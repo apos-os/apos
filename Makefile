@@ -33,11 +33,11 @@ kernel.bin: $(OBJFILES)
 	$(LD) -T linker.ld -o $@ $^
 
 kernel.img: kernel.bin
-	dd if=/dev/zero of=pad bs=1 count=750
-	cat $(BOOTLOADER)/stage1 $(BOOTLOADER)/stage2 pad $< > $@
+	dd if=/dev/zero of=pad.tmp bs=1 count=750
+	cat $(BOOTLOADER)/stage1 $(BOOTLOADER)/stage2 pad.tmp $< > $@
  
 clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img pad
+	$(RM) $(OBJFILES) kernel.bin kernel.img pad.tmp
 
 run: kernel.img
 	./bochs/bochs
