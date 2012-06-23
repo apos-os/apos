@@ -14,7 +14,7 @@
 
 AS	= i586-elf-as
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -nostdlib -fno-builtin -nostartfiles -nodefaultlibs
+CFLAGS	= -Wall -Wextra -nostdlib -fno-builtin -nostartfiles -nodefaultlibs -std=c99
 LD	= i586-elf-ld
 
 BOOTLOADER	= grub
