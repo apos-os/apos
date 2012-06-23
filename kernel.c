@@ -14,8 +14,27 @@
 
 #include <stdint.h>
 
-void kmain(void)
-{
+const uint32_t kScreenWidth = 80;
+const uint32_t kScreenHeight = 24;
+
+void print(const char* msg) {
+   unsigned char* videoram = (char *)0xB8000;
+   uint32_t i, j;
+   for (i = 0; i < kScreenWidth * kScreenHeight; ++i) {
+     videoram[i*2] = ' ';
+     videoram[i*2+1] = 0x07;
+   }
+
+   i = 0;
+   while (*msg) {
+     videoram[i*2] = *msg;
+     videoram[i*2+1] = 0x07; /* light grey (7) on black (0). */
+     ++msg;
+     ++i;
+   }
+}
+
+void kmain(void) {
    extern uint32_t magic;
    extern void *mbd;
 
@@ -32,7 +51,5 @@ void kmain(void)
    //char * boot_loader_name =(char*) ((long*)mbd)[16];
 
    /* Print a letter to screen to see everything is working: */
-   unsigned char *videoram = (char *)0xB8000;
-   videoram[0] = 65; /* character 'A' */
-   videoram[1] = 0x07; /* light grey (7) on black (0). */
+   print("Hello, world!");
 }
