@@ -12,32 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-AS	= i586-elf-as
-CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99
-LD	= i586-elf-ld
+# Set up the multiboot header for GRUB.  These must appear in the first 8k of the image.
+.set ALIGN,    1<<0                     # align loaded modules on page boundaries
+.set MEMINFO,  1<<1                     # provide memory map
+.set FLAGS,    ALIGN | MEMINFO          # this is the Multiboot 'flag' field
+.set MAGIC,    0x1BADB002               # 'magic number' lets bootloader find the header
+.set CHECKSUM, -(MAGIC + FLAGS)         # checksum required
 
-BOOTLOADER	= grub
- 
-OBJFILES = loader.o kernel.o multiboot.o
- 
-all: kernel.img
- 
-%.o : %.s
-	$(AS) -o $@ $<
-
-.c.o:
-	$(CC) $(CFLAGS) -o $@ -c $<
- 
-kernel.bin: $(OBJFILES) linker.ld
-	$(LD) -T linker.ld -o $@ $^
-
-kernel.img: kernel.bin
-	dd if=/dev/zero of=pad.tmp bs=1 count=750
-	cat $(BOOTLOADER)/stage1 $(BOOTLOADER)/stage2 pad.tmp $< > $@
- 
-clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img pad.tmp
-
-run: kernel.img
-	./bochs/bochs
+.align 4
+.long MAGIC
+.long FLAGS
+.long CHECKSUM
