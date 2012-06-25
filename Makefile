@@ -29,7 +29,7 @@ all: kernel.img
 .c.o:
 	$(CC) $(CFLAGS) -o $@ -c $<
  
-kernel.bin: $(OBJFILES)
+kernel.bin: $(OBJFILES) linker.ld
 	$(LD) -T linker.ld -o $@ $^
 
 kernel.img: kernel.bin
