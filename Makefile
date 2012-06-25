@@ -40,4 +40,7 @@ clean:
 	$(RM) $(OBJFILES) kernel.bin kernel.img pad.tmp
 
 run: kernel.img
-	./bochs/bochs
+	./bochs/bochs -q
+
+runx: kernel.img
+	./bochs/bochs -q -f bochsrc.txt.x11
