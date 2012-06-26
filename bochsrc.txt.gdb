@@ -9,3 +9,4 @@ clock: sync=realtime
 cpu: ips=1000000
 display_library: term
 gdbstub: enabled=1, port=1234, text_base=0, data_base=0, bss_base=0
+parport1: enabled=1, file="log.txt"

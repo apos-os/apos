@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "klog.h"
 #include "kstring.h"
 #include "memory.h"
 #include "page_alloc.h"
@@ -35,6 +36,7 @@ void clear() {
 }
 
 void print(const char* msg) {
+  klog(msg);
   int i = 0;
   while (*msg) {
     if (*msg == '\n') {
@@ -52,6 +54,8 @@ void itoa_test();
 void paging_test();
 
 void kmain(memory_info_t* meminfo) {
+  klog("kmain()\n");
+  klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
 
   clear();
