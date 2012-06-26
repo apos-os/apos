@@ -15,12 +15,12 @@
 AS	= i586-elf-as
 ASFLAGS = --gen-debug
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99 -g
+CFLAGS	= -Wall -Wextra -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99 -g -I.
 LD	= i586-elf-ld
 
 BOOTLOADER	= grub
  
-OBJFILES = loader.o gdt.o gdt_flush.o paging.o kernel.o multiboot.o kstring.o kassert.o
+OBJFILES = init/multiboot.o init/loader.o init/gdt.o init/gdt_flush.o init/mem_init.o kernel.o kstring.o kassert.o
  
 all: kernel.img
  

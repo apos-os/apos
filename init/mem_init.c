@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "paging.h"
+#include "init/mem_init.h"
 
 #define PAGE_SIZE          0x00001000
 #define PAGE_INDEX_MASK    0xFFFFF000
