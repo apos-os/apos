@@ -50,12 +50,10 @@ extern uint32_t KERNEL_END_SYMBOL;
 
 // The VMA offset at which we're loading our kernel.  We can subtract this from
 // KERNEL_{START,END}_SYMBOL to get the physical limits of the kernel as loaded
-// by GRUB.
+// by GRUB.  Note that the kernel will actually be loaded 1MB past this by GRUB.
 //
 // Note: keep this is sync with the constant in linker.ld.
 const uint32_t KERNEL_VIRT_START = 0xC0000000;
-
-uint32_t* page_directory = 0;
 
 static void die_phys() {
   __asm__("int $3");
@@ -74,6 +72,28 @@ static void kassert_page_aligned(uint32_t x) {
   kassert_phys((x & PAGE_OFFSET_MASK) == 0);
 }
 
+// Allocate an unaligned block of memory at the end of the current kernel
+// physical space, updating meminfo->kernel_end_phys as necessary.
+static uint32_t* kalloc_unaligned(memory_info_t* meminfo, uint32_t n) {
+  uint32_t* addr = (uint32_t*)meminfo->kernel_end_phys;
+  meminfo->kernel_end_phys += n;
+  return addr;
+}
+
+// Allocate an (aligned) page at the end of the current kernel physical space,
+// updating meminfo->kernel_end_phys as necessary.
+static uint32_t* kalloc_page(memory_info_t* meminfo) {
+  uint32_t* addr = (uint32_t*)0xDEADBEEF;
+  if ((meminfo->kernel_end_phys & PAGE_OFFSET_MASK) == 0) {
+    addr = (uint32_t*)meminfo->kernel_end_phys;
+  } else {
+    addr = (uint32_t*)(
+        (meminfo->kernel_end_phys & PAGE_INDEX_MASK) + PAGE_SIZE);
+  }
+  meminfo->kernel_end_phys = (uint32_t)addr + PAGE_SIZE;
+  return addr;
+}
+
 // Fill the given page table with a linear mapping from virt_base to phys_base.
 // Then install the page table in the given PDE.
 // virt_base must be PTE-size aligned (that is, must be 4MB aligned if each PTE
@@ -81,8 +101,8 @@ static void kassert_page_aligned(uint32_t x) {
 static void map_linear_page_table(uint32_t* pde, uint32_t* pte,
                                   uint32_t virt_base, uint32_t phys_base) {
   // Ensure everything is page-aligned.
-  kassert_page_aligned(pde);
-  kassert_page_aligned(pte);
+  kassert_page_aligned((uint32_t)pde);
+  kassert_page_aligned((uint32_t)pte);
   kassert_page_aligned(virt_base);
   kassert_page_aligned(virt_base / PAGE_SIZE);
   kassert_page_aligned(phys_base);
@@ -98,12 +118,14 @@ static void map_linear_page_table(uint32_t* pde, uint32_t* pte,
   pde[pde_idx] = ((uint32_t)pte & PDE_ADDRESS_MASK) | PDE_WRITABLE | PDE_PRESENT;
 }
 
-void paging_init() {
+// Set up page tables and enable paging.  Updates meminfo as it allocates and
+// creates a virtual memory space.  Returns the new (virtual) address of
+// meminfo.
+static memory_info_t* setup_paging(memory_info_t* meminfo) {
   // First, find a spot just past the end of the kernel to put our initial PDE.
   // Find the final page, then add one to get the next whole page after the end
   // of the kernel.
-  const uint32_t phys_kernel_end = (uint32_t)(&KERNEL_END_SYMBOL) - KERNEL_VIRT_START;
-  page_directory = (uint32_t*)((phys_kernel_end & PDE_ADDRESS_MASK) + PAGE_SIZE);
+  uint32_t* page_directory = kalloc_page(meminfo);
 
   // Zero it out.
   uint32_t i;
@@ -114,10 +136,21 @@ void paging_init() {
 
   // Create two initial PTEs as well.  Identity map the first 4MB, and map the
   // higher-half kernel to the first physical 4MB as well.
-  uint32_t* page_table1 = (uint32_t*)((uint32_t)page_directory + PAGE_SIZE);
+  uint32_t* page_table1 = kalloc_page(meminfo);
   map_linear_page_table(page_directory, page_table1, 0x0, 0x0);
-  uint32_t* page_table2 = (uint32_t*)((uint32_t)page_table1 + PAGE_SIZE);
+  uint32_t* page_table2 = kalloc_page(meminfo);
   map_linear_page_table(page_directory, page_table2, KERNEL_VIRT_START, 0x0);
+
+  // Finally, map the last PDE entry onto itself so we can always access the
+  // current PDE/PTEs without having to map them in explicitly.
+  page_directory[PDE_NUM_ENTRIES - 1] = (uint32_t)page_directory;
+
+  // Update meminfo.
+  meminfo->kernel_start_virt = meminfo->kernel_start_phys + KERNEL_VIRT_START;
+  meminfo->kernel_end_virt = meminfo->kernel_end_phys + KERNEL_VIRT_START;
+  meminfo->mapped_start = KERNEL_VIRT_START;
+  // We mapped a single PTE (4MB) for use by the kernel.
+  meminfo->mapped_end = KERNEL_VIRT_START + PTE_NUM_ENTRIES * PAGE_SIZE;
 
   // Install the PDE and enable paging.
   __asm__ __volatile__
@@ -126,4 +159,41 @@ void paging_init() {
        "or 0x80000000, %%eax;"
        "mov %%eax, %%cr0"
        :: "b"(page_directory) : "eax");
+
+  // Return the virtual-mapped address of meminfo.
+  return ((uint32_t)meminfo) + KERNEL_VIRT_START;
+}
+
+// Allocates a memory_info_t at the end of the kernel and fills it in with what
+// we know.
+static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
+  // Allocate a memory_info_t just past the end of the kernel.  We will pass
+  // this around to keep track of how much memory we allocate here, updating
+  // meminfo->kernel_end_{phys, virt} as needed.
+  const uint32_t kernel_end_phys =
+      (uint32_t)(&KERNEL_END_SYMBOL) - KERNEL_VIRT_START;
+
+  memory_info_t* meminfo = (memory_info_t*)kernel_end_phys;
+  meminfo->kernel_start_phys =
+      (uint32_t)(&KERNEL_START_SYMBOL) - KERNEL_VIRT_START;
+  // Account for the memory_info_t we just allocated.
+  meminfo->kernel_end_phys =
+      kernel_end_phys + sizeof(memory_info_t);
+
+  meminfo->kernel_start_virt = meminfo->kernel_end_virt = 0;
+  meminfo->mapped_start = meminfo->mapped_end = 0;
+
+  kassert_phys((mb_info->flags & MULTIBOOT_INFO_MEMORY) != 0);
+  meminfo->lower_memory = mb_info->mem_lower * 1024;
+  meminfo->upper_memory = mb_info->mem_upper * 1024;
+
+  return meminfo;
+}
+
+memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys) {
+  kassert_phys(magic == 0x2BADB002);
+
+  memory_info_t* meminfo = create_initial_meminfo(multiboot_info_phys);
+  meminfo = setup_paging(meminfo);
+  // We are now in virtual memory!
 }

@@ -17,8 +17,8 @@
 # reserve initial kernel stack space
 .set STACKSIZE, 0x4000                  # that is, 16k.
 .lcomm stack, STACKSIZE                 # reserve 16k stack on a doubleword boundary
-.comm  mbd, 4                           # we will use this in kmain
-.comm  magic, 4                         # we will use this in kmain
+.lcomm  mbd, 4                          # we will use this in kmain
+.lcomm  magic, 4                        # we will use this in kmain
 
 loader:
     movl  $(stack + STACKSIZE), %esp    # set up the stack
@@ -27,9 +27,14 @@ loader:
 
     # Set up GDT and paging.
     call gdt_init
-    call paging_init
+
+    pushl mbd
+    pushl magic
+    call mem_init
 
     # We're now running in virtual memory!
+    # Pass the memory_info_t* returned by mem_init to kmain.
+    pushl %eax
     call  kmain                         # call kernel proper
 
     cli

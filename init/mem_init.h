@@ -15,10 +15,21 @@
 #ifndef APOO_PAGING_H
 #define APOO_PAGING_H
 
+#include <stdint.h>
+
+#include "multiboot.h"
+#include "memory.h"
+
 // Initialize page tables and enable paging.
 //
 // Identity maps the first 4MB of memory.  Must be called before paging has been
 // enabled, and linked at it's physical address.
-void paging_init();
+//
+// Takes the PHYSICAL address of the multiboot info structure provided by GRUB,
+// and returns the VIRTUAL address of a memory_info_t that has been allocated
+// and filled.
+//
+// Once this returns, we are running in virtual memory.
+memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys);
 
 #endif

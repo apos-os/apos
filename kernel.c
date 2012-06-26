@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "kstring.h"
+#include "memory.h"
 
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
@@ -48,25 +49,22 @@ void print(const char* msg) {
 void itoa_test();
 void paging_test();
 
-void kmain(void) {
-   extern uint32_t magic;
-   extern void *mbd;
-
-   if ( magic != 0x2BADB002 )
-   {
-      /* Something went not according to specs. Print an error */
-      /* message and halt, but do *not* rely on the multiboot */
-      /* data structure. */
-   }
-
-   /* You could either use multiboot.h */
-   /* (http://www.gnu.org/software/grub/manual/multiboot/multiboot.html#multiboot_002eh) */
-   /* or do your offsets yourself. The following is merely an example. */
-   //char * boot_loader_name =(char*) ((long*)mbd)[16];
-
+void kmain(memory_info_t* meminfo) {
   clear();
   print("APOO\n");
-  print("kmain: 0x");
+
+  print("meminfo: 0x");
+  print(itoa_hex((uint32_t)meminfo));
+  print("\nmeminfo->kernel_start_phys: 0x"); print(itoa_hex(meminfo-> kernel_start_phys));
+  print("\nmeminfo->kernel_end_phys:   0x"); print(itoa_hex(meminfo-> kernel_end_phys));
+  print("\nmeminfo->kernel_start_virt: 0x"); print(itoa_hex(meminfo-> kernel_start_virt));
+  print("\nmeminfo->kernel_end_virt:   0x"); print(itoa_hex(meminfo-> kernel_end_virt));
+  print("\nmeminfo->mapped_start:      0x"); print(itoa_hex(meminfo-> mapped_start));
+  print("\nmeminfo->mapped_end:        0x"); print(itoa_hex(meminfo-> mapped_end));
+  print("\nmeminfo->lower_memory:      0x"); print(itoa_hex(meminfo-> lower_memory));
+  print("\nmeminfo->upper_memory:      0x"); print(itoa_hex(meminfo-> upper_memory));
+
+  print("\n\nkmain: 0x");
   print(itoa_hex((uint32_t)&kmain));
   print("\nitoa_test: 0x");
   print(itoa_hex((uint32_t)&itoa_test));
