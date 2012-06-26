@@ -34,8 +34,9 @@ all: kernel.img
 kernel.bin: $(OBJFILES) linker.ld
 	$(LD) -T linker.ld -o $@ $^
 
-kernel.img: kernel.bin
+kernel.img: kernel.bin grub/menu.lst kernel.img.base
 	cp kernel.img.base $@
+	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
  
 clean:
