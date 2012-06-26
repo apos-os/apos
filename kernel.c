@@ -16,29 +16,35 @@
 
 #include "gdt.h"
 #include "kstring.h"
+#include "paging.h"
 
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
 
-void print(const char* msg) {
-   unsigned char* videoram = (char *)0xB8000;
-   uint32_t i, j;
-   for (i = 0; i < kScreenWidth * kScreenHeight; ++i) {
-     videoram[i*2] = ' ';
-     videoram[i*2+1] = 0x07;
-   }
+static unsigned char* const videoram = (char *)0xB8000;
+static uint32_t cursor = 0;
 
-   i = 0;
-   while (*msg) {
-     if (*msg == '\n') {
-       i = ((i / kScreenWidth) + 1) * kScreenWidth - 1;
-     } else {
-       videoram[i*2] = *msg;
-       videoram[i*2+1] = 0x07; /* light grey (7) on black (0). */
-     }
-     ++msg;
-     ++i;
-   }
+void clear() {
+  cursor = 0;
+  uint32_t i, j;
+  for (i = 0; i < kScreenWidth * kScreenHeight; ++i) {
+    videoram[i*2] = ' ';
+    videoram[i*2+1] = 0x07;
+  }
+}
+
+void print(const char* msg) {
+  int i = 0;
+  while (*msg) {
+    if (*msg == '\n') {
+      cursor = ((cursor / kScreenWidth) + 1) * kScreenWidth - 1;
+    } else {
+      videoram[cursor*2] = *msg;
+      videoram[cursor*2+1] = 0x07; /* light grey (7) on black (0). */
+    }
+    ++msg;
+    ++cursor;
+  }
 }
 
 void kmain(void) {
@@ -59,6 +65,11 @@ void kmain(void) {
 
   gdt_init();
 
+  paging_init();
+
+  clear();
+  print("APOO");
+  paging_test();
   itoa_test();
 }
 
@@ -66,7 +77,8 @@ void itoa_test() {
   char buf[1700];
   buf[0] = '\0';
 
-  kstrcat(buf, "itoa() test:\n");
+  kstrcat(buf, "\n\nitoa() test:\n");
+  kstrcat(buf, "------------\n");
   kstrcat(buf, "0: '");
   kstrcat(buf, itoa(0));
   kstrcat(buf, "'\n");
@@ -90,5 +102,22 @@ void itoa_test() {
   kstrcat(buf, "1234567890: '");
   kstrcat(buf, itoa(1234567890));
   kstrcat(buf, "'\n");
+  print(buf);
+}
+
+extern uint32_t KERNEL_START_SYMBOL;
+extern uint32_t KERNEL_END_SYMBOL;
+void paging_test() {
+  char buf[1700];
+  kstrcpy(buf, "\n\npaging test:\n");
+  kstrcat(buf, "------------\n");
+  kstrcat(buf, "KERNEL_START: ");
+  kstrcat(buf, itoa(KERNEL_START_SYMBOL));
+  kstrcat(buf, "\n&KERNEL_START: ");
+  kstrcat(buf, itoa(&KERNEL_START_SYMBOL));
+  kstrcat(buf, "\nKERNEL_END: ");
+  kstrcat(buf, itoa(KERNEL_END_SYMBOL));
+  kstrcat(buf, "\n&KERNEL_END: ");
+  kstrcat(buf, itoa(&KERNEL_END_SYMBOL));
   print(buf);
 }

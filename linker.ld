@@ -19,6 +19,7 @@ ENTRY (loader)
 SECTIONS
 {
     . = 0x00100000;
+    KERNEL_START_SYMBOL = .;
 
     .multiboot_header :
     {
@@ -42,9 +43,8 @@ SECTIONS
 
     .bss :
     {
-        sbss = .;
         *(COMMON)
         *(.bss)
-        ebss = .;
+        KERNEL_END_SYMBOL = .;
     }
 }
