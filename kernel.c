@@ -14,6 +14,8 @@
 
 #include <stdint.h>
 
+#include "gdt.h"
+
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
 
@@ -49,6 +51,8 @@ void kmain(void) {
    /* (http://www.gnu.org/software/grub/manual/multiboot/multiboot.html#multiboot_002eh) */
    /* or do your offsets yourself. The following is merely an example. */
    //char * boot_loader_name =(char*) ((long*)mbd)[16];
+
+  gdt_init();
 
    /* Print a letter to screen to see everything is working: */
    print("Hello, world!");
