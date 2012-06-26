@@ -16,32 +16,46 @@
 
 ENTRY (loader)
 
+/* NOTE: keep this in sync with the constant in paging.c */
+_OFFSET = 0xC0000000;
+
 SECTIONS
 {
     . = 0x00100000;
-    KERNEL_START_SYMBOL = .;
 
     .multiboot_header :
     {
         multiboot.o
     }
 
-    .text ALIGN (0x1000) :
+    .init-text ALIGN(0x1000) :
+    {
+      loader.o(.text .rodata .data .bss)
+      paging.o(.text .rodata .data .bss)
+      gdt.o(.text .rodata .data .bss)
+      gdt_flush.o(.text .rodata .data .bss)
+    }
+
+    /* Load the main part of the kernel at VMA 0xC0000000. */
+    . += _OFFSET;
+
+    KERNEL_START_SYMBOL = .;
+    .text ALIGN (0x1000) : AT(ADDR(.text) - _OFFSET)
     {
         *(.text)
     }
 
-    .rodata ALIGN (0x1000) :
+    .rodata ALIGN (0x1000) : AT(ADDR(.rodata) - _OFFSET)
     {
         *(.rodata*)
     }
 
-    .data ALIGN (0x1000) :
+    .data ALIGN (0x1000) : AT(ADDR(.data) - _OFFSET)
     {
         *(.data)
     }
 
-    .bss :
+    .bss : AT(ADDR(.bss) - _OFFSET)
     {
         *(COMMON)
         *(.bss)

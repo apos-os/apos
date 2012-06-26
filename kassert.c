@@ -14,8 +14,12 @@
 
 #include "kassert.h"
 
+static void die() {
+  __asm__("int $3");
+}
+
 void kassert(int x) {
   if (!x) {
-    __asm__("int $3");
+    die();
   }
 }
