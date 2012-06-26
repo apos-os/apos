@@ -15,31 +15,7 @@
 #include <stdint.h>
 
 #include "init/mem_init.h"
-
-#define PAGE_SIZE          0x00001000
-#define PAGE_INDEX_MASK    0xFFFFF000
-#define PAGE_OFFSET_MASK   0x00000FFF
-
-#define PDE_ADDRESS_MASK   0xFFFFF000 /* PAGE_INDEX_MASK */
-#define PDE_LARGE_PAGES    0x00000080
-#define PDE_ACCESSED       0x00000020
-#define PDE_CACHE_DISABLED 0x00000010
-#define PDE_WRITE_THROUGH  0x00000008
-#define PDE_USER_ACCESS    0x00000004
-#define PDE_WRITABLE       0x00000002
-#define PDE_PRESENT        0x00000001
-#define PDE_NUM_ENTRIES    (PAGE_SIZE / 4)
-
-#define PTE_ADDRESS_MASK   0xFFFFF000 /* PAGE_INDEX_MASK */
-#define PTE_GLOBAL         0x00000100
-#define PTE_DIRTY          0x00000040
-#define PTE_ACCESSED       0x00000020
-#define PTE_CACHE_DISABLED 0x00000010
-#define PTE_WRITE_TRHOUGH  0x00000008
-#define PTE_USER_ACCESS    0x00000004
-#define PTE_WRITABLE       0x00000002
-#define PTE_PRESENT        0x00000001
-#define PTE_NUM_ENTRIES    (PAGE_SIZE / 4)
+#include "memory.h"
 
 // Memory limits of the kernel --- symbols defined at the start and end of the
 // kernel.  Defined in loader.s.
@@ -47,13 +23,6 @@
 // Note: these are the VIRTUAL addresses of the start and end.
 extern uint32_t KERNEL_START_SYMBOL;
 extern uint32_t KERNEL_END_SYMBOL;
-
-// The VMA offset at which we're loading our kernel.  We can subtract this from
-// KERNEL_{START,END}_SYMBOL to get the physical limits of the kernel as loaded
-// by GRUB.  Note that the kernel will actually be loaded 1MB past this by GRUB.
-//
-// Note: keep this is sync with the constant in linker.ld.
-const uint32_t KERNEL_VIRT_START = 0xC0000000;
 
 static void die_phys() {
   __asm__("int $3");
@@ -136,6 +105,8 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 
   // Create two initial PTEs as well.  Identity map the first 4MB, and map the
   // higher-half kernel to the first physical 4MB as well.
+  // Note: Keep this in sync with init/kernel_init.c (which undoes the first
+  // mapping).
   uint32_t* page_table1 = kalloc_page(meminfo);
   map_linear_page_table(page_directory, page_table1, 0x0, 0x0);
   uint32_t* page_table2 = kalloc_page(meminfo);
@@ -143,7 +114,9 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 
   // Finally, map the last PDE entry onto itself so we can always access the
   // current PDE/PTEs without having to map them in explicitly.
-  page_directory[PDE_NUM_ENTRIES - 1] = (uint32_t)page_directory;
+  kassert_page_aligned((uint32_t)page_directory);
+  page_directory[PDE_NUM_ENTRIES - 1] =
+      (uint32_t)page_directory | PDE_WRITABLE | PDE_PRESENT;
 
   // Update meminfo.
   meminfo->kernel_start_virt = meminfo->kernel_start_phys + KERNEL_VIRT_START;
@@ -196,4 +169,5 @@ memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys) {
   memory_info_t* meminfo = create_initial_meminfo(multiboot_info_phys);
   meminfo = setup_paging(meminfo);
   // We are now in virtual memory!
+  return meminfo;
 }

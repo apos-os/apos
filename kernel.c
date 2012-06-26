@@ -20,7 +20,8 @@
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
 
-static unsigned char* const videoram = (char *)0xB8000;
+// VIRTUAL address of the framebuffer.
+static unsigned char* const videoram = (char *)0xC00B8000;
 static uint32_t cursor = 0;
 
 void clear() {

@@ -20,6 +20,13 @@
 #include "multiboot.h"
 #include "memory.h"
 
+// The VMA offset at which we're loading our kernel.  We can subtract this from
+// KERNEL_{START,END}_SYMBOL to get the physical limits of the kernel as loaded
+// by GRUB.  Note that the kernel will actually be loaded 1MB past this by GRUB.
+//
+// Note: keep this is sync with the constant in linker.ld.
+#define KERNEL_VIRT_START 0xC0000000
+
 // Initialize page tables and enable paging.
 //
 // Identity maps the first 4MB of memory.  Must be called before paging has been

@@ -20,7 +20,8 @@ LD	= i586-elf-ld
 
 BOOTLOADER	= grub
  
-OBJFILES = init/multiboot.o init/loader.o init/gdt.o init/gdt_flush.o init/mem_init.o kernel.o kstring.o kassert.o
+OBJFILES = init/multiboot.o init/loader.o init/gdt.o init/gdt_flush.o init/mem_init.o init/kernel_init.o \
+	   kernel.o kstring.o kassert.o
  
 all: kernel.img
  
