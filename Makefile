@@ -35,8 +35,8 @@ kernel.bin: $(OBJFILES) linker.ld
 	$(LD) -T linker.ld -o $@ $^
 
 kernel.img: kernel.bin
-	dd if=/dev/zero of=pad.tmp bs=1 count=750
-	cat $(BOOTLOADER)/stage1 $(BOOTLOADER)/stage2 pad.tmp $< > $@
+	cp kernel.img.base $@
+	mcopy -i $@ kernel.bin ::/
  
 clean:
 	$(RM) $(OBJFILES) kernel.bin kernel.img pad.tmp
