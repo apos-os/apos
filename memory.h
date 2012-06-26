@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Basic data structures and constants used by the lowel-level memory code.
 #ifndef APOO_MEMORY_H
 #define APOO_MEMORY_H
 
@@ -62,5 +63,15 @@ typedef struct {
   uint32_t lower_memory;
   uint32_t upper_memory;
 } memory_info_t;
+
+// Returns the page containing the given address.
+uint32_t addr2page(uint32_t addr);
+
+// Returns the next page/frame start address after x (or x if x is
+// page-aligned).
+uint32_t next_page(uint32_t x);
+
+// Returns non-zero if the given address is page-aligned.
+int is_page_aligned(uint32_t x);
 
 #endif

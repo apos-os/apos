@@ -16,6 +16,7 @@
 
 #include "kstring.h"
 #include "memory.h"
+#include "page_alloc.h"
 
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
@@ -51,6 +52,8 @@ void itoa_test();
 void paging_test();
 
 void kmain(memory_info_t* meminfo) {
+  page_frame_alloc_init(meminfo);
+
   clear();
   print("APOO\n");
 
@@ -65,13 +68,14 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->lower_memory:      0x"); print(itoa_hex(meminfo-> lower_memory));
   print("\nmeminfo->upper_memory:      0x"); print(itoa_hex(meminfo-> upper_memory));
 
-  print("\n\nkmain: 0x");
-  print(itoa_hex((uint32_t)&kmain));
-  print("\nitoa_test: 0x");
-  print(itoa_hex((uint32_t)&itoa_test));
+  page_frame_alloc_test();
+  //print("\n\nkmain: 0x");
+  //print(itoa_hex((uint32_t)&kmain));
+  //print("\nitoa_test: 0x");
+  //print(itoa_hex((uint32_t)&itoa_test));
 
-  paging_test();
-  itoa_test();
+  //paging_test();
+  //itoa_test();
 }
 
 void itoa_test() {
@@ -134,4 +138,44 @@ void paging_test() {
   kstrcat(buf, "\n&KERNEL_END: 0x");
   kstrcat(buf, itoa_hex(&KERNEL_END_SYMBOL));
   print(buf);
+}
+
+void page_frame_alloc_test() {
+  clear();
+  print("page_frame_alloc test\n");
+
+  // Total allocator test.
+  //int i = 0;
+  //while (page_frame_alloc() != 0) {
+  //  i++;
+  //}
+  //print("total allocated: ");
+  //print(itoa(i));
+
+  uint32_t page1 = page_frame_alloc();
+  uint32_t page2 = page_frame_alloc();
+  uint32_t page3 = page_frame_alloc();
+  print("page1: 0x"); print(itoa_hex(page1)); print("\n");
+  print("page2: 0x"); print(itoa_hex(page2)); print("\n");
+  print("page3: 0x"); print(itoa_hex(page3)); print("\n");
+
+  page_frame_free(page1);
+  page_frame_free(page2);
+  page_frame_free(page3);
+
+  uint32_t page4 = page_frame_alloc();
+  uint32_t page5 = page_frame_alloc();
+  uint32_t page6 = page_frame_alloc();
+
+  print("pages 4-6 should be equal to pages 1-3 in reverse order\n");
+  print("page4: 0x"); print(itoa_hex(page4)); print("\n");
+  print("page5: 0x"); print(itoa_hex(page5)); print("\n");
+  print("page6: 0x"); print(itoa_hex(page6)); print("\n");
+
+  page_frame_free(page4);
+  page_frame_free(page5);
+  page_frame_free(page6);
+
+  print("double-free: should kassert");
+  page_frame_free(page4);
 }
