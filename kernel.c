@@ -14,9 +14,7 @@
 
 #include <stdint.h>
 
-#include "gdt.h"
 #include "kstring.h"
-#include "paging.h"
 
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
@@ -72,8 +70,6 @@ void kmain(void) {
   print(itoa_hex((uint32_t)&kmain));
   print("\nitoa_test: 0x");
   print(itoa_hex((uint32_t)&itoa_test));
-  print("\npaging_init: 0x");
-  print(itoa_hex((uint32_t)(&paging_init)));
 
   paging_test();
   itoa_test();
