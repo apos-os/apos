@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "gdt.h"
+#include "kstring.h"
 
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
@@ -29,8 +30,12 @@ void print(const char* msg) {
 
    i = 0;
    while (*msg) {
-     videoram[i*2] = *msg;
-     videoram[i*2+1] = 0x07; /* light grey (7) on black (0). */
+     if (*msg == '\n') {
+       i = ((i / kScreenWidth) + 1) * kScreenWidth - 1;
+     } else {
+       videoram[i*2] = *msg;
+       videoram[i*2+1] = 0x07; /* light grey (7) on black (0). */
+     }
      ++msg;
      ++i;
    }
@@ -54,6 +59,36 @@ void kmain(void) {
 
   gdt_init();
 
-   /* Print a letter to screen to see everything is working: */
-   print("Hello, world!");
+  itoa_test();
+}
+
+void itoa_test() {
+  char buf[1700];
+  buf[0] = '\0';
+
+  kstrcat(buf, "itoa() test:\n");
+  kstrcat(buf, "0: '");
+  kstrcat(buf, itoa(0));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "1: '");
+  kstrcat(buf, itoa(1));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "10: '");
+  kstrcat(buf, itoa(10));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "100: '");
+  kstrcat(buf, itoa(100));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "123: '");
+  kstrcat(buf, itoa(123));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "1234567890: '");
+  kstrcat(buf, itoa(1234567890));
+  kstrcat(buf, "'\n");
+  print(buf);
 }
