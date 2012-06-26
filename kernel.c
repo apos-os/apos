@@ -102,6 +102,19 @@ void itoa_test() {
   kstrcat(buf, "1234567890: '");
   kstrcat(buf, itoa(1234567890));
   kstrcat(buf, "'\n");
+
+  kstrcat(buf, "0x0: '");
+  kstrcat(buf, itoa_hex(0x0));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "0x1: '");
+  kstrcat(buf, itoa_hex(0x1));
+  kstrcat(buf, "'\n");
+
+  kstrcat(buf, "0xABCDEF0: '");
+  kstrcat(buf, itoa_hex(0xABCDEF0));
+  kstrcat(buf, "'\n");
+
   print(buf);
 }
 
@@ -111,13 +124,13 @@ void paging_test() {
   char buf[1700];
   kstrcpy(buf, "\n\npaging test:\n");
   kstrcat(buf, "------------\n");
-  kstrcat(buf, "KERNEL_START: ");
-  kstrcat(buf, itoa(KERNEL_START_SYMBOL));
-  kstrcat(buf, "\n&KERNEL_START: ");
-  kstrcat(buf, itoa(&KERNEL_START_SYMBOL));
-  kstrcat(buf, "\nKERNEL_END: ");
-  kstrcat(buf, itoa(KERNEL_END_SYMBOL));
-  kstrcat(buf, "\n&KERNEL_END: ");
-  kstrcat(buf, itoa(&KERNEL_END_SYMBOL));
+  kstrcat(buf, "KERNEL_START: 0x");
+  kstrcat(buf, itoa_hex(KERNEL_START_SYMBOL));
+  kstrcat(buf, "\n&KERNEL_START: 0x");
+  kstrcat(buf, itoa_hex(&KERNEL_START_SYMBOL));
+  kstrcat(buf, "\nKERNEL_END: 0x");
+  kstrcat(buf, itoa_hex(KERNEL_END_SYMBOL));
+  kstrcat(buf, "\n&KERNEL_END: 0x");
+  kstrcat(buf, itoa_hex(&KERNEL_END_SYMBOL));
   print(buf);
 }
