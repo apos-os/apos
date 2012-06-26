@@ -47,6 +47,9 @@ void print(const char* msg) {
   }
 }
 
+void itoa_test();
+void paging_test();
+
 void kmain(void) {
    extern uint32_t magic;
    extern void *mbd;
@@ -63,12 +66,15 @@ void kmain(void) {
    /* or do your offsets yourself. The following is merely an example. */
    //char * boot_loader_name =(char*) ((long*)mbd)[16];
 
-  gdt_init();
-
-  paging_init();
-
   clear();
-  print("APOO");
+  print("APOO\n");
+  print("kmain: 0x");
+  print(itoa_hex((uint32_t)&kmain));
+  print("\nitoa_test: 0x");
+  print(itoa_hex((uint32_t)&itoa_test));
+  print("\npaging_init: 0x");
+  print(itoa_hex((uint32_t)(&paging_init)));
+
   paging_test();
   itoa_test();
 }

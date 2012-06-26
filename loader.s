@@ -25,6 +25,11 @@ loader:
     movl  %eax, magic                   # Multiboot magic number
     movl  %ebx, mbd                     # Multiboot data structure
 
+    # Set up GDT and paging.
+    call gdt_init
+    call paging_init
+
+    # We're now running in virtual memory!
     call  kmain                         # call kernel proper
 
     cli

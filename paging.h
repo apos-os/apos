@@ -15,4 +15,10 @@
 #ifndef APOO_PAGING_H
 #define APOO_PAGING_H
 
+// Initialize page tables and enable paging.
+//
+// Identity maps the first 4MB of memory.  Must be called before paging has been
+// enabled, and linked at it's physical address.
+void paging_init();
+
 #endif
