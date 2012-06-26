@@ -8,4 +8,4 @@ mouse: enabled=0
 clock: sync=realtime
 cpu: ips=1000000
 display_library: term
-gdbstub: enabled=1
+gdbstub: enabled=1, port=1234, text_base=0, data_base=0, bss_base=0

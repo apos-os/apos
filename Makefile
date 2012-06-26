@@ -13,8 +13,9 @@
 # limitations under the License.
 
 AS	= i586-elf-as
+ASFLAGS = --gen-debug
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99
+CFLAGS	= -Wall -Wextra -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99 -g
 LD	= i586-elf-ld
 
 BOOTLOADER	= grub
@@ -24,7 +25,7 @@ OBJFILES = loader.o kernel.o multiboot.o gdt.o gdt_flush.o kstring.o paging.o ka
 all: kernel.img
  
 %.o : %.s
-	$(AS) -o $@ $<
+	$(AS) $(ASFLAGS) -o $@ $<
 
 %.o : %.c
 	$(CC) $(CFLAGS) -o $@ -c $<
