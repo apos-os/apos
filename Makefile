@@ -44,3 +44,6 @@ run: kernel.img
 
 runx: kernel.img
 	./bochs/bochs -q -f bochsrc.txt.x11
+
+gdb: kernel.bin kernel.img
+	./bochs/bochs_gdb -q -f bochsrc.txt.gdb
