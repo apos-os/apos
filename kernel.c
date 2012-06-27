@@ -16,6 +16,7 @@
 
 #include "kassert.h"
 #include "klog.h"
+#include "kmalloc.h"
 #include "kstring.h"
 #include "memory.h"
 #include "page_alloc.h"
@@ -53,12 +54,14 @@ void print(const char* msg) {
 
 void itoa_test();
 void paging_test();
+void kmalloc_test();
 
 void kmain(memory_info_t* meminfo) {
   klog("kmain()\n");
   klog("page_frame_alloc_init()\n");
   set_global_meminfo(meminfo);
   page_frame_alloc_init(meminfo);
+  kmalloc_init();
 
   clear();
   print("APOO\n");
@@ -76,6 +79,7 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(itoa_hex(meminfo->phys_map_start));
 
   page_frame_alloc_test();
+  kmalloc_test();
   //print("\n\nkmain: 0x");
   //print(itoa_hex((uint32_t)&kmain));
   //print("\nitoa_test: 0x");
@@ -221,4 +225,25 @@ void page_frame_alloc_test() {
 
   //print("double-free: should kassert");
   //page_frame_free(page4);
+}
+
+void kmalloc_test() {
+  klog("initial state\n");
+  klog("---------------\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  void* x = kmalloc(128);
+  klog("kmalloc(128) => ");
+  klog(itoa_hex((uint32_t)x));
+  klog("\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  void* x2 = kmalloc(128);
+  klog("kmalloc(128) => ");
+  klog(itoa_hex((uint32_t)x2));
+  klog("\n");
+  kmalloc_log_state();
+  klog("---------------\n");
 }
