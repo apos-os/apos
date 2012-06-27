@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "kstring.h"
 #include "ktest.h"
 
 void kstring_test() {
@@ -53,4 +54,23 @@ void kstring_test() {
   KEXPECT_GT(kstrncmp("abcc", "abcb", 10), 0);
   KEXPECT_LT(kstrncmp("abca", "abcdefghiklmnop", 10), 0);
   KEXPECT_GT(kstrncmp("abcz", "abcdefghiklmnop", 10), 0);
+
+  // TODO(aoates): tests for kmemset, kstrcpy, kstrncpy, kstrcat
+
+  KTEST_BEGIN("itoa()");
+  KEXPECT_STREQ("0", itoa(0));
+  KEXPECT_STREQ("0", itoa(00));
+  KEXPECT_STREQ("10", itoa(10));
+  KEXPECT_STREQ("100", itoa(100));
+  KEXPECT_STREQ("123", itoa(123));
+  KEXPECT_STREQ("1234567890", itoa(1234567890));
+
+  KTEST_BEGIN("itoa_hex()");
+  KEXPECT_STREQ("0", itoa_hex(0));
+  KEXPECT_STREQ("0", itoa_hex(00));
+  KEXPECT_STREQ("10", itoa_hex(0x10));
+  KEXPECT_STREQ("DEADBEEF", itoa_hex(0xDEADBEEF));
+  KEXPECT_STREQ("12345", itoa_hex(0x12345));
+  KEXPECT_STREQ("67890", itoa_hex(0x67890));
+  KEXPECT_STREQ("ABCDEF0", itoa_hex(0xABCDEF0));
 }

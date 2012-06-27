@@ -22,7 +22,7 @@ BOOTLOADER	= grub
  
 OBJFILES = init/multiboot.o init/loader.o init/gdt.o init/gdt_flush.o init/mem_init.o init/kernel_init.o \
 	   memory.o page_alloc.o kernel.o kstring.o kassert.o klog.o kmalloc.o \
-	   ktest_test.o kstring_test.o
+	   ktest.o ktest_test.o kstring_test.o
 
 HDRFILES = $(wildcard *.h)
  

@@ -17,38 +17,34 @@
 #define APOO_KTEST_H
 
 #include "klog.h"
+#include "kstring.h"
 
 #define STR2(x) #x
 #define STR(x) STR2(x)
 
-#define KTEST_SUITE_BEGIN(name) do { \
-  klog("\n\nTEST SUITE: " name "\n"); \
-  klog("#######################################\n"); \
-} while (0)
+void KTEST_SUITE_BEGIN(const char* name);
+void KTEST_BEGIN(const char* name);
 
-#define KTEST_BEGIN(name) do { \
-  klog("\nTEST: " name "\n"); \
-  klog("---------------------------------------\n"); \
+void kexpect_(uint32_t cond, const char* name,
+              const char* astr, const char* bstr,
+              const char* aval, const char* bval,
+              const char* opstr,
+              const char* file, const char* line);
+
+#define KEXPECT_(name, astr, bstr, aval, bval, cond, opstr) do { \
+  kexpect_(cond, name, astr, bstr, aval, bval, opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 
-#define KEXPECT_(name, astr, bstr, cond, condstr) do { \
-  if (cond) { \
-    klog("[PASSED] " name "(" astr ", " bstr ")\n"); \
-  } else { \
-    klog("[FAILED] " name "(" astr ", " bstr ") at " __FILE__ ":" STR(__LINE__) ": " condstr "\n"); \
-  } \
-} while(0)
+#define KEXPECT_EQ(a, b) KEXPECT_("KEXPECT_EQ", #a, #b, itoa(a), itoa(b), a == b, " != ")
+#define KEXPECT_NE(a, b) KEXPECT_("KEXPECT_NE", #a, #b, itoa(a), itoa(b), a != b, " == ")
 
-#define KEXPECT_EQ(a, b) KEXPECT_("KEXPECT_EQ", #a, #b, a == b, #a " != " #b)
-#define KEXPECT_NE(a, b) KEXPECT_("KEXPECT_NE", #a, #b, a != b, #a " == " #b)
+#define KEXPECT_STREQ(a, b) KEXPECT_("KEXPECT_STREQ", #a, #b, a, b, !kstrcmp(a, b), " != ")
+#define KEXPECT_STRNE(a, b) KEXPECT_("KEXPECT_STRNE", #a, #b, a, b, kstrcmp(a, b), " == ")
 
-#define KEXPECT_STREQ(a, b) KEXPECT_("KEXPECT_STREQ", #a, #b, !kstrcmp(a, b), #a " != " #b)
-#define KEXPECT_STRNE(a, b) KEXPECT_("KEXPECT_STRNE", #a, #b, kstrcmp(a, b), #a " == " #b)
+#define KEXPECT_LT(a, b) KEXPECT_("KEXPECT_LT", #a, #b, itoa(a), itoa(b), a < b, " >= ")
+#define KEXPECT_LE(a, b) KEXPECT_("KEXPECT_LE", #a, #b, itoa(a), itoa(b), a <= b, " > ")
 
-#define KEXPECT_LT(a, b) KEXPECT_("KEXPECT_LT", #a, #b, a < b, #a " >= " #b)
-#define KEXPECT_LE(a, b) KEXPECT_("KEXPECT_LE", #a, #b, a <= b, #a " > " #b)
-
-#define KEXPECT_GT(a, b) KEXPECT_("KEXPECT_GT", #a, #b, a > b, #a " <= " #b)
-#define KEXPECT_GE(a, b) KEXPECT_("KEXPECT_GE", #a, #b, a >= b, #a " < " #b)
+#define KEXPECT_GT(a, b) KEXPECT_("KEXPECT_GT", #a, #b, itoa(a), itoa(b), a > b, " <= ")
+#define KEXPECT_GE(a, b) KEXPECT_("KEXPECT_GE", #a, #b, itoa(a), itoa(b), a >= b, " < ")
 
 #endif
