@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "kassert.h"
 #include "klog.h"
 #include "kstring.h"
 #include "memory.h"

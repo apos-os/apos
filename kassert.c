@@ -14,12 +14,24 @@
 
 #include "kassert.h"
 
-static void die() {
+#include "klog.h"
+
+void die(const char* msg) {
+  klog("PANIC: ");
+  if (msg) {
+    klog(msg);
+  } else {
+    klog("<unknown reason :(>");
+  }
   __asm__("int $3");
 }
 
 void kassert(int x) {
+  kassert_msg(x, 0);
+}
+
+void kassert_msg(int x, const char* msg) {
   if (!x) {
-    die();
+    die(msg);
   }
 }

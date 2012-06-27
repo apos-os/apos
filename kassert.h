@@ -15,6 +15,11 @@
 #ifndef APOO_KASSERT_H
 #define APOO_KAS
 
+// Kills the kernel, logging the given message first.
+void die(const char* msg);
+
+// Calls die() if x is zero.
 void kassert(int x);
+void kassert_msg(int x, const char* msg);
 
 #endif
