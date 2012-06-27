@@ -62,7 +62,16 @@ typedef struct {
   // machine, in bytes.
   uint32_t lower_memory;
   uint32_t upper_memory;
+
+  // The location in kernel memory at which all physical memory is mapped.  Any
+  // physical address can be accessed by adding this offset to get the
+  // corresponding virtual address.
+  uint32_t phys_map_start;
 } memory_info_t;
+
+// Once we've finished setting up our initial memory mappings, sets a global
+// memory_info_t that is used by the other functions in this module.
+void set_global_meminfo(memory_info_t* meminfo);
 
 // Returns the page containing the given address.
 uint32_t addr2page(uint32_t addr);
@@ -73,5 +82,9 @@ uint32_t next_page(uint32_t x);
 
 // Returns non-zero if the given address is page-aligned.
 int is_page_aligned(uint32_t x);
+
+// Converts a physical address to a virtual address (i.e. the virtual location,
+// in the kernel, where that physical page is mapped, at 0xd0000000).
+uint32_t phys2virt(uint32_t x);
 
 #endif

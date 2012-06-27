@@ -14,6 +14,12 @@
 
 #include "memory.h"
 
+static memory_info_t* global_meminfo = 0;
+
+void set_global_meminfo(memory_info_t* meminfo) {
+  global_meminfo = meminfo;
+}
+
 uint32_t addr2page(uint32_t addr) {
   return addr & PAGE_INDEX_MASK;
 }
@@ -29,4 +35,8 @@ uint32_t next_page(uint32_t x) {
 
 int is_page_aligned(uint32_t x) {
   return !(x & PAGE_OFFSET_MASK);
+}
+
+uint32_t phys2virt(uint32_t x) {
+  return x + global_meminfo->phys_map_start;
 }

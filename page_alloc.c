@@ -68,10 +68,11 @@ uint32_t page_frame_alloc() {
 
   uint32_t frame = free_frame_stack[--stack_idx];
 
-  //// Fill the page with crap.
-  //for (int i = 0; i < PAGE_SIZE / 4; ++i) {
-  //  ((uint32_t*)frame)[i] = 0xCAFEBABE;
-  //}
+  // Fill the page with crap.
+  uint32_t virt_frame = phys2virt(frame);
+  for (int i = 0; i < PAGE_SIZE / 4; ++i) {
+    ((uint32_t*)virt_frame)[i] = 0xCAFEBABE;
+  }
 
   return frame;
 }
@@ -88,8 +89,9 @@ void page_frame_free(uint32_t frame) {
   kassert(stack_idx <= stack_size);
 
   // Fill the page with crap.
-  //for (int i = 0; i < PAGE_SIZE / 4; ++i) {
-  //  ((uint32_t*)frame)[i] = 0xDEADBEEF;
-  //}
+  uint32_t virt_frame = phys2virt(frame);
+  for (int i = 0; i < PAGE_SIZE / 4; ++i) {
+    ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
+  }
   free_frame_stack[stack_idx++] = frame_addr;
 }

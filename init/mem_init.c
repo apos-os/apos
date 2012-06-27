@@ -24,12 +24,12 @@
 extern uint32_t KERNEL_START_SYMBOL;
 extern uint32_t KERNEL_END_SYMBOL;
 
-// We will additionally set up an identity map for physical memory into the
-// kernel's virtual memory space, at the following address.
-const uint32_t KERNEL_IDENTITY_MAP_START = 0xD0000000;
+// We will additionally set up a linear map for physical memory into the
+// kernel's virtual memory space, starting at the following address.
+const uint32_t KERNEL_PHYS_MAP_START = 0xD0000000;
 
 // The maximum amount of physical memory we support (due to the
-// KERNEL_IDENTITY_MAP_START).
+// KERNEL_PHYS_MAP_START).
 const uint32_t MAX_MEMORY_BYTES = 0x10000000;
 
 static void die_phys() {
@@ -126,7 +126,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   while (ident_addr < total_mem) {
     uint32_t* ident_page_table = kalloc_page(meminfo);
     map_linear_page_table(page_directory, ident_page_table,
-                          ident_addr + KERNEL_IDENTITY_MAP_START, ident_addr);
+                          ident_addr + KERNEL_PHYS_MAP_START, ident_addr);
     ident_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
   }
 
@@ -182,6 +182,8 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
   if (meminfo->upper_memory > MAX_MEMORY_BYTES) {
     meminfo->upper_memory = MAX_MEMORY_BYTES;
   }
+
+  meminfo->phys_map_start = KERNEL_PHYS_MAP_START;
 
   return meminfo;
 }
