@@ -54,7 +54,9 @@ void print(const char* msg) {
 
 void utoa_test();
 void paging_test();
-void kmalloc_test();
+void kmalloc_test1();
+void kmalloc_test2();
+void kmalloc_test3();
 
 void kmain(memory_info_t* meminfo) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
@@ -85,7 +87,7 @@ void kmain(memory_info_t* meminfo) {
   //kstring_test();
   //kprintf_test();
   //page_frame_alloc_test();
-  kmalloc_test();
+  kmalloc_test3();
   //print("\n\nkmain: 0x");
   //print(utoa_hex((uint32_t)&kmain));
   //print("\nutoa_test: 0x");
@@ -232,7 +234,7 @@ void page_frame_alloc_test() {
   //page_frame_free(page4);
 }
 
-void kmalloc_test() {
+void kmalloc_test1() {
   klog("initial state\n");
   klog("---------------\n");
   kmalloc_log_state();
@@ -272,6 +274,45 @@ void kmalloc_test() {
   klog("kmalloc(256) => ");
   klog(utoa_hex((uint32_t)x5));
   klog("\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+}
+
+void kmalloc_test2() {
+  klog("initial state\n");
+  klog("---------------\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  void* x1 = kmalloc(128);
+  klogf("kmalloc(128) => %x\n", x1);
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  kfree(x1);
+  klogf("free(%x)\n", x1);
+  kmalloc_log_state();
+  klog("---------------\n");
+}
+
+// Thrashing test (repeatedly alloc and free small blocks)
+void kmalloc_test3() {
+  klog("initial state\n");
+  klog("---------------\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  for (int i = 0; i < 10000; ++i) {
+    void* x1 = kmalloc(128);
+    void* x2 = kmalloc(128);
+    void* x3 = kmalloc(128);
+
+    kfree(x3);
+    kfree(x2);
+    kfree(x1);
+  }
+
+  klogf("post-thrash\n");
   kmalloc_log_state();
   klog("---------------\n");
 }

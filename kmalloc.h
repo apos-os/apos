@@ -19,6 +19,7 @@
 
 // TODO(aoates): document these
 void kmalloc_init();
+void kfree(void* x);
 void* kmalloc(uint32_t n);
 void kmalloc_log_state();
 

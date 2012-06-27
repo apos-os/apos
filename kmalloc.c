@@ -25,6 +25,8 @@
 // Don't bother splitting a block if it'll be smaller than this (bytes).
 #define KALLOC_MIN_BLOCK_SIZE 8
 
+#define KALLOC_MAGIC 0xAB
+
 // Every memory block has the following structure:
 // | free (8 bits) | length (32 bits) | prev (32 bits) | next (32 bits) | data (length bytes) |
 // That is, a header with the block length (not including the header), a pointer
@@ -34,6 +36,7 @@
 // headers.  When we give a block to (or take on from) a caller, we use a
 // pointer to the data.
 struct block {
+  uint8_t magic;
   uint8_t free;
   uint32_t length;
   struct block* prev;
@@ -53,12 +56,21 @@ void kmalloc_init() {
   g_block_list = &head;
 }
 
+static void init_block(block_t* b) {
+  b->magic = KALLOC_MAGIC;
+  b->free = 1;
+  b->length = 0;
+  b->prev = 0;
+  b->next = 0;
+}
+
 // Allocates a fresh physical page from the page frame allocator, creates a
 // block for it, inserts it into the block list, and returns it.
 static block_t* kalloc_new_page() {
   uint32_t page = page_frame_alloc();
   kassert_msg(page, "out of memory in kmalloc");
   block_t* block = (block_t*)phys2virt(page);
+  init_block(block);
 
   block->free = 1;
   block->length = PAGE_SIZE - sizeof(block_t);
@@ -103,6 +115,7 @@ static block_t* kalloc_split_block(block_t* b, uint32_t n) {
   }
 
   block_t* new_block = (uint8_t*)b + sizeof(block_t) + n;
+  init_block(new_block);
   new_block->free = 1;
   new_block->length = b->length - sizeof(block_t) - n;
   new_block->prev = b;
@@ -138,6 +151,14 @@ void* kmalloc(uint32_t n) {
   cblock->free = 0;
   cblock = kalloc_split_block(cblock, n);
   return (void*)(&cblock->data);
+}
+
+void kfree(void* x) {
+  block_t* b = (block_t*)((uint8_t*)x - sizeof(block_t));
+  kassert(b->magic == KALLOC_MAGIC);
+  b->free = 1;
+
+  // TODO(aoates): merge blocks.
 }
 
 void kmalloc_log_state() {
