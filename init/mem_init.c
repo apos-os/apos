@@ -24,6 +24,14 @@
 extern uint32_t KERNEL_START_SYMBOL;
 extern uint32_t KERNEL_END_SYMBOL;
 
+// We will additionally set up an identity map for physical memory into the
+// kernel's virtual memory space, at the following address.
+const uint32_t KERNEL_IDENTITY_MAP_START = 0xD0000000;
+
+// The maximum amount of physical memory we support (due to the
+// KERNEL_IDENTITY_MAP_START).
+const uint32_t MAX_MEMORY_BYTES = 0x10000000;
+
 static void die_phys() {
   __asm__("int $3");
 }
@@ -73,8 +81,8 @@ static void map_linear_page_table(uint32_t* pde, uint32_t* pte,
   kassert_page_aligned((uint32_t)pde);
   kassert_page_aligned((uint32_t)pte);
   kassert_page_aligned(virt_base);
-  kassert_page_aligned(virt_base / PAGE_SIZE);
   kassert_page_aligned(phys_base);
+  kassert_phys((virt_base % (PAGE_SIZE * PDE_NUM_ENTRIES)) == 0);
 
   for (int i = 0; i < PTE_NUM_ENTRIES; ++i) {
     const uint32_t phys_address = phys_base + i * PAGE_SIZE;
@@ -111,6 +119,16 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   map_linear_page_table(page_directory, page_table1, 0x0, 0x0);
   uint32_t* page_table2 = kalloc_page(meminfo);
   map_linear_page_table(page_directory, page_table2, KERNEL_VIRT_START, 0x0);
+
+  // Identity map all physical memory as well.
+  const uint32_t total_mem = meminfo->lower_memory + meminfo->upper_memory;
+  uint32_t ident_addr = 0;
+  while (ident_addr < total_mem) {
+    uint32_t* ident_page_table = kalloc_page(meminfo);
+    map_linear_page_table(page_directory, ident_page_table,
+                          ident_addr + KERNEL_IDENTITY_MAP_START, ident_addr);
+    ident_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
+  }
 
   // Finally, map the last PDE entry onto itself so we can always access the
   // current PDE/PTEs without having to map them in explicitly.
@@ -159,6 +177,11 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
   kassert_phys((mb_info->flags & MULTIBOOT_INFO_MEMORY) != 0);
   meminfo->lower_memory = mb_info->mem_lower * 1024;
   meminfo->upper_memory = mb_info->mem_upper * 1024;
+
+  // TODO(aoates): this isn't totally correct.
+  if (meminfo->upper_memory > MAX_MEMORY_BYTES) {
+    meminfo->upper_memory = MAX_MEMORY_BYTES;
+  }
 
   return meminfo;
 }
