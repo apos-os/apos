@@ -52,7 +52,7 @@ void print(const char* msg) {
   }
 }
 
-void itoa_test();
+void utoa_test();
 void paging_test();
 void kmalloc_test();
 
@@ -70,70 +70,70 @@ void kmain(memory_info_t* meminfo) {
   print("APOO\n");
 
   print("meminfo: 0x");
-  print(itoa_hex((uint32_t)meminfo));
-  print("\nmeminfo->kernel_start_phys: 0x"); print(itoa_hex(meminfo->kernel_start_phys));
-  print("\nmeminfo->kernel_end_phys:   0x"); print(itoa_hex(meminfo->kernel_end_phys));
-  print("\nmeminfo->kernel_start_virt: 0x"); print(itoa_hex(meminfo->kernel_start_virt));
-  print("\nmeminfo->kernel_end_virt:   0x"); print(itoa_hex(meminfo->kernel_end_virt));
-  print("\nmeminfo->mapped_start:      0x"); print(itoa_hex(meminfo->mapped_start));
-  print("\nmeminfo->mapped_end:        0x"); print(itoa_hex(meminfo->mapped_end));
-  print("\nmeminfo->lower_memory:      0x"); print(itoa_hex(meminfo->lower_memory));
-  print("\nmeminfo->upper_memory:      0x"); print(itoa_hex(meminfo->upper_memory));
-  print("\nmeminfo->phys_map_start:    0x"); print(itoa_hex(meminfo->phys_map_start));
+  print(utoa_hex((uint32_t)meminfo));
+  print("\nmeminfo->kernel_start_phys: 0x"); print(utoa_hex(meminfo->kernel_start_phys));
+  print("\nmeminfo->kernel_end_phys:   0x"); print(utoa_hex(meminfo->kernel_end_phys));
+  print("\nmeminfo->kernel_start_virt: 0x"); print(utoa_hex(meminfo->kernel_start_virt));
+  print("\nmeminfo->kernel_end_virt:   0x"); print(utoa_hex(meminfo->kernel_end_virt));
+  print("\nmeminfo->mapped_start:      0x"); print(utoa_hex(meminfo->mapped_start));
+  print("\nmeminfo->mapped_end:        0x"); print(utoa_hex(meminfo->mapped_end));
+  print("\nmeminfo->lower_memory:      0x"); print(utoa_hex(meminfo->lower_memory));
+  print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
+  print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
 
   //ktest_test();
   kstring_test();
   //page_frame_alloc_test();
   //kmalloc_test();
   //print("\n\nkmain: 0x");
-  //print(itoa_hex((uint32_t)&kmain));
-  //print("\nitoa_test: 0x");
-  //print(itoa_hex((uint32_t)&itoa_test));
+  //print(utoa_hex((uint32_t)&kmain));
+  //print("\nutoa_test: 0x");
+  //print(utoa_hex((uint32_t)&utoa_test));
 
   //paging_test();
-  //itoa_test();
+  //utoa_test();
 }
 
-void itoa_test() {
+void utoa_test() {
   char buf[1700];
   buf[0] = '\0';
 
-  kstrcat(buf, "\n\nitoa() test:\n");
+  kstrcat(buf, "\n\nutoa() test:\n");
   kstrcat(buf, "------------\n");
   kstrcat(buf, "0: '");
-  kstrcat(buf, itoa(0));
+  kstrcat(buf, utoa(0));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "1: '");
-  kstrcat(buf, itoa(1));
+  kstrcat(buf, utoa(1));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "10: '");
-  kstrcat(buf, itoa(10));
+  kstrcat(buf, utoa(10));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "100: '");
-  kstrcat(buf, itoa(100));
+  kstrcat(buf, utoa(100));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "123: '");
-  kstrcat(buf, itoa(123));
+  kstrcat(buf, utoa(123));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "1234567890: '");
-  kstrcat(buf, itoa(1234567890));
+  kstrcat(buf, utoa(1234567890));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "0x0: '");
-  kstrcat(buf, itoa_hex(0x0));
+  kstrcat(buf, utoa_hex(0x0));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "0x1: '");
-  kstrcat(buf, itoa_hex(0x1));
+  kstrcat(buf, utoa_hex(0x1));
   kstrcat(buf, "'\n");
 
   kstrcat(buf, "0xABCDEF0: '");
-  kstrcat(buf, itoa_hex(0xABCDEF0));
+  kstrcat(buf, utoa_hex(0xABCDEF0));
   kstrcat(buf, "'\n");
 
   print(buf);
@@ -146,13 +146,13 @@ void paging_test() {
   kstrcpy(buf, "\n\npaging test:\n");
   kstrcat(buf, "------------\n");
   kstrcat(buf, "KERNEL_START: 0x");
-  kstrcat(buf, itoa_hex(KERNEL_START_SYMBOL));
+  kstrcat(buf, utoa_hex(KERNEL_START_SYMBOL));
   kstrcat(buf, "\n&KERNEL_START: 0x");
-  kstrcat(buf, itoa_hex(&KERNEL_START_SYMBOL));
+  kstrcat(buf, utoa_hex(&KERNEL_START_SYMBOL));
   kstrcat(buf, "\nKERNEL_END: 0x");
-  kstrcat(buf, itoa_hex(KERNEL_END_SYMBOL));
+  kstrcat(buf, utoa_hex(KERNEL_END_SYMBOL));
   kstrcat(buf, "\n&KERNEL_END: 0x");
-  kstrcat(buf, itoa_hex(&KERNEL_END_SYMBOL));
+  kstrcat(buf, utoa_hex(&KERNEL_END_SYMBOL));
   print(buf);
 }
 
@@ -180,14 +180,14 @@ void page_frame_alloc_test() {
   //  i++;
   //}
   //print("total allocated: ");
-  //print(itoa(i));
+  //print(utoa(i));
 
   uint32_t page1 = page_frame_alloc();
   uint32_t page2 = page_frame_alloc();
   uint32_t page3 = page_frame_alloc();
-  print("page1: 0x"); print(itoa_hex(page1)); print("\n");
-  print("page2: 0x"); print(itoa_hex(page2)); print("\n");
-  print("page3: 0x"); print(itoa_hex(page3)); print("\n");
+  print("page1: 0x"); print(utoa_hex(page1)); print("\n");
+  print("page2: 0x"); print(utoa_hex(page2)); print("\n");
+  print("page3: 0x"); print(utoa_hex(page3)); print("\n");
 
   check_frame(page1, 0xCAFEBABE);
   check_frame(page2, 0xCAFEBABE);
@@ -219,9 +219,9 @@ void page_frame_alloc_test() {
   uint32_t page6 = page_frame_alloc();
 
   print("pages 4-6 should be equal to pages 1-3 in reverse order\n");
-  print("page4: 0x"); print(itoa_hex(page4)); print("\n");
-  print("page5: 0x"); print(itoa_hex(page5)); print("\n");
-  print("page6: 0x"); print(itoa_hex(page6)); print("\n");
+  print("page4: 0x"); print(utoa_hex(page4)); print("\n");
+  print("page5: 0x"); print(utoa_hex(page5)); print("\n");
+  print("page6: 0x"); print(utoa_hex(page6)); print("\n");
 
   page_frame_free(page4);
   page_frame_free(page5);
@@ -239,14 +239,14 @@ void kmalloc_test() {
 
   void* x = kmalloc(128);
   klog("kmalloc(128) => ");
-  klog(itoa_hex((uint32_t)x));
+  klog(utoa_hex((uint32_t)x));
   klog("\n");
   kmalloc_log_state();
   klog("---------------\n");
 
   void* x2 = kmalloc(128);
   klog("kmalloc(128) => ");
-  klog(itoa_hex((uint32_t)x2));
+  klog(utoa_hex((uint32_t)x2));
   klog("\n");
   kmalloc_log_state();
   klog("---------------\n");

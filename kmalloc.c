@@ -122,15 +122,15 @@ void kmalloc_log_state() {
   block_t* cblock = g_block_list;
   while (cblock) {
     klog("  < free: ");
-    klog(itoa(cblock->free));
+    klog(utoa(cblock->free));
     klog(" len: ");
-    klog(itoa_hex(cblock->length));
+    klog(utoa_hex(cblock->length));
 
     klog(" prev: ");
-    klog(itoa_hex(cblock->prev));
+    klog(utoa_hex(cblock->prev));
 
     klog(" next: ");
-    klog(itoa_hex(cblock->next));
+    klog(utoa_hex(cblock->next));
     klog(" >\n");
 
     cblock = cblock->next;

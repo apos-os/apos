@@ -27,7 +27,7 @@ char* kstrncpy(char* dst, const char* src, uint32_t n);
 
 char *kstrcat(char *dest, const char *src);
 
-const char* itoa(uint32_t x);
-const char* itoa_hex(uint32_t x);
+const char* utoa(uint32_t x);
+const char* utoa_hex(uint32_t x);
 
 #endif

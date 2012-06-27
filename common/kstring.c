@@ -87,9 +87,9 @@ char* kstrcat(char* dst, const char* src) {
   return dst_orig;
 }
 
-// Helper for itoa/itoa_hex that takes a number, a base, and a lookup table of
+// Helper for utoa/utoa_hex that takes a number, a base, and a lookup table of
 // characters.
-static const char* itoa_internal(uint32_t x, uint32_t base, const char* tbl) {
+static const char* utoa_internal(uint32_t x, uint32_t base, const char* tbl) {
   static char buf[256];
   int i = 0;
   if (x == 0) {
@@ -111,10 +111,10 @@ static const char* itoa_internal(uint32_t x, uint32_t base, const char* tbl) {
   return buf;
 }
 
-const char* itoa(uint32_t x) {
-  return itoa_internal(x, 10, "0123456789");
+const char* utoa(uint32_t x) {
+  return utoa_internal(x, 10, "0123456789");
 }
 
-const char* itoa_hex(uint32_t x) {
-  return itoa_internal(x, 16, "0123456789ABCDEF");
+const char* utoa_hex(uint32_t x) {
+  return utoa_internal(x, 16, "0123456789ABCDEF");
 }
