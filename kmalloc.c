@@ -121,17 +121,8 @@ void kmalloc_log_state() {
   klog("kmalloc block list:\n");
   block_t* cblock = g_block_list;
   while (cblock) {
-    klog("  < free: ");
-    klog(utoa(cblock->free));
-    klog(" len: ");
-    klog(utoa_hex(cblock->length));
-
-    klog(" prev: ");
-    klog(utoa_hex(cblock->prev));
-
-    klog(" next: ");
-    klog(utoa_hex(cblock->next));
-    klog(" >\n");
+    klogf("  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
+          cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
 
     cblock = cblock->next;
   }

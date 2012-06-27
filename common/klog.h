@@ -18,5 +18,6 @@
 
 // Log the given string.
 void klog(const char* s);
+void klogf(const char* fmt, ...);
 
 #endif

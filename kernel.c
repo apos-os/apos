@@ -83,9 +83,9 @@ void kmain(memory_info_t* meminfo) {
 
   //ktest_test();
   //kstring_test();
-  kprintf_test();
+  //kprintf_test();
   //page_frame_alloc_test();
-  //kmalloc_test();
+  kmalloc_test();
   //print("\n\nkmain: 0x");
   //print(utoa_hex((uint32_t)&kmain));
   //print("\nutoa_test: 0x");
