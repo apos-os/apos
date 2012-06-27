@@ -38,7 +38,7 @@ int kstrcmp(const char* s1, const char* s2) {
 
 int kstrncmp(const char* s1, const char* s2, uint32_t n) {
   int x = 0;
-  while (*s1 && *s2 && x < n) {
+  while (*s1 && *s2 && x < n - 1) {
     if (*s1 != *s2) {
       return *s1 - *s2;
     }
