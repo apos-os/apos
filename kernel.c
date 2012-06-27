@@ -57,6 +57,7 @@ void paging_test();
 void kmalloc_test1();
 void kmalloc_test2();
 void kmalloc_test3();
+void kmalloc_test4();
 
 void kmain(memory_info_t* meminfo) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
@@ -87,7 +88,7 @@ void kmain(memory_info_t* meminfo) {
   //kstring_test();
   //kprintf_test();
   //page_frame_alloc_test();
-  kmalloc_test3();
+  kmalloc_test4();
   //print("\n\nkmain: 0x");
   //print(utoa_hex((uint32_t)&kmain));
   //print("\nutoa_test: 0x");
@@ -313,6 +314,63 @@ void kmalloc_test3() {
   }
 
   klogf("\npost-thrash\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+}
+
+uint16_t rand() {
+  static uint16_t p = 0xbeef;
+  static uint16_t n = 0xabcd;
+  p = n;
+  uint32_t x = n * n;
+  n = (x >> 8) & 0x0000ffff;
+  return p ^ n;
+}
+
+void kmalloc_test4() {
+  klog("initial state\n");
+  klog("---------------\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  void* ptrs[500];
+  int ptr_idx = 0;
+  int total_allocs = 0;
+  int max_alloced = 0;
+
+  for (int i = 0; i < 500; ++i) {
+    int threshold = 2;
+    if (ptr_idx < 200) {
+      threshold = 3;
+    } else if (ptr_idx > 400) {
+      threshold = 1;
+    }
+    if ((ptr_idx == 0 || rand() % 4 < threshold) && ptr_idx < 500) {
+      ptrs[ptr_idx++] = kmalloc(rand() % 3900);
+      total_allocs++;
+    } else {
+      kassert(ptr_idx > 0);
+      kfree(ptrs[--ptr_idx]);
+    }
+
+    if (ptr_idx > max_alloced) {
+      max_alloced = ptr_idx;
+    }
+
+    if (i % 50 == 0) {
+      klogf("i = %i, ptr_idx = %i\n", i, ptr_idx);
+      kmalloc_log_state();
+      klogf("---------------\n");
+    }
+  }
+
+  while (ptr_idx > 0) {
+    kfree(ptrs[--ptr_idx]);
+  }
+
+  klogf("\npost-thrash\n");
+  klogf("total allocs: %i\npeak allocs: %i\n", total_allocs, max_alloced);
+  klog("---------------\n");
   kmalloc_log_state();
   klog("---------------\n");
 }
