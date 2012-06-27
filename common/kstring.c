@@ -72,7 +72,6 @@ char* kstrncpy(char* dst, const char* src, uint32_t n) {
     *(dst_out++) = *(src++);
     i++;
   }
-  *dst_out = '\0';
   return dst;
 }
 
@@ -85,6 +84,36 @@ char* kstrcat(char* dst, const char* src) {
   }
   *dst = '\0';
   return dst_orig;
+}
+
+static void strprepend(char* buf, const char* prefix) {
+  const int blen = kstrlen(buf);
+  const int plen = kstrlen(prefix);
+  buf[plen + blen] = '\0';
+  for (int i = blen + plen - 1; i >= plen; --i) {
+    buf[i] = buf[i - plen];
+  }
+  kstrncpy(buf, prefix, plen);
+}
+
+static uint32_t abs(int32_t x) {
+  return x < 0 ? -x : x;
+}
+
+const char* itoa(int32_t x) {
+  const char* out = utoa(abs(x));
+  if (x < 0) {
+    strprepend(out, "-");
+  }
+  return out;
+}
+
+const char* itoa_hex(int32_t x) {
+  const char* out = utoa_hex(abs(x));
+  if (x < 0) {
+    strprepend(out, "-");
+  }
+  return out;
 }
 
 // Helper for utoa/utoa_hex that takes a number, a base, and a lookup table of
