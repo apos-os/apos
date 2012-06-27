@@ -16,6 +16,8 @@
 
 #include <stdint.h>
 
+#include "interrupts.h"
+
 #define IDT_PRESENT 0x80
 #define IDT_DPL_RING0 0x00
 #define IDT_DPL_RING3 0x60
@@ -24,19 +26,6 @@
 // The kernel's code segment selector.  Make sure this matches the one set in
 // gdt_flush.s.
 #define SELECTOR 0x08
-
-typedef struct {
-   uint16_t offset_low;
-   uint16_t selector;
-   uint8_t zero;
-   uint8_t type_attr;
-   uint16_t offset_high;
-} __attribute__((packed)) idt_entry_t;
-
-typedef struct {
-   uint16_t limit;
-   uint32_t base;
-} __attribute__((packed)) idt_ptr_t;
 
 // TODO(aoates): we don't really need all these entries (we don't use all the
 // interrupts).

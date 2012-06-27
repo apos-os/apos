@@ -84,7 +84,15 @@ uint32_t next_page(uint32_t x);
 int is_page_aligned(uint32_t x);
 
 // Converts a physical address to a virtual address (i.e. the virtual location,
-// in the kernel, where that physical page is mapped, at 0xd0000000).
+// in the kernel's space, where that physical page is mapped, at 0xd0000000).
 uint32_t phys2virt(uint32_t x);
+
+// Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL (i.e.
+// the virtual location, in the kernel, where that physical page is mapped, at
+// 0xc0000000).
+//
+// This differs from phys2virt in that it only works on addresses in the
+// physical kernel loaded at boot, not arbitrary physical addresses.
+uint32_t phys2kernel(uint32_t x);
 
 #endif

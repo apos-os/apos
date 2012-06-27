@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "kmalloc.h"
 #include "common/kstring.h"
+#include "interrupts.h"
 #include "memory.h"
 #include "page_alloc.h"
 #include "test/kernel_tests.h"
@@ -68,6 +69,7 @@ void kmain(memory_info_t* meminfo) {
   set_global_meminfo(meminfo);
   page_frame_alloc_init(meminfo);
   kmalloc_init();
+  interrupts_init();
 
   clear();
   print("APOO\n");

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "memory.h"
+#include "init/mem_init.h"
 
 static memory_info_t* global_meminfo = 0;
 
@@ -39,4 +40,8 @@ int is_page_aligned(uint32_t x) {
 
 uint32_t phys2virt(uint32_t x) {
   return x + global_meminfo->phys_map_start;
+}
+
+uint32_t phys2kernel(uint32_t x) {
+  return x + KERNEL_VIRT_START;
 }
