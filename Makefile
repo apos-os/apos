@@ -22,9 +22,9 @@ BOOTLOADER	= grub
  
 OBJFILES = init/multiboot.o init/loader.o init/gdt.o init/gdt_flush.o init/mem_init.o init/kernel_init.o \
 	   memory.o page_alloc.o kernel.o kstring.o kassert.o klog.o kmalloc.o \
-	   ktest.o ktest_test.o kstring_test.o
+	   test/ktest.o test/ktest_test.o test/kstring_test.o
 
-HDRFILES = $(wildcard *.h)
+HDRFILES = $(wildcard *.h) $(wildcard init/*.h) $(wildcard test/*.h)
  
 all: kernel.img
  

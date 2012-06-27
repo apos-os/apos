@@ -14,13 +14,13 @@
 
 #include <stdint.h>
 
-#include "all_tests.h"
 #include "kassert.h"
 #include "klog.h"
 #include "kmalloc.h"
 #include "kstring.h"
 #include "memory.h"
 #include "page_alloc.h"
+#include "test/kernel_tests.h"
 
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;

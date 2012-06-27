@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "ktest.h"
+#include "test/ktest.h"
 
 void ktest_test() {
   KTEST_SUITE_BEGIN("ktest");

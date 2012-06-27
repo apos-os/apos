@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "kstring.h"
-#include "ktest.h"
+#include "test/ktest.h"
 
 void kstring_test() {
   KTEST_SUITE_BEGIN("kstring");
