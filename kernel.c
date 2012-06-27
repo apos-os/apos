@@ -302,7 +302,7 @@ void kmalloc_test3() {
   kmalloc_log_state();
   klog("---------------\n");
 
-  for (int i = 0; i < 10000; ++i) {
+  for (int i = 0; i < 500; ++i) {
     void* x1 = kmalloc(128);
     void* x2 = kmalloc(128);
     void* x3 = kmalloc(128);
@@ -312,7 +312,7 @@ void kmalloc_test3() {
     kfree(x1);
   }
 
-  klogf("post-thrash\n");
+  klogf("\npost-thrash\n");
   kmalloc_log_state();
   klog("---------------\n");
 }

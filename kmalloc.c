@@ -45,6 +45,14 @@ struct block {
 };
 typedef struct block block_t;
 
+// Returns the address (as a uint32_t) of the start/end of the block_t,
+// including header and data.
+#define BLOCK_START(b) ((uint32_t)b)
+#define BLOCK_END(b) ((uint32_t)b + sizeof(block_t) + b->length)
+
+// Returns the total size of a block_t, including headers and data.
+#define BLOCK_SIZE(b) (sizeof(block_t) + b->length)
+
 // Global block list.
 block_t* g_block_list = 0;
 
@@ -64,9 +72,76 @@ static void init_block(block_t* b) {
   b->next = 0;
 }
 
+// Fill the given block's data with a repeating pattern.
+static void fill_block(block_t* b, uint32_t pattern) {
+  uint32_t i = 0;
+  while (i < b->length) {
+    int len = (b->length - i >= 4) ? 4 : (b->length - i);
+    kmemcpy(&(b->data[i]), &pattern, len);
+    i += len;
+  }
+}
+// Takes a block and a required size, and (if it's large enough), splits the
+// block into two blocks, adding them both to the block list as needed.
+static block_t* split_block(block_t* b, uint32_t n) {
+  kassert(b->length >= n);
+  if (b->length < n + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE) {
+    return b;
+  }
+
+  block_t* new_block = (uint8_t*)b + sizeof(block_t) + n;
+  init_block(new_block);
+  new_block->free = 1;
+  new_block->length = b->length - sizeof(block_t) - n;
+  new_block->prev = b;
+  new_block->next = b->next;
+
+  b->length = n;
+  b->next = new_block;
+
+  return b;
+}
+
+// Given two adjacent blocks, merge them, returning the new (unified) block.
+static block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
+  kassert(a->free);
+  kassert(b->free);
+  kassert(BLOCK_END(a) == BLOCK_START(b));
+  kassert(a->next == b);
+  kassert(b->prev == a);
+
+  if (b->next) {
+    b->next->prev = a;
+  }
+  a->next = b->next;
+  a->length += BLOCK_SIZE(b);
+  fill_block(a, 0xDEADBEEF);
+  return a;
+}
+
+// Given a (free) block, merge it with the previous and/or next blocks in the
+// block list, if they're also free.  Returns a pointer to the new block.
+static block_t* merge_block(block_t* b) {
+  kassert(b->free);
+
+  if (b->prev && b->prev->free) {
+    if (BLOCK_END(b->prev) == BLOCK_START(b)) {
+      b = merge_adjancent_blocks(b->prev, b);
+    }
+  }
+
+  if (b->next && b->next->free) {
+    if (BLOCK_END(b) == BLOCK_START(b->next)) {
+      b = merge_adjancent_blocks(b, b->next);
+    }
+  }
+
+  return b;
+}
+
 // Allocates a fresh physical page from the page frame allocator, creates a
 // block for it, inserts it into the block list, and returns it.
-static block_t* kalloc_new_page() {
+static block_t* new_page() {
   uint32_t page = page_frame_alloc();
   kassert_msg(page, "out of memory in kmalloc");
   block_t* block = (block_t*)phys2virt(page);
@@ -101,30 +176,9 @@ static block_t* kalloc_new_page() {
     cblock->prev = block;
   }
 
-  // TODO(aoates): merge block.
-
+  fill_block(block, 0xDEADBEEF);
+  merge_block(block);
   return block;
-}
-
-// Takes a block and a required size, and (if it's large enough), splits the
-// block into two blocks, adding them both to the block list as needed.
-static block_t* kalloc_split_block(block_t* b, uint32_t n) {
-  kassert(b->length >= n);
-  if (b->length < n + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE) {
-    return b;
-  }
-
-  block_t* new_block = (uint8_t*)b + sizeof(block_t) + n;
-  init_block(new_block);
-  new_block->free = 1;
-  new_block->length = b->length - sizeof(block_t) - n;
-  new_block->prev = b;
-  new_block->next = b->next;
-
-  b->length = n;
-  b->next = new_block;
-
-  return b;
 }
 
 void* kmalloc(uint32_t n) {
@@ -138,7 +192,7 @@ void* kmalloc(uint32_t n) {
   }
 
   if (!cblock) {
-    cblock = kalloc_new_page();
+    cblock = new_page();
   }
 
   if (!cblock || cblock->length < n) {
@@ -149,7 +203,9 @@ void* kmalloc(uint32_t n) {
   kassert(cblock->length >= n);
 
   cblock->free = 0;
-  cblock = kalloc_split_block(cblock, n);
+  cblock = split_block(cblock, n);
+
+  fill_block(cblock, 0xAAAAAAAA);
   return (void*)(&cblock->data);
 }
 
@@ -157,8 +213,9 @@ void kfree(void* x) {
   block_t* b = (block_t*)((uint8_t*)x - sizeof(block_t));
   kassert(b->magic == KALLOC_MAGIC);
   b->free = 1;
+  fill_block(b, 0xDEADBEEF);
 
-  // TODO(aoates): merge blocks.
+  merge_block(b);
 }
 
 void kmalloc_log_state() {
@@ -167,6 +224,11 @@ void kmalloc_log_state() {
   while (cblock) {
     klogf("  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
           cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
+    //klogf("             < %x %x %x %x >\n",
+    //      ((uint32_t*)(&cblock->data))[0],
+    //      ((uint32_t*)(&cblock->data))[1],
+    //      ((uint32_t*)(&cblock->data))[2],
+    //      ((uint32_t*)(&cblock->data))[3]);
 
     cblock = cblock->next;
   }
