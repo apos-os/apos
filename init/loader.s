@@ -33,6 +33,9 @@ loader:
     # Set up GDT and paging.
     call gdt_init
 
+    # Set up IDT.
+    call idt_init
+
     pushl mbd
     pushl magic
     call mem_init
