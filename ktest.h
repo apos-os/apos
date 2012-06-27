@@ -31,36 +31,24 @@
   klog("---------------------------------------\n"); \
 } while(0)
 
-#define KEXPECT_EQ(a, b) do { \
-  if (a != b) { \
-    klog("[FAILED] KEXPECT_EQ(" #a ", " #b ") at " __FILE__ ":" STR(__LINE__) ": " #a " != " #b "\n"); \
+#define KEXPECT_(name, astr, bstr, cond, condstr) do { \
+  if (cond) { \
+    klog("[PASSED] " name "(" astr ", " bstr ")\n"); \
   } else { \
-    klog("[PASSED] KEXPECT_EQ(" #a ", " #b ")\n"); \
+    klog("[FAILED] " name "(" astr ", " bstr ") at " __FILE__ ":" STR(__LINE__) ": " condstr "\n"); \
   } \
 } while(0)
 
-#define KEXPECT_STREQ(a, b) do { \
-  if (kstrcmp(a, b)) { \
-    klog("[FAILED] KEXPECT_STREQ(" #a ", " #b ") at " __FILE__ ":" STR(__LINE__) ": " #a " != " #b "\n"); \
-  } else { \
-    klog("[PASSED] KEXPECT_STREQ(" #a ", " #b ")\n"); \
-  } \
-} while(0)
+#define KEXPECT_EQ(a, b) KEXPECT_("KEXPECT_EQ", #a, #b, a == b, #a " != " #b)
+#define KEXPECT_NE(a, b) KEXPECT_("KEXPECT_NE", #a, #b, a != b, #a " == " #b)
 
-#define KEXPECT_NE(a, b) do { \
-  if (a == b) { \
-    klog("[FAILED] KEXPECT_NE(" #a ", " #b ") at " __FILE__ ":" STR(__LINE__) ": " #a " == " #b "\n"); \
-  } else { \
-    klog("[PASSED] KEXPECT_NE(" #a ", " #b ")\n"); \
-  } \
-} while(0)
+#define KEXPECT_STREQ(a, b) KEXPECT_("KEXPECT_STREQ", #a, #b, !kstrcmp(a, b), #a " != " #b)
+#define KEXPECT_STRNE(a, b) KEXPECT_("KEXPECT_STRNE", #a, #b, kstrcmp(a, b), #a " == " #b)
 
-#define KEXPECT_STRNE(a, b) do { \
-  if (kstrcmp(a, b)) { \
-    klog("[FAILED] KEXPECT_STRNE(" #a ", " #b ") at " __FILE__ ":" STR(__LINE__) ": " #a " != " #b "\n"); \
-  } else { \
-    klog("[PASSED] KEXPECT_STRNE(" #a ", " #b ")\n"); \
-  } \
-} while(0)
+#define KEXPECT_LT(a, b) KEXPECT_("KEXPECT_LT", #a, #b, a < b, #a " >= " #b)
+#define KEXPECT_LE(a, b) KEXPECT_("KEXPECT_LE", #a, #b, a <= b, #a " > " #b)
+
+#define KEXPECT_GT(a, b) KEXPECT_("KEXPECT_GT", #a, #b, a > b, #a " <= " #b)
+#define KEXPECT_GE(a, b) KEXPECT_("KEXPECT_GE", #a, #b, a >= b, #a " < " #b)
 
 #endif
