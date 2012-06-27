@@ -14,10 +14,10 @@
 
 #include <stdint.h>
 
-#include "kassert.h"
-#include "klog.h"
+#include "common/kassert.h"
+#include "common/klog.h"
 #include "kmalloc.h"
-#include "kstring.h"
+#include "common/kstring.h"
 #include "memory.h"
 #include "page_alloc.h"
 #include "test/kernel_tests.h"

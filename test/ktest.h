@@ -16,8 +16,8 @@
 #ifndef APOO_KTEST_H
 #define APOO_KTEST_H
 
-#include "klog.h"
-#include "kstring.h"
+#include "common/klog.h"
+#include "common/kstring.h"
 
 #define STR2(x) #x
 #define STR(x) STR2(x)

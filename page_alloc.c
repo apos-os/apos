@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "kassert.h"
+#include "common/kassert.h"
 #include "memory.h"
 
 // The current stack of free page frame addresses.  The stack is guarded on both

@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "kassert.h"
+#include "common/kassert.h"
 
-#include "klog.h"
+#include "common/klog.h"
 
 void die(const char* msg) {
   klog("PANIC: ");

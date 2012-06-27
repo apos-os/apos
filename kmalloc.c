@@ -16,9 +16,9 @@
 
 #include <stdint.h>
 
-#include "klog.h"
-#include "kassert.h"
-#include "kstring.h"
+#include "common/klog.h"
+#include "common/kassert.h"
+#include "common/kstring.h"
 #include "memory.h"
 #include "page_alloc.h"
 

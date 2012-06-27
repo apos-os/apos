@@ -14,8 +14,8 @@
 
 #include "test/ktest.h"
 
-#include "kstring.h"
-#include "klog.h"
+#include "common/kstring.h"
+#include "common/klog.h"
 
 void KTEST_SUITE_BEGIN(const char* name) {
   klog("\n\nTEST SUITE: ");
