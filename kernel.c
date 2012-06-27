@@ -251,4 +251,27 @@ void kmalloc_test() {
   klog("\n");
   kmalloc_log_state();
   klog("---------------\n");
+
+  void* x3 = kmalloc(256);
+  klog("kmalloc(256) => ");
+  klog(utoa_hex((uint32_t)x3));
+  klog("\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  klog("<allocating a too-large block>\n");
+  void* x4 = kmalloc(0xf00);
+  klog("kmalloc(0xf00) => ");
+  klog(utoa_hex((uint32_t)x4));
+  klog("\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  klog("<exhaust the small amount of page left from that last alloc>\n");
+  void* x5 = kmalloc(256);
+  klog("kmalloc(256) => ");
+  klog(utoa_hex((uint32_t)x5));
+  klog("\n");
+  kmalloc_log_state();
+  klog("---------------\n");
 }

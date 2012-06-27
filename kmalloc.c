@@ -22,6 +22,9 @@
 #include "memory.h"
 #include "page_alloc.h"
 
+// Don't bother splitting a block if it'll be smaller than this (bytes).
+#define KALLOC_MIN_BLOCK_SIZE 8
+
 // Every memory block has the following structure:
 // | free (8 bits) | length (32 bits) | prev (32 bits) | next (32 bits) | data (length bytes) |
 // That is, a header with the block length (not including the header), a pointer
@@ -91,6 +94,26 @@ static block_t* kalloc_new_page() {
   return block;
 }
 
+// Takes a block and a required size, and (if it's large enough), splits the
+// block into two blocks, adding them both to the block list as needed.
+static block_t* kalloc_split_block(block_t* b, uint32_t n) {
+  kassert(b->length >= n);
+  if (b->length < n + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE) {
+    return b;
+  }
+
+  block_t* new_block = (uint8_t*)b + sizeof(block_t) + n;
+  new_block->free = 1;
+  new_block->length = b->length - sizeof(block_t) - n;
+  new_block->prev = b;
+  new_block->next = b->next;
+
+  b->length = n;
+  b->next = new_block;
+
+  return b;
+}
+
 void* kmalloc(uint32_t n) {
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
@@ -112,8 +135,8 @@ void* kmalloc(uint32_t n) {
   kassert(cblock->free);
   kassert(cblock->length >= n);
 
-  // TODO(aoates): split block.
   cblock->free = 0;
+  cblock = kalloc_split_block(cblock, n);
   return (void*)(&cblock->data);
 }
 
