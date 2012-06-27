@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "all_tests.h"
 #include "kassert.h"
 #include "klog.h"
 #include "kmalloc.h"
@@ -38,7 +39,6 @@ void clear() {
 }
 
 void print(const char* msg) {
-  klog(msg);
   int i = 0;
   while (*msg) {
     if (*msg == '\n') {
@@ -57,6 +57,9 @@ void paging_test();
 void kmalloc_test();
 
 void kmain(memory_info_t* meminfo) {
+  klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+  klog(    "@                          APOO                           @\n");
+  klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog("kmain()\n");
   klog("page_frame_alloc_init()\n");
   set_global_meminfo(meminfo);
@@ -78,8 +81,10 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->upper_memory:      0x"); print(itoa_hex(meminfo->upper_memory));
   print("\nmeminfo->phys_map_start:    0x"); print(itoa_hex(meminfo->phys_map_start));
 
-  page_frame_alloc_test();
-  kmalloc_test();
+  ktest_test();
+  kstring_test();
+  //page_frame_alloc_test();
+  //kmalloc_test();
   //print("\n\nkmain: 0x");
   //print(itoa_hex((uint32_t)&kmain));
   //print("\nitoa_test: 0x");
@@ -87,7 +92,6 @@ void kmain(memory_info_t* meminfo) {
 
   //paging_test();
   //itoa_test();
-  klog("[PASSED]");
 }
 
 void itoa_test() {

@@ -30,6 +30,8 @@ int kstrcmp(const char* s1, const char* s2) {
     if (*s1 != *s2) {
       return *s1 - *s2;
     }
+    ++s1;
+    ++s2;
   }
   return *s1 - *s2;
 }
@@ -40,6 +42,8 @@ int kstrncmp(const char* s1, const char* s2, uint32_t n) {
     if (*s1 != *s2) {
       return *s1 - *s2;
     }
+    ++s1;
+    ++s2;
     ++x;
   }
   return *s1 - *s2;
