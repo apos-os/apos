@@ -34,6 +34,7 @@ SECTIONS
       init/mem_init.o(.text .rodata .data .bss)
       init/gdt.o(.text .rodata .data .bss)
       init/gdt_flush.o(.text .rodata .data .bss)
+      init/pic.o(.text .rodata .data .bss)
     }
 
     /* Load the main part of the kernel at VMA 0xC0000000. */

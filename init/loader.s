@@ -25,6 +25,11 @@ loader:
     movl  %eax, magic                   # Multiboot magic number
     movl  %ebx, mbd                     # Multiboot data structure
 
+    # Reprogram PIC.
+    pushl $0x28
+    pushl $0x20
+    call PIC_remap
+
     # Set up GDT and paging.
     call gdt_init
 
