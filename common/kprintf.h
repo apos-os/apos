@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#ifndef APOO_KPRINTF_H
+#define APOO_KPRINTF_H
 
-void ktest_test();
-void kstring_test();
-void kprintf_test();
+#include <stdarg.h>
+
+// The printf functions support %s, %d, %i, %u, and %x.
+int ksprintf(char* str, const char* fmt, ...);
+int kvsprintf(char* str, const char* fmt, va_list args);
 
 #endif

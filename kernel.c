@@ -82,7 +82,8 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
 
   //ktest_test();
-  kstring_test();
+  //kstring_test();
+  kprintf_test();
   //page_frame_alloc_test();
   //kmalloc_test();
   //print("\n\nkmain: 0x");
