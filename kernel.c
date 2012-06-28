@@ -16,9 +16,10 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "kmalloc.h"
 #include "common/kstring.h"
 #include "interrupts.h"
+#include "keyboard.h"
+#include "kmalloc.h"
 #include "memory.h"
 #include "page_alloc.h"
 #include "test/kernel_tests.h"
@@ -73,6 +74,8 @@ void kmain(memory_info_t* meminfo) {
   kmalloc_init();
   klog("interrupts_init()\n");
   interrupts_init();
+  klog("keyboard_init()\n");
+  keyboard_init();
 
   klog("initialization finished...\n");
 
@@ -90,6 +93,14 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->lower_memory:      0x"); print(utoa_hex(meminfo->lower_memory));
   print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
+
+  print("\n");
+  char buf[2];
+  buf[1] = '\0';
+  while (1) {
+    buf[0] = read_char();
+    print(buf);
+  }
 
   //ktest_test();
   //kstring_test();
