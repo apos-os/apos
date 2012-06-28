@@ -169,7 +169,7 @@ static int controller_init() {
   // TODO(aoates): properly handle 2 channels.
 
   // Send new config.  Disable interrupts and translation.
-  config = CLEAR(config, CTRL_CFG_INT1);
+  config = SET(config, CTRL_CFG_INT1);
   config = CLEAR(config, CTRL_CFG_INT2);
   config = CLEAR(config, CTRL_CFG_TRANS1);
   klogf("  sending new config: %s\n", config_str(config));
@@ -272,6 +272,14 @@ static int device_init() {
     return 0;
   }
 
+  // Enable interrupts.
+  send_cmd(CTRL_CMD_READ_CONFIG);
+  uint8_t config = read_data();
+  config = SET(config, CTRL_CFG_INT1);
+  klogf("  enabling interrupt...\n");
+  send_cmd(CTRL_CMD_WRITE_CONFIG);
+  write_data(config);
+
   return 1;
 }
 
@@ -290,6 +298,13 @@ uint8_t read_char() {
       default: return '?';
     }
   }
+}
+
+void keyboard_interrupt() {
+  char buf[2];
+  buf[1] = '\0';
+  buf[0] = read_char();
+  klogf("keyboard: %s\n", buf);
 }
 
 void ps2_init() {

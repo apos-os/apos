@@ -24,6 +24,8 @@
 #include "ps2.h"
 #include "test/kernel_tests.h"
 
+void pic_init();
+
 const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
 
@@ -72,10 +74,13 @@ void kmain(memory_info_t* meminfo) {
   page_frame_alloc_init(meminfo);
   klog("kmalloc_init()\n");
   kmalloc_init();
-  klog("interrupts_init()\n");
-  interrupts_init();
+  klog("pic_init()\n");
+  pic_init();
   klog("ps2_init()\n");
   ps2_init();
+  klog("interrupts_init()\n");
+  interrupts_init();
+
 
   klog("initialization finished...\n");
 
@@ -94,13 +99,13 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
 
-  print("\n");
-  char buf[2];
-  buf[1] = '\0';
-  while (1) {
-    buf[0] = read_char();
-    print(buf);
-  }
+  //print("\n");
+  //char buf[2];
+  //buf[1] = '\0';
+  //while (1) {
+  //  buf[0] = read_char();
+  //  print(buf);
+  //}
 
   //ktest_test();
   //kstring_test();

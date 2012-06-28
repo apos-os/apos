@@ -5,6 +5,7 @@ target remote localhost:1234
 break die
 break die_phys
 break int_handler
+break irq33_handler
 
 set disassemble-next-line on
 # try this: layout asm

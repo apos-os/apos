@@ -22,6 +22,22 @@ static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
 
 extern void int_handler();
+extern void irq0();
+extern void irq1();
+extern void irq2();
+extern void irq3();
+extern void irq4();
+extern void irq5();
+extern void irq6();
+extern void irq7();
+extern void irq8();
+extern void irq9();
+extern void irq10();
+extern void irq11();
+extern void irq12();
+extern void irq13();
+extern void irq14();
+extern void irq15();
 
 typedef void (*handler_t)(void);
 static void register_interrupt_handler(int num, handler_t h) {
@@ -49,6 +65,22 @@ void interrupts_init() {
   for (int i = 0; i < idt_entries; ++i) {
     register_interrupt_handler(i, &int_handler);
   }
+  register_interrupt_handler(0x20, &irq0);
+  register_interrupt_handler(0x21, &irq1);
+  register_interrupt_handler(0x22, &irq2);
+  register_interrupt_handler(0x23, &irq3);
+  register_interrupt_handler(0x24, &irq4);
+  register_interrupt_handler(0x25, &irq5);
+  register_interrupt_handler(0x26, &irq6);
+  register_interrupt_handler(0x27, &irq7);
+  register_interrupt_handler(0x28, &irq8);
+  register_interrupt_handler(0x29, &irq9);
+  register_interrupt_handler(0x2A, &irq10);
+  register_interrupt_handler(0x2B, &irq11);
+  register_interrupt_handler(0x2C, &irq12);
+  register_interrupt_handler(0x2D, &irq13);
+  register_interrupt_handler(0x2E, &irq14);
+  register_interrupt_handler(0x2F, &irq15);
 
   // Enable interrupts.
   __asm__ __volatile__("sti");

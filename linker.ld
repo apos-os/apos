@@ -34,7 +34,6 @@ SECTIONS
       init/mem_init.o(.text .rodata .data .bss)
       init/gdt.o(.text .rodata .data .bss)
       init/gdt_flush.o(.text .rodata .data .bss)
-      init/pic.o(.text .rodata .data .bss)
       init/idt.o(.text .rodata .data .bss)
     }
 
