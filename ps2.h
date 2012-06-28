@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_KEYBOARD_H
-#define APOO_KEYBOARD_H
+// Code for initializing and using the PS/2 controller and devices.
+#ifndef APOO_PS2_H
+#define APOO_PS2_H
 
 // Blocks until a character is available from the keyboard, then translates it
 // into an ASCII char and returns it.
 uint8_t read_char();
-void keyboard_init();
+void ps2_init();
 
 #endif

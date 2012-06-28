@@ -164,10 +164,10 @@ static const char* config_str(uint8_t config) {
 static int controller_init() {
   klogf("  initializing controller...\n");
   uint8_t status = get_status();
-  klogf("  keyboard status: %s\n", status_str(status));
+  klogf("  controller status: %s\n", status_str(status));
   send_cmd(CTRL_CMD_READ_CONFIG);
   uint8_t config = read_data();
-  klogf("  keyboard config: %s\n", config_str(config));
+  klogf("  controller config: %s\n", config_str(config));
 
   // Disable ports.
   klogf("  disabling ports...\n");
@@ -199,7 +199,7 @@ static int controller_init() {
     klogf("FAILED\n");
     return 0;
   } else {
-    klogf("PANIC: unknown keyboard self-test response code: %x\n", result);
+    klogf("PANIC: unknown device self-test response code: %x\n", result);
     kassert(0);
   }
 
@@ -305,8 +305,8 @@ uint8_t read_char() {
   }
 }
 
-void keyboard_init() {
-  klogf("Initializing keyboard...\n");
+void ps2_init() {
+  klogf("Initializing PS/2 controller...\n");
   if (!controller_init()) {
     klogf("  aborting initalization\n");
     return;
@@ -316,5 +316,5 @@ void keyboard_init() {
     klogf("  aborting initalization\n");
     return;
   }
-  klogf("  finished keyobard initalization!\n");
+  klogf("  finished PS/2 initalization!\n");
 }

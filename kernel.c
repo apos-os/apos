@@ -18,10 +18,10 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "interrupts.h"
-#include "keyboard.h"
 #include "kmalloc.h"
 #include "memory.h"
 #include "page_alloc.h"
+#include "ps2.h"
 #include "test/kernel_tests.h"
 
 const uint32_t kScreenWidth = 80;
@@ -74,8 +74,8 @@ void kmain(memory_info_t* meminfo) {
   kmalloc_init();
   klog("interrupts_init()\n");
   interrupts_init();
-  klog("keyboard_init()\n");
-  keyboard_init();
+  klog("ps2_init()\n");
+  ps2_init();
 
   klog("initialization finished...\n");
 
