@@ -14,24 +14,11 @@
 
 #include <stdint.h>
 
+#include "common/io.h"
 #include "common/kassert.h"w
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
-
-static void outb(uint16_t port, uint8_t val) {
-  __asm__ __volatile__ (
-      "outb %0, %1"
-      :: "a"(val), "Nd"(port));
-}
-
-static uint8_t inb(uint16_t port) {
-  uint8_t val;
-  __asm__ __volatile__ (
-      "inb %1, %0"
-      : "=a"(val) : "Nd"(port));
-  return val;
-}
 
 #define CTRL_DATA_PORT 0x60
 #define CTRL_STATUS_PORT 0x64

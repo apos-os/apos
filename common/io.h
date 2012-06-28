@@ -12,29 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifndef APOO_IO_H
+#define APOO_IO_H
+
 #include <stdint.h>
-#include <stdarg.h>
 
-#include "common/io.h"
-#include "common/kprintf.h"
+void outb(uint16_t port, uint8_t val);
+uint8_t inb(uint16_t port);
 
-void klog(const char* s) {
-  int i = 0;
-  while (s[i]) {
-    outb(0x37a, 0x04 | 0x08);
-    outb(0x378, s[i]);
-    outb(0x37a, 0x01);
-    i++;
-  }
-}
-
-void klogf(const char* fmt, ...) {
-  char buf[1024];
-
-  va_list args;
-  va_start(args, fmt);
-  kvsprintf(buf, fmt, args);
-  va_end(args);
-
-  klog(buf);
-}
+#endif

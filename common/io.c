@@ -13,28 +13,19 @@
 // limitations under the License.
 
 #include <stdint.h>
-#include <stdarg.h>
 
 #include "common/io.h"
-#include "common/kprintf.h"
 
-void klog(const char* s) {
-  int i = 0;
-  while (s[i]) {
-    outb(0x37a, 0x04 | 0x08);
-    outb(0x378, s[i]);
-    outb(0x37a, 0x01);
-    i++;
-  }
+void outb(uint16_t port, uint8_t val) {
+  __asm__ __volatile__ (
+      "outb %0, %1"
+      :: "a"(val), "Nd"(port));
 }
 
-void klogf(const char* fmt, ...) {
-  char buf[1024];
-
-  va_list args;
-  va_start(args, fmt);
-  kvsprintf(buf, fmt, args);
-  va_end(args);
-
-  klog(buf);
+uint8_t inb(uint16_t port) {
+  uint8_t val;
+  __asm__ __volatile__ (
+      "inb %1, %0"
+      : "=a"(val) : "Nd"(port));
+  return val;
 }
