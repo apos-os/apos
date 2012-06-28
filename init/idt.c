@@ -18,15 +18,6 @@
 
 #include "interrupts.h"
 
-#define IDT_PRESENT 0x80
-#define IDT_DPL_RING0 0x00
-#define IDT_DPL_RING3 0x60
-#define IDT_TYPE_32_INT 0x0E
-
-// The kernel's code segment selector.  Make sure this matches the one set in
-// gdt_flush.s.
-#define SELECTOR 0x08
-
 // TODO(aoates): we don't really need all these entries (we don't use all the
 // interrupts).
 #define NUM_IDT_ENTRIES 256
@@ -41,7 +32,7 @@ void idt_init() {
 
   for (int i = 0; i < NUM_IDT_ENTRIES; ++i) {
     idt_entries[i].offset_low = 0;
-    idt_entries[i].selector = SELECTOR;
+    idt_entries[i].selector = IDT_SELECTOR_VALUE;
     idt_entries[i].zero = 0;
     idt_entries[i].type_attr = IDT_DPL_RING0 | IDT_TYPE_32_INT;
     idt_entries[i].offset_high = 0;

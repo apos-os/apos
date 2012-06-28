@@ -14,7 +14,9 @@
 
 #include <stdint.h>
 
+#include "init/gdt.h"
 #include "init/mem_init.h"
+#include "interrupts.h"
 #include "memory.h"
 
 extern void kmain(memory_info_t* meminfo);
@@ -39,10 +41,30 @@ void kinit(memory_info_t* meminfo) {
       "movl %%eax, %%ebp;"
       :: "i"(KERNEL_VIRT_START) : "eax");
 
+  // Also switch our GDT and IDT pointers to their virtual addresses.
+  gdt_ptr_t gdt_ptr;
+  __asm__ __volatile__(
+      "sgdt (%0);"
+      :: "r"((uint32_t)&gdt_ptr) :);
+  gdt_ptr.base += KERNEL_VIRT_START;
+  gdt_flush(&gdt_ptr);
+
+  idt_ptr_t idt_ptr;
+  __asm__ __volatile__(
+      "sidt (%0);"
+      :: "r"((uint32_t)&idt_ptr) :);
+  idt_ptr.base += KERNEL_VIRT_START;
+  __asm__ __volatile__(
+      "lidt (%0);"
+      :: "r"((uint32_t)&idt_ptr) :);
+
   // setup_paging() in mem_init.c identity-maps the first PDE entry.  We want to
   // undo that.
   // The page directory is self-mapped at the end of the address space.
   uint32_t* page_directory = (uint32_t*)0xFFFFF000;
   page_directory[0] = 0 | PDE_WRITABLE;
   kmain(meminfo);
+
+  // We can't ever return or we'll page fault!
+  while(1);
 }

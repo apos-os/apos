@@ -21,13 +21,35 @@
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
 
+extern void int_handler();
+
+typedef void (*handler_t)(void);
+static void register_interrupt_handler(int num, handler_t h) {
+  kassert(idt != 0);
+  kassert(num < idt_entries);
+
+  uint32_t offset = (uint32_t)h;
+  idt[num].offset_low = offset & 0x0000FFFF;
+  idt[num].offset_high = offset >> 16;
+  idt[num].selector = IDT_SELECTOR_VALUE;
+  idt[num].type_attr = 0 | IDT_PRESENT | IDT_DPL_RING0 | IDT_TYPE_32_INT;
+}
+
 void interrupts_init() {
   // First, figure out where the IDT is.
   idt_ptr_t idt_ptr;
-  __asm __volatile__(
+  __asm__ __volatile__(
       "sidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
   kassert(idt_ptr.limit % sizeof(idt_entry_t) == 0);
   idt_entries = idt_ptr.limit / sizeof(idt_entry_t);
-  idt = (idt_entry_t*)phys2kernel(idt_ptr.base);
+  idt = (idt_entry_t*)idt_ptr.base;
+
+  // Install a test keyboard handler.
+  for (int i = 0; i < idt_entries; ++i) {
+    register_interrupt_handler(i, &int_handler);
+  }
+
+  // Enable interrupts.
+  __asm__ __volatile__("sti");
 }

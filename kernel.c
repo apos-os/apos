@@ -65,11 +65,16 @@ void kmain(memory_info_t* meminfo) {
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog("kmain()\n");
-  klog("page_frame_alloc_init()\n");
+  klog("set_global_meminfo()\n");
   set_global_meminfo(meminfo);
+  klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
+  klog("kmalloc_init()\n");
   kmalloc_init();
+  klog("interrupts_init()\n");
   interrupts_init();
+
+  klog("initialization finished...\n");
 
   clear();
   print("APOO\n");
@@ -90,7 +95,7 @@ void kmain(memory_info_t* meminfo) {
   //kstring_test();
   //kprintf_test();
   //page_frame_alloc_test();
-  kmalloc_test4();
+  //kmalloc_test4();
   //print("\n\nkmain: 0x");
   //print(utoa_hex((uint32_t)&kmain));
   //print("\nutoa_test: 0x");
@@ -98,6 +103,7 @@ void kmain(memory_info_t* meminfo) {
 
   //paging_test();
   //utoa_test();
+  klog("DONE\n");
 }
 
 void utoa_test() {

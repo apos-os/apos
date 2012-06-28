@@ -32,4 +32,13 @@ typedef struct {
    uint32_t base;
 } __attribute__((packed)) idt_ptr_t;
 
+#define IDT_PRESENT 0x80
+#define IDT_DPL_RING0 0x00
+#define IDT_DPL_RING3 0x60
+#define IDT_TYPE_32_INT 0x0E
+
+// The kernel's code segment selector.  Make sure this matches the one set in
+// gdt_flush.s.
+#define IDT_SELECTOR_VALUE 0x08
+
 #endif
