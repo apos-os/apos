@@ -57,6 +57,16 @@ void kstring_test() {
 
   // TODO(aoates): tests for kmemset, kstrcpy, kstrncpy, kstrcat
 
+  KTEST_BEGIN("kstrcat()");
+  char buf[1024];
+  buf[0] = '\0';
+  kstrcat(buf, "a");
+  KEXPECT_STREQ("a", buf);
+  kstrcat(buf, "b");
+  KEXPECT_STREQ("ab", buf);
+  kstrcat(buf, "ABCDEFG");
+  KEXPECT_STREQ("abABCDEFG", buf);
+
   KTEST_BEGIN("utoa()");
   KEXPECT_STREQ("0", utoa(0));
   KEXPECT_STREQ("0", utoa(00));
