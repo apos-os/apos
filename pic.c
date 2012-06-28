@@ -20,6 +20,8 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
+#include "pic.h"
+
 #define PIC_MASTER_CMD  0x20
 #define PIC_MASTER_DATA 0x21
 #define PIC_SLAVE_CMD   0xA0
@@ -27,7 +29,14 @@
 
 #define PIC_EOI         0x20
 
+#define NUM_HANDLERS 16
+static irq_handler_t g_handlers[NUM_HANDLERS];
+
 void pic_init() {
+  for (int i = 0; i < NUM_HANDLERS; ++i) {
+    g_handlers[i] = 0x0;
+  }
+
   outb(PIC_MASTER_CMD, 0x11);
   outb(PIC_SLAVE_CMD, 0x11);
   outb(PIC_MASTER_DATA, 0x20);
@@ -48,6 +57,11 @@ void pic_init() {
   outb(0x40, high);
 }
 
+void register_irq_handler(uint8_t irq, irq_handler_t handler) {
+  // TODO(aoates): probs need to disable interrupts here.
+  g_handlers[irq] = handler;
+}
+
 void timer_interrupt() {
   klog("tick\n");
 }
@@ -58,5 +72,8 @@ void irq_handler(uint32_t irq, uint32_t interrupt) {
   }
   outb(PIC_MASTER_CMD, PIC_EOI);
 
-  klogf("irq: 0x%x\n", irq);
+  if (g_handlers[irq] != 0x0) {
+    g_handlers[irq]();
+  }
+  //klogf("irq: 0x%x\n", irq);
 }

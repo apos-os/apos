@@ -20,6 +20,8 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
+#include "pic.h"
+
 #define CTRL_DATA_PORT 0x60
 #define CTRL_STATUS_PORT 0x64
 #define CTRL_CMD_PORT 0x64
@@ -284,19 +286,17 @@ static int device_init() {
 }
 
 uint8_t read_char() {
-  while (1) {
-    uint8_t c = read_data();
-    switch (c) {
-      case 0xF0: read_data(); continue;
-      case 0xE0: read_data(); continue;
-      case 0xE1: read_data(); read_data(); continue;
-      case 0x1C: return 'A';
-      case 0x32: return 'B';
-      case 0x21: return 'C';
-      case 0x23: return 'D';
-      case 0x24: return 'E';
-      default: return '?';
-    }
+  uint8_t c = read_data();
+  switch (c) {
+    case 0xF0: read_data(); return '?';
+    case 0xE0: read_data(); return '?';
+    case 0xE1: read_data(); read_data(); return '?';
+    case 0x1C: return 'A';
+    case 0x32: return 'B';
+    case 0x21: return 'C';
+    case 0x23: return 'D';
+    case 0x24: return 'E';
+    default: return '?';
   }
 }
 
@@ -319,4 +319,6 @@ void ps2_init() {
     return;
   }
   klogf("  finished PS/2 initalization!\n");
+
+  register_irq_handler(0x01, &keyboard_interrupt);
 }
