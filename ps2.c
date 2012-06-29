@@ -20,7 +20,7 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
-#include "pic.h"
+#include "irq.h"
 
 #define CTRL_DATA_PORT 0x60
 #define CTRL_STATUS_PORT 0x64
