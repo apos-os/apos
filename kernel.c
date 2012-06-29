@@ -22,6 +22,7 @@
 #include "memory.h"
 #include "page_alloc.h"
 #include "dev/ps2.h"
+#include "dev/keyboard/ps2_keyboard.h"
 #include "dev/timer.h"
 #include "test/kernel_tests.h"
 
@@ -118,7 +119,8 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
 
-  interrupt_clobber_test();
+  // interrupt_clobber_test();
+  KASSERT(ps2_keyboard_init());
 
   //print("\n");
   //char buf[2];
