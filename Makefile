@@ -22,7 +22,8 @@ BOOTLOADER	= grub
  
 OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_init.o load/kernel_init.o load/idt.o \
 	   common/kstring.o common/kassert.o common/klog.o common/kprintf.o common/io.o \
-	   memory.o page_alloc.o kernel.o kmalloc.o interrupts.o isr.o ps2.o irq.o timer.o \
+	   dev/interrupts.o dev/ps2.o dev/irq.o dev/timer.o dev/isr.o \
+	   memory.o page_alloc.o kernel.o kmalloc.o \
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o
 
 HDRFILES = $(wildcard *.h) $(wildcard load/*.h) $(wildcard test/*.h)

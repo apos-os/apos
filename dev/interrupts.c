@@ -16,7 +16,7 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "interrupts.h"
+#include "dev/interrupts.h"
 
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;

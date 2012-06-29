@@ -17,6 +17,8 @@
 ctags -R \
   *.c \
   *.h \
-  load \
+  build \
   common \
+  dev \
+  load \
   test \

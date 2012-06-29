@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-#include "interrupts.h"
+#include "dev/interrupts.h"
 
 // TODO(aoates): we don't really need all these entries (we don't use all the
 // interrupts).

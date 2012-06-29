@@ -17,12 +17,12 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "interrupts.h"
+#include "dev/interrupts.h"
 #include "kmalloc.h"
 #include "memory.h"
 #include "page_alloc.h"
-#include "ps2.h"
-#include "timer.h"
+#include "dev/ps2.h"
+#include "dev/timer.h"
 #include "test/kernel_tests.h"
 
 void pic_init();

@@ -16,7 +16,7 @@
 
 #include "load/gdt.h"
 #include "load/mem_init.h"
-#include "interrupts.h"
+#include "dev/interrupts.h"
 #include "memory.h"
 
 extern void kmain(memory_info_t* meminfo);

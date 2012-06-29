@@ -17,8 +17,8 @@
 #include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "irq.h"
-#include "timer.h"
+#include "dev/irq.h"
+#include "dev/timer.h"
 
 typedef struct {
   uint32_t counter;

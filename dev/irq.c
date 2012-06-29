@@ -20,8 +20,8 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
-#include "interrupts.h"
-#include "irq.h"
+#include "dev/interrupts.h"
+#include "dev/irq.h"
 
 #define PIC_MASTER_CMD  0x20
 #define PIC_MASTER_DATA 0x21
