@@ -18,6 +18,10 @@
 
 void interrupts_init();
 
+// Register a handler to be called when a particular interrupt fires.
+typedef void (*int_handler_t)(void);
+void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);
+
 // Structs for the IDT and its entries.
 typedef struct {
    uint16_t offset_low;

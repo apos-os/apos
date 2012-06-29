@@ -39,8 +39,7 @@ extern void irq13();
 extern void irq14();
 extern void irq15();
 
-typedef void (*handler_t)(void);
-static void register_interrupt_handler(int num, handler_t h) {
+void register_interrupt_handler(uint8_t num, int_handler_t h) {
   kassert(idt != 0);
   kassert(num < idt_entries);
 
