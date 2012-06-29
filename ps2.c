@@ -320,5 +320,5 @@ void ps2_init() {
   }
   klogf("  finished PS/2 initalization!\n");
 
-  register_irq_handler(0x01, &keyboard_interrupt);
+  register_irq_handler(IRQ1, &keyboard_interrupt);
 }

@@ -95,7 +95,7 @@ void pic_init() {
   outb(0x40, low);
   outb(0x40, high);
 
-  register_irq_handler(0x0, &timer_interrupt);
+  register_irq_handler(IRQ0, &timer_interrupt);
 }
 
 void register_irq_handler(uint8_t irq, irq_handler_t handler) {
