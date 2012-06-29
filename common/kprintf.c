@@ -15,11 +15,13 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "common/klog.h"
+#include "common/kprintf.h"
 #include "common/kstring.h"
 
 int ksprintf(char* str, const char* fmt, ...) {
   va_list args;
-  va_start(args, str);
+  va_start(args, fmt);
   int r = kvsprintf(str, fmt, args);
   va_end(args);
   return r;

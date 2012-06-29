@@ -89,7 +89,7 @@ static block_t* split_block(block_t* b, uint32_t n) {
     return b;
   }
 
-  block_t* new_block = (uint8_t*)b + sizeof(block_t) + n;
+  block_t* new_block = (block_t*)((uint8_t*)b + sizeof(block_t) + n);
   init_block(new_block);
   new_block->free = 1;
   new_block->length = b->length - sizeof(block_t) - n;

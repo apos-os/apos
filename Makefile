@@ -15,7 +15,7 @@
 AS	= i586-elf-as
 ASFLAGS = --gen-debug
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99 -g -I.
+CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99 -g -I.
 LD	= i586-elf-ld
 
 BOOTLOADER	= grub

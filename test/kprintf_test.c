@@ -37,6 +37,9 @@ void kprintf_test() {
   ksprintf(buf, "%s", "arg1");
   KEXPECT_STREQ("arg1", buf);
 
+  ksprintf(buf, "prefix%s", "arg1");
+  KEXPECT_STREQ("prefixarg1", buf);
+
   ksprintf(buf, "%s%s%s", "arg1", "arg2", "arg3");
   KEXPECT_STREQ("arg1arg2arg3", buf);
 

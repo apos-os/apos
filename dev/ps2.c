@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #include "common/io.h"
-#include "common/kassert.h"w
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"

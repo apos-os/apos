@@ -14,8 +14,8 @@
 
 #include <stdint.h>
 
-#include "common/io.h"w
-#include "common/kassert.h"w
+#include "common/io.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
@@ -93,6 +93,7 @@ void register_irq_handler(uint8_t irq, irq_handler_t handler) {
 }
 
 void irq_handler(uint32_t irq, uint32_t interrupt) {
+  KASSERT(interrupt == irq + 0x20);
   // TODO(aoates): this isn't really correct!
   // Assume all 7 and 15 IRQs are spurious
   if (irq == 7 || irq == 15) {

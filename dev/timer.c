@@ -30,7 +30,7 @@ static timer_t timers[KMAX_TIMERS];
 static uint32_t timer_idx = 0;  // Points to the next free timer.
 
 static void internal_timer_handler() {
-  for (int i = 0; i < timer_idx; ++i) {
+  for (uint32_t i = 0; i < timer_idx; ++i) {
     if (timers[i].counter == 0) {
       timers[i].counter = timers[i].period_slices;
       timers[i].handler();
