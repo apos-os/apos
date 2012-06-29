@@ -38,8 +38,14 @@ void kexpect_(uint32_t cond, const char* name,
 #define KEXPECT_INT_(name, astr, bstr, aval, bval, cond, opstr) do { \
   char aval_str[50]; \
   char bval_str[50]; \
-  kstrcpy(aval_str, utoa(aval)); \
-  kstrcpy(bval_str, utoa(bval)); \
+  /* If the expected value is written as hex, print the actual value as hex too.*/ \
+  if (kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) { \
+    ksprintf(aval_str, "0x%s", utoa_hex(aval)); \
+    ksprintf(bval_str, "0x%s", utoa_hex(bval)); \
+  } else { \
+    kstrcpy(aval_str, utoa(aval)); \
+    kstrcpy(bval_str, utoa(bval)); \
+  } \
   kexpect_(cond, name, astr, bstr, aval_str, bval_str, opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 

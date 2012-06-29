@@ -21,6 +21,12 @@ void ktest_test() {
   KEXPECT_EQ(1, 1);
   KEXPECT_EQ(1, 2);
 
+  KTEST_BEGIN("KEXPECT_EQ (hex)");
+  KEXPECT_EQ(0xdeadbeef, 0xdeadbeef);
+  KEXPECT_EQ(0xdeadbeef, 0xbaadf00d);
+  KEXPECT_EQ(0xdeadbeef, 1);
+  KEXPECT_EQ(1, 0xdeadbeef);
+
   KTEST_BEGIN("KEXPECT_STREQ");
   KEXPECT_STREQ("abc", "abc");
   KEXPECT_STREQ("abc", "def");
