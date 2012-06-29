@@ -37,7 +37,7 @@ int kstrcmp(const char* s1, const char* s2) {
 }
 
 int kstrncmp(const char* s1, const char* s2, uint32_t n) {
-  int x = 0;
+  uint32_t x = 0;
   while (*s1 && *s2 && x < n - 1) {
     if (*s1 != *s2) {
       return *s1 - *s2;
@@ -50,7 +50,7 @@ int kstrncmp(const char* s1, const char* s2, uint32_t n) {
 }
 
 void* kmemset(void *s, int c, uint32_t n) {
-  for (int i = 0; i < n; ++i) {
+  for (uint32_t i = 0; i < n; ++i) {
     ((char*)s)[i] = c;
   }
   return s;
@@ -93,34 +93,30 @@ char* kstrcat(char* dst, const char* src) {
   return dst_orig;
 }
 
-static void strprepend(char* buf, const char* prefix) {
-  const int blen = kstrlen(buf);
-  const int plen = kstrlen(prefix);
-  buf[plen + blen] = '\0';
-  for (int i = blen + plen - 1; i >= plen; --i) {
-    buf[i] = buf[i - plen];
-  }
-  kstrncpy(buf, prefix, plen);
-}
-
 static uint32_t abs(int32_t x) {
   return x < 0 ? -x : x;
 }
 
 const char* itoa(int32_t x) {
-  const char* out = utoa(abs(x));
+  static char buf[256];
+  buf[0] = '\0';
+
   if (x < 0) {
-    strprepend(out, "-");
+    kstrcat(buf, "-");
   }
-  return out;
+  kstrcat(buf, utoa(abs(x)));
+  return buf;
 }
 
 const char* itoa_hex(int32_t x) {
-  const char* out = utoa_hex(abs(x));
+  static char buf[256];
+  buf[0] = '\0';
+
   if (x < 0) {
-    strprepend(out, "-");
+    kstrcat(buf, "-");
   }
-  return out;
+  kstrcat(buf, utoa_hex(abs(x)));
+  return buf;
 }
 
 // Helper for utoa/utoa_hex that takes a number, a base, and a lookup table of

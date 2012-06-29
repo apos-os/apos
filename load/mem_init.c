@@ -49,14 +49,6 @@ static void kassert_page_aligned(uint32_t x) {
   kassert_phys((x & PAGE_OFFSET_MASK) == 0);
 }
 
-// Allocate an unaligned block of memory at the end of the current kernel
-// physical space, updating meminfo->kernel_end_phys as necessary.
-static uint32_t* kalloc_unaligned(memory_info_t* meminfo, uint32_t n) {
-  uint32_t* addr = (uint32_t*)meminfo->kernel_end_phys;
-  meminfo->kernel_end_phys += n;
-  return addr;
-}
-
 // Allocate an (aligned) page at the end of the current kernel physical space,
 // updating meminfo->kernel_end_phys as necessary.
 static uint32_t* kalloc_page(memory_info_t* meminfo) {
@@ -152,7 +144,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
        :: "b"(page_directory) : "eax");
 
   // Return the virtual-mapped address of meminfo.
-  return ((uint32_t)meminfo) + KERNEL_VIRT_START;
+  return (memory_info_t*)(((uint32_t)meminfo) + KERNEL_VIRT_START);
 }
 
 // Allocates a memory_info_t at the end of the kernel and fills it in with what
