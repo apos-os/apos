@@ -26,6 +26,8 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o
 
 HDRFILES = $(wildcard *.h) $(wildcard load/*.h) $(wildcard test/*.h)
+
+BUILD = build
  
 all: kernel.img
  
@@ -35,22 +37,22 @@ all: kernel.img
 %.o : %.c $(HDRFILES)
 	$(CC) $(CFLAGS) -o $@ -c $<
  
-kernel.bin: $(OBJFILES) linker.ld
-	$(LD) -T linker.ld -o $@ $^
+kernel.bin: $(OBJFILES) $(BUILD)/linker.ld
+	$(LD) -T $(BUILD)/linker.ld -o $@ $^
 
-kernel.img: kernel.bin grub/menu.lst kernel.img.base
-	cp kernel.img.base $@
+kernel.img: kernel.bin grub/menu.lst $(BUILD)/kernel.img.base
+	cp $(BUILD)/kernel.img.base $@
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
  
 clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img pad.tmp
+	$(RM) $(OBJFILES) kernel.bin kernel.img tags
 
 run: kernel.img
-	./bochs/bochs -q
+	./bochs/bochs -q -f $(BUILD)/bochsrc.txt
 
 runx: kernel.img
-	./bochs/bochs -q -f bochsrc.txt.x11
+	./bochs/bochs -q -f $(BUILD)/bochsrc.txt.x11
 
 gdb: kernel.bin kernel.img
-	./bochs/bochs_gdb -q -f bochsrc.txt.gdb
+	./bochs/bochs_gdb -q -f $(BUILD)/bochsrc.txt.gdb
