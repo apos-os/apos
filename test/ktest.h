@@ -35,16 +35,24 @@ void kexpect_(uint32_t cond, const char* name,
   kexpect_(cond, name, astr, bstr, aval, bval, opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 
-#define KEXPECT_EQ(a, b) KEXPECT_("KEXPECT_EQ", #a, #b, utoa(a), utoa(b), a == b, " != ")
-#define KEXPECT_NE(a, b) KEXPECT_("KEXPECT_NE", #a, #b, utoa(a), utoa(b), a != b, " == ")
+#define KEXPECT_INT_(name, astr, bstr, aval, bval, cond, opstr) do { \
+  char aval_str[50]; \
+  char bval_str[50]; \
+  kstrcpy(aval_str, utoa(aval)); \
+  kstrcpy(bval_str, utoa(bval)); \
+  kexpect_(cond, name, astr, bstr, aval_str, bval_str, opstr, __FILE__, STR(__LINE__)); \
+} while(0)
+
+#define KEXPECT_EQ(a, b) KEXPECT_INT_("KEXPECT_EQ", #a, #b, a, b, a == b, " != ")
+#define KEXPECT_NE(a, b) KEXPECT_INT_("KEXPECT_NE", #a, #b, a, b, a != b, " == ")
 
 #define KEXPECT_STREQ(a, b) KEXPECT_("KEXPECT_STREQ", #a, #b, a, b, !kstrcmp(a, b), " != ")
 #define KEXPECT_STRNE(a, b) KEXPECT_("KEXPECT_STRNE", #a, #b, a, b, kstrcmp(a, b), " == ")
 
-#define KEXPECT_LT(a, b) KEXPECT_("KEXPECT_LT", #a, #b, utoa(a), utoa(b), a < b, " >= ")
-#define KEXPECT_LE(a, b) KEXPECT_("KEXPECT_LE", #a, #b, utoa(a), utoa(b), a <= b, " > ")
+#define KEXPECT_LT(a, b) KEXPECT_INT_("KEXPECT_LT", #a, #b, a, b, a < b, " >= ")
+#define KEXPECT_LE(a, b) KEXPECT_INT_("KEXPECT_LE", #a, #b, a, b, a <= b, " > ")
 
-#define KEXPECT_GT(a, b) KEXPECT_("KEXPECT_GT", #a, #b, utoa(a), utoa(b), a > b, " <= ")
-#define KEXPECT_GE(a, b) KEXPECT_("KEXPECT_GE", #a, #b, utoa(a), utoa(b), a >= b, " < ")
+#define KEXPECT_GT(a, b) KEXPECT_INT_("KEXPECT_GT", #a, #b, a, b, a > b, " <= ")
+#define KEXPECT_GE(a, b) KEXPECT_INT_("KEXPECT_GE", #a, #b, a, b, a >= b, " < ")
 
 #endif
