@@ -20,7 +20,7 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
-#include "dev/irq.h"
+#include "dev/ps2.h"
 
 #define CTRL_DATA_PORT 0x60
 #define CTRL_STATUS_PORT 0x64
@@ -76,10 +76,8 @@
 #define SET(a, mask) ((a) | (mask))
 #define CLEAR(a, mask) ((a) & ~(mask))
 
-
-#define DEVICE_UNKNOWN 0
-#define DEVICE_KEYBOARD 1
-static int g_port1_device = DEVICE_UNKNOWN;
+static int g_device_types[2];
+static int g_initialized = 0;
 
 static void send_cmd(uint8_t cmd) {
   outb(CTRL_CMD_PORT, cmd);
@@ -208,7 +206,6 @@ static int controller_init() {
   klogf("  enabling port1...\n");
   send_cmd(CTRL_CMD_ENABLE_PORT1);
 
-  // TODO(aoates): enable IRQ once we want them.
   return 1;
 }
 
@@ -260,11 +257,12 @@ static int device_init() {
 
   if (type1 == 0xAB && type2 == 0x83) {
     klogf("  device identified as keyboard\n");
-    g_port1_device = DEVICE_KEYBOARD;
+    g_device_types[0] = PS2_DEVICE_KEYBOARD;
   } else {
     klogf("  device identified as unknown type\n");
-    g_port1_device = DEVICE_UNKNOWN;
+    g_device_types[0] = PS2_DEVICE_UNKNOWN;
   }
+  g_device_types[1] = PS2_DEVICE_DISABLED;
 
   // Re-enable scanning.
   write_data(PS2_CMD_ENABLE_SCANNING);
@@ -274,51 +272,48 @@ static int device_init() {
     return 0;
   }
 
-  // Enable interrupts.
+  return 1;
+}
+
+int ps2_init() {
+  klogf("Initializing PS/2 controller...\n");
+  if (!controller_init()) {
+    klogf("  aborting initalization\n");
+    return 0;
+  }
+
+  if (!device_init()) {
+    klogf("  aborting initalization\n");
+    return 0;
+  }
+  klogf("  finished PS/2 initalization!\n");
+
+  g_initialized = 1;
+  return 1;
+}
+
+int ps2_get_device_type(int port) {
+  KASSERT(port == PS2_PORT1 || port == PS2_PORT2);
+  KASSERT(g_initialized);
+  return g_device_types[port - 1];
+}
+
+void ps2_enable_interrupts(int port) {
+  // TODO(aoates): support port2.
+  KASSERT(port == PS2_PORT1);
+  KASSERT(g_initialized);
+
   send_cmd(CTRL_CMD_READ_CONFIG);
   uint8_t config = read_data();
   config = SET(config, CTRL_CFG_INT1);
   klogf("  enabling interrupt...\n");
   send_cmd(CTRL_CMD_WRITE_CONFIG);
   write_data(config);
-
-  return 1;
 }
 
-uint8_t read_char() {
-  uint8_t c = read_data();
-  switch (c) {
-    case 0xF0: read_data(); return '?';
-    case 0xE0: read_data(); return '?';
-    case 0xE1: read_data(); read_data(); return '?';
-    case 0x1C: return 'A';
-    case 0x32: return 'B';
-    case 0x21: return 'C';
-    case 0x23: return 'D';
-    case 0x24: return 'E';
-    default: return '?';
-  }
-}
-
-void keyboard_interrupt() {
-  char buf[2];
-  buf[1] = '\0';
-  buf[0] = read_char();
-  klogf("keyboard: %s\n", buf);
-}
-
-void ps2_init() {
-  klogf("Initializing PS/2 controller...\n");
-  if (!controller_init()) {
-    klogf("  aborting initalization\n");
-    return;
-  }
-
-  if (!device_init()) {
-    klogf("  aborting initalization\n");
-    return;
-  }
-  klogf("  finished PS/2 initalization!\n");
-
-  register_irq_handler(IRQ1, &keyboard_interrupt);
+uint8_t ps2_read_byte(int port) {
+  // TODO(aoates): support port2.
+  KASSERT(port == PS2_PORT1);
+  KASSERT(g_initialized);
+  return read_data();
 }

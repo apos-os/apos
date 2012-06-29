@@ -16,9 +16,25 @@
 #ifndef APOO_PS2_H
 #define APOO_PS2_H
 
-// Blocks until a character is available from the keyboard, then translates it
-// into an ASCII char and returns it.
-uint8_t read_char();
-void ps2_init();
+// Constants for communicating with the ps2 driver.
+#define PS2_PORT1 1
+#define PS2_PORT2 2
+
+// Device types.
+#define PS2_DEVICE_DISABLED 0    // The port is disabled.
+#define PS2_DEVICE_UNKNOWN 1     // We don't know what the device is
+#define PS2_DEVICE_KEYBOARD 2
+
+// Initialize the PS2 subsystem.  Returns 0 if there was a failure.
+int ps2_init();
+
+// Returns the device type of the device attached to the given port.
+int ps2_get_device_type(int port);
+
+// Enables interrupts for the given port.
+void ps2_enable_interrupts(int port);
+
+// Blocks until a byte of data is available on the given port, then returns it.
+uint8_t ps2_read_byte(int port);
 
 #endif
