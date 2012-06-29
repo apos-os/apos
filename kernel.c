@@ -31,12 +31,12 @@ const uint32_t kScreenWidth = 80;
 const uint32_t kScreenHeight = 24;
 
 // VIRTUAL address of the framebuffer.
-static unsigned char* const videoram = (char *)0xC00B8000;
+static unsigned char* const videoram = (unsigned char *)0xC00B8000;
 static uint32_t cursor = 0;
 
 void clear() {
   cursor = 0;
-  uint32_t i, j;
+  uint32_t i;
   for (i = 0; i < kScreenWidth * kScreenHeight; ++i) {
     videoram[i*2] = ' ';
     videoram[i*2+1] = 0x07;
@@ -44,7 +44,6 @@ void clear() {
 }
 
 void print(const char* msg) {
-  int i = 0;
   while (*msg) {
     if (*msg == '\n') {
       cursor = ((cursor / kScreenWidth) + 1) * kScreenWidth - 1;
@@ -65,7 +64,7 @@ void kmalloc_test3();
 void kmalloc_test4();
 
 static void tick() {
-  static char i = 0;
+  static uint8_t i = 0;
   static const char* beat = "oO";
   i = (i + 1) % 2;
 
@@ -198,11 +197,11 @@ void paging_test() {
   kstrcat(buf, "KERNEL_START: 0x");
   kstrcat(buf, utoa_hex(KERNEL_START_SYMBOL));
   kstrcat(buf, "\n&KERNEL_START: 0x");
-  kstrcat(buf, utoa_hex(&KERNEL_START_SYMBOL));
+  kstrcat(buf, utoa_hex((uint32_t)&KERNEL_START_SYMBOL));
   kstrcat(buf, "\nKERNEL_END: 0x");
   kstrcat(buf, utoa_hex(KERNEL_END_SYMBOL));
   kstrcat(buf, "\n&KERNEL_END: 0x");
-  kstrcat(buf, utoa_hex(&KERNEL_END_SYMBOL));
+  kstrcat(buf, utoa_hex((uint32_t)&KERNEL_END_SYMBOL));
   print(buf);
 }
 
