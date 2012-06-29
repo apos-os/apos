@@ -81,7 +81,6 @@ void kmain(memory_info_t* meminfo) {
   klog("interrupts_init()\n");
   interrupts_init();
 
-
   klog("initialization finished...\n");
 
   clear();
@@ -194,7 +193,7 @@ void fill_frame(uint32_t frame_start, uint32_t x) {
 void check_frame(uint32_t frame_start, uint32_t x) {
   uint32_t* frame = (uint32_t*)(phys2virt(frame_start));
   for (uint32_t i = 0; i < PAGE_SIZE / 4; ++i) {
-    kassert(frame[i] == x);
+    KASSERT(frame[i] == x);
   }
 }
 
@@ -373,7 +372,7 @@ void kmalloc_test4() {
       ptrs[ptr_idx++] = kmalloc(rand() % 3900);
       total_allocs++;
     } else {
-      kassert(ptr_idx > 0);
+      KASSERT(ptr_idx > 0);
       kfree(ptrs[--ptr_idx]);
     }
 

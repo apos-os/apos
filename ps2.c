@@ -189,7 +189,7 @@ static int controller_init() {
     return 0;
   } else {
     klogf("PANIC: unknown device self-test response code: %x\n", result);
-    kassert(0);
+    KASSERT(0);
   }
 
   // Do port test.

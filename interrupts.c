@@ -61,8 +61,8 @@ extern void irq14();
 extern void irq15();
 
 void register_interrupt_handler(uint8_t num, int_handler_t h) {
-  kassert(idt != 0);
-  kassert(num < idt_entries);
+  KASSERT(idt != 0);
+  KASSERT(num < idt_entries);
 
   uint32_t offset = (uint32_t)h;
   idt[num].offset_low = offset & 0x0000FFFF;
@@ -77,7 +77,7 @@ void interrupts_init() {
   __asm__ __volatile__(
       "sidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
-  kassert(idt_ptr.limit % sizeof(idt_entry_t) == 0);
+  KASSERT(idt_ptr.limit % sizeof(idt_entry_t) == 0);
   idt_entries = idt_ptr.limit / sizeof(idt_entry_t);
   idt = (idt_entry_t*)idt_ptr.base;
 

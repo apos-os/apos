@@ -53,8 +53,8 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   stack_idx = 0;
   uint32_t address = kernel_end_page + stack_size;
   for (uint32_t i = 0; i < free_frames - (stack_size / PAGE_SIZE); ++i) {
-    kassert(is_page_aligned(address));
-    kassert(address + PAGE_SIZE <= total_frames * PAGE_SIZE);
+    KASSERT(is_page_aligned(address));
+    KASSERT(address + PAGE_SIZE <= total_frames * PAGE_SIZE);
 
     free_frame_stack[stack_idx++] = address;
     address += PAGE_SIZE;
@@ -79,14 +79,14 @@ uint32_t page_frame_alloc() {
 
 void page_frame_free(uint32_t frame) {
   const uint32_t frame_addr = (uint32_t)frame;
-  kassert(is_page_aligned(frame_addr));
+  KASSERT(is_page_aligned(frame_addr));
 
   // Check that the page frame isn't already free.
   for (uint32_t i = 0; i < stack_idx; ++i) {
-    kassert(free_frame_stack[i] != frame_addr);
+    KASSERT(free_frame_stack[i] != frame_addr);
   }
 
-  kassert(stack_idx <= stack_size);
+  KASSERT(stack_idx <= stack_size);
 
   // Fill the page with crap.
   uint32_t virt_frame = phys2virt(frame);

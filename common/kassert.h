@@ -15,6 +15,13 @@
 #ifndef APOO_KASSERT_H
 #define APOO_KAS
 
+#define STR2(x) #x
+#define STR(x) STR2(x)
+
+#define KASSERT(cond) do { \
+  kassert_msg((cond), "assertion failed: " #cond " (" __FILE__ ":" STR(__LINE__) ")\n"); \
+} while(0)
+
 // Kills the kernel, logging the given message first.
 void die(const char* msg);
 

@@ -20,10 +20,12 @@ void die(const char* msg) {
   klog("PANIC: ");
   if (msg) {
     klog(msg);
+    klog("\n");
   } else {
-    klog("<unknown reason :(>");
+    klog("<unknown reason :(>\n");
   }
   __asm__("int $3");
+  __asm__("hlt");
 }
 
 void kassert(int x) {
