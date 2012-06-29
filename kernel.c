@@ -22,6 +22,7 @@
 #include "memory.h"
 #include "page_alloc.h"
 #include "ps2.h"
+#include "timer.h"
 #include "test/kernel_tests.h"
 
 void pic_init();
@@ -63,12 +64,24 @@ void kmalloc_test2();
 void kmalloc_test3();
 void kmalloc_test4();
 
+static void tick() {
+  static char i = 0;
+  static const char* beat = "oO";
+  i = (i + 1) % 2;
+
+  videoram[(kScreenWidth-1)*2] = beat[i];
+  videoram[(kScreenWidth-1)*2+1] = 0x07;
+}
+
+static void add_timers() {
+  KASSERT(register_timer_callback(1000, &tick));
+}
+
 void kmain(memory_info_t* meminfo) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog("kmain()\n");
-  kmalloc_init();
   klog("interrupts_init()\n");
   interrupts_init();
   klog("pic_init()\n");
@@ -83,6 +96,11 @@ void kmain(memory_info_t* meminfo) {
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
   klog("kmalloc_init()\n");
+  kmalloc_init();
+
+  klog("timer_init()\n");
+  timer_init();
+  add_timers();
 
   klog("initialization finished...\n");
 
