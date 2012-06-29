@@ -98,6 +98,8 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
 
+  interrupt_clobber_test();
+
   //print("\n");
   //char buf[2];
   //buf[1] = '\0';

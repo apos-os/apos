@@ -19,5 +19,6 @@
 void ktest_test();
 void kstring_test();
 void kprintf_test();
+void interrupt_clobber_test();
 
 #endif

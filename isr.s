@@ -23,15 +23,25 @@
 .global int\intr
 int\intr :
   cli
+  pusha
+  # Copy the error code pushed for us onto the top of the stack as a function arg.
+  mov 32(%esp), %eax
+  push %eax
   push $\intr
   jmp int_common_handler
 .endm
 
-# Same as above, but for interrupt handlers that don't push an error code.
+# Same as above, but for interrupt handlers that don't push an error code.  We
+# first push a fake error code, then save all registers, then push the fake
+# error code again, then the interrupt number.  This sets us up for
+# int_common_handler in the same way as INT_ERROR (stack = error code, saved
+# regs, error code, int number).
 .macro INT_NOERROR intr
 .global int\intr
 int\intr :
   cli
+  push $0  # fake error code
+  pusha
   push $0  # fake error code
   push $\intr
   jmp int_common_handler
@@ -61,7 +71,17 @@ INT_NOERROR   19
 int_common_handler:
   # TODO(aoates): do segment switching, etc, once we have userland.
   call int_handler
+
+  # DEBUG
+  # Clobber %eax, %ebx, %edx (caller-save) to fail loudly if we
+  # aren't saving them properly.
+  mov $0xAAAAAAAA, %eax
+  mov $0xBBBBBBBB, %ebx
+  mov $0xDDDDDDDD, %edx
+
   add $8, %esp  # pop interrupt and error numbers
+  popa
+  add $4, %esp  # pop the other copy of the error number
   sti
   iret
 
@@ -71,6 +91,7 @@ int_common_handler:
 .global irq\irq
 irq\irq :
   cli
+  pusha
   push $\intr
   push $\irq 
   jmp irq_common_handler
@@ -96,6 +117,15 @@ IRQ 15, 0x2F
 irq_common_handler:
   # TODO(aoates): do segment switching, etc, once we have userland.
   call irq_handler
+
+  # DEBUG
+  # Clobber %eax, %ebx, %edx (caller-save) to fail loudly if we
+  # aren't saving them properly.
+  mov $0xAAAAAAAA, %eax
+  mov $0xBBBBBBBB, %ebx
+  mov $0xDDDDDDDD, %edx
+
   add $8, %esp  # clean up pushed interrupt and IRQ numbers.
+  popa
   sti
   iret
