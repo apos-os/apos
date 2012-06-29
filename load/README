@@ -1,0 +1,11 @@
+This directory contains the code to load and set up the kernel AFTER the
+bootloader gives us control.
+
+The code here, except for kernel_init.c, is linked at the kernel's physical
+address.  loader.s is called by the bootloader.  It then sets up the GDT,
+various other low level things, sets up paging and calls kinit.
+
+kinit, which is linked in the kernel's virtual address space, cleans up,
+finishes the switch from physical to virtual addresses, unmaps the physical
+memory we set up for bootstrapping, and calls kmain().  From kmain() onwards,
+everything runs in virtual memory.

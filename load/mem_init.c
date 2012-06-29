@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "init/mem_init.h"
+#include "load/mem_init.h"
 #include "memory.h"
 
 // Memory limits of the kernel --- symbols defined at the start and end of the
@@ -113,7 +113,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 
   // Create two initial PTEs as well.  Identity map the first 4MB, and map the
   // higher-half kernel to the first physical 4MB as well.
-  // Note: Keep this in sync with init/kernel_init.c (which undoes the first
+  // Note: Keep this in sync with load/kernel_init.c (which undoes the first
   // mapping).
   uint32_t* page_table1 = kalloc_page(meminfo);
   map_linear_page_table(page_directory, page_table1, 0x0, 0x0);

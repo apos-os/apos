@@ -15,7 +15,7 @@
 // Code to initialize the GDT.
 
 #include <stdint.h>
-#include "init/gdt.h"
+#include "load/gdt.h"
 
 #define GDT_NUM_ENTRIES 5
 static gdt_entry_t g_gdt[GDT_NUM_ENTRIES] __attribute__((aligned (8)));

@@ -14,8 +14,8 @@
 
 #include <stdint.h>
 
-#include "init/gdt.h"
-#include "init/mem_init.h"
+#include "load/gdt.h"
+#include "load/mem_init.h"
 #include "interrupts.h"
 #include "memory.h"
 
@@ -25,7 +25,7 @@ extern void kmain(memory_info_t* meminfo);
 // code.  Tears down temporary mappings set up by paging initialization and
 // finishes transfer to fully-virtual memory space.
 //
-// Unlike everything else in init/, is linked at it's VIRTUAL address.  It's
+// Unlike everything else in load/, is linked at it's VIRTUAL address.  It's
 // invoked after paging is setup, at which point we're running completely in
 // higher-half mode.  So it unmaps the first 4MB that were needed while paging
 // was being initialized, and jumps to kmain.

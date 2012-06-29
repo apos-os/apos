@@ -25,16 +25,16 @@ SECTIONS
 
     .multiboot_header :
     {
-        init/multiboot.o
+        load/multiboot.o
     }
 
     .init-text ALIGN(0x1000) :
     {
-      init/loader.o(.text .rodata .data .bss)
-      init/mem_init.o(.text .rodata .data .bss)
-      init/gdt.o(.text .rodata .data .bss)
-      init/gdt_flush.o(.text .rodata .data .bss)
-      init/idt.o(.text .rodata .data .bss)
+      load/loader.o(.text .rodata .data .bss)
+      load/mem_init.o(.text .rodata .data .bss)
+      load/gdt.o(.text .rodata .data .bss)
+      load/gdt_flush.o(.text .rodata .data .bss)
+      load/idt.o(.text .rodata .data .bss)
     }
 
     /* Load the main part of the kernel at VMA 0xC0000000. */

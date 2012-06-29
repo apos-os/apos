@@ -20,12 +20,12 @@ LD	= i586-elf-ld
 
 BOOTLOADER	= grub
  
-OBJFILES = init/multiboot.o init/loader.o init/gdt.o init/gdt_flush.o init/mem_init.o init/kernel_init.o init/idt.o \
+OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_init.o load/kernel_init.o load/idt.o \
 	   common/kstring.o common/kassert.o common/klog.o common/kprintf.o common/io.o \
 	   memory.o page_alloc.o kernel.o kmalloc.o interrupts.o isr.o ps2.o irq.o timer.o \
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o
 
-HDRFILES = $(wildcard *.h) $(wildcard init/*.h) $(wildcard test/*.h)
+HDRFILES = $(wildcard *.h) $(wildcard load/*.h) $(wildcard test/*.h)
  
 all: kernel.img
  

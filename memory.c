@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "memory.h"
-#include "init/mem_init.h"
+#include "load/mem_init.h"
 
 static memory_info_t* global_meminfo = 0;
 
