@@ -21,7 +21,28 @@
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
 
-extern void int_handler();
+//extern void int_handler();
+extern void int0();
+extern void int1();
+extern void int2();
+extern void int3();
+extern void int4();
+extern void int5();
+extern void int6();
+extern void int7();
+extern void int8();
+extern void int9();
+extern void int10();
+extern void int11();
+extern void int12();
+extern void int13();
+extern void int14();
+extern void int15();
+extern void int16();
+extern void int17();
+extern void int18();
+extern void int19();
+
 extern void irq0();
 extern void irq1();
 extern void irq2();
@@ -61,9 +82,30 @@ void interrupts_init() {
   idt = (idt_entry_t*)idt_ptr.base;
 
   // Install a test keyboard handler.
-  for (int i = 0; i < idt_entries; ++i) {
-    register_interrupt_handler(i, &int_handler);
-  }
+  //for (int i = 0; i < idt_entries; ++i) {
+  //  register_interrupt_handler(i, &int_handler);
+  //}
+  register_interrupt_handler(0, &int0);
+  register_interrupt_handler(1, &int1);
+  register_interrupt_handler(2, &int2);
+  register_interrupt_handler(3, &int3);
+  register_interrupt_handler(4, &int4);
+  register_interrupt_handler(5, &int5);
+  register_interrupt_handler(6, &int6);
+  register_interrupt_handler(7, &int7);
+  register_interrupt_handler(8, &int8);
+  register_interrupt_handler(9, &int9);
+  register_interrupt_handler(10, &int10);
+  register_interrupt_handler(11, &int11);
+  register_interrupt_handler(12, &int12);
+  register_interrupt_handler(13, &int13);
+  register_interrupt_handler(14, &int14);
+  register_interrupt_handler(15, &int15);
+  register_interrupt_handler(16, &int16);
+  register_interrupt_handler(17, &int17);
+  register_interrupt_handler(18, &int18);
+  register_interrupt_handler(19, &int19);
+
   register_interrupt_handler(0x20, &irq0);
   register_interrupt_handler(0x21, &irq1);
   register_interrupt_handler(0x22, &irq2);
@@ -83,4 +125,8 @@ void interrupts_init() {
 
   // Enable interrupts.
   __asm__ __volatile__("sti");
+}
+
+void int_handler(uint32_t interrupt, uint32_t error) {
+  klogf("interrupt: 0x%x  error: 0x%x\n", interrupt, error);
 }

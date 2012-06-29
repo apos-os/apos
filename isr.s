@@ -14,9 +14,57 @@
 
 # Code to handle interrupts.
 
-.global int_handler
-int_handler:
+#.global int_handler
+#int_handler:
+#  iret
+
+# Create an interrupt handler for the given exception (with error code).
+.macro INT_ERROR intr
+.global int\intr
+int\intr :
+  cli
+  push $\intr
+  jmp int_common_handler
+.endm
+
+# Same as above, but for interrupt handlers that don't push an error code.
+.macro INT_NOERROR intr
+.global int\intr
+int\intr :
+  cli
+  push $0  # fake error code
+  push $\intr
+  jmp int_common_handler
+.endm
+
+INT_NOERROR   0
+INT_NOERROR   1
+INT_NOERROR   2
+INT_NOERROR   3
+INT_NOERROR   4
+INT_NOERROR   5
+INT_NOERROR   6
+INT_NOERROR   7
+INT_ERROR     8
+INT_NOERROR   9
+INT_ERROR     10
+INT_ERROR     11
+INT_ERROR     12
+INT_ERROR     13
+INT_ERROR     14
+INT_NOERROR   15
+INT_NOERROR   16
+INT_ERROR     17
+INT_NOERROR   18
+INT_NOERROR   19
+
+int_common_handler:
+  # TODO(aoates): do segment switching, etc, once we have userland.
+  call int_handler
+  add $8, %esp  # pop interrupt and error numbers
+  sti
   iret
+
 
 # Create an IRQ handler for the given irq/interrupt pair.
 .macro IRQ irq intr
