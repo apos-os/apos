@@ -52,8 +52,6 @@ extern void irq13();
 extern void irq14();
 extern void irq15();
 
-void timer_interrupt();
-
 void pic_init() {
   for (int i = 0; i < NUM_HANDLERS; ++i) {
     g_handlers[i] = 0x0;
@@ -86,32 +84,12 @@ void pic_init() {
   outb(PIC_SLAVE_DATA, 0x01);
   outb(PIC_MASTER_DATA, 0x0);
   outb(PIC_SLAVE_DATA, 0x0);
-
-  // Inintialize the timer.
-  outb(0x43, 0x36);
-  uint16_t divisor = 1193180 / 20;
-  uint8_t low = (uint8_t)(divisor & 0xFF);
-  uint8_t high = (uint8_t)((divisor >> 8) & 0xFF);
-  outb(0x40, low);
-  outb(0x40, high);
-
-  register_irq_handler(0x0, &timer_interrupt);
 }
 
 void register_irq_handler(uint8_t irq, irq_handler_t handler) {
   KASSERT(irq < NUM_HANDLERS);
   // TODO(aoates): probs need to disable interrupts here.
   g_handlers[irq] = handler;
-}
-
-void timer_interrupt() {
-  static int tick = 0;
-  tick++;
-  // Tick every 5s.
-  if (tick > 100) {
-    tick = 0;
-    klog("tick\n");
-  }
 }
 
 void irq_handler(uint32_t irq, uint32_t interrupt) {
