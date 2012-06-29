@@ -18,6 +18,9 @@
 
 void interrupts_init();
 
+void enable_interrupts();
+void disable_interrupts();
+
 // Register a handler to be called when a particular interrupt fires.
 typedef void (*int_handler_t)(void);
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);

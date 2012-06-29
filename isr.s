@@ -85,6 +85,7 @@ int_common_handler:
   sti
   iret
 
+# Code to handle IRQ interrupts.
 
 # Create an IRQ handler for the given irq/interrupt pair.
 .macro IRQ irq intr

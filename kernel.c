@@ -68,18 +68,21 @@ void kmain(memory_info_t* meminfo) {
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog("kmain()\n");
+  kmalloc_init();
+  klog("interrupts_init()\n");
+  interrupts_init();
+  klog("pic_init()\n");
+  pic_init();
+  klog("ps2_init()\n");
+  ps2_init();
+
+  enable_interrupts();
+
   klog("set_global_meminfo()\n");
   set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
   klog("kmalloc_init()\n");
-  kmalloc_init();
-  klog("pic_init()\n");
-  pic_init();
-  klog("ps2_init()\n");
-  ps2_init();
-  klog("interrupts_init()\n");
-  interrupts_init();
 
   klog("initialization finished...\n");
 
