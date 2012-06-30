@@ -31,6 +31,9 @@ uint32_t video_get_height(video_t* v);
 // Sets the character at a given position on the display.
 void video_setc(video_t* v, uint32_t row, uint32_t col, uint8_t c);
 
+// Returns the character at the given position.
+uint8_t video_getc(video_t* v, uint32_t row, uint32_t col);
+
 // Clears the display.
 void video_clear(video_t* v);
 

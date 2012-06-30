@@ -48,6 +48,13 @@ void video_setc(video_t* v, uint32_t row, uint32_t col, uint8_t c) {
   v->videoram[2 * (row * v->width + col)] = c;
 }
 
+uint8_t video_getc(video_t* v, uint32_t row, uint32_t col) {
+  if (col >= v->width || row >= v->height) {
+    return 0;
+  }
+  return v->videoram[2 * (row * v->width + col)];
+}
+
 void video_clear(video_t* v) {
   uint32_t i;
   for (i = 0; i < v->width * v->height; ++i) {

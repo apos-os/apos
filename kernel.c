@@ -25,29 +25,18 @@
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
 #include "dev/video/vga.h"
+#include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "test/kernel_tests.h"
 
 void pic_init();
 
+static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
-static uint32_t cursor_x = 0;
-static uint32_t cursor_y = 0;
-
-void clear() {
-  cursor_x = cursor_y = 0;
-  video_clear(g_video);
-}
 
 void print(const char* msg) {
   while (*msg) {
-    if (*msg == '\n') {
-      cursor_y++;
-      cursor_x = 0;
-    } else {
-      video_setc(g_video, cursor_y, cursor_x, *msg);
-      cursor_x++;
-    }
+    vterm_putc(g_vterm, *msg);
     ++msg;
   }
 }
@@ -72,10 +61,7 @@ static void add_timers() {
 }
 
 static void keyboard_cb(char c) {
-  char buf[2];
-  buf[0] = c;
-  buf[1] = '\0';
-  print(buf);
+  vterm_putc(g_vterm, c);
 }
 
 static void io_init() {
@@ -86,6 +72,7 @@ static void io_init() {
   vkeyboard_set_handler(kbd, &keyboard_cb);
 
   g_video = video_get_default();
+  g_vterm = vterm_create(g_video);
 }
 
 void kmain(memory_info_t* meminfo) {
@@ -109,15 +96,15 @@ void kmain(memory_info_t* meminfo) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
+  io_init();
+
   klog("timer_init()\n");
   timer_init();
   add_timers();
 
-  io_init();
-
   klog("initialization finished...\n");
 
-  clear();
+  vterm_clear(g_vterm);
   print("APOO\n");
 
   print("meminfo: 0x");
@@ -131,6 +118,7 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->lower_memory:      0x"); print(utoa_hex(meminfo->lower_memory));
   print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
+  vterm_clear(g_vterm);
 
   // interrupt_clobber_test();
 
@@ -234,7 +222,7 @@ void check_frame(uint32_t frame_start, uint32_t x) {
 }
 
 void page_frame_alloc_test() {
-  clear();
+  vterm_clear(g_vterm);
   print("page_frame_alloc test\n");
 
   // Total allocator test.
