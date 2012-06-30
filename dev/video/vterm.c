@@ -85,9 +85,11 @@ void vterm_putc(vterm_t* t, uint8_t c) {
   if (t->cursor_y >= t->vheight) {
     scroll(t, t->cursor_y - t->vheight + 1);
   }
+  video_move_cursor(t->video, t->cursor_y, t->cursor_x);
 }
 
 void vterm_clear(vterm_t* t) {
   video_clear(t->video);
   t->cursor_x = t->cursor_y = 0;
+  video_move_cursor(t->video, t->cursor_y, t->cursor_x);
 }

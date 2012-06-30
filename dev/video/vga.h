@@ -21,6 +21,9 @@
 
 typedef struct video video_t;
 
+// Initialize the VGA subsystem.
+void video_vga_init();
+
 // Returns a video_t associated with the default display.
 video_t* video_get_default();
 
@@ -36,5 +39,8 @@ uint8_t video_getc(video_t* v, uint32_t row, uint32_t col);
 
 // Clears the display.
 void video_clear(video_t* v);
+
+// Moves the cursor.
+void video_move_cursor(video_t* v, uint32_t row, uint32_t col);
 
 #endif

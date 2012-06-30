@@ -69,6 +69,7 @@ static void io_init() {
   kbd = vkeyboard_create();
   KASSERT(ps2_keyboard_init(kbd));
 
+  video_vga_init();
   vkeyboard_set_handler(kbd, &keyboard_cb);
 
   g_video = video_get_default();

@@ -14,10 +14,30 @@
 
 #include <stdint.h>
 
+#include "common/io.h"
 #include "common/kassert.h"
 
 #include "dev/video/vga.h"
 
+#define MISC_OUTPUT_REG_READ 0x3CC
+#define MISC_OUTPUT_REG_WRITE 0x3C2
+
+#define MISC_OUTPUT_REG_IOAS 0x01
+
+#define CRT_PORT_ADDR 0x3D4
+#define CRT_PORT_DATA 0x3D5
+
+#define CRT_START_ADDR 0x0A
+#define CRT_START_CURSOR_DISABLE 0x20
+#define CRT_START_CURSOR_START 0x0F
+
+#define CRT_END_ADDR 0x0B
+#define CRT_END_CURSOR_END 0x0F
+
+#define CRT_CURSOR_LOW_ADDR  0x0F
+#define CRT_CURSOR_HIGH_ADDR 0x0E
+
+// This struct is sort of a lie...there's only one VGA display available.
 struct video {
   uint8_t* videoram;
   uint32_t width;
@@ -25,6 +45,21 @@ struct video {
 };
 
 static video_t g_video;
+
+void video_vga_init() {
+  // Make sure our CRT controller register is in "color" mode.
+  uint8_t c = inb(MISC_OUTPUT_REG_READ);
+  c |= MISC_OUTPUT_REG_IOAS;
+  outb(MISC_OUTPUT_REG_WRITE, c);
+
+  // Enable the cursor.
+  uint8_t orig_addr = inb(CRT_PORT_ADDR);
+  outb(CRT_PORT_ADDR, CRT_START_ADDR);
+  c = inb(CRT_PORT_DATA);
+  c &= ~CRT_START_CURSOR_DISABLE;
+  outb(CRT_PORT_DATA, c);
+  outb(CRT_PORT_ADDR, orig_addr);
+}
 
 video_t* video_get_default() {
   g_video.videoram = (uint8_t*)0xC00B8000;
@@ -61,4 +96,15 @@ void video_clear(video_t* v) {
     v->videoram[i*2] = ' ';
     v->videoram[i*2+1] = 0x07;
   }
+}
+
+void video_move_cursor(video_t* v, uint32_t row, uint32_t col) {
+  const uint16_t cursor_pos = row * v->width + col;
+
+  uint8_t orig_addr = inb(CRT_PORT_ADDR);
+  outb(CRT_PORT_ADDR, CRT_CURSOR_LOW_ADDR);
+  outb(CRT_PORT_DATA, cursor_pos & 0xFF);
+  outb(CRT_PORT_ADDR, CRT_CURSOR_HIGH_ADDR);
+  outb(CRT_PORT_DATA, (cursor_pos >> 8) & 0xFF);
+  outb(CRT_PORT_ADDR, orig_addr);
 }
