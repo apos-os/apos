@@ -28,6 +28,22 @@ struct vterm {
   uint32_t vwidth, vheight;
 };
 
+// Scroll down a given nmuber of lines.
+static void scroll(vterm_t* t, int amt) {
+  KASSERT(amt >= 0);
+
+  for (uint32_t row = 0; row < t->vheight; ++row) {
+    for (uint32_t col = 0; col < t->vwidth; col++) {
+      uint8_t newc = ' ';
+      if (row + amt < t->vheight) {
+        newc = video_getc(t->video, row + amt, col);
+      }
+      video_setc(t->video, row, col, newc);
+    }
+  }
+  t->cursor_y -= amt;
+}
+
 vterm_t* vterm_create(video_t* v) {
   vterm_t* term = (vterm_t*)kmalloc(sizeof(vterm_t));
   term->video = v;
@@ -57,14 +73,18 @@ void vterm_putc(vterm_t* t, uint8_t c) {
     video_setc(t->video, t->cursor_y, t->cursor_x, ' ');
   } else {
     // Printable character.
-    if (t->cursor_x >= t->vwidth) {
-      t->cursor_x = 0;
-      t->cursor_y++;
-    }
     video_setc(t->video, t->cursor_y, t->cursor_x, c);
     t->cursor_x++;
   }
-  // TODO(aoates): scroll if needed.
+
+  // Wrap to nenxt line if needed.
+  if (t->cursor_x >= t->vwidth) {
+    t->cursor_x = 0;
+    t->cursor_y++;
+  }
+  if (t->cursor_y >= t->vheight) {
+    scroll(t, t->cursor_y - t->vheight + 1);
+  }
 }
 
 void vterm_clear(vterm_t* t) {
