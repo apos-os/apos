@@ -108,7 +108,7 @@ void irq_handler(uint32_t irq, uint32_t interrupt) {
   if (g_handlers[irq] != 0x0) {
     g_handlers[irq]();
   }
-  if (irq != 0) {
-    klogf("irq: 0x%x\n", irq);
-  }
+  //if (irq != 0) {
+  //  klogf("irq: 0x%x\n", irq);
+  //}
 }
