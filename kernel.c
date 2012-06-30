@@ -24,37 +24,31 @@
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
+#include "dev/video/vga.h"
 #include "dev/timer.h"
 #include "test/kernel_tests.h"
 
 void pic_init();
 
-const uint32_t kScreenWidth = 80;
-const uint32_t kScreenHeight = 24;
-
-// VIRTUAL address of the framebuffer.
-static unsigned char* const videoram = (unsigned char *)0xC00B8000;
-static uint32_t cursor = 0;
+static video_t* g_video = 0;
+static uint32_t cursor_x = 0;
+static uint32_t cursor_y = 0;
 
 void clear() {
-  cursor = 0;
-  uint32_t i;
-  for (i = 0; i < kScreenWidth * kScreenHeight; ++i) {
-    videoram[i*2] = ' ';
-    videoram[i*2+1] = 0x07;
-  }
+  cursor_x = cursor_y = 0;
+  video_clear(g_video);
 }
 
 void print(const char* msg) {
   while (*msg) {
     if (*msg == '\n') {
-      cursor = ((cursor / kScreenWidth) + 1) * kScreenWidth - 1;
+      cursor_y++;
+      cursor_x = 0;
     } else {
-      videoram[cursor*2] = *msg;
-      videoram[cursor*2+1] = 0x07; /* light grey (7) on black (0). */
+      video_setc(g_video, cursor_y, cursor_x, *msg);
+      cursor_x++;
     }
     ++msg;
-    ++cursor;
   }
 }
 
@@ -70,8 +64,7 @@ static void tick() {
   static const char* beat = "oO";
   i = (i + 1) % 2;
 
-  videoram[(kScreenWidth-1)*2] = beat[i];
-  videoram[(kScreenWidth-1)*2+1] = 0x07;
+  video_setc(g_video, 0, video_get_width(g_video)-1, beat[i]);
 }
 
 static void add_timers() {
@@ -91,6 +84,8 @@ static void io_init() {
   KASSERT(ps2_keyboard_init(kbd));
 
   vkeyboard_set_handler(kbd, &keyboard_cb);
+
+  g_video = video_get_default();
 }
 
 void kmain(memory_info_t* meminfo) {
