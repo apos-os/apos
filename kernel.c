@@ -23,6 +23,7 @@
 #include "page_alloc.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
+#include "dev/keyboard/keyboard.h"
 #include "dev/timer.h"
 #include "test/kernel_tests.h"
 
@@ -77,6 +78,21 @@ static void add_timers() {
   KASSERT(register_timer_callback(1000, &tick));
 }
 
+static void keyboard_cb(char c) {
+  char buf[2];
+  buf[0] = c;
+  buf[1] = '\0';
+  print(buf);
+}
+
+static void io_init() {
+  static vkeyboard_t* kbd = 0x0;
+  kbd = vkeyboard_create();
+  KASSERT(ps2_keyboard_init(kbd));
+
+  vkeyboard_set_handler(kbd, &keyboard_cb);
+}
+
 void kmain(memory_info_t* meminfo) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
@@ -102,6 +118,8 @@ void kmain(memory_info_t* meminfo) {
   timer_init();
   add_timers();
 
+  io_init();
+
   klog("initialization finished...\n");
 
   clear();
@@ -120,7 +138,6 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
 
   // interrupt_clobber_test();
-  KASSERT(ps2_keyboard_init());
 
   //print("\n");
   //char buf[2];

@@ -20,10 +20,13 @@
 #ifndef APOO_KEYBOARD_PS2_KEYBOARD_H
 #define APOO_KEYBOARD_PS2_KEYBOARD_H
 
+#include "dev/keyboard/keyboard.h"
+
 // Initializes the PS/2 keyboard.  Returns 1 if a keyboard was found and
-// initalization succeeded.
+// initalization succeeded.  Attaches the keyboard to the given virtual
+// keyboard, if non-NULL.
 //
 // REQUIRES: ps2_init() was called and successful.
-int ps2_keyboard_init();
+int ps2_keyboard_init(vkeyboard_t* vkbd);
 
 #endif

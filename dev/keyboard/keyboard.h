@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Code for,
-//  a) receiving interrupts (IRQs) from the keyboard, and reading its data
-//  a) transforming raw scancodes from the PS/2 keyboard into portable constants
-//  b) tracking keyboard state and generating an ASCII stream from a stream of
-//     keyboard events.
+// Code for tracking keyboard state and generating an ASCII stream from a
+// stream of keyboard events.  Hardward drivers (like PS/2) are attached to a
+// particular "virtual keyboard", which receives raw key events and translates
+// that into ASCII output for consumption (e.g. by a line discipline).
 #ifndef APOO_KEYBOARD_KEYBOARD_H
 #define APOO_KEYBOARD_KEYBOARD_H
 
+#include <stdint.h>
+
+// Raw key codes.  Provided by hardward drivers.
 #define NONE 0
 #define KEY_0 1
 #define KEY_1 2
@@ -123,5 +125,27 @@
 #define KEY_BSLASH 100
 #define KEY_RBRACKET 101
 #define KEY_BACKTICK 102
+
+#define KEY_MAX_KEY 102
+
+typedef struct vkeyboard vkeyboard_t;
+
+// Create a virtual keyboard.
+vkeyboard_t* vkeyboard_create();
+
+// Send a raw keycode (and whether the event is key-up or key-down) to a virtual
+// keyboard.
+void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t ip);
+
+// Attach the output of a virtual keyboard to the given handler.  When the
+// keyboard generates ASCII output, it will invoke the handler.  Each keyboard
+// can only have one handler at a time.
+//
+// NOTE: the handler will likely be invoked on an interrupt context, so it
+// shouldn't block.
+//
+// NOTE: this should be called before any keycodes are sent.
+typedef void (*vkeyboard_handler_t)(char);
+void vkeyboard_set_handler(vkeyboard_t* kbd, vkeyboard_handler_t handler);
 
 #endif
