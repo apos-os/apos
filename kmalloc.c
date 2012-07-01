@@ -74,6 +74,9 @@ static block_t* split_block(block_t* b, uint32_t n) {
   new_block->next = b->next;
 
   b->length = n;
+  if (b->next) {
+    b->next->prev = new_block;
+  }
   b->next = new_block;
 
   return b;

@@ -20,6 +20,23 @@
 #include "memory.h"
 #include "test/ktest.h"
 
+static void verify_list(block_t* lst) {
+  while (lst) {
+    // Dereference the pointer to make sure it's valid.
+    uint8_t x = *((uint8_t*)lst);
+    x = x;  // appease the compiler
+
+    if (lst->prev) {
+      KASSERT(lst->prev->next == lst);
+    }
+    if (lst->next) {
+      KASSERT(lst->next->prev == lst);
+    }
+
+    lst = lst->next;
+  }
+}
+
 static int list_length(block_t* lst) {
   int len = 0;
   while (lst) {
@@ -88,6 +105,7 @@ static void basic_test() {
 
   // Make sure it's on the list.
   block_t* list_root = kmalloc_internal_get_block_list();
+  verify_list(list_root);
   KEXPECT_EQ(3, list_length(list_root));
   KEXPECT_EQ((uint32_t)x_block, (uint32_t)list_root->next);
   KEXPECT_EQ(PAGE_SIZE + sizeof(block_t), list_size(list_root));
@@ -99,11 +117,13 @@ static void basic_test() {
   void* x4 = kmalloc(160);
 
   // We should still have only allocated one page.
+  verify_list(list_root);
   KEXPECT_EQ(PAGE_SIZE + sizeof(block_t), list_size(list_root));
   KEXPECT_EQ(100 + 128 + 145 + 160, list_used_size(list_root));
 
   // Allocate a big chunk.
   void* x5 = kmalloc(0xf00);
+  verify_list(list_root);
 
   // We should have needed another page for that.
   KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
@@ -112,6 +132,7 @@ static void basic_test() {
 
   // Free a block in the middle.
   kfree(x3);
+  verify_list(list_root);
 
   KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
   KEXPECT_EQ(0xf00 + 100 + 128 + 160, list_used_size(list_root));
@@ -122,6 +143,7 @@ static void basic_test() {
   kfree(x2);
   kfree(x4);
   kfree(x5);
+  verify_list(list_root);
 
   // Make sure it's all merged together.
   KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
@@ -171,6 +193,7 @@ static void stress_test() {
     if (i % 20 == 0) {
       klogf("i = %i, ptr_idx = %i\n", i, ptr_idx);
     }
+    verify_list(kmalloc_internal_get_block_list());
   }
 
   klogf("freeing everything that's left...\n");
