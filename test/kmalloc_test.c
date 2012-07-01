@@ -14,9 +14,44 @@
 
 #include <stdint.h>
 
+#include "common/kassert.h"
 #include "kmalloc.h"
 #include "kmalloc-internal.h"
+#include "memory.h"
 #include "test/ktest.h"
+
+static int list_length(block_t* lst) {
+  int len = 0;
+  while (lst) {
+    len++;
+    lst = lst->next;
+  }
+  return len;
+}
+
+// Returns the size (in bytes) of the list (including data and headers of each
+// element).
+static int list_size(block_t* lst) {
+  int len = 0;
+  while (lst) {
+    len += sizeof(block_t);
+    len += lst->length;
+    lst = lst->next;
+  }
+  return len;
+}
+
+// Return the DATA (no headers) size of all used space on the list.
+static int list_used_size(block_t* lst) {
+  int len = 0;
+  while (lst) {
+    if (!lst->free) {
+      len += lst->length;
+    }
+    lst = lst->next;
+  }
+  return len;
+}
 
 static void macros_test() {
   KTEST_BEGIN("kmalloc macros");
@@ -30,8 +65,136 @@ static void macros_test() {
   KEXPECT_EQ(sizeof(block_t) + 100, BLOCK_SIZE(block));
 }
 
+static void init_test() {
+  KTEST_BEGIN("kmalloc init");
+
+  kmalloc_init();
+  block_t* list = kmalloc_internal_get_block_list();
+  KEXPECT_NE(0, (uint32_t)list);
+  KEXPECT_EQ(0, (uint32_t)list->prev);
+  KEXPECT_EQ(0, (uint32_t)list->next);
+  KEXPECT_EQ(0, list->length);
+  KEXPECT_EQ(0, list->free);
+}
+
+static void basic_test() {
+  KTEST_BEGIN("kmalloc malloc");
+
+  kmalloc_init();
+  void* x = kmalloc(100);
+  block_t* x_block = (block_t*)((uint32_t)x - sizeof(block_t));
+  KEXPECT_EQ(0, x_block->free);
+  KEXPECT_EQ(100, x_block->length);
+
+  // Make sure it's on the list.
+  block_t* list_root = kmalloc_internal_get_block_list();
+  KEXPECT_EQ(3, list_length(list_root));
+  KEXPECT_EQ((uint32_t)x_block, (uint32_t)list_root->next);
+  KEXPECT_EQ(PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(100, list_used_size(list_root));
+
+  // Allocate some more blocks.
+  void* x2 = kmalloc(128);
+  void* x3 = kmalloc(145);
+  void* x4 = kmalloc(160);
+
+  // We should still have only allocated one page.
+  KEXPECT_EQ(PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(100 + 128 + 145 + 160, list_used_size(list_root));
+
+  // Allocate a big chunk.
+  void* x5 = kmalloc(0xf00);
+
+  // We should have needed another page for that.
+  KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(0xf00 + 100 + 128 + 145 + 160, list_used_size(list_root));
+  KEXPECT_EQ(8, list_length(list_root));
+
+  // Free a block in the middle.
+  kfree(x3);
+
+  KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(0xf00 + 100 + 128 + 160, list_used_size(list_root));
+  KEXPECT_EQ(8, list_length(list_root));
+
+  // Free the rest.
+  kfree(x);
+  kfree(x2);
+  kfree(x4);
+  kfree(x5);
+
+  // Make sure it's all merged together.
+  KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(0, list_used_size(list_root));
+  KEXPECT_EQ(2, list_length(list_root));
+
+  kmalloc_log_state();
+}
+
+static uint16_t rand() {
+  static uint16_t p = 0xbeef;
+  static uint16_t n = 0xabcd;
+  p = n;
+  uint32_t x = n * n;
+  n = (x >> 8) & 0x0000ffff;
+  return p ^ n;
+}
+
+static void stress_test() {
+  KTEST_BEGIN("stress test");
+  kmalloc_init();
+
+  void* ptrs[500];
+  int ptr_idx = 0;
+  int total_allocs = 0;
+  int max_alloced = 0;
+
+  for (int i = 0; i < 500; ++i) {
+    int threshold = 2;
+    if (ptr_idx < 200) {
+      threshold = 3;
+    } else if (ptr_idx > 400) {
+      threshold = 1;
+    }
+    if ((ptr_idx == 0 || rand() % 4 < threshold) && ptr_idx < 500) {
+      ptrs[ptr_idx++] = kmalloc(rand() % 3900);
+      total_allocs++;
+    } else {
+      KASSERT(ptr_idx > 0);
+      kfree(ptrs[--ptr_idx]);
+    }
+
+    if (ptr_idx > max_alloced) {
+      max_alloced = ptr_idx;
+    }
+
+    if (i % 20 == 0) {
+      klogf("i = %i, ptr_idx = %i\n", i, ptr_idx);
+    }
+  }
+
+  klogf("freeing everything that's left...\n");
+  while (ptr_idx > 0) {
+    kfree(ptrs[--ptr_idx]);
+  }
+
+  klogf("\npost-thrash\n");
+  klogf("total allocs: %i\npeak allocs: %i\n", total_allocs, max_alloced);
+  klog("---------------\n");
+  kmalloc_log_state();
+  klog("---------------\n");
+
+  block_t* list_root = kmalloc_internal_get_block_list();
+  KEXPECT_EQ(2, list_length(list_root));
+  KEXPECT_EQ(0, (list_size(list_root) - sizeof(block_t))% PAGE_SIZE);  // even # of pages
+  KEXPECT_EQ(0, list_used_size(list_root));
+}
+
 void kmalloc_test() {
   KTEST_SUITE_BEGIN("kmalloc");
 
   macros_test();
+  init_test();
+  basic_test();
+  stress_test();
 }

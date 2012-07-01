@@ -182,6 +182,7 @@ void* kmalloc(uint32_t n) {
 void kfree(void* x) {
   block_t* b = (block_t*)((uint8_t*)x - sizeof(block_t));
   KASSERT(b->magic == KALLOC_MAGIC);
+  KASSERT(b->free == 0);
   b->free = 1;
   fill_block(b, 0xDEADBEEF);
 

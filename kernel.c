@@ -43,10 +43,6 @@ void print(const char* msg) {
 
 void utoa_test();
 void paging_test();
-void kmalloc_test1();
-void kmalloc_test2();
-void kmalloc_test3();
-void kmalloc_test4();
 
 static void tick() {
   static uint8_t i = 0;
@@ -136,7 +132,6 @@ void kmain(memory_info_t* meminfo) {
   //kstring_test();
   //kprintf_test();
   //page_frame_alloc_test();
-  //kmalloc_test4();
   //print("\n\nkmain: 0x");
   //print(utoa_hex((uint32_t)&kmain));
   //print("\nutoa_test: 0x");
@@ -282,144 +277,4 @@ void page_frame_alloc_test() {
 
   //print("double-free: should kassert");
   //page_frame_free(page4);
-}
-
-void kmalloc_test1() {
-  klog("initial state\n");
-  klog("---------------\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  void* x = kmalloc(128);
-  klog("kmalloc(128) => ");
-  klog(utoa_hex((uint32_t)x));
-  klog("\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  void* x2 = kmalloc(128);
-  klog("kmalloc(128) => ");
-  klog(utoa_hex((uint32_t)x2));
-  klog("\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  void* x3 = kmalloc(256);
-  klog("kmalloc(256) => ");
-  klog(utoa_hex((uint32_t)x3));
-  klog("\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  klog("<allocating a too-large block>\n");
-  void* x4 = kmalloc(0xf00);
-  klog("kmalloc(0xf00) => ");
-  klog(utoa_hex((uint32_t)x4));
-  klog("\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  klog("<exhaust the small amount of page left from that last alloc>\n");
-  void* x5 = kmalloc(256);
-  klog("kmalloc(256) => ");
-  klog(utoa_hex((uint32_t)x5));
-  klog("\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-}
-
-void kmalloc_test2() {
-  klog("initial state\n");
-  klog("---------------\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  void* x1 = kmalloc(128);
-  klogf("kmalloc(128) => %x\n", x1);
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  kfree(x1);
-  klogf("free(%x)\n", x1);
-  kmalloc_log_state();
-  klog("---------------\n");
-}
-
-// Thrashing test (repeatedly alloc and free small blocks)
-void kmalloc_test3() {
-  klog("initial state\n");
-  klog("---------------\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  for (int i = 0; i < 500; ++i) {
-    void* x1 = kmalloc(128);
-    void* x2 = kmalloc(128);
-    void* x3 = kmalloc(128);
-
-    kfree(x3);
-    kfree(x2);
-    kfree(x1);
-  }
-
-  klogf("\npost-thrash\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-}
-
-uint16_t rand() {
-  static uint16_t p = 0xbeef;
-  static uint16_t n = 0xabcd;
-  p = n;
-  uint32_t x = n * n;
-  n = (x >> 8) & 0x0000ffff;
-  return p ^ n;
-}
-
-void kmalloc_test4() {
-  klog("initial state\n");
-  klog("---------------\n");
-  kmalloc_log_state();
-  klog("---------------\n");
-
-  void* ptrs[500];
-  int ptr_idx = 0;
-  int total_allocs = 0;
-  int max_alloced = 0;
-
-  for (int i = 0; i < 500; ++i) {
-    int threshold = 2;
-    if (ptr_idx < 200) {
-      threshold = 3;
-    } else if (ptr_idx > 400) {
-      threshold = 1;
-    }
-    if ((ptr_idx == 0 || rand() % 4 < threshold) && ptr_idx < 500) {
-      ptrs[ptr_idx++] = kmalloc(rand() % 3900);
-      total_allocs++;
-    } else {
-      KASSERT(ptr_idx > 0);
-      kfree(ptrs[--ptr_idx]);
-    }
-
-    if (ptr_idx > max_alloced) {
-      max_alloced = ptr_idx;
-    }
-
-    if (i % 50 == 0) {
-      klogf("i = %i, ptr_idx = %i\n", i, ptr_idx);
-      kmalloc_log_state();
-      klogf("---------------\n");
-    }
-  }
-
-  while (ptr_idx > 0) {
-    kfree(ptrs[--ptr_idx]);
-  }
-
-  klogf("\npost-thrash\n");
-  klogf("total allocs: %i\npeak allocs: %i\n", total_allocs, max_alloced);
-  klog("---------------\n");
-  kmalloc_log_state();
-  klog("---------------\n");
 }
