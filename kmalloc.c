@@ -42,15 +42,22 @@ static void init_block(block_t* b) {
   b->next = 0;
 }
 
-// Fill the given block's data with a repeating pattern.
-static void fill_block(block_t* b, uint32_t pattern) {
+// Fill the given block with a repeating pattern.
+static void fill_buffer(uint8_t* buf, uint32_t n, uint32_t pattern) {
   uint32_t i = 0;
-  while (i < b->length) {
-    int len = (b->length - i >= 4) ? 4 : (b->length - i);
-    kmemcpy(&(b->data[i]), &pattern, len);
-    i += len;
+  uint32_t i2 = 0;
+  while (i < n) {
+    buf[i] = ((uint8_t*)&pattern)[i2];
+    i2 = (i2 + 1) % 4;
+    i++;
   }
 }
+
+// Fill the given block's data with a repeating pattern.
+static void fill_block(block_t* b, uint32_t pattern) {
+  fill_buffer(b->data, b->length, pattern);
+}
+
 // Takes a block and a required size, and (if it's large enough), splits the
 // block into two blocks, adding them both to the block list as needed.
 static block_t* split_block(block_t* b, uint32_t n) {
@@ -85,7 +92,9 @@ static block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
   }
   a->next = b->next;
   a->length += BLOCK_SIZE(b);
-  fill_block(a, 0xDEADBEEF);
+
+  // Clobber the header of b.
+  fill_buffer((uint8_t*)b, sizeof(block_t), 0xDEADBEEF);
   return a;
 }
 
