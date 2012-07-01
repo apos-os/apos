@@ -12,14 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#include <stdint.h>
 
-void interrupt_clobber_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
+#include "kmalloc.h"
+#include "kmalloc-internal.h"
+#include "test/ktest.h"
 
-#endif
+static void macros_test() {
+  KTEST_BEGIN("kmalloc macros");
+
+  uint8_t block_mem[120];
+  block_t* block = (block_t*)&block_mem;
+  block->length = 100;
+
+  KEXPECT_EQ((uint32_t)block, BLOCK_START(block));
+  KEXPECT_EQ((uint32_t)block + sizeof(block_t) + 100, BLOCK_END(block));
+  KEXPECT_EQ(sizeof(block_t) + 100, BLOCK_SIZE(block));
+}
+
+void kmalloc_test() {
+  KTEST_SUITE_BEGIN("kmalloc");
+
+  macros_test();
+}

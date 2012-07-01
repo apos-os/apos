@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "kmalloc.h"
+#include "kmalloc-internal.h"
 
 #include <stdint.h>
 
@@ -22,39 +23,8 @@
 #include "memory.h"
 #include "page_alloc.h"
 
-// Don't bother splitting a block if it'll be smaller than this (bytes).
-#define KALLOC_MIN_BLOCK_SIZE 8
-
-#define KALLOC_MAGIC 0xAB
-
-// Every memory block has the following structure:
-// | free (8 bits) | length (32 bits) | prev (32 bits) | next (32 bits) | data (length bytes) |
-// That is, a header with the block length (not including the header), a pointer
-// to the next block in chain, and then the data.
-//
-// In general, blocks are passed around by pointers to the start of their
-// headers.  When we give a block to (or take on from) a caller, we use a
-// pointer to the data.
-struct block {
-  uint8_t magic;
-  uint8_t free;
-  uint32_t length;
-  struct block* prev;
-  struct block* next;
-  uint8_t data[0];
-};
-typedef struct block block_t;
-
-// Returns the address (as a uint32_t) of the start/end of the block_t,
-// including header and data.
-#define BLOCK_START(b) ((uint32_t)b)
-#define BLOCK_END(b) ((uint32_t)b + sizeof(block_t) + b->length)
-
-// Returns the total size of a block_t, including headers and data.
-#define BLOCK_SIZE(b) (sizeof(block_t) + b->length)
-
 // Global block list.
-block_t* g_block_list = 0;
+static block_t* g_block_list = 0;
 
 void kmalloc_init() {
   static block_t head;
@@ -232,4 +202,8 @@ void kmalloc_log_state() {
 
     cblock = cblock->next;
   }
+}
+
+block_t* kmalloc_internal_get_block_list() {
+  return g_block_list;
 }
