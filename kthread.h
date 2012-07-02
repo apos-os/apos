@@ -16,7 +16,16 @@
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
-typedef struct kthread kthread_t;
+// NOTE: if you update this structure, make sure you update kthread_asm.s as
+// well.
+typedef struct {
+  uint32_t id;
+  uint32_t active;  // Redundant with g_current_thread.
+  uint32_t esp;
+  void* retval;
+  struct kthread* prev;
+  struct kthread* next;
+} kthread_t;
 
 // Initialize the kthreads.
 void kthread_init();

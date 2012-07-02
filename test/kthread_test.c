@@ -12,15 +12,30 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#include <stdint.h>
 
-void interrupt_clobber_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kthread_test();
+#include "common/kassert.h"
+#include "kmalloc.h"
+#include "kthread.h"
+#include "test/ktest.h"
 
-#endif
+static void* thread_func(void* arg) {
+  int id = (int)arg;
+  klogf("THREAD STARTED: %d\n", id);
+  for (int i = 0; i < 3; ++i) {
+    klogf("THREAD ITER: %d (iter %d)\n", id, i);
+  }
+  return (void*)0;
+}
+
+static void basic_test() {
+  kthread_t thread1;
+  KASSERT(kthread_create(&thread1, &thread_func, (void*)1));
+  kthread_yield();
+}
+
+void kthread_test() {
+  KTEST_SUITE_BEGIN("kthread_test");
+
+  basic_test();
+}

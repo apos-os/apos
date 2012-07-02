@@ -23,15 +23,6 @@
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
-struct kthread {
-  uint32_t id;
-  uint8_t active;  // Redundant with g_current_thread.
-  uint32_t esp;
-  void* retval;
-  struct kthread* prev;
-  struct kthread* next;
-};
-
 // A linked list of kthreads.
 typedef struct {
   struct kthread* head;
@@ -87,7 +78,7 @@ static void kthread_list_init(kthread_list_t* lst) {
   lst->head = lst->tail = 0x0;
 }
 
-static void swap_context(kthread_t* target);
+static void kthread_swap_context(kthread_t* src, kthread_t* target);
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
   start_routine(arg);
@@ -151,7 +142,7 @@ void kthread_yield() {
 
   kthread_t* new_thread = kthread_pop(&g_run_queue);
   kthread_push_back(&g_run_queue, g_current_thread);
-  swap_context(new_thread);
+  kthread_swap_context(g_current_thread, new_thread);
 }
 
 void kthread_exit(void* x) {
@@ -162,35 +153,36 @@ void kthread_exit(void* x) {
   // TODO(aoates): we need an idle thread to run here!
   KASSERT(!kthread_empty(&g_run_queue));
   kthread_t* new_thread = kthread_pop(&g_run_queue);
-  swap_context(new_thread);
+  kthread_swap_context(g_current_thread, new_thread);
   // Never get here!
   KASSERT(0);
 }
 
 
-static void swap_context(kthread_t* target) {
-  g_current_thread->active = 0;
-  // interrupts!
-  __asm__ __volatile__(
-      "push %%eax\n\t"
-      "push %%ecx\n\t"
-      "push %%edx\n\t"
-      "push %%ebx\n\t"
-      "push %%ebp\n\t"
-      "push %%esi\n\t"
-      "push %%edi\n\t"
-      "mov %%esp, %0\n\t"
-      "mov %1, %%esp\n\t"
-      "pop %%edi\n\t"
-      "pop %%esi\n\t"
-      "pop %%ebp\n\t"
-      "pop %%ebx\n\t"
-      "pop %%edx\n\t"
-      "pop %%ecx\n\t"
-      "pop %%eax\n\t"
-      : "=m"(g_current_thread->esp) : "m"(target->esp));
-  // assert(cs == 0x08)
-  // assert(ds == 0x10)
-  g_current_thread = target;
-  g_current_thread->active = 1;
-}
+//static void swap_context(kthread_t* target) {
+//  kthread_swap_cont
+//  g_current_thread->active = 0;
+//  // interrupts!
+//  __asm__ __volatile__(
+//      "push %%eax\n\t"
+//      "push %%ecx\n\t"
+//      "push %%edx\n\t"
+//      "push %%ebx\n\t"
+//      "push %%ebp\n\t"
+//      "push %%esi\n\t"
+//      "push %%edi\n\t"
+//      "mov %%esp, %0\n\t"
+//      "mov %1, %%esp\n\t"
+//      "pop %%edi\n\t"
+//      "pop %%esi\n\t"
+//      "pop %%ebp\n\t"
+//      "pop %%ebx\n\t"
+//      "pop %%edx\n\t"
+//      "pop %%ecx\n\t"
+//      "pop %%eax\n\t"
+//      : "=m"(g_current_thread->esp) : "m"(target->esp));
+//  // assert(cs == 0x08)
+//  // assert(ds == 0x10)
+//  g_current_thread = target;
+//  g_current_thread->active = 1;
+//}

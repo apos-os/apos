@@ -19,6 +19,7 @@
 #include "common/kstring.h"
 #include "dev/interrupts.h"
 #include "kmalloc.h"
+#include "kthread.h"
 #include "memory.h"
 #include "page_alloc.h"
 #include "dev/ps2.h"
@@ -99,6 +100,9 @@ void kmain(memory_info_t* meminfo) {
   timer_init();
   add_timers();
 
+  klog("kthread_init()\n");
+  kthread_init();
+
   klog("initialization finished...\n");
 
   vterm_clear(g_vterm);
@@ -117,7 +121,8 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
-  kmalloc_test();
+  kthread_test();
+  //kmalloc_test();
   // interrupt_clobber_test();
 
   //print("\n");
