@@ -116,6 +116,7 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
   // Allocate a stack for the thread.
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
   KASSERT(stack != 0x0);
+  thread->stack = stack;
   stack = (uint32_t*)((uint8_t*)stack + KTHREAD_STACK_SIZE - 4);
 
   // Set up the stack.

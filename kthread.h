@@ -25,6 +25,7 @@ struct kthread {
   void* retval;
   struct kthread* prev;
   struct kthread* next;
+  uint32_t* stack;  // The block of memory allocated for the thread's stack.
 };
 typedef struct kthread kthread_t;
 
