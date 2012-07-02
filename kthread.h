@@ -24,11 +24,15 @@ typedef struct {
   struct kthread* tail;
 } kthread_list_t;
 
+#define KTHREAD_RUNNING 0 // Currently running.
+#define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
+#define KTHREAD_DONE    2 // Finished.
+
 // NOTE: if you update this structure, make sure you update kthread_asm.s as
 // well.
 struct kthread {
   uint32_t id;
-  uint32_t active;  // Redundant with g_current_thread.
+  uint32_t state;
   uint32_t esp;
   void* retval;
   struct kthread* prev;

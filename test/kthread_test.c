@@ -27,7 +27,7 @@ static void* thread_func(void* arg) {
     kthread_yield();
   }
   klogf("THREAD %d: done\n", id);
-  return (void*)0;
+  return 0;
 }
 
 static void yield_test() {
@@ -42,11 +42,46 @@ static void yield_test() {
 }
 
 static void basic_test() {
+  KTEST_BEGIN("basic test");
   kthread_t thread1;
+  kthread_t thread2;
+  kthread_t thread3;
+
   KASSERT(kthread_create(&thread1, &thread_func, (void*)1));
+  KASSERT(kthread_create(&thread2, &thread_func, (void*)2));
+  KASSERT(kthread_create(&thread3, &thread_func, (void*)3));
+
   kthread_join(&thread1);
+  kthread_join(&thread2);
+  kthread_join(&thread3);
 
   klogf("MAIN THREAD: done\n");
+}
+
+static void* kthread_exit_thread_func(void* arg) {
+  kthread_exit(arg);
+  KASSERT(0);
+  return 0;
+}
+
+static void kthread_exit_test() {
+  KTEST_BEGIN("kthread_exit() test");
+  kthread_t thread1;
+
+  KASSERT(kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
+  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(&thread1));
+}
+
+static void* kthread_return_thread_func(void* arg) {
+  return arg;
+}
+
+static void kthread_return_test() {
+  KTEST_BEGIN("explicit return test");
+  kthread_t thread1;
+
+  KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd));
+  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(&thread1));
 }
 
 void kthread_test() {
@@ -54,4 +89,6 @@ void kthread_test() {
 
   yield_test();
   basic_test();
+  kthread_exit_test();
+  kthread_return_test();
 }

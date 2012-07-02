@@ -88,7 +88,7 @@ static void kthread_list_init(kthread_list_t* lst) {
 }
 
 static void kthread_init_kthread(kthread_t* t) {
-  t->id = t->active = t->esp = 0;
+  t->id = t->esp = 0;
   t->retval = 0x0;
   t->prev = t->next = 0x0;
   t->stack = 0x0;
@@ -96,15 +96,20 @@ static void kthread_init_kthread(kthread_t* t) {
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
-  start_routine(arg);
-  kthread_exit(0);
+  void* retval = start_routine(arg);
+  kthread_exit(retval);
   // Should never get here.
   KASSERT(0);
 }
 
 static void* kthread_idle_thread_body(void* arg) {
+  int iter = 0;
   while(1) {
-    klogf("[idle thread]\n");
+    if (iter % 100000 == 0) {
+      klogf("[idle thread]\n");
+      iter = 0;
+    }
+    iter++;
     kthread_yield_no_reschedule();
   }
   return 0;
@@ -116,7 +121,7 @@ void kthread_init() {
   kthread_t* first = (kthread_t*)kmalloc(sizeof(kthread_t));
   KASSERT(first != 0x0);
   kthread_init_kthread(first);
-  first->active = 1;
+  first->state = KTHREAD_RUNNING;
   first->esp = 0;
   first->id = g_next_id++;
 
@@ -132,7 +137,7 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
                    void *arg) {
   kthread_init_kthread(thread);
   thread->id = g_next_id++;
-  thread->active = 0;
+  thread->state = KTHREAD_PENDING;
   thread->esp = 0;
   thread->retval = 0x0;
 
@@ -181,8 +186,11 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
 }
 
 void* kthread_join(kthread_t* thread) {
-  kthread_push_back(&thread->join_list, g_current_thread);
-  kthread_yield_no_reschedule();
+  if (thread->state != KTHREAD_DONE) {
+    kthread_push_back(&thread->join_list, g_current_thread);
+    kthread_yield_no_reschedule();
+    // TODO(aoates): clean up if no-one else is waiting on this thread.
+  }
   return thread->retval;
 }
 
@@ -195,6 +203,7 @@ static void kthread_yield_no_reschedule() {
     new_thread = g_idle_thread;
   }
   g_current_thread = new_thread;
+  new_thread->state = KTHREAD_RUNNING;
   kthread_swap_context(old_thread, new_thread);
 
   // Verify that we're back on the proper stack!
@@ -202,6 +211,7 @@ static void kthread_yield_no_reschedule() {
 }
 
 void kthread_yield() {
+  g_current_thread->state = KTHREAD_PENDING;
   kthread_push_back(&g_run_queue, g_current_thread);
   kthread_yield_no_reschedule();
 }
@@ -210,6 +220,14 @@ void kthread_exit(void* x) {
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
   g_current_thread->retval = x;
+  g_current_thread->state = KTHREAD_DONE;
+
+  // Schedule all the waiting threads.
+  kthread_t* t = kthread_pop(&g_current_thread->join_list);
+  while (t) {
+    kthread_push_back(&g_run_queue, t);
+    t = kthread_pop(&g_current_thread->join_list);
+  }
 
   // TODO(aoates): we need an idle thread to run here!
   kthread_yield_no_reschedule();
