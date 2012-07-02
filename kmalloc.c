@@ -177,6 +177,14 @@ void* kmalloc(uint32_t n) {
     cblock = new_page();
   }
 
+  // Keep allocating pages until we can fit it.
+  // TODO(aoates): this is a pretty crappy idea, and relies on us getting
+  // continuous pages back from the page allocator.  Fix this once we have real
+  // kernel virtual memory going.
+  while (cblock && cblock->length < n) {
+    cblock = new_page();
+  }
+
   if (!cblock || cblock->length < n) {
     return 0;
   }

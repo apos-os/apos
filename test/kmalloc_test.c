@@ -153,6 +153,36 @@ static void basic_test() {
   kmalloc_log_state();
 }
 
+static void large_alloc_test() {
+  KTEST_BEGIN("kmalloc large alloc");
+
+  void* x1 = kmalloc(PAGE_SIZE / 2);
+  kmalloc_log_state();
+  void* x2 = kmalloc(PAGE_SIZE);
+  kmalloc_log_state();
+  void* x3 = kmalloc(PAGE_SIZE * 2);
+  kmalloc_log_state();
+  void* x4 = kmalloc(PAGE_SIZE * 4);
+  kmalloc_log_state();
+  verify_list(kmalloc_internal_get_block_list());
+
+  KEXPECT_NE(0x0, (uint32_t)x1);
+  KEXPECT_NE(0x0, (uint32_t)x2);
+  KEXPECT_NE(0x0, (uint32_t)x3);
+  KEXPECT_NE(0x0, (uint32_t)x4);
+
+  if (x1 && x2 && x3 && x4) {
+    kfree(x1);
+    kfree(x2);
+    kfree(x3);
+    kfree(x4);
+  }
+  verify_list(kmalloc_internal_get_block_list());
+
+  KEXPECT_EQ(0, list_used_size(kmalloc_internal_get_block_list()));
+  kmalloc_log_state();
+}
+
 static uint16_t rand() {
   static uint16_t p = 0xbeef;
   static uint16_t n = 0xabcd;
@@ -219,5 +249,6 @@ void kmalloc_test() {
   macros_test();
   init_test();
   basic_test();
+  large_alloc_test();
   stress_test();
 }
