@@ -19,6 +19,9 @@
 #include "kthread.h"
 #include "test/ktest.h"
 
+// TODO(aoates): other things to test:
+//  * multiple threads join()'d onto one thread
+
 static void* thread_func(void* arg) {
   int id = (int)arg;
   klogf("THREAD STARTED: %d\n", id);
@@ -84,6 +87,37 @@ static void kthread_return_test() {
   KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(&thread1));
 }
 
+#define STRESS_TEST_ITERS 1000
+#define STRESS_TEST_THREADS 1000
+
+static void* stress_test_func(void* arg) {
+  klogf("THREAD %d START\n", (int)arg);
+  for (int i = 0; i < STRESS_TEST_ITERS; ++i) {
+    kthread_yield();
+  }
+  klogf("THREAD %d DONE\n", (int)arg);
+  return arg;
+}
+
+// TODO(aoates): make this random.
+static void stress_test() {
+  KTEST_BEGIN("stress test");
+  kthread_t* threads[STRESS_TEST_THREADS];
+
+  for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
+    threads[i] = (kthread_t*)kmalloc(sizeof(kthread_t));
+    KASSERT(kthread_create(threads[i], &stress_test_func, (void*)i));
+  }
+
+  for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
+    KEXPECT_EQ(i, (int)kthread_join(threads[i]));
+  }
+
+  for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
+    kfree(threads[i]);
+  }
+}
+
 void kthread_test() {
   KTEST_SUITE_BEGIN("kthread_test");
 
@@ -91,4 +125,5 @@ void kthread_test() {
   basic_test();
   kthread_exit_test();
   kthread_return_test();
+  stress_test();
 }
