@@ -24,7 +24,9 @@ static void* thread_func(void* arg) {
   klogf("THREAD STARTED: %d\n", id);
   for (int i = 0; i < 3; ++i) {
     klogf("THREAD ITER: %d (iter %d)\n", id, i);
+    kthread_yield();
   }
+  klogf("THREAD 0x%x: done\n", id);
   return (void*)0;
 }
 
@@ -32,6 +34,8 @@ static void basic_test() {
   kthread_t thread1;
   KASSERT(kthread_create(&thread1, &thread_func, (void*)1));
   kthread_yield();
+
+  klogf("MAIN THREAD: done\n");
 }
 
 void kthread_test() {

@@ -21,7 +21,7 @@
 #include "kthread.h"
 #include "memory.h"
 
-#define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
+#define KTHREAD_STACK_SIZE 1024 // (4 * 4096)  // 16k
 
 // A linked list of kthreads.
 typedef struct {
@@ -33,6 +33,12 @@ static kthread_t* g_current_thread = 0;
 static int g_next_id = 0;
 
 static kthread_list_t g_run_queue;
+
+// Swap context from threadA (the currently running thread) to threadB (the new
+// thread).
+//
+// Defined in kthread_asm.s
+void kthread_swap_context(kthread_t* threadA, kthread_t* threadB);
 
 // TODO(aoates): INTERRUPTS
 
@@ -65,6 +71,8 @@ static kthread_t* kthread_pop(kthread_list_t* lst) {
   lst->head = front->next;
   if (front->next) {
     front->next->prev = 0x0;
+  } else {
+    lst->tail = 0x0;
   }
   front->next = 0x0;
   return front;
@@ -77,8 +85,6 @@ static int kthread_empty(kthread_list_t* lst) {
 static void kthread_list_init(kthread_list_t* lst) {
   lst->head = lst->tail = 0x0;
 }
-
-static void kthread_swap_context(kthread_t* src, kthread_t* target);
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
   start_routine(arg);
@@ -110,26 +116,41 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
   // Allocate a stack for the thread.
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
   KASSERT(stack != 0x0);
+  stack = (uint32_t*)((uint8_t*)stack + KTHREAD_STACK_SIZE - 4);
 
   // Set up the stack.
-  *(stack++) = 0xDEADDEAD;
-  // Jump into the trampoline at first.  First push the args, then the address.
-  *(stack++) = (uint32_t)(arg);
-  *(stack++) = (uint32_t)(start_routine);
-  *(stack++) = (uint32_t)(&kthread_trampoline);
+  *(stack--) = 0xDEADDEAD;
+  // Jump into the trampoline at first.  First push the args, then the eip saved
+  // from the "call" to kthread_trampoline (since kthread_trampoline never
+  // returns, we should never try to pop and access it).  Then push the address
+  // of the start of kthread_trampoline, which swap_context will pop and jump to
+  // when it calls "ret".
+  *(stack--) = (uint32_t)(arg);
+  *(stack--) = (uint32_t)(start_routine);
+  *(stack--) = 0xDEADEADD;  // Fake saved eip.
+  *(stack--) = (uint32_t)(&kthread_trampoline);
 
   // Set set up the stack as if we'd called swap_context().
   // TODO(aoates): this isn't quite correct, we don't take into account what
   // swap_context might have done to the stack!
-  uint32_t saved_ebp = 0; // TODO
-  *(stack++) = 0;  // eax
-  *(stack++) = 0;  // ecx
-  *(stack++) = 0;  // edx
-  *(stack++) = 0;  // ebx
-  *(stack++) = saved_ebp;  // ebp
-  *(stack++) = 0;  // esi
-  *(stack++) = 0;  // edi
+  // First push the saved %ebp, which points to the ebp used by the 'call' to
+  // swap_context -- since we jump into the trampoline (which will do it's own
+  // thing with ebp), this doesn't have to be valid.
+  *(stack--) = 0xDEADBADD;
+  *(stack--) = 0;  // ebx
+  *(stack--) = 0;  // esi
+  *(stack--) = 0;  // edi
 
+  // "push" the flags.
+  uint32_t flags;
+  __asm__ __volatile__ (
+      "pushf\n\t"
+      "pop %0\n\t"
+      : "=r"(flags));
+  *(stack--) = flags;
+  // TODO(aoates): we probably need to enable interrupts in the flag manually!
+
+  stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
   kthread_push_back(&g_run_queue, thread);
   return 1;
@@ -140,9 +161,16 @@ void kthread_yield() {
     return;
   }
 
+  uint32_t my_id = g_current_thread->id;
+
+  kthread_t* old_thread = g_current_thread;
   kthread_t* new_thread = kthread_pop(&g_run_queue);
-  kthread_push_back(&g_run_queue, g_current_thread);
-  kthread_swap_context(g_current_thread, new_thread);
+  g_current_thread = new_thread;
+  kthread_push_back(&g_run_queue, old_thread);
+  kthread_swap_context(old_thread, new_thread);
+
+  // Verify that we're back on the proper stack!
+  KASSERT(g_current_thread->id == my_id);
 }
 
 void kthread_exit(void* x) {
@@ -152,8 +180,10 @@ void kthread_exit(void* x) {
 
   // TODO(aoates): we need an idle thread to run here!
   KASSERT(!kthread_empty(&g_run_queue));
+  kthread_t* old_thread = g_current_thread;
   kthread_t* new_thread = kthread_pop(&g_run_queue);
-  kthread_swap_context(g_current_thread, new_thread);
+  g_current_thread = new_thread;
+  kthread_swap_context(old_thread, new_thread);
   // Never get here!
   KASSERT(0);
 }
