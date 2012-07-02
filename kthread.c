@@ -21,15 +21,10 @@
 #include "kthread.h"
 #include "memory.h"
 
-#define KTHREAD_STACK_SIZE 1024 // (4 * 4096)  // 16k
-
-// A linked list of kthreads.
-typedef struct {
-  struct kthread* head;
-  struct kthread* tail;
-} kthread_list_t;
+#define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
 static kthread_t* g_current_thread = 0;
+static kthread_t* g_idle_thread = 0;
 static int g_next_id = 0;
 
 static kthread_list_t g_run_queue;
@@ -39,6 +34,10 @@ static kthread_list_t g_run_queue;
 //
 // Defined in kthread_asm.s
 void kthread_swap_context(kthread_t* threadA, kthread_t* threadB);
+
+// Just like kthread_yield, but doesn't reschedule the current thread on the run
+// queue.
+static void kthread_yield_no_reschedule();
 
 // TODO(aoates): INTERRUPTS
 
@@ -66,7 +65,9 @@ static void kthread_push_back(kthread_list_t* lst, kthread_t* thread) {
 
 // Pop a thread off the front of a list.
 static kthread_t* kthread_pop(kthread_list_t* lst) {
-  KASSERT(lst->head != 0x0);
+  if (!lst->head) {
+    return lst->head;
+  }
   kthread_t* front = lst->head;
   lst->head = front->next;
   if (front->next) {
@@ -78,12 +79,20 @@ static kthread_t* kthread_pop(kthread_list_t* lst) {
   return front;
 }
 
-static int kthread_empty(kthread_list_t* lst) {
-  return lst->head == 0x0;
-}
+//static int kthread_empty(kthread_list_t* lst) {
+//  return lst->head == 0x0;
+//}
 
 static void kthread_list_init(kthread_list_t* lst) {
   lst->head = lst->tail = 0x0;
+}
+
+static void kthread_init_kthread(kthread_t* t) {
+  t->id = t->active = t->esp = 0;
+  t->retval = 0x0;
+  t->prev = t->next = 0x0;
+  t->stack = 0x0;
+  kthread_list_init(&t->join_list);
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -93,21 +102,35 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
   KASSERT(0);
 }
 
+static void* kthread_idle_thread_body(void* arg) {
+  while(1) {
+    klogf("[idle thread]\n");
+    kthread_yield_no_reschedule();
+  }
+  return 0;
+}
+
 void kthread_init() {
   KASSERT(g_current_thread == 0);
 
   kthread_t* first = (kthread_t*)kmalloc(sizeof(kthread_t));
   KASSERT(first != 0x0);
+  kthread_init_kthread(first);
   first->active = 1;
   first->esp = 0;
   first->id = g_next_id++;
 
   kthread_list_init(&g_run_queue);
   g_current_thread = first;
+
+  // Make the idle thread.
+  g_idle_thread = (kthread_t*)kmalloc(sizeof(kthread_t));
+  KASSERT(kthread_create(g_idle_thread, &kthread_idle_thread_body, 0));
 }
 
 int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
                    void *arg) {
+  kthread_init_kthread(thread);
   thread->id = g_next_id++;
   thread->active = 0;
   thread->esp = 0;
@@ -117,7 +140,7 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
   KASSERT(stack != 0x0);
   thread->stack = stack;
-  stack = (uint32_t*)((uint8_t*)stack + KTHREAD_STACK_SIZE - 4);
+  stack = (uint32_t*)((uint32_t)stack + KTHREAD_STACK_SIZE - 4);
 
   // Set up the stack.
   *(stack--) = 0xDEADDEAD;
@@ -157,21 +180,30 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
   return 1;
 }
 
-void kthread_yield() {
-  if (kthread_empty(&g_run_queue)) {
-    return;
-  }
+void* kthread_join(kthread_t* thread) {
+  kthread_push_back(&thread->join_list, g_current_thread);
+  kthread_yield_no_reschedule();
+  return thread->retval;
+}
 
+static void kthread_yield_no_reschedule() {
   uint32_t my_id = g_current_thread->id;
 
   kthread_t* old_thread = g_current_thread;
   kthread_t* new_thread = kthread_pop(&g_run_queue);
+  if (!new_thread) {
+    new_thread = g_idle_thread;
+  }
   g_current_thread = new_thread;
-  kthread_push_back(&g_run_queue, old_thread);
   kthread_swap_context(old_thread, new_thread);
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
+}
+
+void kthread_yield() {
+  kthread_push_back(&g_run_queue, g_current_thread);
+  kthread_yield_no_reschedule();
 }
 
 void kthread_exit(void* x) {
@@ -180,11 +212,8 @@ void kthread_exit(void* x) {
   g_current_thread->retval = x;
 
   // TODO(aoates): we need an idle thread to run here!
-  KASSERT(!kthread_empty(&g_run_queue));
-  kthread_t* old_thread = g_current_thread;
-  kthread_t* new_thread = kthread_pop(&g_run_queue);
-  g_current_thread = new_thread;
-  kthread_swap_context(old_thread, new_thread);
+  kthread_yield_no_reschedule();
+
   // Never get here!
   KASSERT(0);
 }

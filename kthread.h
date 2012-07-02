@@ -16,6 +16,14 @@
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
+struct kthread;
+
+// A linked list of kthreads.
+typedef struct {
+  struct kthread* head;
+  struct kthread* tail;
+} kthread_list_t;
+
 // NOTE: if you update this structure, make sure you update kthread_asm.s as
 // well.
 struct kthread {
@@ -26,6 +34,7 @@ struct kthread {
   struct kthread* prev;
   struct kthread* next;
   uint32_t* stack;  // The block of memory allocated for the thread's stack.
+  kthread_list_t join_list;  // List of thread's join()'d to this one.
 };
 typedef struct kthread kthread_t;
 
@@ -36,7 +45,11 @@ void kthread_init();
 // in start_routine, with arg passed.
 //
 // RETURNS: 0 if unable to create the thread.
-int kthread_create(kthread_t *thread, void *(*start_routine)(void*), void *arg);
+int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
+
+// Join the given thread.  Will return once the other thread has exited
+// (implicitly or explicitly), and return's the thread's return value.
+void* kthread_join(kthread_t* thread);
 
 // Explicitly yield to another thread.  The scheduler may choose this thread to
 // run immediately, however.

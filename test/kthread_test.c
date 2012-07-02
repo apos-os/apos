@@ -26,14 +26,25 @@ static void* thread_func(void* arg) {
     klogf("THREAD ITER: %d (iter %d)\n", id, i);
     kthread_yield();
   }
-  klogf("THREAD 0x%x: done\n", id);
+  klogf("THREAD %d: done\n", id);
   return (void*)0;
+}
+
+static void yield_test() {
+  // Repeatedly yield and make sure we get to the end.
+  KTEST_BEGIN("trivial yield test");
+
+  kthread_yield();
+  kthread_yield();
+  kthread_yield();
+
+  klogf("  DONE\n");
 }
 
 static void basic_test() {
   kthread_t thread1;
   KASSERT(kthread_create(&thread1, &thread_func, (void*)1));
-  kthread_yield();
+  kthread_join(&thread1);
 
   klogf("MAIN THREAD: done\n");
 }
@@ -41,5 +52,6 @@ static void basic_test() {
 void kthread_test() {
   KTEST_SUITE_BEGIN("kthread_test");
 
+  yield_test();
   basic_test();
 }
