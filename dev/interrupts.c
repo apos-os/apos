@@ -91,7 +91,13 @@ void interrupts_init() {
 }
 
 void int_handler(uint32_t interrupt, uint32_t error) {
-  klogf("interrupt: 0x%x  error: 0x%x\n", interrupt, error);
+  if (interrupt == 0x0E) {
+    uint32_t addr;
+    __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(addr));
+    klogf("page fault: addr: 0x%x  error: 0x%x\n", addr, error);
+  } else {
+    klogf("interrupt: 0x%x  error: 0x%x\n", interrupt, error);
+  }
 }
 
 void enable_interrupts() {
