@@ -87,6 +87,61 @@ static void kthread_return_test() {
   KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(&thread1));
 }
 
+static void* join_test_func(void* arg) {
+  kthread_t* t = (kthread_t*)arg;
+  // Yield a few times then join.
+  kthread_yield();
+  kthread_yield();
+  kthread_yield();
+  if (t) {
+    return (void*)((int)kthread_join(t) + 1);
+  } else {
+    return 0;
+  }
+}
+
+#define JOIN_CHAIN_TEST_SIZE 10
+
+// Chain together a bunch of joined threads.
+static void join_chain_test() {
+  KTEST_BEGIN("chained join test");
+
+  kthread_t threads[JOIN_CHAIN_TEST_SIZE];
+  for (int i = 0; i < JOIN_CHAIN_TEST_SIZE; i++) {
+    kthread_t* target = i > 0 ? &threads[i-1] : 0;
+    int result = kthread_create(&threads[i], &join_test_func, (void*)target);
+    KASSERT(result != 0);
+  }
+
+  int out = (int)kthread_join(&threads[JOIN_CHAIN_TEST_SIZE-1]);
+  KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE - 1, out);
+}
+
+// Similar to above, but *create* the next thread in the sequence.
+static void* join_test2_func(void* arg) {
+  int x = (int)arg;
+  if (!x) {
+    return 0;
+  }
+  kthread_t* next = (kthread_t*)kmalloc(sizeof(kthread_t));
+  KASSERT(kthread_create(next, &join_test2_func, (void*)(x-1)));
+  return (void*)(1 + (int)kthread_join(next));
+}
+
+// Chain together a bunch of joined threads.  This time, each thread CREATES the
+// next thread in the chain.
+static void join_chain_test2() {
+  KTEST_BEGIN("chained join test #2");
+
+  kthread_t thread;
+  int result = kthread_create(&thread, &join_test2_func,
+                              (void*)JOIN_CHAIN_TEST_SIZE);
+  KASSERT(result != 0);
+
+  int out = (int)kthread_join(&thread);
+  KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
+}
+
 #define STRESS_TEST_ITERS 1000
 #define STRESS_TEST_THREADS 1000
 
@@ -125,5 +180,7 @@ void kthread_test() {
   basic_test();
   kthread_exit_test();
   kthread_return_test();
+  join_chain_test();
+  join_chain_test2();
   stress_test();
 }

@@ -53,11 +53,17 @@ static void kthread_list_insert(kthread_t* A, kthread_t* B) {
 
 // Push a thread onto the end of a list.
 static void kthread_push_back(kthread_list_t* lst, kthread_t* thread) {
+  KASSERT(thread->prev == 0);
+  KASSERT(thread->next == 0);
+
   if (!lst->head) {
     KASSERT(lst->tail == 0x0);
     lst->head = lst->tail = thread;
     thread->prev = thread->next = 0x0;
   } else {
+    if (lst->tail->prev) {
+      KASSERT(lst->tail->prev->next == lst->tail);
+    }
     kthread_list_insert(lst->tail, thread);
     lst->tail = thread;
   }
@@ -71,6 +77,7 @@ static kthread_t* kthread_pop(kthread_list_t* lst) {
   kthread_t* front = lst->head;
   lst->head = front->next;
   if (front->next) {
+    KASSERT(front->next->prev == front);
     front->next->prev = 0x0;
   } else {
     lst->tail = 0x0;
@@ -110,6 +117,7 @@ static void* kthread_idle_thread_body(void* arg) {
       iter = 0;
     }
     iter++;
+    g_current_thread->state = KTHREAD_PENDING;
     kthread_yield_no_reschedule();
   }
   return 0;
@@ -187,10 +195,12 @@ int kthread_create(kthread_t *thread, void *(*start_routine)(void*),
 
 void* kthread_join(kthread_t* thread) {
   if (thread->state != KTHREAD_DONE) {
+    g_current_thread->state = KTHREAD_PENDING;
     kthread_push_back(&thread->join_list, g_current_thread);
     kthread_yield_no_reschedule();
     // TODO(aoates): clean up if no-one else is waiting on this thread.
   }
+  KASSERT(thread->state == KTHREAD_DONE);
   return thread->retval;
 }
 
@@ -225,6 +235,7 @@ void kthread_exit(void* x) {
   // Schedule all the waiting threads.
   kthread_t* t = kthread_pop(&g_current_thread->join_list);
   while (t) {
+    KASSERT(t->state == KTHREAD_PENDING);
     kthread_push_back(&g_run_queue, t);
     t = kthread_pop(&g_current_thread->join_list);
   }

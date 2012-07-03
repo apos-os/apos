@@ -28,6 +28,20 @@ typedef struct {
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
 #define KTHREAD_DONE    2 // Finished.
 
+// TODO(aoates): is it really a good idea to be handing callers the whole
+// structure?  That means that their kthread_t must outlive both the thread, and
+// any threads that join() on it, which makes me nervous.
+//
+// An alternative would be to use IDs to identify threads (like processes), and
+// have a lookup table.
+//
+// OR: just have the thread code clean up the kthread_t, and callers should just
+// always heap-allocate it.
+//
+// OR: maybe best yet: have the kthread_t POINT to the actual data, which the
+// thread code cleans up.  So if the kthread_t goes out of scope, the client
+// just loses their handle on the thread.  This one.
+
 // NOTE: if you update this structure, make sure you update kthread_asm.s as
 // well.
 struct kthread {
@@ -47,6 +61,9 @@ void kthread_init();
 
 // Create a new thread and put it on the run queue.  The new thread will start
 // in start_routine, with arg passed.
+//
+// Note: the kthread_t given MUST last longer than the lifetime of the thread,
+// and any threads that call join() on it.
 //
 // RETURNS: 0 if unable to create the thread.
 int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
