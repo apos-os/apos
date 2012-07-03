@@ -24,8 +24,9 @@ void die(const char* msg) {
   } else {
     klog("<unknown reason :(>\n");
   }
-  __asm__("int $3");
-  __asm__("hlt");
+  __asm__ __volatile__ (
+      "cli\n\t"
+      "hlt\n\t");
 }
 
 void kassert(int x) {
