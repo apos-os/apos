@@ -196,8 +196,6 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   *(stack--) = (uint32_t)(&kthread_trampoline);
 
   // Set set up the stack as if we'd called swap_context().
-  // TODO(aoates): this isn't quite correct, we don't take into account what
-  // swap_context might have done to the stack!
   // First push the saved %ebp, which points to the ebp used by the 'call' to
   // swap_context -- since we jump into the trampoline (which will do it's own
   // thing with ebp), this doesn't have to be valid.
@@ -269,38 +267,8 @@ void kthread_exit(void* x) {
     t = kthread_pop(&g_current_thread->join_list);
   }
 
-  // TODO(aoates): we need an idle thread to run here!
   kthread_yield_no_reschedule();
 
   // Never get here!
   KASSERT(0);
 }
-
-
-//static void swap_context(kthread_t* target) {
-//  kthread_swap_cont
-//  g_current_thread->active = 0;
-//  // interrupts!
-//  __asm__ __volatile__(
-//      "push %%eax\n\t"
-//      "push %%ecx\n\t"
-//      "push %%edx\n\t"
-//      "push %%ebx\n\t"
-//      "push %%ebp\n\t"
-//      "push %%esi\n\t"
-//      "push %%edi\n\t"
-//      "mov %%esp, %0\n\t"
-//      "mov %1, %%esp\n\t"
-//      "pop %%edi\n\t"
-//      "pop %%esi\n\t"
-//      "pop %%ebp\n\t"
-//      "pop %%ebx\n\t"
-//      "pop %%edx\n\t"
-//      "pop %%ecx\n\t"
-//      "pop %%eax\n\t"
-//      : "=m"(g_current_thread->esp) : "m"(target->esp));
-//  // assert(cs == 0x08)
-//  // assert(ds == 0x10)
-//  g_current_thread = target;
-//  g_current_thread->active = 1;
-//}
