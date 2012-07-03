@@ -54,9 +54,9 @@ static void basic_test() {
   KASSERT(kthread_create(&thread2, &thread_func, (void*)2));
   KASSERT(kthread_create(&thread3, &thread_func, (void*)3));
 
-  kthread_join(&thread1);
-  kthread_join(&thread2);
-  kthread_join(&thread3);
+  kthread_join(thread1);
+  kthread_join(thread2);
+  kthread_join(thread3);
 
   klogf("MAIN THREAD: done\n");
 }
@@ -72,7 +72,7 @@ static void kthread_exit_test() {
   kthread_t thread1;
 
   KASSERT(kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
-  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(&thread1));
+  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
 }
 
 static void* kthread_return_thread_func(void* arg) {
@@ -84,11 +84,11 @@ static void kthread_return_test() {
   kthread_t thread1;
 
   KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd));
-  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(&thread1));
+  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
 }
 
 static void* join_test_func(void* arg) {
-  kthread_t* t = (kthread_t*)arg;
+  kthread_t t = (kthread_t)arg;
   // Yield a few times then join.
   kthread_yield();
   kthread_yield();
@@ -108,12 +108,12 @@ static void join_chain_test() {
 
   kthread_t threads[JOIN_CHAIN_TEST_SIZE];
   for (int i = 0; i < JOIN_CHAIN_TEST_SIZE; i++) {
-    kthread_t* target = i > 0 ? &threads[i-1] : 0;
+    kthread_t target = i > 0 ? threads[i-1] : 0;
     int result = kthread_create(&threads[i], &join_test_func, (void*)target);
     KASSERT(result != 0);
   }
 
-  int out = (int)kthread_join(&threads[JOIN_CHAIN_TEST_SIZE-1]);
+  int out = (int)kthread_join(threads[JOIN_CHAIN_TEST_SIZE-1]);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE - 1, out);
 }
 
@@ -123,8 +123,8 @@ static void* join_test2_func(void* arg) {
   if (!x) {
     return 0;
   }
-  kthread_t* next = (kthread_t*)kmalloc(sizeof(kthread_t));
-  KASSERT(kthread_create(next, &join_test2_func, (void*)(x-1)));
+  kthread_t next;
+  KASSERT(kthread_create(&next, &join_test2_func, (void*)(x-1)));
   return (void*)(1 + (int)kthread_join(next));
 }
 
@@ -138,7 +138,7 @@ static void join_chain_test2() {
                               (void*)JOIN_CHAIN_TEST_SIZE);
   KASSERT(result != 0);
 
-  int out = (int)kthread_join(&thread);
+  int out = (int)kthread_join(thread);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
 }
 
@@ -157,11 +157,10 @@ static void* stress_test_func(void* arg) {
 // TODO(aoates): make this random.
 static void stress_test() {
   KTEST_BEGIN("stress test");
-  kthread_t* threads[STRESS_TEST_THREADS];
+  kthread_t threads[STRESS_TEST_THREADS];
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
-    threads[i] = (kthread_t*)kmalloc(sizeof(kthread_t));
-    KASSERT(kthread_create(threads[i], &stress_test_func, (void*)i));
+    KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i));
   }
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {

@@ -16,45 +16,8 @@
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
-struct kthread;
-
-// A linked list of kthreads.
-typedef struct {
-  struct kthread* head;
-  struct kthread* tail;
-} kthread_list_t;
-
-#define KTHREAD_RUNNING 0 // Currently running.
-#define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
-#define KTHREAD_DONE    2 // Finished.
-
-// TODO(aoates): is it really a good idea to be handing callers the whole
-// structure?  That means that their kthread_t must outlive both the thread, and
-// any threads that join() on it, which makes me nervous.
-//
-// An alternative would be to use IDs to identify threads (like processes), and
-// have a lookup table.
-//
-// OR: just have the thread code clean up the kthread_t, and callers should just
-// always heap-allocate it.
-//
-// OR: maybe best yet: have the kthread_t POINT to the actual data, which the
-// thread code cleans up.  So if the kthread_t goes out of scope, the client
-// just loses their handle on the thread.  This one.
-
-// NOTE: if you update this structure, make sure you update kthread_asm.s as
-// well.
-struct kthread {
-  uint32_t id;
-  uint32_t state;
-  uint32_t esp;
-  void* retval;
-  struct kthread* prev;
-  struct kthread* next;
-  uint32_t* stack;  // The block of memory allocated for the thread's stack.
-  kthread_list_t join_list;  // List of thread's join()'d to this one.
-};
-typedef struct kthread kthread_t;
+struct kthread_data;
+typedef struct kthread_data* kthread_t;
 
 // Initialize the kthreads.
 void kthread_init();
@@ -62,15 +25,15 @@ void kthread_init();
 // Create a new thread and put it on the run queue.  The new thread will start
 // in start_routine, with arg passed.
 //
-// Note: the kthread_t given MUST last longer than the lifetime of the thread,
-// and any threads that call join() on it.
+// Note: the kthread_t given is just a handle to the thread --- if it goes out
+// of scope or is overwritten, the thread will continue unhindered.
 //
 // RETURNS: 0 if unable to create the thread.
 int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 
 // Join the given thread.  Will return once the other thread has exited
 // (implicitly or explicitly), and return's the thread's return value.
-void* kthread_join(kthread_t* thread);
+void* kthread_join(kthread_t thread);
 
 // Explicitly yield to another thread.  The scheduler may choose this thread to
 // run immediately, however.
