@@ -37,7 +37,7 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
   uint32_t address;
   __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(address));
 
-  klogf("page fault: addr: 0x%x  error: 0x%x\n", address, error);
+  //klogf("page fault: addr: 0x%x  error: 0x%x\n", address, error);
 
   if (address >= g_meminfo->heap_start && address < g_meminfo->heap_end) {
     // TODO(aoates): properly handle user-mode processes trying to access the
@@ -48,7 +48,7 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
     const uint32_t phys_addr = page_frame_alloc();
     KASSERT(phys_addr);
     const uint32_t virt_addr = addr2page(address);
-    klogf("  page fault: mapping 0x%x --> 0x%x\n", virt_addr, phys_addr);
+    //klogf("  page fault: mapping 0x%x --> 0x%x\n", virt_addr, phys_addr);
     page_frame_map_virtual(virt_addr, phys_addr);
     return;
   }
