@@ -35,4 +35,7 @@ typedef void (*timer_handler_t)(void);
 // limit.
 int register_timer_callback(uint32_t period_ms, timer_handler_t cb);
 
+// Return the approximate time since timer initialization, in ms.
+uint32_t get_time_ms();
+
 #endif

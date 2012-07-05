@@ -28,8 +28,10 @@ typedef struct {
 
 static timer_t timers[KMAX_TIMERS];
 static uint32_t timer_idx = 0;  // Points to the next free timer.
+static uint32_t time_ms = 0;  // Time (in ms) since timer initialization.
 
 static void internal_timer_handler() {
+  time_ms += KTIMESLICE_MS;
   for (uint32_t i = 0; i < timer_idx; ++i) {
     if (timers[i].counter == 0) {
       timers[i].counter = timers[i].period_slices;
@@ -67,4 +69,8 @@ int register_timer_callback(uint32_t period, timer_handler_t cb) {
   timers[idx].counter = timers[idx].period_slices;
   timers[idx].handler = cb;
   return 1;
+}
+
+uint32_t get_time_ms() {
+  return time_ms;
 }
