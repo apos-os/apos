@@ -67,11 +67,20 @@ typedef struct {
   // physical address can be accessed by adding this offset to get the
   // corresponding virtual address.
   uint32_t phys_map_start;
+
+  // Start and end (virtual) addresses of the  kernel heap.  The heap consists
+  // of memory in the range [heap_start, heap_end).
+  // TODO(aoates): once we have a better VM system set up, use a memory map for
+  // this rather than a pseudo-hard-coded range.
+  uint32_t heap_start;
+  uint32_t heap_end;
 } memory_info_t;
 
 // Once we've finished setting up our initial memory mappings, sets a global
 // memory_info_t that is used by the other functions in this module.
 void set_global_meminfo(memory_info_t* meminfo);
+
+const memory_info_t* get_global_meminfo();
 
 // Returns the page containing the given address.
 uint32_t addr2page(uint32_t addr);
@@ -84,7 +93,8 @@ uint32_t next_page(uint32_t x);
 int is_page_aligned(uint32_t x);
 
 // Converts a physical address to a virtual address (i.e. the virtual location,
-// in the kernel's space, where that physical page is mapped, at 0xd0000000).
+// in the kernel's space, where that physical page is mapped, at
+// meminfo->phys_map_start).
 uint32_t phys2virt(uint32_t x);
 
 // Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL (i.e.

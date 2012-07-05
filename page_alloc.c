@@ -17,6 +17,8 @@
 #include "common/kassert.h"
 #include "memory.h"
 
+#define SUPPORTS_INVPLG_INSTRUCTION 0
+
 // The current stack of free page frame addresses.  The stack is guarded on both
 // ends by an invalid (non-aligned) page frames.
 static uint32_t* free_frame_stack = 0;
@@ -94,4 +96,90 @@ void page_frame_free(uint32_t frame) {
     ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
   }
   free_frame_stack[stack_idx++] = frame_addr;
+}
+
+// Returns the current page directory.
+static inline uint32_t* get_page_directory() {
+  return (uint32_t*)0xFFFFF000;
+}
+
+// Returns the page table entry for the given page address.  Requires that the
+// appropriate page table already exists and is pointed to by the page
+// directory.
+static inline uint32_t* get_page_table_entry(uint32_t virt) {
+  return (uint32_t*)0xFFC00000 + (virt / PAGE_SIZE);
+}
+
+// Invalidate the TLB entry for the given virtual address.
+static inline void invalidate_tlb(uint32_t virt) {
+  if (SUPPORTS_INVPLG_INSTRUCTION) {
+    __asm__ __volatile__ (
+        "invlpg %0\n\t"
+        :: "m"(virt));
+  } else {
+    __asm__ __volatile__ (
+        "mov %%cr3, %%eax\n\t"
+        "mov %%eax, %%cr3\n\t"
+        ::: "eax");
+  }
+}
+
+// Given a virtual page address, returns a pointer to the page table entry
+// responsible for page.  If create is non-zero, and the page table doesn't
+// exist, a page table is allocated and initialized for it.
+//
+// TODO(aoates): if we create a new page table after fork() has happened, how
+// does that entry in the page directory get propogated to other processes?
+// If it's a kernel mapping, we want to share it between all processes, but
+// we'll currently just set it in the current one only.
+//
+// Maybe the solution is, at boot create (in the initial page directory) blank
+// page tables for all kernel mapped memory (e.g. the kernel heap), which we can
+// then point to from all subsequent page directories and update with global
+// reach.
+static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
+  uint32_t* page_directory = get_page_directory();
+  const uint32_t page_idx = virt / PAGE_SIZE;
+  const uint32_t page_table_idx = page_idx / PTE_NUM_ENTRIES;
+
+  if (page_directory[page_table_idx] & PDE_PRESENT) {
+    return get_page_table_entry(virt);
+  } else if (!create) {
+    return 0x0;
+  } else {
+    // Allocate a new page table.
+    uint32_t pte_phys_addr = page_frame_alloc();
+    KASSERT(pte_phys_addr);
+    page_directory[page_table_idx] = pte_phys_addr | PDE_WRITABLE | PDE_PRESENT;
+
+    // Initialize the new page table.  Get the *first* address of the new page
+    // table.
+    uint32_t* pte_virt_addr = get_page_table_entry(
+        page_table_idx * PTE_NUM_ENTRIES * PAGE_SIZE);
+    for (uint32_t i = 0; i < PTE_NUM_ENTRIES; ++i) {
+      pte_virt_addr[i] = 0 | PDE_WRITABLE;
+    }
+
+    return get_page_table_entry(virt);
+  }
+}
+
+// TODO(aoates): make kernel mappings PDE_GLOBAL for efficiency.
+void page_frame_map_virtual(uint32_t virt, uint32_t phys) {
+  KASSERT(virt % PAGE_SIZE == 0);
+  KASSERT(phys % PAGE_SIZE == 0);
+
+  uint32_t* pte = get_or_create_page_table_entry(virt, 1);
+  *pte = phys | PTE_WRITABLE | PTE_PRESENT;
+  invalidate_tlb(virt);
+}
+
+void page_frame_unmap_virtual(uint32_t virt) {
+  KASSERT(virt % PAGE_SIZE == 0);
+  uint32_t* pte = get_or_create_page_table_entry(virt, 0);
+  if (pte) {
+    // Mark the page as non-present.
+    *pte &= ~PTE_PRESENT;
+    invalidate_tlb(virt);
+  }
 }

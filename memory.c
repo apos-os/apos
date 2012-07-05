@@ -21,6 +21,10 @@ void set_global_meminfo(memory_info_t* meminfo) {
   global_meminfo = meminfo;
 }
 
+const memory_info_t* get_global_meminfo() {
+  return global_meminfo;
+}
+
 uint32_t addr2page(uint32_t addr) {
   return addr & PAGE_INDEX_MASK;
 }

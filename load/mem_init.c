@@ -26,11 +26,15 @@ extern uint32_t KERNEL_END_SYMBOL;
 
 // We will additionally set up a linear map for physical memory into the
 // kernel's virtual memory space, starting at the following address.
-const uint32_t KERNEL_PHYS_MAP_START = 0xD0000000;
+const uint32_t KERNEL_PHYS_MAP_START = 0xE0000000;
 
 // The maximum amount of physical memory we support (due to the
 // KERNEL_PHYS_MAP_START).
 const uint32_t MAX_MEMORY_BYTES = 0x10000000;
+
+// The virtual start and end addresses of the kernel heap.
+const uint32_t START_HEAP = 0xD0000000;
+const uint32_t END_HEAP =   0xE0000000;
 
 static void die_phys() {
   __asm__("int $3");
@@ -176,6 +180,8 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
   }
 
   meminfo->phys_map_start = KERNEL_PHYS_MAP_START;
+  meminfo->heap_start = START_HEAP;
+  meminfo->heap_end = END_HEAP;
 
   return meminfo;
 }

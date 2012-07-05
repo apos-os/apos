@@ -22,6 +22,7 @@
 #include "kthread.h"
 #include "memory.h"
 #include "page_alloc.h"
+#include "page_fault.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
@@ -91,6 +92,8 @@ void kmain(memory_info_t* meminfo) {
   set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
+  klog("paging_init()\n");
+  paging_init(meminfo);
   klog("kmalloc_init()\n");
   kmalloc_init();
 
@@ -121,6 +124,7 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
+  //page_alloc_map_test();
   kthread_test();
   //kmalloc_test();
   // interrupt_clobber_test();

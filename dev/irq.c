@@ -57,22 +57,22 @@ void pic_init() {
     g_handlers[i] = 0x0;
   }
 
-  register_interrupt_handler(0x20, &irq0);
-  register_interrupt_handler(0x21, &irq1);
-  register_interrupt_handler(0x22, &irq2);
-  register_interrupt_handler(0x23, &irq3);
-  register_interrupt_handler(0x24, &irq4);
-  register_interrupt_handler(0x25, &irq5);
-  register_interrupt_handler(0x26, &irq6);
-  register_interrupt_handler(0x27, &irq7);
-  register_interrupt_handler(0x28, &irq8);
-  register_interrupt_handler(0x29, &irq9);
-  register_interrupt_handler(0x2A, &irq10);
-  register_interrupt_handler(0x2B, &irq11);
-  register_interrupt_handler(0x2C, &irq12);
-  register_interrupt_handler(0x2D, &irq13);
-  register_interrupt_handler(0x2E, &irq14);
-  register_interrupt_handler(0x2F, &irq15);
+  register_raw_interrupt_handler(0x20, &irq0);
+  register_raw_interrupt_handler(0x21, &irq1);
+  register_raw_interrupt_handler(0x22, &irq2);
+  register_raw_interrupt_handler(0x23, &irq3);
+  register_raw_interrupt_handler(0x24, &irq4);
+  register_raw_interrupt_handler(0x25, &irq5);
+  register_raw_interrupt_handler(0x26, &irq6);
+  register_raw_interrupt_handler(0x27, &irq7);
+  register_raw_interrupt_handler(0x28, &irq8);
+  register_raw_interrupt_handler(0x29, &irq9);
+  register_raw_interrupt_handler(0x2A, &irq10);
+  register_raw_interrupt_handler(0x2B, &irq11);
+  register_raw_interrupt_handler(0x2C, &irq12);
+  register_raw_interrupt_handler(0x2D, &irq13);
+  register_raw_interrupt_handler(0x2E, &irq14);
+  register_raw_interrupt_handler(0x2F, &irq15);
 
   outb(PIC_MASTER_CMD, 0x11);
   outb(PIC_SLAVE_CMD, 0x11);

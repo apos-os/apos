@@ -12,16 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// Code for handling page fault exceptions.
+#ifndef APOO_PAGE_FAULT
+#define APOO_PAGE_FAULT
 
-void interrupt_clobber_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kthread_test();
-void page_alloc_map_test();
+#include <stdint.h>
+#include "memory.h"
+
+// Initialize the page fault handler and register it with the interrupts module.
+void paging_init(memory_info_t* meminfo);
+
+// Interrupt handler for page faults.  Reads the address that caused the fault
+// from register CR2, and takes the error code given by the interrupt.
+void page_fault_handler(uint32_t interrupt, uint32_t error);
 
 #endif

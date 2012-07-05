@@ -26,20 +26,22 @@
 // Global block list.
 static block_t* g_block_list = 0;
 
-void kmalloc_init() {
-  static block_t head;
-  head.free = 0;
-  head.prev = 0;
-  head.next = 0;
-  g_block_list = &head;
-}
-
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
   b->free = 1;
   b->length = 0;
   b->prev = 0;
   b->next = 0;
+}
+
+void kmalloc_init() {
+  const memory_info_t* meminfo = get_global_meminfo();
+
+  // Initialize the free list to one giant block consisting of the entire heap.
+  block_t* head = (block_t*)meminfo->heap_start;
+  init_block(head);
+  head->length = meminfo->heap_end - meminfo->heap_start - sizeof(block_t);
+  g_block_list = head;
 }
 
 // Fill the given block with a repeating pattern.
@@ -121,48 +123,6 @@ static block_t* merge_block(block_t* b) {
   return b;
 }
 
-// Allocates a fresh physical page from the page frame allocator, creates a
-// block for it, inserts it into the block list, and returns it.
-static block_t* new_page() {
-  uint32_t page = page_frame_alloc();
-  kassert_msg(page, "out of memory in kmalloc");
-  block_t* block = (block_t*)phys2virt(page);
-  init_block(block);
-
-  block->free = 1;
-  block->length = PAGE_SIZE - sizeof(block_t);
-
-  // Add it to the list.
-  block_t* prev = g_block_list;
-  block_t* cblock = g_block_list->next;
-  while (cblock) {
-    if (cblock != g_block_list && cblock > block) {
-      break;
-    }
-    prev = cblock;
-    cblock = cblock->next;
-  }
-
-  if (!cblock) {
-    // Insert at end of list.
-    prev->next = block;
-    block->prev = prev;
-    block->next = 0;
-  } else {
-    // Insert in between prev and cblock.
-    KASSERT(prev->next == cblock);
-    KASSERT(cblock->prev == prev);
-    prev->next = block;
-    block->prev = prev;
-    block->next = cblock;
-    cblock->prev = block;
-  }
-
-  fill_block(block, 0xDEADBEEF);
-  merge_block(block);
-  return block;
-}
-
 void* kmalloc(uint32_t n) {
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
@@ -171,18 +131,6 @@ void* kmalloc(uint32_t n) {
       break;
     }
     cblock = cblock->next;
-  }
-
-  if (!cblock) {
-    cblock = new_page();
-  }
-
-  // Keep allocating pages until we can fit it.
-  // TODO(aoates): this is a pretty crappy idea, and relies on us getting
-  // continuous pages back from the page allocator.  Fix this once we have real
-  // kernel virtual memory going.
-  while (cblock && cblock->length < n) {
-    cblock = new_page();
   }
 
   if (!cblock || cblock->length < n) {
