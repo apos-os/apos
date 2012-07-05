@@ -30,11 +30,13 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o \
 	   test/kmalloc_test.o test/kthread_test.o
 
-HDRFILES = $(wildcard *.h) $(wildcard load/*.h) $(wildcard test/*.h)
+FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
+ALLFILES = $(shell find $(FIND_FLAGS))
+HDRFILES = $(filter %.h, $(ALLFILES))
 
-BUILD = build
+BUILD_DIR = build
  
-all: kernel.img
+all: kernel.img tags
  
 %.o : %.s
 	$(AS) $(ASFLAGS) -o $@ $<
@@ -42,11 +44,11 @@ all: kernel.img
 %.o : %.c $(HDRFILES)
 	$(CC) $(CFLAGS) -o $@ -c $<
  
-kernel.bin: $(OBJFILES) $(BUILD)/linker.ld
-	$(LD) -T $(BUILD)/linker.ld -o $@ $^
+kernel.bin: $(OBJFILES) $(BUILD_DIR)/linker.ld
+	$(LD) -T $(BUILD_DIR)/linker.ld -o $@ $(filter-out %.ld, $^)
 
-kernel.img: kernel.bin grub/menu.lst $(BUILD)/kernel.img.base
-	cp $(BUILD)/kernel.img.base $@
+kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
+	cp $(BUILD_DIR)/kernel.img.base $@
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
  
@@ -54,10 +56,15 @@ clean:
 	$(RM) $(OBJFILES) kernel.bin kernel.img tags
 
 run: kernel.img
-	./bochs/bochs -q -f $(BUILD)/bochsrc.txt
+	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
 
 runx: kernel.img
-	./bochs/bochs -q -f $(BUILD)/bochsrc.txt.x11
+	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt.x11
 
 gdb: kernel.bin kernel.img
-	./bochs/bochs_gdb -q -f $(BUILD)/bochsrc.txt.gdb
+	./bochs/bochs_gdb -q -f $(BUILD_DIR)/bochsrc.txt.gdb
+
+tags: $(ALLFILES)
+	@echo 'generating tags...'
+	@find $(FIND_FLAGS) | ctags -L -
+	@echo 'generated' `wc -l tags | cut -d ' ' -f 1` 'tags'
