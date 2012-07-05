@@ -92,6 +92,8 @@ void kmain(memory_info_t* meminfo) {
   set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
+  klog("paging_init()\n");
+  paging_init(meminfo);
   klog("kmalloc_init()\n");
   kmalloc_init();
 
@@ -103,9 +105,6 @@ void kmain(memory_info_t* meminfo) {
 
   klog("kthread_init()\n");
   kthread_init();
-
-  klog("paging_init()\n");
-  paging_init();
 
   klog("initialization finished...\n");
 
@@ -125,8 +124,8 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
-  page_alloc_map_test();
-  //kthread_test();
+  //page_alloc_map_test();
+  kthread_test();
   //kmalloc_test();
   // interrupt_clobber_test();
 

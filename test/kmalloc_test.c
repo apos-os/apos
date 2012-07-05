@@ -20,6 +20,8 @@
 #include "memory.h"
 #include "test/ktest.h"
 
+#define HEAP_SIZE 0x10000000
+
 static void verify_list(block_t* lst) {
   while (lst) {
     // Dereference the pointer to make sure it's valid.
@@ -90,8 +92,8 @@ static void init_test() {
   KEXPECT_NE(0, (uint32_t)list);
   KEXPECT_EQ(0, (uint32_t)list->prev);
   KEXPECT_EQ(0, (uint32_t)list->next);
-  KEXPECT_EQ(0, list->length);
-  KEXPECT_EQ(0, list->free);
+  KEXPECT_EQ(HEAP_SIZE - sizeof(block_t), list->length);
+  KEXPECT_EQ(1, list->free);
 }
 
 static void basic_test() {
@@ -106,9 +108,9 @@ static void basic_test() {
   // Make sure it's on the list.
   block_t* list_root = kmalloc_internal_get_block_list();
   verify_list(list_root);
-  KEXPECT_EQ(3, list_length(list_root));
-  KEXPECT_EQ((uint32_t)x_block, (uint32_t)list_root->next);
-  KEXPECT_EQ(PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(2, list_length(list_root));
+  KEXPECT_EQ((uint32_t)x_block, (uint32_t)list_root);
+  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(100, list_used_size(list_root));
 
   // Allocate some more blocks.
@@ -118,7 +120,7 @@ static void basic_test() {
 
   // We should still have only allocated one page.
   verify_list(list_root);
-  KEXPECT_EQ(PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(100 + 128 + 145 + 160, list_used_size(list_root));
 
   // Allocate a big chunk.
@@ -126,17 +128,17 @@ static void basic_test() {
   verify_list(list_root);
 
   // We should have needed another page for that.
-  KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(0xf00 + 100 + 128 + 145 + 160, list_used_size(list_root));
-  KEXPECT_EQ(8, list_length(list_root));
+  KEXPECT_EQ(6, list_length(list_root));
 
   // Free a block in the middle.
   kfree(x3);
   verify_list(list_root);
 
-  KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(0xf00 + 100 + 128 + 160, list_used_size(list_root));
-  KEXPECT_EQ(8, list_length(list_root));
+  KEXPECT_EQ(6, list_length(list_root));
 
   // Free the rest.
   kfree(x);
@@ -146,9 +148,9 @@ static void basic_test() {
   verify_list(list_root);
 
   // Make sure it's all merged together.
-  KEXPECT_EQ(2 * PAGE_SIZE + sizeof(block_t), list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(0, list_used_size(list_root));
-  KEXPECT_EQ(2, list_length(list_root));
+  KEXPECT_EQ(1, list_length(list_root));
 
   kmalloc_log_state();
 }
@@ -238,8 +240,8 @@ static void stress_test() {
   klog("---------------\n");
 
   block_t* list_root = kmalloc_internal_get_block_list();
-  KEXPECT_EQ(2, list_length(list_root));
-  KEXPECT_EQ(0, (list_size(list_root) - sizeof(block_t))% PAGE_SIZE);  // even # of pages
+  KEXPECT_EQ(1, list_length(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(0, list_used_size(list_root));
 }
 

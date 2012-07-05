@@ -17,12 +17,17 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
+#include "memory.h"
 #include "page_fault.h"
+#include "page_alloc.h"
 
 // TODO(aoates): define these common interrupts in dev/interrupts.h
 #define PAGE_FAULT_INTERRUPT 0x0E
 
-void paging_init() {
+static memory_info_t* g_meminfo = 0;
+
+void paging_init(memory_info_t* meminfo) {
+  g_meminfo = meminfo;
   register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
 }
 
@@ -33,5 +38,20 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
   __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(address));
 
   klogf("page fault: addr: 0x%x  error: 0x%x\n", address, error);
+
+  if (address >= g_meminfo->heap_start && address < g_meminfo->heap_end) {
+    // TODO(aoates): properly handle user-mode processes trying to access the
+    // kernel heap.
+    KASSERT((error & 0x04) == 0);
+
+    // Get a new physical page and map it in.
+    const uint32_t phys_addr = page_frame_alloc();
+    KASSERT(phys_addr);
+    const uint32_t virt_addr = addr2page(address);
+    klogf("  page fault: mapping 0x%x --> 0x%x\n", virt_addr, phys_addr);
+    page_frame_map_virtual(virt_addr, phys_addr);
+    return;
+  }
+
   die("unhandled kernel page fault");
 }
