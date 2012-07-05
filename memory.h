@@ -84,7 +84,8 @@ uint32_t next_page(uint32_t x);
 int is_page_aligned(uint32_t x);
 
 // Converts a physical address to a virtual address (i.e. the virtual location,
-// in the kernel's space, where that physical page is mapped, at 0xd0000000).
+// in the kernel's space, where that physical page is mapped, at
+// meminfo->phys_map_start).
 uint32_t phys2virt(uint32_t x);
 
 // Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL (i.e.

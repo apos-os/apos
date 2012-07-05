@@ -26,7 +26,7 @@ extern uint32_t KERNEL_END_SYMBOL;
 
 // We will additionally set up a linear map for physical memory into the
 // kernel's virtual memory space, starting at the following address.
-const uint32_t KERNEL_PHYS_MAP_START = 0xD0000000;
+const uint32_t KERNEL_PHYS_MAP_START = 0xE0000000;
 
 // The maximum amount of physical memory we support (due to the
 // KERNEL_PHYS_MAP_START).
