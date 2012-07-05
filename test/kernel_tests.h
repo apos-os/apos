@@ -22,5 +22,6 @@ void kprintf_test();
 void kstring_test();
 void ktest_test();
 void kthread_test();
+void page_alloc_map_test();
 
 #endif
