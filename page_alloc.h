@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Code for the low-level kernel page frame allocator.
+// Code for the low-level kernel page frame allocator and page tables.  Handles
+// allocating physical pages, and creating/deleting page mappings.
 
 #ifndef APOO_PAGE_ALLOC_H
 #define APOO_PAGE_ALLOC_H
@@ -30,5 +31,17 @@ uint32_t page_frame_alloc();
 
 // Frees the given page frame.
 void page_frame_free(uint32_t frame);
+
+// Establishes a mapping from the given virtual address to the physical address
+// in the currently-loaded page tables.
+//
+// REQUIRES: virt and phys are page-aligned.
+void page_frame_map_virtual(uint32_t virt, uint32_t phys);
+
+// Removes the mapping for the given virtual address from the currently-loaded
+// page table (by marking it non-present), if it exists.
+//
+// REQUIRES: virt is page-aligned.
+void page_frame_unmap_virtual(uint32_t virt);
 
 #endif

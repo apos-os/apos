@@ -44,6 +44,7 @@ void print(const char* msg) {
 
 void utoa_test();
 void paging_test();
+void page_map_test();
 
 static void tick() {
   static uint8_t i = 0;
@@ -121,8 +122,9 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
+  page_map_test();
   //kthread_test();
-  kmalloc_test();
+  //kmalloc_test();
   // interrupt_clobber_test();
 
   //print("\n");
@@ -282,4 +284,60 @@ void page_frame_alloc_test() {
 
   //print("double-free: should kassert");
   //page_frame_free(page4);
+}
+
+// Test page mapping.  Note: will cause page faults and crash the kernel!
+void page_map_test() {
+  // Chosen to be in the middle of a page table for maximal testyness.
+  uint8_t* addr = (uint8_t*)0x80047014;
+
+  // Should page fault:
+  // *addr = 10;
+
+  // Set up mapping.
+  uint32_t phys_page = page_frame_alloc();
+  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page);
+
+  // Should succeed:
+  *addr = 10;
+
+  // Should be able to touch anything in that page.
+  uint8_t* addr2 = 0;
+  for (uint32_t i = 0; i < 4096; ++i) {
+    addr2 = (uint8_t*)(((uint32_t)addr & PDE_ADDRESS_MASK) + i);
+    *addr2 = 10;
+  }
+
+  // Make a mapping for a different page in the same table.  Shouldn't require
+  // creating a new table (step in to verify).
+  addr2 = addr - 2 * 4096;
+  page_frame_map_virtual((uint32_t)addr2 & PDE_ADDRESS_MASK, phys_page);
+
+  // Both should succeed (and affect each other, since they're mapped to the
+  // same page):
+  *addr = 15;
+  KASSERT(*addr2 == 15);
+  *addr2 = 20;
+  KASSERT(*addr == 20);
+  KASSERT(*addr2 == 20);
+
+  // REMAPPING.
+  // Remap addr to a NEW physical page, without unmapping in between.
+  uint32_t phys_page2 = page_frame_alloc();
+  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page2);
+
+  *addr = 71;
+  *addr2 = 72;
+  KASSERT(*addr == 71);
+  KASSERT(*addr2 == 72);
+
+  // Unmap the original mapping.
+  page_frame_unmap_virtual((uint32_t)addr & PDE_ADDRESS_MASK);
+
+  // Should still succeed:
+  *addr2 = 30;
+  KASSERT(*addr2 == 30);
+
+  // Should page fault:
+  //*addr = 25;
 }
