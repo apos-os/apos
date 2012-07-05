@@ -16,6 +16,7 @@
 
 #include "common/kassert.h"
 #include "memory.h"
+#include "page_alloc.h"
 
 #define SUPPORTS_INVPLG_INSTRUCTION 0
 
@@ -94,6 +95,15 @@ void page_frame_free(uint32_t frame_addr) {
   for (int i = 0; i < PAGE_SIZE / 4; ++i) {
     ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
   }
+
+  page_frame_free_nocheck(frame_addr);
+}
+
+void page_frame_free_nocheck(uint32_t frame) {
+  const uint32_t frame_addr = (uint32_t)frame;
+  KASSERT(is_page_aligned(frame_addr));
+  KASSERT(stack_idx <= stack_size);
+
   free_frame_stack[stack_idx++] = frame_addr;
 }
 
