@@ -29,6 +29,7 @@
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
+#include "test/ktest.h"
 #include "test/kernel_tests.h"
 
 void pic_init();
@@ -124,28 +125,19 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
-  //page_alloc_map_test();
-  kthread_test();
-  //kmalloc_test();
-  // interrupt_clobber_test();
-
-  //print("\n");
-  //char buf[2];
-  //buf[1] = '\0';
-  //while (1) {
-  //  buf[0] = read_char();
-  //  print(buf);
-  //}
+  ktest_begin_all();
 
   //ktest_test();
-  //kstring_test();
-  //kprintf_test();
-  //page_frame_alloc_test();
-  //print("\n\nkmain: 0x");
-  //print(utoa_hex((uint32_t)&kmain));
-  //print("\nutoa_test: 0x");
-  //print(utoa_hex((uint32_t)&utoa_test));
+  page_alloc_map_test();
+  kthread_test();
+  kmalloc_test();
+  interrupt_clobber_test();
+  kstring_test();
+  kprintf_test();
 
+  ktest_finish_all();
+
+  //page_frame_alloc_test();
   //paging_test();
   //utoa_test();
   klog("DONE\n");
