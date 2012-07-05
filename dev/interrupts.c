@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
+#include "page_fault.h"
 
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
@@ -94,8 +95,7 @@ void int_handler(uint32_t interrupt, uint32_t error) {
   if (interrupt == 0x0E) {
     uint32_t addr;
     __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(addr));
-    klogf("page fault: addr: 0x%x  error: 0x%x\n", addr, error);
-    die("unhandled kernel page fault");
+    handle_page_fault(addr, error);
   } else {
     klogf("interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }
