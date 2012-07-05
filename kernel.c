@@ -121,8 +121,8 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
-  kthread_test();
-  //kmalloc_test();
+  //kthread_test();
+  kmalloc_test();
   // interrupt_clobber_test();
 
   //print("\n");
