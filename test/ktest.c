@@ -16,6 +16,7 @@
 
 #include "common/kstring.h"
 #include "common/klog.h"
+#include "dev/timer.h"
 
 // Track statistics about passing and failing tests.
 static int num_suites = 0;
@@ -26,6 +27,8 @@ static int num_tests_passing = 0;
 // Is the current suite/test passing?
 static int current_suite_passing = 0;
 static int current_test_passing = 0;
+
+static uint32_t test_start_time;
 
 static void finish_test() {
   if (current_test_passing) {
@@ -95,19 +98,23 @@ void kexpect_(uint32_t cond, const char* name,
 
 void ktest_begin_all() {
   klogf("KERNEL UNIT TESTS");
+  test_start_time = get_time_ms();
 }
 
 void ktest_finish_all() {
+  uint32_t end_time = get_time_ms();
   finish_test();
   finish_suite();
 
   klogf("---------------------------------------\n");
   klogf("KERNEL UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
-    klogf("[PASSED] passed %d/%d suites and %d/%d tests\n",
-          num_suites_passing, num_suites, num_tests_passing, num_tests);
+    klogf("[PASSED] passed %d/%d suites and %d/%d tests in %d ms\n",
+          num_suites_passing, num_suites, num_tests_passing, num_tests,
+          end_time - test_start_time);
   } else {
-    klogf("[FAILED] passed %d/%d suites and %d/%d tests\n",
-          num_suites_passing, num_suites, num_tests_passing, num_tests);
+    klogf("[FAILED] passed %d/%d suites and %d/%d tests in %d ms\n",
+          num_suites_passing, num_suites, num_tests_passing, num_tests,
+          end_time - test_start_time);
   }
 }
