@@ -17,7 +17,6 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
-#include "page_fault.h"
 
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
@@ -44,7 +43,15 @@ extern void int17();
 extern void int18();
 extern void int19();
 
-void register_interrupt_handler(uint8_t num, int_handler_t h) {
+// User-defined handlers established by register_interrupt_handler().
+static int_handler_t g_handlers[MAX_INTERRUPT];
+
+void register_interrupt_handler(uint8_t interrupt, int_handler_t handler) {
+  KASSERT(interrupt < MAX_INTERRUPT);
+  g_handlers[interrupt] = handler;
+}
+
+void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
   KASSERT(idt != 0);
   KASSERT(num < idt_entries);
 
@@ -65,39 +72,37 @@ void interrupts_init() {
   idt_entries = idt_ptr.limit / sizeof(idt_entry_t);
   idt = (idt_entry_t*)idt_ptr.base;
 
-  // Install a test keyboard handler.
-  //for (int i = 0; i < idt_entries; ++i) {
-  //  register_interrupt_handler(i, &int_handler);
-  //}
-  register_interrupt_handler(0, &int0);
-  register_interrupt_handler(1, &int1);
-  register_interrupt_handler(2, &int2);
-  register_interrupt_handler(3, &int3);
-  register_interrupt_handler(4, &int4);
-  register_interrupt_handler(5, &int5);
-  register_interrupt_handler(6, &int6);
-  register_interrupt_handler(7, &int7);
-  register_interrupt_handler(8, &int8);
-  register_interrupt_handler(9, &int9);
-  register_interrupt_handler(10, &int10);
-  register_interrupt_handler(11, &int11);
-  register_interrupt_handler(12, &int12);
-  register_interrupt_handler(13, &int13);
-  register_interrupt_handler(14, &int14);
-  register_interrupt_handler(15, &int15);
-  register_interrupt_handler(16, &int16);
-  register_interrupt_handler(17, &int17);
-  register_interrupt_handler(18, &int18);
-  register_interrupt_handler(19, &int19);
+  for (int i = 0; i < MAX_INTERRUPT; ++i) {
+    g_handlers[i] = 0x0;
+  }
+
+  register_raw_interrupt_handler(0, &int0);
+  register_raw_interrupt_handler(1, &int1);
+  register_raw_interrupt_handler(2, &int2);
+  register_raw_interrupt_handler(3, &int3);
+  register_raw_interrupt_handler(4, &int4);
+  register_raw_interrupt_handler(5, &int5);
+  register_raw_interrupt_handler(6, &int6);
+  register_raw_interrupt_handler(7, &int7);
+  register_raw_interrupt_handler(8, &int8);
+  register_raw_interrupt_handler(9, &int9);
+  register_raw_interrupt_handler(10, &int10);
+  register_raw_interrupt_handler(11, &int11);
+  register_raw_interrupt_handler(12, &int12);
+  register_raw_interrupt_handler(13, &int13);
+  register_raw_interrupt_handler(14, &int14);
+  register_raw_interrupt_handler(15, &int15);
+  register_raw_interrupt_handler(16, &int16);
+  register_raw_interrupt_handler(17, &int17);
+  register_raw_interrupt_handler(18, &int18);
+  register_raw_interrupt_handler(19, &int19);
 }
 
 void int_handler(uint32_t interrupt, uint32_t error) {
-  if (interrupt == 0x0E) {
-    uint32_t addr;
-    __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(addr));
-    handle_page_fault(addr, error);
+  if (g_handlers[interrupt]) {
+    g_handlers[interrupt](interrupt, error);
   } else {
-    klogf("interrupt: 0x%x  error: 0x%x\n", interrupt, error);
+    klogf("unhandled interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }
 }
 

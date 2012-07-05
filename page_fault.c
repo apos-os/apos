@@ -16,8 +16,22 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "dev/interrupts.h"
+#include "page_fault.h"
 
-void handle_page_fault(uint32_t address, uint32_t error) {
+// TODO(aoates): define these common interrupts in dev/interrupts.h
+#define PAGE_FAULT_INTERRUPT 0x0E
+
+void paging_init() {
+  register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
+}
+
+void page_fault_handler(uint32_t interrupt, uint32_t error) {
+  KASSERT(interrupt == PAGE_FAULT_INTERRUPT);
+
+  uint32_t address;
+  __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(address));
+
   klogf("page fault: addr: 0x%x  error: 0x%x\n", address, error);
   die("unhandled kernel page fault");
 }

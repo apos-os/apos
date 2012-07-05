@@ -22,6 +22,7 @@
 #include "kthread.h"
 #include "memory.h"
 #include "page_alloc.h"
+#include "page_fault.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
@@ -103,6 +104,9 @@ void kmain(memory_info_t* meminfo) {
 
   klog("kthread_init()\n");
   kthread_init();
+
+  klog("paging_init()\n");
+  paging_init();
 
   klog("initialization finished...\n");
 

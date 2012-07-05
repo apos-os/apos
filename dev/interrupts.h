@@ -21,9 +21,29 @@ void interrupts_init();
 void enable_interrupts();
 void disable_interrupts();
 
-// Register a handler to be called when a particular interrupt fires.
-typedef void (*int_handler_t)(void);
+#define MIN_INTERRUPT 0
+#define MAX_INTERRUPT 19
+
+// Register a handler to be called when a particular interrupt fires.  The
+// interrupt number must be between MIN_INTERRUPT and MAX_INTERRUPT.
+//
+// Use this to register normal handlers for things like page faults --- when the
+// interrupt fires, a common stub will deal it, then invoke your handler with
+// the interrupt number (and error, if applicable), then clean up after it
+// returns.
+typedef void (*int_handler_t)(
+    uint32_t /* interrupt no. */, uint32_t /* error or 0 */);
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);
+
+// Register a RAW handler to be called when a particular interrupt fires.  The
+// handler will be put in the IDT, and invoked directly when the interrupt
+// fires.
+//
+// This is probably not what you want --- use register_interrupt_handler above
+// to set up a normal callback.  Only use this if you need custom stub code
+// (like for IRQs).
+typedef void (*raw_int_handler_t)(void);
+void register_raw_interrupt_handler(uint8_t interrupt, raw_int_handler_t handler);
 
 // Structs for the IDT and its entries.
 typedef struct {

@@ -18,8 +18,11 @@
 
 #include <stdint.h>
 
-// Handle a page fault.  Should be given the address that caused the fault (as
-// read from register CR2) and the error code given by the exception.
-void handle_page_fault(uint32_t address, uint32_t error);
+// Initialize the page fault handler and register it with the interrupts module.
+void paging_init();
+
+// Interrupt handler for page faults.  Reads the address that caused the fault
+// from register CR2, and takes the error code given by the interrupt.
+void page_fault_handler(uint32_t interrupt, uint32_t error);
 
 #endif
