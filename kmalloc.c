@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "common/debug.h"
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -85,7 +86,7 @@ static block_t* split_block(block_t* b, uint32_t n) {
 }
 
 // Given two adjacent blocks, merge them, returning the new (unified) block.
-static block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
+static inline block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
   KASSERT(a->free);
   KASSERT(b->free);
   KASSERT(BLOCK_END(a) == BLOCK_START(b));
@@ -98,8 +99,10 @@ static block_t* merge_adjancent_blocks(block_t* a, block_t* b) {
   a->next = b->next;
   a->length += BLOCK_SIZE(b);
 
-  // Clobber the header of b.
-  fill_buffer((uint8_t*)b, sizeof(block_t), 0xDEADBEEF);
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    // Clobber the header of b.
+    fill_buffer((uint8_t*)b, sizeof(block_t), 0xDEADBEEF);
+  }
   return a;
 }
 
@@ -143,7 +146,9 @@ void* kmalloc(uint32_t n) {
   cblock->free = 0;
   cblock = split_block(cblock, n);
 
-  fill_block(cblock, 0xAAAAAAAA);
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    fill_block(cblock, 0xAAAAAAAA);
+  }
   return (void*)(&cblock->data);
 }
 
@@ -152,7 +157,9 @@ void kfree(void* x) {
   KASSERT(b->magic == KALLOC_MAGIC);
   KASSERT(b->free == 0);
   b->free = 1;
-  fill_block(b, 0xDEADBEEF);
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    fill_block(b, 0xDEADBEEF);
+  }
 
   merge_block(b);
 }
