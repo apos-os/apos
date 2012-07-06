@@ -36,4 +36,18 @@ struct kthread_data {
 };
 typedef struct kthread_data kthread_data_t;
 
+// Return a handle to the currently running thread.
+kthread_t kthread_current_thread();
+
+// Explicitly switch execution to another thread.
+void kthread_switch(kthread_t new_thread);
+
+// Chooses a new thread off the run queue and switches to it, *without*
+// rescheduling the current thread on the run queue.
+//
+// Used internally in kthread.c and scheduler.c.  Clients should use
+// scheduler_yield() (to yield and reschedule) and scheduler_wait_on() (to wait
+// on another thread queue).
+void scheduler_yield_no_reschedule();
+
 #endif

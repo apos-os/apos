@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "kmalloc.h"
 #include "kthread.h"
+#include "scheduler.h"
 #include "test/ktest.h"
 
 // TODO(aoates): other things to test:
@@ -27,7 +28,7 @@ static void* thread_func(void* arg) {
   klogf("THREAD STARTED: %d\n", id);
   for (int i = 0; i < 3; ++i) {
     klogf("THREAD ITER: %d (iter %d)\n", id, i);
-    kthread_yield();
+    scheduler_yield();
   }
   klogf("THREAD %d: done\n", id);
   return 0;
@@ -37,9 +38,9 @@ static void yield_test() {
   // Repeatedly yield and make sure we get to the end.
   KTEST_BEGIN("trivial yield test");
 
-  kthread_yield();
-  kthread_yield();
-  kthread_yield();
+  scheduler_yield();
+  scheduler_yield();
+  scheduler_yield();
 
   klogf("  DONE\n");
 }
@@ -90,9 +91,9 @@ static void kthread_return_test() {
 static void* join_test_func(void* arg) {
   kthread_t t = (kthread_t)arg;
   // Yield a few times then join.
-  kthread_yield();
-  kthread_yield();
-  kthread_yield();
+  scheduler_yield();
+  scheduler_yield();
+  scheduler_yield();
   if (t) {
     return (void*)((int)kthread_join(t) + 1);
   } else {
@@ -148,7 +149,7 @@ static void join_chain_test2() {
 static void* stress_test_func(void* arg) {
   klogf("THREAD %d START\n", (int)arg);
   for (int i = 0; i < STRESS_TEST_ITERS; ++i) {
-    kthread_yield();
+    scheduler_yield();
   }
   klogf("THREAD %d DONE\n", (int)arg);
   return arg;

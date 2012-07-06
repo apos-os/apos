@@ -21,24 +21,18 @@
 #include "kthread.h"
 #include "kthread-internal.h"
 #include "memory.h"
+#include "scheduler.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
 static kthread_data_t* g_current_thread = 0;
-static kthread_t g_idle_thread = 0;
 static int g_next_id = 0;
-
-static kthread_queue_t g_run_queue;
 
 // Swap context from threadA (the currently running thread) to threadB (the new
 // thread).
 //
 // Defined in kthread_asm.s
 void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB);
-
-// Just like kthread_yield, but doesn't reschedule the current thread on the run
-// queue.
-static void kthread_yield_no_reschedule();
 
 // TODO(aoates): INTERRUPTS
 
@@ -58,20 +52,6 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
   KASSERT(0);
 }
 
-static void* kthread_idle_thread_body(void* arg) {
-  int iter = 0;
-  while(1) {
-    if (iter % 100000 == 0) {
-      klogf("[idle thread]\n");
-      iter = 0;
-    }
-    iter++;
-    g_current_thread->state = KTHREAD_PENDING;
-    kthread_yield_no_reschedule();
-  }
-  return 0;
-}
-
 void kthread_init() {
   KASSERT(g_current_thread == 0);
 
@@ -82,12 +62,11 @@ void kthread_init() {
   first->esp = 0;
   first->id = g_next_id++;
 
-  kthread_queue_init(&g_run_queue);
   g_current_thread = first;
+}
 
-  // Make the idle thread.
-  int ret = kthread_create(&g_idle_thread, &kthread_idle_thread_body, 0);
-  KASSERT(ret != 0);
+kthread_t kthread_current_thread() {
+  return g_current_thread;
 }
 
 int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
@@ -148,42 +127,18 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
-  kthread_queue_push(&g_run_queue, thread);
+  scheduler_make_runnable(thread);
   return 1;
 }
 
 void* kthread_join(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
   if (thread->state != KTHREAD_DONE) {
-    g_current_thread->state = KTHREAD_PENDING;
-    kthread_queue_push(&thread->join_list, g_current_thread);
-    kthread_yield_no_reschedule();
+    scheduler_wait_on(&thread->join_list);
     // TODO(aoates): clean up if no-one else is waiting on this thread.
   }
   KASSERT(thread->state == KTHREAD_DONE);
   return thread->retval;
-}
-
-static void kthread_yield_no_reschedule() {
-  uint32_t my_id = g_current_thread->id;
-
-  kthread_data_t* old_thread = g_current_thread;
-  kthread_data_t* new_thread = kthread_queue_pop(&g_run_queue);
-  if (!new_thread) {
-    new_thread = g_idle_thread;
-  }
-  g_current_thread = new_thread;
-  new_thread->state = KTHREAD_RUNNING;
-  kthread_swap_context(old_thread, new_thread);
-
-  // Verify that we're back on the proper stack!
-  KASSERT(g_current_thread->id == my_id);
-}
-
-void kthread_yield() {
-  g_current_thread->state = KTHREAD_PENDING;
-  kthread_queue_push(&g_run_queue, g_current_thread);
-  kthread_yield_no_reschedule();
 }
 
 void kthread_exit(void* x) {
@@ -196,14 +151,27 @@ void kthread_exit(void* x) {
   kthread_data_t* t = kthread_queue_pop(&g_current_thread->join_list);
   while (t) {
     KASSERT(t->state == KTHREAD_PENDING);
-    kthread_queue_push(&g_run_queue, t);
+    scheduler_make_runnable(t);
     t = kthread_queue_pop(&g_current_thread->join_list);
   }
 
-  kthread_yield_no_reschedule();
+  scheduler_yield_no_reschedule();
 
   // Never get here!
   KASSERT(0);
+}
+
+void kthread_switch(kthread_t new_thread) {
+  KASSERT(g_current_thread->state != KTHREAD_RUNNING);
+  uint32_t my_id = g_current_thread->id;
+
+  kthread_data_t* old_thread = g_current_thread;
+  g_current_thread = new_thread;
+  new_thread->state = KTHREAD_RUNNING;
+  kthread_swap_context(old_thread, new_thread);
+
+  // Verify that we're back on the proper stack!
+  KASSERT(g_current_thread->id == my_id);
 }
 
 void kthread_queue_init(kthread_queue_t* lst) {
@@ -257,7 +225,7 @@ kthread_t kthread_queue_pop(kthread_queue_t* lst) {
 
 int kthread_on_queue(kthread_t thread_addr) {
   kthread_data_t* thread = (kthread_data_t*)thread_addr;
-  return thread->next == 0x0 && thread->prev == 0x0;
+  return thread->next != 0x0 || thread->prev != 0x0;
 }
 
 int kthread_queue_empty(kthread_queue_t* lst) {

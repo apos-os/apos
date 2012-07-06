@@ -13,17 +13,21 @@
 // limitations under the License.
 
 // Kernel threads package.
+//
+// The package is in two parts: kthreads (this), which provides the threading
+// primitives (threads, handles, thread queues); and the scheduler (see
+// scheduler.h/c), which is responsible for actually running and scheduling
+// threads.
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
-struct kthread_data;
 typedef struct kthread_data* kthread_t;
 
-// Initialize the kthreads.
+// Initialize the kthreads package.
 void kthread_init();
 
-// Create a new thread and put it on the run queue.  The new thread will start
-// in start_routine, with arg passed.
+// Create a new thread.  The new thread will start in start_routine, with arg
+// passed.
 //
 // Note: the kthread_t given is just a handle to the thread --- if it goes out
 // of scope or is overwritten, the thread will continue unhindered.
@@ -34,10 +38,6 @@ int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 // Join the given thread.  Will return once the other thread has exited
 // (implicitly or explicitly), and return's the thread's return value.
 void* kthread_join(kthread_t thread);
-
-// Explicitly yield to another thread.  The scheduler may choose this thread to
-// run immediately, however.
-void kthread_yield();
 
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
