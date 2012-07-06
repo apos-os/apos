@@ -25,11 +25,6 @@
 
 struct kthread_data;
 
-// A linked list of kthreads.
-typedef struct {
-  struct kthread_data* head;
-  struct kthread_data* tail;
-} kthread_queue_t;
 
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
@@ -66,59 +61,6 @@ void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB);
 static void kthread_yield_no_reschedule();
 
 // TODO(aoates): INTERRUPTS
-
-// Inserts the node B into the linked list right after A.
-static void kthread_queue_insert(kthread_data_t* A, kthread_data_t* B) {
-  B->next = A->next;
-  B->prev = A;
-  if (A->next) {
-    A->next->prev = B;
-  }
-  A->next = B;
-}
-
-// Push a thread onto the end of a list.
-static void kthread_push_back(kthread_queue_t* lst, kthread_data_t* thread) {
-  KASSERT(thread->prev == 0);
-  KASSERT(thread->next == 0);
-
-  if (!lst->head) {
-    KASSERT(lst->tail == 0x0);
-    lst->head = lst->tail = thread;
-    thread->prev = thread->next = 0x0;
-  } else {
-    if (lst->tail->prev) {
-      KASSERT(lst->tail->prev->next == lst->tail);
-    }
-    kthread_queue_insert(lst->tail, thread);
-    lst->tail = thread;
-  }
-}
-
-// Pop a thread off the front of a list.
-static kthread_data_t* kthread_pop(kthread_queue_t* lst) {
-  if (!lst->head) {
-    return lst->head;
-  }
-  kthread_data_t* front = lst->head;
-  lst->head = front->next;
-  if (front->next) {
-    KASSERT(front->next->prev == front);
-    front->next->prev = 0x0;
-  } else {
-    lst->tail = 0x0;
-  }
-  front->next = 0x0;
-  return front;
-}
-
-//static int kthread_empty(kthread_queue_t* lst) {
-//  return lst->head == 0x0;
-//}
-
-static void kthread_queue_init(kthread_queue_t* lst) {
-  lst->head = lst->tail = 0x0;
-}
 
 static void kthread_init_kthread(kthread_data_t* t) {
   t->state = KTHREAD_PENDING;
@@ -226,7 +168,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
-  kthread_push_back(&g_run_queue, thread);
+  kthread_queue_push(&g_run_queue, thread);
   return 1;
 }
 
@@ -234,7 +176,7 @@ void* kthread_join(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
   if (thread->state != KTHREAD_DONE) {
     g_current_thread->state = KTHREAD_PENDING;
-    kthread_push_back(&thread->join_list, g_current_thread);
+    kthread_queue_push(&thread->join_list, g_current_thread);
     kthread_yield_no_reschedule();
     // TODO(aoates): clean up if no-one else is waiting on this thread.
   }
@@ -246,7 +188,7 @@ static void kthread_yield_no_reschedule() {
   uint32_t my_id = g_current_thread->id;
 
   kthread_data_t* old_thread = g_current_thread;
-  kthread_data_t* new_thread = kthread_pop(&g_run_queue);
+  kthread_data_t* new_thread = kthread_queue_pop(&g_run_queue);
   if (!new_thread) {
     new_thread = g_idle_thread;
   }
@@ -260,7 +202,7 @@ static void kthread_yield_no_reschedule() {
 
 void kthread_yield() {
   g_current_thread->state = KTHREAD_PENDING;
-  kthread_push_back(&g_run_queue, g_current_thread);
+  kthread_queue_push(&g_run_queue, g_current_thread);
   kthread_yield_no_reschedule();
 }
 
@@ -271,15 +213,73 @@ void kthread_exit(void* x) {
   g_current_thread->state = KTHREAD_DONE;
 
   // Schedule all the waiting threads.
-  kthread_data_t* t = kthread_pop(&g_current_thread->join_list);
+  kthread_data_t* t = kthread_queue_pop(&g_current_thread->join_list);
   while (t) {
     KASSERT(t->state == KTHREAD_PENDING);
-    kthread_push_back(&g_run_queue, t);
-    t = kthread_pop(&g_current_thread->join_list);
+    kthread_queue_push(&g_run_queue, t);
+    t = kthread_queue_pop(&g_current_thread->join_list);
   }
 
   kthread_yield_no_reschedule();
 
   // Never get here!
   KASSERT(0);
+}
+
+void kthread_queue_init(kthread_queue_t* lst) {
+  lst->head = lst->tail = 0x0;
+}
+
+// Inserts the node B into the linked list right after A.
+static void kthread_queue_insert(kthread_data_t* A, kthread_data_t* B) {
+  B->next = A->next;
+  B->prev = A;
+  if (A->next) {
+    A->next->prev = B;
+  }
+  A->next = B;
+}
+
+// Push a thread onto the end of a list.
+void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
+  KASSERT(thread->prev == 0);
+  KASSERT(thread->next == 0);
+
+  if (!lst->head) {
+    KASSERT(lst->tail == 0x0);
+    lst->head = lst->tail = thread;
+    thread->prev = thread->next = 0x0;
+  } else {
+    if (lst->tail->prev) {
+      KASSERT(lst->tail->prev->next == lst->tail);
+    }
+    kthread_queue_insert(lst->tail, thread);
+    lst->tail = thread;
+  }
+}
+
+// Pop a thread off the front of a list.
+kthread_t kthread_queue_pop(kthread_queue_t* lst) {
+  if (!lst->head) {
+    return lst->head;
+  }
+  kthread_data_t* front = lst->head;
+  lst->head = front->next;
+  if (front->next) {
+    KASSERT(front->next->prev == front);
+    front->next->prev = 0x0;
+  } else {
+    lst->tail = 0x0;
+  }
+  front->next = 0x0;
+  return front;
+}
+
+int kthread_on_queue(kthread_t thread_addr) {
+  kthread_data_t* thread = (kthread_data_t*)thread_addr;
+  return thread->next == 0x0 && thread->prev == 0x0;
+}
+
+int kthread_queue_empty(kthread_queue_t* lst) {
+  return lst->head == 0x0;
 }

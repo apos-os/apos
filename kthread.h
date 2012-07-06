@@ -42,4 +42,28 @@ void kthread_yield();
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
 
+// Thread queues are simple linked lists of threads, which can be pushed on the
+// back and popped from the front.  A given thread can only be on a single
+// thread queue (or no thread queues) at once --- trying to enqueue a thread on
+// multiple queues will result in a panic.
+typedef struct {
+  kthread_t head;
+  kthread_t tail;
+} kthread_queue_t;
+
+// Initialze a thread queue.
+void kthread_queue_init(kthread_queue_t* queue);
+
+// Returns 1 if the given thread is on any thread queue.
+int kthread_on_queue(kthread_t thread_addr);
+
+// Returns 1 if the given thread queue is empty.
+int kthread_queue_empty(kthread_queue_t* queue);
+
+// Enqueue a thread on the back of the given thread queue.
+void kthread_queue_push(kthread_queue_t* queue, kthread_t thread);
+
+// Pops a thread off the front of the thread queue.
+kthread_t kthread_queue_pop(kthread_queue_t* queue);
+
 #endif
