@@ -79,8 +79,7 @@ uint32_t page_frame_alloc() {
   return frame;
 }
 
-void page_frame_free(uint32_t frame) {
-  const uint32_t frame_addr = (uint32_t)frame;
+void page_frame_free(uint32_t frame_addr) {
   KASSERT(is_page_aligned(frame_addr));
 
   // Check that the page frame isn't already free.
@@ -91,7 +90,7 @@ void page_frame_free(uint32_t frame) {
   KASSERT(stack_idx <= stack_size);
 
   // Fill the page with crap.
-  uint32_t virt_frame = phys2virt(frame);
+  uint32_t virt_frame = phys2virt(frame_addr);
   for (int i = 0; i < PAGE_SIZE / 4; ++i) {
     ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
   }
