@@ -16,7 +16,8 @@ AS	= i586-elf-as
 ASFLAGS = --gen-debug
 CC	= i586-elf-gcc
 CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=c99 -g -I. \
-	  -Wno-unused-parameter -Wno-error=unused-function
+	  -Wno-unused-parameter -Wno-error=unused-function \
+	  -DENABLE_KERNEL_SAFETY_NETS=0
 LD	= i586-elf-ld
 
 BOOTLOADER	= grub

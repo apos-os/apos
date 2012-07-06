@@ -121,6 +121,7 @@ static void kthread_list_init(kthread_list_t* lst) {
 }
 
 static void kthread_init_kthread(kthread_data_t* t) {
+  t->state = KTHREAD_PENDING;
   t->id = t->esp = 0;
   t->retval = 0x0;
   t->prev = t->next = 0x0;
@@ -163,7 +164,8 @@ void kthread_init() {
   g_current_thread = first;
 
   // Make the idle thread.
-  KASSERT(kthread_create(&g_idle_thread, &kthread_idle_thread_body, 0));
+  int ret = kthread_create(&g_idle_thread, &kthread_idle_thread_body, 0);
+  KASSERT(ret != 0);
 }
 
 int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
@@ -180,6 +182,15 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   // Allocate a stack for the thread.
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
   KASSERT(stack != 0x0);
+
+  // Touch each page of the stack to make sure it's paged in.  If we don't do
+  // this, when we try to use the stack, we'll cause a page fault, which will in
+  // turn cause a double (then triple) fault when IT tries to use the stack.
+  for (uint32_t i = 0; i < KTHREAD_STACK_SIZE / PAGE_SIZE; ++i) {
+    *((uint8_t*)stack + i * PAGE_SIZE) = 0xAA;
+  }
+  *((uint8_t*)stack + KTHREAD_STACK_SIZE - 1) = 0xAA;
+
   thread->stack = stack;
   stack = (uint32_t*)((uint32_t)stack + KTHREAD_STACK_SIZE - 4);
 

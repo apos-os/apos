@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/debug.h"
 #include "common/kassert.h"
 #include "dev/interrupts.h"
 #include "kmalloc.h"
@@ -84,9 +85,11 @@ void test_basic() {
   KEXPECT_EQ(0, page2 % PAGE_SIZE);
   KEXPECT_EQ(0, page3 % PAGE_SIZE);
 
-  check_frame(page1, 0xCAFEBABE);
-  check_frame(page2, 0xCAFEBABE);
-  check_frame(page3, 0xCAFEBABE);
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    check_frame(page1, 0xCAFEBABE);
+    check_frame(page2, 0xCAFEBABE);
+    check_frame(page3, 0xCAFEBABE);
+  }
 
   fill_frame(page1, 0x11111111);
   fill_frame(page2, 0x22222222);
@@ -98,16 +101,20 @@ void test_basic() {
 
   page_frame_free(page1);
 
-  check_frame(page1, 0xDEADBEEF);
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    check_frame(page1, 0xDEADBEEF);
+  }
   check_frame(page2, 0x22222222);
   check_frame(page3, 0x33333333);
 
   page_frame_free(page2);
   page_frame_free(page3);
 
-  check_frame(page1, 0xDEADBEEF);
-  check_frame(page2, 0xDEADBEEF);
-  check_frame(page3, 0xDEADBEEF);
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    check_frame(page1, 0xDEADBEEF);
+    check_frame(page2, 0xDEADBEEF);
+    check_frame(page3, 0xDEADBEEF);
+  }
 
   uint32_t page4 = page_frame_alloc();
   uint32_t page5 = page_frame_alloc();
