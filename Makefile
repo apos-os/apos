@@ -67,5 +67,5 @@ gdb: kernel.bin kernel.img
 
 tags: $(ALLFILES)
 	@echo 'generating tags...'
-	@find $(FIND_FLAGS) | ctags -L -
+	@find $(FIND_FLAGS) | ctags -L - --languages=c
 	@echo 'generated' `wc -l tags | cut -d ' ' -f 1` 'tags'
