@@ -4,8 +4,13 @@ target remote localhost:1234
 
 break die
 break die_phys
-break int_handler
-break irq33_handler
+
+# For some reason GDB insists on stopping at all page faults.  This will silently continue when that happens.
+break int14
+commands
+silent
+continue
+end
 
 set disassemble-next-line on
 # try this: layout asm
