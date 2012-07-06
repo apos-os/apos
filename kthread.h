@@ -55,9 +55,6 @@ typedef struct {
 // Initialze a thread queue.
 void kthread_queue_init(kthread_queue_t* queue);
 
-// Returns 1 if the given thread is on any thread queue.
-int kthread_on_queue(kthread_t thread_addr);
-
 // Returns 1 if the given thread queue is empty.
 int kthread_queue_empty(kthread_queue_t* queue);
 

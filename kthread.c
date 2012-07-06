@@ -222,11 +222,6 @@ kthread_t kthread_queue_pop(kthread_queue_t* lst) {
   return front;
 }
 
-int kthread_on_queue(kthread_t thread_addr) {
-  kthread_data_t* thread = (kthread_data_t*)thread_addr;
-  return thread->next != 0x0 || thread->prev != 0x0;
-}
-
 int kthread_queue_empty(kthread_queue_t* lst) {
   return lst->head == 0x0;
 }

@@ -49,7 +49,6 @@ void scheduler_init() {
 }
 
 void scheduler_make_runnable(kthread_t thread) {
-  KASSERT(!kthread_on_queue(thread));
   kthread_queue_push(&g_run_queue, thread);
 }
 
