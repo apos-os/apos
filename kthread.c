@@ -219,6 +219,7 @@ kthread_t kthread_queue_pop(kthread_queue_t* lst) {
     lst->tail = 0x0;
   }
   front->next = 0x0;
+  KASSERT(front->next == 0x0 && front->prev == 0x0);
   return front;
 }
 
