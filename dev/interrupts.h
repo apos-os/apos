@@ -21,6 +21,15 @@ void interrupts_init();
 void enable_interrupts();
 void disable_interrupts();
 
+#define IF_FLAG 0x200
+
+// Disable interrupts and return the previous (pre-disabling) IF flag value.
+static inline uint32_t save_and_disable_interrupts();
+
+// Restore interrupt state (given the return value of
+// save_and_disable_interrupts).
+static inline void restore_interrupts(uint32_t saved);
+
 #define MIN_INTERRUPT 0
 #define MAX_INTERRUPT 19
 
@@ -67,5 +76,28 @@ typedef struct {
 // The kernel's code segment selector.  Make sure this matches the one set in
 // gdt_flush.s.
 #define IDT_SELECTOR_VALUE 0x08
+
+// Inline definitions.
+
+static inline uint32_t save_and_disable_interrupts() {
+  uint32_t saved_flags;
+  __asm__ __volatile__ (
+      "pushf\n\t"
+      "pop %0\n\t"
+      "cli\n\t"
+      : "=r"(saved_flags));
+  return saved_flags & IF_FLAG;
+}
+
+static inline void restore_interrupts(uint32_t saved) {
+  uint32_t saved_flags;
+  __asm__ __volatile__ (
+      "pushf\n\t"
+      "pop %0\n\t"
+      : "=r"(saved_flags));
+  if (saved) {
+    __asm__ __volatile__ ("sti");
+  }
+}
 
 #endif

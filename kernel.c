@@ -135,6 +135,7 @@ void kmain(memory_info_t* meminfo) {
   kthread_test();
   kmalloc_test();
   interrupt_clobber_test();
+  interrupt_save_test();
   kstring_test();
   kprintf_test();
 
