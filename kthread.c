@@ -19,30 +19,10 @@
 #include "common/kstring.h"
 #include "kmalloc.h"
 #include "kthread.h"
+#include "kthread-internal.h"
 #include "memory.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
-
-struct kthread_data;
-
-
-#define KTHREAD_RUNNING 0 // Currently running.
-#define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
-#define KTHREAD_DONE    2 // Finished.
-
-// NOTE: if you update this structure, make sure you update kthread_asm.s as
-// well.
-struct kthread_data {
-  uint32_t id;
-  uint32_t state;
-  uint32_t esp;
-  void* retval;
-  struct kthread_data* prev;
-  struct kthread_data* next;
-  uint32_t* stack;  // The block of memory allocated for the thread's stack.
-  kthread_queue_t join_list;  // List of thread's join()'d to this one.
-};
-typedef struct kthread_data kthread_data_t;
 
 static kthread_data_t* g_current_thread = 0;
 static kthread_t g_idle_thread = 0;
