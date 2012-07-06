@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/debug.h"
 #include "common/kassert.h"
 #include "memory.h"
 #include "page_alloc.h"
@@ -71,10 +72,12 @@ uint32_t page_frame_alloc() {
 
   uint32_t frame = free_frame_stack[--stack_idx];
 
-  // Fill the page with crap.
-  uint32_t virt_frame = phys2virt(frame);
-  for (int i = 0; i < PAGE_SIZE / 4; ++i) {
-    ((uint32_t*)virt_frame)[i] = 0xCAFEBABE;
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    // Fill the page with crap.
+    uint32_t virt_frame = phys2virt(frame);
+    for (int i = 0; i < PAGE_SIZE / 4; ++i) {
+      ((uint32_t*)virt_frame)[i] = 0xCAFEBABE;
+    }
   }
 
   return frame;
@@ -82,18 +85,19 @@ uint32_t page_frame_alloc() {
 
 void page_frame_free(uint32_t frame_addr) {
   KASSERT(is_page_aligned(frame_addr));
-
-  // Check that the page frame isn't already free.
-  for (uint32_t i = 0; i < stack_idx; ++i) {
-    KASSERT(free_frame_stack[i] != frame_addr);
-  }
-
   KASSERT(stack_idx <= stack_size);
 
-  // Fill the page with crap.
-  uint32_t virt_frame = phys2virt(frame_addr);
-  for (int i = 0; i < PAGE_SIZE / 4; ++i) {
-    ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    // Check that the page frame isn't already free.
+    for (uint32_t i = 0; i < stack_idx; ++i) {
+      KASSERT(free_frame_stack[i] != frame_addr);
+    }
+
+    // Fill the page with crap.
+    uint32_t virt_frame = phys2virt(frame_addr);
+    for (int i = 0; i < PAGE_SIZE / 4; ++i) {
+      ((uint32_t*)virt_frame)[i] = 0xDEADBEEF;
+    }
   }
 
   page_frame_free_nocheck(frame_addr);
