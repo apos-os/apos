@@ -53,5 +53,6 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
     return;
   }
 
+  klogf("kernel page fault: addr: 0x%x  error: 0x%x\n", address, error);
   die("unhandled kernel page fault");
 }
