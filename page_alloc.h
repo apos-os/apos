@@ -32,6 +32,12 @@ uint32_t page_frame_alloc();
 // Frees the given page frame.
 void page_frame_free(uint32_t frame);
 
+// The exact same as page_frame_free, but doesn't do the extra checks (searching
+// for double-free, filling with 0xDEADBEEF).  Mostly useful in tests where
+// we're doing large blocks of allocations and want to avoid the overhead (since
+// it can be globally disabled with a #define).
+void page_frame_free_nocheck(uint32_t frame);
+
 // Establishes a mapping from the given virtual address to the physical address
 // in the currently-loaded page tables.
 //

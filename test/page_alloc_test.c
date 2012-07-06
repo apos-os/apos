@@ -1,0 +1,136 @@
+// Copyright 2014 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include <stdint.h>
+
+#include "common/kassert.h"
+#include "dev/interrupts.h"
+#include "kmalloc.h"
+#include "memory.h"
+#include "page_alloc.h"
+#include "page_fault.h"
+#include "test/ktest.h"
+
+static void fill_frame(uint32_t frame_start, uint32_t x) {
+  uint32_t* frame = (uint32_t*)(phys2virt(frame_start));
+  for (uint32_t i = 0; i < PAGE_SIZE / 4; ++i) {
+    frame[i] = x;
+  }
+}
+
+static void check_frame(uint32_t frame_start, uint32_t x) {
+  uint32_t matched_words = 0;
+  uint32_t* frame = (uint32_t*)(phys2virt(frame_start));
+  for (uint32_t i = 0; i < PAGE_SIZE / 4; ++i) {
+    if (frame[i] == x) {
+      matched_words++;
+    }
+  }
+  KEXPECT_EQ(matched_words, PAGE_SIZE / sizeof(uint32_t));
+}
+
+void test_alloc_all() {
+  KTEST_BEGIN("allocate all pages test");
+
+  // This test will only work up to 100MB of ram.
+  const uint32_t MAX_PAGES = 100 * 1024 * 1024 / PAGE_SIZE;
+  uint32_t* pages = kmalloc(sizeof(uint32_t) * MAX_PAGES);
+  KASSERT(pages != 0x0);
+
+  uint32_t i = 0;
+  while (i < MAX_PAGES) {
+    pages[i] = page_frame_alloc();
+    if (!pages[i]) {
+      break;
+    }
+    i++;
+  }
+
+  KEXPECT_LT(i, MAX_PAGES);
+  klogf("total allocated pages: %d (%d bytes)\n", i, i * PAGE_SIZE);
+
+  // Free all those pages we just allocated, in apposite order (for the hell of
+  // it).
+  for (uint32_t i2 = 0; i2 < i; i2++) {
+    page_frame_free_nocheck(pages[i2]);
+  }
+}
+
+void test_basic() {
+  KTEST_BEGIN("basic test");
+
+  uint32_t page1 = page_frame_alloc();
+  uint32_t page2 = page_frame_alloc();
+  uint32_t page3 = page_frame_alloc();
+
+  // Make sure we got physical, not virtual, page addresses.
+  KEXPECT_LT(page1, 0xC0000000);
+  KEXPECT_LT(page2, 0xC0000000);
+  KEXPECT_LT(page3, 0xC0000000);
+
+  // Make sure they're page-aligned.
+  KEXPECT_EQ(0, page1 % PAGE_SIZE);
+  KEXPECT_EQ(0, page2 % PAGE_SIZE);
+  KEXPECT_EQ(0, page3 % PAGE_SIZE);
+
+  check_frame(page1, 0xCAFEBABE);
+  check_frame(page2, 0xCAFEBABE);
+  check_frame(page3, 0xCAFEBABE);
+
+  fill_frame(page1, 0x11111111);
+  fill_frame(page2, 0x22222222);
+  fill_frame(page3, 0x33333333);
+
+  check_frame(page1, 0x11111111);
+  check_frame(page2, 0x22222222);
+  check_frame(page3, 0x33333333);
+
+  page_frame_free(page1);
+
+  check_frame(page1, 0xDEADBEEF);
+  check_frame(page2, 0x22222222);
+  check_frame(page3, 0x33333333);
+
+  page_frame_free(page2);
+  page_frame_free(page3);
+
+  check_frame(page1, 0xDEADBEEF);
+  check_frame(page2, 0xDEADBEEF);
+  check_frame(page3, 0xDEADBEEF);
+
+  uint32_t page4 = page_frame_alloc();
+  uint32_t page5 = page_frame_alloc();
+  uint32_t page6 = page_frame_alloc();
+
+  // Pages 4-6 should be equal to pages 1-3 in reverse order.
+  KEXPECT_EQ(page1, page6);
+  KEXPECT_EQ(page2, page5);
+  KEXPECT_EQ(page3, page4);
+
+  page_frame_free(page4);
+  page_frame_free(page5);
+  page_frame_free(page6);
+
+  // TODO(aoates): allow expectations of kasserts (as with expected page faults)
+  // so we can test this.
+  //print("double-free: should kassert");
+  //page_frame_free(page4);
+}
+
+void page_alloc_test() {
+  KTEST_SUITE_BEGIN("page_frame_alloc() test");
+
+  test_alloc_all();
+  test_basic();
+}

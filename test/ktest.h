@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Utilities for kernel unit tests.
+// Kernel unit-testing framework.
 #ifndef APOO_KTEST_H
 #define APOO_KTEST_H
 
@@ -61,5 +61,11 @@ void kexpect_(uint32_t cond, const char* name,
 
 #define KEXPECT_GT(a, b) KEXPECT_INT_("KEXPECT_GT", #a, #b, a, b, a > b, " <= ")
 #define KEXPECT_GE(a, b) KEXPECT_INT_("KEXPECT_GE", #a, #b, a, b, a >= b, " < ")
+
+// Initialize the testing framework.
+void ktest_begin_all();
+
+// Tear down the framework and print statistics about passing/failing tests.
+void ktest_finish_all();
 
 #endif
