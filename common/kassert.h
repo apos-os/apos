@@ -20,7 +20,7 @@
 
 #define KASSERT(cond) do { \
   if (!(cond)) { \
-    kassert_msg((cond), "assertion failed: " #cond " (" __FILE__ ":" STR(__LINE__) ")\n"); \
+    kassert_msg(0, "assertion failed: " #cond " (" __FILE__ ":" STR(__LINE__) ")\n"); \
   } \
 } while(0)
 

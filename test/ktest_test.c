@@ -14,6 +14,8 @@
 
 #include "test/ktest.h"
 
+#include "common/kassert.h"
+
 void ktest_test() {
   KTEST_SUITE_BEGIN("ktest");
 
@@ -62,4 +64,13 @@ void ktest_test() {
   KEXPECT_GE(0, -1);
   KEXPECT_GE(1, 1);
   KEXPECT_GE(0, 1);
+}
+
+void kassert_test() {
+  KTEST_SUITE_BEGIN("kassert");
+
+  KTEST_BEGIN("KASSERT no side effects");
+  int x = 0;
+  KASSERT(++x);
+  KEXPECT_EQ(1, x);
 }
