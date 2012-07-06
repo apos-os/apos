@@ -55,6 +55,10 @@ static void basic_test() {
   KASSERT(kthread_create(&thread2, &thread_func, (void*)2));
   KASSERT(kthread_create(&thread3, &thread_func, (void*)3));
 
+  scheduler_make_runnable(thread1);
+  scheduler_make_runnable(thread2);
+  scheduler_make_runnable(thread3);
+
   kthread_join(thread1);
   kthread_join(thread2);
   kthread_join(thread3);
@@ -73,6 +77,7 @@ static void kthread_exit_test() {
   kthread_t thread1;
 
   KASSERT(kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
+  scheduler_make_runnable(thread1);
   KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
 }
 
@@ -85,6 +90,7 @@ static void kthread_return_test() {
   kthread_t thread1;
 
   KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd));
+  scheduler_make_runnable(thread1);
   KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
 }
 
@@ -112,6 +118,7 @@ static void join_chain_test() {
     kthread_t target = i > 0 ? threads[i-1] : 0;
     int result = kthread_create(&threads[i], &join_test_func, (void*)target);
     KASSERT(result != 0);
+    scheduler_make_runnable(threads[i]);
   }
 
   int out = (int)kthread_join(threads[JOIN_CHAIN_TEST_SIZE-1]);
@@ -126,6 +133,7 @@ static void* join_test2_func(void* arg) {
   }
   kthread_t next;
   KASSERT(kthread_create(&next, &join_test2_func, (void*)(x-1)));
+  scheduler_make_runnable(next);
   return (void*)(1 + (int)kthread_join(next));
 }
 
@@ -138,6 +146,7 @@ static void join_chain_test2() {
   int result = kthread_create(&thread, &join_test2_func,
                               (void*)JOIN_CHAIN_TEST_SIZE);
   KASSERT(result != 0);
+  scheduler_make_runnable(thread);
 
   int out = (int)kthread_join(thread);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
@@ -162,6 +171,7 @@ static void stress_test() {
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i));
+    scheduler_make_runnable(threads[i]);
   }
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {

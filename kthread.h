@@ -27,7 +27,8 @@ typedef struct kthread_data* kthread_t;
 void kthread_init();
 
 // Create a new thread.  The new thread will start in start_routine, with arg
-// passed.
+// passed.  The new thread is NOT automatically made runnable --- you must call
+// scheduler_make_runnable(...) on it after creation if you want it to run.
 //
 // Note: the kthread_t given is just a handle to the thread --- if it goes out
 // of scope or is overwritten, the thread will continue unhindered.

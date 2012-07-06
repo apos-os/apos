@@ -127,7 +127,6 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
-  scheduler_make_runnable(thread);
   return 1;
 }
 
