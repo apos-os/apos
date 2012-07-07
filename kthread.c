@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "dev/interrupts.h"
 #include "kmalloc.h"
 #include "kthread.h"
 #include "kthread-internal.h"
@@ -33,8 +34,6 @@ static int g_next_id = 0;
 //
 // Defined in kthread_asm.s
 void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB);
-
-// TODO(aoates): INTERRUPTS
 
 static void kthread_init_kthread(kthread_data_t* t) {
   t->state = KTHREAD_PENDING;
@@ -53,6 +52,7 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
 }
 
 void kthread_init() {
+  PUSH_INTERRUPTS();
   KASSERT(g_current_thread == 0);
 
   kthread_data_t* first = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
@@ -63,6 +63,7 @@ void kthread_init() {
   first->id = g_next_id++;
 
   g_current_thread = first;
+  POP_INTERRUPTS();
 }
 
 kthread_t kthread_current_thread() {
@@ -71,6 +72,7 @@ kthread_t kthread_current_thread() {
 
 int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
                    void *arg) {
+  PUSH_INTERRUPTS();
   kthread_data_t* thread = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
   *thread_ptr = thread;
 
@@ -127,6 +129,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
+  POP_INTERRUPTS();
   return 1;
 }
 
@@ -141,6 +144,7 @@ void* kthread_join(kthread_t thread_ptr) {
 }
 
 void kthread_exit(void* x) {
+  PUSH_INTERRUPTS();
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
   g_current_thread->retval = x;
@@ -158,9 +162,11 @@ void kthread_exit(void* x) {
 
   // Never get here!
   KASSERT(0);
+  POP_INTERRUPTS();
 }
 
 void kthread_switch(kthread_t new_thread) {
+  PUSH_INTERRUPTS();
   KASSERT(g_current_thread->state != KTHREAD_RUNNING);
   uint32_t my_id = g_current_thread->id;
 
@@ -171,6 +177,7 @@ void kthread_switch(kthread_t new_thread) {
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
+  POP_INTERRUPTS();
 }
 
 void kthread_queue_init(kthread_queue_t* lst) {

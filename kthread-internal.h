@@ -18,6 +18,8 @@
 
 #include <stdint.h>
 
+#include "dev/interrupts.h"
+
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
 #define KTHREAD_DONE    2 // Finished.
@@ -49,5 +51,11 @@ void kthread_switch(kthread_t new_thread);
 // scheduler_yield() (to yield and reschedule) and scheduler_wait_on() (to wait
 // on another thread queue).
 void scheduler_yield_no_reschedule();
+
+#define PUSH_INTERRUPTS() \
+    uint32_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
+
+#define POP_INTERRUPTS() \
+    restore_interrupts(_SAVED_INTERRUPTS);
 
 #endif
