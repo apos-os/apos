@@ -27,7 +27,8 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   dev/interrupts.o dev/ps2.o dev/irq.o dev/timer.o dev/isr.o \
 	   dev/keyboard/ps2_keyboard.o dev/keyboard/ps2_scancodes.o dev/keyboard/keyboard.o \
 	   dev/video/vga.o dev/video/vterm.o \
-	   memory.o page_alloc.o kernel.o kmalloc.o kthread.o kthread_asm.o scheduler.o page_fault.o \
+	   proc/kthread.o proc/kthread_asm.o proc/scheduler.o \
+	   memory.o page_alloc.o kernel.o kmalloc.o page_fault.o \
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o \
 	   test/kmalloc_test.o test/kthread_test.o test/page_alloc_map_test.o test/page_alloc_test.o
 

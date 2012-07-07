@@ -19,10 +19,10 @@
 #include "common/kstring.h"
 #include "dev/interrupts.h"
 #include "kmalloc.h"
-#include "kthread.h"
-#include "kthread-internal.h"
+#include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "memory.h"
-#include "scheduler.h"
+#include "proc/scheduler.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 

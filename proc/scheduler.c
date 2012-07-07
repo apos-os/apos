@@ -18,10 +18,10 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "kmalloc.h"
-#include "kthread.h"
-#include "kthread-internal.h"
+#include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 #include "memory.h"
-#include "scheduler.h"
+#include "proc/scheduler.h"
 
 static kthread_t g_idle_thread = 0;
 static kthread_queue_t g_run_queue;

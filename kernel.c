@@ -19,7 +19,7 @@
 #include "common/kstring.h"
 #include "dev/interrupts.h"
 #include "kmalloc.h"
-#include "kthread.h"
+#include "proc/kthread.h"
 #include "memory.h"
 #include "page_alloc.h"
 #include "page_fault.h"
@@ -29,7 +29,7 @@
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
-#include "scheduler.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 

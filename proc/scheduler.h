@@ -23,7 +23,7 @@
 #ifndef APOO_SCHEDULER_H
 #define APOO_SCHEDULER_H
 
-#include "kthread.h"
+#include "proc/kthread.h"
 
 // Initialize the scheduler.
 void scheduler_init();

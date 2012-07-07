@@ -16,9 +16,9 @@
 
 #include "common/kassert.h"
 #include "kmalloc.h"
-#include "kthread.h"
-#include "kthread-internal.h"
-#include "scheduler.h"
+#include "proc/kthread.h"
+#include "proc/kthread-internal.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
 
 // TODO(aoates): other things to test:
