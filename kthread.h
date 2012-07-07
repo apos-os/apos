@@ -13,17 +13,22 @@
 // limitations under the License.
 
 // Kernel threads package.
+//
+// The package is in two parts: kthreads (this), which provides the threading
+// primitives (threads, handles, thread queues); and the scheduler (see
+// scheduler.h/c), which is responsible for actually running and scheduling
+// threads.
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
-struct kthread_data;
 typedef struct kthread_data* kthread_t;
 
-// Initialize the kthreads.
+// Initialize the kthreads package.
 void kthread_init();
 
-// Create a new thread and put it on the run queue.  The new thread will start
-// in start_routine, with arg passed.
+// Create a new thread.  The new thread will start in start_routine, with arg
+// passed.  The new thread is NOT automatically made runnable --- you must call
+// scheduler_make_runnable(...) on it after creation if you want it to run.
 //
 // Note: the kthread_t given is just a handle to the thread --- if it goes out
 // of scope or is overwritten, the thread will continue unhindered.
@@ -35,11 +40,28 @@ int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 // (implicitly or explicitly), and return's the thread's return value.
 void* kthread_join(kthread_t thread);
 
-// Explicitly yield to another thread.  The scheduler may choose this thread to
-// run immediately, however.
-void kthread_yield();
-
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
+
+// Thread queues are simple linked lists of threads, which can be pushed on the
+// back and popped from the front.  A given thread can only be on a single
+// thread queue (or no thread queues) at once --- trying to enqueue a thread on
+// multiple queues will result in a panic.
+typedef struct {
+  kthread_t head;
+  kthread_t tail;
+} kthread_queue_t;
+
+// Initialze a thread queue.
+void kthread_queue_init(kthread_queue_t* queue);
+
+// Returns 1 if the given thread queue is empty.
+int kthread_queue_empty(kthread_queue_t* queue);
+
+// Enqueue a thread on the back of the given thread queue.
+void kthread_queue_push(kthread_queue_t* queue, kthread_t thread);
+
+// Pops a thread off the front of the thread queue.
+kthread_t kthread_queue_pop(kthread_queue_t* queue);
 
 #endif

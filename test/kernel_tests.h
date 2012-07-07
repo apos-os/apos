@@ -17,6 +17,7 @@
 #define APOO_ALL_TESTS_H
 
 void interrupt_clobber_test();
+void interrupt_save_test();
 void kmalloc_test();
 void kprintf_test();
 void kstring_test();

@@ -29,6 +29,7 @@
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
+#include "scheduler.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
@@ -104,6 +105,9 @@ void kmain(memory_info_t* meminfo) {
   klog("kthread_init()\n");
   kthread_init();
 
+  klog("scheduler_init()\n");
+  scheduler_init();
+
   klog("initialization finished...\n");
 
   vterm_clear(g_vterm);
@@ -131,6 +135,7 @@ void kmain(memory_info_t* meminfo) {
   kthread_test();
   kmalloc_test();
   interrupt_clobber_test();
+  interrupt_save_test();
   kstring_test();
   kprintf_test();
 

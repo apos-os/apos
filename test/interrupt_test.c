@@ -14,6 +14,7 @@
 
 #include "common/kstring.h"
 #include "common/kprintf.h"
+#include "dev/interrupts.h"
 #include "test/ktest.h"
 
 // Trigger an error interrupt, a non-error interrupt, and an IRQ, and make sure
@@ -84,4 +85,38 @@ void interrupt_clobber_test() {
   KEXPECT_EQ(0xBAADF00D, eax);
   KEXPECT_EQ(0xBAADF11D, ebx);
   KEXPECT_EQ(0xBAADF22D, edx);
+}
+
+// Test saving/restoring interrupt state.
+static uint32_t get_interrupt_state() {
+  uint32_t saved_flags;
+  __asm__ __volatile__ (
+      "pushf\n\t"
+      "pop %0\n\t"
+      : "=r"(saved_flags));
+  return saved_flags & IF_FLAG;
+}
+
+void interrupt_save_test() {
+  KTEST_SUITE_BEGIN("interrupt save/restore");
+  int orig_state = get_interrupt_state();
+
+  enable_interrupts();
+  KEXPECT_NE(0, get_interrupt_state());
+
+  int saved = save_and_disable_interrupts();
+  KEXPECT_EQ(0, get_interrupt_state());
+
+  restore_interrupts(0);
+  KEXPECT_EQ(0, get_interrupt_state());
+
+  restore_interrupts(saved);
+  KEXPECT_NE(0, get_interrupt_state());
+
+  // Restore original state.
+  if (orig_state) {
+    enable_interrupts();
+  } else {
+    disable_interrupts();
+  }
 }
