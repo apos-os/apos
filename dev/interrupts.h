@@ -30,6 +30,13 @@ static inline uint32_t save_and_disable_interrupts();
 // save_and_disable_interrupts).
 static inline void restore_interrupts(uint32_t saved);
 
+// Macros to use the functions above (and ensure they're called in pairs).
+#define PUSH_AND_DISABLE_INTERRUPTS() \
+    uint32_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
+
+#define POP_INTERRUPTS() \
+    restore_interrupts(_SAVED_INTERRUPTS);
+
 #define MIN_INTERRUPT 0
 #define MAX_INTERRUPT 19
 

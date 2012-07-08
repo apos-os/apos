@@ -56,10 +56,4 @@ void kthread_switch(kthread_t new_thread);
 // on another thread queue).
 void scheduler_yield_no_reschedule();
 
-#define PUSH_INTERRUPTS() \
-    uint32_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
-
-#define POP_INTERRUPTS() \
-    restore_interrupts(_SAVED_INTERRUPTS);
-
 #endif

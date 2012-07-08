@@ -53,7 +53,7 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
 }
 
 void kthread_init() {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread == 0);
 
   kthread_data_t* first = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
@@ -73,7 +73,7 @@ kthread_t kthread_current_thread() {
 
 int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
                    void *arg) {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* thread = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
   *thread_ptr = thread;
 
@@ -149,7 +149,7 @@ void* kthread_join(kthread_t thread_ptr) {
 }
 
 void kthread_exit(void* x) {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
   g_current_thread->retval = x;
@@ -171,7 +171,7 @@ void kthread_exit(void* x) {
 }
 
 void kthread_switch(kthread_t new_thread) {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread->state != KTHREAD_RUNNING);
   uint32_t my_id = g_current_thread->id;
 

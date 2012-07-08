@@ -43,7 +43,7 @@ static void* idle_thread_body(void* arg) {
 // TODO(aoates): add test for interrupts/idle loop.
 
 void scheduler_init() {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_queue_init(&g_run_queue);
 
   // Make the idle thread.
@@ -53,19 +53,19 @@ void scheduler_init() {
 }
 
 void scheduler_make_runnable(kthread_t thread) {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_queue_push(&g_run_queue, thread);
   POP_INTERRUPTS();
 }
 
 void scheduler_yield() {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   scheduler_wait_on(&g_run_queue);
   POP_INTERRUPTS();
 }
 
 void scheduler_yield_no_reschedule() {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* new_thread = kthread_queue_pop(&g_run_queue);
   if (!new_thread) {
     new_thread = g_idle_thread;
@@ -75,7 +75,7 @@ void scheduler_yield_no_reschedule() {
 }
 
 void scheduler_wait_on(kthread_queue_t* queue) {
-  PUSH_INTERRUPTS();
+  PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
   current->state = KTHREAD_PENDING;
   kthread_queue_push(queue, current);
