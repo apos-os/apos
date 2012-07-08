@@ -42,6 +42,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->prev = t->next = 0x0;
   t->stack = 0x0;
   kthread_queue_init(&t->join_list);
+  t->process = 0x0;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -81,6 +82,9 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   thread->state = KTHREAD_PENDING;
   thread->esp = 0;
   thread->retval = 0x0;
+
+  // TODO(aoates): use the process from the parent thread for this thread, once
+  // we support multiple threads per process.
 
   // Allocate a stack for the thread.
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);

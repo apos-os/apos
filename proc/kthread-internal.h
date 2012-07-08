@@ -24,6 +24,9 @@
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
 #define KTHREAD_DONE    2 // Finished.
 
+struct process;
+typedef struct process process_t;
+
 // NOTE: if you update this structure, make sure you update kthread_asm.s as
 // well.
 struct kthread_data {
@@ -35,6 +38,7 @@ struct kthread_data {
   struct kthread_data* next;
   uint32_t* stack;  // The block of memory allocated for the thread's stack.
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
+  process_t* process;  // The process owning this thread.
 };
 typedef struct kthread_data kthread_data_t;
 

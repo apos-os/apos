@@ -20,6 +20,7 @@
 #include "dev/interrupts.h"
 #include "kmalloc.h"
 #include "proc/kthread.h"
+#include "proc/process.h"
 #include "memory.h"
 #include "page_alloc.h"
 #include "page_fault.h"
@@ -104,9 +105,10 @@ void kmain(memory_info_t* meminfo) {
 
   klog("kthread_init()\n");
   kthread_init();
-
   klog("scheduler_init()\n");
   scheduler_init();
+  klog("proc_init()\n");
+  proc_init();
 
   klog("initialization finished...\n");
 
