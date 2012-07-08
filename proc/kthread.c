@@ -124,8 +124,9 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
       "pushf\n\t"
       "pop %0\n\t"
       : "=r"(flags));
+  // Enable interrupts by default in the new thread.
+  flags = flags | IF_FLAG;
   *(stack--) = flags;
-  // TODO(aoates): we probably need to enable interrupts in the flag manually!
 
   stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
