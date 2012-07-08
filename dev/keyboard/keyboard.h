@@ -21,6 +21,8 @@
 
 #include <stdint.h>
 
+#include "dev/char.h"
+
 // Raw key codes.  Provided by hardward drivers.
 #define NONE 0
 #define KEY_0 1
@@ -135,7 +137,7 @@ vkeyboard_t* vkeyboard_create();
 
 // Send a raw keycode (and whether the event is key-up or key-down) to a virtual
 // keyboard.
-void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t ip);
+void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up);
 
 // Attach the output of a virtual keyboard to the given handler.  When the
 // keyboard generates ASCII output, it will invoke the handler.  Each keyboard
@@ -145,7 +147,6 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t ip);
 // shouldn't block.
 //
 // NOTE: this should be called before any keycodes are sent.
-typedef void (*vkeyboard_handler_t)(char);
-void vkeyboard_set_handler(vkeyboard_t* kbd, vkeyboard_handler_t handler);
+void vkeyboard_set_handler(vkeyboard_t* kbd, char_sink_t handler, void* arg);
 
 #endif

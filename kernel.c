@@ -58,20 +58,16 @@ static void add_timers() {
   KASSERT(register_timer_callback(1000, &tick));
 }
 
-static void keyboard_cb(char c) {
-  vterm_putc(g_vterm, c);
-}
-
 static void io_init() {
   static vkeyboard_t* kbd = 0x0;
   kbd = vkeyboard_create();
   KASSERT(ps2_keyboard_init(kbd));
 
   video_vga_init();
-  vkeyboard_set_handler(kbd, &keyboard_cb);
-
   g_video = video_get_default();
   g_vterm = vterm_create(g_video);
+
+  vkeyboard_set_handler(kbd, &vterm_putc_sink, (void*)g_vterm);
 }
 
 void kmain(memory_info_t* meminfo) {

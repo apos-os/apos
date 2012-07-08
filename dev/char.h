@@ -12,28 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Basic video terminal that can output ASCII, handle backspace, etc.
-#ifndef APOO_DEV_VIDEO_VTERM
-#define APOO_DEV_VIDEO_VTERM
+// Common definitions for character sources and sinks.
+#ifndef APOO_CHAR_H
+#define APOO_CHAR_H
 
-#include <stdint.h>
-
-#include "dev/video/vga.h"
-
-typedef struct vterm vterm_t;
-
-// Create a vterm attached to the given video device.
-vterm_t* vterm_create(video_t* v);
-
-// Send a character to the vterm.
-void vterm_putc(vterm_t* t, uint8_t c);
-
-// char_sink_t version of the above.
-static inline void vterm_putc_sink(void* arg, char c) {
-  vterm_putc((vterm_t*)arg, (uint8_t)c);
-}
-
-// Clear the terminal.
-void vterm_clear(vterm_t* t);
+// A char_sink_t is a function accepting an opaque arg and a character to be
+// processed.
+//
+// Generally, character sources (like keyboards and line disciplines) will be
+// configured with a char_sink_t to call when a character is available (and the
+// arg to pass to that sink).
+typedef void (*char_sink_t)(void*, char);
 
 #endif
