@@ -24,6 +24,8 @@
 #include "dev/keyboard/keyboard.h"
 #include "dev/keyboard/ps2_scancodes.h"
 
+#define PS2_DATA_TIMEOUT 10
+
 static vkeyboard_t* g_vkbd = 0x0;
 
 static void irq_handler() {
@@ -33,7 +35,11 @@ static void irq_handler() {
   uint8_t done = 0;
 
   while (!done) {
-    c = ps2_read_byte(PS2_PORT1);
+    if (!ps2_read_byte_async(PS2_PORT1, &c, PS2_DATA_TIMEOUT)) {
+      klogf("WARNING: expected data byte from PS/2 keyboard controller "
+            "but timed out.\n");
+      return;
+    }
     switch (c) {
       case 0xE0:
         is_extended = 1;

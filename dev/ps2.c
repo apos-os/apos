@@ -20,6 +20,7 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
+#include "dev/interrupts.h"
 #include "dev/ps2.h"
 
 #define CTRL_DATA_PORT 0x60
@@ -299,16 +300,28 @@ int ps2_get_device_type(int port) {
 }
 
 void ps2_enable_interrupts(int port) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   // TODO(aoates): support port2.
   KASSERT(port == PS2_PORT1);
   KASSERT(g_initialized);
 
-  send_cmd(CTRL_CMD_READ_CONFIG);
-  uint8_t config = read_data();
+  // TODO(aoates): we should probably do this read-loop thing (or an equivalent
+  // iowait type operation) for ALL times we try to read the current config.
+  // Though this one is the only one that seems to have issues --- maybe because
+  // of interrupts being enabled during this call?
+  uint8_t config;
+  read_data_async(&config, 0);  // Flush any pending output.
+  while (1) {
+    send_cmd(CTRL_CMD_READ_CONFIG);
+    if (read_data_async(&config, 100)) {
+      break;
+    }
+  }
   config = SET(config, CTRL_CFG_INT1);
   klogf("  enabling interrupt...\n");
   send_cmd(CTRL_CMD_WRITE_CONFIG);
   write_data(config);
+  POP_INTERRUPTS();
 }
 
 uint8_t ps2_read_byte(int port) {
@@ -316,4 +329,11 @@ uint8_t ps2_read_byte(int port) {
   KASSERT(port == PS2_PORT1);
   KASSERT(g_initialized);
   return read_data();
+}
+
+int ps2_read_byte_async(int port, uint8_t* data_out, int timeout) {
+  // TODO(aoates): support port2.
+  KASSERT(port == PS2_PORT1);
+  KASSERT(g_initialized);
+  return read_data_async(data_out, timeout);
 }

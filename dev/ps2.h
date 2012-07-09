@@ -37,4 +37,9 @@ void ps2_enable_interrupts(int port);
 // Blocks until a byte of data is available on the given port, then returns it.
 uint8_t ps2_read_byte(int port);
 
+// Async version of the above.  Loops up to timeout times waiting for data, then
+// puts it in data_out and returns 1.  If no data is available after the number
+// of checks is done, then 0 is returned.
+int ps2_read_byte_async(int port, uint8_t* data_out, int timeout);
+
 #endif
