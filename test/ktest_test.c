@@ -16,54 +16,88 @@
 
 #include "common/kassert.h"
 
+char* inc_char(char* x) {
+  *x = *x + 1;
+  return x;
+}
+
 void ktest_test() {
   KTEST_SUITE_BEGIN("ktest");
 
-  KTEST_BEGIN("KEXPECT_EQ");
+  do {
+    uint32_t aval = 1;
+    uint32_t bval = 1;
+    char aval_str[50];
+    char bval_str[50];
+    if (kstrncmp("1", "0x", 2) == 0 || kstrncmp("1", "0x", 2) == 0) {
+      ksprintf(aval_str, "0x%s", utoa_hex(aval));
+      ksprintf(bval_str, "0x%s", utoa_hex(bval));
+    } else {
+      kstrcpy(aval_str, utoa(aval));
+      kstrcpy(bval_str, utoa(bval));
+    }
+    kexpect_(aval == bval, "KEXPECT_EQ", "1", "1", aval_str, bval_str, " != ", "test/ktest_test.c", "14");
+  } while(0);
+
+  KTEST_BEGIN("KEXPECT_EQ [PF]");
   KEXPECT_EQ(1, 1);
   KEXPECT_EQ(1, 2);
 
-  KTEST_BEGIN("KEXPECT_EQ (hex)");
+  KTEST_BEGIN("KEXPECT_EQ (hex) [PFFF]");
   KEXPECT_EQ(0xdeadbeef, 0xdeadbeef);
   KEXPECT_EQ(0xdeadbeef, 0xbaadf00d);
   KEXPECT_EQ(0xdeadbeef, 1);
   KEXPECT_EQ(1, 0xdeadbeef);
 
-  KTEST_BEGIN("KEXPECT_STREQ");
+  KTEST_BEGIN("KEXPECT_STREQ [PF]");
   KEXPECT_STREQ("abc", "abc");
   KEXPECT_STREQ("abc", "def");
 
-  KTEST_BEGIN("KEXPECT_NE");
+  KTEST_BEGIN("KEXPECT_NE [PF]");
   KEXPECT_NE(1, 2);
   KEXPECT_NE(1, 1);
 
-  KTEST_BEGIN("KEXPECT_STRNE");
+  KTEST_BEGIN("KEXPECT_STRNE [PF]");
   KEXPECT_STRNE("abc", "def");
   KEXPECT_STRNE("abc", "abc");
 
-  KTEST_BEGIN("KEXPECT_LT");
+  KTEST_BEGIN("KEXPECT_LT [PPFF]");
   KEXPECT_LT(1, 2);
   KEXPECT_LT(-1, 0);
   KEXPECT_LT(1, 1);
   KEXPECT_LT(2, 1);
 
-  KTEST_BEGIN("KEXPECT_LE");
+  KTEST_BEGIN("KEXPECT_LE [PPPF]");
   KEXPECT_LE(1, 2);
   KEXPECT_LE(-1, 0);
   KEXPECT_LE(1, 1);
   KEXPECT_LE(2, 1);
 
-  KTEST_BEGIN("KEXPECT_GT");
+  KTEST_BEGIN("KEXPECT_GT [PPFF]");
   KEXPECT_GT(3, 2);
   KEXPECT_GT(0, -1);
   KEXPECT_GT(1, 1);
   KEXPECT_GT(0, 1);
 
-  KTEST_BEGIN("KEXPECT_GE");
+  KTEST_BEGIN("KEXPECT_GE [PPPF]");
   KEXPECT_GE(3, 2);
   KEXPECT_GE(0, -1);
   KEXPECT_GE(1, 1);
   KEXPECT_GE(0, 1);
+
+  // Verify that the EXPECT macros don't evaluate their args twice (and
+  // therefore don't screw up any side effects).
+  KTEST_BEGIN("KEXPEXT_EQ no side effects (SHOULD PASS)");
+  int x = 0;
+  KEXPECT_EQ(1, ++x);
+  KEXPECT_EQ(1, x);
+
+  KTEST_BEGIN("KEXPEXT_STREQ no side effects (SHOULD PASS)");
+  char buf[2];
+  buf[0] = 'a';
+  buf[1] = '\0';
+  KEXPECT_STREQ("b", inc_char(buf));
+  KEXPECT_STREQ("b", buf);
 }
 
 void kassert_test() {

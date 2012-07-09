@@ -32,11 +32,16 @@ void kexpect_(uint32_t cond, const char* name,
               const char* opstr,
               const char* file, const char* line);
 
-#define KEXPECT_(name, astr, bstr, aval, bval, cond, opstr) do { \
+#define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr) do { \
+  const char* aval = a; \
+  const char* bval = b; \
+  uint32_t cond = cond_func(aval, bval); \
   kexpect_(cond, name, astr, bstr, aval, bval, opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 
-#define KEXPECT_INT_(name, astr, bstr, aval, bval, cond, opstr) do { \
+#define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr) do { \
+  typeof(a) aval = a; \
+  typeof(a) bval = b; \
   char aval_str[50]; \
   char bval_str[50]; \
   /* If the expected value is written as hex, print the actual value as hex too.*/ \
@@ -47,20 +52,20 @@ void kexpect_(uint32_t cond, const char* name,
     kstrcpy(aval_str, utoa(aval)); \
     kstrcpy(bval_str, utoa(bval)); \
   } \
-  kexpect_(cond, name, astr, bstr, aval_str, bval_str, opstr, __FILE__, STR(__LINE__)); \
+  kexpect_((aval op bval), name, astr, bstr, aval_str, bval_str, opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 
-#define KEXPECT_EQ(a, b) KEXPECT_INT_("KEXPECT_EQ", #a, #b, a, b, a == b, " != ")
-#define KEXPECT_NE(a, b) KEXPECT_INT_("KEXPECT_NE", #a, #b, a, b, a != b, " == ")
+#define KEXPECT_EQ(a, b) KEXPECT_INT_("KEXPECT_EQ", #a, #b, a, b, ==, " != ")
+#define KEXPECT_NE(a, b) KEXPECT_INT_("KEXPECT_NE", #a, #b, a, b, !=, " == ")
 
-#define KEXPECT_STREQ(a, b) KEXPECT_("KEXPECT_STREQ", #a, #b, a, b, !kstrcmp(a, b), " != ")
-#define KEXPECT_STRNE(a, b) KEXPECT_("KEXPECT_STRNE", #a, #b, a, b, kstrcmp(a, b), " == ")
+#define KEXPECT_STREQ(a, b) KEXPECT_("KEXPECT_STREQ", #a, #b, a, b, !kstrcmp, " != ")
+#define KEXPECT_STRNE(a, b) KEXPECT_("KEXPECT_STRNE", #a, #b, a, b, kstrcmp, " == ")
 
-#define KEXPECT_LT(a, b) KEXPECT_INT_("KEXPECT_LT", #a, #b, a, b, a < b, " >= ")
-#define KEXPECT_LE(a, b) KEXPECT_INT_("KEXPECT_LE", #a, #b, a, b, a <= b, " > ")
+#define KEXPECT_LT(a, b) KEXPECT_INT_("KEXPECT_LT", #a, #b, a, b, <, " >= ")
+#define KEXPECT_LE(a, b) KEXPECT_INT_("KEXPECT_LE", #a, #b, a, b, <=, " > ")
 
-#define KEXPECT_GT(a, b) KEXPECT_INT_("KEXPECT_GT", #a, #b, a, b, a > b, " <= ")
-#define KEXPECT_GE(a, b) KEXPECT_INT_("KEXPECT_GE", #a, #b, a, b, a >= b, " < ")
+#define KEXPECT_GT(a, b) KEXPECT_INT_("KEXPECT_GT", #a, #b, a, b, >, " <= ")
+#define KEXPECT_GE(a, b) KEXPECT_INT_("KEXPECT_GE", #a, #b, a, b, >=, " < ")
 
 // Initialize the testing framework.
 void ktest_begin_all();
