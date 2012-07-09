@@ -187,7 +187,9 @@ static int ld_read_internal(ld_t* l, char* buf, int n) {
 
 int ld_read(ld_t* l, char* buf, int n) {
   PUSH_AND_DISABLE_INTERRUPTS();
-  while (l->start_idx == l->cooked_idx) {
+  // Note: this means that if multiple threads are blocking on an ld_read()
+  // here, we could return 0 for some of them even though we didn't see an EOF!
+  if (l->start_idx == l->cooked_idx) {
     // Block until data is available.
     scheduler_wait_on(&l->wait_queue);
   }
