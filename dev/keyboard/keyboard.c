@@ -41,12 +41,9 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up) {
 
   if (code == KEY_L_SHFT || code == KEY_R_SHFT) {
     kbd->shift_down = !up;
-  }
-  if (code == KEY_CAPS) {
+  } else if (code == KEY_CAPS) {
     kbd->caps_down = !up;
-  }
-
-  if (!up) {
+  } else if (!up) {
     char out = '\0';
     if (kbd->shift_down) {
       out = SHIFT_ASCII_LOOKUP[code];
