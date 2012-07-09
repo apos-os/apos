@@ -29,7 +29,7 @@ static kthread_queue_t g_run_queue;
 static void* idle_thread_body(void* arg) {
   int iter = 0;
   while(1) {
-    if (iter % 100000 == 0) {
+    if (iter % 10000000 == 0) {
       klogf("[idle thread]\n");
       iter = 0;
     }
