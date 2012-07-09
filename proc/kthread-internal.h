@@ -23,6 +23,7 @@
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
 #define KTHREAD_DONE    2 // Finished.
+#define KTHREAD_DESTROYED 3 // Destroyed.  Should never be seen.
 
 struct process;
 typedef struct process process_t;
@@ -38,9 +39,19 @@ struct kthread_data {
   struct kthread_data* next;
   uint32_t* stack;  // The block of memory allocated for the thread's stack.
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
+  // Then number of threads blocking in kthread_join() on this thread.  This is
+  // distinct from join_list, since threads may have been removed from join_list
+  // but not yet scheduled (and therefore still blocking in kthread_join).
+  int join_list_pending;
   process_t* process;  // The process owning this thread.
 };
 typedef struct kthread_data kthread_data_t;
+
+// Destroy a thread object and clean up its storage.
+//
+// This should NEVER be called by clients --- threads will be automatically
+// cleaned up when they exit.
+void kthread_destroy(kthread_t thread);
 
 // Return a handle to the currently running thread.
 kthread_t kthread_current_thread();

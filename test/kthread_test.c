@@ -272,10 +272,6 @@ static void stress_test() {
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
     KEXPECT_EQ(i, (int)kthread_join(threads[i]));
   }
-
-  for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
-    kfree(threads[i]);
-  }
 }
 
 void kthread_test() {

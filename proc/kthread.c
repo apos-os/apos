@@ -42,6 +42,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->prev = t->next = 0x0;
   t->stack = 0x0;
   kthread_queue_init(&t->join_list);
+  t->join_list_pending = 0;
   t->process = 0x0;
 }
 
@@ -138,14 +139,37 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   return 1;
 }
 
+void kthread_destroy(kthread_t thread) {
+  // Write gargbage to crash anyone that tries to use the thread later.
+  thread->esp = 0;
+  thread->state = KTHREAD_DESTROYED;
+  kfree(thread->stack);
+  thread->stack = 0x0;
+
+  // If we're in debug mode, leave the thread body around to we can die if we
+  // try to use it later.
+#if !ENABLE_KERNEL_SAFETY_NETS
+  kfree(thread);
+#endif
+}
+
 void* kthread_join(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
+  KASSERT(thread->state == KTHREAD_PENDING ||
+          thread->state == KTHREAD_DONE);
+
   if (thread->state != KTHREAD_DONE) {
+    thread->join_list_pending++;
     scheduler_wait_on(&thread->join_list);
-    // TODO(aoates): clean up if no-one else is waiting on this thread.
+    thread->join_list_pending--;
   }
   KASSERT(thread->state == KTHREAD_DONE);
-  return thread->retval;
+  void* retval = thread->retval;
+  // If we're last, clean up after the thread.
+  if (thread->join_list_pending == 0) {
+    kthread_destroy(thread);
+  }
+  return retval;
 }
 
 void kthread_exit(void* x) {

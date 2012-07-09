@@ -38,6 +38,10 @@ int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 
 // Join the given thread.  Will return once the other thread has exited
 // (implicitly or explicitly), and return's the thread's return value.
+//
+// Note: since the join()'ing thread cleans up the join()'ed threads data, it's
+// not safe for multiple threads to join() on a single other thread, UNLESS they
+// all call kthread_join() before the target thread has been scheduled.
 void* kthread_join(kthread_t thread);
 
 // Exits the current thread, setting it's return value to x.
