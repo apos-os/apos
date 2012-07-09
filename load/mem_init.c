@@ -37,7 +37,7 @@ const uint32_t START_HEAP = 0xD0000000;
 const uint32_t END_HEAP =   0xE0000000;
 
 static void die_phys() {
-  __asm__("int $3");
+  asm("int $3");
 }
 
 // We have to use our own version of kassert, since the normal kassert is linked
@@ -140,7 +140,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   meminfo->mapped_end = KERNEL_VIRT_START + PTE_NUM_ENTRIES * PAGE_SIZE;
 
   // Install the PDE and enable paging.
-  __asm__ __volatile__
+  asm volatile
       ("mov %0, %%cr3;"
        "mov %%cr0, %%eax;"
        "or 0x80000000, %%eax;"

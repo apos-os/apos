@@ -65,7 +65,7 @@ void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
 void interrupts_init() {
   // First, figure out where the IDT is.
   idt_ptr_t idt_ptr;
-  __asm__ __volatile__(
+  asm volatile(
       "sidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
   KASSERT(idt_ptr.limit % sizeof(idt_entry_t) == 0);
@@ -107,9 +107,9 @@ void int_handler(uint32_t interrupt, uint32_t error) {
 }
 
 void enable_interrupts() {
-  __asm__ __volatile__("sti");
+  asm volatile("sti");
 }
 
 void disable_interrupts() {
-  __asm__ __volatile__("cli");
+  asm volatile("cli");
 }

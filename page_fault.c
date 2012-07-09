@@ -35,7 +35,7 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
   KASSERT(interrupt == PAGE_FAULT_INTERRUPT);
 
   uint32_t address;
-  __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(address));
+  asm volatile ("movl %%cr2, %0\n\t" : "=g"(address));
 
   //klogf("page fault: addr: 0x%x  error: 0x%x\n", address, error);
 

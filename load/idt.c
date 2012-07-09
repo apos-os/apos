@@ -38,7 +38,7 @@ void idt_init() {
     idt_entries[i].offset_high = 0;
   }
 
-  __asm__ __volatile__(
+  asm volatile(
       "lidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
 }

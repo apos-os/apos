@@ -32,7 +32,7 @@ extern void kmain(memory_info_t* meminfo);
 void kinit(memory_info_t* meminfo) {
   // First, switch our stack to the virtual version (we're currently running on
   // an identity-mapped physical stack).
-  __asm__ __volatile__(
+  asm volatile (
       "movl %%esp, %%eax;"
       "add %0, %%eax;"
       "movl %%eax, %%esp;"
@@ -43,18 +43,18 @@ void kinit(memory_info_t* meminfo) {
 
   // Also switch our GDT and IDT pointers to their virtual addresses.
   gdt_ptr_t gdt_ptr;
-  __asm__ __volatile__(
+  asm volatile (
       "sgdt (%0);"
       :: "r"((uint32_t)&gdt_ptr) :);
   gdt_ptr.base += KERNEL_VIRT_START;
   gdt_flush(&gdt_ptr);
 
   idt_ptr_t idt_ptr;
-  __asm__ __volatile__(
+  asm volatile (
       "sidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
   idt_ptr.base += KERNEL_VIRT_START;
-  __asm__ __volatile__(
+  asm volatile (
       "lidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
 

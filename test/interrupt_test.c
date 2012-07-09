@@ -27,7 +27,7 @@ void interrupt_clobber_test() {
   eax = 0xBAADF00D;
   ebx = 0xBAADF11D;
   edx = 0xBAADF22D;
-  __asm__ __volatile__ (
+  asm volatile (
       "movl %3, %%eax\n\t"
       "movl %4, %%ebx\n\t"
       "movl %5, %%edx\n\t"
@@ -46,7 +46,7 @@ void interrupt_clobber_test() {
   eax = 0xBAADF00D;
   ebx = 0xBAADF11D;
   edx = 0xBAADF22D;
-  __asm__ __volatile__ (
+  asm volatile (
       "movl %3, %%eax\n\t"
       "movl %4, %%ebx\n\t"
       "movl %5, %%edx\n\t"
@@ -71,7 +71,7 @@ void interrupt_clobber_test() {
   eax = 0xBAADF00D;
   ebx = 0xBAADF11D;
   edx = 0xBAADF22D;
-  __asm__ __volatile__ (
+  asm volatile (
       "movl %3, %%eax\n\t"
       "movl %4, %%ebx\n\t"
       "movl %5, %%edx\n\t"
@@ -90,7 +90,7 @@ void interrupt_clobber_test() {
 // Test saving/restoring interrupt state.
 static uint32_t get_interrupt_state() {
   uint32_t saved_flags;
-  __asm__ __volatile__ (
+  asm volatile (
       "pushf\n\t"
       "pop %0\n\t"
       : "=r"(saved_flags));

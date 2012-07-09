@@ -124,7 +124,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   // "push" the flags.
   uint32_t flags;
-  __asm__ __volatile__ (
+  asm volatile (
       "pushf\n\t"
       "pop %0\n\t"
       : "=r"(flags));

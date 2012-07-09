@@ -48,7 +48,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
   KASSERT(interrupt == 0x0E);
 
   uint32_t address;
-  __asm__ __volatile__ ("movl %%cr2, %0\n\t" : "=g"(address));
+  asm volatile ("movl %%cr2, %0\n\t" : "=g"(address));
 
   if (expected_seen) {
     KEXPECT_EQ(0, expected_seen);
@@ -61,7 +61,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
   // Walk up the stack and change where we're returning.  This is pretty kooky.
   uint32_t* esp;
   int limit = 128;
-  __asm__ __volatile__ ("movl %%esp, %0\n\t" : "=g"(esp));
+  asm volatile ("movl %%esp, %0\n\t" : "=g"(esp));
   // Look for an address on the stack thats in between the orig and new return
   // addresses.
   while (*esp <= expected_orig_return_address ||

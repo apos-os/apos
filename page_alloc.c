@@ -126,11 +126,11 @@ static inline uint32_t* get_page_table_entry(uint32_t virt) {
 // Invalidate the TLB entry for the given virtual address.
 static inline void invalidate_tlb(uint32_t virt) {
   if (SUPPORTS_INVPLG_INSTRUCTION) {
-    __asm__ __volatile__ (
+    asm volatile (
         "invlpg %0\n\t"
         :: "m"(virt));
   } else {
-    __asm__ __volatile__ (
+    asm volatile (
         "mov %%cr3, %%eax\n\t"
         "mov %%eax, %%cr3\n\t"
         ::: "eax");

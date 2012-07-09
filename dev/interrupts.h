@@ -88,7 +88,7 @@ typedef struct {
 
 static inline uint32_t save_and_disable_interrupts() {
   uint32_t saved_flags;
-  __asm__ __volatile__ (
+  asm volatile (
       "pushf\n\t"
       "pop %0\n\t"
       "cli\n\t"
@@ -98,12 +98,12 @@ static inline uint32_t save_and_disable_interrupts() {
 
 static inline void restore_interrupts(uint32_t saved) {
   uint32_t saved_flags;
-  __asm__ __volatile__ (
+  asm volatile (
       "pushf\n\t"
       "pop %0\n\t"
       : "=r"(saved_flags));
   if (saved) {
-    __asm__ __volatile__ ("sti");
+    asm volatile ("sti");
   }
 }
 

@@ -24,7 +24,7 @@ void die(const char* msg) {
   } else {
     klog("<unknown reason :(>\n");
   }
-  __asm__ __volatile__ (
+  asm volatile (
       "cli\n\t"
       "hlt\n\t");
 }
