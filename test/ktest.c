@@ -97,8 +97,15 @@ void kexpect_(uint32_t cond, const char* name,
 }
 
 void ktest_begin_all() {
-  klogf("KERNEL UNIT TESTS");
+  num_suites = 0;
+  num_tests = 0;
+  num_suites_passing = 0;
+  num_tests_passing = 0;
+  current_suite_passing = 0;
+  current_test_passing = 0;
   test_start_time = get_time_ms();
+
+  klogf("KERNEL UNIT TESTS");
 }
 
 void ktest_finish_all() {
