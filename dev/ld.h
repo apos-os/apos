@@ -54,6 +54,9 @@ void ld_set_sink(ld_t* l, char_sink_t sink, void* arg);
 // If there is no data available, blocks until data becomes available.
 int ld_read(ld_t* l, char* buf, int n);
 
+// Same as above, but doesn't block if there is no data (it simply returns 0).
+int ld_read_async(ld_t* l, char* buf, int n);
+
 // Write n characters from buf to the ld's output.  Returns the number of
 // characters written.
 int ld_write(ld_t* l, char* buf, int n);

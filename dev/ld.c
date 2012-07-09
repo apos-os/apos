@@ -154,13 +154,7 @@ void ld_set_sink(ld_t* l, char_sink_t sink, void* arg) {
   l->sink_arg = arg;
 }
 
-int ld_read(ld_t* l, char* buf, int n) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  while (l->start_idx == l->cooked_idx) {
-    // Block until data is available.
-    scheduler_wait_on(&l->wait_queue);
-  }
-
+static int ld_read_internal(ld_t* l, char* buf, int n) {
   int copied = 0;
   int buf_idx = 0;
   while (l->start_idx != l->cooked_idx && copied < n) {
@@ -169,7 +163,25 @@ int ld_read(ld_t* l, char* buf, int n) {
     copied++;
     l->start_idx = circ_inc(l->start_idx);
   }
+  return copied;
+}
 
+int ld_read(ld_t* l, char* buf, int n) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  while (l->start_idx == l->cooked_idx) {
+    // Block until data is available.
+    scheduler_wait_on(&l->wait_queue);
+  }
+
+  // TODO(aoates): handle end-of-stream.
+  int copied = ld_read_internal(l, buf, n);
+  POP_INTERRUPTS();
+  return copied;
+}
+
+int ld_read_async(ld_t* l, char* buf, int n) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int copied = ld_read_internal(l, buf, n);
   POP_INTERRUPTS();
   return copied;
 }
