@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/ld.h"
+#include "kmalloc.h"
 #include "test/ktest.h"
 
 static ld_t* g_ld = 0;
@@ -28,13 +29,21 @@ static void test_sink(void* arg, char c) {
   g_sink[g_sink_idx++] = c;
 }
 
-static void reset_sink() {
+static void reset() {
+  if (g_ld) {
+    kfree(g_ld);
+  }
+
+  g_ld = ld_create();
+  KASSERT(g_ld);
+
   g_sink_idx = 0;
+  ld_set_sink(g_ld, &test_sink, 0x0);
 }
 
 static void echo_test() {
   KTEST_BEGIN("echo test");
-  reset_sink();
+  reset();
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -50,7 +59,7 @@ static void echo_test() {
 
 static void provide_sink_test() {
   KTEST_BEGIN("ld_provide_sink() test");
-  reset_sink();
+  reset();
 
   ld_provide_sink((void*)g_ld, 'a');
   ld_provide_sink((void*)g_ld, 'b');
@@ -62,7 +71,7 @@ static void provide_sink_test() {
 
 static void write_test() {
   KTEST_BEGIN("ld_write() test");
-  reset_sink();
+  reset();
 
   char buf[100];
   kstrcpy(buf, "hello, world");
@@ -81,14 +90,122 @@ static void write_test() {
   KEXPECT_EQ(0, kstrncmp(g_sink, "hello, worldABC", 15));
 }
 
+static void basic_read_test() {
+  KTEST_BEGIN("basic ld_read() test");
+  reset();
+
+  char buf[100];
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(0, read_len);
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\n');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(4, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "abc\n", 4));
+}
+
+static void cook_test() {
+  KTEST_BEGIN("ld_read() cooking test");
+  reset();
+
+  char buf[100];
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(0, read_len);
+
+  // Delete some chars then provide new ones.
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, 'D');
+  ld_provide(g_ld, 'E');
+  ld_provide(g_ld, 'F');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(0, read_len);
+
+  ld_provide(g_ld, '\n');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(5, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "aDEF\n", 5));
+}
+
+static void cook_limit_test() {
+  KTEST_BEGIN("ld_read() cook-past-start-of-line test");
+  reset();
+
+  char buf[100];
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\n');
+
+  ld_provide(g_ld, 'd');
+  ld_provide(g_ld, 'e');
+  ld_provide(g_ld, 'f');
+
+  // Delete too many chars.
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, 'g');
+  ld_provide(g_ld, 'h');
+  ld_provide(g_ld, '\n');
+
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(7, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "abc\ngh\n", 7));
+}
+
+static void cook_limit_test2() {
+  KTEST_BEGIN("ld_read() cook-past-start-of-line test (start_idx in middle)");
+  reset();
+
+  char buf[100];
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\n');
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(4, read_len);
+
+  ld_provide(g_ld, 'd');
+  ld_provide(g_ld, 'e');
+  ld_provide(g_ld, 'f');
+
+  // Delete too many chars.
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, 'g');
+  ld_provide(g_ld, 'h');
+  ld_provide(g_ld, '\n');
+
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(3, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "gh\n", 3));
+}
+
+// TODO(aoates): more tests to write:
+//  1) blocking test with threads
+//  2) dropping excees characters test
+//  3) wrapping around end of buffer test (for start, cooked, and raw idxs).
+
 void ld_test() {
   KTEST_SUITE_BEGIN("line discipline");
-  g_ld = ld_create();
-  KASSERT(g_ld);
-
-  ld_set_sink(g_ld, &test_sink, 0x0);
 
   echo_test();
   provide_sink_test();
   write_test();
+  basic_read_test();
+  cook_test();
+  cook_limit_test();
+  cook_limit_test2();
 }
