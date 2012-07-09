@@ -38,6 +38,7 @@
 #define LD_BUF_SIZE 1024
 
 void pic_init();
+void kshell_main(ld_t* l);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
@@ -131,21 +132,7 @@ void kmain(memory_info_t* meminfo) {
   print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
   vterm_clear(g_vterm);
 
-  ktest_begin_all();
-
-  //ktest_test();
-  ld_test();
-  kassert_test();
-  page_alloc_test();
-  page_alloc_map_test();
-  kthread_test();
-  kmalloc_test();
-  interrupt_clobber_test();
-  interrupt_save_test();
-  kstring_test();
-  kprintf_test();
-
-  ktest_finish_all();
+  kshell_main(g_ld);
 
   //page_frame_alloc_test();
   klog("DONE\n");
