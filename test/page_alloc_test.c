@@ -66,6 +66,7 @@ void test_alloc_all() {
   for (uint32_t i2 = 0; i2 < i; i2++) {
     page_frame_free_nocheck(pages[i2]);
   }
+  kfree(pages);
 }
 
 void test_basic() {
