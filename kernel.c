@@ -132,6 +132,7 @@ void kmain(memory_info_t* meminfo) {
   ktest_begin_all();
 
   //ktest_test();
+  ld_test();
   kassert_test();
   page_alloc_test();
   page_alloc_map_test();
