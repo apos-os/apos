@@ -100,6 +100,10 @@ static void test_cmd(int argc, char* argv[]) {
   ksh_printf("error: unknown test '%s'\n", argv[1]);
 }
 
+static void meminfo_cmd(int argc, char* argv[]) {
+  kmalloc_log_state();
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -107,6 +111,7 @@ typedef struct {
 
 static cmd_t CMDS[] = {
   { "test", &test_cmd },
+  { "meminfo", &meminfo_cmd },
   { 0x0, 0x0 },
 };
 

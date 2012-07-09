@@ -166,8 +166,14 @@ void kfree(void* x) {
 
 void kmalloc_log_state() {
   klog("kmalloc block list:\n");
+  uint32_t total = 0;
+  uint32_t free = 0;
   block_t* cblock = g_block_list;
   while (cblock) {
+    total += cblock->length + sizeof(block_t);
+    if (cblock->free) {
+      free += cblock->length;
+    }
     klogf("  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
           cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
     //klogf("             < %x %x %x %x >\n",
@@ -178,6 +184,8 @@ void kmalloc_log_state() {
 
     cblock = cblock->next;
   }
+  klogf("total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
+  klogf("free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
 }
 
 block_t* kmalloc_internal_get_block_list() {
