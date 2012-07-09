@@ -19,6 +19,8 @@
 #include "common/kstring.h"
 #include "dev/ld.h"
 #include "kmalloc.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
 
 #define LD_BUF_SIZE 15
@@ -294,9 +296,155 @@ static void read_limit_test() {
   KEXPECT_EQ(0, read_len);
 }
 
+typedef struct {
+  ld_t* l;
+  int idx;
+  int len;
+  int out_len;
+  char buf[100];
+} read_test_data_t;
+
+static void* basic_read_test_func(void* arg) {
+  read_test_data_t* d = (read_test_data_t*)arg;
+  klogf("ld_read() thread %d started\n", d->idx);
+  d->out_len = ld_read(d->l, d->buf, d->len);
+  klogf("ld_read() thread %d read %d bytes\n", d->idx, d->out_len);
+  return 0;
+}
+
+static void basic_read_thread_test() {
+  KTEST_BEGIN("basic read thread test");
+  read_test_data_t data;
+  data.l = g_ld;
+  data.len = 100;
+  data.idx = 0;
+  data.out_len = 0;
+
+  kthread_t thread;
+  kthread_create(&thread, &basic_read_test_func, &data);
+  scheduler_make_runnable(thread);
+
+  scheduler_yield();
+
+  // Write to the ld.
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+
+  // Yield and make sure nothing was read yet.
+  scheduler_yield();
+
+  KEXPECT_EQ(0, data.out_len);
+  ld_provide(g_ld, '\n');
+
+  scheduler_yield();
+  KEXPECT_EQ(4, data.out_len);
+  KEXPECT_EQ(0, kstrncmp(data.buf, "abc\n", 4));
+}
+
+static void three_thread_test() {
+  KTEST_BEGIN("3-read thread test");
+  read_test_data_t data[3];
+  for (int i = 0; i < 3; ++i) {
+    data[i].l = g_ld;
+    data[i].idx = i;
+    data[i].len = 1;
+    data[i].out_len = 0;
+  }
+
+  kthread_t threads[3];
+  for (int i = 0; i < 3; ++i) {
+    kthread_create(&threads[i], &basic_read_test_func, &data[i]);
+    scheduler_make_runnable(threads[i]);
+  }
+
+  scheduler_yield();
+
+  // Write to the ld.
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+
+  // Yield and make sure nothing was read yet.
+  scheduler_yield();
+
+  KEXPECT_EQ(0, data[0].out_len);
+  KEXPECT_EQ(0, data[1].out_len);
+  KEXPECT_EQ(0, data[2].out_len);
+  ld_provide(g_ld, '\n');
+
+  kthread_join(threads[0]);
+  kthread_join(threads[1]);
+  kthread_join(threads[2]);
+
+  KEXPECT_EQ(1, data[0].out_len);
+  KEXPECT_EQ(0, kstrncmp(data[0].buf, "a", 1));
+
+  KEXPECT_EQ(1, data[1].out_len);
+  KEXPECT_EQ(0, kstrncmp(data[1].buf, "b", 1));
+
+  KEXPECT_EQ(1, data[2].out_len);
+  KEXPECT_EQ(0, kstrncmp(data[2].buf, "c", 1));
+
+  char buf[10];
+  int read_len = ld_read(g_ld, buf, 10);
+  KEXPECT_EQ(1, read_len);
+}
+
+// Same as above, but the first 2 threads consume all the available bytes.
+static void three_thread_test2() {
+  KTEST_BEGIN("3-read thread test #2");
+  read_test_data_t data[3];
+  for (int i = 0; i < 3; ++i) {
+    data[i].l = g_ld;
+    data[i].idx = i;
+    data[i].len = 2;
+    data[i].out_len = 0;
+  }
+
+  kthread_t threads[3];
+  for (int i = 0; i < 3; ++i) {
+    kthread_create(&threads[i], &basic_read_test_func, &data[i]);
+    scheduler_make_runnable(threads[i]);
+  }
+
+  scheduler_yield();
+
+  // Write to the ld.
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+
+  // Yield and make sure nothing was read yet.
+  scheduler_yield();
+
+  KEXPECT_EQ(0, data[0].out_len);
+  KEXPECT_EQ(0, data[1].out_len);
+  KEXPECT_EQ(0, data[2].out_len);
+  ld_provide(g_ld, '\n');
+
+  kthread_join(threads[0]);
+  kthread_join(threads[1]);
+
+  KEXPECT_EQ(2, data[0].out_len);
+  KEXPECT_EQ(0, kstrncmp(data[0].buf, "ab", 2));
+
+  KEXPECT_EQ(2, data[1].out_len);
+  KEXPECT_EQ(0, kstrncmp(data[1].buf, "c\n", 2));
+
+  KEXPECT_EQ(0, data[2].out_len);
+
+  ld_provide(g_ld, 'd');
+  ld_provide(g_ld, '\n');
+  kthread_join(threads[2]);
+
+  KEXPECT_EQ(2, data[2].out_len);
+  KEXPECT_EQ(0, kstrncmp(data[2].buf, "d\n", 2));
+}
+
 // TODO(aoates): more tests to write:
-//  1) blocking test with threads
-//  2) wrapping around end of buffer test (for start, cooked, and raw idxs).
+//  1) interrupt-masking test (provide() from a timer interrupt and
+//  simultaneously read).
 
 void ld_test() {
   KTEST_SUITE_BEGIN("line discipline");
@@ -311,4 +459,7 @@ void ld_test() {
   char_limit_test();
   wrap_deletes_test();
   read_limit_test();
+  basic_read_thread_test();
+  three_thread_test();
+  three_thread_test2();
 }
