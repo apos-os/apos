@@ -27,6 +27,7 @@
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
+#include "dev/ld.h"
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
@@ -34,10 +35,13 @@
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
+#define LD_BUF_SIZE 1024
+
 void pic_init();
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
+static ld_t* g_ld = 0;
 
 void print(const char* msg) {
   while (*msg) {
@@ -58,20 +62,19 @@ static void add_timers() {
   KASSERT(register_timer_callback(1000, &tick));
 }
 
-static void keyboard_cb(char c) {
-  vterm_putc(g_vterm, c);
-}
-
 static void io_init() {
   static vkeyboard_t* kbd = 0x0;
   kbd = vkeyboard_create();
   KASSERT(ps2_keyboard_init(kbd));
 
   video_vga_init();
-  vkeyboard_set_handler(kbd, &keyboard_cb);
-
   g_video = video_get_default();
   g_vterm = vterm_create(g_video);
+
+  g_ld = ld_create(LD_BUF_SIZE);
+  ld_set_sink(g_ld, &vterm_putc_sink, (void*)g_vterm);
+
+  vkeyboard_set_handler(kbd, &ld_provide_sink, (void*)g_ld);
 }
 
 void kmain(memory_info_t* meminfo) {
@@ -131,6 +134,7 @@ void kmain(memory_info_t* meminfo) {
   ktest_begin_all();
 
   //ktest_test();
+  ld_test();
   kassert_test();
   page_alloc_test();
   page_alloc_map_test();

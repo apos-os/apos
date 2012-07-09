@@ -28,6 +28,11 @@ vterm_t* vterm_create(video_t* v);
 // Send a character to the vterm.
 void vterm_putc(vterm_t* t, uint8_t c);
 
+// char_sink_t version of the above.
+static inline void vterm_putc_sink(void* arg, char c) {
+  vterm_putc((vterm_t*)arg, (uint8_t)c);
+}
+
 // Clear the terminal.
 void vterm_clear(vterm_t* t);
 

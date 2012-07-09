@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// Common definitions for character sources and sinks.
+#ifndef APOO_CHAR_H
+#define APOO_CHAR_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
+// A char_sink_t is a function accepting an opaque arg and a character to be
+// processed.
+//
+// Generally, character sources (like keyboards and line disciplines) will be
+// configured with a char_sink_t to call when a character is available (and the
+// arg to pass to that sink).
+typedef void (*char_sink_t)(void*, char);
 
 #endif

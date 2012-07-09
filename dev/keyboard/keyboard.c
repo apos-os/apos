@@ -16,6 +16,7 @@
 
 #include "common/kassert.h"
 #include "kmalloc.h"
+#include "dev/char.h"
 #include "dev/keyboard/keyboard.h"
 
 static char NORMAL_ASCII_LOOKUP[];
@@ -26,13 +27,14 @@ struct vkeyboard {
   // TODO(aoates): support control chars besides shift.
   uint8_t shift_down;
   uint8_t caps_down;
-  vkeyboard_handler_t handler;
+  char_sink_t handler;
+  void* handler_arg;
 };
 
 vkeyboard_t* vkeyboard_create() {
   vkeyboard_t* kbd = (vkeyboard_t*)kmalloc(sizeof(vkeyboard_t));
   kbd->shift_down = kbd->caps_down = 0;
-  kbd->handler = (vkeyboard_handler_t)0;
+  kbd->handler = (char_sink_t)0;
   return kbd;
 }
 
@@ -53,13 +55,14 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up) {
       out = NORMAL_ASCII_LOOKUP[code];
     }
     if (kbd->handler) {
-      kbd->handler(out);
+      kbd->handler(kbd->handler_arg, out);
     }
   }
 }
 
-void vkeyboard_set_handler(vkeyboard_t* kbd, vkeyboard_handler_t handler) {
+void vkeyboard_set_handler(vkeyboard_t* kbd, char_sink_t handler, void* arg) {
   kbd->handler = handler;
+  kbd->handler_arg = arg;
 }
 
 // Maps from keycode to ASCII.
