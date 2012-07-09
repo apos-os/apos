@@ -195,10 +195,108 @@ static void cook_limit_test2() {
   KEXPECT_EQ(0, kstrncmp(buf, "gh\n", 3));
 }
 
+// Sends too many chars then verifies that overloading worked correctly.
+static void do_overload_test() {
+  for (int i = 0; i < 26; i++) {
+    ld_provide(g_ld, 'a' + i);
+  }
+  ld_provide(g_ld, '\n');
+
+  // We should have exceeded the limit, so the newline was dropped.
+  char buf[100];
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(0, read_len);
+
+  // Make room then try cooking again.
+  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\n');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(14, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "abcdefghijklm\n", 14));
+}
+
+static void char_limit_test() {
+  KTEST_BEGIN("buffer length limit test");
+  reset();
+  do_overload_test();
+
+  // Now make sure we handle the limit in the middle of the buffer as well (when
+  // wrapping).
+  reset();
+  for (int i = 0; i < 5; i++) {
+    ld_provide(g_ld, 'a' + i);
+  }
+  char buf[100];
+  ld_provide(g_ld, '\n');
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(6, read_len);
+
+  // Now we should be in the middle of the buffer.  Try overloading again.
+  do_overload_test();
+}
+
+static void wrap_deletes_test() {
+  KTEST_BEGIN("wrap deletes around buffer test");
+  reset();
+
+  for (int i = 0; i < 10; i++) {
+    ld_provide(g_ld, 'a' + i);
+  }
+  char buf[100];
+  ld_provide(g_ld, '\n');
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(11, read_len);
+
+  for (int i = 0; i < 10; i++) {
+    ld_provide(g_ld, 'a' + i);
+  }
+  for (int i = 0; i < 8; i++) {
+    ld_provide(g_ld, '\b');
+  }
+  for (int i = 0; i < 6; i++) {
+    ld_provide(g_ld, 'C' + i);
+  }
+
+  ld_provide(g_ld, '\n');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(9, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "abCDEFGH\n", 9));
+}
+
+static void read_limit_test() {
+  KTEST_BEGIN("ld_read() limit");
+  reset();
+
+  for (int i = 0; i < 10; i++) {
+    ld_provide(g_ld, 'a' + i);
+  }
+  ld_provide(g_ld, '\n');
+
+  // Read it in several chunks.
+  char buf[100];
+  int read_len = ld_read_async(g_ld, buf, 3);
+  KEXPECT_EQ(3, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "abc", 3));
+
+  read_len = ld_read_async(g_ld, buf, 4);
+  KEXPECT_EQ(4, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "defg", 4));
+
+  read_len = ld_read_async(g_ld, buf, 3);
+  KEXPECT_EQ(3, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "hij", 3));
+
+  read_len = ld_read_async(g_ld, buf, 1);
+  KEXPECT_EQ(1, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "\n", 1));
+
+  read_len = ld_read_async(g_ld, buf, 1);
+  KEXPECT_EQ(0, read_len);
+}
+
 // TODO(aoates): more tests to write:
 //  1) blocking test with threads
-//  2) dropping excees characters test
-//  3) wrapping around end of buffer test (for start, cooked, and raw idxs).
+//  2) wrapping around end of buffer test (for start, cooked, and raw idxs).
 
 void ld_test() {
   KTEST_SUITE_BEGIN("line discipline");
@@ -210,4 +308,7 @@ void ld_test() {
   cook_test();
   cook_limit_test();
   cook_limit_test2();
+  char_limit_test();
+  wrap_deletes_test();
+  read_limit_test();
 }
