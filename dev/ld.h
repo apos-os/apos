@@ -25,8 +25,13 @@
 struct ld;
 typedef struct ld ld_t;
 
-// Allocate and initialize a new line discipline.
-ld_t* ld_create();
+// Allocate and initialize a new line discipline, with an internal buffer of the
+// given size.
+ld_t* ld_create(int buf_size);
+
+// Free and ld_t created with ld_create().  You must call this instead of
+// freeing the ld_t directly or you will leak memory.
+void ld_destroy(ld_t* l);
 
 // **** Functions for connecting the ld to the terminal ****
 // Provide a character from the keyboard (or other source) to the given ld.

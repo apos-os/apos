@@ -24,17 +24,14 @@
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 
-#define LD_BUF_SIZE 1024
-
-// TODO(aoates): unit tests!
-
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
   // raw}_idx, which refer to the first character, the end of the cooked region,
   // and the end of the raw region respectively.
   //  start_idx <= cooked_idx <= raw_idx
   // (subject to circular index rollover).
-  char read_buf[LD_BUF_SIZE];
+  char* read_buf;
+  int buf_len;
   uint32_t start_idx;
   uint32_t cooked_idx;
   uint32_t raw_idx;
@@ -48,8 +45,10 @@ struct ld {
 };
 typedef struct ld ld_t;
 
-ld_t* ld_create() {
+ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
+  l->read_buf = (char*)kmalloc(buf_size);
+  l->buf_len = buf_size;
   l->start_idx = l->cooked_idx = l->raw_idx = 0;
   l->sink = 0x0;
   l->sink_arg = 0x0;
@@ -57,12 +56,19 @@ ld_t* ld_create() {
   return l;
 }
 
-static inline uint32_t circ_inc(uint32_t x) {
-  return (x + 1) % LD_BUF_SIZE;
+void ld_destroy(ld_t* l) {
+  if (l->read_buf) {
+    kfree(l->read_buf);
+  }
+  kfree(l);
 }
 
-static inline uint32_t circ_dec(uint32_t x) {
-  if (x == 0) return LD_BUF_SIZE - 1;
+static inline uint32_t circ_inc(ld_t* l, uint32_t x) {
+  return (x + 1) % l->buf_len;
+}
+
+static inline uint32_t circ_dec(ld_t* l, uint32_t x) {
+  if (x == 0) return l->buf_len - 1;
   else return x - 1;
 }
 
@@ -81,26 +87,26 @@ static void cook_buffer(ld_t* l) {
 
 void log_state(ld_t* l) {
   klogf("ld state:\n");
-  char buf[LD_BUF_SIZE+2];
-  for (int i = 0; i < LD_BUF_SIZE; i++) {
+  char buf[l->buf_len+2];
+  for (int i = 0; i < l->buf_len; i++) {
     buf[i] = l->read_buf[i];
     if (buf[i] < 32) {
       buf[i] = '?';
     }
   }
-  buf[LD_BUF_SIZE] = '\n';
-  buf[LD_BUF_SIZE+1] = '\0';
+  buf[l->buf_len] = '\n';
+  buf[l->buf_len+1] = '\0';
   klog(buf);
 
-  kmemset(buf, ' ', LD_BUF_SIZE);
+  kmemset(buf, ' ', l->buf_len);
   buf[l->start_idx] = 's';
   klog(buf);
 
-  kmemset(buf, ' ', LD_BUF_SIZE);
+  kmemset(buf, ' ', l->buf_len);
   buf[l->cooked_idx] = 'c';
   klog(buf);
 
-  kmemset(buf, ' ', LD_BUF_SIZE);
+  kmemset(buf, ' ', l->buf_len);
   buf[l->raw_idx] = 'r';
   klog(buf);
 }
@@ -110,7 +116,7 @@ void ld_provide(ld_t* l, char c) {
   KASSERT(l->sink != 0x0);
 
   // Check for overflow.
-  if (c != '\b' && circ_inc(l->raw_idx) == l->start_idx) {
+  if (c != '\b' && circ_inc(l, l->raw_idx) == l->start_idx) {
     char buf[2];
     buf[0] = c;
     buf[1] = '\0';
@@ -124,7 +130,7 @@ void ld_provide(ld_t* l, char c) {
         // Ignore backspace at start of line.
         return;
       }
-      l->raw_idx = circ_dec(l->raw_idx);
+      l->raw_idx = circ_dec(l, l->raw_idx);
       l->read_buf[l->raw_idx] = '#';  // DEBUG
       break;
 
@@ -136,7 +142,7 @@ void ld_provide(ld_t* l, char c) {
     // TODO(aoates): handle other special chars.
     default:
       l->read_buf[l->raw_idx] = c;
-      l->raw_idx = circ_inc(l->raw_idx);
+      l->raw_idx = circ_inc(l, l->raw_idx);
   }
 
   // Echo it to the screen.
@@ -161,7 +167,7 @@ static int ld_read_internal(ld_t* l, char* buf, int n) {
     buf[buf_idx] = l->read_buf[l->start_idx];
     buf_idx++;
     copied++;
-    l->start_idx = circ_inc(l->start_idx);
+    l->start_idx = circ_inc(l, l->start_idx);
   }
   return copied;
 }

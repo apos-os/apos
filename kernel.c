@@ -35,6 +35,8 @@
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
+#define LD_BUF_SIZE 1024
+
 void pic_init();
 
 static vterm_t* g_vterm = 0;
@@ -69,7 +71,7 @@ static void io_init() {
   g_video = video_get_default();
   g_vterm = vterm_create(g_video);
 
-  g_ld = ld_create();
+  g_ld = ld_create(LD_BUF_SIZE);
   ld_set_sink(g_ld, &vterm_putc_sink, (void*)g_vterm);
 
   vkeyboard_set_handler(kbd, &ld_provide_sink, (void*)g_ld);

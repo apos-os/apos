@@ -21,6 +21,8 @@
 #include "kmalloc.h"
 #include "test/ktest.h"
 
+#define LD_BUF_SIZE 15
+
 static ld_t* g_ld = 0;
 
 static int g_sink_idx = 0;
@@ -31,10 +33,10 @@ static void test_sink(void* arg, char c) {
 
 static void reset() {
   if (g_ld) {
-    kfree(g_ld);
+    ld_destroy(g_ld);
   }
 
-  g_ld = ld_create();
+  g_ld = ld_create(LD_BUF_SIZE);
   KASSERT(g_ld);
 
   g_sink_idx = 0;
