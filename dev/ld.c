@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/ascii.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -124,6 +125,7 @@ void ld_provide(ld_t* l, char c) {
     return;
   }
 
+  int echo = 1;
   switch (c) {
     case '\b':
       if (l->cooked_idx == l->raw_idx) {
@@ -134,6 +136,10 @@ void ld_provide(ld_t* l, char c) {
       l->read_buf[l->raw_idx] = '#';  // DEBUG
       break;
 
+    case ASCII_EOT:
+      echo = 0;
+      break;
+
     case '\r':
     case '\f':
       die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
@@ -141,16 +147,23 @@ void ld_provide(ld_t* l, char c) {
 
     // TODO(aoates): handle other special chars.
     default:
+      if (c < 32 && c != '\n') {
+        klogf("WARNING: ignoring unknown control char 0x%x in ld\n");
+        return;
+      }
+
       l->read_buf[l->raw_idx] = c;
       l->raw_idx = circ_inc(l, l->raw_idx);
   }
 
   // Echo it to the screen.
-  l->sink(l->sink_arg, c);
+  if (echo) {
+    l->sink(l->sink_arg, c);
+  }
 
   // Cook the buffer, optionally.
   // TODO(aoates): handle ctrl-c, ctrl-d, etc.
-  if (c == '\n') {
+  if (c == '\n' || c == ASCII_EOT) {
     cook_buffer(l);
   }
 }

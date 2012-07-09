@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/ascii.h"
 #include "common/kassert.h"
 #include "kmalloc.h"
 #include "dev/char.h"
@@ -27,13 +28,15 @@ struct vkeyboard {
   // TODO(aoates): support control chars besides shift.
   uint8_t shift_down;
   uint8_t caps_down;
+  uint8_t ctrl_down;
+  uint8_t alt_down;
   char_sink_t handler;
   void* handler_arg;
 };
 
 vkeyboard_t* vkeyboard_create() {
   vkeyboard_t* kbd = (vkeyboard_t*)kmalloc(sizeof(vkeyboard_t));
-  kbd->shift_down = kbd->caps_down = 0;
+  kbd->shift_down = kbd->caps_down = kbd->ctrl_down = kbd->alt_down = 0;
   kbd->handler = (char_sink_t)0;
   return kbd;
 }
@@ -45,6 +48,10 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up) {
     kbd->shift_down = !up;
   } else if (code == KEY_CAPS) {
     kbd->caps_down = !up;
+  } else if (code == KEY_L_CTRL || code == KEY_R_CTRL) {
+    kbd->ctrl_down = !up;
+  } else if (code == KEY_L_ALT || code == KEY_R_ALT) {
+    kbd->alt_down = !up;
   } else if (!up) {
     char out = '\0';
     if (kbd->shift_down) {
@@ -54,7 +61,11 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up) {
     } else {
       out = NORMAL_ASCII_LOOKUP[code];
     }
-    if (kbd->handler) {
+    // TODO(aoates): figure out a more elegent way to do this.
+    if ((out == 'd' || out == 'D') && kbd->ctrl_down) {
+      out = ASCII_EOT;
+    }
+    if (kbd->handler || out != '\0') {
       kbd->handler(kbd->handler_arg, out);
     }
   }

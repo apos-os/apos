@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/ascii.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -109,6 +110,23 @@ static void basic_read_test() {
   read_len = ld_read_async(g_ld, buf, 100);
   KEXPECT_EQ(4, read_len);
   KEXPECT_EQ(0, kstrncmp(buf, "abc\n", 4));
+}
+
+static void eof_read_test() {
+  KTEST_BEGIN("EOF ld_read() test");
+  reset();
+
+  char buf[100];
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(0, read_len);
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, ASCII_EOT);
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(3, read_len);
+  KEXPECT_EQ(0, kstrncmp(buf, "abc", 3));
 }
 
 static void cook_test() {
@@ -453,6 +471,7 @@ void ld_test() {
   provide_sink_test();
   write_test();
   basic_read_test();
+  eof_read_test();
   cook_test();
   cook_limit_test();
   cook_limit_test2();
