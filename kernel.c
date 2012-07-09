@@ -27,6 +27,7 @@
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
+#include "dev/ld.h"
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
@@ -38,6 +39,7 @@ void pic_init();
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
+static ld_t* g_ld = 0;
 
 void print(const char* msg) {
   while (*msg) {
@@ -67,7 +69,10 @@ static void io_init() {
   g_video = video_get_default();
   g_vterm = vterm_create(g_video);
 
-  vkeyboard_set_handler(kbd, &vterm_putc_sink, (void*)g_vterm);
+  g_ld = ld_create();
+  ld_set_sink(g_ld, &vterm_putc_sink, (void*)g_vterm);
+
+  vkeyboard_set_handler(kbd, &ld_provide_sink, (void*)g_ld);
 }
 
 void kmain(memory_info_t* meminfo) {
