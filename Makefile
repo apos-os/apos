@@ -30,6 +30,7 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   dev/video/vga.o dev/video/vterm.o dev/ld.o \
 	   proc/kthread.o proc/kthread_asm.o proc/scheduler.o proc/process.o \
 	   memory.o page_alloc.o kernel.o kmalloc.o page_fault.o \
+	   vfs/vfs.o vfs/ramfs.o \
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o \
 	   test/kmalloc_test.o test/kthread_test.o test/page_alloc_map_test.o test/page_alloc_test.o \
 	   test/ld_test.o test/hashtable_test.o \
