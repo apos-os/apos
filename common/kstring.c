@@ -150,3 +150,27 @@ const char* utoa(uint32_t x) {
 const char* utoa_hex(uint32_t x) {
   return utoa_internal(x, 16, "0123456789ABCDEF");
 }
+
+static uint32_t atou_internal(const char* s) {
+  uint32_t out = 0;
+  while (*s) {
+    if (*s < '0' || *s > '9') {
+      break;
+    }
+    out = 10 * out + (*s - '0');
+    s++;
+  }
+  return out;
+}
+
+int32_t atoi(const char* s) {
+  if (*s == '-') {
+    return -(int32_t)atou_internal(s+1);
+  } else {
+    return (int32_t)atou_internal(s);
+  }
+}
+
+uint32_t atou(const char* s) {
+  return atou_internal(s);
+}

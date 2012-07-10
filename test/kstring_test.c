@@ -103,4 +103,21 @@ void kstring_test() {
   KEXPECT_STREQ("67890", itoa_hex(0x67890));
   KEXPECT_STREQ("ABCDEF0", itoa_hex(0xABCDEF0));
   KEXPECT_STREQ("-ABCDEF0", itoa_hex(-0xABCDEF0));
+
+  KTEST_BEGIN("atoi()");
+  KEXPECT_EQ(0, atoi("0"));
+  KEXPECT_EQ(10, atoi("10"));
+  KEXPECT_EQ(-10, atoi("-10"));
+  KEXPECT_EQ(12345, atoi("12345"));
+  KEXPECT_EQ(7890, atoi("7890"));
+  KEXPECT_EQ(-7890, atoi("-7890"));
+  KEXPECT_EQ(-7890, atoi("-7890abc"));
+
+  KTEST_BEGIN("atou()");
+  KEXPECT_EQ(0, atou("0"));
+  KEXPECT_EQ(10, atou("10"));
+  KEXPECT_EQ(12345, atou("12345"));
+  KEXPECT_EQ(7890, atou("7890"));
+  KEXPECT_EQ(1234567890, atou("1234567890"));
+  KEXPECT_EQ(7890, atoi("7890abc"));
 }

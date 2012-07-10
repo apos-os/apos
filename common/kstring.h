@@ -35,4 +35,8 @@ const char* itoa_hex(int32_t x);
 const char* utoa(uint32_t x);
 const char* utoa_hex(uint32_t x);
 
+// Note: these only support decimal.
+int32_t atoi(const char* s);
+uint32_t atou(const char* s);
+
 #endif
