@@ -29,6 +29,9 @@
 static kthread_data_t* g_current_thread = 0;
 static int g_next_id = 0;
 
+// A queue of threads that have exited and we can clean up.
+static kthread_queue_t g_reap_queue;
+
 // Swap context from threadA (the currently running thread) to threadB (the new
 // thread).
 //
@@ -41,6 +44,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->retval = 0x0;
   t->prev = t->next = 0x0;
   t->stack = 0x0;
+  t->detached = 0;
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
@@ -63,6 +67,8 @@ void kthread_init() {
   first->state = KTHREAD_RUNNING;
   first->esp = 0;
   first->id = g_next_id++;
+
+  kthread_queue_init(&g_reap_queue);
 
   g_current_thread = first;
   POP_INTERRUPTS();
@@ -143,20 +149,30 @@ void kthread_destroy(kthread_t thread) {
   // Write gargbage to crash anyone that tries to use the thread later.
   thread->esp = 0;
   thread->state = KTHREAD_DESTROYED;
-  kfree(thread->stack);
-  thread->stack = 0x0;
+  if (thread->stack) {
+    kfree(thread->stack);
+    thread->stack = 0x0;
+  }
 
   // If we're in debug mode, leave the thread body around to we can die if we
   // try to use it later.
-#if !ENABLE_KERNEL_SAFETY_NETS
-  kfree(thread);
-#endif
+  if(!ENABLE_KERNEL_SAFETY_NETS) {
+    kfree(thread);
+  }
+}
+
+void kthread_detach(kthread_t thread_ptr) {
+  kthread_data_t* thread = thread_ptr;
+  KASSERT(!thread->detached);
+  KASSERT(thread->join_list_pending == 0);
+  thread->detached = 1;
 }
 
 void* kthread_join(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
   KASSERT(thread->state == KTHREAD_PENDING ||
           thread->state == KTHREAD_DONE);
+  KASSERT(!thread->detached);
 
   if (thread->state != KTHREAD_DONE) {
     thread->join_list_pending++;
@@ -187,6 +203,10 @@ void kthread_exit(void* x) {
     t = kthread_queue_pop(&g_current_thread->join_list);
   }
 
+  if (g_current_thread->detached) {
+    kthread_queue_push(&g_reap_queue, g_current_thread);
+  }
+
   scheduler_yield_no_reschedule();
 
   // Never get here!
@@ -206,6 +226,14 @@ void kthread_switch(kthread_t new_thread) {
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
+
+  // Clean up any thread stacks waiting to be reaped.
+  kthread_t t = kthread_queue_pop(&g_reap_queue);
+  while (t) {
+    kthread_destroy(t);
+    t = kthread_queue_pop(&g_reap_queue);
+  }
+
   POP_INTERRUPTS();
 }
 

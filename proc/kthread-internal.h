@@ -38,6 +38,7 @@ struct kthread_data {
   struct kthread_data* prev;
   struct kthread_data* next;
   uint32_t* stack;  // The block of memory allocated for the thread's stack.
+  uint32_t detached;
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
   // Then number of threads blocking in kthread_join() on this thread.  This is
   // distinct from join_list, since threads may have been removed from join_list

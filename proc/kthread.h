@@ -30,6 +30,10 @@ void kthread_init();
 // passed.  The new thread is NOT automatically made runnable --- you must call
 // scheduler_make_runnable(...) on it after creation if you want it to run.
 //
+// All threads should be either joined (with kthread_join()), from another
+// thread, or detached (with kthread_detach()).  Not doing so will leak
+// resources.
+//
 // Note: the kthread_t given is just a handle to the thread --- if it goes out
 // of scope or is overwritten, the thread will continue unhindered.
 //
@@ -43,6 +47,12 @@ int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 // not safe for multiple threads to join() on a single other thread, UNLESS they
 // all call kthread_join() before the target thread has been scheduled.
 void* kthread_join(kthread_t thread);
+
+// Detach the given thread.  When the thread exits, its resources will be
+// collected immediately.
+//
+// Note that a detached thread cannot be join()'d (doing so will KASSERT(0)).
+void kthread_detach(kthread_t thread);
 
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);

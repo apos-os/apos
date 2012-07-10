@@ -153,12 +153,14 @@ static void join_chain_test2() {
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
 }
 
+static void* noop_func(void* arg) { return 0; }
+
 static void queue_test() {
   KTEST_BEGIN("queue operations test");
   kthread_t thread1, thread2;
-  int ret = kthread_create(&thread1, 0x0, 0x0);
+  int ret = kthread_create(&thread1, &noop_func, 0x0);
   KASSERT(ret);
-  ret = kthread_create(&thread2, 0x0, 0x0);
+  ret = kthread_create(&thread2, &noop_func, 0x0);
   KASSERT(ret);
 
   kthread_queue_t queue;
@@ -185,6 +187,13 @@ static void queue_test() {
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
 
   KEXPECT_EQ(0, (uint32_t)kthread_queue_pop(&queue));
+
+  // Clean up.
+  kthread_detach(thread1);
+  kthread_detach(thread2);
+  scheduler_make_runnable(thread1);
+  scheduler_make_runnable(thread2);
+  scheduler_yield();
 }
 
 typedef struct {
