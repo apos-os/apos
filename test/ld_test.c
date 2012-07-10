@@ -358,6 +358,8 @@ static void basic_read_thread_test() {
   scheduler_yield();
   KEXPECT_EQ(4, data.out_len);
   KEXPECT_EQ(0, kstrncmp(data.buf, "abc\n", 4));
+
+  kthread_join(thread);
 }
 
 static void three_thread_test() {
