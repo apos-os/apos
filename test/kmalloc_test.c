@@ -185,6 +185,28 @@ static void large_alloc_test() {
   kmalloc_log_state();
 }
 
+static void tiny_alloc_test() {
+  KTEST_BEGIN("kmalloc tiny alloc");
+
+  void* x[100];
+  for (int i = 0; i < 100; ++i) {
+    x[i] = kmalloc(i % 3 + 1);
+    KEXPECT_NE(0x0, (uint32_t)x[i]);
+  }
+  kmalloc_log_state();
+  verify_list(kmalloc_internal_get_block_list());
+
+  for (int i = 0; i < 100; ++i) {
+    if (x[i]) {
+      kfree(x[i]);
+    }
+  }
+  verify_list(kmalloc_internal_get_block_list());
+
+  KEXPECT_EQ(0, list_used_size(kmalloc_internal_get_block_list()));
+  kmalloc_log_state();
+}
+
 static uint16_t rand() {
   static uint16_t p = 0xbeef;
   static uint16_t n = 0xabcd;
@@ -252,5 +274,6 @@ void kmalloc_test() {
   init_test();
   basic_test();
   large_alloc_test();
+  tiny_alloc_test();
   stress_test();
 }
