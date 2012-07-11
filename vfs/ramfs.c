@@ -171,7 +171,7 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
       break;
     }
 
-    kmemcpy(buf, d, d->length);
+    kmemcpy(buf + bytes_read, d, d->length);
     bytes_read += d->length;
     offset += d->length;
   }

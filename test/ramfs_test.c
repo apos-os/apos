@@ -17,8 +17,9 @@
 #include "common/kassert.h"
 #include "kmalloc.h"
 #include "test/ktest.h"
-#include "vfs/vfs.h"
+#include "vfs/dirent.h"
 #include "vfs/ramfs.h"
+#include "vfs/vfs.h"
 
 static fs_t* g_fs = 0;
 
@@ -111,9 +112,62 @@ static void basic_test() {
   KEXPECT_EQ('4', buf[13]);
 }
 
+// TODO(aoates): get_vnode test
+
+static void directory_test() {
+  KTEST_BEGIN("empty directory getdents() test");
+  vnode_t* n = g_fs->alloc_vnode(g_fs);
+  n->type = VNODE_DIRECTORY;
+
+  uint8_t dirent_buf[300];
+  int result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
+  KEXPECT_EQ(0, result);
+
+  KTEST_BEGIN("empty directory w/ offset getdents() test");
+  result = g_fs->getdents(n, 25, &dirent_buf[0], 300);
+  KEXPECT_EQ(0, result);
+
+  KTEST_BEGIN("link() test");
+  vnode_t* file = g_fs->alloc_vnode(g_fs);
+  g_fs->link(n, file, "file1");
+
+  // TODO(aoates): verify link counts.
+
+  result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
+  KEXPECT_GT(result, 0);
+
+  dirent_t* d = (dirent_t*)(&dirent_buf[0]);
+  KEXPECT_EQ(d->vnode, file->num);
+  KEXPECT_EQ(d->length, result);
+  KEXPECT_STREQ(d->name, "file1");
+
+  // Link another file.
+  vnode_t* file2 = g_fs->alloc_vnode(g_fs);
+  g_fs->link(n, file2, "file2");
+
+  result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
+  KEXPECT_GT(result, 0);
+
+  d = (dirent_t*)(&dirent_buf[0]);
+  KEXPECT_EQ(d->vnode, file->num);
+  KEXPECT_STREQ(d->name, "file1");
+  KEXPECT_GT(result, d->length + sizeof(dirent_t));
+
+  dirent_t* d2 = (dirent_t*)((uint8_t*)d + d->length);
+  KEXPECT_EQ(d2->vnode, file2->num);
+  KEXPECT_STREQ(d2->name, "file2");
+  KEXPECT_EQ(result, d->length + d2->length);
+
+  // TODO(aoates): test relinking the same file.
+
+  // TODO(aoates): test reading multiple dirents with several sequential calls
+  // to getdents() with increasing offsets.
+}
+
 void ramfs_test() {
   KTEST_SUITE_BEGIN("ramfs()");
   g_fs = ramfs_create();
 
   basic_test();
+  directory_test();
 }
