@@ -65,11 +65,11 @@ struct fs {
 
   // Read up to bufsize bytes from the given vnode at the given offset.  Returns
   // the number of bytes read.
-  int (*read)(vnode_t* vnode, int offset, uint8_t* buf, int bufsize);
+  int (*read)(vnode_t* vnode, int offset, void* buf, int bufsize);
 
   // Write up to bufsize bytes to the given vnode at the given offset.  Returns
   // the number of bytes written.
-  int (*write)(vnode_t* vnode, int offset, const uint8_t* buf, int bufsize);
+  int (*write)(vnode_t* vnode, int offset, const void* buf, int bufsize);
 
   // Link the given vnode_t into the parent (which must be a directory) with the
   // given name.
@@ -77,8 +77,7 @@ struct fs {
 
   // Read several dirent_ts from the given (directory) vnode and fill the given
   // buffer.  Returns the number of bytes read from the filesystem.
-  int (*getdents)(vnode_t* /* node */, int /* offset */,
-                  uint8_t* /* buf */, int /* bufsize */);
+  int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
 };
 typedef struct fs fs_t;
 

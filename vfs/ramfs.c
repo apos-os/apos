@@ -102,7 +102,7 @@ vnode_t* ramfs_get_vnode(fs_t* fs, int vnode) {
   return ramfs->inodes[vnode];
 }
 
-int ramfs_read(vnode_t* vnode, int offset, uint8_t* buf, int bufsize) {
+int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
 
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
@@ -111,7 +111,7 @@ int ramfs_read(vnode_t* vnode, int offset, uint8_t* buf, int bufsize) {
   return len;
 }
 
-int ramfs_write(vnode_t* vnode, int offset, const uint8_t* buf, int bufsize) {
+int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
 
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
@@ -146,11 +146,11 @@ void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   kstrcpy(dirent->name, name);
 
   // Append the new dirent.
-  int result = ramfs_write(parent, parent->len, (uint8_t*)dirent, dlen);
+  int result = ramfs_write(parent, parent->len, dirent, dlen);
   KASSERT(result == dlen);
 }
 
-int ramfs_getdents(vnode_t* vnode, int offset, uint8_t* buf, int bufsize) {
+int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(vnode->type == VNODE_DIRECTORY);
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;

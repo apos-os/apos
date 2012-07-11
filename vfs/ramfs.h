@@ -25,9 +25,9 @@ fs_t* ramfs_create();
 
 vnode_t* ramfs_alloc_vnode(fs_t* fs);
 vnode_t* ramfs_get_vnode(fs_t* fs, int vnode);
-int ramfs_read(vnode_t* vnode, int offset, uint8_t* buf, int bufsize);
-int ramfs_write(vnode_t* vnode, int offset, const uint8_t* buf, int bufsize);
+int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
+int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-int ramfs_getdents(vnode_t* vnode, int offset, uint8_t* buf, int bufsize);
+int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 
 #endif
