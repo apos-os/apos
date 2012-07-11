@@ -45,8 +45,7 @@ typedef struct ramfs ramfs_t;
 struct ramfs_inode {
   vnode_t vnode;
   uint8_t* data;
-
-  // TODO(aoates): link count
+  uint32_t link_count;  // An inode can be deallocated when it's link_count (and vnode refcount) go to zero.
 };
 typedef struct ramfs_inode ramfs_inode_t;
 
@@ -88,6 +87,7 @@ vnode_t* ramfs_alloc_vnode(fs_t* f) {
 
   ramfs_inode_t* node = (ramfs_inode_t*)kmalloc(sizeof(ramfs_inode_t));
   node->data = kmalloc(1);
+  node->link_count = 0;
 
   vnode_t* vnode = (vnode_t*)node;
   vfs_vnode_init(vnode);
@@ -153,6 +153,9 @@ void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   // Append the new dirent.
   int result = ramfs_write(parent, parent->len, dirent, dlen);
   KASSERT(result == dlen);
+
+  ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
+  inode->link_count++;
 }
 
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
