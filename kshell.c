@@ -66,6 +66,7 @@ static test_entry_t TESTS[] = {
   { "kstring", &kstring_test, 1 },
   { "kprintf", &kprintf_test, 1 },
   { "hashtable", &hashtable_test, 1 },
+  { "ramfs", &ramfs_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
@@ -108,7 +109,6 @@ static void meminfo_cmd(int argc, char* argv[]) {
   kmalloc_log_state();
 }
 
-<<<<<<< HEAD
 static void hash_cmd(int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: hash <number>\n");

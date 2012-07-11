@@ -29,6 +29,11 @@
   typeof(b) _b = (b); \
   _a < _b ? _a : _b;})
 
+#define MAX(a, b) ({ \
+  typeof(a) _a = (a); \
+  typeof(b) _b = (b); \
+  _a > _b ? _a : _b;})
+
 struct ramfs {
   fs_t fs;  // Embedded fs interface.
 
@@ -106,7 +111,7 @@ int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
 
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
-  int len = MIN(vnode->len - offset, bufsize);
+  int len = MAX(0, MIN(vnode->len - offset, bufsize));
   kmemcpy(buf, node->data + offset, len);
   return len;
 }

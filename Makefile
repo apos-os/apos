@@ -33,7 +33,7 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   vfs/vfs.o vfs/ramfs.o \
 	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o \
 	   test/kmalloc_test.o test/kthread_test.o test/page_alloc_map_test.o test/page_alloc_test.o \
-	   test/ld_test.o test/hashtable_test.o \
+	   test/ld_test.o test/hashtable_test.o test/ramfs_test.o \
 	   kshell.o
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'

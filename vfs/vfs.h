@@ -45,6 +45,7 @@ typedef struct vnode vnode_t;
 
 // Concrete filesystem interface.  One of these is instantiated by the concrete
 // filesystem when it is initialized.
+// TODO(aoates): pinning and unpinning inodes and freeing them as needed.
 struct fs {
   // The root vnode.
   vnode_t* root;
