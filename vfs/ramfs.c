@@ -51,6 +51,7 @@ typedef struct ramfs_inode ramfs_inode_t;
 
 fs_t* ramfs_create() {
   ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
+  kmemset(f, 0, sizeof(ramfs_t));
 
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     f->inodes[i] = 0x0;
@@ -61,6 +62,7 @@ fs_t* ramfs_create() {
   f->fs.read = &ramfs_read;
   f->fs.write = &ramfs_write;
   f->fs.link = &ramfs_link;
+  f->fs.unlink = &ramfs_unlink;
   f->fs.getdents = &ramfs_getdents;
 
   f->fs.root = ramfs_alloc_vnode((fs_t*)f);
@@ -142,6 +144,8 @@ void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(parent->type == VNODE_DIRECTORY);
 
+  // TODO(aoates): look for deleted dirent_t slots to reuse.
+
   // This is sorta inefficient....there's really no need to create it on the
   // heap then copy it over, but whatever.
   const int dlen = sizeof(dirent_t) + kstrlen(name) + 1;
@@ -158,6 +162,34 @@ void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   inode->link_count++;
 }
 
+void ramfs_unlink(vnode_t* parent, const char* name) {
+  KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
+
+  // In ramfs, we store dirent_ts directly.
+  int offset = 0;
+  while (offset < parent->len) {
+    dirent_t* d = (dirent_t*)(inode->data + offset);
+
+    if (kstrcmp(d->name, name) == 0) {
+      vnode_t* n = ramfs_get_vnode(parent->fs, d->vnode);
+      KASSERT(n != 0x0);
+
+      // Record that it was deleted.
+      d->vnode = -1;
+      ((ramfs_inode_t*)n)->link_count--;
+
+      // TODO(aoates): reclaim space if possible.
+      return;
+    }
+
+    offset += d->length;
+  }
+
+  die("couldn't find file to unlink");
+}
+
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(vnode->type == VNODE_DIRECTORY);
@@ -170,10 +202,14 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
     if (bytes_read + d->length >= bufsize) {
       break;
     }
+    offset += d->length;
 
+    // Skip dirents that have been unlinked.
+    if (d->vnode == -1) {
+      continue;
+    }
     kmemcpy(buf + bytes_read, d, d->length);
     bytes_read += d->length;
-    offset += d->length;
   }
 
   return bytes_read;

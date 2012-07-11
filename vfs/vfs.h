@@ -72,9 +72,16 @@ struct fs {
   // the number of bytes written.
   int (*write)(vnode_t* vnode, int offset, const void* buf, int bufsize);
 
+  // TODO(aoates): return error codes here instead of KASSERT()ing
+
   // Link the given vnode_t into the parent (which must be a directory) with the
   // given name.
   void (*link)(vnode_t* parent, vnode_t* vnode, const char* name);
+
+  // Unlink the vnode in the parent (which must be a directory) that has the
+  // given name.  If the underlying inode is not linked anywhere else, it can be
+  // destroyed.
+  void (*unlink)(vnode_t* parent, const char* name);
 
   // Read several dirent_ts from the given (directory) vnode and fill the given
   // buffer.  Returns the number of bytes read from the filesystem.

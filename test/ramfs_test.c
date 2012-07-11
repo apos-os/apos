@@ -162,6 +162,18 @@ static void directory_test() {
 
   // TODO(aoates): test reading multiple dirents with several sequential calls
   // to getdents() with increasing offsets.
+
+  KTEST_BEGIN("unlink() test");
+  g_fs->unlink(n, "file1");
+
+  result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
+  KEXPECT_GT(result, 0);
+
+  d = (dirent_t*)(&dirent_buf[0]);
+  KEXPECT_EQ(d->vnode, file2->num);
+  KEXPECT_STREQ(d->name, "file2");
+  KEXPECT_EQ(result, d->length);
+  // TODO(aoates): check link count
 }
 
 void ramfs_test() {
