@@ -57,6 +57,8 @@ void kthread_detach(kthread_t thread);
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
 
+/******************************* Thread Queues ********************************/
+
 // Thread queues are simple linked lists of threads, which can be pushed on the
 // back and popped from the front.  A given thread can only be on a single
 // thread queue (or no thread queues) at once --- trying to enqueue a thread on
@@ -77,5 +79,23 @@ void kthread_queue_push(kthread_queue_t* queue, kthread_t thread);
 
 // Pops a thread off the front of the thread queue.
 kthread_t kthread_queue_pop(kthread_queue_t* queue);
+
+/********************************* Mutexes ************************************/
+
+struct kmutex {
+  int locked;
+  kthread_t holder; // For debugging.
+  kthread_queue_t wait_queue;
+};
+typedef struct kmutex kmutex_t;
+
+// Initialize the given mutex.
+void kmutex_init(kmutex_t* m);
+
+// Lock the given mutex, blocking until the lock is acquired.
+void kmutex_lock(kmutex_t* m);
+
+// Unlock the mutex.
+void kmutex_unlock(kmutex_t* m);
 
 #endif

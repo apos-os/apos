@@ -290,3 +290,37 @@ kthread_t kthread_queue_pop(kthread_queue_t* lst) {
 int kthread_queue_empty(kthread_queue_t* lst) {
   return lst->head == 0x0;
 }
+
+void kmutex_init(kmutex_t* m) {
+  m->locked = 0;
+  m->holder = 0x0;
+  kthread_queue_init(&m->wait_queue);
+}
+
+void kmutex_lock(kmutex_t* m) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  if (m->locked) {
+    scheduler_wait_on(&m->wait_queue);
+  } else {
+    m->locked = 1;
+  }
+  KASSERT(m->locked == 1);
+  m->holder = kthread_current_thread();
+  POP_INTERRUPTS();
+}
+
+void kmutex_unlock(kmutex_t* m) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  KASSERT(m->locked == 1);
+  KASSERT(m->holder == kthread_current_thread());
+  if (!kthread_queue_empty(&m->wait_queue)) {
+    kthread_t next_holder = kthread_queue_pop(&m->wait_queue);
+    scheduler_make_runnable(next_holder);
+    scheduler_yield();
+  } else {
+    m->locked = 0;
+    m->holder = 0x0;
+  }
+  POP_INTERRUPTS();
+}

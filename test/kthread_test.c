@@ -283,6 +283,43 @@ static void stress_test() {
   }
 }
 
+
+static kmutex_t kmutex_test_mutex;
+static void* kmutex_test_func(void* arg) {
+  int* x = (int*)arg;
+  for (int i = 0; i < 1000; ++i) {
+    kmutex_lock(&kmutex_test_mutex);
+    int dummy = *x;
+    scheduler_yield();
+    dummy++;
+    *x = dummy;
+    kmutex_unlock(&kmutex_test_mutex);
+  }
+  return 0;
+}
+
+#define KMUTEX_TEST_SIZE 5
+static void kmutex_test() {
+  KTEST_BEGIN("kmutex test");
+  kmutex_init(&kmutex_test_mutex);
+
+  kthread_t threads[KMUTEX_TEST_SIZE];
+  int out = 0;
+  for (int i = 0; i < KMUTEX_TEST_SIZE; ++i) {
+    int result = kthread_create(&threads[i], &kmutex_test_func, (void*)(&out));
+    KASSERT(result != 0);
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < KMUTEX_TEST_SIZE; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KEXPECT_EQ(1000 * KMUTEX_TEST_SIZE, out);
+}
+
+// TODO(aoates): add some more involved kmutex tests.
+
 void kthread_test() {
   KTEST_SUITE_BEGIN("kthread_test");
 
@@ -295,4 +332,5 @@ void kthread_test() {
   queue_test();
   scheduler_wait_on_test();
   stress_test();
+  kmutex_test();
 }
