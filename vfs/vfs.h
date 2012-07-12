@@ -18,8 +18,9 @@
 #include <stdint.h>
 
 // vnode types.
-#define VNODE_REGULAR   0
-#define VNODE_DIRECTORY 1
+#define VNODE_INVALID 0
+#define VNODE_REGULAR   1
+#define VNODE_DIRECTORY 2
 // TODO(aoates): symlinks, special devices, etc.
 
 struct fs;
@@ -54,19 +55,15 @@ struct fs {
   // The root vnode.
   vnode_t* root;
 
-  // Allocate and initialize a new vnode for the FS.  Returns 0 if the FS is out
-  // of free inodes.
-  //
-  // TODO(aoates): document what fields should be set and what shouldn't be set.
-  //
-  // Note: the returned vnode might end up being a regular file, or a directory,
-  // or special file, etc.  Do we need additional hooks for initailizing those
-  // types of files in an FS-specific way?
-  vnode_t* (*alloc_vnode)(struct fs* fs);
-
-  // Given a vnode number, find the vnode, and return the corresponding vnode_t
-  // (allocating it if necessary).  Return 0 if the vnode couldn't be found.
+  // Given an inode number, find the inode, and create and return the
+  // corresponding vnode_t.  The returned vnode_t should have a refcount of 1.
+  // Return 0 if the inode couldn't be found.
   vnode_t* (*get_vnode)(struct fs* fs, int);
+
+  // Put a vnode that VFS no longer needs.  Make sure any pending writes are
+  // flushed, then collect any resources that can be collected, and free the
+  // vnode_t.
+  void (*put_vnode)(vnode_t* n);
 
   // Create a regular file in the given directory.  Returns the inode number of
   // the new file, or -error on failure.
@@ -98,6 +95,11 @@ struct fs {
   // Read several dirent_ts from the given (directory) vnode and fill the given
   // buffer.  Returns the number of bytes read from the filesystem.
   int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
+
+  // TODO(aoates): functions to add:
+  //  * mknod
+  //  * anything to do with attributes
+  //  * freeing vnodes
 };
 typedef struct fs fs_t;
 

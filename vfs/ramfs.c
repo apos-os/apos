@@ -50,50 +50,7 @@ struct ramfs_inode {
 };
 typedef struct ramfs_inode ramfs_inode_t;
 
-// Find the dirent in the parent's data with the given name, or NULL.
-static dirent_t* find_dirent(vnode_t* parent, const char* name) {
-  KASSERT(parent->type == VNODE_DIRECTORY);
-  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
-
-  int offset = 0;
-  while (offset < parent->len) {
-    dirent_t* d = (dirent_t*)(inode->data + offset);
-
-    if (kstrcmp(d->name, name) == 0) {
-      return d;
-    }
-
-    offset += d->length;
-  }
-
-  return 0;
-}
-
-fs_t* ramfs_create_fs() {
-  ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
-  kmemset(f, 0, sizeof(ramfs_t));
-
-  for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
-    f->inodes[i] = 0x0;
-  }
-
-  f->fs.alloc_vnode = &ramfs_alloc_vnode;
-  f->fs.get_vnode = &ramfs_get_vnode;
-  f->fs.create = &ramfs_create;
-  f->fs.mkdir = &ramfs_mkdir;
-  f->fs.read = &ramfs_read;
-  f->fs.write = &ramfs_write;
-  f->fs.link = &ramfs_link;
-  f->fs.unlink = &ramfs_unlink;
-  f->fs.getdents = &ramfs_getdents;
-
-  f->fs.root = ramfs_alloc_vnode((fs_t*)f);
-  f->fs.root->type = VNODE_DIRECTORY;
-
-  return (fs_t*)f;
-}
-
-vnode_t* ramfs_alloc_vnode(fs_t* f) {
+static vnode_t* ramfs_alloc_vnode(fs_t* f) {
   ramfs_t* ramfs = (ramfs_t*)f;
 
   // Find a free inode number.
@@ -125,10 +82,72 @@ vnode_t* ramfs_alloc_vnode(fs_t* f) {
   return vnode;
 }
 
+// Find the dirent in the parent's data with the given name, or NULL.
+static dirent_t* find_dirent(vnode_t* parent, const char* name) {
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
+
+  int offset = 0;
+  while (offset < parent->len) {
+    dirent_t* d = (dirent_t*)(inode->data + offset);
+
+    if (kstrcmp(d->name, name) == 0) {
+      return d;
+    }
+
+    offset += d->length;
+  }
+
+  return 0;
+}
+
+fs_t* ramfs_create_fs() {
+  ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
+  kmemset(f, 0, sizeof(ramfs_t));
+
+  for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
+    f->inodes[i] = 0x0;
+  }
+
+  f->fs.get_vnode = &ramfs_get_vnode;
+  f->fs.put_vnode = &ramfs_put_vnode;
+  f->fs.create = &ramfs_create;
+  f->fs.mkdir = &ramfs_mkdir;
+  f->fs.read = &ramfs_read;
+  f->fs.write = &ramfs_write;
+  f->fs.link = &ramfs_link;
+  f->fs.unlink = &ramfs_unlink;
+  f->fs.getdents = &ramfs_getdents;
+
+  f->fs.root = ramfs_alloc_vnode((fs_t*)f);
+  f->fs.root->type = VNODE_DIRECTORY;
+
+  return (fs_t*)f;
+}
+
 vnode_t* ramfs_get_vnode(fs_t* fs, int vnode) {
   KASSERT(vnode >= 0 && vnode < RAMFS_MAX_INODES);
   ramfs_t* ramfs = (ramfs_t*)fs;
-  return ramfs->inodes[vnode];
+
+  vnode_t* n = ramfs->inodes[vnode];
+  // No-one else should be referencing this node right now (otherwise, the VFS
+  // shouldn't have called this function, if it already had a reference around).
+  // KASSERT(n->refcount == 0);
+  n->refcount++;
+  return n;
+}
+
+void ramfs_put_vnode(vnode_t* vnode) {
+  KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  KASSERT(vnode->refcount == 0);
+
+  ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
+  if (inode->link_count == 0) {
+    vnode->type = VNODE_INVALID;
+    kfree(inode->data);
+    inode->data = 0x0;
+    kfree(inode);
+  }
 }
 
 int ramfs_create(vnode_t* parent, const char* name) {
