@@ -25,8 +25,6 @@
 #include "kmalloc.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
-#include "vfs/vfs.h"
-#include "vfs/ramfs.h"
 
 #define READ_BUF_SIZE 1024
 
@@ -117,66 +115,6 @@ static void hash_cmd(int argc, char* argv[]) {
   uint32_t x = atou(argv[1]);
   uint32_t h = fnv_hash(x);
   ksh_printf("%u (0x%x)\n", h, h);
-=======
-// ramfs testing.
-static fs_t* g_fs = 0;
-static void rcreate_cmd(int argc, char* argv[]) {
-  if (g_fs) {
-    ksh_printf("error: FS already created\n");
-    return;
-  }
-
-  g_fs = ramfs_create_fs();
-}
-
-static void ralloc_cmd(int argc, char* argv[]) {
-  if (!g_fs) {
-    ksh_printf("error: no fs available\n");
-    return;
-  }
-
-  vnode_t* vnode = g_fs->alloc_vnode(g_fs);
-  ksh_printf("allocated vnode %d (at 0x%x)\n", vnode->num, vnode);
-}
-
-static void rread_cmd(int argc, char* argv[]) {
-  if (argc != 4) {
-    ksh_printf("usage: rread <inode> <offset> <max_amnt>\n");
-    return;
-  }
-  int inode = atoi(argv[1]);
-  int offset = atoi(argv[2]);
-  int max_amt = atoi(argv[3]);
-
-  uint8_t* buf = (uint8_t*)kmalloc(max_amt+1);
-
-  vnode_t* vnode = g_fs->get_vnode(g_fs, inode);
-  if (!vnode) {
-    ksh_printf("error: vnode %d not found\n", inode);
-    return;
-  }
-  int read = g_fs->read(vnode, offset, buf, max_amt);
-  buf[read] = '\0';
-  ksh_printf("read %d bytes:\n%s\n", read, buf);
-  kfree(buf);
-}
-
-static void rwrite_cmd(int argc, char* argv[]) {
-  if (argc != 4) {
-    ksh_printf("usage: rwrite <inode> <offset> <data>\n");
-    return;
-  }
-  int inode = atoi(argv[1]);
-  int offset = atoi(argv[2]);
-  char* data = argv[3];
-
-  vnode_t* vnode = g_fs->get_vnode(g_fs, inode);
-  if (!vnode) {
-    ksh_printf("error: vnode %d not found\n", inode);
-    return;
-  }
-  int written = g_fs->write(vnode, offset, (uint8_t*)data, kstrlen(data));
-  ksh_printf("wrote %d bytes\n", written);
 }
 
 typedef struct {
@@ -188,12 +126,6 @@ static cmd_t CMDS[] = {
   { "test", &test_cmd },
   { "meminfo", &meminfo_cmd },
   { "hash", &hash_cmd },
-
-  // ramfs testing.
-  { "rcreate", &rcreate_cmd },
-  { "ralloc", &ralloc_cmd },
-  { "rread", &rread_cmd },
-  { "rwrite", &rwrite_cmd },
 
   { 0x0, 0x0 },
 };
