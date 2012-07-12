@@ -25,8 +25,8 @@ static fs_t* g_fs = 0;
 
 static void basic_test() {
   KTEST_BEGIN("basic read/write test");
-  vnode_t* n = g_fs->alloc_vnode(g_fs);
-  KEXPECT_EQ(0, n->len);
+  int vnode_num = g_fs->create(g_fs->root, "testA");
+  vnode_t* n = g_fs->get_vnode(g_fs, vnode_num);
 
   // Empty read test.
   char buf[100];
@@ -110,14 +110,15 @@ static void basic_test() {
   KEXPECT_EQ('2', buf[11]);
   KEXPECT_EQ('3', buf[12]);
   KEXPECT_EQ('4', buf[13]);
+
+  KEXPECT_GE(g_fs->unlink(g_fs->root, "testA"), 0);
 }
 
 // TODO(aoates): get_vnode test
 
 static void directory_test() {
   KTEST_BEGIN("empty directory getdents() test");
-  vnode_t* n = g_fs->alloc_vnode(g_fs);
-  n->type = VNODE_DIRECTORY;
+  vnode_t* n = g_fs->root;
 
   uint8_t dirent_buf[300];
   int result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
@@ -127,9 +128,14 @@ static void directory_test() {
   result = g_fs->getdents(n, 25, &dirent_buf[0], 300);
   KEXPECT_EQ(0, result);
 
-  KTEST_BEGIN("link() test");
-  vnode_t* file = g_fs->alloc_vnode(g_fs);
-  g_fs->link(n, file, "file1");
+  KTEST_BEGIN("mkdir() test");
+  int dir_vnode = g_fs->mkdir(g_fs->root, "test_dir");
+  KEXPECT_GE(dir_vnode, 0);
+  n = g_fs->get_vnode(g_fs, dir_vnode);
+  KEXPECT_NE(0, (uint32_t)n);
+
+  KTEST_BEGIN("create() test");
+  vnode_t* file = g_fs->get_vnode(g_fs, g_fs->create(n, "file1"));
 
   // TODO(aoates): verify link counts.
 
@@ -141,9 +147,8 @@ static void directory_test() {
   KEXPECT_EQ(d->length, result);
   KEXPECT_STREQ(d->name, "file1");
 
-  // Link another file.
-  vnode_t* file2 = g_fs->alloc_vnode(g_fs);
-  g_fs->link(n, file2, "file2");
+  // Create another file.
+  vnode_t* file2 = g_fs->get_vnode(g_fs, g_fs->create(n, "file2"));
 
   result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
   KEXPECT_GT(result, 0);
@@ -178,7 +183,7 @@ static void directory_test() {
 
 void ramfs_test() {
   KTEST_SUITE_BEGIN("ramfs()");
-  g_fs = ramfs_create();
+  g_fs = ramfs_create_fs();
 
   basic_test();
   directory_test();

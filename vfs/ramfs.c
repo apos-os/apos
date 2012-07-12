@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "kmalloc.h"
@@ -49,7 +50,26 @@ struct ramfs_inode {
 };
 typedef struct ramfs_inode ramfs_inode_t;
 
-fs_t* ramfs_create() {
+// Find the dirent in the parent's data with the given name, or NULL.
+static dirent_t* find_dirent(vnode_t* parent, const char* name) {
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
+
+  int offset = 0;
+  while (offset < parent->len) {
+    dirent_t* d = (dirent_t*)(inode->data + offset);
+
+    if (kstrcmp(d->name, name) == 0) {
+      return d;
+    }
+
+    offset += d->length;
+  }
+
+  return 0;
+}
+
+fs_t* ramfs_create_fs() {
   ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
   kmemset(f, 0, sizeof(ramfs_t));
 
@@ -59,6 +79,8 @@ fs_t* ramfs_create() {
 
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
   f->fs.get_vnode = &ramfs_get_vnode;
+  f->fs.create = &ramfs_create;
+  f->fs.mkdir = &ramfs_mkdir;
   f->fs.read = &ramfs_read;
   f->fs.write = &ramfs_write;
   f->fs.link = &ramfs_link;
@@ -109,6 +131,34 @@ vnode_t* ramfs_get_vnode(fs_t* fs, int vnode) {
   return ramfs->inodes[vnode];
 }
 
+int ramfs_create(vnode_t* parent, const char* name) {
+  KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+
+  vnode_t* n = ramfs_alloc_vnode(parent->fs);
+  n->type = VNODE_REGULAR;
+  int result = ramfs_link(parent, n, name);
+  if (result >= 0) {
+    return n->num;
+  } else {
+    // TODO(aoates): destroy vnode on error!
+    return result;
+  }
+}
+
+int ramfs_mkdir(vnode_t* parent, const char* name) {
+  KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+
+  vnode_t* n = ramfs_alloc_vnode(parent->fs);
+  n->type = VNODE_DIRECTORY;
+  int result = ramfs_link(parent, n, name);
+  if (result >= 0) {
+    return n->num;
+  } else {
+    // TODO(aoates): destroy vnode on error!
+    return result;
+  }
+}
+
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
 
@@ -139,12 +189,16 @@ int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize) {
   return bufsize;
 }
 
-void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
+int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(parent->type == VNODE_DIRECTORY);
 
   // TODO(aoates): look for deleted dirent_t slots to reuse.
+  dirent_t* d = find_dirent(parent, name);
+  if (d) {
+    return -EEXIST;
+  }
 
   // This is sorta inefficient....there's really no need to create it on the
   // heap then copy it over, but whatever.
@@ -160,39 +214,35 @@ void ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 
   ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
   inode->link_count++;
+  return 0;
 }
 
-void ramfs_unlink(vnode_t* parent, const char* name) {
+int ramfs_unlink(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
-  KASSERT(parent->type == VNODE_DIRECTORY);
-  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
-
-  // In ramfs, we store dirent_ts directly.
-  int offset = 0;
-  while (offset < parent->len) {
-    dirent_t* d = (dirent_t*)(inode->data + offset);
-
-    if (kstrcmp(d->name, name) == 0) {
-      vnode_t* n = ramfs_get_vnode(parent->fs, d->vnode);
-      KASSERT(n != 0x0);
-
-      // Record that it was deleted.
-      d->vnode = -1;
-      ((ramfs_inode_t*)n)->link_count--;
-
-      // TODO(aoates): reclaim space if possible.
-      return;
-    }
-
-    offset += d->length;
+  if (parent->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
   }
 
-  die("couldn't find file to unlink");
+  dirent_t* d = find_dirent(parent, name);
+  if (!d) {
+    return -ENOENT;
+  }
+
+  vnode_t* n = ramfs_get_vnode(parent->fs, d->vnode);
+  KASSERT(n != 0x0);
+
+  // Record that it was deleted.
+  d->vnode = -1;
+  ((ramfs_inode_t*)n)->link_count--;
+  return 0;
 }
 
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
-  KASSERT(vnode->type == VNODE_DIRECTORY);
+  if (vnode->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
 
   // In ramfs, we store dirent_ts directly.

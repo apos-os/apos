@@ -126,7 +126,7 @@ static void rcreate_cmd(int argc, char* argv[]) {
     return;
   }
 
-  g_fs = ramfs_create();
+  g_fs = ramfs_create_fs();
 }
 
 static void ralloc_cmd(int argc, char* argv[]) {

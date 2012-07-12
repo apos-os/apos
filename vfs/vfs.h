@@ -45,6 +45,10 @@ typedef struct vnode vnode_t;
 
 // Concrete filesystem interface.  One of these is instantiated by the concrete
 // filesystem when it is initialized.
+//
+// All fs functions return 0 on success, or -errno on failure.
+// TODO(aoates): make that actually the case!
+//
 // TODO(aoates): pinning and unpinning inodes and freeing them as needed.
 struct fs {
   // The root vnode.
@@ -64,6 +68,14 @@ struct fs {
   // (allocating it if necessary).  Return 0 if the vnode couldn't be found.
   vnode_t* (*get_vnode)(struct fs* fs, int);
 
+  // Create a regular file in the given directory.  Returns the inode number of
+  // the new file, or -error on failure.
+  int (*create)(vnode_t* parent, const char* name /*, mode? */);
+
+  // Create a directory in the given directory.  Returns the inode number of
+  // the new directory, or -error on failure.
+  int (*mkdir)(vnode_t* parent, const char* name /*, mode? */);
+
   // Read up to bufsize bytes from the given vnode at the given offset.  Returns
   // the number of bytes read.
   int (*read)(vnode_t* vnode, int offset, void* buf, int bufsize);
@@ -76,12 +88,12 @@ struct fs {
 
   // Link the given vnode_t into the parent (which must be a directory) with the
   // given name.
-  void (*link)(vnode_t* parent, vnode_t* vnode, const char* name);
+  int (*link)(vnode_t* parent, vnode_t* vnode, const char* name);
 
   // Unlink the vnode in the parent (which must be a directory) that has the
   // given name.  If the underlying inode is not linked anywhere else, it can be
   // destroyed.
-  void (*unlink)(vnode_t* parent, const char* name);
+  int (*unlink)(vnode_t* parent, const char* name);
 
   // Read several dirent_ts from the given (directory) vnode and fill the given
   // buffer.  Returns the number of bytes read from the filesystem.
