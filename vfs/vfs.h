@@ -65,6 +65,10 @@ struct fs {
   // vnode_t.
   void (*put_vnode)(vnode_t* n);
 
+  // Return the inode number of the inode with the given name in a directory, or
+  // -error on failure.
+  int (*lookup)(vnode_t* parent, const char* name);
+
   // Create a regular file in the given directory.  Returns the inode number of
   // the new file, or -error on failure.
   int (*create)(vnode_t* parent, const char* name /*, mode? */);

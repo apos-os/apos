@@ -111,6 +111,7 @@ fs_t* ramfs_create_fs() {
 
   f->fs.get_vnode = &ramfs_get_vnode;
   f->fs.put_vnode = &ramfs_put_vnode;
+  f->fs.lookup = &ramfs_lookup;
   f->fs.create = &ramfs_create;
   f->fs.mkdir = &ramfs_mkdir;
   f->fs.read = &ramfs_read;
@@ -148,6 +149,19 @@ void ramfs_put_vnode(vnode_t* vnode) {
     inode->data = 0x0;
     kfree(inode);
   }
+}
+
+int ramfs_lookup(vnode_t* parent, const char* name) {
+  KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  if (parent->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
+  dirent_t* d = find_dirent(parent, name);
+  if (!d) {
+    return -ENOENT;
+  }
+  return d->vnode;
 }
 
 int ramfs_create(vnode_t* parent, const char* name) {
