@@ -136,11 +136,10 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
   int dirents_seen = 0;
   result = node->fs->getdents(node, offset, dirents_buf, BUFSIZE);
   while (result > 0) {
-    offset += result;
-
     int bufidx = 0;
     while (bufidx < result) {
       dirent_t* d = (dirent_t*)&dirents_buf[bufidx];
+      offset = d->offset;
       dirents_seen++;
       if (expected_idx < n) {
         expected_name = va_arg(args, const char*);

@@ -282,13 +282,14 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
 
   // In ramfs, we store dirent_ts directly.
-  int bytes_read = 0;
+  int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
     dirent_t* d = (dirent_t*)(node->data + offset);
     if (bytes_read + d->length >= bufsize) {
       break;
     }
     offset += d->length;
+    d->offset = offset;
 
     // Skip dirents that have been unlinked.
     if (d->vnode == -1) {

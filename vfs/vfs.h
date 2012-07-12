@@ -97,7 +97,12 @@ struct fs {
   int (*unlink)(vnode_t* parent, const char* name);
 
   // Read several dirent_ts from the given (directory) vnode and fill the given
-  // buffer.  Returns the number of bytes read from the filesystem.
+  // buffer.  Returns the number of bytes read into the buffer.  For subsequent
+  // calls, the offset in the last dirent_t read should be passed in the offset
+  // parameter, NOT the amount returned from the function.
+  //
+  // That is, offset is in concrete filesystem bytes, while the returned value
+  // (and bufsize) are in buffer-size bytes.
   int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
 
   // TODO(aoates): functions to add:

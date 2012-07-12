@@ -19,7 +19,8 @@
 // A single directory entry, as produced by a concrete filesystem.
 struct dirent {
   int vnode;  // vnode number
-  int length; // Length of this dirent_t
+  int offset;  // Offset from *start* of directory to the next dirent_t.
+  int length;  // Length of this dirent_t
   char name[];  // Null-terminated filename
 };
 typedef struct dirent dirent_t;
