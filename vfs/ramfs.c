@@ -250,6 +250,8 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   return 0;
 }
 
+// TODO(aoates): a good test: create a file, unlink it, create a new one with
+// the same name, do stuff to it and verify it's a totaly new file.
 int ramfs_unlink(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   if (parent->type != VNODE_DIRECTORY) {
@@ -266,6 +268,7 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
 
   // Record that it was deleted.
   d->vnode = -1;
+  d->name[0] = '\0';
   ((ramfs_inode_t*)n)->link_count--;
   return 0;
 }

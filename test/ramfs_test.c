@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdarg.h>
 #include <stdint.h>
 
 #include "common/kassert.h"
@@ -116,6 +117,51 @@ static void basic_test() {
 
 // TODO(aoates): get_vnode test
 
+
+// Check that the dirents returned by getdents() on the given node match the
+// expected.  Note: you must pass 2*n arguments, alternating name (const char*)
+// and vnodes (int).
+void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
+  va_list args;
+  va_start(args, n);
+
+  int expected_idx = 0;
+  const char* expected_name = 0;
+  int expected_vnode = 0;
+
+  const int BUFSIZE = 300;
+  char dirents_buf[BUFSIZE];
+  int result = 0;
+  int offset = 0;
+  int dirents_seen = 0;
+  result = node->fs->getdents(node, offset, dirents_buf, BUFSIZE);
+  while (result > 0) {
+    offset += result;
+
+    int bufidx = 0;
+    while (bufidx < result) {
+      dirent_t* d = (dirent_t*)&dirents_buf[bufidx];
+      dirents_seen++;
+      if (expected_idx < n) {
+        expected_name = va_arg(args, const char*);
+        expected_vnode = va_arg(args, int);
+        KEXPECT_STREQ(expected_name, d->name);
+        KEXPECT_EQ(expected_vnode, d->vnode);
+
+        expected_idx++;
+      }
+
+      bufidx += d->length;
+    }
+
+    // Read another chunk.
+    result = node->fs->getdents(node, offset, dirents_buf, BUFSIZE);
+  }
+  KEXPECT_EQ(n, dirents_seen);
+
+  va_end(args);
+}
+
 static void directory_test() {
   KTEST_BEGIN("empty directory getdents() test");
   vnode_t* n = g_fs->root;
@@ -138,30 +184,11 @@ static void directory_test() {
   vnode_t* file = g_fs->get_vnode(g_fs, g_fs->create(n, "file1"));
 
   // TODO(aoates): verify link counts.
-
-  result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
-  KEXPECT_GT(result, 0);
-
-  dirent_t* d = (dirent_t*)(&dirent_buf[0]);
-  KEXPECT_EQ(d->vnode, file->num);
-  KEXPECT_EQ(d->length, result);
-  KEXPECT_STREQ(d->name, "file1");
+  EXPECT_DIRENTS(n, 1, "file1", file->num);
 
   // Create another file.
   vnode_t* file2 = g_fs->get_vnode(g_fs, g_fs->create(n, "file2"));
-
-  result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
-  KEXPECT_GT(result, 0);
-
-  d = (dirent_t*)(&dirent_buf[0]);
-  KEXPECT_EQ(d->vnode, file->num);
-  KEXPECT_STREQ(d->name, "file1");
-  KEXPECT_GT(result, d->length + sizeof(dirent_t));
-
-  dirent_t* d2 = (dirent_t*)((uint8_t*)d + d->length);
-  KEXPECT_EQ(d2->vnode, file2->num);
-  KEXPECT_STREQ(d2->name, "file2");
-  KEXPECT_EQ(result, d->length + d2->length);
+  EXPECT_DIRENTS(n, 2, "file1", file->num, "file2", file2->num);
 
   // TODO(aoates): test relinking the same file.
 
@@ -170,14 +197,8 @@ static void directory_test() {
 
   KTEST_BEGIN("unlink() test");
   g_fs->unlink(n, "file1");
+  EXPECT_DIRENTS(n, 1, "file2", file2->num);
 
-  result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
-  KEXPECT_GT(result, 0);
-
-  d = (dirent_t*)(&dirent_buf[0]);
-  KEXPECT_EQ(d->vnode, file2->num);
-  KEXPECT_STREQ(d->name, "file2");
-  KEXPECT_EQ(result, d->length);
   // TODO(aoates): check link count
 }
 
