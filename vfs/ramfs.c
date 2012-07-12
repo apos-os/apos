@@ -35,51 +35,58 @@
   typeof(b) _b = (b); \
   _a > _b ? _a : _b;})
 
-struct ramfs {
-  fs_t fs;  // Embedded fs interface.
 
-  // For each inode number, a pointer to its vnode.
-  vnode_t* inodes[RAMFS_MAX_INODES];
-};
-typedef struct ramfs ramfs_t;
-
+// TODO(aoates): just use a different "on-disk" format to make things clearer.
 struct ramfs_inode {
-  vnode_t vnode;
+  vnode_t vnode;  // We use num, type, and len.
   uint8_t* data;
   uint32_t link_count;  // An inode can be deallocated when it's link_count (and vnode refcount) go to zero.
 };
 typedef struct ramfs_inode ramfs_inode_t;
 
-static vnode_t* ramfs_alloc_vnode(fs_t* f) {
-  ramfs_t* ramfs = (ramfs_t*)f;
+struct ramfs {
+  fs_t fs;  // Embedded fs interface.
 
-  // Find a free inode number.
+  // For each inode number, we just store a ramfs_inode_t directly.  We don't
+  // use all the fields of the vnode_t, though.
+  ramfs_inode_t inodes[RAMFS_MAX_INODES];
+};
+typedef struct ramfs ramfs_t;
+
+
+// Find and return a free inode number, or -1 on failure.
+static int find_free_inode(ramfs_t* ramfs) {
   int inode = -1;
   for (inode = 0; inode < RAMFS_MAX_INODES; ++inode) {
-    if (ramfs->inodes[inode] == 0x0) {
-      break;
+    if (ramfs->inodes[inode].vnode.num == -1) {
+      return inode;
     }
   }
-  KASSERT(inode >= 0);
-  if (inode >= RAMFS_MAX_INODES) {
-    // Out of inodes :(
-    return 0x0;
-  }
+  // Out of inodes :(
+  return -1;
+}
 
-  ramfs_inode_t* node = (ramfs_inode_t*)kmalloc(sizeof(ramfs_inode_t));
+// Initialize the fields for a new "on-disk" inode.
+static void init_inode(ramfs_t* ramfs, ramfs_inode_t* node) {
   node->data = kmalloc(1);
   node->link_count = 0;
 
   vnode_t* vnode = (vnode_t*)node;
-  vfs_vnode_init(vnode);
-  vnode->num = inode;
   vnode->len = 0;
   kstrcpy(vnode->fstype, "ramfs");
-  vnode->fs = f;
+  vnode->fs = (fs_t*)ramfs;
+}
 
-  ramfs->inodes[inode] = vnode;
-
-  return vnode;
+// Given an in-memory inode, write its metadata back to "disk".  Call this
+// whenever you change things like len, link_count, data ptr, etc.
+static void writeback_metadata(ramfs_inode_t* inode) {
+  ramfs_inode_t* disk_inode =
+      &((ramfs_t*)inode->vnode.fs)->inodes[inode->vnode.num];
+  KASSERT(disk_inode->vnode.num == inode->vnode.num);
+  KASSERT(disk_inode->vnode.type == inode->vnode.type);
+  disk_inode->vnode.len = inode->vnode.len;
+  disk_inode->data = inode->data;
+  disk_inode->link_count = inode->link_count;
 }
 
 // Find the dirent in the parent's data with the given name, or NULL.
@@ -106,9 +113,11 @@ fs_t* ramfs_create_fs() {
   kmemset(f, 0, sizeof(ramfs_t));
 
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
-    f->inodes[i] = 0x0;
+    f->inodes[i].vnode.num = -1;
   }
 
+  f->fs.alloc_vnode = &ramfs_alloc_vnode;
+  f->fs.get_root = &ramfs_get_root;
   f->fs.get_vnode = &ramfs_get_vnode;
   f->fs.put_vnode = &ramfs_put_vnode;
   f->fs.lookup = &ramfs_lookup;
@@ -120,25 +129,48 @@ fs_t* ramfs_create_fs() {
   f->fs.unlink = &ramfs_unlink;
   f->fs.getdents = &ramfs_getdents;
 
-  f->fs.root = ramfs_alloc_vnode((fs_t*)f);
-  f->fs.root->type = VNODE_DIRECTORY;
+  // Allocate the root inode.
+  int root_inode = find_free_inode(f);
+  KASSERT(root_inode == 0);
+  ramfs_inode_t* root = &f->inodes[root_inode];
+  init_inode(f, root);
+  root->vnode.num = root_inode;
+  root->vnode.len = 0;
+  root->vnode.type = VNODE_DIRECTORY;
 
   return (fs_t*)f;
 }
 
-vnode_t* ramfs_get_vnode(fs_t* fs, int vnode) {
-  KASSERT(vnode >= 0 && vnode < RAMFS_MAX_INODES);
-  ramfs_t* ramfs = (ramfs_t*)fs;
-
-  vnode_t* n = ramfs->inodes[vnode];
-  // No-one else should be referencing this node right now (otherwise, the VFS
-  // shouldn't have called this function, if it already had a reference around).
-  // KASSERT(n->refcount == 0);
-  n->refcount++;
-  return n;
+vnode_t* ramfs_alloc_vnode(struct fs* fs) {
+  ramfs_inode_t* node = (ramfs_inode_t*)kmalloc(sizeof(ramfs_inode_t));
+  kmemset(node, 0, sizeof(ramfs_inode_t));
+  return (vnode_t*)node;
 }
 
-void ramfs_put_vnode(vnode_t* vnode) {
+int ramfs_get_root(struct fs* fs) {
+  return 0;
+}
+
+int ramfs_get_vnode(vnode_t* n) {
+  ramfs_t* ramfs = (ramfs_t*)n->fs;
+  if (n->num < 0 || n->num >= RAMFS_MAX_INODES ||
+      ramfs->inodes[n->num].vnode.num == -1) {
+    return -ENOENT;
+  }
+
+  ramfs_inode_t* inode = &ramfs->inodes[n->num];
+
+  // Copy over everything we'll need.
+  n->type = inode->vnode.type;
+  n->len = inode->vnode.len;
+  kstrcpy(n->fstype, "ramfs");
+  ((ramfs_inode_t*)n)->data = inode->data;
+  ((ramfs_inode_t*)n)->link_count = inode->link_count;
+
+  return 0;
+}
+
+int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(vnode->refcount == 0);
 
@@ -147,8 +179,8 @@ void ramfs_put_vnode(vnode_t* vnode) {
     vnode->type = VNODE_INVALID;
     kfree(inode->data);
     inode->data = 0x0;
-    kfree(inode);
   }
+  return 0;
 }
 
 int ramfs_lookup(vnode_t* parent, const char* name) {
@@ -166,12 +198,22 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
 
 int ramfs_create(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
 
-  vnode_t* n = ramfs_alloc_vnode(parent->fs);
-  n->type = VNODE_REGULAR;
-  int result = ramfs_link(parent, n, name);
+  int new_inode = find_free_inode(ramfs);
+  if (new_inode < 0) {
+    return -ENOSPC;
+  }
+
+  ramfs_inode_t* n = &ramfs->inodes[new_inode];
+  KASSERT(n->vnode.num == -1);
+  n->vnode.num = new_inode;
+  init_inode(ramfs, n);
+
+  n->vnode.type = VNODE_REGULAR;
+  int result = ramfs_link(parent, (vnode_t*)n, name);
   if (result >= 0) {
-    return n->num;
+    return n->vnode.num;
   } else {
     // TODO(aoates): destroy vnode on error!
     return result;
@@ -180,12 +222,22 @@ int ramfs_create(vnode_t* parent, const char* name) {
 
 int ramfs_mkdir(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
 
-  vnode_t* n = ramfs_alloc_vnode(parent->fs);
-  n->type = VNODE_DIRECTORY;
-  int result = ramfs_link(parent, n, name);
+  int new_inode = find_free_inode(ramfs);
+  if (new_inode < 0) {
+    return -ENOSPC;
+  }
+
+  ramfs_inode_t* n = &ramfs->inodes[new_inode];
+  KASSERT(n->vnode.num == -1);
+  n->vnode.num = new_inode;
+  init_inode(ramfs, n);
+
+  n->vnode.type = VNODE_DIRECTORY;
+  int result = ramfs_link(parent, (vnode_t*)n, name);
   if (result >= 0) {
-    return n->num;
+    return n->vnode.num;
   } else {
     // TODO(aoates): destroy vnode on error!
     return result;
@@ -216,6 +268,9 @@ int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize) {
     kfree(node->data);
     node->data = newdata;
     vnode->len = newlen;
+
+    // Write it back to "disk" as well.
+    writeback_metadata(node);
   }
 
   kmemcpy(node->data + offset, buf, bufsize);
@@ -247,6 +302,7 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 
   ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
   inode->link_count++;
+  writeback_metadata(inode);
   return 0;
 }
 
@@ -263,13 +319,16 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
     return -ENOENT;
   }
 
-  vnode_t* n = ramfs_get_vnode(parent->fs, d->vnode);
-  KASSERT(n != 0x0);
-
   // Record that it was deleted.
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  KASSERT(d->vnode >= 0 && d->vnode < RAMFS_MAX_INODES);
+  KASSERT(ramfs->inodes[d->vnode].vnode.num != -1);
+  // TODO(aoates): how do we propagate this back to all the vnode_t*s floating
+  // around pointing to this inode?
+  ramfs->inodes[d->vnode].link_count--;
+
   d->vnode = -1;
   d->name[0] = '\0';
-  ((ramfs_inode_t*)n)->link_count--;
   return 0;
 }
 

@@ -23,8 +23,10 @@
 // Initialize a new ramfs and return it.
 fs_t* ramfs_create_fs();
 
-vnode_t* ramfs_get_vnode(fs_t* fs, int vnode);
-void ramfs_put_vnode(vnode_t* vnode);
+vnode_t* ramfs_alloc_vnode(struct fs* fs);
+int ramfs_get_root(struct fs* fs);
+int ramfs_get_vnode(vnode_t* vnode);
+int ramfs_put_vnode(vnode_t* vnode);
 int ramfs_lookup(vnode_t* parent, const char* name);
 int ramfs_create(vnode_t* parent, const char* name);
 int ramfs_mkdir(vnode_t* parent, const char* name);

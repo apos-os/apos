@@ -23,11 +23,27 @@
 #include "vfs/vfs.h"
 
 static fs_t* g_fs = 0;
+static vnode_t* g_root = 0;
+
+// Allocate, initialize, and return a vnode for the given inode.
+static vnode_t* get_vnode(int inode) {
+  vnode_t* n = g_fs->alloc_vnode(g_fs);
+  n->num = inode;
+  n->refcount = 1;
+  kstrcpy(n->fstype, "ramfs");
+  n->fs = g_fs;
+
+  if (g_fs->get_vnode(n) != 0) {
+    kfree(n);
+    return 0;
+  }
+  return n;
+}
 
 static void basic_test() {
   KTEST_BEGIN("basic read/write test");
-  int vnode_num = g_fs->create(g_fs->root, "testA");
-  vnode_t* n = g_fs->get_vnode(g_fs, vnode_num);
+  int vnode_num = g_fs->create(g_root, "testA");
+  vnode_t* n = get_vnode(vnode_num);
 
   // Empty read test.
   char buf[100];
@@ -112,7 +128,7 @@ static void basic_test() {
   KEXPECT_EQ('3', buf[12]);
   KEXPECT_EQ('4', buf[13]);
 
-  KEXPECT_GE(g_fs->unlink(g_fs->root, "testA"), 0);
+  KEXPECT_GE(g_fs->unlink(g_root, "testA"), 0);
 }
 
 // TODO(aoates): get_vnode test
@@ -163,7 +179,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
 
 static void directory_test() {
   KTEST_BEGIN("empty directory getdents() test");
-  vnode_t* n = g_fs->root;
+  vnode_t* n = g_root;
 
   uint8_t dirent_buf[300];
   int result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
@@ -174,19 +190,19 @@ static void directory_test() {
   KEXPECT_EQ(0, result);
 
   KTEST_BEGIN("mkdir() test");
-  int dir_vnode = g_fs->mkdir(g_fs->root, "test_dir");
+  int dir_vnode = g_fs->mkdir(g_root, "test_dir");
   KEXPECT_GE(dir_vnode, 0);
-  n = g_fs->get_vnode(g_fs, dir_vnode);
+  n = get_vnode(dir_vnode);
   KEXPECT_NE(0, (uint32_t)n);
 
   KTEST_BEGIN("create() test");
-  vnode_t* file = g_fs->get_vnode(g_fs, g_fs->create(n, "file1"));
+  vnode_t* file = get_vnode(g_fs->create(n, "file1"));
 
   // TODO(aoates): verify link counts.
   EXPECT_DIRENTS(n, 1, "file1", file->num);
 
   // Create another file.
-  vnode_t* file2 = g_fs->get_vnode(g_fs, g_fs->create(n, "file2"));
+  vnode_t* file2 = get_vnode(g_fs->create(n, "file2"));
   EXPECT_DIRENTS(n, 2, "file1", file->num, "file2", file2->num);
 
   // TODO(aoates): test relinking the same file.
@@ -204,6 +220,7 @@ static void directory_test() {
 void ramfs_test() {
   KTEST_SUITE_BEGIN("ramfs()");
   g_fs = ramfs_create_fs();
+  g_root = get_vnode(g_fs->get_root(g_fs));
 
   basic_test();
   directory_test();

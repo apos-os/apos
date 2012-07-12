@@ -52,18 +52,26 @@ typedef struct vnode vnode_t;
 //
 // TODO(aoates): pinning and unpinning inodes and freeing them as needed.
 struct fs {
-  // The root vnode.
-  vnode_t* root;
+  // TODO(aoates): how does allocating the root inode/vnode work?
 
-  // Given an inode number, find the inode, and create and return the
-  // corresponding vnode_t.  The returned vnode_t should have a refcount of 1.
-  // Return 0 if the inode couldn't be found.
-  vnode_t* (*get_vnode)(struct fs* fs, int);
+  // Allocate a vnode_t, with enough extra space for whatever data the FS will
+  // want to store there.  The FS doesn't have to initialize any fields.
+  vnode_t* (*alloc_vnode)(struct fs* fs);
+
+  // Return the inode number of the root of the FS.
+  int (*get_root)(struct fs* fs);
+
+  // Fill in the vnode_t with data from the filesystem.  The vnode_t will have
+  // been allocated with alloc_vnode and had the following fields initalized:
+  // num, refcount, fs, mutex.  The FS should initialize the remaining fields
+  // (and any FS-specific fields), and return 0 on success, or -errno on
+  // failure.
+  int (*get_vnode)(vnode_t* n);
 
   // Put a vnode that VFS no longer needs.  Make sure any pending writes are
-  // flushed, then collect any resources that can be collected, and free the
-  // vnode_t.
-  void (*put_vnode)(vnode_t* n);
+  // flushed, then collect any resources that can be collected (such as inodes
+  // with linkcounts of 0).  Do not free the vnode_t.
+  int (*put_vnode)(vnode_t* n);
 
   // Return the inode number of the inode with the given name in a directory, or
   // -error on failure.
