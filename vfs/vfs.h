@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "proc/kthread.h"
+
 // vnode types.
 #define VNODE_INVALID 0
 #define VNODE_REGULAR   1
@@ -38,6 +40,9 @@ struct vnode {
 
   char fstype[10];
   fs_t* fs;
+
+  // Protects the vnode across blocking IO calls.
+  kmutex_t mutex;
   // VFS impl pointer.
   //
   // TODO(aoates): mutex?
@@ -128,7 +133,20 @@ typedef struct fs fs_t;
 #define VFS_O_WRONLY   0x10
 #define VFS_O_RDWR     0x20
 
+// Initialize the VFS.
+void vfs_init();
+
 // Initialize (and zero-out) a vnode_t.
 void vfs_vnode_init(vnode_t* n);
+
+// Given a filesystem and a vnode number, return the corresponding vnode_t.
+// This increments the vnode's refcount, which must be decremented later vith
+// vfs_put.
+vnode_t* vfs_get(int vnode);
+
+// Decrement the refcount of the given vnode, potentially releasing it's
+// resources.  You must not access the vnode after calling this, unless you have
+// another outstanding reference.
+void vfs_put(vnode_t* n);
 
 #endif
