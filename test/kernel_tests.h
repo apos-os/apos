@@ -27,5 +27,6 @@ void kthread_test();
 void page_alloc_map_test();
 void page_alloc_test();
 void ld_test();
+void hashtable_test();
 
 #endif

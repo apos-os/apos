@@ -63,6 +63,7 @@ static test_entry_t TESTS[] = {
   { "interrupt_save", &interrupt_save_test, 1 },
   { "kstring", &kstring_test, 1 },
   { "kprintf", &kprintf_test, 1 },
+  { "hashtable", &hashtable_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
