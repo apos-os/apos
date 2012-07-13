@@ -174,3 +174,33 @@ int32_t atoi(const char* s) {
 uint32_t atou(const char* s) {
   return atou_internal(s);
 }
+
+const char* kstrchr(const char* s, int c) {
+  while (*s) {
+    if (*s == c) {
+      return s;
+    }
+    s++;
+  }
+  return 0;
+}
+
+const char* kstrrchr(const char* s, int c) {
+  const int len = kstrlen(s);
+  for (int i = len-1; i >= 0; --i) {
+    if (s[i] == c) {
+      return s + i;
+    }
+  }
+  return 0;
+}
+
+const char* kstrchrnul(const char* s, int c) {
+  while (*s) {
+    if (*s == c) {
+      return s;
+    }
+    s++;
+  }
+  return s;
+}

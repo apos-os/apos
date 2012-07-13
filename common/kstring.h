@@ -39,4 +39,8 @@ const char* utoa_hex(uint32_t x);
 int32_t atoi(const char* s);
 uint32_t atou(const char* s);
 
+const char* kstrchr(const char* s, int c);
+const char* kstrrchr(const char* s, int c);
+const char* kstrchrnul(const char* s, int c);
+
 #endif
