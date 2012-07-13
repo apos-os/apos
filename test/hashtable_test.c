@@ -76,6 +76,13 @@ static void do_table_test(htbl_t* tbl) {
   KEXPECT_NE(0, htbl_get(tbl, 2, &out));
   KEXPECT_NE(0, htbl_get(tbl, 3, &out));
   KEXPECT_NE(0, htbl_get(tbl, 4, &out));
+
+  KTEST_BEGIN("cleanup test");
+  // Add a bunch of nodes (twice per key) then don't remove them.
+  for (int i = 0; i < 100; ++i) {
+    htbl_put(tbl, i, (void*)i);
+    htbl_put(tbl, i, (void*)i);
+  }
 }
 
 void hashtable_test() {

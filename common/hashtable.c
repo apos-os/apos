@@ -31,10 +31,21 @@ static inline uint32_t hash(htbl_t* tbl, uint32_t key) {
 
 void htbl_init(htbl_t* tbl, int buckets) {
   tbl->buckets = (htbl_entry_t**)kmalloc(sizeof(htbl_entry_t*) * buckets);
+  for (int i = 0; i < buckets; ++i) {
+    tbl->buckets[i] = 0x0;
+  }
   tbl->num_buckets = buckets;
 }
 
 void htbl_cleanup(htbl_t* tbl) {
+  for (int i = 0; i < tbl->num_buckets; ++i) {
+    htbl_entry_t* e = tbl->buckets[i];
+    while (e) {
+      htbl_entry_t* next = e->next;
+      kfree(e);
+      e = next;
+    }
+  }
   kfree(tbl->buckets);
   tbl->buckets = 0x0;
   tbl->num_buckets = -1;
