@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/hashtable.h"
+#include "common/kstring.h"
 #include "kmalloc.h"
 #include "proc/kthread.h"
 #include "vfs/ramfs.h"
@@ -33,6 +34,83 @@ void vfs_vnode_init(vnode_t* n) {
 
 static fs_t* g_root_fs = 0;
 static htbl_t g_vnode_cache;
+
+// Given a path /path/to/file, return the vnode_t* for the parent (/path/to),
+// and the inode number of the child (file), or -1 if it doesn't exist.  If the
+// path is the root path, parent_out and inode_out will both point at the root
+// vnode.
+//
+// Returns 0 on success, or -error on failure.  Note that a missing directory on
+// the path will result in a -ENOENT, while a missing final child will be a
+// success.
+//
+// Returns *parent_out with a refcount.
+// TODO(aoates): this needs to handle symlinks!
+// TODO(aoates): things to test:
+//  * regular path
+//  * root directory
+//  * path ending in file
+//  * path ending in directory
+//  * trailing slashes
+//  * no leading slash (?)
+//  * non-directory in middle of path (ENOTDIR)
+//  * non-existing in middle of path (ENOENT)
+static int lookup_path(const char* path, vnode_t** parent_out, int* inode_out) {
+  int root_vnode = g_root_fs->get_root(g_root_fs);
+  vnode_t* n = vfs_get(root_vnode);
+  KASSERT(n);
+  // Skip leading '/'.
+  while (*path && *path == '/') path++;
+
+  if (!*path) {
+    // The path was the root node.
+    *parent_out = n;
+    *inode_out = root_vnode;
+    return 0;
+  }
+
+  while(1) {
+    KASSERT(*path);
+    const char* name_end = kstrchrnul(path, '/');
+    if (name_end - path >= MAX_FILENAME_LENGTH) {
+      return -ENAMETOOLONG;
+    }
+
+    // TODO(aoates): get rid of this copy.
+    char name[MAX_FILENAME_LENGTH];
+    kstrncpy(name, path, name_end - path);
+    name[name_end - path] = '\0';
+
+    kmutex_lock(&n->mutex);
+    int child_inode = n->fs->lookup(n, name);
+    kmutex_unlock(&n->mutex);
+
+    // Check for errors.
+    if (child_inode < 0 && child_inode != -ENOENT) {
+      vfs_put(n);
+      return child_inode;
+    }
+
+    // Advance past any trailing slashes.
+    while (*name_end && *name_end == '/') name_end++;
+
+    // Check if we're done.
+    if (!*name_end) {
+      *parent_out = n;
+      if (child_inode == -ENOENT) {
+        *inode_out = -1;
+      } else {
+        *inode_out = child_inode;
+      }
+      return 0;
+    }
+
+    // Otherwise, lookup the child and keep going.
+    vfs_put(n);
+    n = vfs_get(child_inode);
+    path = name_end;
+  }
+}
 
 void vfs_init() {
   KASSERT(g_root_fs == 0);
