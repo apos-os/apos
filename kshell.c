@@ -16,6 +16,7 @@
 
 #include <stdint.h>
 
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -62,6 +63,7 @@ static test_entry_t TESTS[] = {
   { "interrupt_save", &interrupt_save_test, 1 },
   { "kstring", &kstring_test, 1 },
   { "kprintf", &kprintf_test, 1 },
+  { "hashtable", &hashtable_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
@@ -104,6 +106,16 @@ static void meminfo_cmd(int argc, char* argv[]) {
   kmalloc_log_state();
 }
 
+static void hash_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: hash <number>\n");
+    return;
+  }
+  uint32_t x = atou(argv[1]);
+  uint32_t h = fnv_hash(x);
+  ksh_printf("%u (0x%x)\n", h, h);
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -112,6 +124,7 @@ typedef struct {
 static cmd_t CMDS[] = {
   { "test", &test_cmd },
   { "meminfo", &meminfo_cmd },
+  { "hash", &hash_cmd },
   { 0x0, 0x0 },
 };
 

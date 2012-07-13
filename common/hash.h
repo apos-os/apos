@@ -12,21 +12,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#ifndef APOO_HASH_H
+#define APOO_HASH_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
+static inline uint32_t fnv_hash(uint32_t key) {
+  uint32_t h = 2166136261;
+  h ^= (key * 0xFF);
+  h *= 16777619;
+  h ^= ((key >> 8) * 0xFF);
+  h *= 16777619;
+  h ^= ((key >> 16) * 0xFF);
+  h *= 16777619;
+  h ^= ((key >> 24) * 0xFF);
+  h *= 16777619;
+  return h;
+}
 
 #endif
