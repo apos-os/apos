@@ -49,4 +49,9 @@ int htbl_get(htbl_t* tbl, uint32_t key, void** value);
 // Removes the value associated with a given key, returning 0 if successful.
 int htbl_remove(htbl_t* tbl, uint32_t key);
 
+// Invoke func on each (key, value) pair in the table.  There are no guarantees
+// about what order the items will be iterated in, and func must not mutate the
+// table.
+void htbl_iterate(htbl_t* tbl, void (*func)(uint32_t, void*));
+
 #endif

@@ -102,3 +102,13 @@ int htbl_remove(htbl_t* tbl, uint32_t key) {
   }
   return -1;
 }
+
+void htbl_iterate(htbl_t* tbl, void (*func)(uint32_t, void*)) {
+  for (int i = 0; i < tbl->num_buckets; ++i) {
+    htbl_entry_t* e = tbl->buckets[i];
+    while (e) {
+      func(e->key, e->value);
+      e = e->next;
+    }
+  }
+}
