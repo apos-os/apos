@@ -48,6 +48,9 @@ void kexpect_(uint32_t cond, const char* name,
   if (kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) { \
     ksprintf(aval_str, "0x%s", utoa_hex(aval)); \
     ksprintf(bval_str, "0x%s", utoa_hex(bval)); \
+  } else if (kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) { \
+    kstrcpy(aval_str, itoa(aval)); \
+    kstrcpy(bval_str, itoa(bval)); \
   } else { \
     kstrcpy(aval_str, utoa(aval)); \
     kstrcpy(bval_str, utoa(bval)); \
