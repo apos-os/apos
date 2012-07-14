@@ -19,7 +19,8 @@
 
 #include "proc/kthread.h"
 
-#define MAX_FILENAME_LENGTH 256
+#define VFS_MAX_FILENAME_LENGTH 256
+#define VFS_MAX_PATH_LENGTH 1024
 
 // vnode types.
 #define VNODE_INVALID 0
