@@ -15,6 +15,8 @@
 #ifndef APOO_FILE_H
 #define APOO_FILE_H
 
+#include "kmalloc.h"
+
 struct vnode;
 
 // Represents an open file on the VFS.  There may be multiple file_t's per vnode
@@ -30,5 +32,15 @@ typedef struct file file_t;
 
 // Initialize a file_t with sane values.
 void file_init_file(file_t* f);
+
+// Allocate and free a file.  For now, these just call kmalloc() and kfree(),
+// but we cloud replace them with a better allocator in the future.
+static inline file_t* file_alloc() {
+  return (file_t*)kmalloc(sizeof(file_t));
+}
+
+static inline void file_free(file_t* f) {
+  kfree(f);
+}
 
 #endif

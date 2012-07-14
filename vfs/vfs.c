@@ -235,6 +235,7 @@ void vfs_put(vnode_t* vnode) {
 
   // TODO(aoates): instead of greedily freeing the vnode, mark it as unnecessary
   // and only free it later, if we need to.
+  KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
     KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
     // TODO(aoates): is this lock/unlock really neccessary?
@@ -313,11 +314,32 @@ int vfs_open(const char* path, uint32_t flags) {
   }
 
   KASSERT(g_file_table[idx] == 0x0);
-  g_file_table[idx] = (file_t*)kmalloc(sizeof(file_t));
+  g_file_table[idx] = file_alloc();
   g_file_table[idx]->vnode = child;
   g_file_table[idx]->refcount = 1;
 
   KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
   proc->fds[fd] = idx;
   return fd;
+}
+
+int vfs_close(int fd) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+
+  file->refcount--;
+  KASSERT(file->refcount >= 0);
+  if (file->refcount == 0) {
+    vfs_put(file->vnode);
+    file->vnode = 0x0;
+    file_free(file);
+  }
+
+  proc->fds[fd] = PROC_UNUSED_FD;
+  return 0;
 }

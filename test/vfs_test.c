@@ -40,6 +40,34 @@ static void open_test() {
   KEXPECT_EQ(3, vfs_open("/test1", 0));
   vfs_log_cache();
 
+  KTEST_BEGIN("vfs_close() test");
+  KEXPECT_EQ(-EBADF, vfs_close(-10));
+  KEXPECT_EQ(-EBADF, vfs_close(10000000));
+  KEXPECT_EQ(-EBADF, vfs_close(5));
+
+  KEXPECT_EQ(0, vfs_close(1));
+  vfs_log_cache();
+
+  // Make sure we reuse the fd.
+  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT));
+  vfs_log_cache();
+
+  // Close everything else.
+  KEXPECT_EQ(0, vfs_close(3));
+  vfs_log_cache();
+  KEXPECT_EQ(0, vfs_close(2));
+  vfs_log_cache();
+  KEXPECT_EQ(0, vfs_close(0));
+  vfs_log_cache();
+
+  KTEST_BEGIN("re-vfs_open() test");
+  KEXPECT_EQ(0, vfs_open("/test1", 0));
+  vfs_log_cache();
+
+  // Close everything.
+  KEXPECT_EQ(0, vfs_close(0));
+  KEXPECT_EQ(0, vfs_close(1));
+
   // TODO(aoates): test in subdirectories once mkdir works
 }
 
