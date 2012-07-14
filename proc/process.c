@@ -14,12 +14,14 @@
 
 #include <stdint.h>
 
+#include "common/kassert.h"
 #include "kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 
 static process_t* g_proc_table[PROC_MAX_PROCS];
+static int g_current_proc = -1;
 
 static void proc_init_process(process_t* p) {
   p->id = -1;
@@ -40,4 +42,10 @@ void proc_init() {
   g_proc_table[0]->id = 0;
   g_proc_table[0]->thread = kthread_current_thread();
   g_proc_table[0]->thread->process = g_proc_table[0];
+  g_current_proc = 0;
+}
+
+process_t* proc_current() {
+  KASSERT(g_current_proc >= 0 && g_current_proc < PROC_MAX_PROCS);
+  return g_proc_table[g_current_proc];
 }

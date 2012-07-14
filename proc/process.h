@@ -36,4 +36,7 @@ typedef struct process {
 // REQUIRES: kthread_init() and scheduler_init().
 void proc_init();
 
+// Return the current process descriptor.
+process_t* proc_current();
+
 #endif
