@@ -134,6 +134,7 @@ fs_t* ramfs_create_fs() {
   KASSERT(root_inode == 0);
   ramfs_inode_t* root = &f->inodes[root_inode];
   init_inode(f, root);
+  root->link_count = 1;
   root->vnode.num = root_inode;
   root->vnode.len = 0;
   root->vnode.type = VNODE_DIRECTORY;
