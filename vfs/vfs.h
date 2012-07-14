@@ -175,4 +175,8 @@ int vfs_open(const char* path, uint32_t flags);
 // Close the given file descriptor.  Returns 0 on success, or -error.
 int vfs_close(int fd);
 
+// Make a directory at the given path.  Returns 0 on success, or -error.
+// TODO(aoates): mode
+int vfs_mkdir(const char* path);
+
 #endif

@@ -69,10 +69,57 @@ static void open_test() {
   KEXPECT_EQ(0, vfs_close(1));
 
   // TODO(aoates): test in subdirectories once mkdir works
+  KTEST_BEGIN("vfs_open() w/ directories test");
+  KEXPECT_EQ(-EISDIR, vfs_open("/", 0));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", 0));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT));
+}
+
+static void mkdir_test() {
+  KTEST_BEGIN("vfs_mkdir() test");
+
+  // Make sure we have some normal files around.
+  int test1_fd = vfs_open("/test1", VFS_O_CREAT);
+  KEXPECT_GE(test1_fd, 0);
+
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/test1"));
+
+  KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1"));
+
+  KTEST_BEGIN("regular mkdir()");
+  KEXPECT_EQ(0, vfs_mkdir("/dir1"));
+  KEXPECT_EQ(0, vfs_mkdir("/dir2"));
+
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir2"));
+
+  KTEST_BEGIN("nested mkdir()");
+  KEXPECT_EQ(-ENOENT, vfs_mkdir("/dir1/dir1a/dir1b"));
+  KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a"));
+  KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a/dir1b"));
+
+  // TODO(aoates): better testing for . and ...
+  KTEST_BEGIN("crappy '.' and '..' tests");
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/."));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/.."));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/./dir1"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/../dir1"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/../../../dir1"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1/./././dir1a"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1/../dir2/../dir1/./dir1a/dir1b/../dir1b"));
+
+  // TODO(aoates): create files in the directories, open them
+  // TODO(aoates): test '.' and '..' links!
+  // TODO(aoates): test multiple slashes and traling slashes
+
+  // Cleanup.
+  vfs_close(test1_fd);
 }
 
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
   open_test();
+  mkdir_test();
 }

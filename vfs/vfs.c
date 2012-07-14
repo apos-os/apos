@@ -167,6 +167,12 @@ static int lookup_path(vnode_t* root, const char* path,
       return error;
     }
 
+    // TODO(aoates): symlink
+    if (child->type != VNODE_DIRECTORY) {
+      vfs_put(child);
+      return -ENOTDIR;
+    }
+
     // Move to the child and keep going.
     n = child;
     path = name_end;
@@ -272,6 +278,9 @@ int vfs_open(const char* path, uint32_t flags) {
   if (error) {
     return error;
   }
+  if (base_name[0] == '\0') {
+    return -EISDIR;  // Root directory is verboten.
+  }
 
   // Lookup the child inode.
   vnode_t* child;
@@ -299,6 +308,11 @@ int vfs_open(const char* path, uint32_t flags) {
   vfs_put(parent);
   parent = 0x0;
 
+  // TODO(aoates): apparently on linux, you can open a directory for reading.
+  // What does that mean, and should we allow it?
+  if (child->type == VNODE_DIRECTORY) {
+    return -EISDIR;
+  }
   // Allocate a new file_t in the global file table.
   int idx = next_free_file_idx();
   if (idx < 0) {
@@ -341,5 +355,43 @@ int vfs_close(int fd) {
   }
 
   proc->fds[fd] = PROC_UNUSED_FD;
+  return 0;
+}
+
+int vfs_mkdir(const char* path) {
+  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* parent;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  // TODO(aoates): support cwd
+  KASSERT(path[0] == '/');
+  int error = lookup_path(root, path, &parent, base_name);
+  vfs_put(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    return -EEXIST;  // Root directory!
+  }
+
+  int child_inode = parent->fs->mkdir(parent, base_name);
+  if (child_inode < 0) {
+    vfs_put(parent);
+    return child_inode;  // Error :(
+  }
+
+  // Set up '.' and '..'.
+  vnode_t* dir = vfs_get(child_inode);
+  kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
+  kmutex_lock(&dir->mutex); // TODO(aoates): ??
+  // TODO: handle this more gracefully.
+  KASSERT(0 == dir->fs->link(dir, dir, "."));
+  KASSERT(0 == dir->fs->link(dir, parent, ".."));
+  kmutex_unlock(&dir->mutex);
+  kmutex_unlock(&parent->mutex);
+
+  // We're done!
+  vfs_put(parent);
   return 0;
 }

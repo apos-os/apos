@@ -139,6 +139,10 @@ fs_t* ramfs_create_fs() {
   root->vnode.len = 0;
   root->vnode.type = VNODE_DIRECTORY;
 
+  // Link it to itself.
+  ramfs_link((vnode_t*)root, (vnode_t*)root, ".");
+  ramfs_link((vnode_t*)root, (vnode_t*)root, "..");
+
   return (fs_t*)f;
 }
 
@@ -175,6 +179,9 @@ int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(vnode->refcount == 0);
 
+  // TODO(aoates): consider that directories must be treated differently.  Does
+  // that mean that the self-linking of directories should go in ramfs, not vfs?
+  // Probably.
   ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
   if (inode->link_count == 0) {
     vnode->type = VNODE_INVALID;
