@@ -29,5 +29,6 @@ void page_alloc_test();
 void ld_test();
 void hashtable_test();
 void ramfs_test();
+void vfs_test();
 
 #endif

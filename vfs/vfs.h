@@ -22,6 +22,9 @@
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
 
+// How many files can be open, globally, at once.
+#define VFS_MAX_FILES 1024
+
 // vnode types.
 #define VNODE_INVALID 0
 #define VNODE_REGULAR   1
@@ -129,9 +132,11 @@ struct fs {
 typedef struct fs fs_t;
 
 // Syscall flags.
+// TODO(aoates): once we have userland, these should be the same constants as
+// are used there.
 #define VFS_O_APPEND   0x01
 #define VFS_O_CREAT    0x02
-#define VFS_O_TRUNC    0x04
+#define VFS_O_TRUNC    0x04  // TODO(aoates)
 #define VFS_O_RDONLY   0x08
 #define VFS_O_WRONLY   0x10
 #define VFS_O_RDWR     0x20
@@ -147,9 +152,24 @@ void vfs_vnode_init(vnode_t* n);
 // vfs_put.
 vnode_t* vfs_get(int vnode);
 
+// Log the current vnode cache.
+void vfs_log_cache();
+
+// Increment the given node's refcount.
+void vfs_ref(vnode_t* n);
+
 // Decrement the refcount of the given vnode, potentially releasing it's
 // resources.  You must not access the vnode after calling this, unless you have
 // another outstanding reference.
 void vfs_put(vnode_t* n);
+
+// Open the given file in the current process, returning the file descriptor
+// opened or -error on failure.
+//
+// If VFS_O_CREAT is given, the file will be created (if it doesn't already
+// exist).
+//
+// TODO(aoates): mode!
+int vfs_open(const char* path, uint32_t flags);
 
 #endif

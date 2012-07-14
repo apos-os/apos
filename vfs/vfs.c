@@ -19,6 +19,8 @@
 #include "common/kstring.h"
 #include "kmalloc.h"
 #include "proc/kthread.h"
+#include "proc/process.h"
+#include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
 
@@ -32,8 +34,13 @@ void vfs_vnode_init(vnode_t* n) {
 
 #define VNODE_CACHE_SIZE 1000
 
+static const char* VNODE_TYPE_NAME[] = {
+  "INV", "REG", "DIR"
+};
+
 static fs_t* g_root_fs = 0;
 static htbl_t g_vnode_cache;
+static file_t* g_file_table[VFS_MAX_FILES];
 
 // Copy path into canon_path, replacing strings of '/'s with a single '/', and
 // removing any trailing '/'s.
@@ -57,6 +64,45 @@ static void canonicalize_path(char* canon_path, const char* path) {
   *canon_path = '\0';
 }
 
+// Return the index of the next free entry in the file table, or -1 if there's
+// no space left.
+//
+// TODO(aoates): this could be much more efficient.
+static int next_free_file_idx() {
+  for (int i = 0; i < VFS_MAX_FILES; ++i) {
+    if (g_file_table[i] == 0x0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Return the lowest free fd in the process.
+static int next_free_fd(process_t* p) {
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (p->fds[i] == PROC_UNUSED_FD) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+// Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
+// success (and refcounts the child).
+static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
+  // TODO(aoates): do we need to lock the parent's mutex here?
+  kmutex_lock(&parent->mutex);
+  int child_inode = parent->fs->lookup(parent, name);
+  kmutex_unlock(&parent->mutex);
+
+  if (child_inode < 0) {
+    return child_inode;
+  }
+
+  *child_out = vfs_get(child_inode);
+  return 0;
+}
+
 // Given a vnode and a path path/to/myfile relative to that vnode, return the
 // vnode_t of the directory part of the path, and copy the base name of the path
 // (without any trailing slashes) into base_name_out.
@@ -66,7 +112,7 @@ static void canonicalize_path(char* canon_path, const char* path) {
 // Returns 0 on success, or -error on failure (in which case the contents of
 // parent_out and base_name_out are undefined).
 //
-// Returns *parent_out with a refcount.
+// Returns *parent_out with a refcount unless there was an error.
 // TODO(aoates): this needs to handle symlinks!
 // TODO(aoates): things to test:
 //  * regular path
@@ -80,6 +126,8 @@ static void canonicalize_path(char* canon_path, const char* path) {
 static int lookup_path(vnode_t* root, const char* path,
                        vnode_t** parent_out, char* base_name_out) {
   vnode_t* n = root;
+  vfs_ref(n);
+
   // Skip leading '/'.
   while (*path && *path == '/') path++;
 
@@ -94,6 +142,7 @@ static int lookup_path(vnode_t* root, const char* path,
     KASSERT(*path);
     const char* name_end = kstrchrnul(path, '/');
     if (name_end - path >= VFS_MAX_FILENAME_LENGTH) {
+      vfs_put(n);
       return -ENAMETOOLONG;
     }
 
@@ -105,24 +154,21 @@ static int lookup_path(vnode_t* root, const char* path,
 
     // Are we at the end?
     if (!*name_end) {
+      // Don't vfs_put() the parent, since we want to return it with a refcount.
       *parent_out = n;
       return 0;
     }
 
     // Otherwise, descend again.
-    kmutex_lock(&n->mutex);
-    int child_inode = n->fs->lookup(n, base_name_out);
-    kmutex_unlock(&n->mutex);
-
-    // Check for errors.
-    if (child_inode < 0) {
-      vfs_put(n);
-      return child_inode;
+    vnode_t* child = 0x0;
+    int error = lookup(n, base_name_out, &child);
+    vfs_put(n);
+    if (error) {
+      return error;
     }
 
-    // Lookup the child and keep going.
-    vfs_put(n);
-    n = vfs_get(child_inode);
+    // Move to the child and keep going.
+    n = child;
     path = name_end;
   }
 }
@@ -131,12 +177,15 @@ void vfs_init() {
   KASSERT(g_root_fs == 0);
   g_root_fs = ramfs_create_fs();
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
+
+  for (int i = 0; i < VFS_MAX_FILES; ++i) {
+    g_file_table[i] = 0x0;
+  }
 }
 
 vnode_t* vfs_get(int vnode_num) {
   vnode_t* vnode;
-  int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,
-                             (void**)(&vnode));
+  int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,  (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
     KASSERT(vnode->type != VNODE_INVALID);
@@ -158,6 +207,9 @@ vnode_t* vfs_get(int vnode_num) {
     vnode->fs = g_root_fs;
     kmutex_lock(&vnode->mutex);
 
+    // Put the (unitialized but locked) vnode into the table.
+    htbl_put(&g_vnode_cache, (uint32_t)vnode_num, (void*)vnode);
+
     // This call could block, at which point other threads attempting to access
     // this node will block until we release the mutex.
     error = g_root_fs->get_vnode(vnode);
@@ -173,10 +225,16 @@ vnode_t* vfs_get(int vnode_num) {
   }
 }
 
+void vfs_ref(vnode_t* n) {
+  n->refcount++;
+}
+
 void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->type != VNODE_INVALID);  // We must be fully initialized.
   vnode->refcount--;
 
+  // TODO(aoates): instead of greedily freeing the vnode, mark it as unnecessary
+  // and only free it later, if we need to.
   if (vnode->refcount == 0) {
     KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
     // TODO(aoates): is this lock/unlock really neccessary?
@@ -186,4 +244,80 @@ void vfs_put(vnode_t* vnode) {
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }
+}
+
+static void vfs_log_cache_iter(uint32_t key, void* val) {
+  vnode_t* vnode = (vnode_t*)val;
+  KASSERT(key == (uint32_t)vnode->num);
+  klogf("  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
+        vnode, vnode->num, VNODE_TYPE_NAME[vnode->type],
+        vnode->len, vnode->refcount);
+}
+
+void vfs_log_cache() {
+  klogf("VFS vnode cache:\n");
+  htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter);
+}
+
+int vfs_open(const char* path, uint32_t flags) {
+  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* parent;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  // TODO(aoates): cwd: track current working directory and use that here.
+  KASSERT(path[0] == '/');
+  int error = lookup_path(root, path, &parent, base_name);
+  vfs_put(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  error = lookup(parent, base_name, &child);
+  if (error < 0 && error != -ENOENT) {
+    vfs_put(parent);
+    return error;
+  } else if (error == -ENOENT) {
+    if (!(flags & VFS_O_CREAT)) {
+      vfs_put(parent);
+      return error;
+    }
+
+    // Create it.
+    int child_inode = parent->fs->create(parent, base_name);
+    if (child_inode < 0) {
+      vfs_put(parent);
+      return child_inode;
+    }
+
+    child = vfs_get(child_inode);
+  }
+
+  // Done with the parent.
+  vfs_put(parent);
+  parent = 0x0;
+
+  // Allocate a new file_t in the global file table.
+  int idx = next_free_file_idx();
+  if (idx < 0) {
+    vfs_put(child);
+    return -ENFILE;
+  }
+
+  process_t* proc = proc_current();
+  int fd = next_free_fd(proc);
+  if (fd < 0) {
+    vfs_put(child);
+    return -EMFILE;
+  }
+
+  KASSERT(g_file_table[idx] == 0x0);
+  g_file_table[idx] = (file_t*)kmalloc(sizeof(file_t));
+  g_file_table[idx]->vnode = child;
+  g_file_table[idx]->refcount = 1;
+
+  KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
+  proc->fds[fd] = idx;
+  return fd;
 }
