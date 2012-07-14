@@ -19,16 +19,24 @@
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 
-#define MAX_PROCS 256
-static process_t* g_proc_table[MAX_PROCS];
+static process_t* g_proc_table[PROC_MAX_PROCS];
+
+static void proc_init_process(process_t* p) {
+  p->id = -1;
+  p->thread = 0x0;
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    p->fds[i] = -1;
+  }
+}
 
 void proc_init() {
-  for (int i = 0; i < MAX_PROCS; ++i) {
+  for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
   }
 
   // Create first process.
   g_proc_table[0] = (process_t*)kmalloc(sizeof(process_t));
+  proc_init_process(g_proc_table[0]);
   g_proc_table[0]->id = 0;
   g_proc_table[0]->thread = kthread_current_thread();
   g_proc_table[0]->thread->process = g_proc_table[0];
