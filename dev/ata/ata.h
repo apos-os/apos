@@ -18,24 +18,10 @@
 
 #include <stdint.h>
 
-// Contains data about the port offsets for the primary and secondary ATA
-// channels.
-struct ata_channel {
-  uint16_t cmd_offset;  // Port offset for the command block.
-  uint16_t ctrl_offset;  // Port offset for the control block.
-  uint8_t irq;  // The IRQ used by this channel.
-};
-typedef struct ata_channel ata_channel_t;
-
-struct ata {
-  ata_channel_t primary;
-  ata_channel_t secondary;
-};
-typedef struct ata ata_t;
-
-// Initialize the ATA driver with the given channel information.  For instance,
-// the PCI/IDE bridge chip driver might call this after it has initialized the
-// bridge.
-void ata_init(const ata_t* ata);
+// Initialize the ATA driver and scan the primary and secondary channels for ATA
+// devices.
+//
+// REQUIRES: pci_init() -- in case the ATA bus is accessed through a PCI bridge.
+void ata_init();
 
 #endif

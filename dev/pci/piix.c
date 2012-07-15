@@ -46,19 +46,5 @@ void pci_piix_driver_init(pci_device_t* pcidev) {
   KASSERT((base & 0x1) == 1);  // Should always be I/O mapped.
   base &= 0x0000FFF0;
 
-  // Initialize the ATA driver with the I/O port ranges used by the PIIX(3) (see
-  // page 96 of the datasheet).
-  ata_t ata;
-  ata.primary.cmd_offset =  0x01F0;
-  ata.primary.ctrl_offset = 0x03F0;
-  ata.primary.irq = 14;
-  ata.secondary.cmd_offset =  0x0170;
-  ata.secondary.ctrl_offset = 0x0370;
-  ata.secondary.irq = 15;
-
-  // TODO(aoates): I think this chip supports 4 ATA channels --- we should
-  // initialize all 4.
-  ata_init(&ata);
-
   // TODO(aoates): use base to set up bus-mastered DMA for the ATA chips.
 }

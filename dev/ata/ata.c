@@ -20,6 +20,24 @@
 #include "common/io.h"
 #include "dev/ata/ata.h"
 
+// Contains data about the port offsets for the primary and secondary ATA
+// channels.
+struct ata_channel {
+  uint16_t cmd_offset;  // Port offset for the command block.
+  uint16_t ctrl_offset;  // Port offset for the control block.
+  uint8_t irq;  // The IRQ used by this channel.
+};
+typedef struct ata_channel ata_channel_t;
+
+struct ata {
+  ata_channel_t primary;
+  ata_channel_t secondary;
+};
+typedef struct ata ata_t;
+
+static ata_t g_ata;
+static int g_init = 0;
+
 // Port offsets (from the base ports given in the ata_t structure) for the ATA
 // control registers.  Some registers have different purposes when reading vs.
 // writing, and are enumerated twice.
@@ -81,9 +99,6 @@ struct drive {
   // TODO(aoates): the rest of the fields.
 };
 typedef struct drive drive_t;
-
-static ata_t g_ata;
-static int g_init = 0;
 
 // Reads the status register on the given channel.  This resets the interrupt
 // state.
@@ -262,7 +277,7 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
   return 0;
 }
 
-void ata_init(const ata_t* ata) {
+static void ata_init_internal(const ata_t* ata) {
   KASSERT(g_init == 0);
   g_ata = *ata;
   g_init = 1;
@@ -310,4 +325,22 @@ void ata_init(const ata_t* ata) {
   }
 
   // TODO(aoates): enable interrupts with device control register
+}
+
+void ata_init() {
+  // Initialize the ATA driver with the I/O port ranges used by the PIIX(3) (see
+  // page 96 of the datasheet).  There doesn't seem to be a way to determine
+  // these dynamically, so we just guess-and-pray.
+  ata_t ata;
+  ata.primary.cmd_offset =  0x01F0;
+  ata.primary.ctrl_offset = 0x03F0;
+  ata.primary.irq = 14;
+  ata.secondary.cmd_offset =  0x0170;
+  ata.secondary.ctrl_offset = 0x0370;
+  ata.secondary.irq = 15;
+
+  // TODO(aoates): Sometimes we could have 4 ATA channels -- try to
+  // initialize all 4.
+
+  ata_init_internal(&ata);
 }
