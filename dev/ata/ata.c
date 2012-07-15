@@ -147,6 +147,26 @@ static inline void drive_select(ata_channel_t* channel, uint8_t drive) {
   read_status(channel);
 }
 
+// When strings are read by the IDENTIFY command in 2-byte chunks, the byte
+// order gets reversed.  This cleans up the strings.
+static void cleanup_ata_string(char* s, int len) {
+  // Swap characters.
+  int i = 0;
+  while (i < len - 1) {
+    char tmp = s[i];
+    s[i] = s[i+1];
+    s[i+1] = tmp;
+    i += 2;
+  }
+
+  // Trim trailing spaces.
+  i = len - 2;
+  while (i > 0 && s[i] == ' ') {
+    s[i] = '\0';
+    i--;
+  }
+}
+
 // Send the "identify drive" command for the given channel and drive.  Returns 0
 // if successful (meaning a drive was found and the identify command was
 // successful).  Returns non-zero if there was no drive or there was an error.
@@ -188,13 +208,16 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
   d->sectors_per_track = buf[6];
   kmemcpy(d->serial, &buf[10], 20);
   d->serial[20] = '\0';
+  cleanup_ata_string(d->serial, 20);
   d->buf_type = buf[20];
   d->buf_size = buf[21];
   d->ecc_bytes = buf[22];
   kmemcpy(d->firmware, &buf[23], 8);
   d->firmware[8] = '\0';
+  cleanup_ata_string(d->firmware, 8);
   kmemcpy(d->model, &buf[27], 40);
   d->model[40] = '\0';
+  cleanup_ata_string(d->model, 40);
 
   return 0;
 }
@@ -204,6 +227,7 @@ void ata_init(const ata_t* ata) {
   g_ata = *ata;
   g_init = 1;
 
+  klogf("ATA: scanning for ATA drives...\n");
   // Identify all the drives available.
   drive_t drives[4];
   int drives_status[4];
@@ -218,15 +242,14 @@ void ata_init(const ata_t* ata) {
                                     ATA_DRIVE_SLAVE, &drives[3]);
 
   for (int i = 0; i < 4; ++i) {
-    const char* status;
-    switch (drives_status[i]) {
-      case 0: status = "FOUND"; break;
-      case -1: status = "NOT FOUND"; break;
-      case -2: status = "ERROR"; break;
-      case -3: status = "BAD RESPONSE"; break;
-      default: status = "<unknown>";
+    if (drives_status[i] == 0) {
+      uint32_t total_size = drives[i].cylinders * drives[i].heads *
+          drives[i].sectors_per_track * drives[i].bytes_per_sector;
+      klogf("  ATA drive %d: %s (%s) --- %dc/%dh/%ds (%d bytes/sector) -- %d (%d MB) total\n", i,
+            drives[i].model, drives[i].serial, drives[i].cylinders, drives[i].heads,
+            drives[i].sectors_per_track, drives[i].bytes_per_sector, total_size,
+            total_size / 1000000);
     }
-    klogf("  ATA drive %d: %s\n", i, status);
   }
 
   // TODO(aoates): enable interrupts with device control register
