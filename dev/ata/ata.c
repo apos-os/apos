@@ -47,12 +47,20 @@
 #define ATA_DH_DRV 0x10  // 0 for master, 1 for slave.
 #define ATA_HD_HEAD_MASK 0x0F
 
+// Feature bits in the features2 field of the drive info.
+#define ATA_FEAT2_LBA 0x200
+#define ATA_FEAT2_DMA 0x100
+
 #define ATA_DRIVE_MASTER 0
 #define ATA_DRIVE_SLAVE  1
 #define ATA_BLOCK_SIZE 512
 
 // Data about a particular drive.
 struct drive {
+  // Meta fields: is the drive present, and supported by the driver.
+  uint8_t present;
+  uint8_t supported;
+
   uint16_t features;  // Feature bits.
   uint16_t cylinders;
   uint16_t heads;
@@ -65,6 +73,10 @@ struct drive {
   uint16_t ecc_bytes;
   char firmware[9];  // Null-terminated firmware version.
   char model[41];  // Null-terminated model number.
+  uint16_t features2;
+
+  // Total number of user-addressable sectors in LBA mode.
+  uint32_t lba_sectors;
 
   // TODO(aoates): the rest of the fields.
 };
@@ -209,15 +221,22 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
   kmemcpy(d->serial, &buf[10], 20);
   d->serial[20] = '\0';
   cleanup_ata_string(d->serial, 20);
+
   d->buf_type = buf[20];
   d->buf_size = buf[21];
   d->ecc_bytes = buf[22];
+
   kmemcpy(d->firmware, &buf[23], 8);
   d->firmware[8] = '\0';
   cleanup_ata_string(d->firmware, 8);
+
   kmemcpy(d->model, &buf[27], 40);
   d->model[40] = '\0';
   cleanup_ata_string(d->model, 40);
+
+  d->features2 = buf[49];
+  d->lba_sectors = ((buf[61] << 16) & 0xFFFF0000) +
+      (buf[60] & 0x0000FFFF);
 
   return 0;
 }
@@ -243,8 +262,25 @@ void ata_init(const ata_t* ata) {
 
   for (int i = 0; i < 4; ++i) {
     if (drives_status[i] == 0) {
-      uint32_t total_size = drives[i].cylinders * drives[i].heads *
-          drives[i].sectors_per_track * drives[i].bytes_per_sector;
+      drives[i].present = 1;
+
+      // We require support for LBA and DMA.
+      if ((drives[i].features2 & ATA_FEAT2_LBA) == 0 ||
+          (drives[i].features2 & ATA_FEAT2_DMA) == 0) {
+        klogf("ata: found drive %d, but doesn't support LBA or DMA :(\n", i);
+        drives[i].supported = 0;
+      } else {
+        drives[i].supported = 1;
+      }
+    } else {
+      drives[i].present = 0;
+      drives[i].supported = 0;
+    }
+  }
+
+  for (int i = 0; i < 4; ++i) {
+    if (drives[i].present && drives[i].supported) {
+      uint32_t total_size = drives[i].lba_sectors * drives[i].bytes_per_sector;
       klogf("  ATA drive %d: %s (%s) --- %dc/%dh/%ds (%d bytes/sector) -- %d (%d MB) total\n", i,
             drives[i].model, drives[i].serial, drives[i].cylinders, drives[i].heads,
             drives[i].sectors_per_track, drives[i].bytes_per_sector, total_size,
