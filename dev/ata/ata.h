@@ -17,11 +17,18 @@
 #define APOO_DEV_ATA_H
 
 #include <stdint.h>
+#include "dev/block.h"
 
 // Initialize the ATA driver and scan the primary and secondary channels for ATA
 // devices.
 //
 // REQUIRES: pci_init() -- in case the ATA bus is accessed through a PCI bridge.
 void ata_init();
+
+// Returns the number of ATA devices found at initialization time.
+int ata_num_devices();
+
+// Returns the block_dev_t corresponding to an ATA device.
+block_dev_t* ata_get_block_dev(int dev);
 
 #endif

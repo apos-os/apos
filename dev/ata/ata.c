@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -277,6 +278,40 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
   return 0;
 }
 
+static int ata_read(struct block_dev* dev, uint32_t offset,
+                        void* buf, uint32_t len) {
+  return -ENOTSUP;
+}
+
+static int ata_write(struct block_dev* dev, uint32_t offset,
+                         const void* buf, uint32_t len) {
+  return -ENOTSUP;
+}
+
+static void create_ata_block_dev(drive_t* d, block_dev_t* bd) {
+  KASSERT(d->present);
+  KASSERT(d->supported);
+
+  kmemset(bd, 0, sizeof(block_dev_t));
+  bd->sectors = d->lba_sectors;
+  bd->sector_size = ATA_BLOCK_SIZE;
+  bd->dev_data = d;
+
+  bd->read = &ata_read;
+  bd->write = &ata_write;
+}
+
+// A global array of drives, one for each possible device.  Not all will be
+// present or supported.
+#define ATA_MAX_DRIVES 4
+static drive_t g_drives[ATA_MAX_DRIVES];
+
+// An array of block_dev_ts, one for each present and supported device.  At
+// init-time, after detecting drives, we go through each potential device and
+// create a block_dev_t here for it if it's supported.
+static block_dev_t g_ata_block_devs[ATA_MAX_DRIVES];
+static int g_num_ata_block_devs = 0;
+
 static void ata_init_internal(const ata_t* ata) {
   KASSERT(g_init == 0);
   g_ata = *ata;
@@ -284,43 +319,48 @@ static void ata_init_internal(const ata_t* ata) {
 
   klogf("ATA: scanning for ATA drives...\n");
   // Identify all the drives available.
-  drive_t drives[4];
-  int drives_status[4];
+  int drives_status[ATA_MAX_DRIVES];
 
   drives_status[0] = identify_drive(&g_ata.primary,
-                                    ATA_DRIVE_MASTER, &drives[0]);
+                                    ATA_DRIVE_MASTER, &g_drives[0]);
   drives_status[1] = identify_drive(&g_ata.primary,
-                                    ATA_DRIVE_SLAVE, &drives[1]);
+                                    ATA_DRIVE_SLAVE, &g_drives[1]);
   drives_status[2] = identify_drive(&g_ata.secondary,
-                                    ATA_DRIVE_MASTER, &drives[2]);
+                                    ATA_DRIVE_MASTER, &g_drives[2]);
   drives_status[3] = identify_drive(&g_ata.secondary,
-                                    ATA_DRIVE_SLAVE, &drives[3]);
+                                    ATA_DRIVE_SLAVE, &g_drives[3]);
 
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < ATA_MAX_DRIVES; ++i) {
     if (drives_status[i] == 0) {
-      drives[i].present = 1;
+      g_drives[i].present = 1;
 
       // We require support for LBA and DMA.
-      if ((drives[i].features2 & ATA_FEAT2_LBA) == 0 ||
-          (drives[i].features2 & ATA_FEAT2_DMA) == 0) {
+      if ((g_drives[i].features2 & ATA_FEAT2_LBA) == 0 ||
+          (g_drives[i].features2 & ATA_FEAT2_DMA) == 0) {
         klogf("ata: found drive %d, but doesn't support LBA or DMA :(\n", i);
-        drives[i].supported = 0;
+        g_drives[i].supported = 0;
       } else {
-        drives[i].supported = 1;
+        g_drives[i].supported = 1;
       }
     } else {
-      drives[i].present = 0;
-      drives[i].supported = 0;
+      g_drives[i].present = 0;
+      g_drives[i].supported = 0;
     }
   }
 
-  for (int i = 0; i < 4; ++i) {
-    if (drives[i].present && drives[i].supported) {
-      uint32_t total_size = drives[i].lba_sectors * drives[i].bytes_per_sector;
-      klogf("  ATA drive %d: %s (%s) --- %dc/%dh/%ds (%d bytes/sector) -- %d (%d MB) total\n", i,
-            drives[i].model, drives[i].serial, drives[i].cylinders, drives[i].heads,
-            drives[i].sectors_per_track, drives[i].bytes_per_sector, total_size,
-            total_size / 1000000);
+  // Create block devices for (and log about) each device we found.
+  for (int i = 0; i < ATA_MAX_DRIVES; ++i) {
+    if (g_drives[i].present && g_drives[i].supported) {
+      uint32_t total_size =
+          g_drives[i].lba_sectors * g_drives[i].bytes_per_sector;
+      klogf("  ATA drive %d: %s (%s) --- %dc/%dh/%ds (%d bytes/sector) "
+            "-- %d (%d MB) total\n", i,
+            g_drives[i].model, g_drives[i].serial, g_drives[i].cylinders,
+            g_drives[i].heads, g_drives[i].sectors_per_track,
+            g_drives[i].bytes_per_sector, total_size, total_size / 1000000);
+      create_ata_block_dev(&g_drives[i],
+                           &g_ata_block_devs[g_num_ata_block_devs]);
+      g_num_ata_block_devs++;
     }
   }
 
@@ -343,4 +383,15 @@ void ata_init() {
   // initialize all 4.
 
   ata_init_internal(&ata);
+}
+
+int ata_num_devices() {
+  return g_num_ata_block_devs;
+}
+
+block_dev_t* ata_get_block_dev(int dev) {
+  if (dev < 0 || dev >= g_num_ata_block_devs) {
+    return 0x0;
+  }
+  return &g_ata_block_devs[dev];
 }
