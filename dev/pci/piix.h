@@ -17,6 +17,7 @@
 #define APOO_DEV_PIIX_H
 
 #include "dev/pci/pci.h"
+#include "dev/pci/pci-driver.h"
 
 // Invoked by the PCI pseudo-driver whenever it detects a compatible device.
 void pci_piix_driver_init(pci_device_t* pcidev);

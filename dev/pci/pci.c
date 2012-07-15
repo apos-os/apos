@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/io.h"
 #include "dev/pci/pci.h"
+#include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
 #include "kmalloc.h"
 
@@ -33,6 +34,8 @@
 #define PCI_FUNCTION_MAX 0x07
 #define PCI_REGISTER_MIN 0x00
 #define PCI_REGISTER_MAX 0xFC
+
+#define PCI_STATUS_REG_OFFSET 0x04
 
 #define PCI_HEADER_IS_MULTIFUNCTION 0x80
 
@@ -54,19 +57,30 @@ static pci_driver_t PCI_DRIVERS[] = {
   { 0xFFFF, 0xFFFF, 0x0 },
 };
 
-// Read a word from a PCI config register.
-static uint32_t pci_read_config(uint8_t bus, uint8_t device,
+static inline uint32_t make_cmd(uint8_t bus, uint8_t device,
                                 uint8_t function, uint8_t reg_offset) {
   KASSERT((device & 0xE0) == 0);
   KASSERT((function & 0xF8) == 0);
   KASSERT((reg_offset & 0x03) == 0);
-  uint32_t cmd = (0x80000000 | // Enable
-                  (bus << 16) |
-                  (device << 11) |
-                  (function << 8) |
-                  (reg_offset & 0xFC));
-  outl(PCI_CONFIG_ADDR, cmd);
+  return (0x80000000 | // Enable
+          (bus << 16) |
+          (device << 11) |
+          (function << 8) |
+          (reg_offset & 0xFC));
+}
+
+// Read a word from a PCI config register.
+static uint32_t pci_read_config(uint8_t bus, uint8_t device,
+                                uint8_t function, uint8_t reg_offset) {
+  outl(PCI_CONFIG_ADDR, make_cmd(bus, device, function, reg_offset));
   return inl(PCI_CONFIG_DATA);
+}
+
+static void pci_write_config(uint8_t bus, uint8_t device,
+                             uint8_t function, uint8_t reg_offset,
+                             uint32_t value) {
+  outl(PCI_CONFIG_ADDR, make_cmd(bus, device, function, reg_offset));
+  outl(PCI_CONFIG_DATA, value);
 }
 
 // Read config data for a single (bus, device, function) tuple.  Returns 0 if
@@ -85,9 +99,7 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
     return;
   }
 
-  data = pci_read_config(bus, device, function, 0x04);
-  pcidev->status = (data >> 16) & 0x0000FFFF;
-  pcidev->command = data & 0x0000FFFF;
+  pci_read_status(pcidev);
 
   data = pci_read_config(bus, device, function, 0x08);
   pcidev->class_code = (data >> 24) & 0x000000FF;
@@ -101,6 +113,20 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
     pcidev->base_address[i] = pci_read_config(bus, device, function,
                                               0x10 + 0x04 * i);
   }
+}
+
+void pci_read_status(pci_device_t* pcidev) {
+  uint32_t data = pci_read_config(pcidev->bus, pcidev->device,
+                                  pcidev->function, PCI_STATUS_REG_OFFSET);
+  pcidev->status = (data >> 16) & 0x0000FFFF;
+  pcidev->command = data & 0x0000FFFF;
+}
+
+void pci_write_status(pci_device_t* pcidev) {
+  uint32_t data = ((pcidev->status & 0x0000FFFF) << 16) |
+      (pcidev->command & 0x0000FFFF);
+  pci_write_config(pcidev->bus, pcidev->device, pcidev->function,
+                   PCI_STATUS_REG_OFFSET, data);
 }
 
 static void pci_print_device(pci_device_t* pcidev) {

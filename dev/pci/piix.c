@@ -19,7 +19,9 @@
 #include "dev/pci/piix.h"
 
 // Index into the PCI base address array for the IDE bus-master base address.
-#define PIIX_BUS_MASTER_BASE_ADDR
+#define PIIX_BUS_MASTER_BASE_ADDR 4
+
+#define PIIX_BUSMASTER_ENABLE 0x04
 
 void pci_piix_driver_init(pci_device_t* pcidev) {
   // Return any device functions that aren't the IDE interface.
@@ -31,4 +33,19 @@ void pci_piix_driver_init(pci_device_t* pcidev) {
   KASSERT(pcidev->class_code == 0x1);
   KASSERT(pcidev->subclass_code == 0x1);
   KASSERT(pcidev->prog_if == 0x80);
+
+  // Enable bus-master function.
+  pci_read_status(pcidev);
+  pcidev->command |= PIIX_BUSMASTER_ENABLE;
+  pci_write_status(pcidev);
+
+  // The base address should have been configured by the BIOS.
+  uint32_t base = pcidev->base_address[PIIX_BUS_MASTER_BASE_ADDR];
+  KASSERT(base != 0);
+  KASSERT((base & 0x1) == 1);  // Should always be I/O mapped.
+  base &= 0x0000FFF0;
+
+  // TODO(aoates): initialize the ATA driver with the I/O port ranges used by
+  // the PIIX(3) (see page 96 of the datasheet).
+  // TODO(aoates): use base to set up bus-mastered DMA for the ATA chips.
 }
