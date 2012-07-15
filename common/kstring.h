@@ -23,6 +23,7 @@ int kstrncmp(const char* s1, const char* s2, uint32_t n);
 
 void* kmemset(void* s, int c, uint32_t n);
 void* kmemcpy(void* dest, const void* src, uint32_t n);
+int kmemcmp(void* s1, void* s2, uint32_t n);
 
 char* kstrcpy(char* dst, const char* src);
 char* kstrncpy(char* dst, const char* src, uint32_t n);

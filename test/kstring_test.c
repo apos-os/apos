@@ -136,4 +136,11 @@ void kstring_test() {
   KEXPECT_EQ((uint32_t)s, (uint32_t)kstrchrnul(s, '/'));
   KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrchrnul(s, 'a'));
   KEXPECT_EQ((uint32_t)(s+8), (uint32_t)kstrchrnul(s, 'x'));
+
+  KTEST_BEGIN("kmemcmp()");
+  KEXPECT_EQ(0, kmemcmp("abc", "abc", 3));
+  KEXPECT_EQ(0, kmemcmp("abc", "abc", 2));
+  KEXPECT_EQ(0, kmemcmp("abD", "abF", 2));
+  KEXPECT_LT(kmemcmp("abc", "bbc", 3), 0);
+  KEXPECT_GT(kmemcmp("cbc", "bbc", 3), 0);
 }
