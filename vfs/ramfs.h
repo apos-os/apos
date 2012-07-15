@@ -30,6 +30,7 @@ int ramfs_put_vnode(vnode_t* vnode);
 int ramfs_lookup(vnode_t* parent, const char* name);
 int ramfs_create(vnode_t* parent, const char* name);
 int ramfs_mkdir(vnode_t* parent, const char* name);
+int ramfs_rmdir(vnode_t* parent, const char* name);
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name);

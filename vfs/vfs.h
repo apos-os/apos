@@ -98,6 +98,9 @@ struct fs {
   // Note: it must create the '.' and '..' entries in the directory as well.
   int (*mkdir)(vnode_t* parent, const char* name /*, mode? */);
 
+  // Remove an empty directory from the parent. Returns 0 on success, or -error.
+  int (*rmdir)(vnode_t* parent, const char* name);
+
   // Read up to bufsize bytes from the given vnode at the given offset.  Returns
   // the number of bytes read.
   int (*read)(vnode_t* vnode, int offset, void* buf, int bufsize);
@@ -180,5 +183,8 @@ int vfs_close(int fd);
 // Make a directory at the given path.  Returns 0 on success, or -error.
 // TODO(aoates): mode
 int vfs_mkdir(const char* path);
+
+// Remove an empty directory. Returns 0 on success, or -error.
+int vfs_rmdir(const char* path);
 
 #endif

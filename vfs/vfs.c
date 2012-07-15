@@ -390,3 +390,30 @@ int vfs_mkdir(const char* path) {
   vfs_put(parent);
   return 0;
 }
+
+int vfs_rmdir(const char* path) {
+  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* parent;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  // TODO(aoates): support cwd
+  KASSERT(path[0] == '/');
+  int error = lookup_path(root, path, &parent, base_name);
+  vfs_put(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    return -EPERM;  // Root directory!
+  } else if (kstrcmp(base_name, ".") == 0) {
+    return -EINVAL;
+  }
+
+  // TODO(aoates): do we really need this lock/unlock?
+  kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
+  error = parent->fs->rmdir(parent, base_name);
+  kmutex_unlock(&parent->mutex);
+  vfs_put(parent);
+  return error;
+}

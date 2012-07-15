@@ -112,6 +112,39 @@ static void mkdir_test() {
   // TODO(aoates): create files in the directories, open them
   // TODO(aoates): test '.' and '..' links!
   // TODO(aoates): test multiple slashes and traling slashes
+  // TODO(aoates): test unlink()'ing a directory
+  // TODO(aoates): you can't unlink '.' or '..'
+
+  KTEST_BEGIN("rmdir(): directory or path doesn't exist");
+  KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo"));
+  KEXPECT_EQ(-ENOENT, vfs_rmdir("/dir1/boo"));
+  KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo/boo2"));
+
+  KTEST_BEGIN("rmdir(): not a directory");
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("/test1"));
+  // TODO(aoates): test nested not-a-dir
+
+  KTEST_BEGIN("rmdir(): root directory");
+  KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
+
+  KTEST_BEGIN("rmdir(): invalid paths");
+  KEXPECT_EQ(-EINVAL, vfs_rmdir("/dir1/dir1a/."));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a/dir1b/.."));
+
+  KTEST_BEGIN("rmdir(): not empty");
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a"));
+
+  // Actually test it (and cleanup the directories we created).
+  KTEST_BEGIN("rmdir(): working");
+  KEXPECT_EQ(-0, vfs_rmdir("/dir2"));
+  KEXPECT_EQ(-0, vfs_rmdir("/dir1/dir1a/.././dir1a/dir1b"));
+  KEXPECT_EQ(-0, vfs_rmdir("/dir1/dir1a/"));
+  KEXPECT_EQ(-0, vfs_rmdir("///dir1//"));
+
+  // Should still fail even though it's empty.
+  KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
 
   // Cleanup.
   vfs_close(test1_fd);

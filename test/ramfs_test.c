@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "kmalloc.h"
 #include "test/ktest.h"
@@ -205,8 +206,22 @@ static void directory_test() {
   // to getdents() with increasing offsets.
 
   KTEST_BEGIN("unlink() test");
-  g_fs->unlink(n, "file1");
+  KEXPECT_EQ(0, g_fs->unlink(n, "file1"));
   EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file2", file2->num);
+
+  KTEST_BEGIN("unlink() a directory test");
+  KEXPECT_EQ(-EISDIR, g_fs->unlink(g_root, "test_dir"));
+
+  KTEST_BEGIN("rmdir() a file test");
+  KEXPECT_EQ(-ENOENT, g_fs->rmdir(n, "file1"));
+  KEXPECT_EQ(-ENOTDIR, g_fs->rmdir(n, "file2"));
+
+  KTEST_BEGIN("rmdir() a non-empty directory");
+  KEXPECT_EQ(-ENOTEMPTY, g_fs->rmdir(g_root, "test_dir"));
+
+  KTEST_BEGIN("rmdir() test");
+  KEXPECT_EQ(0, g_fs->unlink(n, "file2"));
+  KEXPECT_EQ(0, g_fs->rmdir(g_root, "test_dir"));
 
   // TODO(aoates): check link count
 }

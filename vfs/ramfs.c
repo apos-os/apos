@@ -99,6 +99,7 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
     dirent_t* d = (dirent_t*)(inode->data + offset);
 
     if (kstrcmp(d->name, name) == 0) {
+      KASSERT(d->vnode >= 0);
       return d;
     }
 
@@ -106,6 +107,23 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
   }
 
   return 0;
+}
+
+// Return the number of entries (including '.' and '..') in a directory.
+static int count_dirents(vnode_t* parent) {
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
+
+  int offset = 0, count = 0;
+  while (offset < parent->len) {
+    dirent_t* d = (dirent_t*)(inode->data + offset);
+    if (d->vnode >= 0) {
+      count++;
+    }
+    offset += d->length;
+  }
+
+  return count;
 }
 
 static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
@@ -148,6 +166,7 @@ fs_t* ramfs_create_fs() {
   f->fs.lookup = &ramfs_lookup;
   f->fs.create = &ramfs_create;
   f->fs.mkdir = &ramfs_mkdir;
+  f->fs.rmdir = &ramfs_rmdir;
   f->fs.read = &ramfs_read;
   f->fs.write = &ramfs_write;
   f->fs.link = &ramfs_link;
@@ -289,6 +308,41 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   return n->vnode.num;
 }
 
+int ramfs_rmdir(vnode_t* parent, const char* name) {
+  KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  if (parent->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
+  dirent_t* d = find_dirent(parent, name);
+  if (!d) {
+    return -ENOENT;
+  }
+
+  // Record that it was deleted.
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  KASSERT(d->vnode >= 0 && d->vnode < RAMFS_MAX_INODES);
+  KASSERT(ramfs->inodes[d->vnode].vnode.num != -1);
+  vnode_t* dir_vnode = (vnode_t*)&ramfs->inodes[d->vnode];
+  if (dir_vnode->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
+  const int dirents = count_dirents(dir_vnode);
+  KASSERT(dirents >= 2);
+  if (dirents > 2) {
+    return -ENOTEMPTY;
+  }
+
+  // One each for the parent and '.'.
+  // TODO(aoates): if link_count == 0, recollect the inode.
+  ((ramfs_inode_t*)dir_vnode)->link_count -= 2;
+
+  d->vnode = -1;
+  d->name[0] = '\0';
+  return 0;
+}
+
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
 
@@ -348,6 +402,10 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   KASSERT(d->vnode >= 0 && d->vnode < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->vnode].vnode.num != -1);
+  if (ramfs->inodes[d->vnode].vnode.type == VNODE_DIRECTORY) {
+    return -EISDIR;
+  }
+
   // TODO(aoates): how do we propagate this back to all the vnode_t*s floating
   // around pointing to this inode?
   ramfs->inodes[d->vnode].link_count--;
