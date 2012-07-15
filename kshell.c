@@ -64,6 +64,7 @@ static test_entry_t TESTS[] = {
   { "kstring", &kstring_test, 1 },
   { "kprintf", &kprintf_test, 1 },
   { "hashtable", &hashtable_test, 1 },
+  { "ramdisk", &ramdisk_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

@@ -12,22 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// A simple in-memory block device.
+#ifndef APOO_DEV_RAMDISK_H
+#define APOO_DEV_RAMDISK_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
+#include <stdint.h>
+#include "dev/block.h"
+
+struct ramdisk;
+typedef struct ramdisk ramdisk_t;
+
+// Create a ramdisk of the given size (which must be an even multiple of the
+// page size).  Returns 0 on success, and sets d to the ramdisk structure.
+int ramdisk_create(uint32_t size, ramdisk_t** d);
+
+// Destroys a ramdisk created with ramdisk_create().
+void ramdisk_destroy(ramdisk_t* d);
+
+// Initializes a block_dev_t with data for the given ramdisk.
+void ramdisk_dev(ramdisk_t* d, block_dev_t* bd);
 
 #endif
