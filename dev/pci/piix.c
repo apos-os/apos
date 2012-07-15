@@ -50,10 +50,10 @@ void pci_piix_driver_init(pci_device_t* pcidev) {
   // page 96 of the datasheet).
   ata_t ata;
   ata.primary.cmd_offset =  0x01F0;
-  ata.primary.ctrl_offset = 0x03F4;
+  ata.primary.ctrl_offset = 0x03F0;
   ata.primary.irq = 14;
   ata.secondary.cmd_offset =  0x0170;
-  ata.secondary.ctrl_offset = 0x0374;
+  ata.secondary.ctrl_offset = 0x0370;
   ata.secondary.irq = 15;
 
   // TODO(aoates): I think this chip supports 4 ATA channels --- we should
