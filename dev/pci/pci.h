@@ -16,6 +16,29 @@
 #ifndef APOO_PCI_H
 #define APOO_PCI_H
 
+// Represents a single (bus, device, function) tuple.
+struct pci_device {
+  uint8_t bus;
+  uint8_t device;
+  uint8_t function;
+
+  uint16_t device_id;
+  uint16_t vendor_id;
+
+  uint16_t status;
+  uint16_t command;
+
+  // Defines what type of device/controller this is (generically).
+  uint8_t class_code;
+  uint8_t subclass_code;
+  uint8_t prog_if;
+
+  uint8_t header_type;
+
+  // TODO(aoates): base addresses, BIST, etc
+};
+typedef struct pci_device pci_device_t;
+
 // Initialize the PCI subsystem, and query the bus to discover all connected
 // devices.
 void pci_init();

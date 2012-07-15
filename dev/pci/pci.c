@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/io.h"
+#include "dev/pci/pci.h"
 #include "kmalloc.h"
 
 // IO ports for manipulating the PCI bus.
@@ -34,28 +35,9 @@
 
 #define PCI_HEADER_IS_MULTIFUNCTION 0x80
 
-// Represents a single (bus, device, function) tuple.
-struct pci_device {
-  uint8_t bus;
-  uint8_t device;
-  uint8_t function;
-
-  uint16_t device_id;
-  uint16_t vendor_id;
-
-  uint16_t status;
-  uint16_t command;
-
-  // Defines what type of device/controller this is (generically).
-  uint8_t class_code;
-  uint8_t subclass_code;
-  uint8_t prog_if;
-
-  uint8_t header_type;
-
-  // TODO(aoates): base addresses, BIST, etc
-};
-typedef struct pci_device pci_device_t;
+#define PCI_MAX_DEVICES 10
+static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
+static int g_pci_count = 0;
 
 // Read a word from a PCI config register.
 static uint32_t pci_read_config(uint8_t bus, uint8_t device,
@@ -102,7 +84,7 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
 }
 
 static void pci_print_device(pci_device_t* pcidev) {
-  klogf("  device found at %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
+  klogf("    %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
         "  type: (0x%x, 0x%x, 0x%x)\n",
         (uint32_t)pcidev->bus, (uint32_t)pcidev->device,
         (uint32_t)pcidev->function, (uint32_t)pcidev->device_id,
@@ -110,6 +92,16 @@ static void pci_print_device(pci_device_t* pcidev) {
         (uint32_t)pcidev->subclass_code, (uint32_t)pcidev->prog_if);
 }
 
+static void pci_add_device(pci_device_t* pcidev) {
+  if (g_pci_count >= PCI_MAX_DEVICES) {
+    klogf("WARNING: too many PCI devices found (maximum is %d)\n",
+          PCI_MAX_DEVICES);
+    return;
+  }
+  g_pci_devices[g_pci_count++] = *pcidev;
+}
+
+// Read all functions from a (bus, device).
 static void pci_check_device(uint8_t bus, uint8_t device) {
   pci_device_t pcidev;
   pci_read_device(bus, device, PCI_FUNCTION_MIN, &pcidev);
@@ -120,12 +112,12 @@ static void pci_check_device(uint8_t bus, uint8_t device) {
   if (pcidev.header_type & PCI_HEADER_IS_MULTIFUNCTION) {
     int function = PCI_FUNCTION_MIN + 1;
     while (pcidev.vendor_id != 0xFFFF && function <= PCI_FUNCTION_MAX) {
-      pci_print_device(&pcidev);
+      pci_add_device(&pcidev);
       pci_read_device(bus, device, function, &pcidev);
       function++;
     }
   } else {
-    pci_print_device(&pcidev);
+    pci_add_device(&pcidev);
   }
 }
 
@@ -137,5 +129,10 @@ void pci_init() {
     for (uint8_t device = PCI_DEVICE_MIN; device < PCI_DEVICE_MAX; ++device) {
       pci_check_device(bus, device);
     }
+  }
+
+  klogf("  found %d devices:\n", g_pci_count);
+  for (int i = 0; i < g_pci_count; ++i) {
+    pci_print_device(&g_pci_devices[i]);
   }
 }
