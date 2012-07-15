@@ -16,6 +16,8 @@
 #ifndef APOO_PCI_H
 #define APOO_PCI_H
 
+#include <stdint.h>
+
 // Represents a single (bus, device, function) tuple.
 struct pci_device {
   uint8_t bus;
@@ -34,6 +36,8 @@ struct pci_device {
   uint8_t prog_if;
 
   uint8_t header_type;
+
+  uint32_t base_address[6];
 
   // TODO(aoates): base addresses, BIST, etc
 };

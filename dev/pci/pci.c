@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/io.h"
 #include "dev/pci/pci.h"
+#include "dev/pci/piix.h"
 #include "kmalloc.h"
 
 // IO ports for manipulating the PCI bus.
@@ -38,6 +39,20 @@
 #define PCI_MAX_DEVICES 10
 static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
+
+// Static table of drivers.
+struct pci_driver {
+  uint16_t device_id;
+  uint16_t vendor_id;
+  void (*driver)(pci_device_t*);
+};
+typedef struct pci_driver pci_driver_t;
+
+static pci_driver_t PCI_DRIVERS[] = {
+  { 0x7000, 0x8086, &pci_piix_driver_init },  // PCI <-> ISA controller
+  { 0x7010, 0x8086, &pci_piix_driver_init },  // PCI <-> IDE controller
+  { 0xFFFF, 0xFFFF, 0x0 },
+};
 
 // Read a word from a PCI config register.
 static uint32_t pci_read_config(uint8_t bus, uint8_t device,
@@ -81,6 +96,11 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
 
   data = pci_read_config(bus, device, function, 0x0C);
   pcidev->header_type = (data >> 16) & 0x000000FF;
+
+  for (int i = 0; i < 6; ++i) {
+    pcidev->base_address[i] = pci_read_config(bus, device, function,
+                                              0x10 + 0x04 * i);
+  }
 }
 
 static void pci_print_device(pci_device_t* pcidev) {
@@ -134,5 +154,17 @@ void pci_init() {
   klogf("  found %d devices:\n", g_pci_count);
   for (int i = 0; i < g_pci_count; ++i) {
     pci_print_device(&g_pci_devices[i]);
+  }
+
+  // Invoke drivers.
+  for (int i = 0; i < g_pci_count; ++i) {
+    pci_driver_t* driver = &PCI_DRIVERS[0];
+    while (driver->vendor_id != 0xFFFF) {
+      if (driver->vendor_id == g_pci_devices[i].vendor_id &&
+          driver->device_id == g_pci_devices[i].device_id) {
+        driver->driver(&g_pci_devices[i]);
+      }
+      driver++;
+    }
   }
 }
