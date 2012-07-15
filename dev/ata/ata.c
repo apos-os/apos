@@ -112,23 +112,23 @@ static inline void wait_until_set(ata_channel_t* channel, uint8_t bits) {
   }
 }
 
-// Issues an ATA command then reads a block of data in blocking PIO mode.
-// Assumes that any needed parameters (including the drive select!) have already
-// been loaded into the appropriate registers.  Returns 0 on success.
-//
-// This involves a busy looping waiting for data, so really shouldn't be used
-// except at boot time.
-//
-// TODO(aoates): make this work for commands that read more than one block of
-// data.
-static int pio_read_block(ata_channel_t* channel, uint8_t cmd, uint16_t* buf) {
+// Issues an ATA command on the given channel, blocking until the BSY flag is
+// clear before sending it.  Assumes that any needed parameters (including the
+// drive select!) have already been loaded into the appropriate registers.
+static void send_cmd(ata_channel_t* channel, uint8_t cmd) {
   // Wait until BSY is unset.
   wait_until_clear(channel, ATA_STATUS_BSY);
 
   // Send the command, the wait until BSY is unset again.
   outb(channel->cmd_offset + ATA_CMD_CMD, cmd);
-  wait_until_clear(channel, ATA_STATUS_BSY);
+}
 
+// Blocks until BSY is unset, then reads a block of data in blocking PIO mode.
+// Returns 0 on success.
+//
+// This involves a busy looping waiting for data, so really shouldn't be used
+// except at boot time.
+static int pio_read_block(ata_channel_t* channel, uint16_t* buf) {
   // Wait for DRQ or ERR to be set
   // TODO(aoates): have a timeout here.  Also check for write faults?
   wait_until_set(channel, ATA_STATUS_DRQ | ATA_STATUS_ERR);
@@ -146,7 +146,6 @@ static int pio_read_block(ata_channel_t* channel, uint8_t cmd, uint16_t* buf) {
 }
 
 // Select a drive (ATA_DRIVE_MASTER or ATA_DRIVE_SLAVE) on the given channel.
-// TODO(aoates): this needs to select a portion of the LBA too!
 static inline void drive_select(ata_channel_t* channel, uint8_t drive) {
   KASSERT(drive == 0 || drive == 1);
   const uint8_t dh = 0xA0 | ATA_DH_LBA | (drive * ATA_DH_DRV);
@@ -157,6 +156,27 @@ static inline void drive_select(ata_channel_t* channel, uint8_t drive) {
   read_status(channel);
   read_status(channel);
   read_status(channel);
+}
+
+// Load the given LBA address into the appropriate registers.
+static inline void set_lba(ata_channel_t* channel, uint32_t lba) {
+  KASSERT((lba & 0xF0000000) == 0);  // Must be 28-bit.
+
+  // Load bits 27-24 into the DH register.
+  uint8_t dh = inb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD);
+  dh = (dh & 0xF0) | ATA_DH_LBA | ((lba >> 24) & 0x0000000F);
+  outb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD, dh);
+
+  // Bits 23-16 go in the cylinder high register.
+  outb(channel->cmd_offset + ATA_CMD_CYL_HIGH,
+       (lba >> 16) & 0x000000FF);
+
+  // Bits 15-8 go in the cylinder low register.
+  outb(channel->cmd_offset + ATA_CMD_CYL_LOW,
+       (lba >> 8) & 0x000000FF);
+
+  // Bits 7-0 go in the sector number register.
+  outb(channel->cmd_offset + ATA_CMD_SECTOR_NUM, lba & 0x000000FF);
 }
 
 // When strings are read by the IDENTIFY command in 2-byte chunks, the byte
@@ -200,7 +220,8 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
     return -1;
   }
 
-  if (pio_read_block(channel, CMD, buf)) {
+  send_cmd(channel, CMD);
+  if (pio_read_block(channel, buf)) {
     klogf("ata: error reading data from 'identify drive' command\n");
     return -2;
   }
