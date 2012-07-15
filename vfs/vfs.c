@@ -220,6 +220,8 @@ vnode_t* vfs_get(int vnode_num) {
     // this node will block until we release the mutex.
     error = g_root_fs->get_vnode(vnode);
     if (error) {
+      // TODO(aoates): unlock the vnode and remove it from the table!  How do we
+      // synchronize this with other threads trying to get this vnode?
       klogf("warning: error when getting inode %d: %s\n",
             vnode_num, errorname(-error));
       kfree(vnode);
@@ -375,21 +377,14 @@ int vfs_mkdir(const char* path) {
     return -EEXIST;  // Root directory!
   }
 
+  // TODO(aoates): do we really need this lock/unlock?
+  kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
   int child_inode = parent->fs->mkdir(parent, base_name);
+  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
     vfs_put(parent);
     return child_inode;  // Error :(
   }
-
-  // Set up '.' and '..'.
-  vnode_t* dir = vfs_get(child_inode);
-  kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
-  kmutex_lock(&dir->mutex); // TODO(aoates): ??
-  // TODO: handle this more gracefully.
-  KASSERT(0 == dir->fs->link(dir, dir, "."));
-  KASSERT(0 == dir->fs->link(dir, parent, ".."));
-  kmutex_unlock(&dir->mutex);
-  kmutex_unlock(&parent->mutex);
 
   // We're done!
   vfs_put(parent);

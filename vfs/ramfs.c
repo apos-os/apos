@@ -108,6 +108,31 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
   return 0;
 }
 
+static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
+  // TODO(aoates): look for deleted dirent_t slots to reuse.
+  dirent_t* d = find_dirent(parent, name);
+  if (d) {
+    return -EEXIST;
+  }
+
+  // This is sorta inefficient....there's really no need to create it on the
+  // heap then copy it over, but whatever.
+  const int dlen = sizeof(dirent_t) + kstrlen(name) + 1;
+  dirent_t* dirent = (dirent_t*)kmalloc(dlen);
+  dirent->vnode = inode;
+  dirent->length = dlen;
+  kstrcpy(dirent->name, name);
+
+  // Append the new dirent.
+  int result = ramfs_write(parent, parent->len, dirent, dlen);
+  KASSERT(result == dlen);
+
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  ramfs_inode_t* inode_ptr = &ramfs->inodes[inode];
+  inode_ptr->link_count++;
+  return 0;
+}
+
 fs_t* ramfs_create_fs() {
   ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
   kmemset(f, 0, sizeof(ramfs_t));
@@ -140,8 +165,8 @@ fs_t* ramfs_create_fs() {
   root->vnode.type = VNODE_DIRECTORY;
 
   // Link it to itself.
-  ramfs_link((vnode_t*)root, (vnode_t*)root, ".");
-  ramfs_link((vnode_t*)root, (vnode_t*)root, "..");
+  ramfs_link_internal((vnode_t*)root, root_inode, ".");
+  ramfs_link_internal((vnode_t*)root, root_inode, "..");
 
   return (fs_t*)f;
 }
@@ -243,13 +268,25 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   init_inode(ramfs, n);
 
   n->vnode.type = VNODE_DIRECTORY;
-  int result = ramfs_link(parent, (vnode_t*)n, name);
-  if (result >= 0) {
-    return n->vnode.num;
-  } else {
+  int result = ramfs_link_internal(parent, n->vnode.num, name);
+  if (result < 0) {
     // TODO(aoates): destroy vnode on error!
     return result;
   }
+
+  // Create '.' and '..' as well.
+  result = ramfs_link_internal((vnode_t*)n, n->vnode.num, ".");
+  if (result < 0) {
+    // TODO(aoates): destroy vnode on error!
+    return result;
+  }
+  result = ramfs_link_internal((vnode_t*)n, parent->num, "..");
+  if (result < 0) {
+    // TODO(aoates): destroy vnode on error!
+    return result;
+  }
+
+  return n->vnode.num;
 }
 
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
@@ -289,29 +326,9 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT(vnode->type != VNODE_DIRECTORY);
 
-  // TODO(aoates): look for deleted dirent_t slots to reuse.
-  dirent_t* d = find_dirent(parent, name);
-  if (d) {
-    return -EEXIST;
-  }
-
-  // This is sorta inefficient....there's really no need to create it on the
-  // heap then copy it over, but whatever.
-  const int dlen = sizeof(dirent_t) + kstrlen(name) + 1;
-  dirent_t* dirent = (dirent_t*)kmalloc(dlen);
-  dirent->vnode = vnode->num;
-  dirent->length = dlen;
-  kstrcpy(dirent->name, name);
-
-  // Append the new dirent.
-  int result = ramfs_write(parent, parent->len, dirent, dlen);
-  KASSERT(result == dlen);
-
-  ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
-  inode->link_count++;
-  writeback_metadata(inode);
-  return 0;
+  return ramfs_link_internal(parent, vnode->num, name);
 }
 
 // TODO(aoates): a good test: create a file, unlink it, create a new one with

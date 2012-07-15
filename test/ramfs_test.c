@@ -180,14 +180,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
 static void directory_test() {
   KTEST_BEGIN("empty directory getdents() test");
   vnode_t* n = g_root;
-
-  uint8_t dirent_buf[300];
-  int result = g_fs->getdents(n, 0, &dirent_buf[0], 300);
-  KEXPECT_EQ(0, result);
-
-  KTEST_BEGIN("empty directory w/ offset getdents() test");
-  result = g_fs->getdents(n, 25, &dirent_buf[0], 300);
-  KEXPECT_EQ(0, result);
+  EXPECT_DIRENTS(n, 2, ".", n->num, "..", n->num);
 
   KTEST_BEGIN("mkdir() test");
   int dir_vnode = g_fs->mkdir(g_root, "test_dir");
@@ -199,11 +192,12 @@ static void directory_test() {
   vnode_t* file = get_vnode(g_fs->create(n, "file1"));
 
   // TODO(aoates): verify link counts.
-  EXPECT_DIRENTS(n, 1, "file1", file->num);
+  EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file1", file->num);
 
   // Create another file.
   vnode_t* file2 = get_vnode(g_fs->create(n, "file2"));
-  EXPECT_DIRENTS(n, 2, "file1", file->num, "file2", file2->num);
+  EXPECT_DIRENTS(n, 4, ".", n->num, "..", g_root->num,
+                 "file1", file->num, "file2", file2->num);
 
   // TODO(aoates): test relinking the same file.
 
@@ -212,7 +206,7 @@ static void directory_test() {
 
   KTEST_BEGIN("unlink() test");
   g_fs->unlink(n, "file1");
-  EXPECT_DIRENTS(n, 1, "file2", file2->num);
+  EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file2", file2->num);
 
   // TODO(aoates): check link count
 }

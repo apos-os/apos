@@ -92,8 +92,10 @@ struct fs {
   // the new file, or -error on failure.
   int (*create)(vnode_t* parent, const char* name /*, mode? */);
 
-  // Create a directory in the given directory.  Returns the inode number of
-  // the new directory, or -error on failure.
+  // Create a directory in the given directory.  Returns the inode number of the
+  // new directory, or -error on failure.
+  //
+  // Note: it must create the '.' and '..' entries in the directory as well.
   int (*mkdir)(vnode_t* parent, const char* name /*, mode? */);
 
   // Read up to bufsize bytes from the given vnode at the given offset.  Returns
