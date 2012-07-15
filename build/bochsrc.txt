@@ -9,3 +9,4 @@ clock: sync=realtime
 cpu: ips=1000000
 display_library: term
 parport1: enabled=1, file="log.txt"
+ata0-master: type=disk, path="hd.img", mode=flat, cylinders=20, heads=16, spt=63

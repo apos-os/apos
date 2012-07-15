@@ -42,7 +42,7 @@ HDRFILES = $(filter %.h, $(ALLFILES))
 
 BUILD_DIR = build
  
-all: kernel.img tags
+all: kernel.img hd.img tags
  
 %.o : %.s
 	$(AS) $(ASFLAGS) -o $@ $<
@@ -57,17 +57,20 @@ kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	cp $(BUILD_DIR)/kernel.img.base $@
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
- 
-clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img tags
 
-run: kernel.img
+hd.img:
+	./bochs/bximage -hd -mode=flat -size=10 -q $@
+
+clean:
+	$(RM) $(OBJFILES) kernel.bin kernel.img hd.img tags
+
+run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
 
-runx: kernel.img
+runx: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt.x11
 
-gdb: kernel.bin kernel.img
+gdb: kernel.bin all
 	./bochs/bochs_gdb -q -f $(BUILD_DIR)/bochsrc.txt.gdb
 
 tags: $(ALLFILES)
