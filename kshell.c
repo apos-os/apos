@@ -16,11 +16,14 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
+#include "dev/ata/ata.h"
+#include "dev/block.h"
 #include "dev/ld.h"
 #include "kmalloc.h"
 #include "test/kernel_tests.h"
@@ -117,6 +120,62 @@ static void hash_cmd(int argc, char* argv[]) {
   ksh_printf("%u (0x%x)\n", h, h);
 }
 
+// Reads a block from a block device.
+static void b_read_cmd(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: b_read <block dev> <block>\n");
+    return;
+  }
+
+  block_dev_t* b = ata_get_block_dev(atou(argv[1]));
+  if (!b) {
+    ksh_printf("error: unknown block device %s\n", argv[1]);
+    return;
+  }
+
+  uint32_t block = atou(argv[2]);
+
+  char buf[4096];
+  kmemset(buf, 0x0, 4096);
+  int error = b->read(b, block, buf, 4096);
+  if (error < 0) {
+    ksh_printf("error: %s\n", errorname(-error));
+    return;
+  }
+
+  ksh_printf("read %d bytes:\n", error);
+  buf[error] = '\0';
+  ksh_printf(buf);
+  ksh_printf("\n");
+}
+
+// Writes a block to a block device.
+static void b_write_cmd(int argc, char* argv[]) {
+  if (argc != 4) {
+    ksh_printf("usage: b_write <block dev> <block> <data>\n");
+    return;
+  }
+
+  block_dev_t* b = ata_get_block_dev(atou(argv[1]));
+  if (!b) {
+    ksh_printf("error: unknown block device %s\n", argv[1]);
+    return;
+  }
+
+  uint32_t block = atou(argv[2]);
+
+  char buf[4096];
+  kmemset(buf, 0x0, 4096);
+  kstrcpy(buf, argv[3]);
+  int error = b->write(b, block, buf, 4096);
+  if (error < 0) {
+    ksh_printf("error: %s\n", errorname(-error));
+    return;
+  }
+
+  ksh_printf("wrote %d bytes\n", error);
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -126,6 +185,8 @@ static cmd_t CMDS[] = {
   { "test", &test_cmd },
   { "meminfo", &meminfo_cmd },
   { "hash", &hash_cmd },
+  { "b_read", &b_read_cmd },
+  { "b_write", &b_write_cmd },
   { 0x0, 0x0 },
 };
 

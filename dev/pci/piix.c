@@ -14,6 +14,9 @@
 
 #include <stdint.h>
 
+// See datasheet at
+// http://download.intel.com/design/intarch/datashts/29055002.pdf
+
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/ata/ata.h"
@@ -45,6 +48,7 @@ void pci_piix_driver_init(pci_device_t* pcidev) {
   KASSERT(base != 0);
   KASSERT((base & 0x1) == 1);  // Should always be I/O mapped.
   base &= 0x0000FFF0;
+  ata_enable_bumaster((uint16_t)base, (uint16_t)base + 0x08);
 
   // TODO(aoates): use base to set up bus-mastered DMA for the ATA chips.
 }

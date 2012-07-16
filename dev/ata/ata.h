@@ -31,4 +31,11 @@ int ata_num_devices();
 // Returns the block_dev_t corresponding to an ATA device.
 block_dev_t* ata_get_block_dev(int dev);
 
+// Sets the base address of the PCI DMA bus master control registers.  Can be
+// called before ata_init() --- presumably by the busmaster driver itself.
+//
+// If this has been called, then the ATA driver will use these port offsets to
+// communicate with the busmaster (presumably a PIIX chip) to do DMA.
+void ata_enable_bumaster(uint16_t primary_offset, uint16_t secondary_offset);
+
 #endif

@@ -20,21 +20,10 @@
 #include "common/kstring.h"
 #include "common/io.h"
 #include "dev/ata/ata.h"
-
-// Contains data about the port offsets for the primary and secondary ATA
-// channels.
-struct ata_channel {
-  uint16_t cmd_offset;  // Port offset for the command block.
-  uint16_t ctrl_offset;  // Port offset for the control block.
-  uint8_t irq;  // The IRQ used by this channel.
-};
-typedef struct ata_channel ata_channel_t;
-
-struct ata {
-  ata_channel_t primary;
-  ata_channel_t secondary;
-};
-typedef struct ata ata_t;
+#include "dev/ata/ata-internal.h"
+#include "dev/irq.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 
 static ata_t g_ata;
 static int g_init = 0;
@@ -79,6 +68,9 @@ struct drive {
   // Meta fields: is the drive present, and supported by the driver.
   uint8_t present;
   uint8_t supported;
+
+  ata_channel_t* channel;
+  uint8_t drive_num;  // 0 for master, 1 for slave.
 
   uint16_t features;  // Feature bits.
   uint16_t cylinders;
@@ -249,6 +241,9 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
     return -3;
   }
 
+  d->channel = channel;
+  d->drive_num = drive;
+
   d->features = buf[0];
   d->cylinders = buf[1];
   d->heads = buf[3];
@@ -278,14 +273,116 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
   return 0;
 }
 
+static void ata_dump_state(ata_channel_t* channel) {
+  klogf(" ATA_CMD_DATA: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_DATA));
+  klogf(" ATA_CMD_ERROR: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_ERROR));
+  klogf(" ATA_CMD_SECTOR_CNT: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_SECTOR_CNT));
+  klogf(" ATA_CMD_SECTOR_NUM: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_SECTOR_NUM));
+  klogf(" ATA_CMD_CYL_LOW: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_CYL_LOW));
+  klogf(" ATA_CMD_CYL_HIGH: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_CYL_HIGH));
+  klogf(" ATA_CMD_DRIVE_HEAD: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD));
+  klogf(" ATA_CMD_STATUS: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_STATUS));
+}
+
+static kthread_queue_t g_wait_queue;
+// IRQ handlers for the primary and secondary channels.
+static void irq_handler_primary() {
+  klogf("IRQ for primary ATA device\n");
+  ata_channel_t* channel = &g_ata.primary;
+  dma_finish_transfer(channel);
+  uint8_t status = inb(channel->busmaster_offset + 0x02);
+  klogf("  controller status: 0x%x\n", status);
+  status = inb(channel->cmd_offset + ATA_CMD_STATUS);
+  klogf("  device status: 0x%x\n", status);
+  status = inb(channel->cmd_offset + ATA_CMD_ERROR);
+  klogf("  device error: 0x%x\n", status);
+  ata_dump_state(channel);
+
+  kthread_t t = kthread_queue_pop(&g_wait_queue);
+  while (t) {
+    scheduler_make_runnable(t);
+    t = kthread_queue_pop(&g_wait_queue);
+  }
+}
+
+static void irq_handler_secondary() {
+  klogf("IRQ for secondary ATA device\n");
+}
+
+static int ata_do_op(struct block_dev* dev, uint32_t offset,
+                     void* buf, uint32_t len, uint8_t is_write) {
+  // TODO(aoates): we need to deal with locking the channel, waiting for pending
+  // reads, etc.
+  if (len % ATA_BLOCK_SIZE != 0) {
+    return -EINVAL;
+  }
+
+  drive_t* d = (drive_t*)dev->dev_data;
+  if (offset >= d->lba_sectors) {
+    return 0;
+  }
+
+  if (offset + (len / ATA_BLOCK_SIZE) > d->lba_sectors) {
+    len = (d->lba_sectors - offset) * ATA_BLOCK_SIZE;
+  }
+
+  if (len == 0) {
+    return 0;
+  }
+
+  // TODO(aoates) this is a silly cap.
+  // KASSERT(len <= PAGE_SIZE);
+
+  // TODO(aoates): check if DMA has been enabled (if the busmaster driver has
+  // loaded) and fail gracefully if so.
+
+  // TODO(aoates): check if the channel is active!
+  // Select the drive.
+  drive_select(d->channel, d->drive_num);
+
+  if (is_write) {
+    kmemcpy(dma_get_buffer(), buf, len);
+  }
+
+  // Start the DMA.
+  dma_setup_transfer(d->channel, len, is_write);
+
+  // Set address and length.
+  uint32_t len_sectors = len / ATA_BLOCK_SIZE;
+  if (len_sectors > 255) {
+    len_sectors = 255;
+  } else if (len_sectors == 256) {
+    len_sectors = 0;
+  }
+  set_lba(d->channel, offset);
+  outb(d->channel->cmd_offset + ATA_CMD_SECTOR_CNT, len_sectors);
+  // Send Read or Write DMA command.
+  if (is_write) {
+    send_cmd(d->channel, 0xCA);
+  } else {
+    send_cmd(d->channel, 0xC8);
+  }
+
+  ata_dump_state(d->channel);
+
+  dma_start_transfer(d->channel);
+
+  scheduler_wait_on(&g_wait_queue);
+
+  if (!is_write) {
+    kmemcpy(buf, dma_get_buffer(), len);
+  }
+  return len;
+}
+
 static int ata_read(struct block_dev* dev, uint32_t offset,
-                        void* buf, uint32_t len) {
-  return -ENOTSUP;
+                    void* buf, uint32_t len) {
+  return ata_do_op(dev, offset, buf, len, 0 /* read */);
 }
 
 static int ata_write(struct block_dev* dev, uint32_t offset,
-                         const void* buf, uint32_t len) {
-  return -ENOTSUP;
+                     const void* buf, uint32_t len) {
+  return ata_do_op(dev, offset, (void*)buf, len, 1 /* write */);
 }
 
 static void create_ata_block_dev(drive_t* d, block_dev_t* bd) {
@@ -316,6 +413,7 @@ static void ata_init_internal(const ata_t* ata) {
   KASSERT(g_init == 0);
   g_ata = *ata;
   g_init = 1;
+  kthread_queue_init(&g_wait_queue);
 
   klogf("ATA: scanning for ATA drives...\n");
   // Identify all the drives available.
@@ -364,7 +462,23 @@ static void ata_init_internal(const ata_t* ata) {
     }
   }
 
+  // Initialize DMA stuff.
+  dma_init();
+
+  // Set up IRQs.
+  register_irq_handler(g_ata.primary.irq, &irq_handler_primary);
+  register_irq_handler(g_ata.secondary.irq, &irq_handler_secondary);
+
   // TODO(aoates): enable interrupts with device control register
+}
+
+// TODO(aoates): if we have global ata_channel_t's, we sholud just set them
+// directly.
+static uint16_t g_busmaster_prim_offset = 0;
+static uint16_t g_busmaster_secd_offset = 0;
+void ata_enable_bumaster(uint16_t primary_offset, uint16_t secondary_offset) {
+  g_busmaster_prim_offset = primary_offset;
+  g_busmaster_secd_offset = secondary_offset;
 }
 
 void ata_init() {
@@ -374,9 +488,11 @@ void ata_init() {
   ata_t ata;
   ata.primary.cmd_offset =  0x01F0;
   ata.primary.ctrl_offset = 0x03F0;
+  ata.primary.busmaster_offset = g_busmaster_prim_offset;
   ata.primary.irq = 14;
   ata.secondary.cmd_offset =  0x0170;
   ata.secondary.ctrl_offset = 0x0370;
+  ata.secondary.busmaster_offset = g_busmaster_secd_offset;
   ata.secondary.irq = 15;
 
   // TODO(aoates): Sometimes we could have 4 ATA channels -- try to
