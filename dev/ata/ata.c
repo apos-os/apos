@@ -22,6 +22,7 @@
 #include "dev/ata/ata.h"
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/queue.h"
+#include "dev/interrupts.h"
 #include "dev/irq.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -251,37 +252,57 @@ static void ata_dump_state(ata_channel_t* channel) {
   klogf(" ATA_CMD_STATUS: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_STATUS));
 }
 
-static kthread_queue_t g_wait_queue;
+static void handle_interrupt(ata_channel_t* channel) {
+  KASSERT(channel->pending_op != 0x0);
+  KASSERT(channel->pending_op->drive->channel == channel);
+
+  dma_finish_transfer(channel);
+
+  ata_disk_op_t* op = channel->pending_op;
+
+  // TODO(aoates): check for controller error as well!
+  uint8_t status = inb(channel->cmd_offset + ATA_CMD_STATUS);
+  if (status & ATA_STATUS_ERR) {
+    op->status = -EIO;
+    status = inb(channel->cmd_offset + ATA_CMD_ERROR);
+    klogf("  ATA device error: 0x%x\n", status);
+    ata_dump_state(channel);
+  }
+  op->done = 1;
+
+  // Wake up any threads waiting for the op to finish.
+  kthread_t t = kthread_queue_pop(&op->waiters);
+  while (t) {
+    scheduler_make_runnable(t);
+    t = kthread_queue_pop(&op->waiters);
+  }
+
+  // Set the channel to free and wake up a thread waiting to do disk IO on this
+  // channel.
+  channel->pending_op = 0x0;
+  t = kthread_queue_pop(&channel->channel_waiters);
+  if (t) {
+    scheduler_make_runnable(t);
+  }
+}
+
 // IRQ handlers for the primary and secondary channels.
 static void irq_handler_primary() {
   klogf("IRQ for primary ATA device\n");
-  ata_channel_t* channel = &g_ata.primary;
-  dma_finish_transfer(channel);
-  uint8_t status = inb(channel->busmaster_offset + 0x02);
-  klogf("  controller status: 0x%x\n", status);
-  status = inb(channel->cmd_offset + ATA_CMD_STATUS);
-  klogf("  device status: 0x%x\n", status);
-  status = inb(channel->cmd_offset + ATA_CMD_ERROR);
-  klogf("  device error: 0x%x\n", status);
-  ata_dump_state(channel);
-
-  kthread_t t = kthread_queue_pop(&g_wait_queue);
-  while (t) {
-    scheduler_make_runnable(t);
-    t = kthread_queue_pop(&g_wait_queue);
-  }
+  handle_interrupt(&g_ata.primary);
 }
 
 static void irq_handler_secondary() {
   klogf("IRQ for secondary ATA device\n");
+  handle_interrupt(&g_ata.secondary);
 }
 
 static void ata_do_op(ata_disk_op_t* op) {
+  op->done = 0;
   op->status = 0;
   op->out_len = 0;
+  kthread_queue_init(&op->waiters);
 
-  // TODO(aoates): we need to deal with locking the channel, waiting for pending
-  // reads, etc.
   if (op->len % ATA_BLOCK_SIZE != 0) {
     op->status = -EINVAL;
     return;
@@ -303,10 +324,19 @@ static void ata_do_op(ata_disk_op_t* op) {
   // TODO(aoates) this is a silly cap.
   // KASSERT(len <= PAGE_SIZE);
 
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  // If the channel is busy, wait until it's free.
+  while (op->drive->channel->pending_op != 0x0) {
+    scheduler_wait_on(&op->drive->channel->channel_waiters);
+  }
+
+  KASSERT(op->drive->channel->pending_op == 0x0);
+  op->drive->channel->pending_op = op;
+
   // TODO(aoates): check if DMA has been enabled (if the busmaster driver has
   // loaded) and fail gracefully if so.
 
-  // TODO(aoates): check if the channel is active!
   // Select the drive.
   drive_select(op->drive->channel, op->drive->drive_num);
 
@@ -333,17 +363,17 @@ static void ata_do_op(ata_disk_op_t* op) {
     send_cmd(op->drive->channel, 0xC8);
   }
 
-  ata_dump_state(op->drive->channel);
-
   dma_start_transfer(op->drive->channel);
-
-  scheduler_wait_on(&g_wait_queue);
+  scheduler_wait_on(&op->waiters);
+  KASSERT(op->done != 0);
 
   if (!op->is_write) {
     kmemcpy(op->read_buf, dma_get_buffer(), len);
   }
 
   op->out_len = len;
+
+  POP_INTERRUPTS();
 }
 
 static int ata_read(struct block_dev* dev, uint32_t offset,
@@ -410,7 +440,6 @@ static void ata_init_internal(const ata_t* ata) {
   KASSERT(g_init == 0);
   g_ata = *ata;
   g_init = 1;
-  kthread_queue_init(&g_wait_queue);
 
   klogf("ATA: scanning for ATA drives...\n");
   // Identify all the drives available.
@@ -487,10 +516,14 @@ void ata_init() {
   ata.primary.ctrl_offset = 0x03F0;
   ata.primary.busmaster_offset = g_busmaster_prim_offset;
   ata.primary.irq = 14;
+  ata.primary.pending_op = 0x0;
+  kthread_queue_init(&ata.primary.channel_waiters);
   ata.secondary.cmd_offset =  0x0170;
   ata.secondary.ctrl_offset = 0x0370;
   ata.secondary.busmaster_offset = g_busmaster_secd_offset;
   ata.secondary.irq = 15;
+  ata.secondary.pending_op = 0x0;
+  kthread_queue_init(&ata.secondary.channel_waiters);
 
   // TODO(aoates): Sometimes we could have 4 ATA channels -- try to
   // initialize all 4.

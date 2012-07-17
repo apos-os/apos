@@ -38,8 +38,12 @@ struct ata_disk_op {
   uint32_t len;  // The length of the buffer (max # of bytes to read);
 
   // Output parameters (set once the op has finished).
+  int done;
   int status;  // 0 for success, or -errno on error.
   int out_len;  // The actual number of bytes read/written.
+
+  // Thread queue of threads waiting on this op to finish.
+  kthread_queue_t waiters;
 };
 typedef struct ata_disk_op ata_disk_op_t;
 

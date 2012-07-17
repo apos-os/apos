@@ -19,6 +19,11 @@
 #define ATA_DRIVE_SLAVE  1
 #define ATA_BLOCK_SIZE 512
 
+#include "proc/kthread.h"
+
+// dev/ata/queue.h
+struct ata_disk_op;
+
 // Contains data about the port offsets for the primary and secondary ATA
 // channels.
 struct ata_channel {
@@ -27,6 +32,13 @@ struct ata_channel {
   // Port offset for the DMA busmaster (if available).
   uint16_t busmaster_offset;
   uint8_t irq;  // The IRQ used by this channel.
+
+  // The currently-pending operation on this channel (for the master or slave),
+  // or 0x0 if the channel is free.
+  struct ata_disk_op* pending_op;
+
+  // Threads waiting for the channel to be free.
+  kthread_queue_t channel_waiters;
 };
 typedef struct ata_channel ata_channel_t;
 

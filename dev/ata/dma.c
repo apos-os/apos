@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "common/kassert.h"
-#include "common/klog.h"
 #include "common/io.h"
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"
@@ -96,7 +95,6 @@ void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
     cmd |= BM_CMD_RW;
   }
   KASSERT((cmd & BM_CMD_STARTSTOP) == 0);
-  klogf("DMA cmd: 0x%x\n", cmd);
   outb(channel->busmaster_offset + BM_CMD, cmd);
 
   // Clear interrupts and errors.
