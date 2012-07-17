@@ -14,9 +14,13 @@
 
 #include <stdint.h>
 
+#include "common/kassert.h"
 #include "common/errno.h"
 #include "common/kstring.h"
 #include "dev/block.h"
+#include "kmalloc.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
 
 void bd_standard_test(block_dev_t* bd) {
@@ -87,4 +91,127 @@ void bd_standard_test(block_dev_t* bd) {
   kmemset(golden2, 1, 512);
   kmemset(golden2 + 512, 2, 512);
   KEXPECT_EQ(0, kmemcmp(buf, golden2, 1024));
+}
+
+#define THREAD_TEST_VERBOSE 1
+
+typedef struct {
+  block_dev_t* bd;
+  int dev_num;
+
+  // The number of threads, per block device, to spawn.  Each thread will read
+  // and write every NUM_THREADS blocks.
+  uint32_t NUM_THREADS;
+
+  // Number of blocks for each thread to read/write.  So the total number of
+  // blocks accessed on each block device will be NUM_THREADS * NUM_BLOCKS.
+  uint32_t NUM_BLOCKS;
+
+  // Each thread will write to every block i * NUM_THREADS + offset, for i in
+  // [0, NUM_BLOCKS).
+  uint32_t offset;
+
+  // A unique ID across all threads in the system.
+  uint32_t id;
+} bd_thread_test_t;
+
+// TODO(aoates): it would be neat to test multi-sector writing as well.
+void* bd_thread_test_func(void* arg) {
+  bd_thread_test_t* t = (bd_thread_test_t*)arg;
+  uint32_t* buf = (uint32_t*)kmalloc(t->bd->sector_size);
+
+  if (THREAD_TEST_VERBOSE) {
+    klogf("thread %d started\n", t->id);
+  }
+  for (uint32_t i = 0; i < t->NUM_BLOCKS; i++) {
+    const uint32_t block = i * t->NUM_THREADS + t->offset;
+    // Write to the block.
+    const uint32_t val = t->id + i;
+    for (uint32_t j = 0; j < t->bd->sector_size / sizeof(uint32_t); ++j) {
+      buf[j] = val;
+    }
+
+    // Write the block to the disk.
+    if (THREAD_TEST_VERBOSE) {
+      klogf("thread %d writing block %u (actual block %u)\n", t->id, i, block);
+    }
+    int result = t->bd->write(t->bd, block, buf, t->bd->sector_size);
+    if (result != t->bd->sector_size) {
+      klogf("failed: block %d on dev %d in thread %d didn't match: "
+            "write failed (expected %d, got %d)\n",
+            block, t->dev_num, t->id, t->bd->sector_size, result);
+      return (void*)1;
+    }
+    scheduler_yield();
+  }
+
+  // Go back and verify all the blocks we just wrote.
+  for (uint32_t i = 0; i < t->NUM_BLOCKS; i++) {
+    const uint32_t block = i * t->NUM_THREADS + t->offset;
+    const uint32_t expected_val = t->id + i;
+
+    // Read the block.
+    if (THREAD_TEST_VERBOSE) {
+      klogf("thread %d reading block %u (actual block %u)\n", t->id, i, block);
+    }
+    int result = t->bd->read(t->bd, block, buf, t->bd->sector_size);
+    if (result != t->bd->sector_size) {
+      klogf("failed: block %d on dev %d in thread %d didn't match: "
+            "read failed (expected %d, got %d)\n",
+            block, t->dev_num, t->id, t->bd->sector_size, result);
+      return (void*)1;
+    }
+
+    // Make sure it's the same thing we wrote.
+    for (uint32_t j = 0; j < t->bd->sector_size / sizeof(uint32_t); ++j) {
+      if (buf[j] != expected_val) {
+        klogf("failed: block %d, index %d on dev %d in thread %d didn't match: "
+              "expected 0x%x, found 0x%x\n",
+              block, j, t->dev_num, t->id, expected_val, buf[j]);
+        return (void*)1;
+      }
+    }
+    scheduler_yield();
+  }
+  if (THREAD_TEST_VERBOSE) {
+    klogf("thread %d done\n", t->id);
+  }
+  kfree(buf);
+  return 0;
+}
+
+void bd_thread_test(block_dev_t** bds, int len,
+                    uint32_t num_threads, uint32_t num_blocks) {
+  // One thread and test struct for each thread and block dev.
+  bd_thread_test_t* ts =
+      (bd_thread_test_t*)kmalloc(len * num_threads * sizeof(bd_thread_test_t));
+  kthread_t* threads =
+      (kthread_t*)kmalloc(len * num_threads * sizeof(kthread_t));
+  int idx = 0;
+
+  // For each block device, create a thread.
+  for (int bd_idx = 0; bd_idx < len; ++bd_idx) {
+    for (uint32_t thread_idx = 0; thread_idx < num_threads; ++thread_idx) {
+      ts[idx].bd = bds[bd_idx];
+      ts[idx].dev_num = bd_idx;
+      ts[idx].NUM_THREADS = num_threads;
+      ts[idx].NUM_BLOCKS = num_blocks;
+      ts[idx].offset = thread_idx;  // Offset is per-bd.
+      ts[idx].id = idx;  // ID is global.
+      KASSERT(kthread_create(&threads[idx],
+                             &bd_thread_test_func, (void*)(&ts[idx])));
+      idx++;
+    }
+  }
+  for (int i = 0; i < idx; ++i) {
+    scheduler_make_runnable(threads[i]);
+  }
+
+  // Make sure each thread succeeds.
+  for (int i = 0; i < idx; ++i) {
+    KEXPECT_EQ(0, (int)kthread_join(threads[i]));
+  }
+
+  kfree(ts);
+  kfree(threads);
 }

@@ -20,4 +20,17 @@
 // overlapping) and verify that everything comes back correctly.
 void bd_standard_test(block_dev_t* bd);
 
+// Takes an array of block devices, and spawns a bunch of threads that
+// simultaneously read and write interleaving blocks on multiple devices.
+//
+// This tests things liike channel locking for ATA, where multiple block devices
+// can't be used simultaneously.
+//
+// num_threads is the number of threads (per block device) to spawn; num_blocks
+// is the number of blocks (striped across the block device) that each thread
+// should write.  num_threads * num_blocks must be <= the size of each block
+// device.
+void bd_thread_test(block_dev_t** bds, int len,
+                    uint32_t num_threads, uint32_t num_blocks);
+
 #endif

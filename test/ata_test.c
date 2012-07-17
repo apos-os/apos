@@ -21,15 +21,27 @@
 #include "common/kprintf.h"
 #include "dev/block.h"
 #include "dev/ata/ata.h"
+#include "kmalloc.h"
 #include "test/block_dev_test.h"
 #include "test/ktest.h"
 
 void ata_test() {
+  block_dev_t** bds = (block_dev_t**)kmalloc(
+      ata_num_devices() * sizeof(block_dev_t*));
+  for (int i = 0; i < ata_num_devices(); ++i) {
+    bds[i] = ata_get_block_dev(i);
+  }
+
   for (int i = 0; i < ata_num_devices(); ++i) {
     char buf[256];
     ksprintf(buf, "ATA (drive %d)", i);
     KTEST_SUITE_BEGIN(buf);
 
-    bd_standard_test(ata_get_block_dev(i));
+    bd_standard_test(bds[i]);
   }
+
+  KTEST_SUITE_BEGIN("ATA multi-disk thread test");
+  bd_thread_test(&bds[0], ata_num_devices(), 2, 2);
+
+  kfree(bds);
 }

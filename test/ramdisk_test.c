@@ -32,6 +32,8 @@ void ramdisk_test() {
   ramdisk_dev(rd, &bd);
 
   bd_standard_test(&bd);
+  block_dev_t* bds = &bd;
+  bd_thread_test(&bds, 1, 10, 5);
 
   ramdisk_destroy(rd);
 }
