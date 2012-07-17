@@ -16,6 +16,7 @@
 #include "common/io.h"
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"
+#include "dev/ata/dma.h"
 #include "page_alloc.h"
 #include "proc/kthread.h"
 

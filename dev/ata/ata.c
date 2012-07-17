@@ -21,6 +21,7 @@
 #include "common/io.h"
 #include "dev/ata/ata.h"
 #include "dev/ata/ata-internal.h"
+#include "dev/ata/dma.h"
 #include "dev/ata/queue.h"
 #include "dev/interrupts.h"
 #include "dev/irq.h"
