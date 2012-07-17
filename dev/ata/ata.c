@@ -288,12 +288,12 @@ static void handle_interrupt(ata_channel_t* channel) {
 
 // IRQ handlers for the primary and secondary channels.
 static void irq_handler_primary() {
-  klogf("IRQ for primary ATA device\n");
+  //klogf("IRQ for primary ATA device\n");
   handle_interrupt(&g_ata.primary);
 }
 
 static void irq_handler_secondary() {
-  klogf("IRQ for secondary ATA device\n");
+  //klogf("IRQ for secondary ATA device\n");
   handle_interrupt(&g_ata.secondary);
 }
 
@@ -334,6 +334,9 @@ static void ata_do_op(ata_disk_op_t* op) {
   KASSERT(op->drive->channel->pending_op == 0x0);
   op->drive->channel->pending_op = op;
 
+  // Always acquire the DMA lock after acquiring the channel.
+  dma_lock_buffer();
+
   // TODO(aoates): check if DMA has been enabled (if the busmaster driver has
   // loaded) and fail gracefully if so.
 
@@ -370,6 +373,7 @@ static void ata_do_op(ata_disk_op_t* op) {
   if (!op->is_write) {
     kmemcpy(op->read_buf, dma_get_buffer(), len);
   }
+  dma_unlock_buffer();
 
   op->out_len = len;
 

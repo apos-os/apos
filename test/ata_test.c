@@ -41,7 +41,7 @@ void ata_test() {
   }
 
   KTEST_SUITE_BEGIN("ATA multi-disk thread test");
-  bd_thread_test(&bds[0], ata_num_devices(), 2, 2);
+  bd_thread_test(&bds[0], ata_num_devices(), 10, 100);
 
   kfree(bds);
 }

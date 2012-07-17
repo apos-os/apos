@@ -93,7 +93,7 @@ void bd_standard_test(block_dev_t* bd) {
   KEXPECT_EQ(0, kmemcmp(buf, golden2, 1024));
 }
 
-#define THREAD_TEST_VERBOSE 1
+#define THREAD_TEST_VERBOSE 0
 
 typedef struct {
   block_dev_t* bd;

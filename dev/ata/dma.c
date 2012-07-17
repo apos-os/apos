@@ -17,6 +17,7 @@
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"
 #include "page_alloc.h"
+#include "proc/kthread.h"
 
 // TODO(aoates): all of this really belongs in the PIIX driver, exposed via some
 // DMA interface to the ATA driver.
@@ -46,6 +47,13 @@
 static uint32_t g_prdt_phys = 0;
 static uint32_t g_prd_phys = 0;
 
+// Global lock for the shared DMA buffer.  This keeps us from starting to write
+// to the DMA buffer after an operation finished, but before the previous
+// operation has had a chance to copy it out.
+// TODO(aoates): we should have several DMA buffers and rotate between them to
+// reduce contention.
+static kmutex_t g_dma_buf_mutex;
+
 void dma_init() {
   g_prdt_phys = page_frame_alloc();
   // Find a 64-kb aligned page.
@@ -54,11 +62,21 @@ void dma_init() {
   while (g_prd_phys % 0x10000 != 0) {
     g_prd_phys = page_frame_alloc();
   }
+  kmutex_init(&g_dma_buf_mutex);
 }
 
 // Returns the DMA buffer that should be written to/read from.
 void* dma_get_buffer() {
+  KASSERT(g_dma_buf_mutex.locked);
   return (void*)phys2virt(g_prd_phys);
+}
+
+void dma_lock_buffer() {
+  kmutex_lock(&g_dma_buf_mutex);
+}
+
+void dma_unlock_buffer() {
+  kmutex_unlock(&g_dma_buf_mutex);
 }
 
 // TODO(aoates): interrupt masking!
@@ -106,6 +124,7 @@ void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
 }
 
 void dma_start_transfer(ata_channel_t* channel) {
+  KASSERT(g_dma_buf_mutex.locked);
   KASSERT(channel->busmaster_offset != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
@@ -118,6 +137,7 @@ void dma_start_transfer(ata_channel_t* channel) {
 }
 
 void dma_finish_transfer(ata_channel_t* channel) {
+  KASSERT(g_dma_buf_mutex.locked);
   KASSERT(channel->busmaster_offset != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);

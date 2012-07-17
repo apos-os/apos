@@ -82,7 +82,15 @@ typedef struct drive drive_t;
 void dma_init();
 
 // Returns the buffer used for DMA.  It is exactly one page long.
+//
+// NOTE: you MUST have the buffer locked (dma_lock_buffer()/dma_unlock_buffer())
+// before reading or writing to the buffer.  This includes by invoking the DMA
+// functions below.
 void* dma_get_buffer();
+
+// Lock and unlock the DMA buffer.
+void dma_lock_buffer();
+void dma_unlock_buffer();
 
 // Initiate a DMA transfer on the currently-selected drive on the given channel.
 // This is step 1, which sets up and loads the PRDT in the controller, and sets
