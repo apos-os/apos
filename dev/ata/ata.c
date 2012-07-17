@@ -92,7 +92,7 @@ static inline void wait_until_set(ata_channel_t* channel, uint8_t bits) {
 // Issues an ATA command on the given channel, blocking until the BSY flag is
 // clear before sending it.  Assumes that any needed parameters (including the
 // drive select!) have already been loaded into the appropriate registers.
-static void send_cmd(ata_channel_t* channel, uint8_t cmd) {
+void send_cmd(ata_channel_t* channel, uint8_t cmd) {
   // Wait until BSY is unset.
   wait_until_clear(channel, ATA_STATUS_BSY);
 
@@ -122,8 +122,7 @@ static int pio_read_block(ata_channel_t* channel, uint16_t* buf) {
   return 0;
 }
 
-// Select a drive (ATA_DRIVE_MASTER or ATA_DRIVE_SLAVE) on the given channel.
-static inline void drive_select(ata_channel_t* channel, uint8_t drive) {
+inline void drive_select(ata_channel_t* channel, uint8_t drive) {
   KASSERT(drive == 0 || drive == 1);
   const uint8_t dh = 0xA0 | ATA_DH_LBA | (drive * ATA_DH_DRV);
   outb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD, dh);
@@ -135,8 +134,7 @@ static inline void drive_select(ata_channel_t* channel, uint8_t drive) {
   read_status(channel);
 }
 
-// Load the given LBA address into the appropriate registers.
-static inline void set_lba(ata_channel_t* channel, uint32_t lba) {
+inline void set_lba(ata_channel_t* channel, uint32_t lba, uint32_t sector_count) {
   KASSERT((lba & 0xF0000000) == 0);  // Must be 28-bit.
 
   // Load bits 27-24 into the DH register.
@@ -154,6 +152,13 @@ static inline void set_lba(ata_channel_t* channel, uint32_t lba) {
 
   // Bits 7-0 go in the sector number register.
   outb(channel->cmd_offset + ATA_CMD_SECTOR_NUM, lba & 0x000000FF);
+
+  // ...and the sector count.
+  KASSERT(sector_count > 0 && sector_count <= 256);
+  if (sector_count == 256) {
+    sector_count = 0;  // Zero in the SECTOR_CNT register means 256.
+  }
+  outb(channel->cmd_offset + ATA_CMD_SECTOR_CNT, sector_count);
 }
 
 // When strings are read by the IDENTIFY command in 2-byte chunks, the byte
@@ -313,16 +318,11 @@ static void ata_do_op(ata_disk_op_t* op) {
     return;  // Nothing to do.
   }
 
-  uint32_t len = op->len;
-  if (op->offset + (len / ATA_BLOCK_SIZE) > op->drive->lba_sectors) {
-    len = (op->drive->lba_sectors - op->offset) * ATA_BLOCK_SIZE;
+  if (op->offset + (op->len / ATA_BLOCK_SIZE) > op->drive->lba_sectors) {
+    op->len = (op->drive->lba_sectors - op->offset) * ATA_BLOCK_SIZE;
   }
 
-  if (len > dma_buffer_size()) {
-    len = dma_buffer_size();
-  }
-
-  if (len == 0) {
+  if (op->len == 0) {
     return;
   }
 
@@ -336,48 +336,7 @@ static void ata_do_op(ata_disk_op_t* op) {
   KASSERT(op->drive->channel->pending_op == 0x0);
   op->drive->channel->pending_op = op;
 
-  // Always acquire the DMA lock after acquiring the channel.
-  dma_lock_buffer();
-
-  // TODO(aoates): check if DMA has been enabled (if the busmaster driver has
-  // loaded) and fail gracefully if so.
-
-  // Select the drive.
-  drive_select(op->drive->channel, op->drive->drive_num);
-
-  if (op->is_write) {
-    kmemcpy(dma_get_buffer(), op->write_buf, len);
-  }
-
-  // Start the DMA.
-  dma_setup_transfer(op->drive->channel, len, op->is_write);
-
-  // Set address and length.
-  uint32_t len_sectors = len / ATA_BLOCK_SIZE;
-  if (len_sectors > 255) {
-    len_sectors = 255;
-  } else if (len_sectors == 256) {
-    len_sectors = 0;
-  }
-  set_lba(op->drive->channel, op->offset);
-  outb(op->drive->channel->cmd_offset + ATA_CMD_SECTOR_CNT, len_sectors);
-  // Send Read or Write DMA command.
-  if (op->is_write) {
-    send_cmd(op->drive->channel, 0xCA);
-  } else {
-    send_cmd(op->drive->channel, 0xC8);
-  }
-
-  dma_start_transfer(op->drive->channel);
-  scheduler_wait_on(&op->waiters);
-  KASSERT(op->done != 0);
-
-  if (!op->is_write) {
-    kmemcpy(op->read_buf, dma_get_buffer(), len);
-  }
-  dma_unlock_buffer();
-
-  op->out_len = len;
+  dma_perform_op(op);
 
   POP_INTERRUPTS();
 }

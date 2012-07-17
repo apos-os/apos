@@ -78,4 +78,18 @@ struct drive {
 };
 typedef struct drive drive_t;
 
+// Select a drive (ATA_DRIVE_MASTER or ATA_DRIVE_SLAVE) on the given channel.
+// The channel must not be in use.
+void drive_select(ata_channel_t* channel, uint8_t drive);
+
+// Load the given LBA address and sector count into the appropriate registers.
+// The sector count is clamped to the range [1, 256].  Notably, that means you
+// can't set a range of zero sectors.
+void set_lba(ata_channel_t* channel, uint32_t lba, uint32_t sector_count);
+
+// Issues an ATA command on the given channel, blocking until the BSY flag is
+// clear before sending it.  Assumes that any needed parameters (including the
+// drive select!) have already been loaded into the appropriate registers.
+void send_cmd(ata_channel_t* channel, uint8_t cmd);
+
 #endif

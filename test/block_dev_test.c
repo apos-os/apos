@@ -37,6 +37,12 @@ void bd_standard_test(block_dev_t* bd) {
   kmemset(buf + 512, 3, 256);
   kmemset(buf + 768, 3, 256);
 
+  KTEST_BEGIN("zero-length read()");
+  KEXPECT_EQ(0, bd->read(bd, 0, buf, 0));
+
+  KTEST_BEGIN("zero-length write()");
+  KEXPECT_EQ(0, bd->write(bd, 0, buf, 0));
+
   char golden_buf[1024];
   kmemcpy(golden_buf, buf, 1024);
 

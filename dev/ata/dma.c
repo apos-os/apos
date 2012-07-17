@@ -14,11 +14,13 @@
 
 #include "common/kassert.h"
 #include "common/io.h"
+#include "common/kstring.h"
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/dma.h"
 #include "page_alloc.h"
 #include "proc/kthread.h"
+#include "proc/scheduler.h"
 
 // TODO(aoates): all of this really belongs in the PIIX driver, exposed via some
 // DMA interface to the ATA driver.
@@ -55,38 +57,27 @@ static uint32_t g_prd_phys = 0;
 // reduce contention.
 static kmutex_t g_dma_buf_mutex;
 
-void dma_init() {
-  g_prdt_phys = page_frame_alloc();
-  // Find a 64-kb aligned page.
-  // TODO(aoates): this is a really terrible way of doing this...
-  g_prd_phys = page_frame_alloc();
-  while (g_prd_phys % 0x10000 != 0) {
-    g_prd_phys = page_frame_alloc();
-  }
-  kmutex_init(&g_dma_buf_mutex);
-}
-
 // Returns the DMA buffer that should be written to/read from.
-void* dma_get_buffer() {
+static void* dma_get_buffer() {
   KASSERT(g_dma_buf_mutex.locked);
   return (void*)phys2virt(g_prd_phys);
 }
 
-inline uint32_t dma_buffer_size() {
+static inline uint32_t dma_buffer_size() {
   return PAGE_SIZE;
 }
 
-void dma_lock_buffer() {
+static inline void dma_lock_buffer() {
   kmutex_lock(&g_dma_buf_mutex);
 }
 
-void dma_unlock_buffer() {
+static inline void dma_unlock_buffer() {
   kmutex_unlock(&g_dma_buf_mutex);
 }
 
 // TODO(aoates): interrupt masking!
-void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
-                        uint8_t is_write) {
+static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
+                               uint8_t is_write) {
   KASSERT(channel->busmaster_offset != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
@@ -128,7 +119,7 @@ void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
   outb(channel->busmaster_offset + BM_STATUS, status);
 }
 
-void dma_start_transfer(ata_channel_t* channel) {
+static void dma_start_transfer(ata_channel_t* channel) {
   KASSERT(g_dma_buf_mutex.locked);
   KASSERT(channel->busmaster_offset != 0);
   KASSERT(g_prdt_phys != 0);
@@ -140,6 +131,69 @@ void dma_start_transfer(ata_channel_t* channel) {
 
   // And we're off!
 }
+
+void dma_init() {
+  g_prdt_phys = page_frame_alloc();
+  // Find a 64-kb aligned page.
+  // TODO(aoates): this is a really terrible way of doing this...
+  g_prd_phys = page_frame_alloc();
+  while (g_prd_phys % 0x10000 != 0) {
+    g_prd_phys = page_frame_alloc();
+  }
+  kmutex_init(&g_dma_buf_mutex);
+}
+
+// TODO(aoates): test reading/writing blocks of > 256 sectors (to make sure
+// clamping, and in particular the return value, is handled correctly).
+void dma_perform_op(ata_disk_op_t* op) {
+  KASSERT(op);
+  KASSERT(op->drive->channel->pending_op == op);
+
+  // Clamp to DMA buffer size.
+  if (op->len > dma_buffer_size()) {
+    op->len = dma_buffer_size();
+  }
+
+  // Always acquire the DMA lock after acquiring the channel.
+  dma_lock_buffer();
+
+  // TODO(aoates): check if DMA has been enabled (if the busmaster driver has
+  // loaded) and fail gracefully if so.
+
+  // Select the drive.
+  drive_select(op->drive->channel, op->drive->drive_num);
+
+  if (op->is_write) {
+    kmemcpy(dma_get_buffer(), op->write_buf, op->len);
+  }
+
+  // Start the DMA.
+  dma_setup_transfer(op->drive->channel, op->len, op->is_write);
+
+  // Set address and length.
+  uint32_t len_sectors = op->len / ATA_BLOCK_SIZE;
+  if (len_sectors > 256) {
+    len_sectors = 256;
+  }
+  set_lba(op->drive->channel, op->offset, len_sectors);
+  // Send Read or Write DMA command.
+  if (op->is_write) {
+    send_cmd(op->drive->channel, 0xCA);
+  } else {
+    send_cmd(op->drive->channel, 0xC8);
+  }
+
+  dma_start_transfer(op->drive->channel);
+  scheduler_wait_on(&op->waiters);
+  KASSERT(op->done != 0);
+
+  op->out_len = len_sectors * ATA_BLOCK_SIZE;
+  if (!op->is_write) {
+    kmemcpy(op->read_buf, dma_get_buffer(), op->out_len);
+  }
+  dma_unlock_buffer();
+}
+
 
 void dma_finish_transfer(ata_channel_t* channel) {
   KASSERT(g_dma_buf_mutex.locked);
