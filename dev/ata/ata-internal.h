@@ -15,6 +15,10 @@
 #ifndef APOO_DEV_ATA_INTERNAL_H
 #define APOO_DEV_ATA_INTERNAL_H
 
+#define ATA_DRIVE_MASTER 0
+#define ATA_DRIVE_SLAVE  1
+#define ATA_BLOCK_SIZE 512
+
 // Contains data about the port offsets for the primary and secondary ATA
 // channels.
 struct ata_channel {
@@ -31,6 +35,36 @@ struct ata {
   ata_channel_t secondary;
 };
 typedef struct ata ata_t;
+
+// Data about a particular drive.
+struct drive {
+  // Meta fields: is the drive present, and supported by the driver.
+  uint8_t present;
+  uint8_t supported;
+
+  ata_channel_t* channel;
+  uint8_t drive_num;  // 0 for master, 1 for slave.
+
+  uint16_t features;  // Feature bits.
+  uint16_t cylinders;
+  uint16_t heads;
+  uint16_t bytes_per_track;
+  uint16_t bytes_per_sector;
+  uint16_t sectors_per_track;
+  char serial[21];  // Null-terminated ASCII serial number.
+  uint16_t buf_type;
+  uint16_t buf_size;
+  uint16_t ecc_bytes;
+  char firmware[9];  // Null-terminated firmware version.
+  char model[41];  // Null-terminated model number.
+  uint16_t features2;
+
+  // Total number of user-addressable sectors in LBA mode.
+  uint32_t lba_sectors;
+
+  // TODO(aoates): the rest of the fields.
+};
+typedef struct drive drive_t;
 
 // Initialize the DMA subsytem that talks to the PIIX(3) controller.
 void dma_init();

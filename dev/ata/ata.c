@@ -21,6 +21,7 @@
 #include "common/io.h"
 #include "dev/ata/ata.h"
 #include "dev/ata/ata-internal.h"
+#include "dev/ata/queue.h"
 #include "dev/irq.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -58,40 +59,6 @@ static int g_init = 0;
 // Feature bits in the features2 field of the drive info.
 #define ATA_FEAT2_LBA 0x200
 #define ATA_FEAT2_DMA 0x100
-
-#define ATA_DRIVE_MASTER 0
-#define ATA_DRIVE_SLAVE  1
-#define ATA_BLOCK_SIZE 512
-
-// Data about a particular drive.
-struct drive {
-  // Meta fields: is the drive present, and supported by the driver.
-  uint8_t present;
-  uint8_t supported;
-
-  ata_channel_t* channel;
-  uint8_t drive_num;  // 0 for master, 1 for slave.
-
-  uint16_t features;  // Feature bits.
-  uint16_t cylinders;
-  uint16_t heads;
-  uint16_t bytes_per_track;
-  uint16_t bytes_per_sector;
-  uint16_t sectors_per_track;
-  char serial[21];  // Null-terminated ASCII serial number.
-  uint16_t buf_type;
-  uint16_t buf_size;
-  uint16_t ecc_bytes;
-  char firmware[9];  // Null-terminated firmware version.
-  char model[41];  // Null-terminated model number.
-  uint16_t features2;
-
-  // Total number of user-addressable sectors in LBA mode.
-  uint32_t lba_sectors;
-
-  // TODO(aoates): the rest of the fields.
-};
-typedef struct drive drive_t;
 
 // Reads the status register on the given channel.  This resets the interrupt
 // state.
@@ -309,25 +276,28 @@ static void irq_handler_secondary() {
   klogf("IRQ for secondary ATA device\n");
 }
 
-static int ata_do_op(struct block_dev* dev, uint32_t offset,
-                     void* buf, uint32_t len, uint8_t is_write) {
+static void ata_do_op(ata_disk_op_t* op) {
+  op->status = 0;
+  op->out_len = 0;
+
   // TODO(aoates): we need to deal with locking the channel, waiting for pending
   // reads, etc.
-  if (len % ATA_BLOCK_SIZE != 0) {
-    return -EINVAL;
+  if (op->len % ATA_BLOCK_SIZE != 0) {
+    op->status = -EINVAL;
+    return;
   }
 
-  drive_t* d = (drive_t*)dev->dev_data;
-  if (offset >= d->lba_sectors) {
-    return 0;
+  if (op->offset >= op->drive->lba_sectors) {
+    return;  // Nothing to do.
   }
 
-  if (offset + (len / ATA_BLOCK_SIZE) > d->lba_sectors) {
-    len = (d->lba_sectors - offset) * ATA_BLOCK_SIZE;
+  uint32_t len = op->len;
+  if (op->offset + (len / ATA_BLOCK_SIZE) > op->drive->lba_sectors) {
+    len = (op->drive->lba_sectors - op->offset) * ATA_BLOCK_SIZE;
   }
 
   if (len == 0) {
-    return 0;
+    return;
   }
 
   // TODO(aoates) this is a silly cap.
@@ -338,14 +308,14 @@ static int ata_do_op(struct block_dev* dev, uint32_t offset,
 
   // TODO(aoates): check if the channel is active!
   // Select the drive.
-  drive_select(d->channel, d->drive_num);
+  drive_select(op->drive->channel, op->drive->drive_num);
 
-  if (is_write) {
-    kmemcpy(dma_get_buffer(), buf, len);
+  if (op->is_write) {
+    kmemcpy(dma_get_buffer(), op->write_buf, len);
   }
 
   // Start the DMA.
-  dma_setup_transfer(d->channel, len, is_write);
+  dma_setup_transfer(op->drive->channel, len, op->is_write);
 
   // Set address and length.
   uint32_t len_sectors = len / ATA_BLOCK_SIZE;
@@ -354,35 +324,62 @@ static int ata_do_op(struct block_dev* dev, uint32_t offset,
   } else if (len_sectors == 256) {
     len_sectors = 0;
   }
-  set_lba(d->channel, offset);
-  outb(d->channel->cmd_offset + ATA_CMD_SECTOR_CNT, len_sectors);
+  set_lba(op->drive->channel, op->offset);
+  outb(op->drive->channel->cmd_offset + ATA_CMD_SECTOR_CNT, len_sectors);
   // Send Read or Write DMA command.
-  if (is_write) {
-    send_cmd(d->channel, 0xCA);
+  if (op->is_write) {
+    send_cmd(op->drive->channel, 0xCA);
   } else {
-    send_cmd(d->channel, 0xC8);
+    send_cmd(op->drive->channel, 0xC8);
   }
 
-  ata_dump_state(d->channel);
+  ata_dump_state(op->drive->channel);
 
-  dma_start_transfer(d->channel);
+  dma_start_transfer(op->drive->channel);
 
   scheduler_wait_on(&g_wait_queue);
 
-  if (!is_write) {
-    kmemcpy(buf, dma_get_buffer(), len);
+  if (!op->is_write) {
+    kmemcpy(op->read_buf, dma_get_buffer(), len);
   }
-  return len;
+
+  op->out_len = len;
 }
 
 static int ata_read(struct block_dev* dev, uint32_t offset,
                     void* buf, uint32_t len) {
-  return ata_do_op(dev, offset, buf, len, 0 /* read */);
+  ata_disk_op_t op;
+  op.drive = (drive_t*)dev->dev_data;
+  op.is_write = 0;
+  op.offset = offset;
+  op.read_buf = buf;
+  op.write_buf = 0x0;
+  op.len = len;
+  ata_do_op(&op);
+
+  if (op.status < 0) {
+    return op.status;
+  } else {
+    return op.out_len;
+  }
 }
 
 static int ata_write(struct block_dev* dev, uint32_t offset,
                      const void* buf, uint32_t len) {
-  return ata_do_op(dev, offset, (void*)buf, len, 1 /* write */);
+  ata_disk_op_t op;
+  op.drive = (drive_t*)dev->dev_data;
+  op.is_write = 1;
+  op.offset = offset;
+  op.read_buf = 0x0;
+  op.write_buf = buf;
+  op.len = len;
+  ata_do_op(&op);
+
+  if (op.status < 0) {
+    return op.status;
+  } else {
+    return op.out_len;
+  }
 }
 
 static void create_ata_block_dev(drive_t* d, block_dev_t* bd) {
