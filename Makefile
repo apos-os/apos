@@ -44,7 +44,9 @@ HDRFILES = $(filter %.h, $(ALLFILES))
 
 BUILD_DIR = build
  
-all: kernel.img hd.img tags
+HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
+
+all: kernel.img $(HD_IMAGES) tags
  
 %.o : %.s
 	$(AS) $(ASFLAGS) -o $@ $<
@@ -60,12 +62,15 @@ kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
 
-hd.img:
+$(HD_IMAGES):
 	@echo 'generating hard drive image...'
-	@./bochs/bximage -hd -mode=flat -size=10 -q $@
+	@./bochs/bximage -hd -mode=flat -size=10 -q hd1.img
+	cp hd1.img hd2.img
+	cp hd1.img hd3.img
+	cp hd1.img hd4.img
 
 clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img hd.img tags
+	$(RM) $(OBJFILES) kernel.bin kernel.img $(HD_IMAGES) tags
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
