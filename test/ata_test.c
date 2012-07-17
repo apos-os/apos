@@ -12,23 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#include <stdint.h>
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
+#include "common/errno.h"
+#include "common/kassert.h"
+#include "common/klog.h"
+#include "common/kstring.h"
+#include "common/kprintf.h"
+#include "dev/block.h"
+#include "dev/ata/ata.h"
+#include "test/block_dev_test.h"
+#include "test/ktest.h"
 
-#endif
+void ata_test() {
+  for (int i = 0; i < ata_num_devices(); ++i) {
+    char buf[256];
+    ksprintf(buf, "ATA (drive %d)", i);
+    KTEST_SUITE_BEGIN(buf);
+
+    bd_standard_test(ata_get_block_dev(i));
+  }
+}

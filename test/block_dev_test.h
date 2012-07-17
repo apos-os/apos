@@ -12,23 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// A set of generic tests that can be run against any block device.
+#ifndef APOO_TEST_BLOCKDEV_TEST_H
+#define APOO_TEST_BLOCKDEV_TEST_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
+// Repeatedly read and write blocks of various lengths and sizes (some
+// overlapping) and verify that everything comes back correctly.
+void bd_standard_test(block_dev_t* bd);
 
 #endif
