@@ -88,6 +88,9 @@ void dma_init();
 // functions below.
 void* dma_get_buffer();
 
+// Returns the size of the buffer, in bytes.
+uint32_t dma_buffer_size();
+
 // Lock and unlock the DMA buffer.
 void dma_lock_buffer();
 void dma_unlock_buffer();

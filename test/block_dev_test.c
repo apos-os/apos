@@ -91,6 +91,33 @@ void bd_standard_test(block_dev_t* bd) {
   kmemset(golden2, 1, 512);
   kmemset(golden2 + 512, 2, 512);
   KEXPECT_EQ(0, kmemcmp(buf, golden2, 1024));
+
+  // Test reading/writing a really large (multi-page) block.
+  KTEST_BEGIN("multi-page read/write");
+  const int BIG_BUF_SIZE = 4096 * 3;
+  char* big_buf = (char*)kmalloc(BIG_BUF_SIZE);
+  KASSERT(BIG_BUF_SIZE % bd->sector_size == 0);
+  for (int i = 0; i < BIG_BUF_SIZE / bd->sector_size; ++i) {
+    kmemset(big_buf + i * bd->sector_size, i, bd->sector_size);
+  }
+
+  int result = bd->write(bd, 0, big_buf, BIG_BUF_SIZE);
+  // Make sure we wrote at least a page of it.
+  KEXPECT_GE(result, 4096);
+
+  // Read and verify.
+  kmemset(big_buf, 0, BIG_BUF_SIZE);
+  result = bd->read(bd, 0, big_buf, BIG_BUF_SIZE);
+  KEXPECT_GE(result, 4096);
+
+  // Verify what we got back.
+  KASSERT(result % bd->sector_size == 0);
+  for (int i = 0; i < result / bd->sector_size; ++i) {
+    kmemset(buf, i, bd->sector_size);
+    KEXPECT_EQ(0, kmemcmp(buf, big_buf + i * bd->sector_size, bd->sector_size));
+  }
+
+  kfree(big_buf);
 }
 
 #define THREAD_TEST_VERBOSE 0
@@ -182,6 +209,7 @@ void* bd_thread_test_func(void* arg) {
 
 void bd_thread_test(block_dev_t** bds, int len,
                     uint32_t num_threads, uint32_t num_blocks) {
+  KTEST_BEGIN("multi-thread block device test");
   // One thread and test struct for each thread and block dev.
   bd_thread_test_t* ts =
       (bd_thread_test_t*)kmalloc(len * num_threads * sizeof(bd_thread_test_t));

@@ -317,12 +317,13 @@ static void ata_do_op(ata_disk_op_t* op) {
     len = (op->drive->lba_sectors - op->offset) * ATA_BLOCK_SIZE;
   }
 
+  if (len > dma_buffer_size()) {
+    len = dma_buffer_size();
+  }
+
   if (len == 0) {
     return;
   }
-
-  // TODO(aoates) this is a silly cap.
-  // KASSERT(len <= PAGE_SIZE);
 
   PUSH_AND_DISABLE_INTERRUPTS();
 

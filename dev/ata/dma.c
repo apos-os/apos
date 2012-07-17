@@ -71,6 +71,10 @@ void* dma_get_buffer() {
   return (void*)phys2virt(g_prd_phys);
 }
 
+inline uint32_t dma_buffer_size() {
+  return PAGE_SIZE;
+}
+
 void dma_lock_buffer() {
   kmutex_lock(&g_dma_buf_mutex);
 }
@@ -85,7 +89,7 @@ void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
   KASSERT(channel->busmaster_offset != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
-  KASSERT(len <= PAGE_SIZE);
+  KASSERT(len <= dma_buffer_size());
 
   // TODO(aoates): KASSERT no pending DMA transfers?
 
