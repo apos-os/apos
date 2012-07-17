@@ -60,7 +60,8 @@ kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	mcopy -i $@ kernel.bin ::/
 
 hd.img:
-	./bochs/bximage -hd -mode=flat -size=10 -q $@
+	@echo 'generating hard drive image...'
+	@./bochs/bximage -hd -mode=flat -size=10 -q $@
 
 clean:
 	$(RM) $(OBJFILES) kernel.bin kernel.img hd.img tags
