@@ -22,9 +22,6 @@
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 
-// TODO(aoates): all of this really belongs in the PIIX driver, exposed via some
-// DMA interface to the ATA driver.
-
 // Offsets for the busmaster control registers.
 #define BM_CMD      0x00
 #define BM_STATUS   0x02
@@ -75,7 +72,6 @@ static inline void dma_unlock_buffer() {
   kmutex_unlock(&g_dma_buf_mutex);
 }
 
-// TODO(aoates): interrupt masking!
 static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
                                uint8_t is_write) {
   KASSERT(channel->busmaster_offset != 0);

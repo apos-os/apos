@@ -463,8 +463,6 @@ static void ata_init_internal(const ata_t* ata) {
   // TODO(aoates): enable interrupts with device control register
 }
 
-// TODO(aoates): if we have global ata_channel_t's, we sholud just set them
-// directly.
 static uint16_t g_busmaster_prim_offset = 0;
 static uint16_t g_busmaster_secd_offset = 0;
 void ata_enable_bumaster(uint16_t primary_offset, uint16_t secondary_offset) {
