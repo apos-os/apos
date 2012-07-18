@@ -17,7 +17,7 @@
 #define APOO_DEV_ATA_H
 
 #include <stdint.h>
-#include "dev/block.h"
+#include "dev/block_dev.h"
 
 // Initialize the ATA driver and scan the primary and secondary channels for ATA
 // devices.

@@ -18,7 +18,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "dev/block.h"
+#include "dev/block_dev.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "memory.h"
 #include "test/block_dev_test.h"

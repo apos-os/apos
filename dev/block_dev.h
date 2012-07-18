@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Interface for block devices.
-#ifndef APOO_BLOCK_H
-#define APOO_BLOCK_H
+#ifndef APOO_DEV_BLOCK_DEV_H
+#define APOO_DEV_BLOCK_DEV_H
 
 #include <stdint.h>
 
@@ -41,6 +41,7 @@ struct block_dev {
   int (*write)(struct block_dev* dev, uint32_t offset,
                const void* buf, uint32_t len);
 
+  // Device-specific private data.
   void* dev_data;
 };
 typedef struct block_dev block_dev_t;

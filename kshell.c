@@ -24,7 +24,7 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 #include "dev/ata/ata.h"
-#include "dev/block.h"
+#include "dev/block_dev.h"
 #include "dev/ld.h"
 #include "dev/timer.h"
 #include "kmalloc.h"

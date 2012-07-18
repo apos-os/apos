@@ -17,7 +17,7 @@
 #include "common/kassert.h"
 #include "common/errno.h"
 #include "common/kstring.h"
-#include "dev/block.h"
+#include "dev/block_dev.h"
 #include "kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"

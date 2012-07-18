@@ -17,7 +17,7 @@
 #define APOO_DEV_RAMDISK_H
 
 #include <stdint.h>
-#include "dev/block.h"
+#include "dev/block_dev.h"
 
 struct ramdisk;
 typedef struct ramdisk ramdisk_t;
