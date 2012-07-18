@@ -19,7 +19,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "kmalloc.h"
-#include "dev/char.h"
+#include "dev/char_dev.h"
 #include "dev/interrupts.h"
 #include "dev/ld.h"
 #include "proc/kthread.h"

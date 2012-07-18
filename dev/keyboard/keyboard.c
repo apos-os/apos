@@ -17,7 +17,7 @@
 #include "common/ascii.h"
 #include "common/kassert.h"
 #include "kmalloc.h"
-#include "dev/char.h"
+#include "dev/char_dev.h"
 #include "dev/keyboard/keyboard.h"
 
 static char NORMAL_ASCII_LOOKUP[];

@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Common definitions for character sources and sinks.
-#ifndef APOO_CHAR_H
-#define APOO_CHAR_H
+// Interface for charater devices.
+#ifndef APOO_DEV_CHAR_DEV_H
+#define APOO_DEV_CHAR_DEV_H
+
+#include <stdint.h>
 
 // A char_sink_t is a function accepting an opaque arg and a character to be
 // processed.
@@ -23,5 +25,24 @@
 // configured with a char_sink_t to call when a character is available (and the
 // arg to pass to that sink).
 typedef void (*char_sink_t)(void*, char);
+
+// A single character device.
+struct char_dev {
+  // Read up to len bytes from the device into the given buffer.  Blocks until
+  // the read is complete.  If no bytes are available, blocks until some can be
+  // read.
+  //
+  // Returns the number of bytes read on success, 0 for EOF, or -error on error.
+  int (*read)(struct char_dev* dev, void* buf, uint32_t len);
+
+  // Write up to len bytes to the device. Blocks until the write is complete.
+  //
+  // Returns the number of bytes written on success, or -error on error.
+  int (*write)(struct char_dev* dev, const void* buf, uint32_t len);
+
+  // Device-specific private data.
+  void* dev_data;
+};
+typedef struct char_dev char_dev_t;
 
 #endif
