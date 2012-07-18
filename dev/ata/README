@@ -1,0 +1,4 @@
+A (very) basic driver for ATA hard drives.  It's not very good, probably
+fragile, and has terrible throughput.  It basically exists so that I can
+bootstrap some sort of filesystem, and I'll eventually write drivers for
+something a bit more modern.  So don't judge me on it, please.
