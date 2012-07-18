@@ -28,6 +28,8 @@
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
 #include "dev/ld.h"
+#include "dev/ata/ata.h"
+#include "dev/pci/pci.h"
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
@@ -102,6 +104,12 @@ void kmain(memory_info_t* meminfo) {
   kmalloc_init();
 
   io_init();
+
+  klog("pci_init()\n");
+  pci_init();
+
+  klog("ata_init()\n");
+  ata_init();
 
   klog("timer_init()\n");
   timer_init();

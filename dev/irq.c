@@ -95,8 +95,8 @@ void register_irq_handler(uint8_t irq, irq_handler_t handler) {
 void irq_handler(uint32_t irq, uint32_t interrupt) {
   KASSERT(interrupt == irq + 0x20);
   // TODO(aoates): this isn't really correct!
-  // Assume all 7 and 15 IRQs are spurious
-  if (irq == 7 || irq == 15) {
+  // Assume all 7 IRQs are spurious
+  if (irq == 7) {
     return;
   }
 

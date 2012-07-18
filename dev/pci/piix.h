@@ -12,18 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_IO_H
-#define APOO_IO_H
+// Driver for the Intel PIIX/PIIX3 PCI <--> ISA/IDE/USB family of PCI devices.
+#ifndef APOO_DEV_PIIX_H
+#define APOO_DEV_PIIX_H
 
-#include <stdint.h>
+#include "dev/pci/pci.h"
+#include "dev/pci/pci-driver.h"
 
-void outb(uint16_t port, uint8_t val);
-uint8_t inb(uint16_t port);
-
-void outs(uint16_t port, uint16_t val);
-uint16_t ins(uint16_t port);
-
-void outl(uint16_t port, uint32_t val);
-uint32_t inl(uint16_t port);
+// Invoked by the PCI pseudo-driver whenever it detects a compatible device.
+void pci_piix_driver_init(pci_device_t* pcidev);
 
 #endif

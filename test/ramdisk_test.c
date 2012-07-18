@@ -12,18 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_IO_H
-#define APOO_IO_H
-
 #include <stdint.h>
 
-void outb(uint16_t port, uint8_t val);
-uint8_t inb(uint16_t port);
+#include "common/errno.h"
+#include "common/kassert.h"
+#include "common/klog.h"
+#include "common/kstring.h"
+#include "dev/block.h"
+#include "dev/ramdisk/ramdisk.h"
+#include "memory.h"
+#include "test/block_dev_test.h"
+#include "test/ktest.h"
 
-void outs(uint16_t port, uint16_t val);
-uint16_t ins(uint16_t port);
+void ramdisk_test() {
+  KTEST_SUITE_BEGIN("ramdisk");
+  ramdisk_t* rd;
+  block_dev_t bd;
+  KASSERT(ramdisk_create(10 * PAGE_SIZE, &rd) == 0);
+  ramdisk_dev(rd, &bd);
 
-void outl(uint16_t port, uint32_t val);
-uint32_t inl(uint16_t port);
+  bd_standard_test(&bd);
+  block_dev_t* bds = &bd;
+  bd_thread_test(&bds, 1, 10, 5);
 
-#endif
+  ramdisk_destroy(rd);
+}

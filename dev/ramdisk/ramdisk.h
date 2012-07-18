@@ -12,18 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_IO_H
-#define APOO_IO_H
+// A simple in-memory block device.
+#ifndef APOO_DEV_RAMDISK_H
+#define APOO_DEV_RAMDISK_H
 
 #include <stdint.h>
+#include "dev/block.h"
 
-void outb(uint16_t port, uint8_t val);
-uint8_t inb(uint16_t port);
+struct ramdisk;
+typedef struct ramdisk ramdisk_t;
 
-void outs(uint16_t port, uint16_t val);
-uint16_t ins(uint16_t port);
+// Create a ramdisk of the given size (which must be an even multiple of the
+// page size).  Returns 0 on success, and sets d to the ramdisk structure.
+int ramdisk_create(uint32_t size, ramdisk_t** d);
 
-void outl(uint16_t port, uint32_t val);
-uint32_t inl(uint16_t port);
+// Destroys a ramdisk created with ramdisk_create().
+void ramdisk_destroy(ramdisk_t* d);
+
+// Initializes a block_dev_t with data for the given ramdisk.
+void ramdisk_dev(ramdisk_t* d, block_dev_t* bd);
 
 #endif

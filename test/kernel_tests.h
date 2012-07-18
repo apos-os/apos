@@ -28,5 +28,7 @@ void page_alloc_map_test();
 void page_alloc_test();
 void ld_test();
 void hashtable_test();
+void ramdisk_test();
+void ata_test();
 
 #endif

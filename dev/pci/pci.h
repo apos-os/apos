@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_IO_H
-#define APOO_IO_H
+// PCI driver.
+#ifndef APOO_PCI_H
+#define APOO_PCI_H
 
-#include <stdint.h>
-
-void outb(uint16_t port, uint8_t val);
-uint8_t inb(uint16_t port);
-
-void outs(uint16_t port, uint16_t val);
-uint16_t ins(uint16_t port);
-
-void outl(uint16_t port, uint32_t val);
-uint32_t inl(uint16_t port);
+// Initialize the PCI subsystem, and query the bus to discover all connected
+// devices.  Invokes drivers for any devices that are recognized.
+void pci_init();
 
 #endif
