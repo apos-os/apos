@@ -154,36 +154,33 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 // Allocates a memory_info_t at the end of the kernel and fills it in with what
 // we know.
 static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
-  // Allocate a memory_info_t just past the end of the kernel.  We will pass
-  // this around to keep track of how much memory we allocate here, updating
+  // Statically allocate a memory_info_t.  We will pass this around to keep
+  // track of how much memory we allocate here, updating
   // meminfo->kernel_end_{phys, virt} as needed.
-  const uint32_t kernel_end_phys =
-      (uint32_t)(&KERNEL_END_SYMBOL) - KERNEL_VIRT_START;
+  static memory_info_t g_meminfo;
 
-  memory_info_t* meminfo = (memory_info_t*)kernel_end_phys;
-  meminfo->kernel_start_phys =
+  g_meminfo.kernel_start_phys =
       (uint32_t)(&KERNEL_START_SYMBOL) - KERNEL_VIRT_START;
   // Account for the memory_info_t we just allocated.
-  meminfo->kernel_end_phys =
-      kernel_end_phys + sizeof(memory_info_t);
+  g_meminfo.kernel_end_phys =
+      (uint32_t)(&KERNEL_END_SYMBOL) - KERNEL_VIRT_START;
 
-  meminfo->kernel_start_virt = meminfo->kernel_end_virt = 0;
-  meminfo->mapped_start = meminfo->mapped_end = 0;
+  g_meminfo.kernel_start_virt = g_meminfo.kernel_end_virt = 0;
+  g_meminfo.mapped_start = g_meminfo.mapped_end = 0;
 
   kassert_phys((mb_info->flags & MULTIBOOT_INFO_MEMORY) != 0);
-  meminfo->lower_memory = mb_info->mem_lower * 1024;
-  meminfo->upper_memory = mb_info->mem_upper * 1024;
+  g_meminfo.lower_memory = mb_info->mem_lower * 1024;
+  g_meminfo.upper_memory = mb_info->mem_upper * 1024;
 
   // TODO(aoates): this isn't totally correct.
-  if (meminfo->upper_memory > MAX_MEMORY_BYTES) {
-    meminfo->upper_memory = MAX_MEMORY_BYTES;
+  if (g_meminfo.upper_memory > MAX_MEMORY_BYTES) {
+    g_meminfo.upper_memory = MAX_MEMORY_BYTES;
   }
 
-  meminfo->phys_map_start = KERNEL_PHYS_MAP_START;
-  meminfo->heap_start = START_HEAP;
-  meminfo->heap_end = END_HEAP;
-
-  return meminfo;
+  g_meminfo.phys_map_start = KERNEL_PHYS_MAP_START;
+  g_meminfo.heap_start = START_HEAP;
+  g_meminfo.heap_end = END_HEAP;
+  return &g_meminfo;
 }
 
 memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys) {
