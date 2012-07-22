@@ -143,7 +143,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   asm volatile
       ("mov %0, %%cr3;"
        "mov %%cr0, %%eax;"
-       "or 0x80000000, %%eax;"
+       "or $0x80000000, %%eax;"
        "mov %%eax, %%cr0"
        :: "b"(page_directory) : "eax");
 
