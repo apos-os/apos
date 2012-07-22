@@ -46,13 +46,6 @@ static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
 static ld_t* g_ld = 0;
 
-void print(const char* msg) {
-  while (*msg) {
-    vterm_putc(g_vterm, *msg);
-    ++msg;
-  }
-}
-
 static void tick() {
   static uint8_t i = 0;
   static const char* beat = "oO";
@@ -73,6 +66,8 @@ static void io_init() {
   video_vga_init();
   g_video = video_get_default();
   g_vterm = vterm_create(g_video);
+  klog_set_vterm(g_vterm);
+  klog_set_mode(KLOG_VTERM);
 
   g_ld = ld_create(LD_BUF_SIZE);
   ld_set_sink(g_ld, &vterm_putc_sink, (void*)g_vterm);
@@ -84,7 +79,6 @@ void kmain(memory_info_t* meminfo) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
-  klog("kmain()\n");
   klog("interrupts_init()\n");
   interrupts_init();
   klog("pic_init()\n");
@@ -125,20 +119,20 @@ void kmain(memory_info_t* meminfo) {
   klog("initialization finished...\n");
 
   vterm_clear(g_vterm);
-  print("APOO\n");
+  klog("APOO\n");
 
-  print("meminfo: 0x");
-  print(utoa_hex((uint32_t)meminfo));
-  print("\nmeminfo->kernel_start_phys: 0x"); print(utoa_hex(meminfo->kernel_start_phys));
-  print("\nmeminfo->kernel_end_phys:   0x"); print(utoa_hex(meminfo->kernel_end_phys));
-  print("\nmeminfo->kernel_start_virt: 0x"); print(utoa_hex(meminfo->kernel_start_virt));
-  print("\nmeminfo->kernel_end_virt:   0x"); print(utoa_hex(meminfo->kernel_end_virt));
-  print("\nmeminfo->mapped_start:      0x"); print(utoa_hex(meminfo->mapped_start));
-  print("\nmeminfo->mapped_end:        0x"); print(utoa_hex(meminfo->mapped_end));
-  print("\nmeminfo->lower_memory:      0x"); print(utoa_hex(meminfo->lower_memory));
-  print("\nmeminfo->upper_memory:      0x"); print(utoa_hex(meminfo->upper_memory));
-  print("\nmeminfo->phys_map_start:    0x"); print(utoa_hex(meminfo->phys_map_start));
-  vterm_clear(g_vterm);
+  klog("meminfo: 0x");
+  klog(utoa_hex((uint32_t)meminfo));
+  klog("\nmeminfo->kernel_start_phys: 0x"); klog(utoa_hex(meminfo->kernel_start_phys));
+  klog("\nmeminfo->kernel_end_phys:   0x"); klog(utoa_hex(meminfo->kernel_end_phys));
+  klog("\nmeminfo->kernel_start_virt: 0x"); klog(utoa_hex(meminfo->kernel_start_virt));
+  klog("\nmeminfo->kernel_end_virt:   0x"); klog(utoa_hex(meminfo->kernel_end_virt));
+  klog("\nmeminfo->mapped_start:      0x"); klog(utoa_hex(meminfo->mapped_start));
+  klog("\nmeminfo->mapped_end:        0x"); klog(utoa_hex(meminfo->mapped_end));
+  klog("\nmeminfo->lower_memory:      0x"); klog(utoa_hex(meminfo->lower_memory));
+  klog("\nmeminfo->upper_memory:      0x"); klog(utoa_hex(meminfo->upper_memory));
+  klog("\nmeminfo->phys_map_start:    0x"); klog(utoa_hex(meminfo->phys_map_start));
+  klog("\n");
 
   kshell_main(g_ld);
 
