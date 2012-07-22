@@ -1,0 +1,15 @@
+/bochsout.txt
+/kernel.img
+/kernel.bin
+/log.txt
+/bochs
+*.o
+NOTES
+TODO
+/patches
+/Session.vim
+/hd1.img
+/hd2.img
+/hd3.img
+/hd4.img
+/tags
