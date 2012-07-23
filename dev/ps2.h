@@ -42,4 +42,7 @@ uint8_t ps2_read_byte(int port);
 // of checks is done, then 0 is returned.
 int ps2_read_byte_async(int port, uint8_t* data_out, int timeout);
 
+// Writes a byte to the given port.  Blocks until the write is complete.
+void ps2_write_byte(int port, uint8_t data);
+
 #endif

@@ -24,7 +24,7 @@
 #include "dev/keyboard/keyboard.h"
 #include "dev/keyboard/ps2_scancodes.h"
 
-#define PS2_DATA_TIMEOUT 10
+#define PS2_DATA_TIMEOUT 1000000
 
 static vkeyboard_t* g_vkbd = 0x0;
 
@@ -58,7 +58,7 @@ static void irq_handler() {
   uint32_t keycode = ps2_convert_scancode(c, is_extended);
   if (keycode == NONE) {
     klogf("WARNING: ignoring unknown scancode: 0x%x (extended: %d)\n",
-    c, is_extended);
+        c, is_extended);
   } else if (g_vkbd) {
     vkeyboard_send_keycode(g_vkbd, keycode, is_up_evt);
   }
@@ -69,6 +69,8 @@ int ps2_keyboard_init(vkeyboard_t* vkbd) {
     klogf("keyboard initalization FAILED (no keyboard found on port1)\n");
     return 0;
   }
+
+  // TODO(aoates): we should probably verify it's in scanset 2.
 
   register_irq_handler(IRQ1, &irq_handler);
   ps2_enable_interrupts(PS2_PORT1);
