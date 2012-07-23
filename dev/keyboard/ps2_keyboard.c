@@ -24,35 +24,41 @@
 #include "dev/keyboard/keyboard.h"
 #include "dev/keyboard/ps2_scancodes.h"
 
-#define PS2_DATA_TIMEOUT 1000000
+#define PS2_DATA_TIMEOUT 10000
 
 static vkeyboard_t* g_vkbd = 0x0;
 
-static void irq_handler() {
-  uint8_t c;
-  uint8_t is_up_evt = 0;
-  uint8_t is_extended = 0;
-  uint8_t done = 0;
+// Given a buffer of scancodes, process it and potentially generate a keypress.
+// Returns the new (potentially truncated) buffer length.
+static int process_scancode_buffer(uint8_t* buf, int len) {
+  if (len > 3) {
+    klogf("WARNING: unknown long scancode sequence (%d bytes)\n", len);
+  }
 
-  while (!done) {
-    if (!ps2_read_byte_async(PS2_PORT1, &c, PS2_DATA_TIMEOUT)) {
-      klogf("WARNING: expected data byte from PS/2 keyboard controller "
-            "but timed out.\n");
-      return;
-    }
-    switch (c) {
+  uint8_t c = 0;
+  int is_up_evt = 0;
+  int is_extended = 0;
+  int done = 0;
+
+  for (int i = 0; i < len; ++i) {
+    switch (buf[i]) {
       case 0xE0:
         is_extended = 1;
-        continue;
+        break;
 
       case 0xF0:
         is_up_evt = 1;
-        continue;
+        break;
 
       default:
+        c = buf[i];
         done = 1;
         break;
     }
+  }
+
+  if (!done) {
+    return len;
   }
 
   uint32_t keycode = ps2_convert_scancode(c, is_extended);
@@ -62,6 +68,25 @@ static void irq_handler() {
   } else if (g_vkbd) {
     vkeyboard_send_keycode(g_vkbd, keycode, is_up_evt);
   }
+
+  return 0;
+}
+
+static void irq_handler() {
+  static uint8_t scancode_buffer[10];
+  static int buf_idx = 0;
+
+  uint8_t c;
+  if (!ps2_read_byte_async(PS2_PORT1, &c, PS2_DATA_TIMEOUT)) {
+    klogf("WARNING: expected data byte from PS/2 keyboard controller "
+          "but timed out.\n");
+    return;
+  }
+  KASSERT(buf_idx < 9);
+  scancode_buffer[buf_idx++] = c;
+
+  // Process the buffer.
+  buf_idx = process_scancode_buffer(scancode_buffer, buf_idx);
 }
 
 int ps2_keyboard_init(vkeyboard_t* vkbd) {
