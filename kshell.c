@@ -239,6 +239,11 @@ static void parse_and_dispatch(char* cmd) {
 void kshell_main(ld_t* io) {
   g_io = io;
 
+  ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+  ksh_printf("@                     APOS                       @\n");
+  ksh_printf("@            (c) Andrew Oates 2012               @\n");
+  ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+
   char read_buf[READ_BUF_SIZE];
   while (1) {
     ld_write(g_io, "> ", 2);
