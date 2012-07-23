@@ -27,13 +27,7 @@ static kthread_t g_idle_thread = 0;
 static kthread_queue_t g_run_queue;
 
 static void* idle_thread_body(void* arg) {
-  int iter = 0;
   while(1) {
-    if (iter % 10000000 == 0) {
-      klogf("[idle thread]\n");
-      iter = 0;
-    }
-    iter++;
     kthread_current_thread()->state = KTHREAD_PENDING;
     scheduler_yield_no_reschedule();
   }
