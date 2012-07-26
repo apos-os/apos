@@ -44,17 +44,32 @@ static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
 
 // Static table of drivers.
+#define PCI_DRIVER_VENDOR 1
+#define PCI_DRIVER_CLASS 2
 struct pci_driver {
+  // Determines how the driver is matched.  Should be either PCI_DRIVER_VENDOR
+  // (meaning device_id and vendor_id are checked), or PCI_DRIVER_CLASS (meaning
+  // class_code, subclass_code and prog_if are checked).
+  int type;
+
   uint16_t device_id;
   uint16_t vendor_id;
+
+  uint8_t class_code;
+  uint8_t subclass_code;
+  uint8_t prog_if;
+
   void (*driver)(pci_device_t*);
 };
 typedef struct pci_driver pci_driver_t;
 
 static pci_driver_t PCI_DRIVERS[] = {
-  { 0x7000, 0x8086, &pci_piix_driver_init },  // PCI <-> ISA controller
-  { 0x7010, 0x8086, &pci_piix_driver_init },  // PCI <-> IDE controller
-  { 0xFFFF, 0xFFFF, 0x0 },
+  // PCI <-> ISA controller
+  { PCI_DRIVER_VENDOR, 0x7000, 0x8086, 0, 0, 0, &pci_piix_driver_init },
+  // PCI <-> IDE controller
+  { PCI_DRIVER_VENDOR, 0x7010, 0x8086, 0, 0, 0, &pci_piix_driver_init },
+
+  { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},
 };
 
 static inline uint32_t make_cmd(uint8_t bus, uint8_t device,
@@ -191,8 +206,14 @@ void pci_init() {
   for (int i = 0; i < g_pci_count; ++i) {
     pci_driver_t* driver = &PCI_DRIVERS[0];
     while (driver->vendor_id != 0xFFFF) {
-      if (driver->vendor_id == g_pci_devices[i].vendor_id &&
+      if (driver->type == PCI_DRIVER_VENDOR &&
+          driver->vendor_id == g_pci_devices[i].vendor_id &&
           driver->device_id == g_pci_devices[i].device_id) {
+        driver->driver(&g_pci_devices[i]);
+      } else if (driver->type == PCI_DRIVER_CLASS &&
+                 driver->class_code == g_pci_devices[i].class_code &&
+                 driver->subclass_code == g_pci_devices[i].subclass_code &&
+                 driver->prog_if == g_pci_devices[i].prog_if) {
         driver->driver(&g_pci_devices[i]);
       }
       driver++;
