@@ -27,12 +27,16 @@ void klogf(const char* fmt, ...);
 // available, KLOG_VTERM should be used (to play nice with other I/O).
 #define KLOG_PARELLEL_PORT 1  // Only log to the parallel port.
 #define KLOG_RAW_VIDEO 2      // Log by writing to raw video memory.
-#define KLOG_VTERM 3          // 
+#define KLOG_VTERM 3          //
 
 // Set the current logging mode.
 void klog_set_mode(int mode);
 
 // Set the vterm_t to be used with KLOG_VTERM.
 void klog_set_vterm(vterm_t* t);
+
+// Reads up to len bytes from the log history at the given offset into the
+// buffer.  Returns the number of bytes read
+int klog_read(int offset, void* buf, int len);
 
 #endif

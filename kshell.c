@@ -177,6 +177,44 @@ static void b_write_cmd(int argc, char* argv[]) {
   ksh_printf("wrote %d bytes\n", error);
 }
 
+// Simple pager for the kernel log.  With no arguments, prints the next few
+// lines of the log (and the current offset).  With one argument, prints the log
+// starting at the given offset.
+static void klog_cmd(int argc, char* argv[]) {
+  static int offset = 0;
+  if (argc < 1 || argc > 2) {
+    ksh_printf("usage: klog [offset]\n");
+    return;
+  }
+
+  if (argc == 2) {
+    offset = atou(argv[1]);
+  }
+  char buf[1024];
+  int read = klog_read(offset, buf, 1024);
+
+  // Find the last newline, and truncate the last line (if multi-line).
+  while (buf[read] != '\n' && read > 0) read--;
+  if (read > 0) buf[read] = '\0';
+
+  // Only show up to 20 lines.
+  const int MAX_LINES = 20;
+  int lines = 0;
+  for (int i = 0; i < read; ++i) {
+    if (buf[i] == '\n') lines++;
+    if (lines > MAX_LINES) {
+      read = i;
+      buf[i] = '\0';
+      break;
+    }
+  }
+
+  ksh_printf("offset: %d\n------", offset);
+  ksh_printf(buf);
+  ksh_printf("\n------\n");
+  offset += read;
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -188,6 +226,7 @@ static cmd_t CMDS[] = {
   { "hash", &hash_cmd },
   { "b_read", &b_read_cmd },
   { "b_write", &b_write_cmd },
+  { "klog", &klog_cmd },
   { 0x0, 0x0 },
 };
 
