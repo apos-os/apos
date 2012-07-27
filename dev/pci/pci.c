@@ -39,7 +39,7 @@
 
 #define PCI_HEADER_IS_MULTIFUNCTION 0x80
 
-#define PCI_MAX_DEVICES 10
+#define PCI_MAX_DEVICES 20
 static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
 
