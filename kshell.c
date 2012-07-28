@@ -18,6 +18,7 @@
 
 #include "common/errno.h"
 #include "common/hash.h"
+#include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -220,6 +221,37 @@ static void klog_cmd(int argc, char* argv[]) {
   offset += read;
 }
 
+// Commands for doing {in,out}{b,s,l}.
+#define IO_IN_CMD(name, type) \
+  static void name##_cmd(int argc, char* argv[]) { \
+    if (argc != 2) { \
+      ksh_printf("usage: " #name " <port>\n"); \
+      return; \
+    } \
+    uint16_t port = atou(argv[1]); \
+    type val = name(port); \
+    ksh_printf("0x%x\n", val); \
+  }
+
+#define IO_OUT_CMD(name, type) \
+  static void name##_cmd(int argc, char* argv[]) { \
+    if (argc != 3) { \
+      ksh_printf("usage: " #name " <port> <value>\n"); \
+      return; \
+    } \
+    uint16_t port = atou(argv[1]); \
+    type value = (type)atou(argv[2]); \
+    name(port, value); \
+  }
+
+IO_IN_CMD(inb, uint8_t);
+IO_IN_CMD(ins, uint16_t);
+IO_IN_CMD(inl, uint32_t);
+
+IO_OUT_CMD(outb, uint8_t);
+IO_OUT_CMD(outs, uint16_t);
+IO_OUT_CMD(outl, uint32_t);
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -232,6 +264,14 @@ static cmd_t CMDS[] = {
   { "b_read", &b_read_cmd },
   { "b_write", &b_write_cmd },
   { "klog", &klog_cmd },
+
+  { "inb", &inb_cmd },
+  { "ins", &ins_cmd },
+  { "inl", &inl_cmd },
+  { "outb", &outb_cmd },
+  { "outs", &outs_cmd },
+  { "outl", &outl_cmd },
+
   { 0x0, 0x0 },
 };
 
