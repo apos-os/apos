@@ -20,6 +20,7 @@
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
+#include "dev/pci/usb_uhci.h"
 #include "kmalloc.h"
 
 // IO ports for manipulating the PCI bus.
@@ -68,6 +69,9 @@ static pci_driver_t PCI_DRIVERS[] = {
   { PCI_DRIVER_VENDOR, 0x7000, 0x8086, 0, 0, 0, &pci_piix_driver_init },
   // PCI <-> IDE controller
   { PCI_DRIVER_VENDOR, 0x7010, 0x8086, 0, 0, 0, &pci_piix_driver_init },
+
+  // UHCI USB Host Controller.
+  { PCI_DRIVER_CLASS, 0x0, 0x0, 0x0C, 0x03, 0x00, &usb_uhci_pci_init },
 
   { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},
 };

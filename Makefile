@@ -28,8 +28,10 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   dev/interrupts.o dev/ps2.o dev/irq.o dev/timer.o dev/isr.o dev/rtc.o \
 	   dev/keyboard/ps2_keyboard.o dev/keyboard/ps2_scancodes.o dev/keyboard/keyboard.o \
 	   dev/video/vga.o dev/video/vterm.o dev/ld.o dev/pci/pci.o dev/pci/piix.o \
+	   dev/pci/usb_uhci.o \
 	   dev/ata/ata.o dev/ata/dma.o \
 	   dev/ramdisk/ramdisk.o \
+	   dev/usb/uhci/uhci.o \
 	   proc/kthread.o proc/kthread_asm.o proc/scheduler.o proc/process.o \
 	   proc/sleep.o proc/kthread_pool.o \
 	   memory.o page_alloc.o kernel.o kmalloc.o page_fault.o slab_alloc.o \
