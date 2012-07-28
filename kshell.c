@@ -200,8 +200,13 @@ static void klog_cmd(int argc, char* argv[]) {
   // Only show up to 20 lines.
   const int MAX_LINES = 20;
   int lines = 0;
+  int cline_length = 0;
   for (int i = 0; i < read; ++i) {
-    if (buf[i] == '\n') lines++;
+    cline_length++;
+    if (buf[i] == '\n' || cline_length > 80) {
+      lines++;
+      cline_length = 0;
+    }
     if (lines > MAX_LINES) {
       read = i;
       buf[i] = '\0';
