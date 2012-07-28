@@ -165,16 +165,36 @@ const char* utoa_hex(uint32_t x) {
   return utoa_internal(x, 16, "0123456789ABCDEF");
 }
 
-static uint32_t atou_internal(const char* s) {
+static uint32_t atou_internal_base(const char* s, int base) {
+  if (base != 10 && base != 16) {
+    return 0;
+  }
   uint32_t out = 0;
   while (*s) {
-    if (*s < '0' || *s > '9') {
+    int digit = 0;
+    if (*s >= '0' && *s <= '9') {
+      digit = *s - '0';
+    } else if (base == 16 && *s >= 'a' && *s <= 'f') {
+      digit = *s - 'a' + 10;
+    } else if (base == 16 && *s >= 'A' && *s <= 'F') {
+      digit = *s - 'A' + 10;
+    } else {
+      // Invalid digit.
       break;
     }
-    out = 10 * out + (*s - '0');
+    out = base * out + digit;
     s++;
   }
   return out;
+}
+
+static uint32_t atou_internal(const char* s) {
+  if (kstrncmp(s, "0x", 2) == 0 ||
+      kstrncmp(s, "0X", 2) == 0) {
+    return atou_internal_base(s + 2, 16);
+  } else {
+    return atou_internal_base(s, 10);
+  }
 }
 
 int32_t atoi(const char* s) {

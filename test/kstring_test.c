@@ -113,6 +113,14 @@ void kstring_test() {
   KEXPECT_EQ(-7890, atoi("-7890"));
   KEXPECT_EQ(-7890, atoi("-7890abc"));
 
+  KTEST_BEGIN("atoi() -- hex");
+  KEXPECT_EQ(0x10, atoi("0x10"));
+  KEXPECT_EQ(-0x10, atoi("-0x10"));
+  KEXPECT_EQ(0x12345, atoi("0x12345"));
+  KEXPECT_EQ(-0xABCDEF, atoi("-0xABCDEF"));
+  KEXPECT_EQ(-0xABCDEF, atoi("-0XaBcDeF"));
+  KEXPECT_EQ(0xABCDEF1, atoi("0xABCDEF1Q"));
+
   KTEST_BEGIN("atou()");
   KEXPECT_EQ(0, atou("0"));
   KEXPECT_EQ(10, atou("10"));
@@ -120,6 +128,13 @@ void kstring_test() {
   KEXPECT_EQ(7890, atou("7890"));
   KEXPECT_EQ(1234567890, atou("1234567890"));
   KEXPECT_EQ(7890, atoi("7890abc"));
+
+  KTEST_BEGIN("atou() -- hex");
+  KEXPECT_EQ(0x10, atou("0x10"));
+  KEXPECT_EQ(0x12345, atou("0x12345"));
+  KEXPECT_EQ(0xABCDEF, atou("0xABCDEF"));
+  KEXPECT_EQ(0xABCDEF, atoi("0XaBcDeF"));
+  KEXPECT_EQ(0xABCDEF1, atoi("0xABCDEF1Q"));
 
   KTEST_BEGIN("kstrchr()");
   const char* s = "/abc/def";
