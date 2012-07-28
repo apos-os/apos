@@ -21,10 +21,7 @@
 #include "dev/pci/pci-driver.h"
 
 // Data for a single UHCI USB controller.
-struct usb_uhci {
-  uint32_t base_port;  // USBBASE register.
-  uint32_t* frame_list;  // Pointer to the frame list.
-};
+struct usb_uhci;
 typedef struct usb_uhci usb_uhci_t;
 
 // Register a UHCI controller with the given base port offset.

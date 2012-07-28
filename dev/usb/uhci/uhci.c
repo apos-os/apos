@@ -21,6 +21,7 @@
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/usb/uhci/uhci.h"
+#include "dev/usb/uhci/uhci-internal.h"
 #include "page_alloc.h"
 
 // UHCI I/O Registers (offsets from the base).
