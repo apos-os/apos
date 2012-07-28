@@ -28,8 +28,14 @@ extern uint32_t KERNEL_END_SYMBOL;
 // kernel's virtual memory space, starting at the following address.
 const uint32_t KERNEL_PHYS_MAP_START = 0xE0000000;
 
+// The maximum number of bytes we'll physically map into the region starting at
+// KERNEL_PHYS_MAP_START.
+const uint32_t KERNEL_PHYS_MAP_MAX_LENGTH = 0x10000000;
+
 // The maximum amount of physical memory we support (due to the
 // KERNEL_PHYS_MAP_START).
+// TODO(aoates): add option to page allocator to allocate only from
+// physically-mapped region, then remove this artificial cap.
 const uint32_t MAX_MEMORY_BYTES = 0x10000000;
 
 // The virtual start and end addresses of the kernel heap.
@@ -116,15 +122,20 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   uint32_t* page_table2 = kalloc_page(meminfo);
   map_linear_page_table(page_directory, page_table2, KERNEL_VIRT_START, 0x0);
 
-  // Identity map all physical memory as well.
-  const uint32_t total_mem = meminfo->lower_memory + meminfo->upper_memory;
+  // Identity map the first KERNEL_PHYS_MAP_MAX_LENGTH bytes of physical memory
+  // as well.
+  uint32_t phys_map_len = meminfo->lower_memory + meminfo->upper_memory;
+  if (phys_map_len > KERNEL_PHYS_MAP_MAX_LENGTH) {
+    phys_map_len = KERNEL_PHYS_MAP_MAX_LENGTH;
+  }
   uint32_t ident_addr = 0;
-  while (ident_addr < total_mem) {
+  while (ident_addr < phys_map_len) {
     uint32_t* ident_page_table = kalloc_page(meminfo);
     map_linear_page_table(page_directory, ident_page_table,
                           ident_addr + KERNEL_PHYS_MAP_START, ident_addr);
     ident_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
   }
+  meminfo->phys_map_length = phys_map_len;
 
   // Finally, map the last PDE entry onto itself so we can always access the
   // current PDE/PTEs without having to map them in explicitly.
@@ -178,6 +189,7 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
   }
 
   g_meminfo.phys_map_start = KERNEL_PHYS_MAP_START;
+  g_meminfo.phys_map_length = 0;  // We'll set this when we do the mapping.
   g_meminfo.heap_start = START_HEAP;
   g_meminfo.heap_end = END_HEAP;
   return &g_meminfo;

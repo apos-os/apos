@@ -132,6 +132,7 @@ void kmain(memory_info_t* meminfo) {
   klog("\nmeminfo->lower_memory:      0x"); klog(utoa_hex(meminfo->lower_memory));
   klog("\nmeminfo->upper_memory:      0x"); klog(utoa_hex(meminfo->upper_memory));
   klog("\nmeminfo->phys_map_start:    0x"); klog(utoa_hex(meminfo->phys_map_start));
+  klog("\nmeminfo->phys_map_length:   0x"); klog(utoa_hex(meminfo->phys_map_length));
   klog("\n");
 
   kshell_main(g_ld);
