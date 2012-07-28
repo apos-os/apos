@@ -23,11 +23,16 @@
 // Data for a single UHCI USB controller.
 struct usb_uhci {
   uint32_t base_port;  // USBBASE register.
+  uint32_t* frame_list;  // Pointer to the frame list.
 };
 typedef struct usb_uhci usb_uhci_t;
 
 // Register a UHCI controller with the given base port offset.
-void usb_uhci_register_controller(usb_uhci_t c);
+//
+// Initializes the controller and adds it to the global list of USB controllers.
+//
+// Called from a lower-level bus driver (e.g., PCI).
+void usb_uhci_register_controller(uint32_t base_addr);
 
 // Returns the number of detecte UHCI controllers.
 int usb_uhci_num_controllers();

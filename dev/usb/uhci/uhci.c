@@ -14,18 +14,21 @@
 
 #include <stdint.h>
 
+#include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/usb/uhci/uhci.h"
+#include "page_alloc.h"
 
 // UHCI I/O Registers (offsets from the base).
 #define USBCMD     0x00  // 16 bits
 #define USBSTS     0x02  // 16 bits
 #define USBINTR    0x04  // 16 bits
 #define FRNUM      0x06  // 16 bits
-#define FLBASEADD  0x08  // 32 bits
+#define FLBASEADDR 0x08  // 32 bits
 #define SOF_MODIFY 0x0C  // 8 bits
 #define PORTSC1    0x10  // 16 bits
 #define PORTSC2    0x12  // 16 bits
@@ -53,7 +56,7 @@
 #define USBINTR_TMO_CRC   0x0001  // Timeout/CRC interrupt enable
 
 #define FRNUM_MASK  0x07FF  // Only bits 10:0 are used for the frnum
-#define FLBASEADD_MASK 0xFFFFF000  // Must be page-aligned
+#define FLBASEADDR_MASK 0xFFFFF000  // Must be page-aligned
 
 // Port status/control bits.  One set each for port1 and port2.
 #define PORTSC_SUSPEND     0x1000  // R/W (1=suspended)
@@ -70,14 +73,35 @@
 static usb_uhci_t g_controllers[UHCI_MAX_CONTROLLERS];
 static int g_num_controllers = 0;
 
-void usb_uhci_register_controller(usb_uhci_t c) {
+static void init_controller(usb_uhci_t* c) {
+  uint32_t frame_list_phys = page_frame_alloc();
+  c->frame_list = (uint32_t*)phys2virt(frame_list_phys);
+
+  // TODO(aoates): do a global reset on the bus.
+
+  // Set max packet to 64 bytes and disable everything.
+  outs(c->base_port + USBCMD, USBCMD_MAXP);
+
+  // Set the frame list address and frame number registers.
+  KASSERT((frame_list_phys & FLBASEADDR_MASK) == frame_list_phys);
+  outl(c->base_port + FLBASEADDR, frame_list_phys);
+  outs(c->base_port + FRNUM, 0x00);
+}
+
+void usb_uhci_register_controller(uint32_t base_addr) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
     klogf("WARNING: too many UHCI controllers; ignoring\n");
     return;
   }
-  g_controllers[g_num_controllers++] = c;
+  usb_uhci_t* c = &g_controllers[g_num_controllers++];
+  kmemset(c, 0, sizeof(usb_uhci_t));
+  c->base_port = base_addr;
   klogf("USB: found UHCI controller #%d (at 0x%x)\n", g_num_controllers,
-        c.base_port);
+        c->base_port);
+
+  // Initialize the controller.
+  // TODO(aoates): we probably need to mask interrupts.
+  init_controller(c);
 }
 
 int usb_uhci_num_controllers() {

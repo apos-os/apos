@@ -23,7 +23,5 @@ void usb_uhci_pci_init(pci_device_t* pcidev) {
   KASSERT((base & 0x1) == 1);  // Should always be I/O mapped.
   base &= 0x0000FFE0;
 
-  usb_uhci_t c;
-  c.base_port = base;
-  usb_uhci_register_controller(c);
+  usb_uhci_register_controller(base);
 }
