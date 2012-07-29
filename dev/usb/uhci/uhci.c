@@ -23,6 +23,7 @@
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "page_alloc.h"
+#include "slab_alloc.h"
 
 // UHCI I/O Registers (offsets from the base).
 #define USBCMD     0x00  // 16 bits
@@ -74,7 +75,21 @@
 static usb_uhci_t g_controllers[UHCI_MAX_CONTROLLERS];
 static int g_num_controllers = 0;
 
+// Slab allocators for QHs and TDs.
+static slab_alloc_t* td_alloc = 0x0;
+static slab_alloc_t* qh_alloc = 0x0;
+
+// Maximum number of pages to allocate in TD and QH slab allocators.
+#define SLAB_MAX_PAGES 10
+
 static void init_controller(usb_uhci_t* c) {
+  if (!td_alloc) {
+    td_alloc = slab_alloc_create(sizeof(uhci_td_t), SLAB_MAX_PAGES);
+  }
+  if (!qh_alloc) {
+    qh_alloc = slab_alloc_create(sizeof(uhci_td_t), SLAB_MAX_PAGES);
+  }
+
   uint32_t frame_list_phys = page_frame_alloc();
   c->frame_list = (uint32_t*)phys2virt(frame_list_phys);
 
@@ -87,6 +102,38 @@ static void init_controller(usb_uhci_t* c) {
   KASSERT((frame_list_phys & FLBASEADDR_MASK) == frame_list_phys);
   outl(c->base_port + FLBASEADDR, frame_list_phys);
   outs(c->base_port + FRNUM, 0x00);
+
+  // Create a QH for each type of transfer we support.
+  c->interrupt_qh = (uhci_qh_t*)slab_alloc(qh_alloc);
+  c->control_qh = (uhci_qh_t*)slab_alloc(qh_alloc);
+  c->bulk_qh = (uhci_qh_t*)slab_alloc(qh_alloc);
+  kmemset(c->interrupt_qh, 0, sizeof(uhci_qh_t));
+  kmemset(c->control_qh, 0, sizeof(uhci_qh_t));
+  kmemset(c->bulk_qh, 0, sizeof(uhci_qh_t));
+
+  // Link them to each other horizontally, and mark their vertical links as
+  // terminal.
+  KASSERT(((uint32_t)c->interrupt_qh & QH_LINK_PTR_MASK) == (uint32_t)c->interrupt_qh);
+  KASSERT(((uint32_t)c->control_qh & QH_LINK_PTR_MASK) == (uint32_t)c->control_qh);
+  KASSERT(((uint32_t)c->bulk_qh & QH_LINK_PTR_MASK) == (uint32_t)c->bulk_qh);
+
+  c->interrupt_qh->head_link_ptr =
+    (virt2phys((uint32_t)c->control_qh) & QH_LINK_PTR_MASK) | QH_QH;
+  c->interrupt_qh->elt_link_ptr = QH_TERM;
+
+  c->control_qh->head_link_ptr =
+    (virt2phys((uint32_t)c->bulk_qh) & QH_LINK_PTR_MASK) | QH_QH;
+  c->control_qh->elt_link_ptr = QH_TERM;
+
+  // TODO(aoates): if we want to support bandwidth reclamation, we should loop
+  // this back around.
+  c->bulk_qh->head_link_ptr = QH_TERM;
+  c->bulk_qh->elt_link_ptr = QH_TERM;
+
+  // Start the controller.
+  uint16_t cmd = ins(c->base_port + USBCMD);
+  cmd |= USBCMD_CF | USBCMD_RS;
+  outs(c->base_port + USBCMD, cmd);
 }
 
 void usb_uhci_register_controller(uint32_t base_addr) {
