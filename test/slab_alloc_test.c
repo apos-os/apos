@@ -56,7 +56,8 @@ static void do_slab_test(int obj_size, int max_pages, int expected_objs) {
 }
 
 void slab_alloc_test() {
-  KTEST_BEGIN("slab_alloc test");
+  KTEST_SUITE_BEGIN("slab_alloc test");
+  KTEST_BEGIN("alloc test");
   do_slab_test(8, 1, 504);
   do_slab_test(16, 1, 254);
   do_slab_test(512, 1, 7);
