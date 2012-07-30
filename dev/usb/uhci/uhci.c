@@ -14,14 +14,18 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/io.h"
+#include "common/math.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "dev/pci/pci.h"
+#include "dev/interrupts.h"
 #include "dev/pci/pci-driver.h"
-#include "dev/usb/uhci/uhci.h"
+#include "dev/pci/pci.h"
+#include "dev/usb/hcd.h"
 #include "dev/usb/uhci/uhci-internal.h"
+#include "dev/usb/uhci/uhci.h"
 #include "page_alloc.h"
 #include "slab_alloc.h"
 
@@ -71,6 +75,8 @@
 #define PORTSC_CONNECT_CHG 0x0002  // R/WC - Connect status change
 #define PORTSC_CONNECT     0x0001  // R/O - Connect status (1=device connected)
 
+// TODO(aoates): we don't need a table of UHCIs, since we can just store the
+// data in the HCDI we give to the USBD.
 #define UHCI_MAX_CONTROLLERS 10
 static usb_uhci_t g_controllers[UHCI_MAX_CONTROLLERS];
 static int g_num_controllers = 0;
@@ -81,6 +87,73 @@ static slab_alloc_t* qh_alloc = 0x0;
 
 // Maximum number of pages to allocate in TD and QH slab allocators.
 #define SLAB_MAX_PAGES 10
+
+// The schedule_irp function in the UHCI HCDI.
+//
+// Note: we don't really do anything fancy, and this isn't completely compliant.
+// For example, we take no pains to ensure that bus time is allocated
+// appropriately to the different transfer types.
+static int uhci_schedule_irp(usb_hcdi_irp_t* irp) {
+  if (irp->endpoint->type == USB_ISOCHRONOUS) {
+    return -ENOTSUP;
+  }
+  KASSERT(irp->endpoint->max_packet <= 64);
+  KASSERT(irp->endpoint->speed == USB_LOW_SPEED ||
+          irp->endpoint->speed == USB_FULL_SPEED);
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  // Create a sequence of TDs for the transfer.
+  uint32_t bytes_left = irp->buflen;
+  uhci_td_t* prev = 0x0;
+  uhci_td_t* ctd = slab_alloc(td_alloc);
+  uhci_td_t* head_td = ctd;
+  uint32_t buf_phys = virt2phys((uint32_t)irp->buffer);
+  while (bytes_left > 0) {
+    // Fill in the current TD.
+    const uint16_t packet_len = min(bytes_left, irp->endpoint->max_packet);
+    kmemset(ctd, 0, sizeof(uhci_td_t));
+
+    ctd->link_ptr = TD_LINK_PTR_TERM;
+    // TODO(aoates): probably want SPD as well.
+    if (irp->endpoint->speed == USB_LOW_SPEED) {
+      ctd->status_ctrl = TD_SC_LS;
+    } else {
+      ctd->status_ctrl = 0x0;
+    }
+    KASSERT(packet_len < 1280);
+    const uint16_t td_max_len = packet_len > 0 ? packet_len - 1 : 0x7FF;
+    // TODO(aoates): per-endpoint DATA0/1 bit; use it here and toggle it.
+    ctd->token =
+      ((td_max_len << TD_TOK_MAXLEN_OFFSET) & TD_TOK_MAXLEN_MASK) |
+      ((irp->endpoint->endpoint << TD_TOK_ENDPT_OFFSET) & TD_TOK_ENDPT_MASK) |
+      ((irp->endpoint->address << TD_TOK_DADDR_OFFSET) & TD_TOK_DADDR_MASK) |
+      (irp->pid & TD_TOK_PID_MASK);
+    ctd->buf_ptr = buf_phys;
+    buf_phys += packet_len;
+
+    // Connect the previous TD to this one.
+    if (prev) {
+      prev->link_ptr =
+        (virt2phys((uint32_t)ctd) & TD_LINK_PTR_ADDR_MASK);
+    }
+    prev = ctd;
+  }
+
+  // TODO(aoates):
+  //  1) create a QH for the transfer, add head_td to it.
+  //  2) find the QH for the endpoint, add this transfer QH to the end of that
+  //     QH's children.
+  //
+  //  On transfer finish:
+  //   1) find the transfer QH
+  //   2) remove it from the endpoint QH
+  //   3) clean up memory, invoke callback
+
+
+  POP_INTERRUPTS();
+  return 0;
+}
 
 static void init_controller(usb_uhci_t* c) {
   if (!td_alloc) {
@@ -150,6 +223,12 @@ void usb_uhci_register_controller(uint32_t base_addr) {
   // Initialize the controller.
   // TODO(aoates): we probably need to mask interrupts.
   init_controller(c);
+
+  // Register it with the USBD.
+  usb_hcdi_t hcdi;
+  kmemset(&hcdi, 0, sizeof(usb_hcdi_t));
+  hcdi.schedule_irp = &uhci_schedule_irp;
+  hcdi.dev_data = c;
 }
 
 int usb_uhci_num_controllers() {

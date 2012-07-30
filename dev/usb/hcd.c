@@ -12,28 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_DEV_USB_UHCI_H
-#define APOO_DEV_USB_UHCI_H
-
-#include <stdint.h>
-
+#include "common/klog.h"
 #include "dev/usb/usb.h"
+#include "dev/usb/hcd.h"
 
-// Data for a single UHCI USB controller.
-struct usb_uhci;
-typedef struct usb_uhci usb_uhci_t;
+// The maximum number of host controllers we will support.
+#define MAX_HCS 10
+static usb_hcdi_t g_hcs[MAX_HCS];
+static int g_num_hcs = 0;
 
-// Register a UHCI controller with the given base port offset.
-//
-// Initializes the controller and adds it to the global list of USB controllers.
-//
-// Called from a lower-level bus driver (e.g., PCI).
-void usb_uhci_register_controller(uint32_t base_addr);
-
-// Returns the number of detecte UHCI controllers.
-int usb_uhci_num_controllers();
-
-// Returns one of the UHCI controllers.
-usb_uhci_t* usb_uhci_get_controller(int i);
-
-#endif
+void usb_register_host_controller(usb_hcdi_t hc) {
+  if (g_num_hcs >= MAX_HCS) {
+    klogf("WARNING: too many USB host controllers!\n");
+    return;
+  }
+  g_hcs[g_num_hcs++] = hc;
+}
