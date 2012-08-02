@@ -38,6 +38,22 @@ enum usb_speed {
 };
 typedef enum usb_speed usb_speed_t;
 
+// Packet ID types (PIDs).
+// TODO(aoates): move this to a usb-internal header (since clients don't need
+// it).
+enum usb_pid {
+  USB_PID_IN = 0x69,
+  USB_PID_OUT = 0xE1,
+  USB_PID_SETUP = 0x2D,
+};
+typedef enum usb_pid usb_pid_t;
+
+enum usb_data_toggle {
+  USB_DATA0 = 0,
+  USB_DATA1 = 1,
+};
+typedef enum usb_data_toggle usb_data_toggle_t;
+
 // An endpoint on a given device.
 struct usb_endpoint {
   // hdci* controller;
@@ -52,6 +68,9 @@ struct usb_endpoint {
   // The speed of the associated device.  This should probably be in the device
   // spec, not here.
   usb_speed_t speed;
+
+  // The current data toggle bit of the endpoint (see section 8.6 of the spec).
+  usb_data_toggle_t data_toggle;
 
   // TODO: bandwidth, error handling reqs
 

@@ -18,6 +18,14 @@
 
 #include "dev/usb/usb.h"
 
+// Data toggle setting for an IRP.
+enum usb_hcdi_dt {
+  USB_DATA_TOGGLE_NORMAL,  // Use the current data toggle from the endpoint.
+  USB_DATA_TOGGLE_RESET0,  // Reset the endpoint to DATA0 with this IRP.
+  USB_DATA_TOGGLE_RESET1,  // Reset the endpoint to DATA1 with this IRP.
+};
+typedef enum usb_hcdi_dt usb_hcdi_dt_t;
+
 // A transfer request.
 struct usb_hcdi_irp {
   usb_endpoint_t* endpoint;
@@ -25,6 +33,20 @@ struct usb_hcdi_irp {
   // Buffer for input or output, depending on the endpoint type.
   void* buffer;
   uint32_t buflen;
+
+  // PID for the IRP.  If the IRP is split into multiple packets, the PID will
+  // be used for each.  It is the caller's responsibility to ensure this is
+  // appropriate.
+  usb_pid_t pid;
+
+  // Data toggle for this IRP.  If NORMAL, the endpoint's current data toggle
+  // status will be used.  Otherwise, the endpoint will be reset to the given
+  // value for the first packet of the IRP.
+  //
+  // Either way, if the IRP is split into multiple packets, the endpoint's data
+  // toggle will be inverted for each packet (and updated in the endpoint
+  // struct).
+  usb_hcdi_dt_t data_toggle;
 
   // Callback to invoke when the IRP is finished (either successfully or on
   // error).
@@ -41,20 +63,22 @@ struct usb_hcdi {
   // data in the hcd_data field of the endpoint.
   //
   // Optional.
-  int (*register_endpoint)(usb_endpoint_t* ep);
+  int (*register_endpoint)(struct usb_hcdi* hc, usb_endpoint_t* ep);
 
   // Unregister the endpoint (for instance, because the device was
   // disconnected), freeing any HCD-specific memory associated with it (in the
   // hcd_data field).
   //
   // Optional.
-  int (*unregister_endpoint)(usb_endpoint_t* ep);
+  int (*unregister_endpoint)(struct usb_hcdi* hc, usb_endpoint_t* ep);
 
   // Schedules the given IRP on the bus.  Returns 0 on success, or -errno on
   // error.  If 0 is returned, then the IRP's callback will eventually be
   // invoked.  If unable to schedule the IRP, then the callback will NOT be
   // invoked.
-  int (*schedule_irp)(usb_hcdi_irp_t* irp);
+  //
+  // Only one IRP can be active at a time on a given endpoint.
+  int (*schedule_irp)(struct usb_hcdi* hc, usb_hcdi_irp_t* irp);
 
   // HCD-specific data.
   void* dev_data;
