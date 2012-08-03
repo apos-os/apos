@@ -24,6 +24,7 @@ typedef struct {
   uint32_t counter;
   uint32_t period_slices;  // the timers period in units of timeslices
   timer_handler_t handler;
+  void* handler_arg;
 } timer_t;
 
 static timer_t timers[KMAX_TIMERS];
@@ -35,7 +36,7 @@ static void internal_timer_handler() {
   for (uint32_t i = 0; i < timer_idx; ++i) {
     if (timers[i].counter == 0) {
       timers[i].counter = timers[i].period_slices;
-      timers[i].handler();
+      timers[i].handler(timers[i].handler_arg);
     }
 
     timers[i].counter--;
@@ -57,7 +58,7 @@ void timer_init() {
   timer_idx = 0;
 }
 
-int register_timer_callback(uint32_t period, timer_handler_t cb) {
+int register_timer_callback(uint32_t period, timer_handler_t cb, void* arg) {
   if (timer_idx >= KMAX_TIMERS) {
     return 0;
   }
@@ -68,6 +69,7 @@ int register_timer_callback(uint32_t period, timer_handler_t cb) {
   }
   timers[idx].counter = timers[idx].period_slices;
   timers[idx].handler = cb;
+  timers[idx].handler_arg = arg;
   return 1;
 }
 

@@ -22,7 +22,7 @@
 // Initialize the timer.  Must be called AFTER interrupts/IRQs are enabled.
 void timer_init();
 
-typedef void (*timer_handler_t)(void);
+typedef void (*timer_handler_t)(void*);
 
 // Register a function to be called every X ms, where X must be an even multiple
 // of the timeslice size.
@@ -33,7 +33,7 @@ typedef void (*timer_handler_t)(void);
 // NOTE 2: there are a limited number of timers that can be installed
 // (KMAX_TIMERS).  register_timer_callback will return 0 if you've exceeded this
 // limit.
-int register_timer_callback(uint32_t period_ms, timer_handler_t cb);
+int register_timer_callback(uint32_t period_ms, timer_handler_t cb, void* arg);
 
 // Return the approximate time since timer initialization, in ms.
 uint32_t get_time_ms();

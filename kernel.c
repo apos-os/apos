@@ -46,7 +46,7 @@ static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
 static ld_t* g_ld = 0;
 
-static void tick() {
+static void tick(void* arg) {
   static uint8_t i = 0;
   static const char* beat = "oO";
   i = (i + 1) % 2;
@@ -55,7 +55,7 @@ static void tick() {
 }
 
 static void add_timers() {
-  KASSERT(register_timer_callback(1000, &tick));
+  KASSERT(register_timer_callback(1000, &tick, 0x0));
 }
 
 static void io_init() {
