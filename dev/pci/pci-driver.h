@@ -41,6 +41,10 @@ struct pci_device {
 
   uint32_t base_address[6];
 
+  // The interrupt line and pin the device is currently configured to use.
+  uint8_t interrupt_line;
+  uint8_t interrupt_pin;
+
   // TODO(aoates): base addresses, BIST, etc
 };
 typedef struct pci_device pci_device_t;

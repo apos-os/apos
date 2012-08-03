@@ -113,6 +113,10 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
     pcidev->base_address[i] = pci_read_config(bus, device, function,
                                               0x10 + 0x04 * i);
   }
+
+  data = pci_read_config(bus, device, function, 0x3C);
+  pcidev->interrupt_line = data & 0x000000FF;
+  pcidev->interrupt_pin = (data >> 8) & 0x000000FF;
 }
 
 void pci_read_status(pci_device_t* pcidev) {
@@ -131,11 +135,12 @@ void pci_write_status(pci_device_t* pcidev) {
 
 static void pci_print_device(pci_device_t* pcidev) {
   klogf("    %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
-        "  type: (0x%x, 0x%x, 0x%x)\n",
+        "  type: (0x%x, 0x%x, 0x%x)  intr: %d\n",
         (uint32_t)pcidev->bus, (uint32_t)pcidev->device,
         (uint32_t)pcidev->function, (uint32_t)pcidev->device_id,
         (uint32_t)pcidev->vendor_id, (uint32_t)pcidev->class_code,
-        (uint32_t)pcidev->subclass_code, (uint32_t)pcidev->prog_if);
+        (uint32_t)pcidev->subclass_code, (uint32_t)pcidev->prog_if,
+        (uint32_t)pcidev->interrupt_line);
 }
 
 static void pci_add_device(pci_device_t* pcidev) {
