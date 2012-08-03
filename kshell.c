@@ -26,6 +26,7 @@
 #include "dev/ata/ata.h"
 #include "dev/block.h"
 #include "dev/ld.h"
+#include "dev/timer.h"
 #include "kmalloc.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -253,6 +254,26 @@ IO_OUT_CMD(outb, uint8_t);
 IO_OUT_CMD(outs, uint16_t);
 IO_OUT_CMD(outl, uint32_t);
 
+// Registers a timer to print a message at the given interval.
+static void timer_cmd(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: timer <interval_ms> <msg>\n");
+    return;
+  }
+
+  void timer_cb(void* arg) {
+    ksh_printf((char*)arg);
+  }
+
+  char* buf = (char*)kmalloc(kstrlen(argv[2])+1);
+  kstrcpy(buf, argv[2]);
+  int result = register_timer_callback(atou(argv[1]), &timer_cb, buf);
+  if (result < 0) {
+    ksh_printf("Could not register timer: %s\n", errorname(-result));
+    kfree(buf);
+  }
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -272,6 +293,8 @@ static cmd_t CMDS[] = {
   { "outb", &outb_cmd },
   { "outs", &outs_cmd },
   { "outl", &outl_cmd },
+
+  { "timer", &timer_cmd },
 
   { 0x0, 0x0 },
 };
