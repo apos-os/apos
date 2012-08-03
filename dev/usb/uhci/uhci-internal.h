@@ -17,6 +17,11 @@
 
 #include <stdint.h>
 
+// Bits in a frame list entry.
+#define FL_PTR_MASK 0xFFFFFFF0
+#define FL_PTR_QH   0x00000002
+#define FL_PTR_TERM 0x00000001
+
 // A UHCI transfer descriptor (TD).
 #define TD_LINK_PTR_ADDR_MASK  0xFFFFFFF0
 #define TD_LINK_PTR_VF 0x04     // 1 = depth first, 0 = breadth-first

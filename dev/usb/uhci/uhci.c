@@ -30,6 +30,9 @@
 #include "page_alloc.h"
 #include "slab_alloc.h"
 
+// Number of frames in the frame list.
+#define UHCI_NUM_FRAMES 1024
+
 // UHCI I/O Registers (offsets from the base).
 #define USBCMD     0x00  // 16 bits
 #define USBSTS     0x02  // 16 bits
@@ -172,6 +175,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     }
     ctd->buf_ptr = buf_phys;
     buf_phys += packet_len;
+    bytes_left -= packet_len;
 
     // Connect the previous TD to this one.
     if (prev) {
@@ -180,11 +184,12 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     }
     prev = ctd;
   }
+  ctd->status_ctrl |= TD_SC_IOC;
 
   // Create a QH for the transfer.
   uhci_qh_t* transfer_qh = alloc_qh();
   KASSERT(((uint32_t)head_td & QH_LINK_PTR_MASK) == (uint32_t)head_td);
-  transfer_qh->elt_link_ptr = (uint32_t)head_td;  // Non-terminal TD.
+  transfer_qh->elt_link_ptr = virt2phys((uint32_t)head_td);  // Non-terminal TD.
   transfer_qh->head_link_ptr = 0x0;
 
   // Insert it into the appropriate queue.
@@ -193,11 +198,11 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   switch (irp->endpoint->type) {
     case USB_INTERRUPT:
       type_qh = uhci_hc->interrupt_qh;
-      next_type_qh = (uint32_t)uhci_hc->control_qh | QH_QH;
+      next_type_qh = virt2phys((uint32_t)uhci_hc->control_qh) | QH_QH;
       break;
     case USB_CONTROL:
       type_qh = uhci_hc->control_qh;
-      next_type_qh = (uint32_t)uhci_hc->bulk_qh | QH_QH;
+      next_type_qh = virt2phys((uint32_t)uhci_hc->bulk_qh) | QH_QH;
       break;
     case USB_BULK:
       type_qh = uhci_hc->bulk_qh;
@@ -215,7 +220,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     KASSERT(type_qh->elt_link_ptr & QH_QH);
     transfer_qh->head_link_ptr = type_qh->elt_link_ptr | QH_QH;
   }
-  type_qh->elt_link_ptr = (uint32_t)transfer_qh | QH_QH;
+  type_qh->elt_link_ptr = virt2phys((uint32_t)transfer_qh) | QH_QH;
 
   irp->endpoint->hcd_data = transfer_qh;
 
@@ -276,6 +281,13 @@ static void init_controller(usb_uhci_t* c) {
   // this back around.
   c->bulk_qh->head_link_ptr = QH_TERM;
   c->bulk_qh->elt_link_ptr = QH_TERM;
+
+  // Make each element in the frame list point at our queues.
+  const uint32_t frame_list_entry =
+      virt2phys((uint32_t)c->interrupt_qh) | FL_PTR_QH;
+  for (int i = 0; i < UHCI_NUM_FRAMES; ++i) {
+    c->frame_list[i] = frame_list_entry;
+  }
 
   // Start the controller.
   uint16_t cmd = ins(c->base_port + USBCMD);
