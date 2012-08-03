@@ -16,6 +16,8 @@
 #ifndef APOO_TIMER_H
 #define APOO_TIMER_H
 
+#include <stdint.h>
+
 #define KMAX_TIMERS 10
 #define KTIMESLICE_MS 10
 
