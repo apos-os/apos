@@ -28,6 +28,7 @@
 #include "dev/ld.h"
 #include "dev/timer.h"
 #include "kmalloc.h"
+#include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 
@@ -275,6 +276,16 @@ static void timer_cmd(int argc, char* argv[]) {
   }
 }
 
+// Sleeps the thread for a certain number of ms.
+static void sleep_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: sleep <ms>\n");
+    return;
+  }
+
+  ksleep(atou(argv[1]));
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -296,6 +307,7 @@ static cmd_t CMDS[] = {
   { "outl", &outl_cmd },
 
   { "timer", &timer_cmd },
+  { "sleep", &sleep_cmd },
 
   { 0x0, 0x0 },
 };

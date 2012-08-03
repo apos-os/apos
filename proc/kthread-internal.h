@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "dev/interrupts.h"
+#include "proc/kthread.h"
 
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
