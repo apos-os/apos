@@ -25,14 +25,14 @@ void timer_init();
 typedef void (*timer_handler_t)(void*);
 
 // Register a function to be called every X ms, where X must be an even multiple
-// of the timeslice size.
+// of the timeslice size.  Returns 0 on success, or -errno on error.
 //
 // NOTE: the handler will be called in an interrupt context, so it should be
 // fast, careful, and not block!
 //
 // NOTE 2: there are a limited number of timers that can be installed
-// (KMAX_TIMERS).  register_timer_callback will return 0 if you've exceeded this
-// limit.
+// (KMAX_TIMERS).  register_timer_callback will return -ENOMEM if you've
+// exceeded this limit.
 int register_timer_callback(uint32_t period_ms, timer_handler_t cb, void* arg);
 
 // Return the approximate time since timer initialization, in ms.

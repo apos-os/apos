@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -60,7 +61,7 @@ void timer_init() {
 
 int register_timer_callback(uint32_t period, timer_handler_t cb, void* arg) {
   if (timer_idx >= KMAX_TIMERS) {
-    return 0;
+    return -ENOMEM;
   }
   uint32_t idx = timer_idx++;
   timers[idx].period_slices = period / KTIMESLICE_MS;
@@ -70,7 +71,7 @@ int register_timer_callback(uint32_t period, timer_handler_t cb, void* arg) {
   timers[idx].counter = timers[idx].period_slices;
   timers[idx].handler = cb;
   timers[idx].handler_arg = arg;
-  return 1;
+  return 0;
 }
 
 uint32_t get_time_ms() {
