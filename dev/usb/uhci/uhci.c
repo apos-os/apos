@@ -24,6 +24,7 @@
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/pci.h"
 #include "dev/usb/hcd.h"
+#include "dev/usb/request.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
 #include "page_alloc.h"
