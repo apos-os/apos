@@ -86,4 +86,9 @@ struct usb_uhci {
   uhci_qh_t* bulk_qh;
 };
 
+// HACK
+// Run some tests on the controller.  Leaves it in an inconsistent state, and
+// should not be run outside of debugging.
+void uhci_test_controller(usb_hcdi_t* c);
+
 #endif

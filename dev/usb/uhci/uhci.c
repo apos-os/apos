@@ -27,6 +27,7 @@
 #include "dev/usb/request.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
+#include "proc/sleep.h"
 #include "page_alloc.h"
 #include "slab_alloc.h"
 
@@ -297,6 +298,87 @@ static void init_controller(usb_uhci_t* c) {
   outs(c->base_port + USBCMD, cmd);
 }
 
+// Test sequence for the controller that detects devices and sends their
+// descriptors.
+void uhci_test_controller(usb_hcdi_t* ci) {
+  usb_uhci_t* c = (usb_uhci_t*)ci->dev_data;
+  for (int port = 0; port < 2; ++port) {
+    const uint16_t port_reg = c->base_port +
+        (port == 0 ? PORTSC1 : PORTSC2);
+
+    uint16_t status = ins(port_reg);
+    if (!(status & PORTSC_CONNECT)) {
+      klogf("<no device found on port %d>\n", port + 1);
+      continue;
+    }
+
+    // Reset change bit.
+    outs(port_reg, PORTSC_CONNECT_CHG);
+
+    // Reset the port.
+    klogf("resetting port %d\n", port + 1);
+    status = ins(port_reg);
+    outs(port_reg, status | PORTSC_RST);
+    ksleep(20);
+
+    status = ins(port_reg);
+    outs(port_reg, status & ~PORTSC_RST);
+
+    // Enable the port.
+    klogf("enabling port %d\n", port + 1);
+    status = ins(port_reg);
+    outs(port_reg, status | PORTSC_ENABLE | PORTSC_ENABLE_CHG);
+
+    // Make an endpoint for the default control pipe.
+    usb_endpoint_t endpoint;
+    endpoint.address = 0;  // Default address.
+    endpoint.endpoint = 0;
+    endpoint.type = USB_CONTROL;
+    endpoint.max_packet = 8;
+    if (status & PORTSC_LOSPEED) {
+      endpoint.speed = USB_LOW_SPEED;
+    } else {
+      endpoint.speed = USB_FULL_SPEED;
+    }
+    endpoint.data_toggle = USB_DATA0;
+    endpoint.hcd_data = 0x0;
+
+    // Send GET_DESCRIPTOR(DEVICE).
+    slab_alloc_t* alloc =
+        slab_alloc_create(sizeof(usb_dev_request_t), SLAB_MAX_PAGES);
+    usb_dev_request_t* req = (usb_dev_request_t*)slab_alloc(alloc);
+    req->bmRequestType = 0x80;
+    req->bRequest = USB_DEVREQ_GET_DESCRIPTOR;
+    req->wValue = 1 << 8;
+    req->wIndex = 0;
+    req->wLength = 8;
+
+    usb_hcdi_irp_t irp;
+    irp.endpoint = &endpoint;
+    irp.buffer = req;
+    irp.buflen = 8;
+    irp.pid = USB_PID_SETUP;
+    irp.data_toggle = USB_DATA_TOGGLE_NORMAL;
+    irp.callback = 0x0;
+
+    klogf("scheduling setup IRP...\n");
+    uhci_schedule_irp(ci, &irp);
+    ksleep(100);
+
+    // Send IN(8).
+    uint32_t page_phys = page_frame_alloc();
+    uint32_t page = phys2virt(page_phys);
+    irp.buffer = (void*)page;
+    irp.pid = USB_IN;
+
+    klogf("scheduling IN IRP...\n");
+    uhci_schedule_irp(ci, &irp);
+    ksleep(100);
+
+    break;
+  }
+}
+
 void usb_uhci_register_controller(uint32_t base_addr) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
     klogf("WARNING: too many UHCI controllers; ignoring\n");
@@ -319,6 +401,7 @@ void usb_uhci_register_controller(uint32_t base_addr) {
   hcdi.unregister_endpoint = &uhci_unregister_endpoint;
   hcdi.schedule_irp = &uhci_schedule_irp;
   hcdi.dev_data = c;
+  usb_register_host_controller(hcdi);
 }
 
 int usb_uhci_num_controllers() {
