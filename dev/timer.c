@@ -26,6 +26,8 @@ typedef struct {
   uint32_t period_slices;  // the timers period in units of timeslices
   timer_handler_t handler;
   void* handler_arg;
+  int limit;
+
   int free;
   int prev;  // Index of the prev timer in the linked list, or -1.
   int next;
@@ -45,6 +47,22 @@ static void internal_timer_handler() {
     if (timers[idx].counter == 0) {
       timers[idx].counter = timers[idx].period_slices;
       timers[idx].handler(timers[idx].handler_arg);
+
+      if (timers[idx].limit > 0) {
+        timers[idx].limit--;
+        if (timers[idx].limit == 0) {
+          timers[idx].free = 1;
+          num_timers--;
+          if (timers[idx].prev >= 0) {
+            timers[timers[idx].prev].next = timers[idx].next;
+          } else {
+            list_head = timers[idx].next;
+          }
+          if (timers[idx].next >= 0) {
+            timers[timers[idx].next].prev = timers[idx].prev;
+          }
+        }
+      }
     }
 
     timers[idx].counter--;
@@ -70,7 +88,9 @@ void timer_init() {
   num_timers = 0;
 }
 
-int register_timer_callback(uint32_t period, timer_handler_t cb, void* arg) {
+int register_timer_callback(uint32_t period, int limit,
+                            timer_handler_t cb, void* arg) {
+  // TODO(aoates): disable interrupts!
   if (num_timers >= KMAX_TIMERS) {
     return -ENOMEM;
   }
@@ -101,6 +121,7 @@ int register_timer_callback(uint32_t period, timer_handler_t cb, void* arg) {
   timers[idx].counter = timers[idx].period_slices;
   timers[idx].handler = cb;
   timers[idx].handler_arg = arg;
+  timers[idx].limit = limit;
   return 0;
 }
 

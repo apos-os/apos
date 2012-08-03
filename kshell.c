@@ -256,8 +256,8 @@ IO_OUT_CMD(outl, uint32_t);
 
 // Registers a timer to print a message at the given interval.
 static void timer_cmd(int argc, char* argv[]) {
-  if (argc != 3) {
-    ksh_printf("usage: timer <interval_ms> <msg>\n");
+  if (argc != 4) {
+    ksh_printf("usage: timer <interval_ms> <limit> <msg>\n");
     return;
   }
 
@@ -265,9 +265,10 @@ static void timer_cmd(int argc, char* argv[]) {
     ksh_printf((char*)arg);
   }
 
-  char* buf = (char*)kmalloc(kstrlen(argv[2])+1);
-  kstrcpy(buf, argv[2]);
-  int result = register_timer_callback(atou(argv[1]), &timer_cb, buf);
+  char* buf = (char*)kmalloc(kstrlen(argv[3])+1);
+  kstrcpy(buf, argv[3]);
+  int result = register_timer_callback(atou(argv[1]), atou(argv[2]),
+                                       &timer_cb, buf);
   if (result < 0) {
     ksh_printf("Could not register timer: %s\n", errorname(-result));
     kfree(buf);

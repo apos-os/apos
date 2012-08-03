@@ -55,7 +55,7 @@ static void tick(void* arg) {
 }
 
 static void add_timers() {
-  KASSERT(0 == register_timer_callback(1000, &tick, 0x0));
+  KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
 }
 
 static void io_init() {
