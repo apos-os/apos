@@ -158,6 +158,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     } else {
       ctd->status_ctrl = 0x0;
     }
+    ctd->status_ctrl |= TD_SC_STS_ACTIVE;
     KASSERT(packet_len < 1280);
     const uint16_t td_max_len = packet_len > 0 ? packet_len - 1 : 0x7FF;
     ctd->token =
@@ -254,6 +255,7 @@ static void init_controller(usb_uhci_t* c) {
   KASSERT((frame_list_phys & FLBASEADDR_MASK) == frame_list_phys);
   outl(c->base_port + FLBASEADDR, frame_list_phys);
   outs(c->base_port + FRNUM, 0x00);
+  outs(c->base_port + USBINTR, USBINTR_IOC | USBINTR_TMO_CRC);
 
   // Create a QH for each type of transfer we support.
   c->interrupt_qh = alloc_qh();
