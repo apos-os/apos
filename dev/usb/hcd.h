@@ -89,4 +89,10 @@ typedef struct usb_hcdi usb_hcdi_t;
 // when it detects the controller.
 void usb_register_host_controller(usb_hcdi_t hc);
 
+// Return the number of registered host controllers.
+int usb_num_host_controllers();
+
+// Return the given host controller.
+usb_hcdi_t* usb_get_host_controller(int i);
+
 #endif

@@ -28,3 +28,14 @@ void usb_register_host_controller(usb_hcdi_t hc) {
   }
   g_hcs[g_num_hcs++] = hc;
 }
+
+int usb_num_host_controllers() {
+  return g_num_hcs;
+}
+
+usb_hcdi_t* usb_get_host_controller(int i) {
+  if (i < 0 || i >= g_num_hcs) {
+    return 0x0;
+  }
+  return &g_hcs[i];
+}
