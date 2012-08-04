@@ -16,19 +16,22 @@
 
 #include "common/errno.h"
 #include "common/io.h"
-#include "common/math.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
+#include "dev/irq.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/pci.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/request.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
-#include "proc/sleep.h"
 #include "page_alloc.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "slab_alloc.h"
 
 // Number of frames in the frame list.
@@ -86,9 +89,10 @@
 static usb_uhci_t g_controllers[UHCI_MAX_CONTROLLERS];
 static int g_num_controllers = 0;
 
-// Slab allocators for QHs and TDs.
+// Slab allocators for QHs and TDs, and pending IRPs.
 static slab_alloc_t* td_alloc = 0x0;
 static slab_alloc_t* qh_alloc = 0x0;
+static slab_alloc_t* pirp_alloc = 0x0;
 
 // Maximum number of pages to allocate in TD and QH slab allocators.
 #define SLAB_MAX_PAGES 10
@@ -99,6 +103,10 @@ static inline uhci_qh_t* alloc_qh() {
 
 static inline uhci_td_t* alloc_td() {
   return (uhci_td_t*)slab_alloc(td_alloc);
+}
+
+static inline uhci_pending_irp_t* alloc_pending_irp() {
+  return (uhci_pending_irp_t*)slab_alloc(pirp_alloc);
 }
 
 static int uhci_register_endpoint(struct usb_hcdi* hc, usb_endpoint_t* ep) {
@@ -176,6 +184,9 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
       irp->endpoint->data_toggle = USB_DATA1;
     }
     ctd->buf_ptr = buf_phys;
+
+    ctd->data[TD_DATA_BUF_OFFSET] = (irp->buflen - bytes_left);
+
     buf_phys += packet_len;
     bytes_left -= packet_len;
 
@@ -224,7 +235,16 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   }
   type_qh->elt_link_ptr = virt2phys((uint32_t)transfer_qh) | QH_QH;
 
+  // Add it to the pending IRP list.
+  uhci_pending_irp_t* pirp = alloc_pending_irp();
+  pirp->next = uhci_hc->pending_irps;
+  pirp->qh = transfer_qh;
+  pirp->td = ctd;
+  uhci_hc->pending_irps = irp;
+
+  irp->hcd_data = pirp;
   irp->endpoint->hcd_data = transfer_qh;
+  irp->status = USB_IRP_PENDING;
 
   // TODO(aoates):
   //  On transfer finish:
@@ -236,12 +256,93 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   return 0;
 }
 
+static void uhci_interrupt(void* arg) {
+  usb_uhci_t* c = (usb_uhci_t*)arg;
+  uint16_t status = ins(c->base_port + USBSTS);
+  // TODO(aoates): handle halted condition, host errors, etc.
+  KASSERT((status & 0xFFFC) == 0);
+
+  // TODO(aoates): handle short packet detect!
+  // Find the transaction that finished.
+  usb_hcdi_irp_t* prev = 0x0;
+  usb_hcdi_irp_t* irp = c->pending_irps;
+  while (irp) {
+    uhci_pending_irp_t* pirp = (uhci_pending_irp_t*)irp->hcd_data;
+    int done = 0;
+    uhci_td_t* final_td = 0x0;
+
+    // Check if we got through the entire queue.
+    if (pirp->qh->elt_link_ptr & QH_TERM) {
+      done = 1;
+      final_td = pirp->td;
+    } else {
+      // Otherwise check if the first TD in the queue is inactive (indicating a
+      // short packet or an error).
+      KASSERT(pirp->qh->elt_link_ptr & QH_QH);
+      uhci_td_t* head_td = (uhci_td_t*)
+          phys2virt(pirp->qh->elt_link_ptr & QH_LINK_PTR_MASK);
+      if ((head_td->status_ctrl & TD_SC_STS_ACTIVE) == 0) {
+        done = 1;
+        final_td = head_td;
+      }
+    }
+
+    if (done) {
+      // The final TD must have been retired.
+      KASSERT((final_td->status_ctrl & TD_SC_STS_ACTIVE) == 0);
+
+      if (final_td->status_ctrl & TD_SC_STS_STALLED) {
+        irp->status = USB_IRP_STALL;
+      } else if (final_td->status_ctrl & TD_SC_STS_DBUF_ERR ||
+                 final_td->status_ctrl & TD_SC_STS_BABBLE ||
+                 final_td->status_ctrl & TD_SC_STS_TOCRC_ERR ||
+                 final_td->status_ctrl & TD_SC_STS_BITSF_ERR) {
+        klogf("WARNING: UHCI TD failed\n");
+        irp->status = USB_IRP_DEVICE_ERROR;
+      } else {
+        irp->status = USB_IRP_SUCCESS;
+      }
+
+      const uint16_t td_act_len = final_td->status_ctrl & TD_SC_ACTLEN_MASK;
+      const uint16_t act_len = td_act_len != 0x7FF ? td_act_len + 1 : 0;
+      irp->out_len = final_td->data[TD_DATA_BUF_OFFSET] + act_len;
+
+      // Unlink it from the pending IRP list.
+      if (prev) {
+        ((uhci_pending_irp_t*)prev->hcd_data)->next = pirp->next;
+      } else {
+        c->pending_irps = pirp->next;
+      }
+      pirp->next = 0x0;  // Just in case.
+
+      // Mark the endpoint as free.
+      irp->endpoint->hcd_data = 0x0;
+
+      // Remove the QH from the type queue.
+      // TODO
+
+      // Invoke the callback.
+      if (irp->callback) {
+        irp->callback(irp, irp->callback_arg);
+      }
+    }
+
+    irp = pirp->next;
+  }
+
+  // Clear the txn error and IOC bits.
+  outs(c->base_port + USBSTS, 0x3);
+}
+
 static void init_controller(usb_uhci_t* c) {
   if (!td_alloc) {
     td_alloc = slab_alloc_create(sizeof(uhci_td_t), SLAB_MAX_PAGES);
   }
   if (!qh_alloc) {
     qh_alloc = slab_alloc_create(sizeof(uhci_td_t), SLAB_MAX_PAGES);
+  }
+  if (!pirp_alloc) {
+    pirp_alloc = slab_alloc_create(sizeof(uhci_pending_irp_t), SLAB_MAX_PAGES);
   }
 
   uint32_t frame_list_phys = page_frame_alloc();
@@ -257,6 +358,8 @@ static void init_controller(usb_uhci_t* c) {
   outl(c->base_port + FLBASEADDR, frame_list_phys);
   outs(c->base_port + FRNUM, 0x00);
   outs(c->base_port + USBINTR, USBINTR_IOC | USBINTR_TMO_CRC);
+
+  c->pending_irps = 0x0;
 
   // Create a QH for each type of transfer we support.
   c->interrupt_qh = alloc_qh();
@@ -301,6 +404,13 @@ static void init_controller(usb_uhci_t* c) {
 // Test sequence for the controller that detects devices and sends their
 // descriptors.
 void uhci_test_controller(usb_hcdi_t* ci) {
+  void td_callback(usb_hcdi_irp_t* irp, void* arg) {
+    kthread_queue_t* q = (kthread_queue_t*)arg;
+    while (!kthread_queue_empty(q)) {
+      scheduler_make_runnable(kthread_queue_pop(q));
+    }
+  }
+
   usb_uhci_t* c = (usb_uhci_t*)ci->dev_data;
   for (int port = 0; port < 2; ++port) {
     const uint16_t port_reg = c->base_port +
@@ -359,29 +469,64 @@ void uhci_test_controller(usb_hcdi_t* ci) {
     irp.buflen = 8;
     irp.pid = USB_PID_SETUP;
     irp.data_toggle = USB_DATA_TOGGLE_NORMAL;
-    irp.callback = 0x0;
 
-    klogf("scheduling setup IRP...\n");
-    uhci_schedule_irp(ci, &irp);
-    ksleep(100);
+    kthread_queue_t q;
+    kthread_queue_init(&q);
+    irp.callback = &td_callback;
+    irp.callback_arg = &q;
+
+    klogf("scheduling SETUP IRP...\n");
+    {
+      PUSH_AND_DISABLE_INTERRUPTS();
+      uhci_schedule_irp(ci, &irp);
+      scheduler_wait_on(&q);
+      POP_INTERRUPTS();
+    }
+
+    KASSERT(irp.status != USB_IRP_PENDING);
+    if (irp.status != USB_IRP_SUCCESS) {
+      klogf("error sending SETUP txn: %d\n", irp.status);
+      return;
+    }
+    klogf("wrote %d bytes\n", irp.out_len);
 
     // Send IN(8).
     uint32_t page_phys = page_frame_alloc();
     uint32_t page = phys2virt(page_phys);
     irp.buffer = (void*)page;
-    irp.pid = USB_IN;
+    irp.pid = USB_PID_IN;
 
     klogf("scheduling IN IRP...\n");
-    uhci_schedule_irp(ci, &irp);
-    ksleep(100);
+    {
+      PUSH_AND_DISABLE_INTERRUPTS();
+      uhci_schedule_irp(ci, &irp);
+      scheduler_wait_on(&q);
+      POP_INTERRUPTS();
+    }
+
+    KASSERT(irp.status != USB_IRP_PENDING);
+    if (irp.status != USB_IRP_SUCCESS) {
+      klogf("error sending IN txn: %d\n", irp.status);
+      return;
+    }
+    klogf("test_uhci: read %d bytes\n", irp.out_len);
+    klogf("data:");
+    for (uint32_t i = 0; i < irp.out_len; ++i) {
+      klogf(" %x", ((char*)irp.buffer)[i]);
+    }
+    klogf("\n");
 
     break;
   }
 }
 
-void usb_uhci_register_controller(uint32_t base_addr) {
+void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
     klogf("WARNING: too many UHCI controllers; ignoring\n");
+    return;
+  }
+  if (irq == 0xFF) {
+    klogf("WARNING: UHCI controllers without IRQs are unsupported\n");
     return;
   }
   usb_uhci_t* c = &g_controllers[g_num_controllers++];
@@ -394,6 +539,11 @@ void usb_uhci_register_controller(uint32_t base_addr) {
   // TODO(aoates): we probably need to mask interrupts.
   init_controller(c);
 
+  // Register IRQ handler for the controller.
+  // TODO(aoates): this will clobber any other controllers listening on this
+  // IRQ!  This is probably not what we want.
+  register_irq_handler(irq, &uhci_interrupt, c);
+
   // Register it with the USBD.
   usb_hcdi_t hcdi;
   kmemset(&hcdi, 0, sizeof(usb_hcdi_t));
@@ -402,6 +552,11 @@ void usb_uhci_register_controller(uint32_t base_addr) {
   hcdi.schedule_irp = &uhci_schedule_irp;
   hcdi.dev_data = c;
   usb_register_host_controller(hcdi);
+  return;
+}
+
+void usb_uhci_interrupt(int handle) {
+  KASSERT(handle >= 0 && handle < g_num_controllers);
 }
 
 int usb_uhci_num_controllers() {

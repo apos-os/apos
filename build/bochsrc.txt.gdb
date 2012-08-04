@@ -14,4 +14,4 @@ ata0-master: type=disk, path="hd1.img", mode=flat, cylinders=20, heads=16, spt=6
 ata0-slave: type=disk, path="hd2.img", mode=flat, cylinders=20, heads=16, spt=63
 ata1-master: type=disk, path="hd3.img", mode=flat, cylinders=20, heads=16, spt=63
 ata1-slave: type=disk, path="hd4.img", mode=flat, cylinders=20, heads=16, spt=63
-usb_uhci: enabled=1
+usb_uhci: enabled=1, port1=hub, port2=mouse

@@ -23,12 +23,14 @@
 struct usb_uhci;
 typedef struct usb_uhci usb_uhci_t;
 
-// Register a UHCI controller with the given base port offset.
+// Register a UHCI controller with the given base port offset and corresponding
+// IRQ number.
 //
 // Initializes the controller and adds it to the global list of USB controllers.
+// Returns a handle, or -errno.
 //
 // Called from a lower-level bus driver (e.g., PCI).
-void usb_uhci_register_controller(uint32_t base_addr);
+void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq);
 
 // Returns the number of detecte UHCI controllers.
 int usb_uhci_num_controllers();

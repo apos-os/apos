@@ -55,6 +55,11 @@
 #define TD_TOK_DADDR_OFFSET  8
 #define TD_TOK_PID_MASK      0x000000FF
 
+// The different fields of the TD custom data section.
+// This is the offset into the buffer of this TD (that is, the number of bytes
+// represented by all the TDS in the transfer before this one).
+#define TD_DATA_BUF_OFFSET 0
+
 struct uhci_td {
   uint32_t link_ptr;  // Link pointer and associated flags.
   uint32_t status_ctrl;  // Status and control bits.
@@ -76,6 +81,15 @@ struct uhci_qh {
 };
 typedef struct uhci_qh uhci_qh_t;
 
+// A pending IRP.  Pointed to by the hcd_data field of a usb_hcdi_irp_t struct.
+struct uhci_pending_irp {
+  usb_hcdi_irp_t* next;  // Next IRP in the pending list.
+  uhci_qh_t* qh;  // The QH for this transfer.
+  // The final TD for the transfer (used as a shortcut for finding IOC TDs).
+  uhci_td_t* td;
+};
+typedef struct uhci_pending_irp uhci_pending_irp_t;
+
 struct usb_uhci {
   uint32_t base_port;  // USBBASE register.
   uint32_t* frame_list;  // Pointer to the frame list.
@@ -84,6 +98,9 @@ struct usb_uhci {
   uhci_qh_t* interrupt_qh;
   uhci_qh_t* control_qh;
   uhci_qh_t* bulk_qh;
+
+  // Linked-list of pending IRPs.
+  usb_hcdi_irp_t* pending_irps;
 };
 
 // HACK

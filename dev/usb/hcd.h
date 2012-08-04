@@ -26,11 +26,24 @@ enum usb_hcdi_dt {
 };
 typedef enum usb_hcdi_dt usb_hcdi_dt_t;
 
+// Status of an IRP.
+enum usb_hcdi_irp_status {
+  USB_IRP_PENDING,
+  USB_IRP_SUCCESS,
+  USB_IRP_STALL,
+  USB_IRP_DEVICE_ERROR,
+};
+typedef enum usb_hcdi_irp_status usb_hcdi_irp_status_t;
+
 // A transfer request.
 struct usb_hcdi_irp {
   usb_endpoint_t* endpoint;
 
   // Buffer for input or output, depending on the endpoint type.
+  //
+  // Note: the buffer MUST be in the physically-mapped memory region, so it must
+  // be allocated with slab_alloc or page_alloc, not kmalloc.
+  // TODO(aoates): should we remove this requirement?
   void* buffer;
   uint32_t buflen;
 
@@ -48,11 +61,17 @@ struct usb_hcdi_irp {
   // struct).
   usb_hcdi_dt_t data_toggle;
 
+  // Status fields set when the IRP is completed.
+  usb_hcdi_irp_status_t status;
+  uint32_t out_len;  // Actual number of bytes read or written.
+
   // Callback to invoke when the IRP is finished (either successfully or on
   // error).
-  void (*callback)(struct usb_hcdi_irp* irp);
+  void (*callback)(struct usb_hcdi_irp* irp, void* arg);
+  void* callback_arg;
 
   // TODO(aoates): packet type, status.
+  void* hcd_data;
 };
 typedef struct usb_hcdi_irp usb_hcdi_irp_t;
 
