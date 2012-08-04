@@ -40,7 +40,7 @@ static uint32_t num_timers = 0;
 static uint32_t time_ms = 0;  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
 
-static void internal_timer_handler() {
+static void internal_timer_handler(void* arg) {
   time_ms += KTIMESLICE_MS;
   int idx = list_head;
   while (idx >= 0) {
@@ -80,7 +80,7 @@ void timer_init() {
   outb(0x40, low);
   outb(0x40, high);
 
-  register_irq_handler(IRQ0, &internal_timer_handler);
+  register_irq_handler(IRQ0, &internal_timer_handler, 0x0);
 
   for (int i = 0; i < KMAX_TIMERS; ++i) {
     timers[i].free = 1;

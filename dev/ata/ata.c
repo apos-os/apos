@@ -293,12 +293,12 @@ static void handle_interrupt(ata_channel_t* channel) {
 }
 
 // IRQ handlers for the primary and secondary channels.
-static void irq_handler_primary() {
+static void irq_handler_primary(void* arg) {
   //klogf("IRQ for primary ATA device\n");
   handle_interrupt(&g_ata.primary);
 }
 
-static void irq_handler_secondary() {
+static void irq_handler_secondary(void* arg) {
   //klogf("IRQ for secondary ATA device\n");
   handle_interrupt(&g_ata.secondary);
 }
@@ -457,8 +457,8 @@ static void ata_init_internal(const ata_t* ata) {
   dma_init();
 
   // Set up IRQs.
-  register_irq_handler(g_ata.primary.irq, &irq_handler_primary);
-  register_irq_handler(g_ata.secondary.irq, &irq_handler_secondary);
+  register_irq_handler(g_ata.primary.irq, &irq_handler_primary, 0x0);
+  register_irq_handler(g_ata.secondary.irq, &irq_handler_secondary, 0x0);
 
   // TODO(aoates): enable interrupts with device control register
 }

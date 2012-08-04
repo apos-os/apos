@@ -72,7 +72,7 @@ static int process_scancode_buffer(uint8_t* buf, int len) {
   return 0;
 }
 
-static void irq_handler() {
+static void irq_handler(void* arg) {
   static uint8_t scancode_buffer[10];
   static int buf_idx = 0;
 
@@ -97,7 +97,7 @@ int ps2_keyboard_init(vkeyboard_t* vkbd) {
 
   // TODO(aoates): we should probably verify it's in scanset 2.
 
-  register_irq_handler(IRQ1, &irq_handler);
+  register_irq_handler(IRQ1, &irq_handler, 0x0);
   ps2_enable_interrupts(PS2_PORT1);
 
   g_vkbd = vkbd;

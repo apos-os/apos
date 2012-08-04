@@ -34,6 +34,7 @@
 // These are the user-defined handlers.
 #define NUM_HANDLERS 16
 static irq_handler_t g_handlers[NUM_HANDLERS];
+static void* g_args[NUM_HANDLERS];
 
 // These are our handler stubs that invoke irq_handler below.
 extern void irq0();
@@ -87,10 +88,11 @@ void pic_init() {
   outb(PIC_SLAVE_DATA, 0x0);
 }
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler) {
+void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
   KASSERT(irq < NUM_HANDLERS);
   // TODO(aoates): probs need to disable interrupts here.
   g_handlers[irq] = handler;
+  g_args[irq] = arg;
 }
 
 void irq_handler(uint32_t irq, uint32_t interrupt) {
@@ -123,6 +125,6 @@ void irq_handler(uint32_t irq, uint32_t interrupt) {
   //}
 
   if (g_handlers[irq] != 0x0) {
-    g_handlers[irq]();
+    g_handlers[irq](g_args[irq]);
   }
 }
