@@ -185,7 +185,8 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
 
   // TODO(aoates): this isn't totally correct.
   if (g_meminfo.upper_memory > MAX_MEMORY_BYTES) {
-    g_meminfo.upper_memory = MAX_MEMORY_BYTES;
+    g_meminfo.upper_memory =
+        MAX_MEMORY_BYTES - g_meminfo.lower_memory - PAGE_SIZE;
   }
 
   g_meminfo.phys_map_start = KERNEL_PHYS_MAP_START;
