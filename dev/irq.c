@@ -28,6 +28,7 @@
 #define PIC_SLAVE_CMD   0xA0
 #define PIC_SLAVE_DATA  0xA1
 
+#define PIC_READ_ISR    0x0B
 #define PIC_EOI         0x20
 
 // These are the user-defined handlers.
@@ -94,10 +95,22 @@ void register_irq_handler(uint8_t irq, irq_handler_t handler) {
 
 void irq_handler(uint32_t irq, uint32_t interrupt) {
   KASSERT(interrupt == irq + 0x20);
-  // TODO(aoates): this isn't really correct!
-  // Assume all 7 IRQs are spurious
+  // Check for spurious IRQs.
   if (irq == 7) {
-    return;
+    outb(PIC_MASTER_CMD, PIC_READ_ISR);
+    uint8_t isr = inb(PIC_MASTER_CMD);
+    if (!(isr & (1 << 7))) {
+      // Spurious.  Return.
+      return;
+    }
+  } else if (irq == 15) {
+    outb(PIC_SLAVE_CMD, PIC_READ_ISR);
+    uint8_t isr = inb(PIC_SLAVE_CMD);
+    if (!(isr & (1 << 7))) {
+      // Spurious.  Send EOI to master, but not slave.
+      outb(PIC_MASTER_CMD, PIC_EOI);
+      return;
+    }
   }
 
   if (irq > 7) {
@@ -105,10 +118,11 @@ void irq_handler(uint32_t irq, uint32_t interrupt) {
   }
   outb(PIC_MASTER_CMD, PIC_EOI);
 
+  //if (irq != 0 && irq != 1) {
+  //  klogf("irq: 0x%x\n", irq);
+  //}
+
   if (g_handlers[irq] != 0x0) {
     g_handlers[irq]();
   }
-  //if (irq != 0) {
-  //  klogf("irq: 0x%x\n", irq);
-  //}
 }
