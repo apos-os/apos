@@ -31,5 +31,6 @@ void hashtable_test();
 void ramdisk_test();
 void ata_test();
 void slab_alloc_test();
+void kthread_pool_test();
 
 #endif

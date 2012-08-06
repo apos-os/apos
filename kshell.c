@@ -65,6 +65,7 @@ static test_entry_t TESTS[] = {
   { "page_alloc", &page_alloc_test, 1 },
   { "page_alloc_map", &page_alloc_map_test, 1 },
   { "kthread", &kthread_test, 1 },
+  { "kthread_pool", &kthread_pool_test, 1 },
   { "interrupt_clobber", &interrupt_clobber_test, 1 },
   { "interrupt_save", &interrupt_save_test, 1 },
   { "kstring", &kstring_test, 1 },
