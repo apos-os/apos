@@ -34,8 +34,6 @@
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "dev/usb/hcd.h"
-#include "dev/usb/uhci/uhci.h"
-#include "dev/usb/uhci/uhci-internal.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
@@ -137,11 +135,6 @@ void kmain(memory_info_t* meminfo) {
   klog("\nmeminfo->phys_map_start:    0x"); klog(utoa_hex(meminfo->phys_map_start));
   klog("\nmeminfo->phys_map_length:   0x"); klog(utoa_hex(meminfo->phys_map_length));
   klog("\n");
-
-  // Test the USB controller.
-  for (int i = 0; i < usb_num_host_controllers(); ++i) {
-    uhci_test_controller(usb_get_host_controller(i));
-  }
 
   kshell_main(g_ld);
 

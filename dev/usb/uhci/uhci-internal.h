@@ -106,6 +106,6 @@ struct usb_uhci {
 // HACK
 // Run some tests on the controller.  Leaves it in an inconsistent state, and
 // should not be run outside of debugging.
-void uhci_test_controller(usb_hcdi_t* c);
+void uhci_test_controller(usb_hcdi_t* ci, int port);
 
 #endif
