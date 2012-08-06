@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "dev/timer.h"
 #include "kmalloc.h"
 #include "kmalloc-internal.h"
 #include "memory.h"
@@ -267,6 +268,47 @@ static void stress_test() {
   KEXPECT_EQ(0, list_used_size(list_root));
 }
 
+// Make sure kmalloc/kfree are interrupt-safe.  Essentially the same as
+// tiny_alloc_test() but with a timer interrupting and doing allocations as
+// well.
+static void interrupt_test() {
+  KTEST_BEGIN("kmalloc interrupt safety test");
+
+  void timer_cb(void* arg) {
+    void* x1 = kmalloc(1);
+    void* x2 = kmalloc(1);
+    void* x3 = kmalloc(1);
+    void* x4 = kmalloc(1);
+    kfree(x3);
+    kfree(x2);
+    kfree(x4);
+    kfree(x1);
+  }
+
+  register_timer_callback(1, 1000, &timer_cb, 0x0);
+
+  for (int round = 0; round < 200; round++) {
+    void* x[100];
+    for (int i = 0; i < 100; ++i) {
+      x[i] = kmalloc(i % 3 + 1);
+      if (!x[i]) {
+        KEXPECT_NE(0x0, (uint32_t)x[i]);
+      }
+    }
+    verify_list(kmalloc_internal_get_block_list());
+
+    for (int i = 0; i < 100; ++i) {
+      if (x[i]) {
+        kfree(x[i]);
+      }
+    }
+    verify_list(kmalloc_internal_get_block_list());
+
+    KEXPECT_EQ(0, list_used_size(kmalloc_internal_get_block_list()));
+  }
+  kmalloc_log_state();
+}
+
 void kmalloc_test() {
   KTEST_SUITE_BEGIN("kmalloc");
 
@@ -282,6 +324,7 @@ void kmalloc_test() {
   large_alloc_test();
   tiny_alloc_test();
   stress_test();
+  interrupt_test();
 
   // The kernel is no longer in a usable state.
   // TODO(aoates): if this ever becomes annoying, we could force-reboot the

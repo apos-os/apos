@@ -21,6 +21,7 @@
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "dev/interrupts.h"
 #include "memory.h"
 #include "page_alloc.h"
 
@@ -127,6 +128,7 @@ static block_t* merge_block(block_t* b) {
 }
 
 void* kmalloc(uint32_t n) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
   while (cblock) {
@@ -146,6 +148,8 @@ void* kmalloc(uint32_t n) {
   cblock->free = 0;
   cblock = split_block(cblock, n);
 
+  POP_INTERRUPTS();
+
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(cblock, 0xAAAAAAAA);
   }
@@ -161,7 +165,9 @@ void kfree(void* x) {
     fill_block(b, 0xDEADBEEF);
   }
 
+  PUSH_AND_DISABLE_INTERRUPTS();
   merge_block(b);
+  POP_INTERRUPTS();
 }
 
 void kmalloc_log_state() {
