@@ -270,10 +270,22 @@ static void stress_test() {
 void kmalloc_test() {
   KTEST_SUITE_BEGIN("kmalloc");
 
+  // NOTE: we disable klog-to-VTERM since we'll be overwriting the kmalloc
+  // state, which causes problems with the vterm.  If there's anything else
+  // running simultaneously with these tests that touches kmalloc'd memory, the
+  // whole system will likely explode.
+  klog_set_mode(KLOG_RAW_VIDEO);
+
   macros_test();
   init_test();
   basic_test();
   large_alloc_test();
   tiny_alloc_test();
   stress_test();
+
+  // The kernel is no longer in a usable state.
+  // TODO(aoates): if this ever becomes annoying, we could force-reboot the
+  // kernel (by resetting the stack pointer and calling kmain).
+  klogf("NOTE: kmalloc_test() ruins the kernel, so expect a page fault (if "
+      "you're lucky) or undefined behavior (if you're not).\n");
 }
