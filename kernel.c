@@ -34,6 +34,7 @@
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "dev/usb/hcd.h"
+#include "kshell.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
@@ -41,7 +42,6 @@
 #define LD_BUF_SIZE 1024
 
 void pic_init();
-void kshell_main(ld_t* l);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;

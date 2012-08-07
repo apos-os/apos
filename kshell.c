@@ -29,8 +29,7 @@
 #include "dev/timer.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
-#include "dev/usb/uhci/uhci.h"
-#include "dev/usb/uhci/uhci-internal.h"
+#include "dev/usb/uhci/uhci_cmd.h"
 #include "kmalloc.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
@@ -40,7 +39,7 @@
 
 static ld_t* g_io = 0;
 
-static void ksh_printf(const char* fmt, ...) {
+void ksh_printf(const char* fmt, ...) {
   char buf[1024];
 
   va_list args;
@@ -292,22 +291,6 @@ static void sleep_cmd(int argc, char* argv[]) {
   ksleep(atou(argv[1]));
 }
 
-// Test the UHCI controller(s).
-static void uhci_cmd(int argc, char* argv[]) {
-  if (argc != 3) {
-    ksh_printf("usage: uhci <idx> <port>\n");
-    return;
-  }
-  int idx = atoi(argv[1]);
-  int port = atoi(argv[2]);
-  if (idx >= usb_num_host_controllers()) {
-    ksh_printf("error: invalid controller %d\n", idx);
-    return;
-  }
-  // Test the USB controller.
-  uhci_test_controller(usb_get_host_controller(idx), port);
-}
-
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -388,12 +371,6 @@ void kshell_main(ld_t* io) {
   ksh_printf("@                     APOS                       @\n");
   ksh_printf("@            (c) Andrew Oates 2012               @\n");
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
-
-  for (int i = 0; i < usb_num_host_controllers(); ++i) {
-    for (int port = 0; port < 2; port++) {
-      uhci_test_controller(usb_get_host_controller(i), port);
-    }
-  }
 
   char read_buf[READ_BUF_SIZE];
   while (1) {
