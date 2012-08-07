@@ -73,6 +73,7 @@ static test_entry_t TESTS[] = {
   { "hashtable", &hashtable_test, 1 },
   { "ramdisk", &ramdisk_test, 1 },
   { "slab_alloc", &slab_alloc_test, 1 },
+  { "flag_printf", &flag_printf_test, 1 },
   { "ata", &ata_test, 0 },  // Don't run by default so we don't muck up our FS.
 
   // Fake test for running everything.

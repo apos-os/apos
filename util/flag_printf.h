@@ -12,26 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// Utility for printing sets of flags.  For example,
+//
+// flag_spec_t FLAGS[] = {
+//   { 0x0001, "ABC" },
+//   { 0x0002, "DEF" },
+//   { 0x0004, "XX" },
+//   { 0x0, 0x0 },
+// };
+//
+// ....
+//
+// flag_sprintf(buf, 0x5, FLAGS);
+//
+// yields the string "[ ABC XX ]"
+#ifndef APOO_UTIL_FLAG_PRINTF_H
+#define APOO_UTIL_FLAG_PRINTF_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
-void slab_alloc_test();
-void kthread_pool_test();
-void flag_printf_test();
+// A flag spec.
+struct flag_spec {
+  uint32_t flag;
+  const char* name;
+};
+typedef struct flag_spec flag_spec_t;
+
+// Find all the flags present in a value and produce a string describing them.
+int flag_sprintf(char* buf, uint32_t value, flag_spec_t* flags);
 
 #endif
