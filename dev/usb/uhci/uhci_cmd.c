@@ -21,6 +21,7 @@
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/usb.h"
 #include "kshell.h"
+#include "memory.h"
 #include "util/flag_printf.h"
 
 static flag_spec_t USBCMD_FLAGS[] = {
@@ -65,6 +66,85 @@ static flag_spec_t PORTSC_FLAGS[] = {
   FLAG_SPEC_FLAG("CONNECT", 0x0001),
   FLAG_SPEC_END,
 };
+
+//static flag_spec_t FL_PTR_FLAGS[] = {
+//  FLAG_SPEC_FIELD("ADDR", 0xFFFFFFF0, 0),
+//  FLAG_SPEC_FLAG("QH", 0x00000002),
+//  FLAG_SPEC_FLAG("TERM", 0x00000001),
+//  FLAG_SPEC_END,
+//};
+
+static flag_spec_t TD_LINK_PTR_FLAGS[] = {
+  FLAG_SPEC_FIELD("ADDR", 0xFFFFFFF0, 0),
+  FLAG_SPEC_FLAG("VF", 0x04),
+  FLAG_SPEC_FLAG("QH", 0x02),
+  FLAG_SPEC_FLAG("TERM", 0x01),
+  FLAG_SPEC_END,
+};
+
+static flag_spec_t TD_SC_FLAGS[] = {
+  FLAG_SPEC_FLAG("SPD", 0x20000000),
+  FLAG_SPEC_FIELD("ERR", 0x18000000, 24),
+  FLAG_SPEC_FLAG("LS", 0x04000000),
+  FLAG_SPEC_FLAG("IOS", 0x02000000),
+  FLAG_SPEC_FLAG("IOC", 0x01000000),
+  FLAG_SPEC_FLAG2("STS_ACTIVE", "STS_INACTIVE", 0x00800000),
+  FLAG_SPEC_FLAG("STS_STALLED", 0x00400000),
+  FLAG_SPEC_FLAG("STS_DBUF_ERR", 0x00200000),
+  FLAG_SPEC_FLAG("STS_BABBLE", 0x00100000),
+  FLAG_SPEC_FLAG("STS_NAK", 0x00080000),
+  FLAG_SPEC_FLAG("STS_TOCRC_ERR", 0x00040000),
+  FLAG_SPEC_FLAG("STS_BITSF_ERR", 0x00020000),
+  FLAG_SPEC_FIELD("ACTLEN", 0x000007FF, 0),
+  FLAG_SPEC_END,
+};
+
+static flag_spec_t TD_TOK_FLAGS[] = {
+  FLAG_SPEC_FIELD("MAXLEN", 0xFFE00000, 21),
+  FLAG_SPEC_FLAG2("DATA1", "DATA0", 0x00080000),
+  FLAG_SPEC_FIELD("ENDPT", 0x00078000, 15),
+  FLAG_SPEC_FIELD("DADDR", 0x00007F00, 8),
+  FLAG_SPEC_FIELD("PID", 0x000000FF, 0),
+  FLAG_SPEC_END,
+};
+
+static flag_spec_t QH_FLAGS[] = {
+  FLAG_SPEC_FIELD("ADDR", 0xFFFFFFF0, 0),
+  FLAG_SPEC_FLAG2("QH", "TD", 0x00000002),
+  FLAG_SPEC_FLAG("TERM", 0x00000001),
+  FLAG_SPEC_END,
+};
+
+static void print_td(uhci_td_t* td) {
+  // If the address is physical, convert to virtual before reading it.
+  if (is_direct_mappable((uint32_t)td)) {
+    td = (uhci_td_t*)phys2virt((uint32_t)td);
+  }
+  char buf[1024];
+  flag_sprintf(buf, td->link_ptr, TD_LINK_PTR_FLAGS);
+  ksh_printf("  LINK_PTR: %s\n", buf);
+  flag_sprintf(buf, td->status_ctrl, TD_SC_FLAGS);
+  ksh_printf("  STATUS_CTRL: %s\n", buf);
+  flag_sprintf(buf, td->token, TD_TOK_FLAGS);
+  ksh_printf("  TOKEN: %s\n", buf);
+  ksh_printf("  BUFFER: 0x%x\n", td->buf_ptr);
+  ksh_printf("  DATA[0]: 0x%x\n", td->data[0]);
+  ksh_printf("  DATA[1]: 0x%x\n", td->data[1]);
+  ksh_printf("  DATA[2]: 0x%x\n", td->data[2]);
+  ksh_printf("  DATA[3]: 0x%x\n", td->data[3]);
+}
+
+static void print_qh(uhci_qh_t* qh) {
+  // If the address is physical, convert to virtual before reading it.
+  if (is_direct_mappable((uint32_t)qh)) {
+    qh = (uhci_qh_t*)phys2virt((uint32_t)qh);
+  }
+  char buf[1024];
+  flag_sprintf(buf, qh->head_link_ptr, QH_FLAGS);
+  ksh_printf("  HEAD_LINK_PTR: %s\n", buf);
+  flag_sprintf(buf, qh->elt_link_ptr, QH_FLAGS);
+  ksh_printf("  ELT_LINK_PTR: %s\n", buf);
+}
 
 static void uhci_cmd_test(int argc, char* argv[]) {
   if (argc != 4) {
@@ -126,6 +206,24 @@ static void uhci_cmd_ls(int argc, char* argv[]) {
   POP_INTERRUPTS();
 }
 
+static void uhci_cmd_td(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: uhci td <address>\n");
+    return;
+  }
+  uint32_t address = atou(argv[2]);
+  print_td((uhci_td_t*)address);
+}
+
+static void uhci_cmd_qh(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: uhci qh <address>\n");
+    return;
+  }
+  uint32_t address = atou(argv[2]);
+  print_qh((uhci_qh_t*)address);
+}
+
 // Test the UHCI controller(s).
 void uhci_cmd(int argc, char* argv[]) {
   if (argc < 2) {
@@ -136,6 +234,10 @@ void uhci_cmd(int argc, char* argv[]) {
     uhci_cmd_test(argc, argv);
   } else if (kstrcmp(argv[1], "ls") == 0) {
     uhci_cmd_ls(argc, argv);
+  } else if (kstrcmp(argv[1], "td") == 0) {
+    uhci_cmd_td(argc, argv);
+  } else if (kstrcmp(argv[1], "qh") == 0) {
+    uhci_cmd_qh(argc, argv);
   } else {
     ksh_printf("error: unknown command '%s'\n", argv[1]);
   }

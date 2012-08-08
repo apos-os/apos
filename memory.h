@@ -106,6 +106,14 @@ uint32_t phys2virt(uint32_t x);
 // physical address.
 uint32_t virt2phys(uint32_t x);
 
+// Returns true if the address is a physical address mapped into the
+// direct-mapped region (that is, if phys2virt would succeed).
+int is_direct_mappable(uint32_t x);
+
+// Returns true if the address is a VIRTUAL address IN the
+// direct-mapped region (that is, if virt2phys would succeed).
+int is_direct_mapped(uint32_t x);
+
 // Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL
 // (i.e.  the virtual location, in the kernel, where that physical page is
 // mapped, at 0xc0000000).

@@ -54,6 +54,15 @@ uint32_t virt2phys(uint32_t x) {
   return x - global_meminfo->phys_map_start;
 }
 
+int is_direct_mappable(uint32_t x) {
+  return (x < global_meminfo->phys_map_length);
+}
+
+int is_direct_mapped(uint32_t x) {
+  return (x >= global_meminfo->phys_map_start &&
+          x < global_meminfo->phys_map_start + global_meminfo->phys_map_length);
+}
+
 uint32_t phys2kernel(uint32_t x) {
   return x + KERNEL_VIRT_START;
 }
