@@ -152,10 +152,14 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   // Create a sequence of TDs for the transfer.
   uint32_t bytes_left = irp->buflen;
   uhci_td_t* prev = 0x0;
-  uhci_td_t* ctd = alloc_td();
-  uhci_td_t* head_td = ctd;
+  uhci_td_t* ctd = 0x0;
+  uhci_td_t* head_td = 0x0;
   uint32_t buf_phys = virt2phys((uint32_t)irp->buffer);
   while (bytes_left > 0) {
+    ctd = alloc_td();
+    if (!head_td) {
+      head_td = ctd;
+    }
     // Fill in the current TD.
     const uint16_t packet_len = min(bytes_left, irp->endpoint->max_packet);
     kmemset(ctd, 0, sizeof(uhci_td_t));
