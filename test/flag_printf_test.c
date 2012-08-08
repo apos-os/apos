@@ -18,7 +18,7 @@
 
 static flag_spec_t FLAGS[] = {
   FLAG_SPEC_FLAG("F1", 0x1),
-  FLAG_SPEC_FLAG("F2", 0x2),
+  FLAG_SPEC_FLAG2("F2", "NOT_F2", 0x2),
   FLAG_SPEC_FLAG("FFF3", 0x8),
   FLAG_SPEC_FLAG("FFFF4", 0x10),
   FLAG_SPEC_FIELD("T1", 0x60, 5),
@@ -34,8 +34,8 @@ void flag_printf_test() {
 
   KTEST_BEGIN("empty test");
   result = flag_sprintf(buf, 0x0, FLAGS);
-  KEXPECT_EQ(15, result);
-  KEXPECT_STREQ("[ T1(0) T2(0) ]", buf);
+  KEXPECT_EQ(22, result);
+  KEXPECT_STREQ("[ NOT_F2 T1(0) T2(0) ]", buf);
 
   KTEST_BEGIN("basic test");
   result = flag_sprintf(buf, 0xFFF, FLAGS);
@@ -48,6 +48,6 @@ void flag_printf_test() {
 
   KTEST_BEGIN("field test");
   result = flag_sprintf(buf, 0x3C0, FLAGS);
-  KEXPECT_EQ(15, result);
-  KEXPECT_STREQ("[ T1(2) T2(7) ]", buf);
+  KEXPECT_EQ(22, result);
+  KEXPECT_STREQ("[ NOT_F2 T1(2) T2(7) ]", buf);
 }

@@ -22,10 +22,9 @@ int flag_sprintf(char* buf, uint32_t value, flag_spec_t* flags) {
   idx += 2;
   while (flags->name != 0x0) {
     if (flags->type == FLAG && flags->flag & value) {
-      kstrcpy(buf + idx, flags->name);
-      idx += kstrlen(flags->name);
-      kstrcpy(buf + idx, " ");
-      idx++;
+      idx += ksprintf(buf + idx, "%s ", flags->name);
+    } else if (flags->type == FLAG && flags->alternate_name != 0x0) {
+      idx += ksprintf(buf + idx, "%s ", flags->alternate_name);
     } else if (flags->type == FIELD) {
       uint32_t fieldval = (value & flags->field_mask) >> flags->field_offset;
       idx += ksprintf(buf + idx, "%s(%d) ", flags->name, fieldval);
