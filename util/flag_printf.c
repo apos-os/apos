@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/kstring.h"
+#include "common/kprintf.h"
 #include "util/flag_printf.h"
 
 int flag_sprintf(char* buf, uint32_t value, flag_spec_t* flags) {
@@ -20,11 +21,14 @@ int flag_sprintf(char* buf, uint32_t value, flag_spec_t* flags) {
   kstrcpy(buf, "[ ");
   idx += 2;
   while (flags->name != 0x0) {
-    if (flags->flag & value) {
+    if (flags->type == FLAG && flags->flag & value) {
       kstrcpy(buf + idx, flags->name);
       idx += kstrlen(flags->name);
       kstrcpy(buf + idx, " ");
       idx++;
+    } else if (flags->type == FIELD) {
+      uint32_t fieldval = (value & flags->field_mask) >> flags->field_offset;
+      idx += ksprintf(buf + idx, "%s(%d) ", flags->name, fieldval);
     }
     flags++;
   }

@@ -17,11 +17,13 @@
 #include "util/flag_printf.h"
 
 static flag_spec_t FLAGS[] = {
-  { 0x1, "F1" },
-  { 0x2, "F2" },
-  { 0x8, "FFF3" },
-  { 0x10, "FFFF4" },
-  { 0x0, 0x0 },
+  FLAG_SPEC_FLAG("F1", 0x1),
+  FLAG_SPEC_FLAG("F2", 0x2),
+  FLAG_SPEC_FLAG("FFF3", 0x8),
+  FLAG_SPEC_FLAG("FFFF4", 0x10),
+  FLAG_SPEC_FIELD("T1", 0x60, 5),
+  FLAG_SPEC_FIELD("T2", 0xF80, 7),
+  FLAG_SPEC_END,
 };
 
 void flag_printf_test() {
@@ -32,15 +34,20 @@ void flag_printf_test() {
 
   KTEST_BEGIN("empty test");
   result = flag_sprintf(buf, 0x0, FLAGS);
-  KEXPECT_EQ(3, result);
-  KEXPECT_STREQ("[ ]", buf);
+  KEXPECT_EQ(15, result);
+  KEXPECT_STREQ("[ T1(0) T2(0) ]", buf);
 
   KTEST_BEGIN("basic test");
   result = flag_sprintf(buf, 0xFFF, FLAGS);
-  KEXPECT_EQ(20, result);
-  KEXPECT_STREQ("[ F1 F2 FFF3 FFFF4 ]", buf);
+  KEXPECT_EQ(33, result);
+  KEXPECT_STREQ("[ F1 F2 FFF3 FFFF4 T1(3) T2(31) ]", buf);
 
   result = flag_sprintf(buf, 0x12, FLAGS);
-  KEXPECT_EQ(12, result);
-  KEXPECT_STREQ("[ F2 FFFF4 ]", buf);
+  KEXPECT_EQ(24, result);
+  KEXPECT_STREQ("[ F2 FFFF4 T1(0) T2(0) ]", buf);
+
+  KTEST_BEGIN("field test");
+  result = flag_sprintf(buf, 0x3C0, FLAGS);
+  KEXPECT_EQ(15, result);
+  KEXPECT_STREQ("[ T1(2) T2(7) ]", buf);
 }
