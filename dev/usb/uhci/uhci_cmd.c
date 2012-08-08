@@ -24,46 +24,46 @@
 #include "util/flag_printf.h"
 
 static flag_spec_t USBCMD_FLAGS[] = {
-  { 0x0080, "MAXP" },
-  { 0x0040, "CF" },
-  { 0x0020, "SWDBG" },
-  { 0x0010, "FGR" },
-  { 0x0008, "EGSM" },
-  { 0x0004, "GRESET" },
-  { 0x0002, "HCRESET" },
-  { 0x0001, "RS" },
-  { 0x0, 0x0 },
+  FLAG_SPEC_FLAG("MAXP", 0x0080),
+  FLAG_SPEC_FLAG("CF", 0x0040),
+  FLAG_SPEC_FLAG("SWDBG", 0x0020),
+  FLAG_SPEC_FLAG("FGR", 0x0010),
+  FLAG_SPEC_FLAG("EGSM", 0x0008),
+  FLAG_SPEC_FLAG("GRESET", 0x0004),
+  FLAG_SPEC_FLAG("HCRESET", 0x0002),
+  FLAG_SPEC_FLAG("RS", 0x0001),
+  FLAG_SPEC_END,
 };
 
 static flag_spec_t USBSTS_FLAGS[] = {
-  { 0x0020, "HALTED" },
-  { 0x0010, "HCERROR" },
-  { 0x0008, "HSYSERROR" },
-  { 0x0004, "RESUME" },
-  { 0x0002, "ERRINT" },
-  { 0x0001, "INT" },
-  { 0x0, 0x0 },
+  FLAG_SPEC_FLAG("HALTED", 0x0020),
+  FLAG_SPEC_FLAG("HCERROR", 0x0010),
+  FLAG_SPEC_FLAG("HSYSERROR", 0x0008),
+  FLAG_SPEC_FLAG("RESUME", 0x0004),
+  FLAG_SPEC_FLAG("ERRINT", 0x0002),
+  FLAG_SPEC_FLAG("INT", 0x0001),
+  FLAG_SPEC_END,
 };
 
 static flag_spec_t USBINTR_FLAGS[] = {
-  { 0x0008, "SHORTP" },
-  { 0x0004, "IOC" },
-  { 0x0002, "RESUME" },
-  { 0x0001, "TMO_CRC" },
-  { 0x0, 0x0 },
+  FLAG_SPEC_FLAG("SHORTP", 0x0008),
+  FLAG_SPEC_FLAG("IOC", 0x0004),
+  FLAG_SPEC_FLAG("RESUME", 0x0002),
+  FLAG_SPEC_FLAG("TMO_CRC", 0x0001),
+  FLAG_SPEC_END,
 };
 
 static flag_spec_t PORTSC_FLAGS[] = {
-  { 0x1000, "SUSPEND" },
-  { 0x0200, "RST" },
-  { 0x0100, "LOSPEED" },
-  { 0x0040, "RESUME_DTCT" },
-  { 0x0030, "LINE_STATUS" },
-  { 0x0008, "ENABLE_CHG" },
-  { 0x0004, "ENABLE" },
-  { 0x0002, "CONNECT_CHG" },
-  { 0x0001, "CONNECT" },
-  { 0x0, 0x0 },
+  FLAG_SPEC_FLAG("SUSPEND", 0x1000),
+  FLAG_SPEC_FLAG("RST", 0x0200),
+  FLAG_SPEC_FLAG("LOSPEED", 0x0100),
+  FLAG_SPEC_FLAG("RESUME_DTCT", 0x0040),
+  FLAG_SPEC_FIELD("LINE_STATUS", 0x0030, 4),
+  FLAG_SPEC_FLAG("ENABLE_CHG", 0x0008),
+  FLAG_SPEC_FLAG("ENABLE", 0x0004),
+  FLAG_SPEC_FLAG("CONNECT_CHG", 0x0002),
+  FLAG_SPEC_FLAG("CONNECT", 0x0001),
+  FLAG_SPEC_END,
 };
 
 static void uhci_cmd_test(int argc, char* argv[]) {
