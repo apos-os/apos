@@ -56,16 +56,4 @@ typedef struct usb_dev_request usb_dev_request_t;
 #define USB_DEVREQ_SET_INTERFACE     11
 #define USB_DEVREQ_SYNCH_FRAME       12
 
-// Descriptor types (for GET/SET_DESCRIPTOR requests).
-// TODO(aoates): unify abbreviation (DEV vs DEVICE, etc) use across entire USB
-// subsystem.
-#define USB_DESC_DEV                  1
-#define USB_DESC_CONFIG               2
-#define USB_DESC_STRING               3
-#define USB_DESC_IFACE                4
-#define USB_DESC_ENDPT                5
-#define USB_DESC_DEV_QUAL             6
-#define USB_DESC_OTHER_SPEED_CONFIG   7
-#define USB_DESC_IFACE_POWER          8
-
 #endif

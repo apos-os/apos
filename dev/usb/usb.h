@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "dev/usb/descriptor.h"
+
 // Transfer types.
 enum usb_ttype {
   USB_ISOCHRONOUS,
