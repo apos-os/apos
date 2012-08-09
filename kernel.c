@@ -84,8 +84,6 @@ void kmain(memory_info_t* meminfo) {
   interrupts_init();
   klog("pic_init()\n");
   pic_init();
-  klog("ps2_init()\n");
-  ps2_init();
 
   enable_interrupts();
 
@@ -98,10 +96,13 @@ void kmain(memory_info_t* meminfo) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
-  io_init();
-
   klog("pci_init()\n");
   pci_init();
+
+  klog("ps2_init()\n");
+  ps2_init();
+
+  io_init();
 
   klog("ata_init()\n");
   ata_init();

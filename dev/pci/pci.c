@@ -224,3 +224,14 @@ void pci_init() {
     }
   }
 }
+
+uint32_t pci_read_register(pci_device_t* pcidev, uint8_t reg_offset) {
+  return pci_read_config(pcidev->bus, pcidev->device, pcidev->function,
+                         reg_offset);
+}
+
+void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
+                        uint32_t value) {
+  return pci_write_config(pcidev->bus, pcidev->device, pcidev->function,
+                          reg_offset, value);
+}

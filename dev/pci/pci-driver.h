@@ -59,4 +59,10 @@ void pci_read_status(pci_device_t* pcidev);
 // need to before invoking this.
 void pci_write_status(pci_device_t* pcidev);
 
+// Read or write an arbitrary register from the PCI configuration space.
+uint32_t pci_read_register(pci_device_t* pcidev, uint8_t reg_offset);
+void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
+                        uint32_t value);
+
+
 #endif
