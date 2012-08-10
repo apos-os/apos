@@ -449,8 +449,8 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
 
   // Make an endpoint for the default control pipe.
   usb_endpoint_t endpoint;
-  endpoint.address = 0;  // Default address.
-  endpoint.endpoint = 0;
+  endpoint.address = USB_DEFAULT_ADDRESS;  // Default address.
+  endpoint.endpoint = USB_DEFAULT_CONTROL_PIPE;
   endpoint.type = USB_CONTROL;
   endpoint.max_packet = 8;
   if (status & PORTSC_LOSPEED) {

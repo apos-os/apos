@@ -19,6 +19,9 @@
 
 #include "dev/usb/descriptor.h"
 
+#define USB_DEFAULT_ADDRESS 0
+#define USB_DEFAULT_CONTROL_PIPE 0
+
 // Transfer types.
 enum usb_ttype {
   USB_ISOCHRONOUS,
