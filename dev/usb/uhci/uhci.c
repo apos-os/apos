@@ -282,7 +282,7 @@ static void uhci_interrupt(void* arg) {
     } else {
       // Otherwise check if the first TD in the queue is inactive (indicating a
       // short packet or an error).
-      KASSERT(pirp->qh->elt_link_ptr & QH_QH);
+      KASSERT(!(pirp->qh->elt_link_ptr & QH_QH));
       uhci_td_t* head_td = (uhci_td_t*)
           phys2virt(pirp->qh->elt_link_ptr & QH_LINK_PTR_MASK);
       if ((head_td->status_ctrl & TD_SC_STS_ACTIVE) == 0) {
@@ -470,7 +470,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   req->bRequest = USB_DEVREQ_GET_DESCRIPTOR;
   req->wValue = 1 << 8;
   req->wIndex = 0;
-  req->wLength = 8;
+  req->wLength = sizeof(usb_desc_dev_t);
 
   usb_hcdi_irp_t irp;
   irp.endpoint = &endpoint;
@@ -516,6 +516,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   usb_hcdi_irp_t irp2 = irp;
   irp2.buffer = (void*)page;
   irp2.pid = USB_PID_IN;
+  irp2.buflen = sizeof(usb_desc_dev_t);
 
   klogf("scheduling IN IRP...\n");
   {
@@ -541,6 +542,22 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   for (uint32_t i = 0; i < irp2.out_len; ++i) {
     klogf(" %x", ((char*)irp2.buffer)[i]);
   }
+  usb_desc_dev_t* dev_desc = (usb_desc_dev_t*)page;
+  klogf("  bLength: 0x%x\n", dev_desc->bLength);
+  klogf("  bDescriptorType: 0x%x\n", dev_desc->bDescriptorType);
+  klogf("  bcdUSB: 0x%x\n", dev_desc->bcdUSB);
+  klogf("  bDeviceClass: 0x%x\n", dev_desc->bDeviceClass);
+  klogf("  bDeviceSubClass: 0x%x\n", dev_desc->bDeviceSubClass);
+  klogf("  bDeviceProtocol: 0x%x\n", dev_desc->bDeviceProtocol);
+  klogf("  bMaxPacketSize0: 0x%x\n", dev_desc->bMaxPacketSize0);
+  klogf("  idVendor: 0x%x\n", dev_desc->idVendor);
+  klogf("  idProduct: 0x%x\n", dev_desc->idProduct);
+  klogf("  bcdDevice: 0x%x\n", dev_desc->bcdDevice);
+  klogf("  iManufacturer: 0x%x\n", dev_desc->iManufacturer);
+  klogf("  iProduct: 0x%x\n", dev_desc->iProduct);
+  klogf("  iSerialNumber: 0x%x\n", dev_desc->iSerialNumber);
+  klogf("  bNumConfigurations: 0x%x\n", dev_desc->bNumConfigurations);
+
   klogf("\n");
 }
 
