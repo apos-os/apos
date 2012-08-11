@@ -66,7 +66,7 @@ struct usb_hcdi_irp {
   uint32_t out_len;  // Actual number of bytes read or written.
 
   // Callback to invoke when the IRP is finished (either successfully or on
-  // error).
+  // error).  May be called from an interrupt context.
   void (*callback)(struct usb_hcdi_irp* irp, void* arg);
   void* callback_arg;
 

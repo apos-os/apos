@@ -82,8 +82,16 @@ struct usb_desc_interface {
 };
 typedef struct usb_desc_interface usb_desc_interface_t;
 
+// Direction for an endpoint (1 == IN).
+#define USB_DESC_ENDPOINT_DIR_IN 0x80
+
 // Fields in the bmAttributes field of usb_desc_endpoint_t struct.
 #define USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_MASK 0x03
+#define USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_CONTROL 0x00
+#define USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_ISO 0x01
+#define USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_BULK 0x02
+#define USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_INTERRUPT 0x03
+
 #define USB_DESC_ENDPOINT_BMATTR_SYNC_TYPE_MASK  0x0C
 #define USB_DESC_ENDPOINT_BMATTR_USAGE_TYPE_MASK 0x30
 

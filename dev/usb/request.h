@@ -28,8 +28,9 @@ struct usb_dev_request {
 typedef struct usb_dev_request usb_dev_request_t;
 
 // Flags in the bmRequestType field.
-#define USB_DEVREQ_HOST2DEV    0x00
-#define USB_DEVREQ_DEV2HOST    0x80
+#define USB_DEVREQ_DIR_MASK      0x80
+#define USB_DEVREQ_DIR_HOST2DEV  0x00
+#define USB_DEVREQ_DIR_DEV2HOST  0x80
 
 #define USB_DEVREQ_TYPE_MASK   0x60
 #define USB_DEVREQ_TYPE_OFFSET 5
@@ -55,5 +56,16 @@ typedef struct usb_dev_request usb_dev_request_t;
 #define USB_DEVREQ_GET_INTERFACE     10
 #define USB_DEVREQ_SET_INTERFACE     11
 #define USB_DEVREQ_SYNCH_FRAME       12
+
+// Bits in the standard statuses returned by GET_STATUS.
+#define USB_GET_STATUS_DEV_SELF_PWR    0x0001
+#define USB_GET_STATUS_DEV_REMOTE_WKUP 0x0002
+
+#define USB_GET_STATUS_ENDPT_HALT 0x0001
+
+// Standard features (for CLEAR_FEATURE and SET_FEATURE).
+#define USB_FEAT_ENDPOINT_HALT 0
+#define USB_FEAT_DEVICE_REMOTE_WAKEUP 1
+#define USB_FEAT_DEVICE_TEST_MODE 2
 
 #endif

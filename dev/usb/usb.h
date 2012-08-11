@@ -21,6 +21,11 @@
 
 #define USB_DEFAULT_ADDRESS 0
 #define USB_DEFAULT_CONTROL_PIPE 0
+// The configuration value of an unconfigured device.
+#define USB_NO_CONFIGURATION 0
+
+// Standard class codes.
+#define USB_CLASS_HUB 0x09
 
 // Transfer types.
 enum usb_ttype {

@@ -17,6 +17,9 @@
 
 #include <stdint.h>
 
+#include "dev/usb/hcd.h"
+#include "dev/usb/uhci/uhci_hub.h"
+
 // Bits in a frame list entry.
 #define FL_PTR_MASK 0xFFFFFFF0
 #define FL_PTR_QH   0x00000002
@@ -101,6 +104,9 @@ struct usb_uhci {
 
   // Linked-list of pending IRPs.
   usb_hcdi_irp_t* pending_irps;
+
+  // Fake controller for the root hub.
+  uhci_hub_t* root_hub;
 };
 
 // HACK
