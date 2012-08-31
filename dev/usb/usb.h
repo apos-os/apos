@@ -27,6 +27,9 @@
 // Standard class codes.
 #define USB_CLASS_HUB 0x09
 
+struct usb_bus;
+struct usb_hcdi;
+
 // Transfer types.
 enum usb_ttype {
   USB_ISOCHRONOUS,
@@ -88,5 +91,51 @@ struct usb_endpoint {
   void* hcd_data;
 };
 typedef struct usb_endpoint usb_endpoint_t;
+
+// A single USB device.
+struct usb_device {
+  // The bus this device is on.
+  struct usb_bus* bus;
+
+  // The device's address.
+  uint8_t address;
+
+  // The device descriptor.
+  usb_desc_dev_t dev_desc;
+
+  // An array of configurations, dev_desc->bNumConfigurations in length.  Each
+  // element is the beginning of a linked list of descriptors for the given
+  // configuration.
+  usb_desc_list_node_t* configs;
+
+  // The device's parent (which must be a hub), or NULL if the device is the
+  // HC's root hub.
+  struct usb_device* parent;
+
+  // The first child of the device, if it is a hub.
+  struct usb_device* first_child;
+
+  // The next sibling of the device, if the parent is a hub.
+  struct usb_device* next;
+};
+typedef struct usb_device usb_device_t;
+
+// A single logical USB bus, corresponding to a single hub controller.
+struct usb_bus {
+  // The HCD controlling this hub.
+  struct usb_hcdi* hcd;
+
+  // The root device, which must be the HCD's root hub.
+  usb_device_t* root_hub;
+
+  // The next free address.
+  // TODO: allocate and free addresses so we can't run out.
+  uint8_t next_address;
+
+  // Set if there is currently a device on the bus responding to the default
+  // address.
+  uint8_t default_address_in_use;
+};
+typedef struct usb_bus usb_bus_t;
 
 #endif

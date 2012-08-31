@@ -18,6 +18,24 @@
 
 #include <stdint.h>
 
+// Standard descriptor "interface".  All standard descriptors start with a
+// length and type, followed by the rest of the data.
+struct usb_desc_base {
+  uint8_t bLength;  // Size of the descriptor in bytes.
+  uint8_t bDescriptorType;  // Must be USB_DESC_DEVICE.
+
+  // The rest of the descriptor.
+  char data[];
+};
+typedef struct usb_desc_base usb_desc_base_t;
+
+// Descriptor linked list.
+struct usb_desc_list_node {
+  struct usb_desc_list_node* next;
+  usb_desc_base_t* desc;
+};
+typedef struct usb_desc_list_node usb_desc_list_node_t;
+
 // Descriptor types.  See page 251 of the USB 2.0 spec.
 #define USB_DESC_DEVICE 1
 #define USB_DESC_CONFIGURATION 2
