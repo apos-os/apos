@@ -120,22 +120,4 @@ struct usb_device {
 };
 typedef struct usb_device usb_device_t;
 
-// A single logical USB bus, corresponding to a single hub controller.
-struct usb_bus {
-  // The HCD controlling this hub.
-  struct usb_hcdi* hcd;
-
-  // The root device, which must be the HCD's root hub.
-  usb_device_t* root_hub;
-
-  // The next free address.
-  // TODO: allocate and free addresses so we can't run out.
-  uint8_t next_address;
-
-  // Set if there is currently a device on the bus responding to the default
-  // address.
-  uint8_t default_address_in_use;
-};
-typedef struct usb_bus usb_bus_t;
-
 #endif

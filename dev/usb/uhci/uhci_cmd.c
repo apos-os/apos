@@ -15,6 +15,7 @@
 #include "common/io.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
+#include "dev/usb/bus.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci_registers.h"
@@ -153,12 +154,12 @@ static void uhci_cmd_test(int argc, char* argv[]) {
   }
   int idx = atoi(argv[2]);
   int port = atoi(argv[3]);
-  if (idx >= usb_num_host_controllers()) {
+  if (idx >= usb_num_buses()) {
     ksh_printf("error: invalid controller %d\n", idx);
     return;
   }
   // Test the USB controller.
-  uhci_test_controller(usb_get_host_controller(idx), port);
+  uhci_test_controller(usb_get_bus(idx)->hcd, port);
 }
 
 static void uhci_cmd_ls(int argc, char* argv[]) {
@@ -169,17 +170,17 @@ static void uhci_cmd_ls(int argc, char* argv[]) {
   PUSH_AND_DISABLE_INTERRUPTS();
   if (argc == 2) {
     // FIXME(aoates): this will break when we add other controller types!
-    for (int i = 0; i < usb_num_host_controllers(); ++i) {
-      usb_uhci_t* hc = (usb_uhci_t*)usb_get_host_controller(i)->dev_data;
+    for (int i = 0; i < usb_num_buses(); ++i) {
+      usb_uhci_t* hc = (usb_uhci_t*)usb_get_bus(i)->hcd->dev_data;
       ksh_printf("USB %d: port: 0x%x\n", i, hc->base_port);
     }
   } else {
     int idx = atoi(argv[2]);
-    if (idx >= usb_num_host_controllers()) {
+    if (idx >= usb_num_buses()) {
       ksh_printf("error: invalid controller %d\n", idx);
       return;
     }
-    usb_uhci_t* hc = (usb_uhci_t*)usb_get_host_controller(idx)->dev_data;
+    usb_uhci_t* hc = (usb_uhci_t*)usb_get_bus(idx)->hcd->dev_data;
 
     // Get the current state.
     uint16_t usbcmd = ins(hc->base_port + USBCMD);

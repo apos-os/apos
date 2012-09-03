@@ -24,11 +24,13 @@
 #include "dev/irq.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/pci.h"
+#include "dev/usb/bus.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/request.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci_registers.h"
+#include "kmalloc.h"
 #include "page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -539,13 +541,13 @@ void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
   register_irq_handler(irq, &uhci_interrupt, c);
 
   // Register it with the USBD.
-  usb_hcdi_t hcdi;
-  kmemset(&hcdi, 0, sizeof(usb_hcdi_t));
-  hcdi.register_endpoint = &uhci_register_endpoint;
-  hcdi.unregister_endpoint = &uhci_unregister_endpoint;
-  hcdi.schedule_irp = &uhci_schedule_irp;
-  hcdi.dev_data = c;
-  usb_register_host_controller(hcdi);
+  usb_hcdi_t* hcdi = (usb_hcdi_t*)kmalloc(sizeof(usb_hcdi_t));
+  kmemset(hcdi, 0, sizeof(usb_hcdi_t));
+  hcdi->register_endpoint = &uhci_register_endpoint;
+  hcdi->unregister_endpoint = &uhci_unregister_endpoint;
+  hcdi->schedule_irp = &uhci_schedule_irp;
+  hcdi->dev_data = c;
+  usb_create_bus(hcdi);
 }
 
 void usb_uhci_interrupt(int handle) {
