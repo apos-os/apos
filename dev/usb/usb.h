@@ -120,4 +120,12 @@ struct usb_device {
 };
 typedef struct usb_device usb_device_t;
 
+// Status of an IRP.
+enum usb_irp_status {
+  USB_IRP_PENDING = 1,
+  USB_IRP_SUCCESS,
+  USB_IRP_STALL,
+  USB_IRP_DEVICE_ERROR,
+};
+typedef enum usb_irp_status usb_irp_status_t;
 #endif
