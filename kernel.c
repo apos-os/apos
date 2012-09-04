@@ -33,7 +33,7 @@
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
-#include "dev/usb/hcd.h"
+#include "dev/usb/usb.h"
 #include "kshell.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
@@ -117,6 +117,9 @@ void kmain(memory_info_t* meminfo) {
   scheduler_init();
   klog("proc_init()\n");
   proc_init();
+
+  klog("usb_init()\n");
+  usb_init();
 
   klog("initialization finished...\n");
 

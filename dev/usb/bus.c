@@ -23,10 +23,9 @@
 #define MAX_BUSES 10
 static usb_bus_t g_buses[MAX_BUSES];
 static int g_num_buses = 0;
-static int g_bus_initialized = 0;
 
 void usb_create_bus(usb_hcdi_t* hc) {
-  KASSERT(g_bus_initialized == 0);
+  KASSERT(usb_is_initialized() == 0);
   if (g_num_buses >= MAX_BUSES) {
     klogf("WARNING: too many USB host controllers!\n");
     return;

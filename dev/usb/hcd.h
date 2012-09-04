@@ -20,7 +20,7 @@
 
 // Data toggle setting for an IRP.
 enum usb_hcdi_dt {
-  USB_DATA_TOGGLE_NORMAL,  // Use the current data toggle from the endpoint.
+  USB_DATA_TOGGLE_NORMAL = 1,  // Use the current data toggle from the endpoint.
   USB_DATA_TOGGLE_RESET0,  // Reset the endpoint to DATA0 with this IRP.
   USB_DATA_TOGGLE_RESET1,  // Reset the endpoint to DATA1 with this IRP.
 };
