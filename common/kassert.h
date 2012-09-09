@@ -15,6 +15,8 @@
 #ifndef APOO_KASSERT_H
 #define APOO_KAS
 
+#include "common/debug.h"
+
 #define STR2(x) #x
 #define STR(x) STR2(x)
 
@@ -23,6 +25,13 @@
     kassert_msg(0, "assertion failed: " #cond " (" __FILE__ ":" STR(__LINE__) ")\n"); \
   } \
 } while(0)
+
+// Version of KASSERT that is a no-op in non-debug builds.
+#if ENABLE_KERNEL_SAFETY_NETS
+#define KASSERT_DBG(cond) KASSERT(cond)
+#else
+#define KASSERT_DBG(cond) do {} while (0)
+#endif
 
 // Kills the kernel, logging the given message first.
 void die(const char* msg);
