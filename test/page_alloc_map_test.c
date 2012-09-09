@@ -62,16 +62,20 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
   uint32_t* esp;
   int limit = 128;
   asm volatile ("movl %%esp, %0\n\t" : "=g"(esp));
-  // Look for an address on the stack thats in between the orig and new return
-  // addresses.
-  while (*esp <= expected_orig_return_address ||
-         *esp >= expected_new_return_address) {
-    if (limit-- == 0) {
-      die("couldn't find return address in test_page_fault_handler");
+  // We have to do it twice --- once for the fake stack frame generated in isr.s
+  // for GDB's sake, and once for the actual return address.
+  for (int i = 0; i < 2; ++i) {
+    // Look for an address on the stack thats in between the orig and new return
+    // addresses.
+    while (*esp <= expected_orig_return_address ||
+           *esp >= expected_new_return_address) {
+      if (limit-- == 0) {
+        die("couldn't find return address in test_page_fault_handler");
+      }
+      esp++;
     }
-    esp++;
+    *esp = expected_new_return_address;
   }
-  *esp = expected_new_return_address;
   // I can't believe I just wrote that code...
 }
 
