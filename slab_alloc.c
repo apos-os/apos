@@ -81,6 +81,10 @@ slab_alloc_t* slab_alloc_create(int obj_size, int max_pages) {
     s->pages[i] = 0x0;
     s->page_full[i] = 0;
   }
+
+  // Go ahead and allocate the first page.
+  s->pages[0] = alloc_slab_page(s);
+
   return s;
 }
 
