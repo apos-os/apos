@@ -108,8 +108,9 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   uhci_td_t* prev = 0x0;
   uhci_td_t* ctd = 0x0;
   uhci_td_t* head_td = 0x0;
-  uint32_t buf_phys = virt2phys((uint32_t)irp->buffer);
-  while (bytes_left > 0) {
+  uint32_t buf_phys = irp->buffer == 0x0 ? 0 : virt2phys((uint32_t)irp->buffer);
+  // Create at least 1 TD (even if the data length is 0).
+  do {
     ctd = alloc_td();
     if (!head_td) {
       head_td = ctd;
@@ -154,7 +155,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
         (virt2phys((uint32_t)ctd) & TD_LINK_PTR_ADDR_MASK);
     }
     prev = ctd;
-  }
+  } while (bytes_left > 0);
   ctd->status_ctrl |= TD_SC_IOC;
 
   // Create a QH for the transfer.
@@ -362,11 +363,9 @@ static void init_controller(usb_uhci_t* c) {
 // Test sequence for the controller that detects devices and sends their
 // descriptors.
 void uhci_test_controller(usb_hcdi_t* ci, int port) {
-  void td_callback(usb_hcdi_irp_t* irp, void* arg) {
-    kthread_queue_t* q = (kthread_queue_t*)arg;
-    while (!kthread_queue_empty(q)) {
-      scheduler_make_runnable(kthread_queue_pop(q));
-    }
+  void irp_callback(usb_irp_t* irp, void* arg) {
+    int* done = (int*)arg;
+    *done = 1;
   }
   if (port < 0 || port > 1) {
     klogf("error: port %d out of range\n", port);
@@ -401,8 +400,19 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   outs(port_reg, status | PORTSC_ENABLE | PORTSC_ENABLE_CHG);
   ksleep(100);
 
+  // Make a fake bus and device.
+  usb_bus_t bus;
+  kmemset(&bus, 0, sizeof(usb_bus_t));
+  bus.hcd =  ci;
+
+  usb_device_t device;
+  kmemset(&device, 0, sizeof(usb_device_t));
+  device.bus = &bus;
+  device.address = USB_DEFAULT_ADDRESS;
+
   // Make an endpoint for the default control pipe.
   usb_endpoint_t endpoint;
+  endpoint.device = &device;
   endpoint.address = USB_DEFAULT_ADDRESS;  // Default address.
   endpoint.endpoint = USB_DEFAULT_CONTROL_PIPE;
   endpoint.type = USB_CONTROL;
@@ -426,75 +436,40 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   req->wIndex = 0;
   req->wLength = sizeof(usb_desc_dev_t);
 
-  usb_hcdi_irp_t irp;
-  irp.endpoint = &endpoint;
-  irp.buffer = req;
-  irp.buflen = 8;
-  irp.pid = USB_PID_SETUP;
-  irp.data_toggle = USB_DATA_TOGGLE_NORMAL;
-
-  kthread_queue_t q;
-  kthread_queue_init(&q);
-  irp.callback = &td_callback;
-  irp.callback_arg = &q;
-
-  status = ins(c->base_port + USBSTS);
-  klogf("before sched USBSTS: 0x%x\n", status);
-  status = ins(c->base_port + USBINTR);
-  klogf("before sched USBINTR: 0x%x\n", status);
-
-  klogf("scheduling SETUP IRP...\n");
-  {
-    //PUSH_AND_DISABLE_INTERRUPTS();
-    uhci_schedule_irp(ci, &irp);
-    //POP_INTERRUPTS();
-  }
-
-  uint32_t i = 1000000;
-  while (i) {
-    scheduler_yield();
-    i--;
-    if (irp.status != USB_IRP_PENDING) {
-      break;
-    }
-  }
-  if (irp.status != USB_IRP_SUCCESS) {
-    klogf("error sending SETUP txn: %d\n", irp.status);
-    return;
-  }
-  klogf("wrote %d bytes\n", irp.out_len);
-
-  // Send IN(8).
   uint32_t page_phys = page_frame_alloc();
   uint32_t page = phys2virt(page_phys);
-  usb_hcdi_irp_t irp2 = irp;
-  irp2.buffer = (void*)page;
-  irp2.pid = USB_PID_IN;
-  irp2.buflen = sizeof(usb_desc_dev_t);
 
-  klogf("scheduling IN IRP...\n");
-  {
-    //PUSH_AND_DISABLE_INTERRUPTS();
-    uhci_schedule_irp(ci, &irp2);
-    //POP_INTERRUPTS();
-  }
+  usb_irp_t irp;
+  usb_init_irp(&irp);
+  irp.endpoint = &endpoint;
+  irp.buffer = (void*)page;
+  irp.buflen = sizeof(usb_desc_dev_t);
 
-  i = 1000000;
-  while (i) {
-    scheduler_yield();
-    i--;
-    if (irp2.status != USB_IRP_PENDING) {
-      break;
-    }
-  }
-  if (irp2.status != USB_IRP_SUCCESS) {
-    klogf("error sending IN txn: %d\n", irp2.status);
+  int done = 0;
+  irp.callback = &irp_callback;
+  irp.cb_arg = &done;
+
+  klogf("sending request...\n");
+  int result = usb_send_request(&irp, req);
+  if (result != 0) {
+    klogf("ERROR: usb_send_request() returned %s\n", errorname(-result));
     return;
   }
-  klogf("test_uhci: read %d bytes\n", irp2.out_len);
+
+  int i = 1000000;
+  while (i && !done) {
+    scheduler_yield();
+    i--;
+  }
+  klogf("done: %d  i: %d  status: %d\n", done, i, irp.status);
+  if (irp.status != USB_IRP_SUCCESS) {
+    klogf("error sending request: %d\n", irp.status);
+    return;
+  }
+  klogf("test_uhci: read %d bytes\n", irp.outlen);
   klogf("data:");
-  for (uint32_t i = 0; i < irp2.out_len; ++i) {
-    klogf(" %x", ((char*)irp2.buffer)[i]);
+  for (int i = 0; i < irp.outlen; ++i) {
+    klogf(" %x", ((char*)irp.buffer)[i]);
   }
   usb_desc_dev_t* dev_desc = (usb_desc_dev_t*)page;
   klogf("  bLength: 0x%x\n", dev_desc->bLength);
