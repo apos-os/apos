@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include "dev/usb/descriptor.h"
+#include "dev/usb/device.h"
 #include "dev/usb/request.h"
 
 #define USB_DEFAULT_ADDRESS 0
@@ -32,99 +33,6 @@
 
 struct usb_bus;
 struct usb_hcdi;
-struct usb_device;
-
-// Transfer types.
-enum usb_ttype {
-  USB_ISOCHRONOUS,
-  USB_INTERRUPT,
-  USB_CONTROL,
-  USB_BULK,
-};
-typedef enum usb_ttype usb_ttype_t;
-
-enum usb_dir {
-  USB_IN,
-  USB_OUT,
-};
-typedef enum usb_dir usb_dir_t;
-
-enum usb_speed {
-  USB_LOW_SPEED,
-  USB_FULL_SPEED,
-};
-typedef enum usb_speed usb_speed_t;
-
-// Packet ID types (PIDs).
-// TODO(aoates): move this to a usb-internal header (since clients don't need
-// it).
-enum usb_pid {
-  USB_PID_IN = 0x69,
-  USB_PID_OUT = 0xE1,
-  USB_PID_SETUP = 0x2D,
-};
-typedef enum usb_pid usb_pid_t;
-
-enum usb_data_toggle {
-  USB_DATA0 = 0,
-  USB_DATA1 = 1,
-};
-typedef enum usb_data_toggle usb_data_toggle_t;
-
-// An endpoint on a given device.
-struct usb_endpoint {
-  struct usb_device* device;
-
-  // TODO(aoates): remove address field.
-  uint8_t address;  // Device address.
-  uint8_t endpoint; // Endpoint number (0-15).
-  usb_ttype_t type;
-  usb_dir_t dir;  // Only if type != USB_CONTROL (which are bidirectional).
-
-  uint32_t period;  // In frames.  Only for interrupt endpoints.
-  uint32_t max_packet;  // Max packet size, in bytes.
-
-  // The speed of the associated device.  This should probably be in the device
-  // spec, not here.
-  usb_speed_t speed;
-
-  // The current data toggle bit of the endpoint (see section 8.6 of the spec).
-  usb_data_toggle_t data_toggle;
-
-  // TODO: bandwidth, error handling reqs
-
-  // Space for HCD-specific data.
-  void* hcd_data;
-};
-typedef struct usb_endpoint usb_endpoint_t;
-
-// A single USB device.
-struct usb_device {
-  // The bus this device is on.
-  struct usb_bus* bus;
-
-  // The device's address.
-  uint8_t address;
-
-  // The device descriptor.
-  usb_desc_dev_t dev_desc;
-
-  // An array of configurations, dev_desc->bNumConfigurations in length.  Each
-  // element is the beginning of a linked list of descriptors for the given
-  // configuration.
-  usb_desc_list_node_t* configs;
-
-  // The device's parent (which must be a hub), or NULL if the device is the
-  // HC's root hub.
-  struct usb_device* parent;
-
-  // The first child of the device, if it is a hub.
-  struct usb_device* first_child;
-
-  // The next sibling of the device, if the parent is a hub.
-  struct usb_device* next;
-};
-typedef struct usb_device usb_device_t;
 
 // Initialize the USB subsystem.
 //
@@ -183,5 +91,15 @@ int usb_send_data_in(usb_irp_t* irp);
 
 // Send data on a host-to-function endpoint.
 int usb_send_data_out(usb_irp_t* irp);
+
+// Packet ID types (PIDs).
+// TODO(aoates): move this to a usb-internal header (since clients don't need
+// it).
+enum usb_pid {
+  USB_PID_IN = 0x69,
+  USB_PID_OUT = 0xE1,
+  USB_PID_SETUP = 0x2D,
+};
+typedef enum usb_pid usb_pid_t;
 
 #endif
