@@ -72,6 +72,9 @@ struct usb_hcdi {
   // Register a newly-discovered endpoint with the HCD.  It can store any extra
   // data in the hcd_data field of the endpoint.
   //
+  // The endpoint's device may not be inserted into the device hierarchy yet,
+  // but will be otherwise fully initialized.
+  //
   // Optional.
   int (*register_endpoint)(struct usb_hcdi* hc, usb_endpoint_t* ep);
 

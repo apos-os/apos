@@ -19,6 +19,8 @@
 #include "dev/usb/descriptor.h"
 
 #define USB_NUM_ENDPOINTS 16
+#define USB_MIN_MAX_PACKET 8
+#define USB_DEFAULT_MAX_PACKET 8
 
 struct usb_bus;
 struct usb_endpoint;
@@ -77,6 +79,7 @@ enum usb_ttype {
 typedef enum usb_ttype usb_ttype_t;
 
 enum usb_dir {
+  USB_INVALID_DIR = 0,
   USB_IN,
   USB_OUT,
 };
@@ -100,6 +103,7 @@ struct usb_endpoint {
 
   uint8_t endpoint_idx; // Endpoint number (0-15).
   usb_ttype_t type;
+  // TODO(aoates): where is this used?  is it needed?
   usb_dir_t dir;  // Only if type != USB_CONTROL (which are bidirectional).
 
   uint32_t period;  // In frames.  Only for interrupt endpoints.

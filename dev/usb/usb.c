@@ -20,6 +20,7 @@
 #include "dev/usb/bus.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
+#include "dev/usb/usb_driver.h"
 #include "kmalloc.h"
 #include "proc/kthread_pool.h"
 #include "slab_alloc.h"
@@ -45,6 +46,20 @@ static usb_hcdi_irp_t* alloc_hcdi_irp() {
   return (usb_hcdi_irp_t*)slab_alloc(g_hcdi_irp_alloc);
 }
 
+// Create a default control pipe endpoint for the given device.
+static void usb_create_default_control_pipe(usb_device_t* dev) {
+  usb_endpoint_t* defctrl = (usb_endpoint_t*)kmalloc(sizeof(usb_endpoint_t));
+  kmemset(defctrl, 0, sizeof(usb_endpoint_t));
+
+  defctrl->endpoint_idx = USB_DEFAULT_CONTROL_PIPE;
+  defctrl->type = USB_CONTROL;
+  defctrl->dir = USB_INVALID_DIR;
+  defctrl->max_packet = USB_DEFAULT_MAX_PACKET;
+  defctrl->speed = USB_LOW_SPEED; // TODO(aoates) How do we know this yet?
+
+  usb_add_endpoint(dev, defctrl);
+}
+
 void usb_init() {
   KASSERT(g_usb_initialized == 0);
 
@@ -68,7 +83,9 @@ void usb_init() {
 
     bus->default_address_in_use = 1;
 
-    // TODO(aoates): set up default control endpoint.
+    // Set up the default control endpoint.
+    usb_create_default_control_pipe(root_hub);
+
     // TODO(aoates): assign the root hub an address and hand to the HUBD.
 
     bus->root_hub = root_hub;
