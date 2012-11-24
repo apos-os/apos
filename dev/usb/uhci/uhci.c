@@ -472,6 +472,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
     klogf(" %x", ((char*)irp.buffer)[i]);
   }
   usb_desc_dev_t* dev_desc = (usb_desc_dev_t*)page;
+  klogf("\n");
   klogf("  bLength: 0x%x\n", dev_desc->bLength);
   klogf("  bDescriptorType: 0x%x\n", dev_desc->bDescriptorType);
   klogf("  bcdUSB: 0x%x\n", dev_desc->bcdUSB);

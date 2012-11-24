@@ -189,6 +189,7 @@ static void usb_request_STATUS(void* arg) {
   }
 
   // The overall IRP's outlen is equal to the DATA phase's outlen.
+  // TODO(aoates): is this correct if we came straight from SETUP?
   context->irp->outlen = context->hcdi_irp->out_len;
 
   // DATA succeeded, so create the STATUS IRP.
