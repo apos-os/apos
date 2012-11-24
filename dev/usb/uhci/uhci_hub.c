@@ -811,7 +811,7 @@ static int handle_sc_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 int uhci_hub_handle_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
   KASSERT(hub->address == irp->endpoint->device->address);
 
-  switch (irp->endpoint->endpoint) {
+  switch (irp->endpoint->endpoint_idx) {
     case USB_DEFAULT_CONTROL_PIPE:
       return handle_dcp_irp(hub, irp);
 
@@ -820,7 +820,7 @@ int uhci_hub_handle_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 
     default:
       klogf("error: unknown endpoint %d in UHCI hub handler\n",
-            irp->endpoint->endpoint);
+            irp->endpoint->endpoint_idx);
       die("unknown endpoint in UHCI hub handler");
   }
 

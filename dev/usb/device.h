@@ -18,7 +18,10 @@
 
 #include "dev/usb/descriptor.h"
 
+#define USB_NUM_ENDPOINTS 16
+
 struct usb_bus;
+struct usb_endpoint;
 
 // States of a USB device.  See section 9.1 of the USB spec.
 enum usb_device_state {
@@ -40,6 +43,9 @@ struct usb_device {
 
   // The device's address.
   uint8_t address;
+
+  // Currently-configured endpoints.  May be NULL.
+  struct usb_endpoint* endpoints[USB_NUM_ENDPOINTS];
 
   // The device descriptor.
   usb_desc_dev_t dev_desc;
@@ -92,7 +98,7 @@ typedef enum usb_data_toggle usb_data_toggle_t;
 struct usb_endpoint {
   struct usb_device* device;
 
-  uint8_t endpoint; // Endpoint number (0-15).
+  uint8_t endpoint_idx; // Endpoint number (0-15).
   usb_ttype_t type;
   usb_dir_t dir;  // Only if type != USB_CONTROL (which are bidirectional).
 

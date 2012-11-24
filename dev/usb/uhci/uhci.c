@@ -88,6 +88,9 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   KASSERT(irp->endpoint->max_packet <= 64);
   KASSERT(irp->endpoint->speed == USB_LOW_SPEED ||
           irp->endpoint->speed == USB_FULL_SPEED);
+  KASSERT(irp->endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
+  KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
+          irp->endpoint);
 
   PUSH_AND_DISABLE_INTERRUPTS();
   if (irp->endpoint->hcd_data != 0x0) {
@@ -131,7 +134,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     const uint16_t td_max_len = packet_len > 0 ? packet_len - 1 : 0x7FF;
     ctd->token =
       ((td_max_len << TD_TOK_MAXLEN_OFFSET) & TD_TOK_MAXLEN_MASK) |
-      ((irp->endpoint->endpoint << TD_TOK_ENDPT_OFFSET) & TD_TOK_ENDPT_MASK) |
+      ((irp->endpoint->endpoint_idx << TD_TOK_ENDPT_OFFSET) & TD_TOK_ENDPT_MASK) |
       ((irp->endpoint->device->address << TD_TOK_DADDR_OFFSET) & TD_TOK_DADDR_MASK) |
       (irp->pid & TD_TOK_PID_MASK);
 
@@ -413,7 +416,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   // Make an endpoint for the default control pipe.
   usb_endpoint_t endpoint;
   endpoint.device = &device;
-  endpoint.endpoint = USB_DEFAULT_CONTROL_PIPE;
+  endpoint.endpoint_idx = USB_DEFAULT_CONTROL_PIPE;
   endpoint.type = USB_CONTROL;
   endpoint.max_packet = 8;
   if (status & PORTSC_LOSPEED) {
@@ -424,6 +427,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   }
   endpoint.data_toggle = USB_DATA0;
   endpoint.hcd_data = 0x0;
+  device.endpoints[endpoint.endpoint_idx] = &endpoint;
 
   // Send GET_DESCRIPTOR(DEVICE).
   slab_alloc_t* alloc =

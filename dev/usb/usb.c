@@ -68,6 +68,7 @@ void usb_init() {
 
     bus->default_address_in_use = 1;
 
+    // TODO(aoates): set up default control endpoint.
     // TODO(aoates): assign the root hub an address and hand to the HUBD.
 
     bus->root_hub = root_hub;
@@ -238,6 +239,9 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
   if (irp->endpoint->type != USB_CONTROL) {
     return -EINVAL;
   }
+  KASSERT(irp->endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
+  KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
+          irp->endpoint);
 
   irp->status = USB_IRP_PENDING;
   irp->outlen = 0;
