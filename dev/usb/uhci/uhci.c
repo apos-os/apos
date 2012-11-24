@@ -132,7 +132,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     ctd->token =
       ((td_max_len << TD_TOK_MAXLEN_OFFSET) & TD_TOK_MAXLEN_MASK) |
       ((irp->endpoint->endpoint << TD_TOK_ENDPT_OFFSET) & TD_TOK_ENDPT_MASK) |
-      ((irp->endpoint->address << TD_TOK_DADDR_OFFSET) & TD_TOK_DADDR_MASK) |
+      ((irp->endpoint->device->address << TD_TOK_DADDR_OFFSET) & TD_TOK_DADDR_MASK) |
       (irp->pid & TD_TOK_PID_MASK);
 
     // Toggle the data toggle bit.
@@ -413,7 +413,6 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   // Make an endpoint for the default control pipe.
   usb_endpoint_t endpoint;
   endpoint.device = &device;
-  endpoint.address = USB_DEFAULT_ADDRESS;  // Default address.
   endpoint.endpoint = USB_DEFAULT_CONTROL_PIPE;
   endpoint.type = USB_CONTROL;
   endpoint.max_packet = 8;

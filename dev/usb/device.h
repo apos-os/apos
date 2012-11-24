@@ -87,12 +87,11 @@ enum usb_data_toggle {
   USB_DATA1 = 1,
 };
 typedef enum usb_data_toggle usb_data_toggle_t;
+
 // An endpoint on a given device.
 struct usb_endpoint {
   struct usb_device* device;
 
-  // TODO(aoates): remove address field.
-  uint8_t address;  // Device address.
   uint8_t endpoint; // Endpoint number (0-15).
   usb_ttype_t type;
   usb_dir_t dir;  // Only if type != USB_CONTROL (which are bidirectional).

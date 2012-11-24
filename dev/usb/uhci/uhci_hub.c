@@ -809,7 +809,7 @@ static int handle_sc_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 }
 
 int uhci_hub_handle_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
-  KASSERT(hub->address == irp->endpoint->address);
+  KASSERT(hub->address == irp->endpoint->device->address);
 
   switch (irp->endpoint->endpoint) {
     case USB_DEFAULT_CONTROL_PIPE:
