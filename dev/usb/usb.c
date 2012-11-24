@@ -46,19 +46,6 @@ static usb_hcdi_irp_t* alloc_hcdi_irp() {
   return (usb_hcdi_irp_t*)slab_alloc(g_hcdi_irp_alloc);
 }
 
-// Create a default control pipe endpoint for the given device.
-static void usb_create_default_control_pipe(usb_device_t* dev) {
-  usb_endpoint_t* defctrl = (usb_endpoint_t*)kmalloc(sizeof(usb_endpoint_t));
-  kmemset(defctrl, 0, sizeof(usb_endpoint_t));
-
-  defctrl->endpoint_idx = USB_DEFAULT_CONTROL_PIPE;
-  defctrl->type = USB_CONTROL;
-  defctrl->dir = USB_INVALID_DIR;
-  defctrl->max_packet = USB_DEFAULT_MAX_PACKET;
-
-  usb_add_endpoint(dev, defctrl);
-}
-
 void usb_init() {
   KASSERT(g_usb_initialized == 0);
 
@@ -71,24 +58,12 @@ void usb_init() {
     bus->next_address = USB_FIRST_ADDRESS;
 
     // Create a usb_device_t for the root hub of the bus.
-    usb_device_t* root_hub = (usb_device_t*)kmalloc(sizeof(usb_device_t));
-    kmemset(root_hub, 0, sizeof(usb_device_t));
-
-    root_hub->bus = bus;
-    root_hub->speed = USB_FULL_SPEED;
-    root_hub->address = USB_DEFAULT_ADDRESS;
-    root_hub->parent = 0x0;
-    root_hub->first_child = 0x0;
-    root_hub->next = 0x0;
-
-    bus->default_address_in_use = 1;
-
-    // Set up the default control endpoint.
-    usb_create_default_control_pipe(root_hub);
+    usb_device_t* root_hub =
+        usb_create_device(bus, 0x0 /* parent */, USB_FULL_SPEED);
+    KASSERT(bus->root_hub == root_hub);
+    root_hub->state = USB_DEV_DEFAULT;
 
     // TODO(aoates): assign the root hub an address and hand to the HUBD.
-
-    bus->root_hub = root_hub;
   }
 
   // Initialize the thread pool.

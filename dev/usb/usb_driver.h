@@ -16,9 +16,19 @@
 #ifndef APOO_DEV_USB_USB_DRIVER_H
 #define APOO_DEV_USB_USB_DRIVER_H
 
+#include "dev/usb/bus.h"
 #include "dev/usb/device.h"
 
 // Add an endpoint to a device, and register it with the HCD.
 void usb_add_endpoint(usb_device_t* dev, usb_endpoint_t* endpoint);
+
+// Create a new device on the given bus, with the given parent (or NULL) if this
+// is the root hub).  Sets the address to the default address on the hub and
+// creates the default control pipe.
+//
+// The created device will be in the INVALID state.  The caller should update
+// the state as necessary.
+usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
+                                usb_speed_t speed);
 
 #endif

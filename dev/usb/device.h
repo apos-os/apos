@@ -27,7 +27,8 @@ struct usb_endpoint;
 
 // States of a USB device.  See section 9.1 of the USB spec.
 enum usb_device_state {
-  USB_DEV_ATTACHED = 1,
+  USB_DEV_INVALID = 0,
+  USB_DEV_ATTACHED,
   USB_DEV_POWERED,
   USB_DEV_DEFAULT,
   USB_DEV_ADDRESS,
