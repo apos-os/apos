@@ -86,8 +86,8 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     return -EINVAL;
   }
   KASSERT(irp->endpoint->max_packet <= 64);
-  KASSERT(irp->endpoint->speed == USB_LOW_SPEED ||
-          irp->endpoint->speed == USB_FULL_SPEED);
+  KASSERT(irp->endpoint->device->speed == USB_LOW_SPEED ||
+          irp->endpoint->device->speed == USB_FULL_SPEED);
   KASSERT(irp->endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
           irp->endpoint);
@@ -124,7 +124,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
 
     ctd->link_ptr = TD_LINK_PTR_TERM;
     // TODO(aoates): probably want SPD as well.
-    if (irp->endpoint->speed == USB_LOW_SPEED) {
+    if (irp->endpoint->device->speed == USB_LOW_SPEED) {
       ctd->status_ctrl = TD_SC_LS;
     } else {
       ctd->status_ctrl = 0x0;
@@ -412,6 +412,12 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   kmemset(&device, 0, sizeof(usb_device_t));
   device.bus = &bus;
   device.address = USB_DEFAULT_ADDRESS;
+  if (status & PORTSC_LOSPEED) {
+    klogf("lo-speed device\n");
+    device.speed = USB_LOW_SPEED;
+  } else {
+    device.speed = USB_FULL_SPEED;
+  }
 
   // Make an endpoint for the default control pipe.
   usb_endpoint_t endpoint;
@@ -419,12 +425,6 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   endpoint.endpoint_idx = USB_DEFAULT_CONTROL_PIPE;
   endpoint.type = USB_CONTROL;
   endpoint.max_packet = 8;
-  if (status & PORTSC_LOSPEED) {
-    klogf("lo-speed endpoint\n");
-    endpoint.speed = USB_LOW_SPEED;
-  } else {
-    endpoint.speed = USB_FULL_SPEED;
-  }
   endpoint.data_toggle = USB_DATA0;
   endpoint.hcd_data = 0x0;
   device.endpoints[endpoint.endpoint_idx] = &endpoint;

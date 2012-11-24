@@ -36,6 +36,12 @@ enum usb_device_state {
 };
 typedef enum usb_device_state usb_device_state_t;
 
+enum usb_speed {
+  USB_LOW_SPEED,
+  USB_FULL_SPEED,
+};
+typedef enum usb_speed usb_speed_t;
+
 // A single USB device.
 struct usb_device {
   // The bus this device is on.
@@ -45,6 +51,9 @@ struct usb_device {
 
   // The device's address.
   uint8_t address;
+
+  // The speed of the device.
+  usb_speed_t speed;
 
   // Currently-configured endpoints.  May be NULL.
   struct usb_endpoint* endpoints[USB_NUM_ENDPOINTS];
@@ -85,12 +94,6 @@ enum usb_dir {
 };
 typedef enum usb_dir usb_dir_t;
 
-enum usb_speed {
-  USB_LOW_SPEED,
-  USB_FULL_SPEED,
-};
-typedef enum usb_speed usb_speed_t;
-
 enum usb_data_toggle {
   USB_DATA0 = 0,
   USB_DATA1 = 1,
@@ -108,10 +111,6 @@ struct usb_endpoint {
 
   uint32_t period;  // In frames.  Only for interrupt endpoints.
   uint32_t max_packet;  // Max packet size, in bytes.
-
-  // The speed of the associated device.  This should probably be in the device
-  // spec, not here.
-  usb_speed_t speed;
 
   // The current data toggle bit of the endpoint (see section 8.6 of the spec).
   usb_data_toggle_t data_toggle;

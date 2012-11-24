@@ -55,7 +55,6 @@ static void usb_create_default_control_pipe(usb_device_t* dev) {
   defctrl->type = USB_CONTROL;
   defctrl->dir = USB_INVALID_DIR;
   defctrl->max_packet = USB_DEFAULT_MAX_PACKET;
-  defctrl->speed = USB_LOW_SPEED; // TODO(aoates) How do we know this yet?
 
   usb_add_endpoint(dev, defctrl);
 }
@@ -76,6 +75,7 @@ void usb_init() {
     kmemset(root_hub, 0, sizeof(usb_device_t));
 
     root_hub->bus = bus;
+    root_hub->speed = USB_FULL_SPEED;
     root_hub->address = USB_DEFAULT_ADDRESS;
     root_hub->parent = 0x0;
     root_hub->first_child = 0x0;
