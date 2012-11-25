@@ -31,4 +31,18 @@ void usb_add_endpoint(usb_device_t* dev, usb_endpoint_t* endpoint);
 usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
                                 usb_speed_t speed);
 
+// Initialize a device.  This kicks off a process that will (asynchronously),
+//   a) assign an address
+//   b) read device descriptors
+//   c) configure the device
+//   d) look for an appropriate driver
+//   e) if one is found, hand the device to the driver
+//
+// After (a) is complete, any callbacks waiting on the bus's default address
+// list will be woken up.
+// TODO(aoates): figure out this mechanism and implement it.
+//
+// The device must be in the USB_DEV_DEFAULT state.
+void usb_init_device(usb_device_t* dev);
+
 #endif

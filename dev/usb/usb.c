@@ -82,6 +82,22 @@ void usb_init_irp(usb_irp_t* irp) {
   irp->status = USB_IRP_PENDING;
 }
 
+// For the time being, requests must be allocated with a slab allocator so that
+// they can be mapped into physical memory by the HCD.
+static slab_alloc_t* g_request_alloc = 0x0;
+static const int REQUEST_ALLOC_MAX_PAGES = 10;
+usb_dev_request_t* usb_alloc_request() {
+  if (g_request_alloc == 0x0) {
+    g_request_alloc =
+        slab_alloc_create(sizeof(usb_dev_request_t), REQUEST_ALLOC_MAX_PAGES);
+  }
+  return (usb_dev_request_t*)slab_alloc(g_request_alloc);
+}
+
+void usb_free_request(usb_dev_request_t* request) {
+  slab_free(g_request_alloc, request);
+}
+
 // The context of a request.
 struct usb_request_context {
   usb_irp_t* irp;
@@ -234,6 +250,8 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
   KASSERT(irp->endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
           irp->endpoint);
+
+  // TODO(aoates): lock the endpoint so it doesn't go away, somehow.
 
   irp->status = USB_IRP_PENDING;
   irp->outlen = 0;

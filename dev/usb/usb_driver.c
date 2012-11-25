@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/errno.h"
 #include "common/kassert.h"
+#include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/usb/bus.h"
 #include "dev/usb/device.h"
@@ -78,4 +80,135 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
 
   bus->default_address_in_use = 1;
   return dev;
+}
+
+// Allocate and return a free address for the given bus.  Returns
+// USB_DEFAULT_ADDRESS if no addresses are available.
+uint8_t usb_get_free_address(usb_bus_t* bus) {
+  if (bus->next_address == 255) {
+    return USB_DEFAULT_ADDRESS;
+  }
+  return bus->next_address++;
+}
+
+// Tracks the state as we go through all the stages of usb_init_device().
+struct usb_init_state {
+  usb_device_t* dev;
+  usb_irp_t irp;
+  usb_dev_request_t* request;
+  uint8_t address;
+};
+typedef struct usb_init_state usb_init_state_t;
+
+// Different stages of usb_init_device.
+static void usb_set_address(usb_init_state_t* state);
+static void usb_set_address_done(usb_irp_t* irp, void* arg);
+static void usb_get_device_desc(usb_init_state_t* state);
+static void usb_init_done(usb_init_state_t* state);
+
+void usb_init_device(usb_device_t* dev) {
+  KASSERT(dev->state == USB_DEV_DEFAULT);
+  KASSERT(dev->address == USB_DEFAULT_ADDRESS);
+  KASSERT(dev->bus->default_address_in_use);
+}
+
+static void usb_set_address(usb_init_state_t* state) {
+  KASSERT(state->dev->state == USB_DEV_DEFAULT);
+  KASSERT(state->dev->address == USB_DEFAULT_ADDRESS);
+  KASSERT(state->dev->bus->default_address_in_use);
+
+  state->address = usb_get_free_address(state->dev->bus);
+  if (state->address == USB_DEFAULT_ADDRESS) {
+    klogf("ERROR: USB device init failed; no free addresses on bus");
+    usb_init_done(state);
+    return;
+  }
+
+  state->request = usb_alloc_request();
+  state->request->bmRequestType =
+      USB_DEVREQ_DIR_HOST2DEV |
+      USB_DEVREQ_TYPE_STD |
+      USB_DEVREQ_RCPT_DEV;
+  KASSERT(state->request->bmRequestType == 0x0);
+  state->request->bRequest = USB_DEVREQ_SET_ADDRESS;
+  state->request->wValue = state->address;
+  state->request->wIndex = state->request->wLength = 0;
+
+  // Set up the IRP.
+  usb_init_irp(&state->irp);
+  state->irp.endpoint = state->dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
+  state->irp.buffer = 0x0;
+  state->irp.buflen = 0;
+  state->irp.callback = &usb_set_address_done;
+  state->irp.cb_arg = state;
+
+  int result = usb_send_request(&state->irp, state->request);
+  if (result != 0) {
+    klogf("ERROR: USB device init failed; usb_send_request returned %s",
+          errorname(-result));
+    usb_init_done(state);
+    return;
+  }
+}
+
+static void usb_set_address_done(usb_irp_t* irp, void* arg) {
+  usb_init_state_t* state = (usb_init_state_t*)arg;
+  KASSERT(irp == &state->irp);
+
+  // Check if IRP was successful.
+  if (irp->status != USB_IRP_SUCCESS) {
+    klogf("ERROR: USB device init failed; SET_ADDRESS IRP failed");
+    usb_init_done(state);
+    return;
+  }
+  KASSERT(irp->outlen == 0);
+
+  KASSERT(state->dev->address == USB_DEFAULT_ADDRESS);
+  KASSERT(state->dev->bus->default_address_in_use);
+  state->dev->address = state->address;
+  state->dev->state = USB_DEV_ADDRESS;
+  state->dev->bus->default_address_in_use = 0;
+  // TODO(aoates): wake up waiting threads/callbacks for default address.
+
+  // Get device descriptor.
+  usb_get_device_desc(state);
+}
+
+static void usb_get_device_desc(usb_init_state_t* state) {
+  KASSERT(state->dev->state == USB_DEV_ADDRESS);
+  KASSERT(state->dev->address != USB_DEFAULT_ADDRESS);
+
+  state->request->bmRequestType =
+      USB_DEVREQ_DIR_DEV2HOST |
+      USB_DEVREQ_TYPE_STD |
+      USB_DEVREQ_RCPT_DEV;
+  state->request->bRequest = USB_DEVREQ_GET_DESCRIPTOR;
+  // Device descriptor in high byte, index 0 in low byte.
+  state->request->wValue = USB_DESC_DEVICE << 8;
+  state->request->wIndex = 0;
+  state->request->wLength = sizeof(usb_desc_dev_t);
+
+  // Set up the IRP.
+  usb_init_irp(&state->irp);
+  state->irp.endpoint = state->dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
+  state->irp.buffer = 0x0;  // TODO start here
+  state->irp.buflen = 0;
+  state->irp.callback = &usb_set_address_done;
+  state->irp.cb_arg = state;
+
+  int result = usb_send_request(&state->irp, state->request);
+  if (result != 0) {
+    klogf("ERROR: USB device init failed; usb_send_request returned %s",
+          errorname(-result));
+    usb_init_done(state);
+    return;
+  }
+}
+
+static void usb_init_done(usb_init_state_t* state) {
+  if (state->request != 0x0) {
+    usb_free_request(state->request);
+  }
+  kmemset(state, 0, sizeof(usb_init_state_t));  // DBG
+  kfree(state);
 }

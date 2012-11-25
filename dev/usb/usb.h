@@ -77,6 +77,11 @@ typedef struct usb_irp usb_irp_t;
 // Initialize an IRP.
 void usb_init_irp(usb_irp_t* irp);
 
+// Allocate (and free) a usb_dev_request_t that can be used with
+// usb_send_request.
+usb_dev_request_t* usb_alloc_request();
+void usb_free_request(usb_dev_request_t* request);
+
 // For all of these, the endpoint, IRP, and request (if given) must live until
 // the callback is invoked.
 
