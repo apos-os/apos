@@ -125,14 +125,7 @@ static void usb_set_address(usb_init_state_t* state) {
   }
 
   state->request = usb_alloc_request();
-  state->request->bmRequestType =
-      USB_DEVREQ_DIR_HOST2DEV |
-      USB_DEVREQ_TYPE_STD |
-      USB_DEVREQ_RCPT_DEV;
-  KASSERT(state->request->bmRequestType == 0x0);
-  state->request->bRequest = USB_DEVREQ_SET_ADDRESS;
-  state->request->wValue = state->address;
-  state->request->wIndex = state->request->wLength = 0;
+  usb_make_SET_ADDRESS(state->request, state->address);
 
   // Set up the IRP.
   usb_init_irp(&state->irp);
