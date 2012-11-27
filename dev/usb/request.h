@@ -70,11 +70,12 @@ typedef struct usb_dev_request usb_dev_request_t;
 
 // Request "constructors" for standard requests.
 void usb_make_SET_ADDRESS(usb_dev_request_t* req_out, uint8_t address);
+void usb_make_GET_DESCRIPTOR(usb_dev_request_t* req_out,
+                             uint8_t type, uint8_t index, uint16_t length);
 
 //void usb_make_GET_STATUS(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_CLEAR_FEATURE(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SET_FEATURE(usb_dev_request_t* req_out, ...); // TODO
-//void usb_make_GET_DESCRIPTOR(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SET_DESCRIPTOR(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_GET_CONFIGURATION(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SET_CONFIGURATION(usb_dev_request_t* req_out, ...); // TODO

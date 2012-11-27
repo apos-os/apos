@@ -171,15 +171,8 @@ static void usb_get_device_desc(usb_init_state_t* state) {
   KASSERT(state->dev->state == USB_DEV_ADDRESS);
   KASSERT(state->dev->address != USB_DEFAULT_ADDRESS);
 
-  state->request->bmRequestType =
-      USB_DEVREQ_DIR_DEV2HOST |
-      USB_DEVREQ_TYPE_STD |
-      USB_DEVREQ_RCPT_DEV;
-  state->request->bRequest = USB_DEVREQ_GET_DESCRIPTOR;
-  // Device descriptor in high byte, index 0 in low byte.
-  state->request->wValue = USB_DESC_DEVICE << 8;
-  state->request->wIndex = 0;
-  state->request->wLength = sizeof(usb_desc_dev_t);
+  usb_make_GET_DESCRIPTOR(state->request,
+                          USB_DESC_DEVICE, 0, sizeof(usb_desc_dev_t));
 
   // Set up the IRP.
   usb_init_irp(&state->irp);

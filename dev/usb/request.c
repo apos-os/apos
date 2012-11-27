@@ -25,3 +25,16 @@ void usb_make_SET_ADDRESS(usb_dev_request_t* req_out, uint8_t address) {
   req_out->wValue = address;
   req_out->wIndex = req_out->wLength = 0;
 }
+
+void usb_make_GET_DESCRIPTOR(usb_dev_request_t* req_out,
+                             uint8_t type, uint8_t index, uint16_t length) {
+  req_out->bmRequestType =
+      USB_DEVREQ_DIR_DEV2HOST |
+      USB_DEVREQ_TYPE_STD |
+      USB_DEVREQ_RCPT_DEV;
+  req_out->bRequest = USB_DEVREQ_GET_DESCRIPTOR;
+  // Descriptor type in high byte, index in low byte.
+  req_out->wValue = (type << 8) | index;
+  req_out->wIndex = 0;
+  req_out->wLength = length;
+}
