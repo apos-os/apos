@@ -160,12 +160,12 @@ void kfree(void* x) {
   block_t* b = (block_t*)((uint8_t*)x - sizeof(block_t));
   KASSERT(b->magic == KALLOC_MAGIC);
   KASSERT(b->free == 0);
-  b->free = 1;
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(b, 0xDEADBEEF);
   }
 
   PUSH_AND_DISABLE_INTERRUPTS();
+  b->free = 1;
   merge_block(b);
   POP_INTERRUPTS();
 }

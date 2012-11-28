@@ -309,6 +309,47 @@ static void interrupt_test() {
   kmalloc_log_state();
 }
 
+// Similar to interrupt_test, but doesn't do as much checking, just bangs on it.
+static void large_interrupt_test() {
+  KTEST_BEGIN("kmalloc large interrupt safety test");
+
+  const int kTestLengthMs = 10000;
+
+  void timer_cb(void* arg) {
+    void* x1 = kmalloc(1);
+    void* x2 = kmalloc(1);
+    void* x3 = kmalloc(1);
+    void* x4 = kmalloc(1);
+    kfree(x3);
+    kfree(x2);
+    kfree(x4);
+    kfree(x1);
+  }
+
+  const uint32_t start_time = get_time_ms();
+
+  register_timer_callback(10, kTestLengthMs / 10, &timer_cb, 0x0);
+  int round = 0;
+  while (get_time_ms() < start_time + kTestLengthMs) {
+    round++;
+    if (round % 100 == 0) {
+      klogf("round %d, elapsed: %d\n", round, get_time_ms() - start_time);
+    }
+    void* x[100];
+    for (int i = 0; i < 100; ++i) {
+      x[i] = kmalloc(i % 3 + 1);
+    }
+
+    for (int i = 0; i < 100; ++i) {
+      if (x[i]) {
+        kfree(x[i]);
+      }
+    }
+  }
+  klogf("Did %d rounds over %d ms\n", round, kTestLengthMs);
+  kmalloc_log_state();
+}
+
 void kmalloc_test() {
   KTEST_SUITE_BEGIN("kmalloc");
 
@@ -325,6 +366,7 @@ void kmalloc_test() {
   tiny_alloc_test();
   stress_test();
   interrupt_test();
+  large_interrupt_test();
 
   // The kernel is no longer in a usable state.
   // TODO(aoates): if this ever becomes annoying, we could force-reboot the
