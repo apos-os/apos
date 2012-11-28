@@ -29,6 +29,14 @@
 
 static int g_usb_initialized = 0;
 
+// Slab allocators for buffers between 16 and 512 bytes.  Used to copy data
+// to/from USB IRPs (which can be anywhere in memory) from/into HCD IRPs (which
+// much be physically mappable).
+#define BUFSLAB_MIN_EXPONENT 4
+#define BUFSLAB_MAX_EXPONENT 9
+#define BUFSLAB_MAX_PAGES 10
+static slab_alloc_t* g_buffer_allocs[BUFSLAB_MAX_EXPONENT + 1];
+
 // Dedicated USB thread pool.  Used to run all driver callbacks and background
 // processes to keep them off the interrupt contexts.
 #define USB_POOL_SIZE 4
@@ -44,6 +52,22 @@ static usb_hcdi_irp_t* alloc_hcdi_irp() {
         sizeof(usb_hcdi_irp_t), SLAB_MAX_PAGES);
   }
   return (usb_hcdi_irp_t*)slab_alloc(g_hcdi_irp_alloc);
+}
+
+// Returns the appropriate slab_alloc for the given buffer size.
+slab_alloc_t* get_buf_alloc(int size) {
+  int bufsize = 1;
+  int idx = 0;
+  while (idx <= BUFSLAB_MAX_EXPONENT &&
+          (bufsize < size || g_buffer_allocs[idx] == 0x0)) {
+    bufsize *= 2;
+    idx++;
+  }
+  if (bufsize < size) {
+    return 0x0;
+  } else {
+    return g_buffer_allocs[idx];
+  }
 }
 
 void usb_init() {
@@ -69,6 +93,18 @@ void usb_init() {
   // Initialize the thread pool.
   int result = kthread_pool_init(&g_pool, USB_POOL_SIZE);
   KASSERT(result == 0);
+
+  // Initialize the buffer slab allocators.
+  int bufsize = 1;
+  for (int i = 0; i <= BUFSLAB_MAX_EXPONENT; ++i) {
+    if (i < BUFSLAB_MIN_EXPONENT) {
+      g_buffer_allocs[i] = 0x0;
+    } else {
+      g_buffer_allocs[i] = slab_alloc_create(
+          bufsize, BUFSLAB_MAX_PAGES);
+    }
+    bufsize *= 2;
+  }
 
   g_usb_initialized = 1;
 }
@@ -104,6 +140,9 @@ struct usb_request_context {
   usb_dev_request_t* request;
   usb_hcdi_irp_t* hcdi_irp;
 
+  // The physically-mappable buffer we allocate for the usb_hcdi_irp.
+  void* phys_buf;
+
   // The next callback to run in handling the request.  This will be pushed onto
   // the USB thread pool by the trampoline function (which is called by the
   // HCD, possibly on an interrupt context).
@@ -128,6 +167,12 @@ static void usb_request_finish(usb_request_context_t* context,
   slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
   context->hcdi_irp = 0x0;
   usb_irp_t* irp = context->irp;
+
+  if (context->phys_buf != 0x0) {
+    slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
+    KASSERT(alloc != 0x0);
+    slab_free(alloc, context->phys_buf);
+  }
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     kmemset(context, 0, sizeof(usb_request_context_t));
@@ -162,7 +207,7 @@ static void usb_request_DATA(void* arg) {
   // SETUP succeeded, so create the DATA IRP.
   kmemset(context->hcdi_irp, 0, sizeof(usb_hcdi_irp_t));
   context->hcdi_irp->endpoint = context->irp->endpoint;
-  context->hcdi_irp->buffer = context->irp->buffer;
+  context->hcdi_irp->buffer = context->phys_buf;
   context->hcdi_irp->buflen = context->irp->buflen;
   const uint8_t dir = context->request->bmRequestType & USB_DEVREQ_DIR_MASK;
   KASSERT_DBG(dir == USB_DEVREQ_DIR_HOST2DEV ||
@@ -173,6 +218,10 @@ static void usb_request_DATA(void* arg) {
     context->hcdi_irp->pid = USB_PID_IN;
   }
   context->hcdi_irp->data_toggle = USB_DATA_TOGGLE_NORMAL;
+
+  if (dir == USB_DEVREQ_DIR_HOST2DEV) {
+    kmemcpy(context->phys_buf, context->irp->buffer, context->irp->buflen);
+  }
 
   // Set up the next stage to trampoline into usb_request_STATUS.
   context->hcdi_irp->callback = &usb_request_trampoline;
@@ -199,7 +248,13 @@ static void usb_request_STATUS(void* arg) {
 
   // The overall IRP's outlen is equal to the DATA phase's outlen.
   // TODO(aoates): is this correct if we came straight from SETUP?
+  const uint8_t dir = context->request->bmRequestType & USB_DEVREQ_DIR_MASK;
   context->irp->outlen = context->hcdi_irp->out_len;
+  if (dir == USB_DEVREQ_DIR_DEV2HOST && context->irp->buflen > 0
+      /* TODO && last_pid == DATA, !SETUP */) {
+    kmemcpy(context->irp->buffer,
+            context->phys_buf, context->hcdi_irp->out_len);
+  }
 
   // DATA succeeded, so create the STATUS IRP.
   kmemset(context->hcdi_irp, 0, sizeof(usb_hcdi_irp_t));
@@ -208,7 +263,6 @@ static void usb_request_STATUS(void* arg) {
   context->hcdi_irp->buflen = 0;
 
   // Opposite direction from the DATA phase, and always DATA1.
-  const uint8_t dir = context->request->bmRequestType & USB_DEVREQ_DIR_MASK;
   if (context->irp->buflen == 0 || dir == USB_DEVREQ_DIR_HOST2DEV) {
     context->hcdi_irp->pid = USB_PID_IN;
   } else {
@@ -261,6 +315,21 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
       (usb_request_context_t*)kmalloc(sizeof(usb_request_context_t));
   context->irp = irp;
   context->request = request;
+
+  // Create a physically-mappable buffer for the HCD IRP, since the buffer we
+  // were just given may not be.
+  // TODO(aoates): check if the passed-in buffer is physically mappable and, if
+  // so, use it instead of making a new one and copying.
+  if (irp->buflen == 0) {
+    context->phys_buf = 0x0;
+  } else {
+    slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
+    if (!alloc) {
+      kfree(context);
+      return -EINVAL;
+    }
+    context->phys_buf = slab_alloc(alloc);
+  }
 
   // First send the SETUP packet.
   context->hcdi_irp = alloc_hcdi_irp();
