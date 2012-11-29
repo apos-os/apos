@@ -59,7 +59,7 @@ slab_alloc_t* get_buf_alloc(int size) {
   int bufsize = 1;
   int idx = 0;
   while (idx <= BUFSLAB_MAX_EXPONENT &&
-          (bufsize < size || g_buffer_allocs[idx] == 0x0)) {
+         (bufsize < size || g_buffer_allocs[idx] == 0x0)) {
     bufsize *= 2;
     idx++;
   }
@@ -72,6 +72,22 @@ slab_alloc_t* get_buf_alloc(int size) {
 
 void usb_init() {
   KASSERT(g_usb_initialized == 0);
+
+  // Initialize the thread pool.
+  int result = kthread_pool_init(&g_pool, USB_POOL_SIZE);
+  KASSERT(result == 0);
+
+  // Initialize the buffer slab allocators.
+  int bufsize = 1;
+  for (int i = 0; i <= BUFSLAB_MAX_EXPONENT; ++i) {
+    if (i < BUFSLAB_MIN_EXPONENT) {
+      g_buffer_allocs[i] = 0x0;
+    } else {
+      g_buffer_allocs[i] = slab_alloc_create(
+          bufsize, BUFSLAB_MAX_PAGES);
+    }
+    bufsize *= 2;
+  }
 
   // Initialize each bus we know about.
   for (int i = 0; i < usb_num_buses(); ++i) {
@@ -88,22 +104,7 @@ void usb_init() {
     root_hub->state = USB_DEV_DEFAULT;
 
     // TODO(aoates): assign the root hub an address and hand to the HUBD.
-  }
-
-  // Initialize the thread pool.
-  int result = kthread_pool_init(&g_pool, USB_POOL_SIZE);
-  KASSERT(result == 0);
-
-  // Initialize the buffer slab allocators.
-  int bufsize = 1;
-  for (int i = 0; i <= BUFSLAB_MAX_EXPONENT; ++i) {
-    if (i < BUFSLAB_MIN_EXPONENT) {
-      g_buffer_allocs[i] = 0x0;
-    } else {
-      g_buffer_allocs[i] = slab_alloc_create(
-          bufsize, BUFSLAB_MAX_PAGES);
-    }
-    bufsize *= 2;
+    usb_init_device(root_hub);
   }
 
   g_usb_initialized = 1;
