@@ -104,12 +104,20 @@ typedef struct usb_init_state usb_init_state_t;
 static void usb_set_address(usb_init_state_t* state);
 static void usb_set_address_done(usb_irp_t* irp, void* arg);
 static void usb_get_device_desc(usb_init_state_t* state);
+static void usb_get_device_desc_done(usb_irp_t* irp, void* arg);
 static void usb_init_done(usb_init_state_t* state);
 
 void usb_init_device(usb_device_t* dev) {
   KASSERT(dev->state == USB_DEV_DEFAULT);
   KASSERT(dev->address == USB_DEFAULT_ADDRESS);
   KASSERT(dev->bus->default_address_in_use);
+
+  usb_init_state_t* state =
+      (usb_init_state_t*)kmalloc(sizeof(usb_init_state_t));
+  kmemset(state, 0, sizeof(usb_init_state_t));
+  state->dev = dev;
+
+  usb_set_address(state);
 }
 
 static void usb_set_address(usb_init_state_t* state) {
@@ -123,6 +131,9 @@ static void usb_set_address(usb_init_state_t* state) {
     usb_init_done(state);
     return;
   }
+
+  klogf("INFO: USB assigning address %d to device %x\n",
+        state->address, state->dev);
 
   state->request = usb_alloc_request();
   usb_make_SET_ADDRESS(state->request, state->address);
@@ -156,6 +167,8 @@ static void usb_set_address_done(usb_irp_t* irp, void* arg) {
   }
   KASSERT(irp->outlen == 0);
 
+  klogf("INFO: SET_ADDRESS for device %x successful\n", state->dev);
+
   KASSERT(state->dev->address == USB_DEFAULT_ADDRESS);
   KASSERT(state->dev->bus->default_address_in_use);
   state->dev->address = state->address;
@@ -171,15 +184,17 @@ static void usb_get_device_desc(usb_init_state_t* state) {
   KASSERT(state->dev->state == USB_DEV_ADDRESS);
   KASSERT(state->dev->address != USB_DEFAULT_ADDRESS);
 
+  klogf("INFO: USB getting device descriptor for device %x\n", state->dev);
+
   usb_make_GET_DESCRIPTOR(state->request,
                           USB_DESC_DEVICE, 0, sizeof(usb_desc_dev_t));
 
   // Set up the IRP.
   usb_init_irp(&state->irp);
   state->irp.endpoint = state->dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-  state->irp.buffer = 0x0;  // TODO start here
-  state->irp.buflen = 0;
-  state->irp.callback = &usb_set_address_done;
+  state->irp.buffer = &state->dev->dev_desc;
+  state->irp.buflen = sizeof(usb_desc_dev_t);
+  state->irp.callback = &usb_get_device_desc_done;
   state->irp.cb_arg = state;
 
   int result = usb_send_request(&state->irp, state->request);
@@ -189,6 +204,25 @@ static void usb_get_device_desc(usb_init_state_t* state) {
     usb_init_done(state);
     return;
   }
+}
+
+static void usb_get_device_desc_done(usb_irp_t* irp, void* arg) {
+  usb_init_state_t* state = (usb_init_state_t*)arg;
+  KASSERT(irp == &state->irp);
+
+  // Check if IRP was successful.
+  if (irp->status != USB_IRP_SUCCESS) {
+    klogf("ERROR: USB device init failed; GET_DESCRIPTOR IRP failed");
+    usb_init_done(state);
+    return;
+  }
+  // TODO(aoates): we shouldn't assert this, since the device may misbehave.
+  KASSERT(irp->outlen == sizeof(usb_desc_dev_t));
+
+  // TODO(aoates): print the descriptor
+
+  // TODO(aoates): get the rest of the descriptors and configure the device.
+  usb_init_done(state);
 }
 
 static void usb_init_done(usb_init_state_t* state) {
