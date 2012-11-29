@@ -219,7 +219,8 @@ static void usb_get_device_desc_done(usb_irp_t* irp, void* arg) {
   // TODO(aoates): we shouldn't assert this, since the device may misbehave.
   KASSERT(irp->outlen == sizeof(usb_desc_dev_t));
 
-  // TODO(aoates): print the descriptor
+  klogf("INFO: USB read device descriptor for device %x:\n", state->dev);
+  usb_print_desc_dev(&state->dev->dev_desc);
 
   // TODO(aoates): get the rest of the descriptors and configure the device.
   usb_init_done(state);
