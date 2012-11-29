@@ -72,6 +72,10 @@ int kthread_pool_init(kthread_pool_t* pool, int size) {
 }
 
 int kthread_pool_push(kthread_pool_t* pool, kthread_pool_cb_t cb, void* arg) {
+  if (!pool->threads) {
+    return -EINVAL;
+  }
+
   kthread_pool_item_t* item = (kthread_pool_item_t*)kmalloc(
       sizeof(kthread_pool_item_t));
   if (!item) {
