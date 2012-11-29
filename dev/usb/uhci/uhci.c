@@ -473,20 +473,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
     klogf(" %x", ((char*)irp.buffer)[i]);
   }
   klogf("\n");
-  klogf("  bLength: 0x%x\n", dev_desc.bLength);
-  klogf("  bDescriptorType: 0x%x\n", dev_desc.bDescriptorType);
-  klogf("  bcdUSB: 0x%x\n", dev_desc.bcdUSB);
-  klogf("  bDeviceClass: 0x%x\n", dev_desc.bDeviceClass);
-  klogf("  bDeviceSubClass: 0x%x\n", dev_desc.bDeviceSubClass);
-  klogf("  bDeviceProtocol: 0x%x\n", dev_desc.bDeviceProtocol);
-  klogf("  bMaxPacketSize0: 0x%x\n", dev_desc.bMaxPacketSize0);
-  klogf("  idVendor: 0x%x\n", dev_desc.idVendor);
-  klogf("  idProduct: 0x%x\n", dev_desc.idProduct);
-  klogf("  bcdDevice: 0x%x\n", dev_desc.bcdDevice);
-  klogf("  iManufacturer: 0x%x\n", dev_desc.iManufacturer);
-  klogf("  iProduct: 0x%x\n", dev_desc.iProduct);
-  klogf("  iSerialNumber: 0x%x\n", dev_desc.iSerialNumber);
-  klogf("  bNumConfigurations: 0x%x\n", dev_desc.bNumConfigurations);
+  usb_print_desc_dev(&dev_desc);
 
   klogf("\n");
 }

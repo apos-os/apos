@@ -125,4 +125,7 @@ struct usb_desc_endpoint {
 };
 typedef struct usb_desc_endpoint usb_desc_endpoint_t;
 
+// Utility functions.
+void usb_print_desc_dev(usb_desc_dev_t* dev_desc);
+
 #endif

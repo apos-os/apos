@@ -33,6 +33,7 @@ OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_i
 	   dev/ramdisk/ramdisk.o \
 	   dev/usb/uhci/uhci.o dev/usb/uhci/uhci_cmd.o dev/usb/uhci/uhci_hub.o \
 	   dev/usb/bus.o dev/usb/usb.o dev/usb/usb_driver.o dev/usb/request.o \
+	   dev/usb/descriptor.o \
 	   proc/kthread.o proc/kthread_asm.o proc/scheduler.o proc/process.o \
 	   proc/sleep.o proc/kthread_pool.o \
 	   memory.o page_alloc.o kernel.o kmalloc.o page_fault.o slab_alloc.o \
