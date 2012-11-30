@@ -357,6 +357,9 @@ static void init_controller(usb_uhci_t* c) {
     c->frame_list[i] = frame_list_entry;
   }
 
+  // Initialize the root hub controller.
+  KASSERT(0 == uhci_hub_init(c));
+
   // Start the controller.
   uint16_t cmd = ins(c->base_port + USBCMD);
   cmd |= USBCMD_CF | USBCMD_RS;

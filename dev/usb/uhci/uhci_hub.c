@@ -655,6 +655,7 @@ static int handle_SET_CONFIGURATION(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 }
 
 static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
+  int status = 0;
   switch (hub->dcp_irp_state) {
     case IRP_SETUP:
       KASSERT(irp->pid == USB_PID_SETUP);
@@ -704,14 +705,14 @@ static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
       }
 
       switch (hub->dcp_request.bRequest) {
-        case USB_DEVREQ_GET_STATUS: return handle_GET_STATUS(hub, irp);
-        case USB_DEVREQ_CLEAR_FEATURE: return handle_CLEAR_FEATURE(hub, irp);
-        case USB_DEVREQ_SET_FEATURE: return handle_SET_FEATURE(hub, irp);
-        case USB_DEVREQ_SET_ADDRESS: return handle_SET_ADDRESS(hub, irp);
-        case USB_DEVREQ_GET_DESCRIPTOR: return handle_GET_DESCRIPTOR(hub, irp);
-        case USB_DEVREQ_SET_DESCRIPTOR: return handle_SET_DESCRIPTOR(hub, irp);
-        case USB_DEVREQ_GET_CONFIGURATION: return handle_GET_CONFIGURATION(hub, irp);
-        case USB_DEVREQ_SET_CONFIGURATION: return handle_SET_CONFIGURATION(hub, irp);
+        case USB_DEVREQ_GET_STATUS: status = handle_GET_STATUS(hub, irp); break;
+        case USB_DEVREQ_CLEAR_FEATURE: status = handle_CLEAR_FEATURE(hub, irp); break;
+        case USB_DEVREQ_SET_FEATURE: status = handle_SET_FEATURE(hub, irp); break;
+        case USB_DEVREQ_SET_ADDRESS: status = handle_SET_ADDRESS(hub, irp); break;
+        case USB_DEVREQ_GET_DESCRIPTOR: status = handle_GET_DESCRIPTOR(hub, irp); break;
+        case USB_DEVREQ_SET_DESCRIPTOR: status = handle_SET_DESCRIPTOR(hub, irp); break;
+        case USB_DEVREQ_GET_CONFIGURATION: status = handle_GET_CONFIGURATION(hub, irp); break;
+        case USB_DEVREQ_SET_CONFIGURATION: status = handle_SET_CONFIGURATION(hub, irp); break;
         default:
           die("unsupported bRequest in UHCI hub controller");
       }
@@ -723,20 +724,20 @@ static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
       // The status packet should be the *opposite* of the data packet.
       if ((hub->dcp_request.bmRequestType & USB_DEVREQ_DIR_MASK) ==
           USB_DEVREQ_DIR_DEV2HOST) {
-        KASSERT(irp->pid == USB_PID_IN);
-      } else {
         KASSERT(irp->pid == USB_PID_OUT);
+      } else {
+        KASSERT(irp->pid == USB_PID_IN);
       }
 
       switch (hub->dcp_request.bRequest) {
-        case USB_DEVREQ_GET_STATUS: return handle_GET_STATUS(hub, irp);
-        case USB_DEVREQ_CLEAR_FEATURE: return handle_CLEAR_FEATURE(hub, irp);
-        case USB_DEVREQ_SET_FEATURE: return handle_SET_FEATURE(hub, irp);
-        case USB_DEVREQ_SET_ADDRESS: return handle_SET_ADDRESS(hub, irp);
-        case USB_DEVREQ_GET_DESCRIPTOR: return handle_GET_DESCRIPTOR(hub, irp);
-        case USB_DEVREQ_SET_DESCRIPTOR: return handle_SET_DESCRIPTOR(hub, irp);
-        case USB_DEVREQ_GET_CONFIGURATION: return handle_GET_CONFIGURATION(hub, irp);
-        case USB_DEVREQ_SET_CONFIGURATION: return handle_SET_CONFIGURATION(hub, irp);
+        case USB_DEVREQ_GET_STATUS: status = handle_GET_STATUS(hub, irp); break;
+        case USB_DEVREQ_CLEAR_FEATURE: status = handle_CLEAR_FEATURE(hub, irp); break;
+        case USB_DEVREQ_SET_FEATURE: status = handle_SET_FEATURE(hub, irp); break;
+        case USB_DEVREQ_SET_ADDRESS: status = handle_SET_ADDRESS(hub, irp); break;
+        case USB_DEVREQ_GET_DESCRIPTOR: status = handle_GET_DESCRIPTOR(hub, irp); break;
+        case USB_DEVREQ_SET_DESCRIPTOR: status = handle_SET_DESCRIPTOR(hub, irp); break;
+        case USB_DEVREQ_GET_CONFIGURATION: status = handle_GET_CONFIGURATION(hub, irp); break;
+        case USB_DEVREQ_SET_CONFIGURATION: status = handle_SET_CONFIGURATION(hub, irp); break;
         default:
           die("unsupported bRequest in UHCI hub controller");
       }
@@ -749,7 +750,7 @@ static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
   // TODO(aoates): is it safe to do this synchronously?  Should we throw it onto
   // the shared USB threadpool?
   irp->callback(irp, irp->callback_arg);
-  return 0;
+  return status;
 }
 
 // Run in an interrupt context.  Checks for status changes and finishes the IRP
