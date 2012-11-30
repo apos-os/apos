@@ -247,12 +247,16 @@ static void usb_request_STATUS(void* arg) {
     return;
   }
 
-  // The overall IRP's outlen is equal to the DATA phase's outlen.
-  // TODO(aoates): is this correct if we came straight from SETUP?
+  // The overall IRP's outlen is equal to the DATA phase's outlen, or 0 if there
+  // was no DATA phase.
   const uint8_t dir = context->request->bmRequestType & USB_DEVREQ_DIR_MASK;
-  context->irp->outlen = context->hcdi_irp->out_len;
-  if (dir == USB_DEVREQ_DIR_DEV2HOST && context->irp->buflen > 0
-      /* TODO && last_pid == DATA, !SETUP */) {
+  if (context->irp->buflen > 0) {
+    context->irp->outlen = context->hcdi_irp->out_len;
+  } else {
+    context->irp->outlen = 0;
+  }
+
+  if (dir == USB_DEVREQ_DIR_DEV2HOST && context->irp->buflen > 0) {
     kmemcpy(context->irp->buffer,
             context->phys_buf, context->hcdi_irp->out_len);
   }
