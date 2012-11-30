@@ -100,6 +100,16 @@ struct usb_init_state {
 };
 typedef struct usb_init_state usb_init_state_t;
 
+static void create_init_irp(usb_init_state_t* state, void* buffer, int buflen,
+                             void (*callback)(struct usb_irp*, void*)) {
+  usb_init_irp(&state->irp);
+  state->irp.endpoint = state->dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
+  state->irp.buffer = buffer;
+  state->irp.buflen = buflen;
+  state->irp.callback = callback;
+  state->irp.cb_arg = state;
+}
+
 // Different stages of usb_init_device.
 static void usb_set_address(usb_init_state_t* state);
 static void usb_set_address_done(usb_irp_t* irp, void* arg);
@@ -139,12 +149,7 @@ static void usb_set_address(usb_init_state_t* state) {
   usb_make_SET_ADDRESS(state->request, state->address);
 
   // Set up the IRP.
-  usb_init_irp(&state->irp);
-  state->irp.endpoint = state->dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-  state->irp.buffer = 0x0;
-  state->irp.buflen = 0;
-  state->irp.callback = &usb_set_address_done;
-  state->irp.cb_arg = state;
+  create_init_irp(state, 0x0, 0, &usb_set_address_done);
 
   int result = usb_send_request(&state->irp, state->request);
   if (result != 0) {
@@ -190,12 +195,8 @@ static void usb_get_device_desc(usb_init_state_t* state) {
                           USB_DESC_DEVICE, 0, sizeof(usb_desc_dev_t));
 
   // Set up the IRP.
-  usb_init_irp(&state->irp);
-  state->irp.endpoint = state->dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-  state->irp.buffer = &state->dev->dev_desc;
-  state->irp.buflen = sizeof(usb_desc_dev_t);
-  state->irp.callback = &usb_get_device_desc_done;
-  state->irp.cb_arg = state;
+  create_init_irp(state, &state->dev->dev_desc, sizeof(usb_desc_dev_t),
+                  &usb_get_device_desc_done);
 
   int result = usb_send_request(&state->irp, state->request);
   if (result != 0) {
