@@ -106,6 +106,14 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     case USB_DATA_TOGGLE_RESET1: irp->endpoint->data_toggle = USB_DATA1; break;
   }
 
+  // If the transfer is bound for the root hub, intercept it.
+  // TODO(aoates): we don't currently track that intercepted IRPs are
+  // one-at-a-time (unlike normal IRPs), so multiple simultaneous ones could
+  // wreak havoc.
+  if (irp->endpoint->device->address == uhci_hc->root_hub->address) {
+    return uhci_hub_handle_irp(uhci_hc->root_hub, irp);
+  }
+
   // Create a sequence of TDs for the transfer.
   uint32_t bytes_left = irp->buflen;
   uhci_td_t* prev = 0x0;
