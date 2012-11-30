@@ -30,6 +30,7 @@
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci_registers.h"
+#include "dev/usb/usb_driver.h"
 #include "kmalloc.h"
 #include "page_alloc.h"
 #include "proc/kthread.h"
@@ -415,78 +416,15 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   ksleep(100);
 
   // Make a fake bus and device.
-  usb_bus_t bus;
-  kmemset(&bus, 0, sizeof(usb_bus_t));
-  bus.hcd =  ci;
+  usb_bus_t* bus = (usb_bus_t*)kmalloc(sizeof(usb_bus_t));;
+  kmemset(bus, 0, sizeof(usb_bus_t));
+  bus->hcd = ci;
+  bus->next_address = 1;
 
-  usb_device_t device;
-  kmemset(&device, 0, sizeof(usb_device_t));
-  device.bus = &bus;
-  device.address = USB_DEFAULT_ADDRESS;
-  if (status & PORTSC_LOSPEED) {
-    klogf("lo-speed device\n");
-    device.speed = USB_LOW_SPEED;
-  } else {
-    device.speed = USB_FULL_SPEED;
-  }
-
-  // Make an endpoint for the default control pipe.
-  usb_endpoint_t endpoint;
-  endpoint.device = &device;
-  endpoint.endpoint_idx = USB_DEFAULT_CONTROL_PIPE;
-  endpoint.type = USB_CONTROL;
-  endpoint.max_packet = 8;
-  endpoint.data_toggle = USB_DATA0;
-  endpoint.hcd_data = 0x0;
-  device.endpoints[endpoint.endpoint_idx] = &endpoint;
-
-  // Send GET_DESCRIPTOR(DEVICE).
-  slab_alloc_t* alloc =
-      slab_alloc_create(sizeof(usb_dev_request_t), SLAB_MAX_PAGES);
-  usb_dev_request_t* req = (usb_dev_request_t*)slab_alloc(alloc);
-  req->bmRequestType = 0x80;
-  req->bRequest = USB_DEVREQ_GET_DESCRIPTOR;
-  req->wValue = 1 << 8;
-  req->wIndex = 0;
-  req->wLength = sizeof(usb_desc_dev_t);
-
-  usb_desc_dev_t dev_desc;
-  usb_irp_t irp;
-  usb_init_irp(&irp);
-  irp.endpoint = &endpoint;
-  irp.buffer = &dev_desc;
-  irp.buflen = sizeof(usb_desc_dev_t);
-
-  int done = 0;
-  irp.callback = &irp_callback;
-  irp.cb_arg = &done;
-
-  klogf("sending request...\n");
-  int result = usb_send_request(&irp, req);
-  if (result != 0) {
-    klogf("ERROR: usb_send_request() returned %s\n", errorname(-result));
-    return;
-  }
-
-  int i = 1000000;
-  while (i && !done) {
-    scheduler_yield();
-    i--;
-  }
-  klogf("done: %d  i: %d  status: %d\n", done, i, irp.status);
-  if (irp.status != USB_IRP_SUCCESS) {
-    klogf("error sending request: %d\n", irp.status);
-    return;
-  }
-  klogf("test_uhci: read %d bytes\n", irp.outlen);
-  klogf("data:");
-  for (int i = 0; i < irp.outlen; ++i) {
-    klogf(" %x", ((char*)irp.buffer)[i]);
-  }
-  klogf("\n");
-  usb_print_desc_dev(&dev_desc);
-
-  klogf("\n");
+  usb_device_t* device = usb_create_device(
+      bus, 0x0, (status & PORTSC_LOSPEED) ? USB_LOW_SPEED : USB_FULL_SPEED);
+  device->state = USB_DEV_DEFAULT;
+  usb_init_device(device);
 }
 
 void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
