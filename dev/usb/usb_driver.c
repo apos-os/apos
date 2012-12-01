@@ -21,6 +21,8 @@
 #include "dev/usb/usb_driver.h"
 #include "kmalloc.h"
 
+#define CONFIG_BUFFER_SIZE 512
+
 void usb_add_endpoint(usb_device_t* dev, usb_endpoint_t* endpoint) {
   KASSERT(endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(dev->endpoints[endpoint->endpoint_idx] == 0x0);
@@ -97,6 +99,8 @@ struct usb_init_state {
   usb_irp_t irp;
   usb_dev_request_t* request;
   uint8_t address;
+  uint8_t next_config_idx;  // The next configuration desc to load.
+  void* config_buffer;
 };
 typedef struct usb_init_state usb_init_state_t;
 
@@ -115,6 +119,8 @@ static void usb_set_address(usb_init_state_t* state);
 static void usb_set_address_done(usb_irp_t* irp, void* arg);
 static void usb_get_device_desc(usb_init_state_t* state);
 static void usb_get_device_desc_done(usb_irp_t* irp, void* arg);
+static void usb_get_config_desc(usb_init_state_t* state);
+static void usb_get_config_desc_done(usb_irp_t* irp, void* arg);
 static void usb_init_done(usb_init_state_t* state);
 
 void usb_init_device(usb_device_t* dev) {
@@ -213,23 +219,96 @@ static void usb_get_device_desc_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
-    klogf("ERROR: USB device init failed; GET_DESCRIPTOR IRP failed");
+    klogf("ERROR: USB device init failed; GET_DESCRIPTOR (device) IRP failed");
     usb_init_done(state);
     return;
   }
   // TODO(aoates): we shouldn't assert this, since the device may misbehave.
   KASSERT(irp->outlen == sizeof(usb_desc_dev_t));
 
+  // TODO(aoates): process descriptor (e.g. max packet size, etc).
+
   klogf("INFO: USB read device descriptor for device %x:\n", state->dev);
   usb_print_desc_dev(&state->dev->dev_desc);
 
-  // TODO(aoates): get the rest of the descriptors and configure the device.
+  KASSERT(state->dev->dev_desc.bNumConfigurations > 0);
+  usb_get_config_desc(state);
+}
+
+static void usb_get_config_desc(usb_init_state_t* state) {
+  const int kNumConfigs = state->dev->dev_desc.bNumConfigurations;
+
+  KASSERT_DBG(state->dev->state == USB_DEV_ADDRESS);
+  KASSERT_DBG(state->dev->address != USB_DEFAULT_ADDRESS);
+  KASSERT(state->next_config_idx < kNumConfigs);
+
+  klogf("INFO: USB getting config descriptor #%d for device %x\n",
+        state->next_config_idx, state->dev);
+
+  // If it doesn't already exist, allocate the configuration descriptor array.
+  if (state->dev->configs == 0x0) {
+    const int size = sizeof(usb_desc_list_node_t) * kNumConfigs;
+    state->dev->configs = (usb_desc_list_node_t*)kmalloc(size);
+    kmemset(state->dev->configs, 0, size);
+  }
+
+  // ...and a buffer.
+  if (state->config_buffer == 0x0) {
+    state->config_buffer = kmalloc(CONFIG_BUFFER_SIZE);
+    KASSERT(state->config_buffer != 0x0); // TODO(aoates): better handling.
+  }
+
+  usb_make_GET_DESCRIPTOR(state->request,
+                          USB_DESC_CONFIGURATION, state->next_config_idx, CONFIG_BUFFER_SIZE);
+  create_init_irp(state, state->config_buffer, CONFIG_BUFFER_SIZE,
+                  &usb_get_config_desc_done);
+
+  int result = usb_send_request(&state->irp, state->request);
+  if (result != 0) {
+    klogf("ERROR: USB device init failed; usb_send_request returned %s",
+          errorname(-result));
+    usb_init_done(state);
+    return;
+  }
+
+}
+
+static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
+  usb_init_state_t* state = (usb_init_state_t*)arg;
+  KASSERT(irp == &state->irp);
+  KASSERT_DBG(state->next_config_idx < state->dev->dev_desc.bNumConfigurations);
+
+  // Check if IRP was successful.
+  if (irp->status != USB_IRP_SUCCESS) {
+    klogf("ERROR: USB device init failed; GET_DESCRIPTOR (config) IRP failed");
+    usb_init_done(state);
+    return;
+  }
+
+  klogf("INFO: USB read %d bytes of config descriptor for device %x\n",
+        state->irp.outlen, state->dev);
+
+  KASSERT_DBG(state->dev->configs[state->next_config_idx].desc == 0x0);
+  int result = usb_parse_descriptors(&state->dev->configs[state->next_config_idx],
+                                     state->config_buffer, CONFIG_BUFFER_SIZE);
+  KASSERT(result == 0);  // TODO(aoates): handle more gracefully.
+
+  state->next_config_idx++;
+  if (state->next_config_idx < state->dev->dev_desc.bNumConfigurations) {
+    usb_get_config_desc(state);
+    return;
+  }
+
+  // TODO find a driver, finish init, etc
   usb_init_done(state);
 }
 
 static void usb_init_done(usb_init_state_t* state) {
   if (state->request != 0x0) {
     usb_free_request(state->request);
+  }
+  if (state->config_buffer != 0x0) {
+    kfree(state->config_buffer);
   }
   kmemset(state, 0, sizeof(usb_init_state_t));  // DBG
   kfree(state);

@@ -16,6 +16,7 @@
 #ifndef APOO_DEV_USB_DESCRIPTOR_H
 #define APOO_DEV_USB_DESCRIPTOR_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 // Standard descriptor "interface".  All standard descriptors start with a
@@ -62,7 +63,7 @@ struct usb_desc_dev {
   uint8_t iProduct;
   uint8_t iSerialNumber;
   uint8_t bNumConfigurations;
-};
+} __attribute__((packed));
 typedef struct usb_desc_dev usb_desc_dev_t;
 
 // Bits in in the bmAttributes field in usb_desc_config_t.
@@ -82,7 +83,7 @@ struct usb_desc_config {
   uint8_t iConfiguration;
   uint8_t bmAttributes;
   uint8_t bMaxPower;  // Max power in 2 mA units.
-};
+} __attribute__((packed));
 typedef struct usb_desc_config usb_desc_config_t;
 
 // Interface descriptor.  There are bNumInterfaces interfaces for each
@@ -97,7 +98,7 @@ struct usb_desc_interface {
   uint8_t bInterfaceSubClass;
   uint8_t bInterfaceProtocol;
   uint8_t iInterface;
-};
+} __attribute__((packed));
 typedef struct usb_desc_interface usb_desc_interface_t;
 
 // Direction for an endpoint (1 == IN).
@@ -122,10 +123,20 @@ struct usb_desc_endpoint {
   uint8_t bmAttributes;
   uint16_t wMaxPacketSize;
   uint8_t bInterval;
-};
+} __attribute__((packed));
 typedef struct usb_desc_endpoint usb_desc_endpoint_t;
 
 // Utility functions.
-void usb_print_desc_dev(usb_desc_dev_t* dev_desc);
+
+// Parse a set of descriptors returned by a device sent GET_DESCRIPTOR(CONFIG,
+// |config_index|).  Creates a descriptor list (e.g. to put in a device_t) and
+// returns it in |list_out|, which should point to an empty list node to be used
+// as the list head.  Returns -errno if it couldn't be parsed.
+int usb_parse_descriptors(usb_desc_list_node_t* list_out,
+                          void* buf, size_t buflen);
+
+// Print descriptors.
+void usb_print_desc_dev(usb_desc_dev_t* desc);
+void usb_print_desc_config(usb_desc_config_t* desc);
 
 #endif
