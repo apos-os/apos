@@ -44,7 +44,7 @@ typedef struct usb_desc_list_node usb_desc_list_node_t;
 #define USB_DESC_INTERFACE 4
 #define USB_DESC_ENDPOINT 5
 #define USB_DESC_DEVICE_QUALIFIER 6
-#define USB_DESC_OTHER_SPEED_CONFIGURATION 7 1
+#define USB_DESC_OTHER_SPEED_CONFIGURATION 7
 #define USB_DESC_INTERFACE_POWER 8
 
 // Device descriptor.  One per device.
@@ -136,7 +136,12 @@ int usb_parse_descriptors(usb_desc_list_node_t* list_out,
                           void* buf, size_t buflen);
 
 // Print descriptors.
+void usb_print_desc_list(usb_desc_list_node_t* list);
+
+void usb_print_desc(usb_desc_base_t* desc);
 void usb_print_desc_dev(usb_desc_dev_t* desc);
 void usb_print_desc_config(usb_desc_config_t* desc);
+void usb_print_desc_interface(usb_desc_interface_t* desc);
+void usb_print_desc_endpoint(usb_desc_endpoint_t* desc);
 
 #endif

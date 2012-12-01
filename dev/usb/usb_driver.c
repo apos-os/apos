@@ -292,6 +292,7 @@ static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
   int result = usb_parse_descriptors(&state->dev->configs[state->next_config_idx],
                                      state->config_buffer, CONFIG_BUFFER_SIZE);
   KASSERT(result == 0);  // TODO(aoates): handle more gracefully.
+  usb_print_desc_list(&state->dev->configs[state->next_config_idx]);
 
   state->next_config_idx++;
   if (state->next_config_idx < state->dev->dev_desc.bNumConfigurations) {
