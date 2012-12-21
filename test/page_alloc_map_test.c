@@ -60,7 +60,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
 
   // Walk up the stack and change where we're returning.  This is pretty kooky.
   uint32_t* esp;
-  int limit = 128;
+  int limit = 512;
   asm volatile ("movl %%esp, %0\n\t" : "=g"(esp));
   // We have to do it twice --- once for the fake stack frame generated in isr.s
   // for GDB's sake, and once for the actual return address.
