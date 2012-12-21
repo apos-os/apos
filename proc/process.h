@@ -18,10 +18,10 @@
 
 #include "proc/kthread.h"
 
-typedef struct process {
+struct process {
   int id;  // Index into global process table.
   kthread_t thread;  // Main process thread.
-} process_t;
+};
 
 // Initialize the process table, and create the first process (process 0) from
 // the current thread.
