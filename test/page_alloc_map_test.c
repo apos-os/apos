@@ -48,7 +48,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
   KASSERT(interrupt == 0x0E);
 
   uint32_t address;
-  asm volatile ("movl %%cr2, %0\n\t" : "=g"(address));
+  asm volatile ("movl %%cr2, %0\n\t" : "=r"(address));
 
   if (expected_seen) {
     KEXPECT_EQ(0, expected_seen);
