@@ -271,21 +271,20 @@ static void stress_test() {
 // Make sure kmalloc/kfree are interrupt-safe.  Essentially the same as
 // tiny_alloc_test() but with a timer interrupting and doing allocations as
 // well.
+void interrupt_test_timer_cb(void* arg) {
+  void* x1 = kmalloc(1);
+  void* x2 = kmalloc(1);
+  void* x3 = kmalloc(1);
+  void* x4 = kmalloc(1);
+  kfree(x3);
+  kfree(x2);
+  kfree(x4);
+  kfree(x1);
+}
 static void interrupt_test() {
   KTEST_BEGIN("kmalloc interrupt safety test");
 
-  void timer_cb(void* arg) {
-    void* x1 = kmalloc(1);
-    void* x2 = kmalloc(1);
-    void* x3 = kmalloc(1);
-    void* x4 = kmalloc(1);
-    kfree(x3);
-    kfree(x2);
-    kfree(x4);
-    kfree(x1);
-  }
-
-  register_timer_callback(1, 1000, &timer_cb, 0x0);
+  register_timer_callback(1, 1000, &interrupt_test_timer_cb, 0x0);
 
   for (int round = 0; round < 200; round++) {
     void* x[100];
@@ -310,25 +309,24 @@ static void interrupt_test() {
 }
 
 // Similar to interrupt_test, but doesn't do as much checking, just bangs on it.
+void large_interrupt_test_timer_cb(void* arg) {
+  void* x1 = kmalloc(1);
+  void* x2 = kmalloc(1);
+  void* x3 = kmalloc(1);
+  void* x4 = kmalloc(1);
+  kfree(x3);
+  kfree(x2);
+  kfree(x4);
+  kfree(x1);
+}
 static void large_interrupt_test() {
   KTEST_BEGIN("kmalloc large interrupt safety test");
 
   const int kTestLengthMs = 10000;
-
-  void timer_cb(void* arg) {
-    void* x1 = kmalloc(1);
-    void* x2 = kmalloc(1);
-    void* x3 = kmalloc(1);
-    void* x4 = kmalloc(1);
-    kfree(x3);
-    kfree(x2);
-    kfree(x4);
-    kfree(x1);
-  }
-
   const uint32_t start_time = get_time_ms();
 
-  register_timer_callback(10, kTestLengthMs / 10, &timer_cb, 0x0);
+  register_timer_callback(10, kTestLengthMs / 10,
+                          &large_interrupt_test_timer_cb, 0x0);
   int round = 0;
   while (get_time_ms() < start_time + kTestLengthMs) {
     round++;
