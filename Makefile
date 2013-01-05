@@ -24,7 +24,7 @@ BOOTLOADER	= grub
  
 OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_init.o load/kernel_init.o load/idt.o \
 	   common/kstring.o common/kassert.o common/klog.o common/kprintf.o common/io.o \
-	   common/errno.o common/hashtable.o \
+	   common/errno.o common/hashtable.o common/builtins.o \
 	   dev/interrupts.o dev/ps2.o dev/irq.o dev/timer.o dev/isr.o dev/rtc.o \
 	   dev/keyboard/ps2_keyboard.o dev/keyboard/ps2_scancodes.o dev/keyboard/keyboard.o \
 	   dev/video/vga.o dev/video/vterm.o dev/ld.o dev/pci/pci.o dev/pci/piix.o \
