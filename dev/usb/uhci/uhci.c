@@ -378,10 +378,6 @@ static void init_controller(usb_uhci_t* c) {
 // Test sequence for the controller that detects devices and sends their
 // descriptors.
 void uhci_test_controller(usb_hcdi_t* ci, int port) {
-  void irp_callback(usb_irp_t* irp, void* arg) {
-    int* done = (int*)arg;
-    *done = 1;
-  }
   if (port < 0 || port > 1) {
     klogf("error: port %d out of range\n", port);
     return;

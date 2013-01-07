@@ -59,6 +59,14 @@ int uhci_hub_init(usb_uhci_t* hc) {
   return 0;
 }
 
+// Copy a flag from one bitset to another.
+inline static void COPY_FLAG(uint16_t port_status, uint16_t* out,
+                             uint16_t flag_in, uint16_t flag_out) {
+  if (port_status & flag_in) {
+    *out |= flag_out;
+  }
+}
+
 // Handlers for each of the request types.  The handlers are responsible for,
 //   a) handling both DATA and STATUS stages of the request
 //   b) copying any data (in the DATA stage), if necessary.
@@ -130,14 +138,6 @@ static int handle_GET_STATUS(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         *change_out = 0x0;
         const uint16_t port_sc =
             ins(hub->hc->base_port + (port == 1 ? PORTSC1 : PORTSC2));
-
-        inline void COPY_FLAG(
-            uint16_t port_status, uint16_t* out,
-            uint16_t flag_in, uint16_t flag_out) {
-          if (port_status & flag_in) {
-            *out |= flag_out;
-          }
-        }
 
         COPY_FLAG(port_sc, data_out, PORTSC_CONNECT, USB_HUBD_PORT_CONNECTION);
         COPY_FLAG(port_sc, change_out, PORTSC_CONNECT_CHG, USB_HUBD_C_PORT_CONNECTION);
