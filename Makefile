@@ -19,6 +19,7 @@ CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu99 -g -I. \
 	  -Wno-unused-parameter -Wno-error=unused-function \
 	  -DENABLE_KERNEL_SAFETY_NETS=1
 LD	= i586-elf-ld
+BUILD_OUT 	= build-out
 
 BOOTLOADER	= grub
  
@@ -42,7 +43,12 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  kshell.c
 C_SOURCES = $(filter %.c,$(SOURCES))
 ASM_SOURCES = $(filter %.s,$(SOURCES))
-OBJFILES = $(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o)
+OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
+
+# Object files that are placed manually in the linker script.
+MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
+		       load/multiboot.o load/loader.o load/mem_init.o \
+		       load/gdt.o load/gdt_flush.o load/idt.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))
@@ -59,18 +65,23 @@ else
 endif
 
 # Various tests use self assignment as a no-op to appease the compiler.
-test/%.o: CFLAGS += -Wno-self-assign
+$(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
 
 all: kernel.img $(HD_IMAGES) tags
+
+mk-build-dir = @mkdir -p $(dir $@)
  
-%.o : %.s
+$(BUILD_OUT)/%.o : %.s
+	$(mk-build-dir)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-%.o : %.c
+$(BUILD_OUT)/%.o : %.c
+	$(mk-build-dir)
 	$(CC) $(CFLAGS) -o $@ -c $<
  
 kernel.bin: $(OBJFILES) $(BUILD_DIR)/linker.ld
-	$(LD) -T $(BUILD_DIR)/linker.ld -o $@ $(filter-out %.ld, $^)
+	$(LD) -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ \
+	  $(filter-out %.ld $(MANUALLY_LINKED_OBJS), $^)
 
 kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	cp $(BUILD_DIR)/kernel.img.base $@
@@ -85,12 +96,13 @@ hd1.img :
 	cp $< $@
 
 # Automatic dependency calculation.
-%.d : %.c
+$(BUILD_OUT)/%.d : %.c
 	@echo Generating dependency list for $<
+	$(mk-build-dir)
 	@$(CC) $(CFLAGS) -MM $< | \
 	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
 	  > $@
-DEPSFILES = $(C_SOURCES:.c=.d)
+DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
 -include $(DEPSFILES)
 
 clean:
