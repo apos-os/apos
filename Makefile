@@ -46,7 +46,6 @@ OBJFILES = $(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))
-HDRFILES = $(filter %.h, $(ALLFILES))
 
 BUILD_DIR = build
  
@@ -67,7 +66,7 @@ all: kernel.img $(HD_IMAGES) tags
 %.o : %.s
 	$(AS) $(ASFLAGS) -o $@ $<
 
-%.o : %.c $(HDRFILES)
+%.o : %.c
 	$(CC) $(CFLAGS) -o $@ -c $<
  
 kernel.bin: $(OBJFILES) $(BUILD_DIR)/linker.ld
@@ -85,8 +84,16 @@ $(HD_IMAGES):
 	cp hd1.img hd3.img
 	cp hd1.img hd4.img
 
+# Automatic dependency calculation.
+%.d : %.c
+	@$(CC) $(CFLAGS) -MM $< | \
+	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
+	  > $@
+DEPSFILES = $(C_SOURCES:.c=.d)
+-include $(DEPSFILES)
+
 clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img $(HD_IMAGES) tags
+	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES) tags
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
