@@ -15,6 +15,8 @@
 #ifndef APOO_HASH_H
 #define APOO_HASH_H
 
+#include <stdint.h>
+
 static inline uint32_t fnv_hash(uint32_t key) {
   uint32_t h = 2166136261;
   h ^= (key * 0xFF);

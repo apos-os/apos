@@ -12,21 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Kernel process management.
-#ifndef APOO_PROCESS_H
-#define APOO_PROCESS_H
+// Defines common builtin functions required by the compiler.
+#include "common/kstring.h"
 
-#include "proc/kthread.h"
-
-struct process {
-  int id;  // Index into global process table.
-  kthread_t thread;  // Main process thread.
-};
-
-// Initialize the process table, and create the first process (process 0) from
-// the current thread.
-//
-// REQUIRES: kthread_init() and scheduler_init().
-void proc_init();
-
-#endif
+// TODO(aoates): make this inlineable.
+void* memcpy(void* dest, const void* src, uint32_t n) {
+  return kmemcpy(dest, src, n);
+}

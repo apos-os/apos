@@ -13,71 +13,104 @@
 # limitations under the License.
 
 AS	= i586-elf-as
-ASFLAGS = --gen-debug
+ASFLAGS	= --gen-debug
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=gnu99 -g -I. \
+CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu99 -g -I. \
 	  -Wno-unused-parameter -Wno-error=unused-function \
 	  -DENABLE_KERNEL_SAFETY_NETS=1
 LD	= i586-elf-ld
+BUILD_OUT 	= build-out
 
 BOOTLOADER	= grub
  
-OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_init.o load/kernel_init.o load/idt.o \
-	   common/kstring.o common/kassert.o common/klog.o common/kprintf.o common/io.o \
-	   common/errno.o common/hashtable.o \
-	   dev/interrupts.o dev/ps2.o dev/irq.o dev/timer.o dev/isr.o dev/rtc.o \
-	   dev/keyboard/ps2_keyboard.o dev/keyboard/ps2_scancodes.o dev/keyboard/keyboard.o \
-	   dev/video/vga.o dev/video/vterm.o dev/ld.o dev/pci/pci.o dev/pci/piix.o \
-	   dev/pci/usb_uhci.o \
-	   dev/ata/ata.o dev/ata/dma.o \
-	   dev/ramdisk/ramdisk.o \
-	   dev/usb/uhci/uhci.o dev/usb/uhci/uhci_cmd.o dev/usb/uhci/uhci_hub.o \
-	   dev/usb/bus.o dev/usb/usb.o dev/usb/usb_driver.o dev/usb/request.o \
-	   dev/usb/descriptor.o \
-	   proc/kthread.o proc/kthread_asm.o proc/scheduler.o proc/process.o \
-	   proc/sleep.o proc/kthread_pool.o \
-	   memory.o page_alloc.o kernel.o kmalloc.o page_fault.o slab_alloc.o \
-	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o \
-	   test/kmalloc_test.o test/kthread_test.o test/page_alloc_map_test.o test/page_alloc_test.o \
-	   test/ld_test.o test/hashtable_test.o test/ramdisk_test.o \
-	   test/block_dev_test.o test/ata_test.o test/slab_alloc_test.o \
-	   test/kthread_pool_test.o test/flag_printf_test.o \
-	   util/flag_printf.o \
-	   kshell.o
+SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_init.c load/kernel_init.c load/idt.c \
+	  common/kstring.c common/kassert.c common/klog.c common/kprintf.c common/io.c \
+	  common/errno.c common/hashtable.c common/builtins.c \
+	  dev/interrupts.c dev/ps2.c dev/irq.c dev/timer.c dev/isr.s dev/rtc.c \
+	  dev/keyboard/ps2_keyboard.c dev/keyboard/ps2_scancodes.c dev/keyboard/keyboard.c \
+	  dev/video/vga.c dev/video/vterm.c dev/ld.c dev/pci/pci.c dev/pci/piix.c \
+	  dev/pci/usb_uhci.c \
+	  dev/ata/ata.c dev/ata/dma.c \
+	  dev/ramdisk/ramdisk.c \
+	  dev/usb/uhci/uhci.c dev/usb/uhci/uhci_cmd.c dev/usb/uhci/uhci_hub.c \
+	  dev/usb/bus.c dev/usb/usb.c dev/usb/usb_driver.c dev/usb/request.c \
+	  dev/usb/descriptor.c \
+	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
+	  proc/sleep.c proc/kthread_pool.c \
+	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
+	  test/ktest.c test/ktest_test.c test/kstring_test.c test/kprintf_test.c test/interrupt_test.c \
+	  test/kmalloc_test.c test/kthread_test.c test/page_alloc_map_test.c test/page_alloc_test.c \
+	  test/ld_test.c test/hashtable_test.c test/ramdisk_test.c \
+	  test/block_dev_test.c test/ata_test.c test/slab_alloc_test.c \
+	  test/kthread_pool_test.c test/flag_printf_test.c \
+	  util/flag_printf.c \
+	  kshell.c
+C_SOURCES = $(filter %.c,$(SOURCES))
+ASM_SOURCES = $(filter %.s,$(SOURCES))
+OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
+
+# Object files that are placed manually in the linker script.
+MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
+		       load/multiboot.o load/loader.o load/mem_init.o \
+		       load/gdt.o load/gdt_flush.o load/idt.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))
-HDRFILES = $(filter %.h, $(ALLFILES))
 
 BUILD_DIR = build
  
 HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
 
+# Clang- and GCC-specific flags.
+ifeq ($(CC),clang)
+  CFLAGS += -march=i586
+else
+  CFLAGS += -nostartfiles -nodefaultlibs
+endif
+
+# Various tests use self assignment as a no-op to appease the compiler.
+$(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
+
 all: kernel.img $(HD_IMAGES) tags
+
+mk-build-dir = @mkdir -p $(dir $@)
  
-%.o : %.s
+$(BUILD_OUT)/%.o : %.s
+	$(mk-build-dir)
 	$(AS) $(ASFLAGS) -o $@ $<
 
-%.o : %.c $(HDRFILES)
+$(BUILD_OUT)/%.o : %.c
+	$(mk-build-dir)
 	$(CC) $(CFLAGS) -o $@ -c $<
  
 kernel.bin: $(OBJFILES) $(BUILD_DIR)/linker.ld
-	$(LD) -T $(BUILD_DIR)/linker.ld -o $@ $(filter-out %.ld, $^)
+	$(LD) -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ \
+	  $(filter-out %.ld $(MANUALLY_LINKED_OBJS), $^)
 
 kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	cp $(BUILD_DIR)/kernel.img.base $@
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
 
-$(HD_IMAGES):
+hd1.img :
 	@echo 'generating hard drive image...'
 	@./bochs/bximage -hd -mode=flat -size=10 -q hd1.img
-	cp hd1.img hd2.img
-	cp hd1.img hd3.img
-	cp hd1.img hd4.img
+
+%.img : hd1.img
+	cp $< $@
+
+# Automatic dependency calculation.
+$(BUILD_OUT)/%.d : %.c
+	@echo Generating dependency list for $<
+	$(mk-build-dir)
+	@$(CC) $(CFLAGS) -MM $< | \
+	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
+	  > $@
+DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
+-include $(DEPSFILES)
 
 clean:
-	$(RM) $(OBJFILES) kernel.bin kernel.img $(HD_IMAGES) tags
+	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES) tags
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt

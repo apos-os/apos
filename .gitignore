@@ -3,7 +3,7 @@
 /kernel.bin
 /log.txt
 /bochs
-*.o
+/build-out
 NOTES
 TODO
 /patches

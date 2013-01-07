@@ -19,6 +19,9 @@ ENTRY (loader)
 /* NOTE: keep this in sync with the constant in paging.c */
 _OFFSET = 0xC0000000;
 
+/*NOTE: keep the list of manually-placed object files in sync with the one in
+ * the Makefile, to prevent duplicate symbols.
+ */
 SECTIONS
 {
     . = 0x00100000;

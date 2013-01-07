@@ -44,7 +44,6 @@ struct ld {
   // Threads that are waiting for cooked data to be available in the buffer.
   kthread_queue_t wait_queue;
 };
-typedef struct ld ld_t;
 
 ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
