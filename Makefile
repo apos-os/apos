@@ -77,12 +77,12 @@ kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
 	mcopy -i $@ kernel.bin ::/
 
-$(HD_IMAGES):
+hd1.img :
 	@echo 'generating hard drive image...'
 	@./bochs/bximage -hd -mode=flat -size=10 -q hd1.img
-	cp hd1.img hd2.img
-	cp hd1.img hd3.img
-	cp hd1.img hd4.img
+
+%.img : hd1.img
+	cp $< $@
 
 # Automatic dependency calculation.
 %.d : %.c
