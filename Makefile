@@ -22,24 +22,27 @@ LD	= i586-elf-ld
 
 BOOTLOADER	= grub
  
-OBJFILES = load/multiboot.o load/loader.o load/gdt.o load/gdt_flush.o load/mem_init.o load/kernel_init.o load/idt.o \
-	   common/kstring.o common/kassert.o common/klog.o common/kprintf.o common/io.o \
-	   common/errno.o common/hashtable.o common/builtins.o \
-	   dev/interrupts.o dev/ps2.o dev/irq.o dev/timer.o dev/isr.o dev/rtc.o \
-	   dev/keyboard/ps2_keyboard.o dev/keyboard/ps2_scancodes.o dev/keyboard/keyboard.o \
-	   dev/video/vga.o dev/video/vterm.o dev/ld.o dev/pci/pci.o dev/pci/piix.o \
-	   dev/ata/ata.o dev/ata/dma.o \
-	   dev/ramdisk/ramdisk.o \
-	   proc/kthread.o proc/kthread_asm.o proc/scheduler.o proc/process.o \
-	   proc/sleep.o proc/kthread_pool.o \
-	   memory.o page_alloc.o kernel.o kmalloc.o page_fault.o slab_alloc.o \
-	   test/ktest.o test/ktest_test.o test/kstring_test.o test/kprintf_test.o test/interrupt_test.o \
-	   test/kmalloc_test.o test/kthread_test.o test/page_alloc_map_test.o test/page_alloc_test.o \
-	   test/ld_test.o test/hashtable_test.o test/ramdisk_test.o \
-	   test/block_dev_test.o test/ata_test.o test/slab_alloc_test.o \
-	   test/kthread_pool_test.o test/flag_printf_test.o \
-	   util/flag_printf.o \
-	   kshell.o
+SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_init.c load/kernel_init.c load/idt.c \
+	  common/kstring.c common/kassert.c common/klog.c common/kprintf.c common/io.c \
+	  common/errno.c common/hashtable.c common/builtins.c \
+	  dev/interrupts.c dev/ps2.c dev/irq.c dev/timer.c dev/isr.s dev/rtc.c \
+	  dev/keyboard/ps2_keyboard.c dev/keyboard/ps2_scancodes.c dev/keyboard/keyboard.c \
+	  dev/video/vga.c dev/video/vterm.c dev/ld.c dev/pci/pci.c dev/pci/piix.c \
+	  dev/ata/ata.c dev/ata/dma.c \
+	  dev/ramdisk/ramdisk.c \
+	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
+	  proc/sleep.c proc/kthread_pool.c \
+	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
+	  test/ktest.c test/ktest_test.c test/kstring_test.c test/kprintf_test.c test/interrupt_test.c \
+	  test/kmalloc_test.c test/kthread_test.c test/page_alloc_map_test.c test/page_alloc_test.c \
+	  test/ld_test.c test/hashtable_test.c test/ramdisk_test.c \
+	  test/block_dev_test.c test/ata_test.c test/slab_alloc_test.c \
+	  test/kthread_pool_test.c test/flag_printf_test.c \
+	  util/flag_printf.c \
+	  kshell.c
+C_SOURCES = $(filter %.c,$(SOURCES))
+ASM_SOURCES = $(filter %.s,$(SOURCES))
+OBJFILES = $(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))
