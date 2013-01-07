@@ -86,6 +86,7 @@ hd1.img :
 
 # Automatic dependency calculation.
 %.d : %.c
+	@echo Generating dependency list for $<
 	@$(CC) $(CFLAGS) -MM $< | \
 	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
 	  > $@
