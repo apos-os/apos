@@ -13,9 +13,9 @@
 # limitations under the License.
 
 AS	= i586-elf-as
-ASFLAGS = --gen-debug
+ASFLAGS	= --gen-debug
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -nostartfiles -nodefaultlibs -std=gnu99 -g -I. \
+CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu99 -g -I. \
 	  -Wno-unused-parameter -Wno-error=unused-function \
 	  -DENABLE_KERNEL_SAFETY_NETS=1
 LD	= i586-elf-ld
@@ -48,6 +48,16 @@ HDRFILES = $(filter %.h, $(ALLFILES))
 BUILD_DIR = build
  
 HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
+
+# Clang- and GCC-specific flags.
+ifeq ($(CC),clang)
+  CFLAGS += -march=i586
+else
+  CFLAGS += -nostartfiles -nodefaultlibs
+endif
+
+# Various tests use self assignment as a no-op to appease the compiler.
+test/%.o: CFLAGS += -Wno-self-assign
 
 all: kernel.img $(HD_IMAGES) tags
  
