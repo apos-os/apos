@@ -35,6 +35,7 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  dev/usb/uhci/uhci.c dev/usb/uhci/uhci_cmd.c dev/usb/uhci/uhci_hub.c \
 	  dev/usb/bus.c dev/usb/usb.c dev/usb/usb_driver.c dev/usb/request.c \
 	  dev/usb/descriptor.c \
+	  dev/usb/drivers/drivers.c \
 	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
 	  proc/sleep.c proc/kthread_pool.c \
 	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
