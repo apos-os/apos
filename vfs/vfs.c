@@ -355,6 +355,7 @@ int vfs_open(const char* path, uint32_t flags) {
   // TODO(aoates): apparently on linux, you can open a directory for reading.
   // What does that mean, and should we allow it?
   if (child->type == VNODE_DIRECTORY) {
+    vfs_put(child);
     return -EISDIR;
   }
   // Allocate a new file_t in the global file table.

@@ -24,6 +24,19 @@
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
+static void open_dir_test() {
+  KTEST_BEGIN("vfs_open(): on directory test");
+  KEXPECT_EQ(0, vfs_mkdir("/dir1"));
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
+
+  // Try to vfs_open() the directory.
+  KEXPECT_EQ(-EISDIR, vfs_open("/dir1", 0));
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_rmdir("/dir1"));
+}
+
 static void open_test() {
   KTEST_BEGIN("vfs_open() test");
 
@@ -92,6 +105,8 @@ static void open_test() {
   KEXPECT_EQ(-EISDIR, vfs_open("/", 0));
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", 0));
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT));
+
+  open_dir_test();
 }
 
 static void mkdir_test() {
