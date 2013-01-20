@@ -42,6 +42,16 @@ static fs_t* g_root_fs = 0;
 static htbl_t g_vnode_cache;
 static file_t* g_file_table[VFS_MAX_FILES];
 
+// Helpers for putting and adopting references.  Prefer these to using
+// vfs_put(x) and y = x directly.
+
+// Calls vfs_put() and NULLs out the vnode_t* to prevent future use.
+#define VFS_PUT_AND_CLEAR(x) do { \
+  vnode_t** const _x = &(x); \
+  vfs_put(*_x); \
+  *_x = 0x0; \
+} while (0)
+
 // Copy path into canon_path, replacing strings of '/'s with a single '/', and
 // removing any trailing '/'s.
 static void canonicalize_path(char* canon_path, const char* path) {
@@ -143,7 +153,7 @@ static int lookup_path(vnode_t* root, const char* path,
     KASSERT(*path);
     const char* name_end = kstrchrnul(path, '/');
     if (name_end - path >= VFS_MAX_FILENAME_LENGTH) {
-      vfs_put(n);
+      VFS_PUT_AND_CLEAR(n);
       return -ENAMETOOLONG;
     }
 
@@ -163,14 +173,14 @@ static int lookup_path(vnode_t* root, const char* path,
     // Otherwise, descend again.
     vnode_t* child = 0x0;
     int error = lookup(n, base_name_out, &child);
-    vfs_put(n);
+    VFS_PUT_AND_CLEAR(n);
     if (error) {
       return error;
     }
 
     // TODO(aoates): symlink
     if (child->type != VNODE_DIRECTORY) {
-      vfs_put(child);
+      VFS_PUT_AND_CLEAR(child);
       return -ENOTDIR;
     }
 
@@ -289,7 +299,7 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
 
   KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
-  vfs_put(root);
+  VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
@@ -301,13 +311,13 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
     // Lookup the child inode.
     error = lookup(parent, base_name, &child);
     if (error < 0) {
-      vfs_put(parent);
+      VFS_PUT_AND_CLEAR(parent);
       return error;
     }
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
   }
   const int refcount = child->refcount - 1;
-  vfs_put(child);
+  VFS_PUT_AND_CLEAR(child);
   return refcount;
 }
 
@@ -319,12 +329,12 @@ int vfs_open(const char* path, uint32_t flags) {
   // TODO(aoates): cwd: track current working directory and use that here.
   KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
-  vfs_put(root);
+  VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
   if (base_name[0] == '\0') {
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
     return -EISDIR;  // Root directory is verboten.
   }
 
@@ -332,18 +342,18 @@ int vfs_open(const char* path, uint32_t flags) {
   vnode_t* child;
   error = lookup(parent, base_name, &child);
   if (error < 0 && error != -ENOENT) {
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
     return error;
   } else if (error == -ENOENT) {
     if (!(flags & VFS_O_CREAT)) {
-      vfs_put(parent);
+      VFS_PUT_AND_CLEAR(parent);
       return error;
     }
 
     // Create it.
     int child_inode = parent->fs->create(parent, base_name);
     if (child_inode < 0) {
-      vfs_put(parent);
+      VFS_PUT_AND_CLEAR(parent);
       return child_inode;
     }
 
@@ -351,26 +361,25 @@ int vfs_open(const char* path, uint32_t flags) {
   }
 
   // Done with the parent.
-  vfs_put(parent);
-  parent = 0x0;
+  VFS_PUT_AND_CLEAR(parent);
 
   // TODO(aoates): apparently on linux, you can open a directory for reading.
   // What does that mean, and should we allow it?
   if (child->type == VNODE_DIRECTORY) {
-    vfs_put(child);
+    VFS_PUT_AND_CLEAR(child);
     return -EISDIR;
   }
   // Allocate a new file_t in the global file table.
   int idx = next_free_file_idx();
   if (idx < 0) {
-    vfs_put(child);
+    VFS_PUT_AND_CLEAR(child);
     return -ENFILE;
   }
 
   process_t* proc = proc_current();
   int fd = next_free_fd(proc);
   if (fd < 0) {
-    vfs_put(child);
+    VFS_PUT_AND_CLEAR(child);
     return -EMFILE;
   }
 
@@ -402,7 +411,7 @@ int vfs_close(int fd) {
     // thread reference this fd/file during that time?  Maybe we need to remove
     // it from the table, and mark the GD as PROC_UNUSED_FD first?
     g_file_table[proc->fds[fd]] = 0x0;
-    vfs_put(file->vnode);
+    VFS_PUT_AND_CLEAR(file->vnode);
     file->vnode = 0x0;
     file_free(file);
   }
@@ -419,13 +428,13 @@ int vfs_mkdir(const char* path) {
   // TODO(aoates): support cwd
   KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
-  vfs_put(root);
+  VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
 
   if (base_name[0] == '\0') {
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
     return -EEXIST;  // Root directory!
   }
 
@@ -434,12 +443,12 @@ int vfs_mkdir(const char* path) {
   int child_inode = parent->fs->mkdir(parent, base_name);
   kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
 
   // We're done!
-  vfs_put(parent);
+  VFS_PUT_AND_CLEAR(parent);
   return 0;
 }
 
@@ -451,16 +460,16 @@ int vfs_rmdir(const char* path) {
   // TODO(aoates): support cwd
   KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
-  vfs_put(root);
+  VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
 
   if (base_name[0] == '\0') {
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
     return -EPERM;  // Root directory!
   } else if (kstrcmp(base_name, ".") == 0) {
-    vfs_put(parent);
+    VFS_PUT_AND_CLEAR(parent);
     return -EINVAL;
   }
 
@@ -468,6 +477,6 @@ int vfs_rmdir(const char* path) {
   kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
   error = parent->fs->rmdir(parent, base_name);
   kmutex_unlock(&parent->mutex);
-  vfs_put(parent);
+  VFS_PUT_AND_CLEAR(parent);
   return error;
 }
