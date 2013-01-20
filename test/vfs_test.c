@@ -21,23 +21,33 @@
 #include "test/ktest.h"
 #include "vfs/vfs.h"
 
+#define EXPECT_VNODE_REFCOUNT(count, path) \
+    KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
+
 static void open_test() {
   KTEST_BEGIN("vfs_open() test");
 
   vfs_log_cache();
   KEXPECT_EQ(-ENOENT, vfs_open("/test1", 0));
+  EXPECT_VNODE_REFCOUNT(-ENOENT, "/test1");
   vfs_log_cache();
 
   KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT));
+  EXPECT_VNODE_REFCOUNT(1, "/test1");
   vfs_log_cache();
 
   KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT));
+  EXPECT_VNODE_REFCOUNT(2, "/test1");
   vfs_log_cache();
 
   KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT));
+  EXPECT_VNODE_REFCOUNT(2, "/test1");
+  EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
 
   KEXPECT_EQ(3, vfs_open("/test1", 0));
+  EXPECT_VNODE_REFCOUNT(3, "/test1");
+  EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
 
   KTEST_BEGIN("vfs_close() test");
@@ -46,10 +56,15 @@ static void open_test() {
   KEXPECT_EQ(-EBADF, vfs_close(5));
 
   KEXPECT_EQ(0, vfs_close(1));
+  EXPECT_VNODE_REFCOUNT(2, "/test1");
+  EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
 
   // Make sure we reuse the fd.
   KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT));
+  EXPECT_VNODE_REFCOUNT(2, "/test1");
+  EXPECT_VNODE_REFCOUNT(1, "/test2");
+  EXPECT_VNODE_REFCOUNT(1, "/test3");
   vfs_log_cache();
 
   // Close everything else.
@@ -60,8 +75,12 @@ static void open_test() {
   KEXPECT_EQ(0, vfs_close(0));
   vfs_log_cache();
 
+  EXPECT_VNODE_REFCOUNT(0, "/test1");
+  EXPECT_VNODE_REFCOUNT(0, "/test2");
+
   KTEST_BEGIN("re-vfs_open() test");
   KEXPECT_EQ(0, vfs_open("/test1", 0));
+  EXPECT_VNODE_REFCOUNT(1, "/test1");
   vfs_log_cache();
 
   // Close everything.

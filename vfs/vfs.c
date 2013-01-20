@@ -281,6 +281,35 @@ int vfs_cache_size() {
   return size;
 }
 
+int vfs_get_vnode_refcount_for_path(const char* path) {
+  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* parent;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  KASSERT(path[0] == '/');
+  int error = lookup_path(root, path, &parent, base_name);
+  vfs_put(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    return -EEXIST;  // Root directory!
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  error = lookup(parent, base_name, &child);
+  if (error < 0) {
+    vfs_put(parent);
+    return error;
+  }
+
+  const int refcount = child->refcount - 1;
+  vfs_put(child);
+  return refcount;
+}
+
 int vfs_open(const char* path, uint32_t flags) {
   vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
   vnode_t* parent;
