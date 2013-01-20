@@ -24,6 +24,41 @@
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
+// Test that we correctly refcount parent directories when calling vfs_open().
+static void open_parent_refcount_test() {
+  KTEST_BEGIN("vfs_open(): parent refcount test");
+  KEXPECT_EQ(0, vfs_mkdir("/ref_dir1"));
+  KEXPECT_EQ(0, vfs_mkdir("/ref_dir1/dir2"));
+
+  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT);
+  KEXPECT_GE(fd1, 0);
+
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
+  EXPECT_VNODE_REFCOUNT(1, "/ref_dir1/dir2/test1");
+
+  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT);
+  KEXPECT_GE(fd2, 0);
+
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
+  EXPECT_VNODE_REFCOUNT(2, "/ref_dir1/dir2/test1");
+
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
+  EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2/test1");
+
+  // Clean up.
+  // TODO(aoates): remove test1 file and directories.
+}
+
+// Test calling vfs_open() on a directory.
 static void open_dir_test() {
   KTEST_BEGIN("vfs_open(): on directory test");
   KEXPECT_EQ(0, vfs_mkdir("/dir1"));
@@ -103,9 +138,13 @@ static void open_test() {
   // TODO(aoates): test in subdirectories once mkdir works
   KTEST_BEGIN("vfs_open() w/ directories test");
   KEXPECT_EQ(-EISDIR, vfs_open("/", 0));
+  EXPECT_VNODE_REFCOUNT(0, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", 0));
+  EXPECT_VNODE_REFCOUNT(0, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT));
+  EXPECT_VNODE_REFCOUNT(0, "/");
 
+  open_parent_refcount_test();
   open_dir_test();
 }
 

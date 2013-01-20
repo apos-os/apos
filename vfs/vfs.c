@@ -324,6 +324,7 @@ int vfs_open(const char* path, uint32_t flags) {
     return error;
   }
   if (base_name[0] == '\0') {
+    vfs_put(parent);
     return -EISDIR;  // Root directory is verboten.
   }
 
