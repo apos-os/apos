@@ -43,7 +43,10 @@ static htbl_t g_vnode_cache;
 static file_t* g_file_table[VFS_MAX_FILES];
 
 // Helpers for putting and adopting references.  Prefer these to using
-// vfs_put(x) and y = x directly.
+// vfs_put(x) and y = x directly.  You should never write ptr = value directly,
+// instead using either ptr = VFS_COPY_REF(val) (if you want to acquire a new
+// reference and increase the refcount), or VFS_MOVE_REF(val) (if you want to
+// move an existing reference into a new location).
 
 // Calls vfs_put() and NULLs out the vnode_t* to prevent future use.
 #define VFS_PUT_AND_CLEAR(x) do { \
@@ -51,6 +54,19 @@ static file_t* g_file_table[VFS_MAX_FILES];
   vfs_put(*_x); \
   *_x = 0x0; \
 } while (0)
+
+// Copy an existing vnode reference.
+static inline vnode_t* VFS_COPY_REF(vnode_t* ref) {
+  vfs_ref(ref);
+  return ref;
+}
+
+// Move an existing vnode reference into a new variable.
+#define VFS_MOVE_REF(x) \
+    ({vnode_t** const _x = &(x); \
+      vnode_t* const _old_val = *_x; \
+      *_x = 0x0; \
+      _old_val; })
 
 // Copy path into canon_path, replacing strings of '/'s with a single '/', and
 // removing any trailing '/'s.
@@ -136,15 +152,14 @@ static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
 //  * non-existing in middle of path (ENOENT)
 static int lookup_path(vnode_t* root, const char* path,
                        vnode_t** parent_out, char* base_name_out) {
-  vnode_t* n = root;
-  vfs_ref(n);
+  vnode_t* n = VFS_COPY_REF(root);
 
   // Skip leading '/'.
   while (*path && *path == '/') path++;
 
   if (!*path) {
     // The path was the root node.
-    *parent_out = n;
+    *parent_out = VFS_MOVE_REF(n);
     *base_name_out = '\0';
     return 0;
   }
@@ -166,7 +181,7 @@ static int lookup_path(vnode_t* root, const char* path,
     // Are we at the end?
     if (!*name_end) {
       // Don't vfs_put() the parent, since we want to return it with a refcount.
-      *parent_out = n;
+      *parent_out = VFS_MOVE_REF(n);
       return 0;
     }
 
@@ -185,7 +200,7 @@ static int lookup_path(vnode_t* root, const char* path,
     }
 
     // Move to the child and keep going.
-    n = child;
+    n = VFS_MOVE_REF(child);
     path = name_end;
   }
 }
@@ -294,7 +309,7 @@ int vfs_cache_size() {
 
 int vfs_get_vnode_refcount_for_path(const char* path) {
   vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
-  vnode_t* parent;
+  vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   KASSERT(path[0] == '/');
@@ -306,7 +321,7 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
 
   vnode_t* child = 0x0;
   if (base_name[0] == '\0') {
-    child = parent;
+    child = VFS_MOVE_REF(parent);
   } else {
     // Lookup the child inode.
     error = lookup(parent, base_name, &child);
@@ -323,7 +338,7 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
 
 int vfs_open(const char* path, uint32_t flags) {
   vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
-  vnode_t* parent;
+  vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   // TODO(aoates): cwd: track current working directory and use that here.
@@ -383,11 +398,9 @@ int vfs_open(const char* path, uint32_t flags) {
     return -EMFILE;
   }
 
-  // TODO(aoates): add a (no-op) syntax for adopting vnode refs.
-
   KASSERT(g_file_table[idx] == 0x0);
   g_file_table[idx] = file_alloc();
-  g_file_table[idx]->vnode = child;
+  g_file_table[idx]->vnode = VFS_MOVE_REF(child);
   g_file_table[idx]->refcount = 1;
 
   KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
@@ -412,7 +425,6 @@ int vfs_close(int fd) {
     // it from the table, and mark the GD as PROC_UNUSED_FD first?
     g_file_table[proc->fds[fd]] = 0x0;
     VFS_PUT_AND_CLEAR(file->vnode);
-    file->vnode = 0x0;
     file_free(file);
   }
 
@@ -422,7 +434,7 @@ int vfs_close(int fd) {
 
 int vfs_mkdir(const char* path) {
   vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
-  vnode_t* parent;
+  vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   // TODO(aoates): support cwd
@@ -454,7 +466,7 @@ int vfs_mkdir(const char* path) {
 
 int vfs_rmdir(const char* path) {
   vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
-  vnode_t* parent;
+  vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   // TODO(aoates): support cwd
