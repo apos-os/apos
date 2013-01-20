@@ -268,6 +268,19 @@ void vfs_log_cache() {
   htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
 }
 
+static void vfs_cache_size_iter(void* arg, uint32_t key, void* val) {
+  int* counter = (int*)arg;
+  vnode_t* vnode = (vnode_t*)val;
+  KASSERT(key == (uint32_t)vnode->num);
+  (*counter)++;
+}
+
+int vfs_cache_size() {
+  int size = 0;
+  htbl_iterate(&g_vnode_cache, &vfs_cache_size_iter, &size);
+  return size;
+}
+
 int vfs_open(const char* path, uint32_t flags) {
   vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
   vnode_t* parent;

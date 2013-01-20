@@ -159,6 +159,9 @@ vnode_t* vfs_get(int vnode);
 // Log the current vnode cache.
 void vfs_log_cache();
 
+// Return how many vnodes are currently in the cache.
+int vfs_cache_size();
+
 // Increment the given node's refcount.
 void vfs_ref(vnode_t* n);
 
