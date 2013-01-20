@@ -425,6 +425,7 @@ int vfs_mkdir(const char* path) {
   }
 
   if (base_name[0] == '\0') {
+    vfs_put(parent);
     return -EEXIST;  // Root directory!
   }
 

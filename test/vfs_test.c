@@ -152,11 +152,13 @@ static void mkdir_test() {
   KTEST_BEGIN("vfs_mkdir() test");
 
   // Make sure we have some normal files around.
-  int test1_fd = vfs_open("/test1", VFS_O_CREAT);
+  const int test1_fd = vfs_open("/test1", VFS_O_CREAT);
   KEXPECT_GE(test1_fd, 0);
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/test1"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1"));
 
