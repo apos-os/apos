@@ -294,18 +294,18 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
     return error;
   }
 
+  vnode_t* child = 0x0;
   if (base_name[0] == '\0') {
-    return -EEXIST;  // Root directory!
-  }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  error = lookup(parent, base_name, &child);
-  if (error < 0) {
+    child = parent;
+  } else {
+    // Lookup the child inode.
+    error = lookup(parent, base_name, &child);
+    if (error < 0) {
+      vfs_put(parent);
+      return error;
+    }
     vfs_put(parent);
-    return error;
   }
-
   const int refcount = child->refcount - 1;
   vfs_put(child);
   return refcount;
