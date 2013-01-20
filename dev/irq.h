@@ -36,7 +36,7 @@
 void pic_init();
 
 // Register a handler to be called when a particular IRQ fires.
-typedef void (*irq_handler_t)(void);
-void register_irq_handler(uint8_t irq, irq_handler_t handler);
+typedef void (*irq_handler_t)(void*);
+void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg);
 
 #endif

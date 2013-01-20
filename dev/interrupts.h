@@ -16,6 +16,8 @@
 #ifndef APOO_INTERRUPTS_H
 #define APOO_INTERRUPTS_H
 
+#include <stdint.h>
+
 void interrupts_init();
 
 void enable_interrupts();

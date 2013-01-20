@@ -25,7 +25,9 @@ loader:
     movl  %eax, magic                   # Multiboot magic number
     movl  %ebx, mbd                     # Multiboot data structure
 
-    # Set up GDT and paging.
+    # Set up GDT and paging.  Note: neither gdt_init nor idt_init should touch
+    # any memory outside that statically allocated to the kernel (until
+    # mem_init has a chance to copy the multiboot struct).
     call gdt_init
 
     # Set up IDT.

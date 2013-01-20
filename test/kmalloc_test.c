@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "dev/timer.h"
 #include "kmalloc.h"
 #include "kmalloc-internal.h"
 #include "memory.h"
@@ -267,8 +268,94 @@ static void stress_test() {
   KEXPECT_EQ(0, list_used_size(list_root));
 }
 
+// Make sure kmalloc/kfree are interrupt-safe.  Essentially the same as
+// tiny_alloc_test() but with a timer interrupting and doing allocations as
+// well.
+void interrupt_test_timer_cb(void* arg) {
+  void* x1 = kmalloc(1);
+  void* x2 = kmalloc(1);
+  void* x3 = kmalloc(1);
+  void* x4 = kmalloc(1);
+  kfree(x3);
+  kfree(x2);
+  kfree(x4);
+  kfree(x1);
+}
+static void interrupt_test() {
+  KTEST_BEGIN("kmalloc interrupt safety test");
+
+  register_timer_callback(1, 1000, &interrupt_test_timer_cb, 0x0);
+
+  for (int round = 0; round < 200; round++) {
+    void* x[100];
+    for (int i = 0; i < 100; ++i) {
+      x[i] = kmalloc(i % 3 + 1);
+      if (!x[i]) {
+        KEXPECT_NE(0x0, (uint32_t)x[i]);
+      }
+    }
+    verify_list(kmalloc_internal_get_block_list());
+
+    for (int i = 0; i < 100; ++i) {
+      if (x[i]) {
+        kfree(x[i]);
+      }
+    }
+    verify_list(kmalloc_internal_get_block_list());
+
+    KEXPECT_EQ(0, list_used_size(kmalloc_internal_get_block_list()));
+  }
+  kmalloc_log_state();
+}
+
+// Similar to interrupt_test, but doesn't do as much checking, just bangs on it.
+void large_interrupt_test_timer_cb(void* arg) {
+  void* x1 = kmalloc(1);
+  void* x2 = kmalloc(1);
+  void* x3 = kmalloc(1);
+  void* x4 = kmalloc(1);
+  kfree(x3);
+  kfree(x2);
+  kfree(x4);
+  kfree(x1);
+}
+static void large_interrupt_test() {
+  KTEST_BEGIN("kmalloc large interrupt safety test");
+
+  const int kTestLengthMs = 10000;
+  const uint32_t start_time = get_time_ms();
+
+  register_timer_callback(10, kTestLengthMs / 10,
+                          &large_interrupt_test_timer_cb, 0x0);
+  int round = 0;
+  while (get_time_ms() < start_time + kTestLengthMs) {
+    round++;
+    if (round % 100 == 0) {
+      klogf("round %d, elapsed: %d\n", round, get_time_ms() - start_time);
+    }
+    void* x[100];
+    for (int i = 0; i < 100; ++i) {
+      x[i] = kmalloc(i % 3 + 1);
+    }
+
+    for (int i = 0; i < 100; ++i) {
+      if (x[i]) {
+        kfree(x[i]);
+      }
+    }
+  }
+  klogf("Did %d rounds over %d ms\n", round, kTestLengthMs);
+  kmalloc_log_state();
+}
+
 void kmalloc_test() {
   KTEST_SUITE_BEGIN("kmalloc");
+
+  // NOTE: we disable klog-to-VTERM since we'll be overwriting the kmalloc
+  // state, which causes problems with the vterm.  If there's anything else
+  // running simultaneously with these tests that touches kmalloc'd memory, the
+  // whole system will likely explode.
+  klog_set_mode(KLOG_RAW_VIDEO);
 
   macros_test();
   init_test();
@@ -276,4 +363,12 @@ void kmalloc_test() {
   large_alloc_test();
   tiny_alloc_test();
   stress_test();
+  interrupt_test();
+  large_interrupt_test();
+
+  // The kernel is no longer in a usable state.
+  // TODO(aoates): if this ever becomes annoying, we could force-reboot the
+  // kernel (by resetting the stack pointer and calling kmain).
+  klogf("NOTE: kmalloc_test() ruins the kernel, so expect a page fault (if "
+      "you're lucky) or undefined behavior (if you're not).\n");
 }

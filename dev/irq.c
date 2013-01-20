@@ -28,11 +28,21 @@
 #define PIC_SLAVE_CMD   0xA0
 #define PIC_SLAVE_DATA  0xA1
 
+#define PIC_READ_ISR    0x0B
 #define PIC_EOI         0x20
+
+// Up to MAX_HANDLERS_PER_IRQ can be registered to be called per IRQ.
+#define MAX_HANDLERS_PER_IRQ 10
+struct handler_block {
+  irq_handler_t handlers[MAX_HANDLERS_PER_IRQ];
+  void* args[MAX_HANDLERS_PER_IRQ];
+  int num;
+};
+typedef struct handler_block handler_block_t;
 
 // These are the user-defined handlers.
 #define NUM_HANDLERS 16
-static irq_handler_t g_handlers[NUM_HANDLERS];
+static handler_block_t g_handlers[NUM_HANDLERS];
 
 // These are our handler stubs that invoke irq_handler below.
 extern void irq0();
@@ -54,7 +64,11 @@ extern void irq15();
 
 void pic_init() {
   for (int i = 0; i < NUM_HANDLERS; ++i) {
-    g_handlers[i] = 0x0;
+    for (int j = 0; j < MAX_HANDLERS_PER_IRQ; ++j) {
+      g_handlers[i].handlers[j] = 0x0;
+      g_handlers[i].args[j] = 0x0;
+    }
+    g_handlers[i].num = 0;
   }
 
   register_raw_interrupt_handler(0x20, &irq0);
@@ -86,18 +100,33 @@ void pic_init() {
   outb(PIC_SLAVE_DATA, 0x0);
 }
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler) {
+void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
   KASSERT(irq < NUM_HANDLERS);
+  KASSERT(g_handlers[irq].num < MAX_HANDLERS_PER_IRQ);
   // TODO(aoates): probs need to disable interrupts here.
-  g_handlers[irq] = handler;
+  int idx = g_handlers[irq].num++;
+  g_handlers[irq].handlers[idx] = handler;
+  g_handlers[irq].args[idx] = arg;
 }
 
 void irq_handler(uint32_t irq, uint32_t interrupt) {
   KASSERT(interrupt == irq + 0x20);
-  // TODO(aoates): this isn't really correct!
-  // Assume all 7 and 15 IRQs are spurious
-  if (irq == 7 || irq == 15) {
-    return;
+  // Check for spurious IRQs.
+  if (irq == 7) {
+    outb(PIC_MASTER_CMD, PIC_READ_ISR);
+    uint8_t isr = inb(PIC_MASTER_CMD);
+    if (!(isr & (1 << 7))) {
+      // Spurious.  Return.
+      return;
+    }
+  } else if (irq == 15) {
+    outb(PIC_SLAVE_CMD, PIC_READ_ISR);
+    uint8_t isr = inb(PIC_SLAVE_CMD);
+    if (!(isr & (1 << 7))) {
+      // Spurious.  Send EOI to master, but not slave.
+      outb(PIC_MASTER_CMD, PIC_EOI);
+      return;
+    }
   }
 
   if (irq > 7) {
@@ -105,10 +134,13 @@ void irq_handler(uint32_t irq, uint32_t interrupt) {
   }
   outb(PIC_MASTER_CMD, PIC_EOI);
 
-  if (g_handlers[irq] != 0x0) {
-    g_handlers[irq]();
-  }
-  //if (irq != 0) {
+  //if (irq != 0 && irq != 1) {
   //  klogf("irq: 0x%x\n", irq);
   //}
+
+  for (int i = 0; i < g_handlers[irq].num; ++i) {
+    if (g_handlers[irq].handlers[i] != 0x0) {
+      g_handlers[irq].handlers[i](g_handlers[irq].args[i]);
+    }
+  }
 }

@@ -73,22 +73,46 @@
 #define PS2_RESET_FAIL    0xFC
 
 // Setting and clearing bits.
+// TODO(aoates): make these macros available everywhere.
 #define IS_SET(a, mask) ((a) & (mask))
 #define SET(a, mask) ((a) | (mask))
 #define CLEAR(a, mask) ((a) & ~(mask))
 
+// How many cycles we should wait when attempting to read or write.
+#define PS2_TIMEOUT 100000
+
+// Print debugging information.
+#define PS2_DEBUG 0
+
 static int g_device_types[2];
 static int g_initialized = 0;
-
-static void send_cmd(uint8_t cmd) {
-  outb(CTRL_CMD_PORT, cmd);
-}
 
 inline static uint8_t get_status() {
   return inb(CTRL_STATUS_PORT);
 }
 
+// Wait for IBF to be clear (aka ready to write).
+inline static void wait_ibf_clear() {
+  int count = 0;
+  uint8_t status = get_status();
+  while (IS_SET(status, CTRL_STATUS_IBF)) {
+    status = get_status();
+    count++;
+  }
+  if (PS2_DEBUG) {
+    if (count > 0) {
+      klogf("  [wait_ibf_clear: waited %d cycles to write]\n", count);
+    }
+  }
+}
+
+static void send_cmd(uint8_t cmd) {
+  wait_ibf_clear();
+  outb(CTRL_CMD_PORT, cmd);
+}
+
 // Blocks until data is available.
+// TODO(aoates): get rid of this, and make all callers us the async version.
 static uint8_t read_data() {
   // Wait for OBF to be set.
   uint8_t status = get_status();
@@ -115,11 +139,7 @@ static int read_data_async(uint8_t* data_out, int timeout) {
 }
 
 static void write_data(uint8_t data) {
-  // Wait for IBF to be clear.
-  uint8_t status = get_status();
-  while (IS_SET(status, CTRL_STATUS_IBF)) {
-    status = get_status();
-  }
+  wait_ibf_clear();
   outb(CTRL_DATA_PORT, data);
 }
 
@@ -149,7 +169,17 @@ static const char* config_str(uint8_t config) {
   return buf;
 }
 
+// Flush the output (keyboard -> host) buffer by reading it a bunch of times.
+static inline void flush_output_buffer() {
+  uint8_t data;
+  while (read_data_async(&data, 0)) {}
+}
+
+// TODO(aoates): probably flush the input buffer more (like before starting?)
+// and after every command that expects an ACK.
 static int controller_init() {
+  flush_output_buffer();
+
   klogf("  initializing controller...\n");
   uint8_t status = get_status();
   klogf("  controller status: %s\n", status_str(status));
@@ -164,18 +194,24 @@ static int controller_init() {
 
   // Flush the output buffer.
   klogf("  flushing output buffer...\n");
-  uint8_t data;
-  read_data_async(&data, 0);
+  flush_output_buffer();
 
   // TODO(aoates): properly handle 2 channels.
 
   // Send new config.  Disable interrupts and translation.
-  config = SET(config, CTRL_CFG_INT1);
+  config = CLEAR(config, CTRL_CFG_INT1);
   config = CLEAR(config, CTRL_CFG_INT2);
   config = CLEAR(config, CTRL_CFG_TRANS1);
   klogf("  sending new config: %s\n", config_str(config));
   send_cmd(CTRL_CMD_WRITE_CONFIG);
   write_data(config);
+
+  // Make sure it went through.
+  if (PS2_DEBUG) {
+    send_cmd(CTRL_CMD_READ_CONFIG);
+    config = read_data();
+    klogf("  actual new controller config: %s\n", config_str(config));
+  }
 
   // Do controller self-test.
   klogf("  controller self test: ");
@@ -212,10 +248,12 @@ static int controller_init() {
 
 static int device_init() {
   // Reset the device.
+  // TODO(aoates): if this fails, just mark the device as unavailable instead
+  // of failing the whole initialization.
   klogf("  resetting port1 device...\n");
   write_data(PS2_CMD_RESET);
   uint8_t result;
-  if (!read_data_async(&result, 100)) {
+  if (!read_data_async(&result, PS2_TIMEOUT)) {
     klogf("  reset FAILED (no response)\n");
     return 0;
   } else if (result != PS2_ACK) {
@@ -247,7 +285,7 @@ static int device_init() {
   // Read 1 or (maybe) 2 bytes of device ID.
   uint8_t type1, type2;
   type1 = read_data();
-  result = read_data_async(&type2, 100);
+  result = read_data_async(&type2, PS2_TIMEOUT);
   char buf[50];
   if (result) {
     ksprintf(buf, "0x%x 0x%x", (uint32_t)type1, (uint32_t)type2);
@@ -256,8 +294,15 @@ static int device_init() {
   }
   klogf("  device ID: %s\n", buf);
 
-  if (type1 == 0xAB && type2 == 0x83) {
+  if (type1 == 0xAB && (
+        type2 == 0x83 || type2 == 0x41 || type2 == 0xC1)) {
     klogf("  device identified as keyboard\n");
+    // These types mean controller translation is on, which we should have
+    // disabled in controller_init() above.  Or it could just be buggy
+    // firmware.
+    if (type2 == 0x41 || type2 == 0xC1) {
+      klogf("  (warning: keyboard reported controller translation on)\n");
+    }
     g_device_types[0] = PS2_DEVICE_KEYBOARD;
   } else {
     klogf("  device identified as unknown type\n");
@@ -310,7 +355,7 @@ void ps2_enable_interrupts(int port) {
   // Though this one is the only one that seems to have issues --- maybe because
   // of interrupts being enabled during this call?
   uint8_t config;
-  read_data_async(&config, 0);  // Flush any pending output.
+  flush_output_buffer();
   while (1) {
     send_cmd(CTRL_CMD_READ_CONFIG);
     if (read_data_async(&config, 100)) {
@@ -321,6 +366,14 @@ void ps2_enable_interrupts(int port) {
   klogf("  enabling interrupt...\n");
   send_cmd(CTRL_CMD_WRITE_CONFIG);
   write_data(config);
+
+  flush_output_buffer();
+  if (PS2_DEBUG) {
+    send_cmd(CTRL_CMD_READ_CONFIG);
+    config = read_data();
+    klogf("  actual new controller config: %s\n", config_str(config));
+  }
+
   POP_INTERRUPTS();
 }
 
@@ -336,4 +389,11 @@ int ps2_read_byte_async(int port, uint8_t* data_out, int timeout) {
   KASSERT(port == PS2_PORT1);
   KASSERT(g_initialized);
   return read_data_async(data_out, timeout);
+}
+
+void ps2_write_byte(int port, uint8_t data) {
+  // TODO(aoates): support port2.
+  KASSERT(port == PS2_PORT1);
+  KASSERT(g_initialized);
+  return write_data(data);
 }

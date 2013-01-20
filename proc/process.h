@@ -17,18 +17,19 @@
 #define APOO_PROCESS_H
 
 #include "proc/kthread.h"
+#include "proc/kthread-internal.h"
 
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32
 #define PROC_UNUSED_FD -1
 
-typedef struct process {
+struct process {
   int id;  // Index into global process table.
   kthread_t thread;  // Main process thread.
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];
-} process_t;
+};
 
 // Initialize the process table, and create the first process (process 0) from
 // the current thread.

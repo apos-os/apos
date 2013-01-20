@@ -16,14 +16,64 @@
 #include <stdarg.h>
 
 #include "common/io.h"
+#include "common/klog.h"
 #include "common/kprintf.h"
+
+// The current logging mode.
+static int g_klog_mode = KLOG_RAW_VIDEO;
+static vterm_t* g_klog_vterm = 0x0;
+
+// The first KLOG_BUF_SIZE log characters will be saved for viewing (e.g. to
+// examine the boot process).
+#define KLOG_BUF_SIZE 4096
+static char g_klog_history[KLOG_BUF_SIZE];
+static int g_klog_len = 0;
+
+#define VRAM_START 0xC00B8000
+
+static void pp_putc(uint8_t c) {
+  outb(0x37a, 0x04 | 0x08);
+  outb(0x378, c);
+  outb(0x37a, 0x01);
+}
+
+static void raw_putc(uint8_t c) {
+  static uint8_t* vram = (uint8_t*)VRAM_START;
+  if (c == '\n') {
+    while ((vram - (uint8_t*)VRAM_START) % 160 != 0) {
+      *vram++ = ' ';
+      *vram++ = 0x07;
+    }
+  } else {
+    *vram++ = c;
+    *vram++ = 0x07;
+  }
+
+  // Loop it if needed.
+  if (vram >= (uint8_t*)VRAM_START + 160 * 24) {
+    vram = (uint8_t*)VRAM_START;
+  }
+}
 
 void klog(const char* s) {
   int i = 0;
   while (s[i]) {
-    outb(0x37a, 0x04 | 0x08);
-    outb(0x378, s[i]);
-    outb(0x37a, 0x01);
+    pp_putc(s[i]);
+    switch (g_klog_mode) {
+      case KLOG_PARELLEL_PORT:
+        break;
+
+      case KLOG_RAW_VIDEO:
+        raw_putc(s[i]);
+        break;
+
+      case KLOG_VTERM:
+        vterm_putc(g_klog_vterm, s[i]);
+        break;
+    }
+    if (g_klog_len < KLOG_BUF_SIZE) {
+      g_klog_history[g_klog_len++] = s[i];
+    }
     i++;
   }
 }
@@ -37,4 +87,21 @@ void klogf(const char* fmt, ...) {
   va_end(args);
 
   klog(buf);
+}
+
+void klog_set_mode(int mode) {
+  g_klog_mode = mode;
+}
+
+// Set the vterm_t to be used with KLOG_VTERM.
+void klog_set_vterm(vterm_t* t) {
+  g_klog_vterm = t;
+}
+
+int klog_read(int offset, void* buf, int len) {
+  int bytes_read = 0;
+  while (offset < g_klog_len && bytes_read < len) {
+    ((char*)buf)[bytes_read++] = g_klog_history[offset++];
+  }
+  return bytes_read;
 }

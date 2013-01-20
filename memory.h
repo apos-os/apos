@@ -63,10 +63,15 @@ typedef struct {
   uint32_t lower_memory;
   uint32_t upper_memory;
 
-  // The location in kernel memory at which all physical memory is mapped.  Any
-  // physical address can be accessed by adding this offset to get the
-  // corresponding virtual address.
+  // The location in kernel memory at which the lowest portion of physical
+  // memory is mapped.  Any physical address in that region can be accessed by
+  // adding this offset to get the corresponding virtual address.
   uint32_t phys_map_start;
+
+  // The size of the physically-mapped region.  If there is too much physical
+  // memory to fit in the virtual map region, only the lowest X bytes will be
+  // mapped.
+  uint32_t phys_map_length;
 
   // Start and end (virtual) addresses of the  kernel heap.  The heap consists
   // of memory in the range [heap_start, heap_end).
@@ -97,9 +102,13 @@ int is_page_aligned(uint32_t x);
 // meminfo->phys_map_start).
 uint32_t phys2virt(uint32_t x);
 
-// Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL (i.e.
-// the virtual location, in the kernel, where that physical page is mapped, at
-// 0xc0000000).
+// Converts a virtual address (in the direct-mapped region) to the corresponding
+// physical address.
+uint32_t virt2phys(uint32_t x);
+
+// Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL
+// (i.e.  the virtual location, in the kernel, where that physical page is
+// mapped, at 0xc0000000).
 //
 // This differs from phys2virt in that it only works on addresses in the
 // physical kernel loaded at boot, not arbitrary physical addresses.

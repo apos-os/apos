@@ -48,7 +48,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
   KASSERT(interrupt == 0x0E);
 
   uint32_t address;
-  asm volatile ("movl %%cr2, %0\n\t" : "=g"(address));
+  asm volatile ("movl %%cr2, %0\n\t" : "=r"(address));
 
   if (expected_seen) {
     KEXPECT_EQ(0, expected_seen);
@@ -60,23 +60,28 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
 
   // Walk up the stack and change where we're returning.  This is pretty kooky.
   uint32_t* esp;
-  int limit = 128;
+  int limit = 512;
   asm volatile ("movl %%esp, %0\n\t" : "=g"(esp));
-  // Look for an address on the stack thats in between the orig and new return
-  // addresses.
-  while (*esp <= expected_orig_return_address ||
-         *esp >= expected_new_return_address) {
-    if (limit-- == 0) {
-      die("couldn't find return address in test_page_fault_handler");
+  // We have to do it twice --- once for the fake stack frame generated in isr.s
+  // for GDB's sake, and once for the actual return address.
+  for (int i = 0; i < 2; ++i) {
+    // Look for an address on the stack thats in between the orig and new return
+    // addresses.
+    while (*esp <= expected_orig_return_address ||
+           *esp >= expected_new_return_address) {
+      if (limit-- == 0) {
+        die("couldn't find return address in test_page_fault_handler");
+      }
+      esp++;
     }
-    esp++;
+    *esp = expected_new_return_address;
   }
-  *esp = expected_new_return_address;
   // I can't believe I just wrote that code...
 }
 
 // Test page mapping.  Note: will cause page faults and crash the kernel!
 void page_alloc_map_test() {
+  KTEST_SUITE_BEGIN("page_alloc map/unmap test");
   // Set up test handler.
   register_interrupt_handler(0x0E, &test_page_fault_handler);
 
@@ -84,6 +89,7 @@ void page_alloc_map_test() {
   uint8_t* addr = (uint8_t*)0x80047014;
 
   // Should page fault:
+  KTEST_BEGIN("page fault");
   expect_page_fault((uint32_t)addr, 0x02, (uint32_t)&&fault_A, (uint32_t)&&recover_A);
 fault_A:
   *addr = 10;
@@ -92,6 +98,7 @@ recover_A:
   KEXPECT_EQ(1, expected_seen);
 
   // Set up mapping.
+  KTEST_BEGIN("valid mapping");
   uint32_t phys_page = page_frame_alloc();
   page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page);
 
@@ -128,6 +135,7 @@ recover_C:
 
   // Make a mapping for a different page in the same table.  Shouldn't require
   // creating a new table (step in to verify).
+  KTEST_BEGIN("new mapping in same table");
   addr2 = addr - 2 * 4096;
   page_frame_map_virtual((uint32_t)addr2 & PDE_ADDRESS_MASK, phys_page);
 
@@ -141,6 +149,7 @@ recover_C:
 
   // REMAPPING.
   // Remap addr to a NEW physical page, without unmapping in between.
+  KTEST_BEGIN("remapping");
   uint32_t phys_page2 = page_frame_alloc();
   page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page2);
 
@@ -150,6 +159,7 @@ recover_C:
   KEXPECT_EQ(72, *addr2);
 
   // Unmap the original mapping.
+  KTEST_BEGIN("unmapping");
   page_frame_unmap_virtual((uint32_t)addr & PDE_ADDRESS_MASK);
 
   // Should still succeed:

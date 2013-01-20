@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/kassert.h"
 #include "memory.h"
 #include "load/mem_init.h"
 
@@ -43,7 +44,14 @@ int is_page_aligned(uint32_t x) {
 }
 
 uint32_t phys2virt(uint32_t x) {
+  KASSERT(x < global_meminfo->phys_map_length);
   return x + global_meminfo->phys_map_start;
+}
+
+uint32_t virt2phys(uint32_t x) {
+  KASSERT(x >= global_meminfo->phys_map_start);
+  KASSERT(x - global_meminfo->phys_map_length < global_meminfo->phys_map_start);
+  return x - global_meminfo->phys_map_start;
 }
 
 uint32_t phys2kernel(uint32_t x) {

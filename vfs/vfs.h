@@ -134,7 +134,6 @@ struct fs {
   //  * anything to do with attributes
   //  * freeing vnodes
 };
-typedef struct fs fs_t;
 
 // Syscall flags.
 // TODO(aoates): once we have userland, these should be the same constants as

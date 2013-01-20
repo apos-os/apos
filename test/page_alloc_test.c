@@ -23,6 +23,12 @@
 #include "page_fault.h"
 #include "test/ktest.h"
 
+// The maximum amount of memory (in MB) that the test_alloc_all test will
+// attempt to allocate.  If it's too big, we might run out of space to track all
+// the pages; if it's too small (smaller than the actual memory of the machine),
+// we don't allocate them all and the test will fail.
+#define MAX_MEMORY 512
+
 static void fill_frame(uint32_t frame_start, uint32_t x) {
   uint32_t* frame = (uint32_t*)(phys2virt(frame_start));
   for (uint32_t i = 0; i < PAGE_SIZE / 4; ++i) {
@@ -45,7 +51,7 @@ void test_alloc_all() {
   KTEST_BEGIN("allocate all pages test");
 
   // This test will only work up to 100MB of ram.
-  const uint32_t MAX_PAGES = 100 * 1024 * 1024 / PAGE_SIZE;
+  const uint32_t MAX_PAGES = MAX_MEMORY * 1024 * 1024 / PAGE_SIZE;
   uint32_t* pages = kmalloc(sizeof(uint32_t) * MAX_PAGES);
   KASSERT(pages != 0x0);
 
@@ -61,7 +67,7 @@ void test_alloc_all() {
   KEXPECT_LT(i, MAX_PAGES);
   klogf("total allocated pages: %d (%d bytes)\n", i, i * PAGE_SIZE);
 
-  // Free all those pages we just allocated, in apposite order (for the hell of
+  // Free all those pages we just allocated, in opposite order (for the hell of
   // it).
   for (uint32_t i2 = 0; i2 < i; i2++) {
     page_frame_free_nocheck(pages[i2]);

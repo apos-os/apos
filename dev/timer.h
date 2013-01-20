@@ -16,24 +16,30 @@
 #ifndef APOO_TIMER_H
 #define APOO_TIMER_H
 
+#include <stdint.h>
+
 #define KMAX_TIMERS 10
 #define KTIMESLICE_MS 10
 
 // Initialize the timer.  Must be called AFTER interrupts/IRQs are enabled.
 void timer_init();
 
-typedef void (*timer_handler_t)(void);
+typedef void (*timer_handler_t)(void*);
 
 // Register a function to be called every X ms, where X must be an even multiple
-// of the timeslice size.
+// of the timeslice size.  Returns 0 on success, or -errno on error.
+//
+// If limit is positive, the timer will only be triggered that many times.  If
+// limit is 0, the timer will trigger indefinitely.
 //
 // NOTE: the handler will be called in an interrupt context, so it should be
 // fast, careful, and not block!
 //
 // NOTE 2: there are a limited number of timers that can be installed
-// (KMAX_TIMERS).  register_timer_callback will return 0 if you've exceeded this
-// limit.
-int register_timer_callback(uint32_t period_ms, timer_handler_t cb);
+// (KMAX_TIMERS).  register_timer_callback will return -ENOMEM if you've
+// exceeded this limit.
+int register_timer_callback(uint32_t period_ms, int limit,
+                            timer_handler_t cb, void* arg);
 
 // Return the approximate time since timer initialization, in ms.
 uint32_t get_time_ms();
