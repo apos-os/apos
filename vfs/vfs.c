@@ -47,6 +47,7 @@ static file_t* g_file_table[VFS_MAX_FILES];
 static void canonicalize_path(char* canon_path, const char* path) {
   while (*path) {
     if (*path == '/') {
+      // TODO(aoates): will this cause us to skip the character after the '/'?
       while (*path && *path == '/') {
         path++;
       }
@@ -372,6 +373,8 @@ int vfs_open(const char* path, uint32_t flags) {
     return -EMFILE;
   }
 
+  // TODO(aoates): add a (no-op) syntax for adopting vnode refs.
+
   KASSERT(g_file_table[idx] == 0x0);
   g_file_table[idx] = file_alloc();
   g_file_table[idx]->vnode = child;
@@ -394,6 +397,10 @@ int vfs_close(int fd) {
   file->refcount--;
   KASSERT(file->refcount >= 0);
   if (file->refcount == 0) {
+    // TODO(aoates): don't we need to remove it from the file table?
+    // TODO(aoates): is there a race here? Does vfs_put block?  Could another
+    // thread reference this fd/file during that time?  Maybe we need to remove
+    // it from the table first?
     vfs_put(file->vnode);
     file->vnode = 0x0;
     file_free(file);
