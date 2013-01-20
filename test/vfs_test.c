@@ -246,9 +246,36 @@ static void mkdir_test() {
   vfs_close(test1_fd);
 }
 
+// Test repeatedly opening and closing a file to make sure that we reclaim FDs
+// and file table entries correctly.
+static void file_table_reclaim_test() {
+  KTEST_BEGIN("file table reclaim test");
+  const char kTestDir[] = "/reclaim_test/";
+  const char kTestFile[] = "/reclaim_test/test1";
+  KEXPECT_EQ(0, vfs_mkdir(kTestDir));
+  int files_opened = 0;
+  for (int i = 0; i < VFS_MAX_FILES * 2; ++i) {
+    const int fd = vfs_open(kTestFile, VFS_O_CREAT);
+    if (fd < 0) {
+      KEXPECT_GE(fd, 0);
+      break;
+    }
+    files_opened++;
+    if (vfs_get_vnode_refcount_for_path(kTestFile) != 1) {
+      EXPECT_VNODE_REFCOUNT(1, kTestFile);
+    }
+    vfs_close(fd);
+    if (vfs_get_vnode_refcount_for_path(kTestFile) != 0) {
+      EXPECT_VNODE_REFCOUNT(0, kTestFile);
+    }
+  }
+  KEXPECT_EQ(VFS_MAX_FILES * 2, files_opened);
+}
+
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
   open_test();
   mkdir_test();
+  file_table_reclaim_test();
 }

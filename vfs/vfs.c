@@ -398,10 +398,10 @@ int vfs_close(int fd) {
   file->refcount--;
   KASSERT(file->refcount >= 0);
   if (file->refcount == 0) {
-    // TODO(aoates): don't we need to remove it from the file table?
     // TODO(aoates): is there a race here? Does vfs_put block?  Could another
     // thread reference this fd/file during that time?  Maybe we need to remove
-    // it from the table first?
+    // it from the table, and mark the GD as PROC_UNUSED_FD first?
+    g_file_table[proc->fds[fd]] = 0x0;
     vfs_put(file->vnode);
     file->vnode = 0x0;
     file_free(file);

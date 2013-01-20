@@ -23,7 +23,7 @@
 #define VFS_MAX_PATH_LENGTH 1024
 
 // How many files can be open, globally, at once.
-#define VFS_MAX_FILES 1024
+#define VFS_MAX_FILES 128
 
 // vnode types.
 #define VNODE_INVALID 0
