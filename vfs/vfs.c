@@ -255,7 +255,7 @@ void vfs_put(vnode_t* vnode) {
   }
 }
 
-static void vfs_log_cache_iter(uint32_t key, void* val) {
+static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
   KASSERT(key == (uint32_t)vnode->num);
   klogf("  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
@@ -265,7 +265,7 @@ static void vfs_log_cache_iter(uint32_t key, void* val) {
 
 void vfs_log_cache() {
   klogf("VFS vnode cache:\n");
-  htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter);
+  htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
 }
 
 int vfs_open(const char* path, uint32_t flags) {
