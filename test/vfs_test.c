@@ -161,18 +161,28 @@ static void mkdir_test() {
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KTEST_BEGIN("regular mkdir()");
   KEXPECT_EQ(0, vfs_mkdir("/dir1"));
   KEXPECT_EQ(0, vfs_mkdir("/dir2"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir2"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("nested mkdir()");
   KEXPECT_EQ(-ENOENT, vfs_mkdir("/dir1/dir1a/dir1b"));
   KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a"));
   KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a/dir1b"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
 
   // TODO(aoates): better testing for . and ...
   KTEST_BEGIN("crappy '.' and '..' tests");
@@ -194,22 +204,33 @@ static void mkdir_test() {
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo"));
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/dir1/boo"));
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo/boo2"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("rmdir(): not a directory");
   KEXPECT_EQ(-ENOTDIR, vfs_rmdir("/test1"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/test1");
   // TODO(aoates): test nested not-a-dir
 
   KTEST_BEGIN("rmdir(): root directory");
   KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
 
   KTEST_BEGIN("rmdir(): invalid paths");
   KEXPECT_EQ(-EINVAL, vfs_rmdir("/dir1/dir1a/."));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a/dir1b/.."));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
 
   KTEST_BEGIN("rmdir(): not empty");
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1"));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/"));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a"));
+  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   // Actually test it (and cleanup the directories we created).
   KTEST_BEGIN("rmdir(): working");

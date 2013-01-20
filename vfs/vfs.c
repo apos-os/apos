@@ -457,8 +457,10 @@ int vfs_rmdir(const char* path) {
   }
 
   if (base_name[0] == '\0') {
+    vfs_put(parent);
     return -EPERM;  // Root directory!
   } else if (kstrcmp(base_name, ".") == 0) {
+    vfs_put(parent);
     return -EINVAL;
   }
 
