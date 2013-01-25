@@ -68,29 +68,6 @@ static inline vnode_t* VFS_COPY_REF(vnode_t* ref) {
       *_x = 0x0; \
       _old_val; })
 
-// Copy path into canon_path, replacing strings of '/'s with a single '/', and
-// removing any trailing '/'s.
-static void canonicalize_path(char* canon_path, const char* path) {
-  while (*path) {
-    if (*path == '/') {
-      // TODO(aoates): will this cause us to skip the character after the '/'?
-      while (*path && *path == '/') {
-        path++;
-      }
-
-      // If it wasn't a trailing slash...
-      if (*path) {
-        *canon_path = '/';
-      }
-    } else {
-      *canon_path = *path;
-    }
-    canon_path++;
-    path++;
-  }
-  *canon_path = '\0';
-}
-
 // Return the index of the next free entry in the file table, or -1 if there's
 // no space left.
 //
