@@ -148,6 +148,9 @@ struct fs {
 // Initialize the VFS.
 void vfs_init();
 
+// Return the root FS.
+fs_t* vfs_get_root_fs();
+
 // Initialize (and zero-out) a vnode_t.
 void vfs_vnode_init(vnode_t* n);
 

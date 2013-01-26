@@ -192,6 +192,10 @@ void vfs_init() {
   }
 }
 
+fs_t* vfs_get_root_fs() {
+  return g_root_fs;
+}
+
 vnode_t* vfs_get(int vnode_num) {
   vnode_t* vnode;
   int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,  (void**)(&vnode));
