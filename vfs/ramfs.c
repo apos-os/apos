@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "kmalloc.h"
+#include "proc/scheduler.h"
 #include "vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
@@ -50,6 +51,9 @@ struct ramfs {
   // For each inode number, we just store a ramfs_inode_t directly.  We don't
   // use all the fields of the vnode_t, though.
   ramfs_inode_t inodes[RAMFS_MAX_INODES];
+
+  // Whether or not the appropriate syscalls should block.
+  int enable_blocking;
 };
 typedef struct ramfs ramfs_t;
 
@@ -151,6 +155,13 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   return 0;
 }
 
+static void maybe_block(struct fs* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  if (ramfs->enable_blocking) {
+    scheduler_yield();
+  }
+}
+
 fs_t* ramfs_create_fs() {
   ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
   kmemset(f, 0, sizeof(ramfs_t));
@@ -158,6 +169,7 @@ fs_t* ramfs_create_fs() {
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     f->inodes[i].vnode.num = -1;
   }
+  f->enable_blocking = 0;
 
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
   f->fs.get_root = &ramfs_get_root;
@@ -190,6 +202,16 @@ fs_t* ramfs_create_fs() {
   return (fs_t*)f;
 }
 
+void ramfs_enable_blocking(fs_t* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  ramfs->enable_blocking = 1;
+}
+
+void ramfs_disable_blocking(fs_t* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  ramfs->enable_blocking = 0;
+}
+
 vnode_t* ramfs_alloc_vnode(struct fs* fs) {
   ramfs_inode_t* node = (ramfs_inode_t*)kmalloc(sizeof(ramfs_inode_t));
   kmemset(node, 0, sizeof(ramfs_inode_t));
@@ -201,6 +223,8 @@ int ramfs_get_root(struct fs* fs) {
 }
 
 int ramfs_get_vnode(vnode_t* n) {
+  maybe_block(n->fs);
+
   ramfs_t* ramfs = (ramfs_t*)n->fs;
   if (n->num < 0 || n->num >= RAMFS_MAX_INODES ||
       ramfs->inodes[n->num].vnode.num == -1) {
@@ -222,6 +246,7 @@ int ramfs_get_vnode(vnode_t* n) {
 int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(vnode->refcount == 0);
+  maybe_block(vnode->fs);
 
   // TODO(aoates): consider that directories must be treated differently.  Does
   // that mean that the self-linking of directories should go in ramfs, not vfs?
@@ -237,6 +262,7 @@ int ramfs_put_vnode(vnode_t* vnode) {
 
 int ramfs_lookup(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  maybe_block(parent->fs);
   if (parent->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
@@ -251,6 +277,7 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
 int ramfs_create(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  maybe_block(parent->fs);
 
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
@@ -275,6 +302,7 @@ int ramfs_create(vnode_t* parent, const char* name) {
 int ramfs_mkdir(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  maybe_block(parent->fs);
 
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
@@ -310,6 +338,7 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
 
 int ramfs_rmdir(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  maybe_block(parent->fs);
   if (parent->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
@@ -345,6 +374,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
 
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
   int len = MAX(0, MIN(vnode->len - offset, bufsize));
@@ -354,6 +384,7 @@ int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
 int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
 
   ramfs_inode_t* node = (ramfs_inode_t*)vnode;
   const int newlen = offset + bufsize;
@@ -381,6 +412,7 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT(vnode->type != VNODE_DIRECTORY);
+  maybe_block(vnode->fs);
 
   return ramfs_link_internal(parent, vnode->num, name);
 }
@@ -389,6 +421,7 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 // the same name, do stuff to it and verify it's a totaly new file.
 int ramfs_unlink(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  maybe_block(parent->fs);
   if (parent->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
@@ -417,6 +450,7 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
 
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
   if (vnode->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }

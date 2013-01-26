@@ -23,6 +23,12 @@
 // Initialize a new ramfs and return it.
 fs_t* ramfs_create_fs();
 
+// Enable and disable artificial blocking for the ramfs.  If enabled, every call
+// that's allowed to block will do so by calling scheduler_yield.  Useful for
+// testing.
+void ramfs_enable_blocking(fs_t* fs);
+void ramfs_disable_blocking(fs_t* fs);
+
 vnode_t* ramfs_alloc_vnode(struct fs* fs);
 int ramfs_get_root(struct fs* fs);
 int ramfs_get_vnode(vnode_t* vnode);
