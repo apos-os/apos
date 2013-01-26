@@ -201,7 +201,6 @@ vnode_t* vfs_get(int vnode_num) {
   int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,  (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
-    KASSERT(vnode->type != VNODE_INVALID);
 
     // Increment the refcount, then lock the mutex.  This ensures that the node
     // is initialized (since the thread creating it locks the mutex *before*
@@ -209,6 +208,11 @@ vnode_t* vfs_get(int vnode_num) {
     vnode->refcount++;
     kmutex_lock(&vnode->mutex);
     kmutex_unlock(&vnode->mutex);
+
+    // The vnode should now be fully initialized.
+    // TODO(aoates): we need to handle error cases!  This will currently explode
+    // if the vnode wasn't initialized properly.
+    KASSERT(vnode->type != VNODE_INVALID);
     return vnode;
   } else {
     // We need to create the vnode and backfill it from disk.
