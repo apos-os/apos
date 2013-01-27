@@ -318,6 +318,28 @@ static void kmutex_test() {
   KEXPECT_EQ(1000 * KMUTEX_TEST_SIZE, out);
 }
 
+static void kmutex_auto_lock_test() {
+  KTEST_BEGIN("kmutex auto lock test");
+  kmutex_t m;
+  kmutex_init(&m);
+
+  KEXPECT_EQ(0, kmutex_is_locked(&m));
+  {
+    KEXPECT_EQ(0, kmutex_is_locked(&m));
+    KMUTEX_AUTO_LOCK(my_lock, &m);
+    KEXPECT_NE(0, kmutex_is_locked(&m));
+  }
+  KEXPECT_EQ(0, kmutex_is_locked(&m));
+
+  // Verify that it doesn't evaluate side effects more than once.
+  KTEST_BEGIN("kmutex auto lock single evaluation");
+  {
+    int i = 0;
+    KMUTEX_AUTO_LOCK(my_lock, &m + i++);
+    KEXPECT_EQ(1, i);
+  }
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test() {
@@ -333,4 +355,5 @@ void kthread_test() {
   scheduler_wait_on_test();
   stress_test();
   kmutex_test();
+  kmutex_auto_lock_test();
 }

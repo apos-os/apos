@@ -98,4 +98,28 @@ void kmutex_lock(kmutex_t* m);
 // Unlock the mutex.
 void kmutex_unlock(kmutex_t* m);
 
+// Returns non-zero if the mutex is currently locked.
+int kmutex_is_locked(kmutex_t* m);
+
+// An auto-unlocking mutex lock.
+//
+// Example usage:
+//  {
+//    KMUTEX_AUTO_LOCK(my_x_lock, &x->lock);
+//    ...
+//    // x->lock is automatically unlocked here when my_x_lock goes out of
+//    // scope.
+//  }
+static kmutex_t* _kmutex_autolock_lock(kmutex_t* m) {
+  kmutex_lock(m);
+  return m;
+}
+static void _kmutex_autolock_unlock(kmutex_t** m) {
+  kmutex_unlock(*m);
+}
+#define KMUTEX_AUTO_LOCK(name, lock) \
+  kmutex_t* name __attribute__((cleanup(_kmutex_autolock_unlock))) = \
+    _kmutex_autolock_lock(lock); \
+  (void)name; \
+
 #endif

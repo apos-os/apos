@@ -324,3 +324,10 @@ void kmutex_unlock(kmutex_t* m) {
   }
   POP_INTERRUPTS();
 }
+
+int kmutex_is_locked(kmutex_t* m) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int is_locked = m->locked;
+  POP_INTERRUPTS();
+  return is_locked;
+}
