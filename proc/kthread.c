@@ -300,6 +300,8 @@ void kmutex_init(kmutex_t* m) {
 void kmutex_lock(kmutex_t* m) {
   PUSH_AND_DISABLE_INTERRUPTS();
   if (m->locked) {
+    // Mutexes are non-reentrant, so this would deadlock.
+    KASSERT(m->holder != kthread_current_thread());
     scheduler_wait_on(&m->wait_queue);
   } else {
     m->locked = 1;
@@ -330,4 +332,17 @@ int kmutex_is_locked(kmutex_t* m) {
   int is_locked = m->locked;
   POP_INTERRUPTS();
   return is_locked;
+}
+
+void kmutex_assert_is_held(kmutex_t* m) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT(m->locked == 1);
+  KASSERT(m->holder == kthread_current_thread());
+  POP_INTERRUPTS();
+}
+
+void kmutex_assert_is_not_held(kmutex_t* m) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT(m->holder != kthread_current_thread());
+  POP_INTERRUPTS();
 }
