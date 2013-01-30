@@ -18,7 +18,10 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "kmalloc.h"
+#include "proc/process.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
+#include "vfs/ramfs.h"
 #include "vfs/vfs.h"
 
 #define EXPECT_VNODE_REFCOUNT(count, path) \
@@ -272,10 +275,82 @@ static void file_table_reclaim_test() {
   KEXPECT_EQ(VFS_MAX_FILES * 2, files_opened);
 }
 
+// Test thread-safety of allocating file descriptors and file table entries by
+// repeatedly opening and closing a file.
+#define THREAD_SAFETY_TEST_ITERS 1000
+#define THREAD_SAFETY_TEST_THREADS 10
+
+typedef struct {
+  kmutex_t mu;
+
+  // How many threads have a given FD open right now.
+  int fds_open[PROC_MAX_FDS];
+
+  // How many threads have ever opened each FD.
+  int fds_total_count[PROC_MAX_FDS];
+} thread_safety_test_t;
+
+static void* vfs_open_thread_safety_test_func(void* arg) {
+  thread_safety_test_t* test = (thread_safety_test_t*)arg;
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS; ++i) {
+    int fd = vfs_open("/thread_safety_test_file", VFS_O_CREAT);
+    KASSERT(fd >= 0);
+
+    kmutex_lock(&test->mu);
+    KASSERT(test->fds_open[fd] == 0);
+    test->fds_open[fd] = 1;
+    test->fds_total_count[fd]++;
+    kmutex_unlock(&test->mu);
+
+    vfs_close(fd);
+    kmutex_lock(&test->mu);
+    KASSERT(test->fds_open[fd] == 1);
+    test->fds_open[fd] = 0;
+    kmutex_unlock(&test->mu);
+  }
+  return 0;
+}
+
+static void vfs_open_thread_safety_test() {
+  KTEST_BEGIN("vfs_open() thread safety test");
+  kthread_t threads[THREAD_SAFETY_TEST_THREADS];
+
+  thread_safety_test_t test;
+  kmutex_init(&test.mu);
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    test.fds_open[i] = test.fds_total_count[i] = 0;
+  }
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    KASSERT(kthread_create(&threads[i],
+                           &vfs_open_thread_safety_test_func, &test));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  int total_open = 0;
+  int total = 0;
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    total_open += test.fds_open[i];
+    total += test.fds_total_count[i];
+  }
+
+  KEXPECT_EQ(0, total_open);
+  KEXPECT_EQ(THREAD_SAFETY_TEST_THREADS * THREAD_SAFETY_TEST_ITERS, total);
+}
+
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
+
+  ramfs_enable_blocking(vfs_get_root_fs());
 
   open_test();
   mkdir_test();
   file_table_reclaim_test();
+  vfs_open_thread_safety_test();
+
+  ramfs_disable_blocking(vfs_get_root_fs());
 }
