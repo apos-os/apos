@@ -62,12 +62,12 @@ HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
 # Clang- and GCC-specific flags.
 ifeq ($(CC),clang)
   CFLAGS += -march=i586
+
+  # Various tests use self assignment as a no-op to appease the compiler.
+  $(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
 else
   CFLAGS += -nostartfiles -nodefaultlibs
 endif
-
-# Various tests use self assignment as a no-op to appease the compiler.
-$(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
 
 all: kernel.img $(HD_IMAGES) tags
 
