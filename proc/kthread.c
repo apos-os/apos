@@ -301,7 +301,9 @@ void kmutex_lock(kmutex_t* m) {
   PUSH_AND_DISABLE_INTERRUPTS();
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.
-    KASSERT(m->holder != kthread_current_thread());
+    KASSERT_MSG(m->holder != kthread_current_thread(),
+                "Mutexs are non-reentrant: cannot lock mutex already held by "
+                "the current thread!");
     scheduler_wait_on(&m->wait_queue);
   } else {
     m->locked = 1;
