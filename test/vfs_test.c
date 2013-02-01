@@ -24,6 +24,9 @@
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
 
+// Increase this to make thread safety tests run longer.
+#define THREAD_SAFETY_MULTIPLIER 1
+
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
@@ -278,7 +281,7 @@ static void file_table_reclaim_test() {
 
 // Test thread-safety of allocating file descriptors and file table entries by
 // repeatedly opening and closing a file.
-#define THREAD_SAFETY_TEST_ITERS 1000
+#define THREAD_SAFETY_TEST_ITERS (100 * THREAD_SAFETY_MULTIPLIER)
 #define THREAD_SAFETY_TEST_THREADS 10
 
 typedef struct {
@@ -294,7 +297,8 @@ typedef struct {
 static void* vfs_open_thread_safety_test_func(void* arg) {
   thread_safety_test_t* test = (thread_safety_test_t*)arg;
   for (int i = 0; i < THREAD_SAFETY_TEST_ITERS; ++i) {
-    int fd = vfs_open("/thread_safety_test_file", VFS_O_CREAT);
+    int fd = vfs_open("/thread_safety_test/a/./b/../b/thread_safety_test_file",
+                      VFS_O_CREAT);
     KASSERT(fd >= 0);
 
     kmutex_lock(&test->mu);
@@ -315,6 +319,11 @@ static void* vfs_open_thread_safety_test_func(void* arg) {
 static void vfs_open_thread_safety_test() {
   KTEST_BEGIN("vfs_open() thread safety test");
   kthread_t threads[THREAD_SAFETY_TEST_THREADS];
+
+  // Set things up.
+  KASSERT(vfs_mkdir("/thread_safety_test") == 0);
+  KASSERT(vfs_mkdir("/thread_safety_test/a") == 0);
+  KASSERT(vfs_mkdir("/thread_safety_test/a/b") == 0);
 
   thread_safety_test_t test;
   kmutex_init(&test.mu);
@@ -341,6 +350,8 @@ static void vfs_open_thread_safety_test() {
 
   KEXPECT_EQ(0, total_open);
   KEXPECT_EQ(THREAD_SAFETY_TEST_THREADS * THREAD_SAFETY_TEST_ITERS, total);
+
+  // TODO(aoates): clean up
 }
 
 void vfs_test() {
