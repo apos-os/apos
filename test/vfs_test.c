@@ -354,6 +354,38 @@ static void vfs_open_thread_safety_test() {
   // TODO(aoates): clean up
 }
 
+void unlink_test() {
+  KTEST_BEGIN("vfs_unlink(): basic test");
+  int fd = vfs_open("/unlink", VFS_O_CREAT);
+  vfs_close(fd);
+  KEXPECT_EQ(0, vfs_unlink("/unlink"));
+  KEXPECT_EQ(-ENOENT, vfs_open("/unlink", 0));
+
+  KTEST_BEGIN("vfs_unlink(): non-existent file");
+  KEXPECT_EQ(-ENOENT, vfs_unlink("/doesnt_exist"));
+
+  KTEST_BEGIN("vfs_unlink(): in a directory");
+  vfs_mkdir("/unlink");
+  vfs_mkdir("/unlink/a");
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT);
+  vfs_close(fd);
+  KEXPECT_EQ(0, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
+  KEXPECT_EQ(-ENOENT, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
+
+  KTEST_BEGIN("vfs_unlink(): non-directory in path");
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT);
+  vfs_close(fd);
+  KEXPECT_EQ(-ENOTDIR, vfs_unlink("/unlink/a/file/in_file"));
+  KEXPECT_EQ(0, vfs_unlink("/unlink/a/file")); // Clean up.
+
+  KTEST_BEGIN("vfs_unlink(): unlinking directory");
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a"));
+
+  // Clean up.
+  vfs_rmdir("/unlink/a");
+  vfs_rmdir("/unlink");
+}
+
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
@@ -363,6 +395,7 @@ void vfs_test() {
   mkdir_test();
   file_table_reclaim_test();
   vfs_open_thread_safety_test();
+  unlink_test();
 
   ramfs_disable_blocking(vfs_get_root_fs());
 }

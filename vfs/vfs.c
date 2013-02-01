@@ -497,3 +497,21 @@ int vfs_rmdir(const char* path) {
   VFS_PUT_AND_CLEAR(parent);
   return error;
 }
+
+int vfs_unlink(const char* path) {
+  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  // TODO(aoates): support cwd
+  KASSERT(path[0] == '/');
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  error = parent->fs->unlink(parent, base_name);
+  VFS_PUT_AND_CLEAR(parent);
+  return error;
+}

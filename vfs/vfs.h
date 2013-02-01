@@ -199,4 +199,7 @@ int vfs_mkdir(const char* path);
 // Remove an empty directory. Returns 0 on success, or -error.
 int vfs_rmdir(const char* path);
 
+// Unlink an entry from a directory.
+int vfs_unlink(const char* path);
+
 #endif
