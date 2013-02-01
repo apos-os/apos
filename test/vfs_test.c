@@ -188,6 +188,7 @@ static void mkdir_test() {
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
 
   // TODO(aoates): better testing for . and ...
+  // TODO(aoates): test '.' and '..' at the end of paths
   KTEST_BEGIN("crappy '.' and '..' tests");
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/."));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/.."));

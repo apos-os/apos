@@ -93,11 +93,13 @@ static int next_free_fd(process_t* p) {
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
-static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
-  // TODO(aoates): do we need to lock the parent's mutex here?
-  kmutex_lock(&parent->mutex);
+//
+// Requires a lock on the parent to ensure that the child isn't removed between
+// the call to parent->lookup() and vfs_get(child).
+static int lookup_locked(vnode_t* parent, const char* name,
+                         vnode_t** child_out) {
+  kmutex_assert_is_held(&parent->mutex);
   int child_inode = parent->fs->lookup(parent, name);
-  kmutex_unlock(&parent->mutex);
 
   if (child_inode < 0) {
     return child_inode;
@@ -105,6 +107,14 @@ static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
 
   *child_out = vfs_get(child_inode);
   return 0;
+}
+
+// Convenience wrapper that locks the parent around a call to lookup_locked().
+static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
+  kmutex_lock(&parent->mutex);
+  const int result = lookup_locked(parent, name, child_out);
+  kmutex_unlock(&parent->mutex);
+  return result;
 }
 
 // Given a vnode and a path path/to/myfile relative to that vnode, return the
@@ -206,8 +216,11 @@ vnode_t* vfs_get(int vnode_num) {
     // is initialized (since the thread creating it locks the mutex *before*
     // putting it in the table, and doesn't unlock it until it's initialized).
     vnode->refcount++;
-    kmutex_lock(&vnode->mutex);
-    kmutex_unlock(&vnode->mutex);
+    if (vnode->type == VNODE_INVALID) {
+      // TODO(aoates): add an UNINITIALIZED state and use a semaphore for this.
+      kmutex_lock(&vnode->mutex);
+      kmutex_unlock(&vnode->mutex);
+    }
 
     // The vnode should now be fully initialized.
     // TODO(aoates): we need to handle error cases!  This will currently explode
@@ -340,28 +353,35 @@ int vfs_open(const char* path, uint32_t flags) {
 
   // Lookup the child inode.
   vnode_t* child;
-  error = lookup(parent, base_name, &child);
-  if (error < 0 && error != -ENOENT) {
-    VFS_PUT_AND_CLEAR(parent);
-    return error;
-  } else if (error == -ENOENT) {
-    if (!(flags & VFS_O_CREAT)) {
+  {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0 && error != -ENOENT) {
+      kmutex_unlock(&parent->mutex);
       VFS_PUT_AND_CLEAR(parent);
       return error;
+    } else if (error == -ENOENT) {
+      if (!(flags & VFS_O_CREAT)) {
+        kmutex_unlock(&parent->mutex);
+        VFS_PUT_AND_CLEAR(parent);
+        return error;
+      }
+
+      // Create it.
+      int child_inode = parent->fs->create(parent, base_name);
+      if (child_inode < 0) {
+        kmutex_unlock(&parent->mutex);
+        VFS_PUT_AND_CLEAR(parent);
+        return child_inode;
+      }
+
+      child = vfs_get(child_inode);
     }
 
-    // Create it.
-    int child_inode = parent->fs->create(parent, base_name);
-    if (child_inode < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return child_inode;
-    }
-
-    child = vfs_get(child_inode);
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
   }
-
-  // Done with the parent.
-  VFS_PUT_AND_CLEAR(parent);
 
   // TODO(aoates): apparently on linux, you can open a directory for reading.
   // What does that mean, and should we allow it?
