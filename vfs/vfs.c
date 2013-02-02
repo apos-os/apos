@@ -472,6 +472,7 @@ int vfs_open(const char* path, uint32_t flags) {
   file_init_file(g_file_table[idx]);
   g_file_table[idx]->vnode = VFS_MOVE_REF(child);
   g_file_table[idx]->refcount = 1;
+  g_file_table[idx]->mode = mode;
 
   KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
   proc->fds[fd] = idx;
@@ -583,6 +584,9 @@ int vfs_read(int fd, void* buf, int count) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
+  if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
+    return -EBADF;
+  }
   file->refcount++;
 
   int result = 0;
@@ -606,6 +610,9 @@ int vfs_write(int fd, const void* buf, int count) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
+  if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
+    return -EBADF;
+  }
   file->refcount++;
 
   int result = 0;

@@ -707,6 +707,56 @@ static void write_thread_test() {
   KEXPECT_EQ(WRITE_SAFETY_THREADS * WRITE_SAFETY_ITERS, nums);
 }
 
+static void rw_mode_test() {
+  const char kFile[] = "/rw_test_file";
+  const int kBufSize = 512;
+  char buf[kBufSize];
+
+  // Create a file and put some data in it.
+  int fd = vfs_open(kFile, VFS_O_CREAT | VFS_O_RDWR);
+  KEXPECT_EQ(6, vfs_write(fd, "abcdef", 6));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): read-only file");
+  fd = vfs_open(kFile, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): write-only file");
+  fd = vfs_open(kFile, VFS_O_WRONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_read(fd, buf, kBufSize));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_write(): read-only file");
+  fd = vfs_open(kFile, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_write(fd, "123456", 6));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): write-only file");
+  fd = vfs_open(kFile, VFS_O_WRONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(3, vfs_write(fd, "ABC", 3));
+  vfs_close(fd);
+
+
+  // Make sure the only write that succeeded was the write-only mode.
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  buf[6] = '\0';
+  KEXPECT_STREQ("ABCdef", buf);
+  vfs_close(fd);
+
+  // TODO(aoates): keep the file open between tests with the same mode, and
+  // verify that the invalid call doesn't modify the file pos.
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+}
+
 void reverse_path_test() {
   char buf[512];
   KTEST_BEGIN("reverse_path() test");
@@ -751,6 +801,7 @@ void vfs_test() {
   cwd_test();
   rw_test();
   write_thread_test();
+  rw_mode_test();
 
   reverse_path_test();
 
