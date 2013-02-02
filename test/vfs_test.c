@@ -80,7 +80,9 @@ static void open_parent_refcount_test() {
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2/test1");
 
   // Clean up.
-  // TODO(aoates): remove test1 file and directories.
+  vfs_unlink("/ref_dir1/dir2/test1");
+  vfs_rmdir("/ref_dir1/dir2");
+  vfs_rmdir("/ref_dir1");
 }
 
 // Test calling vfs_open() on a directory.
@@ -171,6 +173,11 @@ static void open_test() {
 
   open_parent_refcount_test();
   open_dir_test();
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_unlink("/test1"));
+  KEXPECT_EQ(0, vfs_unlink("/test2"));
+  KEXPECT_EQ(0, vfs_unlink("/test3"));
 }
 
 static void mkdir_test() {
@@ -270,6 +277,7 @@ static void mkdir_test() {
 
   // Cleanup.
   vfs_close(test1_fd);
+  KEXPECT_EQ(0, vfs_unlink("/test1"));
 }
 
 // Test repeatedly opening and closing a file to make sure that we reclaim FDs
@@ -296,6 +304,10 @@ static void file_table_reclaim_test() {
     }
   }
   KEXPECT_EQ(VFS_MAX_FILES * 2, files_opened);
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_unlink("/reclaim_test/test1"));
+  KEXPECT_EQ(0, vfs_rmdir("/reclaim_test"));
 }
 
 // Test thread-safety of allocating file descriptors and file table entries by
@@ -370,7 +382,11 @@ static void vfs_open_thread_safety_test() {
   KEXPECT_EQ(0, total_open);
   KEXPECT_EQ(THREAD_SAFETY_TEST_THREADS * THREAD_SAFETY_TEST_ITERS, total);
 
-  // TODO(aoates): clean up
+  // Clean up
+  vfs_unlink("/thread_safety_test/a/b/thread_safety_test_file");
+  vfs_rmdir("/thread_safety_test/a/b");
+  vfs_rmdir("/thread_safety_test/a");
+  vfs_rmdir("/thread_safety_test");
 }
 
 static void unlink_test() {
