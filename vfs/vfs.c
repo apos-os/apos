@@ -238,6 +238,16 @@ static int lookup_path(vnode_t* root, const char* path,
   }
 }
 
+// Returns the appropriate root node for the given path, either the fs root or
+// the process's cwd.
+static vnode_t* get_root_for_path(const char* path) {
+  if (path[0] == '/') {
+    return vfs_get(g_root_fs->get_root(g_root_fs));
+  } else {
+    return VFS_COPY_REF(proc_current()->cwd);
+  }
+}
+
 void vfs_init() {
   KASSERT(g_root_fs == 0);
   g_root_fs = ramfs_create_fs();
@@ -385,12 +395,11 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
 }
 
 int vfs_open(const char* path, uint32_t flags) {
-  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   // TODO(aoates): cwd: track current working directory and use that here.
-  KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
@@ -488,12 +497,10 @@ int vfs_close(int fd) {
 }
 
 int vfs_mkdir(const char* path) {
-  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  // TODO(aoates): support cwd
-  KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
@@ -520,12 +527,10 @@ int vfs_mkdir(const char* path) {
 }
 
 int vfs_rmdir(const char* path) {
-  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  // TODO(aoates): support cwd
-  KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
@@ -549,12 +554,10 @@ int vfs_rmdir(const char* path) {
 }
 
 int vfs_unlink(const char* path) {
-  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  // TODO(aoates): support cwd
-  KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
@@ -635,19 +638,9 @@ int vfs_getcwd(char* path_out, int size) {
 }
 
 int vfs_chdir(const char* path) {
-  if (!path) {
-    return -EINVAL;
-  }
-
-  vnode_t* root = 0x0;
+  vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  if (path[0] == '/') {
-    root = vfs_get(g_root_fs->get_root(g_root_fs));
-  } else {
-    root = VFS_COPY_REF(proc_current()->cwd);
-  }
 
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);

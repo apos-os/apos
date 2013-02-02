@@ -38,6 +38,17 @@ static void create_file(const char* path) {
   vfs_close(fd);
 }
 
+// Helper method that verifies that the given file can be created (then unlinks
+// it).
+static void EXPECT_CAN_CREATE_FILE(const char* path) {
+  const int fd = vfs_open(path, VFS_O_CREAT);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    vfs_close(fd);
+    vfs_unlink(path);
+  }
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test() {
   KTEST_BEGIN("vfs_open(): parent refcount test");
@@ -452,7 +463,6 @@ static void cwd_test() {
   EXPECT_CWD("/cwd_test");
 
   KTEST_BEGIN("vfs_chdir(): bad arguments");
-  KEXPECT_EQ(-EINVAL, vfs_chdir(0x0));
   KEXPECT_EQ(-EINVAL, vfs_chdir(""));
 
   KTEST_BEGIN("vfs_getcwd(): bad arguments");
@@ -463,10 +473,31 @@ static void cwd_test() {
   const int len = vfs_getcwd(buf, kBufSize);
   KEXPECT_EQ(-ERANGE, vfs_getcwd(buf, len));
 
+  KTEST_BEGIN("vfs_open(): respects cwd");
+  create_file("/cwd_test/cwd_open_file");
+  vfs_chdir("/cwd_test");
+  const int fd = vfs_open("cwd_open_file", 0);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    vfs_close(fd);
+  }
+
+  KTEST_BEGIN("vfs_mkdir(): respects cwd");
+  vfs_chdir("/cwd_test");
+  vfs_mkdir("cwd_mkdir_dir");
+  EXPECT_CAN_CREATE_FILE("/cwd_test/cwd_mkdir_dir/file");
+
+  KTEST_BEGIN("vfs_rmdir(): respects cwd");
+  vfs_chdir("/cwd_test");
+  vfs_mkdir("/cwd_test/cwd_rmdir_dir");
+  KEXPECT_EQ(0, vfs_rmdir("cwd_rmdir_dir"));
+
+  KTEST_BEGIN("vfs_unlink(): respects cwd");
+  vfs_chdir("/cwd_test");
+  create_file("/cwd_test/cwd_unlink_file");
+  KEXPECT_EQ(0, vfs_unlink("cwd_unlink_file"));
+
   // TODO test:
-  // mkdir relative to cwd
-  // vfs_open relative to cwd
-  // etc.
   // rmdir() the cwd
   // cwd through a symlink (and getcwd after)
   // cwd through a directory in a sub fs with the same inode number as the root
