@@ -120,6 +120,10 @@ void kmain(memory_info_t* meminfo) {
   klog("vfs_init()\n");
   vfs_init();
 
+  // TODO(aoates): is there a cleaner way of doing this?  The proc/vfs circular
+  // dependency is gross.
+  proc_current()->cwd = vfs_get_root_vnode();
+
   klog("initialization finished...\n");
 
   vterm_clear(g_vterm);

@@ -31,6 +31,13 @@
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
+// Helper method to create a file for a test.
+static void create_file(const char* path) {
+  const int fd = vfs_open(path, VFS_O_CREAT);
+  KASSERT(fd >= 0);
+  vfs_close(fd);
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test() {
   KTEST_BEGIN("vfs_open(): parent refcount test");
@@ -40,7 +47,7 @@ static void open_parent_refcount_test() {
   const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT);
   KEXPECT_GE(fd1, 0);
 
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(1, "/ref_dir1/dir2/test1");
@@ -48,7 +55,7 @@ static void open_parent_refcount_test() {
   const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT);
   KEXPECT_GE(fd2, 0);
 
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(2, "/ref_dir1/dir2/test1");
@@ -56,7 +63,7 @@ static void open_parent_refcount_test() {
   KEXPECT_EQ(0, vfs_close(fd1));
   KEXPECT_EQ(0, vfs_close(fd2));
 
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2/test1");
@@ -145,11 +152,11 @@ static void open_test() {
   // TODO(aoates): test in subdirectories once mkdir works
   KTEST_BEGIN("vfs_open() w/ directories test");
   KEXPECT_EQ(-EISDIR, vfs_open("/", 0));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", 0));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
 
   open_parent_refcount_test();
   open_dir_test();
@@ -164,29 +171,29 @@ static void mkdir_test() {
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/test1"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KTEST_BEGIN("regular mkdir()");
   KEXPECT_EQ(0, vfs_mkdir("/dir1"));
   KEXPECT_EQ(0, vfs_mkdir("/dir2"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir2"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("nested mkdir()");
   KEXPECT_EQ(-ENOENT, vfs_mkdir("/dir1/dir1a/dir1b"));
   KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a"));
   KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a/dir1b"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
@@ -212,23 +219,23 @@ static void mkdir_test() {
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo"));
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/dir1/boo"));
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo/boo2"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("rmdir(): not a directory");
   KEXPECT_EQ(-ENOTDIR, vfs_rmdir("/test1"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   // TODO(aoates): test nested not-a-dir
 
   KTEST_BEGIN("rmdir(): root directory");
   KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
 
   KTEST_BEGIN("rmdir(): invalid paths");
   KEXPECT_EQ(-EINVAL, vfs_rmdir("/dir1/dir1a/."));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a/dir1b/.."));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
@@ -237,7 +244,7 @@ static void mkdir_test() {
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1"));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/"));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a"));
-  EXPECT_VNODE_REFCOUNT(0, "/");
+  EXPECT_VNODE_REFCOUNT(1, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   // Actually test it (and cleanup the directories we created).
@@ -355,7 +362,7 @@ static void vfs_open_thread_safety_test() {
   // TODO(aoates): clean up
 }
 
-void unlink_test() {
+static void unlink_test() {
   KTEST_BEGIN("vfs_unlink(): basic test");
   int fd = vfs_open("/unlink", VFS_O_CREAT);
   vfs_close(fd);
@@ -385,6 +392,94 @@ void unlink_test() {
   // Clean up.
   vfs_rmdir("/unlink/a");
   vfs_rmdir("/unlink");
+}
+
+static void cwd_test() {
+  const int kBufSize = 100;
+  char  buf[kBufSize];
+
+#define EXPECT_CWD(path) \
+  KEXPECT_EQ(kstrlen(path), vfs_getcwd(buf, kBufSize)); \
+  KEXPECT_STREQ((path), buf)
+
+  vfs_mkdir("/cwd_test");
+  vfs_mkdir("/cwd_test/a");
+  create_file("/cwd_test/file");
+
+  KTEST_BEGIN("vfs_getcwd(): root test");
+  EXPECT_CWD("/");
+  KEXPECT_EQ(-ERANGE, vfs_getcwd(buf, 1));
+
+  KTEST_BEGIN("vfs_chdir(): basic test");
+  KEXPECT_EQ(0, vfs_chdir("/cwd_test/a"));
+  EXPECT_CWD("/cwd_test/a");
+
+  KTEST_BEGIN("vfs_chdir(): chdir to '/'");
+  KEXPECT_EQ(0, vfs_chdir("/"));
+  EXPECT_CWD("/");
+
+  KTEST_BEGIN("vfs_chdir(): chdir to '/' via ..");
+  KEXPECT_EQ(0, vfs_chdir("/cwd_test/./../."));
+  EXPECT_CWD("/");
+
+  KTEST_BEGIN("vfs_chdir(): vfs_chdir('..')");
+  KEXPECT_EQ(0, vfs_chdir("/cwd_test/a"));
+  KEXPECT_EQ(0, vfs_chdir(".."));
+  EXPECT_CWD("/cwd_test");
+
+  KTEST_BEGIN("vfs_chdir(): relative path");
+  KEXPECT_EQ(0, vfs_chdir("a"));
+  EXPECT_CWD("/cwd_test/a");
+
+  KTEST_BEGIN("vfs_chdir(): absolute path from non-root");
+  KEXPECT_EQ(0, vfs_chdir("/cwd_test"));
+  EXPECT_CWD("/cwd_test");
+
+  KTEST_BEGIN("vfs_chdir(): non-existent directory");
+  KEXPECT_EQ(-ENOENT, vfs_chdir("b"));
+  EXPECT_CWD("/cwd_test");
+
+  KTEST_BEGIN("vfs_chdir(): non-existent directory in path");
+  KEXPECT_EQ(-ENOENT, vfs_chdir("b/dir"));
+  EXPECT_CWD("/cwd_test");
+
+  KTEST_BEGIN("vfs_chdir(): chdir into a file");
+  KEXPECT_EQ(-ENOTDIR, vfs_chdir("file"));
+  EXPECT_CWD("/cwd_test");
+
+  KTEST_BEGIN("vfs_chdir(): chdir with a file in the path");
+  KEXPECT_EQ(-ENOTDIR, vfs_chdir("/cwd_test/file/dir"));
+  EXPECT_CWD("/cwd_test");
+
+  KTEST_BEGIN("vfs_chdir(): bad arguments");
+  KEXPECT_EQ(-EINVAL, vfs_chdir(0x0));
+  KEXPECT_EQ(-EINVAL, vfs_chdir(""));
+
+  KTEST_BEGIN("vfs_getcwd(): bad arguments");
+  KEXPECT_EQ(-EINVAL, vfs_getcwd(0x0, 5));
+  KEXPECT_EQ(-EINVAL, vfs_getcwd(buf, -1));
+  KEXPECT_EQ(-ERANGE, vfs_getcwd(buf, 0));
+  KEXPECT_EQ(-ERANGE, vfs_getcwd(buf, 3));
+  const int len = vfs_getcwd(buf, kBufSize);
+  KEXPECT_EQ(-ERANGE, vfs_getcwd(buf, len));
+
+  // TODO test:
+  // mkdir relative to cwd
+  // vfs_open relative to cwd
+  // etc.
+  // rmdir() the cwd
+  // cwd through a symlink (and getcwd after)
+  // cwd through a directory in a sub fs with the same inode number as the root
+  // of the root fs
+  // refcounts on the directories
+  // cwd through an unlinked directory
+
+  // Clean up.
+  vfs_chdir("/");
+  vfs_unlink("/cwd_test/file");
+  vfs_rmdir("/cwd_test/a");
+  vfs_rmdir("/cwd_test");
+#undef EXPECT_CWD
 }
 
 void reverse_path_test() {
@@ -428,6 +523,8 @@ void vfs_test() {
   file_table_reclaim_test();
   vfs_open_thread_safety_test();
   unlink_test();
+  cwd_test();
+
   reverse_path_test();
 
   ramfs_disable_blocking(vfs_get_root_fs());

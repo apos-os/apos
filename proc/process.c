@@ -29,6 +29,7 @@ static void proc_init_process(process_t* p) {
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     p->fds[i] = -1;
   }
+  p->cwd = 0x0;
 }
 
 void proc_init() {

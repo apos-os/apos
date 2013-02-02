@@ -151,6 +151,9 @@ void vfs_init();
 // Return the root FS.
 fs_t* vfs_get_root_fs();
 
+// Return the root vnode, with a reference on it.
+vnode_t* vfs_get_root_vnode();
+
 // Initialize (and zero-out) a vnode_t.
 void vfs_vnode_init(vnode_t* n);
 
@@ -201,5 +204,12 @@ int vfs_rmdir(const char* path);
 
 // Unlink an entry from a directory.
 int vfs_unlink(const char* path);
+
+// Return the full pathname of the current working directory in the given
+// buffer.  Returns the length of the string on success, or -error on error.
+int vfs_getcwd(char* path_out, int size);
+
+// Change the current working directory.  Returns 0 on success, or -error.
+int vfs_chdir(const char* path);
 
 #endif

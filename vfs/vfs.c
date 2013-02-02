@@ -20,8 +20,10 @@
 #include "kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "vfs/dirent.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
+#include "vfs/util.h"
 #include "vfs/vfs.h"
 
 void vfs_vnode_init(vnode_t* n) {
@@ -117,6 +119,46 @@ static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
   return result;
 }
 
+// Similar to lookup(), but does the reverse: given a directory and an inode
+// number, return the corresponding name, if the directory has an entry for
+// that inode number.
+//
+// Returns the length of the name on success, or -error.
+static int lookup_by_inode(vnode_t* parent, int inode,
+                           char* name_out, int len) {
+  KMUTEX_AUTO_LOCK(parent_lock, &parent->mutex);
+  const int kBufSize = 512;
+  char dirent_buf[kBufSize];
+
+  int offset = 0;
+  dirent_t* ent;
+  do {
+    const int len = parent->fs->getdents(parent, offset, dirent_buf, kBufSize);
+    if (len == 0) {
+      // Didn't find any matching nodes :(
+      return -ENOENT;
+    }
+
+    // Look for a matching dirent.
+    int buf_offset = 0;
+    do {
+      ent = (dirent_t*)(&dirent_buf[buf_offset]);
+      buf_offset += ent->length;
+    } while (ent->vnode != inode && buf_offset < len);
+    // Keep going until we find a match.
+    offset = ent->offset;
+  } while (ent->vnode != inode);
+
+  // Found a match, copy its name.
+  const int name_len = kstrlen(ent->name);
+  if (len < name_len + 1) {
+    return -ERANGE;
+  }
+
+  kstrcpy(name_out, ent->name);
+  return name_len;
+}
+
 // Given a vnode and a path path/to/myfile relative to that vnode, return the
 // vnode_t of the directory part of the path, and copy the base name of the path
 // (without any trailing slashes) into base_name_out.
@@ -139,6 +181,10 @@ static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
 //  * non-existing in middle of path (ENOENT)
 static int lookup_path(vnode_t* root, const char* path,
                        vnode_t** parent_out, char* base_name_out) {
+  if (!*path) {
+    return -EINVAL;
+  }
+
   vnode_t* n = VFS_COPY_REF(root);
 
   // Skip leading '/'.
@@ -204,6 +250,10 @@ void vfs_init() {
 
 fs_t* vfs_get_root_fs() {
   return g_root_fs;
+}
+
+vnode_t* vfs_get_root_vnode() {
+  return vfs_get(g_root_fs->get_root(g_root_fs));
 }
 
 vnode_t* vfs_get(int vnode_num) {
@@ -514,4 +564,119 @@ int vfs_unlink(const char* path) {
   error = parent->fs->unlink(parent, base_name);
   VFS_PUT_AND_CLEAR(parent);
   return error;
+}
+
+int vfs_getcwd(char* path_out, int size) {
+  if (!path_out || size < 0) {
+    return -EINVAL;
+  }
+
+  if (size < 2) {
+    return -ERANGE;
+  }
+
+  int size_out = 0;
+  char* cpath = path_out;
+  vnode_t* n = VFS_COPY_REF(proc_current()->cwd);
+
+  // Add an initial '/', which will be trailing at the end.
+  kstrcpy(cpath, "/");
+  cpath++;
+  size_out++;
+  size--;
+
+  while (n->fs != g_root_fs || n->num != g_root_fs->get_root(g_root_fs)) {
+    // First find the parent vnode.
+    vnode_t* parent = 0x0;
+    int result = lookup(n, "..", &parent);
+    if (result < 0) {
+      VFS_PUT_AND_CLEAR(n);
+      return result;
+    }
+
+    const int inode = n->num;
+    VFS_PUT_AND_CLEAR(n);
+
+    // ...then get the name of the *current* vnode.
+    result = lookup_by_inode(parent, inode, cpath, size);
+    // TODO(aoates): handle ENOENT more gracefully.
+    if (result < 0) {
+      VFS_PUT_AND_CLEAR(parent);
+      return result;
+    }
+    size_out += result;
+    cpath += result;
+    size -= result;
+
+    // Add a trailing '/'.
+    if (size < 2) {
+      VFS_PUT_AND_CLEAR(parent);
+      return -ERANGE;
+    }
+    kstrcpy(cpath, "/");
+    cpath++;
+    size_out++;
+    size--;
+
+    // Recur.
+    n = VFS_MOVE_REF(parent);
+  }
+
+  VFS_PUT_AND_CLEAR(n);
+
+  if (size_out > 1) {
+    reverse_path(path_out);
+    KASSERT_DBG(path_out[size_out - 1] == '/');
+    path_out[size_out - 1] = '\0';
+    size_out--;
+  }
+
+  return size_out;
+}
+
+int vfs_chdir(const char* path) {
+  if (!path) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = 0x0;
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  if (path[0] == '/') {
+    root = vfs_get(g_root_fs->get_root(g_root_fs));
+  } else {
+    root = VFS_COPY_REF(proc_current()->cwd);
+  }
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  vnode_t* new_cwd = 0x0;
+  if (base_name[0] == '\0') {
+    new_cwd = VFS_MOVE_REF(parent);
+  } else {
+    // Lookup the child inode.
+    error = lookup(parent, base_name, &new_cwd);
+    if (error < 0) {
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    VFS_PUT_AND_CLEAR(parent);
+
+    if (new_cwd->type != VNODE_DIRECTORY) {
+      VFS_PUT_AND_CLEAR(new_cwd);
+      return -ENOTDIR;
+    }
+  }
+
+  // Set new cwd.
+  VFS_PUT_AND_CLEAR(proc_current()->cwd);
+  proc_current()->cwd = VFS_MOVE_REF(new_cwd);
+  return 0;
 }

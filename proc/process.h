@@ -23,12 +23,17 @@
 #define PROC_MAX_FDS 32
 #define PROC_UNUSED_FD -1
 
+struct vnode;
+
 struct process {
   int id;  // Index into global process table.
   kthread_t thread;  // Main process thread.
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];
+
+  // The current working directory of the process.
+  struct vnode* cwd;
 };
 
 // Initialize the process table, and create the first process (process 0) from
