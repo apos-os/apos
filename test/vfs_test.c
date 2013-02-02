@@ -22,6 +22,7 @@
 #include "proc/scheduler.h"
 #include "test/ktest.h"
 #include "vfs/ramfs.h"
+#include "vfs/util.h"
 #include "vfs/vfs.h"
 
 // Increase this to make thread safety tests run longer.
@@ -386,6 +387,37 @@ void unlink_test() {
   vfs_rmdir("/unlink");
 }
 
+void reverse_path_test() {
+  char buf[512];
+  KTEST_BEGIN("reverse_path() test");
+
+#define TEST(in, out) \
+  kstrcpy(buf, in); \
+  reverse_path(buf); \
+  KEXPECT_STREQ(out, buf);
+
+  TEST("a", "a");
+  TEST("/a", "a/");
+  TEST("a/", "/a");
+
+  TEST("ab", "ab");
+  TEST("/ab", "ab/");
+  TEST("ab/", "/ab");
+
+  TEST("abc", "abc");
+  TEST("/a/b/c", "c/b/a/");
+  TEST("/a/b/c/", "/c/b/a/");
+  TEST("a/b/c/", "/c/b/a");
+
+  TEST("abc/def/", "/def/abc");
+
+  TEST("///abc/def", "def/abc///");
+  TEST("///abc/def//", "//def/abc///");
+  TEST("///abc////def//", "//def////abc///");
+
+#undef TEST
+}
+
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
@@ -396,6 +428,7 @@ void vfs_test() {
   file_table_reclaim_test();
   vfs_open_thread_safety_test();
   unlink_test();
+  reverse_path_test();
 
   ramfs_disable_blocking(vfs_get_root_fs());
 }

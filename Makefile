@@ -34,7 +34,7 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
 	  proc/sleep.c proc/kthread_pool.c \
 	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
-	  vfs/vfs.c vfs/ramfs.c vfs/file.c \
+	  vfs/vfs.c vfs/ramfs.c vfs/file.c vfs/util.c \
 	  test/ktest.c test/ktest_test.c test/kstring_test.c test/kprintf_test.c test/interrupt_test.c \
 	  test/kmalloc_test.c test/kthread_test.c test/page_alloc_map_test.c test/page_alloc_test.c \
 	  test/ld_test.c test/hashtable_test.c test/ramdisk_test.c \
