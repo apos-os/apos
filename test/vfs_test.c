@@ -87,15 +87,25 @@ static void open_parent_refcount_test() {
 
 // Test calling vfs_open() on a directory.
 static void open_dir_test() {
-  KTEST_BEGIN("vfs_open(): on directory test");
+  KTEST_BEGIN("vfs_open(): open directory (read-only)");
   KEXPECT_EQ(0, vfs_mkdir("/dir1"));
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
-  // Try to vfs_open() the directory.
+  int fd = vfs_open("/dir1", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_open(): open directory (RW/write-only)");
+  KEXPECT_EQ(-EISDIR, vfs_open("/dir1", VFS_O_WRONLY));
   KEXPECT_EQ(-EISDIR, vfs_open("/dir1", VFS_O_RDWR));
-  EXPECT_VNODE_REFCOUNT(0, "/dir1");
+
+  KTEST_BEGIN("vfs_open(): open root directory");
+  fd = vfs_open("/", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
 
   // Clean up.
+  EXPECT_VNODE_REFCOUNT(0, "/dir1");
   KEXPECT_EQ(0, vfs_rmdir("/dir1"));
 }
 
@@ -495,7 +505,7 @@ static void cwd_test() {
   KTEST_BEGIN("vfs_open(): respects cwd");
   create_file("/cwd_test/cwd_open_file");
   vfs_chdir("/cwd_test");
-  const int fd = vfs_open("cwd_open_file", VFS_O_RDWR);
+  int fd = vfs_open("cwd_open_file", VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
   if (fd >= 0) {
     vfs_close(fd);
@@ -515,6 +525,18 @@ static void cwd_test() {
   vfs_chdir("/cwd_test");
   create_file("/cwd_test/cwd_unlink_file");
   KEXPECT_EQ(0, vfs_unlink("cwd_unlink_file"));
+
+  KTEST_BEGIN("vfs_open(): '.' with cwd");
+  vfs_chdir("/cwd_test");
+  fd = vfs_open(".", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_open(): '..' with cwd");
+  vfs_chdir("/cwd_test");
+  fd = vfs_open("..", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
 
   // TODO test:
   // rmdir() the cwd
@@ -536,9 +558,11 @@ static void cwd_test() {
 
 static void rw_test() {
   const char kFile[] = "/rw_test_file";
+  const char kDir[] = "/rw_test_dir";
   const int kBufSize = 512;
   char buf[kBufSize];
   create_file(kFile);
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
 
   KTEST_BEGIN("vfs_write(): basic write test");
   int fd = vfs_open(kFile, VFS_O_RDWR);
@@ -617,6 +641,13 @@ static void rw_test() {
   KEXPECT_EQ(-EBADF, vfs_write(-1, buf, kBufSize));
   KEXPECT_EQ(-EBADF, vfs_write(5, buf, kBufSize));
 
+  KTEST_BEGIN("vfs_read/write(): directory test");
+  fd = vfs_open(kDir, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EISDIR, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(-EISDIR, vfs_write(fd, buf, kBufSize));
+  vfs_close(fd);
+
   // TODO test:
   // trunc vs append
   // mode
@@ -625,6 +656,7 @@ static void rw_test() {
 
   // Clean up.
   KEXPECT_EQ(0, vfs_unlink(kFile));
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
 // Multi-thread vfs_write() test.  Each thread repeatedly writes 'abc' and

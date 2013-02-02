@@ -404,20 +404,17 @@ int vfs_open(const char* path, uint32_t flags) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  // TODO(aoates): cwd: track current working directory and use that here.
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
-  if (base_name[0] == '\0') {
-    VFS_PUT_AND_CLEAR(parent);
-    return -EISDIR;  // Root directory is verboten.
-  }
 
   // Lookup the child inode.
   vnode_t* child;
-  {
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
     kmutex_lock(&parent->mutex);
     error = lookup_locked(parent, base_name, &child);
     if (error < 0 && error != -ENOENT) {
@@ -447,12 +444,17 @@ int vfs_open(const char* path, uint32_t flags) {
     VFS_PUT_AND_CLEAR(parent);
   }
 
-  // TODO(aoates): apparently on linux, you can open a directory for reading.
-  // What does that mean, and should we allow it?
-  if (child->type == VNODE_DIRECTORY) {
+  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(child);
+    return -ENOTSUP;
+  }
+
+  // Directories must be opened read-only.
+  if (child->type == VNODE_DIRECTORY && mode != VFS_O_RDONLY) {
     VFS_PUT_AND_CLEAR(child);
     return -EISDIR;
   }
+
   // Allocate a new file_t in the global file table.
   int idx = next_free_file_idx();
   if (idx < 0) {
@@ -584,6 +586,11 @@ int vfs_read(int fd, void* buf, int count) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
+  if (file->vnode->type == VNODE_DIRECTORY) {
+    return -EISDIR;
+  } else if (file->vnode->type != VNODE_REGULAR) {
+    return -ENOTSUP;
+  }
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
     return -EBADF;
   }
@@ -610,6 +617,11 @@ int vfs_write(int fd, const void* buf, int count) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
+  if (file->vnode->type == VNODE_DIRECTORY) {
+    return -EISDIR;
+  } else if (file->vnode->type != VNODE_REGULAR) {
+    return -ENOTSUP;
+  }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
     return -EBADF;
   }
