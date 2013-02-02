@@ -395,6 +395,11 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
 }
 
 int vfs_open(const char* path, uint32_t flags) {
+  // Check arguments.
+  const uint32_t mode = flags & VFS_MODE_MASK;
+  if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
+    return -EINVAL;
+  }
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];

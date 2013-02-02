@@ -33,7 +33,7 @@
 
 // Helper method to create a file for a test.
 static void create_file(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
   KASSERT(fd >= 0);
   vfs_close(fd);
 }
@@ -41,7 +41,7 @@ static void create_file(const char* path) {
 // Helper method that verifies that the given file can be created (then unlinks
 // it).
 static void EXPECT_CAN_CREATE_FILE(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
   if (fd >= 0) {
     vfs_close(fd);
@@ -55,7 +55,7 @@ static void open_parent_refcount_test() {
   KEXPECT_EQ(0, vfs_mkdir("/ref_dir1"));
   KEXPECT_EQ(0, vfs_mkdir("/ref_dir1/dir2"));
 
-  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT);
+  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
   KEXPECT_GE(fd1, 0);
 
   EXPECT_VNODE_REFCOUNT(1, "/");
@@ -63,7 +63,7 @@ static void open_parent_refcount_test() {
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(1, "/ref_dir1/dir2/test1");
 
-  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT);
+  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
   KEXPECT_GE(fd2, 0);
 
   EXPECT_VNODE_REFCOUNT(1, "/");
@@ -92,7 +92,7 @@ static void open_dir_test() {
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   // Try to vfs_open() the directory.
-  KEXPECT_EQ(-EISDIR, vfs_open("/dir1", 0));
+  KEXPECT_EQ(-EISDIR, vfs_open("/dir1", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   // Clean up.
@@ -103,24 +103,24 @@ static void open_test() {
   KTEST_BEGIN("vfs_open() test");
 
   vfs_log_cache();
-  KEXPECT_EQ(-ENOENT, vfs_open("/test1", 0));
+  KEXPECT_EQ(-ENOENT, vfs_open("/test1", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(-ENOENT, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT));
+  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT));
+  KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT));
+  KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT | VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
 
-  KEXPECT_EQ(3, vfs_open("/test1", 0));
+  KEXPECT_EQ(3, vfs_open("/test1", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(3, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
@@ -136,7 +136,7 @@ static void open_test() {
   vfs_log_cache();
 
   // Make sure we reuse the fd.
-  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT));
+  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT | VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   EXPECT_VNODE_REFCOUNT(1, "/test3");
@@ -154,7 +154,7 @@ static void open_test() {
   EXPECT_VNODE_REFCOUNT(0, "/test2");
 
   KTEST_BEGIN("re-vfs_open() test");
-  KEXPECT_EQ(0, vfs_open("/test1", 0));
+  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   vfs_log_cache();
 
@@ -164,15 +164,18 @@ static void open_test() {
 
   // TODO(aoates): test in subdirectories once mkdir works
   KTEST_BEGIN("vfs_open() w/ directories test");
-  KEXPECT_EQ(-EISDIR, vfs_open("/", 0));
+  KEXPECT_EQ(-EISDIR, vfs_open("/", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(1, "/");
-  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", 0));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(1, "/");
-  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT | VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(1, "/");
 
   open_parent_refcount_test();
   open_dir_test();
+
+  KTEST_BEGIN("vfs_open(): invalid mode");
+  KEXPECT_EQ(-EINVAL, vfs_open("/test1", VFS_O_RDWR | VFS_O_WRONLY));
 
   // Clean up.
   KEXPECT_EQ(0, vfs_unlink("/test1"));
@@ -184,7 +187,7 @@ static void mkdir_test() {
   KTEST_BEGIN("vfs_mkdir() test");
 
   // Make sure we have some normal files around.
-  const int test1_fd = vfs_open("/test1", VFS_O_CREAT);
+  const int test1_fd = vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR);
   KEXPECT_GE(test1_fd, 0);
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
@@ -289,7 +292,7 @@ static void file_table_reclaim_test() {
   KEXPECT_EQ(0, vfs_mkdir(kTestDir));
   int files_opened = 0;
   for (int i = 0; i < VFS_MAX_FILES * 2; ++i) {
-    const int fd = vfs_open(kTestFile, VFS_O_CREAT);
+    const int fd = vfs_open(kTestFile, VFS_O_CREAT | VFS_O_RDWR);
     if (fd < 0) {
       KEXPECT_GE(fd, 0);
       break;
@@ -329,7 +332,7 @@ static void* vfs_open_thread_safety_test_func(void* arg) {
   thread_safety_test_t* test = (thread_safety_test_t*)arg;
   for (int i = 0; i < THREAD_SAFETY_TEST_ITERS; ++i) {
     int fd = vfs_open("/thread_safety_test/a/./b/../b/thread_safety_test_file",
-                      VFS_O_CREAT);
+                      VFS_O_CREAT | VFS_O_RDWR);
     KASSERT(fd >= 0);
 
     kmutex_lock(&test->mu);
@@ -391,10 +394,10 @@ static void vfs_open_thread_safety_test() {
 
 static void unlink_test() {
   KTEST_BEGIN("vfs_unlink(): basic test");
-  int fd = vfs_open("/unlink", VFS_O_CREAT);
+  int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR);
   vfs_close(fd);
   KEXPECT_EQ(0, vfs_unlink("/unlink"));
-  KEXPECT_EQ(-ENOENT, vfs_open("/unlink", 0));
+  KEXPECT_EQ(-ENOENT, vfs_open("/unlink", VFS_O_RDWR));
 
   KTEST_BEGIN("vfs_unlink(): non-existent file");
   KEXPECT_EQ(-ENOENT, vfs_unlink("/doesnt_exist"));
@@ -402,13 +405,13 @@ static void unlink_test() {
   KTEST_BEGIN("vfs_unlink(): in a directory");
   vfs_mkdir("/unlink");
   vfs_mkdir("/unlink/a");
-  fd = vfs_open("/unlink/a/file", VFS_O_CREAT);
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR);
   vfs_close(fd);
   KEXPECT_EQ(0, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
   KEXPECT_EQ(-ENOENT, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
 
   KTEST_BEGIN("vfs_unlink(): non-directory in path");
-  fd = vfs_open("/unlink/a/file", VFS_O_CREAT);
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR);
   vfs_close(fd);
   KEXPECT_EQ(-ENOTDIR, vfs_unlink("/unlink/a/file/in_file"));
   KEXPECT_EQ(0, vfs_unlink("/unlink/a/file")); // Clean up.
@@ -492,7 +495,7 @@ static void cwd_test() {
   KTEST_BEGIN("vfs_open(): respects cwd");
   create_file("/cwd_test/cwd_open_file");
   vfs_chdir("/cwd_test");
-  const int fd = vfs_open("cwd_open_file", 0);
+  const int fd = vfs_open("cwd_open_file", VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
   if (fd >= 0) {
     vfs_close(fd);
@@ -538,26 +541,26 @@ static void rw_test() {
   create_file(kFile);
 
   KTEST_BEGIN("vfs_write(): basic write test");
-  int fd = vfs_open(kFile, 0);
+  int fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(26, vfs_write(fd, "abcdefghijklmnopqrstuvwxyz", 26));
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_read(): basic read test");
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(26, vfs_read(fd, buf, kBufSize));
   buf[26] = '\0';
   KEXPECT_STREQ("abcdefghijklmnopqrstuvwxyz", buf);
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_read(): read at end of file test");
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(26, vfs_read(fd, buf, kBufSize));
   KEXPECT_EQ(0, vfs_read(fd, buf, kBufSize));
   KEXPECT_EQ(0, vfs_read(fd, buf, kBufSize));
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_read(): chunked read test");
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(10, vfs_read(fd, buf, 10));
   buf[10] = '\0';
   KEXPECT_STREQ("abcdefghij", buf);
@@ -572,35 +575,35 @@ static void rw_test() {
   create_file(kFile);
 
   KTEST_BEGIN("vfs_write(): chunked write test");
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
   KEXPECT_EQ(3, vfs_write(fd, "def", 3));
   vfs_close(fd);
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
   buf[6] = '\0';
   KEXPECT_STREQ("abcdef", buf);
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_write(): overwrite test");
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(3, vfs_write(fd, "ABC", 3));
   vfs_close(fd);
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
   buf[6] = '\0';
   KEXPECT_STREQ("ABCdef", buf);
   vfs_close(fd);
 
   KTEST_BEGIN("vfs read/write(): read/write share position");
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(2, vfs_write(fd, "12", 2));
   KEXPECT_EQ(2, vfs_read(fd, buf, 2));
   buf[2] = '\0';
   KEXPECT_STREQ("Cd", buf);
   KEXPECT_EQ(2, vfs_write(fd, "56", 2));
   vfs_close(fd);
-  fd = vfs_open(kFile, 0);
+  fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
   buf[6] = '\0';
   KEXPECT_STREQ("12Cd56", buf);
@@ -649,7 +652,7 @@ static void write_thread_test() {
   kthread_t threads[WRITE_SAFETY_THREADS];
 
   create_file("/vfs_write_thread_safety_test");
-  int fd = vfs_open("/vfs_write_thread_safety_test", 0);
+  int fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i],
                            &write_thread_test_func, (void*)fd));
@@ -662,7 +665,7 @@ static void write_thread_test() {
 
   // Make sure all the writes were atomic.
   vfs_close(fd);
-  fd = vfs_open("/vfs_write_thread_safety_test", 0);
+  fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   char buf[512];
   int letters = 0, nums = 0;
   while (1) {

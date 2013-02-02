@@ -138,12 +138,14 @@ struct fs {
 // Syscall flags.
 // TODO(aoates): once we have userland, these should be the same constants as
 // are used there.
-#define VFS_O_APPEND   0x01
-#define VFS_O_CREAT    0x02
-#define VFS_O_TRUNC    0x04  // TODO(aoates)
-#define VFS_O_RDONLY   0x08
-#define VFS_O_WRONLY   0x10
-#define VFS_O_RDWR     0x20
+#define VFS_MODE_MASK  0x03
+#define VFS_O_RDONLY   0x00
+#define VFS_O_WRONLY   0x01
+#define VFS_O_RDWR     0x02
+
+#define VFS_O_APPEND   0x04
+#define VFS_O_CREAT    0x08
+#define VFS_O_TRUNC    0x10  // TODO(aoates)
 
 // Initialize the VFS.
 void vfs_init();
