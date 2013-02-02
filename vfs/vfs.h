@@ -205,6 +205,16 @@ int vfs_rmdir(const char* path);
 // Unlink an entry from a directory.
 int vfs_unlink(const char* path);
 
+// Read up to count bytes from the given fd into buf, and advance the file
+// position by that amount.  Returns the actual number of bytes read on success,
+// or -error.
+int vfs_read(int fd, void* buf, int count);
+
+// Write up to count bytes from buf into the given fd, and advance the file
+// position by that amount.  Returns the actual number of bytes written on
+// success, or -error.
+int vfs_write(int fd, const void* buf, int count);
+
 // Return the full pathname of the current working directory in the given
 // buffer.  Returns the length of the string on success, or -error on error.
 int vfs_getcwd(char* path_out, int size);

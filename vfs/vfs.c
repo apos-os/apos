@@ -464,6 +464,7 @@ int vfs_open(const char* path, uint32_t flags) {
 
   KASSERT(g_file_table[idx] == 0x0);
   g_file_table[idx] = file_alloc();
+  file_init_file(g_file_table[idx]);
   g_file_table[idx]->vnode = VFS_MOVE_REF(child);
   g_file_table[idx]->refcount = 1;
 
@@ -567,6 +568,52 @@ int vfs_unlink(const char* path) {
   error = parent->fs->unlink(parent, base_name);
   VFS_PUT_AND_CLEAR(parent);
   return error;
+}
+
+int vfs_read(int fd, void* buf, int count) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
+    if (result >= 0) {
+      file->pos += result;
+    }
+  }
+
+  file->refcount--;
+  return result;
+}
+
+int vfs_write(int fd, const void* buf, int count) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
+    if (result >= 0) {
+      file->pos += result;
+    }
+  }
+
+  file->refcount--;
+  return result;
 }
 
 int vfs_getcwd(char* path_out, int size) {

@@ -520,6 +520,8 @@ static void cwd_test() {
   // of the root fs
   // refcounts on the directories
   // cwd through an unlinked directory
+  // simultaneous open/read/write/close calls
+  // pos is maintained on error
 
   // Clean up.
   vfs_chdir("/");
@@ -527,6 +529,179 @@ static void cwd_test() {
   vfs_rmdir("/cwd_test/a");
   vfs_rmdir("/cwd_test");
 #undef EXPECT_CWD
+}
+
+static void rw_test() {
+  const char kFile[] = "/rw_test_file";
+  const int kBufSize = 512;
+  char buf[kBufSize];
+  create_file(kFile);
+
+  KTEST_BEGIN("vfs_write(): basic write test");
+  int fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(26, vfs_write(fd, "abcdefghijklmnopqrstuvwxyz", 26));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): basic read test");
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(26, vfs_read(fd, buf, kBufSize));
+  buf[26] = '\0';
+  KEXPECT_STREQ("abcdefghijklmnopqrstuvwxyz", buf);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): read at end of file test");
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(26, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, vfs_read(fd, buf, kBufSize));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): chunked read test");
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(10, vfs_read(fd, buf, 10));
+  buf[10] = '\0';
+  KEXPECT_STREQ("abcdefghij", buf);
+  KEXPECT_EQ(10, vfs_read(fd, buf, 10));
+  KEXPECT_STREQ("klmnopqrst", buf);
+  KEXPECT_EQ(6, vfs_read(fd, buf, 10));
+  buf[6] = '\0';
+  KEXPECT_STREQ("uvwxyz", buf);
+  vfs_close(fd);
+
+  vfs_unlink(kFile);
+  create_file(kFile);
+
+  KTEST_BEGIN("vfs_write(): chunked write test");
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(fd, "def", 3));
+  vfs_close(fd);
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  buf[6] = '\0';
+  KEXPECT_STREQ("abcdef", buf);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_write(): overwrite test");
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(3, vfs_write(fd, "ABC", 3));
+  vfs_close(fd);
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  buf[6] = '\0';
+  KEXPECT_STREQ("ABCdef", buf);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs read/write(): read/write share position");
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(2, vfs_write(fd, "12", 2));
+  KEXPECT_EQ(2, vfs_read(fd, buf, 2));
+  buf[2] = '\0';
+  KEXPECT_STREQ("Cd", buf);
+  KEXPECT_EQ(2, vfs_write(fd, "56", 2));
+  vfs_close(fd);
+  fd = vfs_open(kFile, 0);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  buf[6] = '\0';
+  KEXPECT_STREQ("12Cd56", buf);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_read(): bad fd");
+  KEXPECT_EQ(-EBADF, vfs_read(-1, buf, kBufSize));
+  KEXPECT_EQ(-EBADF, vfs_read(5, buf, kBufSize));
+
+  KTEST_BEGIN("vfs_write(): bad fd");
+  KEXPECT_EQ(-EBADF, vfs_write(-1, buf, kBufSize));
+  KEXPECT_EQ(-EBADF, vfs_write(5, buf, kBufSize));
+
+  // TODO test:
+  // trunc vs append
+  // mode
+  // multithread read/write test
+  // multi-fd test
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+}
+
+// Multi-thread vfs_write() test.  Each thread repeatedly writes 'abc' and
+// '1234' to a file descriptor, and at the end we verify that the writes didn't
+// step on each other (i.e., each happened atomically).
+#define WRITE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define WRITE_SAFETY_THREADS 5
+static void* write_thread_test_func(void* arg) {
+  const int fd = (int)arg;
+  for (int i = 0; i < WRITE_SAFETY_ITERS; ++i) {
+    int result = vfs_write(fd, "abc", 3);
+    if (result != 3) {
+      KEXPECT_EQ(3, result);
+    }
+    result = vfs_write(fd, "1234", 4);
+    if (result != 4) {
+      KEXPECT_EQ(4, result);
+    }
+  }
+  return 0x0;
+}
+
+static void write_thread_test() {
+  KTEST_BEGIN("vfs_write(): thread-safety test");
+  kthread_t threads[WRITE_SAFETY_THREADS];
+
+  create_file("/vfs_write_thread_safety_test");
+  int fd = vfs_open("/vfs_write_thread_safety_test", 0);
+  for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
+    KASSERT(kthread_create(&threads[i],
+                           &write_thread_test_func, (void*)fd));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  // Make sure all the writes were atomic.
+  vfs_close(fd);
+  fd = vfs_open("/vfs_write_thread_safety_test", 0);
+  char buf[512];
+  int letters = 0, nums = 0;
+  while (1) {
+    int len = vfs_read(fd, buf, 3);
+    if (len == 0) {
+      break;
+    }
+
+    if (buf[0] == '1') {
+      const int len2 = vfs_read(fd, &buf[3], 1);
+      if (len2 != 1) {
+        KEXPECT_EQ(1, len2);
+      }
+      len += len2;
+    }
+    buf[len] = '\0';
+
+    if (buf[0] == 'a') {
+      if (len != 3 || kstrncmp(buf, "abc", 3) != 0) {
+        KEXPECT_EQ(3, len);
+        KEXPECT_STREQ("abc", buf);
+      }
+      letters++;
+    } else if (buf[0] == '1') {
+      if (len != 4 || kstrncmp(buf, "1234", 4) != 0) {
+        KEXPECT_EQ(4, len);
+        KEXPECT_STREQ("1234", buf);
+      }
+      nums++;
+    } else {
+      // TODO(aoates): add a better way to expect this.
+      KEXPECT_EQ(0, 1);
+      break;
+    }
+  }
+  vfs_close(fd);
+
+  KEXPECT_EQ(WRITE_SAFETY_THREADS * WRITE_SAFETY_ITERS, letters);
+  KEXPECT_EQ(WRITE_SAFETY_THREADS * WRITE_SAFETY_ITERS, nums);
 }
 
 void reverse_path_test() {
@@ -571,6 +746,8 @@ void vfs_test() {
   vfs_open_thread_safety_test();
   unlink_test();
   cwd_test();
+  rw_test();
+  write_thread_test();
 
   reverse_path_test();
 
