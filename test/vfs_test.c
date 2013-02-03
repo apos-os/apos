@@ -515,6 +515,7 @@ static void cwd_test() {
   vfs_chdir("/cwd_test");
   vfs_mkdir("cwd_mkdir_dir");
   EXPECT_CAN_CREATE_FILE("/cwd_test/cwd_mkdir_dir/file");
+  KEXPECT_EQ(0, vfs_rmdir("/cwd_test/cwd_mkdir_dir"));
 
   KTEST_BEGIN("vfs_rmdir(): respects cwd");
   vfs_chdir("/cwd_test");
@@ -550,9 +551,10 @@ static void cwd_test() {
 
   // Clean up.
   vfs_chdir("/");
-  vfs_unlink("/cwd_test/file");
-  vfs_rmdir("/cwd_test/a");
-  vfs_rmdir("/cwd_test");
+  KEXPECT_EQ(0, vfs_unlink("/cwd_test/cwd_open_file"));
+  KEXPECT_EQ(0, vfs_unlink("/cwd_test/file"));
+  KEXPECT_EQ(0, vfs_rmdir("/cwd_test/a"));
+  KEXPECT_EQ(-0, vfs_rmdir("/cwd_test"));
 #undef EXPECT_CWD
 }
 
@@ -737,6 +739,8 @@ static void write_thread_test() {
 
   KEXPECT_EQ(WRITE_SAFETY_THREADS * WRITE_SAFETY_ITERS, letters);
   KEXPECT_EQ(WRITE_SAFETY_THREADS * WRITE_SAFETY_ITERS, nums);
+
+  KEXPECT_EQ(0, vfs_unlink("/vfs_write_thread_safety_test"));
 }
 
 static void rw_mode_test() {
@@ -789,6 +793,114 @@ static void rw_mode_test() {
   KEXPECT_EQ(0, vfs_unlink(kFile));
 }
 
+// Run vfs_getdents() on the given fd and verify it matches the given set of
+// dirents.
+// TODO(aoates): actually verify the vnode numbers vfs_getdents returns.
+typedef struct {
+  int vnode;
+  const char* name;
+} edirent_t;
+static void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
+  const int kBufSize = sizeof(dirent_t) * 3;  // Ensure we have several calls.
+  char buf[kBufSize];
+  int num_dirents = 0;
+
+  while (1) {
+    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    if (len < 0) {
+      KEXPECT_GE(len, -0);
+      break;
+    }
+    if (len == 0) {
+      break;
+    }
+
+    int buf_offset = 0;
+    do {
+      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      num_dirents++;
+      buf_offset += ent->length;
+
+      klogf("dirent: %d -> %s\n", ent->vnode, ent->name);
+
+      // Make sure the dirent matches one of the expected.
+      int i;
+      for (i = 0; i < expected_num; ++i) {
+        if (kstrcmp(ent->name, expected[i].name) == 0) {
+          break;
+        }
+      }
+      if (i == expected_num) {
+        klogf("Error: dirent <%d, %s> doesn't match any expected dirents\n",
+              ent->vnode, ent->name);
+        KEXPECT_EQ(0, 1); // TODO(aoates): more elegant way to signal this
+      }
+    } while (buf_offset < len);
+  }
+
+  KEXPECT_EQ(expected_num, num_dirents);
+}
+
+static void getdents_test() {
+  edirent_t root_expected[] = {{0, "."}, {0, ".."}};
+  edirent_t getdents_expected[] = {
+    {-1, "."}, {0, ".."}, {-1, "a"}, {-1, "b"}, {-1, "c"},
+    {-1, "f1"}, {-1, "f2"}};
+  edirent_t getdents_a_expected[] = {
+    {-1, "."}, {0, ".."}, {-1, "1"}, {-1, "f3"}};
+
+  KTEST_BEGIN("vfs_getdents(): root");
+  int fd = vfs_open("/", VFS_O_RDONLY);
+  EXPECT_GETDENTS(fd, 2, root_expected);
+  vfs_close(fd);
+
+  vfs_mkdir("/getdents");
+  vfs_mkdir("/getdents/a");
+  vfs_mkdir("/getdents/b");
+  vfs_mkdir("/getdents/c");
+  vfs_mkdir("/getdents/a/1");
+  create_file("/getdents/f1");
+  create_file("/getdents/f2");
+  create_file("/getdents/a/f3");
+
+  KTEST_BEGIN("vfs_getdents(): files and directories");
+  fd = vfs_open("/", VFS_O_RDONLY);
+  EXPECT_GETDENTS(fd, 3, (edirent_t[]){{0, "."}, {0, ".."}, {-1, "getdents"}});
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_getdents(): subdir #2");
+  fd = vfs_open("/getdents", VFS_O_RDONLY);
+  EXPECT_GETDENTS(fd, 7, getdents_expected);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_getdents(): subdir #3");
+  fd = vfs_open("/getdents/a", VFS_O_RDONLY);
+  EXPECT_GETDENTS(fd, 4, getdents_a_expected);
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_getdents(): cwd");
+  vfs_chdir("/getdents");
+  fd = vfs_open(".", VFS_O_RDONLY);
+  EXPECT_GETDENTS(fd, 7, getdents_expected);
+  vfs_close(fd);
+
+  // TODO(aoates): test:
+  // buffer too small for one dirent
+  // multiple calls to getdents
+  // that we internally use tho offset instead of the dirent length to update
+  // file pos.
+
+  // Clean up.
+  vfs_unlink("/getdents/a/f3");
+  vfs_unlink("/getdents/f2");
+  vfs_unlink("/getdents/f1");
+  vfs_rmdir("/getdents/a/1");
+  vfs_rmdir("/getdents/a");
+  vfs_rmdir("/getdents/c");
+  vfs_rmdir("/getdents/b");
+  vfs_rmdir("/getdents");
+}
+
 void reverse_path_test() {
   char buf[512];
   KTEST_BEGIN("reverse_path() test");
@@ -834,6 +946,7 @@ void vfs_test() {
   rw_test();
   write_thread_test();
   rw_mode_test();
+  getdents_test();
 
   reverse_path_test();
 

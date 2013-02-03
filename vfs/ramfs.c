@@ -461,7 +461,11 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
     dirent_t* d = (dirent_t*)(node->data + offset);
-    if (bytes_read + d->length >= bufsize) {
+    if (d->vnode != -1 && bytes_read + d->length >= bufsize) {
+      // If the buffer is too small to fit even one entry, return -EINVAL.
+      if (bytes_read == 0) {
+        return -EINVAL;
+      }
       break;
     }
     offset += d->length;

@@ -640,6 +640,39 @@ int vfs_write(int fd, const void* buf, int count) {
   return result;
 }
 
+int vfs_getdents(int fd, dirent_t* buf, int count) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  if (file->vnode->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = file->vnode->fs->getdents(file->vnode, file->pos, buf, count);
+    if (result >= 0) {
+      // Find the last returned dirent_t, and use it's offset.
+      dirent_t* ent = buf;
+      int bufpos = 0;
+      while (bufpos < result) {
+        ent = (dirent_t*)((char*)buf + bufpos);
+        bufpos += ent->length;
+      }
+      file->pos = ent->offset;
+    }
+  }
+
+  file->refcount--;
+  return result;
+}
+
 int vfs_getcwd(char* path_out, int size) {
   if (!path_out || size < 0) {
     return -EINVAL;

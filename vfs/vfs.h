@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "proc/kthread.h"
+#include "vfs/dirent.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
@@ -216,6 +217,11 @@ int vfs_read(int fd, void* buf, int count);
 // position by that amount.  Returns the actual number of bytes written on
 // success, or -error.
 int vfs_write(int fd, const void* buf, int count);
+
+// Read several dirent_t structures from the file descriptor into the given
+// buffer.  count is the size of the buffer in bytes.  Returns the number of
+// bytes read on success, or -error.
+int vfs_getdents(int fd, dirent_t* buf, int count);
 
 // Return the full pathname of the current working directory in the given
 // buffer.  Returns the length of the string on success, or -error on error.
