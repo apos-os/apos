@@ -167,7 +167,7 @@ void vfs_vnode_init(vnode_t* n);
 // Given a filesystem and a vnode number, return the corresponding vnode_t.
 // This increments the vnode's refcount, which must be decremented later vith
 // vfs_put.
-vnode_t* vfs_get(int vnode);
+vnode_t* vfs_get(fs_t* fs, int vnode);
 
 // TODO(aoates): make a vfs-internal.h file with the internal-only functions in
 // it.

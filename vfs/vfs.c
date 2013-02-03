@@ -107,7 +107,7 @@ static int lookup_locked(vnode_t* parent, const char* name,
     return child_inode;
   }
 
-  *child_out = vfs_get(child_inode);
+  *child_out = vfs_get(parent->fs, child_inode);
   return 0;
 }
 
@@ -242,7 +242,7 @@ static int lookup_path(vnode_t* root, const char* path,
 // the process's cwd.
 static vnode_t* get_root_for_path(const char* path) {
   if (path[0] == '/') {
-    return vfs_get(g_root_fs->get_root(g_root_fs));
+    return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
   } else {
     return VFS_COPY_REF(proc_current()->cwd);
   }
@@ -263,10 +263,10 @@ fs_t* vfs_get_root_fs() {
 }
 
 vnode_t* vfs_get_root_vnode() {
-  return vfs_get(g_root_fs->get_root(g_root_fs));
+  return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
 }
 
-vnode_t* vfs_get(int vnode_num) {
+vnode_t* vfs_get(fs_t* fs, int vnode_num) {
   vnode_t* vnode;
   int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,  (void**)(&vnode));
   if (!error) {
@@ -289,12 +289,12 @@ vnode_t* vfs_get(int vnode_num) {
     return vnode;
   } else {
     // We need to create the vnode and backfill it from disk.
-    vnode = g_root_fs->alloc_vnode(g_root_fs);
+    vnode = fs->alloc_vnode(fs);
     vnode->num = vnode_num;
     vnode->type = VNODE_INVALID;
     vnode->len = -1;
     vnode->refcount = 1;
-    vnode->fs = g_root_fs;
+    vnode->fs = fs;
     kmutex_lock(&vnode->mutex);
 
     // Put the (unitialized but locked) vnode into the table.
@@ -302,7 +302,7 @@ vnode_t* vfs_get(int vnode_num) {
 
     // This call could block, at which point other threads attempting to access
     // this node will block until we release the mutex.
-    error = g_root_fs->get_vnode(vnode);
+    error = fs->get_vnode(vnode);
     if (error) {
       // TODO(aoates): unlock the vnode and remove it from the table!  How do we
       // synchronize this with other threads trying to get this vnode?
@@ -363,7 +363,7 @@ int vfs_cache_size() {
 }
 
 int vfs_get_vnode_refcount_for_path(const char* path) {
-  vnode_t* root = vfs_get(g_root_fs->get_root(g_root_fs));
+  vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
@@ -433,7 +433,7 @@ int vfs_open(const char* path, uint32_t flags) {
         return child_inode;
       }
 
-      child = vfs_get(child_inode);
+      child = vfs_get(parent->fs, child_inode);
     }
 
     // Done with the parent.
