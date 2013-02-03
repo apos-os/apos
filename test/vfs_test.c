@@ -38,6 +38,14 @@ static void create_file(const char* path) {
   vfs_close(fd);
 }
 
+static void create_file_with_data(const char* path, const char* data) {
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  KASSERT(fd >= 0);
+  const int result = vfs_write(fd, data, kstrlen(data));
+  KASSERT(result == kstrlen(data));
+  vfs_close(fd);
+}
+
 // Helper method that verifies that the given file can be created (then unlinks
 // it).
 static void EXPECT_CAN_CREATE_FILE(const char* path) {
@@ -902,6 +910,85 @@ static void getdents_test() {
   vfs_chdir("/");
 }
 
+static void seek_test() {
+  const char kFile[] = "/seek_test_file";
+  const int kBufSize = 512;
+  char buf[kBufSize];
+  kmemset(buf, 0, kBufSize);
+  create_file_with_data(kFile, "abcdefghijklmnopqrstuvwxyz");
+
+  int fd = vfs_open(kFile, VFS_O_RDWR);
+  KTEST_BEGIN("vfs_seek(): read");
+  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(4, vfs_read(fd, buf, 4));
+  KEXPECT_EQ(0, kstrncmp(buf, "defg", 4));
+  KEXPECT_EQ(4, vfs_read(fd, buf, 4));
+  KEXPECT_EQ(0, kstrncmp(buf, "hijk", 4));
+
+  KTEST_BEGIN("vfs_seek(): write");
+  KEXPECT_EQ(0, vfs_seek(fd, 5, VFS_SEEK_SET));
+  KEXPECT_EQ(2, vfs_write(fd, "12", 2));
+  KEXPECT_EQ(2, vfs_write(fd, "34", 2));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(26, vfs_read(fd, buf, kBufSize));
+  KEXPECT_STREQ("abcde1234jklmnopqrstuvwxyz", buf);
+
+  KTEST_BEGIN("vfs_seek(): SEEK_CUR");
+  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(0, vfs_seek(fd, 2, VFS_SEEK_CUR));
+  KEXPECT_EQ(4, vfs_read(fd, buf, 4));
+  KEXPECT_EQ(0, kstrncmp(buf, "1234", 4));
+
+  KTEST_BEGIN("vfs_seek(): SEEK_END");
+  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_END));
+  KEXPECT_EQ(2, vfs_write(fd, "12", 2));
+  KEXPECT_EQ(2, vfs_write(fd, "34", 2));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(33, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kmemcmp("abcde1234jklmnopqrstuvwxyz\0\0\0" "1234", buf, 33));
+
+  KTEST_BEGIN("vfs_seek(): negative seek");
+  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(0, vfs_seek(fd, -2, VFS_SEEK_CUR));
+  KEXPECT_EQ(4, vfs_read(fd, buf, 4));
+  KEXPECT_EQ(0, kstrncmp(buf, "bcde", 4));
+
+  // TODO(aoates): negative seek from end.
+
+  KTEST_BEGIN("vfs_seek(): negative seek");
+  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(-EINVAL, vfs_seek(fd, -4, VFS_SEEK_CUR));
+  KEXPECT_EQ(-EINVAL, vfs_seek(fd, -1, VFS_SEEK_SET));
+
+  KTEST_BEGIN("vfs_seek(): seek not shared across independent FDs");
+  int fd1 = vfs_open(kFile, VFS_O_RDONLY);
+  int fd2 = vfs_open(kFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_seek(fd1, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(0, vfs_seek(fd2, 10, VFS_SEEK_SET));
+  KEXPECT_EQ(3, vfs_read(fd1, buf, 3));
+  KEXPECT_EQ(0, kmemcmp("de1", buf, 3));
+  KEXPECT_EQ(3, vfs_read(fd2, buf, 3));
+  KEXPECT_EQ(0, kmemcmp("klm", buf, 3));
+  vfs_close(fd1);
+  vfs_close(fd2);
+
+  KTEST_BEGIN("vfs_seek(): invalid arguments");
+  KEXPECT_EQ(-EBADF, vfs_seek(fd2, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-EBADF, vfs_seek(10000, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-EBADF, vfs_seek(-3, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-EINVAL, vfs_seek(fd, 0, 5));
+  KEXPECT_EQ(-EINVAL, vfs_seek(fd, 0, -5));
+
+  // TODO(aoates): test,
+  // seek past end with all three whences
+  // seek is shared across dup()s
+  // seek is not shared across non-dup()'d fds
+
+  // Clean up.
+  vfs_close(fd);
+  vfs_unlink(kFile);
+}
+
 void reverse_path_test() {
   char buf[512];
   KTEST_BEGIN("reverse_path() test");
@@ -948,6 +1035,7 @@ void vfs_test() {
   write_thread_test();
   rw_mode_test();
   getdents_test();
+  seek_test();
 
   reverse_path_test();
 

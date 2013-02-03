@@ -148,6 +148,10 @@ struct fs {
 #define VFS_O_CREAT    0x08
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
 
+#define VFS_SEEK_SET 1
+#define VFS_SEEK_CUR 2
+#define VFS_SEEK_END 3
+
 // Initialize the VFS.
 void vfs_init();
 
@@ -217,6 +221,10 @@ int vfs_read(int fd, void* buf, int count);
 // position by that amount.  Returns the actual number of bytes written on
 // success, or -error.
 int vfs_write(int fd, const void* buf, int count);
+
+// Seek the fd to the given offset, relative to whence.  Returns 0 on success,
+// or -error.
+int vfs_seek(int fd, int offset, int whence);
 
 // Read several dirent_t structures from the file descriptor into the given
 // buffer.  count is the size of the buffer in bytes.  Returns the number of

@@ -631,6 +631,37 @@ int vfs_write(int fd, const void* buf, int count) {
   return result;
 }
 
+int vfs_seek(int fd, int offset, int whence) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+  if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR &&
+      whence != VFS_SEEK_END) {
+    return -EINVAL;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  if (file->vnode->type != VNODE_REGULAR) {
+    return -ENOTSUP;
+  }
+
+  int new_pos = -1;
+  switch (whence) {
+    case VFS_SEEK_SET: new_pos = offset; break;
+    case VFS_SEEK_CUR: new_pos = file->pos + offset; break;
+    case VFS_SEEK_END: new_pos = file->vnode->len + offset; break;
+  }
+
+  if (new_pos < 0) {
+    return -EINVAL;
+  }
+
+  file->pos = new_pos;
+  return 0;
+}
+
 int vfs_getdents(int fd, dirent_t* buf, int count) {
   process_t* proc = proc_current();
   if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
