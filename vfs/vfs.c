@@ -330,10 +330,7 @@ void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
     KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
-    // TODO(aoates): is this lock/unlock really neccessary?
-    kmutex_lock(&vnode->mutex);
     vnode->fs->put_vnode(vnode);
-    kmutex_unlock(&vnode->mutex);
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }
@@ -521,10 +518,7 @@ int vfs_mkdir(const char* path) {
     return -EEXIST;  // Root directory!
   }
 
-  // TODO(aoates): do we really need this lock/unlock?
-  kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
   int child_inode = parent->fs->mkdir(parent, base_name);
-  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
@@ -554,10 +548,7 @@ int vfs_rmdir(const char* path) {
     return -EINVAL;
   }
 
-  // TODO(aoates): do we really need this lock/unlock?
-  kmutex_lock(&parent->mutex); // So it doesn't get collected while we wait.
   error = parent->fs->rmdir(parent, base_name);
-  kmutex_unlock(&parent->mutex);
   VFS_PUT_AND_CLEAR(parent);
   return error;
 }
