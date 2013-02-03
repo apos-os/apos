@@ -26,10 +26,11 @@
 // How many files can be open, globally, at once.
 #define VFS_MAX_FILES 128
 
-// vnode types.
-#define VNODE_INVALID 0
-#define VNODE_REGULAR   1
-#define VNODE_DIRECTORY 2
+// vnode types.  Keep these synchcronized with VNODE_TYPE_NAME in vfs.c.
+#define VNODE_UNINITIALIZED 0
+#define VNODE_INVALID 1
+#define VNODE_REGULAR   2
+#define VNODE_DIRECTORY 3
 // TODO(aoates): symlinks, special devices, etc.
 
 struct fs;

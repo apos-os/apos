@@ -37,7 +37,7 @@ void vfs_vnode_init(vnode_t* n) {
 #define VNODE_CACHE_SIZE 1000
 
 static const char* VNODE_TYPE_NAME[] = {
-  "INV", "REG", "DIR"
+  "UNINIT", "INV", "REG", "DIR"
 };
 
 static fs_t* g_root_fs = 0;
@@ -276,22 +276,26 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     // is initialized (since the thread creating it locks the mutex *before*
     // putting it in the table, and doesn't unlock it until it's initialized).
     vnode->refcount++;
-    if (vnode->type == VNODE_INVALID) {
-      // TODO(aoates): add an UNINITIALIZED state and use a semaphore for this.
+    if (vnode->type == VNODE_UNINITIALIZED) {
+      // TODO(aoates): use a semaphore for this.
       kmutex_lock(&vnode->mutex);
       kmutex_unlock(&vnode->mutex);
     }
 
-    // The vnode should now be fully initialized.
-    // TODO(aoates): we need to handle error cases!  This will currently explode
-    // if the vnode wasn't initialized properly.
-    KASSERT(vnode->type != VNODE_INVALID);
+    // If initialization failed, put the node back.  This will free it if we're
+    // the last one waiting on it.
+    if (vnode->type == VNODE_UNINITIALIZED) {
+      vfs_put(vnode);
+      return 0x0;
+    }
+
+    KASSERT(vnode->type != VNODE_UNINITIALIZED && vnode->type != VNODE_INVALID);
     return vnode;
   } else {
     // We need to create the vnode and backfill it from disk.
     vnode = fs->alloc_vnode(fs);
     vnode->num = vnode_num;
-    vnode->type = VNODE_INVALID;
+    vnode->type = VNODE_UNINITIALIZED;
     vnode->len = -1;
     vnode->refcount = 1;
     vnode->fs = fs;
@@ -303,12 +307,14 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     // This call could block, at which point other threads attempting to access
     // this node will block until we release the mutex.
     error = fs->get_vnode(vnode);
+
     if (error) {
-      // TODO(aoates): unlock the vnode and remove it from the table!  How do we
-      // synchronize this with other threads trying to get this vnode?
+      // In case the fs overwrote this.  We must do this before we unlock.
+      vnode->type = VNODE_UNINITIALIZED;
       klogf("warning: error when getting inode %d: %s\n",
             vnode_num, errorname(-error));
-      kfree(vnode);
+      kmutex_unlock(&vnode->mutex);
+      vfs_put(vnode);
       return 0x0;
     }
 
@@ -322,7 +328,7 @@ void vfs_ref(vnode_t* n) {
 }
 
 void vfs_put(vnode_t* vnode) {
-  KASSERT(vnode->type != VNODE_INVALID);  // We must be fully initialized.
+  KASSERT(vnode->type != VNODE_INVALID);
   vnode->refcount--;
 
   // TODO(aoates): instead of greedily freeing the vnode, mark it as unnecessary
@@ -330,7 +336,11 @@ void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
     KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
-    vnode->fs->put_vnode(vnode);
+    // Only put the node back into the fs if we were able to fully initialize
+    // it.
+    if (vnode->type != VNODE_UNINITIALIZED) {
+      vnode->fs->put_vnode(vnode);
+    }
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }

@@ -989,6 +989,42 @@ static void seek_test() {
   vfs_unlink(kFile);
 }
 
+#define BAD_INODE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define BAD_INODE_SAFETY_THREADS 5
+static void* bad_inode_thread_test_func(void* arg) {
+  for (int i = 0; i < BAD_INODE_SAFETY_ITERS; ++i) {
+    vnode_t* node = vfs_get(vfs_get_root_fs(), 52187 + (i % 3));
+    KEXPECT_EQ(0x0, (int)node);
+  }
+  return 0x0;
+}
+
+static void bad_inode_thread_test() {
+  KTEST_BEGIN("vfs_get(): bad inode thread-safety test");
+  kthread_t threads[BAD_INODE_SAFETY_THREADS];
+
+  for (int i = 0; i < BAD_INODE_SAFETY_THREADS; ++i) {
+    KASSERT(kthread_create(&threads[i], &bad_inode_thread_test_func, 0x0));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < BAD_INODE_SAFETY_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  vfs_log_cache();
+}
+
+static void get_bad_inode_test() {
+  KTEST_BEGIN("vfs_get(): bad inode");
+  vnode_t* node = vfs_get(vfs_get_root_fs(), 52187);
+  KEXPECT_EQ(0x0, (int)node);
+
+  bad_inode_thread_test();
+
+  // TODO(aoates): test vfs_open, cwd, etc handle dangling inodes
+}
+
 void reverse_path_test() {
   char buf[512];
   KTEST_BEGIN("reverse_path() test");
@@ -1036,6 +1072,7 @@ void vfs_test() {
   rw_mode_test();
   getdents_test();
   seek_test();
+  get_bad_inode_test();
 
   reverse_path_test();
 
