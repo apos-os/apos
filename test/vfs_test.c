@@ -899,6 +899,7 @@ static void getdents_test() {
   vfs_rmdir("/getdents/c");
   vfs_rmdir("/getdents/b");
   vfs_rmdir("/getdents");
+  vfs_chdir("/");
 }
 
 void reverse_path_test() {
