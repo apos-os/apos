@@ -29,6 +29,8 @@ typedef struct {
   int minor;
 } dev_t;
 
+dev_t mkdev(int major, int minor);
+
 // Register a new block or character device.  The minor id may be
 // DEVICE_ID_UNKNOWN, in which case one will be chosen.  The id of the created
 // device will be written into the id parameter.  Returns 0 on success, or

@@ -45,6 +45,13 @@ static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR], dev_t* id) {
   return 0;
 }
 
+dev_t mkdev(int major, int minor) {
+  dev_t dev;
+  dev.major = major;
+  dev.minor = minor;
+  return dev;
+}
+
 int dev_register_block(block_dev_t* dev, dev_t* id) {
   int result = check_register(dev, id);
   if (result) {
