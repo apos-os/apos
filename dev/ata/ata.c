@@ -465,7 +465,7 @@ static void ata_init_internal(const ata_t* ata) {
 
 static uint16_t g_busmaster_prim_offset = 0;
 static uint16_t g_busmaster_secd_offset = 0;
-void ata_enable_bumaster(uint16_t primary_offset, uint16_t secondary_offset) {
+void ata_enable_busmaster(uint16_t primary_offset, uint16_t secondary_offset) {
   g_busmaster_prim_offset = primary_offset;
   g_busmaster_secd_offset = secondary_offset;
 }
