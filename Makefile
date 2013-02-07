@@ -31,6 +31,7 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  dev/video/vga.c dev/video/vterm.c dev/ld.c dev/pci/pci.c dev/pci/piix.c \
 	  dev/ata/ata.c dev/ata/dma.c \
 	  dev/ramdisk/ramdisk.c \
+	  dev/dev.c \
 	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
 	  proc/sleep.c proc/kthread_pool.c \
 	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
