@@ -25,6 +25,7 @@
 #include "common/kprintf.h"
 #include "dev/ata/ata.h"
 #include "dev/block_dev.h"
+#include "dev/dev.h"
 #include "dev/ld.h"
 #include "dev/timer.h"
 #include "kmalloc.h"
@@ -129,18 +130,18 @@ static void hash_cmd(int argc, char* argv[]) {
 
 // Reads a block from a block device.
 static void b_read_cmd(int argc, char* argv[]) {
-  if (argc != 3) {
-    ksh_printf("usage: b_read <block dev> <block>\n");
+  if (argc != 4) {
+    ksh_printf("usage: b_read <dev major> <dev minor> <block>\n");
     return;
   }
 
-  block_dev_t* b = ata_get_block_dev(atou(argv[1]));
+  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
   if (!b) {
-    ksh_printf("error: unknown block device %s\n", argv[1]);
+    ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[2]);
+  uint32_t block = atou(argv[3]);
 
   char buf[4096];
   kmemset(buf, 0x0, 4096);
@@ -158,22 +159,22 @@ static void b_read_cmd(int argc, char* argv[]) {
 
 // Writes a block to a block device.
 static void b_write_cmd(int argc, char* argv[]) {
-  if (argc != 4) {
-    ksh_printf("usage: b_write <block dev> <block> <data>\n");
+  if (argc != 5) {
+    ksh_printf("usage: b_write <dev major> <dev minor> <block> <data>\n");
     return;
   }
 
-  block_dev_t* b = ata_get_block_dev(atou(argv[1]));
+  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
   if (!b) {
-    ksh_printf("error: unknown block device %s\n", argv[1]);
+    ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[2]);
+  uint32_t block = atou(argv[3]);
 
   char buf[4096];
   kmemset(buf, 0x0, 4096);
-  kstrcpy(buf, argv[3]);
+  kstrcpy(buf, argv[4]);
   int error = b->write(b, block, buf, 4096);
   if (error < 0) {
     ksh_printf("error: %s\n", errorname(-error));

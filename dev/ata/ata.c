@@ -23,6 +23,7 @@
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/dma.h"
 #include "dev/ata/queue.h"
+#include "dev/dev.h"
 #include "dev/interrupts.h"
 #include "dev/irq.h"
 #include "proc/kthread.h"
@@ -492,6 +493,12 @@ void ata_init() {
   // initialize all 4.
 
   ata_init_internal(&ata);
+
+  // Register all the devices.
+  for (int i = 0; i < g_num_ata_block_devs; ++i) {
+    dev_t dev = mkdev(DEVICE_MAJOR_ATA, DEVICE_ID_UNKNOWN);
+    KASSERT(dev_register_block(&g_ata_block_devs[i], &dev) == 0);
+  }
 }
 
 int ata_num_devices() {
