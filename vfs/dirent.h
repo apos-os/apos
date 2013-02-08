@@ -12,28 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// Directory entries.
+#ifndef APOO_DIRENT_H
+#define APOO_DIRENT_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
-void slab_alloc_test();
-void kthread_pool_test();
-void flag_printf_test();
-void ramfs_test();
-void vfs_test();
+// A single directory entry, as produced by a concrete filesystem.
+struct dirent {
+  int vnode;  // vnode number
+  int offset;  // Offset from *start* of directory to the next dirent_t.
+  int length;  // Length of this dirent_t
+  char name[];  // Null-terminated filename
+};
+typedef struct dirent dirent_t;
 
 #endif

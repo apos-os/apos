@@ -76,6 +76,8 @@ static test_entry_t TESTS[] = {
   { "slab_alloc", &slab_alloc_test, 1 },
   { "flag_printf", &flag_printf_test, 1 },
   { "ata", &ata_test, 0 },  // Don't run by default so we don't muck up our FS.
+  { "ramfs", &ramfs_test, 1 },
+  { "vfs", &vfs_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

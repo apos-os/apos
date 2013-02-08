@@ -12,28 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#ifndef APOO_VFS_UTIL_H
+#define APOO_VFS_UTIL_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
-void slab_alloc_test();
-void kthread_pool_test();
-void flag_printf_test();
-void ramfs_test();
-void vfs_test();
+// Reverse a pathname, element-wise.
+void reverse_path(char* path);
 
 #endif

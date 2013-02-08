@@ -34,6 +34,7 @@
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "proc/scheduler.h"
+#include "vfs/vfs.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
@@ -115,6 +116,13 @@ void kmain(memory_info_t* meminfo) {
   scheduler_init();
   klog("proc_init()\n");
   proc_init();
+
+  klog("vfs_init()\n");
+  vfs_init();
+
+  // TODO(aoates): is there a cleaner way of doing this?  The proc/vfs circular
+  // dependency is gross.
+  proc_current()->cwd = vfs_get_root_vnode();
 
   klog("initialization finished...\n");
 
