@@ -95,3 +95,27 @@ char_dev_t* dev_get_char(dev_t id) {
   }
   return g_char_devices[id.major][id.minor];
 }
+
+int dev_unregister_block(dev_t id) {
+  if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
+      id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
+    return -ERANGE;
+  }
+  if (g_block_devices[id.major][id.minor] == 0x0) {
+    return -ENOENT;
+  }
+  g_block_devices[id.major][id.minor] = 0x0;
+  return 0;
+}
+
+int dev_unregister_char(dev_t id) {
+  if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
+      id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
+    return -ERANGE;
+  }
+  if (g_char_devices[id.major][id.minor] == 0x0) {
+    return -ENOENT;
+  }
+  g_char_devices[id.major][id.minor] = 0x0;
+  return 0;
+}

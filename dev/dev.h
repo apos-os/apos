@@ -45,6 +45,11 @@ int dev_register_char(char_dev_t* dev, dev_t* id);
 block_dev_t* dev_get_block(dev_t id);
 char_dev_t* dev_get_char(dev_t id);
 
-// TODO(aoates): allow removing devices
+// Remove the given block or character device.
+//
+// NOTE: there may still be outstanding references to the block device.  This
+// makes no attempt to synchronize with them.
+int dev_unregister_block(dev_t id);
+int dev_unregister_char(dev_t id);
 
 #endif
