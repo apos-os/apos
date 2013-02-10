@@ -27,7 +27,8 @@
 struct ramdisk {
   void* data;
   uint32_t size;
-  int blocking;
+  int read_blocking;
+  int write_blocking;
 };
 
 int ramdisk_create(uint32_t size, ramdisk_t** d) {
@@ -46,7 +47,8 @@ int ramdisk_create(uint32_t size, ramdisk_t** d) {
     return -ENOMEM;
   }
   disk->size = size;
-  disk->blocking = 0;
+  disk->read_blocking = 0;
+  disk->write_blocking = 0;
   *d = disk;
   return 0;
 }
@@ -75,7 +77,7 @@ static int ramdisk_read(struct block_dev* dev, uint32_t offset,
     len = d->size - (uint32_t)offset * dev->sector_size;
   }
 
-  if (d->blocking) {
+  if (d->read_blocking) {
     scheduler_yield();
   }
   kmemcpy(buf, d->data + offset * dev->sector_size, len);
@@ -97,7 +99,7 @@ static int ramdisk_write(struct block_dev* dev, uint32_t offset,
     len = d->size - (uint32_t)offset * dev->sector_size;
   }
 
-  if (d->blocking) {
+  if (d->write_blocking) {
     scheduler_yield();
   }
   kmemcpy(d->data + offset * dev->sector_size, buf, len);
@@ -113,10 +115,7 @@ void ramdisk_dev(ramdisk_t* d, block_dev_t* bd) {
   bd->dev_data = d;
 }
 
-void ramdisk_enable_blocking(ramdisk_t* d) {
-  d->blocking = 1;
-}
-
-void ramdisk_disable_blocking(ramdisk_t* d) {
-  d->blocking = 0;
+void ramdisk_set_blocking(ramdisk_t* d, int read, int write) {
+  d->read_blocking = read;
+  d->write_blocking = write;
 }
