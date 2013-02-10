@@ -164,14 +164,13 @@ void block_cache_put(dev_t dev, int offset) {
 
   cache_entry_t* entry = (cache_entry_t*)tbl_value;
   entry->pin_count--;
-  if (entry->pin_count == 0) {
-    g_size--;
 
-    // TODO(aoates): make sure we synchronize with threads that may be trying to
-    // get() this block simultaneously.
-    // TODO(aoates): don't actually remove the block from the cache until we
-    // need to reclaim memory.
-    KASSERT(htbl_remove(&g_table, h) == 0);
+  // TODO(aoates): don't actually remove the block from the cache until we
+  // need to reclaim memory.
+  if (entry->pin_count == 0) {
+    // First, flush the data to disk.  Mark the node as uninitialized in case
+    // other threads are trying to get it.
+    entry->initialized = 0;
 
     // Write the data back to disk.  This may block.
     block_dev_t* bd = dev_get_block(dev);
@@ -180,6 +179,17 @@ void block_cache_put(dev_t dev, int offset) {
         bd->write(bd, sector, entry->block, BLOCK_CACHE_BLOCK_SIZE);
     KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
 
+    // Now re-check if anyone has tried to take the cache entry since we
+    // flushed.
+    if (entry->pin_count > 0) {
+      entry->initialized = 1;
+      scheduler_wake_all(&entry->init_wait_queue);
+      return;
+    }
+
+    // No-one else has it, so free it.
+    g_size--;
+    KASSERT(htbl_remove(&g_table, h) == 0);
     put_free_block(entry->block);
     kfree(entry);
   }

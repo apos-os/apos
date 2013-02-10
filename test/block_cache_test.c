@@ -77,10 +77,7 @@ static void basic_get_test(dev_t dev) {
   block_cache_put(dev, 1);
 }
 
-// TODO(aoates): test multi-threaded get() calls for same block.
 // TODO(aoates): test running out of space on the free block stack
-// TODO(aoates): test multi-threaded get()/put() to make sure that if we get()
-// during a (final) put() call, we don't read old data.
 
 static void basic_write_test(dev_t dev) {
   KTEST_BEGIN("block_cache_get(): basic write/put test");
@@ -207,6 +204,63 @@ static void get_thread_test(dev_t dev) {
   KEXPECT_EQ(0, block_cache_get_pin_count(dev, 1));
 }
 
+// Test that if multiple threads are calling get() and put(), they don't see
+// stale data.  The threads get() the block, increment it's data, then put() it
+// again.
+#define PUT_THREAD_TEST_ITERS 10
+#define PUT_THREAD_TEST_THREADS 10
+typedef struct {
+  dev_t dev;
+  int thread_id;
+} put_thread_test_args_t;
+static void* put_thread_test_thread(void* arg) {
+  put_thread_test_args_t* args = (put_thread_test_args_t*)arg;
+  for (int i = 0; i < PUT_THREAD_TEST_ITERS; ++i) {
+    void* block = block_cache_get(args->dev, 1);
+    uint8_t* value = (uint8_t*)block;
+    (*value)++;
+    block_cache_put(args->dev, 1);
+  }
+  return 0x0;
+}
+
+static void put_thread_test(ramdisk_t* rd, dev_t dev) {
+  // Disable read blocking to force race condition.
+  ramdisk_set_blocking(rd, 0, 1);
+
+  KTEST_BEGIN("block_cache_put(): thread-safety test");
+  KEXPECT_EQ(0, block_cache_get_pin_count(dev, 1));
+  kthread_t threads[PUT_THREAD_TEST_THREADS];
+  put_thread_test_args_t args[PUT_THREAD_TEST_THREADS];
+
+  // Initialize block to 0.
+  void* block = block_cache_get(dev, 1);
+  uint8_t* value = (uint8_t*)block;
+  *value = 0;
+  block_cache_put(dev, 1);
+
+  for (int i = 0; i < PUT_THREAD_TEST_THREADS; ++i) {
+    args[i].dev = dev;
+    args[i].thread_id = i;
+    KASSERT(kthread_create(&threads[i],
+                           &put_thread_test_thread, &args[i]));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < PUT_THREAD_TEST_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  // Make sure the correct value is in the block.
+  KASSERT(PUT_THREAD_TEST_ITERS * PUT_THREAD_TEST_THREADS < 256);
+  block = block_cache_get(dev, 1);
+  value = (uint8_t*)block;
+  KEXPECT_EQ(PUT_THREAD_TEST_ITERS * PUT_THREAD_TEST_THREADS, *value);
+  block_cache_put(dev, 1);
+
+  ramdisk_set_blocking(rd, 1, 1);
+}
+
 void block_cache_test() {
   KTEST_SUITE_BEGIN("block_cache test");
 
@@ -227,6 +281,7 @@ void block_cache_test() {
   get_shares_buffers_test(dev);
   cache_size_test(dev);
   get_thread_test(dev);
+  put_thread_test(ramdisk, dev);
 
   // Cleanup.
   KASSERT(dev_unregister_block(dev) == 0);
