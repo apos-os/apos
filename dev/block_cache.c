@@ -22,6 +22,8 @@
 #include "kmalloc.h"
 #include "memory.h"
 #include "page_alloc.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 
 #define BLOCKS_PER_PAGE (PAGE_SIZE / BLOCK_CACHE_BLOCK_SIZE)
 #define DEFAULT_CACHE_SIZE 100
@@ -37,6 +39,9 @@ static htbl_t g_table;
 typedef struct {
   void* block;
   int pin_count;
+
+  int initialized;
+  kthread_queue_t init_wait_queue;
 } cache_entry_t;
 
 // TODO(aoates): make this flexible.
@@ -110,8 +115,6 @@ void* block_cache_get(dev_t dev, int offset) {
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
     // Get a new free block, fill it, and return it.
-    // TODO(aoates): coordinate with other threads that may be requesting the
-    // same block.
     void* block = get_free_block();
     if (!block) {
       return 0x0;
@@ -121,6 +124,11 @@ void* block_cache_get(dev_t dev, int offset) {
     cache_entry_t* entry = (cache_entry_t*)kmalloc(sizeof(cache_entry_t));
     entry->block = block;
     entry->pin_count = 1;
+    entry->initialized = 0;
+    kthread_queue_init(&entry->init_wait_queue);
+
+    // Put the uninitialized entry into the table.
+    htbl_put(&g_table, h, entry);
 
     // Read data from the block device into the cache.
     block_dev_t* bd = dev_get_block(dev);
@@ -132,11 +140,17 @@ void* block_cache_get(dev_t dev, int offset) {
         bd->read(bd, sector, entry->block, BLOCK_CACHE_BLOCK_SIZE);
     KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
 
-    htbl_put(&g_table, h, entry);
+    entry->initialized = 1;
+    scheduler_wake_all(&entry->init_wait_queue);
+
     return entry->block;
   } else {
     cache_entry_t* entry = (cache_entry_t*)tbl_value;
     entry->pin_count++;
+    if (!entry->initialized) {
+      scheduler_wait_on(&entry->init_wait_queue);
+    }
+    KASSERT(entry->initialized);
     return entry->block;
   }
 }

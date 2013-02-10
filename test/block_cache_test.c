@@ -21,6 +21,8 @@
 #include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "memory.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
 
 #define RAMDISK_SIZE (PAGE_SIZE * 4)
@@ -172,6 +174,37 @@ static void cache_size_test(dev_t dev) {
   block_cache_put(dev, 3);
 }
 
+// Test that multiple threads calling block_cache_get() on the same block get
+// the same block.
+static void* get_thread_test_thread(void* arg) {
+  dev_t* dev = (dev_t*)arg;
+  return block_cache_get(*dev, 1);
+}
+
+static void get_thread_test(dev_t dev) {
+  const int kThreads = 10;
+  KTEST_BEGIN("block_cache_get(): thread-safety test");
+  kthread_t threads[kThreads];
+
+  for (int i = 0; i < kThreads; ++i) {
+    KASSERT(kthread_create(&threads[i],
+                           &get_thread_test_thread, &dev));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  void* blocks[kThreads];
+  for (int i = 0; i < kThreads; ++i) {
+    blocks[i] = kthread_join(threads[i]);
+  }
+
+  KEXPECT_NE(0x0, (int)blocks[0]);
+  block_cache_put(dev, 1);
+  for (int i = 1; i < kThreads; ++i) {
+    KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
+    block_cache_put(dev, 1);
+  }
+}
+
 void block_cache_test() {
   KTEST_SUITE_BEGIN("block_cache test");
 
@@ -179,6 +212,7 @@ void block_cache_test() {
   ramdisk_t* ramdisk = 0x0;
   block_dev_t ramdisk_bd;
   KASSERT(ramdisk_create(RAMDISK_SIZE, &ramdisk) == 0);
+  ramdisk_set_blocking(ramdisk, 1, 1);
   ramdisk_dev(ramdisk, &ramdisk_bd);
 
   dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
@@ -190,6 +224,7 @@ void block_cache_test() {
   write_at_end_test(dev);
   get_shares_buffers_test(dev);
   cache_size_test(dev);
+  get_thread_test(dev);
 
   // Cleanup.
   KASSERT(dev_unregister_block(dev) == 0);
