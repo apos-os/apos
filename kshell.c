@@ -78,6 +78,7 @@ static test_entry_t TESTS[] = {
   { "ata", &ata_test, 0 },  // Don't run by default so we don't muck up our FS.
   { "ramfs", &ramfs_test, 1 },
   { "vfs", &vfs_test, 1 },
+  { "hash", &hash_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

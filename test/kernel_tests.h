@@ -35,5 +35,6 @@ void kthread_pool_test();
 void flag_printf_test();
 void ramfs_test();
 void vfs_test();
+void hash_test();
 
 #endif

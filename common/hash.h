@@ -17,17 +17,36 @@
 
 #include <stdint.h>
 
+static const uint32_t kFNVOffsetBasis = 2166136261;
+static const uint32_t kFNVPrime = 16777619;
+
 static inline uint32_t fnv_hash(uint32_t key) {
-  uint32_t h = 2166136261;
-  h ^= (key * 0xFF);
-  h *= 16777619;
-  h ^= ((key >> 8) * 0xFF);
-  h *= 16777619;
-  h ^= ((key >> 16) * 0xFF);
-  h *= 16777619;
-  h ^= ((key >> 24) * 0xFF);
-  h *= 16777619;
+  uint32_t h = kFNVOffsetBasis;
+  h ^= (key & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 8) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 16) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 24) & 0xFF);
+  h *= kFNVPrime;
   return h;
+}
+
+static inline uint32_t fnv_hash_array(const void* buf, int len) {
+  uint32_t h = kFNVOffsetBasis;
+  for (int i = 0; i < len; ++i) {
+    h ^= ((uint8_t*)buf)[i];
+    h *= kFNVPrime;
+  }
+  return h;
+}
+
+static inline uint32_t fnv_hash_concat(uint32_t a, uint32_t b) {
+  uint32_t buf[2];
+  buf[0] = a;
+  buf[1] = b;
+  return fnv_hash_array(buf, sizeof(uint32_t) * 2);
 }
 
 #endif

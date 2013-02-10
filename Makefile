@@ -42,6 +42,7 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  test/block_dev_test.c test/ata_test.c test/slab_alloc_test.c \
 	  test/kthread_pool_test.c test/flag_printf_test.c \
 	  test/ramfs_test.c test/vfs_test.c \
+	  test/hash_test.c \
 	  util/flag_printf.c \
 	  kshell.c
 C_SOURCES = $(filter %.c,$(SOURCES))
