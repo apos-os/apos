@@ -32,4 +32,9 @@ void ramdisk_destroy(ramdisk_t* d);
 // Initializes a block_dev_t with data for the given ramdisk.
 void ramdisk_dev(ramdisk_t* d, block_dev_t* bd);
 
+// Enable or disable blocking for the ramdisk.  If enabled, all read() and
+// write() calls on the ramdisk will (artificially) yield the current thread.
+void ramdisk_enable_blocking(ramdisk_t* d);
+void ramdisk_disable_blocking(ramdisk_t* d);
+
 #endif

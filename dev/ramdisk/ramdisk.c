@@ -22,10 +22,12 @@
 #include "dev/ramdisk/ramdisk.h"
 #include "kmalloc.h"
 #include "memory.h"
+#include "proc/scheduler.h"
 
 struct ramdisk {
   void* data;
   uint32_t size;
+  int blocking;
 };
 
 int ramdisk_create(uint32_t size, ramdisk_t** d) {
@@ -44,6 +46,7 @@ int ramdisk_create(uint32_t size, ramdisk_t** d) {
     return -ENOMEM;
   }
   disk->size = size;
+  disk->blocking = 0;
   *d = disk;
   return 0;
 }
@@ -72,6 +75,9 @@ static int ramdisk_read(struct block_dev* dev, uint32_t offset,
     len = d->size - (uint32_t)offset * dev->sector_size;
   }
 
+  if (d->blocking) {
+    scheduler_yield();
+  }
   kmemcpy(buf, d->data + offset * dev->sector_size, len);
   return len;
 }
@@ -91,6 +97,9 @@ static int ramdisk_write(struct block_dev* dev, uint32_t offset,
     len = d->size - (uint32_t)offset * dev->sector_size;
   }
 
+  if (d->blocking) {
+    scheduler_yield();
+  }
   kmemcpy(d->data + offset * dev->sector_size, buf, len);
   return len;
 }
@@ -102,4 +111,12 @@ void ramdisk_dev(ramdisk_t* d, block_dev_t* bd) {
   bd->read = &ramdisk_read;
   bd->write = &ramdisk_write;
   bd->dev_data = d;
+}
+
+void ramdisk_enable_blocking(ramdisk_t* d) {
+  d->blocking = 1;
+}
+
+void ramdisk_disable_blocking(ramdisk_t* d) {
+  d->blocking = 0;
 }
