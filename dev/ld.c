@@ -76,13 +76,7 @@ static void cook_buffer(ld_t* l) {
   l->cooked_idx = l->raw_idx;
 
   // Wake up all the waiting threads.
-  // TODO(aoates): this should probably be a higher-level primitive (or at least
-  // a convenience function).
-  kthread_t t = kthread_queue_pop(&l->wait_queue);
-  while (t) {
-    scheduler_make_runnable(t);
-    t = kthread_queue_pop(&l->wait_queue);
-  }
+  scheduler_wake_all(&l->wait_queue);
 }
 
 void log_state(ld_t* l) {

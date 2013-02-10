@@ -20,8 +20,7 @@
 
 static void ksleep_cb(void* arg) {
   kthread_queue_t* q = (kthread_queue_t*)arg;
-  kthread_t t = kthread_queue_pop(q);
-  scheduler_make_runnable(t);
+  scheduler_wake_one(q);
   KASSERT(kthread_queue_empty(q));
   kfree(q);
 }

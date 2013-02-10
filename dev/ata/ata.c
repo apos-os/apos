@@ -278,19 +278,12 @@ static void handle_interrupt(ata_channel_t* channel) {
   op->done = 1;
 
   // Wake up any threads waiting for the op to finish.
-  kthread_t t = kthread_queue_pop(&op->waiters);
-  while (t) {
-    scheduler_make_runnable(t);
-    t = kthread_queue_pop(&op->waiters);
-  }
+  scheduler_wake_all(&op->waiters);
 
   // Set the channel to free and wake up a thread waiting to do disk IO on this
   // channel.
   channel->pending_op = 0x0;
-  t = kthread_queue_pop(&channel->channel_waiters);
-  if (t) {
-    scheduler_make_runnable(t);
-  }
+  scheduler_wake_one(&channel->channel_waiters);
 }
 
 // IRQ handlers for the primary and secondary channels.
