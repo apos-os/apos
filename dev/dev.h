@@ -22,6 +22,7 @@
 #define DEVICE_MAX_MINOR 20
 
 #define DEVICE_MAJOR_ATA 2
+#define DEVICE_MAJOR_RAMDISK 3
 #define DEVICE_ID_UNKNOWN -1
 
 // A device identifier.

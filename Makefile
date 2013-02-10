@@ -32,6 +32,7 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  dev/ata/ata.c dev/ata/dma.c \
 	  dev/ramdisk/ramdisk.c \
 	  dev/dev.c \
+	  dev/block_cache.c \
 	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
 	  proc/sleep.c proc/kthread_pool.c \
 	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
@@ -43,6 +44,7 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  test/kthread_pool_test.c test/flag_printf_test.c \
 	  test/ramfs_test.c test/vfs_test.c \
 	  test/hash_test.c \
+	  test/block_cache_test.c \
 	  util/flag_printf.c \
 	  kshell.c
 C_SOURCES = $(filter %.c,$(SOURCES))

@@ -36,5 +36,6 @@ void flag_printf_test();
 void ramfs_test();
 void vfs_test();
 void hash_test();
+void block_cache_test();
 
 #endif
