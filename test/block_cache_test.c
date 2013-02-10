@@ -203,6 +203,8 @@ static void get_thread_test(dev_t dev) {
     KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
     block_cache_put(dev, 1);
   }
+
+  KEXPECT_EQ(0, block_cache_get_pin_count(dev, 1));
 }
 
 void block_cache_test() {

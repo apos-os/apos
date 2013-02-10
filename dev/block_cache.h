@@ -35,6 +35,10 @@ void* block_cache_get(dev_t dev, int offset);
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 void block_cache_put(dev_t dev, int offset);
 
+// Returns the current pin count of the given block, or 0 if it is not in the
+// cache.
+int block_cache_get_pin_count(dev_t dev, int offset);
+
 // Set the maximum size of the block cache, in blocks.  If the cache is
 // currently larger than this, it may not be immediately pruned.
 void block_cache_set_size(int blocks);

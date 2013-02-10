@@ -185,6 +185,20 @@ void block_cache_put(dev_t dev, int offset) {
   }
 }
 
+int block_cache_get_pin_count(dev_t dev, int offset) {
+  if (!g_initialized) {
+    return 0;
+  }
+
+  const uint32_t h = block_hash(dev, offset);
+  void* tbl_value = 0x0;
+  if (htbl_get(&g_table, h, &tbl_value) != 0) {
+    return 0;
+  }
+
+  return ((cache_entry_t*)tbl_value)->pin_count;
+}
+
 void block_cache_set_size(int blocks) {
   g_max_size = blocks;
   // TODO
