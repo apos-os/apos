@@ -255,6 +255,64 @@ static void scheduler_wait_on_test() {
   kthread_join(thread3);
 }
 
+static void scheduler_wake_test() {
+  KTEST_BEGIN("scheduler_wake_one() test");
+  kthread_t thread1, thread2, thread3;
+
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+
+  queue_test_funct_data_t d1 = {0, 0, &queue};
+  kthread_create(&thread1, &queue_test_func, &d1);
+  queue_test_funct_data_t d2 = {0, 0, &queue};
+  kthread_create(&thread2, &queue_test_func, &d2);
+  queue_test_funct_data_t d3 = {0, 0, &queue};
+  kthread_create(&thread3, &queue_test_func, &d3);
+
+  scheduler_make_runnable(thread1);
+  scheduler_make_runnable(thread2);
+  scheduler_make_runnable(thread3);
+
+  scheduler_yield();
+
+  KEXPECT_EQ(1, d1.waiting);
+  KEXPECT_EQ(0, d1.ran);
+  KEXPECT_EQ(1, d2.waiting);
+  KEXPECT_EQ(0, d2.ran);
+  KEXPECT_EQ(1, d3.waiting);
+  KEXPECT_EQ(0, d3.ran);
+
+  scheduler_wake_one(&queue);
+  scheduler_yield();
+  scheduler_yield();
+
+  KEXPECT_EQ(1, d1.ran);
+  KEXPECT_EQ(0, d2.ran);
+  KEXPECT_EQ(0, d3.ran);
+
+  KTEST_BEGIN("scheduler_wake_all() test");
+  scheduler_wake_all(&queue);
+  scheduler_yield();
+  scheduler_yield();
+
+  KEXPECT_EQ(1, d1.ran);
+  KEXPECT_EQ(1, d2.ran);
+  KEXPECT_EQ(1, d3.ran);
+
+  KTEST_BEGIN("scheduler_wake_one(): empty queue test");
+  scheduler_wake_one(&queue);
+  scheduler_yield();
+  KEXPECT_EQ(1, kthread_queue_empty(&queue));
+
+  KTEST_BEGIN("scheduler_wake_all(): empty queue test");
+  scheduler_wake_all(&queue);
+  scheduler_yield();
+  KEXPECT_EQ(1, kthread_queue_empty(&queue));
+
+  kthread_join(thread1);
+  kthread_join(thread2);
+  kthread_join(thread3);
+}
 
 #define STRESS_TEST_ITERS 1000
 #define STRESS_TEST_THREADS 1000
@@ -353,6 +411,7 @@ void kthread_test() {
   join_chain_test2();
   queue_test();
   scheduler_wait_on_test();
+  scheduler_wake_test();
   stress_test();
   kmutex_test();
   kmutex_auto_lock_test();

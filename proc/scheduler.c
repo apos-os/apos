@@ -76,3 +76,15 @@ void scheduler_wait_on(kthread_queue_t* queue) {
   scheduler_yield_no_reschedule();
   POP_INTERRUPTS();
 }
+
+void scheduler_wake_one(kthread_queue_t* queue) {
+  if (!kthread_queue_empty(queue)) {
+    scheduler_make_runnable(kthread_queue_pop(queue));
+  }
+}
+
+void scheduler_wake_all(kthread_queue_t* queue) {
+  while (!kthread_queue_empty(queue)) {
+    scheduler_make_runnable(kthread_queue_pop(queue));
+  }
+}
