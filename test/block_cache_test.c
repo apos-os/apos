@@ -75,7 +75,6 @@ static void basic_get_test(dev_t dev) {
   block_cache_put(dev, 1);
 }
 
-// TODO(aoates): test write at end
 // TODO(aoates): test multi-threaded get() calls for same block.
 // TODO(aoates): test running out of space on the free block stack
 // TODO(aoates): test multi-threaded get()/put() to make sure that if we get()
@@ -105,6 +104,21 @@ static void basic_write_test(dev_t dev) {
   block = block_cache_get(dev, 1);
   KEXPECT_EQ(0, kstrcmp(block, "WRITTEN BLOCK"));
   block_cache_put(dev, 1);
+}
+
+static void write_at_end_test(dev_t dev) {
+  KTEST_BEGIN("block_cache_put(): write at end of block");
+
+  void* block = block_cache_get(dev, 1);
+  kstrcpy(block + BLOCK_CACHE_BLOCK_SIZE - 20, "written end");
+  block_cache_put(dev, 1);
+
+  // Verify that it was written back to the ramdisk.
+  char buf[BLOCK_CACHE_BLOCK_SIZE];
+  block_dev_t* bd = dev_get_block(dev);
+  KASSERT(BLOCK_CACHE_BLOCK_SIZE ==
+          bd->read(bd, block2sector(bd, 1), buf, BLOCK_CACHE_BLOCK_SIZE));
+  KEXPECT_STREQ("written end", &buf[BLOCK_CACHE_BLOCK_SIZE - 20]);
 }
 
 static void get_shares_buffers_test(dev_t dev) {
@@ -173,6 +187,7 @@ void block_cache_test() {
   // Run tests.
   basic_get_test(dev);
   basic_write_test(dev);
+  write_at_end_test(dev);
   get_shares_buffers_test(dev);
   cache_size_test(dev);
 
