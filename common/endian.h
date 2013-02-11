@@ -24,4 +24,7 @@
 static inline uint16_t htol16(uint16_t val) { return val; }
 static inline uint32_t htol32(uint32_t val) { return val; }
 
+static inline uint16_t ltoh16(uint16_t val) { return val; }
+static inline uint32_t ltoh32(uint32_t val) { return val; }
+
 #endif
