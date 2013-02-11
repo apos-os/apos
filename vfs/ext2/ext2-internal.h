@@ -131,6 +131,8 @@ _Static_assert(sizeof(ext2_superblock_t) + 760 == 1024,
 #define EXT2_BZIP2_ALG 0x00000008
 #define EXT2_LZO_ALG 0x00000010
 
+void ext2_superblock_log(ext2_superblock_t* sb);
+
 // Convert a superblock from host endian to little endian.
 void ext2_superblock_htol(ext2_superblock_t* sb);
 
