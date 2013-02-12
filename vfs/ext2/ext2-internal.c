@@ -15,6 +15,7 @@
 #include "vfs/ext2/ext2-internal.h"
 
 #include "common/endian.h"
+#include "common/klog.h"
 
 void ext2_superblock_log(ext2_superblock_t* sb) {
   klogf("s_inodes_count: %u\n", sb->s_inodes_count);
@@ -32,7 +33,7 @@ void ext2_superblock_log(ext2_superblock_t* sb) {
   klogf("s_wtime: %u\n", sb->s_wtime);
   klogf("s_mnt_count: %u\n", (uint32_t)sb->s_mnt_count);
   klogf("s_max_mnt_count: %u\n", (uint32_t)sb->s_max_mnt_count);
-  klogf("s_magic: %u\n", (uint32_t)sb->s_magic);
+  klogf("s_magic: 0x%x\n", (uint32_t)sb->s_magic);
   klogf("s_state: %u\n", (uint32_t)sb->s_state);
   klogf("s_errors: %u\n", (uint32_t)sb->s_errors);
   klogf("s_minor_rev_level: %u\n", (uint32_t)sb->s_minor_rev_level);

@@ -21,6 +21,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "vfs/dirent.h"
+#include "vfs/ext2/ext2.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -252,7 +253,29 @@ static vnode_t* get_root_for_path(const char* path) {
 
 void vfs_init() {
   KASSERT(g_root_fs == 0);
-  g_root_fs = ramfs_create_fs();
+
+  // First try to mount every ATA device as an ext2 fs.
+  fs_t* ext2fs = ext2_create_fs();
+  int success = 0;
+  for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
+    const dev_t dev = mkdev(DEVICE_MAJOR_ATA, i);
+    if (dev_get_block(dev)) {
+      const int result = ext2_mount(ext2fs, dev);
+      if (result == 0) {
+        klogf("Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
+        g_root_fs = ext2fs;
+        success = 1;
+        break;
+      }
+    }
+  }
+
+  if (!success) {
+    klogf("Didn't find any mountable filesystems; mounting ramfs as /\n");
+    ext2_destroy_fs(ext2fs);
+    g_root_fs = ramfs_create_fs();
+  }
+
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
