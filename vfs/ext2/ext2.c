@@ -36,7 +36,6 @@ static int ext2_read_superblock(ext2fs_t* fs) {
   ext2_superblock_ltoh(&fs->sb);
   block_cache_put(fs->dev, sb_block_num);
 
-
   // Check magic number and version.
   if (fs->sb.s_magic != EXT2_SUPER_MAGIC) {
     klogf("ext2: invalid magic number: %x\n", fs->sb.s_magic);
@@ -66,6 +65,12 @@ static int ext2_read_superblock(ext2fs_t* fs) {
     klogf("ext2: warning: unsupported RO features: 0x%x\n",
           fs->sb.s_feature_ro_compat);
     fs->read_only = 1;
+  }
+
+  // Check block size.
+  if (fs->sb.s_log_block_size != 0 || fs->sb.s_log_frag_size != 0) {
+    klogf("ext2: unsupported block or fragment size\n");
+    return -EINVAL;
   }
 
   return 0;
