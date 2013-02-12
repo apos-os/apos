@@ -134,6 +134,6 @@ _Static_assert(sizeof(ext2_superblock_t) + 760 == 1024,
 void ext2_superblock_log(ext2_superblock_t* sb);
 
 // Convert a superblock from host endian to little endian.
-void ext2_superblock_htol(ext2_superblock_t* sb);
+void ext2_superblock_ltoh(ext2_superblock_t* sb);
 
 #endif

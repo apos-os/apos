@@ -33,7 +33,7 @@ static int ext2_read_superblock(ext2fs_t* fs) {
   }
 
   kmemcpy(&fs->sb, sb_block + sb_block_offset, sizeof(ext2_superblock_t));
-  ext2_superblock_htol(&fs->sb);
+  ext2_superblock_ltoh(&fs->sb);
   block_cache_put(fs->dev, sb_block_num);
 
 

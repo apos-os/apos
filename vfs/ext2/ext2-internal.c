@@ -78,44 +78,44 @@ void ext2_superblock_log(ext2_superblock_t* sb) {
   klogf("s_first_meta_bg: %u\n", sb->s_first_meta_bg);
 }
 
-void ext2_superblock_htol(ext2_superblock_t* sb) {
-  sb->s_inodes_count = htol32(sb->s_inodes_count);
-  sb->s_blocks_count = htol32(sb->s_blocks_count);
-  sb->s_r_blocks_count = htol32(sb->s_r_blocks_count);
-  sb->s_free_blocks_count = htol32(sb->s_free_blocks_count);
-  sb->s_free_inodes_count = htol32(sb->s_free_inodes_count);
-  sb->s_first_data_block = htol32(sb->s_first_data_block);
-  sb->s_log_block_size = htol32(sb->s_log_block_size);
-  sb->s_log_frag_size = htol32(sb->s_log_frag_size);
-  sb->s_blocks_per_group = htol32(sb->s_blocks_per_group);
-  sb->s_frags_per_group = htol32(sb->s_frags_per_group);
-  sb->s_inodes_per_group = htol32(sb->s_inodes_per_group);
-  sb->s_mtime = htol32(sb->s_mtime);
-  sb->s_wtime = htol32(sb->s_wtime);
-  sb->s_mnt_count = htol16(sb->s_mnt_count);
-  sb->s_max_mnt_count = htol16(sb->s_max_mnt_count);
-  sb->s_magic = htol16(sb->s_magic);
-  sb->s_state = htol16(sb->s_state);
-  sb->s_errors = htol16(sb->s_errors);
-  sb->s_minor_rev_level = htol16(sb->s_minor_rev_level);
-  sb->s_lastcheck = htol32(sb->s_lastcheck);
-  sb->s_checkinterval = htol32(sb->s_checkinterval);
-  sb->s_creator_os = htol32(sb->s_creator_os);
-  sb->s_rev_level = htol32(sb->s_rev_level);
-  sb->s_def_resuid = htol16(sb->s_def_resuid);
-  sb->s_def_resgid = htol16(sb->s_def_resgid);
+void ext2_superblock_ltoh(ext2_superblock_t* sb) {
+  sb->s_inodes_count = ltoh32(sb->s_inodes_count);
+  sb->s_blocks_count = ltoh32(sb->s_blocks_count);
+  sb->s_r_blocks_count = ltoh32(sb->s_r_blocks_count);
+  sb->s_free_blocks_count = ltoh32(sb->s_free_blocks_count);
+  sb->s_free_inodes_count = ltoh32(sb->s_free_inodes_count);
+  sb->s_first_data_block = ltoh32(sb->s_first_data_block);
+  sb->s_log_block_size = ltoh32(sb->s_log_block_size);
+  sb->s_log_frag_size = ltoh32(sb->s_log_frag_size);
+  sb->s_blocks_per_group = ltoh32(sb->s_blocks_per_group);
+  sb->s_frags_per_group = ltoh32(sb->s_frags_per_group);
+  sb->s_inodes_per_group = ltoh32(sb->s_inodes_per_group);
+  sb->s_mtime = ltoh32(sb->s_mtime);
+  sb->s_wtime = ltoh32(sb->s_wtime);
+  sb->s_mnt_count = ltoh16(sb->s_mnt_count);
+  sb->s_max_mnt_count = ltoh16(sb->s_max_mnt_count);
+  sb->s_magic = ltoh16(sb->s_magic);
+  sb->s_state = ltoh16(sb->s_state);
+  sb->s_errors = ltoh16(sb->s_errors);
+  sb->s_minor_rev_level = ltoh16(sb->s_minor_rev_level);
+  sb->s_lastcheck = ltoh32(sb->s_lastcheck);
+  sb->s_checkinterval = ltoh32(sb->s_checkinterval);
+  sb->s_creator_os = ltoh32(sb->s_creator_os);
+  sb->s_rev_level = ltoh32(sb->s_rev_level);
+  sb->s_def_resuid = ltoh16(sb->s_def_resuid);
+  sb->s_def_resgid = ltoh16(sb->s_def_resgid);
 
   // EXT2_DYNAMIC_REV Specific
-  sb->s_first_ino = htol32(sb->s_first_ino);
-  sb->s_inode_size = htol16(sb->s_inode_size);
-  sb->s_block_group_nr = htol16(sb->s_block_group_nr);
-  sb->s_feature_compat = htol32(sb->s_feature_compat);
-  sb->s_feature_incompat = htol32(sb->s_feature_incompat);
-  sb->s_feature_ro_compat = htol32(sb->s_feature_ro_compat);
+  sb->s_first_ino = ltoh32(sb->s_first_ino);
+  sb->s_inode_size = ltoh16(sb->s_inode_size);
+  sb->s_block_group_nr = ltoh16(sb->s_block_group_nr);
+  sb->s_feature_compat = ltoh32(sb->s_feature_compat);
+  sb->s_feature_incompat = ltoh32(sb->s_feature_incompat);
+  sb->s_feature_ro_compat = ltoh32(sb->s_feature_ro_compat);
   // char s_uuid[16];
   // char s_volume_name[16];
   // char s_last_mounted[64];
-  sb->s_algo_bitmap = htol32(sb->s_algo_bitmap);
+  sb->s_algo_bitmap = ltoh32(sb->s_algo_bitmap);
 
   // Performance Hints
   // uint8_t s_prealloc_blocks;
@@ -124,19 +124,19 @@ void ext2_superblock_htol(ext2_superblock_t* sb) {
 
   // Journaling Support
   // char s_journal_uuid[16];
-  sb->s_journal_inum = htol32(sb->s_journal_inum);
-  sb->s_journal_dev = htol32(sb->s_journal_dev);
-  sb->s_last_orphan = htol32(sb->s_last_orphan);
+  sb->s_journal_inum = ltoh32(sb->s_journal_inum);
+  sb->s_journal_dev = ltoh32(sb->s_journal_dev);
+  sb->s_last_orphan = ltoh32(sb->s_last_orphan);
 
   // Directory Indexing Support
-  sb->s_hash_seed[0] = htol32(sb->s_hash_seed[0]);
-  sb->s_hash_seed[1] = htol32(sb->s_hash_seed[1]);
-  sb->s_hash_seed[2] = htol32(sb->s_hash_seed[2]);
-  sb->s_hash_seed[3] = htol32(sb->s_hash_seed[3]);
+  sb->s_hash_seed[0] = ltoh32(sb->s_hash_seed[0]);
+  sb->s_hash_seed[1] = ltoh32(sb->s_hash_seed[1]);
+  sb->s_hash_seed[2] = ltoh32(sb->s_hash_seed[2]);
+  sb->s_hash_seed[3] = ltoh32(sb->s_hash_seed[3]);
   // uint8_t s_def_hash_version;
   // char padding2[3];
 
   // Other options
-  sb->s_default_mount_options = htol32(sb->s_default_mount_options);
-  sb->s_first_meta_bg = htol32(sb->s_first_meta_bg);
+  sb->s_default_mount_options = ltoh32(sb->s_default_mount_options);
+  sb->s_first_meta_bg = ltoh32(sb->s_first_meta_bg);
 }
