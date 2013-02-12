@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/block_cache.h"
 #include "kmalloc.h"
 #include "vfs/ext2/ext2-internal.h"
@@ -76,6 +77,51 @@ static int ext2_read_superblock(ext2fs_t* fs) {
   return 0;
 }
 
+static int ext2_read_block_groups(ext2fs_t* fs) {
+  const int block_size = 1024 << fs->sb.s_log_block_size;
+  const int bg_first_block = fs->sb.s_first_data_block + 1;
+  fs->num_block_groups =
+      ceiling_div(fs->sb.s_blocks_count, fs->sb.s_blocks_per_group);
+
+  fs->block_groups = (ext2_block_group_desc_t*)kmalloc(
+      sizeof(ext2_block_group_desc_t) * fs->num_block_groups);
+
+  // How many blocks are in the block group descriptor table.
+  const int bgdt_blocks =
+      ceiling_div(fs->num_block_groups * sizeof(ext2_block_group_desc_t),
+                  block_size);
+  uint32_t bgs_remaining = fs->num_block_groups;
+  for (int i = 0; i < bgdt_blocks; ++i) {
+    const int block = bg_first_block + i;
+    void* bg_block = block_cache_get(fs->dev, block);
+    if (!bg_block) {
+      kfree(fs->block_groups);
+      fs->block_groups = 0x0;
+      return -ENOMEM;
+    }
+
+    const uint32_t bgs_in_this_block =
+        min(fs->sb.s_blocks_per_group, bgs_remaining);
+    for (uint32_t bufidx = 0; bufidx < bgs_in_this_block; ++bufidx) {
+      ext2_block_group_desc_t* cbg =
+          &fs->block_groups[fs->num_block_groups - bgs_remaining];
+      kmemcpy(cbg, bg_block + (bufidx * sizeof(ext2_block_group_desc_t)),
+              sizeof(ext2_block_group_desc_t));
+      ext2_block_group_desc_ltoh(cbg);
+      bgs_remaining--;
+    }
+    block_cache_put(fs->dev, block);
+  }
+
+  for (int i = 0; i < fs->num_block_groups; ++i) {
+    klogf("block group %d:\n", i);
+    ext2_block_group_desc_log(&fs->block_groups[i]);
+    klogf("\n");
+  }
+
+  return 0;
+}
+
 fs_t* ext2_create_fs() {
   ext2fs_t* fs = kmalloc(sizeof(ext2fs_t));
   kmemset(fs, 0, sizeof(ext2fs_t));
@@ -87,6 +133,9 @@ fs_t* ext2_create_fs() {
 void ext2_destroy_fs(fs_t* fs) {
   ext2fs_t* ext2fs = (ext2fs_t*)fs;
   KASSERT(!ext2fs->mounted);
+  if (ext2fs->block_groups) {
+    kfree(ext2fs->block_groups);
+  }
   kfree(ext2fs);
 }
 
@@ -98,6 +147,11 @@ int ext2_mount(fs_t* fs, dev_t dev) {
 
   ext2fs->dev = dev;
   int result = ext2_read_superblock(ext2fs);
+  if (result) {
+    return result;
+  }
+
+  result = ext2_read_block_groups(ext2fs);
   if (result) {
     return result;
   }

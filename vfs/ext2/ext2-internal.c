@@ -140,3 +140,21 @@ void ext2_superblock_ltoh(ext2_superblock_t* sb) {
   sb->s_default_mount_options = ltoh32(sb->s_default_mount_options);
   sb->s_first_meta_bg = ltoh32(sb->s_first_meta_bg);
 }
+
+void ext2_block_group_desc_log(ext2_block_group_desc_t* bg) {
+  klogf("bg_block_bitmap: %u\n", bg->bg_block_bitmap);
+  klogf("bg_inode_bitmap: %u\n", bg->bg_inode_bitmap);
+  klogf("bg_inode_table: %u\n", bg->bg_inode_table);
+  klogf("bg_free_blocks_count: %u\n", (uint32_t)bg->bg_free_blocks_count);
+  klogf("bg_free_inodes_count: %u\n", (uint32_t)bg->bg_free_inodes_count);
+  klogf("bg_used_dirs_count: %u\n", (uint32_t)bg->bg_used_dirs_count);
+}
+
+void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg) {
+  bg->bg_block_bitmap = htol32(bg->bg_block_bitmap);
+  bg->bg_inode_bitmap = htol32(bg->bg_inode_bitmap);
+  bg->bg_inode_table = htol32(bg->bg_inode_table);
+  bg->bg_free_blocks_count = htol16(bg->bg_free_blocks_count);
+  bg->bg_free_inodes_count = htol16(bg->bg_free_inodes_count);
+  bg->bg_used_dirs_count = htol16(bg->bg_used_dirs_count);
+}

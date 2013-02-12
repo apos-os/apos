@@ -136,4 +136,19 @@ void ext2_superblock_log(ext2_superblock_t* sb);
 // Convert a superblock from host endian to little endian.
 void ext2_superblock_ltoh(ext2_superblock_t* sb);
 
+typedef struct {
+  uint32_t bg_block_bitmap;
+  uint32_t bg_inode_bitmap;
+  uint32_t bg_inode_table;
+  uint16_t bg_free_blocks_count;
+  uint16_t bg_free_inodes_count;
+  uint16_t bg_used_dirs_count;
+  uint16_t bg_pad;
+  char bg_reserved[12];
+} __attribute__((packed)) ext2_block_group_desc_t;
+_Static_assert(sizeof(ext2_block_group_desc_t) == 32,
+               "ext2 block group descriptor incorrect size");
+void ext2_block_group_desc_log(ext2_block_group_desc_t* bg);
+void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg);
+
 #endif

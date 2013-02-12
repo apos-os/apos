@@ -29,6 +29,10 @@ typedef struct {
 
   // In-memory copy of the superblock.  Only valid if mounted == true.
   ext2_superblock_t sb;
+
+  // How many block groups there are, and the corresponding descriptors.
+  int num_block_groups;
+  ext2_block_group_desc_t* block_groups;
 } ext2fs_t;
 
 #endif
