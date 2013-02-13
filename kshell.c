@@ -385,6 +385,63 @@ static void cd_cmd(int argc, char* argv[]) {
   }
 }
 
+static void cat_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: cat <path>\n");
+    return;
+  }
+
+  const int fd = vfs_open(argv[1], VFS_O_RDONLY);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-fd));
+    return;
+  }
+
+  const int kBufSize = 512;
+  char buf[kBufSize];
+  while (1) {
+    const int len = vfs_read(fd, buf, kBufSize - 1);
+    if (len < 0) {
+      ksh_printf("error: couldn't read from file: %s\n", errorname(-len));
+      vfs_close(fd);
+      return;
+    } else if (len == 0) {
+      break;
+    } else {
+      buf[len] = '\0';
+      ksh_printf(buf);
+    }
+  }
+  vfs_close(fd);
+}
+
+static void write_cmd(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: write <path> <data>\n");
+    return;
+  }
+
+  const int fd = vfs_open(argv[1], VFS_O_RDWR | VFS_O_CREAT);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-fd));
+    return;
+  }
+
+  const char* buf = argv[2];
+  int buf_len = kstrlen(argv[2]);
+  while (buf_len > 0) {
+    const int len = vfs_write(fd, buf, buf_len);
+    if (len < 0) {
+      ksh_printf("error: couldn't write to file: %s\n", errorname(-len));
+      vfs_close(fd);
+      return;
+    } else {
+      buf_len -= len;
+    }
+  }
+  vfs_close(fd);
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -412,6 +469,8 @@ static cmd_t CMDS[] = {
   { "mkdir", &mkdir_cmd },
   { "pwd", &pwd_cmd },
   { "cd", &cd_cmd },
+  { "cat", &cat_cmd },
+  { "write", &write_cmd },
 
   { 0x0, 0x0 },
 };
