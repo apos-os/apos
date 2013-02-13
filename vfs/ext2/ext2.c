@@ -21,6 +21,7 @@
 #include "dev/block_cache.h"
 #include "kmalloc.h"
 #include "vfs/ext2/ext2-internal.h"
+#include "vfs/ext2/ext2_ops.h"
 #include "vfs/ext2/ext2fs.h"
 #include "vfs/vfs.h"
 
@@ -78,7 +79,7 @@ static int ext2_read_superblock(ext2fs_t* fs) {
 }
 
 static int ext2_read_block_groups(ext2fs_t* fs) {
-  const int block_size = 1024 << fs->sb.s_log_block_size;
+  const uint32_t block_size = ext2_block_size(fs);
   const int bg_first_block = fs->sb.s_first_data_block + 1;
   fs->num_block_groups =
       ceiling_div(fs->sb.s_blocks_count, fs->sb.s_blocks_per_group);
@@ -113,7 +114,7 @@ static int ext2_read_block_groups(ext2fs_t* fs) {
     block_cache_put(fs->dev, block);
   }
 
-  for (int i = 0; i < fs->num_block_groups; ++i) {
+  for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
     klogf("block group %d:\n", i);
     ext2_block_group_desc_log(&fs->block_groups[i]);
     klogf("\n");
@@ -155,6 +156,8 @@ int ext2_mount(fs_t* fs, dev_t dev) {
   if (result) {
     return result;
   }
+
+  ext2_set_ops(fs);
 
   // TODO
   ext2fs->mounted = 1;

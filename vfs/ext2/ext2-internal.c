@@ -158,3 +158,48 @@ void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg) {
   bg->bg_free_inodes_count = htol16(bg->bg_free_inodes_count);
   bg->bg_used_dirs_count = htol16(bg->bg_used_dirs_count);
 }
+
+void ext2_inode_log(ext2_inode_t* i) {
+  klogf("i_mode: %u\n", (uint32_t)i->i_mode);
+  klogf("i_uid: %u\n", (uint32_t)i->i_uid);
+  klogf("i_size: %u\n", i->i_size);
+  klogf("i_atime: %u\n", i->i_atime);
+  klogf("i_ctime: %u\n", i->i_ctime);
+  klogf("i_mtime: %u\n", i->i_mtime);
+  klogf("i_dtime: %u\n", i->i_dtime);
+  klogf("i_gid: %u\n", (uint32_t)i->i_gid);
+  klogf("i_links_count: %u\n", (uint32_t)i->i_links_count);
+  klogf("i_blocks: %u\n", i->i_blocks);
+  klogf("i_flags: %u\n", i->i_flags);
+  klogf("i_osd1: %u\n", i->i_osd1);
+  for (int idx = 0; idx < 15; ++idx) {
+    klogf("i_block[%d]: %u\n", idx, i->i_block[idx]);
+  }
+  klogf("i_generation: %u\n", i->i_generation);
+  klogf("i_file_acl: %u\n", i->i_file_acl);
+  klogf("i_dir_acl: %u\n", i->i_dir_acl);
+  klogf("i_faddr: %u\n", i->i_faddr);
+}
+
+void ext2_inode_ltoh(ext2_inode_t* i) {
+  i->i_mode = htol16(i->i_mode);
+  i->i_uid = htol16(i->i_uid);
+  i->i_size = htol32(i->i_size);
+  i->i_atime = htol32(i->i_atime);
+  i->i_ctime = htol32(i->i_ctime);
+  i->i_mtime = htol32(i->i_mtime);
+  i->i_dtime = htol32(i->i_dtime);
+  i->i_gid = htol16(i->i_gid);
+  i->i_links_count = htol16(i->i_links_count);
+  i->i_blocks = htol32(i->i_blocks);
+  i->i_flags = htol32(i->i_flags);
+  i->i_osd1 = htol32(i->i_osd1);
+  for (int idx = 0; idx < 15; ++idx) {
+    i->i_block[idx] = htol32(i->i_block[idx]);
+  }
+  i->i_generation = htol32(i->i_generation);
+  i->i_file_acl = htol32(i->i_file_acl);
+  i->i_dir_acl = htol32(i->i_dir_acl);
+  i->i_faddr = htol32(i->i_faddr);
+  // char i_osd2[12];
+}

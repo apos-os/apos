@@ -151,4 +151,61 @@ _Static_assert(sizeof(ext2_block_group_desc_t) == 32,
 void ext2_block_group_desc_log(ext2_block_group_desc_t* bg);
 void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg);
 
+typedef struct {
+  uint16_t i_mode;
+  uint16_t i_uid;
+  uint32_t i_size;
+  uint32_t i_atime;
+  uint32_t i_ctime;
+  uint32_t i_mtime;
+  uint32_t i_dtime;
+  uint16_t i_gid;
+  uint16_t i_links_count;
+  uint32_t i_blocks;
+  uint32_t i_flags;
+  uint32_t i_osd1;
+  uint32_t i_block[15];
+  uint32_t i_generation;
+  uint32_t i_file_acl;
+  uint32_t i_dir_acl;
+  uint32_t i_faddr;
+  char i_osd2[12];
+} __attribute__((packed)) ext2_inode_t;
+_Static_assert(sizeof(ext2_inode_t) == 128,
+               "ext2 inode incorrect size");
+void ext2_inode_log(ext2_inode_t* i);
+void ext2_inode_ltoh(ext2_inode_t* i);
+
+// Reserved ext2 inodes.
+#define EXT2_BAD_INO 1  // bad blocks inode
+#define EXT2_ROOT_INO 2  // root directory inode
+#define EXT2_ACL_IDX_INO 3  // ACL index inode (deprecated?)
+#define EXT2_ACL_DATA_INO 4  // ACL data inode (deprecated?)
+#define EXT2_BOOT_LOADER_INO 5  // boot loader inode
+#define EXT2_UNDEL_DIR_INO 6  // undelete directory inode
+
+// inode i_mode flags.
+// file format
+#define EXT2_S_IFSOCK 0xC000  // socket
+#define EXT2_S_IFLNK 0xA000  // symbolic link
+#define EXT2_S_IFREG 0x8000  // regular file
+#define EXT2_S_IFBLK 0x6000  // block device
+#define EXT2_S_IFDIR 0x4000  // directory
+#define EXT2_S_IFCHR 0x2000  // character device
+#define EXT2_S_IFIFO 0x1000  // fifo
+// process execution user/group override
+#define EXT2_S_ISUID 0x0800  // Set process User ID
+#define EXT2_S_ISGID 0x0400  // Set process Group ID
+#define EXT2_S_ISVTX 0x0200  // sticky bit
+// access rights
+#define EXT2_S_IRUSR 0x0100  // user read
+#define EXT2_S_IWUSR 0x0080  // user write
+#define EXT2_S_IXUSR 0x0040  // user execute
+#define EXT2_S_IRGRP 0x0020  // group read
+#define EXT2_S_IWGRP 0x0010  // group write
+#define EXT2_S_IXGRP 0x0008  // group execute
+#define EXT2_S_IROTH 0x0004  // others read
+#define EXT2_S_IWOTH 0x0002  // others write
+#define EXT2_S_IXOTH 0x0001  // others execute
+
 #endif
