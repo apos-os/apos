@@ -32,6 +32,8 @@
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "vfs/dirent.h"
+#include "vfs/vfs.h"
 
 #define READ_BUF_SIZE 1024
 
@@ -292,6 +294,97 @@ static void sleep_cmd(int argc, char* argv[]) {
   ksleep(atou(argv[1]));
 }
 
+static void ls_cmd(int argc, char* argv[]) {
+  if (argc > 3) {
+    ksh_printf("usage: ls [-l] [optional path]\n");
+    return;
+  }
+  int long_mode = 0;
+  argc--;
+  argv++;
+  while (argc > 0) {
+    if (kstrcmp(argv[0], "-l") == 0) {
+      long_mode = 1;
+    } else {
+      break;
+    }
+    argc--;
+    argv++;
+  }
+  const char* path = (argc == 0 ? "." : argv[0]);
+
+  int fd = vfs_open(path, VFS_O_RDONLY);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open directory '%s': %s\n",
+               path, errorname(-fd));
+    return;
+  }
+
+  const int kBufSize = 512;
+  char buf[kBufSize];
+
+  while (1) {
+    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    if (len < 0) {
+      vfs_close(fd);
+      ksh_printf("error: vfs_getdents(): %s\n", errorname(-len));
+      return;
+    }
+    if (len == 0) {
+      break;
+    }
+
+    int buf_offset = 0;
+    do {
+      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      buf_offset += ent->length;
+      if (long_mode) {
+        ksh_printf("[%d] %s\n", ent->vnode, ent->name);
+      } else {
+        ksh_printf("%s\n", ent->name);
+      }
+    } while (buf_offset < len);
+  }
+
+  vfs_close(fd);
+}
+
+static void mkdir_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: mkdir <path>\n");
+    return;
+  }
+  const int result = vfs_mkdir(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_mkdir(): %s\n", errorname(-result));
+  }
+}
+
+static void pwd_cmd(int argc, char* argv[]) {
+  if (argc != 1) {
+    ksh_printf("usage: pwd\n");
+    return;
+  }
+  char buf[VFS_MAX_PATH_LENGTH];
+  const int result = vfs_getcwd(buf, VFS_MAX_PATH_LENGTH);
+  if (result < 0) {
+    ksh_printf("error: vfs_getcwd(): %s\n", errorname(-result));
+  } else {
+    ksh_printf("%s\n", buf);
+  }
+}
+
+static void cd_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: cd <path>\n");
+    return;
+  }
+  const int result = vfs_chdir(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_chdir(): %s\n", errorname(-result));
+  }
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -314,6 +407,11 @@ static cmd_t CMDS[] = {
 
   { "timer", &timer_cmd },
   { "sleep", &sleep_cmd },
+
+  { "ls", &ls_cmd },
+  { "mkdir", &mkdir_cmd },
+  { "pwd", &pwd_cmd },
+  { "cd", &cd_cmd },
 
   { 0x0, 0x0 },
 };
