@@ -14,9 +14,11 @@
 
 #include "vfs/ext2/ext2_ops.h"
 
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/block_cache.h"
 #include "kmalloc.h"
 #include "vfs/vfs.h"
@@ -88,6 +90,8 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
     return -ENOENT;
   }
 
+  // TODO(aoates): we needto check the inode bitmap again!
+
   ext2_inode_t* disk_inode = (ext2_inode_t*)(
       bg_inode_table + (bg_inode_idx * fs->sb.s_inode_size) -
       (block_size * bg_inode_table_block_offset));
@@ -95,7 +99,64 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   block_cache_put(fs->dev, bg_inode_table_block);
 
   ext2_inode_ltoh(inode);
+
+  klogf("ext2 get_inode(%d):\n", inode_num);
+  ext2_inode_log(inode);
   return 0;
+}
+
+// Given a block number, return the ith uint32_t of that block.
+static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
+  void* block = block_cache_get(fs->dev, block_num);
+  KASSERT(block);
+  uint32_t value = ((uint32_t*)block)[idx];
+  block_cache_put(fs->dev, block_num);
+  return ltoh32(value);
+}
+
+// Given an inode and a block number in that inode, return the absolute block
+// number of that block (in the filesystem), or -errno on error.
+static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
+                                uint32_t inode_block) {
+  const uint32_t kDirectBlocks = 12;
+  const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
+  const uint32_t kBlocksPerDoubleIndirect =
+      kBlocksPerIndirect * kBlocksPerIndirect;
+  const uint32_t kBlocksPerTripleIndirect =
+      kBlocksPerDoubleIndirect * kBlocksPerIndirect;
+
+  if (inode_block < kDirectBlocks) {
+    return inode->i_block[inode_block];
+  } else if (inode_block < kDirectBlocks + kBlocksPerIndirect) {
+    // Single indirect block.
+    return get_block_idx(fs, inode->i_block[12], inode_block - kDirectBlocks);
+  } else if (inode_block < kDirectBlocks + kBlocksPerIndirect +
+             kBlocksPerDoubleIndirect) {
+    // Doubly indirect block.
+    // The index within the doubly indirect blocks.
+    const uint32_t dbl_block_idx =
+        inode_block - kDirectBlocks - kBlocksPerIndirect;
+    const uint32_t dbl_block = inode->i_block[13];
+    const uint32_t indirect_block = get_block_idx(
+        fs, dbl_block, dbl_block_idx / kBlocksPerIndirect);
+    return get_block_idx(fs, indirect_block,
+                         dbl_block_idx % kBlocksPerIndirect);
+  } else {
+    // Triply indirect block.
+    KASSERT(inode_block < kDirectBlocks + kBlocksPerIndirect +
+            kBlocksPerDoubleIndirect + kBlocksPerTripleIndirect);
+    const uint32_t triple_block_idx =
+        inode_block - kDirectBlocks - kBlocksPerIndirect -
+        kBlocksPerDoubleIndirect;
+    const uint32_t triple_block = inode->i_block[14];
+    const uint32_t dbl_block = get_block_idx(
+        fs, triple_block, triple_block_idx / kBlocksPerDoubleIndirect);
+    const uint32_t dbl_block_idx = triple_block_idx % kBlocksPerDoubleIndirect;
+    const uint32_t indirect_block = get_block_idx(
+        fs, dbl_block, dbl_block_idx / kBlocksPerIndirect);
+    return get_block_idx(fs, indirect_block,
+                         dbl_block_idx % kBlocksPerIndirect);
+  }
 }
 
 void ext2_set_ops(fs_t* fs) {
@@ -154,23 +215,75 @@ static int ext2_get_vnode(vnode_t* vnode) {
 }
 
 static int ext2_put_vnode(vnode_t* vnode) {
-  return -ENOTSUP;
+  // TODO(aoates): copy len, etc back into inode and flush.
+  return 0;
 }
 
 static int ext2_lookup(vnode_t* parent, const char* name) {
-  return -ENOTSUP;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  ext2_inode_t* inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, parent->num, inode);
+  if (result) {
+    kfree(inode);
+    return result;
+  }
+
+  const int name_len = kstrlen(name);
+
+  // Look for an appropriate entry.
+  uint32_t bytes_left = parent->len;
+  uint32_t inode_block = 0;
+  while (bytes_left > 0) {
+    const uint32_t block = get_inode_block(fs, inode, inode_block);
+    const uint32_t block_len = min(ext2_block_size(fs), bytes_left);
+    void* block_data = block_cache_get(fs->dev, block);
+    if (!block_data) {
+      kfree(inode);
+      return -ENOENT;
+    }
+
+    uint32_t block_idx = 0;
+    while (block_idx < block_len) {
+      ext2_dirent_t* dirent = (ext2_dirent_t*)(block_data + block_idx);
+      if (dirent->inode != 0 && dirent->name_len == name_len &&
+          kstrncmp(name, dirent->name, name_len) == 0) {
+        int result = dirent->inode;
+        block_cache_put(fs->dev, block);
+        kfree(inode);
+        return result;
+      }
+      block_idx += dirent->rec_len;
+    }
+    if (block_idx > block_len) {
+      klogf("ext2: error: dirent spans multiple blocks\n");
+      block_cache_put(fs->dev, block);
+      kfree(inode);
+      return -EFAULT;
+    }
+
+    block_cache_put(fs->dev, block);
+    inode_block++;
+    bytes_left -= block_len;
+  }
+
+  kfree(inode);
+  return -ENOENT;
 }
 
 static int ext2_create(vnode_t* parent, const char* name) {
-  return -ENOTSUP;
+  return -EROFS;
 }
 
 static int ext2_mkdir(vnode_t* parent, const char* name) {
-  return -ENOTSUP;
+  return -EROFS;
 }
 
 static int ext2_rmdir(vnode_t* parent, const char* name) {
-  return -ENOTSUP;
+  return -EROFS;
 }
 
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
@@ -179,18 +292,17 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
 static int ext2_write(vnode_t* vnode, int offset,
                       const void* buf, int bufsize) {
-  return -ENOTSUP;
+  return -EROFS;
 }
 
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
-  return -ENOTSUP;
+  return -EROFS;
 }
 
 static int ext2_unlink(vnode_t* parent, const char* name) {
-  return -ENOTSUP;
+  return -EROFS;
 }
 
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   return -ENOTSUP;
 }
-

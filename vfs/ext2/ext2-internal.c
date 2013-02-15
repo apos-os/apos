@@ -16,6 +16,7 @@
 
 #include "common/endian.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 
 void ext2_superblock_log(ext2_superblock_t* sb) {
   klogf("s_inodes_count: %u\n", sb->s_inodes_count);
@@ -160,7 +161,7 @@ void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg) {
 }
 
 void ext2_inode_log(ext2_inode_t* i) {
-  klogf("i_mode: %u\n", (uint32_t)i->i_mode);
+  klogf("i_mode: 0x%x\n", (uint32_t)i->i_mode);
   klogf("i_uid: %u\n", (uint32_t)i->i_uid);
   klogf("i_size: %u\n", i->i_size);
   klogf("i_atime: %u\n", i->i_atime);
@@ -170,7 +171,7 @@ void ext2_inode_log(ext2_inode_t* i) {
   klogf("i_gid: %u\n", (uint32_t)i->i_gid);
   klogf("i_links_count: %u\n", (uint32_t)i->i_links_count);
   klogf("i_blocks: %u\n", i->i_blocks);
-  klogf("i_flags: %u\n", i->i_flags);
+  klogf("i_flags: 0x%x\n", i->i_flags);
   klogf("i_osd1: %u\n", i->i_osd1);
   for (int idx = 0; idx < 15; ++idx) {
     klogf("i_block[%d]: %u\n", idx, i->i_block[idx]);
@@ -202,4 +203,21 @@ void ext2_inode_ltoh(ext2_inode_t* i) {
   i->i_dir_acl = htol32(i->i_dir_acl);
   i->i_faddr = htol32(i->i_faddr);
   // char i_osd2[12];
+}
+
+void ext2_dirent_log(ext2_dirent_t* d) {
+  klogf("inode: %u\n", d->inode);
+  klogf("rec_len: %u\n", (uint32_t)d->rec_len);
+  klogf("name_len: %u\n", (uint32_t)d->name_len);
+  klogf("file_type: %u\n", (uint32_t)d->file_type);
+
+  char name[256];
+  kstrncpy(name, d->name, d->name_len);
+  name[d->name_len] = '\0';
+  klogf("name: %s\n", name);
+}
+
+void ext2_dirent_ltoh(ext2_dirent_t* d) {
+  d->inode = htol32(d->inode);
+  d->rec_len = htol16(d->rec_len);
 }

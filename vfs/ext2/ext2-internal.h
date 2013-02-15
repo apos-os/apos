@@ -208,4 +208,23 @@ void ext2_inode_ltoh(ext2_inode_t* i);
 #define EXT2_S_IWOTH 0x0002  // others write
 #define EXT2_S_IXOTH 0x0001  // others execute
 
+typedef struct {
+  uint32_t inode;
+  uint16_t rec_len;
+  uint8_t name_len;
+  uint8_t file_type;
+  char name[];
+} ext2_dirent_t;
+void ext2_dirent_log(ext2_dirent_t* d);
+void ext2_dirent_ltoh(ext2_dirent_t* d);
+
+#define EXT2_FT_UNKNOWN 0  // Unknown File Type
+#define EXT2_FT_REG_FILE 1  // Regular File
+#define EXT2_FT_DIR 2  // Directory File
+#define EXT2_FT_CHRDEV 3  // Character Device
+#define EXT2_FT_BLKDEV 4  // Block Device
+#define EXT2_FT_FIFO 5  // Buffer File
+#define EXT2_FT_SOCK 6  // Socket File
+#define EXT2_FT_SYMLINK 7  // Symbolic Link
+
 #endif
