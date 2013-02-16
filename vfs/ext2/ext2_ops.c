@@ -75,6 +75,38 @@ static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
   return idx * 8 + bit_idx;
 }
 
+// Helper for get_inode and write_inode.  Given an inode number, return (via out
+// parameters) the inode's block group, the index of the inode within that block
+// group, the block number of the corresponding inode bitmap, and the block
+// number and byte index of the corresponding block in the appropriate block
+// group's inode table.
+// TODO(aoates): use this for allocate_inode as well.
+static void get_inode_info(ext2fs_t* fs, uint32_t inode_num,
+                           uint32_t* block_group_out,
+                           uint32_t* inode_bg_idx_out,
+                           uint32_t* inode_bitmap_block_out,
+                           uint32_t* inode_table_block_out,
+                           uint32_t* inode_table_offset_out) {
+  // Find the block group and load it's inode bitmap.
+  const uint32_t bg = (inode_num - 1) / fs->sb.s_inodes_per_group;
+  const uint32_t bg_inode_idx = (inode_num - 1) % fs->sb.s_inodes_per_group;
+  KASSERT(bg < fs->num_block_groups);
+  *inode_bitmap_block_out = fs->block_groups[bg].bg_inode_bitmap;
+
+  // The inode table map span multiple blocks, so figure out which block we
+  // need.
+  const uint32_t block_size = ext2_block_size(fs);
+  KASSERT(block_size % fs->sb.s_inode_size == 0);
+  const uint32_t bg_inode_table_block_offset =
+      (bg_inode_idx * fs->sb.s_inode_size) / block_size;
+  *inode_table_offset_out =
+      (bg_inode_idx * fs->sb.s_inode_size) % block_size;
+  *inode_table_block_out =
+      fs->block_groups[bg].bg_inode_table + bg_inode_table_block_offset;
+  *block_group_out = bg;
+  *inode_bg_idx_out = bg_inode_idx;
+}
+
 // Given an inode number (1-indexed), find the corresponding inode on disk and
 // fill the given ext2_inode_t.  Returns 0 on success, or -errno on error.
 static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
@@ -85,49 +117,79 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
     return -ENOENT;
   }
 
+  uint32_t block_group = 0;
+  uint32_t inode_bg_idx = 0;
+  uint32_t inode_bitmap_block = 0;
+  uint32_t inode_table_block = 0;
+  uint32_t inode_table_offset = 0;
+  get_inode_info(fs, inode_num, &block_group, &inode_bg_idx,
+                 &inode_bitmap_block, &inode_table_block, &inode_table_offset);
+
   // Find the block group and load it's inode bitmap.
-  const uint32_t bg = (inode_num - 1) / fs->sb.s_inodes_per_group;
-  const uint32_t bg_inode_idx = (inode_num - 1) % fs->sb.s_inodes_per_group;
-  KASSERT(bg < fs->num_block_groups);
-  const uint32_t bg_inode_bitmap_block = fs->block_groups[bg].bg_inode_bitmap;
-  void* bg_inode_bitmap = block_cache_get(fs->dev, bg_inode_bitmap_block);
-  if (!bg_inode_bitmap) {
+  void* inode_bitmap = block_cache_get(fs->dev, inode_bitmap_block);
+  if (!inode_bitmap) {
     klogf("ext2: warning: couldn't get inode bitmap for block "
-          "group %d (block %d)\n", bg, bg_inode_bitmap_block);
+          "group %d (block %d)\n", block_group, inode_bitmap_block);
     return -ENOENT;
   }
-  if (!bg_bitmap_get(fs, bg_inode_bitmap, bg_inode_idx)) {
-    block_cache_put(fs->dev, bg_inode_bitmap_block);
+  if (!bg_bitmap_get(fs, inode_bitmap, inode_bg_idx)) {
+    block_cache_put(fs->dev, inode_bitmap_block);
     return -ENOENT;
   }
-  block_cache_put(fs->dev, bg_inode_bitmap_block);
+  block_cache_put(fs->dev, inode_bitmap_block);
 
   // We know that the inode is allocated, now get it from the inode table.
-  // The inode table map span multiple blocks, so figure out which block we
-  // need.
-  const uint32_t block_size = ext2_block_size(fs);
-  KASSERT(block_size % fs->sb.s_inode_size == 0);
-  const uint32_t bg_inode_table_block_offset =
-      (bg_inode_idx * fs->sb.s_inode_size) / block_size;
-  const uint32_t bg_inode_table_block =
-      fs->block_groups[bg].bg_inode_table + bg_inode_table_block_offset;
-  void* bg_inode_table = block_cache_get(fs->dev, bg_inode_table_block);
-  if (!bg_inode_table) {
+  void* inode_table = block_cache_get(fs->dev, inode_table_block);
+  if (!inode_table) {
     klogf("ext2: warning: couldn't get inode table for block "
-          "group %d (block %d)\n", bg, bg_inode_table_block);
+          "group %d (block %d)\n", block_group, inode_table_block);
     return -ENOENT;
   }
 
   // TODO(aoates): we needto check the inode bitmap again!
 
   ext2_inode_t* disk_inode = (ext2_inode_t*)(
-      bg_inode_table + (bg_inode_idx * fs->sb.s_inode_size) -
-      (block_size * bg_inode_table_block_offset));
+      inode_table + inode_table_offset);
   kmemcpy(inode, disk_inode, fs->sb.s_inode_size);
-  block_cache_put(fs->dev, bg_inode_table_block);
+  block_cache_put(fs->dev, inode_table_block);
 
   ext2_inode_ltoh(inode);
 
+  return 0;
+}
+
+// Given an inode number and data, copy it back to disk.
+static int write_inode(ext2fs_t* fs, uint32_t inode_num,
+                       const ext2_inode_t* inode) {
+  if (inode_num <= 0) {
+    return -ERANGE;
+  }
+  if (inode_num > fs->sb.s_inodes_count) {
+    return -ENOENT;
+  }
+
+  uint32_t block_group = 0;
+  uint32_t inode_bg_idx = 0;
+  uint32_t inode_bitmap_block = 0;
+  uint32_t inode_table_block = 0;
+  uint32_t inode_table_offset = 0;
+  get_inode_info(fs, inode_num, &block_group, &inode_bg_idx,
+                 &inode_bitmap_block, &inode_table_block, &inode_table_offset);
+
+  // Get the needed inode table block.
+  void* inode_table = block_cache_get(fs->dev, inode_table_block);
+  if (!inode_table) {
+    klogf("ext2: warning: couldn't get inode table for block "
+          "group %d (block %d)\n", block_group, inode_table_block);
+    return -ENOENT;
+  }
+
+  ext2_inode_t* disk_inode = (ext2_inode_t*)(
+      inode_table + inode_table_offset);
+  kmemcpy(disk_inode, inode, fs->sb.s_inode_size);
+  ext2_inode_ltoh(disk_inode);
+
+  block_cache_put(fs->dev, inode_table_block);
   return 0;
 }
 
@@ -356,8 +418,25 @@ static int ext2_get_vnode(vnode_t* vnode) {
 }
 
 static int ext2_put_vnode(vnode_t* vnode) {
-  // TODO(aoates): copy len, etc back into inode and flush.
-  return 0;
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+
+  ext2_inode_t* inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  int result = get_inode(fs, vnode->num, inode);
+  if (result) {
+    kfree(inode);
+    return result;
+  }
+
+  switch (vnode->type) {
+    case VNODE_REGULAR: KASSERT(inode->i_mode & EXT2_S_IFREG); break;
+    case VNODE_DIRECTORY: KASSERT(inode->i_mode & EXT2_S_IFDIR); break;
+  }
+
+  inode->i_size = vnode->len;
+  result = write_inode(fs, vnode->num, inode);
+  kfree(inode);
+  return result;
 }
 
 typedef struct {
