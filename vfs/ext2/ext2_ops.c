@@ -47,6 +47,34 @@ static inline int bg_bitmap_get(ext2fs_t* fs, void* bitmap, int n) {
   return (((uint8_t*)bitmap)[n / 8] >> (n % 8)) & 0x01;
 }
 
+// Set the Nth bit in the given block-sized bitmap.
+static inline void bg_bitmap_set(void* bitmap, int n) {
+  KASSERT_DBG(n >= 0);
+  ((uint8_t*)bitmap)[n / 8] |= (0x01 << (n % 8));
+}
+
+// Given a block-sized bitmap, return the index of the first unset bit, or -1 if
+// all bits are set.
+static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
+  const unsigned int block_size = ext2_block_size(fs);
+  unsigned int idx = 0;
+  for (idx = 0; idx < block_size; ++idx) {
+    if (bitmap[idx] != 0xFF) break;
+  }
+  if (idx == block_size) {
+    return -1;
+  }
+
+  const uint8_t value = bitmap[idx];
+  int bit_idx;
+  for (bit_idx = 0; bit_idx < 8; ++bit_idx) {
+    if ((value & (0x01 << bit_idx)) == 0x0) break;
+  }
+  // We should have found at least *one* free bit!
+  KASSERT(bit_idx != 8);
+  return idx * 8 + bit_idx;
+}
+
 // Given an inode number (1-indexed), find the corresponding inode on disk and
 // fill the given ext2_inode_t.  Returns 0 on success, or -errno on error.
 static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
@@ -206,6 +234,70 @@ static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
   }
 
   return 0;
+}
+
+// Allocate a new inode.  Depending on the type, it may be allocated in the
+// parent's block group, or another block group.
+//
+// Marks the inode as in-use in the inode bitmap of the chosen block group, and
+// returns the new inode's number.  Returns -errno (and doesn't mark any inodes
+// as in-use) on error.
+static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
+  if (fs->sb.s_free_inodes_count == 0) {
+    return -ENOSPC;
+  }
+
+  // If we're not creating a directory, try to allocate in the parent's bg.
+  // TODO(aoates): choose a random block group!
+  uint32_t bg = ((mode & EXT2_S_IFDIR) == 0) ?
+      ((parent_inode - 1) / fs->sb.s_inodes_per_group) : 0;
+
+  // Starting with bg, find a block group with a free inode.
+  unsigned int block_groups_checked = 0;
+  while (fs->block_groups[bg].bg_free_inodes_count == 0 &&
+         block_groups_checked < fs->num_block_groups) {
+    block_groups_checked++;
+    bg = (bg + 1) % fs->num_block_groups;
+  }
+  if (block_groups_checked == fs->num_block_groups) {
+    klogf("ext2 warning: superblock indicated free inodes, but none found "
+          "in block groups!\n");
+    fs->unhealthy = 1;
+    return -ENOSPC;
+  }
+
+  // Decrement the free inode count in the superblock and bgd, then flush them.
+  KASSERT(fs->block_groups[bg].bg_free_inodes_count > 0);
+  fs->sb.s_free_inodes_count--;
+  fs->block_groups[bg].bg_free_inodes_count--;
+  if (mode & EXT2_S_IFDIR) {
+    fs->block_groups[bg].bg_used_dirs_count++;
+  }
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
+
+  // Find the actual free inode in the bitmap.
+  uint8_t* inode_bitmap = block_cache_get(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+  if (!inode_bitmap) {
+    // TODO(aoates): roll back the decrement of the counters.
+    return -ENOMEM;
+  }
+  int idx_in_bg = bg_bitmap_find_free(fs, inode_bitmap);
+  if (idx_in_bg < 0) {
+    block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+    klogf("ext2 warning: block group desc indicated free inodes, but none found "
+          "in inode bitmap!\n");
+    fs->unhealthy = 1;
+    return -ENOSPC;
+  }
+
+  // Mark the inode as used and return it's index.
+  bg_bitmap_set(inode_bitmap, idx_in_bg);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+
+  // Inode numbers are 1-indexed.
+  const int inode = bg * fs->sb.s_inodes_per_group + idx_in_bg + 1;
+  return inode;
 }
 
 void ext2_set_ops(fs_t* fs) {
