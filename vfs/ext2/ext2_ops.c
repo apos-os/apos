@@ -157,6 +157,57 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
   }
 }
 
+
+// Iterate over the dirents in the given inode (which must be a directory),
+// calling the given function on each one.  If the function returns non-zero,
+// then the iteration will end early.  The return value is the return value of
+// the final function call.
+//
+// The function takes: the given argument, a pointer to the on-disk dirent (in
+// little endian form), and the absolute offset of that dirent from the
+// beginning of the directory inode.
+typedef int (*inode_iter_func_t)(void*, ext2_dirent_t*, uint32_t);
+static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
+                          inode_iter_func_t func, void* arg) {
+  KASSERT(inode->i_mode & EXT2_S_IFDIR);
+
+  // Look for an appropriate entry.
+  uint32_t inode_block = offset / ext2_block_size(fs);
+  while (offset < inode->i_size) {
+    const uint32_t block = get_inode_block(fs, inode, inode_block);
+    const uint32_t block_len = min(
+        ext2_block_size(fs), inode->i_size - inode_block * ext2_block_size(fs));
+    void* block_data = block_cache_get(fs->dev, block);
+    if (!block_data) {
+      kfree(inode);
+      return -ENOENT;
+    }
+
+    uint32_t block_idx = offset % ext2_block_size(fs);
+    while (block_idx < block_len) {
+      ext2_dirent_t* dirent = (ext2_dirent_t*)(block_data + block_idx);
+      KASSERT(offset == inode_block * ext2_block_size(fs) + block_idx);
+      const int result = func(arg, dirent, offset);
+      if (result) {
+        block_cache_put(fs->dev, block);
+        return result;
+      }
+      block_idx += ltoh16(dirent->rec_len);
+      offset += ltoh16(dirent->rec_len);
+    }
+    if (block_idx > block_len) {
+      klogf("ext2: error: dirent spans multiple blocks\n");
+      block_cache_put(fs->dev, block);
+      return -EFAULT;
+    }
+
+    block_cache_put(fs->dev, block);
+    inode_block++;
+  }
+
+  return 0;
+}
+
 void ext2_set_ops(fs_t* fs) {
   fs->alloc_vnode = &ext2_alloc_vnode;
   fs->get_root = &ext2_get_root;
@@ -217,6 +268,26 @@ static int ext2_put_vnode(vnode_t* vnode) {
   return 0;
 }
 
+typedef struct {
+  const char* name;
+  int name_len;
+  int inode_out;
+} ext2_lookup_iter_arg_t;
+static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
+                                 uint32_t offset) {
+  ext2_lookup_iter_arg_t* lookup_args = (ext2_lookup_iter_arg_t*)arg;
+
+  const uint32_t inode = ltoh32(little_endian_dirent->inode);
+  if (inode != 0 &&
+      little_endian_dirent->name_len == lookup_args->name_len &&
+      kstrncmp(little_endian_dirent->name, lookup_args->name,
+               lookup_args->name_len) == 0) {
+    lookup_args->inode_out = inode;
+    return 1;
+  }
+  return 0;
+}
+
 static int ext2_lookup(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
@@ -230,46 +301,19 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
     return result;
   }
 
-  const int name_len = kstrlen(name);
+  ext2_lookup_iter_arg_t arg;
+  arg.name = name;
+  arg.name_len = kstrlen(name);
+  arg.inode_out = -1;
 
-  // Look for an appropriate entry.
-  uint32_t bytes_left = parent->len;
-  uint32_t inode_block = 0;
-  while (bytes_left > 0) {
-    const uint32_t block = get_inode_block(fs, inode, inode_block);
-    const uint32_t block_len = min(ext2_block_size(fs), bytes_left);
-    void* block_data = block_cache_get(fs->dev, block);
-    if (!block_data) {
-      kfree(inode);
-      return -ENOENT;
-    }
-
-    uint32_t block_idx = 0;
-    while (block_idx < block_len) {
-      ext2_dirent_t* dirent = (ext2_dirent_t*)(block_data + block_idx);
-      if (dirent->inode != 0 && dirent->name_len == name_len &&
-          kstrncmp(name, dirent->name, name_len) == 0) {
-        int result = dirent->inode;
-        block_cache_put(fs->dev, block);
-        kfree(inode);
-        return result;
-      }
-      block_idx += dirent->rec_len;
-    }
-    if (block_idx > block_len) {
-      klogf("ext2: error: dirent spans multiple blocks\n");
-      block_cache_put(fs->dev, block);
-      kfree(inode);
-      return -EFAULT;
-    }
-
-    block_cache_put(fs->dev, block);
-    inode_block++;
-    bytes_left -= block_len;
-  }
-
+  dirent_iterate(fs, inode, 0, &ext2_lookup_iter_func, &arg);
   kfree(inode);
-  return -ENOENT;
+
+  if (arg.inode_out >= 0) {
+    return arg.inode_out;
+  } else {
+    return -ENOENT;
+  }
 }
 
 static int ext2_create(vnode_t* parent, const char* name) {
@@ -339,6 +383,71 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
   return -EROFS;
 }
 
+
+typedef struct {
+  void* buf;
+  int bufsize;
+  dirent_t* last_dirent;  // The last dirent we put into the buffer.
+} ext2_getdents_iter_arg_t;
+static int ext2_getdents_iter_func(void* arg,
+                                   ext2_dirent_t* little_endian_dirent,
+                                   uint32_t offset) {
+  ext2_getdents_iter_arg_t* getdents_args = (ext2_getdents_iter_arg_t*)arg;
+
+  // Update the offset of the *last* dirent we wrote to the current offset.
+  if (getdents_args->last_dirent) {
+    getdents_args->last_dirent->offset = offset;
+  }
+
+  const int dirent_out_size =
+      sizeof(dirent_t) + little_endian_dirent->name_len + 1;
+  if (dirent_out_size > getdents_args->bufsize) {
+    // Out of room, we're done.
+    return 1;
+  }
+
+  dirent_t* dirent_out = (dirent_t*)getdents_args->buf;
+  dirent_out->vnode = ltoh32(little_endian_dirent->inode);
+  dirent_out->offset = -1;  // We'll update this in the next iteration.
+  dirent_out->length = dirent_out_size;
+  kstrncpy(dirent_out->name, little_endian_dirent->name,
+           little_endian_dirent->name_len);
+  dirent_out->name[little_endian_dirent->name_len] = '\0';
+
+  getdents_args->buf += dirent_out_size;
+  getdents_args->bufsize -= dirent_out_size;
+  getdents_args->last_dirent = dirent_out;
+  return 0;
+}
+
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
-  return -ENOTSUP;
+  KASSERT(vnode->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  ext2_inode_t* inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, vnode->num, inode);
+  if (result) {
+    kfree(inode);
+    return result;
+  }
+
+  ext2_getdents_iter_arg_t arg;
+  arg.buf = buf;
+  arg.bufsize = bufsize;
+  arg.last_dirent = 0x0;
+
+  result = dirent_iterate(fs, inode, offset, &ext2_getdents_iter_func, &arg);
+  kfree(inode);
+
+  if (result) {
+    KASSERT(arg.last_dirent->offset >= offset);
+  } else if (arg.last_dirent != 0x0) {
+    // If we went through all the dirents possible, set the offset to the end of
+    // the file.
+    KASSERT(arg.last_dirent->offset == -1);
+    arg.last_dirent->offset = vnode->len;
+  }
+  return bufsize - arg.bufsize;
 }
