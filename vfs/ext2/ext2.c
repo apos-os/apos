@@ -128,6 +128,7 @@ fs_t* ext2_create_fs() {
   kmemset(fs, 0, sizeof(ext2fs_t));
 
   fs->mounted = 0;
+  fs->unhealthy = 0;
   return (fs_t*)fs;
 }
 

@@ -28,6 +28,10 @@ typedef struct {
   int mounted;
   int read_only;
 
+  // Set to 1 if any part of the ext2 implementation detects an inconsistency in
+  // the filesystem.
+  int unhealthy;
+
   // In-memory copy of the superblock.  Only valid if mounted == true.
   ext2_superblock_t sb;
 
