@@ -362,6 +362,79 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   return inode;
 }
 
+typedef struct {
+  uint32_t new_rec_len;
+  uint32_t offset;
+} link_internal_iter_t;
+static int link_internal_iter_func(
+    void* arg, ext2_dirent_t* little_endian_dirent, uint32_t offset) {
+  link_internal_iter_t* link_arg = (link_internal_iter_t*)arg;
+  // See if the new link could fit into this dirent.
+  const uint16_t min_rec_len =
+      (little_endian_dirent->inode == 0 ? 0 :
+       ext2_dirent_min_size(little_endian_dirent->name_len));
+  if (min_rec_len + link_arg->new_rec_len <=
+      ltoh16(little_endian_dirent->rec_len)) {
+    link_arg->offset = offset;
+    return offset + 1;
+  }
+  return 0;
+}
+// Create a link in the given parent directory to the given inode with the given
+// name.  Doesn't look up the child inode to verify it's existence or increment
+// it's link count.
+static int link_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
+                         uint32_t inode) {
+  KASSERT(parent->i_mode & EXT2_S_IFDIR);
+
+  const int name_len = kstrlen(name);
+  KASSERT(name_len <= 255);
+  link_internal_iter_t iter_arg;
+  iter_arg.new_rec_len = ext2_dirent_min_size(name_len);
+  iter_arg.offset = 0;
+
+  int result =
+      dirent_iterate(fs, parent, 0, &link_internal_iter_func, &iter_arg);
+  if (!result) {
+    // TODO(aoates): allocate a new block at the end of the file and start
+    // there.
+    return -ENOSPC;
+  }
+
+  klogf("ext2 link_internal: splitting inode at offset %d\n", iter_arg.offset);
+  const uint32_t block_size = ext2_block_size(fs);
+  const uint32_t inode_block = iter_arg.offset / block_size;
+  const uint32_t block_offset = iter_arg.offset % block_size;
+  const uint32_t block_num = get_inode_block(fs, parent, inode_block);
+  void* block = block_cache_get(fs->dev, block_num);
+  if (!block) {
+    return -ENOMEM;
+  }
+
+  ext2_dirent_t* dirent_to_split = (ext2_dirent_t*)(block + block_offset);
+  const uint16_t first_dirent_len =
+      (dirent_to_split->inode == 0) ? 0 :
+      ext2_dirent_min_size(dirent_to_split->name_len);
+  const uint16_t second_dirent_len =
+      ltoh16(dirent_to_split->rec_len) - first_dirent_len;
+  KASSERT(second_dirent_len >= ext2_dirent_min_size(name_len));
+  if (first_dirent_len > 0) {
+    dirent_to_split->rec_len = htol16(first_dirent_len);
+  }
+
+  ext2_dirent_t* new_dirent =
+      (ext2_dirent_t*)(block + block_offset + first_dirent_len);
+  new_dirent->inode = htol32(inode);
+  new_dirent->rec_len = htol16(second_dirent_len);
+  new_dirent->name_len = name_len;
+  // TODO(aoates): use filetype extension.
+  new_dirent->file_type = EXT2_FT_UNKNOWN;
+  kstrncpy(new_dirent->name, name, name_len);
+
+  block_cache_put(fs->dev, block_num);
+  return 0;
+}
+
 void ext2_set_ops(fs_t* fs) {
   fs->alloc_vnode = &ext2_alloc_vnode;
   fs->get_root = &ext2_get_root;
@@ -488,7 +561,63 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
 }
 
 static int ext2_create(vnode_t* parent, const char* name) {
-  return -EROFS;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t* parent_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, parent->num, parent_inode);
+  if (result) {
+    kfree(parent_inode);
+    return result;
+  }
+
+  // First allocate a new inode for the new file.
+  const int child_inode_num = allocate_inode(fs, parent->num, EXT2_S_IFREG);
+  KASSERT(child_inode_num < 0 ||
+          (uint32_t)child_inode_num >= fs->sb.s_first_ino);
+  if (child_inode_num < 0) {
+    kfree(parent_inode);
+    return child_inode_num;
+  }
+
+  ext2_inode_t* child_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  result = get_inode(fs, child_inode_num, child_inode);
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    kfree(child_inode);
+    kfree(parent_inode);
+    return result;
+  }
+
+  // Fill the new inode and write it back to disk.
+  kmemset(child_inode, 0, fs->sb.s_inode_size);
+  child_inode->i_mode |= EXT2_S_IFREG;
+  child_inode->i_size = 0;
+  child_inode->i_links_count = 1;
+  result = write_inode(fs, child_inode_num, child_inode);
+  kfree(child_inode);
+  child_inode = 0x0;
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    kfree(parent_inode);
+    return result;
+  }
+
+  // Link it into the directory.
+  result = link_internal(fs, parent_inode, name, child_inode_num);
+  kfree(parent_inode);
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    return result;
+  }
+
+  return child_inode_num;
 }
 
 static int ext2_mkdir(vnode_t* parent, const char* name) {

@@ -218,6 +218,12 @@ typedef struct {
 void ext2_dirent_log(ext2_dirent_t* d);
 void ext2_dirent_ltoh(ext2_dirent_t* d);
 
+// The minimum size (in bytes) of a dirent_t with the given name length.
+static inline uint16_t ext2_dirent_min_size(int name_len) {
+  uint16_t size = sizeof(ext2_dirent_t) + name_len;
+  return (size % 4) ? ((size / 4 + 1) * 4) : size;
+}
+
 #define EXT2_FT_UNKNOWN 0  // Unknown File Type
 #define EXT2_FT_REG_FILE 1  // Regular File
 #define EXT2_FT_DIR 2  // Directory File
