@@ -45,4 +45,11 @@ static inline uint32_t ext2_block_size(ext2fs_t* fs) {
   return 1024 << fs->sb.s_log_block_size;
 }
 
+// Read the superblock and block groups from disk into the given ext2fs_t.
+// Returns 0 on success, or -errno if there was an error, or if the on-disk
+// filesystem is incompatible with this implementation (for example, by
+// requiring unsupported features).
+int ext2_read_superblock(ext2fs_t* fs);
+int ext2_read_block_groups(ext2fs_t* fs);
+
 #endif
