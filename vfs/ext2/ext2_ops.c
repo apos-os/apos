@@ -287,7 +287,45 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
 }
 
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
-  return -ENOTSUP;
+  KASSERT(vnode->type == VNODE_REGULAR);
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  KASSERT(offset >= 0);
+  KASSERT(offset <= vnode->len);
+
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const uint32_t inode_block = offset / ext2_block_size(fs);
+  const uint32_t block_offset = offset % ext2_block_size(fs);
+
+  // How many bytes we'll actually read.
+  const int len = min(bufsize, min(
+          vnode->len - offset,
+          (int)ext2_block_size(fs) - (int)block_offset));
+  if (len == 0) {
+    return 0;
+  }
+
+  ext2_inode_t* inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, vnode->num, inode);
+  if (result) {
+    kfree(inode);
+    return result;
+  }
+  const uint32_t block = get_inode_block(fs, inode, inode_block);
+  KASSERT(block > 0);
+
+  void* block_data = block_cache_get(fs->dev, block);
+  if (!block_data) {
+    kfree(inode);
+    return -ENOENT;
+  }
+  KASSERT_DBG(block_offset + len <= ext2_block_size(fs));
+  KASSERT_DBG(len <= bufsize);
+  kmemcpy(buf, block_data + block_offset, len);
+
+  block_cache_put(fs->dev, block);
+  kfree(inode);
+  return len;
 }
 
 static int ext2_write(vnode_t* vnode, int offset,
