@@ -100,8 +100,6 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 
   ext2_inode_ltoh(inode);
 
-  klogf("ext2 get_inode(%d):\n", inode_num);
-  ext2_inode_log(inode);
   return 0;
 }
 
