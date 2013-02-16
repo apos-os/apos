@@ -15,6 +15,7 @@
 // A very basic kernel-mode shell.  Currently just for testing ld I/O.
 
 #include <stdint.h>
+#include <limits.h>
 
 #include "common/errno.h"
 #include "common/hash.h"
@@ -23,6 +24,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
+#include "common/math.h"
 #include "dev/ata/ata.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
@@ -442,6 +444,60 @@ static void write_cmd(int argc, char* argv[]) {
   vfs_close(fd);
 }
 
+static void hash_file_cmd(int argc, char* argv[]) {
+  if (argc != 4) {
+    ksh_printf("usage: hash_file <start> <end> <path>\n");
+    return;
+  }
+
+  const int start = atoi(argv[1]);
+  int end = atoi(argv[2]);
+  if (end < 0) {
+    end = INT_MAX;
+  }
+
+  const int fd = vfs_open(argv[3], VFS_O_RDONLY);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[3], errorname(-fd));
+    return;
+  }
+
+  const int result = vfs_seek(fd, start, VFS_SEEK_SET);
+  if (result < 0) {
+    ksh_printf("error: couldn't seek: %s\n", errorname(-result));
+    vfs_close(fd);
+    return;
+  }
+
+  int cpos = start;
+  uint32_t h = kFNVOffsetBasis;
+  const int kBufSize = 700;
+  char buf[kBufSize];
+  while (1) {
+    if (end >= 0 && cpos >= end) {
+      break;
+    }
+    const int max_len = min(kBufSize, end - cpos);
+    const int len = vfs_read(fd, buf, max_len);
+    if (len < 0) {
+      ksh_printf("error: couldn't read from file: %s\n", errorname(-len));
+      vfs_close(fd);
+      return;
+    } else if (len == 0) {
+      break;
+    } else {
+      cpos += len;
+      for (int i = 0; i < len; ++i) {
+        h ^= ((uint8_t*)buf)[i];
+        h *= kFNVPrime;
+      }
+    }
+  }
+  ksh_printf("hash: 0x%x\n", h);
+  vfs_close(fd);
+}
+
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -471,6 +527,8 @@ static cmd_t CMDS[] = {
   { "cd", &cd_cmd },
   { "cat", &cat_cmd },
   { "write", &write_cmd },
+
+  { "hash_file", &hash_file_cmd },
 
   { 0x0, 0x0 },
 };
