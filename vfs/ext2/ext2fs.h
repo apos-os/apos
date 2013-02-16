@@ -41,7 +41,7 @@ typedef struct {
 } ext2fs_t;
 
 // Returns the block size in bytes.
-static inline uint32_t ext2_block_size(ext2fs_t* fs) {
+static inline uint32_t ext2_block_size(const ext2fs_t* fs) {
   return 1024 << fs->sb.s_log_block_size;
 }
 
@@ -51,5 +51,10 @@ static inline uint32_t ext2_block_size(ext2fs_t* fs) {
 // requiring unsupported features).
 int ext2_read_superblock(ext2fs_t* fs);
 int ext2_read_block_groups(ext2fs_t* fs);
+
+// Write the metadata from the superblock or the given block group from the
+// ext2fs_t back to disk.
+int ext2_flush_superblock(const ext2fs_t* fs);
+int ext2_flush_block_group(const ext2fs_t* fs, unsigned int bg);
 
 #endif

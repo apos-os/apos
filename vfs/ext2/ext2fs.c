@@ -14,6 +14,7 @@
 
 #include "vfs/ext2/ext2fs.h"
 
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -117,5 +118,77 @@ int ext2_read_block_groups(ext2fs_t* fs) {
     klogf("\n");
   }
 
+  return 0;
+}
+
+int ext2_flush_superblock(const ext2fs_t* fs) {
+  KASSERT(BLOCK_CACHE_BLOCK_SIZE == ext2_block_size(fs));
+
+  // Write out the superblock to every copy.
+  for (uint32_t i = 0; i < fs->num_block_groups; ++i) {
+    // TODO(aoates): handle sparse super block feature.
+    const int sb_block_num = fs->sb.s_first_data_block + (i * fs->sb.s_blocks_per_group);
+    const int sb_block_offset =
+        ((i == 0 && ext2_block_size(fs) > 1024) ? 1024 : 0);
+    KASSERT_DBG(sb_block_offset + sizeof(ext2_superblock_t) <= ext2_block_size(fs));
+
+    void* sb_block = block_cache_get(fs->dev, sb_block_num);
+    if (!sb_block) {
+      // Yikes! Only partially flushed!
+      return -ENOMEM;
+    }
+
+    // TODO(aoates): is it really safe to write it to the disk, *then* endian-swap
+    // it?  OTOH, it seems silly to copy it to an intermediate buffer, then fix
+    // endianess, then copy again.
+    ext2_superblock_t* on_disk_sb = (ext2_superblock_t*)(sb_block + sb_block_offset);
+    KASSERT(on_disk_sb->s_magic == htol16(EXT2_SUPER_MAGIC));
+
+    kmemcpy(on_disk_sb, &fs->sb, sizeof(ext2_superblock_t));
+    ext2_superblock_ltoh(on_disk_sb);
+    block_cache_put(fs->dev, sb_block_num);
+  }
+
+  return 0;
+}
+
+int ext2_flush_block_group(const ext2fs_t* fs, unsigned int bg) {
+  KASSERT(bg < fs->num_block_groups);
+
+  const uint32_t block_size = ext2_block_size(fs);
+  const int bg_descs_per_block = block_size / sizeof(ext2_block_group_desc_t);
+
+  // Where in the bgdt the chosen bg descriptor is (both block index, and
+  // descriptor offset within that block).
+  const uint32_t flush_bg_bgdt_block_idx = bg / bg_descs_per_block;
+  const uint32_t flush_bg_bgdt_idx_in_block = bg % bg_descs_per_block;
+
+  const ext2_block_group_desc_t* bgd_to_flush = &fs->block_groups[bg];
+
+  // Flush for each copy of the bgdt.
+  for (uint32_t i = 0; i < fs->num_block_groups; ++i) {
+    // TODO(aoates): handle sparse super block feature.
+    // Get the first block of the block group, then the appropriate block within
+    // that copy of the block descriptor table.
+    const uint32_t bgdt_first_block =
+        fs->sb.s_first_data_block + (i * fs->sb.s_blocks_per_group) + 1;
+    const uint32_t bgdt_block_num = bgdt_first_block + flush_bg_bgdt_block_idx;
+    ext2_block_group_desc_t* bgdt_block = block_cache_get(fs->dev, bgdt_block_num);
+    if (!bgdt_block) {
+      // Yikes! Only partially flushed!
+      return -ENOMEM;
+    }
+
+    ext2_block_group_desc_t* on_disk_bgd = &bgdt_block[flush_bg_bgdt_idx_in_block];
+
+    // Sanity check the on-disk bgd to make sure we didn't pick the wrong block.
+    KASSERT(on_disk_bgd->bg_block_bitmap == htol32(bgd_to_flush->bg_block_bitmap));
+    KASSERT(on_disk_bgd->bg_inode_bitmap == htol32(bgd_to_flush->bg_inode_bitmap));
+    KASSERT(on_disk_bgd->bg_inode_table == htol32(bgd_to_flush->bg_inode_table));
+
+    kmemcpy(on_disk_bgd, bgd_to_flush, sizeof(ext2_block_group_desc_t));
+    ext2_block_group_desc_ltoh(on_disk_bgd);
+    block_cache_put(fs->dev, bgdt_block_num);
+  }
   return 0;
 }
