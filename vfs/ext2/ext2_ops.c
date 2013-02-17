@@ -202,10 +202,16 @@ static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
   return ltoh32(value);
 }
 
-// Given an inode and a block number in that inode, return the absolute block
-// number of that block (in the filesystem), or -errno on error.
-static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
-                                uint32_t inode_block) {
+// Given an inode and a block index within that inode (that's not in the inode's
+// i_block list), return the indirect block containing that block's address (in
+// *indirect_block_out) and the offset within that block (in
+// *indirect_block_offset_out).
+//
+// Returns 0 on success, or -errno on error.
+static int get_inode_indirect_block(ext2fs_t* fs, ext2_inode_t* inode,
+                                    uint32_t inode_block,
+                                    uint32_t* indirect_block_out,
+                                    uint32_t* indirect_block_offset_out) {
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
   const uint32_t kBlocksPerDoubleIndirect =
@@ -214,10 +220,12 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
       kBlocksPerDoubleIndirect * kBlocksPerIndirect;
 
   if (inode_block < kDirectBlocks) {
-    return inode->i_block[inode_block];
+    return -ERANGE;
   } else if (inode_block < kDirectBlocks + kBlocksPerIndirect) {
     // Single indirect block.
-    return get_block_idx(fs, inode->i_block[12], inode_block - kDirectBlocks);
+    *indirect_block_out = inode->i_block[12];
+    *indirect_block_offset_out = inode_block - kDirectBlocks;
+    return 0;
   } else if (inode_block < kDirectBlocks + kBlocksPerIndirect +
              kBlocksPerDoubleIndirect) {
     // Doubly indirect block.
@@ -227,8 +235,10 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
     const uint32_t dbl_block = inode->i_block[13];
     const uint32_t indirect_block = get_block_idx(
         fs, dbl_block, dbl_block_idx / kBlocksPerIndirect);
-    return get_block_idx(fs, indirect_block,
-                         dbl_block_idx % kBlocksPerIndirect);
+
+    *indirect_block_out = indirect_block;
+    *indirect_block_offset_out = dbl_block_idx % kBlocksPerIndirect;
+    return 0;
   } else {
     // Triply indirect block.
     KASSERT(inode_block < kDirectBlocks + kBlocksPerIndirect +
@@ -242,11 +252,29 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
     const uint32_t dbl_block_idx = triple_block_idx % kBlocksPerDoubleIndirect;
     const uint32_t indirect_block = get_block_idx(
         fs, dbl_block, dbl_block_idx / kBlocksPerIndirect);
-    return get_block_idx(fs, indirect_block,
-                         dbl_block_idx % kBlocksPerIndirect);
+
+    *indirect_block_out = indirect_block;
+    *indirect_block_offset_out = dbl_block_idx % kBlocksPerIndirect;
+    return 0;
   }
 }
 
+// Given an inode and a block number in that inode, return the absolute block
+// number of that block (in the filesystem), or -errno on error.
+static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
+                                uint32_t inode_block) {
+  const uint32_t kDirectBlocks = 12;
+  if (inode_block < kDirectBlocks) {
+    return inode->i_block[inode_block];
+  } else {
+    uint32_t indirect_block;
+    uint32_t indirect_block_offset;
+    int result = get_inode_indirect_block(
+        fs, inode, inode_block, &indirect_block, &indirect_block_offset);
+    KASSERT(result == 0);
+    return get_block_idx(fs, indirect_block, indirect_block_offset);
+  }
+}
 
 // Iterate over the dirents in the given inode (which must be a directory),
 // calling the given function on each one.  If the function returns non-zero,
