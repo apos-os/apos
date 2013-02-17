@@ -362,6 +362,60 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   return inode;
 }
 
+// Find and allocate N free blocks, preferably in the same block group as the
+// given inode.  Returns 0 on success, or -errno on error.
+// TODO(aoates): combine this and allocate_inode into a single function for
+// finding free nodes in a block group's bitmap.
+static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
+                           uint32_t* blocks_out) {
+  if (fs->sb.s_free_blocks_count < nblocks) {
+    return -ENOSPC;
+  }
+
+  // Starting with the inode's block group, look for one with enough free
+  // blocks.
+  uint32_t bg = (inode_num - 1) / fs->sb.s_inodes_per_group;
+  unsigned int block_groups_checked = 0;
+  while (fs->block_groups[bg].bg_free_blocks_count < nblocks &&
+         block_groups_checked < fs->num_block_groups) {
+    block_groups_checked++;
+    bg = (bg + 1) % fs->num_block_groups;
+  }
+  // TODO(aoates): allocate the blocks amongst several block groups.
+  if (block_groups_checked == fs->num_block_groups) {
+    klogf("ext2 warning: no block groups found with %d free blocks\n", nblocks);
+    return -ENOSPC;
+  }
+
+  // Decrement the free block count in the superblock and bgd, then flush them.
+  KASSERT(fs->block_groups[bg].bg_free_blocks_count >= nblocks);
+  fs->sb.s_free_blocks_count -= nblocks;
+  fs->block_groups[bg].bg_free_blocks_count -= nblocks;
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
+
+  // Find the actual free blocks in the bitmap.
+  uint8_t* block_bitmap = block_cache_get(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+  if (!block_bitmap) {
+    // TODO(aoates): roll back the decrement of the counters.
+    return -ENOMEM;
+  }
+  for (unsigned int i = 0; i < nblocks; ++i) {
+    int idx_in_bg = bg_bitmap_find_free(fs, block_bitmap);
+    if (idx_in_bg < 0) {
+      block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+      klogf("ext2 warning: block group desc indicated free blocks, but none "
+            "found in block bitmap!\n");
+      fs->unhealthy = 1;
+      return -ENOSPC;
+    }
+    bg_bitmap_set(block_bitmap, idx_in_bg);
+    blocks_out[i] = bg * fs->sb.s_blocks_per_group + idx_in_bg;
+  }
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+  return 0;
+}
+
 typedef struct {
   uint32_t new_rec_len;
   uint32_t offset;
