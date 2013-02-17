@@ -435,6 +435,67 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
   return 0;
 }
 
+// Create a new node in the parent with the given name.
+static int mknod_internal(vnode_t* parent, const char* name, uint16_t mode) {
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t* parent_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, parent->num, parent_inode);
+  if (result) {
+    kfree(parent_inode);
+    return result;
+  }
+
+  // First allocate a new inode for the new file.
+  const int child_inode_num = allocate_inode(fs, parent->num, mode);
+  KASSERT(child_inode_num < 0 ||
+          (uint32_t)child_inode_num >= fs->sb.s_first_ino);
+  if (child_inode_num < 0) {
+    kfree(parent_inode);
+    return child_inode_num;
+  }
+
+  ext2_inode_t* child_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  result = get_inode(fs, child_inode_num, child_inode);
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    kfree(child_inode);
+    kfree(parent_inode);
+    return result;
+  }
+
+  // Fill the new inode and write it back to disk.
+  kmemset(child_inode, 0, fs->sb.s_inode_size);
+  child_inode->i_mode = mode;
+  child_inode->i_size = 0;
+  child_inode->i_links_count = 1;
+  result = write_inode(fs, child_inode_num, child_inode);
+  kfree(child_inode);
+  child_inode = 0x0;
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    kfree(parent_inode);
+    return result;
+  }
+
+  // Link it into the directory.
+  result = link_internal(fs, parent_inode, name, child_inode_num);
+  kfree(parent_inode);
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    return result;
+  }
+
+  return child_inode_num;
+}
+
 void ext2_set_ops(fs_t* fs) {
   fs->alloc_vnode = &ext2_alloc_vnode;
   fs->get_root = &ext2_get_root;
@@ -561,63 +622,7 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
 }
 
 static int ext2_create(vnode_t* parent, const char* name) {
-  KASSERT(parent->type == VNODE_DIRECTORY);
-  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
-
-  ext2fs_t* fs = (ext2fs_t*)parent->fs;
-  if (fs->read_only) {
-    return -EROFS;
-  }
-
-  ext2_inode_t* parent_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
-  // TODO(aoates): do we want to store the inode in the vnode?
-  int result = get_inode(fs, parent->num, parent_inode);
-  if (result) {
-    kfree(parent_inode);
-    return result;
-  }
-
-  // First allocate a new inode for the new file.
-  const int child_inode_num = allocate_inode(fs, parent->num, EXT2_S_IFREG);
-  KASSERT(child_inode_num < 0 ||
-          (uint32_t)child_inode_num >= fs->sb.s_first_ino);
-  if (child_inode_num < 0) {
-    kfree(parent_inode);
-    return child_inode_num;
-  }
-
-  ext2_inode_t* child_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
-  result = get_inode(fs, child_inode_num, child_inode);
-  if (result) {
-    // TODO(aoates): free the allocated inode
-    kfree(child_inode);
-    kfree(parent_inode);
-    return result;
-  }
-
-  // Fill the new inode and write it back to disk.
-  kmemset(child_inode, 0, fs->sb.s_inode_size);
-  child_inode->i_mode |= EXT2_S_IFREG;
-  child_inode->i_size = 0;
-  child_inode->i_links_count = 1;
-  result = write_inode(fs, child_inode_num, child_inode);
-  kfree(child_inode);
-  child_inode = 0x0;
-  if (result) {
-    // TODO(aoates): free the allocated inode
-    kfree(parent_inode);
-    return result;
-  }
-
-  // Link it into the directory.
-  result = link_internal(fs, parent_inode, name, child_inode_num);
-  kfree(parent_inode);
-  if (result) {
-    // TODO(aoates): free the allocated inode
-    return result;
-  }
-
-  return child_inode_num;
+  return mknod_internal(parent, name, EXT2_S_IFREG);
 }
 
 static int ext2_mkdir(vnode_t* parent, const char* name) {
