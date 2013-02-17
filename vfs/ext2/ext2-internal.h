@@ -173,7 +173,7 @@ typedef struct {
 } __attribute__((packed)) ext2_inode_t;
 _Static_assert(sizeof(ext2_inode_t) == 128,
                "ext2 inode incorrect size");
-void ext2_inode_log(ext2_inode_t* i);
+void ext2_inode_log(ext2_inode_t* i, int long_mode);
 void ext2_inode_ltoh(ext2_inode_t* i);
 
 // Reserved ext2 inodes.
