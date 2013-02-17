@@ -639,7 +639,55 @@ static int ext2_create(vnode_t* parent, const char* name) {
 }
 
 static int ext2_mkdir(vnode_t* parent, const char* name) {
-  return -EROFS;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t* parent_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, parent->num, parent_inode);
+  if (result) {
+    kfree(parent_inode);
+    return result;
+  }
+
+  ext2_inode_t* child_inode = 0x0;
+  const int child_inode_num =
+      make_inode(fs, parent->num, EXT2_S_IFDIR, &child_inode);
+  if (child_inode_num < 0) {
+    KASSERT(child_inode == 0x0);
+    kfree(parent_inode);
+    return child_inode_num;
+  }
+
+  // Link it to itself and it's parent.
+  result = link_internal(fs, child_inode, ".", child_inode_num);
+  if (result) {
+    kfree(child_inode);
+    kfree(parent_inode);
+    return result;
+  }
+  result = link_internal(fs, child_inode, "..", parent->num);
+  if (result) {
+    kfree(child_inode);
+    kfree(parent_inode);
+    return result;
+  }
+  kfree(child_inode);
+
+  // Link it into the directory.
+  result = link_internal(fs, parent_inode, name, child_inode_num);
+  kfree(parent_inode);
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    return result;
+  }
+
+  return child_inode_num;
 }
 
 static int ext2_rmdir(vnode_t* parent, const char* name) {
