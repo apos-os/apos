@@ -362,6 +362,17 @@ static void mkdir_cmd(int argc, char* argv[]) {
   }
 }
 
+static void rmdir_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: rmdir <path>\n");
+    return;
+  }
+  const int result = vfs_rmdir(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_rmdir(): %s\n", errorname(-result));
+  }
+}
+
 static void pwd_cmd(int argc, char* argv[]) {
   if (argc != 1) {
     ksh_printf("usage: pwd\n");
@@ -523,6 +534,7 @@ static cmd_t CMDS[] = {
 
   { "ls", &ls_cmd },
   { "mkdir", &mkdir_cmd },
+  { "rmdir", &rmdir_cmd },
   { "pwd", &pwd_cmd },
   { "cd", &cd_cmd },
   { "cat", &cat_cmd },
