@@ -841,9 +841,14 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
     kfree(parent_inode);
     return result;
   }
-  kfree(child_inode);
 
-  // TODO(aoates): fix up link counts
+  // Fix up link counts.
+  parent_inode->i_links_count++;
+  child_inode->i_links_count++;
+  write_inode(fs, parent->num, parent_inode);
+  write_inode(fs, child_inode_num, child_inode);
+
+  kfree(child_inode);
 
   // Link it into the directory.
   result = link_internal(fs, parent_inode, parent->num, name, child_inode_num);
