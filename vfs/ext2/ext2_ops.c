@@ -42,7 +42,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 
 // Given a block-sized bitmap (i.e. a block group's block or inode bitmap),
 // return the value of the Nth entry.
-static inline int bg_bitmap_get(ext2fs_t* fs, void* bitmap, int n) {
+static inline int bg_bitmap_get(ext2fs_t* fs, const void* bitmap, int n) {
   KASSERT_DBG(n >= 0);
   return (((uint8_t*)bitmap)[n / 8] >> (n % 8)) & 0x01;
 }
@@ -51,6 +51,12 @@ static inline int bg_bitmap_get(ext2fs_t* fs, void* bitmap, int n) {
 static inline void bg_bitmap_set(void* bitmap, int n) {
   KASSERT_DBG(n >= 0);
   ((uint8_t*)bitmap)[n / 8] |= (0x01 << (n % 8));
+}
+
+// Clear the Nth bit in the given block-sized bitmap.
+static inline void bg_bitmap_clear(void* bitmap, int n) {
+  KASSERT_DBG(n >= 0);
+  ((uint8_t*)bitmap)[n / 8] &= ~(0x01 << (n % 8));
 }
 
 // Given a block-sized bitmap, return the index of the first unset bit, or -1 if
@@ -75,6 +81,22 @@ static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
   return idx * 8 + bit_idx;
 }
 
+// Return the block group that the given inode is in.
+static inline int get_inode_bg(ext2fs_t* fs, uint32_t inode_num) {
+  return (inode_num - 1) / fs->sb.s_inodes_per_group;
+}
+static inline int get_inode_bg_idx(ext2fs_t* fs, uint32_t inode_num) {
+  return (inode_num - 1) % fs->sb.s_inodes_per_group;
+}
+
+// Return the block group that the given block is in.
+static inline int get_block_bg(ext2fs_t* fs, uint32_t block_num) {
+  return (block_num - fs->sb.s_first_data_block) / fs->sb.s_blocks_per_group;
+}
+static inline int get_block_bg_idx(ext2fs_t* fs, uint32_t block_num) {
+  return (block_num - fs->sb.s_first_data_block) % fs->sb.s_blocks_per_group;
+}
+
 // Helper for get_inode and write_inode.  Given an inode number, return (via out
 // parameters) the inode's block group, the index of the inode within that block
 // group, the block number of the corresponding inode bitmap, and the block
@@ -88,8 +110,8 @@ static void get_inode_info(ext2fs_t* fs, uint32_t inode_num,
                            uint32_t* inode_table_block_out,
                            uint32_t* inode_table_offset_out) {
   // Find the block group and load it's inode bitmap.
-  const uint32_t bg = (inode_num - 1) / fs->sb.s_inodes_per_group;
-  const uint32_t bg_inode_idx = (inode_num - 1) % fs->sb.s_inodes_per_group;
+  const uint32_t bg = get_inode_bg(fs, inode_num);
+  const uint32_t bg_inode_idx = get_inode_bg_idx(fs, inode_num);
   KASSERT(bg < fs->num_block_groups);
   *inode_bitmap_block_out = fs->block_groups[bg].bg_inode_bitmap;
 
@@ -386,14 +408,35 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
       return -ENOSPC;
     }
     bg_bitmap_set(block_bitmap, idx_in_bg_bmp);
-    blocks_out[i] = fs->sb.s_first_data_block +bg * fs->sb.s_blocks_per_group +
+    blocks_out[i] = fs->sb.s_first_data_block + bg * fs->sb.s_blocks_per_group +
         idx_in_bg_bmp;
   }
   block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
   return 0;
 }
 
+// Free the given block.
+static int free_block(ext2fs_t* fs, uint32_t block) {
+  const uint32_t bg = get_block_bg(fs, block);
+  const uint32_t bg_block_idx = get_block_bg_idx(fs, block);
 
+  // Increment the free block count in the superblock and bgd, then flush them.
+  fs->sb.s_free_blocks_count++;
+  fs->block_groups[bg].bg_free_blocks_count++;
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
+
+  // Mark the block as free in the bitmap
+  uint8_t* block_bitmap = block_cache_get(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+  if (!block_bitmap) {
+    return -ENOMEM;
+  }
+  KASSERT(bg_bitmap_get(fs, block_bitmap, bg_block_idx));
+  bg_bitmap_clear(block_bitmap, bg_block_idx);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+
+  return 0;
+}
 
 // Allocate a new inode.  Depending on the type, it may be allocated in the
 // parent's block group, or another block group.
@@ -457,6 +500,58 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   // Inode numbers are 1-indexed.
   const int inode = bg * fs->sb.s_inodes_per_group + idx_in_bg + 1;
   return inode;
+}
+
+// Free the given inode and associated data blocks.  The inode's links_count
+// must be 0.  Returns 0 on success.
+static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
+  KASSERT(inode->i_links_count == 0);
+
+  const uint32_t bg = get_inode_bg(fs, inode_num);
+  const uint32_t bg_inode_idx = get_inode_bg_idx(fs, inode_num);
+
+  // Increment the free inode count in the superblock and bgd, then flush them.
+  fs->sb.s_free_inodes_count++;
+  fs->block_groups[bg].bg_free_inodes_count++;
+  if (inode->i_mode & EXT2_S_IFDIR) {
+    fs->block_groups[bg].bg_used_dirs_count--;
+  }
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
+
+  // Mark the inode as free in the bitmap
+  uint8_t* inode_bitmap = block_cache_get(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+  if (!inode_bitmap) {
+    return -ENOMEM;
+  }
+  KASSERT(bg_bitmap_get(fs, inode_bitmap, bg_inode_idx));
+  bg_bitmap_clear(inode_bitmap, bg_inode_idx);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+
+  // Free all of its blocks.
+  // TODO(aoates): this is a bit lenient in case there are holes, but is that
+  // actually possible?
+  // TODO(aoates): this is a ridiculously inefficient way to do this (since it
+  // requires deref'ing the indirect blocks each time).
+  uint32_t blocks_to_free = inode->i_blocks / (2 << fs->sb.s_log_block_size);
+  uint32_t inode_block = 0;
+  // TODO(aoates): should also verify that inode_blocks won't exceed the maximum
+  // number of blocks.
+  while (blocks_to_free > 0) {
+    const uint32_t block_to_free = get_inode_block(fs, inode, inode_block);
+    inode_block++;
+    if (block_to_free != 0) {
+      int result = free_block(fs, block_to_free);
+      if (result) {
+        return result;
+      }
+      blocks_to_free--;
+    }
+  }
+
+  kmemset(inode, 0, sizeof(ext2_inode_t));
+  write_inode(fs, inode_num, inode);
+  return 0;
 }
 
 // Extend the given inode by N blocks, and updates it's size.  Returns 0 on
@@ -646,6 +741,42 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
   new_dirent->file_type = EXT2_FT_UNKNOWN;
   kstrncpy(new_dirent->name, name, name_len);
 
+  block_cache_put(fs->dev, block_num);
+  return 0;
+}
+
+// Unlink the given entry in the parent.  Does NOT update the link count of the
+// child.
+static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
+                           const char* name) {
+  KASSERT(parent->i_mode & EXT2_S_IFDIR);
+  const uint32_t block_size = ext2_block_size(fs);
+
+  // Lookup the child and find its dirent.
+  uint32_t child_inode, child_offset;
+  int result = lookup_internal(fs, parent, name, &child_inode, &child_offset);
+  if (result) {
+    return result;
+  }
+
+  const uint32_t inode_block = child_offset / block_size;
+  const uint32_t block_offset = child_offset % block_size;
+  const uint32_t block_num = get_inode_block(fs, parent, inode_block);
+  void* block = block_cache_get(fs->dev, block_num);
+  if (!block) {
+    return -ENOMEM;
+  }
+
+  // Mark the dirent as unused.
+  ext2_dirent_t* child_dirent = (ext2_dirent_t*)(block + block_offset);
+  KASSERT_DBG(ltoh32(child_dirent->inode) == child_inode);
+  KASSERT_DBG(kstrncmp(child_dirent->name, name, child_dirent->name_len) == 0);
+  child_dirent->inode = 0;
+  child_dirent->name_len = 0;
+  child_dirent->file_type = 0;
+
+  // TODO(aoates): check if previous and/or next dirents are also free, and
+  // merge them with this one if so.
   block_cache_put(fs->dev, block_num);
   return 0;
 }
@@ -877,8 +1008,58 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
   return child_inode_num;
 }
 
+static int ext2_rmdir_iter_func(void* arg,
+                                ext2_dirent_t* dirent,
+                                uint32_t offset) {
+  if (dirent->inode != 0 &&
+      kstrncmp(dirent->name, ".", dirent->name_len) != 0 &&
+      kstrncmp(dirent->name, "..", dirent->name_len) != 0) {
+    return 1;
+  }
+  return 0;
+}
+
 static int ext2_rmdir(vnode_t* parent, const char* name) {
-  return -EROFS;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  // Get the parent inode.
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  ext2_inode_t parent_inode;
+  int result = get_inode(fs, parent->num, &parent_inode);
+  if (result)
+    return result;
+  KASSERT(parent_inode.i_mode & EXT2_S_IFDIR);
+
+  // Get the child inode.
+  const int child_inode_num = ext2_lookup(parent, name);
+  if (child_inode_num < 0) return child_inode_num;
+
+  ext2_inode_t child_inode;
+  result = get_inode(fs, child_inode_num, &child_inode);
+  if (result) return result;
+  if ((child_inode.i_mode & EXT2_S_IFDIR) == 0)
+    return -ENOTDIR;
+
+  // Make sure it is empty.
+  result = dirent_iterate(fs, &child_inode, 0, &ext2_rmdir_iter_func, 0x0);
+  if (result)
+    return -ENOTEMPTY;
+
+  // Can't hard link directories, so should just be 2 links.
+  KASSERT(child_inode.i_links_count == 2);
+
+  result = unlink_internal(fs, &parent_inode, name);
+  if (result)
+    return result;
+
+  // Update link counts.
+  parent_inode.i_links_count--;
+  write_inode(fs, parent->num, &parent_inode);
+
+  child_inode.i_links_count -= 2;
+  result = free_inode(fs, child_inode_num, &child_inode);
+  return result;
 }
 
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
@@ -933,7 +1114,6 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
   return -EROFS;
 }
 
-
 typedef struct {
   void* buf;
   int bufsize;
@@ -943,6 +1123,11 @@ static int ext2_getdents_iter_func(void* arg,
                                    ext2_dirent_t* little_endian_dirent,
                                    uint32_t offset) {
   ext2_getdents_iter_arg_t* getdents_args = (ext2_getdents_iter_arg_t*)arg;
+
+  // Skip empty entries.
+  if (little_endian_dirent->inode == 0) {
+    return 0;
+  }
 
   // Update the offset of the *last* dirent we wrote to the current offset.
   if (getdents_args->last_dirent) {
