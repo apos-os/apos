@@ -455,6 +455,17 @@ static void write_cmd(int argc, char* argv[]) {
   vfs_close(fd);
 }
 
+static void rm_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: rm <path>\n");
+    return;
+  }
+  const int result = vfs_unlink(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_unlxn(): %s\n", errorname(-result));
+  }
+}
+
 static void hash_file_cmd(int argc, char* argv[]) {
   if (argc != 4) {
     ksh_printf("usage: hash_file <start> <end> <path>\n");
@@ -539,6 +550,7 @@ static cmd_t CMDS[] = {
   { "cd", &cd_cmd },
   { "cat", &cat_cmd },
   { "write", &write_cmd },
+  { "rm", &rm_cmd },
 
   { "hash_file", &hash_file_cmd },
 
