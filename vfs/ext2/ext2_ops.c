@@ -314,6 +314,7 @@ static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
     while (block_idx < block_len) {
       ext2_dirent_t* dirent = (ext2_dirent_t*)(block_data + block_idx);
       KASSERT(offset == inode_block * ext2_block_size(fs) + block_idx);
+      KASSERT(dirent->rec_len >= ext2_dirent_min_size(dirent->name_len));
       const int result = func(arg, dirent, offset);
       if (result) {
         block_cache_put(fs->dev, block);
@@ -506,7 +507,6 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
 typedef struct {
   uint32_t new_rec_len;
   uint32_t offset;
-  int overwrite;
 } link_internal_iter_t;
 static int link_internal_iter_func(
     void* arg, ext2_dirent_t* little_endian_dirent, uint32_t offset) {
@@ -518,7 +518,6 @@ static int link_internal_iter_func(
   if (min_rec_len + link_arg->new_rec_len <=
       ltoh16(little_endian_dirent->rec_len)) {
     link_arg->offset = offset;
-    link_arg->overwrite = (little_endian_dirent->inode == 0);
     return offset + 1;
   }
   return 0;
@@ -533,6 +532,7 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
                          uint32_t parent_inode, const char* name,
                          uint32_t inode) {
   KASSERT(parent->i_mode & EXT2_S_IFDIR);
+  const uint32_t block_size = ext2_block_size(fs);
 
   const int name_len = kstrlen(name);
   KASSERT(name_len <= 255);
@@ -542,9 +542,9 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
 
   int result =
       dirent_iterate(fs, parent, 0, &link_internal_iter_func, &iter_arg);
+  int new_block_created = 0;
   if (!result) {
     // Round the current size up to a round block size, then add a block.
-    const uint32_t block_size = ext2_block_size(fs);
     uint32_t new_size =
         (ceiling_div(parent->i_size, block_size) + 1) * block_size;
     result = extend_inode(fs, parent, parent_inode, 1, new_size);
@@ -553,12 +553,11 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
     }
     // Put the new dirent at the start of the new block.
     iter_arg.offset = parent->i_size - block_size;
-    iter_arg.overwrite = 1;
     KASSERT(iter_arg.offset % block_size == 0);
+    new_block_created = 1;
   }
 
   klogf("ext2 link_internal: splitting inode at offset %d\n", iter_arg.offset);
-  const uint32_t block_size = ext2_block_size(fs);
   const uint32_t inode_block = iter_arg.offset / block_size;
   const uint32_t block_offset = iter_arg.offset % block_size;
   const uint32_t block_num = get_inode_block(fs, parent, inode_block);
@@ -567,21 +566,27 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
     return -ENOMEM;
   }
 
-  ext2_dirent_t* dirent_to_split = (ext2_dirent_t*)(block + block_offset);
-  const uint16_t first_dirent_len =
-      iter_arg.overwrite ? 0 :
-      ext2_dirent_min_size(dirent_to_split->name_len);
-  const uint16_t second_dirent_len =
-      ltoh16(dirent_to_split->rec_len) - first_dirent_len;
-  KASSERT(second_dirent_len >= ext2_dirent_min_size(name_len));
-  if (first_dirent_len > 0) {
-    dirent_to_split->rec_len = htol16(first_dirent_len);
-  }
+  ext2_dirent_t* new_dirent = 0x0;
+  uint16_t new_dirent_len = 0;
+  // If we didn't create a new block, split the existing dirent.
+  if (new_block_created) {
+    new_dirent = block;
+    new_dirent_len = block_size;
+  } else {
+    ext2_dirent_t* dirent_to_split = (ext2_dirent_t*)(block + block_offset);
+    const uint16_t first_dirent_len =
+        (dirent_to_split->inode == 0) ? 0 :
+        ext2_dirent_min_size(dirent_to_split->name_len);
+    new_dirent_len = ltoh16(dirent_to_split->rec_len) - first_dirent_len;
+    KASSERT(new_dirent_len >= ext2_dirent_min_size(name_len));
+    if (first_dirent_len > 0) {
+      dirent_to_split->rec_len = htol16(first_dirent_len);
+    }
 
-  ext2_dirent_t* new_dirent =
-      (ext2_dirent_t*)(block + block_offset + first_dirent_len);
+    new_dirent = (ext2_dirent_t*)(block + block_offset + first_dirent_len);
+  }
   new_dirent->inode = htol32(inode);
-  new_dirent->rec_len = htol16(second_dirent_len);
+  new_dirent->rec_len = htol16(new_dirent_len);
   new_dirent->name_len = name_len;
   // TODO(aoates): use filetype extension.
   new_dirent->file_type = EXT2_FT_UNKNOWN;
