@@ -508,6 +508,55 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
 }
 
 typedef struct {
+  const char* name;
+  int name_len;
+  uint32_t inode_out;
+  uint32_t offset_out;
+} ext2_lookup_iter_arg_t;
+static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
+                                 uint32_t offset) {
+  ext2_lookup_iter_arg_t* lookup_args = (ext2_lookup_iter_arg_t*)arg;
+
+  const uint32_t inode = ltoh32(little_endian_dirent->inode);
+  if (inode != 0 &&
+      little_endian_dirent->name_len == lookup_args->name_len &&
+      kstrncmp(little_endian_dirent->name, lookup_args->name,
+               lookup_args->name_len) == 0) {
+    lookup_args->inode_out = inode;
+    lookup_args->offset_out = offset;
+    return 1;
+  }
+  return 0;
+}
+
+// Look up the given name in the parent, and return it's inode and its offset of
+// the dirent_t within the parent inode.  Returns 0 on success, -errno on error.
+// TODO(aoates): support filetype extension, and return it here.
+// TODO(aoates): make this take a const ext2_inode_t*.
+static int lookup_internal(ext2fs_t* fs, ext2_inode_t* parent_inode,
+                           const char* name, uint32_t* inode_out,
+                           uint32_t* offset_out) {
+  KASSERT(parent_inode->i_mode & EXT2_S_IFDIR);
+
+  ext2_lookup_iter_arg_t arg;
+  arg.name = name;
+  arg.name_len = kstrlen(name);
+  arg.inode_out = arg.offset_out = 0;
+
+  int result =
+      dirent_iterate(fs, parent_inode, 0, &ext2_lookup_iter_func, &arg);
+  if (result) {
+    KASSERT(arg.inode_out > 0);
+    KASSERT(arg.offset_out < parent_inode->i_size);
+    if (inode_out) *inode_out = arg.inode_out;
+    if (offset_out) *offset_out = arg.offset_out;
+    return 0;
+  } else {
+    return -ENOENT;
+  }
+}
+
+typedef struct {
   uint32_t new_rec_len;
   uint32_t offset;
 } link_internal_iter_t;
@@ -705,55 +754,6 @@ static int ext2_put_vnode(vnode_t* vnode) {
   inode.i_size = vnode->len;
   result = write_inode(fs, vnode->num, &inode);
   return result;
-}
-
-typedef struct {
-  const char* name;
-  int name_len;
-  uint32_t inode_out;
-  uint32_t offset_out;
-} ext2_lookup_iter_arg_t;
-static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
-                                 uint32_t offset) {
-  ext2_lookup_iter_arg_t* lookup_args = (ext2_lookup_iter_arg_t*)arg;
-
-  const uint32_t inode = ltoh32(little_endian_dirent->inode);
-  if (inode != 0 &&
-      little_endian_dirent->name_len == lookup_args->name_len &&
-      kstrncmp(little_endian_dirent->name, lookup_args->name,
-               lookup_args->name_len) == 0) {
-    lookup_args->inode_out = inode;
-    lookup_args->offset_out = offset;
-    return 1;
-  }
-  return 0;
-}
-
-// Look up the given name in the parent, and return it's inode and its offset of
-// the dirent_t within the parent inode.  Returns 0 on success, -errno on error.
-// TODO(aoates): support filetype extension, and return it here.
-// TODO(aoates): make this take a const ext2_inode_t*.
-static int lookup_internal(ext2fs_t* fs, ext2_inode_t* parent_inode,
-                           const char* name, uint32_t* inode_out,
-                           uint32_t* offset_out) {
-  KASSERT(parent_inode->i_mode & EXT2_S_IFDIR);
-
-  ext2_lookup_iter_arg_t arg;
-  arg.name = name;
-  arg.name_len = kstrlen(name);
-  arg.inode_out = arg.offset_out = 0;
-
-  int result =
-      dirent_iterate(fs, parent_inode, 0, &ext2_lookup_iter_func, &arg);
-  if (result) {
-    KASSERT(arg.inode_out > 0);
-    KASSERT(arg.offset_out < parent_inode->i_size);
-    if (inode_out) *inode_out = arg.inode_out;
-    if (offset_out) *offset_out = arg.offset_out;
-    return 0;
-  } else {
-    return -ENOENT;
-  }
 }
 
 static int ext2_lookup(vnode_t* parent, const char* name) {
