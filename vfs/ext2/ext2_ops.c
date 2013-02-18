@@ -202,6 +202,15 @@ static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
   return ltoh32(value);
 }
 
+// Given a block number, set the ith uint32_t of that block.
+static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
+                          uint32_t value) {
+  void* block = block_cache_get(fs->dev, block_num);
+  KASSERT(block);
+  ((uint32_t*)block)[idx] = htol32(value);
+  block_cache_put(fs->dev, block_num);
+}
+
 // Given an inode and a block index within that inode (that's not in the inode's
 // i_block list), return the indirect block containing that block's address (in
 // *indirect_block_out) and the offset within that block (in
@@ -444,9 +453,60 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   return 0;
 }
 
+// Extend the given inode by N blocks, and updates it's size.  Returns 0 on
+// success, or -errno on error.  On error, the no new blocks are allocated, and
+// the size isn't updated.
+static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
+                        unsigned int nblocks, uint32_t new_size) {
+  const uint32_t kDirectBlocks = 12;
+  const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
+  const uint32_t kBlocksPerDoubleIndirect =
+      kBlocksPerIndirect * kBlocksPerIndirect;
+  const uint32_t kBlocksPerTripleIndirect =
+      kBlocksPerDoubleIndirect * kBlocksPerIndirect;
+  const uint32_t kMaxBlocks = kDirectBlocks + kBlocksPerIndirect +
+      kBlocksPerDoubleIndirect + kBlocksPerTripleIndirect;
+
+  const uint32_t last_block = inode->i_blocks / (2 << fs->sb.s_log_block_size);
+  if (last_block >= kMaxBlocks - nblocks) {
+    return -EFBIG;
+  }
+
+  uint32_t* new_blocks = (uint32_t*)kmalloc(sizeof(uint32_t) * nblocks);
+  int result = allocate_blocks(fs, inode_num, nblocks, new_blocks);
+  if (result) {
+    kfree(new_blocks);
+    return result;
+  }
+
+  uint32_t inode_block = last_block;
+  for (unsigned int i = 0; i < nblocks; ++i) {
+    if (inode_block < kDirectBlocks) {
+      KASSERT(inode->i_block[inode_block] == 0);
+      inode->i_block[inode_block] = new_blocks[i];
+    } else {
+      uint32_t indirect_block;
+      uint32_t indirect_block_offset;
+      int result = get_inode_indirect_block(
+          fs, inode, inode_block, &indirect_block, &indirect_block_offset);
+      KASSERT(result == 0);
+      set_block_idx(fs, indirect_block, indirect_block_offset,
+                    new_blocks[i]);
+    }
+    inode_block++;
+  }
+  kfree(new_blocks);
+
+  inode->i_blocks += nblocks * (ext2_block_size(fs) / 512);
+  KASSERT(new_size >= inode->i_size);
+  inode->i_size = new_size;
+  return write_inode(fs, inode_num, inode);
+}
+
 typedef struct {
   uint32_t new_rec_len;
   uint32_t offset;
+  int overwrite;
 } link_internal_iter_t;
 static int link_internal_iter_func(
     void* arg, ext2_dirent_t* little_endian_dirent, uint32_t offset) {
@@ -458,6 +518,7 @@ static int link_internal_iter_func(
   if (min_rec_len + link_arg->new_rec_len <=
       ltoh16(little_endian_dirent->rec_len)) {
     link_arg->offset = offset;
+    link_arg->overwrite = (little_endian_dirent->inode == 0);
     return offset + 1;
   }
   return 0;
@@ -465,7 +526,11 @@ static int link_internal_iter_func(
 // Create a link in the given parent directory to the given inode with the given
 // name.  Doesn't look up the child inode to verify it's existence or increment
 // it's link count.
-static int link_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
+//
+// Note: the caller must update any vnodes for the parent with it's (potentially
+// new) size.
+static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
+                         uint32_t parent_inode, const char* name,
                          uint32_t inode) {
   KASSERT(parent->i_mode & EXT2_S_IFDIR);
 
@@ -478,9 +543,18 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
   int result =
       dirent_iterate(fs, parent, 0, &link_internal_iter_func, &iter_arg);
   if (!result) {
-    // TODO(aoates): allocate a new block at the end of the file and start
-    // there.
-    return -ENOSPC;
+    // Round the current size up to a round block size, then add a block.
+    const uint32_t block_size = ext2_block_size(fs);
+    uint32_t new_size =
+        (ceiling_div(parent->i_size, block_size) + 1) * block_size;
+    result = extend_inode(fs, parent, parent_inode, 1, new_size);
+    if (result) {
+      return result;
+    }
+    // Put the new dirent at the start of the new block.
+    iter_arg.offset = parent->i_size - block_size;
+    iter_arg.overwrite = 1;
+    KASSERT(iter_arg.offset % block_size == 0);
   }
 
   klogf("ext2 link_internal: splitting inode at offset %d\n", iter_arg.offset);
@@ -495,7 +569,7 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
 
   ext2_dirent_t* dirent_to_split = (ext2_dirent_t*)(block + block_offset);
   const uint16_t first_dirent_len =
-      (dirent_to_split->inode == 0) ? 0 :
+      iter_arg.overwrite ? 0 :
       ext2_dirent_min_size(dirent_to_split->name_len);
   const uint16_t second_dirent_len =
       ltoh16(dirent_to_split->rec_len) - first_dirent_len;
@@ -710,7 +784,8 @@ static int ext2_create(vnode_t* parent, const char* name) {
   kfree(child_inode);
 
   // Link it into the directory.
-  result = link_internal(fs, parent_inode, name, child_inode_num);
+  result = link_internal(fs, parent_inode, parent->num, name, child_inode_num);
+  parent->len = parent_inode->i_size;
   kfree(parent_inode);
   if (result) {
     // TODO(aoates): free the allocated inode
@@ -747,13 +822,14 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
   }
 
   // Link it to itself and it's parent.
-  result = link_internal(fs, child_inode, ".", child_inode_num);
+  result = link_internal(fs, child_inode, child_inode_num,
+                         ".", child_inode_num);
   if (result) {
     kfree(child_inode);
     kfree(parent_inode);
     return result;
   }
-  result = link_internal(fs, child_inode, "..", parent->num);
+  result = link_internal(fs, child_inode, child_inode_num, "..", parent->num);
   if (result) {
     kfree(child_inode);
     kfree(parent_inode);
@@ -761,8 +837,11 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
   }
   kfree(child_inode);
 
+  // TODO(aoates): fix up link counts
+
   // Link it into the directory.
-  result = link_internal(fs, parent_inode, name, child_inode_num);
+  result = link_internal(fs, parent_inode, parent->num, name, child_inode_num);
+  parent->len = parent_inode->i_size;
   kfree(parent_inode);
   if (result) {
     // TODO(aoates): free the allocated inode
