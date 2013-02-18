@@ -710,7 +710,8 @@ static int ext2_put_vnode(vnode_t* vnode) {
 typedef struct {
   const char* name;
   int name_len;
-  int inode_out;
+  uint32_t inode_out;
+  uint32_t offset_out;
 } ext2_lookup_iter_arg_t;
 static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
                                  uint32_t offset) {
@@ -722,9 +723,37 @@ static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
       kstrncmp(little_endian_dirent->name, lookup_args->name,
                lookup_args->name_len) == 0) {
     lookup_args->inode_out = inode;
+    lookup_args->offset_out = offset;
     return 1;
   }
   return 0;
+}
+
+// Look up the given name in the parent, and return it's inode and its offset of
+// the dirent_t within the parent inode.  Returns 0 on success, -errno on error.
+// TODO(aoates): support filetype extension, and return it here.
+// TODO(aoates): make this take a const ext2_inode_t*.
+static int lookup_internal(ext2fs_t* fs, ext2_inode_t* parent_inode,
+                           const char* name, uint32_t* inode_out,
+                           uint32_t* offset_out) {
+  KASSERT(parent_inode->i_mode & EXT2_S_IFDIR);
+
+  ext2_lookup_iter_arg_t arg;
+  arg.name = name;
+  arg.name_len = kstrlen(name);
+  arg.inode_out = arg.offset_out = 0;
+
+  int result =
+      dirent_iterate(fs, parent_inode, 0, &ext2_lookup_iter_func, &arg);
+  if (result) {
+    KASSERT(arg.inode_out > 0);
+    KASSERT(arg.offset_out < parent_inode->i_size);
+    if (inode_out) *inode_out = arg.inode_out;
+    if (offset_out) *offset_out = arg.offset_out;
+    return 0;
+  } else {
+    return -ENOENT;
+  }
 }
 
 static int ext2_lookup(vnode_t* parent, const char* name) {
@@ -738,17 +767,12 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
     return result;
   }
 
-  ext2_lookup_iter_arg_t arg;
-  arg.name = name;
-  arg.name_len = kstrlen(name);
-  arg.inode_out = -1;
-
-  dirent_iterate(fs, &inode, 0, &ext2_lookup_iter_func, &arg);
-
-  if (arg.inode_out >= 0) {
-    return arg.inode_out;
+  uint32_t child_inode;
+  result = lookup_internal(fs, &inode, name, &child_inode, 0x0);
+  if (result) {
+    return result;
   } else {
-    return -ENOENT;
+    return child_inode;
   }
 }
 
@@ -761,14 +785,17 @@ static int ext2_create(vnode_t* parent, const char* name) {
     return -EROFS;
   }
 
-  if (ext2_lookup(parent, name) >= 0) {
-    return -EEXIST;
-  }
-
   ext2_inode_t parent_inode;
   // TODO(aoates): do we want to store the inode in the vnode?
   int result = get_inode(fs, parent->num, &parent_inode);
   if (result) {
+    return result;
+  }
+
+  result = lookup_internal(fs, &parent_inode, name, 0x0, 0x0);
+  if (result == 0) {
+    return -EEXIST;
+  } else if (result != -ENOENT) {
     return result;
   }
 
@@ -799,14 +826,17 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
     return -EROFS;
   }
 
-  if (ext2_lookup(parent, name) >= 0) {
-    return -EEXIST;
-  }
-
   ext2_inode_t parent_inode;
   // TODO(aoates): do we want to store the inode in the vnode?
   int result = get_inode(fs, parent->num, &parent_inode);
   if (result) {
+    return result;
+  }
+
+  result = lookup_internal(fs, &parent_inode, name, 0x0, 0x0);
+  if (result == 0) {
+    return -EEXIST;
+  } else if (result != -ENOENT) {
     return result;
   }
 
