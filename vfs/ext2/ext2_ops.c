@@ -220,6 +220,7 @@ static int write_inode(ext2fs_t* fs, uint32_t inode_num,
 
 // Given a block number, return the ith uint32_t of that block.
 static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
+  KASSERT(block_num != 0);
   void* block = block_cache_get(fs->dev, block_num);
   KASSERT(block);
   uint32_t value = ((uint32_t*)block)[idx];
@@ -230,6 +231,7 @@ static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
 // Given a block number, set the ith uint32_t of that block.
 static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
                           uint32_t value) {
+  KASSERT(block_num != 0);
   void* block = block_cache_get(fs->dev, block_num);
   KASSERT(block);
   ((uint32_t*)block)[idx] = htol32(value);
