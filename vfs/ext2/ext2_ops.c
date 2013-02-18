@@ -1025,6 +1025,8 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
 
   // Get the parent inode.
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) return -EROFS;
+
   ext2_inode_t parent_inode;
   int result = get_inode(fs, parent->num, &parent_inode);
   if (result)
@@ -1111,7 +1113,47 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 }
 
 static int ext2_unlink(vnode_t* parent, const char* name) {
-  return -EROFS;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  // Get the parent inode.
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) return -EROFS;
+
+  ext2_inode_t parent_inode;
+  int result = get_inode(fs, parent->num, &parent_inode);
+  if (result)
+    return result;
+  KASSERT(parent_inode.i_mode & EXT2_S_IFDIR);
+
+  // Get the child inode.
+  const int child_inode_num = ext2_lookup(parent, name);
+  if (child_inode_num < 0)
+    return child_inode_num;
+
+  ext2_inode_t child_inode;
+  result = get_inode(fs, child_inode_num, &child_inode);
+  if (result)
+    return result;
+  if (child_inode.i_mode & EXT2_S_IFDIR)
+    return -EISDIR;
+
+  KASSERT(child_inode.i_links_count >= 1);
+
+  result = unlink_internal(fs, &parent_inode, name);
+  if (result)
+    return result;
+
+  // Update link counts.
+  child_inode.i_links_count--;
+  write_inode(fs, child_inode_num, &child_inode);
+
+  if (child_inode.i_links_count == 0) {
+    result = free_inode(fs, child_inode_num, &child_inode);
+    return result;
+  } else {
+    return 0;
+  }
 }
 
 typedef struct {
