@@ -771,6 +771,10 @@ static int ext2_create(vnode_t* parent, const char* name) {
     return -EROFS;
   }
 
+  if (ext2_lookup(parent, name) >= 0) {
+    return -EEXIST;
+  }
+
   ext2_inode_t* parent_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
   // TODO(aoates): do we want to store the inode in the vnode?
   int result = get_inode(fs, parent->num, parent_inode);
@@ -808,6 +812,10 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
   if (fs->read_only) {
     return -EROFS;
+  }
+
+  if (ext2_lookup(parent, name) >= 0) {
+    return -EEXIST;
   }
 
   ext2_inode_t* parent_inode = (ext2_inode_t*)kmalloc(fs->sb.s_inode_size);
