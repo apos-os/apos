@@ -439,16 +439,17 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
     return -ENOMEM;
   }
   for (unsigned int i = 0; i < nblocks; ++i) {
-    int idx_in_bg = bg_bitmap_find_free(fs, block_bitmap);
-    if (idx_in_bg < 0) {
+    int idx_in_bg_bmp = bg_bitmap_find_free(fs, block_bitmap);
+    if (idx_in_bg_bmp < 0) {
       block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
       klogf("ext2 warning: block group desc indicated free blocks, but none "
             "found in block bitmap!\n");
       fs->unhealthy = 1;
       return -ENOSPC;
     }
-    bg_bitmap_set(block_bitmap, idx_in_bg);
-    blocks_out[i] = bg * fs->sb.s_blocks_per_group + idx_in_bg;
+    bg_bitmap_set(block_bitmap, idx_in_bg_bmp);
+    blocks_out[i] = fs->sb.s_first_data_block +bg * fs->sb.s_blocks_per_group +
+        idx_in_bg_bmp;
   }
   block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
   return 0;
