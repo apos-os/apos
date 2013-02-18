@@ -988,7 +988,9 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   kfree(inode);
 
   if (result) {
-    KASSERT(arg.last_dirent->offset >= offset);
+    if (arg.last_dirent) {
+      KASSERT(arg.last_dirent->offset >= offset);
+    }
   } else if (arg.last_dirent != 0x0) {
     // If we went through all the dirents possible, set the offset to the end of
     // the file.
