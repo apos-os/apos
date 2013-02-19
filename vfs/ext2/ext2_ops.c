@@ -603,8 +603,11 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 // Extend the given inode by N blocks, and updates it's size to the given value.
 // Returns 0 on success, or -errno on error.  On error, the no new blocks are
 // allocated, and the size isn't updated.
+//
+// If clear_new_blocks is set, the new blocks are loaded and zeroed out.
 static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
-                        unsigned int nblocks, uint32_t new_size) {
+                        unsigned int nblocks, uint32_t new_size,
+                        int clear_new_blocks) {
   const uint32_t block_size = ext2_block_size(fs);
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = block_size / sizeof(uint32_t);
@@ -680,6 +683,14 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
 
       set_block_idx(fs, indirect_block, indirect_block_offset,
                     new_blocks[i]);
+    }
+    if (clear_new_blocks) {
+      // TODO(aoates): there's no actual need to read this from disk if it's
+      // not in the cache.  Add an option to block_cache_get() that skips the
+      // read.
+      void* block = block_cache_get(fs->dev, new_blocks[i]);
+      kmemset(block, 0, block_size);
+      block_cache_put(fs->dev, new_blocks[i]);
     }
     inode_block++;
   }
@@ -783,7 +794,7 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
     // Round the current size up to a round block size, then add a block.
     uint32_t new_size =
         (ceiling_div(parent->i_size, block_size) + 1) * block_size;
-    result = extend_inode(fs, parent, parent_inode, 1, new_size);
+    result = extend_inode(fs, parent, parent_inode, 1, new_size, 0);
     if (result) {
       return result;
     }
@@ -1221,7 +1232,7 @@ static int ext2_write(vnode_t* vnode, int offset,
       klogf("allocating %d new blocks for inode %d\n", new_blocks - old_blocks,
             vnode->num);
       result = extend_inode(fs, &inode, vnode->num, new_blocks - old_blocks,
-                            new_size);
+                            new_size, 1);
       if (result)
         return result;
     }
