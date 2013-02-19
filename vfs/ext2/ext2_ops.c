@@ -180,6 +180,9 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 
   ext2_inode_ltoh(inode);
 
+  //klogf("inode %d:\n", inode_num);
+  //ext2_inode_log(inode, 0);
+
   return 0;
 }
 
@@ -238,16 +241,11 @@ static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
   block_cache_put(fs->dev, block_num);
 }
 
-// Given an inode and a block index within that inode (that's not in the inode's
-// i_block list), return the indirect block containing that block's address (in
-// *indirect_block_out) and the offset within that block (in
-// *indirect_block_offset_out).
-//
-// Returns 0 on success, or -errno on error.
-static int get_inode_indirect_block(ext2fs_t* fs, ext2_inode_t* inode,
-                                    uint32_t inode_block,
-                                    uint32_t* indirect_block_out,
-                                    uint32_t* indirect_block_offset_out) {
+// Given an inode block index, return the level (0 for direct, 1 for indirect,
+// etc), and the offset to get to that level (0 for direct, 12 for indirect, 12
+// + 1024 for double indirect, etc).
+static void get_inode_level_and_offset(ext2fs_t* fs, uint32_t inode_block,
+                                       int* level_out, uint32_t* offset_out) {
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
   const uint32_t kBlocksPerDoubleIndirect =
@@ -256,41 +254,76 @@ static int get_inode_indirect_block(ext2fs_t* fs, ext2_inode_t* inode,
       kBlocksPerDoubleIndirect * kBlocksPerIndirect;
 
   if (inode_block < kDirectBlocks) {
-    return -ERANGE;
+    *level_out = 0;
+    *offset_out = 0;
   } else if (inode_block < kDirectBlocks + kBlocksPerIndirect) {
-    // Single indirect block.
-    *indirect_block_out = inode->i_block[12];
-    *indirect_block_offset_out = inode_block - kDirectBlocks;
-    return 0;
+    *level_out = 1;
+    *offset_out = kDirectBlocks;
   } else if (inode_block < kDirectBlocks + kBlocksPerIndirect +
              kBlocksPerDoubleIndirect) {
-    // Doubly indirect block.
-    // The index within the doubly indirect blocks.
-    const uint32_t dbl_block_idx =
-        inode_block - kDirectBlocks - kBlocksPerIndirect;
-    const uint32_t dbl_block = inode->i_block[13];
-    const uint32_t indirect_block = get_block_idx(
-        fs, dbl_block, dbl_block_idx / kBlocksPerIndirect);
-
-    *indirect_block_out = indirect_block;
-    *indirect_block_offset_out = dbl_block_idx % kBlocksPerIndirect;
-    return 0;
+    *level_out = 2;
+    *offset_out = kDirectBlocks + kBlocksPerIndirect;
   } else {
     // Triply indirect block.
     KASSERT(inode_block < kDirectBlocks + kBlocksPerIndirect +
             kBlocksPerDoubleIndirect + kBlocksPerTripleIndirect);
-    const uint32_t triple_block_idx =
-        inode_block - kDirectBlocks - kBlocksPerIndirect -
-        kBlocksPerDoubleIndirect;
-    const uint32_t triple_block = inode->i_block[14];
-    const uint32_t dbl_block = get_block_idx(
-        fs, triple_block, triple_block_idx / kBlocksPerDoubleIndirect);
-    const uint32_t dbl_block_idx = triple_block_idx % kBlocksPerDoubleIndirect;
-    const uint32_t indirect_block = get_block_idx(
-        fs, dbl_block, dbl_block_idx / kBlocksPerIndirect);
+    *level_out = 3;
+    *offset_out = kDirectBlocks + kBlocksPerIndirect + kBlocksPerDoubleIndirect;
+  }
+}
 
-    *indirect_block_out = indirect_block;
-    *indirect_block_offset_out = dbl_block_idx % kBlocksPerIndirect;
+// Given a base block, a level (>= 1), and an index within that level, return
+// the indirect block containing that block's address (in *indirect_block_out)
+// and the offset within that block (in *indirect_block_offset_out).
+static void get_indirect_block(ext2fs_t* fs, int level,
+                               uint32_t base_block, uint32_t index,
+                               uint32_t* indirect_block_out,
+                               uint32_t* indirect_block_offset_out) {
+  KASSERT(level > 0 && level <= 3);
+  const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
+  // How many blocks are (recursively) in this level.
+  uint32_t blocks_in_next_level = 1;
+  for (int i = 1; i < level; ++i) {
+    blocks_in_next_level *= kBlocksPerIndirect;
+  }
+  if (level == 1) {
+    KASSERT(index < kBlocksPerIndirect);
+    *indirect_block_out = base_block;
+    *indirect_block_offset_out = index;
+  } else {
+    const uint32_t next_level_block = index / blocks_in_next_level;
+    const uint32_t next_level_index =
+        index - (next_level_block * blocks_in_next_level);
+    get_indirect_block(fs, level - 1,
+                       get_block_idx(fs, base_block, next_level_block),
+                       next_level_index,
+                       indirect_block_out, indirect_block_offset_out);
+  }
+}
+
+// Given an inode and a block index within that inode (that's not in the inode's
+// i_block list), return the indirect block containing that block's address (in
+// *indirect_block_out) and the offset within that block (in
+// *indirect_block_offset_out).
+//
+// Returns 0 on success, or -errno on error.
+// TODO(aoates): deprecate this  and replace with a solution based on
+// get_inode_level_and_offset and a recursive function.
+static int get_inode_indirect_block(ext2fs_t* fs, ext2_inode_t* inode,
+                                    uint32_t inode_block,
+                                    uint32_t* indirect_block_out,
+                                    uint32_t* indirect_block_offset_out) {
+  int level;
+  uint32_t offset;
+  get_inode_level_and_offset(fs, inode_block, &level, &offset);
+  if (level == 0) {
+    return -ERANGE;
+  } else {
+    KASSERT(level <= 3);
+    get_indirect_block(fs, level, inode->i_block[11 + level],
+                       inode_block - offset,
+                       indirect_block_out,
+                       indirect_block_offset_out);
     return 0;
   }
 }
