@@ -804,7 +804,6 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
     new_block_created = 1;
   }
 
-  klogf("ext2 link_internal: splitting inode at offset %d\n", iter_arg.offset);
   const uint32_t inode_block = iter_arg.offset / block_size;
   const uint32_t block_offset = iter_arg.offset % block_size;
   const uint32_t block_num = get_inode_block(fs, parent, inode_block);
@@ -1229,8 +1228,6 @@ static int ext2_write(vnode_t* vnode, int offset,
     const uint32_t old_blocks = ceiling_div(inode.i_size, block_size);
     const uint32_t new_blocks = ceiling_div(new_size, block_size);
     if (new_blocks > old_blocks) {
-      klogf("allocating %d new blocks for inode %d\n", new_blocks - old_blocks,
-            vnode->num);
       result = extend_inode(fs, &inode, vnode->num, new_blocks - old_blocks,
                             new_size, 1);
       if (result)
