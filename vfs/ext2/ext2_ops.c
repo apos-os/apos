@@ -1175,6 +1175,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   if (result) {
     return result;
   }
+  KASSERT(vnode->len == (int)inode.i_size);
   const uint32_t block = get_inode_block(fs, &inode, inode_block);
   KASSERT(block > 0);
 
@@ -1192,7 +1193,66 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
 static int ext2_write(vnode_t* vnode, int offset,
                       const void* buf, int bufsize) {
-  return -EROFS;
+  KASSERT(vnode->type == VNODE_REGULAR);
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  KASSERT(offset >= 0);
+
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t inode;
+  int result = get_inode(fs, vnode->num, &inode);
+  if (result) {
+    return result;
+  }
+  KASSERT(vnode->len == (int)inode.i_size);
+
+  // Resize the file if needed.
+  const uint32_t block_size = ext2_block_size(fs);
+  if ((uint32_t)offset + bufsize > inode.i_size) {
+    const uint32_t new_size = offset + bufsize;
+    // TODO(aoates): this isn't quite right, since we may have pre-allocated
+    // additional blocks.
+    const uint32_t old_blocks = ceiling_div(inode.i_size, block_size);
+    const uint32_t new_blocks = ceiling_div(new_size, block_size);
+    if (new_blocks > old_blocks) {
+      klogf("allocating %d new blocks for inode %d\n", new_blocks - old_blocks,
+            vnode->num);
+      result = extend_inode(fs, &inode, vnode->num, new_blocks - old_blocks,
+                            new_size);
+      if (result)
+        return result;
+    }
+    inode.i_size = new_size;
+    KASSERT(write_inode(fs, vnode->num, &inode) == 0);
+    vnode->len = new_size;
+  }
+  KASSERT((uint32_t)vnode->len == inode.i_size);
+  KASSERT(vnode->len >= offset + bufsize);
+
+  uint32_t bytes_to_write = bufsize;
+  while (bytes_to_write > 0) {
+    const uint32_t inode_block = offset / block_size;
+    const uint32_t block_offset = offset % block_size;
+    const uint32_t chunk_size = min(block_size - block_offset, bytes_to_write);
+
+    const uint32_t block = get_inode_block(fs, &inode, inode_block);
+    KASSERT(block > 0);
+
+    void* block_data = block_cache_get(fs->dev, block);
+    if (!block_data) {
+      return -ENOMEM;
+    }
+    KASSERT_DBG(block_offset + chunk_size <= block_size);
+    kmemcpy(block_data + block_offset, buf, chunk_size);
+    block_cache_put(fs->dev, block);
+
+    offset += chunk_size;
+    bytes_to_write -= chunk_size;
+  }
+  return bufsize;
 }
 
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
