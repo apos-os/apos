@@ -455,6 +455,56 @@ static void write_cmd(int argc, char* argv[]) {
   vfs_close(fd);
 }
 
+static void cp_cmd(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: cp <src> <dst>\n");
+    return;
+  }
+
+  const int src_fd = vfs_open(argv[1], VFS_O_RDONLY);
+  if (src_fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-src_fd));
+    return;
+  }
+
+  const int dst_fd = vfs_open(argv[2], VFS_O_WRONLY | VFS_O_CREAT);
+  if (dst_fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[2], errorname(-dst_fd));
+    vfs_close(src_fd);
+    return;
+  }
+
+  const int kBufSize = 900;
+  char buf[kBufSize];
+  while (1) {
+    const int len = vfs_read(src_fd, buf, kBufSize);
+    if (len < 0) {
+      ksh_printf("error: couldn't read from file: %s\n", errorname(-len));
+      vfs_close(src_fd);
+      vfs_close(dst_fd);
+      return;
+    } else if (len == 0) {
+      break;
+    } else {
+      int bytes_to_write = len;
+      int offset = 0;
+      while (bytes_to_write > 0) {
+        const int write_len = vfs_write(dst_fd, buf + offset, bytes_to_write);
+        if (write_len < 0) {
+          ksh_printf("error: couldn't write to file: %s\n",
+                     errorname(-write_len));
+          vfs_close(src_fd);
+          vfs_close(dst_fd);
+          return;
+        }
+        bytes_to_write -= write_len;
+      }
+    }
+  }
+  vfs_close(src_fd);
+  vfs_close(dst_fd);
+}
+
 static void rm_cmd(int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: rm <path>\n");
@@ -551,6 +601,7 @@ static cmd_t CMDS[] = {
   { "cat", &cat_cmd },
   { "write", &write_cmd },
   { "rm", &rm_cmd },
+  { "cp", &cp_cmd },
 
   { "hash_file", &hash_file_cmd },
 
