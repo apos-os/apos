@@ -285,10 +285,6 @@ static void get_indirect_block(ext2fs_t* fs, int level,
                                uint32_t* indirect_block_out,
                                uint32_t* indirect_block_offset_out) {
   KASSERT(level > 0 && level <= 3);
-  *indirect_block_out = base_block;
-  *indirect_block_offset_out = index;
-  *level_out = level;
-
   if (base_block == 0) {
     // We can't continue to dereference, so bail early.
     *level_out = level + 1;
@@ -303,11 +299,17 @@ static void get_indirect_block(ext2fs_t* fs, int level,
   }
   if (level == 1) {
     KASSERT(index < kBlocksPerIndirect);
+    *indirect_block_out = base_block;
+    *indirect_block_offset_out = index;
+    *level_out = level;
     return;
   } else {
     const uint32_t next_level_block_idx = index / blocks_in_next_level;
     const uint32_t next_level_index =
         index - (next_level_block_idx * blocks_in_next_level);
+    *indirect_block_out = base_block;
+    *indirect_block_offset_out = next_level_block_idx;
+    *level_out = level;
     get_indirect_block(fs, level - 1,
                        get_block_idx(fs, base_block, next_level_block_idx),
                        next_level_index,
