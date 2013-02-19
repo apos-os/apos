@@ -475,6 +475,27 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   return 0;
 }
 
+// Free an n-th level indirect block.
+static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level) {
+  KASSERT(level >= 1);
+  if (block_num == 0)
+    return;
+
+  uint32_t* block = block_cache_get(fs->dev, block_num);
+  KASSERT(block);
+
+  const uint32_t block_size = ext2_block_size(fs);
+  for (unsigned int i = 0; i < block_size / sizeof(uint32_t); ++i) {
+    if (level == 1 && block[i] != 0) {
+      free_block(fs, block[i]);
+    } else if (level > 1) {
+      free_indirect_block(fs, block[i], level - 1);
+    }
+  }
+  block_cache_put(fs->dev, block_num);
+  free_block(fs, block_num);  // Free the indirect block itself.
+}
+
 // Allocate a new inode.  Depending on the type, it may be allocated in the
 // parent's block group, or another block group.
 //
@@ -566,25 +587,13 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
 
   // Free all of its blocks.
-  // TODO(aoates): this is a bit lenient in case there are holes, but is that
-  // actually possible?
-  // TODO(aoates): this is a ridiculously inefficient way to do this (since it
-  // requires deref'ing the indirect blocks each time).
-  uint32_t blocks_to_free = inode->i_blocks / (2 << fs->sb.s_log_block_size);
-  uint32_t inode_block = 0;
-  // TODO(aoates): should also verify that inode_blocks won't exceed the maximum
-  // number of blocks.
-  while (blocks_to_free > 0) {
-    const uint32_t block_to_free = get_inode_block(fs, inode, inode_block);
-    inode_block++;
-    if (block_to_free != 0) {
-      int result = free_block(fs, block_to_free);
-      if (result) {
-        return result;
-      }
-      blocks_to_free--;
-    }
+  for (int i = 0; i < 12; ++i) {
+    if (inode->i_block[i])
+      free_block(fs, inode->i_block[i]);
   }
+  free_indirect_block(fs, inode->i_block[12], 1);
+  free_indirect_block(fs, inode->i_block[13], 2);
+  free_indirect_block(fs, inode->i_block[14], 3);
 
   kmemset(inode, 0, sizeof(ext2_inode_t));
   write_inode(fs, inode_num, inode);
