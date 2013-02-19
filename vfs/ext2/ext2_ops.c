@@ -275,29 +275,44 @@ static void get_inode_level_and_offset(ext2fs_t* fs, uint32_t inode_block,
 // Given a base block, a level (>= 1), and an index within that level, return
 // the indirect block containing that block's address (in *indirect_block_out)
 // and the offset within that block (in *indirect_block_offset_out).
+//
+// If we reach a '0' block number before we get to the final level, we set the
+// arguments (including *level_out to the current level) and return early.
 static void get_indirect_block(ext2fs_t* fs, int level,
                                uint32_t base_block, uint32_t index,
+                               int* level_out,
                                uint32_t* indirect_block_out,
                                uint32_t* indirect_block_offset_out) {
   KASSERT(level > 0 && level <= 3);
+  KASSERT(base_block != 0);
   const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
   // How many blocks are (recursively) in this level.
   uint32_t blocks_in_next_level = 1;
   for (int i = 1; i < level; ++i) {
     blocks_in_next_level *= kBlocksPerIndirect;
   }
+  *indirect_block_out = base_block;
+  *indirect_block_offset_out = index;
+  *level_out = 1;
   if (level == 1) {
     KASSERT(index < kBlocksPerIndirect);
-    *indirect_block_out = base_block;
-    *indirect_block_offset_out = index;
+    return;
   } else {
-    const uint32_t next_level_block = index / blocks_in_next_level;
+    const uint32_t next_level_block_idx = index / blocks_in_next_level;
     const uint32_t next_level_index =
-        index - (next_level_block * blocks_in_next_level);
+        index - (next_level_block_idx * blocks_in_next_level);
+    const uint32_t next_level_block =
+        get_block_idx(fs, base_block, next_level_block_idx);
+    if (next_level_block == 0) {
+      // We can't continue to dereference, so bail early.
+      return;
+    }
     get_indirect_block(fs, level - 1,
-                       get_block_idx(fs, base_block, next_level_block),
+                       next_level_block,
                        next_level_index,
-                       indirect_block_out, indirect_block_offset_out);
+                       level_out,
+                       indirect_block_out,
+                       indirect_block_offset_out);
   }
 }
 
@@ -320,10 +335,14 @@ static int get_inode_indirect_block(ext2fs_t* fs, ext2_inode_t* inode,
     return -ERANGE;
   } else {
     KASSERT(level <= 3);
+    int final_level;
+    KASSERT(inode->i_block[11 + level] != 0);
     get_indirect_block(fs, level, inode->i_block[11 + level],
                        inode_block - offset,
+                       &final_level,
                        indirect_block_out,
                        indirect_block_offset_out);
+    KASSERT(final_level == 1);
     return 0;
   }
 }
