@@ -14,6 +14,8 @@
 
 #include "dev/block_cache.h"
 
+#include <stddef.h>
+
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -24,9 +26,10 @@
 #include "page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 
 #define BLOCKS_PER_PAGE (PAGE_SIZE / BLOCK_CACHE_BLOCK_SIZE)
-#define DEFAULT_CACHE_SIZE 100
+#define DEFAULT_CACHE_SIZE 2000
 
 static int g_size = 0;
 static int g_initialized = 0;
@@ -34,20 +37,144 @@ static int g_max_size = DEFAULT_CACHE_SIZE;
 
 static htbl_t g_table;
 
+// Lists of cache entries.
+struct cache_entry;
+typedef struct {
+  struct cache_entry* prev;
+  struct cache_entry* next;
+} cache_entry_link_t;
+
+typedef struct {
+  struct cache_entry* head;
+  struct cache_entry* tail;
+} cache_entry_list_t;
+
 // A cache entry.
 // TODO(aoates): we could probably stuff this all into a single uint32_t.
-typedef struct {
+typedef struct cache_entry {
+  dev_t dev;
+  uint32_t offset;
   void* block;
   int pin_count;
 
+  // Link on the flush queue and LRU queue.
+  cache_entry_link_t flushq;
+  cache_entry_link_t lruq;
+
+  // Set to 1 when the entry is flushed to disk, and to 0 when the entry is
+  // taken by a thread.
+  uint8_t flushed;
+  uint8_t flushing;
+
   int initialized;
-  kthread_queue_t init_wait_queue;
+  kthread_queue_t wait_queue;  // Threads waiting for init or flush.
 } cache_entry_t;
 
 // TODO(aoates): make this flexible.
 #define FREE_BLOCK_STACK_SIZE DEFAULT_CACHE_SIZE
 static uint32_t g_free_block_stack[FREE_BLOCK_STACK_SIZE];
 static int g_free_block_stack_idx = 0;  // First free entry.
+
+// Queue of cache entries that need to be flushed.
+static cache_entry_list_t g_flush_queue = {0x0, 0x0};
+
+// LRU queue of cache entries that *might* be freeable.
+static cache_entry_list_t g_lru_queue = {0x0, 0x0};
+
+static inline void init_link(cache_entry_link_t* link) {
+  link->prev = link->next = 0x0;
+}
+
+// TODO(aoates): move this list stuff to a common place where others can use it.
+static inline cache_entry_link_t* get_link(cache_entry_t* entry,
+                                           size_t link_offset) {
+  return (cache_entry_link_t*)((void*)entry + link_offset);
+}
+
+static void _cache_entry_push(cache_entry_list_t* list,
+                              cache_entry_t* entry,
+                              size_t link_offset) {
+  cache_entry_link_t* link = get_link(entry, link_offset);
+  KASSERT_DBG(link->prev == 0x0);
+  KASSERT_DBG(link->next == 0x0);
+  if (list->head == 0x0) {
+    KASSERT_DBG(list->tail == 0x0);
+    list->head = list->tail = entry;
+  } else {
+    KASSERT_DBG(list->tail != 0x0);
+    link->prev = list->tail;
+    cache_entry_link_t* list_tail_link = get_link(list->tail, link_offset);
+    list_tail_link->next = entry;
+    list->tail = entry;
+  }
+}
+#define cache_entry_push(list, entry, link_name) \
+    _cache_entry_push(list, entry, offsetof(cache_entry_t, link_name))
+
+static cache_entry_t* _cache_entry_pop(cache_entry_list_t* list,
+                                       size_t link_offset) {
+  if (list->head == 0x0) {
+    KASSERT_DBG(list->tail == 0x0);
+    return 0x0;
+  } else {
+    cache_entry_t* result = list->head;
+    cache_entry_link_t* link = get_link(result, link_offset);
+    KASSERT_DBG(link->prev == 0x0);
+    if (link->next != 0x0) {
+      KASSERT_DBG(list->tail != result);
+      cache_entry_link_t* link_next_link = get_link(link->next, link_offset);
+      link_next_link->prev = 0x0;
+      list->head = link->next;
+      link->next = 0x0;
+    } else {
+      KASSERT_DBG(list->tail == list->head);
+      list->tail = list->head = 0x0;
+    }
+    return result;
+  }
+}
+#define cache_entry_pop(list, link_name) \
+    _cache_entry_pop(list, offsetof(cache_entry_t, link_name))
+
+static void _cache_entry_remove(cache_entry_list_t* list,
+                                cache_entry_t* entry,
+                                size_t link_offset) {
+  cache_entry_link_t* link = get_link(entry, link_offset);
+  KASSERT_DBG(list->head != 0x0);
+  KASSERT_DBG(list->tail != 0x0);
+  if (list->head == entry) {
+    _cache_entry_pop(list, link_offset);
+  } else if (list->tail == entry) {
+    KASSERT_DBG(link->next == 0x0);
+    KASSERT_DBG(link->prev != 0x0);
+    list->tail = link->prev;
+    KASSERT_DBG(list->tail != 0x0);
+    cache_entry_link_t* list_tail_link = get_link(list->tail, link_offset);
+    KASSERT_DBG(list_tail_link->next == entry);
+    list_tail_link->next = 0x0;
+    link->prev = 0x0;
+  } else {
+    KASSERT_DBG(link->prev != 0x0);
+    KASSERT_DBG(link->next != 0x0);
+    cache_entry_link_t* prev_link = get_link(link->prev, link_offset);
+    cache_entry_link_t* next_link = get_link(link->next, link_offset);
+    prev_link->next = link->next;
+    next_link->prev = link->prev;
+    link->prev = link->next = 0x0;
+  }
+}
+#define cache_entry_remove(list, entry, link_name) \
+    _cache_entry_remove(list, entry, offsetof(cache_entry_t, link_name))
+
+static int _cache_entry_on_list(cache_entry_t* entry,
+                                size_t link_offset) {
+  cache_entry_link_t* link = get_link(entry, link_offset);
+  return link->next != 0x0 || link->prev != 0x0;
+}
+#define cache_entry_on_list(entry, link_name) \
+    _cache_entry_on_list(entry, offsetof(cache_entry_t, link_name))
+
+#define cache_entry_next(entry, link_name) (entry)->link_name.next
 
 // Acquire more free blocks and add them to the free block stack.
 static void get_more_free_blocks() {
@@ -102,13 +229,119 @@ static uint32_t block_hash(dev_t dev, int offset) {
   return h;
 }
 
+// Flush the given cache entry to disk.
+static void flush_cache_entry(cache_entry_t* entry) {
+  // Write the data back to disk.  This may block.
+  entry->flushing = 1;
+  block_dev_t* bd = dev_get_block(entry->dev);
+  const uint32_t sector =
+      entry->offset * BLOCK_CACHE_BLOCK_SIZE / bd->sector_size;
+  const int result =
+      bd->write(bd, sector, entry->block, BLOCK_CACHE_BLOCK_SIZE);
+  KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
+  entry->flushing = 0;
+  entry->flushed = 1;
+  scheduler_wake_all(&entry->wait_queue);
+}
+
+// The flush thread that works through the flush queue, flushing cache entries
+// and sleeping.
+static kthread_t g_flush_queue_thread;
+static void* flush_queue_thread(void* arg) {
+  const int kSleepMs = 5000;
+  const int kMaxFlushesPerCycle = 1000;
+  while (1) {
+    ksleep(kSleepMs);
+    int flushed = 0;
+    while (flushed < kMaxFlushesPerCycle) {
+      cache_entry_t* entry = cache_entry_pop(&g_flush_queue, flushq);
+      if (!entry) break;
+      flush_cache_entry(entry);
+      flushed++;
+    }
+    if (flushed > 0)
+      klogf("<block cache flushed %d entries>\n", flushed);
+  }
+  return 0x0;
+}
+
+// Remove the given (flushed and unpinned) cache entry from the table, release
+// it's block, and free the entry object.
+static void free_cache_entry(cache_entry_t* entry) {
+  KASSERT_DBG(cache_entry_on_list(entry, flushq) == 0);
+  KASSERT_DBG(cache_entry_on_list(entry, lruq) == 0);
+  KASSERT_DBG(entry->pin_count == 0);
+  KASSERT_DBG(entry->flushed);
+
+  //klogf("<block cache free block %d>\n", entry->offset);
+  g_size--;
+  const uint32_t h = block_hash(entry->dev, entry->offset);
+  KASSERT(htbl_remove(&g_table, h) == 0);
+  put_free_block(entry->block);
+  kfree(entry);
+}
+
+// Go through the cache and look for unpinned entries we can flush.
+// TODO(aoates): use some sort of LRU mechanism to decide what to free.
+static void maybe_free_cache_space() {
+  const int kMaxEntriesFreed = 1;
+  cache_entry_t* entry = g_lru_queue.head;
+  int entries_freed = 0;
+  while (entry && entries_freed < kMaxEntriesFreed) {
+    KASSERT(entry->pin_count == 0);
+    if (entry->flushed) {
+      KASSERT_DBG(!cache_entry_on_list(entry, flushq));
+      cache_entry_remove(&g_lru_queue, entry, lruq);
+
+      // No-one else has it, so free it.
+      free_cache_entry(entry);
+      entries_freed++;
+    }
+    entry = cache_entry_next(entry, lruq);
+  }
+
+  // If nothing is already flushed, find an unpinned entry and force flush it.
+  entry = g_lru_queue.head;
+  while (entry && entries_freed < kMaxEntriesFreed) {
+    KASSERT(entry->pin_count == 0);
+    if (cache_entry_on_list(entry, flushq)) {
+      cache_entry_remove(&g_flush_queue, entry, flushq);
+      cache_entry_remove(&g_lru_queue, entry, lruq);
+
+      flush_cache_entry(entry);
+
+      // flush_cache_entry blocks, so we have to verify that no one took it in
+      // the meantime.
+      if (entry->flushed && entry->pin_count == 0) {
+        // No-one else has it, so free it.
+        free_cache_entry(entry);
+        entries_freed++;
+      }
+    }
+    entry = cache_entry_next(entry, lruq);
+  }
+
+  // TODO(aoates): if something is currently flushing, block for it to finish.
+}
+
+static void init_block_cache() {
+  KASSERT(!g_initialized);
+  htbl_init(&g_table, g_max_size * 2);
+  KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) != 0);
+  scheduler_make_runnable(g_flush_queue_thread);
+  g_initialized = 1;
+}
+
 void* block_cache_get(dev_t dev, int offset) {
+  //if (offset == 1) klogf("block_cache_get(block=1)\n");
   if (!g_initialized) {
-    htbl_init(&g_table, g_max_size * 2);
-    g_initialized = 1;
+    init_block_cache();
   }
   if (g_size >= g_max_size) {
-    return 0x0;
+    maybe_free_cache_space();
+    if (g_size >= g_max_size) {
+      return 0x0;
+    }
   }
 
   const uint32_t h = block_hash(dev, offset);
@@ -122,10 +355,16 @@ void* block_cache_get(dev_t dev, int offset) {
 
     g_size++;
     cache_entry_t* entry = (cache_entry_t*)kmalloc(sizeof(cache_entry_t));
+    entry->dev = dev;
+    entry->offset = offset;
     entry->block = block;
     entry->pin_count = 1;
     entry->initialized = 0;
-    kthread_queue_init(&entry->init_wait_queue);
+    entry->flushed = 0;
+    entry->flushing = 0;
+    init_link(&entry->flushq);
+    init_link(&entry->lruq);
+    kthread_queue_init(&entry->wait_queue);
 
     // Put the uninitialized entry into the table.
     htbl_put(&g_table, h, entry);
@@ -141,21 +380,27 @@ void* block_cache_get(dev_t dev, int offset) {
     KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
 
     entry->initialized = 1;
-    scheduler_wake_all(&entry->init_wait_queue);
+    scheduler_wake_all(&entry->wait_queue);
 
     return entry->block;
   } else {
     cache_entry_t* entry = (cache_entry_t*)tbl_value;
     entry->pin_count++;
     if (!entry->initialized) {
-      scheduler_wait_on(&entry->init_wait_queue);
+      scheduler_wait_on(&entry->wait_queue);
     }
     KASSERT(entry->initialized);
+    if (cache_entry_on_list(entry, lruq)) {
+      KASSERT(entry->pin_count == 1);
+      cache_entry_remove(&g_lru_queue, entry, lruq);
+    }
+    entry->flushed = 0;
     return entry->block;
   }
 }
 
 void block_cache_put(dev_t dev, int offset) {
+  //if (offset == 1) klogf("block_cache_put(block=1)\n");
   KASSERT(g_initialized);
 
   const uint32_t h = block_hash(dev, offset);
@@ -163,35 +408,18 @@ void block_cache_put(dev_t dev, int offset) {
   KASSERT(htbl_get(&g_table, h, &tbl_value) == 0);
 
   cache_entry_t* entry = (cache_entry_t*)tbl_value;
+  KASSERT(entry->dev.major == dev.major && entry->dev.minor == dev.minor);
   entry->pin_count--;
 
-  // TODO(aoates): don't actually remove the block from the cache until we
-  // need to reclaim memory.
+  // The block needs to be flushed, if it's not already scheduled for one.
+  entry->flushed = 0;
+  if (!cache_entry_on_list(entry, flushq)) {
+    cache_entry_push(&g_flush_queue, entry, flushq);
+  }
+
+  KASSERT(!cache_entry_on_list(entry, lruq));
   if (entry->pin_count == 0) {
-    // First, flush the data to disk.  Mark the node as uninitialized in case
-    // other threads are trying to get it.
-    entry->initialized = 0;
-
-    // Write the data back to disk.  This may block.
-    block_dev_t* bd = dev_get_block(dev);
-    const uint32_t sector = offset * BLOCK_CACHE_BLOCK_SIZE / bd->sector_size;
-    const int result =
-        bd->write(bd, sector, entry->block, BLOCK_CACHE_BLOCK_SIZE);
-    KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
-
-    // Now re-check if anyone has tried to take the cache entry since we
-    // flushed.
-    if (entry->pin_count > 0) {
-      entry->initialized = 1;
-      scheduler_wake_all(&entry->init_wait_queue);
-      return;
-    }
-
-    // No-one else has it, so free it.
-    g_size--;
-    KASSERT(htbl_remove(&g_table, h) == 0);
-    put_free_block(entry->block);
-    kfree(entry);
+    cache_entry_push(&g_lru_queue, entry, lruq);
   }
 }
 
