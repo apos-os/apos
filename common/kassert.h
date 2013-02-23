@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #ifndef APOO_KASSERT_H
-#define APOO_KAS
+#define APOO_KASSERT_H
 
 #include "common/debug.h"
 #include "common/klog.h"
