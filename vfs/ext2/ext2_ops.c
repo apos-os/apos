@@ -669,6 +669,15 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
           return result;
         }
 
+        // Zero out the new block.
+        void* block = block_cache_get(fs->dev, new_indirect_block);
+        if (!block) {
+          kfree(new_blocks);
+          return -ENOMEM;
+        }
+        kmemset(block, 0, block_size);
+        block_cache_put(fs->dev, new_indirect_block);
+
         if (final_level == level + 1) {
           KASSERT(inode->i_block[11 + level] == 0);
           inode->i_block[11 + level] = new_indirect_block;
