@@ -35,6 +35,7 @@ static int block2sector(block_dev_t* bd, int block) {
 }
 
 static void setup_disk(dev_t dev) {
+  block_cache_clear_unpinned();
   block_dev_t* bd = dev_get_block(dev);
 
   char data[BLOCK_CACHE_BLOCK_SIZE];

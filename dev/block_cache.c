@@ -442,6 +442,25 @@ void block_cache_set_size(int blocks) {
   // TODO
 }
 
+void block_cache_clear_unpinned() {
+  // Flush everything on the flush queue.
+  cache_entry_t* entry = cache_entry_pop(&g_flush_queue, flushq);
+  while (entry) {
+    flush_cache_entry(entry);
+    entry = cache_entry_pop(&g_flush_queue, flushq);
+  }
+
+  // Clear the LRU queue.
+  entry = cache_entry_pop(&g_lru_queue, lruq);
+  while (entry) {
+    KASSERT_DBG(entry->pin_count == 0);
+    KASSERT_DBG(entry->flushed);
+    KASSERT_DBG(!cache_entry_on_list(entry, flushq));
+    free_cache_entry(entry);
+    entry = cache_entry_pop(&g_lru_queue, lruq);
+  }
+}
+
 typedef struct {
   int total;
   int flushq;
