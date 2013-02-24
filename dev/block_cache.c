@@ -441,3 +441,44 @@ void block_cache_set_size(int blocks) {
   g_max_size = blocks;
   // TODO
 }
+
+typedef struct {
+  int total;
+  int flushq;
+  int flushing;
+  int flushed;
+  int lru;
+  int pinned;
+  int total_pins;
+} stats_t;
+void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
+static void stats_counter_func(void* arg, uint32_t key, void* value) {
+  stats_t* stats = (stats_t*)arg;
+  cache_entry_t* entry = (cache_entry_t*)value;
+  stats->total++;
+  if (cache_entry_on_list(entry, flushq))
+    stats->flushq++;
+  else if (entry->pin_count == 0 && entry->flushed == 0)
+    stats->flushing++;
+  if (entry->flushed)
+    stats->flushed++;
+  if (cache_entry_on_list(entry, lruq))
+    stats->lru++;
+  if (entry->pin_count > 0) {
+    stats->pinned++;
+    stats->total_pins += entry->pin_count;
+  }
+}
+void block_cache_log_stats() {
+  stats_t stats;
+  kmemset(&stats, 0, sizeof(stats_t));
+  htbl_iterate(&g_table, &stats_counter_func, &stats);
+  klogf("Block cache stats:\n");
+  klogf("  total entries: %d\n", stats.total);
+  klogf("         pinned: %d\n", stats.pinned);
+  klogf("     total pins: %d\n", stats.total_pins);
+  klogf("      on flushq: %d\n", stats.flushq);
+  klogf("         on lru: %d\n", stats.lru);
+  klogf("        flushed: %d\n", stats.flushed);
+  klogf("       flushing: %d\n", stats.flushing);
+}

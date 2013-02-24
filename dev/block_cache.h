@@ -43,6 +43,8 @@ int block_cache_get_pin_count(dev_t dev, int offset);
 // currently larger than this, it may not be immediately pruned.
 void block_cache_set_size(int blocks);
 
+void block_cache_log_stats();
+
 // TODO(aoates): support sync operations on pinned cache entries.
 
 #endif

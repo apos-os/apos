@@ -26,6 +26,7 @@
 #include "common/kprintf.h"
 #include "common/math.h"
 #include "dev/ata/ata.h"
+#include "dev/block_cache.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/ld.h"
@@ -578,6 +579,9 @@ static void hash_file_cmd(int argc, char* argv[]) {
   ksh_printf("elapsed time: %d ms\n", elapsed);
 }
 
+void bcstats_cmd(int argc, char** argv) {
+  block_cache_log_stats();
+}
 
 typedef struct {
   const char* name;
@@ -613,6 +617,8 @@ static cmd_t CMDS[] = {
   { "cp", &cp_cmd },
 
   { "hash_file", &hash_file_cmd },
+
+  { "bcstats", &bcstats_cmd },
 
   { 0x0, 0x0 },
 };
