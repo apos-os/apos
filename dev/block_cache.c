@@ -454,6 +454,10 @@ void block_cache_clear_unpinned() {
   // Clear the LRU queue.
   entry = cache_entry_pop(&g_lru_queue, lruq);
   while (entry) {
+    if (!entry->flushed) {
+      KASSERT_DBG(entry->flushing);
+      scheduler_wait_on(&entry->wait_queue);
+    }
     KASSERT_DBG(entry->pin_count == 0);
     KASSERT_DBG(entry->flushed);
     KASSERT_DBG(!cache_entry_on_list(&g_flush_queue, entry, flushq));
