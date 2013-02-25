@@ -31,6 +31,9 @@
 #define BLOCKS_PER_PAGE (PAGE_SIZE / BLOCK_CACHE_BLOCK_SIZE)
 #define DEFAULT_CACHE_SIZE 2000
 
+// If set, then all data structures will be frequently checked for consistency.
+#define SLOW_CONSISTENCY_CHECKS 1
+
 static int g_size = 0;
 static int g_initialized = 0;
 static int g_max_size = DEFAULT_CACHE_SIZE;
@@ -170,6 +173,16 @@ static int _cache_entry_on_list(cache_entry_list_t* list,
                                 cache_entry_t* entry,
                                 size_t link_offset) {
   cache_entry_link_t* link = get_link(entry, link_offset);
+  if (SLOW_CONSISTENCY_CHECKS) {
+    cache_entry_t* centry = list->head;
+    while (centry) {
+      if (centry == entry) return 1;
+      centry = get_link(centry, link_offset)->next;
+    }
+    KASSERT(link->next == 0x0);
+    KASSERT(link->prev == 0x0);
+    return 0;
+  }
   return (list->head == entry || link->next != 0x0 || link->prev != 0x0);
 }
 #define cache_entry_on_list(list, entry, link_name) \
@@ -410,6 +423,7 @@ void block_cache_put(dev_t dev, int offset) {
 
   cache_entry_t* entry = (cache_entry_t*)tbl_value;
   KASSERT(entry->dev.major == dev.major && entry->dev.minor == dev.minor);
+  KASSERT(entry->pin_count > 0);
   entry->pin_count--;
 
   // The block needs to be flushed, if it's not already scheduled for one.
