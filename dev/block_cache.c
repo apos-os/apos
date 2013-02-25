@@ -32,7 +32,7 @@
 #define DEFAULT_CACHE_SIZE 2000
 
 // If set, then all data structures will be frequently checked for consistency.
-#define SLOW_CONSISTENCY_CHECKS 1
+#define SLOW_CONSISTENCY_CHECKS 0
 
 static int g_size = 0;
 static int g_initialized = 0;
