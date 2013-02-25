@@ -281,13 +281,12 @@ static void free_cache_entry(cache_entry_t* entry) {
   kfree(entry);
 }
 
-// Go through the cache and look for unpinned entries we can flush.
-// TODO(aoates): use some sort of LRU mechanism to decide what to free.
-static void maybe_free_cache_space() {
-  const int kMaxEntriesFreed = 1;
+// Go through the cache and look for unpinned entries we can free.  Attempt to
+// free up to max_entries of them.
+static void maybe_free_cache_space(int max_entries) {
   cache_entry_t* entry = g_lru_queue.head;
   int entries_freed = 0;
-  while (entry && entries_freed < kMaxEntriesFreed) {
+  while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
     cache_entry_t* next = cache_entry_next(entry, lruq);
     if (entry->flushed) {
@@ -303,7 +302,7 @@ static void maybe_free_cache_space() {
 
   // If nothing is already flushed, find an unpinned entry and force flush it.
   entry = g_lru_queue.head;
-  while (entry && entries_freed < kMaxEntriesFreed) {
+  while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
     if (cache_entry_on_list(entry, flushq)) {
       cache_entry_remove(&g_flush_queue, entry, flushq);
@@ -339,7 +338,7 @@ void* block_cache_get(dev_t dev, int offset) {
     init_block_cache();
   }
   if (g_size >= g_max_size) {
-    maybe_free_cache_space();
+    maybe_free_cache_space(g_size - g_max_size + 1);
     if (g_size >= g_max_size) {
       return 0x0;
     }
