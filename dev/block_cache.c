@@ -289,6 +289,7 @@ static void maybe_free_cache_space() {
   int entries_freed = 0;
   while (entry && entries_freed < kMaxEntriesFreed) {
     KASSERT(entry->pin_count == 0);
+    cache_entry_t* next = cache_entry_next(entry, lruq);
     if (entry->flushed) {
       KASSERT_DBG(!cache_entry_on_list(entry, flushq));
       cache_entry_remove(&g_lru_queue, entry, lruq);
@@ -297,7 +298,7 @@ static void maybe_free_cache_space() {
       free_cache_entry(entry);
       entries_freed++;
     }
-    entry = cache_entry_next(entry, lruq);
+    entry = next;
   }
 
   // If nothing is already flushed, find an unpinned entry and force flush it.
