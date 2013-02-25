@@ -158,10 +158,10 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
     return -ENOENT;
   }
   if (!bg_bitmap_get(fs, inode_bitmap, inode_bg_idx)) {
-    block_cache_put(fs->dev, inode_bitmap_block);
+    block_cache_put(fs->dev, inode_bitmap_block, BC_FLUSH_ASYNC);
     return -ENOENT;
   }
-  block_cache_put(fs->dev, inode_bitmap_block);
+  block_cache_put(fs->dev, inode_bitmap_block, BC_FLUSH_ASYNC);
 
   // We know that the inode is allocated, now get it from the inode table.
   void* inode_table = block_cache_get(fs->dev, inode_table_block);
@@ -176,7 +176,7 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   ext2_inode_t* disk_inode = (ext2_inode_t*)(
       inode_table + inode_table_offset);
   kmemcpy(inode, disk_inode, sizeof(ext2_inode_t));
-  block_cache_put(fs->dev, inode_table_block);
+  block_cache_put(fs->dev, inode_table_block, BC_FLUSH_ASYNC);
 
   ext2_inode_ltoh(inode);
 
@@ -217,7 +217,7 @@ static int write_inode(ext2fs_t* fs, uint32_t inode_num,
   kmemcpy(disk_inode, inode, sizeof(ext2_inode_t));
   ext2_inode_ltoh(disk_inode);
 
-  block_cache_put(fs->dev, inode_table_block);
+  block_cache_put(fs->dev, inode_table_block, BC_FLUSH_ASYNC);
   return 0;
 }
 
@@ -227,7 +227,7 @@ static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
   void* block = block_cache_get(fs->dev, block_num);
   KASSERT(block);
   uint32_t value = ((uint32_t*)block)[idx];
-  block_cache_put(fs->dev, block_num);
+  block_cache_put(fs->dev, block_num, BC_FLUSH_ASYNC);
   return ltoh32(value);
 }
 
@@ -238,7 +238,7 @@ static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
   void* block = block_cache_get(fs->dev, block_num);
   KASSERT(block);
   ((uint32_t*)block)[idx] = htol32(value);
-  block_cache_put(fs->dev, block_num);
+  block_cache_put(fs->dev, block_num, BC_FLUSH_ASYNC);
 }
 
 // Given an inode block index, return the level (0 for direct, 1 for indirect,
@@ -380,7 +380,7 @@ static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
       KASSERT(dirent->rec_len >= ext2_dirent_min_size(dirent->name_len));
       const int result = func(arg, dirent, offset);
       if (result) {
-        block_cache_put(fs->dev, block);
+        block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
         return result;
       }
       block_idx += ltoh16(dirent->rec_len);
@@ -388,11 +388,11 @@ static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
     }
     if (block_idx > block_len) {
       klogf("ext2: error: dirent spans multiple blocks\n");
-      block_cache_put(fs->dev, block);
+      block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
       return -EFAULT;
     }
 
-    block_cache_put(fs->dev, block);
+    block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
     inode_block++;
   }
 
@@ -440,7 +440,7 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   for (unsigned int i = 0; i < nblocks; ++i) {
     int idx_in_bg_bmp = bg_bitmap_find_free(fs, block_bitmap);
     if (idx_in_bg_bmp < 0) {
-      block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+      block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
       klogf("ext2 warning: block group desc indicated free blocks, but none "
             "found in block bitmap!\n");
       fs->unhealthy = 1;
@@ -450,7 +450,7 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
     blocks_out[i] = fs->sb.s_first_data_block + bg * fs->sb.s_blocks_per_group +
         idx_in_bg_bmp;
   }
-  block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
   return 0;
 }
 
@@ -472,7 +472,7 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   }
   KASSERT(bg_bitmap_get(fs, block_bitmap, bg_block_idx));
   bg_bitmap_clear(block_bitmap, bg_block_idx);
-  block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
 
   return 0;
 }
@@ -494,7 +494,7 @@ static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level) {
       free_indirect_block(fs, block[i], level - 1);
     }
   }
-  block_cache_put(fs->dev, block_num);
+  block_cache_put(fs->dev, block_num, BC_FLUSH_ASYNC);
   free_block(fs, block_num);  // Free the indirect block itself.
 }
 
@@ -546,7 +546,7 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   }
   int idx_in_bg = bg_bitmap_find_free(fs, inode_bitmap);
   if (idx_in_bg < 0) {
-    block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+    block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
     klogf("ext2 warning: block group desc indicated free inodes, but none found "
           "in inode bitmap!\n");
     fs->unhealthy = 1;
@@ -555,7 +555,7 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
 
   // Mark the inode as used and return it's index.
   bg_bitmap_set(inode_bitmap, idx_in_bg);
-  block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
   // Inode numbers are 1-indexed.
   const int inode = bg * fs->sb.s_inodes_per_group + idx_in_bg + 1;
@@ -586,7 +586,7 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   }
   KASSERT(bg_bitmap_get(fs, inode_bitmap, bg_inode_idx));
   bg_bitmap_clear(inode_bitmap, bg_inode_idx);
-  block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap);
+  block_cache_put(fs->dev, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
   // Free all of its blocks.
   for (int i = 0; i < 12; ++i) {
@@ -676,7 +676,7 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
           return -ENOMEM;
         }
         kmemset(block, 0, block_size);
-        block_cache_put(fs->dev, new_indirect_block);
+        block_cache_put(fs->dev, new_indirect_block, BC_FLUSH_ASYNC);
 
         if (final_level == level + 1) {
           KASSERT(inode->i_block[11 + level] == 0);
@@ -701,7 +701,7 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
       // read.
       void* block = block_cache_get(fs->dev, new_blocks[i]);
       kmemset(block, 0, block_size);
-      block_cache_put(fs->dev, new_blocks[i]);
+      block_cache_put(fs->dev, new_blocks[i], BC_FLUSH_ASYNC);
     }
     inode_block++;
   }
@@ -849,7 +849,7 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
   new_dirent->file_type = EXT2_FT_UNKNOWN;
   kstrncpy(new_dirent->name, name, name_len);
 
-  block_cache_put(fs->dev, block_num);
+  block_cache_put(fs->dev, block_num, BC_FLUSH_ASYNC);
   return 0;
 }
 
@@ -885,7 +885,7 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
 
   // TODO(aoates): check if previous and/or next dirents are also free, and
   // merge them with this one if so.
-  block_cache_put(fs->dev, block_num);
+  block_cache_put(fs->dev, block_num, BC_FLUSH_ASYNC);
   return 0;
 }
 
@@ -1208,7 +1208,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT_DBG(len <= bufsize);
   kmemcpy(buf, block_data + block_offset, len);
 
-  block_cache_put(fs->dev, block);
+  block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
   return len;
 }
 
@@ -1266,7 +1266,7 @@ static int ext2_write(vnode_t* vnode, int offset,
     }
     KASSERT_DBG(block_offset + chunk_size <= block_size);
     kmemcpy(block_data + block_offset, buf, chunk_size);
-    block_cache_put(fs->dev, block);
+    block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
 
     offset += chunk_size;
     bytes_to_write -= chunk_size;

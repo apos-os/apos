@@ -36,7 +36,7 @@ int ext2_read_superblock(ext2fs_t* fs) {
 
   kmemcpy(&fs->sb, sb_block + sb_block_offset, sizeof(ext2_superblock_t));
   ext2_superblock_ltoh(&fs->sb);
-  block_cache_put(fs->dev, sb_block_num);
+  block_cache_put(fs->dev, sb_block_num, BC_FLUSH_ASYNC);
 
   // Check magic number and version.
   if (fs->sb.s_magic != EXT2_SUPER_MAGIC) {
@@ -111,7 +111,7 @@ int ext2_read_block_groups(ext2fs_t* fs) {
       ext2_block_group_desc_ltoh(cbg);
       bgs_remaining--;
     }
-    block_cache_put(fs->dev, block);
+    block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
   }
 
   for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
@@ -143,7 +143,7 @@ static int flush_superblock_in_bg(const ext2fs_t* fs, unsigned int bg) {
 
   kmemcpy(on_disk_sb, &fs->sb, sizeof(ext2_superblock_t));
   ext2_superblock_ltoh(on_disk_sb);
-  block_cache_put(fs->dev, sb_block_num);
+  block_cache_put(fs->dev, sb_block_num, BC_FLUSH_ASYNC);
   return 0;
 }
 
@@ -198,7 +198,7 @@ static int flush_bgdt_in_bg(const ext2fs_t* fs,
 
   kmemcpy(on_disk_bgd, bgd_to_flush, sizeof(ext2_block_group_desc_t));
   ext2_block_group_desc_ltoh(on_disk_bgd);
-  block_cache_put(fs->dev, bgdt_block_num);
+  block_cache_put(fs->dev, bgdt_block_num, BC_FLUSH_ASYNC);
   return 0;
 }
 

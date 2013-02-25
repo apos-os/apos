@@ -407,13 +407,15 @@ void* block_cache_get(dev_t dev, int offset) {
     if (cache_entry_on_list(&g_lru_queue, entry, lruq)) {
       KASSERT(entry->pin_count == 1);
       cache_entry_remove(&g_lru_queue, entry, lruq);
+      KASSERT(entry->lruq.next == 0x0);
+      KASSERT(entry->lruq.prev == 0x0);
     }
     entry->flushed = 0;
     return entry->block;
   }
 }
 
-void block_cache_put(dev_t dev, int offset) {
+void block_cache_put(dev_t dev, int offset, block_cache_flush_t flush_mode) {
   //if (offset == 1) klogf("block_cache_put(block=1)\n");
   KASSERT(g_initialized);
 
@@ -424,15 +426,21 @@ void block_cache_put(dev_t dev, int offset) {
   cache_entry_t* entry = (cache_entry_t*)tbl_value;
   KASSERT(entry->dev.major == dev.major && entry->dev.minor == dev.minor);
   KASSERT(entry->pin_count > 0);
-  entry->pin_count--;
 
   // The block needs to be flushed, if it's not already scheduled for one.
-  entry->flushed = 0;
-  if (!cache_entry_on_list(&g_flush_queue, entry, flushq)) {
-    cache_entry_push(&g_flush_queue, entry, flushq);
+  if (flush_mode != BC_FLUSH_NONE) {
+    entry->flushed = 0;
+    if (flush_mode == BC_FLUSH_SYNC) {
+      flush_cache_entry(entry);
+    } else if (flush_mode == BC_FLUSH_ASYNC) {
+      if (!cache_entry_on_list(&g_flush_queue, entry, flushq)) {
+        cache_entry_push(&g_flush_queue, entry, flushq);
+      }
+    }
   }
 
   KASSERT(!cache_entry_on_list(&g_lru_queue, entry, lruq));
+  entry->pin_count--;
   if (entry->pin_count == 0) {
     cache_entry_push(&g_lru_queue, entry, lruq);
   }

@@ -21,6 +21,13 @@
 // TODO(aoates): support other block sizes.
 #define BLOCK_CACHE_BLOCK_SIZE 1024
 
+// Flush modes for block_cache_put().
+typedef enum {
+  BC_FLUSH_NONE = 1,
+  BC_FLUSH_SYNC,
+  BC_FLUSH_ASYNC,
+} block_cache_flush_t;
+
 // Return a pointer to the block cache for the given block.  If no entry exists,
 // the data is read from the block device into a fresh (or reused) buffer.
 //
@@ -33,7 +40,18 @@
 void* block_cache_get(dev_t dev, int offset);
 
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
-void block_cache_put(dev_t dev, int offset);
+//
+// The block's contents may be written back to the underlying disk, depending on
+// FLUSH_MODE:
+//  * BC_FLUSH_NONE --- the block MAY not be flushed (another thread may cause a
+//    flush of the current data, however).  Use if the current thread didn't
+//    modify the contents of the block.
+//  * BC_FLUSH_SYNC --- the block will be synchronously flushed to disk.
+//  * BC_FLUSH_ASYNC --- the block will be asynchronously flushed to disk some
+//    time in the future, possibly several seconds away.
+//
+// Most callers should probably use BC_FLUSH_ASYNC.
+void block_cache_put(dev_t dev, int offset, block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.

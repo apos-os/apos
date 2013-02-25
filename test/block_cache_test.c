@@ -64,7 +64,7 @@ static void basic_get_test(dev_t dev) {
 
     ksprintf(data, "end%i", i);
     KEXPECT_STREQ(data, block + BLOCK_CACHE_BLOCK_SIZE - 10);
-    block_cache_put(dev, i);
+    block_cache_put(dev, i, BC_FLUSH_SYNC);
   }
 
   KTEST_BEGIN("block_cache_get(): same pointer returned");
@@ -73,9 +73,9 @@ static void basic_get_test(dev_t dev) {
   void* block1 = block_cache_get(dev, 1);
   KEXPECT_EQ((int)block0a, (int)block0b);
   KEXPECT_NE((int)block0a, (int)block1);
-  block_cache_put(dev, 0);
-  block_cache_put(dev, 0);
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 0, BC_FLUSH_SYNC);
+  block_cache_put(dev, 0, BC_FLUSH_SYNC);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
 }
 
 // TODO(aoates): test running out of space on the free block stack
@@ -86,7 +86,7 @@ static void basic_write_test(dev_t dev) {
 
   void* block = block_cache_get(dev, 1);
   kstrcpy(block, "written block");
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
 
   // Verify that it was written back to the ramdisk.
   char buf[RAMDISK_SECTOR_SIZE];
@@ -101,9 +101,10 @@ static void basic_write_test(dev_t dev) {
           bd->write(bd, block2sector(bd, 1), buf, BLOCK_CACHE_BLOCK_SIZE));
 
   // Verify that if we get() it again we see the new data.
+  block_cache_clear_unpinned();
   block = block_cache_get(dev, 1);
   KEXPECT_EQ(0, kstrcmp(block, "WRITTEN BLOCK"));
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
 }
 
 static void write_at_end_test(dev_t dev) {
@@ -111,7 +112,7 @@ static void write_at_end_test(dev_t dev) {
 
   void* block = block_cache_get(dev, 1);
   kstrcpy(block + BLOCK_CACHE_BLOCK_SIZE - 20, "written end");
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
 
   // Verify that it was written back to the ramdisk.
   char buf[BLOCK_CACHE_BLOCK_SIZE];
@@ -132,11 +133,11 @@ static void get_shares_buffers_test(dev_t dev) {
 
   // Write to the first buffer, then put() it.
   kstrcpy(blockA, "written to A");
-  block_cache_put(dev, 3);
+  block_cache_put(dev, 3, BC_FLUSH_SYNC);
 
   // Make sure we can still read it out of the second buffer.
   KEXPECT_EQ(0, kstrcmp(blockB, "written to A"));
-  block_cache_put(dev, 3);
+  block_cache_put(dev, 3, BC_FLUSH_SYNC);
 }
 
 static void cache_size_test(dev_t dev) {
@@ -157,19 +158,21 @@ static void cache_size_test(dev_t dev) {
 
   // Put back one of the refs to the first block and make sure we still can't
   // get a new block.
-  block_cache_put(dev, 0);
+  if (block0a != 0x0 || block0b != 0x0)
+    block_cache_put(dev, 0, BC_FLUSH_SYNC);
   block3 = block_cache_get(dev, 3);
   KEXPECT_EQ(0x0, (int)block3);
 
   // Put back the other ref, then make sure we can get the third block.
-  block_cache_put(dev, 0);
+  if (block0a != 0x0 || block0b != 0x0)
+    block_cache_put(dev, 0, BC_FLUSH_SYNC);
   block3 = block_cache_get(dev, 3);
   KEXPECT_NE(0x0, (int)block3);
 
   // Clean up.
-  block_cache_put(dev, 1);
-  block_cache_put(dev, 2);
-  block_cache_put(dev, 3);
+  if (block1) block_cache_put(dev, 1, BC_FLUSH_SYNC);
+  if (block2) block_cache_put(dev, 2, BC_FLUSH_SYNC);
+  if (block3) block_cache_put(dev, 3, BC_FLUSH_SYNC);
 }
 
 // Test that multiple threads calling block_cache_get() on the same block get
@@ -196,10 +199,10 @@ static void get_thread_test(dev_t dev) {
   }
 
   KEXPECT_NE(0x0, (int)blocks[0]);
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
   for (int i = 1; i < kThreads; ++i) {
     KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
-    if (blocks[i]) block_cache_put(dev, 1);
+    if (blocks[i]) block_cache_put(dev, 1, BC_FLUSH_SYNC);
   }
 
   KEXPECT_EQ(0, block_cache_get_pin_count(dev, 1));
@@ -220,7 +223,7 @@ static void* put_thread_test_thread(void* arg) {
     void* block = block_cache_get(args->dev, 1);
     uint8_t* value = (uint8_t*)block;
     (*value)++;
-    if (block) block_cache_put(args->dev, 1);
+    if (block) block_cache_put(args->dev, 1, BC_FLUSH_SYNC);
   }
   return 0x0;
 }
@@ -238,7 +241,7 @@ static void put_thread_test(ramdisk_t* rd, dev_t dev) {
   void* block = block_cache_get(dev, 1);
   uint8_t* value = (uint8_t*)block;
   *value = 0;
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
 
   for (int i = 0; i < PUT_THREAD_TEST_THREADS; ++i) {
     args[i].dev = dev;
@@ -257,10 +260,12 @@ static void put_thread_test(ramdisk_t* rd, dev_t dev) {
   block = block_cache_get(dev, 1);
   value = (uint8_t*)block;
   KEXPECT_EQ(PUT_THREAD_TEST_ITERS * PUT_THREAD_TEST_THREADS, *value);
-  block_cache_put(dev, 1);
+  block_cache_put(dev, 1, BC_FLUSH_SYNC);
 
   ramdisk_set_blocking(rd, 1, 1);
 }
+
+// TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test() {
   KTEST_SUITE_BEGIN("block_cache test");
