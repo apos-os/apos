@@ -199,7 +199,7 @@ static void get_thread_test(dev_t dev) {
   block_cache_put(dev, 1);
   for (int i = 1; i < kThreads; ++i) {
     KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
-    block_cache_put(dev, 1);
+    if (blocks[i]) block_cache_put(dev, 1);
   }
 
   KEXPECT_EQ(0, block_cache_get_pin_count(dev, 1));
@@ -220,7 +220,7 @@ static void* put_thread_test_thread(void* arg) {
     void* block = block_cache_get(args->dev, 1);
     uint8_t* value = (uint8_t*)block;
     (*value)++;
-    block_cache_put(args->dev, 1);
+    if (block) block_cache_put(args->dev, 1);
   }
   return 0x0;
 }
@@ -285,6 +285,7 @@ void block_cache_test() {
   put_thread_test(ramdisk, dev);
 
   // Cleanup.
+  block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.
   KASSERT(dev_unregister_block(dev) == 0);
   ramdisk_destroy(ramdisk);
 }
