@@ -166,13 +166,14 @@ static void _cache_entry_remove(cache_entry_list_t* list,
 #define cache_entry_remove(list, entry, link_name) \
     _cache_entry_remove(list, entry, offsetof(cache_entry_t, link_name))
 
-static int _cache_entry_on_list(cache_entry_t* entry,
+static int _cache_entry_on_list(cache_entry_list_t* list,
+                                cache_entry_t* entry,
                                 size_t link_offset) {
   cache_entry_link_t* link = get_link(entry, link_offset);
-  return link->next != 0x0 || link->prev != 0x0;
+  return (list->head == entry || link->next != 0x0 || link->prev != 0x0);
 }
-#define cache_entry_on_list(entry, link_name) \
-    _cache_entry_on_list(entry, offsetof(cache_entry_t, link_name))
+#define cache_entry_on_list(list, entry, link_name) \
+    _cache_entry_on_list(list, entry, offsetof(cache_entry_t, link_name))
 
 #define cache_entry_next(entry, link_name) (entry)->link_name.next
 
@@ -268,8 +269,8 @@ static void* flush_queue_thread(void* arg) {
 // Remove the given (flushed and unpinned) cache entry from the table, release
 // it's block, and free the entry object.
 static void free_cache_entry(cache_entry_t* entry) {
-  KASSERT_DBG(cache_entry_on_list(entry, flushq) == 0);
-  KASSERT_DBG(cache_entry_on_list(entry, lruq) == 0);
+  KASSERT_DBG(cache_entry_on_list(&g_flush_queue, entry, flushq) == 0);
+  KASSERT_DBG(cache_entry_on_list(&g_lru_queue, entry, lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
   KASSERT_DBG(entry->flushed);
 
@@ -290,7 +291,7 @@ static void maybe_free_cache_space(int max_entries) {
     KASSERT(entry->pin_count == 0);
     cache_entry_t* next = cache_entry_next(entry, lruq);
     if (entry->flushed) {
-      KASSERT_DBG(!cache_entry_on_list(entry, flushq));
+      KASSERT_DBG(!cache_entry_on_list(&g_flush_queue, entry, flushq));
       cache_entry_remove(&g_lru_queue, entry, lruq);
 
       // No-one else has it, so free it.
@@ -304,7 +305,7 @@ static void maybe_free_cache_space(int max_entries) {
   entry = g_lru_queue.head;
   while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
-    if (cache_entry_on_list(entry, flushq)) {
+    if (cache_entry_on_list(&g_flush_queue, entry, flushq)) {
       cache_entry_remove(&g_flush_queue, entry, flushq);
       cache_entry_remove(&g_lru_queue, entry, lruq);
 
@@ -390,7 +391,7 @@ void* block_cache_get(dev_t dev, int offset) {
       scheduler_wait_on(&entry->wait_queue);
     }
     KASSERT(entry->initialized);
-    if (cache_entry_on_list(entry, lruq)) {
+    if (cache_entry_on_list(&g_lru_queue, entry, lruq)) {
       KASSERT(entry->pin_count == 1);
       cache_entry_remove(&g_lru_queue, entry, lruq);
     }
@@ -413,11 +414,11 @@ void block_cache_put(dev_t dev, int offset) {
 
   // The block needs to be flushed, if it's not already scheduled for one.
   entry->flushed = 0;
-  if (!cache_entry_on_list(entry, flushq)) {
+  if (!cache_entry_on_list(&g_flush_queue, entry, flushq)) {
     cache_entry_push(&g_flush_queue, entry, flushq);
   }
 
-  KASSERT(!cache_entry_on_list(entry, lruq));
+  KASSERT(!cache_entry_on_list(&g_lru_queue, entry, lruq));
   if (entry->pin_count == 0) {
     cache_entry_push(&g_lru_queue, entry, lruq);
   }
@@ -455,7 +456,7 @@ void block_cache_clear_unpinned() {
   while (entry) {
     KASSERT_DBG(entry->pin_count == 0);
     KASSERT_DBG(entry->flushed);
-    KASSERT_DBG(!cache_entry_on_list(entry, flushq));
+    KASSERT_DBG(!cache_entry_on_list(&g_flush_queue, entry, flushq));
     free_cache_entry(entry);
     entry = cache_entry_pop(&g_lru_queue, lruq);
   }
@@ -475,13 +476,13 @@ static void stats_counter_func(void* arg, uint32_t key, void* value) {
   stats_t* stats = (stats_t*)arg;
   cache_entry_t* entry = (cache_entry_t*)value;
   stats->total++;
-  if (cache_entry_on_list(entry, flushq))
+  if (cache_entry_on_list(&g_flush_queue, entry, flushq))
     stats->flushq++;
   else if (entry->pin_count == 0 && entry->flushed == 0)
     stats->flushing++;
   if (entry->flushed)
     stats->flushed++;
-  if (cache_entry_on_list(entry, lruq))
+  if (cache_entry_on_list(&g_lru_queue, entry, lruq))
     stats->lru++;
   if (entry->pin_count > 0) {
     stats->pinned++;
