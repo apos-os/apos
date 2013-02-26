@@ -1062,6 +1062,93 @@ void reverse_path_test() {
 #undef TEST
 }
 
+// Multi-thread vfs_open(VFS_O_CREAT) test.  Each thread creates a series of
+// files in a particular directory.
+#define CREATE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define CREATE_SAFETY_THREADS 5
+static void* create_thread_test_func(void* arg) {
+  const char kTestDir[] = "/create_thread_test";
+  const int thread_num = (int)arg;
+  for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
+    char buf[512];
+    ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
+    int fd = vfs_open(buf, VFS_O_CREAT | VFS_O_RDWR);
+    if (fd < 0) {
+      KEXPECT_GE(fd, -0);
+    } else {
+      vfs_close(fd);
+    }
+  }
+  return 0x0;
+}
+
+static void* unlink_thread_test_func(void* arg) {
+  const char kTestDir[] = "/create_thread_test";
+  const int thread_num = (int)arg;
+  for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
+    char buf[512];
+    ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
+    int result = vfs_unlink(buf);
+    if (result < 0) {
+      KEXPECT_EQ(-0, result);
+    }
+  }
+  return 0x0;
+}
+
+static void create_thread_test() {
+  KTEST_BEGIN("vfs_open(VFS_O_CREAT): thread-safety test");
+  const char kTestDir[] = "/create_thread_test";
+  kthread_t threads[CREATE_SAFETY_THREADS];
+
+  KEXPECT_EQ(0, vfs_mkdir(kTestDir));
+  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+    KASSERT(kthread_create(&threads[i], &create_thread_test_func, (void*)i));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  // Make sure they're all created correctly.
+  const int kNumExpected = CREATE_SAFETY_ITERS * CREATE_SAFETY_THREADS + 2;
+  char expected_names[kNumExpected][30];
+  edirent_t expected_dirents[kNumExpected];
+  expected_dirents[0].vnode = expected_dirents[1].vnode = -1;
+  expected_dirents[0].name = ".";
+  expected_dirents[1].name = "..";
+  for (int i = 2; i < kNumExpected; ++i) {
+    ksprintf(expected_names[i], "%d.%d", (i - 2) / CREATE_SAFETY_ITERS,
+             (i - 2) % CREATE_SAFETY_ITERS);
+    expected_dirents[i].vnode = -1;
+    expected_dirents[i].name = expected_names[i];
+  }
+  int fd = vfs_open(kTestDir, VFS_O_RDONLY);
+  if (fd >= 0) {
+    EXPECT_GETDENTS(fd, kNumExpected, expected_dirents);
+    vfs_close(fd);
+  }
+
+  KTEST_BEGIN("vfs_unlink(): thread-safety test");
+  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+    KASSERT(kthread_create(&threads[i], &unlink_thread_test_func, (void*)i));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  fd = vfs_open(kTestDir, VFS_O_RDONLY);
+  if (fd >= 0) {
+    EXPECT_GETDENTS(fd, 2, expected_dirents);
+    vfs_close(fd);
+  }
+
+  KEXPECT_EQ(0, vfs_rmdir(kTestDir));
+}
+
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
@@ -1079,6 +1166,7 @@ void vfs_test() {
   getdents_test();
   seek_test();
   get_bad_inode_test();
+  create_thread_test();
 
   reverse_path_test();
 
