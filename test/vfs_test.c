@@ -57,6 +57,20 @@ static void EXPECT_CAN_CREATE_FILE(const char* path) {
   }
 }
 
+// Helper method that verifies the given file exists.
+static void EXPECT_FILE_EXISTS(const char* path) {
+  // The file should still exist.
+  const int fd = vfs_open(path, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    KEXPECT_EQ(0, vfs_close(fd));
+  }
+}
+
+static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
+  EXPECT_CAN_CREATE_FILE(path);
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test() {
   KTEST_BEGIN("vfs_open(): parent refcount test");
@@ -1149,6 +1163,58 @@ static void create_thread_test() {
   KEXPECT_EQ(0, vfs_rmdir(kTestDir));
 }
 
+// Test that if we create a file, then unlink it before closing it, we can still
+// read from it.
+static void unlink_open_file_test() {
+  KTEST_BEGIN("unlink() open file test");
+  const char kFile[] = "unlink_open_file_test";
+  const char kFile2[] = "unlink_open_file_test2";
+  create_file_with_data(kFile, "123456789");
+
+  const int fd = vfs_open(kFile, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  // The file should not be in the directory any more.
+  EXPECT_FILE_DOESNT_EXIST(kFile);
+
+  create_file_with_data(kFile2, "abcdefg");  // Make sure we don't reuse the inode.
+
+  char buf[512];
+  KEXPECT_EQ(9, vfs_read(fd, buf, 512));
+  buf[9] = '\0';
+  KEXPECT_STREQ("123456789", buf);
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  EXPECT_FILE_DOESNT_EXIST(kFile);
+
+  KEXPECT_EQ(0, vfs_unlink(kFile2));
+}
+
+// Test unlinking a directory that's open for reading.
+static void unlink_open_directory_test() {
+  KTEST_BEGIN("rmdir() open directory test");
+  const char kDir[] = "unlink_open_directory_test";
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  const int fd = vfs_open(kDir, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+
+  // The file should not be in the directory any more.
+  EXPECT_FILE_DOESNT_EXIST(kDir);
+
+  EXPECT_GETDENTS(fd, 0, 0x0);
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  EXPECT_FILE_DOESNT_EXIST(kDir);
+}
+
+// TODO(aoates): test creating a file in a directory that's been rmdir()'d, but
+// is still open for reading.
+
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
@@ -1167,6 +1233,8 @@ void vfs_test() {
   seek_test();
   get_bad_inode_test();
   create_thread_test();
+  unlink_open_file_test();
+  unlink_open_directory_test();
 
   reverse_path_test();
 

@@ -994,7 +994,13 @@ static int ext2_put_vnode(vnode_t* vnode) {
 
   inode.i_size = vnode->len;
   result = write_inode(fs, vnode->num, &inode);
-  return result;
+
+  if (inode.i_links_count == 0) {
+    result = free_inode(fs, vnode->num, &inode);
+    return result;
+  }
+
+  return 0;
 }
 
 static int ext2_lookup(vnode_t* parent, const char* name) {
@@ -1159,6 +1165,13 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
   // Can't hard link directories, so should just be 2 links.
   KASSERT(child_inode.i_links_count == 2);
 
+  // TODO(aoates): unlink_internal can block --- what happens if another thread
+  // tries to simultaneously add a new entry to this directory?
+  //
+  // POSIX dictates that the '.' and '..' entries will be removed, but the
+  // directory will exist until all outstanding references are closed, *and* no
+  // new files can be created in the directory.
+
   result = unlink_internal(fs, &parent_inode, name);
   if (result)
     return result;
@@ -1168,8 +1181,9 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
   write_inode(fs, parent->num, &parent_inode);
 
   child_inode.i_links_count -= 2;
-  result = free_inode(fs, child_inode_num, &child_inode);
-  return result;
+  child_inode.i_size = 0;
+  write_inode(fs, child_inode_num, &child_inode);
+  return 0;
 }
 
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
@@ -1202,7 +1216,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
   void* block_data = block_cache_get(fs->dev, block);
   if (!block_data) {
-    return -ENOENT;
+    return -ENOMEM;
   }
   KASSERT_DBG(block_offset + len <= ext2_block_size(fs));
   KASSERT_DBG(len <= bufsize);
@@ -1314,12 +1328,7 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
   child_inode.i_links_count--;
   write_inode(fs, child_inode_num, &child_inode);
 
-  if (child_inode.i_links_count == 0) {
-    result = free_inode(fs, child_inode_num, &child_inode);
-    return result;
-  } else {
-    return 0;
-  }
+  return 0;
 }
 
 typedef struct {

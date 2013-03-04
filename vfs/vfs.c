@@ -582,7 +582,17 @@ int vfs_rmdir(const char* path) {
     return -EINVAL;
   }
 
+  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
+  // collect the inode if it's now unused.
+  vnode_t* child = 0x0;
+  error = lookup(parent, base_name, &child);
+  if (error) {
+    VFS_PUT_AND_CLEAR(parent);
+    return error;
+  }
+
   error = parent->fs->rmdir(parent, base_name);
+  VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);
   return error;
 }
@@ -598,7 +608,17 @@ int vfs_unlink(const char* path) {
     return error;
   }
 
+  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
+  // collect the inode if it's now unused.
+  vnode_t* child = 0x0;
+  error = lookup(parent, base_name, &child);
+  if (error) {
+    VFS_PUT_AND_CLEAR(parent);
+    return error;
+  }
+
   error = parent->fs->unlink(parent, base_name);
+  VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);
   return error;
 }
