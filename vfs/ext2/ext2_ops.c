@@ -1180,8 +1180,16 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
   parent_inode.i_links_count--;
   write_inode(fs, parent->num, &parent_inode);
 
+  // Unlink '.' and '..' entries.
+  result = unlink_internal(fs, &child_inode, "..");
+  if (result)
+    return result;
+
+  result = unlink_internal(fs, &child_inode, ".");
+  if (result)
+    return result;
+
   child_inode.i_links_count -= 2;
-  child_inode.i_size = 0;
   write_inode(fs, child_inode_num, &child_inode);
   return 0;
 }

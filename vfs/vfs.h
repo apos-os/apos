@@ -101,6 +101,9 @@ struct fs {
   int (*mkdir)(vnode_t* parent, const char* name /*, mode? */);
 
   // Remove an empty directory from the parent. Returns 0 on success, or -error.
+  //
+  // The filesystem must remove the '.' and '..' entries from the child before
+  // rmdir() returns, but must not free the underlying inode.
   int (*rmdir)(vnode_t* parent, const char* name);
 
   // Read up to bufsize bytes from the given vnode at the given offset.  Returns
@@ -118,8 +121,8 @@ struct fs {
   int (*link)(vnode_t* parent, vnode_t* vnode, const char* name);
 
   // Unlink the vnode in the parent (which must be a directory) that has the
-  // given name.  If the underlying inode is not linked anywhere else, it can be
-  // destroyed.
+  // given name.  The underlying inode must not be destroyed if it's link count
+  // is 0, since there may be outstanding VFS references.
   int (*unlink)(vnode_t* parent, const char* name);
 
   // Read several dirent_ts from the given (directory) vnode and fill the given

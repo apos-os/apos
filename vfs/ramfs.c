@@ -367,6 +367,14 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   // TODO(aoates): if link_count == 0, recollect the inode.
   ((ramfs_inode_t*)dir_vnode)->link_count -= 2;
 
+  // Remove '.' and '..'.
+  dirent_t* child_dirent = find_dirent(dir_vnode, ".");
+  child_dirent->vnode = -1;
+  child_dirent->name[0] = '\0';
+  child_dirent = find_dirent(dir_vnode, "..");
+  child_dirent->vnode = -1;
+  child_dirent->name[0] = '\0';
+
   d->vnode = -1;
   d->name[0] = '\0';
   return 0;
