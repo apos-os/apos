@@ -171,6 +171,7 @@ fs_t* ramfs_create_fs() {
   }
   f->enable_blocking = 0;
 
+  kstrcpy(f->fs.fstype, "ramfs");
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
   f->fs.get_root = &ramfs_get_root;
   f->fs.get_vnode = &ramfs_get_vnode;
@@ -203,11 +204,13 @@ fs_t* ramfs_create_fs() {
 }
 
 void ramfs_enable_blocking(fs_t* fs) {
+  KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
   ramfs->enable_blocking = 1;
 }
 
 void ramfs_disable_blocking(fs_t* fs) {
+  KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
   ramfs->enable_blocking = 0;
 }

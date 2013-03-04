@@ -59,6 +59,7 @@ int ext2_mount(fs_t* fs, dev_t dev) {
   }
 
   ext2_set_ops(fs);
+  kstrcpy(fs->fstype, "ext2");
 
   // TODO
   ext2fs->mounted = 1;

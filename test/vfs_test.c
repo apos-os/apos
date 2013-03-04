@@ -1241,7 +1241,9 @@ static void create_in_unlinked_directory() {
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
 
-  ramfs_enable_blocking(vfs_get_root_fs());
+  if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
+    ramfs_enable_blocking(vfs_get_root_fs());
+  }
 
   open_test();
   mkdir_test();
@@ -1262,5 +1264,7 @@ void vfs_test() {
 
   reverse_path_test();
 
-  ramfs_disable_blocking(vfs_get_root_fs());
+  if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
+    ramfs_disable_blocking(vfs_get_root_fs());
+  }
 }
