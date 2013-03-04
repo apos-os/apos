@@ -1212,8 +1212,31 @@ static void unlink_open_directory_test() {
   EXPECT_FILE_DOESNT_EXIST(kDir);
 }
 
-// TODO(aoates): test creating a file in a directory that's been rmdir()'d, but
-// is still open for reading.
+// Test trying to create a file in an unlinked directory (that's still open for
+// reading).
+static void create_in_unlinked_directory() {
+  KTEST_BEGIN("create in rmdir()'d directory test");
+  const char kDir[] = "create_in_unlinked_directory_test";
+  const char kFile[] = "create_in_unlinked_directory_test/file";
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  const int fd = vfs_open(kDir, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+
+  // Try to create a file in the directory.  It should fail.
+  const int fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT);
+  KEXPECT_EQ(-ENOENT, fd2);
+
+  EXPECT_GETDENTS(fd, 0, 0x0);
+
+  KEXPECT_EQ(0, vfs_close(fd));
+}
+
+// TODO(aoates): multi-threaded test for creating a file in directory that is
+// being unlinked.  There may currently be a race condition where a new entry is
+// creating while the directory is being deleted.
 
 void vfs_test() {
   KTEST_SUITE_BEGIN("vfs test");
@@ -1235,6 +1258,7 @@ void vfs_test() {
   create_thread_test();
   unlink_open_file_test();
   unlink_open_directory_test();
+  create_in_unlinked_directory();
 
   reverse_path_test();
 
