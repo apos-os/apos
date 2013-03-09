@@ -16,8 +16,12 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "memory/kmalloc.h"
+#include "memory/memobj.h"
+#include "memory/memobj_block_dev.h"
 
 static void* g_block_devices[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
+static memobj_t* g_block_memobjs[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
 static void* g_char_devices[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
 
 static int check_register(void* dev, dev_t* id) {
@@ -63,6 +67,9 @@ int dev_register_block(block_dev_t* dev, dev_t* id) {
   }
 
   g_block_devices[id->major][id->minor] = dev;
+  g_block_memobjs[id->major][id->minor] = (memobj_t*)kmalloc(sizeof(memobj_t));
+  KASSERT(
+      0 == memobj_create_block_dev(g_block_memobjs[id->major][id->minor], *id));
   return 0;
 }
 
@@ -96,6 +103,14 @@ char_dev_t* dev_get_char(dev_t id) {
   return g_char_devices[id.major][id.minor];
 }
 
+memobj_t* dev_get_block_memobj(dev_t id) {
+  if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
+      id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
+    return 0x0;
+  }
+  return g_block_memobjs[id.major][id.minor];
+}
+
 int dev_unregister_block(dev_t id) {
   if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
       id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
@@ -105,6 +120,7 @@ int dev_unregister_block(dev_t id) {
     return -ENOENT;
   }
   g_block_devices[id.major][id.minor] = 0x0;
+  kfree(g_block_memobjs[id.major][id.minor]);
   return 0;
 }
 

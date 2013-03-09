@@ -17,6 +17,7 @@
 
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
+#include "memory/memobj.h"
 
 #define DEVICE_MAX_MAJOR 10
 #define DEVICE_MAX_MINOR 20
@@ -45,6 +46,10 @@ int dev_register_char(char_dev_t* dev, dev_t* id);
 // Retrieve the device with the given id.  Returns NULL if none could be found.
 block_dev_t* dev_get_block(dev_t id);
 char_dev_t* dev_get_char(dev_t id);
+
+// Retrieve the memobj for the block device with the given id.  Returns NULL if
+// no such device exists.
+memobj_t* dev_get_block_memobj(dev_t id);
 
 // Remove the given block or character device.
 //
