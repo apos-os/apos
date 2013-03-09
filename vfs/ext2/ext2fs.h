@@ -15,7 +15,7 @@
 #ifndef APOO_VFS_EXT2_EXT2FS_H
 #define APOO_VFS_EXT2_EXT2FS_H
 
-#include "dev/block_cache.h"
+#include "memory/block_cache.h"
 #include "dev/dev.h"
 #include "vfs/vfs.h"
 

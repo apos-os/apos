@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // A block cache for filesystem blocks.
-#ifndef APOO_DEV_BLOCK_CACHE_H
-#define APOO_DEV_BLOCK_CACHE_H
+#ifndef APOO_MEMORY_BLOCK_CACHE_H
+#define APOO_MEMORY_BLOCK_CACHE_H
 
 #include "dev/dev.h"
 #include "memory/memory.h"

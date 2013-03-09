@@ -26,7 +26,7 @@
 #include "common/kprintf.h"
 #include "common/math.h"
 #include "dev/ata/ata.h"
-#include "dev/block_cache.h"
+#include "memory/block_cache.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/ld.h"
