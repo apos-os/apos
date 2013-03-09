@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "kmalloc.h"
-#include "kmalloc-internal.h"
+#include "memory/kmalloc.h"
+#include "memory/kmalloc-internal.h"
 
 #include <stdint.h>
 
@@ -22,8 +22,8 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
-#include "memory.h"
-#include "page_alloc.h"
+#include "memory/memory.h"
+#include "memory/page_alloc.h"
 
 // Global block list.
 static block_t* g_block_list = 0;

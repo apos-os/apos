@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #include "load/mem_init.h"
-#include "memory.h"
+#include "memory/memory.h"
 
 // Memory limits of the kernel --- symbols defined at the start and end of the
 // kernel.  Defined in loader.s.

@@ -17,7 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "vfs/ext2/ext2-internal.h"
 #include "vfs/ext2/ext2_ops.h"
 #include "vfs/ext2/ext2fs.h"

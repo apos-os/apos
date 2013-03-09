@@ -17,10 +17,10 @@
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "dev/interrupts.h"
-#include "kmalloc.h"
-#include "memory.h"
-#include "page_alloc.h"
-#include "page_fault.h"
+#include "memory/kmalloc.h"
+#include "memory/memory.h"
+#include "memory/page_alloc.h"
+#include "memory/page_fault.h"
 #include "test/ktest.h"
 
 // The maximum amount of memory (in MB) that the test_alloc_all test will

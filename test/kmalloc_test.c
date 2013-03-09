@@ -16,9 +16,9 @@
 
 #include "common/kassert.h"
 #include "dev/timer.h"
-#include "kmalloc.h"
-#include "kmalloc-internal.h"
-#include "memory.h"
+#include "memory/kmalloc.h"
+#include "memory/kmalloc-internal.h"
+#include "memory/memory.h"
 #include "test/ktest.h"
 
 #define HEAP_SIZE 0x10000000

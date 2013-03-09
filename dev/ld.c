@@ -18,7 +18,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "dev/char_dev.h"
 #include "dev/interrupts.h"
 #include "dev/ld.h"

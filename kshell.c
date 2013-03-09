@@ -31,7 +31,7 @@
 #include "dev/dev.h"
 #include "dev/ld.h"
 #include "dev/timer.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"

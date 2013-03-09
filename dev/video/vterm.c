@@ -18,7 +18,7 @@
 #include "common/klog.h"
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 
 struct vterm {
   video_t* video;

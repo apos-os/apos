@@ -17,7 +17,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"

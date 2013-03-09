@@ -21,7 +21,7 @@
 #include "common/kprintf.h"
 #include "dev/block_dev.h"
 #include "dev/ata/ata.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "test/block_dev_test.h"
 #include "test/ktest.h"
 

@@ -17,7 +17,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "test/ktest.h"
 #include "vfs/dirent.h"
 #include "vfs/ramfs.h"

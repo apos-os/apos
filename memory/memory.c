@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "common/kassert.h"
-#include "memory.h"
+#include "memory/memory.h"
 #include "load/mem_init.h"
 
 static memory_info_t* global_meminfo = 0;

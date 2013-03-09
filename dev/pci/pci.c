@@ -20,7 +20,7 @@
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 
 // IO ports for manipulating the PCI bus.
 #define PCI_CONFIG_ADDR 0xCF8

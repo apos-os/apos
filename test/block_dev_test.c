@@ -18,7 +18,7 @@
 #include "common/errno.h"
 #include "common/kstring.h"
 #include "dev/block_dev.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"

@@ -20,7 +20,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/block_cache.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "vfs/vfs.h"
 
 #include "vfs/ext2/ext2-internal.h"

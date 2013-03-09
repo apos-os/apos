@@ -18,10 +18,10 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
-#include "memory.h"
+#include "memory/memory.h"
 #include "proc/scheduler.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k

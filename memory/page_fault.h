@@ -17,7 +17,7 @@
 #define APOO_PAGE_FAULT
 
 #include <stdint.h>
-#include "memory.h"
+#include "memory/memory.h"
 
 // Initialize the page fault handler and register it with the interrupts module.
 void paging_init(memory_info_t* meminfo);

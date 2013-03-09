@@ -20,7 +20,7 @@
 
 #include <stdint.h>
 
-#include "memory.h"
+#include "memory/memory.h"
 
 // Initialize the allocator with the given meminfo.
 void page_frame_alloc_init(memory_info_t* meminfo);

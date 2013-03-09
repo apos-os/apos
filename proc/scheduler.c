@@ -17,10 +17,10 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
-#include "memory.h"
+#include "memory/memory.h"
 #include "proc/scheduler.h"
 
 static kthread_t g_idle_thread = 0;

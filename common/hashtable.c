@@ -17,7 +17,7 @@
 #include "common/kassert.h"
 #include "common/hash.h"
 #include "common/hashtable.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 
 struct htbl_entry {
   uint32_t key;

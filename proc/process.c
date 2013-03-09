@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"

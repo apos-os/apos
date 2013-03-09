@@ -20,8 +20,8 @@
 #include "common/kstring.h"
 #include "dev/block_dev.h"
 #include "dev/ramdisk/ramdisk.h"
-#include "kmalloc.h"
-#include "memory.h"
+#include "memory/kmalloc.h"
+#include "memory/memory.h"
 #include "proc/scheduler.h"
 
 struct ramdisk {

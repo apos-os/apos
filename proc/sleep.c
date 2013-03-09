@@ -14,7 +14,7 @@
 
 #include "common/kassert.h"
 #include "dev/timer.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
 

@@ -35,7 +35,9 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  dev/block_cache.c \
 	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
 	  proc/sleep.c proc/kthread_pool.c \
-	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
+	  memory/memory.c memory/page_alloc.c memory/kmalloc.c \
+	  memory/page_fault.c memory/slab_alloc.c \
+	  kernel.c \
 	  vfs/vfs.c vfs/ramfs.c vfs/file.c vfs/util.c \
 	  vfs/ext2/ext2.c vfs/ext2/ext2-internal.c vfs/ext2/ext2_ops.c \
 	  vfs/ext2/ext2fs.c \

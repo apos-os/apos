@@ -16,8 +16,8 @@
 
 #include "common/debug.h"
 #include "common/kassert.h"
-#include "kmalloc.h"
-#include "slab_alloc.h"
+#include "memory/kmalloc.h"
+#include "memory/slab_alloc.h"
 #include "test/ktest.h"
 
 // Make a slab allocator and ensure we can allocate the expected number of

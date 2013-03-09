@@ -20,7 +20,7 @@
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
-#include "memory.h"
+#include "memory/memory.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"

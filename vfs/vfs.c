@@ -17,7 +17,7 @@
 #include "common/klog.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "vfs/dirent.h"

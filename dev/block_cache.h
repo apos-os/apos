@@ -17,7 +17,7 @@
 #define APOO_DEV_BLOCK_CACHE_H
 
 #include "dev/dev.h"
-#include "memory.h"
+#include "memory/memory.h"
 
 // TODO(aoates): support other block sizes.
 #define BLOCK_CACHE_BLOCK_SIZE PAGE_SIZE

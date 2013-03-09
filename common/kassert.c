@@ -16,7 +16,7 @@
 
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "memory.h"
+#include "memory/memory.h"
 
 static void print_stack_trace() {
   const int kMaxFrames = 32;
