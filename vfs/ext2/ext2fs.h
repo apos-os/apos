@@ -15,6 +15,7 @@
 #ifndef APOO_VFS_EXT2_EXT2FS_H
 #define APOO_VFS_EXT2_EXT2FS_H
 
+#include "dev/block_cache.h"
 #include "dev/dev.h"
 #include "vfs/vfs.h"
 
@@ -44,6 +45,12 @@ typedef struct {
 static inline uint32_t ext2_block_size(const ext2fs_t* fs) {
   return 1024 << fs->sb.s_log_block_size;
 }
+
+// Get and put the requested block from the fs's device.  If the fs's block size
+// is smaller than the block cache's, then the returned pointer may point to the
+// middle of a block cache entry.
+void* ext2_block_get(const ext2fs_t* fs, int offset);
+void ext2_block_put(const ext2fs_t* fs, int offset, block_cache_flush_t flush_mode);
 
 // Read the superblock and block groups from disk into the given ext2fs_t.
 // Returns 0 on success, or -errno if there was an error, or if the on-disk

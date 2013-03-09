@@ -25,6 +25,33 @@
 
 #define SUPPORTED_RO_FEATURES EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER
 
+void* ext2_block_get(const ext2fs_t* fs, int offset) {
+  const uint32_t block_size = ext2_block_size(fs);
+  KASSERT_DBG(fs->sb.s_magic == EXT2_SUPER_MAGIC);
+  KASSERT_DBG(BLOCK_CACHE_BLOCK_SIZE >= block_size);
+  KASSERT_DBG(BLOCK_CACHE_BLOCK_SIZE % block_size == 0);
+
+  const int fs_blocks_per_dev_block = BLOCK_CACHE_BLOCK_SIZE / block_size;
+  const int dev_block = offset / fs_blocks_per_dev_block;
+  const int dev_block_offset = offset % fs_blocks_per_dev_block;
+  void* dev_block_ptr = block_cache_get(fs->dev, dev_block);
+  if (dev_block_ptr) {
+    return dev_block_ptr + dev_block_offset * block_size;
+  } else {
+    return dev_block_ptr;
+  }
+}
+
+void ext2_block_put(const ext2fs_t* fs, int offset, block_cache_flush_t flush_mode) {
+  const uint32_t block_size = ext2_block_size(fs);
+  KASSERT_DBG(BLOCK_CACHE_BLOCK_SIZE >= block_size);
+  KASSERT_DBG(BLOCK_CACHE_BLOCK_SIZE % block_size == 0);
+
+  const int fs_blocks_per_dev_block = BLOCK_CACHE_BLOCK_SIZE / block_size;
+  const int dev_block = offset / fs_blocks_per_dev_block;
+  block_cache_put(fs->dev, dev_block, flush_mode);
+}
+
 int ext2_read_superblock(ext2fs_t* fs) {
   KASSERT(BLOCK_CACHE_BLOCK_SIZE >= 1024);
   const int sb_block_num = (BLOCK_CACHE_BLOCK_SIZE == 1024) ? 1 : 0;
@@ -70,7 +97,9 @@ int ext2_read_superblock(ext2fs_t* fs) {
   }
 
   // Check block size.
-  if (fs->sb.s_log_block_size != 0 || fs->sb.s_log_frag_size != 0) {
+  const uint32_t block_size = ext2_block_size(fs);
+  if (block_size > BLOCK_CACHE_BLOCK_SIZE ||
+      fs->sb.s_log_frag_size != fs->sb.s_log_block_size) {
     klogf("ext2: unsupported block or fragment size\n");
     return -EINVAL;
   }
@@ -94,7 +123,7 @@ int ext2_read_block_groups(ext2fs_t* fs) {
   uint32_t bgs_remaining = fs->num_block_groups;
   for (int i = 0; i < bgdt_blocks; ++i) {
     const int block = bg_first_block + i;
-    void* bg_block = block_cache_get(fs->dev, block);
+    void* bg_block = ext2_block_get(fs, block);
     if (!bg_block) {
       kfree(fs->block_groups);
       fs->block_groups = 0x0;
@@ -111,7 +140,7 @@ int ext2_read_block_groups(ext2fs_t* fs) {
       ext2_block_group_desc_ltoh(cbg);
       bgs_remaining--;
     }
-    block_cache_put(fs->dev, block, BC_FLUSH_ASYNC);
+    ext2_block_put(fs, block, BC_FLUSH_ASYNC);
   }
 
   for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
@@ -129,7 +158,7 @@ static int flush_superblock_in_bg(const ext2fs_t* fs, unsigned int bg) {
       ((bg == 0 && ext2_block_size(fs) > 1024) ? 1024 : 0);
   KASSERT_DBG(sb_block_offset + sizeof(ext2_superblock_t) <= ext2_block_size(fs));
 
-  void* sb_block = block_cache_get(fs->dev, sb_block_num);
+  void* sb_block = ext2_block_get(fs, sb_block_num);
   if (!sb_block) {
     // Yikes! Only partially flushed!
     return -ENOMEM;
@@ -143,13 +172,11 @@ static int flush_superblock_in_bg(const ext2fs_t* fs, unsigned int bg) {
 
   kmemcpy(on_disk_sb, &fs->sb, sizeof(ext2_superblock_t));
   ext2_superblock_ltoh(on_disk_sb);
-  block_cache_put(fs->dev, sb_block_num, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, sb_block_num, BC_FLUSH_ASYNC);
   return 0;
 }
 
 int ext2_flush_superblock(const ext2fs_t* fs) {
-  KASSERT(BLOCK_CACHE_BLOCK_SIZE == ext2_block_size(fs));
-
   // Write out the superblock to every copy.
   if (fs->sb.s_feature_ro_compat & EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER) {
     flush_superblock_in_bg(fs, 0);
@@ -183,7 +210,7 @@ static int flush_bgdt_in_bg(const ext2fs_t* fs,
   const uint32_t bgdt_first_block =
       fs->sb.s_first_data_block + (bg * fs->sb.s_blocks_per_group) + 1;
   const uint32_t bgdt_block_num = bgdt_first_block + flush_bg_bgdt_block_idx;
-  ext2_block_group_desc_t* bgdt_block = block_cache_get(fs->dev, bgdt_block_num);
+  ext2_block_group_desc_t* bgdt_block = ext2_block_get(fs, bgdt_block_num);
   if (!bgdt_block) {
     // Yikes! Only partially flushed!
     return -ENOMEM;
@@ -198,7 +225,7 @@ static int flush_bgdt_in_bg(const ext2fs_t* fs,
 
   kmemcpy(on_disk_bgd, bgd_to_flush, sizeof(ext2_block_group_desc_t));
   ext2_block_group_desc_ltoh(on_disk_bgd);
-  block_cache_put(fs->dev, bgdt_block_num, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, bgdt_block_num, BC_FLUSH_ASYNC);
   return 0;
 }
 
