@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Code for handling page fault exceptions.
-#ifndef APOO_PAGE_FAULT
-#define APOO_PAGE_FAULT
+#ifndef APOO_MEMORY_PAGE_FAULT
+#define APOO_MEMORY_PAGE_FAULT
 
 #include <stdint.h>
 #include "memory/memory.h"

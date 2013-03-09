@@ -14,8 +14,8 @@
 
 // Internal of the kmalloc implementation.  Exposed here for testing.  Should
 // not be used directly.
-#ifndef APOO_KMALLOC_INTERNAL_H
-#define APOO_KMALLOC_INTERNAL_H
+#ifndef APOO_MEMORY_KMALLOC_INTERNAL_H
+#define APOO_MEMORY_KMALLOC_INTERNAL_H
 
 // Don't bother splitting a block if it'll be smaller than this (bytes).
 #define KALLOC_MIN_BLOCK_SIZE 8
