@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 
+#include "common/errno.h"
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -55,7 +56,7 @@ typedef struct {
 // A cache entry.
 // TODO(aoates): we could probably stuff this all into a single uint32_t.
 typedef struct cache_entry {
-  dev_t dev;
+  memobj_t* obj;
   uint32_t offset;
   void* block;
   int pin_count;
@@ -235,11 +236,9 @@ static void put_free_block(void* block) {
   g_free_block_stack[g_free_block_stack_idx++] = (uint32_t)block;
 }
 
-static uint32_t block_hash(dev_t dev, int offset) {
-  // TODO(aoates): do we want to make a guaranteed-unique key by stuffing the
-  // dev and offset into a uint32_t instead of hashing?
-  uint32_t h = fnv_hash_array(&dev, sizeof(dev_t));
-  h = fnv_hash_concat(h, fnv_hash(offset));
+static uint32_t obj_hash(memobj_t* obj, int offset) {
+  uint32_t array[3] = {obj->type, obj->id, offset};
+  uint32_t h = fnv_hash_array(array, 3 * sizeof(uint32_t));
   return h;
 }
 
@@ -247,12 +246,10 @@ static uint32_t block_hash(dev_t dev, int offset) {
 static void flush_cache_entry(cache_entry_t* entry) {
   // Write the data back to disk.  This may block.
   entry->flushing = 1;
-  block_dev_t* bd = dev_get_block(entry->dev);
-  const uint32_t sector =
-      entry->offset * BLOCK_CACHE_BLOCK_SIZE / bd->sector_size;
+  KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
   const int result =
-      bd->write(bd, sector, entry->block, BLOCK_CACHE_BLOCK_SIZE);
-  KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
+      entry->obj->ops->write_page(entry->obj, entry->offset, entry->block);
+  KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
   entry->flushing = 0;
   entry->flushed = 1;
   scheduler_wake_all(&entry->wait_queue);
@@ -289,7 +286,7 @@ static void free_cache_entry(cache_entry_t* entry) {
 
   //klogf("<block cache free block %d>\n", entry->offset);
   g_size--;
-  const uint32_t h = block_hash(entry->dev, entry->offset);
+  const uint32_t h = obj_hash(entry->obj, entry->offset);
   KASSERT(htbl_remove(&g_table, h) == 0);
   put_free_block(entry->block);
   kfree(entry);
@@ -346,7 +343,7 @@ static void init_block_cache() {
   g_initialized = 1;
 }
 
-void* block_cache_get(dev_t dev, int offset) {
+void* block_cache_get(memobj_t* obj, int offset) {
   //if (offset == 1) klogf("block_cache_get(block=1)\n");
   if (!g_initialized) {
     init_block_cache();
@@ -358,7 +355,7 @@ void* block_cache_get(dev_t dev, int offset) {
     }
   }
 
-  const uint32_t h = block_hash(dev, offset);
+  const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
     // Get a new free block, fill it, and return it.
@@ -369,7 +366,7 @@ void* block_cache_get(dev_t dev, int offset) {
 
     g_size++;
     cache_entry_t* entry = (cache_entry_t*)kmalloc(sizeof(cache_entry_t));
-    entry->dev = dev;
+    entry->obj = obj;
     entry->offset = offset;
     entry->block = block;
     entry->pin_count = 1;
@@ -384,14 +381,11 @@ void* block_cache_get(dev_t dev, int offset) {
     htbl_put(&g_table, h, entry);
 
     // Read data from the block device into the cache.
-    block_dev_t* bd = dev_get_block(dev);
-    KASSERT(bd != 0x0);
-    KASSERT(BLOCK_CACHE_BLOCK_SIZE % bd->sector_size == 0);
-    const uint32_t sector = offset * BLOCK_CACHE_BLOCK_SIZE / bd->sector_size;
     // Note: this may block.
+    KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
     const int result =
-        bd->read(bd, sector, entry->block, BLOCK_CACHE_BLOCK_SIZE);
-    KASSERT(result == BLOCK_CACHE_BLOCK_SIZE);
+        obj->ops->read_page(obj, offset, entry->block);
+    KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
 
     entry->initialized = 1;
     scheduler_wake_all(&entry->wait_queue);
@@ -415,16 +409,17 @@ void* block_cache_get(dev_t dev, int offset) {
   }
 }
 
-void block_cache_put(dev_t dev, int offset, block_cache_flush_t flush_mode) {
+void block_cache_put(memobj_t* obj, int offset,
+                     block_cache_flush_t flush_mode) {
   //if (offset == 1) klogf("block_cache_put(block=1)\n");
   KASSERT(g_initialized);
 
-  const uint32_t h = block_hash(dev, offset);
+  const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   KASSERT(htbl_get(&g_table, h, &tbl_value) == 0);
 
   cache_entry_t* entry = (cache_entry_t*)tbl_value;
-  KASSERT(entry->dev.major == dev.major && entry->dev.minor == dev.minor);
+  KASSERT(entry->obj == obj);
   KASSERT(entry->pin_count > 0);
 
   // The block needs to be flushed, if it's not already scheduled for one.
@@ -446,12 +441,12 @@ void block_cache_put(dev_t dev, int offset, block_cache_flush_t flush_mode) {
   }
 }
 
-int block_cache_get_pin_count(dev_t dev, int offset) {
+int block_cache_get_pin_count(memobj_t* obj, int offset) {
   if (!g_initialized) {
     return 0;
   }
 
-  const uint32_t h = block_hash(dev, offset);
+  const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
     return 0;

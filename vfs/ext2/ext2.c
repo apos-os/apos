@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "dev/block_dev.h"
 #include "memory/kmalloc.h"
 #include "vfs/ext2/ext2-internal.h"
 #include "vfs/ext2/ext2_ops.h"
@@ -48,6 +49,7 @@ int ext2_mount(fs_t* fs, dev_t dev) {
   }
 
   ext2fs->dev = dev;
+  ext2fs->obj = dev_get_block_memobj(dev);
   int result = ext2_read_superblock(ext2fs);
   if (result) {
     return result;

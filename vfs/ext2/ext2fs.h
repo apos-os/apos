@@ -16,6 +16,7 @@
 #define APOO_VFS_EXT2_EXT2FS_H
 
 #include "memory/block_cache.h"
+#include "memory/memobj.h"
 #include "dev/dev.h"
 #include "vfs/vfs.h"
 
@@ -26,6 +27,7 @@ typedef struct {
   fs_t fs;  // Embedded fs interface.
 
   dev_t dev;
+  memobj_t* obj;
   int mounted;
   int read_only;
 

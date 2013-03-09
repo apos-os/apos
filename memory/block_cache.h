@@ -16,8 +16,8 @@
 #ifndef APOO_MEMORY_BLOCK_CACHE_H
 #define APOO_MEMORY_BLOCK_CACHE_H
 
-#include "dev/dev.h"
 #include "memory/memory.h"
+#include "memory/memobj.h"
 
 // TODO(aoates): support other block sizes.
 #define BLOCK_CACHE_BLOCK_SIZE PAGE_SIZE
@@ -30,7 +30,7 @@ typedef enum {
 } block_cache_flush_t;
 
 // Return a pointer to the block cache for the given block.  If no entry exists,
-// the data is read from the block device into a fresh (or reused) buffer.
+// the data is read from the memory object into a fresh (or reused) buffer.
 //
 // offset is the block number to retrieve.
 //
@@ -38,7 +38,7 @@ typedef enum {
 // when you are done with the block.
 //
 // Returns NULL if the block cannot be retrieved, or the cache is full.
-void* block_cache_get(dev_t dev, int offset);
+void* block_cache_get(memobj_t* obj, int offset);
 
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 //
@@ -52,11 +52,11 @@ void* block_cache_get(dev_t dev, int offset);
 //    time in the future, possibly several seconds away.
 //
 // Most callers should probably use BC_FLUSH_ASYNC.
-void block_cache_put(dev_t dev, int offset, block_cache_flush_t flush_mode);
+void block_cache_put(memobj_t* obj, int offset, block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.
-int block_cache_get_pin_count(dev_t dev, int offset);
+int block_cache_get_pin_count(memobj_t* obj, int offset);
 
 // Set the maximum size of the block cache, in blocks.  If the cache is
 // currently larger than this, it may not be immediately pruned.
