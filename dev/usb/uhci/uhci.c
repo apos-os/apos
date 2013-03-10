@@ -31,12 +31,12 @@
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci_registers.h"
 #include "dev/usb/usb_driver.h"
-#include "kmalloc.h"
-#include "page_alloc.h"
+#include "memory/kmalloc.h"
+#include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
-#include "slab_alloc.h"
+#include "memory/slab_alloc.h"
 
 // TODO(aoates): we don't need a table of UHCIs, since we can just store the
 // data in the HCDI we give to the USBD.

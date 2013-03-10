@@ -21,9 +21,9 @@
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
 #include "dev/usb/usb_driver.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread_pool.h"
-#include "slab_alloc.h"
+#include "memory/slab_alloc.h"
 
 #define USB_FIRST_ADDRESS 1
 

@@ -18,12 +18,12 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
-#include "memory.h"
-#include "page_alloc.h"
-#include "page_fault.h"
+#include "memory/memory.h"
+#include "memory/page_alloc.h"
+#include "memory/page_fault.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
@@ -36,6 +36,7 @@
 #include "dev/usb/usb.h"
 #include "kshell.h"
 #include "proc/scheduler.h"
+#include "vfs/vfs.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
@@ -120,6 +121,13 @@ void kmain(memory_info_t* meminfo) {
 
   klog("usb_init()\n");
   usb_init();
+
+  klog("vfs_init()\n");
+  vfs_init();
+
+  // TODO(aoates): is there a cleaner way of doing this?  The proc/vfs circular
+  // dependency is gross.
+  proc_current()->cwd = vfs_get_root_vnode();
 
   klog("initialization finished...\n");
 

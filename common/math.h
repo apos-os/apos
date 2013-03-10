@@ -25,4 +25,11 @@
      typeof (b) _b = (b); \
    _a > _b ? _a : _b; })
 
+// Does integer division of a by b, but takes the ceiling of the result, not the
+// floor.
+#define ceiling_div(a, b) \
+ ({ typeof (a) _a = (a); \
+     typeof (b) _b = (b); \
+    (_a % _b) ? _a / _b + 1 : _a / _b; })
+
 #endif

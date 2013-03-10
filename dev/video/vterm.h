@@ -12,7 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Basic video terminal that can output ASCII, handle backspace, etc.
+// Basic video terminal that can output ASCII, handle backspace, etc.  It stores
+// (and can restore) it's current state, allowing multiple video terminals to be
+// multiplexed on a single video device.
 #ifndef APOO_DEV_VIDEO_VTERM
 #define APOO_DEV_VIDEO_VTERM
 
@@ -35,5 +37,8 @@ static inline void vterm_putc_sink(void* arg, char c) {
 
 // Clear the terminal.
 void vterm_clear(vterm_t* t);
+
+// Clear the screen and redraw the current state onto the video device.
+void vterm_redraw(vterm_t* t);
 
 #endif

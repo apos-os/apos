@@ -14,9 +14,9 @@
 
 #include "common/kassert.h"
 #include "common/kstring.h"
-#include "kmalloc.h"
-#include "page_alloc.h"
-#include "slab_alloc.h"
+#include "memory/kmalloc.h"
+#include "memory/page_alloc.h"
+#include "memory/slab_alloc.h"
 
 struct slab_alloc {
   int obj_size;  // The object size.

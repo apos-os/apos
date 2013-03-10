@@ -17,10 +17,10 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
-#include "memory.h"
+#include "memory/memory.h"
 #include "proc/scheduler.h"
 
 static kthread_t g_idle_thread = 0;
@@ -75,4 +75,16 @@ void scheduler_wait_on(kthread_queue_t* queue) {
   kthread_queue_push(queue, current);
   scheduler_yield_no_reschedule();
   POP_INTERRUPTS();
+}
+
+void scheduler_wake_one(kthread_queue_t* queue) {
+  if (!kthread_queue_empty(queue)) {
+    scheduler_make_runnable(kthread_queue_pop(queue));
+  }
+}
+
+void scheduler_wake_all(kthread_queue_t* queue) {
+  while (!kthread_queue_empty(queue)) {
+    scheduler_make_runnable(kthread_queue_pop(queue));
+  }
 }

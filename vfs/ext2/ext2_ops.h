@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Common definitions for character sources and sinks.
-#ifndef APOO_CHAR_H
-#define APOO_CHAR_H
+#ifndef APOO_VFS_EXT2_EXT2_OPS_H
+#define APOO_VFS_EXT2_EXT2_OPS_H
 
-// A char_sink_t is a function accepting an opaque arg and a character to be
-// processed.
-//
-// Generally, character sources (like keyboards and line disciplines) will be
-// configured with a char_sink_t to call when a character is available (and the
-// arg to pass to that sink).
-typedef void (*char_sink_t)(void*, char);
+#include "vfs/vfs.h"
+
+void ext2_set_ops(fs_t* fs);
 
 #endif

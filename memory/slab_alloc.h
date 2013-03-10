@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Basic slab allocator.  Best for objects < 128 bytes.
-#ifndef APOO_SLAB_ALLOC_H
-#define APOO_SLAB_ALLOC_H
+#ifndef APOO_MEMORY_SLAB_ALLOC_H
+#define APOO_MEMORY_SLAB_ALLOC_H
 
 struct slab_alloc;
 typedef struct slab_alloc slab_alloc_t;

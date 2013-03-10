@@ -16,8 +16,8 @@
 
 #include "common/debug.h"
 #include "common/kassert.h"
-#include "memory.h"
-#include "page_alloc.h"
+#include "memory/memory.h"
+#include "memory/page_alloc.h"
 
 #define SUPPORTS_INVPLG_INSTRUCTION 0
 

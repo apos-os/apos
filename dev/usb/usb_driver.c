@@ -19,7 +19,7 @@
 #include "dev/usb/bus.h"
 #include "dev/usb/device.h"
 #include "dev/usb/usb_driver.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 
 #define CONFIG_BUFFER_SIZE 512
 

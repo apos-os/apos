@@ -25,7 +25,7 @@
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci_hub.h"
 #include "dev/usb/uhci/uhci_registers.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 
 // Length of time to hold down the reset line for a port.
 #define UHCI_PORT_RESET_MS 10

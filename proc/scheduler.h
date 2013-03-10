@@ -45,4 +45,10 @@ void scheduler_yield();
 // queue and calles scheduler_make_runnable() on it.
 void scheduler_wait_on(kthread_queue_t* queue);
 
+// Wake one thread waiting on the given thread queue.
+void scheduler_wake_one(kthread_queue_t* queue);
+
+// Wake *all* threads waiting on the given thread queue.
+void scheduler_wake_all(kthread_queue_t* queue);
+
 #endif

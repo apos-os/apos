@@ -23,6 +23,7 @@
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/dma.h"
 #include "dev/ata/queue.h"
+#include "dev/dev.h"
 #include "dev/interrupts.h"
 #include "dev/irq.h"
 #include "proc/kthread.h"
@@ -277,19 +278,12 @@ static void handle_interrupt(ata_channel_t* channel) {
   op->done = 1;
 
   // Wake up any threads waiting for the op to finish.
-  kthread_t t = kthread_queue_pop(&op->waiters);
-  while (t) {
-    scheduler_make_runnable(t);
-    t = kthread_queue_pop(&op->waiters);
-  }
+  scheduler_wake_all(&op->waiters);
 
   // Set the channel to free and wake up a thread waiting to do disk IO on this
   // channel.
   channel->pending_op = 0x0;
-  t = kthread_queue_pop(&channel->channel_waiters);
-  if (t) {
-    scheduler_make_runnable(t);
-  }
+  scheduler_wake_one(&channel->channel_waiters);
 }
 
 // IRQ handlers for the primary and secondary channels.
@@ -465,7 +459,7 @@ static void ata_init_internal(const ata_t* ata) {
 
 static uint16_t g_busmaster_prim_offset = 0;
 static uint16_t g_busmaster_secd_offset = 0;
-void ata_enable_bumaster(uint16_t primary_offset, uint16_t secondary_offset) {
+void ata_enable_busmaster(uint16_t primary_offset, uint16_t secondary_offset) {
   g_busmaster_prim_offset = primary_offset;
   g_busmaster_secd_offset = secondary_offset;
 }
@@ -492,6 +486,12 @@ void ata_init() {
   // initialize all 4.
 
   ata_init_internal(&ata);
+
+  // Register all the devices.
+  for (int i = 0; i < g_num_ata_block_devs; ++i) {
+    dev_t dev = mkdev(DEVICE_MAJOR_ATA, DEVICE_ID_UNKNOWN);
+    KASSERT(dev_register_block(&g_ata_block_devs[i], &dev) == 0);
+  }
 }
 
 int ata_num_devices() {

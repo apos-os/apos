@@ -15,6 +15,7 @@
 // A very basic kernel-mode shell.  Currently just for testing ld I/O.
 
 #include <stdint.h>
+#include <limits.h>
 
 #include "common/errno.h"
 #include "common/hash.h"
@@ -23,17 +24,22 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
+#include "common/math.h"
 #include "dev/ata/ata.h"
-#include "dev/block.h"
+#include "memory/block_cache.h"
+#include "dev/block_dev.h"
+#include "dev/dev.h"
 #include "dev/ld.h"
 #include "dev/timer.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
 #include "dev/usb/uhci/uhci_cmd.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "vfs/dirent.h"
+#include "vfs/vfs.h"
 
 #define READ_BUF_SIZE 1024
 
@@ -78,6 +84,10 @@ static test_entry_t TESTS[] = {
   { "slab_alloc", &slab_alloc_test, 1 },
   { "flag_printf", &flag_printf_test, 1 },
   { "ata", &ata_test, 0 },  // Don't run by default so we don't muck up our FS.
+  { "ramfs", &ramfs_test, 1 },
+  { "vfs", &vfs_test, 1 },
+  { "hash", &hash_test, 1 },
+  { "block_cache", &block_cache_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
@@ -132,18 +142,18 @@ static void hash_cmd(int argc, char* argv[]) {
 
 // Reads a block from a block device.
 static void b_read_cmd(int argc, char* argv[]) {
-  if (argc != 3) {
-    ksh_printf("usage: b_read <block dev> <block>\n");
+  if (argc != 4) {
+    ksh_printf("usage: b_read <dev major> <dev minor> <block>\n");
     return;
   }
 
-  block_dev_t* b = ata_get_block_dev(atou(argv[1]));
+  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
   if (!b) {
-    ksh_printf("error: unknown block device %s\n", argv[1]);
+    ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[2]);
+  uint32_t block = atou(argv[3]);
 
   char buf[4096];
   kmemset(buf, 0x0, 4096);
@@ -161,22 +171,22 @@ static void b_read_cmd(int argc, char* argv[]) {
 
 // Writes a block to a block device.
 static void b_write_cmd(int argc, char* argv[]) {
-  if (argc != 4) {
-    ksh_printf("usage: b_write <block dev> <block> <data>\n");
+  if (argc != 5) {
+    ksh_printf("usage: b_write <dev major> <dev minor> <block> <data>\n");
     return;
   }
 
-  block_dev_t* b = ata_get_block_dev(atou(argv[1]));
+  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
   if (!b) {
-    ksh_printf("error: unknown block device %s\n", argv[1]);
+    ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[2]);
+  uint32_t block = atou(argv[3]);
 
   char buf[4096];
   kmemset(buf, 0x0, 4096);
-  kstrcpy(buf, argv[3]);
+  kstrcpy(buf, argv[4]);
   int error = b->write(b, block, buf, 4096);
   if (error < 0) {
     ksh_printf("error: %s\n", errorname(-error));
@@ -290,6 +300,292 @@ static void sleep_cmd(int argc, char* argv[]) {
   ksleep(atou(argv[1]));
 }
 
+static void ls_cmd(int argc, char* argv[]) {
+  if (argc > 3) {
+    ksh_printf("usage: ls [-l] [optional path]\n");
+    return;
+  }
+  int long_mode = 0;
+  argc--;
+  argv++;
+  while (argc > 0) {
+    if (kstrcmp(argv[0], "-l") == 0) {
+      long_mode = 1;
+    } else {
+      break;
+    }
+    argc--;
+    argv++;
+  }
+  const char* path = (argc == 0 ? "." : argv[0]);
+
+  int fd = vfs_open(path, VFS_O_RDONLY);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open directory '%s': %s\n",
+               path, errorname(-fd));
+    return;
+  }
+
+  const int kBufSize = 512;
+  char buf[kBufSize];
+
+  while (1) {
+    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    if (len < 0) {
+      vfs_close(fd);
+      ksh_printf("error: vfs_getdents(): %s\n", errorname(-len));
+      return;
+    }
+    if (len == 0) {
+      break;
+    }
+
+    int buf_offset = 0;
+    do {
+      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      buf_offset += ent->length;
+      if (long_mode) {
+        ksh_printf("[%d] %s\n", ent->vnode, ent->name);
+      } else {
+        ksh_printf("%s\n", ent->name);
+      }
+    } while (buf_offset < len);
+  }
+
+  vfs_close(fd);
+}
+
+static void mkdir_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: mkdir <path>\n");
+    return;
+  }
+  const int result = vfs_mkdir(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_mkdir(): %s\n", errorname(-result));
+  }
+}
+
+static void rmdir_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: rmdir <path>\n");
+    return;
+  }
+  const int result = vfs_rmdir(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_rmdir(): %s\n", errorname(-result));
+  }
+}
+
+static void pwd_cmd(int argc, char* argv[]) {
+  if (argc != 1) {
+    ksh_printf("usage: pwd\n");
+    return;
+  }
+  char buf[VFS_MAX_PATH_LENGTH];
+  const int result = vfs_getcwd(buf, VFS_MAX_PATH_LENGTH);
+  if (result < 0) {
+    ksh_printf("error: vfs_getcwd(): %s\n", errorname(-result));
+  } else {
+    ksh_printf("%s\n", buf);
+  }
+}
+
+static void cd_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: cd <path>\n");
+    return;
+  }
+  const int result = vfs_chdir(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_chdir(): %s\n", errorname(-result));
+  }
+}
+
+static void cat_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: cat <path>\n");
+    return;
+  }
+
+  const int fd = vfs_open(argv[1], VFS_O_RDONLY);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-fd));
+    return;
+  }
+
+  const int kBufSize = 512;
+  char buf[kBufSize];
+  while (1) {
+    const int len = vfs_read(fd, buf, kBufSize - 1);
+    if (len < 0) {
+      ksh_printf("error: couldn't read from file: %s\n", errorname(-len));
+      vfs_close(fd);
+      return;
+    } else if (len == 0) {
+      break;
+    } else {
+      buf[len] = '\0';
+      ksh_printf(buf);
+    }
+  }
+  vfs_close(fd);
+}
+
+static void write_cmd(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: write <path> <data>\n");
+    return;
+  }
+
+  const int fd = vfs_open(argv[1], VFS_O_RDWR | VFS_O_CREAT);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-fd));
+    return;
+  }
+
+  const char* buf = argv[2];
+  int buf_len = kstrlen(argv[2]);
+  while (buf_len > 0) {
+    const int len = vfs_write(fd, buf, buf_len);
+    if (len < 0) {
+      ksh_printf("error: couldn't write to file: %s\n", errorname(-len));
+      vfs_close(fd);
+      return;
+    } else {
+      buf_len -= len;
+    }
+  }
+  vfs_close(fd);
+}
+
+static void cp_cmd(int argc, char* argv[]) {
+  if (argc != 3) {
+    ksh_printf("usage: cp <src> <dst>\n");
+    return;
+  }
+
+  const int src_fd = vfs_open(argv[1], VFS_O_RDONLY);
+  if (src_fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-src_fd));
+    return;
+  }
+
+  const int dst_fd = vfs_open(argv[2], VFS_O_WRONLY | VFS_O_CREAT);
+  if (dst_fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[2], errorname(-dst_fd));
+    vfs_close(src_fd);
+    return;
+  }
+
+  const uint32_t time_start = get_time_ms();
+  uint32_t bytes_copied = 0;
+  const int kBufSize = 900;
+  char buf[kBufSize];
+  while (1) {
+    const int len = vfs_read(src_fd, buf, kBufSize);
+    if (len < 0) {
+      ksh_printf("error: couldn't read from file: %s\n", errorname(-len));
+      vfs_close(src_fd);
+      vfs_close(dst_fd);
+      return;
+    } else if (len == 0) {
+      break;
+    } else {
+      bytes_copied += len;
+      int bytes_to_write = len;
+      int offset = 0;
+      while (bytes_to_write > 0) {
+        const int write_len = vfs_write(dst_fd, buf + offset, bytes_to_write);
+        if (write_len < 0) {
+          ksh_printf("error: couldn't write to file: %s\n",
+                     errorname(-write_len));
+          vfs_close(src_fd);
+          vfs_close(dst_fd);
+          return;
+        }
+        bytes_to_write -= write_len;
+      }
+    }
+  }
+  vfs_close(src_fd);
+  vfs_close(dst_fd);
+  const uint32_t elapsed = get_time_ms() - time_start;
+  ksh_printf("elapsed time: %d ms\n", elapsed);
+  ksh_printf("bytes copied: %d\n", bytes_copied);
+}
+
+static void rm_cmd(int argc, char* argv[]) {
+  if (argc != 2) {
+    ksh_printf("usage: rm <path>\n");
+    return;
+  }
+  const int result = vfs_unlink(argv[1]);
+  if (result) {
+    ksh_printf("error: vfs_unlxn(): %s\n", errorname(-result));
+  }
+}
+
+static void hash_file_cmd(int argc, char* argv[]) {
+  if (argc != 4) {
+    ksh_printf("usage: hash_file <start> <end> <path>\n");
+    return;
+  }
+
+  const int start = atoi(argv[1]);
+  int end = atoi(argv[2]);
+  if (end < 0) {
+    end = INT_MAX;
+  }
+
+  const int fd = vfs_open(argv[3], VFS_O_RDONLY);
+  if (fd < 0) {
+    ksh_printf("error: couldn't open %s: %s\n", argv[3], errorname(-fd));
+    return;
+  }
+
+  const uint32_t time_start = get_time_ms();
+  const int result = vfs_seek(fd, start, VFS_SEEK_SET);
+  if (result < 0) {
+    ksh_printf("error: couldn't seek: %s\n", errorname(-result));
+    vfs_close(fd);
+    return;
+  }
+
+  int cpos = start;
+  uint32_t h = kFNVOffsetBasis;
+  const int kBufSize = 700;
+  char buf[kBufSize];
+  while (1) {
+    if (end >= 0 && cpos >= end) {
+      break;
+    }
+    const int max_len = min(kBufSize, end - cpos);
+    const int len = vfs_read(fd, buf, max_len);
+    if (len < 0) {
+      ksh_printf("error: couldn't read from file: %s\n", errorname(-len));
+      vfs_close(fd);
+      return;
+    } else if (len == 0) {
+      break;
+    } else {
+      cpos += len;
+      for (int i = 0; i < len; ++i) {
+        h ^= ((uint8_t*)buf)[i];
+        h *= kFNVPrime;
+      }
+    }
+  }
+  ksh_printf("hash: 0x%x\n", h);
+  vfs_close(fd);
+  const uint32_t elapsed = get_time_ms() - time_start;
+  ksh_printf("elapsed time: %d ms\n", elapsed);
+}
+
+void bcstats_cmd(int argc, char** argv) {
+  block_cache_log_stats();
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -313,7 +609,21 @@ static cmd_t CMDS[] = {
   { "timer", &timer_cmd },
   { "sleep", &sleep_cmd },
 
+  { "ls", &ls_cmd },
+  { "mkdir", &mkdir_cmd },
+  { "rmdir", &rmdir_cmd },
+  { "pwd", &pwd_cmd },
+  { "cd", &cd_cmd },
+  { "cat", &cat_cmd },
+  { "write", &write_cmd },
+  { "rm", &rm_cmd },
+  { "cp", &cp_cmd },
+
+  { "hash_file", &hash_file_cmd },
+
   { "uhci", &uhci_cmd },
+
+  { "bcstats", &bcstats_cmd },
 
   { 0x0, 0x0 },
 };

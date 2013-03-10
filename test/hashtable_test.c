@@ -88,11 +88,11 @@ static void do_table_test(htbl_t* tbl) {
 
 #define ITERATE_SIZE 10
 static int g_iterate_vals[10];
-static int g_iterate_ctr = 0;
-static void iterate_func(uint32_t key, void* val) {
+static void iterate_func(void* arg, uint32_t key, void* val) {
+  int* counter = (int*)arg;
   KASSERT(key < ITERATE_SIZE);
   g_iterate_vals[key] = (int)val;
-  g_iterate_ctr++;
+  (*counter)++;
 }
 
 void iterate_test(htbl_t* tbl) {
@@ -101,15 +101,15 @@ void iterate_test(htbl_t* tbl) {
   for (int i = 0; i < ITERATE_SIZE; ++i) {
     g_iterate_vals[i] = 0;
   }
-  g_iterate_ctr = 0;
+  int iterate_ctr = 0;
 
   htbl_put(tbl, 1, (void*)301);
   htbl_put(tbl, 3, (void*)303);
   htbl_put(tbl, 4, (void*)304);
   htbl_put(tbl, 6, (void*)306);
 
-  htbl_iterate(tbl, &iterate_func);
-  KEXPECT_EQ(4, g_iterate_ctr);
+  htbl_iterate(tbl, &iterate_func, &iterate_ctr);
+  KEXPECT_EQ(4, iterate_ctr);
   KEXPECT_EQ(0, g_iterate_vals[0]);
   KEXPECT_EQ(301, g_iterate_vals[1]);
   KEXPECT_EQ(0, g_iterate_vals[2]);
@@ -122,9 +122,9 @@ void iterate_test(htbl_t* tbl) {
   htbl_remove(tbl, 1);
   htbl_remove(tbl, 4);
 
-  g_iterate_ctr = 0;
-  htbl_iterate(tbl, &iterate_func);
-  KEXPECT_EQ(2, g_iterate_ctr);
+  iterate_ctr = 0;
+  htbl_iterate(tbl, &iterate_func, &iterate_ctr);
+  KEXPECT_EQ(2, iterate_ctr);
 
   htbl_remove(tbl, 3);
   htbl_remove(tbl, 6);

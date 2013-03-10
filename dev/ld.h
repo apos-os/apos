@@ -20,7 +20,7 @@
 #ifndef APOO_LINE_DISCIPLINE_H
 #define APOO_LINE_DISCIPLINE_H
 
-#include "dev/char.h"
+#include "dev/char_dev.h"
 
 struct ld;
 typedef struct ld ld_t;

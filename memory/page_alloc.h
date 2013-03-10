@@ -15,12 +15,12 @@
 // Code for the low-level kernel page frame allocator and page tables.  Handles
 // allocating physical pages, and creating/deleting page mappings.
 
-#ifndef APOO_PAGE_ALLOC_H
-#define APOO_PAGE_ALLOC_H
+#ifndef APOO_MEMORY_PAGE_ALLOC_H
+#define APOO_MEMORY_PAGE_ALLOC_H
 
 #include <stdint.h>
 
-#include "memory.h"
+#include "memory/memory.h"
 
 // Initialize the allocator with the given meminfo.
 void page_frame_alloc_init(memory_info_t* meminfo);

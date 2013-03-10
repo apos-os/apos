@@ -12,18 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Code for handling page fault exceptions.
-#ifndef APOO_PAGE_FAULT
-#define APOO_PAGE_FAULT
+#include "vfs/file.h"
 
-#include <stdint.h>
-#include "memory.h"
-
-// Initialize the page fault handler and register it with the interrupts module.
-void paging_init(memory_info_t* meminfo);
-
-// Interrupt handler for page faults.  Reads the address that caused the fault
-// from register CR2, and takes the error code given by the interrupt.
-void page_fault_handler(uint32_t interrupt, uint32_t error);
-
-#endif
+void file_init_file(file_t* f) {
+  f->vnode = 0x0;
+  f->refcount = 0;
+  f->pos = 0;
+  f->mode = 0xFF;  // A bad mode.
+}

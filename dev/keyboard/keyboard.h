@@ -21,7 +21,7 @@
 
 #include <stdint.h>
 
-#include "dev/char.h"
+#include "dev/char_dev.h"
 
 // Raw key codes.  Provided by hardward drivers.
 #define NONE 0

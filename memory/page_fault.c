@@ -17,9 +17,9 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
-#include "memory.h"
-#include "page_fault.h"
-#include "page_alloc.h"
+#include "memory/memory.h"
+#include "memory/page_fault.h"
+#include "memory/page_alloc.h"
 
 // TODO(aoates): define these common interrupts in dev/interrupts.h
 #define PAGE_FAULT_INTERRUPT 0x0E

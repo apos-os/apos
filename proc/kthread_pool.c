@@ -16,7 +16,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread_pool.h"
 #include "proc/scheduler.h"

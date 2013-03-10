@@ -17,7 +17,7 @@
 #define APOO_DEV_ATA_H
 
 #include <stdint.h>
-#include "dev/block.h"
+#include "dev/block_dev.h"
 
 // Initialize the ATA driver and scan the primary and secondary channels for ATA
 // devices.
@@ -36,6 +36,6 @@ block_dev_t* ata_get_block_dev(int dev);
 //
 // If this has been called, then the ATA driver will use these port offsets to
 // communicate with the busmaster (presumably a PIIX chip) to do DMA.
-void ata_enable_bumaster(uint16_t primary_offset, uint16_t secondary_offset);
+void ata_enable_busmaster(uint16_t primary_offset, uint16_t secondary_offset);
 
 #endif

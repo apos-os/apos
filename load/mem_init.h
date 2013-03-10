@@ -18,7 +18,7 @@
 #include <stdint.h>
 
 #include "load/multiboot.h"
-#include "memory.h"
+#include "memory/memory.h"
 
 // The VMA offset at which we're loading our kernel.  We can subtract this from
 // KERNEL_{START,END}_SYMBOL to get the physical limits of the kernel as loaded

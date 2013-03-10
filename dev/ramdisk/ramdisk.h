@@ -17,7 +17,7 @@
 #define APOO_DEV_RAMDISK_H
 
 #include <stdint.h>
-#include "dev/block.h"
+#include "dev/block_dev.h"
 
 struct ramdisk;
 typedef struct ramdisk ramdisk_t;
@@ -31,5 +31,10 @@ void ramdisk_destroy(ramdisk_t* d);
 
 // Initializes a block_dev_t with data for the given ramdisk.
 void ramdisk_dev(ramdisk_t* d, block_dev_t* bd);
+
+// Enable or disable blocking for the ramdisk for reading and/or writing.  If
+// enabled, read() and write() calls on the ramdisk will (artificially) yield
+// the current thread.
+void ramdisk_set_blocking(ramdisk_t* d, int read, int write);
 
 #endif

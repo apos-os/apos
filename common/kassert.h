@@ -13,18 +13,25 @@
 // limitations under the License.
 
 #ifndef APOO_KASSERT_H
-#define APOO_KAS
+#define APOO_KASSERT_H
 
 #include "common/debug.h"
+#include "common/klog.h"
 
 #define STR2(x) #x
 #define STR(x) STR2(x)
 
-#define KASSERT(cond) do { \
+#define KASSERT_MSG(cond, fmt, ...) do { \
   if (!(cond)) { \
+    if (*fmt) { \
+      klogf(fmt, ##__VA_ARGS__); \
+      klog("\n"); \
+    } \
     kassert_msg(0, "assertion failed: " #cond " (" __FILE__ ":" STR(__LINE__) ")\n"); \
   } \
 } while(0)
+
+#define KASSERT(cond) KASSERT_MSG(cond, "")
 
 // Version of KASSERT that is a no-op in non-debug builds.
 #if ENABLE_KERNEL_SAFETY_NETS

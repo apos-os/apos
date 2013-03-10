@@ -16,7 +16,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/usb/descriptor.h"
-#include "kmalloc.h"
+#include "memory/kmalloc.h"
 
 int usb_parse_descriptors(usb_desc_list_node_t* list_out,
                           void* buf, size_t buflen) {

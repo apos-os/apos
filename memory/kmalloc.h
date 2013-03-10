@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_KMALLOC_H
-#define APOO_KMALLOC_H
+#ifndef APOO_MEMORY_KMALLOC_H
+#define APOO_MEMORY_KMALLOC_H
 
 #include <stdint.h>
 

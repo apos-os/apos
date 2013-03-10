@@ -36,14 +36,24 @@ SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_in
 	  dev/usb/bus.c dev/usb/usb.c dev/usb/usb_driver.c dev/usb/request.c \
 	  dev/usb/descriptor.c \
 	  dev/usb/drivers/drivers.c \
+	  dev/dev.c \
 	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
 	  proc/sleep.c proc/kthread_pool.c \
-	  memory.c page_alloc.c kernel.c kmalloc.c page_fault.c slab_alloc.c \
+	  memory/memory.c memory/page_alloc.c memory/kmalloc.c \
+	  memory/page_fault.c memory/slab_alloc.c memory/block_cache.c \
+	  memory/memobj_block_dev.c \
+	  kernel.c \
+	  vfs/vfs.c vfs/ramfs.c vfs/file.c vfs/util.c \
+	  vfs/ext2/ext2.c vfs/ext2/ext2-internal.c vfs/ext2/ext2_ops.c \
+	  vfs/ext2/ext2fs.c \
 	  test/ktest.c test/ktest_test.c test/kstring_test.c test/kprintf_test.c test/interrupt_test.c \
 	  test/kmalloc_test.c test/kthread_test.c test/page_alloc_map_test.c test/page_alloc_test.c \
 	  test/ld_test.c test/hashtable_test.c test/ramdisk_test.c \
 	  test/block_dev_test.c test/ata_test.c test/slab_alloc_test.c \
 	  test/kthread_pool_test.c test/flag_printf_test.c \
+	  test/ramfs_test.c test/vfs_test.c \
+	  test/hash_test.c \
+	  test/block_cache_test.c \
 	  util/flag_printf.c \
 	  kshell.c
 C_SOURCES = $(filter %.c,$(SOURCES))
@@ -65,12 +75,12 @@ HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
 # Clang- and GCC-specific flags.
 ifeq ($(CC),clang)
   CFLAGS += -march=i586
+
+  # Various tests use self assignment as a no-op to appease the compiler.
+  $(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
 else
   CFLAGS += -nostartfiles -nodefaultlibs
 endif
-
-# Various tests use self assignment as a no-op to appease the compiler.
-$(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
 
 all: kernel.img $(HD_IMAGES) tags
 

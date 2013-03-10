@@ -22,7 +22,7 @@
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/usb.h"
 #include "kshell.h"
-#include "memory.h"
+#include "memory/memory.h"
 #include "util/flag_printf.h"
 
 static flag_spec_t USBCMD_FLAGS[] = {

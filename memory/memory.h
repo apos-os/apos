@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Basic data structures and constants used by the lowel-level memory code.
-#ifndef APOO_MEMORY_H
-#define APOO_MEMORY_H
+#ifndef APOO_MEMORY_MEMORY_H
+#define APOO_MEMORY_MEMORY_H
 
 #include <stdint.h>
 

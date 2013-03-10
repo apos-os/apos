@@ -18,14 +18,17 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "dev/block.h"
+#include "dev/block_dev.h"
 #include "dev/ramdisk/ramdisk.h"
-#include "kmalloc.h"
-#include "memory.h"
+#include "memory/kmalloc.h"
+#include "memory/memory.h"
+#include "proc/scheduler.h"
 
 struct ramdisk {
   void* data;
   uint32_t size;
+  int read_blocking;
+  int write_blocking;
 };
 
 int ramdisk_create(uint32_t size, ramdisk_t** d) {
@@ -44,6 +47,8 @@ int ramdisk_create(uint32_t size, ramdisk_t** d) {
     return -ENOMEM;
   }
   disk->size = size;
+  disk->read_blocking = 0;
+  disk->write_blocking = 0;
   *d = disk;
   return 0;
 }
@@ -72,6 +77,9 @@ static int ramdisk_read(struct block_dev* dev, uint32_t offset,
     len = d->size - (uint32_t)offset * dev->sector_size;
   }
 
+  if (d->read_blocking) {
+    scheduler_yield();
+  }
   kmemcpy(buf, d->data + offset * dev->sector_size, len);
   return len;
 }
@@ -91,6 +99,9 @@ static int ramdisk_write(struct block_dev* dev, uint32_t offset,
     len = d->size - (uint32_t)offset * dev->sector_size;
   }
 
+  if (d->write_blocking) {
+    scheduler_yield();
+  }
   kmemcpy(d->data + offset * dev->sector_size, buf, len);
   return len;
 }
@@ -102,4 +113,9 @@ void ramdisk_dev(ramdisk_t* d, block_dev_t* bd) {
   bd->read = &ramdisk_read;
   bd->write = &ramdisk_write;
   bd->dev_data = d;
+}
+
+void ramdisk_set_blocking(ramdisk_t* d, int read, int write) {
+  d->read_blocking = read;
+  d->write_blocking = write;
 }
