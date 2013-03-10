@@ -29,10 +29,6 @@ define SOURCES_SUBDIR
   include $(SRC_PATH)$$(DIR)/Sources.mk
 endef
 
-define INCLUDE_SUBDIRS
-  $(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
-endef
-
 define BEGIN_SOURCES
   SP := $(SP).x
   SRC_PATH_IN_$$(SP) := $(SRC_PATH)

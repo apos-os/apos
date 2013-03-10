@@ -22,6 +22,6 @@ LOCAL_SOURCES := \
 
 LOCAL_SUBDIRS := ext2
 
-$(eval $(INCLUDE_SUBDIRS))
+$(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 
 $(eval $(END_SOURCES))

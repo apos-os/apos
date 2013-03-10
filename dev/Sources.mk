@@ -26,6 +26,6 @@ LOCAL_SOURCES := \
 
 LOCAL_SUBDIRS := keyboard video pci ata ramdisk
 
-$(eval $(INCLUDE_SUBDIRS))
+$(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 
 $(eval $(END_SOURCES))
