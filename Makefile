@@ -80,7 +80,7 @@ else
   CFLAGS += -nostartfiles -nodefaultlibs
 endif
 
-all: kernel.img $(HD_IMAGES) tags
+all: kernel.img $(HD_IMAGES)
 
 mk-build-dir = @mkdir -p $(dir $@)
  
@@ -119,7 +119,7 @@ DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
 -include $(DEPSFILES)
 
 clean:
-	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES) tags
+	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES)
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
@@ -129,8 +129,3 @@ runx: all
 
 gdb: kernel.bin all
 	./bochs/bochs_gdb -q -f $(BUILD_DIR)/bochsrc.txt.gdb
-
-tags: $(ALLFILES)
-	@echo 'generating tags...'
-	@find $(FIND_FLAGS) | ctags -L - --languages=all
-	@echo 'generated' `wc -l tags | cut -d ' ' -f 1` 'tags'
