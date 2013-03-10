@@ -22,40 +22,34 @@ LD	= i586-elf-ld
 BUILD_OUT 	= build-out
 
 BOOTLOADER	= grub
- 
-SOURCES = load/multiboot.s load/loader.s load/gdt.c load/gdt_flush.s load/mem_init.c load/kernel_init.c load/idt.c \
-	  common/kstring.c common/kassert.c common/klog.c common/kprintf.c common/io.c \
-	  common/errno.c common/hashtable.c common/builtins.c \
-	  dev/interrupts.c dev/ps2.c dev/irq.c dev/timer.c dev/isr.s dev/rtc.c \
-	  dev/keyboard/ps2_keyboard.c dev/keyboard/ps2_scancodes.c dev/keyboard/keyboard.c \
-	  dev/video/vga.c dev/video/vterm.c dev/ld.c dev/pci/pci.c dev/pci/piix.c \
-	  dev/pci/usb_uhci.c \
-	  dev/ata/ata.c dev/ata/dma.c \
-	  dev/ramdisk/ramdisk.c \
-	  dev/usb/uhci/uhci.c dev/usb/uhci/uhci_cmd.c dev/usb/uhci/uhci_hub.c \
-	  dev/usb/bus.c dev/usb/usb.c dev/usb/usb_driver.c dev/usb/request.c \
-	  dev/usb/descriptor.c \
-	  dev/usb/drivers/drivers.c \
-	  dev/dev.c \
-	  proc/kthread.c proc/kthread_asm.s proc/scheduler.c proc/process.c \
-	  proc/sleep.c proc/kthread_pool.c \
-	  memory/memory.c memory/page_alloc.c memory/kmalloc.c \
-	  memory/page_fault.c memory/slab_alloc.c memory/block_cache.c \
-	  memory/memobj_block_dev.c \
-	  kernel.c \
-	  vfs/vfs.c vfs/ramfs.c vfs/file.c vfs/util.c \
-	  vfs/ext2/ext2.c vfs/ext2/ext2-internal.c vfs/ext2/ext2_ops.c \
-	  vfs/ext2/ext2fs.c \
-	  test/ktest.c test/ktest_test.c test/kstring_test.c test/kprintf_test.c test/interrupt_test.c \
-	  test/kmalloc_test.c test/kthread_test.c test/page_alloc_map_test.c test/page_alloc_test.c \
-	  test/ld_test.c test/hashtable_test.c test/ramdisk_test.c \
-	  test/block_dev_test.c test/ata_test.c test/slab_alloc_test.c \
-	  test/kthread_pool_test.c test/flag_printf_test.c \
-	  test/ramfs_test.c test/vfs_test.c \
-	  test/hash_test.c \
-	  test/block_cache_test.c \
-	  util/flag_printf.c \
-	  kshell.c
+
+# Macros for Sources.mk.
+define SOURCES_SUBDIR
+  DIR := /$(1)
+  include $(SRC_PATH)$$(DIR)/Sources.mk
+endef
+
+define BEGIN_SOURCES
+  SP := $(SP).x
+  SRC_PATH_IN_$$(SP) := $(SRC_PATH)
+  LOCAL_SOURCES_IN_$$(SP) := $(LOCAL_SOURCES)
+  SRC_PATH := $(SRC_PATH)$(DIR)
+  LOCAL_SOURCES :=
+endef
+
+define END_SOURCES
+  SOURCES += $(patsubst %,$(SRC_PATH)/%,$(LOCAL_SOURCES))
+  SRC_PATH := $(SRC_PATH_IN_$(SP))
+  LOCAL_SOURCES := $(LOCAL_SOURCES_IN_$(SP))
+  SP := $(basename $(SP))
+endef
+
+# Build master $(SOURCES) list.
+LOCAL_SOURCES :=
+SOURCES :=
+SP :=
+include Sources.mk
+
 C_SOURCES = $(filter %.c,$(SOURCES))
 ASM_SOURCES = $(filter %.s,$(SOURCES))
 OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
@@ -82,7 +76,7 @@ else
   CFLAGS += -nostartfiles -nodefaultlibs
 endif
 
-all: kernel.img $(HD_IMAGES) tags
+all: kernel.img $(HD_IMAGES)
 
 mk-build-dir = @mkdir -p $(dir $@)
  
@@ -121,7 +115,7 @@ DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
 -include $(DEPSFILES)
 
 clean:
-	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES) tags
+	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES)
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
@@ -131,8 +125,3 @@ runx: all
 
 gdb: kernel.bin all
 	./bochs/bochs_gdb -q -f $(BUILD_DIR)/bochsrc.txt.gdb
-
-tags: $(ALLFILES)
-	@echo 'generating tags...'
-	@find $(FIND_FLAGS) | ctags -L - --languages=all
-	@echo 'generated' `wc -l tags | cut -d ' ' -f 1` 'tags'
