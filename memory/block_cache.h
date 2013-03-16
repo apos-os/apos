@@ -29,6 +29,13 @@ typedef enum {
   BC_FLUSH_ASYNC,
 } block_cache_flush_t;
 
+// Block cache entry.  Must not be modified outside of the block cache.
+typedef struct bc_entry {
+  memobj_t* obj;
+  uint32_t offset;
+  void* block;
+} bc_entry_t;
+
 // Return a pointer to the block cache for the given block.  If no entry exists,
 // the data is read from the memory object into a fresh (or reused) buffer.
 //

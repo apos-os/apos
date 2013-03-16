@@ -43,11 +43,8 @@ static int g_max_size = DEFAULT_CACHE_SIZE;
 static htbl_t g_table;
 
 // A cache entry.
-// TODO(aoates): we could probably stuff this all into a single uint32_t.
-typedef struct cache_entry {
-  memobj_t* obj;
-  uint32_t offset;
-  void* block;
+typedef struct bc_entry_internal {
+  bc_entry_t pub;
   int pin_count;
 
   // Link on the flush queue and LRU queue.
@@ -61,7 +58,7 @@ typedef struct cache_entry {
 
   int initialized;
   kthread_queue_t wait_queue;  // Threads waiting for init or flush.
-} cache_entry_t;
+} bc_entry_internal_t;
 
 // TODO(aoates): make this flexible.
 #define FREE_BLOCK_STACK_SIZE DEFAULT_CACHE_SIZE
@@ -75,13 +72,13 @@ static list_t g_flush_queue = {0x0, 0x0};
 static list_t g_lru_queue = {0x0, 0x0};
 
 #define cache_entry_pop(list, link_name) \
-    container_of(list_pop(list), cache_entry_t, link_name)
+    container_of(list_pop(list), bc_entry_internal_t, link_name)
 
 #define cache_entry_next(entry, link_name) \
-    container_of((entry)->link_name.next, cache_entry_t, link_name)
+    container_of((entry)->link_name.next, bc_entry_internal_t, link_name)
 
 #define cache_entry_head(list, link_name) \
-    container_of((list).head, cache_entry_t, link_name)
+    container_of((list).head, bc_entry_internal_t, link_name)
 
 // Acquire more free blocks and add them to the free block stack.
 static void get_more_free_blocks() {
@@ -135,12 +132,13 @@ static uint32_t obj_hash(memobj_t* obj, int offset) {
 }
 
 // Flush the given cache entry to disk.
-static void flush_cache_entry(cache_entry_t* entry) {
+static void flush_cache_entry(bc_entry_internal_t* entry) {
   // Write the data back to disk.  This may block.
   entry->flushing = 1;
   KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
   const int result =
-      entry->obj->ops->write_page(entry->obj, entry->offset, entry->block);
+      entry->pub.obj->ops->write_page(
+          entry->pub.obj, entry->pub.offset, entry->pub.block);
   KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
   entry->flushing = 0;
   entry->flushed = 1;
@@ -157,7 +155,7 @@ static void* flush_queue_thread(void* arg) {
     ksleep(kSleepMs);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
-      cache_entry_t* entry = cache_entry_pop(&g_flush_queue, flushq);
+      bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
       if (!entry) break;
       flush_cache_entry(entry);
       flushed++;
@@ -170,28 +168,28 @@ static void* flush_queue_thread(void* arg) {
 
 // Remove the given (flushed and unpinned) cache entry from the table, release
 // it's block, and free the entry object.
-static void free_cache_entry(cache_entry_t* entry) {
+static void free_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(list_link_on_list(&g_flush_queue, &entry->flushq) == 0);
   KASSERT_DBG(list_link_on_list(&g_lru_queue, &entry->lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
   KASSERT_DBG(entry->flushed);
 
-  //klogf("<block cache free block %d>\n", entry->offset);
+  //klogf("<block cache free block %d>\n", entry->pub.offset);
   g_size--;
-  const uint32_t h = obj_hash(entry->obj, entry->offset);
+  const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
   KASSERT(htbl_remove(&g_table, h) == 0);
-  put_free_block(entry->block);
+  put_free_block(entry->pub.block);
   kfree(entry);
 }
 
 // Go through the cache and look for unpinned entries we can free.  Attempt to
 // free up to max_entries of them.
 static void maybe_free_cache_space(int max_entries) {
-  cache_entry_t* entry = cache_entry_head(g_lru_queue, lruq);
+  bc_entry_internal_t* entry = cache_entry_head(g_lru_queue, lruq);
   int entries_freed = 0;
   while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
-    cache_entry_t* next = cache_entry_next(entry, lruq);
+    bc_entry_internal_t* next = cache_entry_next(entry, lruq);
     if (entry->flushed) {
       KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
       list_remove(&g_lru_queue, &entry->lruq);
@@ -257,10 +255,10 @@ void* block_cache_get(memobj_t* obj, int offset) {
     }
 
     g_size++;
-    cache_entry_t* entry = (cache_entry_t*)kmalloc(sizeof(cache_entry_t));
-    entry->obj = obj;
-    entry->offset = offset;
-    entry->block = block;
+    bc_entry_internal_t* entry = (bc_entry_internal_t*)kmalloc(sizeof(bc_entry_internal_t));
+    entry->pub.obj = obj;
+    entry->pub.offset = offset;
+    entry->pub.block = block;
     entry->pin_count = 1;
     entry->initialized = 0;
     entry->flushed = 0;
@@ -276,15 +274,15 @@ void* block_cache_get(memobj_t* obj, int offset) {
     // Note: this may block.
     KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
     const int result =
-        obj->ops->read_page(obj, offset, entry->block);
+        obj->ops->read_page(obj, offset, entry->pub.block);
     KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
 
     entry->initialized = 1;
     scheduler_wake_all(&entry->wait_queue);
 
-    return entry->block;
+    return entry->pub.block;
   } else {
-    cache_entry_t* entry = (cache_entry_t*)tbl_value;
+    bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
     entry->pin_count++;
     if (!entry->initialized) {
       scheduler_wait_on(&entry->wait_queue);
@@ -297,7 +295,7 @@ void* block_cache_get(memobj_t* obj, int offset) {
       KASSERT(entry->lruq.prev == 0x0);
     }
     entry->flushed = 0;
-    return entry->block;
+    return entry->pub.block;
   }
 }
 
@@ -310,8 +308,8 @@ void block_cache_put(memobj_t* obj, int offset,
   void* tbl_value = 0x0;
   KASSERT(htbl_get(&g_table, h, &tbl_value) == 0);
 
-  cache_entry_t* entry = (cache_entry_t*)tbl_value;
-  KASSERT(entry->obj == obj);
+  bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
+  KASSERT(entry->pub.obj == obj);
   KASSERT(entry->pin_count > 0);
 
   // The block needs to be flushed, if it's not already scheduled for one.
@@ -344,7 +342,7 @@ int block_cache_get_pin_count(memobj_t* obj, int offset) {
     return 0;
   }
 
-  return ((cache_entry_t*)tbl_value)->pin_count;
+  return ((bc_entry_internal_t*)tbl_value)->pin_count;
 }
 
 void block_cache_set_size(int blocks) {
@@ -354,7 +352,7 @@ void block_cache_set_size(int blocks) {
 
 void block_cache_clear_unpinned() {
   // Flush everything on the flush queue.
-  cache_entry_t* entry = cache_entry_pop(&g_flush_queue, flushq);
+  bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
   while (entry) {
     flush_cache_entry(entry);
     entry = cache_entry_pop(&g_flush_queue, flushq);
@@ -387,7 +385,7 @@ typedef struct {
 void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
 static void stats_counter_func(void* arg, uint32_t key, void* value) {
   stats_t* stats = (stats_t*)arg;
-  cache_entry_t* entry = (cache_entry_t*)value;
+  bc_entry_internal_t* entry = (bc_entry_internal_t*)value;
   stats->total++;
   if (list_link_on_list(&g_flush_queue, &entry->flushq))
     stats->flushq++;
