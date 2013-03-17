@@ -34,11 +34,12 @@ void* ext2_block_get(const ext2fs_t* fs, int offset) {
   const int fs_blocks_per_dev_block = BLOCK_CACHE_BLOCK_SIZE / block_size;
   const int dev_block = offset / fs_blocks_per_dev_block;
   const int dev_block_offset = offset % fs_blocks_per_dev_block;
-  void* dev_block_ptr = block_cache_get(fs->obj, dev_block);
-  if (dev_block_ptr) {
-    return dev_block_ptr + dev_block_offset * block_size;
+  bc_entry_t* dev_block_entry = 0x0;
+  const int result = block_cache_get(fs->obj, dev_block, &dev_block_entry);
+  if (result == 0) {
+    return dev_block_entry->block + dev_block_offset * block_size;
   } else {
-    return dev_block_ptr;
+    return 0x0;
   }
 }
 
@@ -49,21 +50,28 @@ void ext2_block_put(const ext2fs_t* fs, int offset, block_cache_flush_t flush_mo
 
   const int fs_blocks_per_dev_block = BLOCK_CACHE_BLOCK_SIZE / block_size;
   const int dev_block = offset / fs_blocks_per_dev_block;
-  block_cache_put(fs->obj, dev_block, flush_mode);
+
+  // Get the block, then put it twice, once for this new reference and once for
+  // the one outstanding.
+  bc_entry_t* dev_block_entry = 0x0;
+  const int result = block_cache_get(fs->obj, dev_block, &dev_block_entry);
+  KASSERT(result == 0);
+  block_cache_put(dev_block_entry, BC_FLUSH_NONE);
+  block_cache_put(dev_block_entry, flush_mode);
 }
 
 int ext2_read_superblock(ext2fs_t* fs) {
   KASSERT(BLOCK_CACHE_BLOCK_SIZE >= 1024);
   const int sb_block_num = (BLOCK_CACHE_BLOCK_SIZE == 1024) ? 1 : 0;
   const int sb_block_offset = (BLOCK_CACHE_BLOCK_SIZE == 1024) ? 0 : 1024;
-  void* sb_block = block_cache_get(fs->obj, sb_block_num);
-  if (!sb_block) {
+  bc_entry_t* sb_block = 0x0;
+  if (block_cache_get(fs->obj, sb_block_num, &sb_block) != 0) {
     return -ENOMEM;
   }
 
-  kmemcpy(&fs->sb, sb_block + sb_block_offset, sizeof(ext2_superblock_t));
+  kmemcpy(&fs->sb, sb_block->block + sb_block_offset, sizeof(ext2_superblock_t));
   ext2_superblock_ltoh(&fs->sb);
-  block_cache_put(fs->obj, sb_block_num, BC_FLUSH_ASYNC);
+  block_cache_put(sb_block, BC_FLUSH_ASYNC);
 
   // Check magic number and version.
   if (fs->sb.s_magic != EXT2_SUPER_MAGIC) {

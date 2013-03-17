@@ -29,6 +29,13 @@ typedef enum {
   BC_FLUSH_ASYNC,
 } block_cache_flush_t;
 
+// Block cache entry.  Must not be modified outside of the block cache.
+typedef struct bc_entry {
+  memobj_t* obj;
+  uint32_t offset;
+  void* block;
+} bc_entry_t;
+
 // Return a pointer to the block cache for the given block.  If no entry exists,
 // the data is read from the memory object into a fresh (or reused) buffer.
 //
@@ -37,8 +44,8 @@ typedef enum {
 // This puts a pin on the returned cache entry.  You MUST call block_cache_put()
 // when you are done with the block.
 //
-// Returns NULL if the block cannot be retrieved, or the cache is full.
-void* block_cache_get(memobj_t* obj, int offset);
+// Returns 0 on success, or -errno on error.
+int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out);
 
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 //
@@ -52,7 +59,10 @@ void* block_cache_get(memobj_t* obj, int offset);
 //    time in the future, possibly several seconds away.
 //
 // Most callers should probably use BC_FLUSH_ASYNC.
-void block_cache_put(memobj_t* obj, int offset, block_cache_flush_t flush_mode);
+//
+// Returns 0 on success, or -errno on error.  The caller must not use the
+// bc_entry_t after this call unless it has another pin.
+int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.
