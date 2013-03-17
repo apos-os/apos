@@ -16,7 +16,7 @@
 #include "common/kassert.h"
 #include "common/list.h"
 
-#define SLOW_CONSISTENCY_CHECKS ENABLE_KERNEL_SAFETY_NETS
+#define SLOW_CONSISTENCY_CHECKS 0
 
 const list_link_t LIST_LINK_INIT = { 0x0, 0x0 };
 const list_t LIST_INIT = { 0x0, 0x0 };
