@@ -22,6 +22,7 @@ LOCAL_SOURCES := \
   io.c \
   errno.c \
   hashtable.c \
-  builtins.c
+  builtins.c \
+  list.c \
 
 $(eval $(END_SOURCES))
