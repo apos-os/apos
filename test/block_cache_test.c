@@ -54,44 +54,47 @@ static void setup_disk(dev_t dev) {
 }
 
 static void basic_get_test(dev_t dev) {
-  KTEST_BEGIN("block_cache_get_block(): basic test");
+  KTEST_BEGIN("block_cache_get(): basic test");
   setup_disk(dev);
 
   memobj_t* obj = dev_get_block_memobj(dev);
   for (int i = 0; i < RAMDISK_BLOCKS; ++i) {
-    void* block = block_cache_get_block(obj, i);
+    bc_entry_t* block = 0x0;
+    KEXPECT_EQ(0, block_cache_get(obj, i, &block));
     KEXPECT_NE(0x0, (int)block);
 
     char data[100];
     ksprintf(data, "block%i", i);
-    KEXPECT_STREQ(data, block);
+    KEXPECT_STREQ(data, block->block);
 
     ksprintf(data, "end%i", i);
-    KEXPECT_STREQ(data, block + BLOCK_CACHE_BLOCK_SIZE - 10);
-    block_cache_put_block(obj, i, BC_FLUSH_SYNC);
+    KEXPECT_STREQ(data, block->block + BLOCK_CACHE_BLOCK_SIZE - 10);
+    block_cache_put(block, BC_FLUSH_SYNC);
   }
 
-  KTEST_BEGIN("block_cache_get_block(): same pointer returned");
-  void* block0a = block_cache_get_block(obj, 0);
-  void* block0b = block_cache_get_block(obj, 0);
-  void* block1 = block_cache_get_block(obj, 1);
+  KTEST_BEGIN("block_cache_get(): same pointer returned");
+  bc_entry_t *block0a, *block0b, *block1;
+  KEXPECT_EQ(0, block_cache_get(obj, 0, &block0a));
+  KEXPECT_EQ(0, block_cache_get(obj, 0, &block0b));
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block1));
   KEXPECT_EQ((int)block0a, (int)block0b);
   KEXPECT_NE((int)block0a, (int)block1);
-  block_cache_put_block(obj, 0, BC_FLUSH_SYNC);
-  block_cache_put_block(obj, 0, BC_FLUSH_SYNC);
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  block_cache_put(block0a, BC_FLUSH_SYNC);
+  block_cache_put(block0b, BC_FLUSH_SYNC);
+  block_cache_put(block1, BC_FLUSH_SYNC);
 }
 
 // TODO(aoates): test running out of space on the free block stack
 
 static void basic_write_test(dev_t dev) {
-  KTEST_BEGIN("block_cache_get_block(): basic write/put test");
+  KTEST_BEGIN("block_cache_get(): basic write/put test");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
 
-  void* block = block_cache_get_block(obj, 1);
-  kstrcpy(block, "written block");
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  bc_entry_t* block = 0x0;
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block));
+  kstrcpy(block->block, "written block");
+  block_cache_put(block, BC_FLUSH_SYNC);
 
   // Verify that it was written back to the ramdisk.
   char buf[RAMDISK_SECTOR_SIZE];
@@ -107,18 +110,19 @@ static void basic_write_test(dev_t dev) {
 
   // Verify that if we get() it again we see the new data.
   block_cache_clear_unpinned();
-  block = block_cache_get_block(obj, 1);
-  KEXPECT_EQ(0, kstrcmp(block, "WRITTEN BLOCK"));
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block));
+  KEXPECT_EQ(0, kstrcmp(block->block, "WRITTEN BLOCK"));
+  block_cache_put(block, BC_FLUSH_SYNC);
 }
 
 static void write_at_end_test(dev_t dev) {
-  KTEST_BEGIN("block_cache_put_block(): write at end of block");
+  KTEST_BEGIN("block_cache_put(): write at end of block");
   memobj_t* obj = dev_get_block_memobj(dev);
 
-  void* block = block_cache_get_block(obj, 1);
-  kstrcpy(block + BLOCK_CACHE_BLOCK_SIZE - 20, "written end");
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  bc_entry_t* block;
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block));
+  kstrcpy(block->block + BLOCK_CACHE_BLOCK_SIZE - 20, "written end");
+  KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));
 
   // Verify that it was written back to the ramdisk.
   char buf[BLOCK_CACHE_BLOCK_SIZE];
@@ -129,70 +133,72 @@ static void write_at_end_test(dev_t dev) {
 }
 
 static void get_shares_buffers_test(dev_t dev) {
-  KTEST_BEGIN("block_cache_get_block(): get shares buffers");
+  KTEST_BEGIN("block_cache_get(): get shares buffers");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
 
   // Note: it's a little silly to use 2 pointers, since they should be equal
   // anyways.
-  void* blockA = block_cache_get_block(obj, 3);
-  void* blockB = block_cache_get_block(obj, 3);
+  bc_entry_t *blockA, *blockB;
+  KEXPECT_EQ(0, block_cache_get(obj, 3, &blockA));
+  KEXPECT_EQ(0, block_cache_get(obj, 3, &blockB));
 
   // Write to the first buffer, then put() it.
-  kstrcpy(blockA, "written to A");
-  block_cache_put_block(obj, 3, BC_FLUSH_SYNC);
+  kstrcpy(blockA->block, "written to A");
+  block_cache_put(blockA, BC_FLUSH_SYNC);
 
   // Make sure we can still read it out of the second buffer.
-  KEXPECT_EQ(0, kstrcmp(blockB, "written to A"));
-  block_cache_put_block(obj, 3, BC_FLUSH_SYNC);
+  KEXPECT_EQ(0, kstrcmp(blockB->block, "written to A"));
+  block_cache_put(blockB, BC_FLUSH_SYNC);
 }
 
 static void cache_size_test(dev_t dev) {
-  KTEST_BEGIN("block_cache_get_block(): cache size");
+  KTEST_BEGIN("block_cache_get(): cache size");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
   block_cache_set_size(3);
 
-  void* block0a = block_cache_get_block(obj, 0);
-  void* block0b = block_cache_get_block(obj, 0);
-  void* block1 = block_cache_get_block(obj, 1);
-  void* block2 = block_cache_get_block(obj, 2);
-  void* block3 = block_cache_get_block(obj, 3);
+  bc_entry_t *block0a, *block0b, *block1, *block2, *block3;
+  KEXPECT_EQ(0, block_cache_get(obj, 0, &block0a));
+  KEXPECT_EQ(0, block_cache_get(obj, 0, &block0b));
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block1));
+  KEXPECT_EQ(0, block_cache_get(obj, 2, &block2));
+  KEXPECT_EQ(-ENOMEM, block_cache_get(obj, 3, &block3));
   KEXPECT_NE(0x0, (int)block0a);
   KEXPECT_NE(0x0, (int)block0b);
   KEXPECT_NE(0x0, (int)block1);
   KEXPECT_NE(0x0, (int)block2);
-  KEXPECT_EQ(0x0, (int)block3);
 
   // Put back one of the refs to the first block and make sure we still can't
   // get a new block.
   if (block0a != 0x0 || block0b != 0x0)
-    block_cache_put_block(obj, 0, BC_FLUSH_SYNC);
-  block3 = block_cache_get_block(obj, 3);
-  KEXPECT_EQ(0x0, (int)block3);
+    block_cache_put(block0a, BC_FLUSH_SYNC);
+  KEXPECT_EQ(-ENOMEM, block_cache_get(obj, 3, &block3));
 
   // Put back the other ref, then make sure we can get the third block.
   if (block0a != 0x0 || block0b != 0x0)
-    block_cache_put_block(obj, 0, BC_FLUSH_SYNC);
-  block3 = block_cache_get_block(obj, 3);
+    block_cache_put(block0b, BC_FLUSH_SYNC);
+  KEXPECT_EQ(0, block_cache_get(obj, 3, &block3));
   KEXPECT_NE(0x0, (int)block3);
 
   // Clean up.
-  if (block1) block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
-  if (block2) block_cache_put_block(obj, 2, BC_FLUSH_SYNC);
-  if (block3) block_cache_put_block(obj, 3, BC_FLUSH_SYNC);
+  if (block1) block_cache_put(block1, BC_FLUSH_SYNC);
+  if (block2) block_cache_put(block2, BC_FLUSH_SYNC);
+  if (block3) block_cache_put(block3, BC_FLUSH_SYNC);
 }
 
-// Test that multiple threads calling block_cache_get_block() on the same block
+// Test that multiple threads calling block_cache_get() on the same block
 // get the same block.
 static void* get_thread_test_thread(void* arg) {
+  bc_entry_t* entry = 0x0;
   memobj_t* obj = (memobj_t*)arg;
-  return block_cache_get_block(obj, 1);
+  KASSERT(0 == block_cache_get(obj, 1, &entry));
+  return entry;
 }
 
 static void get_thread_test(dev_t dev) {
   const int kThreads = 10;
-  KTEST_BEGIN("block_cache_get_block(): thread-safety test");
+  KTEST_BEGIN("block_cache_get(): thread-safety test");
   kthread_t threads[kThreads];
   memobj_t* obj = dev_get_block_memobj(dev);
 
@@ -202,16 +208,16 @@ static void get_thread_test(dev_t dev) {
     scheduler_make_runnable(threads[i]);
   }
 
-  void* blocks[kThreads];
+  bc_entry_t* blocks[kThreads];
   for (int i = 0; i < kThreads; ++i) {
     blocks[i] = kthread_join(threads[i]);
   }
 
   KEXPECT_NE(0x0, (int)blocks[0]);
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  block_cache_put(blocks[0], BC_FLUSH_SYNC);
   for (int i = 1; i < kThreads; ++i) {
     KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
-    if (blocks[i]) block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+    if (blocks[i]) block_cache_put(blocks[i], BC_FLUSH_SYNC);
   }
 
   KEXPECT_EQ(0, block_cache_get_pin_count(obj, 1));
@@ -229,10 +235,13 @@ typedef struct {
 static void* put_thread_test_thread(void* arg) {
   put_thread_test_args_t* args = (put_thread_test_args_t*)arg;
   for (int i = 0; i < PUT_THREAD_TEST_ITERS; ++i) {
-    void* block = block_cache_get_block(args->obj, 1);
-    uint8_t* value = (uint8_t*)block;
-    (*value)++;
-    if (block) block_cache_put_block(args->obj, 1, BC_FLUSH_SYNC);
+    bc_entry_t* block = 0x0;
+    const int result = block_cache_get(args->obj, 1, &block);
+    if (result == 0) {
+      uint8_t* value = (uint8_t*)block->block;
+      (*value)++;
+      block_cache_put(block, BC_FLUSH_SYNC);
+    }
   }
   return 0x0;
 }
@@ -242,16 +251,17 @@ static void put_thread_test(ramdisk_t* rd, dev_t dev) {
   ramdisk_set_blocking(rd, 0, 1);
   memobj_t* obj = dev_get_block_memobj(dev);
 
-  KTEST_BEGIN("block_cache_put_block(): thread-safety test");
+  KTEST_BEGIN("block_cache_put(): thread-safety test");
   KEXPECT_EQ(0, block_cache_get_pin_count(obj, 1));
   kthread_t threads[PUT_THREAD_TEST_THREADS];
   put_thread_test_args_t args[PUT_THREAD_TEST_THREADS];
 
   // Initialize block to 0.
-  void* block = block_cache_get_block(obj, 1);
-  uint8_t* value = (uint8_t*)block;
+  bc_entry_t* block = 0x0;
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block));
+  uint8_t* value = (uint8_t*)block->block;
   *value = 0;
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  block_cache_put(block, BC_FLUSH_SYNC);
 
   for (int i = 0; i < PUT_THREAD_TEST_THREADS; ++i) {
     args[i].obj = obj;
@@ -267,10 +277,10 @@ static void put_thread_test(ramdisk_t* rd, dev_t dev) {
 
   // Make sure the correct value is in the block.
   KASSERT(PUT_THREAD_TEST_ITERS * PUT_THREAD_TEST_THREADS < 256);
-  block = block_cache_get_block(obj, 1);
-  value = (uint8_t*)block;
+  KEXPECT_EQ(0, block_cache_get(obj, 1, &block));
+  value = (uint8_t*)block->block;
   KEXPECT_EQ(PUT_THREAD_TEST_ITERS * PUT_THREAD_TEST_THREADS, *value);
-  block_cache_put_block(obj, 1, BC_FLUSH_SYNC);
+  block_cache_put(block, BC_FLUSH_SYNC);
 
   ramdisk_set_blocking(rd, 1, 1);
 }
