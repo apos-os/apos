@@ -47,11 +47,6 @@ typedef struct bc_entry {
 // Returns 0 on success, or -errno on error.
 int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out);
 
-// Legacy/convenience version that returns the bc_entry_t::block directly.
-// Returns NULL if the block cannot be retrieved, or the cache is full.
-// TODO(aoates): update callers and remove this.
-void* block_cache_get_block(memobj_t* obj, int offset);
-
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 //
 // The block's contents may be written back to the underlying disk, depending on
@@ -68,11 +63,6 @@ void* block_cache_get_block(memobj_t* obj, int offset);
 // Returns 0 on success, or -errno on error.  The caller must not use the
 // bc_entry_t after this call unless it has another pin.
 int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
-
-// Legacy/convenience version that looks up the bc_entry_t again.
-// TODO(aoates): update callers and remove this.
-void block_cache_put_block(memobj_t* obj, int offset,
-                           block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.

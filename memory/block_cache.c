@@ -300,15 +300,6 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
   }
 }
 
-void* block_cache_get_block(memobj_t* obj, int offset) {
-  bc_entry_t* entry = 0x0;
-  const int result = block_cache_get(obj, offset, &entry);
-  if (result)
-    return 0x0;
-  else
-    return entry->block;
-}
-
 int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KASSERT(g_initialized);
 
@@ -334,21 +325,6 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   }
 
   return 0;
-}
-
-void block_cache_put_block(memobj_t* obj, int offset,
-                           block_cache_flush_t flush_mode) {
-  KASSERT(g_initialized);
-
-  const uint32_t h = obj_hash(obj, offset);
-  void* tbl_value = 0x0;
-  KASSERT(htbl_get(&g_table, h, &tbl_value) == 0);
-
-  bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-  KASSERT(entry->pub.obj == obj);
-  KASSERT(entry->pin_count > 0);
-  const int result = block_cache_put(&entry->pub, flush_mode);
-  KASSERT(result == 0);
 }
 
 int block_cache_get_pin_count(memobj_t* obj, int offset) {
