@@ -233,15 +233,14 @@ static void init_block_cache() {
   g_initialized = 1;
 }
 
-void* block_cache_get_block(memobj_t* obj, int offset) {
-  //if (offset == 1) klogf("block_cache_get_block(block=1)\n");
+int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
   if (!g_initialized) {
     init_block_cache();
   }
   if (g_size >= g_max_size) {
     maybe_free_cache_space(g_size - g_max_size + 1);
     if (g_size >= g_max_size) {
-      return 0x0;
+      return -ENOMEM;
     }
   }
 
@@ -251,7 +250,7 @@ void* block_cache_get_block(memobj_t* obj, int offset) {
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
     if (!block) {
-      return 0x0;
+      return -ENOMEM;
     }
 
     g_size++;
@@ -280,7 +279,8 @@ void* block_cache_get_block(memobj_t* obj, int offset) {
     entry->initialized = 1;
     scheduler_wake_all(&entry->wait_queue);
 
-    return entry->pub.block;
+    *entry_out = &entry->pub;
+    return 0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
     entry->pin_count++;
@@ -295,21 +295,24 @@ void* block_cache_get_block(memobj_t* obj, int offset) {
       KASSERT(entry->lruq.prev == 0x0);
     }
     entry->flushed = 0;
-    return entry->pub.block;
+    *entry_out = &entry->pub;
+    return 0;
   }
 }
 
-void block_cache_put_block(memobj_t* obj, int offset,
-                           block_cache_flush_t flush_mode) {
-  //if (offset == 1) klogf("block_cache_put(block=1)\n");
+void* block_cache_get_block(memobj_t* obj, int offset) {
+  bc_entry_t* entry = 0x0;
+  const int result = block_cache_get(obj, offset, &entry);
+  if (result)
+    return 0x0;
+  else
+    return entry->block;
+}
+
+int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KASSERT(g_initialized);
 
-  const uint32_t h = obj_hash(obj, offset);
-  void* tbl_value = 0x0;
-  KASSERT(htbl_get(&g_table, h, &tbl_value) == 0);
-
-  bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-  KASSERT(entry->pub.obj == obj);
+  bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
 
   // The block needs to be flushed, if it's not already scheduled for one.
@@ -329,6 +332,23 @@ void block_cache_put_block(memobj_t* obj, int offset,
   if (entry->pin_count == 0) {
     list_push(&g_lru_queue, &entry->lruq);
   }
+
+  return 0;
+}
+
+void block_cache_put_block(memobj_t* obj, int offset,
+                           block_cache_flush_t flush_mode) {
+  KASSERT(g_initialized);
+
+  const uint32_t h = obj_hash(obj, offset);
+  void* tbl_value = 0x0;
+  KASSERT(htbl_get(&g_table, h, &tbl_value) == 0);
+
+  bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
+  KASSERT(entry->pub.obj == obj);
+  KASSERT(entry->pin_count > 0);
+  const int result = block_cache_put(&entry->pub, flush_mode);
+  KASSERT(result == 0);
 }
 
 int block_cache_get_pin_count(memobj_t* obj, int offset) {
