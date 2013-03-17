@@ -36,9 +36,11 @@
 #define APOO_COMMON_LIST_H
 
 // Given a pointer to a struct member, the name of the containing type, and the
-// name of the member, return the a pointer to the containing object.
+// name of the member, return a pointer to the containing object.
 #define container_of(ptr, type, member_name) \
-    ((type*)((char*)(ptr) + offsetof(type, member_name)))
+    ({typeof(((type*)0x0)->member_name)* __member = (ptr); \
+      __member == 0x0 ? 0x0 : \
+       ((type*)((char*)(__member) - offsetof(type, member_name)));})
 
 // A link in the list.  Embed this in your value struct.
 typedef struct list_link {
