@@ -41,17 +41,17 @@ typedef struct {
 
 // Operations that can be performed on a memory object.
 struct memobj_ops {
-  // Read the page at |offset| from the backing store into |buffer|, which will
-  // be page-aligned and page-sized.
+  // Read the page at |page_offset| (which is in pages, not bytes) from the
+  // backing store into |buffer|, which will be page-aligned and page-sized.
   //
   // Return 0 on success, or -errno on error.
-  int (*read_page)(memobj_t* obj, int offset, void* buffer);
+  int (*read_page)(memobj_t* obj, int page_offset, void* buffer);
 
   // Write the data in |buffer|, which is page-aligned and page-sized, into the
-  // page at |offset| in the backing store.
+  // page at |page_offset| (which is in pages, not bytes) in the backing store.
   //
   // Return 0 on success, or -errno on error.
-  int (*write_page)(memobj_t* obj, int offset, const void* buffer);
+  int (*write_page)(memobj_t* obj, int page_offset, const void* buffer);
 };
 
 #endif

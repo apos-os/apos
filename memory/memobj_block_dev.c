@@ -22,15 +22,15 @@
 #include "memory/memobj.h"
 #include "memory/memory.h"
 
-static int bd_read_page(memobj_t* obj, int offset, void* buffer);
-static int bd_write_page(memobj_t* obj, int offset, const void* buffer);
+static int bd_read_page(memobj_t* obj, int page_offset, void* buffer);
+static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer);
 
 static memobj_ops_t g_block_dev_ops = {
   &bd_read_page,
   &bd_write_page,
 };
 
-static int bd_read_page(memobj_t* obj, int offset, void* buffer) {
+static int bd_read_page(memobj_t* obj, int page_offset, void* buffer) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
   KASSERT(obj->data != 0x0);
 
@@ -38,11 +38,11 @@ static int bd_read_page(memobj_t* obj, int offset, void* buffer) {
   const int kSectorsPerPage = PAGE_SIZE / bd->sector_size;
   // TODO(aoates): handle the last few sectors of a device if it's not an even
   // multiple of the page size.
-  if (offset < 0 || (offset + 1) * kSectorsPerPage > bd->sectors) {
+  if (page_offset < 0 || (page_offset + 1) * kSectorsPerPage > bd->sectors) {
     return -ERANGE;
   }
 
-  int result = bd->read(bd, offset * kSectorsPerPage, buffer, PAGE_SIZE);
+  int result = bd->read(bd, page_offset * kSectorsPerPage, buffer, PAGE_SIZE);
   if (result < 0) return result;
 
   // TODO(aoates): handle partial reads more gracefully.
@@ -50,7 +50,7 @@ static int bd_read_page(memobj_t* obj, int offset, void* buffer) {
   return 0;
 }
 
-static int bd_write_page(memobj_t* obj, int offset, const void* buffer) {
+static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
   KASSERT(obj->data != 0x0);
 
@@ -58,11 +58,11 @@ static int bd_write_page(memobj_t* obj, int offset, const void* buffer) {
   const int kSectorsPerPage = PAGE_SIZE / bd->sector_size;
   // TODO(aoates): handle the last few sectors of a device if it's not an even
   // multiple of the page size.
-  if (offset < 0 || (offset + 1) * kSectorsPerPage > bd->sectors) {
+  if (page_offset < 0 || (page_offset + 1) * kSectorsPerPage > bd->sectors) {
     return -ERANGE;
   }
 
-  int result = bd->write(bd, offset * kSectorsPerPage, buffer, PAGE_SIZE);
+  int result = bd->write(bd, page_offset * kSectorsPerPage, buffer, PAGE_SIZE);
   if (result < 0) return result;
 
   // TODO(aoates): handle partial writes more gracefully.
