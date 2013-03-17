@@ -30,6 +30,7 @@ LOCAL_SOURCES := \
   kthread_pool_test.c \
   kthread_test.c \
   ld_test.c \
+  list_test.c \
   page_alloc_map_test.c \
   page_alloc_test.c \
   ramdisk_test.c \

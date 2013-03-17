@@ -18,6 +18,7 @@
 
 #include "common/errno.h"
 #include "common/debug.h"
+#include "common/list.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/hash.h"
@@ -41,18 +42,6 @@ static int g_max_size = DEFAULT_CACHE_SIZE;
 
 static htbl_t g_table;
 
-// Lists of cache entries.
-struct cache_entry;
-typedef struct {
-  struct cache_entry* prev;
-  struct cache_entry* next;
-} cache_entry_link_t;
-
-typedef struct {
-  struct cache_entry* head;
-  struct cache_entry* tail;
-} cache_entry_list_t;
-
 // A cache entry.
 // TODO(aoates): we could probably stuff this all into a single uint32_t.
 typedef struct cache_entry {
@@ -62,8 +51,8 @@ typedef struct cache_entry {
   int pin_count;
 
   // Link on the flush queue and LRU queue.
-  cache_entry_link_t flushq;
-  cache_entry_link_t lruq;
+  list_link_t flushq;
+  list_link_t lruq;
 
   // Set to 1 when the entry is flushed to disk, and to 0 when the entry is
   // taken by a thread.
@@ -80,116 +69,19 @@ static uint32_t g_free_block_stack[FREE_BLOCK_STACK_SIZE];
 static int g_free_block_stack_idx = 0;  // First free entry.
 
 // Queue of cache entries that need to be flushed.
-static cache_entry_list_t g_flush_queue = {0x0, 0x0};
+static list_t g_flush_queue = {0x0, 0x0};
 
 // LRU queue of cache entries that *might* be freeable.
-static cache_entry_list_t g_lru_queue = {0x0, 0x0};
+static list_t g_lru_queue = {0x0, 0x0};
 
-static inline void init_link(cache_entry_link_t* link) {
-  link->prev = link->next = 0x0;
-}
-
-// TODO(aoates): move this list stuff to a common place where others can use it.
-static inline cache_entry_link_t* get_link(cache_entry_t* entry,
-                                           size_t link_offset) {
-  return (cache_entry_link_t*)((void*)entry + link_offset);
-}
-
-static void _cache_entry_push(cache_entry_list_t* list,
-                              cache_entry_t* entry,
-                              size_t link_offset) {
-  cache_entry_link_t* link = get_link(entry, link_offset);
-  KASSERT_DBG(link->prev == 0x0);
-  KASSERT_DBG(link->next == 0x0);
-  if (list->head == 0x0) {
-    KASSERT_DBG(list->tail == 0x0);
-    list->head = list->tail = entry;
-  } else {
-    KASSERT_DBG(list->tail != 0x0);
-    link->prev = list->tail;
-    cache_entry_link_t* list_tail_link = get_link(list->tail, link_offset);
-    list_tail_link->next = entry;
-    list->tail = entry;
-  }
-}
-#define cache_entry_push(list, entry, link_name) \
-    _cache_entry_push(list, entry, offsetof(cache_entry_t, link_name))
-
-static cache_entry_t* _cache_entry_pop(cache_entry_list_t* list,
-                                       size_t link_offset) {
-  if (list->head == 0x0) {
-    KASSERT_DBG(list->tail == 0x0);
-    return 0x0;
-  } else {
-    cache_entry_t* result = list->head;
-    cache_entry_link_t* link = get_link(result, link_offset);
-    KASSERT_DBG(link->prev == 0x0);
-    if (link->next != 0x0) {
-      KASSERT_DBG(list->tail != result);
-      cache_entry_link_t* link_next_link = get_link(link->next, link_offset);
-      link_next_link->prev = 0x0;
-      list->head = link->next;
-      link->next = 0x0;
-    } else {
-      KASSERT_DBG(list->tail == list->head);
-      list->tail = list->head = 0x0;
-    }
-    return result;
-  }
-}
 #define cache_entry_pop(list, link_name) \
-    _cache_entry_pop(list, offsetof(cache_entry_t, link_name))
+    container_of(list_pop(list), cache_entry_t, link_name)
 
-static void _cache_entry_remove(cache_entry_list_t* list,
-                                cache_entry_t* entry,
-                                size_t link_offset) {
-  cache_entry_link_t* link = get_link(entry, link_offset);
-  KASSERT_DBG(list->head != 0x0);
-  KASSERT_DBG(list->tail != 0x0);
-  if (list->head == entry) {
-    _cache_entry_pop(list, link_offset);
-  } else if (list->tail == entry) {
-    KASSERT_DBG(link->next == 0x0);
-    KASSERT_DBG(link->prev != 0x0);
-    list->tail = link->prev;
-    KASSERT_DBG(list->tail != 0x0);
-    cache_entry_link_t* list_tail_link = get_link(list->tail, link_offset);
-    KASSERT_DBG(list_tail_link->next == entry);
-    list_tail_link->next = 0x0;
-    link->prev = 0x0;
-  } else {
-    KASSERT_DBG(link->prev != 0x0);
-    KASSERT_DBG(link->next != 0x0);
-    cache_entry_link_t* prev_link = get_link(link->prev, link_offset);
-    cache_entry_link_t* next_link = get_link(link->next, link_offset);
-    prev_link->next = link->next;
-    next_link->prev = link->prev;
-    link->prev = link->next = 0x0;
-  }
-}
-#define cache_entry_remove(list, entry, link_name) \
-    _cache_entry_remove(list, entry, offsetof(cache_entry_t, link_name))
+#define cache_entry_next(entry, link_name) \
+    container_of((entry)->link_name.next, cache_entry_t, link_name)
 
-static int _cache_entry_on_list(cache_entry_list_t* list,
-                                cache_entry_t* entry,
-                                size_t link_offset) {
-  cache_entry_link_t* link = get_link(entry, link_offset);
-  if (SLOW_CONSISTENCY_CHECKS) {
-    cache_entry_t* centry = list->head;
-    while (centry) {
-      if (centry == entry) return 1;
-      centry = get_link(centry, link_offset)->next;
-    }
-    KASSERT(link->next == 0x0);
-    KASSERT(link->prev == 0x0);
-    return 0;
-  }
-  return (list->head == entry || link->next != 0x0 || link->prev != 0x0);
-}
-#define cache_entry_on_list(list, entry, link_name) \
-    _cache_entry_on_list(list, entry, offsetof(cache_entry_t, link_name))
-
-#define cache_entry_next(entry, link_name) (entry)->link_name.next
+#define cache_entry_head(list, link_name) \
+    container_of((list).head, cache_entry_t, link_name)
 
 // Acquire more free blocks and add them to the free block stack.
 static void get_more_free_blocks() {
@@ -279,8 +171,8 @@ static void* flush_queue_thread(void* arg) {
 // Remove the given (flushed and unpinned) cache entry from the table, release
 // it's block, and free the entry object.
 static void free_cache_entry(cache_entry_t* entry) {
-  KASSERT_DBG(cache_entry_on_list(&g_flush_queue, entry, flushq) == 0);
-  KASSERT_DBG(cache_entry_on_list(&g_lru_queue, entry, lruq) == 0);
+  KASSERT_DBG(list_link_on_list(&g_flush_queue, &entry->flushq) == 0);
+  KASSERT_DBG(list_link_on_list(&g_lru_queue, &entry->lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
   KASSERT_DBG(entry->flushed);
 
@@ -295,14 +187,14 @@ static void free_cache_entry(cache_entry_t* entry) {
 // Go through the cache and look for unpinned entries we can free.  Attempt to
 // free up to max_entries of them.
 static void maybe_free_cache_space(int max_entries) {
-  cache_entry_t* entry = g_lru_queue.head;
+  cache_entry_t* entry = cache_entry_head(g_lru_queue, lruq);
   int entries_freed = 0;
   while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
     cache_entry_t* next = cache_entry_next(entry, lruq);
     if (entry->flushed) {
-      KASSERT_DBG(!cache_entry_on_list(&g_flush_queue, entry, flushq));
-      cache_entry_remove(&g_lru_queue, entry, lruq);
+      KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+      list_remove(&g_lru_queue, &entry->lruq);
 
       // No-one else has it, so free it.
       free_cache_entry(entry);
@@ -312,12 +204,12 @@ static void maybe_free_cache_space(int max_entries) {
   }
 
   // If nothing is already flushed, find an unpinned entry and force flush it.
-  entry = g_lru_queue.head;
+  entry = cache_entry_head(g_lru_queue, lruq);
   while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
-    if (cache_entry_on_list(&g_flush_queue, entry, flushq)) {
-      cache_entry_remove(&g_flush_queue, entry, flushq);
-      cache_entry_remove(&g_lru_queue, entry, lruq);
+    if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
+      list_remove(&g_flush_queue, &entry->flushq);
+      list_remove(&g_lru_queue, &entry->lruq);
 
       flush_cache_entry(entry);
 
@@ -373,8 +265,8 @@ void* block_cache_get(memobj_t* obj, int offset) {
     entry->initialized = 0;
     entry->flushed = 0;
     entry->flushing = 0;
-    init_link(&entry->flushq);
-    init_link(&entry->lruq);
+    entry->flushq = LIST_LINK_INIT;
+    entry->lruq = LIST_LINK_INIT;
     kthread_queue_init(&entry->wait_queue);
 
     // Put the uninitialized entry into the table.
@@ -398,9 +290,9 @@ void* block_cache_get(memobj_t* obj, int offset) {
       scheduler_wait_on(&entry->wait_queue);
     }
     KASSERT(entry->initialized);
-    if (cache_entry_on_list(&g_lru_queue, entry, lruq)) {
+    if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
       KASSERT(entry->pin_count == 1);
-      cache_entry_remove(&g_lru_queue, entry, lruq);
+      list_remove(&g_lru_queue, &entry->lruq);
       KASSERT(entry->lruq.next == 0x0);
       KASSERT(entry->lruq.prev == 0x0);
     }
@@ -428,16 +320,16 @@ void block_cache_put(memobj_t* obj, int offset,
     if (flush_mode == BC_FLUSH_SYNC) {
       flush_cache_entry(entry);
     } else if (flush_mode == BC_FLUSH_ASYNC) {
-      if (!cache_entry_on_list(&g_flush_queue, entry, flushq)) {
-        cache_entry_push(&g_flush_queue, entry, flushq);
+      if (!list_link_on_list(&g_flush_queue, &entry->flushq)) {
+        list_push(&g_flush_queue, &entry->flushq);
       }
     }
   }
 
-  KASSERT(!cache_entry_on_list(&g_lru_queue, entry, lruq));
+  KASSERT(!list_link_on_list(&g_lru_queue, &entry->lruq));
   entry->pin_count--;
   if (entry->pin_count == 0) {
-    cache_entry_push(&g_lru_queue, entry, lruq);
+    list_push(&g_lru_queue, &entry->lruq);
   }
 }
 
@@ -477,7 +369,7 @@ void block_cache_clear_unpinned() {
     }
     KASSERT_DBG(entry->pin_count == 0);
     KASSERT_DBG(entry->flushed);
-    KASSERT_DBG(!cache_entry_on_list(&g_flush_queue, entry, flushq));
+    KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
     free_cache_entry(entry);
     entry = cache_entry_pop(&g_lru_queue, lruq);
   }
@@ -497,13 +389,13 @@ static void stats_counter_func(void* arg, uint32_t key, void* value) {
   stats_t* stats = (stats_t*)arg;
   cache_entry_t* entry = (cache_entry_t*)value;
   stats->total++;
-  if (cache_entry_on_list(&g_flush_queue, entry, flushq))
+  if (list_link_on_list(&g_flush_queue, &entry->flushq))
     stats->flushq++;
   else if (entry->pin_count == 0 && entry->flushed == 0)
     stats->flushing++;
   if (entry->flushed)
     stats->flushed++;
-  if (cache_entry_on_list(&g_lru_queue, entry, lruq))
+  if (list_link_on_list(&g_lru_queue, &entry->lruq))
     stats->lru++;
   if (entry->pin_count > 0) {
     stats->pinned++;

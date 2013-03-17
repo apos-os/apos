@@ -46,14 +46,14 @@ void kexpect_(uint32_t cond, const char* name,
   char bval_str[50]; \
   /* If the expected value is written as hex, print the actual value as hex too.*/ \
   if (kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) { \
-    ksprintf(aval_str, "0x%s", utoa_hex(aval)); \
-    ksprintf(bval_str, "0x%s", utoa_hex(bval)); \
+    ksprintf(aval_str, "0x%s", utoa_hex((uint32_t)aval)); \
+    ksprintf(bval_str, "0x%s", utoa_hex((uint32_t)bval)); \
   } else if (kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) { \
-    kstrcpy(aval_str, itoa(aval)); \
-    kstrcpy(bval_str, itoa(bval)); \
+    kstrcpy(aval_str, itoa((int32_t)aval)); \
+    kstrcpy(bval_str, itoa((int32_t)bval)); \
   } else { \
-    kstrcpy(aval_str, utoa(aval)); \
-    kstrcpy(bval_str, utoa(bval)); \
+    kstrcpy(aval_str, utoa((uint32_t)aval)); \
+    kstrcpy(bval_str, utoa((uint32_t)bval)); \
   } \
   kexpect_((aval op bval), name, astr, bstr, aval_str, bval_str, opstr, __FILE__, STR(__LINE__)); \
 } while(0)
