@@ -45,7 +45,7 @@ typedef struct bc_entry {
 // when you are done with the block.
 //
 // Returns NULL if the block cannot be retrieved, or the cache is full.
-void* block_cache_get(memobj_t* obj, int offset);
+void* block_cache_get_block(memobj_t* obj, int offset);
 
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 //
@@ -59,7 +59,8 @@ void* block_cache_get(memobj_t* obj, int offset);
 //    time in the future, possibly several seconds away.
 //
 // Most callers should probably use BC_FLUSH_ASYNC.
-void block_cache_put(memobj_t* obj, int offset, block_cache_flush_t flush_mode);
+void block_cache_put_block(memobj_t* obj, int offset,
+                           block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.

@@ -696,8 +696,8 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
                     new_blocks[i]);
     }
     if (clear_new_blocks) {
-      // TODO(aoates): there's no actual need to read this from disk if it's
-      // not in the cache.  Add an option to block_cache_get() that skips the
+      // TODO(aoates): there's no actual need to read this from disk if it's not
+      // in the cache.  Add an option to block_cache_get_block() that skips the
       // read.
       void* block = ext2_block_get(fs, new_blocks[i]);
       kmemset(block, 0, block_size);

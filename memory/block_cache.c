@@ -233,8 +233,8 @@ static void init_block_cache() {
   g_initialized = 1;
 }
 
-void* block_cache_get(memobj_t* obj, int offset) {
-  //if (offset == 1) klogf("block_cache_get(block=1)\n");
+void* block_cache_get_block(memobj_t* obj, int offset) {
+  //if (offset == 1) klogf("block_cache_get_block(block=1)\n");
   if (!g_initialized) {
     init_block_cache();
   }
@@ -299,8 +299,8 @@ void* block_cache_get(memobj_t* obj, int offset) {
   }
 }
 
-void block_cache_put(memobj_t* obj, int offset,
-                     block_cache_flush_t flush_mode) {
+void block_cache_put_block(memobj_t* obj, int offset,
+                           block_cache_flush_t flush_mode) {
   //if (offset == 1) klogf("block_cache_put(block=1)\n");
   KASSERT(g_initialized);
 
