@@ -51,6 +51,7 @@ static inline uint32_t ext2_block_size(const ext2fs_t* fs) {
 // Get and put the requested block from the fs's device.  If the fs's block size
 // is smaller than the block cache's, then the returned pointer may point to the
 // middle of a block cache entry.
+// TODO(aoates): change these to return the actual bc_entry_t.
 void* ext2_block_get(const ext2fs_t* fs, int offset);
 void ext2_block_put(const ext2fs_t* fs, int offset, block_cache_flush_t flush_mode);
 
