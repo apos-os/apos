@@ -18,6 +18,7 @@
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "vfs/dirent.h"
@@ -35,6 +36,7 @@ void vfs_vnode_init(vnode_t* n) {
   n->len = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
+  memobj_init_vnode(n);
 }
 
 #define VNODE_CACHE_SIZE 1000

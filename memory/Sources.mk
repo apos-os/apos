@@ -22,5 +22,6 @@ LOCAL_SOURCES := \
   slab_alloc.c \
   block_cache.c \
   memobj_block_dev.c \
+  memobj_vnode.c \
 
 $(eval $(END_SOURCES))

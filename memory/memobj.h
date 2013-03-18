@@ -23,6 +23,7 @@ typedef struct memobj_ops memobj_ops_t;
 // Types of memory objects.
 typedef enum {
   MEMOBJ_BLOCK_DEV = 1,
+  MEMOBJ_VNODE = 2,
 } memobj_type_t;
 
 // A memobj_t is an in-memory object backed by another data source, such as a

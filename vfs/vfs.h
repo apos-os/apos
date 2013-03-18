@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "vfs/dirent.h"
 
@@ -48,6 +49,9 @@ struct vnode {
 
   char fstype[10];
   fs_t* fs;
+
+  // The memobj_t corresponding to this vnode.
+  memobj_t memobj;
 
   // Protects the vnode across blocking IO calls.
   kmutex_t mutex;
