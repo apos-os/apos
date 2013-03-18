@@ -39,6 +39,8 @@ static int ext2_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name);
 static int ext2_unlink(vnode_t* parent, const char* name);
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
+static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf);
+static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
 // Given a block-sized bitmap (i.e. a block group's block or inode bitmap),
 // return the value of the Nth entry.
@@ -939,6 +941,8 @@ void ext2_set_ops(fs_t* fs) {
   fs->link = &ext2_link;
   fs->unlink = &ext2_unlink;
   fs->getdents = &ext2_getdents;
+  fs->read_page = &ext2_read_page;
+  fs->write_page = &ext2_write_page;
 }
 
 static vnode_t* ext2_alloc_vnode(struct fs* fs) {
@@ -1411,4 +1415,63 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
     arg.last_dirent->offset = vnode->len;
   }
   return bufsize - arg.bufsize;
+}
+
+// Either read or write a page from the file.
+static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write) {
+  KASSERT(vnode->type == VNODE_REGULAR);
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  KASSERT(page_offset >= 0);
+  KASSERT(page_offset * PAGE_SIZE <= vnode->len);
+
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  KASSERT(PAGE_SIZE % ext2_block_size(fs) == 0);
+  const uint32_t inode_block = (page_offset * PAGE_SIZE) / ext2_block_size(fs);
+
+  // How many bytes we'll actually read.
+  const unsigned int len =
+      min(PAGE_SIZE, vnode->len - (page_offset * PAGE_SIZE));
+  KASSERT(len > 0);
+
+  ext2_inode_t inode;
+  int result = get_inode(fs, vnode->num, &inode);
+  if (result) {
+    return result;
+  }
+  KASSERT(vnode->len == (int)inode.i_size);
+
+  // TODO(aoates): rewrite this to pull directly from the device instead of
+  // caching the data twice.
+  unsigned int bytes_left = len;
+  for (unsigned int block_idx = 0;
+       block_idx < ceiling_div(len, ext2_block_size(fs));
+       ++block_idx) {
+    KASSERT(bytes_left > 0);
+    const uint32_t block = get_inode_block(fs, &inode, inode_block + block_idx);
+    KASSERT(block > 0);
+
+    void* block_data = ext2_block_get(fs, block);
+    if (!block_data) {
+      return -ENOMEM;
+    }
+    const unsigned int bytes_to_copy = min(bytes_left, ext2_block_size(fs));
+    void* buf_offset = (char*)buf + (block_idx * ext2_block_size(fs));
+    if (is_write) {
+      kmemcpy(block_data, buf_offset, bytes_to_copy);
+    } else {
+      kmemcpy(buf_offset, block_data, bytes_to_copy);
+    }
+
+    ext2_block_put(fs, block, BC_FLUSH_ASYNC);
+    bytes_left -= ext2_block_size(fs);
+  }
+  return 0;
+}
+
+static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf) {
+  return ext2_page_op(vnode, page_offset, buf, 0);
+}
+
+static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf) {
+  return ext2_page_op(vnode, page_offset, (void*)buf, 1);
 }

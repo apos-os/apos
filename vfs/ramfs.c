@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "memory/memory.h"
 #include "proc/scheduler.h"
 #include "vfs/dirent.h"
 #include "vfs/ramfs.h"
@@ -185,6 +186,8 @@ fs_t* ramfs_create_fs() {
   f->fs.link = &ramfs_link;
   f->fs.unlink = &ramfs_unlink;
   f->fs.getdents = &ramfs_getdents;
+  f->fs.read_page = &ramfs_read_page;
+  f->fs.write_page = &ramfs_write_page;
 
   // Allocate the root inode.
   int root_inode = find_free_inode(f);
@@ -491,4 +494,32 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   }
 
   return bytes_read;
+}
+
+int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
+  KASSERT((uint32_t)buf % PAGE_SIZE == 0);
+  KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
+  if (vnode->type != VNODE_REGULAR) {
+    return -EISDIR;
+  }
+
+  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  int len = MAX(0, MIN(vnode->len - (page_offset * PAGE_SIZE), PAGE_SIZE));
+  kmemcpy(buf, node->data + (page_offset * PAGE_SIZE), len);
+  return 0;
+}
+
+int ramfs_write_page(vnode_t* vnode, int page_offset, const void* buf) {
+  KASSERT((uint32_t)buf % PAGE_SIZE == 0);
+  KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
+  if (vnode->type != VNODE_REGULAR) {
+    return -EISDIR;
+  }
+
+  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  int len = MAX(0, MIN(vnode->len - (page_offset * PAGE_SIZE), PAGE_SIZE));
+  kmemcpy(node->data + (page_offset * PAGE_SIZE), buf, len);
+  return 0;
 }

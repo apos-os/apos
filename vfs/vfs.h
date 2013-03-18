@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "vfs/dirent.h"
 
@@ -48,6 +49,9 @@ struct vnode {
 
   char fstype[10];
   fs_t* fs;
+
+  // The memobj_t corresponding to this vnode.
+  memobj_t memobj;
 
   // Protects the vnode across blocking IO calls.
   kmutex_t mutex;
@@ -134,6 +138,23 @@ struct fs {
   // That is, offset is in concrete filesystem bytes, while the returned value
   // (and bufsize) are in buffer-size bytes.
   int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
+
+  // Read and write a single page to/from the file.  This is use by the VM
+  // subsystem when mmap'ing files.  The FS should read/write a page of data at
+  // the given page_offset (which is in pages, not bytes) into/from the given
+  // buffer, which will be page-aligned and sized.
+  //
+  // If there are fewer than a page of bytes in the file at the offset, the FS
+  // must only read/write the data up to the length of the file.
+  //
+  // Note: the FS SHOULD NOT use the block cache to read from an underlying
+  // device, since that data will simply be reinserted into the block cache
+  // again.  If possible, the FS should read/write directly from the underlying
+  // device into the buffer.
+  //
+  // Return 0 on success, or -errno on error.
+  int (*read_page)(vnode_t* node, int page_offset, void* buf);
+  int (*write_page)(vnode_t* node, int page_offset, const void* buf);
 
   // TODO(aoates): functions to add:
   //  * mknod
@@ -242,5 +263,11 @@ int vfs_getcwd(char* path_out, int size);
 
 // Change the current working directory.  Returns 0 on success, or -error.
 int vfs_chdir(const char* path);
+
+// Get the memobj_t associated with the given fd.  It will remain valid as long
+// as the fd is open.  The given mode must match the file's mode.  Returns 0 on
+// success, or -error.
+// TODO(aoates): how do we handle executable?
+int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out);
 
 #endif

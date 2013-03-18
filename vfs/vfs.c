@@ -18,6 +18,7 @@
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "vfs/dirent.h"
@@ -35,6 +36,7 @@ void vfs_vnode_init(vnode_t* n) {
   n->len = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
+  memobj_init_vnode(n);
 }
 
 #define VNODE_CACHE_SIZE 1000
@@ -851,5 +853,28 @@ int vfs_chdir(const char* path) {
   // Set new cwd.
   VFS_PUT_AND_CLEAR(proc_current()->cwd);
   proc_current()->cwd = VFS_MOVE_REF(new_cwd);
+  return 0;
+}
+
+int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
+  *memobj_out = 0x0;
+
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  if (file->vnode->type == VNODE_DIRECTORY) {
+    return -EISDIR;
+  } else if (file->vnode->type != VNODE_REGULAR) {
+    return -ENOTSUP;
+  }
+  if (file->mode != VFS_O_RDWR && file->mode != mode) {
+    return -EBADF;
+  }
+
+  *memobj_out = &file->vnode->memobj;
   return 0;
 }
