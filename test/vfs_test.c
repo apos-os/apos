@@ -19,6 +19,9 @@
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
+#include "memory/memory.h"
+#include "memory/memobj.h"
+#include "memory/page_alloc.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
@@ -1291,6 +1294,94 @@ static void create_in_unlinked_directory() {
   KEXPECT_EQ(0, vfs_close(fd));
 }
 
+// Create a file, write a pattern of N bytes to it, then verify that we can see
+// it via read_page.
+static void read_page_test(const char* filename, const int size) {
+  const uint32_t page_buf_phys = page_frame_alloc();
+  void* const page_buf = (void*)phys2virt(page_buf_phys);
+
+  int fd = vfs_open(filename, VFS_O_RDWR | VFS_O_CREAT);
+  KEXPECT_GE(fd, 0);
+
+  // Create a unique pattern.
+  uint8_t* buf = (uint8_t*)kmalloc(size);
+  fill_with_pattern(page_buf_phys, buf, size);
+
+  // Write a few pages to the file first.
+  const int kPrefixPages = 3;
+  for (int i = 0; i < kPrefixPages; ++i) {
+    KEXPECT_EQ(PAGE_SIZE, vfs_write(fd, page_buf, PAGE_SIZE));
+  }
+
+  // Write the pattern to the file.
+  KEXPECT_EQ(size, vfs_write(fd, buf, size));
+
+  // Get a memobj.
+  memobj_t* memobj = 0x0;
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &memobj));
+
+  // Read the page and make sure it matches.
+  kmemset(page_buf, 0, PAGE_SIZE);
+  memobj->ops->read_page(memobj, kPrefixPages, page_buf);
+  KEXPECT_EQ(0, kmemcmp(page_buf, buf, size));
+  for (int i = size; i < PAGE_SIZE; ++i) {
+    uint8_t bufval = ((uint8_t*)page_buf)[i];
+    if (bufval != 0) KEXPECT_EQ(0, bufval);
+  }
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(filename));
+  page_frame_free(page_buf_phys);
+}
+
+// Test a vnode-backed memobj.
+static void memobj_test() {
+  KTEST_BEGIN("vfs_get_memobj() test");
+  const char kDir[] = "memobj_test";
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  KTEST_BEGIN("vfs_get_memobj() mode test");
+  const char kFile[] = "memobj_test/file";
+  memobj_t* unused_memobj = 0x0;
+  int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  fd = vfs_open(kFile, VFS_O_WRONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_get_memobj(): read_page() full page");
+  read_page_test("full_page", PAGE_SIZE);
+
+  KTEST_BEGIN("vfs_get_memobj(): read_page() half page");
+  read_page_test("half_page", PAGE_SIZE / 2);
+
+  KTEST_BEGIN("vfs_get_memobj(): read_page() eighth page");
+  read_page_test("eighth_page", PAGE_SIZE / 8);
+
+  KTEST_BEGIN("vfs_get_memobj(): read_page() non-divisible page");
+  read_page_test("non_divisible_page", PAGE_SIZE - 71);
+
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+}
+
+// TODO(aoates): test for memobj write_page as well.
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -1319,6 +1410,7 @@ void vfs_test() {
   unlink_open_file_test();
   unlink_open_directory_test();
   create_in_unlinked_directory();
+  memobj_test();
 
   reverse_path_test();
 

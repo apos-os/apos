@@ -264,4 +264,10 @@ int vfs_getcwd(char* path_out, int size);
 // Change the current working directory.  Returns 0 on success, or -error.
 int vfs_chdir(const char* path);
 
+// Get the memobj_t associated with the given fd.  It will remain valid as long
+// as the fd is open.  The given mode must match the file's mode.  Returns 0 on
+// success, or -error.
+// TODO(aoates): how do we handle executable?
+int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out);
+
 #endif
