@@ -1291,6 +1291,7 @@ static int ext2_write(vnode_t* vnode, int offset,
     ext2_block_put(fs, block, BC_FLUSH_ASYNC);
 
     offset += chunk_size;
+    buf += chunk_size;
     bytes_to_write -= chunk_size;
   }
   return bufsize;

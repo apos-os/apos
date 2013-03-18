@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "proc/process.h"
@@ -44,6 +45,16 @@ static void create_file_with_data(const char* path, const char* data) {
   const int result = vfs_write(fd, data, kstrlen(data));
   KASSERT(result == kstrlen(data));
   vfs_close(fd);
+}
+
+// Fill the buffer with an interesting pattern.
+static void fill_with_pattern(uint32_t seed, void* buf, int len) {
+  uint32_t val = seed;
+  for (int i = 0; i < len; ++i) {
+    ((uint8_t*)buf)[i] = (uint8_t)val;
+    val = fnv_hash(val);
+    KASSERT(val != 0);
+  }
 }
 
 // Helper method that verifies that the given file can be created (then unlinks
@@ -683,6 +694,52 @@ static void rw_test() {
   KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
+static void write_large_test() {
+  const char kFile[] = "/write_large_test";
+  const int kBufSize = 4096;
+  char* buf = (char*)kmalloc(kBufSize);
+  char* buf_read = (char*)kmalloc(kBufSize);
+  create_file(kFile);
+
+  fill_with_pattern(2153215, buf, kBufSize);
+
+  KTEST_BEGIN("vfs_write(): large write test");
+  int fd = vfs_open(kFile, VFS_O_RDWR);
+
+  int bytes_left = kBufSize;
+  int write_chunks = 0;
+  while (bytes_left > 0) {
+    const int written =
+        vfs_write(fd, buf + (kBufSize - bytes_left), bytes_left);
+    KEXPECT_GT(written, 0);
+    if (written <= 0) break;
+    bytes_left -= written;
+    write_chunks++;
+  }
+  klogf("<wrote %d bytes in %d chunks>\n", kBufSize - bytes_left, write_chunks);
+
+  // Read it back in.
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  bytes_left = kBufSize;
+  int read_chunks = 0;
+  while (bytes_left > 0) {
+    const int read =
+        vfs_read(fd, buf_read + (kBufSize - bytes_left), bytes_left);
+    KEXPECT_GT(read, 0);
+    if (read <= 0) break;
+    bytes_left -= read;
+    read_chunks++;
+  }
+  klogf("<read %d bytes in %d chunks>\n", kBufSize - bytes_left, read_chunks);
+
+  KEXPECT_EQ(0, kmemcmp(buf, buf_read, kBufSize));
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+  kfree(buf);
+  kfree(buf_read);
+}
+
 // Multi-thread vfs_write() test.  Each thread repeatedly writes 'abc' and
 // '1234' to a file descriptor, and at the end we verify that the writes didn't
 // step on each other (i.e., each happened atomically).
@@ -1252,6 +1309,7 @@ void vfs_test() {
   unlink_test();
   cwd_test();
   rw_test();
+  write_large_test();
   write_thread_test();
   rw_mode_test();
   getdents_test();
