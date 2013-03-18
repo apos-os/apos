@@ -21,13 +21,33 @@
 #include "memory/memory.h"
 #include "vfs/vfs.h"
 
+static void vnode_ref(memobj_t* obj);
+static void vnode_unref(memobj_t* obj);
 static int vnode_read_page(memobj_t* obj, int offset, void* buffer);
 static int vnode_write_page(memobj_t* obj, int offset, const void* buffer);
 
 static memobj_ops_t g_vnode_ops = {
+  &vnode_ref,
+  &vnode_unref,
   &vnode_read_page,
   &vnode_write_page,
 };
+
+static void vnode_ref(memobj_t* obj) {
+  KASSERT(obj->type == MEMOBJ_VNODE);
+  obj->refcount++;
+  vnode_t* vnode = (vnode_t*)obj->data;
+  vfs_ref(vnode);
+}
+
+static void vnode_unref(memobj_t* obj) {
+  KASSERT(obj->type == MEMOBJ_VNODE);
+  KASSERT(obj->refcount > 0);
+  obj->refcount--;
+  vnode_t* vnode = (vnode_t*)obj->data;
+  vfs_put(vnode);
+  // obj may now be invalid!
+}
 
 static int vnode_read_page(memobj_t* obj, int offset, void* buffer) {
   KASSERT(obj->type == MEMOBJ_VNODE);
@@ -52,6 +72,7 @@ void memobj_init_vnode(vnode_t* vnode) {
   obj->type = MEMOBJ_VNODE;
   // TODO(aoates): include filesystem number when mounting is supported.
   obj->id = fnv_hash(vnode->num);
+  obj->refcount = 0;
   obj->data = vnode;
 
   obj->ops = &g_vnode_ops;

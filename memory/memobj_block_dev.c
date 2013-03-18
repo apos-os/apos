@@ -22,13 +22,28 @@
 #include "memory/memobj.h"
 #include "memory/memory.h"
 
+static void bd_ref(memobj_t* obj);
+static void bd_unref(memobj_t* obj);
 static int bd_read_page(memobj_t* obj, int page_offset, void* buffer);
 static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer);
 
 static memobj_ops_t g_block_dev_ops = {
+  &bd_ref,
+  &bd_unref,
   &bd_read_page,
   &bd_write_page,
 };
+
+static void bd_ref(memobj_t* obj) {
+  KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  obj->refcount++;
+}
+
+static void bd_unref(memobj_t* obj) {
+  KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  KASSERT(obj->refcount > 0);
+  obj->refcount--;
+}
 
 static int bd_read_page(memobj_t* obj, int page_offset, void* buffer) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
@@ -74,6 +89,7 @@ int memobj_create_block_dev(memobj_t* obj, dev_t dev) {
   kmemset(obj, 0, sizeof(memobj_t));
   obj->type = MEMOBJ_BLOCK_DEV;
   obj->id = fnv_hash_array(&dev, sizeof(dev_t));
+  obj->refcount = 0;
   obj->data = dev_get_block(dev);
   if (!obj->data) {
     return -ENODEV;

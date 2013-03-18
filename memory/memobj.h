@@ -36,12 +36,22 @@ typedef struct {
   uint32_t id;  // Must be globally unique!
   memobj_ops_t* ops;
 
+  // Refcount.  Do not modify directly --- use ref() and unref() instead.  The
+  // meaning may very depending on the memobj type.
+  int refcount;
+
   // Data specific to the type memory object.
   void* data;
 } memobj_t;
 
 // Operations that can be performed on a memory object.
 struct memobj_ops {
+  // Ref or unref the given memobj.  This may modify refcounts on underlying
+  // back store objects as well.  The caller to unref must not access the
+  // memobj_t after unref() returns, unless it has another reference.
+  void (*ref)(memobj_t* obj);
+  void (*unref)(memobj_t* obj);
+
   // Read the page at |page_offset| (which is in pages, not bytes) from the
   // backing store into |buffer|, which will be page-aligned and page-sized.
   //

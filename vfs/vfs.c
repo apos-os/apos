@@ -361,6 +361,7 @@ void vfs_put(vnode_t* vnode) {
   // and only free it later, if we need to.
   KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
+    KASSERT(vnode->memobj.refcount == 0);
     KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
     // Only put the node back into the fs if we were able to fully initialize
     // it.

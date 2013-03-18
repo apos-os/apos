@@ -17,7 +17,8 @@
 
 #include "vfs/vfs.h"
 
-// Initialize the memobj_t embedded in the given vnode.
+// Initialize the memobj_t embedded in the given vnode.  Each reference on the
+// memobj_t corresponds to a reference on the owning vnode.
 void memobj_init_vnode(vnode_t* vnode);
 
 #endif
