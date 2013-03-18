@@ -42,5 +42,7 @@ int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
 int ramfs_unlink(vnode_t* parent, const char* name);
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
+int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf);
+int ramfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
 #endif
