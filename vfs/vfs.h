@@ -135,6 +135,23 @@ struct fs {
   // (and bufsize) are in buffer-size bytes.
   int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
 
+  // Read and write a single page to/from the file.  This is use by the VM
+  // subsystem when mmap'ing files.  The FS should read/write a page of data at
+  // the given page_offset (which is in pages, not bytes) into/from the given
+  // buffer, which will be page-aligned and sized.
+  //
+  // If there are fewer than a page of bytes in the file at the offset, the FS
+  // must only read/write the data up to the length of the file.
+  //
+  // Note: the FS SHOULD NOT use the block cache to read from an underlying
+  // device, since that data will simply be reinserted into the block cache
+  // again.  If possible, the FS should read/write directly from the underlying
+  // device into the buffer.
+  //
+  // Return 0 on success, or -errno on error.
+  int (*read_page)(vnode_t* node, int page_offset, void* buf);
+  int (*write_page)(vnode_t* node, int page_offset, const void* buf);
+
   // TODO(aoates): functions to add:
   //  * mknod
   //  * anything to do with attributes
