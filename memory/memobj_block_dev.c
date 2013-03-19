@@ -18,18 +18,25 @@
 #include "common/kstring.h"
 #include "dev/dev.h"
 #include "dev/block_dev.h"
+#include "memory/block_cache.h"
 #include "memory/memobj_block_dev.h"
 #include "memory/memobj.h"
 #include "memory/memory.h"
 
 static void bd_ref(memobj_t* obj);
 static void bd_unref(memobj_t* obj);
+static int bd_get_page(memobj_t* obj, int page_offset, int writable,
+                       bc_entry_t** entry_out);
+static int bd_put_page(memobj_t* obj, bc_entry_t* entry_out,
+                       block_cache_flush_t flush_mode);
 static int bd_read_page(memobj_t* obj, int page_offset, void* buffer);
 static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer);
 
 static memobj_ops_t g_block_dev_ops = {
   &bd_ref,
   &bd_unref,
+  &bd_get_page,
+  &bd_put_page,
   &bd_read_page,
   &bd_write_page,
 };
@@ -43,6 +50,19 @@ static void bd_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
   KASSERT(obj->refcount > 0);
   obj->refcount--;
+}
+
+static int bd_get_page(memobj_t* obj, int page_offset, int writable,
+                       bc_entry_t** entry_out) {
+  KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  return block_cache_get(obj, page_offset, entry_out);
+}
+
+static int bd_put_page(memobj_t* obj, bc_entry_t* entry,
+                       block_cache_flush_t flush_mode) {
+  KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  KASSERT(obj == entry->obj);
+  return block_cache_put(entry, flush_mode);
 }
 
 static int bd_read_page(memobj_t* obj, int page_offset, void* buffer) {

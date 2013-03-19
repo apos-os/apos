@@ -25,6 +25,7 @@
 #include "common/hashtable.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
+#include "memory/memobj.h"
 #include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"

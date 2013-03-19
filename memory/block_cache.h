@@ -17,10 +17,11 @@
 #define APOO_MEMORY_BLOCK_CACHE_H
 
 #include "memory/memory.h"
-#include "memory/memobj.h"
 
 // TODO(aoates): support other block sizes.
 #define BLOCK_CACHE_BLOCK_SIZE PAGE_SIZE
+
+struct memobj;
 
 // Flush modes for block_cache_put().
 typedef enum {
@@ -31,7 +32,7 @@ typedef enum {
 
 // Block cache entry.  Must not be modified outside of the block cache.
 typedef struct bc_entry {
-  memobj_t* obj;
+  struct memobj* obj;
   uint32_t offset;
   void* block;
 } bc_entry_t;
@@ -45,7 +46,7 @@ typedef struct bc_entry {
 // when you are done with the block.
 //
 // Returns 0 on success, or -errno on error.
-int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out);
+int block_cache_get(struct memobj* obj, int offset, bc_entry_t** entry_out);
 
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 //
@@ -66,7 +67,7 @@ int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.
-int block_cache_get_pin_count(memobj_t* obj, int offset);
+int block_cache_get_pin_count(struct memobj* obj, int offset);
 
 // Set the maximum size of the block cache, in blocks.  If the cache is
 // currently larger than this, it may not be immediately pruned.

@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "memory/block_cache.h"
+
 struct memobj_ops;
 typedef struct memobj_ops memobj_ops_t;
 
@@ -31,7 +33,7 @@ typedef enum {
 //
 // Each memobj_t has an ID that must be unique within it's type and a set of
 // operations for reading and writing to the backing store.
-typedef struct {
+typedef struct memobj {
   memobj_type_t type;
   uint32_t id;  // Must be globally unique!
   memobj_ops_t* ops;
@@ -51,6 +53,41 @@ struct memobj_ops {
   // memobj_t after unref() returns, unless it has another reference.
   void (*ref)(memobj_t* obj);
   void (*unref)(memobj_t* obj);
+
+  // ********************************* VM ops **********************************
+  // The following operations are for use by the VM system.  They should be used
+  // instead of the corresponding functions directly on the block_cache, as the
+  // memobj (in particular, shadow objects) may impose additional behavior.
+  // ***************************************************************************
+
+  // Get a page entry from the memobj, allocating a page frame and reading the
+  // data from the backing store if necessary.  The page is returned with a pin
+  // put in it.  The caller must call put_page() later to unpin it.
+  //
+  // If writable is zero, then the returned page *may belong to another memobj*,
+  // and MUST NOT be modified.
+  //
+  // Returns 0 on success, or -errno on error.
+  int (*get_page)(memobj_t* obj, int page_offset, int writable,
+                  bc_entry_t** entry_out);
+
+  // Unpin a page retrieved with get_page() above.  The caller must not refer to
+  // the bc_entry_t after this call unless it has another pinned copy.
+  //
+  // Note: if get_page() returned a bc_entry_t belonging to a different
+  // memobj_t, then put_page() should supply the *original* memobj_t, not the
+  // one owning the bc_entry_t.
+  //
+  // Returns 0 on success, or -errno on error.
+  int (*put_page)(memobj_t* obj, bc_entry_t* entry,
+                  block_cache_flush_t flush_mode);
+
+
+  // **************************** block cache ops ******************************
+  // The following operations are for use by the block cache code for paging
+  // data in and out of the backing store.  Other clients (such as filesystems
+  // and VM) should use the get/lookup/put functions above.
+  // ***************************************************************************
 
   // Read the page at |page_offset| (which is in pages, not bytes) from the
   // backing store into |buffer|, which will be page-aligned and page-sized.

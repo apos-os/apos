@@ -23,12 +23,18 @@
 
 static void vnode_ref(memobj_t* obj);
 static void vnode_unref(memobj_t* obj);
+static int vnode_get_page(memobj_t* obj, int page_offset, int writable,
+                          bc_entry_t** entry_out);
+static int vnode_put_page(memobj_t* obj, bc_entry_t* entry_out,
+                          block_cache_flush_t flush_mode);
 static int vnode_read_page(memobj_t* obj, int offset, void* buffer);
 static int vnode_write_page(memobj_t* obj, int offset, const void* buffer);
 
 static memobj_ops_t g_vnode_ops = {
   &vnode_ref,
   &vnode_unref,
+  &vnode_get_page,
+  &vnode_put_page,
   &vnode_read_page,
   &vnode_write_page,
 };
@@ -47,6 +53,19 @@ static void vnode_unref(memobj_t* obj) {
   vnode_t* vnode = (vnode_t*)obj->data;
   vfs_put(vnode);
   // obj may now be invalid!
+}
+
+static int vnode_get_page(memobj_t* obj, int page_offset, int writable,
+                          bc_entry_t** entry_out) {
+  KASSERT(obj->type == MEMOBJ_VNODE);
+  return block_cache_get(obj, page_offset, entry_out);
+}
+
+static int vnode_put_page(memobj_t* obj, bc_entry_t* entry,
+                          block_cache_flush_t flush_mode) {
+  KASSERT(obj->type == MEMOBJ_VNODE);
+  KASSERT(obj == entry->obj);
+  return block_cache_put(entry, flush_mode);
 }
 
 static int vnode_read_page(memobj_t* obj, int offset, void* buffer) {
