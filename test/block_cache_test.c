@@ -84,6 +84,39 @@ static void basic_get_test(dev_t dev) {
   block_cache_put(block1, BC_FLUSH_SYNC);
 }
 
+static void basic_lookup_test(dev_t dev) {
+  KTEST_BEGIN("block_cache_lookup(): basic test");
+  setup_disk(dev);
+
+  memobj_t* obj = dev_get_block_memobj(dev);
+
+  bc_entry_t* block = (bc_entry_t*)0xABCD;
+  KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));
+  KEXPECT_EQ(0x0, (uint32_t)block);
+  KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));
+  KEXPECT_EQ(0x0, (uint32_t)block);
+  KEXPECT_EQ(0, block_cache_lookup(obj, 1, &block));
+  KEXPECT_EQ(0x0, (uint32_t)block);
+
+  // Now get() the block.
+  bc_entry_t* get_block = (bc_entry_t*)0xABCD;
+  KEXPECT_EQ(0, block_cache_get(obj, 0, &get_block));
+  KEXPECT_NE(0x0, (uint32_t)get_block);
+
+  // ..and make sure we can get it via lookup now.
+  KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));
+  KEXPECT_EQ(get_block, block);
+  KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));
+  KEXPECT_EQ(get_block, block);
+
+  KEXPECT_EQ(3, block_cache_get_pin_count(obj, 0));
+
+  KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));
+  KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));
+  KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(obj, 0));
+}
+
 // TODO(aoates): test running out of space on the free block stack
 
 static void basic_write_test(dev_t dev) {
@@ -196,10 +229,19 @@ static void* get_thread_test_thread(void* arg) {
   return entry;
 }
 
+// Test that threads calling block_cache_lookup() on the block get either the
+// same block, or NULL.
+static void* lookup_thread_test_thread(void* arg) {
+  bc_entry_t* entry = 0x0;
+  memobj_t* obj = (memobj_t*)arg;
+  KASSERT(0 == block_cache_lookup(obj, 1, &entry));
+  return entry;
+}
+
 static void get_thread_test(dev_t dev) {
   const int kThreads = 10;
   KTEST_BEGIN("block_cache_get(): thread-safety test");
-  kthread_t threads[kThreads];
+  kthread_t threads[kThreads * 2];
   memobj_t* obj = dev_get_block_memobj(dev);
 
   for (int i = 0; i < kThreads; ++i) {
@@ -208,8 +250,14 @@ static void get_thread_test(dev_t dev) {
     scheduler_make_runnable(threads[i]);
   }
 
-  bc_entry_t* blocks[kThreads];
   for (int i = 0; i < kThreads; ++i) {
+    KASSERT(kthread_create(&threads[kThreads + i],
+                           &lookup_thread_test_thread, obj));
+    scheduler_make_runnable(threads[kThreads + i]);
+  }
+
+  bc_entry_t* blocks[kThreads];
+  for (int i = 0; i < kThreads * 2; ++i) {
     blocks[i] = kthread_join(threads[i]);
   }
 
@@ -218,6 +266,13 @@ static void get_thread_test(dev_t dev) {
   for (int i = 1; i < kThreads; ++i) {
     KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
     if (blocks[i]) block_cache_put(blocks[i], BC_FLUSH_SYNC);
+  }
+
+  for (int i = kThreads; i < kThreads * 2; ++i) {
+    if (blocks[i] != 0x0) {
+      KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
+      block_cache_put(blocks[i], BC_FLUSH_SYNC);
+    }
   }
 
   KEXPECT_EQ(0, block_cache_get_pin_count(obj, 1));
@@ -249,7 +304,7 @@ static void* put_thread_test_thread(void* arg) {
 static void put_thread_test(ramdisk_t* rd, dev_t dev) {
   // Disable read blocking to force race condition.
   ramdisk_set_blocking(rd, 0, 1);
-  memobj_t* obj = dev_get_block_memobj(dev);
+  struct memobj* obj = dev_get_block_memobj(dev);
 
   KTEST_BEGIN("block_cache_put(): thread-safety test");
   KEXPECT_EQ(0, block_cache_get_pin_count(obj, 1));
@@ -302,6 +357,7 @@ void block_cache_test() {
 
   // Run tests.
   basic_get_test(dev);
+  basic_lookup_test(dev);
   basic_write_test(dev);
   write_at_end_test(dev);
   get_shares_buffers_test(dev);

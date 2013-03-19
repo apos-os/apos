@@ -234,6 +234,23 @@ static void init_block_cache() {
   g_initialized = 1;
 }
 
+// Given an existing table entry, wait for it to be initialized (if applicable)
+// and add a pin.
+static void block_cache_get_internal(bc_entry_internal_t* entry) {
+  entry->pin_count++;
+  if (!entry->initialized) {
+    scheduler_wait_on(&entry->wait_queue);
+  }
+  KASSERT(entry->initialized);
+  if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
+    KASSERT(entry->pin_count == 1);
+    list_remove(&g_lru_queue, &entry->lruq);
+    KASSERT(entry->lruq.next == 0x0);
+    KASSERT(entry->lruq.prev == 0x0);
+  }
+  entry->flushed = 0;
+}
+
 int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
   if (!g_initialized) {
     init_block_cache();
@@ -284,21 +301,27 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     return 0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    entry->pin_count++;
-    if (!entry->initialized) {
-      scheduler_wait_on(&entry->wait_queue);
-    }
-    KASSERT(entry->initialized);
-    if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
-      KASSERT(entry->pin_count == 1);
-      list_remove(&g_lru_queue, &entry->lruq);
-      KASSERT(entry->lruq.next == 0x0);
-      KASSERT(entry->lruq.prev == 0x0);
-    }
-    entry->flushed = 0;
+    block_cache_get_internal(entry);
     *entry_out = &entry->pub;
     return 0;
   }
+}
+
+int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
+  if (!g_initialized) {
+    init_block_cache();
+  }
+
+  const uint32_t h = obj_hash(obj, offset);
+  void* tbl_value = 0x0;
+  if (htbl_get(&g_table, h, &tbl_value) != 0) {
+    *entry_out = 0x0;
+  } else {
+    bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
+    block_cache_get_internal(entry);
+    *entry_out = &entry->pub;
+  }
+  return 0;
 }
 
 int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {

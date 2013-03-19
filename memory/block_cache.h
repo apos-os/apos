@@ -48,6 +48,9 @@ typedef struct bc_entry {
 // Returns 0 on success, or -errno on error.
 int block_cache_get(struct memobj* obj, int offset, bc_entry_t** entry_out);
 
+// Like block_cache_get, but sets *entry_out to NULL if the page isn't resident.
+int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out);
+
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
 //
 // The block's contents may be written back to the underlying disk, depending on
