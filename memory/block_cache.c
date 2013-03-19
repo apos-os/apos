@@ -206,6 +206,7 @@ static void maybe_free_cache_space(int max_entries) {
   entry = cache_entry_head(g_lru_queue, lruq);
   while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
+    bc_entry_internal_t* next_entry = cache_entry_next(entry, lruq);
     if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
       list_remove(&g_flush_queue, &entry->flushq);
       list_remove(&g_lru_queue, &entry->lruq);
@@ -215,12 +216,13 @@ static void maybe_free_cache_space(int max_entries) {
       // flush_cache_entry blocks, so we have to verify that no one took it in
       // the meantime.
       if (entry->flushed && entry->pin_count == 0) {
+        KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
         // No-one else has it, so free it.
         free_cache_entry(entry);
         entries_freed++;
       }
     }
-    entry = cache_entry_next(entry, lruq);
+    entry = next_entry;
   }
 
   // TODO(aoates): if something is currently flushing, block for it to finish.
@@ -391,6 +393,8 @@ void block_cache_clear_unpinned() {
     free_cache_entry(entry);
     entry = cache_entry_pop(&g_lru_queue, lruq);
   }
+  KASSERT(list_empty(&g_flush_queue));
+  KASSERT(list_empty(&g_lru_queue));
 }
 
 typedef struct {
