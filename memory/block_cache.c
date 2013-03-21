@@ -288,16 +288,17 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
   if (!g_initialized) {
     init_block_cache();
   }
-  if (g_size >= g_max_size) {
-    maybe_free_cache_space(g_size - g_max_size + 1);
-    if (g_size >= g_max_size) {
-      return -ENOMEM;
-    }
-  }
 
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
+    if (g_size >= g_max_size) {
+      maybe_free_cache_space(g_size - g_max_size + 1);
+      if (g_size >= g_max_size) {
+        return -ENOMEM;
+      }
+    }
+
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
     if (!block) {
