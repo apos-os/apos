@@ -189,6 +189,7 @@ static void cache_size_test(dev_t dev) {
   KTEST_BEGIN("block_cache_get(): cache size");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
+  const int old_size = block_cache_get_size();
   block_cache_set_size(3);
 
   bc_entry_t *block0a, *block0b, *block1, *block2, *block3;
@@ -218,6 +219,8 @@ static void cache_size_test(dev_t dev) {
   if (block1) block_cache_put(block1, BC_FLUSH_SYNC);
   if (block2) block_cache_put(block2, BC_FLUSH_SYNC);
   if (block3) block_cache_put(block3, BC_FLUSH_SYNC);
+
+  block_cache_set_size(old_size);
 }
 
 // Test that multiple threads calling block_cache_get() on the same block

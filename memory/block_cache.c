@@ -413,7 +413,10 @@ int block_cache_get_pin_count(memobj_t* obj, int offset) {
 
 void block_cache_set_size(int blocks) {
   g_max_size = blocks;
-  // TODO
+}
+
+int block_cache_get_size() {
+  return g_max_size;
 }
 
 void block_cache_clear_unpinned() {
