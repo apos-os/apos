@@ -61,6 +61,10 @@ extern const list_t LIST_INIT;
 // Push a new link onto the back of the given list.
 void list_push(list_t* list, list_link_t* link);
 
+// Insert the given element in the list after prev.  If prev == NULL, then the
+// new link is inserted at the list head.
+void list_insert(list_t* list, list_link_t* prev, list_link_t* link);
+
 // Pop a link off the front of the given list.  Returns NULL if the list is
 // empty.
 list_link_t* list_pop(list_t* list);

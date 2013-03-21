@@ -55,6 +55,31 @@ list_link_t* list_pop(list_t* list) {
   }
 }
 
+void list_insert(list_t* list, list_link_t* prev, list_link_t* link) {
+  KASSERT_DBG(link->prev == 0x0);
+  KASSERT_DBG(link->next == 0x0);
+  link->prev = prev;
+  if (prev == 0x0) {
+    link->next = list->head;
+    if (list->head) {
+      list->head->prev = link;
+    } else {
+      KASSERT_DBG(list->tail == 0x0);
+      list->tail = link;
+    }
+    list->head = link;
+  } else {
+    if (prev->next) {
+      prev->next->prev = link;
+    } else {
+      KASSERT_DBG(list->tail == prev);
+      list->tail = link;
+    }
+    link->next = prev->next;
+    prev->next = link;
+  }
+}
+
 void list_remove(list_t* list, list_link_t* link) {
   KASSERT_DBG(list->head != 0x0);
   KASSERT_DBG(list->tail != 0x0);
