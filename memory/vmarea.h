@@ -1,0 +1,57 @@
+// Copyright 2014 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#ifndef APOO_MEMORY_VMAREA_H
+#define APOO_MEMORY_VMAREA_H
+
+#include "common/list.h"
+#include "common/types.h"
+#include "memory/memobj.h"
+#include "memory/block_cache.h"
+#include "proc/process.h"
+
+// A vmarea_t represents a mapped region of virtual memory in a process.  Each
+// is backed by a memobj_t.
+struct vm_area {
+  // The memobj_t backing the region.  The vm_area holds one reference on the
+  // memobj_t.
+  memobj_t* memobj;
+
+  // The address and length (in bytes) of the region in the process's address
+  // space.  Must be page-aligned and page-sized.
+  addr_t vm_base;
+  addr_t vm_length;
+
+  // Offset (in bytes) within the memobj.
+  addr_t memobj_base;
+
+  // Parent process.
+  process_t* proc;
+
+  // Link to the next vm_area in this process.
+  list_link_t vm_proc_list;
+
+  // TODO(aoates): implement swapping so we don't have to pin the resident
+  // pages.  Then we can ditch this array.
+  // An array of (vm_length / PAGE_SIZE) bc_entry_t's, one for each page in the
+  // vm_area_t.  If the page is resident, this will point to the (pinned)
+  // bc_entry_t; otherwise, it will be NULL.
+  bc_entry_t* pages[];
+};
+typedef struct vm_area vm_area_t;
+
+// Create a vm_area_t of the given size.
+int vm_area_create(addr_t length, vm_area_t** area_out);
+
+#endif

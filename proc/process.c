@@ -43,6 +43,7 @@ void proc_init() {
   g_proc_table[0]->id = 0;
   g_proc_table[0]->thread = kthread_current_thread();
   g_proc_table[0]->thread->process = g_proc_table[0];
+  g_proc_table[0]->vm_area_list = LIST_INIT;
   g_current_proc = 0;
 }
 

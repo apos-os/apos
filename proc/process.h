@@ -16,6 +16,7 @@
 #ifndef APOO_PROCESS_H
 #define APOO_PROCESS_H
 
+#include "common/list.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 
@@ -34,6 +35,9 @@ struct process {
 
   // The current working directory of the process.
   struct vnode* cwd;
+
+  // List of vm_area_t's of the mmap'd areas in the current process.
+  list_t vm_area_list;
 };
 
 // Initialize the process table, and create the first process (process 0) from
