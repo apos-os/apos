@@ -132,17 +132,42 @@ static uint32_t obj_hash(memobj_t* obj, int offset) {
   return h;
 }
 
+// Basic sanity checks on a bc_entry_t.
+static int entry_is_sane(bc_entry_internal_t* entry) {
+ if (!entry->pub.obj || ((uint32_t)entry->pub.block & 0x00000FFF) ||
+     entry->pin_count < 0 ||
+     (entry->initialized != 0 && entry->initialized != 1) ||
+     (entry->flushing != 0 && entry->flushing != 1) ||
+     (entry->flushed != 0 && entry->flushed != 1)) {
+   return 0;
+ } else {
+   return 1;
+ }
+}
+
 // Flush the given cache entry to disk.
 static void flush_cache_entry(bc_entry_internal_t* entry) {
-  // Write the data back to disk.  This may block.
+  KASSERT_DBG(!entry->flushing);
+  KASSERT_DBG(!entry->flushed);
+  KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+
   entry->flushing = 1;
-  KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
-  const int result =
-      entry->pub.obj->ops->write_page(
-          entry->pub.obj, entry->pub.offset, entry->pub.block);
-  KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
+  while (!entry->flushed) {
+    entry->flushed = 1;
+    // Write the data back to disk.  This may block.
+    KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
+    KASSERT_DBG(entry_is_sane(entry));
+    const int result =
+        entry->pub.obj->ops->write_page(
+            entry->pub.obj, entry->pub.offset, entry->pub.block);
+    KASSERT_DBG(entry_is_sane(entry));
+    KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
+
+    // Another thread may have dirtied the block during the write, so if flushed
+    // == 0 we need to try again.
+    KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+  }
   entry->flushing = 0;
-  entry->flushed = 1;
   scheduler_wake_all(&entry->wait_queue);
 }
 
@@ -174,6 +199,7 @@ static void free_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(list_link_on_list(&g_lru_queue, &entry->lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
   KASSERT_DBG(entry->flushed);
+  KASSERT_DBG(!entry->flushing);
 
   //klogf("<block cache free block %d>\n", entry->pub.offset);
   g_size--;
@@ -191,7 +217,7 @@ static void maybe_free_cache_space(int max_entries) {
   while (entry && entries_freed < max_entries) {
     KASSERT(entry->pin_count == 0);
     bc_entry_internal_t* next = cache_entry_next(entry, lruq);
-    if (entry->flushed) {
+    if (entry->flushed && !entry->flushing) {
       KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
       list_remove(&g_lru_queue, &entry->lruq);
 
@@ -215,7 +241,12 @@ static void maybe_free_cache_space(int max_entries) {
 
       // flush_cache_entry blocks, so we have to verify that no one took it in
       // the meantime.
-      if (entry->flushed && entry->pin_count == 0) {
+      if (entry->flushed && !entry->flushing && entry->pin_count == 0) {
+        if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
+          list_remove(&g_lru_queue, &entry->lruq);
+        }
+
+        KASSERT_DBG(!entry->flushing);
         KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
         // No-one else has it, so free it.
         free_cache_entry(entry);
@@ -249,8 +280,8 @@ static void block_cache_get_internal(bc_entry_internal_t* entry) {
     list_remove(&g_lru_queue, &entry->lruq);
     KASSERT(entry->lruq.next == 0x0);
     KASSERT(entry->lruq.prev == 0x0);
+    entry->flushed = 1;
   }
-  entry->flushed = 0;
 }
 
 int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
@@ -280,7 +311,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->pub.block = block;
     entry->pin_count = 1;
     entry->initialized = 0;
-    entry->flushed = 0;
+    entry->flushed = 1;
     entry->flushing = 0;
     entry->flushq = LIST_LINK_INIT;
     entry->lruq = LIST_LINK_INIT;
@@ -336,9 +367,21 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   if (flush_mode != BC_FLUSH_NONE) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
-      flush_cache_entry(entry);
+      if (entry->flushing) {
+        scheduler_wait_on(&entry->wait_queue);
+      } else {
+        if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
+          list_remove(&g_flush_queue, &entry->flushq);
+        }
+        flush_cache_entry(entry);
+      }
     } else if (flush_mode == BC_FLUSH_ASYNC) {
-      if (!list_link_on_list(&g_flush_queue, &entry->flushq)) {
+      // Only schedule a flush if we're not currently flushing, and don't
+      // already have one scheduled.
+      if (!entry->flushing &&
+          !list_link_on_list(&g_flush_queue, &entry->flushq)) {
+        // If the entry is currently flushing, this will schedule it for
+        // another, later flush.
         list_push(&g_flush_queue, &entry->flushq);
       }
     }
@@ -389,6 +432,7 @@ void block_cache_clear_unpinned() {
     }
     KASSERT_DBG(entry->pin_count == 0);
     KASSERT_DBG(entry->flushed);
+    KASSERT_DBG(!entry->flushing);
     KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
     free_cache_entry(entry);
     entry = cache_entry_pop(&g_lru_queue, lruq);

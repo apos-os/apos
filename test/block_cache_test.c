@@ -342,6 +342,14 @@ static void put_thread_test(ramdisk_t* rd, dev_t dev) {
 
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
+// TODO(aoates): a good test:
+//  get()
+//  put(BC_FLUSH_ASYNC)
+//  get()  // runs before the flush thread
+//  put(BC_FLUSH_NONE)
+//  wait_for_flush()
+//  * verify that the second put() didn't cancel the first's flush *
+
 void block_cache_test() {
   KTEST_SUITE_BEGIN("block_cache test");
 
@@ -367,6 +375,7 @@ void block_cache_test() {
 
   // Cleanup.
   block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.
+  block_cache_log_stats();
   KASSERT(dev_unregister_block(dev) == 0);
   ramdisk_destroy(ramdisk);
 }
