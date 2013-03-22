@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/interrupts.h"
+#include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/page_fault.h"
 #include "memory/page_alloc.h"
@@ -49,7 +50,10 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
     KASSERT(phys_addr);
     const uint32_t virt_addr = addr2page(address);
     //klogf("  page fault: mapping 0x%x --> 0x%x\n", virt_addr, phys_addr);
-    page_frame_map_virtual(virt_addr, phys_addr);
+    page_frame_map_virtual(virt_addr, phys_addr,
+                           MEM_PROT_ALL,
+                           MEM_ACCESS_KERNEL_ONLY,
+                           MEM_GLOBAL);
     return;
   }
 

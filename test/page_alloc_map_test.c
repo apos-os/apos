@@ -16,6 +16,7 @@
 
 #include "common/kassert.h"
 #include "dev/interrupts.h"
+#include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
 #include "memory/page_fault.h"
@@ -100,7 +101,8 @@ recover_A:
   // Set up mapping.
   KTEST_BEGIN("valid mapping");
   uint32_t phys_page = page_frame_alloc();
-  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page);
+  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page,
+                         MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 
   // Should succeed:
   *addr = 10;
@@ -137,7 +139,8 @@ recover_C:
   // creating a new table (step in to verify).
   KTEST_BEGIN("new mapping in same table");
   addr2 = addr - 2 * 4096;
-  page_frame_map_virtual((uint32_t)addr2 & PDE_ADDRESS_MASK, phys_page);
+  page_frame_map_virtual((uint32_t)addr2 & PDE_ADDRESS_MASK, phys_page,
+                         MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 
   // Both should succeed (and affect each other, since they're mapped to the
   // same page):
@@ -151,7 +154,8 @@ recover_C:
   // Remap addr to a NEW physical page, without unmapping in between.
   KTEST_BEGIN("remapping");
   uint32_t phys_page2 = page_frame_alloc();
-  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page2);
+  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page2,
+                         MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 
   *addr = 71;
   *addr2 = 72;
@@ -179,3 +183,5 @@ recover_D:
   // hardcoding this.
   register_interrupt_handler(0x0E, &page_fault_handler);
 }
+
+// TODO(aoates): test protections, access flags, etc.

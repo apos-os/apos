@@ -41,8 +41,13 @@ void page_frame_free_nocheck(uint32_t frame);
 // Establishes a mapping from the given virtual address to the physical address
 // in the currently-loaded page tables.
 //
+// prot should be an OR combination of MEM_PROT_* values.  access should be one
+// of the MEM_ACCESS_* values.  flags should be a combination of the other mem
+// flags.
+//
 // REQUIRES: virt and phys are page-aligned.
-void page_frame_map_virtual(uint32_t virt, uint32_t phys);
+void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
+                            int access, int flags);
 
 // Removes the mapping for the given virtual address from the currently-loaded
 // page table (by marking it non-present), if it exists.

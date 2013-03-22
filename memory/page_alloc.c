@@ -16,6 +16,7 @@
 
 #include "common/debug.h"
 #include "common/kassert.h"
+#include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
 
@@ -161,16 +162,20 @@ static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
     return 0x0;
   } else {
     // Allocate a new page table.
+    // TODO(aoates): should we bother marking PDEs as non-writable or
+    // non-user-accessible?
     uint32_t pte_phys_addr = page_frame_alloc();
     KASSERT(pte_phys_addr);
-    page_directory[page_table_idx] = pte_phys_addr | PDE_WRITABLE | PDE_PRESENT;
+    KASSERT_DBG((pte_phys_addr & PDE_ADDRESS_MASK) == pte_phys_addr);
+    page_directory[page_table_idx] =
+        pte_phys_addr | PDE_USER_ACCESS | PDE_WRITABLE | PDE_PRESENT;
 
     // Initialize the new page table.  Get the *first* address of the new page
     // table.
     uint32_t* pte_virt_addr = get_page_table_entry(
         page_table_idx * PTE_NUM_ENTRIES * PAGE_SIZE);
     for (uint32_t i = 0; i < PTE_NUM_ENTRIES; ++i) {
-      pte_virt_addr[i] = 0 | PDE_WRITABLE;
+      pte_virt_addr[i] = 0;
     }
 
     return get_page_table_entry(virt);
@@ -178,12 +183,24 @@ static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
 }
 
 // TODO(aoates): make kernel mappings PDE_GLOBAL for efficiency.
-void page_frame_map_virtual(uint32_t virt, uint32_t phys) {
+void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
+                            int access, int flags) {
   KASSERT(virt % PAGE_SIZE == 0);
   KASSERT(phys % PAGE_SIZE == 0);
+  // TODO(aoates): handle unsupported flags better.
+  KASSERT(prot & MEM_PROT_READ);
+  KASSERT(prot & MEM_PROT_EXEC);
+  KASSERT(access == MEM_ACCESS_KERNEL_ONLY ||
+          access == MEM_ACCESS_KERNEL_AND_USER);
+  KASSERT(flags == 0 || flags == MEM_GLOBAL);
 
+  // The PDE entry we may create will automatically get the most permissive
+  // flags.
   uint32_t* pte = get_or_create_page_table_entry(virt, 1);
-  *pte = phys | PTE_WRITABLE | PTE_PRESENT;
+  *pte = phys | PTE_PRESENT;
+  if (prot & MEM_PROT_WRITE) *pte |= PTE_WRITABLE;
+  if (access == MEM_ACCESS_KERNEL_AND_USER) *pte |= PTE_USER_ACCESS;
+  if (flags & MEM_GLOBAL) *pte |= PTE_GLOBAL;
   invalidate_tlb(virt);
 }
 
