@@ -89,6 +89,9 @@ void kmain(memory_info_t* meminfo) {
 
   enable_interrupts();
 
+  klog("proc_init_stage1()\n");
+  proc_init_stage1();
+
   klog("set_global_meminfo()\n");
   set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
@@ -114,15 +117,11 @@ void kmain(memory_info_t* meminfo) {
   kthread_init();
   klog("scheduler_init()\n");
   scheduler_init();
-  klog("proc_init()\n");
-  proc_init();
+  klog("proc_init_stage2()\n");
+  proc_init_stage2();
 
   klog("vfs_init()\n");
   vfs_init();
-
-  // TODO(aoates): is there a cleaner way of doing this?  The proc/vfs circular
-  // dependency is gross.
-  proc_current()->cwd = vfs_get_root_vnode();
 
   klog("initialization finished...\n");
 

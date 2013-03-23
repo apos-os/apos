@@ -283,6 +283,9 @@ void vfs_init() {
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
     g_file_table[i] = 0x0;
   }
+
+  KASSERT(proc_current()->cwd == 0x0);
+  proc_current()->cwd = vfs_get_root_vnode();
 }
 
 fs_t* vfs_get_root_fs() {
