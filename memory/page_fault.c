@@ -21,9 +21,15 @@
 #include "memory/memory.h"
 #include "memory/page_fault.h"
 #include "memory/page_alloc.h"
+#include "memory/vm_page_fault.h"
 
 // TODO(aoates): define these common interrupts in dev/interrupts.h
 #define PAGE_FAULT_INTERRUPT 0x0E
+
+#define PAGE_FAULT_ERR_PRESENT 0x01
+#define PAGE_FAULT_ERR_WRITE   0x02
+#define PAGE_FAULT_ERR_USER    0x04
+#define PAGE_FAULT_ERR_RSVD    0x08
 
 static memory_info_t* g_meminfo = 0;
 
@@ -34,29 +40,16 @@ void paging_init(memory_info_t* meminfo) {
 
 void page_fault_handler(uint32_t interrupt, uint32_t error) {
   KASSERT(interrupt == PAGE_FAULT_INTERRUPT);
+  KASSERT((error & PAGE_FAULT_ERR_RSVD) == 0);
 
   uint32_t address;
   asm volatile ("movl %%cr2, %0\n\t" : "=r"(address));
 
-  //klogf("page fault: addr: 0x%x  error: 0x%x\n", address, error);
-
-  if (address >= g_meminfo->heap_start && address < g_meminfo->heap_end) {
-    // TODO(aoates): properly handle user-mode processes trying to access the
-    // kernel heap.
-    KASSERT((error & 0x04) == 0);
-
-    // Get a new physical page and map it in.
-    const uint32_t phys_addr = page_frame_alloc();
-    KASSERT(phys_addr);
-    const uint32_t virt_addr = addr2page(address);
-    //klogf("  page fault: mapping 0x%x --> 0x%x\n", virt_addr, phys_addr);
-    page_frame_map_virtual(virt_addr, phys_addr,
-                           MEM_PROT_ALL,
-                           MEM_ACCESS_KERNEL_ONLY,
-                           MEM_GLOBAL);
-    return;
-  }
-
-  klogf("kernel page fault: addr: 0x%x  error: 0x%x\n", address, error);
-  die("unhandled kernel page fault");
+  const vm_fault_type_t type =
+      (error & PAGE_FAULT_ERR_PRESENT) ? VM_FAULT_ACCESS : VM_FAULT_NOT_PRESENT;
+  const vm_fault_op_t op =
+      (error & PAGE_FAULT_ERR_WRITE) ? VM_FAULT_WRITE : VM_FAULT_READ;
+  const vm_fault_mode_t mode =
+      (error & PAGE_FAULT_ERR_USER) ? VM_FAULT_USER : VM_FAULT_KERNEL;
+  vm_handle_page_fault(address, type, op, mode);
 }
