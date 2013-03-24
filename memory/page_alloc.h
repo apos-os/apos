@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 
+#include "memory/flags.h"
 #include "memory/memory.h"
 
 // Initialize the allocator with the given meminfo.
@@ -47,7 +48,7 @@ void page_frame_free_nocheck(uint32_t frame);
 //
 // REQUIRES: virt and phys are page-aligned.
 void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
-                            int access, int flags);
+                            mem_access_t access, int flags);
 
 // Removes the mapping for the given virtual address from the currently-loaded
 // page table (by marking it non-present), if it exists.

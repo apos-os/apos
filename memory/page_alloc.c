@@ -184,7 +184,7 @@ static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
 
 // TODO(aoates): make kernel mappings PDE_GLOBAL for efficiency.
 void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
-                            int access, int flags) {
+                            mem_access_t access, int flags) {
   KASSERT(virt % PAGE_SIZE == 0);
   KASSERT(phys % PAGE_SIZE == 0);
   // TODO(aoates): handle unsupported flags better.

@@ -24,8 +24,10 @@
 #define MEM_PROT_ALL (MEM_PROT_READ | MEM_PROT_WRITE | MEM_PROT_EXEC)
 
 // Who can access a memory location.
-#define MEM_ACCESS_KERNEL_ONLY 0
-#define MEM_ACCESS_KERNEL_AND_USER 1
+typedef enum {
+  MEM_ACCESS_KERNEL_ONLY,
+  MEM_ACCESS_KERNEL_AND_USER,
+} mem_access_t;
 
 // Other misc. flags.
 #define MEM_GLOBAL 0x01  // A global (across all processes) mapping.
