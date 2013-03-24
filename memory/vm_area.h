@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_MEMORY_VMAREA_H
-#define APOO_MEMORY_VMAREA_H
+#ifndef APOO_MEMORY_VM_AREA_H
+#define APOO_MEMORY_VM_AREA_H
 
 #include "common/list.h"
 #include "common/types.h"
@@ -21,7 +21,7 @@
 #include "memory/block_cache.h"
 #include "proc/process.h"
 
-// A vmarea_t represents a mapped region of virtual memory in a process.  Each
+// A vm_area_t represents a mapped region of virtual memory in a process.  Each
 // is backed by a memobj_t.
 struct vm_area {
   // The memobj_t backing the region.  The vm_area holds one reference on the

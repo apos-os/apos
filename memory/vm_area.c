@@ -18,7 +18,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
-#include "memory/vmarea.h"
+#include "memory/vm_area.h"
 
 int vm_area_create(addr_t length, vm_area_t** area_out) {
   *area_out = 0x0;

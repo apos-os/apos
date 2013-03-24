@@ -15,7 +15,7 @@
 #include "common/kassert.h"
 #include "common/list.h"
 #include "memory/vm.h"
-#include "memory/vmarea.h"
+#include "memory/vm_area.h"
 
 void vm_insert_area(process_t* proc, vm_area_t* area) {
   KASSERT(!list_link_on_list(&proc->vm_area_list, &area->vm_proc_list));

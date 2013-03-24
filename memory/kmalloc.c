@@ -25,7 +25,7 @@
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
-#include "memory/vmarea.h"
+#include "memory/vm_area.h"
 #include "proc/process.h"
 
 // Global block list.

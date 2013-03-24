@@ -15,7 +15,7 @@
 #ifndef APOO_MEMORY_VM_H
 #define APOO_MEMORY_VM_H
 
-#include "memory/vmarea.h"
+#include "memory/vm_area.h"
 #include "proc/process.h"
 
 // Insert the given vm_area_t into the process's memory map.  The new area MUST
