@@ -310,6 +310,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->pub.obj = obj;
     entry->pub.offset = offset;
     entry->pub.block = block;
+    entry->pub.block_phys = virt2phys((addr_t)block);
     entry->pin_count = 1;
     entry->initialized = 0;
     entry->flushed = 1;

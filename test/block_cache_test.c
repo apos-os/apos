@@ -62,6 +62,7 @@ static void basic_get_test(dev_t dev) {
     bc_entry_t* block = 0x0;
     KEXPECT_EQ(0, block_cache_get(obj, i, &block));
     KEXPECT_NE(0x0, (int)block);
+    KEXPECT_EQ(virt2phys((uint32_t)block->block), block->block_phys);
 
     char data[100];
     ksprintf(data, "block%i", i);
