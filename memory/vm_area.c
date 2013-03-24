@@ -30,6 +30,9 @@ int vm_area_create(addr_t length, vm_area_t** area_out) {
   const unsigned long area_struct_size =
       sizeof(vm_area_t) + (sizeof(bc_entry_t*) * num_pages);
   vm_area_t* area = (vm_area_t*)kmalloc(area_struct_size);
+  if (!area) {
+    return -ENOMEM;
+  }
   kmemset(area, 0, area_struct_size);
 
   area->memobj = 0x0;
@@ -40,5 +43,6 @@ int vm_area_create(addr_t length, vm_area_t** area_out) {
   for (unsigned long i = 0; i < num_pages; ++i) {
     area->pages[i] = 0x0;
   }
+  *area_out = area;
   return 0;
 }
