@@ -19,14 +19,16 @@
 
 void vm_insert_area(process_t* proc, vm_area_t* area) {
   KASSERT(!list_link_on_list(&proc->vm_area_list, &area->vm_proc_list));
-  list_link_t* prev = proc->vm_area_list.head;
-  while (prev && prev->next) {
-    vm_area_t* next_area = container_of(prev->next, vm_area_t, vm_proc_list);
-    if (next_area->vm_base > area->vm_base) {
-      KASSERT(area->vm_base + area->vm_length <= next_area->vm_base);
+  list_link_t* prev = 0x0;
+  list_link_t* curr = proc->vm_area_list.head;
+  while (curr) {
+    vm_area_t* curr_area = container_of(curr, vm_area_t, vm_proc_list);
+    if (curr_area->vm_base > area->vm_base) {
+      KASSERT(area->vm_base + area->vm_length <= curr_area->vm_base);
       break;
     }
-    prev = prev->next;
+    prev = curr;
+    curr = curr->next;
   }
   if (prev) {
     vm_area_t* prev_area = container_of(prev, vm_area_t, vm_proc_list);
