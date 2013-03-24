@@ -58,13 +58,36 @@ static vm_area_t* find_area(process_t* proc, addr_t address) {
   return 0x0;
 }
 
+static int fault_allowed(vm_area_t* area, vm_fault_type_t type,
+                          vm_fault_op_t op, vm_fault_mode_t mode) {
+  if (!area) {
+    klogf("address not in any mapped region\n");
+    return 0;
+  }
+  switch (op) {
+    case VM_FAULT_READ:
+      if (!(area->prot & MEM_PROT_READ)) {
+        klogf("read operation not allowed in mapped region\n");
+        return 0;
+      }
+      break;
+
+    case VM_FAULT_WRITE:
+      if (!(area->prot & MEM_PROT_WRITE)) {
+        klogf("write operation not allowed in mapped region\n");
+        return 0;
+      }
+      break;
+  }
+  if (mode == VM_FAULT_USER && area->access != MEM_ACCESS_KERNEL_AND_USER) {
+    klogf("user mode attempt to access kernel memory\n");
+    return 0;
+  }
+  return 1;
+}
+
 void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
                           vm_fault_op_t op, vm_fault_mode_t mode) {
-  // TODO(aoates): properly handle user-mode processes trying to access the
-  // kernel heap.
-  KASSERT(type == VM_FAULT_NOT_PRESENT);
-  KASSERT(mode == VM_FAULT_KERNEL);
-
   process_t* proc = proc_current();
   if (ENABLE_KERNEL_SAFETY_NETS) {
     check_vm_list(proc);
@@ -72,23 +95,27 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
 
   // Find the vm_area containing the address.
   vm_area_t* area = find_area(proc, address);
-  if (area) {
-    KASSERT(!area->memobj);
-    // Get a new physical page and map it in.
-    const uint32_t phys_addr = page_frame_alloc();
-    KASSERT(phys_addr);
-    const uint32_t virt_addr = addr2page(address);
-    page_frame_map_virtual(virt_addr, phys_addr,
-                           MEM_PROT_ALL,
-                           MEM_ACCESS_KERNEL_ONLY,
-                           MEM_GLOBAL);
-  } else {
-    if (mode == VM_FAULT_KERNEL) {
-      klogf("kernel page fault: addr: 0x%x\n", address);
-      die("unhandled kernel page fault");
-    } else {
-      // TODO(aoates): handle user-mode segfaults.
-      die("user mode page fault (unsupported)");
+  if (!fault_allowed(area, type, op, mode)) {
+    switch (mode) {
+      case VM_FAULT_KERNEL:
+        klogf("kernel page fault: addr: 0x%x\n", address);
+        die("unhandled kernel page fault");
+        break;
+
+      case VM_FAULT_USER:
+        // TODO(aoates): handle user-mode segfaults.
+        die("user mode page fault (unsupported)");
+        break;
     }
   }
+
+  // TODO(aoates): handle memobj-backed mappings.
+  KASSERT(!area->memobj);
+  KASSERT(area->access == MEM_ACCESS_KERNEL_ONLY);
+  // Get a new physical page and map it in.
+  const uint32_t phys_addr = page_frame_alloc();
+  KASSERT(phys_addr);
+  const uint32_t virt_addr = addr2page(address);
+  page_frame_map_virtual(virt_addr, phys_addr,
+                         area->prot, area->access, area->flags);
 }

@@ -55,6 +55,9 @@ void kmalloc_init() {
   g_root_heap_vm_area.memobj = 0x0;
   g_root_heap_vm_area.vm_base = meminfo->heap_start;
   g_root_heap_vm_area.vm_length = meminfo->heap_end - meminfo->heap_start;
+  g_root_heap_vm_area.prot = MEM_PROT_ALL;
+  g_root_heap_vm_area.access = MEM_ACCESS_KERNEL_ONLY;
+  g_root_heap_vm_area.flags = 0;
   g_root_heap_vm_area.proc = proc_current();
   g_root_heap_vm_area.vm_proc_list = LIST_LINK_INIT;
 

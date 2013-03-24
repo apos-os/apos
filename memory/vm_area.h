@@ -17,6 +17,7 @@
 
 #include "common/list.h"
 #include "common/types.h"
+#include "memory/flags.h"
 #include "memory/memobj.h"
 #include "memory/block_cache.h"
 #include "proc/process.h"
@@ -38,6 +39,11 @@ struct vm_area {
 
   // Offset (in bytes) within the memobj.
   addr_t memobj_base;
+
+  // Protection, access, and other flags.
+  int prot;
+  mem_access_t access;
+  int flags;
 
   // Parent process.
   process_t* proc;
