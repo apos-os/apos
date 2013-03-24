@@ -109,13 +109,39 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
     }
   }
 
-  // TODO(aoates): handle memobj-backed mappings.
-  KASSERT(!area->memobj);
-  KASSERT(area->access == MEM_ACCESS_KERNEL_ONLY);
-  // Get a new physical page and map it in.
-  const uint32_t phys_addr = page_frame_alloc();
-  KASSERT(phys_addr);
-  const uint32_t virt_addr = addr2page(address);
-  page_frame_map_virtual(virt_addr, phys_addr,
-                         area->prot, area->access, area->flags);
+  addr_t phys_addr = 0x0;
+  const uint32_t virt_page = addr2page(address);
+
+  // Some kernel mappings (such as the heap) don't have a backing memobj.
+  if (!area->memobj) {
+    KASSERT(area->access == MEM_ACCESS_KERNEL_ONLY);
+    KASSERT(mode == VM_FAULT_KERNEL);
+
+    // TODO(aoates): if no pages are available, force a swap.
+    phys_addr = page_frame_alloc();
+    KASSERT(phys_addr);
+  } else {
+    KASSERT_DBG(virt_page >= area->vm_base &&
+                virt_page < area->vm_base + area->vm_length);
+    const addr_t area_page_offset = (virt_page - area->vm_base) / PAGE_SIZE;
+    KASSERT(area->pages[area_page_offset] == 0x0);
+    const int result = area->memobj->ops->get_page(
+        area->memobj,
+        (area->memobj_base / PAGE_SIZE) + area_page_offset,
+        op == VM_FAULT_WRITE,
+        &area->pages[area_page_offset]);
+    // TODO(aoates): handle failures for user-mode faults.
+    KASSERT(result == 0);
+    KASSERT(area->pages[area_page_offset]);
+    phys_addr = area->pages[area_page_offset]->block_phys;
+  }
+
+  // Only create a writable mapping if the operation is a write (so that we can
+  // do copy-on-write).
+  const int mapping_prot = (MEM_PROT_READ | MEM_PROT_EXEC |
+          (op == VM_FAULT_WRITE ? MEM_PROT_WRITE : 0x0));
+
+  KASSERT(phys_addr != 0x0);
+  page_frame_map_virtual(virt_page, phys_addr,
+                         mapping_prot, area->access, area->flags);
 }
