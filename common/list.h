@@ -35,6 +35,8 @@
 #ifndef APOO_COMMON_LIST_H
 #define APOO_COMMON_LIST_H
 
+#include <stddef.h>
+
 // Given a pointer to a struct member, the name of the containing type, and the
 // name of the member, return a pointer to the containing object.
 #define container_of(ptr, type, member_name) \

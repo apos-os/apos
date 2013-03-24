@@ -24,9 +24,15 @@
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
+#include "memory/vm.h"
+#include "memory/vmarea.h"
+#include "proc/process.h"
 
 // Global block list.
 static block_t* g_block_list = 0;
+
+// Root process vm_area_t for the heap.
+vm_area_t g_root_heap_vm_area;
 
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
@@ -38,6 +44,21 @@ static void init_block(block_t* b) {
 
 void kmalloc_init() {
   const memory_info_t* meminfo = get_global_meminfo();
+  KASSERT(meminfo->heap_end > meminfo->heap_start);
+  KASSERT(proc_current() != 0x0);
+  KASSERT(proc_current()->id == 0);
+
+  // First we have to set up the vm_area_t in the current process for our heap
+  // region.  We touch the memory after this, and this mapping must exist for
+  // the page fault handler not to bork.
+  kmemset(&g_root_heap_vm_area, 0, sizeof(vm_area_t));
+  g_root_heap_vm_area.memobj = 0x0;
+  g_root_heap_vm_area.vm_base = meminfo->heap_start;
+  g_root_heap_vm_area.vm_length = meminfo->heap_end - meminfo->heap_start;
+  g_root_heap_vm_area.proc = proc_current();
+  g_root_heap_vm_area.vm_proc_list = LIST_LINK_INIT;
+
+  vm_insert_area(proc_current(), &g_root_heap_vm_area);
 
   // Initialize the free list to one giant block consisting of the entire heap.
   block_t* head = (block_t*)meminfo->heap_start;

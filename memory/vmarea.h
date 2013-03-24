@@ -26,6 +26,9 @@
 struct vm_area {
   // The memobj_t backing the region.  The vm_area holds one reference on the
   // memobj_t.
+  //
+  // This may be NULL for certain anonymous kernel mappings that must exists
+  // early in the boot process (e.g., the heap).
   memobj_t* memobj;
 
   // The address and length (in bytes) of the region in the process's address
@@ -47,6 +50,8 @@ struct vm_area {
   // An array of (vm_length / PAGE_SIZE) bc_entry_t's, one for each page in the
   // vm_area_t.  If the page is resident, this will point to the (pinned)
   // bc_entry_t; otherwise, it will be NULL.
+  //
+  // This may not exist if memobj == NULL.
   bc_entry_t* pages[];
 };
 typedef struct vm_area vm_area_t;
