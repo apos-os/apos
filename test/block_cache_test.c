@@ -58,11 +58,13 @@ static void basic_get_test(dev_t dev) {
   setup_disk(dev);
 
   memobj_t* obj = dev_get_block_memobj(dev);
+  const int start_obj_refcount = obj->refcount;
   for (int i = 0; i < RAMDISK_BLOCKS; ++i) {
     bc_entry_t* block = 0x0;
     KEXPECT_EQ(0, block_cache_get(obj, i, &block));
     KEXPECT_NE(0x0, (int)block);
     KEXPECT_EQ(virt2phys((uint32_t)block->block), block->block_phys);
+    KEXPECT_GT(obj->refcount, start_obj_refcount);
 
     char data[100];
     ksprintf(data, "block%i", i);
@@ -367,6 +369,9 @@ void block_cache_test() {
   dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KASSERT(dev_register_block(&ramdisk_bd, &dev) == 0);
 
+  memobj_t* obj = dev_get_block_memobj(dev);
+  const int start_obj_refcount = obj->refcount;
+
   // Run tests.
   basic_get_test(dev);
   basic_lookup_test(dev);
@@ -379,6 +384,8 @@ void block_cache_test() {
 
   // Cleanup.
   block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.
+  KEXPECT_EQ(start_obj_refcount, obj->refcount);
+
   block_cache_log_stats();
   KASSERT(dev_unregister_block(dev) == 0);
   ramdisk_destroy(ramdisk);
