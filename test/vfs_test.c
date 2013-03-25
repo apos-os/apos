@@ -1340,21 +1340,32 @@ static void memobj_test() {
   const char kDir[] = "memobj_test";
   KEXPECT_EQ(0, vfs_mkdir(kDir));
 
+  memobj_t* unused_memobj = 0x0;
+
+  KTEST_BEGIN("vfs_get_memobj() bad fd test");
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(-5, VFS_O_RDONLY, &unused_memobj));
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(10, VFS_O_RDONLY, &unused_memobj));
+  KEXPECT_EQ(-EBADF, vfs_get_memobj(55555555, VFS_O_RDONLY, &unused_memobj));
+
+  KTEST_BEGIN("vfs_get_memobj() directory test");
+  int dir_fd = vfs_open(kDir, VFS_O_RDONLY);
+  KEXPECT_EQ(-EISDIR, vfs_get_memobj(dir_fd, VFS_O_RDONLY, &unused_memobj));
+  vfs_close(dir_fd);
+
   KTEST_BEGIN("vfs_get_memobj() mode test");
   const char kFile[] = "memobj_test/file";
-  memobj_t* unused_memobj = 0x0;
   int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
-  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
-  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
+  KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
+  KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
   KEXPECT_EQ(0, vfs_close(fd));
 
   fd = vfs_open(kFile, VFS_O_WRONLY);
   KEXPECT_GE(fd, 0);
-  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
+  KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
-  KEXPECT_EQ(-EBADF, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
+  KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
   KEXPECT_EQ(0, vfs_close(fd));
 
   fd = vfs_open(kFile, VFS_O_RDWR);

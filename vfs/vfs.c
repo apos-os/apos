@@ -875,7 +875,7 @@ int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDWR && file->mode != mode) {
-    return -EBADF;
+    return -EACCES;
   }
 
   *memobj_out = &file->vnode->memobj;
