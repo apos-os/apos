@@ -28,10 +28,10 @@
 #include "vfs/util.h"
 #include "vfs/vfs.h"
 
-void vfs_vnode_init(vnode_t* n) {
+void vfs_vnode_init(vnode_t* n, int num) {
   n->fs = 0x0;
   n->fstype[0] = 0x0;
-  n->num = -1;
+  n->num = num;
   n->type = VNODE_UNINITIALIZED;
   n->len = -1;
   n->refcount = 0;
@@ -324,8 +324,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
   } else {
     // We need to create the vnode and backfill it from disk.
     vnode = fs->alloc_vnode(fs);
-    vfs_vnode_init(vnode);
-    vnode->num = vnode_num;
+    vfs_vnode_init(vnode, vnode_num);
     vnode->refcount = 1;
     vnode->fs = fs;
     kmutex_lock(&vnode->mutex);
