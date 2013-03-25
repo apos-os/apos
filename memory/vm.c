@@ -14,8 +14,32 @@
 
 #include "common/kassert.h"
 #include "common/list.h"
+#include "common/math.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+
+addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
+                    addr_t length) {
+  addr_t addr = start_addr;
+  list_link_t* link = proc->vm_area_list.head;
+  while (link && addr < end_addr) {
+    const vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
+    if (addr < area->vm_base) {
+      const addr_t hole_size = min(area->vm_base, end_addr) - addr;
+      if (hole_size >= length) {
+        return addr;
+      }
+    }
+    addr = area->vm_base + area->vm_length;
+    link = link->next;
+  }
+
+  if (addr >= end_addr || (end_addr - addr) < length) {
+    return 0;
+  } else {
+    return addr;
+  }
+}
 
 void vm_insert_area(process_t* proc, vm_area_t* area) {
   KASSERT(!list_link_on_list(&proc->vm_area_list, &area->vm_proc_list));

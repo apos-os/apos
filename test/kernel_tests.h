@@ -38,5 +38,6 @@ void vfs_test();
 void hash_test();
 void block_cache_test();
 void list_test();
+void mmap_test();
 
 #endif

@@ -15,8 +15,15 @@
 #ifndef APOO_MEMORY_VM_H
 #define APOO_MEMORY_VM_H
 
+#include "common/types.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
+
+// Find an address in the process's vm map with a hole at least as large as the
+// requested size, between start_addr and end_addr.  If no such holes are
+// available, returns  0.
+addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
+                    addr_t length);
 
 // Insert the given vm_area_t into the process's memory map.  The new area MUST
 // NOT overlap with any existing area.

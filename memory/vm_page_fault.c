@@ -124,14 +124,15 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
     KASSERT_DBG(virt_page >= area->vm_base &&
                 virt_page < area->vm_base + area->vm_length);
     const addr_t area_page_offset = (virt_page - area->vm_base) / PAGE_SIZE;
-    KASSERT(area->pages[area_page_offset] == 0x0);
-    const int result = area->memobj->ops->get_page(
-        area->memobj,
-        (area->memobj_base / PAGE_SIZE) + area_page_offset,
-        op == VM_FAULT_WRITE,
-        &area->pages[area_page_offset]);
-    // TODO(aoates): handle failures for user-mode faults.
-    KASSERT(result == 0);
+    if (area->pages[area_page_offset] == 0x0) {
+      const int result = area->memobj->ops->get_page(
+          area->memobj,
+          (area->memobj_base / PAGE_SIZE) + area_page_offset,
+          op == VM_FAULT_WRITE,
+          &area->pages[area_page_offset]);
+      // TODO(aoates): handle failures for user-mode faults.
+      KASSERT(result == 0);
+    }
     KASSERT(area->pages[area_page_offset]);
     phys_addr = area->pages[area_page_offset]->block_phys;
   }
