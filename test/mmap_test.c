@@ -431,6 +431,38 @@ static void unaligned_addr_hint_test() {
   vfs_close(fdA);
 }
 
+static void map_fixed_test() {
+  // Map both files in.
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  const int fdB = vfs_open(kFileB, VFS_O_RDWR);
+  void* addrA = 0x0, *addrB = 0x0;
+
+  KTEST_BEGIN("mmap(): unaligned MAP_FIXED test");
+  KEXPECT_EQ(-EINVAL,
+             do_mmap((void*)0x5432, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                     MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): MAP_FIXED test");
+  KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+  KEXPECT_EQ((void*)0x5000, addrA);
+
+  EXPECT_MMAP(1, (emmap_t[]){{0x5000, 0x3000, fdA}});
+
+  KTEST_BEGIN("mmap(): MAP_FIXED overlapping existing mapping test");
+  KEXPECT_EQ(0, do_mmap((void*)0x7000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_FIXED, fdB, 0, &addrB));
+  KEXPECT_EQ((void*)0x7000, addrB);
+
+  EXPECT_MMAP(2, (emmap_t[]){{0x5000, 0x2000, fdA}, {0x7000, 0x3000, fdB}});
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+
+  vfs_close(fdA);
+  vfs_close(fdB);
+}
+
 // TODO(aoates): things to test:
 // * overlapping mappings (at start, middle, end)
 // * partial unmappings
@@ -455,6 +487,7 @@ void mmap_test() {
   map_file_mode_test();
   addr_hint_test();
   unaligned_addr_hint_test();
+  map_fixed_test();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);

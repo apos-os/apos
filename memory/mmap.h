@@ -27,13 +27,16 @@
 #define PROT_ALL MEM_PROT_ALL
 
 // Exactly one of MAP_SHARED and MAP_PRIVATE must be given.
-#define MAP_SHARED 1
-#define MAP_PRIVATE 2
+#define MAP_SHARED 0x01
+#define MAP_PRIVATE 0x02
+
+// Other flags.
+#define MAP_FIXED 0x04
 
 // Create a mapping in the current process.
 //
 // Currently, addr must be NULL, prot must include PORT_EXEC | PROT_READ,
-// and flags must be MAP_SHARED.
+// and flags must be MAP_SHARED and a combination of other flags.
 //
 // TODO(aoates): implement protection, private mappings, and other flags (in
 // particular, MAP_ANONYMOUS).
