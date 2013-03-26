@@ -20,6 +20,8 @@
 #include "memory/memory.h"
 #include "memory/mmap.h"
 #include "memory/page_alloc.h"
+#include "memory/vm_area.h"
+#include "proc/process.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
 
@@ -58,6 +60,62 @@ static void write_test_file(const char name[], char contents) {
 static void setup_test_files() {
   write_test_file(kFileA, 'A');
   write_test_file(kFileB, 'X');
+}
+
+// Expect a given memory map contents for the current process.  Skips any kernel
+// mappings.
+typedef struct {
+  addr_t base;
+  addr_t length;
+  int fd;  // Mapping for the given fd, or -1 for don't care.
+} emmap_t;
+static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
+  process_t* proc = proc_current();
+  int idx = 0;
+  list_link_t* link = proc->vm_area_list.head;
+  while (link && idx < num_entries) {
+    vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
+    if (area->vm_base > MEM_LAST_USER_MAPPABLE_ADDR) {
+      link = link->next;
+      continue;
+    }
+
+    memobj_t* memobj = 0x0;
+    if (expected[idx].fd >= 0) {
+      KASSERT(vfs_get_memobj(expected[idx].fd, VFS_O_RDONLY, &memobj) == 0);
+    }
+    if (area->vm_base != expected[idx].base ||
+        area->vm_length != expected[idx].length ||
+        (expected[idx].fd >= 0 && area->memobj != memobj)) {
+      KEXPECT_EQ(expected[idx].base, area->vm_base);
+      KEXPECT_EQ(expected[idx].length, area->vm_length);
+      if (expected[idx].fd >= 0) {
+        KEXPECT_EQ(memobj, area->memobj);
+      }
+      klogf("FAILURE:\n expected: <base: 0x%x  len: 0x%x  memobj: 0x%x>\n",
+            expected[idx].base, expected[idx].length, memobj);
+      klogf(" found:    <base: 0x%x  len: 0x%x  memobj: 0x%x>\n",
+            area->vm_base, area->vm_length, area->memobj);
+      return;
+    }
+    link = link->next;
+    idx++;
+  }
+
+  // Skip any remaining kernel mappings.
+  while (link) {
+    vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
+    if (area->vm_base > MEM_LAST_USER_MAPPABLE_ADDR) {
+      link = link->next;
+    } else {
+      break;
+    }
+  }
+
+  // Should have seen exactly num_entries entries, and be at the end of the
+  // list.
+  KEXPECT_EQ(idx, num_entries);
+  KEXPECT_EQ((list_link_t*)0x0, link);
 }
 
 // Flush all page mappings in the given range.
@@ -130,6 +188,8 @@ static void mmap_basic() {
                         MAP_SHARED, fdB, 0, &addrB));
   KEXPECT_NE((void*)0x0, addrB);
 
+  EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, fdA}, {0x4000, 0x3000, fdB}});
+
   // Make sure they match.
   KEXPECT_EQ('A', bufcmp(addrA, 'A', PAGE_SIZE));
   KEXPECT_EQ('B', bufcmp((char*)addrA + PAGE_SIZE, 'B', PAGE_SIZE));
@@ -140,6 +200,9 @@ static void mmap_basic() {
 
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+
   vfs_close(fdA);
   vfs_close(fdB);
 }
@@ -277,6 +340,9 @@ static void mmap_multi_map_test() {
   KEXPECT_NE((void*)0x0, addrA2);
   KEXPECT_NE(addrA1, addrA2);
 
+  EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, fdA},
+              {0x4000, 0x3000, fdA}});
+
   // Make sure they match.
   KEXPECT_EQ('A', bufcmp(addrA1, 'A', PAGE_SIZE));
   KEXPECT_EQ('A', bufcmp(addrA2, 'A', PAGE_SIZE));
@@ -285,7 +351,12 @@ static void mmap_multi_map_test() {
   kstrcpy((char*)addrA1 + PAGE_SIZE + 100, "written string");
   KEXPECT_EQ(0, kmemcmp((char*)addrA2 + PAGE_SIZE + 100, "written string", 14));
 
+  // Unmap one, and make sure we can still read the other.
   KEXPECT_EQ(0, do_munmap(addrA1, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, kmemcmp((char*)addrA2 + PAGE_SIZE + 100, "written string", 14));
+
+  EXPECT_MMAP(1, (emmap_t[]){{0x4000, 0x3000, fdA}});
+
   KEXPECT_EQ(0, do_munmap(addrA2, kTestFilePages * PAGE_SIZE));
   vfs_close(fdA);
 }
