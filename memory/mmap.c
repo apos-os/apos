@@ -134,7 +134,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
       flags != MAP_SHARED) {
     return -EINVAL;
   }
-  if (length % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0) {
+  if (length == 0 || length % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0) {
     return -EINVAL;
   }
 

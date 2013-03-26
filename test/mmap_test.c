@@ -140,6 +140,10 @@ static void mmap_invalid_args() {
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
                               MAP_SHARED, fd, 0x15, &addr_out));
 
+  KTEST_BEGIN("mmap(): length == 0 test");
+  KEXPECT_EQ(-EINVAL, do_mmap(0x0, 0, PROT_ALL,
+                              MAP_SHARED, fd, 0, &addr_out));
+
   KTEST_BEGIN("mmap(): invalid fd test");
   KEXPECT_EQ(-EBADF, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
                              MAP_SHARED, -5, 0, &addr_out));
