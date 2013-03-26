@@ -463,13 +463,63 @@ static void map_fixed_test() {
   vfs_close(fdB);
 }
 
+// Test that we can't map and unmap in the kernel's memory region.
+static void map_unmap_kernel_memory() {
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  void* addrA = 0x0;
+
+  KTEST_BEGIN("mmap(): map in kernel memory (partial/hint)");
+  KEXPECT_EQ(-EINVAL, do_mmap(
+          (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - PAGE_SIZE),
+          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): map in kernel memory (partial/fixed)");
+  KEXPECT_EQ(-EINVAL, do_mmap(
+          (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - PAGE_SIZE),
+          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): map in kernel memory (total/hint)");
+  KEXPECT_EQ(-EINVAL, do_mmap(
+          (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) + 5 * PAGE_SIZE),
+          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): map in kernel memory (total/fixed)");
+  KEXPECT_EQ(-EINVAL, do_mmap(
+          (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) + 5 * PAGE_SIZE),
+          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): map in kernel memory (overflow/hint)");
+  KEXPECT_EQ(-EINVAL, do_mmap(
+          (void*)addr2page(MEM_LAST_MAPPABLE_ADDR),
+          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): map in kernel memory (overflow/fixed)");
+  KEXPECT_EQ(-EINVAL, do_mmap(
+          (void*)addr2page(MEM_LAST_MAPPABLE_ADDR),
+          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+
+  KTEST_BEGIN("mmap(): unmap in kernel memory (partial)");
+  KEXPECT_EQ(-EINVAL, do_munmap(
+          (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - PAGE_SIZE),
+          10 * PAGE_SIZE));
+
+  KTEST_BEGIN("mmap(): unmap in kernel memory (total)");
+  KEXPECT_EQ(-EINVAL, do_munmap(
+          (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) + 5 * PAGE_SIZE),
+          10 * PAGE_SIZE));
+
+  KTEST_BEGIN("mmap(): unmap in kernel memory (overflow)");
+  KEXPECT_EQ(-EINVAL, do_munmap(
+          (void*)addr2page(MEM_LAST_MAPPABLE_ADDR),
+          10 * PAGE_SIZE));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+
+  vfs_close(fdA);
+}
+
 // TODO(aoates): things to test:
-// * overlapping mappings (at start, middle, end)
-// * partial unmappings
 // * where fd mode > requested mapping mode
-// * mapping in kernel memory (full and partial)
-// * unmapping in kernel memory (full and partial)
-// * offset in file
 // * vfs_close() after map (public and private mappings)
 
 void mmap_test() {
@@ -488,6 +538,7 @@ void mmap_test() {
   addr_hint_test();
   unaligned_addr_hint_test();
   map_fixed_test();
+  map_unmap_kernel_memory();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);

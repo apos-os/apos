@@ -141,6 +141,10 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     return -EINVAL;
   }
 
+  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length) {
+    return -EINVAL;
+  }
+
   // Find an appropriate address.
   addr_t hole_addr = 0x0;
   if (flags & MAP_FIXED) {
@@ -201,6 +205,10 @@ int do_munmap(void* addr_ptr, addr_t length) {
     return -EINVAL;
   }
 
+  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length) {
+    return -EINVAL;
+  }
+
   list_link_t* link = proc_current()->vm_area_list.head;
   while (link && addr < MEM_LAST_USER_MAPPABLE_ADDR) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
@@ -209,6 +217,7 @@ int do_munmap(void* addr_ptr, addr_t length) {
     const addr_t overlap_end =
         min(addr + length, area->vm_base + area->vm_length);
     if (overlap_end > overlap_start) {
+      KASSERT(area->access == MEM_ACCESS_KERNEL_AND_USER);
       unmap_area(area, overlap_start, overlap_end);
       // area may no longer be valid.
     }
