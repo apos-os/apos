@@ -32,6 +32,35 @@ void kexpect_(uint32_t cond, const char* name,
               const char* opstr,
               const char* file, const char* line);
 
+typedef enum {
+  PRINT_SIGNED,
+  PRINT_UNSIGNED,
+  PRINT_HEX,
+  PRINT_UNKNOWN,
+} kexpect_print_t;
+
+// GCC doesn't support C11 generic macros yet :/
+#ifdef SUPPORTS_GENERIC_MACROS
+
+#define PRINT_TYPE(expr) \
+    _Generic((expr), \
+             int8_t: PRINT_SIGNED, \
+             int16_t: PRINT_SIGNED, \
+             int32_t: PRINT_SIGNED, \
+             int64_t: PRINT_SIGNED, \
+             uint8_t: PRINT_UNSIGNED, \
+             uint16_t: PRINT_UNSIGNED, \
+             uint32_t: PRINT_UNSIGNED, \
+             uint64_t: PRINT_UNSIGNED, \
+             void*: PRINT_HEX, \
+             default: PRINT_HEX)
+
+#else
+
+#define PRINT_TYPE(expr) PRINT_UNKNOWN
+
+#endif // SUPPORTS_GENERIC_MACROS
+
 #define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr) do { \
   const char* aval = a; \
   const char* bval = b; \
@@ -45,10 +74,12 @@ void kexpect_(uint32_t cond, const char* name,
   char aval_str[50]; \
   char bval_str[50]; \
   /* If the expected value is written as hex, print the actual value as hex too.*/ \
-  if (kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) { \
+  if (PRINT_TYPE(a) == PRINT_HEX || \
+      kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) { \
     ksprintf(aval_str, "0x%s", utoa_hex((uint32_t)aval)); \
     ksprintf(bval_str, "0x%s", utoa_hex((uint32_t)bval)); \
-  } else if (kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) { \
+  } else if (PRINT_TYPE(a) == PRINT_SIGNED || \
+             kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) { \
     kstrcpy(aval_str, itoa((int32_t)aval)); \
     kstrcpy(bval_str, itoa((int32_t)bval)); \
   } else { \

@@ -15,7 +15,7 @@
 AS	= i586-elf-as
 ASFLAGS	= --gen-debug
 CC	= i586-elf-gcc
-CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu99 -g -I. \
+CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g -I. \
 	  -Wno-unused-parameter -Wno-error=unused-function \
 	  -DENABLE_KERNEL_SAFETY_NETS=1
 LD	= i586-elf-ld
@@ -68,7 +68,7 @@ HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
 
 # Clang- and GCC-specific flags.
 ifeq ($(CC),clang)
-  CFLAGS += -march=i586
+  CFLAGS += -march=i586 -DSUPPORTS_GENERIC_MACROS
 
   # Various tests use self assignment as a no-op to appease the compiler.
   $(BUILD_OUT)/test/%.o: CFLAGS += -Wno-self-assign
