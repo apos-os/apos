@@ -130,7 +130,7 @@ int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
 
 int do_mmap(void* addr, addr_t length, int prot, int flags,
             int fd, addr_t offset, void** addr_out) {
-  if (addr != 0x0 || (prot & PROT_EXEC) == 0 || (prot & PROT_READ) == 0 ||
+  if ((prot & PROT_EXEC) == 0 || (prot & PROT_READ) == 0 ||
       flags != MAP_SHARED) {
     return -EINVAL;
   }
@@ -141,7 +141,8 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   // Find an appropriate address.
   const addr_t hole_addr =
       vm_find_hole(proc_current(),
-                   max((addr_t)addr, (addr_t)MEM_FIRST_MAPPABLE_ADDR),
+                   max(addr2page((addr_t)addr),
+                       (addr_t)MEM_FIRST_MAPPABLE_ADDR),
                    MEM_LAST_USER_MAPPABLE_ADDR,
                    length);
   if (hole_addr == 0) {

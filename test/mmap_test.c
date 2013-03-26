@@ -131,10 +131,8 @@ static void mmap_invalid_args() {
   KEXPECT_GE(fd, 0);
   void* addr_out;
 
-  // Not page-aligned addr, length, and offset.
+  // Not page-aligned length, and offset.
   KTEST_BEGIN("mmap(): unaligned args test");
-  KEXPECT_EQ(-EINVAL, do_mmap((void*)0xABCD, PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED, fd, 0, &addr_out));
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, 0x15, PROT_ALL,
                               MAP_SHARED, fd, 0, &addr_out));
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
@@ -167,6 +165,9 @@ static void mmap_invalid_args() {
                               0, fd, 0, &addr_out));
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_WRITE,
                               10, fd, 0, &addr_out));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+
   vfs_close(fd);
   vfs_unlink(kFile);
 }
@@ -391,6 +392,45 @@ static void map_file_mode_test() {
   vfs_close(fdA);
 }
 
+// Test that a non-NULL addr parameter is used as a hint.
+static void addr_hint_test() {
+  KTEST_BEGIN("mmap(): addr hint test");
+
+  // Map both files in.
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  const int fdB = vfs_open(kFileB, VFS_O_RDWR);
+  void* addrA = 0x0, *addrB = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED, fdA, 0, &addrA));
+  KEXPECT_EQ((void*)0x5000, addrA);
+
+  // Test that the hint won't cause an existing mapping to be overwritten.
+  KEXPECT_EQ(0, do_mmap((void*)0x6000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED, fdB, 0, &addrB));
+  KEXPECT_EQ((void*)0x8000, addrB);
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+
+  vfs_close(fdA);
+  vfs_close(fdB);
+}
+
+// Test an unaligned addr hint.
+static void unaligned_addr_hint_test() {
+  KTEST_BEGIN("mmap(): unaligned addr hint test");
+
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)0x5432, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED, fdA, 0, &addrA));
+  KEXPECT_EQ((void*)0x5000, addrA);
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+
+  vfs_close(fdA);
+}
+
 // TODO(aoates): things to test:
 // * overlapping mappings (at start, middle, end)
 // * partial unmappings
@@ -413,6 +453,8 @@ void mmap_test() {
   mmap_write_test();
   mmap_multi_map_test();
   map_file_mode_test();
+  addr_hint_test();
+  unaligned_addr_hint_test();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);
