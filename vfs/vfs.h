@@ -188,7 +188,7 @@ fs_t* vfs_get_root_fs();
 vnode_t* vfs_get_root_vnode();
 
 // Initialize (and zero-out) a vnode_t.
-void vfs_vnode_init(vnode_t* n);
+void vfs_vnode_init(vnode_t* n, int num);
 
 // Given a filesystem and a vnode number, return the corresponding vnode_t.
 // This increments the vnode's refcount, which must be decremented later vith

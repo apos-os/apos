@@ -12,32 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#ifndef APOO_MEMORY_VM_H
+#define APOO_MEMORY_VM_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
-void slab_alloc_test();
-void kthread_pool_test();
-void flag_printf_test();
-void ramfs_test();
-void vfs_test();
-void hash_test();
-void block_cache_test();
-void list_test();
-void mmap_test();
+#include "common/types.h"
+#include "memory/vm_area.h"
+#include "proc/process.h"
+
+// Find an address in the process's vm map with a hole at least as large as the
+// requested size, between start_addr and end_addr.  If no such holes are
+// available, returns  0.
+addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
+                    addr_t length);
+
+// Insert the given vm_area_t into the process's memory map.  The new area MUST
+// NOT overlap with any existing area.
+void vm_insert_area(process_t* proc, vm_area_t* area);
 
 #endif

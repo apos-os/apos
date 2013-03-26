@@ -35,6 +35,8 @@
 #ifndef APOO_COMMON_LIST_H
 #define APOO_COMMON_LIST_H
 
+#include <stddef.h>
+
 // Given a pointer to a struct member, the name of the containing type, and the
 // name of the member, return a pointer to the containing object.
 #define container_of(ptr, type, member_name) \
@@ -60,6 +62,10 @@ extern const list_t LIST_INIT;
 
 // Push a new link onto the back of the given list.
 void list_push(list_t* list, list_link_t* link);
+
+// Insert the given element in the list after prev.  If prev == NULL, then the
+// new link is inserted at the list head.
+void list_insert(list_t* list, list_link_t* prev, list_link_t* link);
 
 // Pop a link off the front of the given list.  Returns NULL if the list is
 // empty.

@@ -23,5 +23,9 @@ LOCAL_SOURCES := \
   block_cache.c \
   memobj_block_dev.c \
   memobj_vnode.c \
+  vm_page_fault.c \
+  vm.c \
+  mmap.c \
+  vm_area.c \
 
 $(eval $(END_SOURCES))

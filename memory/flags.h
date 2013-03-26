@@ -12,32 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+// Common flags for memory operations.
+#ifndef APOO_MEMORY_FLAGS_H
+#define APOO_MEMORY_FLAGS_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
-void slab_alloc_test();
-void kthread_pool_test();
-void flag_printf_test();
-void ramfs_test();
-void vfs_test();
-void hash_test();
-void block_cache_test();
-void list_test();
-void mmap_test();
+// Protection flags.  Not all are supported on all platforms.
+#define MEM_PROT_NONE 0x00
+#define MEM_PROT_READ 0x01
+#define MEM_PROT_WRITE 0x02
+#define MEM_PROT_EXEC 0x04
+#define MEM_PROT_ALL (MEM_PROT_READ | MEM_PROT_WRITE | MEM_PROT_EXEC)
+
+// Who can access a memory location.
+typedef enum {
+  MEM_ACCESS_KERNEL_ONLY,
+  MEM_ACCESS_KERNEL_AND_USER,
+} mem_access_t;
+
+// Other misc. flags.
+#define MEM_GLOBAL 0x01  // A global (across all processes) mapping.
 
 #endif

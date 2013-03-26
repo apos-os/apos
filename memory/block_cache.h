@@ -16,6 +16,7 @@
 #ifndef APOO_MEMORY_BLOCK_CACHE_H
 #define APOO_MEMORY_BLOCK_CACHE_H
 
+#include "common/types.h"
 #include "memory/memory.h"
 
 // TODO(aoates): support other block sizes.
@@ -35,6 +36,9 @@ typedef struct bc_entry {
   struct memobj* obj;
   uint32_t offset;
   void* block;
+
+  // Physical address of the memory block.  Will be block-size-aligned.
+  addr_t block_phys;
 } bc_entry_t;
 
 // Return a pointer to the block cache for the given block.  If no entry exists,

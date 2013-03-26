@@ -16,6 +16,7 @@
 #ifndef APOO_PROCESS_H
 #define APOO_PROCESS_H
 
+#include "common/list.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 
@@ -34,13 +35,28 @@ struct process {
 
   // The current working directory of the process.
   struct vnode* cwd;
+
+  // List of vm_area_t's of the mmap'd areas in the current process.
+  list_t vm_area_list;
 };
 
 // Initialize the process table, and create the first process (process 0) from
 // the current thread.
 //
+// Initialization has two stages.  Stage 1, which has no init
+// dependencies, creates the initial process and
+// minimally initializes it.
+//
+// Stage 2 finishes initializing the root process.
+
+// Minimally initialize the root process.  After proc_init_stage1, the
+// vm_area_list may be modified, but nothing else.
+void proc_init_stage1();
+
+// Finish initializing the root process (except for the cwd).
+//
 // REQUIRES: kthread_init() and scheduler_init().
-void proc_init();
+void proc_init_stage2();
 
 // Return the current process descriptor.
 process_t* proc_current();

@@ -27,6 +27,22 @@ static int pop_all(list_t* list) {
   return count;
 }
 
+static void push_all(list_t* list, list_link_t links[], int num) {
+  for (int i = 0; i < num; ++i) {
+    list_push(list, &links[i]);
+  }
+}
+
+static int list_size(list_t* list) {
+  int size = 0;
+  list_link_t* link = list->head;
+  while (link) {
+    size++;
+    link = link->next;
+  }
+  return size;
+}
+
 static void basic_list_test() {
   const int kNumLinks = 10;
   list_t list = LIST_INIT;
@@ -108,9 +124,61 @@ static void list_remove_test() {
   KEXPECT_EQ(0, list_link_on_list(&list, &links[0]));
 }
 
+static void list_insert_test() {
+  const int kNumLinks = 5;
+  list_t list = LIST_INIT;
+  list_link_t links[kNumLinks];
+  list_link_t new_link = LIST_LINK_INIT;
+  for (int i = 0; i < kNumLinks; ++i) links[i] = LIST_LINK_INIT;
+
+  KTEST_BEGIN("list: insert at beginning test");
+  push_all(&list, links, kNumLinks);
+  list_insert(&list, 0x0, &new_link);
+  KEXPECT_EQ(kNumLinks + 1, list_size(&list));
+  KEXPECT_EQ(&new_link, list_pop(&list));
+  KEXPECT_EQ(&links[0], list_pop(&list));
+
+  pop_all(&list);
+
+  KTEST_BEGIN("list: insert at end test");
+  push_all(&list, links, kNumLinks);
+  list_insert(&list, &links[kNumLinks - 1], &new_link);
+  KEXPECT_EQ(kNumLinks + 1, list_size(&list));
+  for (int i = 0; i < kNumLinks; ++i) {
+    KEXPECT_EQ(&links[i], list_pop(&list));
+  }
+  KEXPECT_EQ(&new_link, list_pop(&list));
+  KEXPECT_NE(0, list_empty(&list));
+
+  KTEST_BEGIN("list: insert in middle test");
+  push_all(&list, links, kNumLinks);
+  list_insert(&list, &links[2], &new_link);
+  KEXPECT_EQ(kNumLinks + 1, list_size(&list));
+  KEXPECT_EQ(&links[0], list_pop(&list));
+  KEXPECT_EQ(&links[1], list_pop(&list));
+  KEXPECT_EQ(&links[2], list_pop(&list));
+  KEXPECT_EQ(&new_link, list_pop(&list));
+  KEXPECT_EQ(&links[3], list_pop(&list));
+  pop_all(&list);
+
+  KTEST_BEGIN("list: insert on empty list");
+  KEXPECT_NE(0, list_empty(&list));
+  list_insert(&list, 0x0, &new_link);
+  KEXPECT_EQ(0, list_empty(&list));
+  KEXPECT_EQ(1, list_size(&list));
+  KEXPECT_EQ(&new_link, list.head);
+  KEXPECT_EQ(&new_link, list.tail);
+  KEXPECT_EQ((list_link_t*)0x0, new_link.prev);
+  KEXPECT_EQ((list_link_t*)0x0, new_link.next);
+  KEXPECT_EQ(&new_link, list_pop(&list));
+  KEXPECT_EQ((list_link_t*)0x0, list_pop(&list));
+  KEXPECT_NE(0, list_empty(&list));
+}
+
 void list_test() {
   KTEST_SUITE_BEGIN("list test");
 
   basic_list_test();
   list_remove_test();
+  list_insert_test();
 }

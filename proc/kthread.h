@@ -22,6 +22,7 @@
 #define APOO_KTHREAD_T
 
 typedef struct kthread_data* kthread_t;
+#define KTHREAD_NO_THREAD 0x0
 
 // Initialize the kthreads package.
 void kthread_init();

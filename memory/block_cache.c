@@ -205,6 +205,10 @@ static void free_cache_entry(bc_entry_internal_t* entry) {
   g_size--;
   const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
   KASSERT(htbl_remove(&g_table, h) == 0);
+
+  entry->pub.obj->ops->unref(entry->pub.obj);
+  entry->pub.obj = 0x0;
+
   put_free_block(entry->pub.block);
   kfree(entry);
 }
@@ -310,6 +314,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->pub.obj = obj;
     entry->pub.offset = offset;
     entry->pub.block = block;
+    entry->pub.block_phys = virt2phys((addr_t)block);
     entry->pin_count = 1;
     entry->initialized = 0;
     entry->flushed = 1;
@@ -317,6 +322,11 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->flushq = LIST_LINK_INIT;
     entry->lruq = LIST_LINK_INIT;
     kthread_queue_init(&entry->wait_queue);
+
+    // N.B.(aoates): this means that we'll potentially keep the obj (and
+    // underlying objects like vnodes) around indefinitely after we're done with
+    // them, as long as the bc entries haven't been forced out of the cache.
+    obj->ops->ref(obj);
 
     // Put the uninitialized entry into the table.
     htbl_put(&g_table, h, entry);

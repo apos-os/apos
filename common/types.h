@@ -12,32 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Forward declarations for all tests.
-#ifndef APOO_ALL_TESTS_H
-#define APOO_ALL_TESTS_H
+#ifndef APOO_COMMON_TYPES_H
+#define APOO_COMMON_TYPES_H
 
-void interrupt_clobber_test();
-void interrupt_save_test();
-void kmalloc_test();
-void kprintf_test();
-void kstring_test();
-void ktest_test();
-void kassert_test();
-void kthread_test();
-void page_alloc_map_test();
-void page_alloc_test();
-void ld_test();
-void hashtable_test();
-void ramdisk_test();
-void ata_test();
-void slab_alloc_test();
-void kthread_pool_test();
-void flag_printf_test();
-void ramfs_test();
-void vfs_test();
-void hash_test();
-void block_cache_test();
-void list_test();
-void mmap_test();
+#include <stdint.h>
+
+// A memory address.
+// TODO(aoates): replace all uses of uint32_t with addr_t (where appropriate).
+typedef uint32_t addr_t;
 
 #endif
