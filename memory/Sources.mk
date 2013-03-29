@@ -22,6 +22,7 @@ LOCAL_SOURCES := \
   slab_alloc.c \
   block_cache.c \
   memobj_block_dev.c \
+  memobj_shadow.c \
   memobj_vnode.c \
   vm_page_fault.c \
   vm.c \
