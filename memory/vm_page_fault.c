@@ -124,7 +124,7 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
     KASSERT_DBG(virt_page >= area->vm_base &&
                 virt_page < area->vm_base + area->vm_length);
     const addr_t area_page_offset = (virt_page - area->vm_base) / PAGE_SIZE;
-    if (area->pages[area_page_offset] == 0x0) {
+    if (type == VM_FAULT_ACCESS || area->pages[area_page_offset] == 0x0) {
       const int result = area->memobj->ops->get_page(
           area->memobj,
           (area->memobj_base / PAGE_SIZE) + area_page_offset,
