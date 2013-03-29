@@ -614,6 +614,50 @@ static void mmap_private_writeback() {
   vfs_close(fdA);
 }
 
+// Test that we share the underlying mapping's pages until we write.
+static void mmap_copy_on_write() {
+  KTEST_BEGIN("mmap(): MAP_PRIVATE copy-on-write");
+  setup_test_files();
+
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  void* addrA1 = 0x0, *addrA2 = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_PRIVATE, fdA, 0, &addrA1));
+  KEXPECT_NE((void*)0x0, addrA1);
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED, fdA, 0, &addrA2));
+  KEXPECT_NE((void*)0x0, addrA2);
+
+  // Write to the private mapping, verify it's not in the shared mapping.
+  kstrcpy(addrA1, "private");
+  KEXPECT_EQ('A', bufcmp(addrA2, 'A', PAGE_SIZE));
+
+  // Read the second page of the private mapping.
+  KEXPECT_EQ('B', bufcmp((char*)addrA1 + PAGE_SIZE, 'B', PAGE_SIZE));
+
+  // Write to the 2nd page of the shared mapping.
+  kstrcpy((char*)addrA2 + PAGE_SIZE, "shared");
+
+  // ...and make sure we see it in the (not COW'd) private mapping page.
+  KEXPECT_STREQ("shared", (char*)addrA1 + PAGE_SIZE);
+
+  // Now write to the same page in the private mapping and verify that we don't
+  // copy that back to the shared mapping.
+  kstrcpy((char*)addrA1 + PAGE_SIZE, "private2");
+  KEXPECT_STREQ("shared", (char*)addrA2 + PAGE_SIZE);
+
+  // Finally, write (again) to the shared mapping, and make sure our copy
+  // doesn't change.
+  kstrcpy((char*)addrA2 + PAGE_SIZE, "shared2");
+  KEXPECT_STREQ("private2", (char*)addrA1 + PAGE_SIZE);
+  KEXPECT_STREQ("shared2", (char*)addrA2 + PAGE_SIZE);
+
+  KEXPECT_EQ(0, do_munmap(addrA1, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrA2, kTestFilePages * PAGE_SIZE));
+
+  vfs_close(fdA);
+}
+
 // TODO(aoates): things to test:
 // * where fd mode > requested mapping mode
 // * vfs_close() after map (public and private mappings)
@@ -638,6 +682,7 @@ void mmap_test() {
 
   mmap_private_basic();
   mmap_private_writeback();
+  mmap_copy_on_write();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);
