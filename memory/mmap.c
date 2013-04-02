@@ -181,8 +181,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   // For private mappings, create a shadow object.
   if (flags & MAP_PRIVATE) {
-    memobj_t* shadow_obj = (memobj_t*)kmalloc(sizeof(memobj_t));
-    memobj_create_shadow(memobj, shadow_obj);
+    memobj_t* shadow_obj = memobj_create_shadow(memobj);
     memobj = shadow_obj;
   }
 

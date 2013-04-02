@@ -24,7 +24,7 @@
 
 #include "memory/memobj.h"
 
-// Initialize a shadow memobj in shadow_memobj shadowing sub_obj.
-void memobj_create_shadow(memobj_t* sub_obj, memobj_t* shadow_memobj);
+// Create and return a shadow memobj shadowing sub_obj.
+memobj_t* memobj_create_shadow(memobj_t* sub_obj);
 
 #endif

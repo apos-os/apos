@@ -17,6 +17,7 @@
 #include "common/hash.h"
 #include "common/kstring.h"
 #include "memory/block_cache.h"
+#include "memory/kmalloc.h"
 #include "memory/memobj_shadow.h"
 #include "memory/memobj.h"
 #include "memory/memory.h"
@@ -50,6 +51,11 @@ static void shadow_unref(memobj_t* obj) {
   obj->refcount--;
   // TODO(aoates): check if the only remaining refs are resident pages; if so,
   // flush and delete them, unref the underlying object, and delete this one.
+  if (obj->refcount == 0) {
+    memobj_t* subobj = (memobj_t*)obj->data;
+    subobj->ops->unref(subobj);
+    kfree(obj);
+  }
 }
 
 static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
@@ -111,7 +117,10 @@ static int shadow_write_page(memobj_t* obj, int offset, const void* buffer) {
   return 0;
 }
 
-void memobj_create_shadow(memobj_t* subobj, memobj_t* shadow_obj) {
+memobj_t* memobj_create_shadow(memobj_t* subobj) {
+  memobj_t* shadow_obj = (memobj_t*)kmalloc(sizeof(memobj_t));
+  if (!shadow_obj) return 0x0;
+
   kmemset(shadow_obj, 0, sizeof(memobj_t));
 
   shadow_obj->type = MEMOBJ_SHADOW;
@@ -121,4 +130,5 @@ void memobj_create_shadow(memobj_t* subobj, memobj_t* shadow_obj) {
   shadow_obj->data = subobj;
 
   subobj->ops->ref(subobj);
+  return shadow_obj;
 }
