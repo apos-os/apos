@@ -465,7 +465,8 @@ int vfs_open(const char* path, uint32_t flags) {
       }
 
       // Create it.
-      int child_inode = parent->fs->create(parent, base_name);
+      int child_inode =
+          parent->fs->mknod(parent, base_name, VNODE_REGULAR, mkdev(0, 0));
       if (child_inode < 0) {
         kmutex_unlock(&parent->mutex);
         VFS_PUT_AND_CLEAR(parent);

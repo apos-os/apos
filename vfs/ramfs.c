@@ -178,7 +178,7 @@ fs_t* ramfs_create_fs() {
   f->fs.get_vnode = &ramfs_get_vnode;
   f->fs.put_vnode = &ramfs_put_vnode;
   f->fs.lookup = &ramfs_lookup;
-  f->fs.create = &ramfs_create;
+  f->fs.mknod = &ramfs_mknod;
   f->fs.mkdir = &ramfs_mkdir;
   f->fs.rmdir = &ramfs_rmdir;
   f->fs.read = &ramfs_read;
@@ -280,7 +280,8 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   return d->vnode;
 }
 
-int ramfs_create(vnode_t* parent, const char* name) {
+int ramfs_mknod(vnode_t* parent, const char* name, int type, dev_t dev) {
+  KASSERT(type == VNODE_REGULAR);
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);

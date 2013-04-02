@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "vfs/dirent.h"
@@ -32,6 +33,8 @@
 #define VNODE_INVALID 1
 #define VNODE_REGULAR   2
 #define VNODE_DIRECTORY 3
+#define VNODE_BLOCKDEV 4
+#define VNODE_CHARDEV 5
 // TODO(aoates): symlinks, special devices, etc.
 
 struct fs;
@@ -95,9 +98,14 @@ struct fs {
   // -error on failure.
   int (*lookup)(vnode_t* parent, const char* name);
 
-  // Create a regular file in the given directory.  Returns the inode number of
-  // the new file, or -error on failure.
-  int (*create)(vnode_t* parent, const char* name /*, mode? */);
+  // Create a regular file, block device, or character device in the given
+  // directory.  type must be one of VNODE_{REGULAR,BLOCKDEV,CHARDEV}.  If
+  // creating a block or character device, dev is the corresponding device to
+  // bind it to.  Otherwise, it is ignored.
+  //
+  // Returns the inode number of the new file, or -error on failure.
+  int (*mknod)(vnode_t* parent, const char* name, int type, dev_t dev
+               /*, mode? */);
 
   // Create a directory in the given directory.  Returns the inode number of the
   // new directory, or -error on failure.

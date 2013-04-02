@@ -31,7 +31,7 @@ static int ext2_get_root(struct fs* fs);
 static int ext2_get_vnode(vnode_t* vnode);
 static int ext2_put_vnode(vnode_t* vnode);
 static int ext2_lookup(vnode_t* parent, const char* name);
-static int ext2_create(vnode_t* parent, const char* name);
+static int ext2_mknod(vnode_t* parent, const char* name, int type, dev_t dev);
 static int ext2_mkdir(vnode_t* parent, const char* name);
 static int ext2_rmdir(vnode_t* parent, const char* name);
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize);
@@ -933,7 +933,7 @@ void ext2_set_ops(fs_t* fs) {
   fs->get_vnode = &ext2_get_vnode;
   fs->put_vnode = &ext2_put_vnode;
   fs->lookup = &ext2_lookup;
-  fs->create = &ext2_create;
+  fs->mknod = &ext2_mknod;
   fs->mkdir = &ext2_mkdir;
   fs->rmdir = &ext2_rmdir;
   fs->read = &ext2_read;
@@ -1027,7 +1027,8 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
   }
 }
 
-static int ext2_create(vnode_t* parent, const char* name) {
+static int ext2_mknod(vnode_t* parent, const char* name, int type, dev_t dev) {
+  KASSERT(type == VNODE_REGULAR);
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
 
