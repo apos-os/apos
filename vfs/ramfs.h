@@ -34,7 +34,8 @@ int ramfs_get_root(struct fs* fs);
 int ramfs_get_vnode(vnode_t* vnode);
 int ramfs_put_vnode(vnode_t* vnode);
 int ramfs_lookup(vnode_t* parent, const char* name);
-int ramfs_mknod(vnode_t* parent, const char* name, int type, dev_t dev);
+int ramfs_mknod(vnode_t* parent, const char* name,
+                vnode_type_t type, dev_t dev);
 int ramfs_mkdir(vnode_t* parent, const char* name);
 int ramfs_rmdir(vnode_t* parent, const char* name);
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);

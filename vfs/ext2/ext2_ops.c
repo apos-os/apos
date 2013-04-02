@@ -31,7 +31,8 @@ static int ext2_get_root(struct fs* fs);
 static int ext2_get_vnode(vnode_t* vnode);
 static int ext2_put_vnode(vnode_t* vnode);
 static int ext2_lookup(vnode_t* parent, const char* name);
-static int ext2_mknod(vnode_t* parent, const char* name, int type, dev_t dev);
+static int ext2_mknod(vnode_t* parent, const char* name,
+                      vnode_type_t type, dev_t dev);
 static int ext2_mkdir(vnode_t* parent, const char* name);
 static int ext2_rmdir(vnode_t* parent, const char* name);
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize);
@@ -992,8 +993,13 @@ static int ext2_put_vnode(vnode_t* vnode) {
   }
 
   switch (vnode->type) {
+    case VNODE_UNINITIALIZED:
+    case VNODE_INVALID:
+      die("ext2: invalid vnode type"); break;
     case VNODE_REGULAR: KASSERT(inode.i_mode & EXT2_S_IFREG); break;
     case VNODE_DIRECTORY: KASSERT(inode.i_mode & EXT2_S_IFDIR); break;
+    case VNODE_BLOCKDEV: KASSERT(inode.i_mode & EXT2_S_IFBLK); break;
+    case VNODE_CHARDEV: KASSERT(inode.i_mode & EXT2_S_IFCHR); break;
   }
 
   inode.i_size = vnode->len;
@@ -1027,7 +1033,8 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
   }
 }
 
-static int ext2_mknod(vnode_t* parent, const char* name, int type, dev_t dev) {
+static int ext2_mknod(vnode_t* parent, const char* name,
+                      vnode_type_t type, dev_t dev) {
   KASSERT(type == VNODE_REGULAR);
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);

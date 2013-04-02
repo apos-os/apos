@@ -29,13 +29,15 @@
 #define VFS_MAX_FILES 128
 
 // vnode types.  Keep these synchcronized with VNODE_TYPE_NAME in vfs.c.
-#define VNODE_UNINITIALIZED 0
-#define VNODE_INVALID 1
-#define VNODE_REGULAR   2
-#define VNODE_DIRECTORY 3
-#define VNODE_BLOCKDEV 4
-#define VNODE_CHARDEV 5
-// TODO(aoates): symlinks, special devices, etc.
+typedef enum {
+  VNODE_UNINITIALIZED = 0,
+  VNODE_INVALID = 1,
+  VNODE_REGULAR   = 2,
+  VNODE_DIRECTORY = 3,
+  VNODE_BLOCKDEV = 4,
+  VNODE_CHARDEV = 5,
+} vnode_type_t;
+// TODO(aoates): symlinks, etc.
 
 struct fs;
 typedef struct fs fs_t;
@@ -45,7 +47,7 @@ typedef struct fs fs_t;
 // additional metadata.
 struct vnode {
   int num;
-  int type;
+  vnode_type_t type;
   int len;
 
   int refcount;
@@ -104,7 +106,7 @@ struct fs {
   // bind it to.  Otherwise, it is ignored.
   //
   // Returns the inode number of the new file, or -error on failure.
-  int (*mknod)(vnode_t* parent, const char* name, int type, dev_t dev
+  int (*mknod)(vnode_t* parent, const char* name, vnode_type_t type, dev_t dev
                /*, mode? */);
 
   // Create a directory in the given directory.  Returns the inode number of the

@@ -280,7 +280,8 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   return d->vnode;
 }
 
-int ramfs_mknod(vnode_t* parent, const char* name, int type, dev_t dev) {
+int ramfs_mknod(vnode_t* parent, const char* name,
+                vnode_type_t type, dev_t dev) {
   KASSERT(type == VNODE_REGULAR);
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;

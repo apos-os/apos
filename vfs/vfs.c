@@ -42,7 +42,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
 #define VNODE_CACHE_SIZE 1000
 
 static const char* VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR"
+  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
 };
 
 static fs_t* g_root_fs = 0;
