@@ -44,6 +44,10 @@ static char bufcmp(const void* buf, const char expected, int len) {
 static void write_test_file(const char name[], char contents) {
   char buf[PAGE_SIZE];
 
+  // TODO(aoates): delete this once ext2 read/write properly synchronizes with
+  // the vnode page buffer.
+  vfs_unlink(name);
+
   int fd = vfs_open(name, VFS_O_RDWR | VFS_O_CREAT);
   for (int page = 0; page < kTestFilePages; ++page) {
     kmemset(buf, contents + page, PAGE_SIZE);
@@ -165,6 +169,10 @@ static void mmap_invalid_args() {
                               0, fd, 0, &addr_out));
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_WRITE,
                               10, fd, 0, &addr_out));
+
+  KTEST_BEGIN("mmap(): MAP_SHARED and MAP_PRIVATE test");
+  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
+                              MAP_SHARED | MAP_PRIVATE, fd, 0, &addr_out));
 
   EXPECT_MMAP(0, (emmap_t[]){});
 
@@ -518,6 +526,138 @@ static void map_unmap_kernel_memory() {
   vfs_close(fdA);
 }
 
+static void mmap_private_basic() {
+  KTEST_BEGIN("mmap(): MAP_PRIVATE basic test");
+  setup_test_files();
+
+  // Map both files in.
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  const int fdB = vfs_open(kFileB, VFS_O_RDWR);
+  void* addrA = 0x0, *addrB = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_PRIVATE, fdA, 0, &addrA));
+  KEXPECT_NE((void*)0x0, addrA);
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_PRIVATE, fdB, 0, &addrB));
+  KEXPECT_NE((void*)0x0, addrB);
+
+  EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, -1}, {0x4000, 0x3000, -1}});
+
+  // Make sure they match.
+  KEXPECT_EQ('A', bufcmp(addrA, 'A', PAGE_SIZE));
+  KEXPECT_EQ('B', bufcmp((char*)addrA + PAGE_SIZE, 'B', PAGE_SIZE));
+  KEXPECT_EQ('C', bufcmp((char*)addrA + 2 * PAGE_SIZE, 'C', PAGE_SIZE));
+  KEXPECT_EQ('X', bufcmp(addrB, 'X', PAGE_SIZE));
+  KEXPECT_EQ('Y', bufcmp((char*)addrB + PAGE_SIZE, 'Y', PAGE_SIZE));
+  KEXPECT_EQ('Z', bufcmp((char*)addrB + 2 * PAGE_SIZE, 'Z', PAGE_SIZE));
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+
+  vfs_close(fdA);
+  vfs_close(fdB);
+}
+
+static void mmap_private_writeback() {
+  KTEST_BEGIN("mmap(): MAP_PRIVATE not shared test");
+  setup_test_files();
+
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  void* addrA1 = 0x0, *addrA2 = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_PRIVATE, fdA, 0, &addrA1));
+  KEXPECT_NE((void*)0x0, addrA1);
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_PRIVATE, fdA, 0, &addrA2));
+  KEXPECT_NE((void*)0x0, addrA2);
+
+  EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, -1}, {0x4000, 0x3000, -1}});
+
+  // Make sure they match.
+  KEXPECT_EQ('A', bufcmp(addrA1, 'A', PAGE_SIZE));
+  KEXPECT_EQ('B', bufcmp((char*)addrA1 + PAGE_SIZE, 'B', PAGE_SIZE));
+  KEXPECT_EQ('C', bufcmp((char*)addrA1 + 2 * PAGE_SIZE, 'C', PAGE_SIZE));
+  KEXPECT_EQ('A', bufcmp(addrA2, 'A', PAGE_SIZE));
+  KEXPECT_EQ('B', bufcmp((char*)addrA2 + PAGE_SIZE, 'B', PAGE_SIZE));
+  KEXPECT_EQ('C', bufcmp((char*)addrA2 + 2 * PAGE_SIZE, 'C', PAGE_SIZE));
+
+  // Modify one of the mappings and verify the other is unchanged.
+  kstrcpy(addrA1, "page1");
+  kstrcpy((char*)addrA1 + PAGE_SIZE, "page2");
+  kstrcpy((char*)addrA1 + 2 * PAGE_SIZE, "page3");
+  KEXPECT_EQ('A', bufcmp(addrA2, 'A', PAGE_SIZE));
+  KEXPECT_EQ('B', bufcmp((char*)addrA2 + PAGE_SIZE, 'B', PAGE_SIZE));
+  KEXPECT_EQ('C', bufcmp((char*)addrA2 + 2 * PAGE_SIZE, 'C', PAGE_SIZE));
+
+  KEXPECT_EQ(0, do_munmap(addrA1, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrA2, kTestFilePages * PAGE_SIZE));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+
+  // Verify that the write wasn't copied back to the underlying file.
+  KEXPECT_EQ(0, vfs_seek(fdA, 0, VFS_SEEK_SET));
+  char buf[10];
+  buf[9] = '\0';
+  KEXPECT_EQ(9, vfs_read(fdA, buf, 9));
+  KEXPECT_STREQ("AAAAAAAAA", buf);
+
+  KEXPECT_EQ(0, vfs_seek(fdA, PAGE_SIZE, VFS_SEEK_SET));
+  KEXPECT_EQ(9, vfs_read(fdA, buf, 9));
+  KEXPECT_STREQ("BBBBBBBBB", buf);
+
+  KEXPECT_EQ(0, vfs_seek(fdA, 2 * PAGE_SIZE, VFS_SEEK_SET));
+  KEXPECT_EQ(9, vfs_read(fdA, buf, 9));
+  KEXPECT_STREQ("CCCCCCCCC", buf);
+
+  vfs_close(fdA);
+}
+
+// Test that we share the underlying mapping's pages until we write.
+static void mmap_copy_on_write() {
+  KTEST_BEGIN("mmap(): MAP_PRIVATE copy-on-write");
+  setup_test_files();
+
+  const int fdA = vfs_open(kFileA, VFS_O_RDWR);
+  void* addrA1 = 0x0, *addrA2 = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_PRIVATE, fdA, 0, &addrA1));
+  KEXPECT_NE((void*)0x0, addrA1);
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED, fdA, 0, &addrA2));
+  KEXPECT_NE((void*)0x0, addrA2);
+
+  // Write to the private mapping, verify it's not in the shared mapping.
+  kstrcpy(addrA1, "private");
+  KEXPECT_EQ('A', bufcmp(addrA2, 'A', PAGE_SIZE));
+
+  // Read the second page of the private mapping.
+  KEXPECT_EQ('B', bufcmp((char*)addrA1 + PAGE_SIZE, 'B', PAGE_SIZE));
+
+  // Write to the 2nd page of the shared mapping.
+  kstrcpy((char*)addrA2 + PAGE_SIZE, "shared");
+
+  // ...and make sure we see it in the (not COW'd) private mapping page.
+  KEXPECT_STREQ("shared", (char*)addrA1 + PAGE_SIZE);
+
+  // Now write to the same page in the private mapping and verify that we don't
+  // copy that back to the shared mapping.
+  kstrcpy((char*)addrA1 + PAGE_SIZE, "private2");
+  KEXPECT_STREQ("shared", (char*)addrA2 + PAGE_SIZE);
+
+  // Finally, write (again) to the shared mapping, and make sure our copy
+  // doesn't change.
+  kstrcpy((char*)addrA2 + PAGE_SIZE, "shared2");
+  KEXPECT_STREQ("private2", (char*)addrA1 + PAGE_SIZE);
+  KEXPECT_STREQ("shared2", (char*)addrA2 + PAGE_SIZE);
+
+  KEXPECT_EQ(0, do_munmap(addrA1, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrA2, kTestFilePages * PAGE_SIZE));
+
+  vfs_close(fdA);
+}
+
 // TODO(aoates): things to test:
 // * where fd mode > requested mapping mode
 // * vfs_close() after map (public and private mappings)
@@ -539,6 +679,10 @@ void mmap_test() {
   unaligned_addr_hint_test();
   map_fixed_test();
   map_unmap_kernel_memory();
+
+  mmap_private_basic();
+  mmap_private_writeback();
+  mmap_copy_on_write();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);

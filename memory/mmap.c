@@ -19,6 +19,7 @@
 #include "memory/mmap.h"
 #include "memory/memory.h"
 #include "memory/memobj.h"
+#include "memory/memobj_shadow.h"
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
@@ -131,7 +132,8 @@ int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
 int do_mmap(void* addr, addr_t length, int prot, int flags,
             int fd, addr_t offset, void** addr_out) {
   if ((prot & PROT_EXEC) == 0 || (prot & PROT_READ) == 0 ||
-      (flags & MAP_PRIVATE) || !(flags & MAP_SHARED)) {
+      (!(flags & MAP_PRIVATE) && !(flags & MAP_SHARED)) ||
+      ((flags & MAP_PRIVATE) && (flags & MAP_SHARED))) {
     return -EINVAL;
   }
   if (length == 0 || length % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0) {
@@ -176,6 +178,12 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   else if (prot & PROT_WRITE) fd_mode = VFS_O_WRONLY;
   int result = vfs_get_memobj(fd, fd_mode, &memobj);
   if (result) return result;
+
+  // For private mappings, create a shadow object.
+  if (flags & MAP_PRIVATE) {
+    memobj_t* shadow_obj = memobj_create_shadow(memobj);
+    memobj = shadow_obj;
+  }
 
   // Create the new vm_area_t.
   vm_area_t* area = 0x0;
