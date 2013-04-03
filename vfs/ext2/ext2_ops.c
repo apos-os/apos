@@ -363,7 +363,7 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
 typedef int (*inode_iter_func_t)(void*, ext2_dirent_t*, uint32_t);
 static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
                           inode_iter_func_t func, void* arg) {
-  KASSERT(inode->i_mode & EXT2_S_IFDIR);
+  KASSERT((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
   // Look for an appropriate entry.
   uint32_t inode_block = offset / ext2_block_size(fs);
@@ -535,7 +535,7 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   KASSERT(fs->block_groups[bg].bg_free_inodes_count > 0);
   fs->sb.s_free_inodes_count--;
   fs->block_groups[bg].bg_free_inodes_count--;
-  if (mode & EXT2_S_IFDIR) {
+  if ((mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
     fs->block_groups[bg].bg_used_dirs_count++;
   }
   ext2_flush_superblock(fs);
@@ -576,7 +576,7 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   // Increment the free inode count in the superblock and bgd, then flush them.
   fs->sb.s_free_inodes_count++;
   fs->block_groups[bg].bg_free_inodes_count++;
-  if (inode->i_mode & EXT2_S_IFDIR) {
+  if ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
     fs->block_groups[bg].bg_used_dirs_count--;
   }
   ext2_flush_superblock(fs);
@@ -745,7 +745,7 @@ static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
 static int lookup_internal(ext2fs_t* fs, ext2_inode_t* parent_inode,
                            const char* name, uint32_t* inode_out,
                            uint32_t* offset_out) {
-  KASSERT(parent_inode->i_mode & EXT2_S_IFDIR);
+  KASSERT((parent_inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
   ext2_lookup_iter_arg_t arg;
   arg.name = name;
@@ -792,7 +792,7 @@ static int link_internal_iter_func(
 static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
                          uint32_t parent_inode, const char* name,
                          uint32_t inode) {
-  KASSERT(parent->i_mode & EXT2_S_IFDIR);
+  KASSERT((parent->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
   const uint32_t block_size = ext2_block_size(fs);
 
   const int name_len = kstrlen(name);
@@ -860,7 +860,7 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
 // child.
 static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
                            const char* name) {
-  KASSERT(parent->i_mode & EXT2_S_IFDIR);
+  KASSERT((parent->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
   const uint32_t block_size = ext2_block_size(fs);
 
   // Lookup the child and find its dirent.
@@ -968,11 +968,11 @@ static int ext2_get_vnode(vnode_t* vnode) {
     return result;
   }
 
-  if (inode.i_mode & EXT2_S_IFREG) {
+  if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFREG) {
     vnode->type = VNODE_REGULAR;
     // Don't support large files.
     KASSERT(inode.i_dir_acl == 0);
-  } else if (inode.i_mode & EXT2_S_IFDIR) {
+  } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
     vnode->type = VNODE_DIRECTORY;
   } else {
     klogf("ext2: unsupported inode type: 0x%x\n", inode.i_mode);
@@ -996,10 +996,10 @@ static int ext2_put_vnode(vnode_t* vnode) {
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
       die("ext2: invalid vnode type"); break;
-    case VNODE_REGULAR: KASSERT(inode.i_mode & EXT2_S_IFREG); break;
-    case VNODE_DIRECTORY: KASSERT(inode.i_mode & EXT2_S_IFDIR); break;
-    case VNODE_BLOCKDEV: KASSERT(inode.i_mode & EXT2_S_IFBLK); break;
-    case VNODE_CHARDEV: KASSERT(inode.i_mode & EXT2_S_IFCHR); break;
+    case VNODE_REGULAR:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFREG); break;
+    case VNODE_DIRECTORY: KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR); break;
+    case VNODE_BLOCKDEV:  KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFBLK); break;
+    case VNODE_CHARDEV:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFCHR); break;
   }
 
   inode.i_size = vnode->len;
@@ -1157,7 +1157,7 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
   int result = get_inode(fs, parent->num, &parent_inode);
   if (result)
     return result;
-  KASSERT(parent_inode.i_mode & EXT2_S_IFDIR);
+  KASSERT((parent_inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
   // Get the child inode.
   const int child_inode_num = ext2_lookup(parent, name);
@@ -1325,7 +1325,7 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
   int result = get_inode(fs, parent->num, &parent_inode);
   if (result)
     return result;
-  KASSERT(parent_inode.i_mode & EXT2_S_IFDIR);
+  KASSERT((parent_inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
   // Get the child inode.
   const int child_inode_num = ext2_lookup(parent, name);
@@ -1336,7 +1336,7 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
   result = get_inode(fs, child_inode_num, &child_inode);
   if (result)
     return result;
-  if (child_inode.i_mode & EXT2_S_IFDIR)
+  if ((child_inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR)
     return -EISDIR;
 
   KASSERT(child_inode.i_links_count >= 1);

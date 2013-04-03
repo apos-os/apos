@@ -193,6 +193,7 @@ void ext2_inode_ltoh(ext2_inode_t* i);
 #define EXT2_S_IFDIR 0x4000  // directory
 #define EXT2_S_IFCHR 0x2000  // character device
 #define EXT2_S_IFIFO 0x1000  // fifo
+#define EXT2_S_MASK  0xF000
 // process execution user/group override
 #define EXT2_S_ISUID 0x0800  // Set process User ID
 #define EXT2_S_ISGID 0x0400  // Set process Group ID
