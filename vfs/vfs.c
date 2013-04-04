@@ -481,7 +481,8 @@ int vfs_open(const char* path, uint32_t flags) {
     VFS_PUT_AND_CLEAR(parent);
   }
 
-  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY) {
+  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
+      child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV) {
     VFS_PUT_AND_CLEAR(child);
     return -ENOTSUP;
   }
@@ -559,6 +560,43 @@ int vfs_mkdir(const char* path) {
   }
 
   int child_inode = parent->fs->mkdir(parent, base_name);
+  if (child_inode < 0) {
+    VFS_PUT_AND_CLEAR(parent);
+    return child_inode;  // Error :(
+  }
+
+  // We're done!
+  VFS_PUT_AND_CLEAR(parent);
+  return 0;
+}
+
+int vfs_mknod(const char* path, uint32_t mode, dev_t dev) {
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  if (mode != VFS_S_IFREG && mode != VFS_S_IFCHR && mode != VFS_S_IFBLK) {
+    return -EINVAL;
+  }
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    VFS_PUT_AND_CLEAR(parent);
+    return -EEXIST;  // Root directory!
+  }
+
+  vnode_type_t type = VNODE_INVALID;
+  if (mode & VFS_S_IFREG) type = VNODE_REGULAR;
+  else if (mode & VFS_S_IFBLK) type = VNODE_BLOCKDEV;
+  else if (mode & VFS_S_IFCHR) type = VNODE_CHARDEV;
+  else die("unknown node type");
+
+  int child_inode = parent->fs->mknod(parent, base_name, type, dev);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(

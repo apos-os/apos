@@ -1393,6 +1393,59 @@ static void memobj_test() {
 
 // TODO(aoates): test for memobj write_page as well.
 
+static void mknod_test() {
+  const char kDir[] = "mknod_test_dir";
+  const char kRegFile[] = "mknod_test_dir/reg";
+  const char kCharDevFile[] = "mknod_test_dir/char";
+  const char kBlockDevFile[] = "mknod_test_dir/block";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  KTEST_BEGIN("mknod(): regular file test");
+  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+
+  int fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(5, vfs_write(fd, "abcde", 5));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  char buf[10];
+  KEXPECT_EQ(5, vfs_read(fd, buf, 10));
+  KEXPECT_EQ(0, kmemcmp("abcde", buf, 5));
+  vfs_close(fd);
+
+  KTEST_BEGIN("mknod(): empty path test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod("", VFS_S_IFREG, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): existing file test");
+  KEXPECT_EQ(-EEXIST, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): bath path test");
+  KEXPECT_EQ(-ENOENT, vfs_mknod("bad/path/test", VFS_S_IFREG, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): character device file test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(0, 0)));
+
+  fd = vfs_open(kCharDevFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  KTEST_BEGIN("mknod(): block device file test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(0, 0)));
+
+  fd = vfs_open(kBlockDevFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  // TODO(aoates): test character device functionality.
+  // TODO(aoates): test block device functionality.
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -1422,6 +1475,8 @@ void vfs_test() {
   unlink_open_directory_test();
   create_in_unlinked_directory();
   memobj_test();
+
+  mknod_test();
 
   reverse_path_test();
 
