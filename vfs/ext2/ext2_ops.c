@@ -565,6 +565,12 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   return inode;
 }
 
+// Returns 1 if a inode with the given mode has data blocks.
+static int inode_has_data_blocks(uint16_t mode) {
+  return ((mode & EXT2_S_MASK) == EXT2_S_IFREG ||
+          (mode & EXT2_S_MASK) == EXT2_S_IFDIR);
+}
+
 // Free the given inode and associated data blocks.  The inode's links_count
 // must be 0.  Returns 0 on success.
 static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
@@ -592,13 +598,15 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
   // Free all of its blocks.
-  for (int i = 0; i < 12; ++i) {
-    if (inode->i_block[i])
-      free_block(fs, inode->i_block[i]);
+  if (inode_has_data_blocks(inode->i_mode)) {
+    for (int i = 0; i < 12; ++i) {
+      if (inode->i_block[i])
+        free_block(fs, inode->i_block[i]);
+    }
+    free_indirect_block(fs, inode->i_block[12], 1);
+    free_indirect_block(fs, inode->i_block[13], 2);
+    free_indirect_block(fs, inode->i_block[14], 3);
   }
-  free_indirect_block(fs, inode->i_block[12], 1);
-  free_indirect_block(fs, inode->i_block[13], 2);
-  free_indirect_block(fs, inode->i_block[14], 3);
 
   kmemset(inode, 0, sizeof(ext2_inode_t));
   write_inode(fs, inode_num, inode);
