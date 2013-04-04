@@ -19,6 +19,7 @@ LOCAL_SOURCES := \
   ramfs.c \
   file.c \
   util.c \
+  special.c \
 
 LOCAL_SUBDIRS := ext2
 
