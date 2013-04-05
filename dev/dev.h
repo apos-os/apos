@@ -24,6 +24,7 @@
 
 #define DEVICE_MAJOR_ATA 2
 #define DEVICE_MAJOR_RAMDISK 3
+#define DEVICE_MAJOR_TTY 4
 #define DEVICE_ID_UNKNOWN -1
 
 // A device identifier.

@@ -23,6 +23,7 @@ LOCAL_SOURCES := \
   rtc.c \
   dev.c \
   ld.c \
+  tty.c \
 
 LOCAL_SUBDIRS := keyboard video pci ata ramdisk
 

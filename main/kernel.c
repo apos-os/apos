@@ -33,6 +33,7 @@
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
+#include "dev/tty.h"
 #include "proc/scheduler.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
@@ -41,11 +42,11 @@
 #define LD_BUF_SIZE 1024
 
 void pic_init();
-void kshell_main(ld_t* l);
+void kshell_main(dev_t tty);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
-static ld_t* g_ld = 0;
+static dev_t g_tty_dev;
 
 static void tick(void* arg) {
   static uint8_t i = 0;
@@ -70,10 +71,13 @@ static void io_init() {
   klog_set_vterm(g_vterm);
   klog_set_mode(KLOG_VTERM);
 
-  g_ld = ld_create(LD_BUF_SIZE);
-  ld_set_sink(g_ld, &vterm_putc_sink, (void*)g_vterm);
+  ld_t* ld = ld_create(LD_BUF_SIZE);
+  ld_set_sink(ld, &vterm_putc_sink, (void*)g_vterm);
 
-  vkeyboard_set_handler(kbd, &ld_provide_sink, (void*)g_ld);
+  vkeyboard_set_handler(kbd, &ld_provide_sink, (void*)ld);
+
+  // Create a TTY device.
+  g_tty_dev = tty_create(ld);
 }
 
 void kmain(memory_info_t* meminfo) {
@@ -142,7 +146,7 @@ void kmain(memory_info_t* meminfo) {
   klog("\nmeminfo->phys_map_length:   0x"); klog(utoa_hex(meminfo->phys_map_length));
   klog("\n");
 
-  kshell_main(g_ld);
+  kshell_main(g_tty_dev);
 
   //page_frame_alloc_test();
   klog("DONE\n");
