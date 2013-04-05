@@ -64,6 +64,9 @@ int ld_read_async(ld_t* l, char* buf, int n);
 
 // Write n characters from buf to the ld's output.  Returns the number of
 // characters written.
-int ld_write(ld_t* l, char* buf, int n);
+int ld_write(ld_t* l, const char* buf, int n);
+
+// Initialize a char_dev_t for the given ld.
+void ld_init_char_dev(ld_t* l, char_dev_t* dev);
 
 #endif
