@@ -906,8 +906,9 @@ static void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
 
       klogf("dirent: %d -> %s\n", ent->vnode, ent->name);
 
-      // Ignore the root lost+found directory in ext2.
-      if (kstrcmp(ent->name, "lost+found") == 0) {
+      // Ignore the root lost+found and /dev directories.
+      if (kstrcmp(ent->name, "lost+found") == 0 ||
+          kstrcmp(ent->name, "dev") == 0) {
         num_dirents--;
         continue;
       }

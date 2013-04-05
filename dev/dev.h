@@ -22,6 +22,7 @@
 #define DEVICE_MAX_MAJOR 10
 #define DEVICE_MAX_MINOR 20
 
+// Major device types.  Keep this in sync with the device type names in dev.c.
 #define DEVICE_MAJOR_ATA 2
 #define DEVICE_MAJOR_RAMDISK 3
 #define DEVICE_MAJOR_TTY 4
@@ -58,5 +59,10 @@ memobj_t* dev_get_block_memobj(dev_t id);
 // makes no attempt to synchronize with them.
 int dev_unregister_block(dev_t id);
 int dev_unregister_char(dev_t id);
+
+// Initialize the /dev filesystem by creating /dev (if it doesn't already
+// exist), removing stale entries, and populating with new entries for all
+// registered devices.
+void dev_init_fs();
 
 #endif

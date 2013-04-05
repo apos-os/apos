@@ -127,6 +127,8 @@ void kmain(memory_info_t* meminfo) {
   klog("vfs_init()\n");
   vfs_init();
 
+  dev_init_fs();
+
   klog("initialization finished...\n");
 
   vterm_clear(g_vterm);
