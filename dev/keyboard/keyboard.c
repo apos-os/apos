@@ -65,7 +65,7 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up) {
     if ((out == 'd' || out == 'D') && kbd->ctrl_down) {
       out = ASCII_EOT;
     }
-    if (kbd->handler || out != '\0') {
+    if (kbd->handler && out != '\0') {
       kbd->handler(kbd->handler_arg, out);
     }
   }
