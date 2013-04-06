@@ -53,5 +53,5 @@ void gdt_init() {
   gdt_ptr_t gdtptr;
   gdtptr.base = (uint32_t)(&g_gdt);
   gdtptr.limit = GDT_NUM_ENTRIES * sizeof(gdt_entry_t) - 1;
-  gdt_flush(&gdtptr);
+  gdt_flush_phys(&gdtptr);
 }

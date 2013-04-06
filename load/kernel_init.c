@@ -47,7 +47,7 @@ void kinit(memory_info_t* meminfo) {
       "sgdt (%0);"
       :: "r"((uint32_t)&gdt_ptr) :);
   gdt_ptr.base += KERNEL_VIRT_START;
-  gdt_flush(&gdt_ptr);
+  gdt_flush_phys(&gdt_ptr);
 
   idt_ptr_t idt_ptr;
   asm volatile (

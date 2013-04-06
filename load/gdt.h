@@ -46,6 +46,6 @@ typedef struct {
 } __attribute__((packed)) gdt_ptr_t;
 _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 
-void gdt_flush(gdt_ptr_t* gdt_ptr);
+void gdt_flush_phys(gdt_ptr_t* gdt_ptr);
 
 #endif

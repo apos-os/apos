@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.global gdt_flush
+.global gdt_flush_phys
 
-gdt_flush:
+gdt_flush_phys:
     movl 4(%esp), %eax
     lgdt (%eax)
 
