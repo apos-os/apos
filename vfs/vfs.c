@@ -26,6 +26,7 @@
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
+#include "vfs/special.h"
 #include "vfs/vfs.h"
 
 void vfs_vnode_init(vnode_t* n, int num) {
@@ -42,7 +43,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
 #define VNODE_CACHE_SIZE 1000
 
 static const char* VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR"
+  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
 };
 
 static fs_t* g_root_fs = 0;
@@ -465,7 +466,8 @@ int vfs_open(const char* path, uint32_t flags) {
       }
 
       // Create it.
-      int child_inode = parent->fs->create(parent, base_name);
+      int child_inode =
+          parent->fs->mknod(parent, base_name, VNODE_REGULAR, mkdev(0, 0));
       if (child_inode < 0) {
         kmutex_unlock(&parent->mutex);
         VFS_PUT_AND_CLEAR(parent);
@@ -480,7 +482,8 @@ int vfs_open(const char* path, uint32_t flags) {
     VFS_PUT_AND_CLEAR(parent);
   }
 
-  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY) {
+  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
+      child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV) {
     VFS_PUT_AND_CLEAR(child);
     return -ENOTSUP;
   }
@@ -568,6 +571,43 @@ int vfs_mkdir(const char* path) {
   return 0;
 }
 
+int vfs_mknod(const char* path, uint32_t mode, dev_t dev) {
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  if (mode != VFS_S_IFREG && mode != VFS_S_IFCHR && mode != VFS_S_IFBLK) {
+    return -EINVAL;
+  }
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    VFS_PUT_AND_CLEAR(parent);
+    return -EEXIST;  // Root directory!
+  }
+
+  vnode_type_t type = VNODE_INVALID;
+  if (mode & VFS_S_IFREG) type = VNODE_REGULAR;
+  else if (mode & VFS_S_IFBLK) type = VNODE_BLOCKDEV;
+  else if (mode & VFS_S_IFCHR) type = VNODE_CHARDEV;
+  else die("unknown node type");
+
+  int child_inode = parent->fs->mknod(parent, base_name, type, dev);
+  if (child_inode < 0) {
+    VFS_PUT_AND_CLEAR(parent);
+    return child_inode;  // Error :(
+  }
+
+  // We're done!
+  VFS_PUT_AND_CLEAR(parent);
+  return 0;
+}
+
 int vfs_rmdir(const char* path) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
@@ -638,7 +678,9 @@ int vfs_read(int fd, void* buf, int count) {
   KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
-  } else if (file->vnode->type != VNODE_REGULAR) {
+  } else if (file->vnode->type != VNODE_REGULAR &&
+             file->vnode->type != VNODE_CHARDEV &&
+             file->vnode->type != VNODE_BLOCKDEV) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
@@ -649,8 +691,13 @@ int vfs_read(int fd, void* buf, int count) {
   int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
-    result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
-    if (result >= 0) {
+    if (file->vnode->type == VNODE_REGULAR) {
+      result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
+    } else {
+      result = special_device_read(file->vnode->type, file->vnode->dev,
+                                   file->pos, buf, count);
+    }
+    if (result >= 0 && file->vnode->type != VNODE_CHARDEV) {
       file->pos += result;
     }
   }
@@ -669,7 +716,9 @@ int vfs_write(int fd, const void* buf, int count) {
   KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
-  } else if (file->vnode->type != VNODE_REGULAR) {
+  } else if (file->vnode->type != VNODE_REGULAR &&
+             file->vnode->type != VNODE_CHARDEV &&
+             file->vnode->type != VNODE_BLOCKDEV) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
@@ -680,8 +729,13 @@ int vfs_write(int fd, const void* buf, int count) {
   int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
-    result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
-    if (result >= 0) {
+    if (file->vnode->type == VNODE_REGULAR) {
+      result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
+    } else {
+      result = special_device_write(file->vnode->type, file->vnode->dev,
+                                    file->pos, buf, count);
+    }
+    if (result >= 0 && file->vnode->type != VNODE_CHARDEV) {
       file->pos += result;
     }
   }
@@ -702,8 +756,15 @@ int vfs_seek(int fd, int offset, int whence) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
-  if (file->vnode->type != VNODE_REGULAR) {
+  if (file->vnode->type != VNODE_REGULAR &&
+      file->vnode->type != VNODE_CHARDEV &&
+      file->vnode->type != VNODE_BLOCKDEV) {
     return -ENOTSUP;
+  }
+
+  if (file->vnode->type == VNODE_CHARDEV) {
+    KASSERT_DBG(file->pos == 0);
+    return 0;
   }
 
   int new_pos = -1;
@@ -715,6 +776,12 @@ int vfs_seek(int fd, int offset, int whence) {
 
   if (new_pos < 0) {
     return -EINVAL;
+  } else if (file->vnode->type == VNODE_BLOCKDEV) {
+    // Verify that we're in bounds for the device.
+    KASSERT(file->vnode->len == 0);
+    block_dev_t* dev = dev_get_block(file->vnode->dev);
+    if (!dev) return -ENXIO;
+    if (new_pos >= dev->sectors * dev->sector_size) return -EINVAL;
   }
 
   file->pos = new_pos;

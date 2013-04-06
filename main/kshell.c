@@ -28,8 +28,8 @@
 #include "dev/ata/ata.h"
 #include "memory/block_cache.h"
 #include "dev/block_dev.h"
+#include "dev/char_dev.h"
 #include "dev/dev.h"
-#include "dev/ld.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/sleep.h"
@@ -40,7 +40,7 @@
 
 #define READ_BUF_SIZE 1024
 
-static ld_t* g_io = 0;
+static dev_t g_tty;
 
 static void ksh_printf(const char* fmt, ...) {
   char buf[1024];
@@ -49,7 +49,9 @@ static void ksh_printf(const char* fmt, ...) {
   va_start(args, fmt);
   kvsprintf(buf, fmt, args);
   va_end(args);
-  ld_write(g_io, buf, kstrlen(buf));
+
+  char_dev_t* dev = dev_get_char(g_tty);
+  dev->write(dev, buf, kstrlen(buf));
 }
 
 typedef struct {
@@ -670,8 +672,9 @@ static void parse_and_dispatch(char* cmd) {
   ksh_printf("error: known command '%s'\n", argv[0]);
 }
 
-void kshell_main(ld_t* io) {
-  g_io = io;
+void kshell_main(dev_t tty) {
+  g_tty = tty;
+  char_dev_t* tty_dev = dev_get_char(g_tty);
 
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   ksh_printf("@                     APOS                       @\n");
@@ -680,8 +683,8 @@ void kshell_main(ld_t* io) {
 
   char read_buf[READ_BUF_SIZE];
   while (1) {
-    ld_write(g_io, "> ", 2);
-    int read_len = ld_read(g_io, read_buf, READ_BUF_SIZE);
+    ksh_printf("> ");
+    int read_len = tty_dev->read(tty_dev, read_buf, READ_BUF_SIZE);
 
     read_buf[read_len] = '\0';
     //klogf("kshell: read %d bytes:\n%s\n", read_len, read_buf);

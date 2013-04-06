@@ -178,7 +178,7 @@ fs_t* ramfs_create_fs() {
   f->fs.get_vnode = &ramfs_get_vnode;
   f->fs.put_vnode = &ramfs_put_vnode;
   f->fs.lookup = &ramfs_lookup;
-  f->fs.create = &ramfs_create;
+  f->fs.mknod = &ramfs_mknod;
   f->fs.mkdir = &ramfs_mkdir;
   f->fs.rmdir = &ramfs_rmdir;
   f->fs.read = &ramfs_read;
@@ -242,6 +242,7 @@ int ramfs_get_vnode(vnode_t* n) {
   // Copy over everything we'll need.
   n->type = inode->vnode.type;
   n->len = inode->vnode.len;
+  n->dev = inode->vnode.dev;
   kstrcpy(n->fstype, "ramfs");
   ((ramfs_inode_t*)n)->data = inode->data;
   ((ramfs_inode_t*)n)->link_count = inode->link_count;
@@ -280,7 +281,10 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   return d->vnode;
 }
 
-int ramfs_create(vnode_t* parent, const char* name) {
+int ramfs_mknod(vnode_t* parent, const char* name,
+                vnode_type_t type, dev_t dev) {
+  KASSERT(type == VNODE_REGULAR || type == VNODE_BLOCKDEV ||
+          type == VNODE_CHARDEV);
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
@@ -295,7 +299,8 @@ int ramfs_create(vnode_t* parent, const char* name) {
   n->vnode.num = new_inode;
   init_inode(ramfs, n);
 
-  n->vnode.type = VNODE_REGULAR;
+  n->vnode.type = type;
+  n->vnode.dev = dev;
   int result = ramfs_link(parent, (vnode_t*)n, name);
   if (result >= 0) {
     return n->vnode.num;

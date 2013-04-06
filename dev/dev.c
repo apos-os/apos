@@ -16,13 +16,33 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
+#include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "memory/memobj.h"
 #include "memory/memobj_block_dev.h"
+#include "vfs/vfs.h"
+
+// Names for each known device type.
+static const char* kTypeNames[DEVICE_MAX_MAJOR] = {
+  0x0,
+  0x0,
+  "ata", // DEVICE_MAJOR_ATA
+  "ram", // DEVICE_MAJOR_RAMDISK
+  "tty", // DEVICE_MAJOR_TTY
+  0x0,
+  0x0,
+  0x0,
+  0x0,
+  0x0,
+};
 
 static void* g_block_devices[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
 static memobj_t* g_block_memobjs[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
 static void* g_char_devices[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
+static int g_dev_fs_ready = 0;
+
+static void make_fs_device(int vfs_type, int major, int minor);
 
 static int check_register(void* dev, dev_t* id) {
   if (!dev || id->major < 0 || id->major >= DEVICE_MAX_MAJOR ||
@@ -70,6 +90,9 @@ int dev_register_block(block_dev_t* dev, dev_t* id) {
   g_block_memobjs[id->major][id->minor] = (memobj_t*)kmalloc(sizeof(memobj_t));
   KASSERT(
       0 == memobj_create_block_dev(g_block_memobjs[id->major][id->minor], *id));
+  if (g_dev_fs_ready) {
+    make_fs_device(VFS_S_IFBLK, id->major, id->minor);
+  }
   return 0;
 }
 
@@ -84,6 +107,9 @@ int dev_register_char(char_dev_t* dev, dev_t* id) {
   }
 
   g_char_devices[id->major][id->minor] = dev;
+  if (g_dev_fs_ready) {
+    make_fs_device(VFS_S_IFCHR, id->major, id->minor);
+  }
   return 0;
 }
 
@@ -121,6 +147,7 @@ int dev_unregister_block(dev_t id) {
   }
   g_block_devices[id.major][id.minor] = 0x0;
   kfree(g_block_memobjs[id.major][id.minor]);
+  // TODO(aoates): remove the entry from /dev if appropriate
   return 0;
 }
 
@@ -133,5 +160,78 @@ int dev_unregister_char(dev_t id) {
     return -ENOENT;
   }
   g_char_devices[id.major][id.minor] = 0x0;
+  // TODO(aoates): remove the entry from /dev if appropriate
   return 0;
+}
+
+static void make_fs_device(int vfs_type, int major, int minor) {
+  char name[512];
+  if (!kTypeNames[major]) {
+    klogf("warning: cannot create device node for device of "
+          "unknown type (%d.%d)\n", major, minor);
+    return;
+  }
+  ksprintf(name, "/dev/%s%d", kTypeNames[major], minor);
+  const int result = vfs_mknod(name, vfs_type, mkdev(major, minor));
+  if (result < 0) {
+    klogf("warning: unable to create %s: %s\n", name, errorname(-result));
+  }
+}
+
+void dev_init_fs() {
+  const int kBufSize = 512;
+  vfs_mkdir("/dev");
+
+  const int dev_fd = vfs_open("/dev", VFS_O_RDONLY);
+  KASSERT(dev_fd >= 0);
+
+  // Removing existing entries.
+  char buf[kBufSize];
+  while (1) {
+    const int len = vfs_getdents(dev_fd, (dirent_t*)(&buf[0]), kBufSize);
+    if (len < 0) {
+      klogf("warning: unable to read /dev: %s\n", errorname(-len));
+      vfs_close(dev_fd);
+      return;
+    }
+    if (len == 0) {
+      break;
+    }
+
+    int buf_offset = 0;
+    while (buf_offset < len) {
+      dirent_t* ent = (dirent_t*)(buf + buf_offset);
+      buf_offset += ent->length;
+
+      if (kstrcmp(ent->name, ".") == 0 ||
+          kstrcmp(ent->name, "..") == 0) {
+        continue;
+      }
+
+      char full_path[VFS_MAX_PATH_LENGTH];
+      ksprintf(full_path, "/dev/%s", ent->name);
+      const int result = vfs_unlink(full_path);
+      if (result < 0) {
+        klogf("warning: unable to remove %s\n", full_path);
+      }
+    }
+  }
+
+  // Create new entries for each existing device.
+  for (int major = 0; major < DEVICE_MAX_MAJOR; ++major) {
+    for (int minor = 0; minor < DEVICE_MAX_MINOR; ++minor) {
+      if (g_block_devices[major][minor]) {
+        make_fs_device(VFS_S_IFBLK, major, minor);
+      }
+      if (g_char_devices[major][minor]) {
+        make_fs_device(VFS_S_IFCHR, major, minor);
+      }
+    }
+  }
+
+  // TODO(aoates): there's a race condition here between other threads
+  // registering devices and us setting this bit.  We should really have a mutex
+  // and lock over the entire init.
+  vfs_close(dev_fd);
+  g_dev_fs_ready = 1;
 }

@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
+#include "dev/ramdisk/ramdisk.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/memobj.h"
@@ -905,8 +906,9 @@ static void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
 
       klogf("dirent: %d -> %s\n", ent->vnode, ent->name);
 
-      // Ignore the root lost+found directory in ext2.
-      if (kstrcmp(ent->name, "lost+found") == 0) {
+      // Ignore the root lost+found and /dev directories.
+      if (kstrcmp(ent->name, "lost+found") == 0 ||
+          kstrcmp(ent->name, "dev") == 0) {
         num_dirents--;
         continue;
       }
@@ -1393,6 +1395,125 @@ static void memobj_test() {
 
 // TODO(aoates): test for memobj write_page as well.
 
+static void mknod_test() {
+  const char kDir[] = "mknod_test_dir";
+  const char kRegFile[] = "mknod_test_dir/reg";
+  const char kCharDevFile[] = "mknod_test_dir/char";
+  const char kBlockDevFile[] = "mknod_test_dir/block";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  KTEST_BEGIN("mknod(): regular file test");
+  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+
+  int fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(5, vfs_write(fd, "abcde", 5));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  char buf[10];
+  KEXPECT_EQ(5, vfs_read(fd, buf, 10));
+  KEXPECT_EQ(0, kmemcmp("abcde", buf, 5));
+  vfs_close(fd);
+
+  KTEST_BEGIN("mknod(): empty path test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod("", VFS_S_IFREG, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): existing file test");
+  KEXPECT_EQ(-EEXIST, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): bath path test");
+  KEXPECT_EQ(-ENOENT, vfs_mknod("bad/path/test", VFS_S_IFREG, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): character device file test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(0, 0)));
+
+  fd = vfs_open(kCharDevFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  KTEST_BEGIN("mknod(): block device file test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(0, 0)));
+
+  fd = vfs_open(kBlockDevFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  // TODO(aoates): test character device functionality.
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
+static void block_device_test() {
+  const char kDir[] = "block_dev_test_dir";
+  const char kBlockDevFile[] = "block_dev_test_dir/block";
+  const int kRamdiskSize = PAGE_SIZE * 3;
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  // Create a ramdisk for the test.
+  ramdisk_t* ramdisk = 0x0;
+  block_dev_t ramdisk_bd;
+  KASSERT(ramdisk_create(kRamdiskSize, &ramdisk) == 0);
+  ramdisk_set_blocking(ramdisk, 1, 1);
+  ramdisk_dev(ramdisk, &ramdisk_bd);
+
+  dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  KEXPECT_EQ(0, dev_register_block(&ramdisk_bd, &dev));
+
+  KTEST_BEGIN("vfs: block device file test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, dev));
+
+  int fd = vfs_open(kBlockDevFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+
+  // Write to the ramdisk, then read from the fd.
+  const int kBufSize = 512;
+  KASSERT(kBufSize == ramdisk_bd.sector_size);
+  char buf[kBufSize];
+  kmemset(buf, 0, kBufSize);
+
+  // Zero out the entire ramdisk.
+  for (int i = 0; i < kRamdiskSize / kBufSize; ++i) {
+    KEXPECT_EQ(kBufSize, ramdisk_bd.write(&ramdisk_bd, i, buf, kBufSize));
+  }
+
+  KTEST_BEGIN("vfs_read(): block device");
+  kstrcpy(buf, "ramdisk");
+  KEXPECT_EQ(kBufSize, ramdisk_bd.write(&ramdisk_bd, 0, buf, kBufSize));
+  kmemset(buf, 0, kBufSize);
+  KEXPECT_EQ(10, vfs_read(fd, buf, 10));
+  KEXPECT_EQ(0, kmemcmp("ramdisk\0\0\0", buf, 10));
+
+  KTEST_BEGIN("vfs_write(): block device");
+  KEXPECT_EQ(7, vfs_write(fd, "written", 7));
+  KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 0, buf, kBufSize));
+  KEXPECT_EQ(0, kmemcmp("ramdisk\0\0\0written\0\0\0", buf, 20));
+
+  KTEST_BEGIN("vfs_seek(): block device: seek within block");
+  KEXPECT_EQ(0, vfs_seek(fd, kBufSize * 2 + 5, VFS_SEEK_SET));
+  KEXPECT_EQ(6, vfs_write(fd, "write2", 6));
+  KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 2, buf, kBufSize));
+  KEXPECT_EQ(0, kmemcmp("\0\0\0\0\0write2\0\0\0\0", buf, 15));
+
+  KTEST_BEGIN("vfs_seek(): block device: seek past end of device");
+  KEXPECT_EQ(-EINVAL, vfs_seek(fd, kBufSize * 30, VFS_SEEK_SET));
+
+  vfs_close(fd);
+
+  // Cleanup.
+  // TODO(aoates): make this work
+  block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.
+  KASSERT(dev_unregister_block(dev) == 0);
+  ramdisk_destroy(ramdisk);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_rmdir(kDir);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -1422,6 +1543,9 @@ void vfs_test() {
   unlink_open_directory_test();
   create_in_unlinked_directory();
   memobj_test();
+
+  mknod_test();
+  block_device_test();
 
   reverse_path_test();
 

@@ -200,7 +200,7 @@ int ld_read_async(ld_t* l, char* buf, int n) {
   return copied;
 }
 
-int ld_write(ld_t* l, char* buf, int n) {
+int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
@@ -209,4 +209,19 @@ int ld_write(ld_t* l, char* buf, int n) {
   }
 
   return n;
+}
+
+static int ld_char_dev_read(struct char_dev* dev, void* buf, uint32_t len) {
+  return ld_read((ld_t*)dev->dev_data, buf, len);
+}
+
+static int ld_char_dev_write(struct char_dev* dev, const void* buf,
+                             uint32_t len) {
+  return ld_write((ld_t*)dev->dev_data, buf, len);
+}
+
+void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
+  dev->read = &ld_char_dev_read;
+  dev->write = &ld_char_dev_write;
+  dev->dev_data = l;
 }

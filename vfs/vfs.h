@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "vfs/dirent.h"
@@ -28,11 +29,15 @@
 #define VFS_MAX_FILES 128
 
 // vnode types.  Keep these synchcronized with VNODE_TYPE_NAME in vfs.c.
-#define VNODE_UNINITIALIZED 0
-#define VNODE_INVALID 1
-#define VNODE_REGULAR   2
-#define VNODE_DIRECTORY 3
-// TODO(aoates): symlinks, special devices, etc.
+typedef enum {
+  VNODE_UNINITIALIZED = 0,
+  VNODE_INVALID = 1,
+  VNODE_REGULAR   = 2,
+  VNODE_DIRECTORY = 3,
+  VNODE_BLOCKDEV = 4,
+  VNODE_CHARDEV = 5,
+} vnode_type_t;
+// TODO(aoates): symlinks, etc.
 
 struct fs;
 typedef struct fs fs_t;
@@ -42,13 +47,16 @@ typedef struct fs fs_t;
 // additional metadata.
 struct vnode {
   int num;
-  int type;
+  vnode_type_t type;
   int len;
 
   int refcount;
 
   char fstype[10];
   fs_t* fs;
+
+  // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
+  dev_t dev;
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;
@@ -95,9 +103,14 @@ struct fs {
   // -error on failure.
   int (*lookup)(vnode_t* parent, const char* name);
 
-  // Create a regular file in the given directory.  Returns the inode number of
-  // the new file, or -error on failure.
-  int (*create)(vnode_t* parent, const char* name /*, mode? */);
+  // Create a regular file, block device, or character device in the given
+  // directory.  type must be one of VNODE_{REGULAR,BLOCKDEV,CHARDEV}.  If
+  // creating a block or character device, dev is the corresponding device to
+  // bind it to.  Otherwise, it is ignored.
+  //
+  // Returns the inode number of the new file, or -error on failure.
+  int (*mknod)(vnode_t* parent, const char* name, vnode_type_t type, dev_t dev
+               /*, mode? */);
 
   // Create a directory in the given directory.  Returns the inode number of the
   // new directory, or -error on failure.
@@ -174,6 +187,11 @@ struct fs {
 #define VFS_O_CREAT    0x08
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
 
+// File types.
+#define VFS_S_IFREG      0x10000
+#define VFS_S_IFCHR      0x20000
+#define VFS_S_IFBLK      0x40000
+
 #define VFS_SEEK_SET 1
 #define VFS_SEEK_CUR 2
 #define VFS_SEEK_END 3
@@ -231,6 +249,11 @@ int vfs_close(int fd);
 // Make a directory at the given path.  Returns 0 on success, or -error.
 // TODO(aoates): mode
 int vfs_mkdir(const char* path);
+
+// Create a file system node (regular file or special file).  mode must be one
+// of the supported file types, bitwise OR'd with the mode of the file.
+// TODO(aoates): implement mode
+int vfs_mknod(const char* path, uint32_t mode, dev_t dev);
 
 // Remove an empty directory. Returns 0 on success, or -error.
 int vfs_rmdir(const char* path);
