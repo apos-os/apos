@@ -33,6 +33,7 @@ loader:
     # Set up IDT.
     call idt_init
 
+    pushl $(stack)
     pushl mbd
     pushl magic
     call mem_init

@@ -67,6 +67,9 @@ void kthread_init() {
   first->state = KTHREAD_RUNNING;
   first->esp = 0;
   first->id = g_next_id++;
+  first->stack = (uint32_t*)get_global_meminfo()->kernel_stack_base;
+
+  KASSERT_DBG((uint32_t)(&first) < (uint32_t)first->stack + KTHREAD_STACK_SIZE);
 
   kthread_queue_init(&g_reap_queue);
 

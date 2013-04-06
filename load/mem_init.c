@@ -164,7 +164,8 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 
 // Allocates a memory_info_t at the end of the kernel and fills it in with what
 // we know.
-static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
+static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
+                                             uint32_t stack) {
   // Statically allocate a memory_info_t.  We will pass this around to keep
   // track of how much memory we allocate here, updating
   // meminfo->kernel_end_{phys, virt} as needed.
@@ -193,13 +194,15 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info) {
   g_meminfo.phys_map_length = 0;  // We'll set this when we do the mapping.
   g_meminfo.heap_start = START_HEAP;
   g_meminfo.heap_end = END_HEAP;
+  g_meminfo.kernel_stack_base = stack + KERNEL_VIRT_START;
   return &g_meminfo;
 }
 
-memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys) {
+memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys,
+                        uint32_t stack) {
   kassert_phys(magic == 0x2BADB002);
 
-  memory_info_t* meminfo = create_initial_meminfo(multiboot_info_phys);
+  memory_info_t* meminfo = create_initial_meminfo(multiboot_info_phys, stack);
   meminfo = setup_paging(meminfo);
   // We are now in virtual memory!
   return meminfo;
