@@ -57,7 +57,8 @@ OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
 # Object files that are placed manually in the linker script.
 MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
 		       load/multiboot.o load/loader.o load/mem_init.o \
-		       load/gdt.o load/gdt_flush.o load/idt.o)
+		       load/gdt.o load/idt.o \
+		       memory/gdt.PHYS.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))
@@ -76,6 +77,8 @@ else
   CFLAGS += -nostartfiles -nodefaultlibs
 endif
 
+$(MANUALLY_LINKED_OBJS): CFLAGS += -D_MULTILINK_SUFFIX=_PHYS
+
 all: kernel.img $(HD_IMAGES)
 
 mk-build-dir = @mkdir -p $(dir $@)
@@ -87,8 +90,12 @@ $(BUILD_OUT)/%.o : %.s
 $(BUILD_OUT)/%.o : %.c
 	$(mk-build-dir)
 	$(CC) $(CFLAGS) -o $@ -c $<
+
+$(BUILD_OUT)/%.PHYS.o : %.c
+	$(mk-build-dir)
+	$(CC) $(CFLAGS) -D_MULTILINK_SUFFIX=_PHYS -o $@ -c $<
  
-kernel.bin: $(OBJFILES) $(BUILD_DIR)/linker.ld
+kernel.bin: $(OBJFILES) $(MANUALLY_LINKED_OBJS) $(BUILD_DIR)/linker.ld
 	$(LD) -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ \
 	  $(filter-out %.ld $(MANUALLY_LINKED_OBJS), $^)
 

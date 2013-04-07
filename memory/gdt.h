@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_GDT_H
-#define APOO_GDT_H
+#ifndef APOO_MEMORY_GDT_H
+#define APOO_MEMORY_GDT_H
 
 #include <stdint.h>
+
+#include "common/multilink.h"
 
 // Common segment indices.
 #define GDT_NULL_SEGMENT 0
@@ -46,6 +48,11 @@ typedef struct {
 } __attribute__((packed)) gdt_ptr_t;
 _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 
-void gdt_flush_phys(gdt_ptr_t* gdt_ptr);
+// Create a gdt_entry_t with the given parameters.
+gdt_entry_t MULTILINK(gdt_entry_create) (
+    uint32_t base, uint32_t limit, uint8_t type,
+    uint8_t dpl, uint8_t granularity);
+
+void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr);
 
 #endif

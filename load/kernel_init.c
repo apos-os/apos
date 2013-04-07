@@ -14,9 +14,9 @@
 
 #include <stdint.h>
 
-#include "load/gdt.h"
 #include "load/mem_init.h"
 #include "dev/interrupts.h"
+#include "memory/gdt.h"
 #include "memory/memory.h"
 
 extern void kmain(memory_info_t* meminfo);
@@ -47,7 +47,7 @@ void kinit(memory_info_t* meminfo) {
       "sgdt (%0);"
       :: "r"((uint32_t)&gdt_ptr) :);
   gdt_ptr.base += KERNEL_VIRT_START;
-  gdt_flush_phys(&gdt_ptr);
+  gdt_flush(&gdt_ptr);
 
   idt_ptr_t idt_ptr;
   asm volatile (
