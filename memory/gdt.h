@@ -20,11 +20,19 @@
 #include "common/multilink.h"
 
 // Common segment indices.
+#define GDT_NUM_ENTRIES 5
+
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
 #define GDT_KERNEL_DATA_SEGMENT 2
 #define GDT_USER_CODE_SEGMENT 3
 #define GDT_USER_DATA_SEGMENT 4
+
+typedef enum {
+  SEG_CODE,
+  SEG_DATA,
+  SEG_TSS,
+} gdt_seg_type_t;
 
 typedef struct {
    uint16_t limit_low;           // Lower 16 bits of the limit.
@@ -50,9 +58,10 @@ _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 
 // Create a gdt_entry_t with the given parameters.
 gdt_entry_t MULTILINK(gdt_entry_create) (
-    uint32_t base, uint32_t limit, uint8_t type,
-    uint8_t dpl, uint8_t granularity);
+    uint32_t base, uint32_t limit, gdt_seg_type_t type,
+    uint8_t flags, uint8_t dpl, uint8_t granularity);
 
+// Install the given GDT pointer and flush all segment registers.
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr);
 
 #endif

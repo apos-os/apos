@@ -16,19 +16,36 @@
 #include "memory/gdt.h"
 
 gdt_entry_t MULTILINK(gdt_entry_create) (
-    uint32_t base, uint32_t limit, uint8_t type,
-    uint8_t dpl, uint8_t granularity) {
+    uint32_t base, uint32_t limit, gdt_seg_type_t type,
+    uint8_t flags, uint8_t dpl, uint8_t granularity) {
   gdt_entry_t entry;
   entry.base_low = base & 0x0000FFFF;
   entry.base_middle = (base >> 16) & 0x000000FF;
   entry.base_high = (base >> 24) & 0x000000FF;
   entry.limit_low = limit & 0x0000FFFF;
   entry.limit_high = (limit >> 16) & 0x0000000F;
-  entry.type = type;
-  entry.sys = 1;
+
+  switch (type) {
+    case SEG_CODE: entry.type = 0x8 | flags; break;
+    case SEG_DATA: entry.type = flags; break;
+    case SEG_TSS: entry.type = 0x9; break;
+  }
+
+  switch (type) {
+    case SEG_CODE:
+    case SEG_DATA:
+      entry.sys = 1;
+      entry.db = 1;  // Always set for 32 bit segments.
+      break;
+
+    case SEG_TSS:
+      entry.sys = 0;
+      entry.db = 0;
+      break;
+  }
+
   entry.dpl = dpl;
   entry.present = 1;
-  entry.db = 1;  // Always set for 32 bit segments.
   entry.granularity = granularity;
   return entry;
 }

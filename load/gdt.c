@@ -19,20 +19,19 @@
 #include "common/types.h"
 #include "memory/gdt.h"
 
-#define GDT_NUM_ENTRIES 5
 static gdt_entry_t g_gdt[GDT_NUM_ENTRIES] __attribute__((aligned (8)));
 
 void gdt_init() {
   // See section 3.4.5.1 of the Intel manuals for a description of the type
   // field.
   g_gdt[GDT_KERNEL_CODE_SEGMENT] =
-      gdt_entry_create_PHYS(0x0, 0x000FFFFF, 0xA, 0, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_CODE, 0x2, 0, 1);
   g_gdt[GDT_KERNEL_DATA_SEGMENT] =
-      gdt_entry_create_PHYS(0x0, 0x000FFFFF, 0x2, 0, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_DATA, 0x2, 0, 1);
   g_gdt[GDT_USER_CODE_SEGMENT] =
-      gdt_entry_create_PHYS(0x0, 0x000FFFFF, 0xA, 3, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_CODE, 0x2, 3, 1);
   g_gdt[GDT_USER_DATA_SEGMENT] =
-      gdt_entry_create_PHYS(0x0, 0x000FFFFF, 0x2, 3, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_DATA, 0x2, 3, 1);
 
   gdt_ptr_t gdtptr;
   gdtptr.base = (uint32_t)(&g_gdt);
