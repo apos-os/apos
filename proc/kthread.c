@@ -23,6 +23,7 @@
 #include "proc/kthread-internal.h"
 #include "memory/memory.h"
 #include "proc/scheduler.h"
+#include "proc/tss.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
@@ -58,6 +59,8 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
 }
 
 void kthread_init() {
+  tss_init();
+
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread == 0);
 
@@ -74,6 +77,7 @@ void kthread_init() {
   kthread_queue_init(&g_reap_queue);
 
   g_current_thread = first;
+  tss_set_kernel_stack((addr_t)first->stack);
   POP_INTERRUPTS();
 }
 
@@ -224,6 +228,7 @@ void kthread_switch(kthread_t new_thread) {
 
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;
+  tss_set_kernel_stack((addr_t)g_current_thread->stack);
   new_thread->state = KTHREAD_RUNNING;
   kthread_swap_context(old_thread, new_thread);
 

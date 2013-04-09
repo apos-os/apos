@@ -21,5 +21,6 @@ LOCAL_SOURCES := \
   process.c \
   sleep.c \
   kthread_pool.c \
+  tss.c \
 
 $(eval $(END_SOURCES))

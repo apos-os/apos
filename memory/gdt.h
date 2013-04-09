@@ -20,13 +20,14 @@
 #include "common/multilink.h"
 
 // Common segment indices.
-#define GDT_NUM_ENTRIES 5
+#define GDT_NUM_ENTRIES 6
 
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
 #define GDT_KERNEL_DATA_SEGMENT 2
 #define GDT_USER_CODE_SEGMENT 3
 #define GDT_USER_DATA_SEGMENT 4
+#define GDT_TSS 5
 
 typedef enum {
   SEG_CODE,
@@ -63,5 +64,8 @@ gdt_entry_t MULTILINK(gdt_entry_create) (
 
 // Install the given GDT pointer and flush all segment registers.
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr);
+
+// Install a segment in the GDT at the given index.
+void MULTILINK(gdt_install_segment) (int index, gdt_entry_t entry);
 
 #endif

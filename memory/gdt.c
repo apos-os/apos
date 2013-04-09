@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <stdint.h>
+
+#include "common/kassert.h"
 #include "memory/gdt.h"
 
 gdt_entry_t MULTILINK(gdt_entry_create) (
@@ -63,4 +65,16 @@ void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr) {
       "    mov %%ax, %%ss\n"
       "    ljmp $0x08, $.flush\n"
       ".flush:\n" :: "g"(gdt_ptr) : "eax");
+}
+
+void MULTILINK(gdt_install_segment) (int index, gdt_entry_t entry) {
+  gdt_ptr_t gdt_ptr;
+  asm volatile (
+      "sgdt (%0);"
+      :: "r"((uint32_t)&gdt_ptr) :);
+
+  KASSERT(index > 0 && index < GDT_NUM_ENTRIES);
+  gdt_entry_t* entries = (gdt_entry_t*)gdt_ptr.base;
+  entries[index] = entry;
+  MULTILINK(gdt_flush) (&gdt_ptr);
 }
