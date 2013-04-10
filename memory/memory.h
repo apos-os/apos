@@ -84,6 +84,9 @@ typedef struct {
   // this rather than a pseudo-hard-coded range.
   uint32_t heap_start;
   uint32_t heap_end;
+
+  // The base address of the initial kernel stack (used for thread/process 0).
+  uint32_t kernel_stack_base;
 } memory_info_t;
 
 // Once we've finished setting up our initial memory mappings, sets a global

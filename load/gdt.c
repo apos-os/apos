@@ -15,43 +15,26 @@
 // Code to initialize the GDT.
 
 #include <stdint.h>
-#include "load/gdt.h"
 
-#define GDT_NUM_ENTRIES 5
+#include "common/types.h"
+#include "memory/gdt.h"
+
 static gdt_entry_t g_gdt[GDT_NUM_ENTRIES] __attribute__((aligned (8)));
-
-// Create a gdt_entry_t with the given parameters.
-gdt_entry_t create_gdt_entry(uint32_t base, uint32_t limit, uint8_t type,
-                             uint8_t dpl, uint8_t granularity) {
-  gdt_entry_t entry;
-  entry.base_low = base & 0x0000FFFF;
-  entry.base_middle = (base >> 16) & 0x000000FF;
-  entry.base_high = (base >> 24) & 0x000000FF;
-  entry.limit_low = limit & 0x0000FFFF;
-  entry.limit_high = (limit >> 16) & 0x0000000F;
-  entry.type = type;
-  entry.sys = 1;
-  entry.dpl = dpl;
-  entry.present = 1;
-  entry.db = 1;  // Always set for 32 bit segments.
-  entry.granularity = granularity;
-  return entry;
-}
 
 void gdt_init() {
   // See section 3.4.5.1 of the Intel manuals for a description of the type
   // field.
   g_gdt[GDT_KERNEL_CODE_SEGMENT] =
-      create_gdt_entry(0x0, 0x000FFFFF, 0xA, 0, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_CODE, 0x2, 0, 1);
   g_gdt[GDT_KERNEL_DATA_SEGMENT] =
-      create_gdt_entry(0x0, 0x000FFFFF, 0x2, 0, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_DATA, 0x2, 0, 1);
   g_gdt[GDT_USER_CODE_SEGMENT] =
-      create_gdt_entry(0x0, 0x000FFFFF, 0xA, 3, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_CODE, 0x2, 3, 1);
   g_gdt[GDT_USER_DATA_SEGMENT] =
-      create_gdt_entry(0x0, 0x000FFFFF, 0x2, 3, 1);
+      gdt_entry_create_PHYS(0x0, 0x000FFFFF, SEG_DATA, 0x2, 3, 1);
 
   gdt_ptr_t gdtptr;
   gdtptr.base = (uint32_t)(&g_gdt);
   gdtptr.limit = GDT_NUM_ENTRIES * sizeof(gdt_entry_t) - 1;
-  gdt_flush(&gdtptr);
+  gdt_flush_PHYS(&gdtptr);
 }

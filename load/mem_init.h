@@ -37,6 +37,7 @@
 // and filled.
 //
 // Once this returns, we are running in virtual memory.
-memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys);
+memory_info_t* mem_init(uint32_t magic, multiboot_info_t* multiboot_info_phys,
+                        uint32_t stack);
 
 #endif

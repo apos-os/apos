@@ -36,8 +36,8 @@ SECTIONS
       load/loader.o(.text .rodata .data .bss)
       load/mem_init.o(.text .rodata .data .bss)
       load/gdt.o(.text .rodata .data .bss)
-      load/gdt_flush.o(.text .rodata .data .bss)
       load/idt.o(.text .rodata .data .bss)
+      memory/gdt.PHYS.o(.text .rodata .data .bss)
     }
 
     /* Load the main part of the kernel at VMA 0xC0000000. */

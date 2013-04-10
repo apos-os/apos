@@ -18,7 +18,6 @@ LOCAL_SOURCES := \
   multiboot.s  \
   loader.s  \
   gdt.c  \
-  gdt_flush.s  \
   mem_init.c  \
   kernel_init.c  \
   idt.c \

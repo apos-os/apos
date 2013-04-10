@@ -12,17 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_GDT_H
-#define APOO_GDT_H
+#ifndef APOO_MEMORY_GDT_H
+#define APOO_MEMORY_GDT_H
 
 #include <stdint.h>
 
+#include "common/multilink.h"
+
 // Common segment indices.
+#define GDT_NUM_ENTRIES 6
+
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
 #define GDT_KERNEL_DATA_SEGMENT 2
 #define GDT_USER_CODE_SEGMENT 3
 #define GDT_USER_DATA_SEGMENT 4
+#define GDT_TSS 5
+
+typedef enum {
+  SEG_CODE,
+  SEG_DATA,
+  SEG_TSS,
+} gdt_seg_type_t;
 
 typedef struct {
    uint16_t limit_low;           // Lower 16 bits of the limit.
@@ -46,6 +57,15 @@ typedef struct {
 } __attribute__((packed)) gdt_ptr_t;
 _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 
-void gdt_flush(gdt_ptr_t* gdt_ptr);
+// Create a gdt_entry_t with the given parameters.
+gdt_entry_t MULTILINK(gdt_entry_create) (
+    uint32_t base, uint32_t limit, gdt_seg_type_t type,
+    uint8_t flags, uint8_t dpl, uint8_t granularity);
+
+// Install the given GDT pointer and flush all segment registers.
+void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr);
+
+// Install a segment in the GDT at the given index.
+void MULTILINK(gdt_install_segment) (int index, gdt_entry_t entry);
 
 #endif
