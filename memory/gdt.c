@@ -17,39 +17,57 @@
 #include "common/kassert.h"
 #include "memory/gdt.h"
 
+typedef struct {
+   uint16_t limit_low;           // Lower 16 bits of the limit.
+   uint16_t base_low;            // Lower 16 bits of the base.
+   uint8_t  base_middle;         // Middle 8 bits of the base.
+   unsigned int type:4;          // Type of segment.
+   unsigned int sys:1;           // System or regular descriptor.
+   unsigned int dpl:2;           // Descriptor protection level (ring).
+   unsigned int present:1;
+   unsigned int limit_high:4;    // Upper 4 bits of the limit.
+   unsigned int :2;              // Unused.
+   unsigned int db:1;            // Default/bound flag.
+   unsigned int granularity:1;   // Limit granularity (0 = bytes, 1 = 4kbs)
+   uint8_t  base_high;           // Last 8 bits of the base.
+} __attribute__((packed)) gdt_segment_entry_t;
+_Static_assert(sizeof(gdt_segment_entry_t) == sizeof(gdt_entry_t),
+               "gdt_entry_t incorrect size");
+
 gdt_entry_t MULTILINK(gdt_entry_create) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
     uint8_t flags, uint8_t dpl, uint8_t granularity) {
-  gdt_entry_t entry;
-  entry.base_low = base & 0x0000FFFF;
-  entry.base_middle = (base >> 16) & 0x000000FF;
-  entry.base_high = (base >> 24) & 0x000000FF;
-  entry.limit_low = limit & 0x0000FFFF;
-  entry.limit_high = (limit >> 16) & 0x0000000F;
+  gdt_entry_t entry_data;
+  gdt_segment_entry_t* entry = (gdt_segment_entry_t*)(&entry_data);
+  entry->base_low = base & 0x0000FFFF;
+  entry->base_middle = (base >> 16) & 0x000000FF;
+  entry->base_high = (base >> 24) & 0x000000FF;
+  entry->limit_low = limit & 0x0000FFFF;
+  entry->limit_high = (limit >> 16) & 0x0000000F;
 
   switch (type) {
-    case SEG_CODE: entry.type = 0x8 | flags; break;
-    case SEG_DATA: entry.type = flags; break;
-    case SEG_TSS: entry.type = 0x9; break;
+    case SEG_CODE: entry->type = 0x8 | flags; break;
+    case SEG_DATA: entry->type = flags; break;
+    case SEG_TSS: entry->type = 0x9; break;
   }
 
   switch (type) {
     case SEG_CODE:
     case SEG_DATA:
-      entry.sys = 1;
-      entry.db = 1;  // Always set for 32 bit segments.
+      entry->sys = 1;
+      entry->db = 1;  // Always set for 32 bit segments.
       break;
 
     case SEG_TSS:
-      entry.sys = 0;
-      entry.db = 0;
+      entry->sys = 0;
+      entry->db = 0;
       break;
   }
 
-  entry.dpl = dpl;
-  entry.present = 1;
-  entry.granularity = granularity;
-  return entry;
+  entry->dpl = dpl;
+  entry->present = 1;
+  entry->granularity = granularity;
+  return entry_data;
 }
 
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr) {
