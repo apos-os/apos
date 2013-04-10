@@ -27,6 +27,10 @@
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
+static inline addr_t stack_top(addr_t stack) {
+  return stack + KTHREAD_STACK_SIZE - 4;
+}
+
 static kthread_data_t* g_current_thread = 0;
 static int g_next_id = 0;
 
@@ -77,7 +81,7 @@ void kthread_init() {
   kthread_queue_init(&g_reap_queue);
 
   g_current_thread = first;
-  tss_set_kernel_stack((addr_t)first->stack);
+  tss_set_kernel_stack(stack_top((addr_t)first->stack));
   POP_INTERRUPTS();
 }
 
@@ -113,7 +117,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   *((uint8_t*)stack + KTHREAD_STACK_SIZE - 1) = 0xAA;
 
   thread->stack = stack;
-  stack = (uint32_t*)((uint32_t)stack + KTHREAD_STACK_SIZE - 4);
+  stack = (uint32_t*)stack_top((addr_t)stack);
 
   // Set up the stack.
   *(stack--) = 0xDEADDEAD;
@@ -228,7 +232,7 @@ void kthread_switch(kthread_t new_thread) {
 
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;
-  tss_set_kernel_stack((addr_t)g_current_thread->stack);
+  tss_set_kernel_stack(stack_top((addr_t)g_current_thread->stack));
   new_thread->state = KTHREAD_RUNNING;
   kthread_swap_context(old_thread, new_thread);
 
