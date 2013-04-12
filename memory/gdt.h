@@ -35,21 +35,11 @@ typedef enum {
   SEG_TSS,
 } gdt_seg_type_t;
 
-typedef struct {
-   uint16_t limit_low;           // Lower 16 bits of the limit.
-   uint16_t base_low;            // Lower 16 bits of the base.
-   uint8_t  base_middle;         // Middle 8 bits of the base.
-   unsigned int type:4;          // Type of segment.
-   unsigned int sys:1;           // System or regular descriptor.
-   unsigned int dpl:2;           // Descriptor protection level (ring).
-   unsigned int present:1;
-   unsigned int limit_high:4;    // Upper 4 bits of the limit.
-   unsigned int :2;              // Unused.
-   unsigned int db:1;            // Default/bound flag.
-   unsigned int granularity:1;   // Limit granularity (0 = bytes, 1 = 4kbs)
-   uint8_t  base_high;           // Last 8 bits of the base.
-} __attribute__((packed)) gdt_entry_t;
-_Static_assert(sizeof(gdt_entry_t) == 8, "gdt_entry_t incorrect size");
+typedef enum {
+  GATE_CALL,
+} gdt_gate_type_t;
+
+typedef struct { uint32_t data[2]; } gdt_entry_t;
 
 typedef struct {
   uint16_t limit;    // Limit of the GDT (last valid byte; # of entries * 8 - 1)
@@ -57,10 +47,15 @@ typedef struct {
 } __attribute__((packed)) gdt_ptr_t;
 _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 
-// Create a gdt_entry_t with the given parameters.
-gdt_entry_t MULTILINK(gdt_entry_create) (
+// Create a GDT segment entry with the given parameters.
+gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
     uint8_t flags, uint8_t dpl, uint8_t granularity);
+
+// Create a GDT gate entry with the given parameters.
+// TODO(aoates): unify this with the IDT gate creation code.
+gdt_entry_t MULTILINK(gdt_entry_create_gate) (
+    uint32_t offset, uint16_t seg_selector, gdt_gate_type_t type, uint8_t dpl);
 
 // Install the given GDT pointer and flush all segment registers.
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr);
