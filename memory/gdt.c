@@ -34,7 +34,7 @@ typedef struct {
 _Static_assert(sizeof(gdt_segment_entry_t) == sizeof(gdt_entry_t),
                "gdt_entry_t incorrect size");
 
-gdt_entry_t MULTILINK(gdt_entry_create) (
+gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
     uint8_t flags, uint8_t dpl, uint8_t granularity) {
   gdt_entry_t entry_data;

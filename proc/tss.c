@@ -33,7 +33,7 @@ void tss_init() {
   g_tss.iombp = sizeof(tss_t);  // No IOBMP.
 
   // Create a segment descriptor for the TSS.
-  const gdt_entry_t desc = gdt_entry_create(
+  const gdt_entry_t desc = gdt_entry_create_segment(
       (uint32_t)&g_tss, sizeof(tss_t) - 1, SEG_TSS,
       0, 0, 0);
   gdt_install_segment(GDT_TSS, desc);

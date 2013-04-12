@@ -43,8 +43,8 @@ typedef struct {
 } __attribute__((packed)) gdt_ptr_t;
 _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 
-// Create a gdt_entry_t with the given parameters.
-gdt_entry_t MULTILINK(gdt_entry_create) (
+// Create a GDT segment entry with the given parameters.
+gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
     uint8_t flags, uint8_t dpl, uint8_t granularity);
 
