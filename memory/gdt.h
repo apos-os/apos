@@ -35,6 +35,10 @@ typedef enum {
   SEG_TSS,
 } gdt_seg_type_t;
 
+typedef enum {
+  GATE_CALL,
+} gdt_gate_type_t;
+
 typedef struct { uint32_t data[2]; } gdt_entry_t;
 
 typedef struct {
@@ -47,6 +51,11 @@ _Static_assert(sizeof(gdt_ptr_t) == 6, "gdt_ptr_t incorrect size");
 gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
     uint8_t flags, uint8_t dpl, uint8_t granularity);
+
+// Create a GDT gate entry with the given parameters.
+// TODO(aoates): unify this with the IDT gate creation code.
+gdt_entry_t MULTILINK(gdt_entry_create_gate) (
+    uint32_t offset, uint16_t seg_selector, gdt_gate_type_t type, uint8_t dpl);
 
 // Install the given GDT pointer and flush all segment registers.
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr);

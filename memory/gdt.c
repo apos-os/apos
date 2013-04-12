@@ -32,7 +32,20 @@ typedef struct {
    uint8_t  base_high;           // Last 8 bits of the base.
 } __attribute__((packed)) gdt_segment_entry_t;
 _Static_assert(sizeof(gdt_segment_entry_t) == sizeof(gdt_entry_t),
-               "gdt_entry_t incorrect size");
+               "gdt_segment_entry_t incorrect size");
+
+typedef struct {
+   uint16_t offset_low;          // Lower 16 bits of the offset.
+   uint16_t segment;             // Segment selector.
+   uint8_t  zero1;               // <must be zero>
+   unsigned int type:4;          // Type of segment.
+   unsigned int zero2:1;         // <must be zero>
+   unsigned int dpl:2;           // Descriptor protection level (ring).
+   unsigned int present:1;
+   uint16_t offset_high;         // Upper 16 bits of the offset.
+} __attribute__((packed)) gdt_gate_entry_t;
+_Static_assert(sizeof(gdt_gate_entry_t) == sizeof(gdt_entry_t),
+               "gdt_gate_entry_t incorrect size");
 
 gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
@@ -67,6 +80,23 @@ gdt_entry_t MULTILINK(gdt_entry_create_segment) (
   entry->dpl = dpl;
   entry->present = 1;
   entry->granularity = granularity;
+  return entry_data;
+}
+
+gdt_entry_t MULTILINK(gdt_entry_create_gate) (
+    uint32_t offset, uint16_t seg_selector, gdt_gate_type_t type, uint8_t dpl) {
+  gdt_entry_t entry_data;
+  gdt_gate_entry_t* entry = (gdt_gate_entry_t*)(&entry_data);
+  entry->offset_low = offset & 0xFFFF;
+  entry->offset_high = (offset >> 16) & 0xFFFF;
+  entry->segment = seg_selector;
+  entry->zero1 = 0;
+  switch (type) {
+    case GATE_CALL: entry->type = 0xC;
+  }
+  entry->zero2 = 0;
+  entry->dpl = dpl;
+  entry->present = 1;
   return entry_data;
 }
 
