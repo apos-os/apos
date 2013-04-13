@@ -39,7 +39,7 @@
 
 #define PCI_HEADER_IS_MULTIFUNCTION 0x80
 
-#define PCI_MAX_DEVICES 20
+#define PCI_MAX_DEVICES 40
 static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
 
@@ -161,11 +161,13 @@ static void pci_check_device(uint8_t bus, uint8_t device) {
   }
 
   if (pcidev.header_type & PCI_HEADER_IS_MULTIFUNCTION) {
-    int function = PCI_FUNCTION_MIN + 1;
-    while (pcidev.vendor_id != 0xFFFF && function <= PCI_FUNCTION_MAX) {
-      pci_add_device(&pcidev);
+    pci_add_device(&pcidev);
+    for (int function = PCI_FUNCTION_MIN + 1; function <= PCI_FUNCTION_MAX;
+         ++function) {
       pci_read_device(bus, device, function, &pcidev);
-      function++;
+      if (pcidev.vendor_id != 0xFFFF) {
+        pci_add_device(&pcidev);
+      }
     }
   } else {
     pci_add_device(&pcidev);
@@ -176,8 +178,8 @@ static void pci_check_device(uint8_t bus, uint8_t device) {
 void pci_init() {
   // Find all connected PCI devices.
   klogf("Scanning PCI bus...\n");
-  for (uint8_t bus = PCI_BUS_MIN; bus < PCI_BUS_MAX; ++bus) {
-    for (uint8_t device = PCI_DEVICE_MIN; device < PCI_DEVICE_MAX; ++device) {
+  for (unsigned int bus = PCI_BUS_MIN; bus <= PCI_BUS_MAX; ++bus) {
+    for (uint8_t device = PCI_DEVICE_MIN; device <= PCI_DEVICE_MAX; ++device) {
       pci_check_device(bus, device);
     }
   }
