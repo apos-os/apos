@@ -125,6 +125,14 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
                 virt_page < area->vm_base + area->vm_length);
     const addr_t area_page_offset = (virt_page - area->vm_base) / PAGE_SIZE;
     if (type == VM_FAULT_ACCESS || area->pages[area_page_offset] == 0x0) {
+      if (area->pages[area_page_offset] != 0x0) {
+        // TODO(aoates): verify the page isn't dirty.
+        // ASSERT(current_mapping not writable)
+        area->memobj->ops->put_page(area->memobj, area->pages[area_page_offset],
+                                    BC_FLUSH_NONE);
+        area->pages[area_page_offset] = 0x0;
+      }
+
       const int result = area->memobj->ops->get_page(
           area->memobj,
           (area->memobj_base / PAGE_SIZE) + area_page_offset,
