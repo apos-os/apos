@@ -659,9 +659,44 @@ static void mmap_copy_on_write() {
   vfs_close(fdA);
 }
 
+static void mmap_anonymous() {
+  KTEST_BEGIN("mmap(): MAP_ANONYMOUS test");
+
+  void* addrA = 0x0, *addrB = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &addrA));
+  KEXPECT_NE((void*)0x0, addrA);
+  KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &addrB));
+  KEXPECT_NE((void*)0x0, addrB);
+
+  EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, -1}, {0x4000, 0x3000, -1}});
+
+  if (addrA && addrB) {  // Just in case...
+    KEXPECT_EQ(0, bufcmp(addrA, 0, PAGE_SIZE));
+    KEXPECT_EQ(0, bufcmp(addrB, 0, PAGE_SIZE));
+
+    // Write to the page.
+    kstrcpy(((char*)addrA + PAGE_SIZE), "page2");
+
+    // ...and make sure it doesn't show up anywhere else.
+    KEXPECT_EQ(0, bufcmp(addrA, 0, PAGE_SIZE));
+    KEXPECT_EQ(0, bufcmp((char*)addrA + 2 * PAGE_SIZE, 0, PAGE_SIZE));
+    KEXPECT_EQ(0, bufcmp(addrB, 0, PAGE_SIZE));
+    KEXPECT_EQ(0, bufcmp((char*)addrB + PAGE_SIZE, 0, PAGE_SIZE));
+    KEXPECT_EQ(0, bufcmp((char*)addrB + 2 * PAGE_SIZE, 0, PAGE_SIZE));
+  }
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+}
+
 // TODO(aoates): things to test:
 // * where fd mode > requested mapping mode
 // * vfs_close() after map (public and private mappings)
+// * MAP_SHARED | MAP_ANONYMOUS after fork()
 
 void mmap_test() {
   KTEST_SUITE_BEGIN("mmap()/munmap() tests");
@@ -684,6 +719,8 @@ void mmap_test() {
   mmap_private_basic();
   mmap_private_writeback();
   mmap_copy_on_write();
+
+  mmap_anonymous();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);

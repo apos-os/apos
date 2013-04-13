@@ -21,6 +21,7 @@ LOCAL_SOURCES := \
   page_fault.c \
   slab_alloc.c \
   block_cache.c \
+  memobj_anon.c \
   memobj_block_dev.c \
   memobj_shadow.c \
   memobj_vnode.c \

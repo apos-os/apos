@@ -27,6 +27,7 @@ typedef enum {
   MEMOBJ_BLOCK_DEV = 1,
   MEMOBJ_VNODE = 2,
   MEMOBJ_SHADOW = 3,
+  MEMOBJ_ANON = 4,
 } memobj_type_t;
 
 // A memobj_t is an in-memory object backed by another data source, such as a

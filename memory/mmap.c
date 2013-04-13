@@ -19,6 +19,7 @@
 #include "memory/mmap.h"
 #include "memory/memory.h"
 #include "memory/memobj.h"
+#include "memory/memobj_anon.h"
 #include "memory/memobj_shadow.h"
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
@@ -139,7 +140,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   if (length == 0 || length % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0) {
     return -EINVAL;
   }
-  if (flags & ~(MAP_SHARED | MAP_PRIVATE | MAP_FIXED)) {
+  if (flags & ~(MAP_SHARED | MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS)) {
     return -EINVAL;
   }
 
@@ -172,17 +173,26 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   // Get the underlying memobj.
   memobj_t* memobj = 0x0;
-  uint32_t fd_mode = 0;
-  if ((prot & PROT_READ) && (prot & PROT_WRITE)) fd_mode = VFS_O_RDWR;
-  else if (prot & PROT_READ) fd_mode = VFS_O_RDONLY;
-  else if (prot & PROT_WRITE) fd_mode = VFS_O_WRONLY;
-  int result = vfs_get_memobj(fd, fd_mode, &memobj);
-  if (result) return result;
+  int result;
+  if (flags & MAP_ANONYMOUS) {
+    // Note that it doesn't matter if it's private or shared.
+    // TODO(aoates): allow anonymous mappings to share read-only pages of
+    // zeroes, and only create new ones on writes.
+    memobj = memobj_create_anon();
+    if (!memobj) return -ENOMEM;
+  } else {
+    uint32_t fd_mode = 0;
+    if ((prot & PROT_READ) && (prot & PROT_WRITE)) fd_mode = VFS_O_RDWR;
+    else if (prot & PROT_READ) fd_mode = VFS_O_RDONLY;
+    else if (prot & PROT_WRITE) fd_mode = VFS_O_WRONLY;
+    result = vfs_get_memobj(fd, fd_mode, &memobj);
+    if (result) return result;
 
-  // For private mappings, create a shadow object.
-  if (flags & MAP_PRIVATE) {
-    memobj_t* shadow_obj = memobj_create_shadow(memobj);
-    memobj = shadow_obj;
+    // For private mappings, create a shadow object.
+    if (flags & MAP_PRIVATE) {
+      memobj_t* shadow_obj = memobj_create_shadow(memobj);
+      memobj = shadow_obj;
+    }
   }
 
   // Create the new vm_area_t.

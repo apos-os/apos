@@ -32,14 +32,12 @@
 
 // Other flags.
 #define MAP_FIXED 0x04
+#define MAP_ANONYMOUS 0x08
 
 // Create a mapping in the current process.
 //
 // Currently, addr must be NULL, prot must include PORT_EXEC | PROT_READ,
 // and flags must be MAP_SHARED and a combination of other flags.
-//
-// TODO(aoates): implement protection, private mappings, and other flags (in
-// particular, MAP_ANONYMOUS).
 int do_mmap(void* addr, addr_t length, int prot, int flags,
             int fd, addr_t offset, void** addr_out);
 
