@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Test user-mode program.
-// TODO(aoates): remove when binary loading is supported.
+#ifndef APOO_SYSCALL_SYSCALLS_H
+#define APOO_SYSCALL_SYSCALLS_H
 
-#include "user/syscall.h"
-#include "user/test.h"
+// All syscalls and their numbers.
+#define SYS_TEST 0  // Test syscall.
 
-void user_main() {
-  long ret = syscall_test(1, 2, 3, 4, 5, 6);
-  while (ret) {}
-}
+#endif

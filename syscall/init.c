@@ -12,13 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Test user-mode program.
-// TODO(aoates): remove when binary loading is supported.
+#include "memory/gdt.h"
 
-#include "user/syscall.h"
-#include "user/test.h"
+long _syscall_enter();
 
-void user_main() {
-  long ret = syscall_test(1, 2, 3, 4, 5, 6);
-  while (ret) {}
+void syscalls_init() {
+  gdt_entry_t call_gate_entry =
+      gdt_entry_create_gate((uint32_t)(&_syscall_enter),
+                            GDT_KERNEL_CODE_SEGMENT << 3,
+                            GATE_CALL,
+                            3);
+  gdt_install_segment(GDT_SYSCALL_CALL_GATE, call_gate_entry);
 }

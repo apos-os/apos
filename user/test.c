@@ -12,13 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Test user-mode program.
-// TODO(aoates): remove when binary loading is supported.
-
-#include "user/syscall.h"
 #include "user/test.h"
+#include "user/syscall.h"
 
-void user_main() {
-  long ret = syscall_test(1, 2, 3, 4, 5, 6);
-  while (ret) {}
+long syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
+                  long arg6) {
+  return do_syscall(SYS_TEST, arg1, arg2, arg3, arg4, arg5, arg6);
 }

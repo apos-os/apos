@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-define ROOT_SUBDIR
-  DIR := $(1)
-  include $$(DIR)/Sources.mk
-endef
+$(eval $(BEGIN_SOURCES))
 
-SUBDIRS := common dev load main memory proc syscall test user util vfs
+LOCAL_SOURCES := \
+  syscall.s \
+  test.c \
 
-SRC_PATH :=
-$(foreach subdir,$(SUBDIRS),$(eval $(call ROOT_SUBDIR,$(subdir))))
+$(eval $(END_SOURCES))

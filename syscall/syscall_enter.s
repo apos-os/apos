@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-define ROOT_SUBDIR
-  DIR := $(1)
-  include $$(DIR)/Sources.mk
-endef
+# Kernel entrance point for syscalls from userland.
+.global _syscall_enter
 
-SUBDIRS := common dev load main memory proc syscall test user util vfs
-
-SRC_PATH :=
-$(foreach subdir,$(SUBDIRS),$(eval $(call ROOT_SUBDIR,$(subdir))))
+_syscall_enter:
+  pushl %ebp  # arg6
+  pushl %edi  # arg5
+  pushl %esi  # arg4
+  pushl %edx  # arg3
+  pushl %ecx  # arg2
+  pushl %ebx  # arg1
+  pushl %eax  # syscall number
+  call syscall_dispatch
+  add $28, %esp
+  lret

@@ -12,12 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-define ROOT_SUBDIR
-  DIR := $(1)
-  include $$(DIR)/Sources.mk
-endef
+.global do_syscall
 
-SUBDIRS := common dev load main memory proc syscall test user util vfs
+do_syscall:
+  pushl %ebp
+  movl %esp, %ebp
 
-SRC_PATH :=
-$(foreach subdir,$(SUBDIRS),$(eval $(call ROOT_SUBDIR,$(subdir))))
+  pushl %ebx
+  pushl %esi
+  pushl %edi
+
+  mov 8(%ebp), %eax  # syscall number
+  mov 12(%ebp), %ebx # arg1
+  mov 16(%ebp), %ecx # arg2
+  mov 20(%ebp), %edx # arg3
+  mov 24(%ebp), %esi # arg4
+  mov 28(%ebp), %edi # arg5
+  mov 32(%ebp), %ebp # arg6
+
+  lcall  $0x33, $0
+
+  popl %edi
+  popl %esi
+  popl %ebx
+  popl %ebp
+  ret

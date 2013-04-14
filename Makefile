@@ -59,7 +59,8 @@ MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
 		       load/multiboot.o load/loader.o load/mem_init.o \
 		       load/gdt.o load/idt.o \
 		       memory/gdt.PHYS.o \
-		       main/user_main.o)
+		       main/user_main.o \
+		       user/syscall.o user/test.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))

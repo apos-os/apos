@@ -36,6 +36,7 @@
 #include "dev/tty.h"
 #include "proc/scheduler.h"
 #include "vfs/vfs.h"
+#include "syscall/init.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
@@ -126,6 +127,9 @@ void kmain(memory_info_t* meminfo) {
 
   klog("vfs_init()\n");
   vfs_init();
+
+  klog("syscalls_init()\n");
+  syscalls_init();
 
   dev_init_fs();
 
