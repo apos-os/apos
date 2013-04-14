@@ -27,11 +27,14 @@
 #include "common/math.h"
 #include "dev/ata/ata.h"
 #include "memory/block_cache.h"
+#include "memory/gdt.h"
+#include "memory/mmap.h"
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
 #include "dev/dev.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "memory/page_alloc.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -587,6 +590,63 @@ void bcstats_cmd(int argc, char** argv) {
   block_cache_log_stats();
 }
 
+extern uint32_t USER_START_SYMBOL;
+extern uint32_t USER_END_SYMBOL;
+extern uint32_t _USER_OFFSET;
+
+// Create a mapping for the static user-mode code at the appropriate address.
+void setup_user_code() {
+  const uint32_t start = (uint32_t)&_USER_OFFSET;
+  const uint32_t end = (uint32_t)&USER_END_SYMBOL;
+  for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
+    KASSERT(addr % PAGE_SIZE == 0);
+    page_frame_map_virtual(addr, addr - start,
+                           MEM_PROT_ALL,
+                           MEM_ACCESS_KERNEL_AND_USER,
+                           0);
+  }
+}
+
+void user_main();
+
+void boot_cmd(int argc, char** argv) {
+  setup_user_code();
+
+  // Create the stack.
+  const uint32_t kStackStart = 0x90000000;
+  const uint32_t kStackSize = 1024 * PAGE_SIZE;
+  void* stack_addr_out;
+  const int result = do_mmap((void*)kStackStart, kStackSize, PROT_ALL,
+                             MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0,
+                             &stack_addr_out);
+  if (result) {
+    klogf("error: couldn't create mapping for kernel stack: %s\n",
+          errorname(-result));
+    return;
+  }
+  uint32_t* stack_top =
+      (uint32_t*)(kStackStart + kStackSize - sizeof(uint32_t));
+
+  const uint32_t ptr = (uint32_t)(&user_main);
+  const uint32_t new_data_seg = (GDT_USER_DATA_SEGMENT << 3) | 0x03;
+  const uint32_t new_code_seg = (GDT_USER_CODE_SEGMENT << 3) | 0x03;
+  asm volatile (
+      "mov %0, %%eax\n\t"
+      "mov %%ax, %%ds\n\t"
+      "mov %%ax, %%es\n\t"
+      "mov %%ax, %%fs\n\t"
+      "mov %%ax, %%gs\n\t"
+      "pushl %0\n\t"
+      "pushl %1\n\t"
+      "pushf\n\t"
+      "pushl %2\n\t"
+      "pushl %3\n\t"
+      "iret"
+      :: "r"(new_data_seg), "r"(stack_top),
+         "r"(new_code_seg), "r"(ptr) : "eax");
+  return;
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -623,6 +683,8 @@ static cmd_t CMDS[] = {
   { "hash_file", &hash_file_cmd },
 
   { "bcstats", &bcstats_cmd },
+
+  { "boot", &boot_cmd },
 
   { 0x0, 0x0 },
 };
