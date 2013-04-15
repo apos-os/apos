@@ -40,5 +40,6 @@ void block_cache_test();
 void list_test();
 void mmap_test();
 void vm_test();
+void dmz_test();
 
 #endif

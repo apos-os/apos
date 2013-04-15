@@ -93,6 +93,7 @@ static test_entry_t TESTS[] = {
   { "list", &list_test, 1 },
   { "mmap", &mmap_test, 1 },
   { "vm", &vm_test, 1 },
+  { "dmz", &dmz_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

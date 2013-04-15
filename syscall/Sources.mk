@@ -15,6 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  dmz.c \
   init.c \
   syscall_dispatch.c \
   syscall_enter.s \
