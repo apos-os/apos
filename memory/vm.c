@@ -63,6 +63,16 @@ void vm_insert_area(process_t* proc, vm_area_t* area) {
   list_insert(&proc->vm_area_list, prev, &area->vm_proc_list);
 }
 
+// Check if access is allowed to the given region.
+// TODO(aoates): unify this with fault_allowed() in vm_page_fault.c
+static int verify_access(vm_area_t* area, int is_write, int is_user) {
+  if (is_write && (!(area->prot & MEM_PROT_WRITE)))
+    return -EFAULT;
+  if (is_user && (area->access != MEM_ACCESS_KERNEL_AND_USER))
+    return -EFAULT;
+  return 0;
+}
+
 int vm_verify_region(process_t* proc, addr_t start, addr_t end,
                      int is_write, int is_user) {
   if (!proc || start >= end) {
@@ -80,10 +90,8 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
     } else if (area->vm_base > start) {
       return -EFAULT;
     } else if (overlap_start < overlap_end) {
-      if (is_write && (!(area->prot & MEM_PROT_WRITE)))
-        return -EFAULT;
-      if (is_user && (area->access != MEM_ACCESS_KERNEL_AND_USER))
-        return -EFAULT;
+      const int result = verify_access(area, is_write, is_user);
+      if (result) return result;
     }
     start = overlap_end;
     link = link->next;
@@ -94,4 +102,48 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
   } else {
     return 0;
   }
+}
+
+int vm_verify_address(process_t* proc, addr_t addr, int is_write,
+                      int is_user, addr_t* end_out) {
+  if (!proc || !end_out) {
+    return -EINVAL;
+  }
+  *end_out = addr;
+
+  // First, find the region containing addr.
+  vm_area_t* addr_area = NULL;
+  list_link_t* link = proc->vm_area_list.head;
+  while (link) {
+    vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
+    if (addr >= area->vm_base && addr < area->vm_base + area->vm_length) {
+      addr_area = area;
+      break;
+    }
+    link = link->next;
+  }
+
+  if (!addr_area) {
+    return -EFAULT;
+  }
+
+  // Check if the access is valid.
+  int access_valid = verify_access(addr_area, is_write, is_user);
+  if (access_valid != 0) {
+    return access_valid;
+  }
+
+  // Find the largest contiguous usable region.
+  vm_area_t* prev_area = NULL;
+  vm_area_t* contig_area = addr_area;
+  link = &contig_area->vm_proc_list;
+  do {
+    *end_out = contig_area->vm_base + contig_area->vm_length;
+    prev_area = contig_area;
+    link = link->next;
+    contig_area = container_of(link, vm_area_t, vm_proc_list);
+  } while (link &&
+           contig_area->vm_base == prev_area->vm_base + prev_area->vm_length &&
+           verify_access(contig_area, is_write, is_user) == 0);
+  return 0;
 }

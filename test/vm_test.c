@@ -37,6 +37,29 @@ static void EXPECT_REGION(addr_t start, addr_t end,
              vm_verify_region(proc_current(), start, end, 1, 1));
 }
 
+
+static void EXPECT_ADDRESS_ONE(addr_t start, addr_t end,
+                               int expected_result,
+                               int is_write, int is_user) {
+  addr_t end_out = 0;
+  KEXPECT_EQ(expected_result,
+             vm_verify_address(proc_current(), start,
+                               is_write, is_user, &end_out));
+  if (expected_result == 0)
+    KEXPECT_EQ(end, end_out);
+  else
+    KEXPECT_EQ(start, end_out);
+}
+
+static void EXPECT_ADDRESS(addr_t start, addr_t end,
+                           int kernel_read, int kernel_write,
+                           int user_read, int user_write) {
+  EXPECT_ADDRESS_ONE(start, end, kernel_read, 0, 0);
+  EXPECT_ADDRESS_ONE(start, end, kernel_write, 1, 0);
+  EXPECT_ADDRESS_ONE(start, end, user_read, 0, 1);
+  EXPECT_ADDRESS_ONE(start, end, user_write, 1, 1);
+}
+
 static void vm_region_basic() {
   KTEST_BEGIN("vm_verify_region() kernel heap test");
 
@@ -182,6 +205,160 @@ static void vm_region_invalid_args() {
                                        (addr_t)&x - 1, 0, 0));
 }
 
+static void vm_address_basic() {
+  KTEST_BEGIN("vm_verify_address() kernel heap");
+  void* heap = kmalloc(10);
+  addr_t end_out = 0;
+  KEXPECT_EQ(0,
+             vm_verify_address(proc_current(), (addr_t)heap, 0, 0, &end_out));
+  KEXPECT_GE(end_out, (addr_t)heap + 10);
+
+  end_out = 0;
+  KEXPECT_EQ(0,
+             vm_verify_address(proc_current(), (addr_t)heap, 1, 0, &end_out));
+  KEXPECT_GE(end_out, (addr_t)heap + 10);
+
+  end_out = 0;
+  KEXPECT_EQ(-EFAULT,
+             vm_verify_address(proc_current(), (addr_t)heap, 0, 1, &end_out));
+  KEXPECT_EQ((addr_t)heap, end_out);
+
+  end_out = 0;
+  KEXPECT_EQ(-EFAULT,
+             vm_verify_address(proc_current(), (addr_t)heap, 1, 1, &end_out));
+  KEXPECT_EQ((addr_t)heap, end_out);
+  kfree(heap);
+
+  KTEST_BEGIN("vm_verify_address() kernel code");
+  // TODO(aoates): test kernel access to code when we have a mapping for it.
+  end_out = 0;
+  KEXPECT_EQ(-EFAULT,
+             vm_verify_address(proc_current(), (addr_t)&do_mmap, 0, 1,
+                               &end_out));
+  KEXPECT_EQ((addr_t)&do_mmap, end_out);
+
+  end_out = 0;
+  KEXPECT_EQ(-EFAULT,
+             vm_verify_address(proc_current(), (addr_t)&do_mmap, 1, 1,
+                               &end_out));
+  KEXPECT_EQ((addr_t)&do_mmap, end_out);
+}
+
+static void vm_address_mmap_basic() {
+  const addr_t kRegionSize = 2 * PAGE_SIZE;
+
+  KTEST_BEGIN("vm_verify_address() basic");
+
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+  EXPECT_ADDRESS((addr_t)addrA, (addr_t)addrA + kRegionSize,
+                 0, 0, 0, 0);
+
+  KTEST_BEGIN("vm_verify_address() middle of region");
+  EXPECT_ADDRESS((addr_t)addrA + 200, (addr_t)addrA + kRegionSize,
+                 0, 0, 0, 0);
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+}
+
+static void vm_address_mmap_ro() {
+  const addr_t kRegionSize = 2 * PAGE_SIZE;
+
+  KTEST_BEGIN("vm_verify_address() R/O region");
+
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_READ | PROT_EXEC,
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+  EXPECT_ADDRESS((addr_t)addrA, (addr_t)addrA + kRegionSize,
+                 0, -EFAULT, 0, -EFAULT);
+
+  KTEST_BEGIN("vm_verify_address() middle of R/O region");
+  EXPECT_ADDRESS((addr_t)addrA + 200, (addr_t)addrA + kRegionSize,
+                 0, -EFAULT, 0, -EFAULT);
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+}
+
+static void vm_address_mmap_hole() {
+  const addr_t kRegionSize = 2 * PAGE_SIZE;
+  KTEST_BEGIN("vm_verify_address() mmap()'d regions with hole");
+
+  void* addrA = 0x0, *addrB = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+  KEXPECT_EQ(0, do_mmap(addrA + kRegionSize + PAGE_SIZE, kRegionSize, PROT_ALL,
+                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+                        -1, 0, &addrB));
+
+  EXPECT_ADDRESS((addr_t)addrA, (addr_t)addrA + kRegionSize,
+                 0, 0, 0, 0);
+
+  EXPECT_ADDRESS((addr_t)addrB, (addr_t)addrB + kRegionSize,
+                 0, 0, 0, 0);
+
+  // Test in hole.
+  EXPECT_ADDRESS((addr_t)addrA + kRegionSize + 20,
+                 (addr_t)addrA + kRegionSize + 20,
+                 -EFAULT, -EFAULT, -EFAULT, -EFAULT);
+
+  // Test for off-by-ones when handling the first and last address of a region.
+  KTEST_BEGIN("vm_verify_address() last address of region");
+  EXPECT_ADDRESS((addr_t)addrA + kRegionSize,
+                 (addr_t)addrA + kRegionSize,
+                 -EFAULT, -EFAULT, -EFAULT, -EFAULT);
+
+  KTEST_BEGIN("vm_verify_address() one before first address of region");
+  EXPECT_ADDRESS((addr_t)addrB -1,
+                 (addr_t)addrB -1,
+                 -EFAULT, -EFAULT, -EFAULT, -EFAULT);
+
+  // Now map a R/O area into the hole.
+  KTEST_BEGIN("vm_verify_address() mmap()'d regions with R/O middle region");
+  void* addrC = 0x0;
+  KEXPECT_EQ(0, do_mmap(addrA + kRegionSize, PAGE_SIZE,
+                        PROT_READ | PROT_EXEC,
+                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+                        -1, 0, &addrC));
+
+  KTEST_BEGIN("vm_verify_address() across read-only hole (read)");
+  EXPECT_ADDRESS_ONE((addr_t)addrA, (addr_t)addrB + kRegionSize,
+                     0, 0, 0);
+
+  KTEST_BEGIN("vm_verify_address() across read-only hole (write)");
+  EXPECT_ADDRESS_ONE((addr_t)addrA, (addr_t)addrA + kRegionSize,
+                     0, 1, 0);
+
+  KTEST_BEGIN("vm_verify_address() inside read-only hole (read) (#1)");
+  EXPECT_ADDRESS_ONE((addr_t)addrC, (addr_t)addrB + kRegionSize,
+                     0, 0, 0);
+
+  KTEST_BEGIN("vm_verify_address() inside read-only hole (read) (#2)");
+  EXPECT_ADDRESS_ONE((addr_t)addrC + 200, (addr_t)addrB + kRegionSize,
+                     0, 0, 0);
+
+  KTEST_BEGIN("vm_verify_address() across read-only hole (write) (#1)");
+  EXPECT_ADDRESS_ONE((addr_t)addrC, (addr_t)addrA + kRegionSize,
+                     -EFAULT, 1, 0);
+
+  KTEST_BEGIN("vm_verify_address() across read-only hole (write) (#2)");
+  EXPECT_ADDRESS_ONE((addr_t)addrC + 200, (addr_t)addrA + kRegionSize,
+                     -EFAULT, 1, 0);
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+  KEXPECT_EQ(0, do_munmap(addrB, kRegionSize));
+  KEXPECT_EQ(0, do_munmap(addrC, PAGE_SIZE));
+}
+
+static void vm_address_invalid_args() {
+  KTEST_BEGIN("vm_verify_address() invalid args");
+  int x;
+  addr_t end_out;
+  KEXPECT_EQ(-EINVAL, vm_verify_address(NULL, (addr_t)&x, 0, 0, &end_out));
+  KEXPECT_EQ(-EINVAL,
+             vm_verify_address(proc_current(), (addr_t)&x, 0, 0, NULL));
+}
+
 // TODO(aoates): test PROT_EXEC once it's supported
 
 void vm_test() {
@@ -192,4 +369,10 @@ void vm_test() {
   vm_region_mmap_ro();
   vm_region_mmap_hole();
   vm_region_invalid_args();
+
+  vm_address_basic();
+  vm_address_mmap_basic();
+  vm_address_mmap_ro();
+  vm_address_mmap_hole();
+  vm_address_invalid_args();
 }
