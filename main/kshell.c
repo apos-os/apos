@@ -92,6 +92,7 @@ static test_entry_t TESTS[] = {
   { "block_cache", &block_cache_test, 1 },
   { "list", &list_test, 1 },
   { "mmap", &mmap_test, 1 },
+  { "vm", &vm_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

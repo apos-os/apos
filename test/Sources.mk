@@ -37,6 +37,7 @@ LOCAL_SOURCES := \
   ramdisk_test.c \
   ramfs_test.c \
   slab_alloc_test.c \
+  vm_test.c \
   vfs_test.c \
 
 $(eval $(END_SOURCES))
