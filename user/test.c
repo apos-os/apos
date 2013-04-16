@@ -17,5 +17,5 @@
 
 long syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                   long arg6) {
-  return do_syscall(SYS_TEST, arg1, arg2, arg3, arg4, arg5, arg6);
+  return do_syscall(SYS_SYSCALL_TEST, arg1, arg2, arg3, arg4, arg5, arg6);
 }

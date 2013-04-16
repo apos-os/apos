@@ -21,6 +21,7 @@ CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g -I. \
 LD	= i586-elf-ld
 M4      = m4
 M4FLAGS =
+M4_DEPS = util/m4_deps.sh
 BUILD_OUT 	= build-out
 
 BOOTLOADER	= grub
@@ -133,6 +134,12 @@ $(BUILD_OUT)/%.d : %.c
 	$(mk-build-dir)
 	@$(CC) $(CFLAGS) -MM $< | \
 	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
+	  > $@
+$(BUILD_OUT)/%.m4.d : %.m4
+	@echo Generating dependency list for $<
+	$(mk-build-dir)
+	@$(M4_DEPS) $< | \
+	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ :,' \
 	  > $@
 DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
 -include $(DEPSFILES)

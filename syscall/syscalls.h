@@ -16,6 +16,6 @@
 #define APOO_SYSCALL_SYSCALLS_H
 
 // All syscalls and their numbers.
-#define SYS_TEST 0  // Test syscall.
+#define SYS_SYSCALL_TEST 0  // Test syscall.
 
 #endif

@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright 2014 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,14 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+# Generates a deps file for an M4 macro file.
 
-LOCAL_SOURCES := \
-  dmz.c \
-  init.c \
-  syscall_dispatch.m4.c \
-  syscall_dmz.m4.c \
-  syscall_enter.s \
-  test.c \
+M4_FILE=$1
 
-$(eval $(END_SOURCES))
+DEPS=$(grep < $M4_FILE -o "include(\`[^']*')" | \
+  sed "s/include(\`\(.*\)')/\1/g" | \
+  tr "\n" " ")
+
+echo "$M4_FILE: $DEPS"
