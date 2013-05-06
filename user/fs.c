@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+#include "syscall/syscalls.h"
+#include "user/fs.h"
+#include "user/syscall.h"
 
-// All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0  // Test syscall.
-#define SYS_OPEN 1
-#define SYS_READ 2
-#define SYS_WRITE 3
+int open(const char* path, uint32_t flags) {
+  return do_syscall(SYS_OPEN, (long)path, (long)flags, 0, 0, 0, 0);
+}
 
-#endif
+int read(int fd, void* buf, int count) {
+  return do_syscall(SYS_READ, (long)fd, (long)buf, (long)count, 0, 0, 0);
+}
+
+int write(int fd, const void* buf, int count) {
+  return do_syscall(SYS_WRITE, (long)fd, (long)buf, (long)count, 0, 0, 0);
+}
+

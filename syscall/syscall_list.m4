@@ -43,3 +43,17 @@ DEF_SYSCALL(syscall_test, do_syscall_test,
     `long:arg4:u',
     `long:arg5:u',
     `long:arg6:u')
+
+DEF_SYSCALL(open, vfs_open,
+    `const char*:path:s',
+    `int:mode:u')
+
+DEF_SYSCALL(read, vfs_read,
+    `int:fd:u',
+    `void*:buf:bw:count',
+    `int:count:u')
+
+DEF_SYSCALL(write, vfs_write,
+    `int:fd:u',
+    `const void*:buf:br:count',
+    `int:count:u')

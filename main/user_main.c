@@ -15,10 +15,32 @@
 // Test user-mode program.
 // TODO(aoates): remove when binary loading is supported.
 
+#include "user/fs.h"
 #include "user/syscall.h"
 #include "user/test.h"
 
+int my_strlen(const char* str) {
+  int len = 0;
+  while (str[len]) len++;
+  return len;
+}
+
+void write_all(int fd, const char* str) {
+  int len = my_strlen(str);
+  while (len > 0) {
+    const int result = write(fd, str, len);
+    if (result < 0) return;
+    len -= result;
+    str += result;
+  }
+}
+
 void user_main() {
   long ret = syscall_test(1, 2, 3, 4, 5, 6);
+
+  const int fd = open("/dev/tty0", O_RDWR);
+  if (fd < 0) while (1) {}
+  write_all(fd, "In user-mode!\n");
+
   while (ret) {}
 }

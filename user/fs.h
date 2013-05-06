@@ -12,13 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+// Filesystem syscalls.
+#ifndef APOO_USER_FS_H
+#define APOO_USER_FS_H
 
-// All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0  // Test syscall.
-#define SYS_OPEN 1
-#define SYS_READ 2
-#define SYS_WRITE 3
+#include <stdint.h>
+
+#include "vfs/vfs.h"
+
+#define O_RDONLY VFS_O_RDONLY
+#define O_WRONLY VFS_O_WRONLY
+#define O_RDWR VFS_O_RDWR
+
+#define O_APPEND VFS_O_APPEND
+#define O_CREAT VFS_O_CREAT
+#define O_TRUNC VFS_O_TRUNC
+
+// File types.
+#define S_IFREG VFS_S_IFREG
+#define S_IFCHR VFS_S_IFCHR
+#define S_IFBLK VFS_S_IFBLK
+
+#define SEEK_SET VFS_SEEK_SET
+#define SEEK_CUR VFS_SEEK_CUR
+#define SEEK_END VFS_SEEK_END
+
+int open(const char* path, uint32_t flags);
+int read(int fd, void* buf, int count);
+int write(int fd, const void* buf, int count);
 
 #endif

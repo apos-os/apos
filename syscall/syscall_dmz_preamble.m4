@@ -18,3 +18,4 @@ dnl limitations under the License.
 #include "syscall/dmz.h"
 
 #include "syscall/test.h"
+#include "vfs/vfs.h"

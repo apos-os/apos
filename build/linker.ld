@@ -50,6 +50,7 @@ SECTIONS
     .user-text ALIGN(0x1000) : AT(ADDR(.user-text) - _USER_OFFSET)
     {
       main/user_main.o(.text .rodata .data .bss)
+      user/fs.o(.text .rodata .data .bss)
       user/syscall.o(.text .rodata .data .bss)
       user/test.o(.text .rodata .data .bss)
     }
