@@ -597,9 +597,18 @@ extern uint32_t USER_END_SYMBOL;
 extern uint32_t _USER_OFFSET;
 
 // Create a mapping for the static user-mode code at the appropriate address.
-void setup_user_code() {
+int setup_user_code() {
   const uint32_t start = (uint32_t)&_USER_OFFSET;
   const uint32_t end = (uint32_t)&USER_END_SYMBOL;
+  // Create an anonymous mapping "backing" the user code to allow memory checks.
+  void* map_addr_out = 0x0;
+  const uint32_t map_length = ceiling_div(end - start, PAGE_SIZE) * PAGE_SIZE;
+  const int result = do_mmap((void*)start, map_length, PROT_ALL,
+                             MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS,
+                             -1, 0, &map_addr_out);
+  if (result < 0) return result;
+
+  // Create the actual mappings on top of the mmap'd region.
   for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
     KASSERT(addr % PAGE_SIZE == 0);
     page_frame_map_virtual(addr, addr - start,
@@ -607,20 +616,26 @@ void setup_user_code() {
                            MEM_ACCESS_KERNEL_AND_USER,
                            0);
   }
+  return 0;
 }
 
 void user_main();
 
 void boot_cmd(int argc, char** argv) {
-  setup_user_code();
+  int result = setup_user_code();
+  if (result) {
+    klogf("error: couldn't map user-mode code into address space: %s\n",
+          errorname(-result));
+    return;
+  }
 
   // Create the stack.
   const uint32_t kStackStart = 0x90000000;
   const uint32_t kStackSize = 1024 * PAGE_SIZE;
   void* stack_addr_out;
-  const int result = do_mmap((void*)kStackStart, kStackSize, PROT_ALL,
-                             MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0,
-                             &stack_addr_out);
+  result = do_mmap((void*)kStackStart, kStackSize, PROT_ALL,
+                   MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0,
+                   &stack_addr_out);
   if (result) {
     klogf("error: couldn't create mapping for kernel stack: %s\n",
           errorname(-result));
