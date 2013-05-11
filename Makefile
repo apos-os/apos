@@ -88,13 +88,17 @@ $(MANUALLY_LINKED_OBJS): CFLAGS += -D_MULTILINK_SUFFIX=_PHYS
 
 mk-build-dir = @mkdir -p $(dir $@)
 
-# Preserve the output of M4-generated source files.
-.PRECIOUS : $(BUILD_OUT)/%.m4.c
+# Preserve the output of generated source files.
+.PRECIOUS : $(BUILD_OUT)/%.m4.c $(BUILD_OUT)/%.tpl.c
 
 $(BUILD_OUT)/%.m4.c : %.m4
 	$(mk-build-dir)
 	$(M4) $(M4FLAGS) $< > $@
- 
+
+$(BUILD_OUT)/%.tpl.c : %.tpl
+	$(mk-build-dir)
+	util/tpl_gen.py $< > $@
+
 $(BUILD_OUT)/%.o : %.s
 	$(mk-build-dir)
 	$(AS) $(ASFLAGS) -o $@ $<
@@ -139,6 +143,12 @@ $(BUILD_OUT)/%.m4.d : %.m4
 	@echo Generating dependency list for $<
 	$(mk-build-dir)
 	@$(M4_DEPS) $< | \
+	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ :,' \
+	  > $@
+$(BUILD_OUT)/%.tpl.d : %.tpl
+	@echo Generating dependency list for $<
+	$(mk-build-dir)
+	@util/tpl_deps.sh $< | \
 	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ :,' \
 	  > $@
 DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
