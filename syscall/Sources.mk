@@ -18,7 +18,7 @@ LOCAL_SOURCES := \
   dmz.c \
   init.c \
   syscall_dispatch.m4.c \
-  syscall_dmz.m4.c \
+  syscall_dmz.tpl.c \
   syscall_enter.s \
   test.c \
 
