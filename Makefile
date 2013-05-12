@@ -149,7 +149,7 @@ $(BUILD_OUT)/%.tpl.d : %.tpl
 	@echo Generating dependency list for $<
 	$(mk-build-dir)
 	@util/tpl_deps.sh $< | \
-	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ :,' \
+	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ : $<,' \
 	  > $@
 DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
 -include $(DEPSFILES)
