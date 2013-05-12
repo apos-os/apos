@@ -15,13 +15,7 @@
  #-}
 
 {# Helper macros for the syscall DMZ generator. #}
-
-{#- Formats the arguments for use in a function declaration. #}
-{% macro decl_args(args) -%}
-{% for arg in args -%}
-{{ arg.ctype }} {{ arg.name }}{% if not loop.last %}, {% endif %}
-{%- endfor %}
-{%- endmacro %}
+{% import "syscall/common_macros.tpl" as common %}
 
 {#- Formats the arguments for use in a function call. #}
 {%- macro call_args(args) -%}
@@ -90,7 +84,7 @@ if ({{ check_alloc_cond(args) }}) {
 
 {#- Defines the DMZ function for the given syscall. #}
 {% macro syscall_dmz(syscall) -%}
-long SYSCALL_DMZ_{{ syscall.name }}({{ decl_args(syscall.args) }}) {
+long SYSCALL_DMZ_{{ syscall.name }}({{ common.decl_args(syscall.args) }}) {
   {{ kernel_decls(syscall.args) | indent(2) }}
 
   {{ check_args(syscall.args) | indent(2) }}
