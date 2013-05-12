@@ -33,6 +33,19 @@ case {{ common.syscall_constant(syscall) }}:
 #include "common/errno.h"
 #include "syscall/syscalls.h"
 
+// Assert that all argument types are valid.
+{% set arg_types = {} -%}
+{%- for syscall in SYSCALLS -%}
+{%- for arg in syscall.args -%}
+{%- do arg_types.update([(arg.ctype, True)]) -%}
+{%- endfor -%}
+{%- endfor -%}
+
+{% for arg_type in arg_types %}
+_Static_assert(sizeof({{ arg_type }}) == sizeof(long),
+    "invalid argument type: {{ arg_type }} (sizeof({{ arg_type }}) != sizeof(long))");
+{% endfor %}
+
 // Forward declare DMZ functions.
 {% for syscall in SYSCALLS %}
 long SYSCALL_DMZ_{{ syscall.name }}({{ common.decl_args(syscall.args) }});

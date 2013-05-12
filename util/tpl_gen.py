@@ -47,7 +47,8 @@ def main(argv):
   env = jinja2.Environment(
       loader=jinja2.FileSystemLoader(['.', os.path.dirname(tpl_file)]),
       trim_blocks=True,
-      undefined=jinja2.StrictUndefined)
+      undefined=jinja2.StrictUndefined,
+      extensions=['jinja2.ext.do'])
   template = env.get_template(tpl_file)
   print template.render(python_env)
 
