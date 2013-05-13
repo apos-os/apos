@@ -27,3 +27,11 @@ SYS_{{ syscall.name | upper}}
 {{ arg.ctype }} {{ arg.name }}{% if not loop.last %}, {% endif %}
 {%- endfor %}
 {%- endmacro %}
+
+{#- Includes all the headers from the given attr in each syscall.  Only includes
+  each unique header once. #}
+{% macro include_headers(syscalls, header_attr) %}
+{% for header, _ in syscalls | groupby(header_attr) if header %}
+#include "{{ header }}"
+{% endfor %}
+{% endmacro %}

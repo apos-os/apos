@@ -15,15 +15,14 @@
  #-}
 
 {# PY_IMPORT syscall/syscall_list.py #}
+{% import "syscall/common_macros.tpl" as common %}
 {% import "syscall/syscall_dmz_macros.tpl" as dmz_macros %}
 #include "common/errno.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "syscall/dmz.h"
 
-{% for header, _ in SYSCALLS | groupby('header') if header %}
-#include "{{ header }}"
-{% endfor %}
+{{ common.include_headers(SYSCALLS, 'header') }}
 
 {% for syscall in SYSCALLS -%}
 {{ dmz_macros.syscall_dmz(syscall) }}

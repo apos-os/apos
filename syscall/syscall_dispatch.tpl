@@ -33,6 +33,8 @@ case {{ common.syscall_constant(syscall) }}:
 #include "common/errno.h"
 #include "syscall/syscalls.h"
 
+{{ common.include_headers(SYSCALLS, 'header') }}
+
 // Assert that all argument types are valid.
 {% set arg_types = {} -%}
 {%- for syscall in SYSCALLS -%}
