@@ -36,6 +36,9 @@
 #   bw --> write-only buffer (checked)
 #   brw --> read/write buffer (checked)
 
+# Maximum number of arguments.
+MAX_ARGS = 6
+
 # Global list of syscalls.
 SYSCALLS = []
 
@@ -71,6 +74,7 @@ class SyscallArg(object):
 
 class SyscallDef(object):
   def __init__(self, name, kernel_name, header, args):
+    assert len(args) <= MAX_ARGS
     self.name = name
     self.kernel_name = kernel_name
     self.header = header
