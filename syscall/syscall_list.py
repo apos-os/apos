@@ -73,11 +73,12 @@ class SyscallArg(object):
 
 
 class SyscallDef(object):
-  def __init__(self, name, kernel_name, header, args):
+  def __init__(self, name, kernel_name, header, user_header, args):
     assert len(args) <= MAX_ARGS
     self.name = name
     self.kernel_name = kernel_name
     self.header = header
+    self.user_header = user_header
     self.args = [SyscallArg(x) for x in args]
 
 
@@ -85,7 +86,7 @@ def AddSyscall(*args):
   SYSCALLS.append(SyscallDef(*args))
 
 
-AddSyscall('syscall_test', 'do_syscall_test', 'syscall/test.h', [
+AddSyscall('syscall_test', 'do_syscall_test', 'syscall/test.h', 'user/test.h', [
     'long:arg1:u',
     'long:arg2:u',
     'long:arg3:u',
@@ -93,16 +94,16 @@ AddSyscall('syscall_test', 'do_syscall_test', 'syscall/test.h', [
     'long:arg5:u',
     'long:arg6:u'])
 
-AddSyscall('open', 'vfs_open', 'vfs/vfs.h', [
+AddSyscall('open', 'vfs_open', 'vfs/vfs.h', 'user/fs.h', [
     'const char*:path:s',
     'uint32_t:flags:u'])
 
-AddSyscall('read', 'vfs_read', 'vfs/vfs.h', [
+AddSyscall('read', 'vfs_read', 'vfs/vfs.h', 'user/fs.h', [
     'int:fd:u',
     'void*:buf:bw:count',
     'int:count:u'])
 
-AddSyscall('write', 'vfs_write', 'vfs/vfs.h', [
+AddSyscall('write', 'vfs_write', 'vfs/vfs.h', 'user/fs.h', [
     'int:fd:u',
     'const void*:buf:br:count',
     'int:count:u'])

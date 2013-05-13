@@ -37,8 +37,8 @@
 #define SEEK_CUR VFS_SEEK_CUR
 #define SEEK_END VFS_SEEK_END
 
-int open(const char* path, uint32_t flags);
-int read(int fd, void* buf, int count);
-int write(int fd, const void* buf, int count);
+long open(const char* path, uint32_t flags);
+long read(int fd, void* buf, int count);
+long write(int fd, const void* buf, int count);
 
 #endif

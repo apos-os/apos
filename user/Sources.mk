@@ -15,8 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  fs.c \
+  syscall_impl.tpl.c \
   syscall.s \
-  test.c \
 
 $(eval $(END_SOURCES))
