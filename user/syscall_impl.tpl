@@ -32,7 +32,7 @@
 
 {#- Implement a user-space syscall. #}
 {%- macro syscall_impl(syscall) -%}
-long {{ syscall.name }}({{ common.decl_args(syscall.args) }}) {
+{{ syscall.return_type }} {{ syscall.name }}({{ common.decl_args(syscall.args) }}) {
   return do_syscall({{ common.syscall_constant(syscall) }}, {{ cast_args(syscall.args) }});
 }
 {%- endmacro %}
