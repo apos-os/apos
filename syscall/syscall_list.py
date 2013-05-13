@@ -95,7 +95,7 @@ AddSyscall('syscall_test', 'do_syscall_test', 'syscall/test.h', [
 
 AddSyscall('open', 'vfs_open', 'vfs/vfs.h', [
     'const char*:path:s',
-    'int:mode:u'])
+    'uint32_t:flags:u'])
 
 AddSyscall('read', 'vfs_read', 'vfs/vfs.h', [
     'int:fd:u',
