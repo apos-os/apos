@@ -84,7 +84,7 @@ if ({{ check_alloc_cond(args) }}) {
 
 {#- Defines the DMZ function for the given syscall. #}
 {% macro syscall_dmz(syscall) -%}
-{{ syscall.return_type }} SYSCALL_DMZ_{{ syscall.name }}({{ common.decl_args(syscall.args) }}) {
+{{ common.syscall_decl(syscall, 'SYSCALL_DMZ_') }} {
   {{ kernel_decls(syscall.args) | indent(2) }}
 
   {{ check_args(syscall.args) | indent(2) }}

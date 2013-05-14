@@ -28,6 +28,12 @@ SYS_{{ syscall.name | upper}}
 {%- endfor %}
 {%- endmacro %}
 
+{# Generates the signature (for declaration or definition) of a function
+  corresponding to the given syscall. #}
+{%- macro syscall_decl(syscall, name_prefix) -%}
+{{ syscall.return_type }} {{name_prefix}}{{ syscall.name }}({{ decl_args(syscall.args) }})
+{%- endmacro %}
+
 {#- Includes all the headers from the given attr in each syscall.  Only includes
   each unique header once. #}
 {% macro include_headers(syscalls, header_attr) %}

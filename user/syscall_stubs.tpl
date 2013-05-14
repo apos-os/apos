@@ -32,7 +32,7 @@
 
 {#- Implement a user-space syscall. #}
 {%- macro syscall_impl(syscall) -%}
-{{ syscall.return_type }} {{ syscall.name }}({{ common.decl_args(syscall.args) }}) {
+static inline {{ common.syscall_decl(syscall, '_do_') }} {
   return do_syscall({{ common.syscall_constant(syscall) }}, {{ cast_args(syscall.args) }});
 }
 {%- endmacro %}
@@ -42,7 +42,17 @@
 
 {{ common.include_headers(SYSCALLS, 'user_header') }}
 
-{% for syscall in SYSCALLS if syscall.generate_user_stub %}
+{# First, generate L1 stubs for *all* syscalls. #}
+{% for syscall in SYSCALLS %}
 {{ syscall_impl(syscall) }}
+
+{% endfor %}
+
+{# Next, generate L2 stubs (that call the L1 stubs) for all syscalls that want
+  an automatically generated user-mode stub. #}
+{% for syscall in SYSCALLS if syscall.generate_user_stub %}
+{{ common.syscall_decl(syscall, '') }} {
+  return _do_{{ syscall.name }}({{ syscall.args | join(', ', 'name') }});
+}
 
 {% endfor %}

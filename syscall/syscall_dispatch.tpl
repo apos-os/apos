@@ -50,7 +50,7 @@ _Static_assert(sizeof({{ arg_type }}) == sizeof(long),
 
 // Forward declare DMZ functions.
 {% for syscall in SYSCALLS %}
-{{ syscall.return_type }} SYSCALL_DMZ_{{ syscall.name }}({{ common.decl_args(syscall.args) }});
+{{ common.syscall_decl(syscall, 'SYSCALL_DMZ_') }};
 {% endfor %}
 
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
