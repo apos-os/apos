@@ -74,7 +74,8 @@ class SyscallArg(object):
 
 class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
-      header, user_header, return_type, args):
+      header, user_header, return_type, args,
+      generate_user_stub=True):
     assert len(args) <= MAX_ARGS
     self.name = name
     self.number = number
@@ -83,10 +84,11 @@ class SyscallDef(object):
     self.user_header = user_header
     self.return_type = return_type
     self.args = [SyscallArg(x) for x in args]
+    self.generate_user_stub = generate_user_stub
 
 
-def AddSyscall(*args):
-  syscall = SyscallDef(*args)
+def AddSyscall(*args, **kwargs):
+  syscall = SyscallDef(*args, **kwargs)
   assert syscall.name not in [s.name for s in SYSCALLS]
   assert syscall.number not in [s.number for s in SYSCALLS]
   SYSCALLS.append(syscall)

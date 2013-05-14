@@ -42,7 +42,7 @@
 
 {{ common.include_headers(SYSCALLS, 'user_header') }}
 
-{% for syscall in SYSCALLS %}
+{% for syscall in SYSCALLS if syscall.generate_user_stub %}
 {{ syscall_impl(syscall) }}
 
 {% endfor %}
