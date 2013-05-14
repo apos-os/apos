@@ -22,4 +22,6 @@ LOCAL_SOURCES := \
   syscall_enter.s \
   test.c \
 
+$(eval $(call ADD_TPL,syscall/syscalls.h.tpl,syscall/syscalls.h))
+
 $(eval $(END_SOURCES))

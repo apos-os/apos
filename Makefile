@@ -51,10 +51,26 @@ define END_SOURCES
   SP := $(basename $(SP))
 endef
 
+# Defines a tpl-generated file.
+# Usage: ADD_TPL(tpl_path,out_path)
+define ADD_TPL
+GENERATED += $(2)
+$(2) : $(1)
+	$(mk-build-dir)
+	util/tpl_gen.py $(1) > $(2)
+$(BUILD_OUT)/$(2).d : $(1) util/tpl_deps.sh
+	@echo Generating dependency list for $2
+	$(mk-build-dir)
+	@util/tpl_deps.sh $1 | \
+	  sed 's,^\($1\):,$(BUILD_OUT)/$(2).d $2 : $1,' \
+	  > $(BUILD_OUT)/$(2).d
+endef
+
 # Build master $(SOURCES) list.
 LOCAL_SOURCES :=
 SOURCES :=
 SP :=
+GENERATED :=
 include Sources.mk
 
 C_SOURCES = $(filter %.c,$(SOURCES))
@@ -151,7 +167,7 @@ $(BUILD_OUT)/%.tpl.d : %.tpl util/tpl_deps.sh
 	@util/tpl_deps.sh $< | \
 	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ : $<,' \
 	  > $@
-DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES))
+DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES)) $(patsubst %,$(BUILD_OUT)/%.d,$(GENERATED))
 -include $(DEPSFILES)
 
 clean:
