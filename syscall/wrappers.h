@@ -12,26 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
-//
-// To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+// Small wrappers for syscalls.
+#ifndef APOO_SYSCALL_WRAPPERS_H
+#define APOO_SYSCALL_WRAPPERS_H
 
-// All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0
-#define SYS_OPEN 1
-#define SYS_CLOSE 2
-#define SYS_MKDIR 3
-#define SYS_MKNOD 4
-#define SYS_RMDIR 5
-#define SYS_UNLINK 6
-#define SYS_READ 7
-#define SYS_WRITE 8
-#define SYS_SEEK 9
-#define SYS_GETDENTS 10
-#define SYS_GETCWD 11
-#define SYS_CHDIR 12
+#include <stdint.h>
+
+#include "vfs/vfs.h"
+#include "dev/dev.h"
+
+static inline int vfs_mknod_wrapper(const char* path, uint32_t mode,
+                                    int dev_major, int dev_minor) {
+  return vfs_mknod(path, mode, mkdev(dev_major, dev_minor));
+}
+
 
 #endif

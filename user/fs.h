@@ -38,7 +38,16 @@
 #define SEEK_END VFS_SEEK_END
 
 int open(const char* path, uint32_t flags);
+int close(int fd);
+int mkdir(const char* path);
+int mknod(const char* path, uint32_t mode, dev_t dev);
+int rmdir(const char* path);
+int unlink(const char* path);
 int read(int fd, void* buf, int count);
 int write(int fd, const void* buf, int count);
+int seek(int fd, int offset, int whence);
+int getdents(int fd, dirent_t* buf, int count);
+int getcwd(char* path_out, int size);
+int chdir(const char* path);
 
 #endif

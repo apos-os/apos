@@ -109,14 +109,59 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', 'user/fs.h',
     'const char*:path:s',
     'uint32_t:flags:u'])
 
-AddSyscall('read', 2, 'vfs_read', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'int:fd:u'])
+
+AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'const char*:path:s'])
+
+AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h', 'user/fs.h',
+    'int', [
+    'const char*:path:s',
+    'uint32_t:mode:u',
+    'int:dev_major:u',
+    'int:dev_minor:u'],
+    generate_user_stub=False)
+
+AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'const char*:path:s'])
+
+AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'const char*:path:s'])
+
+AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'int:fd:u',
     'void*:buf:bw:count',
     'int:count:u'])
 
-AddSyscall('write', 3, 'vfs_write', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'int:fd:u',
     'const void*:buf:br:count',
     'int:count:u'])
+
+AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'int:fd:u',
+    'int:offset:u',
+    'int:whence:u'])
+
+AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'int:fd:u',
+    'dirent_t*:buf:bw:count',
+    'int:count:u'])
+
+AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'char*:path_out:bw:size',
+    'int:size:u'])
+
+AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'const char*:path:s'])

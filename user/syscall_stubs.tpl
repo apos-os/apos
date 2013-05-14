@@ -56,3 +56,5 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 }
 
 {% endfor %}
+
+{% include "user/syscall_stubs_manual.tpl" %}

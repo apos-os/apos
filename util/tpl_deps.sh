@@ -23,8 +23,8 @@ grep < $TPL_FILE -o "{#\s*PY_IMPORT\s*\S*" | \
   sed "s/.*PY_IMPORT\s*\(\S*\)/\1/g" \
   >> ${TMPFILE}
 
-grep < $TPL_FILE -o "{%\s*import\s*\"[^\"*]*\"" | \
-  sed "s/.*import\s*\"\([^\"]*\)\"/\1/g" \
+grep < $TPL_FILE -o "{%\s*\(import\|include\)\s*\"[^\"*]*\"" | \
+  sed "s/.*\(import\|include\)\s*\"\([^\"]*\)\"/\2/g" \
   >> ${TMPFILE}
 
 DEPS=$(tr < $TMPFILE "\n" " ")

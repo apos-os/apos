@@ -145,7 +145,7 @@ $(BUILD_OUT)/%.m4.d : %.m4
 	@$(M4_DEPS) $< | \
 	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ :,' \
 	  > $@
-$(BUILD_OUT)/%.tpl.d : %.tpl
+$(BUILD_OUT)/%.tpl.d : %.tpl util/tpl_deps.sh
 	@echo Generating dependency list for $<
 	$(mk-build-dir)
 	@util/tpl_deps.sh $< | \
