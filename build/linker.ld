@@ -50,7 +50,7 @@ SECTIONS
     .user-text ALIGN(0x1000) : AT(ADDR(.user-text) - _USER_OFFSET)
     {
       main/user_main.o(.text .rodata .data .bss)
-      user/syscall_impl.tpl.o(.text .rodata .data .bss)
+      user/syscall_stubs.tpl.o(.text .rodata .data .bss)
       user/syscall.o(.text .rodata .data .bss)
     }
     USER_END_SYMBOL = .;
