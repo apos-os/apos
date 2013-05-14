@@ -20,7 +20,7 @@
 #include "common/multilink.h"
 
 // Common segment indices.
-#define GDT_NUM_ENTRIES 6
+#define GDT_NUM_ENTRIES 7
 
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
@@ -28,6 +28,7 @@
 #define GDT_USER_CODE_SEGMENT 3
 #define GDT_USER_DATA_SEGMENT 4
 #define GDT_TSS 5
+#define GDT_SYSCALL_CALL_GATE 6
 
 typedef enum {
   SEG_CODE,

@@ -12,33 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+.global do_syscall
 
-LOCAL_SOURCES := \
-  ata_test.c \
-  block_cache_test.c \
-  block_dev_test.c \
-  dmz_test.c \
-  flag_printf_test.c \
-  hash_test.c \
-  hashtable_test.c \
-  interrupt_test.c \
-  kmalloc_test.c \
-  kprintf_test.c \
-  kstring_test.c \
-  ktest.c \
-  ktest_test.c \
-  kthread_pool_test.c \
-  kthread_test.c \
-  ld_test.c \
-  list_test.c \
-  mmap_test.c \
-  page_alloc_map_test.c \
-  page_alloc_test.c \
-  ramdisk_test.c \
-  ramfs_test.c \
-  slab_alloc_test.c \
-  vm_test.c \
-  vfs_test.c \
+do_syscall:
+  pushl %ebp
+  movl %esp, %ebp
 
-$(eval $(END_SOURCES))
+  pushl %ebx
+  pushl %esi
+  pushl %edi
+
+  mov 8(%ebp), %eax  # syscall number
+  mov 12(%ebp), %ebx # arg1
+  mov 16(%ebp), %ecx # arg2
+  mov 20(%ebp), %edx # arg3
+  mov 24(%ebp), %esi # arg4
+  mov 28(%ebp), %edi # arg5
+  mov 32(%ebp), %ebp # arg6
+
+  lcall  $0x33, $0
+
+  popl %edi
+  popl %esi
+  popl %ebx
+  popl %ebp
+  ret

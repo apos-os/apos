@@ -29,4 +29,21 @@ addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
 // NOT overlap with any existing area.
 void vm_insert_area(process_t* proc, vm_area_t* area);
 
+// Verify that accesses of the given type are valid for the entire region
+// [start, end).  Returns 0 if the access is valid, -EFAULT if not.
+// TODO(aoates): should we use vm_fault_op_t, etc here?
+int vm_verify_region(process_t* proc, addr_t start, addr_t end,
+                     int is_write, int is_user);
+
+// Verifies that an access to the given address is valid, as for
+// vm_verify_region.  Returns (in end_out) the next *invalid* address after this
+// one for this type of access.
+//
+// That is, *end_out is the highest address greater than addr s.t.
+// vm_verify_region(addr, end_out, ...) == 0.
+//
+// Returns 0 if the access is valid, -EFAULT (and sets *end_out to addr) if not.
+int vm_verify_address(process_t* proc, addr_t addr, int is_write,
+                      int is_user, addr_t* end_out);
+
 #endif

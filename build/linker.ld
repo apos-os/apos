@@ -19,6 +19,11 @@ ENTRY (loader)
 /* NOTE: keep this in sync with the constant in paging.c */
 _OFFSET = 0xC0000000;
 
+/* Offset to the hard-coded user-mode code.
+ * TODO(aoates): remove when loading is implemented.
+ */
+_USER_OFFSET = 0x10000000;
+
 /*NOTE: keep the list of manually-placed object files in sync with the one in
  * the Makefile, to prevent duplicate symbols.
  */
@@ -40,8 +45,18 @@ SECTIONS
       memory/gdt.PHYS.o(.text .rodata .data .bss)
     }
 
+    . += _USER_OFFSET;
+    USER_START_SYMBOL = .;
+    .user-text ALIGN(0x1000) : AT(ADDR(.user-text) - _USER_OFFSET)
+    {
+      main/user_main.o(.text .rodata .data .bss)
+      user/syscall_stubs.tpl.o(.text .rodata .data .bss)
+      user/syscall.o(.text .rodata .data .bss)
+    }
+    USER_END_SYMBOL = .;
+
     /* Load the main part of the kernel at VMA 0xC0000000. */
-    . += _OFFSET;
+    . += _OFFSET - _USER_OFFSET;
 
     KERNEL_START_SYMBOL = .;
     .text ALIGN (0x1000) : AT(ADDR(.text) - _OFFSET)

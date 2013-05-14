@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/list.h"
 #include "common/math.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "proc/process.h"
 
 addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
                     addr_t length) {
@@ -59,4 +61,89 @@ void vm_insert_area(process_t* proc, vm_area_t* area) {
     KASSERT(prev_area->vm_base + prev_area->vm_length <= area->vm_base);
   }
   list_insert(&proc->vm_area_list, prev, &area->vm_proc_list);
+}
+
+// Check if access is allowed to the given region.
+// TODO(aoates): unify this with fault_allowed() in vm_page_fault.c
+static int verify_access(vm_area_t* area, int is_write, int is_user) {
+  if (is_write && (!(area->prot & MEM_PROT_WRITE)))
+    return -EFAULT;
+  if (is_user && (area->access != MEM_ACCESS_KERNEL_AND_USER))
+    return -EFAULT;
+  return 0;
+}
+
+int vm_verify_region(process_t* proc, addr_t start, addr_t end,
+                     int is_write, int is_user) {
+  if (!proc || start >= end) {
+    return -EINVAL;
+  }
+
+  list_link_t* link = proc->vm_area_list.head;
+  while (link && start < end) {
+    vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
+    const addr_t overlap_start = max(area->vm_base, start);
+    const addr_t overlap_end =
+        max(overlap_start, min(area->vm_base + area->vm_length, end));
+    if (area->vm_base > end) {
+      break;
+    } else if (area->vm_base > start) {
+      return -EFAULT;
+    } else if (overlap_start < overlap_end) {
+      const int result = verify_access(area, is_write, is_user);
+      if (result) return result;
+    }
+    start = overlap_end;
+    link = link->next;
+  }
+
+  if (start < end) {
+    return -EFAULT;
+  } else {
+    return 0;
+  }
+}
+
+int vm_verify_address(process_t* proc, addr_t addr, int is_write,
+                      int is_user, addr_t* end_out) {
+  if (!proc || !end_out) {
+    return -EINVAL;
+  }
+  *end_out = addr;
+
+  // First, find the region containing addr.
+  vm_area_t* addr_area = NULL;
+  list_link_t* link = proc->vm_area_list.head;
+  while (link) {
+    vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
+    if (addr >= area->vm_base && addr < area->vm_base + area->vm_length) {
+      addr_area = area;
+      break;
+    }
+    link = link->next;
+  }
+
+  if (!addr_area) {
+    return -EFAULT;
+  }
+
+  // Check if the access is valid.
+  int access_valid = verify_access(addr_area, is_write, is_user);
+  if (access_valid != 0) {
+    return access_valid;
+  }
+
+  // Find the largest contiguous usable region.
+  vm_area_t* prev_area = NULL;
+  vm_area_t* contig_area = addr_area;
+  link = &contig_area->vm_proc_list;
+  do {
+    *end_out = contig_area->vm_base + contig_area->vm_length;
+    prev_area = contig_area;
+    link = link->next;
+    contig_area = container_of(link, vm_area_t, vm_proc_list);
+  } while (link &&
+           contig_area->vm_base == prev_area->vm_base + prev_area->vm_length &&
+           verify_access(contig_area, is_write, is_user) == 0);
+  return 0;
 }

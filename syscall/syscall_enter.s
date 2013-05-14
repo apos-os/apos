@@ -12,33 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+# Kernel entrance point for syscalls from userland.
+.global _syscall_enter
 
-LOCAL_SOURCES := \
-  ata_test.c \
-  block_cache_test.c \
-  block_dev_test.c \
-  dmz_test.c \
-  flag_printf_test.c \
-  hash_test.c \
-  hashtable_test.c \
-  interrupt_test.c \
-  kmalloc_test.c \
-  kprintf_test.c \
-  kstring_test.c \
-  ktest.c \
-  ktest_test.c \
-  kthread_pool_test.c \
-  kthread_test.c \
-  ld_test.c \
-  list_test.c \
-  mmap_test.c \
-  page_alloc_map_test.c \
-  page_alloc_test.c \
-  ramdisk_test.c \
-  ramfs_test.c \
-  slab_alloc_test.c \
-  vm_test.c \
-  vfs_test.c \
-
-$(eval $(END_SOURCES))
+_syscall_enter:
+  pushl %ebp  # arg6
+  pushl %edi  # arg5
+  pushl %esi  # arg4
+  pushl %edx  # arg3
+  pushl %ecx  # arg2
+  pushl %ebx  # arg1
+  pushl %eax  # syscall number
+  call syscall_dispatch
+  add $28, %esp
+  lret

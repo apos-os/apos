@@ -1,3 +1,4 @@
+#!/bin/bash
 # Copyright 2014 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,33 +13,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+# Generates a deps file for a jinja2 template file.
 
-LOCAL_SOURCES := \
-  ata_test.c \
-  block_cache_test.c \
-  block_dev_test.c \
-  dmz_test.c \
-  flag_printf_test.c \
-  hash_test.c \
-  hashtable_test.c \
-  interrupt_test.c \
-  kmalloc_test.c \
-  kprintf_test.c \
-  kstring_test.c \
-  ktest.c \
-  ktest_test.c \
-  kthread_pool_test.c \
-  kthread_test.c \
-  ld_test.c \
-  list_test.c \
-  mmap_test.c \
-  page_alloc_map_test.c \
-  page_alloc_test.c \
-  ramdisk_test.c \
-  ramfs_test.c \
-  slab_alloc_test.c \
-  vm_test.c \
-  vfs_test.c \
+TPL_FILE=$1
 
-$(eval $(END_SOURCES))
+TMPFILE=$(tempfile)
+
+grep < $TPL_FILE -o "{#\s*PY_IMPORT\s*\S*" | \
+  sed "s/.*PY_IMPORT\s*\(\S*\)/\1/g" \
+  >> ${TMPFILE}
+
+grep < $TPL_FILE -o "{%\s*\(import\|include\)\s*\"[^\"*]*\"" | \
+  sed "s/.*\(import\|include\)\s*\"\([^\"]*\)\"/\2/g" \
+  >> ${TMPFILE}
+
+DEPS=$(tr < $TMPFILE "\n" " ")
+rm $TMPFILE
+
+echo "$TPL_FILE: $DEPS"

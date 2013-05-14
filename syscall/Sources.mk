@@ -15,30 +15,13 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  ata_test.c \
-  block_cache_test.c \
-  block_dev_test.c \
-  dmz_test.c \
-  flag_printf_test.c \
-  hash_test.c \
-  hashtable_test.c \
-  interrupt_test.c \
-  kmalloc_test.c \
-  kprintf_test.c \
-  kstring_test.c \
-  ktest.c \
-  ktest_test.c \
-  kthread_pool_test.c \
-  kthread_test.c \
-  ld_test.c \
-  list_test.c \
-  mmap_test.c \
-  page_alloc_map_test.c \
-  page_alloc_test.c \
-  ramdisk_test.c \
-  ramfs_test.c \
-  slab_alloc_test.c \
-  vm_test.c \
-  vfs_test.c \
+  dmz.c \
+  init.c \
+  syscall_dispatch.tpl.c \
+  syscall_dmz.tpl.c \
+  syscall_enter.s \
+  test.c \
+
+$(eval $(call ADD_TPL,syscall/syscalls.h.tpl,syscall/syscalls.h))
 
 $(eval $(END_SOURCES))
