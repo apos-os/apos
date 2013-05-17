@@ -24,6 +24,9 @@
 // zero-length.  The address and length do not have to be page-aligned (but see
 // additional restrictions below).
 //
+// If mem_len > file_len, the portion after the file data will be filled with
+// zeroes.
+//
 //                +------------------------+
 // <@file_offset> | ABC...                 |
 //                +------------------------+
@@ -31,15 +34,18 @@
 //                       +----+
 //                       V
 //           +------------------------+-----------------+
-// <@vaddr>  | ABC...<file_len>       | 000...<mem_len> |
+// <@vaddr>  | ABC...                 | 000...          |
 //           +------------------------|-----------------+
+//           | <----- file_len -----> |
+//           | <--------------- mem_len --------------> |
 //
 // REQUIRES: file_offset == vaddr (mod PAGE_SIZE)
+// REQUIRES: mem_len >= file_len
 typedef struct {
   addr_t file_offset;  // Offset within the file.
   addr_t vaddr;  // Virtual address to load at.
-  addr_t file_len;  // Number of bytes to load from the file.
-  addr_t mem_len;  // Number of bytes to map anonymously after the file portion.
+  addr_t file_len;  // Number of bytes to map from the file.
+  addr_t mem_len;  // Number of bytes to map into memory.  Must be >= file_len.
 
   // Protection flags (from memory/flags.h).
   int prot;
