@@ -187,9 +187,6 @@ void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
                             mem_access_t access, int flags) {
   KASSERT(virt % PAGE_SIZE == 0);
   KASSERT(phys % PAGE_SIZE == 0);
-  // TODO(aoates): handle unsupported flags better.
-  KASSERT(prot & MEM_PROT_READ);
-  KASSERT(prot & MEM_PROT_EXEC);
   KASSERT(access == MEM_ACCESS_KERNEL_ONLY ||
           access == MEM_ACCESS_KERNEL_AND_USER);
   KASSERT(flags == 0 || flags == MEM_GLOBAL);

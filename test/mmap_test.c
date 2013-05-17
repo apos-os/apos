@@ -155,21 +155,11 @@ static void mmap_invalid_args() {
   KEXPECT_EQ(-EBADF, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
                              MAP_SHARED, 532333, 0, &addr_out));
 
-  KTEST_BEGIN("mmap(): invalid prot test");
-  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_NONE,
-                              MAP_SHARED, fd, 0, &addr_out));
-  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_WRITE,
-                              MAP_SHARED, fd, 0, &addr_out));
-  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_WRITE | PROT_EXEC,
-                              MAP_SHARED, fd, 0, &addr_out));
-  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_WRITE | PROT_READ,
-                              MAP_SHARED, fd, 0, &addr_out));
-
   KTEST_BEGIN("mmap(): invalid flags test");
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
                               0, fd, 0, &addr_out));
-  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_WRITE,
-                              10, fd, 0, &addr_out));
+  KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
+                              50, fd, 0, &addr_out));
 
   KTEST_BEGIN("mmap(): MAP_SHARED and MAP_PRIVATE test");
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
@@ -697,6 +687,7 @@ static void mmap_anonymous() {
 // * where fd mode > requested mapping mode
 // * vfs_close() after map (public and private mappings)
 // * MAP_SHARED | MAP_ANONYMOUS after fork()
+// * requested protection level is given
 
 void mmap_test() {
   KTEST_SUITE_BEGIN("mmap()/munmap() tests");

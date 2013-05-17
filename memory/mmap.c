@@ -30,7 +30,7 @@
 // Unmap a portion of the given vm_area_t.  Zero, one, or two smaller vm_area_ts
 // may be created (and added to the process's list), depending on the overlap of
 // the unmap region and the vm_area_t.
-int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
+static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
   KASSERT(unmap_start >= area->vm_base);
   KASSERT(unmap_end <= area->vm_base + area->vm_length);
 
@@ -132,8 +132,7 @@ int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
 
 int do_mmap(void* addr, addr_t length, int prot, int flags,
             int fd, addr_t offset, void** addr_out) {
-  if ((prot & PROT_EXEC) == 0 || (prot & PROT_READ) == 0 ||
-      (!(flags & MAP_PRIVATE) && !(flags & MAP_SHARED)) ||
+  if ((!(flags & MAP_PRIVATE) && !(flags & MAP_SHARED)) ||
       ((flags & MAP_PRIVATE) && (flags & MAP_SHARED))) {
     return -EINVAL;
   }
