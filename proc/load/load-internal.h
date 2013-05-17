@@ -32,4 +32,20 @@ typedef struct {
   int (*load)(int fd, load_binary_t** binary_out);
 } load_module_t;
 
+// Given a hybrid file/memory load_region_t, that is not page-aligned, split it
+// into up to 3 regions.  Each region will be page-aligned, and all but the last
+// non-empty region will be page-sized.
+//
+// The first region will consist only of file data, and will be 0 or more pages
+// in length.  The middle region will have both file data and memory data (which
+// must be zeroed), and will be up to 1 pages in length.  The third region will
+// be only memory data (i.e., an anonymous mapping), and will be 0 or more pages
+// in length.
+//
+// Any of the three regions may have mem_length == 0.
+void load_pagify_region(const load_region_t* orig_region,
+                        load_region_t* region0,
+                        load_region_t* region1,
+                        load_region_t* region2);
+
 #endif

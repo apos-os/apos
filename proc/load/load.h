@@ -42,8 +42,8 @@
 // REQUIRES: file_offset == vaddr (mod PAGE_SIZE)
 // REQUIRES: mem_len >= file_len
 typedef struct {
-  addr_t file_offset;  // Offset within the file.
-  addr_t vaddr;  // Virtual address to load at.
+  addr_t file_offset;  // Offset within the file.  Unspecified if file_len == 0.
+  addr_t vaddr;  // Virtual address to load at.  Unspecified if mem_len == 0.
   addr_t file_len;  // Number of bytes to map from the file.
   addr_t mem_len;  // Number of bytes to map into memory.  Must be >= file_len.
 
