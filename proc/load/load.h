@@ -67,4 +67,10 @@ typedef struct {
 // If successful, the caller MUST kfree(*binary_out) when it's done with it.
 int load_binary(int fd, load_binary_t** binary_out);
 
+// Attempt to map the given binary into the current address space.
+//
+// Note: does NOT tear down any existing mappings; the caller should almost
+// certainly do that before calling this.
+int load_map_binary(int fd, const load_binary_t* binary);
+
 #endif
