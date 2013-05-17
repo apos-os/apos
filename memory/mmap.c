@@ -143,7 +143,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     return -EINVAL;
   }
 
-  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length) {
+  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length + 1) {
     return -EINVAL;
   }
 
@@ -163,7 +163,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
         vm_find_hole(proc_current(),
                      max(addr2page((addr_t)addr),
                          (addr_t)MEM_FIRST_MAPPABLE_ADDR),
-                     MEM_LAST_USER_MAPPABLE_ADDR,
+                     MEM_LAST_USER_MAPPABLE_ADDR + 1,
                      length);
   }
   if (hole_addr == 0) {
@@ -222,12 +222,12 @@ int do_munmap(void* addr_ptr, addr_t length) {
     return -EINVAL;
   }
 
-  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length) {
+  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length + 1) {
     return -EINVAL;
   }
 
   list_link_t* link = proc_current()->vm_area_list.head;
-  while (link && addr < MEM_LAST_USER_MAPPABLE_ADDR) {
+  while (link && addr <= MEM_LAST_USER_MAPPABLE_ADDR) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
     list_link_t* next = link->next;
     const addr_t overlap_start = max(addr, area->vm_base);
