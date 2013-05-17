@@ -389,6 +389,17 @@ static void map_file_mode_test() {
              do_mmap(0x0, PAGE_SIZE, PROT_READ | PROT_EXEC,
                      MAP_SHARED, fdA, 0, &addrA));
   vfs_close(fdA);
+
+  // For a private mapping, we should be able to create a R/W mapping even if
+  // the underlying file is R/O, since nothing will be written back.
+  KTEST_BEGIN("mmap(): file mode test (R/W private mapping of R/O file)");
+  fdA = vfs_open(kFileA, VFS_O_RDONLY);
+  KEXPECT_EQ(0,
+             do_mmap(0x0, PAGE_SIZE, PROT_ALL,
+                     MAP_PRIVATE, fdA, 0, &addrA));
+  KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
+
+  vfs_close(fdA);
 }
 
 // Test that a non-NULL addr parameter is used as a hint.

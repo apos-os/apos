@@ -181,9 +181,14 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     if (!memobj) return -ENOMEM;
   } else {
     uint32_t fd_mode = 0;
-    if ((prot & PROT_READ) && (prot & PROT_WRITE)) fd_mode = VFS_O_RDWR;
-    else if (prot & PROT_READ) fd_mode = VFS_O_RDONLY;
-    else if (prot & PROT_WRITE) fd_mode = VFS_O_WRONLY;
+    // If the mapping is private, we only need read access to the file.
+    if (flags & MAP_PRIVATE) {
+      fd_mode = VFS_O_RDONLY;
+    } else {
+      if ((prot & PROT_READ) && (prot & PROT_WRITE)) fd_mode = VFS_O_RDWR;
+      else if (prot & PROT_READ) fd_mode = VFS_O_RDONLY;
+      else if (prot & PROT_WRITE) fd_mode = VFS_O_WRONLY;
+    }
     result = vfs_get_memobj(fd, fd_mode, &memobj);
     if (result) return result;
 
