@@ -118,14 +118,21 @@ static int elf_read_phdrs(int fd, const Elf32_Ehdr* header, Elf32_Phdr* phdrs) {
 static int elf_create_load_binary(const Elf32_Ehdr* header,
                                   const Elf32_Phdr* phdrs,
                                   load_binary_t** binary_out) {
+  int num_regions = 0;
+  for (int i = 0; i < header->e_phnum; ++i) {
+    if (phdrs[i].p_type == PT_LOAD) ++num_regions;
+  }
+
   load_binary_t* bin = (load_binary_t*)kmalloc(
-      sizeof(load_binary_t) + sizeof(load_region_t) * header->e_phnum);
+      sizeof(load_binary_t) + sizeof(load_region_t) * num_regions);
   *binary_out = bin;
 
   bin->entry = header->e_entry;
-  bin->num_regions = header->e_phnum;
+  bin->num_regions = num_regions;
+  int region_number = 0;
   for (int i = 0; i < header->e_phnum; ++i) {
-    load_region_t* region = &bin->regions[i];
+    if (phdrs[i].p_type != PT_LOAD) continue;
+    load_region_t* region = &bin->regions[region_number++];
     region->file_offset = phdrs[i].p_offset;
     region->vaddr = phdrs[i].p_vaddr;
     region->file_len = phdrs[i].p_filesz;
