@@ -149,6 +149,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   meminfo->mapped_start = KERNEL_VIRT_START;
   // We mapped a single PTE (4MB) for use by the kernel.
   meminfo->mapped_end = KERNEL_VIRT_START + PTE_NUM_ENTRIES * PAGE_SIZE;
+  meminfo->kernel_page_directory = (page_dir_ptr_t)page_directory;
 
   // Install the PDE and enable paging.
   asm volatile

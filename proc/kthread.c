@@ -45,7 +45,7 @@ void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB);
 
 static void kthread_init_kthread(kthread_data_t* t) {
   t->state = KTHREAD_PENDING;
-  t->id = t->esp = 0;
+  t->id = t->esp = t->page_directory = 0;
   t->retval = 0x0;
   t->prev = t->next = 0x0;
   t->stack = 0x0;
@@ -75,6 +75,7 @@ void kthread_init() {
   first->esp = 0;
   first->id = g_next_id++;
   first->stack = (uint32_t*)get_global_meminfo()->kernel_stack_base;
+  first->page_directory = get_global_meminfo()->kernel_page_directory;
 
   KASSERT_DBG((uint32_t)(&first) < (uint32_t)first->stack + KTHREAD_STACK_SIZE);
 
@@ -103,6 +104,9 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   // TODO(aoates): use the process from the parent thread for this thread, once
   // we support multiple threads per process.
+
+  // Inherit the creating thread's address space.
+  thread->page_directory = g_current_thread->page_directory;
 
   // Allocate a stack for the thread.
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
