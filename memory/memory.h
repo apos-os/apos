@@ -43,6 +43,8 @@
 #define PTE_PRESENT        0x00000001
 #define PTE_NUM_ENTRIES    (PAGE_SIZE / 4)
 
+#define MIN_GLOBAL_MAPPING_SIZE (PAGE_SIZE * PTE_NUM_ENTRIES)
+
 // The first and last mappable addresses.
 #define MEM_FIRST_MAPPABLE_ADDR PAGE_SIZE
 #define MEM_LAST_USER_MAPPABLE_ADDR 0xBFFFFFFF
