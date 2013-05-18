@@ -67,6 +67,7 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
     if (result) return result;
 
     new_area->memobj = area->memobj;
+    new_area->allow_allocation = area->allow_allocation;
     new_area->memobj->ops->ref(new_area->memobj);
     new_area->vm_base = new_area_start;
     new_area->vm_length = new_area_end - new_area_start;
@@ -208,6 +209,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   memobj->ops->ref(memobj);
   area->memobj = memobj;
+  area->allow_allocation = 1;
   area->vm_base = hole_addr;
   area->vm_length = length;
   area->memobj_base = offset;

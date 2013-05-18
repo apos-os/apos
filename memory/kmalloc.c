@@ -53,6 +53,7 @@ void kmalloc_init() {
   // the page fault handler not to bork.
   kmemset(&g_root_heap_vm_area, 0, sizeof(vm_area_t));
   g_root_heap_vm_area.memobj = 0x0;
+  g_root_heap_vm_area.allow_allocation = 1;
   g_root_heap_vm_area.vm_base = meminfo->heap_start;
   g_root_heap_vm_area.vm_length = meminfo->heap_end - meminfo->heap_start;
   g_root_heap_vm_area.prot = MEM_PROT_ALL;

@@ -32,6 +32,9 @@ struct vm_area {
   // early in the boot process (e.g., the heap).
   memobj_t* memobj;
 
+  // If set, allow new pages to be allocated for this area.
+  int allow_allocation;
+
   // The address and length (in bytes) of the region in the process's address
   // space.  Must be page-aligned and page-sized.
   addr_t vm_base;
