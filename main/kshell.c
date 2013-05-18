@@ -14,6 +14,7 @@
 
 // A very basic kernel-mode shell.  Currently just for testing ld I/O.
 
+#include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
 
@@ -35,6 +36,7 @@
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
+#include "proc/load/load.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -593,42 +595,48 @@ void bcstats_cmd(int argc, char** argv) {
   block_cache_log_stats();
 }
 
-extern uint32_t USER_START_SYMBOL;
-extern uint32_t USER_END_SYMBOL;
-extern uint32_t _USER_OFFSET;
-
-// Create a mapping for the static user-mode code at the appropriate address.
-int setup_user_code() {
-  const uint32_t start = (uint32_t)&_USER_OFFSET;
-  const uint32_t end = (uint32_t)&USER_END_SYMBOL;
-  // Create an anonymous mapping "backing" the user code to allow memory checks.
-  void* map_addr_out = 0x0;
-  const uint32_t map_length = ceiling_div(end - start, PAGE_SIZE) * PAGE_SIZE;
-  const int result = do_mmap((void*)start, map_length, PROT_ALL,
-                             MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS,
-                             -1, 0, &map_addr_out);
-  if (result < 0) return result;
-
-  // Create the actual mappings on top of the mmap'd region.
-  for (uint32_t addr = start; addr < end; addr += PAGE_SIZE) {
-    KASSERT(addr % PAGE_SIZE == 0);
-    page_frame_map_virtual(addr, addr - start,
-                           MEM_PROT_ALL,
-                           MEM_ACCESS_KERNEL_AND_USER,
-                           0);
-  }
-  return 0;
-}
-
-void user_main();
-
 void boot_cmd(int argc, char** argv) {
-  int result = setup_user_code();
+  if (argc != 2) {
+    klogf("Usage: boot <binary>\n");
+    return;
+  }
+
+  const int fd = vfs_open(argv[1], VFS_O_RDONLY);
+  if (fd < 0) {
+    klogf("error: couldn't open file '%s' for reading: %s\n", argv[1],
+          errorname(-fd));
+    return;
+  }
+
+  // Load the binary.
+  load_binary_t* binary = NULL;
+  int result = load_binary(fd, &binary);
   if (result) {
-    klogf("error: couldn't map user-mode code into address space: %s\n",
+    klogf("error: couldn't load binary from file '%s': %s\n", argv[1],
           errorname(-result));
     return;
   }
+
+  // Unmap the current user address space.
+  // TODO(aoates): if this (or anything after this) fails, we're hosed.  Should
+  // exit the process.
+  result = do_munmap((void*)MEM_FIRST_MAPPABLE_ADDR,
+                     MEM_LAST_USER_MAPPABLE_ADDR -
+                     MEM_FIRST_MAPPABLE_ADDR + 1);
+  if (result) {
+    kfree(binary);
+    klogf("boot: couldn't unmap existing user code: %s\n", errorname(-result));
+    return;
+  }
+
+  // Map the data into our address space.
+  result = load_map_binary(fd, binary);
+  if (result) {
+    kfree(binary);
+    klogf("boot: couldn't map new user code: %s\n", errorname(-result));
+    return;
+  }
+  vfs_close(fd);
 
   // Create the stack.
   const uint32_t kStackStart = 0x90000000;
@@ -645,7 +653,7 @@ void boot_cmd(int argc, char** argv) {
   uint32_t* stack_top =
       (uint32_t*)(kStackStart + kStackSize - sizeof(uint32_t));
 
-  const uint32_t ptr = (uint32_t)(&user_main);
+  const uint32_t ptr = binary->entry;
   const uint32_t new_data_seg = (GDT_USER_DATA_SEGMENT << 3) | 0x03;
   const uint32_t new_code_seg = (GDT_USER_CODE_SEGMENT << 3) | 0x03;
   asm volatile (
