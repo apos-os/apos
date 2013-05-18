@@ -28,15 +28,13 @@
 #include "common/math.h"
 #include "dev/ata/ata.h"
 #include "memory/block_cache.h"
-#include "memory/gdt.h"
-#include "memory/mmap.h"
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
 #include "dev/dev.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
-#include "proc/load/load.h"
+#include "proc/exec.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -601,76 +599,10 @@ void boot_cmd(int argc, char** argv) {
     return;
   }
 
-  const int fd = vfs_open(argv[1], VFS_O_RDONLY);
-  if (fd < 0) {
-    klogf("error: couldn't open file '%s' for reading: %s\n", argv[1],
-          errorname(-fd));
-    return;
-  }
-
-  // Load the binary.
-  load_binary_t* binary = NULL;
-  int result = load_binary(fd, &binary);
+  int result = do_exec(argv[1]);
   if (result) {
-    klogf("error: couldn't load binary from file '%s': %s\n", argv[1],
-          errorname(-result));
-    return;
+    klogf("Couldn't boot %s: %s\n", argv[1], errorname(-result));
   }
-
-  // Unmap the current user address space.
-  // TODO(aoates): if this (or anything after this) fails, we're hosed.  Should
-  // exit the process.
-  result = do_munmap((void*)MEM_FIRST_MAPPABLE_ADDR,
-                     MEM_LAST_USER_MAPPABLE_ADDR -
-                     MEM_FIRST_MAPPABLE_ADDR + 1);
-  if (result) {
-    kfree(binary);
-    klogf("boot: couldn't unmap existing user code: %s\n", errorname(-result));
-    return;
-  }
-
-  // Map the data into our address space.
-  result = load_map_binary(fd, binary);
-  if (result) {
-    kfree(binary);
-    klogf("boot: couldn't map new user code: %s\n", errorname(-result));
-    return;
-  }
-  vfs_close(fd);
-
-  // Create the stack.
-  const uint32_t kStackStart = 0x90000000;
-  const uint32_t kStackSize = 1024 * PAGE_SIZE;
-  void* stack_addr_out;
-  result = do_mmap((void*)kStackStart, kStackSize, PROT_ALL,
-                   MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0,
-                   &stack_addr_out);
-  if (result) {
-    klogf("error: couldn't create mapping for kernel stack: %s\n",
-          errorname(-result));
-    return;
-  }
-  uint32_t* stack_top =
-      (uint32_t*)(kStackStart + kStackSize - sizeof(uint32_t));
-
-  const uint32_t ptr = binary->entry;
-  const uint32_t new_data_seg = (GDT_USER_DATA_SEGMENT << 3) | 0x03;
-  const uint32_t new_code_seg = (GDT_USER_CODE_SEGMENT << 3) | 0x03;
-  asm volatile (
-      "mov %0, %%eax\n\t"
-      "mov %%ax, %%ds\n\t"
-      "mov %%ax, %%es\n\t"
-      "mov %%ax, %%fs\n\t"
-      "mov %%ax, %%gs\n\t"
-      "pushl %0\n\t"
-      "pushl %1\n\t"
-      "pushf\n\t"
-      "pushl %2\n\t"
-      "pushl %3\n\t"
-      "iret"
-      :: "r"(new_data_seg), "r"(stack_top),
-         "r"(new_code_seg), "r"(ptr) : "eax");
-  return;
 }
 
 typedef struct {
