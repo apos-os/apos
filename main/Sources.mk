@@ -17,6 +17,5 @@ $(eval $(BEGIN_SOURCES))
 LOCAL_SOURCES := \
   kernel.c \
   kshell.c \
-  user_main.c \
 
 $(eval $(END_SOURCES))
