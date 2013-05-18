@@ -389,6 +389,17 @@ static void map_file_mode_test() {
              do_mmap(0x0, PAGE_SIZE, PROT_READ | PROT_EXEC,
                      MAP_SHARED, fdA, 0, &addrA));
   vfs_close(fdA);
+
+  // For a private mapping, we should be able to create a R/W mapping even if
+  // the underlying file is R/O, since nothing will be written back.
+  KTEST_BEGIN("mmap(): file mode test (R/W private mapping of R/O file)");
+  fdA = vfs_open(kFileA, VFS_O_RDONLY);
+  KEXPECT_EQ(0,
+             do_mmap(0x0, PAGE_SIZE, PROT_ALL,
+                     MAP_PRIVATE, fdA, 0, &addrA));
+  KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
+
+  vfs_close(fdA);
 }
 
 // Test that a non-NULL addr parameter is used as a hint.
@@ -683,6 +694,44 @@ static void mmap_anonymous() {
   EXPECT_MMAP(0, (emmap_t[]){});
 }
 
+// Test boundary conditions (first and last mappable page).
+static void mmap_first_and_last_page() {
+  KTEST_BEGIN("mmap(): first mappable page");
+
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)MEM_FIRST_MAPPABLE_ADDR, PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED, -1, 0, &addrA));
+  KEXPECT_EQ((void*)MEM_FIRST_MAPPABLE_ADDR, addrA);
+  EXPECT_MMAP(1, (emmap_t[]){{MEM_FIRST_MAPPABLE_ADDR, 0x1000, -1}});
+  KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
+  EXPECT_MMAP(0, (emmap_t[]){});
+
+  KTEST_BEGIN("mmap(): last mappable page (hint)");
+  addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR),
+                        PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS,
+                        -1, 0, &addrA));
+  KEXPECT_EQ((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR), addrA);
+  EXPECT_MMAP(1, (emmap_t[])
+              {{addr2page(MEM_LAST_USER_MAPPABLE_ADDR), 0x1000, -1}});
+  KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
+  EXPECT_MMAP(0, (emmap_t[]){});
+
+  KTEST_BEGIN("mmap(): last mappable page (MAP_FIXED)");
+  addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR),
+                        PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED,
+                        -1, 0, &addrA));
+  KEXPECT_EQ((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR), addrA);
+  EXPECT_MMAP(1, (emmap_t[])
+              {{addr2page(MEM_LAST_USER_MAPPABLE_ADDR), 0x1000, -1}});
+  KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
+
+  EXPECT_MMAP(0, (emmap_t[]){});
+}
+
 // TODO(aoates): things to test:
 // * where fd mode > requested mapping mode
 // * vfs_close() after map (public and private mappings)
@@ -712,6 +761,8 @@ void mmap_test() {
   mmap_copy_on_write();
 
   mmap_anonymous();
+
+  mmap_first_and_last_page();
 
   vfs_unlink(kFileA);
   vfs_unlink(kFileB);

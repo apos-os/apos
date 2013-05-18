@@ -15,7 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  syscall_stubs.tpl.c \
-  syscall.s \
+  elf.c \
+  load.c \
 
 $(eval $(END_SOURCES))

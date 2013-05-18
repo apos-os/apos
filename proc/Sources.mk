@@ -15,6 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  exec.c \
   kthread.c \
   kthread_asm.s \
   scheduler.c \
@@ -22,5 +23,10 @@ LOCAL_SOURCES := \
   sleep.c \
   kthread_pool.c \
   tss.c \
+  user_mode.c \
+
+LOCAL_SUBDIRS := load
+
+$(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 
 $(eval $(END_SOURCES))
