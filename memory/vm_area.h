@@ -37,6 +37,8 @@ struct vm_area {
 
   // The address and length (in bytes) of the region in the process's address
   // space.  Must be page-aligned and page-sized.
+  //
+  // If (flags & MEM_GLOBAL), additional restrictions may apply.
   addr_t vm_base;
   addr_t vm_length;
 

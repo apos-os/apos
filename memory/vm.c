@@ -15,7 +15,9 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/list.h"
+#include "common/kstring.h"
 #include "common/math.h"
+#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
@@ -146,4 +148,25 @@ int vm_verify_address(process_t* proc, addr_t addr, int is_write,
            contig_area->vm_base == prev_area->vm_base + prev_area->vm_length &&
            verify_access(contig_area, is_write, is_user) == 0);
   return 0;
+}
+
+void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
+                              int allow_allocation) {
+  KASSERT(proc_current() != 0x0);
+  KASSERT(proc_current()->id == 0);
+
+  kmemset(area, 0, sizeof(vm_area_t));
+  area->memobj = 0x0;
+  area->allow_allocation = allow_allocation;
+  area->vm_base = base;
+  area->vm_length = length;
+  area->prot = MEM_PROT_ALL;
+  area->access = MEM_ACCESS_KERNEL_ONLY;
+  area->flags = MEM_GLOBAL;
+  area->proc = proc_current();
+  area->vm_proc_list = LIST_LINK_INIT;
+
+  vm_insert_area(proc_current(), area);
+
+  page_frame_init_global_mapping(base, length);
 }
