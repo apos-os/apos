@@ -17,6 +17,7 @@
 #include "common/list.h"
 #include "common/kstring.h"
 #include "common/math.h"
+#include "memory/memobj_shadow.h"
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
@@ -158,6 +159,7 @@ void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
   kmemset(area, 0, sizeof(vm_area_t));
   area->memobj = 0x0;
   area->allow_allocation = allow_allocation;
+  area->is_private = 0;
   area->vm_base = base;
   area->vm_length = length;
   area->prot = MEM_PROT_ALL;
@@ -169,4 +171,63 @@ void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
   vm_insert_area(proc_current(), area);
 
   page_frame_init_global_mapping(base, length);
+}
+
+int vm_fork_address_space_into(process_t* target_proc) {
+  KASSERT(list_empty(&target_proc->vm_area_list));
+
+  list_link_t* link = proc_current()->vm_area_list.head;
+  while (link) {
+    vm_area_t* const source_area = container_of(link, vm_area_t, vm_proc_list);
+    vm_area_t* target_area = NULL;
+    const int result = vm_area_create(source_area->vm_length, &target_area);
+    if (result) return result;
+
+    target_area->allow_allocation = source_area->allow_allocation;
+    target_area->is_private = source_area->is_private;
+    target_area->vm_base = source_area->vm_base;
+    target_area->vm_length = source_area->vm_length;
+    target_area->memobj_base = source_area->memobj_base;
+    target_area->prot = source_area->prot;
+    target_area->access = source_area->access;
+    target_area->flags = source_area->flags;
+    target_area->proc = target_proc;
+
+    // If the mapping is private, create shadow objects in both processes.
+    if (source_area->memobj) {
+      if (target_area->is_private) {
+        memobj_t* orig_memobj = source_area->memobj;
+        source_area->memobj = memobj_create_shadow(orig_memobj);
+        target_area->memobj = memobj_create_shadow(orig_memobj);
+
+        source_area->memobj->ops->ref(source_area->memobj);
+        target_area->memobj->ops->ref(target_area->memobj);
+
+        // Unmap the range in our current process so we pick up the COW versions.
+        // TODO(aoates): just make the current mappings read-only.
+        page_frame_unmap_virtual_range(
+            source_area->vm_base, source_area->vm_length);
+      } else {
+        target_area->memobj = source_area->memobj;
+        target_area->memobj->ops->ref(target_area->memobj);
+      }
+    } else {
+      KASSERT(target_area->flags & MEM_GLOBAL);
+      target_area->memobj = 0x0;
+    }
+
+    // If it's a global mapping, link it in the new address space.
+    if (target_area->flags & MEM_GLOBAL) {
+      page_frame_link_global_mapping(target_proc->page_directory,
+                                     target_area->vm_base,
+                                     target_area->vm_length);
+    }
+
+    // TODO(aoates): this is O(n^2), but has some nice sanity checks.
+    vm_insert_area(target_proc, target_area);
+
+    link = link->next;
+  }
+
+  return 0;
 }

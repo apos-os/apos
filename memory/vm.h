@@ -60,4 +60,16 @@ int vm_verify_address(process_t* proc, addr_t addr, int is_write,
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
                               int allow_allocation);
 
+// Fork the current process's address space and mappings into another process.
+// Each vm_area_t in the current process will be copied to the new process.  If
+// the area represents a private mapping, shadow objects will be created for
+// both the current process and new process to ensure they don't share
+// modifications.
+//
+// For any global mappings, links the new address space to the global region.
+//
+// Returns 0 on success, or -errno on error (in which case the target's
+// vm_area_list is left in an indeterminate state).
+int vm_fork_address_space_into(process_t* target);
+
 #endif

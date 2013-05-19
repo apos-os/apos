@@ -24,6 +24,9 @@
 
 // A vm_area_t represents a mapped region of virtual memory in a process.  Each
 // is backed by a memobj_t.
+//
+// NOTE: if you modify this structure, be sure to update vm_area_create() and
+// vm_fork_address_space_into() to handle the new field.
 struct vm_area {
   // The memobj_t backing the region.  The vm_area holds one reference on the
   // memobj_t.
@@ -34,6 +37,7 @@ struct vm_area {
 
   // If set, allow new pages to be allocated for this area.
   int allow_allocation;
+  int is_private;
 
   // The address and length (in bytes) of the region in the process's address
   // space.  Must be page-aligned and page-sized.
