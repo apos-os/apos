@@ -192,12 +192,19 @@ void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
 }
 
 void page_frame_unmap_virtual(uint32_t virt) {
+  page_frame_unmap_virtual_range(virt, PAGE_SIZE);
+}
+
+void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length) {
   KASSERT(virt % PAGE_SIZE == 0);
-  uint32_t* pte = get_or_create_page_table_entry(virt, 0);
-  if (pte) {
-    // Mark the page as non-present.
-    *pte &= ~PTE_PRESENT;
-    invalidate_tlb(virt);
+  KASSERT(length % PAGE_SIZE == 0);
+  for (uint32_t i = 0; i < length / PAGE_SIZE; ++i) {
+    uint32_t* pte = get_or_create_page_table_entry(virt + i * PAGE_SIZE, 0);
+    if (pte) {
+      // Mark the page as non-present.
+      *pte &= ~PTE_PRESENT;
+      invalidate_tlb(virt);
+    }
   }
 }
 

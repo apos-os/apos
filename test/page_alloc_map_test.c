@@ -178,6 +178,36 @@ recover_D:
   addr = addr;
   KEXPECT_EQ(1, expected_seen);
 
+  KTEST_BEGIN("unmapping range");
+  // First set up a multi-page mapping.
+  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page,
+                         MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
+  page_frame_map_virtual(((uint32_t)addr & PDE_ADDRESS_MASK) + PAGE_SIZE,
+                         phys_page,
+                         MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
+
+  *addr = 25;
+  *(uint32_t*)((uint32_t)addr + PAGE_SIZE) = 25;
+
+  // ...then unmap both.
+  page_frame_unmap_virtual_range((uint32_t)addr & PDE_ADDRESS_MASK,
+                                 2 * PAGE_SIZE);
+
+  // Accesses to both pages should page fault.
+  expect_page_fault((uint32_t)addr, 0x02, (uint32_t)&&fault_E, (uint32_t)&&recover_E);
+fault_E:
+  *addr = 25;
+recover_E:
+  addr = addr;
+  KEXPECT_EQ(1, expected_seen);
+
+  expect_page_fault((uint32_t)addr + PAGE_SIZE, 0x02, (uint32_t)&&fault_F, (uint32_t)&&recover_F);
+fault_F:
+  *(uint32_t*)((uint32_t)addr + PAGE_SIZE) = 25;
+recover_F:
+  addr = addr;
+  KEXPECT_EQ(1, expected_seen);
+
   // Restore original handler.
   // TODO(aoates): get the actual original handler to restore instead of
   // hardcoding this.

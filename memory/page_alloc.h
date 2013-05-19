@@ -70,6 +70,11 @@ void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
 // REQUIRES: virt is page-aligned.
 void page_frame_unmap_virtual(uint32_t virt);
 
+// Removes mappings for an entire range of addresses.
+//
+// REQUIRES: virt and length are page-aligned.
+void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length);
+
 // Allocate and initialize a new page directory (e.g. for a new process), and
 // return it's (physical) address.
 page_dir_ptr_t page_frame_alloc_directory();
