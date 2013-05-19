@@ -22,6 +22,7 @@
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "memory/memory.h"
+#include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/tss.h"
 
@@ -41,11 +42,12 @@ static kthread_queue_t g_reap_queue;
 // thread).
 //
 // Defined in kthread_asm.s
-void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB);
+void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB,
+                          page_dir_ptr_t pdA, page_dir_ptr_t pdB);
 
 static void kthread_init_kthread(kthread_data_t* t) {
   t->state = KTHREAD_PENDING;
-  t->id = t->esp = t->page_directory = 0;
+  t->id = t->esp = 0;
   t->retval = 0x0;
   t->prev = t->next = 0x0;
   t->stack = 0x0;
@@ -75,7 +77,6 @@ void kthread_init() {
   first->esp = 0;
   first->id = g_next_id++;
   first->stack = (uint32_t*)get_global_meminfo()->kernel_stack_base;
-  first->page_directory = get_global_meminfo()->kernel_page_directory;
 
   KASSERT_DBG((uint32_t)(&first) < (uint32_t)first->stack + KTHREAD_STACK_SIZE);
 
@@ -104,9 +105,6 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   // TODO(aoates): use the process from the parent thread for this thread, once
   // we support multiple threads per process.
-
-  // Inherit the creating thread's address space.
-  thread->page_directory = g_current_thread->page_directory;
 
   // Allocate a stack for the thread.
   uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
@@ -238,7 +236,18 @@ void kthread_switch(kthread_t new_thread) {
   g_current_thread = new_thread;
   tss_set_kernel_stack(stack_top((addr_t)g_current_thread->stack));
   new_thread->state = KTHREAD_RUNNING;
-  kthread_swap_context(old_thread, new_thread);
+
+  // If either the old or new thread isn't owned by a process (as with some
+  // kernel threads), either unconditionally switch to the new thread's address
+  // space, or continue executing in whatever address space we're already in.
+  // TODO(aoates): should we really allow orphan threads like this?  Or should
+  // we require all such threads to be tied to the root process?  It's a little
+  // weird that these threads can end up executing in arbitrary address spaces.
+  const page_dir_ptr_t old_pd =
+      (old_thread->process ? old_thread->process->page_directory : 0x0);
+  const page_dir_ptr_t new_pd =
+      (new_thread->process ? new_thread->process->page_directory : old_pd);
+  kthread_swap_context(old_thread, new_thread, old_pd, new_pd);
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 .set KTHREAD_T_ESP, 0x08
-.set KTHREAD_T_PAGE_DIRECTORY, 0xc
 
 .global kthread_swap_context
 kthread_swap_context:
@@ -31,11 +30,10 @@ kthread_swap_context:
   movl %esp, KTHREAD_T_ESP(%eax)
 
   # Switch address spaces, if necessary.
-  movl 12(%ebp), %ecx
-  movl KTHREAD_T_PAGE_DIRECTORY(%ecx), %ecx  # threadB->page_directory
+  movl 20(%ebp), %ecx  # threadB->page_directory
 
   # if (threadA->page_directory != threadB->page_directory)
-  cmp KTHREAD_T_PAGE_DIRECTORY(%eax), %ecx
+  cmp 16(%ebp), %ecx
   je no_cr3_switch_needed
 
   movl %ecx, %cr3

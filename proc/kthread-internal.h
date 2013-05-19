@@ -36,7 +36,6 @@ struct kthread_data {
   uint32_t id;
   uint32_t state;
   uint32_t esp;  // KTHREAD_T_ESP in kthread_asm.s
-  page_dir_ptr_t page_directory;  // KTHREAD_T_PAGE_DIRECTORY in kthread_asm.s
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;

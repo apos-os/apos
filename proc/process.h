@@ -38,6 +38,8 @@ struct process {
 
   // List of vm_area_t's of the mmap'd areas in the current process.
   list_t vm_area_list;
+
+  page_dir_ptr_t page_directory;
 };
 
 // Initialize the process table, and create the first process (process 0) from

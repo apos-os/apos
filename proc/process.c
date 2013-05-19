@@ -45,6 +45,7 @@ static void proc_init_process(process_t* p) {
   }
   p->cwd = 0x0;
   p->vm_area_list = LIST_INIT;
+  p->page_directory = 0;
 }
 
 void proc_init_stage1() {
@@ -59,11 +60,13 @@ void proc_init_stage1() {
   g_proc_table[0]->id = 0;
   g_current_proc = 0;
 
+  const memory_info_t* meminfo = get_global_meminfo();
+  g_proc_table[0]->page_directory = meminfo->kernel_page_directory;
+
   g_proc_init_stage = 1;
 
   // Create vm_areas corresponding to the regions mapped in the loading code.
   // TODO(aoates): is there a better place to do this?
-  const memory_info_t* meminfo = get_global_meminfo();
   vm_create_kernel_mapping(&g_kernel_mapped_vm_area, meminfo->mapped_start,
                            meminfo->mapped_end - meminfo->mapped_start,
                            0 /* allow_allocation */);
