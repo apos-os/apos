@@ -94,15 +94,16 @@ void kmain(memory_info_t* meminfo) {
 
   enable_interrupts();
 
-  klog("proc_init_stage1()\n");
-  proc_init_stage1();
-
   klog("set_global_meminfo()\n");
   set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
   klog("paging_init()\n");
   paging_init(meminfo);
+
+  klog("proc_init_stage1()\n");
+  proc_init_stage1();
+
   klog("kmalloc_init()\n");
   kmalloc_init();
 

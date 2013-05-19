@@ -15,6 +15,9 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "common/math.h"
+#include "memory/vm.h"
+#include "memory/vm_area.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
@@ -23,6 +26,12 @@
 // before kmalloc_init(), and therefore kmalloc_init() can set up its memory
 // area.
 static process_t g_first_process;
+
+// vm_area_t's representing the regions mapped for the kernel binary, and the
+// physically-mapped region, respectively.  They will be put in
+// g_first_process's memory map.
+static vm_area_t g_kernel_mapped_vm_area;
+static vm_area_t g_physical_mapped_vm_area;
 
 static process_t* g_proc_table[PROC_MAX_PROCS];
 static int g_current_proc = -1;
@@ -51,6 +60,20 @@ void proc_init_stage1() {
   g_current_proc = 0;
 
   g_proc_init_stage = 1;
+
+  // Create vm_areas corresponding to the regions mapped in the loading code.
+  // TODO(aoates): is there a better place to do this?
+  const memory_info_t* meminfo = get_global_meminfo();
+  vm_create_kernel_mapping(&g_kernel_mapped_vm_area, meminfo->mapped_start,
+                           meminfo->mapped_end - meminfo->mapped_start,
+                           0 /* allow_allocation */);
+  // Round up to the next MIN_GLOBAL_MAPPING_SIZE amount.
+  const addr_t phys_map_len =
+      ceiling_div(meminfo->phys_map_length, MIN_GLOBAL_MAPPING_SIZE) *
+      MIN_GLOBAL_MAPPING_SIZE;
+  vm_create_kernel_mapping(&g_physical_mapped_vm_area, meminfo->phys_map_start,
+                           phys_map_len,
+                           0 /* allow_allocation */);
 }
 
 void proc_init_stage2() {

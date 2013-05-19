@@ -75,7 +75,8 @@ typedef struct {
   uint32_t kernel_start_virt;
   uint32_t kernel_end_virt;
 
-  // The area of virtual memory that has been mapped for use by the kernel.
+  // The area of virtual memory that has been mapped containing the kernel
+  // binary.
   uint32_t mapped_start;
   uint32_t mapped_end;
 
