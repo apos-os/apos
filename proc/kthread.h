@@ -38,7 +38,7 @@ void kthread_init();
 // Note: the kthread_t given is just a handle to the thread --- if it goes out
 // of scope or is overwritten, the thread will continue unhindered.
 //
-// RETURNS: 0 if unable to create the thread.
+// RETURNS: 0 if successful, or -errno if unable to create the thread.
 int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 
 // Join the given thread.  Will return once the other thread has exited

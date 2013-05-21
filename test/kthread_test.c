@@ -52,9 +52,9 @@ static void basic_test() {
   kthread_t thread2;
   kthread_t thread3;
 
-  KASSERT(kthread_create(&thread1, &thread_func, (void*)1));
-  KASSERT(kthread_create(&thread2, &thread_func, (void*)2));
-  KASSERT(kthread_create(&thread3, &thread_func, (void*)3));
+  KASSERT(kthread_create(&thread1, &thread_func, (void*)1) == 0);
+  KASSERT(kthread_create(&thread2, &thread_func, (void*)2) == 0);
+  KASSERT(kthread_create(&thread3, &thread_func, (void*)3) == 0);
 
   scheduler_make_runnable(thread1);
   scheduler_make_runnable(thread2);
@@ -77,7 +77,7 @@ static void kthread_exit_test() {
   KTEST_BEGIN("kthread_exit() test");
   kthread_t thread1;
 
-  KASSERT(kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
+  KASSERT(!kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
   scheduler_make_runnable(thread1);
   KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
 }
@@ -90,7 +90,8 @@ static void kthread_return_test() {
   KTEST_BEGIN("explicit return test");
   kthread_t thread1;
 
-  KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd));
+  KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd)
+          == 0);
   scheduler_make_runnable(thread1);
   KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
 }
@@ -118,7 +119,7 @@ static void join_chain_test() {
   for (int i = 0; i < JOIN_CHAIN_TEST_SIZE; i++) {
     kthread_t target = i > 0 ? threads[i-1] : 0;
     int result = kthread_create(&threads[i], &join_test_func, (void*)target);
-    KASSERT(result != 0);
+    KASSERT(result == 0);
     scheduler_make_runnable(threads[i]);
   }
 
@@ -133,7 +134,7 @@ static void* join_test2_func(void* arg) {
     return 0;
   }
   kthread_t next;
-  KASSERT(kthread_create(&next, &join_test2_func, (void*)(x-1)));
+  KASSERT(kthread_create(&next, &join_test2_func, (void*)(x-1)) == 0);
   scheduler_make_runnable(next);
   return (void*)(1 + (int)kthread_join(next));
 }
@@ -146,7 +147,7 @@ static void join_chain_test2() {
   kthread_t thread;
   int result = kthread_create(&thread, &join_test2_func,
                               (void*)JOIN_CHAIN_TEST_SIZE);
-  KASSERT(result != 0);
+  KASSERT(result == 0);
   scheduler_make_runnable(thread);
 
   int out = (int)kthread_join(thread);
@@ -159,9 +160,9 @@ static void queue_test() {
   KTEST_BEGIN("queue operations test");
   kthread_t thread1, thread2;
   int ret = kthread_create(&thread1, &noop_func, 0x0);
-  KASSERT(ret);
+  KASSERT(ret == 0);
   ret = kthread_create(&thread2, &noop_func, 0x0);
-  KASSERT(ret);
+  KASSERT(ret == 0);
 
   kthread_queue_t queue;
   kthread_queue_init(&queue);
@@ -332,7 +333,7 @@ static void stress_test() {
   kthread_t threads[STRESS_TEST_THREADS];
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i));
+    KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
@@ -365,7 +366,7 @@ static void kmutex_test() {
   int out = 0;
   for (int i = 0; i < KMUTEX_TEST_SIZE; ++i) {
     int result = kthread_create(&threads[i], &kmutex_test_func, (void*)(&out));
-    KASSERT(result != 0);
+    KASSERT(result == 0);
     scheduler_make_runnable(threads[i]);
   }
 

@@ -42,7 +42,7 @@ void scheduler_init() {
 
   // Make the idle thread.
   int ret = kthread_create(&g_idle_thread, &idle_thread_body, 0);
-  KASSERT(ret != 0);
+  KASSERT(ret == 0);
   POP_INTERRUPTS();
 }
 

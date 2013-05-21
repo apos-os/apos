@@ -252,13 +252,13 @@ static void get_thread_test(dev_t dev) {
 
   for (int i = 0; i < kThreads; ++i) {
     KASSERT(kthread_create(&threads[i],
-                           &get_thread_test_thread, obj));
+                           &get_thread_test_thread, obj) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
   for (int i = 0; i < kThreads; ++i) {
     KASSERT(kthread_create(&threads[kThreads + i],
-                           &lookup_thread_test_thread, obj));
+                           &lookup_thread_test_thread, obj) == 0);
     scheduler_make_runnable(threads[kThreads + i]);
   }
 
@@ -328,7 +328,7 @@ static void put_thread_test(ramdisk_t* rd, dev_t dev) {
     args[i].obj = obj;
     args[i].thread_id = i;
     KASSERT(kthread_create(&threads[i],
-                           &put_thread_test_thread, &args[i]));
+                           &put_thread_test_thread, &args[i]) == 0);
     scheduler_make_runnable(threads[i]);
   }
 

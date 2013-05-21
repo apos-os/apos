@@ -55,7 +55,7 @@ int kthread_pool_init(kthread_pool_t* pool, int size) {
 
   // Create all the threads.
   for (int i = 0; i < size; ++i) {
-    if (!kthread_create(&pool->threads[i], &worker_func, pool)) {
+    if (kthread_create(&pool->threads[i], &worker_func, pool)) {
       // Note: we'll leak resources here (for all the previous threads we
       // already created).
       klogf("WARNING: error creating one of the threads in a kthraed_pool\n");

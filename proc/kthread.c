@@ -153,7 +153,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   stack++;  // Point to last valid element.
   thread->esp = (uint32_t)stack;
   POP_INTERRUPTS();
-  return 1;
+  return 0;
 }
 
 void kthread_destroy(kthread_t thread) {

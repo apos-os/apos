@@ -266,7 +266,7 @@ static void maybe_free_cache_space(int max_entries) {
 static void init_block_cache() {
   KASSERT(!g_initialized);
   htbl_init(&g_table, g_max_size * 2);
-  KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) != 0);
+  KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
   scheduler_make_runnable(g_flush_queue_thread);
   g_initialized = 1;
 }

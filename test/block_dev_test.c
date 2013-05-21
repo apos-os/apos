@@ -233,7 +233,7 @@ void bd_thread_test(block_dev_t** bds, int len,
       ts[idx].offset = thread_idx;  // Offset is per-bd.
       ts[idx].id = idx;  // ID is global.
       KASSERT(kthread_create(&threads[idx],
-                             &bd_thread_test_func, (void*)(&ts[idx])));
+                             &bd_thread_test_func, (void*)(&ts[idx])) == 0);
       idx++;
     }
   }

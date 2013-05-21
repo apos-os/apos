@@ -414,7 +414,7 @@ static void vfs_open_thread_safety_test() {
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i],
-                           &vfs_open_thread_safety_test_func, &test));
+                           &vfs_open_thread_safety_test_func, &test) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
@@ -772,7 +772,7 @@ static void write_thread_test() {
   int fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i],
-                           &write_thread_test_func, (void*)fd));
+                           &write_thread_test_func, (void*)fd) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
@@ -1086,7 +1086,7 @@ static void bad_inode_thread_test() {
   kthread_t threads[BAD_INODE_SAFETY_THREADS];
 
   for (int i = 0; i < BAD_INODE_SAFETY_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i], &bad_inode_thread_test_func, 0x0));
+    KASSERT(kthread_create(&threads[i], &bad_inode_thread_test_func, 0x0) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
@@ -1179,7 +1179,8 @@ static void create_thread_test() {
 
   KEXPECT_EQ(0, vfs_mkdir(kTestDir));
   for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i], &create_thread_test_func, (void*)i));
+    KASSERT(
+        kthread_create(&threads[i], &create_thread_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
@@ -1208,7 +1209,8 @@ static void create_thread_test() {
 
   KTEST_BEGIN("vfs_unlink(): thread-safety test");
   for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i], &unlink_thread_test_func, (void*)i));
+    KASSERT(
+        kthread_create(&threads[i], &unlink_thread_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
