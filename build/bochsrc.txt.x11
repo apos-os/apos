@@ -1,7 +1,7 @@
 megs: 32
 romimage: file=bochs/bios/BIOS-bochs-latest
 vgaromimage: file=bochs/bios/VGABIOS-elpin-2.40
-floppya: 1_44="kernel.img", status=inserted
+floppya: 1_44="build-out/kernel.img", status=inserted
 boot: a
 log: bochsout.txt
 mouse: enabled=0

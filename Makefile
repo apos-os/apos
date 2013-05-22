@@ -28,7 +28,7 @@ BOOTLOADER	= grub
 
 HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
 
-all: kernel.img $(HD_IMAGES)
+all: $(BUILD_OUT)/kernel.img $(HD_IMAGES)
 
 # Macros for Sources.mk.
 define SOURCES_SUBDIR
@@ -130,14 +130,14 @@ $(BUILD_OUT)/%.PHYS.o : %.c
 	$(mk-build-dir)
 	$(CC) $(CFLAGS) -D_MULTILINK_SUFFIX=_PHYS -o $@ -c $<
  
-kernel.bin: $(OBJFILES) $(MANUALLY_LINKED_OBJS) $(BUILD_DIR)/linker.ld
+$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(MANUALLY_LINKED_OBJS) $(BUILD_DIR)/linker.ld
 	$(LD) -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ \
 	  $(filter-out %.ld $(MANUALLY_LINKED_OBJS), $^)
 
-kernel.img: kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
+$(BUILD_OUT)/kernel.img: $(BUILD_OUT)/kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	cp $(BUILD_DIR)/kernel.img.base $@
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
-	mcopy -i $@ kernel.bin ::/
+	mcopy -i $@ $(BUILD_OUT)/kernel.bin ::/
 
 hd1.img :
 	@echo 'generating hard drive image...'
@@ -169,7 +169,7 @@ DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES)) $(patsubst %,$(BUILD_O
 -include $(DEPSFILES)
 
 clean:
-	$(RM) $(OBJFILES) $(DEPSFILES) kernel.bin kernel.img $(HD_IMAGES)
+	$(RM) $(OBJFILES) $(DEPSFILES) $(BUILD_OUT)/kernel.bin $(BUILD_OUT)/kernel.img $(HD_IMAGES)
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
@@ -177,5 +177,5 @@ run: all
 runx: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt.x11
 
-gdb: kernel.bin all
+gdb: $(BUILD_OUT)/kernel.bin all
 	./bochs/bochs_gdb -q -f $(BUILD_DIR)/bochsrc.txt.gdb
