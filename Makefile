@@ -134,10 +134,13 @@ $(BUILD_OUT)/kernel.bin: $(OBJFILES) $(MANUALLY_LINKED_OBJS) $(BUILD_DIR)/linker
 	$(LD) -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ \
 	  $(filter-out %.ld $(MANUALLY_LINKED_OBJS), $^)
 
-$(BUILD_OUT)/kernel.img: $(BUILD_OUT)/kernel.bin grub/menu.lst $(BUILD_DIR)/kernel.img.base
+$(BUILD_OUT)/kernel.bin.stripped: $(BUILD_OUT)/kernel.bin
+	strip -s $< -o $@
+
+$(BUILD_OUT)/kernel.img: $(BUILD_OUT)/kernel.bin.stripped grub/menu.lst $(BUILD_DIR)/kernel.img.base
 	cp $(BUILD_DIR)/kernel.img.base $@
 	mcopy -i $@ grub/menu.lst ::/boot/grub/menu.lst 
-	mcopy -i $@ $(BUILD_OUT)/kernel.bin ::/
+	mcopy -i $@ $(BUILD_OUT)/kernel.bin.stripped ::/kernel.bin
 
 hd1.img :
 	@echo 'generating hard drive image...'
@@ -170,6 +173,7 @@ DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES)) $(patsubst %,$(BUILD_O
 
 clean:
 	$(RM) $(OBJFILES) $(DEPSFILES) $(BUILD_OUT)/kernel.bin $(BUILD_OUT)/kernel.img $(HD_IMAGES)
+	$(RM) $(OBJFILES) $(DEPSFILES) $(BUILD_OUT)/kernel.bin $(BUILD_OUT)/kernel.bin.stripped $(BUILD_OUT)/kernel.img $(HD_IMAGES)
 
 run: all
 	./bochs/bochs -q -f $(BUILD_DIR)/bochsrc.txt
