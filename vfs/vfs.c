@@ -948,3 +948,18 @@ int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
   *memobj_out = &file->vnode->memobj;
   return 0;
 }
+
+void vfs_fork_fds(process_t* procA, process_t* procB) {
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    for (int i = 0; i < PROC_MAX_FDS; ++i) {
+      KASSERT(procB->fds[i] == PROC_UNUSED_FD);
+    }
+  }
+
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (procA->fds[i] != PROC_UNUSED_FD) {
+      procB->fds[i] = procA->fds[i];
+      g_file_table[procA->fds[i]]->refcount++;
+    }
+  }
+}
