@@ -34,7 +34,7 @@ static vm_area_t g_kernel_mapped_vm_area;
 static vm_area_t g_physical_mapped_vm_area;
 
 static process_t* g_proc_table[PROC_MAX_PROCS];
-static int g_current_proc = -1;
+static pid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
 
 static void proc_init_process(process_t* p) {

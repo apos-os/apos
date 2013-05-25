@@ -26,8 +26,11 @@
 
 struct vnode;
 
+// Process ID.
+typedef int pid_t;
+
 struct process {
-  int id;  // Index into global process table.
+  pid_t id;  // Index into global process table.
   kthread_t thread;  // Main process thread.
 
   // File descriptors.  Indexes into the global file table.
