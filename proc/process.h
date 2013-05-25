@@ -66,4 +66,7 @@ void proc_init_stage2();
 // Return the current process descriptor.
 process_t* proc_current();
 
+// Return the process_t with the given ID, or NULL if there is none.
+process_t* proc_get(pid_t id);
+
 #endif

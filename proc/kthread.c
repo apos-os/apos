@@ -22,6 +22,7 @@
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "memory/memory.h"
+#include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/tss.h"
@@ -247,6 +248,9 @@ void kthread_switch(kthread_t new_thread) {
       (old_thread->process ? old_thread->process->page_directory : 0x0);
   const page_dir_ptr_t new_pd =
       (new_thread->process ? new_thread->process->page_directory : old_pd);
+  if (new_thread->process) {
+    proc_set_current(new_thread->process);
+  }
   kthread_swap_context(old_thread, new_thread, old_pd, new_pd);
 
   // Verify that we're back on the proper stack!

@@ -16,6 +16,7 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   exec.c \
+  fork.c \
   kthread.c \
   kthread_asm.s \
   scheduler.c \

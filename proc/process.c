@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "common/kassert.h"
 #include "common/math.h"
+#include "memory/kmalloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
+#include "proc/process-internal.h"
 
 // We statically allocate the first process_t, so that proc_init() can run
 // before kmalloc_init(), and therefore kmalloc_init() can set up its memory
@@ -33,7 +36,7 @@ static process_t g_first_process;
 static vm_area_t g_kernel_mapped_vm_area;
 static vm_area_t g_physical_mapped_vm_area;
 
-static process_t* g_proc_table[PROC_MAX_PROCS];
+process_t* g_proc_table[PROC_MAX_PROCS];
 static pid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
 
@@ -46,6 +49,25 @@ static void proc_init_process(process_t* p) {
   p->cwd = 0x0;
   p->vm_area_list = LIST_INIT;
   p->page_directory = 0;
+}
+
+process_t* proc_alloc() {
+  int id = -1;
+  for (int i = 0; i < PROC_MAX_PROCS; ++i) {
+    if (g_proc_table[i] == NULL) {
+      id = i;
+      break;
+    }
+  }
+  if (id < 0) return 0x0;
+
+  process_t* proc = (process_t*)kmalloc(sizeof(process_t));
+  if (!proc) return 0x0;
+
+  proc_init_process(proc);
+  proc->id = id;
+  g_proc_table[id] = proc;
+  return proc;
 }
 
 void proc_init_stage1() {
@@ -94,4 +116,18 @@ process_t* proc_current() {
   KASSERT(g_current_proc >= 0 && g_current_proc < PROC_MAX_PROCS);
   KASSERT(g_proc_init_stage >= 1);
   return g_proc_table[g_current_proc];
+}
+
+process_t* proc_get(pid_t id) {
+  if (id < 0 || id >= PROC_MAX_PROCS)
+    return NULL;
+  else
+    return g_proc_table[id];
+}
+
+void proc_set_current(process_t* process) {
+  KASSERT_MSG(process->id >= 0 && process->id < PROC_MAX_PROCS,
+              "bad process ID: %d", process->id);
+  KASSERT(g_proc_table[process->id] == process);
+  g_current_proc = process->id;
 }
