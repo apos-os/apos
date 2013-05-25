@@ -95,6 +95,8 @@ static test_entry_t TESTS[] = {
   { "vm", &vm_test, 1 },
   { "dmz", &dmz_test, 1 },
   { "proc_load", &proc_load_test, 1 },
+  // TODO(aoates): add this to the default set when it doesn't break them.
+  { "fork", &fork_test, 0 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
