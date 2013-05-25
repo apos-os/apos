@@ -20,7 +20,8 @@ import sys
 import subprocess
 
 def symbolize(frame_num, addr):
-  p = subprocess.Popen(["addr2line", "-f", "-s", "-e", "kernel.bin", addr],
+  p = subprocess.Popen(["addr2line", "-f", "-s", "-e",
+                        "build-out/kernel.bin", addr],
                        stdout=subprocess.PIPE)
   output = p.communicate()[0].split('\n')
   function = output[0]
