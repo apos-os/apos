@@ -20,5 +20,6 @@
 typedef int pid_t;
 
 pid_t fork();
+void _exit(int status);
 
 #endif

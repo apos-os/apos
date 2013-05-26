@@ -166,5 +166,11 @@ AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'const char*:path:s'])
 
-AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', 'user/fork.h',
+AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', 'user/process.h',
     'pid_t', [])
+
+AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
+    'user/process.h',
+    'int', [
+    'int:status:u'],
+    generate_user_stub=False)

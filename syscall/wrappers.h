@@ -18,13 +18,20 @@
 
 #include <stdint.h>
 
-#include "vfs/vfs.h"
 #include "dev/dev.h"
+#include "proc/exit.h"
+#include "vfs/vfs.h"
 
 static inline int vfs_mknod_wrapper(const char* path, uint32_t mode,
                                     int dev_major, int dev_minor) {
   return vfs_mknod(path, mode, mkdev(dev_major, dev_minor));
 }
 
+// TODO(aoates): if we have more void syscalls, we should add support directly
+// to the syscall templates.
+static inline int proc_exit_wrapper(int status) {
+  proc_exit(status);
+  return 0;  // Should never get here.
+}
 
 #endif

@@ -19,3 +19,7 @@
 int mknod(const char* path, uint32_t mode, dev_t dev) {
   return _do_mknod(path, mode, dev.major, dev.minor);
 }
+
+void _exit(int status) {
+  _do_exit(status);
+}
