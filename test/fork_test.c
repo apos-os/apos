@@ -22,6 +22,7 @@
 #include "proc/exit.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
 
@@ -160,7 +161,10 @@ static void do_test() {
 
   // TODO(aoates): test fd and cwd forking.
 
-  // TODO(aoates): wait for child to exit.
+  int exit_status = -1;
+  const pid_t wait_child_pid = proc_wait(&exit_status);
+  KEXPECT_EQ(5, exit_status);
+  KEXPECT_EQ(child_pid, wait_child_pid);
 
   KEXPECT_EQ(0, do_munmap((void*)SHARED_MAP_BASE, MAP_LENGTH));
   KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));

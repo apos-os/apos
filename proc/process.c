@@ -54,6 +54,7 @@ static void proc_init_process(process_t* p) {
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;
+  kthread_queue_init(&p->wait_queue);
 }
 
 process_t* proc_alloc() {
@@ -73,6 +74,18 @@ process_t* proc_alloc() {
   proc->id = id;
   g_proc_table[id] = proc;
   return proc;
+}
+
+void proc_destroy(process_t* process) {
+  KASSERT(process->state == PROC_INVALID);
+  KASSERT(process->thread == KTHREAD_NO_THREAD);
+  KASSERT(process->page_directory == 0x0);
+  KASSERT(process->id > 0 && process->id < PROC_MAX_PROCS);
+  KASSERT(g_proc_table[process->id] == process);
+
+  g_proc_table[process->id] = NULL;
+  process->id = -1;
+  kfree(process);
 }
 
 void proc_init_stage1() {

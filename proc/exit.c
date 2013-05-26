@@ -18,6 +18,7 @@
 #include "proc/kthread.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
+#include "proc/scheduler.h"
 #include "vfs/vfs.h"
 
 void proc_exit(int status) {
@@ -61,8 +62,10 @@ void proc_exit(int status) {
   }
 
   p->state = PROC_ZOMBIE;
+  p->thread = KTHREAD_NO_THREAD;
 
-  // TODO(aoates): wake up parent if it's wait()'ing.
+  // Wake up parent if it's wait()'ing.
+  scheduler_wake_one(&p->parent->wait_queue);
 
   kthread_exit(0x0);
   die("unreachable");

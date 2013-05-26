@@ -224,6 +224,12 @@ page_dir_ptr_t page_frame_alloc_directory() {
   return dir_phys;
 }
 
+void page_frame_free_directory(page_dir_ptr_t page_directory) {
+  KASSERT(page_directory);
+  KASSERT(page_directory % PAGE_SIZE == 0);
+  page_frame_free(page_directory);
+}
+
 void page_frame_init_global_mapping(addr_t addr, addr_t length) {
   KASSERT(addr % MIN_GLOBAL_MAPPING_SIZE == 0);
   KASSERT(length % MIN_GLOBAL_MAPPING_SIZE == 0);

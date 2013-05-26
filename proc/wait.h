@@ -12,21 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Utilities and definitions for use inside the process module.
-#ifndef APOO_PROC_PROCESS_INTERNAL_H
-#define APOO_PROC_PROCESS_INTERNAL_H
+#ifndef APOO_PROC_WAIT_H
+#define APOO_PROC_WAIT_H
 
 #include "proc/process.h"
 
-// Allocate and initialize a process, and assign it a free process ID.
-// Returns NULL if the kernel is out of memory or process IDs.
-process_t* proc_alloc();
-
-// Destroy the given process_t and remove it from the process table.  It must
-// have already been torn down (as per proc_exit() and proc_wait()).
-void proc_destroy(process_t* process);
-
-// Change the current process.
-void proc_set_current(process_t* process);
+// Wait until a child exits, and return it's pid (and optionally it's exit
+// status).
+pid_t proc_wait(int* exit_status);
 
 #endif

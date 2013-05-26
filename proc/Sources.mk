@@ -26,6 +26,7 @@ LOCAL_SOURCES := \
   kthread_pool.c \
   tss.c \
   user_mode.c \
+  wait.c \
 
 LOCAL_SUBDIRS := load
 

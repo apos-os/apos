@@ -79,6 +79,9 @@ void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length);
 // return it's (physical) address.
 page_dir_ptr_t page_frame_alloc_directory();
 
+// Free the given page directory.
+void page_frame_free_directory(page_dir_ptr_t page_directory);
+
 // Initializes a region of memory as a globally-shared region.  This must be
 // called once per region in the initial address space, before any new processes
 // are created.
