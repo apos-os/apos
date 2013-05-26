@@ -75,6 +75,62 @@ static void implicit_exit_test() {
   KEXPECT_EQ(0, exit_status);
 }
 
+static void parent_exit_first_child_func_inner(void* arg) {
+  scheduler_yield();
+  scheduler_yield();
+  scheduler_yield();
+  proc_exit(6);
+}
+
+static void parent_exit_first_child_func_outer(void* arg) {
+  proc_fork(&parent_exit_first_child_func_inner, 0x0);
+  proc_exit(5);
+}
+
+static void parent_exit_first_test() {
+  KTEST_BEGIN("fork() parent exit first test");
+
+  proc_fork(&parent_exit_first_child_func_outer, 0x0);
+
+  int exit_status = -1;
+  proc_wait(&exit_status);
+  KEXPECT_EQ(5, exit_status);
+
+  // The child should have been adopted by the current (root) process.
+  KEXPECT_EQ(0, proc_current()->id);
+  if (proc_current()->id == 0) {
+    proc_wait(&exit_status);
+    KEXPECT_EQ(6, exit_status);
+  }
+}
+
+static void multi_child_func(void* arg) {
+  scheduler_yield();
+  scheduler_yield();
+  proc_exit((int)arg);
+}
+
+static void multi_child_test() {
+  const int SIZE = 5;
+
+  KTEST_BEGIN("fork() multi-child test");
+
+  int exited[SIZE];
+  for (int i = 0; i < SIZE; ++i) {
+    proc_fork(&multi_child_func, (void*)i);
+    exited[i] = 0;
+  }
+
+  for (int i = 0; i < SIZE; ++i) {
+    int exit_status = -1;
+    proc_wait(&exit_status);
+    KEXPECT_GE(i, 0);
+    KEXPECT_LT(i, SIZE);
+    KEXPECT_EQ(0, exited[exit_status]);
+    exited[exit_status] = 1;
+  }
+}
+
 // Addresses of various mappings created in the parent and child processes.
 #define MAP_LENGTH (3 * PAGE_SIZE)
 #define SHARED_MAP_BASE 0x5000
@@ -189,8 +245,6 @@ static void mapping_test() {
   *(uint32_t*)(PRIVATE_ADDR2) = 55;
   *(uint32_t*)(PRIVATE_ADDR3) = 66;
 
-  // TODO(aoates): test fd and cwd forking.
-
   proc_wait(0x0);
 
   KEXPECT_EQ(0, do_munmap((void*)SHARED_MAP_BASE, MAP_LENGTH));
@@ -198,13 +252,14 @@ static void mapping_test() {
   KEXPECT_EQ(0, do_munmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH));
 }
 
-// TODO(aoates): test adopting of children into root process.
-// TODO(aoates): implicit exit
+// TODO(aoates): test fd and cwd forking.
 
 void fork_test() {
   KTEST_SUITE_BEGIN("proc_fork()");
 
   basic_test();
   implicit_exit_test();
+  parent_exit_first_test();
+  multi_child_test();
   mapping_test();
 }
