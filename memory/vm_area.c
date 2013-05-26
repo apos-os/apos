@@ -50,7 +50,6 @@ int vm_area_create(addr_t length, vm_area_t** area_out) {
 
 void vm_area_destroy(vm_area_t* area) {
   if (area->memobj) {
-    area->memobj->ops->unref(area->memobj);
     for (unsigned int i = 0; i < area->vm_length / PAGE_SIZE; ++i) {
       if (area->pages[i]) {
         area->memobj->ops->put_page(area->memobj, area->pages[i],
@@ -58,6 +57,7 @@ void vm_area_destroy(vm_area_t* area) {
         area->pages[i] = 0x0;
       }
     }
+    area->memobj->ops->unref(area->memobj);
   }
   area->memobj = 0x0;
   KASSERT(!list_link_on_list(&area->proc->vm_area_list, &area->vm_proc_list));
