@@ -19,6 +19,7 @@
 #include "proc/fork.h"
 #include "proc/sleep.h"
 #include "proc/kthread.h"
+#include "proc/exit.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
@@ -95,15 +96,7 @@ static void child_func(void* arg) {
   KEXPECT_EQ(80, *(uint32_t*)SEPARATE_ADDR2);
   KEXPECT_EQ(90, *(uint32_t*)SEPARATE_ADDR3);
 
-  KEXPECT_EQ(0, do_munmap((void*)SHARED_MAP_BASE, MAP_LENGTH));
-  KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));
-  KEXPECT_EQ(0, do_munmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH));
-
-  while (1) {
-    ksleep(10000);
-  }
-
-  // TODO(aoates): call exit()
+  proc_exit(5);
 }
 
 static void do_test() {
@@ -173,6 +166,9 @@ static void do_test() {
   KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));
   KEXPECT_EQ(0, do_munmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH));
 }
+
+// TODO(aoates): test adopting of children into root process.
+// TODO(aoates): implicit exit
 
 void fork_test() {
   KTEST_SUITE_BEGIN("proc_fork()");

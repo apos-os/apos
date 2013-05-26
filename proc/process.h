@@ -29,9 +29,18 @@ struct vnode;
 // Process ID.
 typedef int pid_t;
 
+// Process state.
+typedef enum {
+  PROC_INVALID,
+  PROC_RUNNING,
+  PROC_ZOMBIE,
+} proc_state_t;
+
 struct process {
   pid_t id;  // Index into global process table.
+  proc_state_t state;
   kthread_t thread;  // Main process thread.
+  int exit_status;
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];

@@ -42,7 +42,9 @@ static int g_proc_init_stage = 0;
 
 static void proc_init_process(process_t* p) {
   p->id = -1;
+  p->state = PROC_INVALID;
   p->thread = KTHREAD_NO_THREAD;
+  p->exit_status = -0xABCD;
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     p->fds[i] = -1;
   }

@@ -87,5 +87,6 @@ int proc_fork(proc_func_t start, void* arg) {
   list_push(&proc_current()->children_list,
             &new_process->children_link);
 
+  new_process->state = PROC_RUNNING;
   return new_process->id;
 }
