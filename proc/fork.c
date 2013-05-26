@@ -83,5 +83,9 @@ int proc_fork(proc_func_t start, void* arg) {
 
   scheduler_make_runnable(new_process->thread);
 
+  new_process->parent = proc_current();
+  list_push(&proc_current()->children_list,
+            &new_process->children_link);
+
   return new_process->id;
 }

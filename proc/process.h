@@ -43,6 +43,15 @@ struct process {
   list_t vm_area_list;
 
   page_dir_ptr_t page_directory;
+
+  // Parent process.
+  process_t* parent;
+
+  // Child processes (alive and zombies).
+  list_t children_list;
+
+  // Link on parent's children list.
+  list_link_t children_link;
 };
 
 // Initialize the process table, and create the first process (process 0) from

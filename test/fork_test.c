@@ -130,6 +130,13 @@ static void do_test() {
   KEXPECT_GE(child_pid, 0);
   KEXPECT_NE(parent_pid, child_pid);
 
+  process_t* child_proc = proc_get(child_pid);
+  KEXPECT_EQ(&child_proc->children_link,
+             proc_current()->children_list.head);
+  KEXPECT_EQ(&child_proc->children_link,
+             proc_current()->children_list.tail);
+  KEXPECT_EQ(proc_current(), child_proc->parent);
+
   // Make a new mapping that shouldn't be shared in the child.
   make_separate_mapping();
   *(uint32_t*)(SEPARATE_ADDR1) = 7;
