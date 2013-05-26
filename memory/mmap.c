@@ -123,10 +123,8 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
   } else {
     KASSERT(unmap_start == area->vm_base);
     KASSERT(unmap_end == area->vm_base + area->vm_length);
-    area->memobj->ops->unref(area->memobj);
-    area->memobj = 0x0;
     list_remove(&area->proc->vm_area_list, &area->vm_proc_list);
-    kfree(area);
+    vm_area_destroy(area);
   }
 
   return 0;

@@ -74,4 +74,8 @@ typedef struct vm_area vm_area_t;
 // Create a vm_area_t of the given size.
 int vm_area_create(addr_t length, vm_area_t** area_out);
 
+// Destroy the given vm_area_t and unrefs the underlying memobj.  Must already
+// be removed from the process's list.
+void vm_area_destroy(vm_area_t* area);
+
 #endif
