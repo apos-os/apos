@@ -266,6 +266,10 @@ void kthread_switch(kthread_t new_thread) {
   POP_INTERRUPTS();
 }
 
+addr_t kthread_kernel_stack_top() {
+  return stack_top((addr_t)g_current_thread->stack);
+}
+
 void kthread_queue_init(kthread_queue_t* lst) {
   lst->head = lst->tail = 0x0;
 }

@@ -165,3 +165,6 @@ AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', 'user/fs.h',
 AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'const char*:path:s'])
+
+AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', 'user/fork.h',
+    'pid_t', [])
