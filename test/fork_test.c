@@ -26,6 +26,55 @@
 #include "test/ktest.h"
 #include "vfs/vfs.h"
 
+static pid_t child_pid = -1;
+
+static void basic_child_func(void* arg) {
+  KEXPECT_EQ(0x1234, (uint32_t)arg);
+  char cwd[VFS_MAX_PATH_LENGTH];
+  klogf("child proc:  id: %d  arg: %d\n", proc_current()->id, arg);
+  vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH);
+  klogf("child proc:  cwd: %s\n", cwd);
+
+  KEXPECT_EQ(child_pid, proc_current()->id);
+
+  proc_exit(0x5678);
+}
+
+static void basic_test() {
+  KTEST_BEGIN("fork() basic test");
+
+  // Fork.
+  pid_t parent_pid = proc_current()->id;
+  child_pid = proc_fork(&basic_child_func, (void*)0x1234);
+  KEXPECT_GE(child_pid, 0);
+  KEXPECT_NE(parent_pid, child_pid);
+
+  process_t* child_proc = proc_get(child_pid);
+  KEXPECT_EQ(&child_proc->children_link,
+             proc_current()->children_list.head);
+  KEXPECT_EQ(&child_proc->children_link,
+             proc_current()->children_list.tail);
+  KEXPECT_EQ(proc_current(), child_proc->parent);
+
+  int exit_status = -1;
+  const pid_t child_pid_wait = proc_wait(&exit_status);
+  KEXPECT_EQ(child_pid, child_pid_wait);
+  KEXPECT_EQ(0x5678, exit_status);
+}
+
+static void implicit_exit_child_func(void* arg) {
+}
+
+static void implicit_exit_test() {
+  KTEST_BEGIN("fork() implicit proc_exit() test");
+
+  proc_fork(&implicit_exit_child_func, 0x0);
+
+  int exit_status = -1;
+  proc_wait(&exit_status);
+  KEXPECT_EQ(0, exit_status);
+}
+
 // Addresses of various mappings created in the parent and child processes.
 #define MAP_LENGTH (3 * PAGE_SIZE)
 #define SHARED_MAP_BASE 0x5000
@@ -44,8 +93,6 @@
 #define SEPARATE_ADDR2 (SEPARATE_MAP_BASE + 300 + PAGE_SIZE)
 #define SEPARATE_ADDR3 (SEPARATE_MAP_BASE + 300 + 2 * PAGE_SIZE)
 
-static pid_t child_pid = -1;
-
 static void make_separate_mapping() {
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
@@ -54,13 +101,6 @@ static void make_separate_mapping() {
 }
 
 static void child_func(void* arg) {
-  char cwd[VFS_MAX_PATH_LENGTH];
-  klogf("child proc:  id: %d  arg: %d\n", proc_current()->id, arg);
-  vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH);
-  klogf("child proc:  cwd: %s\n", cwd);
-
-  KEXPECT_EQ(child_pid, proc_current()->id);
-
   KEXPECT_EQ(1, *(uint32_t*)SHARED_ADDR1);
   KEXPECT_EQ(2, *(uint32_t*)SHARED_ADDR2);
   KEXPECT_EQ(3, *(uint32_t*)SHARED_ADDR3);
@@ -96,11 +136,10 @@ static void child_func(void* arg) {
   KEXPECT_EQ(70, *(uint32_t*)SEPARATE_ADDR1);
   KEXPECT_EQ(80, *(uint32_t*)SEPARATE_ADDR2);
   KEXPECT_EQ(90, *(uint32_t*)SEPARATE_ADDR3);
-
-  proc_exit(5);
 }
 
-static void do_test() {
+static void mapping_test() {
+  KTEST_BEGIN("fork() mapping test");
   // Create a shared and a private mapping.
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SHARED_MAP_BASE, MAP_LENGTH, PROT_ALL,
@@ -119,17 +158,8 @@ static void do_test() {
   *(uint32_t*)(PRIVATE_ADDR3) = 6;
 
   // Fork.
-  pid_t parent_pid = proc_current()->id;
-  child_pid = proc_fork(&child_func, (void*)0xABCD);
+  pid_t child_pid = proc_fork(&child_func, (void*)0xABCD);
   KEXPECT_GE(child_pid, 0);
-  KEXPECT_NE(parent_pid, child_pid);
-
-  process_t* child_proc = proc_get(child_pid);
-  KEXPECT_EQ(&child_proc->children_link,
-             proc_current()->children_list.head);
-  KEXPECT_EQ(&child_proc->children_link,
-             proc_current()->children_list.tail);
-  KEXPECT_EQ(proc_current(), child_proc->parent);
 
   // Make a new mapping that shouldn't be shared in the child.
   make_separate_mapping();
@@ -161,10 +191,7 @@ static void do_test() {
 
   // TODO(aoates): test fd and cwd forking.
 
-  int exit_status = -1;
-  const pid_t wait_child_pid = proc_wait(&exit_status);
-  KEXPECT_EQ(5, exit_status);
-  KEXPECT_EQ(child_pid, wait_child_pid);
+  proc_wait(0x0);
 
   KEXPECT_EQ(0, do_munmap((void*)SHARED_MAP_BASE, MAP_LENGTH));
   KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));
@@ -177,6 +204,7 @@ static void do_test() {
 void fork_test() {
   KTEST_SUITE_BEGIN("proc_fork()");
 
-  KTEST_BEGIN("basic fork() test");
-  do_test();
+  basic_test();
+  implicit_exit_test();
+  mapping_test();
 }

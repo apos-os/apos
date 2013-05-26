@@ -17,6 +17,7 @@
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
 #include "memory/vm.h"
+#include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
@@ -38,8 +39,8 @@ static void* proc_fork_trampoline(void* arg) {
 
   (*start_func)(start_arg);
 
-  // TODO(aoates): call exit() here.
-  die("proc_fork_trampoline(): start function returned.");
+  proc_exit(0);
+  die("unreachable");
   return 0x0;
 }
 
