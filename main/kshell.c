@@ -35,6 +35,9 @@
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
 #include "proc/exec.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
+#include "proc/wait.h"
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -594,15 +597,28 @@ void bcstats_cmd(int argc, char** argv) {
   block_cache_log_stats();
 }
 
+static void boot_child_func(void* arg) {
+  int result = do_exec((char*)arg);
+  if (result) {
+    klogf("Couldn't boot %s: %s\n", (char*)arg, errorname(-result));
+    proc_exit(1);
+  }
+}
+
 void boot_cmd(int argc, char** argv) {
   if (argc != 2) {
     klogf("Usage: boot <binary>\n");
     return;
   }
 
-  int result = do_exec(argv[1]);
-  if (result) {
-    klogf("Couldn't boot %s: %s\n", argv[1], errorname(-result));
+  pid_t child_pid = proc_fork(&boot_child_func, argv[1]);
+  if (child_pid < 0) {
+    klogf("Unable to fork(): %s\n", errorname(-child_pid));
+  } else {
+    int exit_status;
+    pid_t wait_pid = proc_wait(&exit_status);
+    klogf("<child process %d exited with status %d>\n",
+          wait_pid, exit_status);
   }
 }
 
