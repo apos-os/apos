@@ -98,6 +98,7 @@ void proc_init_stage1() {
   g_proc_table[0] = &g_first_process;
   proc_init_process(g_proc_table[0]);
   g_proc_table[0]->id = 0;
+  g_proc_table[0]->state = PROC_RUNNING;
   g_current_proc = 0;
 
   const memory_info_t* meminfo = get_global_meminfo();
