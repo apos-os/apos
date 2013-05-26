@@ -14,12 +14,26 @@
 
 // Code for the low-level kernel page frame allocator and page tables.  Handles
 // allocating physical pages, and creating/deleting page mappings.
+//
+// Global mappings
+// ===============
+// Global regions are memory regions whose mappings are shared between all
+// processes.  This is done by sharing the mid- and low- level page structures
+// between all processes.
+//
+// A global region has a minimum size, depending on the architecture (4MB for
+// x86).  Global regions are established by calling
+// page_frame_init_global_mapping() at boot time, in the address space of the
+// initial process.  Then, when each new process is created,
+// page_frame_link_global_mapping() is called to create the mapping in the new
+// process's address space.
 
 #ifndef APOO_MEMORY_PAGE_ALLOC_H
 #define APOO_MEMORY_PAGE_ALLOC_H
 
 #include <stdint.h>
 
+#include "common/types.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
 
@@ -55,5 +69,37 @@ void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
 //
 // REQUIRES: virt is page-aligned.
 void page_frame_unmap_virtual(uint32_t virt);
+
+// Removes mappings for an entire range of addresses.
+//
+// REQUIRES: virt and length are page-aligned.
+void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length);
+
+// Allocate and initialize a new page directory (e.g. for a new process), and
+// return it's (physical) address.
+page_dir_ptr_t page_frame_alloc_directory();
+
+// Free the given page directory.
+void page_frame_free_directory(page_dir_ptr_t page_directory);
+
+// Initializes a region of memory as a globally-shared region.  This must be
+// called once per region in the initial address space, before any new processes
+// are created.
+//
+// Any new mappings created in the region (in any process) will be seen by all
+// other processes, assuming that page_frame_link_global_mapping() is called
+// appropriately.
+//
+// REQUIRES: addr and length are aligned and sized according to the minimum
+// global region size for the current architecture.
+void page_frame_init_global_mapping(addr_t addr, addr_t length);
+
+// Link a global region (which must be present in the current address space) to
+// a new address space, represented by the given page directory pointer.
+//
+// REQUIRES: addr and length match a previous call to
+// page_frame_init_global_mapping() in the current address space.
+void page_frame_link_global_mapping(page_dir_ptr_t target,
+                                    addr_t addr, addr_t length);
 
 #endif

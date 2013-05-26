@@ -95,6 +95,7 @@ static test_entry_t TESTS[] = {
   { "vm", &vm_test, 1 },
   { "dmz", &dmz_test, 1 },
   { "proc_load", &proc_load_test, 1 },
+  { "fork", &fork_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

@@ -29,6 +29,17 @@ kthread_swap_context:
   movl 8(%ebp), %eax
   movl %esp, KTHREAD_T_ESP(%eax)
 
+  # Switch address spaces, if necessary.
+  movl 20(%ebp), %ecx  # threadB->page_directory
+
+  # if (threadA->page_directory != threadB->page_directory)
+  cmp 16(%ebp), %ecx
+  je no_cr3_switch_needed
+
+  movl %ecx, %cr3
+
+  no_cr3_switch_needed:
+
   # Load the ESP from threadB.
   movl 12(%ebp), %eax
   movl KTHREAD_T_ESP(%eax), %esp

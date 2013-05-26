@@ -12,27 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
-//
-// To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+// Utilities and definitions for use inside the process module.
+#ifndef APOO_PROC_PROCESS_INTERNAL_H
+#define APOO_PROC_PROCESS_INTERNAL_H
 
-// All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0
-#define SYS_OPEN 1
-#define SYS_CLOSE 2
-#define SYS_MKDIR 3
-#define SYS_MKNOD 4
-#define SYS_RMDIR 5
-#define SYS_UNLINK 6
-#define SYS_READ 7
-#define SYS_WRITE 8
-#define SYS_SEEK 9
-#define SYS_GETDENTS 10
-#define SYS_GETCWD 11
-#define SYS_CHDIR 12
-#define SYS_FORK 13
+#include "proc/process.h"
+
+// Allocate and initialize a process, and assign it a free process ID.
+// Returns NULL if the kernel is out of memory or process IDs.
+process_t* proc_alloc();
+
+// Destroy the given process_t and remove it from the process table.  It must
+// have already been torn down (as per proc_exit() and proc_wait()).
+void proc_destroy(process_t* process);
+
+// Change the current process.
+void proc_set_current(process_t* process);
 
 #endif

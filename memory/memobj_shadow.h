@@ -25,6 +25,8 @@
 #include "memory/memobj.h"
 
 // Create and return a shadow memobj shadowing sub_obj.
+//
+// IMPORTANT NOTE: the returned object has a refcount of 0.
 memobj_t* memobj_create_shadow(memobj_t* sub_obj);
 
 #endif

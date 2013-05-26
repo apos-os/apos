@@ -42,5 +42,6 @@ void mmap_test();
 void vm_test();
 void dmz_test();
 void proc_load_test();
+void fork_test();
 
 #endif

@@ -68,6 +68,8 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
 
     new_area->memobj = area->memobj;
     new_area->memobj->ops->ref(new_area->memobj);
+    new_area->allow_allocation = area->allow_allocation;
+    new_area->is_private = area->is_private;
     new_area->vm_base = new_area_start;
     new_area->vm_length = new_area_end - new_area_start;
     new_area->memobj_base =
@@ -121,10 +123,8 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
   } else {
     KASSERT(unmap_start == area->vm_base);
     KASSERT(unmap_end == area->vm_base + area->vm_length);
-    area->memobj->ops->unref(area->memobj);
-    area->memobj = 0x0;
     list_remove(&area->proc->vm_area_list, &area->vm_proc_list);
-    kfree(area);
+    vm_area_destroy(area);
   }
 
   return 0;
@@ -208,6 +208,8 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   memobj->ops->ref(memobj);
   area->memobj = memobj;
+  area->allow_allocation = 1;
+  area->is_private = (flags & MAP_PRIVATE);
   area->vm_base = hole_addr;
   area->vm_length = length;
   area->memobj_base = offset;

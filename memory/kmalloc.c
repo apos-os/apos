@@ -32,7 +32,7 @@
 static block_t* g_block_list = 0;
 
 // Root process vm_area_t for the heap.
-vm_area_t g_root_heap_vm_area;
+static vm_area_t g_root_heap_vm_area;
 
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
@@ -51,17 +51,9 @@ void kmalloc_init() {
   // First we have to set up the vm_area_t in the current process for our heap
   // region.  We touch the memory after this, and this mapping must exist for
   // the page fault handler not to bork.
-  kmemset(&g_root_heap_vm_area, 0, sizeof(vm_area_t));
-  g_root_heap_vm_area.memobj = 0x0;
-  g_root_heap_vm_area.vm_base = meminfo->heap_start;
-  g_root_heap_vm_area.vm_length = meminfo->heap_end - meminfo->heap_start;
-  g_root_heap_vm_area.prot = MEM_PROT_ALL;
-  g_root_heap_vm_area.access = MEM_ACCESS_KERNEL_ONLY;
-  g_root_heap_vm_area.flags = 0;
-  g_root_heap_vm_area.proc = proc_current();
-  g_root_heap_vm_area.vm_proc_list = LIST_LINK_INIT;
-
-  vm_insert_area(proc_current(), &g_root_heap_vm_area);
+  vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap_start,
+                           meminfo->heap_end - meminfo->heap_start,
+                           1 /* allow_allocation */);
 
   // Initialize the free list to one giant block consisting of the entire heap.
   block_t* head = (block_t*)meminfo->heap_start;

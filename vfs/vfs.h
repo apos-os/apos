@@ -20,6 +20,7 @@
 #include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
+#include "proc/process.h"
 #include "vfs/dirent.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
@@ -292,5 +293,8 @@ int vfs_chdir(const char* path);
 // compatible with the file's mode.  Returns 0 on success, or -error.
 // TODO(aoates): how do we handle executable?
 int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out);
+
+// Duplicate (as for fork()) procA's fds into procB.
+void vfs_fork_fds(process_t* procA, process_t* procB);
 
 #endif

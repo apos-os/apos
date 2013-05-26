@@ -64,6 +64,10 @@ static int fault_allowed(vm_area_t* area, vm_fault_type_t type,
     klogf("address not in any mapped region\n");
     return 0;
   }
+  if (type == VM_FAULT_NOT_PRESENT && !area->allow_allocation) {
+    klogf("cannot allocate new pages in the mapped region\n");
+    return 0;
+  }
   switch (op) {
     case VM_FAULT_READ:
       if (!(area->prot & MEM_PROT_READ)) {

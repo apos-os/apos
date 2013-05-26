@@ -12,27 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
-//
-// To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+#ifndef APOO_PROC_FORK_H
+#define APOO_PROC_FORK_H
 
-// All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0
-#define SYS_OPEN 1
-#define SYS_CLOSE 2
-#define SYS_MKDIR 3
-#define SYS_MKNOD 4
-#define SYS_RMDIR 5
-#define SYS_UNLINK 6
-#define SYS_READ 7
-#define SYS_WRITE 8
-#define SYS_SEEK 9
-#define SYS_GETDENTS 10
-#define SYS_GETCWD 11
-#define SYS_CHDIR 12
-#define SYS_FORK 13
+// The start function of a procedure.
+typedef void (*proc_func_t)(void*);
+
+// Fork the current process into a new process with a copy of the current
+// address space.  The new process will be identical to the current process,
+// except that its main thread will start by calling the given function with the
+// given argument.  If the function returns, the new process will exit.
+//
+// Returns the new process's id on success, or -errno on error.
+int proc_fork(proc_func_t start, void* arg);
 
 #endif

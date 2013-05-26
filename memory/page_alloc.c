@@ -141,16 +141,6 @@ static inline void invalidate_tlb(uint32_t virt) {
 // Given a virtual page address, returns a pointer to the page table entry
 // responsible for page.  If create is non-zero, and the page table doesn't
 // exist, a page table is allocated and initialized for it.
-//
-// TODO(aoates): if we create a new page table after fork() has happened, how
-// does that entry in the page directory get propogated to other processes?
-// If it's a kernel mapping, we want to share it between all processes, but
-// we'll currently just set it in the current one only.
-//
-// Maybe the solution is, at boot create (in the initial page directory) blank
-// page tables for all kernel mapped memory (e.g. the kernel heap), which we can
-// then point to from all subsequent page directories and update with global
-// reach.
 static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
   uint32_t* page_directory = get_page_directory();
   const uint32_t page_idx = virt / PAGE_SIZE;
@@ -202,11 +192,81 @@ void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
 }
 
 void page_frame_unmap_virtual(uint32_t virt) {
+  page_frame_unmap_virtual_range(virt, PAGE_SIZE);
+}
+
+void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length) {
   KASSERT(virt % PAGE_SIZE == 0);
-  uint32_t* pte = get_or_create_page_table_entry(virt, 0);
-  if (pte) {
-    // Mark the page as non-present.
-    *pte &= ~PTE_PRESENT;
-    invalidate_tlb(virt);
+  KASSERT(length % PAGE_SIZE == 0);
+  for (uint32_t i = 0; i < length / PAGE_SIZE; ++i) {
+    uint32_t* pte = get_or_create_page_table_entry(virt + i * PAGE_SIZE, 0);
+    if (pte) {
+      // Mark the page as non-present.
+      *pte &= ~PTE_PRESENT;
+      invalidate_tlb(virt);
+    }
+  }
+}
+
+page_dir_ptr_t page_frame_alloc_directory() {
+  uint32_t dir_phys = page_frame_alloc();
+  KASSERT(dir_phys);
+  KASSERT_DBG((dir_phys & PDE_ADDRESS_MASK) == dir_phys);
+
+  uint32_t* dir = (uint32_t*)phys2virt(dir_phys);
+  for (int i = 0; i < PDE_NUM_ENTRIES; ++i) {
+    dir[i] = 0;
+  }
+
+  // Self-map the page directory in the last 4MB of the address space.
+  dir[PDE_NUM_ENTRIES - 1] = dir_phys | PDE_WRITABLE | PDE_PRESENT;
+
+  return dir_phys;
+}
+
+void page_frame_free_directory(page_dir_ptr_t page_directory) {
+  KASSERT(page_directory);
+  KASSERT(page_directory % PAGE_SIZE == 0);
+  page_frame_free(page_directory);
+}
+
+void page_frame_init_global_mapping(addr_t addr, addr_t length) {
+  KASSERT(addr % MIN_GLOBAL_MAPPING_SIZE == 0);
+  KASSERT(length % MIN_GLOBAL_MAPPING_SIZE == 0);
+
+  // For each PDE in the current page directory, make sure a page table is
+  // allocated.  This page table will be shared between all processes (by making
+  // their page directories point to the same ones.
+  // TODO(aoates): this will have overflow issues if mapping at the end of the
+  // address space.
+  for (uint32_t pt_addr = addr; pt_addr < addr + length;
+       pt_addr += MIN_GLOBAL_MAPPING_SIZE) {
+    // pt_addr is the first address of the region represented by each page
+    // table.
+    // TODO(aoates): set the GLOBAL flag on each of these mappings.
+    get_or_create_page_table_entry(pt_addr, 1);
+  }
+}
+
+void page_frame_link_global_mapping(page_dir_ptr_t target,
+                                    addr_t addr, addr_t length) {
+  // Copy all the page directory entries created in
+  // page_frame_init_global_mapping() from the current address space into the
+  // new page directory.
+  KASSERT(addr % MIN_GLOBAL_MAPPING_SIZE == 0);
+  KASSERT(length % MIN_GLOBAL_MAPPING_SIZE == 0);
+
+  uint32_t* source = get_page_directory();
+  uint32_t* target_virt = (uint32_t*)phys2virt(target);
+
+  // TODO(aoates): this will have overflow issues if mapping at the end of the
+  // address space.
+  for (uint32_t pde_idx = addr / MIN_GLOBAL_MAPPING_SIZE;
+       pde_idx < (addr + length) / MIN_GLOBAL_MAPPING_SIZE;
+       pde_idx++) {
+    // TODO(aoates): do we want to to check or reset any of the flags in the
+    // PDE?
+    KASSERT(source[pde_idx] != 0);
+    target_virt[pde_idx] = source[pde_idx];
   }
 }

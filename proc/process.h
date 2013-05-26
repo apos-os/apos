@@ -26,9 +26,21 @@
 
 struct vnode;
 
+// Process ID.
+typedef int pid_t;
+
+// Process state.
+typedef enum {
+  PROC_INVALID,
+  PROC_RUNNING,
+  PROC_ZOMBIE,
+} proc_state_t;
+
 struct process {
-  int id;  // Index into global process table.
+  pid_t id;  // Index into global process table.
+  proc_state_t state;
   kthread_t thread;  // Main process thread.
+  int exit_status;
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];
@@ -38,6 +50,20 @@ struct process {
 
   // List of vm_area_t's of the mmap'd areas in the current process.
   list_t vm_area_list;
+
+  page_dir_ptr_t page_directory;
+
+  // Parent process.
+  process_t* parent;
+
+  // Child processes (alive and zombies).
+  list_t children_list;
+
+  // Link on parent's children list.
+  list_link_t children_link;
+
+  // Wait queue for the parent thread wait()'ing.
+  kthread_queue_t wait_queue;
 };
 
 // Initialize the process table, and create the first process (process 0) from
@@ -60,5 +86,8 @@ void proc_init_stage2();
 
 // Return the current process descriptor.
 process_t* proc_current();
+
+// Return the process_t with the given ID, or NULL if there is none.
+process_t* proc_get(pid_t id);
 
 #endif

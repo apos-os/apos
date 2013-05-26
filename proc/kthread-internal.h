@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "dev/interrupts.h"
+#include "memory/memory.h"
 #include "proc/kthread.h"
 
 #define KTHREAD_RUNNING 0 // Currently running.
@@ -34,7 +35,7 @@ typedef struct process process_t;
 struct kthread_data {
   uint32_t id;
   uint32_t state;
-  uint32_t esp;
+  uint32_t esp;  // KTHREAD_T_ESP in kthread_asm.s
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;

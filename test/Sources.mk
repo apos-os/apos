@@ -23,6 +23,7 @@ LOCAL_SOURCES := \
   hash_test.c \
   hashtable_test.c \
   interrupt_test.c \
+  fork_test.c \
   kmalloc_test.c \
   kprintf_test.c \
   kstring_test.c \

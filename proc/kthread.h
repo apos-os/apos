@@ -21,6 +21,8 @@
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
+#include "common/types.h"
+
 typedef struct kthread_data* kthread_t;
 #define KTHREAD_NO_THREAD 0x0
 
@@ -57,6 +59,10 @@ void kthread_detach(kthread_t thread);
 
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
+
+// Return the top of the current thread's kernel stack.  This is the address ONE
+// STACK SLOT ABOVE the first element on the stack, if anything has been pushed.
+addr_t kthread_kernel_stack_top(void);
 
 /******************************* Thread Queues ********************************/
 

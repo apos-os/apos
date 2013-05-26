@@ -46,4 +46,30 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
 int vm_verify_address(process_t* proc, addr_t addr, int is_write,
                       int is_user, addr_t* end_out);
 
+// Initialize and insert a global kernel memory region (such as the heap, or the
+// linearly-mapped kernel binary).
+//
+// If allow_allocation is non-zero, then non-present page faults in the region
+// will cause a new anonymous page to be allocated and mapped.
+//
+// If allow_allocation is zero, then non-present page faults in the region will
+// be fatal.  It is the callers responsibility to create the needed mappings by
+// calling page_frame_map_virtual() directly.
+//
+// REQUIRES: proc_current() is the root process.
+void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
+                              int allow_allocation);
+
+// Fork the current process's address space and mappings into another process.
+// Each vm_area_t in the current process will be copied to the new process.  If
+// the area represents a private mapping, shadow objects will be created for
+// both the current process and new process to ensure they don't share
+// modifications.
+//
+// For any global mappings, links the new address space to the global region.
+//
+// Returns 0 on success, or -errno on error (in which case the target's
+// vm_area_list is left in an indeterminate state).
+int vm_fork_address_space_into(process_t* target);
+
 #endif

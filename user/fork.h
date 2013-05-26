@@ -12,27 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
-//
-// To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+#ifndef APOO_USER_FORK_H
+#define APOO_USER_FORK_H
 
-// All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0
-#define SYS_OPEN 1
-#define SYS_CLOSE 2
-#define SYS_MKDIR 3
-#define SYS_MKNOD 4
-#define SYS_RMDIR 5
-#define SYS_UNLINK 6
-#define SYS_READ 7
-#define SYS_WRITE 8
-#define SYS_SEEK 9
-#define SYS_GETDENTS 10
-#define SYS_GETCWD 11
-#define SYS_CHDIR 12
-#define SYS_FORK 13
+// TODO(aoates): Do we want to combine this with the definition in
+// proc/process.h?
+typedef int pid_t;
+
+pid_t fork();
 
 #endif
