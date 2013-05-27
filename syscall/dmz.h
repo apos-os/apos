@@ -50,4 +50,10 @@ int syscall_verify_buffer(const void* buf, size_t len, int is_write);
 // Strings are assumed to be read-only.
 int syscall_verify_string(const char* str);
 
+// Verify a NULL-terminated pointer array of the form 'void* array[]'.
+//
+// Returns the length of the table (in pointer entries, not bytes), INCLUDING
+// the terminating NULL on success, or -errno on error.
+int syscall_verify_ptr_table(void* table[]);
+
 #endif
