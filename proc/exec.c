@@ -73,7 +73,10 @@ static int copy_string_table(addr_t* stack_top_ptr, char* const table[],
   return 0;
 }
 
-int do_execve(const char* path, char* const argv[], char* const envp[]) {
+int do_execve(const char* path, char* const argv[], char* const envp[],
+              void (*cleanup)(const char* path,
+                              char* const argv[], char* const envp[],
+                              void* arg), void* cleanup_arg) {
   const int fd = vfs_open(path, VFS_O_RDONLY);
   if (fd < 0) {
     klogf("exec error: couldn't open file '%s' for reading: %s\n", path,
@@ -145,6 +148,10 @@ int do_execve(const char* path, char* const argv[], char* const envp[]) {
   stack_top -= stack_top % sizeof(addr_t);
   *(addr_t*)(stack_top -= sizeof(addr_t)) = envp_addr;
   *(addr_t*)(stack_top -= sizeof(addr_t)) = argv_addr;
+
+  if (cleanup) {
+    (*cleanup)(path, argv, envp, cleanup_arg);
+  }
 
   // Jump to the entry point.
   const addr_t entry = binary->entry;
