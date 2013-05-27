@@ -19,7 +19,7 @@
 
 // Trigger an error interrupt, a non-error interrupt, and an IRQ, and make sure
 // that we didn't clobber registers %eax, %ebx, or %edx across the calls.
-void interrupt_clobber_test() {
+void interrupt_clobber_test(void) {
   KTEST_SUITE_BEGIN("interrupt register clobbering");
 
   uint32_t eax, ebx, edx;
@@ -88,7 +88,7 @@ void interrupt_clobber_test() {
 }
 
 // Test saving/restoring interrupt state.
-static uint32_t get_interrupt_state() {
+static uint32_t get_interrupt_state(void) {
   uint32_t saved_flags;
   asm volatile (
       "pushf\n\t"
@@ -97,7 +97,7 @@ static uint32_t get_interrupt_state() {
   return saved_flags & IF_FLAG;
 }
 
-void interrupt_save_test() {
+void interrupt_save_test(void) {
   KTEST_SUITE_BEGIN("interrupt save/restore");
   int orig_state = get_interrupt_state();
 

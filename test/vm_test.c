@@ -60,7 +60,7 @@ static void EXPECT_ADDRESS(addr_t start, addr_t end,
   EXPECT_ADDRESS_ONE(start, end, user_write, 1, 1);
 }
 
-static void vm_region_basic() {
+static void vm_region_basic(void) {
   KTEST_BEGIN("vm_verify_region() kernel heap test");
 
   void* test_region = kmalloc(10);
@@ -82,7 +82,7 @@ static void vm_region_basic() {
                                        1, 1));
 }
 
-static void vm_region_mmap() {
+static void vm_region_mmap(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
   KTEST_BEGIN("vm_verify_region() mmap()'d R/W region");
 
@@ -136,7 +136,7 @@ static void vm_region_mmap() {
                 -EFAULT, -EFAULT, -EFAULT, -EFAULT);
 }
 
-static void vm_region_mmap_ro() {
+static void vm_region_mmap_ro(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
   KTEST_BEGIN("vm_verify_region() mmap()'d R/O region");
 
@@ -151,7 +151,7 @@ static void vm_region_mmap_ro() {
 }
 
 // Map two regions with a hole in the middle.
-static void vm_region_mmap_hole() {
+static void vm_region_mmap_hole(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
   KTEST_BEGIN("vm_verify_region() mmap()'d regions with hole");
 
@@ -194,7 +194,7 @@ static void vm_region_mmap_hole() {
   KEXPECT_EQ(0, do_munmap(addrC, PAGE_SIZE));
 }
 
-static void vm_region_invalid_args() {
+static void vm_region_invalid_args(void) {
   KTEST_BEGIN("vm_verify_region() invalid args");
   int x;
   KEXPECT_EQ(-EINVAL, vm_verify_region(NULL, (addr_t)&x, (addr_t)&x + 10,
@@ -205,7 +205,7 @@ static void vm_region_invalid_args() {
                                        (addr_t)&x - 1, 0, 0));
 }
 
-static void vm_address_basic() {
+static void vm_address_basic(void) {
   KTEST_BEGIN("vm_verify_address() kernel heap");
   void* heap = kmalloc(10);
   addr_t end_out = 0;
@@ -244,7 +244,7 @@ static void vm_address_basic() {
   KEXPECT_EQ((addr_t)&do_mmap, end_out);
 }
 
-static void vm_address_mmap_basic() {
+static void vm_address_mmap_basic(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
 
   KTEST_BEGIN("vm_verify_address() basic");
@@ -262,7 +262,7 @@ static void vm_address_mmap_basic() {
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
 
-static void vm_address_mmap_ro() {
+static void vm_address_mmap_ro(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
 
   KTEST_BEGIN("vm_verify_address() R/O region");
@@ -280,7 +280,7 @@ static void vm_address_mmap_ro() {
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
 
-static void vm_address_mmap_hole() {
+static void vm_address_mmap_hole(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
   KTEST_BEGIN("vm_verify_address() mmap()'d regions with hole");
 
@@ -350,7 +350,7 @@ static void vm_address_mmap_hole() {
   KEXPECT_EQ(0, do_munmap(addrC, PAGE_SIZE));
 }
 
-static void vm_address_invalid_args() {
+static void vm_address_invalid_args(void) {
   KTEST_BEGIN("vm_verify_address() invalid args");
   int x;
   addr_t end_out;
@@ -361,7 +361,7 @@ static void vm_address_invalid_args() {
 
 // TODO(aoates): test PROT_EXEC once it's supported
 
-void vm_test() {
+void vm_test(void) {
   KTEST_SUITE_BEGIN("VM tests");
 
   vm_region_basic();

@@ -35,7 +35,7 @@ static void* thread_func(void* arg) {
   return 0;
 }
 
-static void yield_test() {
+static void yield_test(void) {
   // Repeatedly yield and make sure we get to the end.
   KTEST_BEGIN("trivial yield test");
 
@@ -46,7 +46,7 @@ static void yield_test() {
   klogf("  DONE\n");
 }
 
-static void basic_test() {
+static void basic_test(void) {
   KTEST_BEGIN("basic test");
   kthread_t thread1;
   kthread_t thread2;
@@ -73,7 +73,7 @@ static void* kthread_exit_thread_func(void* arg) {
   return 0;
 }
 
-static void kthread_exit_test() {
+static void kthread_exit_test(void) {
   KTEST_BEGIN("kthread_exit() test");
   kthread_t thread1;
 
@@ -86,7 +86,7 @@ static void* kthread_return_thread_func(void* arg) {
   return arg;
 }
 
-static void kthread_return_test() {
+static void kthread_return_test(void) {
   KTEST_BEGIN("explicit return test");
   kthread_t thread1;
 
@@ -112,7 +112,7 @@ static void* join_test_func(void* arg) {
 #define JOIN_CHAIN_TEST_SIZE 10
 
 // Chain together a bunch of joined threads.
-static void join_chain_test() {
+static void join_chain_test(void) {
   KTEST_BEGIN("chained join test");
 
   kthread_t threads[JOIN_CHAIN_TEST_SIZE];
@@ -141,7 +141,7 @@ static void* join_test2_func(void* arg) {
 
 // Chain together a bunch of joined threads.  This time, each thread CREATES the
 // next thread in the chain.
-static void join_chain_test2() {
+static void join_chain_test2(void) {
   KTEST_BEGIN("chained join test #2");
 
   kthread_t thread;
@@ -156,7 +156,7 @@ static void join_chain_test2() {
 
 static void* noop_func(void* arg) { return 0; }
 
-static void queue_test() {
+static void queue_test(void) {
   KTEST_BEGIN("queue operations test");
   kthread_t thread1, thread2;
   int ret = kthread_create(&thread1, &noop_func, 0x0);
@@ -212,7 +212,7 @@ static void* queue_test_func(void* arg) {
   return 0;
 }
 
-static void scheduler_wait_on_test() {
+static void scheduler_wait_on_test(void) {
   KTEST_BEGIN("scheduler_wait_on() test");
   kthread_t thread1, thread2, thread3;
 
@@ -256,7 +256,7 @@ static void scheduler_wait_on_test() {
   kthread_join(thread3);
 }
 
-static void scheduler_wake_test() {
+static void scheduler_wake_test(void) {
   KTEST_BEGIN("scheduler_wake_one() test");
   kthread_t thread1, thread2, thread3;
 
@@ -328,7 +328,7 @@ static void* stress_test_func(void* arg) {
 }
 
 // TODO(aoates): make this random.
-static void stress_test() {
+static void stress_test(void) {
   KTEST_BEGIN("stress test");
   kthread_t threads[STRESS_TEST_THREADS];
 
@@ -358,7 +358,7 @@ static void* kmutex_test_func(void* arg) {
 }
 
 #define KMUTEX_TEST_SIZE 5
-static void kmutex_test() {
+static void kmutex_test(void) {
   KTEST_BEGIN("kmutex test");
   kmutex_init(&kmutex_test_mutex);
 
@@ -377,7 +377,7 @@ static void kmutex_test() {
   KEXPECT_EQ(1000 * KMUTEX_TEST_SIZE, out);
 }
 
-static void kmutex_auto_lock_test() {
+static void kmutex_auto_lock_test(void) {
   KTEST_BEGIN("kmutex auto lock test");
   kmutex_t m;
   kmutex_init(&m);
@@ -401,7 +401,7 @@ static void kmutex_auto_lock_test() {
 
 // TODO(aoates): add some more involved kmutex tests.
 
-void kthread_test() {
+void kthread_test(void) {
   KTEST_SUITE_BEGIN("kthread_test");
 
   yield_test();

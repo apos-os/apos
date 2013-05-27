@@ -22,7 +22,7 @@
 #define KTIMESLICE_MS 10
 
 // Initialize the timer.  Must be called AFTER interrupts/IRQs are enabled.
-void timer_init();
+void timer_init(void);
 
 typedef void (*timer_handler_t)(void*);
 
@@ -42,6 +42,6 @@ int register_timer_callback(uint32_t period_ms, int limit,
                             timer_handler_t cb, void* arg);
 
 // Return the approximate time since timer initialization, in ms.
-uint32_t get_time_ms();
+uint32_t get_time_ms(void);
 
 #endif

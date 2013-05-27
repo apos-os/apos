@@ -27,7 +27,7 @@ typedef struct kthread_data* kthread_t;
 #define KTHREAD_NO_THREAD 0x0
 
 // Initialize the kthreads package.
-void kthread_init();
+void kthread_init(void);
 
 // Create a new thread.  The new thread will start in start_routine, with arg
 // passed.  The new thread is NOT automatically made runnable --- you must call

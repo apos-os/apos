@@ -79,14 +79,14 @@ int block_cache_get_pin_count(struct memobj* obj, int offset);
 // Set the maximum size of the block cache, in blocks.  If the cache is
 // currently larger than this, it may not be immediately pruned.
 void block_cache_set_size(int blocks);
-int block_cache_get_size();
+int block_cache_get_size(void);
 
 // Clear the block cache of all unpinned entries, flushing all unflushed entries
 // to disk.  Behavior is undefined if any other block cache methods are called
 // simultaneously, and is therefore probably only useful for tests.
-void block_cache_clear_unpinned();
+void block_cache_clear_unpinned(void);
 
-void block_cache_log_stats();
+void block_cache_log_stats(void);
 
 // TODO(aoates): support sync operations on pinned cache entries.
 

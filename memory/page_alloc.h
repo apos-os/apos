@@ -42,7 +42,7 @@ void page_frame_alloc_init(memory_info_t* meminfo);
 
 // Allocate a free page frame, returning its (physical) address.  If no page
 // frames are available, returns 0.
-uint32_t page_frame_alloc();
+uint32_t page_frame_alloc(void);
 
 // Frees the given page frame.
 void page_frame_free(uint32_t frame);
@@ -77,7 +77,7 @@ void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length);
 
 // Allocate and initialize a new page directory (e.g. for a new process), and
 // return it's (physical) address.
-page_dir_ptr_t page_frame_alloc_directory();
+page_dir_ptr_t page_frame_alloc_directory(void);
 
 // Free the given page directory.
 void page_frame_free_directory(page_dir_ptr_t page_directory);

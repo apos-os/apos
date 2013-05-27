@@ -87,12 +87,12 @@
 static int g_device_types[2];
 static int g_initialized = 0;
 
-inline static uint8_t get_status() {
+inline static uint8_t get_status(void) {
   return inb(CTRL_STATUS_PORT);
 }
 
 // Wait for IBF to be clear (aka ready to write).
-inline static void wait_ibf_clear() {
+inline static void wait_ibf_clear(void) {
   int count = 0;
   uint8_t status = get_status();
   while (IS_SET(status, CTRL_STATUS_IBF)) {
@@ -113,7 +113,7 @@ static void send_cmd(uint8_t cmd) {
 
 // Blocks until data is available.
 // TODO(aoates): get rid of this, and make all callers us the async version.
-static uint8_t read_data() {
+static uint8_t read_data(void) {
   // Wait for OBF to be set.
   uint8_t status = get_status();
   while (!IS_SET(status, CTRL_STATUS_OBF)) {
@@ -170,14 +170,14 @@ static const char* config_str(uint8_t config) {
 }
 
 // Flush the output (keyboard -> host) buffer by reading it a bunch of times.
-static inline void flush_output_buffer() {
+static inline void flush_output_buffer(void) {
   uint8_t data;
   while (read_data_async(&data, 0)) {}
 }
 
 // TODO(aoates): probably flush the input buffer more (like before starting?)
 // and after every command that expects an ACK.
-static int controller_init() {
+static int controller_init(void) {
   flush_output_buffer();
 
   klogf("  initializing controller...\n");
@@ -246,7 +246,7 @@ static int controller_init() {
   return 1;
 }
 
-static int device_init() {
+static int device_init(void) {
   // Reset the device.
   // TODO(aoates): if this fails, just mark the device as unavailable instead
   // of failing the whole initialization.

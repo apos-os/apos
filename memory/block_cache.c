@@ -82,7 +82,7 @@ static list_t g_lru_queue = {0x0, 0x0};
     container_of((list).head, bc_entry_internal_t, link_name)
 
 // Acquire more free blocks and add them to the free block stack.
-static void get_more_free_blocks() {
+static void get_more_free_blocks(void) {
   KASSERT(FREE_BLOCK_STACK_SIZE - g_free_block_stack_idx > BLOCKS_PER_PAGE);
   const uint32_t phys_page = page_frame_alloc();
   if (phys_page == 0x0) {
@@ -98,7 +98,7 @@ static void get_more_free_blocks() {
 }
 
 // Return a free block for a new cache entry.
-static void* get_free_block() {
+static void* get_free_block(void) {
   if (g_free_block_stack_idx == 0) {
     get_more_free_blocks();
   }
@@ -263,7 +263,7 @@ static void maybe_free_cache_space(int max_entries) {
   // TODO(aoates): if something is currently flushing, block for it to finish.
 }
 
-static void init_block_cache() {
+static void init_block_cache(void) {
   KASSERT(!g_initialized);
   htbl_init(&g_table, g_max_size * 2);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);

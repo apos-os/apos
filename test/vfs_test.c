@@ -87,7 +87,7 @@ static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
 }
 
 // Test that we correctly refcount parent directories when calling vfs_open().
-static void open_parent_refcount_test() {
+static void open_parent_refcount_test(void) {
   KTEST_BEGIN("vfs_open(): parent refcount test");
   KEXPECT_EQ(0, vfs_mkdir("/ref_dir1"));
   KEXPECT_EQ(0, vfs_mkdir("/ref_dir1/dir2"));
@@ -123,7 +123,7 @@ static void open_parent_refcount_test() {
 }
 
 // Test calling vfs_open() on a directory.
-static void open_dir_test() {
+static void open_dir_test(void) {
   KTEST_BEGIN("vfs_open(): open directory (read-only)");
   KEXPECT_EQ(0, vfs_mkdir("/dir1"));
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
@@ -146,7 +146,7 @@ static void open_dir_test() {
   KEXPECT_EQ(0, vfs_rmdir("/dir1"));
 }
 
-static void open_test() {
+static void open_test(void) {
   KTEST_BEGIN("vfs_open() test");
 
   vfs_log_cache();
@@ -230,7 +230,7 @@ static void open_test() {
   KEXPECT_EQ(0, vfs_unlink("/test3"));
 }
 
-static void mkdir_test() {
+static void mkdir_test(void) {
   KTEST_BEGIN("vfs_mkdir() test");
 
   // Make sure we have some normal files around.
@@ -332,7 +332,7 @@ static void mkdir_test() {
 
 // Test repeatedly opening and closing a file to make sure that we reclaim FDs
 // and file table entries correctly.
-static void file_table_reclaim_test() {
+static void file_table_reclaim_test(void) {
   KTEST_BEGIN("file table reclaim test");
   const char kTestDir[] = "/reclaim_test/";
   const char kTestFile[] = "/reclaim_test/test1";
@@ -397,7 +397,7 @@ static void* vfs_open_thread_safety_test_func(void* arg) {
   return 0;
 }
 
-static void vfs_open_thread_safety_test() {
+static void vfs_open_thread_safety_test(void) {
   KTEST_BEGIN("vfs_open() thread safety test");
   kthread_t threads[THREAD_SAFETY_TEST_THREADS];
 
@@ -439,7 +439,7 @@ static void vfs_open_thread_safety_test() {
   vfs_rmdir("/thread_safety_test");
 }
 
-static void unlink_test() {
+static void unlink_test(void) {
   KTEST_BEGIN("vfs_unlink(): basic test");
   int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR);
   vfs_close(fd);
@@ -471,7 +471,7 @@ static void unlink_test() {
   vfs_rmdir("/unlink");
 }
 
-static void cwd_test() {
+static void cwd_test(void) {
   const int kBufSize = 100;
   char  buf[kBufSize];
 
@@ -595,7 +595,7 @@ static void cwd_test() {
 #undef EXPECT_CWD
 }
 
-static void rw_test() {
+static void rw_test(void) {
   const char kFile[] = "/rw_test_file";
   const char kDir[] = "/rw_test_dir";
   const int kBufSize = 512;
@@ -698,7 +698,7 @@ static void rw_test() {
   KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
-static void write_large_test() {
+static void write_large_test(void) {
   const char kFile[] = "/write_large_test";
   const int kBufSize = 4096;
   char* buf = (char*)kmalloc(kBufSize);
@@ -764,7 +764,7 @@ static void* write_thread_test_func(void* arg) {
   return 0x0;
 }
 
-static void write_thread_test() {
+static void write_thread_test(void) {
   KTEST_BEGIN("vfs_write(): thread-safety test");
   kthread_t threads[WRITE_SAFETY_THREADS];
 
@@ -826,7 +826,7 @@ static void write_thread_test() {
   KEXPECT_EQ(0, vfs_unlink("/vfs_write_thread_safety_test"));
 }
 
-static void rw_mode_test() {
+static void rw_mode_test(void) {
   const char kFile[] = "/rw_test_file";
   const int kBufSize = 512;
   char buf[kBufSize];
@@ -931,7 +931,7 @@ static void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
   KEXPECT_EQ(expected_num, num_dirents);
 }
 
-static void getdents_test() {
+static void getdents_test(void) {
   edirent_t root_expected[] = {{0, "."}, {0, ".."}};
   edirent_t getdents_expected[] = {
     {-1, "."}, {0, ".."}, {-1, "a"}, {-1, "b"}, {-1, "c"},
@@ -992,7 +992,7 @@ static void getdents_test() {
   vfs_chdir("/");
 }
 
-static void seek_test() {
+static void seek_test(void) {
   const char kFile[] = "/seek_test_file";
   const int kBufSize = 512;
   char buf[kBufSize];
@@ -1081,7 +1081,7 @@ static void* bad_inode_thread_test_func(void* arg) {
   return 0x0;
 }
 
-static void bad_inode_thread_test() {
+static void bad_inode_thread_test(void) {
   KTEST_BEGIN("vfs_get(): bad inode thread-safety test");
   kthread_t threads[BAD_INODE_SAFETY_THREADS];
 
@@ -1097,7 +1097,7 @@ static void bad_inode_thread_test() {
   vfs_log_cache();
 }
 
-static void get_bad_inode_test() {
+static void get_bad_inode_test(void) {
   KTEST_BEGIN("vfs_get(): bad inode");
   vnode_t* node = vfs_get(vfs_get_root_fs(), 52187);
   KEXPECT_EQ(0x0, (int)node);
@@ -1107,7 +1107,7 @@ static void get_bad_inode_test() {
   // TODO(aoates): test vfs_open, cwd, etc handle dangling inodes
 }
 
-void reverse_path_test() {
+void reverse_path_test(void) {
   char buf[512];
   KTEST_BEGIN("reverse_path() test");
 
@@ -1172,7 +1172,7 @@ static void* unlink_thread_test_func(void* arg) {
   return 0x0;
 }
 
-static void create_thread_test() {
+static void create_thread_test(void) {
   KTEST_BEGIN("vfs_open(VFS_O_CREAT): thread-safety test");
   const char kTestDir[] = "/create_thread_test";
   kthread_t threads[CREATE_SAFETY_THREADS];
@@ -1229,7 +1229,7 @@ static void create_thread_test() {
 
 // Test that if we create a file, then unlink it before closing it, we can still
 // read from it.
-static void unlink_open_file_test() {
+static void unlink_open_file_test(void) {
   KTEST_BEGIN("unlink() open file test");
   const char kFile[] = "unlink_open_file_test";
   const char kFile2[] = "unlink_open_file_test2";
@@ -1257,7 +1257,7 @@ static void unlink_open_file_test() {
 }
 
 // Test unlinking a directory that's open for reading.
-static void unlink_open_directory_test() {
+static void unlink_open_directory_test(void) {
   KTEST_BEGIN("rmdir() open directory test");
   const char kDir[] = "unlink_open_directory_test";
   KEXPECT_EQ(0, vfs_mkdir(kDir));
@@ -1278,7 +1278,7 @@ static void unlink_open_directory_test() {
 
 // Test trying to create a file in an unlinked directory (that's still open for
 // reading).
-static void create_in_unlinked_directory() {
+static void create_in_unlinked_directory(void) {
   KTEST_BEGIN("create in rmdir()'d directory test");
   const char kDir[] = "create_in_unlinked_directory_test";
   const char kFile[] = "create_in_unlinked_directory_test/file";
@@ -1339,7 +1339,7 @@ static void read_page_test(const char* filename, const int size) {
 }
 
 // Test a vnode-backed memobj.
-static void memobj_test() {
+static void memobj_test(void) {
   KTEST_BEGIN("vfs_get_memobj() test");
   const char kDir[] = "memobj_test";
   KEXPECT_EQ(0, vfs_mkdir(kDir));
@@ -1397,7 +1397,7 @@ static void memobj_test() {
 
 // TODO(aoates): test for memobj write_page as well.
 
-static void mknod_test() {
+static void mknod_test(void) {
   const char kDir[] = "mknod_test_dir";
   const char kRegFile[] = "mknod_test_dir/reg";
   const char kCharDevFile[] = "mknod_test_dir/char";
@@ -1449,7 +1449,7 @@ static void mknod_test() {
   vfs_rmdir(kDir);
 }
 
-static void block_device_test() {
+static void block_device_test(void) {
   const char kDir[] = "block_dev_test_dir";
   const char kBlockDevFile[] = "block_dev_test_dir/block";
   const int kRamdiskSize = PAGE_SIZE * 3;
@@ -1520,7 +1520,7 @@ static void block_device_test() {
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
 
-void vfs_test() {
+void vfs_test(void) {
   KTEST_SUITE_BEGIN("vfs test");
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {

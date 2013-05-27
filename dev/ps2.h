@@ -26,7 +26,7 @@
 #define PS2_DEVICE_KEYBOARD 2
 
 // Initialize the PS2 subsystem.  Returns 0 if there was a failure.
-int ps2_init();
+int ps2_init(void);
 
 // Returns the device type of the device attached to the given port.
 int ps2_get_device_type(int port);

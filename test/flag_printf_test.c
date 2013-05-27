@@ -26,7 +26,7 @@ static flag_spec_t FLAGS[] = {
   FLAG_SPEC_END,
 };
 
-void flag_printf_test() {
+void flag_printf_test(void) {
   KTEST_SUITE_BEGIN("flag_printf()");
 
   char buf[100];

@@ -17,7 +17,7 @@
 #include "common/hash.h"
 #include "test/ktest.h"
 
-static void basic_fnv_test() {
+static void basic_fnv_test(void) {
   KTEST_BEGIN("fnv_hash(): basic test");
   KEXPECT_EQ(1268118805, fnv_hash(0));
   KEXPECT_EQ(4218009092, fnv_hash(1));
@@ -25,7 +25,7 @@ static void basic_fnv_test() {
   KEXPECT_EQ(794109580, fnv_hash(12345678));
 }
 
-static void fnv_array_test() {
+static void fnv_array_test(void) {
   KTEST_BEGIN("fnv_hash_array(): basic test");
 
   for (uint32_t i = 0; i < 10; ++i) {
@@ -33,7 +33,7 @@ static void fnv_array_test() {
   }
 }
 
-static void fnv_concat_test() {
+static void fnv_concat_test(void) {
   KTEST_BEGIN("fnv_hash_concat(): basic test");
 
   KEXPECT_NE(fnv_hash_concat(1, 2), 1);
@@ -51,7 +51,7 @@ static void fnv_concat_test() {
   }
 }
 
-void hash_test() {
+void hash_test(void) {
   KTEST_SUITE_BEGIN("hash test");
 
   basic_fnv_test();

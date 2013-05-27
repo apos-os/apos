@@ -198,13 +198,13 @@ struct fs {
 #define VFS_SEEK_END 3
 
 // Initialize the VFS.
-void vfs_init();
+void vfs_init(void);
 
 // Return the root FS.
-fs_t* vfs_get_root_fs();
+fs_t* vfs_get_root_fs(void);
 
 // Return the root vnode, with a reference on it.
-vnode_t* vfs_get_root_vnode();
+vnode_t* vfs_get_root_vnode(void);
 
 // Initialize (and zero-out) a vnode_t.
 void vfs_vnode_init(vnode_t* n, int num);
@@ -217,10 +217,10 @@ vnode_t* vfs_get(fs_t* fs, int vnode);
 // TODO(aoates): make a vfs-internal.h file with the internal-only functions in
 // it.
 // Log the current vnode cache.
-void vfs_log_cache();
+void vfs_log_cache(void);
 
 // Return how many vnodes are currently in the cache.
-int vfs_cache_size();
+int vfs_cache_size(void);
 
 // Looks up the given path and returns the refcount of the corresponding vnode,
 // 0 if there is no matching vnode in the cache, or -errno if the path can't be

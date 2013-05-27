@@ -24,7 +24,7 @@
 #include "test/block_dev_test.h"
 #include "test/ktest.h"
 
-void ramdisk_test() {
+void ramdisk_test(void) {
   KTEST_SUITE_BEGIN("ramdisk");
   ramdisk_t* rd;
   block_dev_t bd;

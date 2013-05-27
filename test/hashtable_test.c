@@ -130,7 +130,7 @@ void iterate_test(htbl_t* tbl) {
   htbl_remove(tbl, 6);
 }
 
-void hashtable_test() {
+void hashtable_test(void) {
   KTEST_SUITE_BEGIN("hashtable (large table)");
   htbl_t t;
   htbl_init(&t, 100);

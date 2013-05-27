@@ -21,7 +21,7 @@
 #include "vfs/vfs.h"
 
 // Initialize a new ramfs and return it.
-fs_t* ramfs_create_fs();
+fs_t* ramfs_create_fs(void);
 
 // Enable and disable artificial blocking for the ramfs.  If enabled, every call
 // that's allowed to block will do so by calling scheduler_yield.  Useful for

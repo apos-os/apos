@@ -18,9 +18,9 @@
 #include <stdint.h>
 
 // TODO(aoates): document these
-void kmalloc_init();
+void kmalloc_init(void);
 void kfree(void* x);
 void* kmalloc(uint32_t n);
-void kmalloc_log_state();
+void kmalloc_log_state(void);
 
 #endif

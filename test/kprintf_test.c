@@ -16,7 +16,7 @@
 #include "common/kprintf.h"
 #include "test/ktest.h"
 
-void kprintf_test() {
+void kprintf_test(void) {
   KTEST_SUITE_BEGIN("kprintf");
 
   KTEST_BEGIN("ksprintf()");

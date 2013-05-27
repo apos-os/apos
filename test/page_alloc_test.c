@@ -47,7 +47,7 @@ static void check_frame(uint32_t frame_start, uint32_t x) {
   KEXPECT_EQ(matched_words, PAGE_SIZE / sizeof(uint32_t));
 }
 
-void test_alloc_all() {
+void test_alloc_all(void) {
   KTEST_BEGIN("allocate all pages test");
 
   // This test will only work up to 100MB of ram.
@@ -75,7 +75,7 @@ void test_alloc_all() {
   kfree(pages);
 }
 
-void test_basic() {
+void test_basic(void) {
   KTEST_BEGIN("basic test");
 
   uint32_t page1 = page_frame_alloc();
@@ -142,7 +142,7 @@ void test_basic() {
   //page_frame_free(page4);
 }
 
-void page_alloc_test() {
+void page_alloc_test(void) {
   KTEST_SUITE_BEGIN("page_frame_alloc() test");
 
   test_alloc_all();

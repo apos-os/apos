@@ -45,22 +45,22 @@ typedef struct handler_block handler_block_t;
 static handler_block_t g_handlers[NUM_HANDLERS];
 
 // These are our handler stubs that invoke irq_handler below.
-extern void irq0();
-extern void irq1();
-extern void irq2();
-extern void irq3();
-extern void irq4();
-extern void irq5();
-extern void irq6();
-extern void irq7();
-extern void irq8();
-extern void irq9();
-extern void irq10();
-extern void irq11();
-extern void irq12();
-extern void irq13();
-extern void irq14();
-extern void irq15();
+extern void irq0(void);
+extern void irq1(void);
+extern void irq2(void);
+extern void irq3(void);
+extern void irq4(void);
+extern void irq5(void);
+extern void irq6(void);
+extern void irq7(void);
+extern void irq8(void);
+extern void irq9(void);
+extern void irq10(void);
+extern void irq11(void);
+extern void irq12(void);
+extern void irq13(void);
+extern void irq14(void);
+extern void irq15(void);
 
 void pic_init() {
   for (int i = 0; i < NUM_HANDLERS; ++i) {

@@ -33,7 +33,7 @@ _Static_assert(sizeof(tss_t) == 104, "tss_t incorrect size");
 // Allocate, initialize, and install a TSS.
 //
 // You must call tss_set_kernel_stack() before entering user mode.
-void tss_init();
+void tss_init(void);
 
 // Set the current kernel stack in the TSS.  Call when switching threads.
 void tss_set_kernel_stack(addr_t stack);

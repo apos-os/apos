@@ -40,7 +40,7 @@ static void basic_child_func(void* arg) {
   proc_exit(0x5678);
 }
 
-static void basic_test() {
+static void basic_test(void) {
   KTEST_BEGIN("fork() basic test");
 
   // Fork.
@@ -65,7 +65,7 @@ static void basic_test() {
 static void implicit_exit_child_func(void* arg) {
 }
 
-static void implicit_exit_test() {
+static void implicit_exit_test(void) {
   KTEST_BEGIN("fork() implicit proc_exit() test");
 
   proc_fork(&implicit_exit_child_func, 0x0);
@@ -87,7 +87,7 @@ static void parent_exit_first_child_func_outer(void* arg) {
   proc_exit(5);
 }
 
-static void parent_exit_first_test() {
+static void parent_exit_first_test(void) {
   KTEST_BEGIN("fork() parent exit first test");
 
   proc_fork(&parent_exit_first_child_func_outer, 0x0);
@@ -110,7 +110,7 @@ static void multi_child_func(void* arg) {
   proc_exit((int)arg);
 }
 
-static void multi_child_test() {
+static void multi_child_test(void) {
   const int SIZE = 5;
 
   KTEST_BEGIN("fork() multi-child test");
@@ -149,7 +149,7 @@ static void multi_child_test() {
 #define SEPARATE_ADDR2 (SEPARATE_MAP_BASE + 300 + PAGE_SIZE)
 #define SEPARATE_ADDR3 (SEPARATE_MAP_BASE + 300 + 2 * PAGE_SIZE)
 
-static void make_separate_mapping() {
+static void make_separate_mapping(void) {
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
                         MAP_FIXED | MAP_ANONYMOUS | MAP_SHARED,
@@ -194,7 +194,7 @@ static void child_func(void* arg) {
   KEXPECT_EQ(90, *(uint32_t*)SEPARATE_ADDR3);
 }
 
-static void mapping_test() {
+static void mapping_test(void) {
   KTEST_BEGIN("fork() mapping test");
   // Create a shared and a private mapping.
   void* addr;
@@ -254,7 +254,7 @@ static void mapping_test() {
 
 // TODO(aoates): test fd and cwd forking.
 
-void fork_test() {
+void fork_test(void) {
   KTEST_SUITE_BEGIN("proc_fork()");
 
   basic_test();

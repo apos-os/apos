@@ -26,7 +26,7 @@
 #include "proc/kthread.h"
 
 // Initialize the scheduler.
-void scheduler_init();
+void scheduler_init(void);
 
 // Add the given thread to the run queue.
 void scheduler_make_runnable(kthread_t thread);
@@ -35,7 +35,7 @@ void scheduler_make_runnable(kthread_t thread);
 // automatically re-added to the back of the run queue.
 //
 // Equivalent (logically) to scheduler_wait_on(RUN_QUEUE).
-void scheduler_yield();
+void scheduler_yield(void);
 
 // Wait on the given thread queue.
 //

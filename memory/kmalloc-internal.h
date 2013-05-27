@@ -48,6 +48,6 @@ typedef struct block block_t;
 // Returns the total size of a block_t, including headers and data.
 #define BLOCK_SIZE(b) (sizeof(block_t) + b->length)
 
-block_t* kmalloc_internal_get_block_list();
+block_t* kmalloc_internal_get_block_list(void);
 
 #endif

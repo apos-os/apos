@@ -73,7 +73,7 @@ static int list_used_size(block_t* lst) {
   return len;
 }
 
-static void macros_test() {
+static void macros_test(void) {
   KTEST_BEGIN("kmalloc macros");
 
   uint8_t block_mem[120];
@@ -85,7 +85,7 @@ static void macros_test() {
   KEXPECT_EQ(sizeof(block_t) + 100, BLOCK_SIZE(block));
 }
 
-static void init_test() {
+static void init_test(void) {
   KTEST_BEGIN("kmalloc init");
 
   kmalloc_init();
@@ -97,7 +97,7 @@ static void init_test() {
   KEXPECT_EQ(1, list->free);
 }
 
-static void basic_test() {
+static void basic_test(void) {
   KTEST_BEGIN("kmalloc malloc");
 
   kmalloc_init();
@@ -156,7 +156,7 @@ static void basic_test() {
   kmalloc_log_state();
 }
 
-static void large_alloc_test() {
+static void large_alloc_test(void) {
   KTEST_BEGIN("kmalloc large alloc");
 
   void* x1 = kmalloc(PAGE_SIZE / 2);
@@ -186,7 +186,7 @@ static void large_alloc_test() {
   kmalloc_log_state();
 }
 
-static void tiny_alloc_test() {
+static void tiny_alloc_test(void) {
   KTEST_BEGIN("kmalloc tiny alloc");
 
   void* x[100];
@@ -208,7 +208,7 @@ static void tiny_alloc_test() {
   kmalloc_log_state();
 }
 
-static uint16_t rand() {
+static uint16_t rand(void) {
   static uint16_t p = 0xbeef;
   static uint16_t n = 0xabcd;
   p = n;
@@ -217,7 +217,7 @@ static uint16_t rand() {
   return p ^ n;
 }
 
-static void stress_test() {
+static void stress_test(void) {
   KTEST_BEGIN("stress test");
   kmalloc_init();
 
@@ -281,7 +281,7 @@ void interrupt_test_timer_cb(void* arg) {
   kfree(x4);
   kfree(x1);
 }
-static void interrupt_test() {
+static void interrupt_test(void) {
   KTEST_BEGIN("kmalloc interrupt safety test");
 
   register_timer_callback(1, 1000, &interrupt_test_timer_cb, 0x0);
@@ -319,7 +319,7 @@ void large_interrupt_test_timer_cb(void* arg) {
   kfree(x4);
   kfree(x1);
 }
-static void large_interrupt_test() {
+static void large_interrupt_test(void) {
   KTEST_BEGIN("kmalloc large interrupt safety test");
 
   const int kTestLengthMs = 10000;
@@ -348,7 +348,7 @@ static void large_interrupt_test() {
   kmalloc_log_state();
 }
 
-void kmalloc_test() {
+void kmalloc_test(void) {
   KTEST_SUITE_BEGIN("kmalloc");
 
   // NOTE: we disable klog-to-VTERM since we'll be overwriting the kmalloc

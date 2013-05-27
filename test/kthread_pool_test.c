@@ -49,7 +49,7 @@ static void timer_cb(void* arg) {
 #define TEST_SIZE 100
 #define POOL_SIZE 5
 
-void kthread_pool_test() {
+void kthread_pool_test(void) {
   KTEST_SUITE_BEGIN("kthread_pool");
   KTEST_BEGIN("kthread_pool");
 

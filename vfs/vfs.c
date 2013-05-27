@@ -80,7 +80,7 @@ static inline vnode_t* VFS_COPY_REF(vnode_t* ref) {
 // no space left.
 //
 // TODO(aoates): this could be much more efficient.
-static int next_free_file_idx() {
+static int next_free_file_idx(void) {
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
     if (g_file_table[i] == 0x0) {
       return i;

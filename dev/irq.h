@@ -33,7 +33,7 @@
 #define IRQ15 15
 
 // Initialize the PIC and set up IRQs.
-void pic_init();
+void pic_init(void);
 
 // Register a handler to be called when a particular IRQ fires.
 typedef void (*irq_handler_t)(void*);

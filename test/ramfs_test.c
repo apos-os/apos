@@ -41,7 +41,7 @@ static vnode_t* get_vnode(int inode) {
   return n;
 }
 
-static void basic_test() {
+static void basic_test(void) {
   KTEST_BEGIN("basic read/write test");
   int vnode_num = g_fs->mknod(g_root, "testA", VNODE_REGULAR, mkdev(0,0));
   vnode_t* n = get_vnode(vnode_num);
@@ -178,7 +178,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
   va_end(args);
 }
 
-static void directory_test() {
+static void directory_test(void) {
   KTEST_BEGIN("empty directory getdents() test");
   vnode_t* n = g_root;
   EXPECT_DIRENTS(n, 2, ".", n->num, "..", n->num);
@@ -227,7 +227,7 @@ static void directory_test() {
   // TODO(aoates): check link count
 }
 
-void ramfs_test() {
+void ramfs_test(void) {
   KTEST_SUITE_BEGIN("ramfs()");
   g_fs = ramfs_create_fs();
   g_root = get_vnode(g_fs->get_root(g_fs));

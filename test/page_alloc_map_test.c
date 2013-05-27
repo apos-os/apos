@@ -81,7 +81,7 @@ void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
 }
 
 // Test page mapping.  Note: will cause page faults and crash the kernel!
-void page_alloc_map_test() {
+void page_alloc_map_test(void) {
   KTEST_SUITE_BEGIN("page_alloc map/unmap test");
   // Set up test handler.
   register_interrupt_handler(0x0E, &test_page_fault_handler);

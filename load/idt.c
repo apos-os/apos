@@ -26,7 +26,7 @@ static idt_ptr_t   idt_ptr;
 
 extern void idt_flush(uint32_t gdt);
 
-void idt_init() {
+void idt_init(void) {
   idt_ptr.limit = sizeof(idt_entry_t) * NUM_IDT_ENTRIES;
   idt_ptr.base  = (uint32_t)&idt_entries;
 

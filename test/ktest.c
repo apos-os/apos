@@ -30,13 +30,13 @@ static int current_test_passing = 0;
 
 static uint32_t test_start_time;
 
-static void finish_test() {
+static void finish_test(void) {
   if (current_test_passing) {
     num_tests_passing++;
   }
 }
 
-static void finish_suite() {
+static void finish_suite(void) {
   if (current_suite_passing) {
     num_suites_passing++;
   }

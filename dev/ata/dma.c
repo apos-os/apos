@@ -55,20 +55,20 @@ static uint32_t g_prd_phys = 0;
 static kmutex_t g_dma_buf_mutex;
 
 // Returns the DMA buffer that should be written to/read from.
-static void* dma_get_buffer() {
+static void* dma_get_buffer(void) {
   KASSERT(g_dma_buf_mutex.locked);
   return (void*)phys2virt(g_prd_phys);
 }
 
-static inline uint32_t dma_buffer_size() {
+static inline uint32_t dma_buffer_size(void) {
   return PAGE_SIZE;
 }
 
-static inline void dma_lock_buffer() {
+static inline void dma_lock_buffer(void) {
   kmutex_lock(&g_dma_buf_mutex);
 }
 
-static inline void dma_unlock_buffer() {
+static inline void dma_unlock_buffer(void) {
   kmutex_unlock(&g_dma_buf_mutex);
 }
 

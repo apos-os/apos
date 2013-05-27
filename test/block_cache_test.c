@@ -356,7 +356,7 @@ static void put_thread_test(ramdisk_t* rd, apos_dev_t dev) {
 //  wait_for_flush()
 //  * verify that the second put() didn't cancel the first's flush *
 
-void block_cache_test() {
+void block_cache_test(void) {
   KTEST_SUITE_BEGIN("block_cache test");
 
   // Set up a ramdisk to use for testing.

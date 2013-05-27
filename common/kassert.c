@@ -18,7 +18,7 @@
 #include "common/kstring.h"
 #include "memory/memory.h"
 
-static void print_stack_trace() {
+static void print_stack_trace(void) {
   const int kMaxFrames = 32;
   uint32_t frames[kMaxFrames];
   int cframe = 0;

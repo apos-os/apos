@@ -43,7 +43,7 @@ static int list_size(list_t* list) {
   return size;
 }
 
-static void basic_list_test() {
+static void basic_list_test(void) {
   const int kNumLinks = 10;
   list_t list = LIST_INIT;
   list_link_t links[kNumLinks];
@@ -83,7 +83,7 @@ static void basic_list_test() {
   KEXPECT_EQ(&links[2], list_pop(&list));
 }
 
-static void list_remove_test() {
+static void list_remove_test(void) {
   const int kNumLinks = 5;
   list_t list = LIST_INIT;
   list_link_t links[kNumLinks];
@@ -124,7 +124,7 @@ static void list_remove_test() {
   KEXPECT_EQ(0, list_link_on_list(&list, &links[0]));
 }
 
-static void list_insert_test() {
+static void list_insert_test(void) {
   const int kNumLinks = 5;
   list_t list = LIST_INIT;
   list_link_t links[kNumLinks];
@@ -175,7 +175,7 @@ static void list_insert_test() {
   KEXPECT_NE(0, list_empty(&list));
 }
 
-void list_test() {
+void list_test(void) {
   KTEST_SUITE_BEGIN("list test");
 
   basic_list_test();

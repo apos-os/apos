@@ -86,7 +86,7 @@ void test_pagify(addr_t file_offset,
   }
 }
 
-void proc_load_test() {
+void proc_load_test(void) {
   KTEST_SUITE_BEGIN("proc load test");
 
   KTEST_BEGIN("load_pagify_region(): empty region");

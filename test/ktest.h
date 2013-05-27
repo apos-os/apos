@@ -102,9 +102,9 @@ typedef enum {
 #define KEXPECT_GE(a, b) KEXPECT_INT_("KEXPECT_GE", #a, #b, a, b, >=, " < ")
 
 // Initialize the testing framework.
-void ktest_begin_all();
+void ktest_begin_all(void);
 
 // Tear down the framework and print statistics about passing/failing tests.
-void ktest_finish_all();
+void ktest_finish_all(void);
 
 #endif

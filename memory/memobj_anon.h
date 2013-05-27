@@ -18,6 +18,6 @@
 #include "memory/memobj.h"
 
 // Create an anonymous memobj.
-memobj_t* memobj_create_anon();
+memobj_t* memobj_create_anon(void);
 
 #endif

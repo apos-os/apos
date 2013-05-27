@@ -36,7 +36,7 @@ void file_init_file(file_t* f);
 
 // Allocate and free a file.  For now, these just call kmalloc() and kfree(),
 // but we cloud replace them with a better allocator in the future.
-static inline file_t* file_alloc() {
+static inline file_t* file_alloc(void) {
   return (file_t*)kmalloc(sizeof(file_t));
 }
 

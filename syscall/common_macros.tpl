@@ -25,6 +25,8 @@ SYS_{{ syscall.name | upper}}
 {% macro decl_args(args) -%}
 {% for arg in args -%}
 {{ arg.ctype }} {{ arg.name }}{% if not loop.last %}, {% endif %}
+{%- else %}
+void
 {%- endfor %}
 {%- endmacro %}
 

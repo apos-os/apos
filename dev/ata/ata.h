@@ -23,10 +23,10 @@
 // devices.
 //
 // REQUIRES: pci_init() -- in case the ATA bus is accessed through a PCI bridge.
-void ata_init();
+void ata_init(void);
 
 // Returns the number of ATA devices found at initialization time.
-int ata_num_devices();
+int ata_num_devices(void);
 
 // Returns the block_dev_t corresponding to an ATA device.
 block_dev_t* ata_get_block_dev(int dev);

@@ -16,6 +16,6 @@
 #define APOO_SYSCALL_INIT_H
 
 // Initialize the syscall gate.
-void syscalls_init();
+void syscalls_init(void);
 
 #endif

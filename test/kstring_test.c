@@ -15,7 +15,7 @@
 #include "common/kstring.h"
 #include "test/ktest.h"
 
-void kstring_test() {
+void kstring_test(void) {
   KTEST_SUITE_BEGIN("kstring");
 
   KTEST_BEGIN("kstrlen()");

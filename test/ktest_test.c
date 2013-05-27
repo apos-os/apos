@@ -21,7 +21,7 @@ char* inc_char(char* x) {
   return x;
 }
 
-void ktest_test() {
+void ktest_test(void) {
   KTEST_SUITE_BEGIN("ktest");
 
   do {
@@ -100,7 +100,7 @@ void ktest_test() {
   KEXPECT_STREQ("b", buf);
 }
 
-void kassert_test() {
+void kassert_test(void) {
   KTEST_SUITE_BEGIN("kassert");
 
   KTEST_BEGIN("KASSERT no side effects");

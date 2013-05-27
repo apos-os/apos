@@ -113,7 +113,7 @@ void page_frame_free_nocheck(uint32_t frame) {
 }
 
 // Returns the current page directory.
-static inline uint32_t* get_page_directory() {
+static inline uint32_t* get_page_directory(void) {
   return (uint32_t*)0xFFFFF000;
 }
 

@@ -21,7 +21,7 @@
 
 static gdt_entry_t g_gdt[GDT_NUM_ENTRIES] __attribute__((aligned (8)));
 
-void gdt_init() {
+void gdt_init(void) {
   // See section 3.4.5.1 of the Intel manuals for a description of the type
   // field.
   g_gdt[GDT_KERNEL_CODE_SEGMENT] =

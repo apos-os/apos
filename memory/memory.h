@@ -113,7 +113,7 @@ typedef struct {
 // memory_info_t that is used by the other functions in this module.
 void set_global_meminfo(memory_info_t* meminfo);
 
-const memory_info_t* get_global_meminfo();
+const memory_info_t* get_global_meminfo(void);
 
 // Returns the page containing the given address.
 uint32_t addr2page(uint32_t addr);

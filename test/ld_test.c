@@ -34,7 +34,7 @@ static void test_sink(void* arg, char c) {
   g_sink[g_sink_idx++] = c;
 }
 
-static void reset() {
+static void reset(void) {
   if (g_ld) {
     ld_destroy(g_ld);
   }
@@ -46,7 +46,7 @@ static void reset() {
   ld_set_sink(g_ld, &test_sink, 0x0);
 }
 
-static void echo_test() {
+static void echo_test(void) {
   KTEST_BEGIN("echo test");
   reset();
 
@@ -62,7 +62,7 @@ static void echo_test() {
   KEXPECT_EQ('\b', g_sink[3]);
 }
 
-static void provide_sink_test() {
+static void provide_sink_test(void) {
   KTEST_BEGIN("ld_provide_sink() test");
   reset();
 
@@ -74,7 +74,7 @@ static void provide_sink_test() {
   KEXPECT_EQ('b', g_sink[1]);
 }
 
-static void write_test() {
+static void write_test(void) {
   KTEST_BEGIN("ld_write() test");
   reset();
 
@@ -95,7 +95,7 @@ static void write_test() {
   KEXPECT_EQ(0, kstrncmp(g_sink, "hello, worldABC", 15));
 }
 
-static void basic_read_test() {
+static void basic_read_test(void) {
   KTEST_BEGIN("basic ld_read() test");
   reset();
 
@@ -112,7 +112,7 @@ static void basic_read_test() {
   KEXPECT_EQ(0, kstrncmp(buf, "abc\n", 4));
 }
 
-static void eof_read_test() {
+static void eof_read_test(void) {
   KTEST_BEGIN("EOF ld_read() test");
   reset();
 
@@ -129,7 +129,7 @@ static void eof_read_test() {
   KEXPECT_EQ(0, kstrncmp(buf, "abc", 3));
 }
 
-static void cook_test() {
+static void cook_test(void) {
   KTEST_BEGIN("ld_read() cooking test");
   reset();
 
@@ -155,7 +155,7 @@ static void cook_test() {
   KEXPECT_EQ(0, kstrncmp(buf, "aDEF\n", 5));
 }
 
-static void cook_limit_test() {
+static void cook_limit_test(void) {
   KTEST_BEGIN("ld_read() cook-past-start-of-line test");
   reset();
 
@@ -184,7 +184,7 @@ static void cook_limit_test() {
   KEXPECT_EQ(0, kstrncmp(buf, "abc\ngh\n", 7));
 }
 
-static void cook_limit_test2() {
+static void cook_limit_test2(void) {
   KTEST_BEGIN("ld_read() cook-past-start-of-line test (start_idx in middle)");
   reset();
 
@@ -216,7 +216,7 @@ static void cook_limit_test2() {
 }
 
 // Sends too many chars then verifies that overloading worked correctly.
-static void do_overload_test() {
+static void do_overload_test(void) {
   for (int i = 0; i < 26; i++) {
     ld_provide(g_ld, 'a' + i);
   }
@@ -235,7 +235,7 @@ static void do_overload_test() {
   KEXPECT_EQ(0, kstrncmp(buf, "abcdefghijklm\n", 14));
 }
 
-static void char_limit_test() {
+static void char_limit_test(void) {
   KTEST_BEGIN("buffer length limit test");
   reset();
   do_overload_test();
@@ -255,7 +255,7 @@ static void char_limit_test() {
   do_overload_test();
 }
 
-static void wrap_deletes_test() {
+static void wrap_deletes_test(void) {
   KTEST_BEGIN("wrap deletes around buffer test");
   reset();
 
@@ -283,7 +283,7 @@ static void wrap_deletes_test() {
   KEXPECT_EQ(0, kstrncmp(buf, "abCDEFGH\n", 9));
 }
 
-static void read_limit_test() {
+static void read_limit_test(void) {
   KTEST_BEGIN("ld_read() limit");
   reset();
 
@@ -330,7 +330,7 @@ static void* basic_read_test_func(void* arg) {
   return 0;
 }
 
-static void basic_read_thread_test() {
+static void basic_read_thread_test(void) {
   KTEST_BEGIN("basic read thread test");
   read_test_data_t data;
   data.l = g_ld;
@@ -362,7 +362,7 @@ static void basic_read_thread_test() {
   kthread_join(thread);
 }
 
-static void three_thread_test() {
+static void three_thread_test(void) {
   KTEST_BEGIN("3-read thread test");
   read_test_data_t data[3];
   for (int i = 0; i < 3; ++i) {
@@ -412,7 +412,7 @@ static void three_thread_test() {
 }
 
 // Same as above, but the first 2 threads consume all the available bytes.
-static void three_thread_test2() {
+static void three_thread_test2(void) {
   KTEST_BEGIN("3-read thread test #2");
   read_test_data_t data[3];
   for (int i = 0; i < 3; ++i) {
@@ -469,7 +469,7 @@ static void three_thread_test2() {
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
 
-void ld_test() {
+void ld_test(void) {
   KTEST_SUITE_BEGIN("line discipline");
 
   echo_test();

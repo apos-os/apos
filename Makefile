@@ -16,7 +16,7 @@ AS	= i586-elf-as
 ASFLAGS	= --gen-debug
 CC	= i586-elf-gcc
 CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g -I. \
-	  -Wno-unused-parameter -Wno-error=unused-function \
+	  -Wno-unused-parameter -Wno-error=unused-function -Wstrict-prototypes \
 	  -DENABLE_KERNEL_SAFETY_NETS=1
 LD	= i586-elf-ld
 M4      = m4

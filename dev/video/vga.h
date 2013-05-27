@@ -22,10 +22,10 @@
 typedef struct video video_t;
 
 // Initialize the VGA subsystem.
-void video_vga_init();
+void video_vga_init(void);
 
 // Returns a video_t associated with the default display.
-video_t* video_get_default();
+video_t* video_get_default(void);
 
 // Return the width/height of the display.
 uint32_t video_get_width(video_t* v);

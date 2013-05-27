@@ -42,7 +42,7 @@
 
 #define LD_BUF_SIZE 1024
 
-void pic_init();
+void pic_init(void);
 void kshell_main(apos_dev_t tty);
 
 static vterm_t* g_vterm = 0;
@@ -57,11 +57,11 @@ static void tick(void* arg) {
   video_setc(g_video, 0, video_get_width(g_video)-1, beat[i]);
 }
 
-static void add_timers() {
+static void add_timers(void) {
   KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
 }
 
-static void io_init() {
+static void io_init(void) {
   static vkeyboard_t* kbd = 0x0;
   kbd = vkeyboard_create();
   KASSERT(ps2_keyboard_init(kbd));

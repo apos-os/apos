@@ -22,13 +22,13 @@
 #include "syscall/dmz.h"
 #include "test/ktest.h"
 
-static void dmz_buffer_invalid_args() {
+static void dmz_buffer_invalid_args(void) {
   KTEST_BEGIN("syscall_verify_buffer() invalid args test");
 
   KEXPECT_EQ(-EINVAL, syscall_verify_buffer(NULL, 10, 0));
 }
 
-static void dmz_buffer_basic() {
+static void dmz_buffer_basic(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
 
   KTEST_BEGIN("syscall_verify_buffer() basic test");
@@ -71,7 +71,7 @@ static void dmz_buffer_basic() {
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
 
-static void dmz_buffer_read_only() {
+static void dmz_buffer_read_only(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
 
   KTEST_BEGIN("syscall_verify_buffer() read-only test");
@@ -85,7 +85,7 @@ static void dmz_buffer_read_only() {
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
 
-static void dmz_string_basic() {
+static void dmz_string_basic(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
 
   KTEST_BEGIN("syscall_verify_string() invalid args test");
@@ -135,7 +135,7 @@ static void dmz_string_basic() {
 
 // TODO(aoates): test syscall_verify_string() in read-only region.
 
-void dmz_test() {
+void dmz_test(void) {
   KTEST_SUITE_BEGIN("Syscall DMZ tests");
 
   dmz_buffer_basic();

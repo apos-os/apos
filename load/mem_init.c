@@ -42,7 +42,7 @@ const uint32_t MAX_MEMORY_BYTES = 0x10000000;
 const uint32_t START_HEAP = 0xD0000000;
 const uint32_t END_HEAP =   0xE0000000;
 
-static void die_phys() {
+static void die_phys(void) {
   asm("int $3");
 }
 

@@ -62,7 +62,7 @@ static void write_test_file(const char name[], char contents) {
   vfs_close(fd);
 }
 
-static void setup_test_files() {
+static void setup_test_files(void) {
   write_test_file(kFileA, 'A');
   write_test_file(kFileB, 'X');
 }
@@ -130,7 +130,7 @@ static void flush_all_mappings(void* start, int pages) {
   }
 }
 
-static void mmap_invalid_args() {
+static void mmap_invalid_args(void) {
   const char kFile[] = "mmap_file";
   const int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT);
   KEXPECT_GE(fd, 0);
@@ -171,13 +171,13 @@ static void mmap_invalid_args() {
   vfs_unlink(kFile);
 }
 
-static void munmap_invalid_args() {
+static void munmap_invalid_args(void) {
   KTEST_BEGIN("munmap(): unaligned args test");
   KEXPECT_EQ(-EINVAL, do_munmap((void*)0xABCD, PAGE_SIZE));
   KEXPECT_EQ(-EINVAL, do_munmap((void*)(PAGE_SIZE * 10), 0x15));
 }
 
-static void mmap_basic() {
+static void mmap_basic(void) {
   KTEST_BEGIN("mmap(): basic test");
   setup_test_files();
 
@@ -211,7 +211,7 @@ static void mmap_basic() {
   vfs_close(fdB);
 }
 
-static void map_offset_test() {
+static void map_offset_test(void) {
   KTEST_BEGIN("mmap(): map offset test");
   setup_test_files();
 
@@ -228,7 +228,7 @@ static void map_offset_test() {
   vfs_close(fdA);
 }
 
-static void partial_unmap_test() {
+static void partial_unmap_test(void) {
   KTEST_BEGIN("mmap(): partial unmap test");
   setup_test_files();
 
@@ -292,7 +292,7 @@ static void run_hole_test(int page_to_unmap, char expected[]) {
   vfs_close(fdB);
 }
 
-static void map_into_hole_test() {
+static void map_into_hole_test(void) {
   setup_test_files();
   KTEST_BEGIN("mmap(): map into hole test (prefix)");
   run_hole_test(0, "ZBC");
@@ -304,7 +304,7 @@ static void map_into_hole_test() {
   run_hole_test(2, "ABZ");
 }
 
-static void mmap_write_test() {
+static void mmap_write_test(void) {
   KTEST_BEGIN("mmap(): write back test");
   setup_test_files();
 
@@ -330,7 +330,7 @@ static void mmap_write_test() {
 }
 
 // Test mapping the same file multiple times.
-static void mmap_multi_map_test() {
+static void mmap_multi_map_test(void) {
   KTEST_BEGIN("mmap(): multi-map test");
   setup_test_files();
 
@@ -365,7 +365,7 @@ static void mmap_multi_map_test() {
   vfs_close(fdA);
 }
 
-static void map_file_mode_test() {
+static void map_file_mode_test(void) {
   KTEST_BEGIN("mmap(): file mode test");
   setup_test_files();
 
@@ -403,7 +403,7 @@ static void map_file_mode_test() {
 }
 
 // Test that a non-NULL addr parameter is used as a hint.
-static void addr_hint_test() {
+static void addr_hint_test(void) {
   KTEST_BEGIN("mmap(): addr hint test");
 
   // Map both files in.
@@ -427,7 +427,7 @@ static void addr_hint_test() {
 }
 
 // Test an unaligned addr hint.
-static void unaligned_addr_hint_test() {
+static void unaligned_addr_hint_test(void) {
   KTEST_BEGIN("mmap(): unaligned addr hint test");
 
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
@@ -441,7 +441,7 @@ static void unaligned_addr_hint_test() {
   vfs_close(fdA);
 }
 
-static void map_fixed_test() {
+static void map_fixed_test(void) {
   // Map both files in.
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   const int fdB = vfs_open(kFileB, VFS_O_RDWR);
@@ -474,7 +474,7 @@ static void map_fixed_test() {
 }
 
 // Test that we can't map and unmap in the kernel's memory region.
-static void map_unmap_kernel_memory() {
+static void map_unmap_kernel_memory(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA = 0x0;
 
@@ -528,7 +528,7 @@ static void map_unmap_kernel_memory() {
   vfs_close(fdA);
 }
 
-static void mmap_private_basic() {
+static void mmap_private_basic(void) {
   KTEST_BEGIN("mmap(): MAP_PRIVATE basic test");
   setup_test_files();
 
@@ -562,7 +562,7 @@ static void mmap_private_basic() {
   vfs_close(fdB);
 }
 
-static void mmap_private_writeback() {
+static void mmap_private_writeback(void) {
   KTEST_BEGIN("mmap(): MAP_PRIVATE not shared test");
   setup_test_files();
 
@@ -617,7 +617,7 @@ static void mmap_private_writeback() {
 }
 
 // Test that we share the underlying mapping's pages until we write.
-static void mmap_copy_on_write() {
+static void mmap_copy_on_write(void) {
   KTEST_BEGIN("mmap(): MAP_PRIVATE copy-on-write");
   setup_test_files();
 
@@ -660,7 +660,7 @@ static void mmap_copy_on_write() {
   vfs_close(fdA);
 }
 
-static void mmap_anonymous() {
+static void mmap_anonymous(void) {
   KTEST_BEGIN("mmap(): MAP_ANONYMOUS test");
 
   void* addrA = 0x0, *addrB = 0x0;
@@ -695,7 +695,7 @@ static void mmap_anonymous() {
 }
 
 // Test boundary conditions (first and last mappable page).
-static void mmap_first_and_last_page() {
+static void mmap_first_and_last_page(void) {
   KTEST_BEGIN("mmap(): first mappable page");
 
   void* addrA = 0x0;
@@ -738,7 +738,7 @@ static void mmap_first_and_last_page() {
 // * MAP_SHARED | MAP_ANONYMOUS after fork()
 // * requested protection level is given
 
-void mmap_test() {
+void mmap_test(void) {
   KTEST_SUITE_BEGIN("mmap()/munmap() tests");
 
   mmap_invalid_args();

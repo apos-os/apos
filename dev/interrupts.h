@@ -18,15 +18,15 @@
 
 #include <stdint.h>
 
-void interrupts_init();
+void interrupts_init(void);
 
-void enable_interrupts();
-void disable_interrupts();
+void enable_interrupts(void);
+void disable_interrupts(void);
 
 #define IF_FLAG 0x200
 
 // Disable interrupts and return the previous (pre-disabling) IF flag value.
-static inline uint32_t save_and_disable_interrupts();
+static inline uint32_t save_and_disable_interrupts(void);
 
 // Restore interrupt state (given the return value of
 // save_and_disable_interrupts).

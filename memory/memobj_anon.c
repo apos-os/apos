@@ -79,7 +79,7 @@ static int anon_write_page(memobj_t* obj, int page_offset, const void* buffer) {
   return 0;
 }
 
-memobj_t* memobj_create_anon() {
+memobj_t* memobj_create_anon(void) {
   memobj_t* anon_obj = (memobj_t*)kmalloc(sizeof(memobj_t));
   if (!anon_obj) return 0x0;
 

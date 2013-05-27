@@ -20,7 +20,7 @@
 
 // Allocate and initialize a process, and assign it a free process ID.
 // Returns NULL if the kernel is out of memory or process IDs.
-process_t* proc_alloc();
+process_t* proc_alloc(void);
 
 // Destroy the given process_t and remove it from the process table.  It must
 // have already been torn down (as per proc_exit() and proc_wait()).

@@ -63,6 +63,6 @@ int dev_unregister_char(apos_dev_t id);
 // Initialize the /dev filesystem by creating /dev (if it doesn't already
 // exist), removing stale entries, and populating with new entries for all
 // registered devices.
-void dev_init_fs();
+void dev_init_fs(void);
 
 #endif

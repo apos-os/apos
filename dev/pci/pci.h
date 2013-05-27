@@ -18,6 +18,6 @@
 
 // Initialize the PCI subsystem, and query the bus to discover all connected
 // devices.  Invokes drivers for any devices that are recognized.
-void pci_init();
+void pci_init(void);
 
 #endif

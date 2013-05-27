@@ -21,7 +21,7 @@
 #include "vfs/vfs.h"
 
 // Initialize a new ext2fs and return it.  The ext2fs is NOT mounted.
-fs_t* ext2_create_fs();
+fs_t* ext2_create_fs(void);
 
 // Destroy an ext2fs.  The ext2fs must NOT be mounted.
 void ext2_destroy_fs(fs_t* fs);

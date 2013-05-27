@@ -66,7 +66,7 @@ typedef struct {
   int run_in_all;
 } test_entry_t;
 
-static void run_all_tests();
+static void run_all_tests(void);
 
 static test_entry_t TESTS[] = {
   { "ktest", &ktest_test, 0 },
@@ -105,7 +105,7 @@ static test_entry_t TESTS[] = {
   { 0, 0, 0},
 };
 
-static void run_all_tests() {
+static void run_all_tests(void) {
   test_entry_t* e = &TESTS[0];
   while (e->name != 0x0) {
     if (e->run_in_all) {

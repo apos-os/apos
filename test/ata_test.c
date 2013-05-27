@@ -25,7 +25,7 @@
 #include "test/block_dev_test.h"
 #include "test/ktest.h"
 
-void ata_test() {
+void ata_test(void) {
   block_dev_t** bds = (block_dev_t**)kmalloc(
       ata_num_devices() * sizeof(block_dev_t*));
   for (int i = 0; i < ata_num_devices(); ++i) {

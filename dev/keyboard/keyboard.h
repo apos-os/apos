@@ -133,7 +133,7 @@
 typedef struct vkeyboard vkeyboard_t;
 
 // Create a virtual keyboard.
-vkeyboard_t* vkeyboard_create();
+vkeyboard_t* vkeyboard_create(void);
 
 // Send a raw keycode (and whether the event is key-up or key-down) to a virtual
 // keyboard.

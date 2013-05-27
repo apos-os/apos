@@ -20,7 +20,7 @@
 #include "dev/ata/queue.h"
 
 // Initialize the DMA subsytem that talks to the PIIX(3) controller.
-void dma_init();
+void dma_init(void);
 
 // Perform the given operation using DMA.  Records success or failure in the
 // op's status (and out_len) fields.

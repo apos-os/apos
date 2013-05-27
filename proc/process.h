@@ -77,15 +77,15 @@ struct process {
 
 // Minimally initialize the root process.  After proc_init_stage1, the
 // vm_area_list may be modified, but nothing else.
-void proc_init_stage1();
+void proc_init_stage1(void);
 
 // Finish initializing the root process (except for the cwd).
 //
 // REQUIRES: kthread_init() and scheduler_init().
-void proc_init_stage2();
+void proc_init_stage2(void);
 
 // Return the current process descriptor.
-process_t* proc_current();
+process_t* proc_current(void);
 
 // Return the process_t with the given ID, or NULL if there is none.
 process_t* proc_get(pid_t id);
