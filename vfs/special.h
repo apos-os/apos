@@ -19,9 +19,9 @@
 #include "vfs/vfs.h"
 
 // Read and write to/from a device special file.  Used internally by the VFS.
-int special_device_read(vnode_type_t type, dev_t dev, int offset,
+int special_device_read(vnode_type_t type, apos_dev_t dev, int offset,
                         void* buf, int len);
-int special_device_write(vnode_type_t type, dev_t dev, int offset,
+int special_device_write(vnode_type_t type, apos_dev_t dev, int offset,
                          const void* buf, int len);
 
 #endif

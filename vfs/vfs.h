@@ -57,7 +57,7 @@ struct vnode {
   fs_t* fs;
 
   // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
-  dev_t dev;
+  apos_dev_t dev;
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;
@@ -110,8 +110,8 @@ struct fs {
   // bind it to.  Otherwise, it is ignored.
   //
   // Returns the inode number of the new file, or -error on failure.
-  int (*mknod)(vnode_t* parent, const char* name, vnode_type_t type, dev_t dev
-               /*, mode? */);
+  int (*mknod)(vnode_t* parent, const char* name, vnode_type_t type,
+               apos_dev_t dev /*, mode? */);
 
   // Create a directory in the given directory.  Returns the inode number of the
   // new directory, or -error on failure.
@@ -254,7 +254,7 @@ int vfs_mkdir(const char* path);
 // Create a file system node (regular file or special file).  mode must be one
 // of the supported file types, bitwise OR'd with the mode of the file.
 // TODO(aoates): implement mode
-int vfs_mknod(const char* path, uint32_t mode, dev_t dev);
+int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev);
 
 // Remove an empty directory. Returns 0 on success, or -error.
 int vfs_rmdir(const char* path);

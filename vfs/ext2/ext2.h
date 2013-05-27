@@ -28,6 +28,6 @@ void ext2_destroy_fs(fs_t* fs);
 
 // Mount an ext2fs created with ext2_create_fs() on the given device.  Returns 0
 // on success.
-int ext2_mount(fs_t* fs, dev_t dev);
+int ext2_mount(fs_t* fs, apos_dev_t dev);
 
 #endif

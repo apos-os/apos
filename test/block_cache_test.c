@@ -37,7 +37,7 @@ static int block2sector(block_dev_t* bd, int block) {
   return block * BLOCK_CACHE_BLOCK_SIZE / bd->sector_size;
 }
 
-static void setup_disk(dev_t dev) {
+static void setup_disk(apos_dev_t dev) {
   block_cache_clear_unpinned();
   block_dev_t* bd = dev_get_block(dev);
 
@@ -53,7 +53,7 @@ static void setup_disk(dev_t dev) {
   }
 }
 
-static void basic_get_test(dev_t dev) {
+static void basic_get_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_get(): basic test");
   setup_disk(dev);
 
@@ -87,7 +87,7 @@ static void basic_get_test(dev_t dev) {
   block_cache_put(block1, BC_FLUSH_SYNC);
 }
 
-static void basic_lookup_test(dev_t dev) {
+static void basic_lookup_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_lookup(): basic test");
   setup_disk(dev);
 
@@ -122,7 +122,7 @@ static void basic_lookup_test(dev_t dev) {
 
 // TODO(aoates): test running out of space on the free block stack
 
-static void basic_write_test(dev_t dev) {
+static void basic_write_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_get(): basic write/put test");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
@@ -151,7 +151,7 @@ static void basic_write_test(dev_t dev) {
   block_cache_put(block, BC_FLUSH_SYNC);
 }
 
-static void write_at_end_test(dev_t dev) {
+static void write_at_end_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_put(): write at end of block");
   memobj_t* obj = dev_get_block_memobj(dev);
 
@@ -168,7 +168,7 @@ static void write_at_end_test(dev_t dev) {
   KEXPECT_STREQ("written end", &buf[BLOCK_CACHE_BLOCK_SIZE - 20]);
 }
 
-static void get_shares_buffers_test(dev_t dev) {
+static void get_shares_buffers_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_get(): get shares buffers");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
@@ -188,7 +188,7 @@ static void get_shares_buffers_test(dev_t dev) {
   block_cache_put(blockB, BC_FLUSH_SYNC);
 }
 
-static void cache_size_test(dev_t dev) {
+static void cache_size_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_get(): cache size");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
@@ -244,7 +244,7 @@ static void* lookup_thread_test_thread(void* arg) {
   return entry;
 }
 
-static void get_thread_test(dev_t dev) {
+static void get_thread_test(apos_dev_t dev) {
   const int kThreads = 10;
   KTEST_BEGIN("block_cache_get(): thread-safety test");
   kthread_t threads[kThreads * 2];
@@ -307,7 +307,7 @@ static void* put_thread_test_thread(void* arg) {
   return 0x0;
 }
 
-static void put_thread_test(ramdisk_t* rd, dev_t dev) {
+static void put_thread_test(ramdisk_t* rd, apos_dev_t dev) {
   // Disable read blocking to force race condition.
   ramdisk_set_blocking(rd, 0, 1);
   struct memobj* obj = dev_get_block_memobj(dev);
@@ -366,7 +366,7 @@ void block_cache_test() {
   ramdisk_set_blocking(ramdisk, 1, 1);
   ramdisk_dev(ramdisk, &ramdisk_bd);
 
-  dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  apos_dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KASSERT(dev_register_block(&ramdisk_bd, &dev) == 0);
 
   memobj_t* obj = dev_get_block_memobj(dev);

@@ -32,7 +32,7 @@ static int ext2_get_vnode(vnode_t* vnode);
 static int ext2_put_vnode(vnode_t* vnode);
 static int ext2_lookup(vnode_t* parent, const char* name);
 static int ext2_mknod(vnode_t* parent, const char* name,
-                      vnode_type_t type, dev_t dev);
+                      vnode_type_t type, apos_dev_t dev);
 static int ext2_mkdir(vnode_t* parent, const char* name);
 static int ext2_rmdir(vnode_t* parent, const char* name);
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize);
@@ -901,7 +901,7 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
 }
 
 // Extract a device from an inode (stored in the first block pointer).
-static dev_t ext2_get_device(const ext2_inode_t* inode) {
+static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
   const int major = (inode->i_block[0] >> 16) & 0xFFFF;
@@ -910,7 +910,7 @@ static dev_t ext2_get_device(const ext2_inode_t* inode) {
 }
 
 // Set the device for an inode.
-static void ext2_set_device(ext2_inode_t* inode, dev_t dev) {
+static void ext2_set_device(ext2_inode_t* inode, apos_dev_t dev) {
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
   const uint32_t block = (dev.major << 16) | (dev.minor & 0xFFFF);
@@ -924,7 +924,7 @@ static void ext2_set_device(ext2_inode_t* inode, dev_t dev) {
 // child_inode_out, and returns the inode number.
 // Returns -errno on error.
 static int make_inode(ext2fs_t* fs, uint32_t parent_inode, uint16_t mode,
-                      dev_t dev, ext2_inode_t* child_inode_out) {
+                      apos_dev_t dev, ext2_inode_t* child_inode_out) {
   // First allocate a new inode for the new file.
   const int child_inode_num = allocate_inode(fs, parent_inode, mode);
   KASSERT(child_inode_num < 0 ||
@@ -1068,7 +1068,7 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
 }
 
 static int ext2_mknod(vnode_t* parent, const char* name,
-                      vnode_type_t type, dev_t dev) {
+                      vnode_type_t type, apos_dev_t dev) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
 

@@ -24,7 +24,7 @@
 #include "vfs/special.h"
 #include "vfs/vfs.h"
 
-static int block_dev_op(int is_write, dev_t dev, int offset,
+static int block_dev_op(int is_write, apos_dev_t dev, int offset,
                         void* buf, int len) {
   memobj_t* obj = dev_get_block_memobj(dev);
   if (!obj) {
@@ -57,7 +57,7 @@ static int block_dev_op(int is_write, dev_t dev, int offset,
   return bytes_read;
 }
 
-int special_device_read(vnode_type_t type, dev_t dev, int offset,
+int special_device_read(vnode_type_t type, apos_dev_t dev, int offset,
                         void* buf, int len) {
   KASSERT(type == VNODE_BLOCKDEV || type == VNODE_CHARDEV);
   if (type == VNODE_BLOCKDEV) {
@@ -70,7 +70,7 @@ int special_device_read(vnode_type_t type, dev_t dev, int offset,
   }
 }
 
-int special_device_write(vnode_type_t type, dev_t dev, int offset,
+int special_device_write(vnode_type_t type, apos_dev_t dev, int offset,
                          const void* buf, int len) {
   KASSERT(type == VNODE_BLOCKDEV || type == VNODE_CHARDEV);
   if (type == VNODE_BLOCKDEV) {

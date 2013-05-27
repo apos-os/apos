@@ -26,7 +26,7 @@
 typedef struct {
   fs_t fs;  // Embedded fs interface.
 
-  dev_t dev;
+  apos_dev_t dev;
   memobj_t* obj;
   int mounted;
   int read_only;

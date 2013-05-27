@@ -46,7 +46,7 @@
 
 #define READ_BUF_SIZE 1024
 
-static dev_t g_tty;
+static apos_dev_t g_tty;
 
 static void ksh_printf(const char* fmt, ...) {
   char buf[1024];
@@ -709,7 +709,7 @@ static void parse_and_dispatch(char* cmd) {
   ksh_printf("error: known command '%s'\n", argv[0]);
 }
 
-void kshell_main(dev_t tty) {
+void kshell_main(apos_dev_t tty) {
   g_tty = tty;
   char_dev_t* tty_dev = dev_get_char(g_tty);
 

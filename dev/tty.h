@@ -18,8 +18,8 @@
 #include "dev/dev.h"
 #include "dev/ld.h"
 
-// Create a TTY character device over the given ld.  Returns the dev_t of the
-// new device.
-dev_t tty_create(ld_t* ld);
+// Create a TTY character device over the given ld.  Returns the apos_dev_t of
+// the new device.
+apos_dev_t tty_create(ld_t* ld);
 
 #endif

@@ -261,7 +261,7 @@ void vfs_init() {
   fs_t* ext2fs = ext2_create_fs();
   int success = 0;
   for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
-    const dev_t dev = mkdev(DEVICE_MAJOR_ATA, i);
+    const apos_dev_t dev = mkdev(DEVICE_MAJOR_ATA, i);
     if (dev_get_block(dev)) {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
@@ -571,7 +571,7 @@ int vfs_mkdir(const char* path) {
   return 0;
 }
 
-int vfs_mknod(const char* path, uint32_t mode, dev_t dev) {
+int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];

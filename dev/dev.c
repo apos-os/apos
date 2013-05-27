@@ -44,7 +44,7 @@ static int g_dev_fs_ready = 0;
 
 static void make_fs_device(int vfs_type, int major, int minor);
 
-static int check_register(void* dev, dev_t* id) {
+static int check_register(void* dev, apos_dev_t* id) {
   if (!dev || id->major < 0 || id->major >= DEVICE_MAX_MAJOR ||
       (id->minor < 0 && id->minor != DEVICE_ID_UNKNOWN) ||
       id->minor >= DEVICE_MAX_MINOR) {
@@ -54,7 +54,8 @@ static int check_register(void* dev, dev_t* id) {
 }
 
 // Finds and fills the id, returning 0 on success.
-static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR], dev_t* id) {
+static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR],
+                   apos_dev_t* id) {
   if (id->minor != DEVICE_ID_UNKNOWN && array[id->major][id->minor] != 0x0) {
     return -EEXIST;
   } else if (id->minor == DEVICE_ID_UNKNOWN) {
@@ -69,14 +70,14 @@ static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR], dev_t* id) {
   return 0;
 }
 
-dev_t mkdev(int major, int minor) {
-  dev_t dev;
+apos_dev_t mkdev(int major, int minor) {
+  apos_dev_t dev;
   dev.major = major;
   dev.minor = minor;
   return dev;
 }
 
-int dev_register_block(block_dev_t* dev, dev_t* id) {
+int dev_register_block(block_dev_t* dev, apos_dev_t* id) {
   int result = check_register(dev, id);
   if (result) {
     return result;
@@ -96,7 +97,7 @@ int dev_register_block(block_dev_t* dev, dev_t* id) {
   return 0;
 }
 
-int dev_register_char(char_dev_t* dev, dev_t* id) {
+int dev_register_char(char_dev_t* dev, apos_dev_t* id) {
   int result = check_register(dev, id);
   if (result) {
     return result;
@@ -113,7 +114,7 @@ int dev_register_char(char_dev_t* dev, dev_t* id) {
   return 0;
 }
 
-block_dev_t* dev_get_block(dev_t id) {
+block_dev_t* dev_get_block(apos_dev_t id) {
   if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
       id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
     return 0x0;
@@ -121,7 +122,7 @@ block_dev_t* dev_get_block(dev_t id) {
   return g_block_devices[id.major][id.minor];
 }
 
-char_dev_t* dev_get_char(dev_t id) {
+char_dev_t* dev_get_char(apos_dev_t id) {
   if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
       id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
     return 0x0;
@@ -129,7 +130,7 @@ char_dev_t* dev_get_char(dev_t id) {
   return g_char_devices[id.major][id.minor];
 }
 
-memobj_t* dev_get_block_memobj(dev_t id) {
+memobj_t* dev_get_block_memobj(apos_dev_t id) {
   if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
       id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
     return 0x0;
@@ -137,7 +138,7 @@ memobj_t* dev_get_block_memobj(dev_t id) {
   return g_block_memobjs[id.major][id.minor];
 }
 
-int dev_unregister_block(dev_t id) {
+int dev_unregister_block(apos_dev_t id) {
   if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
       id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
     return -ERANGE;
@@ -151,7 +152,7 @@ int dev_unregister_block(dev_t id) {
   return 0;
 }
 
-int dev_unregister_char(dev_t id) {
+int dev_unregister_char(apos_dev_t id) {
   if (id.major < 0 || id.major >= DEVICE_MAX_MAJOR ||
       id.minor < 0 || id.minor >= DEVICE_MAX_MINOR) {
     return -ERANGE;

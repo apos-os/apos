@@ -20,6 +20,6 @@
 
 // Create a memory object backed by a block device.  Only one memobj_t should be
 // created per device.
-int memobj_create_block_dev(memobj_t* obj, dev_t dev);
+int memobj_create_block_dev(memobj_t* obj, apos_dev_t dev);
 
 #endif

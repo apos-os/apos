@@ -105,10 +105,10 @@ static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer) {
   return 0;
 }
 
-int memobj_create_block_dev(memobj_t* obj, dev_t dev) {
+int memobj_create_block_dev(memobj_t* obj, apos_dev_t dev) {
   kmemset(obj, 0, sizeof(memobj_t));
   obj->type = MEMOBJ_BLOCK_DEV;
-  obj->id = fnv_hash_array(&dev, sizeof(dev_t));
+  obj->id = fnv_hash_array(&dev, sizeof(apos_dev_t));
   obj->refcount = 0;
   obj->data = dev_get_block(dev);
   if (!obj->data) {

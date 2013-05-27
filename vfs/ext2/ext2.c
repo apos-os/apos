@@ -42,7 +42,7 @@ void ext2_destroy_fs(fs_t* fs) {
   kfree(ext2fs);
 }
 
-int ext2_mount(fs_t* fs, dev_t dev) {
+int ext2_mount(fs_t* fs, apos_dev_t dev) {
   ext2fs_t* ext2fs = (ext2fs_t*)fs;
   if (ext2fs->mounted) {
     return -EINVAL;

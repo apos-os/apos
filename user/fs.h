@@ -40,7 +40,7 @@
 int open(const char* path, uint32_t flags);
 int close(int fd);
 int mkdir(const char* path);
-int mknod(const char* path, uint32_t mode, dev_t dev);
+int mknod(const char* path, uint32_t mode, apos_dev_t dev);
 int rmdir(const char* path);
 int unlink(const char* path);
 int read(int fd, void* buf, int count);

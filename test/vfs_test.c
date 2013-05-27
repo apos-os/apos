@@ -1463,7 +1463,7 @@ static void block_device_test() {
   ramdisk_set_blocking(ramdisk, 1, 1);
   ramdisk_dev(ramdisk, &ramdisk_bd);
 
-  dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  apos_dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KEXPECT_EQ(0, dev_register_block(&ramdisk_bd, &dev));
 
   KTEST_BEGIN("vfs: block device file test");

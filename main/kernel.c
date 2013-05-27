@@ -43,11 +43,11 @@
 #define LD_BUF_SIZE 1024
 
 void pic_init();
-void kshell_main(dev_t tty);
+void kshell_main(apos_dev_t tty);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
-static dev_t g_tty_dev;
+static apos_dev_t g_tty_dev;
 
 static void tick(void* arg) {
   static uint8_t i = 0;
