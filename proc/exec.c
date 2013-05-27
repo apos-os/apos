@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
@@ -25,7 +26,54 @@
 #include "proc/user_mode.h"
 #include "vfs/vfs.h"
 
-int do_exec(const char* path) {
+#define MAX_ARGV_ENVP_SIZE (MEM_USER_STACK_SIZE / 4)
+
+// Copy the given string table to the stack, updating the stack top pointer.
+// A copy of the table (with updated pointers) will be placed near the original
+// stack top, pointing to copies of all the strings located in the stack.  The
+// actual address of the table copy will be stored in |table_out_ptr|.
+static int copy_string_table(addr_t* stack_top_ptr, char* const table[],
+                             addr_t* table_out_ptr) {
+  KASSERT((*stack_top_ptr) % sizeof(addr_t) == 0);
+
+  addr_t* table_copy = (addr_t*)(*stack_top_ptr);
+  int copied = 0;
+
+  // Make a copy of the table first.
+  for (int i = 0; table[i] != NULL; ++i) {
+    copied += sizeof(addr_t);
+    if (copied >= MAX_ARGV_ENVP_SIZE) return -E2BIG;
+
+    *(table_copy - i) = 0x0;
+    (*stack_top_ptr) -= sizeof(addr_t);
+  }
+
+  // Final NULL entry.
+  copied += sizeof(addr_t);
+  if (copied >= MAX_ARGV_ENVP_SIZE) return -E2BIG;
+  *((addr_t*)(*stack_top_ptr)) = 0x0;
+  (*stack_top_ptr) -= sizeof(addr_t);
+
+  *table_out_ptr = *stack_top_ptr;
+
+  // Copy each string.
+  for (int i = 0; table[i] != NULL; ++i) {
+    const int len = kstrlen(table[i]);
+    if (copied + len >= MAX_ARGV_ENVP_SIZE) return -E2BIG;
+    (*stack_top_ptr) -= len + 1;
+    kstrcpy((void*)(*stack_top_ptr), table[i]);
+    ((addr_t*)(*table_out_ptr))[i] = (addr_t)(*stack_top_ptr);
+  }
+
+  // Align the stack top appropriately.  Align to next lowest word, then add a
+  // padding word for good measure.
+  // TODO(aoates): how do we do this in a platform-independent way?
+  (*stack_top_ptr) -= sizeof(addr_t) + (*stack_top_ptr) % sizeof(addr_t);
+
+  return 0;
+}
+
+int do_execve(const char* path, char* const argv[], char* const envp[]) {
   const int fd = vfs_open(path, VFS_O_RDONLY);
   if (fd < 0) {
     klogf("exec error: couldn't open file '%s' for reading: %s\n", path,
@@ -77,12 +125,31 @@ int do_exec(const char* path) {
     return result;
   }
 
+  // Copy argv and envp to the new stack.
+  addr_t stack_top =
+      (MEM_USER_STACK_BOTTOM + MEM_USER_STACK_SIZE - sizeof(addr_t));
+  addr_t argv_addr = 0x0;
+  result = copy_string_table(&stack_top, argv, &argv_addr);
+  if (result) {
+    kfree(binary);
+    return result;
+  }
+  addr_t envp_addr = 0x0;
+  result = copy_string_table(&stack_top, envp, &envp_addr);
+  if (result) {
+    kfree(binary);
+    return result;
+  }
+
+  // Push argv and envp onto the stack to pass to the program.
+  stack_top -= stack_top % sizeof(addr_t);
+  *(addr_t*)(stack_top -= sizeof(addr_t)) = envp_addr;
+  *(addr_t*)(stack_top -= sizeof(addr_t)) = argv_addr;
+
   // Jump to the entry point.
   const addr_t entry = binary->entry;
   kfree(binary);
 
-  const addr_t stack_top =
-      (MEM_USER_STACK_BOTTOM + MEM_USER_STACK_SIZE - sizeof(addr_t));
   user_mode_enter(stack_top, entry);
 
   // We shouldn't ever get here, since we can't return from user space.

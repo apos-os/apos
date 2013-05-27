@@ -598,7 +598,9 @@ void bcstats_cmd(int argc, char** argv) {
 }
 
 static void boot_child_func(void* arg) {
-  int result = do_exec((char*)arg);
+  char* argv[] = { (char*)arg, NULL };
+  char* envp[] = { NULL };
+  int result = do_execve((char*)arg, argv, envp);
   if (result) {
     klogf("Couldn't boot %s: %s\n", (char*)arg, errorname(-result));
     proc_exit(1);

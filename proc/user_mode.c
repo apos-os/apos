@@ -20,6 +20,8 @@ void user_mode_enter(addr_t stack, addr_t entry) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
                  "Invalid addr_t size for i386 code");
 
+  *(addr_t*)(stack -= sizeof(addr_t)) = 0x0;
+
   const uint32_t new_data_seg = (GDT_USER_DATA_SEGMENT << 3) | 0x03;
   const uint32_t new_code_seg = (GDT_USER_CODE_SEGMENT << 3) | 0x03;
   asm volatile (
