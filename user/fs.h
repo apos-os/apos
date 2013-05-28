@@ -49,5 +49,6 @@ int seek(int fd, int offset, int whence);
 int getdents(int fd, dirent_t* buf, int count);
 int getcwd(char* path_out, int size);
 int chdir(const char* path);
+int isatty(int fd);
 
 #endif

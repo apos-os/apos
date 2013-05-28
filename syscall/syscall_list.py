@@ -193,3 +193,7 @@ AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
 AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
     'user/process.h',
     'pid_t', []);
+
+AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', 'user/fs.h',
+    'int', [
+    'int:fd:u'])

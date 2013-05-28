@@ -38,5 +38,6 @@
 #define SYS_EXECVE 15
 #define SYS_GETPID 16
 #define SYS_GETPPID 17
+#define SYS_ISATTY 18
 
 #endif

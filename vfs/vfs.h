@@ -297,4 +297,7 @@ int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out);
 // Duplicate (as for fork()) procA's fds into procB.
 void vfs_fork_fds(process_t* procA, process_t* procB);
 
+// Returns 1 if the given fd refers to a TTY device, 0 otherwise.
+int vfs_isatty(int fd);
+
 #endif
