@@ -597,10 +597,16 @@ void bcstats_cmd(int argc, char** argv) {
   block_cache_log_stats();
 }
 
+typedef struct {
+  int argc;
+  char** argv;
+} boot_child_args_t;
+
 static void boot_child_func(void* arg) {
-  char* argv[] = { (char*)arg, NULL };
+  boot_child_args_t* args = (boot_child_args_t*)arg;
+
   char* envp[] = { NULL };
-  int result = do_execve((char*)arg, argv, envp, NULL, NULL);
+  int result = do_execve(args->argv[1], args->argv + 1, envp, NULL, NULL);
   if (result) {
     klogf("Couldn't boot %s: %s\n", (char*)arg, errorname(-result));
     proc_exit(1);
@@ -608,12 +614,16 @@ static void boot_child_func(void* arg) {
 }
 
 void boot_cmd(int argc, char** argv) {
-  if (argc != 2) {
-    klogf("Usage: boot <binary>\n");
+  if (argc < 2) {
+    klogf("Usage: boot <binary> <args...>\n");
     return;
   }
 
-  pid_t child_pid = proc_fork(&boot_child_func, argv[1]);
+  boot_child_args_t args;
+  args.argc = argc;
+  args.argv = argv;
+
+  pid_t child_pid = proc_fork(&boot_child_func, &args);
   if (child_pid < 0) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {
@@ -694,6 +704,7 @@ static void parse_and_dispatch(char* cmd) {
     i++;
   }
 
+  argv[argc] = 0x0;
   if (argc == 0) {
     return;
   }
