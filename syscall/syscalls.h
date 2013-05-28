@@ -36,5 +36,7 @@
 #define SYS_FORK 13
 #define SYS_EXIT 14
 #define SYS_EXECVE 15
+#define SYS_GETPID 16
+#define SYS_GETPPID 17
 
 #endif

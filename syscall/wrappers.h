@@ -40,4 +40,7 @@ int execve_wrapper(const char* path_checked,
                    char* const* argv_unchecked,
                    char* const* envp_unchecked);
 
+pid_t getpid_wrapper(void);
+pid_t getppid_wrapper(void);
+
 #endif

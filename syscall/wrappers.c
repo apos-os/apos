@@ -17,6 +17,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "proc/exec.h"
+#include "proc/process.h"
 #include "syscall/dmz.h"
 #include "syscall/wrappers.h"
 
@@ -108,4 +109,16 @@ int execve_wrapper(const char* path_unchecked,
   KASSERT(result != 0);
   cleanup(KERNEL_path, KERNEL_argv, KERNEL_envp, NULL);
   return result;
+}
+
+pid_t getpid_wrapper() {
+  return proc_current()->id;
+}
+
+pid_t getppid_wrapper() {
+  if (proc_current()->parent) {
+    return proc_current()->parent->id;
+  } else {
+    return proc_current()->id;
+  }
 }

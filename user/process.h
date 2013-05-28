@@ -19,8 +19,10 @@
 // proc/process.h?
 typedef int pid_t;
 
-pid_t fork();
+pid_t fork(void);
 void _exit(int status);
 int execve(const char* path, char* const argv[], char* const envp[]);
+pid_t getpid(void);
+pid_t getppid(void);
 
 #endif

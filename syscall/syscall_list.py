@@ -185,3 +185,11 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
     'char* const*:argv:u',  # Manually checked by the wrapper.
     'char* const*:envp:u',  # Manually checked by the wrapper.
     ])
+
+AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
+    'user/process.h',
+    'pid_t', []);
+
+AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
+    'user/process.h',
+    'pid_t', []);
