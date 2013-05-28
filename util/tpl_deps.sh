@@ -19,12 +19,17 @@ TPL_FILE=$1
 
 TMPFILE=$(tempfile)
 
+# TODO(aoates): properly recursively find the entire transitive closure of deps.
 grep < $TPL_FILE -o "{#\s*PY_IMPORT\s*\S*" | \
   sed "s/.*PY_IMPORT\s*\(\S*\)/\1/g" \
   >> ${TMPFILE}
 
 grep < $TPL_FILE -o "{%\s*\(import\|include\)\s*\"[^\"*]*\"" | \
   sed "s/.*\(import\|include\)\s*\"\([^\"]*\)\"/\2/g" \
+  >> ${TMPFILE}
+
+grep < $TPL_FILE -o "^#include\s*\"[^\"]*\"" | \
+  sed "s/.*#include\s*\"\([^\"]*\)\"/\1/g" \
   >> ${TMPFILE}
 
 DEPS=$(tr < $TMPFILE "\n" " ")
