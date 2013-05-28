@@ -21,5 +21,6 @@ typedef int pid_t;
 
 pid_t fork();
 void _exit(int status);
+int execve(const char* path, char* const argv[], char* const envp[]);
 
 #endif

@@ -23,6 +23,7 @@ LOCAL_SOURCES := \
   syscall_dmz.tpl.c \
   syscall_enter.s \
   test.c \
+  wrappers.c \
 
 $(eval $(call ADD_TPL,syscall/syscalls.h.tpl,syscall/syscalls.h))
 

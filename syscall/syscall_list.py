@@ -174,3 +174,14 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     'int', [
     'int:status:u'],
     generate_user_stub=False)
+
+# The execve wrapper manually checks its arguments so that it can clean up the
+# allocated kernel copies properly (since on success, do_execve will never
+# return).
+AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
+    'user/process.h',
+    'int', [
+    'const char*:path:u', # Manually checked by the wrapper.
+    'char* const*:argv:u',  # Manually checked by the wrapper.
+    'char* const*:envp:u',  # Manually checked by the wrapper.
+    ])

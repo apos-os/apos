@@ -133,6 +133,39 @@ static void dmz_string_basic(void) {
   KEXPECT_EQ(0, do_munmap(addrB, kRegionSize));
 }
 
+static void dmz_table_basic(void) {
+  const addr_t kRegionSize = 2 * PAGE_SIZE;
+
+  KTEST_BEGIN("syscall_verify_ptr_table() invalid args test");
+  KEXPECT_EQ(-EINVAL, syscall_verify_ptr_table(NULL));
+
+  KTEST_BEGIN("syscall_verify_ptr_table() basic test");
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+
+  ((addr_t*)addrA)[0] = 1;
+  ((addr_t*)addrA)[1] = 2;
+  ((addr_t*)addrA)[2] = 0x0;
+  KEXPECT_EQ(3, syscall_verify_ptr_table(addrA));
+
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 1));
+
+  KTEST_BEGIN("syscall_verify_ptr_table() zero-length test");
+  ((addr_t*)addrA)[0] = 0x0;
+  KEXPECT_EQ(1, syscall_verify_ptr_table(addrA));
+
+  KTEST_BEGIN("syscall_verify_ptr_table() full region (unterminated) test");
+  kmemset(addrA, 'x', kRegionSize);
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA));
+
+  KTEST_BEGIN("syscall_verify_ptr_table() full region (terminated) test");
+  ((addr_t*)addrA)[kRegionSize / sizeof(addr_t) - 1] = 0x0;
+  KEXPECT_EQ(kRegionSize / sizeof(addr_t), syscall_verify_ptr_table(addrA));
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+}
+
 // TODO(aoates): test syscall_verify_string() in read-only region.
 
 void dmz_test(void) {
@@ -142,4 +175,6 @@ void dmz_test(void) {
   dmz_buffer_read_only();
 
   dmz_string_basic();
+
+  dmz_table_basic();
 }

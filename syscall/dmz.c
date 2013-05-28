@@ -48,3 +48,26 @@ int syscall_verify_string(const char* str) {
   }
   return -EFAULT;
 }
+
+// TODO(aoates): combine this somehow with syscall_verify_string, which is
+// nearly identical.
+int syscall_verify_ptr_table(void* table[]) {
+  if (!table) {
+    return -EINVAL;
+  }
+
+  addr_t region_end;
+  const int result = vm_verify_address(proc_current(), (addr_t)table,
+                                       0, 1, &region_end);
+  if (result) return result;
+
+  // Look for a NULL in the valid region.
+  // TODO(aoates): there's a race here if the user concurrently munmap()s the
+  // region containing the string.
+  for (addr_t i = 0; (addr_t)table + sizeof(void*) * i < region_end; ++i) {
+    if (table[i] == '\0') {
+      return i + 1;
+    }
+  }
+  return -EFAULT;
+}

@@ -16,7 +16,15 @@
 #define APOO_PROC_EXEC_H
 
 // Attempt to load into user-space and execute the binary at the given path.
-// TODO(aoates): support argv and envp.
-int do_exec(const char* path);
+//
+// The cleanup function will be called just before entering user mode, and can
+// be used to clean up kernel memory allocated for this call (e.g. argv and
+// envp)
+int do_execve(const char* path, char* const argv[], char* const envp[],
+              void (*cleanup)(const char* path,
+                              char* const argv[],
+                              char* const envp[],
+                              void* arg),
+              void* cleanup_arg);
 
 #endif
