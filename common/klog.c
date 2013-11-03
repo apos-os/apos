@@ -32,9 +32,15 @@ static int g_klog_len = 0;
 #define VRAM_START 0xC00B8000
 
 static void pp_putc(uint8_t c) {
-  outb(0x37a, 0x04 | 0x08);
+  while (~inb(0x37a) & 0x80) {}
   outb(0x378, c);
-  outb(0x37a, 0x01);
+
+  uint8_t orig = inb(0x37a);
+  outb(0x37a, orig | 0x04 | 0x08);
+  outb(0x37a, orig | 0x01);
+  outb(0x37a, orig);
+
+  while (~inb(0x37a) & 0x80) {}
 }
 
 static void raw_putc(uint8_t c) {
