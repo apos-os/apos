@@ -402,12 +402,12 @@ int vfs_cache_size() {
   return size;
 }
 
-int vfs_get_vnode_refcount_for_path(const char* path) {
+// TODO(aoates): can this be used as a helper for other functions as well?
+static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
@@ -426,9 +426,28 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
     }
     VFS_PUT_AND_CLEAR(parent);
   }
-  const int refcount = child->refcount - 1;
-  VFS_PUT_AND_CLEAR(child);
+  *vnode_out = child;
+  return 0;
+}
+
+int vfs_get_vnode_refcount_for_path(const char* path) {
+  vnode_t* vnode = NULL;
+  const int result = vfs_get_vnode(path, &vnode);
+  if (result) return result;
+
+  const int refcount = vnode->refcount - 1;
+  VFS_PUT_AND_CLEAR(vnode);
   return refcount;
+}
+
+int vfs_get_vnode_for_path(const char* path) {
+  vnode_t* vnode = NULL;
+  const int result = vfs_get_vnode(path, &vnode);
+  if (result) return result;
+
+  const int num = vnode->num;
+  VFS_PUT_AND_CLEAR(vnode);
+  return num;
 }
 
 int vfs_open(const char* path, uint32_t flags) {

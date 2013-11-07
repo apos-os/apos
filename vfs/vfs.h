@@ -231,7 +231,15 @@ int vfs_cache_size(void);
 // Looks up the given path and returns the refcount of the corresponding vnode,
 // 0 if there is no matching vnode in the cache, or -errno if the path can't be
 // found.
+//
+// Should only be used in tests.
 int vfs_get_vnode_refcount_for_path(const char* path);
+
+// Returns the vnode number at the given path, or -errno if the path can't be
+// found.
+//
+// Should only be used in tests.
+int vfs_get_vnode_for_path(const char* path);
 
 // Increment the given node's refcount.
 void vfs_ref(vnode_t* n);
