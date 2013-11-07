@@ -198,6 +198,7 @@ struct fs {
 #define VFS_S_IFREG      0x10000
 #define VFS_S_IFCHR      0x20000
 #define VFS_S_IFBLK      0x40000
+#define VFS_S_IFDIR      0x80000
 
 #define VFS_SEEK_SET 1
 #define VFS_SEEK_CUR 2

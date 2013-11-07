@@ -1001,8 +1001,18 @@ int vfs_isatty(int fd) {
 }
 
 static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
-  // TODO: stat->st_dev
+  // TODO(aoates): do st_rdev.
+  stat->st_dev = vnode->dev;
   stat->st_ino = vnode->num;
+  stat->st_mode = 0;
+  switch (vnode->type) {
+    case VNODE_REGULAR: stat->st_mode |= VFS_S_IFREG; break;
+    case VNODE_DIRECTORY: stat->st_mode |= VFS_S_IFDIR; break;
+    case VNODE_BLOCKDEV: stat->st_mode |= VFS_S_IFBLK; break;
+    case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
+    default: die("Invalid vnode type seen in vfs_lstat");
+  }
+  stat->st_size = vnode->len;
   // TODO: stat->st_nlink
   if (vnode->fs->stat) {
     return vnode->fs->stat(vnode, stat);
