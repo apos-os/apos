@@ -1526,7 +1526,6 @@ static void stat_test(void) {
 
   // TODO(aoates): test the following
   //  * st_dev
-  //  * rdev
   //  * linked file
   //  * fstat
   apos_stat_t stat;
@@ -1536,7 +1535,7 @@ static void stat_test(void) {
 
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
-  // TODO(aoates): test st_dev, rdev, blksize.
+  // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFREG, stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
@@ -1551,7 +1550,7 @@ static void stat_test(void) {
 
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
-  // TODO(aoates): test st_dev, rdev, blksize.
+  // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFREG, stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
@@ -1564,7 +1563,7 @@ static void stat_test(void) {
   KTEST_BEGIN("stat(): directory test");
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kDir, &stat));
-  // TODO(aoates): test st_dev, rdev, blksize.
+  // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kDir), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFDIR, stat.st_mode);
   KEXPECT_EQ(2, stat.st_nlink);
@@ -1573,27 +1572,31 @@ static void stat_test(void) {
   KEXPECT_GE(stat.st_blocks, 1);
 
   KTEST_BEGIN("stat(): character device file test");
-  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
 
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kCharDevFile, &stat));
-  // TODO(aoates): test st_dev, rdev, blksize.
+  // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kCharDevFile), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFCHR, stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(1, stat.st_rdev.major);
+  KEXPECT_EQ(2, stat.st_rdev.minor);
   KEXPECT_GE(stat.st_size, 0);
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);
 
   KTEST_BEGIN("stat(): blockdevice file test");
-  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kBlockDevFile, &stat));
-  // TODO(aoates): test st_dev, rdev, blksize.
+  // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kBlockDevFile), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFBLK, stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(3, stat.st_rdev.major);
+  KEXPECT_EQ(4, stat.st_rdev.minor);
   KEXPECT_GE(stat.st_size, 0);
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);

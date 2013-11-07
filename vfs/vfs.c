@@ -1012,6 +1012,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
+  stat->st_rdev = vnode->dev;
   stat->st_size = vnode->len;
   // TODO: stat->st_nlink
   if (vnode->fs->stat) {
