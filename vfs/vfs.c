@@ -980,3 +980,56 @@ int vfs_isatty(int fd) {
     return 0;
   }
 }
+
+static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
+  // TODO: stat->st_dev
+  stat->st_ino = vnode->num;
+  // TODO: stat->st_nlink
+  if (vnode->fs->stat) {
+    return vnode->fs->stat(vnode, stat);
+  } else {
+    return -ENOTSUP;
+  }
+}
+
+int vfs_lstat(const char* path, apos_stat_t* stat) {
+  if (!path || !stat) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  int result = vfs_stat_internal(child, stat);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+int vfs_fstat(int fd, apos_stat_t* stat) {
+  return -ENOTSUP;
+}

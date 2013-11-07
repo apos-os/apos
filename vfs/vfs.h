@@ -22,6 +22,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "vfs/dirent.h"
+#include "vfs/stat.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
@@ -152,6 +153,11 @@ struct fs {
   // That is, offset is in concrete filesystem bytes, while the returned value
   // (and bufsize) are in buffer-size bytes.
   int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
+
+  // Stat the given vnode.   The VFS system will pre-populate the fields that
+  // can be determined by examining the vnode only.  The concrete filesystem
+  // must only fill in fields that only it can determine.
+  int (*stat)(vnode_t* node, apos_stat_t* stat_out);
 
   // Read and write a single page to/from the file.  This is use by the VM
   // subsystem when mmap'ing files.  The FS should read/write a page of data at
@@ -299,5 +305,11 @@ void vfs_fork_fds(process_t* procA, process_t* procB);
 
 // Returns 1 if the given fd refers to a TTY device, 0 otherwise.
 int vfs_isatty(int fd);
+
+// Stats the given path.  Returns 0 on success, or -error.
+int vfs_lstat(const char* path, apos_stat_t* stat);
+
+// Stats the given fd.  Returns 0 on success, or -error.
+int vfs_fstat(int fd, apos_stat_t* stat);
 
 #endif
