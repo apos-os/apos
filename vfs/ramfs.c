@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "proc/scheduler.h"
@@ -186,6 +187,7 @@ fs_t* ramfs_create_fs() {
   f->fs.link = &ramfs_link;
   f->fs.unlink = &ramfs_unlink;
   f->fs.getdents = &ramfs_getdents;
+  f->fs.stat = &ramfs_stat;
   f->fs.read_page = &ramfs_read_page;
   f->fs.write_page = &ramfs_write_page;
 
@@ -499,6 +501,17 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   }
 
   return bytes_read;
+}
+
+int ramfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
+  KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
+
+  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  stat_out->st_nlink = node->link_count;
+  stat_out->st_blksize = 512;
+  stat_out->st_blocks = ceiling_div(vnode->len, 512);
+  return 0;
 }
 
 int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
