@@ -1516,6 +1516,21 @@ static void block_device_test(void) {
   vfs_rmdir(kDir);
 }
 
+static void fs_dev_test(void) {
+  KTEST_BEGIN("VFS fs_t::dev test");
+
+  vnode_t* vnode = vfs_get_root_vnode();
+  if (kstrcmp(vnode->fs->fstype, "ramfs") == 0) {
+    KEXPECT_EQ(DEVICE_ID_UNKNOWN, vnode->fs->dev.major);
+    KEXPECT_EQ(DEVICE_ID_UNKNOWN, vnode->fs->dev.minor);
+  } else {
+    KEXPECT_NE(DEVICE_ID_UNKNOWN, vnode->fs->dev.major);
+    KEXPECT_NE(DEVICE_ID_UNKNOWN, vnode->fs->dev.minor);
+  }
+
+  vfs_put(vnode);
+}
+
 static void stat_test(void) {
   const char kDir[] = "stat_test_dir";
   const char kRegFile[] = "stat_test_dir/reg";
@@ -1640,6 +1655,7 @@ void vfs_test(void) {
   mknod_test();
   block_device_test();
 
+  fs_dev_test();
   stat_test();
 
   reverse_path_test();

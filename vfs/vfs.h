@@ -80,6 +80,8 @@ typedef struct vnode vnode_t;
 // TODO(aoates): pinning and unpinning inodes and freeing them as needed.
 struct fs {
   char fstype[10];
+  apos_dev_t dev;  // The underlying device.
+
   // TODO(aoates): how does allocating the root inode/vnode work?
 
   // Allocate a vnode_t, with enough extra space for whatever data the FS will
