@@ -1531,6 +1531,24 @@ static void fs_dev_test(void) {
   vfs_put(vnode);
 }
 
+static void KEXPECT_STAT_EQ(const apos_stat_t* A, const apos_stat_t* B) {
+  int result = kmemcmp(A, B, sizeof(apos_stat_t));
+  KEXPECT_EQ(0, result);
+
+  if (result != 0) {
+    KEXPECT_EQ(A->st_dev.major, B->st_dev.major);
+    KEXPECT_EQ(A->st_dev.minor, B->st_dev.minor);
+    KEXPECT_EQ(A->st_ino, B->st_ino);
+    KEXPECT_EQ(A->st_mode, B->st_mode);
+    KEXPECT_EQ(A->st_nlink, B->st_nlink);
+    KEXPECT_EQ(A->st_rdev.major, B->st_rdev.major);
+    KEXPECT_EQ(A->st_rdev.minor, B->st_rdev.minor);
+    KEXPECT_EQ(A->st_size, B->st_size);
+    KEXPECT_EQ(A->st_blksize, B->st_blksize);
+    KEXPECT_EQ(A->st_blocks, B->st_blocks);
+  }
+}
+
 static void stat_test(void) {
   const char kDir[] = "stat_test_dir";
   const char kRegFile[] = "stat_test_dir/reg";
@@ -1543,12 +1561,13 @@ static void stat_test(void) {
   //  * st_dev
   //  * linked file
   //  * fstat
-  apos_stat_t stat;
+  apos_stat_t stat, fstat;
 
-  KTEST_BEGIN("stat(): regular file test (empty)");
+  KTEST_BEGIN("lstat(): regular file test (empty)");
   create_file(kRegFile);
 
   kmemset(&stat, 0xFF, sizeof(stat));
+  kmemset(&fstat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
   // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
@@ -1558,9 +1577,15 @@ static void stat_test(void) {
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);
 
+  KTEST_BEGIN("fstat(): regular file test (empty)");
+  int fd = vfs_open(kRegFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
   vfs_unlink(kRegFile);
 
-  KTEST_BEGIN("stat(): regular file test (with data)");
+  KTEST_BEGIN("lstat(): regular file test (with data)");
   create_file_with_data(kRegFile, "abcde");
 
   kmemset(&stat, 0xFF, sizeof(stat));
@@ -1573,9 +1598,15 @@ static void stat_test(void) {
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_GE(stat.st_blocks, 1);
 
+  KTEST_BEGIN("fstat(): regular file test (with data)");
+  fd = vfs_open(kRegFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
   // TODO(aoates): test hard-linked file once they're supported.
 
-  KTEST_BEGIN("stat(): directory test");
+  KTEST_BEGIN("lstat(): directory test");
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kDir, &stat));
   // TODO(aoates): test st_dev, blksize.
@@ -1586,7 +1617,13 @@ static void stat_test(void) {
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_GE(stat.st_blocks, 1);
 
-  KTEST_BEGIN("stat(): character device file test");
+  KTEST_BEGIN("fstat(): directory test");
+  fd = vfs_open(kDir, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  KTEST_BEGIN("lstat(): character device file test");
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
 
   kmemset(&stat, 0xFF, sizeof(stat));
@@ -1601,7 +1638,13 @@ static void stat_test(void) {
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);
 
-  KTEST_BEGIN("stat(): blockdevice file test");
+  KTEST_BEGIN("fstat(): character device file test");
+  fd = vfs_open(kCharDevFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  KTEST_BEGIN("lstat(): blockdevice file test");
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
   kmemset(&stat, 0xFF, sizeof(stat));
@@ -1616,10 +1659,18 @@ static void stat_test(void) {
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);
 
+  KTEST_BEGIN("fstat(): blockdevice file test");
+  fd = vfs_open(kBlockDevFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
   vfs_unlink(kBlockDevFile);
   vfs_unlink(kCharDevFile);
   vfs_unlink(kRegFile);
   vfs_rmdir(kDir);
+
+  // TODO(aoates): test fstat on fds with different modes.
 }
 
 // TODO(aoates): multi-threaded test for creating a file in directory that is
