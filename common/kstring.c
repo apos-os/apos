@@ -63,7 +63,7 @@ void* kmemcpy(void* dest, const void* src, uint32_t n) {
   return dest;
 }
 
-int kmemcmp(void* m1, void* m2, uint32_t n) {
+int kmemcmp(const void* m1, const void* m2, uint32_t n) {
   const char* s1 = (const char*)m1;
   const char* s2 = (const char*)m2;
   while (n > 0) {
