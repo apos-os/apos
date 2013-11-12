@@ -430,27 +430,40 @@ int block_cache_get_size() {
 }
 
 void block_cache_clear_unpinned() {
-  // Flush everything on the flush queue.
-  bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
-  while (entry) {
-    flush_cache_entry(entry);
-    entry = cache_entry_pop(&g_flush_queue, flushq);
-  }
-
-  // Clear the LRU queue.
-  entry = cache_entry_pop(&g_lru_queue, lruq);
-  while (entry) {
-    if (!entry->flushed) {
-      KASSERT_DBG(entry->flushing);
-      scheduler_wait_on(&entry->wait_queue);
+  // Since freeing entries from the LRU queue may cause dirtying of additional
+  // entries (e.g. this happens with ext2), keep trying until the flush queue is
+  // empty.
+  do {
+    // Flush everything on the flush queue.
+    bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
+    while (entry) {
+      flush_cache_entry(entry);
+      entry = cache_entry_pop(&g_flush_queue, flushq);
     }
-    KASSERT_DBG(entry->pin_count == 0);
-    KASSERT_DBG(entry->flushed);
-    KASSERT_DBG(!entry->flushing);
-    KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
-    free_cache_entry(entry);
-    entry = cache_entry_pop(&g_lru_queue, lruq);
-  }
+
+    // Clear the LRU queue of flushed entries.
+    entry = cache_entry_head(g_lru_queue, lruq);
+    while (entry) {
+      if (entry->flushing) {
+        scheduler_wait_on(&entry->wait_queue);
+      }
+      if (!entry->flushed) {
+        // Skip it, we'll flush it above and get it the next time around.
+        entry = cache_entry_next(entry, lruq);
+        continue;
+      }
+      KASSERT_DBG(entry->pin_count == 0);
+      KASSERT_DBG(entry->flushed);
+      KASSERT_DBG(!entry->flushing);
+      KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+
+      bc_entry_internal_t* next_entry = cache_entry_next(entry, lruq);
+      list_remove(&g_lru_queue, &entry->lruq);
+      free_cache_entry(entry);
+      entry = next_entry;
+    }
+  } while (!list_empty(&g_flush_queue));
+
   KASSERT(list_empty(&g_flush_queue));
   KASSERT(list_empty(&g_lru_queue));
 }
