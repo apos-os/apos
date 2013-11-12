@@ -32,15 +32,15 @@ static int g_klog_len = 0;
 #define VRAM_START 0xC00B8000
 
 static void pp_putc(uint8_t c) {
-  while (~inb(0x37a) & 0x80) {}
+  // N.B.(aoates): In principle, I think we should be checking for the busy bit
+  // here and at the end, but that doesn't seem to work with the bochs parallel
+  // port.
   outb(0x378, c);
 
   uint8_t orig = inb(0x37a);
   outb(0x37a, orig | 0x04 | 0x08);
   outb(0x37a, orig | 0x01);
   outb(0x37a, orig);
-
-  while (~inb(0x37a) & 0x80) {}
 }
 
 static void raw_putc(uint8_t c) {
