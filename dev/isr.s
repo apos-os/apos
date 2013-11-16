@@ -87,6 +87,23 @@ INT_ERROR     17
 INT_NOERROR   18
 INT_NOERROR   19
 
+INT_NOERROR   32
+INT_NOERROR   33
+INT_NOERROR   34
+INT_NOERROR   35
+INT_NOERROR   36
+INT_NOERROR   37
+INT_NOERROR   38
+INT_NOERROR   39
+INT_NOERROR   40
+INT_NOERROR   41
+INT_NOERROR   42
+INT_NOERROR   43
+INT_NOERROR   44
+INT_NOERROR   45
+INT_NOERROR   46
+INT_NOERROR   47
+
 int_common_handler:
   # TODO(aoates): do segment switching, etc, once we have userland.
   call int_handler
@@ -105,51 +122,5 @@ int_common_handler:
   popa
   add $4, %esp  # pop the other copy of the error number (the one pushed by the
                 # processor, or the fake one we pushed to simulate it)
-  sti
-  iret
-
-# Code to handle IRQ interrupts.
-
-# Create an IRQ handler for the given irq/interrupt pair.
-.macro IRQ irq intr
-.global irq\irq
-irq\irq :
-  cli
-  pusha
-  push $\intr
-  push $\irq 
-  jmp irq_common_handler
-.endm
-
-IRQ 0,  0x20
-IRQ 1,  0x21
-IRQ 2,  0x22
-IRQ 3,  0x23
-IRQ 4,  0x24
-IRQ 5,  0x25
-IRQ 6,  0x26
-IRQ 7,  0x27
-IRQ 8,  0x28
-IRQ 9,  0x29
-IRQ 10, 0x2A
-IRQ 11, 0x2B
-IRQ 12, 0x2C
-IRQ 13, 0x2D
-IRQ 14, 0x2E
-IRQ 15, 0x2F
-
-irq_common_handler:
-  # TODO(aoates): do segment switching, etc, once we have userland.
-  call irq_handler
-
-  # DEBUG
-  # Clobber %eax, %ebx, %edx (caller-save) to fail loudly if we
-  # aren't saving them properly.
-  mov $0xAAAAAAAA, %eax
-  mov $0xBBBBBBBB, %ebx
-  mov $0xDDDDDDDD, %edx
-
-  add $8, %esp  # clean up pushed interrupt and IRQ numbers.
-  popa
   sti
   iret

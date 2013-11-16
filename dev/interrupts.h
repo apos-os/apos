@@ -40,7 +40,7 @@ static inline void restore_interrupts(uint32_t saved);
     restore_interrupts(_SAVED_INTERRUPTS);
 
 #define MIN_INTERRUPT 0
-#define MAX_INTERRUPT 19
+#define MAX_INTERRUPT 0x2f
 
 // Register a handler to be called when a particular interrupt fires.  The
 // interrupt number must be between MIN_INTERRUPT and MAX_INTERRUPT.
@@ -52,16 +52,6 @@ static inline void restore_interrupts(uint32_t saved);
 typedef void (*int_handler_t)(
     uint32_t /* interrupt no. */, uint32_t /* error or 0 */);
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);
-
-// Register a RAW handler to be called when a particular interrupt fires.  The
-// handler will be put in the IDT, and invoked directly when the interrupt
-// fires.
-//
-// This is probably not what you want --- use register_interrupt_handler above
-// to set up a normal callback.  Only use this if you need custom stub code
-// (like for IRQs).
-typedef void (*raw_int_handler_t)(void);
-void register_raw_interrupt_handler(uint8_t interrupt, raw_int_handler_t handler);
 
 // Structs for the IDT and its entries.
 typedef struct {

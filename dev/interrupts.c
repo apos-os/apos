@@ -43,15 +43,36 @@ extern void int17(void);
 extern void int18(void);
 extern void int19(void);
 
+extern void int32(void);
+extern void int33(void);
+extern void int34(void);
+extern void int35(void);
+extern void int36(void);
+extern void int37(void);
+extern void int38(void);
+extern void int39(void);
+extern void int40(void);
+extern void int41(void);
+extern void int42(void);
+extern void int43(void);
+extern void int44(void);
+extern void int45(void);
+extern void int46(void);
+extern void int47(void);
+
 // User-defined handlers established by register_interrupt_handler().
-static int_handler_t g_handlers[MAX_INTERRUPT];
+static int_handler_t g_handlers[MAX_INTERRUPT + 1];
 
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler) {
-  KASSERT(interrupt < MAX_INTERRUPT);
+  KASSERT(interrupt <= MAX_INTERRUPT);
   g_handlers[interrupt] = handler;
 }
 
-void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
+// Register a RAW handler to be called when a particular interrupt fires.  The
+// handler will be put in the IDT, and invoked directly when the interrupt
+// fires.
+typedef void (*raw_int_handler_t)(void);
+static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
   KASSERT(idt != 0);
   KASSERT(num < idt_entries);
 
@@ -76,6 +97,10 @@ void interrupts_init() {
     g_handlers[i] = 0x0;
   }
 
+  // TODO(aoates): Generate a handler for all interrupt vectors so that this
+  // code doesn't have to know up front which will be needed.
+
+  // Processor-generated interrupts.
   register_raw_interrupt_handler(0, &int0);
   register_raw_interrupt_handler(1, &int1);
   register_raw_interrupt_handler(2, &int2);
@@ -96,6 +121,24 @@ void interrupts_init() {
   register_raw_interrupt_handler(17, &int17);
   register_raw_interrupt_handler(18, &int18);
   register_raw_interrupt_handler(19, &int19);
+
+  // IRQ interrupts.
+  register_raw_interrupt_handler(0x20, &int32);
+  register_raw_interrupt_handler(0x21, &int33);
+  register_raw_interrupt_handler(0x22, &int34);
+  register_raw_interrupt_handler(0x23, &int35);
+  register_raw_interrupt_handler(0x24, &int36);
+  register_raw_interrupt_handler(0x25, &int37);
+  register_raw_interrupt_handler(0x26, &int38);
+  register_raw_interrupt_handler(0x27, &int39);
+  register_raw_interrupt_handler(0x28, &int40);
+  register_raw_interrupt_handler(0x29, &int41);
+  register_raw_interrupt_handler(0x2A, &int42);
+  register_raw_interrupt_handler(0x2B, &int43);
+  register_raw_interrupt_handler(0x2C, &int44);
+  register_raw_interrupt_handler(0x2D, &int45);
+  register_raw_interrupt_handler(0x2E, &int46);
+  register_raw_interrupt_handler(0x2F, &int47);
 }
 
 void int_handler(uint32_t interrupt, uint32_t error) {
