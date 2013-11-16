@@ -48,7 +48,7 @@ int ext2_mount(fs_t* fs, apos_dev_t dev) {
     return -EINVAL;
   }
 
-  ext2fs->dev = dev;
+  ext2fs->fs.dev = dev;
   ext2fs->obj = dev_get_block_memobj(dev);
   int result = ext2_read_superblock(ext2fs);
   if (result) {

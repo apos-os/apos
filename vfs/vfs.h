@@ -22,6 +22,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "vfs/dirent.h"
+#include "vfs/stat.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
@@ -79,6 +80,8 @@ typedef struct vnode vnode_t;
 // TODO(aoates): pinning and unpinning inodes and freeing them as needed.
 struct fs {
   char fstype[10];
+  apos_dev_t dev;  // The underlying device.
+
   // TODO(aoates): how does allocating the root inode/vnode work?
 
   // Allocate a vnode_t, with enough extra space for whatever data the FS will
@@ -153,6 +156,11 @@ struct fs {
   // (and bufsize) are in buffer-size bytes.
   int (*getdents)(vnode_t* node, int offset, void* buf, int bufsize);
 
+  // Stat the given vnode.   The VFS system will pre-populate the fields that
+  // can be determined by examining the vnode only.  The concrete filesystem
+  // must only fill in fields that only it can determine.
+  int (*stat)(vnode_t* node, apos_stat_t* stat_out);
+
   // Read and write a single page to/from the file.  This is use by the VM
   // subsystem when mmap'ing files.  The FS should read/write a page of data at
   // the given page_offset (which is in pages, not bytes) into/from the given
@@ -192,6 +200,7 @@ struct fs {
 #define VFS_S_IFREG      0x10000
 #define VFS_S_IFCHR      0x20000
 #define VFS_S_IFBLK      0x40000
+#define VFS_S_IFDIR      0x80000
 
 #define VFS_SEEK_SET 1
 #define VFS_SEEK_CUR 2
@@ -225,7 +234,15 @@ int vfs_cache_size(void);
 // Looks up the given path and returns the refcount of the corresponding vnode,
 // 0 if there is no matching vnode in the cache, or -errno if the path can't be
 // found.
+//
+// Should only be used in tests.
 int vfs_get_vnode_refcount_for_path(const char* path);
+
+// Returns the vnode number at the given path, or -errno if the path can't be
+// found.
+//
+// Should only be used in tests.
+int vfs_get_vnode_for_path(const char* path);
 
 // Increment the given node's refcount.
 void vfs_ref(vnode_t* n);
@@ -299,5 +316,11 @@ void vfs_fork_fds(process_t* procA, process_t* procB);
 
 // Returns 1 if the given fd refers to a TTY device, 0 otherwise.
 int vfs_isatty(int fd);
+
+// Stats the given path.  Returns 0 on success, or -error.
+int vfs_lstat(const char* path, apos_stat_t* stat);
+
+// Stats the given fd.  Returns 0 on success, or -error.
+int vfs_fstat(int fd, apos_stat_t* stat);
 
 #endif

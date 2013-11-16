@@ -40,6 +40,7 @@ static int ext2_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name);
 static int ext2_unlink(vnode_t* parent, const char* name);
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
+static int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -970,6 +971,7 @@ void ext2_set_ops(fs_t* fs) {
   fs->link = &ext2_link;
   fs->unlink = &ext2_unlink;
   fs->getdents = &ext2_getdents;
+  fs->stat = &ext2_stat;
   fs->read_page = &ext2_read_page;
   fs->write_page = &ext2_write_page;
 }
@@ -1467,6 +1469,23 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
     arg.last_dirent->offset = vnode->len;
   }
   return bufsize - arg.bufsize;
+}
+
+int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out) {
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  ext2_inode_t inode;
+  int result = get_inode(fs, vnode->num, &inode);
+  if (result) {
+    return result;
+  }
+
+  stat_out->st_nlink = inode.i_links_count;
+  stat_out->st_blksize = ext2_block_size(fs);
+  stat_out->st_blocks = inode.i_blocks;
+
+  return 0;
 }
 
 // Either read or write a page from the file.

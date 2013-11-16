@@ -1516,6 +1516,163 @@ static void block_device_test(void) {
   vfs_rmdir(kDir);
 }
 
+static void fs_dev_test(void) {
+  KTEST_BEGIN("VFS fs_t::dev test");
+
+  vnode_t* vnode = vfs_get_root_vnode();
+  if (kstrcmp(vnode->fs->fstype, "ramfs") == 0) {
+    KEXPECT_EQ(DEVICE_ID_UNKNOWN, vnode->fs->dev.major);
+    KEXPECT_EQ(DEVICE_ID_UNKNOWN, vnode->fs->dev.minor);
+  } else {
+    KEXPECT_NE(DEVICE_ID_UNKNOWN, vnode->fs->dev.major);
+    KEXPECT_NE(DEVICE_ID_UNKNOWN, vnode->fs->dev.minor);
+  }
+
+  vfs_put(vnode);
+}
+
+static void KEXPECT_STAT_EQ(const apos_stat_t* A, const apos_stat_t* B) {
+  int result = kmemcmp(A, B, sizeof(apos_stat_t));
+  KEXPECT_EQ(0, result);
+
+  if (result != 0) {
+    KEXPECT_EQ(A->st_dev.major, B->st_dev.major);
+    KEXPECT_EQ(A->st_dev.minor, B->st_dev.minor);
+    KEXPECT_EQ(A->st_ino, B->st_ino);
+    KEXPECT_EQ(A->st_mode, B->st_mode);
+    KEXPECT_EQ(A->st_nlink, B->st_nlink);
+    KEXPECT_EQ(A->st_rdev.major, B->st_rdev.major);
+    KEXPECT_EQ(A->st_rdev.minor, B->st_rdev.minor);
+    KEXPECT_EQ(A->st_size, B->st_size);
+    KEXPECT_EQ(A->st_blksize, B->st_blksize);
+    KEXPECT_EQ(A->st_blocks, B->st_blocks);
+  }
+}
+
+static void stat_test(void) {
+  const char kDir[] = "stat_test_dir";
+  const char kRegFile[] = "stat_test_dir/reg";
+  const char kCharDevFile[] = "stat_test_dir/char";
+  const char kBlockDevFile[] = "stat_test_dir/block";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  // TODO(aoates): test the following
+  //  * st_dev
+  //  * linked file
+  //  * fstat
+  apos_stat_t stat, fstat;
+
+  KTEST_BEGIN("lstat(): regular file test (empty)");
+  create_file(kRegFile);
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  kmemset(&fstat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
+  // TODO(aoates): test st_dev, blksize.
+  KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFREG, stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+  KTEST_BEGIN("fstat(): regular file test (empty)");
+  int fd = vfs_open(kRegFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  vfs_unlink(kRegFile);
+
+  KTEST_BEGIN("lstat(): regular file test (with data)");
+  create_file_with_data(kRegFile, "abcde");
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
+  // TODO(aoates): test st_dev, blksize.
+  KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFREG, stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(5, stat.st_size);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_GE(stat.st_blocks, 1);
+
+  KTEST_BEGIN("fstat(): regular file test (with data)");
+  fd = vfs_open(kRegFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  // TODO(aoates): test hard-linked file once they're supported.
+
+  KTEST_BEGIN("lstat(): directory test");
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kDir, &stat));
+  // TODO(aoates): test st_dev, blksize.
+  KEXPECT_EQ(vfs_get_vnode_for_path(kDir), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFDIR, stat.st_mode);
+  KEXPECT_EQ(2, stat.st_nlink);
+  KEXPECT_GE(stat.st_size, 0);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_GE(stat.st_blocks, 1);
+
+  KTEST_BEGIN("fstat(): directory test");
+  fd = vfs_open(kDir, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  KTEST_BEGIN("lstat(): character device file test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kCharDevFile, &stat));
+  // TODO(aoates): test st_dev, blksize.
+  KEXPECT_EQ(vfs_get_vnode_for_path(kCharDevFile), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFCHR, stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(1, stat.st_rdev.major);
+  KEXPECT_EQ(2, stat.st_rdev.minor);
+  KEXPECT_GE(stat.st_size, 0);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+  KTEST_BEGIN("fstat(): character device file test");
+  fd = vfs_open(kCharDevFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  KTEST_BEGIN("lstat(): blockdevice file test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kBlockDevFile, &stat));
+  // TODO(aoates): test st_dev, blksize.
+  KEXPECT_EQ(vfs_get_vnode_for_path(kBlockDevFile), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFBLK, stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(3, stat.st_rdev.major);
+  KEXPECT_EQ(4, stat.st_rdev.minor);
+  KEXPECT_GE(stat.st_size, 0);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+  KTEST_BEGIN("fstat(): blockdevice file test");
+  fd = vfs_open(kBlockDevFile, VFS_O_RDONLY);
+  KEXPECT_EQ(0, vfs_fstat(fd, &fstat));
+  KEXPECT_STAT_EQ(&stat, &fstat);
+  vfs_close(fd);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+
+  // TODO(aoates): test fstat on fds with different modes.
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -1548,6 +1705,9 @@ void vfs_test(void) {
 
   mknod_test();
   block_device_test();
+
+  fs_dev_test();
+  stat_test();
 
   reverse_path_test();
 

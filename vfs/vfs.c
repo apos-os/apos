@@ -402,12 +402,12 @@ int vfs_cache_size() {
   return size;
 }
 
-int vfs_get_vnode_refcount_for_path(const char* path) {
+// TODO(aoates): can this be used as a helper for other functions as well?
+static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  KASSERT(path[0] == '/');
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
@@ -426,9 +426,28 @@ int vfs_get_vnode_refcount_for_path(const char* path) {
     }
     VFS_PUT_AND_CLEAR(parent);
   }
-  const int refcount = child->refcount - 1;
-  VFS_PUT_AND_CLEAR(child);
+  *vnode_out = child;
+  return 0;
+}
+
+int vfs_get_vnode_refcount_for_path(const char* path) {
+  vnode_t* vnode = NULL;
+  const int result = vfs_get_vnode(path, &vnode);
+  if (result) return result;
+
+  const int refcount = vnode->refcount - 1;
+  VFS_PUT_AND_CLEAR(vnode);
   return refcount;
+}
+
+int vfs_get_vnode_for_path(const char* path) {
+  vnode_t* vnode = NULL;
+  const int result = vfs_get_vnode(path, &vnode);
+  if (result) return result;
+
+  const int num = vnode->num;
+  VFS_PUT_AND_CLEAR(vnode);
+  return num;
 }
 
 int vfs_open(const char* path, uint32_t flags) {
@@ -979,4 +998,84 @@ int vfs_isatty(int fd) {
   } else {
     return 0;
   }
+}
+
+static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
+  // TODO(aoates): do st_rdev.
+  stat->st_dev = vnode->dev;
+  stat->st_ino = vnode->num;
+  stat->st_mode = 0;
+  switch (vnode->type) {
+    case VNODE_REGULAR: stat->st_mode |= VFS_S_IFREG; break;
+    case VNODE_DIRECTORY: stat->st_mode |= VFS_S_IFDIR; break;
+    case VNODE_BLOCKDEV: stat->st_mode |= VFS_S_IFBLK; break;
+    case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
+    default: die("Invalid vnode type seen in vfs_lstat");
+  }
+  stat->st_rdev = vnode->dev;
+  stat->st_size = vnode->len;
+  // TODO: stat->st_nlink
+  if (vnode->fs->stat) {
+    return vnode->fs->stat(vnode, stat);
+  } else {
+    return -ENOTSUP;
+  }
+}
+
+int vfs_lstat(const char* path, apos_stat_t* stat) {
+  if (!path || !stat) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  int result = vfs_stat_internal(child, stat);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+int vfs_fstat(int fd, apos_stat_t* stat) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = vfs_stat_internal(file->vnode, stat);
+  }
+
+  file->refcount--;
+  return result;
 }
