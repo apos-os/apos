@@ -29,7 +29,7 @@ static tss_t g_tss __attribute__((aligned (256)));
 void tss_init() {
   KASSERT(g_tss.ss0 == 0);
   kmemset(&g_tss, 0, sizeof(tss_t));
-  g_tss.ss0 = GDT_KERNEL_DATA_SEGMENT * sizeof(gdt_entry_t);
+  g_tss.ss0 = segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL);
   g_tss.iombp = sizeof(tss_t);  // No IOBMP.
 
   // Create a segment descriptor for the TSS.

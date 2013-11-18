@@ -30,6 +30,14 @@
 #define GDT_TSS 5
 #define GDT_SYSCALL_CALL_GATE 6
 
+#define RPL_KERNEL 0
+#define RPL_USER 3
+
+// Create a segment selector for the given segment and RPL.
+static inline uint16_t segment_selector(uint16_t segment, uint16_t rpl) {
+  return (segment << 3) | rpl;
+}
+
 typedef enum {
   SEG_CODE,
   SEG_DATA,

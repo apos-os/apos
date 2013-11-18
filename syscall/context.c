@@ -30,14 +30,15 @@ syscall_context_t syscall_extract_context() {
   context.cs = *(stack_ptr--);
   context.eip = *(stack_ptr--);
 
-  KASSERT(context.ss == ((GDT_USER_DATA_SEGMENT << 3) | 0x03));
-  KASSERT(context.cs == ((GDT_USER_CODE_SEGMENT << 3) | 0x03));
+  KASSERT(context.ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
+  KASSERT(context.cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
   return context;
 }
 
 void syscall_apply_context(syscall_context_t context, uint32_t retval) {
-  KASSERT(context.ss == ((GDT_USER_DATA_SEGMENT << 3) | 0x03));
-  KASSERT(context.cs == ((GDT_USER_CODE_SEGMENT << 3) | 0x03));
+  KASSERT(context.ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
+  KASSERT(context.cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+
 
   // TODO(aoates): do we want to merge this with the code in proc/user_mode.c?
   asm volatile (

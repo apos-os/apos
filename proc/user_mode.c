@@ -22,8 +22,10 @@ void user_mode_enter(addr_t stack, addr_t entry) {
 
   *(addr_t*)(stack -= sizeof(addr_t)) = 0x0;
 
-  const uint32_t new_data_seg = (GDT_USER_DATA_SEGMENT << 3) | 0x03;
-  const uint32_t new_code_seg = (GDT_USER_CODE_SEGMENT << 3) | 0x03;
+  const uint32_t new_data_seg =
+      segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER);
+  const uint32_t new_code_seg =
+      segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER);
   asm volatile (
       "mov %0, %%eax\n\t"
       "mov %%ax, %%ds\n\t"
