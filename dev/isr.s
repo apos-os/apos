@@ -108,13 +108,6 @@ int_common_handler:
   # TODO(aoates): do segment switching, etc, once we have userland.
   call int_handler
 
-  # DEBUG
-  # Clobber %eax, %ebx, %edx (caller-save) to fail loudly if we
-  # aren't saving them properly.
-  mov $0xAAAAAAAA, %eax
-  mov $0xBBBBBBBB, %ebx
-  mov $0xDDDDDDDD, %edx
-
   add $8, %esp  # pop interrupt and error numbers
   pop %ebp  # pop the fake GDB stack frame
   add $4, %esp

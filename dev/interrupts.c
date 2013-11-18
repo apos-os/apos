@@ -147,6 +147,17 @@ void int_handler(uint32_t interrupt, uint32_t error) {
   } else {
     klogf("unhandled interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }
+
+  // Clobber some registers to cause loud failures if we don't restore them
+  // properly.
+  asm volatile (
+      "movl $0, %%eax\n\t"
+      "movl $0, %%ebx\n\t"
+      "movl $0, %%ecx\n\t"
+      "movl $0, %%edx\n\t"
+      "movl $0, %%esi\n\t"
+      "movl $0, %%edi\n\t"
+      ::: "eax", "ebx", "ecx", "edx", "esi", "edi");
 }
 
 void enable_interrupts() {

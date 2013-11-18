@@ -18,38 +18,56 @@
 #include "test/ktest.h"
 
 // Trigger an error interrupt, a non-error interrupt, and an IRQ, and make sure
-// that we didn't clobber registers %eax, %ebx, or %edx across the calls.
+// that we didn't clobber any registers across the calls.
 void interrupt_clobber_test(void) {
   KTEST_SUITE_BEGIN("interrupt register clobbering");
 
-  uint32_t eax, ebx, edx;
+  uint32_t eax, ebx, ecx, edx, esi, edi;
   KTEST_BEGIN("no-error interrupt");
   eax = 0xBAADF00D;
   ebx = 0xBAADF11D;
-  edx = 0xBAADF22D;
+  ecx = 0xBAADF22D;
+  edx = 0xBAADF33D;
+  esi = 0xBAADF44D;
+  edi = 0xBAADF55D;
   asm volatile (
-      "movl %3, %%eax\n\t"
-      "movl %4, %%ebx\n\t"
-      "movl %5, %%edx\n\t"
+      "movl %6, %%eax\n\t"
+      "movl %7, %%ebx\n\t"
+      "movl %8, %%ecx\n\t"
+      "movl %9, %%edx\n\t"
+      "movl %10, %%esi\n\t"
+      "movl %11, %%edi\n\t"
       "int $0\n\t"
       "movl %%eax, %0\n\t"
       "movl %%ebx, %1\n\t"
-      "movl %%edx, %2\n\t"
-      : "=m"(eax), "=m"(ebx), "=m"(edx)
-      : "m"(eax), "m"(ebx), "m"(edx)
-      : "eax", "ebx", "edx");
+      "movl %%ecx, %2\n\t"
+      "movl %%edx, %3\n\t"
+      "movl %%esi, %4\n\t"
+      "movl %%edi, %5\n\t"
+      : "=m"(eax), "=m"(ebx), "=m"(ecx), "=m"(edx), "=m"(esi), "=m"(edi)
+      : "m"(eax), "m"(ebx), "m"(ecx), "m"(edx), "m"(esi), "m"(edi)
+      : "eax", "ebx", "ecx", "edx", "esi", "edi");
   KEXPECT_EQ(0xBAADF00D, eax);
   KEXPECT_EQ(0xBAADF11D, ebx);
-  KEXPECT_EQ(0xBAADF22D, edx);
+  KEXPECT_EQ(0xBAADF22D, ecx);
+  KEXPECT_EQ(0xBAADF33D, edx);
+  KEXPECT_EQ(0xBAADF44D, esi);
+  KEXPECT_EQ(0xBAADF55D, edi);
 
   KTEST_BEGIN("error interrupt");
   eax = 0xBAADF00D;
   ebx = 0xBAADF11D;
-  edx = 0xBAADF22D;
+  ecx = 0xBAADF22D;
+  edx = 0xBAADF33D;
+  esi = 0xBAADF44D;
+  edi = 0xBAADF55D;
   asm volatile (
-      "movl %3, %%eax\n\t"
-      "movl %4, %%ebx\n\t"
-      "movl %5, %%edx\n\t"
+      "movl %6, %%eax\n\t"
+      "movl %7, %%ebx\n\t"
+      "movl %8, %%ecx\n\t"
+      "movl %9, %%edx\n\t"
+      "movl %10, %%esi\n\t"
+      "movl %11, %%edi\n\t"
       // Fake setting up the stack for an interrupt.
       "pushf\n\t"
       "push %%cs\n\t"
@@ -59,32 +77,50 @@ void interrupt_clobber_test(void) {
       "post_int:\n\t"
       "movl %%eax, %0\n\t"
       "movl %%ebx, %1\n\t"
-      "movl %%edx, %2\n\t"
-      : "=m"(eax), "=m"(ebx), "=m"(edx)
-      : "m"(eax), "m"(ebx), "m"(edx)
-      : "eax", "ebx", "edx");
+      "movl %%ecx, %2\n\t"
+      "movl %%edx, %3\n\t"
+      "movl %%esi, %4\n\t"
+      "movl %%edi, %5\n\t"
+      : "=m"(eax), "=m"(ebx), "=m"(ecx), "=m"(edx), "=m"(esi), "=m"(edi)
+      : "m"(eax), "m"(ebx), "m"(ecx), "m"(edx), "m"(esi), "m"(edi)
+      : "eax", "ebx", "ecx", "edx", "esi", "edi");
   KEXPECT_EQ(0xBAADF00D, eax);
   KEXPECT_EQ(0xBAADF11D, ebx);
-  KEXPECT_EQ(0xBAADF22D, edx);
+  KEXPECT_EQ(0xBAADF22D, ecx);
+  KEXPECT_EQ(0xBAADF33D, edx);
+  KEXPECT_EQ(0xBAADF44D, esi);
+  KEXPECT_EQ(0xBAADF55D, edi);
 
   KTEST_BEGIN("IRQ interrupt");
   eax = 0xBAADF00D;
   ebx = 0xBAADF11D;
-  edx = 0xBAADF22D;
+  ecx = 0xBAADF22D;
+  edx = 0xBAADF33D;
+  esi = 0xBAADF44D;
+  edi = 0xBAADF55D;
   asm volatile (
-      "movl %3, %%eax\n\t"
-      "movl %4, %%ebx\n\t"
-      "movl %5, %%edx\n\t"
+      "movl %6, %%eax\n\t"
+      "movl %7, %%ebx\n\t"
+      "movl %8, %%ecx\n\t"
+      "movl %9, %%edx\n\t"
+      "movl %10, %%esi\n\t"
+      "movl %11, %%edi\n\t"
       "int $0x20\n\t"
       "movl %%eax, %0\n\t"
       "movl %%ebx, %1\n\t"
-      "movl %%edx, %2\n\t"
-      : "=m"(eax), "=m"(ebx), "=m"(edx)
-      : "m"(eax), "m"(ebx), "m"(edx)
-      : "eax", "ebx", "edx");
+      "movl %%ecx, %2\n\t"
+      "movl %%edx, %3\n\t"
+      "movl %%esi, %4\n\t"
+      "movl %%edi, %5\n\t"
+      : "=m"(eax), "=m"(ebx), "=m"(ecx), "=m"(edx), "=m"(esi), "=m"(edi)
+      : "m"(eax), "m"(ebx), "m"(ecx), "m"(edx), "m"(esi), "m"(edi)
+      : "eax", "ebx", "ecx", "edx", "esi", "edi");
   KEXPECT_EQ(0xBAADF00D, eax);
   KEXPECT_EQ(0xBAADF11D, ebx);
-  KEXPECT_EQ(0xBAADF22D, edx);
+  KEXPECT_EQ(0xBAADF22D, ecx);
+  KEXPECT_EQ(0xBAADF33D, edx);
+  KEXPECT_EQ(0xBAADF44D, esi);
+  KEXPECT_EQ(0xBAADF55D, edi);
 }
 
 // Test saving/restoring interrupt state.
