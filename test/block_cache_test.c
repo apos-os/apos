@@ -195,7 +195,8 @@ static void cache_size_test(apos_dev_t dev) {
   const int old_size = block_cache_get_size();
   block_cache_set_size(3);
 
-  bc_entry_t *block0a, *block0b, *block1, *block2, *block3;
+  bc_entry_t *block0a = 0x0, *block0b = 0x0, *block1 = 0x0, *block2 = 0x0,
+             *block3 = 0x0;
   KEXPECT_EQ(0, block_cache_get(obj, 0, &block0a));
   KEXPECT_EQ(0, block_cache_get(obj, 0, &block0b));
   KEXPECT_EQ(0, block_cache_get(obj, 1, &block1));
