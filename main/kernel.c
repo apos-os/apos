@@ -14,13 +14,16 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "proc/wait.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
 #include "memory/page_fault.h"
@@ -79,6 +82,10 @@ static void io_init(void) {
 
   // Create a TTY device.
   g_tty_dev = tty_create(ld);
+}
+
+static void kshell_trampoline(void* arg) {
+  kshell_main(g_tty_dev);
 }
 
 void kmain(memory_info_t* meminfo) {
@@ -153,7 +160,17 @@ void kmain(memory_info_t* meminfo) {
   klog("\nmeminfo->phys_map_length:   0x"); klog(utoa_hex(meminfo->phys_map_length));
   klog("\n");
 
-  kshell_main(g_tty_dev);
+  const pid_t shell_pid = proc_fork(&kshell_trampoline, 0x0);
+  if (shell_pid < 0) {
+    klogf("proc_fork error: %d\n", errorname(-shell_pid));
+    die("unable to fork process 0 to create kshell");
+  }
+
+  // Collect zombie children until the shell exits.
+  pid_t child_pid;
+  do {
+    child_pid = proc_wait(0x0);
+  } while (child_pid != shell_pid);
 
   //page_frame_alloc_test();
   klog("DONE\n");

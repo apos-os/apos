@@ -83,25 +83,26 @@ static void parent_exit_first_child_func_inner(void* arg) {
 }
 
 static void parent_exit_first_child_func_outer(void* arg) {
-  proc_fork(&parent_exit_first_child_func_inner, 0x0);
+  *(pid_t*)arg = proc_fork(&parent_exit_first_child_func_inner, 0x0);
   proc_exit(5);
 }
 
 static void parent_exit_first_test(void) {
   KTEST_BEGIN("fork() parent exit first test");
 
-  proc_fork(&parent_exit_first_child_func_outer, 0x0);
+  pid_t inner_pid = 0;
+  proc_fork(&parent_exit_first_child_func_outer, &inner_pid);
 
   int exit_status = -1;
   proc_wait(&exit_status);
   KEXPECT_EQ(5, exit_status);
 
-  // The child should have been adopted by the current (root) process.
-  KEXPECT_EQ(0, proc_current()->id);
-  if (proc_current()->id == 0) {
-    proc_wait(&exit_status);
-    KEXPECT_EQ(6, exit_status);
-  }
+  // The child should have been adopted by the root process.
+  KEXPECT_EQ(0, proc_get(inner_pid)->parent->id);
+
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  KEXPECT_EQ((process_t*)0x0, proc_get(inner_pid));
 }
 
 static void multi_child_func(void* arg) {

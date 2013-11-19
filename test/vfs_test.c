@@ -33,6 +33,8 @@
 // Increase this to make thread safety tests run longer.
 #define THREAD_SAFETY_MULTIPLIER 1
 
+#define ROOT_VNODE_REFCOUNT 2
+
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
@@ -95,7 +97,7 @@ static void open_parent_refcount_test(void) {
   const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
   KEXPECT_GE(fd1, 0);
 
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(1, "/ref_dir1/dir2/test1");
@@ -103,7 +105,7 @@ static void open_parent_refcount_test(void) {
   const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
   KEXPECT_GE(fd2, 0);
 
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(2, "/ref_dir1/dir2/test1");
@@ -111,7 +113,7 @@ static void open_parent_refcount_test(void) {
   KEXPECT_EQ(0, vfs_close(fd1));
   KEXPECT_EQ(0, vfs_close(fd2));
 
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2/test1");
@@ -212,11 +214,11 @@ static void open_test(void) {
   // TODO(aoates): test in subdirectories once mkdir works
   KTEST_BEGIN("vfs_open() w/ directories test");
   KEXPECT_EQ(-EISDIR, vfs_open("/", VFS_O_RDWR));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_RDWR));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT | VFS_O_RDWR));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
 
   open_parent_refcount_test();
   open_dir_test();
@@ -239,29 +241,29 @@ static void mkdir_test(void) {
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/test1"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KTEST_BEGIN("regular mkdir()");
   KEXPECT_EQ(0, vfs_mkdir("/dir1"));
   KEXPECT_EQ(0, vfs_mkdir("/dir2"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir2"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("nested mkdir()");
   KEXPECT_EQ(-ENOENT, vfs_mkdir("/dir1/dir1a/dir1b"));
   KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a"));
   KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a/dir1b"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
@@ -287,23 +289,23 @@ static void mkdir_test(void) {
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo"));
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/dir1/boo"));
   KEXPECT_EQ(-ENOENT, vfs_rmdir("/boo/boo2"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("rmdir(): not a directory");
   KEXPECT_EQ(-ENOTDIR, vfs_rmdir("/test1"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   // TODO(aoates): test nested not-a-dir
 
   KTEST_BEGIN("rmdir(): root directory");
   KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
 
   KTEST_BEGIN("rmdir(): invalid paths");
   KEXPECT_EQ(-EINVAL, vfs_rmdir("/dir1/dir1a/."));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a/dir1b/.."));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a/dir1b");
@@ -312,7 +314,7 @@ static void mkdir_test(void) {
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1"));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/"));
   KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("/dir1/dir1a"));
-  EXPECT_VNODE_REFCOUNT(1, "/");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   // Actually test it (and cleanup the directories we created).
