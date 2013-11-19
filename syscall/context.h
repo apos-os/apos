@@ -21,9 +21,7 @@
 
 // Context of a syscall.  Captured to reproduce conditions in a fork() syscall.
 typedef struct {
-  uint32_t ss;
   uint32_t esp;
-  uint32_t cs;
   uint32_t eip;
 } syscall_context_t;
 

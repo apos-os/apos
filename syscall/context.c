@@ -25,20 +25,19 @@ syscall_context_t syscall_extract_context() {
   syscall_context_t context;
   uint32_t* stack_ptr = (uint32_t*)kthread_kernel_stack_top();
   stack_ptr--;  // The first slot is garbage.
-  context.ss = *(stack_ptr--);
+  const uint32_t ss = *(stack_ptr--);
   context.esp = *(stack_ptr--);
-  context.cs = *(stack_ptr--);
+  const uint32_t cs = *(stack_ptr--);
   context.eip = *(stack_ptr--);
 
-  KASSERT(context.ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
-  KASSERT(context.cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+  KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
+  KASSERT(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
   return context;
 }
 
 void syscall_apply_context(syscall_context_t context, uint32_t retval) {
-  KASSERT(context.ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
-  KASSERT(context.cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
-
+  const uint32_t ss = segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER);
+  const uint32_t cs = segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER);
 
   // TODO(aoates): do we want to merge this with the code in proc/user_mode.c?
   asm volatile (
@@ -53,8 +52,8 @@ void syscall_apply_context(syscall_context_t context, uint32_t retval) {
       "pushl %3\n\t"
       "mov %4, %%eax\n\t"
       "lret"
-      :: "r"(context.ss), "r"(context.esp),
-         "r"(context.cs), "r"(context.eip), "r"(retval) : "eax");
+      :: "r"(ss), "r"(context.esp),
+         "r"(cs), "r"(context.eip), "r"(retval) : "eax");
 
   // Never get here.
 }
