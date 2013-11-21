@@ -25,6 +25,7 @@ LOCAL_SOURCES := \
   sleep.c \
   kthread_pool.c \
   tss.c \
+  user_context.c \
   user_mode.c \
   wait.c \
 
