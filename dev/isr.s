@@ -28,15 +28,19 @@ int\intr :
   # currently at the top.
 
   pusha
+  push %ds
+  push %es
+  push %fs
+  push %gs
 
   # Make a fake stack frame for GDB (original return address and EBP).
-  mov 36(%esp), %eax  # get the original IP
+  mov 52(%esp), %eax  # get the original IP
   push %eax
   push %ebp
   mov %esp, %ebp
 
   # Copy the error code pushed for us onto the top of the stack as a function arg.
-  mov 40(%esp), %eax
+  mov 56(%esp), %eax
   push %eax
   push $\intr
   jmp int_common_handler
@@ -54,9 +58,13 @@ int\intr :
 
   push $0  # fake error code
   pusha
+  push %ds
+  push %es
+  push %fs
+  push %gs
 
   # Make a fake stack frame for GDB (original return address and EBP).
-  mov 36(%esp), %eax  # get the original IP
+  mov 52(%esp), %eax  # get the original IP
   push %eax
   push %ebp
   mov %esp, %ebp
@@ -105,13 +113,16 @@ INT_NOERROR   46
 INT_NOERROR   47
 
 int_common_handler:
-  # TODO(aoates): do segment switching, etc, once we have userland.
   call int_handler
 
   add $8, %esp  # pop interrupt and error numbers
   pop %ebp  # pop the fake GDB stack frame
   add $4, %esp
 
+  pop %gs
+  pop %fs
+  pop %es
+  pop %ds
   popa
   add $4, %esp  # pop the other copy of the error number (the one pushed by the
                 # processor, or the fake one we pushed to simulate it)
