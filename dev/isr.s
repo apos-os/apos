@@ -27,49 +27,19 @@ int\intr :
   # The machine has pushed the first copy of the error number onto the stack,
   # currently at the top.
 
-  pusha
-  push %ds
-  push %es
-  push %fs
-  push %gs
-
-  # Make a fake stack frame for GDB (original return address and EBP).
-  mov 52(%esp), %eax  # get the original IP
-  push %eax
-  push %ebp
-  mov %esp, %ebp
-
-  # Copy the error code pushed for us onto the top of the stack as a function arg.
-  mov 56(%esp), %eax
-  push %eax
   push $\intr
   jmp int_common_handler
 .endm
 
 # Same as above, but for interrupt handlers that don't push an error code.  We
-# first push a fake error code, then save all registers, then push the fake
-# error code again, then the interrupt number.  This sets us up for
-# int_common_handler in the same way as INT_ERROR (stack = error code, saved
-# regs, error code, int number).
+# first push a fake error code, then continue as in INT_ERROR above.
 .macro INT_NOERROR intr
 .global int\intr
 int\intr :
   cli
 
   push $0  # fake error code
-  pusha
-  push %ds
-  push %es
-  push %fs
-  push %gs
 
-  # Make a fake stack frame for GDB (original return address and EBP).
-  mov 52(%esp), %eax  # get the original IP
-  push %eax
-  push %ebp
-  mov %esp, %ebp
-
-  push $0  # fake error code
   push $\intr
   jmp int_common_handler
 .endm
@@ -113,6 +83,26 @@ INT_NOERROR   46
 INT_NOERROR   47
 
 int_common_handler:
+  pusha
+  push %ds
+  push %es
+  push %fs
+  push %gs
+
+  # Make a fake stack frame for GDB (original return address and EBP).
+  mov 56(%esp), %eax  # get the original IP
+  push %eax
+  push %ebp
+  mov %esp, %ebp
+
+  # Copy the error code pushed for us onto the top of the stack as a function arg.
+  mov 60(%esp), %eax
+  push %eax
+
+  # Copy the interrupt number as a function arg.
+  mov 60(%esp), %eax
+  push %eax
+
   call int_handler
 
   add $8, %esp  # pop interrupt and error numbers
@@ -124,7 +114,10 @@ int_common_handler:
   pop %es
   pop %ds
   popa
-  add $4, %esp  # pop the other copy of the error number (the one pushed by the
-                # processor, or the fake one we pushed to simulate it)
+
+  # Pop the other copy of the error number (the one pushed by the processor, or
+  # the fake one we pushed to simulate it), and the interrupt number.
+  add $8, %esp
+
   sti
   iret
