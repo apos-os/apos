@@ -15,9 +15,7 @@
 #ifndef APOO_USER_FORK_H
 #define APOO_USER_FORK_H
 
-// TODO(aoates): Do we want to combine this with the definition in
-// proc/process.h?
-typedef int pid_t;
+#include "common/posix_types.h"
 
 pid_t fork(void);
 void _exit(int status);

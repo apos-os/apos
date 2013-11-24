@@ -12,16 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Common types.  See common/posix_types.h for POSIX-required types.
-#ifndef APOO_COMMON_TYPES_H
-#define APOO_COMMON_TYPES_H
+// Common types required by POSIX to be defined in <sys/types.h>.
+#ifndef APOO_COMMON_POSIX_TYPES_H
+#define APOO_COMMON_POSIX_TYPES_H
 
-#include <stdint.h>
-
-#include "common/posix_types.h"
-
-// A memory address.
-// TODO(aoates): replace all uses of uint32_t with addr_t (where appropriate).
-typedef uint32_t addr_t;
+// Process ID.
+typedef int pid_t;
 
 #endif

@@ -26,9 +26,6 @@
 
 struct vnode;
 
-// Process ID.
-typedef int pid_t;
-
 // Process state.
 typedef enum {
   PROC_INVALID,
