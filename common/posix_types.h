@@ -19,4 +19,7 @@
 // Process ID.
 typedef int pid_t;
 
+typedef int blksize_t;
+typedef int blkcnt_t;
+
 #endif

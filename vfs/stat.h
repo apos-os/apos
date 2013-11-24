@@ -15,10 +15,8 @@
 #ifndef APOO_VFS_STAT_H
 #define APOO_VFS_STAT_H
 
+#include "common/posix_types.h"
 #include "dev/dev.h"
-
-typedef int blksize_t;
-typedef int blkcnt_t;
 
 // Information about a vnode.
 // TODO(aoates): add ino_t and off_t typedefs
