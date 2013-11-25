@@ -39,6 +39,7 @@ LOCAL_SOURCES := \
   page_alloc_test.c \
   ramdisk_test.c \
   ramfs_test.c \
+  signal_test.c \
   slab_alloc_test.c \
   vm_test.c \
   vfs_test.c \
