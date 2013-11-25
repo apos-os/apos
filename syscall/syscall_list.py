@@ -197,3 +197,8 @@ AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
 AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'int:fd:u'])
+
+AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', 'user/signal.h',
+    'int', [
+    'pid_t:pid:u',
+    'int:sig:u'])
