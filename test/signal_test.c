@@ -24,6 +24,7 @@ static void ksigemptyset_test(void) {
 
   sigset_t set;
   KEXPECT_EQ(0, ksigemptyset(&set));
+  KEXPECT_EQ(1, ksigisemptyset(&set));
 
   for (int i = SIGMIN; i <= SIGMAX; ++i) {
     KEXPECT_EQ(0, ksigismember(&set, i));
@@ -35,6 +36,8 @@ static void ksigfillset_test(void) {
 
   sigset_t set;
   KEXPECT_EQ(0, ksigfillset(&set));
+  KEXPECT_EQ(0, ksigisemptyset(&set));
+
 
   for (int i = SIGMIN; i <= SIGMAX; ++i) {
     KEXPECT_EQ(1, ksigismember(&set, i));
@@ -48,6 +51,7 @@ static void ksigaddset_test(void) {
   ksigemptyset(&set);
 
   KEXPECT_EQ(0, ksigaddset(&set, SIGABRT));
+  KEXPECT_EQ(0, ksigisemptyset(&set));
 
   KEXPECT_EQ(1, ksigismember(&set, SIGABRT));
   KEXPECT_EQ(0, ksigismember(&set, SIGALRM));
