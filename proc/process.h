@@ -54,6 +54,9 @@ struct process {
   // Set of pending signals.
   sigset_t pending_signals;
 
+  // Current signal dispositions.
+  sigaction_t signal_dispositions[SIGMAX + 1];
+
   // Parent process.
   process_t* parent;
 

@@ -35,6 +35,13 @@ typedef void (*sighandler_t)(int);
 #define SIG_DFL ((sighandler_t)0x0)
 #define SIG_IGN ((sighandler_t)0x1)
 
+typedef struct sigaction {
+  sighandler_t sa_handler;
+  sigset_t sa_mask;
+  int sa_flags;
+  // TODO(aoates): support sa_sigaction.
+} sigaction_t;
+
 _Static_assert(sizeof(sigset_t) * 8 >= SIGMAX,
                "sigset_t too small to hold all signals");
 

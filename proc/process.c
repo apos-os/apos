@@ -52,6 +52,11 @@ static void proc_init_process(process_t* p) {
   p->vm_area_list = LIST_INIT;
   p->page_directory = 0;
   ksigemptyset(&p->pending_signals);
+  for (int i = 0; i <= SIGMAX; ++i) {
+    ksigemptyset(&p->signal_dispositions[i].sa_mask);
+    p->signal_dispositions[i].sa_flags = 0;
+    p->signal_dispositions[i].sa_handler = SIG_DFL;
+  }
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;
