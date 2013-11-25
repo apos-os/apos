@@ -16,6 +16,7 @@
 #define APOO_PROC_SIGNAL_SIGNAL_H
 
 #include "common/errno.h"
+#include "common/types.h"
 #include "proc/signal/posix_signal.h"
 
 static inline int ksigemptyset(sigset_t* set) {
@@ -56,5 +57,9 @@ static inline int ksigismember(const sigset_t* set, int signum) {
     return 0;
   }
 }
+
+// Send a signal to the given process, as per kill(2).  Returns 0 on success, or
+// -errno on error.
+int proc_kill(pid_t pid, int sig);
 
 #endif

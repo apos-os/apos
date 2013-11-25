@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "test/ktest.h"
 
@@ -87,6 +88,29 @@ static void ksigismember_test(void) {
   KEXPECT_EQ(-EINVAL, ksigismember(&set, SIGMAX + 1));
 }
 
+static void kill_test(void) {
+  const pid_t my_pid = proc_current()->id;
+
+  KTEST_BEGIN("proc_kill() invalid pid test");
+  KEXPECT_EQ(-EINVAL, proc_kill(0, SIGABRT));
+  KEXPECT_EQ(-EINVAL, proc_kill(-10, SIGABRT));
+  // TODO(aoates): figure out a better way to generate a guaranteed-unused PID.
+  KEXPECT_EQ(-EINVAL, proc_kill(100, SIGABRT));
+  KEXPECT_EQ(-EINVAL, proc_kill(PROC_MAX_PROCS + 10, SIGABRT));
+
+  // TODO(aoates): test with a zombie process.
+
+  KTEST_BEGIN("proc_kill() invalid signal test");
+  KEXPECT_EQ(-EINVAL, proc_kill(my_pid, -1));
+  KEXPECT_EQ(-EINVAL, proc_kill(my_pid, SIGMAX + 1));
+
+  KTEST_BEGIN("proc_kill() SIGNULL test");
+  KEXPECT_EQ(0, proc_kill(my_pid, 0));
+  KEXPECT_EQ(-EINVAL, proc_kill(PROC_MAX_PROCS + 10, 0));
+
+  // TODO(aoates): test the actual kill functionality.
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -95,4 +119,6 @@ void signal_test(void) {
   ksigaddset_test();
   ksigdelset_test();
   ksigismember_test();
+
+  kill_test();
 }
