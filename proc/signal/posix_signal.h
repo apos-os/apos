@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 typedef uint32_t sigset_t;
+typedef void (*sighandler_t)(int);
 
 // Signal numbers.
 #define SIGNULL 0
@@ -29,6 +30,10 @@ typedef uint32_t sigset_t;
 #define SIGALRM 2
 
 #define SIGMAX 2
+
+// sighandler_t constants.
+#define SIG_DFL ((sighandler_t)0x0)
+#define SIG_IGN ((sighandler_t)0x1)
 
 _Static_assert(sizeof(sigset_t) * 8 >= SIGMAX,
                "sigset_t too small to hold all signals");
