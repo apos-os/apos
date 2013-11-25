@@ -19,6 +19,7 @@
 #include "common/list.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/signal/signal.h"
 
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32
@@ -49,6 +50,9 @@ struct process {
   list_t vm_area_list;
 
   page_dir_ptr_t page_directory;
+
+  // Set of pending signals.
+  sigset_t pending_signals;
 
   // Parent process.
   process_t* parent;

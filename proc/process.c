@@ -51,6 +51,7 @@ static void proc_init_process(process_t* p) {
   p->cwd = 0x0;
   p->vm_area_list = LIST_INIT;
   p->page_directory = 0;
+  ksigemptyset(&p->pending_signals);
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;

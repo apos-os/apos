@@ -21,6 +21,7 @@
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
+#include "proc/signal/signal.h"
 
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
@@ -47,6 +48,9 @@ struct kthread_data {
   // but not yet scheduled (and therefore still blocking in kthread_join).
   int join_list_pending;
   process_t* process;  // The process owning this thread.
+
+  // The current signal mask (i.e. the signals blocked in this thread).
+  sigset_t signal_mask;
 };
 typedef struct kthread_data kthread_data_t;
 

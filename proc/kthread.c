@@ -103,6 +103,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   thread->state = KTHREAD_PENDING;
   thread->esp = 0;
   thread->retval = 0x0;
+  ksigemptyset(&thread->signal_mask);
 
   // TODO(aoates): use the process from the parent thread for this thread, once
   // we support multiple threads per process.
