@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/types.h"
 #include "proc/signal/posix_signal.h"
+#include "proc/user_context.h"
 
 static inline int ksigemptyset(sigset_t* set) {
   *set = 0;
@@ -65,5 +66,16 @@ static inline int ksigisemptyset(const sigset_t* set) {
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
 int proc_kill(pid_t pid, int sig);
+
+// Dispatch any pending signals in the current process.  If there are any
+// signals that aren't blocked by the current thread's signal mask, it
+// dispatches them appropriately.
+//
+// |context| is the user-mode context (e.g. from an interrupt or syscall being
+// handled) that should be restored when all the pending signal handlers have
+// returned.
+//
+// Will not return if any signal handlers need to be invoked.
+void proc_dispatch_pending_signals(user_context_t context);
 
 #endif
