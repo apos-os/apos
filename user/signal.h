@@ -20,4 +20,7 @@
 
 int kill(pid_t pid, int sig);
 
+int sigaction(int signum, const struct sigaction* act,
+              struct sigaction* oldact);
+
 #endif

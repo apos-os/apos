@@ -217,3 +217,10 @@ AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', 'user/signal.h',
     'int', [
     'pid_t:pid:u',
     'int:sig:u'])
+
+AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
+    'user/signal.h',
+    'int', [
+    'int:signum:u',
+    'const struct sigaction*:act:br?:sizeof(struct sigaction)',
+    'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
