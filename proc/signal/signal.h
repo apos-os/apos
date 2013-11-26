@@ -84,4 +84,7 @@ int proc_sigaction(int signum, const struct sigaction* act,
 // Will not return if any signal handlers need to be invoked.
 void proc_dispatch_pending_signals(const user_context_t* context);
 
+// Return from a signal handling routine, via the trampoline.
+int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context);
+
 #endif

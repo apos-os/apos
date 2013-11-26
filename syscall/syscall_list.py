@@ -224,3 +224,9 @@ AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     'int:signum:u',
     'const struct sigaction*:act:br?:sizeof(struct sigaction)',
     'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
+
+AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
+    'user/signal.h',
+    'int', [
+    'const sigset_t*:old_mask:br:sizeof(sigset_t)',
+    'const user_context_t*:context:br:sizeof(user_context_t)'])

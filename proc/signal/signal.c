@@ -17,6 +17,8 @@
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/process.h"
+#include "proc/signal/signal_enter.h"
+#include "syscall/syscalls.h"
 
 // Possible default actions for signals.
 typedef enum {
@@ -123,8 +125,18 @@ static void dispatch_signal(int signum, const user_context_t* context) {
         die("unreachable");
     }
   } else {
-    // TODO(aoates): support custom signal handlers.
-    die("cannot dispatch to custom signal handler");
+    KASSERT_DBG(signum != SIGKILL);
+    KASSERT_DBG(signum != SIGSTOP);
+    KASSERT_DBG(proc->thread == kthread_current_thread());
+
+    // Save the old signal mask, apply the mask from the action, and mask out
+    // the current signal as well.
+    sigset_t old_mask = proc->thread->signal_mask;
+    proc->thread->signal_mask |= action->sa_mask;
+    ksigaddset(&proc->thread->signal_mask, signum);
+
+    proc_run_user_sighandler(signum, action, &old_mask, context);
+    die("unreachable");
   }
 }
 
@@ -137,9 +149,27 @@ void proc_dispatch_pending_signals(const user_context_t* context) {
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
     if (ksigismember(&proc->pending_signals, signum) &&
         !ksigismember(&proc->thread->signal_mask, signum)) {
+      // TODO(aoates): when we support multiple threads, we'll need to switch to
+      // the thread that's handling the signal.
       ksigdelset(&proc->pending_signals, signum);
       dispatch_signal(signum, context);
     }
   }
 
 }
+
+int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
+  // Restore the old signal mask, then process any outstanding signals.
+  proc_current()->thread->signal_mask = *old_mask;
+  proc_dispatch_pending_signals(context);
+
+  // If there weren't any signals to be processed, restore the original context.
+  user_context_apply(context);
+  die("unreachable");
+  return 0;
+}
+
+// If this fails, because SYS_SIGRETURN changes, the constant in
+// syscall_trampoline.s must be updated to match.
+_Static_assert(SYS_SIGRETURN == 21,
+               "SYS_SIGRETURN must match the constant in syscall_trampoline.s");

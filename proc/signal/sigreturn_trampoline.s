@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+.global sigreturn_trampoline_start
+.global sigreturn_trampoline_end
 
-LOCAL_SOURCES := \
-  signal.c \
-  signal_enter.c \
-  sigreturn_trampoline.s \
-
-$(eval $(END_SOURCES))
+sigreturn_trampoline_start:
+  mov $21, %eax  # SYS_SIGRETURN
+  mov 8(%esp), %ebx  # address of old signal mask (arg1)
+  mov 4(%esp), %ecx  # address of user context (arg2)
+  lcall  $0x33, $0
+  hlt  # Should never get here.
+sigreturn_trampoline_end:
