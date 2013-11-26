@@ -18,8 +18,10 @@
 #include "proc/kthread.h"
 #include "syscall/context.h"
 
-user_context_t syscall_extract_context() {
+user_context_t syscall_extract_context(long retval) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
+                 "x86 syscall_extract_context used on incompatible platform");
+  _Static_assert(sizeof(long) == sizeof(uint32_t),
                  "x86 syscall_extract_context used on incompatible platform");
 
   user_context_t context;
@@ -30,7 +32,7 @@ user_context_t syscall_extract_context() {
   const uint32_t cs = *(stack_ptr--);
   context.eip = *(stack_ptr--);
 
-  context.eax = 0xABCD;
+  context.eax = (uint32_t)retval;
   context.ebx = 0xABCD;
   context.ecx = 0xABCD;
   context.edx = 0xABCD;
@@ -40,9 +42,4 @@ user_context_t syscall_extract_context() {
   KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
   KASSERT(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
   return context;
-}
-
-void syscall_apply_context(user_context_t context, uint32_t retval) {
-  context.eax = retval;
-  user_context_apply(context);
 }

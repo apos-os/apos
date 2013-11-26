@@ -17,14 +17,10 @@
 
 #include "proc/user_context.h"
 
-// Extract the syscall_context_t from the current thread's kernel stack.
+// Extract the syscall_context_t from the current thread's kernel stack.  Uses
+// the given value for the syscall return value.
 //
 // REQUIRES: a syscall be executing currently.
-user_context_t syscall_extract_context(void);
-
-// Apply an extracted syscall context on the current stack to return to
-// user-space.  Uses the given value for the syscall return value.  Does not
-// return.
-void syscall_apply_context(user_context_t context, uint32_t retval);
+user_context_t syscall_extract_context(long retval);
 
 #endif

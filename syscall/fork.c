@@ -23,7 +23,7 @@ static void proc_fork_syscall_trampoline(void* arg) {
   user_context_t context = *context_ptr;
   kfree(context_ptr);
 
-  syscall_apply_context(context, 0);
+  user_context_apply(context);
 }
 
 pid_t proc_fork_syscall() {
@@ -31,7 +31,7 @@ pid_t proc_fork_syscall() {
       (user_context_t*)kmalloc(sizeof(user_context_t));
   if (!context_ptr) return -ENOMEM;
 
-  *context_ptr = syscall_extract_context();
+  *context_ptr = syscall_extract_context(0 /* return 0 in the child */);
   int result = proc_fork(&proc_fork_syscall_trampoline, context_ptr);
   if (result < 0) {
     kfree(context_ptr);
