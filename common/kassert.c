@@ -29,7 +29,7 @@ static void print_stack_trace(void) {
       "mov %%ebp, %0"
       : "=g"(ebp));
 
-  while (1) {
+  while (ebp != 0x0) {
     const uint32_t old_ebp = *(uint32_t*)ebp;
     // Subtract 2 to get back to the call instruction.
     const uint32_t return_addr = *(uint32_t*)(ebp + 4) - 2;
