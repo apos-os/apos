@@ -35,6 +35,9 @@
 #   br --> read-only buffer (checked)
 #   bw --> write-only buffer (checked)
 #   brw --> read/write buffer (checked)
+#
+# The buffer types can be followed by a '?', which means that the argument is
+# allowed to be NULL.
 
 # Maximum number of arguments.
 MAX_ARGS = 6
@@ -50,6 +53,15 @@ class SyscallArg(object):
     self.arg_type = split[2]
     if len(split) == 4:
       self.size_name = split[3]
+
+    if self.arg_type[-1] == '?':
+      self.arg_type = self.arg_type[:-1]
+      assert self.arg_type.startswith('b')
+      self.allow_null = True
+    else:
+      self.allow_null = False
+
+    assert self.arg_type in ['u', 's', 'br', 'bw', 'brw']
 
   def NeedsPreCopy(self):
     return (self.arg_type == 's' or self.arg_type == 'br' or
@@ -70,6 +82,9 @@ class SyscallArg(object):
 
   def IsWritable(self):
     return self.arg_type == 'bw' or self.arg_type == 'brw'
+
+  def AllowNull(self):
+    return self.allow_null
 
 
 class SyscallDef(object):

@@ -30,8 +30,12 @@
 // Verify that the given buffer is allowed for a syscall (that is, that its
 // entire length is within memory accessible to the current process).
 //
+// If |allow_null| is non-zero, buf is allowed to be NULL (0x0), but otherwise
+// must point to a valid region.
+//
 // Returns 0 if the access is valid, -error if not.
-int syscall_verify_buffer(const void* buf, size_t len, int is_write);
+int syscall_verify_buffer(const void* buf, size_t len, int is_write,
+                          int allow_null);
 
 // Verify that the given NULL-terminated string is allowed for a syscall (that
 // its entire length is within memory accessible to the current process).

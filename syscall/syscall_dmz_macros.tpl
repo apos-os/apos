@@ -38,7 +38,9 @@
 const int SIZE_{{ arg.name }} = syscall_verify_string({{ arg.name }});
 if (SIZE_{{ arg.name }} < 0) return SIZE_{{ arg.name }};
 {% elif arg.IsBuffer() %}
-const int CHECK_{{ arg.name }} = syscall_verify_buffer({{ arg.name }}, {{ arg.size_name }}, {{ arg.IsWritable() | int }});
+const int CHECK_{{ arg.name }} = syscall_verify_buffer({{ arg.name }}, {{
+    arg.size_name }}, {{ arg.IsWritable() | int }} /* is_write */,
+    {{ arg.AllowNull() | int }}  /* allow_null */);
 if (CHECK_{{ arg.name }} < 0) return CHECK_{{ arg.name }};
 {% endif %}
 {% endfor %}
