@@ -34,6 +34,8 @@ typedef enum {
   PROC_ZOMBIE,
 } proc_state_t;
 
+// Note: any fields added here (and potentially in kthread_t) must be properly
+// handled in fork() and execve().
 struct process {
   pid_t id;  // Index into global process table.
   proc_state_t state;
