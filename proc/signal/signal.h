@@ -78,9 +78,10 @@ int proc_sigaction(int signum, const struct sigaction* act,
 //
 // |context| is the user-mode context (e.g. from an interrupt or syscall being
 // handled) that should be restored when all the pending signal handlers have
-// returned.
+// returned.  A copy will be made if necessary (the caller doesn't have to
+// ensure it outlives the call).
 //
 // Will not return if any signal handlers need to be invoked.
-void proc_dispatch_pending_signals(user_context_t context);
+void proc_dispatch_pending_signals(const user_context_t* context);
 
 #endif

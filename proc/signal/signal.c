@@ -97,7 +97,7 @@ int proc_sigaction(int signum, const struct sigaction* act,
 }
 
 // Dispatch a particular signal in the current process.  May not return.
-static void dispatch_signal(int signum, user_context_t context) {
+static void dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();
 
   const sigaction_t* action = &proc->signal_dispositions[signum];
@@ -128,7 +128,7 @@ static void dispatch_signal(int signum, user_context_t context) {
   }
 }
 
-void proc_dispatch_pending_signals(user_context_t context) {
+void proc_dispatch_pending_signals(const user_context_t* context) {
   process_t* proc = proc_current();
   if (ksigisemptyset(&proc->pending_signals)) {
     return;

@@ -23,7 +23,7 @@ static void proc_fork_syscall_trampoline(void* arg) {
   user_context_t context = *context_ptr;
   kfree(context_ptr);
 
-  user_context_apply(context);
+  user_context_apply(&context);
 }
 
 pid_t proc_fork_syscall() {

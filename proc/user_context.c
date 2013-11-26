@@ -17,7 +17,12 @@
 #include "memory/gdt.h"
 #include "proc/user_context.h"
 
-void user_context_apply(user_context_t context) {
+void user_context_apply(const user_context_t* context_ptr) {
+  // Make a copy on the local stack to free up our registers and let GCC do its
+  // thing with the asm constraints.  This isn't strictly necessary but makes
+  // things easier.
+  const user_context_t context = *context_ptr;
+
   const uint32_t ss = segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER);
   const uint32_t cs = segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER);
 

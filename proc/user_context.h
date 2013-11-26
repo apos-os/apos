@@ -41,7 +41,7 @@ typedef struct {
 } user_context_t;
 
 // Apply an user-mode context on the current stack to return to user-space.
-// Does not return.
-void user_context_apply(user_context_t context);
+// Does not delete the context.  Does not return.
+void user_context_apply(const user_context_t* context);
 
 #endif

@@ -75,7 +75,8 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
       arg4, arg5, arg6);
 
   if (!ksigisemptyset(&proc_current()->pending_signals)) {
-    proc_dispatch_pending_signals(syscall_extract_context(result));
+    user_context_t context = syscall_extract_context(result);
+    proc_dispatch_pending_signals(&context);
   }
 
   // Don't do anything here!  After we call proc_dispatch_pending_signals(), we
