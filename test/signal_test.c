@@ -147,6 +147,12 @@ static void sigaction_test(void) {
   sigaction_t act = dfl_action;
   act.sa_flags = 0x12345;
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, 0x0));
+
+  // Ensure we get back the same (invalid) flags when we read.
+  oact = garbage_action;
+  KEXPECT_EQ(0, proc_sigaction(SIGUSR1, 0x0, &oact));
+  KEXPECT_EQ(0x12345, oact.sa_flags);
+
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &dfl_action, 0x0));
 
 

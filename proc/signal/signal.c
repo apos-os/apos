@@ -102,7 +102,7 @@ static void dispatch_signal(int signum, user_context_t context) {
 
   const sigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.
-  KASSERT_DBG(action->sa_flags == 0);
+
   if (action->sa_handler == SIG_IGN) {
     return;
   } else if (action->sa_handler == SIG_DFL) {
