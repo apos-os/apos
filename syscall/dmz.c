@@ -19,7 +19,11 @@
 #include "memory/vm.h"
 #include "syscall/dmz.h"
 
-int syscall_verify_buffer(const void* buf, size_t len, int is_write) {
+int syscall_verify_buffer(const void* buf, size_t len, int is_write,
+                          int allow_null) {
+  if (!buf && allow_null) {
+    return 0;
+  }
   if ((addr_t)buf > MEM_LAST_MAPPABLE_ADDR - len) {
     return -EFAULT;
   }

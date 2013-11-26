@@ -19,7 +19,8 @@ long _syscall_enter(void);
 void syscalls_init(void) {
   gdt_entry_t call_gate_entry =
       gdt_entry_create_gate((uint32_t)(&_syscall_enter),
-                            GDT_KERNEL_CODE_SEGMENT << 3,
+                            segment_selector(GDT_KERNEL_CODE_SEGMENT,
+                                             RPL_KERNEL),
                             GATE_CALL,
                             3);
   gdt_install_segment(GDT_SYSCALL_CALL_GATE, call_gate_entry);

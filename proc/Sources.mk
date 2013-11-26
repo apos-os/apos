@@ -25,10 +25,11 @@ LOCAL_SOURCES := \
   sleep.c \
   kthread_pool.c \
   tss.c \
+  user_context.c \
   user_mode.c \
   wait.c \
 
-LOCAL_SUBDIRS := load
+LOCAL_SUBDIRS := load signal
 
 $(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 

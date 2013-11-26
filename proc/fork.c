@@ -61,6 +61,13 @@ int proc_fork(proc_func_t start, void* arg) {
     return result;
   }
 
+  // Duplicate any signal handlers.  The set of pending signals in the child
+  // is set to empty, however.
+  for (int signo = SIGMIN; signo <= SIGMAX; ++signo) {
+    new_process->signal_dispositions[signo] =
+        proc_current()->signal_dispositions[signo];
+  }
+
   // Create the kthread.
   proc_start_args_t* trampoline_args =
       (proc_start_args_t*)kmalloc(sizeof(proc_start_args_t));

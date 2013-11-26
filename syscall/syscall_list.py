@@ -35,6 +35,9 @@
 #   br --> read-only buffer (checked)
 #   bw --> write-only buffer (checked)
 #   brw --> read/write buffer (checked)
+#
+# The buffer types can be followed by a '?', which means that the argument is
+# allowed to be NULL.
 
 # Maximum number of arguments.
 MAX_ARGS = 6
@@ -50,6 +53,15 @@ class SyscallArg(object):
     self.arg_type = split[2]
     if len(split) == 4:
       self.size_name = split[3]
+
+    if self.arg_type[-1] == '?':
+      self.arg_type = self.arg_type[:-1]
+      assert self.arg_type.startswith('b')
+      self.allow_null = True
+    else:
+      self.allow_null = False
+
+    assert self.arg_type in ['u', 's', 'br', 'bw', 'brw']
 
   def NeedsPreCopy(self):
     return (self.arg_type == 's' or self.arg_type == 'br' or
@@ -70,6 +82,9 @@ class SyscallArg(object):
 
   def IsWritable(self):
     return self.arg_type == 'bw' or self.arg_type == 'brw'
+
+  def AllowNull(self):
+    return self.allow_null
 
 
 class SyscallDef(object):
@@ -197,3 +212,21 @@ AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
 AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'int:fd:u'])
+
+AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', 'user/signal.h',
+    'int', [
+    'pid_t:pid:u',
+    'int:sig:u'])
+
+AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
+    'user/signal.h',
+    'int', [
+    'int:signum:u',
+    'const struct sigaction*:act:br?:sizeof(struct sigaction)',
+    'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
+
+AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
+    'user/signal.h',
+    'int', [
+    'const sigset_t*:old_mask:br:sizeof(sigset_t)',
+    'const user_context_t*:context:br:sizeof(user_context_t)'])

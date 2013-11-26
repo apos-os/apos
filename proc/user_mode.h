@@ -17,6 +17,9 @@
 
 // Enter user mode using the given stack pointer, and at the given address.
 //
+// It is the caller's responsibility to set up the stack as needed if this is
+// simulating a function call (including arguments, return address, etc).
+//
 // Will not return.
 void user_mode_enter(addr_t stack, addr_t entry);
 

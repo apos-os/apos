@@ -22,10 +22,16 @@
 #include "syscall/dmz.h"
 #include "test/ktest.h"
 
-static void dmz_buffer_invalid_args(void) {
-  KTEST_BEGIN("syscall_verify_buffer() invalid args test");
+static void dmz_buffer_null_buffer(void) {
+  KTEST_BEGIN("syscall_verify_buffer() NULL buffer test");
 
-  KEXPECT_EQ(-EINVAL, syscall_verify_buffer(NULL, 10, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(NULL, 10, 0, 0));
+
+  KEXPECT_EQ(0, syscall_verify_buffer(NULL, 10, 0, 1));
+  KEXPECT_EQ(0, syscall_verify_buffer(NULL, 0, 0, 1));
+
+  KEXPECT_EQ(0, syscall_verify_buffer(NULL, 10, 1, 1));
+  KEXPECT_EQ(0, syscall_verify_buffer(NULL, 0, 1, 1));
 }
 
 static void dmz_buffer_basic(void) {
@@ -37,36 +43,36 @@ static void dmz_buffer_basic(void) {
                         MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
   void* const addrAEnd = (void*)((addr_t)addrA + kRegionSize);
 
-  KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 0));
-  KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 1));
-  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrAEnd, kRegionSize, 0));
-  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrAEnd, kRegionSize, 1));
+  KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 0, 0));
+  KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 1, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrAEnd, kRegionSize, 0, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrAEnd, kRegionSize, 1, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() overlap region start test");
   KEXPECT_EQ(-EFAULT, syscall_verify_buffer(
-          (void*)((addr_t)addrA - 10), 20, 0));
+          (void*)((addr_t)addrA - 10), 20, 0, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() overlap region end test");
   KEXPECT_EQ(-EFAULT, syscall_verify_buffer(
-          (void*)((addr_t)addrAEnd - 10), 20, 0));
+          (void*)((addr_t)addrAEnd - 10), 20, 0, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() one past end test");
-  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrA, kRegionSize + 1, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrA, kRegionSize + 1, 0, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() middle of region test");
   KEXPECT_EQ(0, syscall_verify_buffer(
-          (void*)((addr_t)addrA + 10), 20, 0));
+          (void*)((addr_t)addrA + 10), 20, 0, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() wraparound address test");
   KEXPECT_EQ(-EFAULT, syscall_verify_buffer(
-          (void*)((addr_t)addrA + 200), 0xFFFFFFF0, 0));
+          (void*)((addr_t)addrA + 200), 0xFFFFFFF0, 0, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() kernel memory test");
   void* kernel_buf = kmalloc(100);
-  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(kernel_buf, 10, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(kernel_buf, 10, 0, 0));
 
   KTEST_BEGIN("syscall_verify_buffer() kernel memory wraparound test");
-  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(kernel_buf, 0xFFFFFFFE, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(kernel_buf, 0xFFFFFFFE, 0, 0));
 
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
@@ -79,8 +85,8 @@ static void dmz_buffer_read_only(void) {
   KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_READ | PROT_EXEC,
                         MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
 
-  KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 0));
-  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrA, kRegionSize, 1));
+  KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 0, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrA, kRegionSize, 1, 0));
 
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
@@ -171,6 +177,7 @@ static void dmz_table_basic(void) {
 void dmz_test(void) {
   KTEST_SUITE_BEGIN("Syscall DMZ tests");
 
+  dmz_buffer_null_buffer();
   dmz_buffer_basic();
   dmz_buffer_read_only();
 

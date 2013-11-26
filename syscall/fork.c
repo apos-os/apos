@@ -19,19 +19,19 @@
 #include "syscall/fork.h"
 
 static void proc_fork_syscall_trampoline(void* arg) {
-  syscall_context_t* context_ptr = (syscall_context_t*)arg;
-  syscall_context_t context = *context_ptr;
+  user_context_t* context_ptr = (user_context_t*)arg;
+  user_context_t context = *context_ptr;
   kfree(context_ptr);
 
-  syscall_apply_context(context, 0);
+  user_context_apply(&context);
 }
 
 pid_t proc_fork_syscall() {
-  syscall_context_t* context_ptr =
-      (syscall_context_t*)kmalloc(sizeof(syscall_context_t));
+  user_context_t* context_ptr =
+      (user_context_t*)kmalloc(sizeof(user_context_t));
   if (!context_ptr) return -ENOMEM;
 
-  *context_ptr = syscall_extract_context();
+  *context_ptr = syscall_extract_context(0 /* return 0 in the child */);
   int result = proc_fork(&proc_fork_syscall_trampoline, context_ptr);
   if (result < 0) {
     kfree(context_ptr);

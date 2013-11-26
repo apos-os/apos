@@ -19,6 +19,7 @@
 #include "common/list.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/signal/signal.h"
 
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32
@@ -33,6 +34,8 @@ typedef enum {
   PROC_ZOMBIE,
 } proc_state_t;
 
+// Note: any fields added here (and potentially in kthread_t) must be properly
+// handled in fork() and execve().
 struct process {
   pid_t id;  // Index into global process table.
   proc_state_t state;
@@ -49,6 +52,12 @@ struct process {
   list_t vm_area_list;
 
   page_dir_ptr_t page_directory;
+
+  // Set of pending signals.
+  sigset_t pending_signals;
+
+  // Current signal dispositions.
+  sigaction_t signal_dispositions[SIGMAX + 1];
 
   // Parent process.
   process_t* parent;

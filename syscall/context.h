@@ -15,26 +15,12 @@
 #ifndef APOO_SYSCALL_CONTEXT_H
 #define APOO_SYSCALL_CONTEXT_H
 
-#include <stdint.h>
+#include "proc/user_context.h"
 
-#include "common/types.h"
-
-// Context of a syscall.  Captured to reproduce conditions in a fork() syscall.
-typedef struct {
-  uint32_t ss;
-  uint32_t esp;
-  uint32_t cs;
-  uint32_t eip;
-} syscall_context_t;
-
-// Extract the syscall_context_t from the current thread's kernel stack.
+// Extract the syscall_context_t from the current thread's kernel stack.  Uses
+// the given value for the syscall return value.
 //
 // REQUIRES: a syscall be executing currently.
-syscall_context_t syscall_extract_context(void);
-
-// Apply an extracted syscall context on the current stack to return to
-// user-space.  Uses the given value for the syscall return value.  Does not
-// return.
-void syscall_apply_context(syscall_context_t context, uint32_t retval);
+user_context_t syscall_extract_context(long retval);
 
 #endif
