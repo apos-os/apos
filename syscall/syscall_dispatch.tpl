@@ -31,6 +31,9 @@ case {{ common.syscall_constant(syscall) }}:
 {%- endmacro %}
 
 #include "common/errno.h"
+#include "proc/process.h"
+#include "proc/signal/signal.h"
+#include "syscall/context.h"
 #include "syscall/syscalls.h"
 
 {{ common.include_headers(SYSCALLS, 'header') }}
@@ -53,8 +56,8 @@ _Static_assert(sizeof({{ arg_type }}) == sizeof(long),
 {{ common.syscall_decl(syscall, 'SYSCALL_DMZ_') }};
 {% endfor %}
 
-long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
-    long arg4, long arg5, long arg6) {
+static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
+    long arg3, long arg4, long arg5, long arg6) {
   switch (syscall_number) {
     {% for syscall in SYSCALLS -%}
     {{ syscall_dispatch_case(syscall) | indent(4) }}
@@ -64,4 +67,18 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     default:
       return -ENOTSUP;
   }
+}
+
+long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
+    long arg4, long arg5, long arg6) {
+  const long result = do_syscall_dispatch(syscall_number, arg1, arg2, arg3,
+      arg4, arg5, arg6);
+
+  if (!ksigisemptyset(&proc_current()->pending_signals)) {
+    proc_dispatch_pending_signals(syscall_extract_context(result));
+  }
+
+  // Don't do anything here!  After we call proc_dispatch_pending_signals(), we
+  // may never return.
+  return result;
 }
