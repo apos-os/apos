@@ -26,10 +26,34 @@ typedef void (*sighandler_t)(int);
 #define SIGNULL 0
 #define SIGMIN 1
 
-#define SIGABRT 1
-#define SIGALRM 2
+#define SIGABRT   1   // Process abort signal.
+#define SIGALRM   2   // Alarm clock.
+#define SIGBUS    3   // Access to an undefined portion of a memory object.
+#define SIGCHLD   4   // Child process terminated, stopped, or continued.
+#define SIGCONT   5   // Continue executing, if stopped.
+#define SIGFPE    6   // Erroneous arithmetic operation.
+#define SIGHUP    7   // Hangup.
+#define SIGILL    8   // Illegal instruction.
+#define SIGINT    9   // Terminal interrupt signal.
+#define SIGKILL   10  // Kill (cannot be caught or ignored).
+#define SIGPIPE   11  // Write on a pipe with no one to read it.
+#define SIGQUIT   12  // Terminal quit signal.
+#define SIGSEGV   13  // Invalid memory reference.
+#define SIGSTOP   14  // Stop executing (cannot be caught or ignored).
+#define SIGTERM   15  // Termination signal.
+#define SIGTSTP   16  // Terminal stop signal.
+#define SIGTTIN   17  // Background process attempting read.
+#define SIGTTOU   18  // Background process attempting write.
+#define SIGUSR1   19  // User-defined signal 1.
+#define SIGUSR2   20  // User-defined signal 2.
+#define SIGSYS    21  // Bad system call.
+#define SIGTRAP   22  // Trace/breakpoint trap.
+#define SIGURG    23  // High bandwidth data is available at a socket.
+#define SIGVTALRM 24  // Virtual timer expired.
+#define SIGXCPU   25  // CPU time limit exceeded.
+#define SIGXFSZ   26  // File size limit exceeded.
 
-#define SIGMAX 2
+#define SIGMAX 26
 
 // sighandler_t constants.
 #define SIG_DFL ((sighandler_t)0x0)

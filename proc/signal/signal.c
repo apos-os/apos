@@ -23,13 +23,39 @@ typedef enum {
   SIGACT_TERM,
   SIGACT_TERM_AND_CORE,
   SIGACT_IGNORE,
+  SIGACT_STOP,
+  SIGACT_CONTINUE,
 } signal_default_action_t;
 
 // Table of default signal actions.
 static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
-  SIGACT_IGNORE,  // SIGNULL
-  SIGACT_TERM_AND_CORE,  // SIGABRT
-  SIGACT_TERM,  // SIGALRM
+  SIGACT_IGNORE,        // SIGNULL
+  SIGACT_TERM_AND_CORE, // SIGABRT
+  SIGACT_TERM,          // SIGALRM
+  SIGACT_TERM_AND_CORE, // SIGBUS
+  SIGACT_IGNORE,        // SIGCHLD
+  SIGACT_CONTINUE,      // SIGCONT
+  SIGACT_TERM_AND_CORE, // SIGFPE
+  SIGACT_TERM,          // SIGHUP
+  SIGACT_TERM_AND_CORE, // SIGILL
+  SIGACT_TERM,          // SIGINT
+  SIGACT_TERM,          // SIGKILL
+  SIGACT_TERM,          // SIGPIPE
+  SIGACT_TERM_AND_CORE, // SIGQUIT
+  SIGACT_TERM_AND_CORE, // SIGSEGV
+  SIGACT_STOP,          // SIGSTOP
+  SIGACT_TERM,          // SIGTERM
+  SIGACT_STOP,          // SIGTSTP
+  SIGACT_STOP,          // SIGTTIN
+  SIGACT_STOP,          // SIGTTOU
+  SIGACT_TERM,          // SIGUSR1
+  SIGACT_TERM,          // SIGUSR2
+  SIGACT_TERM_AND_CORE, // SIGSYS
+  SIGACT_TERM_AND_CORE, // SIGTRAP
+  SIGACT_IGNORE,        // SIGURG
+  SIGACT_TERM,          // SIGVTALRM
+  SIGACT_TERM_AND_CORE, // SIGXCPU
+  SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
 int proc_kill(pid_t pid, int sig) {
@@ -60,6 +86,12 @@ static void dispatch_signal(int signum, user_context_t context) {
     return;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
+      case SIGACT_STOP:
+      case SIGACT_CONTINUE:
+        // TODO(aoates): implement STOP and CONTINUE once job control exists.
+        klogf("Warning: cannot deliver stop or continue signal\n");
+        return;
+
       case SIGACT_IGNORE:
         return;
 
