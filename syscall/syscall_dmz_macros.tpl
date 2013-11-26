@@ -53,10 +53,16 @@ if (CHECK_{{ arg.name }} < 0) return CHECK_{{ arg.name }};
 {%- elif arg.IsBuffer() -%}{{ arg.size_name }}{%- endif %}
 {%- endmacro %}
 
+{#- Allocate a kernel buffer for the given argument if it's non-NULL #}
+{%- macro alloc_arg(arg) -%}
+KERNEL_{{ arg.name }} = {% if arg.AllowNull() %}!{{ arg.name }} ? 0x0 : {% endif -%}
+({{ arg.ctype }})kmalloc({{ arg_size(arg) }});
+{%- endmacro %}
+
 {#- Allocate kernel buffers for each argument #}
 {%- macro alloc_args(args) -%}
 {% for arg in args if arg.NeedsCopy() -%}
-KERNEL_{{ arg.name }} = ({{ arg.ctype }})kmalloc({{ arg_size(arg) }});
+{{ alloc_arg(arg) }}
 {% endfor %}
 {%- endmacro %}
 
@@ -70,7 +76,12 @@ if (KERNEL_{{ arg.name }}) kfree((void*)KERNEL_{{ arg.name }});
 {#- Create an || condition testing each allocation #}
 {%- macro check_alloc_cond(args) -%}
 {% for arg in args if arg.NeedsCopy() -%}
-!KERNEL_{{ arg.name }}{% if not loop.last %} || {% endif %}
+{% if arg.AllowNull() -%}
+  ({{ arg.name }} && !KERNEL_{{ arg.name }})
+{%- else -%}
+  !KERNEL_{{ arg.name }}
+{%- endif -%}
+{% if not loop.last %} || {% endif %}
 {%- endfor %}
 {%- endmacro %}
 
@@ -96,13 +107,13 @@ if ({{ check_alloc_cond(args) }}) {
   {{ check_allocs(syscall.args) | indent(2) }}
 
   {% for arg in syscall.args if arg.NeedsPreCopy() -%}
-  kmemcpy((void*)KERNEL_{{ arg.name }}, {{ arg.name }}, {{ arg_size(arg) }});
+  if ({{ arg.name }}) kmemcpy((void*)KERNEL_{{ arg.name }}, {{ arg.name }}, {{ arg_size(arg) }});
   {% endfor %}
 
   const int result = {{ syscall.kernel_name }}({{ call_args(syscall.args) }});
 
   {% for arg in syscall.args if arg.NeedsPostCopy() -%}
-  kmemcpy({{ arg.name }}, KERNEL_{{ arg.name }}, {{ arg_size(arg) }});
+  if ({{ arg.name }}) kmemcpy({{ arg.name }}, KERNEL_{{ arg.name }}, {{ arg_size(arg) }});
   {% endfor %}
 
   {{ free_all(syscall.args) | indent(2) }}
