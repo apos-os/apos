@@ -22,10 +22,10 @@
 #include "syscall/dmz.h"
 #include "test/ktest.h"
 
-static void dmz_buffer_invalid_args(void) {
-  KTEST_BEGIN("syscall_verify_buffer() invalid args test");
+static void dmz_buffer_null_buffer(void) {
+  KTEST_BEGIN("syscall_verify_buffer() NULL buffer test");
 
-  KEXPECT_EQ(-EINVAL, syscall_verify_buffer(NULL, 10, 0));
+  KEXPECT_EQ(-EFAULT, syscall_verify_buffer(NULL, 10, 0));
 }
 
 static void dmz_buffer_basic(void) {
@@ -171,6 +171,7 @@ static void dmz_table_basic(void) {
 void dmz_test(void) {
   KTEST_SUITE_BEGIN("Syscall DMZ tests");
 
+  dmz_buffer_null_buffer();
   dmz_buffer_basic();
   dmz_buffer_read_only();
 
