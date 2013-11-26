@@ -148,6 +148,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   stack_top -= stack_top % sizeof(addr_t);
   *(addr_t*)(stack_top -= sizeof(addr_t)) = envp_addr;
   *(addr_t*)(stack_top -= sizeof(addr_t)) = argv_addr;
+  *(addr_t*)(stack_top -= sizeof(addr_t)) = 0x0;  // Fake return address.
 
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);

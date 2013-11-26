@@ -20,8 +20,6 @@ void user_mode_enter(addr_t stack, addr_t entry) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
                  "Invalid addr_t size for i386 code");
 
-  *(addr_t*)(stack -= sizeof(addr_t)) = 0x0;
-
   const uint32_t new_data_seg =
       segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER);
   const uint32_t new_code_seg =
