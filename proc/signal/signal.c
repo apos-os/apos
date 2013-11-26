@@ -89,8 +89,6 @@ int proc_sigaction(int signum, const struct sigaction* act,
     *oldact = proc_current()->signal_dispositions[signum];
   }
 
-  // TODO(aoates): should we check for bad flags?
-
   if (act) {
     proc_current()->signal_dispositions[signum] = *act;
   }

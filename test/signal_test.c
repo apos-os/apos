@@ -142,6 +142,13 @@ static void sigaction_test(void) {
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGMAX + 1, 0x0, 0x0));
   KEXPECT_EQ(-EINVAL, proc_sigaction(-5, 0x0, 0x0));
 
+  // POSIX seems to indicate that setting invalid flags should succeed.
+  KTEST_BEGIN("proc_sigaction(): invalid flags");
+  sigaction_t act = dfl_action;
+  act.sa_flags = 0x12345;
+  KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, 0x0));
+  KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &dfl_action, 0x0));
+
 
   KTEST_BEGIN("proc_sigaction(): setting SIGKILL/SIGSTOP");
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGKILL, &dfl_action, 0x0));
@@ -173,7 +180,7 @@ static void sigaction_test(void) {
   // signal should succeed, though it won't actually be masked.
   KTEST_BEGIN("proc_sigaction(): SIGKILL/SIGSTOP in sa_mask");
 
-  sigaction_t act = dfl_action;
+  act = dfl_action;
   ksigaddset(&act.sa_mask, SIGKILL);
   ksigaddset(&act.sa_mask, SIGSTOP);
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, 0x0));
