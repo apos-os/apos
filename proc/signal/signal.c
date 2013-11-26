@@ -75,6 +75,29 @@ int proc_kill(pid_t pid, int sig) {
   return ksigaddset(&proc->pending_signals, sig);
 }
 
+int proc_sigaction(int signum, const struct sigaction* act,
+                   struct sigaction* oldact) {
+  if (signum < SIGMIN || signum > SIGMAX) {
+    return -EINVAL;
+  }
+
+  if ((signum == SIGKILL || signum == SIGSTOP) && act != 0x0) {
+    return -EINVAL;
+  }
+
+  if (oldact) {
+    *oldact = proc_current()->signal_dispositions[signum];
+  }
+
+  // TODO(aoates): should we check for bad flags?
+
+  if (act) {
+    proc_current()->signal_dispositions[signum] = *act;
+  }
+
+  return 0;
+}
+
 // Dispatch a particular signal in the current process.  May not return.
 static void dispatch_signal(int signum, user_context_t context) {
   process_t* proc = proc_current();

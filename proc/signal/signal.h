@@ -67,6 +67,11 @@ static inline int ksigisemptyset(const sigset_t* set) {
 // -errno on error.
 int proc_kill(pid_t pid, int sig);
 
+// Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
+// success, or -errno on error.
+int proc_sigaction(int signum, const struct sigaction* act,
+                   struct sigaction* oldact);
+
 // Dispatch any pending signals in the current process.  If there are any
 // signals that aren't blocked by the current thread's signal mask, it
 // dispatches them appropriately.
