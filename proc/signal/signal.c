@@ -74,7 +74,10 @@ int proc_kill(pid_t pid, int sig) {
     return 0;
   }
 
-  return ksigaddset(&proc->pending_signals, sig);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int result = ksigaddset(&proc->pending_signals, sig);
+  POP_INTERRUPTS();
+  return result;
 }
 
 int proc_sigaction(int signum, const struct sigaction* act,
@@ -92,7 +95,9 @@ int proc_sigaction(int signum, const struct sigaction* act,
   }
 
   if (act) {
+    PUSH_AND_DISABLE_INTERRUPTS();
     proc_current()->signal_dispositions[signum] = *act;
+    POP_INTERRUPTS();
   }
 
   return 0;
@@ -141,8 +146,10 @@ static void dispatch_signal(int signum, const user_context_t* context) {
 }
 
 void proc_dispatch_pending_signals(const user_context_t* context) {
+  PUSH_AND_DISABLE_INTERRUPTS();
   process_t* proc = proc_current();
   if (ksigisemptyset(&proc->pending_signals)) {
+    POP_INTERRUPTS();
     return;
   }
 
@@ -156,12 +163,17 @@ void proc_dispatch_pending_signals(const user_context_t* context) {
     }
   }
 
+  POP_INTERRUPTS();
 }
 
 int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+
   // Restore the old signal mask, then process any outstanding signals.
   proc_current()->thread->signal_mask = *old_mask;
   proc_dispatch_pending_signals(context);
+
+  POP_INTERRUPTS();
 
   // If there weren't any signals to be processed, restore the original context.
   user_context_apply(context);
