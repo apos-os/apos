@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/types.h"
 #include "dev/interrupts.h"
+#include "dev/faults.h"
 #include "memory/gdt.h"
 #include "proc/process.h"
 #include "proc/user_context.h"
@@ -203,6 +204,9 @@ void interrupts_init() {
   register_raw_interrupt_handler(0x2D, &int45);
   register_raw_interrupt_handler(0x2E, &int46);
   register_raw_interrupt_handler(0x2F, &int47);
+
+  // Register common fault handlers.
+  register_fault_handlers();
 }
 
 void int_handler(uint32_t interrupt, uint32_t error, uint32_t ebp) {
