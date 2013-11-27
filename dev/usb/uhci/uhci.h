@@ -33,7 +33,7 @@ typedef struct usb_uhci usb_uhci_t;
 void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq);
 
 // Returns the number of detecte UHCI controllers.
-int usb_uhci_num_controllers();
+int usb_uhci_num_controllers(void);
 
 // Returns one of the UHCI controllers.
 usb_uhci_t* usb_uhci_get_controller(int i);

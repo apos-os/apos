@@ -52,15 +52,15 @@ static slab_alloc_t* pirp_alloc = 0x0;
 // Maximum number of pages to allocate in TD and QH slab allocators.
 #define SLAB_MAX_PAGES 10
 
-static inline uhci_qh_t* alloc_qh() {
+static inline uhci_qh_t* alloc_qh(void) {
   return (uhci_qh_t*)slab_alloc(qh_alloc);
 }
 
-static inline uhci_td_t* alloc_td() {
+static inline uhci_td_t* alloc_td(void) {
   return (uhci_td_t*)slab_alloc(td_alloc);
 }
 
-static inline uhci_pending_irp_t* alloc_pending_irp() {
+static inline uhci_pending_irp_t* alloc_pending_irp(void) {
   return (uhci_pending_irp_t*)slab_alloc(pirp_alloc);
 }
 

@@ -46,7 +46,7 @@ static kthread_pool_t g_pool;
 #define SLAB_MAX_PAGES 10
 static slab_alloc_t* g_hcdi_irp_alloc = 0x0;
 
-static usb_hcdi_irp_t* alloc_hcdi_irp() {
+static usb_hcdi_irp_t* alloc_hcdi_irp(void) {
   if (!g_hcdi_irp_alloc) {
     g_hcdi_irp_alloc = slab_alloc_create(
         sizeof(usb_hcdi_irp_t), SLAB_MAX_PAGES);

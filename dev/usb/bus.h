@@ -41,7 +41,7 @@ typedef struct usb_bus usb_bus_t;
 void usb_create_bus(usb_hcdi_t* hc);
 
 // Return the number of buses.
-int usb_num_buses();
+int usb_num_buses(void);
 
 // Return the given bus.
 usb_bus_t* usb_get_bus(int i);

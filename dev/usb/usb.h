@@ -40,10 +40,10 @@ struct usb_hcdi;
 // have been discovered and registered (with usb_create_bus) before this is
 // called.  For instance, PCI must be fully initialized before USB is
 // initialized.
-void usb_init();
+void usb_init(void);
 
 // Returns 1 if usb_init() has been called (and returned).
-int usb_is_initialized();
+int usb_is_initialized(void);
 
 // Status of an IRP.
 enum usb_irp_status {
@@ -79,7 +79,7 @@ void usb_init_irp(usb_irp_t* irp);
 
 // Allocate (and free) a usb_dev_request_t that can be used with
 // usb_send_request.
-usb_dev_request_t* usb_alloc_request();
+usb_dev_request_t* usb_alloc_request(void);
 void usb_free_request(usb_dev_request_t* request);
 
 // For all of these, the endpoint, IRP, and request (if given) must live until
