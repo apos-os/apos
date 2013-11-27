@@ -21,7 +21,7 @@
 #include "dev/usb/uhci/uhci_registers.h"
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/usb.h"
-#include "kshell.h"
+#include "main/kshell.h"
 #include "memory/memory.h"
 #include "util/flag_printf.h"
 

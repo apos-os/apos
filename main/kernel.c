@@ -34,7 +34,7 @@
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "dev/usb/usb.h"
-#include "kshell.h"
+#include "main/kshell.h"
 #include "proc/scheduler.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"

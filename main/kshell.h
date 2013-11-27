@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_KSHELL_H
-#define APOO_KSHELL_H
+#ifndef APOO_MAIN_KSHELL_H
+#define APOO_MAIN_KSHELL_H
 
 #include "dev/ld.h"
 
