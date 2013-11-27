@@ -44,7 +44,7 @@ typedef struct handler_block handler_block_t;
 #define NUM_HANDLERS 16
 static handler_block_t g_handlers[NUM_HANDLERS];
 
-static void irq_handler(uint32_t interrupt, uint32_t error);
+static void irq_handler(uint32_t interrupt, uint32_t error, int is_user);
 
 void pic_init() {
   for (int i = 0; i < NUM_HANDLERS; ++i) {
@@ -93,7 +93,7 @@ void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
   g_handlers[irq].args[idx] = arg;
 }
 
-static void irq_handler(uint32_t interrupt, uint32_t error) {
+static void irq_handler(uint32_t interrupt, uint32_t error, int is_user) {
   KASSERT(interrupt >= 0x20 + IRQ0);
   KASSERT(interrupt <= 0x20 + IRQ15);
   KASSERT(error == 0);

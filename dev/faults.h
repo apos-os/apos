@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Code for handling page fault exceptions.
-#ifndef APOO_MEMORY_PAGE_FAULT
-#define APOO_MEMORY_PAGE_FAULT
+// Handlers for common (non page-) CPU exceptions and faults.
+#ifndef APOO_DEV_FAULTS_H
+#define APOO_DEV_FAULTS_H
 
-#include <stdint.h>
-#include "memory/memory.h"
-
-// Initialize the page fault handler and register it with the interrupts module.
-void paging_init(memory_info_t* meminfo);
-
-// Interrupt handler for page faults.  Reads the address that caused the fault
-// from register CR2, and takes the error code given by the interrupt.
-void page_fault_handler(uint32_t interrupt, uint32_t error, int is_user);
+// Register handlers for various CPU exceptions (e.g. floating point
+// exceptions).
+void register_fault_handlers(void);
 
 #endif

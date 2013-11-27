@@ -38,7 +38,7 @@ void paging_init(memory_info_t* meminfo) {
   register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
 }
 
-void page_fault_handler(uint32_t interrupt, uint32_t error) {
+void page_fault_handler(uint32_t interrupt, uint32_t error, int is_user) {
   KASSERT(interrupt == PAGE_FAULT_INTERRUPT);
   KASSERT((error & PAGE_FAULT_ERR_RSVD) == 0);
 
@@ -51,5 +51,7 @@ void page_fault_handler(uint32_t interrupt, uint32_t error) {
       (error & PAGE_FAULT_ERR_WRITE) ? VM_FAULT_WRITE : VM_FAULT_READ;
   const vm_fault_mode_t mode =
       (error & PAGE_FAULT_ERR_USER) ? VM_FAULT_USER : VM_FAULT_KERNEL;
+  KASSERT_DBG(is_user ? (mode == VM_FAULT_USER) : (mode == VM_FAULT_KERNEL));
+
   vm_handle_page_fault(address, type, op, mode);
 }

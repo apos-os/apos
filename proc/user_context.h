@@ -21,6 +21,7 @@
 
 typedef enum {
   USER_CONTEXT_CALL_GATE = 1,
+  USER_CONTEXT_INTERRUPT = 2,
 } user_context_type_t;
 
 // Context from a switch from user mode into kernel mode, e.g. from an interrupt
@@ -30,6 +31,7 @@ typedef struct {
   user_context_type_t type;
 
   uint32_t esp;
+  uint32_t ebp;
   uint32_t eip;
 
   uint32_t eax;
@@ -38,6 +40,9 @@ typedef struct {
   uint32_t edx;
   uint32_t esi;
   uint32_t edi;
+
+  // Only if type == USER_CONTEXT_INTERRUPT.
+  uint32_t eflags;
 } user_context_t;
 
 // Apply an user-mode context on the current stack to return to user-space.

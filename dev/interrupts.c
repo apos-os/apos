@@ -16,7 +16,13 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/types.h"
 #include "dev/interrupts.h"
+#include "dev/faults.h"
+#include "memory/gdt.h"
+#include "proc/process.h"
+#include "proc/user_context.h"
+#include "proc/signal/signal.h"
 
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
@@ -83,6 +89,65 @@ static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
   idt[num].type_attr = 0 | IDT_PRESENT | IDT_DPL_RING0 | IDT_TYPE_32_INT;
 }
 
+// Given the ebp from int_common_handler (in isr.s), determine whether the
+// interrupt occurred in user or kernel mode.
+static int is_user_interrupt(addr_t ebp) {
+  // The contents of the stack are,
+  //  ebp+0x20 SS       (if a user interrupt)
+  //  ebp+0x1c ESP      (if a user interrupt)
+  //  ebp+0x18 EFLAGS
+  //  ebp+0x14 CS
+  //  ebp+0x10 EIP
+  //  ebp+0xc  Error code
+  //  ebp+0x8  Interrupt number
+  //  ebp+0x4  EIP (again)
+  //  ebp      Saved EBP          <-- *ebp
+  //   <saved registers>
+  const addr_t cs = *((addr_t*)ebp + 5);
+  if (cs != segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) &&
+      cs != segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL)) {
+    klogf("unknown code segment: 0x%x\n", cs);
+    die("unknown code segment");
+  }
+  const int is_user = (cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+
+  // Do some sanity checking on the rest of the stack frame.
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    if (is_user) {
+      const addr_t ss = *((addr_t*)ebp + 8);
+      KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
+    }
+    KASSERT(*((addr_t*)ebp + 1) == *((addr_t*)ebp + 4));
+    KASSERT(*((addr_t*)ebp + 2) < 256);
+  }
+
+  return is_user;
+}
+
+// Extract a user_context_t for the current interrupt, which must be a user-mode
+// interrupt.
+static user_context_t extract_interrupt_context(addr_t ebp) {
+  user_context_t context;
+
+  const addr_t cs = *((addr_t*)ebp + 5);
+  KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+
+  context.type = USER_CONTEXT_INTERRUPT;
+  context.esp = *((addr_t*)ebp + 7);
+  context.ebp = *((addr_t*)ebp);
+  context.eip = *((addr_t*)ebp + 4);
+  context.eax = *((addr_t*)ebp - 1);
+  context.ebx = *((addr_t*)ebp - 4);
+  context.ecx = *((addr_t*)ebp - 2);
+  context.edx = *((addr_t*)ebp - 3);
+  context.esi = *((addr_t*)ebp - 7);
+  context.edi = *((addr_t*)ebp - 8);
+
+  context.eflags = *((addr_t*)ebp + 6);
+
+  return context;
+}
+
 void interrupts_init() {
   // First, figure out where the IDT is.
   idt_ptr_t idt_ptr;
@@ -139,11 +204,16 @@ void interrupts_init() {
   register_raw_interrupt_handler(0x2D, &int45);
   register_raw_interrupt_handler(0x2E, &int46);
   register_raw_interrupt_handler(0x2F, &int47);
+
+  // Register common fault handlers.
+  register_fault_handlers();
 }
 
-void int_handler(uint32_t interrupt, uint32_t error) {
+void int_handler(uint32_t interrupt, uint32_t error, uint32_t ebp) {
+  const int is_user = is_user_interrupt(ebp);
+
   if (g_handlers[interrupt]) {
-    g_handlers[interrupt](interrupt, error);
+    g_handlers[interrupt](interrupt, error, is_user);
   } else {
     klogf("unhandled interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }
@@ -158,6 +228,13 @@ void int_handler(uint32_t interrupt, uint32_t error) {
       "movl $0, %%esi\n\t"
       "movl $0, %%edi\n\t"
       ::: "eax", "ebx", "ecx", "edx", "esi", "edi");
+
+  if (is_user && !ksigisemptyset(&proc_current()->pending_signals)) {
+    user_context_t context = extract_interrupt_context(ebp);
+    proc_dispatch_pending_signals(&context);
+  }
+
+  // Note: we may never get here, if there were signals to dispatch.
 }
 
 void enable_interrupts() {

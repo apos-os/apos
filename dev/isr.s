@@ -83,31 +83,36 @@ INT_NOERROR   46
 INT_NOERROR   47
 
 int_common_handler:
+  push $0  # Will hold the interrupted EIP, see below.
+  push %ebp
+  mov %esp, %ebp
+
   pusha
   push %ds
   push %es
   push %fs
   push %gs
 
-  # Make a fake stack frame for GDB (original return address and EBP).
-  mov 56(%esp), %eax  # get the original IP
-  push %eax
+  # Copy the interrupted EIP into our "stack frame" so that GDB gives useful
+  # stack traces.  We can't do this before we pusha because we need to clobber a
+  # register.
+  mov 0x10(%ebp), %eax
+  mov %eax, 0x4(%ebp)
+
+  # Copy the %ebp as a funtion arg.
   push %ebp
-  mov %esp, %ebp
 
   # Copy the error code pushed for us onto the top of the stack as a function arg.
-  mov 60(%esp), %eax
+  mov 0xc(%ebp), %eax
   push %eax
 
   # Copy the interrupt number as a function arg.
-  mov 60(%esp), %eax
+  mov 0x8(%ebp), %eax
   push %eax
 
   call int_handler
 
-  add $8, %esp  # pop interrupt and error numbers
-  pop %ebp  # pop the fake GDB stack frame
-  add $4, %esp
+  add $0xc, %esp  # pop int_handler args
 
   pop %gs
   pop %fs
@@ -115,9 +120,12 @@ int_common_handler:
   pop %ds
   popa
 
-  # Pop the other copy of the error number (the one pushed by the processor, or
-  # the fake one we pushed to simulate it), and the interrupt number.
-  add $8, %esp
+  pop %ebp
+
+  # Pop the fake stack frame EIP, the interrupt number, and the other copy of
+  # the error number (the one pushed by the processor, or the fake one we pushed
+  # to simulate it).
+  add $0xc, %esp
 
   sti
   iret

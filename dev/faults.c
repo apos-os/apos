@@ -12,18 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Code for handling page fault exceptions.
-#ifndef APOO_MEMORY_PAGE_FAULT
-#define APOO_MEMORY_PAGE_FAULT
+#include "dev/faults.h"
 
-#include <stdint.h>
-#include "memory/memory.h"
+#include "dev/interrupts.h"
+#include "common/kassert.h"
+#include "proc/process.h"
+#include "proc/signal/signal.h"
 
-// Initialize the page fault handler and register it with the interrupts module.
-void paging_init(memory_info_t* meminfo);
+static void fpe_handler(uint32_t interrupt, uint32_t error, int is_user) {
+  if (!is_user) {
+    die("floating point exception in kernel code");
+  }
 
-// Interrupt handler for page faults.  Reads the address that caused the fault
-// from register CR2, and takes the error code given by the interrupt.
-void page_fault_handler(uint32_t interrupt, uint32_t error, int is_user);
+  proc_kill(proc_current()->id, SIGFPE);
+}
 
-#endif
+void register_fault_handlers(void) {
+  register_interrupt_handler(0, &fpe_handler);
+  register_interrupt_handler(7, &fpe_handler);
+  register_interrupt_handler(9, &fpe_handler);
+  register_interrupt_handler(16, &fpe_handler);
+  register_interrupt_handler(19, &fpe_handler);
+}

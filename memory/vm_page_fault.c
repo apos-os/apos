@@ -107,9 +107,8 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
         break;
 
       case VM_FAULT_USER:
-        // TODO(aoates): handle user-mode segfaults.
-        die("user mode page fault (unsupported)");
-        break;
+        proc_kill(proc_current()->id, SIGSEGV);
+        return;
     }
   }
 

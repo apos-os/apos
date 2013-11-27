@@ -33,15 +33,17 @@ static void print_stack_trace(void) {
     const uint32_t old_ebp = *(uint32_t*)ebp;
     // Subtract 2 to get back to the call instruction.
     const uint32_t return_addr = *(uint32_t*)(ebp + 4) - 2;
+    if (cframe >= kMaxFrames) break;
+
+    frames[cframe++] = return_addr;
+    ebp = old_ebp;
+
     // If we're about to go before the start of a thread (0xDEADxxxx), or into
     // pre-VM addresses, stop.
     if ((return_addr & 0xFFFF0000) == 0xDEAD0000 ||
-        return_addr < get_global_meminfo()->mapped_start ||
-        cframe >= kMaxFrames) {
+        return_addr < get_global_meminfo()->mapped_start) {
       break;
     }
-    frames[cframe++] = return_addr;
-    ebp = old_ebp;
   }
 
   for (int i = 0; i < cframe; ++i) {
