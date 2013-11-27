@@ -25,6 +25,8 @@ user_context_t syscall_extract_context(long retval) {
                  "x86 syscall_extract_context used on incompatible platform");
 
   user_context_t context;
+  context.type = USER_CONTEXT_CALL_GATE;
+
   uint32_t* stack_ptr = (uint32_t*)kthread_kernel_stack_top();
   stack_ptr--;  // The first slot is garbage.
   const uint32_t ss = *(stack_ptr--);
