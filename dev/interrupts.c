@@ -19,6 +19,9 @@
 #include "common/types.h"
 #include "dev/interrupts.h"
 #include "memory/gdt.h"
+#include "proc/process.h"
+#include "proc/user_context.h"
+#include "proc/signal/signal.h"
 
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
@@ -120,6 +123,30 @@ static int is_user_interrupt(addr_t ebp) {
   return is_user;
 }
 
+// Extract a user_context_t for the current interrupt, which must be a user-mode
+// interrupt.
+static user_context_t extract_interrupt_context(addr_t ebp) {
+  user_context_t context;
+
+  const addr_t cs = *((addr_t*)ebp + 5);
+  KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+
+  context.type = USER_CONTEXT_INTERRUPT;
+  context.esp = *((addr_t*)ebp + 7);
+  context.ebp = *((addr_t*)ebp);
+  context.eip = *((addr_t*)ebp + 4);
+  context.eax = *((addr_t*)ebp - 1);
+  context.ebx = *((addr_t*)ebp - 4);
+  context.ecx = *((addr_t*)ebp - 2);
+  context.edx = *((addr_t*)ebp - 3);
+  context.esi = *((addr_t*)ebp - 7);
+  context.edi = *((addr_t*)ebp - 8);
+
+  context.eflags = *((addr_t*)ebp + 6);
+
+  return context;
+}
+
 void interrupts_init() {
   // First, figure out where the IDT is.
   idt_ptr_t idt_ptr;
@@ -197,6 +224,13 @@ void int_handler(uint32_t interrupt, uint32_t error, uint32_t ebp) {
       "movl $0, %%esi\n\t"
       "movl $0, %%edi\n\t"
       ::: "eax", "ebx", "ecx", "edx", "esi", "edi");
+
+  if (is_user && !ksigisemptyset(&proc_current()->pending_signals)) {
+    user_context_t context = extract_interrupt_context(ebp);
+    proc_dispatch_pending_signals(&context);
+  }
+
+  // Note: we may never get here, if there were signals to dispatch.
 }
 
 void enable_interrupts() {
