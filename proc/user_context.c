@@ -26,29 +26,60 @@ void user_context_apply(const user_context_t* context_ptr) {
   const uint32_t ss = segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER);
   const uint32_t cs = segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER);
 
-  // TODO(aoates): do we want to merge this with the code in proc/user_mode.c?
-  asm volatile (
-      "mov %0, %%eax\n\t"
-      "mov %%ax, %%ds\n\t"
-      "mov %%ax, %%es\n\t"
-      "mov %%ax, %%fs\n\t"
-      "mov %%ax, %%gs\n\t"
-      "pushl %0\n\t"
-      "pushl %1\n\t"
-      "pushl %2\n\t"
-      "pushl %3\n\t"
-      "mov %4, %%eax\n\t"
-      "mov %5, %%ebx\n\t"
-      "mov %6, %%ecx\n\t"
-      "mov %7, %%edx\n\t"
-      "mov %8, %%esi\n\t"
-      "mov %9, %%edi\n\t"
-      "lret"
-      :: "r"(ss), "r"(context.esp),
-         "r"(cs), "r"(context.eip),
-         "m"(context.eax), "m"(context.ebx), "m"(context.ecx), "m"(context.edx),
-         "m"(context.esi), "m"(context.edi)
-       : "eax");
+  switch (context.type) {
+    case USER_CONTEXT_CALL_GATE:
+        asm volatile (
+            "mov %0, %%eax\n\t"
+            "mov %%ax, %%ds\n\t"
+            "mov %%ax, %%es\n\t"
+            "mov %%ax, %%fs\n\t"
+            "mov %%ax, %%gs\n\t"
+            "pushl %0\n\t"
+            "pushl %1\n\t"
+            "pushl %2\n\t"
+            "pushl %3\n\t"
+            "mov %4, %%eax\n\t"
+            "mov %5, %%ebx\n\t"
+            "mov %6, %%ecx\n\t"
+            "mov %7, %%edx\n\t"
+            "mov %8, %%esi\n\t"
+            "mov %9, %%edi\n\t"
+            "lret"
+            :: "r"(ss), "r"(context.esp),
+            "r"(cs), "r"(context.eip),
+            "m"(context.eax), "m"(context.ebx), "m"(context.ecx),
+            "m"(context.edx), "m"(context.esi), "m"(context.edi)
+         : "eax");
+        break;
+
+    // TODO(aoates): merge this with the code in proc/user_mode.c
+    case USER_CONTEXT_INTERRUPT:
+        asm volatile (
+            "mov %0, %%eax\n\t"
+            "mov %%ax, %%ds\n\t"
+            "mov %%ax, %%es\n\t"
+            "mov %%ax, %%fs\n\t"
+            "mov %%ax, %%gs\n\t"
+            "pushl %0\n\t"
+            "pushl %1\n\t"
+            "pushl %10\n\t"
+            "pushl %2\n\t"
+            "pushl %3\n\t"
+            "mov %4, %%eax\n\t"
+            "mov %5, %%ebx\n\t"
+            "mov %6, %%ecx\n\t"
+            "mov %7, %%edx\n\t"
+            "mov %8, %%esi\n\t"
+            "mov %9, %%edi\n\t"
+            "iret"
+            :: "r"(ss), "r"(context.esp),
+            "r"(cs), "r"(context.eip),
+            "m"(context.eax), "m"(context.ebx), "m"(context.ecx),
+            "m"(context.edx), "m"(context.esi), "m"(context.edi),
+            "r"(context.eflags)
+         : "eax");
+        break;
+  }
 
   die("unreachable");
   // Never get here.
