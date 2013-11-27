@@ -45,7 +45,8 @@ void expect_page_fault(uint32_t address, uint32_t error,
 
 // Interrupt handler just for the tests.  It allows us to expect page faults
 // and catch them for tests.
-void test_page_fault_handler(uint32_t interrupt, uint32_t error) {
+void test_page_fault_handler(uint32_t interrupt, uint32_t error, int is_user) {
+  KASSERT(!is_user);
   KASSERT(interrupt == 0x0E);
 
   uint32_t address;

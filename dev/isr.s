@@ -99,6 +99,9 @@ int_common_handler:
   mov 0x10(%ebp), %eax
   mov %eax, 0x4(%ebp)
 
+  # Copy the %ebp as a funtion arg.
+  push %ebp
+
   # Copy the error code pushed for us onto the top of the stack as a function arg.
   mov 0xc(%ebp), %eax
   push %eax
@@ -109,7 +112,7 @@ int_common_handler:
 
   call int_handler
 
-  add $8, %esp  # pop interrupt and error numbers
+  add $0xc, %esp  # pop int_handler args
 
   pop %gs
   pop %fs

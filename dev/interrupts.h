@@ -50,7 +50,7 @@ static inline void restore_interrupts(uint32_t saved);
 // the interrupt number (and error, if applicable), then clean up after it
 // returns.
 typedef void (*int_handler_t)(
-    uint32_t /* interrupt no. */, uint32_t /* error or 0 */);
+    uint32_t /* interrupt no. */, uint32_t /* error or 0 */, int /* is_user */);
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);
 
 // Structs for the IDT and its entries.

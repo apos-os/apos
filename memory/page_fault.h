@@ -24,6 +24,6 @@ void paging_init(memory_info_t* meminfo);
 
 // Interrupt handler for page faults.  Reads the address that caused the fault
 // from register CR2, and takes the error code given by the interrupt.
-void page_fault_handler(uint32_t interrupt, uint32_t error);
+void page_fault_handler(uint32_t interrupt, uint32_t error, int is_user);
 
 #endif
