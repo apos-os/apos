@@ -40,6 +40,7 @@ user_context_t syscall_extract_context(long retval) {
   context.edx = 0xABCD;
   context.esi = 0xABCD;
   context.edi = 0xABCD;
+  context.ebp = 0xABCD;
 
   KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
   KASSERT(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));

@@ -31,6 +31,7 @@ typedef struct {
   user_context_type_t type;
 
   uint32_t esp;
+  uint32_t ebp;
   uint32_t eip;
 
   uint32_t eax;

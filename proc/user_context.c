@@ -44,11 +44,13 @@ void user_context_apply(const user_context_t* context_ptr) {
             "mov %7, %%edx\n\t"
             "mov %8, %%esi\n\t"
             "mov %9, %%edi\n\t"
+            "mov %10, %%ebp\n\t"
             "lret"
             :: "r"(ss), "r"(context.esp),
             "r"(cs), "r"(context.eip),
             "m"(context.eax), "m"(context.ebx), "m"(context.ecx),
-            "m"(context.edx), "m"(context.esi), "m"(context.edi)
+            "m"(context.edx), "m"(context.esi), "m"(context.edi),
+            "m"(context.ebp)
          : "eax");
         break;
 
@@ -62,7 +64,7 @@ void user_context_apply(const user_context_t* context_ptr) {
             "mov %%ax, %%gs\n\t"
             "pushl %0\n\t"
             "pushl %1\n\t"
-            "pushl %10\n\t"
+            "pushl %11\n\t"
             "pushl %2\n\t"
             "pushl %3\n\t"
             "mov %4, %%eax\n\t"
@@ -71,12 +73,13 @@ void user_context_apply(const user_context_t* context_ptr) {
             "mov %7, %%edx\n\t"
             "mov %8, %%esi\n\t"
             "mov %9, %%edi\n\t"
+            "mov %10, %%ebp\n\t"
             "iret"
             :: "r"(ss), "r"(context.esp),
             "r"(cs), "r"(context.eip),
             "m"(context.eax), "m"(context.ebx), "m"(context.ecx),
             "m"(context.edx), "m"(context.esi), "m"(context.edi),
-            "r"(context.eflags)
+            "m"(context.ebp), "r"(context.eflags)
          : "eax");
         break;
   }
