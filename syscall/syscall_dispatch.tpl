@@ -65,6 +65,7 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     {% endfor -%}
 
     default:
+      proc_kill(proc_current()->id, SIGSYS);
       return -ENOTSUP;
   }
 }
