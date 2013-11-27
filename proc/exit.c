@@ -66,6 +66,9 @@ void proc_exit(int status) {
   p->state = PROC_ZOMBIE;
   p->thread = KTHREAD_NO_THREAD;
 
+  // Send SIGCHLD to the parent.
+  proc_kill(p->parent->id, SIGCHLD);
+
   // Wake up parent if it's wait()'ing.
   scheduler_wake_one(&p->parent->wait_queue);
 
