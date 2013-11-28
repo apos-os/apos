@@ -19,13 +19,22 @@ ENTRY (loader)
 /* NOTE: keep this in sync with the constant in paging.c */
 _OFFSET = 0xC0000000;
 
+/* Constants for the multiboot header */
+_MB_MAGIC = 0x1BADB002;
+_MB_FLAG_ALIGN = 0x1;
+_MB_FLAG_MEMINFO = 0x2;
+_MB_FLAGS = _MB_FLAG_ALIGN | _MB_FLAG_MEMINFO;
+_MB_CHECKSUM = -(_MB_MAGIC + _MB_FLAGS);
+
 SECTIONS
 {
     . = 0x00100000;
 
-    .multiboot_header :
+    .multiboot_header ALIGN(4) :
     {
-        load/multiboot.o
+        LONG(_MB_MAGIC)
+        LONG(_MB_FLAGS)
+        LONG(_MB_CHECKSUM)
     }
 
     .init-text ALIGN(0x1000) :
