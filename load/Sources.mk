@@ -15,11 +15,6 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  multiboot.s  \
-  loader.s  \
-  gdt.c  \
-  mem_init.c  \
   kernel_init.c  \
-  idt.c \
 
 $(eval $(END_SOURCES))

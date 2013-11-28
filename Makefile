@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+AR	= i586-elf-ar
 AS	= i586-elf-as
 ASFLAGS	= --gen-debug
 CC	= i586-elf-gcc
@@ -79,7 +80,7 @@ OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
 
 # Object files that are placed manually in the linker script.
 MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
-		       load/multiboot.o load/loader.o load/mem_init.o \
+		       load/loader.o load/mem_init.o \
 		       load/gdt.o load/idt.o \
 		       memory/gdt.PHYS.o)
 
@@ -129,10 +130,12 @@ $(BUILD_OUT)/%.o : $(BUILD_OUT)/%.c
 $(BUILD_OUT)/%.PHYS.o : %.c
 	$(mk-build-dir)
 	$(CC) $(CFLAGS) -D_MULTILINK_SUFFIX=_PHYS -o $@ -c $<
+
+$(BUILD_OUT)/libkernel_phys.a: $(MANUALLY_LINKED_OBJS)
+	$(AR) rcs $@ $^
  
-$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(MANUALLY_LINKED_OBJS) $(BUILD_DIR)/linker.ld
-	$(LD) -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ \
-	  $(filter-out %.ld $(MANUALLY_LINKED_OBJS), $^)
+$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(BUILD_OUT)/load/multiboot.o $(BUILD_OUT)/libkernel_phys.a $(BUILD_DIR)/linker.ld
+	$(LD)  -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ $(OBJFILES)
 
 $(BUILD_OUT)/kernel.bin.stripped: $(BUILD_OUT)/kernel.bin
 	strip -s $< -o $@

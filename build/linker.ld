@@ -19,9 +19,6 @@ ENTRY (loader)
 /* NOTE: keep this in sync with the constant in paging.c */
 _OFFSET = 0xC0000000;
 
-/*NOTE: keep the list of manually-placed object files in sync with the one in
- * the Makefile, to prevent duplicate symbols.
- */
 SECTIONS
 {
     . = 0x00100000;
@@ -33,11 +30,7 @@ SECTIONS
 
     .init-text ALIGN(0x1000) :
     {
-      load/loader.o(.text .rodata .data .bss)
-      load/mem_init.o(.text .rodata .data .bss)
-      load/gdt.o(.text .rodata .data .bss)
-      load/idt.o(.text .rodata .data .bss)
-      memory/gdt.PHYS.o(.text .rodata .data .bss)
+        libkernel_phys.a(.text .rodata .data .bss)
     }
 
     /* Load the main part of the kernel at VMA 0xC0000000. */
