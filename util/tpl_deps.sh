@@ -28,10 +28,6 @@ grep < $TPL_FILE -o "{%\s*\(import\|include\)\s*\"[^\"*]*\"" | \
   sed "s/.*\(import\|include\)\s*\"\([^\"]*\)\"/\2/g" \
   >> ${TMPFILE}
 
-grep < $TPL_FILE -o "^#include\s*\"[^\"]*\"" | \
-  sed "s/.*#include\s*\"\([^\"]*\)\"/\1/g" \
-  >> ${TMPFILE}
-
 DEPS=$(tr < $TMPFILE "\n" " ")
 rm $TMPFILE
 

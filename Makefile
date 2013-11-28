@@ -76,6 +76,7 @@ include Sources.mk
 
 C_SOURCES = $(filter %.c,$(SOURCES))
 ASM_SOURCES = $(filter %.s,$(SOURCES))
+TPL_SOURCES = $(filter %.tpl.c,$(SOURCES))
 OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
 
 # Object files that are placed manually in the linker script.
@@ -159,19 +160,25 @@ $(BUILD_OUT)/%.d : %.c
 	@$(CC) $(CFLAGS) -MM $< | \
 	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
 	  > $@
+$(BUILD_OUT)/%.d : $(BUILD_OUT)/%.c
+	@echo Generating dependency list for $<
+	$(mk-build-dir)
+	@$(CC) $(CFLAGS) -MM $< | \
+	  sed 's,^\($(notdir $*)\)\.o:,$(dir $@)\1.o $@ :,' \
+	  > $@
 $(BUILD_OUT)/%.m4.d : %.m4
 	@echo Generating dependency list for $<
 	$(mk-build-dir)
 	@$(M4_DEPS) $< | \
 	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ :,' \
 	  > $@
-$(BUILD_OUT)/%.tpl.d : %.tpl util/tpl_deps.sh
+$(BUILD_OUT)/%.d : %.tpl util/tpl_deps.sh
 	@echo Generating dependency list for $<
 	$(mk-build-dir)
 	@util/tpl_deps.sh $< | \
 	  sed 's,^\($<\):,$(dir $@)$(notdir $<).c $@ : $<,' \
 	  > $@
-DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES)) $(patsubst %,$(BUILD_OUT)/%.d,$(GENERATED))
+DEPSFILES = $(patsubst %.c,$(BUILD_OUT)/%.d,$(C_SOURCES)) $(patsubst %.tpl.c,$(BUILD_OUT)/%.d,$(TPL_SOURCES)) $(patsubst %,$(BUILD_OUT)/%.d,$(GENERATED))
 -include $(DEPSFILES)
 
 clean:
