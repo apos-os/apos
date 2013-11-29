@@ -42,5 +42,6 @@
 #define SYS_KILL 19
 #define SYS_SIGACTION 20
 #define SYS_SIGRETURN 21
+#define SYS_ALARM 22
 
 #endif

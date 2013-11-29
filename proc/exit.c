@@ -51,6 +51,9 @@ void proc_exit(int status) {
 
   // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
 
+  // Cancel any outstanding alarms.
+  proc_alarm(0);
+
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);
   list_link_t* child_link = list_pop(&p->children_list);

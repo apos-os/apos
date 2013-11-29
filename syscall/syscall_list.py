@@ -230,3 +230,8 @@ AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     'int', [
     'const sigset_t*:old_mask:br:sizeof(sigset_t)',
     'const user_context_t*:context:br:sizeof(user_context_t)'])
+
+AddSyscall('alarm', 22, 'proc_alarm', 'proc/alarm.h',
+    'user/signal.h',
+    'unsigned int', [
+    'unsigned int:seconds:u'])
