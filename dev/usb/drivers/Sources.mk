@@ -15,8 +15,6 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  pci.c \
-  piix.c \
-  usb_uhci.c \
+  drivers.c \
 
 $(eval $(END_SOURCES))

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 // A very basic kernel-mode shell.  Currently just for testing ld I/O.
+#include "main/kshell.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,9 @@
 #include "dev/char_dev.h"
 #include "dev/dev.h"
 #include "dev/timer.h"
+#include "dev/usb/hcd.h"
+#include "dev/usb/usb.h"
+#include "dev/usb/uhci/uhci_cmd.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
 #include "proc/exec.h"
@@ -48,7 +52,7 @@
 
 static apos_dev_t g_tty;
 
-static void ksh_printf(const char* fmt, ...) {
+void ksh_printf(const char* fmt, ...) {
   char buf[1024];
 
   va_list args;
@@ -669,6 +673,8 @@ static cmd_t CMDS[] = {
   { "cp", &cp_cmd },
 
   { "hash_file", &hash_file_cmd },
+
+  { "uhci", &uhci_cmd },
 
   { "bcstats", &bcstats_cmd },
 

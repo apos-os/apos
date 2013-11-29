@@ -37,6 +37,8 @@
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "dev/tty.h"
+#include "dev/usb/usb.h"
+#include "main/kshell.h"
 #include "proc/scheduler.h"
 #include "vfs/vfs.h"
 #include "syscall/init.h"
@@ -46,7 +48,6 @@
 #define LD_BUF_SIZE 1024
 
 void pic_init(void);
-void kshell_main(apos_dev_t tty);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
@@ -96,8 +97,6 @@ void kmain(memory_info_t* meminfo) {
   interrupts_init();
   klog("pic_init()\n");
   pic_init();
-  klog("ps2_init()\n");
-  ps2_init();
 
   enable_interrupts();
 
@@ -114,10 +113,13 @@ void kmain(memory_info_t* meminfo) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
-  io_init();
-
   klog("pci_init()\n");
   pci_init();
+
+  klog("ps2_init()\n");
+  ps2_init();
+
+  io_init();
 
   klog("ata_init()\n");
   ata_init();
@@ -132,6 +134,9 @@ void kmain(memory_info_t* meminfo) {
   scheduler_init();
   klog("proc_init_stage2()\n");
   proc_init_stage2();
+
+  klog("usb_init()\n");
+  usb_init();
 
   klog("vfs_init()\n");
   vfs_init();

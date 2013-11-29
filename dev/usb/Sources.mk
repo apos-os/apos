@@ -15,8 +15,14 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  pci.c \
-  piix.c \
-  usb_uhci.c \
+  bus.c \
+  usb.c \
+  usb_driver.c \
+  request.c \
+  descriptor.c \
+
+LOCAL_SUBDIRS := uhci drivers
+
+$(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 
 $(eval $(END_SOURCES))

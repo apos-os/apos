@@ -15,8 +15,8 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  pci.c \
-  piix.c \
-  usb_uhci.c \
+  uhci.c \
+  uhci_cmd.c \
+  uhci_hub.c \
 
 $(eval $(END_SOURCES))

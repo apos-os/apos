@@ -26,7 +26,7 @@ LOCAL_SOURCES := \
   ld.c \
   tty.c \
 
-LOCAL_SUBDIRS := keyboard video pci ata ramdisk
+LOCAL_SUBDIRS := keyboard video pci ata ramdisk usb
 
 $(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 

@@ -20,6 +20,7 @@
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
+#include "dev/pci/usb_uhci.h"
 #include "memory/kmalloc.h"
 
 // IO ports for manipulating the PCI bus.
@@ -44,17 +45,35 @@ static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
 
 // Static table of drivers.
+#define PCI_DRIVER_VENDOR 1
+#define PCI_DRIVER_CLASS 2
 struct pci_driver {
+  // Determines how the driver is matched.  Should be either PCI_DRIVER_VENDOR
+  // (meaning device_id and vendor_id are checked), or PCI_DRIVER_CLASS (meaning
+  // class_code, subclass_code and prog_if are checked).
+  int type;
+
   uint16_t device_id;
   uint16_t vendor_id;
+
+  uint8_t class_code;
+  uint8_t subclass_code;
+  uint8_t prog_if;
+
   void (*driver)(pci_device_t*);
 };
 typedef struct pci_driver pci_driver_t;
 
 static pci_driver_t PCI_DRIVERS[] = {
-  { 0x7000, 0x8086, &pci_piix_driver_init },  // PCI <-> ISA controller
-  { 0x7010, 0x8086, &pci_piix_driver_init },  // PCI <-> IDE controller
-  { 0xFFFF, 0xFFFF, 0x0 },
+  // PCI <-> ISA controller
+  { PCI_DRIVER_VENDOR, 0x7000, 0x8086, 0, 0, 0, &pci_piix_driver_init },
+  // PCI <-> IDE controller
+  { PCI_DRIVER_VENDOR, 0x7010, 0x8086, 0, 0, 0, &pci_piix_driver_init },
+
+  // UHCI USB Host Controller.
+  { PCI_DRIVER_CLASS, 0x0, 0x0, 0x0C, 0x03, 0x00, &usb_uhci_pci_init },
+
+  { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},
 };
 
 static inline uint32_t make_cmd(uint8_t bus, uint8_t device,
@@ -135,12 +154,12 @@ void pci_write_status(pci_device_t* pcidev) {
 
 static void pci_print_device(pci_device_t* pcidev) {
   klogf("    %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
-        "  type: (0x%x, 0x%x, 0x%x)  intr: %d\n",
+        "  type: (0x%x, 0x%x, 0x%x)  intr: %d (pin %d)\n",
         (uint32_t)pcidev->bus, (uint32_t)pcidev->device,
         (uint32_t)pcidev->function, (uint32_t)pcidev->device_id,
         (uint32_t)pcidev->vendor_id, (uint32_t)pcidev->class_code,
         (uint32_t)pcidev->subclass_code, (uint32_t)pcidev->prog_if,
-        (uint32_t)pcidev->interrupt_line);
+        (uint32_t)pcidev->interrupt_line, (uint32_t)pcidev->interrupt_pin);
 }
 
 static void pci_add_device(pci_device_t* pcidev) {
@@ -193,11 +212,28 @@ void pci_init() {
   for (int i = 0; i < g_pci_count; ++i) {
     pci_driver_t* driver = &PCI_DRIVERS[0];
     while (driver->vendor_id != 0xFFFF) {
-      if (driver->vendor_id == g_pci_devices[i].vendor_id &&
+      if (driver->type == PCI_DRIVER_VENDOR &&
+          driver->vendor_id == g_pci_devices[i].vendor_id &&
           driver->device_id == g_pci_devices[i].device_id) {
+        driver->driver(&g_pci_devices[i]);
+      } else if (driver->type == PCI_DRIVER_CLASS &&
+                 driver->class_code == g_pci_devices[i].class_code &&
+                 driver->subclass_code == g_pci_devices[i].subclass_code &&
+                 driver->prog_if == g_pci_devices[i].prog_if) {
         driver->driver(&g_pci_devices[i]);
       }
       driver++;
     }
   }
+}
+
+uint32_t pci_read_register(pci_device_t* pcidev, uint8_t reg_offset) {
+  return pci_read_config(pcidev->bus, pcidev->device, pcidev->function,
+                         reg_offset);
+}
+
+void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
+                        uint32_t value) {
+  return pci_write_config(pcidev->bus, pcidev->device, pcidev->function,
+                          reg_offset, value);
 }
