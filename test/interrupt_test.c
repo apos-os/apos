@@ -37,7 +37,7 @@ void interrupt_clobber_test(void) {
       "movl %9, %%edx\n\t"
       "movl %10, %%esi\n\t"
       "movl %11, %%edi\n\t"
-      "int $0\n\t"
+      "int $3\n\t"
       "movl %%eax, %0\n\t"
       "movl %%ebx, %1\n\t"
       "movl %%ecx, %2\n\t"
