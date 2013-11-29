@@ -36,7 +36,7 @@ typedef enum {
 } proc_state_t;
 
 // Note: any fields added here (and potentially in kthread_t) must be properly
-// handled in fork() and execve().
+// handled in fork(), execve(), and exit().
 struct process {
   pid_t id;  // Index into global process table.
   proc_state_t state;
@@ -62,6 +62,14 @@ struct process {
 
   // Pending alarm, if any.
   proc_alarm_t alarm;
+
+  // Real, effective, and saved uid and gid.
+  uid_t ruid;
+  gid_t rgid;
+  uid_t euid;
+  gid_t egid;
+  uid_t suid;
+  gid_t sgid;
 
   // Parent process.
   process_t* parent;
