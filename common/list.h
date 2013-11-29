@@ -60,6 +60,9 @@ typedef struct {
 extern const list_link_t LIST_LINK_INIT;
 extern const list_t LIST_INIT;
 
+// Static initializer for list_t for statically initializing global variables.
+#define LIST_INIT_STATIC {0x0, 0x0}
+
 // Push a new link onto the back of the given list.
 void list_push(list_t* list, list_link_t* link);
 
