@@ -29,7 +29,7 @@ int ksleep(int ms) {
   // This isn't the most efficient way of doing things, but meh.
   kthread_queue_t* q = (kthread_queue_t*)kmalloc(sizeof(kthread_queue_t));
 
-  int result = register_timer_callback(ms, 1, &ksleep_cb, q);
+  int result = register_event_timer(get_time_ms() + ms, &ksleep_cb, q, 0x0);
   if (result < 0) {
     kfree(q);
     return result;

@@ -333,8 +333,8 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
                   kmalloc(sizeof(uhci_port_reset_done_arg_t));
               arg->hub = hub;
               arg->port = port;
-              register_timer_callback(UHCI_PORT_RESET_MS, 1,
-                                      &uhci_port_reset_done, arg);
+              register_event_timer(get_time_ms() + UHCI_PORT_RESET_MS,
+                                   &uhci_port_reset_done, arg, 0x0);
             }
             break;
 
@@ -794,8 +794,8 @@ void uhci_check_sc_timer(void* arg) {
     args->irp->callback(args->irp, args->irp->callback_arg);
   } else {
     // "NACK" the packet and schedule a timer to run in 250ms to check again.
-    register_timer_callback(UHCI_HUB_STATUS_CHANGE_INTERVAL, 1,
-                            &uhci_check_sc_timer, args);
+    register_event_timer(get_time_ms() + UHCI_HUB_STATUS_CHANGE_INTERVAL,
+                         &uhci_check_sc_timer, args, 0x0);
   }
 }
 
@@ -804,8 +804,8 @@ static int handle_sc_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
       kmalloc(sizeof(uhci_check_sc_timer_args_t));
   args->hub = hub;
   args->irp = irp;
-  register_timer_callback(UHCI_HUB_STATUS_CHANGE_INTERVAL, 1,
-                          &uhci_check_sc_timer, args);
+  register_event_timer(get_time_ms() + UHCI_HUB_STATUS_CHANGE_INTERVAL,
+                       &uhci_check_sc_timer, args, 0x0);
   return 0;
 }
 

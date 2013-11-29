@@ -32,4 +32,11 @@
      typeof (b) _b = (b); \
     (_a % _b) ? _a / _b + 1 : _a / _b; })
 
+// Does integer division of a by b, but rounds to the nearest quotient instead
+// of truncating.
+#define round_nearest_div(a, b) \
+ ({ typeof (a) _a = (a); \
+     typeof (b) _b = (b); \
+    (_a + (_b / 2)) / _b; })
+
 #endif

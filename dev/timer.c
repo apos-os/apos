@@ -14,12 +14,18 @@
 
 #include <stdint.h>
 
+#include "common/debug.h"
 #include "common/errno.h"
 #include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/list.h"
 #include "dev/irq.h"
+#include "dev/interrupts.h"
 #include "dev/timer.h"
+#include "memory/kmalloc.h"
+
+// TODO(aoates): clean this up and unify the one-shot and recurring timers.
 
 typedef struct {
   uint32_t counter;
@@ -39,6 +45,27 @@ static timer_t timers[KMAX_TIMERS];
 static uint32_t num_timers = 0;
 static uint32_t time_ms = 0;  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
+
+#if ENABLE_KERNEL_SAFETY_NETS
+// Magic number in event_timer_t to indicate that it's valid.
+const int kEventTimerValidMagic = 0x52187AB;
+#endif
+
+// For the event timers, we're allowed to used kmalloc(), so a true linked list
+// of timers.
+typedef struct {
+  uint32_t deadline_ms;
+  timer_handler_t handler;
+  void* handler_arg;
+
+  list_link_t link;
+
+#if ENABLE_KERNEL_SAFETY_NETS
+  int valid_magic;
+#endif
+} event_timer_t;
+
+static list_t event_timers = LIST_INIT_STATIC;
 
 static void internal_timer_handler(void* arg) {
   time_ms += KTIMESLICE_MS;
@@ -67,6 +94,19 @@ static void internal_timer_handler(void* arg) {
 
     timers[idx].counter--;
     idx = timers[idx].next;
+  }
+
+  // Handle any pending event timers.
+  while (!list_empty(&event_timers)) {
+    event_timer_t* timer = container_of(event_timers.head, event_timer_t, link);
+    if (timer->deadline_ms > time_ms) break;
+
+    list_pop(&event_timers);
+    timer->handler(timer->handler_arg);
+#if ENABLE_KERNEL_SAFETY_NETS
+    timer->valid_magic = 0;
+#endif
+    kfree(timer);
   }
 }
 
@@ -123,6 +163,55 @@ int register_timer_callback(uint32_t period, int limit,
   timers[idx].handler_arg = arg;
   timers[idx].limit = limit;
   return 0;
+}
+
+int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg,
+                         timer_handle_t* handle) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  event_timer_t* timer = (event_timer_t*)kmalloc(sizeof(event_timer_t));
+  timer->deadline_ms = deadline_ms;
+  timer->handler = cb;
+  timer->handler_arg = arg;
+  timer->link = LIST_LINK_INIT;
+#if ENABLE_KERNEL_SAFETY_NETS
+  timer->valid_magic = kEventTimerValidMagic;
+#endif
+
+  // Insert the timer in its spot in the priority queue.
+  list_link_t* prev = 0x0;
+  for (list_link_t* link = event_timers.head; link != 0x0;
+       link = link->next) {
+    event_timer_t* timer = container_of(link, event_timer_t, link);
+    if (timer->deadline_ms >= deadline_ms) break;
+    prev = link;
+  }
+
+  list_insert(&event_timers, prev, &timer->link);
+
+  if (handle) {
+    *handle = timer;
+  }
+
+  POP_INTERRUPTS();
+  return 0;
+}
+
+void cancel_event_timer(timer_handle_t handle) {
+  event_timer_t* timer = (event_timer_t*)handle;
+#if ENABLE_KERNEL_SAFETY_NETS
+  KASSERT(timer->valid_magic == kEventTimerValidMagic);
+#endif
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  list_remove(&event_timers, &timer->link);
+#if ENABLE_KERNEL_SAFETY_NETS
+  timer->valid_magic = 0;
+#endif
+  kfree(timer);
+
+  POP_INTERRUPTS();
 }
 
 uint32_t get_time_ms() {
