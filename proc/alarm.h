@@ -17,15 +17,12 @@
 
 #include <stdint.h>
 
-#include "common/list.h"
+#include "dev/timer.h"
 
 // An alarm in a process.  Each process has exactly one alarm.
 typedef struct {
-  // The deadline of the alarm.
   uint32_t deadline_ms;
-
-  // The link on the alarm list.
-  list_link_t link;
+  timer_handle_t timer;
 } proc_alarm_t;
 
 // Initialize an alarm in a process.
