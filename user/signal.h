@@ -24,6 +24,8 @@ int kill(pid_t pid, int sig);
 int sigaction(int signum, const struct sigaction* act,
               struct sigaction* oldact);
 
+unsigned int alarm(unsigned int seconds);
+
 // TODO(aoates): set errno in these once it's available.
 static inline int sigemptyset(sigset_t* set) {
   *set = 0;

@@ -15,6 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  alarm.c \
   exec.c \
   exit.c \
   fork.c \

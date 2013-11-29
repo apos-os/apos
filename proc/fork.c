@@ -68,6 +68,8 @@ int proc_fork(proc_func_t start, void* arg) {
         proc_current()->signal_dispositions[signo];
   }
 
+  // Don't duplicate the alarm; pending alarms are cleared in the child.
+
   // Create the kthread.
   proc_start_args_t* trampoline_args =
       (proc_start_args_t*)kmalloc(sizeof(proc_start_args_t));

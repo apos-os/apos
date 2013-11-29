@@ -17,6 +17,7 @@
 #define APOO_PROCESS_H
 
 #include "common/list.h"
+#include "proc/alarm.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/signal/signal.h"
@@ -58,6 +59,9 @@ struct process {
 
   // Current signal dispositions.
   sigaction_t signal_dispositions[SIGMAX + 1];
+
+  // Pending alarm, if any.
+  proc_alarm_t alarm;
 
   // Parent process.
   process_t* parent;
