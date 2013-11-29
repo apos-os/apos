@@ -70,6 +70,14 @@ int proc_fork(proc_func_t start, void* arg) {
 
   // Don't duplicate the alarm; pending alarms are cleared in the child.
 
+  // Propagate identity.
+  new_process->ruid = proc_current()->ruid;
+  new_process->rgid = proc_current()->rgid;
+  new_process->euid = proc_current()->euid;
+  new_process->egid = proc_current()->egid;
+  new_process->suid = proc_current()->suid;
+  new_process->sgid = proc_current()->sgid;
+
   // Create the kthread.
   proc_start_args_t* trampoline_args =
       (proc_start_args_t*)kmalloc(sizeof(proc_start_args_t));
