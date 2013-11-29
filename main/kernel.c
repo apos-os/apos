@@ -59,10 +59,11 @@ static void tick(void* arg) {
   i = (i + 1) % 2;
 
   video_setc(g_video, 0, video_get_width(g_video)-1, beat[i]);
+  KASSERT(0 == register_event_timer(get_time_ms() + 1000, &tick, 0x0, 0x0));
 }
 
 static void add_timers(void) {
-  KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
+  KASSERT(0 == register_event_timer(get_time_ms() + 1000, &tick, 0x0, 0x0));
 }
 
 static void io_init(void) {
