@@ -41,6 +41,15 @@ typedef void (*timer_handler_t)(void*);
 int register_timer_callback(uint32_t period_ms, int limit,
                             timer_handler_t cb, void* arg);
 
+// Register a one-shot time that calls the given handler at the given deadline
+// (as determined by get_time_ms()).
+//
+// Prefer this to registering a one-shot timer with register_timer_callback, as
+// there can be an unbounded number of one-shot events.
+//
+// REQUIRES: kmalloc_init()
+int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg);
+
 // Return the approximate time since timer initialization, in ms.
 uint32_t get_time_ms(void);
 

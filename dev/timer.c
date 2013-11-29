@@ -18,8 +18,13 @@
 #include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/list.h"
 #include "dev/irq.h"
+#include "dev/interrupts.h"
 #include "dev/timer.h"
+#include "memory/kmalloc.h"
+
+// TODO(aoates): clean this up and unify the one-shot and recurring timers.
 
 typedef struct {
   uint32_t counter;
@@ -39,6 +44,18 @@ static timer_t timers[KMAX_TIMERS];
 static uint32_t num_timers = 0;
 static uint32_t time_ms = 0;  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
+
+// For the event timers, we're allowed to used kmalloc(), so a true linked list
+// of timers.
+typedef struct {
+  uint32_t deadline_ms;
+  timer_handler_t handler;
+  void* handler_arg;
+
+  list_link_t link;
+} event_timer_t;
+
+static list_t event_timers = LIST_INIT_STATIC;
 
 static void internal_timer_handler(void* arg) {
   time_ms += KTIMESLICE_MS;
@@ -67,6 +84,16 @@ static void internal_timer_handler(void* arg) {
 
     timers[idx].counter--;
     idx = timers[idx].next;
+  }
+
+  // Handle any pending event timers.
+  while (!list_empty(&event_timers)) {
+    event_timer_t* timer = container_of(event_timers.head, event_timer_t, link);
+    if (timer->deadline_ms > time_ms) break;
+
+    list_pop(&event_timers);
+    timer->handler(timer->handler_arg);
+    kfree(timer);
   }
 }
 
@@ -122,6 +149,30 @@ int register_timer_callback(uint32_t period, int limit,
   timers[idx].handler = cb;
   timers[idx].handler_arg = arg;
   timers[idx].limit = limit;
+  return 0;
+}
+
+int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  event_timer_t* timer = (event_timer_t*)kmalloc(sizeof(event_timer_t));
+  timer->deadline_ms = deadline_ms;
+  timer->handler = cb;
+  timer->handler_arg = arg;
+  timer->link = LIST_LINK_INIT;
+
+  // Insert the timer in its spot in the priority queue.
+  list_link_t* prev = 0x0;
+  for (list_link_t* link = event_timers.head; link != 0x0;
+       link = link->next) {
+    event_timer_t* timer = container_of(link, event_timer_t, link);
+    if (timer->deadline_ms >= deadline_ms) break;
+    prev = link;
+  }
+
+  list_insert(&event_timers, prev, &timer->link);
+
+  POP_INTERRUPTS();
   return 0;
 }
 
