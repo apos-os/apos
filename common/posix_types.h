@@ -19,6 +19,10 @@
 // Process ID.
 typedef int pid_t;
 
+// User and group IDs.
+typedef int uid_t;
+typedef int gid_t;
+
 typedef int blksize_t;
 typedef int blkcnt_t;
 
