@@ -15,6 +15,7 @@
 #include "proc/alarm.h"
 
 #include "common/kassert.h"
+#include "common/math.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/process.h"
@@ -50,7 +51,8 @@ unsigned int proc_alarm(unsigned int seconds) {
   // If there's already an alarm, cancel it.
   if (proc->alarm.timer != TIMER_HANDLE_NONE) {
     KASSERT_DBG(proc->alarm.deadline_ms >= ctime);
-    old_remaining = (proc->alarm.deadline_ms - ctime) / 1000;
+    old_remaining = round_nearest_div(proc->alarm.deadline_ms - ctime, 1000);
+    old_remaining = max(old_remaining, 1U);
 
     cancel_event_timer(proc->alarm.timer);
     proc->alarm.timer = TIMER_HANDLE_NONE;
