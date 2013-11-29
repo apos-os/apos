@@ -41,6 +41,7 @@ LOCAL_SOURCES := \
   ramfs_test.c \
   signal_test.c \
   slab_alloc_test.c \
+  user_test.c \
   vm_test.c \
   vfs_test.c \
 
