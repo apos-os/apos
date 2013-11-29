@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/debug.h"
 #include "common/errno.h"
 #include "common/io.h"
 #include "common/kassert.h"
@@ -45,6 +46,11 @@ static uint32_t num_timers = 0;
 static uint32_t time_ms = 0;  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
 
+#if ENABLE_KERNEL_SAFETY_NETS
+// Magic number in event_timer_t to indicate that it's valid.
+const int kEventTimerValidMagic = 0x52187AB;
+#endif
+
 // For the event timers, we're allowed to used kmalloc(), so a true linked list
 // of timers.
 typedef struct {
@@ -53,6 +59,10 @@ typedef struct {
   void* handler_arg;
 
   list_link_t link;
+
+#if ENABLE_KERNEL_SAFETY_NETS
+  int valid_magic;
+#endif
 } event_timer_t;
 
 static list_t event_timers = LIST_INIT_STATIC;
@@ -93,6 +103,9 @@ static void internal_timer_handler(void* arg) {
 
     list_pop(&event_timers);
     timer->handler(timer->handler_arg);
+#if ENABLE_KERNEL_SAFETY_NETS
+    timer->valid_magic = 0;
+#endif
     kfree(timer);
   }
 }
@@ -152,7 +165,8 @@ int register_timer_callback(uint32_t period, int limit,
   return 0;
 }
 
-int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg) {
+int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg,
+                         timer_handle_t* handle) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
   event_timer_t* timer = (event_timer_t*)kmalloc(sizeof(event_timer_t));
@@ -160,6 +174,9 @@ int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg) {
   timer->handler = cb;
   timer->handler_arg = arg;
   timer->link = LIST_LINK_INIT;
+#if ENABLE_KERNEL_SAFETY_NETS
+  timer->valid_magic = kEventTimerValidMagic;
+#endif
 
   // Insert the timer in its spot in the priority queue.
   list_link_t* prev = 0x0;
@@ -172,8 +189,29 @@ int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg) {
 
   list_insert(&event_timers, prev, &timer->link);
 
+  if (handle) {
+    *handle = timer;
+  }
+
   POP_INTERRUPTS();
   return 0;
+}
+
+void cancel_event_timer(timer_handle_t handle) {
+  event_timer_t* timer = (event_timer_t*)handle;
+#if ENABLE_KERNEL_SAFETY_NETS
+  KASSERT(timer->valid_magic == kEventTimerValidMagic);
+#endif
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+
+  list_remove(&event_timers, &timer->link);
+#if ENABLE_KERNEL_SAFETY_NETS
+  timer->valid_magic = 0;
+#endif
+  kfree(timer);
+
+  POP_INTERRUPTS();
 }
 
 uint32_t get_time_ms() {

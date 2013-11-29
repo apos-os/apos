@@ -26,6 +26,9 @@ void timer_init(void);
 
 typedef void (*timer_handler_t)(void*);
 
+typedef void* timer_handle_t;
+#define TIMER_HANDLE_NONE 0x0
+
 // Register a function to be called every X ms, where X must be an even multiple
 // of the timeslice size.  Returns 0 on success, or -errno on error.
 //
@@ -47,8 +50,21 @@ int register_timer_callback(uint32_t period_ms, int limit,
 // Prefer this to registering a one-shot timer with register_timer_callback, as
 // there can be an unbounded number of one-shot events.
 //
+// If |handle| is non-NULL, it will be set to a handle that can be used to
+// cancel the timer before it fires.
+//
 // REQUIRES: kmalloc_init()
-int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg);
+int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg,
+                         timer_handle_t* handle);
+
+// Cancel a timer created with register_event_timer.
+//
+// NOTE: The timer must not have fired already.  This means the general usage
+// model should be,
+//   PUSH_AND_DISABLE_INTERRUPTS();
+//   if (!timer_fired) cancel_event_timer(handle);
+//   POP_INTERRUPTS()
+void cancel_event_timer(timer_handle_t handle);
 
 // Return the approximate time since timer initialization, in ms.
 uint32_t get_time_ms(void);
