@@ -41,6 +41,9 @@ typedef void* timer_handle_t;
 // NOTE 2: there are a limited number of timers that can be installed
 // (KMAX_TIMERS).  register_timer_callback will return -ENOMEM if you've
 // exceeded this limit.
+//
+// TODO(aoates): convert remaining users of this to use register_event_timer()
+// instead.
 int register_timer_callback(uint32_t period_ms, int limit,
                             timer_handler_t cb, void* arg);
 
