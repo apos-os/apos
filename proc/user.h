@@ -16,8 +16,24 @@
 #ifndef APOO_PROC_USER_H
 #define APOO_PROC_USER_H
 
+#include "common/posix_types.h"
+
 // The uid and gid of the superuser.
 #define SUPERUSER_UID 0
 #define SUPERUSER_GID 0
+
+// Change the current user ID.  If the superuser, changes the real, effective,
+// and saved uids.  Otherwise, changes the effective uid to either the real or
+// saved uids.
+//
+// Returns 0 on success, or -errno on error.
+int setuid(uid_t uid);
+
+// Set the current group ID, as per setuid().
+int setgid(gid_t gid);
+
+// Return the current real user and group IDs.
+uid_t getuid(void);
+gid_t getgid(void);
 
 #endif
