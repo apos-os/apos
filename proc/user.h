@@ -36,4 +36,13 @@ int setgid(gid_t gid);
 uid_t getuid(void);
 gid_t getgid(void);
 
+// Set the effective user or group ID.  If the user is not the superuser, the
+// new uid/gid must be the real or saved uid/gid.
+int seteuid(uid_t uid);
+int setegid(gid_t gid);
+
+// Return the current effective user and group IDs.
+uid_t geteuid(void);
+gid_t getegid(void);
+
 #endif

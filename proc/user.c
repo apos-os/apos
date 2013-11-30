@@ -57,3 +57,31 @@ uid_t getuid(void) {
 gid_t getgid(void) {
   return proc_current()->rgid;
 }
+
+int seteuid(uid_t uid) {
+  if (is_super() || uid == proc_current()->ruid ||
+      uid == proc_current()->suid) {
+    proc_current()->euid = uid;
+    return 0;
+  } else {
+    return -EPERM;
+  }
+}
+
+int setegid(gid_t gid) {
+  if (is_super() || gid == proc_current()->rgid ||
+      gid == proc_current()->sgid) {
+    proc_current()->egid = gid;
+    return 0;
+  } else {
+    return -EPERM;
+  }
+}
+
+uid_t geteuid(void) {
+  return proc_current()->euid;
+}
+
+gid_t getegid(void) {
+  return proc_current()->egid;
+}
