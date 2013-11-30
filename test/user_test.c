@@ -407,4 +407,14 @@ void user_test(void) {
   setuid_test();
   seteuid_test();
   setreuid_test();
+
+  // Make sure the tests cleaned up after themselves.
+  KTEST_BEGIN("User test cleanup verification");
+  KEXPECT_EQ(SUPERUSER_UID, proc_current()->ruid);
+  KEXPECT_EQ(SUPERUSER_UID, proc_current()->euid);
+  KEXPECT_EQ(SUPERUSER_UID, proc_current()->suid);
+
+  KEXPECT_EQ(SUPERUSER_GID, proc_current()->rgid);
+  KEXPECT_EQ(SUPERUSER_GID, proc_current()->egid);
+  KEXPECT_EQ(SUPERUSER_GID, proc_current()->sgid);
 }
