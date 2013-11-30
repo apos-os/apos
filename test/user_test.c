@@ -43,6 +43,16 @@ static void root_test(void) {
   KEXPECT_EQ(SUPERUSER_GID, proc_current()->sgid);
 }
 
+static void fork_test_func2(void* arg) {
+  KEXPECT_EQ(kTestUserA, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserC, proc_current()->suid);
+
+  KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupC, proc_current()->sgid);
+}
+
 static void fork_test_func(void* arg) {
   KEXPECT_EQ(SUPERUSER_UID, proc_current()->ruid);
   KEXPECT_EQ(SUPERUSER_UID, proc_current()->euid);
@@ -51,6 +61,19 @@ static void fork_test_func(void* arg) {
   KEXPECT_EQ(SUPERUSER_GID, proc_current()->rgid);
   KEXPECT_EQ(SUPERUSER_GID, proc_current()->egid);
   KEXPECT_EQ(SUPERUSER_GID, proc_current()->sgid);
+
+  proc_current()->ruid = kTestUserA;
+  proc_current()->euid = kTestUserB;
+  proc_current()->suid = kTestUserC;
+
+  proc_current()->rgid = kTestGroupA;
+  proc_current()->egid = kTestGroupB;
+  proc_current()->sgid = kTestGroupC;
+
+  pid_t child_pid = proc_fork(&fork_test_func2, 0x0);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_wait(0x0);
 }
 
 static void fork_test(void) {
@@ -224,9 +247,6 @@ static void seteuid_test(void) {
 
   proc_wait(0x0);
 }
-
-// TODO(aoates): test that the various identity bits are copied correctly (with
-// different values for each)
 
 void user_test(void) {
   KTEST_SUITE_BEGIN("kthread_test");
