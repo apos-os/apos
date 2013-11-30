@@ -45,4 +45,8 @@ int setegid(gid_t gid);
 uid_t geteuid(void);
 gid_t getegid(void);
 
+// Set the real and effective user/group IDs, if allowed.
+int setreuid(uid_t ruid, uid_t euid);
+int setregid(gid_t rgid, gid_t egid);
+
 #endif
