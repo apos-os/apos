@@ -146,6 +146,10 @@ static void basic_test(void) {
   kfree(x2);
   kfree(x4);
   kfree(x5);
+
+  KTEST_BEGIN("kmalloc malloc OOM");
+  KEXPECT_EQ((void*)0x0, kmalloc(HEAP_SIZE + 10));
+
   verify_list(list_root);
 
   // Make sure it's all merged together.

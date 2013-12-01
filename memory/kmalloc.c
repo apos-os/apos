@@ -164,6 +164,7 @@ void* kmalloc(uint32_t n) {
   }
 
   if (!cblock || cblock->length < n) {
+    POP_INTERRUPTS();
     return 0;
   }
 
