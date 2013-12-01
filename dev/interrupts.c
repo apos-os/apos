@@ -244,3 +244,8 @@ void enable_interrupts() {
 void disable_interrupts() {
   asm volatile("cli");
 }
+
+void _interrupts_unpopped_die(void) {
+  die("Interrupt state saved with PUSH_AND_DISABLE_INTERRUPTS(), but "
+      "not popped before returning!");
+}

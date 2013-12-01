@@ -32,9 +32,35 @@ static inline uint32_t save_and_disable_interrupts(void);
 // save_and_disable_interrupts).
 static inline void restore_interrupts(uint32_t saved);
 
+// Return the current IF flag state (as per save_and_disable_interrupts).
+static inline uint32_t get_interrupts_state(void);
+
+#if ENABLE_KERNEL_SAFETY_NETS
+// If safety nets are enabled, verify that interrupts are popped properly after
+// every PUSH_AND_DISABLE_INTERRUPTS.  This catches things like early returns
+// that don't call POP_INTERRUPTS() when they should.
+void _interrupts_unpopped_die(void);
+static inline void _interrupts_cleanup_verify(uint32_t* saved) {
+  if (*saved != get_interrupts_state()) {
+    _interrupts_unpopped_die();
+  }
+}
+#endif  // ENABLE_KERNEL_SAFETY_NETS
+
 // Macros to use the functions above (and ensure they're called in pairs).
+#if ENABLE_KERNEL_SAFETY_NETS
+
+#define PUSH_AND_DISABLE_INTERRUPTS() \
+    uint32_t _SAVED_INTERRUPTS \
+      __attribute__((cleanup(_interrupts_cleanup_verify))) = \
+      save_and_disable_interrupts()
+
+#else  // ENABLE_KERNEL_SAFETY_NETS
+
 #define PUSH_AND_DISABLE_INTERRUPTS() \
     uint32_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
+
+#endif  // ENABLE_KERNEL_SAFETY_NETS
 
 #define POP_INTERRUPTS() \
     restore_interrupts(_SAVED_INTERRUPTS);
@@ -77,6 +103,15 @@ typedef struct {
 #define IDT_SELECTOR_VALUE 0x08
 
 // Inline definitions.
+
+static inline uint32_t get_interrupts_state(void) {
+  uint32_t saved_flags;
+  asm volatile (
+      "pushf\n\t"
+      "pop %0\n\t"
+      : "=r"(saved_flags));
+  return saved_flags & IF_FLAG;
+}
 
 static inline uint32_t save_and_disable_interrupts() {
   uint32_t saved_flags;
