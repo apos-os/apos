@@ -28,11 +28,15 @@
 #include "memory/vm_area.h"
 #include "proc/process.h"
 
+static int g_initialized = 0;
+
 // Global block list.
 static block_t* g_block_list = 0;
 
 // Root process vm_area_t for the heap.
 static vm_area_t g_root_heap_vm_area;
+
+static int g_test_mode = 0;
 
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
@@ -46,20 +50,25 @@ void kmalloc_init() {
   const memory_info_t* meminfo = get_global_meminfo();
   KASSERT(meminfo->heap_end > meminfo->heap_start);
   KASSERT(proc_current() != 0x0);
-  KASSERT(proc_current()->id == 0);
 
-  // First we have to set up the vm_area_t in the current process for our heap
-  // region.  We touch the memory after this, and this mapping must exist for
-  // the page fault handler not to bork.
-  vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap_start,
-                           meminfo->heap_end - meminfo->heap_start,
-                           1 /* allow_allocation */);
+  if (!g_test_mode) {
+    KASSERT(!g_initialized);
+    KASSERT(proc_current()->id == 0);
+
+    // First we have to set up the vm_area_t in the current process for our heap
+    // region.  We touch the memory after this, and this mapping must exist for
+    // the page fault handler not to bork.
+    vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap_start,
+                             meminfo->heap_end - meminfo->heap_start,
+                             1 /* allow_allocation */);
+  }
 
   // Initialize the free list to one giant block consisting of the entire heap.
   block_t* head = (block_t*)meminfo->heap_start;
   init_block(head);
   head->length = meminfo->heap_end - meminfo->heap_start - sizeof(block_t);
   g_block_list = head;
+  g_initialized = 1;
 }
 
 // Fill the given block with a repeating pattern.
@@ -208,6 +217,10 @@ void kmalloc_log_state() {
   }
   klogf("total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
   klogf("free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
+}
+
+void kmalloc_enable_test_mode(void) {
+  g_test_mode = 1;
 }
 
 block_t* kmalloc_internal_get_block_list() {

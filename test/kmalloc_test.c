@@ -351,6 +351,8 @@ static void large_interrupt_test(void) {
 void kmalloc_test(void) {
   KTEST_SUITE_BEGIN("kmalloc");
 
+  kmalloc_enable_test_mode();
+
   // NOTE: we disable klog-to-VTERM since we'll be overwriting the kmalloc
   // state, which causes problems with the vterm.  If there's anything else
   // running simultaneously with these tests that touches kmalloc'd memory, the
