@@ -43,5 +43,15 @@
 #define SYS_SIGACTION 20
 #define SYS_SIGRETURN 21
 #define SYS_ALARM 22
+#define SYS_SETUID 23
+#define SYS_SETGID 24
+#define SYS_GETUID 25
+#define SYS_GETGID 26
+#define SYS_SETEUID 27
+#define SYS_SETEGID 28
+#define SYS_GETEUID 29
+#define SYS_GETEGID 30
+#define SYS_SETREUID 31
+#define SYS_SETREGID 32
 
 #endif
