@@ -44,5 +44,6 @@ void dmz_test(void);
 void proc_load_test(void);
 void fork_test(void);
 void signal_test(void);
+void user_test(void);
 
 #endif

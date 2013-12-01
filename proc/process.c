@@ -24,6 +24,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
+#include "proc/user.h"
 
 // We statically allocate the first process_t, so that proc_init() can run
 // before kmalloc_init(), and therefore kmalloc_init() can set up its memory
@@ -58,6 +59,8 @@ static void proc_init_process(process_t* p) {
     p->signal_dispositions[i].sa_flags = 0;
     p->signal_dispositions[i].sa_handler = SIG_DFL;
   }
+  p->ruid = p->euid = p->suid = -1;
+  p->rgid = p->egid = p->sgid = -1;
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;
@@ -106,6 +109,10 @@ void proc_init_stage1() {
   proc_init_process(g_proc_table[0]);
   g_proc_table[0]->id = 0;
   g_proc_table[0]->state = PROC_RUNNING;
+  g_proc_table[0]->ruid = g_proc_table[0]->euid = g_proc_table[0]->suid =
+      SUPERUSER_UID;
+  g_proc_table[0]->rgid = g_proc_table[0]->egid = g_proc_table[0]->sgid =
+      SUPERUSER_GID;
   g_current_proc = 0;
 
   const memory_info_t* meminfo = get_global_meminfo();

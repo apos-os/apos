@@ -235,3 +235,33 @@ AddSyscall('alarm', 22, 'proc_alarm', 'proc/alarm.h',
     'user/signal.h',
     'unsigned int', [
     'unsigned int:seconds:u'])
+
+AddSyscall('setuid', 23, 'setuid', 'proc/user.h', 'user/process.h',
+    'int', ['uid_t:uid:u'])
+
+AddSyscall('setgid', 24, 'setgid', 'proc/user.h', 'user/process.h',
+    'int', ['gid_t:gid:u'])
+
+AddSyscall('getuid', 25, 'getuid', 'proc/user.h', 'user/process.h',
+    'uid_t', [])
+
+AddSyscall('getgid', 26, 'getgid', 'proc/user.h', 'user/process.h',
+    'gid_t', [])
+
+AddSyscall('seteuid', 27, 'seteuid', 'proc/user.h', 'user/process.h',
+    'int', ['uid_t:uid:u'])
+
+AddSyscall('setegid', 28, 'setegid', 'proc/user.h', 'user/process.h',
+    'int', ['gid_t:gid:u'])
+
+AddSyscall('geteuid', 29, 'geteuid', 'proc/user.h', 'user/process.h',
+    'uid_t', [])
+
+AddSyscall('getegid', 30, 'getegid', 'proc/user.h', 'user/process.h',
+    'gid_t', [])
+
+AddSyscall('setreuid', 31, 'setreuid', 'proc/user.h', 'user/process.h',
+    'int', ['uid_t:ruid:u', 'uid_t:euid:u'])
+
+AddSyscall('setregid', 32, 'setregid', 'proc/user.h', 'user/process.h',
+    'int', ['gid_t:rgid:u', 'gid_t:egid:u'])

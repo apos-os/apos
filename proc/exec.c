@@ -124,6 +124,10 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     }
   }
 
+  // TODO(aoates): handle set-user-ID/set-group-ID bits.
+  proc_current()->suid = proc_current()->euid;
+  proc_current()->sgid = proc_current()->egid;
+
   // Create the stack.
   void* stack_addr_out;
   result = do_mmap((void*)MEM_USER_STACK_BOTTOM, MEM_USER_STACK_SIZE,
