@@ -112,6 +112,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   // one-at-a-time (unlike normal IRPs), so multiple simultaneous ones could
   // wreak havoc.
   if (irp->endpoint->device->address == uhci_hc->root_hub->address) {
+    POP_INTERRUPTS();
     return uhci_hub_handle_irp(uhci_hc->root_hub, irp);
   }
 
