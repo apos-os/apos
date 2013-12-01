@@ -375,6 +375,7 @@ void kmalloc_test(void) {
   // The kernel is no longer in a usable state.
   // TODO(aoates): if this ever becomes annoying, we could force-reboot the
   // kernel (by resetting the stack pointer and calling kmain).
-  klogf("NOTE: kmalloc_test() ruins the kernel, so expect a page fault (if "
-      "you're lucky) or undefined behavior (if you're not).\n");
+  ktest_finish_all();
+  klogf("NOTE: kmalloc_test() ruins the kernel, so a reboot is needed.\n");
+  while (1) {}
 }
