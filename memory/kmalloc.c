@@ -21,6 +21,7 @@
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
@@ -153,12 +154,23 @@ static block_t* merge_block(block_t* b) {
 }
 
 void* kmalloc(uint32_t n) {
+  return kmalloc_aligned(n, 1);
+}
+
+void* kmalloc_aligned(uint32_t n, uint32_t alignment) {
   PUSH_AND_DISABLE_INTERRUPTS();
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
+  addr_t block_addr, next_aligned;
   while (cblock) {
     if (cblock->free && cblock->length >= n) {
-      break;
+      block_addr = (addr_t)&cblock->data;
+      if (block_addr % alignment == 0) break;  // Fast path.
+
+      // TODO(aoates): check for overflow in these various calculations.
+      next_aligned = alignment * ceiling_div(
+          block_addr + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE, alignment);
+      if (block_addr + cblock->length >= next_aligned + n) break;
     }
     cblock = cblock->next;
   }
@@ -170,6 +182,17 @@ void* kmalloc(uint32_t n) {
 
   KASSERT(cblock->free);
   KASSERT(cblock->length >= n);
+
+  if (block_addr % alignment != 0) {
+    block_t* extra = split_block(
+        cblock, next_aligned - (block_addr + sizeof(block_t)));
+    cblock = extra->next;
+
+    KASSERT_DBG((addr_t)&cblock->data % alignment == 0);
+    KASSERT_DBG((addr_t)&cblock->data == next_aligned);
+
+    block_addr = next_aligned;
+  }
 
   cblock->free = 0;
   cblock = split_block(cblock, n);

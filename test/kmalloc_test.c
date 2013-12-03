@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "common/types.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "memory/kmalloc-internal.h"
@@ -352,6 +353,31 @@ static void large_interrupt_test(void) {
   kmalloc_log_state();
 }
 
+static void kmalloc_aligned_test(void) {
+  kmalloc_init();
+  kmalloc_log_state();
+  // Try allocations with a variety of alignments.
+  const uint32_t kAlignments[] = {1, 2, 3, 5, 17, 32, 1234, 4096};
+
+  for (unsigned int i = 0; i < sizeof(kAlignments) / sizeof(uint32_t); ++i) {
+    const int kNumAllocs = 5;
+    void* allocs[kNumAllocs];
+
+    for (int alloc = 0; alloc < kNumAllocs; ++alloc) {
+      allocs[alloc] = kmalloc_aligned(100, kAlignments[i]);
+      KEXPECT_NE((void*)0x0, allocs[alloc]);
+      KEXPECT_EQ(0, (addr_t)allocs[alloc] % kAlignments[i]);
+    }
+
+    for (int alloc = 0; alloc < kNumAllocs; ++alloc) {
+      if (allocs[alloc]) kfree(allocs[alloc]);
+    }
+  }
+
+  // TODO test: blocks that are shorter than the next aligned address
+  kmalloc_log_state();
+}
+
 void kmalloc_test(void) {
   KTEST_SUITE_BEGIN("kmalloc");
 
@@ -371,6 +397,7 @@ void kmalloc_test(void) {
   stress_test();
   interrupt_test();
   large_interrupt_test();
+  kmalloc_aligned_test();
 
   // The kernel is no longer in a usable state.
   // TODO(aoates): if this ever becomes annoying, we could force-reboot the
