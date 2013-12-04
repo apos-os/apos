@@ -70,6 +70,8 @@ void interrupt_clobber_test(void) {
       "movl %11, %%edi\n\t"
       // Fake setting up the stack for an interrupt.
       "pushf\n\t"
+      // Since bochs only pushes the lower 16 bits of %cs, zero it out first.
+      "movl $0, -4(%%esp)\n\t"
       "push %%cs\n\t"
       "push $post_int\n\t"  // resume at 'post_int' below
       "push $0xCC\n\t"  // fake the error number
