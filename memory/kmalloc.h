@@ -21,6 +21,14 @@
 void kmalloc_init(void);
 void kfree(void* x);
 void* kmalloc(uint32_t n);
+void* kmalloc_aligned(uint32_t n, uint32_t alignment);
 void kmalloc_log_state(void);
+
+// Enable test mode.  In test mode, certain components are not re-initialized in
+// kmalloc_init(), allowing it to be called more than once.
+//
+// Once test mode is entered, the kernel is pretty much hosed and shouldn't be
+// used (other than running the tests).
+void kmalloc_enable_test_mode(void);
 
 #endif

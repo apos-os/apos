@@ -21,6 +21,7 @@
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
@@ -28,11 +29,15 @@
 #include "memory/vm_area.h"
 #include "proc/process.h"
 
+static int g_initialized = 0;
+
 // Global block list.
 static block_t* g_block_list = 0;
 
 // Root process vm_area_t for the heap.
 static vm_area_t g_root_heap_vm_area;
+
+static int g_test_mode = 0;
 
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
@@ -46,20 +51,25 @@ void kmalloc_init() {
   const memory_info_t* meminfo = get_global_meminfo();
   KASSERT(meminfo->heap_end > meminfo->heap_start);
   KASSERT(proc_current() != 0x0);
-  KASSERT(proc_current()->id == 0);
 
-  // First we have to set up the vm_area_t in the current process for our heap
-  // region.  We touch the memory after this, and this mapping must exist for
-  // the page fault handler not to bork.
-  vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap_start,
-                           meminfo->heap_end - meminfo->heap_start,
-                           1 /* allow_allocation */);
+  if (!g_test_mode) {
+    KASSERT(!g_initialized);
+    KASSERT(proc_current()->id == 0);
+
+    // First we have to set up the vm_area_t in the current process for our heap
+    // region.  We touch the memory after this, and this mapping must exist for
+    // the page fault handler not to bork.
+    vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap_start,
+                             meminfo->heap_end - meminfo->heap_start,
+                             1 /* allow_allocation */);
+  }
 
   // Initialize the free list to one giant block consisting of the entire heap.
   block_t* head = (block_t*)meminfo->heap_start;
   init_block(head);
   head->length = meminfo->heap_end - meminfo->heap_start - sizeof(block_t);
   g_block_list = head;
+  g_initialized = 1;
 }
 
 // Fill the given block with a repeating pattern.
@@ -144,22 +154,45 @@ static block_t* merge_block(block_t* b) {
 }
 
 void* kmalloc(uint32_t n) {
+  return kmalloc_aligned(n, 1);
+}
+
+void* kmalloc_aligned(uint32_t n, uint32_t alignment) {
   PUSH_AND_DISABLE_INTERRUPTS();
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
+  addr_t block_addr, next_aligned;
   while (cblock) {
     if (cblock->free && cblock->length >= n) {
-      break;
+      block_addr = (addr_t)&cblock->data;
+      if (block_addr % alignment == 0) break;  // Fast path.
+
+      // TODO(aoates): check for overflow in these various calculations.
+      next_aligned = alignment * ceiling_div(
+          block_addr + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE, alignment);
+      if (block_addr + cblock->length >= next_aligned + n) break;
     }
     cblock = cblock->next;
   }
 
   if (!cblock || cblock->length < n) {
+    POP_INTERRUPTS();
     return 0;
   }
 
   KASSERT(cblock->free);
   KASSERT(cblock->length >= n);
+
+  if (block_addr % alignment != 0) {
+    block_t* extra = split_block(
+        cblock, next_aligned - (block_addr + sizeof(block_t)));
+    cblock = extra->next;
+
+    KASSERT_DBG((addr_t)&cblock->data % alignment == 0);
+    KASSERT_DBG((addr_t)&cblock->data == next_aligned);
+
+    block_addr = next_aligned;
+  }
 
   cblock->free = 0;
   cblock = split_block(cblock, n);
@@ -208,6 +241,10 @@ void kmalloc_log_state() {
   }
   klogf("total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
   klogf("free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
+}
+
+void kmalloc_enable_test_mode(void) {
+  g_test_mode = 1;
 }
 
 block_t* kmalloc_internal_get_block_list() {

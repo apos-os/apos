@@ -109,7 +109,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   // we support multiple threads per process.
 
   // Allocate a stack for the thread.
-  uint32_t* stack = (uint32_t*)kmalloc(KTHREAD_STACK_SIZE);
+  uint32_t* stack = (uint32_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
   KASSERT(stack != 0x0);
 
   // Touch each page of the stack to make sure it's paged in.  If we don't do
