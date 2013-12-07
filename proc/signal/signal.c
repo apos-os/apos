@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/process.h"
+#include "proc/user.h"
 #include "proc/signal/signal_enter.h"
 #include "syscall/syscalls.h"
 
@@ -185,3 +186,13 @@ int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
 // syscall_trampoline.s must be updated to match.
 _Static_assert(SYS_SIGRETURN == 21,
                "SYS_SIGRETURN must match the constant in syscall_trampoline.s");
+
+int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
+  // TODO(aoates): allow SIGCONT between processes in the same session, once we
+  // have process groups and sessions.
+  return (proc_is_superuser(A) ||
+          A->ruid == B->ruid ||
+          A->euid == B->ruid ||
+          A->ruid == B->suid ||
+          A->euid == B->suid);
+}
