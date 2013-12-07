@@ -102,10 +102,10 @@ static void kill_test(void) {
 
   KTEST_BEGIN("proc_kill() invalid pid test");
   KEXPECT_EQ(-EINVAL, proc_kill(0, SIGABRT));
-  KEXPECT_EQ(-EINVAL, proc_kill(-10, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(-10, SIGABRT));
   // TODO(aoates): figure out a better way to generate a guaranteed-unused PID.
-  KEXPECT_EQ(-EINVAL, proc_kill(100, SIGABRT));
-  KEXPECT_EQ(-EINVAL, proc_kill(PROC_MAX_PROCS + 10, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(100, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(PROC_MAX_PROCS + 10, SIGABRT));
 
   // TODO(aoates): test with a zombie process.
 
@@ -115,7 +115,7 @@ static void kill_test(void) {
 
   KTEST_BEGIN("proc_kill() SIGNULL test");
   KEXPECT_EQ(0, proc_kill(my_pid, 0));
-  KEXPECT_EQ(-EINVAL, proc_kill(PROC_MAX_PROCS + 10, 0));
+  KEXPECT_EQ(-ESRCH, proc_kill(PROC_MAX_PROCS + 10, 0));
 
   // TODO(aoates): test the actual kill functionality.
 }

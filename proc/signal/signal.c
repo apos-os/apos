@@ -75,7 +75,7 @@ int proc_kill(pid_t pid, int sig) {
 
   process_t* proc = proc_get(pid);
   if (!proc || proc->state != PROC_RUNNING) {
-    return -EINVAL;
+    return -ESRCH;
   }
 
   if (!proc_signal_allowed(proc_current(), proc, sig)) {
