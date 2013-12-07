@@ -57,7 +57,42 @@ typedef enum {
 
 #else
 
+#ifdef __GNUC__
+
+#define PRINT_TYPE(expr) \
+    ({ \
+     kexpect_print_t _type; \
+     if (__builtin_types_compatible_p(typeof(expr), char) || \
+         __builtin_types_compatible_p(typeof(expr), short) || \
+         __builtin_types_compatible_p(typeof(expr), int) || \
+         __builtin_types_compatible_p(typeof(expr), long) || \
+         __builtin_types_compatible_p(typeof(expr), long long) || \
+         __builtin_types_compatible_p(typeof(expr), int8_t) || \
+         __builtin_types_compatible_p(typeof(expr), int16_t) || \
+         __builtin_types_compatible_p(typeof(expr), int32_t) || \
+         __builtin_types_compatible_p(typeof(expr), int64_t)) { \
+       _type = PRINT_SIGNED; \
+     } else if (__builtin_types_compatible_p(typeof(expr), unsigned char) || \
+                __builtin_types_compatible_p(typeof(expr), unsigned short) || \
+                __builtin_types_compatible_p(typeof(expr), unsigned int) || \
+                __builtin_types_compatible_p(typeof(expr), unsigned long) || \
+                __builtin_types_compatible_p(typeof(expr), unsigned long long) || \
+                __builtin_types_compatible_p(typeof(expr), uint8_t) || \
+                __builtin_types_compatible_p(typeof(expr), uint16_t) || \
+                __builtin_types_compatible_p(typeof(expr), uint32_t) || \
+                __builtin_types_compatible_p(typeof(expr), uint64_t)) { \
+       _type = PRINT_UNSIGNED; \
+     } else { \
+       _type = PRINT_HEX; \
+     } \
+     _type; \
+   })
+
+#else // __GNUC__
+
 #define PRINT_TYPE(expr) PRINT_UNKNOWN
+
+#endif // __GNUC__
 
 #endif // SUPPORTS_GENERIC_MACROS
 
