@@ -71,7 +71,7 @@ void proc_exit(int status) {
   p->thread = KTHREAD_NO_THREAD;
 
   // Send SIGCHLD to the parent.
-  proc_kill(p->parent->id, SIGCHLD);
+  KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);
 
   // Wake up parent if it's wait()'ing.
   scheduler_wake_one(&p->parent->wait_queue);

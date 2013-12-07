@@ -64,6 +64,10 @@ static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
+// Force send a signal to the given process, without any permission checks or
+// the like.  Returns 0 on success, or -errno on error.
+int proc_force_signal(process_t* proc, int sig);
+
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
 int proc_kill(pid_t pid, int sig);

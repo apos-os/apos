@@ -24,7 +24,7 @@ static void fpe_handler(uint32_t interrupt, uint32_t error, int is_user) {
     die("floating point exception in kernel code");
   }
 
-  proc_kill(proc_current()->id, SIGFPE);
+  KASSERT(proc_force_signal(proc_current(), SIGFPE) == 0);
 }
 
 void register_fault_handlers(void) {

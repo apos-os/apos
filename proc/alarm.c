@@ -29,7 +29,7 @@ static void timer_cb(void* arg) {
   proc->alarm.timer = TIMER_HANDLE_NONE;
   proc->alarm.deadline_ms = 0;
 
-  if (proc_kill(proc->id, SIGALRM) != 0) {
+  if (proc_force_signal(proc, SIGALRM) != 0) {
     klogf("WARNING: unable to send SIGALRM to pid %d\n", proc->id);
   }
 }

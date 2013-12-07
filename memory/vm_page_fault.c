@@ -108,7 +108,7 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
         break;
 
       case VM_FAULT_USER:
-        proc_kill(proc_current()->id, SIGSEGV);
+        KASSERT(proc_force_signal(proc_current(), SIGSEGV) == 0);
         return;
     }
   }
