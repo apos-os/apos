@@ -19,6 +19,7 @@
 #include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "vfs/vfs.h"
 
 void proc_exit(int status) {

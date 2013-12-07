@@ -21,7 +21,7 @@
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
-#include "proc/signal/signal.h"
+#include "proc/signal/posix_signal.h"
 
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.

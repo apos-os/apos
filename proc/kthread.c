@@ -25,6 +25,7 @@
 #include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "proc/tss.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k

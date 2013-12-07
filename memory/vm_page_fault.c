@@ -22,6 +22,7 @@
 #include "memory/vm_page_fault.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
+#include "proc/signal/signal.h"
 
 static inline vm_area_t* link2area(list_link_t* link) {
   return container_of(link, vm_area_t, vm_proc_list);

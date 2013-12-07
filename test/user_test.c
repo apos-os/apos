@@ -15,6 +15,7 @@
 // Tests for process user and group identity.
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "proc/fork.h"
 #include "proc/process.h"
