@@ -24,6 +24,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
+#include "proc/signal/signal.h"
 #include "proc/user.h"
 
 // We statically allocate the first process_t, so that proc_init() can run

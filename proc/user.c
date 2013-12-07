@@ -17,13 +17,12 @@
 #include "common/errno.h"
 #include "proc/process.h"
 
-static inline int is_super(void) {
-  return proc_current()->ruid == SUPERUSER_UID ||
-      proc_current()->rgid == SUPERUSER_GID;
+int proc_is_superuser(const process_t* proc) {
+  return proc->euid == SUPERUSER_UID;
 }
 
 int setuid(uid_t uid) {
-  if (is_super()) {
+  if (proc_is_superuser(proc_current())) {
     proc_current()->ruid = uid;
     proc_current()->euid = uid;
     proc_current()->suid = uid;
@@ -37,7 +36,7 @@ int setuid(uid_t uid) {
 }
 
 int setgid(gid_t gid) {
-  if (is_super()) {
+  if (proc_is_superuser(proc_current())) {
     proc_current()->rgid = gid;
     proc_current()->egid = gid;
     proc_current()->sgid = gid;
@@ -59,7 +58,7 @@ gid_t getgid(void) {
 }
 
 int seteuid(uid_t uid) {
-  if (is_super() || uid == proc_current()->ruid ||
+  if (proc_is_superuser(proc_current()) || uid == proc_current()->ruid ||
       uid == proc_current()->suid) {
     proc_current()->euid = uid;
     return 0;
@@ -69,7 +68,7 @@ int seteuid(uid_t uid) {
 }
 
 int setegid(gid_t gid) {
-  if (is_super() || gid == proc_current()->rgid ||
+  if (proc_is_superuser(proc_current()) || gid == proc_current()->rgid ||
       gid == proc_current()->sgid) {
     proc_current()->egid = gid;
     return 0;
@@ -87,7 +86,7 @@ gid_t getegid(void) {
 }
 
 int setreuid(uid_t ruid, uid_t euid) {
-  const int super = is_super();
+  const int super = proc_is_superuser(proc_current());
   if (ruid != -1 && ruid != proc_current()->ruid) {
     if (super) {
       proc_current()->ruid = ruid;
@@ -110,7 +109,7 @@ int setreuid(uid_t ruid, uid_t euid) {
 }
 
 int setregid(gid_t rgid, gid_t egid) {
-  const int super = is_super();
+  const int super = proc_is_superuser(proc_current());
   if (rgid != -1 && rgid != proc_current()->rgid) {
     if (super) {
       proc_current()->rgid = rgid;

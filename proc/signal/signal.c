@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/process.h"
+#include "proc/user.h"
 #include "proc/signal/signal_enter.h"
 #include "syscall/syscalls.h"
 
@@ -60,6 +61,13 @@ static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
+int proc_force_signal(process_t* proc, int sig) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int result = ksigaddset(&proc->pending_signals, sig);
+  POP_INTERRUPTS();
+  return result;
+}
+
 int proc_kill(pid_t pid, int sig) {
   if (pid == 0) {
     return -EINVAL;
@@ -67,17 +75,18 @@ int proc_kill(pid_t pid, int sig) {
 
   process_t* proc = proc_get(pid);
   if (!proc || proc->state != PROC_RUNNING) {
-    return -EINVAL;
+    return -ESRCH;
+  }
+
+  if (!proc_signal_allowed(proc_current(), proc, sig)) {
+    return -EPERM;
   }
 
   if (sig == SIGNULL) {
     return 0;
   }
 
-  PUSH_AND_DISABLE_INTERRUPTS();
-  int result = ksigaddset(&proc->pending_signals, sig);
-  POP_INTERRUPTS();
-  return result;
+  return proc_force_signal(proc, sig);
 }
 
 int proc_sigaction(int signum, const struct sigaction* act,
@@ -185,3 +194,13 @@ int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
 // syscall_trampoline.s must be updated to match.
 _Static_assert(SYS_SIGRETURN == 21,
                "SYS_SIGRETURN must match the constant in syscall_trampoline.s");
+
+int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
+  // TODO(aoates): allow SIGCONT between processes in the same session, once we
+  // have process groups and sessions.
+  return (proc_is_superuser(A) ||
+          A->ruid == B->ruid ||
+          A->euid == B->ruid ||
+          A->ruid == B->suid ||
+          A->euid == B->suid);
+}

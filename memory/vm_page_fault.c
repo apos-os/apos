@@ -22,6 +22,7 @@
 #include "memory/vm_page_fault.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
+#include "proc/signal/signal.h"
 
 static inline vm_area_t* link2area(list_link_t* link) {
   return container_of(link, vm_area_t, vm_proc_list);
@@ -107,7 +108,7 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
         break;
 
       case VM_FAULT_USER:
-        proc_kill(proc_current()->id, SIGSEGV);
+        KASSERT(proc_force_signal(proc_current(), SIGSEGV) == 0);
         return;
     }
   }

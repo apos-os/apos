@@ -15,8 +15,13 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
+#include "proc/sleep.h"
+#include "proc/user.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 
 static void ksigemptyset_test(void) {
@@ -97,10 +102,10 @@ static void kill_test(void) {
 
   KTEST_BEGIN("proc_kill() invalid pid test");
   KEXPECT_EQ(-EINVAL, proc_kill(0, SIGABRT));
-  KEXPECT_EQ(-EINVAL, proc_kill(-10, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(-10, SIGABRT));
   // TODO(aoates): figure out a better way to generate a guaranteed-unused PID.
-  KEXPECT_EQ(-EINVAL, proc_kill(100, SIGABRT));
-  KEXPECT_EQ(-EINVAL, proc_kill(PROC_MAX_PROCS + 10, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(100, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(PROC_MAX_PROCS + 10, SIGABRT));
 
   // TODO(aoates): test with a zombie process.
 
@@ -110,7 +115,7 @@ static void kill_test(void) {
 
   KTEST_BEGIN("proc_kill() SIGNULL test");
   KEXPECT_EQ(0, proc_kill(my_pid, 0));
-  KEXPECT_EQ(-EINVAL, proc_kill(PROC_MAX_PROCS + 10, 0));
+  KEXPECT_EQ(-ESRCH, proc_kill(PROC_MAX_PROCS + 10, 0));
 
   // TODO(aoates): test the actual kill functionality.
 }
@@ -225,6 +230,134 @@ static void sigaction_test(void) {
   // do user-space tests.
 }
 
+static void signal_allowed_test(void) {
+  process_t A, B, A_default, B_default;
+
+  A_default.ruid = 1001; A_default.rgid = 2001;
+  A_default.euid = 1002; A_default.egid = 2002;
+  A_default.suid = 1003; A_default.sgid = 2003;
+  B_default.ruid = 3001; B_default.rgid = 4001;
+  B_default.euid = 3002; B_default.egid = 4002;
+  B_default.suid = 3003; B_default.sgid = 4003;
+
+  KTEST_BEGIN("proc_signal_allowed(): root can send any signal");
+  A = A_default; B = B_default;
+  A.euid = SUPERUSER_UID;
+
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGTERM));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGSTOP));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+
+  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGTERM));
+  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGKILL));
+  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGSTOP));
+  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGCONT));
+
+  KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches ruid");
+  A = A_default; B = B_default;
+  A.ruid = B.ruid;
+
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+
+  KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches ruid");
+  A = A_default; B = B_default;
+  A.euid = B.ruid;
+
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+
+  KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches suid");
+  A = A_default; B = B_default;
+  A.ruid = B.suid;
+
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+
+  KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches suid");
+  A = A_default; B = B_default;
+  A.euid = B.suid;
+
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
+  A = A_default; B = B_default;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches ruid");
+  A = A_default; B = B_default;
+  A.suid = B.ruid;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches euid");
+  A = A_default; B = B_default;
+  A.suid = B.euid;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches suid");
+  A = A_default; B = B_default;
+  A.suid = B.suid;
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+
+  KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if gids match");
+  A = A_default; B = B_default;
+  A.rgid = B.rgid;
+  A.egid = B.egid;
+  A.sgid = B.sgid;
+
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
+}
+
+// Child process that sleeps then exits, to let us test if signals were
+// delivered or not.
+static void signal_child_func(void* arg) {
+  ksleep(10);
+  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+}
+
+static void signal_setuid_then_kill_func(void* arg) {
+  proc_current()->ruid = 100;
+  proc_current()->euid = 100;
+  proc_current()->suid = 100;
+
+  int child_pid = proc_fork(&signal_child_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_get(child_pid)->ruid = 101;
+  proc_get(child_pid)->euid = 101;
+  proc_get(child_pid)->suid = 101;
+
+  KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGKILL));
+  int exit_code;
+  KEXPECT_EQ(child_pid, proc_wait(&exit_code));
+  KEXPECT_EQ(0, exit_code);  // Should not have received signal.
+}
+
+static void signal_permission_test(void) {
+  KTEST_BEGIN("proc_kill(): root can signal any process");
+
+  int child_pid = proc_fork(&signal_child_func, (void*)100);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_get(child_pid)->ruid = 101;
+  proc_get(child_pid)->euid = 101;
+  proc_get(child_pid)->suid = 101;
+
+  KEXPECT_EQ(0, proc_kill(child_pid, SIGKILL));
+  int exit_code;
+  KEXPECT_EQ(child_pid, proc_wait(&exit_code));
+  KEXPECT_EQ(1, exit_code);  // Should have received signal.
+
+  KTEST_BEGIN("proc_kill(): different user can't signal process");
+  child_pid = proc_fork(&signal_setuid_then_kill_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  KEXPECT_EQ(child_pid, proc_wait(0x0));
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -242,6 +375,9 @@ void signal_test(void) {
 
   kill_test();
   sigaction_test();
+
+  signal_allowed_test();
+  signal_permission_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {

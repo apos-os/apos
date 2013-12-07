@@ -17,6 +17,7 @@
 
 #include "common/errno.h"
 #include "common/types.h"
+#include "proc/process.h"
 #include "proc/signal/posix_signal.h"
 #include "proc/user_context.h"
 
@@ -63,6 +64,10 @@ static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
+// Force send a signal to the given process, without any permission checks or
+// the like.  Returns 0 on success, or -errno on error.
+int proc_force_signal(process_t* proc, int sig);
+
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
 int proc_kill(pid_t pid, int sig);
@@ -86,5 +91,8 @@ void proc_dispatch_pending_signals(const user_context_t* context);
 
 // Return from a signal handling routine, via the trampoline.
 int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context);
+
+// Returns 1 if process A can send the given signal to process C.
+int proc_signal_allowed(const process_t* A, const process_t* B, int signal);
 
 #endif
