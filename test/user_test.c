@@ -100,10 +100,11 @@ static void setuid_test_func(void* arg) {
   KEXPECT_EQ(kTestUserA, proc_current()->suid);
 
   KTEST_BEGIN("setgid() as superuser");
+  proc_current()->euid = SUPERUSER_UID;
   KEXPECT_EQ(SUPERUSER_GID, getgid());
 
   KEXPECT_EQ(0, setgid(kTestGroupA));
-  KEXPECT_EQ(kTestUserA, getuid());
+  KEXPECT_EQ(SUPERUSER_UID, geteuid());
   KEXPECT_EQ(kTestGroupA, getgid());
   KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
   KEXPECT_EQ(kTestGroupA, proc_current()->egid);
@@ -179,10 +180,11 @@ static void seteuid_test_func(void* arg) {
   KEXPECT_EQ(SUPERUSER_UID, proc_current()->suid);
 
   KTEST_BEGIN("setegid() as superuser");
+  proc_current()->euid = SUPERUSER_UID;
   KEXPECT_EQ(SUPERUSER_GID, getegid());
 
   KEXPECT_EQ(0, setegid(kTestGroupA));
-  KEXPECT_EQ(kTestUserA, geteuid());
+  KEXPECT_EQ(SUPERUSER_UID, geteuid());
   KEXPECT_EQ(kTestGroupA, getegid());
   KEXPECT_EQ(SUPERUSER_GID, proc_current()->rgid);
   KEXPECT_EQ(kTestGroupA, proc_current()->egid);
@@ -259,6 +261,7 @@ static void setreuid_test_func(void* arg) {
   KEXPECT_EQ(kTestUserB, proc_current()->suid);
 
   KTEST_BEGIN("setregid() as superuser");
+  proc_current()->euid = SUPERUSER_UID;
   KEXPECT_EQ(SUPERUSER_GID, getgid());
 
   KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
@@ -270,37 +273,42 @@ static void setreuid_test_func(void* arg) {
 
   proc_current()->ruid = SUPERUSER_UID;
   proc_current()->rgid = SUPERUSER_GID;
-  proc_current()->euid = kTestUserC;
-  proc_current()->egid = kTestGroupC;
+  proc_current()->euid = SUPERUSER_UID;
+  proc_current()->egid = SUPERUSER_GID;
+  proc_current()->suid = kTestUserC;
+  proc_current()->sgid = kTestGroupC;
 
   KTEST_BEGIN("setreuid() as superuser (just real)");
   KEXPECT_EQ(0, setreuid(kTestUserA, -1));
   KEXPECT_EQ(kTestUserA, proc_current()->ruid);
-  KEXPECT_EQ(kTestUserC, proc_current()->euid);
-  KEXPECT_EQ(kTestUserC, proc_current()->suid);
+  KEXPECT_EQ(SUPERUSER_UID, proc_current()->euid);
+  KEXPECT_EQ(SUPERUSER_UID, proc_current()->suid);
 
   KTEST_BEGIN("setregid() as superuser (just real)");
   KEXPECT_EQ(0, setregid(kTestGroupA, -1));
   KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
-  KEXPECT_EQ(kTestGroupC, proc_current()->egid);
-  KEXPECT_EQ(kTestGroupC, proc_current()->sgid);
+  KEXPECT_EQ(SUPERUSER_GID, proc_current()->egid);
+  KEXPECT_EQ(SUPERUSER_GID, proc_current()->sgid);
 
-  proc_current()->ruid = SUPERUSER_UID;
-  proc_current()->rgid = SUPERUSER_GID;
-  proc_current()->euid = kTestUserB;
-  proc_current()->egid = kTestGroupB;
+  proc_current()->ruid = kTestUserA;
+  proc_current()->rgid = kTestGroupA;
+  proc_current()->euid = SUPERUSER_UID;
+  proc_current()->egid = SUPERUSER_GID;
+  proc_current()->suid = kTestUserC;
+  proc_current()->sgid = kTestGroupC;
 
   KTEST_BEGIN("setreuid() as superuser (just effective)");
-  KEXPECT_EQ(0, setreuid(-1, kTestUserA));
-  KEXPECT_EQ(SUPERUSER_UID, proc_current()->ruid);
-  KEXPECT_EQ(kTestUserA, proc_current()->euid);
-  KEXPECT_EQ(kTestUserA, proc_current()->suid);
+  KEXPECT_EQ(0, setreuid(-1, kTestUserB));
+  KEXPECT_EQ(kTestUserA, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserB, proc_current()->suid);
 
   KTEST_BEGIN("setregid() as superuser (just effective)");
-  KEXPECT_EQ(0, setregid(-1, kTestGroupA));
-  KEXPECT_EQ(SUPERUSER_GID, proc_current()->rgid);
-  KEXPECT_EQ(kTestGroupA, proc_current()->egid);
-  KEXPECT_EQ(kTestGroupA, proc_current()->sgid);
+  proc_current()->euid = SUPERUSER_UID;
+  KEXPECT_EQ(0, setregid(-1, kTestGroupB));
+  KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
 
   // Manually twiddle the effective and saved uid/gid for the tests.
   proc_current()->ruid = kTestUserA;
@@ -399,6 +407,46 @@ static void setreuid_test(void) {
   proc_wait(0x0);
 }
 
+static void proc_is_superuser_test(void) {
+  process_t proc;
+
+  KTEST_BEGIN("proc_is_superuser(): all uids are 0");
+  proc.ruid = 0;
+  proc.euid = 0;
+  proc.suid = 0;
+  proc.rgid = kTestGroupA;
+  proc.egid = kTestGroupA;
+  proc.sgid = kTestGroupA;
+  KEXPECT_EQ(1, proc_is_superuser(&proc));
+
+  KTEST_BEGIN("proc_is_superuser(): only ruid is 0");
+  proc.ruid = 0;
+  proc.euid = kTestUserA;
+  proc.suid = kTestUserA;
+  KEXPECT_EQ(0, proc_is_superuser(&proc));
+
+  KTEST_BEGIN("proc_is_superuser(): only euid is 0");
+  proc.ruid = kTestUserA;
+  proc.euid = 0;
+  proc.suid = kTestUserA;
+  KEXPECT_EQ(1, proc_is_superuser(&proc));
+
+  KTEST_BEGIN("proc_is_superuser(): only suid is 0");
+  proc.ruid = kTestUserA;
+  proc.euid = kTestUserA;
+  proc.suid = 0;
+  KEXPECT_EQ(0, proc_is_superuser(&proc));
+
+  KTEST_BEGIN("proc_is_superuser(): gids uids are 0, but uids aren't");
+  proc.ruid = kTestUserA;
+  proc.euid = kTestUserA;
+  proc.suid = kTestUserA;
+  proc.rgid = 0;
+  proc.egid = 0;
+  proc.sgid = 0;
+  KEXPECT_EQ(0, proc_is_superuser(&proc));
+}
+
 void user_test(void) {
   KTEST_SUITE_BEGIN("kthread_test");
 
@@ -407,6 +455,8 @@ void user_test(void) {
   setuid_test();
   seteuid_test();
   setreuid_test();
+
+  proc_is_superuser_test();
 
   // Make sure the tests cleaned up after themselves.
   KTEST_BEGIN("User test cleanup verification");

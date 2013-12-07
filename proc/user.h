@@ -17,10 +17,15 @@
 #define APOO_PROC_USER_H
 
 #include "common/posix_types.h"
+#include "proc/process.h"
 
 // The uid and gid of the superuser.
 #define SUPERUSER_UID 0
 #define SUPERUSER_GID 0
+
+// Returns 1 if the given process is privileged (if the effective uid is the
+// superuser).
+int proc_is_superuser(const process_t* proc);
 
 // Change the current user ID.  If the superuser, changes the real, effective,
 // and saved uids.  Otherwise, changes the effective uid to either the real or
