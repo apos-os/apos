@@ -30,9 +30,21 @@ static int current_test_passing = 0;
 
 static uint32_t test_start_time;
 
+static const char* current_test_name = 0x0;
+
+// Array of failing test names.  Assumes that test names aren't generated on the
+// fly (i.e. the pointers we get to them in KTEST_BEGIN() stay good).
+#define FAILING_TEST_NAMES_LEN 100
+static const char* failing_test_names[FAILING_TEST_NAMES_LEN];
+static int failing_test_names_idx = 0;
+
 static void finish_test(void) {
   if (current_test_passing) {
     num_tests_passing++;
+  } else if (num_tests > 0) {
+    if (failing_test_names_idx < FAILING_TEST_NAMES_LEN) {
+      failing_test_names[failing_test_names_idx++] = current_test_name;
+    }
   }
 }
 
@@ -54,6 +66,7 @@ void KTEST_SUITE_BEGIN(const char* name) {
 
 void KTEST_BEGIN(const char* name) {
   finish_test();  // Finish the previous test, if running.
+  current_test_name = name;
   current_test_passing = 1;
   num_tests++;
   klog("\nTEST: ");
@@ -103,6 +116,7 @@ void ktest_begin_all() {
   num_tests_passing = 0;
   current_suite_passing = 0;
   current_test_passing = 0;
+  failing_test_names_idx = 0;
   test_start_time = get_time_ms();
 
   klogf("KERNEL UNIT TESTS");
@@ -123,5 +137,13 @@ void ktest_finish_all() {
     klogf("[FAILED] passed %d/%d suites and %d/%d tests in %d ms\n",
           num_suites_passing, num_suites, num_tests_passing, num_tests,
           end_time - test_start_time);
+    klogf("Failed tests:\n");
+    for (int i = 0; i < failing_test_names_idx; ++i) {
+      klogf("  %s\n", failing_test_names[i]);
+    }
+    int num_leftover = num_tests - num_tests_passing - failing_test_names_idx;
+    if (num_leftover > 0) {
+      klogf("  ...and %d more\n", num_leftover);
+    }
   }
 }
