@@ -78,6 +78,10 @@ int proc_kill(pid_t pid, int sig) {
     return -EINVAL;
   }
 
+  if (!proc_signal_allowed(proc_current(), proc, sig)) {
+    return -EPERM;
+  }
+
   if (sig == SIGNULL) {
     return 0;
   }

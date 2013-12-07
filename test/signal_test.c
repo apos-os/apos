@@ -15,9 +15,13 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
+#include "proc/sleep.h"
 #include "proc/user.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 
 static void ksigemptyset_test(void) {
@@ -308,6 +312,52 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
 }
 
+// Child process that sleeps then exits, to let us test if signals were
+// delivered or not.
+static void signal_child_func(void* arg) {
+  ksleep(10);
+  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+}
+
+static void signal_setuid_then_kill_func(void* arg) {
+  proc_current()->ruid = 100;
+  proc_current()->euid = 100;
+  proc_current()->suid = 100;
+
+  int child_pid = proc_fork(&signal_child_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_get(child_pid)->ruid = 101;
+  proc_get(child_pid)->euid = 101;
+  proc_get(child_pid)->suid = 101;
+
+  KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGKILL));
+  int exit_code;
+  KEXPECT_EQ(child_pid, proc_wait(&exit_code));
+  KEXPECT_EQ(0, exit_code);  // Should not have received signal.
+}
+
+static void signal_permission_test(void) {
+  KTEST_BEGIN("proc_kill(): root can signal any process");
+
+  int child_pid = proc_fork(&signal_child_func, (void*)100);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_get(child_pid)->ruid = 101;
+  proc_get(child_pid)->euid = 101;
+  proc_get(child_pid)->suid = 101;
+
+  KEXPECT_EQ(0, proc_kill(child_pid, SIGKILL));
+  int exit_code;
+  KEXPECT_EQ(child_pid, proc_wait(&exit_code));
+  KEXPECT_EQ(1, exit_code);  // Should have received signal.
+
+  KTEST_BEGIN("proc_kill(): different user can't signal process");
+  child_pid = proc_fork(&signal_setuid_then_kill_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  KEXPECT_EQ(child_pid, proc_wait(0x0));
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -327,6 +377,7 @@ void signal_test(void) {
   sigaction_test();
 
   signal_allowed_test();
+  signal_permission_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
