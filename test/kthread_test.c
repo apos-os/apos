@@ -19,6 +19,7 @@
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 
 // TODO(aoates): other things to test:
@@ -399,6 +400,36 @@ static void kmutex_auto_lock_test(void) {
   }
 }
 
+static void* sleep_func(void* arg) {
+  ksleep(1);
+  return 0x0;
+}
+
+static void ksleep_test(void) {
+  const int kNumThreads = 300;
+
+  KTEST_BEGIN("ksleep() stress test");
+  kthread_t threads[kNumThreads];
+
+  int threads_created = 0;
+  for (int i = 0; i < kNumThreads; ++i) {
+    if (kthread_create(&threads[i], &sleep_func, 0x0) == 0) {
+      threads_created++;
+      scheduler_make_runnable(threads[i]);
+
+      // Spin for a bit to spread the threads out and make it more likely that
+      // an interrupt will hit in one of them.
+      for (volatile int j = 0; j < 10000; ++j);
+    }
+  }
+
+  KEXPECT_EQ(kNumThreads, threads_created);
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -416,4 +447,5 @@ void kthread_test(void) {
   stress_test();
   kmutex_test();
   kmutex_auto_lock_test();
+  ksleep_test();
 }

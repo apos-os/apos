@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/kassert.h"
+#include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/scheduler.h"
@@ -28,13 +29,16 @@ static void ksleep_cb(void* arg) {
 int ksleep(int ms) {
   // This isn't the most efficient way of doing things, but meh.
   kthread_queue_t* q = (kthread_queue_t*)kmalloc(sizeof(kthread_queue_t));
+  kthread_queue_init(q);
 
+  PUSH_AND_DISABLE_INTERRUPTS();
   int result = register_event_timer(get_time_ms() + ms, &ksleep_cb, q, 0x0);
   if (result < 0) {
     kfree(q);
+    POP_INTERRUPTS();
     return result;
   }
-  kthread_queue_init(q);
   scheduler_wait_on(q);
+  POP_INTERRUPTS();
   return 0;
 }
