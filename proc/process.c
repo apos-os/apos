@@ -42,6 +42,10 @@ process_t* g_proc_table[PROC_MAX_PROCS];
 static pid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
 
+// Process groups.  Each element of the table is a list of processes in that
+// group.
+list_t g_proc_group_table[PROC_MAX_PROCS];
+
 static void proc_init_process(process_t* p) {
   p->id = -1;
   p->state = PROC_INVALID;
@@ -62,6 +66,8 @@ static void proc_init_process(process_t* p) {
   }
   p->ruid = p->euid = p->suid = -1;
   p->rgid = p->egid = p->sgid = -1;
+  p->pgroup = -1;
+  p->pgroup_link = LIST_LINK_INIT;
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;
@@ -71,6 +77,7 @@ static void proc_init_process(process_t* p) {
 process_t* proc_alloc() {
   int id = -1;
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
+    // TODO(aoates): ensure the process group is empty.
     if (g_proc_table[i] == NULL) {
       id = i;
       break;
@@ -103,6 +110,7 @@ void proc_init_stage1() {
   KASSERT(g_proc_init_stage == 0);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
+    g_proc_group_table[i] = LIST_INIT;
   }
 
   // Create first process.
@@ -114,6 +122,8 @@ void proc_init_stage1() {
       SUPERUSER_UID;
   g_proc_table[0]->rgid = g_proc_table[0]->egid = g_proc_table[0]->sgid =
       SUPERUSER_GID;
+  g_proc_table[0]->pgroup = 0;
+  list_push(proc_group_get(0), &g_proc_table[0]->pgroup_link);
   g_current_proc = 0;
 
   const memory_info_t* meminfo = get_global_meminfo();
@@ -164,4 +174,11 @@ void proc_set_current(process_t* process) {
               "bad process ID: %d", process->id);
   KASSERT(g_proc_table[process->id] == process);
   g_current_proc = process->id;
+}
+
+list_t* proc_group_get(pid_t gid) {
+  if (gid < 0 || gid >= PROC_MAX_PROCS)
+    return NULL;
+  else
+    return &g_proc_group_table[gid];
 }

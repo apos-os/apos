@@ -71,6 +71,12 @@ struct process {
   uid_t suid;
   gid_t sgid;
 
+  // The current process group.
+  pid_t pgroup;
+
+  // Link on the process group list.
+  list_link_t pgroup_link;
+
   // Parent process.
   process_t* parent;
 
@@ -107,5 +113,8 @@ process_t* proc_current(void);
 
 // Return the process_t with the given ID, or NULL if there is none.
 process_t* proc_get(pid_t id);
+
+// Return the process group with the given ID.
+list_t* proc_group_get(pid_t gid);
 
 #endif
