@@ -68,6 +68,7 @@ static void proc_init_process(process_t* p) {
   p->rgid = p->egid = p->sgid = -1;
   p->pgroup = -1;
   p->pgroup_link = LIST_LINK_INIT;
+  p->execed = 0;
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;

@@ -77,6 +77,9 @@ struct process {
   // Link on the process group list.
   list_link_t pgroup_link;
 
+  // Has this process exec()'d since it was created.
+  uint8_t execed;
+
   // Parent process.
   process_t* parent;
 

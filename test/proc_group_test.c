@@ -70,6 +70,9 @@ static int group_contains(pid_t pgid, pid_t pid) {
 static void basic_setgpid_test(void* arg) {
   const pid_t group = (pid_t)arg;
 
+  // To ensure it's not looked at or carried to children.
+  proc_current()->execed = 1;
+
   KTEST_BEGIN("setgpid() create new group");
   KEXPECT_NE(proc_current()->id, getpgid(0));
   KEXPECT_EQ(getpgid(proc_current()->id), getpgid(0));
@@ -142,6 +145,9 @@ static void child_setgpid_test(void* arg) {
   const pid_t group = (pid_t)arg;
   int test_done = 0;
 
+  // To ensure it's not looked at or carried to children.
+  proc_current()->execed = 1;
+
   KTEST_BEGIN("setpgid(): set pgid of child");
   int child = proc_fork(&loop_until_done, &test_done);
   KEXPECT_EQ(0, setpgid(child, group));
@@ -157,8 +163,18 @@ static void child_setgpid_test(void* arg) {
   test_done = 1;
   KEXPECT_EQ(child, proc_wait(0x0));
 
-  // TODO(aoates): test setting the pgid of a child process that has called
-  // exec(), once we can have a reasonable way of running exec in tests.
+  // TODO(aoates): if we ever have good kernel exec() tests, actually test by
+  // calling exec() rather than setting the execed bit manually.
+  KTEST_BEGIN("setpgid(): set pgid of child that has exec()'d");
+  test_done = 0;
+  child = proc_fork(&loop_until_done, &test_done);
+  KEXPECT_EQ(0, proc_get(child)->execed);
+  proc_get(child)->execed = 1;
+  KEXPECT_EQ(-EACCES, setpgid(child, 0));
+  KEXPECT_EQ(proc_current()->pgroup, getpgid(child));
+
+  test_done = 1;
+  KEXPECT_EQ(child, proc_wait(0x0));
 }
 
 void proc_group_test(void) {

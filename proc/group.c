@@ -38,7 +38,7 @@ int setpgid(pid_t pid, pid_t pgid) {
   if (pgid == 0) pgid = pid;
 
   process_t* proc = proc_get(pid);
-  // TODO(aoates): check if the child process has called exec.
+  // TODO(aoates): check if the process is a session leader.
   if (!proc || (proc != proc_current() && proc->parent != proc_current())) {
     return -ESRCH;
   }
@@ -48,6 +48,10 @@ int setpgid(pid_t pid, pid_t pgid) {
   // session.
   if (pgid != pid && list_empty(pgroup)) {
     return -EPERM;
+  }
+
+  if (proc->parent == proc_current() && proc->execed) {
+    return -EACCES;
   }
 
   // Remove the process from its current group and add it to the new one.
