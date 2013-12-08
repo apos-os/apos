@@ -28,3 +28,32 @@ pid_t getpgid(pid_t pid) {
 
   return proc->pgroup;
 }
+
+int setpgid(pid_t pid, pid_t pgid) {
+  if (pgid < 0 || pgid >= PROC_MAX_PROCS) {
+    return -EINVAL;
+  }
+
+  if (pid == 0) pid = proc_current()->id;
+  if (pgid == 0) pgid = pid;
+
+  process_t* proc = proc_get(pid);
+  // TODO(aoates): check if the child process has called exec.
+  if (!proc || (proc != proc_current() && proc->parent != proc_current())) {
+    return -ESRCH;
+  }
+
+  list_t* pgroup = proc_group_get(pgid);
+  // TODO(aoates): test if any of the processes in the group are in the current
+  // session.
+  if (pgid != pid && list_empty(pgroup)) {
+    return -EPERM;
+  }
+
+  // Remove the process from its current group and add it to the new one.
+  list_remove(proc_group_get(proc->pgroup), &proc->pgroup_link);
+  list_push(pgroup, &proc->pgroup_link);
+  proc->pgroup = pgid;
+
+  return 0;
+}

@@ -23,4 +23,9 @@
 // Returns the process group ID on success, or -errno on error.
 pid_t getpgid(pid_t pid);
 
+// Set the given process's process group, as per setpgid(2).
+//
+// Returns 0 on success, or -errno on error.
+int setpgid(pid_t pid, pid_t pgid);
+
 #endif
