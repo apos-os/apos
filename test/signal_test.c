@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/group.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
@@ -101,11 +102,12 @@ static void kill_test(void) {
   const pid_t my_pid = proc_current()->id;
 
   KTEST_BEGIN("proc_kill() invalid pid test");
-  KEXPECT_EQ(-EINVAL, proc_kill(0, SIGABRT));
-  KEXPECT_EQ(-ESRCH, proc_kill(-10, SIGABRT));
+  KEXPECT_EQ(-EINVAL, proc_kill(-1, SIGABRT));
   // TODO(aoates): figure out a better way to generate a guaranteed-unused PID.
   KEXPECT_EQ(-ESRCH, proc_kill(100, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(-100, SIGABRT));
   KEXPECT_EQ(-ESRCH, proc_kill(PROC_MAX_PROCS + 10, SIGABRT));
+  KEXPECT_EQ(-ESRCH, proc_kill(-(PROC_MAX_PROCS + 10), SIGABRT));
 
   // TODO(aoates): test with a zombie process.
 
@@ -358,6 +360,112 @@ static void signal_permission_test(void) {
   KEXPECT_EQ(child_pid, proc_wait(0x0));
 }
 
+// Helper that sets up a process group with several processes.  |okA| and |okB|
+// will be set to pids in the new group that can receive signals from the
+// current process; |bad| will be set to a pid in the current group that cannot.
+static void create_process_group(pid_t* okA, pid_t* okB, pid_t* bad) {
+  *okA = proc_fork(&signal_child_func, 0x0);
+  *okB = proc_fork(&signal_child_func, 0x0);
+  *bad = proc_fork(&signal_child_func, 0x0);
+
+  KEXPECT_EQ(0, setpgid(*okA, *okA));
+  KEXPECT_EQ(0, setpgid(*okB, *okA));
+  KEXPECT_EQ(0, setpgid(*bad, *okA));
+
+  proc_get(*bad)->ruid = proc_get(*bad)->euid = proc_get(*bad)->suid = 1000;
+}
+
+// Create a process group then send SIGKILL to it.  |arg| is a bitfield.  If bit
+// 1 is set, then the current process is included in the process group (and
+// expected to receive the SIGKILL as well).  If bit 2 is set, then the signal
+// is sent to pgid 0 (i.e. the current process group).
+static void create_group_then_kill(void* arg) {
+  uint32_t flags = (uint32_t)arg;
+
+  // Ensure we're not the superuser.
+  KEXPECT_EQ(0, setuid(500));
+
+  pid_t okA, okB, bad;
+  create_process_group(&okA, &okB, &bad);
+
+  if (flags & 0x1) {
+    KEXPECT_EQ(0, setpgid(0, okA));
+  }
+
+  if (flags & 0x2) {
+    KEXPECT_EQ(0, proc_kill(0, SIGKILL));
+    KEXPECT_EQ(0, proc_kill(0, SIGNULL));  // Try SIGNULL too, for kicks.
+  } else {
+    KEXPECT_EQ(0, proc_kill(-okA, SIGKILL));
+    KEXPECT_EQ(0, proc_kill(-okA, SIGNULL));  // Try SIGNULL too, for kicks.
+  }
+
+  // We should have received the signal if we're in the group.
+  int got_signal = ksigismember(&proc_current()->pending_signals, SIGKILL);
+  if (flags & 0x1) {
+    KEXPECT_EQ(1, got_signal);
+  } else {
+    KEXPECT_EQ(0, got_signal);
+  }
+
+  // Either way, okA and okB should have gotten it as well, but not bad.
+  for (int i = 0; i < 3; ++i) {
+    int status;
+    int child = proc_wait(&status);
+    if (child == okA || child == okB) {
+      KEXPECT_EQ(1, status);
+    } else {
+      KEXPECT_EQ(0, status);
+    }
+  }
+}
+
+static void cannot_signal_any_process_in_group(void* arg) {
+  KTEST_BEGIN("proc_kill(): cannot send signal to any process in group");
+  // Ensure we're not the superuser.
+  KEXPECT_EQ(0, setuid(500));
+
+  pid_t okA, okB, bad;
+  create_process_group(&okA, &okB, &bad);
+
+  KEXPECT_EQ(0, setpgid(bad, bad));
+
+  KEXPECT_EQ(-EPERM, proc_kill(-bad, SIGKILL));
+
+  KTEST_BEGIN("proc_kill(): invalid signal to process group");
+  KEXPECT_EQ(0, setpgid(0, okA));
+  KEXPECT_EQ(-EINVAL, proc_kill(0, -1));
+  KEXPECT_EQ(-EINVAL, proc_kill(0, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, proc_kill(-okA, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, proc_kill(-bad, SIGMAX + 1));
+
+  // No-one should have received any signals.
+  for (int i = 0; i < 3; ++i) {
+    int status;
+    proc_wait(&status);
+    KEXPECT_EQ(0, status);
+  }
+}
+
+static void signal_send_to_pgroup_test(void) {
+  KTEST_BEGIN("proc_kill(): pid == -pgid sends to process group "
+              "(not including current process)");
+  int child = proc_fork(&create_group_then_kill, 0x0);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_kill(): pid == -pgid sends to process group "
+              "(including current process)");
+  child = proc_fork(&create_group_then_kill, (void*)0x1);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_kill(): pid == 0 sends to current process group");
+  child = proc_fork(&create_group_then_kill, (void*)0x3);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  child = proc_fork(&cannot_signal_any_process_in_group, 0x0);
+  KEXPECT_EQ(child, proc_wait(0x0));
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -378,6 +486,8 @@ void signal_test(void) {
 
   signal_allowed_test();
   signal_permission_test();
+
+  signal_send_to_pgroup_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
