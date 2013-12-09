@@ -102,7 +102,6 @@ static void kill_test(void) {
   const pid_t my_pid = proc_current()->id;
 
   KTEST_BEGIN("proc_kill() invalid pid test");
-  KEXPECT_EQ(-EINVAL, proc_kill(-1, SIGABRT));
   // TODO(aoates): figure out a better way to generate a guaranteed-unused PID.
   KEXPECT_EQ(-ESRCH, proc_kill(100, SIGABRT));
   KEXPECT_EQ(-ESRCH, proc_kill(-100, SIGABRT));
@@ -466,6 +465,57 @@ static void signal_send_to_pgroup_test(void) {
   KEXPECT_EQ(child, proc_wait(0x0));
 }
 
+static void send_all_allowed_func(void* arg) {
+  KEXPECT_EQ(0, setuid((uid_t)arg));
+  KEXPECT_EQ(0, proc_kill(-1, SIGKILL));
+  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+}
+
+static void signal_send_to_all_allowed_test(void) {
+  KTEST_BEGIN("proc_kill(): pid == -1 sends to all allowed processes");
+
+  int children[4];
+  for (int i = 0; i < 3; ++i) {
+    children[i] = proc_fork(&signal_child_func, 0x0);
+  }
+
+  // Make children 1 and 3 killable by child 4.
+  proc_get(children[0])->ruid = 800;
+  proc_get(children[1])->ruid = 600;
+  proc_get(children[2])->ruid = 800;
+  children[3] = proc_fork(&send_all_allowed_func, (void*)800);
+
+  int statuses[4];
+  for (int i = 0; i < 4; ++i) {
+    int status;
+    int child = proc_wait(&status);
+    if (child == children[0]) statuses[0] = status;
+    else if (child == children[1]) statuses[1] = status;
+    else if (child == children[2]) statuses[2] = status;
+    else if (child == children[3]) statuses[3] = status;
+    else die("unknown child");
+  }
+
+  KEXPECT_EQ(1, statuses[0]);
+  KEXPECT_EQ(0, statuses[1]);
+  KEXPECT_EQ(1, statuses[2]);
+  KEXPECT_EQ(1, statuses[3]);
+
+  KTEST_BEGIN("proc_kill(): pid == -1 skips processes 0 and 1");
+  int child = proc_fork(&send_all_allowed_func, (void*)0);
+  KEXPECT_EQ(child, proc_wait(0x0));
+
+  // The signal shouldn't have been sent to processes 0 or 1.
+  if (proc_get(0))
+    KEXPECT_EQ(0, ksigismember(&proc_get(0)->pending_signals, SIGKILL));
+  if (proc_get(1))
+    KEXPECT_EQ(0, ksigismember(&proc_get(1)->pending_signals, SIGKILL));
+
+  // TODO(aoates): is there any scenario in which a process wouldn't be able to
+  // send a signal to itself, and therefore proc_kill(-1, X) would return
+  // -EPERM?
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -488,6 +538,7 @@ void signal_test(void) {
   signal_permission_test();
 
   signal_send_to_pgroup_test();
+  signal_send_to_all_allowed_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {

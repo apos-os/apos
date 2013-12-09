@@ -90,8 +90,10 @@ int proc_kill(pid_t pid, int sig) {
   }
 
   if (pid == -1) {
-    // TODO(aoates): send to all processes allowed.
-    return -EINVAL;
+    for (pid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
+      proc_kill_one(proc_get(pid), sig);
+    }
+    return 0;
   } else if (pid <= 0) {
     if (pid == 0) pid = -proc_current()->pgroup;
 
