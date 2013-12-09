@@ -524,6 +524,8 @@ void signal_test(void) {
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
+  sigset_t saved_pending_signals = proc_current()->pending_signals;
+  // TODO(aoates): do we want to save/restore the signal mask as well?
 
   ksigemptyset_test();
   ksigfillset_test();
@@ -546,4 +548,5 @@ void signal_test(void) {
       KASSERT(proc_sigaction(signum, &saved_handlers[signum], 0x0) == 0);
     }
   }
+  proc_current()->pending_signals = saved_pending_signals;
 }
