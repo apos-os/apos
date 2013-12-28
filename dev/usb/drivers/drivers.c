@@ -14,8 +14,11 @@
 
 #include "dev/usb/drivers/drivers.h"
 
+#include "dev/usb/drivers/hub.h"
+
 // Static table of drivers.
 static usb_driver_t g_drivers[] = {
+  { &usb_hubd_check_device, &usb_hubd_adopt_device },
   { NULL, NULL },
 };
 

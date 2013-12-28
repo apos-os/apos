@@ -16,5 +16,6 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   drivers.c \
+  hub.c \
 
 $(eval $(END_SOURCES))

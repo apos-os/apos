@@ -16,6 +16,10 @@
 #ifndef APOO_DEV_USB_HUB_H
 #define APOO_DEV_USB_HUB_H
 
+#include "dev/usb/device.h"
+
+#define USB_HUBD_HUB_CLASSCODE 0x09
+
 // Bits in the status returned by GET_HUB_STATUS.
 #define USB_HUBD_HUB_LOCAL_POWER   0x0001
 #define USB_HUBD_HUB_OVER_CURRENT  0x0002
@@ -96,5 +100,13 @@ struct usb_hubd_desc {
   uint8_t PortBits[];
 };
 typedef struct usb_hubd_desc usb_hubd_desc_t;
+
+// USB device driver interface.
+
+// Returns 1 if the device is a hub that this driver can handle.
+int usb_hubd_check_device(usb_device_t* dev);
+
+// Adopt the given hub device, returning -errno on error.
+int usb_hubd_adopt_device(usb_device_t* dev);
 
 #endif
