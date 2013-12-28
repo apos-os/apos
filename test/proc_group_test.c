@@ -177,6 +177,53 @@ static void child_setgpid_test(void* arg) {
   KEXPECT_EQ(child, proc_wait(0x0));
 }
 
+// Create a process group with no leader, then fork a bunch of times and make
+// sure the process group id isn't reused.
+//
+// Note: this test isn't conclusive (depending on the pid allocation strategy it
+// could give false negatives), but is good enough for the current pid
+// allocation method.
+static void dont_reuse_pid_of_group_test(void) {
+  int kNumChildren = 5;
+
+  KTEST_BEGIN("fork(): don't use pid of an existing process group");
+
+  // Create a process group with a single non-leader member.
+  int parent_done = 0, pgroup_done = 0, test_done = 0;
+  const int pgroup_leader_pid = proc_fork(&loop_until_done, &parent_done);
+  KEXPECT_EQ(0, setpgid(pgroup_leader_pid, pgroup_leader_pid));
+  const int child_pid = proc_fork(&loop_until_done, &pgroup_done);
+  KEXPECT_EQ(0, setpgid(child_pid, pgroup_leader_pid));
+
+  parent_done = 1;
+  KEXPECT_EQ(pgroup_leader_pid, proc_wait(0x0));
+
+  // Now fork a bunch of times and make sure the parent pid isn't reused.
+  for (int i = 0; i < kNumChildren; ++i) {
+    const int pid = proc_fork(&loop_until_done, &test_done);
+    KEXPECT_NE(pid, pgroup_leader_pid);
+  }
+
+  // Now finish the process in the pgroup, and make sure we *do* reuse the
+  // pgroup pid.
+  pgroup_done = 1;
+  KEXPECT_EQ(child_pid, proc_wait(0x0));
+
+  int used_pid = 0;
+  for (int i = 0; i < kNumChildren; ++i) {
+    const int pid = proc_fork(&loop_until_done, &test_done);
+    if (pid == pgroup_leader_pid) used_pid = 1;
+  }
+
+  // At least one of the children should have gotten the (now empty) pgroup pid.
+  KEXPECT_EQ(1, used_pid);
+
+  test_done = 1;
+  for (int i = 0; i < 2 * kNumChildren; ++i) {
+    proc_wait(0x0);
+  }
+}
+
 void proc_group_test(void) {
   KTEST_SUITE_BEGIN("Process group tests");
 
@@ -190,6 +237,7 @@ void proc_group_test(void) {
   fork_and_run(&basic_setgpid_test, pgroup_leader_pid);
   fork_and_run(&invalid_params_setgpid_test, pgroup_leader_pid);
   fork_and_run(&child_setgpid_test, pgroup_leader_pid);
+  dont_reuse_pid_of_group_test();
 
   test_done = 1;
   int child = proc_wait(0x0);

@@ -78,8 +78,7 @@ static void proc_init_process(process_t* p) {
 process_t* proc_alloc() {
   int id = -1;
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
-    // TODO(aoates): ensure the process group is empty.
-    if (g_proc_table[i] == NULL) {
+    if (g_proc_table[i] == NULL && list_empty(&g_proc_group_table[i])) {
       id = i;
       break;
     }
