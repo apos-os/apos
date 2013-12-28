@@ -28,6 +28,7 @@ usb_driver_t* usb_find_driver(usb_device_t* device) {
     if (driver->check_device(device)) {
       return driver;
     }
+    driver++;
   }
   return 0x0;
 }
