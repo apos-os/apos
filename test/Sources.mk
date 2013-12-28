@@ -37,6 +37,7 @@ LOCAL_SOURCES := \
   mmap_test.c \
   page_alloc_map_test.c \
   page_alloc_test.c \
+  proc_group_test.c \
   ramdisk_test.c \
   ramfs_test.c \
   signal_test.c \

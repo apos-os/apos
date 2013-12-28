@@ -53,5 +53,7 @@
 #define SYS_GETEGID 30
 #define SYS_SETREUID 31
 #define SYS_SETREGID 32
+#define SYS_GETPGID 33
+#define SYS_SETPGID 34
 
 #endif

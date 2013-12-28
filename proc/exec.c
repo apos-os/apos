@@ -171,6 +171,8 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   const addr_t entry = binary->entry;
   kfree(binary);
 
+  proc_current()->execed = 1;
+
   user_mode_enter(stack_top, entry);
 
   // We shouldn't ever get here, since we can't return from user space.

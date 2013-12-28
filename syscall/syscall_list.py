@@ -265,3 +265,9 @@ AddSyscall('setreuid', 31, 'setreuid', 'proc/user.h', 'user/process.h',
 
 AddSyscall('setregid', 32, 'setregid', 'proc/user.h', 'user/process.h',
     'int', ['gid_t:rgid:u', 'gid_t:egid:u'])
+
+AddSyscall('getpgid', 33, 'getpgid', 'proc/group.h', 'user/process.h',
+    'pid_t', ['pid_t:pid:u'])
+
+AddSyscall('setpgid', 34, 'setpgid', 'proc/group.h', 'user/process.h',
+    'int', ['pid_t:pid:u', 'pid_t:pgid:u'])

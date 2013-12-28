@@ -68,12 +68,7 @@ int proc_force_signal(process_t* proc, int sig) {
   return result;
 }
 
-int proc_kill(pid_t pid, int sig) {
-  if (pid == 0) {
-    return -EINVAL;
-  }
-
-  process_t* proc = proc_get(pid);
+static int proc_kill_one(process_t* proc, int sig) {
   if (!proc || proc->state != PROC_RUNNING) {
     return -ESRCH;
   }
@@ -87,6 +82,38 @@ int proc_kill(pid_t pid, int sig) {
   }
 
   return proc_force_signal(proc, sig);
+}
+
+int proc_kill(pid_t pid, int sig) {
+  if (sig < SIGNULL || sig > SIGMAX) {
+    return -EINVAL;
+  }
+
+  if (pid == -1) {
+    for (pid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
+      proc_kill_one(proc_get(pid), sig);
+    }
+    return 0;
+  } else if (pid <= 0) {
+    if (pid == 0) pid = -proc_current()->pgroup;
+
+    list_t* pgroup = proc_group_get(-pid);
+    if (!pgroup || list_empty(pgroup)) {
+      return -ESRCH;
+    }
+
+    int num_signalled = 0;
+    for (list_link_t* link = pgroup->head; link != 0x0; link = link->next) {
+      int result =
+          proc_kill_one(container_of(link, process_t, pgroup_link), sig);
+      KASSERT_DBG(result == 0 || result == -EPERM);
+      if (result == 0) num_signalled++;
+    }
+    return (num_signalled > 0) ? 0 : -EPERM;
+  } else {
+    process_t* proc = proc_get(pid);
+    return proc_kill_one(proc, sig);
+  }
 }
 
 int proc_sigaction(int signum, const struct sigaction* act,

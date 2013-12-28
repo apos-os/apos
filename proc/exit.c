@@ -55,6 +55,10 @@ void proc_exit(int status) {
   // Cancel any outstanding alarms.
   proc_alarm(0);
 
+  // Remove it from the process group list.
+  list_remove(proc_group_get(p->pgroup), &p->pgroup_link);
+  p->pgroup = -1;
+
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);
   list_link_t* child_link = list_pop(&p->children_list);

@@ -19,6 +19,7 @@ LOCAL_SOURCES := \
   exec.c \
   exit.c \
   fork.c \
+  group.c \
   kthread.c \
   kthread_asm.s \
   scheduler.c \
