@@ -18,6 +18,7 @@
 #include "common/kstring.h"
 #include "dev/usb/bus.h"
 #include "dev/usb/device.h"
+#include "dev/usb/drivers/drivers.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
 
@@ -121,6 +122,7 @@ static void usb_get_device_desc(usb_init_state_t* state);
 static void usb_get_device_desc_done(usb_irp_t* irp, void* arg);
 static void usb_get_config_desc(usb_init_state_t* state);
 static void usb_get_config_desc_done(usb_irp_t* irp, void* arg);
+static void usb_init_driver(usb_init_state_t* state);
 static void usb_init_done(usb_init_state_t* state);
 
 void usb_init_device(usb_device_t* dev) {
@@ -300,7 +302,24 @@ static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
     return;
   }
 
-  // TODO find a driver, finish init, etc
+  usb_init_driver(state);
+}
+
+static void usb_init_driver(usb_init_state_t* state) {
+  usb_driver_t* driver = usb_find_driver(state->dev);
+  if (!driver) {
+    klogf("USB: no driver found for device with class/subclass 0x%x/0x%x\n",
+          (int)state->dev->dev_desc.bDeviceClass,
+          (int)state->dev->dev_desc.bDeviceSubClass);
+  } else {
+    int result = driver->adopt_device(state->dev);
+    if (result) {
+      klogf("USB: Warning: unable to assign driver to device: %s\n",
+            errorname(-result));
+    }
+  }
+
+  // TODO finish init, etc
   usb_init_done(state);
 }
 
