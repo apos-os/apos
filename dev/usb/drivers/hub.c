@@ -25,9 +25,10 @@ int usb_hubd_check_device(usb_device_t* dev) {
       dev->dev_desc.bDeviceSubClass == 0 &&
       dev->dev_desc.bDeviceProtocol == 0) {
     if (dev->dev_desc.bLength != 0x12 ||
-        dev->dev_desc.bMaxPacketSize0 != 64 ||
         dev->dev_desc.bNumConfigurations != 1 ||
         dev->speed != USB_FULL_SPEED) {
+      // Note: it seems that the USB spec requires bMaxPacketSize0 to be 64, but
+      // for QEMU virtual hubs it's 8, so we don't bother checking it.
       klogf("Warning: invalid USB hub device descriptor; ignoring\n");
       return 0;
     }
