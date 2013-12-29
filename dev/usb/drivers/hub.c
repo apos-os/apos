@@ -16,6 +16,12 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "dev/usb/usb_driver.h"
+
+static void set_configuration_done(usb_device_t* dev, void* arg) {
+  KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
+  klogf("USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index, dev->address);
+}
 
 int usb_hubd_check_device(usb_device_t* dev) {
   KASSERT_DBG(dev->state == USB_DEV_ADDRESS);
@@ -40,6 +46,15 @@ int usb_hubd_check_device(usb_device_t* dev) {
 }
 
 int usb_hubd_adopt_device(usb_device_t* dev) {
-  klogf("USB: found hub device\n");
+  klogf("USB HUBD: found device\n");
+
+  // Step 1: configure the hub.
+  KASSERT_DBG(dev->dev_desc.bNumConfigurations == 1);
+  uint8_t config;
+  usb_get_configuration_values(dev, &config);
+  klogf("USB HUBD: configuring hub %d.%d (config %d)\n", dev->bus->bus_index,
+        dev->address, config);
+  usb_set_configuration(dev, config, &set_configuration_done, dev);
+
   return 0;
 }

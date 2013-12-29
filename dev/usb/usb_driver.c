@@ -553,3 +553,11 @@ static void usb_set_configuration_done(usb_irp_t* irp, void* arg) {
 
   kfree(state);
 }
+
+void usb_get_configuration_values(usb_device_t* dev, uint8_t* config_values)  {
+  for (int i = 0; i < dev->dev_desc.bNumConfigurations; ++i) {
+    usb_desc_config_t* config = (usb_desc_config_t*)dev->configs[i].desc;
+    KASSERT_DBG(config->bDescriptorType == USB_DESC_CONFIGURATION);
+    config_values[i] = config->bConfigurationValue;
+  }
+}

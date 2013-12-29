@@ -58,4 +58,11 @@ void usb_set_configuration(usb_device_t* dev, uint8_t config,
                            void (*callback)(usb_device_t*, void*),
                            void* arg);
 
+// Descriptor manipulation utilities.
+
+// Return the configuration values (i.e. the numbers given to SET_CONFIGURATION)
+// of the given device in |config_values|.  |config_values| must have at least
+// |dev->dev_desk->bNumConfigurations| entries.
+void usb_get_configuration_values(usb_device_t* dev, uint8_t* config_values);
+
 #endif
