@@ -97,6 +97,12 @@ void usb_init() {
 
     bus->next_address = USB_FIRST_ADDRESS;
 
+    int result = bus->hcd->init(bus->hcd);
+    if (result) {
+      klogf("USB WARNING: unable to initialize bus %i: %s\n", i,
+            errorname(-result));
+    }
+
     // Create a usb_device_t for the root hub of the bus.
     usb_device_t* root_hub =
         usb_create_device(bus, 0x0 /* parent */, USB_FULL_SPEED);

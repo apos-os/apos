@@ -306,7 +306,10 @@ static void uhci_interrupt(void* arg) {
   outs(c->base_port + USBSTS, 0x3);
 }
 
-static void init_controller(usb_uhci_t* c) {
+// Initialize the UHCI HCD.  Called by usb_init().
+static int uhci_init_controller(usb_hcdi_t* hcd) {
+  usb_uhci_t* c = (usb_uhci_t*)hcd->dev_data;
+
   if (!td_alloc) {
     td_alloc = slab_alloc_create(sizeof(uhci_td_t), SLAB_MAX_PAGES);
   }
@@ -374,6 +377,14 @@ static void init_controller(usb_uhci_t* c) {
   uint16_t cmd = ins(c->base_port + USBCMD);
   cmd |= USBCMD_CF | USBCMD_RS;
   outs(c->base_port + USBCMD, cmd);
+
+  // Register IRQ handler for the controller.
+  // TODO(aoates): this will clobber any other controllers listening on this
+  // IRQ!  This is probably not what we want.
+  klogf("registering UHCI at base port 0x%x on IRQ %d\n", c->base_port, c->irq);
+  register_irq_handler(c->irq, &uhci_interrupt, c);
+
+  return 0;
 }
 
 // Test sequence for the controller that detects devices and sends their
@@ -436,22 +447,14 @@ void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
   usb_uhci_t* c = &g_controllers[g_num_controllers++];
   kmemset(c, 0, sizeof(usb_uhci_t));
   c->base_port = base_addr;
+  c->irq = irq;
   klogf("USB: found UHCI controller #%d (at 0x%x)\n", g_num_controllers,
         c->base_port);
-
-  // Initialize the controller.
-  // TODO(aoates): we probably need to mask interrupts.
-  init_controller(c);
-
-  // Register IRQ handler for the controller.
-  // TODO(aoates): this will clobber any other controllers listening on this
-  // IRQ!  This is probably not what we want.
-  klogf("registering UHCI at base port 0x%x on IRQ %d\n", base_addr, (uint32_t)irq);
-  register_irq_handler(irq, &uhci_interrupt, c);
 
   // Register it with the USBD.
   usb_hcdi_t* hcdi = (usb_hcdi_t*)kmalloc(sizeof(usb_hcdi_t));
   kmemset(hcdi, 0, sizeof(usb_hcdi_t));
+  hcdi->init = &uhci_init_controller;
   hcdi->register_endpoint = &uhci_register_endpoint;
   hcdi->unregister_endpoint = &uhci_unregister_endpoint;
   hcdi->schedule_irp = &uhci_schedule_irp;
