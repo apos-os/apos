@@ -21,6 +21,34 @@
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
   klogf("USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index, dev->address);
+
+  // Sanity check the hub.
+  int status_endpoint_idx = 0;
+  for (int i = 1; i < USB_NUM_ENDPOINTS; ++i) {
+    if (dev->endpoints[i]) {
+      if (status_endpoint_idx > 0) {
+        klogf("USB HUBD: hub %d.%d has more than 1 endpoint; invalid\n",
+              dev->bus->bus_index, dev->address);
+        return;
+      }
+      status_endpoint_idx = i;
+    }
+  }
+
+  if (status_endpoint_idx <= 0) {
+    klogf("USB HUBD: hub %d.%d has no status change endpoint; invalid\n",
+          dev->bus->bus_index, dev->address);
+    return;
+  }
+
+  usb_endpoint_t* status_change = dev->endpoints[status_endpoint_idx];
+  if (status_change->type != USB_INTERRUPT ||
+      status_change->dir != USB_IN) {
+    klogf("USB HUBD: hub %d.%d has an invalid status change endpoint "
+          "(must be an IN/INTERRUPT endpoint)\n", dev->bus->bus_index,
+          dev->address);
+    return;
+  }
 }
 
 int usb_hubd_check_device(usb_device_t* dev) {
