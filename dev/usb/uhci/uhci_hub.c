@@ -484,7 +484,7 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         desc_interface.bDescriptorType = USB_DESC_INTERFACE;
         desc_interface.bInterfaceNumber = 0;
         desc_interface.bAlternateSetting = 0;
-        desc_interface.bNumEndpoints = 0;
+        desc_interface.bNumEndpoints = 1;
         desc_interface.bInterfaceClass = USB_CLASS_HUB;
         desc_interface.bInterfaceSubClass = 0;
         desc_interface.bInterfaceProtocol = 0;
