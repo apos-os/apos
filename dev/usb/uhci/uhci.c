@@ -332,7 +332,6 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   KASSERT((frame_list_phys & FLBASEADDR_MASK) == frame_list_phys);
   outl(c->base_port + FLBASEADDR, frame_list_phys);
   outs(c->base_port + FRNUM, 0x00);
-  outs(c->base_port + USBINTR, USBINTR_IOC | USBINTR_TMO_CRC);
 
   c->pending_irps = 0x0;
 
@@ -383,6 +382,9 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   // IRQ!  This is probably not what we want.
   klogf("registering UHCI at base port 0x%x on IRQ %d\n", c->base_port, c->irq);
   register_irq_handler(c->irq, &uhci_interrupt, c);
+
+  // Enable interrupts.
+  outs(c->base_port + USBINTR, USBINTR_IOC | USBINTR_TMO_CRC);
 
   return 0;
 }
