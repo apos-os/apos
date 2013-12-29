@@ -370,14 +370,125 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
   return result;
 }
 
+// The context of a stream pipe read/write.
+typedef struct {
+  usb_irp_t* irp;
+  usb_hcdi_irp_t* hcdi_irp;
+
+  // The physically-mappable buffer we allocate for the usb_hcdi_irp.
+  void* phys_buf;
+
+  // The next callback to run in handling the request.  This will be pushed onto
+  // the USB thread pool by the trampoline function (which is called by the
+  // HCD, possibly on an interrupt context).
+  //
+  // The argument is a usb_request_context_t*.
+  void (*callback)(void*);
+} usb_stream_context_t;
+
+// Run by the HCDI when the HCD IRP finishes.
+static void usb_stream_done(usb_hcdi_irp_t* irp, void* arg);
+
+// Clean up and finish the stream IRP, optionally running the callback.
+static void usb_stream_finish(usb_stream_context_t* context, int do_callback);
+
+// TODO(aoates): try to combine code between this and the message pipe
+// functions.
+// Start an IRP on a stream pipe (either in or out).
+static int usb_stream_start(usb_irp_t* irp, int is_in) {
+  if (irp->endpoint->type == USB_CONTROL) {
+    return -EINVAL;
+  }
+  KASSERT(irp->endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
+  KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
+          irp->endpoint);
+
+  // TODO(aoates): lock the endpoint so it doesn't go away, somehow.
+
+  irp->status = USB_IRP_PENDING;
+  irp->outlen = 0;
+
+  // TODO(aoates): should we use a slab allocator for these?
+  usb_stream_context_t* context =
+      (usb_stream_context_t*)kmalloc(sizeof(usb_stream_context_t));
+  context->irp = irp;
+
+  // Create a physically-mappable buffer for the HCD IRP, since the buffer we
+  // were just given may not be.
+  // TODO(aoates): check if the passed-in buffer is physically mappable and, if
+  // so, use it instead of making a new one and copying.
+  if (irp->buflen == 0) {
+    context->phys_buf = 0x0;
+  } else {
+    slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
+    if (!alloc) {
+      kfree(context);
+      return -EINVAL;
+    }
+    context->phys_buf = slab_alloc(alloc);
+  }
+
+  // Send the HCD IRP.
+  context->hcdi_irp = alloc_hcdi_irp();
+  context->hcdi_irp->endpoint = irp->endpoint;
+  context->hcdi_irp->buffer = context->phys_buf;
+  context->hcdi_irp->buflen = irp->buflen;
+  context->hcdi_irp->pid = is_in ? USB_PID_IN : USB_PID_OUT;
+  context->hcdi_irp->data_toggle = USB_DATA_TOGGLE_NORMAL;
+
+  context->hcdi_irp->callback = &usb_stream_done;
+  context->hcdi_irp->callback_arg = context;
+
+  usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
+  const int result = hc->schedule_irp(hc, context->hcdi_irp);
+  if (result != 0) {
+    usb_stream_finish(context, 0 /* don't run callback */);
+  }
+  return result;
+}
+
+static void usb_stream_done(usb_hcdi_irp_t* irp, void* arg) {
+  usb_stream_context_t* context = (usb_stream_context_t*)arg;
+  KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
+
+  if (context->hcdi_irp->status != USB_IRP_SUCCESS) {
+    context->irp->status = USB_IRP_DEVICE_ERROR;
+  } else {
+    context->irp->status = USB_IRP_SUCCESS;
+  }
+
+  usb_stream_finish(context, 1);
+}
+
+// Trampoline the caller's IRP-finished callback onto the USB threadpool.
+static void usb_stream_run_callback(void* arg) {
+  usb_irp_t* irp = (usb_irp_t*)arg;
+  irp->callback(irp, irp->cb_arg);
+}
+
+static void usb_stream_finish(usb_stream_context_t* context, int do_callback) {
+  slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
+  context->hcdi_irp = 0x0;
+  usb_irp_t* irp = context->irp;
+
+  if (context->phys_buf != 0x0) {
+    slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
+    KASSERT(alloc != 0x0);
+    slab_free(alloc, context->phys_buf);
+  }
+
+  kfree(context);
+
+  if (do_callback) {
+    int result = kthread_pool_push(&g_pool, &usb_stream_run_callback, irp);
+    KASSERT(result == 0);
+  }
+}
+
 int usb_send_data_in(usb_irp_t* irp) {
-  // TODO
-  die("usb_send_data_in NOT YET IMPLEMENTED");
-  return -ENOTSUP;
+  return usb_stream_start(irp, 1 /* is_in */);
 }
 
 int usb_send_data_out(usb_irp_t* irp) {
-  // TODO
-  die("usb_send_data_out NOT YET IMPLEMENTED");
-  return -ENOTSUP;
+  return usb_stream_start(irp, 0 /* is_in */);
 }
