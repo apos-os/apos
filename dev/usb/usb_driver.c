@@ -419,7 +419,9 @@ static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
-    klogf("ERROR: USB device init failed; GET_DESCRIPTOR (config) IRP failed");
+    klogf("ERROR: USB device init failed; GET_DESCRIPTOR (config) IRP failed "
+          "(config idx: %d  IRP status: %d)\n", state->next_config_idx,
+          irp->status);
     usb_init_done(state);
     return;
   }
