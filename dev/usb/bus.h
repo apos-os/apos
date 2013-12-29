@@ -20,6 +20,9 @@
 
 // A single logical USB bus, corresponding to a single hub controller.
 struct usb_bus {
+  // The index of this bus.
+  int bus_index;
+
   // The HCD controlling this hub.
   usb_hcdi_t* hcd;
 

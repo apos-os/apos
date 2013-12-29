@@ -33,8 +33,10 @@ void usb_create_bus(usb_hcdi_t* hc) {
 
   // Pre-initialize the next bus.  The rest of the initialization will happen
   // when the USB subsystem is fully initialized.
-  usb_bus_t* bus = &g_buses[g_num_buses++];
+  int bus_idx = g_num_buses++;
+  usb_bus_t* bus = &g_buses[bus_idx];
   kmemset(bus, 0, sizeof(usb_bus_t));
+  bus->bus_index = bus_idx;
   bus->hcd = hc;
 }
 

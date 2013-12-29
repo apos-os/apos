@@ -92,6 +92,7 @@ void usb_init() {
   // Initialize each bus we know about.
   for (int i = 0; i < usb_num_buses(); ++i) {
     usb_bus_t* bus = usb_get_bus(i);
+    KASSERT(bus->bus_index == i);
     KASSERT(bus->hcd != 0x0);
     KASSERT(bus->root_hub == 0x0);
 
