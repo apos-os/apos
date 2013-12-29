@@ -76,6 +76,9 @@ struct usb_device {
 
   // The next sibling of the device, if the parent is a hub.
   struct usb_device* next;
+
+  // Extra data for the driver that owns the device.
+  void* driver_data;
 };
 typedef struct usb_device usb_device_t;
 

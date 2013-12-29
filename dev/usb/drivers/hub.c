@@ -16,11 +16,20 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "dev/usb/usb_driver.h"
+#include "memory/kmalloc.h"
+
+// Per-device data for the hub driver.
+typedef struct {
+  // Index of the status change endpoint.
+  int status_change_idx;
+} usb_hubd_data_t;
 
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
-  klogf("USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index, dev->address);
+  klogf("USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index,
+        dev->address);
 
   // Sanity check the hub.
   int status_endpoint_idx = 0;
@@ -34,6 +43,7 @@ static void set_configuration_done(usb_device_t* dev, void* arg) {
       status_endpoint_idx = i;
     }
   }
+  ((usb_hubd_data_t*)dev->driver_data)->status_change_idx = status_endpoint_idx;
 
   if (status_endpoint_idx <= 0) {
     klogf("USB HUBD: hub %d.%d has no status change endpoint; invalid\n",
@@ -75,6 +85,11 @@ int usb_hubd_check_device(usb_device_t* dev) {
 
 int usb_hubd_adopt_device(usb_device_t* dev) {
   klogf("USB HUBD: found device\n");
+
+  usb_hubd_data_t* data =
+      (usb_hubd_data_t*)kmalloc(sizeof(usb_hubd_adopt_device));
+  kmemset(data, 0, sizeof(usb_hubd_data_t));
+  dev->driver_data = data;
 
   // Step 1: configure the hub.
   KASSERT_DBG(dev->dev_desc.bNumConfigurations == 1);
