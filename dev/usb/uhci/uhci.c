@@ -323,7 +323,11 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   uint32_t frame_list_phys = page_frame_alloc();
   c->frame_list = (uint32_t*)phys2virt(frame_list_phys);
 
-  // TODO(aoates): do a global reset on the bus.
+  // Do a global reset on the bus.
+  uint16_t cmd = ins(c->base_port + USBCMD);
+  outs(c->base_port + USBCMD, cmd | USBCMD_GRESET);
+  ksleep(20);
+  outs(c->base_port + USBCMD, cmd);
 
   // Set max packet to 64 bytes and disable everything.
   outs(c->base_port + USBCMD, USBCMD_MAXP);
@@ -373,7 +377,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   KASSERT(0 == uhci_hub_init(c));
 
   // Start the controller.
-  uint16_t cmd = ins(c->base_port + USBCMD);
+  cmd = ins(c->base_port + USBCMD);
   cmd |= USBCMD_CF | USBCMD_RS;
   outs(c->base_port + USBCMD, cmd);
 
