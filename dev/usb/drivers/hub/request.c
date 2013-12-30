@@ -29,3 +29,15 @@ void usb_make_GET_HUB_DESCRIPTOR(usb_dev_request_t* req_out, uint16_t length)  {
   req_out->wIndex = 0;
   req_out->wLength = length;
 }
+
+void usb_make_GET_PORT_STATUS(usb_dev_request_t* req_out, int port) {
+  req_out->bmRequestType =
+      USB_DEVREQ_DIR_DEV2HOST |
+      USB_DEVREQ_TYPE_CLASS |
+      USB_DEVREQ_RCPT_OTHER;
+  KASSERT_DBG(req_out->bmRequestType == 0xa3);
+  req_out->bRequest = USB_DEVREQ_GET_STATUS;
+  req_out->wValue = 0;
+  req_out->wIndex = port;
+  req_out->wLength = 4;
+}

@@ -19,5 +19,6 @@
 #include "dev/usb/request.h"
 
 void usb_make_GET_HUB_DESCRIPTOR(usb_dev_request_t* req_out, uint16_t length);
+void usb_make_GET_PORT_STATUS(usb_dev_request_t* req_out, int port);
 
 #endif
