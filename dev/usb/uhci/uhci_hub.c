@@ -780,16 +780,16 @@ void uhci_check_sc_timer(void* arg) {
   }
 
   if (status_change != 0x0) {
-    if (args->irp->buflen > 0) {
-      args->irp->out_len = 1;
-      *(uint8_t*)args->irp->buffer = status_change;
+    usb_hcdi_irp_t* irp = args->irp;
+    if (irp->buflen > 0) {
+      irp->out_len = 1;
+      *(uint8_t*)irp->buffer = status_change;
     } else {
-      args->irp->out_len = 0;
+      irp->out_len = 0;
     }
-    args->irp->status = USB_IRP_SUCCESS;
-    kmemset(args, 0, sizeof(uhci_check_sc_timer_args_t));  // TODO(remove)
+    irp->status = USB_IRP_SUCCESS;
     kfree(args);
-    args->irp->callback(args->irp, args->irp->callback_arg);
+    irp->callback(irp, irp->callback_arg);
   } else {
     // "NACK" the packet and schedule a timer to run in 250ms to check again.
     register_event_timer(get_time_ms() + UHCI_HUB_STATUS_CHANGE_INTERVAL,
