@@ -187,10 +187,24 @@ static void usb_create_config_endpoints(usb_device_t* dev, int config_idx) {
   }
 }
 
+void usb_acquire_default_address(usb_bus_t* bus,
+                                 void (*callback)(usb_bus_t* bus, void* arg),
+                                 void* arg) {
+  // TODO(aoates): support queueing to wait for the default address.
+  KASSERT(bus->default_address_in_use == 0);
+  bus->default_address_in_use = 1;
+  callback(bus, arg);
+}
+
+void usb_release_default_address(usb_bus_t* bus) {
+  KASSERT(bus->default_address_in_use == 1);
+  bus->default_address_in_use = 0;
+  // TODO(aoates): support queueing to wait for the default address.
+}
+
 usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
                                 usb_speed_t speed) {
-  KASSERT(bus->default_address_in_use == 0);
-
+  KASSERT(bus->default_address_in_use == 1);
   usb_device_t* dev = (usb_device_t*)kmalloc(sizeof(usb_device_t));
   kmemset(dev, 0, sizeof(usb_device_t));
 
@@ -218,7 +232,6 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
   // Set up the default control endpoint.
   usb_create_default_control_pipe(dev);
 
-  bus->default_address_in_use = 1;
   return dev;
 }
 
@@ -324,8 +337,7 @@ static void usb_set_address_done(usb_irp_t* irp, void* arg) {
   KASSERT(state->dev->bus->default_address_in_use);
   state->dev->address = state->address;
   state->dev->state = USB_DEV_ADDRESS;
-  state->dev->bus->default_address_in_use = 0;
-  // TODO(aoates): wake up waiting threads/callbacks for default address.
+  usb_release_default_address(state->dev->bus);
 
   // Get device descriptor.
   usb_get_device_desc(state);

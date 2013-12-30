@@ -70,6 +70,17 @@ slab_alloc_t* get_buf_alloc(int size) {
   }
 }
 
+// Create a usb_device_t for the root hub of the bus.
+static void usb_create_root_hub(usb_bus_t* bus, void* arg) {
+  usb_device_t* root_hub =
+      usb_create_device(bus, 0x0 /* parent */, USB_FULL_SPEED);
+  KASSERT(bus->root_hub == root_hub);
+  root_hub->state = USB_DEV_DEFAULT;
+
+  // Assign the root hub an address and hand to the HUBD.
+  usb_init_device(root_hub);
+}
+
 void usb_init() {
   KASSERT(g_usb_initialized == 0);
 
@@ -104,14 +115,9 @@ void usb_init() {
             errorname(-result));
     }
 
-    // Create a usb_device_t for the root hub of the bus.
-    usb_device_t* root_hub =
-        usb_create_device(bus, 0x0 /* parent */, USB_FULL_SPEED);
-    KASSERT(bus->root_hub == root_hub);
-    root_hub->state = USB_DEV_DEFAULT;
-
-    // TODO(aoates): assign the root hub an address and hand to the HUBD.
-    usb_init_device(root_hub);
+    // This should run synchronously, since nothing should be holding the
+    // default address.
+    usb_acquire_default_address(bus, &usb_create_root_hub, 0x0);
   }
 
   g_usb_initialized = 1;

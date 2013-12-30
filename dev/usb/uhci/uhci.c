@@ -435,6 +435,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   kmemset(bus, 0, sizeof(usb_bus_t));
   bus->hcd = ci;
   bus->next_address = 1;
+  bus->default_address_in_use = 1;
 
   usb_device_t* device = usb_create_device(
       bus, 0x0, (status & PORTSC_LOSPEED) ? USB_LOW_SPEED : USB_FULL_SPEED);
