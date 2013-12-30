@@ -555,7 +555,7 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
     desc->PortBits[1] = 0xFF;
 
     const int bytes_to_copy = min(irp->buflen, desc->bLength);
-    kmemcpy(irp->buffer, &desc, bytes_to_copy);
+    kmemcpy(irp->buffer, desc, bytes_to_copy);
     irp->out_len = bytes_to_copy;
   } else {
     klogf("UHCI: unsupported request type in GET_DESCRIPTOR: %d\n", type);
