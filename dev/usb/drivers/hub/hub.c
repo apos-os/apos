@@ -165,6 +165,8 @@ static void ack_port_change_done(usb_device_t* dev, int result);
 // IRP.
 static void handle_queued_events(usb_device_t* dev);
 
+static void handle_one_event(usb_device_t* dev, port_event_t* event);
+
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
   klogf("USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index,
@@ -384,20 +386,35 @@ static void ack_port_change_done(usb_device_t* dev, int result) {
 }
 
 static void handle_queued_events(usb_device_t* dev) {
-  klogf("USB HUBD: hub %d.%d queued events:\n",
-        dev->bus->bus_index, dev->address);
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
-  for (list_link_t* link = list_pop(&hubd->pending_port_events);
-       link != 0x0;
-       link = list_pop(&hubd->pending_port_events)) {
-    port_event_t* event = container_of(link, port_event_t, link);
-    klogf("  port %d %s\n", event->port,
-          port_event_type_str(event));
-    kfree(event);
+  KASSERT(hubd->current_port == -1);
+
+  // All the change bits should have been cleared by now.
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    KASSERT_DBG(get_hub_change_bit(hubd->status_change_buf) == 0);
+    for (int port = 1; port <= hubd->hub_desc.bNbrPorts; port++)
+      KASSERT_DBG(get_port_change_bit(hubd->status_change_buf, port) == 0);
   }
 
-  // If no changes were found, start the status change IRP again.
+  // Find an event to handle.
+  list_link_t* link = list_pop(&hubd->pending_port_events);
+  if (link) {
+    port_event_t* event = container_of(link, port_event_t, link);
+    handle_one_event(dev, event);
+    return;
+  }
+
+  // If no events are left, start the status change IRP again.
   start_status_change_irp(dev);
+}
+
+static void handle_one_event(usb_device_t* dev, port_event_t* event) {
+  klogf("USB HUBD: handling hub %d.%d event: port %d %s\n",
+        dev->bus->bus_index, dev->address, event->port,
+        port_event_type_str(event));
+  kfree(event);
+
+  handle_queued_events(dev);
 }
 
 int usb_hubd_check_device(usb_device_t* dev) {
