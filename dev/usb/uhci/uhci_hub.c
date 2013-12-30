@@ -283,6 +283,10 @@ static void uhci_port_reset_done(void* arg) {
   port_sc &= ~PORTSC_RST;
   outs(port_sc_register, port_sc);
 
+  // Enable the port.
+  port_sc |= PORTSC_ENABLE;
+  outs(port_sc_register, port_sc);
+
   // Signal the reset is done.
   args->hub->c_port_reset[args->port-1] = 1;
   kfree(args);
