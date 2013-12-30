@@ -38,6 +38,11 @@ void usb_hubd_clear_port_feature(
     usb_device_t* dev, int port, int feature,
     usb_hubd_callback_t callback);
 
+// Set a port feature.
+void usb_hubd_set_port_feature(
+    usb_device_t* dev, int port, int feature,
+    usb_hubd_callback_t callback);
+
 // Request a status change update from the given device.  When a status change
 // occurs (which may be indefinitely far in the future), the status change bits
 // will be copied into the given buffer and the callback will be invoked.

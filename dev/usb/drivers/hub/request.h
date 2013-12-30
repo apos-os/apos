@@ -21,5 +21,6 @@
 void usb_make_GET_HUB_DESCRIPTOR(usb_dev_request_t* req_out, uint16_t length);
 void usb_make_GET_PORT_STATUS(usb_dev_request_t* req_out, int port);
 void usb_make_CLEAR_PORT_FEATURE(usb_dev_request_t* req_out, int port, int feature);
+void usb_make_SET_PORT_FEATURE(usb_dev_request_t* req_out, int port, int feature);
 
 #endif

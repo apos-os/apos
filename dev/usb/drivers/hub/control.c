@@ -116,6 +116,18 @@ void usb_hubd_clear_port_feature(
                     0x0, 0, callback);
 }
 
+void usb_hubd_set_port_feature(
+    usb_device_t* dev, int port, int feature,
+    usb_hubd_callback_t callback) {
+  KASSERT(port > 0);
+
+  usb_dev_request_t* request = usb_alloc_request();
+  usb_make_SET_PORT_FEATURE(request, port, feature);
+
+  request_irp_start("SET_PORT_FEATURE", dev, request,
+                    0x0, 0, callback);
+}
+
 static void status_change_irp_done(usb_irp_t* irp, void* arg);
 
 void usb_hubd_get_status_change(usb_device_t* dev, uint8_t* sc_buf,
