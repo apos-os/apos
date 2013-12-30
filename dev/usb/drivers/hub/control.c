@@ -23,12 +23,30 @@
 #include "dev/usb/drivers/hub/request.h"
 #include "dev/usb/request.h"
 
-static void get_hub_desc_done(usb_irp_t* irp, void* arg);
-
 typedef struct {
   usb_hubd_callback_t callback;
   usb_dev_request_t* request;
 } context_t;
+
+// Standard finisher for request-based commands.
+static void request_irp_done(usb_irp_t* irp, void* arg) {
+  usb_device_t* dev = irp->endpoint->device;
+
+  int result = 0;
+  if (irp->status != USB_IRP_SUCCESS) {
+    result = -EIO;
+  }
+
+  context_t* context = (context_t*)arg;
+  usb_hubd_callback_t cb = context->callback;
+
+  // Free the IRP, context and request.
+  kfree(irp);
+  usb_free_request(context->request);
+  kfree(context);
+
+  cb(dev, result);
+}
 
 void usb_hubd_get_hub_descriptor(
     usb_device_t* dev, usb_hubd_desc_t* desc,
@@ -46,7 +64,7 @@ void usb_hubd_get_hub_descriptor(
   irp->buffer = desc;
   irp->buflen = sizeof(usb_hubd_desc_t);
 
-  irp->callback = &get_hub_desc_done;
+  irp->callback = &request_irp_done;
   irp->cb_arg = context;
 
   context->request = request;
@@ -62,29 +80,6 @@ void usb_hubd_get_hub_descriptor(
     callback(dev, result);
   }
 }
-
-static void get_hub_desc_done(usb_irp_t* irp, void* arg) {
-  usb_device_t* dev = irp->endpoint->device;
-
-  int result = 0;
-  if (irp->status != USB_IRP_SUCCESS) {
-    klogf("USB HUBD: failed to read hub descriptor for hub %d.%d\n",
-          dev->bus->bus_index, dev->address);
-    result = -EIO;
-  }
-
-  context_t* context = (context_t*)arg;
-  usb_hubd_callback_t cb = context->callback;
-
-  // Free the IRP, context and request.
-  kfree(irp);
-  usb_free_request(context->request);
-  kfree(context);
-
-  cb(dev, result);
-}
-
-static void get_port_status_done(usb_irp_t* irp, void* arg);
 
 void usb_hubd_get_port_status(
     usb_device_t* dev, int port,
@@ -103,7 +98,7 @@ void usb_hubd_get_port_status(
   irp->buffer = status_out;
   irp->buflen = 4;
 
-  irp->callback = &get_port_status_done;
+  irp->callback = &request_irp_done;
   irp->cb_arg = context;
 
   context->request = request;
@@ -118,27 +113,6 @@ void usb_hubd_get_port_status(
     usb_free_request(request);
     callback(dev, result);
   }
-}
-
-static void get_port_status_done(usb_irp_t* irp, void* arg) {
-  usb_device_t* dev = irp->endpoint->device;
-
-  int result = 0;
-  if (irp->status != USB_IRP_SUCCESS) {
-    klogf("USB HUBD: failed to get port status for hub %d.%d\n",
-          dev->bus->bus_index, dev->address);
-    result = -EIO;
-  }
-
-  context_t* context = (context_t*)arg;
-  usb_hubd_callback_t cb = context->callback;
-
-  // Free the IRP, context and request.
-  kfree(irp);
-  usb_free_request(context->request);
-  kfree(context);
-
-  cb(dev, result);
 }
 
 static void status_change_irp_done(usb_irp_t* irp, void* arg);
