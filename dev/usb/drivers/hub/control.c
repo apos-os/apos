@@ -115,6 +115,40 @@ void usb_hubd_get_port_status(
   }
 }
 
+void usb_hubd_clear_port_feature(
+    usb_device_t* dev, int port, int feature,
+    usb_hubd_callback_t callback) {
+  KASSERT(port > 0);
+  context_t* context = (context_t*)kmalloc(sizeof(context_t));
+
+  usb_dev_request_t* request = usb_alloc_request();
+  usb_make_CLEAR_PORT_FEATURE(request, port, feature);
+
+  usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
+  usb_init_irp(irp);
+
+  irp->endpoint = dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
+
+  irp->buffer = 0x0;
+  irp->buflen = 0;
+
+  irp->callback = &request_irp_done;
+  irp->cb_arg = context;
+
+  context->request = request;
+  context->callback = callback;
+
+  int result = usb_send_request(irp, request);
+  if (result) {
+    klogf("USB HUBD: CLEAR_PORT_FEATURE for hub %d.%d/port %d failed: %s\n",
+          dev->bus->bus_index, dev->address, port, errorname(-result));
+    kfree(context);
+    kfree(irp);
+    usb_free_request(request);
+    callback(dev, result);
+  }
+}
+
 static void status_change_irp_done(usb_irp_t* irp, void* arg);
 
 void usb_hubd_get_status_change(usb_device_t* dev, uint8_t* sc_buf,

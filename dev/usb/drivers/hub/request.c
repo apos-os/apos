@@ -41,3 +41,15 @@ void usb_make_GET_PORT_STATUS(usb_dev_request_t* req_out, int port) {
   req_out->wIndex = port;
   req_out->wLength = 4;
 }
+
+void usb_make_CLEAR_PORT_FEATURE(usb_dev_request_t* req_out, int port, int feature) {
+  req_out->bmRequestType =
+      USB_DEVREQ_DIR_HOST2DEV |
+      USB_DEVREQ_TYPE_CLASS |
+      USB_DEVREQ_RCPT_OTHER;
+  KASSERT_DBG(req_out->bmRequestType == 0x23);
+  req_out->bRequest = USB_DEVREQ_CLEAR_FEATURE;
+  req_out->wValue = feature;
+  req_out->wIndex = 0xFF & port;  // TODO(aoates): support indicator selector too.
+  req_out->wLength = 0;
+}
