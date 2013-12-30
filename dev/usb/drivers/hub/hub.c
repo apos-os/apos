@@ -19,6 +19,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/math.h"
+#include "dev/usb/drivers/hub/request.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
 
@@ -102,12 +103,7 @@ static void get_hub_desc(usb_device_t* dev) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
 
   usb_dev_request_t* request = usb_alloc_request();
-  usb_make_GET_DESCRIPTOR(request, USB_HUBD_DESC_TYPE, 0,
-                          sizeof(usb_hubd_data_t));
-  request->bmRequestType = USB_DEVREQ_DIR_DEV2HOST |
-      USB_DEVREQ_TYPE_CLASS |
-      USB_DEVREQ_RCPT_DEV;
-  KASSERT_DBG(request->bmRequestType == 0xa0);
+  usb_make_GET_HUB_DESCRIPTOR(request, sizeof(usb_hubd_data_t));
 
   usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
   usb_init_irp(irp);

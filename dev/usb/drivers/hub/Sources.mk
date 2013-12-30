@@ -16,5 +16,6 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   hub.c \
+  request.c \
 
 $(eval $(END_SOURCES))
