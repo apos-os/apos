@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "dev/usb/drivers/hub.h"
+#include "dev/usb/drivers/hub/hub.h"
 
 #include "common/errno.h"
 #include "common/kassert.h"

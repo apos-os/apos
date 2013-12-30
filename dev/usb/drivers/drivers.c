@@ -14,7 +14,7 @@
 
 #include "dev/usb/drivers/drivers.h"
 
-#include "dev/usb/drivers/hub.h"
+#include "dev/usb/drivers/hub/hub.h"
 
 // Static table of drivers.
 static usb_driver_t g_drivers[] = {

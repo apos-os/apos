@@ -20,7 +20,7 @@
 #include "common/errno.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
-#include "dev/usb/drivers/hub.h"
+#include "dev/usb/drivers/hub/hub.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci_hub.h"
