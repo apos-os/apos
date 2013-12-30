@@ -33,10 +33,9 @@ typedef struct usb_dev_request usb_dev_request_t;
 #define USB_DEVREQ_DIR_DEV2HOST  0x80
 
 #define USB_DEVREQ_TYPE_MASK   0x60
-#define USB_DEVREQ_TYPE_OFFSET 5
-#define USB_DEVREQ_TYPE_STD    0
-#define USB_DEVREQ_TYPE_CLASS  1
-#define USB_DEVREQ_TYPE_VENDOR 2
+#define USB_DEVREQ_TYPE_STD    (0 << 5)
+#define USB_DEVREQ_TYPE_CLASS  (1 << 5)
+#define USB_DEVREQ_TYPE_VENDOR (2 << 5)
 
 #define USB_DEVREQ_RCPT_MASK   0x1F
 #define USB_DEVREQ_RCPT_DEV    0
