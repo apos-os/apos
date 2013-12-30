@@ -292,16 +292,14 @@ static void handle_port_changes(usb_device_t* dev, int port) {
     } else {
       event = "DISCONNECTED";
       // TODO(aoates): handle
+      die("USB HUBD: cannot handle disconnected devices");
     }
     feature_to_clear = USB_HUBD_FEAT_C_PORT_CONNECTION;
   } else if (port_change & USB_HUBD_C_PORT_ENABLE) {
-    if (port_status & USB_HUBD_PORT_ENABLE) {
-      event = "ENABLED";
-      // TODO(aoates): handle
-    } else {
-      event = "DISABLED";
-      // TODO(aoates): handle
-    }
+    // C_PORT_ENABLE should only be set when enable is 1 -> 0.
+    KASSERT((port_status & USB_HUBD_PORT_ENABLE) == 0);
+    // TODO(aoates): handle
+    die("USB HUBD: cannot handle port error");
     feature_to_clear = USB_HUBD_FEAT_C_PORT_ENABLE;
   } else if (port_change & USB_HUBD_C_PORT_SUSPEND) {
     if (port_status & USB_HUBD_PORT_SUSPEND) {
@@ -313,22 +311,14 @@ static void handle_port_changes(usb_device_t* dev, int port) {
     }
     feature_to_clear = USB_HUBD_FEAT_C_PORT_SUSPEND;
   } else if (port_change & USB_HUBD_C_PORT_OVER_CURRENT) {
-    if (port_status & USB_HUBD_PORT_OVER_CURRENT) {
-      event = "OVER-CURRENT";
-      // TODO(aoates): handle
-    } else {
-      event = "NOT OVER-CURRENT";
-      // TODO(aoates): handle
-    }
+    die("USB HUBD: cannot handle over-current condition");
     feature_to_clear = USB_HUBD_FEAT_C_PORT_OVER_CURRENT;
   } else if (port_change & USB_HUBD_C_PORT_RESET) {
-    if (port_status & USB_HUBD_PORT_RESET) {
-      event = "RESETTING";
-      // TODO(aoates): handle
-    } else {
-      event = "DONE RESETTING";
-      // TODO(aoates): handle
-    }
+    // C_PORT_RESET should only be set when enable is 0 -> 1.
+    KASSERT(port_status & USB_HUBD_PORT_ENABLE);
+    KASSERT((port_status & USB_HUBD_PORT_RESET) == 0);
+    event = "DONE RESETTING";
+    // TODO(aoates): handle
     feature_to_clear = USB_HUBD_FEAT_C_PORT_RESET;
   }
 
