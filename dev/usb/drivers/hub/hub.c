@@ -117,6 +117,14 @@ static inline void clear_port_change_bit(uint8_t status_change_buf[9],
   status_change_buf[byte] &= ~mask;
 }
 
+static uint16_t hubd_get_port_status(const usb_hubd_data_t* hubd, int port) {
+  return hubd->port_status[2 * (port - 1)];
+}
+
+static uint16_t hubd_get_port_change(const usb_hubd_data_t* hubd, int port) {
+  return hubd->port_status[2 * (port - 1) + 1];
+}
+
 // An event on a port that needs to be handled.
 typedef struct {
   enum {
@@ -299,8 +307,8 @@ static void get_port_status_done(usb_device_t* dev, int result) {
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
   } else {
-    const uint16_t port_status = hubd->port_status[2 * (port - 1)];
-    const uint16_t port_change = hubd->port_status[2 * (port - 1) + 1];
+    const uint16_t port_status = hubd_get_port_status(hubd, port);
+    const uint16_t port_change = hubd_get_port_change(hubd, port);
     klogf("USB HUBD: GET_PORT_STATUS for hub %d.%d/port %d finished:\n",
           dev->bus->bus_index, dev->address, port);
     char buf[1024];
@@ -317,8 +325,8 @@ static void handle_port_changes(usb_device_t* dev, int port) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
   KASSERT(port == hubd->current_port);
 
-  const uint16_t port_status = hubd->port_status[2 * (port - 1)];
-  const uint16_t port_change = hubd->port_status[2 * (port - 1) + 1];
+  const uint16_t port_status = hubd_get_port_status(hubd, port);
+  const uint16_t port_change = hubd_get_port_change(hubd, port);
 
   port_event_t event;
   event.link = LIST_LINK_INIT;
