@@ -28,6 +28,40 @@ typedef struct {
   usb_dev_request_t* request;
 } context_t;
 
+static void request_irp_done(usb_irp_t* irp, void* arg);
+
+// Standard starter for request-based commands.
+static void request_irp_start(const char* name, usb_device_t* dev,
+                              usb_dev_request_t* request,
+                              void* buffer, uint32_t buflen,
+                              usb_hubd_callback_t callback) {
+  context_t* context = (context_t*)kmalloc(sizeof(context_t));
+
+  usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
+  usb_init_irp(irp);
+
+  irp->endpoint = dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
+
+  irp->buffer = buffer;
+  irp->buflen = buflen;
+
+  irp->callback = &request_irp_done;
+  irp->cb_arg = context;
+
+  context->request = request;
+  context->callback = callback;
+
+  int result = usb_send_request(irp, request);
+  if (result) {
+    klogf("USB HUBD: sending %s for hub %d.%d failed: %s\n",
+          name, dev->bus->bus_index, dev->address, errorname(-result));
+    kfree(context);
+    kfree(irp);
+    usb_free_request(request);
+    callback(dev, result);
+  }
+}
+
 // Standard finisher for request-based commands.
 static void request_irp_done(usb_irp_t* irp, void* arg) {
   usb_device_t* dev = irp->endpoint->device;
@@ -51,102 +85,35 @@ static void request_irp_done(usb_irp_t* irp, void* arg) {
 void usb_hubd_get_hub_descriptor(
     usb_device_t* dev, usb_hubd_desc_t* desc,
     usb_hubd_callback_t callback) {
-  context_t* context = (context_t*)kmalloc(sizeof(context_t));
-
   usb_dev_request_t* request = usb_alloc_request();
   usb_make_GET_HUB_DESCRIPTOR(request, sizeof(usb_hubd_desc_t));
 
-  usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
-  usb_init_irp(irp);
-
-  irp->endpoint = dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-
-  irp->buffer = desc;
-  irp->buflen = sizeof(usb_hubd_desc_t);
-
-  irp->callback = &request_irp_done;
-  irp->cb_arg = context;
-
-  context->request = request;
-  context->callback = callback;
-
-  int result = usb_send_request(irp, request);
-  if (result) {
-    klogf("USB HUBD: sending GET_DESCRIPTOR (hub) for hub %d.%d failed: %s\n",
-          dev->bus->bus_index, dev->address, errorname(-result));
-    kfree(context);
-    kfree(irp);
-    usb_free_request(request);
-    callback(dev, result);
-  }
+  request_irp_start("GET_HUB_DESCRIPTOR", dev, request,
+                    desc, sizeof(usb_hubd_desc_t), callback);
 }
 
 void usb_hubd_get_port_status(
     usb_device_t* dev, int port,
     uint16_t status_out[2], usb_hubd_callback_t callback) {
   KASSERT(port > 0);
-  context_t* context = (context_t*)kmalloc(sizeof(context_t));
 
   usb_dev_request_t* request = usb_alloc_request();
   usb_make_GET_PORT_STATUS(request, port);
 
-  usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
-  usb_init_irp(irp);
-
-  irp->endpoint = dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-
-  irp->buffer = status_out;
-  irp->buflen = 4;
-
-  irp->callback = &request_irp_done;
-  irp->cb_arg = context;
-
-  context->request = request;
-  context->callback = callback;
-
-  int result = usb_send_request(irp, request);
-  if (result) {
-    klogf("USB HUBD: GET_PORT_STATUS for hub %d.%d/port %d failed: %s\n",
-          dev->bus->bus_index, dev->address, port, errorname(-result));
-    kfree(context);
-    kfree(irp);
-    usb_free_request(request);
-    callback(dev, result);
-  }
+  request_irp_start("GET_PORT_STATUS", dev, request,
+                    status_out, 4, callback);
 }
 
 void usb_hubd_clear_port_feature(
     usb_device_t* dev, int port, int feature,
     usb_hubd_callback_t callback) {
   KASSERT(port > 0);
-  context_t* context = (context_t*)kmalloc(sizeof(context_t));
 
   usb_dev_request_t* request = usb_alloc_request();
   usb_make_CLEAR_PORT_FEATURE(request, port, feature);
 
-  usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
-  usb_init_irp(irp);
-
-  irp->endpoint = dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-
-  irp->buffer = 0x0;
-  irp->buflen = 0;
-
-  irp->callback = &request_irp_done;
-  irp->cb_arg = context;
-
-  context->request = request;
-  context->callback = callback;
-
-  int result = usb_send_request(irp, request);
-  if (result) {
-    klogf("USB HUBD: CLEAR_PORT_FEATURE for hub %d.%d/port %d failed: %s\n",
-          dev->bus->bus_index, dev->address, port, errorname(-result));
-    kfree(context);
-    kfree(irp);
-    usb_free_request(request);
-    callback(dev, result);
-  }
+  request_irp_start("CLEAR_PORT_FEATURE", dev, request,
+                    0x0, 0, callback);
 }
 
 static void status_change_irp_done(usb_irp_t* irp, void* arg);
