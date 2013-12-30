@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "common/math.h"
 #include "dev/usb/drivers/hub/control.h"
 #include "dev/usb/drivers/hub/request.h"
@@ -85,6 +86,10 @@ typedef struct {
   // The port we're currently handling changes to, or -1 if we aren't handling
   // any port's changes.
   int current_port;
+
+  // List of events that need to be handled before we look for more status
+  // changes.
+  list_t pending_port_events;
 } usb_hubd_data_t;
 
 // Get the hub change bit from the status_change_buf.
@@ -112,6 +117,31 @@ static inline void clear_port_change_bit(uint8_t status_change_buf[9],
   status_change_buf[byte] &= ~mask;
 }
 
+// An event on a port that needs to be handled.
+typedef struct {
+  enum {
+    PORT_NONE,
+    PORT_CONNECTED,
+    PORT_DISCONNECTED,
+    PORT_ERROR,
+    PORT_RESET_DONE,
+  } type;
+
+  int port;
+  list_link_t link;
+} port_event_t;
+
+static const char* port_event_type_str(const port_event_t* event) {
+  switch (event->type) {
+    case PORT_NONE: return "NONE";
+    case PORT_CONNECTED: return "CONNECTED";
+    case PORT_DISCONNECTED: return "DISCONNECTED";
+    case PORT_ERROR: return "ERROR";
+    case PORT_RESET_DONE: return "RESET_DONE";
+  }
+  return "<unknown>";
+}
+
 static void set_configuration_done(usb_device_t* dev, void* arg);
 static void get_hub_desc(usb_device_t* dev);
 static void get_hub_desc_done(usb_device_t* dev, int result);
@@ -127,8 +157,13 @@ static void process_all_changes(usb_device_t* dev);
 static void get_port_status(usb_device_t* dev, int port);
 static void get_port_status_done(usb_device_t* dev, int result);
 
+// Examines the port status and enqueues an event for it in pending_port_events.
 static void handle_port_changes(usb_device_t* dev, int port);
 static void ack_port_change_done(usb_device_t* dev, int result);
+
+// Handles all the queued events for the device, then restarts the status change
+// IRP.
+static void handle_queued_events(usb_device_t* dev);
 
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
@@ -242,8 +277,8 @@ static void process_all_changes(usb_device_t* dev) {
     }
   }
 
-  // If no changes were found, start the status change IRP again.
-  start_status_change_irp(dev);
+  // If there are no remaining changes, handle the queued events.
+  handle_queued_events(dev);
 }
 
 static void get_port_status(usb_device_t* dev, int port) {
@@ -283,32 +318,27 @@ static void handle_port_changes(usb_device_t* dev, int port) {
   const uint16_t port_status = hubd->port_status[2 * (port - 1)];
   const uint16_t port_change = hubd->port_status[2 * (port - 1) + 1];
 
-  const char* event = "";
+  port_event_t event;
+  event.link = LIST_LINK_INIT;
+  event.type = PORT_NONE;
+  event.port = port;
+
   int feature_to_clear = -1;
   if (port_change & USB_HUBD_C_PORT_CONNECTION) {
     if (port_status & USB_HUBD_PORT_CONNECTION) {
-      event = "CONNECTED";
-      // TODO(aoates): handle
+      event.type = PORT_CONNECTED;
     } else {
-      event = "DISCONNECTED";
-      // TODO(aoates): handle
-      die("USB HUBD: cannot handle disconnected devices");
+      event.type = PORT_DISCONNECTED;
     }
     feature_to_clear = USB_HUBD_FEAT_C_PORT_CONNECTION;
   } else if (port_change & USB_HUBD_C_PORT_ENABLE) {
     // C_PORT_ENABLE should only be set when enable is 1 -> 0.
     KASSERT((port_status & USB_HUBD_PORT_ENABLE) == 0);
-    // TODO(aoates): handle
-    die("USB HUBD: cannot handle port error");
+    event.type = ERROR;
     feature_to_clear = USB_HUBD_FEAT_C_PORT_ENABLE;
   } else if (port_change & USB_HUBD_C_PORT_SUSPEND) {
-    if (port_status & USB_HUBD_PORT_SUSPEND) {
-      event = "SUSPENDED";
-      // TODO(aoates): handle
-    } else {
-      event = "UNSUSPENDED";
-      // TODO(aoates): handle
-    }
+    // We shouldn't receive SUSPEND changes since we don't do suspends.
+    die("USB HUBD: cannot handle SUSPEND change");
     feature_to_clear = USB_HUBD_FEAT_C_PORT_SUSPEND;
   } else if (port_change & USB_HUBD_C_PORT_OVER_CURRENT) {
     die("USB HUBD: cannot handle over-current condition");
@@ -317,14 +347,18 @@ static void handle_port_changes(usb_device_t* dev, int port) {
     // C_PORT_RESET should only be set when enable is 0 -> 1.
     KASSERT(port_status & USB_HUBD_PORT_ENABLE);
     KASSERT((port_status & USB_HUBD_PORT_RESET) == 0);
-    event = "DONE RESETTING";
-    // TODO(aoates): handle
+    event.type = PORT_RESET_DONE;
     feature_to_clear = USB_HUBD_FEAT_C_PORT_RESET;
   }
 
+  if (event.type != PORT_NONE) {
+    KASSERT_DBG(feature_to_clear > 0);
+    port_event_t* event_heap = (port_event_t*)kmalloc(sizeof(port_event_t));
+    *event_heap = event;
+    list_push(&hubd->pending_port_events, &event_heap->link);
+  }
+
   if (feature_to_clear > 0) {
-    klogf("USB HUBD: %d.%d port %d %s\n",
-          dev->bus->bus_index, dev->address, port, event);
     usb_hubd_clear_port_feature(dev, port, feature_to_clear,
                                 &ack_port_change_done);
     return;
@@ -347,6 +381,23 @@ static void ack_port_change_done(usb_device_t* dev, int result) {
     // just process the bits as we see them the once?
     get_port_status(dev, port);
   }
+}
+
+static void handle_queued_events(usb_device_t* dev) {
+  klogf("USB HUBD: hub %d.%d queued events:\n",
+        dev->bus->bus_index, dev->address);
+  usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
+  for (list_link_t* link = list_pop(&hubd->pending_port_events);
+       link != 0x0;
+       link = list_pop(&hubd->pending_port_events)) {
+    port_event_t* event = container_of(link, port_event_t, link);
+    klogf("  port %d %s\n", event->port,
+          port_event_type_str(event));
+    kfree(event);
+  }
+
+  // If no changes were found, start the status change IRP again.
+  start_status_change_irp(dev);
 }
 
 int usb_hubd_check_device(usb_device_t* dev) {
@@ -378,6 +429,7 @@ int usb_hubd_adopt_device(usb_device_t* dev) {
       (usb_hubd_data_t*)kmalloc(sizeof(usb_hubd_data_t));
   kmemset(data, 0, sizeof(usb_hubd_data_t));
   data->current_port = -1;
+  data->pending_port_events = LIST_INIT;
   dev->driver_data = data;
 
   // Step 1: configure the hub.
