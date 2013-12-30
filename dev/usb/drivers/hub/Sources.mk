@@ -15,6 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  control.c \
   hub.c \
   request.c \
 

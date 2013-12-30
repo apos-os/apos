@@ -19,6 +19,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/math.h"
+#include "dev/usb/drivers/hub/control.h"
 #include "dev/usb/drivers/hub/request.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
@@ -57,7 +58,7 @@ typedef struct {
 
 static void set_configuration_done(usb_device_t* dev, void* arg);
 static void get_hub_desc(usb_device_t* dev);
-static void get_hub_desc_done(usb_irp_t* irp, void* arg);
+static void get_hub_desc_done(usb_device_t* dev, int result);
 
 static void start_status_change_irp(usb_device_t* dev);
 static void status_change_irp_done(usb_irp_t* irp, void* arg);
@@ -101,51 +102,21 @@ static void set_configuration_done(usb_device_t* dev, void* arg) {
 
 static void get_hub_desc(usb_device_t* dev) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
-
-  usb_dev_request_t* request = usb_alloc_request();
-  usb_make_GET_HUB_DESCRIPTOR(request, sizeof(usb_hubd_data_t));
-
-  usb_irp_t* irp = (usb_irp_t*)kmalloc(sizeof(usb_irp_t));
-  usb_init_irp(irp);
-
-  irp->endpoint = dev->endpoints[USB_DEFAULT_CONTROL_PIPE];
-
-  irp->buffer = &hubd->hub_desc;
-  irp->buflen = sizeof(usb_hubd_desc_t);
-
-  irp->callback = &get_hub_desc_done;
-  irp->cb_arg = request;
-
-  int result = usb_send_request(irp, request);
-  if (result) {
-    klogf("USB HUBD: sending GET_DESCRIPTOR (hub) for hub %d.%d failed: %s\n",
-          dev->bus->bus_index, dev->address, errorname(-result));
-    kfree(irp);
-    usb_free_request(request);
-    return;
-  }
+  usb_hubd_get_hub_descriptor(dev, &hubd->hub_desc, &get_hub_desc_done);
 }
 
-static void get_hub_desc_done(usb_irp_t* irp, void* arg) {
-  usb_device_t* dev = irp->endpoint->device;
+static void get_hub_desc_done(usb_device_t* dev, int result) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
-
   klogf("USB HUBD: GET_DESCRIPTOR (hub) for hub %d.%d finished\n",
         dev->bus->bus_index, dev->address);
 
-  if (irp->status != USB_IRP_SUCCESS) {
-    klogf("USB HUBD: failed to read hub descriptor for hub %d.%d\n",
-          dev->bus->bus_index, dev->address);
+  if (result) {
     // TODO(aoates): mark hub as invalid somehow.
   } else {
     klogf("USB HUBD: hub descriptor for hub %d.%d:\n",
           dev->bus->bus_index, dev->address);
     usb_print_desc_hub(&hubd->hub_desc);
   }
-
-  // Free the IRP and request.
-  kfree(irp);
-  usb_free_request(arg);
 
   start_status_change_irp(dev);
 }
