@@ -97,8 +97,8 @@ struct usb_hubd_desc {
   // bytes (so for a 3-port hub, the total length would be 2 bytes --- one each
   // for DeviceRemovable and PortPwrCtrlMask.  Only the first 3 bits of each
   // would be meaningful).
-  uint8_t PortBits[];
-};
+  uint8_t PortBits[16];
+} __attribute__((packed));
 typedef struct usb_hubd_desc usb_hubd_desc_t;
 
 // USB device driver interface.

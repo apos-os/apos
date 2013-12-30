@@ -539,23 +539,21 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
     KASSERT(desc_type == USB_HUBD_DESC_TYPE);
     KASSERT(desc_idx == 0);
 
-    const int desc_len = sizeof(usb_hubd_desc_t) + 2;
-    char desc_buf[desc_len];
-    usb_hubd_desc_t* desc = (usb_hubd_desc_t*)desc_buf;
+    usb_hubd_desc_t desc;
 
-    desc->bLength = desc_len;
-    desc->bDescriptorType = USB_HUBD_DESC_TYPE;
-    desc->bNbrPorts = 2;
-    desc->wHubCharacteristics =
+    desc.bLength = sizeof(usb_hubd_desc_t) - 16 + 2;
+    desc.bDescriptorType = USB_HUBD_DESC_TYPE;
+    desc.bNbrPorts = 2;
+    desc.wHubCharacteristics =
         USB_HUBD_CHAR_LPSM_GANGED |
         USB_HUBD_CHAR_OCPM_NONE1;
-    desc->bPwrOn2PwrGood = 0;
-    desc->bHubContrCurrent = 0;
-    desc->PortBits[0] = 0x0;
-    desc->PortBits[1] = 0xFF;
+    desc.bPwrOn2PwrGood = 0;
+    desc.bHubContrCurrent = 0;
+    desc.PortBits[0] = 0x0;
+    desc.PortBits[1] = 0xFF;
 
-    const int bytes_to_copy = min(irp->buflen, desc->bLength);
-    kmemcpy(irp->buffer, desc, bytes_to_copy);
+    const int bytes_to_copy = min(irp->buflen, desc.bLength);
+    kmemcpy(irp->buffer, &desc, bytes_to_copy);
     irp->out_len = bytes_to_copy;
   } else {
     klogf("UHCI: unsupported request type in GET_DESCRIPTOR: %d\n", type);
