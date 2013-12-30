@@ -28,6 +28,11 @@ void usb_hubd_get_hub_descriptor(
     usb_device_t* dev, usb_hubd_desc_t* desc,
     usb_hubd_callback_t callback);
 
+// Get the port status for the given port.
+void usb_hubd_get_port_status(
+    usb_device_t* dev, int port,
+    uint16_t status_out[2], usb_hubd_callback_t callback);
+
 // Request a status change update from the given device.  When a status change
 // occurs (which may be indefinitely far in the future), the status change bits
 // will be copied into the given buffer and the callback will be invoked.
