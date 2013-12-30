@@ -373,6 +373,8 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
 // The context of a stream pipe read/write.
 typedef struct {
   usb_irp_t* irp;
+  int is_in;
+
   usb_hcdi_irp_t* hcdi_irp;
 
   // The physically-mappable buffer we allocate for the usb_hcdi_irp.
@@ -411,6 +413,7 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   // TODO(aoates): should we use a slab allocator for these?
   usb_stream_context_t* context =
       (usb_stream_context_t*)kmalloc(sizeof(usb_stream_context_t));
+  context->is_in = is_in;
   context->irp = irp;
 
   // Create a physically-mappable buffer for the HCD IRP, since the buffer we
@@ -426,6 +429,10 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
       return -EINVAL;
     }
     context->phys_buf = slab_alloc(alloc);
+  }
+
+  if (!is_in) {
+    kmemcpy(context->phys_buf, irp->buffer, irp->buflen);
   }
 
   // Send the HCD IRP.
@@ -447,7 +454,7 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   return result;
 }
 
-static void usb_stream_done(usb_hcdi_irp_t* irp, void* arg) {
+static void usb_stream_done(usb_hcdi_irp_t* hcd_irp, void* arg) {
   usb_stream_context_t* context = (usb_stream_context_t*)arg;
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
 
@@ -455,6 +462,11 @@ static void usb_stream_done(usb_hcdi_irp_t* irp, void* arg) {
     context->irp->status = USB_IRP_DEVICE_ERROR;
   } else {
     context->irp->status = USB_IRP_SUCCESS;
+
+    context->irp->outlen = context->hcdi_irp->out_len;
+    if (context->is_in) {
+      kmemcpy(context->irp->buffer, context->phys_buf, context->irp->outlen);
+    }
   }
 
   usb_stream_finish(context, 1);
