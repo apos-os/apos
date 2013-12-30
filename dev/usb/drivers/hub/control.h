@@ -21,9 +21,21 @@
 #include "dev/usb/drivers/hub/hub.h"
 #include "dev/usb/usb.h"
 
+typedef void (*usb_hubd_callback_t)(usb_device_t*, int /* success or -error */);
+
 // Read the hub's hub descriptor and invoke the given callback.
 void usb_hubd_get_hub_descriptor(
     usb_device_t* dev, usb_hubd_desc_t* desc,
-    void (*callback)(usb_device_t*, int /* success or -error */));
+    usb_hubd_callback_t callback);
+
+// Request a status change update from the given device.  When a status change
+// occurs (which may be indefinitely far in the future), the status change bits
+// will be copied into the given buffer and the callback will be invoked.
+//
+// The buffer must be big enough to hold a bit for each port plus a bit for the
+// hub.
+void usb_hubd_get_status_change(usb_device_t* dev, uint8_t* sc_buf,
+                                int num_ports, int sc_endpoint,
+                                usb_hubd_callback_t callback);
 
 #endif

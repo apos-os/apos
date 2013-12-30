@@ -61,7 +61,7 @@ static void get_hub_desc(usb_device_t* dev);
 static void get_hub_desc_done(usb_device_t* dev, int result);
 
 static void start_status_change_irp(usb_device_t* dev);
-static void status_change_irp_done(usb_irp_t* irp, void* arg);
+static void status_change_irp_done(usb_device_t* dev, int result);
 
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
@@ -123,29 +123,17 @@ static void get_hub_desc_done(usb_device_t* dev, int result) {
 
 static void start_status_change_irp(usb_device_t* dev) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
-  usb_init_irp(&hubd->status_change_irp);
-
-  hubd->status_change_irp.endpoint = dev->endpoints[hubd->status_change_idx];
-  hubd->status_change_irp.buffer = &hubd->status_change_buf;
-  // One bit for each port, and one for the hub.
-  hubd->status_change_irp.buflen = ceiling_div(1 + hubd->hub_desc.bNbrPorts, 8);
-
-  hubd->status_change_irp.callback = &status_change_irp_done;
-
-  int result = usb_send_data_in(&hubd->status_change_irp);
-  if (result) {
-    klogf("USB HUBD: unable to start status change IRP: %s\n",
-          errorname(-result));
-  }
+  usb_hubd_get_status_change(dev, hubd->status_change_buf,
+                             hubd->hub_desc.bNbrPorts,
+                             hubd->status_change_idx,
+                             status_change_irp_done);
 }
 
-static void status_change_irp_done(usb_irp_t* irp, void* arg) {
-  usb_device_t* dev = irp->endpoint->device;
+static void status_change_irp_done(usb_device_t* dev, int result) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
 
-  if (irp->status != USB_IRP_SUCCESS) {
-    klogf("USB HUBD: status change IRP for hub %d.%d failed: %d\n",
-          dev->bus->bus_index, dev->address, irp->status);
+  if (result) {
+    // TODO(aoates): mark hub as invalid somehow.
   } else {
     klogf("USB HUBD: status change for hub %d.%d: [",
         dev->bus->bus_index, dev->address);
