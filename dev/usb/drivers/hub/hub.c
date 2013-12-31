@@ -135,6 +135,7 @@ typedef struct {
     PORT_RESET_DONE,
   } type;
 
+  usb_device_t* dev;  // The hub.
   int port;
   list_link_t link;
 } port_event_t;
@@ -172,8 +173,14 @@ static void ack_port_change_done(usb_device_t* dev, int result);
 // Handles all the queued events for the device, then restarts the status change
 // IRP.
 static void handle_queued_events(usb_device_t* dev);
-
 static void handle_one_event(usb_device_t* dev, port_event_t* event);
+static void handle_one_event_done(usb_device_t* dev);
+
+// Handle a connected port by creating a device, initializing it, etc.  Called
+// by the USBD when the bus's default address is available.
+static void connect_port(usb_bus_t* bus, void* arg);
+static void connect_port_reset_sent(usb_device_t* dev, int result);
+static void connect_port_reset_done(usb_device_t* dev);
 
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
@@ -329,6 +336,7 @@ static void handle_port_changes(usb_device_t* dev, int port) {
   const uint16_t port_change = hubd_get_port_change(hubd, port);
 
   port_event_t event;
+  event.dev = dev;
   event.link = LIST_LINK_INIT;
   event.type = PORT_NONE;
   event.port = port;
@@ -417,12 +425,100 @@ static void handle_queued_events(usb_device_t* dev) {
 }
 
 static void handle_one_event(usb_device_t* dev, port_event_t* event) {
+  usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
+  KASSERT(hubd->current_port == -1);
+
   klogf("USB HUBD: handling hub %d.%d event: port %d %s\n",
         dev->bus->bus_index, dev->address, event->port,
         port_event_type_str(event));
-  kfree(event);
 
+  hubd->current_port = event->port;
+
+  switch (event->type) {
+    case PORT_NONE:
+      die("NONE event should never be generated");
+
+    case PORT_CONNECTED:
+      usb_acquire_default_address(dev->bus, &connect_port, event);
+      handle_one_event_done(dev);
+      return;
+
+    case PORT_RESET_DONE:
+      kfree(event);
+      connect_port_reset_done(dev);
+      return;
+
+    case PORT_DISCONNECTED:
+    case PORT_ERROR:
+      // TODO(aoates): implement
+      die("unimplemented USB event");
+  }
+
+  die("unreachable");
+}
+
+static void handle_one_event_done(usb_device_t* dev) {
+  usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
+  KASSERT(hubd->current_port > 0);
+
+  hubd->current_port = -1;
   handle_queued_events(dev);
+}
+
+// We may have multiple of these pending for different ports, waiting for the
+// default address to be free, so we have to track the device and port
+// associated with each call.
+//
+// We can't block the event pipeline until a particular port is connected
+// because we need to process RESET_DONE events.
+static void connect_port(usb_bus_t* bus, void* arg) {
+  port_event_t* event = (port_event_t*)arg;
+
+  // We now have the default address.  We reset the port.  Once it's enabled,
+  // we'll create a device, assign an address, put it in the device tree, etc.
+  usb_hubd_set_port_feature(event->dev, event->port, USB_HUBD_FEAT_PORT_RESET,
+                            &connect_port_reset_sent);
+}
+
+static void connect_port_reset_sent(usb_device_t* dev, int result) {
+  if (result) {
+    klogf("USB HUBD: unable to reset connected port: %s\n",
+          errorname(-result));
+    // TODO(aoates): what else should we do?
+  }
+
+  // The reset request is done, but the reset itself may not be.  We'll catch
+  // that in a future status change.
+
+  // Just drop the current thread of control --- we should have started
+  // processing events again when we acquired the default address before
+  // starting the reset.
+}
+
+static void connect_port_reset_done(usb_device_t* dev) {
+  usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
+  KASSERT(hubd->current_port > 0);
+  const int port = hubd->current_port;
+
+  const uint16_t port_status = hubd_get_port_status(hubd, port);
+
+  // Check if the reset succeeded.
+  if (!(port_status & USB_HUBD_PORT_ENABLE)) {
+    klogf("USB HUBD: unable to reset hub %d.%d port %d\n",
+          dev->bus->bus_index, dev->address, port);
+    usb_release_default_address(dev->bus);
+    // TODO(aoates): what else should we do?
+  } else {
+    // Reset succeeded and the port is enabled!  Create a device, insert it into
+    // the device tree, and initialize it.
+    const usb_speed_t child_speed = (port_status & USB_HUBD_PORT_LOW_SPEED)
+        ? USB_LOW_SPEED : USB_FULL_SPEED;
+    usb_device_t* child = usb_create_device(dev->bus, dev, child_speed);
+    child->state = USB_DEV_DEFAULT;
+    usb_init_device(child);
+  }
+
+  handle_one_event_done(dev);
 }
 
 int usb_hubd_check_device(usb_device_t* dev) {
