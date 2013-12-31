@@ -154,7 +154,7 @@ void* bd_thread_test_func(void* arg) {
   uint32_t* buf = (uint32_t*)kmalloc(t->bd->sector_size);
 
   if (THREAD_TEST_VERBOSE) {
-    klogf("thread %d started\n", t->id);
+    KLOG("thread %d started\n", t->id);
   }
   for (uint32_t i = 0; i < t->NUM_BLOCKS; i++) {
     const uint32_t block = i * t->NUM_THREADS + t->offset;
@@ -166,13 +166,13 @@ void* bd_thread_test_func(void* arg) {
 
     // Write the block to the disk.
     if (THREAD_TEST_VERBOSE) {
-      klogf("thread %d writing block %u (actual block %u)\n", t->id, i, block);
+      KLOG("thread %d writing block %u (actual block %u)\n", t->id, i, block);
     }
     int result = t->bd->write(t->bd, block, buf, t->bd->sector_size);
     if (result != t->bd->sector_size) {
-      klogf("failed: block %d on dev %d in thread %d didn't match: "
-            "write failed (expected %d, got %d)\n",
-            block, t->dev_num, t->id, t->bd->sector_size, result);
+      KLOG("failed: block %d on dev %d in thread %d didn't match: "
+           "write failed (expected %d, got %d)\n",
+           block, t->dev_num, t->id, t->bd->sector_size, result);
       return (void*)1;
     }
     scheduler_yield();
@@ -185,29 +185,29 @@ void* bd_thread_test_func(void* arg) {
 
     // Read the block.
     if (THREAD_TEST_VERBOSE) {
-      klogf("thread %d reading block %u (actual block %u)\n", t->id, i, block);
+      KLOG("thread %d reading block %u (actual block %u)\n", t->id, i, block);
     }
     int result = t->bd->read(t->bd, block, buf, t->bd->sector_size);
     if (result != t->bd->sector_size) {
-      klogf("failed: block %d on dev %d in thread %d didn't match: "
-            "read failed (expected %d, got %d)\n",
-            block, t->dev_num, t->id, t->bd->sector_size, result);
+      KLOG("failed: block %d on dev %d in thread %d didn't match: "
+           "read failed (expected %d, got %d)\n",
+           block, t->dev_num, t->id, t->bd->sector_size, result);
       return (void*)1;
     }
 
     // Make sure it's the same thing we wrote.
     for (uint32_t j = 0; j < t->bd->sector_size / sizeof(uint32_t); ++j) {
       if (buf[j] != expected_val) {
-        klogf("failed: block %d, index %d on dev %d in thread %d didn't match: "
-              "expected 0x%x, found 0x%x\n",
-              block, j, t->dev_num, t->id, expected_val, buf[j]);
+        KLOG("failed: block %d, index %d on dev %d in thread %d didn't match: "
+             "expected 0x%x, found 0x%x\n",
+             block, j, t->dev_num, t->id, expected_val, buf[j]);
         return (void*)1;
       }
     }
     scheduler_yield();
   }
   if (THREAD_TEST_VERBOSE) {
-    klogf("thread %d done\n", t->id);
+    KLOG("thread %d done\n", t->id);
   }
   kfree(buf);
   return 0;

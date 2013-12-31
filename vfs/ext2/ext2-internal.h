@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "common/klog.h"
+
 // ext2 superblock structure.
 typedef struct {
   uint32_t s_inodes_count;
@@ -131,7 +133,7 @@ _Static_assert(sizeof(ext2_superblock_t) + 760 == 1024,
 #define EXT2_BZIP2_ALG 0x00000008
 #define EXT2_LZO_ALG 0x00000010
 
-void ext2_superblock_log(ext2_superblock_t* sb);
+void ext2_superblock_log(klog_level_t level, ext2_superblock_t* sb);
 
 // Convert a superblock from host endian to little endian.
 void ext2_superblock_ltoh(ext2_superblock_t* sb);
@@ -148,7 +150,7 @@ typedef struct {
 } __attribute__((packed)) ext2_block_group_desc_t;
 _Static_assert(sizeof(ext2_block_group_desc_t) == 32,
                "ext2 block group descriptor incorrect size");
-void ext2_block_group_desc_log(ext2_block_group_desc_t* bg);
+void ext2_block_group_desc_log(klog_level_t level, ext2_block_group_desc_t* bg);
 void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg);
 
 typedef struct {
@@ -173,7 +175,7 @@ typedef struct {
 } __attribute__((packed)) ext2_inode_t;
 _Static_assert(sizeof(ext2_inode_t) == 128,
                "ext2 inode incorrect size");
-void ext2_inode_log(ext2_inode_t* i, int long_mode);
+void ext2_inode_log(klog_level_t level, ext2_inode_t* i, int long_mode);
 void ext2_inode_ltoh(ext2_inode_t* i);
 
 // Reserved ext2 inodes.
@@ -216,7 +218,7 @@ typedef struct {
   uint8_t file_type;
   char name[];
 } ext2_dirent_t;
-void ext2_dirent_log(ext2_dirent_t* d);
+void ext2_dirent_log(klog_level_t level, ext2_dirent_t* d);
 void ext2_dirent_ltoh(ext2_dirent_t* d);
 
 // The minimum size (in bytes) of a dirent_t with the given name length.

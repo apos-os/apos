@@ -39,8 +39,8 @@ void proc_exit(int status) {
     if (p->fds[i] >= 0) {
       int result = vfs_close(i);
       if (result) {
-        klogf("WARNING: unable to close fd %d in proc_exit(): %s\n",
-              i, errorname(-result));
+        klogfm(KL_PROC, WARNING, "unable to close fd %d in proc_exit(): %s\n",
+               i, errorname(-result));
       }
     }
   }

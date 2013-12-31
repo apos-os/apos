@@ -16,11 +16,42 @@
 #ifndef APOO_KLOG_H
 #define APOO_KLOG_H
 
+#include "common/klog_modules.h"
 #include "dev/video/vterm.h"
 
-// Log the given string.
+// Log levels.  There is a global minimum log level, as well as per-module
+// minimum log levels.  A message will only be printed if its log level is less
+// than either of those minimums.
+typedef enum {
+  LOG_NONE = 0,
+
+  ERROR,
+  WARNING,
+  INFO,
+  DEBUG,
+  DEBUG2,
+  DEBUG3,
+
+  LOG_ALL,
+} klog_level_t;
+
+// Log the given string for the KL_GENERAL module.  Deprecated.
+// TODO(aoates): update all call sites for these functions to use klogfm().
 void klog(const char* s);
 void klogf(const char* fmt, ...);
+
+// Log the given string with the given module and log level.
+void klogm(klog_module_t module, klog_level_t level, const char* s);
+void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...);
+
+// Set the current global log level.
+void klog_set_level(klog_level_t level);
+
+// Set the current log level for the given module.
+void klog_set_module_level(klog_module_t module, klog_level_t level);
+
+// Returns 1 if logging is enabled for the given module and level.
+int klog_enabled(klog_module_t module, klog_level_t level);
 
 // Different logging modes for the kernel, to be used at different stages in the
 // boot process.  Defaults to KLOG_PARALLEL_PORT.  As soon as a vterm_t is

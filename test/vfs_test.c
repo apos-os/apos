@@ -722,7 +722,7 @@ static void write_large_test(void) {
     bytes_left -= written;
     write_chunks++;
   }
-  klogf("<wrote %d bytes in %d chunks>\n", kBufSize - bytes_left, write_chunks);
+  KLOG("<wrote %d bytes in %d chunks>\n", kBufSize - bytes_left, write_chunks);
 
   // Read it back in.
   KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
@@ -736,7 +736,7 @@ static void write_large_test(void) {
     bytes_left -= read;
     read_chunks++;
   }
-  klogf("<read %d bytes in %d chunks>\n", kBufSize - bytes_left, read_chunks);
+  KLOG("<read %d bytes in %d chunks>\n", kBufSize - bytes_left, read_chunks);
 
   KEXPECT_EQ(0, kmemcmp(buf, buf_read, kBufSize));
 
@@ -906,7 +906,7 @@ static void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
       num_dirents++;
       buf_offset += ent->length;
 
-      klogf("dirent: %d -> %s\n", ent->vnode, ent->name);
+      KLOG("dirent: %d -> %s\n", ent->vnode, ent->name);
 
       // Ignore the root lost+found and /dev directories.
       if (kstrcmp(ent->name, "lost+found") == 0 ||
@@ -923,8 +923,8 @@ static void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
         }
       }
       if (i == expected_num) {
-        klogf("Error: dirent <%d, %s> doesn't match any expected dirents\n",
-              ent->vnode, ent->name);
+        KLOG("Error: dirent <%d, %s> doesn't match any expected dirents\n",
+             ent->vnode, ent->name);
         KEXPECT_EQ(0, 1); // TODO(aoates): more elegant way to signal this
       }
     } while (buf_offset < len);

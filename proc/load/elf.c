@@ -20,6 +20,8 @@
 #include "proc/load/elf-internal.h"
 #include "vfs/vfs.h"
 
+#define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
+
 // Attempt to read exactly count bytes.  Read until we get there, or hit EOF.
 // Returns 0 if we read exactly count bytes, error if otherwise.
 static int elf_read_bytes(int fd, void* buf, unsigned int count) {
@@ -49,41 +51,41 @@ static int elf_check_header(const Elf32_Ehdr* header) {
 
   if (header->e_ident[EI_CLASS] != ELFCLASS32 ||
       header->e_ident[EI_DATA] != ELFDATA2LSB) {
-    klogf("error: unsupported ELF format (must be 32-bit, little endian)\n");
+    KLOG(INFO, "unsupported ELF format (must be 32-bit, little endian)\n");
     return -EINVAL;
   }
 
   if (header->e_ident[EI_VERSION] != EV_CURRENT ||
       header->e_version != EV_CURRENT) {
-    klogf("error: unknown ELF version (%d/%d)\n", header->e_ident[EI_VERSION],
-           header->e_version);
+    KLOG(INFO, "unknown ELF version (%d/%d)\n", header->e_ident[EI_VERSION],
+         header->e_version);
     return -EINVAL;
   }
 
   if (header->e_type != ET_EXEC) {
-    klogf("error: ELF type != ET_EXEC (%d)\n", header->e_type);
+    KLOG(INFO, "ELF type != ET_EXEC (%d)\n", header->e_type);
     return -EINVAL;
   }
 
   if (header->e_machine != EM_386) {
-    klogf("error: ELF type != EM_386 (%d)\n", header->e_machine);
+    KLOG(INFO, "ELF type != EM_386 (%d)\n", header->e_machine);
     return -EINVAL;
   }
 
   if (header->e_entry == 0) {
-    klogf("error: ELF missing entry point\n");
+    KLOG(INFO, "ELF missing entry point\n");
     return -EINVAL;
   }
 
   if (header->e_phoff == 0) {
-    klogf("error: ELF missing program header table\n");
+    KLOG(INFO, "ELF missing program header table\n");
     return -EINVAL;
   }
 
   if (header->e_phentsize != sizeof(Elf32_Phdr)) {
     // TODO(aoates): support this.
-    klogf("error: unsupported program header entry size (%d)\n",
-          header->e_phentsize);
+    KLOG(INFO, "unsupported program header entry size (%d)\n",
+         header->e_phentsize);
     return -ENOTSUP;
   }
 
@@ -102,8 +104,8 @@ static int elf_read_phdrs(int fd, const Elf32_Ehdr* header, Elf32_Phdr* phdrs) {
         phdrs[i].p_type != PT_LOAD &&
         phdrs[i].p_type != PT_NOTE &&
         phdrs[i].p_type != PT_GNU_STACK) {
-      klogf("error: unsupported ELF program segment type 0x%x (segment %d)\n",
-            phdrs[i].p_type, i);
+      KLOG(INFO, "unsupported ELF program segment type 0x%x (segment %d)\n",
+           phdrs[i].p_type, i);
       return -EINVAL;
     }
 

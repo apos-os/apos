@@ -26,6 +26,8 @@
 #include "vfs/ext2/ext2-internal.h"
 #include "vfs/ext2/ext2fs.h"
 
+#define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
+
 static vnode_t* ext2_alloc_vnode(struct fs* fs);
 static int ext2_get_root(struct fs* fs);
 static int ext2_get_vnode(vnode_t* vnode);
@@ -157,8 +159,8 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   // Find the block group and load it's inode bitmap.
   void* inode_bitmap = ext2_block_get(fs, inode_bitmap_block);
   if (!inode_bitmap) {
-    klogf("ext2: warning: couldn't get inode bitmap for block "
-          "group %d (block %d)\n", block_group, inode_bitmap_block);
+    KLOG(WARNING, "ext2: couldn't get inode bitmap for block "
+         "group %d (block %d)\n", block_group, inode_bitmap_block);
     return -ENOENT;
   }
   if (!bg_bitmap_get(fs, inode_bitmap, inode_bg_idx)) {
@@ -170,8 +172,8 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   // We know that the inode is allocated, now get it from the inode table.
   void* inode_table = ext2_block_get(fs, inode_table_block);
   if (!inode_table) {
-    klogf("ext2: warning: couldn't get inode table for block "
-          "group %d (block %d)\n", block_group, inode_table_block);
+    KLOG(WARNING, "ext2: couldn't get inode table for block "
+         "group %d (block %d)\n", block_group, inode_table_block);
     return -ENOENT;
   }
 
@@ -184,8 +186,10 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 
   ext2_inode_ltoh(inode);
 
-  //klogf("inode %d:\n", inode_num);
-  //ext2_inode_log(inode, 0);
+  if (klog_enabled(KL_EXT2, DEBUG2)) {
+    KLOG(DEBUG2, "inode %d:\n", inode_num);
+    ext2_inode_log(DEBUG2, inode, 0);
+  }
 
   return 0;
 }
@@ -211,8 +215,8 @@ static int write_inode(ext2fs_t* fs, uint32_t inode_num,
   // Get the needed inode table block.
   void* inode_table = ext2_block_get(fs, inode_table_block);
   if (!inode_table) {
-    klogf("ext2: warning: couldn't get inode table for block "
-          "group %d (block %d)\n", block_group, inode_table_block);
+    KLOG(WARNING, "ext2: couldn't get inode table for block "
+         "group %d (block %d)\n", block_group, inode_table_block);
     return -ENOENT;
   }
 
@@ -391,7 +395,7 @@ static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
       offset += ltoh16(dirent->rec_len);
     }
     if (block_idx > block_len) {
-      klogf("ext2: error: dirent spans multiple blocks\n");
+      KLOG(ERROR, "ext2: dirent spans multiple blocks\n");
       ext2_block_put(fs, block, BC_FLUSH_ASYNC);
       return -EFAULT;
     }
@@ -424,7 +428,7 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   }
   // TODO(aoates): allocate the blocks amongst several block groups.
   if (block_groups_checked == fs->num_block_groups) {
-    klogf("ext2 warning: no block groups found with %d free blocks\n", nblocks);
+    KLOG(WARNING, "ext2: no block groups found with %d free blocks\n", nblocks);
     return -ENOSPC;
   }
 
@@ -445,8 +449,8 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
     int idx_in_bg_bmp = bg_bitmap_find_free(fs, block_bitmap);
     if (idx_in_bg_bmp < 0) {
       ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
-      klogf("ext2 warning: block group desc indicated free blocks, but none "
-            "found in block bitmap!\n");
+      KLOG(WARNING, "ext2: block group desc indicated free blocks, but none "
+           "found in block bitmap!\n");
       fs->unhealthy = 1;
       return -ENOSPC;
     }
@@ -526,8 +530,8 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
     bg = (bg + 1) % fs->num_block_groups;
   }
   if (block_groups_checked == fs->num_block_groups) {
-    klogf("ext2 warning: superblock indicated free inodes, but none found "
-          "in block groups!\n");
+    KLOG(WARNING, "ext2: superblock indicated free inodes, but none found "
+         "in block groups!\n");
     fs->unhealthy = 1;
     return -ENOSPC;
   }
@@ -551,8 +555,8 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   int idx_in_bg = bg_bitmap_find_free(fs, inode_bitmap);
   if (idx_in_bg < 0) {
     ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
-    klogf("ext2 warning: block group desc indicated free inodes, but none found "
-          "in inode bitmap!\n");
+    KLOG(WARNING, "ext2: block group desc indicated free inodes, but none found "
+         "in inode bitmap!\n");
     fs->unhealthy = 1;
     return -ENOSPC;
   }
@@ -1011,7 +1015,7 @@ static int ext2_get_vnode(vnode_t* vnode) {
     vnode->type = VNODE_CHARDEV;
     vnode->dev = ext2_get_device(&inode);
   } else {
-    klogf("ext2: unsupported inode type: 0x%x\n", inode.i_mode);
+    KLOG(WARNING, "ext2: unsupported inode type: 0x%x\n", inode.i_mode);
     return -ENOTSUP;
   }
   vnode->len = inode.i_size;

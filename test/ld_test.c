@@ -324,9 +324,9 @@ typedef struct {
 
 static void* basic_read_test_func(void* arg) {
   read_test_data_t* d = (read_test_data_t*)arg;
-  klogf("ld_read() thread %d started\n", d->idx);
+  KLOG("ld_read() thread %d started\n", d->idx);
   d->out_len = ld_read(d->l, d->buf, d->len);
-  klogf("ld_read() thread %d read %d bytes\n", d->idx, d->out_len);
+  KLOG("ld_read() thread %d read %d bytes\n", d->idx, d->out_len);
   return 0;
 }
 

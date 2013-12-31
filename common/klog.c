@@ -31,6 +31,11 @@ static int g_klog_len = 0;
 
 #define VRAM_START 0xC00B8000
 
+static klog_level_t g_global_log_level = INFO;
+// Current minimum logging levels for each module.  Defaults to ERROR for each
+// module.
+static klog_level_t g_log_levels[KL_MODULE_MAX];
+
 static void pp_putc(uint8_t c) {
   // N.B.(aoates): In principle, I think we should be checking for the busy bit
   // here and at the end, but that doesn't seem to work with the bochs parallel
@@ -62,6 +67,21 @@ static void raw_putc(uint8_t c) {
 }
 
 void klog(const char* s) {
+  klogm(KL_GENERAL, INFO, s);
+}
+
+void klogf(const char* fmt, ...) {
+  char buf[1024];
+
+  va_list args;
+  va_start(args, fmt);
+  kvsprintf(buf, fmt, args);
+  va_end(args);
+
+  klog(buf);
+}
+
+static void klog_puts(const char* s) {
   int i = 0;
   while (s[i]) {
     pp_putc(s[i]);
@@ -84,7 +104,21 @@ void klog(const char* s) {
   }
 }
 
-void klogf(const char* fmt, ...) {
+void klogm(klog_module_t module, klog_level_t level, const char* s) {
+  if (!klog_enabled(module, level)) {
+    return;
+  }
+
+  switch (level) {
+    case ERROR: klog_puts("ERROR: "); break;
+    case WARNING: klog_puts("WARNING: "); break;
+    default: break;
+  }
+
+  klog_puts(s);
+}
+
+void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {
   char buf[1024];
 
   va_list args;
@@ -92,7 +126,19 @@ void klogf(const char* fmt, ...) {
   kvsprintf(buf, fmt, args);
   va_end(args);
 
-  klog(buf);
+  klogm(module, level, buf);
+}
+
+void klog_set_level(klog_level_t level) {
+  g_global_log_level = level;
+}
+
+void klog_set_module_level(klog_module_t module, klog_level_t level) {
+  g_log_levels[module] = level;
+}
+
+int klog_enabled(klog_module_t module, klog_level_t level) {
+  return !(level > g_global_log_level && level > g_log_levels[module]);
 }
 
 void klog_set_mode(int mode) {
