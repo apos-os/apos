@@ -23,6 +23,8 @@
 #include "dev/usb/drivers/hub/request.h"
 #include "dev/usb/request.h"
 
+#define KLOG(...) klogfm(KL_USB_HUB, __VA_ARGS__)
+
 typedef struct {
   usb_hubd_callback_t callback;
   usb_dev_request_t* request;
@@ -53,8 +55,8 @@ static void request_irp_start(const char* name, usb_device_t* dev,
 
   int result = usb_send_request(irp, request);
   if (result) {
-    klogf("USB HUBD: sending %s for hub %d.%d failed: %s\n",
-          name, dev->bus->bus_index, dev->address, errorname(-result));
+    KLOG(WARNING, "USB HUBD: sending %s for hub %d.%d failed: %s\n",
+         name, dev->bus->bus_index, dev->address, errorname(-result));
     kfree(context);
     kfree(irp);
     usb_free_request(request);
@@ -146,8 +148,8 @@ void usb_hubd_get_status_change(usb_device_t* dev, uint8_t* sc_buf,
 
   int result = usb_send_data_in(irp);
   if (result) {
-    klogf("USB HUBD: unable to start status change IRP: %s\n",
-          errorname(-result));
+    KLOG(WARNING, "USB HUBD: unable to start status change IRP: %s\n",
+         errorname(-result));
     kfree(irp);
     callback(dev, result);
   }
@@ -158,8 +160,8 @@ static void status_change_irp_done(usb_irp_t* irp, void* arg) {
 
   int result = 0;
   if (irp->status != USB_IRP_SUCCESS) {
-    klogf("USB HUBD: status change IRP for hub %d.%d failed: %d\n",
-          dev->bus->bus_index, dev->address, irp->status);
+    KLOG(WARNING, "USB HUBD: status change IRP for hub %d.%d failed: %d\n",
+         dev->bus->bus_index, dev->address, irp->status);
     result = -EIO;
   }
 

@@ -32,6 +32,7 @@ typedef enum {
 
   // Device modules.
   KL_USB,
+  KL_USB_HUB,
 
   KL_TEST,
 

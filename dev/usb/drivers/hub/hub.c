@@ -26,6 +26,8 @@
 #include "memory/kmalloc.h"
 #include "util/flag_printf.h"
 
+#define KLOG(...) klogfm(KL_USB_HUB, __VA_ARGS__)
+
 flag_spec_t PORT_STATUS_FLAGS[] = {
   FLAG_SPEC_FLAG("PORT_CONNECTION", USB_HUBD_PORT_CONNECTION),
   FLAG_SPEC_FLAG("PORT_ENABLE", USB_HUBD_PORT_ENABLE),
@@ -49,21 +51,21 @@ flag_spec_t PORT_CHANGE_FLAGS[] = {
   FLAG_SPEC_END,
 };
 
-static void usb_print_desc_hub(usb_hubd_desc_t* desc) {
+static void usb_print_desc_hub(klog_level_t level, usb_hubd_desc_t* desc) {
   KASSERT_DBG(desc->bDescriptorType == USB_HUBD_DESC_TYPE);
-  klogf("  bDescLength: %d\n", desc->bLength);
-  klogf("  bDescriptorType: HUB (%d)\n", desc->bDescriptorType);
-  klogf("  bNbrPorts: %d\n", desc->bNbrPorts);
-  klogf("  wHubCharacteristics: 0x%x\n", desc->wHubCharacteristics);
-  klogf("  bPwrOn2PwrGood: %d\n", desc->bPwrOn2PwrGood);
-  klogf("  bHubContrCurrent: %d\n", desc->bHubContrCurrent);
+  KLOG(level, "  bDescLength: %d\n", desc->bLength);
+  KLOG(level, "  bDescriptorType: HUB (%d)\n", desc->bDescriptorType);
+  KLOG(level, "  bNbrPorts: %d\n", desc->bNbrPorts);
+  KLOG(level, "  wHubCharacteristics: 0x%x\n", desc->wHubCharacteristics);
+  KLOG(level, "  bPwrOn2PwrGood: %d\n", desc->bPwrOn2PwrGood);
+  KLOG(level, "  bHubContrCurrent: %d\n", desc->bHubContrCurrent);
 
-  klogf("  PortBits:");
+  KLOG(level, "  PortBits:");
   const int num_port_bits = 2 * ceiling_div(desc->bNbrPorts, 8);
   for (int i = 0; i < num_port_bits; ++i) {
-    klogf(" %x", desc->PortBits[num_port_bits - i - 1]);
+    KLOG(level, " %x", desc->PortBits[num_port_bits - i - 1]);
   }
-  klogf("\n");
+  KLOG(level, "\n");
 }
 
 // Per-device data for the hub driver.
@@ -184,16 +186,16 @@ static void connect_port_reset_done(usb_device_t* dev);
 
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
-  klogf("USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index,
-        dev->address);
+  KLOG(DEBUG, "USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index,
+       dev->address);
 
   // Sanity check the hub.
   int status_endpoint_idx = 0;
   for (int i = 1; i < USB_NUM_ENDPOINTS; ++i) {
     if (dev->endpoints[i]) {
       if (status_endpoint_idx > 0) {
-        klogf("USB HUBD: hub %d.%d has more than 1 endpoint; invalid\n",
-              dev->bus->bus_index, dev->address);
+        KLOG(WARNING, "USB HUBD: hub %d.%d has more than 1 endpoint; invalid\n",
+             dev->bus->bus_index, dev->address);
         return;
       }
       status_endpoint_idx = i;
@@ -202,17 +204,17 @@ static void set_configuration_done(usb_device_t* dev, void* arg) {
   ((usb_hubd_data_t*)dev->driver_data)->status_change_idx = status_endpoint_idx;
 
   if (status_endpoint_idx <= 0) {
-    klogf("USB HUBD: hub %d.%d has no status change endpoint; invalid\n",
-          dev->bus->bus_index, dev->address);
+    KLOG(WARNING, "USB HUBD: hub %d.%d has no status change endpoint; "
+         "invalid\n", dev->bus->bus_index, dev->address);
     return;
   }
 
   usb_endpoint_t* status_change = dev->endpoints[status_endpoint_idx];
   if (status_change->type != USB_INTERRUPT ||
       status_change->dir != USB_IN) {
-    klogf("USB HUBD: hub %d.%d has an invalid status change endpoint "
-          "(must be an IN/INTERRUPT endpoint)\n", dev->bus->bus_index,
-          dev->address);
+    KLOG(WARNING, "USB HUBD: hub %d.%d has an invalid status change endpoint "
+         "(must be an IN/INTERRUPT endpoint)\n", dev->bus->bus_index,
+         dev->address);
     return;
   }
 
@@ -226,15 +228,15 @@ static void get_hub_desc(usb_device_t* dev) {
 
 static void get_hub_desc_done(usb_device_t* dev, int result) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
-  klogf("USB HUBD: GET_DESCRIPTOR (hub) for hub %d.%d finished\n",
-        dev->bus->bus_index, dev->address);
+  KLOG(DEBUG, "USB HUBD: GET_DESCRIPTOR (hub) for hub %d.%d finished\n",
+       dev->bus->bus_index, dev->address);
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
   } else {
-    klogf("USB HUBD: hub descriptor for hub %d.%d:\n",
-          dev->bus->bus_index, dev->address);
-    usb_print_desc_hub(&hubd->hub_desc);
+    KLOG(DEBUG2, "USB HUBD: hub descriptor for hub %d.%d:\n",
+         dev->bus->bus_index, dev->address);
+    usb_print_desc_hub(DEBUG2, &hubd->hub_desc);
   }
 
   hubd->port_status = (uint16_t*)kmalloc(
@@ -257,17 +259,17 @@ static void status_change_irp_done(usb_device_t* dev, int result) {
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
   } else {
-    klogf("USB HUBD: status change for hub %d.%d: [",
-        dev->bus->bus_index, dev->address);
+    KLOG(DEBUG2, "USB HUBD: status change for hub %d.%d: [",
+         dev->bus->bus_index, dev->address);
     if (get_hub_change_bit(hubd->status_change_buf)) {
-      klogf(" HUB");
+      KLOG(DEBUG2, " HUB");
     }
     for (int port = 1; port <= hubd->hub_desc.bNbrPorts; port++) {
       if (get_port_change_bit(hubd->status_change_buf, port)) {
-        klogf(" P%d", port);
+        KLOG(DEBUG2, " P%d", port);
       }
     }
-    klogf(" ]\n");
+    KLOG(DEBUG2, " ]\n");
   }
 
   process_all_changes(dev);
@@ -316,13 +318,13 @@ static void get_port_status_done(usb_device_t* dev, int result) {
   } else {
     const uint16_t port_status = hubd_get_port_status(hubd, port);
     const uint16_t port_change = hubd_get_port_change(hubd, port);
-    klogf("USB HUBD: GET_PORT_STATUS for hub %d.%d/port %d finished:\n",
-          dev->bus->bus_index, dev->address, port);
+    KLOG(DEBUG2, "USB HUBD: GET_PORT_STATUS for hub %d.%d/port %d finished:\n",
+         dev->bus->bus_index, dev->address, port);
     char buf[1024];
     flag_sprintf(buf, port_status, PORT_STATUS_FLAGS);
-    klogf("  PORT_STATUS: %s\n", buf);
+    KLOG(DEBUG2, "  PORT_STATUS: %s\n", buf);
     flag_sprintf(buf, port_change, PORT_CHANGE_FLAGS);
-    klogf("  PORT_CHANGE: %s\n", buf);
+    KLOG(DEBUG2, "  PORT_CHANGE: %s\n", buf);
   }
 
   handle_port_changes(dev, port);
@@ -428,9 +430,9 @@ static void handle_one_event(usb_device_t* dev, port_event_t* event) {
   usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
   KASSERT(hubd->current_port == -1);
 
-  klogf("USB HUBD: handling hub %d.%d event: port %d %s\n",
-        dev->bus->bus_index, dev->address, event->port,
-        port_event_type_str(event));
+  KLOG(DEBUG2, "USB HUBD: handling hub %d.%d event: port %d %s\n",
+       dev->bus->bus_index, dev->address, event->port,
+       port_event_type_str(event));
 
   hubd->current_port = event->port;
 
@@ -482,8 +484,8 @@ static void connect_port(usb_bus_t* bus, void* arg) {
 
 static void connect_port_reset_sent(usb_device_t* dev, int result) {
   if (result) {
-    klogf("USB HUBD: unable to reset connected port: %s\n",
-          errorname(-result));
+    KLOG(WARNING, "USB HUBD: unable to reset connected port: %s\n",
+         errorname(-result));
     // TODO(aoates): what else should we do?
   }
 
@@ -504,8 +506,8 @@ static void connect_port_reset_done(usb_device_t* dev) {
 
   // Check if the reset succeeded.
   if (!(port_status & USB_HUBD_PORT_ENABLE)) {
-    klogf("USB HUBD: unable to reset hub %d.%d port %d\n",
-          dev->bus->bus_index, dev->address, port);
+    KLOG(WARNING, "USB HUBD: unable to reset hub %d.%d port %d\n",
+         dev->bus->bus_index, dev->address, port);
     usb_release_default_address(dev->bus);
     // TODO(aoates): what else should we do?
   } else {
@@ -533,7 +535,7 @@ int usb_hubd_check_device(usb_device_t* dev) {
         dev->speed != USB_FULL_SPEED) {
       // Note: it seems that the USB spec requires bMaxPacketSize0 to be 64, but
       // for QEMU virtual hubs it's 8, so we don't bother checking it.
-      klogf("Warning: invalid USB hub device descriptor; ignoring\n");
+      KLOG(WARNING, "invalid USB hub device descriptor; ignoring\n");
       return 0;
     }
 
@@ -544,7 +546,7 @@ int usb_hubd_check_device(usb_device_t* dev) {
 }
 
 int usb_hubd_adopt_device(usb_device_t* dev) {
-  klogf("USB HUBD: found device\n");
+  KLOG(DEBUG, "USB HUBD: found device\n");
 
   usb_hubd_data_t* data =
       (usb_hubd_data_t*)kmalloc(sizeof(usb_hubd_data_t));
@@ -557,8 +559,8 @@ int usb_hubd_adopt_device(usb_device_t* dev) {
   KASSERT_DBG(dev->dev_desc.bNumConfigurations == 1);
   uint8_t config;
   usb_get_configuration_values(dev, &config);
-  klogf("USB HUBD: configuring hub %d.%d (config %d)\n", dev->bus->bus_index,
-        dev->address, config);
+  KLOG(DEBUG, "USB HUBD: configuring hub %d.%d (config %d)\n", dev->bus->bus_index,
+       dev->address, config);
   usb_set_configuration(dev, config, &set_configuration_done, dev);
 
   return 0;
