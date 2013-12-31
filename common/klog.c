@@ -105,7 +105,7 @@ static void klog_puts(const char* s) {
 }
 
 void klogm(klog_module_t module, klog_level_t level, const char* s) {
-  if (level > g_global_log_level && level > g_log_levels[module]) {
+  if (!klog_enabled(module, level)) {
     return;
   }
 
@@ -135,6 +135,10 @@ void klog_set_level(klog_level_t level) {
 
 void klog_set_module_level(klog_module_t module, klog_level_t level) {
   g_log_levels[module] = level;
+}
+
+int klog_enabled(klog_module_t module, klog_level_t level) {
+  return !(level > g_global_log_level && level > g_log_levels[module]);
 }
 
 void klog_set_mode(int mode) {
