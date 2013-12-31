@@ -332,6 +332,7 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
             // C_PORT_RESET bit to 1.
             if ((port_sc & PORTSC_RST) == 0) {
               port_sc |= PORTSC_RST;
+              port_sc &= ~PORTSC_ENABLE;
               outs(port_sc_register, port_sc);
               uhci_port_reset_done_arg_t* arg = (uhci_port_reset_done_arg_t*)
                   kmalloc(sizeof(uhci_port_reset_done_arg_t));
