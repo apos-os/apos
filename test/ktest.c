@@ -58,10 +58,10 @@ void KTEST_SUITE_BEGIN(const char* name) {
   finish_suite();  // Finish the previous suite, if running.
   current_suite_passing = 1;
   num_suites++;
-  klog("\n\nTEST SUITE: ");
-  klog(name);
-  klog("\n");
-  klog("#######################################\n");
+  klogm(KL_TEST, INFO, "\n\nTEST SUITE: ");
+  klogm(KL_TEST, INFO, name);
+  klogm(KL_TEST, INFO, "\n");
+  klogm(KL_TEST, INFO, "#######################################\n");
 }
 
 void KTEST_BEGIN(const char* name) {
@@ -69,10 +69,10 @@ void KTEST_BEGIN(const char* name) {
   current_test_name = name;
   current_test_passing = 1;
   num_tests++;
-  klog("\nTEST: ");
-  klog(name);
-  klog("\n");
-  klog("---------------------------------------\n");
+  klogm(KL_TEST, INFO, "\nTEST: ");
+  klogm(KL_TEST, INFO, name);
+  klogm(KL_TEST, INFO, "\n");
+  klogm(KL_TEST, INFO, "---------------------------------------\n");
 }
 
 void kexpect_(uint32_t cond, const char* name,
@@ -81,31 +81,31 @@ void kexpect_(uint32_t cond, const char* name,
               const char* opstr,
               const char* file, const char* line) {
   if (cond) {
-    klog("[PASSED] ");
-    klog(name);
-    klog("(");
-    klog(astr);
-    klog(", ");
-    klog(bstr);
-    klog(")\n");
+    klogm(KL_TEST, INFO, "[PASSED] ");
+    klogm(KL_TEST, INFO, name);
+    klogm(KL_TEST, INFO, "(");
+    klogm(KL_TEST, INFO, astr);
+    klogm(KL_TEST, INFO, ", ");
+    klogm(KL_TEST, INFO, bstr);
+    klogm(KL_TEST, INFO, ")\n");
   } else {
     current_test_passing = 0;
     current_suite_passing = 0;
-    klog("[FAILED] ");
-    klog(name);
-    klog("(");
-    klog(astr);
-    klog(", ");
-    klog(bstr);
-    klog(") at ");
-    klog(file);
-    klog(":");
-    klog(line);
-    klog(": ");
-    klog(aval);
-    klog(opstr);
-    klog(bval);
-    klog("\n");
+    klogm(KL_TEST, INFO, "[FAILED] ");
+    klogm(KL_TEST, INFO, name);
+    klogm(KL_TEST, INFO, "(");
+    klogm(KL_TEST, INFO, astr);
+    klogm(KL_TEST, INFO, ", ");
+    klogm(KL_TEST, INFO, bstr);
+    klogm(KL_TEST, INFO, ") at ");
+    klogm(KL_TEST, INFO, file);
+    klogm(KL_TEST, INFO, ":");
+    klogm(KL_TEST, INFO, line);
+    klogm(KL_TEST, INFO, ": ");
+    klogm(KL_TEST, INFO, aval);
+    klogm(KL_TEST, INFO, opstr);
+    klogm(KL_TEST, INFO, bval);
+    klogm(KL_TEST, INFO, "\n");
   }
 }
 
@@ -119,7 +119,7 @@ void ktest_begin_all() {
   failing_test_names_idx = 0;
   test_start_time = get_time_ms();
 
-  klogf("KERNEL UNIT TESTS");
+  KLOG("KERNEL UNIT TESTS");
 }
 
 void ktest_finish_all() {
@@ -127,23 +127,23 @@ void ktest_finish_all() {
   finish_test();
   finish_suite();
 
-  klogf("---------------------------------------\n");
-  klogf("KERNEL UNIT TESTS FINISHED\n");
+  KLOG("---------------------------------------\n");
+  KLOG("KERNEL UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
-    klogf("[PASSED] passed %d/%d suites and %d/%d tests in %d ms\n",
-          num_suites_passing, num_suites, num_tests_passing, num_tests,
-          end_time - test_start_time);
+    KLOG("[PASSED] passed %d/%d suites and %d/%d tests in %d ms\n",
+         num_suites_passing, num_suites, num_tests_passing, num_tests,
+         end_time - test_start_time);
   } else {
-    klogf("[FAILED] passed %d/%d suites and %d/%d tests in %d ms\n",
-          num_suites_passing, num_suites, num_tests_passing, num_tests,
-          end_time - test_start_time);
-    klogf("Failed tests:\n");
+    KLOG("[FAILED] passed %d/%d suites and %d/%d tests in %d ms\n",
+         num_suites_passing, num_suites, num_tests_passing, num_tests,
+         end_time - test_start_time);
+    KLOG("Failed tests:\n");
     for (int i = 0; i < failing_test_names_idx; ++i) {
-      klogf("  %s\n", failing_test_names[i]);
+      KLOG("  %s\n", failing_test_names[i]);
     }
     int num_leftover = num_tests - num_tests_passing - failing_test_names_idx;
     if (num_leftover > 0) {
-      klogf("  ...and %d more\n", num_leftover);
+      KLOG("  ...and %d more\n", num_leftover);
     }
   }
 }

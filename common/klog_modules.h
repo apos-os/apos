@@ -30,6 +30,8 @@ typedef enum {
   KL_EXT2,
   KL_VFS,
 
+  KL_TEST,
+
   KL_MODULE_MAX,
 } klog_module_t;
 

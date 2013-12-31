@@ -20,6 +20,8 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 
+#define KLOG(...) klogfm(KL_TEST, INFO, __VA_ARGS__)
+
 #define STR2(x) #x
 #define STR(x) STR2(x)
 

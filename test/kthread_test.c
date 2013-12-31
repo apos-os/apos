@@ -27,12 +27,12 @@
 
 static void* thread_func(void* arg) {
   int id = (int)arg;
-  klogf("THREAD STARTED: %d\n", id);
+  KLOG("THREAD STARTED: %d\n", id);
   for (int i = 0; i < 3; ++i) {
-    klogf("THREAD ITER: %d (iter %d)\n", id, i);
+    KLOG("THREAD ITER: %d (iter %d)\n", id, i);
     scheduler_yield();
   }
-  klogf("THREAD %d: done\n", id);
+  KLOG("THREAD %d: done\n", id);
   return 0;
 }
 
@@ -44,7 +44,7 @@ static void yield_test(void) {
   scheduler_yield();
   scheduler_yield();
 
-  klogf("  DONE\n");
+  KLOG("  DONE\n");
 }
 
 static void basic_test(void) {
@@ -65,7 +65,7 @@ static void basic_test(void) {
   kthread_join(thread2);
   kthread_join(thread3);
 
-  klogf("MAIN THREAD: done\n");
+  KLOG("MAIN THREAD: done\n");
 }
 
 static void* kthread_exit_thread_func(void* arg) {
@@ -320,11 +320,11 @@ static void scheduler_wake_test(void) {
 #define STRESS_TEST_THREADS 1000
 
 static void* stress_test_func(void* arg) {
-  klogf("THREAD %d START\n", (int)arg);
+  KLOG("THREAD %d START\n", (int)arg);
   for (int i = 0; i < STRESS_TEST_ITERS; ++i) {
     scheduler_yield();
   }
-  klogf("THREAD %d DONE\n", (int)arg);
+  KLOG("THREAD %d DONE\n", (int)arg);
   return arg;
 }
 

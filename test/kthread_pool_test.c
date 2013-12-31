@@ -40,8 +40,8 @@ static void timer_cb(void* arg) {
   kthread_pool_t* pool = (kthread_pool_t*)arg;
   int result = kthread_pool_push(pool, &pool_cb, arg);
   if (result != 0) {
-    klogf("ERROR: couldn't kthread_pool_push: %s\n",
-          errorname(-result));
+    KLOG("ERROR: couldn't kthread_pool_push: %s\n",
+         errorname(-result));
     KASSERT(result == 0);
   }
 }
@@ -63,8 +63,8 @@ void kthread_pool_test(void) {
   for (int i = 0; i < TEST_SIZE / 2; ++i) {
     int result = kthread_pool_push(&pool, &pool_cb, &pool);
     if (result != 0) {
-      klogf("ERROR: couldn't kthread_pool_push: %s\n",
-            errorname(-result));
+      KLOG("ERROR: couldn't kthread_pool_push: %s\n",
+           errorname(-result));
       KASSERT(result == 0);
     }
   }

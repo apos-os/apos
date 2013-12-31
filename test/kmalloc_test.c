@@ -251,21 +251,21 @@ static void stress_test(void) {
     }
 
     if (i % 20 == 0) {
-      klogf("i = %i, ptr_idx = %i\n", i, ptr_idx);
+      KLOG("i = %i, ptr_idx = %i\n", i, ptr_idx);
     }
     verify_list(kmalloc_internal_get_block_list());
   }
 
-  klogf("freeing everything that's left...\n");
+  KLOG("freeing everything that's left...\n");
   while (ptr_idx > 0) {
     kfree(ptrs[--ptr_idx]);
   }
 
-  klogf("\npost-thrash\n");
-  klogf("total allocs: %i\npeak allocs: %i\n", total_allocs, max_alloced);
-  klog("---------------\n");
+  KLOG("\npost-thrash\n");
+  KLOG("total allocs: %i\npeak allocs: %i\n", total_allocs, max_alloced);
+  KLOG("---------------\n");
   kmalloc_log_state();
-  klog("---------------\n");
+  KLOG("---------------\n");
 
   block_t* list_root = kmalloc_internal_get_block_list();
   KEXPECT_EQ(1, list_length(list_root));
@@ -336,7 +336,7 @@ static void large_interrupt_test(void) {
   while (get_time_ms() < start_time + kTestLengthMs) {
     round++;
     if (round % 100 == 0) {
-      klogf("round %d, elapsed: %d\n", round, get_time_ms() - start_time);
+      KLOG("round %d, elapsed: %d\n", round, get_time_ms() - start_time);
     }
     void* x[100];
     for (int i = 0; i < 100; ++i) {
@@ -349,7 +349,7 @@ static void large_interrupt_test(void) {
       }
     }
   }
-  klogf("Did %d rounds over %d ms\n", round, kTestLengthMs);
+  KLOG("Did %d rounds over %d ms\n", round, kTestLengthMs);
   kmalloc_log_state();
 }
 
@@ -403,6 +403,6 @@ void kmalloc_test(void) {
   // TODO(aoates): if this ever becomes annoying, we could force-reboot the
   // kernel (by resetting the stack pointer and calling kmain).
   ktest_finish_all();
-  klogf("NOTE: kmalloc_test() ruins the kernel, so a reboot is needed.\n");
+  KLOG("NOTE: kmalloc_test() ruins the kernel, so a reboot is needed.\n");
   while (1) {}
 }
