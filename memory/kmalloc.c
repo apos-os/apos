@@ -29,6 +29,8 @@
 #include "memory/vm_area.h"
 #include "proc/process.h"
 
+#define KLOG(...) klogfm(KL_KMALLOC, __VA_ARGS__)
+
 static int g_initialized = 0;
 
 // Global block list.
@@ -220,7 +222,7 @@ void kfree(void* x) {
 }
 
 void kmalloc_log_state() {
-  klog("kmalloc block list:\n");
+  KLOG(INFO, "kmalloc block list:\n");
   uint32_t total = 0;
   uint32_t free = 0;
   block_t* cblock = g_block_list;
@@ -229,18 +231,18 @@ void kmalloc_log_state() {
     if (cblock->free) {
       free += cblock->length;
     }
-    klogf("  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
-          cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
-    //klogf("             < %x %x %x %x >\n",
-    //      ((uint32_t*)(&cblock->data))[0],
-    //      ((uint32_t*)(&cblock->data))[1],
-    //      ((uint32_t*)(&cblock->data))[2],
-    //      ((uint32_t*)(&cblock->data))[3]);
+    KLOG(INFO, "  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
+         cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
+    KLOG(DEBUG, "             < %x %x %x %x >\n",
+         ((uint32_t*)(&cblock->data))[0],
+         ((uint32_t*)(&cblock->data))[1],
+         ((uint32_t*)(&cblock->data))[2],
+         ((uint32_t*)(&cblock->data))[3]);
 
     cblock = cblock->next;
   }
-  klogf("total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
-  klogf("free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
+  KLOG(INFO, "total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
+  KLOG(INFO, "free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
 }
 
 void kmalloc_enable_test_mode(void) {
