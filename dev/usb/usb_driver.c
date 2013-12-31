@@ -606,3 +606,89 @@ void usb_get_configuration_values(usb_device_t* dev, uint8_t* config_values)  {
     config_values[i] = config->bConfigurationValue;
   }
 }
+
+usb_desc_list_node_t* usb_get_configuration_desc(usb_device_t* dev,
+                                                 int config_value) {
+  for (int i = 0; i < dev->dev_desc.bNumConfigurations; ++i) {
+    usb_desc_config_t* config = (usb_desc_config_t*)dev->configs[i].desc;
+    KASSERT_DBG(config->bDescriptorType == USB_DESC_CONFIGURATION);
+    if (config->bConfigurationValue == config_value) {
+      return &dev->configs[i];
+    }
+  }
+
+  return 0x0;
+}
+
+usb_desc_list_node_t* usb_get_interface_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index) {
+  // First find a matching configuration.
+  usb_desc_list_node_t* config_node =
+      usb_get_configuration_desc(dev, config_value);
+  if (!config_node) return 0x0;
+
+  usb_desc_config_t* config = (usb_desc_config_t*)config_node->desc;
+
+  // Now find the corresponding interface.
+  if (interface_index < 0 || interface_index >= config->bNumInterfaces)
+    return 0x0;
+
+  usb_desc_list_node_t* node = config_node->next;
+  while (node) {
+    if (node->desc->bDescriptorType == USB_DESC_INTERFACE) {
+      usb_desc_interface_t* interface = (usb_desc_interface_t*)node->desc;
+      // Interfaces have zero-indexed numbers; they *should* be in order, but we
+      // compare against the index descriptor just in case.
+      if (interface->bInterfaceNumber == interface_index) {
+        return node;
+      }
+    }
+    node = node->next;
+  }
+
+  KLOG(INFO, "USB device %d.%d/config %d advertises %d interfaces, but "
+       "the interface %d descriptor wasn't found\n",
+       dev->bus->bus_index, dev->address, config_value,
+       config->bNumInterfaces, interface_index);
+  return 0x0;
+}
+
+usb_desc_list_node_t* usb_get_endpoint_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index,
+                                             int endpoint_index) {
+  // First find a matching interface.
+  usb_desc_list_node_t* interface_node =
+      usb_get_interface_desc(dev, config_value, interface_index);
+  if (!interface_node) return 0x0;
+
+  KASSERT_DBG(interface_node->desc->bDescriptorType == USB_DESC_INTERFACE);
+  usb_desc_interface_t* interface = (usb_desc_interface_t*)interface_node->desc;
+
+  // Now find the corresponding endpoint.
+  if (endpoint_index < 0 || endpoint_index >= interface->bNumEndpoints)
+    return 0x0;
+
+  usb_desc_list_node_t* node = interface_node->next;
+  int cendpoint = 0;
+  while (node) {
+    if (node->desc->bDescriptorType == USB_DESC_INTERFACE) {
+      break;
+    }
+
+    if (node->desc->bDescriptorType == USB_DESC_ENDPOINT) {
+      if (cendpoint == endpoint_index) {
+        return node;
+      }
+      cendpoint++;
+    }
+    node = node->next;
+  }
+
+  KLOG(INFO, "USB device %d.%d/config %d/iface %d advertises %d endpoints, but "
+       "the endpoint %d descriptor wasn't found\n",
+       dev->bus->bus_index, dev->address, config_value,
+       interface_index, interface->bNumEndpoints, endpoint_index);
+  return 0x0;
+}

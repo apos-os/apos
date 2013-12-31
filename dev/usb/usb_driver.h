@@ -79,4 +79,24 @@ void usb_set_configuration(usb_device_t* dev, uint8_t config,
 // |dev->dev_desk->bNumConfigurations| entries.
 void usb_get_configuration_values(usb_device_t* dev, uint8_t* config_values);
 
+// Return the interface descriptor node corresponding to the given configuration
+// *value*.
+usb_desc_list_node_t* usb_get_configuration_desc(usb_device_t* dev,
+                                                 int config_value);
+
+// Return the interface descriptor node corresponding to the given configuration
+// value and interface index.
+usb_desc_list_node_t* usb_get_interface_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index);
+
+// Return the endpoint descriptor node corresponding to the given configuration
+// value, interface index, and endpoint *index*.
+//
+// Note that this takes an endpoint index, not address.
+usb_desc_list_node_t* usb_get_endpoint_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index,
+                                             int endpoint_index);
+
 #endif
