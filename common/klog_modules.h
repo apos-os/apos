@@ -22,6 +22,7 @@ typedef enum {
   // Memory modules.
   KL_BLOCK_CACHE,
   KL_KMALLOC,
+  KL_PAGE_FAULT,
 
   KL_MODULE_MAX,
 } klog_module_t;

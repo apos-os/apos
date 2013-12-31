@@ -24,6 +24,8 @@
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 
+#define KLOG(...) klogfm(KL_PAGE_FAULT, __VA_ARGS__)
+
 static inline vm_area_t* link2area(list_link_t* link) {
   return container_of(link, vm_area_t, vm_proc_list);
 }
@@ -62,30 +64,30 @@ static vm_area_t* find_area(process_t* proc, addr_t address) {
 static int fault_allowed(vm_area_t* area, vm_fault_type_t type,
                           vm_fault_op_t op, vm_fault_mode_t mode) {
   if (!area) {
-    klogf("address not in any mapped region\n");
+    KLOG(INFO, "address not in any mapped region\n");
     return 0;
   }
   if (type == VM_FAULT_NOT_PRESENT && !area->allow_allocation) {
-    klogf("cannot allocate new pages in the mapped region\n");
+    KLOG(INFO, "cannot allocate new pages in the mapped region\n");
     return 0;
   }
   switch (op) {
     case VM_FAULT_READ:
       if (!(area->prot & MEM_PROT_READ)) {
-        klogf("read operation not allowed in mapped region\n");
+        KLOG(INFO, "read operation not allowed in mapped region\n");
         return 0;
       }
       break;
 
     case VM_FAULT_WRITE:
       if (!(area->prot & MEM_PROT_WRITE)) {
-        klogf("write operation not allowed in mapped region\n");
+        KLOG(INFO, "write operation not allowed in mapped region\n");
         return 0;
       }
       break;
   }
   if (mode == VM_FAULT_USER && area->access != MEM_ACCESS_KERNEL_AND_USER) {
-    klogf("user mode attempt to access kernel memory\n");
+    KLOG(WARNING, "user mode attempt to access kernel memory\n");
     return 0;
   }
   return 1;
@@ -103,7 +105,7 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
   if (!fault_allowed(area, type, op, mode)) {
     switch (mode) {
       case VM_FAULT_KERNEL:
-        klogf("kernel page fault: addr: 0x%x\n", address);
+        KLOG(ERROR, "kernel page fault: addr: 0x%x\n", address);
         die("unhandled kernel page fault");
         break;
 
