@@ -28,6 +28,8 @@
 
 #define MAX_ARGV_ENVP_SIZE (MEM_USER_STACK_SIZE / 4)
 
+#define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
+
 // Copy the given string table to the stack, updating the stack top pointer.
 // A copy of the table (with updated pointers) will be placed near the original
 // stack top, pointing to copies of all the strings located in the stack.  The
@@ -79,8 +81,8 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
                               void* arg), void* cleanup_arg) {
   const int fd = vfs_open(path, VFS_O_RDONLY);
   if (fd < 0) {
-    klogf("exec error: couldn't open file '%s' for reading: %s\n", path,
-          errorname(-fd));
+    KLOG(INFO, "exec error: couldn't open file '%s' for reading: %s\n", path,
+         errorname(-fd));
     return fd;
   }
 
@@ -88,8 +90,8 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   load_binary_t* binary = NULL;
   int result = load_binary(fd, &binary);
   if (result) {
-    klogf("exec error: couldn't load binary from file '%s': %s\n", path,
-          errorname(-result));
+    KLOG(INFO, "exec error: couldn't load binary from file '%s': %s\n", path,
+         errorname(-result));
     return result;
   }
 
@@ -101,8 +103,8 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
                      MEM_FIRST_MAPPABLE_ADDR + 1);
   if (result) {
     kfree(binary);
-    klogf("exec error: couldn't unmap existing user code: %s\n",
-          errorname(-result));
+    KLOG(INFO, "exec error: couldn't unmap existing user code: %s\n",
+         errorname(-result));
     return result;
   }
 
@@ -110,7 +112,8 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   result = load_map_binary(fd, binary);
   if (result) {
     kfree(binary);
-    klogf("exec error: couldn't map new user code: %s\n", errorname(-result));
+    KLOG(INFO, "exec error: couldn't map new user code: %s\n",
+         errorname(-result));
     return result;
   }
   vfs_close(fd);
@@ -136,8 +139,8 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
                    -1, 0, &stack_addr_out);
   if (result) {
     kfree(binary);
-    klogf("exec error: couldn't create mapping for kernel stack: %s\n",
-          errorname(-result));
+    KLOG(INFO, "exec error: couldn't create mapping for kernel stack: %s\n",
+         errorname(-result));
     return result;
   }
 

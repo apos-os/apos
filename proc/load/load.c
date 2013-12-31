@@ -111,8 +111,8 @@ int load_map_binary(int fd, const load_binary_t* binary) {
                            map_regions[i].file_offset, &addr_out);
       KASSERT(result < 0 || addr_out == (void*)map_regions[i].vaddr);
       if (result < 0) {
-        klogf("error: mapping region %d[%d] failed: %s\n", reg, i,
-              errorname(-result));
+        klogfm(KL_PROC, ERROR, "mapping region %d[%d] failed: %s\n", reg, i,
+               errorname(-result));
         // TODO(aoates): tear down mappings.
         return result;
       }

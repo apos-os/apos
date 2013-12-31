@@ -24,6 +24,8 @@ typedef enum {
   KL_KMALLOC,
   KL_PAGE_FAULT,
 
+  KL_PROC,
+
   KL_MODULE_MAX,
 } klog_module_t;
 

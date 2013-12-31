@@ -153,7 +153,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
       case SIGACT_STOP:
       case SIGACT_CONTINUE:
         // TODO(aoates): implement STOP and CONTINUE once job control exists.
-        klogf("Warning: cannot deliver stop or continue signal\n");
+        klogfm(KL_PROC, WARNING, "cannot deliver stop or continue signal\n");
         return;
 
       case SIGACT_IGNORE:

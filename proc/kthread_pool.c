@@ -58,7 +58,7 @@ int kthread_pool_init(kthread_pool_t* pool, int size) {
     if (kthread_create(&pool->threads[i], &worker_func, pool)) {
       // Note: we'll leak resources here (for all the previous threads we
       // already created).
-      klogf("WARNING: error creating one of the threads in a kthraed_pool\n");
+      klogfm(KL_PROC, WARNING, "error creating one of the threads in a kthraed_pool\n");
       kfree(pool->threads);
       return -ENOMEM;
     }

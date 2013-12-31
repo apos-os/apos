@@ -30,7 +30,7 @@ static void timer_cb(void* arg) {
   proc->alarm.deadline_ms = 0;
 
   if (proc_force_signal(proc, SIGALRM) != 0) {
-    klogf("WARNING: unable to send SIGALRM to pid %d\n", proc->id);
+    klogfm(KL_PROC, WARNING, "unable to send SIGALRM to pid %d\n", proc->id);
   }
 }
 
@@ -64,7 +64,8 @@ unsigned int proc_alarm(unsigned int seconds) {
 
     if (register_event_timer(deadline, &timer_cb, proc,
                              &proc->alarm.timer) != 0) {
-      klogf("warning: unable to register alarm for pid %d\n", proc->id);
+      klogfm(KL_PROC, WARNING,
+             "unable to register alarm for pid %d\n", proc->id);
     }
   }
 
