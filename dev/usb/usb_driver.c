@@ -237,6 +237,7 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
   dev->parent = parent;
   dev->first_child = 0x0;
   dev->next = 0x0;
+  dev->driver = 0x0;
   dev->driver_data = 0x0;
 
   if (parent == 0x0) {
@@ -489,6 +490,8 @@ static void usb_init_driver(usb_init_state_t* state) {
     if (result) {
       KLOG(WARNING, "USB: unable to assign driver to device: %s\n",
            errorname(-result));
+    } else {
+      state->dev->driver = driver;
     }
   }
 

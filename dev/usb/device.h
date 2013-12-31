@@ -24,6 +24,7 @@
 
 struct usb_bus;
 struct usb_endpoint;
+struct usb_driver;
 
 // States of a USB device.  See section 9.1 of the USB spec.
 enum usb_device_state {
@@ -76,6 +77,9 @@ struct usb_device {
 
   // The next sibling of the device, if the parent is a hub.
   struct usb_device* next;
+
+  // The driver that owns the device.
+  struct usb_driver* driver;
 
   // Extra data for the driver that owns the device.
   void* driver_data;
