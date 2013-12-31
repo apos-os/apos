@@ -235,12 +235,20 @@ static void uhci_interrupt(void* arg) {
   // TODO(aoates): handle halted condition, host errors, etc.
   KASSERT((status & 0xFFFC) == 0);
 
+  // Clear the txn error and interrupt bits.  Do so before we traverse the
+  // pending IRP list so that if any IOC IRPs finish while we're traversing the
+  // list, the interrupt will be triggered again.
+  outs(c->base_port + USBSTS, 0x3);
+
   // TODO(aoates): handle short packet detect!
   // Find the transaction that finished.
   usb_hcdi_irp_t* prev = 0x0;
   usb_hcdi_irp_t* irp = c->pending_irps;
   while (irp) {
     uhci_pending_irp_t* pirp = (uhci_pending_irp_t*)irp->hcd_data;
+    // Save the next IRP now since we NULL pirp->next if it's finished.
+    usb_hcdi_irp_t* next_irp = pirp->next;
+
     int done = 0;
     uhci_td_t* final_td = 0x0;
 
@@ -298,13 +306,13 @@ static void uhci_interrupt(void* arg) {
       if (irp->callback) {
         irp->callback(irp, irp->callback_arg);
       }
+    } else {
+      // Don't update prev if we deleted the current node.
+      prev = irp;
     }
 
-    irp = pirp->next;
+    irp = next_irp;
   }
-
-  // Clear the txn error and IOC bits.
-  outs(c->base_port + USBSTS, 0x3);
 }
 
 // Initialize the UHCI HCD.  Called by usb_init().
