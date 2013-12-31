@@ -81,11 +81,7 @@ void klogf(const char* fmt, ...) {
   klog(buf);
 }
 
-void klogm(klog_module_t module, klog_level_t level, const char* s) {
-  if (level > g_global_log_level && level > g_log_levels[module]) {
-    return;
-  }
-
+static void klog_puts(const char* s) {
   int i = 0;
   while (s[i]) {
     pp_putc(s[i]);
@@ -106,6 +102,20 @@ void klogm(klog_module_t module, klog_level_t level, const char* s) {
     }
     i++;
   }
+}
+
+void klogm(klog_module_t module, klog_level_t level, const char* s) {
+  if (level > g_global_log_level && level > g_log_levels[module]) {
+    return;
+  }
+
+  switch (level) {
+    case ERROR: klog_puts("ERROR: "); break;
+    case WARNING: klog_puts("WARNING: "); break;
+    default: break;
+  }
+
+  klog_puts(s);
 }
 
 void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {
