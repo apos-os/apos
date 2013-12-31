@@ -18,65 +18,67 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 
-void ext2_superblock_log(ext2_superblock_t* sb) {
-  klogf("s_inodes_count: %u\n", sb->s_inodes_count);
-  klogf("s_blocks_count: %u\n", sb->s_blocks_count);
-  klogf("s_r_blocks_count: %u\n", sb->s_r_blocks_count);
-  klogf("s_free_blocks_count: %u\n", sb->s_free_blocks_count);
-  klogf("s_free_inodes_count: %u\n", sb->s_free_inodes_count);
-  klogf("s_first_data_block: %u\n", sb->s_first_data_block);
-  klogf("s_log_block_size: %u\n", sb->s_log_block_size);
-  klogf("s_log_frag_size: %u\n", sb->s_log_frag_size);
-  klogf("s_blocks_per_group: %u\n", sb->s_blocks_per_group);
-  klogf("s_frags_per_group: %u\n", sb->s_frags_per_group);
-  klogf("s_inodes_per_group: %u\n", sb->s_inodes_per_group);
-  klogf("s_mtime: %u\n", sb->s_mtime);
-  klogf("s_wtime: %u\n", sb->s_wtime);
-  klogf("s_mnt_count: %u\n", (uint32_t)sb->s_mnt_count);
-  klogf("s_max_mnt_count: %u\n", (uint32_t)sb->s_max_mnt_count);
-  klogf("s_magic: 0x%x\n", (uint32_t)sb->s_magic);
-  klogf("s_state: %u\n", (uint32_t)sb->s_state);
-  klogf("s_errors: %u\n", (uint32_t)sb->s_errors);
-  klogf("s_minor_rev_level: %u\n", (uint32_t)sb->s_minor_rev_level);
-  klogf("s_lastcheck: %u\n", sb->s_lastcheck);
-  klogf("s_checkinterval: %u\n", sb->s_checkinterval);
-  klogf("s_creator_os: %u\n", sb->s_creator_os);
-  klogf("s_rev_level: %u\n", sb->s_rev_level);
-  klogf("s_def_resuid: %u\n", (uint32_t)sb->s_def_resuid);
-  klogf("s_def_resgid: %u\n", (uint32_t)sb->s_def_resgid);
+#define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
+
+void ext2_superblock_log(klog_level_t level, ext2_superblock_t* sb) {
+  KLOG(level, "s_inodes_count: %u\n", sb->s_inodes_count);
+  KLOG(level, "s_blocks_count: %u\n", sb->s_blocks_count);
+  KLOG(level, "s_r_blocks_count: %u\n", sb->s_r_blocks_count);
+  KLOG(level, "s_free_blocks_count: %u\n", sb->s_free_blocks_count);
+  KLOG(level, "s_free_inodes_count: %u\n", sb->s_free_inodes_count);
+  KLOG(level, "s_first_data_block: %u\n", sb->s_first_data_block);
+  KLOG(level, "s_log_block_size: %u\n", sb->s_log_block_size);
+  KLOG(level, "s_log_frag_size: %u\n", sb->s_log_frag_size);
+  KLOG(level, "s_blocks_per_group: %u\n", sb->s_blocks_per_group);
+  KLOG(level, "s_frags_per_group: %u\n", sb->s_frags_per_group);
+  KLOG(level, "s_inodes_per_group: %u\n", sb->s_inodes_per_group);
+  KLOG(level, "s_mtime: %u\n", sb->s_mtime);
+  KLOG(level, "s_wtime: %u\n", sb->s_wtime);
+  KLOG(level, "s_mnt_count: %u\n", (uint32_t)sb->s_mnt_count);
+  KLOG(level, "s_max_mnt_count: %u\n", (uint32_t)sb->s_max_mnt_count);
+  KLOG(level, "s_magic: 0x%x\n", (uint32_t)sb->s_magic);
+  KLOG(level, "s_state: %u\n", (uint32_t)sb->s_state);
+  KLOG(level, "s_errors: %u\n", (uint32_t)sb->s_errors);
+  KLOG(level, "s_minor_rev_level: %u\n", (uint32_t)sb->s_minor_rev_level);
+  KLOG(level, "s_lastcheck: %u\n", sb->s_lastcheck);
+  KLOG(level, "s_checkinterval: %u\n", sb->s_checkinterval);
+  KLOG(level, "s_creator_os: %u\n", sb->s_creator_os);
+  KLOG(level, "s_rev_level: %u\n", sb->s_rev_level);
+  KLOG(level, "s_def_resuid: %u\n", (uint32_t)sb->s_def_resuid);
+  KLOG(level, "s_def_resgid: %u\n", (uint32_t)sb->s_def_resgid);
 
   // EXT2_DYNAMIC_REV Specific
-  klogf("s_first_ino: %u\n", sb->s_first_ino);
-  klogf("s_inode_size: %u\n", (uint32_t)sb->s_inode_size);
-  klogf("s_block_group_nr: %u\n", (uint32_t)sb->s_block_group_nr);
-  klogf("s_feature_compat: 0x%x\n", sb->s_feature_compat);
-  klogf("s_feature_incompat: 0x%x\n", sb->s_feature_incompat);
-  klogf("s_feature_ro_compat: 0x%x\n", sb->s_feature_ro_compat);
+  KLOG(level, "s_first_ino: %u\n", sb->s_first_ino);
+  KLOG(level, "s_inode_size: %u\n", (uint32_t)sb->s_inode_size);
+  KLOG(level, "s_block_group_nr: %u\n", (uint32_t)sb->s_block_group_nr);
+  KLOG(level, "s_feature_compat: 0x%x\n", sb->s_feature_compat);
+  KLOG(level, "s_feature_incompat: 0x%x\n", sb->s_feature_incompat);
+  KLOG(level, "s_feature_ro_compat: 0x%x\n", sb->s_feature_ro_compat);
   // char s_uuid[16];
   // char s_volume_name[16];
   // char s_last_mounted[64];
-  klogf("s_algo_bitmap: 0x%x\n", sb->s_algo_bitmap);
+  KLOG(level, "s_algo_bitmap: 0x%x\n", sb->s_algo_bitmap);
 
   // Performance Hints
-  klogf("s_prealloc_blocks: %u\n", (uint32_t)sb->s_prealloc_blocks);
-  klogf("s_prealloc_dir_blocks: %u\n", (uint32_t)sb->s_prealloc_dir_blocks);
+  KLOG(level, "s_prealloc_blocks: %u\n", (uint32_t)sb->s_prealloc_blocks);
+  KLOG(level, "s_prealloc_dir_blocks: %u\n", (uint32_t)sb->s_prealloc_dir_blocks);
 
   // Journaling Support
   // char s_journal_uuid[16];
-  klogf("s_journal_inum: %u\n", sb->s_journal_inum);
-  klogf("s_journal_dev: %u\n", sb->s_journal_dev);
-  klogf("s_last_orphan: %u\n", sb->s_last_orphan);
+  KLOG(level, "s_journal_inum: %u\n", sb->s_journal_inum);
+  KLOG(level, "s_journal_dev: %u\n", sb->s_journal_dev);
+  KLOG(level, "s_last_orphan: %u\n", sb->s_last_orphan);
 
   // Directory Indexing Support
-  klogf("s_hash_seed[0]: %u\n", sb->s_hash_seed[0]);
-  klogf("s_hash_seed[1]: %u\n", sb->s_hash_seed[1]);
-  klogf("s_hash_seed[2]: %u\n", sb->s_hash_seed[2]);
-  klogf("s_hash_seed[3]: %u\n", sb->s_hash_seed[3]);
-  klogf("s_def_hash_version: %u\n", (uint32_t)sb->s_def_hash_version);
+  KLOG(level, "s_hash_seed[0]: %u\n", sb->s_hash_seed[0]);
+  KLOG(level, "s_hash_seed[1]: %u\n", sb->s_hash_seed[1]);
+  KLOG(level, "s_hash_seed[2]: %u\n", sb->s_hash_seed[2]);
+  KLOG(level, "s_hash_seed[3]: %u\n", sb->s_hash_seed[3]);
+  KLOG(level, "s_def_hash_version: %u\n", (uint32_t)sb->s_def_hash_version);
 
   // Other options
-  klogf("s_default_mount_options: %u\n", sb->s_default_mount_options);
-  klogf("s_first_meta_bg: %u\n", sb->s_first_meta_bg);
+  KLOG(level, "s_default_mount_options: %u\n", sb->s_default_mount_options);
+  KLOG(level, "s_first_meta_bg: %u\n", sb->s_first_meta_bg);
 }
 
 void ext2_superblock_ltoh(ext2_superblock_t* sb) {
@@ -142,13 +144,14 @@ void ext2_superblock_ltoh(ext2_superblock_t* sb) {
   sb->s_first_meta_bg = ltoh32(sb->s_first_meta_bg);
 }
 
-void ext2_block_group_desc_log(ext2_block_group_desc_t* bg) {
-  klogf("bg_block_bitmap: %u\n", bg->bg_block_bitmap);
-  klogf("bg_inode_bitmap: %u\n", bg->bg_inode_bitmap);
-  klogf("bg_inode_table: %u\n", bg->bg_inode_table);
-  klogf("bg_free_blocks_count: %u\n", (uint32_t)bg->bg_free_blocks_count);
-  klogf("bg_free_inodes_count: %u\n", (uint32_t)bg->bg_free_inodes_count);
-  klogf("bg_used_dirs_count: %u\n", (uint32_t)bg->bg_used_dirs_count);
+void ext2_block_group_desc_log(klog_level_t level,
+                               ext2_block_group_desc_t* bg) {
+  KLOG(level, "bg_block_bitmap: %u\n", bg->bg_block_bitmap);
+  KLOG(level, "bg_inode_bitmap: %u\n", bg->bg_inode_bitmap);
+  KLOG(level, "bg_inode_table: %u\n", bg->bg_inode_table);
+  KLOG(level, "bg_free_blocks_count: %u\n", (uint32_t)bg->bg_free_blocks_count);
+  KLOG(level, "bg_free_inodes_count: %u\n", (uint32_t)bg->bg_free_inodes_count);
+  KLOG(level, "bg_used_dirs_count: %u\n", (uint32_t)bg->bg_used_dirs_count);
 }
 
 void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg) {
@@ -160,33 +163,33 @@ void ext2_block_group_desc_ltoh(ext2_block_group_desc_t* bg) {
   bg->bg_used_dirs_count = htol16(bg->bg_used_dirs_count);
 }
 
-void ext2_inode_log(ext2_inode_t* i, int long_mode) {
-  klogf("i_mode: 0x%x\n", (uint32_t)i->i_mode);
+void ext2_inode_log(klog_level_t level, ext2_inode_t* i, int long_mode) {
+  KLOG(level, "i_mode: 0x%x\n", (uint32_t)i->i_mode);
   if (long_mode)
-    klogf("i_uid: %u\n", (uint32_t)i->i_uid);
-  klogf("i_size: %u\n", i->i_size);
+    KLOG(level, "i_uid: %u\n", (uint32_t)i->i_uid);
+  KLOG(level, "i_size: %u\n", i->i_size);
   if (long_mode) {
-    klogf("i_atime: %u\n", i->i_atime);
-    klogf("i_ctime: %u\n", i->i_ctime);
-    klogf("i_mtime: %u\n", i->i_mtime);
-    klogf("i_dtime: %u\n", i->i_dtime);
-    klogf("i_gid: %u\n", (uint32_t)i->i_gid);
+    KLOG(level, "i_atime: %u\n", i->i_atime);
+    KLOG(level, "i_ctime: %u\n", i->i_ctime);
+    KLOG(level, "i_mtime: %u\n", i->i_mtime);
+    KLOG(level, "i_dtime: %u\n", i->i_dtime);
+    KLOG(level, "i_gid: %u\n", (uint32_t)i->i_gid);
   }
-  klogf("i_links_count: %u\n", (uint32_t)i->i_links_count);
+  KLOG(level, "i_links_count: %u\n", (uint32_t)i->i_links_count);
   if (long_mode) {
-    klogf("i_blocks: %u\n", i->i_blocks);
-    klogf("i_flags: 0x%x\n", i->i_flags);
-    klogf("i_osd1: %u\n", i->i_osd1);
+    KLOG(level, "i_blocks: %u\n", i->i_blocks);
+    KLOG(level, "i_flags: 0x%x\n", i->i_flags);
+    KLOG(level, "i_osd1: %u\n", i->i_osd1);
   }
   for (int idx = 0; idx < 15; ++idx) {
     if (i->i_block[idx] != 0 || long_mode)
-      klogf("i_block[%d]: %u\n", idx, i->i_block[idx]);
+      KLOG(level, "i_block[%d]: %u\n", idx, i->i_block[idx]);
   }
   if (long_mode) {
-    klogf("i_generation: %u\n", i->i_generation);
-    klogf("i_file_acl: %u\n", i->i_file_acl);
-    klogf("i_dir_acl: %u\n", i->i_dir_acl);
-    klogf("i_faddr: %u\n", i->i_faddr);
+    KLOG(level, "i_generation: %u\n", i->i_generation);
+    KLOG(level, "i_file_acl: %u\n", i->i_file_acl);
+    KLOG(level, "i_dir_acl: %u\n", i->i_dir_acl);
+    KLOG(level, "i_faddr: %u\n", i->i_faddr);
   }
 }
 
@@ -213,16 +216,16 @@ void ext2_inode_ltoh(ext2_inode_t* i) {
   // char i_osd2[12];
 }
 
-void ext2_dirent_log(ext2_dirent_t* d) {
-  klogf("inode: %u\n", d->inode);
-  klogf("rec_len: %u\n", (uint32_t)d->rec_len);
-  klogf("name_len: %u\n", (uint32_t)d->name_len);
-  klogf("file_type: %u\n", (uint32_t)d->file_type);
+void ext2_dirent_log(klog_level_t level, ext2_dirent_t* d) {
+  KLOG(level, "inode: %u\n", d->inode);
+  KLOG(level, "rec_len: %u\n", (uint32_t)d->rec_len);
+  KLOG(level, "name_len: %u\n", (uint32_t)d->name_len);
+  KLOG(level, "file_type: %u\n", (uint32_t)d->file_type);
 
   char name[256];
   kstrncpy(name, d->name, d->name_len);
   name[d->name_len] = '\0';
-  klogf("name: %s\n", name);
+  KLOG(level, "name: %s\n", name);
 }
 
 void ext2_dirent_ltoh(ext2_dirent_t* d) {

@@ -26,6 +26,8 @@ typedef enum {
 
   KL_PROC,
 
+  KL_EXT2,
+
   KL_MODULE_MAX,
 } klog_module_t;
 

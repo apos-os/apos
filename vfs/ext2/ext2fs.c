@@ -23,6 +23,8 @@
 #include "memory/kmalloc.h"
 #include "vfs/ext2/ext2-internal.h"
 
+#define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
+
 #define SUPPORTED_RO_FEATURES EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER
 
 void* ext2_block_get(const ext2fs_t* fs, int offset) {
@@ -75,33 +77,33 @@ int ext2_read_superblock(ext2fs_t* fs) {
 
   // Check magic number and version.
   if (fs->sb.s_magic != EXT2_SUPER_MAGIC) {
-    klogf("ext2: invalid magic number: %x\n", fs->sb.s_magic);
+    KLOG(INFO, "ext2: invalid magic number: %x\n", fs->sb.s_magic);
     return -EINVAL;
   }
 
-  klogf("ext2 superblock found on dev %d.%d:\n",
-        fs->fs.dev.major, fs->fs.dev.minor);
-  ext2_superblock_log(&fs->sb);
+  KLOG(INFO, "ext2 superblock found on dev %d.%d:\n",
+       fs->fs.dev.major, fs->fs.dev.minor);
+  ext2_superblock_log(INFO, &fs->sb);
 
   if (fs->sb.s_rev_level != EXT2_DYNAMIC_REV) {
-    klogf("ext2: unsupported ext2 version: %d\n", fs->sb.s_rev_level);
+    KLOG(INFO, "ext2: unsupported ext2 version: %d\n", fs->sb.s_rev_level);
     return -EINVAL;
   }
   if (fs->sb.s_state != EXT2_VALID_FS) {
-    klogf("ext2: ext2 filesystem in bad state\n");
+    KLOG(INFO, "ext2: ext2 filesystem in bad state\n");
     return -EINVAL;
   }
 
   // Check incompatible features.
   if (fs->sb.s_feature_incompat != 0x0) {
-    klogf("ext2: unsupported features: 0x%x\n", fs->sb.s_feature_incompat);
+    KLOG(INFO, "ext2: unsupported features: 0x%x\n", fs->sb.s_feature_incompat);
     return -EINVAL;
   }
 
   // Check RO features.
   if (fs->sb.s_feature_ro_compat & ~SUPPORTED_RO_FEATURES) {
-    klogf("ext2: warning: unsupported RO features: 0x%x\n",
-          fs->sb.s_feature_ro_compat);
+    KLOG(INFO, "ext2: warning: unsupported RO features: 0x%x\n",
+         fs->sb.s_feature_ro_compat);
     fs->read_only = 1;
   }
 
@@ -109,7 +111,7 @@ int ext2_read_superblock(ext2fs_t* fs) {
   const uint32_t block_size = ext2_block_size(fs);
   if (block_size > BLOCK_CACHE_BLOCK_SIZE ||
       fs->sb.s_log_frag_size != fs->sb.s_log_block_size) {
-    klogf("ext2: unsupported block or fragment size\n");
+    KLOG(INFO, "ext2: unsupported block or fragment size\n");
     return -EINVAL;
   }
 
@@ -153,9 +155,9 @@ int ext2_read_block_groups(ext2fs_t* fs) {
   }
 
   for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
-    klogf("block group %d:\n", i);
-    ext2_block_group_desc_log(&fs->block_groups[i]);
-    klogf("\n");
+    KLOG(INFO, "block group %d:\n", i);
+    ext2_block_group_desc_log(INFO, &fs->block_groups[i]);
+    KLOG(INFO, "\n");
   }
 
   return 0;
