@@ -22,6 +22,8 @@
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
 
+#define KLOG(...) klogfm(KL_USB, __VA_ARGS__)
+
 #define CONFIG_BUFFER_SIZE 512
 
 void usb_add_endpoint(usb_device_t* dev, usb_endpoint_t* endpoint) {
@@ -72,7 +74,7 @@ static void usb_create_endpoint(usb_device_t* dev,
   int endpoint_addr = endpoint_desc->bEndpointAddress & 0x0F;
   KASSERT(endpoint_addr > 0 && endpoint_addr < USB_NUM_ENDPOINTS);
   if (dev->endpoints[endpoint_addr] != 0x0) {
-    klogf("USB ERROR: endpoint %d registered twice", endpoint_addr);
+    KLOG(ERROR, "USB: endpoint %d registered twice", endpoint_addr);
     die("double endpoint");
   }
 
@@ -86,7 +88,7 @@ static void usb_create_endpoint(usb_device_t* dev,
       break;
 
     case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_ISO:
-      klogf("USB WARNING: isochronous endpoints unsupported\n");
+      KLOG(ERROR, "USB: isochronous endpoints unsupported\n");
       endpoint->type = USB_ISOCHRONOUS;
       break;
 
@@ -99,7 +101,7 @@ static void usb_create_endpoint(usb_device_t* dev,
       break;
 
     default:
-      klogf("invalid endpoint type: 0x%x\n", endpoint_desc->bmAttributes);
+      KLOG(ERROR, "invalid endpoint type: 0x%x\n", endpoint_desc->bmAttributes);
       die("invalid USB endpoint type");
   }
 
@@ -131,8 +133,8 @@ static void usb_create_interface_endpoints(
   while (endpoint < iface->bNumEndpoints) {
     if (!node || node->desc->bDescriptorType == USB_DESC_CONFIGURATION ||
         node->desc->bDescriptorType == USB_DESC_INTERFACE) {
-      klogf("USB WARNING: only found %d (of %d) endpoints for interface %d\n",
-            endpoint, iface->bNumEndpoints, iface->bInterfaceNumber);
+      KLOG(WARNING, "USB: only found %d (of %d) endpoints for interface %d\n",
+           endpoint, iface->bNumEndpoints, iface->bInterfaceNumber);
       return;
     }
 
@@ -171,8 +173,8 @@ static void usb_create_config_endpoints(usb_device_t* dev, int config_idx) {
     if (node->desc->bDescriptorType == USB_DESC_INTERFACE) {
       usb_desc_interface_t* iface = (usb_desc_interface_t*)node->desc;
       if (iface->bAlternateSetting != 0) {
-        klogf("USB WARNING: found alternate setting for interface %d (%d); "
-              "ignoring\n", iface->bInterfaceNumber, iface->bAlternateSetting);
+        KLOG(WARNING, "USB: found alternate setting for interface %d (%d); "
+             "ignoring\n", iface->bInterfaceNumber, iface->bAlternateSetting);
       } else {
         interfaces_found++;
         usb_create_interface_endpoints(dev, node);
@@ -182,8 +184,8 @@ static void usb_create_config_endpoints(usb_device_t* dev, int config_idx) {
   }
 
   if (interfaces_found != config_desc->bNumInterfaces) {
-    klogf("USB WARNING: found %d interfaces; expected %d\n",
-          interfaces_found, config_desc->bNumInterfaces);
+    KLOG(WARNING, "USB: found %d interfaces; expected %d\n",
+         interfaces_found, config_desc->bNumInterfaces);
   }
 }
 
@@ -315,13 +317,13 @@ static void usb_set_address(usb_init_state_t* state) {
 
   state->address = usb_get_free_address(state->dev->bus);
   if (state->address == USB_DEFAULT_ADDRESS) {
-    klogf("ERROR: USB device init failed; no free addresses on bus");
+    KLOG(WARNING, "USB device init failed; no free addresses on bus");
     usb_init_done(state);
     return;
   }
 
-  klogf("INFO: USB assigning address %d to device %x\n",
-        state->address, state->dev);
+  KLOG(DEBUG, "USB assigning address %d to device %x\n",
+       state->address, state->dev);
 
   state->request = usb_alloc_request();
   usb_make_SET_ADDRESS(state->request, state->address);
@@ -331,8 +333,8 @@ static void usb_set_address(usb_init_state_t* state) {
 
   int result = usb_send_request(&state->irp, state->request);
   if (result != 0) {
-    klogf("ERROR: USB device init failed; usb_send_request returned %s",
-          errorname(-result));
+    KLOG(WARNING, "USB device init failed; usb_send_request returned %s",
+         errorname(-result));
     usb_init_done(state);
     return;
   }
@@ -344,13 +346,13 @@ static void usb_set_address_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
-    klogf("ERROR: USB device init failed; SET_ADDRESS IRP failed");
+    KLOG(WARNING, "USB device init failed; SET_ADDRESS IRP failed");
     usb_init_done(state);
     return;
   }
   KASSERT(irp->outlen == 0);
 
-  klogf("INFO: SET_ADDRESS for device %x successful\n", state->dev);
+  KLOG(DEBUG, "SET_ADDRESS for device %x successful\n", state->dev);
 
   KASSERT(state->dev->address == USB_DEFAULT_ADDRESS);
   KASSERT(state->dev->bus->default_address_in_use);
@@ -366,7 +368,7 @@ static void usb_get_device_desc(usb_init_state_t* state) {
   KASSERT(state->dev->state == USB_DEV_ADDRESS);
   KASSERT(state->dev->address != USB_DEFAULT_ADDRESS);
 
-  klogf("INFO: USB getting device descriptor for device %x\n", state->dev);
+  KLOG(DEBUG, "USB getting device descriptor for device %x\n", state->dev);
 
   usb_make_GET_DESCRIPTOR(state->request,
                           USB_DESC_DEVICE, 0, sizeof(usb_desc_dev_t));
@@ -377,8 +379,8 @@ static void usb_get_device_desc(usb_init_state_t* state) {
 
   int result = usb_send_request(&state->irp, state->request);
   if (result != 0) {
-    klogf("ERROR: USB device init failed; usb_send_request returned %s",
-          errorname(-result));
+    KLOG(WARNING, "USB device init failed; usb_send_request returned %s",
+         errorname(-result));
     usb_init_done(state);
     return;
   }
@@ -390,7 +392,7 @@ static void usb_get_device_desc_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
-    klogf("ERROR: USB device init failed; GET_DESCRIPTOR (device) IRP failed");
+    KLOG(WARNING, "USB device init failed; GET_DESCRIPTOR (device) IRP failed");
     usb_init_done(state);
     return;
   }
@@ -399,8 +401,8 @@ static void usb_get_device_desc_done(usb_irp_t* irp, void* arg) {
 
   // TODO(aoates): process descriptor (e.g. max packet size, etc).
 
-  klogf("INFO: USB read device descriptor for device %x:\n", state->dev);
-  usb_print_desc_dev(&state->dev->dev_desc);
+  KLOG(DEBUG2, "USB read device descriptor for device %x:\n", state->dev);
+  usb_print_desc_dev(DEBUG2, &state->dev->dev_desc);
 
   KASSERT(state->dev->dev_desc.bNumConfigurations > 0);
   usb_get_config_desc(state);
@@ -413,8 +415,8 @@ static void usb_get_config_desc(usb_init_state_t* state) {
   KASSERT_DBG(state->dev->address != USB_DEFAULT_ADDRESS);
   KASSERT(state->next_config_idx < kNumConfigs);
 
-  klogf("INFO: USB getting config descriptor #%d for device %x\n",
-        state->next_config_idx, state->dev);
+  KLOG(DEBUG, "USB getting config descriptor #%d for device %x\n",
+       state->next_config_idx, state->dev);
 
   // If it doesn't already exist, allocate the configuration descriptor array.
   if (state->dev->configs == 0x0) {
@@ -436,8 +438,8 @@ static void usb_get_config_desc(usb_init_state_t* state) {
 
   int result = usb_send_request(&state->irp, state->request);
   if (result != 0) {
-    klogf("ERROR: USB device init failed; usb_send_request returned %s",
-          errorname(-result));
+    KLOG(WARNING, "USB device init failed; usb_send_request returned %s",
+         errorname(-result));
     usb_init_done(state);
     return;
   }
@@ -451,21 +453,21 @@ static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
-    klogf("ERROR: USB device init failed; GET_DESCRIPTOR (config) IRP failed "
-          "(config idx: %d  IRP status: %d)\n", state->next_config_idx,
-          irp->status);
+    KLOG(WARNING, "USB device init failed; GET_DESCRIPTOR (config) IRP failed "
+         "(config idx: %d  IRP status: %d)\n", state->next_config_idx,
+         irp->status);
     usb_init_done(state);
     return;
   }
 
-  klogf("INFO: USB read %d bytes of config descriptor for device %x\n",
-        state->irp.outlen, state->dev);
+  KLOG(DEBUG, "USB read %d bytes of config descriptor for device %x\n",
+       state->irp.outlen, state->dev);
 
   KASSERT_DBG(state->dev->configs[state->next_config_idx].desc == 0x0);
   int result = usb_parse_descriptors(&state->dev->configs[state->next_config_idx],
                                      state->config_buffer, CONFIG_BUFFER_SIZE);
   KASSERT(result == 0);  // TODO(aoates): handle more gracefully.
-  usb_print_desc_list(&state->dev->configs[state->next_config_idx]);
+  usb_print_desc_list(DEBUG2, &state->dev->configs[state->next_config_idx]);
 
   state->next_config_idx++;
   if (state->next_config_idx < state->dev->dev_desc.bNumConfigurations) {
@@ -479,14 +481,14 @@ static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
 static void usb_init_driver(usb_init_state_t* state) {
   usb_driver_t* driver = usb_find_driver(state->dev);
   if (!driver) {
-    klogf("USB: no driver found for device with class/subclass 0x%x/0x%x\n",
-          (int)state->dev->dev_desc.bDeviceClass,
-          (int)state->dev->dev_desc.bDeviceSubClass);
+    KLOG(INFO, "USB: no driver found for device with class/subclass "
+         "0x%x/0x%x\n", (int)state->dev->dev_desc.bDeviceClass,
+         (int)state->dev->dev_desc.bDeviceSubClass);
   } else {
     int result = driver->adopt_device(state->dev);
     if (result) {
-      klogf("USB: Warning: unable to assign driver to device: %s\n",
-            errorname(-result));
+      KLOG(WARNING, "USB: unable to assign driver to device: %s\n",
+           errorname(-result));
     }
   }
 
@@ -541,8 +543,8 @@ void usb_set_configuration(usb_device_t* dev, uint8_t config,
 
   int result = usb_send_request(&state->irp, state->request);
   if (result != 0) {
-    klogf("ERROR: USB device init failed; usb_send_request returned %s",
-          errorname(-result));
+    KLOG(WARNING, "USB device init failed; usb_send_request returned %s",
+         errorname(-result));
     // TODO(aoates): handle failures more gracefully.
     die("Unable to configure USB device");
   }

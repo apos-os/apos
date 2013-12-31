@@ -30,6 +30,9 @@ typedef enum {
   KL_EXT2,
   KL_VFS,
 
+  // Device modules.
+  KL_USB,
+
   KL_TEST,
 
   KL_MODULE_MAX,

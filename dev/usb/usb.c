@@ -111,8 +111,8 @@ void usb_init() {
 
     int result = bus->hcd->init(bus->hcd);
     if (result) {
-      klogf("USB WARNING: unable to initialize bus %i: %s\n", i,
-            errorname(-result));
+      klogfm(KL_USB, WARNING, "USB: unable to initialize bus %i: %s\n", i,
+             errorname(-result));
     }
 
     // This should run synchronously, since nothing should be holding the

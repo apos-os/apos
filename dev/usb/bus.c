@@ -27,7 +27,7 @@ static int g_num_buses = 0;
 void usb_create_bus(usb_hcdi_t* hc) {
   KASSERT(usb_is_initialized() == 0);
   if (g_num_buses >= MAX_BUSES) {
-    klogf("WARNING: too many USB host controllers!\n");
+    klogfm(KL_USB, WARNING, "USB: too many USB host controllers!\n");
     return;
   }
 
