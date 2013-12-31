@@ -187,19 +187,38 @@ static void usb_create_config_endpoints(usb_device_t* dev, int config_idx) {
   }
 }
 
+typedef struct {
+  void (*callback)(usb_bus_t* bus, void* arg);
+  void* arg;
+  list_link_t link;
+} pending_closure_t;
+
 void usb_acquire_default_address(usb_bus_t* bus,
                                  void (*callback)(usb_bus_t* bus, void* arg),
                                  void* arg) {
-  // TODO(aoates): support queueing to wait for the default address.
-  KASSERT(bus->default_address_in_use == 0);
-  bus->default_address_in_use = 1;
-  callback(bus, arg);
+  if (bus->default_address_in_use) {
+    pending_closure_t* closure = (pending_closure_t*)kmalloc(sizeof(pending_closure_t));
+    closure->callback = callback;
+    closure->arg = arg;
+    closure->link = LIST_LINK_INIT;
+    list_push(&bus->queued_address_callbacks, &closure->link);
+  } else {
+    bus->default_address_in_use = 1;
+    callback(bus, arg);
+  }
 }
 
 void usb_release_default_address(usb_bus_t* bus) {
   KASSERT(bus->default_address_in_use == 1);
-  bus->default_address_in_use = 0;
-  // TODO(aoates): support queueing to wait for the default address.
+
+  if (list_empty(&bus->queued_address_callbacks)) {
+    bus->default_address_in_use = 0;
+  } else {
+    list_link_t* link = list_pop(&bus->queued_address_callbacks);
+    pending_closure_t* closure = container_of(link, pending_closure_t, link);
+    closure->callback(bus, closure->arg);
+    kfree(closure);
+  }
 }
 
 usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,

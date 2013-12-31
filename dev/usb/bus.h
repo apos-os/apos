@@ -15,6 +15,7 @@
 #ifndef APOO_DEV_USB_BUS_H
 #define APOO_DEV_USB_BUS_H
 
+#include "common/list.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
 
@@ -36,6 +37,9 @@ struct usb_bus {
   // Set if there is currently a device on the bus responding to the default
   // address.
   uint8_t default_address_in_use;
+
+  // Queue of callbacks waiting for the default address.
+  list_t queued_address_callbacks;
 };
 typedef struct usb_bus usb_bus_t;
 

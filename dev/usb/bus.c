@@ -38,6 +38,7 @@ void usb_create_bus(usb_hcdi_t* hc) {
   kmemset(bus, 0, sizeof(usb_bus_t));
   bus->bus_index = bus_idx;
   bus->hcd = hc;
+  bus->queued_address_callbacks = LIST_INIT;
 }
 
 int usb_num_buses() {
