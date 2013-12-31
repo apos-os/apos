@@ -27,6 +27,8 @@
 #include "dev/usb/uhci/uhci_registers.h"
 #include "memory/kmalloc.h"
 
+#define KLOG(...) klogfm(KL_USB_UHCI, __VA_ARGS__)
+
 // Length of time to hold down the reset line for a port.
 #define UHCI_PORT_RESET_MS 10
 
@@ -244,13 +246,13 @@ static int handle_CLEAR_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
           case USB_HUBD_FEAT_PORT_TEST:
           case USB_HUBD_FEAT_PORT_CONNECTION:
           default:
-            klogf("unsupported ClearPortFeature feature: %d\n", feat);
+            KLOG(ERROR, "unsupported ClearPortFeature feature: %d\n", feat);
             die("unsupported ClearPortFeature in UHCI root hub cntlr");
         }
         break;
       }
       default:
-        klogf("unsupported ClearPortFeature rcpt: %d\n", rcpt);
+        KLOG(ERROR, "unsupported ClearPortFeature rcpt: %d\n", rcpt);
         die("unsupported ClearPortFeature rcpt");
     }
   } else {
@@ -369,13 +371,13 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
           case USB_HUBD_FEAT_PORT_CONNECTION:
           case USB_HUBD_FEAT_PORT_ENABLE:
           default:
-            klogf("unsupported ClearPortFeature feature: %d\n", feat);
+            KLOG(ERROR, "unsupported ClearPortFeature feature: %d\n", feat);
             die("unsupported ClearPortFeature in UHCI root hub cntlr");
         }
         break;
       }
       default:
-        klogf("unsupported ClearPortFeature rcpt: %d\n", rcpt);
+        KLOG(ERROR, "unsupported ClearPortFeature rcpt: %d\n", rcpt);
         die("unsupported ClearPortFeature rcpt");
     }
   } else {
@@ -536,7 +538,8 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 
       case USB_DESC_STRING:
       default:
-        klogf("unsupported descriptor type in GET_DESCRIPTOR: %d\n", desc_type);
+        KLOG(ERROR, "unsupported descriptor type in GET_DESCRIPTOR: %d\n",
+             desc_type);
         die("unsupported descriptor type in GET_DESCRIPTOR");
     }
   } else if (type == USB_DEVREQ_TYPE_CLASS) {
@@ -561,7 +564,7 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
     kmemcpy(irp->buffer, &desc, bytes_to_copy);
     irp->out_len = bytes_to_copy;
   } else {
-    klogf("UHCI: unsupported request type in GET_DESCRIPTOR: %d\n", type);
+    KLOG(ERROR, "UHCI: unsupported request type in GET_DESCRIPTOR: %d\n", type);
     die("UHCI: unsupported request type in GET_DESCRIPTOR");
   }
   irp->status = USB_IRP_SUCCESS;
@@ -691,8 +694,8 @@ static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         case USB_DEVREQ_SET_INTERFACE:
         case USB_DEVREQ_SYNCH_FRAME:
         default:
-          klogf("error: unsupported bRequest in UHCI hub controller: %d\n",
-                hub->dcp_request.bRequest);
+          KLOG(ERROR, "unsupported bRequest in UHCI hub controller: %d\n",
+               hub->dcp_request.bRequest);
           die("unsupported bRequest in UHCI hub controller");
       }
       break;
@@ -823,8 +826,8 @@ int uhci_hub_handle_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
       return handle_sc_irp(hub, irp);
 
     default:
-      klogf("error: unknown endpoint %d in UHCI hub handler\n",
-            irp->endpoint->endpoint_idx);
+      KLOG(ERROR, "error: unknown endpoint %d in UHCI hub handler\n",
+           irp->endpoint->endpoint_idx);
       die("unknown endpoint in UHCI hub handler");
   }
 

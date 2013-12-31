@@ -38,6 +38,8 @@
 #include "proc/sleep.h"
 #include "memory/slab_alloc.h"
 
+#define KLOG(...) klogfm(KL_USB_UHCI, __VA_ARGS__)
+
 // TODO(aoates): we don't need a table of UHCIs, since we can just store the
 // data in the HCDI we give to the USBD.
 #define UHCI_MAX_CONTROLLERS 10
@@ -96,7 +98,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   PUSH_AND_DISABLE_INTERRUPTS();
   if (irp->endpoint->hcd_data != 0x0) {
     POP_INTERRUPTS();
-    klogf("WARNING: UHCI scheduling IRP on busy endpoint\n");
+    KLOG(WARNING, "UHCI scheduling IRP on busy endpoint\n");
     return -EBUSY;
   }
 
@@ -278,7 +280,7 @@ static void uhci_interrupt(void* arg) {
                  final_td->status_ctrl & TD_SC_STS_BABBLE ||
                  final_td->status_ctrl & TD_SC_STS_TOCRC_ERR ||
                  final_td->status_ctrl & TD_SC_STS_BITSF_ERR) {
-        klogf("WARNING: UHCI TD failed\n");
+        KLOG(WARNING, "UHCI TD failed\n");
         irp->status = USB_IRP_DEVICE_ERROR;
       } else {
         irp->status = USB_IRP_SUCCESS;
@@ -393,7 +395,8 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   // Register IRQ handler for the controller.
   // TODO(aoates): this will clobber any other controllers listening on this
   // IRQ!  This is probably not what we want.
-  klogf("registering UHCI at base port 0x%x on IRQ %d\n", c->base_port, c->irq);
+  KLOG(INFO, "registering UHCI at base port 0x%x on IRQ %d\n",
+       c->base_port, c->irq);
   register_irq_handler(c->irq, &uhci_interrupt, c);
 
   // Enable interrupts.
@@ -406,7 +409,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
 // descriptors.
 void uhci_test_controller(usb_hcdi_t* ci, int port) {
   if (port < 0 || port > 1) {
-    klogf("error: port %d out of range\n", port);
+    KLOG(ERROR, "error: port %d out of range\n", port);
     return;
   }
 
@@ -416,7 +419,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
 
   uint16_t status = ins(port_reg);
   if (!(status & PORTSC_CONNECT)) {
-    klogf("<no device found on port %d>\n", port + 1);
+    KLOG(ERROR, "<no device found on port %d>\n", port + 1);
     return;
   }
 
@@ -424,7 +427,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   outs(port_reg, PORTSC_CONNECT_CHG);
 
   // Reset the port.
-  klogf("resetting port %d\n", port + 1);
+  KLOG(INFO, "resetting port %d\n", port + 1);
   status = ins(port_reg);
   outs(port_reg, status | PORTSC_RST);
   ksleep(100);
@@ -433,7 +436,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   outs(port_reg, status & ~PORTSC_RST);
 
   // Enable the port.
-  klogf("enabling port %d\n", port + 1);
+  KLOG(INFO, "enabling port %d\n", port + 1);
   status = ins(port_reg);
   outs(port_reg, status | PORTSC_ENABLE | PORTSC_ENABLE_CHG);
   ksleep(100);
@@ -453,19 +456,19 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
 
 void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
-    klogf("WARNING: too many UHCI controllers; ignoring\n");
+    KLOG(WARNING, "too many UHCI controllers; ignoring\n");
     return;
   }
   if (irq == 0xFF) {
-    klogf("WARNING: UHCI controllers without IRQs are unsupported\n");
+    KLOG(WARNING, "UHCI controllers without IRQs are unsupported\n");
     return;
   }
   usb_uhci_t* c = &g_controllers[g_num_controllers++];
   kmemset(c, 0, sizeof(usb_uhci_t));
   c->base_port = base_addr;
   c->irq = irq;
-  klogf("USB: found UHCI controller #%d (at 0x%x)\n", g_num_controllers,
-        c->base_port);
+  KLOG(INFO, "USB: found UHCI controller #%d (at 0x%x)\n", g_num_controllers,
+       c->base_port);
 
   // Register it with the USBD.
   usb_hcdi_t* hcdi = (usb_hcdi_t*)kmalloc(sizeof(usb_hcdi_t));
