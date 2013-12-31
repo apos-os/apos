@@ -26,7 +26,9 @@ typedef enum {
 
   KL_PROC,
 
+  // VFS modules.
   KL_EXT2,
+  KL_VFS,
 
   KL_MODULE_MAX,
 } klog_module_t;

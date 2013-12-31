@@ -29,6 +29,8 @@
 #include "vfs/special.h"
 #include "vfs/vfs.h"
 
+#define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
+
 void vfs_vnode_init(vnode_t* n, int num) {
   n->fs = 0x0;
   n->fstype[0] = 0x0;
@@ -265,7 +267,7 @@ void vfs_init() {
     if (dev_get_block(dev)) {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
-        klogf("Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
+        KLOG(INFO, "Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
         g_root_fs = ext2fs;
         success = 1;
         break;
@@ -274,7 +276,7 @@ void vfs_init() {
   }
 
   if (!success) {
-    klogf("Didn't find any mountable filesystems; mounting ramfs as /\n");
+    KLOG(INFO, "Didn't find any mountable filesystems; mounting ramfs as /\n");
     ext2_destroy_fs(ext2fs);
     g_root_fs = ramfs_create_fs();
   }
@@ -340,8 +342,8 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     if (error) {
       // In case the fs overwrote this.  We must do this before we unlock.
       vnode->type = VNODE_UNINITIALIZED;
-      klogf("warning: error when getting inode %d: %s\n",
-            vnode_num, errorname(-error));
+      KLOG(WARNING, "error when getting inode %d: %s\n",
+           vnode_num, errorname(-error));
       kmutex_unlock(&vnode->mutex);
       vfs_put(vnode);
       return 0x0;
@@ -379,13 +381,13 @@ void vfs_put(vnode_t* vnode) {
 static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
   KASSERT(key == (uint32_t)vnode->num);
-  klogf("  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
-        vnode, vnode->num, VNODE_TYPE_NAME[vnode->type],
-        vnode->len, vnode->refcount);
+  KLOG(INFO, "  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
+       vnode, vnode->num, VNODE_TYPE_NAME[vnode->type],
+       vnode->len, vnode->refcount);
 }
 
 void vfs_log_cache() {
-  klogf("VFS vnode cache:\n");
+  KLOG(INFO, "VFS vnode cache:\n");
   htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
 }
 
