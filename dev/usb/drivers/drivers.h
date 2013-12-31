@@ -19,14 +19,18 @@
 #include "dev/usb/device.h"
 
 // A USB driver.
-typedef struct {
+struct usb_driver {
   // Returns non-zero if the driver can handle the given device.
   int (*check_device)(usb_device_t*);
 
   // Adopt the given device, returning -errno on error.  If this is called,
   // check_device will have been previously called with the same device.
   int (*adopt_device)(usb_device_t*);
-} usb_driver_t;
+
+  // Human-readable name of the driver.
+  const char* name;
+};
+typedef struct usb_driver usb_driver_t;
 
 // Finds a driver for the given device, or returns NULL if none can be found.
 usb_driver_t* usb_find_driver(usb_device_t* device);

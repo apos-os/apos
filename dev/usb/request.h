@@ -33,10 +33,9 @@ typedef struct usb_dev_request usb_dev_request_t;
 #define USB_DEVREQ_DIR_DEV2HOST  0x80
 
 #define USB_DEVREQ_TYPE_MASK   0x60
-#define USB_DEVREQ_TYPE_OFFSET 5
-#define USB_DEVREQ_TYPE_STD    0
-#define USB_DEVREQ_TYPE_CLASS  1
-#define USB_DEVREQ_TYPE_VENDOR 2
+#define USB_DEVREQ_TYPE_STD    (0 << 5)
+#define USB_DEVREQ_TYPE_CLASS  (1 << 5)
+#define USB_DEVREQ_TYPE_VENDOR (2 << 5)
 
 #define USB_DEVREQ_RCPT_MASK   0x1F
 #define USB_DEVREQ_RCPT_DEV    0
@@ -72,13 +71,13 @@ typedef struct usb_dev_request usb_dev_request_t;
 void usb_make_SET_ADDRESS(usb_dev_request_t* req_out, uint8_t address);
 void usb_make_GET_DESCRIPTOR(usb_dev_request_t* req_out,
                              uint8_t type, uint8_t index, uint16_t length);
+void usb_make_SET_CONFIGURATION(usb_dev_request_t* req_out, uint8_t config);
 
 //void usb_make_GET_STATUS(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_CLEAR_FEATURE(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SET_FEATURE(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SET_DESCRIPTOR(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_GET_CONFIGURATION(usb_dev_request_t* req_out, ...); // TODO
-//void usb_make_SET_CONFIGURATION(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_GET_INTERFACE(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SET_INTERFACE(usb_dev_request_t* req_out, ...); // TODO
 //void usb_make_SYNCH_FRAME(usb_dev_request_t* req_out, ...); // TODO

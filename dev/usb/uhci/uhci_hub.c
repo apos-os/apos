@@ -20,12 +20,14 @@
 #include "common/errno.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
-#include "dev/usb/hub.h"
+#include "dev/usb/drivers/hub/hub.h"
 #include "dev/usb/uhci/uhci-internal.h"
 #include "dev/usb/uhci/uhci.h"
 #include "dev/usb/uhci/uhci_hub.h"
 #include "dev/usb/uhci/uhci_registers.h"
 #include "memory/kmalloc.h"
+
+#define KLOG(...) klogfm(KL_USB_UHCI, __VA_ARGS__)
 
 // Length of time to hold down the reset line for a port.
 #define UHCI_PORT_RESET_MS 10
@@ -244,13 +246,13 @@ static int handle_CLEAR_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
           case USB_HUBD_FEAT_PORT_TEST:
           case USB_HUBD_FEAT_PORT_CONNECTION:
           default:
-            klogf("unsupported ClearPortFeature feature: %d\n", feat);
+            KLOG(ERROR, "unsupported ClearPortFeature feature: %d\n", feat);
             die("unsupported ClearPortFeature in UHCI root hub cntlr");
         }
         break;
       }
       default:
-        klogf("unsupported ClearPortFeature rcpt: %d\n", rcpt);
+        KLOG(ERROR, "unsupported ClearPortFeature rcpt: %d\n", rcpt);
         die("unsupported ClearPortFeature rcpt");
     }
   } else {
@@ -281,6 +283,10 @@ static void uhci_port_reset_done(void* arg) {
 
   // Stop resetting.
   port_sc &= ~PORTSC_RST;
+  outs(port_sc_register, port_sc);
+
+  // Enable the port.
+  port_sc |= PORTSC_ENABLE;
   outs(port_sc_register, port_sc);
 
   // Signal the reset is done.
@@ -328,6 +334,7 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
             // C_PORT_RESET bit to 1.
             if ((port_sc & PORTSC_RST) == 0) {
               port_sc |= PORTSC_RST;
+              port_sc &= ~PORTSC_ENABLE;
               outs(port_sc_register, port_sc);
               uhci_port_reset_done_arg_t* arg = (uhci_port_reset_done_arg_t*)
                   kmalloc(sizeof(uhci_port_reset_done_arg_t));
@@ -364,13 +371,13 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
           case USB_HUBD_FEAT_PORT_CONNECTION:
           case USB_HUBD_FEAT_PORT_ENABLE:
           default:
-            klogf("unsupported ClearPortFeature feature: %d\n", feat);
+            KLOG(ERROR, "unsupported ClearPortFeature feature: %d\n", feat);
             die("unsupported ClearPortFeature in UHCI root hub cntlr");
         }
         break;
       }
       default:
-        klogf("unsupported ClearPortFeature rcpt: %d\n", rcpt);
+        KLOG(ERROR, "unsupported ClearPortFeature rcpt: %d\n", rcpt);
         die("unsupported ClearPortFeature rcpt");
     }
   } else {
@@ -484,7 +491,7 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         desc_interface.bDescriptorType = USB_DESC_INTERFACE;
         desc_interface.bInterfaceNumber = 0;
         desc_interface.bAlternateSetting = 0;
-        desc_interface.bNumEndpoints = 0;
+        desc_interface.bNumEndpoints = 1;
         desc_interface.bInterfaceClass = USB_CLASS_HUB;
         desc_interface.bInterfaceSubClass = 0;
         desc_interface.bInterfaceProtocol = 0;
@@ -531,7 +538,8 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 
       case USB_DESC_STRING:
       default:
-        klogf("unsupported descriptor type in GET_DESCRIPTOR: %d\n", desc_type);
+        KLOG(ERROR, "unsupported descriptor type in GET_DESCRIPTOR: %d\n",
+             desc_type);
         die("unsupported descriptor type in GET_DESCRIPTOR");
     }
   } else if (type == USB_DEVREQ_TYPE_CLASS) {
@@ -539,26 +547,24 @@ static int handle_GET_DESCRIPTOR(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
     KASSERT(desc_type == USB_HUBD_DESC_TYPE);
     KASSERT(desc_idx == 0);
 
-    const int desc_len = sizeof(usb_hubd_desc_t) + 2;
-    char desc_buf[desc_len];
-    usb_hubd_desc_t* desc = (usb_hubd_desc_t*)desc_buf;
+    usb_hubd_desc_t desc;
 
-    desc->bLength = desc_len;
-    desc->bDescriptorType = USB_HUBD_DESC_TYPE;
-    desc->bNbrPorts = 2;
-    desc->wHubCharacteristics =
+    desc.bLength = sizeof(usb_hubd_desc_t) - 16 + 2;
+    desc.bDescriptorType = USB_HUBD_DESC_TYPE;
+    desc.bNbrPorts = 2;
+    desc.wHubCharacteristics =
         USB_HUBD_CHAR_LPSM_GANGED |
         USB_HUBD_CHAR_OCPM_NONE1;
-    desc->bPwrOn2PwrGood = 0;
-    desc->bHubContrCurrent = 0;
-    desc->PortBits[0] = 0x0;
-    desc->PortBits[1] = 0xFF;
+    desc.bPwrOn2PwrGood = 0;
+    desc.bHubContrCurrent = 0;
+    desc.PortBits[0] = 0x0;
+    desc.PortBits[1] = 0xFF;
 
-    const int bytes_to_copy = min(irp->buflen, desc->bLength);
+    const int bytes_to_copy = min(irp->buflen, desc.bLength);
     kmemcpy(irp->buffer, &desc, bytes_to_copy);
     irp->out_len = bytes_to_copy;
   } else {
-    klogf("UHCI: unsupported request type in GET_DESCRIPTOR: %d\n", type);
+    KLOG(ERROR, "UHCI: unsupported request type in GET_DESCRIPTOR: %d\n", type);
     die("UHCI: unsupported request type in GET_DESCRIPTOR");
   }
   irp->status = USB_IRP_SUCCESS;
@@ -688,8 +694,8 @@ static int handle_dcp_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         case USB_DEVREQ_SET_INTERFACE:
         case USB_DEVREQ_SYNCH_FRAME:
         default:
-          klogf("error: unsupported bRequest in UHCI hub controller: %d\n",
-                hub->dcp_request.bRequest);
+          KLOG(ERROR, "unsupported bRequest in UHCI hub controller: %d\n",
+               hub->dcp_request.bRequest);
           die("unsupported bRequest in UHCI hub controller");
       }
       break;
@@ -782,16 +788,16 @@ void uhci_check_sc_timer(void* arg) {
   }
 
   if (status_change != 0x0) {
-    if (args->irp->buflen > 0) {
-      args->irp->out_len = 1;
-      *(uint8_t*)args->irp->buffer = status_change;
+    usb_hcdi_irp_t* irp = args->irp;
+    if (irp->buflen > 0) {
+      irp->out_len = 1;
+      *(uint8_t*)irp->buffer = status_change;
     } else {
-      args->irp->out_len = 0;
+      irp->out_len = 0;
     }
-    args->irp->status = USB_IRP_SUCCESS;
-    kmemset(args, 0, sizeof(uhci_check_sc_timer_args_t));  // TODO(remove)
+    irp->status = USB_IRP_SUCCESS;
     kfree(args);
-    args->irp->callback(args->irp, args->irp->callback_arg);
+    irp->callback(irp, irp->callback_arg);
   } else {
     // "NACK" the packet and schedule a timer to run in 250ms to check again.
     register_event_timer(get_time_ms() + UHCI_HUB_STATUS_CHANGE_INTERVAL,
@@ -820,8 +826,8 @@ int uhci_hub_handle_irp(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
       return handle_sc_irp(hub, irp);
 
     default:
-      klogf("error: unknown endpoint %d in UHCI hub handler\n",
-            irp->endpoint->endpoint_idx);
+      KLOG(ERROR, "error: unknown endpoint %d in UHCI hub handler\n",
+           irp->endpoint->endpoint_idx);
       die("unknown endpoint in UHCI hub handler");
   }
 

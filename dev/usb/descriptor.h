@@ -19,6 +19,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/klog.h"
+
 // Standard descriptor "interface".  All standard descriptors start with a
 // length and type, followed by the rest of the data.
 struct usb_desc_base {
@@ -114,6 +116,8 @@ typedef struct usb_desc_interface usb_desc_interface_t;
 #define USB_DESC_ENDPOINT_BMATTR_SYNC_TYPE_MASK  0x0C
 #define USB_DESC_ENDPOINT_BMATTR_USAGE_TYPE_MASK 0x30
 
+#define USB_DESC_ENDPOINT_MAX_PACKET_SIZE_MASK 0x3F
+
 // Endpoint descriptor.  Each interface (or alternate setting for an interface)
 // has an associated set of endpoints.
 struct usb_desc_endpoint {
@@ -136,12 +140,12 @@ int usb_parse_descriptors(usb_desc_list_node_t* list_out,
                           void* buf, size_t buflen);
 
 // Print descriptors.
-void usb_print_desc_list(usb_desc_list_node_t* list);
+void usb_print_desc_list(klog_level_t level, usb_desc_list_node_t* list);
 
-void usb_print_desc(usb_desc_base_t* desc);
-void usb_print_desc_dev(usb_desc_dev_t* desc);
-void usb_print_desc_config(usb_desc_config_t* desc);
-void usb_print_desc_interface(usb_desc_interface_t* desc);
-void usb_print_desc_endpoint(usb_desc_endpoint_t* desc);
+void usb_print_desc(klog_level_t level, usb_desc_base_t* desc);
+void usb_print_desc_dev(klog_level_t level, usb_desc_dev_t* desc);
+void usb_print_desc_config(klog_level_t level, usb_desc_config_t* desc);
+void usb_print_desc_interface(klog_level_t level, usb_desc_interface_t* desc);
+void usb_print_desc_endpoint(klog_level_t level, usb_desc_endpoint_t* desc);
 
 #endif

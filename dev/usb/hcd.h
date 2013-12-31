@@ -69,6 +69,9 @@ typedef struct usb_hcdi_irp usb_hcdi_irp_t;
 // Host controller driver interface.  Each host controller driver (e.g UHCI,
 // OHCI, EHCI, etc) must implement this interface.
 struct usb_hcdi {
+  // Initialize the host controller.  Called once, from usb_init().
+  int (*init)(struct usb_hcdi* hc);
+
   // Register a newly-discovered endpoint with the HCD.  It can store any extra
   // data in the hcd_data field of the endpoint.
   //

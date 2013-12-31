@@ -38,3 +38,13 @@ void usb_make_GET_DESCRIPTOR(usb_dev_request_t* req_out,
   req_out->wIndex = 0;
   req_out->wLength = length;
 }
+
+void usb_make_SET_CONFIGURATION(usb_dev_request_t* req_out, uint8_t config) {
+  req_out->bmRequestType =
+      USB_DEVREQ_DIR_HOST2DEV |
+      USB_DEVREQ_TYPE_STD |
+      USB_DEVREQ_RCPT_DEV;
+  req_out->bRequest = USB_DEVREQ_SET_CONFIGURATION;
+  req_out->wValue = config;
+  req_out->wIndex = req_out->wLength = 0;
+}

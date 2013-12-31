@@ -33,6 +33,9 @@
 #include "dev/char_dev.h"
 #include "dev/dev.h"
 #include "dev/timer.h"
+#include "dev/usb/bus.h"
+#include "dev/usb/device.h"
+#include "dev/usb/drivers/drivers.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
 #include "dev/usb/uhci/uhci_cmd.h"
@@ -641,6 +644,74 @@ void boot_cmd(int argc, char** argv) {
   }
 }
 
+static const char* lsusb_speed_str(usb_speed_t speed) {
+  switch (speed) {
+    case USB_LOW_SPEED: return "low";
+    case USB_FULL_SPEED: return "full";
+  }
+  return "<unknown>";
+}
+
+static const char* lsusb_state_str(usb_device_state_t state) {
+  switch (state) {
+    case USB_DEV_INVALID: return "invalid";
+    case USB_DEV_ATTACHED: return "attached";
+    case USB_DEV_POWERED: return "powered";
+    case USB_DEV_DEFAULT: return "default";
+    case USB_DEV_ADDRESS: return "address";
+    case USB_DEV_CONFIGURED: return "configured";
+    case USB_DEV_SUSPENDED: return "suspended";
+  }
+  return "<unknown>";
+}
+
+// Print a USB device and all its children.
+const int LSUSB_IDENT = 1;
+
+static void lsusb_print_node(usb_device_t* dev, int indent) {
+  char indent_str[100];
+  int i;
+  for (i = 0; i < indent; ++i) indent_str[i] = ' ';
+  indent_str[i] = '\0';
+
+  ksh_printf("%sDevice %d.%d", indent_str, dev->bus->bus_index, dev->address);
+  if (dev->state > USB_DEV_INVALID) {
+    ksh_printf(" class=0x%d", dev->dev_desc.bDeviceClass);
+  }
+  ksh_printf(" driver=%s", dev->driver ? dev->driver->name : "<none>");
+  ksh_printf(" speed=%s", lsusb_speed_str(dev->speed));
+  ksh_printf(" state=%s", lsusb_state_str(dev->state));
+  ksh_printf("\n");
+
+  // First print any children.
+  if (dev->first_child) {
+    lsusb_print_node(dev->first_child, indent + LSUSB_IDENT);
+  }
+
+  // ...then siblings.
+  if (dev->next) {
+    lsusb_print_node(dev->next, indent);
+  }
+}
+
+static void lsusb_cmd(int argc, char** argv) {
+  if (argc != 1) {
+    ksh_printf("Usage: lsusb\n");
+    return;
+  }
+
+  if (usb_num_buses() == 0) {
+    ksh_printf("<no USB buses found>\n");
+    return;
+  }
+
+  for (int bus_idx = 0; bus_idx < usb_num_buses(); bus_idx++) {
+    usb_bus_t* bus = usb_get_bus(bus_idx);
+    ksh_printf("Bus %d:\n", bus->bus_index);
+    lsusb_print_node(bus->root_hub, LSUSB_IDENT);
+  }
+}
+
 typedef struct {
   const char* name;
   void (*func)(int, char*[]);
@@ -677,6 +748,7 @@ static cmd_t CMDS[] = {
   { "hash_file", &hash_file_cmd },
 
   { "uhci", &uhci_cmd },
+  { "lsusb", &lsusb_cmd },
 
   { "bcstats", &bcstats_cmd },
 

@@ -15,10 +15,8 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  drivers.c \
-
-LOCAL_SUBDIRS := hub
-
-$(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
+  control.c \
+  hub.c \
+  request.c \
 
 $(eval $(END_SOURCES))

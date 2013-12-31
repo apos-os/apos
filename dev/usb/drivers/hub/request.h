@@ -12,23 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "dev/usb/drivers/drivers.h"
+// Hub-specific requests and helpers for making them.
+#ifndef APOO_DEV_USB_DRIVERS_HUB_REQUEST_H
+#define APOO_DEV_USB_DRIVERS_HUB_REQUEST_H
 
-#include "dev/usb/drivers/hub/hub.h"
+#include "dev/usb/request.h"
 
-// Static table of drivers.
-static usb_driver_t g_drivers[] = {
-  { &usb_hubd_check_device, &usb_hubd_adopt_device, "hub" },
-  { NULL, NULL, NULL },
-};
+void usb_make_GET_HUB_DESCRIPTOR(usb_dev_request_t* req_out, uint16_t length);
+void usb_make_GET_PORT_STATUS(usb_dev_request_t* req_out, int port);
+void usb_make_CLEAR_PORT_FEATURE(usb_dev_request_t* req_out, int port, int feature);
+void usb_make_SET_PORT_FEATURE(usb_dev_request_t* req_out, int port, int feature);
 
-usb_driver_t* usb_find_driver(usb_device_t* device) {
-  usb_driver_t* driver = &g_drivers[0];
-  while (driver->check_device != NULL) {
-    if (driver->check_device(device)) {
-      return driver;
-    }
-    driver++;
-  }
-  return 0x0;
-}
+#endif

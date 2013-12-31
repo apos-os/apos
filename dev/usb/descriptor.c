@@ -18,6 +18,8 @@
 #include "dev/usb/descriptor.h"
 #include "memory/kmalloc.h"
 
+#define KLOG(...) klogfm(KL_USB, __VA_ARGS__)
+
 int usb_parse_descriptors(usb_desc_list_node_t* list_out,
                           void* buf, size_t buflen) {
   if (buf == 0x0 || buflen < sizeof(usb_desc_config_t) ||
@@ -53,8 +55,8 @@ int usb_parse_descriptors(usb_desc_list_node_t* list_out,
   }
 
   if (buflen == 0 && bytes_left_to_read > 0) {
-    klogf("WARNING: ran out of buffer space reading descriptors, truncating "
-          "at %d bytes\n", config->wTotalLength - bytes_left_to_read);
+    KLOG(WARNING, "WARNING: ran out of buffer space reading descriptors, "
+         "truncating at %d bytes\n", config->wTotalLength - bytes_left_to_read);
     // TODO(aoates): free all the descriptors and nodes!
     return -ENOMEM;
   }
@@ -76,86 +78,86 @@ static const char* desc_type(uint8_t type) {
   }
 }
 
-void usb_print_desc_list(usb_desc_list_node_t* list) {
+void usb_print_desc_list(klog_level_t level, usb_desc_list_node_t* list) {
   int count = 0;
   while (list != 0x0) {
-    klogf("Descriptor %d:\n", count);
-    usb_print_desc(list->desc);
+    KLOG(level, "Descriptor %d:\n", count);
+    usb_print_desc(level, list->desc);
     list = list->next;
     ++count;
   }
-  klogf("<%d total descriptors>\n", count);
+  KLOG(level, "<%d total descriptors>\n", count);
 }
 
-void usb_print_desc(usb_desc_base_t* desc) {
+void usb_print_desc(klog_level_t level, usb_desc_base_t* desc) {
   switch (desc->bDescriptorType) {
     case USB_DESC_DEVICE:
-      usb_print_desc_dev((usb_desc_dev_t*)desc);
+      usb_print_desc_dev(level, (usb_desc_dev_t*)desc);
       return;
     case USB_DESC_CONFIGURATION:
-      usb_print_desc_config((usb_desc_config_t*)desc);
+      usb_print_desc_config(level, (usb_desc_config_t*)desc);
       return;
     case USB_DESC_INTERFACE:
-      usb_print_desc_interface((usb_desc_interface_t*)desc);
+      usb_print_desc_interface(level, (usb_desc_interface_t*)desc);
       return;
     case USB_DESC_ENDPOINT:
-      usb_print_desc_endpoint((usb_desc_endpoint_t*)desc);
+      usb_print_desc_endpoint(level, (usb_desc_endpoint_t*)desc);
       return;
     default:
-      klogf("  bLength: %d\n", desc->bLength);
-      klogf("  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
-      klogf("  <%d bytes of data>\n", desc->bLength);
+      KLOG(level, "  bLength: %d\n", desc->bLength);
+      KLOG(level, "  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
+      KLOG(level, "  <%d bytes of data>\n", desc->bLength);
       return;
   }
 }
 
-void usb_print_desc_dev(usb_desc_dev_t* dev_desc) {
-  klogf("  bLength: %d\n", dev_desc->bLength);
-  klogf("  bDescriptorType: %s (%d)\n", desc_type(dev_desc->bDescriptorType),
-        dev_desc->bDescriptorType);
-  klogf("  bcdUSB: 0x%x\n", dev_desc->bcdUSB);
-  klogf("  bDeviceClass: 0x%x\n", dev_desc->bDeviceClass);
-  klogf("  bDeviceSubClass: 0x%x\n", dev_desc->bDeviceSubClass);
-  klogf("  bDeviceProtocol: 0x%x\n", dev_desc->bDeviceProtocol);
-  klogf("  bMaxPacketSize0: %d\n", dev_desc->bMaxPacketSize0);
-  klogf("  idVendor: 0x%x\n", dev_desc->idVendor);
-  klogf("  idProduct: 0x%x\n", dev_desc->idProduct);
-  klogf("  bcdDevice: 0x%x\n", dev_desc->bcdDevice);
-  klogf("  iManufacturer: 0x%x\n", dev_desc->iManufacturer);
-  klogf("  iProduct: 0x%x\n", dev_desc->iProduct);
-  klogf("  iSerialNumber: 0x%x\n", dev_desc->iSerialNumber);
-  klogf("  bNumConfigurations: %d\n", dev_desc->bNumConfigurations);
+void usb_print_desc_dev(klog_level_t level, usb_desc_dev_t* dev_desc) {
+  KLOG(level, "  bLength: %d\n", dev_desc->bLength);
+  KLOG(level, "  bDescriptorType: %s (%d)\n", desc_type(dev_desc->bDescriptorType),
+       dev_desc->bDescriptorType);
+  KLOG(level, "  bcdUSB: 0x%x\n", dev_desc->bcdUSB);
+  KLOG(level, "  bDeviceClass: 0x%x\n", dev_desc->bDeviceClass);
+  KLOG(level, "  bDeviceSubClass: 0x%x\n", dev_desc->bDeviceSubClass);
+  KLOG(level, "  bDeviceProtocol: 0x%x\n", dev_desc->bDeviceProtocol);
+  KLOG(level, "  bMaxPacketSize0: %d\n", dev_desc->bMaxPacketSize0);
+  KLOG(level, "  idVendor: 0x%x\n", dev_desc->idVendor);
+  KLOG(level, "  idProduct: 0x%x\n", dev_desc->idProduct);
+  KLOG(level, "  bcdDevice: 0x%x\n", dev_desc->bcdDevice);
+  KLOG(level, "  iManufacturer: 0x%x\n", dev_desc->iManufacturer);
+  KLOG(level, "  iProduct: 0x%x\n", dev_desc->iProduct);
+  KLOG(level, "  iSerialNumber: 0x%x\n", dev_desc->iSerialNumber);
+  KLOG(level, "  bNumConfigurations: %d\n", dev_desc->bNumConfigurations);
 }
 
-void usb_print_desc_config(usb_desc_config_t* desc) {
-  klogf("  bLength: %d\n", desc->bLength);
-  klogf("  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
-  klogf("  wTotalLength: %d\n", desc->wTotalLength);
-  klogf("  bNumInterfaces: %d\n", desc->bNumInterfaces);
-  klogf("  bConfigurationValue: 0x%x\n", desc->bConfigurationValue);
-  klogf("  iConfiguration: 0x%x\n", desc->iConfiguration);
-  klogf("  bmAttributes: 0x%x\n", desc->bmAttributes);
-  klogf("  bMaxPower: %d\n", desc->bMaxPower);
+void usb_print_desc_config(klog_level_t level, usb_desc_config_t* desc) {
+  KLOG(level, "  bLength: %d\n", desc->bLength);
+  KLOG(level, "  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
+  KLOG(level, "  wTotalLength: %d\n", desc->wTotalLength);
+  KLOG(level, "  bNumInterfaces: %d\n", desc->bNumInterfaces);
+  KLOG(level, "  bConfigurationValue: 0x%x\n", desc->bConfigurationValue);
+  KLOG(level, "  iConfiguration: 0x%x\n", desc->iConfiguration);
+  KLOG(level, "  bmAttributes: 0x%x\n", desc->bmAttributes);
+  KLOG(level, "  bMaxPower: %d\n", desc->bMaxPower);
 }
 
-void usb_print_desc_interface(usb_desc_interface_t* desc) {
-  klogf("  bLength: %d\n", desc->bLength);
-  klogf("  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
-  klogf("  bInterfaceNumber: %d\n", desc->bInterfaceNumber);
-  klogf("  bAlternateSetting: %d\n", desc->bAlternateSetting);
-  klogf("  bNumEndpoints: %d\n", desc->bNumEndpoints);
-  klogf("  bInterfaceClass: 0x%x\n", desc->bInterfaceClass);
-  klogf("  bInterfaceSubClass: 0x%x\n", desc->bInterfaceSubClass);
-  klogf("  bInterfaceProtocol: 0x%x\n", desc->bInterfaceProtocol);
-  klogf("  iInterface: %d\n", desc->iInterface);
+void usb_print_desc_interface(klog_level_t level, usb_desc_interface_t* desc) {
+  KLOG(level, "  bLength: %d\n", desc->bLength);
+  KLOG(level, "  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
+  KLOG(level, "  bInterfaceNumber: %d\n", desc->bInterfaceNumber);
+  KLOG(level, "  bAlternateSetting: %d\n", desc->bAlternateSetting);
+  KLOG(level, "  bNumEndpoints: %d\n", desc->bNumEndpoints);
+  KLOG(level, "  bInterfaceClass: 0x%x\n", desc->bInterfaceClass);
+  KLOG(level, "  bInterfaceSubClass: 0x%x\n", desc->bInterfaceSubClass);
+  KLOG(level, "  bInterfaceProtocol: 0x%x\n", desc->bInterfaceProtocol);
+  KLOG(level, "  iInterface: %d\n", desc->iInterface);
 }
 
-void usb_print_desc_endpoint(usb_desc_endpoint_t* desc) {
-  klogf("  bLength: %d\n", desc->bLength);
-  klogf("  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
-  klogf("  bEndpointAddress: %d (%s)\n", desc->bEndpointAddress & 0x0F,
-        desc->bEndpointAddress & USB_DESC_ENDPOINT_DIR_IN ? "IN" : "OUT");
-  klogf("  bmAttributes: 0x%x\n", desc->bmAttributes);
-  klogf("  wMaxPacketSize: %d\n", desc->wMaxPacketSize);
-  klogf("  bInterval: %d\n", desc->bInterval);
+void usb_print_desc_endpoint(klog_level_t level, usb_desc_endpoint_t* desc) {
+  KLOG(level, "  bLength: %d\n", desc->bLength);
+  KLOG(level, "  bDescriptorType: %s (%d)\n", desc_type(desc->bDescriptorType), desc->bDescriptorType);
+  KLOG(level, "  bEndpointAddress: %d (%s)\n", desc->bEndpointAddress & 0x0F,
+       desc->bEndpointAddress & USB_DESC_ENDPOINT_DIR_IN ? "IN" : "OUT");
+  KLOG(level, "  bmAttributes: 0x%x\n", desc->bmAttributes);
+  KLOG(level, "  wMaxPacketSize: %d\n", desc->wMaxPacketSize);
+  KLOG(level, "  bInterval: %d\n", desc->bInterval);
 }
