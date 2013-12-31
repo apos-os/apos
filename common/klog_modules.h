@@ -19,6 +19,9 @@
 typedef enum {
   KL_GENERAL = 0,
 
+  // Memory modules.
+  KL_BLOCK_CACHE,
+
   KL_MODULE_MAX,
 } klog_module_t;
 

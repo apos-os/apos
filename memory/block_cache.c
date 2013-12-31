@@ -37,6 +37,8 @@
 // If set, then all data structures will be frequently checked for consistency.
 #define SLOW_CONSISTENCY_CHECKS 0
 
+#define KLOG(...) klogfm(KL_BLOCK_CACHE, __VA_ARGS__)
+
 static int g_size = 0;
 static int g_initialized = 0;
 static int g_max_size = DEFAULT_CACHE_SIZE;
@@ -114,8 +116,8 @@ static void* get_free_block(void) {
 // Return a free block to the stack.
 static void put_free_block(void* block) {
   if (g_free_block_stack_idx == FREE_BLOCK_STACK_SIZE) {
-    klogf("WARNING: dropping free block because the free block "
-          "cache is full!\n");
+    KLOG(WARNING, "dropping free block because the free block cache "
+         "is full!\n");
     // TODO(aoates): try to compact free block stack and free pages, and/or
     // resize the stack to fit.
     return;
@@ -187,7 +189,7 @@ static void* flush_queue_thread(void* arg) {
       flushed++;
     }
     if (flushed > 0)
-      klogf("<block cache flushed %d entries>\n", flushed);
+      KLOG(DEBUG, "<block cache flushed %d entries>\n", flushed);
   }
   return 0x0;
 }
@@ -201,7 +203,7 @@ static void free_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(entry->flushed);
   KASSERT_DBG(!entry->flushing);
 
-  //klogf("<block cache free block %d>\n", entry->pub.offset);
+  KLOG(DEBUG2, "<block cache free block %d>\n", entry->pub.offset);
   g_size--;
   const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
   KASSERT(htbl_remove(&g_table, h) == 0);
@@ -499,12 +501,12 @@ void block_cache_log_stats() {
   stats_t stats;
   kmemset(&stats, 0, sizeof(stats_t));
   htbl_iterate(&g_table, &stats_counter_func, &stats);
-  klogf("Block cache stats:\n");
-  klogf("  total entries: %d\n", stats.total);
-  klogf("         pinned: %d\n", stats.pinned);
-  klogf("     total pins: %d\n", stats.total_pins);
-  klogf("      on flushq: %d\n", stats.flushq);
-  klogf("         on lru: %d\n", stats.lru);
-  klogf("        flushed: %d\n", stats.flushed);
-  klogf("       flushing: %d\n", stats.flushing);
+  KLOG(INFO, "Block cache stats:\n");
+  KLOG(INFO, "  total entries: %d\n", stats.total);
+  KLOG(INFO, "         pinned: %d\n", stats.pinned);
+  KLOG(INFO, "     total pins: %d\n", stats.total_pins);
+  KLOG(INFO, "      on flushq: %d\n", stats.flushq);
+  KLOG(INFO, "         on lru: %d\n", stats.lru);
+  KLOG(INFO, "        flushed: %d\n", stats.flushed);
+  KLOG(INFO, "       flushing: %d\n", stats.flushing);
 }
