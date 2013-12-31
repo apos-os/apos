@@ -44,6 +44,12 @@ void klogf(const char* fmt, ...);
 void klogm(klog_module_t module, klog_level_t level, const char* s);
 void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...);
 
+// Set the current global log level.
+void klog_set_level(klog_level_t level);
+
+// Set the current log level for the given module.
+void klog_set_module_level(klog_module_t module, klog_level_t level);
+
 // Different logging modes for the kernel, to be used at different stages in the
 // boot process.  Defaults to KLOG_PARALLEL_PORT.  As soon as a vterm_t is
 // available, KLOG_VTERM should be used (to play nice with other I/O).

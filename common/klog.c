@@ -119,6 +119,14 @@ void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {
   klogm(module, level, buf);
 }
 
+void klog_set_level(klog_level_t level) {
+  g_global_log_level = level;
+}
+
+void klog_set_module_level(klog_module_t module, klog_level_t level) {
+  g_log_levels[module] = level;
+}
+
 void klog_set_mode(int mode) {
   g_klog_mode = mode;
 }
