@@ -245,10 +245,16 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
     KASSERT(bus->root_hub == 0x0);
     bus->root_hub = dev;
   } else {
-    // Insert at the start of the parent's child list.
+    // Insert at the end of the parent's child list.
     KASSERT(bus->root_hub != 0x0);
-    dev->next = parent->first_child;
-    parent->first_child = dev;
+    dev->next = 0x0;
+    usb_device_t* prev = parent->first_child;
+    while (prev && prev->next) prev = prev->next;
+    if (prev) {
+      prev->next = dev;
+    } else {
+      parent->first_child = dev;
+    }
   }
 
   // Set up the default control endpoint.
