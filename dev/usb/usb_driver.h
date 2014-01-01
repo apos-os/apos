@@ -68,6 +68,9 @@ void usb_init_device(usb_device_t* dev);
 
 // Send a SET_CONFIGURATION request to the given device.  If config is zero, the
 // device is deconfigured.
+//
+// The caller should verify that the device was put into the proper state by
+// checking dev->state when the callback is invoked.
 void usb_set_configuration(usb_device_t* dev, uint8_t config,
                            void (*callback)(usb_device_t*, void*),
                            void* arg);

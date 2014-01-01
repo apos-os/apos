@@ -538,12 +538,21 @@ void usb_set_configuration(usb_device_t* dev, uint8_t config,
 }
 
 static void usb_set_configuration_done(usb_irp_t* irp, void* arg) {
-  // TODO(aoates): handle failure more gracefully.
-  KASSERT(irp->status == USB_IRP_SUCCESS);
   KASSERT_DBG(irp->outlen == 0);
 
   set_configuration_state_t* state = (set_configuration_state_t*)arg;
   usb_free_request(state->request);
+
+  if (irp->status != USB_IRP_SUCCESS) {
+    // TODO(aoates): if the device is currently configured, does this always
+    // invalidate that?  Should we tear down all its endpoints and put it back
+    // in the ADDRESS state?
+    KLOG(INFO, "USB: SET_CONFIGURATION for device %d.%d failed (status %d)\n",
+         state->dev->bus->bus_index, state->dev->address, irp->status);
+    state->callback(state->dev, state->arg);
+    kfree(state);
+    return;
+  }
 
   // Update the device's state.
   if (state->config == 0) {

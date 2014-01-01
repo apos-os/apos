@@ -185,7 +185,13 @@ static void connect_port_reset_sent(usb_device_t* dev, int result);
 static void connect_port_reset_done(usb_device_t* dev);
 
 static void set_configuration_done(usb_device_t* dev, void* arg) {
-  KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
+  if (dev->state != USB_DEV_CONFIGURED) {
+    // TODO(aoates): mark the hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: SET_CONFIGURATION for device %d.%d failed\n",
+         dev->bus->bus_index, dev->address);
+    // If configuration failed, we just give up.
+    return;
+  }
   KLOG(DEBUG, "USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index,
        dev->address);
 
