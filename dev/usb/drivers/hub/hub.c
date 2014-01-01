@@ -233,6 +233,11 @@ static void get_hub_desc_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: GET_HUB_DESCRIPTOR for %d.%d failed: %s\n",
+         dev->bus->bus_index, dev->address, errorname(-result));
+    // Don't continue with the initialization process; the hub is in an unknown
+    // state.
+    return;
   } else {
     KLOG(DEBUG2, "USB HUBD: hub descriptor for hub %d.%d:\n",
          dev->bus->bus_index, dev->address);
@@ -258,6 +263,11 @@ static void status_change_irp_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: reading STATUS CHANGE for %d.%d failed: %s\n",
+         dev->bus->bus_index, dev->address, errorname(-result));
+    // Don't continue with the initialization process; the hub is in an unknown
+    // state.
+    return;
   } else {
     KLOG(DEBUG2, "USB HUBD: status change for hub %d.%d: [",
          dev->bus->bus_index, dev->address);
@@ -315,6 +325,10 @@ static void get_port_status_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: GET_PORT_STATUS for %d.%d/port %d failed: %s\n",
+         dev->bus->bus_index, dev->address, port, errorname(-result));
+    // Don't continue; the hub is in an unknown state.
+    return;
   } else {
     const uint16_t port_status = hubd_get_port_status(hubd, port);
     const uint16_t port_change = hubd_get_port_change(hubd, port);
@@ -396,6 +410,10 @@ static void ack_port_change_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: CLEAR_PORT_FEATURE for %d.%d/port %d failed: %s\n",
+         dev->bus->bus_index, dev->address, port, errorname(-result));
+    // Don't continue; the hub is in an unknown state.
+    return;
   } else {
     // TODO(aoates): instead of re-getting the port status each time, should we
     // just process the bits as we see them the once?
