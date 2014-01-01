@@ -510,6 +510,81 @@ static void usb_init_done(usb_init_state_t* state) {
   kfree(state);
 }
 
+void usb_detach_device(usb_device_t* dev) {
+  // First, detach and delete all its children if it's a hub.
+  while (dev->first_child) {
+    usb_device_t* child = dev->first_child;
+    usb_detach_device(child);
+    usb_delete_device(child);
+  }
+
+  dev->state = USB_DEV_INVALID;
+
+  // Clean up and remove all the endpoints (including the DCP).
+  for (int i = 0; i < USB_NUM_ENDPOINTS; i++) {
+    if (dev->endpoints[i]) {
+      usb_endpoint_t* endpoint = dev->endpoints[i];
+      usb_remove_endpoint(endpoint);
+      kfree(endpoint);
+    }
+  }
+
+  if (dev->driver) {
+    dev->driver->cleanup_device(dev);
+  }
+
+  // Remove it from the device tree.
+  if (!dev->parent) {
+    KASSERT_DBG(dev->bus->root_hub == dev);
+    KLOG(WARNING, "USB: removing the root hub device for bus %d\n",
+         dev->bus->bus_index);
+  } else {
+    if (dev->parent->first_child == dev) {
+      dev->parent->first_child = dev->next;
+    } else {
+      usb_device_t* prev = dev->parent->first_child;
+      while (prev && prev->next != dev) {
+        prev = prev->next;
+      }
+      // We must be in the list.
+      KASSERT(prev != 0x0);
+
+      prev->next = dev->next;
+    }
+    dev->next = 0x0;
+    dev->parent = 0x0;
+  }
+}
+
+void usb_delete_device(usb_device_t* dev) {
+  KASSERT_DBG(dev->state == USB_DEV_INVALID);
+  KASSERT_DBG(dev->parent == 0x0);
+  KASSERT_DBG(dev->next == 0x0);
+  KASSERT_DBG(dev->first_child == 0x0);
+
+  for (int i = 0; i < USB_NUM_ENDPOINTS; ++i) {
+    KASSERT_DBG(dev->endpoints[i] == 0x0);
+  }
+
+  if (dev->configs) {
+    for (int i = 0; i < dev->dev_desc.bNumConfigurations; ++i) {
+      if (dev->configs[i].desc) {
+        kfree(dev->configs[i].desc);
+      }
+      usb_desc_list_node_t* cur = dev->configs[i].next;
+      while (cur) {
+        usb_desc_list_node_t* next = cur->next;
+        kfree(cur->desc);
+        kfree(cur);
+        cur = next;
+      }
+    }
+    kfree(dev->configs);
+  }
+
+  kfree(dev);
+}
+
 typedef struct {
   usb_device_t* dev;
   uint8_t config;

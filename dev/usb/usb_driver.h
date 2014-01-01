@@ -66,6 +66,15 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent, int port,
 // The device must be in the USB_DEV_DEFAULT state.
 void usb_init_device(usb_device_t* dev);
 
+// Signal that the given device has been detached.  Cancel any outstanding IRPs
+// on its endpoints, remove it from the device tree and signal the driver that
+// it has been removed.
+void usb_detach_device(usb_device_t* dev);
+
+// Delete the given device, which must have never been initialized, or have been
+// detached with usb_detach_device().
+void usb_delete_device(usb_device_t* dev);
+
 // Send a SET_CONFIGURATION request to the given device.  If config is zero, the
 // device is deconfigured.
 //
