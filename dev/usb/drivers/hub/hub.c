@@ -505,6 +505,8 @@ static void handle_one_event_done(usb_device_t* dev) {
 // because we need to process RESET_DONE events.
 static void connect_port(usb_bus_t* bus, void* arg) {
   port_event_t* event = (port_event_t*)arg;
+  KLOG(DEBUG, "USB HUBD: connecting hub %d.%d port %d\n",
+       event->dev->bus->bus_index, event->dev->address, event->port);
 
   // We now have the default address.  We reset the port.  Once it's enabled,
   // we'll create a device, assign an address, put it in the device tree, etc.

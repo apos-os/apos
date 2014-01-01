@@ -518,6 +518,12 @@ void usb_detach_device(usb_device_t* dev) {
     usb_delete_device(child);
   }
 
+  KLOG(DEBUG, "USB: detaching device %d.%d (from hub %d.%d/port %d)\n",
+       dev->bus->bus_index, dev->address,
+       dev->parent ? dev->parent->bus->bus_index : -1,
+       dev->parent ? dev->parent->address : -1,
+       dev->port);
+
   dev->state = USB_DEV_INVALID;
 
   // Clean up and remove all the endpoints (including the DCP).
