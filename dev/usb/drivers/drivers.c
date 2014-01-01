@@ -18,8 +18,8 @@
 
 // Static table of drivers.
 static usb_driver_t g_drivers[] = {
-  { &usb_hubd_check_device, &usb_hubd_adopt_device, "hub" },
-  { NULL, NULL, NULL },
+  { &usb_hubd_check_device, &usb_hubd_adopt_device, &usb_hubd_cleanup_device, "hub" },
+  { NULL, NULL, NULL, NULL },
 };
 
 usb_driver_t* usb_find_driver(usb_device_t* device) {

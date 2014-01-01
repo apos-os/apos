@@ -589,3 +589,24 @@ int usb_hubd_adopt_device(usb_device_t* dev) {
 
   return 0;
 }
+
+void usb_hubd_cleanup_device(usb_device_t* dev) {
+  KLOG(DEBUG, "USB HUBD: cleanup device %d.%d\n",
+       dev->bus->bus_index, dev->address);
+
+  usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
+  if (hubd->port_status) {
+    kfree(hubd->port_status);
+  }
+
+  while (!list_empty(&hubd->pending_port_events)) {
+    list_link_t* link = list_pop(&hubd->pending_port_events);
+    port_event_t* event = container_of(link, port_event_t, link);
+    KLOG(DEBUG, "USB HUBD: dropping event <port %d %s> on cleanup\n",
+         event->port, port_event_type_str(event));
+    kfree(event);
+  }
+
+  kfree(hubd);
+  dev->driver_data = 0x0;
+}
