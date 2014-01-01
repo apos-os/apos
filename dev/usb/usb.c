@@ -165,13 +165,30 @@ struct usb_irp_context {
 };
 typedef struct usb_irp_context usb_irp_context_t;
 
+static void usb_irp_finish(usb_irp_context_t* context, int do_callback);
+static void usb_irp_check_endpoint(void* arg);
+
 // Trampoline function.  This is set as the callback for the HCD IRP, and is
 // invoked on an interrupt context (or possibly synchronously from
 // schedule_irp).  Trampolines the next callback onto the USB thread pool.
 static void usb_irp_trampoline(usb_hcdi_irp_t* irp, void* arg) {
   usb_irp_context_t* context = (usb_irp_context_t*)arg;
-  int result = kthread_pool_push(&g_pool, context->callback, context);
+  int result = kthread_pool_push(&g_pool, &usb_irp_check_endpoint, context);
   KASSERT(result == 0);
+}
+
+// Second trampoline, which runs on the thread pool.  Checks if the IRP's
+// endpoint has been deleted and, if so, finishes the context without passing
+// control back to the message/stream control flows.
+static void usb_irp_check_endpoint(void* arg) {
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
+  if (context->irp == 0x0) {
+    // The IRP was cancelled, and the endpoint is no longer valid.  Clean up
+    // without running the callback.
+    usb_irp_finish(context, 0 /* don't run callback */);
+  } else {
+    context->callback(context);
+  }
 }
 
 // Clean up a request, free the context, and maybe invoke the IRP's callback.
@@ -478,4 +495,23 @@ int usb_send_data_in(usb_irp_t* irp) {
 
 int usb_send_data_out(usb_irp_t* irp) {
   return usb_stream_start(irp, 0 /* is_in */);
+}
+
+void usb_cancel_endpoint_irp(usb_endpoint_t* endpoint) {
+  if (!endpoint->current_irp) {
+    return;
+  }
+
+  usb_irp_context_t* context = endpoint->current_irp;
+  usb_irp_t* irp = context->irp;
+
+  context->irp = 0x0;  // Signal that this IRP was already dealt with.
+  endpoint->current_irp = 0x0;
+
+  // TODO(aoates): should we mark the endpoint as 'lame duck' somehow?  So that
+  // if the callback code tries to schedule another IRP (which it shouldn't)
+  // there will be a clear error.
+  irp->status = USB_IRP_ENDPOINT_GONE;
+  irp->endpoint = 0x0;
+  irp->callback(irp, irp->cb_arg);
 }

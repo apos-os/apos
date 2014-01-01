@@ -46,8 +46,10 @@ void usb_remove_endpoint(usb_endpoint_t* endpoint) {
   KASSERT(endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(dev->endpoints[endpoint->endpoint_idx] == endpoint);
 
-  if (dev->bus->hcd->register_endpoint != 0x0) {
-    dev->bus->hcd->register_endpoint(dev->bus->hcd, endpoint);
+  usb_cancel_endpoint_irp(endpoint);
+
+  if (dev->bus->hcd->unregister_endpoint != 0x0) {
+    dev->bus->hcd->unregister_endpoint(dev->bus->hcd, endpoint);
   }
   dev->endpoints[endpoint->endpoint_idx] = 0x0;
 }
@@ -548,9 +550,6 @@ static void usb_set_configuration_done(usb_irp_t* irp, void* arg) {
     state->dev->state = USB_DEV_ADDRESS;
 
     // Remove any existing endpoints.
-    // TODO(aoates): how do we guarantee that there are no outstanding refereces
-    // to these endpoints?
-    // TODO(aoates): ensure any pending IRPs on these endpoints are finished.
     for (int i = 1; i < USB_NUM_ENDPOINTS; i++) {
       if (state->dev->endpoints[i]) {
         usb_endpoint_t* endpoint = state->dev->endpoints[i];
