@@ -58,16 +58,14 @@ static usb_hcdi_irp_t* alloc_hcdi_irp(void) {
 slab_alloc_t* get_buf_alloc(int size) {
   int bufsize = 1;
   int idx = 0;
-  while (idx <= BUFSLAB_MAX_EXPONENT &&
-         (bufsize < size || g_buffer_allocs[idx] == 0x0)) {
+  for (idx = 0; idx <= BUFSLAB_MAX_EXPONENT; idx++) {
+    if (g_buffer_allocs[idx] != 0x0 && bufsize >= size) {
+      return g_buffer_allocs[idx];
+    }
     bufsize *= 2;
-    idx++;
   }
-  if (bufsize < size) {
-    return 0x0;
-  } else {
-    return g_buffer_allocs[idx];
-  }
+
+  return 0x0;
 }
 
 // Create a usb_device_t for the root hub of the bus.
