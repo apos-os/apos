@@ -16,6 +16,7 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   bus.c \
+  device.c \
   usb.c \
   usb_driver.c \
   request.c \

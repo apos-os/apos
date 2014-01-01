@@ -81,38 +81,14 @@ static void usb_create_endpoint(usb_device_t* dev,
   usb_endpoint_t* endpoint = (usb_endpoint_t*)kmalloc(sizeof(usb_endpoint_t));
   kmemset(endpoint, 0, sizeof(usb_endpoint_t));
 
-  switch (endpoint_desc->bmAttributes &
-          USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_MASK) {
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_CONTROL:
-      endpoint->type = USB_CONTROL;
-      break;
-
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_ISO:
-      KLOG(ERROR, "USB: isochronous endpoints unsupported\n");
-      endpoint->type = USB_ISOCHRONOUS;
-      break;
-
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_BULK:
-      endpoint->type = USB_BULK;
-      break;
-
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_INTERRUPT:
-      endpoint->type = USB_INTERRUPT;
-      break;
-
-    default:
+  endpoint->type = usb_desc_endpoint_type(endpoint_desc);
+  if (endpoint->type == USB_INVALID_TTYPE) {
       KLOG(ERROR, "invalid endpoint type: 0x%x\n", endpoint_desc->bmAttributes);
       die("invalid USB endpoint type");
   }
 
   endpoint->endpoint_idx = endpoint_addr;
-  if (endpoint->type == USB_CONTROL) {
-    endpoint->dir = USB_INVALID_DIR;
-  } else {
-    endpoint->dir =
-        (endpoint_desc->bEndpointAddress & USB_DESC_ENDPOINT_DIR_IN) ?
-        USB_IN : USB_OUT;
-  }
+  endpoint->dir = usb_desc_endpoint_dir(endpoint_desc);
   endpoint->period = endpoint_desc->bInterval;
   endpoint->max_packet =
       endpoint_desc->wMaxPacketSize & USB_DESC_ENDPOINT_MAX_PACKET_SIZE_MASK;

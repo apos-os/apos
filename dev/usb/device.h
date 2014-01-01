@@ -88,6 +88,7 @@ typedef struct usb_device usb_device_t;
 
 // Transfer types.
 enum usb_ttype {
+  USB_INVALID_TTYPE = 0,
   USB_ISOCHRONOUS,
   USB_INTERRUPT,
   USB_CONTROL,
@@ -129,5 +130,11 @@ struct usb_endpoint {
   void* hcd_data;
 };
 typedef struct usb_endpoint usb_endpoint_t;
+
+// Returns the type of the given endpoint descriptor.
+usb_ttype_t usb_desc_endpoint_type(const usb_desc_endpoint_t* endpoint);
+
+// Returns the direction of the given endpoint descriptor.
+usb_dir_t usb_desc_endpoint_dir(const usb_desc_endpoint_t* endpoint);
 
 #endif
