@@ -46,12 +46,13 @@ void usb_remove_endpoint(usb_endpoint_t* endpoint) {
   KASSERT(endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(dev->endpoints[endpoint->endpoint_idx] == endpoint);
 
+  dev->endpoints[endpoint->endpoint_idx] = 0x0;
+
   usb_cancel_endpoint_irp(endpoint);
 
   if (dev->bus->hcd->unregister_endpoint != 0x0) {
     dev->bus->hcd->unregister_endpoint(dev->bus->hcd, endpoint);
   }
-  dev->endpoints[endpoint->endpoint_idx] = 0x0;
 }
 
 // Create a default control pipe endpoint for the given device.
