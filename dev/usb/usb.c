@@ -181,6 +181,9 @@ static void usb_request_finish(usb_irp_context_t* context,
   context->hcdi_irp = 0x0;
   usb_irp_t* irp = context->irp;
 
+  KASSERT_DBG(irp->endpoint->current_irp == context);
+  irp->endpoint->current_irp = 0x0;
+
   if (context->phys_buf != 0x0) {
     slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
     KASSERT(alloc != 0x0);
@@ -322,6 +325,10 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
   KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
           irp->endpoint);
 
+  if (irp->endpoint->current_irp != 0x0) {
+    return -EBUSY;
+  }
+
   // TODO(aoates): lock the endpoint so it doesn't go away, somehow.
 
   irp->status = USB_IRP_PENDING;
@@ -367,6 +374,8 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
     context->callback = &usb_request_STATUS;
   }
 
+  irp->endpoint->current_irp = context;
+
   usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
   const int result = hc->schedule_irp(hc, context->hcdi_irp);
   if (result != 0) {
@@ -391,6 +400,10 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   KASSERT(irp->endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
           irp->endpoint);
+
+  if (irp->endpoint->current_irp != 0x0) {
+    return -EBUSY;
+  }
 
   // TODO(aoates): lock the endpoint so it doesn't go away, somehow.
 
@@ -433,6 +446,8 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   context->hcdi_irp->callback = &usb_stream_done;
   context->hcdi_irp->callback_arg = context;
 
+  irp->endpoint->current_irp = context;
+
   usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
   const int result = hc->schedule_irp(hc, context->hcdi_irp);
   if (result != 0) {
@@ -469,6 +484,9 @@ static void usb_stream_finish(usb_irp_context_t* context, int do_callback) {
   slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
   context->hcdi_irp = 0x0;
   usb_irp_t* irp = context->irp;
+
+  KASSERT_DBG(irp->endpoint->current_irp == context);
+  irp->endpoint->current_irp = 0x0;
 
   if (context->phys_buf != 0x0) {
     slab_alloc_t* alloc = get_buf_alloc(irp->buflen);

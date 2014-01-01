@@ -25,6 +25,7 @@
 struct usb_bus;
 struct usb_endpoint;
 struct usb_driver;
+struct usb_irp_context;
 
 // States of a USB device.  See section 9.1 of the USB spec.
 enum usb_device_state {
@@ -123,6 +124,10 @@ struct usb_endpoint {
 
   // The current data toggle bit of the endpoint (see section 8.6 of the spec).
   usb_data_toggle_t data_toggle;
+
+  // The current IRP being processed on the endpoint.  Only one endpoint can be
+  // going at once.
+  struct usb_irp_context* current_irp;
 
   // TODO: bandwidth, error handling reqs
 
