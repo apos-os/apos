@@ -168,7 +168,7 @@ typedef struct usb_irp_context usb_irp_context_t;
 // Trampoline function.  This is set as the callback for the HCD IRP, and is
 // invoked on an interrupt context (or possibly synchronously from
 // schedule_irp).  Trampolines the next callback onto the USB thread pool.
-static void usb_request_trampoline(usb_hcdi_irp_t* irp, void* arg) {
+static void usb_irp_trampoline(usb_hcdi_irp_t* irp, void* arg) {
   usb_irp_context_t* context = (usb_irp_context_t*)arg;
   int result = kthread_pool_push(&g_pool, context->callback, context);
   KASSERT(result == 0);
@@ -240,7 +240,7 @@ static void usb_request_DATA(void* arg) {
   }
 
   // Set up the next stage to trampoline into usb_request_STATUS.
-  context->hcdi_irp->callback = &usb_request_trampoline;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   context->hcdi_irp->callback_arg = context;
   context->callback = &usb_request_STATUS;
 
@@ -291,7 +291,7 @@ static void usb_request_STATUS(void* arg) {
   context->hcdi_irp->data_toggle = USB_DATA_TOGGLE_RESET1;
 
   // Set up the next stage to trampoline into usb_request_DONE.
-  context->hcdi_irp->callback = &usb_request_trampoline;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   context->hcdi_irp->callback_arg = context;
   context->callback = &usb_request_DONE;
 
@@ -365,7 +365,7 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
 
   // Set up the next stage to trampoline into usb_request_DATA,
   // usb_request_STATUS if there's no data to send/receive.
-  context->hcdi_irp->callback = &usb_request_trampoline;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   if (context->irp->buflen > 0) {
     context->hcdi_irp->callback_arg = context;
     context->callback = &usb_request_DATA;
@@ -385,7 +385,7 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
 }
 
 // Run by the HCDI when the HCD IRP finishes.
-static void usb_stream_done(usb_hcdi_irp_t* irp, void* arg);
+static void usb_stream_done(void* arg);
 
 // Clean up and finish the stream IRP, optionally running the callback.
 static void usb_stream_finish(usb_irp_context_t* context, int do_callback);
@@ -443,8 +443,9 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   context->hcdi_irp->pid = is_in ? USB_PID_IN : USB_PID_OUT;
   context->hcdi_irp->data_toggle = USB_DATA_TOGGLE_NORMAL;
 
-  context->hcdi_irp->callback = &usb_stream_done;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   context->hcdi_irp->callback_arg = context;
+  context->callback = &usb_stream_done;
 
   irp->endpoint->current_irp = context;
 
@@ -456,7 +457,8 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   return result;
 }
 
-static void usb_stream_done(usb_hcdi_irp_t* hcd_irp, void* arg) {
+static void usb_stream_done(void* arg) {
+  // KASSERT(invoked on g_pool)
   usb_irp_context_t* context = (usb_irp_context_t*)arg;
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
 
@@ -472,12 +474,6 @@ static void usb_stream_done(usb_hcdi_irp_t* hcd_irp, void* arg) {
   }
 
   usb_stream_finish(context, 1);
-}
-
-// Trampoline the caller's IRP-finished callback onto the USB threadpool.
-static void usb_stream_run_callback(void* arg) {
-  usb_irp_t* irp = (usb_irp_t*)arg;
-  irp->callback(irp, irp->cb_arg);
 }
 
 static void usb_stream_finish(usb_irp_context_t* context, int do_callback) {
@@ -497,8 +493,7 @@ static void usb_stream_finish(usb_irp_context_t* context, int do_callback) {
   kfree(context);
 
   if (do_callback) {
-    int result = kthread_pool_push(&g_pool, &usb_stream_run_callback, irp);
-    KASSERT(result == 0);
+    irp->callback(irp, irp->cb_arg);
   }
 }
 
