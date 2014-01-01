@@ -175,8 +175,7 @@ static void usb_irp_trampoline(usb_hcdi_irp_t* irp, void* arg) {
 }
 
 // Clean up a request, free the context, and maybe invoke the IRP's callback.
-static void usb_request_finish(usb_irp_context_t* context,
-                               int do_callback) {
+static void usb_irp_finish(usb_irp_context_t* context, int do_callback) {
   slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
   context->hcdi_irp = 0x0;
   usb_irp_t* irp = context->irp;
@@ -214,7 +213,7 @@ static void usb_request_DATA(void* arg) {
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
   if (context->hcdi_irp->status != USB_IRP_SUCCESS) {
     context->irp->status = context->hcdi_irp->status;
-    usb_request_finish(context, 1);
+    usb_irp_finish(context, 1);
     return;
   }
 
@@ -258,7 +257,7 @@ static void usb_request_STATUS(void* arg) {
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
   if (context->hcdi_irp->status != USB_IRP_SUCCESS) {
     context->irp->status = context->hcdi_irp->status;
-    usb_request_finish(context, 1);
+    usb_irp_finish(context, 1);
     return;
   }
 
@@ -313,7 +312,7 @@ static void usb_request_DONE(void* arg) {
     context->irp->status = USB_IRP_SUCCESS;
   }
 
-  usb_request_finish(context, 1);
+  usb_irp_finish(context, 1);
   return;
 }
 
@@ -379,16 +378,13 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
   usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
   const int result = hc->schedule_irp(hc, context->hcdi_irp);
   if (result != 0) {
-    usb_request_finish(context, 0 /* don't run callback */);
+    usb_irp_finish(context, 0 /* don't run callback */);
   }
   return result;
 }
 
 // Run by the HCDI when the HCD IRP finishes.
 static void usb_stream_done(void* arg);
-
-// Clean up and finish the stream IRP, optionally running the callback.
-static void usb_stream_finish(usb_irp_context_t* context, int do_callback);
 
 // TODO(aoates): try to combine code between this and the message pipe
 // functions.
@@ -452,7 +448,7 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
   const int result = hc->schedule_irp(hc, context->hcdi_irp);
   if (result != 0) {
-    usb_stream_finish(context, 0 /* don't run callback */);
+    usb_irp_finish(context, 0 /* don't run callback */);
   }
   return result;
 }
@@ -473,28 +469,7 @@ static void usb_stream_done(void* arg) {
     }
   }
 
-  usb_stream_finish(context, 1);
-}
-
-static void usb_stream_finish(usb_irp_context_t* context, int do_callback) {
-  slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
-  context->hcdi_irp = 0x0;
-  usb_irp_t* irp = context->irp;
-
-  KASSERT_DBG(irp->endpoint->current_irp == context);
-  irp->endpoint->current_irp = 0x0;
-
-  if (context->phys_buf != 0x0) {
-    slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
-    KASSERT(alloc != 0x0);
-    slab_free(alloc, context->phys_buf);
-  }
-
-  kfree(context);
-
-  if (do_callback) {
-    irp->callback(irp, irp->cb_arg);
-  }
+  usb_irp_finish(context, 1);
 }
 
 int usb_send_data_in(usb_irp_t* irp) {
