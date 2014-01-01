@@ -225,11 +225,19 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent, int port,
     KASSERT(bus->root_hub == 0x0);
     bus->root_hub = dev;
   } else {
-    // Insert at the end of the parent's child list.
+    // Insert it in the parent's child list in order of port number.
     KASSERT(bus->root_hub != 0x0);
     dev->next = 0x0;
-    usb_device_t* prev = parent->first_child;
-    while (prev && prev->next) prev = prev->next;
+    usb_device_t* prev = 0x0, *cur = parent->first_child;
+    while (cur && cur->port < port) {
+      prev = cur;
+      cur = cur->next;
+    }
+    if (cur && cur->port == port) {
+      KLOG(ERROR, "USB: multiple devices on hub %d.%d port %d\n",
+           parent->bus->bus_index, parent->address, port);
+    }
+    dev->next = cur;
     if (prev) {
       prev->next = dev;
     } else {
