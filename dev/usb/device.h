@@ -73,6 +73,10 @@ struct usb_device {
   // HC's root hub.
   struct usb_device* parent;
 
+  // The port (1-indexed) that this occupies on the parent hub, or 0 if the
+  // device is the root hub.
+  int port;
+
   // The first child of the device, if it is a hub.
   struct usb_device* first_child;
 

@@ -675,6 +675,9 @@ static void lsusb_print_node(usb_device_t* dev, int indent) {
   indent_str[i] = '\0';
 
   ksh_printf("%sDevice %d.%d", indent_str, dev->bus->bus_index, dev->address);
+  if (dev->port) {
+    ksh_printf(" port=%d", dev->port);
+  }
   if (dev->state > USB_DEV_INVALID) {
     ksh_printf(" class=0x%d", dev->dev_desc.bDeviceClass);
   }

@@ -202,7 +202,7 @@ void usb_release_default_address(usb_bus_t* bus) {
   }
 }
 
-usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
+usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent, int port,
                                 usb_speed_t speed) {
   KASSERT(bus->default_address_in_use == 1);
   usb_device_t* dev = (usb_device_t*)kmalloc(sizeof(usb_device_t));
@@ -214,6 +214,7 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
   dev->speed = speed;
 
   dev->parent = parent;
+  dev->port = port;
   dev->first_child = 0x0;
   dev->next = 0x0;
   dev->driver = 0x0;

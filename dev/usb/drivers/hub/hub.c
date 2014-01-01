@@ -539,7 +539,7 @@ static void connect_port_reset_done(usb_device_t* dev) {
     // the device tree, and initialize it.
     const usb_speed_t child_speed = (port_status & USB_HUBD_PORT_LOW_SPEED)
         ? USB_LOW_SPEED : USB_FULL_SPEED;
-    usb_device_t* child = usb_create_device(dev->bus, dev, child_speed);
+    usb_device_t* child = usb_create_device(dev->bus, dev, port, child_speed);
     child->state = USB_DEV_DEFAULT;
     usb_init_device(child);
   }

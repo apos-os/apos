@@ -50,7 +50,7 @@ void usb_release_default_address(usb_bus_t* bus);
 // the state as necessary.
 //
 // REQUIRES: the default address is held.
-usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
+usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent, int port,
                                 usb_speed_t speed);
 
 // Initialize a device.  This kicks off a process that will (asynchronously),

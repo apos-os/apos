@@ -449,7 +449,8 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   bus->default_address_in_use = 1;
 
   usb_device_t* device = usb_create_device(
-      bus, 0x0, (status & PORTSC_LOSPEED) ? USB_LOW_SPEED : USB_FULL_SPEED);
+      bus, 0x0, port + 1,
+      (status & PORTSC_LOSPEED) ? USB_LOW_SPEED : USB_FULL_SPEED);
   device->state = USB_DEV_DEFAULT;
   usb_init_device(device);
 }

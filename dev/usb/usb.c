@@ -71,7 +71,7 @@ slab_alloc_t* get_buf_alloc(int size) {
 // Create a usb_device_t for the root hub of the bus.
 static void usb_create_root_hub(usb_bus_t* bus, void* arg) {
   usb_device_t* root_hub =
-      usb_create_device(bus, 0x0 /* parent */, USB_FULL_SPEED);
+      usb_create_device(bus, 0x0 /* parent */, 0 /* port */, USB_FULL_SPEED);
   KASSERT(bus->root_hub == root_hub);
   root_hub->state = USB_DEV_DEFAULT;
 
