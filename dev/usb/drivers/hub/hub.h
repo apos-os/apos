@@ -109,4 +109,7 @@ int usb_hubd_check_device(usb_device_t* dev);
 // Adopt the given hub device, returning -errno on error.
 int usb_hubd_adopt_device(usb_device_t* dev);
 
+// Cleanup the given device.
+void usb_hubd_cleanup_device(usb_device_t* dev);
+
 #endif

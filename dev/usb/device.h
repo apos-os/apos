@@ -25,6 +25,7 @@
 struct usb_bus;
 struct usb_endpoint;
 struct usb_driver;
+struct usb_irp_context;
 
 // States of a USB device.  See section 9.1 of the USB spec.
 enum usb_device_state {
@@ -72,6 +73,10 @@ struct usb_device {
   // HC's root hub.
   struct usb_device* parent;
 
+  // The port (1-indexed) that this occupies on the parent hub, or 0 if the
+  // device is the root hub.
+  int port;
+
   // The first child of the device, if it is a hub.
   struct usb_device* first_child;
 
@@ -88,6 +93,7 @@ typedef struct usb_device usb_device_t;
 
 // Transfer types.
 enum usb_ttype {
+  USB_INVALID_TTYPE = 0,
   USB_ISOCHRONOUS,
   USB_INTERRUPT,
   USB_CONTROL,
@@ -123,11 +129,21 @@ struct usb_endpoint {
   // The current data toggle bit of the endpoint (see section 8.6 of the spec).
   usb_data_toggle_t data_toggle;
 
+  // The current IRP being processed on the endpoint.  Only one endpoint can be
+  // going at once.
+  struct usb_irp_context* current_irp;
+
   // TODO: bandwidth, error handling reqs
 
   // Space for HCD-specific data.
   void* hcd_data;
 };
 typedef struct usb_endpoint usb_endpoint_t;
+
+// Returns the type of the given endpoint descriptor.
+usb_ttype_t usb_desc_endpoint_type(const usb_desc_endpoint_t* endpoint);
+
+// Returns the direction of the given endpoint descriptor.
+usb_dir_t usb_desc_endpoint_dir(const usb_desc_endpoint_t* endpoint);
 
 #endif

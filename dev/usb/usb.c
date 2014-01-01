@@ -58,22 +58,20 @@ static usb_hcdi_irp_t* alloc_hcdi_irp(void) {
 slab_alloc_t* get_buf_alloc(int size) {
   int bufsize = 1;
   int idx = 0;
-  while (idx <= BUFSLAB_MAX_EXPONENT &&
-         (bufsize < size || g_buffer_allocs[idx] == 0x0)) {
+  for (idx = 0; idx <= BUFSLAB_MAX_EXPONENT; idx++) {
+    if (g_buffer_allocs[idx] != 0x0 && bufsize >= size) {
+      return g_buffer_allocs[idx];
+    }
     bufsize *= 2;
-    idx++;
   }
-  if (bufsize < size) {
-    return 0x0;
-  } else {
-    return g_buffer_allocs[idx];
-  }
+
+  return 0x0;
 }
 
 // Create a usb_device_t for the root hub of the bus.
 static void usb_create_root_hub(usb_bus_t* bus, void* arg) {
   usb_device_t* root_hub =
-      usb_create_device(bus, 0x0 /* parent */, USB_FULL_SPEED);
+      usb_create_device(bus, 0x0 /* parent */, 0 /* port */, USB_FULL_SPEED);
   KASSERT(bus->root_hub == root_hub);
   root_hub->state = USB_DEV_DEFAULT;
 
@@ -148,10 +146,11 @@ void usb_free_request(usb_dev_request_t* request) {
   slab_free(g_request_alloc, request);
 }
 
-// The context of a request.
-struct usb_request_context {
+// The context of a request IRP or stream pipe read/write.
+struct usb_irp_context {
   usb_irp_t* irp;
-  usb_dev_request_t* request;
+  usb_dev_request_t* request;  // Only if this is a message IRP.
+  int is_in;  // Only if this is a stream IRP.
   usb_hcdi_irp_t* hcdi_irp;
 
   // The physically-mappable buffer we allocate for the usb_hcdi_irp.
@@ -161,26 +160,45 @@ struct usb_request_context {
   // the USB thread pool by the trampoline function (which is called by the
   // HCD, possibly on an interrupt context).
   //
-  // The argument is a usb_request_context_t*.
+  // The argument is a usb_irp_context_t*.
   void (*callback)(void*);
 };
-typedef struct usb_request_context usb_request_context_t;
+typedef struct usb_irp_context usb_irp_context_t;
+
+static void usb_irp_finish(usb_irp_context_t* context, int do_callback);
+static void usb_irp_check_endpoint(void* arg);
 
 // Trampoline function.  This is set as the callback for the HCD IRP, and is
 // invoked on an interrupt context (or possibly synchronously from
 // schedule_irp).  Trampolines the next callback onto the USB thread pool.
-static void usb_request_trampoline(usb_hcdi_irp_t* irp, void* arg) {
-  usb_request_context_t* context = (usb_request_context_t*)arg;
-  int result = kthread_pool_push(&g_pool, context->callback, context);
+static void usb_irp_trampoline(usb_hcdi_irp_t* irp, void* arg) {
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
+  int result = kthread_pool_push(&g_pool, &usb_irp_check_endpoint, context);
   KASSERT(result == 0);
 }
 
+// Second trampoline, which runs on the thread pool.  Checks if the IRP's
+// endpoint has been deleted and, if so, finishes the context without passing
+// control back to the message/stream control flows.
+static void usb_irp_check_endpoint(void* arg) {
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
+  if (context->irp == 0x0) {
+    // The IRP was cancelled, and the endpoint is no longer valid.  Clean up
+    // without running the callback.
+    usb_irp_finish(context, 0 /* don't run callback */);
+  } else {
+    context->callback(context);
+  }
+}
+
 // Clean up a request, free the context, and maybe invoke the IRP's callback.
-static void usb_request_finish(usb_request_context_t* context,
-                               int do_callback) {
+static void usb_irp_finish(usb_irp_context_t* context, int do_callback) {
   slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
   context->hcdi_irp = 0x0;
   usb_irp_t* irp = context->irp;
+
+  KASSERT_DBG(irp->endpoint->current_irp == context);
+  irp->endpoint->current_irp = 0x0;
 
   if (context->phys_buf != 0x0) {
     slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
@@ -189,7 +207,7 @@ static void usb_request_finish(usb_request_context_t* context,
   }
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
-    kmemset(context, 0, sizeof(usb_request_context_t));
+    kmemset(context, 0, sizeof(usb_irp_context_t));
   }
   kfree(context);
 
@@ -206,13 +224,13 @@ static void usb_request_DONE(void* arg);
 
 static void usb_request_DATA(void* arg) {
   // KASSERT(invoked on g_pool)
-  usb_request_context_t* context = (usb_request_context_t*)arg;
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
 
   // Check the status of the SETUP IRP.
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
   if (context->hcdi_irp->status != USB_IRP_SUCCESS) {
     context->irp->status = context->hcdi_irp->status;
-    usb_request_finish(context, 1);
+    usb_irp_finish(context, 1);
     return;
   }
 
@@ -238,7 +256,7 @@ static void usb_request_DATA(void* arg) {
   }
 
   // Set up the next stage to trampoline into usb_request_STATUS.
-  context->hcdi_irp->callback = &usb_request_trampoline;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   context->hcdi_irp->callback_arg = context;
   context->callback = &usb_request_STATUS;
 
@@ -250,13 +268,13 @@ static void usb_request_DATA(void* arg) {
 
 static void usb_request_STATUS(void* arg) {
   // KASSERT(invoked on g_pool)
-  usb_request_context_t* context = (usb_request_context_t*)arg;
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
 
   // Check the status of the DATA IRP.
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
   if (context->hcdi_irp->status != USB_IRP_SUCCESS) {
     context->irp->status = context->hcdi_irp->status;
-    usb_request_finish(context, 1);
+    usb_irp_finish(context, 1);
     return;
   }
 
@@ -289,7 +307,7 @@ static void usb_request_STATUS(void* arg) {
   context->hcdi_irp->data_toggle = USB_DATA_TOGGLE_RESET1;
 
   // Set up the next stage to trampoline into usb_request_DONE.
-  context->hcdi_irp->callback = &usb_request_trampoline;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   context->hcdi_irp->callback_arg = context;
   context->callback = &usb_request_DONE;
 
@@ -301,7 +319,7 @@ static void usb_request_STATUS(void* arg) {
 
 static void usb_request_DONE(void* arg) {
   // KASSERT(invoked on g_pool)
-  usb_request_context_t* context = (usb_request_context_t*)arg;
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
 
   // Check the status of the STATUS IRP.
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
@@ -311,7 +329,7 @@ static void usb_request_DONE(void* arg) {
     context->irp->status = USB_IRP_SUCCESS;
   }
 
-  usb_request_finish(context, 1);
+  usb_irp_finish(context, 1);
   return;
 }
 
@@ -323,14 +341,18 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
   KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
           irp->endpoint);
 
+  if (irp->endpoint->current_irp != 0x0) {
+    return -EBUSY;
+  }
+
   // TODO(aoates): lock the endpoint so it doesn't go away, somehow.
 
   irp->status = USB_IRP_PENDING;
   irp->outlen = 0;
 
   // TODO(aoates): should we use a slab allocator for these?
-  usb_request_context_t* context =
-      (usb_request_context_t*)kmalloc(sizeof(usb_request_context_t));
+  usb_irp_context_t* context =
+      (usb_irp_context_t*)kmalloc(sizeof(usb_irp_context_t));
   context->irp = irp;
   context->request = request;
 
@@ -359,7 +381,7 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
 
   // Set up the next stage to trampoline into usb_request_DATA,
   // usb_request_STATUS if there's no data to send/receive.
-  context->hcdi_irp->callback = &usb_request_trampoline;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   if (context->irp->buflen > 0) {
     context->hcdi_irp->callback_arg = context;
     context->callback = &usb_request_DATA;
@@ -368,37 +390,18 @@ int usb_send_request(usb_irp_t* irp, usb_dev_request_t* request) {
     context->callback = &usb_request_STATUS;
   }
 
+  irp->endpoint->current_irp = context;
+
   usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
   const int result = hc->schedule_irp(hc, context->hcdi_irp);
   if (result != 0) {
-    usb_request_finish(context, 0 /* don't run callback */);
+    usb_irp_finish(context, 0 /* don't run callback */);
   }
   return result;
 }
 
-// The context of a stream pipe read/write.
-typedef struct {
-  usb_irp_t* irp;
-  int is_in;
-
-  usb_hcdi_irp_t* hcdi_irp;
-
-  // The physically-mappable buffer we allocate for the usb_hcdi_irp.
-  void* phys_buf;
-
-  // The next callback to run in handling the request.  This will be pushed onto
-  // the USB thread pool by the trampoline function (which is called by the
-  // HCD, possibly on an interrupt context).
-  //
-  // The argument is a usb_request_context_t*.
-  void (*callback)(void*);
-} usb_stream_context_t;
-
 // Run by the HCDI when the HCD IRP finishes.
-static void usb_stream_done(usb_hcdi_irp_t* irp, void* arg);
-
-// Clean up and finish the stream IRP, optionally running the callback.
-static void usb_stream_finish(usb_stream_context_t* context, int do_callback);
+static void usb_stream_done(void* arg);
 
 // TODO(aoates): try to combine code between this and the message pipe
 // functions.
@@ -411,14 +414,18 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   KASSERT(irp->endpoint->device->endpoints[irp->endpoint->endpoint_idx] ==
           irp->endpoint);
 
+  if (irp->endpoint->current_irp != 0x0) {
+    return -EBUSY;
+  }
+
   // TODO(aoates): lock the endpoint so it doesn't go away, somehow.
 
   irp->status = USB_IRP_PENDING;
   irp->outlen = 0;
 
   // TODO(aoates): should we use a slab allocator for these?
-  usb_stream_context_t* context =
-      (usb_stream_context_t*)kmalloc(sizeof(usb_stream_context_t));
+  usb_irp_context_t* context =
+      (usb_irp_context_t*)kmalloc(sizeof(usb_irp_context_t));
   context->is_in = is_in;
   context->irp = irp;
 
@@ -449,19 +456,23 @@ static int usb_stream_start(usb_irp_t* irp, int is_in) {
   context->hcdi_irp->pid = is_in ? USB_PID_IN : USB_PID_OUT;
   context->hcdi_irp->data_toggle = USB_DATA_TOGGLE_NORMAL;
 
-  context->hcdi_irp->callback = &usb_stream_done;
+  context->hcdi_irp->callback = &usb_irp_trampoline;
   context->hcdi_irp->callback_arg = context;
+  context->callback = &usb_stream_done;
+
+  irp->endpoint->current_irp = context;
 
   usb_hcdi_t* hc = irp->endpoint->device->bus->hcd;
   const int result = hc->schedule_irp(hc, context->hcdi_irp);
   if (result != 0) {
-    usb_stream_finish(context, 0 /* don't run callback */);
+    usb_irp_finish(context, 0 /* don't run callback */);
   }
   return result;
 }
 
-static void usb_stream_done(usb_hcdi_irp_t* hcd_irp, void* arg) {
-  usb_stream_context_t* context = (usb_stream_context_t*)arg;
+static void usb_stream_done(void* arg) {
+  // KASSERT(invoked on g_pool)
+  usb_irp_context_t* context = (usb_irp_context_t*)arg;
   KASSERT(context->hcdi_irp->status != USB_IRP_PENDING);
 
   if (context->hcdi_irp->status != USB_IRP_SUCCESS) {
@@ -475,32 +486,7 @@ static void usb_stream_done(usb_hcdi_irp_t* hcd_irp, void* arg) {
     }
   }
 
-  usb_stream_finish(context, 1);
-}
-
-// Trampoline the caller's IRP-finished callback onto the USB threadpool.
-static void usb_stream_run_callback(void* arg) {
-  usb_irp_t* irp = (usb_irp_t*)arg;
-  irp->callback(irp, irp->cb_arg);
-}
-
-static void usb_stream_finish(usb_stream_context_t* context, int do_callback) {
-  slab_free(g_hcdi_irp_alloc, context->hcdi_irp);
-  context->hcdi_irp = 0x0;
-  usb_irp_t* irp = context->irp;
-
-  if (context->phys_buf != 0x0) {
-    slab_alloc_t* alloc = get_buf_alloc(irp->buflen);
-    KASSERT(alloc != 0x0);
-    slab_free(alloc, context->phys_buf);
-  }
-
-  kfree(context);
-
-  if (do_callback) {
-    int result = kthread_pool_push(&g_pool, &usb_stream_run_callback, irp);
-    KASSERT(result == 0);
-  }
+  usb_irp_finish(context, 1);
 }
 
 int usb_send_data_in(usb_irp_t* irp) {
@@ -509,4 +495,23 @@ int usb_send_data_in(usb_irp_t* irp) {
 
 int usb_send_data_out(usb_irp_t* irp) {
   return usb_stream_start(irp, 0 /* is_in */);
+}
+
+void usb_cancel_endpoint_irp(usb_endpoint_t* endpoint) {
+  if (!endpoint->current_irp) {
+    return;
+  }
+
+  usb_irp_context_t* context = endpoint->current_irp;
+  usb_irp_t* irp = context->irp;
+
+  context->irp = 0x0;  // Signal that this IRP was already dealt with.
+  endpoint->current_irp = 0x0;
+
+  // TODO(aoates): should we mark the endpoint as 'lame duck' somehow?  So that
+  // if the callback code tries to schedule another IRP (which it shouldn't)
+  // there will be a clear error.
+  irp->status = USB_IRP_ENDPOINT_GONE;
+  irp->endpoint = 0x0;
+  irp->callback(irp, irp->cb_arg);
 }

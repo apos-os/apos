@@ -116,7 +116,7 @@ typedef struct usb_desc_interface usb_desc_interface_t;
 #define USB_DESC_ENDPOINT_BMATTR_SYNC_TYPE_MASK  0x0C
 #define USB_DESC_ENDPOINT_BMATTR_USAGE_TYPE_MASK 0x30
 
-#define USB_DESC_ENDPOINT_MAX_PACKET_SIZE_MASK 0x3F
+#define USB_DESC_ENDPOINT_MAX_PACKET_SIZE_MASK 0x3FF
 
 // Endpoint descriptor.  Each interface (or alternate setting for an interface)
 // has an associated set of endpoints.

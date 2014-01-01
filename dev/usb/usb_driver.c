@@ -46,10 +46,13 @@ void usb_remove_endpoint(usb_endpoint_t* endpoint) {
   KASSERT(endpoint->endpoint_idx < USB_NUM_ENDPOINTS);
   KASSERT(dev->endpoints[endpoint->endpoint_idx] == endpoint);
 
-  if (dev->bus->hcd->register_endpoint != 0x0) {
-    dev->bus->hcd->register_endpoint(dev->bus->hcd, endpoint);
-  }
   dev->endpoints[endpoint->endpoint_idx] = 0x0;
+
+  usb_cancel_endpoint_irp(endpoint);
+
+  if (dev->bus->hcd->unregister_endpoint != 0x0) {
+    dev->bus->hcd->unregister_endpoint(dev->bus->hcd, endpoint);
+  }
 }
 
 // Create a default control pipe endpoint for the given device.
@@ -81,38 +84,14 @@ static void usb_create_endpoint(usb_device_t* dev,
   usb_endpoint_t* endpoint = (usb_endpoint_t*)kmalloc(sizeof(usb_endpoint_t));
   kmemset(endpoint, 0, sizeof(usb_endpoint_t));
 
-  switch (endpoint_desc->bmAttributes &
-          USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_MASK) {
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_CONTROL:
-      endpoint->type = USB_CONTROL;
-      break;
-
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_ISO:
-      KLOG(ERROR, "USB: isochronous endpoints unsupported\n");
-      endpoint->type = USB_ISOCHRONOUS;
-      break;
-
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_BULK:
-      endpoint->type = USB_BULK;
-      break;
-
-    case USB_DESC_ENDPOINT_BMATTR_TRANS_TYPE_INTERRUPT:
-      endpoint->type = USB_INTERRUPT;
-      break;
-
-    default:
+  endpoint->type = usb_desc_endpoint_type(endpoint_desc);
+  if (endpoint->type == USB_INVALID_TTYPE) {
       KLOG(ERROR, "invalid endpoint type: 0x%x\n", endpoint_desc->bmAttributes);
       die("invalid USB endpoint type");
   }
 
   endpoint->endpoint_idx = endpoint_addr;
-  if (endpoint->type == USB_CONTROL) {
-    endpoint->dir = USB_INVALID_DIR;
-  } else {
-    endpoint->dir =
-        (endpoint_desc->bEndpointAddress & USB_DESC_ENDPOINT_DIR_IN) ?
-        USB_IN : USB_OUT;
-  }
+  endpoint->dir = usb_desc_endpoint_dir(endpoint_desc);
   endpoint->period = endpoint_desc->bInterval;
   endpoint->max_packet =
       endpoint_desc->wMaxPacketSize & USB_DESC_ENDPOINT_MAX_PACKET_SIZE_MASK;
@@ -223,7 +202,7 @@ void usb_release_default_address(usb_bus_t* bus) {
   }
 }
 
-usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
+usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent, int port,
                                 usb_speed_t speed) {
   KASSERT(bus->default_address_in_use == 1);
   usb_device_t* dev = (usb_device_t*)kmalloc(sizeof(usb_device_t));
@@ -235,6 +214,7 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
   dev->speed = speed;
 
   dev->parent = parent;
+  dev->port = port;
   dev->first_child = 0x0;
   dev->next = 0x0;
   dev->driver = 0x0;
@@ -245,11 +225,19 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
     KASSERT(bus->root_hub == 0x0);
     bus->root_hub = dev;
   } else {
-    // Insert at the end of the parent's child list.
+    // Insert it in the parent's child list in order of port number.
     KASSERT(bus->root_hub != 0x0);
     dev->next = 0x0;
-    usb_device_t* prev = parent->first_child;
-    while (prev && prev->next) prev = prev->next;
+    usb_device_t* prev = 0x0, *cur = parent->first_child;
+    while (cur && cur->port < port) {
+      prev = cur;
+      cur = cur->next;
+    }
+    if (cur && cur->port == port) {
+      KLOG(ERROR, "USB: multiple devices on hub %d.%d port %d\n",
+           parent->bus->bus_index, parent->address, port);
+    }
+    dev->next = cur;
     if (prev) {
       prev->next = dev;
     } else {
@@ -353,7 +341,13 @@ static void usb_set_address_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
+    // TODO(aoates): are there any circumstances in which the IRP would fail,
+    // but the device would remain in the DEFAULT state?  In that case, it's
+    // invalid for us to release the default address without somehow disabling
+    // the device first.
     KLOG(WARNING, "USB device init failed; SET_ADDRESS IRP failed");
+    state->dev->state = USB_DEV_INVALID;
+    usb_release_default_address(state->dev->bus);
     usb_init_done(state);
     return;
   }
@@ -516,6 +510,87 @@ static void usb_init_done(usb_init_state_t* state) {
   kfree(state);
 }
 
+void usb_detach_device(usb_device_t* dev) {
+  // First, detach and delete all its children if it's a hub.
+  while (dev->first_child) {
+    usb_device_t* child = dev->first_child;
+    usb_detach_device(child);
+    usb_delete_device(child);
+  }
+
+  KLOG(DEBUG, "USB: detaching device %d.%d (from hub %d.%d/port %d)\n",
+       dev->bus->bus_index, dev->address,
+       dev->parent ? dev->parent->bus->bus_index : -1,
+       dev->parent ? dev->parent->address : -1,
+       dev->port);
+
+  dev->state = USB_DEV_INVALID;
+
+  // Clean up and remove all the endpoints (including the DCP).
+  for (int i = 0; i < USB_NUM_ENDPOINTS; i++) {
+    if (dev->endpoints[i]) {
+      usb_endpoint_t* endpoint = dev->endpoints[i];
+      usb_remove_endpoint(endpoint);
+      kfree(endpoint);
+    }
+  }
+
+  if (dev->driver) {
+    dev->driver->cleanup_device(dev);
+  }
+
+  // Remove it from the device tree.
+  if (!dev->parent) {
+    KASSERT_DBG(dev->bus->root_hub == dev);
+    KLOG(WARNING, "USB: removing the root hub device for bus %d\n",
+         dev->bus->bus_index);
+  } else {
+    if (dev->parent->first_child == dev) {
+      dev->parent->first_child = dev->next;
+    } else {
+      usb_device_t* prev = dev->parent->first_child;
+      while (prev && prev->next != dev) {
+        prev = prev->next;
+      }
+      // We must be in the list.
+      KASSERT(prev != 0x0);
+
+      prev->next = dev->next;
+    }
+    dev->next = 0x0;
+    dev->parent = 0x0;
+  }
+}
+
+void usb_delete_device(usb_device_t* dev) {
+  KASSERT_DBG(dev->state == USB_DEV_INVALID);
+  KASSERT_DBG(dev->parent == 0x0);
+  KASSERT_DBG(dev->next == 0x0);
+  KASSERT_DBG(dev->first_child == 0x0);
+
+  for (int i = 0; i < USB_NUM_ENDPOINTS; ++i) {
+    KASSERT_DBG(dev->endpoints[i] == 0x0);
+  }
+
+  if (dev->configs) {
+    for (int i = 0; i < dev->dev_desc.bNumConfigurations; ++i) {
+      if (dev->configs[i].desc) {
+        kfree(dev->configs[i].desc);
+      }
+      usb_desc_list_node_t* cur = dev->configs[i].next;
+      while (cur) {
+        usb_desc_list_node_t* next = cur->next;
+        kfree(cur->desc);
+        kfree(cur);
+        cur = next;
+      }
+    }
+    kfree(dev->configs);
+  }
+
+  kfree(dev);
+}
+
 typedef struct {
   usb_device_t* dev;
   uint8_t config;
@@ -560,21 +635,27 @@ void usb_set_configuration(usb_device_t* dev, uint8_t config,
 }
 
 static void usb_set_configuration_done(usb_irp_t* irp, void* arg) {
-  // TODO(aoates): handle failure more gracefully.
-  KASSERT(irp->status == USB_IRP_SUCCESS);
   KASSERT_DBG(irp->outlen == 0);
 
   set_configuration_state_t* state = (set_configuration_state_t*)arg;
   usb_free_request(state->request);
+
+  if (irp->status != USB_IRP_SUCCESS) {
+    // TODO(aoates): if the device is currently configured, does this always
+    // invalidate that?  Should we tear down all its endpoints and put it back
+    // in the ADDRESS state?
+    KLOG(INFO, "USB: SET_CONFIGURATION for device %d.%d failed (status %d)\n",
+         state->dev->bus->bus_index, state->dev->address, irp->status);
+    state->callback(state->dev, state->arg);
+    kfree(state);
+    return;
+  }
 
   // Update the device's state.
   if (state->config == 0) {
     state->dev->state = USB_DEV_ADDRESS;
 
     // Remove any existing endpoints.
-    // TODO(aoates): how do we guarantee that there are no outstanding refereces
-    // to these endpoints?
-    // TODO(aoates): ensure any pending IRPs on these endpoints are finished.
     for (int i = 1; i < USB_NUM_ENDPOINTS; i++) {
       if (state->dev->endpoints[i]) {
         usb_endpoint_t* endpoint = state->dev->endpoints[i];
@@ -605,4 +686,90 @@ void usb_get_configuration_values(usb_device_t* dev, uint8_t* config_values)  {
     KASSERT_DBG(config->bDescriptorType == USB_DESC_CONFIGURATION);
     config_values[i] = config->bConfigurationValue;
   }
+}
+
+usb_desc_list_node_t* usb_get_configuration_desc(usb_device_t* dev,
+                                                 int config_value) {
+  for (int i = 0; i < dev->dev_desc.bNumConfigurations; ++i) {
+    usb_desc_config_t* config = (usb_desc_config_t*)dev->configs[i].desc;
+    KASSERT_DBG(config->bDescriptorType == USB_DESC_CONFIGURATION);
+    if (config->bConfigurationValue == config_value) {
+      return &dev->configs[i];
+    }
+  }
+
+  return 0x0;
+}
+
+usb_desc_list_node_t* usb_get_interface_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index) {
+  // First find a matching configuration.
+  usb_desc_list_node_t* config_node =
+      usb_get_configuration_desc(dev, config_value);
+  if (!config_node) return 0x0;
+
+  usb_desc_config_t* config = (usb_desc_config_t*)config_node->desc;
+
+  // Now find the corresponding interface.
+  if (interface_index < 0 || interface_index >= config->bNumInterfaces)
+    return 0x0;
+
+  usb_desc_list_node_t* node = config_node->next;
+  while (node) {
+    if (node->desc->bDescriptorType == USB_DESC_INTERFACE) {
+      usb_desc_interface_t* interface = (usb_desc_interface_t*)node->desc;
+      // Interfaces have zero-indexed numbers; they *should* be in order, but we
+      // compare against the index descriptor just in case.
+      if (interface->bInterfaceNumber == interface_index) {
+        return node;
+      }
+    }
+    node = node->next;
+  }
+
+  KLOG(INFO, "USB device %d.%d/config %d advertises %d interfaces, but "
+       "the interface %d descriptor wasn't found\n",
+       dev->bus->bus_index, dev->address, config_value,
+       config->bNumInterfaces, interface_index);
+  return 0x0;
+}
+
+usb_desc_list_node_t* usb_get_endpoint_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index,
+                                             int endpoint_index) {
+  // First find a matching interface.
+  usb_desc_list_node_t* interface_node =
+      usb_get_interface_desc(dev, config_value, interface_index);
+  if (!interface_node) return 0x0;
+
+  KASSERT_DBG(interface_node->desc->bDescriptorType == USB_DESC_INTERFACE);
+  usb_desc_interface_t* interface = (usb_desc_interface_t*)interface_node->desc;
+
+  // Now find the corresponding endpoint.
+  if (endpoint_index < 0 || endpoint_index >= interface->bNumEndpoints)
+    return 0x0;
+
+  usb_desc_list_node_t* node = interface_node->next;
+  int cendpoint = 0;
+  while (node) {
+    if (node->desc->bDescriptorType == USB_DESC_INTERFACE) {
+      break;
+    }
+
+    if (node->desc->bDescriptorType == USB_DESC_ENDPOINT) {
+      if (cendpoint == endpoint_index) {
+        return node;
+      }
+      cendpoint++;
+    }
+    node = node->next;
+  }
+
+  KLOG(INFO, "USB device %d.%d/config %d/iface %d advertises %d endpoints, but "
+       "the endpoint %d descriptor wasn't found\n",
+       dev->bus->bus_index, dev->address, config_value,
+       interface_index, interface->bNumEndpoints, endpoint_index);
+  return 0x0;
 }

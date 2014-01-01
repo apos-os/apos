@@ -50,7 +50,7 @@ void usb_release_default_address(usb_bus_t* bus);
 // the state as necessary.
 //
 // REQUIRES: the default address is held.
-usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
+usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent, int port,
                                 usb_speed_t speed);
 
 // Initialize a device.  This kicks off a process that will (asynchronously),
@@ -66,8 +66,20 @@ usb_device_t* usb_create_device(usb_bus_t* bus, usb_device_t* parent,
 // The device must be in the USB_DEV_DEFAULT state.
 void usb_init_device(usb_device_t* dev);
 
+// Signal that the given device has been detached.  Cancel any outstanding IRPs
+// on its endpoints, remove it from the device tree and signal the driver that
+// it has been removed.
+void usb_detach_device(usb_device_t* dev);
+
+// Delete the given device, which must have never been initialized, or have been
+// detached with usb_detach_device().
+void usb_delete_device(usb_device_t* dev);
+
 // Send a SET_CONFIGURATION request to the given device.  If config is zero, the
 // device is deconfigured.
+//
+// The caller should verify that the device was put into the proper state by
+// checking dev->state when the callback is invoked.
 void usb_set_configuration(usb_device_t* dev, uint8_t config,
                            void (*callback)(usb_device_t*, void*),
                            void* arg);
@@ -78,5 +90,25 @@ void usb_set_configuration(usb_device_t* dev, uint8_t config,
 // of the given device in |config_values|.  |config_values| must have at least
 // |dev->dev_desk->bNumConfigurations| entries.
 void usb_get_configuration_values(usb_device_t* dev, uint8_t* config_values);
+
+// Return the interface descriptor node corresponding to the given configuration
+// *value*.
+usb_desc_list_node_t* usb_get_configuration_desc(usb_device_t* dev,
+                                                 int config_value);
+
+// Return the interface descriptor node corresponding to the given configuration
+// value and interface index.
+usb_desc_list_node_t* usb_get_interface_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index);
+
+// Return the endpoint descriptor node corresponding to the given configuration
+// value, interface index, and endpoint *index*.
+//
+// Note that this takes an endpoint index, not address.
+usb_desc_list_node_t* usb_get_endpoint_desc(usb_device_t* dev,
+                                             int config_value,
+                                             int interface_index,
+                                             int endpoint_index);
 
 #endif

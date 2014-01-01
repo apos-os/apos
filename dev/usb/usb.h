@@ -51,6 +51,11 @@ enum usb_irp_status {
   USB_IRP_SUCCESS,
   USB_IRP_STALL,
   USB_IRP_DEVICE_ERROR,
+
+  // If this is returned, the IRP's endpoint no longer exists (e.g. because the
+  // device was disconnected, or reconfigured).  The driver shouldn't attempt to
+  // make any further IRPs on that endpoint (which may not exist).
+  USB_IRP_ENDPOINT_GONE,
 };
 typedef enum usb_irp_status usb_irp_status_t;
 
@@ -96,6 +101,10 @@ int usb_send_data_in(usb_irp_t* irp);
 
 // Send data on a host-to-function endpoint.
 int usb_send_data_out(usb_irp_t* irp);
+
+// Cancel any outstanding IRPs on the given endpoint, and make them return
+// USB_IRP_ENDPOINT_GONE.
+void usb_cancel_endpoint_irp(usb_endpoint_t* endpoint);
 
 // Packet ID types (PIDs).
 // TODO(aoates): move this to a usb-internal header (since clients don't need

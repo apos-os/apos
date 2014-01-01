@@ -184,8 +184,16 @@ static void connect_port(usb_bus_t* bus, void* arg);
 static void connect_port_reset_sent(usb_device_t* dev, int result);
 static void connect_port_reset_done(usb_device_t* dev);
 
+static void disconnect_port(usb_device_t* hub, int port);
+
 static void set_configuration_done(usb_device_t* dev, void* arg) {
-  KASSERT_DBG(dev->state == USB_DEV_CONFIGURED);
+  if (dev->state != USB_DEV_CONFIGURED) {
+    // TODO(aoates): mark the hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: SET_CONFIGURATION for device %d.%d failed\n",
+         dev->bus->bus_index, dev->address);
+    // If configuration failed, we just give up.
+    return;
+  }
   KLOG(DEBUG, "USB HUBD: hub %d.%d configuration done\n", dev->bus->bus_index,
        dev->address);
 
@@ -233,6 +241,11 @@ static void get_hub_desc_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: GET_HUB_DESCRIPTOR for %d.%d failed: %s\n",
+         dev->bus->bus_index, dev->address, errorname(-result));
+    // Don't continue with the initialization process; the hub is in an unknown
+    // state.
+    return;
   } else {
     KLOG(DEBUG2, "USB HUBD: hub descriptor for hub %d.%d:\n",
          dev->bus->bus_index, dev->address);
@@ -258,6 +271,11 @@ static void status_change_irp_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: reading STATUS CHANGE for %d.%d failed: %s\n",
+         dev->bus->bus_index, dev->address, errorname(-result));
+    // Don't continue with the initialization process; the hub is in an unknown
+    // state.
+    return;
   } else {
     KLOG(DEBUG2, "USB HUBD: status change for hub %d.%d: [",
          dev->bus->bus_index, dev->address);
@@ -315,6 +333,10 @@ static void get_port_status_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: GET_PORT_STATUS for %d.%d/port %d failed: %s\n",
+         dev->bus->bus_index, dev->address, port, errorname(-result));
+    // Don't continue; the hub is in an unknown state.
+    return;
   } else {
     const uint16_t port_status = hubd_get_port_status(hubd, port);
     const uint16_t port_change = hubd_get_port_change(hubd, port);
@@ -396,6 +418,10 @@ static void ack_port_change_done(usb_device_t* dev, int result) {
 
   if (result) {
     // TODO(aoates): mark hub as invalid somehow.
+    KLOG(INFO, "USB HUBD: CLEAR_PORT_FEATURE for %d.%d/port %d failed: %s\n",
+         dev->bus->bus_index, dev->address, port, errorname(-result));
+    // Don't continue; the hub is in an unknown state.
+    return;
   } else {
     // TODO(aoates): instead of re-getting the port status each time, should we
     // just process the bits as we see them the once?
@@ -451,6 +477,10 @@ static void handle_one_event(usb_device_t* dev, port_event_t* event) {
       return;
 
     case PORT_DISCONNECTED:
+      disconnect_port(dev, event->port);
+      kfree(event);
+      return;
+
     case PORT_ERROR:
       // TODO(aoates): implement
       die("unimplemented USB event");
@@ -475,6 +505,8 @@ static void handle_one_event_done(usb_device_t* dev) {
 // because we need to process RESET_DONE events.
 static void connect_port(usb_bus_t* bus, void* arg) {
   port_event_t* event = (port_event_t*)arg;
+  KLOG(DEBUG, "USB HUBD: connecting hub %d.%d port %d\n",
+       event->dev->bus->bus_index, event->dev->address, event->port);
 
   // We now have the default address.  We reset the port.  Once it's enabled,
   // we'll create a device, assign an address, put it in the device tree, etc.
@@ -515,12 +547,35 @@ static void connect_port_reset_done(usb_device_t* dev) {
     // the device tree, and initialize it.
     const usb_speed_t child_speed = (port_status & USB_HUBD_PORT_LOW_SPEED)
         ? USB_LOW_SPEED : USB_FULL_SPEED;
-    usb_device_t* child = usb_create_device(dev->bus, dev, child_speed);
+    usb_device_t* child = usb_create_device(dev->bus, dev, port, child_speed);
     child->state = USB_DEV_DEFAULT;
     usb_init_device(child);
   }
 
   handle_one_event_done(dev);
+}
+
+static void disconnect_port(usb_device_t* hub, int port) {
+  // First, find the child device for the given port.
+  usb_device_t* child = hub->first_child;
+  while (child && child->port != port) {
+    child = child->next;
+  }
+
+  if (!child) {
+    KLOG(ERROR, "USB HUBD: no child device on port %d found on hub %d.%d\n",
+         port, hub->bus->bus_index, hub->address);
+    handle_one_event_done(hub);
+    return;
+  }
+
+  KLOG(DEBUG, "USB HUBD: detaching device %d.%d from hub %d.%d/port %d\n",
+       child->bus->bus_index, child->address,
+       hub->bus->bus_index, hub->address, port);
+  usb_detach_device(child);
+  usb_delete_device(child);
+
+  handle_one_event_done(hub);
 }
 
 int usb_hubd_check_device(usb_device_t* dev) {
@@ -564,4 +619,25 @@ int usb_hubd_adopt_device(usb_device_t* dev) {
   usb_set_configuration(dev, config, &set_configuration_done, dev);
 
   return 0;
+}
+
+void usb_hubd_cleanup_device(usb_device_t* dev) {
+  KLOG(DEBUG, "USB HUBD: cleanup device %d.%d\n",
+       dev->bus->bus_index, dev->address);
+
+  usb_hubd_data_t* hubd = (usb_hubd_data_t*)dev->driver_data;
+  if (hubd->port_status) {
+    kfree(hubd->port_status);
+  }
+
+  while (!list_empty(&hubd->pending_port_events)) {
+    list_link_t* link = list_pop(&hubd->pending_port_events);
+    port_event_t* event = container_of(link, port_event_t, link);
+    KLOG(DEBUG, "USB HUBD: dropping event <port %d %s> on cleanup\n",
+         event->port, port_event_type_str(event));
+    kfree(event);
+  }
+
+  kfree(hubd);
+  dev->driver_data = 0x0;
 }

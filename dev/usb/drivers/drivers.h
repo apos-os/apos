@@ -27,6 +27,11 @@ struct usb_driver {
   // check_device will have been previously called with the same device.
   int (*adopt_device)(usb_device_t*);
 
+  // Handle removal of the given device, cleaning up any driver state.  Before
+  // this is called, all outstanding IRPs will have been cancelled (i.e.
+  // returned USB_IRP_ENDPOINT_GONE) and the endpoints will have been torn down.
+  void (*cleanup_device)(usb_device_t*);
+
   // Human-readable name of the driver.
   const char* name;
 };
