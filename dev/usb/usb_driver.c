@@ -341,7 +341,13 @@ static void usb_set_address_done(usb_irp_t* irp, void* arg) {
 
   // Check if IRP was successful.
   if (irp->status != USB_IRP_SUCCESS) {
+    // TODO(aoates): are there any circumstances in which the IRP would fail,
+    // but the device would remain in the DEFAULT state?  In that case, it's
+    // invalid for us to release the default address without somehow disabling
+    // the device first.
     KLOG(WARNING, "USB device init failed; SET_ADDRESS IRP failed");
+    state->dev->state = USB_DEV_INVALID;
+    usb_release_default_address(state->dev->bus);
     usb_init_done(state);
     return;
   }
