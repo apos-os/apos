@@ -184,6 +184,8 @@ static void connect_port(usb_bus_t* bus, void* arg);
 static void connect_port_reset_sent(usb_device_t* dev, int result);
 static void connect_port_reset_done(usb_device_t* dev);
 
+static void disconnect_port(usb_device_t* hub, int port);
+
 static void set_configuration_done(usb_device_t* dev, void* arg) {
   if (dev->state != USB_DEV_CONFIGURED) {
     // TODO(aoates): mark the hub as invalid somehow.
@@ -475,6 +477,10 @@ static void handle_one_event(usb_device_t* dev, port_event_t* event) {
       return;
 
     case PORT_DISCONNECTED:
+      disconnect_port(dev, event->port);
+      kfree(event);
+      return;
+
     case PORT_ERROR:
       // TODO(aoates): implement
       die("unimplemented USB event");
@@ -545,6 +551,29 @@ static void connect_port_reset_done(usb_device_t* dev) {
   }
 
   handle_one_event_done(dev);
+}
+
+static void disconnect_port(usb_device_t* hub, int port) {
+  // First, find the child device for the given port.
+  usb_device_t* child = hub->first_child;
+  while (child && child->port != port) {
+    child = child->next;
+  }
+
+  if (!child) {
+    KLOG(ERROR, "USB HUBD: no child device on port %d found on hub %d.%d\n",
+         port, hub->bus->bus_index, hub->address);
+    handle_one_event_done(hub);
+    return;
+  }
+
+  KLOG(DEBUG, "USB HUBD: detaching device %d.%d from hub %d.%d/port %d\n",
+       child->bus->bus_index, child->address,
+       hub->bus->bus_index, hub->address, port);
+  usb_detach_device(child);
+  usb_delete_device(child);
+
+  handle_one_event_done(hub);
 }
 
 int usb_hubd_check_device(usb_device_t* dev) {
