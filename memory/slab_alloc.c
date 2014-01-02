@@ -28,8 +28,8 @@ struct slab_alloc {
   // to fit before the bitmap.
   void** pages;
 
-  // Full bit for each page.
-  uint8_t* page_full;
+  // Free count for each page.
+  int* free_count;
 };
 
 #define NUM_OBJECTS(size) (8 * PAGE_SIZE / (8 * (size) + 1))
@@ -76,10 +76,11 @@ slab_alloc_t* slab_alloc_create(int obj_size, int max_pages) {
   s->obj_size = obj_size;
   s->max_pages = max_pages;
   s->pages = (void**)kmalloc(sizeof(void*) * max_pages);
-  s->page_full = (uint8_t*)kmalloc(sizeof(uint8_t) * max_pages);
+  s->free_count = (int*)kmalloc(sizeof(int) * max_pages);
+  int num_objects = NUM_OBJECTS(obj_size);
   for (int i = 0; i < max_pages; ++i) {
     s->pages[i] = 0x0;
-    s->page_full[i] = 0;
+    s->free_count[i] = num_objects;
   }
 
   // Go ahead and allocate the first page.
@@ -96,9 +97,9 @@ void slab_alloc_destroy(slab_alloc_t* s) {
     }
   }
   kfree(s->pages);
-  kfree(s->page_full);
+  kfree(s->free_count);
   s->pages = 0x0;
-  s->page_full = 0x0;
+  s->free_count = 0x0;
   kfree(s);
 }
 
@@ -106,10 +107,12 @@ void* slab_alloc(slab_alloc_t* s) {
   // Find a free page.
   int i;
   for (i = 0; i < s->max_pages; ++i) {
-    if (s->pages[i] != 0x0 && s->page_full[i] == 0) {
+    if (s->pages[i] != 0x0 && s->free_count[i] > 0) {
       break;
     }
   }
+
+  const int num_objects = NUM_OBJECTS(s->obj_size);
 
   // If no free pages, create a new one.
   if (i >= s->max_pages) {
@@ -125,14 +128,13 @@ void* slab_alloc(slab_alloc_t* s) {
     }
 
     s->pages[i] = alloc_slab_page(s);
-    s->page_full[i] = 0;
+    s->free_count[i] = num_objects;
   }
 
   KASSERT(i >= 0 && i < s->max_pages);
-  KASSERT(s->page_full[i] == 0);
+  KASSERT(s->free_count[i] > 0);
 
   // Find a free object in that page.
-  const int num_objects = NUM_OBJECTS(s->obj_size);
   uint8_t* bitmap = get_bitmap(num_objects, s->pages[i]);
   int bitmap_idx = 0;
   while (bitmap[bitmap_idx] == 0x00) bitmap_idx++;
@@ -178,10 +180,8 @@ void* slab_alloc(slab_alloc_t* s) {
     }
   }
 
-  // If it's our last object, mark the page as full.
-  if (bitmap[bitmap_idx] == 0x0 && (bitmap_idx + 1) * 8 >= num_objects) {
-    s->page_full[i] = 1;
-  }
+  s->free_count[i]--;
+  KASSERT_DBG(s->free_count[i] >= 0);
 
   return (void*)(s->pages[i] + obj_idx * s->obj_size);
 }
@@ -215,5 +215,6 @@ void slab_free(slab_alloc_t* s, void* x) {
     case 6: *bitmap |= 0b01000000; break;
     case 7: *bitmap |= 0b10000000; break;
   }
-  s->page_full[i] = 0;
+  s->free_count[i]++;
+  KASSERT_DBG(s->free_count[i] <= num_objects);
 }
