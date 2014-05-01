@@ -23,8 +23,11 @@
 #include "memory/memory.h"
 #include "memory/memobj.h"
 #include "memory/page_alloc.h"
+#include "proc/fork.h"
+#include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/user.h"
 #include "test/ktest.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -1675,6 +1678,64 @@ static void stat_test(void) {
   // TODO(aoates): test fstat on fds with different modes.
 }
 
+static void initial_owner_test_func(void* arg) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const gid_t kTestGroupA = 3;
+  const gid_t kTestGroupB = 4;
+
+  const char kDir[] = "owner_test_dir";
+  const char kRegFile[] = "owner_test_dir/reg";
+  const char kCharDevFile[] = "owner_test_dir/char";
+  const char kBlockDevFile[] = "owner_test_dir/block";
+
+  KTEST_BEGIN("vfs_open() sets uid/gid: regular file test");
+  KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
+  KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  create_file(kRegFile);
+
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
+  KEXPECT_EQ(kTestUserB, stat.st_uid);
+  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_mkdir() sets uid/gid: directory test");
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kDir, &stat));
+  KEXPECT_EQ(kTestUserB, stat.st_uid);
+  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+
+  KTEST_BEGIN("vfs_mknod() sets uid/gid: character device file test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kCharDevFile, &stat));
+  KEXPECT_EQ(kTestUserB, stat.st_uid);
+  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+
+  KTEST_BEGIN("vfs_mknod() sets uid/gid: block device file test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kBlockDevFile, &stat));
+  KEXPECT_EQ(kTestUserB, stat.st_uid);
+  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
+static void initial_owner_test(void) {
+  pid_t child_pid = proc_fork(&initial_owner_test_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_wait(0x0);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -1710,6 +1771,7 @@ void vfs_test(void) {
 
   fs_dev_test();
   stat_test();
+  initial_owner_test();
 
   reverse_path_test();
 

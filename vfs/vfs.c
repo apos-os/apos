@@ -499,6 +499,8 @@ int vfs_open(const char* path, uint32_t flags) {
       }
 
       child = vfs_get(parent->fs, child_inode);
+      child->uid = geteuid();
+      child->gid = getegid();
     }
 
     // Done with the parent.
@@ -590,6 +592,11 @@ int vfs_mkdir(const char* path) {
     return child_inode;  // Error :(
   }
 
+  vnode_t* child = vfs_get(parent->fs, child_inode);
+  child->uid = geteuid();
+  child->gid = getegid();
+  VFS_PUT_AND_CLEAR(child);
+
   // We're done!
   VFS_PUT_AND_CLEAR(parent);
   return 0;
@@ -626,6 +633,11 @@ int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
+
+  vnode_t* child = vfs_get(parent->fs, child_inode);
+  child->uid = geteuid();
+  child->gid = getegid();
+  VFS_PUT_AND_CLEAR(child);
 
   // We're done!
   VFS_PUT_AND_CLEAR(parent);
