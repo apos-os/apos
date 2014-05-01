@@ -21,6 +21,7 @@
 #include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "proc/user.h"
 #include "vfs/dirent.h"
 #include "vfs/ext2/ext2.h"
 #include "vfs/file.h"
@@ -37,6 +38,8 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->num = num;
   n->type = VNODE_UNINITIALIZED;
   n->len = -1;
+  n->uid = -1;
+  n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
   memobj_init_vnode(n);
@@ -1014,6 +1017,8 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
+  stat->st_uid = vnode->uid;
+  stat->st_gid = vnode->gid;
   stat->st_rdev = vnode->dev;
   stat->st_size = vnode->len;
   // TODO: stat->st_nlink
