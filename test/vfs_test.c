@@ -1412,6 +1412,8 @@ static void mknod_test(void) {
 
   KTEST_BEGIN("mknod(): regular file test");
   KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kRegFile);
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   int fd = vfs_open(kRegFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
@@ -1432,8 +1434,12 @@ static void mknod_test(void) {
   KTEST_BEGIN("mknod(): bath path test");
   KEXPECT_EQ(-ENOENT, vfs_mknod("bad/path/test", VFS_S_IFREG, mkdev(0, 0)));
 
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
   KTEST_BEGIN("mknod(): character device file test");
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kCharDevFile);
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   fd = vfs_open(kCharDevFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
@@ -1441,6 +1447,8 @@ static void mknod_test(void) {
 
   KTEST_BEGIN("mknod(): block device file test");
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kBlockDevFile);
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   fd = vfs_open(kBlockDevFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
