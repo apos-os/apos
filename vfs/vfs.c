@@ -1098,3 +1098,11 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   file->refcount--;
   return result;
 }
+
+int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+  return -ENOTSUP;
+}
+
+int vfs_fchown(int fd, uid_t owner, gid_t group) {
+  return -ENOTSUP;
+}
