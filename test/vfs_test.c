@@ -91,6 +91,14 @@ static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
   EXPECT_CAN_CREATE_FILE(path);
 }
 
+static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(path, &stat));
+  KEXPECT_EQ(uid, stat.st_uid);
+  KEXPECT_EQ(gid, stat.st_gid);
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test(void) {
   KTEST_BEGIN("vfs_open(): parent refcount test");
@@ -1703,33 +1711,18 @@ static void initial_owner_test_func(void* arg) {
 
   KEXPECT_EQ(0, vfs_mkdir(kDir));
   create_file(kRegFile);
-
-  apos_stat_t stat;
-  kmemset(&stat, 0xFF, sizeof(stat));
-  KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
-  KEXPECT_EQ(kTestUserB, stat.st_uid);
-  KEXPECT_EQ(kTestGroupB, stat.st_gid);
-
+  EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mkdir() sets uid/gid: directory test");
-  kmemset(&stat, 0xFF, sizeof(stat));
-  KEXPECT_EQ(0, vfs_lstat(kDir, &stat));
-  KEXPECT_EQ(kTestUserB, stat.st_uid);
-  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+  EXPECT_OWNER_IS(kDir, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mknod() sets uid/gid: character device file test");
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
-  kmemset(&stat, 0xFF, sizeof(stat));
-  KEXPECT_EQ(0, vfs_lstat(kCharDevFile, &stat));
-  KEXPECT_EQ(kTestUserB, stat.st_uid);
-  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+  EXPECT_OWNER_IS(kCharDevFile, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mknod() sets uid/gid: block device file test");
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
-  kmemset(&stat, 0xFF, sizeof(stat));
-  KEXPECT_EQ(0, vfs_lstat(kBlockDevFile, &stat));
-  KEXPECT_EQ(kTestUserB, stat.st_uid);
-  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+  EXPECT_OWNER_IS(kBlockDevFile, kTestUserB, kTestGroupB);
 
   vfs_unlink(kBlockDevFile);
   vfs_unlink(kCharDevFile);
