@@ -1099,10 +1099,78 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   return result;
 }
 
-int vfs_lchown(const char* path, uid_t owner, gid_t group) {
-  return -ENOTSUP;
+static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
+  if (owner < -1 || group < -1) return -EINVAL;
+
+  if (!proc_is_superuser(proc_current())) {
+    if (owner != -1 && owner != geteuid()) return -EPERM;
+    if (vnode->uid != geteuid()) return -EPERM;
+    // TODO(aoates): check group against supplementary group ids as well.
+    if (group != -1 && group != getegid()) return -EPERM;
+  }
+
+  if (owner >= 0) vnode->uid = owner;
+  if (group >= 0) vnode->gid = group;
+
+  return 0;
 }
 
+// TODO(aoates): de-dup this with lstat, and others.
+int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+  if (!path || owner < -1 || group < -1) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  int result = vfs_chown_internal(child, owner, group);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+// TODO(aoates): de-dup this with fstat, and others.
 int vfs_fchown(int fd, uid_t owner, gid_t group) {
-  return -ENOTSUP;
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = vfs_chown_internal(file->vnode, owner, group);
+  }
+
+  file->refcount--;
+  return result;
 }
