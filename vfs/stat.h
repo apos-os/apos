@@ -20,6 +20,12 @@
 
 typedef uint32_t mode_t;
 
+// File type flags for mode_t.
+#define VFS_S_IFREG      0x10000
+#define VFS_S_IFCHR      0x20000
+#define VFS_S_IFBLK      0x40000
+#define VFS_S_IFDIR      0x80000
+
 // Information about a vnode.
 // TODO(aoates): add ino_t and off_t typedefs
 typedef struct {

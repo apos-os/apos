@@ -208,12 +208,6 @@ struct fs {
 #define VFS_O_CREAT    0x08
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
 
-// File types.
-#define VFS_S_IFREG      0x10000
-#define VFS_S_IFCHR      0x20000
-#define VFS_S_IFBLK      0x40000
-#define VFS_S_IFDIR      0x80000
-
 #define VFS_SEEK_SET 1
 #define VFS_SEEK_CUR 2
 #define VFS_SEEK_END 3
