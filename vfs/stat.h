@@ -21,10 +21,32 @@
 typedef uint32_t mode_t;
 
 // File type flags for mode_t.
-#define VFS_S_IFREG      0x10000
-#define VFS_S_IFCHR      0x20000
-#define VFS_S_IFBLK      0x40000
-#define VFS_S_IFDIR      0x80000
+#define VFS_S_IFMT      0xFF0000
+#define VFS_S_IFREG     0x010000
+#define VFS_S_IFCHR     0x020000
+#define VFS_S_IFBLK     0x040000
+#define VFS_S_IFDIR     0x080000
+
+// Mode flags for mode_t.
+#define VFS_S_IRWXU     0x000700
+#define VFS_S_IRUSR     0x000400
+#define VFS_S_IWUSR     0x000200
+#define VFS_S_IXUSR     0x000100
+
+#define VFS_S_IRWXG     0x000070
+#define VFS_S_IRGRP     0x000040
+#define VFS_S_IWGRP     0x000020
+#define VFS_S_IXGRP     0x000010
+
+#define VFS_S_IRWXO     0x000007
+#define VFS_S_IROTH     0x000004
+#define VFS_S_IWOTH     0x000002
+#define VFS_S_IXOTH     0x000001
+
+// TODO(aoates): implement these.
+#define VFS_S_ISUID     0x004000
+#define VFS_S_ISGID     0x002000
+#define VFS_S_ISVTX     0x001000
 
 // Information about a vnode.
 // TODO(aoates): add ino_t and off_t typedefs

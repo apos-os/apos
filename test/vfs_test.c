@@ -1981,6 +1981,28 @@ static void chown_test(void) {
   //  * maybe: fchown() with different fd flags? (RW vs RD_ONLY etc)
 }
 
+static void mode_flags_test(void) {
+  KTEST_BEGIN("vfs mode_t flags test");
+  KEXPECT_EQ(VFS_S_IRWXU, VFS_S_IRUSR | VFS_S_IWUSR | VFS_S_IXUSR);
+  KEXPECT_EQ(VFS_S_IRWXG, VFS_S_IRGRP | VFS_S_IWGRP | VFS_S_IXGRP);
+  KEXPECT_EQ(VFS_S_IRWXO, VFS_S_IROTH | VFS_S_IWOTH | VFS_S_IXOTH);
+
+  const mode_t kUniqueFlags[] = {
+    VFS_S_IRUSR, VFS_S_IWUSR, VFS_S_IXUSR, VFS_S_IRGRP, VFS_S_IWGRP,
+    VFS_S_IXGRP, VFS_S_IROTH, VFS_S_IWOTH, VFS_S_IXOTH, VFS_S_ISUID,
+    VFS_S_ISGID, VFS_S_ISVTX,
+  };
+  const int kNumUniqueFlags = sizeof(kUniqueFlags) / sizeof(mode_t);
+
+  for (int i = 0; i < kNumUniqueFlags; ++i) {
+    int count = 0;
+    for (int j = 0; j < kNumUniqueFlags; ++j) {
+      if ((kUniqueFlags[i] & kUniqueFlags[j]) != 0) count++;
+    }
+    KEXPECT_EQ(1, count);
+  }
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2018,6 +2040,8 @@ void vfs_test(void) {
   stat_test();
   initial_owner_test();
   chown_test();
+
+  mode_flags_test();
 
   reverse_path_test();
 
