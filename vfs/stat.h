@@ -18,12 +18,14 @@
 #include "common/posix_types.h"
 #include "dev/dev.h"
 
+typedef uint32_t mode_t;
+
 // Information about a vnode.
 // TODO(aoates): add ino_t and off_t typedefs
 typedef struct {
   apos_dev_t st_dev;    // Device containing the file.
   int st_ino;           // Inode number.
-  uint32_t st_mode;     // File type and mode.
+  mode_t st_mode;       // File type and mode.
   int st_nlink;         // Number of hard links.
   uid_t st_uid;         // File owner.
   gid_t st_gid;         // File group.
