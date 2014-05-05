@@ -1895,6 +1895,20 @@ static void chown_test(void) {
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
+  KTEST_BEGIN("vfs_lchown(): bad arguments");
+  KEXPECT_EQ(-EINVAL, vfs_lchown(0x0, -1, -1));
+  KEXPECT_EQ(-EINVAL, vfs_lchown(kRegFile, -5, -1));
+  KEXPECT_EQ(-EINVAL, vfs_lchown(kRegFile, -1, -5));
+
+  KTEST_BEGIN("vfs_fchown(): bad arguments");
+  int fd = vfs_open(kRegFile, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_fchown(-1, -1, -1));
+  KEXPECT_EQ(-EINVAL, vfs_fchown(fd, -5, -1));
+  KEXPECT_EQ(-EINVAL, vfs_fchown(fd, -1, -5));
+  vfs_close(fd);
+  KEXPECT_EQ(-EBADF, vfs_fchown(fd, -1, -1));
+
   // Regular fchown/lchown tests for each file type.
   BASIC_CHOWN_TEST(kRegFile, "regular file");
   BASIC_CHOWN_TEST(kDir, "directory");
@@ -1908,7 +1922,7 @@ static void chown_test(void) {
   EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupA);
 
   KTEST_BEGIN("vfs_fchown(): only setting uid");
-  int fd = vfs_open(kRegFile, VFS_O_RDWR);
+  fd = vfs_open(kRegFile, VFS_O_RDWR);
   KEXPECT_EQ(0, vfs_fchown(fd, kTestUserA, kTestGroupA));
   KEXPECT_EQ(0, vfs_fchown(fd, kTestUserB, -1));
   EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupA);
