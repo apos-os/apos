@@ -1174,3 +1174,11 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   file->refcount--;
   return result;
 }
+
+int vfs_lchmod(const char* path, mode_t mode) {
+  return -ENOTSUP;
+}
+
+int vfs_fchmod(int fd, mode_t mode) {
+  return -ENOTSUP;
+}
