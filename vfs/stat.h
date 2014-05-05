@@ -25,6 +25,8 @@ typedef struct {
   int st_ino;           // Inode number.
   uint32_t st_mode;     // File type and mode.
   int st_nlink;         // Number of hard links.
+  uid_t st_uid;         // File owner.
+  gid_t st_gid;         // File group.
   apos_dev_t st_rdev;   // Device ID (if special file).
   int st_size;          // Size, in bytes.
   blksize_t st_blksize; // File system block size.

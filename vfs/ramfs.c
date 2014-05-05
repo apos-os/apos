@@ -91,6 +91,8 @@ static void writeback_metadata(ramfs_inode_t* inode) {
   KASSERT(disk_inode->vnode.num == inode->vnode.num);
   KASSERT(disk_inode->vnode.type == inode->vnode.type);
   disk_inode->vnode.len = inode->vnode.len;
+  disk_inode->vnode.uid = inode->vnode.uid;
+  disk_inode->vnode.gid = inode->vnode.gid;
   disk_inode->data = inode->data;
   disk_inode->link_count = inode->link_count;
 }
@@ -247,6 +249,8 @@ int ramfs_get_vnode(vnode_t* n) {
   // Copy over everything we'll need.
   n->type = inode->vnode.type;
   n->len = inode->vnode.len;
+  n->uid = inode->vnode.uid;
+  n->gid = inode->vnode.gid;
   n->dev = inode->vnode.dev;
   kstrcpy(n->fstype, "ramfs");
   ((ramfs_inode_t*)n)->data = inode->data;
@@ -264,6 +268,8 @@ int ramfs_put_vnode(vnode_t* vnode) {
   // that mean that the self-linking of directories should go in ramfs, not vfs?
   // Probably.
   ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
+  writeback_metadata(inode);
+
   if (inode->link_count == 0) {
     vnode->type = VNODE_INVALID;
     kfree(inode->data);

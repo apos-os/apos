@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "common/posix_types.h"
 #include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
@@ -50,7 +51,18 @@ typedef struct fs fs_t;
 struct vnode {
   int num;
   vnode_type_t type;
+
+  // The length is cached here.  It will not be updated by the VFS code.
   int len;
+
+  // Frequently-used metadata is cached here.  The VFS code may update these, in
+  // which case the concrete fs function must write them back to the underlying
+  // filesystem in put_vnone().
+  // TODO(aoates): add an explicit (optional?) put_metadata() function that will
+  // let the concrete fs proactively writeback metadata changes while the vnode
+  // is still open.
+  uid_t uid;
+  gid_t gid;
 
   int refcount;
 
@@ -322,5 +334,13 @@ int vfs_lstat(const char* path, apos_stat_t* stat);
 
 // Stats the given fd.  Returns 0 on success, or -error.
 int vfs_fstat(int fd, apos_stat_t* stat);
+
+// Changes the owner and/or group of the given path.  Returns 0 on success, or
+// -error.
+int vfs_lchown(const char* path, uid_t owner, gid_t group);
+
+// Changes the owner and/or group of the given fd.  Returns 0 on success, or
+// -error.
+int vfs_fchown(int fd, uid_t owner, gid_t group);
 
 #endif

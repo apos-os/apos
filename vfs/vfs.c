@@ -21,6 +21,7 @@
 #include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "proc/user.h"
 #include "vfs/dirent.h"
 #include "vfs/ext2/ext2.h"
 #include "vfs/file.h"
@@ -37,6 +38,8 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->num = num;
   n->type = VNODE_UNINITIALIZED;
   n->len = -1;
+  n->uid = -1;
+  n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
   memobj_init_vnode(n);
@@ -496,6 +499,8 @@ int vfs_open(const char* path, uint32_t flags) {
       }
 
       child = vfs_get(parent->fs, child_inode);
+      child->uid = geteuid();
+      child->gid = getegid();
     }
 
     // Done with the parent.
@@ -587,6 +592,11 @@ int vfs_mkdir(const char* path) {
     return child_inode;  // Error :(
   }
 
+  vnode_t* child = vfs_get(parent->fs, child_inode);
+  child->uid = geteuid();
+  child->gid = getegid();
+  VFS_PUT_AND_CLEAR(child);
+
   // We're done!
   VFS_PUT_AND_CLEAR(parent);
   return 0;
@@ -623,6 +633,11 @@ int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
+
+  vnode_t* child = vfs_get(parent->fs, child_inode);
+  child->uid = geteuid();
+  child->gid = getegid();
+  VFS_PUT_AND_CLEAR(child);
 
   // We're done!
   VFS_PUT_AND_CLEAR(parent);
@@ -1014,6 +1029,8 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
+  stat->st_uid = vnode->uid;
+  stat->st_gid = vnode->gid;
   stat->st_rdev = vnode->dev;
   stat->st_size = vnode->len;
   // TODO: stat->st_nlink
@@ -1076,6 +1093,82 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
+  }
+
+  file->refcount--;
+  return result;
+}
+
+static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
+  if (owner < -1 || group < -1) return -EINVAL;
+
+  if (!proc_is_superuser(proc_current())) {
+    if (owner != -1 && owner != geteuid()) return -EPERM;
+    if (vnode->uid != geteuid()) return -EPERM;
+    // TODO(aoates): check group against supplementary group ids as well.
+    if (group != -1 && group != getegid()) return -EPERM;
+  }
+
+  if (owner >= 0) vnode->uid = owner;
+  if (group >= 0) vnode->gid = group;
+
+  return 0;
+}
+
+// TODO(aoates): de-dup this with lstat, and others.
+int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+  if (!path || owner < -1 || group < -1) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  int result = vfs_chown_internal(child, owner, group);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+// TODO(aoates): de-dup this with fstat, and others.
+int vfs_fchown(int fd, uid_t owner, gid_t group) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = vfs_chown_internal(file->vnode, owner, group);
   }
 
   file->refcount--;

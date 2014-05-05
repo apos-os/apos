@@ -23,8 +23,11 @@
 #include "memory/memory.h"
 #include "memory/memobj.h"
 #include "memory/page_alloc.h"
+#include "proc/fork.h"
+#include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/user.h"
 #include "test/ktest.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -86,6 +89,14 @@ static void EXPECT_FILE_EXISTS(const char* path) {
 
 static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
   EXPECT_CAN_CREATE_FILE(path);
+}
+
+static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(path, &stat));
+  KEXPECT_EQ(uid, stat.st_uid);
+  KEXPECT_EQ(gid, stat.st_gid);
 }
 
 // Test that we correctly refcount parent directories when calling vfs_open().
@@ -1409,6 +1420,8 @@ static void mknod_test(void) {
 
   KTEST_BEGIN("mknod(): regular file test");
   KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kRegFile);
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   int fd = vfs_open(kRegFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
@@ -1429,8 +1442,12 @@ static void mknod_test(void) {
   KTEST_BEGIN("mknod(): bath path test");
   KEXPECT_EQ(-ENOENT, vfs_mknod("bad/path/test", VFS_S_IFREG, mkdev(0, 0)));
 
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
   KTEST_BEGIN("mknod(): character device file test");
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kCharDevFile);
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   fd = vfs_open(kCharDevFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
@@ -1438,6 +1455,8 @@ static void mknod_test(void) {
 
   KTEST_BEGIN("mknod(): block device file test");
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kBlockDevFile);
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   fd = vfs_open(kBlockDevFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
@@ -1675,6 +1694,293 @@ static void stat_test(void) {
   // TODO(aoates): test fstat on fds with different modes.
 }
 
+static void initial_owner_test_func(void* arg) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const gid_t kTestGroupA = 3;
+  const gid_t kTestGroupB = 4;
+
+  const char kDir[] = "owner_test_dir";
+  const char kRegFile[] = "owner_test_dir/reg";
+  const char kCharDevFile[] = "owner_test_dir/char";
+  const char kBlockDevFile[] = "owner_test_dir/block";
+
+  KTEST_BEGIN("vfs_open() sets uid/gid: regular file test");
+  KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
+  KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  create_file(kRegFile);
+  EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupB);
+
+  KTEST_BEGIN("vfs_mkdir() sets uid/gid: directory test");
+  EXPECT_OWNER_IS(kDir, kTestUserB, kTestGroupB);
+
+  KTEST_BEGIN("vfs_mknod() sets uid/gid: character device file test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  EXPECT_OWNER_IS(kCharDevFile, kTestUserB, kTestGroupB);
+
+  KTEST_BEGIN("vfs_mknod() sets uid/gid: block device file test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+  EXPECT_OWNER_IS(kBlockDevFile, kTestUserB, kTestGroupB);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
+static void initial_owner_test(void) {
+  pid_t child_pid = proc_fork(&initial_owner_test_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+
+  proc_wait(0x0);
+}
+
+// Helper that opens the given file, runs vfs_fchown() on the file descriptor,
+// then closes it and returns the result.
+static int do_fchown(const char* path, uid_t owner, gid_t group) {
+  int fd = vfs_open(path, VFS_O_RDWR);
+  int result = vfs_fchown(fd, owner, group);
+  vfs_close(fd);
+  return result;
+}
+
+static void non_root_chown_test_func(void* arg) {
+  // TODO(aoates): consolidate these constants?
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const uid_t kTestUserC = 3;
+  const gid_t kTestGroupA = 4;
+  const gid_t kTestGroupB = 5;
+  const gid_t kTestGroupC = 6;
+
+  const char kRootFile[] = "chown_test_dir/rootfile";
+  const char kUAGA[] = "chown_test_dir/userAgrpA";
+  const char kUAGB[] = "chown_test_dir/userAgrpB";
+  const char kUBGA[] = "chown_test_dir/userBgrpA";
+  const char kUBGB[] = "chown_test_dir/userBgrpB";
+  const char kUCGA[] = "chown_test_dir/userCgrpA";
+  const char kUCGB[] = "chown_test_dir/userCgrpB";
+
+  KTEST_BEGIN("vfs_lchown()/vfs_fchown(): setup for user tests");
+  create_file(kRootFile);
+  create_file(kUAGA);
+  create_file(kUAGB);
+  create_file(kUBGA);
+  create_file(kUBGB);
+  create_file(kUCGA);
+  create_file(kUCGB);
+
+  KEXPECT_EQ(0, vfs_lchown(kUAGA, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kUAGB, kTestUserA, kTestGroupB));
+  KEXPECT_EQ(0, vfs_lchown(kUBGA, kTestUserB, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kUBGB, kTestUserB, kTestGroupB));
+  KEXPECT_EQ(0, vfs_lchown(kUCGA, kTestUserC, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kUCGB, kTestUserC, kTestGroupB));
+
+  KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
+  KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
+
+  KTEST_BEGIN("chown(): cannot change uid if non-root");
+  KEXPECT_EQ(-EPERM, vfs_lchown(kRootFile, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUAGA, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUAGB, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUBGA, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUBGB, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kRootFile, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUAGA, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUAGB, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUBGA, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUBGB, kTestUserC, -1));
+
+  KTEST_BEGIN("chown(): can change uid to same uid if owner (== euid)");
+  KEXPECT_EQ(0, vfs_lchown(kUBGA, kTestUserB, -1));
+  KEXPECT_EQ(0, vfs_lchown(kUBGB, kTestUserB, -1));
+  KEXPECT_EQ(0, do_fchown(kUBGA, kTestUserB, -1));
+  KEXPECT_EQ(0, do_fchown(kUBGB, kTestUserB, -1));
+
+  KTEST_BEGIN("chown(): cannot change uid to same uid if not owner (== ruid)");
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUAGA, kTestUserA, -1));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUAGB, kTestUserA, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUAGA, kTestUserA, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUAGB, kTestUserA, -1));
+
+  KTEST_BEGIN("chown(): cannot change uid to same uid if not owner (unrelated uid)");
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUCGA, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUCGB, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUCGA, kTestUserC, -1));
+  KEXPECT_EQ(-EPERM, do_fchown(kUCGB, kTestUserC, -1));
+
+  KTEST_BEGIN("chown(): cannot change gid to egid if not owner (== ruid)");
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUAGA, -1, kTestGroupB));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUAGB, -1, kTestGroupB));
+  KEXPECT_EQ(-EPERM, do_fchown(kUAGA, -1, kTestGroupB));
+  KEXPECT_EQ(-EPERM, do_fchown(kUAGB, -1, kTestGroupB));
+
+  KTEST_BEGIN("chown(): cannot change gid to egid if not owner (unrelated uid)");
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUCGA, -1, kTestGroupB));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUCGB, -1, kTestGroupB));
+  KEXPECT_EQ(-EPERM, do_fchown(kUCGA, -1, kTestGroupB));
+  KEXPECT_EQ(-EPERM, do_fchown(kUCGB, -1, kTestGroupB));
+
+  KTEST_BEGIN("chown(): can change gid to egid if owner (== euid)");
+  KEXPECT_EQ(0, vfs_lchown(kUBGA, -1, kTestGroupB));
+  KEXPECT_EQ(0, vfs_lchown(kUBGB, -1, kTestGroupB));
+  EXPECT_OWNER_IS(kUBGA, kTestUserB, kTestGroupB);
+  EXPECT_OWNER_IS(kUBGB, kTestUserB, kTestGroupB);
+  KEXPECT_EQ(0, do_fchown(kUBGA, -1, kTestGroupB));
+  KEXPECT_EQ(0, do_fchown(kUBGB, -1, kTestGroupB));
+  EXPECT_OWNER_IS(kUBGA, kTestUserB, kTestGroupB);
+  EXPECT_OWNER_IS(kUBGB, kTestUserB, kTestGroupB);
+
+  // Test again with owner explicitly set.
+  KEXPECT_EQ(0, vfs_lchown(kUBGA, kTestUserB, kTestGroupB));
+  KEXPECT_EQ(0, vfs_lchown(kUBGB, kTestUserB, kTestGroupB));
+  KEXPECT_EQ(0, do_fchown(kUBGA, kTestUserB, kTestGroupB));
+  KEXPECT_EQ(0, do_fchown(kUBGB, kTestUserB, kTestGroupB));
+
+  KTEST_BEGIN("chown(): cannot change gid to non-egid if owner (== euid)");
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUBGA, -1, kTestGroupA));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUBGB, -1, kTestGroupA));
+  KEXPECT_EQ(-EPERM, do_fchown(kUBGA, -1, kTestGroupA));
+  KEXPECT_EQ(-EPERM, do_fchown(kUBGB, -1, kTestGroupA));
+
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUBGA, -1, kTestGroupC));
+  KEXPECT_EQ(-EPERM, vfs_lchown(kUBGB, -1, kTestGroupC));
+  KEXPECT_EQ(-EPERM, do_fchown(kUBGA, -1, kTestGroupC));
+  KEXPECT_EQ(-EPERM, do_fchown(kUBGB, -1, kTestGroupC));
+
+  // TODO(aoates): test setting gid to a supplementary group ID.
+
+  vfs_unlink(kRootFile);
+  vfs_unlink(kUAGA);
+  vfs_unlink(kUAGB);
+  vfs_unlink(kUBGA);
+  vfs_unlink(kUBGB);
+  vfs_unlink(kUCGA);
+  vfs_unlink(kUCGB);
+}
+
+// Do a basic lchown/fchown test for the given file.
+#define BASIC_CHOWN_TEST(path, filetype) do { \
+  KTEST_BEGIN("vfs_lchown(): " filetype); \
+  EXPECT_OWNER_IS(path, 0, 0); \
+  KEXPECT_EQ(0, vfs_lchown(path, kTestUserA, kTestGroupA)); \
+  EXPECT_OWNER_IS(path, kTestUserA, kTestGroupA); \
+\
+  KTEST_BEGIN("vfs_fchown(): " filetype); \
+  int fd = vfs_open(path, VFS_O_RDONLY); \
+  KEXPECT_GE(fd, 0); \
+  KEXPECT_EQ(0, vfs_fchown(fd, kTestUserB, kTestGroupB)); \
+  EXPECT_OWNER_IS(path, kTestUserB, kTestGroupB); \
+  KEXPECT_EQ(0, vfs_close(fd)); \
+} while (0);
+
+// TODO(aoates): rewrite fchown tests to use helper
+static void chown_test(void) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const gid_t kTestGroupA = 3;
+  const gid_t kTestGroupB = 4;
+
+  const char kDir[] = "chown_test_dir";
+  const char kRegFile[] = "chown_test_dir/reg";
+  const char kCharDevFile[] = "chown_test_dir/char";
+  const char kBlockDevFile[] = "chown_test_dir/block";
+
+  KTEST_BEGIN("vfs_lchown()/vfs_fchown(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  create_file(kRegFile);
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+
+  KTEST_BEGIN("vfs_lchown(): bad arguments");
+  KEXPECT_EQ(-EINVAL, vfs_lchown(0x0, -1, -1));
+  KEXPECT_EQ(-EINVAL, vfs_lchown(kRegFile, -5, -1));
+  KEXPECT_EQ(-EINVAL, vfs_lchown(kRegFile, -1, -5));
+
+  KTEST_BEGIN("vfs_fchown(): bad arguments");
+  int fd = vfs_open(kRegFile, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_fchown(-1, -1, -1));
+  KEXPECT_EQ(-EINVAL, vfs_fchown(fd, -5, -1));
+  KEXPECT_EQ(-EINVAL, vfs_fchown(fd, -1, -5));
+  vfs_close(fd);
+  KEXPECT_EQ(-EBADF, vfs_fchown(fd, -1, -1));
+
+  // Regular fchown/lchown tests for each file type.
+  BASIC_CHOWN_TEST(kRegFile, "regular file");
+  BASIC_CHOWN_TEST(kDir, "directory");
+  BASIC_CHOWN_TEST(kCharDevFile, "character device");
+  BASIC_CHOWN_TEST(kBlockDevFile, "block device");
+
+  // Only uid/gid tests.
+  KTEST_BEGIN("vfs_lchown(): only setting uid");
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, kTestUserB, -1));
+  EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupA);
+
+  KTEST_BEGIN("vfs_fchown(): only setting uid");
+  fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fchown(fd, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_fchown(fd, kTestUserB, -1));
+  EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupA);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_lchown(): only setting gid");
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, -1, kTestGroupB));
+  EXPECT_OWNER_IS(kRegFile, kTestUserA, kTestGroupB);
+
+  KTEST_BEGIN("vfs_fchown(): only setting gid");
+  fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fchown(fd, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_fchown(fd, -1, kTestGroupB));
+  EXPECT_OWNER_IS(kRegFile, kTestUserA, kTestGroupB);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_lchown(): setting neither uid nor gid");
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, -1, -1));
+  EXPECT_OWNER_IS(kRegFile, kTestUserA, kTestGroupA);
+
+  KTEST_BEGIN("vfs_fchown(): setting neither uid nor gid");
+  fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fchown(fd, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_fchown(fd, -1, -1));
+  EXPECT_OWNER_IS(kRegFile, kTestUserA, kTestGroupA);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_lchown(): setting uid/gid to 0");
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kRegFile, 0, 0));
+  EXPECT_OWNER_IS(kRegFile, 0, 0);
+
+  KTEST_BEGIN("vfs_fchown(): uid/gid to 0");
+  fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fchown(fd, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_fchown(fd, 0, 0));
+  EXPECT_OWNER_IS(kRegFile, 0, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&non_root_chown_test_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+
+  // TODO(aoates): tests:
+  //  * fchown/lchown resets ISUID/ISGID (if root and not root, only for
+  //  executable files).
+  //  * ISGID for non-group-executable file NOT reset.
+  //  * maybe: fchown() with different fd flags? (RW vs RD_ONLY etc)
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -1710,6 +2016,8 @@ void vfs_test(void) {
 
   fs_dev_test();
   stat_test();
+  initial_owner_test();
+  chown_test();
 
   reverse_path_test();
 

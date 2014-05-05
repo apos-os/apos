@@ -1019,6 +1019,8 @@ static int ext2_get_vnode(vnode_t* vnode) {
     return -ENOTSUP;
   }
   vnode->len = inode.i_size;
+  vnode->uid = inode.i_uid;
+  vnode->gid = inode.i_gid;
   return 0;
 }
 
@@ -1043,6 +1045,8 @@ static int ext2_put_vnode(vnode_t* vnode) {
   }
 
   inode.i_size = vnode->len;
+  inode.i_uid = vnode->uid;
+  inode.i_gid = vnode->gid;
   result = write_inode(fs, vnode->num, &inode);
 
   if (inode.i_links_count == 0) {
