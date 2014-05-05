@@ -29,7 +29,7 @@ BOOTLOADER	= grub
 
 HD_IMAGES = hd1.img hd2.img hd3.img hd4.img
 
-all: $(BUILD_OUT)/kernel.img $(HD_IMAGES)
+all: $(BUILD_OUT)/kernel.bin.stripped $(HD_IMAGES)
 
 # Macros for Sources.mk.
 define SOURCES_SUBDIR
