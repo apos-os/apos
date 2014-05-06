@@ -63,6 +63,7 @@ struct vnode {
   // is still open.
   uid_t uid;
   gid_t gid;
+  mode_t mode;  // Doesn't include type bits (just permissions + sticky)
 
   int refcount;
 
