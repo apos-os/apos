@@ -260,6 +260,13 @@ static vnode_t* get_root_for_path(const char* path) {
   }
 }
 
+// Returns non-zero if the given mode is a valid create mode_t (i.e. can be
+// passed to chmod() or as the mode argument to open()).
+static int is_valid_create_mode(mode_t mode) {
+  return (mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+                   VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX)) == 0;
+}
+
 void vfs_init() {
   KASSERT(g_root_fs == 0);
 
@@ -462,6 +469,16 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
     return -EINVAL;
   }
+  mode_t create_mode = 0;
+  if (flags & VFS_O_CREAT) {
+    va_list args;
+    va_start(args, flags);
+    create_mode = va_arg(args, mode_t);
+    va_end(args);
+  }
+
+  if (!is_valid_create_mode(create_mode)) return -EINVAL;
+
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
@@ -502,6 +519,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
       child = vfs_get(parent->fs, child_inode);
       child->uid = geteuid();
       child->gid = getegid();
+      child->mode = create_mode;
     }
 
     // Done with the parent.
@@ -1178,10 +1196,7 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
 }
 
 static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
-  if ((mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID |
-                VFS_S_ISGID | VFS_S_ISVTX)) != 0) {
-    return -EINVAL;
-  }
+  if (!is_valid_create_mode(mode)) return -EINVAL;
 
   if (!proc_is_superuser(proc_current()) &&
       vnode->uid != geteuid()) {

@@ -2136,6 +2136,50 @@ static void chmod_test(void) {
   //  * writing a regular file clears ISUID/ISGID
 }
 
+static void open_mode_test(void) {
+  const char kDir[] = "open_with_mode_test";
+  const char kRegFile[] = "open_with_mode_test/reg";
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with mode test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with mode test");
+  int fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, 0);
+  KEXPECT_EQ(VFS_S_IFREG, get_mode(kRegFile));
+  vfs_close(fd);
+  vfs_unlink(kRegFile);
+
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRUSR | VFS_S_ISUID);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR | VFS_S_ISUID, get_mode(kRegFile));
+  vfs_close(fd);
+  vfs_unlink(kRegFile);
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with invalid mode test");
+  KEXPECT_EQ(-EINVAL,
+             vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IFREG));
+  KEXPECT_EQ(-EINVAL, vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, 0xFFFFF));
+  KEXPECT_EQ(-EINVAL, vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, -1));
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with mode on existing file");
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRUSR);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRUSR | VFS_S_IRGRP);
+  // Shouldn't have changed the mode.
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_open(): open with mode on existing file, no O_CREAT");
+  fd = vfs_open(kRegFile, VFS_O_RDWR, VFS_S_IRUSR | VFS_S_IRGRP);
+  // Shouldn't have changed the mode.
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2176,6 +2220,7 @@ void vfs_test(void) {
 
   mode_flags_test();
   chmod_test();
+  open_mode_test();
 
   reverse_path_test();
 
