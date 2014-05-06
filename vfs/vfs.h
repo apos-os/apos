@@ -15,6 +15,7 @@
 #ifndef APOO_VFS_H
 #define APOO_VFS_H
 
+#include <stdarg.h>
 #include <stdint.h>
 
 #include "common/posix_types.h"
@@ -265,8 +266,9 @@ void vfs_put(vnode_t* n);
 // If VFS_O_CREAT is given, the file will be created (if it doesn't already
 // exist).
 //
-// TODO(aoates): mode!
-int vfs_open(const char* path, uint32_t flags);
+// If VFS_O_CREAT is given in |flags|, an additional argument (of type mode_t)
+// is taken to be the mode of the file to be created (if necessary).
+int vfs_open(const char* path, uint32_t flags, ...);
 
 // Close the given file descriptor.  Returns 0 on success, or -error.
 int vfs_close(int fd);

@@ -456,7 +456,7 @@ int vfs_get_vnode_for_path(const char* path) {
   return num;
 }
 
-int vfs_open(const char* path, uint32_t flags) {
+int vfs_open(const char* path, uint32_t flags, ...) {
   // Check arguments.
   const uint32_t mode = flags & VFS_MODE_MASK;
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
