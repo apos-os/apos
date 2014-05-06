@@ -93,6 +93,7 @@ static void writeback_metadata(ramfs_inode_t* inode) {
   disk_inode->vnode.len = inode->vnode.len;
   disk_inode->vnode.uid = inode->vnode.uid;
   disk_inode->vnode.gid = inode->vnode.gid;
+  disk_inode->vnode.mode = inode->vnode.mode;
   disk_inode->data = inode->data;
   disk_inode->link_count = inode->link_count;
 }
@@ -251,6 +252,7 @@ int ramfs_get_vnode(vnode_t* n) {
   n->len = inode->vnode.len;
   n->uid = inode->vnode.uid;
   n->gid = inode->vnode.gid;
+  n->mode = inode->vnode.mode;
   n->dev = inode->vnode.dev;
   kstrcpy(n->fstype, "ramfs");
   ((ramfs_inode_t*)n)->data = inode->data;
