@@ -39,6 +39,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->type = VNODE_UNINITIALIZED;
   n->len = -1;
   n->uid = -1;
+  n->mode = 0;
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
@@ -1029,6 +1030,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
+  stat->st_mode |= vnode->mode;
   stat->st_uid = vnode->uid;
   stat->st_gid = vnode->gid;
   stat->st_rdev = vnode->dev;
@@ -1175,10 +1177,76 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   return result;
 }
 
+static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
+  if ((mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID |
+                VFS_S_ISGID | VFS_S_ISVTX)) != 0) {
+    return -EINVAL;
+  }
+
+  if (!proc_is_superuser(proc_current()) &&
+      vnode->uid != geteuid()) {
+    return -EPERM;
+  }
+
+  vnode->mode = mode;
+  return 0;
+}
+
+// TODO(aoates): de-dup this with lstat, and others.
 int vfs_lchmod(const char* path, mode_t mode) {
-  return -ENOTSUP;
+  if (!path) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  int result = vfs_chmod_internal(child, mode);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
 }
 
 int vfs_fchmod(int fd, mode_t mode) {
-  return -ENOTSUP;
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = vfs_chmod_internal(file->vnode, mode);
+  }
+
+  file->refcount--;
+  return result;
 }

@@ -99,6 +99,13 @@ static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
   KEXPECT_EQ(gid, stat.st_gid);
 }
 
+static mode_t get_mode(const char* path) {
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(path, &stat));
+  return stat.st_mode;
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test(void) {
   KTEST_BEGIN("vfs_open(): parent refcount test");
@@ -2003,6 +2010,132 @@ static void mode_flags_test(void) {
   }
 }
 
+// Do a basic lchmod/fchmod test for the given file.
+#define BASIC_CHMOD_TEST(path, filetype, mode_filetype) do { \
+  KTEST_BEGIN("vfs_lchmod(): " filetype); \
+  KEXPECT_NE(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
+  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXO)); \
+  KEXPECT_EQ(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
+\
+  KTEST_BEGIN("vfs_fchmod(): " filetype); \
+  int fd = vfs_open(path, VFS_O_RDONLY); \
+  KEXPECT_GE(fd, 0); \
+  KEXPECT_NE(VFS_S_IRWXG | mode_filetype, get_mode(path)); \
+  KEXPECT_EQ(0, vfs_fchmod(fd, VFS_S_IRWXG)); \
+  KEXPECT_EQ(VFS_S_IRWXG | mode_filetype, get_mode(path)); \
+  KEXPECT_EQ(0, vfs_close(fd)); \
+\
+  KTEST_BEGIN("vfs_lchmod(): SUID/SGID/SVXT for " filetype); \
+  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXU | VFS_S_ISUID | \
+                           VFS_S_ISGID | VFS_S_ISVTX)); \
+  KEXPECT_EQ(VFS_S_IRWXU | VFS_S_ISUID | VFS_S_ISGID |  VFS_S_ISVTX | \
+             mode_filetype, get_mode(path)); \
+\
+} while (0);
+
+static void non_root_chmod_test_func(void* arg) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const uid_t kTestGroupA = 4;
+  const uid_t kTestGroupB = 5;
+
+  const char kRegFileA[] = "chmod_test_dir/regA";
+  const char kRegFileB[] = "chmod_test_dir/regB";
+
+  KTEST_BEGIN("vfs_lchmod(): non-root test setup");
+  create_file(kRegFileA);
+  create_file(kRegFileB);
+  KEXPECT_EQ(0, vfs_lchown(kRegFileA, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kRegFileB, kTestUserB, kTestGroupB));
+
+  KTEST_BEGIN("vfs_lchmod(): root can always chmod");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFileA, VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IRWXO | VFS_S_IFREG, get_mode(kRegFileA));
+
+  KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
+  KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
+
+  KTEST_BEGIN("vfs_lchmod(): non-root owner can chmod");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFileB, VFS_S_IRUSR));
+  KEXPECT_EQ(VFS_S_IRUSR | VFS_S_IFREG, get_mode(kRegFileB));
+
+  KTEST_BEGIN("vfs_lchmod(): non-owner cannot chmod");
+  KEXPECT_EQ(-EPERM, vfs_lchmod(kRegFileA, VFS_S_IRUSR));
+
+  vfs_unlink(kRegFileA);
+  vfs_unlink(kRegFileB);
+}
+
+static void chmod_test(void) {
+  const char kDir[] = "chmod_test_dir";
+  const char kRegFile[] = "chmod_test_dir/reg";
+  const char kCharDevFile[] = "chmod_test_dir/char";
+  const char kBlockDevFile[] = "chmod_test_dir/block";
+
+  KTEST_BEGIN("vfs_lchmod()/vfs_fchmod(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  create_file(kRegFile);
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+
+  KTEST_BEGIN("vfs_lchmod(): invalid arguments test");
+  KEXPECT_EQ(-EINVAL, vfs_lchmod(0x0, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-ENOENT, vfs_lchmod("chmod_test_dir/notafile", VFS_S_IRWXU));
+
+  KTEST_BEGIN("vfs_fchmod(): invalid arguments test");
+  int fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_fchmod(-1, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_fchmod(fd, 0xFFFFF));
+  vfs_close(fd);
+  KEXPECT_EQ(-EBADF, vfs_fchmod(fd, VFS_S_IRWXU));
+
+  BASIC_CHMOD_TEST(kRegFile, "regular file", VFS_S_IFREG);
+  BASIC_CHMOD_TEST(kDir, "directory", VFS_S_IFDIR);
+  BASIC_CHMOD_TEST(kCharDevFile, "character device", VFS_S_IFCHR);
+  BASIC_CHMOD_TEST(kBlockDevFile, "block device", VFS_S_IFBLK);
+
+  KTEST_BEGIN("vfs_lchmod(): decreasing permissions");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+             VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO, get_mode(kRegFile));
+
+  KTEST_BEGIN("vfs_lchmod(): increasing permissions");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO |
+                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO |
+             VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
+
+  KTEST_BEGIN("vfs_lchmod(): keep same permissions");
+  const mode_t kAllPerms = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+      VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX;
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+
+  // TODO(aoates): tests:
+  //  * non-root changing the mode clears ISGID if groups don't match.
+  //  * writing a regular file clears ISUID/ISGID
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2042,6 +2175,7 @@ void vfs_test(void) {
   chown_test();
 
   mode_flags_test();
+  chmod_test();
 
   reverse_path_test();
 
