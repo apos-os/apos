@@ -43,13 +43,13 @@
 
 // Helper method to create a file for a test.
 static void create_file(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
   KASSERT(fd >= 0);
   vfs_close(fd);
 }
 
 static void create_file_with_data(const char* path, const char* data) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
   KASSERT(fd >= 0);
   const int result = vfs_write(fd, data, kstrlen(data));
   KASSERT(result == kstrlen(data));
@@ -69,7 +69,7 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
 // Helper method that verifies that the given file can be created (then unlinks
 // it).
 static void EXPECT_CAN_CREATE_FILE(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(fd, 0);
   if (fd >= 0) {
     vfs_close(fd);
@@ -112,7 +112,7 @@ static void open_parent_refcount_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("/ref_dir1"));
   KEXPECT_EQ(0, vfs_mkdir("/ref_dir1/dir2"));
 
-  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
+  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(fd1, 0);
 
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
@@ -120,7 +120,7 @@ static void open_parent_refcount_test(void) {
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(1, "/ref_dir1/dir2/test1");
 
-  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
+  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(fd2, 0);
 
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
@@ -174,15 +174,15 @@ static void open_test(void) {
   EXPECT_VNODE_REFCOUNT(-ENOENT, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
@@ -203,7 +203,7 @@ static void open_test(void) {
   vfs_log_cache();
 
   // Make sure we reuse the fd.
-  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   EXPECT_VNODE_REFCOUNT(1, "/test3");
@@ -235,7 +235,7 @@ static void open_test(void) {
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
-  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
 
   open_parent_refcount_test();
@@ -254,7 +254,7 @@ static void mkdir_test(void) {
   KTEST_BEGIN("vfs_mkdir() test");
 
   // Make sure we have some normal files around.
-  const int test1_fd = vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR);
+  const int test1_fd = vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(test1_fd, 0);
 
   KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
@@ -359,7 +359,7 @@ static void file_table_reclaim_test(void) {
   KEXPECT_EQ(0, vfs_mkdir(kTestDir));
   int files_opened = 0;
   for (int i = 0; i < VFS_MAX_FILES * 2; ++i) {
-    const int fd = vfs_open(kTestFile, VFS_O_CREAT | VFS_O_RDWR);
+    const int fd = vfs_open(kTestFile, VFS_O_CREAT | VFS_O_RDWR, 0);
     if (fd < 0) {
       KEXPECT_GE(fd, 0);
       break;
@@ -399,7 +399,7 @@ static void* vfs_open_thread_safety_test_func(void* arg) {
   thread_safety_test_t* test = (thread_safety_test_t*)arg;
   for (int i = 0; i < THREAD_SAFETY_TEST_ITERS; ++i) {
     int fd = vfs_open("/thread_safety_test/a/./b/../b/thread_safety_test_file",
-                      VFS_O_CREAT | VFS_O_RDWR);
+                      VFS_O_CREAT | VFS_O_RDWR, 0);
     KASSERT(fd >= 0);
 
     kmutex_lock(&test->mu);
@@ -461,7 +461,7 @@ static void vfs_open_thread_safety_test(void) {
 
 static void unlink_test(void) {
   KTEST_BEGIN("vfs_unlink(): basic test");
-  int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR);
+  int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR, 0);
   vfs_close(fd);
   KEXPECT_EQ(0, vfs_unlink("/unlink"));
   KEXPECT_EQ(-ENOENT, vfs_open("/unlink", VFS_O_RDWR));
@@ -472,13 +472,13 @@ static void unlink_test(void) {
   KTEST_BEGIN("vfs_unlink(): in a directory");
   vfs_mkdir("/unlink");
   vfs_mkdir("/unlink/a");
-  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR);
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR, 0);
   vfs_close(fd);
   KEXPECT_EQ(0, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
   KEXPECT_EQ(-ENOENT, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
 
   KTEST_BEGIN("vfs_unlink(): non-directory in path");
-  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR);
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR, 0);
   vfs_close(fd);
   KEXPECT_EQ(-ENOTDIR, vfs_unlink("/unlink/a/file/in_file"));
   KEXPECT_EQ(0, vfs_unlink("/unlink/a/file")); // Clean up.
@@ -852,7 +852,7 @@ static void rw_mode_test(void) {
   char buf[kBufSize];
 
   // Create a file and put some data in it.
-  int fd = vfs_open(kFile, VFS_O_CREAT | VFS_O_RDWR);
+  int fd = vfs_open(kFile, VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_EQ(6, vfs_write(fd, "abcdef", 6));
   vfs_close(fd);
 
@@ -1168,7 +1168,7 @@ static void* create_thread_test_func(void* arg) {
   for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
     char buf[512];
     ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
-    int fd = vfs_open(buf, VFS_O_CREAT | VFS_O_RDWR);
+    int fd = vfs_open(buf, VFS_O_CREAT | VFS_O_RDWR, 0);
     if (fd < 0) {
       KEXPECT_GE(fd, -0);
     } else {
@@ -1310,7 +1310,7 @@ static void create_in_unlinked_directory(void) {
   KEXPECT_EQ(0, vfs_rmdir(kDir));
 
   // Try to create a file in the directory.  It should fail.
-  const int fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT);
+  const int fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT, 0);
   KEXPECT_EQ(-ENOENT, fd2);
 
   EXPECT_GETDENTS(fd, 0, 0x0);
@@ -1324,7 +1324,7 @@ static void read_page_test(const char* filename, const int size) {
   const uint32_t page_buf_phys = page_frame_alloc();
   void* const page_buf = (void*)phys2virt(page_buf_phys);
 
-  int fd = vfs_open(filename, VFS_O_RDWR | VFS_O_CREAT);
+  int fd = vfs_open(filename, VFS_O_RDWR | VFS_O_CREAT, 0);
   KEXPECT_GE(fd, 0);
 
   // Create a unique pattern.
@@ -1378,7 +1378,7 @@ static void memobj_test(void) {
 
   KTEST_BEGIN("vfs_get_memobj() mode test");
   const char kFile[] = "memobj_test/file";
-  int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT);
+  int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT, 0);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
   KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));

@@ -49,7 +49,7 @@ static void write_test_file(const char name[], char contents) {
   // the vnode page buffer.
   vfs_unlink(name);
 
-  int fd = vfs_open(name, VFS_O_RDWR | VFS_O_CREAT);
+  int fd = vfs_open(name, VFS_O_RDWR | VFS_O_CREAT, 0);
   for (int page = 0; page < kTestFilePages; ++page) {
     kmemset(buf, contents + page, PAGE_SIZE);
     int bytes_left = PAGE_SIZE;
@@ -132,7 +132,7 @@ static void flush_all_mappings(void* start, int pages) {
 
 static void mmap_invalid_args(void) {
   const char kFile[] = "mmap_file";
-  const int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT);
+  const int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT, 0);
   KEXPECT_GE(fd, 0);
   void* addr_out;
 

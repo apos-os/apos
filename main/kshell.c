@@ -459,7 +459,7 @@ static void write_cmd(int argc, char* argv[]) {
     return;
   }
 
-  const int fd = vfs_open(argv[1], VFS_O_RDWR | VFS_O_CREAT);
+  const int fd = vfs_open(argv[1], VFS_O_RDWR | VFS_O_CREAT, 0);
   if (fd < 0) {
     ksh_printf("error: couldn't open %s: %s\n", argv[1], errorname(-fd));
     return;
@@ -492,7 +492,7 @@ static void cp_cmd(int argc, char* argv[]) {
     return;
   }
 
-  const int dst_fd = vfs_open(argv[2], VFS_O_WRONLY | VFS_O_CREAT);
+  const int dst_fd = vfs_open(argv[2], VFS_O_WRONLY | VFS_O_CREAT, 0);
   if (dst_fd < 0) {
     ksh_printf("error: couldn't open %s: %s\n", argv[2], errorname(-dst_fd));
     vfs_close(src_fd);
