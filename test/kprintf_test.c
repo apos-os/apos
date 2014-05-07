@@ -72,4 +72,28 @@ void kprintf_test(void) {
   ksprintf(buf, "string:%s, int:%i, int:%i, hex:%x, percent:%%",
            "abc", 10, -10, 0xbeef);
   KEXPECT_STREQ("string:abc, int:10, int:-10, hex:BEEF, percent:%", buf);
+
+  KTEST_BEGIN("ksprintf(): field width");
+  ksprintf(buf, "%1d", 5);
+  KEXPECT_STREQ("5", buf);
+  ksprintf(buf, "%2d", 5);
+  KEXPECT_STREQ(" 5", buf);
+  ksprintf(buf, "%10d", 5);
+  KEXPECT_STREQ("         5", buf);
+  ksprintf(buf, "%2d", 123);
+  KEXPECT_STREQ("123", buf);
+  ksprintf(buf, "%2d", -123);
+  KEXPECT_STREQ("-123", buf);
+  ksprintf(buf, "%2d", -1);
+  KEXPECT_STREQ("-1", buf);
+  ksprintf(buf, "%3d", -1);
+  KEXPECT_STREQ(" -1", buf);
+  ksprintf(buf, "%3s", "a");
+  KEXPECT_STREQ("  a", buf);
+  ksprintf(buf, "%3x", 12);
+  KEXPECT_STREQ("  C", buf);
+  ksprintf(buf, "%6x", 0xbeef);
+  KEXPECT_STREQ("  BEEF", buf);
+  ksprintf(buf, "%3s %4d %6x", "a", 12, 0xbeef);
+  KEXPECT_STREQ("  a   12   BEEF", buf);
 }

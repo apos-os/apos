@@ -19,6 +19,10 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 
+static inline int is_digit(char c) {
+  return c >= '0' && c <= '9';
+}
+
 int ksprintf(char* str, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
@@ -42,6 +46,14 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     } else {
       if (!*fmt) {
         continue;
+      }
+
+      // Field width.
+      int field_width = 0;
+      while (*fmt && is_digit(*fmt)) {
+        field_width *= 10;
+        field_width += *fmt - '0';
+        fmt++;
       }
 
       switch (*fmt) {
@@ -75,6 +87,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
           s = "";
       }
       len = kstrlen(s);
+      for (int i = 0; i + len < field_width; ++i) *str++ = ' ';
       kstrncpy(str, s, len);
       str += len;
 
