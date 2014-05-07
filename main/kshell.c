@@ -368,7 +368,38 @@ static void ls_cmd(int argc, char* argv[]) {
       dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
       buf_offset += ent->length;
       if (long_mode) {
-        ksh_printf("[%d] %s\n", ent->vnode, ent->name);
+        // TODO(aoates): use fstatat()
+        char child_path[1000];
+        kstrcpy(child_path, path);
+        kstrcat(child_path, "/");
+        kstrcat(child_path, ent->name);
+
+        apos_stat_t stat;
+        const int error = vfs_lstat(child_path, &stat);
+        if (error < 0) {
+          ksh_printf("<unable to stat %s>\n", ent->name);
+        } else {
+          char mode[11];
+          switch (stat.st_mode & VFS_S_IFMT) {
+            case VFS_S_IFREG: mode[0] = '-'; break;
+            case VFS_S_IFDIR: mode[0] = 'd'; break;
+            case VFS_S_IFBLK: mode[0] = 'b'; break;
+            case VFS_S_IFCHR: mode[0] = 'c'; break;
+            default: mode[0] = '?'; break;
+          }
+          mode[1] = stat.st_mode & VFS_S_IRUSR ? 'r' : '-';
+          mode[2] = stat.st_mode & VFS_S_IWUSR ? 'w' : '-';
+          mode[3] = stat.st_mode & VFS_S_IXUSR ? 'x' : '-';
+          mode[4] = stat.st_mode & VFS_S_IRGRP ? 'r' : '-';
+          mode[5] = stat.st_mode & VFS_S_IWGRP ? 'w' : '-';
+          mode[6] = stat.st_mode & VFS_S_IXGRP ? 'x' : '-';
+          mode[7] = stat.st_mode & VFS_S_IROTH ? 'r' : '-';
+          mode[8] = stat.st_mode & VFS_S_IWOTH ? 'w' : '-';
+          mode[9] = stat.st_mode & VFS_S_IXOTH ? 'x' : '-';
+          mode[10] = '\0';
+          ksh_printf("%s [%3d] %5d %5d %10d %s\n", mode, ent->vnode,
+                     stat.st_uid, stat.st_gid, stat.st_size, ent->name);
+        }
       } else {
         ksh_printf("%s\n", ent->name);
       }
