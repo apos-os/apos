@@ -181,7 +181,7 @@ static void make_fs_device(int vfs_type, int major, int minor) {
 
 void dev_init_fs() {
   const int kBufSize = 512;
-  vfs_mkdir("/dev");
+  vfs_mkdir("/dev", 0);
 
   const int dev_fd = vfs_open("/dev", VFS_O_RDONLY);
   KASSERT(dev_fd >= 0);

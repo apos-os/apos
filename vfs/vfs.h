@@ -274,8 +274,7 @@ int vfs_open(const char* path, uint32_t flags, ...);
 int vfs_close(int fd);
 
 // Make a directory at the given path.  Returns 0 on success, or -error.
-// TODO(aoates): mode
-int vfs_mkdir(const char* path);
+int vfs_mkdir(const char* path, mode_t mode);
 
 // Create a file system node (regular file or special file).  mode must be one
 // of the supported file types, bitwise OR'd with the mode of the file.

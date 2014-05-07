@@ -381,7 +381,7 @@ static void mkdir_cmd(int argc, char* argv[]) {
     ksh_printf("usage: mkdir <path>\n");
     return;
   }
-  const int result = vfs_mkdir(argv[1]);
+  const int result = vfs_mkdir(argv[1], 0);
   if (result) {
     ksh_printf("error: vfs_mkdir(): %s\n", errorname(-result));
   }
