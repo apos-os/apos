@@ -624,7 +624,7 @@ int vfs_mkdir(const char* path, mode_t mode) {
   return 0;
 }
 
-int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev) {
+int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];

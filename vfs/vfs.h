@@ -278,8 +278,7 @@ int vfs_mkdir(const char* path, mode_t mode);
 
 // Create a file system node (regular file or special file).  mode must be one
 // of the supported file types, bitwise OR'd with the mode of the file.
-// TODO(aoates): implement mode
-int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev);
+int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev);
 
 // Remove an empty directory. Returns 0 on success, or -error.
 int vfs_rmdir(const char* path);

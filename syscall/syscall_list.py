@@ -137,7 +137,7 @@ AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', 'user/fs.h',
 AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h', 'user/fs.h',
     'int', [
     'const char*:path:s',
-    'uint32_t:mode:u',
+    'mode_t:mode:u',
     'int:dev_major:u',
     'int:dev_minor:u'],
     generate_user_stub=False)
