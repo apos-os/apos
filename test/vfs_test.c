@@ -1425,6 +1425,11 @@ static void mknod_test(void) {
 
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
+  KTEST_BEGIN("mknod(): invalid file type test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFMT, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, 0xffff, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
   KTEST_BEGIN("mknod(): regular file test");
   KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
   EXPECT_VNODE_REFCOUNT(0, kRegFile);
@@ -2201,6 +2206,39 @@ static void mkdir_mode_test(void) {
   vfs_rmdir(kDir);
 }
 
+static void mknod_mode_test(void) {
+  const char kDir[] = "mknod_mode_test_dir";
+  const char kRegFile[] = "mknod_mode_test_dir/reg";
+  const char kCharDevFile[] = "mknod_mode_test_dir/char";
+  const char kBlockDevFile[] = "mknod_mode_test_dir/block";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  KTEST_BEGIN("mknod(): invalid mode test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0xffff, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | -1, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0x8000, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): regular file w/ mode test");
+  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG | VFS_S_IRWXU, mkdev(0, 0)));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
+
+  KTEST_BEGIN("mknod(): character device file w/ mode test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR | VFS_S_IROTH,
+                          mkdev(0, 0)));
+  KEXPECT_EQ(VFS_S_IFCHR | VFS_S_IROTH, get_mode(kCharDevFile));
+
+  KTEST_BEGIN("mknod(): block device file w/ mode test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK | VFS_S_IXGRP,
+                          mkdev(0, 0)));
+  KEXPECT_EQ(VFS_S_IFBLK | VFS_S_IXGRP, get_mode(kBlockDevFile));
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2243,6 +2281,7 @@ void vfs_test(void) {
   chmod_test();
   open_mode_test();
   mkdir_mode_test();
+  mknod_mode_test();
 
   reverse_path_test();
 

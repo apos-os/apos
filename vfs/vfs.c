@@ -625,13 +625,17 @@ int vfs_mkdir(const char* path, mode_t mode) {
 }
 
 int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
+  const mode_t node_type = mode & VFS_S_IFMT;
+  if (node_type != VFS_S_IFREG && node_type != VFS_S_IFCHR &&
+      node_type != VFS_S_IFBLK) {
+    return -EINVAL;
+  }
+
+  if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
+
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  if (mode != VFS_S_IFREG && mode != VFS_S_IFCHR && mode != VFS_S_IFBLK) {
-    return -EINVAL;
-  }
 
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
@@ -659,6 +663,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   vnode_t* child = vfs_get(parent->fs, child_inode);
   child->uid = geteuid();
   child->gid = getegid();
+  child->mode = mode & ~VFS_S_IFMT;
   VFS_PUT_AND_CLEAR(child);
 
   // We're done!
