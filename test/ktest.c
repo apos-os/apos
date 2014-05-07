@@ -78,7 +78,7 @@ void KTEST_BEGIN(const char* name) {
 void kexpect_(uint32_t cond, const char* name,
               const char* astr, const char* bstr,
               const char* aval, const char* bval,
-              const char* opstr,
+              const char* val_surrounders, const char* opstr,
               const char* file, const char* line) {
   if (cond) {
     klogm(KL_TEST, INFO, "[PASSED] ");
@@ -102,9 +102,13 @@ void kexpect_(uint32_t cond, const char* name,
     klogm(KL_TEST, INFO, ":");
     klogm(KL_TEST, INFO, line);
     klogm(KL_TEST, INFO, ": ");
+    klogm(KL_TEST, INFO, val_surrounders);
     klogm(KL_TEST, INFO, aval);
+    klogm(KL_TEST, INFO, val_surrounders);
     klogm(KL_TEST, INFO, opstr);
+    klogm(KL_TEST, INFO, val_surrounders);
     klogm(KL_TEST, INFO, bval);
+    klogm(KL_TEST, INFO, val_surrounders);
     klogm(KL_TEST, INFO, "\n");
   }
 }

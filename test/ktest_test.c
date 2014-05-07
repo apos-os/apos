@@ -36,7 +36,7 @@ void ktest_test(void) {
       kstrcpy(aval_str, utoa(aval));
       kstrcpy(bval_str, utoa(bval));
     }
-    kexpect_(aval == bval, "KEXPECT_EQ", "1", "1", aval_str, bval_str, " != ", "test/ktest_test.c", "14");
+    kexpect_(aval == bval, "KEXPECT_EQ", "1", "1", aval_str, bval_str, "'", " != ", "test/ktest_test.c", "14");
   } while(0);
 
   KTEST_BEGIN("KEXPECT_EQ [PF]");

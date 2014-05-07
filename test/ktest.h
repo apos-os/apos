@@ -31,7 +31,7 @@ void KTEST_BEGIN(const char* name);
 void kexpect_(uint32_t cond, const char* name,
               const char* astr, const char* bstr,
               const char* aval, const char* bval,
-              const char* opstr,
+              const char* val_surrounders, const char* opstr,
               const char* file, const char* line);
 
 typedef enum {
@@ -102,7 +102,7 @@ typedef enum {
   const char* aval = a; \
   const char* bval = b; \
   uint32_t cond = cond_func(aval, bval); \
-  kexpect_(cond, name, astr, bstr, aval, bval, opstr, __FILE__, STR(__LINE__)); \
+  kexpect_(cond, name, astr, bstr, aval, bval, "'", opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 
 #define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr) do { \
@@ -123,7 +123,7 @@ typedef enum {
     kstrcpy(aval_str, utoa((uint32_t)aval)); \
     kstrcpy(bval_str, utoa((uint32_t)bval)); \
   } \
-  kexpect_((aval op bval), name, astr, bstr, aval_str, bval_str, opstr, __FILE__, STR(__LINE__)); \
+  kexpect_((aval op bval), name, astr, bstr, aval_str, bval_str, "", opstr, __FILE__, STR(__LINE__)); \
 } while(0)
 
 #define KEXPECT_EQ(a, b) KEXPECT_INT_("KEXPECT_EQ", #a, #b, a, b, ==, " != ")
