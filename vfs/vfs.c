@@ -590,6 +590,8 @@ int vfs_close(int fd) {
 }
 
 int vfs_mkdir(const char* path, mode_t mode) {
+  if (!is_valid_create_mode(mode)) return -EINVAL;
+
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
@@ -614,6 +616,7 @@ int vfs_mkdir(const char* path, mode_t mode) {
   vnode_t* child = vfs_get(parent->fs, child_inode);
   child->uid = geteuid();
   child->gid = getegid();
+  child->mode = mode;
   VFS_PUT_AND_CLEAR(child);
 
   // We're done!

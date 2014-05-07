@@ -2180,6 +2180,27 @@ static void open_mode_test(void) {
   KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
+static void mkdir_mode_test(void) {
+  const char kDir[] = "mkdir_mode_test";
+
+  KTEST_BEGIN("vfs_mkdir(): invalid mode test");
+  KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, -1));
+  KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, VFS_S_IFDIR | VFS_S_IRWXG));
+
+  KTEST_BEGIN("vfs_mkdir(): mode test");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID,
+             get_mode(kDir));
+  vfs_rmdir(kDir);
+
+  KTEST_BEGIN("vfs_mkdir(): mode test w/ existing directory");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir(kDir, VFS_S_IRWXG));
+  // Shouldn't have changed the mode.
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXU, get_mode(kDir));
+  vfs_rmdir(kDir);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2221,6 +2242,7 @@ void vfs_test(void) {
   mode_flags_test();
   chmod_test();
   open_mode_test();
+  mkdir_mode_test();
 
   reverse_path_test();
 
