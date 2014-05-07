@@ -22,6 +22,9 @@
 
 // A single printf component in the format string.
 typedef struct {
+  // Flags.
+  int zero_flag;
+
   int field_width;
   char type;
 } printf_spec_t;
@@ -37,8 +40,16 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   KASSERT(*fmt == '%');
   fmt++;
 
-  // Field width.
+  spec->zero_flag = 0;
   spec->field_width = 0;
+
+  // Parse flags.
+  if (*fmt == '0') {
+    spec->zero_flag = 1;
+    fmt++;
+  }
+
+  // Field width.
   while (*fmt && is_digit(*fmt)) {
     spec->field_width *= 10;
     spec->field_width += *fmt - '0';
@@ -80,6 +91,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     uint32_t uint;
     int32_t sint;
 
+    int numeric = 1;
     switch (spec.type) {
       case '%':
         s = "%";
@@ -87,6 +99,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
       case 's':
         s = va_arg(args, const char*);
+        numeric = 0;
         break;
 
       case 'd':
@@ -111,9 +124,18 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
         s = "";
     }
     int len = kstrlen(s);
-    for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
-    kstrncpy(str, s, len);
-    str += len;
+
+    const char fill_char = spec.zero_flag && numeric ? '0' : ' ';
+    // Skip leading '-' before filling.
+    if (numeric && spec.zero_flag && s[0] == '-') {
+      *str++ = *s++;
+    }
+    // Pad with '0' or ' ' to the field width.
+    for (int i = 0; i + len < spec.field_width; ++i) *str++ = fill_char;
+
+    // Copy over the remaining value.
+    while (*s) *str++ = *s++;
+
     fmt += spec_len;
   }
   *str = '\0';

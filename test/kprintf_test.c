@@ -73,6 +73,7 @@ void kprintf_test(void) {
            "abc", 10, -10, 0xbeef);
   KEXPECT_STREQ("string:abc, int:10, int:-10, hex:BEEF, percent:%", buf);
 
+  // Test field width.
   KTEST_BEGIN("ksprintf(): field width");
   ksprintf(buf, "%1d", 5);
   KEXPECT_STREQ("5", buf);
@@ -96,4 +97,45 @@ void kprintf_test(void) {
   KEXPECT_STREQ("  BEEF", buf);
   ksprintf(buf, "%3s %4d %6x", "a", 12, 0xbeef);
   KEXPECT_STREQ("  a   12   BEEF", buf);
+  ksprintf(buf, "%1d%1d%1d", 5, 5, 5);
+  KEXPECT_STREQ("555", buf);
+  ksprintf(buf, "%1d%1d%1d", -5, -5, -5);
+  KEXPECT_STREQ("-5-5-5", buf);
+  ksprintf(buf, "%5dabc%4ddef%3dhij", -5, -5, -5);
+  KEXPECT_STREQ("   -5abc  -5def -5hij", buf);
+
+  // Test the '0' flag.
+  KTEST_BEGIN("ksprintf(): '0' flag");
+  ksprintf(buf, "%0d", 5);
+  KEXPECT_STREQ("5", buf);
+  ksprintf(buf, "%0d", -5);
+  KEXPECT_STREQ("-5", buf);
+  ksprintf(buf, "%01d", 5);
+  KEXPECT_STREQ("5", buf);
+  ksprintf(buf, "%03d", 5);
+  KEXPECT_STREQ("005", buf);
+  ksprintf(buf, "%03d", -5);
+  KEXPECT_STREQ("-05", buf);
+  ksprintf(buf, "%03d", -1234);
+  KEXPECT_STREQ("-1234", buf);
+  ksprintf(buf, "%06d", -123);
+  KEXPECT_STREQ("-00123", buf);
+  ksprintf(buf, "%06d", -1234);
+  KEXPECT_STREQ("-01234", buf);
+  ksprintf(buf, "%03i", 5);
+  KEXPECT_STREQ("005", buf);
+  ksprintf(buf, "%03u", 5);
+  KEXPECT_STREQ("005", buf);
+  ksprintf(buf, "%03x", 21);
+  KEXPECT_STREQ("015", buf);
+  ksprintf(buf, "%03X", 21);
+  KEXPECT_STREQ("015", buf);
+  ksprintf(buf, "%03s", "s");
+  KEXPECT_STREQ("  s", buf);
+  ksprintf(buf, "%03s", "ab");
+  KEXPECT_STREQ(" ab", buf);
+  ksprintf(buf, "%03s", "-1");
+  KEXPECT_STREQ(" -1", buf);
+  ksprintf(buf, "%05dabc%04ddef%03dhij", -5, -5, -5);
+  KEXPECT_STREQ("-0005abc-005def-05hij", buf);
 }
