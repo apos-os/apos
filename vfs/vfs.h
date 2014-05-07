@@ -128,13 +128,13 @@ struct fs {
   //
   // Returns the inode number of the new file, or -error on failure.
   int (*mknod)(vnode_t* parent, const char* name, vnode_type_t type,
-               apos_dev_t dev /*, mode? */);
+               apos_dev_t dev);
 
   // Create a directory in the given directory.  Returns the inode number of the
   // new directory, or -error on failure.
   //
   // Note: it must create the '.' and '..' entries in the directory as well.
-  int (*mkdir)(vnode_t* parent, const char* name /*, mode? */);
+  int (*mkdir)(vnode_t* parent, const char* name);
 
   // Remove an empty directory from the parent. Returns 0 on success, or -error.
   //
