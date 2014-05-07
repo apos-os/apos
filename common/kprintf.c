@@ -15,12 +15,39 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
 
+// A single printf component in the format string.
+typedef struct {
+  int field_width;
+  char type;
+} printf_spec_t;
+
 static inline int is_digit(char c) {
   return c >= '0' && c <= '9';
+}
+
+// Attempt to parse a printf_spec_t from the given string.  Returns the number
+// of characters consumed, or -1 if it couldn't be extracted.
+static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
+  const char* const orig_fmt = fmt;
+  KASSERT(*fmt == '%');
+  fmt++;
+
+  // Field width.
+  spec->field_width = 0;
+  while (*fmt && is_digit(*fmt)) {
+    spec->field_width *= 10;
+    spec->field_width += *fmt - '0';
+    fmt++;
+  }
+
+  if (!*fmt) return -1;
+  spec->type = *fmt++;
+  return fmt - orig_fmt;
 }
 
 int ksprintf(char* str, const char* fmt, ...) {
@@ -35,64 +62,59 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
   char* str_orig = str;
 
   while (*fmt) {
-    char c = *(fmt++);
+    if (*fmt != '%') {
+      *(str++) = *(fmt++);
+      continue;
+    }
+
+    printf_spec_t spec;
+    const int spec_len = parse_printf_spec(fmt, &spec);
+    if (spec_len < 0) {
+      klog("invalid printf spec: ");
+      klog(fmt);
+      fmt++;
+      continue;
+    }
+
     const char* s;
     uint32_t uint;
     int32_t sint;
-    int len;
 
-    if (c != '%') {
-      *(str++) = c;
-    } else {
-      if (!*fmt) {
-        continue;
-      }
+    switch (spec.type) {
+      case '%':
+        s = "%";
+        break;
 
-      // Field width.
-      int field_width = 0;
-      while (*fmt && is_digit(*fmt)) {
-        field_width *= 10;
-        field_width += *fmt - '0';
-        fmt++;
-      }
+      case 's':
+        s = va_arg(args, const char*);
+        break;
 
-      switch (*fmt) {
-        case '%':
-          s = "%";
-          break;
+      case 'd':
+      case 'i':
+        sint = va_arg(args, int32_t);
+        s = itoa(sint);
+        break;
 
-        case 's':
-          s = va_arg(args, const char*);
-          break;
+      case 'u':
+        uint = va_arg(args, uint32_t);
+        s = utoa(uint);
+        break;
 
-        case 'd':
-        case 'i':
-          sint = va_arg(args, int32_t);
-          s = itoa(sint);
-          break;
+      case 'x':
+      case 'X':
+        uint = va_arg(args, uint32_t);
+        s = utoa_hex(uint);
+        break;
 
-        case 'u':
-          uint = va_arg(args, uint32_t);
-          s = utoa(uint);
-          break;
-
-        case 'x':
-        case 'X':
-          uint = va_arg(args, uint32_t);
-          s = utoa_hex(uint);
-          break;
-
-        default:
-          klog("ERROR: unknown printf character.\n");
-          s = "";
-      }
-      len = kstrlen(s);
-      for (int i = 0; i + len < field_width; ++i) *str++ = ' ';
-      kstrncpy(str, s, len);
-      str += len;
-
-      fmt++;
+      default:
+        klog("ERROR: unknown printf character.\n");
+        s = "";
     }
+    int len = kstrlen(s);
+    for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+    kstrncpy(str, s, len);
+    str += len;
+    fmt += spec_len;
   }
   *str = '\0';
 
