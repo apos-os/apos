@@ -24,6 +24,7 @@
 typedef struct {
   // Flags.
   int zero_flag;
+  int space_flag;
 
   int field_width;
   char type;
@@ -31,6 +32,10 @@ typedef struct {
 
 static inline int is_digit(char c) {
   return c >= '0' && c <= '9';
+}
+
+static inline int is_flag(char c) {
+  return c == ' ' || c == '0';
 }
 
 // Attempt to parse a printf_spec_t from the given string.  Returns the number
@@ -41,11 +46,13 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   fmt++;
 
   spec->zero_flag = 0;
+  spec->space_flag = 0;
   spec->field_width = 0;
 
   // Parse flags.
-  if (*fmt == '0') {
-    spec->zero_flag = 1;
+  while (*fmt && is_flag(*fmt)) {
+    if (*fmt == '0') spec->zero_flag = 1;
+    else if (*fmt == ' ') spec->space_flag = 1;
     fmt++;
   }
 
@@ -92,6 +99,8 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     int32_t sint;
 
     int numeric = 1;
+    int positive_number = 0;
+
     switch (spec.type) {
       case '%':
         s = "%";
@@ -105,6 +114,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
       case 'd':
       case 'i':
         sint = va_arg(args, int32_t);
+        positive_number = sint > 0;
         s = itoa(sint);
         break;
 
@@ -129,6 +139,10 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     // Skip leading '-' before filling.
     if (numeric && spec.zero_flag && s[0] == '-') {
       *str++ = *s++;
+    }
+    if (spec.space_flag && positive_number) {
+      *str++ = ' ';
+      len++;
     }
     // Pad with '0' or ' ' to the field width.
     for (int i = 0; i + len < spec.field_width; ++i) *str++ = fill_char;
