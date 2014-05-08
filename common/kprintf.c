@@ -127,6 +127,10 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
         break;
 
       case 'x':
+        uint = va_arg(args, uint32_t);
+        s = utoa_hex_lower(uint);
+        break;
+
       case 'X':
         uint = va_arg(args, uint32_t);
         s = utoa_hex(uint);

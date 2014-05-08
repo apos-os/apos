@@ -62,14 +62,21 @@ void kprintf_test(void) {
   KEXPECT_STREQ("10", buf);
 
   ksprintf(buf, "%x", 0xDEADBEEF);
-  KEXPECT_STREQ("DEADBEEF", buf);
+  KEXPECT_STREQ("deadbeef", buf);
+
+  // Test %X.
+  ksprintf(buf, "%X", 0x10);
+  KEXPECT_STREQ("10", buf);
+
+  ksprintf(buf, "%X %x", 0xDEADBEEF, 0xBAADF00D);
+  KEXPECT_STREQ("DEADBEEF baadf00d", buf);
 
   // Test trailing %.
   ksprintf(buf, "abc%");
   KEXPECT_STREQ("abc", buf);
 
   // Put it all together.
-  ksprintf(buf, "string:%s, int:%i, int:%i, hex:%x, percent:%%",
+  ksprintf(buf, "string:%s, int:%i, int:%i, hex:%X, percent:%%",
            "abc", 10, -10, 0xbeef);
   KEXPECT_STREQ("string:abc, int:10, int:-10, hex:BEEF, percent:%", buf);
 
@@ -92,11 +99,15 @@ void kprintf_test(void) {
   ksprintf(buf, "%3s", "a");
   KEXPECT_STREQ("  a", buf);
   ksprintf(buf, "%3x", 12);
+  KEXPECT_STREQ("  c", buf);
+  ksprintf(buf, "%3X", 12);
   KEXPECT_STREQ("  C", buf);
   ksprintf(buf, "%6x", 0xbeef);
+  KEXPECT_STREQ("  beef", buf);
+  ksprintf(buf, "%6X", 0xbeef);
   KEXPECT_STREQ("  BEEF", buf);
   ksprintf(buf, "%3s %4d %6x", "a", 12, 0xbeef);
-  KEXPECT_STREQ("  a   12   BEEF", buf);
+  KEXPECT_STREQ("  a   12   beef", buf);
   ksprintf(buf, "%1d%1d%1d", 5, 5, 5);
   KEXPECT_STREQ("555", buf);
   ksprintf(buf, "%1d%1d%1d", -5, -5, -5);
@@ -150,7 +161,7 @@ void kprintf_test(void) {
   ksprintf(buf, "% i", -5);
   KEXPECT_STREQ("-5", buf);
   ksprintf(buf, "% x", 12);
-  KEXPECT_STREQ("C", buf);
+  KEXPECT_STREQ("c", buf);
   ksprintf(buf, "% X", 12);
   KEXPECT_STREQ("C", buf);
   ksprintf(buf, "% u", 12);
@@ -189,7 +200,7 @@ void kprintf_test(void) {
   ksprintf(buf, "%+i", -5);
   KEXPECT_STREQ("-5", buf);
   ksprintf(buf, "%+x", 12);
-  KEXPECT_STREQ("C", buf);
+  KEXPECT_STREQ("c", buf);
   ksprintf(buf, "%+X", 12);
   KEXPECT_STREQ("C", buf);
   ksprintf(buf, "%+u", 12);
