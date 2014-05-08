@@ -167,4 +167,43 @@ void kprintf_test(void) {
   KEXPECT_STREQ("-0015", buf);
   ksprintf(buf, "%0 5d%0 3d% 3d% 4d", -15, 15, 15, -15);
   KEXPECT_STREQ("-0015 15 15 -15", buf);
+
+  // Test the '+' flag.
+  KTEST_BEGIN("ksprintf(): '+' flag");
+  ksprintf(buf, "%+d", 5);
+  KEXPECT_STREQ("+5", buf);
+  ksprintf(buf, "%+d", -5);
+  KEXPECT_STREQ("-5", buf);
+  ksprintf(buf, "%+ d", 5);
+  KEXPECT_STREQ("+5", buf);
+  ksprintf(buf, "%+ d", -5);
+  KEXPECT_STREQ("-5", buf);
+  ksprintf(buf, "% +d", 5);
+  KEXPECT_STREQ("+5", buf);
+  ksprintf(buf, "%+ 3d", 5);
+  KEXPECT_STREQ(" +5", buf);
+  ksprintf(buf, "% +3d", 5);
+  KEXPECT_STREQ(" +5", buf);
+  ksprintf(buf, "%+i", 5);
+  KEXPECT_STREQ("+5", buf);
+  ksprintf(buf, "%+i", -5);
+  KEXPECT_STREQ("-5", buf);
+  ksprintf(buf, "%+x", 12);
+  KEXPECT_STREQ("C", buf);
+  ksprintf(buf, "%+X", 12);
+  KEXPECT_STREQ("C", buf);
+  ksprintf(buf, "%+u", 12);
+  KEXPECT_STREQ("12", buf);
+  ksprintf(buf, "%+s", "x");
+  KEXPECT_STREQ("x", buf);
+  ksprintf(buf, "%+05d", 15);
+  KEXPECT_STREQ("+0015", buf);
+  ksprintf(buf, "%+05d", -15);
+  KEXPECT_STREQ("-0015", buf);
+  ksprintf(buf, "%0+5d", 15);
+  KEXPECT_STREQ("+0015", buf);
+  ksprintf(buf, "%0+5d", -15);
+  KEXPECT_STREQ("-0015", buf);
+  ksprintf(buf, "%0+5d%0+3d%+3d%+4d", -15, 15, 15, -15);
+  KEXPECT_STREQ("-0015+15+15 -15", buf);
 }

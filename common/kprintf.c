@@ -25,6 +25,7 @@ typedef struct {
   // Flags.
   int zero_flag;
   int space_flag;
+  int plus_flag;
 
   int field_width;
   char type;
@@ -35,7 +36,7 @@ static inline int is_digit(char c) {
 }
 
 static inline int is_flag(char c) {
-  return c == ' ' || c == '0';
+  return c == ' ' || c == '0' || c == '+';
 }
 
 // Attempt to parse a printf_spec_t from the given string.  Returns the number
@@ -48,11 +49,13 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   spec->zero_flag = 0;
   spec->space_flag = 0;
   spec->field_width = 0;
+  spec->plus_flag = 0;
 
   // Parse flags.
   while (*fmt && is_flag(*fmt)) {
     if (*fmt == '0') spec->zero_flag = 1;
     else if (*fmt == ' ') spec->space_flag = 1;
+    else if (*fmt == '+') spec->plus_flag = 1;
     fmt++;
   }
 
@@ -140,12 +143,19 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     if (numeric && spec.zero_flag && s[0] == '-') {
       *str++ = *s++;
     }
-    if (spec.space_flag && positive_number) {
+    if (spec.plus_flag && positive_number) {
+      if (spec.zero_flag) *str++ = '+';
+      len++;
+    } else if (spec.space_flag && positive_number) {
       *str++ = ' ';
       len++;
     }
     // Pad with '0' or ' ' to the field width.
     for (int i = 0; i + len < spec.field_width; ++i) *str++ = fill_char;
+
+    if (spec.plus_flag && positive_number && !spec.zero_flag) {
+      *str++ = '+';
+    }
 
     // Copy over the remaining value.
     while (*s) *str++ = *s++;
