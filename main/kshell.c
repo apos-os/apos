@@ -97,6 +97,7 @@ static test_entry_t TESTS[] = {
   { "flag_printf", &flag_printf_test, 1 },
   { "ata", &ata_test, 0 },  // Don't run by default so we don't muck up our FS.
   { "ramfs", &ramfs_test, 1 },
+  { "vfs_mode", &vfs_mode_test, 1 },
   { "vfs", &vfs_test, 1 },
   { "hash", &hash_test, 1 },
   { "block_cache", &block_cache_test, 1 },

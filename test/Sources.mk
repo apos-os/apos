@@ -44,6 +44,7 @@ LOCAL_SOURCES := \
   slab_alloc_test.c \
   user_test.c \
   vm_test.c \
+  vfs_mode_test.c \
   vfs_test.c \
 
 $(eval $(END_SOURCES))
