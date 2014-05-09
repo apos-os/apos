@@ -26,6 +26,7 @@ typedef struct {
   int zero_flag;
   int space_flag;
   int plus_flag;
+  int left_justify;
 
   int field_width;
   char type;
@@ -36,7 +37,7 @@ static inline int is_digit(char c) {
 }
 
 static inline int is_flag(char c) {
-  return c == ' ' || c == '0' || c == '+';
+  return c == ' ' || c == '0' || c == '+' || c == '-';
 }
 
 // Attempt to parse a printf_spec_t from the given string.  Returns the number
@@ -50,12 +51,14 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   spec->space_flag = 0;
   spec->field_width = 0;
   spec->plus_flag = 0;
+  spec->left_justify = 0;
 
   // Parse flags.
   while (*fmt && is_flag(*fmt)) {
     if (*fmt == '0') spec->zero_flag = 1;
     else if (*fmt == ' ') spec->space_flag = 1;
     else if (*fmt == '+') spec->plus_flag = 1;
+    else if (*fmt == '-') spec->left_justify = 1;
     fmt++;
   }
 
@@ -107,6 +110,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     switch (spec.type) {
       case '%':
         s = "%";
+        numeric = 0;
         break;
 
       case 's':
@@ -117,7 +121,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
       case 'd':
       case 'i':
         sint = va_arg(args, int32_t);
-        positive_number = sint > 0;
+        positive_number = sint >= 0;
         s = itoa(sint);
         break;
 
@@ -142,27 +146,47 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     }
     int len = kstrlen(s);
 
-    const char fill_char = spec.zero_flag && numeric ? '0' : ' ';
-    // Skip leading '-' before filling.
-    if (numeric && spec.zero_flag && s[0] == '-') {
-      *str++ = *s++;
-    }
-    if (spec.plus_flag && positive_number) {
-      if (spec.zero_flag) *str++ = '+';
-      len++;
-    } else if (spec.space_flag && positive_number) {
-      *str++ = ' ';
-      len++;
-    }
-    // Pad with '0' or ' ' to the field width.
-    for (int i = 0; i + len < spec.field_width; ++i) *str++ = fill_char;
+    // The printed value has N parts:
+    //  <space padding><symbol><zero padding><value><space padding>
+    // e.g.
+    //       '  '         '+'                        '36'
+    //                    ' '     '000'         '5'
+    //      '    '                             '123'
+    //                    ' '                   '4'   '   '
 
-    if (spec.plus_flag && positive_number && !spec.zero_flag) {
-      *str++ = '+';
+    // Figure out if we need a symbol, and adjust s and len as necessary.
+    char symbol = '\0';
+    if (numeric && spec.space_flag && !spec.plus_flag && positive_number) {
+      symbol = ' ';
+      len++;
+    } else if (numeric && spec.plus_flag && positive_number) {
+      symbol = '+';
+      len++;
+    } else if (numeric && s[0] == '-') {
+      symbol = '-';
+      s++;
+    }
+
+    // Left space padding.
+    if (!spec.left_justify && (!spec.zero_flag || !numeric)) {
+      for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+    }
+
+    // Add the symbol.
+    if (symbol) *str++ = symbol;
+
+    // Zero padding.
+    if (!spec.left_justify && spec.zero_flag && numeric) {
+      for (int i = 0; i + len < spec.field_width; ++i) *str++ = '0';
     }
 
     // Copy over the remaining value.
     while (*s) *str++ = *s++;
+
+    // Second space padding.
+    if (spec.left_justify) {
+      for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+    }
 
     fmt += spec_len;
   }
