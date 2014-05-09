@@ -220,4 +220,10 @@ void kprintf_test(void) {
   KEXPECT_STREQ("   0x123", do_printf("%8p", (int*)0x123));
   KEXPECT_STREQ("0x000123", do_printf("%08p", (int*)0x123));
   KEXPECT_STREQ("0x123   ", do_printf("%-8p", (int*)0x123));
+
+  // Test '%c'.
+  KTEST_BEGIN("ksprintf(): '%c'");
+  KEXPECT_STREQ("x", do_printf("%c", 'x'));
+  KEXPECT_STREQ("  x", do_printf("%3c", 'x'));
+  KEXPECT_STREQ("x  ", do_printf("%-3c", 'x'));
 }

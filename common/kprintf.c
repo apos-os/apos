@@ -107,6 +107,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     uint32_t uint;
     int32_t sint;
     void* ptr;
+    char chr[2];
 
     int numeric = 1;
     int positive_number = 0;
@@ -120,6 +121,13 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
       case 's':
         s = va_arg(args, const char*);
+        numeric = 0;
+        break;
+
+      case 'c':
+        chr[0] = (char)va_arg(args, int);
+        chr[1] = '\0';
+        s = chr;
         numeric = 0;
         break;
 
