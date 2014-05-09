@@ -20,6 +20,7 @@ LOCAL_SOURCES := \
   file.c \
   util.c \
   special.c \
+  vfs_mode.c \
 
 LOCAL_SUBDIRS := ext2
 
