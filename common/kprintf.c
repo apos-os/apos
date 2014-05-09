@@ -27,6 +27,7 @@ typedef struct {
   int space_flag;
   int plus_flag;
   int left_justify;
+  int alternate_flag;
 
   int field_width;
   char type;
@@ -37,7 +38,7 @@ static inline int is_digit(char c) {
 }
 
 static inline int is_flag(char c) {
-  return c == ' ' || c == '0' || c == '+' || c == '-';
+  return c == ' ' || c == '0' || c == '+' || c == '-' || c == '#';
 }
 
 // Attempt to parse a printf_spec_t from the given string.  Returns the number
@@ -52,6 +53,7 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   spec->field_width = 0;
   spec->plus_flag = 0;
   spec->left_justify = 0;
+  spec->alternate_flag = 0;
 
   // Parse flags.
   while (*fmt && is_flag(*fmt)) {
@@ -59,6 +61,7 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
     else if (*fmt == ' ') spec->space_flag = 1;
     else if (*fmt == '+') spec->plus_flag = 1;
     else if (*fmt == '-') spec->left_justify = 1;
+    else if (*fmt == '#') spec->alternate_flag = 1;
     fmt++;
   }
 
@@ -106,6 +109,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
     int numeric = 1;
     int positive_number = 0;
+    const char* prefix = "";
 
     switch (spec.type) {
       case '%':
@@ -133,11 +137,13 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
       case 'x':
         uint = va_arg(args, uint32_t);
         s = utoa_hex_lower(uint);
+        if (uint != 0 && spec.alternate_flag) prefix = "0x";
         break;
 
       case 'X':
         uint = va_arg(args, uint32_t);
         s = utoa_hex(uint);
+        if (uint != 0 && spec.alternate_flag) prefix = "0X";
         break;
 
       default:
@@ -147,12 +153,12 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     int len = kstrlen(s);
 
     // The printed value has N parts:
-    //  <space padding><symbol><zero padding><value><space padding>
+    //  <space padding><symbol><prefix><zero padding><value><space padding>
     // e.g.
-    //       '  '         '+'                        '36'
-    //                    ' '     '000'         '5'
-    //      '    '                             '123'
-    //                    ' '                   '4'   '   '
+    //       '  '         '+'                         '36'
+    //                    ' '            '000'         '5'
+    //      '    '                                    '123'
+    //                    ' '                          '4'   '   '
 
     // Figure out if we need a symbol, and adjust s and len as necessary.
     char symbol = '\0';
@@ -167,6 +173,8 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
       s++;
     }
 
+    len += kstrlen(prefix);
+
     // Left space padding.
     if (!spec.left_justify && (!spec.zero_flag || !numeric)) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
@@ -174,6 +182,9 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
     // Add the symbol.
     if (symbol) *str++ = symbol;
+
+    // Add the prefix.
+    while (*prefix) *str++ = *prefix++;
 
     // Zero padding.
     if (!spec.left_justify && spec.zero_flag && numeric) {

@@ -265,4 +265,47 @@ void kprintf_test(void) {
   KEXPECT_STREQ("abc  ", buf);
   ksprintf(buf, "%-2s", "abc");
   KEXPECT_STREQ("abc", buf);
+
+  KTEST_BEGIN("ksprintf(): '%x'/'%X' with zero");
+  ksprintf(buf, "%x", 0);
+  KEXPECT_STREQ("0", buf);
+  ksprintf(buf, "%X", 0);
+  KEXPECT_STREQ("0", buf);
+  ksprintf(buf, "%3x", 0);
+  KEXPECT_STREQ("  0", buf);
+  ksprintf(buf, "%3X", 0);
+  KEXPECT_STREQ("  0", buf);
+  ksprintf(buf, "%-3x", 0);
+  KEXPECT_STREQ("0  ", buf);
+  ksprintf(buf, "%-3X", 0);
+  KEXPECT_STREQ("0  ", buf);
+
+  // Test the '#' flag.
+  KTEST_BEGIN("ksprintf(): '#' flag");
+  ksprintf(buf, "%#d", 0);
+  KEXPECT_STREQ("0", buf);
+  ksprintf(buf, "%#d", 123);
+  KEXPECT_STREQ("123", buf);
+  ksprintf(buf, "%#d", -123);
+  KEXPECT_STREQ("-123", buf);
+  ksprintf(buf, "%#i", 123);
+  KEXPECT_STREQ("123", buf);
+  ksprintf(buf, "%#s", "abcd");
+  KEXPECT_STREQ("abcd", buf);
+  ksprintf(buf, "%#x", 0);
+  KEXPECT_STREQ("0", buf);
+  ksprintf(buf, "%#x", 123);
+  KEXPECT_STREQ("0x7b", buf);
+  ksprintf(buf, "%#X", 0);
+  KEXPECT_STREQ("0", buf);
+  ksprintf(buf, "%#X", 123);
+  KEXPECT_STREQ("0X7B", buf);
+  ksprintf(buf, "%#5x", 0);
+  KEXPECT_STREQ("    0", buf);
+  ksprintf(buf, "%#5x", 123);
+  KEXPECT_STREQ(" 0x7b", buf);
+  ksprintf(buf, "%#5X", 0);
+  KEXPECT_STREQ("    0", buf);
+  ksprintf(buf, "%#5X", 123);
+  KEXPECT_STREQ(" 0X7B", buf);
 }
