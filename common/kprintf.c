@@ -104,8 +104,8 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     }
 
     const char* s;
-    uint32_t uint;
-    int32_t sint;
+    unsigned int uint;
+    int sint;
     void* ptr;
     char chr[2];
 
@@ -133,24 +133,24 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
       case 'd':
       case 'i':
-        sint = va_arg(args, int32_t);
+        sint = va_arg(args, int);
         positive_number = sint >= 0;
         s = itoa(sint);
         break;
 
       case 'u':
-        uint = va_arg(args, uint32_t);
+        uint = va_arg(args, unsigned int);
         s = utoa(uint);
         break;
 
       case 'x':
-        uint = va_arg(args, uint32_t);
+        uint = va_arg(args, unsigned int);
         s = utoa_hex_lower(uint);
         if (uint != 0 && spec.alternate_flag) prefix = "0x";
         break;
 
       case 'X':
-        uint = va_arg(args, uint32_t);
+        uint = va_arg(args, unsigned int);
         s = utoa_hex(uint);
         if (uint != 0 && spec.alternate_flag) prefix = "0X";
         break;
