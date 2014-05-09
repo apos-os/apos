@@ -15,9 +15,67 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+
+// A single printf component in the format string.
+typedef struct {
+  // Flags.
+  int zero_flag;
+  int space_flag;
+  int plus_flag;
+  int left_justify;
+  int alternate_flag;
+
+  int field_width;
+  char type;
+} printf_spec_t;
+
+static inline int is_digit(char c) {
+  return c >= '0' && c <= '9';
+}
+
+static inline int is_flag(char c) {
+  return c == ' ' || c == '0' || c == '+' || c == '-' || c == '#';
+}
+
+// Attempt to parse a printf_spec_t from the given string.  Returns the number
+// of characters consumed, or -1 if it couldn't be extracted.
+static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
+  const char* const orig_fmt = fmt;
+  KASSERT(*fmt == '%');
+  fmt++;
+
+  spec->zero_flag = 0;
+  spec->space_flag = 0;
+  spec->field_width = 0;
+  spec->plus_flag = 0;
+  spec->left_justify = 0;
+  spec->alternate_flag = 0;
+
+  // Parse flags.
+  while (*fmt && is_flag(*fmt)) {
+    if (*fmt == '0') spec->zero_flag = 1;
+    else if (*fmt == ' ') spec->space_flag = 1;
+    else if (*fmt == '+') spec->plus_flag = 1;
+    else if (*fmt == '-') spec->left_justify = 1;
+    else if (*fmt == '#') spec->alternate_flag = 1;
+    fmt++;
+  }
+
+  // Field width.
+  while (*fmt && is_digit(*fmt)) {
+    spec->field_width *= 10;
+    spec->field_width += *fmt - '0';
+    fmt++;
+  }
+
+  if (!*fmt) return -1;
+  spec->type = *fmt++;
+  return fmt - orig_fmt;
+}
 
 int ksprintf(char* str, const char* fmt, ...) {
   va_list args;
@@ -31,55 +89,133 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
   char* str_orig = str;
 
   while (*fmt) {
-    char c = *(fmt++);
-    const char* s;
-    uint32_t uint;
-    int32_t sint;
-    int len;
-
-    if (c != '%') {
-      *(str++) = c;
-    } else {
-      if (!*fmt) {
-        continue;
-      }
-
-      switch (*fmt) {
-        case '%':
-          s = "%";
-          break;
-
-        case 's':
-          s = va_arg(args, const char*);
-          break;
-
-        case 'd':
-        case 'i':
-          sint = va_arg(args, int32_t);
-          s = itoa(sint);
-          break;
-
-        case 'u':
-          uint = va_arg(args, uint32_t);
-          s = utoa(uint);
-          break;
-
-        case 'x':
-        case 'X':
-          uint = va_arg(args, uint32_t);
-          s = utoa_hex(uint);
-          break;
-
-        default:
-          klog("ERROR: unknown printf character.\n");
-          s = "";
-      }
-      len = kstrlen(s);
-      kstrncpy(str, s, len);
-      str += len;
-
-      fmt++;
+    if (*fmt != '%') {
+      *(str++) = *(fmt++);
+      continue;
     }
+
+    printf_spec_t spec;
+    const int spec_len = parse_printf_spec(fmt, &spec);
+    if (spec_len < 0) {
+      klog("invalid printf spec: ");
+      klog(fmt);
+      fmt++;
+      continue;
+    }
+
+    const char* s;
+    unsigned int uint;
+    int sint;
+    void* ptr;
+    char chr[2];
+
+    int numeric = 1;
+    int positive_number = 0;
+    const char* prefix = "";
+
+    switch (spec.type) {
+      case '%':
+        s = "%";
+        numeric = 0;
+        break;
+
+      case 's':
+        s = va_arg(args, const char*);
+        numeric = 0;
+        break;
+
+      case 'c':
+        chr[0] = (char)va_arg(args, int);
+        chr[1] = '\0';
+        s = chr;
+        numeric = 0;
+        break;
+
+      case 'd':
+      case 'i':
+        sint = va_arg(args, int);
+        positive_number = sint >= 0;
+        s = itoa(sint);
+        break;
+
+      case 'u':
+        uint = va_arg(args, unsigned int);
+        s = utoa(uint);
+        break;
+
+      case 'x':
+        uint = va_arg(args, unsigned int);
+        s = utoa_hex_lower(uint);
+        if (uint != 0 && spec.alternate_flag) prefix = "0x";
+        break;
+
+      case 'X':
+        uint = va_arg(args, unsigned int);
+        s = utoa_hex(uint);
+        if (uint != 0 && spec.alternate_flag) prefix = "0X";
+        break;
+
+      case 'p':
+        ptr = va_arg(args, void*);
+        s = utoa_hex_lower((intptr_t)ptr);
+        prefix = "0x";
+        break;
+
+      default:
+        klog("ERROR: unknown printf character.\n");
+        s = "";
+    }
+    int len = kstrlen(s);
+
+    // The printed value is composed of several parts, in order.  Each may be
+    // empty:
+    //  * left space padding: spaces to pad to field width
+    //  * symbol: symbol for positive numbers (e.g. '+' or ' ')
+    //  * prefix: value prefix (eg. '0x' or '0X')
+    //  * zero padding: zeroes to pad to field width
+    //  * value: the actual value being printed
+    //  * right space padding: spaces to pad to field width, if left-justified
+
+    // Figure out if we need a symbol, and adjust s and len as necessary.
+    char symbol = '\0';
+    if (numeric && spec.space_flag && !spec.plus_flag && positive_number) {
+      symbol = ' ';
+      len++;
+    } else if (numeric && spec.plus_flag && positive_number) {
+      symbol = '+';
+      len++;
+    } else if (numeric && s[0] == '-') {
+      symbol = '-';
+      s++;
+    }
+
+    len += kstrlen(prefix);
+
+    // Left space padding.
+    if (!spec.left_justify && (!spec.zero_flag || !numeric)) {
+      for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+    }
+
+    // Add the symbol.
+    if (symbol) *str++ = symbol;
+
+    // Add the prefix.
+    while (*prefix) *str++ = *prefix++;
+
+    // Zero padding.
+    if (!spec.left_justify && spec.zero_flag && numeric) {
+      for (int i = 0; i + len < spec.field_width; ++i) *str++ = '0';
+    }
+
+    // Copy over the remaining value.
+    while (*s) *str++ = *s++;
+
+    // Second space padding.
+    if (spec.left_justify) {
+      for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+    }
+
+    fmt += spec_len;
   }
   *str = '\0';
 

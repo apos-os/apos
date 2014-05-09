@@ -84,6 +84,15 @@ void kstring_test(void) {
   KEXPECT_STREQ("67890", utoa_hex(0x67890));
   KEXPECT_STREQ("ABCDEF0", utoa_hex(0xABCDEF0));
 
+  KTEST_BEGIN("utoa_hex_lower()");
+  KEXPECT_STREQ("0", utoa_hex_lower(0));
+  KEXPECT_STREQ("0", utoa_hex_lower(00));
+  KEXPECT_STREQ("10", utoa_hex_lower(0x10));
+  KEXPECT_STREQ("deadbeef", utoa_hex_lower(0xDEADBEEF));
+  KEXPECT_STREQ("12345", utoa_hex_lower(0x12345));
+  KEXPECT_STREQ("67890", utoa_hex_lower(0x67890));
+  KEXPECT_STREQ("abcdef0", utoa_hex_lower(0xABCDEF0));
+
   KTEST_BEGIN("itoa()");
   KEXPECT_STREQ("0", itoa(0));
   KEXPECT_STREQ("0", itoa(-0));

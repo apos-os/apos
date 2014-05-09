@@ -165,6 +165,10 @@ const char* utoa_hex(uint32_t x) {
   return utoa_internal(x, 16, "0123456789ABCDEF");
 }
 
+const char* utoa_hex_lower(uint32_t x) {
+  return utoa_internal(x, 16, "0123456789abcdef");
+}
+
 static uint32_t atou_internal_base(const char* s, int base) {
   if (base != 10 && base != 16) {
     return 0;
