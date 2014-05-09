@@ -308,4 +308,21 @@ void kprintf_test(void) {
   KEXPECT_STREQ("    0", buf);
   ksprintf(buf, "%#5X", 123);
   KEXPECT_STREQ(" 0X7B", buf);
+
+  // Test '%p'.
+  KTEST_BEGIN("ksprintf(): '%p'");
+  ksprintf(buf, "%p", (void*)0x123);
+  KEXPECT_STREQ("0x123", buf);
+  ksprintf(buf, "%p", (void*)0x123ABCD);
+  KEXPECT_STREQ("0x123abcd", buf);
+  ksprintf(buf, "%p", (int*)0x123);
+  KEXPECT_STREQ("0x123", buf);
+  ksprintf(buf, "%4p", (int*)0x123);
+  KEXPECT_STREQ("0x123", buf);
+  ksprintf(buf, "%8p", (int*)0x123);
+  KEXPECT_STREQ("   0x123", buf);
+  ksprintf(buf, "%08p", (int*)0x123);
+  KEXPECT_STREQ("0x000123", buf);
+  ksprintf(buf, "%-8p", (int*)0x123);
+  KEXPECT_STREQ("0x123   ", buf);
 }

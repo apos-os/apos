@@ -106,6 +106,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     const char* s;
     uint32_t uint;
     int32_t sint;
+    void* ptr;
 
     int numeric = 1;
     int positive_number = 0;
@@ -144,6 +145,12 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
         uint = va_arg(args, uint32_t);
         s = utoa_hex(uint);
         if (uint != 0 && spec.alternate_flag) prefix = "0X";
+        break;
+
+      case 'p':
+        ptr = va_arg(args, void*);
+        s = utoa_hex_lower((intptr_t)ptr);
+        prefix = "0x";
         break;
 
       default:
