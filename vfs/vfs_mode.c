@@ -15,8 +15,43 @@
 #include "vfs/vfs_mode.h"
 
 #include "common/errno.h"
+#include "proc/user.h"
 
 int vfs_check_mode(vfs_mode_op_t op, const process_t* proc,
                    const vnode_t* vnode) {
+  if (proc_is_superuser(proc)) return 0;
+
+  switch (op) {
+    case VFS_OP_READ:
+      if (vnode->uid == proc->euid) {
+        if (vnode->mode & VFS_S_IRUSR) return 0;
+      } else if (vnode->gid == proc->egid) {
+        if (vnode->mode & VFS_S_IRGRP) return 0;
+      } else if (vnode->mode & VFS_S_IROTH) {
+        return 0;
+      }
+      break;
+
+    case VFS_OP_WRITE:
+      if (vnode->uid == proc->euid) {
+        if (vnode->mode & VFS_S_IWUSR) return 0;
+      } else if (vnode->gid == proc->egid) {
+        if (vnode->mode & VFS_S_IWGRP) return 0;
+      } else if (vnode->mode & VFS_S_IWOTH) {
+        return 0;
+      }
+      break;
+
+    case VFS_OP_EXEC_OR_SEARCH:
+      if (vnode->uid == proc->euid) {
+        if (vnode->mode & VFS_S_IXUSR) return 0;
+      } else if (vnode->gid == proc->egid) {
+        if (vnode->mode & VFS_S_IXGRP) return 0;
+      } else if (vnode->mode & VFS_S_IXOTH) {
+        return 0;
+      }
+      break;
+  }
+
   return -EACCES;
 }
