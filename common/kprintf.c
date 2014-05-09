@@ -152,13 +152,14 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     }
     int len = kstrlen(s);
 
-    // The printed value has N parts:
-    //  <space padding><symbol><prefix><zero padding><value><space padding>
-    // e.g.
-    //       '  '         '+'                         '36'
-    //                    ' '            '000'         '5'
-    //      '    '                                    '123'
-    //                    ' '                          '4'   '   '
+    // The printed value is composed of several parts, in order.  Each may be
+    // empty:
+    //  * left space padding: spaces to pad to field width
+    //  * symbol: symbol for positive numbers (e.g. '+' or ' ')
+    //  * prefix: value prefix (eg. '0x' or '0X')
+    //  * zero padding: zeroes to pad to field width
+    //  * value: the actual value being printed
+    //  * right space padding: spaces to pad to field width, if left-justified
 
     // Figure out if we need a symbol, and adjust s and len as necessary.
     char symbol = '\0';
