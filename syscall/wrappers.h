@@ -22,7 +22,7 @@
 #include "proc/exit.h"
 #include "vfs/vfs.h"
 
-static inline int vfs_mknod_wrapper(const char* path, uint32_t mode,
+static inline int vfs_mknod_wrapper(const char* path, mode_t mode,
                                     int dev_major, int dev_minor) {
   return vfs_mknod(path, mode, mkdev(dev_major, dev_minor));
 }

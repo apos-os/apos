@@ -1018,6 +1018,21 @@ static int ext2_get_vnode(vnode_t* vnode) {
     KLOG(WARNING, "ext2: unsupported inode type: 0x%x\n", inode.i_mode);
     return -ENOTSUP;
   }
+
+  vnode->mode = 0;
+  if (inode.i_mode & EXT2_S_IRUSR) vnode->mode |= VFS_S_IRUSR;
+  if (inode.i_mode & EXT2_S_IWUSR) vnode->mode |= VFS_S_IWUSR;
+  if (inode.i_mode & EXT2_S_IXUSR) vnode->mode |= VFS_S_IXUSR;
+  if (inode.i_mode & EXT2_S_IRGRP) vnode->mode |= VFS_S_IRGRP;
+  if (inode.i_mode & EXT2_S_IWGRP) vnode->mode |= VFS_S_IWGRP;
+  if (inode.i_mode & EXT2_S_IXGRP) vnode->mode |= VFS_S_IXGRP;
+  if (inode.i_mode & EXT2_S_IROTH) vnode->mode |= VFS_S_IROTH;
+  if (inode.i_mode & EXT2_S_IWOTH) vnode->mode |= VFS_S_IWOTH;
+  if (inode.i_mode & EXT2_S_IXOTH) vnode->mode |= VFS_S_IXOTH;
+  if (inode.i_mode & EXT2_S_ISUID) vnode->mode |= VFS_S_ISUID;
+  if (inode.i_mode & EXT2_S_ISGID) vnode->mode |= VFS_S_ISGID;
+  if (inode.i_mode & EXT2_S_ISVTX) vnode->mode |= VFS_S_ISVTX;
+
   vnode->len = inode.i_size;
   vnode->uid = inode.i_uid;
   vnode->gid = inode.i_gid;
@@ -1043,6 +1058,20 @@ static int ext2_put_vnode(vnode_t* vnode) {
     case VNODE_BLOCKDEV:  KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFBLK); break;
     case VNODE_CHARDEV:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFCHR); break;
   }
+
+  inode.i_mode &= EXT2_S_MASK;  // Clear non-type inode bits.
+  if (vnode->mode & VFS_S_IRUSR) inode.i_mode |= EXT2_S_IRUSR;
+  if (vnode->mode & VFS_S_IWUSR) inode.i_mode |= EXT2_S_IWUSR;
+  if (vnode->mode & VFS_S_IXUSR) inode.i_mode |= EXT2_S_IXUSR;
+  if (vnode->mode & VFS_S_IRGRP) inode.i_mode |= EXT2_S_IRGRP;
+  if (vnode->mode & VFS_S_IWGRP) inode.i_mode |= EXT2_S_IWGRP;
+  if (vnode->mode & VFS_S_IXGRP) inode.i_mode |= EXT2_S_IXGRP;
+  if (vnode->mode & VFS_S_IROTH) inode.i_mode |= EXT2_S_IROTH;
+  if (vnode->mode & VFS_S_IWOTH) inode.i_mode |= EXT2_S_IWOTH;
+  if (vnode->mode & VFS_S_IXOTH) inode.i_mode |= EXT2_S_IXOTH;
+  if (vnode->mode & VFS_S_ISUID) inode.i_mode |= EXT2_S_ISUID;
+  if (vnode->mode & VFS_S_ISGID) inode.i_mode |= EXT2_S_ISGID;
+  if (vnode->mode & VFS_S_ISVTX) inode.i_mode |= EXT2_S_ISVTX;
 
   inode.i_size = vnode->len;
   inode.i_uid = vnode->uid;

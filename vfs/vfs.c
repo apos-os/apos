@@ -39,6 +39,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->type = VNODE_UNINITIALIZED;
   n->len = -1;
   n->uid = -1;
+  n->mode = 0;
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
@@ -259,6 +260,13 @@ static vnode_t* get_root_for_path(const char* path) {
   }
 }
 
+// Returns non-zero if the given mode is a valid create mode_t (i.e. can be
+// passed to chmod() or as the mode argument to open()).
+static int is_valid_create_mode(mode_t mode) {
+  return (mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+                   VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX)) == 0;
+}
+
 void vfs_init() {
   KASSERT(g_root_fs == 0);
 
@@ -455,12 +463,22 @@ int vfs_get_vnode_for_path(const char* path) {
   return num;
 }
 
-int vfs_open(const char* path, uint32_t flags) {
+int vfs_open(const char* path, uint32_t flags, ...) {
   // Check arguments.
   const uint32_t mode = flags & VFS_MODE_MASK;
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
     return -EINVAL;
   }
+  mode_t create_mode = 0;
+  if (flags & VFS_O_CREAT) {
+    va_list args;
+    va_start(args, flags);
+    create_mode = va_arg(args, mode_t);
+    va_end(args);
+  }
+
+  if (!is_valid_create_mode(create_mode)) return -EINVAL;
+
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
@@ -501,6 +519,7 @@ int vfs_open(const char* path, uint32_t flags) {
       child = vfs_get(parent->fs, child_inode);
       child->uid = geteuid();
       child->gid = getegid();
+      child->mode = create_mode;
     }
 
     // Done with the parent.
@@ -570,7 +589,9 @@ int vfs_close(int fd) {
   return 0;
 }
 
-int vfs_mkdir(const char* path) {
+int vfs_mkdir(const char* path, mode_t mode) {
+  if (!is_valid_create_mode(mode)) return -EINVAL;
+
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
@@ -595,6 +616,7 @@ int vfs_mkdir(const char* path) {
   vnode_t* child = vfs_get(parent->fs, child_inode);
   child->uid = geteuid();
   child->gid = getegid();
+  child->mode = mode;
   VFS_PUT_AND_CLEAR(child);
 
   // We're done!
@@ -602,14 +624,18 @@ int vfs_mkdir(const char* path) {
   return 0;
 }
 
-int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev) {
+int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
+  const mode_t node_type = mode & VFS_S_IFMT;
+  if (node_type != VFS_S_IFREG && node_type != VFS_S_IFCHR &&
+      node_type != VFS_S_IFBLK) {
+    return -EINVAL;
+  }
+
+  if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
+
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  if (mode != VFS_S_IFREG && mode != VFS_S_IFCHR && mode != VFS_S_IFBLK) {
-    return -EINVAL;
-  }
 
   int error = lookup_path(root, path, &parent, base_name);
   VFS_PUT_AND_CLEAR(root);
@@ -637,6 +663,7 @@ int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev) {
   vnode_t* child = vfs_get(parent->fs, child_inode);
   child->uid = geteuid();
   child->gid = getegid();
+  child->mode = mode & ~VFS_S_IFMT;
   VFS_PUT_AND_CLEAR(child);
 
   // We're done!
@@ -1029,6 +1056,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
+  stat->st_mode |= vnode->mode;
   stat->st_uid = vnode->uid;
   stat->st_gid = vnode->gid;
   stat->st_rdev = vnode->dev;
@@ -1169,6 +1197,77 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
+  }
+
+  file->refcount--;
+  return result;
+}
+
+static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
+  if (!is_valid_create_mode(mode)) return -EINVAL;
+
+  if (!proc_is_superuser(proc_current()) &&
+      vnode->uid != geteuid()) {
+    return -EPERM;
+  }
+
+  vnode->mode = mode;
+  return 0;
+}
+
+// TODO(aoates): de-dup this with lstat, and others.
+int vfs_lchmod(const char* path, mode_t mode) {
+  if (!path) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  int result = vfs_chmod_internal(child, mode);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+int vfs_fchmod(int fd, mode_t mode) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  file->refcount++;
+
+  int result = 0;
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+    result = vfs_chmod_internal(file->vnode, mode);
   }
 
   file->refcount--;

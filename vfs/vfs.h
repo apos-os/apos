@@ -15,6 +15,7 @@
 #ifndef APOO_VFS_H
 #define APOO_VFS_H
 
+#include <stdarg.h>
 #include <stdint.h>
 
 #include "common/posix_types.h"
@@ -63,6 +64,7 @@ struct vnode {
   // is still open.
   uid_t uid;
   gid_t gid;
+  mode_t mode;  // Doesn't include type bits (just permissions + sticky)
 
   int refcount;
 
@@ -126,13 +128,13 @@ struct fs {
   //
   // Returns the inode number of the new file, or -error on failure.
   int (*mknod)(vnode_t* parent, const char* name, vnode_type_t type,
-               apos_dev_t dev /*, mode? */);
+               apos_dev_t dev);
 
   // Create a directory in the given directory.  Returns the inode number of the
   // new directory, or -error on failure.
   //
   // Note: it must create the '.' and '..' entries in the directory as well.
-  int (*mkdir)(vnode_t* parent, const char* name /*, mode? */);
+  int (*mkdir)(vnode_t* parent, const char* name);
 
   // Remove an empty directory from the parent. Returns 0 on success, or -error.
   //
@@ -208,12 +210,6 @@ struct fs {
 #define VFS_O_CREAT    0x08
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
 
-// File types.
-#define VFS_S_IFREG      0x10000
-#define VFS_S_IFCHR      0x20000
-#define VFS_S_IFBLK      0x40000
-#define VFS_S_IFDIR      0x80000
-
 #define VFS_SEEK_SET 1
 #define VFS_SEEK_CUR 2
 #define VFS_SEEK_END 3
@@ -270,20 +266,19 @@ void vfs_put(vnode_t* n);
 // If VFS_O_CREAT is given, the file will be created (if it doesn't already
 // exist).
 //
-// TODO(aoates): mode!
-int vfs_open(const char* path, uint32_t flags);
+// If VFS_O_CREAT is given in |flags|, an additional argument (of type mode_t)
+// is taken to be the mode of the file to be created (if necessary).
+int vfs_open(const char* path, uint32_t flags, ...);
 
 // Close the given file descriptor.  Returns 0 on success, or -error.
 int vfs_close(int fd);
 
 // Make a directory at the given path.  Returns 0 on success, or -error.
-// TODO(aoates): mode
-int vfs_mkdir(const char* path);
+int vfs_mkdir(const char* path, mode_t mode);
 
 // Create a file system node (regular file or special file).  mode must be one
 // of the supported file types, bitwise OR'd with the mode of the file.
-// TODO(aoates): implement mode
-int vfs_mknod(const char* path, uint32_t mode, apos_dev_t dev);
+int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev);
 
 // Remove an empty directory. Returns 0 on success, or -error.
 int vfs_rmdir(const char* path);
@@ -342,5 +337,11 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group);
 // Changes the owner and/or group of the given fd.  Returns 0 on success, or
 // -error.
 int vfs_fchown(int fd, uid_t owner, gid_t group);
+
+// Changes the file mode of the given path.  Returns 0 on success, or -error.
+int vfs_lchmod(const char* path, mode_t mode);
+
+// Changes the file mode of the given fd.  Returns 0 on success, or -error.
+int vfs_fchmod(int fd, mode_t mode);
 
 #endif

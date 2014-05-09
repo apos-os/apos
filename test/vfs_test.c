@@ -43,13 +43,13 @@
 
 // Helper method to create a file for a test.
 static void create_file(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
   KASSERT(fd >= 0);
   vfs_close(fd);
 }
 
 static void create_file_with_data(const char* path, const char* data) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
   KASSERT(fd >= 0);
   const int result = vfs_write(fd, data, kstrlen(data));
   KASSERT(result == kstrlen(data));
@@ -69,7 +69,7 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
 // Helper method that verifies that the given file can be created (then unlinks
 // it).
 static void EXPECT_CAN_CREATE_FILE(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(fd, 0);
   if (fd >= 0) {
     vfs_close(fd);
@@ -99,13 +99,20 @@ static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
   KEXPECT_EQ(gid, stat.st_gid);
 }
 
+static mode_t get_mode(const char* path) {
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(path, &stat));
+  return stat.st_mode;
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test(void) {
   KTEST_BEGIN("vfs_open(): parent refcount test");
-  KEXPECT_EQ(0, vfs_mkdir("/ref_dir1"));
-  KEXPECT_EQ(0, vfs_mkdir("/ref_dir1/dir2"));
+  KEXPECT_EQ(0, vfs_mkdir("/ref_dir1", 0));
+  KEXPECT_EQ(0, vfs_mkdir("/ref_dir1/dir2", 0));
 
-  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
+  const int fd1 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(fd1, 0);
 
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
@@ -113,7 +120,7 @@ static void open_parent_refcount_test(void) {
   EXPECT_VNODE_REFCOUNT(0, "/ref_dir1/dir2");
   EXPECT_VNODE_REFCOUNT(1, "/ref_dir1/dir2/test1");
 
-  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR);
+  const int fd2 = vfs_open("/ref_dir1/dir2/test1", VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(fd2, 0);
 
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
@@ -138,7 +145,7 @@ static void open_parent_refcount_test(void) {
 // Test calling vfs_open() on a directory.
 static void open_dir_test(void) {
   KTEST_BEGIN("vfs_open(): open directory (read-only)");
-  KEXPECT_EQ(0, vfs_mkdir("/dir1"));
+  KEXPECT_EQ(0, vfs_mkdir("/dir1", 0));
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   int fd = vfs_open("/dir1", VFS_O_RDONLY);
@@ -167,15 +174,15 @@ static void open_test(void) {
   EXPECT_VNODE_REFCOUNT(-ENOENT, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(1, vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   vfs_log_cache();
 
-  KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(2, vfs_open("/test2", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   vfs_log_cache();
@@ -196,7 +203,7 @@ static void open_test(void) {
   vfs_log_cache();
 
   // Make sure we reuse the fd.
-  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(1, vfs_open("/test3", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(2, "/test1");
   EXPECT_VNODE_REFCOUNT(1, "/test2");
   EXPECT_VNODE_REFCOUNT(1, "/test3");
@@ -228,7 +235,7 @@ static void open_test(void) {
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_RDWR));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
-  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT | VFS_O_RDWR));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("/test1/test2", VFS_O_CREAT | VFS_O_RDWR, 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
 
   open_parent_refcount_test();
@@ -247,33 +254,33 @@ static void mkdir_test(void) {
   KTEST_BEGIN("vfs_mkdir() test");
 
   // Make sure we have some normal files around.
-  const int test1_fd = vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR);
+  const int test1_fd = vfs_open("/test1", VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_GE(test1_fd, 0);
 
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/"));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/test1"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/test1", 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
-  KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1"));
+  KEXPECT_EQ(-ENOTDIR, vfs_mkdir("/test1/dir1", 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
 
   KTEST_BEGIN("regular mkdir()");
-  KEXPECT_EQ(0, vfs_mkdir("/dir1"));
-  KEXPECT_EQ(0, vfs_mkdir("/dir2"));
+  KEXPECT_EQ(0, vfs_mkdir("/dir1", 0));
+  KEXPECT_EQ(0, vfs_mkdir("/dir2", 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1"));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir2"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir2", 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
 
   KTEST_BEGIN("nested mkdir()");
-  KEXPECT_EQ(-ENOENT, vfs_mkdir("/dir1/dir1a/dir1b"));
-  KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a"));
-  KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a/dir1b"));
+  KEXPECT_EQ(-ENOENT, vfs_mkdir("/dir1/dir1a/dir1b", 0));
+  KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a", 0));
+  KEXPECT_EQ(0, vfs_mkdir("/dir1/dir1a/dir1b", 0));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(0, "/dir1");
   EXPECT_VNODE_REFCOUNT(0, "/dir1/dir1a");
@@ -282,13 +289,13 @@ static void mkdir_test(void) {
   // TODO(aoates): better testing for . and ...
   // TODO(aoates): test '.' and '..' at the end of paths
   KTEST_BEGIN("crappy '.' and '..' tests");
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/."));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/.."));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/./dir1"));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/../dir1"));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/../../../dir1"));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1/./././dir1a"));
-  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1/../dir2/../dir1/./dir1a/dir1b/../dir1b"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/.", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/..", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/./dir1", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/../dir1", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/../../../dir1", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1/./././dir1a", 0));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("/dir1/../dir2/../dir1/./dir1a/dir1b/../dir1b", 0));
 
   // TODO(aoates): create files in the directories, open them
   // TODO(aoates): test '.' and '..' links!
@@ -349,10 +356,10 @@ static void file_table_reclaim_test(void) {
   KTEST_BEGIN("file table reclaim test");
   const char kTestDir[] = "/reclaim_test/";
   const char kTestFile[] = "/reclaim_test/test1";
-  KEXPECT_EQ(0, vfs_mkdir(kTestDir));
+  KEXPECT_EQ(0, vfs_mkdir(kTestDir, 0));
   int files_opened = 0;
   for (int i = 0; i < VFS_MAX_FILES * 2; ++i) {
-    const int fd = vfs_open(kTestFile, VFS_O_CREAT | VFS_O_RDWR);
+    const int fd = vfs_open(kTestFile, VFS_O_CREAT | VFS_O_RDWR, 0);
     if (fd < 0) {
       KEXPECT_GE(fd, 0);
       break;
@@ -392,7 +399,7 @@ static void* vfs_open_thread_safety_test_func(void* arg) {
   thread_safety_test_t* test = (thread_safety_test_t*)arg;
   for (int i = 0; i < THREAD_SAFETY_TEST_ITERS; ++i) {
     int fd = vfs_open("/thread_safety_test/a/./b/../b/thread_safety_test_file",
-                      VFS_O_CREAT | VFS_O_RDWR);
+                      VFS_O_CREAT | VFS_O_RDWR, 0);
     KASSERT(fd >= 0);
 
     kmutex_lock(&test->mu);
@@ -415,9 +422,9 @@ static void vfs_open_thread_safety_test(void) {
   kthread_t threads[THREAD_SAFETY_TEST_THREADS];
 
   // Set things up.
-  KASSERT(vfs_mkdir("/thread_safety_test") == 0);
-  KASSERT(vfs_mkdir("/thread_safety_test/a") == 0);
-  KASSERT(vfs_mkdir("/thread_safety_test/a/b") == 0);
+  KASSERT(vfs_mkdir("/thread_safety_test", 0) == 0);
+  KASSERT(vfs_mkdir("/thread_safety_test/a", 0) == 0);
+  KASSERT(vfs_mkdir("/thread_safety_test/a/b", 0) == 0);
 
   thread_safety_test_t test;
   kmutex_init(&test.mu);
@@ -454,7 +461,7 @@ static void vfs_open_thread_safety_test(void) {
 
 static void unlink_test(void) {
   KTEST_BEGIN("vfs_unlink(): basic test");
-  int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR);
+  int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR, 0);
   vfs_close(fd);
   KEXPECT_EQ(0, vfs_unlink("/unlink"));
   KEXPECT_EQ(-ENOENT, vfs_open("/unlink", VFS_O_RDWR));
@@ -463,15 +470,15 @@ static void unlink_test(void) {
   KEXPECT_EQ(-ENOENT, vfs_unlink("/doesnt_exist"));
 
   KTEST_BEGIN("vfs_unlink(): in a directory");
-  vfs_mkdir("/unlink");
-  vfs_mkdir("/unlink/a");
-  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR);
+  vfs_mkdir("/unlink", 0);
+  vfs_mkdir("/unlink/a", 0);
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR, 0);
   vfs_close(fd);
   KEXPECT_EQ(0, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
   KEXPECT_EQ(-ENOENT, vfs_unlink("/unlink/./a/../../unlink/a/./file"));
 
   KTEST_BEGIN("vfs_unlink(): non-directory in path");
-  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR);
+  fd = vfs_open("/unlink/a/file", VFS_O_CREAT | VFS_O_RDWR, 0);
   vfs_close(fd);
   KEXPECT_EQ(-ENOTDIR, vfs_unlink("/unlink/a/file/in_file"));
   KEXPECT_EQ(0, vfs_unlink("/unlink/a/file")); // Clean up.
@@ -492,8 +499,8 @@ static void cwd_test(void) {
   KEXPECT_EQ(kstrlen(path), vfs_getcwd(buf, kBufSize)); \
   KEXPECT_STREQ((path), buf)
 
-  vfs_mkdir("/cwd_test");
-  vfs_mkdir("/cwd_test/a");
+  vfs_mkdir("/cwd_test", 0);
+  vfs_mkdir("/cwd_test/a", 0);
   create_file("/cwd_test/file");
 
   KTEST_BEGIN("vfs_getcwd(): root test");
@@ -563,13 +570,13 @@ static void cwd_test(void) {
 
   KTEST_BEGIN("vfs_mkdir(): respects cwd");
   vfs_chdir("/cwd_test");
-  vfs_mkdir("cwd_mkdir_dir");
+  vfs_mkdir("cwd_mkdir_dir", 0);
   EXPECT_CAN_CREATE_FILE("/cwd_test/cwd_mkdir_dir/file");
   KEXPECT_EQ(0, vfs_rmdir("/cwd_test/cwd_mkdir_dir"));
 
   KTEST_BEGIN("vfs_rmdir(): respects cwd");
   vfs_chdir("/cwd_test");
-  vfs_mkdir("/cwd_test/cwd_rmdir_dir");
+  vfs_mkdir("/cwd_test/cwd_rmdir_dir", 0);
   KEXPECT_EQ(0, vfs_rmdir("cwd_rmdir_dir"));
 
   KTEST_BEGIN("vfs_unlink(): respects cwd");
@@ -614,7 +621,7 @@ static void rw_test(void) {
   const int kBufSize = 512;
   char buf[kBufSize];
   create_file(kFile);
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   KTEST_BEGIN("vfs_write(): basic write test");
   int fd = vfs_open(kFile, VFS_O_RDWR);
@@ -845,7 +852,7 @@ static void rw_mode_test(void) {
   char buf[kBufSize];
 
   // Create a file and put some data in it.
-  int fd = vfs_open(kFile, VFS_O_CREAT | VFS_O_RDWR);
+  int fd = vfs_open(kFile, VFS_O_CREAT | VFS_O_RDWR, 0);
   KEXPECT_EQ(6, vfs_write(fd, "abcdef", 6));
   vfs_close(fd);
 
@@ -957,11 +964,11 @@ static void getdents_test(void) {
   EXPECT_GETDENTS(fd, 2, root_expected);
   vfs_close(fd);
 
-  vfs_mkdir("/getdents");
-  vfs_mkdir("/getdents/a");
-  vfs_mkdir("/getdents/b");
-  vfs_mkdir("/getdents/c");
-  vfs_mkdir("/getdents/a/1");
+  vfs_mkdir("/getdents", 0);
+  vfs_mkdir("/getdents/a", 0);
+  vfs_mkdir("/getdents/b", 0);
+  vfs_mkdir("/getdents/c", 0);
+  vfs_mkdir("/getdents/a/1", 0);
   create_file("/getdents/f1");
   create_file("/getdents/f2");
   create_file("/getdents/a/f3");
@@ -1161,7 +1168,7 @@ static void* create_thread_test_func(void* arg) {
   for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
     char buf[512];
     ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
-    int fd = vfs_open(buf, VFS_O_CREAT | VFS_O_RDWR);
+    int fd = vfs_open(buf, VFS_O_CREAT | VFS_O_RDWR, 0);
     if (fd < 0) {
       KEXPECT_GE(fd, -0);
     } else {
@@ -1190,7 +1197,7 @@ static void create_thread_test(void) {
   const char kTestDir[] = "/create_thread_test";
   kthread_t threads[CREATE_SAFETY_THREADS];
 
-  KEXPECT_EQ(0, vfs_mkdir(kTestDir));
+  KEXPECT_EQ(0, vfs_mkdir(kTestDir, 0));
   for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
     KASSERT(
         kthread_create(&threads[i], &create_thread_test_func, (void*)i) == 0);
@@ -1273,7 +1280,7 @@ static void unlink_open_file_test(void) {
 static void unlink_open_directory_test(void) {
   KTEST_BEGIN("rmdir() open directory test");
   const char kDir[] = "unlink_open_directory_test";
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   const int fd = vfs_open(kDir, VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
@@ -1295,7 +1302,7 @@ static void create_in_unlinked_directory(void) {
   KTEST_BEGIN("create in rmdir()'d directory test");
   const char kDir[] = "create_in_unlinked_directory_test";
   const char kFile[] = "create_in_unlinked_directory_test/file";
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   const int fd = vfs_open(kDir, VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
@@ -1303,7 +1310,7 @@ static void create_in_unlinked_directory(void) {
   KEXPECT_EQ(0, vfs_rmdir(kDir));
 
   // Try to create a file in the directory.  It should fail.
-  const int fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT);
+  const int fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT, 0);
   KEXPECT_EQ(-ENOENT, fd2);
 
   EXPECT_GETDENTS(fd, 0, 0x0);
@@ -1317,7 +1324,7 @@ static void read_page_test(const char* filename, const int size) {
   const uint32_t page_buf_phys = page_frame_alloc();
   void* const page_buf = (void*)phys2virt(page_buf_phys);
 
-  int fd = vfs_open(filename, VFS_O_RDWR | VFS_O_CREAT);
+  int fd = vfs_open(filename, VFS_O_RDWR | VFS_O_CREAT, 0);
   KEXPECT_GE(fd, 0);
 
   // Create a unique pattern.
@@ -1355,7 +1362,7 @@ static void read_page_test(const char* filename, const int size) {
 static void memobj_test(void) {
   KTEST_BEGIN("vfs_get_memobj() test");
   const char kDir[] = "memobj_test";
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   memobj_t* unused_memobj = 0x0;
 
@@ -1371,7 +1378,7 @@ static void memobj_test(void) {
 
   KTEST_BEGIN("vfs_get_memobj() mode test");
   const char kFile[] = "memobj_test/file";
-  int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT);
+  int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT, 0);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
   KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
@@ -1416,7 +1423,12 @@ static void mknod_test(void) {
   const char kCharDevFile[] = "mknod_test_dir/char";
   const char kBlockDevFile[] = "mknod_test_dir/block";
 
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  KTEST_BEGIN("mknod(): invalid file type test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFMT, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, 0xffff, mkdev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kDir);
 
   KTEST_BEGIN("mknod(): regular file test");
   KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
@@ -1475,7 +1487,7 @@ static void block_device_test(void) {
   const char kBlockDevFile[] = "block_dev_test_dir/block";
   const int kRamdiskSize = PAGE_SIZE * 3;
 
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   // Create a ramdisk for the test.
   ramdisk_t* ramdisk = 0x0;
@@ -1576,7 +1588,7 @@ static void stat_test(void) {
   const char kCharDevFile[] = "stat_test_dir/char";
   const char kBlockDevFile[] = "stat_test_dir/block";
 
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   // TODO(aoates): test the following
   //  * st_dev
@@ -1709,7 +1721,7 @@ static void initial_owner_test_func(void* arg) {
   KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
   KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
 
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
   create_file(kRegFile);
   EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupB);
 
@@ -1890,7 +1902,7 @@ static void chown_test(void) {
   const char kBlockDevFile[] = "chown_test_dir/block";
 
   KTEST_BEGIN("vfs_lchown()/vfs_fchown(): test setup");
-  KEXPECT_EQ(0, vfs_mkdir(kDir));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
   create_file(kRegFile);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
@@ -1981,6 +1993,252 @@ static void chown_test(void) {
   //  * maybe: fchown() with different fd flags? (RW vs RD_ONLY etc)
 }
 
+static void mode_flags_test(void) {
+  KTEST_BEGIN("vfs mode_t flags test");
+  KEXPECT_EQ(VFS_S_IRWXU, VFS_S_IRUSR | VFS_S_IWUSR | VFS_S_IXUSR);
+  KEXPECT_EQ(VFS_S_IRWXG, VFS_S_IRGRP | VFS_S_IWGRP | VFS_S_IXGRP);
+  KEXPECT_EQ(VFS_S_IRWXO, VFS_S_IROTH | VFS_S_IWOTH | VFS_S_IXOTH);
+
+  const mode_t kUniqueFlags[] = {
+    VFS_S_IRUSR, VFS_S_IWUSR, VFS_S_IXUSR, VFS_S_IRGRP, VFS_S_IWGRP,
+    VFS_S_IXGRP, VFS_S_IROTH, VFS_S_IWOTH, VFS_S_IXOTH, VFS_S_ISUID,
+    VFS_S_ISGID, VFS_S_ISVTX,
+  };
+  const int kNumUniqueFlags = sizeof(kUniqueFlags) / sizeof(mode_t);
+
+  for (int i = 0; i < kNumUniqueFlags; ++i) {
+    int count = 0;
+    for (int j = 0; j < kNumUniqueFlags; ++j) {
+      if ((kUniqueFlags[i] & kUniqueFlags[j]) != 0) count++;
+    }
+    KEXPECT_EQ(1, count);
+  }
+}
+
+// Do a basic lchmod/fchmod test for the given file.
+#define BASIC_CHMOD_TEST(path, filetype, mode_filetype) do { \
+  KTEST_BEGIN("vfs_lchmod(): " filetype); \
+  KEXPECT_NE(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
+  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXO)); \
+  KEXPECT_EQ(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
+\
+  KTEST_BEGIN("vfs_fchmod(): " filetype); \
+  int fd = vfs_open(path, VFS_O_RDONLY); \
+  KEXPECT_GE(fd, 0); \
+  KEXPECT_NE(VFS_S_IRWXG | mode_filetype, get_mode(path)); \
+  KEXPECT_EQ(0, vfs_fchmod(fd, VFS_S_IRWXG)); \
+  KEXPECT_EQ(VFS_S_IRWXG | mode_filetype, get_mode(path)); \
+  KEXPECT_EQ(0, vfs_close(fd)); \
+\
+  KTEST_BEGIN("vfs_lchmod(): SUID/SGID/SVXT for " filetype); \
+  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXU | VFS_S_ISUID | \
+                           VFS_S_ISGID | VFS_S_ISVTX)); \
+  KEXPECT_EQ(VFS_S_IRWXU | VFS_S_ISUID | VFS_S_ISGID |  VFS_S_ISVTX | \
+             mode_filetype, get_mode(path)); \
+\
+} while (0);
+
+static void non_root_chmod_test_func(void* arg) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const uid_t kTestGroupA = 4;
+  const uid_t kTestGroupB = 5;
+
+  const char kRegFileA[] = "chmod_test_dir/regA";
+  const char kRegFileB[] = "chmod_test_dir/regB";
+
+  KTEST_BEGIN("vfs_lchmod(): non-root test setup");
+  create_file(kRegFileA);
+  create_file(kRegFileB);
+  KEXPECT_EQ(0, vfs_lchown(kRegFileA, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_lchown(kRegFileB, kTestUserB, kTestGroupB));
+
+  KTEST_BEGIN("vfs_lchmod(): root can always chmod");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFileA, VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IRWXO | VFS_S_IFREG, get_mode(kRegFileA));
+
+  KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
+  KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
+
+  KTEST_BEGIN("vfs_lchmod(): non-root owner can chmod");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFileB, VFS_S_IRUSR));
+  KEXPECT_EQ(VFS_S_IRUSR | VFS_S_IFREG, get_mode(kRegFileB));
+
+  KTEST_BEGIN("vfs_lchmod(): non-owner cannot chmod");
+  KEXPECT_EQ(-EPERM, vfs_lchmod(kRegFileA, VFS_S_IRUSR));
+
+  vfs_unlink(kRegFileA);
+  vfs_unlink(kRegFileB);
+}
+
+static void chmod_test(void) {
+  const char kDir[] = "chmod_test_dir";
+  const char kRegFile[] = "chmod_test_dir/reg";
+  const char kCharDevFile[] = "chmod_test_dir/char";
+  const char kBlockDevFile[] = "chmod_test_dir/block";
+
+  KTEST_BEGIN("vfs_lchmod()/vfs_fchmod(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+  create_file(kRegFile);
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+
+  KTEST_BEGIN("vfs_lchmod(): invalid arguments test");
+  KEXPECT_EQ(-EINVAL, vfs_lchmod(0x0, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-ENOENT, vfs_lchmod("chmod_test_dir/notafile", VFS_S_IRWXU));
+
+  KTEST_BEGIN("vfs_fchmod(): invalid arguments test");
+  int fd = vfs_open(kRegFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBADF, vfs_fchmod(-1, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_fchmod(fd, 0xFFFFF));
+  vfs_close(fd);
+  KEXPECT_EQ(-EBADF, vfs_fchmod(fd, VFS_S_IRWXU));
+
+  BASIC_CHMOD_TEST(kRegFile, "regular file", VFS_S_IFREG);
+  BASIC_CHMOD_TEST(kDir, "directory", VFS_S_IFDIR);
+  BASIC_CHMOD_TEST(kCharDevFile, "character device", VFS_S_IFCHR);
+  BASIC_CHMOD_TEST(kBlockDevFile, "block device", VFS_S_IFBLK);
+
+  KTEST_BEGIN("vfs_lchmod(): decreasing permissions");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+             VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO, get_mode(kRegFile));
+
+  KTEST_BEGIN("vfs_lchmod(): increasing permissions");
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO |
+                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO |
+             VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
+
+  KTEST_BEGIN("vfs_lchmod(): keep same permissions");
+  const mode_t kAllPerms = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+      VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX;
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
+  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+
+  // TODO(aoates): tests:
+  //  * non-root changing the mode clears ISGID if groups don't match.
+  //  * writing a regular file clears ISUID/ISGID
+}
+
+static void open_mode_test(void) {
+  const char kDir[] = "open_with_mode_test";
+  const char kRegFile[] = "open_with_mode_test/reg";
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with mode test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with mode test");
+  int fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, 0);
+  KEXPECT_EQ(VFS_S_IFREG, get_mode(kRegFile));
+  vfs_close(fd);
+  vfs_unlink(kRegFile);
+
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRUSR | VFS_S_ISUID);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR | VFS_S_ISUID, get_mode(kRegFile));
+  vfs_close(fd);
+  vfs_unlink(kRegFile);
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with invalid mode test");
+  KEXPECT_EQ(-EINVAL,
+             vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IFREG));
+  KEXPECT_EQ(-EINVAL, vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, 0xFFFFF));
+  KEXPECT_EQ(-EINVAL, vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, -1));
+
+  KTEST_BEGIN("vfs_open(): O_CREAT with mode on existing file");
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRUSR);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRUSR | VFS_S_IRGRP);
+  // Shouldn't have changed the mode.
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_open(): open with mode on existing file, no O_CREAT");
+  fd = vfs_open(kRegFile, VFS_O_RDWR, VFS_S_IRUSR | VFS_S_IRGRP);
+  // Shouldn't have changed the mode.
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+}
+
+static void mkdir_mode_test(void) {
+  const char kDir[] = "mkdir_mode_test";
+
+  KTEST_BEGIN("vfs_mkdir(): invalid mode test");
+  KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, -1));
+  KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, VFS_S_IFDIR | VFS_S_IRWXG));
+
+  KTEST_BEGIN("vfs_mkdir(): mode test");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID,
+             get_mode(kDir));
+  vfs_rmdir(kDir);
+
+  KTEST_BEGIN("vfs_mkdir(): mode test w/ existing directory");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir(kDir, VFS_S_IRWXG));
+  // Shouldn't have changed the mode.
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXU, get_mode(kDir));
+  vfs_rmdir(kDir);
+}
+
+static void mknod_mode_test(void) {
+  const char kDir[] = "mknod_mode_test_dir";
+  const char kRegFile[] = "mknod_mode_test_dir/reg";
+  const char kCharDevFile[] = "mknod_mode_test_dir/char";
+  const char kBlockDevFile[] = "mknod_mode_test_dir/block";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  KTEST_BEGIN("mknod(): invalid mode test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0xffff, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | -1, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0x8000, mkdev(0, 0)));
+
+  KTEST_BEGIN("mknod(): regular file w/ mode test");
+  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG | VFS_S_IRWXU, mkdev(0, 0)));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
+
+  KTEST_BEGIN("mknod(): character device file w/ mode test");
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR | VFS_S_IROTH,
+                          mkdev(0, 0)));
+  KEXPECT_EQ(VFS_S_IFCHR | VFS_S_IROTH, get_mode(kCharDevFile));
+
+  KTEST_BEGIN("mknod(): block device file w/ mode test");
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK | VFS_S_IXGRP,
+                          mkdev(0, 0)));
+  KEXPECT_EQ(VFS_S_IFBLK | VFS_S_IXGRP, get_mode(kBlockDevFile));
+
+  vfs_unlink(kBlockDevFile);
+  vfs_unlink(kCharDevFile);
+  vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2018,6 +2276,12 @@ void vfs_test(void) {
   stat_test();
   initial_owner_test();
   chown_test();
+
+  mode_flags_test();
+  chmod_test();
+  open_mode_test();
+  mkdir_mode_test();
+  mknod_mode_test();
 
   reverse_path_test();
 
