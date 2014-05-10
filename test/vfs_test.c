@@ -43,7 +43,8 @@
 
 // Helper method to create a file for a test.
 static void create_file(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR,
+                          VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO);
   KASSERT(fd >= 0);
   vfs_close(fd);
 }
@@ -1604,7 +1605,8 @@ static void stat_test(void) {
   KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
   // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
-  KEXPECT_EQ(VFS_S_IFREG, stat.st_mode);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
   KEXPECT_EQ(0, stat.st_size);
   KEXPECT_GT(stat.st_blksize, 0);
@@ -1753,6 +1755,7 @@ static void initial_owner_test(void) {
 // then closes it and returns the result.
 static int do_fchown(const char* path, uid_t owner, gid_t group) {
   int fd = vfs_open(path, VFS_O_RDWR);
+  if (fd < 0) return fd;
   int result = vfs_fchown(fd, owner, group);
   vfs_close(fd);
   return result;
@@ -1902,7 +1905,7 @@ static void chown_test(void) {
   const char kBlockDevFile[] = "chown_test_dir/block";
 
   KTEST_BEGIN("vfs_lchown()/vfs_fchown(): test setup");
-  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   create_file(kRegFile);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
