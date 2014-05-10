@@ -28,6 +28,7 @@
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/special.h"
+#include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
 
 #define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
@@ -491,6 +492,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
 
   // Lookup the child inode.
   vnode_t* child;
+  int created = 0;
   if (base_name[0] == '\0') {
     child = VFS_MOVE_REF(parent);
   } else {
@@ -520,11 +522,30 @@ int vfs_open(const char* path, uint32_t flags, ...) {
       child->uid = geteuid();
       child->gid = getegid();
       child->mode = create_mode;
+      created = 1;
     }
 
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
+  }
+
+  // Check permissions on the file if it already exists.
+  if (!created) {
+    int mode_check = 0;
+    if (mode == VFS_O_RDONLY || mode == VFS_O_RDWR) {
+      if ((mode_check = vfs_check_mode(VFS_OP_READ, proc_current(), child)))
+        return mode_check;
+    }
+    if (mode == VFS_O_WRONLY || mode == VFS_O_RDWR) {
+      if ((mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), child)))
+        return mode_check;
+    }
+    if (flags & VFS_O_INTERNAL_EXEC) {
+      if ((mode_check = vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, proc_current(),
+                                       child)))
+        return mode_check;
+    }
   }
 
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
