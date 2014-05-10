@@ -21,6 +21,7 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "proc/scheduler.h"
+#include "proc/user.h"
 #include "vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
@@ -206,6 +207,10 @@ fs_t* ramfs_create_fs() {
   root->vnode.num = root_inode;
   root->vnode.len = 0;
   root->vnode.type = VNODE_DIRECTORY;
+  root->vnode.uid = SUPERUSER_UID;
+  root->vnode.gid = SUPERUSER_GID;
+  root->vnode.mode =
+      VFS_S_IRWXU | VFS_S_IRGRP | VFS_S_IXGRP | VFS_S_IROTH | VFS_S_IXOTH;
 
   // Link it to itself.
   ramfs_link_internal((vnode_t*)root, root_inode, ".");
