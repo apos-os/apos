@@ -436,6 +436,7 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_exec", VFS_S_IRUSR |
                           VFS_S_IWUSR | VFS_S_IRWXG | VFS_S_IRWXO));
 
+  // mkdir()
   KTEST_BEGIN("vfs mode test: vfs_mkdir() succeeds in non-readable directory");
   KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_read/d", 0));
   KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test/no_read/d"));
@@ -446,6 +447,19 @@ static void do_syscall_mode_test(void* arg) {
   KTEST_BEGIN("vfs mode test: vfs_mkdir() fails in non-executable directory");
   KEXPECT_EQ(-EACCES, vfs_mkdir("syscall_mode_test/no_exec/d", 0));
 
+  // mknod()
+  KTEST_BEGIN("vfs mode test: vfs_mknod() succeeds in non-readable directory");
+  KEXPECT_EQ(0, vfs_mknod("syscall_mode_test/no_read/chr", VFS_S_IFCHR,
+                          mkdev(1, 2)));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_read/chr"));
+
+  KTEST_BEGIN("vfs mode test: vfs_mknod() fails in non-writable directory");
+  KEXPECT_EQ(-EACCES, vfs_mknod("syscall_mode_test/no_write/chr", VFS_S_IFCHR,
+                          mkdev(1, 2)));
+
+  KTEST_BEGIN("vfs mode test: vfs_mknod() fails in non-executable directory");
+  KEXPECT_EQ(-EACCES, vfs_mknod("syscall_mode_test/no_exec/chr", VFS_S_IFCHR,
+                          mkdev(1, 2)));
 
   // Teardown.
   KTEST_BEGIN("vfs mode test: syscall mode test cleanup");

@@ -684,6 +684,12 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
     return -EEXIST;  // Root directory!
   }
 
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
   vnode_type_t type = VNODE_INVALID;
   if (mode & VFS_S_IFREG) type = VNODE_REGULAR;
   else if (mode & VFS_S_IFBLK) type = VNODE_BLOCKDEV;
