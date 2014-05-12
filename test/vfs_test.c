@@ -1744,7 +1744,6 @@ static void initial_owner_test_func(void* arg) {
   vfs_unlink(kCharDevFile);
   vfs_unlink(kRegFile);
   vfs_rmdir(kSubDir);
-  KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
 static void initial_owner_test(void) {
@@ -1752,6 +1751,7 @@ static void initial_owner_test(void) {
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
+  KEXPECT_EQ(0, vfs_rmdir("owner_test_dir"));
 }
 
 // Helper that opens the given file, runs vfs_fchown() on the file descriptor,

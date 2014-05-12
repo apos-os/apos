@@ -732,6 +732,12 @@ int vfs_rmdir(const char* path) {
     return -EINVAL;
   }
 
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
   vnode_t* child = 0x0;
