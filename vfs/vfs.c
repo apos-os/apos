@@ -534,17 +534,17 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   if (!created) {
     int mode_check = 0;
     if (mode == VFS_O_RDONLY || mode == VFS_O_RDWR) {
-      if ((mode_check = vfs_check_mode(VFS_OP_READ, proc_current(), child)))
-        return mode_check;
+      mode_check = vfs_check_mode(VFS_OP_READ, proc_current(), child);
     }
-    if (mode == VFS_O_WRONLY || mode == VFS_O_RDWR) {
-      if ((mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), child)))
-        return mode_check;
+    if (mode_check == 0 && (mode == VFS_O_WRONLY || mode == VFS_O_RDWR)) {
+      mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), child);
     }
-    if (flags & VFS_O_INTERNAL_EXEC) {
-      if ((mode_check = vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, proc_current(),
-                                       child)))
-        return mode_check;
+    if (mode_check == 0 && flags & VFS_O_INTERNAL_EXEC) {
+      mode_check = vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, proc_current(), child);
+    }
+    if (mode_check) {
+      VFS_PUT_AND_CLEAR(child);
+      return mode_check;
     }
   }
 

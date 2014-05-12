@@ -260,11 +260,15 @@ static void do_basic_rwx_test(void* arg) {
   KEXPECT_EQ(-EACCES, do_open(k__wxrwxrwx, VFS_O_RDONLY));
   KEXPECT_EQ(-EACCES, do_open(k__wxrwxrwx, VFS_O_RDWR));
   KEXPECT_EQ(0,      do_open(k__wxrwxrwx, VFS_O_WRONLY));
+  KEXPECT_EQ(-EACCES, do_open(k__wxrwxrwx, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC));
+  KEXPECT_EQ(-EACCES, do_open(k__wxrwxrwx, VFS_O_RDWR | VFS_O_INTERNAL_EXEC));
 
   KTEST_BEGIN("vfs_open: opening unwritable file for writing");
   KEXPECT_EQ(0,      do_open(k_r_xrwxrwx, VFS_O_RDONLY));
   KEXPECT_EQ(-EACCES, do_open(k_r_xrwxrwx, VFS_O_RDWR));
   KEXPECT_EQ(-EACCES, do_open(k_r_xrwxrwx, VFS_O_WRONLY));
+  KEXPECT_EQ(-EACCES, do_open(k_r_xrwxrwx, VFS_O_RDWR | VFS_O_INTERNAL_EXEC));
+  KEXPECT_EQ(-EACCES, do_open(k_r_xrwxrwx, VFS_O_WRONLY | VFS_O_INTERNAL_EXEC));
 
   KTEST_BEGIN("vfs_open: exec'ing unexecutable file");
   KEXPECT_EQ(-EACCES, do_open(k_rw_rwxrwx, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC));
@@ -284,7 +288,14 @@ static void do_basic_rwx_test(void* arg) {
   KEXPECT_EQ(0, do_open_create("mode_test/new_file3", VFS_O_WRONLY | VFS_O_CREAT,
                                0));
 
-  // TODO: opening a directory.  opening cwd
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k_rwxrwxrwx));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k__wxrwxrwx));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k_r_xrwxrwx));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k_rw_rwxrwx));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("/mode_test/new_file1"));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("/mode_test/new_file2"));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("/mode_test/new_file3"));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("/mode_test"));
 
   // Cleanup.
   KTEST_BEGIN("vfs mode test: teardown");
@@ -317,9 +328,12 @@ static void basic_rwx_test(void) {
 
 void vfs_mode_test(void) {
   KTEST_SUITE_BEGIN("vfs mode test");
+  const int orig_refcount = vfs_get_vnode_refcount_for_path("/");
 
   check_mode_test();
   basic_rwx_test();
+
+  KEXPECT_EQ(orig_refcount, vfs_get_vnode_refcount_for_path("/"));
 
   // Things to test,
   // * as above, but for a directory
