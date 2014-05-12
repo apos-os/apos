@@ -426,6 +426,51 @@ static void root_mode_test(void) {
   KEXPECT_EQ(0, vfs_lchmod("/", root_orig_mode));
 }
 
+static void do_syscall_mode_test(void* arg) {
+  KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
+  KEXPECT_EQ(0, setreuid(kUserB, kUserA));
+  KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_read", VFS_S_IWUSR |
+                          VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_write", VFS_S_IRUSR |
+                          VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_exec", VFS_S_IRUSR |
+                          VFS_S_IWUSR | VFS_S_IRWXG | VFS_S_IRWXO));
+
+  KTEST_BEGIN("vfs mode test: vfs_mkdir() succeeds in non-readable directory");
+  KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_read/d", 0));
+  KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test/no_read/d"));
+
+  KTEST_BEGIN("vfs mode test: vfs_mkdir() fails in non-writable directory");
+  KEXPECT_EQ(-EACCES, vfs_mkdir("syscall_mode_test/no_write/d", 0));
+
+  KTEST_BEGIN("vfs mode test: vfs_mkdir() fails in non-executable directory");
+  KEXPECT_EQ(-EACCES, vfs_mkdir("syscall_mode_test/no_exec/d", 0));
+
+
+  // Teardown.
+  KTEST_BEGIN("vfs mode test: syscall mode test cleanup");
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("syscall_mode_test/no_read"));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("syscall_mode_test/no_write"));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("syscall_mode_test/no_exec"));
+  KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test/no_read"));
+  KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test/no_write"));
+  KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test/no_exec"));
+}
+
+// Test that various path-taking syscalls handle modes correctly.
+static void syscall_mode_test(void) {
+  KTEST_BEGIN("vfs mode test: syscall mode test setup");
+  KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test",
+                          VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&do_syscall_mode_test, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test"));
+}
+
 void vfs_mode_test(void) {
   KTEST_SUITE_BEGIN("vfs mode test");
   const int orig_refcount = vfs_get_vnode_refcount_for_path("/");
@@ -433,6 +478,7 @@ void vfs_mode_test(void) {
   check_mode_test();
   basic_rwx_test();
   root_mode_test();
+  syscall_mode_test();
 
   KEXPECT_EQ(orig_refcount, vfs_get_vnode_refcount_for_path("/"));
 

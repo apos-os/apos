@@ -637,6 +637,12 @@ int vfs_mkdir(const char* path, mode_t mode) {
     return -EEXIST;  // Root directory!
   }
 
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
   int child_inode = parent->fs->mkdir(parent, base_name);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
