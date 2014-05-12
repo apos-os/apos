@@ -16,6 +16,7 @@
 #ifndef APOO_KTEST_H
 #define APOO_KTEST_H
 
+#include "common/errno.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
@@ -33,6 +34,11 @@ void kexpect_(uint32_t cond, const char* name,
               const char* aval, const char* bval,
               const char* val_surrounders, const char* opstr,
               const char* file, const char* line);
+
+// Convert two integer values into strings, appending the errorname if it looks
+// like an error code is being returned (one of the operands is zero, and the
+// other is between -ERRNO_MIN and -ERRNO_MAX).
+void kexpect_int_to_string(int aval, int bval, char* aval_str, char* bval_str);
 
 typedef enum {
   PRINT_SIGNED,
@@ -117,8 +123,7 @@ typedef enum {
     ksprintf(bval_str, "0x%s", utoa_hex((uint32_t)bval)); \
   } else if (PRINT_TYPE(a) == PRINT_SIGNED || \
              kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) { \
-    kstrcpy(aval_str, itoa((int32_t)aval)); \
-    kstrcpy(bval_str, itoa((int32_t)bval)); \
+    kexpect_int_to_string((int)aval, (int)bval, aval_str, bval_str); \
   } else { \
     kstrcpy(aval_str, utoa((uint32_t)aval)); \
     kstrcpy(bval_str, utoa((uint32_t)bval)); \

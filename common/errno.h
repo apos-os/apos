@@ -16,6 +16,7 @@
 #ifndef APOO_ERRNO_H
 #define APOO_ERRNO_H
 
+#define ERRNO_MIN        1
 #define E2BIG            1   // Argument list too long.
 #define EACCES           2   // Permission denied.
 #define EADDRINUSE       3   // Address in use.
@@ -91,6 +92,7 @@
 #define ETXTBSY          73  // Text file busy.
 #define EWOULDBLOCK       6  // Operation would block (may be the same value as [EAGAIN]).
 #define EXDEV            74  // Cross-device link.
+#define ERRNO_MAX        74
 
 // Return the name of the given error code.
 const char* errorname(int err);
