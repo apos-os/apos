@@ -204,13 +204,22 @@ static int lookup_path(vnode_t* root, const char* path,
   while (*path && *path == '/') path++;
 
   if (!*path) {
-    // The path was the root node.
+    // The path was the root node.  We don't check for search permissions since
+    // the caller will check permissions on the directory itself.
     *parent_out = VFS_MOVE_REF(n);
     *base_name_out = '\0';
     return 0;
   }
 
   while(1) {
+    // Ensure we have permission to search this directory.
+    int mode_check;
+    if ((mode_check = vfs_check_mode(
+                VFS_OP_EXEC_OR_SEARCH, proc_current(), n))) {
+      VFS_PUT_AND_CLEAR(n);
+      return mode_check;
+    }
+
     KASSERT(*path);
     const char* name_end = kstrchrnul(path, '/');
     if (name_end - path >= VFS_MAX_FILENAME_LENGTH) {

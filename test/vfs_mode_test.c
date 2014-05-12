@@ -224,12 +224,14 @@ const char k_rwxrwxrwx[] = "mode_test/rwxrwxrwx";
 const char k__wxrwxrwx[] = "mode_test/_wxrwxrwx";
 const char k_r_xrwxrwx[] = "mode_test/r_xrwxrwx";
 const char k_rw_rwxrwx[] = "mode_test/rw_rwxrwx";
-const char k_rwx_wxrwx[] = "mode_test/rwx_wxrwx";
-const char k_rwxr_xrwx[] = "mode_test/rwxr_xrwx";
-const char k_rwxrw_rwx[] = "mode_test/rwxrw_rwx";
-const char k_rwxrwx_wx[] = "mode_test/rwxrwx_wx";
-const char k_rwxrwxr_x[] = "mode_test/rwxrwxr_x";
-const char k_rwxrwxrw_[] = "mode_test/rwxrwxrw_";
+
+const char kDirUnSearchable[] = "mode_test/dir_unsearchable";
+const char kFileInUnsearchable[] = "mode_test/dir_unsearchable/file";
+const char kDirUnSearchableB[] = "mode_test/dir_unsearchable/dir2";
+const char kFileInUnsearchableB[] = "mode_test/dir_unsearchable/dir2/file";
+const char kSearchableInUnsearchable[] = "mode_test/dir_unsearchable/dir3";
+const char kSearchableInUnsearchableFile[] =
+  "mode_test/dir_unsearchable/dir3/file";
 
 // rwxrwxrwx
 // _wxrwxrwx
@@ -242,6 +244,37 @@ const char k_rwxrwxrw_[] = "mode_test/rwxrwxrw_";
 // rwxrwxr_x
 // rwxrwxrw_
 
+static void do_cwd_unsearchable_test(void* arg) {
+  KTEST_BEGIN("vfs: search bit from cwd");
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_LE(0, vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH));
+
+  KEXPECT_EQ(0, vfs_mkdir("mode_test/cwd", str_to_mode("rwxrwxrwx")));
+  KEXPECT_EQ(0, vfs_chdir("mode_test/cwd"));
+  create_file("file", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_mkdir("dir2", str_to_mode("rwxrwxrwx")));
+  create_file("dir2/file", "rwxrwxrwx");
+
+  KEXPECT_EQ(0, vfs_lchmod(".", str_to_mode("rw-rwxrwx")));
+
+  KEXPECT_EQ(-EACCES, do_open("file", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("dir2/file", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("./file", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("./dir2/file", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("../cwd/file", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("../cwd/dir2/file", VFS_O_RDONLY));
+
+  // Cleanup.
+  kstrcat(orig_cwd, "/mode_test/cwd");
+  KEXPECT_EQ(0, vfs_lchmod(orig_cwd, str_to_mode("rwxrwxrwx")));
+  KEXPECT_EQ(0, vfs_chdir(".."));
+
+  KEXPECT_EQ(0, vfs_unlink("cwd/dir2/file"));
+  KEXPECT_EQ(0, vfs_rmdir("cwd/dir2"));
+  KEXPECT_EQ(0, vfs_unlink("cwd/file"));
+  KEXPECT_EQ(0, vfs_rmdir("cwd"));
+}
+
 static void do_basic_rwx_test(void* arg) {
   KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
   KEXPECT_EQ(0, setreuid(kUserB, kUserA));
@@ -249,12 +282,6 @@ static void do_basic_rwx_test(void* arg) {
   create_file(k__wxrwxrwx, "-wxrwxrwx");
   create_file(k_r_xrwxrwx, "r-xrwxrwx");
   create_file(k_rw_rwxrwx, "rw-rwxrwx");
-  create_file(k_rwx_wxrwx, "rwx-wxrwx");
-  create_file(k_rwxr_xrwx, "rwxr-xrwx");
-  create_file(k_rwxrw_rwx, "rwxrw-rwx");
-  create_file(k_rwxrwx_wx, "rwxrwx-wx");
-  create_file(k_rwxrwxr_x, "rwxrwxr-x");
-  create_file(k_rwxrwxrw_, "rwxrwxrw-");
 
   KTEST_BEGIN("vfs_open: opening unreadable file for reading");
   KEXPECT_EQ(-EACCES, do_open(k__wxrwxrwx, VFS_O_RDONLY));
@@ -288,6 +315,39 @@ static void do_basic_rwx_test(void* arg) {
   KEXPECT_EQ(0, do_open_create("mode_test/new_file3", VFS_O_WRONLY | VFS_O_CREAT,
                                0));
 
+  KTEST_BEGIN("vfs_open: traversing an unsearchable directory");
+  KEXPECT_EQ(0, vfs_mkdir(kDirUnSearchable, str_to_mode("rwxrwxrwx")));
+  KEXPECT_EQ(0, vfs_mkdir(kDirUnSearchableB, str_to_mode("rwxrwxrwx")));
+  KEXPECT_EQ(0, vfs_mkdir(kSearchableInUnsearchable, str_to_mode("rwxrwxrwx")));
+  create_file(kFileInUnsearchable, "rwxrwxrwx");
+  create_file(kFileInUnsearchableB, "rwxrwxrwx");
+  create_file(kSearchableInUnsearchableFile, "rwxrwxrwx");
+
+  KEXPECT_EQ(0, vfs_lchmod(kDirUnSearchableB, str_to_mode("rw-rwxrwx")));
+  KEXPECT_EQ(0, vfs_lchmod(kDirUnSearchable, str_to_mode("rw-rwxrwx")));
+
+  KEXPECT_EQ(-EACCES, do_open(kFileInUnsearchable, VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open(kFileInUnsearchable, VFS_O_WRONLY));
+  KEXPECT_EQ(-EACCES, do_open(kFileInUnsearchable, VFS_O_RDWR));
+  KEXPECT_EQ(-EACCES, do_open(kFileInUnsearchableB, VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open(kFileInUnsearchableB, VFS_O_WRONLY));
+  KEXPECT_EQ(-EACCES, do_open(kFileInUnsearchableB, VFS_O_RDWR));
+  KEXPECT_EQ(-EACCES, do_open(kSearchableInUnsearchableFile, VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open(kSearchableInUnsearchableFile, VFS_O_WRONLY));
+  KEXPECT_EQ(-EACCES, do_open(kSearchableInUnsearchableFile, VFS_O_RDWR));
+
+  KEXPECT_EQ(0, vfs_lchmod(kDirUnSearchable, str_to_mode("rwxrwxrwx")));
+  KEXPECT_EQ(0, vfs_lchmod(kDirUnSearchableB, str_to_mode("rwxrwxrwx")));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&do_cwd_unsearchable_test,
+                              (void*)kDirUnSearchable);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  // TODO: opening a directory.  opening cwd.  creating a file in an unwritable
+  // directory.
+
   KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k_rwxrwxrwx));
   KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k__wxrwxrwx));
   KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path(k_r_xrwxrwx));
@@ -299,6 +359,12 @@ static void do_basic_rwx_test(void* arg) {
 
   // Cleanup.
   KTEST_BEGIN("vfs mode test: teardown");
+  vfs_unlink(kFileInUnsearchable);
+  vfs_unlink(kFileInUnsearchableB);
+  vfs_unlink(kSearchableInUnsearchableFile);
+  KEXPECT_EQ(0, vfs_rmdir(kSearchableInUnsearchable));
+  KEXPECT_EQ(0, vfs_rmdir(kDirUnSearchableB));
+  KEXPECT_EQ(0, vfs_rmdir(kDirUnSearchable));
   vfs_unlink("mode_test/new_file1");
   vfs_unlink("mode_test/new_file2");
   vfs_unlink("mode_test/new_file3");
@@ -306,12 +372,6 @@ static void do_basic_rwx_test(void* arg) {
   vfs_unlink(k__wxrwxrwx);
   vfs_unlink(k_r_xrwxrwx);
   vfs_unlink(k_rw_rwxrwx);
-  vfs_unlink(k_rwx_wxrwx);
-  vfs_unlink(k_rwxr_xrwx);
-  vfs_unlink(k_rwxrw_rwx);
-  vfs_unlink(k_rwxrwx_wx);
-  vfs_unlink(k_rwxrwxr_x);
-  vfs_unlink(k_rwxrwxrw_);
 }
 
 static void basic_rwx_test(void) {
@@ -326,12 +386,53 @@ static void basic_rwx_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("mode_test"));
 }
 
+static void do_root_mode_test(void* arg) {
+  KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
+  KEXPECT_EQ(0, setreuid(kUserB, kUserA));
+
+  KEXPECT_EQ(-EACCES, do_open("/", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("/root_dir_test", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, do_open("/root_dir_test/file", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, vfs_open("/new_file", VFS_O_RDWR | VFS_O_CREAT, 0));
+  KEXPECT_EQ(-EACCES, vfs_open("/root_dir_test/new_file",
+                               VFS_O_RDWR | VFS_O_CREAT, 0));
+}
+
+// Testing the mode of the root directory.
+static void root_mode_test(void) {
+  KTEST_BEGIN("vfs mode test: root directory");
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("/", &stat));
+  const mode_t root_orig_mode = stat.st_mode & ~VFS_S_IFMT;
+
+  KEXPECT_EQ(0, vfs_lchmod("/", str_to_mode("rwx------")));
+  KEXPECT_EQ(0, vfs_mkdir("/root_dir_test", str_to_mode("rwxrwxrwx")));
+  create_file("/root_dir_test/file", "rwxrwxrwx");
+
+  KEXPECT_EQ(0, do_open("/", VFS_O_RDONLY));
+  KEXPECT_EQ(0, do_open("/root_dir_test", VFS_O_RDONLY));
+  KEXPECT_EQ(0, do_open("/root_dir_test/file", VFS_O_RDONLY));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&do_root_mode_test, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("/root_dir_test"));
+  KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("/root_dir_test/file"));
+
+  KEXPECT_EQ(0, vfs_unlink("/root_dir_test/file"));
+  KEXPECT_EQ(0, vfs_rmdir("/root_dir_test"));
+  KEXPECT_EQ(0, vfs_lchmod("/", root_orig_mode));
+}
+
 void vfs_mode_test(void) {
   KTEST_SUITE_BEGIN("vfs mode test");
   const int orig_refcount = vfs_get_vnode_refcount_for_path("/");
 
   check_mode_test();
   basic_rwx_test();
+  root_mode_test();
 
   KEXPECT_EQ(orig_refcount, vfs_get_vnode_refcount_for_path("/"));
 
