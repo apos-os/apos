@@ -1037,6 +1037,13 @@ int vfs_chdir(const char* path) {
     }
   }
 
+  int mode_check =
+      vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, proc_current(), new_cwd);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(new_cwd);
+    return mode_check;
+  }
+
   // Set new cwd.
   VFS_PUT_AND_CLEAR(proc_current()->cwd);
   proc_current()->cwd = VFS_MOVE_REF(new_cwd);

@@ -515,6 +515,22 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_exec", kNoExec));
 
 
+  // chdir()
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KTEST_BEGIN("vfs mode test: vfs_chdir() succeeds in non-readable directory");
+  KEXPECT_LE(0, vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH));
+  KEXPECT_EQ(0, vfs_chdir("syscall_mode_test/no_read"));
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+
+  KTEST_BEGIN("vfs mode test: vfs_chdir() succeeds in non-writable directory");
+  KEXPECT_EQ(0, vfs_chdir("syscall_mode_test/no_write"));
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+
+  KTEST_BEGIN("vfs mode test: vfs_chdir() fails in non-executable directory");
+  KEXPECT_EQ(-EACCES, vfs_chdir("syscall_mode_test/no_exec"));
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+
+
   // Teardown.
   KTEST_BEGIN("vfs mode test: syscall mode test cleanup");
   KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("syscall_mode_test/no_read"));
