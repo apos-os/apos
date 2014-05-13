@@ -38,7 +38,8 @@ void kexpect_(uint32_t cond, const char* name,
 // Convert two integer values into strings, appending the errorname if it looks
 // like an error code is being returned (one of the operands is zero, and the
 // other is between -ERRNO_MIN and -ERRNO_MAX).
-void kexpect_int_to_string(int aval, int bval, char* aval_str, char* bval_str);
+static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
+                                         char* bval_str);
 
 typedef enum {
   PRINT_SIGNED,
@@ -148,5 +149,27 @@ void ktest_begin_all(void);
 
 // Tear down the framework and print statistics about passing/failing tests.
 void ktest_finish_all(void);
+
+/***  Implementation details ***/
+
+static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
+                                         char* bval_str) {
+  const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
+  const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
+
+  kstrcpy(aval_str, itoa(aval));
+  if ((bval_in_range || bval == 0) && aval_in_range) {
+    kstrcat(aval_str, " (");
+    kstrcat(aval_str, errorname(-aval));
+    kstrcat(aval_str, ")");
+  }
+  kstrcpy(bval_str, itoa(bval));
+  if ((aval_in_range || aval == 0) && bval_in_range) {
+    kstrcat(bval_str, " (");
+    kstrcat(bval_str, errorname(-bval));
+    kstrcat(bval_str, ")");
+  }
+}
+
 
 #endif
