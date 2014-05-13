@@ -489,6 +489,32 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_exec", kNoExec));
 
 
+  // unlink()
+  KTEST_BEGIN("vfs mode test: vfs_unlink() succeeds in non-readable directory");
+  create_file("syscall_mode_test/no_read/f", "---------");
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_read/f"));
+
+  KTEST_BEGIN("vfs mode test: vfs_unlink() fails in non-writable directory");
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_write", kNoWrite | VFS_S_IWUSR));
+  create_file("syscall_mode_test/no_write/f", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_write", kNoWrite));
+  KEXPECT_EQ(-EACCES, vfs_unlink("syscall_mode_test/no_write/f"));
+
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_write", kNoWrite | VFS_S_IWUSR));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_write/f"));
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_write", kNoWrite));
+
+  KTEST_BEGIN("vfs mode test: vfs_unlink() fails in non-executable directory");
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_exec", kNoExec | VFS_S_IXUSR));
+  create_file("syscall_mode_test/no_exec/f", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_exec", kNoExec));
+  KEXPECT_EQ(-EACCES, vfs_unlink("syscall_mode_test/no_exec/f"));
+
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_exec", kNoExec | VFS_S_IXUSR));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_exec/f"));
+  KEXPECT_EQ(0, vfs_lchmod("syscall_mode_test/no_exec", kNoExec));
+
+
   // Teardown.
   KTEST_BEGIN("vfs mode test: syscall mode test cleanup");
   KEXPECT_EQ(0, vfs_get_vnode_refcount_for_path("syscall_mode_test/no_read"));
