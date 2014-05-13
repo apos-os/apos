@@ -85,104 +85,122 @@ static void check_mode_test(void) {
   setup_vnode(&vnode, kUserA, kGroupD, "rwxrwxrwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserA, kGroupD, "-wxrwxrwx");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserA, kGroupD, "r-xrwxrwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserA, kGroupD, "rw-rwxrwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): owner matches ruid");
   setup_vnode(&vnode, kUserB, kGroupD, "rwxrwx---");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): owner matches suid");
   setup_vnode(&vnode, kUserC, kGroupD, "rwxrwx---");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): owner and group match, but "
               "owner doesn't have permissions ");
   setup_vnode(&vnode, kUserA, kGroupA, "---rwx---");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): owner and group match, but "
               "owner and group don't have permissions ");
   setup_vnode(&vnode, kUserA, kGroupA, "------rwx");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   // Group.
   KTEST_BEGIN("vfs_check_mode(): group matches egid");
   setup_vnode(&vnode, kUserD, kGroupA, "rwxrwxrwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserD, kGroupA, "rwx-wxrwx");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserD, kGroupA, "rwxr-xrwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserD, kGroupA, "rwxrw-rwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): group matches rgid");
   setup_vnode(&vnode, kUserD, kGroupB, "rwxrwx---");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): group matches sgid");
   setup_vnode(&vnode, kUserD, kGroupC, "rwxrwx---");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   // Other.
   KTEST_BEGIN("vfs_check_mode(): not owner or group");
   setup_vnode(&vnode, kUserD, kGroupD, "rwxrwxrwx");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserD, kGroupD, "rwxrwx-wx");
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserD, kGroupD, "rwxrwxr-x");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   setup_vnode(&vnode, kUserD, kGroupD, "rwxrwxrw-");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
   KTEST_BEGIN("vfs_check_mode(): root can do anything");
   test_proc.euid = SUPERUSER_UID;
@@ -190,7 +208,8 @@ static void check_mode_test(void) {
   setup_vnode(&vnode, kUserD, kGroupD, "---------");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 }
 
 // Paths for basic read/write/exec tests.

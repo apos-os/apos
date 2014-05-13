@@ -21,7 +21,8 @@
 typedef enum {
   VFS_OP_READ = 1,
   VFS_OP_WRITE,
-  VFS_OP_EXEC_OR_SEARCH,
+  VFS_OP_EXEC,
+  VFS_OP_SEARCH,
 } vfs_mode_op_t;
 
 // Check whether the given operation in the given process can be done on the

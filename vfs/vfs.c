@@ -215,7 +215,7 @@ static int lookup_path(vnode_t* root, const char* path,
     // Ensure we have permission to search this directory.
     int mode_check;
     if ((mode_check = vfs_check_mode(
-                VFS_OP_EXEC_OR_SEARCH, proc_current(), n))) {
+                VFS_OP_SEARCH, proc_current(), n))) {
       VFS_PUT_AND_CLEAR(n);
       return mode_check;
     }
@@ -557,7 +557,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
       mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), child);
     }
     if (mode_check == 0 && flags & VFS_O_INTERNAL_EXEC) {
-      mode_check = vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, proc_current(), child);
+      mode_check = vfs_check_mode(VFS_OP_EXEC, proc_current(), child);
     }
     if (mode_check) {
       VFS_PUT_AND_CLEAR(child);
@@ -1046,7 +1046,7 @@ int vfs_chdir(const char* path) {
   }
 
   int mode_check =
-      vfs_check_mode(VFS_OP_EXEC_OR_SEARCH, proc_current(), new_cwd);
+      vfs_check_mode(VFS_OP_SEARCH, proc_current(), new_cwd);
   if (mode_check) {
     VFS_PUT_AND_CLEAR(new_cwd);
     return mode_check;

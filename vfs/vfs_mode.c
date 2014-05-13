@@ -42,7 +42,8 @@ int vfs_check_mode(vfs_mode_op_t op, const process_t* proc,
       }
       break;
 
-    case VFS_OP_EXEC_OR_SEARCH:
+    case VFS_OP_EXEC:
+    case VFS_OP_SEARCH:
       if (vnode->uid == proc->euid) {
         if (vnode->mode & VFS_S_IXUSR) return 0;
       } else if (vnode->gid == proc->egid) {
