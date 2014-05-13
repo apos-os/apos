@@ -202,14 +202,25 @@ static void check_mode_test(void) {
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
 
-  KTEST_BEGIN("vfs_check_mode(): root can do anything");
+  KTEST_BEGIN("vfs_check_mode(): root can always read/write/search");
   test_proc.euid = SUPERUSER_UID;
   test_proc.egid = SUPERUSER_GID;
   setup_vnode(&vnode, kUserD, kGroupD, "---------");
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_READ, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
-  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
   KEXPECT_EQ(0, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
+
+  KTEST_BEGIN("vfs_check_mode(): root can only execute if one exec it is set");
+  test_proc.euid = SUPERUSER_UID;
+  test_proc.egid = SUPERUSER_GID;
+  setup_vnode(&vnode, kUserD, kGroupD, "rw-rw-rw-");
+  KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  setup_vnode(&vnode, kUserD, kGroupD, "--x------");
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  setup_vnode(&vnode, kUserD, kGroupD, "-----x---");
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
+  setup_vnode(&vnode, kUserD, kGroupD, "--------x");
+  KEXPECT_EQ(0, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
 }
 
 // Paths for basic read/write/exec tests.

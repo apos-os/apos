@@ -23,11 +23,17 @@
 
 static void do_exec_mode_test(void* arg) {
   const char kFile[] = "exec_mode_test/file";
-  KEXPECT_EQ(0, setregid(1, 2));
-  KEXPECT_EQ(0, setreuid(3, 4));
 
   char* const argv[] = {"f"};
   char* const envp[] = {};
+
+  KTEST_BEGIN("exec(): root can't exec() if no exec bits are set");
+  create_file(kFile, "rw-rw-rw-");
+  KEXPECT_EQ(-EACCES, do_execve(kFile, argv, envp, NULL, NULL));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KEXPECT_EQ(0, setregid(1, 2));
+  KEXPECT_EQ(0, setreuid(3, 4));
 
   KTEST_BEGIN("exec(): fails on non-readable file");
   create_file(kFile, "-wxrwxrwx");

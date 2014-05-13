@@ -19,7 +19,13 @@
 
 int vfs_check_mode(vfs_mode_op_t op, const process_t* proc,
                    const vnode_t* vnode) {
-  if (proc_is_superuser(proc)) return 0;
+  if (proc_is_superuser(proc)) {
+    if (op == VFS_OP_EXEC && !(vnode->mode & VFS_S_IXUSR) &&
+        !(vnode->mode & VFS_S_IXGRP) && !(vnode->mode & VFS_S_IXOTH)) {
+      return -EACCES;
+    }
+    return 0;
+  }
 
   switch (op) {
     case VFS_OP_READ:
