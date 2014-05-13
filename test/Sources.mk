@@ -19,6 +19,7 @@ LOCAL_SOURCES := \
   block_cache_test.c \
   block_dev_test.c \
   dmz_test.c \
+  exec_test.c \
   flag_printf_test.c \
   hash_test.c \
   hashtable_test.c \

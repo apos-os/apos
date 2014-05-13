@@ -79,7 +79,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
               void (*cleanup)(const char* path,
                               char* const argv[], char* const envp[],
                               void* arg), void* cleanup_arg) {
-  const int fd = vfs_open(path, VFS_O_RDONLY);
+  const int fd = vfs_open(path, VFS_O_RDONLY | VFS_O_INTERNAL_EXEC);
   if (fd < 0) {
     KLOG(INFO, "exec error: couldn't open file '%s' for reading: %s\n", path,
          errorname(-fd));

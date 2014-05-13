@@ -47,5 +47,6 @@ void fork_test(void);
 void signal_test(void);
 void user_test(void);
 void proc_group_test(void);
+void exec_test(void);
 
 #endif
