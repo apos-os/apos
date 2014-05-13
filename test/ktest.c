@@ -114,14 +114,17 @@ void kexpect_(uint32_t cond, const char* name,
 }
 
 void kexpect_int_to_string(int aval, int bval, char* aval_str, char* bval_str) {
+  const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
+  const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
+
   kstrcpy(aval_str, itoa(aval));
-  if ((aval == 0 || bval == 0) && aval >= -ERRNO_MAX && aval <= -ERRNO_MIN) {
+  if ((bval_in_range || bval == 0) && aval_in_range) {
     kstrcat(aval_str, " (");
     kstrcat(aval_str, errorname(-aval));
     kstrcat(aval_str, ")");
   }
   kstrcpy(bval_str, itoa(bval));
-  if ((aval == 0 || bval == 0) && bval >= -ERRNO_MAX && bval <= -ERRNO_MIN) {
+  if ((aval_in_range || aval == 0) && bval_in_range) {
     kstrcat(bval_str, " (");
     kstrcat(bval_str, errorname(-bval));
     kstrcat(bval_str, ")");
