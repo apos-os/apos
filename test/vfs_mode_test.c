@@ -30,6 +30,7 @@
 #include "proc/scheduler.h"
 #include "proc/user.h"
 #include "test/ktest.h"
+#include "test/vfs_test_util.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/vfs_mode.h"
@@ -43,33 +44,6 @@ static const int kGroupA = 4;
 static const int kGroupB = 5;
 static const int kGroupC = 6;
 static const int kGroupD = 6;
-
-mode_t str_to_mode(const char* mode_str) {
-  KASSERT(kstrlen(mode_str) == 9);
-  for (int i = 0; i < 9; ++i) {
-    KASSERT(mode_str[i] == 'r' || mode_str[i] == 'w' || mode_str[i] == 'x' ||
-            mode_str[i] == '-');
-  }
-
-  mode_t mode = 0;
-  if (mode_str[0] == 'r') mode |= VFS_S_IRUSR;
-  if (mode_str[1] == 'w') mode |= VFS_S_IWUSR;
-  if (mode_str[2] == 'x') mode |= VFS_S_IXUSR;
-  if (mode_str[3] == 'r') mode |= VFS_S_IRGRP;
-  if (mode_str[4] == 'w') mode |= VFS_S_IWGRP;
-  if (mode_str[5] == 'x') mode |= VFS_S_IXGRP;
-  if (mode_str[6] == 'r') mode |= VFS_S_IROTH;
-  if (mode_str[7] == 'w') mode |= VFS_S_IWOTH;
-  if (mode_str[8] == 'x') mode |= VFS_S_IXOTH;
-
-  return mode;
-}
-
-static void create_file(const char* path, const char* mode) {
-  int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, str_to_mode(mode));
-  KEXPECT_GE(fd, 0);
-  vfs_close(fd);
-}
 
 // Open the given file and then close it and return 0 if successful.
 static int do_open(const char* path, int flags) {
