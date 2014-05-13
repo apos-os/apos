@@ -518,6 +518,14 @@ int vfs_open(const char* path, uint32_t flags, ...) {
         return error;
       }
 
+      int mode_check = 0;
+      mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+      if (mode_check) {
+        kmutex_unlock(&parent->mutex);
+        VFS_PUT_AND_CLEAR(parent);
+        return mode_check;
+      }
+
       // Create it.
       int child_inode =
           parent->fs->mknod(parent, base_name, VNODE_REGULAR, mkdev(0, 0));

@@ -437,6 +437,17 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_write", kNoWrite));
   KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_exec", kNoExec));
 
+  // vfs_open() w/ VFS_O_CREAT
+  KTEST_BEGIN("vfs mode test: vfs_open() with VFS_O_CREAT succeeds in non-readable directory");
+  KEXPECT_EQ(0, vfs_open("syscall_mode_test/no_read/f", VFS_O_CREAT | VFS_O_RDWR, 0));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_read/f"));
+
+  KTEST_BEGIN("vfs mode test: vfs_open() with VFS_O_CREAT fails in non-writable directory");
+  KEXPECT_EQ(-EACCES, vfs_open("syscall_mode_test/no_write/f", VFS_O_CREAT | VFS_O_RDWR, 0));
+
+  KTEST_BEGIN("vfs mode test: vfs_open() with VFS_O_CREAT fails in non-executable directory");
+  KEXPECT_EQ(-EACCES, vfs_open("syscall_mode_test/no_exec/f", VFS_O_CREAT | VFS_O_RDWR, 0));
+
   // mkdir()
   KTEST_BEGIN("vfs mode test: vfs_mkdir() succeeds in non-readable directory");
   KEXPECT_EQ(0, vfs_mkdir("syscall_mode_test/no_read/d", 0));
