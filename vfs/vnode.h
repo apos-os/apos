@@ -1,0 +1,94 @@
+// Copyright 2014 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// vnode_t definition and associated constants and operations.
+#ifndef APOO_VFS_VNODE_H
+#define APOO_VFS_VNODE_H
+
+#include "common/posix_types.h"
+#include "dev/dev.h"
+#include "memory/memobj.h"
+#include "proc/kthread.h"
+#include "vfs/stat.h"
+
+struct fs;
+typedef struct fs fs_t;
+
+// vnode types.  Keep these synchcronized with VNODE_TYPE_NAME in vfs.c.
+typedef enum {
+  VNODE_UNINITIALIZED = 0,
+  VNODE_INVALID = 1,
+  VNODE_REGULAR   = 2,
+  VNODE_DIRECTORY = 3,
+  VNODE_BLOCKDEV = 4,
+  VNODE_CHARDEV = 5,
+} vnode_type_t;
+// TODO(aoates): symlinks, etc.
+
+// A virtual node in the filesystem.  It is expected that concete filesystems
+// will embed the vnode_t structure in their own, custom structure with
+// additional metadata.
+struct vnode {
+  int num;
+  vnode_type_t type;
+
+  // The length is cached here.  It will not be updated by the VFS code.
+  int len;
+
+  // Frequently-used metadata is cached here.  The VFS code may update these, in
+  // which case the concrete fs function must write them back to the underlying
+  // filesystem in put_vnone().
+  // TODO(aoates): add an explicit (optional?) put_metadata() function that will
+  // let the concrete fs proactively writeback metadata changes while the vnode
+  // is still open.
+  uid_t uid;
+  gid_t gid;
+  mode_t mode;  // Doesn't include type bits (just permissions + sticky)
+
+  int refcount;
+
+  char fstype[10];
+  fs_t* fs;
+
+  // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
+  apos_dev_t dev;
+
+  // The memobj_t corresponding to this vnode.
+  memobj_t memobj;
+
+  // Protects the vnode across blocking IO calls.
+  kmutex_t mutex;
+  // VFS impl pointer.
+  //
+  // TODO(aoates): mutex?
+};
+typedef struct vnode vnode_t;
+
+// Initialize (and zero-out) a vnode_t.
+void vfs_vnode_init(vnode_t* n, int num);
+
+// Given a filesystem and a vnode number, return the corresponding vnode_t.
+// This increments the vnode's refcount, which must be decremented later vith
+// vfs_put.
+vnode_t* vfs_get(fs_t* fs, int vnode);
+//
+// Increment the given node's refcount.
+void vfs_ref(vnode_t* n);
+
+// Decrement the refcount of the given vnode, potentially releasing it's
+// resources.  You must not access the vnode after calling this, unless you have
+// another outstanding reference.
+void vfs_put(vnode_t* n);
+
+#endif

@@ -25,65 +25,13 @@
 #include "proc/process.h"
 #include "vfs/dirent.h"
 #include "vfs/stat.h"
+#include "vfs/vnode.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
 
 // How many files can be open, globally, at once.
 #define VFS_MAX_FILES 128
-
-// vnode types.  Keep these synchcronized with VNODE_TYPE_NAME in vfs.c.
-typedef enum {
-  VNODE_UNINITIALIZED = 0,
-  VNODE_INVALID = 1,
-  VNODE_REGULAR   = 2,
-  VNODE_DIRECTORY = 3,
-  VNODE_BLOCKDEV = 4,
-  VNODE_CHARDEV = 5,
-} vnode_type_t;
-// TODO(aoates): symlinks, etc.
-
-struct fs;
-typedef struct fs fs_t;
-
-// A virtual node in the filesystem.  It is expected that concete filesystems
-// will embed the vnode_t structure in their own, custom structure with
-// additional metadata.
-struct vnode {
-  int num;
-  vnode_type_t type;
-
-  // The length is cached here.  It will not be updated by the VFS code.
-  int len;
-
-  // Frequently-used metadata is cached here.  The VFS code may update these, in
-  // which case the concrete fs function must write them back to the underlying
-  // filesystem in put_vnone().
-  // TODO(aoates): add an explicit (optional?) put_metadata() function that will
-  // let the concrete fs proactively writeback metadata changes while the vnode
-  // is still open.
-  uid_t uid;
-  gid_t gid;
-  mode_t mode;  // Doesn't include type bits (just permissions + sticky)
-
-  int refcount;
-
-  char fstype[10];
-  fs_t* fs;
-
-  // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
-  apos_dev_t dev;
-
-  // The memobj_t corresponding to this vnode.
-  memobj_t memobj;
-
-  // Protects the vnode across blocking IO calls.
-  kmutex_t mutex;
-  // VFS impl pointer.
-  //
-  // TODO(aoates): mutex?
-};
-typedef struct vnode vnode_t;
 
 // Concrete filesystem interface.  One of these is instantiated by the concrete
 // filesystem when it is initialized.
@@ -227,14 +175,6 @@ fs_t* vfs_get_root_fs(void);
 // Return the root vnode, with a reference on it.
 vnode_t* vfs_get_root_vnode(void);
 
-// Initialize (and zero-out) a vnode_t.
-void vfs_vnode_init(vnode_t* n, int num);
-
-// Given a filesystem and a vnode number, return the corresponding vnode_t.
-// This increments the vnode's refcount, which must be decremented later vith
-// vfs_put.
-vnode_t* vfs_get(fs_t* fs, int vnode);
-
 // TODO(aoates): make a vfs-internal.h file with the internal-only functions in
 // it.
 // Log the current vnode cache.
@@ -255,14 +195,6 @@ int vfs_get_vnode_refcount_for_path(const char* path);
 //
 // Should only be used in tests.
 int vfs_get_vnode_for_path(const char* path);
-
-// Increment the given node's refcount.
-void vfs_ref(vnode_t* n);
-
-// Decrement the refcount of the given vnode, potentially releasing it's
-// resources.  You must not access the vnode after calling this, unless you have
-// another outstanding reference.
-void vfs_put(vnode_t* n);
 
 // Open the given file in the current process, returning the file descriptor
 // opened or -error on failure.

@@ -16,7 +16,7 @@
 #define APOO_VFS_SPECIAL_H
 
 #include "dev/dev.h"
-#include "vfs/vfs.h"
+#include "vfs/vnode.h"
 
 // Read and write to/from a device special file.  Used internally by the VFS.
 int special_device_read(vnode_type_t type, apos_dev_t dev, int offset,

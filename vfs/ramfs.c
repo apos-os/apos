@@ -25,6 +25,7 @@
 #include "vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
+#include "vfs/vnode.h"
 
 #define RAMFS_MAX_INODES 1024
 

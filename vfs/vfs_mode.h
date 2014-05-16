@@ -16,7 +16,7 @@
 #define APOO_VFS_VFS_MODE_H
 
 #include "proc/process.h"
-#include "vfs/vfs.h"
+#include "vfs/vnode.h"
 
 typedef enum {
   VFS_OP_READ = 1,

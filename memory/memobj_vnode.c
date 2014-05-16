@@ -20,6 +20,7 @@
 #include "memory/memobj.h"
 #include "memory/memory.h"
 #include "vfs/vfs.h"
+#include "vfs/vnode.h"
 
 static void vnode_ref(memobj_t* obj);
 static void vnode_unref(memobj_t* obj);
