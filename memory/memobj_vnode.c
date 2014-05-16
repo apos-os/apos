@@ -19,7 +19,7 @@
 #include "memory/memobj_vnode.h"
 #include "memory/memobj.h"
 #include "memory/memory.h"
-#include "vfs/vfs.h"
+#include "vfs/fs.h"
 #include "vfs/vnode.h"
 
 static void vnode_ref(memobj_t* obj);

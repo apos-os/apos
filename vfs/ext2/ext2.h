@@ -18,7 +18,7 @@
 #include <stdint.h>
 
 #include "dev/dev.h"
-#include "vfs/vfs.h"
+#include "vfs/fs.h"
 
 // Initialize a new ext2fs and return it.  The ext2fs is NOT mounted.
 fs_t* ext2_create_fs(void);

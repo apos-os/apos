@@ -29,6 +29,7 @@
 #include "proc/scheduler.h"
 #include "proc/user.h"
 #include "test/ktest.h"
+#include "vfs/fs.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/vfs.h"
