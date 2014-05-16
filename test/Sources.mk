@@ -19,6 +19,7 @@ LOCAL_SOURCES := \
   block_cache_test.c \
   block_dev_test.c \
   dmz_test.c \
+  exec_test.c \
   flag_printf_test.c \
   hash_test.c \
   hashtable_test.c \
@@ -44,6 +45,8 @@ LOCAL_SOURCES := \
   slab_alloc_test.c \
   user_test.c \
   vm_test.c \
+  vfs_mode_test.c \
   vfs_test.c \
+  vfs_test_util.c \
 
 $(eval $(END_SOURCES))

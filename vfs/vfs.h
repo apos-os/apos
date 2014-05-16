@@ -210,6 +210,10 @@ struct fs {
 #define VFS_O_CREAT    0x08
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
 
+// Used internally (i.e. not exposed to userspace) to indicate a file that will
+// be executed.  If set, vfs_open will check that the file is executable.
+#define VFS_O_INTERNAL_EXEC 0x20
+
 #define VFS_SEEK_SET 1
 #define VFS_SEEK_CUR 2
 #define VFS_SEEK_END 3

@@ -41,7 +41,7 @@ int load_binary(int fd, load_binary_t** binary_out) {
   // TODO(aoates): verify the loaded binary (i.e. to make sure all the mappings
   // are valid, don't overlap, etc).
 
-  return -ENOTSUP;
+  return -ENOEXEC;
 }
 
 void load_pagify_region(const load_region_t* orig_region,

@@ -28,6 +28,7 @@
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/special.h"
+#include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
 
 #define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
@@ -203,13 +204,22 @@ static int lookup_path(vnode_t* root, const char* path,
   while (*path && *path == '/') path++;
 
   if (!*path) {
-    // The path was the root node.
+    // The path was the root node.  We don't check for search permissions since
+    // the caller will check permissions on the directory itself.
     *parent_out = VFS_MOVE_REF(n);
     *base_name_out = '\0';
     return 0;
   }
 
   while(1) {
+    // Ensure we have permission to search this directory.
+    int mode_check;
+    if ((mode_check = vfs_check_mode(
+                VFS_OP_SEARCH, proc_current(), n))) {
+      VFS_PUT_AND_CLEAR(n);
+      return mode_check;
+    }
+
     KASSERT(*path);
     const char* name_end = kstrchrnul(path, '/');
     if (name_end - path >= VFS_MAX_FILENAME_LENGTH) {
@@ -491,6 +501,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
 
   // Lookup the child inode.
   vnode_t* child;
+  int created = 0;
   if (base_name[0] == '\0') {
     child = VFS_MOVE_REF(parent);
   } else {
@@ -507,6 +518,14 @@ int vfs_open(const char* path, uint32_t flags, ...) {
         return error;
       }
 
+      int mode_check = 0;
+      mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+      if (mode_check) {
+        kmutex_unlock(&parent->mutex);
+        VFS_PUT_AND_CLEAR(parent);
+        return mode_check;
+      }
+
       // Create it.
       int child_inode =
           parent->fs->mknod(parent, base_name, VNODE_REGULAR, mkdev(0, 0));
@@ -520,11 +539,30 @@ int vfs_open(const char* path, uint32_t flags, ...) {
       child->uid = geteuid();
       child->gid = getegid();
       child->mode = create_mode;
+      created = 1;
     }
 
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
+  }
+
+  // Check permissions on the file if it already exists.
+  if (!created) {
+    int mode_check = 0;
+    if (mode == VFS_O_RDONLY || mode == VFS_O_RDWR) {
+      mode_check = vfs_check_mode(VFS_OP_READ, proc_current(), child);
+    }
+    if (mode_check == 0 && (mode == VFS_O_WRONLY || mode == VFS_O_RDWR)) {
+      mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), child);
+    }
+    if (mode_check == 0 && flags & VFS_O_INTERNAL_EXEC) {
+      mode_check = vfs_check_mode(VFS_OP_EXEC, proc_current(), child);
+    }
+    if (mode_check) {
+      VFS_PUT_AND_CLEAR(child);
+      return mode_check;
+    }
   }
 
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
@@ -607,6 +645,12 @@ int vfs_mkdir(const char* path, mode_t mode) {
     return -EEXIST;  // Root directory!
   }
 
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
   int child_inode = parent->fs->mkdir(parent, base_name);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
@@ -646,6 +690,12 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   if (base_name[0] == '\0') {
     VFS_PUT_AND_CLEAR(parent);
     return -EEXIST;  // Root directory!
+  }
+
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
   }
 
   vnode_type_t type = VNODE_INVALID;
@@ -690,6 +740,12 @@ int vfs_rmdir(const char* path) {
     return -EINVAL;
   }
 
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
   vnode_t* child = 0x0;
@@ -714,6 +770,12 @@ int vfs_unlink(const char* path) {
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
+  }
+
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
   }
 
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
@@ -981,6 +1043,13 @@ int vfs_chdir(const char* path) {
       VFS_PUT_AND_CLEAR(new_cwd);
       return -ENOTDIR;
     }
+  }
+
+  int mode_check =
+      vfs_check_mode(VFS_OP_SEARCH, proc_current(), new_cwd);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(new_cwd);
+    return mode_check;
   }
 
   // Set new cwd.

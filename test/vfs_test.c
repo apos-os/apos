@@ -43,9 +43,10 @@
 
 // Helper method to create a file for a test.
 static void create_file(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
-  KASSERT(fd >= 0);
-  vfs_close(fd);
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR,
+                          VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) vfs_close(fd);
 }
 
 static void create_file_with_data(const char* path, const char* data) {
@@ -1604,7 +1605,8 @@ static void stat_test(void) {
   KEXPECT_EQ(0, vfs_lstat(kRegFile, &stat));
   // TODO(aoates): test st_dev, blksize.
   KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
-  KEXPECT_EQ(VFS_S_IFREG, stat.st_mode);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
   KEXPECT_EQ(0, stat.st_size);
   KEXPECT_GT(stat.st_blksize, 0);
@@ -1713,20 +1715,22 @@ static void initial_owner_test_func(void* arg) {
   const gid_t kTestGroupB = 4;
 
   const char kDir[] = "owner_test_dir";
+  const char kSubDir[] = "owner_test_dir/dir";
   const char kRegFile[] = "owner_test_dir/reg";
   const char kCharDevFile[] = "owner_test_dir/char";
   const char kBlockDevFile[] = "owner_test_dir/block";
 
   KTEST_BEGIN("vfs_open() sets uid/gid: regular file test");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
   KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
 
-  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
   create_file(kRegFile);
   EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mkdir() sets uid/gid: directory test");
-  EXPECT_OWNER_IS(kDir, kTestUserB, kTestGroupB);
+  KEXPECT_EQ(0, vfs_mkdir(kSubDir, 0));
+  EXPECT_OWNER_IS(kSubDir, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mknod() sets uid/gid: character device file test");
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
@@ -1739,7 +1743,7 @@ static void initial_owner_test_func(void* arg) {
   vfs_unlink(kBlockDevFile);
   vfs_unlink(kCharDevFile);
   vfs_unlink(kRegFile);
-  vfs_rmdir(kDir);
+  vfs_rmdir(kSubDir);
 }
 
 static void initial_owner_test(void) {
@@ -1747,12 +1751,14 @@ static void initial_owner_test(void) {
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
+  KEXPECT_EQ(0, vfs_rmdir("owner_test_dir"));
 }
 
 // Helper that opens the given file, runs vfs_fchown() on the file descriptor,
 // then closes it and returns the result.
 static int do_fchown(const char* path, uid_t owner, gid_t group) {
   int fd = vfs_open(path, VFS_O_RDWR);
+  if (fd < 0) return fd;
   int result = vfs_fchown(fd, owner, group);
   vfs_close(fd);
   return result;
@@ -1902,7 +1908,7 @@ static void chown_test(void) {
   const char kBlockDevFile[] = "chown_test_dir/block";
 
   KTEST_BEGIN("vfs_lchown()/vfs_fchown(): test setup");
-  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   create_file(kRegFile);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
@@ -2067,8 +2073,8 @@ static void non_root_chmod_test_func(void* arg) {
   KTEST_BEGIN("vfs_lchmod(): non-owner cannot chmod");
   KEXPECT_EQ(-EPERM, vfs_lchmod(kRegFileA, VFS_S_IRUSR));
 
-  vfs_unlink(kRegFileA);
-  vfs_unlink(kRegFileB);
+  KEXPECT_EQ(0, vfs_unlink(kRegFileA));
+  KEXPECT_EQ(0, vfs_unlink(kRegFileB));
 }
 
 static void chmod_test(void) {
@@ -2127,6 +2133,7 @@ static void chmod_test(void) {
   KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
 
   // Run tests as an unpriviledged user.
+  KEXPECT_EQ(0, vfs_lchmod(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   pid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
