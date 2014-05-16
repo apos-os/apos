@@ -35,6 +35,7 @@
 #include "vfs/util.h"
 #include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 static const int kUserA = 1;
 static const int kUserB = 2;

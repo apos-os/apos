@@ -57,27 +57,6 @@
 // Initialize the VFS.
 void vfs_init(void);
 
-// TODO(aoates): make a vfs-internal.h file with the internal-only functions in
-// it.
-// Log the current vnode cache.
-void vfs_log_cache(void);
-
-// Return how many vnodes are currently in the cache.
-int vfs_cache_size(void);
-
-// Looks up the given path and returns the refcount of the corresponding vnode,
-// 0 if there is no matching vnode in the cache, or -errno if the path can't be
-// found.
-//
-// Should only be used in tests.
-int vfs_get_vnode_refcount_for_path(const char* path);
-
-// Returns the vnode number at the given path, or -errno if the path can't be
-// found.
-//
-// Should only be used in tests.
-int vfs_get_vnode_for_path(const char* path);
-
 // Open the given file in the current process, returning the file descriptor
 // opened or -error on failure.
 //

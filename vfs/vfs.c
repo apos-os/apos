@@ -30,6 +30,7 @@
 #include "vfs/special.h"
 #include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 #define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
 
