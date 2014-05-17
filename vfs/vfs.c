@@ -30,6 +30,7 @@
 #include "vfs/special.h"
 #include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
 
 #define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
@@ -53,10 +54,6 @@ void vfs_vnode_init(vnode_t* n, int num) {
 static const char* VNODE_TYPE_NAME[] = {
   "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
 };
-
-static fs_t* g_root_fs = 0;
-static htbl_t g_vnode_cache;
-static file_t* g_file_table[VFS_MAX_FILES];
 
 // Helpers for putting and adopting references.  Prefer these to using
 // vfs_put(x) and y = x directly.  You should never write ptr = value directly,

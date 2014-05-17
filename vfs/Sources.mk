@@ -21,6 +21,7 @@ LOCAL_SOURCES := \
   util.c \
   special.c \
   vfs_mode.c \
+  vfs_internal.c \
 
 LOCAL_SUBDIRS := ext2
 
