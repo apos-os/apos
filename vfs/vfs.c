@@ -955,16 +955,12 @@ int vfs_lchmod(const char* path, mode_t mode) {
 }
 
 int vfs_fchmod(int fd, mode_t mode) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chmod_internal(file->vnode, mode);
