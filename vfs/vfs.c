@@ -33,7 +33,7 @@
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
 
-#define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
+#define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
 void vfs_vnode_init(vnode_t* n, int num) {
   n->fs = 0x0;
