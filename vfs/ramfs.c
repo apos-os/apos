@@ -182,6 +182,7 @@ fs_t* ramfs_create_fs() {
   f->enable_blocking = 0;
 
   kstrcpy(f->fs.fstype, "ramfs");
+  f->fs.id = VFS_FSID_NONE;
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
   f->fs.get_root = &ramfs_get_root;
   f->fs.get_vnode = &ramfs_get_vnode;

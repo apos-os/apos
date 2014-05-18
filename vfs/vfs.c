@@ -106,6 +106,8 @@ void vfs_init() {
     g_root_fs = ramfs_create_fs();
   }
 
+  g_root_fs->id = 0;
+
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
   for (int i = 0; i < VFS_MAX_FILES; ++i) {

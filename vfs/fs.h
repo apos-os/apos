@@ -18,6 +18,13 @@
 
 #include "vfs/vnode.h"
 
+// A unique ID assigned to each mounted filesystem.  Corresponds to the
+// filesystem's index in the filesystem table.
+typedef int fsid_t;
+
+// fsid_t corresponding to no mounted filesystem.
+#define VFS_FSID_NONE -1
+
 // Concrete filesystem interface.  One of these is instantiated by the concrete
 // filesystem when it is initialized.
 //
@@ -28,6 +35,7 @@
 struct fs {
   char fstype[10];
   apos_dev_t dev;  // The underlying device.
+  fsid_t id;
 
   // TODO(aoates): how does allocating the root inode/vnode work?
 
