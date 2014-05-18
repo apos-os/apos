@@ -183,6 +183,18 @@ int lookup_existing_path(const char*path, vnode_t** child_out) {
   return 0;
 }
 
+int lookup_fd(int fd, file_t** file_out) {
+  process_t* proc = proc_current();
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+    return -EBADF;
+  }
+
+  file_t* file = g_file_table[proc->fds[fd]];
+  KASSERT(file != 0x0);
+  *file_out = file;
+  return 0;
+}
+
 vnode_t* get_root_for_path(const char* path) {
   if (path[0] == '/') {
     return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));

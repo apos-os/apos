@@ -75,6 +75,10 @@ int lookup_path(vnode_t* root, const char* path,
 // otherwise.
 int lookup_existing_path(const char*path, vnode_t** child_out);
 
+// Lookup a file_t from an open fd.  Returns the corresponding file_t* in
+// |file_out| WITHOUT A REFERENCE, or -error otherwise.
+int lookup_fd(int fd, file_t** file_out);
+
 // Returns the appropriate root node for the given path, either the fs root or
 // the process's cwd.
 vnode_t* get_root_for_path(const char* path);
