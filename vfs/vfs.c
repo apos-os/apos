@@ -562,13 +562,10 @@ int vfs_read(int fd, void* buf, int count) {
 }
 
 int vfs_write(int fd, const void* buf, int count) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
@@ -581,7 +578,6 @@ int vfs_write(int fd, const void* buf, int count) {
   }
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
