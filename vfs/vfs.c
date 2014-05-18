@@ -807,13 +807,10 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
 
 // TODO(aoates): add a unit test for this.
 int vfs_isatty(int fd) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_CHARDEV &&
       file->vnode->dev.major == DEVICE_MAJOR_TTY) {
     return 1;
