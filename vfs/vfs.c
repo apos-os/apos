@@ -852,35 +852,11 @@ int vfs_lstat(const char* path, apos_stat_t* stat) {
     return -EINVAL;
   }
 
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, &child);
+  if (result) return result;
 
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
-  }
-
-  int result = vfs_stat_internal(child, stat);
+  result = vfs_stat_internal(child, stat);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
