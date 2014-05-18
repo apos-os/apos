@@ -67,4 +67,8 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
 int lookup_path(vnode_t* root, const char* path,
                 vnode_t** parent_out, char* base_name_out);
 
+// Returns the appropriate root node for the given path, either the fs root or
+// the process's cwd.
+vnode_t* get_root_for_path(const char* path);
+
 #endif

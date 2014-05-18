@@ -147,3 +147,11 @@ int lookup_path(vnode_t* root, const char* path,
     path = name_end;
   }
 }
+
+vnode_t* get_root_for_path(const char* path) {
+  if (path[0] == '/') {
+    return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
+  } else {
+    return VFS_COPY_REF(proc_current()->cwd);
+  }
+}

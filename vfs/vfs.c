@@ -74,16 +74,6 @@ static int next_free_fd(process_t* p) {
   return -1;
 }
 
-// Returns the appropriate root node for the given path, either the fs root or
-// the process's cwd.
-static vnode_t* get_root_for_path(const char* path) {
-  if (path[0] == '/') {
-    return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
-  } else {
-    return VFS_COPY_REF(proc_current()->cwd);
-  }
-}
-
 // Returns non-zero if the given mode is a valid create mode_t (i.e. can be
 // passed to chmod() or as the mode argument to open()).
 static int is_valid_create_mode(mode_t mode) {
@@ -211,80 +201,6 @@ void vfs_put(vnode_t* vnode) {
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }
-}
-
-static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
-  vnode_t* vnode = (vnode_t*)val;
-  KASSERT(key == (uint32_t)vnode->num);
-  KLOG(INFO, "  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
-       vnode, vnode->num, VNODE_TYPE_NAME[vnode->type],
-       vnode->len, vnode->refcount);
-}
-
-void vfs_log_cache() {
-  KLOG(INFO, "VFS vnode cache:\n");
-  htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
-}
-
-static void vfs_cache_size_iter(void* arg, uint32_t key, void* val) {
-  int* counter = (int*)arg;
-  vnode_t* vnode = (vnode_t*)val;
-  KASSERT(key == (uint32_t)vnode->num);
-  (*counter)++;
-}
-
-int vfs_cache_size() {
-  int size = 0;
-  htbl_iterate(&g_vnode_cache, &vfs_cache_size_iter, &size);
-  return size;
-}
-
-// TODO(aoates): can this be used as a helper for other functions as well?
-static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  vnode_t* child = 0x0;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    // Lookup the child inode.
-    error = lookup(parent, base_name, &child);
-    if (error < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-    VFS_PUT_AND_CLEAR(parent);
-  }
-  *vnode_out = child;
-  return 0;
-}
-
-int vfs_get_vnode_refcount_for_path(const char* path) {
-  vnode_t* vnode = NULL;
-  const int result = vfs_get_vnode(path, &vnode);
-  if (result) return result;
-
-  const int refcount = vnode->refcount - 1;
-  VFS_PUT_AND_CLEAR(vnode);
-  return refcount;
-}
-
-int vfs_get_vnode_for_path(const char* path) {
-  vnode_t* vnode = NULL;
-  const int result = vfs_get_vnode(path, &vnode);
-  if (result) return result;
-
-  const int num = vnode->num;
-  VFS_PUT_AND_CLEAR(vnode);
-  return num;
 }
 
 int vfs_open(const char* path, uint32_t flags, ...) {
