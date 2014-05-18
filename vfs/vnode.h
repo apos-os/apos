@@ -91,4 +91,30 @@ void vfs_ref(vnode_t* n);
 // another outstanding reference.
 void vfs_put(vnode_t* n);
 
+// Helpers for putting and adopting references.  Prefer these to using
+// vfs_put(x) and y = x directly.  You should never write ptr = value directly,
+// instead using either ptr = VFS_COPY_REF(val) (if you want to acquire a new
+// reference and increase the refcount), or VFS_MOVE_REF(val) (if you want to
+// move an existing reference into a new location).
+
+// Calls vfs_put() and NULLs out the vnode_t* to prevent future use.
+#define VFS_PUT_AND_CLEAR(x) do { \
+  vnode_t** const _x = &(x); \
+  vfs_put(*_x); \
+  *_x = 0x0; \
+} while (0)
+
+// Copy an existing vnode reference.
+static inline vnode_t* VFS_COPY_REF(vnode_t* ref) {
+  vfs_ref(ref);
+  return ref;
+}
+
+// Move an existing vnode reference into a new variable.
+#define VFS_MOVE_REF(x) \
+    ({vnode_t** const _x = &(x); \
+      vnode_t* const _old_val = *_x; \
+      *_x = 0x0; \
+      _old_val; })
+
 #endif

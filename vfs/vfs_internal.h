@@ -27,4 +27,44 @@ extern fs_t* g_root_fs;
 extern htbl_t g_vnode_cache;
 extern file_t* g_file_table[VFS_MAX_FILES];
 
+// Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
+// success (and refcounts the child).
+//
+// Requires a lock on the parent to ensure that the child isn't removed between
+// the call to parent->lookup() and vfs_get(child).
+int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out);
+
+// Convenience wrapper that locks the parent around a call to lookup_locked().
+int lookup(vnode_t* parent, const char* name, vnode_t** child_out);
+
+// Similar to lookup(), but does the reverse: given a directory and an inode
+// number, return the corresponding name, if the directory has an entry for
+// that inode number.
+//
+// Returns the length of the name on success, or -error.
+int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
+
+// Given a vnode and a path path/to/myfile relative to that vnode, return the
+// vnode_t of the directory part of the path, and copy the base name of the path
+// (without any trailing slashes) into base_name_out.
+//
+// base_nome_out must be AT LEAST VFS_MAX_FILENAME_LENGTH long.
+//
+// Returns 0 on success, or -error on failure (in which case the contents of
+// parent_out and base_name_out are undefined).
+//
+// Returns *parent_out with a refcount unless there was an error.
+// TODO(aoates): this needs to handle symlinks!
+// TODO(aoates): things to test:
+//  * regular path
+//  * root directory
+//  * path ending in file
+//  * path ending in directory
+//  * trailing slashes
+//  * no leading slash (?)
+//  * non-directory in middle of path (ENOTDIR)
+//  * non-existing in middle of path (ENOENT)
+int lookup_path(vnode_t* root, const char* path,
+                vnode_t** parent_out, char* base_name_out);
+
 #endif

@@ -14,6 +14,136 @@
 
 #include "vfs/vfs_internal.h"
 
+#include "common/errno.h"
+#include "common/kassert.h"
+#include "common/kstring.h"
+#include "vfs/dirent.h"
+#include "vfs/fs.h"
+#include "vfs/vfs_mode.h"
+#include "vfs/vnode.h"
+#include "vfs/vfs.h"
+
 fs_t* g_root_fs = 0;
 htbl_t g_vnode_cache;
 file_t* g_file_table[VFS_MAX_FILES];
+
+int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
+  kmutex_assert_is_held(&parent->mutex);
+  int child_inode = parent->fs->lookup(parent, name);
+
+  if (child_inode < 0) {
+    return child_inode;
+  }
+
+  *child_out = vfs_get(parent->fs, child_inode);
+  return 0;
+}
+
+int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
+  kmutex_lock(&parent->mutex);
+  const int result = lookup_locked(parent, name, child_out);
+  kmutex_unlock(&parent->mutex);
+  return result;
+}
+
+int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
+  KMUTEX_AUTO_LOCK(parent_lock, &parent->mutex);
+  const int kBufSize = 512;
+  char dirent_buf[kBufSize];
+
+  int offset = 0;
+  dirent_t* ent;
+  do {
+    const int len = parent->fs->getdents(parent, offset, dirent_buf, kBufSize);
+    if (len == 0) {
+      // Didn't find any matching nodes :(
+      return -ENOENT;
+    }
+
+    // Look for a matching dirent.
+    int buf_offset = 0;
+    do {
+      ent = (dirent_t*)(&dirent_buf[buf_offset]);
+      buf_offset += ent->length;
+    } while (ent->vnode != inode && buf_offset < len);
+    // Keep going until we find a match.
+    offset = ent->offset;
+  } while (ent->vnode != inode);
+
+  // Found a match, copy its name.
+  const int name_len = kstrlen(ent->name);
+  if (len < name_len + 1) {
+    return -ERANGE;
+  }
+
+  kstrcpy(name_out, ent->name);
+  return name_len;
+}
+
+int lookup_path(vnode_t* root, const char* path,
+                vnode_t** parent_out, char* base_name_out) {
+  if (!*path) {
+    return -EINVAL;
+  }
+
+  vnode_t* n = VFS_COPY_REF(root);
+
+  // Skip leading '/'.
+  while (*path && *path == '/') path++;
+
+  if (!*path) {
+    // The path was the root node.  We don't check for search permissions since
+    // the caller will check permissions on the directory itself.
+    *parent_out = VFS_MOVE_REF(n);
+    *base_name_out = '\0';
+    return 0;
+  }
+
+  while(1) {
+    // Ensure we have permission to search this directory.
+    int mode_check;
+    if ((mode_check = vfs_check_mode(
+                VFS_OP_SEARCH, proc_current(), n))) {
+      VFS_PUT_AND_CLEAR(n);
+      return mode_check;
+    }
+
+    KASSERT(*path);
+    const char* name_end = kstrchrnul(path, '/');
+    if (name_end - path >= VFS_MAX_FILENAME_LENGTH) {
+      VFS_PUT_AND_CLEAR(n);
+      return -ENAMETOOLONG;
+    }
+
+    kstrncpy(base_name_out, path, name_end - path);
+    base_name_out[name_end - path] = '\0';
+
+    // Advance past any trailing slashes.
+    while (*name_end && *name_end == '/') name_end++;
+
+    // Are we at the end?
+    if (!*name_end) {
+      // Don't vfs_put() the parent, since we want to return it with a refcount.
+      *parent_out = VFS_MOVE_REF(n);
+      return 0;
+    }
+
+    // Otherwise, descend again.
+    vnode_t* child = 0x0;
+    int error = lookup(n, base_name_out, &child);
+    VFS_PUT_AND_CLEAR(n);
+    if (error) {
+      return error;
+    }
+
+    // TODO(aoates): symlink
+    if (child->type != VNODE_DIRECTORY) {
+      VFS_PUT_AND_CLEAR(child);
+      return -ENOTDIR;
+    }
+
+    // Move to the child and keep going.
+    n = VFS_MOVE_REF(child);
+    path = name_end;
+  }
+}
