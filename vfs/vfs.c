@@ -769,14 +769,10 @@ int vfs_chdir(const char* path) {
 
 int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
   *memobj_out = 0x0;
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
-
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR) {
