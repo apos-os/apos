@@ -911,18 +911,13 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group) {
   return result;
 }
 
-// TODO(aoates): de-dup this with fstat, and others.
 int vfs_fchown(int fd, uid_t owner, gid_t group) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
