@@ -862,16 +862,12 @@ int vfs_lstat(const char* path, apos_stat_t* stat) {
 }
 
 int vfs_fstat(int fd, apos_stat_t* stat) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
