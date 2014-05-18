@@ -944,41 +944,12 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
   return 0;
 }
 
-// TODO(aoates): de-dup this with lstat, and others.
 int vfs_lchmod(const char* path, mode_t mode) {
-  if (!path) {
-    return -EINVAL;
-  }
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, &child);
+  if (result) return result;
 
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
-  }
-
-  int result = vfs_chmod_internal(child, mode);
+  result = vfs_chmod_internal(child, mode);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
