@@ -82,7 +82,7 @@ static int is_valid_create_mode(mode_t mode) {
 }
 
 void vfs_init() {
-  KASSERT(g_root_fs == 0);
+  KASSERT(g_fs_table[VFS_ROOT_FS] == 0);
 
   // First try to mount every ATA device as an ext2 fs.
   fs_t* ext2fs = ext2_create_fs();
@@ -93,7 +93,7 @@ void vfs_init() {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
         KLOG(INFO, "Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
-        g_root_fs = ext2fs;
+        g_fs_table[VFS_ROOT_FS] = ext2fs;
         success = 1;
         break;
       }
@@ -103,10 +103,10 @@ void vfs_init() {
   if (!success) {
     KLOG(INFO, "Didn't find any mountable filesystems; mounting ramfs as /\n");
     ext2_destroy_fs(ext2fs);
-    g_root_fs = ramfs_create_fs();
+    g_fs_table[VFS_ROOT_FS] = ramfs_create_fs();
   }
 
-  g_root_fs->id = 0;
+  g_fs_table[VFS_ROOT_FS]->id = VFS_ROOT_FS;
 
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
@@ -119,11 +119,12 @@ void vfs_init() {
 }
 
 fs_t* vfs_get_root_fs() {
-  return g_root_fs;
+  return g_fs_table[VFS_ROOT_FS];;
 }
 
 vnode_t* vfs_get_root_vnode() {
-  return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
+  fs_t* root_fs = vfs_get_root_fs();
+  return vfs_get(root_fs, root_fs->get_root(root_fs));
 }
 
 vnode_t* vfs_get(fs_t* fs, int vnode_num) {
@@ -683,7 +684,8 @@ int vfs_getcwd(char* path_out, int size) {
   size_out++;
   size--;
 
-  while (n->fs != g_root_fs || n->num != g_root_fs->get_root(g_root_fs)) {
+  fs_t* root_fs = vfs_get_root_fs();
+  while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
     // First find the parent vnode.
     vnode_t* parent = 0x0;
     int result = lookup(n, "..", &parent);

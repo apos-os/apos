@@ -23,7 +23,10 @@
 // How many files can be open, globally, at once.
 #define VFS_MAX_FILES 128
 
-extern fs_t* g_root_fs;
+// How many filesystems can be mounted, globally, at once.
+#define VFS_MAX_FILESYSTEMS 10
+
+extern fs_t* g_fs_table[VFS_MAX_FILESYSTEMS];
 extern htbl_t g_vnode_cache;
 extern file_t* g_file_table[VFS_MAX_FILES];
 

@@ -23,7 +23,7 @@
 #include "vfs/vnode.h"
 #include "vfs/vfs.h"
 
-fs_t* g_root_fs = 0;
+fs_t* g_fs_table[VFS_MAX_FILESYSTEMS];
 htbl_t g_vnode_cache;
 file_t* g_file_table[VFS_MAX_FILES];
 
@@ -197,7 +197,8 @@ int lookup_fd(int fd, file_t** file_out) {
 
 vnode_t* get_root_for_path(const char* path) {
   if (path[0] == '/') {
-    return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
+    fs_t* const root_fs = g_fs_table[VFS_ROOT_FS];
+    return vfs_get(root_fs, root_fs->get_root(root_fs));
   } else {
     return VFS_COPY_REF(proc_current()->cwd);
   }
