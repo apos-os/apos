@@ -745,34 +745,13 @@ int vfs_getcwd(char* path_out, int size) {
 }
 
 int vfs_chdir(const char* path) {
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
   vnode_t* new_cwd = 0x0;
-  if (base_name[0] == '\0') {
-    new_cwd = VFS_MOVE_REF(parent);
-  } else {
-    // Lookup the child inode.
-    error = lookup(parent, base_name, &new_cwd);
-    if (error < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
+  int error = lookup_existing_path(path, &new_cwd);
+  if (error) return error;
 
-    // Done with the parent.
-    VFS_PUT_AND_CLEAR(parent);
-
-    if (new_cwd->type != VNODE_DIRECTORY) {
-      VFS_PUT_AND_CLEAR(new_cwd);
-      return -ENOTDIR;
-    }
+  if (new_cwd->type != VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(new_cwd);
+    return -ENOTDIR;
   }
 
   int mode_check =
