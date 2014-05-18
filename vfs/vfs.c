@@ -51,10 +51,6 @@ void vfs_vnode_init(vnode_t* n, int num) {
 
 #define VNODE_CACHE_SIZE 1000
 
-static const char* VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
-};
-
 // Return the index of the next free entry in the file table, or -1 if there's
 // no space left.
 //

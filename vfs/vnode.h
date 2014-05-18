@@ -25,7 +25,7 @@
 struct fs;
 typedef struct fs fs_t;
 
-// vnode types.  Keep these synchcronized with VNODE_TYPE_NAME in vfs.c.
+// vnode types.  Keep these synchcronized with VNODE_TYPE_NAME.
 typedef enum {
   VNODE_UNINITIALIZED = 0,
   VNODE_INVALID = 1,
@@ -35,6 +35,10 @@ typedef enum {
   VNODE_CHARDEV = 5,
 } vnode_type_t;
 // TODO(aoates): symlinks, etc.
+
+static const char* const VNODE_TYPE_NAME[] = {
+  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
+};
 
 // A virtual node in the filesystem.  It is expected that concete filesystems
 // will embed the vnode_t structure in their own, custom structure with
