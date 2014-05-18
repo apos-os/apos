@@ -600,17 +600,15 @@ int vfs_write(int fd, const void* buf, int count) {
 }
 
 int vfs_seek(int fd, int offset, int whence) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
   if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR &&
       whence != VFS_SEEK_END) {
     return -EINVAL;
   }
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
+
   if (file->vnode->type != VNODE_REGULAR &&
       file->vnode->type != VNODE_CHARDEV &&
       file->vnode->type != VNODE_BLOCKDEV) {
