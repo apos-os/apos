@@ -148,6 +148,41 @@ int lookup_path(vnode_t* root, const char* path,
   }
 }
 
+int lookup_existing_path(const char*path, vnode_t** child_out) {
+  if (!path) return -EINVAL;
+
+  vnode_t* root = get_root_for_path(path);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  // Lookup the child inode.
+  vnode_t* child;
+  if (base_name[0] == '\0') {
+    child = VFS_MOVE_REF(parent);
+  } else {
+    kmutex_lock(&parent->mutex);
+    error = lookup_locked(parent, base_name, &child);
+    if (error < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+
+    // Done with the parent.
+    kmutex_unlock(&parent->mutex);
+    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  *child_out = child;
+  return 0;
+}
+
 vnode_t* get_root_for_path(const char* path) {
   if (path[0] == '/') {
     return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
