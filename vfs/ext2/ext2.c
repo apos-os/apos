@@ -22,7 +22,7 @@
 #include "vfs/ext2/ext2-internal.h"
 #include "vfs/ext2/ext2_ops.h"
 #include "vfs/ext2/ext2fs.h"
-#include "vfs/vfs.h"
+#include "vfs/fs.h"
 
 fs_t* ext2_create_fs() {
   ext2fs_t* fs = kmalloc(sizeof(ext2fs_t));

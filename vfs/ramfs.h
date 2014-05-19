@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-#include "vfs/vfs.h"
+#include "vfs/fs.h"
 
 // Initialize a new ramfs and return it.
 fs_t* ramfs_create_fs(void);

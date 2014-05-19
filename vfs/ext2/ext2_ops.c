@@ -21,7 +21,8 @@
 #include "common/math.h"
 #include "memory/block_cache.h"
 #include "memory/kmalloc.h"
-#include "vfs/vfs.h"
+#include "vfs/dirent.h"
+#include "vfs/fs.h"
 
 #include "vfs/ext2/ext2-internal.h"
 #include "vfs/ext2/ext2fs.h"

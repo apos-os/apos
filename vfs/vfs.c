@@ -30,8 +30,10 @@
 #include "vfs/special.h"
 #include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
+#include "vfs/vfs_test_util.h"
 
-#define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
+#define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
 void vfs_vnode_init(vnode_t* n, int num) {
   n->fs = 0x0;
@@ -48,40 +50,6 @@ void vfs_vnode_init(vnode_t* n, int num) {
 }
 
 #define VNODE_CACHE_SIZE 1000
-
-static const char* VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
-};
-
-static fs_t* g_root_fs = 0;
-static htbl_t g_vnode_cache;
-static file_t* g_file_table[VFS_MAX_FILES];
-
-// Helpers for putting and adopting references.  Prefer these to using
-// vfs_put(x) and y = x directly.  You should never write ptr = value directly,
-// instead using either ptr = VFS_COPY_REF(val) (if you want to acquire a new
-// reference and increase the refcount), or VFS_MOVE_REF(val) (if you want to
-// move an existing reference into a new location).
-
-// Calls vfs_put() and NULLs out the vnode_t* to prevent future use.
-#define VFS_PUT_AND_CLEAR(x) do { \
-  vnode_t** const _x = &(x); \
-  vfs_put(*_x); \
-  *_x = 0x0; \
-} while (0)
-
-// Copy an existing vnode reference.
-static inline vnode_t* VFS_COPY_REF(vnode_t* ref) {
-  vfs_ref(ref);
-  return ref;
-}
-
-// Move an existing vnode reference into a new variable.
-#define VFS_MOVE_REF(x) \
-    ({vnode_t** const _x = &(x); \
-      vnode_t* const _old_val = *_x; \
-      *_x = 0x0; \
-      _old_val; })
 
 // Return the index of the next free entry in the file table, or -1 if there's
 // no space left.
@@ -104,170 +72,6 @@ static int next_free_fd(process_t* p) {
     }
   }
   return -1;
-}
-
-// Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
-// success (and refcounts the child).
-//
-// Requires a lock on the parent to ensure that the child isn't removed between
-// the call to parent->lookup() and vfs_get(child).
-static int lookup_locked(vnode_t* parent, const char* name,
-                         vnode_t** child_out) {
-  kmutex_assert_is_held(&parent->mutex);
-  int child_inode = parent->fs->lookup(parent, name);
-
-  if (child_inode < 0) {
-    return child_inode;
-  }
-
-  *child_out = vfs_get(parent->fs, child_inode);
-  return 0;
-}
-
-// Convenience wrapper that locks the parent around a call to lookup_locked().
-static int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
-  kmutex_lock(&parent->mutex);
-  const int result = lookup_locked(parent, name, child_out);
-  kmutex_unlock(&parent->mutex);
-  return result;
-}
-
-// Similar to lookup(), but does the reverse: given a directory and an inode
-// number, return the corresponding name, if the directory has an entry for
-// that inode number.
-//
-// Returns the length of the name on success, or -error.
-static int lookup_by_inode(vnode_t* parent, int inode,
-                           char* name_out, int len) {
-  KMUTEX_AUTO_LOCK(parent_lock, &parent->mutex);
-  const int kBufSize = 512;
-  char dirent_buf[kBufSize];
-
-  int offset = 0;
-  dirent_t* ent;
-  do {
-    const int len = parent->fs->getdents(parent, offset, dirent_buf, kBufSize);
-    if (len == 0) {
-      // Didn't find any matching nodes :(
-      return -ENOENT;
-    }
-
-    // Look for a matching dirent.
-    int buf_offset = 0;
-    do {
-      ent = (dirent_t*)(&dirent_buf[buf_offset]);
-      buf_offset += ent->length;
-    } while (ent->vnode != inode && buf_offset < len);
-    // Keep going until we find a match.
-    offset = ent->offset;
-  } while (ent->vnode != inode);
-
-  // Found a match, copy its name.
-  const int name_len = kstrlen(ent->name);
-  if (len < name_len + 1) {
-    return -ERANGE;
-  }
-
-  kstrcpy(name_out, ent->name);
-  return name_len;
-}
-
-// Given a vnode and a path path/to/myfile relative to that vnode, return the
-// vnode_t of the directory part of the path, and copy the base name of the path
-// (without any trailing slashes) into base_name_out.
-//
-// base_nome_out must be AT LEAST VFS_MAX_FILENAME_LENGTH long.
-//
-// Returns 0 on success, or -error on failure (in which case the contents of
-// parent_out and base_name_out are undefined).
-//
-// Returns *parent_out with a refcount unless there was an error.
-// TODO(aoates): this needs to handle symlinks!
-// TODO(aoates): things to test:
-//  * regular path
-//  * root directory
-//  * path ending in file
-//  * path ending in directory
-//  * trailing slashes
-//  * no leading slash (?)
-//  * non-directory in middle of path (ENOTDIR)
-//  * non-existing in middle of path (ENOENT)
-static int lookup_path(vnode_t* root, const char* path,
-                       vnode_t** parent_out, char* base_name_out) {
-  if (!*path) {
-    return -EINVAL;
-  }
-
-  vnode_t* n = VFS_COPY_REF(root);
-
-  // Skip leading '/'.
-  while (*path && *path == '/') path++;
-
-  if (!*path) {
-    // The path was the root node.  We don't check for search permissions since
-    // the caller will check permissions on the directory itself.
-    *parent_out = VFS_MOVE_REF(n);
-    *base_name_out = '\0';
-    return 0;
-  }
-
-  while(1) {
-    // Ensure we have permission to search this directory.
-    int mode_check;
-    if ((mode_check = vfs_check_mode(
-                VFS_OP_SEARCH, proc_current(), n))) {
-      VFS_PUT_AND_CLEAR(n);
-      return mode_check;
-    }
-
-    KASSERT(*path);
-    const char* name_end = kstrchrnul(path, '/');
-    if (name_end - path >= VFS_MAX_FILENAME_LENGTH) {
-      VFS_PUT_AND_CLEAR(n);
-      return -ENAMETOOLONG;
-    }
-
-    kstrncpy(base_name_out, path, name_end - path);
-    base_name_out[name_end - path] = '\0';
-
-    // Advance past any trailing slashes.
-    while (*name_end && *name_end == '/') name_end++;
-
-    // Are we at the end?
-    if (!*name_end) {
-      // Don't vfs_put() the parent, since we want to return it with a refcount.
-      *parent_out = VFS_MOVE_REF(n);
-      return 0;
-    }
-
-    // Otherwise, descend again.
-    vnode_t* child = 0x0;
-    int error = lookup(n, base_name_out, &child);
-    VFS_PUT_AND_CLEAR(n);
-    if (error) {
-      return error;
-    }
-
-    // TODO(aoates): symlink
-    if (child->type != VNODE_DIRECTORY) {
-      VFS_PUT_AND_CLEAR(child);
-      return -ENOTDIR;
-    }
-
-    // Move to the child and keep going.
-    n = VFS_MOVE_REF(child);
-    path = name_end;
-  }
-}
-
-// Returns the appropriate root node for the given path, either the fs root or
-// the process's cwd.
-static vnode_t* get_root_for_path(const char* path) {
-  if (path[0] == '/') {
-    return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
-  } else {
-    return VFS_COPY_REF(proc_current()->cwd);
-  }
 }
 
 // Returns non-zero if the given mode is a valid create mode_t (i.e. can be
@@ -397,80 +201,6 @@ void vfs_put(vnode_t* vnode) {
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }
-}
-
-static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
-  vnode_t* vnode = (vnode_t*)val;
-  KASSERT(key == (uint32_t)vnode->num);
-  KLOG(INFO, "  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
-       vnode, vnode->num, VNODE_TYPE_NAME[vnode->type],
-       vnode->len, vnode->refcount);
-}
-
-void vfs_log_cache() {
-  KLOG(INFO, "VFS vnode cache:\n");
-  htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
-}
-
-static void vfs_cache_size_iter(void* arg, uint32_t key, void* val) {
-  int* counter = (int*)arg;
-  vnode_t* vnode = (vnode_t*)val;
-  KASSERT(key == (uint32_t)vnode->num);
-  (*counter)++;
-}
-
-int vfs_cache_size() {
-  int size = 0;
-  htbl_iterate(&g_vnode_cache, &vfs_cache_size_iter, &size);
-  return size;
-}
-
-// TODO(aoates): can this be used as a helper for other functions as well?
-static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  vnode_t* child = 0x0;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    // Lookup the child inode.
-    error = lookup(parent, base_name, &child);
-    if (error < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-    VFS_PUT_AND_CLEAR(parent);
-  }
-  *vnode_out = child;
-  return 0;
-}
-
-int vfs_get_vnode_refcount_for_path(const char* path) {
-  vnode_t* vnode = NULL;
-  const int result = vfs_get_vnode(path, &vnode);
-  if (result) return result;
-
-  const int refcount = vnode->refcount - 1;
-  VFS_PUT_AND_CLEAR(vnode);
-  return refcount;
-}
-
-int vfs_get_vnode_for_path(const char* path) {
-  vnode_t* vnode = NULL;
-  const int result = vfs_get_vnode(path, &vnode);
-  if (result) return result;
-
-  const int num = vnode->num;
-  VFS_PUT_AND_CLEAR(vnode);
-  return num;
 }
 
 int vfs_open(const char* path, uint32_t flags, ...) {
@@ -794,13 +524,10 @@ int vfs_unlink(const char* path) {
 }
 
 int vfs_read(int fd, void* buf, int count) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
@@ -813,7 +540,6 @@ int vfs_read(int fd, void* buf, int count) {
   }
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
@@ -832,13 +558,10 @@ int vfs_read(int fd, void* buf, int count) {
 }
 
 int vfs_write(int fd, const void* buf, int count) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
@@ -851,7 +574,6 @@ int vfs_write(int fd, const void* buf, int count) {
   }
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
@@ -870,17 +592,15 @@ int vfs_write(int fd, const void* buf, int count) {
 }
 
 int vfs_seek(int fd, int offset, int whence) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
   if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR &&
       whence != VFS_SEEK_END) {
     return -EINVAL;
   }
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
+
   if (file->vnode->type != VNODE_REGULAR &&
       file->vnode->type != VNODE_CHARDEV &&
       file->vnode->type != VNODE_BLOCKDEV) {
@@ -914,19 +634,15 @@ int vfs_seek(int fd, int offset, int whence) {
 }
 
 int vfs_getdents(int fd, dirent_t* buf, int count) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = file->vnode->fs->getdents(file->vnode, file->pos, buf, count);
@@ -1015,34 +731,13 @@ int vfs_getcwd(char* path_out, int size) {
 }
 
 int vfs_chdir(const char* path) {
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
   vnode_t* new_cwd = 0x0;
-  if (base_name[0] == '\0') {
-    new_cwd = VFS_MOVE_REF(parent);
-  } else {
-    // Lookup the child inode.
-    error = lookup(parent, base_name, &new_cwd);
-    if (error < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
+  int error = lookup_existing_path(path, &new_cwd);
+  if (error) return error;
 
-    // Done with the parent.
-    VFS_PUT_AND_CLEAR(parent);
-
-    if (new_cwd->type != VNODE_DIRECTORY) {
-      VFS_PUT_AND_CLEAR(new_cwd);
-      return -ENOTDIR;
-    }
+  if (new_cwd->type != VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(new_cwd);
+    return -ENOTDIR;
   }
 
   int mode_check =
@@ -1060,14 +755,10 @@ int vfs_chdir(const char* path) {
 
 int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
   *memobj_out = 0x0;
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
-
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_DIRECTORY) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR) {
@@ -1098,13 +789,10 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
 
 // TODO(aoates): add a unit test for this.
 int vfs_isatty(int fd) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   if (file->vnode->type == VNODE_CHARDEV &&
       file->vnode->dev.major == DEVICE_MAJOR_TTY) {
     return 1;
@@ -1143,50 +831,22 @@ int vfs_lstat(const char* path, apos_stat_t* stat) {
     return -EINVAL;
   }
 
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, &child);
+  if (result) return result;
 
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
-  }
-
-  int result = vfs_stat_internal(child, stat);
+  result = vfs_stat_internal(child, stat);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
 
 int vfs_fstat(int fd, apos_stat_t* stat) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
@@ -1212,57 +872,27 @@ static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
   return 0;
 }
 
-// TODO(aoates): de-dup this with lstat, and others.
 int vfs_lchown(const char* path, uid_t owner, gid_t group) {
   if (!path || owner < -1 || group < -1) {
     return -EINVAL;
   }
 
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, &child);
+  if (result) return result;
 
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
-  }
-
-  int result = vfs_chown_internal(child, owner, group);
+  result = vfs_chown_internal(child, owner, group);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
 
-// TODO(aoates): de-dup this with fstat, and others.
 int vfs_fchown(int fd, uid_t owner, gid_t group) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
@@ -1284,56 +914,23 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
   return 0;
 }
 
-// TODO(aoates): de-dup this with lstat, and others.
 int vfs_lchmod(const char* path, mode_t mode) {
-  if (!path) {
-    return -EINVAL;
-  }
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, &child);
+  if (result) return result;
 
-  vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
-  }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
-  }
-
-  int result = vfs_chmod_internal(child, mode);
+  result = vfs_chmod_internal(child, mode);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
 
 int vfs_fchmod(int fd, mode_t mode) {
-  process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
-    return -EBADF;
-  }
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
 
-  file_t* file = g_file_table[proc->fds[fd]];
-  KASSERT(file != 0x0);
   file->refcount++;
 
-  int result = 0;
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chmod_internal(file->vnode, mode);

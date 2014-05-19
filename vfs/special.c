@@ -22,7 +22,7 @@
 #include "memory/block_cache.h"
 #include "memory/memobj.h"
 #include "vfs/special.h"
-#include "vfs/vfs.h"
+#include "vfs/vnode.h"
 
 static int block_dev_op(int is_write, apos_dev_t dev, int offset,
                         void* buf, int len) {

@@ -15,7 +15,7 @@
 #ifndef APOO_MEMORY_MEMOBJ_VNODE_H
 #define APOO_MEMORY_MEMOBJ_VNODE_H
 
-#include "vfs/vfs.h"
+#include "vfs/vnode.h"
 
 // Initialize the memobj_t embedded in the given vnode.  Each reference on the
 // memobj_t corresponds to a reference on the owning vnode.

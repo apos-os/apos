@@ -15,7 +15,7 @@
 #ifndef APOO_VFS_EXT2_EXT2_OPS_H
 #define APOO_VFS_EXT2_EXT2_OPS_H
 
-#include "vfs/vfs.h"
+#include "vfs/fs.h"
 
 void ext2_set_ops(fs_t* fs);
 

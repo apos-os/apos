@@ -29,9 +29,12 @@
 #include "proc/scheduler.h"
 #include "proc/user.h"
 #include "test/ktest.h"
+#include "vfs/fs.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
+#include "vfs/vfs_test_util.h"
 
 // Increase this to make thread safety tests run longer.
 #define THREAD_SAFETY_MULTIPLIER 1
