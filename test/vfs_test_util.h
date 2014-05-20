@@ -47,7 +47,9 @@ static void EXPECT_FILE_EXISTS(const char* path) {
 }
 
 static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
-  EXPECT_CAN_CREATE_FILE(path);
+  const int fd = vfs_open(path, VFS_O_RDWR);
+  KEXPECT_EQ(-ENOENT, fd);
+  if (fd >= 0) vfs_close(fd);
 }
 
 #endif
