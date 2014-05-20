@@ -43,6 +43,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->len = -1;
   n->uid = -1;
   n->mode = 0;
+  n->mounted_fs = VFS_FSID_NONE;
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
