@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
@@ -32,6 +33,7 @@
 #include "vfs/vfs.h"
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
+#include "vfs/vnode_hash.h"
 
 #define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
@@ -130,7 +132,8 @@ vnode_t* vfs_get_root_vnode() {
 
 vnode_t* vfs_get(fs_t* fs, int vnode_num) {
   vnode_t* vnode;
-  int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,  (void**)(&vnode));
+  int error = htbl_get(&g_vnode_cache, vnode_hash(fs, vnode_num),
+                       (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
 
@@ -162,7 +165,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     kmutex_lock(&vnode->mutex);
 
     // Put the (unitialized but locked) vnode into the table.
-    htbl_put(&g_vnode_cache, (uint32_t)vnode_num, (void*)vnode);
+    htbl_put(&g_vnode_cache, vnode_hash_n(vnode), (void*)vnode);
 
     // This call could block, at which point other threads attempting to access
     // this node will block until we release the mutex.
@@ -196,7 +199,7 @@ void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
     KASSERT(vnode->memobj.refcount == 0);
-    KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
+    KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     // Only put the node back into the fs if we were able to fully initialize
     // it.
     if (vnode->type != VNODE_UNINITIALIZED) {
