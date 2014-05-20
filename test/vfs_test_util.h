@@ -16,11 +16,38 @@
 #define APOO_TEST_VFS_TEST_UTIL_H
 
 #include "vfs/stat.h"
+#include "vfs/vfs.h"
+#include "test/ktest.h"
 
 // Convert a "rwxr-xrw-"-style string into a mode_t.
 mode_t str_to_mode(const char* mode_str);
 
 // Create the given file with the given mode.
 void create_file(const char* path, const char* mode);
+
+// Helper method that verifies that the given file can be created (then unlinks
+// it).
+static void EXPECT_CAN_CREATE_FILE(const char* path) {
+  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    vfs_close(fd);
+    vfs_unlink(path);
+  }
+}
+
+// Helper method that verifies the given file exists.
+static void EXPECT_FILE_EXISTS(const char* path) {
+  // The file should still exist.
+  const int fd = vfs_open(path, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    KEXPECT_EQ(0, vfs_close(fd));
+  }
+}
+
+static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
+  EXPECT_CAN_CREATE_FILE(path);
+}
 
 #endif

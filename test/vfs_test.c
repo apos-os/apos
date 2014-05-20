@@ -29,6 +29,7 @@
 #include "proc/scheduler.h"
 #include "proc/user.h"
 #include "test/ktest.h"
+#include "test/vfs_test_util.h"
 #include "vfs/fs.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -44,13 +45,7 @@
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))
 
-// Helper method to create a file for a test.
-static void create_file(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR,
-                          VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO);
-  KEXPECT_GE(fd, 0);
-  if (fd >= 0) vfs_close(fd);
-}
+#define RWX "rwxrwxrwx"
 
 static void create_file_with_data(const char* path, const char* data) {
   const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
@@ -68,31 +63,6 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
     val = fnv_hash(val);
     KASSERT(val != 0);
   }
-}
-
-// Helper method that verifies that the given file can be created (then unlinks
-// it).
-static void EXPECT_CAN_CREATE_FILE(const char* path) {
-  const int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, 0);
-  KEXPECT_GE(fd, 0);
-  if (fd >= 0) {
-    vfs_close(fd);
-    vfs_unlink(path);
-  }
-}
-
-// Helper method that verifies the given file exists.
-static void EXPECT_FILE_EXISTS(const char* path) {
-  // The file should still exist.
-  const int fd = vfs_open(path, VFS_O_RDONLY);
-  KEXPECT_GE(fd, 0);
-  if (fd >= 0) {
-    KEXPECT_EQ(0, vfs_close(fd));
-  }
-}
-
-static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
-  EXPECT_CAN_CREATE_FILE(path);
 }
 
 static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
@@ -505,7 +475,7 @@ static void cwd_test(void) {
 
   vfs_mkdir("/cwd_test", 0);
   vfs_mkdir("/cwd_test/a", 0);
-  create_file("/cwd_test/file");
+  create_file("/cwd_test/file", RWX);
 
   KTEST_BEGIN("vfs_getcwd(): root test");
   EXPECT_CWD("/");
@@ -564,7 +534,7 @@ static void cwd_test(void) {
   KEXPECT_EQ(-ERANGE, vfs_getcwd(buf, len));
 
   KTEST_BEGIN("vfs_open(): respects cwd");
-  create_file("/cwd_test/cwd_open_file");
+  create_file("/cwd_test/cwd_open_file", RWX);
   vfs_chdir("/cwd_test");
   int fd = vfs_open("cwd_open_file", VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
@@ -585,7 +555,7 @@ static void cwd_test(void) {
 
   KTEST_BEGIN("vfs_unlink(): respects cwd");
   vfs_chdir("/cwd_test");
-  create_file("/cwd_test/cwd_unlink_file");
+  create_file("/cwd_test/cwd_unlink_file", RWX);
   KEXPECT_EQ(0, vfs_unlink("cwd_unlink_file"));
 
   KTEST_BEGIN("vfs_open(): '.' with cwd");
@@ -624,7 +594,7 @@ static void rw_test(void) {
   const char kDir[] = "/rw_test_dir";
   const int kBufSize = 512;
   char buf[kBufSize];
-  create_file(kFile);
+  create_file(kFile, RWX);
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   KTEST_BEGIN("vfs_write(): basic write test");
@@ -659,7 +629,7 @@ static void rw_test(void) {
   vfs_close(fd);
 
   vfs_unlink(kFile);
-  create_file(kFile);
+  create_file(kFile, RWX);
 
   KTEST_BEGIN("vfs_write(): chunked write test");
   fd = vfs_open(kFile, VFS_O_RDWR);
@@ -727,7 +697,7 @@ static void write_large_test(void) {
   const int kBufSize = 4096;
   char* buf = (char*)kmalloc(kBufSize);
   char* buf_read = (char*)kmalloc(kBufSize);
-  create_file(kFile);
+  create_file(kFile, RWX);
 
   fill_with_pattern(2153215, buf, kBufSize);
 
@@ -792,7 +762,7 @@ static void write_thread_test(void) {
   KTEST_BEGIN("vfs_write(): thread-safety test");
   kthread_t threads[WRITE_SAFETY_THREADS];
 
-  create_file("/vfs_write_thread_safety_test");
+  create_file("/vfs_write_thread_safety_test", RWX);
   int fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i],
@@ -973,9 +943,9 @@ static void getdents_test(void) {
   vfs_mkdir("/getdents/b", 0);
   vfs_mkdir("/getdents/c", 0);
   vfs_mkdir("/getdents/a/1", 0);
-  create_file("/getdents/f1");
-  create_file("/getdents/f2");
-  create_file("/getdents/a/f3");
+  create_file("/getdents/f1", RWX);
+  create_file("/getdents/f2", RWX);
+  create_file("/getdents/a/f3", RWX);
 
   KTEST_BEGIN("vfs_getdents(): files and directories");
   fd = vfs_open("/", VFS_O_RDONLY);
@@ -1601,7 +1571,7 @@ static void stat_test(void) {
   apos_stat_t stat, fstat;
 
   KTEST_BEGIN("lstat(): regular file test (empty)");
-  create_file(kRegFile);
+  create_file(kRegFile, RWX);
 
   kmemset(&stat, 0xFF, sizeof(stat));
   kmemset(&fstat, 0xFF, sizeof(stat));
@@ -1728,7 +1698,7 @@ static void initial_owner_test_func(void* arg) {
   KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
   KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
 
-  create_file(kRegFile);
+  create_file(kRegFile, RWX);
   EXPECT_OWNER_IS(kRegFile, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mkdir() sets uid/gid: directory test");
@@ -1785,13 +1755,13 @@ static void non_root_chown_test_func(void* arg) {
   const char kUCGB[] = "chown_test_dir/userCgrpB";
 
   KTEST_BEGIN("vfs_lchown()/vfs_fchown(): setup for user tests");
-  create_file(kRootFile);
-  create_file(kUAGA);
-  create_file(kUAGB);
-  create_file(kUBGA);
-  create_file(kUBGB);
-  create_file(kUCGA);
-  create_file(kUCGB);
+  create_file(kRootFile, RWX);
+  create_file(kUAGA, RWX);
+  create_file(kUAGB, RWX);
+  create_file(kUBGA, RWX);
+  create_file(kUBGB, RWX);
+  create_file(kUCGA, RWX);
+  create_file(kUCGB, RWX);
 
   KEXPECT_EQ(0, vfs_lchown(kUAGA, kTestUserA, kTestGroupA));
   KEXPECT_EQ(0, vfs_lchown(kUAGB, kTestUserA, kTestGroupB));
@@ -1912,7 +1882,7 @@ static void chown_test(void) {
 
   KTEST_BEGIN("vfs_lchown()/vfs_fchown(): test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
-  create_file(kRegFile);
+  create_file(kRegFile, RWX);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
@@ -2057,8 +2027,8 @@ static void non_root_chmod_test_func(void* arg) {
   const char kRegFileB[] = "chmod_test_dir/regB";
 
   KTEST_BEGIN("vfs_lchmod(): non-root test setup");
-  create_file(kRegFileA);
-  create_file(kRegFileB);
+  create_file(kRegFileA, RWX);
+  create_file(kRegFileB, RWX);
   KEXPECT_EQ(0, vfs_lchown(kRegFileA, kTestUserA, kTestGroupA));
   KEXPECT_EQ(0, vfs_lchown(kRegFileB, kTestUserB, kTestGroupB));
 
@@ -2088,7 +2058,7 @@ static void chmod_test(void) {
 
   KTEST_BEGIN("vfs_lchmod()/vfs_fchmod(): test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
-  create_file(kRegFile);
+  create_file(kRegFile, RWX);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
