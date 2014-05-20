@@ -44,3 +44,51 @@ void create_file(const char* path, const char* mode) {
   KEXPECT_GE(fd, 0);
   vfs_close(fd);
 }
+
+void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
+  const int kBufSize = sizeof(dirent_t) * 3;  // Ensure we have several calls.
+  char buf[kBufSize];
+  int num_dirents = 0;
+
+  while (1) {
+    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    if (len < 0) {
+      KEXPECT_GE(len, -0);
+      break;
+    }
+    if (len == 0) {
+      break;
+    }
+
+    int buf_offset = 0;
+    do {
+      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      num_dirents++;
+      buf_offset += ent->length;
+
+      KLOG("dirent: %d -> %s\n", ent->vnode, ent->name);
+
+      // Ignore the root lost+found and /dev directories.
+      if (kstrcmp(ent->name, "lost+found") == 0 ||
+          kstrcmp(ent->name, "dev") == 0) {
+        num_dirents--;
+        continue;
+      }
+
+      // Make sure the dirent matches one of the expected.
+      int i;
+      for (i = 0; i < expected_num; ++i) {
+        if (kstrcmp(ent->name, expected[i].name) == 0) {
+          break;
+        }
+      }
+      if (i == expected_num) {
+        KLOG("Error: dirent <%d, %s> doesn't match any expected dirents\n",
+             ent->vnode, ent->name);
+        KEXPECT_EQ(0, 1); // TODO(aoates): more elegant way to signal this
+      }
+    } while (buf_offset < len);
+  }
+
+  KEXPECT_EQ(expected_num, num_dirents);
+}

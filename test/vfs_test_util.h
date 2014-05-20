@@ -52,4 +52,13 @@ static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
   if (fd >= 0) vfs_close(fd);
 }
 
+// Run vfs_getdents() on the given fd and verify it matches the given set of
+// dirents.
+// TODO(aoates): actually verify the vnode numbers vfs_getdents returns.
+typedef struct {
+  int vnode;
+  const char* name;
+} edirent_t;
+void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]);
+
 #endif
