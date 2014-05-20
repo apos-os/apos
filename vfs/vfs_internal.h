@@ -19,6 +19,7 @@
 #include "common/hashtable.h"
 #include "vfs/file.h"
 #include "vfs/fs.h"
+#include "vfs/vnode.h"
 
 // How many files can be open, globally, at once.
 #define VFS_MAX_FILES 128
@@ -26,7 +27,13 @@
 // How many filesystems can be mounted, globally, at once.
 #define VFS_MAX_FILESYSTEMS 10
 
-extern fs_t* g_fs_table[VFS_MAX_FILESYSTEMS];
+// A mounted filesystem.
+typedef struct {
+  vnode_t* mount_point;
+  fs_t* fs;
+} mounted_fs_t;
+
+extern mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 extern htbl_t g_vnode_cache;
 extern file_t* g_file_table[VFS_MAX_FILES];
 
