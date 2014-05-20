@@ -16,17 +16,8 @@
 #ifndef APOO_VFS_FS_H
 #define APOO_VFS_FS_H
 
+#include "vfs/fsid.h"
 #include "vfs/vnode.h"
-
-// A unique ID assigned to each mounted filesystem.  Corresponds to the
-// filesystem's index in the filesystem table.
-typedef int fsid_t;
-
-// fsid_t corresponding to no mounted filesystem.
-#define VFS_FSID_NONE -1
-
-// The root fsid.
-#define VFS_ROOT_FS 0
 
 // Concrete filesystem interface.  One of these is instantiated by the concrete
 // filesystem when it is initialized.
