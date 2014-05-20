@@ -37,6 +37,11 @@ extern mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 extern htbl_t g_vnode_cache;
 extern file_t* g_file_table[VFS_MAX_FILES];
 
+// Given a pointer to a vnode, if it is a mount point, replace it with the
+// mounted filesystem's root directory, continuing until the mounts are fully
+// resolved.  If there is an error, returns -error.
+int resolve_mounts(vnode_t** vnode);
+
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
 //
@@ -81,9 +86,13 @@ int lookup_path(vnode_t* root, const char* path,
 // for operations that simply work on an existing file, and don't need to worry
 // about the path root, basename, parent directory, etc.
 //
+// If |resolve_mount| is non-zero, the final child will be resolved if it is a
+// mount point (you probably want this).
+//
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
 // otherwise.
-int lookup_existing_path(const char*path, vnode_t** child_out);
+int lookup_existing_path(const char* path, vnode_t** child_out,
+                         int resolve_mount);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.

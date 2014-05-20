@@ -18,10 +18,11 @@ LOCAL_SOURCES := \
   vfs.c \
   ramfs.c \
   file.c \
+  mount.c \
   util.c \
   special.c \
-  vfs_mode.c \
   vfs_internal.c \
+  vfs_mode.c \
   vfs_test_util.c \
 
 LOCAL_SUBDIRS := ext2

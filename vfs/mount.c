@@ -23,7 +23,7 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
 
   // First open the vnode that will be the mount point.
   vnode_t* mount_point = 0x0;
-  int result = lookup_existing_path(path, &mount_point);
+  int result = lookup_existing_path(path, &mount_point, 1);
   if (result) return result;
 
   if (mount_point->type != VNODE_DIRECTORY) {
@@ -56,7 +56,7 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
 
   // First open the vnode that we're trying to unmount.
   vnode_t* mount_point = 0x0;
-  int result = lookup_existing_path(path, &mount_point);
+  int result = lookup_existing_path(path, &mount_point, 0);
   if (result) return result;
 
   if (mount_point->type != VNODE_DIRECTORY) {

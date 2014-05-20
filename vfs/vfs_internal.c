@@ -27,6 +27,22 @@ mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 htbl_t g_vnode_cache;
 file_t* g_file_table[VFS_MAX_FILES];
 
+int resolve_mounts(vnode_t** vnode) {
+  vnode_t* n = *vnode;
+
+  // If the vnode is a mount point, continue to the child filesystem.
+  while (n->mounted_fs != VFS_FSID_NONE) {
+    // TODO(aoates): check that each of these is valid.
+    fs_t* const child_fs = g_fs_table[n->mounted_fs].fs;
+    vnode_t* child_fs_root = vfs_get(child_fs, child_fs->get_root(child_fs));
+    VFS_PUT_AND_CLEAR(n);
+    n = VFS_MOVE_REF(child_fs_root);
+  }
+
+  *vnode = n;
+  return 0;
+}
+
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   kmutex_assert_is_held(&parent->mutex);
   int child_inode = parent->fs->lookup(parent, name);
@@ -142,13 +158,20 @@ int lookup_path(vnode_t* root, const char* path,
       return -ENOTDIR;
     }
 
+    error = resolve_mounts(&child);
+    if (error) {
+      VFS_PUT_AND_CLEAR(child);
+      return error;
+    }
+
     // Move to the child and keep going.
     n = VFS_MOVE_REF(child);
     path = name_end;
   }
 }
 
-int lookup_existing_path(const char*path, vnode_t** child_out) {
+int lookup_existing_path(const char*path, vnode_t** child_out,
+                         int resolve_mount) {
   if (!path) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
@@ -177,6 +200,14 @@ int lookup_existing_path(const char*path, vnode_t** child_out) {
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
+  }
+
+  if (resolve_mount) {
+    error = resolve_mounts(&child);
+    if (error) {
+      VFS_PUT_AND_CLEAR(child);
+      return error;
+    }
   }
 
   *child_out = child;

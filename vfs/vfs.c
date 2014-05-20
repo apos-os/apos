@@ -284,6 +284,12 @@ int vfs_open(const char* path, uint32_t flags, ...) {
     VFS_PUT_AND_CLEAR(parent);
   }
 
+  error = resolve_mounts(&child);
+  if (error) {
+    VFS_PUT_AND_CLEAR(child);
+    return error;
+  }
+
   // Check permissions on the file if it already exists.
   if (!created) {
     int mode_check = 0;
@@ -740,7 +746,7 @@ int vfs_getcwd(char* path_out, int size) {
 
 int vfs_chdir(const char* path) {
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, &new_cwd);
+  int error = lookup_existing_path(path, &new_cwd, 1);
   if (error) return error;
 
   if (new_cwd->type != VNODE_DIRECTORY) {
@@ -840,7 +846,7 @@ int vfs_lstat(const char* path, apos_stat_t* stat) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child);
+  int result = lookup_existing_path(path, &child, 1);
   if (result) return result;
 
   result = vfs_stat_internal(child, stat);
@@ -886,7 +892,7 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child);
+  int result = lookup_existing_path(path, &child, 1);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
@@ -924,7 +930,7 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
 
 int vfs_lchmod(const char* path, mode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child);
+  int result = lookup_existing_path(path, &child, 1);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);
