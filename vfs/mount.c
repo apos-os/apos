@@ -15,6 +15,7 @@
 #include "vfs/mount.h"
 
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "vfs/vfs_internal.h"
 
 int vfs_mount_fs(const char* path, fs_t* fs) {
@@ -51,5 +52,37 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
 }
 
 int vfs_unmount_fs(const char* path, fs_t** fs_out) {
-  return -ENOTSUP;
+  if (!path || !fs_out) return -EINVAL;
+
+  // First open the vnode that we're trying to unmount.
+  vnode_t* mount_point = 0x0;
+  int result = lookup_existing_path(path, &mount_point);
+  if (result) return result;
+
+  if (mount_point->type != VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(mount_point);
+    return -ENOTDIR;
+  }
+
+  if (mount_point->mounted_fs == VFS_FSID_NONE) {
+    VFS_PUT_AND_CLEAR(mount_point);
+    return -EINVAL;
+  }
+
+  // TODO(aoates): make sure the mounted filesystem isn't busy.
+
+  KASSERT(mount_point->mounted_fs > 0 &&
+          mount_point->mounted_fs < VFS_MAX_FILESYSTEMS);
+  KASSERT(g_fs_table[mount_point->mounted_fs].mount_point == mount_point);
+  KASSERT(g_fs_table[mount_point->mounted_fs].fs->id ==
+          mount_point->mounted_fs);
+
+  *fs_out = g_fs_table[mount_point->mounted_fs].fs;
+
+  VFS_PUT_AND_CLEAR(g_fs_table[mount_point->mounted_fs].mount_point);
+  g_fs_table[mount_point->mounted_fs].fs = 0x0;
+  mount_point->mounted_fs = VFS_FSID_NONE;
+  VFS_PUT_AND_CLEAR(mount_point);
+
+  return 0;
 }
