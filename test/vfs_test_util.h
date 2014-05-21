@@ -59,7 +59,11 @@ typedef struct {
   int vnode;
   const char* name;
 } edirent_t;
-int compare_dirents(int fd, int expected_num, edirent_t expected[])
+int compare_dirents(int fd, int expected_num, const edirent_t expected[])
   __attribute__ ((warn_unused_result));
+
+// As above, but opens the directory instead of taking an fd.
+int compare_dirents_p(const char* path, int expected_num,
+                      const edirent_t expected[]);
 
 #endif

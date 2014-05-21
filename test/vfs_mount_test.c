@@ -62,9 +62,7 @@ static void basic_mount_test(void) {
   KEXPECT_EQ(0, vfs_close(fd));
 
   edirent_t getdents_a_expected[] = {{-1, "."}, {0, ".."}, {-1, "file"}};
-  fd = vfs_open("vfs_mount_test/a", VFS_O_RDONLY);
-  KEXPECT_EQ(0, compare_dirents(fd, 3, getdents_a_expected));
-  vfs_close(fd);
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a", 3, getdents_a_expected));
 
   // Try stat'ing it.
   KTEST_BEGIN("vfs mount: stat mount point");

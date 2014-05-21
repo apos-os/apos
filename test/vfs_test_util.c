@@ -45,7 +45,7 @@ void create_file(const char* path, const char* mode) {
   vfs_close(fd);
 }
 
-int compare_dirents(int fd, int expected_num, edirent_t expected[]) {
+int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
   const int kBufSize = sizeof(dirent_t) * 3;  // Ensure we have several calls.
   char buf[kBufSize];
   int num_dirents = 0;
@@ -97,4 +97,13 @@ int compare_dirents(int fd, int expected_num, edirent_t expected[]) {
   } else {
     return 0;
   }
+}
+
+int compare_dirents_p(const char* path, int expected_num,
+                      const edirent_t expected[]) {
+  int fd = vfs_open(path, VFS_O_RDONLY);
+  if (fd < 0) return fd;
+  int result = compare_dirents(fd, expected_num, expected);
+  vfs_close(fd);
+  return result;
 }
