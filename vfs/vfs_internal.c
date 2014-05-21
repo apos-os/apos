@@ -189,17 +189,11 @@ int lookup_existing_path(const char*path, vnode_t** child_out,
   if (base_name[0] == '\0') {
     child = VFS_MOVE_REF(parent);
   } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
+    error = lookup(parent, base_name, &child);
+    VFS_PUT_AND_CLEAR(parent);
     if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
       return error;
     }
-
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
   }
 
   if (resolve_mount) {
