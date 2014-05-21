@@ -43,6 +43,17 @@ int resolve_mounts(vnode_t** vnode) {
   return 0;
 }
 
+void resolve_mounts_up(vnode_t** parent, const char* child_name) {
+  // If we're traversing past the root node of a mounted filesystem, swap in the
+  // mount point.
+  while (kstrcmp(child_name, "..") == 0 &&
+         (*parent)->parent_mount_point != 0x0) {
+    vnode_t* new_parent = VFS_COPY_REF((*parent)->parent_mount_point);
+    VFS_PUT_AND_CLEAR(*parent);
+    *parent = VFS_MOVE_REF(new_parent);
+  }
+}
+
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   kmutex_assert_is_held(&parent->mutex);
   int child_inode = parent->fs->lookup(parent, name);
@@ -55,10 +66,12 @@ int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   return 0;
 }
 
-int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
-  kmutex_lock(&parent->mutex);
-  const int result = lookup_locked(parent, name, child_out);
-  kmutex_unlock(&parent->mutex);
+int lookup(vnode_t** parent, const char* name, vnode_t** child_out) {
+  resolve_mounts_up(parent, name);
+
+  kmutex_lock(&(*parent)->mutex);
+  const int result = lookup_locked(*parent, name, child_out);
+  kmutex_unlock(&(*parent)->mutex);
   return result;
 }
 
@@ -146,7 +159,7 @@ int lookup_path(vnode_t* root, const char* path,
 
     // Otherwise, descend again.
     vnode_t* child = 0x0;
-    int error = lookup(n, base_name_out, &child);
+    int error = lookup(&n, base_name_out, &child);
     VFS_PUT_AND_CLEAR(n);
     if (error) {
       return error;
@@ -189,7 +202,7 @@ int lookup_existing_path(const char*path, vnode_t** child_out,
   if (base_name[0] == '\0') {
     child = VFS_MOVE_REF(parent);
   } else {
-    error = lookup(parent, base_name, &child);
+    error = lookup(&parent, base_name, &child);
     VFS_PUT_AND_CLEAR(parent);
     if (error < 0) {
       return error;

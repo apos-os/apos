@@ -64,6 +64,10 @@ struct vnode {
   // If this vnode is a mount point, the fsid_t of the mounted filesystem.
   fsid_t mounted_fs;
 
+  // If this vnode is the root of a mounted fs (that's not the root fs), the
+  // mount point on the parent fs.
+  struct vnode* parent_mount_point;
+
   int refcount;
 
   char fstype[10];

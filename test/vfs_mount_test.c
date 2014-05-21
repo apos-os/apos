@@ -137,13 +137,94 @@ static void basic_mount_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void dot_dot_test(void) {
+  KTEST_BEGIN("vfs mount: '..' handling test");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+
+  // Create files.
+  create_file("vfs_mount_test/a/file1", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/dir", VFS_S_IRWXU));
+
+  const edirent_t getdents_a_expected[] = {{-1, "."}, {-1, ".."},
+    {-1, "file1"}, {-1, "file2"}, {-1, "dir"}};
+  const edirent_t getdents_expected[] = {{-1, "."}, {-1, ".."}, {-1, "a"}};
+
+  int fd = vfs_open("vfs_mount_test/a/../a/file1", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  create_file("vfs_mount_test/a/../a/file2", "rwxrwxrwx");
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat(
+          "vfs_mount_test/a/../../vfs_mount_test/./a/./../a/file1", &stat));
+  KEXPECT_EQ(0, vfs_lstat(
+          "vfs_mount_test/a/../../vfs_mount_test/./a/./../a", &stat));
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test", &stat));
+  const int vfs_mount_test_ino = stat.st_ino;
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a", &stat));
+  const int a_ino = stat.st_ino;
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/..", &stat));
+  KEXPECT_EQ(vfs_mount_test_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/../.", &stat));
+  KEXPECT_EQ(vfs_mount_test_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/../a", &stat));
+  KEXPECT_EQ(a_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/../a/.", &stat));
+  KEXPECT_EQ(a_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/.", 5,
+                                  getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../a", 5,
+                                  getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../a/.", 5,
+                                  getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../a/../a", 5,
+                                  getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../../vfs_mount_test/a", 5,
+                                  getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/..", 3, getdents_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../.", 3,
+                                  getdents_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../a/../.",
+                                  3, getdents_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../a/..",
+                                  3, getdents_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../../vfs_mount_test",
+                                  3, getdents_expected));
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/dir"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file1"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file2"));
+
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(ramfsA, unmounted_fs);
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
+  const int orig_cache_size = vfs_cache_size();
 
   ramfsA = ramfs_create_fs();
   ramfsB = ramfs_create_fs();
 
   basic_mount_test();
+  dot_dot_test();
+
+  KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
   // TODO(aoates): free the ramfses.
 }

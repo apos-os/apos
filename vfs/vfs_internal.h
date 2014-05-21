@@ -31,6 +31,7 @@
 typedef struct {
   vnode_t* mount_point;
   fs_t* fs;
+  vnode_t* mounted_root;
 } mounted_fs_t;
 
 extern mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
@@ -42,15 +43,26 @@ extern file_t* g_file_table[VFS_MAX_FILES];
 // resolved.  If there is an error, returns -error.
 int resolve_mounts(vnode_t** vnode);
 
+// The opposite of the above.  Given a pointer to a vnode, *and a child name*,
+// if the child name is '..' and the vnode is a mounted fs root, replace the
+// vnode with the mount point.
+void resolve_mounts_up(vnode_t** parent, const char* child_name);
+
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
 //
 // Requires a lock on the parent to ensure that the child isn't removed between
 // the call to parent->lookup() and vfs_get(child).
+//
+// NOTE: the caller MUST call resolve_mounts_up() before calling this (unlike
+// with lookup()) for mount points to be handled correctly!
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out);
 
-// Convenience wrapper that locks the parent around a call to lookup_locked().
-int lookup(vnode_t* parent, const char* name, vnode_t** child_out);
+// Convenience wrapper that calls resolve_mounts_up() and locks the parent
+// around a call to lookup_locked().
+//
+// NOTE: |parent| may be modified by this call, if it traverses a mount point.
+int lookup(vnode_t** parent, const char* name, vnode_t** child_out);
 
 // Similar to lookup(), but does the reverse: given a directory and an inode
 // number, return the corresponding name, if the directory has an entry for

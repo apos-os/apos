@@ -46,6 +46,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->uid = -1;
   n->mode = 0;
   n->mounted_fs = VFS_FSID_NONE;
+  n->parent_mount_point = 0x0;
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
@@ -235,6 +236,9 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   if (error) {
     return error;
   }
+
+  // If the final component is a '..', try to traverse the mount point.
+  resolve_mounts_up(&parent, base_name);
 
   // Lookup the child inode.
   vnode_t* child;
@@ -492,7 +496,7 @@ int vfs_rmdir(const char* path) {
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
   vnode_t* child = 0x0;
-  error = lookup(parent, base_name, &child);
+  error = lookup(&parent, base_name, &child);
   if (error) {
     VFS_PUT_AND_CLEAR(parent);
     return error;
@@ -524,7 +528,7 @@ int vfs_unlink(const char* path) {
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
   vnode_t* child = 0x0;
-  error = lookup(parent, base_name, &child);
+  error = lookup(&parent, base_name, &child);
   if (error) {
     VFS_PUT_AND_CLEAR(parent);
     return error;
@@ -698,7 +702,7 @@ int vfs_getcwd(char* path_out, int size) {
   while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
     // First find the parent vnode.
     vnode_t* parent = 0x0;
-    int result = lookup(n, "..", &parent);
+    int result = lookup(&n, "..", &parent);
     if (result < 0) {
       VFS_PUT_AND_CLEAR(n);
       return result;

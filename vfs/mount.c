@@ -47,6 +47,11 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
   fs->id = fs_idx;
   g_fs_table[fs_idx].fs = fs;
   g_fs_table[fs_idx].mount_point = VFS_MOVE_REF(mount_point);
+  g_fs_table[fs_idx].mounted_root = vfs_get(fs, fs->get_root(fs));
+
+  KASSERT_DBG(g_fs_table[fs_idx].mounted_root->parent_mount_point == 0x0);
+  g_fs_table[fs_idx].mounted_root->parent_mount_point =
+      VFS_COPY_REF(g_fs_table[fs_idx].mount_point);
 
   return 0;
 }
@@ -76,10 +81,17 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   KASSERT(g_fs_table[mount_point->mounted_fs].mount_point == mount_point);
   KASSERT(g_fs_table[mount_point->mounted_fs].fs->id ==
           mount_point->mounted_fs);
+  KASSERT(g_fs_table[mount_point->mounted_fs].mounted_root->parent_mount_point
+          == mount_point);
 
   *fs_out = g_fs_table[mount_point->mounted_fs].fs;
 
+  VFS_PUT_AND_CLEAR(
+      g_fs_table[mount_point->mounted_fs].mounted_root->parent_mount_point);
+  VFS_PUT_AND_CLEAR(g_fs_table[mount_point->mounted_fs].mounted_root);
+
   VFS_PUT_AND_CLEAR(g_fs_table[mount_point->mounted_fs].mount_point);
+  g_fs_table[mount_point->mounted_fs].fs->id = VFS_FSID_NONE;
   g_fs_table[mount_point->mounted_fs].fs = 0x0;
   mount_point->mounted_fs = VFS_FSID_NONE;
   VFS_PUT_AND_CLEAR(mount_point);
