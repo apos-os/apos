@@ -21,6 +21,9 @@
 int vfs_mount_fs(const char* path, fs_t* fs) {
   if (!path || !fs) return -EINVAL;
 
+  if (fs->id != VFS_FSID_NONE) return -EINVAL;
+  KASSERT_DBG(fs->open_vnodes == 0);
+
   // First open the vnode that will be the mount point.
   vnode_t* mount_point = 0x0;
   int result = lookup_existing_path(path, &mount_point, 1);
@@ -74,8 +77,6 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
     return -EINVAL;
   }
 
-  // TODO(aoates): make sure the mounted filesystem isn't busy.
-
   KASSERT(mount_point->mounted_fs > 0 &&
           mount_point->mounted_fs < VFS_MAX_FILESYSTEMS);
   KASSERT(g_fs_table[mount_point->mounted_fs].mount_point == mount_point);
@@ -83,6 +84,16 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
           mount_point->mounted_fs);
   KASSERT(g_fs_table[mount_point->mounted_fs].mounted_root->parent_mount_point
           == mount_point);
+
+  // We should have at least one open vnode (the mounted_root reference in the
+  // fs table).
+  KASSERT_DBG(g_fs_table[mount_point->mounted_fs].fs->open_vnodes >= 1);
+
+  if (g_fs_table[mount_point->mounted_fs].fs->open_vnodes > 1 ||
+      g_fs_table[mount_point->mounted_fs].mounted_root->refcount > 1) {
+    VFS_PUT_AND_CLEAR(mount_point);
+    return -EBUSY;
+  }
 
   *fs_out = g_fs_table[mount_point->mounted_fs].fs;
 

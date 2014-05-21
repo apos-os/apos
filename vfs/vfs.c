@@ -53,6 +53,14 @@ void vfs_vnode_init(vnode_t* n, int num) {
   memobj_init_vnode(n);
 }
 
+void vfs_fs_init(fs_t* fs) {
+  kmemset(fs, 0, sizeof(fs));
+  fs->id = VFS_FSID_NONE;
+  fs->open_vnodes = 0;
+  fs->dev.major = DEVICE_ID_UNKNOWN;
+  fs->dev.minor = DEVICE_ID_UNKNOWN;
+}
+
 #define VNODE_CACHE_SIZE 1000
 
 // Return the index of the next free entry in the file table, or -1 if there's
@@ -163,6 +171,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     vfs_vnode_init(vnode, vnode_num);
     vnode->refcount = 1;
     vnode->fs = fs;
+    fs->open_vnodes++;
     kmutex_lock(&vnode->mutex);
 
     // Put the (unitialized but locked) vnode into the table.
@@ -206,6 +215,8 @@ void vfs_put(vnode_t* vnode) {
     if (vnode->type != VNODE_UNINITIALIZED) {
       vnode->fs->put_vnode(vnode);
     }
+    vnode->fs->open_vnodes--;
+    KASSERT_DBG(vnode->fs->open_vnodes >= 0);
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }

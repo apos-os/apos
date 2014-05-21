@@ -22,6 +22,7 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/memobj.h"
+#include "memory/mmap.h"
 #include "memory/page_alloc.h"
 #include "proc/exec.h"
 #include "proc/fork.h"
@@ -461,6 +462,67 @@ static void chown_chmod_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void unmount_busy_test(void) {
+  KTEST_BEGIN("vfs mount: cannot unmount busy directory test setup");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_GE(vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH), 0);
+
+  char abs_mount_a[VFS_MAX_PATH_LENGTH];
+  kstrcpy(abs_mount_a, orig_cwd);
+  append_path(abs_mount_a, "vfs_mount_test/a");
+
+  fs_t* unmounted_fs = 0x0;
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/dir", VFS_S_IRWXU));
+
+  KTEST_BEGIN("vfs mount: cannot unmount directory with process cwd in it");
+  KEXPECT_EQ(0, vfs_chdir("vfs_mount_test/a"));
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+  KEXPECT_EQ(0, vfs_chdir("dir"));
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  KTEST_BEGIN("vfs mount: cannot unmount directory with open file in it");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  int fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR,
+                    VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  KTEST_BEGIN("vfs mount: cannot unmount directory mmap'd file in it");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
+
+  void* map_addr = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, PROT_EXEC | PROT_READ, MAP_PRIVATE,
+                        fd, 0, &map_addr));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  KTEST_BEGIN("vfs busy mount test: cleanup");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/dir"));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -473,6 +535,7 @@ void vfs_mount_test(void) {
   mount_cwd_test();
   rmdir_mount_test();
   chown_chmod_test();
+  unmount_busy_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
