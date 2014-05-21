@@ -502,6 +502,12 @@ int vfs_rmdir(const char* path) {
     return error;
   }
 
+  if (child->mounted_fs != VFS_FSID_NONE) {
+    VFS_PUT_AND_CLEAR(child);
+    VFS_PUT_AND_CLEAR(parent);
+    return -EBUSY;
+  }
+
   error = parent->fs->rmdir(parent, base_name);
   VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);

@@ -307,6 +307,72 @@ static void mount_cwd_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void rmdir_mount_test(void) {
+  KTEST_BEGIN("vfs mount: rmdir mount test");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_GE(vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH), 0);
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+
+  KEXPECT_EQ(-EISDIR, vfs_unlink("vfs_mount_test"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("vfs_mount_test/a"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("vfs_mount_test/a/."));
+  KEXPECT_EQ(-EBUSY, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_NE(0, vfs_rmdir("vfs_mount_test/a/."));  // Could be EBUSY or EINVAL
+  KEXPECT_EQ(-EBUSY, vfs_rmdir("vfs_mount_test/a/../a"));
+
+  // Now cd into the directory above the mount point.
+  KEXPECT_EQ(0, vfs_chdir("vfs_mount_test"));
+
+  KEXPECT_EQ(-EISDIR, vfs_unlink("."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("a"));
+  KEXPECT_EQ(-EINVAL, vfs_rmdir("."));
+  KEXPECT_EQ(-EINVAL, vfs_rmdir("./."));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("./a/.."));
+  KEXPECT_EQ(-EBUSY, vfs_rmdir("a"));
+  KEXPECT_NE(0, vfs_rmdir("a/."));  // Could be EBUSY or EINVAL
+  KEXPECT_EQ(-EBUSY, vfs_rmdir("a/../a"));
+
+  // Now cd into the mount point itself.
+  KEXPECT_EQ(0, vfs_chdir("a"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink(".."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("../a"));
+  KEXPECT_NE(0, vfs_rmdir("."));
+  KEXPECT_NE(0, vfs_rmdir("./."));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir(".."));
+  KEXPECT_NE(0, vfs_rmdir("../."));  // Could be ENOTEMPTY or EINVAL
+  KEXPECT_NE(0, vfs_rmdir("../a"));  // Could be EBUSY or EINVAL
+  KEXPECT_NE(0, vfs_rmdir("../a/."));   // Could be EBUSY or EINVAL
+
+  // ...and now cd into a directory below the mount point.
+  KEXPECT_EQ(0, vfs_mkdir("dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_chdir("dir"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink(".."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("../.."));
+  KEXPECT_EQ(-EINVAL, vfs_rmdir("."));
+  KEXPECT_EQ(-EINVAL, vfs_rmdir("./."));
+  KEXPECT_NE(0, vfs_rmdir(".."));
+  KEXPECT_NE(0, vfs_rmdir("../."));
+  KEXPECT_NE(0, vfs_rmdir("../../a"));
+
+  KTEST_BEGIN("vfs cwd test: cleanup");
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/dir"));
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+
+  // TODO(aoates): test rename()ing a mount point if that's implemented.
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -317,6 +383,7 @@ void vfs_mount_test(void) {
   basic_mount_test();
   dot_dot_test();
   mount_cwd_test();
+  rmdir_mount_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
