@@ -523,6 +523,71 @@ static void unmount_busy_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+// Test mounting another filesystem under a mount.
+static void mount_under_mount_test(void) {
+  KTEST_BEGIN("vfs mount: multi mount setup");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/b", VFS_S_IRWXU));
+
+  fs_t* unmounted_fs = 0x0;
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/b", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a/b", ramfsB));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/b/dir", VFS_S_IRWXU));
+  create_file("vfs_mount_test/a/b/dir/file", "rwxrwxrwx");
+
+  KTEST_BEGIN("vfs mount: cannot unmount a mount with another mount inside");
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a", &stat));
+  const int mount_a_ino = stat.st_ino;
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b", &stat));
+  const int mount_b_ino = stat.st_ino;
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b/dir/..", &stat));
+  KEXPECT_EQ(mount_b_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b/dir/../..", &stat));
+  KEXPECT_EQ(mount_a_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b/..", &stat));
+  KEXPECT_EQ(mount_a_ino, stat.st_ino);
+
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a/b", &unmounted_fs));
+  KEXPECT_EQ(ramfsB, unmounted_fs);
+
+  KEXPECT_EQ(-ENOENT, vfs_lstat("vfs_mount_test/a/b/dir", &stat));
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b", &stat));
+  KEXPECT_NE(mount_b_ino, stat.st_ino);
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b/..", &stat));
+  KEXPECT_EQ(mount_a_ino, stat.st_ino);
+
+  KTEST_BEGIN("vfs mount: remounting previously sub-mounted fs");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsB));
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b", &stat));
+  KEXPECT_EQ(mount_b_ino, stat.st_ino);
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b/dir/..", &stat));
+  KEXPECT_EQ(mount_b_ino, stat.st_ino);
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b/dir", &stat));
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b/dir/file", &stat));
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a", &stat));
+  KEXPECT_EQ(mount_a_ino, stat.st_ino);
+
+  KTEST_BEGIN("vfs sub-mount test: cleanup");
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/b"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/dir/file"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b/dir"));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/b", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -536,6 +601,7 @@ void vfs_mount_test(void) {
   rmdir_mount_test();
   chown_chmod_test();
   unmount_busy_test();
+  mount_under_mount_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
