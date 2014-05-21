@@ -65,21 +65,6 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
   }
 }
 
-static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
-  apos_stat_t stat;
-  kmemset(&stat, 0xFF, sizeof(stat));
-  KEXPECT_EQ(0, vfs_lstat(path, &stat));
-  KEXPECT_EQ(uid, stat.st_uid);
-  KEXPECT_EQ(gid, stat.st_gid);
-}
-
-static mode_t get_mode(const char* path) {
-  apos_stat_t stat;
-  kmemset(&stat, 0xFF, sizeof(stat));
-  KEXPECT_EQ(0, vfs_lstat(path, &stat));
-  return stat.st_mode;
-}
-
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test(void) {
   KTEST_BEGIN("vfs_open(): parent refcount test");

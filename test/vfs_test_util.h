@@ -52,6 +52,21 @@ static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
   if (fd >= 0) vfs_close(fd);
 }
 
+static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(path, &stat));
+  KEXPECT_EQ(uid, stat.st_uid);
+  KEXPECT_EQ(gid, stat.st_gid);
+}
+
+static mode_t get_mode(const char* path) {
+  apos_stat_t stat;
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(path, &stat));
+  return stat.st_mode;
+}
+
 // Run vfs_getdents() on the given fd and verify it matches the given set of
 // dirents.  Returns 0 if the dirents match.
 // TODO(aoates): actually verify the vnode numbers vfs_getdents returns.

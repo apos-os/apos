@@ -373,6 +373,94 @@ static void rmdir_mount_test(void) {
   // TODO(aoates): test rename()ing a mount point if that's implemented.
 }
 
+static void chown_chmod_test(void) {
+  KTEST_BEGIN("vfs mount: lchown/lchmod mount test");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/b", VFS_S_IRWXU));
+
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_GE(vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH), 0);
+
+  char abs_mount_a[VFS_MAX_PATH_LENGTH];
+  kstrcpy(abs_mount_a, orig_cwd);
+  append_path(abs_mount_a, "vfs_mount_test/a");
+
+  const mode_t orig_a_mode = get_mode("vfs_mount_test/a");
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/dir", VFS_S_IRWXU));
+
+  KEXPECT_EQ(0, vfs_lchown("vfs_mount_test/a", 1, 1));
+  EXPECT_OWNER_IS("vfs_mount_test/a", 1, 1);
+
+  KEXPECT_EQ(0, vfs_lchmod("vfs_mount_test/a", VFS_S_IRWXG));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG, get_mode("vfs_mount_test/a"));
+
+  // Now cd into the mount point itself.
+  KEXPECT_EQ(0, vfs_chdir("vfs_mount_test/a"));
+
+  KEXPECT_EQ(0, vfs_lchown(".", 2, 2));
+  EXPECT_OWNER_IS(abs_mount_a, 2, 2);
+  KEXPECT_EQ(0, vfs_lchown("../a", 3, 3));
+  EXPECT_OWNER_IS(abs_mount_a, 3, 3);
+  KEXPECT_EQ(0, vfs_lchown("..", 4, 4));
+  EXPECT_OWNER_IS(abs_mount_a, 3, 3);
+
+  KEXPECT_EQ(0, vfs_lchmod(".", VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXO, get_mode(abs_mount_a));
+  KEXPECT_EQ(0, vfs_lchmod("..", VFS_S_IWUSR));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXO, get_mode(abs_mount_a));
+
+  // ...and to a directory below the mount point.
+  KEXPECT_EQ(0, vfs_chdir("dir"));
+
+  KEXPECT_EQ(0, vfs_lchown("..", 5, 5));
+  EXPECT_OWNER_IS(abs_mount_a, 5, 5);
+  KEXPECT_EQ(0, vfs_lchown("../../a", 6, 6));
+  EXPECT_OWNER_IS(abs_mount_a, 6, 6);
+  KEXPECT_EQ(0, vfs_lchown("../../a/.", 7, 7));
+  EXPECT_OWNER_IS(abs_mount_a, 7, 7);
+
+  KEXPECT_EQ(0, vfs_lchmod("..", VFS_S_IRGRP));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRGRP, get_mode(abs_mount_a));
+  KEXPECT_EQ(0, vfs_lchmod("../../a", VFS_S_IXGRP));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IXGRP, get_mode(abs_mount_a));
+
+  // Make sure our changes to the mount point's parent went through.
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+  EXPECT_OWNER_IS("vfs_mount_test", 4, 4);
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IWUSR, get_mode("vfs_mount_test"));
+
+  // Now make sure if we unmount, the orginial mount point is unchanged.
+  KTEST_BEGIN("vfs mount: lchown/lchmod modify mounted fs, not mount point");
+
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+
+  EXPECT_OWNER_IS("vfs_mount_test/a", SUPERUSER_UID, SUPERUSER_GID);
+  KEXPECT_EQ(orig_a_mode, get_mode("vfs_mount_test/a"));
+
+  // Now make sure if we remount, the owner/mode are reflected at the new moint
+  // point.
+  KTEST_BEGIN("vfs mount: lchown/lchmod remounted keep attributes");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsA));
+
+  EXPECT_OWNER_IS("vfs_mount_test/a", SUPERUSER_UID, SUPERUSER_GID);
+  EXPECT_OWNER_IS("vfs_mount_test/b", 7, 7);
+
+  KEXPECT_EQ(orig_a_mode, get_mode("vfs_mount_test/a"));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IXGRP, get_mode("vfs_mount_test/b"));
+
+  KTEST_BEGIN("vfs cwd test: cleanup");
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b/dir"));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/b", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -384,6 +472,7 @@ void vfs_mount_test(void) {
   dot_dot_test();
   mount_cwd_test();
   rmdir_mount_test();
+  chown_chmod_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
