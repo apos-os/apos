@@ -41,6 +41,14 @@
 static fs_t* ramfsA = 0x0;
 static fs_t* ramfsB = 0x0;
 
+static void append_path(char* first, const char* second) {
+  int len = kstrlen(first);
+  if (len > 0 && first[len-1] != '/') {
+    kstrcat(first, "/");
+  }
+  kstrcat(first, second);
+}
+
 static void basic_mount_test(void) {
   KTEST_BEGIN("vfs mount: basic mount");
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
@@ -214,6 +222,91 @@ static void dot_dot_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+// Check that the cwd is equal to orig_cwd joined with relpath.
+#define EXPECT_CWD(orig_cwd, relpath) do { \
+  char _expected_cwd[2 * VFS_MAX_PATH_LENGTH]; \
+  char _actual_cwd[VFS_MAX_PATH_LENGTH]; \
+  kstrcpy(_expected_cwd, (orig_cwd)); \
+  append_path(_expected_cwd, (relpath)); \
+  KEXPECT_GE(vfs_getcwd(_actual_cwd, VFS_MAX_PATH_LENGTH), 0); \
+  KEXPECT_STREQ(_expected_cwd, _actual_cwd); \
+} while (0)
+
+static void mount_cwd_test(void) {
+  KTEST_BEGIN("vfs mount: cwd into mount test");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_GE(vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH), 0);
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+
+  // Create files.
+  create_file("vfs_mount_test/a/file1", "rwxrwxrwx");
+  create_file("vfs_mount_test/a/file2", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/dir", VFS_S_IRWXU));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a", &stat));
+  const int mounted_root_ino = stat.st_ino;
+
+  edirent_t getdents_a_expected[] = {{mounted_root_ino, "."}, {-1, ".."},
+    {-1, "file1"}, {-1, "file2"}, {-1, "dir"}};
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a/../a",
+                                  5, getdents_a_expected));
+
+  // Now cd into the directory above the mount point.
+  KTEST_BEGIN("vfs mount: cwd above mount point test");
+  KEXPECT_EQ(0, vfs_chdir("vfs_mount_test"));
+  KEXPECT_EQ(0, compare_dirents_p("a", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("../vfs_mount_test/a", 5,
+                                  getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("a/../a", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("a/././../a/.", 5, getdents_a_expected));
+
+  EXPECT_CWD(orig_cwd, "vfs_mount_test");
+
+  // Now cd into the mount point itself.
+  KTEST_BEGIN("vfs mount: cwd in mount point test");
+  KEXPECT_EQ(0, vfs_chdir("a"));
+  KEXPECT_EQ(0, compare_dirents_p(".", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("./", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("././.", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("../a", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("../a/../a/.", 5, getdents_a_expected));
+
+  EXPECT_CWD(orig_cwd, "vfs_mount_test/a");
+
+  // ...and now cd into a directory below the mount point.
+  KTEST_BEGIN("vfs mount: cwd below mount point test");
+  KEXPECT_EQ(0, vfs_chdir("dir"));
+  KEXPECT_EQ(0, compare_dirents_p("..", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("../../a", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("../../a/.", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p("./.././", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p(".././dir/..", 5, getdents_a_expected));
+  KEXPECT_EQ(0, compare_dirents_p(".././dir/../.", 5, getdents_a_expected));
+
+  EXPECT_CWD(orig_cwd, "vfs_mount_test/a/dir");
+
+  KTEST_BEGIN("vfs cwd test: cleanup");
+  KEXPECT_EQ(0, vfs_chdir(orig_cwd));
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/dir"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file1"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file2"));
+
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(ramfsA, unmounted_fs);
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -223,6 +316,7 @@ void vfs_mount_test(void) {
 
   basic_mount_test();
   dot_dot_test();
+  mount_cwd_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
