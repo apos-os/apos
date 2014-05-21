@@ -880,7 +880,7 @@ static void getdents_test(void) {
 
   KTEST_BEGIN("vfs_getdents(): root");
   int fd = vfs_open("/", VFS_O_RDONLY);
-  EXPECT_GETDENTS(fd, 2, root_expected);
+  KEXPECT_EQ(0, compare_dirents(fd, 2, root_expected));
   vfs_close(fd);
 
   vfs_mkdir("/getdents", 0);
@@ -894,23 +894,23 @@ static void getdents_test(void) {
 
   KTEST_BEGIN("vfs_getdents(): files and directories");
   fd = vfs_open("/", VFS_O_RDONLY);
-  EXPECT_GETDENTS(fd, 3, (edirent_t[]){{0, "."}, {0, ".."}, {-1, "getdents"}});
+  KEXPECT_EQ(0, compare_dirents(fd, 3, (edirent_t[]){{0, "."}, {0, ".."}, {-1, "getdents"}}));
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_getdents(): subdir #2");
   fd = vfs_open("/getdents", VFS_O_RDONLY);
-  EXPECT_GETDENTS(fd, 7, getdents_expected);
+  KEXPECT_EQ(0, compare_dirents(fd, 7, getdents_expected));
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_getdents(): subdir #3");
   fd = vfs_open("/getdents/a", VFS_O_RDONLY);
-  EXPECT_GETDENTS(fd, 4, getdents_a_expected);
+  KEXPECT_EQ(0, compare_dirents(fd, 4, getdents_a_expected));
   vfs_close(fd);
 
   KTEST_BEGIN("vfs_getdents(): cwd");
   vfs_chdir("/getdents");
   fd = vfs_open(".", VFS_O_RDONLY);
-  EXPECT_GETDENTS(fd, 7, getdents_expected);
+  KEXPECT_EQ(0, compare_dirents(fd, 7, getdents_expected));
   vfs_close(fd);
 
   // TODO(aoates): test:
@@ -1142,7 +1142,7 @@ static void create_thread_test(void) {
   }
   int fd = vfs_open(kTestDir, VFS_O_RDONLY);
   if (fd >= 0) {
-    EXPECT_GETDENTS(fd, kNumExpected, expected_dirents);
+    KEXPECT_EQ(0, compare_dirents(fd, kNumExpected, expected_dirents));
     vfs_close(fd);
   }
 
@@ -1159,7 +1159,7 @@ static void create_thread_test(void) {
 
   fd = vfs_open(kTestDir, VFS_O_RDONLY);
   if (fd >= 0) {
-    EXPECT_GETDENTS(fd, 2, expected_dirents);
+    KEXPECT_EQ(0, compare_dirents(fd, 2, expected_dirents));
     vfs_close(fd);
   }
 
@@ -1209,7 +1209,7 @@ static void unlink_open_directory_test(void) {
   // The file should not be in the directory any more.
   EXPECT_FILE_DOESNT_EXIST(kDir);
 
-  EXPECT_GETDENTS(fd, 0, 0x0);
+  KEXPECT_EQ(0, compare_dirents(fd, 0, 0x0));
 
   KEXPECT_EQ(0, vfs_close(fd));
   EXPECT_FILE_DOESNT_EXIST(kDir);
@@ -1232,7 +1232,7 @@ static void create_in_unlinked_directory(void) {
   const int fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT, 0);
   KEXPECT_EQ(-ENOENT, fd2);
 
-  EXPECT_GETDENTS(fd, 0, 0x0);
+  KEXPECT_EQ(0, compare_dirents(fd, 0, 0x0));
 
   KEXPECT_EQ(0, vfs_close(fd));
 }

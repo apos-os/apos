@@ -45,7 +45,7 @@ void create_file(const char* path, const char* mode) {
   vfs_close(fd);
 }
 
-void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
+int compare_dirents(int fd, int expected_num, edirent_t expected[]) {
   const int kBufSize = sizeof(dirent_t) * 3;  // Ensure we have several calls.
   char buf[kBufSize];
   int num_dirents = 0;
@@ -85,10 +85,16 @@ void EXPECT_GETDENTS(int fd, int expected_num, edirent_t expected[]) {
       if (i == expected_num) {
         KLOG("Error: dirent <%d, %s> doesn't match any expected dirents\n",
              ent->vnode, ent->name);
-        KEXPECT_EQ(0, 1); // TODO(aoates): more elegant way to signal this
+        return 1;
       }
     } while (buf_offset < len);
   }
 
-  KEXPECT_EQ(expected_num, num_dirents);
+  if (expected_num != num_dirents) {
+    KLOG("Error: expected %d dirents, but found %d\n",
+         expected_num, num_dirents);
+    return 1;
+  } else {
+    return 0;
+  }
 }
