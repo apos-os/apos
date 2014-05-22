@@ -63,6 +63,9 @@ static void basic_mount_test(void) {
   // Do the mount.
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
 
+  // Cannot mount the same filesystem in two places.
+  KEXPECT_EQ(-EBUSY, vfs_mount_fs("vfs_mount_test/b", ramfsA));
+
   // Create a file.
   int fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR,
                     VFS_S_IRWXU);
@@ -131,13 +134,64 @@ static void basic_mount_test(void) {
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b", &stat));
   KEXPECT_EQ(ramfsA->get_root(ramfsA), stat.st_ino);
 
+
+  KTEST_BEGIN("vfs mount: cannot mount on non-existant directory");
+  KEXPECT_EQ(-ENOENT, vfs_mount_fs("vfs_mount_test2", ramfsB));
+  KEXPECT_EQ(-ENOENT, vfs_mount_fs("vfs_mount_test/not_there", ramfsB));
+
+
+  KTEST_BEGIN("vfs mount: cannot mount on file");
+  create_file("vfs_mount_test/file", "rwxrwxrwx");
+  KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/file", ramfsB));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/file"));
+
+
+  KTEST_BEGIN("vfs mount: cannot mount on character device");
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/chr", VFS_S_IFCHR, mkdev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/chr", ramfsB));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/chr"));
+
+
+  KTEST_BEGIN("vfs mount: cannot mount on block device");
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/blk", VFS_S_IFBLK, mkdev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/blk", ramfsB));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/blk"));
+
+  // TODO(aoates): test symlinks.
+
+  unmounted_fs = 0x0;
+  KTEST_BEGIN("vfs mount: cannot unmount a file");
+  create_file("vfs_mount_test/file", "rwxrwxrwx");
+  KEXPECT_EQ(-ENOTDIR, vfs_unmount_fs("vfs_mount_test/file", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/file"));
+
+  KTEST_BEGIN("vfs mount: cannot unmount non-moint-point directory");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/not_mount", VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_unmount_fs("vfs_mount_test/not_mount",
+                                     &unmounted_fs));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/not_mount"));
+
+  KTEST_BEGIN("vfs mount: cannot unmount nonexistant mount point");
+  KEXPECT_EQ(-ENOENT, vfs_unmount_fs("vfs_mount_test/doesnt_exist",
+                                     &unmounted_fs));
+
+
+  KTEST_BEGIN("vfs mount: invalid vfs_mount_fs() args");
+  KEXPECT_EQ(-EINVAL, vfs_mount_fs(0x0, ramfsB));
+  KEXPECT_EQ(-EINVAL, vfs_mount_fs("vfs_mount_test/a", 0x0));
+
+
+  KTEST_BEGIN("vfs mount: invalid vfs_unmount_fs() args");
+  KEXPECT_EQ(-EINVAL, vfs_unmount_fs(0x0, &unmounted_fs));
+  KEXPECT_EQ(-EINVAL, vfs_unmount_fs("vfs_mount_test/a", 0x0));
+
+
   // Cleanup.
   KTEST_BEGIN("vfs mount: basic test cleanup");
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/file"));
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b/dir"));
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/chr"));
 
-  unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/b", &unmounted_fs));
   KEXPECT_EQ(ramfsA, unmounted_fs);
 

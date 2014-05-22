@@ -21,7 +21,7 @@
 int vfs_mount_fs(const char* path, fs_t* fs) {
   if (!path || !fs) return -EINVAL;
 
-  if (fs->id != VFS_FSID_NONE) return -EINVAL;
+  if (fs->id != VFS_FSID_NONE) return -EBUSY;
   KASSERT_DBG(fs->open_vnodes == 0);
 
   // First open the vnode that will be the mount point.
