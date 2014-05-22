@@ -63,10 +63,22 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   if (!path || !fs_out) return -EINVAL;
 
   // First open the vnode that we're trying to unmount.
-  vnode_t* mount_point = 0x0;
-  int result = lookup_existing_path(path, &mount_point, 0);
+  vnode_t* mounted_root = 0x0;
+  int result = lookup_existing_path(path, &mounted_root, 1);
   if (result) return result;
 
+  if (mounted_root->type != VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(mounted_root);
+    return -ENOTDIR;
+  }
+
+  if (mounted_root->parent_mount_point == 0x0) {
+    VFS_PUT_AND_CLEAR(mounted_root);
+    return -EINVAL;
+  }
+
+  vnode_t* mount_point = VFS_COPY_REF(mounted_root->parent_mount_point);
+  VFS_PUT_AND_CLEAR(mounted_root);
   if (mount_point->type != VNODE_DIRECTORY) {
     VFS_PUT_AND_CLEAR(mount_point);
     return -ENOTDIR;

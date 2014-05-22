@@ -642,6 +642,63 @@ static void mount_under_mount_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+// Test mounting on an existing mount point (recursive mount).
+static void double_mount_test(void) {
+  KTEST_BEGIN("vfs mount: recursive mount setup");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+
+  KEXPECT_EQ(0, vfs_lchown("vfs_mount_test/a", 1, 1));
+
+  fs_t* unmounted_fs = 0x0;
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  create_file("vfs_mount_test/a/a_file", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_lchown("vfs_mount_test/a", 2, 2));
+
+  KTEST_BEGIN("vfs mount: can mount on existing mount point");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsB));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(-ENOENT, vfs_lstat("vfs_mount_test/a/a_file", &stat));
+  create_file("vfs_mount_test/a/b_file", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_lchown("vfs_mount_test/a", 3, 3));
+
+  // Unmount the second fs.
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(ramfsB, unmounted_fs);
+
+  KEXPECT_EQ(-ENOENT, vfs_lstat("vfs_mount_test/a/b_file", &stat));
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/a_file", &stat));
+  EXPECT_OWNER_IS("vfs_mount_test/a", 2, 2);
+
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/a_file"));
+
+  // Unmount the first fs.
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(ramfsA, unmounted_fs);
+
+  KEXPECT_EQ(-ENOENT, vfs_lstat("vfs_mount_test/a/b_file", &stat));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("vfs_mount_test/a/a_file", &stat));
+  EXPECT_OWNER_IS("vfs_mount_test/a", 1, 1);
+
+  // Remount the second fs to make sure b_file is still there.
+  KTEST_BEGIN("vfs mount: can mount on existing mount point");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsB));
+
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/b_file", &stat));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("vfs_mount_test/a/a_file", &stat));
+  EXPECT_OWNER_IS("vfs_mount_test/a", 3, 3);
+
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/b_file"));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(ramfsB, unmounted_fs);
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -656,6 +713,7 @@ void vfs_mount_test(void) {
   chown_chmod_test();
   unmount_busy_test();
   mount_under_mount_test();
+  double_mount_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
