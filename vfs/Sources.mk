@@ -19,6 +19,7 @@ LOCAL_SOURCES := \
   ramfs.c \
   file.c \
   mount.c \
+  testfs.c \
   util.c \
   special.c \
   vfs_internal.c \
