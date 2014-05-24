@@ -34,7 +34,9 @@
 #include "test/vfs_test_util.h"
 #include "vfs/mount.h"
 #include "vfs/ramfs.h"
+#include "vfs/testfs.h"
 #include "vfs/util.h"
+#include "vfs/vfs_internal.h"
 #include "vfs/vfs_mode.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
@@ -699,6 +701,43 @@ static void double_mount_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void too_many_mounts_test(void) {
+  KTEST_BEGIN("vfs mount: too many mounts");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  fs_t* unmounted_fs;
+
+  fs_t* fses[VFS_MAX_FILESYSTEMS];
+  for (int i = 0; i < VFS_MAX_FILESYSTEMS; ++i) {
+    fses[i] = testfs_create();
+  }
+
+  char name[20];
+  for (int i = 0; i < VFS_MAX_FILESYSTEMS - 1; ++i) {
+    ksprintf(name, "vfs_mount_test/m%d", i);
+    KEXPECT_EQ(0, vfs_mkdir(name, VFS_S_IRWXU));
+
+    KEXPECT_EQ(0, vfs_mount_fs(name, fses[i]));
+  }
+
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/last", VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOMEM, vfs_mount_fs("vfs_mount_test/last",
+                                   fses[VFS_MAX_FILESYSTEMS - 1]));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/last"));
+
+  for (int i = 0; i < VFS_MAX_FILESYSTEMS - 1; ++i) {
+    ksprintf(name, "vfs_mount_test/m%d", i);
+
+    KEXPECT_EQ(0, vfs_unmount_fs(name, &unmounted_fs));
+    KEXPECT_EQ(0, vfs_rmdir(name));
+  }
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+
+  for (int i = 0; i < VFS_MAX_FILESYSTEMS; ++i) {
+    testfs_free(fses[i]);
+  }
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -714,6 +753,7 @@ void vfs_mount_test(void) {
   unmount_busy_test();
   mount_under_mount_test();
   double_mount_test();
+  too_many_mounts_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
