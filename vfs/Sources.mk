@@ -15,6 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  cbfs.c \
   vfs.c \
   ramfs.c \
   file.c \
