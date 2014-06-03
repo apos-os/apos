@@ -26,8 +26,14 @@
 typedef struct {
   int num;
   char name[VFS_MAX_FILENAME_LENGTH];
+  vnode_type_t type;
+
+  // If type == VNODE_REGULAR.
   cbfs_read_t read_cb;
   void* arg;
+
+  // If type == VNODE_DIRECTORY.
+  list_t entries;
 
   uid_t uid;
   gid_t gid;
@@ -39,12 +45,9 @@ typedef struct {
 typedef struct {
   fs_t fs;
 
-  uid_t root_uid;
-  gid_t root_gid;
-  mode_t root_mode;
   int next_ino;
 
-  list_t root;
+  cbfs_entry_t root;
 } cbfs_t;
 
 static inline cbfs_t* fs_to_cbfs(fs_t* f) {
@@ -52,7 +55,7 @@ static inline cbfs_t* fs_to_cbfs(fs_t* f) {
 }
 
 static cbfs_entry_t* lookup(cbfs_t* cfs, int num) {
-  list_link_t* n = cfs->root.head;
+  list_link_t* n = cfs->root.entries.head;
   while (n) {
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
     if (entry->num == num) return entry;
@@ -63,7 +66,7 @@ static cbfs_entry_t* lookup(cbfs_t* cfs, int num) {
 }
 
 static cbfs_entry_t* lookup_by_name(cbfs_t* cfs, const char* name) {
-  list_link_t* n = cfs->root.head;
+  list_link_t* n = cfs->root.entries.head;
   while (n) {
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
     if (kstrcmp(name, entry->name) == 0) return entry;
@@ -114,10 +117,11 @@ fs_t* cbfs_create(void) {
   f->fs.write_page = &cbfs_write_page;
 
   f->next_ino = 1;
-  f->root = LIST_INIT;
-  f->root_uid = SUPERUSER_UID;
-  f->root_gid = SUPERUSER_GID;
-  f->root_mode = VFS_S_IRUSR | VFS_S_IXUSR | VFS_S_IRGRP | VFS_S_IXGRP |
+  f->root.type = VNODE_DIRECTORY;
+  f->root.entries = LIST_INIT;
+  f->root.uid = SUPERUSER_UID;
+  f->root.gid = SUPERUSER_GID;
+  f->root.mode = VFS_S_IRUSR | VFS_S_IXUSR | VFS_S_IRGRP | VFS_S_IXGRP |
       VFS_S_IROTH | VFS_S_IXOTH;
 
   // Create '.' and '..'
@@ -125,15 +129,16 @@ fs_t* cbfs_create(void) {
   for (int i = 0; i < 2; ++i) {
     cbfs_entry_t* entry = (cbfs_entry_t*)kmalloc(sizeof(cbfs_entry_t));
     kstrcpy(entry->name, kNames[i]);
+    entry->type = VNODE_DIRECTORY;
     entry->num = CBFS_ROOT_INO;
     entry->read_cb = 0x0;
     entry->arg = 0x0;
-    entry->mode = f->root_mode;
-    entry->uid = f->root_uid;
-    entry->gid = f->root_gid;
+    entry->mode = f->root.mode;
+    entry->uid = f->root.uid;
+    entry->gid = f->root.gid;
     entry->link = LIST_LINK_INIT;
 
-    list_push(&f->root, &entry->link);
+    list_push(&f->root.entries, &entry->link);
   }
 
   return &f->fs;
@@ -151,6 +156,7 @@ int cbfs_create_file(fs_t* fs, const char* name,
   cbfs_entry_t* entry = (cbfs_entry_t*)kmalloc(sizeof(cbfs_entry_t));
   kstrcpy(entry->name, name);
   entry->num = cfs->next_ino++;
+  entry->type = VNODE_REGULAR;
   entry->read_cb = read_cb;
   entry->arg = arg;
   entry->mode = mode;
@@ -158,7 +164,7 @@ int cbfs_create_file(fs_t* fs, const char* name,
   entry->gid = proc_current()->egid;
   entry->link = LIST_LINK_INIT;
 
-  list_push(&cfs->root, &entry->link);
+  list_push(&cfs->root.entries, &entry->link);
 
   return 0;
 }
@@ -175,9 +181,9 @@ static int cbfs_get_vnode(vnode_t* vnode) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
   if (vnode->num == CBFS_ROOT_INO) {
     vnode->type = VNODE_DIRECTORY;
-    vnode->uid = cfs->root_uid;
-    vnode->gid = cfs->root_gid;
-    vnode->mode = cfs->root_mode;
+    vnode->uid = cfs->root.uid;
+    vnode->gid = cfs->root.gid;
+    vnode->mode = cfs->root.mode;
     kstrcpy(vnode->fstype, "cbfs");
     return 0;
   }
@@ -196,9 +202,9 @@ static int cbfs_get_vnode(vnode_t* vnode) {
 static int cbfs_put_vnode(vnode_t* vnode) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
   if (vnode->num == CBFS_ROOT_INO) {
-    cfs->root_uid = vnode->uid;
-    cfs->root_gid = vnode->gid;
-    cfs->root_mode = vnode->mode;
+    cfs->root.uid = vnode->uid;
+    cfs->root.gid = vnode->gid;
+    cfs->root.mode = vnode->mode;
     return 0;
   }
 
@@ -266,7 +272,7 @@ static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
   KASSERT(vnode->num == 0);
 
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
-  list_link_t* n = cfs->root.head;
+  list_link_t* n = cfs->root.entries.head;
   int idx = 0;
   while (n && idx < offset) {
     n = n->next;
