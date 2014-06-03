@@ -12,14 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-AR	= i586-elf-ar
-AS	= i586-elf-as
+TARGET_PREFIX 	= i586-pc-apos
+AR	= $(TARGET_PREFIX)-ar
+AS	= $(TARGET_PREFIX)-as
 ASFLAGS	= --gen-debug
-CC	= i586-elf-gcc
+CC	= $(TARGET_PREFIX)-gcc
 CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g3 -I. \
 	  -Wno-unused-parameter -Wno-error=unused-function -Wstrict-prototypes \
 	  -DENABLE_KERNEL_SAFETY_NETS=1
-LD	= i586-elf-ld
+LD	= $(TARGET_PREFIX)-ld
 M4      = m4
 M4FLAGS =
 M4_DEPS = util/m4_deps.sh
