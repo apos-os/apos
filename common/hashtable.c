@@ -36,12 +36,7 @@ static inline uint32_t hash(htbl_t* tbl, uint32_t key) {
   return hash_num_buckets(tbl->num_buckets, key);
 }
 
-static void maybe_grow(htbl_t* tbl) {
-  if (tbl->num_entries < tbl->num_buckets * GROW_THRESHOLD) {
-    return;
-  }
-
-  const int new_size = tbl->num_buckets * GROW_RATIO;
+static void resize_table(htbl_t* tbl, int new_size) {
   htbl_entry_t** new_buckets =
       (htbl_entry_t**)kmalloc(sizeof(htbl_entry_t*) * new_size);
   if (!new_buckets) return;
@@ -66,6 +61,13 @@ static void maybe_grow(htbl_t* tbl) {
 
   tbl->buckets = new_buckets;
   tbl->num_buckets = new_size;
+}
+
+static void maybe_grow(htbl_t* tbl) {
+  if (tbl->num_entries >= tbl->num_buckets * GROW_THRESHOLD) {
+    const int new_size = tbl->num_buckets * GROW_RATIO;
+    resize_table(tbl, new_size);
+  }
 }
 
 void htbl_init(htbl_t* tbl, int buckets) {
