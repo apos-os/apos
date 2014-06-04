@@ -130,6 +130,59 @@ void iterate_test(htbl_t* tbl) {
   htbl_remove(tbl, 6);
 }
 
+static void hashtable_size_test(void) {
+  KTEST_BEGIN("hashtable: size");
+  htbl_t tbl;
+  void* val;
+  htbl_init(&tbl, 4);
+
+  KEXPECT_EQ(0, htbl_size(&tbl));
+
+  htbl_put(&tbl, 1, (void*)0x1);
+  EXPECT_IN_TABLE(&tbl, 1, 0x1);
+  KEXPECT_EQ(1, htbl_size(&tbl));
+
+  htbl_put(&tbl, 2, (void*)0x2);
+  EXPECT_IN_TABLE(&tbl, 2, 0x2);
+  KEXPECT_EQ(2, htbl_size(&tbl));
+
+  htbl_put(&tbl, 2, (void*)0x3);
+  EXPECT_IN_TABLE(&tbl, 2, 0x3);
+  KEXPECT_EQ(2, htbl_size(&tbl));
+
+  KEXPECT_EQ(0, htbl_remove(&tbl, 1));
+  KEXPECT_NE(0, htbl_get(&tbl, 1, &val));
+  KEXPECT_EQ(1, htbl_size(&tbl));
+
+  KEXPECT_NE(0, htbl_remove(&tbl, 1));
+  KEXPECT_EQ(1, htbl_size(&tbl));
+
+  htbl_cleanup(&tbl);
+
+
+  KTEST_BEGIN("hashtable: grows when full");
+  htbl_init(&tbl, 1);
+
+  htbl_put(&tbl, 2, (void*)0x1);
+  KEXPECT_EQ(2, htbl_num_buckets(&tbl));
+  htbl_put(&tbl, 10, (void*)0x2);
+  KEXPECT_EQ(4, htbl_num_buckets(&tbl));
+  htbl_put(&tbl, 18, (void*)0x3);
+  KEXPECT_EQ(8, htbl_num_buckets(&tbl));
+  htbl_put(&tbl, 26, (void*)0x4);
+  KEXPECT_EQ(8, htbl_num_buckets(&tbl));
+  htbl_put(&tbl, 34, (void*)0x5);
+  KEXPECT_EQ(8, htbl_num_buckets(&tbl));
+
+  EXPECT_IN_TABLE(&tbl, 2, 0x1);
+  EXPECT_IN_TABLE(&tbl, 10, 0x2);
+  EXPECT_IN_TABLE(&tbl, 18, 0x3);
+  EXPECT_IN_TABLE(&tbl, 26, 0x4);
+  EXPECT_IN_TABLE(&tbl, 34, 0x5);
+
+  htbl_cleanup(&tbl);
+}
+
 void hashtable_test(void) {
   KTEST_SUITE_BEGIN("hashtable (large table)");
   htbl_t t;
@@ -144,4 +197,7 @@ void hashtable_test(void) {
   iterate_test(&t);
   do_table_test(&t);
   htbl_cleanup(&t);
+
+  KTEST_SUITE_BEGIN("hashtable (general tests)");
+  hashtable_size_test();
 }

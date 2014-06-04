@@ -19,14 +19,53 @@
 #include "common/hashtable.h"
 #include "memory/kmalloc.h"
 
+#define GROW_THRESHOLD 0.75
+#define GROW_RATIO 2
+
 struct htbl_entry {
   uint32_t key;
   void* value;
   struct htbl_entry* next;
 };
 
+static inline uint32_t hash_num_buckets(int num_buckets, uint32_t key) {
+  return fnv_hash(key) % num_buckets;
+}
+
 static inline uint32_t hash(htbl_t* tbl, uint32_t key) {
-  return fnv_hash(key) % tbl->num_buckets;
+  return hash_num_buckets(tbl->num_buckets, key);
+}
+
+static void maybe_grow(htbl_t* tbl) {
+  if (tbl->num_entries < tbl->num_buckets * GROW_THRESHOLD) {
+    return;
+  }
+
+  const int new_size = tbl->num_buckets * GROW_RATIO;
+  htbl_entry_t** new_buckets =
+      (htbl_entry_t**)kmalloc(sizeof(htbl_entry_t*) * new_size);
+  if (!new_buckets) return;
+
+  for (int i = 0; i < new_size; ++i) {
+    new_buckets[i] = 0x0;
+  }
+
+  // Copy all the old entries over.
+  for (int i = 0; i < tbl->num_buckets; ++i) {
+    while (tbl->buckets[i]) {
+      htbl_entry_t* e = tbl->buckets[i];
+      tbl->buckets[i] = e->next;
+
+      const uint32_t new_bucket = hash_num_buckets(new_size, e->key);
+      e->next = new_buckets[new_bucket];
+      new_buckets[new_bucket] = e;
+    }
+  }
+
+  kfree(tbl->buckets);
+
+  tbl->buckets = new_buckets;
+  tbl->num_buckets = new_size;
 }
 
 void htbl_init(htbl_t* tbl, int buckets) {
@@ -35,6 +74,7 @@ void htbl_init(htbl_t* tbl, int buckets) {
     tbl->buckets[i] = 0x0;
   }
   tbl->num_buckets = buckets;
+  tbl->num_entries = 0;
 }
 
 void htbl_cleanup(htbl_t* tbl) {
@@ -68,6 +108,9 @@ void htbl_put(htbl_t* tbl, uint32_t key, void* value) {
   e->value = value;
   e->next = tbl->buckets[bucket];
   tbl->buckets[bucket] = e;
+  tbl->num_entries++;
+
+  maybe_grow(tbl);
 }
 
 int htbl_get(htbl_t* tbl, uint32_t key, void** value) {
@@ -95,6 +138,7 @@ int htbl_remove(htbl_t* tbl, uint32_t key) {
         tbl->buckets[bucket] = e->next;
       }
       kfree(e);
+      tbl->num_entries--;
       return 0;
     }
     prev = e;
@@ -112,4 +156,12 @@ void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*),
       e = e->next;
     }
   }
+}
+
+int htbl_size(htbl_t* tbl) {
+  return tbl->num_entries;
+}
+
+int htbl_num_buckets(htbl_t* tbl) {
+  return tbl->num_buckets;
 }

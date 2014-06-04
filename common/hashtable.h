@@ -25,10 +25,7 @@
 struct htbl_entry;
 typedef struct htbl_entry htbl_entry_t;
 
-struct htbl {
-  htbl_entry_t** buckets;
-  int num_buckets;
-};
+struct htbl;
 typedef struct htbl htbl_t;
 
 // Initialize a hash table with a certain number of buckets.
@@ -53,5 +50,19 @@ int htbl_remove(htbl_t* tbl, uint32_t key);
 // arg, the key, and the value, in that order.  There are no guarantees about
 // what order the items will be iterated in, and func must not mutate the table.
 void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
+
+// Return the number of entries in the hashtable.
+int htbl_size(htbl_t* tbl);
+
+// Return the number of buckets in the hashtable.
+int htbl_num_buckets(htbl_t* tbl);
+
+// Internal definition.
+struct htbl {
+  htbl_entry_t** buckets;
+  int num_buckets;
+  int num_entries;
+};
+
 
 #endif
