@@ -93,6 +93,7 @@ char* kstrncpy(char* dst, const char* src, uint32_t n) {
     *(dst_out++) = *(src++);
     i++;
   }
+  if (i < n) *(dst_out++) = '\0';
   return dst;
 }
 
