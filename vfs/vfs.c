@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
@@ -32,6 +33,7 @@
 #include "vfs/vfs.h"
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
+#include "vfs/vnode_hash.h"
 
 #define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
@@ -43,10 +45,20 @@ void vfs_vnode_init(vnode_t* n, int num) {
   n->len = -1;
   n->uid = -1;
   n->mode = 0;
+  n->mounted_fs = VFS_FSID_NONE;
+  n->parent_mount_point = 0x0;
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
   memobj_init_vnode(n);
+}
+
+void vfs_fs_init(fs_t* fs) {
+  kmemset(fs, 0, sizeof(fs));
+  fs->id = VFS_FSID_NONE;
+  fs->open_vnodes = 0;
+  fs->dev.major = DEVICE_ID_UNKNOWN;
+  fs->dev.minor = DEVICE_ID_UNKNOWN;
 }
 
 #define VNODE_CACHE_SIZE 1000
@@ -82,7 +94,7 @@ static int is_valid_create_mode(mode_t mode) {
 }
 
 void vfs_init() {
-  KASSERT(g_root_fs == 0);
+  KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
 
   // First try to mount every ATA device as an ext2 fs.
   fs_t* ext2fs = ext2_create_fs();
@@ -93,7 +105,7 @@ void vfs_init() {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
         KLOG(INFO, "Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
-        g_root_fs = ext2fs;
+        g_fs_table[VFS_ROOT_FS].fs = ext2fs;
         success = 1;
         break;
       }
@@ -103,8 +115,10 @@ void vfs_init() {
   if (!success) {
     KLOG(INFO, "Didn't find any mountable filesystems; mounting ramfs as /\n");
     ext2_destroy_fs(ext2fs);
-    g_root_fs = ramfs_create_fs();
+    g_fs_table[VFS_ROOT_FS].fs = ramfs_create_fs();
   }
+
+  g_fs_table[VFS_ROOT_FS].fs->id = VFS_ROOT_FS;
 
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
@@ -117,16 +131,18 @@ void vfs_init() {
 }
 
 fs_t* vfs_get_root_fs() {
-  return g_root_fs;
+  return g_fs_table[VFS_ROOT_FS].fs;
 }
 
 vnode_t* vfs_get_root_vnode() {
-  return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
+  fs_t* root_fs = vfs_get_root_fs();
+  return vfs_get(root_fs, root_fs->get_root(root_fs));
 }
 
 vnode_t* vfs_get(fs_t* fs, int vnode_num) {
   vnode_t* vnode;
-  int error = htbl_get(&g_vnode_cache, (uint32_t)vnode_num,  (void**)(&vnode));
+  int error = htbl_get(&g_vnode_cache, vnode_hash(fs, vnode_num),
+                       (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
 
@@ -155,10 +171,11 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     vfs_vnode_init(vnode, vnode_num);
     vnode->refcount = 1;
     vnode->fs = fs;
+    fs->open_vnodes++;
     kmutex_lock(&vnode->mutex);
 
     // Put the (unitialized but locked) vnode into the table.
-    htbl_put(&g_vnode_cache, (uint32_t)vnode_num, (void*)vnode);
+    htbl_put(&g_vnode_cache, vnode_hash_n(vnode), (void*)vnode);
 
     // This call could block, at which point other threads attempting to access
     // this node will block until we release the mutex.
@@ -192,12 +209,14 @@ void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
     KASSERT(vnode->memobj.refcount == 0);
-    KASSERT(0 == htbl_remove(&g_vnode_cache, (uint32_t)vnode->num));
+    KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     // Only put the node back into the fs if we were able to fully initialize
     // it.
     if (vnode->type != VNODE_UNINITIALIZED) {
       vnode->fs->put_vnode(vnode);
     }
+    vnode->fs->open_vnodes--;
+    KASSERT_DBG(vnode->fs->open_vnodes >= 0);
     vnode->type = VNODE_INVALID;
     kfree(vnode);
   }
@@ -228,6 +247,9 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   if (error) {
     return error;
   }
+
+  // If the final component is a '..', try to traverse the mount point.
+  resolve_mounts_up(&parent, base_name);
 
   // Lookup the child inode.
   vnode_t* child;
@@ -275,6 +297,12 @@ int vfs_open(const char* path, uint32_t flags, ...) {
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
+  }
+
+  error = resolve_mounts(&child);
+  if (error) {
+    VFS_PUT_AND_CLEAR(child);
+    return error;
   }
 
   // Check permissions on the file if it already exists.
@@ -479,10 +507,16 @@ int vfs_rmdir(const char* path) {
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
   vnode_t* child = 0x0;
-  error = lookup(parent, base_name, &child);
+  error = lookup(&parent, base_name, &child);
   if (error) {
     VFS_PUT_AND_CLEAR(parent);
     return error;
+  }
+
+  if (child->mounted_fs != VFS_FSID_NONE) {
+    VFS_PUT_AND_CLEAR(child);
+    VFS_PUT_AND_CLEAR(parent);
+    return -EBUSY;
   }
 
   error = parent->fs->rmdir(parent, base_name);
@@ -511,7 +545,7 @@ int vfs_unlink(const char* path) {
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
   vnode_t* child = 0x0;
-  error = lookup(parent, base_name, &child);
+  error = lookup(&parent, base_name, &child);
   if (error) {
     VFS_PUT_AND_CLEAR(parent);
     return error;
@@ -681,10 +715,11 @@ int vfs_getcwd(char* path_out, int size) {
   size_out++;
   size--;
 
-  while (n->fs != g_root_fs || n->num != g_root_fs->get_root(g_root_fs)) {
+  fs_t* root_fs = vfs_get_root_fs();
+  while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
     // First find the parent vnode.
     vnode_t* parent = 0x0;
-    int result = lookup(n, "..", &parent);
+    int result = lookup(&n, "..", &parent);
     if (result < 0) {
       VFS_PUT_AND_CLEAR(n);
       return result;
@@ -732,7 +767,7 @@ int vfs_getcwd(char* path_out, int size) {
 
 int vfs_chdir(const char* path) {
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, &new_cwd);
+  int error = lookup_existing_path(path, &new_cwd, 1);
   if (error) return error;
 
   if (new_cwd->type != VNODE_DIRECTORY) {
@@ -832,7 +867,7 @@ int vfs_lstat(const char* path, apos_stat_t* stat) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child);
+  int result = lookup_existing_path(path, &child, 1);
   if (result) return result;
 
   result = vfs_stat_internal(child, stat);
@@ -878,7 +913,7 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child);
+  int result = lookup_existing_path(path, &child, 1);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
@@ -916,7 +951,7 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
 
 int vfs_lchmod(const char* path, mode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child);
+  int result = lookup_existing_path(path, &child, 1);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);

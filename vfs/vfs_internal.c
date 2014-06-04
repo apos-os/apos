@@ -23,9 +23,36 @@
 #include "vfs/vnode.h"
 #include "vfs/vfs.h"
 
-fs_t* g_root_fs = 0;
+mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 htbl_t g_vnode_cache;
 file_t* g_file_table[VFS_MAX_FILES];
+
+int resolve_mounts(vnode_t** vnode) {
+  vnode_t* n = *vnode;
+
+  // If the vnode is a mount point, continue to the child filesystem.
+  while (n->mounted_fs != VFS_FSID_NONE) {
+    // TODO(aoates): check that each of these is valid.
+    fs_t* const child_fs = g_fs_table[n->mounted_fs].fs;
+    vnode_t* child_fs_root = vfs_get(child_fs, child_fs->get_root(child_fs));
+    VFS_PUT_AND_CLEAR(n);
+    n = VFS_MOVE_REF(child_fs_root);
+  }
+
+  *vnode = n;
+  return 0;
+}
+
+void resolve_mounts_up(vnode_t** parent, const char* child_name) {
+  // If we're traversing past the root node of a mounted filesystem, swap in the
+  // mount point.
+  while (kstrcmp(child_name, "..") == 0 &&
+         (*parent)->parent_mount_point != 0x0) {
+    vnode_t* new_parent = VFS_COPY_REF((*parent)->parent_mount_point);
+    VFS_PUT_AND_CLEAR(*parent);
+    *parent = VFS_MOVE_REF(new_parent);
+  }
+}
 
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   kmutex_assert_is_held(&parent->mutex);
@@ -39,10 +66,12 @@ int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   return 0;
 }
 
-int lookup(vnode_t* parent, const char* name, vnode_t** child_out) {
-  kmutex_lock(&parent->mutex);
-  const int result = lookup_locked(parent, name, child_out);
-  kmutex_unlock(&parent->mutex);
+int lookup(vnode_t** parent, const char* name, vnode_t** child_out) {
+  resolve_mounts_up(parent, name);
+
+  kmutex_lock(&(*parent)->mutex);
+  const int result = lookup_locked(*parent, name, child_out);
+  kmutex_unlock(&(*parent)->mutex);
   return result;
 }
 
@@ -130,7 +159,7 @@ int lookup_path(vnode_t* root, const char* path,
 
     // Otherwise, descend again.
     vnode_t* child = 0x0;
-    int error = lookup(n, base_name_out, &child);
+    int error = lookup(&n, base_name_out, &child);
     VFS_PUT_AND_CLEAR(n);
     if (error) {
       return error;
@@ -142,13 +171,20 @@ int lookup_path(vnode_t* root, const char* path,
       return -ENOTDIR;
     }
 
+    error = resolve_mounts(&child);
+    if (error) {
+      VFS_PUT_AND_CLEAR(child);
+      return error;
+    }
+
     // Move to the child and keep going.
     n = VFS_MOVE_REF(child);
     path = name_end;
   }
 }
 
-int lookup_existing_path(const char*path, vnode_t** child_out) {
+int lookup_existing_path(const char*path, vnode_t** child_out,
+                         int resolve_mount) {
   if (!path) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
@@ -166,17 +202,19 @@ int lookup_existing_path(const char*path, vnode_t** child_out) {
   if (base_name[0] == '\0') {
     child = VFS_MOVE_REF(parent);
   } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
+    error = lookup(&parent, base_name, &child);
+    VFS_PUT_AND_CLEAR(parent);
     if (error < 0) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
       return error;
     }
+  }
 
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
+  if (resolve_mount) {
+    error = resolve_mounts(&child);
+    if (error) {
+      VFS_PUT_AND_CLEAR(child);
+      return error;
+    }
   }
 
   *child_out = child;
@@ -197,7 +235,8 @@ int lookup_fd(int fd, file_t** file_out) {
 
 vnode_t* get_root_for_path(const char* path) {
   if (path[0] == '/') {
-    return vfs_get(g_root_fs, g_root_fs->get_root(g_root_fs));
+    fs_t* const root_fs = g_fs_table[VFS_ROOT_FS].fs;
+    return vfs_get(root_fs, root_fs->get_root(root_fs));
   } else {
     return VFS_COPY_REF(proc_current()->cwd);
   }

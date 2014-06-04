@@ -46,6 +46,7 @@ LOCAL_SOURCES := \
   user_test.c \
   vm_test.c \
   vfs_mode_test.c \
+  vfs_mount_test.c \
   vfs_test.c \
   vfs_test_util.c \
 

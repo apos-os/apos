@@ -19,23 +19,50 @@
 #include "common/hashtable.h"
 #include "vfs/file.h"
 #include "vfs/fs.h"
+#include "vfs/vnode.h"
 
 // How many files can be open, globally, at once.
 #define VFS_MAX_FILES 128
 
-extern fs_t* g_root_fs;
+// How many filesystems can be mounted, globally, at once.
+#define VFS_MAX_FILESYSTEMS 10
+
+// A mounted filesystem.
+typedef struct {
+  vnode_t* mount_point;
+  fs_t* fs;
+  vnode_t* mounted_root;
+} mounted_fs_t;
+
+extern mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 extern htbl_t g_vnode_cache;
 extern file_t* g_file_table[VFS_MAX_FILES];
+
+// Given a pointer to a vnode, if it is a mount point, replace it with the
+// mounted filesystem's root directory, continuing until the mounts are fully
+// resolved.  If there is an error, returns -error.
+int resolve_mounts(vnode_t** vnode);
+
+// The opposite of the above.  Given a pointer to a vnode, *and a child name*,
+// if the child name is '..' and the vnode is a mounted fs root, replace the
+// vnode with the mount point.
+void resolve_mounts_up(vnode_t** parent, const char* child_name);
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
 //
 // Requires a lock on the parent to ensure that the child isn't removed between
 // the call to parent->lookup() and vfs_get(child).
+//
+// NOTE: the caller MUST call resolve_mounts_up() before calling this (unlike
+// with lookup()) for mount points to be handled correctly!
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out);
 
-// Convenience wrapper that locks the parent around a call to lookup_locked().
-int lookup(vnode_t* parent, const char* name, vnode_t** child_out);
+// Convenience wrapper that calls resolve_mounts_up() and locks the parent
+// around a call to lookup_locked().
+//
+// NOTE: |parent| may be modified by this call, if it traverses a mount point.
+int lookup(vnode_t** parent, const char* name, vnode_t** child_out);
 
 // Similar to lookup(), but does the reverse: given a directory and an inode
 // number, return the corresponding name, if the directory has an entry for
@@ -71,9 +98,13 @@ int lookup_path(vnode_t* root, const char* path,
 // for operations that simply work on an existing file, and don't need to worry
 // about the path root, basename, parent directory, etc.
 //
+// If |resolve_mount| is non-zero, the final child will be resolved if it is a
+// mount point (you probably want this).
+//
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
 // otherwise.
-int lookup_existing_path(const char*path, vnode_t** child_out);
+int lookup_existing_path(const char* path, vnode_t** child_out,
+                         int resolve_mount);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.

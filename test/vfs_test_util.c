@@ -44,3 +44,66 @@ void create_file(const char* path, const char* mode) {
   KEXPECT_GE(fd, 0);
   vfs_close(fd);
 }
+
+int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
+  const int kBufSize = sizeof(dirent_t) * 3;  // Ensure we have several calls.
+  char buf[kBufSize];
+  int num_dirents = 0;
+
+  while (1) {
+    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    if (len < 0) {
+      KEXPECT_GE(len, -0);
+      break;
+    }
+    if (len == 0) {
+      break;
+    }
+
+    int buf_offset = 0;
+    do {
+      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      num_dirents++;
+      buf_offset += ent->length;
+
+      KLOG("dirent: %d -> %s\n", ent->vnode, ent->name);
+
+      // Ignore the root lost+found and /dev directories.
+      if (kstrcmp(ent->name, "lost+found") == 0 ||
+          kstrcmp(ent->name, "dev") == 0) {
+        num_dirents--;
+        continue;
+      }
+
+      // Make sure the dirent matches one of the expected.
+      int i;
+      for (i = 0; i < expected_num; ++i) {
+        if (kstrcmp(ent->name, expected[i].name) == 0) {
+          break;
+        }
+      }
+      if (i == expected_num) {
+        KLOG("Error: dirent <%d, %s> doesn't match any expected dirents\n",
+             ent->vnode, ent->name);
+        return 1;
+      }
+    } while (buf_offset < len);
+  }
+
+  if (expected_num != num_dirents) {
+    KLOG("Error: expected %d dirents, but found %d\n",
+         expected_num, num_dirents);
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+int compare_dirents_p(const char* path, int expected_num,
+                      const edirent_t expected[]) {
+  int fd = vfs_open(path, VFS_O_RDONLY);
+  if (fd < 0) return fd;
+  int result = compare_dirents(fd, expected_num, expected);
+  vfs_close(fd);
+  return result;
+}

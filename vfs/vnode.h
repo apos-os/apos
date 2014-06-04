@@ -20,6 +20,7 @@
 #include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
+#include "vfs/fsid.h"
 #include "vfs/stat.h"
 
 struct fs;
@@ -59,6 +60,13 @@ struct vnode {
   uid_t uid;
   gid_t gid;
   mode_t mode;  // Doesn't include type bits (just permissions + sticky)
+
+  // If this vnode is a mount point, the fsid_t of the mounted filesystem.
+  fsid_t mounted_fs;
+
+  // If this vnode is the root of a mounted fs (that's not the root fs), the
+  // mount point on the parent fs.
+  struct vnode* parent_mount_point;
 
   int refcount;
 

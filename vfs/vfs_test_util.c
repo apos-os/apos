@@ -18,14 +18,15 @@
 #include "vfs/vnode.h"
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs.h"
+#include "vfs/vnode_hash.h"
 
 #define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
 static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
-  KASSERT(key == (uint32_t)vnode->num);
-  KLOG(INFO, "  0x%x { inode: %d  type: %s  len: %d  refcount: %d }\n",
-       vnode, vnode->num, VNODE_TYPE_NAME[vnode->type],
+  KASSERT(key == vnode_hash_n(vnode));
+  KLOG(INFO, "  0x%x { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
+       vnode, vnode->fs->id, vnode->num, VNODE_TYPE_NAME[vnode->type],
        vnode->len, vnode->refcount);
 }
 
@@ -37,7 +38,7 @@ void vfs_log_cache() {
 static void vfs_cache_size_iter(void* arg, uint32_t key, void* val) {
   int* counter = (int*)arg;
   vnode_t* vnode = (vnode_t*)val;
-  KASSERT(key == (uint32_t)vnode->num);
+  KASSERT(key == vnode_hash_n(vnode));
   (*counter)++;
 }
 
@@ -64,7 +65,7 @@ static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
     child = VFS_MOVE_REF(parent);
   } else {
     // Lookup the child inode.
-    error = lookup(parent, base_name, &child);
+    error = lookup(&parent, base_name, &child);
     if (error < 0) {
       VFS_PUT_AND_CLEAR(parent);
       return error;

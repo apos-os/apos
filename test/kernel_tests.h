@@ -35,6 +35,7 @@ void kthread_pool_test(void);
 void flag_printf_test(void);
 void ramfs_test(void);
 void vfs_mode_test(void);
+void vfs_mount_test(void);
 void vfs_test(void);
 void hash_test(void);
 void block_cache_test(void);

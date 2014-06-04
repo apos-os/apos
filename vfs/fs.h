@@ -16,6 +16,7 @@
 #ifndef APOO_VFS_FS_H
 #define APOO_VFS_FS_H
 
+#include "vfs/fsid.h"
 #include "vfs/vnode.h"
 
 // Concrete filesystem interface.  One of these is instantiated by the concrete
@@ -28,6 +29,8 @@
 struct fs {
   char fstype[10];
   apos_dev_t dev;  // The underlying device.
+  fsid_t id;
+  int open_vnodes;  // The number of open vnodes.
 
   // TODO(aoates): how does allocating the root inode/vnode work?
 
@@ -130,6 +133,9 @@ struct fs {
   //  * anything to do with attributes
   //  * freeing vnodes
 };
+
+// Initialize an fs_t with sane defaults.
+void vfs_fs_init(fs_t* fs);
 
 // Return the root FS.
 fs_t* vfs_get_root_fs(void);

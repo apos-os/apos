@@ -27,6 +27,7 @@
 fs_t* ext2_create_fs() {
   ext2fs_t* fs = kmalloc(sizeof(ext2fs_t));
   kmemset(fs, 0, sizeof(ext2fs_t));
+  vfs_fs_init(&fs->fs);
 
   fs->mounted = 0;
   fs->unhealthy = 0;

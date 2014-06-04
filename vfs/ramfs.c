@@ -172,9 +172,7 @@ static void maybe_block(struct fs* fs) {
 fs_t* ramfs_create_fs() {
   ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
   kmemset(f, 0, sizeof(ramfs_t));
-
-  f->fs.dev.major = DEVICE_ID_UNKNOWN;
-  f->fs.dev.minor = DEVICE_ID_UNKNOWN;
+  vfs_fs_init(&f->fs);
 
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     f->inodes[i].vnode.num = -1;
