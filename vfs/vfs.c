@@ -115,7 +115,7 @@ void vfs_init() {
   if (!success) {
     KLOG(INFO, "Didn't find any mountable filesystems; mounting ramfs as /\n");
     ext2_destroy_fs(ext2fs);
-    g_fs_table[VFS_ROOT_FS].fs = ramfs_create_fs();
+    g_fs_table[VFS_ROOT_FS].fs = ramfs_create_fs(1);
   }
 
   g_fs_table[VFS_ROOT_FS].fs->id = VFS_ROOT_FS;

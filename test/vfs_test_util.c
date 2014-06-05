@@ -68,9 +68,10 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
 
       KLOG("dirent: %d -> %s\n", ent->vnode, ent->name);
 
-      // Ignore the root lost+found and /dev directories.
+      // Ignore the root lost+found, dev, and proc directories.
       if (kstrcmp(ent->name, "lost+found") == 0 ||
-          kstrcmp(ent->name, "dev") == 0) {
+          kstrcmp(ent->name, "dev") == 0 ||
+          kstrcmp(ent->name, "proc") == 0) {
         num_dirents--;
         continue;
       }

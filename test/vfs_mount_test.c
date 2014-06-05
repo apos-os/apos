@@ -742,8 +742,8 @@ void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
 
-  ramfsA = ramfs_create_fs();
-  ramfsB = ramfs_create_fs();
+  ramfsA = ramfs_create_fs(0);
+  ramfsB = ramfs_create_fs(0);
 
   basic_mount_test();
   dot_dot_test();

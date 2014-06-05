@@ -20,8 +20,9 @@
 
 #include "vfs/fs.h"
 
-// Initialize a new ramfs and return it.
-fs_t* ramfs_create_fs(void);
+// Initialize a new ramfs and return it.  If |create_default_dirs| is non-zero,
+// then default system directories (e.g. '/proc') will be created.
+fs_t* ramfs_create_fs(int create_default_dirs);
 
 // Enable and disable artificial blocking for the ramfs.  If enabled, every call
 // that's allowed to block will do so by calling scheduler_yield.  Useful for

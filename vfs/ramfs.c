@@ -169,7 +169,7 @@ static void maybe_block(struct fs* fs) {
   }
 }
 
-fs_t* ramfs_create_fs() {
+fs_t* ramfs_create_fs(int create_default_dirs) {
   ramfs_t* f = (ramfs_t*)kmalloc(sizeof(ramfs_t));
   kmemset(f, 0, sizeof(ramfs_t));
   vfs_fs_init(&f->fs);
@@ -214,6 +214,10 @@ fs_t* ramfs_create_fs() {
   // Link it to itself.
   ramfs_link_internal((vnode_t*)root, root_inode, ".");
   ramfs_link_internal((vnode_t*)root, root_inode, "..");
+
+  if (create_default_dirs) {
+    ramfs_mkdir(&root->vnode, "proc");
+  }
 
   return (fs_t*)f;
 }
