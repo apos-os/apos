@@ -40,6 +40,7 @@
 #include "dev/usb/usb.h"
 #include "main/kshell.h"
 #include "proc/scheduler.h"
+#include "vfs/mount_table.h"
 #include "vfs/vfs.h"
 #include "syscall/init.h"
 #include "test/ktest.h"
@@ -145,6 +146,8 @@ void kmain(memory_info_t* meminfo) {
   syscalls_init();
 
   dev_init_fs();
+
+  vfs_apply_mount_table();
 
   klog("initialization finished...\n");
 

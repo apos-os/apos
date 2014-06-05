@@ -20,6 +20,7 @@ LOCAL_SOURCES := \
   ramfs.c \
   file.c \
   mount.c \
+  mount_table.c \
   testfs.c \
   util.c \
   special.c \
