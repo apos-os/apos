@@ -20,6 +20,8 @@
 #include "memory/vm_area.h"
 #include "proc/process.h"
 #include "vfs/cbfs.h"
+#include "vfs/vfs.h"
+#include "vfs/vfs_util.h"
 
 static int vm_read(fs_t* fs, void* arg, int offset, void* buf, int buflen) {
   offset = 0;
@@ -38,10 +40,16 @@ static int vm_read(fs_t* fs, void* arg, int offset, void* buf, int buflen) {
   return kstrlen(buf);
 }
 
+static int vnode_cache_read(fs_t* fs, void* arg, int offset, void* buf,
+                            int buflen) {
+  return vfs_print_vnode_cache(offset, buf, buflen);
+}
+
 fs_t* procfs_create(void) {
   fs_t* fs = cbfs_create();
 
   cbfs_create_file(fs, "self/vm", &vm_read, 0x0, VFS_S_IRWXU);
+  cbfs_create_file(fs, "vnode", &vnode_cache_read, 0x0, VFS_S_IRWXU);
 
   return fs;
 }

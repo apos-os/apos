@@ -302,8 +302,6 @@ static int cbfs_rmdir(vnode_t* parent, const char* name) {
 }
 
 static int cbfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
-  if (offset > 0) return 0;
-
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
   cbfs_entry_t* entry = get_entry(cfs, vnode->num);
   if (entry->type == VNODE_DIRECTORY) return -EISDIR;
