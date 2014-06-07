@@ -711,8 +711,10 @@ static void too_many_mounts_test(void) {
     fses[i] = testfs_create();
   }
 
+  const int num_to_mount = VFS_MAX_FILESYSTEMS - vfs_mounted_fs_count();
+
   char name[20];
-  for (int i = 0; i < VFS_MAX_FILESYSTEMS - 1; ++i) {
+  for (int i = 0; i < num_to_mount; ++i) {
     ksprintf(name, "vfs_mount_test/m%d", i);
     KEXPECT_EQ(0, vfs_mkdir(name, VFS_S_IRWXU));
 
@@ -721,10 +723,10 @@ static void too_many_mounts_test(void) {
 
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/last", VFS_S_IRWXU));
   KEXPECT_EQ(-ENOMEM, vfs_mount_fs("vfs_mount_test/last",
-                                   fses[VFS_MAX_FILESYSTEMS - 1]));
+                                   fses[num_to_mount]));
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/last"));
 
-  for (int i = 0; i < VFS_MAX_FILESYSTEMS - 1; ++i) {
+  for (int i = 0; i < num_to_mount; ++i) {
     ksprintf(name, "vfs_mount_test/m%d", i);
 
     KEXPECT_EQ(0, vfs_unmount_fs(name, &unmounted_fs));
@@ -742,8 +744,8 @@ void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
 
-  ramfsA = ramfs_create_fs();
-  ramfsB = ramfs_create_fs();
+  ramfsA = ramfs_create_fs(0);
+  ramfsB = ramfs_create_fs(0);
 
   basic_mount_test();
   dot_dot_test();

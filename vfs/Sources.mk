@@ -15,16 +15,19 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  cbfs.c \
   vfs.c \
   ramfs.c \
   file.c \
   mount.c \
+  mount_table.c \
   testfs.c \
   util.c \
   special.c \
   vfs_internal.c \
   vfs_mode.c \
   vfs_test_util.c \
+  vfs_util.c \
 
 LOCAL_SUBDIRS := ext2
 

@@ -229,7 +229,7 @@ static void directory_test(void) {
 
 void ramfs_test(void) {
   KTEST_SUITE_BEGIN("ramfs()");
-  g_fs = ramfs_create_fs();
+  g_fs = ramfs_create_fs(0);
   g_root = get_vnode(g_fs->get_root(g_fs));
 
   basic_test();

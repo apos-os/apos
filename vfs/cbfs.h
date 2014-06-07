@@ -12,22 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_VFS_MOUNT_H
-#define APOO_VFS_MOUNT_H
+// A virtual filesystem where the contents of the files are determined by
+// running callbacks in kernel mode.
+#ifndef APOO_VFS_CBFS_H
+#define APOO_VFS_CBFS_H
 
 #include "vfs/fs.h"
 
-// Mount the given filesystem at the given path, setting its fsid as needed.
-// Returns 0 if the mount succeeds, or -error if it fails.
-int vfs_mount_fs(const char* path, fs_t* fs);
+typedef int (*cbfs_read_t)(fs_t* fs, void* arg, int offset,
+                           void* buf, int buflen);
 
-// Unmount the filesystem mounted at the given path.  If successful, returns 0
-// and sets |fs_out| to the fs_t that was previously mounted at that point (and
-// which has now been removed from the filesystem table).
-int vfs_unmount_fs(const char* path, fs_t** fs_out);
+// Create a cbfs.
+fs_t* cbfs_create(void);
 
-// Return the number of currently-mounted filesystems, including the root
-// filesystem.
-int vfs_mounted_fs_count(void);
+// Free a created cbfs.
+void cbfs_free(fs_t* fs);
+
+// Create a file in the given cbfs.  When the file is read, the given callback
+// will be run.
+int cbfs_create_file(fs_t* fs, const char* name,
+                     cbfs_read_t read_cb, void* arg, mode_t mode);
 
 #endif

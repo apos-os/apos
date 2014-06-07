@@ -12,22 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_VFS_MOUNT_H
-#define APOO_VFS_MOUNT_H
+// Filesystem for process information, generally mounted under /proc.
+#ifndef APOO_PROC_PROCFS_H
+#define APOO_PROC_PROCFS_H
 
 #include "vfs/fs.h"
 
-// Mount the given filesystem at the given path, setting its fsid as needed.
-// Returns 0 if the mount succeeds, or -error if it fails.
-int vfs_mount_fs(const char* path, fs_t* fs);
-
-// Unmount the filesystem mounted at the given path.  If successful, returns 0
-// and sets |fs_out| to the fs_t that was previously mounted at that point (and
-// which has now been removed from the filesystem table).
-int vfs_unmount_fs(const char* path, fs_t** fs_out);
-
-// Return the number of currently-mounted filesystems, including the root
-// filesystem.
-int vfs_mounted_fs_count(void);
+// Create a procfs that can be mounted at the appropriate location.
+fs_t* procfs_create(void);
 
 #endif

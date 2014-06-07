@@ -167,4 +167,20 @@ void kstring_test(void) {
   KEXPECT_EQ(0, kmemcmp("abD", "abF", 2));
   KEXPECT_LT(kmemcmp("abc", "bbc", 3), 0);
   KEXPECT_GT(kmemcmp("cbc", "bbc", 3), 0);
+
+  KTEST_BEGIN("kstrncpy()");
+  kmemset(buf, 'x', 5);
+  kstrncpy(buf, "ab", 4);
+  KEXPECT_EQ('a', buf[0]);
+  KEXPECT_EQ('b', buf[1]);
+  KEXPECT_EQ('\0', buf[2]);
+  KEXPECT_EQ('x', buf[4]);
+
+  kmemset(buf, 'x', 5);
+  kstrncpy(buf, "abcdefgh", 4);
+  KEXPECT_EQ('a', buf[0]);
+  KEXPECT_EQ('b', buf[1]);
+  KEXPECT_EQ('c', buf[2]);
+  KEXPECT_EQ('d', buf[3]);
+  KEXPECT_EQ('x', buf[4]);
 }

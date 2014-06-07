@@ -24,6 +24,7 @@ LOCAL_SOURCES := \
   kthread_asm.s \
   scheduler.c \
   process.c \
+  procfs.c \
   sleep.c \
   kthread_pool.c \
   tss.c \
