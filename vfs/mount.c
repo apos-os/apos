@@ -121,3 +121,11 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
 
   return 0;
 }
+
+int vfs_mounted_fs_count(void) {
+  int count = 0;
+  for (int fs_idx = 0; fs_idx < VFS_MAX_FILESYSTEMS; ++fs_idx) {
+    if (g_fs_table[fs_idx].fs) count++;
+  }
+  return count;
+}

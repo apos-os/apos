@@ -26,4 +26,8 @@ int vfs_mount_fs(const char* path, fs_t* fs);
 // which has now been removed from the filesystem table).
 int vfs_unmount_fs(const char* path, fs_t** fs_out);
 
+// Return the number of currently-mounted filesystems, including the root
+// filesystem.
+int vfs_mounted_fs_count(void);
+
 #endif
