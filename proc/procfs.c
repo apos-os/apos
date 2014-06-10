@@ -24,7 +24,9 @@
 #include "vfs/vfs_util.h"
 
 static int vm_read(fs_t* fs, void* arg, int offset, void* buf, int buflen) {
-  offset = 0;
+  // TODO(aoates): handle non-zero offsets
+  if (offset > 0) return 0;
+
   char tbuf[1024];
 
   list_link_t* link = proc_current()->vm_area_list.head;
