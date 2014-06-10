@@ -223,6 +223,7 @@ int cbfs_create_file(fs_t* fs, const char* name,
   }
 
   if (lookup_by_name(parent, name_start) != 0x0) return -EEXIST;
+  if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
 
   cbfs_entry_t* entry = create_entry(cfs, cfs->next_ino++);
   kstrcpy(entry->name, name_start);
