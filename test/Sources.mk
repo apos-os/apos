@@ -18,6 +18,7 @@ LOCAL_SOURCES := \
   ata_test.c \
   block_cache_test.c \
   block_dev_test.c \
+  cbfs_test.c \
   dmz_test.c \
   exec_test.c \
   flag_printf_test.c \
