@@ -42,9 +42,9 @@ typedef struct {
 } cbfs_inode_t;
 
 typedef struct {
-  char name[VFS_MAX_FILENAME_LENGTH];
   int num;
   list_link_t link;
+  char name[];
 } cbfs_entry_t;
 
 typedef struct {
@@ -102,7 +102,8 @@ cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
 
 // Create a new cbfs_entry_t with the given name and number.
 cbfs_entry_t* create_entry(cbfs_t* cfs, int num, const char name[]) {
-  cbfs_entry_t* entry = (cbfs_entry_t*)kmalloc(sizeof(cbfs_entry_t));
+  cbfs_entry_t* entry =
+      (cbfs_entry_t*)kmalloc(sizeof(cbfs_entry_t) + kstrlen(name) + 1);
   kstrcpy(entry->name, name);
   entry->num = num;
   entry->link = LIST_LINK_INIT;
