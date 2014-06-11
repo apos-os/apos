@@ -49,4 +49,7 @@ static inline uint32_t fnv_hash_concat(uint32_t a, uint32_t b) {
   return fnv_hash_array(buf, sizeof(uint32_t) * 2);
 }
 
+// Compute the MD5 digest of the given buffer.
+void md5_hash(const void* buf, int buflen, uint8_t md5_out[16]);
+
 #endif

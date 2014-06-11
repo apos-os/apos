@@ -24,5 +24,6 @@ LOCAL_SOURCES := \
   hashtable.c \
   builtins.c \
   list.c \
+  hash.c \
 
 $(eval $(END_SOURCES))

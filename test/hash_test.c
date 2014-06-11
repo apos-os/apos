@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/hash.h"
+#include "test/hamlet.h"
 #include "test/ktest.h"
 
 static void basic_fnv_test(void) {
@@ -51,10 +52,92 @@ static void fnv_concat_test(void) {
   }
 }
 
+const char* get_md5_hash_n(const char* str, int len) {
+  static char md5_str[8 * 4 + 1];
+  uint8_t md5[16];
+  md5_hash(str, len, md5);
+  for (int i = 0; i < 16; ++i) {
+    ksprintf(md5_str + i * 2, "%02x", md5[i]);
+  }
+  return md5_str;
+}
+
+const char* get_md5_hash(const char* str) {
+  return get_md5_hash_n(str, kstrlen(str));
+}
+
+static void md5_test(void) {
+  KTEST_BEGIN("MD5 empty string");
+  KEXPECT_STREQ("d41d8cd98f00b204e9800998ecf8427e", get_md5_hash(""));
+
+  KTEST_BEGIN("MD5 basic short strings");
+  KEXPECT_STREQ("900150983cd24fb0d6963f7d28e17f72", get_md5_hash("abc"));
+  KEXPECT_STREQ("7ac66c0f148de9519b8bd264312c4d64", get_md5_hash("abcdefg"));
+
+  KTEST_BEGIN("MD5 hamlet test (55 bytes)");
+  KEXPECT_STREQ("1c324e7bc068c218b628d35a3529289a",
+                get_md5_hash_n(kHamlet, 55));
+
+  KTEST_BEGIN("MD5 hamlet test (56 bytes)");
+  KEXPECT_STREQ("f4d6cdad4ffc09460cc508872b448dec",
+                get_md5_hash_n(kHamlet, 56));
+
+  KTEST_BEGIN("MD5 hamlet test (57 bytes)");
+  KEXPECT_STREQ("017f3d7432a8b53560929cfca93c0341",
+                get_md5_hash_n(kHamlet, 57));
+
+  KTEST_BEGIN("MD5 hamlet test (64 bytes)");
+  KEXPECT_STREQ("9d99a0b1c317910ea2e011f2b1297cfd",
+                get_md5_hash_n(kHamlet, 64));
+
+  KTEST_BEGIN("MD5 hamlet test (63 bytes)");
+  KEXPECT_STREQ("e4e0bdc2b5ad9e9c895364e6f8191cc9",
+                get_md5_hash_n(kHamlet, 63));
+
+  KTEST_BEGIN("MD5 hamlet test (65 bytes)");
+  KEXPECT_STREQ("94baa475b8d7577fdc1acee7663e19f9",
+                get_md5_hash_n(kHamlet, 65));
+
+  KTEST_BEGIN("MD5 hamlet test (100 bytes)");
+  KEXPECT_STREQ("cddef6e346ce4e329df261ab9caefeb1",
+                get_md5_hash_n(kHamlet, 100));
+
+  KTEST_BEGIN("MD5 hamlet test (119 bytes)");
+  KEXPECT_STREQ("de58a5d0cf2ff4ed380e5836245b43f7",
+                get_md5_hash_n(kHamlet, 119));
+
+  KTEST_BEGIN("MD5 hamlet test (120 bytes)");
+  KEXPECT_STREQ("1542adc6068cb989ea296a5c94a09b2c",
+                get_md5_hash_n(kHamlet, 120));
+
+  KTEST_BEGIN("MD5 hamlet test (127 bytes)");
+  KEXPECT_STREQ("f514106775bff844045c1f103d8af95c",
+                get_md5_hash_n(kHamlet, 127));
+
+  KTEST_BEGIN("MD5 hamlet test (128 bytes)");
+  KEXPECT_STREQ("50eb22e61ba28cf5666b3d0c9bd335fd",
+                get_md5_hash_n(kHamlet, 128));
+
+  KTEST_BEGIN("MD5 hamlet test (129 bytes)");
+  KEXPECT_STREQ("62d13cb67e41501e50c276f62fe0d17e",
+                get_md5_hash_n(kHamlet, 129));
+
+  KTEST_BEGIN("MD5 hamlet test (200 bytes)");
+  KEXPECT_STREQ("5ba05d4bf82d0cba0048ef0a4d82b621",
+                get_md5_hash_n(kHamlet, 200));
+
+  KTEST_BEGIN("MD5 hamlet test (1000 bytes)");
+  KEXPECT_STREQ("7930a15bee177618802514e57effbc71",
+                get_md5_hash_n(kHamlet, 1000));
+}
+
 void hash_test(void) {
   KTEST_SUITE_BEGIN("hash test");
 
   basic_fnv_test();
   fnv_array_test();
   fnv_concat_test();
+
+  KTEST_SUITE_BEGIN("MD5 hash test");
+  md5_test();
 }
