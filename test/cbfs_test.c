@@ -235,6 +235,27 @@ static void dynamic_directory_test(void) {
                                                  {102, "f2"},
                                                  {103, "f3"}}));
 
+  int fd = vfs_open("cbfs_test_root/dir1/f0", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  char tmp[100];
+  KEXPECT_EQ(0, vfs_read(0, tmp, 100));
+  vfs_close(fd);
+
+  fd = vfs_open("cbfs_test_root/dir1/f1", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  fd = vfs_open("cbfs_test_root/dir1/f2", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  fd = vfs_open("cbfs_test_root/dir1/f3", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  fd = vfs_open("cbfs_test_root/dir1/f4", VFS_O_RDONLY);
+  KEXPECT_GE(-ENOENT, fd);
+
   if (ENABLE_LARGE_DYNAMIC_TEST) {
     KTEST_BEGIN("cbfs: dynamic directory (many entries)");
     KEXPECT_EQ(0, cbfs_create_directory(fs, "dir2", &dynamic_dir_getdents,
@@ -261,8 +282,7 @@ static void dynamic_directory_test(void) {
   KEXPECT_EQ(0, cbfs_create_directory(fs, "dir3", &dynamic_dir_getdents,
                                       (void*)3, VFS_S_IRWXU));
 
-  int fd = vfs_open("cbfs_test_root/dir3", VFS_O_RDONLY);
-  char tmp[100];
+  fd = vfs_open("cbfs_test_root/dir3", VFS_O_RDONLY);
   KEXPECT_EQ(-EIO, vfs_getdents(fd, (dirent_t*)tmp, 100));
   vfs_close(fd);
 

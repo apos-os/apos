@@ -78,18 +78,58 @@ static int get_inode(cbfs_t* cfs, int num, cbfs_inode_t* tmp,
   return -ENOENT;
 }
 
-// As above.  *ptr_out is set too either an existing inode in the vnode table,
-// or to generated_inode (which is filled with the appropriate data).
-static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
-                          cbfs_inode_t* generated_inode,
-                          cbfs_inode_t** ptr_out) {
-  list_link_t* n = parent->entries.head;
+// Looks for the given entry in the list, returning 0 if succesful, or -error if
+// not.  The number of entries scanned (equal to the size of the list) is stored
+// in |scanned_out|.
+static int lookup_in_entry_list(cbfs_t* fs, const list_t* list,
+                                const char* name, cbfs_inode_t* generated_inode,
+                                cbfs_inode_t** ptr_out, int* scanned_out) {
+  list_link_t* n = list->head;
+  *scanned_out = 0;
   while (n) {
+    (*scanned_out)++;
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
     if (kstrcmp(name, entry->name) == 0) {
       return get_inode(fs, entry->num, generated_inode, ptr_out);
     }
     n = n->next;
+  }
+  return -ENOENT;
+}
+
+// As above.  *ptr_out is set too either an existing inode in the vnode table,
+// or to generated_inode (which is filled with the appropriate data).
+static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
+                          cbfs_inode_t* generated_inode,
+                          cbfs_inode_t** ptr_out) {
+  int scanned;
+  int result = lookup_in_entry_list(fs, &parent->entries, name, generated_inode,
+                                    ptr_out, &scanned);
+  if (result >= 0)
+    return 0;
+  else if (result != -ENOENT)
+    return result;
+
+  if (parent->getdents_cb) {
+    list_t list = LIST_INIT;
+    int offset = 0;
+    do {
+      list = LIST_INIT;
+      const int kCbfsEntryBufSize = 1000;
+      char cbfs_entry_buf[kCbfsEntryBufSize];
+      result = parent->getdents_cb(&fs->fs, parent->arg, offset, &list,
+                                   cbfs_entry_buf, kCbfsEntryBufSize);
+      if (result < 0) return result;
+
+      result = lookup_in_entry_list(fs, &list, name, generated_inode, ptr_out,
+                                    &scanned);
+      if (result >= 0)
+        return 0;
+      else if (result != -ENOENT)
+        return result;
+
+      offset += scanned;
+    } while (!list_empty(&list));
   }
   return -ENOENT;
 }
