@@ -18,6 +18,7 @@
 #include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "proc/user.h"
 #include "vfs/vfs.h"
@@ -31,21 +32,17 @@ struct cbfs_inode {
 
   // If type == VNODE_REGULAR.
   cbfs_read_t read_cb;
-  void* arg;
 
   // If type == VNODE_DIRECTORY.
   list_t entries;
+  cbfs_getdents_t getdents_cb;
+
+  void* arg;
 
   uid_t uid;
   gid_t gid;
   mode_t mode;
 };
-
-typedef struct {
-  int num;
-  list_link_t link;
-  char name[];
-} cbfs_entry_t;
 
 typedef struct {
   fs_t fs;
@@ -108,8 +105,9 @@ static void init_inode(cbfs_inode_t* inode) {
   inode->type = VNODE_INVALID;
   inode->num = -1;
   inode->read_cb = 0x0;
-  inode->arg = 0x0;
   inode->entries = LIST_INIT;
+  inode->getdents_cb = 0x0;
+  inode->arg = 0x0;
   inode->mode = 0;
   inode->uid = -1;
   inode->gid = -1;
@@ -199,6 +197,7 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg) {
   f->fs.write_page = &cbfs_write_page;
 
   f->next_ino = 1;
+  init_inode(&f->root);
   f->root.num = CBFS_ROOT_INO;
   f->root.type = VNODE_DIRECTORY;
   f->root.entries = LIST_INIT;
@@ -236,10 +235,16 @@ void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
   inode->mode = mode;
 }
 
-int cbfs_create_file(fs_t* fs, const char* name,
-                     cbfs_read_t read_cb, void* arg, mode_t mode) {
-  cbfs_t* cfs = fs_to_cbfs(fs);
+void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num) {
+  entry->num = num;
+  entry->link = LIST_LINK_INIT;
+  kstrcpy(entry->name, name);
+}
 
+// Create the parent directories for the given path, and return the inode of the
+// parent (if possible) and the base name of the file, or an error.
+static int create_path(cbfs_t* cfs, const char* name,
+                       const char** base_name_out, cbfs_inode_t** parent_out) {
   const char* name_start = name;
   const char* name_end = kstrchrnul(name_start, '/');
   cbfs_inode_t* parent = &cfs->root;
@@ -270,6 +275,21 @@ int cbfs_create_file(fs_t* fs, const char* name,
     parent = child;
   }
 
+  *base_name_out = name_start;
+  *parent_out = parent;
+
+  return 0;
+}
+
+int cbfs_create_file(fs_t* fs, const char* path,
+                     cbfs_read_t read_cb, void* arg, mode_t mode) {
+  cbfs_t* cfs = fs_to_cbfs(fs);
+
+  const char* name_start = 0x0;
+  cbfs_inode_t* parent = 0x0;
+  int result = create_path(cfs, path, &name_start, &parent);
+  if (result) return result;
+
   cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
   if (lookup_by_name(cfs, parent, name_start, &generated_inode, &inode) == 0)
@@ -284,6 +304,38 @@ int cbfs_create_file(fs_t* fs, const char* name,
   inode->uid = proc_current()->euid;
   inode->gid = proc_current()->egid;
   add_inode_to_vnode_table(cfs, inode);
+
+  cbfs_entry_t* entry = create_entry(cfs, inode->num, name_start);
+  insert_entry(cfs, parent, entry);
+
+  return 0;
+}
+
+int cbfs_create_directory(fs_t* fs, const char* path,
+                          cbfs_getdents_t getdents_cb, void* arg, mode_t mode) {
+  cbfs_t* cfs = fs_to_cbfs(fs);
+
+  const char* name_start = 0x0;
+  cbfs_inode_t* parent = 0x0;
+  int result = create_path(cfs, path, &name_start, &parent);
+  if (result) return result;
+
+  cbfs_inode_t generated_inode;
+  cbfs_inode_t* inode = 0x0;
+  if (lookup_by_name(cfs, parent, name_start, &generated_inode, &inode) == 0)
+    return -EEXIST;
+  if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
+
+  inode = create_inode(cfs, cfs->next_ino++);
+  inode->type = VNODE_DIRECTORY;
+  inode->getdents_cb = getdents_cb;
+  inode->arg = arg;
+  inode->mode = mode;
+  inode->uid = proc_current()->euid;
+  inode->gid = proc_current()->egid;
+  add_inode_to_vnode_table(cfs, inode);
+
+  create_directory_entries(cfs, parent, inode);
 
   cbfs_entry_t* entry = create_entry(cfs, inode->num, name_start);
   insert_entry(cfs, parent, entry);
@@ -393,24 +445,26 @@ static int cbfs_unlink(vnode_t* parent, const char* name) {
   return -EACCES;
 }
 
-static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
-                         int outbufsize) {
-  cbfs_t* cfs = fs_to_cbfs(vnode->fs);
-  cbfs_inode_t generated_inode;
-  cbfs_inode_t* inode = 0x0;
-  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
-  if (result) return result;
-
-  list_link_t* n = inode->entries.head;
+// Traverse the given list of cbfs_entry_ts and create dirent_ts from them.
+// Skips the first entries_to_skip entries in the list.  Returns the *total*
+// number of bytes written (including the incoming bytes_to_write), or an error,
+// and increments entries_seen_out by the number of *entries* written or
+// skipped.  The offset is used to calculate the offset for the generated
+// dirent_ts, so it must be the absolute offset from the start of the directory.
+static int getdents_from_list(const list_t* list, const int entries_to_skip,
+                              const int offset, void* const outbuf,
+                              const int outbufsize, int bytes_written,
+                              int* const entries_seen_out) {
+  list_link_t* n = list->head;
   int idx = 0;
-  while (n && idx < offset) {
+  while (n && idx < entries_to_skip) {
     n = n->next;
     idx++;
+    (*entries_seen_out)++;
   }
 
-  if (!n) return 0;
+  if (!n) return bytes_written;
 
-  int bytes_written = 0;
   while (1) {
     if (!n) break;
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
@@ -420,14 +474,51 @@ static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
 
     dirent_t* d = (dirent_t*)(((const char*)outbuf) + bytes_written);
     d->vnode = entry->num;
-    d->offset = idx + 1;
+    d->offset = offset + idx + 1;
     d->length = dirent_len;
     kstrcpy(d->name, entry->name);
 
     bytes_written += dirent_len;
     n = n->next;
     idx++;
+    (*entries_seen_out)++;
   }
+  return bytes_written;
+}
+
+static int cbfs_getdents(vnode_t* vnode, const int offset, void* outbuf,
+                         int outbufsize) {
+  cbfs_t* cfs = fs_to_cbfs(vnode->fs);
+  cbfs_inode_t generated_inode;
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
+  if (result) return result;
+
+  int bytes_written = 0;
+  int entries_seen = 0;
+  result =
+      getdents_from_list(&inode->entries, offset, offset,
+                         outbuf, outbufsize, bytes_written, &entries_seen);
+  if (result < 0) return result;
+  bytes_written = result;
+
+  if (inode->getdents_cb) {
+    list_t list = LIST_INIT;
+    const int kCbfsEntryBufSize = 1000;
+    char cbfs_entry_buf[kCbfsEntryBufSize];
+    const int num_dynamic_to_skip = max(0, offset - entries_seen);
+    result = inode->getdents_cb(vnode->fs, inode->arg, num_dynamic_to_skip,
+                                &list, cbfs_entry_buf, kCbfsEntryBufSize);
+    if (result < 0) return result;
+    entries_seen += num_dynamic_to_skip;
+
+    result = getdents_from_list(
+        &list, 0 /* entries to skip already accounted for by the getdents_cb */,
+        entries_seen, outbuf, outbufsize, bytes_written, &entries_seen);
+    if (result < 0) return result;
+    bytes_written = result;
+  }
+
   return bytes_written;
 }
 

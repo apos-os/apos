@@ -17,16 +17,37 @@
 #ifndef APOO_VFS_CBFS_H
 #define APOO_VFS_CBFS_H
 
+#include "common/list.h"
+#include "common/kstring.h"
 #include "vfs/fs.h"
 
 struct cbfs_inode;
 typedef struct cbfs_inode cbfs_inode_t;
 
+// A function that reads from a dynamic file in a cbfs.
 typedef int (*cbfs_read_t)(fs_t* fs, void* arg, int offset,
                            void* buf, int buflen);
 
+// A function that looks up a dynamic vnode.
 typedef int (*cbfs_lookup_t)(fs_t* fs, void* arg, int vnode,
                              cbfs_inode_t* inode_out);
+
+// A function that lists entries in a dynamic directory in a cbfs.  It should
+// create a list of cbfs_entry_ts, allocated from the given buffer, and pushed
+// onto |list_out|.  It should return 0 on success.
+typedef int (*cbfs_getdents_t)(fs_t* fs, void* arg, int offset,
+                               list_t* list_out, void* buf, int buflen);
+typedef struct {
+  int num;
+  list_link_t link;
+  char name[];
+} cbfs_entry_t;
+
+static inline size_t cbfs_entry_size(const char* name) {
+  return sizeof(cbfs_entry_t) + kstrlen(name) + 1;
+}
+
+void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num);
 
 // Create a cbfs_inode_t that represents a file.  Fills in the given
 // cbfs_inode_t.
@@ -44,5 +65,12 @@ void cbfs_free(fs_t* fs);
 // will be run.
 int cbfs_create_file(fs_t* fs, const char* name,
                      cbfs_read_t read_cb, void* arg, mode_t mode);
+
+// Create a directory in the given cbfs.  If the getdents callback is non-NULL,
+// it will be run when the directory is listed or a lookup is needed, and should
+// return any dynamic directory entries in the directory (which shouldn't
+// include '.' and '..').
+int cbfs_create_directory(fs_t* fs, const char* path,
+                          cbfs_getdents_t getdents_cb, void* arg, mode_t mode);
 
 #endif
