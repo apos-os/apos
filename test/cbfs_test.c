@@ -133,6 +133,9 @@ static int no_read(fs_t* fs, void* arg, int offset, void* outbuf, int buflen) {
   return 0;
 }
 
+static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
+                                list_t* list_out, void* buf, int buflen);
+
 static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
                             cbfs_inode_t* inode_out) {
   KEXPECT_EQ(0x5, (int)arg);
@@ -141,6 +144,11 @@ static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
     return 0;
   } else if (vnode == 106) {
     return -ENOMEM;
+  } else if (vnode >= 200) {
+    cbfs_inode_create_directory(inode_out, vnode, vnode - 200,
+                                &dynamic_dir_getdents, (void*)0x1, 1, 2,
+                                VFS_S_IRWXU);
+    return 0;
   }
   return -ENOENT;
 }
@@ -176,7 +184,7 @@ static void lookup_function_test(void) {
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
 }
 
-static int dynamic_dir_getdents(fs_t* fs, void* arg, int offset,
+static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                                 list_t* list_out, void* buf, int buflen) {
   if ((int)arg == 1) {
     // Mode 1: create several file entries and return them one by one.
@@ -211,6 +219,16 @@ static int dynamic_dir_getdents(fs_t* fs, void* arg, int offset,
   } else if ((int) arg == 3) {
     // Mode 3: return an error
     return -EIO;
+  } else if ((int)arg == 4) {
+    // Mode 4: create a dynamic subdirectory.
+    if (offset == 0) {
+      const int entry_size = cbfs_entry_size("dyndir");
+      if (entry_size > buflen) return -ENOMEM;
+      cbfs_entry_t* entry = (cbfs_entry_t*)buf;
+      cbfs_create_entry(entry, "dyndir", 200 + vnode_num);
+      list_push(list_out, &entry->link);
+    }
+    return 0;
   }
 
   return 0;
@@ -375,6 +393,39 @@ static void dynamic_directory_test(void) {
                                                  {102, "f2"},
                                                  {103, "f3"},
                                                  {-1, "file"}}));
+
+  KTEST_BEGIN("cbfs: dynamic subdirectory");
+  KEXPECT_EQ(0, cbfs_create_directory(fs, "dir6", &dynamic_dir_getdents,
+                                      (void*)4, VFS_S_IRWXU));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root/dir6", 3,
+                                  (edirent_t[]) {{-1, "."},
+                                                 {-1, ".."},
+                                                 {200, "dyndir"}}));
+  const edirent_t kDyndirExpected[6] = {{-1, "."},
+                                        {-1, ".."},
+                                        {100, "f0"},
+                                        {101, "f1"},
+                                        {102, "f2"},
+                                        {103, "f3"}};
+  KEXPECT_EQ(
+      0, compare_dirents_p("cbfs_test_root/dir6/dyndir", 6, kDyndirExpected));
+  KEXPECT_EQ(
+      0, compare_dirents_p("cbfs_test_root/dir6/dyndir/.", 6, kDyndirExpected));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root/dir6/dyndir/../dyndir", 6,
+                                  kDyndirExpected));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root/dir6/.", 3,
+                                  (edirent_t[]) {{-1, "."},
+                                                 {-1, ".."},
+                                                 {200, "dyndir"}}));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root/dir6/dyndir/..", 3,
+                                  (edirent_t[]) {{-1, "."},
+                                                 {-1, ".."},
+                                                 {200, "dyndir"}}));
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("cbfs_test_root/dir6/dyndir", &stat));
+  KEXPECT_EQ(1, stat.st_uid);
+  KEXPECT_EQ(2, stat.st_gid);
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXU, stat.st_mode);
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));

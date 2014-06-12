@@ -117,8 +117,8 @@ static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
       list = LIST_INIT;
       const int kCbfsEntryBufSize = 1000;
       char cbfs_entry_buf[kCbfsEntryBufSize];
-      result = parent->getdents_cb(&fs->fs, parent->arg, offset, &list,
-                                   cbfs_entry_buf, kCbfsEntryBufSize);
+      result = parent->getdents_cb(&fs->fs, parent->num, parent->arg, offset,
+                                   &list, cbfs_entry_buf, kCbfsEntryBufSize);
       if (result < 0) return result;
 
       result = lookup_in_entry_list(fs, &list, name, generated_inode, ptr_out,
@@ -135,8 +135,7 @@ static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
 }
 
 // Insert a child into the parent's entry list.
-static void insert_entry(cbfs_t* cfs, cbfs_inode_t* parent,
-                         cbfs_entry_t* child) {
+static void insert_entry(cbfs_inode_t* parent, cbfs_entry_t* child) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   list_push(&parent->entries, &child->link);
 }
@@ -166,7 +165,7 @@ cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
 }
 
 // Create a new cbfs_entry_t with the given name and number.
-cbfs_entry_t* create_entry(cbfs_t* cfs, int num, const char name[]) {
+cbfs_entry_t* create_entry(int num, const char name[]) {
   cbfs_entry_t* entry =
       (cbfs_entry_t*)kmalloc(sizeof(cbfs_entry_t) + kstrlen(name) + 1);
   kstrcpy(entry->name, name);
@@ -184,14 +183,13 @@ void add_inode_to_vnode_table(cbfs_t* cfs, cbfs_inode_t* inode) {
 }
 
 // Add standard directory entries ('.' and '..') to the given node.
-void create_directory_entries(cbfs_t* cfs, cbfs_inode_t* parent,
-                              cbfs_inode_t* dir) {
+void create_directory_entries(int parent_num, cbfs_inode_t* dir) {
   const char* const kNames[] = {".", ".."};
-  const int inos[] = {dir->num, parent->num};
+  const int inos[] = {dir->num, parent_num};
   for (int i = 0; i < 2; ++i) {
-    cbfs_entry_t* entry = create_entry(cfs, inos[i], kNames[i]);
+    cbfs_entry_t* entry = create_entry(inos[i], kNames[i]);
 
-    insert_entry(cfs, dir, entry);
+    insert_entry(dir, entry);
   }
 }
 
@@ -248,7 +246,7 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg) {
 
   htbl_init(&f->vnode_table, VNODE_TABLE_BUCKETS);
   add_inode_to_vnode_table(f, &f->root);
-  create_directory_entries(f, &f->root, &f->root);
+  create_directory_entries(f->root.num, &f->root);
 
   f->lookup_cb = lookup_cb;
   f->lookup_arg = lookup_arg;
@@ -273,6 +271,22 @@ void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
   inode->uid = uid;
   inode->gid = gid;
   inode->mode = mode;
+}
+
+void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
+                                 cbfs_getdents_t getdents_cb,
+                                 void* getdents_arg, uid_t uid, gid_t gid,
+                                 mode_t mode) {
+  init_inode(inode);
+  inode->type = VNODE_DIRECTORY;
+  inode->num = num;
+  inode->getdents_cb = getdents_cb;
+  inode->arg = getdents_arg;
+  inode->uid = uid;
+  inode->gid = gid;
+  inode->mode = mode;
+
+  create_directory_entries(parent_num, inode);
 }
 
 void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num) {
@@ -303,10 +317,10 @@ static int create_path(cbfs_t* cfs, const char* name,
       cbfs_inode_t* dir = create_inode(cfs, cfs->next_ino++);
       dir->type = VNODE_DIRECTORY;
       add_inode_to_vnode_table(cfs, dir);
-      create_directory_entries(cfs, parent, dir);
+      create_directory_entries(parent->num, dir);
 
-      cbfs_entry_t* entry = create_entry(cfs, dir->num, name);
-      insert_entry(cfs, parent, entry);
+      cbfs_entry_t* entry = create_entry(dir->num, name);
+      insert_entry(parent, entry);
       child = dir;
     }
 
@@ -345,8 +359,8 @@ int cbfs_create_file(fs_t* fs, const char* path,
   inode->gid = proc_current()->egid;
   add_inode_to_vnode_table(cfs, inode);
 
-  cbfs_entry_t* entry = create_entry(cfs, inode->num, name_start);
-  insert_entry(cfs, parent, entry);
+  cbfs_entry_t* entry = create_entry(inode->num, name_start);
+  insert_entry(parent, entry);
 
   return 0;
 }
@@ -375,10 +389,10 @@ int cbfs_create_directory(fs_t* fs, const char* path,
   inode->gid = proc_current()->egid;
   add_inode_to_vnode_table(cfs, inode);
 
-  create_directory_entries(cfs, parent, inode);
+  create_directory_entries(parent->num, inode);
 
-  cbfs_entry_t* entry = create_entry(cfs, inode->num, name_start);
-  insert_entry(cfs, parent, entry);
+  cbfs_entry_t* entry = create_entry(inode->num, name_start);
+  insert_entry(parent, entry);
 
   return 0;
 }
@@ -547,8 +561,9 @@ static int cbfs_getdents(vnode_t* vnode, const int offset, void* outbuf,
     const int kCbfsEntryBufSize = 1000;
     char cbfs_entry_buf[kCbfsEntryBufSize];
     const int num_dynamic_to_skip = max(0, offset - entries_seen);
-    result = inode->getdents_cb(vnode->fs, inode->arg, num_dynamic_to_skip,
-                                &list, cbfs_entry_buf, kCbfsEntryBufSize);
+    result = inode->getdents_cb(vnode->fs, inode->num, inode->arg,
+                                num_dynamic_to_skip, &list, cbfs_entry_buf,
+                                kCbfsEntryBufSize);
     if (result < 0) return result;
     entries_seen += num_dynamic_to_skip;
 
@@ -570,7 +585,7 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   if (result) return result;
 
   stat_out->st_mode =
-      (inode->type == VNODE_DIRECTORY) ? VFS_S_IFDIR : VFS_S_IFREG |
+      ((inode->type == VNODE_DIRECTORY) ? VFS_S_IFDIR : VFS_S_IFREG) |
       inode->mode;
   stat_out->st_nlink = (inode->type == VNODE_DIRECTORY) ? 2 : 1;
   stat_out->st_rdev = mkdev(0, 0);

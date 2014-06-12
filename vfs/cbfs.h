@@ -20,6 +20,7 @@
 #include "common/list.h"
 #include "common/kstring.h"
 #include "vfs/fs.h"
+#include "vfs/vnode.h"
 
 struct cbfs_inode;
 typedef struct cbfs_inode cbfs_inode_t;
@@ -35,8 +36,9 @@ typedef int (*cbfs_lookup_t)(fs_t* fs, void* arg, int vnode,
 // A function that lists entries in a dynamic directory in a cbfs.  It should
 // create a list of cbfs_entry_ts, allocated from the given buffer, and pushed
 // onto |list_out|.  It should return 0 on success.
-typedef int (*cbfs_getdents_t)(fs_t* fs, void* arg, int offset,
-                               list_t* list_out, void* buf, int buflen);
+typedef int (*cbfs_getdents_t)(fs_t* fs, int vnode_num, void* arg,
+                               int offset, list_t* list_out, void* buf,
+                               int buflen);
 typedef struct {
   int num;
   list_link_t link;
@@ -53,6 +55,13 @@ void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num);
 // cbfs_inode_t.
 void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
                             void* read_arg, uid_t uid, gid_t gid, mode_t mode);
+
+// Create a cbfs_inode_t that represents a directory.  Fills in the given
+// cbfs_inode_t.
+void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
+                                 cbfs_getdents_t getdents_cb,
+                                 void* getdents_arg, uid_t uid, gid_t gid,
+                                 mode_t mode);
 
 // Create a cbfs.  The given callback, if non-NULL, will be run when looking up
 // an unknown vnode.  It can be used to generate vnodes dynamically.
