@@ -58,11 +58,13 @@ static inline cbfs_t* fs_to_cbfs(fs_t* f) {
   return (cbfs_t*)f;
 }
 
-// Get the given inode from the vnode table.
-static cbfs_inode_t* get_inode(cbfs_t* cfs, int num) {
+// Get the given inode from the vnode table.  Returns 0 on success, and sets
+// *ptr_out to the inode.
+static int get_inode(cbfs_t* cfs, int num, cbfs_inode_t** ptr_out) {
   void* ptr;
-  if (htbl_get(&cfs->vnode_table, num, &ptr)) return 0x0;
-  return (cbfs_inode_t*)ptr;
+  if (htbl_get(&cfs->vnode_table, num, &ptr)) return -ENOENT;
+  *ptr_out = (cbfs_inode_t*)ptr;
+  return 0;
 }
 
 static cbfs_inode_t* lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent,
@@ -71,7 +73,10 @@ static cbfs_inode_t* lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent,
   while (n) {
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
     if (kstrcmp(name, entry->name) == 0) {
-      return get_inode(fs, entry->num);
+      cbfs_inode_t* inode = 0x0;
+      int result = get_inode(fs, entry->num, &inode);
+      if (result) return 0x0;
+      else return inode;
     }
     n = n->next;
   }
@@ -254,8 +259,9 @@ static int cbfs_get_root(struct fs* fs) {
 
 static int cbfs_get_vnode(vnode_t* vnode) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
-  cbfs_inode_t* inode = get_inode(cfs, vnode->num);
-  if (!inode) return -ENOENT;
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &inode);
+  if (result) return result;
 
   vnode->type = inode->type;
   vnode->uid = inode->uid;
@@ -274,8 +280,9 @@ static int cbfs_put_vnode(vnode_t* vnode) {
     return 0;
   }
 
-  cbfs_inode_t* inode = get_inode(cfs, vnode->num);
-  if (!inode) return -ENOENT;
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &inode);
+  if (result) return result;
 
   inode->uid = vnode->uid;
   inode->gid = vnode->gid;
@@ -286,7 +293,14 @@ static int cbfs_put_vnode(vnode_t* vnode) {
 
 static int cbfs_lookup(vnode_t* parent, const char* name) {
   cbfs_t* cfs = fs_to_cbfs(parent->fs);
-  cbfs_inode_t* parent_inode = get_inode(cfs, parent->num);
+
+  cbfs_inode_t* parent_inode = 0x0;
+  int result = get_inode(cfs, parent->num, &parent_inode);
+  if (result) {
+    klogfm(KL_VFS, WARNING,
+           "cbfs: unable to get parent inode in cbfs_lookup(): %s\n", result);
+    return result;
+  }
 
   cbfs_inode_t* inode = lookup_by_name(cfs, parent_inode, name);
   if (inode) return inode->num;
@@ -308,7 +322,9 @@ static int cbfs_rmdir(vnode_t* parent, const char* name) {
 
 static int cbfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
-  cbfs_inode_t* inode = get_inode(cfs, vnode->num);
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &inode);
+  if (result) return result;
   if (inode->type == VNODE_DIRECTORY) return -EISDIR;
 
   return inode->read_cb(vnode->fs, inode->arg, offset, buf, bufsize);
@@ -330,7 +346,9 @@ static int cbfs_unlink(vnode_t* parent, const char* name) {
 static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
                          int outbufsize) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
-  cbfs_inode_t* inode = get_inode(cfs, vnode->num);
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &inode);
+  if (result) return result;
 
   list_link_t* n = inode->entries.head;
   int idx = 0;
@@ -364,7 +382,9 @@ static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
 
 static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
-  cbfs_inode_t* inode = get_inode(cfs, vnode->num);
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &inode);
+  if (result) return result;
 
   stat_out->st_mode =
       (inode->type == VNODE_DIRECTORY) ? VFS_S_IFDIR : VFS_S_IFREG |
