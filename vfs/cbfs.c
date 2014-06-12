@@ -67,20 +67,17 @@ static int get_inode(cbfs_t* cfs, int num, cbfs_inode_t** ptr_out) {
   return 0;
 }
 
-static cbfs_inode_t* lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent,
-                                    const char* name) {
+static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
+                          cbfs_inode_t** ptr_out) {
   list_link_t* n = parent->entries.head;
   while (n) {
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
     if (kstrcmp(name, entry->name) == 0) {
-      cbfs_inode_t* inode = 0x0;
-      int result = get_inode(fs, entry->num, &inode);
-      if (result) return 0x0;
-      else return inode;
+      return get_inode(fs, entry->num, ptr_out);
     }
     n = n->next;
   }
-  return 0x0;
+  return -ENOENT;
 }
 
 // Insert a child into the parent's entry list.
@@ -212,9 +209,10 @@ int cbfs_create_file(fs_t* fs, const char* name,
     char name[VFS_MAX_FILENAME_LENGTH];
     kstrncpy(name, name_start, name_end - name_start);
     name[name_end - name_start] = '\0';
-    cbfs_inode_t* child = lookup_by_name(cfs, parent, name);
-
-    if (!child) {
+    cbfs_inode_t* child = 0x0;
+    int result = lookup_by_name(cfs, parent, name, &child);
+    if (result != 0 && result != -ENOENT) return result;
+    if (result == -ENOENT) {
       // Create the directory.
       cbfs_inode_t* dir = create_inode(cfs, cfs->next_ino++);
       dir->type = VNODE_DIRECTORY;
@@ -231,10 +229,11 @@ int cbfs_create_file(fs_t* fs, const char* name,
     parent = child;
   }
 
-  if (lookup_by_name(cfs, parent, name_start) != 0x0) return -EEXIST;
+  cbfs_inode_t* inode = 0x0;
+  if (lookup_by_name(cfs, parent, name_start, &inode) == 0) return -EEXIST;
   if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
 
-  cbfs_inode_t* inode = create_inode(cfs, cfs->next_ino++);
+  inode = create_inode(cfs, cfs->next_ino++);
   inode->type = VNODE_REGULAR;
   inode->read_cb = read_cb;
   inode->arg = arg;
@@ -302,9 +301,12 @@ static int cbfs_lookup(vnode_t* parent, const char* name) {
     return result;
   }
 
-  cbfs_inode_t* inode = lookup_by_name(cfs, parent_inode, name);
-  if (inode) return inode->num;
-  else return -ENOENT;
+  cbfs_inode_t* inode = 0x0;
+  result = lookup_by_name(cfs, parent_inode, name, &inode);
+  if (result)
+    return result;
+  else
+    return inode->num;
 }
 
 static int cbfs_mknod(vnode_t* parent, const char* name,
