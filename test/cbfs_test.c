@@ -17,6 +17,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
@@ -117,11 +118,67 @@ static void basic_file_test(fs_t* fs) {
   KEXPECT_EQ(-EACCES, vfs_unlink("cbfs_test_root/file"));
 }
 
+static void null_lookup_test(fs_t* fs) {
+  KTEST_BEGIN("cbfs: unknown vnode with no lookup function");
+
+  vnode_t vnode;
+  vfs_vnode_init(&vnode, 999);
+  vnode.fs = fs;
+  KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
+}
+
+static int no_read(fs_t* fs, void* arg, int offset, void* outbuf, int buflen) {
+  return 0;
+}
+
+static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
+                            cbfs_inode_t* inode_out) {
+  KEXPECT_EQ(0x5, (int)arg);
+  if (vnode >= 100 && vnode <= 105) {
+    cbfs_inode_create_file(inode_out, vnode, &no_read, 0, 1, 2, VFS_S_IRWXU);
+    return 0;
+  } else if (vnode == 106) {
+    return -ENOMEM;
+  }
+  return -ENOENT;
+}
+
+static void lookup_function_test(void) {
+  KTEST_BEGIN("cbfs: vnode lookup function");
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5);
+  KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
+
+
+  vnode_t vnode;
+  vfs_vnode_init(&vnode, 99);
+  vnode.fs = fs;
+  KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
+
+  vfs_vnode_init(&vnode, 102);
+  vnode.fs = fs;
+  KEXPECT_EQ(0, fs->get_vnode(&vnode));
+  KEXPECT_EQ(VNODE_REGULAR, vnode.type);
+  KEXPECT_EQ(1, vnode.uid);
+  KEXPECT_EQ(2, vnode.gid);
+  KEXPECT_EQ(VFS_S_IRWXU, vnode.mode);
+
+  vfs_vnode_init(&vnode, 106);
+  vnode.fs = fs;
+  KEXPECT_EQ(-ENOMEM, fs->get_vnode(&vnode));
+
+  vfs_vnode_init(&vnode, 107);
+  vnode.fs = fs;
+  KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
+
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+}
+
 void cbfs_test(void) {
   KTEST_SUITE_BEGIN("cbfs");
 
   KTEST_BEGIN("cbfs test setup");
-  fs_t* fs =  cbfs_create();
+  fs_t* fs =  cbfs_create(0x0, 0x0);
   vfs_mkdir("cbfs_test_root", VFS_S_IRWXU);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
@@ -129,6 +186,9 @@ void cbfs_test(void) {
 
 
   basic_file_test(fs);
+  null_lookup_test(fs);
+
+  lookup_function_test();
 
 
   KTEST_BEGIN("cbfs test cleanup");

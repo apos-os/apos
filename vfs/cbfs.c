@@ -25,7 +25,7 @@
 #define CBFS_ROOT_INO 0
 #define VNODE_TABLE_BUCKETS 100
 
-typedef struct {
+struct cbfs_inode {
   int num;
   vnode_type_t type;
 
@@ -39,7 +39,7 @@ typedef struct {
   uid_t uid;
   gid_t gid;
   mode_t mode;
-} cbfs_inode_t;
+};
 
 typedef struct {
   int num;
@@ -52,6 +52,8 @@ typedef struct {
   int next_ino;
   cbfs_inode_t root;
   htbl_t vnode_table;
+  cbfs_lookup_t lookup_cb;
+  void* lookup_arg;
 } cbfs_t;
 
 static inline cbfs_t* fs_to_cbfs(fs_t* f) {
@@ -59,21 +61,36 @@ static inline cbfs_t* fs_to_cbfs(fs_t* f) {
 }
 
 // Get the given inode from the vnode table.  Returns 0 on success, and sets
-// *ptr_out to the inode.
-static int get_inode(cbfs_t* cfs, int num, cbfs_inode_t** ptr_out) {
+// *ptr_out to the inode.  If the vnode isn't in the table, but the cbfs has a
+// lookup callback, it is run, and the generated vnode (if any) is placed in
+// tmp, and *ptr_out is set to tmp.  Thus, tmp should point to a cbfs_inode_t
+// whose lifetime exceeds the use of ptr_out (e.g. a cbfs_inode_t allocated on
+// the callers stack).
+static int get_inode(cbfs_t* cfs, int num, cbfs_inode_t* tmp,
+                     cbfs_inode_t** ptr_out) {
   void* ptr;
-  if (htbl_get(&cfs->vnode_table, num, &ptr)) return -ENOENT;
-  *ptr_out = (cbfs_inode_t*)ptr;
-  return 0;
+  if (htbl_get(&cfs->vnode_table, num, &ptr) == 0) {
+    *ptr_out = (cbfs_inode_t*)ptr;
+    return 0;
+  } else if (cfs->lookup_cb) {
+    int result = cfs->lookup_cb(&cfs->fs, cfs->lookup_arg, num, tmp);
+    *ptr_out = tmp;
+    return result;
+  }
+
+  return -ENOENT;
 }
 
+// As above.  *ptr_out is set too either an existing inode in the vnode table,
+// or to generated_inode (which is filled with the appropriate data).
 static int lookup_by_name(cbfs_t* fs, cbfs_inode_t* parent, const char* name,
+                          cbfs_inode_t* generated_inode,
                           cbfs_inode_t** ptr_out) {
   list_link_t* n = parent->entries.head;
   while (n) {
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
     if (kstrcmp(name, entry->name) == 0) {
-      return get_inode(fs, entry->num, ptr_out);
+      return get_inode(fs, entry->num, generated_inode, ptr_out);
     }
     n = n->next;
   }
@@ -87,14 +104,22 @@ static void insert_entry(cbfs_t* cfs, cbfs_inode_t* parent,
   list_push(&parent->entries, &child->link);
 }
 
-// Create a new cbfs_inode_t with the given number.
-cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
-  cbfs_inode_t* inode = (cbfs_inode_t*)kmalloc(sizeof(cbfs_inode_t));
+static void init_inode(cbfs_inode_t* inode) {
   inode->type = VNODE_INVALID;
-  inode->num = num;
+  inode->num = -1;
   inode->read_cb = 0x0;
   inode->arg = 0x0;
   inode->entries = LIST_INIT;
+  inode->mode = 0;
+  inode->uid = -1;
+  inode->gid = -1;
+}
+
+// Create a new cbfs_inode_t with the given number.
+cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
+  cbfs_inode_t* inode = (cbfs_inode_t*)kmalloc(sizeof(cbfs_inode_t));
+  init_inode(inode);
+  inode->num = num;
   inode->mode = cfs->root.mode;
   inode->uid = cfs->root.uid;
   inode->gid = cfs->root.gid;
@@ -151,7 +176,7 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
-fs_t* cbfs_create(void) {
+fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg) {
   cbfs_t* f = (cbfs_t*)kmalloc(sizeof(cbfs_t));
   vfs_fs_init(&f->fs);
 
@@ -186,6 +211,9 @@ fs_t* cbfs_create(void) {
   add_inode_to_vnode_table(f, &f->root);
   create_directory_entries(f, &f->root, &f->root);
 
+  f->lookup_cb = lookup_cb;
+  f->lookup_arg = lookup_arg;
+
   return &f->fs;
 }
 
@@ -194,6 +222,18 @@ void cbfs_free(fs_t* fs) {
   // TODO(aoates): clean up all entries
   htbl_cleanup(&cfs->vnode_table);
   kfree(cfs);
+}
+
+void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
+                            void* read_arg, uid_t uid, gid_t gid, mode_t mode) {
+  init_inode(inode);
+  inode->type = VNODE_REGULAR;
+  inode->num = num;
+  inode->read_cb = read_cb;
+  inode->arg = read_arg;
+  inode->uid = uid;
+  inode->gid = gid;
+  inode->mode = mode;
 }
 
 int cbfs_create_file(fs_t* fs, const char* name,
@@ -209,8 +249,9 @@ int cbfs_create_file(fs_t* fs, const char* name,
     char name[VFS_MAX_FILENAME_LENGTH];
     kstrncpy(name, name_start, name_end - name_start);
     name[name_end - name_start] = '\0';
+    cbfs_inode_t generated_child;
     cbfs_inode_t* child = 0x0;
-    int result = lookup_by_name(cfs, parent, name, &child);
+    int result = lookup_by_name(cfs, parent, name, &generated_child, &child);
     if (result != 0 && result != -ENOENT) return result;
     if (result == -ENOENT) {
       // Create the directory.
@@ -229,8 +270,10 @@ int cbfs_create_file(fs_t* fs, const char* name,
     parent = child;
   }
 
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  if (lookup_by_name(cfs, parent, name_start, &inode) == 0) return -EEXIST;
+  if (lookup_by_name(cfs, parent, name_start, &generated_inode, &inode) == 0)
+    return -EEXIST;
   if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
 
   inode = create_inode(cfs, cfs->next_ino++);
@@ -258,8 +301,9 @@ static int cbfs_get_root(struct fs* fs) {
 
 static int cbfs_get_vnode(vnode_t* vnode) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  int result = get_inode(cfs, vnode->num, &inode);
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
   if (result) return result;
 
   vnode->type = inode->type;
@@ -279,8 +323,9 @@ static int cbfs_put_vnode(vnode_t* vnode) {
     return 0;
   }
 
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  int result = get_inode(cfs, vnode->num, &inode);
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
   if (result) return result;
 
   inode->uid = vnode->uid;
@@ -293,16 +338,18 @@ static int cbfs_put_vnode(vnode_t* vnode) {
 static int cbfs_lookup(vnode_t* parent, const char* name) {
   cbfs_t* cfs = fs_to_cbfs(parent->fs);
 
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* parent_inode = 0x0;
-  int result = get_inode(cfs, parent->num, &parent_inode);
+  int result = get_inode(cfs, parent->num, &generated_inode, &parent_inode);
   if (result) {
     klogfm(KL_VFS, WARNING,
            "cbfs: unable to get parent inode in cbfs_lookup(): %s\n", result);
     return result;
   }
 
+  cbfs_inode_t generated_inode2;
   cbfs_inode_t* inode = 0x0;
-  result = lookup_by_name(cfs, parent_inode, name, &inode);
+  result = lookup_by_name(cfs, parent_inode, name, &generated_inode2, &inode);
   if (result)
     return result;
   else
@@ -324,8 +371,9 @@ static int cbfs_rmdir(vnode_t* parent, const char* name) {
 
 static int cbfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  int result = get_inode(cfs, vnode->num, &inode);
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
   if (result) return result;
   if (inode->type == VNODE_DIRECTORY) return -EISDIR;
 
@@ -348,8 +396,9 @@ static int cbfs_unlink(vnode_t* parent, const char* name) {
 static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
                          int outbufsize) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  int result = get_inode(cfs, vnode->num, &inode);
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
   if (result) return result;
 
   list_link_t* n = inode->entries.head;
@@ -384,8 +433,9 @@ static int cbfs_getdents(vnode_t* vnode, int offset, void* outbuf,
 
 static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   cbfs_t* cfs = fs_to_cbfs(vnode->fs);
+  cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  int result = get_inode(cfs, vnode->num, &inode);
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
   if (result) return result;
 
   stat_out->st_mode =

@@ -48,7 +48,7 @@ static int vnode_cache_read(fs_t* fs, void* arg, int offset, void* buf,
 }
 
 fs_t* procfs_create(void) {
-  fs_t* fs = cbfs_create();
+  fs_t* fs = cbfs_create(0x0, 0x0);
 
   cbfs_create_file(fs, "self/vm", &vm_read, 0x0, VFS_S_IRWXU);
   cbfs_create_file(fs, "vnode", &vnode_cache_read, 0x0, VFS_S_IRWXU);
