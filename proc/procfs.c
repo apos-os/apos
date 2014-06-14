@@ -23,7 +23,8 @@
 #include "vfs/vfs.h"
 #include "vfs/vfs_util.h"
 
-static int vm_read(fs_t* fs, void* arg, int offset, void* buf, int buflen) {
+static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
+                   int buflen) {
   // TODO(aoates): handle non-zero offsets
   if (offset > 0) return 0;
 
@@ -42,8 +43,8 @@ static int vm_read(fs_t* fs, void* arg, int offset, void* buf, int buflen) {
   return kstrlen(buf);
 }
 
-static int vnode_cache_read(fs_t* fs, void* arg, int offset, void* buf,
-                            int buflen) {
+static int vnode_cache_read(fs_t* fs, void* arg, int vnode, int offset,
+                            void* buf, int buflen) {
   return vfs_print_vnode_cache(offset, buf, buflen);
 }
 

@@ -483,7 +483,8 @@ static int cbfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   if (result) return result;
   if (inode->type == VNODE_DIRECTORY) return -EISDIR;
 
-  return inode->read_cb(vnode->fs, inode->arg, offset, buf, bufsize);
+  return inode->read_cb(vnode->fs, inode->arg, inode->num, offset, buf,
+                        bufsize);
 }
 
 static int cbfs_write(vnode_t* vnode, int offset, const void* buf,

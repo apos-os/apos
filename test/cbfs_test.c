@@ -30,8 +30,8 @@ static fs_t* g_basic_fs = 0x0;
 
 #define ENABLE_LARGE_DYNAMIC_TEST 0
 
-static int basic_file_read_test(fs_t* fs, void* arg, int offset, void* buf,
-                                int buflen) {
+static int basic_file_read_test(fs_t* fs, void* arg, int vnode, int offset,
+                                void* buf, int buflen) {
   KEXPECT_EQ(g_basic_fs, fs);
   KEXPECT_EQ((void*)0x1, arg);
   KEXPECT_EQ(2, offset);
@@ -39,6 +39,12 @@ static int basic_file_read_test(fs_t* fs, void* arg, int offset, void* buf,
 
   kstrcpy(buf, "abcde");
   return 6;
+}
+
+static int save_vnode_read(fs_t* fs, void* arg, int vnode, int offset,
+                           void* buf, int buflen) {
+  *(int*)arg = vnode;
+  return 0;
 }
 
 static void basic_file_test(fs_t* fs) {
@@ -118,6 +124,18 @@ static void basic_file_test(fs_t* fs) {
 
   KTEST_BEGIN("cbfs: can't remove file with vfs_unlink()");
   KEXPECT_EQ(-EACCES, vfs_unlink("cbfs_test_root/file"));
+
+  KTEST_BEGIN("cbfs: correct vnode number passed to read callback");
+  int read_vnode = -1;
+  KEXPECT_EQ(0, cbfs_create_file(fs, "read_vnode_file", &save_vnode_read,
+                                 &read_vnode, VFS_S_IRWXU));
+  fd = vfs_open("cbfs_test_root/read_vnode_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_read(fd, buf, 5));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_GE(read_vnode, -1);
+  KEXPECT_EQ(stat.st_ino, read_vnode);
+  KEXPECT_EQ(0, vfs_close(fd));
 }
 
 static void null_lookup_test(fs_t* fs) {
@@ -129,7 +147,8 @@ static void null_lookup_test(fs_t* fs) {
   KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
 }
 
-static int no_read(fs_t* fs, void* arg, int offset, void* outbuf, int buflen) {
+static int no_read(fs_t* fs, void* arg, int vnode, int offset, void* outbuf,
+                   int buflen) {
   return 0;
 }
 

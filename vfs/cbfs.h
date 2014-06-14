@@ -26,7 +26,7 @@ struct cbfs_inode;
 typedef struct cbfs_inode cbfs_inode_t;
 
 // A function that reads from a dynamic file in a cbfs.
-typedef int (*cbfs_read_t)(fs_t* fs, void* arg, int offset,
+typedef int (*cbfs_read_t)(fs_t* fs, void* arg, int vnode, int offset,
                            void* buf, int buflen);
 
 // A function that looks up a dynamic vnode.
