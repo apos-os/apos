@@ -47,6 +47,7 @@ struct cbfs_inode {
 typedef struct {
   fs_t fs;
   int next_ino;
+  int max_static_vnode;
   cbfs_inode_t root;
   htbl_t vnode_table;
   cbfs_lookup_t lookup_cb;
@@ -55,6 +56,13 @@ typedef struct {
 
 static inline cbfs_t* fs_to_cbfs(fs_t* f) {
   return (cbfs_t*)f;
+}
+
+static inline int alloc_inode_num(cbfs_t* fs) {
+  if (fs->next_ino >= fs->max_static_vnode)
+    return -ENOSPC;
+  else
+    return fs->next_ino++;
 }
 
 // Get the given inode from the vnode table.  Returns 0 on success, and sets
@@ -212,7 +220,8 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
-fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg) {
+fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
+                  int max_static_vnode) {
   cbfs_t* f = (cbfs_t*)kmalloc(sizeof(cbfs_t));
   vfs_fs_init(&f->fs);
 
@@ -235,6 +244,7 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg) {
   f->fs.write_page = &cbfs_write_page;
 
   f->next_ino = 1;
+  f->max_static_vnode = max_static_vnode;
   init_inode(&f->root);
   f->root.num = CBFS_ROOT_INO;
   f->root.type = VNODE_DIRECTORY;
@@ -314,7 +324,10 @@ static int create_path(cbfs_t* cfs, const char* name,
     if (result != 0 && result != -ENOENT) return result;
     if (result == -ENOENT) {
       // Create the directory.
-      cbfs_inode_t* dir = create_inode(cfs, cfs->next_ino++);
+      const int dir_inode = alloc_inode_num(cfs);
+      if (dir_inode < 0) return dir_inode;
+
+      cbfs_inode_t* dir = create_inode(cfs, dir_inode);
       dir->type = VNODE_DIRECTORY;
       add_inode_to_vnode_table(cfs, dir);
       create_directory_entries(parent->num, dir);
@@ -350,7 +363,10 @@ int cbfs_create_file(fs_t* fs, const char* path,
     return -EEXIST;
   if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
 
-  inode = create_inode(cfs, cfs->next_ino++);
+  const int inode_num = alloc_inode_num(cfs);
+  if (inode_num < 0) return inode_num;
+
+  inode = create_inode(cfs, inode_num);
   inode->type = VNODE_REGULAR;
   inode->read_cb = read_cb;
   inode->arg = arg;
@@ -380,7 +396,10 @@ int cbfs_create_directory(fs_t* fs, const char* path,
     return -EEXIST;
   if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
 
-  inode = create_inode(cfs, cfs->next_ino++);
+  const int inode_num = alloc_inode_num(cfs);
+  if (inode_num < 0) return inode_num;
+
+  inode = create_inode(cfs, inode_num);
   inode->type = VNODE_DIRECTORY;
   inode->getdents_cb = getdents_cb;
   inode->arg = arg;

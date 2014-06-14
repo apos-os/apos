@@ -65,7 +65,11 @@ void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
 
 // Create a cbfs.  The given callback, if non-NULL, will be run when looking up
 // an unknown vnode.  It can be used to generate vnodes dynamically.
-fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg);
+// max_static_vnode is the maximum inode/vnode number that the cbfs will
+// allocate for static files and directories.  Use this to, e.g. set aside a
+// range for dynamic use.
+fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
+                  int max_static_vnode);
 
 // Free a created cbfs.
 void cbfs_free(fs_t* fs);

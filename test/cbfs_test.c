@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
 
@@ -174,7 +175,7 @@ static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
 
 static void lookup_function_test(void) {
   KTEST_BEGIN("cbfs: vnode lookup function");
-  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5);
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, INT_MAX);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
 
@@ -255,7 +256,7 @@ static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
 
 static void dynamic_directory_test(void) {
   KTEST_BEGIN("cbfs: dynamic directory");
-  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5);
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, INT_MAX);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
   KEXPECT_EQ(0, cbfs_create_directory(fs, "dir1", &dynamic_dir_getdents,
@@ -450,11 +451,43 @@ static void dynamic_directory_test(void) {
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
 }
 
+static void static_vnode_limit_test(void) {
+  KTEST_BEGIN("cbfs: static vnode limit test");
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, 5);
+  KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
+
+  // Should consume 2 of our 4.
+  KEXPECT_EQ(0, cbfs_create_directory(fs, "dir1/dir2", &dynamic_dir_getdents,
+                                      (void*)1, VFS_S_IRWXU));
+  KEXPECT_EQ(0, cbfs_create_file(fs, "file", &basic_file_read_test, (void*)0x1,
+                                 VFS_S_IRWXU));
+  KEXPECT_EQ(0, cbfs_create_file(fs, "dir1/file", &basic_file_read_test,
+                                 (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOSPC, cbfs_create_file(fs, "dir3/file", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  apos_stat_t stat;
+  KEXPECT_EQ(-ENOENT, vfs_lstat("cbfs_test_root/dir3", &stat));
+
+  KEXPECT_EQ(-ENOSPC,
+             cbfs_create_file(fs, "dir4/dir5/file", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("cbfs_test_root/dir4", &stat));
+  KEXPECT_EQ(-ENOSPC, cbfs_create_file(fs, "file2", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("cbfs_test_root/file2", &stat));
+  KEXPECT_EQ(-ENOSPC, cbfs_create_directory(fs, "dir6", &dynamic_dir_getdents,
+                                            (void*)1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("cbfs_test_root/dir6", &stat));
+
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+}
+
 void cbfs_test(void) {
   KTEST_SUITE_BEGIN("cbfs");
 
   KTEST_BEGIN("cbfs test setup");
-  fs_t* fs =  cbfs_create(0x0, 0x0);
+  fs_t* fs =  cbfs_create(0x0, 0x0, INT_MAX);
   vfs_mkdir("cbfs_test_root", VFS_S_IRWXU);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
@@ -466,6 +499,7 @@ void cbfs_test(void) {
 
   lookup_function_test();
   dynamic_directory_test();
+  static_vnode_limit_test();
 
 
   KTEST_BEGIN("cbfs test cleanup");

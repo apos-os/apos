@@ -14,6 +14,8 @@
 
 #include "proc/procfs.h"
 
+#include <limits.h>
+
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/list.h"
@@ -49,7 +51,7 @@ static int vnode_cache_read(fs_t* fs, void* arg, int vnode, int offset,
 }
 
 fs_t* procfs_create(void) {
-  fs_t* fs = cbfs_create(0x0, 0x0);
+  fs_t* fs = cbfs_create(0x0, 0x0, INT_MAX);
 
   cbfs_create_file(fs, "self/vm", &vm_read, 0x0, VFS_S_IRWXU);
   cbfs_create_file(fs, "vnode", &vnode_cache_read, 0x0, VFS_S_IRWXU);
