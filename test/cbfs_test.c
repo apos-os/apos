@@ -63,11 +63,23 @@ static void basic_file_test(fs_t* fs) {
 
   KEXPECT_EQ(0, vfs_close(fd));
 
+  KTEST_BEGIN("cbfs: leading slashes");
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "/file", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "//file", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(0, cbfs_create_file(fs, "//file2", &basic_file_read_test,
+                                 (void*)0x1, VFS_S_IRWXU));
+
   KTEST_BEGIN("cbfs: basic getdents");
   KEXPECT_EQ(0, compare_dirents_p(
-                    "cbfs_test_root", 3,
-                    (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "file"}}));
+                    "cbfs_test_root", 4,
+                    (edirent_t[]) {
+                        {-1, "."}, {-1, ".."}, {-1, "file"}, {-1, "file2"}}));
 
+  KTEST_BEGIN("cbfs: cannot create file at '/'");
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "/", &basic_file_read_test, 0x0,
+                                       VFS_S_IRWXU));
 
   KTEST_BEGIN("cbfs: creating directory over file");
   KEXPECT_EQ(-ENOTDIR, cbfs_create_file(fs, "file/f2", &basic_file_read_test,
@@ -82,8 +94,9 @@ static void basic_file_test(fs_t* fs) {
 
 
   KTEST_BEGIN("cbfs: multi-level directory creation");
-  KEXPECT_EQ(0, cbfs_create_file(fs, "dir1/dir2/dir3/f", &basic_file_read_test,
-                                 (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(0,
+             cbfs_create_file(fs, "dir1//dir2/dir3///f", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
   apos_stat_t stat;
   KEXPECT_EQ(0, vfs_lstat("cbfs_test_root/dir1", &stat));
   KEXPECT_EQ(VFS_S_IFDIR, stat.st_mode & VFS_S_IFMT);
@@ -368,6 +381,10 @@ static void dynamic_directory_test(void) {
              cbfs_create_directory(fs, "dir4/dirA/dirB", &dynamic_dir_getdents,
                                    (void*)1, VFS_S_IRWXU));
 
+  KTEST_BEGIN("cbfs: dynamic directory creation over root");
+  KEXPECT_EQ(-EEXIST, cbfs_create_directory(fs, "/", &dynamic_dir_getdents,
+                                            (void*)1, VFS_S_IRWXU));
+
   KTEST_BEGIN("cbfs: dynamic directory creation over file");
   KEXPECT_EQ(0, cbfs_create_file(fs, "file", &basic_file_read_test, (void*)0x1,
                                  VFS_S_IRWXU));
@@ -488,6 +505,12 @@ static void changing_getdents_test(void) {
       0, compare_dirents_p("cbfs_test_root/dir1", 3,
                            (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "B"}}));
 
+  KEXPECT_EQ(0, cbfs_directory_set_getdents(fs, "dir1//", &changed_getdentsA,
+                                            (void*)5));
+  KEXPECT_EQ(
+      0, compare_dirents_p("cbfs_test_root/dir1", 3,
+                           (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "A"}}));
+
   KTEST_BEGIN("cbfs: changing getdents to null");
   KEXPECT_EQ(
       0, cbfs_directory_set_getdents(fs, "dir1", 0x0, (void*)6));
@@ -513,8 +536,8 @@ static void changing_getdents_test(void) {
                            fs, "file/abc/def", &changed_getdentsA, (void*)0x5));
 
   KTEST_BEGIN("cbfs: changing getdents of root");
-  KEXPECT_EQ(0, cbfs_create_directory(fs, "/", &changed_getdentsA, (void*)5,
-                                      VFS_S_IRWXU));
+  KEXPECT_EQ(
+      0, cbfs_directory_set_getdents(fs, "/", &changed_getdentsA, (void*)5));
   KEXPECT_EQ(
       0,
       compare_dirents_p(

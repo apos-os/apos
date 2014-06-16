@@ -307,15 +307,22 @@ void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num) {
   kstrcpy(entry->name, name);
 }
 
+static inline const char* skip_slashes(const char* s) {
+  while (*s && *s == '/') s++;
+  return s;
+}
+
 // Lookup the given path and return the inode of the parent (if possible) and
 // the base name of the file, or an error.  If create_directories is non-zero,
 // any missing parent directories will be created.
 static int lookup_path(cbfs_t* cfs, const char* name, int create_directories,
-                       const char** base_name_out, cbfs_inode_t** parent_out) {
-  const char* name_start = name;
+                       char* base_name_out, cbfs_inode_t** parent_out) {
+  const char* name_start = skip_slashes(name);
+
   const char* name_end = kstrchrnul(name_start, '/');
+  const char* next_start = skip_slashes(name_end);
   cbfs_inode_t* parent = &cfs->root;
-  while (*name_end != '\0') {
+  while (*next_start != '\0') {
     if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
 
     char name[VFS_MAX_FILENAME_LENGTH];
@@ -342,19 +349,21 @@ static int lookup_path(cbfs_t* cfs, const char* name, int create_directories,
       child = dir;
     }
 
-    name_start = name_end + 1;
+    name_start = next_start;
     name_end = kstrchrnul(name_start, '/');
+    next_start = skip_slashes(name_end);
     parent = child;
   }
 
-  *base_name_out = name_start;
+  kstrncpy(base_name_out, name_start, name_end - name_start);
+  base_name_out[name_end - name_start] = '\0';
   *parent_out = parent;
 
   return 0;
 }
 
 static int create_path(cbfs_t* cfs, const char* name,
-                       const char** base_name_out, cbfs_inode_t** parent_out) {
+                       char* base_name_out, cbfs_inode_t** parent_out) {
   return lookup_path(cfs, name, 1, base_name_out, parent_out);
 }
 
@@ -362,10 +371,11 @@ int cbfs_create_file(fs_t* fs, const char* path,
                      cbfs_read_t read_cb, void* arg, mode_t mode) {
   cbfs_t* cfs = fs_to_cbfs(fs);
 
-  const char* name_start = 0x0;
+  char name_start[VFS_MAX_FILENAME_LENGTH];
   cbfs_inode_t* parent = 0x0;
-  int result = create_path(cfs, path, &name_start, &parent);
+  int result = create_path(cfs, path, name_start, &parent);
   if (result) return result;
+  if (!name_start[0]) return -EEXIST;  // root
 
   cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
@@ -395,10 +405,11 @@ int cbfs_create_directory(fs_t* fs, const char* path,
                           cbfs_getdents_t getdents_cb, void* arg, mode_t mode) {
   cbfs_t* cfs = fs_to_cbfs(fs);
 
-  const char* name_start = 0x0;
+  char name_start[VFS_MAX_FILENAME_LENGTH];
   cbfs_inode_t* parent = 0x0;
-  int result = create_path(cfs, path, &name_start, &parent);
+  int result = create_path(cfs, path, name_start, &parent);
   if (result) return result;
+  if (!name_start[0]) return -EEXIST;  // root
 
   cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
@@ -430,17 +441,21 @@ int cbfs_directory_set_getdents(fs_t* fs, const char* path,
                                 cbfs_getdents_t getdents_cb, void* arg) {
   cbfs_t* cfs = fs_to_cbfs(fs);
 
-  const char* name_start = 0x0;
+  char name_start[VFS_MAX_FILENAME_LENGTH];
   cbfs_inode_t* parent = 0x0;
-  int result = lookup_path(cfs, path, 0, &name_start, &parent);
+  int result = lookup_path(cfs, path, 0, name_start, &parent);
   if (result) return result;
 
   cbfs_inode_t generated_inode;
   cbfs_inode_t* inode = 0x0;
-  result = lookup_by_name(cfs, parent, name_start, &generated_inode, &inode);
-  if (result) return result;
-  KASSERT(parent->type == VNODE_DIRECTORY);
-  if (inode->type != VNODE_DIRECTORY) return -ENOTDIR;
+  if (name_start[0]) {
+    result = lookup_by_name(cfs, parent, name_start, &generated_inode, &inode);
+    if (result) return result;
+    KASSERT(parent->type == VNODE_DIRECTORY);
+    if (inode->type != VNODE_DIRECTORY) return -ENOTDIR;
+  } else {
+    inode = parent;
+  }
 
   inode->getdents_cb = getdents_cb;
   inode->arg = arg;
