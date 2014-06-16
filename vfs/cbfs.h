@@ -86,4 +86,8 @@ int cbfs_create_file(fs_t* fs, const char* name,
 int cbfs_create_directory(fs_t* fs, const char* path,
                           cbfs_getdents_t getdents_cb, void* arg, mode_t mode);
 
+// Change the getdents callback of an existing directory.
+int cbfs_directory_set_getdents(fs_t* fs, const char* path,
+                                cbfs_getdents_t getdents_cb, void* arg);
+
 #endif

@@ -451,6 +451,81 @@ static void dynamic_directory_test(void) {
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
 }
 
+static int changed_getdentsA(fs_t* fs, int vnode_num, void* arg, int offset,
+                             list_t* list_out, void* buf, int buflen) {
+  KEXPECT_EQ(5, (int)arg);
+  if (offset > 0) return 0;
+  cbfs_entry_t* entry = (cbfs_entry_t*)buf;
+  cbfs_create_entry(entry, "A", 100);
+  list_push(list_out, &entry->link);
+  return 0;
+}
+
+static int changed_getdentsB(fs_t* fs, int vnode_num, void* arg, int offset,
+                             list_t* list_out, void* buf, int buflen) {
+  KEXPECT_EQ(6, (int)arg);
+  if (offset > 0) return 0;
+  cbfs_entry_t* entry = (cbfs_entry_t*)buf;
+  cbfs_create_entry(entry, "B", 100);
+  list_push(list_out, &entry->link);
+  return 0;
+}
+
+static void changing_getdents_test(void) {
+  KTEST_BEGIN("cbfs: changing getdents");
+  fs_t* fs =  cbfs_create(0x0, 0x0, INT_MAX);
+  KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
+
+  KEXPECT_EQ(0, cbfs_create_directory(fs, "dir1", &changed_getdentsA, (void*)5,
+                                      VFS_S_IRWXU));
+  KEXPECT_EQ(
+      0, compare_dirents_p("cbfs_test_root/dir1", 3,
+                           (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "A"}}));
+
+  KEXPECT_EQ(
+      0, cbfs_directory_set_getdents(fs, "dir1", &changed_getdentsB, (void*)6));
+  KEXPECT_EQ(
+      0, compare_dirents_p("cbfs_test_root/dir1", 3,
+                           (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "B"}}));
+
+  KTEST_BEGIN("cbfs: changing getdents to null");
+  KEXPECT_EQ(
+      0, cbfs_directory_set_getdents(fs, "dir1", 0x0, (void*)6));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root/dir1", 2,
+                                  (edirent_t[]) {{-1, "."}, {-1, ".."}}));
+
+  KTEST_BEGIN("cbfs: changing getdents on file");
+  KEXPECT_EQ(0, cbfs_create_file(fs, "file", &basic_file_read_test, (void*)0x1,
+                                 VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOTDIR, cbfs_directory_set_getdents(
+                           fs, "file", &changed_getdentsA, (void*)0x5));
+
+  KTEST_BEGIN("cbfs: changing getdents on non-existant paths");
+  KEXPECT_EQ(-ENOENT, cbfs_directory_set_getdents(
+                          fs, "dir_not", &changed_getdentsA, (void*)0x5));
+  KEXPECT_EQ(-ENOENT, cbfs_directory_set_getdents(
+                          fs, "dir_not/dir2", &changed_getdentsA, (void*)0x5));
+  KEXPECT_EQ(-ENOENT, cbfs_directory_set_getdents(
+                          fs, "dir1/noent", &changed_getdentsA, (void*)0x5));
+  KEXPECT_EQ(-ENOTDIR, cbfs_directory_set_getdents(
+                           fs, "file/abc", &changed_getdentsA, (void*)0x5));
+  KEXPECT_EQ(-ENOTDIR, cbfs_directory_set_getdents(
+                           fs, "file/abc/def", &changed_getdentsA, (void*)0x5));
+
+  KTEST_BEGIN("cbfs: changing getdents of root");
+  KEXPECT_EQ(0, cbfs_create_directory(fs, "/", &changed_getdentsA, (void*)5,
+                                      VFS_S_IRWXU));
+  KEXPECT_EQ(
+      0,
+      compare_dirents_p(
+          "cbfs_test_root", 4,
+          (edirent_t[]) {
+              {-1, "."}, {-1, ".."}, {-1, "dir1"}, {-1, "file"}, {-1, "A"}}));
+
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+}
+
 static void static_vnode_limit_test(void) {
   KTEST_BEGIN("cbfs: static vnode limit test");
   fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, 5);
@@ -499,6 +574,7 @@ void cbfs_test(void) {
 
   lookup_function_test();
   dynamic_directory_test();
+  changing_getdents_test();
   static_vnode_limit_test();
 
 
