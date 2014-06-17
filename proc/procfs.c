@@ -38,6 +38,7 @@
 #define PROC_VNODES_PER_PROC  1000
 #define PROC_VNODE_DIR_OFFSET 0
 #define PROC_VNODE_VM_OFFSET  1
+#define PROC_VNODE_STATUS_OFFSET  2
 
 static inline int proc_dir_vnode(pid_t pid) {
   return PROC_VNODE_OFFSET + pid * PROC_VNODES_PER_PROC + PROC_VNODE_DIR_OFFSET;
@@ -55,6 +56,8 @@ _Static_assert(PROC_VNODES_PER_PROC >= PROC_MAX_FDS, "Not enough vnode space");
 
 static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
                    int buflen);
+static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
+                       int buflen);
 
 // Helper struct for defining entries in the process directories.
 typedef struct {
@@ -70,6 +73,7 @@ typedef struct {
 
 const proc_entry_spec_t kStaticPerProcEntries[] = {
   {"vm", PROC_VNODE_VM_OFFSET, vm_read},
+  {"status", PROC_VNODE_STATUS_OFFSET, status_read},
 };
 
 const unsigned int kNumStaticEntries =
@@ -97,6 +101,46 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
     link = link->next;
   }
 
+  return kstrlen(buf);
+}
+
+static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
+                       int buflen) {
+  // TODO(aoates): handle non-zero offsets
+  if (offset > 0) return 0;
+
+  const pid_t pid = proc_vnode_to_pid(vnode);
+  if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
+  const process_t* const proc = proc_get(pid);
+  if (!proc) return -EINVAL;
+
+  char tbuf[1024];
+  ksprintf(tbuf,
+           "pid: %d\n"
+           "state: %s\n"
+           "ppid: %d\n"
+           "ruid/rgid: %5d %5d\n"
+           "euid/egid: %5d %5d\n"
+           "suid/sgid: %5d %5d\n"
+           "pgroup: %d\n"
+           "exec'ed: %d\n"
+           "children:\n"
+           "",
+           pid, proc_state_to_string(proc->state),
+           proc->parent ? proc->parent->id : -1, proc->ruid, proc->rgid,
+           proc->euid, proc->egid, proc->suid, proc->sgid, proc->pgroup,
+           proc->execed);
+  char* buf_ptr = tbuf + kstrlen(tbuf);
+  for (list_link_t* link = proc->children_list.head;
+       link != 0x0;
+       link = link->next) {
+    const process_t* const child = container_of(link, process_t, children_link);
+    ksprintf(buf_ptr, "  %5d (%s)\n", child->id,
+             proc_state_to_string(child->state));
+    buf_ptr += kstrlen(buf_ptr);
+  }
+  kstrncpy(buf, tbuf, buflen);
+  ((char*)buf)[buflen - 1] = '\0';
   return kstrlen(buf);
 }
 

@@ -35,6 +35,8 @@ typedef enum {
   PROC_ZOMBIE,
 } proc_state_t;
 
+static inline const char* proc_state_to_string(proc_state_t state);
+
 // Note: any fields added here (and potentially in kthread_t) must be properly
 // handled in fork(), execve(), and exit().
 struct process {
@@ -119,5 +121,17 @@ process_t* proc_get(pid_t id);
 
 // Return the process group with the given ID.
 list_t* proc_group_get(pid_t gid);
+
+
+// Implementations.
+
+static inline const char* proc_state_to_string(proc_state_t state) {
+  switch (state) {
+    case PROC_INVALID: return "INVALID";
+    case PROC_RUNNING: return "RUNNING";
+    case PROC_ZOMBIE: return "ZOMBIE";
+  }
+  return "<unknown>";
+}
 
 #endif
