@@ -43,10 +43,6 @@ static inline int proc_dir_vnode(pid_t pid) {
   return PROC_VNODE_OFFSET + pid * PROC_VNODES_PER_PROC + PROC_VNODE_DIR_OFFSET;
 }
 
-static inline int proc_vm_vnode(pid_t pid) {
-  return PROC_VNODE_OFFSET + pid * PROC_VNODES_PER_PROC + PROC_VNODE_VM_OFFSET;
-}
-
 static inline pid_t proc_vnode_to_pid(int vnode) {
   return (vnode - PROC_VNODE_OFFSET) / PROC_VNODES_PER_PROC;
 }
@@ -56,6 +52,28 @@ static inline int proc_vnode_to_offset(int vnode) {
 }
 
 _Static_assert(PROC_VNODES_PER_PROC >= PROC_MAX_FDS, "Not enough vnode space");
+
+static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
+                   int buflen);
+
+// Helper struct for defining entries in the process directories.
+typedef struct {
+  // Name of the entry.
+  const char* name;
+
+  // Offset of this vnode in the process's vnode space.
+  int vnode_offset;
+
+  // Function to read the file.
+  cbfs_read_t read_cb;
+} proc_entry_spec_t;
+
+const proc_entry_spec_t kStaticPerProcEntries[] = {
+  {"vm", PROC_VNODE_VM_OFFSET, vm_read},
+};
+
+const unsigned int kNumStaticEntries =
+    sizeof(kStaticPerProcEntries) / sizeof(proc_entry_spec_t);
 
 static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
                    int buflen) {
@@ -102,6 +120,7 @@ static int procfs_get_vnode(fs_t* fs, void* arg, int vnode,
 
   if (proc < 0 || proc >= PROC_MAX_PROCS) return -EINVAL;
 
+  // Per-process directory.
   if (proc_offset == PROC_VNODE_DIR_OFFSET) {
     cbfs_inode_create_directory(inode_out, vnode, fs->get_root(fs),
                                 &single_proc_getdents, 0x0, SUPERUSER_UID,
@@ -109,11 +128,13 @@ static int procfs_get_vnode(fs_t* fs, void* arg, int vnode,
     return 0;
   }
 
-  if (proc_offset == PROC_VNODE_VM_OFFSET) {
-    KASSERT_DBG(vnode == proc_vm_vnode(proc));
-    cbfs_inode_create_file(inode_out, vnode, &vm_read, 0x0, SUPERUSER_UID,
-                           SUPERUSER_GID, VFS_S_IRUSR);
-    return 0;
+  for (unsigned int i = 0; i < kNumStaticEntries; ++i) {
+    const proc_entry_spec_t* entry_spec = &kStaticPerProcEntries[i];
+    if (proc_offset == entry_spec->vnode_offset) {
+      cbfs_inode_create_file(inode_out, vnode, entry_spec->read_cb, 0x0,
+                             SUPERUSER_UID, SUPERUSER_GID, VFS_S_IRUSR);
+      return 0;
+    }
   }
 
   return -ENOENT;
@@ -146,11 +167,16 @@ static int proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
 
 static int single_proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                                 list_t* list_out, void* buf, int buflen) {
-  if (offset < 1) {
-    const int entry_size = cbfs_entry_size("vm");
+  const pid_t pid = proc_vnode_to_pid(vnode_num);
+  for (unsigned int i = offset; i < kNumStaticEntries; ++i) {
+    const proc_entry_spec_t* entry_spec = &kStaticPerProcEntries[i];
+    const int entry_size = cbfs_entry_size(entry_spec->name);
     if (entry_size > buflen) return 0;
+
+    const int entry_vnode = PROC_VNODE_OFFSET + pid * PROC_VNODES_PER_PROC +
+                            entry_spec->vnode_offset;
     cbfs_entry_t* entry = (cbfs_entry_t*)buf;
-    cbfs_create_entry(entry, "vm", proc_vm_vnode(proc_vnode_to_pid(vnode_num)));
+    cbfs_create_entry(entry, kStaticPerProcEntries[i].name, entry_vnode);
     list_push(list_out, &entry->link);
 
     buf += entry_size;
