@@ -27,6 +27,7 @@
 #include "proc/user.h"
 #include "vfs/cbfs.h"
 #include "vfs/vfs.h"
+#include "vfs/vnode.h"
 #include "vfs/vfs_util.h"
 
 // Constants that help us carve up the dynamic vnode space.  Each process gets a
@@ -114,11 +115,17 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   const process_t* const proc = proc_get(pid);
   if (!proc) return -EINVAL;
 
+  char cwd[VFS_MAX_PATH_LENGTH];
+  int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
+  if (result < 0)
+    ksprintf(cwd, "<unable to determine cwd: %s>", errorname(-result));
+
   char tbuf[1024];
   ksprintf(tbuf,
            "pid: %d\n"
            "state: %s\n"
            "ppid: %d\n"
+           "cwd: %s\n"
            "ruid/rgid: %5d %5d\n"
            "euid/egid: %5d %5d\n"
            "suid/sgid: %5d %5d\n"
@@ -127,7 +134,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
            "children:\n"
            "",
            pid, proc_state_to_string(proc->state),
-           proc->parent ? proc->parent->id : -1, proc->ruid, proc->rgid,
+           proc->parent ? proc->parent->id : -1, cwd, proc->ruid, proc->rgid,
            proc->euid, proc->egid, proc->suid, proc->sgid, proc->pgroup,
            proc->execed);
   char* buf_ptr = tbuf + kstrlen(tbuf);
