@@ -129,4 +129,9 @@ static inline vnode_t* VFS_COPY_REF(vnode_t* ref) {
       *_x = 0x0; \
       _old_val; })
 
+// Return the full pathname of the given vnode, which *must* be a directory, in
+// the given buffer.  Returns the length of the string on success, or -error on
+// error.
+int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size);
+
 #endif

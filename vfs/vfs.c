@@ -222,6 +222,79 @@ void vfs_put(vnode_t* vnode) {
   }
 }
 
+int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
+  if (!path_out || size < 0) {
+    return -EINVAL;
+  }
+
+  if (size < 2) {
+    return -ERANGE;
+  }
+
+  if (vnode->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
+  int size_out = 0;
+  char* cpath = path_out;
+  vnode_t* n = VFS_COPY_REF(vnode);
+
+  // Add an initial '/', which will be trailing at the end.
+  kstrcpy(cpath, "/");
+  cpath++;
+  size_out++;
+  size--;
+
+  fs_t* root_fs = vfs_get_root_fs();
+  while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
+    // First find the parent vnode.
+    vnode_t* parent = 0x0;
+    int result = lookup(&n, "..", &parent);
+    if (result < 0) {
+      VFS_PUT_AND_CLEAR(n);
+      return result;
+    }
+
+    const int inode = n->num;
+    VFS_PUT_AND_CLEAR(n);
+
+    // ...then get the name of the *current* vnode.
+    result = lookup_by_inode(parent, inode, cpath, size);
+    // TODO(aoates): handle ENOENT more gracefully.
+    if (result < 0) {
+      VFS_PUT_AND_CLEAR(parent);
+      return result;
+    }
+    size_out += result;
+    cpath += result;
+    size -= result;
+
+    // Add a trailing '/'.
+    if (size < 2) {
+      VFS_PUT_AND_CLEAR(parent);
+      return -ERANGE;
+    }
+    kstrcpy(cpath, "/");
+    cpath++;
+    size_out++;
+    size--;
+
+    // Recur.
+    n = VFS_MOVE_REF(parent);
+  }
+
+  VFS_PUT_AND_CLEAR(n);
+
+  if (size_out > 1) {
+    reverse_path(path_out);
+    KASSERT_DBG(path_out[size_out - 1] == '/');
+    path_out[size_out - 1] = '\0';
+    size_out--;
+  }
+
+  return size_out;
+}
+
 int vfs_open(const char* path, uint32_t flags, ...) {
   // Check arguments.
   const uint32_t mode = flags & VFS_MODE_MASK;
@@ -697,72 +770,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
 }
 
 int vfs_getcwd(char* path_out, int size) {
-  if (!path_out || size < 0) {
-    return -EINVAL;
-  }
-
-  if (size < 2) {
-    return -ERANGE;
-  }
-
-  int size_out = 0;
-  char* cpath = path_out;
-  vnode_t* n = VFS_COPY_REF(proc_current()->cwd);
-
-  // Add an initial '/', which will be trailing at the end.
-  kstrcpy(cpath, "/");
-  cpath++;
-  size_out++;
-  size--;
-
-  fs_t* root_fs = vfs_get_root_fs();
-  while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
-    // First find the parent vnode.
-    vnode_t* parent = 0x0;
-    int result = lookup(&n, "..", &parent);
-    if (result < 0) {
-      VFS_PUT_AND_CLEAR(n);
-      return result;
-    }
-
-    const int inode = n->num;
-    VFS_PUT_AND_CLEAR(n);
-
-    // ...then get the name of the *current* vnode.
-    result = lookup_by_inode(parent, inode, cpath, size);
-    // TODO(aoates): handle ENOENT more gracefully.
-    if (result < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return result;
-    }
-    size_out += result;
-    cpath += result;
-    size -= result;
-
-    // Add a trailing '/'.
-    if (size < 2) {
-      VFS_PUT_AND_CLEAR(parent);
-      return -ERANGE;
-    }
-    kstrcpy(cpath, "/");
-    cpath++;
-    size_out++;
-    size--;
-
-    // Recur.
-    n = VFS_MOVE_REF(parent);
-  }
-
-  VFS_PUT_AND_CLEAR(n);
-
-  if (size_out > 1) {
-    reverse_path(path_out);
-    KASSERT_DBG(path_out[size_out - 1] == '/');
-    path_out[size_out - 1] = '\0';
-    size_out--;
-  }
-
-  return size_out;
+  return vfs_get_vnode_dir_path(proc_current()->cwd, path_out, size);
 }
 
 int vfs_chdir(const char* path) {

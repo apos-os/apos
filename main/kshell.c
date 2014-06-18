@@ -112,6 +112,7 @@ static test_entry_t TESTS[] = {
   { "user", &user_test, 1 },
   { "pgroup", &proc_group_test, 1 },
   { "exec", &exec_test, 1 },
+  { "cbfs", &cbfs_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
