@@ -450,6 +450,55 @@ static void unlink_test(void) {
   vfs_rmdir("/unlink");
 }
 
+static void get_path_test(void) {
+  KTEST_BEGIN("vfs_get_vnode_path(): basic test");
+  const int kBufSize = 200;
+  char buf[kBufSize];
+
+  vfs_mkdir("/vnode_path_test", 0);
+  vfs_mkdir("/vnode_path_test/a", 0);
+  vfs_mkdir("/vnode_path_test/a/b", 0);
+  create_file("/vnode_path_test/file", RWX);
+  create_file("/vnode_path_test/a/file", RWX);
+
+#define EXPECT_PATH(expected_path, path)                      \
+  do {                                                        \
+    int vnode_num = vfs_get_vnode_for_path(path);             \
+    vnode_t* vnode = vfs_get(vfs_get_root_fs(), vnode_num);   \
+    KEXPECT_EQ(kstrlen(expected_path),                        \
+               vfs_get_vnode_dir_path(vnode, buf, kBufSize)); \
+    KEXPECT_STREQ((expected_path), buf);                      \
+  } while (0)
+
+#define EXPECT_PATH_ERROR(error, path)                               \
+  do {                                                               \
+    int vnode_num = vfs_get_vnode_for_path(path);                    \
+    vnode_t* vnode = vfs_get(vfs_get_root_fs(), vnode_num);          \
+    KEXPECT_EQ(error, vfs_get_vnode_dir_path(vnode, buf, kBufSize)); \
+  } while (0)
+
+  EXPECT_PATH("/vnode_path_test", "/vnode_path_test");
+  EXPECT_PATH("/vnode_path_test/a", "/vnode_path_test//a");
+  EXPECT_PATH("/vnode_path_test/a", "/vnode_path_test/a/.");
+  EXPECT_PATH("/vnode_path_test/a", "/vnode_path_test/a/./");
+  EXPECT_PATH("/vnode_path_test", "/vnode_path_test/a/../");
+  EXPECT_PATH("/vnode_path_test/a", "/vnode_path_test/a/../a");
+  EXPECT_PATH("/vnode_path_test/a/b", "/vnode_path_test/a/../a/b");
+  EXPECT_PATH_ERROR(-ENOTDIR, "/vnode_path_test/a/../file");
+  EXPECT_PATH_ERROR(-ENOTDIR, "/vnode_path_test/a/../a/./file");
+
+  // TODO(aoates): test across mount points.
+  // TODO(aoates): test pathalogical cases (directories that loop to themselves,
+  // have no parent, etc).
+  // TODO(aoates): test for ENOTDIR on non-regular files
+
+  KEXPECT_EQ(0, vfs_unlink("/vnode_path_test/a/file"));
+  KEXPECT_EQ(0, vfs_unlink("/vnode_path_test/file"));
+  KEXPECT_EQ(0, vfs_rmdir("/vnode_path_test/a/b"));
+  KEXPECT_EQ(0, vfs_rmdir("/vnode_path_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("/vnode_path_test"));
+}
+
 static void cwd_test(void) {
   const int kBufSize = 100;
   char  buf[kBufSize];
@@ -2165,6 +2214,7 @@ void vfs_test(void) {
   file_table_reclaim_test();
   vfs_open_thread_safety_test();
   unlink_test();
+  get_path_test();
   cwd_test();
   rw_test();
   write_large_test();
