@@ -34,6 +34,7 @@ typedef enum {
   VNODE_DIRECTORY = 3,
   VNODE_BLOCKDEV = 4,
   VNODE_CHARDEV = 5,
+  VNODE_SYMLINK = 6,
 } vnode_type_t;
 // TODO(aoates): symlinks, etc.
 
