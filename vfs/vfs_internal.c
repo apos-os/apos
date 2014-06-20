@@ -67,7 +67,7 @@ int resolve_symlink(vnode_t* parent, vnode_t** child_ptr) {
 
     // TODO(aoates): limit number of recursions.
     vnode_t* symlink_target_node = 0x0;
-    error = lookup_existing_path_with_root(parent, symlink_target,
+    error = lookup_existing_path_with_root(parent, symlink_target, &parent,
                                            &symlink_target_node, 1);
     if (error) return error;
 
@@ -214,18 +214,19 @@ int lookup_path(vnode_t* root, const char* path,
   }
 }
 
-int lookup_existing_path(const char* path, vnode_t** child_out,
-                         int resolve_mount) {
+int lookup_existing_path(const char* path, vnode_t** parent_out,
+                         vnode_t** child_out, int resolve_mount) {
   if (!path) return -EINVAL;
   vnode_t* root = get_root_for_path(path);
-  int result =
-      lookup_existing_path_with_root(root, path, child_out, resolve_mount);
+  int result = lookup_existing_path_with_root(root, path, parent_out, child_out,
+                                              resolve_mount);
   VFS_PUT_AND_CLEAR(root);
   return result;
 }
 
 int lookup_existing_path_with_root(vnode_t* root, const char* path,
-                                   vnode_t** child_out, int resolve_mount) {
+                                   vnode_t** parent_out, vnode_t** child_out,
+                                   int resolve_mount) {
   if (!path) return -EINVAL;
 
   vnode_t* parent = 0x0;
@@ -239,11 +240,11 @@ int lookup_existing_path_with_root(vnode_t* root, const char* path,
   // Lookup the child inode.
   vnode_t* child;
   if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
+    child = VFS_COPY_REF(parent);
   } else {
     error = lookup(&parent, base_name, &child);
-    VFS_PUT_AND_CLEAR(parent);
     if (error < 0) {
+      VFS_PUT_AND_CLEAR(parent);
       return error;
     }
   }
@@ -251,12 +252,18 @@ int lookup_existing_path_with_root(vnode_t* root, const char* path,
   if (resolve_mount) {
     error = resolve_mounts(&child);
     if (error) {
+      VFS_PUT_AND_CLEAR(parent);
       VFS_PUT_AND_CLEAR(child);
       return error;
     }
   }
 
-  *child_out = child;
+  if (parent_out)
+    *parent_out = VFS_MOVE_REF(parent);
+  else
+    VFS_PUT_AND_CLEAR(parent);
+
+  *child_out = VFS_MOVE_REF(child);
   return 0;
 }
 

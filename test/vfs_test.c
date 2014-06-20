@@ -2278,6 +2278,20 @@ static void symlink_test(void) {
     vfs_close(fd);
   }
 
+  KTEST_BEGIN(
+      "vfs_symlink(): symlink to another symlink (in different directory)");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/dir1", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/dir1/dir2", VFS_S_IRWXU));
+  create_file("symlink_test/dir1/dir2/f", RWX);
+  KEXPECT_EQ(0, vfs_symlink("f", "symlink_test/dir1/dir2/link"));
+  KEXPECT_EQ(0, vfs_symlink("dir2/link", "symlink_test/dir1/link2"));
+  EXPECT_FILE_EXISTS("symlink_test/dir1/link2");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir1/dir2/f"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir1/dir2/link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir1/link2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir1/dir2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir1"));
+
 
   KTEST_BEGIN("vfs_symlink(): long symlinks");
   const char kPath58[] =
