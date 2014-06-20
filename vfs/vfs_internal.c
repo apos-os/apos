@@ -54,27 +54,35 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
-int resolve_symlink(vnode_t* parent, vnode_t** child_ptr) {
+int resolve_symlink(vnode_t* in_parent, vnode_t** child_ptr) {
   vnode_t* child = *child_ptr;
+  vnode_t* parent = VFS_COPY_REF(in_parent);
   while (child->type == VNODE_SYMLINK) {
     char symlink_target[VFS_MAX_PATH_LENGTH];
     if (ENABLE_KERNEL_SAFETY_NETS) {
       kmemset(symlink_target, 0, VFS_MAX_PATH_LENGTH);
     }
     int error = child->fs->readlink(child, symlink_target, VFS_MAX_PATH_LENGTH);
-    if (error < 0) return error;
+    if (error < 0) {
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
     symlink_target[error] = '\0';
 
     // TODO(aoates): limit number of recursions.
     vnode_t* symlink_target_node = 0x0;
-    error = lookup_existing_path_with_root(parent, symlink_target, &parent,
+    vnode_t* new_parent = 0x0;
+    error = lookup_existing_path_with_root(parent, symlink_target, &new_parent,
                                            &symlink_target_node, 1);
+    VFS_PUT_AND_CLEAR(parent);
     if (error) return error;
+    parent = VFS_MOVE_REF(new_parent);
 
     VFS_PUT_AND_CLEAR(child);
     child = VFS_MOVE_REF(symlink_target_node);
     *child_ptr = child;
   }
+  VFS_PUT_AND_CLEAR(parent);
   return 0;
 }
 
