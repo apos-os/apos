@@ -73,8 +73,8 @@ int resolve_symlink(vnode_t* parent, vnode_t** child_ptr) {
 
     VFS_PUT_AND_CLEAR(child);
     child = VFS_MOVE_REF(symlink_target_node);
+    *child_ptr = child;
   }
-  *child_ptr = child;
   return 0;
 }
 

@@ -49,7 +49,9 @@ int resolve_mounts(vnode_t** vnode);
 void resolve_mounts_up(vnode_t** parent, const char* child_name);
 
 // Resolve the given vnode if it is a symlink, replacing it with the final
-// target.  Resolves the symlink path relative to the parent.
+// target.  Resolves the symlink path relative to the parent.  On error, the
+// child pointer will point to *some* vnode, but not necessarily the original
+// one, and must still be vfs_put().
 int resolve_symlink(vnode_t* parent, vnode_t** vnode);
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
