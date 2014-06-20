@@ -2384,6 +2384,31 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
 
+
+  KTEST_BEGIN("vfs_chdir(): follows final symlink");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/chdir_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("chdir_dir", "symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_chdir("symlink_test/chdir_link"));
+
+  char cwd[VFS_MAX_PATH_LENGTH];
+  int cwd_len = vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH);
+  KEXPECT_GE(cwd_len, kstrlen("symlink_test/chdir_dir"));
+  KEXPECT_STREQ("symlink_test/chdir_dir",
+                cwd + (cwd_len - kstrlen("symlink_test/chdir_dir")));
+
+  KEXPECT_EQ(0, vfs_chdir("../.."));
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/chdir_dir"));
+
+
+  KTEST_BEGIN("vfs_chdir(): doesn't follow symlink to non-directory");
+  create_file("symlink_test/chdir_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("chdir_file", "symlink_test/chdir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_chdir("symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_file"));
+
   // TODO(aoates): test all syscalls
   // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory
