@@ -29,6 +29,8 @@
 
 #define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
 
+#define EXT2_SYMLINK_INLINE_LEN 60
+
 static vnode_t* ext2_alloc_vnode(struct fs* fs);
 static int ext2_get_root(struct fs* fs);
 static int ext2_get_vnode(vnode_t* vnode);
@@ -44,6 +46,8 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name);
 static int ext2_unlink(vnode_t* parent, const char* name);
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out);
+static int ext2_symlink(vnode_t* parent, const char* name, const char* path);
+static int ext2_readlink(vnode_t* node, char* buf, int bufsize);
 static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -977,6 +981,8 @@ void ext2_set_ops(fs_t* fs) {
   fs->unlink = &ext2_unlink;
   fs->getdents = &ext2_getdents;
   fs->stat = &ext2_stat;
+  fs->symlink = &ext2_symlink;
+  fs->readlink = &ext2_readlink;
   fs->read_page = &ext2_read_page;
   fs->write_page = &ext2_write_page;
 }
@@ -1015,6 +1021,8 @@ static int ext2_get_vnode(vnode_t* vnode) {
   } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFCHR) {
     vnode->type = VNODE_CHARDEV;
     vnode->dev = ext2_get_device(&inode);
+  } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFLNK) {
+    vnode->type = VNODE_SYMLINK;
   } else {
     KLOG(WARNING, "ext2: unsupported inode type: 0x%x\n", inode.i_mode);
     return -ENOTSUP;
@@ -1053,12 +1061,12 @@ static int ext2_put_vnode(vnode_t* vnode) {
   switch (vnode->type) {
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
-    case VNODE_SYMLINK:
       die("ext2: invalid vnode type"); break;
     case VNODE_REGULAR:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFREG); break;
     case VNODE_DIRECTORY: KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR); break;
     case VNODE_BLOCKDEV:  KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFBLK); break;
     case VNODE_CHARDEV:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFCHR); break;
+    case VNODE_SYMLINK:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFLNK); break;
   }
 
   inode.i_mode &= EXT2_S_MASK;  // Clear non-type inode bits.
@@ -1293,7 +1301,7 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
 }
 
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
-  KASSERT(vnode->type == VNODE_REGULAR);
+  KASSERT(vnode->type == VNODE_REGULAR || vnode->type == VNODE_SYMLINK);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(offset >= 0);
   KASSERT(offset <= vnode->len);
@@ -1334,7 +1342,8 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
 static int ext2_write_inode(ext2fs_t* fs, int vnode_num, ext2_inode_t* inode,
                             int offset, const void* buf, int bufsize) {
-  KASSERT((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFREG);
+  KASSERT((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFREG ||
+          (inode->i_mode & EXT2_S_MASK) == EXT2_S_IFLNK);
   KASSERT(offset >= 0);
 
   // Resize the file if needed.
@@ -1534,6 +1543,88 @@ int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   stat_out->st_blocks = inode.i_blocks;
 
   return 0;
+}
+
+static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t parent_inode;
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, parent->num, &parent_inode);
+  if (result) {
+    return result;
+  }
+
+  result = lookup_internal(fs, &parent_inode, name, 0x0, 0x0);
+  if (result == 0) {
+    return -EEXIST;
+  } else if (result != -ENOENT) {
+    return result;
+  }
+
+  ext2_inode_t child_inode;
+  const int child_inode_num =
+      make_inode(fs, parent->num, EXT2_S_IFLNK, mkdev(0, 0), &child_inode);
+  if (child_inode_num < 0) {
+    return child_inode_num;
+  }
+
+  // Write the path.
+  const int path_len = kstrlen(path);
+  if (path_len < EXT2_SYMLINK_INLINE_LEN) {
+    kmemcpy(child_inode.i_block, path, path_len);
+  } else {
+    result =
+        ext2_write_inode(fs, child_inode_num, &child_inode, 0, path, path_len);
+    if (result < 0) {
+      // TODO(aoates): free the allocated inode
+      return result;
+    }
+  }
+  child_inode.i_size = path_len;
+
+  result = write_inode(fs, child_inode_num, &child_inode);
+  if (result) {
+    KLOG(WARNING, "Unable to writeback inode %d: %s\n",
+         child_inode_num, errorname(-result));
+    return result;
+  }
+
+  // Link it into the directory.
+  result = link_internal(fs, &parent_inode, parent->num, name, child_inode_num);
+  parent->len = parent_inode.i_size;
+  if (result) {
+    // TODO(aoates): free the allocated inode
+    return result;
+  }
+
+  return 0;
+}
+
+static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
+  KASSERT(vnode->type == VNODE_SYMLINK);
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+
+  if (vnode->len < EXT2_SYMLINK_INLINE_LEN) {
+    ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+    ext2_inode_t inode;
+    // TODO(aoates): do we want to store the inode in the vnode?
+    int result = get_inode(fs, vnode->num, &inode);
+    if (result) return result;
+
+    const int bytes_to_copy = min((int)inode.i_size, bufsize);
+    kmemcpy(buf, inode.i_block, bytes_to_copy);
+
+    return bytes_to_copy;
+  } else {
+    return ext2_read(vnode, 0, buf, bufsize);
+  }
 }
 
 // Either read or write a page from the file.
