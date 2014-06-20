@@ -2369,6 +2369,21 @@ static void symlink_test(void) {
   EXPECT_FILE_EXISTS("symlink_test/unlink_file");
   KEXPECT_EQ(0, vfs_unlink("symlink_test/unlink_file"));
 
+
+  KTEST_BEGIN("vfs_lstat(): doesn't follow final symlink");
+  create_file("symlink_test/stat_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
+  KEXPECT_NE(vfs_get_vnode_for_path("symlink_test/stat_file"),
+             vfs_get_vnode_for_path("symlink_test/stat_link"));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(vfs_get_vnode_for_path("symlink_test/stat_link"), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFLNK, stat.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+
   // TODO(aoates): test all syscalls
   // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory

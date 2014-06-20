@@ -26,6 +26,7 @@ typedef uint32_t mode_t;
 #define VFS_S_IFCHR     0x020000
 #define VFS_S_IFBLK     0x040000
 #define VFS_S_IFDIR     0x080000
+#define VFS_S_IFLNK     0x100000
 
 // Mode flags for mode_t.
 #define VFS_S_IRWXU     0x000700

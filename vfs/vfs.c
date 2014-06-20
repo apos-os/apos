@@ -867,6 +867,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_DIRECTORY: stat->st_mode |= VFS_S_IFDIR; break;
     case VNODE_BLOCKDEV: stat->st_mode |= VFS_S_IFBLK; break;
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
+    case VNODE_SYMLINK: stat->st_mode |= VFS_S_IFLNK; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
   stat->st_mode |= vnode->mode;
