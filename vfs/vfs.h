@@ -138,4 +138,8 @@ int vfs_lchmod(const char* path, mode_t mode);
 // Changes the file mode of the given fd.  Returns 0 on success, or -error.
 int vfs_fchmod(int fd, mode_t mode);
 
+// Create a symlink at path2 pointing to (containing) path1.  Returns 0 on
+// success, or -error.
+int vfs_symlink(const char* path1, const char* path2);
+
 #endif

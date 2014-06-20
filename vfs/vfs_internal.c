@@ -54,6 +54,30 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
+int resolve_symlink(vnode_t* parent, vnode_t** child_ptr) {
+  vnode_t* child = *child_ptr;
+  while (child->type == VNODE_SYMLINK) {
+    char symlink_target[VFS_MAX_PATH_LENGTH];
+    if (ENABLE_KERNEL_SAFETY_NETS) {
+      kmemset(symlink_target, 0, VFS_MAX_PATH_LENGTH);
+    }
+    int error = child->fs->readlink(child, symlink_target, VFS_MAX_PATH_LENGTH);
+    if (error < 0) return error;
+    symlink_target[error] = '\0';
+
+    // TODO(aoates): limit number of recursions.
+    vnode_t* symlink_target_node = 0x0;
+    error = lookup_existing_path_with_root(parent, symlink_target,
+                                           &symlink_target_node, 1);
+    if (error) return error;
+
+    VFS_PUT_AND_CLEAR(child);
+    child = VFS_MOVE_REF(symlink_target_node);
+  }
+  *child_ptr = child;
+  return 0;
+}
+
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   kmutex_assert_is_held(&parent->mutex);
   int child_inode = parent->fs->lookup(parent, name);
@@ -63,6 +87,7 @@ int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   }
 
   *child_out = vfs_get(parent->fs, child_inode);
+  if (!*child_out) return -EINVAL;
   return 0;
 }
 
@@ -160,12 +185,18 @@ int lookup_path(vnode_t* root, const char* path,
     // Otherwise, descend again.
     vnode_t* child = 0x0;
     int error = lookup(&n, base_name_out, &child);
-    VFS_PUT_AND_CLEAR(n);
     if (error) {
+      VFS_PUT_AND_CLEAR(n);
       return error;
     }
 
-    // TODO(aoates): symlink
+    error = resolve_symlink(n, &child);
+    VFS_PUT_AND_CLEAR(n);
+    if (error) {
+      VFS_PUT_AND_CLEAR(child);
+      return error;
+    }
+
     if (child->type != VNODE_DIRECTORY) {
       VFS_PUT_AND_CLEAR(child);
       return -ENOTDIR;
@@ -183,16 +214,24 @@ int lookup_path(vnode_t* root, const char* path,
   }
 }
 
-int lookup_existing_path(const char*path, vnode_t** child_out,
+int lookup_existing_path(const char* path, vnode_t** child_out,
                          int resolve_mount) {
   if (!path) return -EINVAL;
-
   vnode_t* root = get_root_for_path(path);
+  int result =
+      lookup_existing_path_with_root(root, path, child_out, resolve_mount);
+  VFS_PUT_AND_CLEAR(root);
+  return result;
+}
+
+int lookup_existing_path_with_root(vnode_t* root, const char* path,
+                                   vnode_t** child_out, int resolve_mount) {
+  if (!path) return -EINVAL;
+
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   int error = lookup_path(root, path, &parent, base_name);
-  VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }

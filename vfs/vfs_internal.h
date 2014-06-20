@@ -48,6 +48,10 @@ int resolve_mounts(vnode_t** vnode);
 // vnode with the mount point.
 void resolve_mounts_up(vnode_t** parent, const char* child_name);
 
+// Resolve the given vnode if it is a symlink, replacing it with the final
+// target.  Resolves the symlink path relative to the parent.
+int resolve_symlink(vnode_t* parent, vnode_t** vnode);
+
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
 //
@@ -105,6 +109,10 @@ int lookup_path(vnode_t* root, const char* path,
 // otherwise.
 int lookup_existing_path(const char* path, vnode_t** child_out,
                          int resolve_mount);
+
+// As above, but lets you specify a particular root vnode for the path.
+int lookup_existing_path_with_root(vnode_t* root, const char* path,
+                                   vnode_t** child_out, int resolve_mount);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.

@@ -328,7 +328,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   vnode_t* child;
   int created = 0;
   if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
+    child = VFS_COPY_REF(parent);
   } else {
     kmutex_lock(&parent->mutex);
     error = lookup_locked(parent, base_name, &child);
@@ -369,7 +369,13 @@ int vfs_open(const char* path, uint32_t flags, ...) {
 
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
+  }
+
+  error = resolve_symlink(parent, &child);
+  VFS_PUT_AND_CLEAR(parent);
+  if (error) {
+    VFS_PUT_AND_CLEAR(child);
+    return error;
   }
 
   error = resolve_mounts(&child);
@@ -394,6 +400,13 @@ int vfs_open(const char* path, uint32_t flags, ...) {
       VFS_PUT_AND_CLEAR(child);
       return mode_check;
     }
+  }
+
+  if (child->type == VNODE_SYMLINK) {
+    KLOG(ERROR, "vfs: got a symlink file in vfs_open('%s') (should have "
+         "been resolved)\n", path);
+    VFS_PUT_AND_CLEAR(child);
+    return -EIO;
   }
 
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
@@ -981,4 +994,34 @@ int vfs_fchmod(int fd, mode_t mode) {
 
   file->refcount--;
   return result;
+}
+
+int vfs_symlink(const char* path1, const char* path2) {
+  if (!path1 || !path2) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path2);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path2, &parent, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    VFS_PUT_AND_CLEAR(parent);
+    return -EEXIST;  // Root directory!
+  }
+
+  if (!parent->fs->symlink) {
+    VFS_PUT_AND_CLEAR(parent);
+    return -EPERM;
+  }
+
+  error = parent->fs->symlink(parent, base_name, path1);
+  VFS_PUT_AND_CLEAR(parent);
+  return error;
 }

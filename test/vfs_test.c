@@ -2198,6 +2198,154 @@ static void mknod_mode_test(void) {
   vfs_rmdir(kDir);
 }
 
+static void symlink_test(void) {
+  const int kBufSize = 100;
+  char buf[kBufSize];
+  int fd;
+
+  KTEST_BEGIN("vfs_symlink(): symlink to file");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test", VFS_S_IRWXU));
+  create_file_with_data("symlink_test/file", "abcd");
+
+  KEXPECT_EQ(0, vfs_symlink("file", "symlink_test/link_to_file"));
+
+  fd = vfs_open("symlink_test/link_to_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    KEXPECT_EQ(4, vfs_read(fd, buf, kBufSize));
+    buf[4] = '\0';
+    KEXPECT_STREQ("abcd", buf);
+    vfs_close(fd);
+  }
+
+  KTEST_BEGIN("vfs_symlink(): symlink to directory");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/dir", VFS_S_IRWXU));
+  create_file("symlink_test/dir/file1", RWX);
+  create_file("symlink_test/dir/file2", RWX);
+
+  KEXPECT_EQ(0, vfs_symlink("dir", "symlink_test/link_to_dir"));
+  KEXPECT_EQ(0, compare_dirents_p(
+                    "symlink_test/link_to_dir", 4,
+                    (edirent_t[]) {
+                        {-1, "."}, {-1, ".."}, {-1, "file1"}, {-1, "file2"}}));
+
+  KTEST_BEGIN("vfs_symlink(): symlink to directory (in middle of path)");
+  fd = vfs_open("symlink_test/link_to_dir/file1", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  KEXPECT_EQ(0, vfs_symlink("..", "symlink_test/link_to_dir2"));
+  KEXPECT_EQ(
+      0,
+      compare_dirents_p(
+          "symlink_test/link_to_dir2/symlink_test/link_to_dir2/./symlink_test/"
+          "dir",
+          4,
+          (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "file1"}, {-1, "file2"}}));
+
+  KTEST_BEGIN("vfs_symlink(): symlink over existing file");
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "/"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/link_to_file"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/link_to_dir"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/file"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/dir"));
+
+  KTEST_BEGIN("vfs_symlink(): symlink at bad path");
+  KEXPECT_EQ(-ENOENT, vfs_symlink("dir", "noent/dir/x"));
+  KEXPECT_EQ(-ENOENT, vfs_symlink("dir", "symlink_test/dir2/x"));
+  KEXPECT_EQ(-ENOTDIR, vfs_symlink("dir", "symlink_test/file/x"));
+
+  KTEST_BEGIN("vfs_symlink(): symlink pointing to bad path");
+  KEXPECT_EQ(0, vfs_symlink("../bad/path", "symlink_test/bad_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link", VFS_O_RDONLY));
+
+  KTEST_BEGIN("vfs_symlink(): invalid arguments");
+  // TODO(aoates): test too-long paths
+  KEXPECT_EQ(-EINVAL, vfs_symlink(0x0, "symlink_test/bad_link"));
+  KEXPECT_EQ(-EINVAL, vfs_symlink("symlink_test/bad_link", 0x0));
+
+
+  KTEST_BEGIN("vfs_symlink(): symlink to another symlink");
+  KEXPECT_EQ(0,
+             vfs_symlink("link_to_file", "symlink_test/link_to_link_to_file"));
+
+  fd = vfs_open("symlink_test/link_to_link_to_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    KEXPECT_EQ(4, vfs_read(fd, buf, kBufSize));
+    buf[4] = '\0';
+    KEXPECT_STREQ("abcd", buf);
+    vfs_close(fd);
+  }
+
+
+  KTEST_BEGIN("vfs_symlink(): long symlinks");
+  const char kPath58[] =
+      "./././././././././././././././././././././././././././file";
+  const char kPath59[] =
+      "./././././././././././././././././././././././././././/file";
+  const char kPath60[] =
+      "././././././././././././././././././././././././././././file";
+  const char kPath61[] =
+      "././././././././././././././././././././././././././././/file";
+  KEXPECT_EQ(58, kstrlen(kPath58));
+  KEXPECT_EQ(59, kstrlen(kPath59));
+  KEXPECT_EQ(60, kstrlen(kPath60));
+  KEXPECT_EQ(61, kstrlen(kPath61));
+
+  KEXPECT_EQ(0, vfs_symlink(kPath58, "symlink_test/link58"));
+  KEXPECT_EQ(0, vfs_symlink(kPath59, "symlink_test/link59"));
+  KEXPECT_EQ(0, vfs_symlink(kPath60, "symlink_test/link60"));
+  KEXPECT_EQ(0, vfs_symlink(kPath61, "symlink_test/link61"));
+
+  EXPECT_FILE_EXISTS("symlink_test/link58");
+  EXPECT_FILE_EXISTS("symlink_test/link59");
+  EXPECT_FILE_EXISTS("symlink_test/link60");
+  EXPECT_FILE_EXISTS("symlink_test/link61");
+
+  char very_long_path[1025];
+  for (int i = 0; i < 1020; i += 2) {
+    very_long_path[i] = '.';
+    very_long_path[i + 1] = '/';
+  }
+  very_long_path[1020] = 'f';
+  very_long_path[1021] = 'i';
+  very_long_path[1022] = 'l';
+  very_long_path[1023] = 'e';
+  very_long_path[1024] = '\0';
+  KEXPECT_EQ(0, vfs_symlink(very_long_path, "symlink_test/link_long"));
+  EXPECT_FILE_EXISTS("symlink_test/link_long");
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link58"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link59"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link60"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link61"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_long"));
+
+  // TODO(aoates): test all syscalls
+  // TODO(aoates): test symlinking in unwritable directory
+  // TODO(aoates): test symlinking in a symlinked directory
+  // TODO(aoates): test symlink loop that's too long
+  // TODO(aoates): symlink to absolute path
+  // TODO(aoates): initial symlink mode
+  // TODO(aoates): symlink across mounts
+  // TODO(aoates): symlink to mount point
+  // TODO(aoates): vfs_open() with O_CREAT on symlink pointing to non-existant
+  // path (*should* create the path)
+
+  KTEST_BEGIN("vfs_symlink(): test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_link_to_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_dir"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_dir2"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir/file1"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2242,6 +2390,8 @@ void vfs_test(void) {
   open_mode_test();
   mkdir_mode_test();
   mknod_mode_test();
+
+  symlink_test();
 
   reverse_path_test();
 
