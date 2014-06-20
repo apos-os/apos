@@ -2409,6 +2409,51 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_link"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_file"));
 
+
+  KTEST_BEGIN("vfs_lchown(): doesn't follow final symlink");
+  create_file("symlink_test/stat_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  const uid_t orig_file_owner = stat.st_uid;
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(orig_file_owner, stat.st_uid);
+
+  KEXPECT_EQ(0, vfs_lchown("symlink_test/stat_link", orig_file_owner + 1, -1));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  KEXPECT_EQ(orig_file_owner, stat.st_uid);
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(orig_file_owner + 1, stat.st_uid);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+
+
+  KTEST_BEGIN("vfs_lchmod(): doesn't follow final symlink");
+  create_file("symlink_test/stat_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  const mode_t orig_file_mode = stat.st_mode & ~VFS_S_IFMT;
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_NE(stat.st_mode & ~VFS_S_IFMT, orig_file_mode | VFS_S_IRWXO);
+
+  KEXPECT_EQ(
+      0, vfs_lchmod("symlink_test/stat_link", orig_file_mode | VFS_S_IRWXO));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  KEXPECT_EQ(orig_file_mode, stat.st_mode & ~VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(orig_file_mode | VFS_S_IRWXO, stat.st_mode & ~VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+
   // TODO(aoates): test all syscalls
   // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory
