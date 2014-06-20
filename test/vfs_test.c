@@ -2336,6 +2336,39 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link61"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_long"));
 
+
+  KTEST_BEGIN("vfs_mkdir(): doesn't follow final symlink");
+  KEXPECT_EQ(0, vfs_symlink("newdir", "symlink_test/mkdir_link"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("symlink_test/mkdir_link", VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/newdir", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/mkdir_link"));
+
+
+  KTEST_BEGIN("vfs_mknod(): doesn't follow final symlink");
+  KEXPECT_EQ(0, vfs_symlink("newnode", "symlink_test/mknod_link"));
+  KEXPECT_EQ(-EEXIST, vfs_mknod("symlink_test/mknod_link",
+                                VFS_S_IFREG | VFS_S_IRWXU, mkdev(0, 0)));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/newnode", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/mknod_link"));
+
+
+  KTEST_BEGIN("vfs_rmdir(): doesn't follow final symlink");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/rmdir_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("rmdir_dir", "symlink_test/rmdir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("symlink_test/rmdir_link"));
+  EXPECT_FILE_EXISTS("symlink_test/rmdir_dir");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/rmdir_link"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/rmdir_dir"));
+
+
+  KTEST_BEGIN("vfs_unlink(): doesn't follow final symlink");
+  create_file("symlink_test/unlink_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("unlink_file", "symlink_test/unlink_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/unlink_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/unlink_link", VFS_S_IRWXU));
+  EXPECT_FILE_EXISTS("symlink_test/unlink_file");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/unlink_file"));
+
   // TODO(aoates): test all syscalls
   // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory
