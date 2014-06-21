@@ -468,6 +468,7 @@ static void get_path_test(void) {
     KEXPECT_EQ(kstrlen(expected_path),                        \
                vfs_get_vnode_dir_path(vnode, buf, kBufSize)); \
     KEXPECT_STREQ((expected_path), buf);                      \
+    vfs_put(vnode);                                           \
   } while (0)
 
 #define EXPECT_PATH_ERROR(error, path)                               \
@@ -475,6 +476,7 @@ static void get_path_test(void) {
     int vnode_num = vfs_get_vnode_for_path(path);                    \
     vnode_t* vnode = vfs_get(vfs_get_root_fs(), vnode_num);          \
     KEXPECT_EQ(error, vfs_get_vnode_dir_path(vnode, buf, kBufSize)); \
+    vfs_put(vnode);                                                  \
   } while (0)
 
   EXPECT_PATH("/vnode_path_test", "/vnode_path_test");
