@@ -73,7 +73,7 @@ int resolve_symlink(vnode_t* in_parent, vnode_t** child_ptr) {
     vnode_t* symlink_target_node = 0x0;
     vnode_t* new_parent = 0x0;
     error = lookup_existing_path_with_root(parent, symlink_target, &new_parent,
-                                           &symlink_target_node, 1);
+                                           &symlink_target_node);
     VFS_PUT_AND_CLEAR(parent);
     if (error) return error;
     parent = VFS_MOVE_REF(new_parent);
@@ -223,18 +223,17 @@ int lookup_path(vnode_t* root, const char* path,
 }
 
 int lookup_existing_path(const char* path, vnode_t** parent_out,
-                         vnode_t** child_out, int resolve_mount) {
+                         vnode_t** child_out) {
   if (!path) return -EINVAL;
   vnode_t* root = get_root_for_path(path);
-  int result = lookup_existing_path_with_root(root, path, parent_out, child_out,
-                                              resolve_mount);
+  int result =
+      lookup_existing_path_with_root(root, path, parent_out, child_out);
   VFS_PUT_AND_CLEAR(root);
   return result;
 }
 
 int lookup_existing_path_with_root(vnode_t* root, const char* path,
-                                   vnode_t** parent_out, vnode_t** child_out,
-                                   int resolve_mount) {
+                                   vnode_t** parent_out, vnode_t** child_out) {
   if (!path) return -EINVAL;
 
   vnode_t* parent = 0x0;
@@ -257,13 +256,11 @@ int lookup_existing_path_with_root(vnode_t* root, const char* path,
     }
   }
 
-  if (resolve_mount) {
-    error = resolve_mounts(&child);
-    if (error) {
-      VFS_PUT_AND_CLEAR(parent);
-      VFS_PUT_AND_CLEAR(child);
-      return error;
-    }
+  error = resolve_mounts(&child);
+  if (error) {
+    VFS_PUT_AND_CLEAR(parent);
+    VFS_PUT_AND_CLEAR(child);
+    return error;
   }
 
   if (parent_out)

@@ -104,19 +104,15 @@ int lookup_path(vnode_t* root, const char* path,
 // for operations that simply work on an existing file, and don't need to worry
 // about the path root, basename, parent directory, etc.
 //
-// If |resolve_mount| is non-zero, the final child will be resolved if it is a
-// mount point (you probably want this).
-//
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
 // otherwise.  Returns the parent of the child, also with a reference in
 // |parent_out|, unless |parent_out| is null.
 int lookup_existing_path(const char* path, vnode_t** parent_out,
-                         vnode_t** child_out, int resolve_mount);
+                         vnode_t** child_out);
 
 // As above, but lets you specify a particular root vnode for the path.
 int lookup_existing_path_with_root(vnode_t* root, const char* path,
-                                   vnode_t** parent_out, vnode_t** child_out,
-                                   int resolve_mount);
+                                   vnode_t** parent_out, vnode_t** child_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.

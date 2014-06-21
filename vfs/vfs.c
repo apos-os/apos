@@ -789,7 +789,7 @@ int vfs_getcwd(char* path_out, int size) {
 int vfs_chdir(const char* path) {
   vnode_t* parent = 0x0;
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, &parent, &new_cwd, 1);
+  int error = lookup_existing_path(path, &parent, &new_cwd);
   if (error) return error;
 
   error = resolve_symlink(parent, &new_cwd);
@@ -897,7 +897,7 @@ int vfs_lstat(const char* path, apos_stat_t* stat) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, 0x0, &child, 1);
+  int result = lookup_existing_path(path, 0x0, &child);
   if (result) return result;
 
   result = vfs_stat_internal(child, stat);
@@ -943,7 +943,7 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, 0x0, &child, 1);
+  int result = lookup_existing_path(path, 0x0, &child);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
@@ -981,7 +981,7 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
 
 int vfs_lchmod(const char* path, mode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, 0x0, &child, 1);
+  int result = lookup_existing_path(path, 0x0, &child);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);
