@@ -2486,6 +2486,8 @@ static void symlink_test(void) {
 
 void vfs_test(void) {
   KTEST_SUITE_BEGIN("vfs test");
+  block_cache_clear_unpinned();
+  const int initial_cache_size = vfs_cache_size();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_enable_blocking(vfs_get_root_fs());
@@ -2532,4 +2534,7 @@ void vfs_test(void) {
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_disable_blocking(vfs_get_root_fs());
   }
+
+  KTEST_BEGIN("vfs: vnode leak verification");
+  KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }
