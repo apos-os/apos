@@ -144,7 +144,13 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
 
 int lookup_path(vnode_t* root, const char* path,
                 vnode_t** parent_out, char* base_name_out) {
-  if (!*path) {
+  return lookup_path2(root, path, 0, parent_out, 0x0, base_name_out);
+}
+
+int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
+                 vnode_t** parent_out, vnode_t** child_out,
+                 char* base_name_out) {
+  if (!*path || !root || !base_name_out) {
     return -EINVAL;
   }
 
@@ -156,7 +162,9 @@ int lookup_path(vnode_t* root, const char* path,
   if (!*path) {
     // The path was the root node.  We don't check for search permissions since
     // the caller will check permissions on the directory itself.
-    *parent_out = VFS_MOVE_REF(n);
+    if (parent_out) *parent_out = VFS_COPY_REF(n);
+    if (child_out) *child_out = VFS_COPY_REF(n);
+    VFS_PUT_AND_CLEAR(n);
     *base_name_out = '\0';
     return 0;
   }
@@ -182,38 +190,54 @@ int lookup_path(vnode_t* root, const char* path,
 
     // Advance past any trailing slashes.
     while (*name_end && *name_end == '/') name_end++;
+    const int at_last_element = (*name_end == '\0');
 
-    // Are we at the end?
-    if (!*name_end) {
-      // Don't vfs_put() the parent, since we want to return it with a refcount.
-      *parent_out = VFS_MOVE_REF(n);
+    // Lookup the next element.  If it can't be found, and we're at the last
+    // element, save the parent and succeed anyways.
+    vnode_t* child = 0x0;
+    int error = lookup(&n, base_name_out, &child);
+    if (error && (!at_last_element || error != -ENOENT)) {
+      VFS_PUT_AND_CLEAR(n);
+      return error;
+    } else if (at_last_element && error == -ENOENT) {
+      if (parent_out) *parent_out = VFS_COPY_REF(n);
+      if (child_out) *child_out = 0x0;
+      VFS_PUT_AND_CLEAR(n);
       return 0;
     }
 
-    // Otherwise, descend again.
-    vnode_t* child = 0x0;
-    int error = lookup(&n, base_name_out, &child);
-    if (error) {
-      VFS_PUT_AND_CLEAR(n);
-      return error;
+    // If we're not at the end, or we want to follow the final symlink, attempt
+    // to resolve it.
+    if (!at_last_element || resolve_final_symlink) {
+      // TODO(aoates) this needs to update the parent
+      error = resolve_symlink(n, &child);
+      if (error) {
+        VFS_PUT_AND_CLEAR(n);
+        VFS_PUT_AND_CLEAR(child);
+        return error;
+      }
     }
 
-    error = resolve_symlink(n, &child);
+    if (at_last_element && parent_out) *parent_out = VFS_COPY_REF(n);
     VFS_PUT_AND_CLEAR(n);
-    if (error) {
-      VFS_PUT_AND_CLEAR(child);
-      return error;
-    }
-
-    if (child->type != VNODE_DIRECTORY) {
-      VFS_PUT_AND_CLEAR(child);
-      return -ENOTDIR;
-    }
 
     error = resolve_mounts(&child);
     if (error) {
       VFS_PUT_AND_CLEAR(child);
       return error;
+    }
+
+    // If we're done, we're done.
+    if (at_last_element) {
+      if (child_out) *child_out = VFS_COPY_REF(child);
+      VFS_PUT_AND_CLEAR(child);
+      return 0;
+    }
+
+    // Otherwise, descend again.
+    if (child->type != VNODE_DIRECTORY) {
+      VFS_PUT_AND_CLEAR(child);
+      return -ENOTDIR;
     }
 
     // Move to the child and keep going.
@@ -234,42 +258,14 @@ int lookup_existing_path(const char* path, vnode_t** parent_out,
 
 int lookup_existing_path_with_root(vnode_t* root, const char* path,
                                    vnode_t** parent_out, vnode_t** child_out) {
-  if (!path) return -EINVAL;
-
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
-  if (error) {
-    return error;
+  char unused_basename[VFS_MAX_FILENAME_LENGTH];
+  int result =
+      lookup_path2(root, path, 0, parent_out, child_out, unused_basename);
+  if (result == 0 && !*child_out) {
+    if (parent_out) VFS_PUT_AND_CLEAR(*parent_out);
+    return -ENOENT;
   }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_COPY_REF(parent);
-  } else {
-    error = lookup(&parent, base_name, &child);
-    if (error < 0) {
-      VFS_PUT_AND_CLEAR(parent);
-      return error;
-    }
-  }
-
-  error = resolve_mounts(&child);
-  if (error) {
-    VFS_PUT_AND_CLEAR(parent);
-    VFS_PUT_AND_CLEAR(child);
-    return error;
-  }
-
-  if (parent_out)
-    *parent_out = VFS_MOVE_REF(parent);
-  else
-    VFS_PUT_AND_CLEAR(parent);
-
-  *child_out = VFS_MOVE_REF(child);
-  return 0;
+  return result;
 }
 
 int lookup_fd(int fd, file_t** file_out) {

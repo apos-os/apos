@@ -100,6 +100,23 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
 int lookup_path(vnode_t* root, const char* path,
                 vnode_t** parent_out, char* base_name_out);
 
+// Looks up a path relative to the root inode.  Looks up every element of the
+// path, following symlinks, until the last element.  If resolve_final_symlink
+// is set, and the last element is a symlink, it will be followed.  Otherwise,
+// the symlink will be returned.
+//
+// If |parent_out| is non-null, it will be set to the parent of the final node.
+// If |child_out| is non-null, and the final element exists, it will be set to
+// the final element.  |base_name_out| (which must be at least
+// VFS_MAX_FILENAME_LENGTH bytes long) will be set to the final element of the
+// path, whether it exists or not.
+//
+// IMPORTANT: if the final element doesn't exist, the call succeeds (returns 0),
+// but *child_out will be set to 0x0.
+int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
+                 vnode_t** parent_out, vnode_t** child_out,
+                 char* base_name_out);
+
 // Similar to lookup_path(), but does a full lookup of an existing file.  Used
 // for operations that simply work on an existing file, and don't need to worry
 // about the path root, basename, parent directory, etc.
