@@ -106,8 +106,8 @@ int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
 // otherwise.  Returns the parent of the child, also with a reference in
 // |parent_out|, unless |parent_out| is null.
-int lookup_existing_path(const char* path, vnode_t** parent_out,
-                         vnode_t** child_out);
+int lookup_existing_path(const char* path, int resolve_final_symlink,
+                         vnode_t** parent_out, vnode_t** child_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.
