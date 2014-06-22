@@ -371,7 +371,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
     kmutex_unlock(&parent->mutex);
   }
 
-  error = resolve_symlink(parent, &child);
+  error = resolve_symlink(&parent, &child);
   VFS_PUT_AND_CLEAR(parent);
   if (error) {
     VFS_PUT_AND_CLEAR(child);
@@ -792,7 +792,7 @@ int vfs_chdir(const char* path) {
   int error = lookup_existing_path(path, &parent, &new_cwd);
   if (error) return error;
 
-  error = resolve_symlink(parent, &new_cwd);
+  error = resolve_symlink(&parent, &new_cwd);
   VFS_PUT_AND_CLEAR(parent);
   if (error) {
     VFS_PUT_AND_CLEAR(new_cwd);

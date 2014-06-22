@@ -54,10 +54,10 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
-int resolve_symlink(vnode_t* in_parent, vnode_t** child_ptr) {
+int resolve_symlink(vnode_t** parent_ptr, vnode_t** child_ptr) {
   char unused_basename[VFS_MAX_FILENAME_LENGTH];
   vnode_t* child = *child_ptr;
-  vnode_t* parent = VFS_COPY_REF(in_parent);
+  vnode_t* parent = VFS_COPY_REF(*parent_ptr);
   while (child->type == VNODE_SYMLINK) {
     char symlink_target[VFS_MAX_PATH_LENGTH];
     if (ENABLE_KERNEL_SAFETY_NETS) {
@@ -84,7 +84,8 @@ int resolve_symlink(vnode_t* in_parent, vnode_t** child_ptr) {
     child = VFS_MOVE_REF(symlink_target_node);
     *child_ptr = child;
   }
-  VFS_PUT_AND_CLEAR(parent);
+  VFS_PUT_AND_CLEAR(*parent_ptr);
+  *parent_ptr = VFS_MOVE_REF(parent);
   return 0;
 }
 
@@ -206,8 +207,7 @@ int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
     // If we're not at the end, or we want to follow the final symlink, attempt
     // to resolve it.
     if (!at_last_element || resolve_final_symlink) {
-      // TODO(aoates) this needs to update the parent
-      error = resolve_symlink(n, &child);
+      error = resolve_symlink(&n, &child);
       if (error) {
         VFS_PUT_AND_CLEAR(n);
         VFS_PUT_AND_CLEAR(child);
