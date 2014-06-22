@@ -787,17 +787,9 @@ int vfs_getcwd(char* path_out, int size) {
 }
 
 int vfs_chdir(const char* path) {
-  vnode_t* parent = 0x0;
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, 0, &parent, &new_cwd);
+  int error = lookup_existing_path(path, 1, 0x0, &new_cwd);
   if (error) return error;
-
-  error = resolve_symlink(&parent, &new_cwd);
-  VFS_PUT_AND_CLEAR(parent);
-  if (error) {
-    VFS_PUT_AND_CLEAR(new_cwd);
-    return error;
-  }
 
   if (new_cwd->type != VNODE_DIRECTORY) {
     VFS_PUT_AND_CLEAR(new_cwd);
