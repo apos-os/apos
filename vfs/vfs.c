@@ -315,7 +315,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -478,7 +478,7 @@ int vfs_mkdir(const char* path, mode_t mode) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -525,7 +525,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -570,7 +570,7 @@ int vfs_rmdir(const char* path) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -616,7 +616,7 @@ int vfs_unlink(const char* path) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -1014,7 +1014,7 @@ int vfs_symlink(const char* path1, const char* path2) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path2, &parent, base_name);
+  int error = lookup_path2(root, path2, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;

@@ -77,29 +77,6 @@ int lookup(vnode_t** parent, const char* name, vnode_t** child_out);
 // Returns the length of the name on success, or -error.
 int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
 
-// Given a vnode and a path path/to/myfile relative to that vnode, return the
-// vnode_t of the directory part of the path, and copy the base name of the path
-// (without any trailing slashes) into base_name_out.
-//
-// base_nome_out must be AT LEAST VFS_MAX_FILENAME_LENGTH long.
-//
-// Returns 0 on success, or -error on failure (in which case the contents of
-// parent_out and base_name_out are undefined).
-//
-// Returns *parent_out with a refcount unless there was an error.
-// TODO(aoates): this needs to handle symlinks!
-// TODO(aoates): things to test:
-//  * regular path
-//  * root directory
-//  * path ending in file
-//  * path ending in directory
-//  * trailing slashes
-//  * no leading slash (?)
-//  * non-directory in middle of path (ENOTDIR)
-//  * non-existing in middle of path (ENOENT)
-int lookup_path(vnode_t* root, const char* path,
-                vnode_t** parent_out, char* base_name_out);
-
 // Looks up a path relative to the root inode.  Looks up every element of the
 // path, following symlinks, until the last element.  If resolve_final_symlink
 // is set, and the last element is a symlink, it will be followed.  Otherwise,
@@ -110,6 +87,10 @@ int lookup_path(vnode_t* root, const char* path,
 // the final element.  |base_name_out| (which must be at least
 // VFS_MAX_FILENAME_LENGTH bytes long) will be set to the final element of the
 // path, whether it exists or not.
+//
+// Returns |*parent_out| with a ref unless there was an error.  Returns
+// |*child_out| with a ref unless there was an error or the last element doesn't
+// exist.
 //
 // IMPORTANT: if the final element doesn't exist, the call succeeds (returns 0),
 // but *child_out will be set to 0x0.

@@ -54,7 +54,7 @@ static int vfs_get_vnode(const char* path, vnode_t** vnode_out) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;

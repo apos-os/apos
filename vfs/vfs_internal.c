@@ -142,11 +142,6 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   return name_len;
 }
 
-int lookup_path(vnode_t* root, const char* path,
-                vnode_t** parent_out, char* base_name_out) {
-  return lookup_path2(root, path, 0, parent_out, 0x0, base_name_out);
-}
-
 int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
                  vnode_t** parent_out, vnode_t** child_out,
                  char* base_name_out) {
