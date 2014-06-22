@@ -108,10 +108,6 @@ int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
 int lookup_existing_path(const char* path, vnode_t** parent_out,
                          vnode_t** child_out);
 
-// As above, but lets you specify a particular root vnode for the path.
-int lookup_existing_path_with_root(vnode_t* root, const char* path,
-                                   vnode_t** parent_out, vnode_t** child_out);
-
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
