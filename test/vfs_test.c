@@ -2260,6 +2260,26 @@ static void symlink_test(void) {
   KTEST_BEGIN("vfs_symlink(): symlink pointing to bad path");
   KEXPECT_EQ(0, vfs_symlink("../bad/path", "symlink_test/bad_link"));
   KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
+
+  KTEST_BEGIN(
+      "vfs_symlink(): symlink pointing to bad path (only last element bad)");
+  KEXPECT_EQ(0, vfs_symlink("../bad", "symlink_test/bad_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
+
 
   KTEST_BEGIN("vfs_symlink(): invalid arguments");
   // TODO(aoates): test too-long paths
@@ -2456,6 +2476,21 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
 
+
+  KTEST_BEGIN(
+      "vfs_symlink(): vfs_open(O_CREAT) on symlink creates destination");
+  KEXPECT_EQ(0, vfs_symlink("doesnt_exist", "symlink_test/creat_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/creat_link", VFS_O_RDWR));
+  fd = vfs_open("symlink_test/creat_link", VFS_O_RDWR | VFS_O_CREAT,
+                VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(4, vfs_write(fd, "abcd", 4));
+  KEXPECT_EQ(0, vfs_close(fd));
+  EXPECT_FILE_EXISTS("symlink_test/creat_link");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/doesnt_exist"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/creat_link"));
+
+
   // TODO(aoates): test all syscalls
   // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory
@@ -2464,14 +2499,11 @@ static void symlink_test(void) {
   // TODO(aoates): initial symlink mode
   // TODO(aoates): symlink across mounts
   // TODO(aoates): symlink to mount point
-  // TODO(aoates): vfs_open() with O_CREAT on symlink pointing to non-existant
-  // path (*should* create the path)
 
   KTEST_BEGIN("vfs_symlink(): test cleanup");
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_link_to_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/file"));
-  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_dir"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_dir2"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/dir/file1"));
@@ -2536,5 +2568,6 @@ void vfs_test(void) {
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }

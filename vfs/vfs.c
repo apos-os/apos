@@ -315,7 +315,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path2(root, path, 0, &parent, 0x0, base_name);
+  int error = lookup_path2(root, path, 1, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -370,13 +370,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
   }
-
-  error = resolve_symlink(&parent, &child);
   VFS_PUT_AND_CLEAR(parent);
-  if (error) {
-    VFS_PUT_AND_CLEAR(child);
-    return error;
-  }
 
   error = resolve_mounts(&child);
   if (error) {

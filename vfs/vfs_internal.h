@@ -53,7 +53,16 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name);
 // parent pointer with the parent of the symlink target.  On error, the child
 // pointer will point to *some* vnode, but not necessarily the original one, and
 // must still be vfs_put().
-int resolve_symlink(vnode_t** parent_ptr, vnode_t** child_ptr);
+//
+// If the symlink is resolved, the new basename of the symlink is copied to
+// |base_name_out|.  If the node isn't a symlink, |base_name_out| is left
+// unchanged.
+//
+// If |allow_nonexistant_final| is non-zero, and the final element of the
+// symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
+// but will set |*child_ptr| to 0x0.
+int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
+                    vnode_t** child_ptr, char* base_name_out);
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
