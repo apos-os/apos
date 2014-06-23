@@ -30,6 +30,7 @@
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
+#define VFS_MAX_LINK_RECURSION 20
 
 // Syscall flags.
 // TODO(aoates): once we have userland, these should be the same constants as

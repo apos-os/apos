@@ -2490,11 +2490,32 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/doesnt_exist"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/creat_link"));
 
+  KTEST_BEGIN("vfs_symlink(): symlink loop");
+  KEXPECT_EQ(0, vfs_symlink("linkB", "symlink_test/linkA"));
+  KEXPECT_EQ(0, vfs_symlink("linkA", "symlink_test/linkB"));
+  KEXPECT_EQ(0, vfs_symlink("../symlink_test/linkD", "symlink_test/linkC"));
+  KEXPECT_EQ(0, vfs_symlink("../symlink_test/linkC", "symlink_test/linkD"));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkA", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkA/d1", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkA/d1/d2", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkB", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkC", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkD", VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkA"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkB"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkC"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkD"));
+
+  KEXPECT_EQ(0, vfs_symlink("linkE/d1", "symlink_test/linkF"));
+  KEXPECT_EQ(0, vfs_symlink("linkF/d1", "symlink_test/linkE"));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkE", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkE/d1", VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkE"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkF"));
 
   // TODO(aoates): test all syscalls
   // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory
-  // TODO(aoates): test symlink loop that's too long
   // TODO(aoates): symlink to absolute path
   // TODO(aoates): initial symlink mode
   // TODO(aoates): symlink across mounts

@@ -62,7 +62,8 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name);
 // symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
 // but will set |*child_ptr| to 0x0.
 int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
-                    vnode_t** child_ptr, char* base_name_out);
+                    vnode_t** child_ptr, char* base_name_out,
+                    int max_recursion);
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
