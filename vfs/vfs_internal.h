@@ -104,9 +104,8 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
 //
 // IMPORTANT: if the final element doesn't exist, the call succeeds (returns 0),
 // but *child_out will be set to 0x0.
-int lookup_path2(vnode_t* root, const char* path, int resolve_final_symlink,
-                 vnode_t** parent_out, vnode_t** child_out,
-                 char* base_name_out);
+int lookup_path(vnode_t* root, const char* path, int resolve_final_symlink,
+                vnode_t** parent_out, vnode_t** child_out, char* base_name_out);
 
 // Similar to lookup_path(), but does a full lookup of an existing file.  Used
 // for operations that simply work on an existing file, and don't need to worry
