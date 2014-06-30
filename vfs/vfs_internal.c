@@ -80,9 +80,11 @@ int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
     // TODO(aoates): limit number of recursions.
     vnode_t* symlink_target_node = 0x0;
     vnode_t* new_parent = 0x0;
-    error = lookup_path_internal(parent, symlink_target, 0, &new_parent,
+    vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
+    error = lookup_path_internal(root, symlink_target, 0, &new_parent,
                                  &symlink_target_node, base_name_out,
                                  max_recursion - 1);
+    VFS_PUT_AND_CLEAR(root);
     VFS_PUT_AND_CLEAR(parent);
     if (error) {
       kfree(symlink_target);
@@ -308,11 +310,20 @@ int lookup_fd(int fd, file_t** file_out) {
   return 0;
 }
 
+int is_absolute_path(const char* path) {
+  return path[0] == '/';
+}
+
 vnode_t* get_root_for_path(const char* path) {
-  if (path[0] == '/') {
+  return get_root_for_path_with_parent(path, proc_current()->cwd);
+}
+
+vnode_t* get_root_for_path_with_parent(const char* path,
+                                       vnode_t* relative_root) {
+  if (is_absolute_path(path)) {
     fs_t* const root_fs = g_fs_table[VFS_ROOT_FS].fs;
     return vfs_get(root_fs, root_fs->get_root(root_fs));
   } else {
-    return VFS_COPY_REF(proc_current()->cwd);
+    return VFS_COPY_REF(relative_root);
   }
 }

@@ -126,4 +126,9 @@ int lookup_fd(int fd, file_t** file_out);
 // the process's cwd.
 vnode_t* get_root_for_path(const char* path);
 
+// As above, but returns the given parent (with an extra ref) if the path isn't
+// absolute.
+vnode_t* get_root_for_path_with_parent(const char* path,
+                                       vnode_t* relative_root);
+
 #endif

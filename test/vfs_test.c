@@ -2526,8 +2526,22 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link"));
   KEXPECT_EQ(0, vfs_rmdir("symlink_test/linkeddir"));
 
+
+  KTEST_BEGIN("vfs_symlink(): symlink to absolute path");
+  KEXPECT_LE(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
+  char link[VFS_MAX_PATH_LENGTH + 1];
+  char target[VFS_MAX_PATH_LENGTH + 1];
+  kstrcpy(link, cwd);
+  kstrcat(link, "/symlink_test/absolute_link");
+  kstrcpy(target, cwd);
+  kstrcat(target, "/symlink_test/file");
+
+  KEXPECT_EQ(0, vfs_symlink(target, link));
+  EXPECT_FILE_EXISTS(link);
+
+  KEXPECT_EQ(0, vfs_unlink(link));
+
   // TODO(aoates): test all syscalls
-  // TODO(aoates): symlink to absolute path
   // TODO(aoates): initial symlink mode
   // TODO(aoates): symlink across mounts
   // TODO(aoates): symlink to mount point
