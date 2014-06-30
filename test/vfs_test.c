@@ -2514,7 +2514,6 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/linkF"));
 
   // TODO(aoates): test all syscalls
-  // TODO(aoates): test symlinking in unwritable directory
   // TODO(aoates): test symlinking in a symlinked directory
   // TODO(aoates): symlink to absolute path
   // TODO(aoates): initial symlink mode

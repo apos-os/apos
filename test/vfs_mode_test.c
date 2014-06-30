@@ -547,6 +547,18 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(0, vfs_chdir(orig_cwd));
 
 
+  // symlink()
+  KTEST_BEGIN("vfs mode test: vfs_symlink() succeeds in non-readable directory");
+  KEXPECT_EQ(0, vfs_symlink("file", "syscall_mode_test/no_read/f"));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_read/f"));
+
+  KTEST_BEGIN("vfs mode test: vfs_symlink() fails in non-writable directory");
+  KEXPECT_EQ(-EACCES, vfs_symlink("file", "syscall_mode_test/no_write/f"));
+
+  KTEST_BEGIN("vfs mode test: vfs_symlink() fails in non-executable directory");
+  KEXPECT_EQ(-EACCES, vfs_symlink("file", "syscall_mode_test/no_exec/f"));
+
+
   // Setup for metadata syscall tests.
   KTEST_BEGIN("vfs mode test: metadata syscall test setup");
   create_file("syscall_mode_test/no_read/f", "---------");

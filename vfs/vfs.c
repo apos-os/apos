@@ -1011,6 +1011,12 @@ int vfs_symlink(const char* path1, const char* path2) {
     return -EEXIST;  // Root directory!
   }
 
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
   if (!parent->fs->symlink) {
     VFS_PUT_AND_CLEAR(parent);
     return -EPERM;
