@@ -2513,8 +2513,20 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/linkE"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/linkF"));
 
+
+  KTEST_BEGIN("vfs_symlink(): create symlink in symlink'd directory");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/linkeddir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("linkeddir", "symlink_test/link"));
+  KEXPECT_EQ(0, vfs_symlink("entry", "symlink_test/link/link2"));
+  KEXPECT_EQ(0, compare_dirents_p(
+                    "symlink_test/linkeddir", 3,
+                    (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "link2"}}));
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkeddir/link2"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/linkeddir"));
+
   // TODO(aoates): test all syscalls
-  // TODO(aoates): test symlinking in a symlinked directory
   // TODO(aoates): symlink to absolute path
   // TODO(aoates): initial symlink mode
   // TODO(aoates): symlink across mounts
