@@ -559,6 +559,29 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(-EACCES, vfs_symlink("file", "syscall_mode_test/no_exec/f"));
 
 
+  KTEST_BEGIN("vfs mode test: can't read a no-read directory through a symlink");
+  KEXPECT_EQ(0, vfs_symlink("no_read", "syscall_mode_test/link"));
+  KEXPECT_EQ(-EACCES, vfs_open("syscall_mode_test/link", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/link"));
+
+
+  KTEST_BEGIN("vfs mode test: can't access a no-execute directory through a symlink");
+  KEXPECT_EQ(0, vfs_symlink("no_exec", "syscall_mode_test/link"));
+  KEXPECT_EQ(-EACCES, vfs_open("syscall_mode_test/link/.", VFS_O_RDONLY));
+  KEXPECT_EQ(-EACCES, vfs_open("syscall_mode_test/link/./.", VFS_O_RDONLY));
+  int fd = vfs_open("syscall_mode_test/link", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/link"));
+
+
+  KTEST_BEGIN("vfs mode test: can't write to a no-write directory through a symlink");
+  KEXPECT_EQ(0, vfs_symlink("no_write", "syscall_mode_test/link"));
+  KEXPECT_EQ(-EACCES, vfs_open("syscall_mode_test/link/newfile",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/link"));
+
+
   // Setup for metadata syscall tests.
   KTEST_BEGIN("vfs mode test: metadata syscall test setup");
   create_file("syscall_mode_test/no_read/f", "---------");
