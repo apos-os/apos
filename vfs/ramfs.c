@@ -552,6 +552,7 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
   init_inode(ramfs, n);
 
   n->vnode.type = VNODE_SYMLINK;
+  n->vnode.mode = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO;
   int result = ramfs_write(&n->vnode, 0, path, kstrlen(path) + 1);
   if (result < 0) return result;
 

@@ -2455,7 +2455,7 @@ static void symlink_test(void) {
 
 
   KTEST_BEGIN("vfs_lchmod(): doesn't follow final symlink");
-  create_file("symlink_test/stat_file", RWX);
+  create_file("symlink_test/stat_file", "rwx------");
   KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
@@ -2541,8 +2541,15 @@ static void symlink_test(void) {
 
   KEXPECT_EQ(0, vfs_unlink(link));
 
+
+  KTEST_BEGIN("vfs_symlink(): initial symlink mode");
+  KEXPECT_EQ(0, vfs_symlink("file", "symlink_test/modelink"));
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/modelink", &stat));
+  KEXPECT_EQ(VFS_S_IFLNK | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/modelink"));
+
   // TODO(aoates): test all syscalls
-  // TODO(aoates): initial symlink mode
   // TODO(aoates): symlink across mounts
   // TODO(aoates): symlink to mount point
 

@@ -1570,7 +1570,11 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
 
   ext2_inode_t child_inode;
   const int child_inode_num =
-      make_inode(fs, parent->num, EXT2_S_IFLNK, mkdev(0, 0), &child_inode);
+      make_inode(fs, parent->num,
+                 EXT2_S_IFLNK | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR |
+                     EXT2_S_IRGRP | EXT2_S_IWGRP | EXT2_S_IXGRP | EXT2_S_IROTH |
+                     EXT2_S_IWOTH | EXT2_S_IXOTH,
+                 mkdev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }
