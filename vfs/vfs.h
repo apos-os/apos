@@ -120,6 +120,10 @@ void vfs_fork_fds(process_t* procA, process_t* procB);
 int vfs_isatty(int fd);
 
 // Stats the given path.  Returns 0 on success, or -error.
+int vfs_stat(const char* path, apos_stat_t* stat);
+
+// Stats the given path, but doesn't resolve path if it is a symlink.  Returns 0
+// on success, or -error.
 int vfs_lstat(const char* path, apos_stat_t* stat);
 
 // Stats the given fd.  Returns 0 on success, or -error.

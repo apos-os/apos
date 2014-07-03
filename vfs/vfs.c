@@ -877,18 +877,28 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
   }
 }
 
-int vfs_lstat(const char* path, apos_stat_t* stat) {
+static int vfs_path_stat_internal(const char* path, apos_stat_t* stat,
+                                  int resolve_final_symlink) {
   if (!path || !stat) {
     return -EINVAL;
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, 0, 0x0, &child);
+  int result = lookup_existing_path(path, resolve_final_symlink, 0x0, &child);
   if (result) return result;
 
   result = vfs_stat_internal(child, stat);
   VFS_PUT_AND_CLEAR(child);
   return result;
+
+}
+
+int vfs_stat(const char* path, apos_stat_t* stat) {
+  return vfs_path_stat_internal(path, stat, 1);
+}
+
+int vfs_lstat(const char* path, apos_stat_t* stat) {
+  return vfs_path_stat_internal(path, stat, 0);
 }
 
 int vfs_fstat(int fd, apos_stat_t* stat) {

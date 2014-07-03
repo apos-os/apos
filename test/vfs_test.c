@@ -1537,7 +1537,7 @@ static void KEXPECT_STAT_EQ(const apos_stat_t* A, const apos_stat_t* B) {
   }
 }
 
-static void stat_test(void) {
+static void lstat_test(void) {
   const char kDir[] = "stat_test_dir";
   const char kRegFile[] = "stat_test_dir/reg";
   const char kCharDevFile[] = "stat_test_dir/char";
@@ -1660,6 +1660,70 @@ static void stat_test(void) {
   vfs_rmdir(kDir);
 
   // TODO(aoates): test fstat on fds with different modes.
+}
+
+static void stat_test(void) {
+  const char kDir[] = "stat_test_dir";
+  const char kRegFile[] = "stat_test_dir/reg";
+  const char kFileLink[] = "stat_test_dir/reg_link";
+  const char kDirLink[] = "stat_test_dir/dir_link";
+  const char kBadLink[] = "stat_test_dir/bad_link";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  apos_stat_t stat;
+
+  KTEST_BEGIN("stat(): regular file test (empty)");
+  create_file(kRegFile, RWX);
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_stat(kRegFile, &stat));
+  KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+
+  KTEST_BEGIN("stat(): link to regular file test");
+  KEXPECT_EQ(0, vfs_symlink("reg", kFileLink));
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_stat(kFileLink, &stat));
+  KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
+  KEXPECT_NE(vfs_get_vnode_for_path(kFileLink), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+
+  KTEST_BEGIN("stat(): link to directory");
+  KEXPECT_EQ(0, vfs_symlink(".", kDirLink));
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_stat(kDirLink, &stat));
+  KEXPECT_EQ(VFS_S_IFDIR, stat.st_mode);
+
+  KTEST_BEGIN("stat(): dangling link");
+  KEXPECT_EQ(0, vfs_symlink("bad", kBadLink));
+  KEXPECT_EQ(-ENOENT, vfs_stat(kBadLink, &stat));
+  KEXPECT_EQ(-ENOENT, vfs_stat("badtarget", &stat));
+
+
+  KTEST_BEGIN("stat(): bad args");
+  KEXPECT_EQ(-EINVAL, vfs_stat(0x0, &stat));
+  KEXPECT_EQ(-EINVAL, vfs_stat(kDirLink, 0x0));
+
+  vfs_unlink(kBadLink);
+  vfs_unlink(kFileLink);
+  vfs_unlink(kDirLink);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
 static void initial_owner_test_func(void* arg) {
@@ -2648,6 +2712,7 @@ void vfs_test(void) {
   block_device_test();
 
   fs_dev_test();
+  lstat_test();
   stat_test();
   initial_owner_test();
   chown_test();
