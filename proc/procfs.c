@@ -22,6 +22,7 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/list.h"
+#include "common/math.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
 #include "proc/user.h"
@@ -237,6 +238,15 @@ static int single_proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
   return 0;
 }
 
+static int self_proc_symlink_readlink(fs_t* fs, void* arg, int vnode_num,
+                                      void* buf, int buflen) {
+  char pid[100];
+  ksprintf(pid, "%d", proc_current()->id);
+  const int len = min(buflen, kstrlen(pid));
+  kstrncpy(buf, pid, len);
+  return len;
+}
+
 fs_t* procfs_create(void) {
   fs_t* fs = cbfs_create(procfs_get_vnode, 0x0, PROC_VNODE_NUM_STATIC);
 
@@ -247,6 +257,7 @@ fs_t* procfs_create(void) {
   }
 
   cbfs_create_file(fs, "vnode", &vnode_cache_read, 0x0, VFS_S_IRWXU);
+  cbfs_create_symlink(fs, "self", &self_proc_symlink_readlink, 0x0);
 
   return fs;
 }
