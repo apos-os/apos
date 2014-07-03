@@ -984,9 +984,9 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
   return 0;
 }
 
-int vfs_lchmod(const char* path, mode_t mode) {
+int vfs_chmod(const char* path, mode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, 0, 0x0, &child);
+  int result = lookup_existing_path(path, 1, 0x0, &child);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);

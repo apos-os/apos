@@ -142,7 +142,7 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group);
 int vfs_fchown(int fd, uid_t owner, gid_t group);
 
 // Changes the file mode of the given path.  Returns 0 on success, or -error.
-int vfs_lchmod(const char* path, mode_t mode);
+int vfs_chmod(const char* path, mode_t mode);
 
 // Changes the file mode of the given fd.  Returns 0 on success, or -error.
 int vfs_fchmod(int fd, mode_t mode);

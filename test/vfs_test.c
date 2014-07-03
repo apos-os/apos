@@ -2111,11 +2111,11 @@ static void mode_flags_test(void) {
   }
 }
 
-// Do a basic lchmod/fchmod test for the given file.
+// Do a basic chmod/fchmod test for the given file.
 #define BASIC_CHMOD_TEST(path, filetype, mode_filetype) do { \
-  KTEST_BEGIN("vfs_lchmod(): " filetype); \
+  KTEST_BEGIN("vfs_chmod(): " filetype); \
   KEXPECT_NE(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
-  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXO)); \
+  KEXPECT_EQ(0, vfs_chmod(path, VFS_S_IRWXO)); \
   KEXPECT_EQ(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
 \
   KTEST_BEGIN("vfs_fchmod(): " filetype); \
@@ -2126,8 +2126,8 @@ static void mode_flags_test(void) {
   KEXPECT_EQ(VFS_S_IRWXG | mode_filetype, get_mode(path)); \
   KEXPECT_EQ(0, vfs_close(fd)); \
 \
-  KTEST_BEGIN("vfs_lchmod(): SUID/SGID/SVXT for " filetype); \
-  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXU | VFS_S_ISUID | \
+  KTEST_BEGIN("vfs_chmod(): SUID/SGID/SVXT for " filetype); \
+  KEXPECT_EQ(0, vfs_chmod(path, VFS_S_IRWXU | VFS_S_ISUID | \
                            VFS_S_ISGID | VFS_S_ISVTX)); \
   KEXPECT_EQ(VFS_S_IRWXU | VFS_S_ISUID | VFS_S_ISGID |  VFS_S_ISVTX | \
              mode_filetype, get_mode(path)); \
@@ -2143,25 +2143,25 @@ static void non_root_chmod_test_func(void* arg) {
   const char kRegFileA[] = "chmod_test_dir/regA";
   const char kRegFileB[] = "chmod_test_dir/regB";
 
-  KTEST_BEGIN("vfs_lchmod(): non-root test setup");
+  KTEST_BEGIN("vfs_chmod(): non-root test setup");
   create_file(kRegFileA, RWX);
   create_file(kRegFileB, RWX);
   KEXPECT_EQ(0, vfs_lchown(kRegFileA, kTestUserA, kTestGroupA));
   KEXPECT_EQ(0, vfs_lchown(kRegFileB, kTestUserB, kTestGroupB));
 
-  KTEST_BEGIN("vfs_lchmod(): root can always chmod");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFileA, VFS_S_IRWXO));
+  KTEST_BEGIN("vfs_chmod(): root can always chmod");
+  KEXPECT_EQ(0, vfs_chmod(kRegFileA, VFS_S_IRWXO));
   KEXPECT_EQ(VFS_S_IRWXO | VFS_S_IFREG, get_mode(kRegFileA));
 
   KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
   KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
 
-  KTEST_BEGIN("vfs_lchmod(): non-root owner can chmod");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFileB, VFS_S_IRUSR));
+  KTEST_BEGIN("vfs_chmod(): non-root owner can chmod");
+  KEXPECT_EQ(0, vfs_chmod(kRegFileB, VFS_S_IRUSR));
   KEXPECT_EQ(VFS_S_IRUSR | VFS_S_IFREG, get_mode(kRegFileB));
 
-  KTEST_BEGIN("vfs_lchmod(): non-owner cannot chmod");
-  KEXPECT_EQ(-EPERM, vfs_lchmod(kRegFileA, VFS_S_IRUSR));
+  KTEST_BEGIN("vfs_chmod(): non-owner cannot chmod");
+  KEXPECT_EQ(-EPERM, vfs_chmod(kRegFileA, VFS_S_IRUSR));
 
   KEXPECT_EQ(0, vfs_unlink(kRegFileA));
   KEXPECT_EQ(0, vfs_unlink(kRegFileB));
@@ -2173,17 +2173,17 @@ static void chmod_test(void) {
   const char kCharDevFile[] = "chmod_test_dir/char";
   const char kBlockDevFile[] = "chmod_test_dir/block";
 
-  KTEST_BEGIN("vfs_lchmod()/vfs_fchmod(): test setup");
+  KTEST_BEGIN("vfs_chmod()/vfs_fchmod(): test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
   create_file(kRegFile, RWX);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
-  KTEST_BEGIN("vfs_lchmod(): invalid arguments test");
-  KEXPECT_EQ(-EINVAL, vfs_lchmod(0x0, VFS_S_IRWXU));
-  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
-  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
-  KEXPECT_EQ(-ENOENT, vfs_lchmod("chmod_test_dir/notafile", VFS_S_IRWXU));
+  KTEST_BEGIN("vfs_chmod(): invalid arguments test");
+  KEXPECT_EQ(-EINVAL, vfs_chmod(0x0, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_chmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-EINVAL, vfs_chmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-ENOENT, vfs_chmod("chmod_test_dir/notafile", VFS_S_IRWXU));
 
   KTEST_BEGIN("vfs_fchmod(): invalid arguments test");
   int fd = vfs_open(kRegFile, VFS_O_RDWR);
@@ -2198,32 +2198,33 @@ static void chmod_test(void) {
   BASIC_CHMOD_TEST(kCharDevFile, "character device", VFS_S_IFCHR);
   BASIC_CHMOD_TEST(kBlockDevFile, "block device", VFS_S_IFBLK);
 
-  KTEST_BEGIN("vfs_lchmod(): decreasing permissions");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
-                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KTEST_BEGIN("vfs_chmod(): decreasing permissions");
+  KEXPECT_EQ(0,
+             vfs_chmod(kRegFile, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+                                     VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
              VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO, get_mode(kRegFile));
 
-  KTEST_BEGIN("vfs_lchmod(): increasing permissions");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU));
+  KTEST_BEGIN("vfs_chmod(): increasing permissions");
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, VFS_S_IRWXU));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO |
-                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID |
+                                        VFS_S_ISGID | VFS_S_ISVTX));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO |
              VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
 
-  KTEST_BEGIN("vfs_lchmod(): keep same permissions");
+  KTEST_BEGIN("vfs_chmod(): keep same permissions");
   const mode_t kAllPerms = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
       VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX;
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, kAllPerms));
   KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, kAllPerms));
   KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
 
   // Run tests as an unpriviledged user.
-  KEXPECT_EQ(0, vfs_lchmod(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_chmod(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   pid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
@@ -2590,7 +2591,7 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
 
 
-  KTEST_BEGIN("vfs_lchmod(): doesn't follow final symlink");
+  KTEST_BEGIN("vfs_chmod(): follows final symlink");
   create_file("symlink_test/stat_file", "rwx------");
   KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
 
@@ -2600,14 +2601,15 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
   KEXPECT_NE(stat.st_mode & ~VFS_S_IFMT, orig_file_mode | VFS_S_IRWXO);
 
-  KEXPECT_EQ(
-      0, vfs_lchmod("symlink_test/stat_link", orig_file_mode | VFS_S_IRWXO));
+  KEXPECT_EQ(0,
+             vfs_chmod("symlink_test/stat_link", orig_file_mode | VFS_S_IRWXO));
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
-  KEXPECT_EQ(orig_file_mode, stat.st_mode & ~VFS_S_IFMT);
+  KEXPECT_EQ(orig_file_mode | VFS_S_IRWXO, stat.st_mode & ~VFS_S_IFMT);
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
-  KEXPECT_EQ(orig_file_mode | VFS_S_IRWXO, stat.st_mode & ~VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode & ~VFS_S_IFMT);
 
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
