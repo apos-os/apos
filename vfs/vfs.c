@@ -1026,3 +1026,27 @@ int vfs_symlink(const char* path1, const char* path2) {
   VFS_PUT_AND_CLEAR(parent);
   return error;
 }
+
+int vfs_readlink(const char* path, char* buf, int bufsize) {
+  if (!path || !buf || bufsize <= 0) {
+    return -EINVAL;
+  }
+
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, 0, 0x0, &child);
+  if (result) return result;
+
+  if (child->type != VNODE_SYMLINK) {
+    VFS_PUT_AND_CLEAR(child);
+    return -EINVAL;
+  }
+
+  if (!child->fs->readlink) {
+    VFS_PUT_AND_CLEAR(child);
+    return -EPERM;
+  }
+
+  result = child->fs->readlink(child, buf, bufsize);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}

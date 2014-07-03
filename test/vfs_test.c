@@ -2561,6 +2561,56 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("symlink_test"));
 }
 
+static void readlink_test(void) {
+  const int kBufSize = 200;
+  char buf[kBufSize];
+
+  KTEST_BEGIN("vfs_readlink(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir("readlink_test", VFS_S_IRWXU));
+
+
+  KTEST_BEGIN("vfs_readlink(): basic link");
+  KEXPECT_EQ(0, vfs_symlink("target", "readlink_test/link"));
+  kmemset(buf, 0, kBufSize);
+  KEXPECT_EQ(6, vfs_readlink("readlink_test/link", buf, kBufSize));
+  KEXPECT_STREQ("target", buf);
+
+
+  KTEST_BEGIN("vfs_readlink(): doesn't append null");
+  kmemset(buf, 'x', kBufSize);
+  KEXPECT_EQ(6, vfs_readlink("readlink_test/link", buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp("targetxxxx", buf, 10));
+
+
+  KTEST_BEGIN("vfs_readlink(): buffer too small");
+  kmemset(buf, 'x', kBufSize);
+  KEXPECT_EQ(3, vfs_readlink("readlink_test/link", buf, 3));
+  KEXPECT_EQ(0, kstrncmp("tarxxxxxxx", buf, 10));
+
+
+  KTEST_BEGIN("vfs_readlink(): invalid arguments");
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", buf, -1));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", 0x0, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink(0x0, buf, kBufSize));
+  KEXPECT_EQ(-ENOENT, vfs_readlink("doesnt_exist", buf, kBufSize));
+  KEXPECT_EQ(-ENOENT,
+             vfs_readlink("readlink_test/doesnt_exist", buf, kBufSize));
+
+  KEXPECT_EQ(-EINVAL, vfs_readlink("/", buf, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("/.", buf, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test", buf, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/./.", buf, kBufSize));
+
+  create_file("readlink_test/file", "rwxrwxrwx");
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/file", buf, kBufSize));
+  KEXPECT_EQ(-ENOTDIR, vfs_readlink("readlink_test/file/link", buf, kBufSize));
+  KEXPECT_EQ(0, vfs_unlink("readlink_test/file"));
+
+  KTEST_BEGIN("vfs_readlink(): test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("readlink_test/link"));
+  KEXPECT_EQ(0, vfs_rmdir("readlink_test"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2609,6 +2659,7 @@ void vfs_test(void) {
   mknod_mode_test();
 
   symlink_test();
+  readlink_test();
 
   reverse_path_test();
 

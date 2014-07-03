@@ -143,4 +143,7 @@ int vfs_fchmod(int fd, mode_t mode);
 // success, or -error.
 int vfs_symlink(const char* path1, const char* path2);
 
+// Read the contents of a symlink into the given buffer.
+int vfs_readlink(const char* path, char* buf, int bufsize);
+
 #endif
