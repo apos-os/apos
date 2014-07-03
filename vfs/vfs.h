@@ -131,6 +131,10 @@ int vfs_fstat(int fd, apos_stat_t* stat);
 
 // Changes the owner and/or group of the given path.  Returns 0 on success, or
 // -error.
+int vfs_chown(const char* path, uid_t owner, gid_t group);
+
+// Changes the owner and/or group of the given path, but doesn't resolve path if
+// it is a symlink.  Returns 0 on success, or -error.
 int vfs_lchown(const char* path, uid_t owner, gid_t group);
 
 // Changes the owner and/or group of the given fd.  Returns 0 on success, or

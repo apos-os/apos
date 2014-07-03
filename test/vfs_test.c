@@ -1914,7 +1914,7 @@ static void non_root_chown_test_func(void* arg) {
 } while (0);
 
 // TODO(aoates): rewrite fchown tests to use helper
-static void chown_test(void) {
+static void lchown_test(void) {
   const uid_t kTestUserA = 1;
   const uid_t kTestUserB = 2;
   const gid_t kTestGroupA = 3;
@@ -2015,6 +2015,78 @@ static void chown_test(void) {
   //  executable files).
   //  * ISGID for non-group-executable file NOT reset.
   //  * maybe: fchown() with different fd flags? (RW vs RD_ONLY etc)
+}
+
+static void chown_test(void) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const gid_t kTestGroupA = 3;
+  const gid_t kTestGroupB = 4;
+
+  const char kDir[] = "chown_test_dir";
+  const char kRegFile[] = "chown_test_dir/reg";
+  const char kFileLink[] = "chown_test_dir/file_link";
+  const char kDirLink[] = "chown_test_dir/dir_link";
+  const char kBadLink[] = "chown_test_dir/bad_link";
+
+  KTEST_BEGIN("vfs_chown(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
+  create_file(kRegFile, RWX);
+
+  KTEST_BEGIN("vfs_chown(): bad arguments");
+  KEXPECT_EQ(-EINVAL, vfs_chown(0x0, -1, -1));
+  KEXPECT_EQ(-EINVAL, vfs_chown(kRegFile, -5, -1));
+  KEXPECT_EQ(-EINVAL, vfs_chown(kRegFile, -1, -5));
+
+
+  KTEST_BEGIN("vfs_chown(): regular file");
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_chown(kRegFile, kTestUserB, kTestGroupB));
+  KEXPECT_EQ(0, vfs_stat(kRegFile, &stat));
+  KEXPECT_EQ(kTestUserB, stat.st_uid);
+  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_chown(): link to regular file");
+  KEXPECT_EQ(0, vfs_symlink("reg", kFileLink));
+  KEXPECT_EQ(0, vfs_chown(kFileLink, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_stat(kRegFile, &stat));
+  KEXPECT_EQ(kTestUserA, stat.st_uid);
+  KEXPECT_EQ(kTestGroupA, stat.st_gid);
+
+  KEXPECT_EQ(0, vfs_lstat(kFileLink, &stat));
+  KEXPECT_EQ(SUPERUSER_UID, stat.st_uid);
+  KEXPECT_EQ(SUPERUSER_GID, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_chown(): link to directory");
+  kmemset(&stat, 0, sizeof(apos_stat_t));
+  KEXPECT_EQ(0, vfs_symlink(".", kDirLink));
+  KEXPECT_EQ(0, vfs_chown(kDirLink, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_stat(kDir, &stat));
+  KEXPECT_EQ(kTestUserA, stat.st_uid);
+  KEXPECT_EQ(kTestGroupA, stat.st_gid);
+
+  KEXPECT_EQ(0, vfs_lstat(kDirLink, &stat));
+  KEXPECT_EQ(SUPERUSER_UID, stat.st_uid);
+  KEXPECT_EQ(SUPERUSER_GID, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_chown(): dangling symlink");
+  kmemset(&stat, 0, sizeof(apos_stat_t));
+  KEXPECT_EQ(0, vfs_symlink("bad", kBadLink));
+  KEXPECT_EQ(-ENOENT, vfs_chown(kBadLink, kTestUserA, kTestGroupA));
+
+  KEXPECT_EQ(0, vfs_lstat(kBadLink, &stat));
+  KEXPECT_EQ(SUPERUSER_UID, stat.st_uid);
+  KEXPECT_EQ(SUPERUSER_GID, stat.st_gid);
+
+
+  vfs_unlink(kFileLink);
+  vfs_unlink(kDirLink);
+  vfs_unlink(kBadLink);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
 static void mode_flags_test(void) {
@@ -2715,6 +2787,7 @@ void vfs_test(void) {
   lstat_test();
   stat_test();
   initial_owner_test();
+  lchown_test();
   chown_test();
 
   mode_flags_test();

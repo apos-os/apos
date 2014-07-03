@@ -933,18 +933,27 @@ static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
   return 0;
 }
 
-int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+static int vfs_chown_path_internal(const char* path, uid_t owner, gid_t group,
+                                   int resolve_final_symlink) {
   if (!path || owner < -1 || group < -1) {
     return -EINVAL;
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, 0, 0x0, &child);
+  int result = lookup_existing_path(path, resolve_final_symlink, 0x0, &child);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
   VFS_PUT_AND_CLEAR(child);
   return result;
+}
+
+int vfs_chown(const char* path, uid_t owner, gid_t group) {
+  return vfs_chown_path_internal(path, owner, group, 1);
+}
+
+int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+  return vfs_chown_path_internal(path, owner, group, 0);
 }
 
 int vfs_fchown(int fd, uid_t owner, gid_t group) {
