@@ -2549,10 +2549,6 @@ static void symlink_test(void) {
              stat.st_mode);
   KEXPECT_EQ(0, vfs_unlink("symlink_test/modelink"));
 
-  // TODO(aoates): test all syscalls
-  // TODO(aoates): symlink across mounts
-  // TODO(aoates): symlink to mount point
-
   KTEST_BEGIN("vfs_symlink(): test cleanup");
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_link_to_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_file"));
