@@ -37,6 +37,9 @@ struct cbfs_inode {
   list_t entries;
   cbfs_getdents_t getdents_cb;
 
+  // If type == VNODE_SYMLINK.
+  cbfs_readlink_t readlink_cb;
+
   void* arg;
 
   uid_t uid;
@@ -219,6 +222,8 @@ static int cbfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
 static int cbfs_unlink(vnode_t* parent, const char* name);
 static int cbfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
+static int cbfs_symlink(vnode_t* parent, const char* name, const char* path);
+static int cbfs_readlink(vnode_t* node, char* buf, int bufsize);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -242,6 +247,8 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
   f->fs.unlink = &cbfs_unlink;
   f->fs.getdents = &cbfs_getdents;
   f->fs.stat = &cbfs_stat;
+  f->fs.symlink = &cbfs_symlink;
+  f->fs.readlink = &cbfs_readlink;
   f->fs.read_page = &cbfs_read_page;
   f->fs.write_page = &cbfs_write_page;
 
@@ -299,6 +306,19 @@ void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
   inode->mode = mode;
 
   create_directory_entries(parent_num, inode);
+}
+
+void cbfs_inode_create_symlink(cbfs_inode_t* inode, int num,
+                               cbfs_readlink_t readlink_cb, void* readlink_arg,
+                               uid_t uid, gid_t gid) {
+  init_inode(inode);
+  inode->type = VNODE_SYMLINK;
+  inode->num = num;
+  inode->readlink_cb = readlink_cb;
+  inode->arg = readlink_arg;
+  inode->uid = uid;
+  inode->gid = gid;
+  inode->mode = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO;
 }
 
 void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num) {
@@ -430,6 +450,40 @@ int cbfs_create_directory(fs_t* fs, const char* path,
   add_inode_to_vnode_table(cfs, inode);
 
   create_directory_entries(parent->num, inode);
+
+  cbfs_entry_t* entry = create_entry(inode->num, name_start);
+  insert_entry(parent, entry);
+
+  return 0;
+}
+
+int cbfs_create_symlink(fs_t* fs, const char* path, cbfs_readlink_t readlink_cb,
+                        void* arg) {
+  cbfs_t* cfs = fs_to_cbfs(fs);
+
+  char name_start[VFS_MAX_FILENAME_LENGTH];
+  cbfs_inode_t* parent = 0x0;
+  int result = create_path(cfs, path, name_start, &parent);
+  if (result) return result;
+  if (!name_start[0]) return -EEXIST;  // root
+
+  cbfs_inode_t generated_inode;
+  cbfs_inode_t* inode = 0x0;
+  if (lookup_by_name(cfs, parent, name_start, &generated_inode, &inode) == 0)
+    return -EEXIST;
+  if (parent->type != VNODE_DIRECTORY) return -ENOTDIR;
+
+  const int inode_num = alloc_inode_num(cfs);
+  if (inode_num < 0) return inode_num;
+
+  inode = create_inode(cfs, inode_num);
+  inode->type = VNODE_SYMLINK;
+  inode->readlink_cb = readlink_cb;
+  inode->arg = arg;
+  inode->mode = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO;
+  inode->uid = proc_current()->euid;
+  inode->gid = proc_current()->egid;
+  add_inode_to_vnode_table(cfs, inode);
 
   cbfs_entry_t* entry = create_entry(inode->num, name_start);
   insert_entry(parent, entry);
@@ -652,15 +706,36 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
   if (result) return result;
 
-  stat_out->st_mode =
-      ((inode->type == VNODE_DIRECTORY) ? VFS_S_IFDIR : VFS_S_IFREG) |
-      inode->mode;
+  switch (inode->type) {
+    case VNODE_REGULAR: inode->mode = VFS_S_IFREG; break;
+    case VNODE_DIRECTORY: inode->mode = VFS_S_IFDIR; break;
+    case VNODE_SYMLINK: inode->mode = VFS_S_IFLNK; break;
+    default: die("invalid vnode filetype in cbfs");
+  }
+  stat_out->st_mode |= inode->mode;
   stat_out->st_nlink = (inode->type == VNODE_DIRECTORY) ? 2 : 1;
   stat_out->st_rdev = mkdev(0, 0);
   stat_out->st_size = 2 * sizeof(dirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;
   return 0;
+}
+
+static int cbfs_symlink(vnode_t* parent, const char* name, const char* path) {
+  return -EACCES;
+}
+
+static int cbfs_readlink(vnode_t* vnode, char* buf, int bufsize) {
+  KASSERT(vnode->type == VNODE_SYMLINK);
+
+  cbfs_t* cfs = fs_to_cbfs(vnode->fs);
+  cbfs_inode_t generated_inode;
+  cbfs_inode_t* inode = 0x0;
+  int result = get_inode(cfs, vnode->num, &generated_inode, &inode);
+  if (result) return result;
+
+  KASSERT(inode->type == VNODE_SYMLINK);
+  return inode->readlink_cb(vnode->fs, inode->arg, inode->num, buf, bufsize);
 }
 
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
