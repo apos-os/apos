@@ -387,6 +387,7 @@ static void ls_cmd(int argc, char* argv[]) {
             case VFS_S_IFDIR: mode[0] = 'd'; break;
             case VFS_S_IFBLK: mode[0] = 'b'; break;
             case VFS_S_IFCHR: mode[0] = 'c'; break;
+            case VFS_S_IFLNK: mode[0] = 'l'; break;
             default: mode[0] = '?'; break;
           }
           mode[1] = stat.st_mode & VFS_S_IRUSR ? 'r' : '-';
@@ -399,8 +400,22 @@ static void ls_cmd(int argc, char* argv[]) {
           mode[8] = stat.st_mode & VFS_S_IWOTH ? 'w' : '-';
           mode[9] = stat.st_mode & VFS_S_IXOTH ? 'x' : '-';
           mode[10] = '\0';
-          ksh_printf("%s [%3d] %5d %5d %10d %s\n", mode, ent->vnode,
-                     stat.st_uid, stat.st_gid, stat.st_size, ent->name);
+
+          char link_target[VFS_MAX_PATH_LENGTH + 5];
+          kmemset(link_target, 0, VFS_MAX_PATH_LENGTH + 5);
+          if ((stat.st_mode & VFS_S_IFMT) == VFS_S_IFLNK) {
+            kstrcat(link_target, " -> ");
+            int result =
+                vfs_readlink(child_path, link_target + 4, VFS_MAX_PATH_LENGTH);
+            if (result < 0) {
+              ksprintf(link_target + 4, "<unable to readlink: %s>",
+                       errorname(-result));
+            }
+          }
+
+          ksh_printf("%s [%3d] %5d %5d %10d %s%s\n", mode, ent->vnode,
+                     stat.st_uid, stat.st_gid, stat.st_size, ent->name,
+                     link_target);
         }
       } else {
         ksh_printf("%s\n", ent->name);

@@ -42,6 +42,9 @@ static int basic_file_read_test(fs_t* fs, void* arg, int vnode, int offset,
   return 6;
 }
 
+static int dynamic_link_readlink(fs_t* fs, void* arg, int vnode, void* buf,
+                                 int buflen);
+
 static int save_vnode_read(fs_t* fs, void* arg, int vnode, int offset,
                            void* buf, int buflen) {
   *(int*)arg = vnode;
@@ -114,6 +117,23 @@ static void basic_file_test(fs_t* fs) {
                     (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "dir2"}}));
 
 
+  KTEST_BEGIN("cbfs: symlink test");
+  KEXPECT_EQ(0, cbfs_create_symlink(fs, "dir1/link", &dynamic_link_readlink,
+                                    (void*)0x1));
+  KEXPECT_EQ(6, vfs_readlink("cbfs_test_root/dir1/link", buf, 100));
+  KEXPECT_EQ(0, kstrncmp(buf, "target", 6));
+
+  KEXPECT_EQ(-EEXIST, cbfs_create_symlink(fs, "dir1/link",
+                                          &dynamic_link_readlink, (void*)0x1));
+  KEXPECT_EQ(-EEXIST, cbfs_create_symlink(fs, "dir1/dir2/dir3/f",
+                                          &dynamic_link_readlink, (void*)0x1));
+  KEXPECT_EQ(-EEXIST, cbfs_create_symlink(fs, "dir1", &dynamic_link_readlink,
+                                          (void*)0x1));
+  KEXPECT_EQ(-EEXIST,
+             cbfs_create_symlink(fs, "/", &dynamic_link_readlink, (void*)0x1));
+  KEXPECT_EQ(-ENOTDIR, cbfs_create_symlink(fs, "dir1/dir2/dir3/f/link",
+                                           &dynamic_link_readlink, (void*)0x1));
+
   KTEST_BEGIN("cbfs: open non-existant files");
   KEXPECT_EQ(-ENOENT, vfs_open("cbfs_test_root/x", VFS_O_RDONLY));
   KEXPECT_EQ(-ENOENT, vfs_open("cbfs_test_root/x/y", VFS_O_RDONLY));
@@ -169,6 +189,7 @@ static int no_read(fs_t* fs, void* arg, int vnode, int offset, void* outbuf,
 static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                                 list_t* list_out, void* buf, int buflen);
 
+
 static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
                             cbfs_inode_t* inode_out) {
   KEXPECT_EQ(0x5, (int)arg);
@@ -177,10 +198,14 @@ static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
     return 0;
   } else if (vnode == 106) {
     return -ENOMEM;
-  } else if (vnode >= 200) {
+  } else if (vnode >= 200 && vnode < 300) {
     cbfs_inode_create_directory(inode_out, vnode, vnode - 200,
                                 &dynamic_dir_getdents, (void*)0x1, 1, 2,
                                 VFS_S_IRWXU);
+    return 0;
+  } else if (vnode == 300) {
+    cbfs_inode_create_symlink(inode_out, vnode, &dynamic_link_readlink,
+                              (void*)0x1, 1, 2);
     return 0;
   }
   return -ENOENT;
@@ -262,9 +287,26 @@ static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
       list_push(list_out, &entry->link);
     }
     return 0;
+  } else if ((int)arg == 5) {
+    // Mode 5: dynamic symlink.
+    if (offset == 0) {
+      const int entry_size = cbfs_entry_size("dynlink");
+      if (entry_size > buflen) return -ENOMEM;
+      cbfs_entry_t* entry = (cbfs_entry_t*)buf;
+      cbfs_create_entry(entry, "dynlink", 300);
+      list_push(list_out, &entry->link);
+    }
   }
 
   return 0;
+}
+
+static int dynamic_link_readlink(fs_t* fs, void* arg, int vnode, void* buf,
+                                 int buflen) {
+  const char* target = "target";
+  int len = min(buflen, kstrlen(target));
+  kstrncpy(buf, target, len);
+  return len;
 }
 
 static void dynamic_directory_test(void) {
@@ -463,6 +505,24 @@ static void dynamic_directory_test(void) {
   KEXPECT_EQ(1, stat.st_uid);
   KEXPECT_EQ(2, stat.st_gid);
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXU, stat.st_mode);
+
+
+  KTEST_BEGIN("cbfs: dynamic symlink");
+  KEXPECT_EQ(0, cbfs_create_directory(fs, "dir7", &dynamic_dir_getdents,
+                                      (void*)5, VFS_S_IRWXU));
+  KEXPECT_EQ(0, compare_dirents_p("cbfs_test_root/dir7", 3,
+                                  (edirent_t[]) {{-1, "."},
+                                                 {-1, ".."},
+                                                 {300, "dynlink"}}));
+
+  kmemset(tmp, 'x', 100);
+  KEXPECT_EQ(6, vfs_readlink("cbfs_test_root/dir7/dynlink", tmp, 100));
+  KEXPECT_EQ(0, kstrncmp(tmp, "targetxxxx", 10));
+  KEXPECT_EQ(0, vfs_lstat("cbfs_test_root/dir7/dynlink", &stat));
+  KEXPECT_EQ(1, stat.st_uid);
+  KEXPECT_EQ(2, stat.st_gid);
+  KEXPECT_EQ(VFS_S_IFLNK | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));

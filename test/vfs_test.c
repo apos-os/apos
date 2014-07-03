@@ -468,6 +468,7 @@ static void get_path_test(void) {
     KEXPECT_EQ(kstrlen(expected_path),                        \
                vfs_get_vnode_dir_path(vnode, buf, kBufSize)); \
     KEXPECT_STREQ((expected_path), buf);                      \
+    vfs_put(vnode);                                           \
   } while (0)
 
 #define EXPECT_PATH_ERROR(error, path)                               \
@@ -475,6 +476,7 @@ static void get_path_test(void) {
     int vnode_num = vfs_get_vnode_for_path(path);                    \
     vnode_t* vnode = vfs_get(vfs_get_root_fs(), vnode_num);          \
     KEXPECT_EQ(error, vfs_get_vnode_dir_path(vnode, buf, kBufSize)); \
+    vfs_put(vnode);                                                  \
   } while (0)
 
   EXPECT_PATH("/vnode_path_test", "/vnode_path_test");
@@ -1535,7 +1537,7 @@ static void KEXPECT_STAT_EQ(const apos_stat_t* A, const apos_stat_t* B) {
   }
 }
 
-static void stat_test(void) {
+static void lstat_test(void) {
   const char kDir[] = "stat_test_dir";
   const char kRegFile[] = "stat_test_dir/reg";
   const char kCharDevFile[] = "stat_test_dir/char";
@@ -1658,6 +1660,70 @@ static void stat_test(void) {
   vfs_rmdir(kDir);
 
   // TODO(aoates): test fstat on fds with different modes.
+}
+
+static void stat_test(void) {
+  const char kDir[] = "stat_test_dir";
+  const char kRegFile[] = "stat_test_dir/reg";
+  const char kFileLink[] = "stat_test_dir/reg_link";
+  const char kDirLink[] = "stat_test_dir/dir_link";
+  const char kBadLink[] = "stat_test_dir/bad_link";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  apos_stat_t stat;
+
+  KTEST_BEGIN("stat(): regular file test (empty)");
+  create_file(kRegFile, RWX);
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_stat(kRegFile, &stat));
+  KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+
+  KTEST_BEGIN("stat(): link to regular file test");
+  KEXPECT_EQ(0, vfs_symlink("reg", kFileLink));
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_stat(kFileLink, &stat));
+  KEXPECT_EQ(vfs_get_vnode_for_path(kRegFile), stat.st_ino);
+  KEXPECT_NE(vfs_get_vnode_for_path(kFileLink), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_GT(stat.st_blksize, 0);
+  KEXPECT_EQ(0, stat.st_blocks);
+
+
+  KTEST_BEGIN("stat(): link to directory");
+  KEXPECT_EQ(0, vfs_symlink(".", kDirLink));
+
+  kmemset(&stat, 0xFF, sizeof(stat));
+  KEXPECT_EQ(0, vfs_stat(kDirLink, &stat));
+  KEXPECT_EQ(VFS_S_IFDIR, stat.st_mode);
+
+  KTEST_BEGIN("stat(): dangling link");
+  KEXPECT_EQ(0, vfs_symlink("bad", kBadLink));
+  KEXPECT_EQ(-ENOENT, vfs_stat(kBadLink, &stat));
+  KEXPECT_EQ(-ENOENT, vfs_stat("badtarget", &stat));
+
+
+  KTEST_BEGIN("stat(): bad args");
+  KEXPECT_EQ(-EINVAL, vfs_stat(0x0, &stat));
+  KEXPECT_EQ(-EINVAL, vfs_stat(kDirLink, 0x0));
+
+  vfs_unlink(kBadLink);
+  vfs_unlink(kFileLink);
+  vfs_unlink(kDirLink);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
 }
 
 static void initial_owner_test_func(void* arg) {
@@ -1848,7 +1914,7 @@ static void non_root_chown_test_func(void* arg) {
 } while (0);
 
 // TODO(aoates): rewrite fchown tests to use helper
-static void chown_test(void) {
+static void lchown_test(void) {
   const uid_t kTestUserA = 1;
   const uid_t kTestUserB = 2;
   const gid_t kTestGroupA = 3;
@@ -1951,6 +2017,78 @@ static void chown_test(void) {
   //  * maybe: fchown() with different fd flags? (RW vs RD_ONLY etc)
 }
 
+static void chown_test(void) {
+  const uid_t kTestUserA = 1;
+  const uid_t kTestUserB = 2;
+  const gid_t kTestGroupA = 3;
+  const gid_t kTestGroupB = 4;
+
+  const char kDir[] = "chown_test_dir";
+  const char kRegFile[] = "chown_test_dir/reg";
+  const char kFileLink[] = "chown_test_dir/file_link";
+  const char kDirLink[] = "chown_test_dir/dir_link";
+  const char kBadLink[] = "chown_test_dir/bad_link";
+
+  KTEST_BEGIN("vfs_chown(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
+  create_file(kRegFile, RWX);
+
+  KTEST_BEGIN("vfs_chown(): bad arguments");
+  KEXPECT_EQ(-EINVAL, vfs_chown(0x0, -1, -1));
+  KEXPECT_EQ(-EINVAL, vfs_chown(kRegFile, -5, -1));
+  KEXPECT_EQ(-EINVAL, vfs_chown(kRegFile, -1, -5));
+
+
+  KTEST_BEGIN("vfs_chown(): regular file");
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_chown(kRegFile, kTestUserB, kTestGroupB));
+  KEXPECT_EQ(0, vfs_stat(kRegFile, &stat));
+  KEXPECT_EQ(kTestUserB, stat.st_uid);
+  KEXPECT_EQ(kTestGroupB, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_chown(): link to regular file");
+  KEXPECT_EQ(0, vfs_symlink("reg", kFileLink));
+  KEXPECT_EQ(0, vfs_chown(kFileLink, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_stat(kRegFile, &stat));
+  KEXPECT_EQ(kTestUserA, stat.st_uid);
+  KEXPECT_EQ(kTestGroupA, stat.st_gid);
+
+  KEXPECT_EQ(0, vfs_lstat(kFileLink, &stat));
+  KEXPECT_EQ(SUPERUSER_UID, stat.st_uid);
+  KEXPECT_EQ(SUPERUSER_GID, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_chown(): link to directory");
+  kmemset(&stat, 0, sizeof(apos_stat_t));
+  KEXPECT_EQ(0, vfs_symlink(".", kDirLink));
+  KEXPECT_EQ(0, vfs_chown(kDirLink, kTestUserA, kTestGroupA));
+  KEXPECT_EQ(0, vfs_stat(kDir, &stat));
+  KEXPECT_EQ(kTestUserA, stat.st_uid);
+  KEXPECT_EQ(kTestGroupA, stat.st_gid);
+
+  KEXPECT_EQ(0, vfs_lstat(kDirLink, &stat));
+  KEXPECT_EQ(SUPERUSER_UID, stat.st_uid);
+  KEXPECT_EQ(SUPERUSER_GID, stat.st_gid);
+
+
+  KTEST_BEGIN("vfs_chown(): dangling symlink");
+  kmemset(&stat, 0, sizeof(apos_stat_t));
+  KEXPECT_EQ(0, vfs_symlink("bad", kBadLink));
+  KEXPECT_EQ(-ENOENT, vfs_chown(kBadLink, kTestUserA, kTestGroupA));
+
+  KEXPECT_EQ(0, vfs_lstat(kBadLink, &stat));
+  KEXPECT_EQ(SUPERUSER_UID, stat.st_uid);
+  KEXPECT_EQ(SUPERUSER_GID, stat.st_gid);
+
+
+  vfs_unlink(kFileLink);
+  vfs_unlink(kDirLink);
+  vfs_unlink(kBadLink);
+  vfs_unlink(kRegFile);
+  KEXPECT_EQ(0, vfs_rmdir(kDir));
+}
+
 static void mode_flags_test(void) {
   KTEST_BEGIN("vfs mode_t flags test");
   KEXPECT_EQ(VFS_S_IRWXU, VFS_S_IRUSR | VFS_S_IWUSR | VFS_S_IXUSR);
@@ -1973,11 +2111,11 @@ static void mode_flags_test(void) {
   }
 }
 
-// Do a basic lchmod/fchmod test for the given file.
+// Do a basic chmod/fchmod test for the given file.
 #define BASIC_CHMOD_TEST(path, filetype, mode_filetype) do { \
-  KTEST_BEGIN("vfs_lchmod(): " filetype); \
+  KTEST_BEGIN("vfs_chmod(): " filetype); \
   KEXPECT_NE(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
-  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXO)); \
+  KEXPECT_EQ(0, vfs_chmod(path, VFS_S_IRWXO)); \
   KEXPECT_EQ(VFS_S_IRWXO | mode_filetype, get_mode(path)); \
 \
   KTEST_BEGIN("vfs_fchmod(): " filetype); \
@@ -1988,8 +2126,8 @@ static void mode_flags_test(void) {
   KEXPECT_EQ(VFS_S_IRWXG | mode_filetype, get_mode(path)); \
   KEXPECT_EQ(0, vfs_close(fd)); \
 \
-  KTEST_BEGIN("vfs_lchmod(): SUID/SGID/SVXT for " filetype); \
-  KEXPECT_EQ(0, vfs_lchmod(path, VFS_S_IRWXU | VFS_S_ISUID | \
+  KTEST_BEGIN("vfs_chmod(): SUID/SGID/SVXT for " filetype); \
+  KEXPECT_EQ(0, vfs_chmod(path, VFS_S_IRWXU | VFS_S_ISUID | \
                            VFS_S_ISGID | VFS_S_ISVTX)); \
   KEXPECT_EQ(VFS_S_IRWXU | VFS_S_ISUID | VFS_S_ISGID |  VFS_S_ISVTX | \
              mode_filetype, get_mode(path)); \
@@ -2005,25 +2143,25 @@ static void non_root_chmod_test_func(void* arg) {
   const char kRegFileA[] = "chmod_test_dir/regA";
   const char kRegFileB[] = "chmod_test_dir/regB";
 
-  KTEST_BEGIN("vfs_lchmod(): non-root test setup");
+  KTEST_BEGIN("vfs_chmod(): non-root test setup");
   create_file(kRegFileA, RWX);
   create_file(kRegFileB, RWX);
   KEXPECT_EQ(0, vfs_lchown(kRegFileA, kTestUserA, kTestGroupA));
   KEXPECT_EQ(0, vfs_lchown(kRegFileB, kTestUserB, kTestGroupB));
 
-  KTEST_BEGIN("vfs_lchmod(): root can always chmod");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFileA, VFS_S_IRWXO));
+  KTEST_BEGIN("vfs_chmod(): root can always chmod");
+  KEXPECT_EQ(0, vfs_chmod(kRegFileA, VFS_S_IRWXO));
   KEXPECT_EQ(VFS_S_IRWXO | VFS_S_IFREG, get_mode(kRegFileA));
 
   KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
   KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
 
-  KTEST_BEGIN("vfs_lchmod(): non-root owner can chmod");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFileB, VFS_S_IRUSR));
+  KTEST_BEGIN("vfs_chmod(): non-root owner can chmod");
+  KEXPECT_EQ(0, vfs_chmod(kRegFileB, VFS_S_IRUSR));
   KEXPECT_EQ(VFS_S_IRUSR | VFS_S_IFREG, get_mode(kRegFileB));
 
-  KTEST_BEGIN("vfs_lchmod(): non-owner cannot chmod");
-  KEXPECT_EQ(-EPERM, vfs_lchmod(kRegFileA, VFS_S_IRUSR));
+  KTEST_BEGIN("vfs_chmod(): non-owner cannot chmod");
+  KEXPECT_EQ(-EPERM, vfs_chmod(kRegFileA, VFS_S_IRUSR));
 
   KEXPECT_EQ(0, vfs_unlink(kRegFileA));
   KEXPECT_EQ(0, vfs_unlink(kRegFileB));
@@ -2035,17 +2173,17 @@ static void chmod_test(void) {
   const char kCharDevFile[] = "chmod_test_dir/char";
   const char kBlockDevFile[] = "chmod_test_dir/block";
 
-  KTEST_BEGIN("vfs_lchmod()/vfs_fchmod(): test setup");
+  KTEST_BEGIN("vfs_chmod()/vfs_fchmod(): test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
   create_file(kRegFile, RWX);
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
 
-  KTEST_BEGIN("vfs_lchmod(): invalid arguments test");
-  KEXPECT_EQ(-EINVAL, vfs_lchmod(0x0, VFS_S_IRWXU));
-  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
-  KEXPECT_EQ(-EINVAL, vfs_lchmod(kRegFile, 0xFFFFF));
-  KEXPECT_EQ(-ENOENT, vfs_lchmod("chmod_test_dir/notafile", VFS_S_IRWXU));
+  KTEST_BEGIN("vfs_chmod(): invalid arguments test");
+  KEXPECT_EQ(-EINVAL, vfs_chmod(0x0, VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_chmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-EINVAL, vfs_chmod(kRegFile, 0xFFFFF));
+  KEXPECT_EQ(-ENOENT, vfs_chmod("chmod_test_dir/notafile", VFS_S_IRWXU));
 
   KTEST_BEGIN("vfs_fchmod(): invalid arguments test");
   int fd = vfs_open(kRegFile, VFS_O_RDWR);
@@ -2060,32 +2198,33 @@ static void chmod_test(void) {
   BASIC_CHMOD_TEST(kCharDevFile, "character device", VFS_S_IFCHR);
   BASIC_CHMOD_TEST(kBlockDevFile, "block device", VFS_S_IFBLK);
 
-  KTEST_BEGIN("vfs_lchmod(): decreasing permissions");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
-                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KTEST_BEGIN("vfs_chmod(): decreasing permissions");
+  KEXPECT_EQ(0,
+             vfs_chmod(kRegFile, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+                                     VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
              VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO, get_mode(kRegFile));
 
-  KTEST_BEGIN("vfs_lchmod(): increasing permissions");
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXU));
+  KTEST_BEGIN("vfs_chmod(): increasing permissions");
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, VFS_S_IRWXU));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO |
-                           VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID |
+                                        VFS_S_ISGID | VFS_S_ISVTX));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO |
              VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
 
-  KTEST_BEGIN("vfs_lchmod(): keep same permissions");
+  KTEST_BEGIN("vfs_chmod(): keep same permissions");
   const mode_t kAllPerms = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
       VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX;
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, kAllPerms));
   KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
-  KEXPECT_EQ(0, vfs_lchmod(kRegFile, kAllPerms));
+  KEXPECT_EQ(0, vfs_chmod(kRegFile, kAllPerms));
   KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
 
   // Run tests as an unpriviledged user.
-  KEXPECT_EQ(0, vfs_lchmod(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_chmod(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   pid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
@@ -2198,12 +2337,426 @@ static void mknod_mode_test(void) {
   vfs_rmdir(kDir);
 }
 
+static void symlink_test(void) {
+  const int kBufSize = 100;
+  char buf[kBufSize];
+  int fd;
+
+  KTEST_BEGIN("vfs_symlink(): symlink to file");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test", VFS_S_IRWXU));
+  create_file_with_data("symlink_test/file", "abcd");
+
+  KEXPECT_EQ(0, vfs_symlink("file", "symlink_test/link_to_file"));
+
+  fd = vfs_open("symlink_test/link_to_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    KEXPECT_EQ(4, vfs_read(fd, buf, kBufSize));
+    buf[4] = '\0';
+    KEXPECT_STREQ("abcd", buf);
+    vfs_close(fd);
+  }
+
+  KTEST_BEGIN("vfs_symlink(): symlink to directory");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/dir", VFS_S_IRWXU));
+  create_file("symlink_test/dir/file1", RWX);
+  create_file("symlink_test/dir/file2", RWX);
+
+  KEXPECT_EQ(0, vfs_symlink("dir", "symlink_test/link_to_dir"));
+  KEXPECT_EQ(0, compare_dirents_p(
+                    "symlink_test/link_to_dir", 4,
+                    (edirent_t[]) {
+                        {-1, "."}, {-1, ".."}, {-1, "file1"}, {-1, "file2"}}));
+
+  KTEST_BEGIN("vfs_symlink(): symlink to directory (in middle of path)");
+  fd = vfs_open("symlink_test/link_to_dir/file1", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+  KEXPECT_EQ(0, vfs_symlink("..", "symlink_test/link_to_dir2"));
+  KEXPECT_EQ(
+      0,
+      compare_dirents_p(
+          "symlink_test/link_to_dir2/symlink_test/link_to_dir2/./symlink_test/"
+          "dir",
+          4,
+          (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "file1"}, {-1, "file2"}}));
+
+  KTEST_BEGIN("vfs_symlink(): symlink over existing file");
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "/"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/link_to_file"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/link_to_dir"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/file"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/dir"));
+
+  KTEST_BEGIN("vfs_symlink(): symlink at bad path");
+  KEXPECT_EQ(-ENOENT, vfs_symlink("dir", "noent/dir/x"));
+  KEXPECT_EQ(-ENOENT, vfs_symlink("dir", "symlink_test/dir2/x"));
+  KEXPECT_EQ(-ENOTDIR, vfs_symlink("dir", "symlink_test/file/x"));
+
+  KTEST_BEGIN("vfs_symlink(): symlink pointing to bad path");
+  KEXPECT_EQ(0, vfs_symlink("../bad/path", "symlink_test/bad_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
+
+  KTEST_BEGIN(
+      "vfs_symlink(): symlink pointing to bad path (only last element bad)");
+  KEXPECT_EQ(0, vfs_symlink("../bad", "symlink_test/bad_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2", VFS_O_RDONLY));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2",
+                               VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
+
+
+  KTEST_BEGIN("vfs_symlink(): invalid arguments");
+  // TODO(aoates): test too-long paths
+  KEXPECT_EQ(-EINVAL, vfs_symlink(0x0, "symlink_test/bad_link"));
+  KEXPECT_EQ(-EINVAL, vfs_symlink("symlink_test/bad_link", 0x0));
+
+
+  KTEST_BEGIN("vfs_symlink(): symlink to another symlink");
+  KEXPECT_EQ(0,
+             vfs_symlink("link_to_file", "symlink_test/link_to_link_to_file"));
+
+  fd = vfs_open("symlink_test/link_to_link_to_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  if (fd >= 0) {
+    KEXPECT_EQ(4, vfs_read(fd, buf, kBufSize));
+    buf[4] = '\0';
+    KEXPECT_STREQ("abcd", buf);
+    vfs_close(fd);
+  }
+
+  KTEST_BEGIN(
+      "vfs_symlink(): symlink to another symlink (in different directory)");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/dir1", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/dir1/dir2", VFS_S_IRWXU));
+  create_file("symlink_test/dir1/dir2/f", RWX);
+  KEXPECT_EQ(0, vfs_symlink("f", "symlink_test/dir1/dir2/link"));
+  KEXPECT_EQ(0, vfs_symlink("dir2/link", "symlink_test/dir1/link2"));
+  EXPECT_FILE_EXISTS("symlink_test/dir1/link2");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir1/dir2/f"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir1/dir2/link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir1/link2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir1/dir2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir1"));
+
+
+  KTEST_BEGIN("vfs_symlink(): long symlinks");
+  const char kPath58[] =
+      "./././././././././././././././././././././././././././file";
+  const char kPath59[] =
+      "./././././././././././././././././././././././././././/file";
+  const char kPath60[] =
+      "././././././././././././././././././././././././././././file";
+  const char kPath61[] =
+      "././././././././././././././././././././././././././././/file";
+  KEXPECT_EQ(58, kstrlen(kPath58));
+  KEXPECT_EQ(59, kstrlen(kPath59));
+  KEXPECT_EQ(60, kstrlen(kPath60));
+  KEXPECT_EQ(61, kstrlen(kPath61));
+
+  KEXPECT_EQ(0, vfs_symlink(kPath58, "symlink_test/link58"));
+  KEXPECT_EQ(0, vfs_symlink(kPath59, "symlink_test/link59"));
+  KEXPECT_EQ(0, vfs_symlink(kPath60, "symlink_test/link60"));
+  KEXPECT_EQ(0, vfs_symlink(kPath61, "symlink_test/link61"));
+
+  EXPECT_FILE_EXISTS("symlink_test/link58");
+  EXPECT_FILE_EXISTS("symlink_test/link59");
+  EXPECT_FILE_EXISTS("symlink_test/link60");
+  EXPECT_FILE_EXISTS("symlink_test/link61");
+
+  char very_long_path[1025];
+  for (int i = 0; i < 1020; i += 2) {
+    very_long_path[i] = '.';
+    very_long_path[i + 1] = '/';
+  }
+  very_long_path[1020] = 'f';
+  very_long_path[1021] = 'i';
+  very_long_path[1022] = 'l';
+  very_long_path[1023] = 'e';
+  very_long_path[1024] = '\0';
+  KEXPECT_EQ(0, vfs_symlink(very_long_path, "symlink_test/link_long"));
+  EXPECT_FILE_EXISTS("symlink_test/link_long");
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link58"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link59"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link60"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link61"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_long"));
+
+
+  KTEST_BEGIN("vfs_mkdir(): doesn't follow final symlink");
+  KEXPECT_EQ(0, vfs_symlink("newdir", "symlink_test/mkdir_link"));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("symlink_test/mkdir_link", VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/newdir", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/mkdir_link"));
+
+
+  KTEST_BEGIN("vfs_mknod(): doesn't follow final symlink");
+  KEXPECT_EQ(0, vfs_symlink("newnode", "symlink_test/mknod_link"));
+  KEXPECT_EQ(-EEXIST, vfs_mknod("symlink_test/mknod_link",
+                                VFS_S_IFREG | VFS_S_IRWXU, mkdev(0, 0)));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/newnode", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/mknod_link"));
+
+
+  KTEST_BEGIN("vfs_rmdir(): doesn't follow final symlink");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/rmdir_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("rmdir_dir", "symlink_test/rmdir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("symlink_test/rmdir_link"));
+  EXPECT_FILE_EXISTS("symlink_test/rmdir_dir");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/rmdir_link"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/rmdir_dir"));
+
+
+  KTEST_BEGIN("vfs_unlink(): doesn't follow final symlink");
+  create_file("symlink_test/unlink_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("unlink_file", "symlink_test/unlink_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/unlink_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/unlink_link", VFS_S_IRWXU));
+  EXPECT_FILE_EXISTS("symlink_test/unlink_file");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/unlink_file"));
+
+
+  KTEST_BEGIN("vfs_lstat(): doesn't follow final symlink");
+  create_file("symlink_test/stat_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
+  KEXPECT_NE(vfs_get_vnode_for_path("symlink_test/stat_file"),
+             vfs_get_vnode_for_path("symlink_test/stat_link"));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(vfs_get_vnode_for_path("symlink_test/stat_link"), stat.st_ino);
+  KEXPECT_EQ(VFS_S_IFLNK, stat.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+
+
+  KTEST_BEGIN("vfs_chdir(): follows final symlink");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/chdir_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("chdir_dir", "symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_chdir("symlink_test/chdir_link"));
+
+  char cwd[VFS_MAX_PATH_LENGTH];
+  int cwd_len = vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH);
+  KEXPECT_GE(cwd_len, kstrlen("symlink_test/chdir_dir"));
+  KEXPECT_STREQ("symlink_test/chdir_dir",
+                cwd + (cwd_len - kstrlen("symlink_test/chdir_dir")));
+
+  KEXPECT_EQ(0, vfs_chdir("../.."));
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/chdir_dir"));
+
+
+  KTEST_BEGIN("vfs_chdir(): doesn't follow symlink to non-directory");
+  create_file("symlink_test/chdir_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("chdir_file", "symlink_test/chdir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_chdir("symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/chdir_file"));
+
+
+  KTEST_BEGIN("vfs_lchown(): doesn't follow final symlink");
+  create_file("symlink_test/stat_file", RWX);
+  KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  const uid_t orig_file_owner = stat.st_uid;
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(orig_file_owner, stat.st_uid);
+
+  KEXPECT_EQ(0, vfs_lchown("symlink_test/stat_link", orig_file_owner + 1, -1));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  KEXPECT_EQ(orig_file_owner, stat.st_uid);
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(orig_file_owner + 1, stat.st_uid);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+
+
+  KTEST_BEGIN("vfs_chmod(): follows final symlink");
+  create_file("symlink_test/stat_file", "rwx------");
+  KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  const mode_t orig_file_mode = stat.st_mode & ~VFS_S_IFMT;
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_NE(stat.st_mode & ~VFS_S_IFMT, orig_file_mode | VFS_S_IRWXO);
+
+  KEXPECT_EQ(0,
+             vfs_chmod("symlink_test/stat_link", orig_file_mode | VFS_S_IRWXO));
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
+  KEXPECT_EQ(orig_file_mode | VFS_S_IRWXO, stat.st_mode & ~VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
+  KEXPECT_EQ(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode & ~VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+
+
+  KTEST_BEGIN(
+      "vfs_symlink(): vfs_open(O_CREAT) on symlink creates destination");
+  KEXPECT_EQ(0, vfs_symlink("doesnt_exist", "symlink_test/creat_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/creat_link", VFS_O_RDWR));
+  fd = vfs_open("symlink_test/creat_link", VFS_O_RDWR | VFS_O_CREAT,
+                VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(4, vfs_write(fd, "abcd", 4));
+  KEXPECT_EQ(0, vfs_close(fd));
+  EXPECT_FILE_EXISTS("symlink_test/creat_link");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/doesnt_exist"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/creat_link"));
+
+  KTEST_BEGIN("vfs_symlink(): symlink loop");
+  KEXPECT_EQ(0, vfs_symlink("linkB", "symlink_test/linkA"));
+  KEXPECT_EQ(0, vfs_symlink("linkA", "symlink_test/linkB"));
+  KEXPECT_EQ(0, vfs_symlink("../symlink_test/linkD", "symlink_test/linkC"));
+  KEXPECT_EQ(0, vfs_symlink("../symlink_test/linkC", "symlink_test/linkD"));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkA", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkA/d1", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkA/d1/d2", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkB", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkC", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkD", VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkA"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkB"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkC"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkD"));
+
+  KEXPECT_EQ(0, vfs_symlink("linkE/d1", "symlink_test/linkF"));
+  KEXPECT_EQ(0, vfs_symlink("linkF/d1", "symlink_test/linkE"));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkE", VFS_O_RDWR));
+  KEXPECT_EQ(-ELOOP, vfs_open("symlink_test/linkE/d1", VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkE"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkF"));
+
+
+  KTEST_BEGIN("vfs_symlink(): create symlink in symlink'd directory");
+  KEXPECT_EQ(0, vfs_mkdir("symlink_test/linkeddir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("linkeddir", "symlink_test/link"));
+  KEXPECT_EQ(0, vfs_symlink("entry", "symlink_test/link/link2"));
+  KEXPECT_EQ(0, compare_dirents_p(
+                    "symlink_test/linkeddir", 3,
+                    (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "link2"}}));
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/linkeddir/link2"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/linkeddir"));
+
+
+  KTEST_BEGIN("vfs_symlink(): symlink to absolute path");
+  KEXPECT_LE(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
+  char link[VFS_MAX_PATH_LENGTH + 1];
+  char target[VFS_MAX_PATH_LENGTH + 1];
+  kstrcpy(link, cwd);
+  kstrcat(link, "/symlink_test/absolute_link");
+  kstrcpy(target, cwd);
+  kstrcat(target, "/symlink_test/file");
+
+  KEXPECT_EQ(0, vfs_symlink(target, link));
+  EXPECT_FILE_EXISTS(link);
+
+  KEXPECT_EQ(0, vfs_unlink(link));
+
+
+  KTEST_BEGIN("vfs_symlink(): initial symlink mode");
+  KEXPECT_EQ(0, vfs_symlink("file", "symlink_test/modelink"));
+  KEXPECT_EQ(0, vfs_lstat("symlink_test/modelink", &stat));
+  KEXPECT_EQ(VFS_S_IFLNK | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/modelink"));
+
+  KTEST_BEGIN("vfs_symlink(): test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_link_to_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_dir"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/link_to_dir2"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir/file1"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/dir/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_test"));
+}
+
+static void readlink_test(void) {
+  const int kBufSize = 200;
+  char buf[kBufSize];
+
+  KTEST_BEGIN("vfs_readlink(): test setup");
+  KEXPECT_EQ(0, vfs_mkdir("readlink_test", VFS_S_IRWXU));
+
+
+  KTEST_BEGIN("vfs_readlink(): basic link");
+  KEXPECT_EQ(0, vfs_symlink("target", "readlink_test/link"));
+  kmemset(buf, 0, kBufSize);
+  KEXPECT_EQ(6, vfs_readlink("readlink_test/link", buf, kBufSize));
+  KEXPECT_STREQ("target", buf);
+
+
+  KTEST_BEGIN("vfs_readlink(): doesn't append null");
+  kmemset(buf, 'x', kBufSize);
+  KEXPECT_EQ(6, vfs_readlink("readlink_test/link", buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp("targetxxxx", buf, 10));
+
+
+  KTEST_BEGIN("vfs_readlink(): buffer too small");
+  kmemset(buf, 'x', kBufSize);
+  KEXPECT_EQ(3, vfs_readlink("readlink_test/link", buf, 3));
+  KEXPECT_EQ(0, kstrncmp("tarxxxxxxx", buf, 10));
+
+
+  KTEST_BEGIN("vfs_readlink(): invalid arguments");
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", buf, -1));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", 0x0, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink(0x0, buf, kBufSize));
+  KEXPECT_EQ(-ENOENT, vfs_readlink("doesnt_exist", buf, kBufSize));
+  KEXPECT_EQ(-ENOENT,
+             vfs_readlink("readlink_test/doesnt_exist", buf, kBufSize));
+
+  KEXPECT_EQ(-EINVAL, vfs_readlink("/", buf, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("/.", buf, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test", buf, kBufSize));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/./.", buf, kBufSize));
+
+  create_file("readlink_test/file", "rwxrwxrwx");
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/file", buf, kBufSize));
+  KEXPECT_EQ(-ENOTDIR, vfs_readlink("readlink_test/file/link", buf, kBufSize));
+  KEXPECT_EQ(0, vfs_unlink("readlink_test/file"));
+
+  KTEST_BEGIN("vfs_readlink(): test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("readlink_test/link"));
+  KEXPECT_EQ(0, vfs_rmdir("readlink_test"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
 
 void vfs_test(void) {
   KTEST_SUITE_BEGIN("vfs test");
+  block_cache_clear_unpinned();
+  const int initial_cache_size = vfs_cache_size();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_enable_blocking(vfs_get_root_fs());
@@ -2233,8 +2786,10 @@ void vfs_test(void) {
   block_device_test();
 
   fs_dev_test();
+  lstat_test();
   stat_test();
   initial_owner_test();
+  lchown_test();
   chown_test();
 
   mode_flags_test();
@@ -2243,9 +2798,16 @@ void vfs_test(void) {
   mkdir_mode_test();
   mknod_mode_test();
 
+  symlink_test();
+  readlink_test();
+
   reverse_path_test();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_disable_blocking(vfs_get_root_fs());
   }
+
+  KTEST_BEGIN("vfs: vnode leak verification");
+  EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
+  KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }

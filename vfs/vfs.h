@@ -30,6 +30,7 @@
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
+#define VFS_MAX_LINK_RECURSION 20
 
 // Syscall flags.
 // TODO(aoates): once we have userland, these should be the same constants as
@@ -119,6 +120,10 @@ void vfs_fork_fds(process_t* procA, process_t* procB);
 int vfs_isatty(int fd);
 
 // Stats the given path.  Returns 0 on success, or -error.
+int vfs_stat(const char* path, apos_stat_t* stat);
+
+// Stats the given path, but doesn't resolve path if it is a symlink.  Returns 0
+// on success, or -error.
 int vfs_lstat(const char* path, apos_stat_t* stat);
 
 // Stats the given fd.  Returns 0 on success, or -error.
@@ -126,6 +131,10 @@ int vfs_fstat(int fd, apos_stat_t* stat);
 
 // Changes the owner and/or group of the given path.  Returns 0 on success, or
 // -error.
+int vfs_chown(const char* path, uid_t owner, gid_t group);
+
+// Changes the owner and/or group of the given path, but doesn't resolve path if
+// it is a symlink.  Returns 0 on success, or -error.
 int vfs_lchown(const char* path, uid_t owner, gid_t group);
 
 // Changes the owner and/or group of the given fd.  Returns 0 on success, or
@@ -133,9 +142,16 @@ int vfs_lchown(const char* path, uid_t owner, gid_t group);
 int vfs_fchown(int fd, uid_t owner, gid_t group);
 
 // Changes the file mode of the given path.  Returns 0 on success, or -error.
-int vfs_lchmod(const char* path, mode_t mode);
+int vfs_chmod(const char* path, mode_t mode);
 
 // Changes the file mode of the given fd.  Returns 0 on success, or -error.
 int vfs_fchmod(int fd, mode_t mode);
+
+// Create a symlink at path2 pointing to (containing) path1.  Returns 0 on
+// success, or -error.
+int vfs_symlink(const char* path1, const char* path2);
+
+// Read the contents of a symlink into the given buffer.
+int vfs_readlink(const char* path, char* buf, int bufsize);
 
 #endif

@@ -27,6 +27,11 @@ mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 htbl_t g_vnode_cache;
 file_t* g_file_table[VFS_MAX_FILES];
 
+static int lookup_path_internal(vnode_t* root, const char* path,
+                                int resolve_final_symlink, vnode_t** parent_out,
+                                vnode_t** child_out, char* base_name_out,
+                                int max_recursion);
+
 int resolve_mounts(vnode_t** vnode) {
   vnode_t* n = *vnode;
 
@@ -54,6 +59,55 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
+int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
+                    vnode_t** child_ptr, char* base_name_out,
+                    int max_recursion) {
+  vnode_t* child = *child_ptr;
+  vnode_t* parent = VFS_COPY_REF(*parent_ptr);
+  char* symlink_target = 0x0;
+  while (child && child->type == VNODE_SYMLINK) {
+    if (!symlink_target) symlink_target = kmalloc(VFS_MAX_PATH_LENGTH + 1);
+
+    int error = child->fs->readlink(child, symlink_target, VFS_MAX_PATH_LENGTH);
+    if (error < 0) {
+      kfree(symlink_target);
+      VFS_PUT_AND_CLEAR(parent);
+      return error;
+    }
+    KASSERT_DBG(error <= VFS_MAX_PATH_LENGTH);
+    symlink_target[error] = '\0';
+
+    // TODO(aoates): limit number of recursions.
+    vnode_t* symlink_target_node = 0x0;
+    vnode_t* new_parent = 0x0;
+    vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
+    error = lookup_path_internal(root, symlink_target, 0, &new_parent,
+                                 &symlink_target_node, base_name_out,
+                                 max_recursion - 1);
+    VFS_PUT_AND_CLEAR(root);
+    VFS_PUT_AND_CLEAR(parent);
+    if (error) {
+      kfree(symlink_target);
+      return error;
+    }
+    if (!allow_nonexistant_final && !error && !symlink_target_node) {
+      kfree(symlink_target);
+      VFS_PUT_AND_CLEAR(new_parent);
+      return -ENOENT;
+    }
+    parent = VFS_MOVE_REF(new_parent);
+
+    VFS_PUT_AND_CLEAR(child);
+    child = VFS_MOVE_REF(symlink_target_node);
+    *child_ptr = child;
+    max_recursion--;
+  }
+  if (symlink_target) kfree(symlink_target);
+  VFS_PUT_AND_CLEAR(*parent_ptr);
+  *parent_ptr = VFS_MOVE_REF(parent);
+  return 0;
+}
+
 int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   kmutex_assert_is_held(&parent->mutex);
   int child_inode = parent->fs->lookup(parent, name);
@@ -63,6 +117,7 @@ int lookup_locked(vnode_t* parent, const char* name, vnode_t** child_out) {
   }
 
   *child_out = vfs_get(parent->fs, child_inode);
+  if (!*child_out) return -EINVAL;
   return 0;
 }
 
@@ -109,10 +164,16 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   return name_len;
 }
 
-int lookup_path(vnode_t* root, const char* path,
-                vnode_t** parent_out, char* base_name_out) {
-  if (!*path) {
+static int lookup_path_internal(vnode_t* root, const char* path,
+                                int resolve_final_symlink, vnode_t** parent_out,
+                                vnode_t** child_out, char* base_name_out,
+                                int max_recursion) {
+  if (!*path || !root || !base_name_out) {
     return -EINVAL;
+  }
+
+  if (max_recursion < 0) {
+    return -ELOOP;
   }
 
   vnode_t* n = VFS_COPY_REF(root);
@@ -123,7 +184,9 @@ int lookup_path(vnode_t* root, const char* path,
   if (!*path) {
     // The path was the root node.  We don't check for search permissions since
     // the caller will check permissions on the directory itself.
-    *parent_out = VFS_MOVE_REF(n);
+    if (parent_out) *parent_out = VFS_COPY_REF(n);
+    if (child_out) *child_out = VFS_COPY_REF(n);
+    VFS_PUT_AND_CLEAR(n);
     *base_name_out = '\0';
     return 0;
   }
@@ -149,32 +212,61 @@ int lookup_path(vnode_t* root, const char* path,
 
     // Advance past any trailing slashes.
     while (*name_end && *name_end == '/') name_end++;
+    const int at_last_element = (*name_end == '\0');
 
-    // Are we at the end?
-    if (!*name_end) {
-      // Don't vfs_put() the parent, since we want to return it with a refcount.
-      *parent_out = VFS_MOVE_REF(n);
+    // Lookup the next element.  If it can't be found, and we're at the last
+    // element, save the parent and succeed anyways.
+    vnode_t* child = 0x0;
+    int error = lookup(&n, base_name_out, &child);
+    if (error && (!at_last_element || error != -ENOENT)) {
+      VFS_PUT_AND_CLEAR(n);
+      return error;
+    } else if (at_last_element && error == -ENOENT) {
+      if (parent_out) *parent_out = VFS_COPY_REF(n);
+      if (child_out) *child_out = 0x0;
+      VFS_PUT_AND_CLEAR(n);
       return 0;
     }
 
-    // Otherwise, descend again.
-    vnode_t* child = 0x0;
-    int error = lookup(&n, base_name_out, &child);
-    VFS_PUT_AND_CLEAR(n);
-    if (error) {
-      return error;
+    // If we're not at the end, or we want to follow the final symlink, attempt
+    // to resolve it.
+    if (!at_last_element || resolve_final_symlink) {
+      error = resolve_symlink(at_last_element, &n, &child, base_name_out,
+                              max_recursion);
+      if (error) {
+        VFS_PUT_AND_CLEAR(n);
+        VFS_PUT_AND_CLEAR(child);
+        return error;
+      }
+
+      if (!child) {
+        if (parent_out) *parent_out = VFS_COPY_REF(n);
+        if (child_out) *child_out = 0x0;
+        VFS_PUT_AND_CLEAR(n);
+        return 0;
+      }
     }
 
-    // TODO(aoates): symlink
-    if (child->type != VNODE_DIRECTORY) {
-      VFS_PUT_AND_CLEAR(child);
-      return -ENOTDIR;
-    }
+    if (at_last_element && parent_out) *parent_out = VFS_COPY_REF(n);
+    VFS_PUT_AND_CLEAR(n);
 
     error = resolve_mounts(&child);
     if (error) {
       VFS_PUT_AND_CLEAR(child);
       return error;
+    }
+
+    // If we're done, we're done.
+    if (at_last_element) {
+      if (child_out) *child_out = VFS_COPY_REF(child);
+      VFS_PUT_AND_CLEAR(child);
+      return 0;
+    }
+
+    // Otherwise, descend again.
+    if (child->type != VNODE_DIRECTORY) {
+      VFS_PUT_AND_CLEAR(child);
+      return -ENOTDIR;
     }
 
     // Move to the child and keep going.
@@ -183,42 +275,27 @@ int lookup_path(vnode_t* root, const char* path,
   }
 }
 
-int lookup_existing_path(const char*path, vnode_t** child_out,
-                         int resolve_mount) {
+int lookup_path(vnode_t* root, const char* path, int resolve_final_symlink,
+                vnode_t** parent_out, vnode_t** child_out,
+                char* base_name_out) {
+  return lookup_path_internal(root, path, resolve_final_symlink, parent_out,
+                              child_out, base_name_out, VFS_MAX_LINK_RECURSION);
+}
+
+
+int lookup_existing_path(const char* path, int resolve_final_symlink,
+                         vnode_t** parent_out, vnode_t** child_out) {
   if (!path) return -EINVAL;
-
   vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
-  char base_name[VFS_MAX_FILENAME_LENGTH];
-
-  int error = lookup_path(root, path, &parent, base_name);
+  char unused_basename[VFS_MAX_FILENAME_LENGTH];
+  int result = lookup_path(root, path, resolve_final_symlink, parent_out,
+                           child_out, unused_basename);
   VFS_PUT_AND_CLEAR(root);
-  if (error) {
-    return error;
+  if (!result && !*child_out) {
+    if (parent_out) VFS_PUT_AND_CLEAR(*parent_out);
+    return -ENOENT;
   }
-
-  // Lookup the child inode.
-  vnode_t* child;
-  if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
-  } else {
-    error = lookup(&parent, base_name, &child);
-    VFS_PUT_AND_CLEAR(parent);
-    if (error < 0) {
-      return error;
-    }
-  }
-
-  if (resolve_mount) {
-    error = resolve_mounts(&child);
-    if (error) {
-      VFS_PUT_AND_CLEAR(child);
-      return error;
-    }
-  }
-
-  *child_out = child;
-  return 0;
+  return result;
 }
 
 int lookup_fd(int fd, file_t** file_out) {
@@ -233,11 +310,20 @@ int lookup_fd(int fd, file_t** file_out) {
   return 0;
 }
 
+int is_absolute_path(const char* path) {
+  return path[0] == '/';
+}
+
 vnode_t* get_root_for_path(const char* path) {
-  if (path[0] == '/') {
+  return get_root_for_path_with_parent(path, proc_current()->cwd);
+}
+
+vnode_t* get_root_for_path_with_parent(const char* path,
+                                       vnode_t* relative_root) {
+  if (is_absolute_path(path)) {
     fs_t* const root_fs = g_fs_table[VFS_ROOT_FS].fs;
     return vfs_get(root_fs, root_fs->get_root(root_fs));
   } else {
-    return VFS_COPY_REF(proc_current()->cwd);
+    return VFS_COPY_REF(relative_root);
   }
 }

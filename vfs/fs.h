@@ -111,6 +111,13 @@ struct fs {
   // must only fill in fields that only it can determine.
   int (*stat)(vnode_t* node, apos_stat_t* stat_out);
 
+  // Create a symlink under the given parent, with the given contents.
+  int (*symlink)(vnode_t* parent, const char* name, const char* path);
+
+  // Read the contents of the given node, which must be a symbolic link, into
+  // the given buffer.
+  int (*readlink)(vnode_t* node, char* buf, int bufsize);
+
   // Read and write a single page to/from the file.  This is use by the VM
   // subsystem when mmap'ing files.  The FS should read/write a page of data at
   // the given page_offset (which is in pages, not bytes) into/from the given

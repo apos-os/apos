@@ -194,6 +194,8 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->fs.unlink = &ramfs_unlink;
   f->fs.getdents = &ramfs_getdents;
   f->fs.stat = &ramfs_stat;
+  f->fs.symlink = &ramfs_symlink;
+  f->fs.readlink = &ramfs_readlink;
   f->fs.read_page = &ramfs_read_page;
   f->fs.write_page = &ramfs_write_page;
 
@@ -531,6 +533,40 @@ int ramfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   stat_out->st_blksize = 512;
   stat_out->st_blocks = ceiling_div(vnode->len, 512);
   return 0;
+}
+
+int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  maybe_block(parent->fs);
+
+  int new_inode = find_free_inode(ramfs);
+  if (new_inode < 0) {
+    return -ENOSPC;
+  }
+
+  ramfs_inode_t* n = &ramfs->inodes[new_inode];
+  KASSERT(n->vnode.num == -1);
+  n->vnode.num = new_inode;
+  init_inode(ramfs, n);
+
+  n->vnode.type = VNODE_SYMLINK;
+  n->vnode.mode = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO;
+  int result = ramfs_write(&n->vnode, 0, path, kstrlen(path));
+  if (result < 0) return result;
+
+  result = ramfs_link(parent, (vnode_t*)n, name);
+  if (result >= 0) {
+    return 0;
+  } else {
+    // TODO(aoates): destroy vnode on error!
+    return result;
+  }
+}
+
+int ramfs_readlink(vnode_t* node, char* buf, int bufsize) {
+  return ramfs_read(node, 0, buf, bufsize);
 }
 
 int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {

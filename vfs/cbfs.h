@@ -39,6 +39,11 @@ typedef int (*cbfs_lookup_t)(fs_t* fs, void* arg, int vnode,
 typedef int (*cbfs_getdents_t)(fs_t* fs, int vnode_num, void* arg,
                                int offset, list_t* list_out, void* buf,
                                int buflen);
+
+// A function that reads from a dynamic symlink in a cbfs.
+typedef int (*cbfs_readlink_t)(fs_t* fs, void* arg, int vnode, void* buf,
+                               int buflen);
+
 typedef struct {
   int num;
   list_link_t link;
@@ -63,6 +68,12 @@ void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
                                  void* getdents_arg, uid_t uid, gid_t gid,
                                  mode_t mode);
 
+// Create a cbfs_inode_t that represents a dynamic symlink.  Fills in the given
+// cbfs_inode_t.
+void cbfs_inode_create_symlink(cbfs_inode_t* inode, int num,
+                               cbfs_readlink_t readlink_cb, void* readlink_arg,
+                               uid_t uid, gid_t gid);
+
 // Create a cbfs.  The given callback, if non-NULL, will be run when looking up
 // an unknown vnode.  It can be used to generate vnodes dynamically.
 // max_static_vnode is the maximum inode/vnode number that the cbfs will
@@ -85,6 +96,11 @@ int cbfs_create_file(fs_t* fs, const char* name,
 // include '.' and '..').
 int cbfs_create_directory(fs_t* fs, const char* path,
                           cbfs_getdents_t getdents_cb, void* arg, mode_t mode);
+
+// Create a symlink in the given cbfs.  When the symlink is read, the given
+// callback will be run.
+int cbfs_create_symlink(fs_t* fs, const char* path, cbfs_readlink_t readlink_cb,
+                        void* arg);
 
 // Change the getdents callback of an existing directory.
 int cbfs_directory_set_getdents(fs_t* fs, const char* path,

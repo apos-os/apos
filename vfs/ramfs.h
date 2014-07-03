@@ -45,6 +45,8 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
 int ramfs_unlink(vnode_t* parent, const char* name);
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 int ramfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
+int ramfs_symlink(vnode_t* parent, const char* name, const char* path);
+int ramfs_readlink(vnode_t* node, char* buf, int bufsize);
 int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 int ramfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 

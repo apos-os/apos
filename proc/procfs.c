@@ -22,6 +22,7 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/list.h"
+#include "common/math.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
 #include "proc/user.h"
@@ -40,6 +41,7 @@
 #define PROC_VNODE_DIR_OFFSET 0
 #define PROC_VNODE_VM_OFFSET  1
 #define PROC_VNODE_STATUS_OFFSET  2
+#define PROC_VNODE_CWD_OFFSET  3
 
 static inline int proc_dir_vnode(pid_t pid) {
   return PROC_VNODE_OFFSET + pid * PROC_VNODES_PER_PROC + PROC_VNODE_DIR_OFFSET;
@@ -59,6 +61,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
                    int buflen);
 static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
                        int buflen);
+static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen);
 
 // Helper struct for defining entries in the process directories.
 typedef struct {
@@ -70,11 +73,15 @@ typedef struct {
 
   // Function to read the file.
   cbfs_read_t read_cb;
+
+  // ...or the symlink, if a symlink.
+  cbfs_readlink_t readlink_cb;
 } proc_entry_spec_t;
 
 const proc_entry_spec_t kStaticPerProcEntries[] = {
-  {"vm", PROC_VNODE_VM_OFFSET, vm_read},
-  {"status", PROC_VNODE_STATUS_OFFSET, status_read},
+  {"vm", PROC_VNODE_VM_OFFSET, vm_read, 0x0},
+  {"status", PROC_VNODE_STATUS_OFFSET, status_read, 0x0},
+  {"cwd", PROC_VNODE_CWD_OFFSET, 0x0, &cwd_readlink},
 };
 
 const unsigned int kNumStaticEntries =
@@ -151,6 +158,21 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   return kstrlen(buf);
 }
 
+static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
+  const pid_t pid = proc_vnode_to_pid(vnode);
+  if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
+
+  const process_t* const proc = proc_get(pid);
+  if (!proc) return -EINVAL;
+
+  char cwd[VFS_MAX_PATH_LENGTH];
+  int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
+  if (result < 0) return result;
+
+  kstrncpy(buf, cwd, result);
+  return result;
+}
+
 static int vnode_cache_read(fs_t* fs, void* arg, int vnode, int offset,
                             void* buf, int buflen) {
   return vfs_print_vnode_cache(offset, buf, buflen);
@@ -182,9 +204,17 @@ static int procfs_get_vnode(fs_t* fs, void* arg, int vnode,
   for (unsigned int i = 0; i < kNumStaticEntries; ++i) {
     const proc_entry_spec_t* entry_spec = &kStaticPerProcEntries[i];
     if (proc_offset == entry_spec->vnode_offset) {
-      cbfs_inode_create_file(inode_out, vnode, entry_spec->read_cb, 0x0,
-                             SUPERUSER_UID, SUPERUSER_GID, VFS_S_IRUSR);
-      return 0;
+      if (entry_spec->read_cb) {
+        cbfs_inode_create_file(inode_out, vnode, entry_spec->read_cb, 0x0,
+                               SUPERUSER_UID, SUPERUSER_GID, VFS_S_IRUSR);
+        return 0;
+      } else if (entry_spec->readlink_cb) {
+        cbfs_inode_create_symlink(inode_out, vnode, entry_spec->readlink_cb,
+                                  0x0, SUPERUSER_UID, SUPERUSER_GID);
+        return 0;
+      } else {
+        die("invalid entry in static procfs array");
+      }
     }
   }
 
@@ -237,6 +267,15 @@ static int single_proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
   return 0;
 }
 
+static int self_proc_symlink_readlink(fs_t* fs, void* arg, int vnode_num,
+                                      void* buf, int buflen) {
+  char pid[100];
+  ksprintf(pid, "%d", proc_current()->id);
+  const int len = min(buflen, kstrlen(pid));
+  kstrncpy(buf, pid, len);
+  return len;
+}
+
 fs_t* procfs_create(void) {
   fs_t* fs = cbfs_create(procfs_get_vnode, 0x0, PROC_VNODE_NUM_STATIC);
 
@@ -247,6 +286,7 @@ fs_t* procfs_create(void) {
   }
 
   cbfs_create_file(fs, "vnode", &vnode_cache_read, 0x0, VFS_S_IRWXU);
+  cbfs_create_symlink(fs, "self", &self_proc_symlink_readlink, 0x0);
 
   return fs;
 }

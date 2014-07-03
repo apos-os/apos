@@ -48,6 +48,23 @@ int resolve_mounts(vnode_t** vnode);
 // vnode with the mount point.
 void resolve_mounts_up(vnode_t** parent, const char* child_name);
 
+// Resolve the given vnode if it is a symlink, replacing it with the final
+// target.  Resolves the symlink path relative to the parent.  Also replaces the
+// parent pointer with the parent of the symlink target.  On error, the child
+// pointer will point to *some* vnode, but not necessarily the original one, and
+// must still be vfs_put().
+//
+// If the symlink is resolved, the new basename of the symlink is copied to
+// |base_name_out|.  If the node isn't a symlink, |base_name_out| is left
+// unchanged.
+//
+// If |allow_nonexistant_final| is non-zero, and the final element of the
+// symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
+// but will set |*child_ptr| to 0x0.
+int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
+                    vnode_t** child_ptr, char* base_name_out,
+                    int max_recursion);
+
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
 //
@@ -71,40 +88,35 @@ int lookup(vnode_t** parent, const char* name, vnode_t** child_out);
 // Returns the length of the name on success, or -error.
 int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
 
-// Given a vnode and a path path/to/myfile relative to that vnode, return the
-// vnode_t of the directory part of the path, and copy the base name of the path
-// (without any trailing slashes) into base_name_out.
+// Looks up a path relative to the root inode.  Looks up every element of the
+// path, following symlinks, until the last element.  If resolve_final_symlink
+// is set, and the last element is a symlink, it will be followed.  Otherwise,
+// the symlink will be returned.
 //
-// base_nome_out must be AT LEAST VFS_MAX_FILENAME_LENGTH long.
+// If |parent_out| is non-null, it will be set to the parent of the final node.
+// If |child_out| is non-null, and the final element exists, it will be set to
+// the final element.  |base_name_out| (which must be at least
+// VFS_MAX_FILENAME_LENGTH bytes long) will be set to the final element of the
+// path, whether it exists or not.
 //
-// Returns 0 on success, or -error on failure (in which case the contents of
-// parent_out and base_name_out are undefined).
+// Returns |*parent_out| with a ref unless there was an error.  Returns
+// |*child_out| with a ref unless there was an error or the last element doesn't
+// exist.
 //
-// Returns *parent_out with a refcount unless there was an error.
-// TODO(aoates): this needs to handle symlinks!
-// TODO(aoates): things to test:
-//  * regular path
-//  * root directory
-//  * path ending in file
-//  * path ending in directory
-//  * trailing slashes
-//  * no leading slash (?)
-//  * non-directory in middle of path (ENOTDIR)
-//  * non-existing in middle of path (ENOENT)
-int lookup_path(vnode_t* root, const char* path,
-                vnode_t** parent_out, char* base_name_out);
+// IMPORTANT: if the final element doesn't exist, the call succeeds (returns 0),
+// but *child_out will be set to 0x0.
+int lookup_path(vnode_t* root, const char* path, int resolve_final_symlink,
+                vnode_t** parent_out, vnode_t** child_out, char* base_name_out);
 
 // Similar to lookup_path(), but does a full lookup of an existing file.  Used
 // for operations that simply work on an existing file, and don't need to worry
 // about the path root, basename, parent directory, etc.
 //
-// If |resolve_mount| is non-zero, the final child will be resolved if it is a
-// mount point (you probably want this).
-//
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
-// otherwise.
-int lookup_existing_path(const char* path, vnode_t** child_out,
-                         int resolve_mount);
+// otherwise.  Returns the parent of the child, also with a reference in
+// |parent_out|, unless |parent_out| is null.
+int lookup_existing_path(const char* path, int resolve_final_symlink,
+                         vnode_t** parent_out, vnode_t** child_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.
@@ -113,5 +125,10 @@ int lookup_fd(int fd, file_t** file_out);
 // Returns the appropriate root node for the given path, either the fs root or
 // the process's cwd.
 vnode_t* get_root_for_path(const char* path);
+
+// As above, but returns the given parent (with an extra ref) if the path isn't
+// absolute.
+vnode_t* get_root_for_path_with_parent(const char* path,
+                                       vnode_t* relative_root);
 
 #endif

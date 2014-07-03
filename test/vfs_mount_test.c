@@ -431,7 +431,7 @@ static void rmdir_mount_test(void) {
 }
 
 static void chown_chmod_test(void) {
-  KTEST_BEGIN("vfs mount: lchown/lchmod mount test");
+  KTEST_BEGIN("vfs mount: lchown/chmod mount test");
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/b", VFS_S_IRWXU));
@@ -452,7 +452,7 @@ static void chown_chmod_test(void) {
   KEXPECT_EQ(0, vfs_lchown("vfs_mount_test/a", 1, 1));
   EXPECT_OWNER_IS("vfs_mount_test/a", 1, 1);
 
-  KEXPECT_EQ(0, vfs_lchmod("vfs_mount_test/a", VFS_S_IRWXG));
+  KEXPECT_EQ(0, vfs_chmod("vfs_mount_test/a", VFS_S_IRWXG));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG, get_mode("vfs_mount_test/a"));
 
   // Now cd into the mount point itself.
@@ -465,9 +465,9 @@ static void chown_chmod_test(void) {
   KEXPECT_EQ(0, vfs_lchown("..", 4, 4));
   EXPECT_OWNER_IS(abs_mount_a, 3, 3);
 
-  KEXPECT_EQ(0, vfs_lchmod(".", VFS_S_IRWXO));
+  KEXPECT_EQ(0, vfs_chmod(".", VFS_S_IRWXO));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXO, get_mode(abs_mount_a));
-  KEXPECT_EQ(0, vfs_lchmod("..", VFS_S_IWUSR));
+  KEXPECT_EQ(0, vfs_chmod("..", VFS_S_IWUSR));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXO, get_mode(abs_mount_a));
 
   // ...and to a directory below the mount point.
@@ -480,9 +480,9 @@ static void chown_chmod_test(void) {
   KEXPECT_EQ(0, vfs_lchown("../../a/.", 7, 7));
   EXPECT_OWNER_IS(abs_mount_a, 7, 7);
 
-  KEXPECT_EQ(0, vfs_lchmod("..", VFS_S_IRGRP));
+  KEXPECT_EQ(0, vfs_chmod("..", VFS_S_IRGRP));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRGRP, get_mode(abs_mount_a));
-  KEXPECT_EQ(0, vfs_lchmod("../../a", VFS_S_IXGRP));
+  KEXPECT_EQ(0, vfs_chmod("../../a", VFS_S_IXGRP));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IXGRP, get_mode(abs_mount_a));
 
   // Make sure our changes to the mount point's parent went through.
@@ -491,7 +491,7 @@ static void chown_chmod_test(void) {
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IWUSR, get_mode("vfs_mount_test"));
 
   // Now make sure if we unmount, the orginial mount point is unchanged.
-  KTEST_BEGIN("vfs mount: lchown/lchmod modify mounted fs, not mount point");
+  KTEST_BEGIN("vfs mount: lchown/chmod modify mounted fs, not mount point");
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
@@ -501,7 +501,7 @@ static void chown_chmod_test(void) {
 
   // Now make sure if we remount, the owner/mode are reflected at the new moint
   // point.
-  KTEST_BEGIN("vfs mount: lchown/lchmod remounted keep attributes");
+  KTEST_BEGIN("vfs mount: lchown/chmod remounted keep attributes");
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsA));
 
   EXPECT_OWNER_IS("vfs_mount_test/a", SUPERUSER_UID, SUPERUSER_GID);
@@ -740,6 +740,91 @@ static void too_many_mounts_test(void) {
   }
 }
 
+static void symlink_mount_test(void) {
+  KTEST_BEGIN("vfs mount: symlink across mounts");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/dir", VFS_S_IRWXU));
+
+  // Create a file and link to it.
+  int fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR,
+                    VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(5, vfs_write(fd, "abcde", 5));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KEXPECT_EQ(0, vfs_symlink("a/file", "vfs_mount_test/link"));
+  EXPECT_FILE_EXISTS("vfs_mount_test/link");
+
+  create_file("vfs_mount_test/rootfile", "rwxrwxrwx");
+  KEXPECT_EQ(0, vfs_symlink("../rootfile", "vfs_mount_test/a/mountlink"));
+  EXPECT_FILE_EXISTS("vfs_mount_test/a/mountlink");
+
+
+  KTEST_BEGIN("vfs mount: symlink to mount");
+  KEXPECT_EQ(0, vfs_symlink("a", "vfs_mount_test/link_to_mount"));
+  fd = vfs_open("vfs_mount_test/link_to_mount", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/link_to_mount"));
+
+
+  KTEST_BEGIN("vfs mount: symlink to mount (inside mount)");
+  KEXPECT_EQ(0, vfs_symlink(".", "vfs_mount_test/a/link_to_mount"));
+  KEXPECT_EQ(0, vfs_symlink("../a", "vfs_mount_test/a/link_to_mount2"));
+  fd = vfs_open("vfs_mount_test/a/link_to_mount", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+  fd = vfs_open("vfs_mount_test/a/link_to_mount2", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/link_to_mount"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/link_to_mount2"));
+
+  KTEST_BEGIN("vfs mount: symlink across mounts");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/b", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsB));
+
+  KEXPECT_EQ(0, vfs_symlink("../b", "vfs_mount_test/a/link1"));
+  create_file("vfs_mount_test/a/link1/linkfile1", "rwxrwxrwx");
+  EXPECT_FILE_EXISTS("vfs_mount_test/b/linkfile1");
+  KEXPECT_EQ(0, compare_dirents_p(
+                    "vfs_mount_test/a/link1", 3,
+                    (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "linkfile1"}}));
+  KEXPECT_EQ(0, compare_dirents_p(
+                    "vfs_mount_test/b", 3,
+                    (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "linkfile1"}}));
+
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/link1/dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("../b/dir", "vfs_mount_test/a/link2"));
+  create_file("vfs_mount_test/a/link2/linkfile2", "rwxrwxrwx");
+  EXPECT_FILE_EXISTS("vfs_mount_test/b/dir/linkfile2");
+
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/link1"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/linkfile1"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/dir/linkfile2"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b/dir"));
+
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/link"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/rootfile"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/mountlink"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/dir"));
+
+  // Cleanup.
+  KTEST_BEGIN("vfs mount: basic test cleanup");
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/b", &unmounted_fs));
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -756,6 +841,7 @@ void vfs_mount_test(void) {
   mount_under_mount_test();
   double_mount_test();
   too_many_mounts_test();
+  symlink_mount_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 

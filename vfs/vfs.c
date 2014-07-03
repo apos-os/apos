@@ -315,7 +315,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path(root, path, 1, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -328,7 +328,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
   vnode_t* child;
   int created = 0;
   if (base_name[0] == '\0') {
-    child = VFS_MOVE_REF(parent);
+    child = VFS_COPY_REF(parent);
   } else {
     kmutex_lock(&parent->mutex);
     error = lookup_locked(parent, base_name, &child);
@@ -369,8 +369,8 @@ int vfs_open(const char* path, uint32_t flags, ...) {
 
     // Done with the parent.
     kmutex_unlock(&parent->mutex);
-    VFS_PUT_AND_CLEAR(parent);
   }
+  VFS_PUT_AND_CLEAR(parent);
 
   error = resolve_mounts(&child);
   if (error) {
@@ -394,6 +394,13 @@ int vfs_open(const char* path, uint32_t flags, ...) {
       VFS_PUT_AND_CLEAR(child);
       return mode_check;
     }
+  }
+
+  if (child->type == VNODE_SYMLINK) {
+    KLOG(ERROR, "vfs: got a symlink file in vfs_open('%s') (should have "
+         "been resolved)\n", path);
+    VFS_PUT_AND_CLEAR(child);
+    return -EIO;
   }
 
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
@@ -465,7 +472,7 @@ int vfs_mkdir(const char* path, mode_t mode) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -512,7 +519,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -557,7 +564,7 @@ int vfs_rmdir(const char* path) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -603,7 +610,7 @@ int vfs_unlink(const char* path) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, &parent, base_name);
+  int error = lookup_path(root, path, 0, &parent, 0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -775,7 +782,7 @@ int vfs_getcwd(char* path_out, int size) {
 
 int vfs_chdir(const char* path) {
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, &new_cwd, 1);
+  int error = lookup_existing_path(path, 1, 0x0, &new_cwd);
   if (error) return error;
 
   if (new_cwd->type != VNODE_DIRECTORY) {
@@ -854,6 +861,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_DIRECTORY: stat->st_mode |= VFS_S_IFDIR; break;
     case VNODE_BLOCKDEV: stat->st_mode |= VFS_S_IFBLK; break;
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
+    case VNODE_SYMLINK: stat->st_mode |= VFS_S_IFLNK; break;
     default: die("Invalid vnode type seen in vfs_lstat");
   }
   stat->st_mode |= vnode->mode;
@@ -869,18 +877,28 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
   }
 }
 
-int vfs_lstat(const char* path, apos_stat_t* stat) {
+static int vfs_path_stat_internal(const char* path, apos_stat_t* stat,
+                                  int resolve_final_symlink) {
   if (!path || !stat) {
     return -EINVAL;
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child, 1);
+  int result = lookup_existing_path(path, resolve_final_symlink, 0x0, &child);
   if (result) return result;
 
   result = vfs_stat_internal(child, stat);
   VFS_PUT_AND_CLEAR(child);
   return result;
+
+}
+
+int vfs_stat(const char* path, apos_stat_t* stat) {
+  return vfs_path_stat_internal(path, stat, 1);
+}
+
+int vfs_lstat(const char* path, apos_stat_t* stat) {
+  return vfs_path_stat_internal(path, stat, 0);
 }
 
 int vfs_fstat(int fd, apos_stat_t* stat) {
@@ -915,18 +933,27 @@ static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
   return 0;
 }
 
-int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+static int vfs_chown_path_internal(const char* path, uid_t owner, gid_t group,
+                                   int resolve_final_symlink) {
   if (!path || owner < -1 || group < -1) {
     return -EINVAL;
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child, 1);
+  int result = lookup_existing_path(path, resolve_final_symlink, 0x0, &child);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
   VFS_PUT_AND_CLEAR(child);
   return result;
+}
+
+int vfs_chown(const char* path, uid_t owner, gid_t group) {
+  return vfs_chown_path_internal(path, owner, group, 1);
+}
+
+int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+  return vfs_chown_path_internal(path, owner, group, 0);
 }
 
 int vfs_fchown(int fd, uid_t owner, gid_t group) {
@@ -957,9 +984,9 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
   return 0;
 }
 
-int vfs_lchmod(const char* path, mode_t mode) {
+int vfs_chmod(const char* path, mode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, &child, 1);
+  int result = lookup_existing_path(path, 1, 0x0, &child);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);
@@ -980,5 +1007,65 @@ int vfs_fchmod(int fd, mode_t mode) {
   }
 
   file->refcount--;
+  return result;
+}
+
+int vfs_symlink(const char* path1, const char* path2) {
+  if (!path1 || !path2) {
+    return -EINVAL;
+  }
+
+  vnode_t* root = get_root_for_path(path2);
+  vnode_t* parent = 0x0;
+  char base_name[VFS_MAX_FILENAME_LENGTH];
+
+  int error = lookup_path(root, path2, 0, &parent, 0x0, base_name);
+  VFS_PUT_AND_CLEAR(root);
+  if (error) {
+    return error;
+  }
+
+  if (base_name[0] == '\0') {
+    VFS_PUT_AND_CLEAR(parent);
+    return -EEXIST;  // Root directory!
+  }
+
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(parent);
+    return mode_check;
+  }
+
+  if (!parent->fs->symlink) {
+    VFS_PUT_AND_CLEAR(parent);
+    return -EPERM;
+  }
+
+  error = parent->fs->symlink(parent, base_name, path1);
+  VFS_PUT_AND_CLEAR(parent);
+  return error;
+}
+
+int vfs_readlink(const char* path, char* buf, int bufsize) {
+  if (!path || !buf || bufsize <= 0) {
+    return -EINVAL;
+  }
+
+  vnode_t* child = 0x0;
+  int result = lookup_existing_path(path, 0, 0x0, &child);
+  if (result) return result;
+
+  if (child->type != VNODE_SYMLINK) {
+    VFS_PUT_AND_CLEAR(child);
+    return -EINVAL;
+  }
+
+  if (!child->fs->readlink) {
+    VFS_PUT_AND_CLEAR(child);
+    return -EPERM;
+  }
+
+  result = child->fs->readlink(child, buf, bufsize);
+  VFS_PUT_AND_CLEAR(child);
   return result;
 }
