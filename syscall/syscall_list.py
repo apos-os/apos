@@ -124,6 +124,7 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', 'user/fs.h',
     'const char*:path:s',
     'uint32_t:flags:u'])
 
+
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', 'user/fs.h',
     'int', [
     'int:fd:u'])

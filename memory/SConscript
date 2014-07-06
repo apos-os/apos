@@ -1,0 +1,23 @@
+# Copyright 2014 Andrew Oates.  All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+Import('env AposAddSources')
+
+srcs =['block_cache.c',
+    'memobj_anon.c', 'memobj_vnode.c', 'page_alloc.c', 'vm_area.c', 'gdt.c', 'memobj_block_dev.c', 'memory.c', 'page_fault.c', 'vm.c', 'kmalloc.c', 'memobj_shadow.c', 'mmap.c', 'slab_alloc.c', 'vm_page_fault.c',
+    ]
+
+objects = AposAddSources(env, srcs, [])
+objects.append(env.PhysObject('gdt.c'))
+Return('objects')

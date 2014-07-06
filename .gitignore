@@ -13,3 +13,5 @@ TODO
 /hd3.img
 /hd4.img
 /tags
+/.sconsign.dblite
+/build-scons
