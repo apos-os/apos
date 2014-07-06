@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-define ROOT_SUBDIR
-  DIR := $(1)
-  include $$(DIR)/Sources.mk
-endef
+Import('env AposAddSources')
 
-SUBDIRS := archs common dev load main memory proc syscall test util vfs
+srcs = []
 
-SRC_PATH :=
-$(foreach subdir,$(SUBDIRS),$(eval $(call ROOT_SUBDIR,$(subdir))))
+subdirs = [
+  env['ARCH'],
+]
+
+objects = AposAddSources(env, srcs, subdirs)
+Return('objects')

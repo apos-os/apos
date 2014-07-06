@@ -15,11 +15,14 @@
 import os
 import re
 
+AddOption('--arch', default='i586', help='architecture to target')
+
 env = Environment(
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
     ENV = {'PATH' : os.environ['PATH']})
 
-TOOL_PREFIX = 'i586-pc-apos'
+env['ARCH'] = env.GetOption('arch')
+TOOL_PREFIX = '%s-pc-apos' % env['ARCH']
 
 env.Replace(AR = '%s-ar' % TOOL_PREFIX)
 env.Replace(AS = '%s-as' % TOOL_PREFIX)
@@ -34,7 +37,7 @@ env.Append(CFLAGS =
 env.Append(ASFLAGS = ['--gen-debug'])
 
 env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
-env.Append(CPPPATH = '#')
+env.Append(CPPPATH = ['#', '#/archs/%s' % env['ARCH'], '#/archs/common'])
 
 def AposAddSources(env, srcs, subdirs):
   """Helper for subdirectories."""

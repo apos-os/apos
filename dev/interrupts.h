@@ -18,22 +18,12 @@
 
 #include <stdint.h>
 
+#include "arch/dev/interrupts.h"
+
 void interrupts_init(void);
 
 void enable_interrupts(void);
 void disable_interrupts(void);
-
-#define IF_FLAG 0x200
-
-// Disable interrupts and return the previous (pre-disabling) IF flag value.
-static inline uint32_t save_and_disable_interrupts(void);
-
-// Restore interrupt state (given the return value of
-// save_and_disable_interrupts).
-static inline void restore_interrupts(uint32_t saved);
-
-// Return the current IF flag state (as per save_and_disable_interrupts).
-static inline uint32_t get_interrupts_state(void);
 
 #if ENABLE_KERNEL_SAFETY_NETS
 // If safety nets are enabled, verify that interrupts are popped properly after
@@ -101,37 +91,5 @@ typedef struct {
 // The kernel's code segment selector.  Make sure this matches the one set in
 // gdt_flush.s.
 #define IDT_SELECTOR_VALUE 0x08
-
-// Inline definitions.
-
-static inline uint32_t get_interrupts_state(void) {
-  uint32_t saved_flags;
-  asm volatile (
-      "pushf\n\t"
-      "pop %0\n\t"
-      : "=r"(saved_flags));
-  return saved_flags & IF_FLAG;
-}
-
-static inline uint32_t save_and_disable_interrupts() {
-  uint32_t saved_flags;
-  asm volatile (
-      "pushf\n\t"
-      "pop %0\n\t"
-      "cli\n\t"
-      : "=r"(saved_flags));
-  return saved_flags & IF_FLAG;
-}
-
-static inline void restore_interrupts(uint32_t saved) {
-  uint32_t saved_flags;
-  asm volatile (
-      "pushf\n\t"
-      "pop %0\n\t"
-      : "=r"(saved_flags));
-  if (saved) {
-    asm volatile ("sti");
-  }
-}
 
 #endif

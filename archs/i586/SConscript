@@ -12,12 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-define ROOT_SUBDIR
-  DIR := $(1)
-  include $$(DIR)/Sources.mk
-endef
-
-SUBDIRS := archs common dev load main memory proc syscall test util vfs
-
-SRC_PATH :=
-$(foreach subdir,$(SUBDIRS),$(eval $(call ROOT_SUBDIR,$(subdir))))
+Return([])

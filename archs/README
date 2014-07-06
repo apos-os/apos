@@ -1,0 +1,17 @@
+This directory contains architecture-specific code.
+
+How it works: each architecture must implement a certain 'API', consisting of
+functions, inline functions, macros, etc.  This is defined by the header files
+in the 'common' directory.
+
+Architecture-independent files should #include "arch/<path>" files.  This will
+search the current architecture-specific directory first (e.g.
+"archs/<arch>/..."), then the common directory ("archs/common/...").  If the
+architecture supplies that header file (for example, to define macros or inline
+functions), it should #include "archs/common/arch/<path>" as well to include the
+corresponding common header, which will declare any normal or inline functions.
+
+If there are no architecture-specific components for the header file, then the
+#include "arch/<path>" line will find the common header file, which will declare
+any functions.  Those functions will be implemented by a corresponding
+"archs/<arch>/<path>/foo.c" file (which should #include the common header).
