@@ -14,8 +14,8 @@
 
 #include <stdint.h>
 
+#include "archs/i586/arch/memory/gdt.h"
 #include "common/kassert.h"
-#include "memory/gdt.h"
 
 typedef struct {
    uint16_t limit_low;           // Lower 16 bits of the limit.

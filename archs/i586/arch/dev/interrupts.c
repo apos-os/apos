@@ -16,11 +16,11 @@
 
 #include "arch/dev/faults.h"
 #include "arch/dev/interrupts-x86.h"
+#include "archs/i586/arch/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/types.h"
 #include "dev/interrupts.h"
-#include "memory/gdt.h"
 #include "proc/process.h"
 #include "proc/user_context.h"
 #include "proc/signal/signal.h"

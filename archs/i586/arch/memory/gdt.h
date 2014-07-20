@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_MEMORY_GDT_H
-#define APOO_MEMORY_GDT_H
+#ifndef APOO_ARCHS_I586_ARCH_MEMORY_GDT_H
+#define APOO_ARCHS_I586_ARCH_MEMORY_GDT_H
 
 #include <stdint.h>
 

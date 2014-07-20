@@ -28,6 +28,5 @@ LOCAL_SOURCES := \
   vm.c \
   mmap.c \
   vm_area.c \
-  gdt.c \
 
 $(eval $(END_SOURCES))

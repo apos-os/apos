@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "archs/i586/arch/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/types.h"
-#include "memory/gdt.h"
 #include "proc/user_context.h"
 
 void user_context_apply(const user_context_t* context_ptr) {

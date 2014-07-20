@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "archs/i586/arch/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/types.h"
-#include "memory/gdt.h"
 
 void user_mode_enter(addr_t stack, addr_t entry) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),

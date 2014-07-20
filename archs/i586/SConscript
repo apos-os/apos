@@ -19,10 +19,12 @@ srcs = [
     'arch/dev/interrupts.c',
     'arch/dev/irq.c',
     'arch/dev/isr.s',
+    'arch/memory/gdt.c',
     'arch/memory/page_fault.c',
     ]
 
 subdirs = ['arch/load']
 
 objects = AposAddSources(env, srcs, subdirs)
+objects.append(env.PhysObject('arch/memory/gdt.c'))
 Return('objects')

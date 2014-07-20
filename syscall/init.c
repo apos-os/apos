@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "memory/gdt.h"
+#include "archs/i586/arch/memory/gdt.h"
 
 long _syscall_enter(void);
 

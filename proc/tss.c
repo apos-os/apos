@@ -14,10 +14,10 @@
 
 #include <stdint.h>
 
+#include "archs/i586/arch/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/types.h"
-#include "memory/gdt.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "proc/tss.h"
