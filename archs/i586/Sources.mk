@@ -21,4 +21,8 @@ LOCAL_SOURCES := \
   arch/dev/isr.s \
   arch/memory/page_fault.c \
 
+LOCAL_SUBDIRS := arch/load
+
+$(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
+
 $(eval $(END_SOURCES))

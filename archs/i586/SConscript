@@ -22,5 +22,7 @@ srcs = [
     'arch/memory/page_fault.c',
     ]
 
-objects = AposAddSources(env, srcs, [])
+subdirs = ['arch/load']
+
+objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

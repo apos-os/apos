@@ -14,7 +14,6 @@
 
 #include "common/kassert.h"
 #include "memory/memory.h"
-#include "load/mem_init.h"
 
 static memory_info_t* global_meminfo = 0;
 
@@ -64,5 +63,5 @@ int is_direct_mapped(uint32_t x) {
 }
 
 uint32_t phys2kernel(uint32_t x) {
-  return x + KERNEL_VIRT_START;
+  return x + global_meminfo->mapped_start;
 }

@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "load/multiboot.h"
+#include "arch/load/multiboot.h"
 #include "memory/memory.h"
 
 // The VMA offset at which we're loading our kernel.  We can subtract this from

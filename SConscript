@@ -20,7 +20,6 @@ SUBDIRS = [
   'archs',
   'common',
   'dev',
-  'load',
   'main',
   'memory',
   'proc',

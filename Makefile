@@ -84,8 +84,10 @@ OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
 
 # Object files that are placed manually in the linker script.
 MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
-		       load/loader.o load/mem_init.o \
-		       load/gdt.o load/idt.o \
+		       archs/i586/arch/load/loader.o \
+		       archs/i586/arch/load/mem_init.o \
+		       archs/i586/arch/load/gdt.o \
+		       archs/i586/arch/load/idt.o \
 		       memory/gdt.PHYS.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
