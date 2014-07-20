@@ -21,6 +21,7 @@ srcs = [
     'arch/memory/page_fault.c',
     'internal/dev/faults.c',
     'internal/memory/gdt.c',
+    'internal/proc/tss.c',
     ]
 
 subdirs = ['internal/load']

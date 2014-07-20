@@ -27,7 +27,6 @@ LOCAL_SOURCES := \
   procfs.c \
   sleep.c \
   kthread_pool.c \
-  tss.c \
   user.c \
   user_context.c \
   user_mode.c \

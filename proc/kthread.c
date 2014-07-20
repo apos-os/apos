@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "archs/i586/internal/proc/tss.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -26,7 +27,6 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
-#include "proc/tss.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 

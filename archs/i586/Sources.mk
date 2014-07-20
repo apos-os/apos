@@ -21,6 +21,7 @@ LOCAL_SOURCES := \
   arch/memory/page_fault.c \
   internal/dev/faults.c \
   internal/memory/gdt.c \
+  internal/proc/tss.c \
 
 LOCAL_SUBDIRS := internal/load
 
