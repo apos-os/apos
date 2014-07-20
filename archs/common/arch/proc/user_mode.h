@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_PROC_USER_MODE_H
-#define APOO_PROC_USER_MODE_H
+#ifndef APOO_ARCHS_COMMON_ARCH_PROC_USER_MODE_H
+#define APOO_ARCHS_COMMON_ARCH_PROC_USER_MODE_H
+
+#include "common/types.h"
 
 // Enter user mode using the given stack pointer, and at the given address.
 //

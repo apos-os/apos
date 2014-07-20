@@ -29,7 +29,6 @@ srcs = [
   'kthread_pool.c',
   'user.c',
   'user_context.c',
-  'user_mode.c',
   'wait.c',
 ]
 

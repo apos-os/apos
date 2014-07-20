@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "archs/i586/internal/memory/gdt.h"
+#include "arch/proc/user_mode.h"
 #include "common/kassert.h"
 #include "common/types.h"
 

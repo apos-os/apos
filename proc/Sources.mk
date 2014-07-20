@@ -29,7 +29,6 @@ LOCAL_SOURCES := \
   kthread_pool.c \
   user.c \
   user_context.c \
-  user_mode.c \
   wait.c \
 
 LOCAL_SUBDIRS := load signal

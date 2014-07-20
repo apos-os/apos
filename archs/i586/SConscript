@@ -19,6 +19,7 @@ srcs = [
     'arch/dev/irq.c',
     'arch/dev/isr.s',
     'arch/memory/page_fault.c',
+    'arch/proc/user_mode.c',
     'internal/dev/faults.c',
     'internal/memory/gdt.c',
     'internal/proc/tss.c',
