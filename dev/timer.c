@@ -14,13 +14,13 @@
 
 #include <stdint.h>
 
+#include "arch/dev/irq.h"
 #include "common/debug.h"
 #include "common/errno.h"
 #include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/list.h"
-#include "dev/irq.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"

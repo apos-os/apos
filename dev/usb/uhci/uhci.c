@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "arch/dev/irq.h"
 #include "common/errno.h"
 #include "common/io.h"
 #include "common/kassert.h"
@@ -21,7 +22,6 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
-#include "dev/irq.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/pci.h"
 #include "dev/usb/bus.h"

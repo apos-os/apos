@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "arch/dev/irq.h"
 #include "common/errno.h"
 #include "common/klog.h"
 #include "common/kassert.h"
@@ -25,7 +26,6 @@
 #include "dev/ata/queue.h"
 #include "dev/dev.h"
 #include "dev/interrupts.h"
-#include "dev/irq.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 

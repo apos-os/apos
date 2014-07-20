@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_PIC_H
-#define APOO_PIC_H
+#ifndef APOO_ARCHS_COMMON_ARCH_DEV_IRQ_H
+#define APOO_ARCHS_COMMON_ARCH_DEV_IRQ_H
 
 #define IRQ0  0
 #define IRQ1  1

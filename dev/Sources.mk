@@ -17,7 +17,6 @@ $(eval $(BEGIN_SOURCES))
 LOCAL_SOURCES := \
   interrupts.c \
   ps2.c \
-  irq.c \
   timer.c \
   rtc.c \
   dev.c \

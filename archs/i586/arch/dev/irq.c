@@ -15,13 +15,12 @@
 #include <stdint.h>
 
 #include "arch/dev/interrupts-x86.h"
+#include "archs/common/arch/dev/irq.h"
 #include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
-
-#include "dev/irq.h"
 
 #define PIC_MASTER_CMD  0x20
 #define PIC_MASTER_DATA 0x21

@@ -17,6 +17,7 @@ $(eval $(BEGIN_SOURCES))
 LOCAL_SOURCES := \
   arch/dev/faults.c \
   arch/dev/interrupts.c \
+  arch/dev/irq.c \
   arch/dev/isr.s \
 
 $(eval $(END_SOURCES))
