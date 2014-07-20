@@ -14,8 +14,8 @@
 
 #include <stdint.h>
 
+#include "arch/dev/interrupts-x86.h"
 #include "load/mem_init.h"
-#include "dev/interrupts.h"
 #include "memory/gdt.h"
 #include "memory/memory.h"
 

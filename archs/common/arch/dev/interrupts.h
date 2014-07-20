@@ -17,6 +17,11 @@
 
 #include <stdint.h>
 
+void interrupts_init(void);
+
+void enable_interrupts(void);
+void disable_interrupts(void);
+
 // Disable interrupts and return the previous (pre-disabling) IF flag value.
 static inline uint32_t save_and_disable_interrupts(void);
 

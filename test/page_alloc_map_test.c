@@ -14,8 +14,8 @@
 
 #include <stdint.h>
 
+#include "arch/dev/interrupts-x86.h"
 #include "common/kassert.h"
-#include "dev/interrupts.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/page_alloc.h"

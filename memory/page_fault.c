@@ -14,9 +14,9 @@
 
 #include <stdint.h>
 
+#include "arch/dev/interrupts-x86.h"
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "dev/interrupts.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/page_fault.h"

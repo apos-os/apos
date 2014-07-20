@@ -14,6 +14,8 @@
 
 $(eval $(BEGIN_SOURCES))
 
-LOCAL_SOURCES :=
+LOCAL_SOURCES := \
+  arch/dev/interrupts.c \
+  arch/dev/isr.s \
 
 $(eval $(END_SOURCES))

@@ -14,7 +14,7 @@
 
 #include "dev/faults.h"
 
-#include "dev/interrupts.h"
+#include "arch/dev/interrupts-x86.h"
 #include "common/kassert.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
