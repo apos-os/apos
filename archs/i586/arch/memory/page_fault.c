@@ -15,11 +15,12 @@
 #include <stdint.h>
 
 #include "arch/dev/interrupts-x86.h"
+#include "arch/memory/page_fault-x86.h"
+#include "archs/common/arch/memory/page_fault.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
-#include "memory/page_fault.h"
 #include "memory/page_alloc.h"
 #include "memory/vm_page_fault.h"
 

@@ -18,7 +18,6 @@ LOCAL_SOURCES := \
   memory.c \
   page_alloc.c \
   kmalloc.c \
-  page_fault.c \
   slab_alloc.c \
   block_cache.c \
   memobj_anon.c \

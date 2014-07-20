@@ -17,10 +17,8 @@
 #define APOO_MEMORY_PAGE_FAULT
 
 #include <stdint.h>
-#include "memory/memory.h"
 
-// Initialize the page fault handler and register it with the interrupts module.
-void paging_init(memory_info_t* meminfo);
+#include "archs/common/arch/memory/page_fault.h"
 
 // Interrupt handler for page faults.  Reads the address that caused the fault
 // from register CR2, and takes the error code given by the interrupt.

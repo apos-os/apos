@@ -19,5 +19,6 @@ LOCAL_SOURCES := \
   arch/dev/interrupts.c \
   arch/dev/irq.c \
   arch/dev/isr.s \
+  arch/memory/page_fault.c \
 
 $(eval $(END_SOURCES))
