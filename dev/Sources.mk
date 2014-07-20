@@ -16,7 +16,6 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   interrupts.c \
-  faults.c \
   ps2.c \
   irq.c \
   timer.c \

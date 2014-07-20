@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Handlers for common (non page-) CPU exceptions and faults.
-#ifndef APOO_DEV_FAULTS_H
-#define APOO_DEV_FAULTS_H
+#ifndef APOO_ARCHS_I586_ARCH_DEV_FAULTS_H
+#define APOO_ARCHS_I586_ARCH_DEV_FAULTS_H
 
 // Register handlers for various CPU exceptions (e.g. floating point
 // exceptions).

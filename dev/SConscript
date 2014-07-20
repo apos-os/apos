@@ -16,7 +16,6 @@ Import('env AposAddSources')
 
 srcs = [
   'interrupts.c',
-  'faults.c',
   'ps2.c',
   'irq.c',
   'timer.c',

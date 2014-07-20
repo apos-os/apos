@@ -14,12 +14,12 @@
 
 #include <stdint.h>
 
+#include "arch/dev/faults.h"
 #include "arch/dev/interrupts-x86.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/types.h"
 #include "dev/interrupts.h"
-#include "dev/faults.h"
 #include "memory/gdt.h"
 #include "proc/process.h"
 #include "proc/user_context.h"

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "dev/faults.h"
+#include "arch/dev/faults.h"
 
 #include "arch/dev/interrupts-x86.h"
 #include "common/kassert.h"
