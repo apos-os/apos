@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "archs/i586/arch/memory/gdt.h"
+#include "archs/i586/internal/memory/gdt.h"
 #include "common/kassert.h"
 
 typedef struct {

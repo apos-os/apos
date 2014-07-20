@@ -14,9 +14,9 @@
 
 #include <stdint.h>
 
-#include "arch/dev/interrupts-x86.h"
-#include "arch/load/mem_init.h"
-#include "archs/i586/arch/memory/gdt.h"
+#include "archs/i586/internal/dev/interrupts-x86.h"
+#include "archs/i586/internal/load/mem_init.h"
+#include "archs/i586/internal/memory/gdt.h"
 #include "memory/memory.h"
 
 extern void kmain(memory_info_t* meminfo);

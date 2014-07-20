@@ -15,16 +15,16 @@
 Import('env AposAddSources')
 
 srcs = [
-    'arch/dev/faults.c',
     'arch/dev/interrupts.c',
     'arch/dev/irq.c',
     'arch/dev/isr.s',
-    'arch/memory/gdt.c',
     'arch/memory/page_fault.c',
+    'internal/dev/faults.c',
+    'internal/memory/gdt.c',
     ]
 
-subdirs = ['arch/load']
+subdirs = ['internal/load']
 
 objects = AposAddSources(env, srcs, subdirs)
-objects.append(env.PhysObject('arch/memory/gdt.c'))
+objects.append(env.PhysObject('internal/memory/gdt.c'))
 Return('objects')

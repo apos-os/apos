@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "arch/dev/interrupts-x86.h"
+#include "archs/i586/internal/dev/interrupts-x86.h"
 #include "archs/common/arch/dev/irq.h"
 #include "common/io.h"
 #include "common/kassert.h"

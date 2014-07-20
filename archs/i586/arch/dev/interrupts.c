@@ -14,9 +14,9 @@
 
 #include <stdint.h>
 
-#include "arch/dev/faults.h"
-#include "arch/dev/interrupts-x86.h"
-#include "archs/i586/arch/memory/gdt.h"
+#include "archs/i586/internal/dev/faults.h"
+#include "archs/i586/internal/dev/interrupts-x86.h"
+#include "archs/i586/internal/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/types.h"

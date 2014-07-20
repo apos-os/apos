@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "archs/i586/arch/memory/gdt.h"
+#include "archs/i586/internal/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/types.h"

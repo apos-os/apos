@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-#include "archs/i586/arch/memory/gdt.h"
+#include "archs/i586/internal/memory/gdt.h"
 #include "common/types.h"
 
 static gdt_entry_t g_gdt[GDT_NUM_ENTRIES] __attribute__((aligned (8)));

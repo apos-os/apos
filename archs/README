@@ -15,3 +15,8 @@ If there are no architecture-specific components for the header file, then the
 #include "arch/<path>" line will find the common header file, which will declare
 any functions.  Those functions will be implemented by a corresponding
 "archs/<arch>/<path>/foo.c" file (which should #include the common header).
+
+Architecture-specific code that doesn't implement the generic interface goes in
+a separate 'internal' directory under each arch.  This keeps it seperate from
+code that is generic, and prevents architecture-independent code from
+accidentally including it.

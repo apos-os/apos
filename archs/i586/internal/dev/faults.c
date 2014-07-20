@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "arch/dev/faults.h"
+#include "archs/i586/internal/dev/faults.h"
 
-#include "arch/dev/interrupts-x86.h"
+#include "archs/i586/internal/dev/interrupts-x86.h"
 #include "common/kassert.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"

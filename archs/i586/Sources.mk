@@ -15,14 +15,14 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  arch/dev/faults.c \
   arch/dev/interrupts.c \
   arch/dev/irq.c \
   arch/dev/isr.s \
-  arch/memory/gdt.c \
   arch/memory/page_fault.c \
+  internal/dev/faults.c \
+  internal/memory/gdt.c \
 
-LOCAL_SUBDIRS := arch/load
+LOCAL_SUBDIRS := internal/load
 
 $(foreach subdir,$(LOCAL_SUBDIRS),$(eval $(call SOURCES_SUBDIR,$(subdir))))
 
