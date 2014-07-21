@@ -101,8 +101,8 @@ recover_A:
 
   // Set up mapping.
   KTEST_BEGIN("valid mapping");
-  uint32_t phys_page = page_frame_alloc();
-  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page,
+  phys_addr_t phys_page = page_frame_alloc();
+  page_frame_map_virtual((addr_t)addr & PDE_ADDRESS_MASK, phys_page,
                          MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 
   // Should succeed:
@@ -140,7 +140,7 @@ recover_C:
   // creating a new table (step in to verify).
   KTEST_BEGIN("new mapping in same table");
   addr2 = addr - 2 * 4096;
-  page_frame_map_virtual((uint32_t)addr2 & PDE_ADDRESS_MASK, phys_page,
+  page_frame_map_virtual((addr_t)addr2 & PDE_ADDRESS_MASK, phys_page,
                          MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 
   // Both should succeed (and affect each other, since they're mapped to the
@@ -154,8 +154,8 @@ recover_C:
   // REMAPPING.
   // Remap addr to a NEW physical page, without unmapping in between.
   KTEST_BEGIN("remapping");
-  uint32_t phys_page2 = page_frame_alloc();
-  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page2,
+  phys_addr_t phys_page2 = page_frame_alloc();
+  page_frame_map_virtual((addr_t)addr & PDE_ADDRESS_MASK, phys_page2,
                          MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 
   *addr = 71;
@@ -181,9 +181,9 @@ recover_D:
 
   KTEST_BEGIN("unmapping range");
   // First set up a multi-page mapping.
-  page_frame_map_virtual((uint32_t)addr & PDE_ADDRESS_MASK, phys_page,
+  page_frame_map_virtual((addr_t)addr & PDE_ADDRESS_MASK, phys_page,
                          MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
-  page_frame_map_virtual(((uint32_t)addr & PDE_ADDRESS_MASK) + PAGE_SIZE,
+  page_frame_map_virtual(((addr_t)addr & PDE_ADDRESS_MASK) + PAGE_SIZE,
                          phys_page,
                          MEM_PROT_ALL, MEM_ACCESS_KERNEL_ONLY, 0);
 

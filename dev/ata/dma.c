@@ -44,8 +44,8 @@
 // TODO(aoates): we could be much more flexible about this (and allow regions >
 // 1 page) for better throughput.  We could also allow callers to get data
 // written directly into their buffers.
-static uint32_t g_prdt_phys = 0;
-static uint32_t g_prd_phys = 0;
+static phys_addr_t g_prdt_phys = 0;
+static phys_addr_t g_prd_phys = 0;
 
 // Global lock for the shared DMA buffer.  This keeps us from starting to write
 // to the DMA buffer after an operation finished, but before the previous

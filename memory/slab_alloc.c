@@ -50,7 +50,7 @@ static inline uint8_t* get_bitmap(int num, void* page) {
 
 // Allocate and initialize a new page for the given allocator.
 static void* alloc_slab_page(slab_alloc_t* s) {
-  uint32_t page_phys = page_frame_alloc();
+  phys_addr_t page_phys = page_frame_alloc();
   uint8_t* page = (uint8_t*)phys2virt(page_phys);
 
   // Initialize the bitmap.
@@ -92,7 +92,7 @@ slab_alloc_t* slab_alloc_create(int obj_size, int max_pages) {
 void slab_alloc_destroy(slab_alloc_t* s) {
   for (int i = 0; i < s->max_pages; ++i) {
     if (s->pages[i] != 0x0) {
-      page_frame_free(virt2phys((uint32_t)s->pages[i]));
+      page_frame_free(virt2phys((addr_t)s->pages[i]));
       s->pages[i] = 0x0;
     }
   }

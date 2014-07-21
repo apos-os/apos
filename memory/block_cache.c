@@ -86,7 +86,7 @@ static list_t g_lru_queue = {0x0, 0x0};
 // Acquire more free blocks and add them to the free block stack.
 static void get_more_free_blocks(void) {
   KASSERT(FREE_BLOCK_STACK_SIZE - g_free_block_stack_idx > BLOCKS_PER_PAGE);
-  const uint32_t phys_page = page_frame_alloc();
+  const phys_addr_t phys_page = page_frame_alloc();
   if (phys_page == 0x0) {
     return;
   }

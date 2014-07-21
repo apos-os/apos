@@ -115,8 +115,8 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
     }
   }
 
-  addr_t phys_addr = 0x0;
-  const uint32_t virt_page = addr2page(address);
+  phys_addr_t phys_addr = 0x0;
+  const addr_t virt_page = addr2page(address);
 
   // Some kernel mappings (such as the heap) don't have a backing memobj.
   if (!area->memobj) {

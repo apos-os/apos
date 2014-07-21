@@ -42,16 +42,16 @@ void page_frame_alloc_init(memory_info_t* meminfo);
 
 // Allocate a free page frame, returning its (physical) address.  If no page
 // frames are available, returns 0.
-uint32_t page_frame_alloc(void);
+phys_addr_t page_frame_alloc(void);
 
 // Frees the given page frame.
-void page_frame_free(uint32_t frame);
+void page_frame_free(phys_addr_t frame);
 
 // The exact same as page_frame_free, but doesn't do the extra checks (searching
 // for double-free, filling with 0xDEADBEEF).  Mostly useful in tests where
 // we're doing large blocks of allocations and want to avoid the overhead (since
 // it can be globally disabled with a #define).
-void page_frame_free_nocheck(uint32_t frame);
+void page_frame_free_nocheck(phys_addr_t frame);
 
 // Establishes a mapping from the given virtual address to the physical address
 // in the currently-loaded page tables.
@@ -61,19 +61,19 @@ void page_frame_free_nocheck(uint32_t frame);
 // flags.
 //
 // REQUIRES: virt and phys are page-aligned.
-void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
+void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
                             mem_access_t access, int flags);
 
 // Removes the mapping for the given virtual address from the currently-loaded
 // page table (by marking it non-present), if it exists.
 //
 // REQUIRES: virt is page-aligned.
-void page_frame_unmap_virtual(uint32_t virt);
+void page_frame_unmap_virtual(addr_t virt);
 
 // Removes mappings for an entire range of addresses.
 //
 // REQUIRES: virt and length are page-aligned.
-void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length);
+void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length);
 
 // Allocate and initialize a new page directory (e.g. for a new process), and
 // return it's (physical) address.

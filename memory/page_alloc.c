@@ -66,7 +66,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   }
 }
 
-uint32_t page_frame_alloc() {
+phys_addr_t page_frame_alloc() {
   if (stack_idx <= 0) {
     return 0;
   }
@@ -84,7 +84,7 @@ uint32_t page_frame_alloc() {
   return frame;
 }
 
-void page_frame_free(uint32_t frame_addr) {
+void page_frame_free(phys_addr_t frame_addr) {
   KASSERT(is_page_aligned(frame_addr));
   KASSERT(stack_idx <= stack_size);
 
@@ -104,7 +104,7 @@ void page_frame_free(uint32_t frame_addr) {
   page_frame_free_nocheck(frame_addr);
 }
 
-void page_frame_free_nocheck(uint32_t frame) {
+void page_frame_free_nocheck(phys_addr_t frame) {
   const uint32_t frame_addr = (uint32_t)frame;
   KASSERT(is_page_aligned(frame_addr));
   KASSERT(stack_idx <= stack_size);
@@ -154,7 +154,7 @@ static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
     // Allocate a new page table.
     // TODO(aoates): should we bother marking PDEs as non-writable or
     // non-user-accessible?
-    uint32_t pte_phys_addr = page_frame_alloc();
+    phys_addr_t pte_phys_addr = page_frame_alloc();
     KASSERT(pte_phys_addr);
     KASSERT_DBG((pte_phys_addr & PDE_ADDRESS_MASK) == pte_phys_addr);
     page_directory[page_table_idx] =
@@ -173,7 +173,7 @@ static uint32_t* get_or_create_page_table_entry(uint32_t virt, int create) {
 }
 
 // TODO(aoates): make kernel mappings PDE_GLOBAL for efficiency.
-void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
+void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
                             mem_access_t access, int flags) {
   KASSERT(virt % PAGE_SIZE == 0);
   KASSERT(phys % PAGE_SIZE == 0);
@@ -191,11 +191,11 @@ void page_frame_map_virtual(uint32_t virt, uint32_t phys, int prot,
   invalidate_tlb(virt);
 }
 
-void page_frame_unmap_virtual(uint32_t virt) {
+void page_frame_unmap_virtual(addr_t virt) {
   page_frame_unmap_virtual_range(virt, PAGE_SIZE);
 }
 
-void page_frame_unmap_virtual_range(uint32_t virt, uint32_t length) {
+void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
   KASSERT(virt % PAGE_SIZE == 0);
   KASSERT(length % PAGE_SIZE == 0);
   for (uint32_t i = 0; i < length / PAGE_SIZE; ++i) {

@@ -331,7 +331,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
     pirp_alloc = slab_alloc_create(sizeof(uhci_pending_irp_t), SLAB_MAX_PAGES);
   }
 
-  uint32_t frame_list_phys = page_frame_alloc();
+  phys_addr_t frame_list_phys = page_frame_alloc();
   c->frame_list = (uint32_t*)phys2virt(frame_list_phys);
 
   // Do a global reset on the bus.
