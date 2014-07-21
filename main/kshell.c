@@ -40,7 +40,6 @@
 #include "dev/usb/usb.h"
 #include "dev/usb/uhci/uhci_cmd.h"
 #include "memory/kmalloc.h"
-#include "memory/page_alloc.h"
 #include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"

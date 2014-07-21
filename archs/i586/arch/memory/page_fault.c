@@ -14,14 +14,14 @@
 
 #include <stdint.h>
 
-#include "archs/common/arch/memory/page_fault.h"
+#include "arch/memory/page_alloc.h"
+#include "arch/memory/page_fault.h"
 #include "archs/i586/internal/dev/interrupts-x86.h"
 #include "archs/i586/internal/memory/page_fault-x86.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
 #include "memory/vm_page_fault.h"
 
 // TODO(aoates): define these common interrupts in dev/interrupts.h

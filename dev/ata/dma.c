@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
 #include "common/io.h"
 #include "common/kstring.h"
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/dma.h"
-#include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 

@@ -14,13 +14,13 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/block_cache.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
-#include "memory/page_alloc.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
 #include "vfs/vfs.h"

@@ -14,12 +14,12 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_alloc.h"
 #include "archs/i586/internal/dev/interrupts-x86.h"
 #include "archs/i586/internal/memory/page_fault-x86.h"
 #include "common/kassert.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
 #include "test/ktest.h"
 
 // Expectations for page faults we want to see.

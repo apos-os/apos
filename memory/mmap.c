@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/math.h"
@@ -21,7 +22,6 @@
 #include "memory/memobj.h"
 #include "memory/memobj_anon.h"
 #include "memory/memobj_shadow.h"
-#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"

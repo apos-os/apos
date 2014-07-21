@@ -28,8 +28,8 @@
 // page_frame_link_global_mapping() is called to create the mapping in the new
 // process's address space.
 
-#ifndef APOO_MEMORY_PAGE_ALLOC_H
-#define APOO_MEMORY_PAGE_ALLOC_H
+#ifndef APOO_ARCHS_COMMON_ARCH_MEMORY_PAGE_ALLOC_H
+#define APOO_ARCHS_COMMON_ARCH_MEMORY_PAGE_ALLOC_H
 
 #include <stdint.h>
 

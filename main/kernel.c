@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_fault.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -26,7 +27,6 @@
 #include "proc/process.h"
 #include "proc/wait.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"

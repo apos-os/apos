@@ -15,7 +15,7 @@
 Import('env AposAddSources')
 
 srcs =['block_cache.c',
-    'memobj_anon.c', 'memobj_vnode.c', 'page_alloc.c', 'vm_area.c', 'memobj_block_dev.c', 'memory.c', 'vm.c', 'kmalloc.c', 'memobj_shadow.c', 'mmap.c', 'slab_alloc.c', 'vm_page_fault.c',
+    'memobj_anon.c', 'memobj_vnode.c', 'vm_area.c', 'memobj_block_dev.c', 'memory.c', 'vm.c', 'kmalloc.c', 'memobj_shadow.c', 'mmap.c', 'slab_alloc.c', 'vm_page_fault.c',
     ]
 
 objects = AposAddSources(env, srcs, [])

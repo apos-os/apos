@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
 #include "common/errno.h"
 #include "memory/kmalloc.h"
-#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
