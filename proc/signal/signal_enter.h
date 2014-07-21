@@ -15,8 +15,8 @@
 #ifndef APOO_PROC_SIGNAL_SIGNAL_ENTER_H
 #define APOO_PROC_SIGNAL_SIGNAL_ENTER_H
 
+#include "arch/proc/user_context.h"
 #include "proc/signal/posix_signal.h"
-#include "proc/user_context.h"
 
 // Enter user-space to run the given signal handler.  Deals with the
 // architecture-specific setup of the user mode stack, return trampoline, etc.

@@ -15,11 +15,11 @@
 #ifndef APOO_PROC_SIGNAL_SIGNAL_H
 #define APOO_PROC_SIGNAL_SIGNAL_H
 
+#include "arch/proc/user_context.h"
 #include "common/errno.h"
 #include "common/types.h"
 #include "proc/process.h"
 #include "proc/signal/posix_signal.h"
-#include "proc/user_context.h"
 
 static inline int ksigemptyset(sigset_t* set) {
   *set = 0;

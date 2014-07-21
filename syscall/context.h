@@ -15,7 +15,7 @@
 #ifndef APOO_SYSCALL_CONTEXT_H
 #define APOO_SYSCALL_CONTEXT_H
 
-#include "proc/user_context.h"
+#include "arch/proc/user_context.h"
 
 // Extract the syscall_context_t from the current thread's kernel stack.  Uses
 // the given value for the syscall return value.

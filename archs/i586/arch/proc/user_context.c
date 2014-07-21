@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/proc/user_context.h"
 #include "archs/i586/internal/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/types.h"
-#include "proc/user_context.h"
 
 void user_context_apply(const user_context_t* context_ptr) {
   // Make a copy on the local stack to free up our registers and let GCC do its

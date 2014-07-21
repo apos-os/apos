@@ -14,13 +14,13 @@
 
 #include "proc/signal/signal_enter.h"
 
+#include "arch/proc/user_context.h"
 #include "arch/proc/user_mode.h"
 #include "common/kassert.h"
 #include "common/math.h"
 #include "common/kstring.h"
 #include "proc/process.h"
 #include "proc/signal/posix_signal.h"
-#include "proc/user_context.h"
 
 extern char sigreturn_trampoline_start;
 extern char sigreturn_trampoline_end;

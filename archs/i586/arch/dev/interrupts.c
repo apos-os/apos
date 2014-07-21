@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "arch/proc/user_context.h"
 #include "archs/i586/internal/dev/faults.h"
 #include "archs/i586/internal/dev/interrupts-x86.h"
 #include "archs/i586/internal/memory/gdt.h"
@@ -22,7 +23,6 @@
 #include "common/types.h"
 #include "dev/interrupts.h"
 #include "proc/process.h"
-#include "proc/user_context.h"
 #include "proc/signal/signal.h"
 
 static uint16_t idt_entries = 0;
