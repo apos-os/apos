@@ -14,9 +14,16 @@
 
 #include "arch/proc/kthread.h"
 
+#include <stddef.h>
+
 #include "archs/i586/internal/proc/kthread.h"
 #include "archs/i586/internal/proc/tss.h"
 #include "proc/kthread-internal.h"
+
+// This asserts that the KTHREAD_T_ESP constant in kthread_asm.s matches the
+// actual offset of the context member.
+_Static_assert(offsetof(kthread_data_t, context) == 0x08,
+               "KTHREAD_T_ESP doesn't match context offset");
 
 void kthread_arch_init(void) {
   tss_init();
