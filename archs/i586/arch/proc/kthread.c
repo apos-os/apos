@@ -29,6 +29,9 @@ void kthread_arch_set_current_thread(kthread_t thread) {
 void kthread_arch_init_thread(kthread_t thread,
                               kthread_trampoline_func_t trampoline,
                               kthread_start_func_t start_routine, void* arg) {
+  _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
+                 "Invalid addr_t for i586 code");
+
   addr_t* stack = (addr_t*)kthread_arch_kernel_stack_top(thread);
 
   // Set up the stack.
@@ -63,5 +66,5 @@ void kthread_arch_init_thread(kthread_t thread,
   *(stack--) = flags;
 
   stack++;  // Point to last valid element.
-  thread->esp = (addr_t)stack;
+  thread->context = (addr_t)stack;
 }

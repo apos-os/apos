@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 
+#include "arch/proc/kthread-context.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
@@ -33,12 +34,10 @@
 struct process;
 typedef struct process process_t;
 
-// NOTE: if you update this structure, make sure you update kthread_asm.s as
-// well.
 struct kthread_data {
   uint32_t id;
   uint32_t state;
-  addr_t esp;  // KTHREAD_T_ESP in kthread_asm.s
+  kthread_arch_context_t context;
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;

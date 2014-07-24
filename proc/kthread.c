@@ -36,7 +36,7 @@ static kthread_queue_t g_reap_queue;
 
 static void kthread_init_kthread(kthread_data_t* t) {
   t->state = KTHREAD_PENDING;
-  t->id = t->esp = 0;
+  t->id = 0;
   t->retval = 0x0;
   t->prev = t->next = 0x0;
   t->stack = 0x0;
@@ -63,7 +63,6 @@ void kthread_init() {
   KASSERT(first != 0x0);
   kthread_init_kthread(first);
   first->state = KTHREAD_RUNNING;
-  first->esp = 0;
   first->id = g_next_id++;
   first->stack = (addr_t*)get_global_meminfo()->kernel_stack_base;
 
@@ -89,7 +88,6 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   kthread_init_kthread(thread);
   thread->id = g_next_id++;
   thread->state = KTHREAD_PENDING;
-  thread->esp = 0;
   thread->retval = 0x0;
   ksigemptyset(&thread->signal_mask);
 
@@ -116,7 +114,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
 void kthread_destroy(kthread_t thread) {
   // Write gargbage to crash anyone that tries to use the thread later.
-  thread->esp = 0;
+  kmemset(&thread->context, 0xAB, sizeof(kthread_arch_context_t));
   thread->state = KTHREAD_DESTROYED;
   if (thread->stack) {
     kfree(thread->stack);
