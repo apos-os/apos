@@ -14,8 +14,8 @@
 
 .set KTHREAD_T_ESP, 0x08
 
-.global kthread_swap_context
-kthread_swap_context:
+.global kthread_arch_swap_context
+kthread_arch_swap_context:
   pushl %ebp
   movl %esp, %ebp
 

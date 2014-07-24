@@ -23,6 +23,8 @@
 #include "proc/kthread.h"
 #include "proc/signal/posix_signal.h"
 
+#define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
+
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
 #define KTHREAD_DONE    2 // Finished.

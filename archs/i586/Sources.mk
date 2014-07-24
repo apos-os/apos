@@ -20,6 +20,8 @@ LOCAL_SOURCES := \
   arch/dev/isr.s \
   arch/memory/page_alloc.c \
   arch/memory/page_fault.c \
+  arch/proc/kthread.c \
+  arch/proc/kthread_asm.s \
   arch/proc/user_context.c \
   arch/proc/user_mode.c \
   internal/dev/faults.c \

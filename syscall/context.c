@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "archs/i586/internal/memory/gdt.h"
+#include "archs/i586/internal/proc/kthread.h"
 #include "common/kassert.h"
 #include "common/types.h"
 #include "proc/kthread.h"
@@ -27,7 +28,9 @@ user_context_t syscall_extract_context(long retval) {
   user_context_t context;
   context.type = USER_CONTEXT_CALL_GATE;
 
-  uint32_t* stack_ptr = (uint32_t*)kthread_kernel_stack_top();
+  // TODO(aoates): this shouldn't have access to kthread_current_thread().
+  uint32_t* stack_ptr =
+      (uint32_t*)kthread_arch_kernel_stack_top(kthread_current_thread());
   stack_ptr--;  // The first slot is garbage.
   const uint32_t ss = *(stack_ptr--);
   context.esp = *(stack_ptr--);

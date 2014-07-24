@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "archs/i586/internal/proc/tss.h"
+#include "arch/proc/kthread.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -28,24 +28,11 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 
-#define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
-
-static inline addr_t stack_top(addr_t stack) {
-  return stack + KTHREAD_STACK_SIZE - 4;
-}
-
 static kthread_data_t* g_current_thread = 0;
 static int g_next_id = 0;
 
 // A queue of threads that have exited and we can clean up.
 static kthread_queue_t g_reap_queue;
-
-// Swap context from threadA (the currently running thread) to threadB (the new
-// thread).
-//
-// Defined in kthread_asm.s
-void kthread_swap_context(kthread_data_t* threadA, kthread_data_t* threadB,
-                          page_dir_ptr_t pdA, page_dir_ptr_t pdB);
 
 static void kthread_init_kthread(kthread_data_t* t) {
   t->state = KTHREAD_PENDING;
@@ -67,7 +54,7 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
 }
 
 void kthread_init() {
-  tss_init();
+  kthread_arch_init();
 
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread == 0);
@@ -85,7 +72,7 @@ void kthread_init() {
   kthread_queue_init(&g_reap_queue);
 
   g_current_thread = first;
-  tss_set_kernel_stack(stack_top((addr_t)first->stack));
+  kthread_arch_set_current_thread(first);
   POP_INTERRUPTS();
 }
 
@@ -122,41 +109,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   *((uint8_t*)stack + KTHREAD_STACK_SIZE - 1) = 0xAA;
 
   thread->stack = stack;
-  stack = (addr_t*)stack_top((addr_t)stack);
-
-  // Set up the stack.
-  *(stack--) = 0xDEADDEAD;
-  // Jump into the trampoline at first.  First push the args, then the eip saved
-  // from the "call" to kthread_trampoline (since kthread_trampoline never
-  // returns, we should never try to pop and access it).  Then push the address
-  // of the start of kthread_trampoline, which swap_context will pop and jump to
-  // when it calls "ret".
-  *(stack--) = (addr_t)(arg);
-  *(stack--) = (addr_t)(start_routine);
-  *(stack--) = 0xDEADEADD;  // Fake saved eip.
-  *(stack--) = (addr_t)(&kthread_trampoline);
-
-  // Set set up the stack as if we'd called swap_context().
-  // First push the saved %ebp, which points to the ebp used by the 'call' to
-  // swap_context -- since we jump into the trampoline (which will do it's own
-  // thing with ebp), this doesn't have to be valid.
-  *(stack--) = 0xDEADBADD;
-  *(stack--) = 0;  // ebx
-  *(stack--) = 0;  // esi
-  *(stack--) = 0;  // edi
-
-  // "push" the flags.
-  uint32_t flags;
-  asm volatile (
-      "pushf\n\t"
-      "pop %0\n\t"
-      : "=r"(flags));
-  // Enable interrupts by default in the new thread.
-  flags = flags | IF_FLAG;
-  *(stack--) = flags;
-
-  stack++;  // Point to last valid element.
-  thread->esp = (addr_t)stack;
+  kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
   POP_INTERRUPTS();
   return 0;
 }
@@ -237,7 +190,7 @@ void kthread_switch(kthread_t new_thread) {
 
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;
-  tss_set_kernel_stack(stack_top((addr_t)g_current_thread->stack));
+  kthread_arch_set_current_thread(g_current_thread);
   new_thread->state = KTHREAD_RUNNING;
 
   // If either the old or new thread isn't owned by a process (as with some
@@ -253,7 +206,7 @@ void kthread_switch(kthread_t new_thread) {
   if (new_thread->process) {
     proc_set_current(new_thread->process);
   }
-  kthread_swap_context(old_thread, new_thread, old_pd, new_pd);
+  kthread_arch_swap_context(old_thread, new_thread, old_pd, new_pd);
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
@@ -266,10 +219,6 @@ void kthread_switch(kthread_t new_thread) {
   }
 
   POP_INTERRUPTS();
-}
-
-addr_t kthread_kernel_stack_top() {
-  return stack_top((addr_t)g_current_thread->stack);
 }
 
 void kthread_queue_init(kthread_queue_t* lst) {

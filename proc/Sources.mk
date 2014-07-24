@@ -21,7 +21,6 @@ LOCAL_SOURCES := \
   fork.c \
   group.c \
   kthread.c \
-  kthread_asm.s \
   scheduler.c \
   process.c \
   procfs.c \
