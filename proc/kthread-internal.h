@@ -36,11 +36,11 @@ typedef struct process process_t;
 struct kthread_data {
   uint32_t id;
   uint32_t state;
-  uint32_t esp;  // KTHREAD_T_ESP in kthread_asm.s
+  addr_t esp;  // KTHREAD_T_ESP in kthread_asm.s
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
-  uint32_t* stack;  // The block of memory allocated for the thread's stack.
+  addr_t* stack;  // The block of memory allocated for the thread's stack.
   uint32_t detached;
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
   // Then number of threads blocking in kthread_join() on this thread.  This is

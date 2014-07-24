@@ -78,9 +78,9 @@ void kthread_init() {
   first->state = KTHREAD_RUNNING;
   first->esp = 0;
   first->id = g_next_id++;
-  first->stack = (uint32_t*)get_global_meminfo()->kernel_stack_base;
+  first->stack = (addr_t*)get_global_meminfo()->kernel_stack_base;
 
-  KASSERT_DBG((uint32_t)(&first) < (uint32_t)first->stack + KTHREAD_STACK_SIZE);
+  KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + KTHREAD_STACK_SIZE);
 
   kthread_queue_init(&g_reap_queue);
 
@@ -110,19 +110,19 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   // we support multiple threads per process.
 
   // Allocate a stack for the thread.
-  uint32_t* stack = (uint32_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
+  addr_t* stack = (addr_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
   KASSERT(stack != 0x0);
 
   // Touch each page of the stack to make sure it's paged in.  If we don't do
   // this, when we try to use the stack, we'll cause a page fault, which will in
   // turn cause a double (then triple) fault when IT tries to use the stack.
-  for (uint32_t i = 0; i < KTHREAD_STACK_SIZE / PAGE_SIZE; ++i) {
+  for (addr_t i = 0; i < KTHREAD_STACK_SIZE / PAGE_SIZE; ++i) {
     *((uint8_t*)stack + i * PAGE_SIZE) = 0xAA;
   }
   *((uint8_t*)stack + KTHREAD_STACK_SIZE - 1) = 0xAA;
 
   thread->stack = stack;
-  stack = (uint32_t*)stack_top((addr_t)stack);
+  stack = (addr_t*)stack_top((addr_t)stack);
 
   // Set up the stack.
   *(stack--) = 0xDEADDEAD;
@@ -131,10 +131,10 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   // returns, we should never try to pop and access it).  Then push the address
   // of the start of kthread_trampoline, which swap_context will pop and jump to
   // when it calls "ret".
-  *(stack--) = (uint32_t)(arg);
-  *(stack--) = (uint32_t)(start_routine);
+  *(stack--) = (addr_t)(arg);
+  *(stack--) = (addr_t)(start_routine);
   *(stack--) = 0xDEADEADD;  // Fake saved eip.
-  *(stack--) = (uint32_t)(&kthread_trampoline);
+  *(stack--) = (addr_t)(&kthread_trampoline);
 
   // Set set up the stack as if we'd called swap_context().
   // First push the saved %ebp, which points to the ebp used by the 'call' to
@@ -156,7 +156,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   *(stack--) = flags;
 
   stack++;  // Point to last valid element.
-  thread->esp = (uint32_t)stack;
+  thread->esp = (addr_t)stack;
   POP_INTERRUPTS();
   return 0;
 }
