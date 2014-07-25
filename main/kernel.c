@@ -16,6 +16,7 @@
 
 #include "arch/memory/page_alloc.h"
 #include "arch/memory/page_fault.h"
+#include "arch/syscall/init.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -42,7 +43,6 @@
 #include "proc/scheduler.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
-#include "syscall/init.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 

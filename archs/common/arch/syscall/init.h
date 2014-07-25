@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_SYSCALL_INIT_H
-#define APOO_SYSCALL_INIT_H
+#ifndef APOO_ARCHS_COMMON_ARCH_SYSCALL_INIT_H
+#define APOO_ARCHS_COMMON_ARCH_SYSCALL_INIT_H
 
-// Initialize the syscall gate.
+// Initialize the syscall system.
 void syscalls_init(void);
 
 #endif

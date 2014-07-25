@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/syscall/init.h"
 #include "archs/i586/internal/memory/gdt.h"
 
 long _syscall_enter(void);

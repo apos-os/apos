@@ -25,6 +25,7 @@ LOCAL_SOURCES := \
   arch/proc/user_context.c \
   arch/proc/user_mode.c \
   arch/syscall/context.c \
+  arch/syscall/init.c \
   internal/dev/faults.c \
   internal/memory/gdt.c \
   internal/proc/tss.c \
