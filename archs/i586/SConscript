@@ -24,6 +24,7 @@ srcs = [
     'arch/proc/kthread_asm.s',
     'arch/proc/user_context.c',
     'arch/proc/user_mode.c',
+    'arch/syscall/context.c',
     'internal/dev/faults.c',
     'internal/memory/gdt.c',
     'internal/proc/tss.c',

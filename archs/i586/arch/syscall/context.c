@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/syscall/context.h"
 #include "archs/i586/internal/memory/gdt.h"
 #include "archs/i586/internal/proc/kthread.h"
 #include "common/kassert.h"
 #include "common/types.h"
 #include "proc/kthread.h"
-#include "syscall/context.h"
 
 user_context_t syscall_extract_context(long retval) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),

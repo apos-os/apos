@@ -15,7 +15,6 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
-  context.c \
   dmz.c \
   fork.c \
   init.c \

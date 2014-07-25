@@ -30,10 +30,10 @@ case {{ common.syscall_constant(syscall) }}:
   return SYSCALL_DMZ_{{ syscall.name }}({{ cast_args(syscall.args) }});
 {%- endmacro %}
 
+#include "arch/syscall/context.h"
 #include "common/errno.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
-#include "syscall/context.h"
 #include "syscall/syscalls.h"
 
 {{ common.include_headers(SYSCALLS, 'header') }}

@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/syscall/context.h"
 #include "common/errno.h"
 #include "memory/kmalloc.h"
 #include "proc/fork.h"
-#include "syscall/context.h"
 #include "syscall/fork.h"
 
 static void proc_fork_syscall_trampoline(void* arg) {

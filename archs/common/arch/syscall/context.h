@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_SYSCALL_CONTEXT_H
-#define APOO_SYSCALL_CONTEXT_H
+#ifndef APOO_ARCHS_COMMON_ARCH_SYSCALL_CONTEXT_H
+#define APOO_ARCHS_COMMON_ARCH_SYSCALL_CONTEXT_H
 
 #include "arch/proc/user_context.h"
 
