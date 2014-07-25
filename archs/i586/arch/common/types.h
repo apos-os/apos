@@ -12,13 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Common types.  See common/posix_types.h for POSIX-required types.
-#ifndef APOO_COMMON_TYPES_H
-#define APOO_COMMON_TYPES_H
+#ifndef APOO_ARCHS_I586_ARCH_COMMON_TYPES_H
+#define APOO_ARCHS_I586_ARCH_COMMON_TYPES_H
 
 #include <stdint.h>
 
-#include "arch/common/types.h"
-#include "common/posix_types.h"
+// A (virtual) memory address.
+// TODO(aoates): replace all uses of uint32_t with addr_t (where appropriate).
+typedef uint32_t addr_t;
+
+// A physical memory address.
+typedef addr_t phys_addr_t;
+
+// A length or delta of memory bytes.
+typedef addr_t addrdiff_t;
 
 #endif
