@@ -14,9 +14,9 @@
 
 #include <stdint.h>
 
+#include "arch/common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
-#include "common/io.h"
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"

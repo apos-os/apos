@@ -14,10 +14,10 @@
 
 #include <stdint.h>
 
+#include "arch/common/io.h"
 #include "arch/dev/irq.h"
 #include "arch/memory/page_alloc.h"
 #include "common/errno.h"
-#include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"

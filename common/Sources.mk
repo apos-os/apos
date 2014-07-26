@@ -19,7 +19,6 @@ LOCAL_SOURCES := \
   kassert.c \
   klog.c \
   kprintf.c \
-  io.c \
   errno.c \
   hashtable.c \
   builtins.c \

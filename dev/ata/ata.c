@@ -14,12 +14,12 @@
 
 #include <stdint.h>
 
+#include "arch/common/io.h"
 #include "arch/dev/irq.h"
 #include "common/errno.h"
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
-#include "common/io.h"
 #include "dev/ata/ata.h"
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/dma.h"

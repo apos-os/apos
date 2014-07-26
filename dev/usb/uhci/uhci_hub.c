@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "common/io.h"
+#include "arch/common/io.h"
 #include "common/math.h"
 #include "common/kassert.h"
 #include "common/klog.h"

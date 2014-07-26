@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/common/io.h"
 #include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
-#include "common/io.h"
 #include "common/kstring.h"
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"

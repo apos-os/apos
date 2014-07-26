@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_IO_H
-#define APOO_IO_H
+#ifndef APOO_ARCHS_COMMON_ARCH_COMMON_IO_H
+#define APOO_ARCHS_COMMON_ARCH_COMMON_IO_H
 
 #include <stdint.h>
 

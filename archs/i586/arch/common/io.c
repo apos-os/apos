@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "common/io.h"
+#include "arch/common/io.h"
 
 void outb(ioport_t port, uint8_t val) {
   asm volatile (
