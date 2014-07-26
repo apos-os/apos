@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "arch/common/types.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/uhci/uhci_hub.h"
 
@@ -94,7 +95,7 @@ struct uhci_pending_irp {
 typedef struct uhci_pending_irp uhci_pending_irp_t;
 
 struct usb_uhci {
-  uint32_t base_port;  // USBBASE register.
+  ioport_t base_port;  // USBBASE register.
   int irq;
   uint32_t* frame_list;  // Pointer to the frame list.
 

@@ -27,10 +27,10 @@ struct ata_disk_op;
 // Contains data about the port offsets for the primary and secondary ATA
 // channels.
 struct ata_channel {
-  uint16_t cmd_offset;  // Port offset for the command block.
-  uint16_t ctrl_offset;  // Port offset for the control block.
+  ioport_t cmd_offset;  // Port offset for the command block.
+  ioport_t ctrl_offset;  // Port offset for the control block.
   // Port offset for the DMA busmaster (if available).
-  uint16_t busmaster_offset;
+  ioport_t busmaster_offset;
   uint8_t irq;  // The IRQ used by this channel.
 
   // The currently-pending operation on this channel (for the master or slave),

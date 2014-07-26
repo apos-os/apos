@@ -27,4 +27,7 @@ typedef addr_t phys_addr_t;
 // A length or delta of memory bytes.
 typedef addr_t addrdiff_t;
 
+// An IO port address.
+typedef uint16_t ioport_t;
+
 #endif

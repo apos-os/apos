@@ -270,7 +270,7 @@ static void klog_cmd(int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port>\n"); \
       return; \
     } \
-    uint16_t port = atou(argv[1]); \
+    ioport_t port = atou(argv[1]); \
     type val = name(port); \
     ksh_printf("0x%x\n", val); \
   }
@@ -281,7 +281,7 @@ static void klog_cmd(int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port> <value>\n"); \
       return; \
     } \
-    uint16_t port = atou(argv[1]); \
+    ioport_t port = atou(argv[1]); \
     type value = (type)atou(argv[2]); \
     name(port, value); \
   }

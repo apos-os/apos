@@ -414,7 +414,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   }
 
   usb_uhci_t* c = (usb_uhci_t*)ci->dev_data;
-  const uint16_t port_reg = c->base_port +
+  const ioport_t port_reg = c->base_port +
       (port == 0 ? PORTSC1 : PORTSC2);
 
   uint16_t status = ins(port_reg);
@@ -455,7 +455,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   usb_init_device(device);
 }
 
-void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
+void usb_uhci_register_controller(ioport_t base_addr, uint8_t irq) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
     KLOG(WARNING, "too many UHCI controllers; ignoring\n");
     return;

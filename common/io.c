@@ -16,13 +16,13 @@
 
 #include "common/io.h"
 
-void outb(uint16_t port, uint8_t val) {
+void outb(ioport_t port, uint8_t val) {
   asm volatile (
       "outb %0, %1"
       :: "a"(val), "Nd"(port));
 }
 
-uint8_t inb(uint16_t port) {
+uint8_t inb(ioport_t port) {
   uint8_t val;
   asm volatile (
       "inb %1, %0"
@@ -30,13 +30,13 @@ uint8_t inb(uint16_t port) {
   return val;
 }
 
-void outs(uint16_t port, uint16_t val) {
+void outs(ioport_t port, uint16_t val) {
   asm volatile (
       "outw %0, %1"
       :: "a"(val), "Nd"(port));
 }
 
-uint16_t ins(uint16_t port) {
+uint16_t ins(ioport_t port) {
   uint16_t val;
   asm volatile (
       "inw %1, %0"
@@ -44,13 +44,13 @@ uint16_t ins(uint16_t port) {
   return val;
 }
 
-void outl(uint16_t port, uint32_t val) {
+void outl(ioport_t port, uint32_t val) {
   asm volatile (
       "outl %0, %1"
       :: "a"(val), "Nd"(port));
 }
 
-uint32_t inl(uint16_t port) {
+uint32_t inl(ioport_t port) {
   uint32_t val;
   asm volatile (
       "inl %1, %0"

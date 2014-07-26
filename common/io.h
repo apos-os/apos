@@ -17,13 +17,15 @@
 
 #include <stdint.h>
 
-void outb(uint16_t port, uint8_t val);
-uint8_t inb(uint16_t port);
+#include "arch/common/types.h"
 
-void outs(uint16_t port, uint16_t val);
-uint16_t ins(uint16_t port);
+void outb(ioport_t port, uint8_t val);
+uint8_t inb(ioport_t port);
 
-void outl(uint16_t port, uint32_t val);
-uint32_t inl(uint16_t port);
+void outs(ioport_t port, uint16_t val);
+uint16_t ins(ioport_t port);
+
+void outl(ioport_t port, uint32_t val);
+uint32_t inl(ioport_t port);
 
 #endif
