@@ -136,7 +136,7 @@ static uint32_t obj_hash(memobj_t* obj, int offset) {
 
 // Basic sanity checks on a bc_entry_t.
 static int entry_is_sane(bc_entry_internal_t* entry) {
- if (!entry->pub.obj || ((uint32_t)entry->pub.block & 0x00000FFF) ||
+ if (!entry->pub.obj || ((uint32_t)entry->pub.block & PAGE_OFFSET_MASK) ||
      entry->pin_count < 0 ||
      (entry->initialized != 0 && entry->initialized != 1) ||
      (entry->flushing != 0 && entry->flushing != 1) ||
