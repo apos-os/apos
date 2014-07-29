@@ -23,6 +23,7 @@ srcs = [
     'arch/memory/page_fault.c',
     'arch/proc/kthread.c',
     'arch/proc/kthread_asm.s',
+    'arch/proc/stack_trace.c',
     'arch/proc/user_context.c',
     'arch/proc/user_mode.c',
     'arch/syscall/context.c',
