@@ -140,8 +140,8 @@ $(BUILD_OUT)/%.PHYS.o : %.c
 $(BUILD_OUT)/libkernel_phys.a: $(MANUALLY_LINKED_OBJS)
 	$(AR) rcs $@ $^
  
-$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(BUILD_OUT)/libkernel_phys.a $(BUILD_DIR)/linker.ld
-	$(LD)  -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ $(OBJFILES)
+$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(BUILD_OUT)/libkernel_phys.a archs/$(ARCH)/build/linker.ld
+	$(LD)  -T archs/$(ARCH)/build/linker.ld -L $(BUILD_OUT) -o $@ $(OBJFILES)
 
 $(BUILD_OUT)/kernel.bin.stripped: $(BUILD_OUT)/kernel.bin
 	strip -s $< -o $@

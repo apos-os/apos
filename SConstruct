@@ -49,9 +49,10 @@ def AposAddSources(env, srcs, subdirs):
 def kernel_program(env, target, source):
   """Builder for the main kernel file."""
   return [
-      env.Depends(target, 'build/linker.ld'),
+      env.Depends(target, 'archs/%s/build/linker.ld' % env['ARCH']),
       env.Program(target, source,
-        LINKFLAGS=env['LINKFLAGS'] + ['-T', 'build/linker.ld', '-L', Dir('.')])]
+        LINKFLAGS=env['LINKFLAGS'] + [
+          '-T', 'archs/%s/build/linker.ld' % env['ARCH'], '-L', Dir('.')])]
 
 def phys_object(env, source):
   """Builder for object files that need to be linked in the physical (not
