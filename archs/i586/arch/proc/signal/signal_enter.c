@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "proc/signal/signal_enter.h"
+#include "arch/proc/signal/signal_enter.h"
 
 #include "arch/proc/user_context.h"
 #include "arch/proc/user_mode.h"

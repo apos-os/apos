@@ -24,6 +24,8 @@ LOCAL_SOURCES := \
   arch/memory/page_fault.c \
   arch/proc/kthread.c \
   arch/proc/kthread_asm.s \
+  arch/proc/signal/signal_enter.c \
+  arch/proc/signal/sigreturn_trampoline.s \
   arch/proc/stack_trace.c \
   arch/proc/user_context.c \
   arch/proc/user_mode.c \

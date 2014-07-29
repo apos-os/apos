@@ -14,11 +14,11 @@
 
 #include "proc/signal/signal.h"
 
+#include "arch/proc/signal/signal_enter.h"
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/process.h"
 #include "proc/user.h"
-#include "proc/signal/signal_enter.h"
 #include "syscall/syscalls.h"
 
 // Possible default actions for signals.
