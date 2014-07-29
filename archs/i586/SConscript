@@ -29,6 +29,7 @@ srcs = [
     'arch/proc/user_mode.c',
     'arch/syscall/context.c',
     'arch/syscall/init.c',
+    'arch/syscall/syscall_enter.s',
     'internal/dev/faults.c',
     'internal/memory/gdt.c',
     'internal/proc/tss.c',

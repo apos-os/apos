@@ -19,7 +19,6 @@ LOCAL_SOURCES := \
   fork.c \
   syscall_dispatch.tpl.c \
   syscall_dmz.tpl.c \
-  syscall_enter.s \
   test.c \
   wrappers.c \
 
