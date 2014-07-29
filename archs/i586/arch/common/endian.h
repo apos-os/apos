@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_COMMON_ENDIAN_H
-#define APOO_COMMON_ENDIAN_H
+#ifndef APOO_ARCHS_I586_ARCH_COMMON_ENDIAN_H
+#define APOO_ARCHS_I586_ARCH_COMMON_ENDIAN_H
 
 #include <stdint.h>
 
-// TODO(aoates): move this to an architecture-defined location once we support
-// non-x86.
+#include "arch/common/endian.h"
 
 // Convert host-to-little endian values.
 static inline uint16_t htol16(uint16_t val) { return val; }

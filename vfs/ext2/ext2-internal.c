@@ -14,7 +14,7 @@
 
 #include "vfs/ext2/ext2-internal.h"
 
-#include "common/endian.h"
+#include "arch/common/endian.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 
