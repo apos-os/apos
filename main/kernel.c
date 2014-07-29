@@ -91,6 +91,8 @@ static void kshell_trampoline(void* arg) {
 }
 
 void kmain(memory_info_t* meminfo) {
+  set_global_meminfo(meminfo);
+
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
@@ -101,8 +103,6 @@ void kmain(memory_info_t* meminfo) {
 
   enable_interrupts();
 
-  klog("set_global_meminfo()\n");
-  set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
   klog("paging_init()\n");

@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <stdint.h>
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "arch/common/io.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
+#include "memory/memory.h"
 
 // The current logging mode.
 static int g_klog_mode = KLOG_RAW_VIDEO;
@@ -29,7 +31,9 @@ static vterm_t* g_klog_vterm = 0x0;
 static char g_klog_history[KLOG_BUF_SIZE];
 static int g_klog_len = 0;
 
-#define VRAM_START 0xC00B8000
+static inline addr_t vram_start(void) {
+  return get_global_meminfo()->phys_map_start + 0xB8000;
+}
 
 static klog_level_t g_global_log_level = INFO;
 // Current minimum logging levels for each module.  Defaults to ERROR for each
@@ -49,9 +53,10 @@ static void pp_putc(uint8_t c) {
 }
 
 static void raw_putc(uint8_t c) {
-  static uint8_t* vram = (uint8_t*)VRAM_START;
+  static uint8_t* vram = NULL;
+  if (!vram) vram = (uint8_t*)vram_start();
   if (c == '\n') {
-    while ((vram - (uint8_t*)VRAM_START) % 160 != 0) {
+    while ((vram - (uint8_t*)vram_start()) % 160 != 0) {
       *vram++ = ' ';
       *vram++ = 0x07;
     }
@@ -61,8 +66,8 @@ static void raw_putc(uint8_t c) {
   }
 
   // Loop it if needed.
-  if (vram >= (uint8_t*)VRAM_START + 160 * 24) {
-    vram = (uint8_t*)VRAM_START;
+  if (vram >= (uint8_t*)vram_start() + 160 * 24) {
+    vram = (uint8_t*)vram_start();
   }
 }
 
