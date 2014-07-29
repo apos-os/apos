@@ -15,6 +15,7 @@
 $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
+  arch/common/die.c \
   arch/common/io.c \
   arch/dev/interrupts.c \
   arch/dev/irq.c \

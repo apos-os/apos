@@ -12,33 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "common/kassert.h"
+#ifndef APOO_ARCHS_COMMON_ARCH_COMMON_DIE_H
+#define APOO_ARCHS_COMMON_ARCH_COMMON_DIE_H
 
-#include "arch/common/die.h"
-#include "arch/proc/stack_trace.h"
-#include "common/klog.h"
-#include "common/kstring.h"
-#include "memory/memory.h"
+// Stop the processor (or whatever makes sense for the architecture).
+void arch_die(void);
 
-void die(const char* msg) {
-  klog("PANIC: ");
-  if (msg) {
-    klog(msg);
-    klog("\n");
-  } else {
-    klog("<unknown reason :(>\n");
-  }
-  klog("Stack trace: \n");
-  print_stack_trace();
-  arch_die();
-}
-
-void kassert(int x) {
-  kassert_msg(x, 0);
-}
-
-void kassert_msg(int x, const char* msg) {
-  if (!x) {
-    die(msg);
-  }
-}
+#endif
