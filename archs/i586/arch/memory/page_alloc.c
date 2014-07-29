@@ -14,7 +14,9 @@
 
 #include <stdint.h>
 
+#include "arch/memory/layout.h"
 #include "arch/memory/page_alloc.h"
+#include "archs/i586/internal/memory/page_tables.h"
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "memory/flags.h"

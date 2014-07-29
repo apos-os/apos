@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "archs/i586/internal/load/mem_init.h"
+#include "archs/i586/internal/memory/page_tables.h"
 #include "memory/memory.h"
 
 // Memory limits of the kernel --- symbols defined at the start and end of the

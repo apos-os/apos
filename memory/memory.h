@@ -18,44 +18,8 @@
 
 #include <stdint.h>
 
+#include "arch/memory/layout.h"
 #include "common/types.h"
-
-#define PAGE_SIZE          0x00001000
-#define PAGE_INDEX_MASK    0xFFFFF000
-#define PAGE_OFFSET_MASK   0x00000FFF
-
-#define PDE_ADDRESS_MASK   0xFFFFF000 /* PAGE_INDEX_MASK */
-#define PDE_LARGE_PAGES    0x00000080
-#define PDE_ACCESSED       0x00000020
-#define PDE_CACHE_DISABLED 0x00000010
-#define PDE_WRITE_THROUGH  0x00000008
-#define PDE_USER_ACCESS    0x00000004
-#define PDE_WRITABLE       0x00000002
-#define PDE_PRESENT        0x00000001
-#define PDE_NUM_ENTRIES    (PAGE_SIZE / 4)
-
-#define PTE_ADDRESS_MASK   0xFFFFF000 /* PAGE_INDEX_MASK */
-#define PTE_GLOBAL         0x00000100
-#define PTE_DIRTY          0x00000040
-#define PTE_ACCESSED       0x00000020
-#define PTE_CACHE_DISABLED 0x00000010
-#define PTE_WRITE_TRHOUGH  0x00000008
-#define PTE_USER_ACCESS    0x00000004
-#define PTE_WRITABLE       0x00000002
-#define PTE_PRESENT        0x00000001
-#define PTE_NUM_ENTRIES    (PAGE_SIZE / 4)
-
-#define MIN_GLOBAL_MAPPING_SIZE (PAGE_SIZE * PTE_NUM_ENTRIES)
-
-// The first and last mappable addresses.
-#define MEM_FIRST_MAPPABLE_ADDR PAGE_SIZE
-#define MEM_LAST_USER_MAPPABLE_ADDR 0xBFFFFFFF
-#define MEM_LAST_MAPPABLE_ADDR      0xFFFFFFFF
-
-// Location and size of the user-mode process stack.
-#define MEM_USER_STACK_SIZE (8 * 1024 * 1024)  // 8MB
-#define MEM_USER_STACK_BOTTOM \
-    (MEM_LAST_USER_MAPPABLE_ADDR + 1 - MEM_USER_STACK_SIZE)
 
 _Static_assert(MEM_USER_STACK_SIZE % PAGE_SIZE == 0,
                "MEM_USER_STACK_SIZE must be an even multiple of PAGE_SIZE");
