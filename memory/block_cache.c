@@ -66,7 +66,7 @@ typedef struct bc_entry_internal {
 
 // TODO(aoates): make this flexible.
 #define FREE_BLOCK_STACK_SIZE DEFAULT_CACHE_SIZE
-static uint32_t g_free_block_stack[FREE_BLOCK_STACK_SIZE];
+static addr_t g_free_block_stack[FREE_BLOCK_STACK_SIZE];
 static int g_free_block_stack_idx = 0;  // First free entry.
 
 // Queue of cache entries that need to be flushed.
@@ -91,7 +91,7 @@ static void get_more_free_blocks(void) {
   if (phys_page == 0x0) {
     return;
   }
-  const uint32_t page = phys2virt(phys_page);
+  const addr_t page = phys2virt(phys_page);
 
   KASSERT(PAGE_SIZE % BLOCK_CACHE_BLOCK_SIZE == 0);
   for (int i = 0; i < BLOCKS_PER_PAGE; ++i) {
@@ -110,7 +110,7 @@ static void* get_free_block(void) {
   if (g_free_block_stack_idx == 0) {
     return 0x0;
   }
-  const uint32_t block = g_free_block_stack[--g_free_block_stack_idx];
+  const addr_t block = g_free_block_stack[--g_free_block_stack_idx];
   return (void*)block;
 }
 
@@ -126,7 +126,7 @@ static void put_free_block(void* block) {
   if (ENABLE_KERNEL_SAFETY_NETS) {
     kmemset(block, 0xB, BLOCK_CACHE_BLOCK_SIZE);
   }
-  g_free_block_stack[g_free_block_stack_idx++] = (uint32_t)block;
+  g_free_block_stack[g_free_block_stack_idx++] = (addr_t)block;
 }
 
 static uint32_t obj_hash(memobj_t* obj, int offset) {
@@ -137,7 +137,7 @@ static uint32_t obj_hash(memobj_t* obj, int offset) {
 
 // Basic sanity checks on a bc_entry_t.
 static int entry_is_sane(bc_entry_internal_t* entry) {
- if (!entry->pub.obj || ((uint32_t)entry->pub.block & PAGE_OFFSET_MASK) ||
+ if (!entry->pub.obj || ((addr_t)entry->pub.block & PAGE_OFFSET_MASK) ||
      entry->pin_count < 0) {
    return 0;
  } else {
