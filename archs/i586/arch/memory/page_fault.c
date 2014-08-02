@@ -39,7 +39,7 @@ void paging_init(memory_info_t* meminfo) {
   register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
 }
 
-void page_fault_handler(uint32_t interrupt, uint32_t error, int is_user) {
+void page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
   KASSERT(interrupt == PAGE_FAULT_INTERRUPT);
   KASSERT((error & PAGE_FAULT_ERR_RSVD) == 0);
 

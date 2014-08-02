@@ -19,7 +19,7 @@
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 
-static void fpe_handler(uint32_t interrupt, uint32_t error, int is_user) {
+static void fpe_handler(uint32_t interrupt, uint32_t error, bool is_user) {
   if (!is_user) {
     die("floating point exception in kernel code");
   }

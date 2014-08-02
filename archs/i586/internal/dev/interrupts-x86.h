@@ -17,6 +17,7 @@
 #ifndef APOO_ARCHS_I586_ARCH_DEV_INTERRUPTS_X86_H
 #define APOO_ARCHS_I586_ARCH_DEV_INTERRUPTS_X86_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define MIN_INTERRUPT 0
@@ -30,7 +31,7 @@
 // the interrupt number (and error, if applicable), then clean up after it
 // returns.
 typedef void (*int_handler_t)(
-    uint32_t /* interrupt no. */, uint32_t /* error or 0 */, int /* is_user */);
+    uint32_t /* interrupt no. */, uint32_t /* error or 0 */, bool /* is_user */);
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler);
 
 // Structs for the IDT and its entries.

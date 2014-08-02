@@ -16,12 +16,13 @@
 #ifndef APOO_MEMORY_PAGE_FAULT
 #define APOO_MEMORY_PAGE_FAULT
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "archs/common/arch/memory/page_fault.h"
 
 // Interrupt handler for page faults.  Reads the address that caused the fault
 // from register CR2, and takes the error code given by the interrupt.
-void page_fault_handler(uint32_t interrupt, uint32_t error, int is_user);
+void page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user);
 
 #endif
