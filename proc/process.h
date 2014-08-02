@@ -16,6 +16,8 @@
 #ifndef APOO_PROCESS_H
 #define APOO_PROCESS_H
 
+#include <stdbool.h>
+
 #include "common/list.h"
 #include "proc/alarm.h"
 #include "proc/kthread.h"
@@ -80,7 +82,7 @@ struct process {
   list_link_t pgroup_link;
 
   // Has this process exec()'d since it was created.
-  uint8_t execed;
+  bool execed;
 
   // Parent process.
   process_t* parent;

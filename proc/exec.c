@@ -174,7 +174,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   const addr_t entry = binary->entry;
   kfree(binary);
 
-  proc_current()->execed = 1;
+  proc_current()->execed = true;
 
   user_mode_enter(stack_top, entry);
 

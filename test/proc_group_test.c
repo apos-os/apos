@@ -71,7 +71,7 @@ static void basic_setgpid_test(void* arg) {
   const pid_t group = (pid_t)arg;
 
   // To ensure it's not looked at or carried to children.
-  proc_current()->execed = 1;
+  proc_current()->execed = true;
 
   KTEST_BEGIN("setgpid() create new group");
   KEXPECT_NE(proc_current()->id, getpgid(0));
@@ -146,7 +146,7 @@ static void child_setgpid_test(void* arg) {
   int test_done = 0;
 
   // To ensure it's not looked at or carried to children.
-  proc_current()->execed = 1;
+  proc_current()->execed = true;
 
   KTEST_BEGIN("setpgid(): set pgid of child");
   int child = proc_fork(&loop_until_done, &test_done);
@@ -168,8 +168,8 @@ static void child_setgpid_test(void* arg) {
   KTEST_BEGIN("setpgid(): set pgid of child that has exec()'d");
   test_done = 0;
   child = proc_fork(&loop_until_done, &test_done);
-  KEXPECT_EQ(0, proc_get(child)->execed);
-  proc_get(child)->execed = 1;
+  KEXPECT_EQ(false, proc_get(child)->execed);
+  proc_get(child)->execed = true;
   KEXPECT_EQ(-EACCES, setpgid(child, 0));
   KEXPECT_EQ(proc_current()->pgroup, getpgid(child));
 
