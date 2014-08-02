@@ -549,7 +549,7 @@ static void cp_cmd(int argc, char* argv[]) {
   }
 
   const uint32_t time_start = get_time_ms();
-  uint32_t bytes_copied = 0;
+  size_t bytes_copied = 0;
   const int kBufSize = 900;
   char buf[kBufSize];
   while (1) {

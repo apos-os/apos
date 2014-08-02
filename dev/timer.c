@@ -135,7 +135,7 @@ int register_timer_callback(uint32_t period, int limit,
     return -ENOMEM;
   }
   // Find a free slot.
-  uint32_t idx;
+  size_t idx;
   for (idx = 0; idx < KMAX_TIMERS; ++idx) {
     if (timers[idx].free) {
       break;

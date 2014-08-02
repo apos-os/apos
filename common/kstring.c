@@ -108,7 +108,7 @@ char* kstrcat(char* dst, const char* src) {
   return dst_orig;
 }
 
-static uint32_t abs(int32_t x) {
+static unsigned long abs(long x) {
   return x < 0 ? -x : x;
 }
 

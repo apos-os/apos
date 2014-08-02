@@ -16,6 +16,8 @@
 #ifndef APOO_MEMORY_BLOCK_CACHE_H
 #define APOO_MEMORY_BLOCK_CACHE_H
 
+#include <stddef.h>
+
 #include "common/types.h"
 #include "memory/memory.h"
 
@@ -34,7 +36,7 @@ typedef enum {
 // Block cache entry.  Must not be modified outside of the block cache.
 typedef struct bc_entry {
   struct memobj* obj;
-  uint32_t offset;
+  size_t offset;
   void* block;
 
   // Physical address of the memory block.  Will be block-size-aligned.

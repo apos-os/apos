@@ -121,11 +121,15 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   }
 
   // Create a sequence of TDs for the transfer.
-  uint32_t bytes_left = irp->buflen;
+  size_t bytes_left = irp->buflen;
   uhci_td_t* prev = 0x0;
   uhci_td_t* ctd = 0x0;
   uhci_td_t* head_td = 0x0;
-  uint32_t buf_phys = irp->buffer == 0x0 ? 0 : virt2phys((uint32_t)irp->buffer);
+  phys_addr_t buf_phys =
+      irp->buffer == 0x0 ? 0 : virt2phys((addr_t)irp->buffer);
+  // TODO(aoates): this needs to be fixed to support 64-bit.
+  _Static_assert(sizeof(buf_phys) == sizeof(uint32_t),
+                 "Physical address not the same size as USB buffer pointer");
   // Create at least 1 TD (even if the data length is 0).
   do {
     ctd = alloc_td();
@@ -169,7 +173,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     // Connect the previous TD to this one.
     if (prev) {
       prev->link_ptr =
-        (virt2phys((uint32_t)ctd) & TD_LINK_PTR_ADDR_MASK);
+        (virt2phys((addr_t)ctd) & TD_LINK_PTR_ADDR_MASK);
     }
     prev = ctd;
   } while (bytes_left > 0);
@@ -177,8 +181,8 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
 
   // Create a QH for the transfer.
   uhci_qh_t* transfer_qh = alloc_qh();
-  KASSERT(((uint32_t)head_td & QH_LINK_PTR_MASK) == (uint32_t)head_td);
-  transfer_qh->elt_link_ptr = virt2phys((uint32_t)head_td);  // Non-terminal TD.
+  KASSERT(((addr_t)head_td & QH_LINK_PTR_MASK) == (addr_t)head_td);
+  transfer_qh->elt_link_ptr = virt2phys((addr_t)head_td);  // Non-terminal TD.
   transfer_qh->head_link_ptr = 0x0;
 
   // Insert it into the appropriate queue.
@@ -187,11 +191,11 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   switch (irp->endpoint->type) {
     case USB_INTERRUPT:
       type_qh = uhci_hc->interrupt_qh;
-      next_type_qh = virt2phys((uint32_t)uhci_hc->control_qh) | QH_QH;
+      next_type_qh = virt2phys((addr_t)uhci_hc->control_qh) | QH_QH;
       break;
     case USB_CONTROL:
       type_qh = uhci_hc->control_qh;
-      next_type_qh = virt2phys((uint32_t)uhci_hc->bulk_qh) | QH_QH;
+      next_type_qh = virt2phys((addr_t)uhci_hc->bulk_qh) | QH_QH;
       break;
     case USB_BULK:
       type_qh = uhci_hc->bulk_qh;
@@ -209,7 +213,7 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
     KASSERT(type_qh->elt_link_ptr & QH_QH);
     transfer_qh->head_link_ptr = type_qh->elt_link_ptr | QH_QH;
   }
-  type_qh->elt_link_ptr = virt2phys((uint32_t)transfer_qh) | QH_QH;
+  type_qh->elt_link_ptr = virt2phys((addr_t)transfer_qh) | QH_QH;
 
   // Add it to the pending IRP list.
   uhci_pending_irp_t* pirp = alloc_pending_irp();
@@ -332,7 +336,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   }
 
   phys_addr_t frame_list_phys = page_frame_alloc();
-  c->frame_list = (uint32_t*)phys2virt(frame_list_phys);
+  c->frame_list = (addr_t*)phys2virt(frame_list_phys);
 
   // Do a global reset on the bus.
   uint16_t cmd = ins(c->base_port + USBCMD);
@@ -360,16 +364,16 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
 
   // Link them to each other horizontally, and mark their vertical links as
   // terminal.
-  KASSERT(((uint32_t)c->interrupt_qh & QH_LINK_PTR_MASK) == (uint32_t)c->interrupt_qh);
-  KASSERT(((uint32_t)c->control_qh & QH_LINK_PTR_MASK) == (uint32_t)c->control_qh);
-  KASSERT(((uint32_t)c->bulk_qh & QH_LINK_PTR_MASK) == (uint32_t)c->bulk_qh);
+  KASSERT(((addr_t)c->interrupt_qh & QH_LINK_PTR_MASK) == (addr_t)c->interrupt_qh);
+  KASSERT(((addr_t)c->control_qh & QH_LINK_PTR_MASK) == (addr_t)c->control_qh);
+  KASSERT(((addr_t)c->bulk_qh & QH_LINK_PTR_MASK) == (addr_t)c->bulk_qh);
 
   c->interrupt_qh->head_link_ptr =
-    (virt2phys((uint32_t)c->control_qh) & QH_LINK_PTR_MASK) | QH_QH;
+    (virt2phys((addr_t)c->control_qh) & QH_LINK_PTR_MASK) | QH_QH;
   c->interrupt_qh->elt_link_ptr = QH_TERM;
 
   c->control_qh->head_link_ptr =
-    (virt2phys((uint32_t)c->bulk_qh) & QH_LINK_PTR_MASK) | QH_QH;
+    (virt2phys((addr_t)c->bulk_qh) & QH_LINK_PTR_MASK) | QH_QH;
   c->control_qh->elt_link_ptr = QH_TERM;
 
   // TODO(aoates): if we want to support bandwidth reclamation, we should loop
@@ -378,9 +382,9 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   c->bulk_qh->elt_link_ptr = QH_TERM;
 
   // Make each element in the frame list point at our queues.
-  const uint32_t frame_list_entry =
-      virt2phys((uint32_t)c->interrupt_qh) | FL_PTR_QH;
-  for (int i = 0; i < UHCI_NUM_FRAMES; ++i) {
+  const phys_addr_t frame_list_entry =
+      virt2phys((addr_t)c->interrupt_qh) | FL_PTR_QH;
+  for (size_t i = 0; i < UHCI_NUM_FRAMES; ++i) {
     c->frame_list[i] = frame_list_entry;
   }
 

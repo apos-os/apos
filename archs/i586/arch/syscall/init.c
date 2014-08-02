@@ -14,12 +14,13 @@
 
 #include "arch/syscall/init.h"
 #include "archs/i586/internal/memory/gdt.h"
+#include "common/types.h"
 
 long _syscall_enter(void);
 
 void syscalls_init(void) {
   gdt_entry_t call_gate_entry =
-      gdt_entry_create_gate((uint32_t)(&_syscall_enter),
+      gdt_entry_create_gate((addr_t)(&_syscall_enter),
                             segment_selector(GDT_KERNEL_CODE_SEGMENT,
                                              RPL_KERNEL),
                             GATE_CALL,

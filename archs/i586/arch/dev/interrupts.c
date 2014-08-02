@@ -83,7 +83,8 @@ static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
   KASSERT(idt != 0);
   KASSERT(num < idt_entries);
 
-  uint32_t offset = (uint32_t)h;
+  _Static_assert(sizeof(h) == sizeof(uint32_t), "Invalid function ptr size");
+  addr_t offset = (addr_t)h;
   idt[num].offset_low = offset & 0x0000FFFF;
   idt[num].offset_high = offset >> 16;
   idt[num].selector = IDT_SELECTOR_VALUE;
@@ -210,7 +211,7 @@ void interrupts_init() {
   register_fault_handlers();
 }
 
-void int_handler(uint32_t interrupt, uint32_t error, uint32_t ebp) {
+void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
   const int is_user = is_user_interrupt(ebp);
 
   if (g_handlers[interrupt]) {

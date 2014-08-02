@@ -118,8 +118,8 @@ static flag_spec_t QH_FLAGS[] = {
 
 static void print_td(uhci_td_t* td) {
   // If the address is physical, convert to virtual before reading it.
-  if (is_direct_mappable((uint32_t)td)) {
-    td = (uhci_td_t*)phys2virt((uint32_t)td);
+  if (is_direct_mappable((phys_addr_t)td)) {
+    td = (uhci_td_t*)phys2virt((phys_addr_t)td);
   }
   char buf[1024];
   flag_sprintf(buf, td->link_ptr, TD_LINK_PTR_FLAGS);
@@ -137,8 +137,8 @@ static void print_td(uhci_td_t* td) {
 
 static void print_qh(uhci_qh_t* qh) {
   // If the address is physical, convert to virtual before reading it.
-  if (is_direct_mappable((uint32_t)qh)) {
-    qh = (uhci_qh_t*)phys2virt((uint32_t)qh);
+  if (is_direct_mappable((phys_addr_t)qh)) {
+    qh = (uhci_qh_t*)phys2virt((phys_addr_t)qh);
   }
   char buf[1024];
   flag_sprintf(buf, qh->head_link_ptr, QH_FLAGS);

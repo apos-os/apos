@@ -35,7 +35,7 @@ static void request_irp_done(usb_irp_t* irp, void* arg);
 // Standard starter for request-based commands.
 static void request_irp_start(const char* name, usb_device_t* dev,
                               usb_dev_request_t* request,
-                              void* buffer, uint32_t buflen,
+                              void* buffer, size_t buflen,
                               usb_hubd_callback_t callback) {
   context_t* context = (context_t*)kmalloc(sizeof(context_t));
 

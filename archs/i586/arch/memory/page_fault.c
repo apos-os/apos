@@ -43,7 +43,8 @@ void page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
   KASSERT(interrupt == PAGE_FAULT_INTERRUPT);
   KASSERT((error & PAGE_FAULT_ERR_RSVD) == 0);
 
-  uint32_t address;
+  _Static_assert(sizeof(addr_t) == sizeof(uint32_t), "Not 32-bit");
+  addr_t address;
   asm volatile ("movl %%cr2, %0\n\t" : "=r"(address));
 
   const vm_fault_type_t type =

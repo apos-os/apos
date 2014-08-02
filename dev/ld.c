@@ -33,9 +33,9 @@ struct ld {
   // (subject to circular index rollover).
   char* read_buf;
   int buf_len;
-  uint32_t start_idx;
-  uint32_t cooked_idx;
-  uint32_t raw_idx;
+  size_t start_idx;
+  size_t cooked_idx;
+  size_t raw_idx;
 
   // The character sink for echoing and writing.
   char_sink_t sink;
@@ -63,11 +63,11 @@ void ld_destroy(ld_t* l) {
   kfree(l);
 }
 
-static inline uint32_t circ_inc(ld_t* l, uint32_t x) {
+static inline size_t circ_inc(ld_t* l, size_t x) {
   return (x + 1) % l->buf_len;
 }
 
-static inline uint32_t circ_dec(ld_t* l, uint32_t x) {
+static inline size_t circ_dec(ld_t* l, size_t x) {
   if (x == 0) return l->buf_len - 1;
   else return x - 1;
 }
@@ -211,12 +211,12 @@ int ld_write(ld_t* l, const char* buf, int n) {
   return n;
 }
 
-static int ld_char_dev_read(struct char_dev* dev, void* buf, uint32_t len) {
+static int ld_char_dev_read(struct char_dev* dev, void* buf, size_t len) {
   return ld_read((ld_t*)dev->dev_data, buf, len);
 }
 
 static int ld_char_dev_write(struct char_dev* dev, const void* buf,
-                             uint32_t len) {
+                             size_t len) {
   return ld_write((ld_t*)dev->dev_data, buf, len);
 }
 

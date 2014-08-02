@@ -46,7 +46,7 @@
 struct ramfs_inode {
   vnode_t vnode;  // We use num, type, and len.
   uint8_t* data;
-  uint32_t link_count;  // An inode can be deallocated when it's link_count (and vnode refcount) go to zero.
+  int link_count;  // An inode can be deallocated when it's link_count (and vnode refcount) go to zero.
 };
 typedef struct ramfs_inode ramfs_inode_t;
 
@@ -571,7 +571,7 @@ int ramfs_readlink(vnode_t* node, char* buf, int bufsize) {
 }
 
 int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
-  KASSERT((uint32_t)buf % PAGE_SIZE == 0);
+  KASSERT((addr_t)buf % PAGE_SIZE == 0);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);
   if (vnode->type != VNODE_REGULAR) {
@@ -585,7 +585,7 @@ int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
 }
 
 int ramfs_write_page(vnode_t* vnode, int page_offset, const void* buf) {
-  KASSERT((uint32_t)buf % PAGE_SIZE == 0);
+  KASSERT((addr_t)buf % PAGE_SIZE == 0);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);
   if (vnode->type != VNODE_REGULAR) {

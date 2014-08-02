@@ -24,7 +24,7 @@ typedef struct ramdisk ramdisk_t;
 
 // Create a ramdisk of the given size (which must be an even multiple of the
 // page size).  Returns 0 on success, and sets d to the ramdisk structure.
-int ramdisk_create(uint32_t size, ramdisk_t** d);
+int ramdisk_create(size_t size, ramdisk_t** d);
 
 // Destroys a ramdisk created with ramdisk_create().
 void ramdisk_destroy(ramdisk_t* d);

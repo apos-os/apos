@@ -21,7 +21,7 @@
 
 #define IF_FLAG 0x200
 
-static inline uint32_t get_interrupts_state(void) {
+static inline interrupt_state_t get_interrupts_state(void) {
   uint32_t saved_flags;
   asm volatile (
       "pushf\n\t"
@@ -30,7 +30,7 @@ static inline uint32_t get_interrupts_state(void) {
   return saved_flags & IF_FLAG;
 }
 
-static inline uint32_t save_and_disable_interrupts(void) {
+static inline interrupt_state_t save_and_disable_interrupts(void) {
   uint32_t saved_flags;
   asm volatile (
       "pushf\n\t"
@@ -40,7 +40,7 @@ static inline uint32_t save_and_disable_interrupts(void) {
   return saved_flags & IF_FLAG;
 }
 
-static inline void restore_interrupts(uint32_t saved) {
+static inline void restore_interrupts(interrupt_state_t saved) {
   uint32_t saved_flags;
   asm volatile (
       "pushf\n\t"

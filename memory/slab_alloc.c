@@ -188,7 +188,7 @@ void* slab_alloc(slab_alloc_t* s) {
 
 void slab_free(slab_alloc_t* s, void* x) {
   // Find the page the thing is in.
-  KASSERT(((uint32_t)x % PAGE_SIZE) % s->obj_size == 0);
+  KASSERT(((addr_t)x % PAGE_SIZE) % s->obj_size == 0);
 
   int i;
   for (i = 0; i < s->max_pages; ++i) {
@@ -198,7 +198,7 @@ void slab_free(slab_alloc_t* s, void* x) {
   }
   KASSERT(i < s->max_pages);
 
-  const int obj_idx = ((uint32_t)x % 4096) / s->obj_size;
+  const int obj_idx = ((addr_t)x % PAGE_SIZE) / s->obj_size;
   const int num_objects = NUM_OBJECTS(s->obj_size);
   KASSERT(obj_idx < num_objects);
 

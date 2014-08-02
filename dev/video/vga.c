@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "arch/common/io.h"
@@ -41,8 +42,8 @@
 // This struct is sort of a lie...there's only one VGA display available.
 struct video {
   uint8_t* videoram;
-  uint32_t width;
-  uint32_t height;
+  int width;
+  int height;
 };
 
 static video_t g_video;
@@ -69,22 +70,22 @@ video_t* video_get_default() {
   return &g_video;
 }
 
-uint32_t video_get_width(video_t* v) {
+int video_get_width(video_t* v) {
   return v->width;
 }
 
-uint32_t video_get_height(video_t* v) {
+int video_get_height(video_t* v) {
   return v->height;
 }
 
-void video_setc(video_t* v, uint32_t row, uint32_t col, uint8_t c) {
+void video_setc(video_t* v, int row, int col, uint8_t c) {
   if (col >= v->width || row >= v->height) {
     return;
   }
   v->videoram[2 * (row * v->width + col)] = c;
 }
 
-uint8_t video_getc(video_t* v, uint32_t row, uint32_t col) {
+uint8_t video_getc(video_t* v, int row, int col) {
   if (col >= v->width || row >= v->height) {
     return 0;
   }
@@ -92,14 +93,14 @@ uint8_t video_getc(video_t* v, uint32_t row, uint32_t col) {
 }
 
 void video_clear(video_t* v) {
-  uint32_t i;
+  int i;
   for (i = 0; i < v->width * v->height; ++i) {
     v->videoram[i*2] = ' ';
     v->videoram[i*2+1] = 0x07;
   }
 }
 
-void video_move_cursor(video_t* v, uint32_t row, uint32_t col) {
+void video_move_cursor(video_t* v, int row, int col) {
   const uint16_t cursor_pos = row * v->width + col;
 
   uint8_t orig_addr = inb(CRT_PORT_ADDR);

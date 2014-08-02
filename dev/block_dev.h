@@ -16,7 +16,7 @@
 #ifndef APOO_DEV_BLOCK_DEV_H
 #define APOO_DEV_BLOCK_DEV_H
 
-#include <stdint.h>
+#include <stddef.h>
 
 // A single block device.
 struct block_dev {
@@ -31,15 +31,15 @@ struct block_dev {
   // sectors, not bytes, and len must be an even multiple of the sector size.
   //
   // Returns the number of bytes read on success, or -error on error.
-  int (*read)(struct block_dev* dev, uint32_t offset, void* buf, uint32_t len);
+  int (*read)(struct block_dev* dev, size_t offset, void* buf, size_t len);
 
   // Write up to len bytes to the device at the given sector offset.  Blocks
   // until the write is complete.  Note that offset is in sectors, not bytes,
   // and len must be an even multiple of the sector size.
   //
   // Returns the number of bytes written on success, or -error on error.
-  int (*write)(struct block_dev* dev, uint32_t offset,
-               const void* buf, uint32_t len);
+  int (*write)(struct block_dev* dev, size_t offset,
+               const void* buf, size_t len);
 
   // Device-specific private data.
   void* dev_data;

@@ -16,7 +16,7 @@
 #ifndef APOO_DEV_CHAR_DEV_H
 #define APOO_DEV_CHAR_DEV_H
 
-#include <stdint.h>
+#include <stddef.h>
 
 // A char_sink_t is a function accepting an opaque arg and a character to be
 // processed.
@@ -33,12 +33,12 @@ struct char_dev {
   // read.
   //
   // Returns the number of bytes read on success, 0 for EOF, or -error on error.
-  int (*read)(struct char_dev* dev, void* buf, uint32_t len);
+  int (*read)(struct char_dev* dev, void* buf, size_t len);
 
   // Write up to len bytes to the device. Blocks until the write is complete.
   //
   // Returns the number of bytes written on success, or -error on error.
-  int (*write)(struct char_dev* dev, const void* buf, uint32_t len);
+  int (*write)(struct char_dev* dev, const void* buf, size_t len);
 
   // Device-specific private data.
   void* dev_data;

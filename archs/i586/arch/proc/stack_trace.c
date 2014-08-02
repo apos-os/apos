@@ -18,21 +18,25 @@
 #include "common/kstring.h"
 #include "memory/memory.h"
 
+#define CALL_INSTRUCTION_SIZE 2
+
 void print_stack_trace(void) {
+  _Static_assert(sizeof(addr_t) == sizeof(uint32_t), "not 32-bit");
   const int kMaxFrames = 32;
-  uint32_t frames[kMaxFrames];
+  addr_t frames[kMaxFrames];
   int cframe = 0;
 
   // Get our current %ebp.
-  uint32_t ebp;
+  addr_t ebp;
   asm volatile (
       "mov %%ebp, %0"
       : "=g"(ebp));
 
   while (ebp != 0x0) {
-    const uint32_t old_ebp = *(uint32_t*)ebp;
+    const addr_t old_ebp = *(addr_t*)ebp;
     // Subtract 2 to get back to the call instruction.
-    const uint32_t return_addr = *(uint32_t*)(ebp + 4) - 2;
+    const addr_t return_addr =
+        *(addr_t*)(ebp + sizeof(addr_t)) - CALL_INSTRUCTION_SIZE;
     if (cframe >= kMaxFrames) break;
 
     frames[cframe++] = return_addr;

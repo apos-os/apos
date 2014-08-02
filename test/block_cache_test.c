@@ -63,7 +63,7 @@ static void basic_get_test(apos_dev_t dev) {
     bc_entry_t* block = 0x0;
     KEXPECT_EQ(0, block_cache_get(obj, i, &block));
     KEXPECT_NE(0x0, (int)block);
-    KEXPECT_EQ(virt2phys((uint32_t)block->block), block->block_phys);
+    KEXPECT_EQ(virt2phys((addr_t)block->block), block->block_phys);
     KEXPECT_GT(obj->refcount, start_obj_refcount);
 
     char data[100];
@@ -95,16 +95,16 @@ static void basic_lookup_test(apos_dev_t dev) {
 
   bc_entry_t* block = (bc_entry_t*)0xABCD;
   KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));
-  KEXPECT_EQ(0x0, (uint32_t)block);
+  KEXPECT_EQ(0x0, (addr_t)block);
   KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));
-  KEXPECT_EQ(0x0, (uint32_t)block);
+  KEXPECT_EQ(0x0, (addr_t)block);
   KEXPECT_EQ(0, block_cache_lookup(obj, 1, &block));
-  KEXPECT_EQ(0x0, (uint32_t)block);
+  KEXPECT_EQ(0x0, (addr_t)block);
 
   // Now get() the block.
   bc_entry_t* get_block = (bc_entry_t*)0xABCD;
   KEXPECT_EQ(0, block_cache_get(obj, 0, &get_block));
-  KEXPECT_NE(0x0, (uint32_t)get_block);
+  KEXPECT_NE(0x0, (addr_t)get_block);
 
   // ..and make sure we can get it via lookup now.
   KEXPECT_EQ(0, block_cache_lookup(obj, 0, &block));

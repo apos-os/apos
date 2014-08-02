@@ -16,6 +16,6 @@
 #include "common/kstring.h"
 
 // TODO(aoates): make this inlineable.
-void* memcpy(void* dest, const void* src, uint32_t n) {
+void* memcpy(void* dest, const void* src, size_t n) {
   return kmemcpy(dest, src, n);
 }

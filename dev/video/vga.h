@@ -28,19 +28,19 @@ void video_vga_init(void);
 video_t* video_get_default(void);
 
 // Return the width/height of the display.
-uint32_t video_get_width(video_t* v);
-uint32_t video_get_height(video_t* v);
+int video_get_width(video_t* v);
+int video_get_height(video_t* v);
 
 // Sets the character at a given position on the display.
-void video_setc(video_t* v, uint32_t row, uint32_t col, uint8_t c);
+void video_setc(video_t* v, int row, int col, uint8_t c);
 
 // Returns the character at the given position.
-uint8_t video_getc(video_t* v, uint32_t row, uint32_t col);
+uint8_t video_getc(video_t* v, int row, int col);
 
 // Clears the display.
 void video_clear(video_t* v);
 
 // Moves the cursor.
-void video_move_cursor(video_t* v, uint32_t row, uint32_t col);
+void video_move_cursor(video_t* v, int row, int col);
 
 #endif

@@ -36,7 +36,7 @@ struct usb_hcdi_irp {
   // be allocated with slab_alloc or page_alloc, not kmalloc.
   // TODO(aoates): should we remove this requirement?
   void* buffer;
-  uint32_t buflen;
+  size_t buflen;
 
   // PID for the IRP.  If the IRP is split into multiple packets, the PID will
   // be used for each.  It is the caller's responsibility to ensure this is
@@ -54,7 +54,7 @@ struct usb_hcdi_irp {
 
   // Status fields set when the IRP is completed.
   usb_irp_status_t status;
-  uint32_t out_len;  // Actual number of bytes read or written.
+  size_t out_len;  // Actual number of bytes read or written.
 
   // Callback to invoke when the IRP is finished (either successfully or on
   // error).  May be called from an interrupt context.

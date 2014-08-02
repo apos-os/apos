@@ -26,12 +26,12 @@
 
 struct ramdisk {
   void* data;
-  uint32_t size;
+  size_t size;
   int read_blocking;
   int write_blocking;
 };
 
-int ramdisk_create(uint32_t size, ramdisk_t** d) {
+int ramdisk_create(size_t size, ramdisk_t** d) {
   if (size % PAGE_SIZE != 0) {
     return -EINVAL;
   }
@@ -62,8 +62,8 @@ void ramdisk_destroy(ramdisk_t* d) {
   kfree(d);
 }
 
-static int ramdisk_read(struct block_dev* dev, uint32_t offset,
-                        void* buf, uint32_t len) {
+static int ramdisk_read(struct block_dev* dev, size_t offset,
+                        void* buf, size_t len) {
   if (len % dev->sector_size != 0) {
     return -EINVAL;
   }
@@ -73,8 +73,8 @@ static int ramdisk_read(struct block_dev* dev, uint32_t offset,
     return 0;
   }
 
-  if ((uint32_t)offset * dev->sector_size + len > d->size) {
-    len = d->size - (uint32_t)offset * dev->sector_size;
+  if (offset * dev->sector_size + len > d->size) {
+    len = d->size - offset * dev->sector_size;
   }
 
   if (d->read_blocking) {
@@ -84,8 +84,8 @@ static int ramdisk_read(struct block_dev* dev, uint32_t offset,
   return len;
 }
 
-static int ramdisk_write(struct block_dev* dev, uint32_t offset,
-                         const void* buf, uint32_t len) {
+static int ramdisk_write(struct block_dev* dev, size_t offset,
+                         const void* buf, size_t len) {
   if (len % dev->sector_size != 0) {
     return -EINVAL;
   }
@@ -95,8 +95,8 @@ static int ramdisk_write(struct block_dev* dev, uint32_t offset,
     return 0;
   }
 
-  if ((uint32_t)offset * dev->sector_size + len > d->size) {
-    len = d->size - (uint32_t)offset * dev->sector_size;
+  if (offset * dev->sector_size + len > d->size) {
+    len = d->size - offset * dev->sector_size;
   }
 
   if (d->write_blocking) {

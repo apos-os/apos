@@ -22,24 +22,24 @@
 
 struct vterm {
   video_t* video;
-  uint32_t cursor_x, cursor_y;
+  int cursor_x, cursor_y;
 
   // Cache the video's dimensions.
-  uint32_t vwidth, vheight;
+  int vwidth, vheight;
 
   // The text of each line on the display.
   uint8_t** line_text;
 
   // The line-length of each line on the display.
-  uint32_t* line_length;
+  int* line_length;
 };
 
 // Scroll down a given nmuber of lines.
 static void scroll(vterm_t* t, int amt) {
   KASSERT(amt >= 0);
 
-  for (uint32_t row = 0; row < t->vheight; row++) {
-    for (uint32_t col = 0; col < t->vwidth; col++) {
+  for (int row = 0; row < t->vheight; row++) {
+    for (int col = 0; col < t->vwidth; col++) {
       uint8_t newc = ' ';
       if (row + amt < t->vheight) {
         newc = video_getc(t->video, row + amt, col);
@@ -48,7 +48,7 @@ static void scroll(vterm_t* t, int amt) {
       t->line_text[row][col] = newc;
     }
 
-    uint32_t new_length = 0;
+    int new_length = 0;
     if (row + amt < t->vheight) {
       new_length = t->line_length[row + amt];
     }
@@ -64,18 +64,17 @@ vterm_t* vterm_create(video_t* v) {
   term->vwidth = video_get_width(v);
   term->vheight = video_get_height(v);
 
-  term->line_length = (uint32_t*)kmalloc(
-      sizeof(uint32_t) * term->vheight);
-  for (uint32_t i = 0; i < term->vheight; i++) {
+  term->line_length = (int*)kmalloc(sizeof(int) * term->vheight);
+  for (int i = 0; i < term->vheight; i++) {
     term->line_length[i] = 0;
   }
 
   term->line_text = (uint8_t**)kmalloc(
       sizeof(uint8_t*) * term->vheight);
-  for (uint32_t i = 0; i < term->vheight; i++) {
+  for (int i = 0; i < term->vheight; i++) {
     term->line_text[i] = (uint8_t*)kmalloc(
         sizeof(uint8_t) * term->vwidth);
-    for (uint32_t j = 0; j < term->vwidth; j++) {
+    for (int j = 0; j < term->vwidth; j++) {
       term->line_text[i][j] = ' ';
     }
   }
@@ -84,8 +83,8 @@ vterm_t* vterm_create(video_t* v) {
 }
 
 // Sets a character in the video and in the vterm's stored version.
-static inline void vterm_setc(vterm_t* t, uint32_t row,
-                              uint32_t col, uint8_t c) {
+static inline void vterm_setc(vterm_t* t, int row,
+                              int col, uint8_t c) {
   video_setc(t->video, row, col, c);
   t->line_text[row][col] = c;
 }
@@ -137,8 +136,8 @@ void vterm_putc(vterm_t* t, uint8_t c) {
 
 void vterm_clear(vterm_t* t) {
   video_clear(t->video);
-  for (uint32_t row = 0; row < t->vheight; row++) {
-    for (uint32_t col = 0; col < t->vwidth; col++) {
+  for (int row = 0; row < t->vheight; row++) {
+    for (int col = 0; col < t->vwidth; col++) {
       t->line_text[row][col] = ' ';
     }
   }
@@ -148,8 +147,8 @@ void vterm_clear(vterm_t* t) {
 }
 
 void vterm_redraw(vterm_t* t) {
-  for (uint32_t row = 0; row < t->vheight; row++) {
-    for (uint32_t col = 0; col < t->vwidth; col++) {
+  for (int row = 0; row < t->vheight; row++) {
+    for (int col = 0; col < t->vwidth; col++) {
       video_setc(t->video, row, col, t->line_text[row][col]);
     }
   }

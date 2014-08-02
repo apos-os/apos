@@ -84,6 +84,8 @@ struct uhci_qh {
   uint32_t elt_link_ptr;   // Vertical link, and flags.
 };
 typedef struct uhci_qh uhci_qh_t;
+_Static_assert(sizeof(phys_addr_t) == sizeof(uint32_t),
+               "phys_addr_t doesn't match UHCI buffer pointer types");
 
 // A pending IRP.  Pointed to by the hcd_data field of a usb_hcdi_irp_t struct.
 struct uhci_pending_irp {
