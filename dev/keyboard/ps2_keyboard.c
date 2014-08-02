@@ -36,23 +36,23 @@ static int process_scancode_buffer(uint8_t* buf, int len) {
   }
 
   uint8_t c = 0;
-  int is_up_evt = 0;
-  int is_extended = 0;
-  int done = 0;
+  bool is_up_evt = 0;
+  bool is_extended = 0;
+  bool done = 0;
 
   for (int i = 0; i < len; ++i) {
     switch (buf[i]) {
       case 0xE0:
-        is_extended = 1;
+        is_extended = true;
         break;
 
       case 0xF0:
-        is_up_evt = 1;
+        is_up_evt = true;
         break;
 
       default:
         c = buf[i];
-        done = 1;
+        done = true;
         break;
     }
   }

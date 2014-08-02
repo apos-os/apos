@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "common/ascii.h"
@@ -26,22 +27,22 @@ static char CAPS_ASCII_LOOKUP[];
 
 struct vkeyboard {
   // TODO(aoates): support control chars besides shift.
-  uint8_t shift_down;
-  uint8_t caps_down;
-  uint8_t ctrl_down;
-  uint8_t alt_down;
+  bool shift_down;
+  bool caps_down;
+  bool ctrl_down;
+  bool alt_down;
   char_sink_t handler;
   void* handler_arg;
 };
 
 vkeyboard_t* vkeyboard_create() {
   vkeyboard_t* kbd = (vkeyboard_t*)kmalloc(sizeof(vkeyboard_t));
-  kbd->shift_down = kbd->caps_down = kbd->ctrl_down = kbd->alt_down = 0;
+  kbd->shift_down = kbd->caps_down = kbd->ctrl_down = kbd->alt_down = false;
   kbd->handler = (char_sink_t)0;
   return kbd;
 }
 
-void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up) {
+void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, bool up) {
   KASSERT(code <= KEY_MAX_KEY);
 
   if (code == KEY_L_SHFT || code == KEY_R_SHFT) {

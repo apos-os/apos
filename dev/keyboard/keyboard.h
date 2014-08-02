@@ -19,6 +19,7 @@
 #ifndef APOO_KEYBOARD_KEYBOARD_H
 #define APOO_KEYBOARD_KEYBOARD_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "dev/char_dev.h"
@@ -137,7 +138,7 @@ vkeyboard_t* vkeyboard_create(void);
 
 // Send a raw keycode (and whether the event is key-up or key-down) to a virtual
 // keyboard.
-void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, uint8_t up);
+void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, bool up);
 
 // Attach the output of a virtual keyboard to the given handler.  When the
 // keyboard generates ASCII output, it will invoke the handler.  Each keyboard
