@@ -382,6 +382,7 @@ void kmalloc_test(void) {
   KTEST_SUITE_BEGIN("kmalloc");
 
   kmalloc_enable_test_mode();
+  cancel_all_event_timers_for_tests();
 
   // NOTE: we disable klog-to-VTERM since we'll be overwriting the kmalloc
   // state, which causes problems with the vterm.  If there's anything else

@@ -214,6 +214,19 @@ void cancel_event_timer(timer_handle_t handle) {
   POP_INTERRUPTS();
 }
 
+void cancel_all_event_timers_for_tests(void) {
+  // Handle any pending event timers.
+  while (!list_empty(&event_timers)) {
+    event_timer_t* timer = container_of(event_timers.head, event_timer_t, link);
+
+    list_pop(&event_timers);
+#if ENABLE_KERNEL_SAFETY_NETS
+    timer->valid_magic = 0;
+#endif
+    kfree(timer);
+  }
+}
+
 uint32_t get_time_ms() {
   return time_ms;
 }

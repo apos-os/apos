@@ -69,6 +69,9 @@ int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg,
 //   POP_INTERRUPTS()
 void cancel_event_timer(timer_handle_t handle);
 
+// Cancel all event timers, for tests.
+void cancel_all_event_timers_for_tests(void);
+
 // Return the approximate time since timer initialization, in ms.
 uint32_t get_time_ms(void);
 
