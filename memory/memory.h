@@ -16,6 +16,7 @@
 #ifndef APOO_MEMORY_MEMORY_H
 #define APOO_MEMORY_MEMORY_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
@@ -89,7 +90,7 @@ addr_t addr2page(addr_t addr);
 addr_t next_page(addr_t x);
 
 // Returns non-zero if the given address is page-aligned.
-int is_page_aligned(addr_t x);
+bool is_page_aligned(addr_t x);
 
 // Converts a physical address to a virtual address (i.e. the virtual location,
 // in the kernel's space, where that physical page is mapped, at
@@ -102,11 +103,11 @@ phys_addr_t virt2phys(addr_t x);
 
 // Returns true if the address is a physical address mapped into the
 // direct-mapped region (that is, if phys2virt would succeed).
-int is_direct_mappable(phys_addr_t x);
+bool is_direct_mappable(phys_addr_t x);
 
 // Returns true if the address is a VIRTUAL address IN the
 // direct-mapped region (that is, if virt2phys would succeed).
-int is_direct_mapped(addr_t x);
+bool is_direct_mapped(addr_t x);
 
 // Converts a physical address IN THE KERNEL to a virtual address IN THE KERNEL
 // (i.e.  the virtual location, in the kernel, where that physical page is

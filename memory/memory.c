@@ -38,7 +38,7 @@ addr_t next_page(addr_t x) {
   }
 }
 
-int is_page_aligned(addr_t x) {
+bool is_page_aligned(addr_t x) {
   return !(x & PAGE_OFFSET_MASK);
 }
 
@@ -53,11 +53,11 @@ phys_addr_t virt2phys(addr_t x) {
   return x - global_meminfo->phys_map_start;
 }
 
-int is_direct_mappable(phys_addr_t x) {
+bool is_direct_mappable(phys_addr_t x) {
   return (x < global_meminfo->phys_map_length);
 }
 
-int is_direct_mapped(addr_t x) {
+bool is_direct_mapped(addr_t x) {
   return (x >= global_meminfo->phys_map_start &&
           x < global_meminfo->phys_map_start + global_meminfo->phys_map_length);
 }
