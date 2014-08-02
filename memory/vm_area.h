@@ -36,8 +36,8 @@ struct vm_area {
   memobj_t* memobj;
 
   // If set, allow new pages to be allocated for this area.
-  int allow_allocation;
-  int is_private;
+  bool allow_allocation;
+  bool is_private;
 
   // The address and length (in bytes) of the region in the process's address
   // space.  Must be page-aligned and page-sized.

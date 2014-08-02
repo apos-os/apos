@@ -135,14 +135,14 @@ void proc_init_stage1() {
   // TODO(aoates): is there a better place to do this?
   vm_create_kernel_mapping(&g_kernel_mapped_vm_area, meminfo->mapped_start,
                            meminfo->mapped_end - meminfo->mapped_start,
-                           0 /* allow_allocation */);
+                           false /* allow_allocation */);
   // Round up to the next MIN_GLOBAL_MAPPING_SIZE amount.
   const addr_t phys_map_len =
       ceiling_div(meminfo->phys_map_length, MIN_GLOBAL_MAPPING_SIZE) *
       MIN_GLOBAL_MAPPING_SIZE;
   vm_create_kernel_mapping(&g_physical_mapped_vm_area, meminfo->phys_map_start,
                            phys_map_len,
-                           0 /* allow_allocation */);
+                           false /* allow_allocation */);
 }
 
 void proc_init_stage2() {

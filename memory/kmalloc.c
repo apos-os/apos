@@ -63,7 +63,7 @@ void kmalloc_init() {
     // the page fault handler not to bork.
     vm_create_kernel_mapping(&g_root_heap_vm_area, meminfo->heap_start,
                              meminfo->heap_end - meminfo->heap_start,
-                             1 /* allow_allocation */);
+                             true /* allow_allocation */);
   }
 
   // Initialize the free list to one giant block consisting of the entire heap.

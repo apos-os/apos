@@ -68,7 +68,7 @@ void vm_insert_area(process_t* proc, vm_area_t* area) {
 
 // Check if access is allowed to the given region.
 // TODO(aoates): unify this with fault_allowed() in vm_page_fault.c
-static int verify_access(vm_area_t* area, int is_write, int is_user) {
+static int verify_access(vm_area_t* area, bool is_write, bool is_user) {
   if (is_write && (!(area->prot & MEM_PROT_WRITE)))
     return -EFAULT;
   if (is_user && (area->access != MEM_ACCESS_KERNEL_AND_USER))
@@ -77,7 +77,7 @@ static int verify_access(vm_area_t* area, int is_write, int is_user) {
 }
 
 int vm_verify_region(process_t* proc, addr_t start, addr_t end,
-                     int is_write, int is_user) {
+                     bool is_write, bool is_user) {
   if (!proc || start >= end) {
     return -EINVAL;
   }
@@ -107,8 +107,8 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
   }
 }
 
-int vm_verify_address(process_t* proc, addr_t addr, int is_write,
-                      int is_user, addr_t* end_out) {
+int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
+                      bool is_user, addr_t* end_out) {
   if (!proc || !end_out) {
     return -EINVAL;
   }
@@ -152,14 +152,14 @@ int vm_verify_address(process_t* proc, addr_t addr, int is_write,
 }
 
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
-                              int allow_allocation) {
+                              bool allow_allocation) {
   KASSERT(proc_current() != 0x0);
   KASSERT(proc_current()->id == 0);
 
   kmemset(area, 0, sizeof(vm_area_t));
   area->memobj = 0x0;
   area->allow_allocation = allow_allocation;
-  area->is_private = 0;
+  area->is_private = false;
   area->vm_base = base;
   area->vm_length = length;
   area->prot = MEM_PROT_ALL;

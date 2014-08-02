@@ -208,7 +208,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   memobj->ops->ref(memobj);
   area->memobj = memobj;
-  area->allow_allocation = 1;
+  area->allow_allocation = true;
   area->is_private = (flags & MAP_PRIVATE);
   area->vm_base = hole_addr;
   area->vm_length = length;

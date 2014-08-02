@@ -15,6 +15,8 @@
 #ifndef APOO_MEMORY_VM_H
 #define APOO_MEMORY_VM_H
 
+#include <stdbool.h>
+
 #include "common/types.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
@@ -32,8 +34,8 @@ void vm_insert_area(process_t* proc, vm_area_t* area);
 // Verify that accesses of the given type are valid for the entire region
 // [start, end).  Returns 0 if the access is valid, -EFAULT if not.
 // TODO(aoates): should we use vm_fault_op_t, etc here?
-int vm_verify_region(process_t* proc, addr_t start, addr_t end,
-                     int is_write, int is_user);
+int vm_verify_region(process_t* proc, addr_t start, addr_t end, bool is_write,
+                     bool is_user);
 
 // Verifies that an access to the given address is valid, as for
 // vm_verify_region.  Returns (in end_out) the next *invalid* address after this
@@ -43,22 +45,22 @@ int vm_verify_region(process_t* proc, addr_t start, addr_t end,
 // vm_verify_region(addr, end_out, ...) == 0.
 //
 // Returns 0 if the access is valid, -EFAULT (and sets *end_out to addr) if not.
-int vm_verify_address(process_t* proc, addr_t addr, int is_write,
-                      int is_user, addr_t* end_out);
+int vm_verify_address(process_t* proc, addr_t addr, bool is_write, bool is_user,
+                      addr_t* end_out);
 
 // Initialize and insert a global kernel memory region (such as the heap, or the
 // linearly-mapped kernel binary).
 //
-// If allow_allocation is non-zero, then non-present page faults in the region
-// will cause a new anonymous page to be allocated and mapped.
+// If allow_allocation is true, then non-present page faults in the region will
+// cause a new anonymous page to be allocated and mapped.
 //
-// If allow_allocation is zero, then non-present page faults in the region will
+// If allow_allocation is false, then non-present page faults in the region will
 // be fatal.  It is the callers responsibility to create the needed mappings by
 // calling page_frame_map_virtual() directly.
 //
 // REQUIRES: proc_current() is the root process.
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
-                              int allow_allocation);
+                              bool allow_allocation);
 
 // Fork the current process's address space and mappings into another process.
 // Each vm_area_t in the current process will be copied to the new process.  If
