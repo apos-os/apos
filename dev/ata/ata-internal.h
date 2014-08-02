@@ -15,11 +15,13 @@
 #ifndef APOO_DEV_ATA_INTERNAL_H
 #define APOO_DEV_ATA_INTERNAL_H
 
+#include <stdbool.h>
+
+#include "proc/kthread.h"
+
 #define ATA_DRIVE_MASTER 0
 #define ATA_DRIVE_SLAVE  1
 #define ATA_BLOCK_SIZE 512
-
-#include "proc/kthread.h"
 
 // dev/ata/queue.h
 struct ata_disk_op;
@@ -51,8 +53,8 @@ typedef struct ata ata_t;
 // Data about a particular drive.
 struct drive {
   // Meta fields: is the drive present, and supported by the driver.
-  uint8_t present;
-  uint8_t supported;
+  bool present;
+  bool supported;
 
   ata_channel_t* channel;
   uint8_t drive_num;  // 0 for master, 1 for slave.

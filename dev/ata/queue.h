@@ -16,6 +16,7 @@
 #ifndef APOO_DEV_ATA_QUEUE_H
 #define APOO_DEV_ATA_QUEUE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "dev/ata/ata-internal.h"
@@ -28,7 +29,7 @@ struct ata_disk_op {
   drive_t* drive;
 
   // Input parameters.
-  uint8_t is_write;  // 1 if writing, 0 if reading.
+  bool is_write;  // 1 if writing, 0 if reading.
   uint32_t offset;  // Disk offset to read/write, in sectors.
 
   // Only one buffer should be set (read_buf if is_write == 0, write_buf if not)
@@ -38,7 +39,7 @@ struct ata_disk_op {
   uint32_t len;  // The length of the buffer (max # of bytes to read);
 
   // Output parameters (set once the op has finished).
-  int done;
+  bool done;
   int status;  // 0 for success, or -errno on error.
   int out_len;  // The actual number of bytes read/written.
 

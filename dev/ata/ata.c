@@ -275,7 +275,7 @@ static void handle_interrupt(ata_channel_t* channel) {
     klogf("  ATA device error: 0x%x\n", status);
     ata_dump_state(channel);
   }
-  op->done = 1;
+  op->done = true;
 
   // Wake up any threads waiting for the op to finish.
   scheduler_wake_all(&op->waiters);
@@ -298,7 +298,7 @@ static void irq_handler_secondary(void* arg) {
 }
 
 static void ata_do_op(ata_disk_op_t* op) {
-  op->done = 0;
+  op->done = false;
   op->status = 0;
   op->out_len = 0;
   kthread_queue_init(&op->waiters);
@@ -339,7 +339,7 @@ static int ata_read(struct block_dev* dev, uint32_t offset,
                     void* buf, uint32_t len) {
   ata_disk_op_t op;
   op.drive = (drive_t*)dev->dev_data;
-  op.is_write = 0;
+  op.is_write = false;
   op.offset = offset;
   op.read_buf = buf;
   op.write_buf = 0x0;
@@ -357,7 +357,7 @@ static int ata_write(struct block_dev* dev, uint32_t offset,
                      const void* buf, uint32_t len) {
   ata_disk_op_t op;
   op.drive = (drive_t*)dev->dev_data;
-  op.is_write = 1;
+  op.is_write = true;
   op.offset = offset;
   op.read_buf = 0x0;
   op.write_buf = buf;
@@ -415,19 +415,19 @@ static void ata_init_internal(const ata_t* ata) {
 
   for (int i = 0; i < ATA_MAX_DRIVES; ++i) {
     if (drives_status[i] == 0) {
-      g_drives[i].present = 1;
+      g_drives[i].present = true;
 
       // We require support for LBA and DMA.
       if ((g_drives[i].features2 & ATA_FEAT2_LBA) == 0 ||
           (g_drives[i].features2 & ATA_FEAT2_DMA) == 0) {
         klogf("ata: found drive %d, but doesn't support LBA or DMA :(\n", i);
-        g_drives[i].supported = 0;
+        g_drives[i].supported = false;
       } else {
-        g_drives[i].supported = 1;
+        g_drives[i].supported = true;
       }
     } else {
-      g_drives[i].present = 0;
-      g_drives[i].supported = 0;
+      g_drives[i].present = false;
+      g_drives[i].supported = false;
     }
   }
 
