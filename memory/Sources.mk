@@ -16,9 +16,7 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   memory.c \
-  page_alloc.c \
   kmalloc.c \
-  page_fault.c \
   slab_alloc.c \
   block_cache.c \
   memobj_anon.c \
@@ -29,6 +27,5 @@ LOCAL_SOURCES := \
   vm.c \
   mmap.c \
   vm_area.c \
-  gdt.c \
 
 $(eval $(END_SOURCES))

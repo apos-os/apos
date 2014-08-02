@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/list.h"
 #include "common/types.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
 #include "memory/vm_page_fault.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
@@ -115,8 +115,8 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
     }
   }
 
-  addr_t phys_addr = 0x0;
-  const uint32_t virt_page = addr2page(address);
+  phys_addr_t phys_addr = 0x0;
+  const addr_t virt_page = addr2page(address);
 
   // Some kernel mappings (such as the heap) don't have a backing memobj.
   if (!area->memobj) {

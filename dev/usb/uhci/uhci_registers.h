@@ -16,6 +16,8 @@
 #ifndef APOO_DEV_USB_UHCI_UHCI_REGISTERS_H
 #define APOO_DEV_USB_UHCI_UHCI_REGISTERS_H
 
+#include "arch/memory/layout.h"
+
 // Number of frames in the frame list.
 #define UHCI_NUM_FRAMES 1024
 
@@ -52,7 +54,7 @@
 #define USBINTR_TMO_CRC   0x0001  // Timeout/CRC interrupt enable
 
 #define FRNUM_MASK  0x07FF  // Only bits 10:0 are used for the frnum
-#define FLBASEADDR_MASK 0xFFFFF000  // Must be page-aligned
+#define FLBASEADDR_MASK PAGE_INDEX_MASK // Must be page-aligned
 
 // Port status/control bits.  One set each for port1 and port2.
 #define PORTSC_SUSPEND     0x1000  // R/W (1=suspended)

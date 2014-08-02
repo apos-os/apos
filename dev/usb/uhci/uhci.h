@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "arch/common/types.h"
 #include "dev/usb/usb.h"
 
 // Data for a single UHCI USB controller.
@@ -30,7 +31,7 @@ typedef struct usb_uhci usb_uhci_t;
 // Returns a handle, or -errno.
 //
 // Called from a lower-level bus driver (e.g., PCI).
-void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq);
+void usb_uhci_register_controller(ioport_t base_addr, uint8_t irq);
 
 // Returns the number of detecte UHCI controllers.
 int usb_uhci_num_controllers(void);

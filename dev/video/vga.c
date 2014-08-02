@@ -14,8 +14,9 @@
 
 #include <stdint.h>
 
-#include "common/io.h"
+#include "arch/common/io.h"
 #include "common/kassert.h"
+#include "memory/memory.h"
 
 #include "dev/video/vga.h"
 
@@ -62,7 +63,7 @@ void video_vga_init() {
 }
 
 video_t* video_get_default() {
-  g_video.videoram = (uint8_t*)0xC00B8000;
+  g_video.videoram = (uint8_t*)(get_global_meminfo()->phys_map_start + 0xB8000);
   g_video.width = 80;
   g_video.height = 24;
   return &g_video;

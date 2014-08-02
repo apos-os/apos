@@ -17,9 +17,9 @@ Import('env AposAddSources')
 objs = []
 
 SUBDIRS = [
+  'archs',
   'common',
   'dev',
-  'load',
   'main',
   'memory',
   'proc',

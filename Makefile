@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ARCH	= i586
 TARGET_PREFIX 	= i586-pc-apos
 AR	= $(TARGET_PREFIX)-ar
 AS	= $(TARGET_PREFIX)-as
@@ -19,7 +20,8 @@ ASFLAGS	= --gen-debug
 CC	= $(TARGET_PREFIX)-gcc
 CFLAGS	= -Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g3 -I. \
 	  -Wno-unused-parameter -Wno-error=unused-function -Wstrict-prototypes \
-	  -DENABLE_KERNEL_SAFETY_NETS=1
+	  -DENABLE_KERNEL_SAFETY_NETS=1 \
+	  -I archs/$(ARCH) -I archs/common
 LD	= $(TARGET_PREFIX)-ld
 M4      = m4
 M4FLAGS =
@@ -82,9 +84,11 @@ OBJFILES = $(patsubst %,$(BUILD_OUT)/%,$(C_SOURCES:.c=.o) $(ASM_SOURCES:.s=.o))
 
 # Object files that are placed manually in the linker script.
 MANUALLY_LINKED_OBJS = $(patsubst %,$(BUILD_OUT)/%, \
-		       load/loader.o load/mem_init.o \
-		       load/gdt.o load/idt.o \
-		       memory/gdt.PHYS.o)
+		       archs/i586/internal/load/loader.o \
+		       archs/i586/internal/load/mem_init.o \
+		       archs/i586/internal/load/gdt.o \
+		       archs/i586/internal/load/idt.o \
+		       archs/i586/internal/memory/gdt.PHYS.o)
 
 FIND_FLAGS = '(' -name '*.c' -or -name '*.h' ')' -and -not -path './bochs/*'
 ALLFILES = $(shell find $(FIND_FLAGS))
@@ -136,8 +140,8 @@ $(BUILD_OUT)/%.PHYS.o : %.c
 $(BUILD_OUT)/libkernel_phys.a: $(MANUALLY_LINKED_OBJS)
 	$(AR) rcs $@ $^
  
-$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(BUILD_OUT)/libkernel_phys.a $(BUILD_DIR)/linker.ld
-	$(LD)  -T $(BUILD_DIR)/linker.ld -L $(BUILD_OUT) -o $@ $(OBJFILES)
+$(BUILD_OUT)/kernel.bin: $(OBJFILES) $(BUILD_OUT)/libkernel_phys.a archs/$(ARCH)/build/linker.ld
+	$(LD)  -T archs/$(ARCH)/build/linker.ld -L $(BUILD_OUT) -o $@ $(OBJFILES)
 
 $(BUILD_OUT)/kernel.bin.stripped: $(BUILD_OUT)/kernel.bin
 	strip -s $< -o $@

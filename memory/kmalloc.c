@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_alloc.h"
 #include "common/debug.h"
 #include "common/klog.h"
 #include "common/kassert.h"
@@ -24,7 +25,6 @@
 #include "common/math.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"

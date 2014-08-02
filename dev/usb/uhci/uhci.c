@@ -14,14 +14,15 @@
 
 #include <stdint.h>
 
+#include "arch/common/io.h"
+#include "arch/dev/irq.h"
+#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
-#include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
-#include "dev/irq.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/pci.h"
 #include "dev/usb/bus.h"
@@ -32,7 +33,6 @@
 #include "dev/usb/uhci/uhci_registers.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
-#include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
@@ -331,7 +331,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
     pirp_alloc = slab_alloc_create(sizeof(uhci_pending_irp_t), SLAB_MAX_PAGES);
   }
 
-  uint32_t frame_list_phys = page_frame_alloc();
+  phys_addr_t frame_list_phys = page_frame_alloc();
   c->frame_list = (uint32_t*)phys2virt(frame_list_phys);
 
   // Do a global reset on the bus.
@@ -414,7 +414,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   }
 
   usb_uhci_t* c = (usb_uhci_t*)ci->dev_data;
-  const uint16_t port_reg = c->base_port +
+  const ioport_t port_reg = c->base_port +
       (port == 0 ? PORTSC1 : PORTSC2);
 
   uint16_t status = ins(port_reg);
@@ -455,7 +455,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   usb_init_device(device);
 }
 
-void usb_uhci_register_controller(uint32_t base_addr, uint8_t irq) {
+void usb_uhci_register_controller(ioport_t base_addr, uint8_t irq) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
     KLOG(WARNING, "too many UHCI controllers; ignoring\n");
     return;

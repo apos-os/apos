@@ -16,7 +16,5 @@ $(eval $(BEGIN_SOURCES))
 
 LOCAL_SOURCES := \
   signal.c \
-  signal_enter.c \
-  sigreturn_trampoline.s \
 
 $(eval $(END_SOURCES))

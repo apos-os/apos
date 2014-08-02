@@ -14,13 +14,13 @@
 
 #include <stdint.h>
 
+#include "arch/dev/irq.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
 
 #include "dev/ps2.h"
-#include "dev/irq.h"
 #include "dev/keyboard/keyboard.h"
 #include "dev/keyboard/ps2_scancodes.h"
 

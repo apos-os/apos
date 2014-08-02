@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -22,7 +23,6 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/memobj.h"
-#include "memory/page_alloc.h"
 #include "proc/fork.h"
 #include "proc/wait.h"
 #include "proc/process.h"
@@ -1276,7 +1276,7 @@ static void create_in_unlinked_directory(void) {
 // Create a file, write a pattern of N bytes to it, then verify that we can see
 // it via read_page.
 static void read_page_test(const char* filename, const int size) {
-  const uint32_t page_buf_phys = page_frame_alloc();
+  const phys_addr_t page_buf_phys = page_frame_alloc();
   void* const page_buf = (void*)phys2virt(page_buf_phys);
 
   int fd = vfs_open(filename, VFS_O_RDWR | VFS_O_CREAT, 0);

@@ -14,6 +14,9 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_alloc.h"
+#include "arch/memory/page_fault.h"
+#include "arch/syscall/init.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -25,8 +28,6 @@
 #include "proc/process.h"
 #include "proc/wait.h"
 #include "memory/memory.h"
-#include "memory/page_alloc.h"
-#include "memory/page_fault.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"
@@ -42,7 +43,6 @@
 #include "proc/scheduler.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
-#include "syscall/init.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
 
@@ -91,6 +91,8 @@ static void kshell_trampoline(void* arg) {
 }
 
 void kmain(memory_info_t* meminfo) {
+  set_global_meminfo(meminfo);
+
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
@@ -101,8 +103,6 @@ void kmain(memory_info_t* meminfo) {
 
   enable_interrupts();
 
-  klog("set_global_meminfo()\n");
-  set_global_meminfo(meminfo);
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
   klog("paging_init()\n");

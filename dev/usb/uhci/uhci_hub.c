@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "common/io.h"
+#include "arch/common/io.h"
 #include "common/math.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -196,7 +196,7 @@ static int handle_CLEAR_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         const int feat = req->wValue;
         KASSERT(port == 1 || port == 2);
 
-        const uint16_t port_sc_register =
+        const ioport_t port_sc_register =
             hub->hc->base_port + (port == 1 ? PORTSC1 : PORTSC2);
         uint16_t port_sc = ins(port_sc_register);
 
@@ -276,7 +276,7 @@ static void uhci_port_reset_done(void* arg) {
 
   KASSERT(args->port == 1 || args->port == 2);
 
-  const uint16_t port_sc_register =
+  const ioport_t port_sc_register =
       args->hub->hc->base_port + (args->port == 1 ? PORTSC1 : PORTSC2);
   uint16_t port_sc = ins(port_sc_register);
   KASSERT(port_sc & PORTSC_RST);
@@ -324,7 +324,7 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         const int feat = req->wValue;
         KASSERT(port == 1 || port == 2);
 
-        const uint16_t port_sc_register =
+        const ioport_t port_sc_register =
             hub->hc->base_port + (port == 1 ? PORTSC1 : PORTSC2);
         uint16_t port_sc = ins(port_sc_register);
 

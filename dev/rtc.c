@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "common/io.h"
+#include "arch/common/io.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "dev/rtc.h"

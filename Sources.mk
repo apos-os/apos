@@ -17,7 +17,7 @@ define ROOT_SUBDIR
   include $$(DIR)/Sources.mk
 endef
 
-SUBDIRS := common dev load main memory proc syscall test util vfs
+SUBDIRS := archs common dev main memory proc syscall test util vfs
 
 SRC_PATH :=
 $(foreach subdir,$(SUBDIRS),$(eval $(call ROOT_SUBDIR,$(subdir))))

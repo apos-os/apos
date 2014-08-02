@@ -21,16 +21,12 @@ LOCAL_SOURCES := \
   fork.c \
   group.c \
   kthread.c \
-  kthread_asm.s \
   scheduler.c \
   process.c \
   procfs.c \
   sleep.c \
   kthread_pool.c \
-  tss.c \
   user.c \
-  user_context.c \
-  user_mode.c \
   wait.c \
 
 LOCAL_SUBDIRS := load signal

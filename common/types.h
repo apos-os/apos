@@ -18,10 +18,7 @@
 
 #include <stdint.h>
 
+#include "arch/common/types.h"
 #include "common/posix_types.h"
-
-// A memory address.
-// TODO(aoates): replace all uses of uint32_t with addr_t (where appropriate).
-typedef uint32_t addr_t;
 
 #endif

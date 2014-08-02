@@ -14,7 +14,6 @@
 
 #include "common/kassert.h"
 #include "memory/memory.h"
-#include "load/mem_init.h"
 
 static memory_info_t* global_meminfo = 0;
 
@@ -26,12 +25,12 @@ const memory_info_t* get_global_meminfo() {
   return global_meminfo;
 }
 
-uint32_t addr2page(uint32_t addr) {
+addr_t addr2page(addr_t addr) {
   return addr & PAGE_INDEX_MASK;
 }
 
 // Returns the next frame start address after x (or x if x is page-aligned).
-uint32_t next_page(uint32_t x) {
+addr_t next_page(addr_t x) {
   if (is_page_aligned(x)) {
     return x;
   } else {
@@ -39,30 +38,30 @@ uint32_t next_page(uint32_t x) {
   }
 }
 
-int is_page_aligned(uint32_t x) {
+int is_page_aligned(addr_t x) {
   return !(x & PAGE_OFFSET_MASK);
 }
 
-uint32_t phys2virt(uint32_t x) {
+addr_t phys2virt(phys_addr_t x) {
   KASSERT(x < global_meminfo->phys_map_length);
   return x + global_meminfo->phys_map_start;
 }
 
-uint32_t virt2phys(uint32_t x) {
+phys_addr_t virt2phys(addr_t x) {
   KASSERT(x >= global_meminfo->phys_map_start);
   KASSERT(x - global_meminfo->phys_map_length < global_meminfo->phys_map_start);
   return x - global_meminfo->phys_map_start;
 }
 
-int is_direct_mappable(uint32_t x) {
+int is_direct_mappable(phys_addr_t x) {
   return (x < global_meminfo->phys_map_length);
 }
 
-int is_direct_mapped(uint32_t x) {
+int is_direct_mapped(addr_t x) {
   return (x >= global_meminfo->phys_map_start &&
           x < global_meminfo->phys_map_start + global_meminfo->phys_map_length);
 }
 
-uint32_t phys2kernel(uint32_t x) {
-  return x + KERNEL_VIRT_START;
+addr_t phys2kernel(phys_addr_t x) {
+  return x + global_meminfo->mapped_start;
 }

@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/common/io.h"
+#include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
-#include "common/io.h"
 #include "common/kstring.h"
 #include "dev/pci/piix.h"
 #include "dev/ata/ata-internal.h"
 #include "dev/ata/dma.h"
-#include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 
@@ -44,8 +44,8 @@
 // TODO(aoates): we could be much more flexible about this (and allow regions >
 // 1 page) for better throughput.  We could also allow callers to get data
 // written directly into their buffers.
-static uint32_t g_prdt_phys = 0;
-static uint32_t g_prd_phys = 0;
+static phys_addr_t g_prdt_phys = 0;
+static phys_addr_t g_prd_phys = 0;
 
 // Global lock for the shared DMA buffer.  This keeps us from starting to write
 // to the DMA buffer after an operation finished, but before the previous

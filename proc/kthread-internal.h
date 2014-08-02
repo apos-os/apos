@@ -18,10 +18,13 @@
 
 #include <stdint.h>
 
+#include "arch/proc/kthread-context.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "proc/signal/posix_signal.h"
+
+#define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
 #define KTHREAD_RUNNING 0 // Currently running.
 #define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
@@ -31,16 +34,14 @@
 struct process;
 typedef struct process process_t;
 
-// NOTE: if you update this structure, make sure you update kthread_asm.s as
-// well.
 struct kthread_data {
   uint32_t id;
   uint32_t state;
-  uint32_t esp;  // KTHREAD_T_ESP in kthread_asm.s
+  kthread_arch_context_t context;
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
-  uint32_t* stack;  // The block of memory allocated for the thread's stack.
+  addr_t* stack;  // The block of memory allocated for the thread's stack.
   uint32_t detached;
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
   // Then number of threads blocking in kthread_join() on this thread.  This is

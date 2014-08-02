@@ -16,8 +16,6 @@ Import('env AposAddSources')
 
 srcs = [
   'signal.c',
-  'signal_enter.c',
-  'sigreturn_trampoline.s',
 ]
 
 subdirs = []

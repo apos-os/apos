@@ -19,9 +19,9 @@
 #include <stdint.h>
 #include <limits.h>
 
+#include "arch/common/io.h"
 #include "common/errno.h"
 #include "common/hash.h"
-#include "common/io.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -40,7 +40,6 @@
 #include "dev/usb/usb.h"
 #include "dev/usb/uhci/uhci_cmd.h"
 #include "memory/kmalloc.h"
-#include "memory/page_alloc.h"
 #include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
@@ -271,7 +270,7 @@ static void klog_cmd(int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port>\n"); \
       return; \
     } \
-    uint16_t port = atou(argv[1]); \
+    ioport_t port = atou(argv[1]); \
     type val = name(port); \
     ksh_printf("0x%x\n", val); \
   }
@@ -282,7 +281,7 @@ static void klog_cmd(int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port> <value>\n"); \
       return; \
     } \
-    uint16_t port = atou(argv[1]); \
+    ioport_t port = atou(argv[1]); \
     type value = (type)atou(argv[2]); \
     name(port, value); \
   }

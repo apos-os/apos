@@ -15,11 +15,14 @@
 import os
 import re
 
+AddOption('--arch', default='i586', help='architecture to target')
+
 env = Environment(
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
     ENV = {'PATH' : os.environ['PATH']})
 
-TOOL_PREFIX = 'i586-pc-apos'
+env['ARCH'] = env.GetOption('arch')
+TOOL_PREFIX = '%s-pc-apos' % env['ARCH']
 
 env.Replace(AR = '%s-ar' % TOOL_PREFIX)
 env.Replace(AS = '%s-as' % TOOL_PREFIX)
@@ -34,7 +37,7 @@ env.Append(CFLAGS =
 env.Append(ASFLAGS = ['--gen-debug'])
 
 env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
-env.Append(CPPPATH = '#')
+env.Append(CPPPATH = ['#', '#/archs/%s' % env['ARCH'], '#/archs/common'])
 
 def AposAddSources(env, srcs, subdirs):
   """Helper for subdirectories."""
@@ -46,9 +49,10 @@ def AposAddSources(env, srcs, subdirs):
 def kernel_program(env, target, source):
   """Builder for the main kernel file."""
   return [
-      env.Depends(target, 'build/linker.ld'),
+      env.Depends(target, 'archs/%s/build/linker.ld' % env['ARCH']),
       env.Program(target, source,
-        LINKFLAGS=env['LINKFLAGS'] + ['-T', 'build/linker.ld', '-L', Dir('.')])]
+        LINKFLAGS=env['LINKFLAGS'] + [
+          '-T', 'archs/%s/build/linker.ld' % env['ARCH'], '-L', Dir('.')])]
 
 def phys_object(env, source):
   """Builder for object files that need to be linked in the physical (not

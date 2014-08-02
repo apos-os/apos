@@ -14,6 +14,7 @@
 
 #include <stddef.h>
 
+#include "arch/proc/user_mode.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -23,7 +24,6 @@
 #include "memory/mmap.h"
 #include "proc/exec.h"
 #include "proc/load/load.h"
-#include "proc/user_mode.h"
 #include "vfs/vfs.h"
 
 #define MAX_ARGV_ENVP_SIZE (MEM_USER_STACK_SIZE / 4)
