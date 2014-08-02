@@ -155,7 +155,7 @@ void kmain(memory_info_t* meminfo) {
   klog("APOO\n");
 
   klog("meminfo: 0x");
-  klog(utoa_hex((uint32_t)meminfo));
+  klog(utoa_hex((addr_t)meminfo));
   klog("\nmeminfo->kernel_start_phys: 0x"); klog(utoa_hex(meminfo->kernel_start_phys));
   klog("\nmeminfo->kernel_end_phys:   0x"); klog(utoa_hex(meminfo->kernel_end_phys));
   klog("\nmeminfo->kernel_start_virt: 0x"); klog(utoa_hex(meminfo->kernel_start_virt));
