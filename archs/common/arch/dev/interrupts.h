@@ -17,19 +17,21 @@
 
 #include <stdint.h>
 
+typedef uint32_t interrupt_state_t;
+
 void interrupts_init(void);
 
 void enable_interrupts(void);
 void disable_interrupts(void);
 
 // Disable interrupts and return the previous (pre-disabling) IF flag value.
-static inline uint32_t save_and_disable_interrupts(void);
+static inline interrupt_state_t save_and_disable_interrupts(void);
 
 // Restore interrupt state (given the return value of
 // save_and_disable_interrupts).
-static inline void restore_interrupts(uint32_t saved);
+static inline void restore_interrupts(interrupt_state_t saved);
 
 // Return the current IF flag state (as per save_and_disable_interrupts).
-static inline uint32_t get_interrupts_state(void);
+static inline interrupt_state_t get_interrupts_state(void);
 
 #endif

@@ -25,7 +25,7 @@
 // every PUSH_AND_DISABLE_INTERRUPTS.  This catches things like early returns
 // that don't call POP_INTERRUPTS() when they should.
 void _interrupts_unpopped_die(void);
-static inline void _interrupts_cleanup_verify(uint32_t* saved) {
+static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
   if (*saved != get_interrupts_state()) {
     _interrupts_unpopped_die();
   }
@@ -36,14 +36,14 @@ static inline void _interrupts_cleanup_verify(uint32_t* saved) {
 #if ENABLE_KERNEL_SAFETY_NETS
 
 #define PUSH_AND_DISABLE_INTERRUPTS() \
-    uint32_t _SAVED_INTERRUPTS \
+    interrupt_state_t _SAVED_INTERRUPTS \
       __attribute__((cleanup(_interrupts_cleanup_verify))) = \
       save_and_disable_interrupts()
 
 #else  // ENABLE_KERNEL_SAFETY_NETS
 
 #define PUSH_AND_DISABLE_INTERRUPTS() \
-    uint32_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
+    interrupt_state_t _SAVED_INTERRUPTS = save_and_disable_interrupts()
 
 #endif  // ENABLE_KERNEL_SAFETY_NETS
 
