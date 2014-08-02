@@ -43,7 +43,7 @@ static int g_test_mode = 0;
 
 static void init_block(block_t* b) {
   b->magic = KALLOC_MAGIC;
-  b->free = 1;
+  b->free = true;
   b->length = 0;
   b->prev = 0;
   b->next = 0;
@@ -75,7 +75,7 @@ void kmalloc_init() {
 }
 
 // Fill the given block with a repeating pattern.
-static void fill_buffer(uint8_t* buf, uint32_t n, uint32_t pattern) {
+static void fill_buffer(uint8_t* buf, size_t n, uint32_t pattern) {
   uint32_t i = 0;
   uint32_t i2 = 0;
   while (i < n) {
@@ -92,7 +92,7 @@ static void fill_block(block_t* b, uint32_t pattern) {
 
 // Takes a block and a required size, and (if it's large enough), splits the
 // block into two blocks, adding them both to the block list as needed.
-static block_t* split_block(block_t* b, uint32_t n) {
+static block_t* split_block(block_t* b, size_t n) {
   KASSERT(b->length >= n);
   if (b->length < n + sizeof(block_t) + KALLOC_MIN_BLOCK_SIZE) {
     return b;
@@ -100,7 +100,7 @@ static block_t* split_block(block_t* b, uint32_t n) {
 
   block_t* new_block = (block_t*)((uint8_t*)b + sizeof(block_t) + n);
   init_block(new_block);
-  new_block->free = 1;
+  new_block->free = true;
   new_block->length = b->length - sizeof(block_t) - n;
   new_block->prev = b;
   new_block->next = b->next;
@@ -155,11 +155,11 @@ static block_t* merge_block(block_t* b) {
   return b;
 }
 
-void* kmalloc(uint32_t n) {
+void* kmalloc(size_t n) {
   return kmalloc_aligned(n, 1);
 }
 
-void* kmalloc_aligned(uint32_t n, uint32_t alignment) {
+void* kmalloc_aligned(size_t n, size_t alignment) {
   PUSH_AND_DISABLE_INTERRUPTS();
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
@@ -196,7 +196,7 @@ void* kmalloc_aligned(uint32_t n, uint32_t alignment) {
     block_addr = next_aligned;
   }
 
-  cblock->free = 0;
+  cblock->free = false;
   cblock = split_block(cblock, n);
 
   POP_INTERRUPTS();
@@ -210,21 +210,21 @@ void* kmalloc_aligned(uint32_t n, uint32_t alignment) {
 void kfree(void* x) {
   block_t* b = (block_t*)((uint8_t*)x - sizeof(block_t));
   KASSERT(b->magic == KALLOC_MAGIC);
-  KASSERT(b->free == 0);
+  KASSERT(b->free == false);
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(b, 0xDEADBEEF);
   }
 
   PUSH_AND_DISABLE_INTERRUPTS();
-  b->free = 1;
+  b->free = true;
   merge_block(b);
   POP_INTERRUPTS();
 }
 
 void kmalloc_log_state() {
   KLOG(INFO, "kmalloc block list:\n");
-  uint32_t total = 0;
-  uint32_t free = 0;
+  size_t total = 0;
+  size_t free = 0;
   block_t* cblock = g_block_list;
   while (cblock) {
     total += cblock->length + sizeof(block_t);

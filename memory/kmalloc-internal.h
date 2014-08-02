@@ -17,6 +17,10 @@
 #ifndef APOO_MEMORY_KMALLOC_INTERNAL_H
 #define APOO_MEMORY_KMALLOC_INTERNAL_H
 
+#include <stdbool.h>
+
+#include "common/types.h"
+
 // Don't bother splitting a block if it'll be smaller than this (bytes).
 #define KALLOC_MIN_BLOCK_SIZE 8
 
@@ -32,18 +36,18 @@
 // pointer to the data.
 struct block {
   uint8_t magic;
-  uint8_t free;
-  uint32_t length;
+  bool free;
+  addrdiff_t length;
   struct block* prev;
   struct block* next;
   uint8_t data[0];
 };
 typedef struct block block_t;
 
-// Returns the address (as a uint32_t) of the start/end of the block_t,
+// Returns the address (as an addr_t) of the start/end of the block_t,
 // including header and data.
-#define BLOCK_START(b) ((uint32_t)b)
-#define BLOCK_END(b) ((uint32_t)b + sizeof(block_t) + b->length)
+#define BLOCK_START(b) ((addr_t)b)
+#define BLOCK_END(b) ((addr_t)b + sizeof(block_t) + b->length)
 
 // Returns the total size of a block_t, including headers and data.
 #define BLOCK_SIZE(b) (sizeof(block_t) + b->length)

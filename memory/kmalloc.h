@@ -15,13 +15,14 @@
 #ifndef APOO_MEMORY_KMALLOC_H
 #define APOO_MEMORY_KMALLOC_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 // TODO(aoates): document these
 void kmalloc_init(void);
 void kfree(void* x);
-void* kmalloc(uint32_t n);
-void* kmalloc_aligned(uint32_t n, uint32_t alignment);
+void* kmalloc(size_t n);
+void* kmalloc_aligned(size_t n, size_t alignment);
 void kmalloc_log_state(void);
 
 // Enable test mode.  In test mode, certain components are not re-initialized in
