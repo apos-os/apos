@@ -14,6 +14,7 @@
 
 #include "memory/block_cache.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "arch/memory/page_alloc.h"
@@ -40,7 +41,7 @@
 #define KLOG(...) klogfm(KL_BLOCK_CACHE, __VA_ARGS__)
 
 static int g_size = 0;
-static int g_initialized = 0;
+static bool g_initialized = false;
 static int g_max_size = DEFAULT_CACHE_SIZE;
 
 static htbl_t g_table;
@@ -54,12 +55,12 @@ typedef struct bc_entry_internal {
   list_link_t flushq;
   list_link_t lruq;
 
-  // Set to 1 when the entry is flushed to disk, and to 0 when the entry is
-  // taken by a thread.
-  uint8_t flushed;
-  uint8_t flushing;
+  // Set to true when the entry is flushed to disk, and to false when the entry
+  // is taken by a thread.
+  bool flushed;
+  bool flushing;
 
-  int initialized;
+  bool initialized;
   kthread_queue_t wait_queue;  // Threads waiting for init or flush.
 } bc_entry_internal_t;
 
@@ -137,10 +138,7 @@ static uint32_t obj_hash(memobj_t* obj, int offset) {
 // Basic sanity checks on a bc_entry_t.
 static int entry_is_sane(bc_entry_internal_t* entry) {
  if (!entry->pub.obj || ((uint32_t)entry->pub.block & PAGE_OFFSET_MASK) ||
-     entry->pin_count < 0 ||
-     (entry->initialized != 0 && entry->initialized != 1) ||
-     (entry->flushing != 0 && entry->flushing != 1) ||
-     (entry->flushed != 0 && entry->flushed != 1)) {
+     entry->pin_count < 0) {
    return 0;
  } else {
    return 1;
@@ -153,9 +151,9 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(!entry->flushed);
   KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
 
-  entry->flushing = 1;
+  entry->flushing = true;
   while (!entry->flushed) {
-    entry->flushed = 1;
+    entry->flushed = true;
     // Write the data back to disk.  This may block.
     KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
     KASSERT_DBG(entry_is_sane(entry));
@@ -169,7 +167,7 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
     // == 0 we need to try again.
     KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
   }
-  entry->flushing = 0;
+  entry->flushing = false;
   scheduler_wake_all(&entry->wait_queue);
 }
 
@@ -270,7 +268,7 @@ static void init_block_cache(void) {
   htbl_init(&g_table, g_max_size * 2);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
   scheduler_make_runnable(g_flush_queue_thread);
-  g_initialized = 1;
+  g_initialized = true;
 }
 
 // Given an existing table entry, wait for it to be initialized (if applicable)
@@ -318,9 +316,9 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->pub.block = block;
     entry->pub.block_phys = virt2phys((addr_t)block);
     entry->pin_count = 1;
-    entry->initialized = 0;
-    entry->flushed = 1;
-    entry->flushing = 0;
+    entry->initialized = false;
+    entry->flushed = true;
+    entry->flushing = false;
     entry->flushq = LIST_LINK_INIT;
     entry->lruq = LIST_LINK_INIT;
     kthread_queue_init(&entry->wait_queue);
@@ -340,7 +338,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
         obj->ops->read_page(obj, offset, entry->pub.block);
     KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
 
-    entry->initialized = 1;
+    entry->initialized = true;
     scheduler_wake_all(&entry->wait_queue);
 
     *entry_out = &entry->pub;
