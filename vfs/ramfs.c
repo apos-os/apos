@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "common/errno.h"
@@ -57,7 +58,7 @@ struct ramfs {
   ramfs_inode_t inodes[RAMFS_MAX_INODES];
 
   // Whether or not the appropriate syscalls should block.
-  int enable_blocking;
+  bool enable_blocking;
 };
 typedef struct ramfs ramfs_t;
 
@@ -177,7 +178,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     f->inodes[i].vnode.num = -1;
   }
-  f->enable_blocking = 0;
+  f->enable_blocking = false;
 
   kstrcpy(f->fs.fstype, "ramfs");
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
@@ -227,13 +228,13 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
 void ramfs_enable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
-  ramfs->enable_blocking = 1;
+  ramfs->enable_blocking = true;
 }
 
 void ramfs_disable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
-  ramfs->enable_blocking = 0;
+  ramfs->enable_blocking = false;
 }
 
 vnode_t* ramfs_alloc_vnode(struct fs* fs) {
