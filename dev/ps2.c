@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "arch/common/io.h"
@@ -85,7 +86,7 @@
 #define PS2_DEBUG 0
 
 static int g_device_types[2];
-static int g_initialized = 0;
+static bool g_initialized = false;
 
 inline static uint8_t get_status(void) {
   return inb(CTRL_STATUS_PORT);
@@ -334,7 +335,7 @@ int ps2_init() {
   }
   klogf("  finished PS/2 initalization!\n");
 
-  g_initialized = 1;
+  g_initialized = true;
   return 1;
 }
 
