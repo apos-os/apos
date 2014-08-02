@@ -40,7 +40,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->retval = 0x0;
   t->prev = t->next = 0x0;
   t->stack = 0x0;
-  t->detached = 0;
+  t->detached = false;
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
@@ -132,7 +132,7 @@ void kthread_detach(kthread_t thread_ptr) {
   kthread_data_t* thread = thread_ptr;
   KASSERT(!thread->detached);
   KASSERT(thread->join_list_pending == 0);
-  thread->detached = 1;
+  thread->detached = true;
 }
 
 void* kthread_join(kthread_t thread_ptr) {
