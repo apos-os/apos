@@ -36,8 +36,8 @@ int kstrcmp(const char* s1, const char* s2) {
   return *s1 - *s2;
 }
 
-int kstrncmp(const char* s1, const char* s2, uint32_t n) {
-  uint32_t x = 0;
+int kstrncmp(const char* s1, const char* s2, size_t n) {
+  size_t x = 0;
   while (*s1 && *s2 && x < n - 1) {
     if (*s1 != *s2) {
       return *s1 - *s2;
@@ -49,21 +49,21 @@ int kstrncmp(const char* s1, const char* s2, uint32_t n) {
   return *s1 - *s2;
 }
 
-void* kmemset(void *s, int c, uint32_t n) {
-  for (uint32_t i = 0; i < n; ++i) {
+void* kmemset(void *s, int c, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
     ((char*)s)[i] = c;
   }
   return s;
 }
 
-void* kmemcpy(void* dest, const void* src, uint32_t n) {
-  for (uint32_t i = 0; i < n; i++) {
+void* kmemcpy(void* dest, const void* src, size_t n) {
+  for (size_t i = 0; i < n; i++) {
     ((uint8_t*)dest)[i] = ((uint8_t*)src)[i];
   }
   return dest;
 }
 
-int kmemcmp(const void* m1, const void* m2, uint32_t n) {
+int kmemcmp(const void* m1, const void* m2, size_t n) {
   const char* s1 = (const char*)m1;
   const char* s2 = (const char*)m2;
   while (n > 0) {
@@ -86,9 +86,9 @@ char* kstrcpy(char* dst, const char* src) {
   return dst;
 }
 
-char* kstrncpy(char* dst, const char* src, uint32_t n) {
+char* kstrncpy(char* dst, const char* src, size_t n) {
   char* dst_out = dst;
-  uint32_t i = 0;
+  size_t i = 0;
   while (*src && i < n) {
     *(dst_out++) = *(src++);
     i++;

@@ -15,18 +15,19 @@
 #ifndef APOO_KSTRING_H
 #define APOO_KSTRING_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 int kstrlen(const char* s);
 int kstrcmp(const char* s1, const char* s2);
-int kstrncmp(const char* s1, const char* s2, uint32_t n);
+int kstrncmp(const char* s1, const char* s2, size_t n);
 
-void* kmemset(void* s, int c, uint32_t n);
-void* kmemcpy(void* dest, const void* src, uint32_t n);
-int kmemcmp(const void* s1, const void* s2, uint32_t n);
+void* kmemset(void* s, int c, size_t n);
+void* kmemcpy(void* dest, const void* src, size_t n);
+int kmemcmp(const void* s1, const void* s2, size_t n);
 
 char* kstrcpy(char* dst, const char* src);
-char* kstrncpy(char* dst, const char* src, uint32_t n);
+char* kstrncpy(char* dst, const char* src, size_t n);
 
 char *kstrcat(char *dest, const char *src);
 
