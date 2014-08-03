@@ -15,6 +15,8 @@
 #ifndef APOO_DEBUG_H
 #define APOO_DEBUG_H
 
+#include "common/config.h"
+
 #ifndef ENABLE_KERNEL_SAFETY_NETS
 
 // If set, various safety nets will be enabled.  This includes things like

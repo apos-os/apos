@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "arch/dev/interrupts.h"
+#include "common/debug.h"
 
 #if ENABLE_KERNEL_SAFETY_NETS
 // If safety nets are enabled, verify that interrupts are popped properly after

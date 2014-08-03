@@ -15,4 +15,6 @@
 #ifndef APOO_COMMON_CONFIG_H
 #define APOO_COMMON_CONFIG_H
 
+#define ENABLE_KERNEL_SAFETY_NETS %(DEBUG)d
+
 #endif

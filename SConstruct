@@ -25,6 +25,7 @@ else:
 
 vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
+vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = []
@@ -71,9 +72,8 @@ env.Append(CFLAGS =
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
 
-if env['DEBUG']:
-  env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
-env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common'])
+env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
+                      '#/%s' % env['BUILD_DIR']])
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
@@ -129,4 +129,4 @@ env.AddMethod(kernel_program, 'Kernel')
 
 Export('env user_env AposAddSources')
 
-SConscript('SConscript', variant_dir='build-scons', duplicate=False)
+SConscript('SConscript', variant_dir=env['BUILD_DIR'], duplicate=False)
