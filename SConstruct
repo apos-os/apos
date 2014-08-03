@@ -28,7 +28,7 @@ vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
-FEATURES = ['EXT2']
+FEATURES = ['EXT2', 'TESTS']
 for feature in FEATURES:
   vars.Add(BoolVariable(feature, 'enable %s' % feature, True))
 

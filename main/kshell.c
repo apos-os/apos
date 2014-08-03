@@ -20,6 +20,7 @@
 #include <limits.h>
 
 #include "arch/common/io.h"
+#include "common/config.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -45,8 +46,10 @@
 #include "proc/fork.h"
 #include "proc/wait.h"
 #include "proc/sleep.h"
+#if ENABLE_TESTS
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#endif
 #include "user/vfs/dirent.h"
 #include "vfs/vfs.h"
 
@@ -65,6 +68,8 @@ void ksh_printf(const char* fmt, ...) {
   char_dev_t* dev = dev_get_char(g_tty);
   dev->write(dev, buf, kstrlen(buf));
 }
+
+#if ENABLE_TESTS
 
 typedef struct {
   const char* name;
@@ -149,6 +154,8 @@ static void test_cmd(int argc, char* argv[]) {
 
   ksh_printf("error: unknown test '%s'\n", argv[1]);
 }
+
+#endif  // ENABLE_TESTS
 
 static void meminfo_cmd(int argc, char* argv[]) {
   kmalloc_log_state();
@@ -770,7 +777,10 @@ typedef struct {
 } cmd_t;
 
 static cmd_t CMDS[] = {
+#if ENABLE_TESTS
   { "test", &test_cmd },
+#endif
+
   { "meminfo", &meminfo_cmd },
   { "hash", &hash_cmd },
   { "b_read", &b_read_cmd },
