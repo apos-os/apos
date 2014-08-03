@@ -15,7 +15,14 @@
 import os
 import re
 
-vars = Variables('build-config.conf')
+CONFIG_CACHE_FILE = 'build-config.conf'
+
+# If the user didn't request 'configure', read the cached config values.
+if 'configure' in COMMAND_LINE_TARGETS:
+  vars = Variables()
+else:
+  vars = Variables(CONFIG_CACHE_FILE)
+
 vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 
@@ -23,6 +30,12 @@ base_env = Environment(
     variables = vars,
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
     ENV = {'PATH' : os.environ['PATH']})
+
+base_env.Alias('configure', [])
+
+# If the user did a 'configure', save their configuration for later.
+if 'configure' in COMMAND_LINE_TARGETS:
+  vars.Save(CONFIG_CACHE_FILE, base_env)
 
 TOOL_PREFIX = '%s-pc-apos' % base_env['ARCH']
 
