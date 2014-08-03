@@ -15,13 +15,14 @@
 import os
 import re
 
-AddOption('--arch', default='i586', help='architecture to target')
+vars = Variables('build-config.conf')
+vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
 
 base_env = Environment(
+    variables = vars,
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
     ENV = {'PATH' : os.environ['PATH']})
 
-base_env['ARCH'] = base_env.GetOption('arch')
 TOOL_PREFIX = '%s-pc-apos' % base_env['ARCH']
 
 base_env.Replace(AR = '%s-ar' % TOOL_PREFIX)
