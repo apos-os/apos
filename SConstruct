@@ -26,6 +26,11 @@ else:
 vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 
+# List of modules that can be enabled/disabled.  All are enabled by default.
+FEATURES = []
+for feature in FEATURES:
+  vars.Add(BoolVariable(feature, 'enable %s' % feature, True))
+
 base_env = Environment(
     variables = vars,
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
