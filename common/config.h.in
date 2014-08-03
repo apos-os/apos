@@ -15,8 +15,6 @@
 #ifndef APOO_COMMON_CONFIG_H
 #define APOO_COMMON_CONFIG_H
 
-#define ENABLE_KERNEL_SAFETY_NETS %(DEBUG)d
-
 // Features enable/disable.
 #define ENABLE_EXT2 %(EXT2)d
 #define ENABLE_TESTS %(TESTS)d
