@@ -28,7 +28,7 @@ vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
-FEATURES = []
+FEATURES = ['EXT2']
 for feature in FEATURES:
   vars.Add(BoolVariable(feature, 'enable %s' % feature, True))
 
@@ -53,7 +53,7 @@ base_env.Replace(RANLIB = '%s-ranlib' % TOOL_PREFIX)
 base_env.Replace(STRIP = '%s-strip' % TOOL_PREFIX)
 
 base_env.Append(CFLAGS =
-        Split("-Wall -Wextra -Werror -std=gnu11 " +
+        Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
               "-Wstrict-prototypes"))
 base_env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -25,7 +26,6 @@
 #include "proc/process.h"
 #include "proc/user.h"
 #include "user/vfs/dirent.h"
-#include "vfs/ext2/ext2.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -35,6 +35,10 @@
 #include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
 #include "vfs/vnode_hash.h"
+
+#if ENABLE_EXT2
+#  include "vfs/ext2/ext2.h"
+#endif
 
 #define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
@@ -96,6 +100,7 @@ static int is_valid_create_mode(mode_t mode) {
 void vfs_init() {
   KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
 
+#if ENABLE_EXT2
   // First try to mount every ATA device as an ext2 fs.
   fs_t* ext2fs = ext2_create_fs();
   int success = 0;
@@ -115,8 +120,11 @@ void vfs_init() {
   if (!success) {
     KLOG(INFO, "Didn't find any mountable filesystems; mounting ramfs as /\n");
     ext2_destroy_fs(ext2fs);
-    g_fs_table[VFS_ROOT_FS].fs = ramfs_create_fs(1);
   }
+#endif  // ENABLE_EXT2
+
+  if (!g_fs_table[VFS_ROOT_FS].fs)
+    g_fs_table[VFS_ROOT_FS].fs = ramfs_create_fs(1);
 
   g_fs_table[VFS_ROOT_FS].fs->id = VFS_ROOT_FS;
 
