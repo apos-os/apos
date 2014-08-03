@@ -17,6 +17,7 @@ import re
 
 vars = Variables('build-config.conf')
 vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
+vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 
 base_env = Environment(
     variables = vars,
@@ -33,11 +34,17 @@ base_env.Replace(RANLIB = '%s-ranlib' % TOOL_PREFIX)
 base_env.Replace(STRIP = '%s-strip' % TOOL_PREFIX)
 
 base_env.Append(CFLAGS =
-        Split("-Wall -Wextra -Werror -std=gnu11 -g3 " +
+        Split("-Wall -Wextra -Werror -std=gnu11 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
               "-Wstrict-prototypes"))
 base_env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
 base_env.Append(CPPPATH = ['#'])
+
+base_env.SetDefault(CPPDEFINES = [])
+
+if base_env['DEBUG']:
+  base_env.Append(CFLAGS = ['-g3'])
+  base_env.Append(ASFLAGS = ['--gen-debug'])
 
 env = base_env.Clone()
 
@@ -46,7 +53,8 @@ env.Append(CFLAGS =
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
 
-env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
+if env['DEBUG']:
+  env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
 env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common'])
 
 # Environment for userspace targets.

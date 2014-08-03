@@ -131,8 +131,10 @@ static int is_user_interrupt(addr_t ebp) {
 static user_context_t extract_interrupt_context(addr_t ebp) {
   user_context_t context;
 
+#if ENABLE_KERNEL_SAFETY_NETS
   const addr_t cs = *((addr_t*)ebp + 5);
   KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+#endif
 
   context.type = USER_CONTEXT_INTERRUPT;
   context.esp = *((addr_t*)ebp + 7);

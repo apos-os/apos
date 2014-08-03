@@ -912,8 +912,10 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
 
 // Extract a device from an inode (stored in the first block pointer).
 static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
+#if ENABLE_KERNEL_SAFETY_NETS
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
+#endif
   const int major = (inode->i_block[0] >> 16) & 0xFFFF;
   const int minor = inode->i_block[0] & 0xFFFF;
   return makedev(major, minor);
@@ -921,8 +923,10 @@ static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
 
 // Set the device for an inode.
 static void ext2_set_device(ext2_inode_t* inode, apos_dev_t dev) {
+#if ENABLE_KERNEL_SAFETY_NETS
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
+#endif
   const uint32_t block = (major(dev) << 16) | (minor(dev) & 0xFFFF);
   inode->i_block[0] = block;
 }
