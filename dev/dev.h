@@ -20,6 +20,7 @@
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
 #include "memory/memobj.h"
+#include "user/dev.h"
 
 #define DEVICE_MAX_MAJOR 10
 #define DEVICE_MAX_MINOR 20
@@ -30,13 +31,8 @@
 #define DEVICE_MAJOR_TTY 4
 #define DEVICE_ID_UNKNOWN UINT16_MAX
 
-// A device identifier.
-typedef uint32_t apos_dev_t;
-
-apos_dev_t makedev(unsigned int major, unsigned int minor);
-
-static inline unsigned int major(apos_dev_t dev) { return dev >> 16; }
-static inline unsigned int minor(apos_dev_t dev) { return dev & 0xFFFF; }
+_Static_assert(sizeof(apos_dev_t) >= sizeof(uint16_t) * 2,
+               "apos_dev_t too small");
 
 // Register a new block or character device.  The minor id may be
 // DEVICE_ID_UNKNOWN, in which case one will be chosen.  The id of the created
