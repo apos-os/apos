@@ -18,6 +18,7 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
+#include "dev/dev.h"
 #include "memory/kmalloc.h"
 #include "memory/memobj_vnode.h"
 #include "proc/kthread.h"

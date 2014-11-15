@@ -19,6 +19,7 @@
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
+#include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"

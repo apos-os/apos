@@ -18,8 +18,8 @@
 
 #include <stdint.h>
 
-#include "dev/dev.h"
 #include "proc/exit.h"
+#include "user/dev.h"
 #include "vfs/vfs.h"
 
 static inline int vfs_mknod_wrapper(const char* path, mode_t mode,

@@ -16,7 +16,7 @@
 #define APOO_VFS_STAT_H
 
 #include "common/posix_types.h"
-#include "dev/dev.h"
+#include "user/dev.h"
 
 typedef uint32_t mode_t;
 

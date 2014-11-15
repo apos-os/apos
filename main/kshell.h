@@ -15,7 +15,7 @@
 #ifndef APOO_MAIN_KSHELL_H
 #define APOO_MAIN_KSHELL_H
 
-#include "dev/dev.h"
+#include "user/dev.h"
 
 void kshell_main(apos_dev_t tty);
 void ksh_printf(const char* fmt, ...);

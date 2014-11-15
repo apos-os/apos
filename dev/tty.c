@@ -14,6 +14,7 @@
 
 #include "common/kassert.h"
 #include "dev/char_dev.h"
+#include "dev/dev.h"
 #include "dev/ld.h"
 #include "dev/tty.h"
 #include "memory/kmalloc.h"

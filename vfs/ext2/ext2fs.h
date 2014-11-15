@@ -17,7 +17,7 @@
 
 #include "memory/block_cache.h"
 #include "memory/memobj.h"
-#include "dev/dev.h"
+#include "user/dev.h"
 #include "vfs/fs.h"
 
 #include "vfs/ext2/ext2-internal.h"

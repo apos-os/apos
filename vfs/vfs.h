@@ -19,10 +19,10 @@
 #include <stdint.h>
 
 #include "common/posix_types.h"
-#include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "user/dev.h"
 #include "user/vfs/stat.h"
 #include "user/vfs/vfs.h"
 #include "vfs/dirent.h"

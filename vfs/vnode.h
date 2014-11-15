@@ -17,9 +17,9 @@
 #define APOO_VFS_VNODE_H
 
 #include "common/posix_types.h"
-#include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
+#include "user/dev.h"
 #include "user/vfs/stat.h"
 #include "vfs/fsid.h"
 
