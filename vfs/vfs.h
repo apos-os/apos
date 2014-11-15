@@ -23,10 +23,10 @@
 #include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "user/vfs/stat.h"
 #include "user/vfs/vfs.h"
 #include "vfs/dirent.h"
 #include "vfs/fs.h"
-#include "vfs/stat.h"
 #include "vfs/vnode.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256

@@ -20,8 +20,8 @@
 #include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
+#include "user/vfs/stat.h"
 #include "vfs/fsid.h"
-#include "vfs/stat.h"
 
 struct fs;
 typedef struct fs fs_t;
