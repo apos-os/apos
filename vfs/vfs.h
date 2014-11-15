@@ -23,6 +23,7 @@
 #include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "user/vfs/vfs.h"
 #include "vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/stat.h"
@@ -31,26 +32,6 @@
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
 #define VFS_MAX_LINK_RECURSION 20
-
-// Syscall flags.
-// TODO(aoates): once we have userland, these should be the same constants as
-// are used there.
-#define VFS_MODE_MASK  0x03
-#define VFS_O_RDONLY   0x00
-#define VFS_O_WRONLY   0x01
-#define VFS_O_RDWR     0x02
-
-#define VFS_O_APPEND   0x04
-#define VFS_O_CREAT    0x08
-#define VFS_O_TRUNC    0x10  // TODO(aoates)
-
-// Used internally (i.e. not exposed to userspace) to indicate a file that will
-// be executed.  If set, vfs_open will check that the file is executable.
-#define VFS_O_INTERNAL_EXEC 0x20
-
-#define VFS_SEEK_SET 1
-#define VFS_SEEK_CUR 2
-#define VFS_SEEK_END 3
 
 // Initialize the VFS.
 void vfs_init(void);
