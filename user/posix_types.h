@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Common types required by POSIX to be defined in <sys/types.h>.
-#ifndef APOO_COMMON_POSIX_TYPES_H
-#define APOO_COMMON_POSIX_TYPES_H
+#ifndef APOO_USER_POSIX_TYPES_H
+#define APOO_USER_POSIX_TYPES_H
 
 // Process ID.
 typedef int pid_t;

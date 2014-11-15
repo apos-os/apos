@@ -16,8 +16,8 @@
 #ifndef APOO_PROC_USER_H
 #define APOO_PROC_USER_H
 
-#include "common/posix_types.h"
 #include "proc/process.h"
+#include "user/posix_types.h"
 
 // The uid and gid of the superuser.
 #define SUPERUSER_UID 0

@@ -19,6 +19,6 @@
 #include <stdint.h>
 
 #include "arch/common/types.h"
-#include "common/posix_types.h"
+#include "user/posix_types.h"
 
 #endif
