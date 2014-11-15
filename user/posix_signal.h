@@ -19,7 +19,7 @@
 
 #include <stdint.h>
 
-#include "common/errno.h"
+#include "user/errors.h"
 
 typedef uint32_t sigset_t;
 typedef void (*sighandler_t)(int);
