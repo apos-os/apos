@@ -20,7 +20,7 @@ import sys
 import subprocess
 
 def symbolize(frame_num, addr):
-  p = subprocess.Popen(["addr2line", "-f", "-s", "-e",
+  p = subprocess.Popen(["i586-pc-apos-addr2line", "-f", "-s", "-e",
                         "build-scons/kernel.bin", addr],
                        stdout=subprocess.PIPE)
   output = p.communicate()[0].split('\n')
