@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Directory entries.
-#ifndef APOO_DIRENT_H
-#define APOO_DIRENT_H
+#ifndef APOO_USER_VFS_DIRENT_H
+#define APOO_USER_VFS_DIRENT_H
 
 // A single directory entry, as produced by a concrete filesystem.
 struct dirent {

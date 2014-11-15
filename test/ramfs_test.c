@@ -19,7 +19,7 @@
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
 

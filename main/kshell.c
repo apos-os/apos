@@ -47,7 +47,7 @@
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/vfs.h"
 
 #define READ_BUF_SIZE 1024

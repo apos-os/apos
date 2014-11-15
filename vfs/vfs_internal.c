@@ -17,7 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/vfs_mode.h"
 #include "vfs/vnode.h"

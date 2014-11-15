@@ -24,7 +24,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/user.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/ext2/ext2.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"

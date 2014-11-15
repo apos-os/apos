@@ -23,9 +23,9 @@
 #include "proc/process.h"
 #include "user/dev.h"
 #include "user/posix_types.h"
+#include "user/vfs/dirent.h"
 #include "user/vfs/stat.h"
 #include "user/vfs/vfs.h"
-#include "vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/vnode.h"
 

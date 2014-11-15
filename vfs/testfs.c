@@ -19,7 +19,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "common/math.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 
 static vnode_t* testfs_alloc_vnode(struct fs* fs);
 static int testfs_get_root(struct fs* fs);
