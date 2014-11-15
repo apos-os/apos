@@ -34,7 +34,7 @@ case {{ common.syscall_constant(syscall) }}:
 #include "common/errno.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
-#include "syscall/syscalls.h"
+#include "user/syscalls.h"
 
 {{ common.include_headers(SYSCALLS, 'header') }}
 

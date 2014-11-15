@@ -14,12 +14,12 @@
 
 {# PY_IMPORT syscall/syscall_list.py #}
 {% import "syscall/common_macros.tpl" as common %}
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
+// List of syscalls.  Manually generated from user/syscalls.h.tpl.
 //
 // To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+//   util/tpl_gen.py user/syscalls.h.tpl > user/syscalls.h
+#ifndef APOO_USER_SYSCALLS_H
+#define APOO_USER_SYSCALLS_H
 
 // All syscalls and their numbers.
 {% for syscall in SYSCALLS %}

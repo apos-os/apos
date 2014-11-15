@@ -37,8 +37,8 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 }
 {%- endmacro %}
 
-#include "syscall/syscalls.h"
 #include "user/syscall.h"
+#include "user/syscalls.h"
 
 {{ common.include_headers(SYSCALLS, 'user_header') }}
 

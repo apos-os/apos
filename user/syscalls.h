@@ -12,12 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
+// List of syscalls.  Manually generated from user/syscalls.h.tpl.
 //
 // To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+//   util/tpl_gen.py user/syscalls.h.tpl > user/syscalls.h
+#ifndef APOO_USER_SYSCALLS_H
+#define APOO_USER_SYSCALLS_H
 
 // All syscalls and their numbers.
 #define SYS_SYSCALL_TEST 0

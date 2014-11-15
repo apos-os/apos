@@ -16,7 +16,7 @@
 #define APOO_USER_SYSCALL_H
 
 // Defines syscall numbers.
-#include "syscall/syscalls.h"
+#include "user/syscalls.h"
 
 // Perform the given syscall.
 long do_syscall(long syscall, long arg1, long arg2, long arg3, long arg4,
