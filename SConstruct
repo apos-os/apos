@@ -29,6 +29,7 @@ env.Replace(AS = '%s-as' % TOOL_PREFIX)
 env.Replace(CC = '%s-gcc' % TOOL_PREFIX)
 env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
 env.Replace(RANLIB = '%s-ranlib' % TOOL_PREFIX)
+env.Replace(STRIP = '%s-strip' % TOOL_PREFIX)
 
 env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g3 " +
