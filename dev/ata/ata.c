@@ -335,8 +335,8 @@ static void ata_do_op(ata_disk_op_t* op) {
   POP_INTERRUPTS();
 }
 
-static int ata_read(struct block_dev* dev, uint32_t offset,
-                    void* buf, uint32_t len) {
+static int ata_read(struct block_dev* dev, size_t offset,
+                    void* buf, size_t len) {
   ata_disk_op_t op;
   op.drive = (drive_t*)dev->dev_data;
   op.is_write = false;
@@ -353,8 +353,8 @@ static int ata_read(struct block_dev* dev, uint32_t offset,
   }
 }
 
-static int ata_write(struct block_dev* dev, uint32_t offset,
-                     const void* buf, uint32_t len) {
+static int ata_write(struct block_dev* dev, size_t offset,
+                     const void* buf, size_t len) {
   ata_disk_op_t op;
   op.drive = (drive_t*)dev->dev_data;
   op.is_write = true;
