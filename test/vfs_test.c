@@ -67,47 +67,47 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
 
 static void dev_test(void) {
   KTEST_BEGIN("device numbering test");
-  apos_dev_t dev = mkdev(0, 0);
+  apos_dev_t dev = makedev(0, 0);
   KEXPECT_EQ(0, major(dev));
   KEXPECT_EQ(0, minor(dev));
 
-  dev = mkdev(0, 5);
+  dev = makedev(0, 5);
   KEXPECT_EQ(0, major(dev));
   KEXPECT_EQ(5, minor(dev));
 
-  dev = mkdev(5, 0);
+  dev = makedev(5, 0);
   KEXPECT_EQ(5, major(dev));
   KEXPECT_EQ(0, minor(dev));
 
-  dev = mkdev(UINT8_MAX, 0);
+  dev = makedev(UINT8_MAX, 0);
   KEXPECT_EQ(UINT8_MAX, major(dev));
   KEXPECT_EQ(0, minor(dev));
 
-  dev = mkdev(0, UINT8_MAX);
+  dev = makedev(0, UINT8_MAX);
   KEXPECT_EQ(0, major(dev));
   KEXPECT_EQ(UINT8_MAX, minor(dev));
 
-  dev = mkdev(UINT16_MAX, 0);
+  dev = makedev(UINT16_MAX, 0);
   KEXPECT_EQ(UINT16_MAX, major(dev));
   KEXPECT_EQ(0, minor(dev));
 
-  dev = mkdev(0, UINT16_MAX);
+  dev = makedev(0, UINT16_MAX);
   KEXPECT_EQ(0, major(dev));
   KEXPECT_EQ(UINT16_MAX, minor(dev));
 
-  dev = mkdev(UINT16_MAX, UINT16_MAX - 1);
+  dev = makedev(UINT16_MAX, UINT16_MAX - 1);
   KEXPECT_EQ(UINT16_MAX, major(dev));
   KEXPECT_EQ(UINT16_MAX - 1, minor(dev));
 
-  dev = mkdev(UINT16_MAX - 1, UINT16_MAX);
+  dev = makedev(UINT16_MAX - 1, UINT16_MAX);
   KEXPECT_EQ(UINT16_MAX - 1, major(dev));
   KEXPECT_EQ(UINT16_MAX, minor(dev));
 
-  dev = mkdev(UINT16_MAX, UINT16_MAX);
+  dev = makedev(UINT16_MAX, UINT16_MAX);
   KEXPECT_EQ(UINT16_MAX, major(dev));
   KEXPECT_EQ(UINT16_MAX, minor(dev));
 
-  dev = mkdev(UINT16_MAX, UINT16_MAX);
+  dev = makedev(UINT16_MAX, UINT16_MAX);
   KEXPECT_EQ(UINT16_MAX, major(dev));
   KEXPECT_EQ(UINT16_MAX, minor(dev));
 }
@@ -1428,12 +1428,12 @@ static void mknod_test(void) {
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   KTEST_BEGIN("mknod(): invalid file type test");
-  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFMT, mkdev(0, 0)));
-  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, 0xffff, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFMT, makedev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, 0xffff, makedev(0, 0)));
   EXPECT_VNODE_REFCOUNT(0, kDir);
 
   KTEST_BEGIN("mknod(): regular file test");
-  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG, makedev(0, 0)));
   EXPECT_VNODE_REFCOUNT(0, kRegFile);
   EXPECT_VNODE_REFCOUNT(0, kDir);
 
@@ -1448,18 +1448,18 @@ static void mknod_test(void) {
   vfs_close(fd);
 
   KTEST_BEGIN("mknod(): empty path test");
-  KEXPECT_EQ(-EINVAL, vfs_mknod("", VFS_S_IFREG, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod("", VFS_S_IFREG, makedev(0, 0)));
 
   KTEST_BEGIN("mknod(): existing file test");
-  KEXPECT_EQ(-EEXIST, vfs_mknod(kRegFile, VFS_S_IFREG, mkdev(0, 0)));
+  KEXPECT_EQ(-EEXIST, vfs_mknod(kRegFile, VFS_S_IFREG, makedev(0, 0)));
 
   KTEST_BEGIN("mknod(): bath path test");
-  KEXPECT_EQ(-ENOENT, vfs_mknod("bad/path/test", VFS_S_IFREG, mkdev(0, 0)));
+  KEXPECT_EQ(-ENOENT, vfs_mknod("bad/path/test", VFS_S_IFREG, makedev(0, 0)));
 
   EXPECT_VNODE_REFCOUNT(0, kDir);
 
   KTEST_BEGIN("mknod(): character device file test");
-  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, makedev(0, 0)));
   EXPECT_VNODE_REFCOUNT(0, kCharDevFile);
   EXPECT_VNODE_REFCOUNT(0, kDir);
 
@@ -1468,7 +1468,7 @@ static void mknod_test(void) {
   vfs_close(fd);
 
   KTEST_BEGIN("mknod(): block device file test");
-  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, makedev(0, 0)));
   EXPECT_VNODE_REFCOUNT(0, kBlockDevFile);
   EXPECT_VNODE_REFCOUNT(0, kDir);
 
@@ -1498,7 +1498,7 @@ static void block_device_test(void) {
   ramdisk_set_blocking(ramdisk, 1, 1);
   ramdisk_dev(ramdisk, &ramdisk_bd);
 
-  apos_dev_t dev = mkdev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  apos_dev_t dev = makedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KEXPECT_EQ(0, dev_register_block(&ramdisk_bd, &dev));
 
   KTEST_BEGIN("vfs: block device file test");
@@ -1660,7 +1660,7 @@ static void lstat_test(void) {
   vfs_close(fd);
 
   KTEST_BEGIN("lstat(): character device file test");
-  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, makedev(1, 2)));
 
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kCharDevFile, &stat));
@@ -1681,7 +1681,7 @@ static void lstat_test(void) {
   vfs_close(fd);
 
   KTEST_BEGIN("lstat(): blockdevice file test");
-  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, makedev(3, 4)));
 
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(kBlockDevFile, &stat));
@@ -1798,11 +1798,11 @@ static void initial_owner_test_func(void* arg) {
   EXPECT_OWNER_IS(kSubDir, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mknod() sets uid/gid: character device file test");
-  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, makedev(1, 2)));
   EXPECT_OWNER_IS(kCharDevFile, kTestUserB, kTestGroupB);
 
   KTEST_BEGIN("vfs_mknod() sets uid/gid: block device file test");
-  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, makedev(3, 4)));
   EXPECT_OWNER_IS(kBlockDevFile, kTestUserB, kTestGroupB);
 
   vfs_unlink(kBlockDevFile);
@@ -1975,8 +1975,8 @@ static void lchown_test(void) {
   KTEST_BEGIN("vfs_lchown()/vfs_fchown(): test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   create_file(kRegFile, RWX);
-  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
-  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, makedev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, makedev(3, 4)));
 
   KTEST_BEGIN("vfs_lchown(): bad arguments");
   KEXPECT_EQ(-EINVAL, vfs_lchown(0x0, -1, -1));
@@ -2223,8 +2223,8 @@ static void chmod_test(void) {
   KTEST_BEGIN("vfs_chmod()/vfs_fchmod(): test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
   create_file(kRegFile, RWX);
-  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, mkdev(1, 2)));
-  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, mkdev(3, 4)));
+  KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR, makedev(1, 2)));
+  KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, makedev(3, 4)));
 
   KTEST_BEGIN("vfs_chmod(): invalid arguments test");
   KEXPECT_EQ(-EINVAL, vfs_chmod(0x0, VFS_S_IRWXU));
@@ -2360,22 +2360,22 @@ static void mknod_mode_test(void) {
   KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
 
   KTEST_BEGIN("mknod(): invalid mode test");
-  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0xffff, mkdev(0, 0)));
-  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | -1, mkdev(0, 0)));
-  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0x8000, mkdev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0xffff, makedev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | -1, makedev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0x8000, makedev(0, 0)));
 
   KTEST_BEGIN("mknod(): regular file w/ mode test");
-  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG | VFS_S_IRWXU, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG | VFS_S_IRWXU, makedev(0, 0)));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRWXU, get_mode(kRegFile));
 
   KTEST_BEGIN("mknod(): character device file w/ mode test");
   KEXPECT_EQ(0, vfs_mknod(kCharDevFile, VFS_S_IFCHR | VFS_S_IROTH,
-                          mkdev(0, 0)));
+                          makedev(0, 0)));
   KEXPECT_EQ(VFS_S_IFCHR | VFS_S_IROTH, get_mode(kCharDevFile));
 
   KTEST_BEGIN("mknod(): block device file w/ mode test");
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK | VFS_S_IXGRP,
-                          mkdev(0, 0)));
+                          makedev(0, 0)));
   KEXPECT_EQ(VFS_S_IFBLK | VFS_S_IXGRP, get_mode(kBlockDevFile));
 
   vfs_unlink(kBlockDevFile);
@@ -2553,7 +2553,7 @@ static void symlink_test(void) {
   KTEST_BEGIN("vfs_mknod(): doesn't follow final symlink");
   KEXPECT_EQ(0, vfs_symlink("newnode", "symlink_test/mknod_link"));
   KEXPECT_EQ(-EEXIST, vfs_mknod("symlink_test/mknod_link",
-                                VFS_S_IFREG | VFS_S_IRWXU, mkdev(0, 0)));
+                                VFS_S_IFREG | VFS_S_IRWXU, makedev(0, 0)));
   KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/newnode", VFS_O_RDONLY));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/mknod_link"));
 

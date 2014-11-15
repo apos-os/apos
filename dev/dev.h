@@ -33,7 +33,7 @@
 // A device identifier.
 typedef uint32_t apos_dev_t;
 
-apos_dev_t mkdev(unsigned int major, unsigned int minor);
+apos_dev_t makedev(unsigned int major, unsigned int minor);
 
 static inline unsigned int major(apos_dev_t dev) { return dev >> 16; }
 static inline unsigned int minor(apos_dev_t dev) { return dev & 0xFFFF; }

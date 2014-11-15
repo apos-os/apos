@@ -24,7 +24,7 @@
 
 static inline int vfs_mknod_wrapper(const char* path, mode_t mode,
                                     int dev_major, int dev_minor) {
-  return vfs_mknod(path, mode, mkdev(dev_major, dev_minor));
+  return vfs_mknod(path, mode, makedev(dev_major, dev_minor));
 }
 
 // TODO(aoates): if we have more void syscalls, we should add support directly

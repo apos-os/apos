@@ -60,7 +60,7 @@ static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR],
   } else if (minor(*id) == DEVICE_ID_UNKNOWN) {
     for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
       if (array[major(*id)][i] == 0x0) {
-        *id = mkdev(major(*id), i);
+        *id = makedev(major(*id), i);
         break;
       }
     }
@@ -69,7 +69,7 @@ static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR],
   return 0;
 }
 
-apos_dev_t mkdev(unsigned int major, unsigned int minor) {
+apos_dev_t makedev(unsigned int major, unsigned int minor) {
   return (major << 16) | (minor & 0xFFFF);
 }
 
@@ -169,7 +169,7 @@ static void make_fs_device(int vfs_type, int major, int minor) {
     return;
   }
   ksprintf(name, "/dev/%s%d", kTypeNames[major], minor);
-  const int result = vfs_mknod(name, vfs_type, mkdev(major, minor));
+  const int result = vfs_mknod(name, vfs_type, makedev(major, minor));
   if (result < 0) {
     klogf("warning: unable to create %s: %s\n", name, errorname(-result));
   }

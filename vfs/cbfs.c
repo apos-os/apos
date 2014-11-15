@@ -714,7 +714,7 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   }
   stat_out->st_mode |= inode->mode;
   stat_out->st_nlink = (inode->type == VNODE_DIRECTORY) ? 2 : 1;
-  stat_out->st_rdev = mkdev(0, 0);
+  stat_out->st_rdev = makedev(0, 0);
   stat_out->st_size = 2 * sizeof(dirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;

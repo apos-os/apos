@@ -916,7 +916,7 @@ static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
   const int major = (inode->i_block[0] >> 16) & 0xFFFF;
   const int minor = inode->i_block[0] & 0xFFFF;
-  return mkdev(major, minor);
+  return makedev(major, minor);
 }
 
 // Set the device for an inode.
@@ -1195,7 +1195,7 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
 
   ext2_inode_t child_inode;
   const int child_inode_num =
-      make_inode(fs, parent->num, EXT2_S_IFDIR, mkdev(0, 0), &child_inode);
+      make_inode(fs, parent->num, EXT2_S_IFDIR, makedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }
@@ -1574,7 +1574,7 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
                  EXT2_S_IFLNK | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR |
                      EXT2_S_IRGRP | EXT2_S_IWGRP | EXT2_S_IXGRP | EXT2_S_IROTH |
                      EXT2_S_IWOTH | EXT2_S_IXOTH,
-                 mkdev(0, 0), &child_inode);
+                 makedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }

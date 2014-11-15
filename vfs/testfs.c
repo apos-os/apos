@@ -166,7 +166,7 @@ static int testfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   KASSERT(vnode->num == 0);
   stat_out->st_mode = VFS_S_IFDIR | VFS_S_IRUSR | VFS_S_IXUSR;
   stat_out->st_nlink = 2;
-  stat_out->st_rdev = mkdev(0, 0);
+  stat_out->st_rdev = makedev(0, 0);
   stat_out->st_size = 2 * sizeof(dirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;

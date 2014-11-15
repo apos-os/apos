@@ -171,7 +171,7 @@ static void b_read_cmd(int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -200,7 +200,7 @@ static void b_write_cmd(int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;

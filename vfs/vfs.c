@@ -57,7 +57,7 @@ void vfs_fs_init(fs_t* fs) {
   kmemset(fs, 0, sizeof(fs));
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
-  fs->dev = mkdev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  fs->dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
 }
 
 #define VNODE_CACHE_SIZE 1000
@@ -99,7 +99,7 @@ void vfs_init() {
   fs_t* ext2fs = ext2_create_fs();
   int success = 0;
   for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
-    const apos_dev_t dev = mkdev(DEVICE_MAJOR_ATA, i);
+    const apos_dev_t dev = makedev(DEVICE_MAJOR_ATA, i);
     if (dev_get_block(dev)) {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
@@ -352,7 +352,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
 
       // Create it.
       int child_inode =
-          parent->fs->mknod(parent, base_name, VNODE_REGULAR, mkdev(0, 0));
+          parent->fs->mknod(parent, base_name, VNODE_REGULAR, makedev(0, 0));
       if (child_inode < 0) {
         kmutex_unlock(&parent->mutex);
         VFS_PUT_AND_CLEAR(parent);
