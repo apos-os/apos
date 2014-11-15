@@ -119,23 +119,24 @@ AddSyscall('syscall_test', 0, 'do_syscall_test',
     'long:arg5:u',
     'long:arg6:u'])
 
-AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'int', [
     'const char*:path:s',
     'uint32_t:flags:u'])
 
 
-AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u'])
 
-AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
     'mode_t:mode:u',
     ])
 
-AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h', 'user/fs.h',
+AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h',
+    '<sys/stat.h>',
     'int', [
     'const char*:path:s',
     'mode_t:mode:u',
@@ -143,52 +144,52 @@ AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h', 'user/fs.h',
     'int:dev_minor:u'],
     generate_user_stub=False)
 
-AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
 
-AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
 
-AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'void*:buf:bw:count',
     'int:count:u'])
 
-AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'const void*:buf:br:count',
     'int:count:u'])
 
-AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'int:offset:u',
     'int:whence:u'])
 
-AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '',
     'int', [
     'int:fd:u',
     'dirent_t*:buf:bw:count',
     'int:count:u'])
 
-AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'char*:path_out:bw:size',
     'int:size:u'])
 
-AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
 
-AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', 'user/process.h',
+AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'pid_t', [])
 
 AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
-    'user/process.h',
+    '',
     'int', [
     'int:status:u'],
     generate_user_stub=False)
@@ -197,7 +198,7 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
 # allocated kernel copies properly (since on success, do_execve will never
 # return).
 AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
-    'user/process.h',
+    '<unistd.h>',
     'int', [
     'const char*:path:u', # Manually checked by the wrapper.
     'char* const*:argv:u',  # Manually checked by the wrapper.
@@ -205,72 +206,72 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
     ])
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
-    'user/process.h',
+    '<unistd.h>',
     'pid_t', []);
 
 AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
-    'user/process.h',
+    '<unistd.h>',
     'pid_t', []);
 
-AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', 'user/fs.h',
+AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u'])
 
-AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', 'user/signal.h',
+AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', '<signal.h>',
     'int', [
     'pid_t:pid:u',
     'int:sig:u'])
 
 AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
-    'user/signal.h',
+    '<signal.h>',
     'int', [
     'int:signum:u',
     'const struct sigaction*:act:br?:sizeof(struct sigaction)',
     'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
 
 AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
-    'user/signal.h',
+    '',
     'int', [
     'const sigset_t*:old_mask:br:sizeof(sigset_t)',
     'const user_context_t*:context:br:sizeof(user_context_t)'])
 
 AddSyscall('alarm', 22, 'proc_alarm', 'proc/alarm.h',
-    'user/signal.h',
+    '<unistd.h>',
     'unsigned int', [
     'unsigned int:seconds:u'])
 
-AddSyscall('setuid', 23, 'setuid', 'proc/user.h', 'user/process.h',
+AddSyscall('setuid', 23, 'setuid', 'proc/user.h', '<unistd.h>',
     'int', ['uid_t:uid:u'])
 
-AddSyscall('setgid', 24, 'setgid', 'proc/user.h', 'user/process.h',
+AddSyscall('setgid', 24, 'setgid', 'proc/user.h', '<unistd.h>',
     'int', ['gid_t:gid:u'])
 
-AddSyscall('getuid', 25, 'getuid', 'proc/user.h', 'user/process.h',
+AddSyscall('getuid', 25, 'getuid', 'proc/user.h', '<unistd.h>',
     'uid_t', [])
 
-AddSyscall('getgid', 26, 'getgid', 'proc/user.h', 'user/process.h',
+AddSyscall('getgid', 26, 'getgid', 'proc/user.h', '<unistd.h>',
     'gid_t', [])
 
-AddSyscall('seteuid', 27, 'seteuid', 'proc/user.h', 'user/process.h',
+AddSyscall('seteuid', 27, 'seteuid', 'proc/user.h', '<unistd.h>',
     'int', ['uid_t:uid:u'])
 
-AddSyscall('setegid', 28, 'setegid', 'proc/user.h', 'user/process.h',
+AddSyscall('setegid', 28, 'setegid', 'proc/user.h', '<unistd.h>',
     'int', ['gid_t:gid:u'])
 
-AddSyscall('geteuid', 29, 'geteuid', 'proc/user.h', 'user/process.h',
+AddSyscall('geteuid', 29, 'geteuid', 'proc/user.h', '<unistd.h>',
     'uid_t', [])
 
-AddSyscall('getegid', 30, 'getegid', 'proc/user.h', 'user/process.h',
+AddSyscall('getegid', 30, 'getegid', 'proc/user.h', '<unistd.h>',
     'gid_t', [])
 
-AddSyscall('setreuid', 31, 'setreuid', 'proc/user.h', 'user/process.h',
+AddSyscall('setreuid', 31, 'setreuid', 'proc/user.h', '<unistd.h>',
     'int', ['uid_t:ruid:u', 'uid_t:euid:u'])
 
-AddSyscall('setregid', 32, 'setregid', 'proc/user.h', 'user/process.h',
+AddSyscall('setregid', 32, 'setregid', 'proc/user.h', '<unistd.h>',
     'int', ['gid_t:rgid:u', 'gid_t:egid:u'])
 
-AddSyscall('getpgid', 33, 'getpgid', 'proc/group.h', 'user/process.h',
+AddSyscall('getpgid', 33, 'getpgid', 'proc/group.h', '<unistd.h>',
     'pid_t', ['pid_t:pid:u'])
 
-AddSyscall('setpgid', 34, 'setpgid', 'proc/group.h', 'user/process.h',
+AddSyscall('setpgid', 34, 'setpgid', 'proc/group.h', '<unistd.h>',
     'int', ['pid_t:pid:u', 'pid_t:pgid:u'])
