@@ -14,8 +14,8 @@
 
 // Contains the POSIX-required definitions and constants for <signal.h>.  To be
 // shared between kernel and user code.
-#ifndef APOO_PROC_SIGNAL_POSIX_SIGNAL_H
-#define APOO_PROC_SIGNAL_POSIX_SIGNAL_H
+#ifndef APOO_USER_POSIX_SIGNAL_H
+#define APOO_USER_POSIX_SIGNAL_H
 
 #include <stdint.h>
 

@@ -19,7 +19,7 @@
 #include "common/errno.h"
 #include "common/types.h"
 #include "proc/process.h"
-#include "proc/signal/posix_signal.h"
+#include "user/posix_signal.h"
 
 static inline int ksigemptyset(sigset_t* set) {
   *set = 0;
