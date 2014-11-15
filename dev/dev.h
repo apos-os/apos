@@ -15,6 +15,8 @@
 #ifndef APOO_DEV_DEV_H
 #define APOO_DEV_DEV_H
 
+#include <stdint.h>
+
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
 #include "memory/memobj.h"
@@ -26,15 +28,15 @@
 #define DEVICE_MAJOR_ATA 2
 #define DEVICE_MAJOR_RAMDISK 3
 #define DEVICE_MAJOR_TTY 4
-#define DEVICE_ID_UNKNOWN -1
+#define DEVICE_ID_UNKNOWN UINT16_MAX
 
 // A device identifier.
-typedef struct {
-  int major;
-  int minor;
-} apos_dev_t;
+typedef uint32_t apos_dev_t;
 
-apos_dev_t mkdev(int major, int minor);
+apos_dev_t mkdev(unsigned int major, unsigned int minor);
+
+static inline unsigned int major(apos_dev_t dev) { return dev >> 16; }
+static inline unsigned int minor(apos_dev_t dev) { return dev & 0xFFFF; }
 
 // Register a new block or character device.  The minor id may be
 // DEVICE_ID_UNKNOWN, in which case one will be chosen.  The id of the created

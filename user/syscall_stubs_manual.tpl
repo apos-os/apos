@@ -18,7 +18,7 @@
 // mknod needs a special stub to decompose the apos_dev_t struct.
 // TODO(aoates): use POSIX dev_t here.
 int mknod(const char* path, uint32_t mode, apos_dev_t dev) {
-  return _do_mknod(path, mode, dev.major, dev.minor);
+  return _do_mknod(path, mode, major(dev), minor(dev));
 }
 
 void _exit(int status) {

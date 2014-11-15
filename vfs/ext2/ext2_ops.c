@@ -923,7 +923,7 @@ static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
 static void ext2_set_device(ext2_inode_t* inode, apos_dev_t dev) {
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
-  const uint32_t block = (dev.major << 16) | (dev.minor & 0xFFFF);
+  const uint32_t block = (major(dev) << 16) | (minor(dev) & 0xFFFF);
   inode->i_block[0] = block;
 }
 

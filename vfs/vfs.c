@@ -57,8 +57,7 @@ void vfs_fs_init(fs_t* fs) {
   kmemset(fs, 0, sizeof(fs));
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
-  fs->dev.major = DEVICE_ID_UNKNOWN;
-  fs->dev.minor = DEVICE_ID_UNKNOWN;
+  fs->dev = mkdev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
 }
 
 #define VNODE_CACHE_SIZE 1000
@@ -104,7 +103,7 @@ void vfs_init() {
     if (dev_get_block(dev)) {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
-        KLOG(INFO, "Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
+        KLOG(INFO, "Found ext2 FS on device %d.%d\n", major(dev), minor(dev));
         g_fs_table[VFS_ROOT_FS].fs = ext2fs;
         success = 1;
         break;
@@ -844,7 +843,7 @@ int vfs_isatty(int fd) {
   if (result) return result;
 
   if (file->vnode->type == VNODE_CHARDEV &&
-      file->vnode->dev.major == DEVICE_MAJOR_TTY) {
+      major(file->vnode->dev) == DEVICE_MAJOR_TTY) {
     return 1;
   } else {
     return 0;

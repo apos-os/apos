@@ -65,6 +65,53 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
   }
 }
 
+static void dev_test(void) {
+  KTEST_BEGIN("device numbering test");
+  apos_dev_t dev = mkdev(0, 0);
+  KEXPECT_EQ(0, major(dev));
+  KEXPECT_EQ(0, minor(dev));
+
+  dev = mkdev(0, 5);
+  KEXPECT_EQ(0, major(dev));
+  KEXPECT_EQ(5, minor(dev));
+
+  dev = mkdev(5, 0);
+  KEXPECT_EQ(5, major(dev));
+  KEXPECT_EQ(0, minor(dev));
+
+  dev = mkdev(UINT8_MAX, 0);
+  KEXPECT_EQ(UINT8_MAX, major(dev));
+  KEXPECT_EQ(0, minor(dev));
+
+  dev = mkdev(0, UINT8_MAX);
+  KEXPECT_EQ(0, major(dev));
+  KEXPECT_EQ(UINT8_MAX, minor(dev));
+
+  dev = mkdev(UINT16_MAX, 0);
+  KEXPECT_EQ(UINT16_MAX, major(dev));
+  KEXPECT_EQ(0, minor(dev));
+
+  dev = mkdev(0, UINT16_MAX);
+  KEXPECT_EQ(0, major(dev));
+  KEXPECT_EQ(UINT16_MAX, minor(dev));
+
+  dev = mkdev(UINT16_MAX, UINT16_MAX - 1);
+  KEXPECT_EQ(UINT16_MAX, major(dev));
+  KEXPECT_EQ(UINT16_MAX - 1, minor(dev));
+
+  dev = mkdev(UINT16_MAX - 1, UINT16_MAX);
+  KEXPECT_EQ(UINT16_MAX - 1, major(dev));
+  KEXPECT_EQ(UINT16_MAX, minor(dev));
+
+  dev = mkdev(UINT16_MAX, UINT16_MAX);
+  KEXPECT_EQ(UINT16_MAX, major(dev));
+  KEXPECT_EQ(UINT16_MAX, minor(dev));
+
+  dev = mkdev(UINT16_MAX, UINT16_MAX);
+  KEXPECT_EQ(UINT16_MAX, major(dev));
+  KEXPECT_EQ(UINT16_MAX, minor(dev));
+}
+
 // Test that we correctly refcount parent directories when calling vfs_open().
 static void open_parent_refcount_test(void) {
   KTEST_BEGIN("vfs_open(): parent refcount test");
@@ -1509,11 +1556,11 @@ static void fs_dev_test(void) {
 
   vnode_t* vnode = vfs_get_root_vnode();
   if (kstrcmp(vnode->fs->fstype, "ramfs") == 0) {
-    KEXPECT_EQ(DEVICE_ID_UNKNOWN, vnode->fs->dev.major);
-    KEXPECT_EQ(DEVICE_ID_UNKNOWN, vnode->fs->dev.minor);
+    KEXPECT_EQ(DEVICE_ID_UNKNOWN, major(vnode->fs->dev));
+    KEXPECT_EQ(DEVICE_ID_UNKNOWN, minor(vnode->fs->dev));
   } else {
-    KEXPECT_NE(DEVICE_ID_UNKNOWN, vnode->fs->dev.major);
-    KEXPECT_NE(DEVICE_ID_UNKNOWN, vnode->fs->dev.minor);
+    KEXPECT_NE(DEVICE_ID_UNKNOWN, major(vnode->fs->dev));
+    KEXPECT_NE(DEVICE_ID_UNKNOWN, minor(vnode->fs->dev));
   }
 
   vfs_put(vnode);
@@ -1524,13 +1571,13 @@ static void KEXPECT_STAT_EQ(const apos_stat_t* A, const apos_stat_t* B) {
   KEXPECT_EQ(0, result);
 
   if (result != 0) {
-    KEXPECT_EQ(A->st_dev.major, B->st_dev.major);
-    KEXPECT_EQ(A->st_dev.minor, B->st_dev.minor);
+    KEXPECT_EQ(major(A->st_dev), major(B->st_dev));
+    KEXPECT_EQ(minor(A->st_dev), minor(B->st_dev));
     KEXPECT_EQ(A->st_ino, B->st_ino);
     KEXPECT_EQ(A->st_mode, B->st_mode);
     KEXPECT_EQ(A->st_nlink, B->st_nlink);
-    KEXPECT_EQ(A->st_rdev.major, B->st_rdev.major);
-    KEXPECT_EQ(A->st_rdev.minor, B->st_rdev.minor);
+    KEXPECT_EQ(major(A->st_rdev), major(B->st_rdev));
+    KEXPECT_EQ(minor(A->st_rdev), minor(B->st_rdev));
     KEXPECT_EQ(A->st_size, B->st_size);
     KEXPECT_EQ(A->st_blksize, B->st_blksize);
     KEXPECT_EQ(A->st_blocks, B->st_blocks);
@@ -1621,8 +1668,8 @@ static void lstat_test(void) {
   KEXPECT_EQ(vfs_get_vnode_for_path(kCharDevFile), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFCHR, stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
-  KEXPECT_EQ(1, stat.st_rdev.major);
-  KEXPECT_EQ(2, stat.st_rdev.minor);
+  KEXPECT_EQ(1, major(stat.st_rdev));
+  KEXPECT_EQ(2, minor(stat.st_rdev));
   KEXPECT_GE(stat.st_size, 0);
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);
@@ -1642,8 +1689,8 @@ static void lstat_test(void) {
   KEXPECT_EQ(vfs_get_vnode_for_path(kBlockDevFile), stat.st_ino);
   KEXPECT_EQ(VFS_S_IFBLK, stat.st_mode);
   KEXPECT_EQ(1, stat.st_nlink);
-  KEXPECT_EQ(3, stat.st_rdev.major);
-  KEXPECT_EQ(4, stat.st_rdev.minor);
+  KEXPECT_EQ(3, major(stat.st_rdev));
+  KEXPECT_EQ(4, minor(stat.st_rdev));
   KEXPECT_GE(stat.st_size, 0);
   KEXPECT_GT(stat.st_blksize, 0);
   KEXPECT_EQ(0, stat.st_blocks);
@@ -2761,6 +2808,8 @@ void vfs_test(void) {
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_enable_blocking(vfs_get_root_fs());
   }
+
+  dev_test();
 
   open_test();
   mkdir_test();
