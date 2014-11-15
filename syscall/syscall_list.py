@@ -90,8 +90,10 @@ class SyscallArg(object):
 class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
       header, user_header, return_type, args,
-      generate_user_stub=True):
+      stubs_to_generate=None):
     assert len(args) <= MAX_ARGS
+    if stubs_to_generate is None: stubs_to_generate = ['L1', 'L2']
+
     self.name = name
     self.number = number
     self.kernel_name = kernel_name
@@ -99,7 +101,7 @@ class SyscallDef(object):
     self.user_header = user_header
     self.return_type = return_type
     self.args = [SyscallArg(x) for x in args]
-    self.generate_user_stub = generate_user_stub
+    self.stubs_to_generate = stubs_to_generate
 
 
 def AddSyscall(*args, **kwargs):
@@ -142,7 +144,7 @@ AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h',
     'mode_t:mode:u',
     'int:dev_major:u',
     'int:dev_minor:u'],
-    generate_user_stub=False)
+    stubs_to_generate=['L1'])
 
 AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -192,7 +194,7 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     '',
     'int', [
     'int:status:u'],
-    generate_user_stub=False)
+    stubs_to_generate=['L1'])
 
 # The execve wrapper manually checks its arguments so that it can clean up the
 # allocated kernel copies properly (since on success, do_execve will never
@@ -233,7 +235,8 @@ AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [
     'const sigset_t*:old_mask:br:sizeof(sigset_t)',
-    'const user_context_t*:context:br:sizeof(user_context_t)'])
+    'const user_context_t*:context:br:sizeof(user_context_t)'],
+    stubs_to_generate=[])
 
 AddSyscall('alarm', 22, 'proc_alarm', 'proc/alarm.h',
     '<unistd.h>',

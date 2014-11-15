@@ -42,15 +42,15 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 
 {{ common.include_headers(SYSCALLS, 'user_header') }}
 
-{# First, generate L1 stubs for *all* syscalls. #}
-{% for syscall in SYSCALLS %}
+{# First, generate L1 stubs for most syscalls. #}
+{% for syscall in SYSCALLS if 'L1' in syscall.stubs_to_generate %}
 {{ syscall_impl(syscall) }}
 
 {% endfor %}
 
 {# Next, generate L2 stubs (that call the L1 stubs) for all syscalls that want
   an automatically generated user-mode stub. #}
-{% for syscall in SYSCALLS if syscall.generate_user_stub %}
+{% for syscall in SYSCALLS if 'L2' in syscall.stubs_to_generate %}
 {{ common.syscall_decl(syscall, '') }} {
   return _do_{{ syscall.name }}({{ syscall.args | join(', ', 'name') }});
 }
