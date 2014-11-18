@@ -16,12 +16,14 @@
 #ifndef APOO_USER_VFS_DIRENT_H
 #define APOO_USER_VFS_DIRENT_H
 
+#include "user/posix_types.h"
+
 // A single directory entry, as produced by a concrete filesystem.
 struct dirent {
-  int vnode;  // vnode number
-  int offset;  // Offset from *start* of directory to the next dirent_t.
-  int length;  // Length of this dirent_t
-  char name[];  // Null-terminated filename
+  ino_t d_ino;  // vnode number
+  off_t d_offset;  // Offset from *start* of directory to the next dirent_t.
+  off_t d_length;  // Length of this dirent_t
+  char d_name[];  // Null-terminated filename
 };
 typedef struct dirent dirent_t;
 

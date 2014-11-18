@@ -110,12 +110,12 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
   while (offset < parent->len) {
     dirent_t* d = (dirent_t*)(inode->data + offset);
 
-    if (kstrcmp(d->name, name) == 0) {
-      KASSERT(d->vnode >= 0);
+    if (kstrcmp(d->d_name, name) == 0) {
+      KASSERT(d->d_ino >= 0);
       return d;
     }
 
-    offset += d->length;
+    offset += d->d_length;
   }
 
   return 0;
@@ -129,10 +129,10 @@ static int count_dirents(vnode_t* parent) {
   int offset = 0, count = 0;
   while (offset < parent->len) {
     dirent_t* d = (dirent_t*)(inode->data + offset);
-    if (d->vnode >= 0) {
+    if (d->d_ino >= 0) {
       count++;
     }
-    offset += d->length;
+    offset += d->d_length;
   }
 
   return count;
@@ -149,9 +149,9 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   // heap then copy it over, but whatever.
   const int dlen = sizeof(dirent_t) + kstrlen(name) + 1;
   dirent_t* dirent = (dirent_t*)kmalloc(dlen);
-  dirent->vnode = inode;
-  dirent->length = dlen;
-  kstrcpy(dirent->name, name);
+  dirent->d_ino = inode;
+  dirent->d_length = dlen;
+  kstrcpy(dirent->d_name, name);
 
   // Append the new dirent.
   int result = ramfs_write(parent, parent->len, dirent, dlen);
@@ -302,7 +302,7 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   if (!d) {
     return -ENOENT;
   }
-  return d->vnode;
+  return d->d_ino;
 }
 
 int ramfs_mknod(vnode_t* parent, const char* name,
@@ -385,9 +385,9 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
-  KASSERT(d->vnode >= 0 && d->vnode < RAMFS_MAX_INODES);
-  KASSERT(ramfs->inodes[d->vnode].vnode.num != -1);
-  vnode_t* dir_vnode = (vnode_t*)&ramfs->inodes[d->vnode];
+  KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
+  KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
+  vnode_t* dir_vnode = (vnode_t*)&ramfs->inodes[d->d_ino];
   if (dir_vnode->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
@@ -404,14 +404,14 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
   // Remove '.' and '..'.
   dirent_t* child_dirent = find_dirent(dir_vnode, ".");
-  child_dirent->vnode = -1;
-  child_dirent->name[0] = '\0';
+  child_dirent->d_ino = -1;
+  child_dirent->d_name[0] = '\0';
   child_dirent = find_dirent(dir_vnode, "..");
-  child_dirent->vnode = -1;
-  child_dirent->name[0] = '\0';
+  child_dirent->d_ino = -1;
+  child_dirent->d_name[0] = '\0';
 
-  d->vnode = -1;
-  d->name[0] = '\0';
+  d->d_ino = -1;
+  d->d_name[0] = '\0';
   return 0;
 }
 
@@ -476,18 +476,18 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
-  KASSERT(d->vnode >= 0 && d->vnode < RAMFS_MAX_INODES);
-  KASSERT(ramfs->inodes[d->vnode].vnode.num != -1);
-  if (ramfs->inodes[d->vnode].vnode.type == VNODE_DIRECTORY) {
+  KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
+  KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
+  if (ramfs->inodes[d->d_ino].vnode.type == VNODE_DIRECTORY) {
     return -EISDIR;
   }
 
   // TODO(aoates): how do we propagate this back to all the vnode_t*s floating
   // around pointing to this inode?
-  ramfs->inodes[d->vnode].link_count--;
+  ramfs->inodes[d->d_ino].link_count--;
 
-  d->vnode = -1;
-  d->name[0] = '\0';
+  d->d_ino = -1;
+  d->d_name[0] = '\0';
   return 0;
 }
 
@@ -504,22 +504,22 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
     dirent_t* d = (dirent_t*)(node->data + offset);
-    if (d->vnode != -1 && bytes_read + d->length >= bufsize) {
+    if (d->d_ino != -1 && bytes_read + d->d_length >= bufsize) {
       // If the buffer is too small to fit even one entry, return -EINVAL.
       if (bytes_read == 0) {
         return -EINVAL;
       }
       break;
     }
-    offset += d->length;
-    d->offset = offset;
+    offset += d->d_length;
+    d->d_offset = offset;
 
     // Skip dirents that have been unlinked.
-    if (d->vnode == -1) {
+    if (d->d_ino == -1) {
       continue;
     }
-    kmemcpy(buf + bytes_read, d, d->length);
-    bytes_read += d->length;
+    kmemcpy(buf + bytes_read, d, d->d_length);
+    bytes_read += d->d_length;
   }
 
   return bytes_read;

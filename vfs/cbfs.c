@@ -648,10 +648,10 @@ static int getdents_from_list(const list_t* list, const int entries_to_skip,
     if (bytes_written + dirent_len > outbufsize) break;
 
     dirent_t* d = (dirent_t*)(((const char*)outbuf) + bytes_written);
-    d->vnode = entry->num;
-    d->offset = offset + idx + 1;
-    d->length = dirent_len;
-    kstrcpy(d->name, entry->name);
+    d->d_ino = entry->num;
+    d->d_offset = offset + idx + 1;
+    d->d_length = dirent_len;
+    kstrcpy(d->d_name, entry->name);
 
     bytes_written += dirent_len;
     n = n->next;

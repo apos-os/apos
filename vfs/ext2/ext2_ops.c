@@ -1472,7 +1472,7 @@ static int ext2_getdents_iter_func(void* arg,
 
   // Update the offset of the *last* dirent we wrote to the current offset.
   if (getdents_args->last_dirent) {
-    getdents_args->last_dirent->offset = offset;
+    getdents_args->last_dirent->d_offset = offset;
   }
 
   const int dirent_out_size =
@@ -1483,12 +1483,12 @@ static int ext2_getdents_iter_func(void* arg,
   }
 
   dirent_t* dirent_out = (dirent_t*)getdents_args->buf;
-  dirent_out->vnode = ltoh32(little_endian_dirent->inode);
-  dirent_out->offset = -1;  // We'll update this in the next iteration.
-  dirent_out->length = dirent_out_size;
-  kstrncpy(dirent_out->name, little_endian_dirent->name,
+  dirent_out->d_ino = ltoh32(little_endian_dirent->inode);
+  dirent_out->d_offset = -1;  // We'll update this in the next iteration.
+  dirent_out->d_length = dirent_out_size;
+  kstrncpy(dirent_out->d_name, little_endian_dirent->name,
            little_endian_dirent->name_len);
-  dirent_out->name[little_endian_dirent->name_len] = '\0';
+  dirent_out->d_name[little_endian_dirent->name_len] = '\0';
 
   getdents_args->buf += dirent_out_size;
   getdents_args->bufsize -= dirent_out_size;
@@ -1517,13 +1517,13 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
   if (result) {
     if (arg.last_dirent) {
-      KASSERT(arg.last_dirent->offset >= offset);
+      KASSERT(arg.last_dirent->d_offset >= offset);
     }
   } else if (arg.last_dirent != 0x0) {
     // If we went through all the dirents possible, set the offset to the end of
     // the file.
-    KASSERT(arg.last_dirent->offset == -1);
-    arg.last_dirent->offset = vnode->len;
+    KASSERT(arg.last_dirent->d_offset == -1);
+    arg.last_dirent->d_offset = vnode->len;
   }
   return bufsize - arg.bufsize;
 }

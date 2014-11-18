@@ -198,15 +198,15 @@ void dev_init_fs() {
     int buf_offset = 0;
     while (buf_offset < len) {
       dirent_t* ent = (dirent_t*)(buf + buf_offset);
-      buf_offset += ent->length;
+      buf_offset += ent->d_length;
 
-      if (kstrcmp(ent->name, ".") == 0 ||
-          kstrcmp(ent->name, "..") == 0) {
+      if (kstrcmp(ent->d_name, ".") == 0 ||
+          kstrcmp(ent->d_name, "..") == 0) {
         continue;
       }
 
       char full_path[VFS_MAX_PATH_LENGTH];
-      ksprintf(full_path, "/dev/%s", ent->name);
+      ksprintf(full_path, "/dev/%s", ent->d_name);
       const int result = vfs_unlink(full_path);
       if (result < 0) {
         klogf("warning: unable to remove %s\n", full_path);

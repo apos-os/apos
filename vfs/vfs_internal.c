@@ -148,19 +148,19 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
     int buf_offset = 0;
     do {
       ent = (dirent_t*)(&dirent_buf[buf_offset]);
-      buf_offset += ent->length;
-    } while (ent->vnode != inode && buf_offset < len);
+      buf_offset += ent->d_length;
+    } while (ent->d_ino != inode && buf_offset < len);
     // Keep going until we find a match.
-    offset = ent->offset;
-  } while (ent->vnode != inode);
+    offset = ent->d_offset;
+  } while (ent->d_ino != inode);
 
   // Found a match, copy its name.
-  const int name_len = kstrlen(ent->name);
+  const int name_len = kstrlen(ent->d_name);
   if (len < name_len + 1) {
     return -ERANGE;
   }
 
-  kstrcpy(name_out, ent->name);
+  kstrcpy(name_out, ent->d_name);
   return name_len;
 }
 

@@ -145,16 +145,16 @@ static int testfs_getdents(vnode_t* vnode, int offset, void* outbuf,
   const int kBufLen = 2 * sizeof(dirent_t) + 2 + 3;
   char buf[kBufLen];
   dirent_t* d = (dirent_t*)(&buf[0]);
-  d->vnode = 0;
-  d->offset = sizeof(dirent_t) + 2;
-  d->length = d->offset;
-  kstrcpy(d->name, ".");
+  d->d_ino = 0;
+  d->d_offset = sizeof(dirent_t) + 2;
+  d->d_length = d->d_offset;
+  kstrcpy(d->d_name, ".");
 
-  d = (dirent_t*)(&buf[d->offset]);
-  d->vnode = 0;
-  d->offset = kBufLen;
-  d->length = sizeof(dirent_t) + 3;
-  kstrcpy(d->name, "..");
+  d = (dirent_t*)(&buf[d->d_offset]);
+  d->d_ino = 0;
+  d->d_offset = kBufLen;
+  d->d_length = sizeof(dirent_t) + 3;
+  kstrcpy(d->d_name, "..");
 
   if (offset >= kBufLen) return 0;
   int len = min(kBufLen, outbufsize);

@@ -766,9 +766,9 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
       int bufpos = 0;
       while (bufpos < result) {
         ent = (dirent_t*)((char*)buf + bufpos);
-        bufpos += ent->length;
+        bufpos += ent->d_length;
       }
-      file->pos = ent->offset;
+      file->pos = ent->d_offset;
     }
   }
 
