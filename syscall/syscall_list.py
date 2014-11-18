@@ -172,7 +172,7 @@ AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'int:offset:u',
     'int:whence:u'])
 
-AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '',
+AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
     'int', [
     'int:fd:u',
     'dirent_t*:buf:bw:count',
