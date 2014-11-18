@@ -183,6 +183,21 @@ AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
     'size_t:size:u'],
     stubs_to_generate=['L1'])
 
+AddSyscall('stat', 35, 'vfs_stat', 'vfs/vfs.h', '<sys/stat.h>',
+    'int', [
+    'const char*:path:s',
+    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+
+AddSyscall('lstat', 36, 'vfs_lstat', 'vfs/vfs.h', '<sys/stat.h>',
+    'int', [
+    'const char*:path:s',
+    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+
+AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
+    'int', [
+    'int:fd:u',
+    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+
 AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
