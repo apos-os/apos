@@ -138,14 +138,12 @@ AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', '<sys/stat.h>',
     'mode_t:mode:u',
     ])
 
-AddSyscall('mknod', 4, 'vfs_mknod_wrapper', 'syscall/wrappers.h',
+AddSyscall('mknod', 4, 'vfs_mknod', 'vfs/vfs.h',
     '<sys/stat.h>',
     'int', [
     'const char*:path:s',
     'mode_t:mode:u',
-    'int:dev_major:u',
-    'int:dev_minor:u'],
-    stubs_to_generate=['L1'])
+    'apos_dev_t:dev:u'])
 
 AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
