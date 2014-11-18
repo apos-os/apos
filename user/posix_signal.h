@@ -19,7 +19,11 @@
 
 #include <stdint.h>
 
-#include "user/errors.h"
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/errors.h"
+#else
+#  include <apos/errors.h>
+#endif
 
 typedef uint32_t sigset_t;
 typedef void (*sighandler_t)(int);

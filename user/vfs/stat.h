@@ -15,8 +15,13 @@
 #ifndef APOO_VFS_STAT_H
 #define APOO_VFS_STAT_H
 
-#include "user/dev.h"
-#include "user/posix_types.h"
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/dev.h"
+#  include "user/posix_types.h"
+#else
+#  include <apos/dev.h>
+#  include <apos/posix_types.h>
+#endif
 
 typedef uint32_t mode_t;
 

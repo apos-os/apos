@@ -38,6 +38,7 @@ env.Append(CFLAGS =
 env.Append(ASFLAGS = ['--gen-debug'])
 
 env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
+env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
 env.Append(CPPPATH = ['#', '#/archs/%s' % env['ARCH'], '#/archs/common'])
 
 def AposAddSources(env, srcs, subdirs):

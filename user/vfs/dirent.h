@@ -16,7 +16,11 @@
 #ifndef APOO_USER_VFS_DIRENT_H
 #define APOO_USER_VFS_DIRENT_H
 
-#include "user/posix_types.h"
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/posix_types.h"
+#else
+#  include <apos/posix_types.h>
+#endif
 
 // A single directory entry, as produced by a concrete filesystem.
 struct dirent {

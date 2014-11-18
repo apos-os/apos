@@ -37,8 +37,13 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 }
 {%- endmacro %}
 
-#include "user/syscall.h"
-#include "user/syscalls.h"
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/syscall.h"
+#  include "user/syscalls.h"
+#else
+#  include <apos/syscall.h>
+#  include <apos/syscalls.h>
+#endif
 
 {{ common.include_headers(SYSCALLS, 'user_header') }}
 
