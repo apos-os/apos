@@ -25,6 +25,7 @@ SUBDIRS = [
   'proc',
   'syscall',
   'test',
+  'user',
   'util',
   'vfs',
 ]
