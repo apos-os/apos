@@ -637,7 +637,7 @@ int vfs_unlink(const char* path) {
   return error;
 }
 
-int vfs_read(int fd, void* buf, int count) {
+int vfs_read(int fd, void* buf, size_t count) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -671,7 +671,7 @@ int vfs_read(int fd, void* buf, int count) {
   return result;
 }
 
-int vfs_write(int fd, const void* buf, int count) {
+int vfs_write(int fd, const void* buf, size_t count) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;

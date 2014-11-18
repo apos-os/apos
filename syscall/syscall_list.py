@@ -158,13 +158,13 @@ AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'void*:buf:bw:count',
-    'int:count:u'])
+    'size_t:count:u'])
 
 AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'const void*:buf:br:count',
-    'int:count:u'])
+    'size_t:count:u'])
 
 AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'int', [
