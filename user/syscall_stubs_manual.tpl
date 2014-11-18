@@ -15,6 +15,20 @@
  #-}
 
 {# Manually implemented syscall stubs. -#}
+#include <stdarg.h>
+
+// open needs a special stub to handle the varargs third argument.
+int open(const char* path, int flags, ...) {
+  mode_t mode = 0;
+  if (flags & O_CREAT) {
+    va_list args;
+    va_start(args, flags);
+    mode = va_arg(args, mode_t);
+    va_end(args);
+  }
+  return _do_open(path, flags, mode);
+}
+
 // mknod needs a special stub to decompose the apos_dev_t struct.
 // TODO(aoates): use POSIX dev_t here.
 int mknod(const char* path, uint32_t mode, apos_dev_t dev) {
