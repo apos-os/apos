@@ -112,7 +112,7 @@ def AddSyscall(*args, **kwargs):
 
 
 AddSyscall('syscall_test', 0, 'do_syscall_test',
-    'syscall/test.h', 'user/test.h',
+    'syscall/test.h', '<apos/test.h>',
     'long', [
     'long:arg1:u',
     'long:arg2:u',
