@@ -776,7 +776,8 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
   return result;
 }
 
-int vfs_getcwd(char* path_out, int size) {
+int vfs_getcwd(char* path_out, size_t size) {
+  // TODO(aoates): size_t all the way down.
   return vfs_get_vnode_dir_path(proc_current()->cwd, path_out, size);
 }
 

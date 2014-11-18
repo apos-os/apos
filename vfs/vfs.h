@@ -83,7 +83,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count);
 
 // Return the full pathname of the current working directory in the given
 // buffer.  Returns the length of the string on success, or -error on error.
-int vfs_getcwd(char* path_out, int size);
+int vfs_getcwd(char* path_out, size_t size);
 
 // Change the current working directory.  Returns 0 on success, or -error.
 int vfs_chdir(const char* path);

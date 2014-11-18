@@ -34,3 +34,12 @@ __attribute__((noreturn)) void _exit(int status) {
   // Should never get here.  Loop to make the compiler happy.
   while (1) {}
 }
+
+char* getcwd(char* buf, size_t size) {
+  int result = _do_getcwd(buf, size);
+  if (result) {
+    // TODO(aoates): set errno
+    return NULL;
+  }
+  return buf;
+}

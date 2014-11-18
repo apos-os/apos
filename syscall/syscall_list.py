@@ -180,7 +180,8 @@ AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
 AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'char*:path_out:bw:size',
-    'int:size:u'])
+    'size_t:size:u'],
+    stubs_to_generate=['L1'])
 
 AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
