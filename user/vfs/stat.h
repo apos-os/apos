@@ -50,16 +50,15 @@ typedef uint32_t mode_t;
 #define VFS_S_ISVTX     0x001000
 
 // Information about a vnode.
-// TODO(aoates): add ino_t and off_t typedefs
 typedef struct {
   apos_dev_t st_dev;    // Device containing the file.
-  int st_ino;           // Inode number.
+  ino_t st_ino;         // Inode number.
   mode_t st_mode;       // File type and mode.
-  int st_nlink;         // Number of hard links.
+  nlink_t st_nlink;     // Number of hard links.
   uid_t st_uid;         // File owner.
   gid_t st_gid;         // File group.
   apos_dev_t st_rdev;   // Device ID (if special file).
-  int st_size;          // Size, in bytes.
+  off_t st_size;        // Size, in bytes.
   blksize_t st_blksize; // File system block size.
   blkcnt_t st_blocks;   // Number of 512B blocks allocated.
 } apos_stat_t;
