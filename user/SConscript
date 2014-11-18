@@ -24,4 +24,6 @@ env.StaticLibrary('apos_user_dummy', [
 env.Tpl('syscall_stubs.tpl')
 env.Tpl('syscall_stubs_manual.tpl')
 
+env.Tpl('#/user/syscalls.h', 'syscalls.h.tpl')
+
 Return([])
