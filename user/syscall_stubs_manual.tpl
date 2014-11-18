@@ -21,6 +21,8 @@ int mknod(const char* path, uint32_t mode, apos_dev_t dev) {
   return _do_mknod(path, mode, major(dev), minor(dev));
 }
 
-void _exit(int status) {
+__attribute__((noreturn)) void _exit(int status) {
   _do_exit(status);
+  // Should never get here.  Loop to make the compiler happy.
+  while (1) {}
 }
