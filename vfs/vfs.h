@@ -74,7 +74,7 @@ int vfs_write(int fd, const void* buf, size_t count);
 
 // Seek the fd to the given offset, relative to whence.  Returns 0 on success,
 // or -error.
-int vfs_seek(int fd, int offset, int whence);
+off_t vfs_seek(int fd, off_t offset, int whence);
 
 // Read several dirent_t structures from the file descriptor into the given
 // buffer.  count is the size of the buffer in bytes.  Returns the number of

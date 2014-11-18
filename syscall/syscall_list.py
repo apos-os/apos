@@ -198,6 +198,12 @@ AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int:fd:u',
     'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
 
+AddSyscall('lseek', 38, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
+    'off_t', [
+    'int:fd:u',
+    'off_t:offset:u',
+    'int:whence:u'])
+
 AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])

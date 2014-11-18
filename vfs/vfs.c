@@ -705,7 +705,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
   return result;
 }
 
-int vfs_seek(int fd, int offset, int whence) {
+off_t vfs_seek(int fd, off_t offset, int whence) {
   if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR &&
       whence != VFS_SEEK_END) {
     return -EINVAL;

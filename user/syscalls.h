@@ -32,6 +32,7 @@
 #define SYS_STAT 35
 #define SYS_LSTAT 36
 #define SYS_FSTAT 37
+#define SYS_LSEEK 38
 #define SYS_CHDIR 12
 #define SYS_FORK 13
 #define SYS_EXIT 14
