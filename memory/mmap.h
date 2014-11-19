@@ -19,20 +19,7 @@
 
 #include "common/types.h"
 #include "memory/flags.h"
-
-#define PROT_NONE MEM_PROT_NONE
-#define PROT_EXEC MEM_PROT_EXEC
-#define PROT_READ MEM_PROT_READ
-#define PROT_WRITE MEM_PROT_WRITE
-#define PROT_ALL MEM_PROT_ALL
-
-// Exactly one of MAP_SHARED and MAP_PRIVATE must be given.
-#define MAP_SHARED 0x01
-#define MAP_PRIVATE 0x02
-
-// Other flags.
-#define MAP_FIXED 0x04
-#define MAP_ANONYMOUS 0x08
+#include "user/mmap.h"
 
 // Create a mapping in the current process.
 //

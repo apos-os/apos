@@ -16,12 +16,17 @@
 #ifndef APOO_MEMORY_FLAGS_H
 #define APOO_MEMORY_FLAGS_H
 
+#include "user/mmap.h"
+
 // Protection flags.  Not all are supported on all platforms.
-#define MEM_PROT_NONE 0x00
-#define MEM_PROT_READ 0x01
-#define MEM_PROT_WRITE 0x02
-#define MEM_PROT_EXEC 0x04
+#define MEM_PROT_NONE PROT_NONE
+#define MEM_PROT_READ PROT_READ
+#define MEM_PROT_WRITE PROT_WRITE
+#define MEM_PROT_EXEC PROT_EXEC
 #define MEM_PROT_ALL (MEM_PROT_READ | MEM_PROT_WRITE | MEM_PROT_EXEC)
+
+// TODO(aoates): get rid of this one.
+#define PROT_ALL MEM_PROT_ALL
 
 // Who can access a memory location.
 typedef enum {
