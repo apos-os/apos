@@ -56,5 +56,7 @@
 #define SYS_SETREGID 32
 #define SYS_GETPGID 33
 #define SYS_SETPGID 34
+#define SYS_MMAP 39
+#define SYS_MUNMAP 40
 
 #endif

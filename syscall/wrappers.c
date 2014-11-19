@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "memory/mmap.h"
 #include "proc/exec.h"
 #include "proc/process.h"
 #include "syscall/dmz.h"
@@ -121,4 +122,10 @@ pid_t getppid_wrapper() {
   } else {
     return proc_current()->id;
   }
+}
+
+int mmap_wrapper(void** addr_inout, addr_t length, int prot, int flags,
+                 int fd, addr_t offset) {
+  void* addr = *addr_inout;
+  return do_mmap(addr, length, prot, flags, fd, offset, addr_inout);
 }

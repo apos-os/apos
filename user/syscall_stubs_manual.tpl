@@ -43,3 +43,12 @@ char* getcwd(char* buf, size_t size) {
   }
   return buf;
 }
+
+void* mmap(void *addr, size_t len, int prot, int flags, int fd, off_t offset) {
+  int result = _do_mmap(&addr, len, prot, flags, fd, offset);
+  if (result) {
+    // TODO(aoates): set errno
+    return NULL;
+  }
+  return addr;
+}
