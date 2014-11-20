@@ -26,6 +26,7 @@
 #define VFS_O_APPEND   0x04
 #define VFS_O_CREAT    0x08
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
+#define VFS_O_EXCL     0x20  // TODO(aoates)
 
 // Used internally (i.e. not exposed to userspace) to indicate a file that will
 // be executed.  If set, vfs_open will check that the file is executable.
