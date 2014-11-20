@@ -18,11 +18,12 @@ Import('env')
 # make sure they can be compiled.
 env.StaticLibrary('apos_user_dummy', [
     'syscall.s',
-    'syscall_stubs.tpl.c',
+    'newlib_syscall_stubs.tpl.c',
     ])
 
 env.Tpl('syscall_stubs.tpl')
-env.Tpl('syscall_stubs_manual.tpl')
+env.Tpl('newlib_syscall_stubs.tpl')
+env.Tpl('newlib_syscall_stubs_manual.tpl')
 
 env.Tpl('#/user/syscalls.h', 'syscalls.h.tpl')
 

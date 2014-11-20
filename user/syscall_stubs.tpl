@@ -52,14 +52,3 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 {{ syscall_impl(syscall) }}
 
 {% endfor %}
-
-{# Next, generate L2 stubs (that call the L1 stubs) for all syscalls that want
-  an automatically generated user-mode stub. #}
-{% for syscall in SYSCALLS if 'L2' in syscall.stubs_to_generate %}
-{{ common.syscall_decl(syscall, '') }} {
-  return _do_{{ syscall.name }}({{ syscall.args | join(', ', 'name') }});
-}
-
-{% endfor %}
-
-{% include "user/syscall_stubs_manual.tpl" %}

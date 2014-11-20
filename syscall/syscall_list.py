@@ -125,8 +125,7 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'int', [
     'const char*:path:s',
     'int:flags:u',
-    'mode_t:mode:u'],
-    stubs_to_generate=['L1'])
+    'mode_t:mode:u'])
 
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
     'int', [
