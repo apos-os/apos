@@ -55,7 +55,7 @@ typedef uint32_t mode_t;
 #define VFS_S_ISVTX     0x001000
 
 // Information about a vnode.
-typedef struct {
+struct stat {
   apos_dev_t st_dev;    // Device containing the file.
   ino_t st_ino;         // Inode number.
   mode_t st_mode;       // File type and mode.
@@ -66,6 +66,8 @@ typedef struct {
   off_t st_size;        // Size, in bytes.
   blksize_t st_blksize; // File system block size.
   blkcnt_t st_blocks;   // Number of 512B blocks allocated.
-} apos_stat_t;
+};
+// TODO(aoates): replace all instances of apos_stat_t with stat_t.
+typedef struct stat apos_stat_t;
 
 #endif
