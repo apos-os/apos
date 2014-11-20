@@ -32,6 +32,10 @@ char* _getcwd_r(struct _reent* reent_ptr, char* buf, size_t size) {
   return buf;
 }
 
+char* getcwd(char* buf, size_t size) {
+  return _getcwd_r(_REENT, buf, size);
+}
+
 void* _mmap_r(struct _reent* reent_ptr, void *addr, size_t len, int prot,
               int flags, int fd, off_t offset) {
   int result = _do_mmap(&addr, len, prot, flags, fd, offset);
@@ -40,4 +44,9 @@ void* _mmap_r(struct _reent* reent_ptr, void *addr, size_t len, int prot,
     return NULL;
   }
   return addr;
+}
+
+void* mmap(void *addr, size_t len, int prot,
+    int flags, int fd, off_t offset) {
+  return _mmap_r(_REENT, addr, len, prot, flags, fd, offset);
 }

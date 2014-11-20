@@ -40,3 +40,13 @@
 {% endfor %}
 
 {% include "user/newlib_syscall_stubs_manual.tpl" %}
+
+{# Finally, generate L3 stubs (that call the L2 reentrant stubs) for syscalls
+  that newlib doesn't define itself. #}
+{% for syscall in SYSCALLS if 'L3' in syscall.stubs_to_generate %}
+{{ common.syscall_decl(syscall, '') }} {
+  return _{{ syscall.name }}_r(_REENT{% if syscall.args %}, {{ syscall.args |
+      join(', ', 'name') }}{% endif %});
+}
+
+{% endfor %}

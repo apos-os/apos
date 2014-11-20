@@ -90,9 +90,15 @@ class SyscallArg(object):
 class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
       header, user_header, return_type, args,
-      stubs_to_generate=None, can_fail=True):
+      stubs_to_generate=None, can_fail=True,
+      newlib_defined=False):
     assert len(args) <= MAX_ARGS
-    if stubs_to_generate is None: stubs_to_generate = ['L1', 'L2']
+    if stubs_to_generate is None:
+      # syscalls defined in newlib will have their own 'L3' stubs already.
+      if newlib_defined:
+        stubs_to_generate = ['L1', 'L2']
+      else:
+        stubs_to_generate = ['L1', 'L2', 'L3']
 
     self.name = name
     self.number = number
@@ -127,11 +133,13 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'int', [
     'const char*:path:s',
     'int:flags:u',
-    'mode_t:mode:u'])
+    'mode_t:mode:u'],
+    newlib_defined=True)
 
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
     'int', [
-    'int:fd:u'])
+    'int:fd:u'],
+    newlib_defined=True)
 
 AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
@@ -152,19 +160,22 @@ AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', '<unistd.h>',
 
 AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', '<unistd.h>',
     'int', [
-    'const char*:path:s'])
+    'const char*:path:s'],
+    newlib_defined=True)
 
 AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'void*:buf:bw:count',
-    'size_t:count:u'])
+    'size_t:count:u'],
+    newlib_defined=True)
 
 AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'int:fd:u',
     'const void*:buf:br:count',
-    'size_t:count:u'])
+    'size_t:count:u'],
+    newlib_defined=True)
 
 AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -187,7 +198,8 @@ AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('stat', 35, 'vfs_stat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'],
+    newlib_defined=True)
 
 AddSyscall('lstat', 36, 'vfs_lstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
@@ -197,20 +209,22 @@ AddSyscall('lstat', 36, 'vfs_lstat', 'vfs/vfs.h', '<sys/stat.h>',
 AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'int:fd:u',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'],
+    newlib_defined=True)
 
 AddSyscall('lseek', 38, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'off_t', [
     'int:fd:u',
     'off_t:offset:u',
-    'int:whence:u'])
+    'int:whence:u'],
+    newlib_defined=True)
 
 AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
 
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
-    'pid_t', [])
+    'pid_t', [], newlib_defined=True)
 
 AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     '',
@@ -228,24 +242,28 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
     'const char*:path:u', # Manually checked by the wrapper.
     'char* const*:argv:u',  # Manually checked by the wrapper.
     'char* const*:envp:u',  # Manually checked by the wrapper.
-    ])
+    ],
+    newlib_defined=True)
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'pid_t', [], can_fail=False);
+    'pid_t', [], can_fail=False,
+    newlib_defined=True)
 
 AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'pid_t', [], can_fail=False);
+    'pid_t', [], can_fail=False)
 
 AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', '<unistd.h>',
     'int', [
-    'int:fd:u'])
+    'int:fd:u'],
+    newlib_defined=True)
 
 AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', '<signal.h>',
     'int', [
     'pid_t:pid:u',
-    'int:sig:u'])
+    'int:sig:u'],
+    newlib_defined=True)
 
 AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     '<signal.h>',
