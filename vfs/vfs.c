@@ -295,7 +295,7 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
   return size_out;
 }
 
-int vfs_open(const char* path, uint32_t flags, ...) {
+int vfs_open(const char* path, int flags, ...) {
   // Check arguments.
   const uint32_t mode = flags & VFS_MODE_MASK;
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {

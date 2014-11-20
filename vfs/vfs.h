@@ -44,7 +44,7 @@ void vfs_init(void);
 //
 // If VFS_O_CREAT is given in |flags|, an additional argument (of type mode_t)
 // is taken to be the mode of the file to be created (if necessary).
-int vfs_open(const char* path, uint32_t flags, ...);
+int vfs_open(const char* path, int flags, ...);
 
 // Close the given file descriptor.  Returns 0 on success, or -error.
 int vfs_close(int fd);
