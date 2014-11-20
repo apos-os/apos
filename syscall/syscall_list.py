@@ -90,7 +90,7 @@ class SyscallArg(object):
 class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
       header, user_header, return_type, args,
-      stubs_to_generate=None):
+      stubs_to_generate=None, can_fail=True):
     assert len(args) <= MAX_ARGS
     if stubs_to_generate is None: stubs_to_generate = ['L1', 'L2']
 
@@ -102,6 +102,8 @@ class SyscallDef(object):
     self.return_type = return_type
     self.args = [SyscallArg(x) for x in args]
     self.stubs_to_generate = stubs_to_generate
+    # Determines if we do errno conversion.
+    self.can_fail = can_fail
 
 
 def AddSyscall(*args, **kwargs):
@@ -214,7 +216,8 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     '',
     'int', [
     'int:status:u'],
-    stubs_to_generate=['L1'])
+    stubs_to_generate=['L1'],
+    can_fail=False)
 
 # The execve wrapper manually checks its arguments so that it can clean up the
 # allocated kernel copies properly (since on success, do_execve will never
@@ -229,11 +232,11 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'pid_t', []);
+    'pid_t', [], can_fail=False);
 
 AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'pid_t', []);
+    'pid_t', [], can_fail=False);
 
 AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -261,7 +264,8 @@ AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
 AddSyscall('alarm', 22, 'proc_alarm', 'proc/alarm.h',
     '<unistd.h>',
     'unsigned int', [
-    'unsigned int:seconds:u'])
+    'unsigned int:seconds:u'],
+    can_fail=False)
 
 AddSyscall('setuid', 23, 'setuid', 'proc/user.h', '<unistd.h>',
     'int', ['uid_t:uid:u'])
@@ -270,10 +274,10 @@ AddSyscall('setgid', 24, 'setgid', 'proc/user.h', '<unistd.h>',
     'int', ['gid_t:gid:u'])
 
 AddSyscall('getuid', 25, 'getuid', 'proc/user.h', '<unistd.h>',
-    'uid_t', [])
+    'uid_t', [], can_fail=False)
 
 AddSyscall('getgid', 26, 'getgid', 'proc/user.h', '<unistd.h>',
-    'gid_t', [])
+    'gid_t', [], can_fail=False)
 
 AddSyscall('seteuid', 27, 'seteuid', 'proc/user.h', '<unistd.h>',
     'int', ['uid_t:uid:u'])
@@ -282,10 +286,10 @@ AddSyscall('setegid', 28, 'setegid', 'proc/user.h', '<unistd.h>',
     'int', ['gid_t:gid:u'])
 
 AddSyscall('geteuid', 29, 'geteuid', 'proc/user.h', '<unistd.h>',
-    'uid_t', [])
+    'uid_t', [], can_fail=False)
 
 AddSyscall('getegid', 30, 'getegid', 'proc/user.h', '<unistd.h>',
-    'gid_t', [])
+    'gid_t', [], can_fail=False)
 
 AddSyscall('setreuid', 31, 'setreuid', 'proc/user.h', '<unistd.h>',
     'int', ['uid_t:ruid:u', 'uid_t:euid:u'])

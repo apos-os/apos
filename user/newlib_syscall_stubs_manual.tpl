@@ -26,7 +26,7 @@ __attribute__((noreturn)) void _exit(int status) {
 char* _getcwd_r(struct _reent* reent_ptr, char* buf, size_t size) {
   int result = _do_getcwd(buf, size);
   if (result) {
-    // TODO(aoates): set errno
+    reent_ptr->_errno = -result;
     return NULL;
   }
   return buf;
@@ -36,7 +36,7 @@ void* _mmap_r(struct _reent* reent_ptr, void *addr, size_t len, int prot,
               int flags, int fd, off_t offset) {
   int result = _do_mmap(&addr, len, prot, flags, fd, offset);
   if (result) {
-    // TODO(aoates): set errno
+    reent_ptr->_errno = -result;
     return NULL;
   }
   return addr;

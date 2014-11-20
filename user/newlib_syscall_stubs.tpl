@@ -27,7 +27,14 @@
   an automatically generated user-mode stub. #}
 {% for syscall in SYSCALLS if 'L2' in syscall.stubs_to_generate %}
 {{ syscall.return_type }} _{{ syscall.name }}_r(struct _reent* reent_ptr{% if syscall.args %}, {{ common.decl_args(syscall.args) }}{% endif %}) {
-  return _do_{{ syscall.name }}({{ syscall.args | join(', ', 'name') }});
+  {{ syscall.return_type }} result = _do_{{ syscall.name }}({{ syscall.args | join(', ', 'name') }});
+  {% if syscall.can_fail -%}
+  if (result < 0) {
+    reent_ptr->_errno = -result;
+    result = -1;
+  }
+  {% endif -%}
+  return result;
 }
 
 {% endfor %}
