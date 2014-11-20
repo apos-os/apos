@@ -17,10 +17,11 @@
 #define APOO_USER_VFS_VFS_H
 
 // Syscall flags.
-#define VFS_MODE_MASK  0x03
+#define VFS_MODE_MASK  0x03  // TODO(aoates): replace with VFS_O_ACCMODE
 #define VFS_O_RDONLY   0x00
 #define VFS_O_WRONLY   0x01
 #define VFS_O_RDWR     0x02
+#define VFS_O_ACCMODE  VFS_MODE_MASK
 
 #define VFS_O_APPEND   0x04
 #define VFS_O_CREAT    0x08
