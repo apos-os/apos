@@ -35,6 +35,8 @@ base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -std=gnu11 -g3 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
               "-Wstrict-prototypes"))
+base_env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
+base_env.Append(CPPPATH = ['#'])
 
 env = base_env.Clone()
 
@@ -44,8 +46,7 @@ env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
 
 env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
-env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
-env.Append(CPPPATH = ['#', '#/archs/%s' % env['ARCH'], '#/archs/common'])
+env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common'])
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
