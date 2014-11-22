@@ -64,14 +64,14 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
     do {
       dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
       num_dirents++;
-      buf_offset += ent->length;
+      buf_offset += ent->d_length;
 
-      KLOG("dirent: %d -> %s\n", ent->vnode, ent->name);
+      KLOG("dirent: %d -> %s\n", ent->d_ino, ent->d_name);
 
       // Ignore the root lost+found, dev, and proc directories.
-      if (kstrcmp(ent->name, "lost+found") == 0 ||
-          kstrcmp(ent->name, "dev") == 0 ||
-          kstrcmp(ent->name, "proc") == 0) {
+      if (kstrcmp(ent->d_name, "lost+found") == 0 ||
+          kstrcmp(ent->d_name, "dev") == 0 ||
+          kstrcmp(ent->d_name, "proc") == 0) {
         num_dirents--;
         continue;
       }
@@ -79,13 +79,13 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
       // Make sure the dirent matches one of the expected.
       int i;
       for (i = 0; i < expected_num; ++i) {
-        if (kstrcmp(ent->name, expected[i].name) == 0) {
+        if (kstrcmp(ent->d_name, expected[i].name) == 0) {
           break;
         }
       }
       if (i == expected_num) {
         KLOG("Error: dirent <%d, %s> doesn't match any expected dirents\n",
-             ent->vnode, ent->name);
+             ent->d_ino, ent->d_name);
         return 1;
       }
     } while (buf_offset < len);

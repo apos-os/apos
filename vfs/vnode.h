@@ -16,12 +16,12 @@
 #ifndef APOO_VFS_VNODE_H
 #define APOO_VFS_VNODE_H
 
-#include "common/posix_types.h"
-#include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
+#include "user/dev.h"
+#include "user/posix_types.h"
+#include "user/vfs/stat.h"
 #include "vfs/fsid.h"
-#include "vfs/stat.h"
 
 struct fs;
 typedef struct fs fs_t;

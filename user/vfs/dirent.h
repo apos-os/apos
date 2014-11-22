@@ -12,15 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_USER_FORK_H
-#define APOO_USER_FORK_H
+// Directory entries.
+#ifndef APOO_USER_VFS_DIRENT_H
+#define APOO_USER_VFS_DIRENT_H
 
-#include "common/posix_types.h"
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/posix_types.h"
+#else
+#  include <apos/posix_types.h>
+#endif
 
-pid_t fork(void);
-void _exit(int status);
-int execve(const char* path, char* const argv[], char* const envp[]);
-pid_t getpid(void);
-pid_t getppid(void);
+// A single directory entry, as produced by a concrete filesystem.
+struct dirent {
+  ino_t d_ino;  // vnode number
+  off_t d_offset;  // Offset from *start* of directory to the next dirent_t.
+  off_t d_length;  // Length of this dirent_t
+  char d_name[];  // Null-terminated filename
+};
+typedef struct dirent dirent_t;
 
 #endif

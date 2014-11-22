@@ -12,23 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_MEMORY_MMAP_H
-#define APOO_MEMORY_MMAP_H
+{# PY_IMPORT syscall/syscall_list.py #}
+{% import "syscall/common_macros.tpl" as common %}
+// List of syscalls.  Generated from user/syscalls.h.tpl.
+#ifndef APOO_USER_SYSCALLS_H
+#define APOO_USER_SYSCALLS_H
 
-#include <stdint.h>
-
-#include "common/types.h"
-#include "memory/flags.h"
-#include "user/mmap.h"
-
-// Create a mapping in the current process.
-//
-// Currently, addr must be NULL, prot must include PORT_EXEC | PROT_READ,
-// and flags must be MAP_SHARED and a combination of other flags.
-int do_mmap(void* addr, addr_t length, int prot, int flags,
-            int fd, addr_t offset, void** addr_out);
-
-// Unmap a portion of a previous mapping.
-int do_munmap(void* addr, addr_t length);
+// All syscalls and their numbers.
+{% for syscall in SYSCALLS %}
+#define {{ common.syscall_constant(syscall) }} {{ syscall.number }}
+{% endfor %}
 
 #endif

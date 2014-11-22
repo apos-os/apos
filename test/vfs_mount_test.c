@@ -101,7 +101,7 @@ static void basic_mount_test(void) {
   KEXPECT_NE(0, stat.st_mode & VFS_S_IFDIR);
 
   KTEST_BEGIN("vfs mount: creating character device in mounted fs");
-  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/a/chr", VFS_S_IFCHR, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/a/chr", VFS_S_IFCHR, makedev(0, 0)));
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/chr", &stat));
   KEXPECT_NE(0, stat.st_mode & VFS_S_IFCHR);
 
@@ -149,13 +149,13 @@ static void basic_mount_test(void) {
 
 
   KTEST_BEGIN("vfs mount: cannot mount on character device");
-  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/chr", VFS_S_IFCHR, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/chr", VFS_S_IFCHR, makedev(0, 0)));
   KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/chr", ramfsB));
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/chr"));
 
 
   KTEST_BEGIN("vfs mount: cannot mount on block device");
-  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/blk", VFS_S_IFBLK, mkdev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/blk", VFS_S_IFBLK, makedev(0, 0)));
   KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/blk", ramfsB));
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/blk"));
 

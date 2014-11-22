@@ -28,6 +28,7 @@
 #include "proc/process.h"
 #include "proc/wait.h"
 #include "memory/memory.h"
+#include "dev/dev.h"
 #include "dev/ps2.h"
 #include "dev/keyboard/ps2_keyboard.h"
 #include "dev/keyboard/keyboard.h"

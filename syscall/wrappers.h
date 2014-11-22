@@ -18,14 +18,9 @@
 
 #include <stdint.h>
 
-#include "dev/dev.h"
 #include "proc/exit.h"
+#include "user/dev.h"
 #include "vfs/vfs.h"
-
-static inline int vfs_mknod_wrapper(const char* path, mode_t mode,
-                                    int dev_major, int dev_minor) {
-  return vfs_mknod(path, mode, mkdev(dev_major, dev_minor));
-}
 
 // TODO(aoates): if we have more void syscalls, we should add support directly
 // to the syscall templates.
@@ -42,5 +37,10 @@ int execve_wrapper(const char* path_checked,
 
 pid_t getpid_wrapper(void);
 pid_t getppid_wrapper(void);
+
+// Wrapper for do_mmap that combines the address in and out arguments to squeeze
+// into the syscall limit.
+int mmap_wrapper(void** addr_inout, addr_t length, int prot, int flags,
+                 int fd, addr_t offset);
 
 #endif

@@ -21,7 +21,7 @@
 #include "common/math.h"
 #include "memory/block_cache.h"
 #include "memory/kmalloc.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/fs.h"
 
 #include "vfs/ext2/ext2-internal.h"
@@ -916,14 +916,14 @@ static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
   const int major = (inode->i_block[0] >> 16) & 0xFFFF;
   const int minor = inode->i_block[0] & 0xFFFF;
-  return mkdev(major, minor);
+  return makedev(major, minor);
 }
 
 // Set the device for an inode.
 static void ext2_set_device(ext2_inode_t* inode, apos_dev_t dev) {
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
-  const uint32_t block = (dev.major << 16) | (dev.minor & 0xFFFF);
+  const uint32_t block = (major(dev) << 16) | (minor(dev) & 0xFFFF);
   inode->i_block[0] = block;
 }
 
@@ -1195,7 +1195,7 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
 
   ext2_inode_t child_inode;
   const int child_inode_num =
-      make_inode(fs, parent->num, EXT2_S_IFDIR, mkdev(0, 0), &child_inode);
+      make_inode(fs, parent->num, EXT2_S_IFDIR, makedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }
@@ -1472,7 +1472,7 @@ static int ext2_getdents_iter_func(void* arg,
 
   // Update the offset of the *last* dirent we wrote to the current offset.
   if (getdents_args->last_dirent) {
-    getdents_args->last_dirent->offset = offset;
+    getdents_args->last_dirent->d_offset = offset;
   }
 
   const int dirent_out_size =
@@ -1483,12 +1483,12 @@ static int ext2_getdents_iter_func(void* arg,
   }
 
   dirent_t* dirent_out = (dirent_t*)getdents_args->buf;
-  dirent_out->vnode = ltoh32(little_endian_dirent->inode);
-  dirent_out->offset = -1;  // We'll update this in the next iteration.
-  dirent_out->length = dirent_out_size;
-  kstrncpy(dirent_out->name, little_endian_dirent->name,
+  dirent_out->d_ino = ltoh32(little_endian_dirent->inode);
+  dirent_out->d_offset = -1;  // We'll update this in the next iteration.
+  dirent_out->d_length = dirent_out_size;
+  kstrncpy(dirent_out->d_name, little_endian_dirent->name,
            little_endian_dirent->name_len);
-  dirent_out->name[little_endian_dirent->name_len] = '\0';
+  dirent_out->d_name[little_endian_dirent->name_len] = '\0';
 
   getdents_args->buf += dirent_out_size;
   getdents_args->bufsize -= dirent_out_size;
@@ -1517,13 +1517,13 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
   if (result) {
     if (arg.last_dirent) {
-      KASSERT(arg.last_dirent->offset >= offset);
+      KASSERT(arg.last_dirent->d_offset >= offset);
     }
   } else if (arg.last_dirent != 0x0) {
     // If we went through all the dirents possible, set the offset to the end of
     // the file.
-    KASSERT(arg.last_dirent->offset == -1);
-    arg.last_dirent->offset = vnode->len;
+    KASSERT(arg.last_dirent->d_offset == -1);
+    arg.last_dirent->d_offset = vnode->len;
   }
   return bufsize - arg.bufsize;
 }
@@ -1574,7 +1574,7 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
                  EXT2_S_IFLNK | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR |
                      EXT2_S_IRGRP | EXT2_S_IWGRP | EXT2_S_IXGRP | EXT2_S_IROTH |
                      EXT2_S_IWOTH | EXT2_S_IXOTH,
-                 mkdev(0, 0), &child_inode);
+                 makedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }

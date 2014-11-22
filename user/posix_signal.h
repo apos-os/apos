@@ -14,10 +14,16 @@
 
 // Contains the POSIX-required definitions and constants for <signal.h>.  To be
 // shared between kernel and user code.
-#ifndef APOO_PROC_SIGNAL_POSIX_SIGNAL_H
-#define APOO_PROC_SIGNAL_POSIX_SIGNAL_H
+#ifndef APOO_USER_POSIX_SIGNAL_H
+#define APOO_USER_POSIX_SIGNAL_H
 
 #include <stdint.h>
+
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/errors.h"
+#else
+#  include <apos/errors.h>
+#endif
 
 typedef uint32_t sigset_t;
 typedef void (*sighandler_t)(int);
@@ -68,5 +74,44 @@ typedef struct sigaction {
 
 _Static_assert(sizeof(sigset_t) * 8 >= SIGMAX,
                "sigset_t too small to hold all signals");
+
+static inline int ksigemptyset(sigset_t* set) {
+  *set = 0;
+  return 0;
+}
+
+static inline int ksigfillset(sigset_t* set) {
+  _Static_assert(sizeof(sigset_t) == sizeof(uint32_t),
+                 "ksigfillset only implemented for uint32_t");
+  *set = 0xFFFFFFFF;
+  return 0;
+}
+
+static inline int ksigaddset(sigset_t* set, int signum) {
+  if (signum <= SIGNULL || signum > SIGMAX) {
+    return -EINVAL;
+  }
+  *set |= (1 << (signum - 1));
+  return 0;
+}
+
+static inline int ksigdelset(sigset_t* set, int signum) {
+  if (signum <= SIGNULL || signum > SIGMAX) {
+    return -EINVAL;
+  }
+  *set &= ~(1 << (signum - 1));
+  return 0;
+}
+
+static inline int ksigismember(const sigset_t* set, int signum) {
+  if (signum <= SIGNULL || signum > SIGMAX) {
+    return -EINVAL;
+  }
+  if (*set & (1 << (signum - 1))) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
 
 #endif

@@ -12,16 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Kernel unit-testing framework.
-#ifndef APOO_KTEST_H
-#define APOO_KTEST_H
+// Kernel unit-testing framework.  Adapted for user-space tests.
+#ifndef APOO_USER_KTEST_H
+#define APOO_USER_KTEST_H
 
-#include "common/errno.h"
-#include "common/klog.h"
-#include "common/kprintf.h"
-#include "common/kstring.h"
-
-#define KLOG(...) klogfm(KL_TEST, INFO, __VA_ARGS__)
+#include <errno.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 #define STR2(x) #x
 #define STR(x) STR2(x)
@@ -77,15 +76,15 @@ typedef enum {
   char bval_str[50]; \
   /* If the expected value is written as hex, print the actual value as hex too.*/ \
   if (PRINT_TYPE(a) == PRINT_HEX || \
-      kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) { \
-    ksprintf(aval_str, "0x%s", utoa_hex((uint32_t)aval)); \
-    ksprintf(bval_str, "0x%s", utoa_hex((uint32_t)bval)); \
+      strncmp(astr, "0x", 2) == 0 || strncmp(bstr, "0x", 2) == 0) { \
+    sprintf(aval_str, "%#x", (int)aval); \
+    sprintf(bval_str, "%#x", (int)bval); \
   } else if (PRINT_TYPE(a) == PRINT_SIGNED || \
-             kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) { \
+             strncmp(astr, "-", 1) == 0 || strncmp(bstr, "-", 1) == 0) { \
     kexpect_int_to_string((int)aval, (int)bval, aval_str, bval_str); \
   } else { \
-    kstrcpy(aval_str, utoa((uint32_t)aval)); \
-    kstrcpy(bval_str, utoa((uint32_t)bval)); \
+    sprintf(aval_str, "%d", (int)aval); \
+    sprintf(bval_str, "%d", (int)bval); \
   } \
   kexpect_((aval op bval), name, astr, bstr, aval_str, bval_str, "", opstr, __FILE__, STR(__LINE__)); \
 } while(0)
@@ -112,22 +111,21 @@ void ktest_finish_all(void);
 
 static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
                                          char* bval_str) {
-  const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
-  const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
+  const int aval_in_range = 0; //aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
+  const int bval_in_range = 0; //bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
 
-  kstrcpy(aval_str, itoa(aval));
+  sprintf(aval_str, "%d", aval);
   if ((bval_in_range || bval == 0) && aval_in_range) {
-    kstrcat(aval_str, " (");
-    kstrcat(aval_str, errorname(-aval));
-    kstrcat(aval_str, ")");
+    strcat(aval_str, " (");
+    strcat(aval_str, strerror(-aval));
+    strcat(aval_str, ")");
   }
-  kstrcpy(bval_str, itoa(bval));
+  sprintf(bval_str, "%d", bval);
   if ((aval_in_range || aval == 0) && bval_in_range) {
-    kstrcat(bval_str, " (");
-    kstrcat(bval_str, errorname(-bval));
-    kstrcat(bval_str, ")");
+    strcat(bval_str, " (");
+    strcat(bval_str, strerror(-bval));
+    strcat(bval_str, ")");
   }
 }
-
 
 #endif

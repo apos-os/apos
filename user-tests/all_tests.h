@@ -11,19 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#ifndef APOO_USER_TESTS_ALL_TESTS_H
+#define APOO_USER_TESTS_ALL_TESTS_H
 
-// Common types required by POSIX to be defined in <sys/types.h>.
-#ifndef APOO_COMMON_POSIX_TYPES_H
-#define APOO_COMMON_POSIX_TYPES_H
-
-// Process ID.
-typedef int pid_t;
-
-// User and group IDs.
-typedef int uid_t;
-typedef int gid_t;
-
-typedef int blksize_t;
-typedef int blkcnt_t;
+void syscall_errno_test(void);
+int exit_status_test(void);
 
 #endif

@@ -19,7 +19,7 @@
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
 
@@ -43,7 +43,7 @@ static vnode_t* get_vnode(int inode) {
 
 static void basic_test(void) {
   KTEST_BEGIN("basic read/write test");
-  int vnode_num = g_fs->mknod(g_root, "testA", VNODE_REGULAR, mkdev(0,0));
+  int vnode_num = g_fs->mknod(g_root, "testA", VNODE_REGULAR, makedev(0,0));
   vnode_t* n = get_vnode(vnode_num);
 
   // Empty read test.
@@ -156,18 +156,18 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
     int bufidx = 0;
     while (bufidx < result) {
       dirent_t* d = (dirent_t*)&dirents_buf[bufidx];
-      offset = d->offset;
+      offset = d->d_offset;
       dirents_seen++;
       if (expected_idx < n) {
         expected_name = va_arg(args, const char*);
         expected_vnode = va_arg(args, int);
-        KEXPECT_STREQ(expected_name, d->name);
-        KEXPECT_EQ(expected_vnode, d->vnode);
+        KEXPECT_STREQ(expected_name, d->d_name);
+        KEXPECT_EQ(expected_vnode, d->d_ino);
 
         expected_idx++;
       }
 
-      bufidx += d->length;
+      bufidx += d->d_length;
     }
 
     // Read another chunk.
@@ -190,14 +190,14 @@ static void directory_test(void) {
   KEXPECT_NE(0, (uint32_t)n);
 
   KTEST_BEGIN("create() test");
-  vnode_t* file = get_vnode(g_fs->mknod(n, "file1", VNODE_REGULAR, mkdev(0,0)));
+  vnode_t* file = get_vnode(g_fs->mknod(n, "file1", VNODE_REGULAR, makedev(0,0)));
 
   // TODO(aoates): verify link counts.
   EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file1", file->num);
 
   // Create another file.
   vnode_t* file2 =
-      get_vnode(g_fs->mknod(n, "file2", VNODE_REGULAR, mkdev(0, 0)));
+      get_vnode(g_fs->mknod(n, "file2", VNODE_REGULAR, makedev(0, 0)));
   EXPECT_DIRENTS(n, 4, ".", n->num, "..", g_root->num,
                  "file1", file->num, "file2", file2->num);
 

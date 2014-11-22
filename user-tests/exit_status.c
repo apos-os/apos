@@ -11,24 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <unistd.h>
+#include <sys/wait.h>
 
-#ifndef APOO_MEMORY_MMAP_H
-#define APOO_MEMORY_MMAP_H
+#include "ktest.h"
+#include "all_tests.h"
 
-#include <stdint.h>
+int exit_status_test() {
+  KTEST_SUITE_BEGIN("Exit status");
 
-#include "common/types.h"
-#include "memory/flags.h"
-#include "user/mmap.h"
+  KTEST_BEGIN("exit() sets status");
+  int status = 0;
+  pid_t pid;
+  if ((pid = fork()) == 0) {
+    exit(3);
+  }
+  KEXPECT_EQ(pid, wait(&status));
+  KEXPECT_EQ(3, status);
 
-// Create a mapping in the current process.
-//
-// Currently, addr must be NULL, prot must include PORT_EXEC | PROT_READ,
-// and flags must be MAP_SHARED and a combination of other flags.
-int do_mmap(void* addr, addr_t length, int prot, int flags,
-            int fd, addr_t offset, void** addr_out);
+  KTEST_BEGIN("return from main() sets status");
+  if ((pid = fork()) == 0) {
+    return 4;
+  }
+  KEXPECT_EQ(pid, wait(&status));
+  KEXPECT_EQ(4, status);
 
-// Unmap a portion of a previous mapping.
-int do_munmap(void* addr, addr_t length);
-
-#endif
+  return 0;
+}

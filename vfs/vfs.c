@@ -18,12 +18,13 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
+#include "dev/dev.h"
 #include "memory/kmalloc.h"
 #include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/user.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/ext2/ext2.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
@@ -57,8 +58,7 @@ void vfs_fs_init(fs_t* fs) {
   kmemset(fs, 0, sizeof(fs));
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
-  fs->dev.major = DEVICE_ID_UNKNOWN;
-  fs->dev.minor = DEVICE_ID_UNKNOWN;
+  fs->dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
 }
 
 #define VNODE_CACHE_SIZE 1000
@@ -100,11 +100,11 @@ void vfs_init() {
   fs_t* ext2fs = ext2_create_fs();
   int success = 0;
   for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
-    const apos_dev_t dev = mkdev(DEVICE_MAJOR_ATA, i);
+    const apos_dev_t dev = makedev(DEVICE_MAJOR_ATA, i);
     if (dev_get_block(dev)) {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
-        KLOG(INFO, "Found ext2 FS on device %d.%d\n", dev.major, dev.minor);
+        KLOG(INFO, "Found ext2 FS on device %d.%d\n", major(dev), minor(dev));
         g_fs_table[VFS_ROOT_FS].fs = ext2fs;
         success = 1;
         break;
@@ -295,7 +295,7 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
   return size_out;
 }
 
-int vfs_open(const char* path, uint32_t flags, ...) {
+int vfs_open(const char* path, int flags, ...) {
   // Check arguments.
   const uint32_t mode = flags & VFS_MODE_MASK;
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
@@ -353,7 +353,7 @@ int vfs_open(const char* path, uint32_t flags, ...) {
 
       // Create it.
       int child_inode =
-          parent->fs->mknod(parent, base_name, VNODE_REGULAR, mkdev(0, 0));
+          parent->fs->mknod(parent, base_name, VNODE_REGULAR, makedev(0, 0));
       if (child_inode < 0) {
         kmutex_unlock(&parent->mutex);
         VFS_PUT_AND_CLEAR(parent);
@@ -637,7 +637,7 @@ int vfs_unlink(const char* path) {
   return error;
 }
 
-int vfs_read(int fd, void* buf, int count) {
+int vfs_read(int fd, void* buf, size_t count) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -671,7 +671,7 @@ int vfs_read(int fd, void* buf, int count) {
   return result;
 }
 
-int vfs_write(int fd, const void* buf, int count) {
+int vfs_write(int fd, const void* buf, size_t count) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -705,7 +705,7 @@ int vfs_write(int fd, const void* buf, int count) {
   return result;
 }
 
-int vfs_seek(int fd, int offset, int whence) {
+off_t vfs_seek(int fd, off_t offset, int whence) {
   if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR &&
       whence != VFS_SEEK_END) {
     return -EINVAL;
@@ -766,9 +766,9 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
       int bufpos = 0;
       while (bufpos < result) {
         ent = (dirent_t*)((char*)buf + bufpos);
-        bufpos += ent->length;
+        bufpos += ent->d_length;
       }
-      file->pos = ent->offset;
+      file->pos = ent->d_offset;
     }
   }
 
@@ -776,7 +776,8 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
   return result;
 }
 
-int vfs_getcwd(char* path_out, int size) {
+int vfs_getcwd(char* path_out, size_t size) {
+  // TODO(aoates): size_t all the way down.
   return vfs_get_vnode_dir_path(proc_current()->cwd, path_out, size);
 }
 
@@ -844,7 +845,7 @@ int vfs_isatty(int fd) {
   if (result) return result;
 
   if (file->vnode->type == VNODE_CHARDEV &&
-      file->vnode->dev.major == DEVICE_MAJOR_TTY) {
+      major(file->vnode->dev) == DEVICE_MAJOR_TTY) {
     return 1;
   } else {
     return 0;

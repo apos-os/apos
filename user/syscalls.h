@@ -12,12 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// List of syscalls.  Manually generated from syscall/syscalls.h.tpl.
-//
-// To regenerate:
-//   util/tpl_gen.py syscall/syscalls.h.tpl > syscall/syscalls.h
-#ifndef APOO_SYSCALL_SYSCALLS_H
-#define APOO_SYSCALL_SYSCALLS_H
+// List of syscalls.  Generated from user/syscalls.h.tpl.
+#ifndef APOO_USER_SYSCALLS_H
+#define APOO_USER_SYSCALLS_H
 
 // All syscalls and their numbers.
 #define SYS_SYSCALL_TEST 0
@@ -32,9 +29,14 @@
 #define SYS_SEEK 9
 #define SYS_GETDENTS 10
 #define SYS_GETCWD 11
+#define SYS_STAT 35
+#define SYS_LSTAT 36
+#define SYS_FSTAT 37
+#define SYS_LSEEK 38
 #define SYS_CHDIR 12
 #define SYS_FORK 13
 #define SYS_EXIT 14
+#define SYS_WAIT 41
 #define SYS_EXECVE 15
 #define SYS_GETPID 16
 #define SYS_GETPPID 17
@@ -55,5 +57,7 @@
 #define SYS_SETREGID 32
 #define SYS_GETPGID 33
 #define SYS_SETPGID 34
+#define SYS_MMAP 39
+#define SYS_MUNMAP 40
 
 #endif

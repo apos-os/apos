@@ -82,7 +82,7 @@ int ext2_read_superblock(ext2fs_t* fs) {
   }
 
   KLOG(INFO, "ext2 superblock found on dev %d.%d:\n",
-       fs->fs.dev.major, fs->fs.dev.minor);
+       major(fs->fs.dev), minor(fs->fs.dev));
   ext2_superblock_log(INFO, &fs->sb);
 
   if (fs->sb.s_rev_level != EXT2_DYNAMIC_REV) {

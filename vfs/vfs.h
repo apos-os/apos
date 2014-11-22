@@ -18,39 +18,20 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#include "common/posix_types.h"
-#include "dev/dev.h"
 #include "memory/memobj.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
-#include "vfs/dirent.h"
+#include "user/dev.h"
+#include "user/posix_types.h"
+#include "user/vfs/dirent.h"
+#include "user/vfs/stat.h"
+#include "user/vfs/vfs.h"
 #include "vfs/fs.h"
-#include "vfs/stat.h"
 #include "vfs/vnode.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024
 #define VFS_MAX_LINK_RECURSION 20
-
-// Syscall flags.
-// TODO(aoates): once we have userland, these should be the same constants as
-// are used there.
-#define VFS_MODE_MASK  0x03
-#define VFS_O_RDONLY   0x00
-#define VFS_O_WRONLY   0x01
-#define VFS_O_RDWR     0x02
-
-#define VFS_O_APPEND   0x04
-#define VFS_O_CREAT    0x08
-#define VFS_O_TRUNC    0x10  // TODO(aoates)
-
-// Used internally (i.e. not exposed to userspace) to indicate a file that will
-// be executed.  If set, vfs_open will check that the file is executable.
-#define VFS_O_INTERNAL_EXEC 0x20
-
-#define VFS_SEEK_SET 1
-#define VFS_SEEK_CUR 2
-#define VFS_SEEK_END 3
 
 // Initialize the VFS.
 void vfs_init(void);
@@ -63,7 +44,7 @@ void vfs_init(void);
 //
 // If VFS_O_CREAT is given in |flags|, an additional argument (of type mode_t)
 // is taken to be the mode of the file to be created (if necessary).
-int vfs_open(const char* path, uint32_t flags, ...);
+int vfs_open(const char* path, int flags, ...);
 
 // Close the given file descriptor.  Returns 0 on success, or -error.
 int vfs_close(int fd);
@@ -84,16 +65,16 @@ int vfs_unlink(const char* path);
 // Read up to count bytes from the given fd into buf, and advance the file
 // position by that amount.  Returns the actual number of bytes read on success,
 // or -error.
-int vfs_read(int fd, void* buf, int count);
+int vfs_read(int fd, void* buf, size_t count);
 
 // Write up to count bytes from buf into the given fd, and advance the file
 // position by that amount.  Returns the actual number of bytes written on
 // success, or -error.
-int vfs_write(int fd, const void* buf, int count);
+int vfs_write(int fd, const void* buf, size_t count);
 
 // Seek the fd to the given offset, relative to whence.  Returns 0 on success,
 // or -error.
-int vfs_seek(int fd, int offset, int whence);
+off_t vfs_seek(int fd, off_t offset, int whence);
 
 // Read several dirent_t structures from the file descriptor into the given
 // buffer.  count is the size of the buffer in bytes.  Returns the number of
@@ -102,7 +83,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count);
 
 // Return the full pathname of the current working directory in the given
 // buffer.  Returns the length of the string on success, or -error on error.
-int vfs_getcwd(char* path_out, int size);
+int vfs_getcwd(char* path_out, size_t size);
 
 // Change the current working directory.  Returns 0 on success, or -error.
 int vfs_chdir(const char* path);

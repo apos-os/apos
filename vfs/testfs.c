@@ -19,7 +19,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "common/math.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 
 static vnode_t* testfs_alloc_vnode(struct fs* fs);
 static int testfs_get_root(struct fs* fs);
@@ -145,16 +145,16 @@ static int testfs_getdents(vnode_t* vnode, int offset, void* outbuf,
   const int kBufLen = 2 * sizeof(dirent_t) + 2 + 3;
   char buf[kBufLen];
   dirent_t* d = (dirent_t*)(&buf[0]);
-  d->vnode = 0;
-  d->offset = sizeof(dirent_t) + 2;
-  d->length = d->offset;
-  kstrcpy(d->name, ".");
+  d->d_ino = 0;
+  d->d_offset = sizeof(dirent_t) + 2;
+  d->d_length = d->d_offset;
+  kstrcpy(d->d_name, ".");
 
-  d = (dirent_t*)(&buf[d->offset]);
-  d->vnode = 0;
-  d->offset = kBufLen;
-  d->length = sizeof(dirent_t) + 3;
-  kstrcpy(d->name, "..");
+  d = (dirent_t*)(&buf[d->d_offset]);
+  d->d_ino = 0;
+  d->d_offset = kBufLen;
+  d->d_length = sizeof(dirent_t) + 3;
+  kstrcpy(d->d_name, "..");
 
   if (offset >= kBufLen) return 0;
   int len = min(kBufLen, outbufsize);
@@ -166,7 +166,7 @@ static int testfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   KASSERT(vnode->num == 0);
   stat_out->st_mode = VFS_S_IFDIR | VFS_S_IRUSR | VFS_S_IXUSR;
   stat_out->st_nlink = 2;
-  stat_out->st_rdev = mkdev(0, 0);
+  stat_out->st_rdev = makedev(0, 0);
   stat_out->st_size = 2 * sizeof(dirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;

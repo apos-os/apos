@@ -22,7 +22,7 @@
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/cbfs.h"
 #include "vfs/mount.h"
 #include "vfs/vfs.h"
@@ -148,7 +148,7 @@ static void basic_file_test(fs_t* fs) {
 
   KTEST_BEGIN("cbfs: can't create file with vfs_mknod");
   KEXPECT_EQ(-EACCES,
-             vfs_mknod("cbfs_test_root/file1", VFS_S_IFREG, mkdev(0, 0)));
+             vfs_mknod("cbfs_test_root/file1", VFS_S_IFREG, makedev(0, 0)));
 
   KTEST_BEGIN("cbfs: can't create directory with vfs_mkdir()");
   KEXPECT_EQ(-EACCES, vfs_mkdir("cbfs_test_root/dir4", VFS_S_IRWXU));

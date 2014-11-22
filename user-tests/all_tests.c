@@ -11,18 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include <fcntl.h>
 
-// Directory entries.
-#ifndef APOO_DIRENT_H
-#define APOO_DIRENT_H
+#include "ktest.h"
+#include "all_tests.h"
 
-// A single directory entry, as produced by a concrete filesystem.
-struct dirent {
-  int vnode;  // vnode number
-  int offset;  // Offset from *start* of directory to the next dirent_t.
-  int length;  // Length of this dirent_t
-  char name[];  // Null-terminated filename
-};
-typedef struct dirent dirent_t;
+int main(int argc, char** argv) {
+  const char* tty = "/dev/tty0";
+  if (argc > 1) tty = argv[1];
+  open(tty, O_RDONLY);
+  open(tty, O_WRONLY);
+  open(tty, O_WRONLY);
 
-#endif
+  ktest_begin_all();
+
+  syscall_errno_test();
+  int status = exit_status_test();
+  if (status) return status;
+
+  ktest_finish_all();
+  return 0;
+}

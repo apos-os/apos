@@ -12,23 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_MEMORY_MMAP_H
-#define APOO_MEMORY_MMAP_H
+// Common types required by POSIX to be defined in <sys/types.h>.
+#ifndef APOO_USER_POSIX_TYPES_H
+#define APOO_USER_POSIX_TYPES_H
 
-#include <stdint.h>
+// Process ID.
+typedef int pid_t;
 
-#include "common/types.h"
-#include "memory/flags.h"
-#include "user/mmap.h"
+// User and group IDs.
+typedef int uid_t;
+typedef int gid_t;
 
-// Create a mapping in the current process.
-//
-// Currently, addr must be NULL, prot must include PORT_EXEC | PROT_READ,
-// and flags must be MAP_SHARED and a combination of other flags.
-int do_mmap(void* addr, addr_t length, int prot, int flags,
-            int fd, addr_t offset, void** addr_out);
+typedef int blksize_t;
+typedef int blkcnt_t;
 
-// Unmap a portion of a previous mapping.
-int do_munmap(void* addr, addr_t length);
+typedef long off_t;
+typedef long ino_t;
+typedef unsigned short nlink_t;
 
 #endif

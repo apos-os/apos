@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/block_dev.h"
+#include "dev/dev.h"
 #include "memory/kmalloc.h"
 #include "vfs/ext2/ext2-internal.h"
 #include "vfs/ext2/ext2_ops.h"

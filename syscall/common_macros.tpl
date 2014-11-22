@@ -40,6 +40,7 @@ void
   each unique header once. #}
 {% macro include_headers(syscalls, header_attr) %}
 {% for header, _ in syscalls | groupby(header_attr) if header %}
-#include "{{ header }}"
+#include {% if header[0] == '<' %}{{ header }}{% else %}"{{ header }}"{% endif %}
+
 {% endfor %}
 {% endmacro %}

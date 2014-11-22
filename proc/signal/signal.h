@@ -19,46 +19,7 @@
 #include "common/errno.h"
 #include "common/types.h"
 #include "proc/process.h"
-#include "proc/signal/posix_signal.h"
-
-static inline int ksigemptyset(sigset_t* set) {
-  *set = 0;
-  return 0;
-}
-
-static inline int ksigfillset(sigset_t* set) {
-  _Static_assert(sizeof(sigset_t) == sizeof(uint32_t),
-                 "ksigfillset only implemented for uint32_t");
-  *set = 0xFFFFFFFF;
-  return 0;
-}
-
-static inline int ksigaddset(sigset_t* set, int signum) {
-  if (signum <= SIGNULL || signum > SIGMAX) {
-    return -EINVAL;
-  }
-  *set |= (1 << (signum - 1));
-  return 0;
-}
-
-static inline int ksigdelset(sigset_t* set, int signum) {
-  if (signum <= SIGNULL || signum > SIGMAX) {
-    return -EINVAL;
-  }
-  *set &= ~(1 << (signum - 1));
-  return 0;
-}
-
-static inline int ksigismember(const sigset_t* set, int signum) {
-  if (signum <= SIGNULL || signum > SIGMAX) {
-    return -EINVAL;
-  }
-  if (*set & (1 << (signum - 1))) {
-    return 1;
-  } else {
-    return 0;
-  }
-}
+#include "user/posix_signal.h"
 
 static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;

@@ -47,7 +47,7 @@
 #include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
-#include "vfs/dirent.h"
+#include "user/vfs/dirent.h"
 #include "vfs/vfs.h"
 
 #define READ_BUF_SIZE 1024
@@ -171,7 +171,7 @@ static void b_read_cmd(int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -200,7 +200,7 @@ static void b_write_cmd(int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(mkdev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -367,18 +367,18 @@ static void ls_cmd(int argc, char* argv[]) {
     int buf_offset = 0;
     do {
       dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
-      buf_offset += ent->length;
+      buf_offset += ent->d_length;
       if (long_mode) {
         // TODO(aoates): use fstatat()
         char child_path[1000];
         kstrcpy(child_path, path);
         kstrcat(child_path, "/");
-        kstrcat(child_path, ent->name);
+        kstrcat(child_path, ent->d_name);
 
         apos_stat_t stat;
         const int error = vfs_lstat(child_path, &stat);
         if (error < 0) {
-          ksh_printf("<unable to stat %s>\n", ent->name);
+          ksh_printf("<unable to stat %s>\n", ent->d_name);
         } else {
           char mode[11];
           switch (stat.st_mode & VFS_S_IFMT) {
@@ -412,12 +412,12 @@ static void ls_cmd(int argc, char* argv[]) {
             }
           }
 
-          ksh_printf("%s [%3d] %5d %5d %10d %s%s\n", mode, ent->vnode,
-                     stat.st_uid, stat.st_gid, stat.st_size, ent->name,
+          ksh_printf("%s [%3d] %5d %5d %10d %s%s\n", mode, ent->d_ino,
+                     stat.st_uid, stat.st_gid, stat.st_size, ent->d_name,
                      link_target);
         }
       } else {
-        ksh_printf("%s\n", ent->name);
+        ksh_printf("%s\n", ent->d_name);
       }
     } while (buf_offset < len);
   }

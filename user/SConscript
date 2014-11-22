@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+Import('env user_env')
 
-LOCAL_SOURCES := \
-  dmz.c \
-  fork.c \
-  syscall_dispatch.tpl.c \
-  syscall_dmz.tpl.c \
-  test.c \
-  wrappers.c \
+# A dummy library that builds the user syscall stubs against system headers to
+# make sure they can be compiled.
+user_env.StaticLibrary('apos_user_dummy', [
+    'syscall.s',
+    'newlib_syscall_stubs.tpl.c',
+    ])
 
-$(eval $(END_SOURCES))
+env.Tpl('syscall_stubs.tpl')
+env.Tpl('newlib_syscall_stubs.tpl')
+env.Tpl('newlib_syscall_stubs_manual.tpl')
+
+env.Tpl('#/user/syscalls.h', 'syscalls.h.tpl')

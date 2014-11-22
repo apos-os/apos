@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 Import('env AposAddSources')
 
 objs = []
@@ -29,6 +31,11 @@ SUBDIRS = [
   'vfs',
 ]
 
+NON_KERNEL_SUBDIRS = [
+  'user',
+  'user-tests',
+]
+
 all_objects = Flatten(AposAddSources(env, objs, SUBDIRS))
 
 objects = [obj for obj in all_objects if obj.name.count('PHYS') == 0]
@@ -38,3 +45,6 @@ physlib = env.StaticLibrary('libkernel_phys', phys_objects)
 kernel = env.Kernel('kernel.bin', Flatten(objects))
 env.Depends(kernel, physlib)
 env.Command('kernel.bin.stripped', 'kernel.bin', '%s -s $SOURCE -o $TARGET' % env['STRIP'])
+
+for subdir in NON_KERNEL_SUBDIRS:
+  SConscript(os.path.join(subdir, 'SConscript'))

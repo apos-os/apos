@@ -12,14 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-$(eval $(BEGIN_SOURCES))
+# A set of tests that run in userspace.
 
-LOCAL_SOURCES := \
-  dmz.c \
-  fork.c \
-  syscall_dispatch.tpl.c \
-  syscall_dmz.tpl.c \
-  test.c \
-  wrappers.c \
+Import('user_env')
 
-$(eval $(END_SOURCES))
+ktest_lib = user_env.StaticLibrary('ktest', ['ktest.c'])
+user_env.Program('all_tests',
+        ['all_tests.c', 'syscall_errno.c', 'exit_status.c'],
+        LIBS=[ktest_lib])

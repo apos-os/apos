@@ -17,28 +17,38 @@ import re
 
 AddOption('--arch', default='i586', help='architecture to target')
 
-env = Environment(
+base_env = Environment(
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
     ENV = {'PATH' : os.environ['PATH']})
 
-env['ARCH'] = env.GetOption('arch')
-TOOL_PREFIX = '%s-pc-apos' % env['ARCH']
+base_env['ARCH'] = base_env.GetOption('arch')
+TOOL_PREFIX = '%s-pc-apos' % base_env['ARCH']
 
-env.Replace(AR = '%s-ar' % TOOL_PREFIX)
-env.Replace(AS = '%s-as' % TOOL_PREFIX)
-env.Replace(CC = '%s-gcc' % TOOL_PREFIX)
-env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
-env.Replace(RANLIB = '%s-ranlib' % TOOL_PREFIX)
-env.Replace(STRIP = '%s-strip' % TOOL_PREFIX)
+base_env.Replace(AR = '%s-ar' % TOOL_PREFIX)
+base_env.Replace(AS = '%s-as' % TOOL_PREFIX)
+base_env.Replace(CC = '%s-gcc' % TOOL_PREFIX)
+base_env.Replace(LD = '%s-ld' % TOOL_PREFIX)
+base_env.Replace(RANLIB = '%s-ranlib' % TOOL_PREFIX)
+base_env.Replace(STRIP = '%s-strip' % TOOL_PREFIX)
+
+base_env.Append(CFLAGS =
+        Split("-Wall -Wextra -Werror -std=gnu11 -g3 " +
+              "-Wno-unused-parameter -Wno-error=unused-function " +
+              "-Wstrict-prototypes"))
+
+env = base_env.Clone()
 
 env.Append(CFLAGS =
-        Split("-Wall -Wextra -Werror -nostdlib -ffreestanding -std=gnu11 -g3 " +
-              "-Wno-unused-parameter -Wno-error=unused-function " +
-              "-Wstrict-prototypes -nostartfiles -nodefaultlibs"))
+        Split("-nostdlib -ffreestanding -nostartfiles -nodefaultlibs"))
 env.Append(ASFLAGS = ['--gen-debug'])
+env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
 
 env.Append(CPPDEFINES = ['ENABLE_KERNEL_SAFETY_NETS=1'])
+env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
 env.Append(CPPPATH = ['#', '#/archs/%s' % env['ARCH'], '#/archs/common'])
+
+# Environment for userspace targets.
+user_env = base_env.Clone()
 
 def AposAddSources(env, srcs, subdirs):
   """Helper for subdirectories."""
@@ -89,6 +99,6 @@ env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
 
-Export('env AposAddSources')
+Export('env user_env AposAddSources')
 
 SConscript('SConscript', variant_dir='build-scons', duplicate=False)
