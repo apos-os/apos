@@ -33,6 +33,7 @@ SUBDIRS = [
 
 NON_KERNEL_SUBDIRS = [
   'user',
+  'user-tests',
 ]
 
 all_objects = Flatten(AposAddSources(env, objs, SUBDIRS))
