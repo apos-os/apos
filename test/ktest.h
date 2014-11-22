@@ -48,62 +48,20 @@ typedef enum {
   PRINT_UNKNOWN,
 } kexpect_print_t;
 
-// GCC doesn't support C11 generic macros yet :/
-#ifdef SUPPORTS_GENERIC_MACROS
-
 #define PRINT_TYPE(expr) \
     _Generic((expr), \
-             int8_t: PRINT_SIGNED, \
-             int16_t: PRINT_SIGNED, \
-             int32_t: PRINT_SIGNED, \
-             int64_t: PRINT_SIGNED, \
-             uint8_t: PRINT_UNSIGNED, \
-             uint16_t: PRINT_UNSIGNED, \
-             uint32_t: PRINT_UNSIGNED, \
-             uint64_t: PRINT_UNSIGNED, \
+             char: PRINT_SIGNED, \
+             short: PRINT_SIGNED, \
+             int: PRINT_SIGNED, \
+             long: PRINT_SIGNED, \
+             long long: PRINT_SIGNED, \
+             unsigned char: PRINT_UNSIGNED, \
+             unsigned short: PRINT_UNSIGNED, \
+             unsigned int: PRINT_UNSIGNED, \
+             unsigned long: PRINT_UNSIGNED, \
+             unsigned long long: PRINT_UNSIGNED, \
              void*: PRINT_HEX, \
              default: PRINT_HEX)
-
-#else
-
-#ifdef __GNUC__
-
-#define PRINT_TYPE(expr) \
-    ({ \
-     kexpect_print_t _type; \
-     if (__builtin_types_compatible_p(typeof(expr), char) || \
-         __builtin_types_compatible_p(typeof(expr), short) || \
-         __builtin_types_compatible_p(typeof(expr), int) || \
-         __builtin_types_compatible_p(typeof(expr), long) || \
-         __builtin_types_compatible_p(typeof(expr), long long) || \
-         __builtin_types_compatible_p(typeof(expr), int8_t) || \
-         __builtin_types_compatible_p(typeof(expr), int16_t) || \
-         __builtin_types_compatible_p(typeof(expr), int32_t) || \
-         __builtin_types_compatible_p(typeof(expr), int64_t)) { \
-       _type = PRINT_SIGNED; \
-     } else if (__builtin_types_compatible_p(typeof(expr), unsigned char) || \
-                __builtin_types_compatible_p(typeof(expr), unsigned short) || \
-                __builtin_types_compatible_p(typeof(expr), unsigned int) || \
-                __builtin_types_compatible_p(typeof(expr), unsigned long) || \
-                __builtin_types_compatible_p(typeof(expr), unsigned long long) || \
-                __builtin_types_compatible_p(typeof(expr), uint8_t) || \
-                __builtin_types_compatible_p(typeof(expr), uint16_t) || \
-                __builtin_types_compatible_p(typeof(expr), uint32_t) || \
-                __builtin_types_compatible_p(typeof(expr), uint64_t)) { \
-       _type = PRINT_UNSIGNED; \
-     } else { \
-       _type = PRINT_HEX; \
-     } \
-     _type; \
-   })
-
-#else // __GNUC__
-
-#define PRINT_TYPE(expr) PRINT_UNKNOWN
-
-#endif // __GNUC__
-
-#endif // SUPPORTS_GENERIC_MACROS
 
 #define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr) do { \
   const char* aval = a; \
