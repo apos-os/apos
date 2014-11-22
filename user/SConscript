@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env')
+Import('env user_env')
 
 # A dummy library that builds the user syscall stubs against system headers to
 # make sure they can be compiled.
-env.StaticLibrary('apos_user_dummy', [
+user_env.StaticLibrary('apos_user_dummy', [
     'syscall.s',
     'newlib_syscall_stubs.tpl.c',
     ])
@@ -26,5 +26,3 @@ env.Tpl('newlib_syscall_stubs.tpl')
 env.Tpl('newlib_syscall_stubs_manual.tpl')
 
 env.Tpl('#/user/syscalls.h', 'syscalls.h.tpl')
-
-Return([])
