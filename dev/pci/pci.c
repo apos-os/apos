@@ -15,12 +15,15 @@
 #include <stdint.h>
 
 #include "arch/common/io.h"
+#include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
+#if ENABLE_USB
 #include "dev/pci/usb_uhci.h"
+#endif
 #include "memory/kmalloc.h"
 
 // IO ports for manipulating the PCI bus.
@@ -70,8 +73,10 @@ static pci_driver_t PCI_DRIVERS[] = {
   // PCI <-> IDE controller
   { PCI_DRIVER_VENDOR, 0x7010, 0x8086, 0, 0, 0, &pci_piix_driver_init },
 
+#if ENABLE_USB
   // UHCI USB Host Controller.
   { PCI_DRIVER_CLASS, 0x0, 0x0, 0x0C, 0x03, 0x00, &usb_uhci_pci_init },
+#endif
 
   { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},
 };

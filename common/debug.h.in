@@ -15,13 +15,9 @@
 #ifndef APOO_DEBUG_H
 #define APOO_DEBUG_H
 
-#ifndef ENABLE_KERNEL_SAFETY_NETS
-
 // If set, various safety nets will be enabled.  This includes things like
 // clobbering all memorying when it's allocated or freed, checking for
 // double-frees and memory corruption, etc.
-#define ENABLE_KERNEL_SAFETY_NETS 0
-
-#endif
+#define ENABLE_KERNEL_SAFETY_NETS %(DEBUG)d
 
 #endif

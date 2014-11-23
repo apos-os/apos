@@ -26,15 +26,19 @@ SUBDIRS = [
   'memory',
   'proc',
   'syscall',
-  'test',
   'util',
   'vfs',
 ]
 
 NON_KERNEL_SUBDIRS = [
   'user',
-  'user-tests',
 ]
+
+if env['TESTS']:
+  SUBDIRS.append('test')
+
+if env['USER_TESTS']:
+  NON_KERNEL_SUBDIRS.append('user-tests')
 
 all_objects = Flatten(AposAddSources(env, objs, SUBDIRS))
 

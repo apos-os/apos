@@ -30,9 +30,10 @@ srcs = [
   'vfs_util.c',
 ]
 
-subdirs = [
-  'ext2',
-]
+subdirs = []
+
+if env['EXT2']:
+  subdirs.append('ext2')
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

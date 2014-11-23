@@ -24,7 +24,10 @@ srcs = [
   'tty.c',
   ]
 
-subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk', 'usb']
+subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk']
+
+if env['USB']:
+  subdirs.append('usb')
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

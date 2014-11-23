@@ -17,8 +17,10 @@ Import('env AposAddSources')
 srcs = [
   'pci.c',
   'piix.c',
-  'usb_uhci.c',
 ]
+
+if env['USB']:
+  srcs.append('usb_uhci.c')
 
 subdirs = []
 
