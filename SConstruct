@@ -26,6 +26,7 @@ else:
 vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
+vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = [
@@ -50,14 +51,14 @@ base_env.Alias('configure', [])
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
 
-TOOL_PREFIX = '%s-pc-apos' % base_env['ARCH']
+base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
 
-base_env.Replace(AR = '%s-ar' % TOOL_PREFIX)
-base_env.Replace(AS = '%s-as' % TOOL_PREFIX)
-base_env.Replace(CC = '%s-gcc' % TOOL_PREFIX)
-base_env.Replace(LD = '%s-ld' % TOOL_PREFIX)
-base_env.Replace(RANLIB = '%s-ranlib' % TOOL_PREFIX)
-base_env.Replace(STRIP = '%s-strip' % TOOL_PREFIX)
+base_env.Replace(AR = '%sar' % base_env['TOOL_PREFIX'])
+base_env.Replace(AS = '%sas' % base_env['TOOL_PREFIX'])
+base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
+base_env.Replace(LD = '%sld' % base_env['TOOL_PREFIX'])
+base_env.Replace(RANLIB = '%sranlib' % base_env['TOOL_PREFIX'])
+base_env.Replace(STRIP = '%sstrip' % base_env['TOOL_PREFIX'])
 
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
@@ -77,7 +78,7 @@ env = base_env.Clone()
 env.Append(CFLAGS =
         Split("-nostdlib -ffreestanding -nostartfiles -nodefaultlibs"))
 env.Append(ASFLAGS = ['--gen-debug'])
-env.Replace(LINK = '%s-ld' % TOOL_PREFIX)
+env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 
 env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
                       '#/%s' % env['BUILD_DIR']])
