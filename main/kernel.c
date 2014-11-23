@@ -17,6 +17,7 @@
 #include "arch/memory/page_alloc.h"
 #include "arch/memory/page_fault.h"
 #include "arch/syscall/init.h"
+#include "common/config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -39,13 +40,16 @@
 #include "dev/video/vterm.h"
 #include "dev/timer.h"
 #include "dev/tty.h"
-#include "dev/usb/usb.h"
 #include "main/kshell.h"
 #include "proc/scheduler.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
+
+#if ENABLE_USB
+#include "dev/usb/usb.h"
+#endif
 
 #define LD_BUF_SIZE 1024
 
@@ -137,8 +141,10 @@ void kmain(memory_info_t* meminfo) {
   klog("proc_init_stage2()\n");
   proc_init_stage2();
 
+#if ENABLE_USB
   klog("usb_init()\n");
   usb_init();
+#endif
 
   klog("vfs_init()\n");
   vfs_init();

@@ -34,12 +34,14 @@
 #include "dev/char_dev.h"
 #include "dev/dev.h"
 #include "dev/timer.h"
+#if ENABLE_USB
 #include "dev/usb/bus.h"
 #include "dev/usb/device.h"
 #include "dev/usb/drivers/drivers.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/usb.h"
 #include "dev/usb/uhci/uhci_cmd.h"
+#endif
 #include "memory/kmalloc.h"
 #include "proc/exec.h"
 #include "proc/exit.h"
@@ -700,6 +702,7 @@ void boot_cmd(int argc, char** argv) {
   }
 }
 
+#if ENABLE_USB
 static const char* lsusb_speed_str(usb_speed_t speed) {
   switch (speed) {
     case USB_LOW_SPEED: return "low";
@@ -770,6 +773,7 @@ static void lsusb_cmd(int argc, char** argv) {
     lsusb_print_node(bus->root_hub, LSUSB_IDENT);
   }
 }
+#endif
 
 typedef struct {
   const char* name;
@@ -809,8 +813,10 @@ static cmd_t CMDS[] = {
 
   { "hash_file", &hash_file_cmd },
 
+#if ENABLE_USB
   { "uhci", &uhci_cmd },
   { "lsusb", &lsusb_cmd },
+#endif
 
   { "bcstats", &bcstats_cmd },
 
