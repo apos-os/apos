@@ -16,8 +16,8 @@
 #define APOO_VFS_STAT_H
 
 #if __APOS_BUILDING_IN_TREE__
-#  include "user/dev.h"
-#  include "user/posix_types.h"
+#  include "user/include/apos/dev.h"
+#  include "user/include/apos/posix_types.h"
 #else
 #  include <apos/dev.h>
 #  include <apos/posix_types.h>

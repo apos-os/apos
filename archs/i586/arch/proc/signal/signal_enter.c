@@ -20,7 +20,7 @@
 #include "common/math.h"
 #include "common/kstring.h"
 #include "proc/process.h"
-#include "user/posix_signal.h"
+#include "user/include/apos/posix_signal.h"
 
 extern char sigreturn_trampoline_start;
 extern char sigreturn_trampoline_end;

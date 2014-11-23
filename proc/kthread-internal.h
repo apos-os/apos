@@ -23,7 +23,7 @@
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
-#include "user/posix_signal.h"
+#include "user/include/apos/posix_signal.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 

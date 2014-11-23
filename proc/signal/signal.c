@@ -19,7 +19,7 @@
 #include "proc/exit.h"
 #include "proc/process.h"
 #include "proc/user.h"
-#include "user/syscalls.h"
+#include "user/include/apos/syscalls.h"
 
 // Possible default actions for signals.
 typedef enum {

@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "user/dev.h"
+#include "user/include/apos/dev.h"
 #include "vfs/fs.h"
 
 // Initialize a new ext2fs and return it.  The ext2fs is NOT mounted.

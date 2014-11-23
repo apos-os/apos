@@ -16,7 +16,7 @@
 #define APOO_MEMORY_MEMOBJ_BLOCK_DEV_H
 
 #include "memory/memobj.h"
-#include "user/dev.h"
+#include "user/include/apos/dev.h"
 
 // Create a memory object backed by a block device.  Only one memobj_t should be
 // created per device.

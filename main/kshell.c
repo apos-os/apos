@@ -52,7 +52,7 @@
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #endif
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/vfs.h"
 
 #define READ_BUF_SIZE 1024

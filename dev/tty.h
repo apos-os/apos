@@ -16,7 +16,7 @@
 #define APOO_DEV_TTY_H
 
 #include "dev/ld.h"
-#include "user/dev.h"
+#include "user/include/apos/dev.h"
 
 // Create a TTY character device over the given ld.  Returns the apos_dev_t of
 // the new device.

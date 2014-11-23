@@ -16,7 +16,7 @@
 #ifndef APOO_PROC_GROUP_H
 #define APOO_PROC_GROUP_H
 
-#include "user/posix_types.h"
+#include "user/include/apos/posix_types.h"
 
 // Return the given process's process group, as per getpgid(2).
 //

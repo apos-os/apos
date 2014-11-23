@@ -15,7 +15,7 @@
 #ifndef APOO_ERRNO_H
 #define APOO_ERRNO_H
 
-#include "user/errors.h"
+#include "user/include/apos/errors.h"
 
 // Return the name of the given error code.
 const char* errorname(int err);

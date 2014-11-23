@@ -38,8 +38,8 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 {%- endmacro %}
 
 #if __APOS_BUILDING_IN_TREE__
-#  include "user/syscall.h"
-#  include "user/syscalls.h"
+#  include "user/include/apos/syscall.h"
+#  include "user/include/apos/syscalls.h"
 #else
 #  include <apos/syscall.h>
 #  include <apos/syscalls.h>

@@ -23,7 +23,7 @@
 #include "memory/memory.h"
 #include "proc/scheduler.h"
 #include "proc/user.h"
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/fs.h"
 #include "vfs/vnode.h"

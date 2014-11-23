@@ -19,7 +19,7 @@
 
 #include "common/types.h"
 #include "memory/flags.h"
-#include "user/mmap.h"
+#include "user/include/apos/mmap.h"
 
 // Create a mapping in the current process.
 //

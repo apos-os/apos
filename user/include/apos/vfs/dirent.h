@@ -17,7 +17,7 @@
 #define APOO_USER_VFS_DIRENT_H
 
 #if __APOS_BUILDING_IN_TREE__
-#  include "user/posix_types.h"
+#  include "user/include/apos/posix_types.h"
 #else
 #  include <apos/posix_types.h>
 #endif

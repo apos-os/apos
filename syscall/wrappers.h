@@ -19,7 +19,7 @@
 #include <stdint.h>
 
 #include "proc/exit.h"
-#include "user/dev.h"
+#include "user/include/apos/dev.h"
 #include "vfs/vfs.h"
 
 // TODO(aoates): if we have more void syscalls, we should add support directly

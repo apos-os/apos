@@ -18,9 +18,9 @@
 
 #include "memory/memobj.h"
 #include "proc/kthread.h"
-#include "user/dev.h"
-#include "user/posix_types.h"
-#include "user/vfs/stat.h"
+#include "user/include/apos/dev.h"
+#include "user/include/apos/posix_types.h"
+#include "user/include/apos/vfs/stat.h"
 #include "vfs/fsid.h"
 
 struct fs;
