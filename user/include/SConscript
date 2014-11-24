@@ -11,7 +11,32 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 
 Import('env user_env')
 
 env.Tpl('#/user/include/apos/syscalls.h', 'apos/syscalls.h.tpl')
+
+HEADERS = [
+  'apos/dev.h',
+  'apos/errors.h',
+  'apos/mmap.h',
+  'apos/posix_signal.h',
+  'apos/posix_types.h',
+  'apos/syscall.h',
+  'apos/syscalls.h',
+  'apos/test.h',
+  'apos/vfs/dirent.h',
+  'apos/vfs/stat.h',
+  'apos/vfs/vfs.h',
+]
+
+HEADER_INSTALL_DIR = os.path.join(env['HEADER_INSTALL_PREFIX'], 'include')
+
+if env['HEADER_INSTALL_PREFIX']:
+  for header in HEADERS:
+    env.Install(
+        os.path.join(HEADER_INSTALL_DIR, os.path.dirname(header)), header)
+  env.Alias('install', HEADER_INSTALL_DIR)
+else:
+  env.Alias('install')
