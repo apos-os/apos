@@ -332,3 +332,9 @@ AddSyscall('mmap', 39, 'mmap_wrapper', 'syscall/wrappers.h', '<sys/mman.h>',
 
 AddSyscall('munmap', 40, 'do_munmap', 'memory/mmap.h', '<sys/mman.h>',
         'int', ['void*:addr:u', 'size_t:length:u'])
+
+AddSyscall('symlink', 42, 'vfs_symlink', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path1:s', 'const char*:path2:s'])
+
+AddSyscall('readlink', 43, 'vfs_readlink', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path:s', 'char*:buf:bw:bufsize', 'size_t:bufsize:u'])
