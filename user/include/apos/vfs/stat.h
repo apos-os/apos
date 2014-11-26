@@ -24,33 +24,44 @@
 #endif
 
 // File type flags for mode_t.
-#define VFS_S_IFMT      0xFF0000
-#define VFS_S_IFREG     0x010000
-#define VFS_S_IFCHR     0x020000
-#define VFS_S_IFBLK     0x040000
-#define VFS_S_IFDIR     0x080000
-#define VFS_S_IFLNK     0x100000
+#define VFS_S_IFREG     0100000
+#define VFS_S_IFCHR     020000
+#define VFS_S_IFBLK     060000
+#define VFS_S_IFDIR     040000
+#define VFS_S_IFLNK     0120000
+#define VFS_S_IFIFO     010000
+#define VFS_S_IFSOCK    0140000
+#define VFS_S_IFMT      (VFS_S_IFREG | VFS_S_IFCHR | VFS_S_IFBLK | \
+                         VFS_S_IFDIR | VFS_S_IFLNK | VFS_S_IFIFO | VFS_S_IFSOCK)
 
 // Mode flags for mode_t.
-#define VFS_S_IRWXU     0x000700
-#define VFS_S_IRUSR     0x000400
-#define VFS_S_IWUSR     0x000200
-#define VFS_S_IXUSR     0x000100
+#define VFS_S_IRWXU     0700
+#define VFS_S_IRUSR     0400
+#define VFS_S_IWUSR     0200
+#define VFS_S_IXUSR     0100
 
-#define VFS_S_IRWXG     0x000070
-#define VFS_S_IRGRP     0x000040
-#define VFS_S_IWGRP     0x000020
-#define VFS_S_IXGRP     0x000010
+#define VFS_S_IRWXG     070
+#define VFS_S_IRGRP     040
+#define VFS_S_IWGRP     020
+#define VFS_S_IXGRP     010
 
-#define VFS_S_IRWXO     0x000007
-#define VFS_S_IROTH     0x000004
-#define VFS_S_IWOTH     0x000002
-#define VFS_S_IXOTH     0x000001
+#define VFS_S_IRWXO     07
+#define VFS_S_IROTH     04
+#define VFS_S_IWOTH     02
+#define VFS_S_IXOTH     01
 
 // TODO(aoates): implement these.
-#define VFS_S_ISUID     0x004000
-#define VFS_S_ISGID     0x002000
-#define VFS_S_ISVTX     0x001000
+#define VFS_S_ISUID     04000
+#define VFS_S_ISGID     02000
+#define VFS_S_ISVTX     01000
+
+#define VFS_S_ISREG(m)  (((m) & VFS_S_IFMT) == VFS_S_IFREG)
+#define VFS_S_ISCHR(m)  (((m) & VFS_S_IFMT) == VFS_S_IFCHR)
+#define VFS_S_ISBLK(m)  (((m) & VFS_S_IFMT) == VFS_S_IFBLK)
+#define VFS_S_ISDIR(m)  (((m) & VFS_S_IFMT) == VFS_S_IFDIR)
+#define VFS_S_ISLNK(m)  (((m) & VFS_S_IFMT) == VFS_S_IFLNK)
+#define VFS_S_ISFIFO(m) (((m) & VFS_S_IFMT) == VFS_S_IFIFO)
+#define VFS_S_ISSOCK(m) (((m) & VFS_S_IFMT) == VFS_S_IFSOCK)
 
 // Information about a vnode.
 struct stat {

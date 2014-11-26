@@ -545,9 +545,9 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   }
 
   vnode_type_t type = VNODE_INVALID;
-  if (mode & VFS_S_IFREG) type = VNODE_REGULAR;
-  else if (mode & VFS_S_IFBLK) type = VNODE_BLOCKDEV;
-  else if (mode & VFS_S_IFCHR) type = VNODE_CHARDEV;
+  if (VFS_S_ISREG(mode)) type = VNODE_REGULAR;
+  else if (VFS_S_ISBLK(mode)) type = VNODE_BLOCKDEV;
+  else if (VFS_S_ISCHR(mode)) type = VNODE_CHARDEV;
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
