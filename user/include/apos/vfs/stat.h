@@ -23,8 +23,6 @@
 #  include <apos/posix_types.h>
 #endif
 
-typedef int mode_t;
-
 // File type flags for mode_t.
 #define VFS_S_IFMT      0xFF0000
 #define VFS_S_IFREG     0x010000
