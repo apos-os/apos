@@ -115,7 +115,7 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
       return d;
     }
 
-    offset += d->d_length;
+    offset += d->d_reclen;
   }
 
   return 0;
@@ -132,7 +132,7 @@ static int count_dirents(vnode_t* parent) {
     if (d->d_ino >= 0) {
       count++;
     }
-    offset += d->d_length;
+    offset += d->d_reclen;
   }
 
   return count;
@@ -150,7 +150,7 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   const int dlen = sizeof(dirent_t) + kstrlen(name) + 1;
   dirent_t* dirent = (dirent_t*)kmalloc(dlen);
   dirent->d_ino = inode;
-  dirent->d_length = dlen;
+  dirent->d_reclen = dlen;
   kstrcpy(dirent->d_name, name);
 
   // Append the new dirent.
@@ -504,22 +504,22 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
     dirent_t* d = (dirent_t*)(node->data + offset);
-    if (d->d_ino != -1 && bytes_read + d->d_length >= bufsize) {
+    if (d->d_ino != -1 && bytes_read + d->d_reclen >= (size_t)bufsize) {
       // If the buffer is too small to fit even one entry, return -EINVAL.
       if (bytes_read == 0) {
         return -EINVAL;
       }
       break;
     }
-    offset += d->d_length;
+    offset += d->d_reclen;
     d->d_offset = offset;
 
     // Skip dirents that have been unlinked.
     if (d->d_ino == -1) {
       continue;
     }
-    kmemcpy(buf + bytes_read, d, d->d_length);
-    bytes_read += d->d_length;
+    kmemcpy(buf + bytes_read, d, d->d_reclen);
+    bytes_read += d->d_reclen;
   }
 
   return bytes_read;

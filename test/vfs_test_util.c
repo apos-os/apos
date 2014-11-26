@@ -64,7 +64,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
     do {
       dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
       num_dirents++;
-      buf_offset += ent->d_length;
+      buf_offset += ent->d_reclen;
 
       KLOG("dirent: %d -> %s\n", ent->d_ino, ent->d_name);
 

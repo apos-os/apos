@@ -376,7 +376,7 @@ static void ls_cmd(int argc, char* argv[]) {
     int buf_offset = 0;
     do {
       dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
-      buf_offset += ent->d_length;
+      buf_offset += ent->d_reclen;
       if (long_mode) {
         // TODO(aoates): use fstatat()
         char child_path[1000];

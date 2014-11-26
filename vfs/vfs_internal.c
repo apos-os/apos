@@ -148,7 +148,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
     int buf_offset = 0;
     do {
       ent = (dirent_t*)(&dirent_buf[buf_offset]);
-      buf_offset += ent->d_length;
+      buf_offset += ent->d_reclen;
     } while (ent->d_ino != inode && buf_offset < len);
     // Keep going until we find a match.
     offset = ent->d_offset;

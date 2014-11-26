@@ -167,7 +167,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
         expected_idx++;
       }
 
-      bufidx += d->d_length;
+      bufidx += d->d_reclen;
     }
 
     // Read another chunk.

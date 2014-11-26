@@ -147,13 +147,13 @@ static int testfs_getdents(vnode_t* vnode, int offset, void* outbuf,
   dirent_t* d = (dirent_t*)(&buf[0]);
   d->d_ino = 0;
   d->d_offset = sizeof(dirent_t) + 2;
-  d->d_length = d->d_offset;
+  d->d_reclen = d->d_offset;
   kstrcpy(d->d_name, ".");
 
   d = (dirent_t*)(&buf[d->d_offset]);
   d->d_ino = 0;
   d->d_offset = kBufLen;
-  d->d_length = sizeof(dirent_t) + 3;
+  d->d_reclen = sizeof(dirent_t) + 3;
   kstrcpy(d->d_name, "..");
 
   if (offset >= kBufLen) return 0;

@@ -1489,7 +1489,7 @@ static int ext2_getdents_iter_func(void* arg,
   dirent_t* dirent_out = (dirent_t*)getdents_args->buf;
   dirent_out->d_ino = ltoh32(little_endian_dirent->inode);
   dirent_out->d_offset = -1;  // We'll update this in the next iteration.
-  dirent_out->d_length = dirent_out_size;
+  dirent_out->d_reclen = dirent_out_size;
   kstrncpy(dirent_out->d_name, little_endian_dirent->name,
            little_endian_dirent->name_len);
   dirent_out->d_name[little_endian_dirent->name_len] = '\0';
