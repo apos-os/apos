@@ -49,6 +49,10 @@ int vfs_open(const char* path, int flags, ...);
 // Close the given file descriptor.  Returns 0 on success, or -error.
 int vfs_close(int fd);
 
+// Duplicate the given file descriptor.  Returns the duplicated fd on success,
+// or -error.
+int vfs_dup(int fd);
+
 // Make a directory at the given path.  Returns 0 on success, or -error.
 int vfs_mkdir(const char* path, mode_t mode);
 

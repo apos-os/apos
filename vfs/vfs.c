@@ -87,7 +87,7 @@ static int next_free_fd(process_t* p) {
       return i;
     }
   }
-  return -1;
+  return -EMFILE;
 }
 
 // Returns non-zero if the given mode is a valid create mode_t (i.e. can be
@@ -434,7 +434,7 @@ int vfs_open(const char* path, int flags, ...) {
   int fd = next_free_fd(proc);
   if (fd < 0) {
     VFS_PUT_AND_CLEAR(child);
-    return -EMFILE;
+    return fd;
   }
 
   KASSERT(g_file_table[idx] == 0x0);
@@ -471,6 +471,23 @@ int vfs_close(int fd) {
 
   proc->fds[fd] = PROC_UNUSED_FD;
   return 0;
+}
+
+int vfs_dup(int orig_fd) {
+  file_t* file = 0x0;
+  int result = lookup_fd(orig_fd, &file);
+  if (result) return result;
+
+  process_t* proc = proc_current();
+  int new_fd = next_free_fd(proc);
+  if (new_fd < 0) {
+    return new_fd;
+  }
+
+  file->refcount++;
+  KASSERT_DBG(proc->fds[new_fd] == PROC_UNUSED_FD);
+  proc->fds[new_fd] = proc->fds[orig_fd];
+  return new_fd;
 }
 
 int vfs_mkdir(const char* path, mode_t mode) {

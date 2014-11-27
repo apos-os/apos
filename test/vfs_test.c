@@ -2797,6 +2797,70 @@ static void readlink_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("readlink_test"));
 }
 
+static void dup_test(void) {
+  KTEST_BEGIN("vfs_dup(): basic test");
+  KEXPECT_EQ(0, vfs_mkdir("dup_test", 0));
+  create_file_with_data("dup_test/file", "abcd");
+
+  int fd1 = vfs_open("dup_test/file", VFS_O_RDONLY);
+  KEXPECT_GE(fd1, 0);
+  EXPECT_VNODE_REFCOUNT(1, "dup_test/file");
+
+  int fd2 = vfs_dup(fd1);
+  KEXPECT_GE(fd2, 0);
+  KEXPECT_NE(fd1, fd2);
+  EXPECT_VNODE_REFCOUNT(1, "dup_test/file");
+
+  // Do a white-box test.
+  file_t* file1, *file2;
+  KEXPECT_EQ(0, lookup_fd(fd1, &file1));
+  KEXPECT_EQ(0, lookup_fd(fd2, &file2));
+  KEXPECT_EQ(file1, file2);
+  KEXPECT_EQ(2, file1->refcount);
+
+  char c;
+  KEXPECT_EQ(1, vfs_read(fd1, &c, 1));
+  KEXPECT_EQ('a', c);
+
+  KEXPECT_EQ(1, vfs_read(fd2, &c, 1));
+  KEXPECT_EQ('b', c);
+
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(1, vfs_read(fd2, &c, 1));
+  KEXPECT_EQ('c', c);
+
+  KEXPECT_EQ(1, file2->refcount);
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  EXPECT_VNODE_REFCOUNT(0, "dup_test/file");
+
+  KTEST_BEGIN("vfs_dup(): bad file descriptor");
+  KEXPECT_EQ(-EBADF, vfs_dup(-5));
+  KEXPECT_EQ(-EBADF, vfs_dup(PROC_MAX_FDS + 1));
+
+  KTEST_BEGIN("vfs_dup(): out of file descriptors");
+  int all_fds[PROC_MAX_FDS];
+  for (int i = 0; i < PROC_MAX_FDS; ++i) all_fds[i] = -1;
+  int i = 0;
+  do {
+    fd1 = vfs_open("dup_test/file", VFS_O_RDONLY);
+    if (fd1 >= 0)
+      all_fds[i++] = fd1;
+  } while (fd1 >= 0);
+
+  KEXPECT_EQ(-EMFILE, fd1);
+  KEXPECT_GE(all_fds[0], 0);
+  KEXPECT_EQ(-EMFILE, vfs_dup(all_fds[0]));
+
+  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+    if (all_fds[i] >= 0) vfs_close(all_fds[i]);
+  }
+
+  KTEST_BEGIN("vfs_dup() test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("dup_test/file"));
+  KEXPECT_EQ(0, vfs_rmdir("dup_test"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -2850,6 +2914,8 @@ void vfs_test(void) {
 
   symlink_test();
   readlink_test();
+
+  dup_test();
 
   reverse_path_test();
 
