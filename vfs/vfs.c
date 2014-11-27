@@ -941,7 +941,6 @@ static int vfs_path_stat_internal(const char* path, apos_stat_t* stat,
   result = vfs_stat_internal(child, stat);
   VFS_PUT_AND_CLEAR(child);
   return result;
-
 }
 
 int vfs_stat(const char* path, apos_stat_t* stat) {
@@ -1118,6 +1117,38 @@ int vfs_readlink(const char* path, char* buf, int bufsize) {
   }
 
   result = child->fs->readlink(child, buf, bufsize);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+int vfs_access(const char* path, int amode) {
+  if (!path) return -EINVAL;
+  if (amode == 0 ||
+      (amode & ~(F_OK | R_OK | W_OK | X_OK)) != 0) {
+    return -EINVAL;
+  }
+
+  vnode_t* child = 0x0;
+  lookup_options_t opt = lookup_opt(true);
+  opt.check_real_ugid = true;
+  int result = lookup_existing_path(path, opt, 0x0, &child);
+  if (result) return result;
+
+  result = 0;
+  if (!result && (amode & R_OK)) {
+    result = vfs_check_mode_rugid(VFS_OP_READ, proc_current(), child);
+  }
+  if (!result && (amode & W_OK)) {
+    result = vfs_check_mode_rugid(VFS_OP_WRITE, proc_current(), child);
+  }
+  if (!result && (amode & X_OK)) {
+    result = vfs_check_mode_rugid(VFS_OP_EXEC, proc_current(), child);
+  }
+  if (!result && (amode & X_OK)) {
+    // TODO(aoates): should we assume that the VFS_OP_EXEC check is sufficient?
+    result = vfs_check_mode_rugid(VFS_OP_SEARCH, proc_current(), child);
+  }
+
   VFS_PUT_AND_CLEAR(child);
   return result;
 }

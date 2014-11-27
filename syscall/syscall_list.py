@@ -229,6 +229,9 @@ AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
 
+AddSyscall('access', 47, 'vfs_access', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path:s', 'int:amode:u'])
+
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'pid_t', [], newlib_defined=True)
 

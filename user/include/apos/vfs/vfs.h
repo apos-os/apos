@@ -38,4 +38,9 @@
 #define VFS_SEEK_CUR 2
 #define VFS_SEEK_END 3
 
+#define F_OK 0x1
+#define R_OK 0x2
+#define W_OK 0x4
+#define X_OK 0x8
+
 #endif

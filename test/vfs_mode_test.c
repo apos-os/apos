@@ -667,6 +667,219 @@ static void syscall_mode_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("syscall_mode_test"));
 }
 
+static int creat(const char* path, mode_t mode, uid_t owner, gid_t group) {
+  int fd = vfs_open(path, VFS_O_CREAT /* | VFS_O_EXCL */, mode);
+  if (fd < 0) return fd;
+  fd = vfs_close(fd);
+  if (fd) return fd;
+
+  return vfs_chown(path, owner, group);
+}
+
+static void access_mode_test_func(void* arg) {
+  const mode_t kNoRead = VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO;
+  const mode_t kNoWrite = VFS_S_IRUSR | VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO;
+  const mode_t kNoExec = VFS_S_IRUSR | VFS_S_IWUSR | VFS_S_IRWXG | VFS_S_IRWXO;
+  KEXPECT_EQ(0, vfs_mkdir("access_mode_test/no_read", kNoRead));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_read", kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_read/no_read", kNoRead, kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_read/no_write", kNoWrite, kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_read/no_exec", kNoExec, kUserA, kGroupA));
+
+  KEXPECT_EQ(0, vfs_mkdir("access_mode_test/no_write", kNoWrite));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_write", kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_write/no_read", kNoRead, kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_write/no_write", kNoWrite, kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_write/no_exec", kNoExec, kUserA, kGroupA));
+
+  KEXPECT_EQ(0, vfs_mkdir("access_mode_test/no_exec", kNoExec));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_exec", kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_exec/no_read", kNoRead, kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_exec/no_write", kNoWrite, kUserA, kGroupA));
+  KEXPECT_EQ(0, creat("access_mode_test/no_exec/no_exec", kNoExec, kUserA, kGroupA));
+
+  KEXPECT_EQ(0, vfs_mkdir("access_mode_test/user_match", VFS_S_IRWXU | VFS_S_IRWXG));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/user_match", kUserA, kGroupC));
+  KEXPECT_EQ(0, vfs_mkdir("access_mode_test/group_match", VFS_S_IRWXU | VFS_S_IRWXG));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/group_match", kUserC, kGroupA));
+
+  KEXPECT_EQ(0, setregid(kGroupA, kGroupB));
+  KEXPECT_EQ(0, setreuid(kUserA, kUserB));
+
+  KTEST_BEGIN("vfs_access(): F_OK");
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_exec", F_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_read/a", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_read", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_write", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_exec", F_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_write/a", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_read", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_write", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_exec", F_OK));
+
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/a", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_read", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_exec", F_OK));
+
+
+  KTEST_BEGIN("vfs_access(): R_OK");
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read", R_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write", R_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_exec", R_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_read/a", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read/no_read", R_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_write", R_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_exec", R_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_write/a", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_write/no_read", R_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_write", R_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_exec", R_OK));
+
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/a", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_read", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_exec", R_OK));
+
+
+  KTEST_BEGIN("vfs_access(): W_OK");
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", W_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_write", W_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_exec", W_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_read/a", W_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_read", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read/no_write", W_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_exec", W_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_write/a", W_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_read", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_write/no_write", W_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_exec", W_OK));
+
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/a", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_read", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_exec", W_OK));
+
+  KTEST_BEGIN("vfs_access(): X_OK");
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read", X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec", X_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_read/a", X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_read", X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read/no_write", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read/no_exec", X_OK));
+
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_write/a", X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_read", X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write/no_write", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_write/no_exec", X_OK));
+
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/a", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_read", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_exec", X_OK));
+
+
+  KTEST_BEGIN("vfs_access(): uses real instead of effective uid/gid");
+  KEXPECT_EQ(0, setregid(kGroupA, kGroupB));
+  KEXPECT_EQ(0, setreuid(kUserB, kUserA));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/user_match", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/user_match", W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/user_match", X_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/group_match", R_OK));
+
+  KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
+  KEXPECT_EQ(0, setreuid(kUserA, kUserB));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/user_match", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/group_match", R_OK));
+
+  KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
+  KEXPECT_EQ(0, setreuid(kUserB, kUserA));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/user_match", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/group_match", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/user_match/a", R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/group_match/a", R_OK));
+
+  KEXPECT_EQ(0, setregid(kGroupA, kGroupB));
+  KEXPECT_EQ(0, setreuid(kUserA, kUserB));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/user_match", R_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/group_match", R_OK));
+
+
+  KTEST_BEGIN("vfs_access(): combos");
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", R_OK | W_OK | X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test", F_OK | R_OK | W_OK | X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read", F_OK | R_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read", R_OK | W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read", R_OK | W_OK | X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read", W_OK | X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_read", W_OK | X_OK | F_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_write", W_OK | X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_write", R_OK | X_OK));
+  KEXPECT_EQ(0,       vfs_access("access_mode_test/no_exec", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec", R_OK | X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", R_OK | W_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", R_OK | X_OK));
+
+  KTEST_BEGIN("vfs_access(): bad path elements");
+  KEXPECT_EQ(-ENOTDIR, vfs_access("access_mode_test/no_read/no_read/a", X_OK));
+  KEXPECT_EQ(-ENOTDIR, vfs_access("access_mode_test/no_read/no_read/a/b", X_OK));
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/no_read/nope", X_OK));
+
+  KTEST_BEGIN("vfs_access(): invalid mode");
+  KEXPECT_EQ(-EINVAL, vfs_access("access_mode_test", 0));
+  KEXPECT_EQ(-EINVAL, vfs_access("access_mode_test", -1));
+  KEXPECT_EQ(-EINVAL, vfs_access("access_mode_test", 1234));
+
+  // TODO(aoates): test symlinks.
+}
+
+static void access_mode_test(void) {
+  KTEST_BEGIN("vfs mode test: access() mode test setup");
+  KEXPECT_EQ(0, vfs_mkdir("access_mode_test",
+                          VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
+
+  // Run tests as an unpriviledged user.
+  pid_t child_pid = proc_fork(&access_mode_test_func, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
+
+  KTEST_BEGIN("vfs_access() test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_read/no_read"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_read/no_write"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_read/no_exec"));
+  KEXPECT_EQ(0, vfs_rmdir("access_mode_test/no_read"));
+
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_write/no_read"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_write/no_write"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_write/no_exec"));
+  KEXPECT_EQ(0, vfs_rmdir("access_mode_test/no_write"));
+
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec/no_read"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec/no_write"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec/no_exec"));
+  KEXPECT_EQ(0, vfs_rmdir("access_mode_test/no_exec"));
+
+  KEXPECT_EQ(0, vfs_rmdir("access_mode_test/user_match"));
+  KEXPECT_EQ(0, vfs_rmdir("access_mode_test/group_match"));
+  KEXPECT_EQ(0, vfs_rmdir("access_mode_test"));
+}
+
 void vfs_mode_test(void) {
   KTEST_SUITE_BEGIN("vfs mode test");
   const int orig_refcount = vfs_get_vnode_refcount_for_path("/");
@@ -675,6 +888,7 @@ void vfs_mode_test(void) {
   basic_rwx_test();
   root_mode_test();
   syscall_mode_test();
+  access_mode_test();
 
   KEXPECT_EQ(orig_refcount, vfs_get_vnode_refcount_for_path("/"));
 
