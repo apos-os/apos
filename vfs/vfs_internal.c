@@ -300,7 +300,7 @@ int lookup_existing_path(const char* path, int resolve_final_symlink,
 
 int lookup_fd(int fd, file_t** file_out) {
   process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+  if (!is_valid_fd(fd) || proc->fds[fd] == PROC_UNUSED_FD) {
     return -EBADF;
   }
 

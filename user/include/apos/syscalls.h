@@ -21,6 +21,7 @@
 #define SYS_OPEN 1
 #define SYS_CLOSE 2
 #define SYS_DUP 45
+#define SYS_DUP2 46
 #define SYS_MKDIR 3
 #define SYS_MKNOD 4
 #define SYS_RMDIR 5

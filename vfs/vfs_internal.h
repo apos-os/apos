@@ -17,6 +17,7 @@
 #define APOO_VFS_VFS_INTERNAL_H
 
 #include "common/hashtable.h"
+#include "proc/process.h"
 #include "vfs/file.h"
 #include "vfs/fs.h"
 #include "vfs/vnode.h"
@@ -121,6 +122,10 @@ int lookup_existing_path(const char* path, int resolve_final_symlink,
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
+
+static inline int is_valid_fd(int fd) {
+  return fd >= 0 && fd < PROC_MAX_FDS;
+}
 
 // Returns the appropriate root node for the given path, either the fs root or
 // the process's cwd.

@@ -53,6 +53,10 @@ int vfs_close(int fd);
 // or -error.
 int vfs_dup(int fd);
 
+// Duplicate the given file descriptor into fd2, closing it if it is currently
+// open.  Returns the duplicated fd on success, or -error.
+int vfs_dup2(int fd1, int fd2);
+
 // Make a directory at the given path.  Returns 0 on success, or -error.
 int vfs_mkdir(const char* path, mode_t mode);
 

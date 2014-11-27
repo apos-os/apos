@@ -490,6 +490,30 @@ int vfs_dup(int orig_fd) {
   return new_fd;
 }
 
+int vfs_dup2(int fd1, int fd2) {
+  file_t* file1 = 0x0, *file2 = 0x0;
+  int result = lookup_fd(fd1, &file1);
+  if (result) return result;
+
+  if (!is_valid_fd(fd2)) return -EBADF;
+
+  if (fd1 == fd2) return fd2;
+
+  // Close fd2 if it already exists.
+  result = lookup_fd(fd2, &file2);
+  if (result == 0) {
+    result = vfs_close(fd2);
+    if (result) return result;
+  }
+
+  process_t* proc = proc_current();
+
+  file1->refcount++;
+  KASSERT_DBG(proc->fds[fd2] == PROC_UNUSED_FD);
+  proc->fds[fd2] = proc->fds[fd1];
+  return fd2;
+}
+
 int vfs_mkdir(const char* path, mode_t mode) {
   if (!is_valid_create_mode(mode)) return -EINVAL;
 

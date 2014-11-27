@@ -144,6 +144,9 @@ AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('dup', 45, 'vfs_dup', 'vfs/vfs.h', '<unistd.h>',
     'int', ['int:fd:u'])
 
+AddSyscall('dup2', 46, 'vfs_dup2', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['int:fd1:u', 'int:fd2:u'])
+
 AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',

@@ -66,6 +66,13 @@ static void fill_with_pattern(uint32_t seed, void* buf, int len) {
   }
 }
 
+static int get_file_refcount(int fd) {
+  file_t* file;
+  int result = lookup_fd(fd, &file);
+  if (result < 0) return result;
+  return file->refcount;
+}
+
 static void dev_test(void) {
   KTEST_BEGIN("device numbering test");
   apos_dev_t dev = makedev(0, 0);
@@ -2829,7 +2836,7 @@ static void dup_test(void) {
   KEXPECT_EQ(1, vfs_read(fd2, &c, 1));
   KEXPECT_EQ('c', c);
 
-  KEXPECT_EQ(1, file2->refcount);
+  KEXPECT_EQ(1, get_file_refcount(fd2));
   KEXPECT_EQ(0, vfs_close(fd2));
 
   EXPECT_VNODE_REFCOUNT(0, "dup_test/file");
@@ -2859,6 +2866,132 @@ static void dup_test(void) {
   KTEST_BEGIN("vfs_dup() test cleanup");
   KEXPECT_EQ(0, vfs_unlink("dup_test/file"));
   KEXPECT_EQ(0, vfs_rmdir("dup_test"));
+}
+
+static void dup2_test(void) {
+  KTEST_BEGIN("vfs_dup2(): basic test");
+  KEXPECT_EQ(0, vfs_mkdir("dup2_test", 0));
+  create_file_with_data("dup2_test/file", "abcd");
+  create_file_with_data("dup2_test/file2", "ABCD");
+
+  int fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  KEXPECT_GE(fd1, 0);
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+
+  // Use vfs_dup() to get an fd we think is free.
+  int fd2 = vfs_dup(fd1);
+  KEXPECT_GE(fd2, 0);
+  KEXPECT_NE(fd1, fd2);
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  // dup2() into the fd we just closed.
+  KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+
+  // Do a white-box test.
+  file_t* file1, *file2;
+  KEXPECT_EQ(0, lookup_fd(fd1, &file1));
+  KEXPECT_EQ(0, lookup_fd(fd2, &file2));
+  KEXPECT_EQ(file1, file2);
+  KEXPECT_EQ(2, file1->refcount);
+
+  char c;
+  KEXPECT_EQ(1, vfs_read(fd1, &c, 1));
+  KEXPECT_EQ('a', c);
+
+  KEXPECT_EQ(1, vfs_read(fd2, &c, 1));
+  KEXPECT_EQ('b', c);
+
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(1, vfs_read(fd2, &c, 1));
+  KEXPECT_EQ('c', c);
+
+  KEXPECT_EQ(1, get_file_refcount(fd2));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  EXPECT_VNODE_REFCOUNT(0, "dup2_test/file");
+
+
+  KTEST_BEGIN("vfs_dup2(): fd1 == fd2");
+  fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  KEXPECT_EQ(fd1, vfs_dup2(fd1, fd1));
+  KEXPECT_EQ(1, get_file_refcount(fd1));
+  KEXPECT_EQ(0, vfs_close(fd1));
+  EXPECT_VNODE_REFCOUNT(0, "dup2_test/file");
+
+
+  KTEST_BEGIN("vfs_dup2(): fd2 exists (different file)");
+  fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  fd2 = vfs_open("dup2_test/file2", VFS_O_RDONLY);
+  KEXPECT_EQ(1, get_file_refcount(fd1));
+  KEXPECT_EQ(1, get_file_refcount(fd2));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file2");
+
+  KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
+  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(2, get_file_refcount(fd1));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+  EXPECT_VNODE_REFCOUNT(0, "dup2_test/file2");
+  KEXPECT_EQ(0, vfs_close(fd1));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+  KEXPECT_EQ(0, vfs_close(fd2));
+  EXPECT_VNODE_REFCOUNT(0, "dup2_test/file");
+
+
+  KTEST_BEGIN("vfs_dup2(): fd2 exists (same file)");
+  fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  fd2 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  KEXPECT_EQ(1, get_file_refcount(fd1));
+  EXPECT_VNODE_REFCOUNT(2, "dup2_test/file");
+  KEXPECT_NE(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+
+  KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
+  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(2, get_file_refcount(fd1));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+  KEXPECT_EQ(0, vfs_close(fd1));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+  KEXPECT_EQ(0, vfs_close(fd2));
+  EXPECT_VNODE_REFCOUNT(0, "dup2_test/file");
+
+
+  KTEST_BEGIN("vfs_dup2(): fd2 exists (already duplicate)");
+  fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  fd2 = vfs_dup(fd1);
+  KEXPECT_EQ(2, get_file_refcount(fd1));
+
+  KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
+  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(2, get_file_refcount(fd2));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(1, get_file_refcount(fd2));
+  EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
+  KEXPECT_EQ(0, vfs_close(fd2));
+  EXPECT_VNODE_REFCOUNT(0, "dup2_test/file");
+
+
+  KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd1)");
+  fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
+  int orig_fd1_idx = proc_current()->fds[fd1];
+  KEXPECT_EQ(-EBADF, vfs_dup2(-5, fd1));
+  KEXPECT_EQ(-EBADF, vfs_dup2(PROC_MAX_FDS + 1, fd1));
+  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
+
+  KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd2)");
+  KEXPECT_EQ(-EBADF, vfs_dup2(-5, -5));
+  KEXPECT_EQ(-EBADF, vfs_dup2(fd1, -5));
+  KEXPECT_EQ(-EBADF, vfs_dup2(fd1, PROC_MAX_FDS + 1));
+  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
+  vfs_close(fd1);
+
+
+  KTEST_BEGIN("vfs_dup2() test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("dup2_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("dup2_test/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("dup2_test"));
+
+  // TODO(aoates): test vfs_dup2() when closing the second file descriptor fails
 }
 
 // TODO(aoates): multi-threaded test for creating a file in directory that is
@@ -2916,6 +3049,7 @@ void vfs_test(void) {
   readlink_test();
 
   dup_test();
+  dup2_test();
 
   reverse_path_test();
 
