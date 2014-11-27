@@ -77,9 +77,9 @@ static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
 // If |allow_nonexistant_final| is non-zero, and the final element of the
 // symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
 // but will set |*child_ptr| to 0x0.
-int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
-                    vnode_t** child_ptr, char* base_name_out,
-                    int max_recursion);
+int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+                    vnode_t** parent_ptr, vnode_t** child_ptr,
+                    char* base_name_out, int max_recursion);
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).

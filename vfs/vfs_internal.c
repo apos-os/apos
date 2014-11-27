@@ -59,9 +59,9 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
-int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
-                    vnode_t** child_ptr, char* base_name_out,
-                    int max_recursion) {
+int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+                    vnode_t** parent_ptr, vnode_t** child_ptr,
+                    char* base_name_out, int max_recursion) {
   vnode_t* child = *child_ptr;
   vnode_t* parent = VFS_COPY_REF(*parent_ptr);
   char* symlink_target = 0x0;
@@ -80,7 +80,8 @@ int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
     vnode_t* symlink_target_node = 0x0;
     vnode_t* new_parent = 0x0;
     vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
-    error = lookup_path_internal(root, symlink_target, lookup_opt(false),
+    opt.resolve_final_symlink = false;
+    error = lookup_path_internal(root, symlink_target, opt,
                                  &new_parent, &symlink_target_node,
                                  base_name_out, max_recursion - 1);
     VFS_PUT_AND_CLEAR(root);
@@ -236,7 +237,7 @@ static int lookup_path_internal(vnode_t* root, const char* path,
     // If we're not at the end, or we want to follow the final symlink, attempt
     // to resolve it.
     if (!at_last_element || opt.resolve_final_symlink) {
-      error = resolve_symlink(at_last_element, &n, &child, base_name_out,
+      error = resolve_symlink(at_last_element, opt, &n, &child, base_name_out,
                               max_recursion);
       if (error) {
         VFS_PUT_AND_CLEAR(n);

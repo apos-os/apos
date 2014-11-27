@@ -703,6 +703,17 @@ static void access_mode_test_func(void* arg) {
   KEXPECT_EQ(0, vfs_mkdir("access_mode_test/group_match", VFS_S_IRWXU | VFS_S_IRWXG));
   KEXPECT_EQ(0, vfs_chown("access_mode_test/group_match", kUserC, kGroupA));
 
+  KEXPECT_EQ(0, vfs_symlink("no_exec", "access_mode_test/no_exec_link"));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_exec_link", kUserA, kGroupA));
+  KEXPECT_EQ(0, vfs_symlink("no_exec/no_read", "access_mode_test/no_exec_link2"));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_exec_link2", kUserA, kGroupA));
+  KEXPECT_EQ(0, vfs_symlink("no_read", "access_mode_test/no_read_link"));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_read_link", kUserA, kGroupA));
+  KEXPECT_EQ(0, vfs_symlink("no_read/no_read", "access_mode_test/no_read_link2"));
+  KEXPECT_EQ(0, vfs_chown("access_mode_test/no_read_link2", kUserA, kGroupA));
+  KEXPECT_EQ(0, vfs_symlink("bad", "access_mode_test/bad_link"));
+  KEXPECT_EQ(0, vfs_lchown("access_mode_test/bad_link", kUserA, kGroupA));
+
   KEXPECT_EQ(0, setregid(kGroupA, kGroupB));
   KEXPECT_EQ(0, setreuid(kUserA, kUserB));
 
@@ -846,7 +857,27 @@ static void access_mode_test_func(void* arg) {
   KEXPECT_EQ(-EINVAL, vfs_access("access_mode_test", -1));
   KEXPECT_EQ(-EINVAL, vfs_access("access_mode_test", 1234));
 
-  // TODO(aoates): test symlinks.
+  KTEST_BEGIN("vfs_access(): through symlink (final element)");
+  KEXPECT_EQ(0, vfs_access("access_mode_test/no_exec_link", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec_link", X_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/no_read_link", X_OK));
+
+  KTEST_BEGIN("vfs_access(): through symlink (final element) B");
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec_link2", F_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec_link2", X_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/no_read_link", X_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/no_read_link2", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read_link2", R_OK));
+
+  KTEST_BEGIN("vfs_access(): through symlink (not final element)");
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec_link/no_read", F_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/no_read_link/no_read", X_OK));
+  KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_read_link/no_read", R_OK));
+  KEXPECT_EQ(0, vfs_access("access_mode_test/no_read_link/no_read", W_OK));
+
+  KTEST_BEGIN("vfs_access(): invalid symlink");
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/bad_link", W_OK));
+  KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/bad_link/x", W_OK));
 }
 
 static void access_mode_test(void) {
@@ -874,6 +905,12 @@ static void access_mode_test(void) {
   KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec/no_write"));
   KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec/no_exec"));
   KEXPECT_EQ(0, vfs_rmdir("access_mode_test/no_exec"));
+
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec_link"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_exec_link2"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_read_link"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/no_read_link2"));
+  KEXPECT_EQ(0, vfs_unlink("access_mode_test/bad_link"));
 
   KEXPECT_EQ(0, vfs_rmdir("access_mode_test/user_match"));
   KEXPECT_EQ(0, vfs_rmdir("access_mode_test/group_match"));
