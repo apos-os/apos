@@ -18,9 +18,11 @@
 #if __APOS_BUILDING_IN_TREE__
 #  include "user/include/apos/dev.h"
 #  include "user/include/apos/posix_types.h"
+#  include "user/include/apos/time_types.h"
 #else
 #  include <apos/dev.h>
 #  include <apos/posix_types.h>
+#  include <apos/time_types.h>
 #endif
 
 // File type flags for mode_t.
@@ -65,16 +67,24 @@
 
 // Information about a vnode.
 struct stat {
-  apos_dev_t st_dev;    // Device containing the file.
-  ino_t st_ino;         // Inode number.
-  mode_t st_mode;       // File type and mode.
-  nlink_t st_nlink;     // Number of hard links.
-  uid_t st_uid;         // File owner.
-  gid_t st_gid;         // File group.
-  apos_dev_t st_rdev;   // Device ID (if special file).
-  off_t st_size;        // Size, in bytes.
-  blksize_t st_blksize; // File system block size.
-  blkcnt_t st_blocks;   // Number of 512B blocks allocated.
+  apos_dev_t st_dev;         // Device containing the file.
+  ino_t st_ino;              // Inode number.
+  mode_t st_mode;            // File type and mode.
+  nlink_t st_nlink;          // Number of hard links.
+  uid_t st_uid;              // File owner.
+  gid_t st_gid;              // File group.
+  apos_dev_t st_rdev;        // Device ID (if special file).
+  off_t st_size;             // Size, in bytes.
+  struct timespec st_atim;   // Last data access timestamp.
+  struct timespec st_mtim;   // Last data modification timestamp.
+  struct timespec st_ctim;   // Last file status change timestamp.
+  blksize_t st_blksize;      // File system block size.
+  blkcnt_t st_blocks;        // Number of 512B blocks allocated.
+
+  // For backwards compatibility.
+# define st_atime st_atim.tv_sec
+# define st_mtime st_mtim.tv_sec
+# define st_ctime st_ctim.tv_sec
 };
 // TODO(aoates): replace all instances of apos_stat_t with stat_t.
 typedef struct stat apos_stat_t;

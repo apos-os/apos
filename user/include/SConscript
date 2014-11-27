@@ -26,6 +26,7 @@ HEADERS = [
   'apos/syscall.h',
   'apos/syscalls.h',
   'apos/test.h',
+  'apos/time_types.h',
   'apos/vfs/dirent.h',
   'apos/vfs/stat.h',
   'apos/vfs/vfs.h',
