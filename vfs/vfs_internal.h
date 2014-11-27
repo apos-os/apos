@@ -52,11 +52,15 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name);
 // Options that determine how we do path lookups.
 typedef struct lookup_options {
   bool resolve_final_symlink;
+  // If true, the ruid/rgid will be checked for access permissions instead of
+  // the euid/egid.  Most syscalls don't want this.  It defaults to false.
+  bool check_real_ugid;
 } lookup_options_t;
 
 static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
   lookup_options_t opt;
   opt.resolve_final_symlink = resolve_final_symlink;
+  opt.check_real_ugid = false;
   return opt;
 }
 

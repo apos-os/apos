@@ -193,8 +193,14 @@ static int lookup_path_internal(vnode_t* root, const char* path,
   while(1) {
     // Ensure we have permission to search this directory.
     int mode_check;
-    if ((mode_check = vfs_check_mode(
-                VFS_OP_SEARCH, proc_current(), n))) {
+    if (!opt.check_real_ugid) {
+      mode_check = vfs_check_mode(
+          VFS_OP_SEARCH, proc_current(), n);
+    } else {
+      mode_check = vfs_check_mode_rugid(
+          VFS_OP_SEARCH, proc_current(), n);
+    }
+    if (mode_check) {
       VFS_PUT_AND_CLEAR(n);
       return mode_check;
     }
