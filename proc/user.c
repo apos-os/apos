@@ -87,46 +87,58 @@ gid_t getegid(void) {
 
 int setreuid(uid_t ruid, uid_t euid) {
   const int super = proc_is_superuser(proc_current());
-  if (ruid != -1 && ruid != proc_current()->ruid) {
-    if (super) {
-      proc_current()->ruid = ruid;
+  const uid_t old_ruid = proc_current()->ruid;
+  const uid_t old_euid = proc_current()->euid;
+  const uid_t old_suid = proc_current()->suid;
+  uid_t new_ruid = old_ruid;
+  uid_t new_euid = old_euid;
+  if (ruid != -1 && ruid != old_ruid) {
+    if (super || ruid == old_euid || ruid == old_suid) {
+      new_ruid = ruid;
     } else {
       return -EPERM;
     }
   }
-  if (euid != -1 && euid != proc_current()->euid) {
-    if (super || euid == proc_current()->ruid ||
-         euid == proc_current()->suid) {
-      proc_current()->euid = euid;
+  if (euid != -1 && euid != old_euid) {
+    if (super || euid == old_ruid || euid == old_suid) {
+      new_euid = euid;
     } else {
       return -EPERM;
     }
   }
+  proc_current()->ruid = new_ruid;
+  proc_current()->euid = new_euid;
   if (ruid != -1 || (euid != -1 && euid != proc_current()->ruid)) {
-    proc_current()->suid = proc_current()->euid;
+    proc_current()->suid = new_euid;
   }
   return 0;
 }
 
 int setregid(gid_t rgid, gid_t egid) {
   const int super = proc_is_superuser(proc_current());
-  if (rgid != -1 && rgid != proc_current()->rgid) {
-    if (super) {
-      proc_current()->rgid = rgid;
+  const gid_t old_rgid = proc_current()->rgid;
+  const gid_t old_egid = proc_current()->egid;
+  const gid_t old_sgid = proc_current()->sgid;
+  gid_t new_rgid = old_rgid;
+  gid_t new_egid = old_egid;
+  if (rgid != -1 && rgid != old_rgid) {
+    if (super || rgid == old_egid || rgid == old_sgid) {
+      new_rgid = rgid;
     } else {
       return -EPERM;
     }
   }
-  if (egid != -1 && egid != proc_current()->egid) {
-    if (super || egid == proc_current()->rgid ||
-         egid == proc_current()->sgid) {
-      proc_current()->egid = egid;
+  if (egid != -1 && egid != old_egid) {
+    if (super || egid == old_rgid || egid == old_sgid) {
+      new_egid = egid;
     } else {
       return -EPERM;
     }
   }
+  proc_current()->rgid = new_rgid;
+  proc_current()->egid = new_egid;
   if (rgid != -1 || (egid != -1 && egid != proc_current()->rgid)) {
-    proc_current()->sgid = proc_current()->egid;
+    proc_current()->sgid = new_egid;
   }
   return 0;
 }
