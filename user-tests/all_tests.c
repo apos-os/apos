@@ -16,12 +16,19 @@
 #include "ktest.h"
 #include "all_tests.h"
 
+bool run_slow_tests = false;
+
 int main(int argc, char** argv) {
+  if (argc > 1 && strcmp(argv[1], "all") == 0)
+    run_slow_tests = true;
+
   ktest_begin_all();
 
   syscall_errno_test();
   int status = exit_status_test();
   if (status) return status;
+
+  basic_signal_test();
 
   ktest_finish_all();
   return 0;

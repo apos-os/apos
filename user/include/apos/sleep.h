@@ -11,15 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef APOO_USER_TESTS_ALL_TESTS_H
-#define APOO_USER_TESTS_ALL_TESTS_H
 
-#include <stdbool.h>
+#ifndef APOO_USER_INCLUDE_APOS_SLEEP_H
+#define APOO_USER_INCLUDE_APOS_SLEEP_H
 
-extern bool run_slow_tests;
-
-void syscall_errno_test(void);
-int exit_status_test(void);
-void basic_signal_test(void);
+int sleep_ms(unsigned int seconds);
 
 #endif
