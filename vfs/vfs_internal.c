@@ -28,7 +28,7 @@ htbl_t g_vnode_cache;
 file_t* g_file_table[VFS_MAX_FILES];
 
 static int lookup_path_internal(vnode_t* root, const char* path,
-                                int resolve_final_symlink, vnode_t** parent_out,
+                                lookup_options_t opt, vnode_t** parent_out,
                                 vnode_t** child_out, char* base_name_out,
                                 int max_recursion);
 
@@ -59,9 +59,9 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
-int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
-                    vnode_t** child_ptr, char* base_name_out,
-                    int max_recursion) {
+int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+                    vnode_t** parent_ptr, vnode_t** child_ptr,
+                    char* base_name_out, int max_recursion) {
   vnode_t* child = *child_ptr;
   vnode_t* parent = VFS_COPY_REF(*parent_ptr);
   char* symlink_target = 0x0;
@@ -77,13 +77,13 @@ int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
     KASSERT_DBG(error <= VFS_MAX_PATH_LENGTH);
     symlink_target[error] = '\0';
 
-    // TODO(aoates): limit number of recursions.
     vnode_t* symlink_target_node = 0x0;
     vnode_t* new_parent = 0x0;
     vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
-    error = lookup_path_internal(root, symlink_target, 0, &new_parent,
-                                 &symlink_target_node, base_name_out,
-                                 max_recursion - 1);
+    opt.resolve_final_symlink = false;
+    error = lookup_path_internal(root, symlink_target, opt,
+                                 &new_parent, &symlink_target_node,
+                                 base_name_out, max_recursion - 1);
     VFS_PUT_AND_CLEAR(root);
     VFS_PUT_AND_CLEAR(parent);
     if (error) {
@@ -165,7 +165,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
 }
 
 static int lookup_path_internal(vnode_t* root, const char* path,
-                                int resolve_final_symlink, vnode_t** parent_out,
+                                lookup_options_t opt, vnode_t** parent_out,
                                 vnode_t** child_out, char* base_name_out,
                                 int max_recursion) {
   if (!*path || !root || !base_name_out) {
@@ -194,8 +194,14 @@ static int lookup_path_internal(vnode_t* root, const char* path,
   while(1) {
     // Ensure we have permission to search this directory.
     int mode_check;
-    if ((mode_check = vfs_check_mode(
-                VFS_OP_SEARCH, proc_current(), n))) {
+    if (!opt.check_real_ugid) {
+      mode_check = vfs_check_mode(
+          VFS_OP_SEARCH, proc_current(), n);
+    } else {
+      mode_check = vfs_check_mode_rugid(
+          VFS_OP_SEARCH, proc_current(), n);
+    }
+    if (mode_check) {
       VFS_PUT_AND_CLEAR(n);
       return mode_check;
     }
@@ -230,8 +236,8 @@ static int lookup_path_internal(vnode_t* root, const char* path,
 
     // If we're not at the end, or we want to follow the final symlink, attempt
     // to resolve it.
-    if (!at_last_element || resolve_final_symlink) {
-      error = resolve_symlink(at_last_element, &n, &child, base_name_out,
+    if (!at_last_element || opt.resolve_final_symlink) {
+      error = resolve_symlink(at_last_element, opt, &n, &child, base_name_out,
                               max_recursion);
       if (error) {
         VFS_PUT_AND_CLEAR(n);
@@ -275,20 +281,20 @@ static int lookup_path_internal(vnode_t* root, const char* path,
   }
 }
 
-int lookup_path(vnode_t* root, const char* path, int resolve_final_symlink,
+int lookup_path(vnode_t* root, const char* path, lookup_options_t opt,
                 vnode_t** parent_out, vnode_t** child_out,
                 char* base_name_out) {
-  return lookup_path_internal(root, path, resolve_final_symlink, parent_out,
+  return lookup_path_internal(root, path, opt, parent_out,
                               child_out, base_name_out, VFS_MAX_LINK_RECURSION);
 }
 
 
-int lookup_existing_path(const char* path, int resolve_final_symlink,
+int lookup_existing_path(const char* path, lookup_options_t opt,
                          vnode_t** parent_out, vnode_t** child_out) {
   if (!path) return -EINVAL;
   vnode_t* root = get_root_for_path(path);
   char unused_basename[VFS_MAX_FILENAME_LENGTH];
-  int result = lookup_path(root, path, resolve_final_symlink, parent_out,
+  int result = lookup_path(root, path, opt, parent_out,
                            child_out, unused_basename);
   VFS_PUT_AND_CLEAR(root);
   if (!result && !*child_out) {

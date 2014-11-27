@@ -330,24 +330,38 @@ static void setreuid_test_func(void* arg) {
   KEXPECT_EQ(0, setreuid(kTestUserA, -1));
 
   KTEST_BEGIN("setreuid() as non-superuser real to effective uid");
-  KEXPECT_EQ(-EPERM, setreuid(kTestUserB, -1));
-
-  KTEST_BEGIN("setreuid() as non-superuser real to saved uid");
-  KEXPECT_EQ(-EPERM, setreuid(kTestUserC, -1));
-
-  KEXPECT_EQ(kTestUserA, proc_current()->ruid);
+  KEXPECT_EQ(0, setreuid(kTestUserB, -1));
+  KEXPECT_EQ(kTestUserB, proc_current()->ruid);
   KEXPECT_EQ(kTestUserB, proc_current()->euid);
   KEXPECT_EQ(kTestUserB, proc_current()->suid);
+  proc_current()->ruid = kTestUserA;
+  proc_current()->suid = kTestUserC;
+
+  KTEST_BEGIN("setreuid() as non-superuser real to saved uid");
+  KEXPECT_EQ(0, setreuid(kTestUserC, -1));
+  KEXPECT_EQ(kTestUserC, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserB, proc_current()->suid);
+  proc_current()->ruid = kTestUserA;
 
   KTEST_BEGIN("setregid() as non-superuser real to real gid");
   KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
   KEXPECT_EQ(0, setregid(kTestGroupA, -1));
 
   KTEST_BEGIN("setregid() as non-superuser real to effective gid");
-  KEXPECT_EQ(-EPERM, setregid(kTestGroupB, -1));
+  KEXPECT_EQ(0, setregid(kTestGroupB, -1));
+  KEXPECT_EQ(kTestGroupB, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
+  proc_current()->rgid = kTestGroupA;
+  proc_current()->sgid = kTestGroupC;
 
   KTEST_BEGIN("setregid() as non-superuser real to saved gid");
-  KEXPECT_EQ(-EPERM, setregid(kTestGroupC, -1));
+  KEXPECT_EQ(0, setregid(kTestGroupC, -1));
+  KEXPECT_EQ(kTestGroupC, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
+  proc_current()->rgid = kTestGroupA;
 
   KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
   KEXPECT_EQ(kTestGroupB, proc_current()->egid);
@@ -393,6 +407,82 @@ static void setreuid_test_func(void* arg) {
   KTEST_BEGIN("setregid() as non-superuser real to unrelated gid");
   KEXPECT_EQ(-EPERM, setregid(kTestUserD, kTestGroupC));
 
+
+  KTEST_BEGIN("setreuid(): can swap euid and ruid");
+  KEXPECT_EQ(0, setreuid(kTestUserB, kTestUserA));
+  KEXPECT_EQ(kTestUserB, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserA, proc_current()->euid);
+  KEXPECT_EQ(kTestUserA, proc_current()->suid);
+
+  KEXPECT_EQ(0, setreuid(kTestUserA, kTestUserB));
+  KEXPECT_EQ(kTestUserA, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserB, proc_current()->suid);
+
+
+  KTEST_BEGIN("setregid(): can swap egid and rgid");
+  KEXPECT_EQ(0, setregid(kTestGroupB, kTestGroupA));
+  KEXPECT_EQ(kTestGroupB, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupA, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupA, proc_current()->sgid);
+
+  KEXPECT_EQ(0, setregid(kTestGroupA, kTestGroupB));
+  KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
+
+
+  KTEST_BEGIN("setreuid(): can set ruid to suid");
+  proc_current()->suid = kTestUserC;
+  KEXPECT_EQ(0, setreuid(kTestUserC, -1));
+  KEXPECT_EQ(kTestUserC, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserB, proc_current()->suid);
+
+  proc_current()->ruid = kTestUserA;
+  proc_current()->euid = proc_current()->suid = kTestUserB;
+
+
+  KTEST_BEGIN("setregid(): can set rgid to sgid");
+  proc_current()->sgid = kTestGroupC;
+  KEXPECT_EQ(0, setregid(kTestGroupC, -1));
+  KEXPECT_EQ(kTestGroupC, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
+
+  proc_current()->rgid = kTestGroupA;
+  proc_current()->egid = proc_current()->sgid = kTestGroupB;
+
+
+  KTEST_BEGIN("setreuid() ruid failure doesn't change state");
+  KEXPECT_EQ(-EPERM, setreuid(kTestUserC, kTestUserA));
+  KEXPECT_EQ(kTestUserA, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserB, proc_current()->suid);
+
+
+  KTEST_BEGIN("setreuid() euid failure doesn't change state");
+  KEXPECT_EQ(-EPERM, setreuid(kTestUserB, kTestUserC));
+  KEXPECT_EQ(kTestUserA, proc_current()->ruid);
+  KEXPECT_EQ(kTestUserB, proc_current()->euid);
+  KEXPECT_EQ(kTestUserB, proc_current()->suid);
+
+
+  KTEST_BEGIN("setregid() rgid failure doesn't change state");
+  KEXPECT_EQ(-EPERM, setregid(kTestGroupC, kTestGroupA));
+  KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
+
+
+  KTEST_BEGIN("setregid() egid failure doesn't change state");
+  KEXPECT_EQ(-EPERM, setregid(kTestGroupB, kTestGroupC));
+  KEXPECT_EQ(kTestGroupA, proc_current()->rgid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->egid);
+  KEXPECT_EQ(kTestGroupB, proc_current()->sgid);
+
+
+  KTEST_BEGIN("setreuid()/setregid() end state");
   KEXPECT_EQ(kTestUserA, proc_current()->ruid);
   KEXPECT_EQ(kTestUserB, proc_current()->euid);
   KEXPECT_EQ(kTestUserB, proc_current()->suid);

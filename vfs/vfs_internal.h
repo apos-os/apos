@@ -49,6 +49,21 @@ int resolve_mounts(vnode_t** vnode);
 // vnode with the mount point.
 void resolve_mounts_up(vnode_t** parent, const char* child_name);
 
+// Options that determine how we do path lookups.
+typedef struct lookup_options {
+  bool resolve_final_symlink;
+  // If true, the ruid/rgid will be checked for access permissions instead of
+  // the euid/egid.  Most syscalls don't want this.  It defaults to false.
+  bool check_real_ugid;
+} lookup_options_t;
+
+static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
+  lookup_options_t opt;
+  opt.resolve_final_symlink = resolve_final_symlink;
+  opt.check_real_ugid = false;
+  return opt;
+}
+
 // Resolve the given vnode if it is a symlink, replacing it with the final
 // target.  Resolves the symlink path relative to the parent.  Also replaces the
 // parent pointer with the parent of the symlink target.  On error, the child
@@ -62,9 +77,9 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name);
 // If |allow_nonexistant_final| is non-zero, and the final element of the
 // symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
 // but will set |*child_ptr| to 0x0.
-int resolve_symlink(int allow_nonexistant_final, vnode_t** parent_ptr,
-                    vnode_t** child_ptr, char* base_name_out,
-                    int max_recursion);
+int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+                    vnode_t** parent_ptr, vnode_t** child_ptr,
+                    char* base_name_out, int max_recursion);
 
 // Given a vnode and child name, lookup the vnode of the child.  Returns 0 on
 // success (and refcounts the child).
@@ -106,7 +121,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len);
 //
 // IMPORTANT: if the final element doesn't exist, the call succeeds (returns 0),
 // but *child_out will be set to 0x0.
-int lookup_path(vnode_t* root, const char* path, int resolve_final_symlink,
+int lookup_path(vnode_t* root, const char* path, lookup_options_t options,
                 vnode_t** parent_out, vnode_t** child_out, char* base_name_out);
 
 // Similar to lookup_path(), but does a full lookup of an existing file.  Used
@@ -116,7 +131,7 @@ int lookup_path(vnode_t* root, const char* path, int resolve_final_symlink,
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
 // otherwise.  Returns the parent of the child, also with a reference in
 // |parent_out|, unless |parent_out| is null.
-int lookup_existing_path(const char* path, int resolve_final_symlink,
+int lookup_existing_path(const char* path, lookup_options_t options,
                          vnode_t** parent_out, vnode_t** child_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in

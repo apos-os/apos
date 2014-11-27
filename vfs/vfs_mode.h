@@ -30,4 +30,8 @@ typedef enum {
 int vfs_check_mode(vfs_mode_op_t op, const process_t* proc,
                    const vnode_t* vnode);
 
+// As above, but uses the ruid/rgid of the process instead of the euid.
+int vfs_check_mode_rugid(vfs_mode_op_t op, const process_t* proc,
+                         const vnode_t* vnode);
+
 #endif

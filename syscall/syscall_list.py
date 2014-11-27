@@ -229,6 +229,18 @@ AddSyscall('chdir', 12, 'vfs_chdir', 'vfs/vfs.h', '<unistd.h>',
     'int', [
     'const char*:path:s'])
 
+AddSyscall('access', 47, 'vfs_access', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path:s', 'int:amode:u'])
+
+AddSyscall('chown', 48, 'vfs_chown', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path:s', 'uid_t:owner:u', 'gid_t:group:u'])
+
+AddSyscall('fchown', 49, 'vfs_fchown', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['int:fd:u', 'uid_t:owner:u', 'gid_t:group:u'])
+
+AddSyscall('lchown', 50, 'vfs_lchown', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path:s', 'uid_t:owner:u', 'gid_t:group:u'])
+
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'pid_t', [], newlib_defined=True)
 
