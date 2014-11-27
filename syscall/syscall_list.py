@@ -338,3 +338,6 @@ AddSyscall('symlink', 42, 'vfs_symlink', 'vfs/vfs.h', '<unistd.h>',
 
 AddSyscall('readlink', 43, 'vfs_readlink', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'char*:buf:bw:bufsize', 'size_t:bufsize:u'])
+
+AddSyscall('sleep_ms', 44, 'ksleep', 'proc/sleep.h', '',
+    'int', ['unsigned int:seconds:u'])
