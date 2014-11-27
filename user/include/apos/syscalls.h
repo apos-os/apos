@@ -37,6 +37,9 @@
 #define SYS_LSEEK 38
 #define SYS_CHDIR 12
 #define SYS_ACCESS 47
+#define SYS_CHOWN 48
+#define SYS_FCHOWN 49
+#define SYS_LCHOWN 50
 #define SYS_FORK 13
 #define SYS_EXIT 14
 #define SYS_WAIT 41
