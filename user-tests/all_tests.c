@@ -17,12 +17,6 @@
 #include "all_tests.h"
 
 int main(int argc, char** argv) {
-  const char* tty = "/dev/tty0";
-  if (argc > 1) tty = argv[1];
-  open(tty, O_RDONLY);
-  open(tty, O_WRONLY);
-  open(tty, O_WRONLY);
-
   ktest_begin_all();
 
   syscall_errno_test();

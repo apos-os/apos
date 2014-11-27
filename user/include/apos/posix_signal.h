@@ -20,7 +20,7 @@
 #include <stdint.h>
 
 #if __APOS_BUILDING_IN_TREE__
-#  include "user/errors.h"
+#  include "user/include/apos/errors.h"
 #else
 #  include <apos/errors.h>
 #endif

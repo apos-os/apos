@@ -19,7 +19,7 @@
 #include "common/errno.h"
 #include "common/types.h"
 #include "proc/process.h"
-#include "user/posix_signal.h"
+#include "user/include/apos/posix_signal.h"
 
 static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;

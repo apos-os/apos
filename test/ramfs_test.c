@@ -19,7 +19,7 @@
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/ramfs.h"
 #include "vfs/vfs.h"
 
@@ -167,7 +167,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
         expected_idx++;
       }
 
-      bufidx += d->d_length;
+      bufidx += d->d_reclen;
     }
 
     // Read another chunk.

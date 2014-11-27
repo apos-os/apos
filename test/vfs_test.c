@@ -2363,7 +2363,7 @@ static void mknod_mode_test(void) {
   KTEST_BEGIN("mknod(): invalid mode test");
   KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0xffff, makedev(0, 0)));
   KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | -1, makedev(0, 0)));
-  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFREG | 0x8000, makedev(0, 0)));
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, 0x200000, makedev(0, 0)));
 
   KTEST_BEGIN("mknod(): regular file w/ mode test");
   KEXPECT_EQ(0, vfs_mknod(kRegFile, VFS_S_IFREG | VFS_S_IRWXU, makedev(0, 0)));

@@ -16,7 +16,7 @@
 #ifndef APOO_MEMORY_FLAGS_H
 #define APOO_MEMORY_FLAGS_H
 
-#include "user/mmap.h"
+#include "user/include/apos/mmap.h"
 
 // Protection flags.  Not all are supported on all platforms.
 #define MEM_PROT_NONE PROT_NONE

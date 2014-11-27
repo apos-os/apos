@@ -15,7 +15,7 @@
 #ifndef APOO_TEST_VFS_TEST_UTIL_H
 #define APOO_TEST_VFS_TEST_UTIL_H
 
-#include "user/vfs/stat.h"
+#include "user/include/apos/vfs/stat.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
 

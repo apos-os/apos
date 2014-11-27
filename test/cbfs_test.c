@@ -22,7 +22,7 @@
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/cbfs.h"
 #include "vfs/mount.h"
 #include "vfs/vfs.h"

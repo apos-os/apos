@@ -22,7 +22,7 @@
 #include "proc/alarm.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
-#include "user/posix_signal.h"
+#include "user/include/apos/posix_signal.h"
 
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32

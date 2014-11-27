@@ -25,7 +25,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/user.h"
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -545,9 +545,9 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   }
 
   vnode_type_t type = VNODE_INVALID;
-  if (mode & VFS_S_IFREG) type = VNODE_REGULAR;
-  else if (mode & VFS_S_IFBLK) type = VNODE_BLOCKDEV;
-  else if (mode & VFS_S_IFCHR) type = VNODE_CHARDEV;
+  if (VFS_S_ISREG(mode)) type = VNODE_REGULAR;
+  else if (VFS_S_ISBLK(mode)) type = VNODE_BLOCKDEV;
+  else if (VFS_S_ISCHR(mode)) type = VNODE_CHARDEV;
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
@@ -774,7 +774,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
       int bufpos = 0;
       while (bufpos < result) {
         ent = (dirent_t*)((char*)buf + bufpos);
-        bufpos += ent->d_length;
+        bufpos += ent->d_reclen;
       }
       file->pos = ent->d_offset;
     }

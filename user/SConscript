@@ -26,4 +26,4 @@ env.Tpl('syscall_stubs.tpl')
 env.Tpl('newlib_syscall_stubs.tpl')
 env.Tpl('newlib_syscall_stubs_manual.tpl')
 
-env.Tpl('#/user/syscalls.h', 'syscalls.h.tpl')
+SConscript('include/SConscript')

@@ -19,7 +19,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "common/math.h"
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 
 static vnode_t* testfs_alloc_vnode(struct fs* fs);
 static int testfs_get_root(struct fs* fs);
@@ -147,13 +147,13 @@ static int testfs_getdents(vnode_t* vnode, int offset, void* outbuf,
   dirent_t* d = (dirent_t*)(&buf[0]);
   d->d_ino = 0;
   d->d_offset = sizeof(dirent_t) + 2;
-  d->d_length = d->d_offset;
+  d->d_reclen = d->d_offset;
   kstrcpy(d->d_name, ".");
 
   d = (dirent_t*)(&buf[d->d_offset]);
   d->d_ino = 0;
   d->d_offset = kBufLen;
-  d->d_length = sizeof(dirent_t) + 3;
+  d->d_reclen = sizeof(dirent_t) + 3;
   kstrcpy(d->d_name, "..");
 
   if (offset >= kBufLen) return 0;

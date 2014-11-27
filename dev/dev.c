@@ -198,7 +198,7 @@ void dev_init_fs() {
     int buf_offset = 0;
     while (buf_offset < len) {
       dirent_t* ent = (dirent_t*)(buf + buf_offset);
-      buf_offset += ent->d_length;
+      buf_offset += ent->d_reclen;
 
       if (kstrcmp(ent->d_name, ".") == 0 ||
           kstrcmp(ent->d_name, "..") == 0) {

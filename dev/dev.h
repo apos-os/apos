@@ -20,7 +20,7 @@
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
 #include "memory/memobj.h"
-#include "user/dev.h"
+#include "user/include/apos/dev.h"
 
 #define DEVICE_MAX_MAJOR 10
 #define DEVICE_MAX_MINOR 20

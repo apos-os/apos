@@ -27,6 +27,7 @@ vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
+vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = [

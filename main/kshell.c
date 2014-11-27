@@ -52,7 +52,7 @@
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #endif
-#include "user/vfs/dirent.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/vfs.h"
 
 #define READ_BUF_SIZE 1024
@@ -376,7 +376,7 @@ static void ls_cmd(int argc, char* argv[]) {
     int buf_offset = 0;
     do {
       dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
-      buf_offset += ent->d_length;
+      buf_offset += ent->d_reclen;
       if (long_mode) {
         // TODO(aoates): use fstatat()
         char child_path[1000];
@@ -672,6 +672,18 @@ typedef struct {
 
 static void boot_child_func(void* arg) {
   boot_child_args_t* args = (boot_child_args_t*)arg;
+  char tty_name[100];
+  ksprintf(tty_name, "/dev/tty%d", minor(g_tty));
+
+  int stdin_fd = vfs_open(tty_name, VFS_O_RDONLY);
+  int stdout_fd = vfs_open(tty_name, VFS_O_WRONLY);
+  int stderr_fd = vfs_open(tty_name, VFS_O_WRONLY);
+  if (stdin_fd != 0 || stdout_fd != 1 || stderr_fd != 2) {
+    klogf("Couldn't boot %s: opened wrong fds for stdin/stdout/stderr "
+          " (stdin: %d, stdout: %d, stderr: %d)\n",
+          args->argv[1], stdin_fd, stdout_fd, stderr_fd);
+    proc_exit(1);
+  }
 
   char* envp[] = { NULL };
   int result = do_execve(args->argv[1], args->argv + 1, envp, NULL, NULL);

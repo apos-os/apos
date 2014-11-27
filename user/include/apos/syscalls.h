@@ -59,5 +59,8 @@
 #define SYS_SETPGID 34
 #define SYS_MMAP 39
 #define SYS_MUNMAP 40
+#define SYS_SYMLINK 42
+#define SYS_READLINK 43
+#define SYS_SLEEP_MS 44
 
 #endif
