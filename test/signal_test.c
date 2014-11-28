@@ -701,7 +701,6 @@ static void signal_interrupt_thread_test(void) {
     KEXPECT_EQ(1, status);
   }
 
-  // TODO(aoates): userspace test of default TERM and TERM_AND_CORE signals.
   // TODO(aoates): tests for various sa_flags when they're implemented.
 }
 

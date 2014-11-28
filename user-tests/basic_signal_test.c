@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <sys/wait.h>
+#include <time.h>
 
 #include <apos/sleep.h>
 #include <apos/syscall.h>
@@ -226,6 +227,25 @@ static void sleep_ms_interrupt_test(void) {
   KEXPECT_LE(status, 50);
 }
 
+static void sleep_ms_send_term_sig_test(int sig) {
+  KTEST_BEGIN("sleep_ms() interrupted by signal");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    exit(sleep_ms(10 * 1000));
+  }
+
+  sleep_ms(50);
+  time_t start_time = time(NULL);
+  KEXPECT_EQ(0, kill(child, sig));
+  time_t end_time = time(NULL);
+  KEXPECT_LE(end_time - start_time, 1);
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(status, 128 + sig);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -240,4 +260,6 @@ void basic_signal_test(void) {
   sigchld_test();
 
   sleep_ms_interrupt_test();
+  sleep_ms_send_term_sig_test(SIGPIPE);  // default TERM
+  sleep_ms_send_term_sig_test(SIGQUIT);  // default TERM_AND_CORE
 }
