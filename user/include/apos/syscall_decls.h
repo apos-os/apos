@@ -44,6 +44,7 @@ int fchown(int fd, uid_t owner, gid_t group);
 int lchown(const char* path, uid_t owner, gid_t group);
 pid_t getppid(void);
 int sigaction(int signum, const struct sigaction* act, struct sigaction* oldact);
+int sigprocmask(int how, const sigset_t* set, sigset_t* oset);
 unsigned int alarm(unsigned int seconds);
 int setuid(uid_t uid);
 int setgid(gid_t gid);

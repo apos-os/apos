@@ -190,6 +190,37 @@ int proc_sigaction(int signum, const struct sigaction* act,
   return 0;
 }
 
+int proc_sigprocmask(int how, const sigset_t* restrict set,
+                     sigset_t* restrict oset) {
+  if (oset) {
+    *oset = kthread_current_thread()->signal_mask;
+  }
+
+  sigset_t new_mask = kthread_current_thread()->signal_mask;
+  if (set) {
+    switch (how) {
+      case SIG_BLOCK:
+        new_mask |= *set;
+        break;
+
+      case SIG_UNBLOCK:
+        new_mask &= ~(*set);
+        break;
+
+      case SIG_SETMASK:
+        new_mask = *set;
+        break;
+
+      default:
+        return -EINVAL;
+    }
+  }
+  ksigdelset(&new_mask, SIGKILL);
+  ksigdelset(&new_mask, SIGSTOP);
+  kthread_current_thread()->signal_mask = new_mask;
+  return 0;
+}
+
 // Dispatch a particular signal in the current process.  May not return.
 static void dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();

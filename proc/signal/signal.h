@@ -62,6 +62,10 @@ int proc_kill(pid_t pid, int sig);
 int proc_sigaction(int signum, const struct sigaction* act,
                    struct sigaction* oldact);
 
+// Adjust the current thread's signal mask.  Returns 0 on success, or -error.
+int proc_sigprocmask(int how, const sigset_t* restrict set,
+                     sigset_t* restrict oset);
+
 // Attempts to assign any pending signals in the current process to the current
 // thread.  It returns 1 if the thread has any assigned signals (newly assigned
 // or not).
