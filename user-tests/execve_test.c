@@ -22,6 +22,7 @@
 
 void execve_test(void) {
   KTEST_SUITE_BEGIN("execve() test");
+  KTEST_BEGIN("execve() ls test");
 
   pid_t child;
   if ((child = fork()) == 0) {
