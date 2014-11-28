@@ -42,6 +42,10 @@ static inline int ksigisemptyset(const sigset_t* set) {
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
 
+// As above, but forces the signal to be handled on the given thread.  Returns 0
+// on success, or -errno on error.
+int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
+
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
 int proc_kill(pid_t pid, int sig);

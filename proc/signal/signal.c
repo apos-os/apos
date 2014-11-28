@@ -68,6 +68,15 @@ int proc_force_signal(process_t* proc, int sig) {
   return result;
 }
 
+int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
+  // This isn't very interesting until we have multiple threads in a process.
+  KASSERT_DBG(thread == proc->thread);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int result = ksigaddset(&thread->assigned_signals, sig);
+  POP_INTERRUPTS();
+  return result;
+}
+
 static int proc_kill_one(process_t* proc, int sig) {
   if (!proc || proc->state != PROC_RUNNING) {
     return -ESRCH;
