@@ -221,6 +221,14 @@ int proc_sigprocmask(int how, const sigset_t* restrict set,
   return 0;
 }
 
+int proc_sigpending(sigset_t* set) {
+  process_t* proc = proc_current();
+  kthread_t thread = proc->thread;
+  *set = proc->pending_signals |
+      (thread->assigned_signals & thread->signal_mask);
+  return 0;
+}
+
 // Dispatch a particular signal in the current process.  May not return.
 static void dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();

@@ -272,7 +272,20 @@ static void blocked_signal_test(void) {
       exit(1);
     }
 
+    sigset_t pending;
+    sigpending(&pending);
+    if (sigismember(&pending, SIGUSR1)) {
+      fprintf(stderr, "SIGUSR should not be pending\n");
+      exit(1);
+    }
+
     raise(SIGUSR1);
+
+    sigpending(&pending);
+    if (!sigismember(&pending, SIGUSR1)) {
+      fprintf(stderr, "SIGUSR should be pending\n");
+      exit(1);
+    }
 
     if (sleep_ms(100) != 0) {
       perror("sleep_ms() didn't return 0");

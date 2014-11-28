@@ -49,6 +49,7 @@
 #define SYS_KILL 19
 #define SYS_SIGACTION 20
 #define SYS_SIGPROCMASK 52
+#define SYS_SIGPENDING 53
 #define SYS_SIGRETURN 21
 #define SYS_ALARM 22
 #define SYS_SETUID 23

@@ -851,6 +851,56 @@ static void sigprocmask_test(void) {
   kthread_current_thread()->signal_mask = orig_mask;
 }
 
+static void sigpending_test(void) {
+  KTEST_BEGIN("sigpending() test -- unassigned signal");
+  ksigemptyset(&proc_current()->thread->assigned_signals);
+
+  sigset_t orig_mask;
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &orig_mask));
+
+  sigset_t mask;
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+
+  proc_force_signal(proc_current(), SIGUSR1);
+  KEXPECT_EQ(1, ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  sigset_t pending;
+  KEXPECT_EQ(0, proc_sigpending(&pending));
+  KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
+  ksigdelset(&pending, SIGUSR1);
+  KEXPECT_EQ(1, ksigisemptyset(&pending));
+
+  KTEST_BEGIN("sigpending() test -- assigned and unblocked signal");
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &mask, NULL));
+  proc_assign_pending_signals();
+
+  KEXPECT_EQ(0, ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  pending = 123;
+  KEXPECT_EQ(0, proc_sigpending(&pending));
+  // Not blocked, so shouldn't be present.
+  KEXPECT_EQ(1, ksigisemptyset(&pending));
+
+  KTEST_BEGIN("sigpending() test -- assigned and blocked signal");
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  proc_assign_pending_signals();
+
+  KEXPECT_EQ(0, ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  pending = 123;
+  KEXPECT_EQ(0, proc_sigpending(&pending));
+  KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
+  ksigemptyset(&pending);
+  KEXPECT_EQ(1, ksigisemptyset(&pending));
+
+  // Cleanup.
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));
+  ksigdelset(&kthread_current_thread()->assigned_signals, SIGUSR1);
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -860,6 +910,7 @@ void signal_test(void) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
   sigset_t saved_pending_signals = proc_current()->pending_signals;
+  sigset_t saved_assigned_signals = proc_current()->thread->assigned_signals;
   // TODO(aoates): do we want to save/restore the signal mask as well?
 
   ksigemptyset_test();
@@ -880,6 +931,7 @@ void signal_test(void) {
   signal_interrupt_thread_test();
   ksleep_interrupted_test();
   sigprocmask_test();
+  sigpending_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
@@ -888,4 +940,5 @@ void signal_test(void) {
     }
   }
   proc_current()->pending_signals = saved_pending_signals;
+  proc_current()->thread->assigned_signals = saved_assigned_signals;
 }
