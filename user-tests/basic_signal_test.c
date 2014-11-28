@@ -22,6 +22,14 @@
 #include "ktest.h"
 #include "all_tests.h"
 
+struct sigaction make_sigaction(void (*handler)(int)) {
+  struct sigaction new_action;
+  new_action.sa_handler = handler;
+  sigemptyset(&new_action.sa_mask);
+  new_action.sa_flags = 0;
+  return new_action;
+}
+
 static bool got_signal = false;
 static void signal_action(int sig) {
   printf("caught signal\n");
@@ -33,9 +41,7 @@ static void alarm_test(void) {
   got_signal = false;
 
   struct sigaction new_action, old_action;
-  new_action.sa_handler = &signal_action;
-  sigemptyset(&new_action.sa_mask);
-  new_action.sa_flags = 0;
+  new_action = make_sigaction(&signal_action);
   KEXPECT_EQ(0, sigaction(SIGALRM, &new_action, &old_action));
   alarm(1);
   sleep(2);  // TODO(aoates): use usleep
@@ -51,10 +57,7 @@ static void signal_test(void) {
 
   pid_t child;
   if (!(child = fork())) {
-    struct sigaction new_action;
-    new_action.sa_handler = &signal_action;
-    sigemptyset(&new_action.sa_mask);
-    new_action.sa_flags = 0;
+    struct sigaction new_action = make_sigaction(&signal_action);
 
     int result = sigaction(SIGUSR1, &new_action, NULL);
     if (result) {
@@ -74,6 +77,62 @@ static void signal_test(void) {
   KEXPECT_EQ(0, exit_status);
 }
 
+static void catch_sigfpe(int sig) {
+  exit(!(sig == SIGFPE));
+}
+
+static void sigfpe_test(void) {
+  KTEST_BEGIN("SIGFPE handling");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    struct sigaction new_action = make_sigaction(&catch_sigfpe);
+    int result = sigaction(SIGFPE, &new_action, NULL);
+    if (result) {
+      perror("sigaction in child failed");
+      exit(1);
+    }
+
+    int x = 5;
+    int y = 0;
+    x = x / y;
+    fprintf(stderr, "Got past divide-by-zero!\n");
+    exit(1);
+  }
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+}
+
+static void catch_sigsegv(int sig) {
+  // TODO(aoates): test the signal metadata, once that's generated.
+  exit(!(sig == SIGSEGV));
+}
+
+static void sigsegv_test(void) {
+  KTEST_BEGIN("SIGSEGV handling");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    struct sigaction new_action = make_sigaction(&catch_sigsegv);
+    int result = sigaction(SIGSEGV, &new_action, NULL);
+    if (result) {
+      perror("sigaction in child failed");
+      exit(1);
+    }
+
+    int x = *(int*)(0x123);
+    x = x * 10;  // Stupid compiler...
+    fprintf(stderr, "Got past segfault!\n");
+    exit(1);
+  }
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -82,4 +141,6 @@ void basic_signal_test(void) {
   }
 
   signal_test();
+  sigfpe_test();
+  sigsegv_test();
 }
