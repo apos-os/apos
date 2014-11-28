@@ -25,6 +25,10 @@ static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
+// Returns 1 if the process has any pending signals.  This should only be used
+// as a hint, since the locking is internal.
+int proc_maybe_has_pending_signals(const process_t* proc);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);

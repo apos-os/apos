@@ -61,6 +61,13 @@ static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
+int proc_maybe_has_pending_signals(const process_t* proc) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int result = !ksigisemptyset(&proc->pending_signals);
+  POP_INTERRUPTS();
+  return result;
+}
+
 int proc_force_signal(process_t* proc, int sig) {
   PUSH_AND_DISABLE_INTERRUPTS();
   int result = ksigaddset(&proc->pending_signals, sig);
