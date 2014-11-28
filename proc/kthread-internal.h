@@ -42,6 +42,7 @@ struct kthread_data {
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
+  kthread_queue_t* queue;  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   bool detached;
   kthread_queue_t join_list;  // List of thread's join()'d to this one.

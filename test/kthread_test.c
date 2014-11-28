@@ -159,10 +159,12 @@ static void* noop_func(void* arg) { return 0; }
 
 static void queue_test(void) {
   KTEST_BEGIN("queue operations test");
-  kthread_t thread1, thread2;
+  kthread_t thread1, thread2, thread3;
   int ret = kthread_create(&thread1, &noop_func, 0x0);
   KASSERT(ret == 0);
   ret = kthread_create(&thread2, &noop_func, 0x0);
+  KASSERT(ret == 0);
+  ret = kthread_create(&thread3, &noop_func, 0x0);
   KASSERT(ret == 0);
 
   kthread_queue_t queue;
@@ -172,29 +174,88 @@ static void queue_test(void) {
 
   kthread_queue_push(&queue, thread1);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
+  KEXPECT_EQ(&queue, thread1->queue);
 
   kthread_queue_push(&queue, thread2);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
+  KEXPECT_EQ(&queue, thread2->queue);
 
   kthread_t popped = kthread_queue_pop(&queue);
   KEXPECT_EQ(0x0, (uint32_t)popped->next);
   KEXPECT_EQ(0x0, (uint32_t)popped->prev);
+  KEXPECT_EQ((void*)0x0, popped->queue);
   KEXPECT_EQ((uint32_t)thread1, (uint32_t)popped);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
 
   popped = kthread_queue_pop(&queue);
   KEXPECT_EQ(0x0, (uint32_t)popped->next);
   KEXPECT_EQ(0x0, (uint32_t)popped->prev);
+  KEXPECT_EQ((void*)0x0, popped->queue);
   KEXPECT_EQ((uint32_t)thread2, (uint32_t)popped);
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
 
   KEXPECT_EQ(0, (uint32_t)kthread_queue_pop(&queue));
 
+  KTEST_BEGIN("kthread_queue_remove(): only element on list");
+  kthread_queue_push(&queue, thread1);
+  kthread_queue_remove(thread1);
+  KEXPECT_EQ(1, kthread_queue_empty(&queue));
+  KEXPECT_EQ((void*)0x0, thread1->prev);
+  KEXPECT_EQ((void*)0x0, thread1->next);
+
+  KTEST_BEGIN("kthread_queue_remove(): first element of list");
+  kthread_queue_push(&queue, thread1);
+  kthread_queue_push(&queue, thread2);
+  kthread_queue_remove(thread1);
+  KEXPECT_EQ(0, kthread_queue_empty(&queue));
+  KEXPECT_EQ((void*)0x0, thread1->queue);
+  KEXPECT_EQ(thread2, queue.head);
+  KEXPECT_EQ(thread2, queue.tail);
+  KEXPECT_EQ((void*)0x0, thread1->prev);
+  KEXPECT_EQ((void*)0x0, thread1->next);
+  KEXPECT_EQ((void*)0x0, thread2->prev);
+  KEXPECT_EQ((void*)0x0, thread2->next);
+  kthread_queue_pop(&queue);
+
+  KTEST_BEGIN("kthread_queue_remove(): last element of list");
+  kthread_queue_push(&queue, thread2);
+  kthread_queue_push(&queue, thread1);
+  kthread_queue_remove(thread1);
+  KEXPECT_EQ((void*)0x0, thread1->queue);
+  KEXPECT_EQ(0, kthread_queue_empty(&queue));
+  KEXPECT_EQ(thread2, queue.head);
+  KEXPECT_EQ(thread2, queue.tail);
+  KEXPECT_EQ((void*)0x0, thread1->prev);
+  KEXPECT_EQ((void*)0x0, thread1->next);
+  KEXPECT_EQ((void*)0x0, thread2->prev);
+  KEXPECT_EQ((void*)0x0, thread2->next);
+  kthread_queue_pop(&queue);
+
+  KTEST_BEGIN("kthread_queue_remove(): middle element of list");
+  kthread_queue_push(&queue, thread2);
+  kthread_queue_push(&queue, thread1);
+  kthread_queue_push(&queue, thread3);
+  kthread_queue_remove(thread1);
+  KEXPECT_EQ(0, kthread_queue_empty(&queue));
+  KEXPECT_EQ(thread2, queue.head);
+  KEXPECT_EQ(thread3, queue.tail);
+  KEXPECT_EQ((void*)0x0, thread2->prev);
+  KEXPECT_EQ(thread3, thread2->next);
+  KEXPECT_EQ(thread2, thread3->prev);
+  KEXPECT_EQ((void*)0x0, thread3->next);
+  KEXPECT_EQ((void*)0x0, thread1->prev);
+  KEXPECT_EQ((void*)0x0, thread1->next);
+  KEXPECT_EQ((void*)0x0, thread1->queue);
+  kthread_queue_pop(&queue);
+  kthread_queue_pop(&queue);
+
   // Clean up.
   kthread_detach(thread1);
   kthread_detach(thread2);
+  kthread_detach(thread3);
   scheduler_make_runnable(thread1);
   scheduler_make_runnable(thread2);
+  scheduler_make_runnable(thread3);
   scheduler_yield();
 }
 
