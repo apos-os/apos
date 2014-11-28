@@ -38,6 +38,13 @@ static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
+static inline sigset_t ksigunionset(const sigset_t* A, const sigset_t* B) {
+  return *A | *B;
+}
+
+// Returns all the pending or assigned signals on the given process.
+sigset_t proc_pending_signals(const process_t* proc);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);

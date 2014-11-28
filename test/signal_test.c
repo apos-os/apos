@@ -25,6 +25,12 @@
 #include "proc/wait.h"
 #include "test/ktest.h"
 
+// Helper to determine if a signal is pending or assigned.
+static int is_signal_pending(const process_t* proc, int signum) {
+  sigset_t pending = proc_pending_signals(proc);
+  return ksigismember(&pending, signum);
+}
+
 static void ksigemptyset_test(void) {
   KTEST_BEGIN("ksigemptyset() test");
 
@@ -317,7 +323,7 @@ static void signal_allowed_test(void) {
 // delivered or not.
 static void signal_child_func(void* arg) {
   ksleep(10);
-  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+  proc_exit(is_signal_pending(proc_current(), SIGKILL));
 }
 
 static void signal_setuid_then_kill_func(void* arg) {
@@ -400,7 +406,7 @@ static void create_group_then_kill(void* arg) {
   }
 
   // We should have received the signal if we're in the group.
-  int got_signal = ksigismember(&proc_current()->pending_signals, SIGKILL);
+  int got_signal = is_signal_pending(proc_current(), SIGKILL);
   if (flags & 0x1) {
     KEXPECT_EQ(1, got_signal);
   } else {
@@ -468,7 +474,7 @@ static void signal_send_to_pgroup_test(void) {
 static void send_all_allowed_func(void* arg) {
   KEXPECT_EQ(0, setuid((uid_t)arg));
   KEXPECT_EQ(0, proc_kill(-1, SIGKILL));
-  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+  proc_exit(is_signal_pending(proc_current(), SIGKILL));
 }
 
 static void signal_send_to_all_allowed_test(void) {
@@ -507,9 +513,9 @@ static void signal_send_to_all_allowed_test(void) {
 
   // The signal shouldn't have been sent to processes 0 or 1.
   if (proc_get(0))
-    KEXPECT_EQ(0, ksigismember(&proc_get(0)->pending_signals, SIGKILL));
+    KEXPECT_EQ(0, is_signal_pending(proc_get(0), SIGKILL));
   if (proc_get(1))
-    KEXPECT_EQ(0, ksigismember(&proc_get(1)->pending_signals, SIGKILL));
+    KEXPECT_EQ(0, is_signal_pending(proc_get(1), SIGKILL));
 
   // TODO(aoates): is there any scenario in which a process wouldn't be able to
   // send a signal to itself, and therefore proc_kill(-1, X) would return

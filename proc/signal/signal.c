@@ -61,9 +61,26 @@ static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
+sigset_t proc_pending_signals(const process_t* proc) {
+  return ksigunionset(&proc->pending_signals, &proc->thread->assigned_signals);
+}
+
+// Try to assign the given signal to a thread in the process.  Fails if it is
+// masked.
+static void proc_try_assign_signal(process_t* proc, int signum) {
+  const kthread_t thread = proc->thread;
+
+  KASSERT_DBG(ksigismember(&proc->pending_signals, signum));
+  if (!ksigismember(&thread->signal_mask, signum)) {
+    ksigdelset(&proc->pending_signals, signum);
+    ksigaddset(&thread->assigned_signals, signum);
+  }
+}
+
 int proc_force_signal(process_t* proc, int sig) {
   PUSH_AND_DISABLE_INTERRUPTS();
   int result = ksigaddset(&proc->pending_signals, sig);
+  proc_try_assign_signal(proc, sig);
   POP_INTERRUPTS();
   return result;
 }
@@ -195,10 +212,8 @@ static void dispatch_signal(int signum, const user_context_t* context) {
 // straightforward.
 static void signal_assign_pending(process_t* proc) {
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
-    if (ksigismember(&proc->pending_signals, signum) &&
-        !ksigismember(&proc->thread->signal_mask, signum)) {
-      ksigdelset(&proc->pending_signals, signum);
-      ksigaddset(&proc->thread->assigned_signals, signum);
+    if (ksigismember(&proc->pending_signals, signum)) {
+      proc_try_assign_signal(proc, signum);
     }
   }
 }
