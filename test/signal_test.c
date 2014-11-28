@@ -705,6 +705,30 @@ static void signal_interrupt_thread_test(void) {
   // TODO(aoates): tests for various sa_flags when they're implemented.
 }
 
+static void ksleep_interrupted_func(void* arg) {
+  proc_exit(ksleep((int)arg));
+}
+
+static void ksleep_interrupted_test(void) {
+  KTEST_BEGIN("ksleep(): interrupted by signal test");
+
+  int child = proc_fork(&ksleep_interrupted_func, (void*)200);
+
+  const int start_time = get_time_ms();
+  ksleep(20);
+
+  KEXPECT_EQ(0, proc_kill(child, SIGALRM));
+
+  int exit_status = 0;
+  KEXPECT_EQ(child, proc_wait(&exit_status));
+  const int end_time = get_time_ms();
+
+  KEXPECT_GE(end_time - start_time, 20);
+  KEXPECT_LE(end_time - start_time, 40);
+  KEXPECT_GE(exit_status, 160);
+  KEXPECT_LE(exit_status, 180);
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -732,6 +756,7 @@ void signal_test(void) {
   signal_send_to_all_allowed_test();
 
   signal_interrupt_thread_test();
+  ksleep_interrupted_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
