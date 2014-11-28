@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/process.h"
+#include "proc/scheduler.h"
 #include "proc/user.h"
 #include "user/include/apos/syscalls.h"
 
@@ -65,6 +66,30 @@ sigset_t proc_pending_signals(const process_t* proc) {
   return ksigunionset(&proc->pending_signals, &proc->thread->assigned_signals);
 }
 
+// Returns true if the given signal will be delivered to the thread.
+static bool signal_deliverable(kthread_t thread, int signum) {
+  const sigaction_t* action = &thread->process->signal_dispositions[signum];
+  if (action->sa_handler == SIG_IGN) {
+    return false;
+  } else if (action->sa_handler == SIG_DFL &&
+             kDefaultActions[signum] == SIGACT_IGNORE) {
+    return false;
+  } else if (ksigismember(&thread->signal_mask, signum)) {
+    return false;
+  }
+
+  return true;
+}
+
+// Force assign the given signal to the thread.  If the signal isn't masked, and
+// will be delivered to the thread, try to wake it up.
+static void do_assign_signal(kthread_t thread, int signum) {
+  ksigaddset(&thread->assigned_signals, signum);
+  if (signal_deliverable(thread, signum)) {
+    scheduler_interrupt_thread(thread);
+  }
+}
+
 // Try to assign the given signal to a thread in the process.  Fails if it is
 // masked.
 static void proc_try_assign_signal(process_t* proc, int signum) {
@@ -73,7 +98,7 @@ static void proc_try_assign_signal(process_t* proc, int signum) {
   KASSERT_DBG(ksigismember(&proc->pending_signals, signum));
   if (!ksigismember(&thread->signal_mask, signum)) {
     ksigdelset(&proc->pending_signals, signum);
-    ksigaddset(&thread->assigned_signals, signum);
+    do_assign_signal(thread, signum);
   }
 }
 
@@ -89,9 +114,9 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
   // This isn't very interesting until we have multiple threads in a process.
   KASSERT_DBG(thread == proc->thread);
   PUSH_AND_DISABLE_INTERRUPTS();
-  int result = ksigaddset(&thread->assigned_signals, sig);
+  do_assign_signal(thread, sig);
   POP_INTERRUPTS();
-  return result;
+  return 0;
 }
 
 static int proc_kill_one(process_t* proc, int sig) {
@@ -173,6 +198,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
+    KASSERT_DBG(!signal_deliverable(kthread_current_thread(), signum));
     return;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
@@ -180,14 +206,17 @@ static void dispatch_signal(int signum, const user_context_t* context) {
       case SIGACT_CONTINUE:
         // TODO(aoates): implement STOP and CONTINUE once job control exists.
         klogfm(KL_PROC, WARNING, "cannot deliver stop or continue signal\n");
+        KASSERT_DBG(!signal_deliverable(kthread_current_thread(), signum));
         return;
 
       case SIGACT_IGNORE:
+        KASSERT_DBG(!signal_deliverable(kthread_current_thread(), signum));
         return;
 
       case SIGACT_TERM:
       case SIGACT_TERM_AND_CORE:
         // TODO(aoates): generate a core file if necessary.
+        KASSERT_DBG(signal_deliverable(kthread_current_thread(), signum));
         proc_exit(128 + signum);
         die("unreachable");
     }
@@ -195,6 +224,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
     KASSERT_DBG(proc->thread == kthread_current_thread());
+    KASSERT_DBG(signal_deliverable(kthread_current_thread(), signum));
 
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.

@@ -19,6 +19,7 @@
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/process.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/user.h"
@@ -522,6 +523,188 @@ static void signal_send_to_all_allowed_test(void) {
   // -EPERM?
 }
 
+struct victim_args {
+  int signum;
+  struct sigaction action;
+  kthread_queue_t queue;
+  bool interruptable;
+  sigset_t mask;
+};
+
+static void interrupted_handler(int signum) {
+  // This never actually runs.
+}
+
+static void signal_interrupt_victim(void* arg) {
+  struct victim_args* args = (struct victim_args*)arg;
+
+  // TODO(aoates): use the appropriate syscall when available.
+  proc_current()->thread->signal_mask = args->mask;
+
+  int result = proc_sigaction(args->signum, &args->action, NULL);
+  if (result) {
+    klogfm(KL_TEST, WARNING, "sigaction() failed: %s\n",
+           errorname(-result));
+    proc_exit(-1);
+  }
+
+  result = 0;
+  if (args->interruptable) {
+    result = scheduler_wait_on_interruptable(&args->queue);
+  } else {
+    scheduler_wait_on(&args->queue);
+  }
+  proc_exit(result);
+}
+
+static void do_interrupt_test(struct victim_args args,
+                              bool expect_interrupted) {
+  int child = proc_fork(&signal_interrupt_victim, &args);
+  scheduler_yield();
+  proc_kill(child, args.signum);
+
+  if (expect_interrupted) {
+    KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
+  } else {
+    KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
+  }
+  scheduler_wake_all(&args.queue);
+
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  if (expect_interrupted) {
+    KEXPECT_EQ(1, status);
+  } else {
+    KEXPECT_EQ(0, status);
+  }
+}
+
+static void signal_interrupt_thread_test(void) {
+  struct victim_args default_args;
+  default_args.action.sa_handler = &interrupted_handler;
+  ksigemptyset(&default_args.action.sa_mask);
+  default_args.action.sa_flags = 0;
+  default_args.signum = SIGUSR1;
+  default_args.interruptable = true;
+  ksigemptyset(&default_args.mask);
+  kthread_queue_init(&default_args.queue);
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: basic test");
+    struct victim_args args = default_args;
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal non-interruptable sleep");
+    struct victim_args args = default_args;
+    args.interruptable = false;
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: sigaction is SIG_IGN");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_IGN;
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is ignored by default");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGURG;
+
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default TERM");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGUSR1;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default TERM_AND_CORE");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGSEGV;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default STOP");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGTSTP;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default CONTINUE");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGCONT;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is masked");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    ksigaddset(&args.mask, SIGUSR1);
+
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is masked "
+                "(force assignment to thread)");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    ksigaddset(&args.mask, SIGUSR1);
+
+    int child = proc_fork(&signal_interrupt_victim, &args);
+    scheduler_yield();
+    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
+                                args.signum);
+
+    KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
+    scheduler_wake_all(&args.queue);
+
+    int status;
+    KEXPECT_EQ(child, proc_wait(&status));
+    KEXPECT_EQ(0, status);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is unmasked "
+                "(force assignment to thread)");
+    struct victim_args args = default_args;
+
+    int child = proc_fork(&signal_interrupt_victim, &args);
+    scheduler_yield();
+    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
+                                args.signum);
+
+    KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
+    scheduler_wake_all(&args.queue);
+
+    int status;
+    KEXPECT_EQ(child, proc_wait(&status));
+    KEXPECT_EQ(1, status);
+  }
+
+  // TODO(aoates): userspace test of default TERM and TERM_AND_CORE signals.
+  // TODO(aoates): tests for various sa_flags when they're implemented.
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -547,6 +730,8 @@ void signal_test(void) {
 
   signal_send_to_pgroup_test();
   signal_send_to_all_allowed_test();
+
+  signal_interrupt_thread_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
