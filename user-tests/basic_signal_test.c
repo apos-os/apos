@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <assert.h>
 #include <unistd.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -312,6 +313,95 @@ static void blocked_signal_test(void) {
   KEXPECT_EQ(0, status);
 }
 
+bool saw_usr1, got_past_usr1_raise, saw_usr2;
+static void raise_handler(int sig) {
+  assert(sig == SIGUSR1 || sig == SIGUSR2);
+  if (sig == SIGUSR1) {
+    saw_usr1 = true;
+    raise(SIGUSR2);
+    got_past_usr1_raise = true;
+  } else {
+    saw_usr2 = true;
+  }
+}
+
+// Test what happens when a signal is raised in a signal handler that is blocked
+// by that handler's mask.  This verifies that we correctly re-assign signals in
+// the sigreturn syscall.
+static void blocked_signal_raised_in_handler_test(void) {
+  KTEST_BEGIN("raise blocked signal in handler test");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    struct sigaction action = make_sigaction(&raise_handler);
+    sigaddset(&action.sa_mask, SIGUSR2);
+    sigaction(SIGUSR1, &action, NULL);
+    sigaction(SIGUSR2, &action, NULL);
+
+    saw_usr1 = got_past_usr1_raise = saw_usr2 = false;
+    raise(SIGUSR1);
+    if (!saw_usr1) {
+      fprintf(stderr, "SIGUSR1 not raised\n");
+      exit(1);
+    }
+
+    if (!got_past_usr1_raise) {
+      fprintf(stderr, "SIGUSR2 raised before got_past_usr1_raise set "
+              "(sa_mask not working?)\n");
+      exit(1);
+    }
+
+    if (!saw_usr2) {
+      fprintf(stderr, "SIGUSR2 not raised\n");
+      exit(1);
+    }
+
+    exit(0);
+  }
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+}
+
+static void sa_mask_test_handler(int sig) {
+  raise(SIGUSR2);
+  // If SIGUSR2 is masked, we should get here.
+  raise(SIGKILL);
+}
+
+static void sa_mask_test(void) {
+  KTEST_BEGIN("signal handler sa_mask test");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    struct sigaction action = make_sigaction(&sa_mask_test_handler);
+    sigaddset(&action.sa_mask, SIGUSR2);
+    sigaction(SIGUSR1, &action, NULL);
+
+    raise(SIGUSR1);
+    fprintf(stderr, "got past SIGKILL; shouldn't have!");
+    exit(1);  // Shouldn't get here.
+  }
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  // TODO(aoates): use the portable macros for this.
+  KEXPECT_EQ(128 + SIGKILL, status);
+
+
+  KTEST_BEGIN("signal handler masks signal being raised");
+  if ((child = fork()) == 0) {
+    struct sigaction action = make_sigaction(&sa_mask_test_handler);
+    sigaction(SIGUSR2, &action, NULL);
+
+    raise(SIGUSR2);
+    fprintf(stderr, "got past SIGKILL; shouldn't have!");
+    exit(1);  // Shouldn't get here.
+  }
+  KEXPECT_EQ(child, wait(&status));
+  // TODO(aoates): use the portable macros for this.
+  KEXPECT_EQ(128 + SIGKILL, status);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -330,4 +420,8 @@ void basic_signal_test(void) {
   sleep_ms_send_term_sig_test(SIGQUIT);  // default TERM_AND_CORE
 
   blocked_signal_test();
+  blocked_signal_raised_in_handler_test();
+  sa_mask_test();
+
+  // TODO(aoates): test nested signal handling.
 }

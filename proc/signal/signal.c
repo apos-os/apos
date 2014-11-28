@@ -329,6 +329,10 @@ int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
 
   // Restore the old signal mask, then process any outstanding signals.
   proc_current()->thread->signal_mask = *old_mask;
+
+  // This catches, for example, signals raised in the signal handler that were
+  // blocked.
+  proc_assign_pending_signals();
   proc_dispatch_pending_signals(context);
 
   POP_INTERRUPTS();
