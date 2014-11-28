@@ -233,7 +233,7 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
       "movl $0, %%edi\n\t"
       ::: "eax", "ebx", "ecx", "edx", "esi", "edi");
 
-  if (is_user && !ksigisemptyset(&proc_current()->pending_signals)) {
+  if (is_user && proc_assign_pending_signals()) {
     user_context_t context = extract_interrupt_context(ebp);
     proc_dispatch_pending_signals(&context);
   }

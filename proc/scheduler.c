@@ -52,6 +52,19 @@ void scheduler_make_runnable(kthread_t thread) {
   POP_INTERRUPTS();
 }
 
+void scheduler_interrupt_thread(kthread_t thread) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  if (thread->queue && thread->queue != &g_run_queue && thread->interruptable) {
+    KASSERT_DBG(thread->state == KTHREAD_PENDING);
+    KASSERT_DBG(kthread_current_thread()->queue == 0x0);
+
+    kthread_queue_remove(thread);
+    thread->interrupted = true;
+    scheduler_make_runnable(thread);
+  }
+  POP_INTERRUPTS();
+}
+
 void scheduler_yield() {
   PUSH_AND_DISABLE_INTERRUPTS();
   scheduler_wait_on(&g_run_queue);
@@ -68,13 +81,29 @@ void scheduler_yield_no_reschedule() {
   POP_INTERRUPTS();
 }
 
-void scheduler_wait_on(kthread_queue_t* queue) {
+
+static int scheduler_wait_on_internal(kthread_queue_t* queue,
+                                      int interruptable) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
   current->state = KTHREAD_PENDING;
+  current->interruptable = interruptable;
+  current->interrupted = 0;
   kthread_queue_push(queue, current);
   scheduler_yield_no_reschedule();
+  int result = current->interrupted;
   POP_INTERRUPTS();
+
+  return result;
+}
+
+void scheduler_wait_on(kthread_queue_t* queue) {
+  int result = scheduler_wait_on_internal(queue, 0);
+  KASSERT_DBG(result == 0);
+}
+
+int scheduler_wait_on_interruptable(kthread_queue_t* queue) {
+  return scheduler_wait_on_internal(queue, 1);
 }
 
 void scheduler_wake_one(kthread_queue_t* queue) {

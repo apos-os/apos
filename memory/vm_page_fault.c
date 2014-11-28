@@ -110,7 +110,8 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
         break;
 
       case VM_FAULT_USER:
-        KASSERT(proc_force_signal(proc_current(), SIGSEGV) == 0);
+        KASSERT(proc_force_signal_on_thread(
+                proc_current(), kthread_current_thread(), SIGSEGV) == 0);
         return;
     }
   }

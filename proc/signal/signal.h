@@ -15,6 +15,19 @@
 #ifndef APOO_PROC_SIGNAL_SIGNAL_H
 #define APOO_PROC_SIGNAL_SIGNAL_H
 
+// Signals go through three phases.
+// 1) generated --- when the signal is first generated.  When generated, a
+// signal is either specific to a particular thread (e.g. SIGFPE or a signal
+// sent with pthread_kill()), or for the entire process.
+//
+// 2) assigned --- the signal is assigned to a particular thread for handling.
+// If the generated signal is specific to a particular thread, it is assigned to
+// that thread directly.  Otherwise, it will be assigned to any thread that
+// doesn't have it masked.
+//
+// 3) dispatched --- the signal is dispatched to the handling thread.  This
+// happens when returning from an interrupt or syscall.
+
 #include "arch/proc/user_context.h"
 #include "common/errno.h"
 #include "common/types.h"
@@ -25,9 +38,20 @@ static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
+static inline sigset_t ksigunionset(const sigset_t* A, const sigset_t* B) {
+  return *A | *B;
+}
+
+// Returns all the pending or assigned signals on the given process.
+sigset_t proc_pending_signals(const process_t* proc);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
+
+// As above, but forces the signal to be handled on the given thread.  Returns 0
+// on success, or -errno on error.
+int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
 
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
@@ -37,6 +61,25 @@ int proc_kill(pid_t pid, int sig);
 // success, or -errno on error.
 int proc_sigaction(int signum, const struct sigaction* act,
                    struct sigaction* oldact);
+
+// Adjust the current thread's signal mask.  Returns 0 on success, or -error.
+int proc_sigprocmask(int how, const sigset_t* restrict set,
+                     sigset_t* restrict oset);
+
+// Return the current set of pending signals in the process.
+int proc_sigpending(sigset_t* set);
+
+// Attempts to assign any pending signals in the current process to the current
+// thread.  It returns 1 if the thread has any assigned signals (newly assigned
+// or not).
+//
+// Call this before proc_dispatch_pending_signals(), using its return value to
+// determine if you need to generate a user_context_t.
+//
+// NOTE: proc_dispatch_pending_signals() may not dispatch any signals, even if
+// proc_assign_pending_signals() returns 1, for example if the signals are
+// masked.
+int proc_assign_pending_signals(void);
 
 // Dispatch any pending signals in the current process.  If there are any
 // signals that aren't blocked by the current thread's signal mask, it

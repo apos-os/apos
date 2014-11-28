@@ -65,6 +65,11 @@ typedef void (*sighandler_t)(int);
 #define SIG_DFL ((sighandler_t)0x0)
 #define SIG_IGN ((sighandler_t)0x1)
 
+// Actions for sigprocmask().
+#define SIG_BLOCK 1
+#define SIG_UNBLOCK 2
+#define SIG_SETMASK 3
+
 typedef struct sigaction {
   sighandler_t sa_handler;
   sigset_t sa_mask;

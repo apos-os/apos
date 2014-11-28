@@ -83,6 +83,9 @@ void kthread_queue_push(kthread_queue_t* queue, kthread_t thread);
 // Pops a thread off the front of the thread queue.
 kthread_t kthread_queue_pop(kthread_queue_t* queue);
 
+// Removes the given thread from the list its on.
+void kthread_queue_remove(kthread_t thread);
+
 /********************************* Mutexes ************************************/
 
 struct kmutex {

@@ -42,6 +42,7 @@ struct kthread_data {
   void* retval;
   struct kthread_data* prev;
   struct kthread_data* next;
+  kthread_queue_t* queue;  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   bool detached;
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
@@ -53,6 +54,16 @@ struct kthread_data {
 
   // The current signal mask (i.e. the signals blocked in this thread).
   sigset_t signal_mask;
+
+  // The set of signals assigned to this thread for handling.
+  sigset_t assigned_signals;
+
+  // Whether or not the thread can be interrupted (e.g. by a signal) if it's
+  // blocked on a queue.
+  bool interruptable;
+
+  // Whether the thread was interrupted and forced onto the run queue.
+  bool interrupted;
 };
 typedef struct kthread_data kthread_data_t;
 

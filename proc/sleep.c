@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/kassert.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
@@ -32,13 +33,16 @@ int ksleep(int ms) {
   kthread_queue_init(q);
 
   PUSH_AND_DISABLE_INTERRUPTS();
-  int result = register_event_timer(get_time_ms() + ms, &ksleep_cb, q, 0x0);
+  const uint32_t start_time = get_time_ms();
+  int result = register_event_timer(start_time + ms, &ksleep_cb, q, 0x0);
   if (result < 0) {
     kfree(q);
     POP_INTERRUPTS();
     return result;
   }
-  scheduler_wait_on(q);
+  int interrupted = scheduler_wait_on_interruptable(q);
+  const uint32_t elapsed = get_time_ms() - start_time;
+  result = interrupted ? max((ms - elapsed), 0U) : 0;
   POP_INTERRUPTS();
-  return 0;
+  return result;
 }

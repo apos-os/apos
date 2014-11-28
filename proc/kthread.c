@@ -39,11 +39,16 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->id = 0;
   t->retval = 0x0;
   t->prev = t->next = 0x0;
+  t->queue = 0x0;
   t->stack = 0x0;
   t->detached = false;
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
+  ksigemptyset(&t->signal_mask);
+  ksigemptyset(&t->assigned_signals);
+  t->interruptable = false;
+  t->interrupted = false;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -237,6 +242,7 @@ static void kthread_queue_insert(kthread_data_t* A, kthread_data_t* B) {
 void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
   KASSERT(thread->prev == 0);
   KASSERT(thread->next == 0);
+  KASSERT(thread->queue == NULL);
 
   if (!lst->head) {
     KASSERT(lst->tail == 0x0);
@@ -249,6 +255,7 @@ void kthread_queue_push(kthread_queue_t* lst, kthread_data_t* thread) {
     kthread_queue_insert(lst->tail, thread);
     lst->tail = thread;
   }
+  thread->queue = lst;
 }
 
 // Pop a thread off the front of a list.
@@ -266,7 +273,23 @@ kthread_t kthread_queue_pop(kthread_queue_t* lst) {
   }
   front->next = 0x0;
   KASSERT(front->next == 0x0 && front->prev == 0x0);
+  KASSERT(front->queue == lst);
+  front->queue = NULL;
   return front;
+}
+
+void kthread_queue_remove(kthread_t thread) {
+  KASSERT_DBG(thread->queue != NULL);
+  if (thread->queue->head == thread)
+    thread->queue->head = thread->next;
+  if (thread->queue->tail == thread)
+    thread->queue->tail = thread->prev;
+  if (thread->prev)
+    thread->prev->next = thread->next;
+  if (thread->next)
+    thread->next->prev = thread->prev;
+  thread->prev = thread->next = 0x0;
+  thread->queue = NULL;
 }
 
 int kthread_queue_empty(kthread_queue_t* lst) {

@@ -19,11 +19,18 @@
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/process.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+
+// Helper to determine if a signal is pending or assigned.
+static int is_signal_pending(const process_t* proc, int signum) {
+  sigset_t pending = proc_pending_signals(proc);
+  return ksigismember(&pending, signum);
+}
 
 static void ksigemptyset_test(void) {
   KTEST_BEGIN("ksigemptyset() test");
@@ -317,7 +324,7 @@ static void signal_allowed_test(void) {
 // delivered or not.
 static void signal_child_func(void* arg) {
   ksleep(10);
-  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+  proc_exit(is_signal_pending(proc_current(), SIGKILL));
 }
 
 static void signal_setuid_then_kill_func(void* arg) {
@@ -400,7 +407,7 @@ static void create_group_then_kill(void* arg) {
   }
 
   // We should have received the signal if we're in the group.
-  int got_signal = ksigismember(&proc_current()->pending_signals, SIGKILL);
+  int got_signal = is_signal_pending(proc_current(), SIGKILL);
   if (flags & 0x1) {
     KEXPECT_EQ(1, got_signal);
   } else {
@@ -468,7 +475,7 @@ static void signal_send_to_pgroup_test(void) {
 static void send_all_allowed_func(void* arg) {
   KEXPECT_EQ(0, setuid((uid_t)arg));
   KEXPECT_EQ(0, proc_kill(-1, SIGKILL));
-  proc_exit(ksigismember(&proc_current()->pending_signals, SIGKILL));
+  proc_exit(is_signal_pending(proc_current(), SIGKILL));
 }
 
 static void signal_send_to_all_allowed_test(void) {
@@ -507,13 +514,391 @@ static void signal_send_to_all_allowed_test(void) {
 
   // The signal shouldn't have been sent to processes 0 or 1.
   if (proc_get(0))
-    KEXPECT_EQ(0, ksigismember(&proc_get(0)->pending_signals, SIGKILL));
+    KEXPECT_EQ(0, is_signal_pending(proc_get(0), SIGKILL));
   if (proc_get(1))
-    KEXPECT_EQ(0, ksigismember(&proc_get(1)->pending_signals, SIGKILL));
+    KEXPECT_EQ(0, is_signal_pending(proc_get(1), SIGKILL));
 
   // TODO(aoates): is there any scenario in which a process wouldn't be able to
   // send a signal to itself, and therefore proc_kill(-1, X) would return
   // -EPERM?
+}
+
+struct victim_args {
+  int signum;
+  struct sigaction action;
+  kthread_queue_t queue;
+  bool interruptable;
+  sigset_t mask;
+};
+
+static void interrupted_handler(int signum) {
+  // This never actually runs.
+}
+
+static void signal_interrupt_victim(void* arg) {
+  struct victim_args* args = (struct victim_args*)arg;
+
+  // TODO(aoates): use the appropriate syscall when available.
+  proc_current()->thread->signal_mask = args->mask;
+
+  int result = proc_sigaction(args->signum, &args->action, NULL);
+  if (result) {
+    klogfm(KL_TEST, WARNING, "sigaction() failed: %s\n",
+           errorname(-result));
+    proc_exit(-1);
+  }
+
+  result = 0;
+  if (args->interruptable) {
+    result = scheduler_wait_on_interruptable(&args->queue);
+  } else {
+    scheduler_wait_on(&args->queue);
+  }
+  proc_exit(result);
+}
+
+static void do_interrupt_test(struct victim_args args,
+                              bool expect_interrupted) {
+  int child = proc_fork(&signal_interrupt_victim, &args);
+  scheduler_yield();
+  proc_kill(child, args.signum);
+
+  if (expect_interrupted) {
+    KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
+  } else {
+    KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
+  }
+  scheduler_wake_all(&args.queue);
+
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  if (expect_interrupted) {
+    KEXPECT_EQ(1, status);
+  } else {
+    KEXPECT_EQ(0, status);
+  }
+}
+
+static void signal_interrupt_thread_test(void) {
+  struct victim_args default_args;
+  default_args.action.sa_handler = &interrupted_handler;
+  ksigemptyset(&default_args.action.sa_mask);
+  default_args.action.sa_flags = 0;
+  default_args.signum = SIGUSR1;
+  default_args.interruptable = true;
+  ksigemptyset(&default_args.mask);
+  kthread_queue_init(&default_args.queue);
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: basic test");
+    struct victim_args args = default_args;
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal non-interruptable sleep");
+    struct victim_args args = default_args;
+    args.interruptable = false;
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: sigaction is SIG_IGN");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_IGN;
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is ignored by default");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGURG;
+
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default TERM");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGUSR1;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default TERM_AND_CORE");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGSEGV;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default STOP");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGTSTP;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is default CONTINUE");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    args.signum = SIGCONT;
+
+    do_interrupt_test(args, true);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is masked");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    ksigaddset(&args.mask, SIGUSR1);
+
+    do_interrupt_test(args, false);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is masked "
+                "(force assignment to thread)");
+    struct victim_args args = default_args;
+    args.action.sa_handler = SIG_DFL;
+    ksigaddset(&args.mask, SIGUSR1);
+
+    int child = proc_fork(&signal_interrupt_victim, &args);
+    scheduler_yield();
+    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
+                                args.signum);
+
+    KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
+    scheduler_wake_all(&args.queue);
+
+    int status;
+    KEXPECT_EQ(child, proc_wait(&status));
+    KEXPECT_EQ(0, status);
+  }
+
+  {
+    KTEST_BEGIN("signal interruptable sleep: signal is unmasked "
+                "(force assignment to thread)");
+    struct victim_args args = default_args;
+
+    int child = proc_fork(&signal_interrupt_victim, &args);
+    scheduler_yield();
+    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
+                                args.signum);
+
+    KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
+    scheduler_wake_all(&args.queue);
+
+    int status;
+    KEXPECT_EQ(child, proc_wait(&status));
+    KEXPECT_EQ(1, status);
+  }
+
+  // TODO(aoates): tests for various sa_flags when they're implemented.
+}
+
+static void ksleep_interrupted_func(void* arg) {
+  proc_exit(ksleep((int)arg));
+}
+
+static void ksleep_interrupted_test(void) {
+  KTEST_BEGIN("ksleep(): interrupted by signal test");
+
+  int child = proc_fork(&ksleep_interrupted_func, (void*)200);
+
+  const int start_time = get_time_ms();
+  ksleep(20);
+
+  KEXPECT_EQ(0, proc_kill(child, SIGALRM));
+
+  int exit_status = 0;
+  KEXPECT_EQ(child, proc_wait(&exit_status));
+  const int end_time = get_time_ms();
+
+  KEXPECT_GE(end_time - start_time, 20);
+  KEXPECT_LE(end_time - start_time, 40);
+  KEXPECT_GE(exit_status, 160);
+  KEXPECT_LE(exit_status, 180);
+}
+
+static void sigprocmask_test(void) {
+  // (cheating)
+  const sigset_t orig_mask = kthread_current_thread()->signal_mask;
+
+  KTEST_BEGIN("sigprocmask(): block signals");
+  sigset_t mask, mask2;
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &mask));
+  KEXPECT_EQ(orig_mask, mask);
+  KEXPECT_EQ(0, ksigismember(&mask, SIGUSR1));  // Make sure our test will work.
+
+  ksigaddset(&mask, SIGUSR1);
+  ksigaddset(&mask, SIGPIPE);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGUSR1));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGALRM));
+  KEXPECT_EQ(mask, mask2);
+
+  // Try adding another one.
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGALRM);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGUSR1));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGALRM));
+
+  // Blocking same signals again should be a no-op.
+  ksigemptyset(&mask2);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGUSR1));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGALRM));
+
+  KTEST_BEGIN("sigprocmask(): unblock signals");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGPIPE);
+  ksigaddset(&mask, SIGUSR2);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &mask, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGUSR1));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGALRM));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGUSR2));
+
+  KTEST_BEGIN("sigprocmask(): setmask");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGPIPE);
+  ksigaddset(&mask, SIGSYS);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &mask2));
+  KEXPECT_EQ(mask, mask2);
+
+  KTEST_BEGIN("sigprocmask(): SIG_BLOCK with oset");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGPIPE);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+  ksigaddset(&mask, SIGSYS);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGSYS));
+
+
+  KTEST_BEGIN("sigprocmask(): SIG_UNBLOCK with oset");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGPIPE);
+  ksigaddset(&mask, SIGSYS);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+  ksigdelset(&mask, SIGSYS);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &mask, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGSYS));
+
+
+  KTEST_BEGIN("sigprocmask(): SIG_SETMASK with oset");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGPIPE);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+  ksigaddset(&mask, SIGSYS);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, &mask2));
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGPIPE));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGSYS));
+
+
+  KTEST_BEGIN("sigprocmask(): ignore how if set is NULL");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  ksigaddset(&mask, SIGPIPE);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, NULL, &mask2));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, NULL, &mask2));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, NULL, &mask2));
+  KEXPECT_EQ(0, proc_sigprocmask(-2, NULL, &mask2));
+  KEXPECT_EQ(0, proc_sigprocmask(1000, NULL, &mask2));
+
+
+  KTEST_BEGIN("sigprocmask(): block unblockable signals");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+
+  ksigaddset(&mask, SIGUSR1);
+  ksigaddset(&mask, SIGKILL);
+  ksigaddset(&mask, SIGSTOP);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, NULL, &mask2));
+
+  KEXPECT_EQ(1, ksigismember(&mask2, SIGUSR1));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGKILL));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGSTOP));
+
+
+  KTEST_BEGIN("sigprocmask(): invalid how arg");
+  ksigemptyset(&mask); ksigemptyset(&mask2);
+  KEXPECT_EQ(-EINVAL, proc_sigprocmask(-1, &mask, NULL));
+  KEXPECT_EQ(-EINVAL, proc_sigprocmask(100, &mask, NULL));
+  KEXPECT_EQ(-EINVAL, proc_sigprocmask(-1, &mask, &mask2));
+  KEXPECT_EQ(-EINVAL, proc_sigprocmask(100, &mask, &mask2));
+
+  kthread_current_thread()->signal_mask = orig_mask;
+}
+
+static void sigpending_test(void) {
+  KTEST_BEGIN("sigpending() test -- unassigned signal");
+  ksigemptyset(&proc_current()->thread->assigned_signals);
+
+  sigset_t orig_mask;
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &orig_mask));
+
+  sigset_t mask;
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+
+  proc_force_signal(proc_current(), SIGUSR1);
+  KEXPECT_EQ(1, ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  sigset_t pending;
+  KEXPECT_EQ(0, proc_sigpending(&pending));
+  KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
+  ksigdelset(&pending, SIGUSR1);
+  KEXPECT_EQ(1, ksigisemptyset(&pending));
+
+  KTEST_BEGIN("sigpending() test -- assigned and unblocked signal");
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &mask, NULL));
+  proc_assign_pending_signals();
+
+  KEXPECT_EQ(0, ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  pending = 123;
+  KEXPECT_EQ(0, proc_sigpending(&pending));
+  // Not blocked, so shouldn't be present.
+  KEXPECT_EQ(1, ksigisemptyset(&pending));
+
+  KTEST_BEGIN("sigpending() test -- assigned and blocked signal");
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  proc_assign_pending_signals();
+
+  KEXPECT_EQ(0, ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  pending = 123;
+  KEXPECT_EQ(0, proc_sigpending(&pending));
+  KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
+  ksigemptyset(&pending);
+  KEXPECT_EQ(1, ksigisemptyset(&pending));
+
+  // Cleanup.
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));
+  ksigdelset(&kthread_current_thread()->assigned_signals, SIGUSR1);
 }
 
 void signal_test(void) {
@@ -525,6 +910,7 @@ void signal_test(void) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
   sigset_t saved_pending_signals = proc_current()->pending_signals;
+  sigset_t saved_assigned_signals = proc_current()->thread->assigned_signals;
   // TODO(aoates): do we want to save/restore the signal mask as well?
 
   ksigemptyset_test();
@@ -542,6 +928,11 @@ void signal_test(void) {
   signal_send_to_pgroup_test();
   signal_send_to_all_allowed_test();
 
+  signal_interrupt_thread_test();
+  ksleep_interrupted_test();
+  sigprocmask_test();
+  sigpending_test();
+
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
     if (signum != SIGSTOP && signum != SIGKILL) {
@@ -549,4 +940,5 @@ void signal_test(void) {
     }
   }
   proc_current()->pending_signals = saved_pending_signals;
+  proc_current()->thread->assigned_signals = saved_assigned_signals;
 }

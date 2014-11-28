@@ -288,6 +288,15 @@ AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     'const struct sigaction*:act:br?:sizeof(struct sigaction)',
     'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
 
+AddSyscall('sigprocmask', 52, 'proc_sigprocmask', 'proc/signal/signal.h',
+    '<signal.h>',
+    'int', ['int:how:u', 'const sigset_t*:set:br?:sizeof(sigset_t)',
+            'sigset_t*:oset:bw?:sizeof(sigset_t)'])
+
+AddSyscall('sigpending', 53, 'proc_sigpending', 'proc/signal/signal.h',
+    '<signal.h>',
+    'int', ['sigset_t*:oset:bw:sizeof(sigset_t)'])
+
 AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [
