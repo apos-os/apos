@@ -183,12 +183,6 @@ AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
     'size_t:count:u'],
     newlib_defined=True)
 
-AddSyscall('seek', 9, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
-    'int', [
-    'int:fd:u',
-    'int:offset:u',
-    'int:whence:u'])
-
 AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
     'int', [
     'int:fd:u',

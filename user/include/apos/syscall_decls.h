@@ -35,7 +35,6 @@ int dup2(int fd1, int fd2);
 int mkdir(const char* path, mode_t mode);
 int mknod(const char* path, mode_t mode, apos_dev_t dev);
 int rmdir(const char* path);
-int seek(int fd, int offset, int whence);
 int getdents(int fd, dirent_t* buf, int count);
 int lstat(const char* path, apos_stat_t* stat);
 int chdir(const char* path);

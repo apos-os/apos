@@ -28,7 +28,6 @@
 #define SYS_UNLINK 6
 #define SYS_READ 7
 #define SYS_WRITE 8
-#define SYS_SEEK 9
 #define SYS_GETDENTS 10
 #define SYS_GETCWD 11
 #define SYS_STAT 35
