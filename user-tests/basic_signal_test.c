@@ -198,6 +198,34 @@ static void sigchld_test(void) {
   KEXPECT_EQ(0, status);
 }
 
+static void sleep_ms_interrupt_test(void) {
+  KTEST_BEGIN("sleep_ms() interrupted by signal");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    got_signal = false;
+    struct sigaction act = make_sigaction(&signal_action);
+    if (sigaction(SIGUSR1, &act, NULL) != 0) {
+      perror("sigaction failed");
+      exit(1);
+    }
+
+    int result = sleep_ms(100);
+    exit(result);
+  }
+
+  sleep_ms(10);
+  KEXPECT_EQ(0, kill(child, SIGURG)); // Should be ignored.
+
+  sleep_ms(50);
+  KEXPECT_EQ(0, kill(child, SIGUSR1)); // Should wake up sleep_ms().
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_GE(status, 20);
+  KEXPECT_LE(status, 50);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -210,4 +238,6 @@ void basic_signal_test(void) {
   sigsegv_test();
   sigsys_test();
   sigchld_test();
+
+  sleep_ms_interrupt_test();
 }
