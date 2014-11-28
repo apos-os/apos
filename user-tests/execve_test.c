@@ -11,26 +11,30 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <fcntl.h>
+
+#include <unistd.h>
+#include <sys/wait.h>
 
 #include "ktest.h"
 #include "all_tests.h"
 
-bool run_slow_tests = false;
+#define EXEC_PROGRAM "ls"
 
-int main(int argc, char** argv) {
-  if (argc > 1 && strcmp(argv[1], "all") == 0)
-    run_slow_tests = true;
+void execve_test(void) {
+  KTEST_SUITE_BEGIN("execve() test");
 
-  ktest_begin_all();
+  pid_t child;
+  if ((child = fork()) == 0) {
+    char* sub_argv[] = {EXEC_PROGRAM, NULL};
+    char* sub_envp[] = {NULL};
+    int result = execve(EXEC_PROGRAM, sub_argv, sub_envp);
+    if (result) {
+      perror("execve failed");
+      exit(1);
+    }
+  }
 
-  syscall_errno_test();
-  int status = exit_status_test();
-  if (status) return status;
-
-  basic_signal_test();
-  execve_test();
-
-  ktest_finish_all();
-  return 0;
+  int status = 0;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
 }

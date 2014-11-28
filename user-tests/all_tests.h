@@ -21,5 +21,6 @@ extern bool run_slow_tests;
 void syscall_errno_test(void);
 int exit_status_test(void);
 void basic_signal_test(void);
+void execve_test(void);
 
 #endif
