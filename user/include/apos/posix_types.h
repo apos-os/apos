@@ -32,4 +32,8 @@ typedef long off_t;
 typedef long ino_t;
 typedef unsigned short nlink_t;
 
+typedef long time_t;
+typedef unsigned long useconds_t;
+typedef long suseconds_t;
+
 #endif

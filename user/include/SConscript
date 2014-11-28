@@ -16,6 +16,7 @@ import os
 Import('env user_env')
 
 env.Tpl('#/user/include/apos/syscalls.h', 'apos/syscalls.h.tpl')
+env.Tpl('#/user/include/apos/syscall_decls.h', 'apos/syscall_decls.h.tpl')
 
 HEADERS = [
   'apos/dev.h',
@@ -26,6 +27,7 @@ HEADERS = [
   'apos/sleep.h',
   'apos/syscall.h',
   'apos/syscalls.h',
+  'apos/syscall_decls.h',
   'apos/test.h',
   'apos/time_types.h',
   'apos/vfs/dirent.h',

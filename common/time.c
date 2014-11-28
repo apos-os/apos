@@ -12,28 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_USER_INCLUDE_APOS_TIME_TYPES_H
-#define APOO_USER_INCLUDE_APOS_TIME_TYPES_H
+#include <stddef.h>
 
-#if __APOS_BUILDING_IN_TREE__
-#  include "user/include/apos/posix_types.h"
-#else
-#  include <apos/posix_types.h>
-#endif
+#include "common/time.h"
+#include "dev/rtc.h"
+#include "user/include/apos/errors.h"
 
-struct timespec {
-  time_t  tv_sec;
-  long    tv_nsec;
-};
+int apos_get_time(struct apos_tm* t) {
+  if (t == NULL) return -EINVAL;
 
-// Similar to POSIX struct tm.
-struct apos_tm {
-  int tm_sec;
-  int tm_min;
-  int tm_hour;
-  int tm_mday;
-  int tm_mon;
-  int tm_year;
-};
+  rtc_time_t rtc;
+  if (rtc_read_time(&rtc) == 0) return -EIO;
 
-#endif
+  t->tm_sec = rtc.seconds;
+  t->tm_min = rtc.minutes;
+  t->tm_hour = rtc.hours;
+  t->tm_mday = rtc.day_of_month;
+  t->tm_mon = rtc.month - 1;
+  t->tm_year = rtc.year + rtc.century * 100 - 1900;
+
+  return 0;
+}

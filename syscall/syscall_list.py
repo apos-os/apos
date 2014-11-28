@@ -359,3 +359,7 @@ AddSyscall('readlink', 43, 'vfs_readlink', 'vfs/vfs.h', '<unistd.h>',
 
 AddSyscall('sleep_ms', 44, 'ksleep', 'proc/sleep.h', '<apos/sleep.h>',
     'int', ['unsigned int:seconds:u'])
+
+AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
+    '<apos/syscall_decls.h>', 'int',
+    ['struct apos_tm*:t:bw:sizeof(struct apos_tm)'])

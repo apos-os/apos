@@ -21,7 +21,9 @@ srcs = ['builtins.c', 'errno.c',
     'klog.c',
     'kprintf.c',
     'kstring.c',
-    'list.c']
+    'list.c',
+    'time.c',
+    ]
 
 def config_h_builder(target, source, env):
   """Builder for a config.h header file."""

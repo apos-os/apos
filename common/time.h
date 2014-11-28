@@ -12,28 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_USER_INCLUDE_APOS_TIME_TYPES_H
-#define APOO_USER_INCLUDE_APOS_TIME_TYPES_H
+#ifndef APOO_COMMON_TIME_H
+#define APOO_COMMON_TIME_H
 
-#if __APOS_BUILDING_IN_TREE__
-#  include "user/include/apos/posix_types.h"
-#else
-#  include <apos/posix_types.h>
-#endif
+#include "user/include/apos/posix_types.h"
+#include "user/include/apos/time_types.h"
 
-struct timespec {
-  time_t  tv_sec;
-  long    tv_nsec;
-};
-
-// Similar to POSIX struct tm.
-struct apos_tm {
-  int tm_sec;
-  int tm_min;
-  int tm_hour;
-  int tm_mday;
-  int tm_mon;
-  int tm_year;
-};
+// Return the current time can best be determined.
+int apos_get_time(struct apos_tm* t);
 
 #endif
