@@ -55,6 +55,9 @@ struct kthread_data {
   // The current signal mask (i.e. the signals blocked in this thread).
   sigset_t signal_mask;
 
+  // The set of signals assigned to this thread for handling.
+  sigset_t assigned_signals;
+
   // Whether or not the thread can be interrupted (e.g. by a signal) if it's
   // blocked on a queue.
   bool interruptable;

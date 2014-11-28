@@ -45,6 +45,8 @@ static void kthread_init_kthread(kthread_data_t* t) {
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
+  ksigemptyset(&t->signal_mask);
+  ksigemptyset(&t->assigned_signals);
   t->interruptable = false;
   t->interrupted = false;
 }

@@ -15,6 +15,19 @@
 #ifndef APOO_PROC_SIGNAL_SIGNAL_H
 #define APOO_PROC_SIGNAL_SIGNAL_H
 
+// Signals go through three phases.
+// 1) generated --- when the signal is first generated.  When generated, a
+// signal is either specific to a particular thread (e.g. SIGFPE or a signal
+// sent with pthread_kill()), or for the entire process.
+//
+// 2) assigned --- the signal is assigned to a particular thread for handling.
+// If the generated signal is specific to a particular thread, it is assigned to
+// that thread directly.  Otherwise, it will be assigned to any thread that
+// doesn't have it masked.
+//
+// 3) dispatched --- the signal is dispatched to the handling thread.  This
+// happens when returning from an interrupt or syscall.
+
 #include "arch/proc/user_context.h"
 #include "common/errno.h"
 #include "common/types.h"

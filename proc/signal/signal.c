@@ -188,20 +188,40 @@ static void dispatch_signal(int signum, const user_context_t* context) {
   }
 }
 
+// Assign any pending signals in the process to a thread that can handle them,
+// if any.  Since we currently only have one thread per process, this is pretty
+// straightforward.
+static void signal_assign_pending(process_t* proc) {
+  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+    if (ksigismember(&proc->pending_signals, signum) &&
+        !ksigismember(&proc->thread->signal_mask, signum)) {
+      ksigdelset(&proc->pending_signals, signum);
+      ksigaddset(&proc->thread->assigned_signals, signum);
+    }
+  }
+}
+
 void proc_dispatch_pending_signals(const user_context_t* context) {
   PUSH_AND_DISABLE_INTERRUPTS();
+
   process_t* proc = proc_current();
-  if (ksigisemptyset(&proc->pending_signals)) {
+  signal_assign_pending(proc);
+
+  kthread_t thread = proc->thread;
+  KASSERT_DBG(thread == kthread_current_thread());
+
+  if (ksigisemptyset(&thread->assigned_signals)) {
     POP_INTERRUPTS();
     return;
   }
 
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
-    if (ksigismember(&proc->pending_signals, signum) &&
-        !ksigismember(&proc->thread->signal_mask, signum)) {
-      // TODO(aoates): when we support multiple threads, we'll need to switch to
-      // the thread that's handling the signal.
-      ksigdelset(&proc->pending_signals, signum);
+    // We need to check the thread's signal mask again, since there may be
+    // signals that are assigned to the thread even though they're masked (e.g.
+    // one sent with pthread_kill()).
+    if (ksigismember(&thread->assigned_signals, signum) &&
+        !ksigismember(&thread->signal_mask, signum)) {
+      ksigdelset(&thread->assigned_signals, signum);
       dispatch_signal(signum, context);
     }
   }
