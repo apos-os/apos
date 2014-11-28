@@ -54,6 +54,13 @@ struct kthread_data {
 
   // The current signal mask (i.e. the signals blocked in this thread).
   sigset_t signal_mask;
+
+  // Whether or not the thread can be interrupted (e.g. by a signal) if it's
+  // blocked on a queue.
+  bool interruptable;
+
+  // Whether the thread was interrupted and forced onto the run queue.
+  bool interrupted;
 };
 typedef struct kthread_data kthread_data_t;
 

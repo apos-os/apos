@@ -263,15 +263,21 @@ typedef struct {
   uint32_t waiting;
   uint32_t ran;
   kthread_queue_t* queue;
+  bool interruptable;
 } queue_test_funct_data_t;
 
 // Set the waiting flag, then wait on the given queue, then set the ran flag.
 static void* queue_test_func(void* arg) {
   queue_test_funct_data_t* d = (queue_test_funct_data_t*)arg;
   d->waiting = 1;
-  scheduler_wait_on(d->queue);
+  int interrupted = 0;
+  if (d->interruptable) {
+    interrupted = scheduler_wait_on_interruptable(d->queue);
+  } else {
+    scheduler_wait_on(d->queue);
+  }
   d->ran = 1;
-  return 0;
+  return (void*)interrupted;
 }
 
 static void scheduler_wait_on_test(void) {
@@ -281,11 +287,11 @@ static void scheduler_wait_on_test(void) {
   kthread_queue_t queue;
   kthread_queue_init(&queue);
 
-  queue_test_funct_data_t d1 = {0, 0, &queue};
+  queue_test_funct_data_t d1 = {0, 0, &queue, false};
   kthread_create(&thread1, &queue_test_func, &d1);
-  queue_test_funct_data_t d2 = {0, 0, &queue};
+  queue_test_funct_data_t d2 = {0, 0, &queue, false};
   kthread_create(&thread2, &queue_test_func, &d2);
-  queue_test_funct_data_t d3 = {0, 0, &queue};
+  queue_test_funct_data_t d3 = {0, 0, &queue, false};
   kthread_create(&thread3, &queue_test_func, &d3);
 
   scheduler_make_runnable(thread1);
@@ -325,11 +331,11 @@ static void scheduler_wake_test(void) {
   kthread_queue_t queue;
   kthread_queue_init(&queue);
 
-  queue_test_funct_data_t d1 = {0, 0, &queue};
+  queue_test_funct_data_t d1 = {0, 0, &queue, false};
   kthread_create(&thread1, &queue_test_func, &d1);
-  queue_test_funct_data_t d2 = {0, 0, &queue};
+  queue_test_funct_data_t d2 = {0, 0, &queue, false};
   kthread_create(&thread2, &queue_test_func, &d2);
-  queue_test_funct_data_t d3 = {0, 0, &queue};
+  queue_test_funct_data_t d3 = {0, 0, &queue, false};
   kthread_create(&thread3, &queue_test_func, &d3);
 
   scheduler_make_runnable(thread1);
@@ -375,6 +381,82 @@ static void scheduler_wake_test(void) {
   kthread_join(thread1);
   kthread_join(thread2);
   kthread_join(thread3);
+}
+
+static void scheduler_interrupt_test(void) {
+  KTEST_BEGIN("scheduler_interrupt_thread(): interruptable thread ");
+  kthread_t thread1;
+
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+
+  {
+    queue_test_funct_data_t d1 = {0, 0, &queue, true};
+    kthread_create(&thread1, &queue_test_func, &d1);
+    scheduler_make_runnable(thread1);
+    while (!d1.waiting) scheduler_yield();
+
+    KEXPECT_EQ(&queue, thread1->queue);
+    scheduler_interrupt_thread(thread1);
+    for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
+    KEXPECT_EQ(1, d1.ran);
+    KEXPECT_EQ(true, thread1->interrupted);
+    KEXPECT_EQ((void*)1, kthread_join(thread1));
+  }
+
+
+  KTEST_BEGIN("scheduler_interrupt_thread(): non-interruptable thread ");
+  {
+    queue_test_funct_data_t d2 = {0, 0, &queue, false};
+    kthread_create(&thread1, &queue_test_func, &d2);
+    scheduler_make_runnable(thread1);
+    while (!d2.waiting) scheduler_yield();
+
+    KEXPECT_EQ(&queue, thread1->queue);
+    scheduler_interrupt_thread(thread1);
+    for (int i = 0; i < 5 && !d2.ran; ++i) scheduler_yield();
+    KEXPECT_EQ(0, d2.ran);
+
+    scheduler_wake_one(&queue);
+    for (int i = 0; i < 5 && !d2.ran; ++i) scheduler_yield();
+    KEXPECT_EQ(1, d2.ran);
+
+    KEXPECT_EQ(false, thread1->interrupted);
+    KEXPECT_EQ((void*)0, kthread_join(thread1));
+  }
+
+  KTEST_BEGIN("scheduler_interrupt_thread(): pending-on-run-queue thread ");
+  {
+    queue_test_funct_data_t d3 = {0, 0, &queue, false};
+    kthread_create(&thread1, &queue_test_func, &d3);
+    scheduler_make_runnable(thread1);
+
+    scheduler_interrupt_thread(thread1);
+    for (int i = 0; i < 5 && !d3.waiting; ++i) scheduler_yield();
+    KEXPECT_EQ(1, d3.waiting);
+    KEXPECT_EQ(0, d3.ran);
+
+    scheduler_wake_one(&queue);
+    for (int i = 0; i < 5 && !d3.ran; ++i) scheduler_yield();
+    KEXPECT_EQ(1, d3.ran);
+
+    KEXPECT_EQ(false, thread1->interrupted);
+    KEXPECT_EQ((void*)0, kthread_join(thread1));
+  }
+
+
+  KTEST_BEGIN("scheduler_interrupt_thread(): current thread (running)");
+  KEXPECT_EQ((void*)0x0, kthread_current_thread()->queue);
+
+  scheduler_interrupt_thread(kthread_current_thread());
+  KEXPECT_EQ((void*)0x0, kthread_current_thread()->queue);
+  KEXPECT_EQ(false, kthread_current_thread()->interrupted);
+
+  // TODO(aoates): test a thread that does an interruptable wait followed by a
+  // non-interruptable wait; verify that the second wait is uninterruptable, and
+  // that the interrupted bit is reset.
+
+  // TODO(aoates): stress/multi-threaded/interrupt test
 }
 
 #define STRESS_TEST_ITERS 1000
@@ -505,6 +587,7 @@ void kthread_test(void) {
   queue_test();
   scheduler_wait_on_test();
   scheduler_wake_test();
+  scheduler_interrupt_test();
   stress_test();
   kmutex_test();
   kmutex_auto_lock_test();

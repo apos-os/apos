@@ -45,6 +45,8 @@ static void kthread_init_kthread(kthread_data_t* t) {
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
+  t->interruptable = false;
+  t->interrupted = false;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
