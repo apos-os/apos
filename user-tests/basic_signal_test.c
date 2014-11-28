@@ -246,6 +246,59 @@ static void sleep_ms_send_term_sig_test(int sig) {
   KEXPECT_EQ(status, 128 + sig);
 }
 
+static void blocked_signal_test(void) {
+  KTEST_BEGIN("blocked signal test");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    struct sigaction action = make_sigaction(&signal_action);
+    got_signal = false;
+    if (sigaction(SIGUSR1, &action, NULL) != 0) {
+      perror("sigaction failed");
+      exit(1);
+    }
+
+    sigset_t orig_mask;
+    if (sigprocmask(0, NULL, &orig_mask) != 0) {
+      perror("sigprocmask failed");
+      exit(1);
+    }
+
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGUSR1);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) != 0) {
+      perror("sigprocmask failed");
+      exit(1);
+    }
+
+    raise(SIGUSR1);
+
+    if (sleep_ms(100) != 0) {
+      perror("sleep_ms() didn't return 0");
+      exit(1);
+    }
+    if (got_signal) {
+      fprintf(stderr, "got SIGUSR that should be blocked\n");
+      exit(1);
+    }
+
+    if (sigprocmask(SIG_SETMASK, &orig_mask, NULL) != 0) {
+      perror("sigprocmask failed");
+      exit(1);
+    }
+    if (!got_signal) {
+      fprintf(stderr, "unblocked SIGUSR wasn't delivered\n");
+      exit(1);
+    }
+    exit(0);
+  }
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -262,4 +315,6 @@ void basic_signal_test(void) {
   sleep_ms_interrupt_test();
   sleep_ms_send_term_sig_test(SIGPIPE);  // default TERM
   sleep_ms_send_term_sig_test(SIGQUIT);  // default TERM_AND_CORE
+
+  blocked_signal_test();
 }
