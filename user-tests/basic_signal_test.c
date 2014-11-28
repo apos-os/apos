@@ -18,6 +18,7 @@
 #include <sys/wait.h>
 
 #include <apos/sleep.h>
+#include <apos/syscall.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -133,6 +134,38 @@ static void sigsegv_test(void) {
   KEXPECT_EQ(0, status);
 }
 
+static void sigsys_test(void) {
+  KTEST_BEGIN("SIGSYS handling");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    struct sigaction act = make_sigaction(&signal_action);
+    if (sigaction(SIGSYS, &act, NULL) != 0) {
+      perror("sigaction failed");
+      exit(1);
+    }
+
+    long syscalls[] = {-5, 10000};
+    for (int i = 0; i < 2; ++i) {
+      got_signal = false;
+      long result = do_syscall(syscalls[i], 1, 2, 3, 4, 5, 6);
+      if (result != -ENOTSUP) {
+        fprintf(stderr, "unexpected do_syscall result: %ld\n", result);
+        exit(1);
+      }
+      if (!got_signal) {
+        fprintf(stderr, "didn't get SIGSYS as expected\n");
+        exit(1);
+      }
+    }
+    exit(0);
+  }
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -143,4 +176,5 @@ void basic_signal_test(void) {
   signal_test();
   sigfpe_test();
   sigsegv_test();
+  sigsys_test();
 }
