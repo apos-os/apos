@@ -166,6 +166,38 @@ static void sigsys_test(void) {
   KEXPECT_EQ(0, status);
 }
 
+static void sigchld_test(void) {
+  KTEST_BEGIN("SIGCHLD handling");
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    got_signal = false;
+    struct sigaction act = make_sigaction(&signal_action);
+    if (sigaction(SIGCHLD, &act, NULL) != 0) {
+      perror("sigaction failed");
+      exit(1);
+    }
+
+    pid_t sub_child;
+    if ((sub_child = fork()) == 0) {
+      exit(0);
+    }
+
+    // TODO(aoates): test interaction of SIGCHLD and wait().
+    sleep_ms(100);  // TODO(aoates): use sigwait()
+    if (!got_signal) {
+      fprintf(stderr, "didn't get SIGCHLD when child exited\n");
+      exit(1);
+    }
+
+    exit(0);
+  }
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -177,4 +209,5 @@ void basic_signal_test(void) {
   sigfpe_test();
   sigsegv_test();
   sigsys_test();
+  sigchld_test();
 }
