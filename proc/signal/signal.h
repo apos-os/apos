@@ -38,10 +38,6 @@ static inline int ksigisemptyset(const sigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
-// Returns 1 if the process has any pending signals.  This should only be used
-// as a hint, since the locking is internal.
-int proc_maybe_has_pending_signals(const process_t* proc);
-
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
@@ -54,6 +50,18 @@ int proc_kill(pid_t pid, int sig);
 // success, or -errno on error.
 int proc_sigaction(int signum, const struct sigaction* act,
                    struct sigaction* oldact);
+
+// Attempts to assign any pending signals in the current process to the current
+// thread.  It returns 1 if the thread has any assigned signals (newly assigned
+// or not).
+//
+// Call this before proc_dispatch_pending_signals(), using its return value to
+// determine if you need to generate a user_context_t.
+//
+// NOTE: proc_dispatch_pending_signals() may not dispatch any signals, even if
+// proc_assign_pending_signals() returns 1, for example if the signals are
+// masked.
+int proc_assign_pending_signals(void);
 
 // Dispatch any pending signals in the current process.  If there are any
 // signals that aren't blocked by the current thread's signal mask, it

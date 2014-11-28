@@ -61,13 +61,6 @@ static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
-int proc_maybe_has_pending_signals(const process_t* proc) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  int result = !ksigisemptyset(&proc->pending_signals);
-  POP_INTERRUPTS();
-  return result;
-}
-
 int proc_force_signal(process_t* proc, int sig) {
   PUSH_AND_DISABLE_INTERRUPTS();
   int result = ksigaddset(&proc->pending_signals, sig);
@@ -201,13 +194,22 @@ static void signal_assign_pending(process_t* proc) {
   }
 }
 
+int proc_assign_pending_signals(void) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT_DBG(kthread_current_thread()->process == proc_current());
+  KASSERT_DBG(proc_current()->thread == kthread_current_thread());
+
+  signal_assign_pending(proc_current());
+  int result = !ksigisemptyset(&kthread_current_thread()->assigned_signals);
+
+  POP_INTERRUPTS();
+  return result;
+}
+
 void proc_dispatch_pending_signals(const user_context_t* context) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
-  process_t* proc = proc_current();
-  signal_assign_pending(proc);
-
-  kthread_t thread = proc->thread;
+  const kthread_t thread = proc_current()->thread;
   KASSERT_DBG(thread == kthread_current_thread());
 
   if (ksigisemptyset(&thread->assigned_signals)) {
