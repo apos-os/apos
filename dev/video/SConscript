@@ -15,6 +15,7 @@
 Import('env AposAddSources')
 
 srcs = [
+  'ansi_escape.c',
   'vga.c',
   'vterm.c',
 ]
