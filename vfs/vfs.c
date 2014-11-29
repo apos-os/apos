@@ -231,6 +231,7 @@ void vfs_put(vnode_t* vnode) {
 }
 
 int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
+  KASSERT(vnode);
   if (!path_out || size < 0) {
     return -EINVAL;
   }

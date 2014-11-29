@@ -123,9 +123,13 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   if (!proc) return -EINVAL;
 
   char cwd[VFS_MAX_PATH_LENGTH];
-  int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
-  if (result < 0)
-    ksprintf(cwd, "<unable to determine cwd: %s>", errorname(-result));
+  if (proc->cwd) {
+    int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
+    if (result < 0)
+      ksprintf(cwd, "<unable to determine cwd: %s>", errorname(-result));
+  } else {
+    kstrcpy(cwd, "<none>");
+  }
 
   char tbuf[1024];
   ksprintf(tbuf,
