@@ -55,6 +55,12 @@
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/vfs.h"
 
+const char* PATH[] = {
+  "/",
+  "/bin",
+  NULL,
+};
+
 #define READ_BUF_SIZE 1024
 
 static apos_dev_t g_tty;
@@ -666,6 +672,7 @@ void bcstats_cmd(int argc, char** argv) {
 }
 
 typedef struct {
+  const char* path;
   int argc;
   char** argv;
 } boot_child_args_t;
@@ -681,25 +688,23 @@ static void boot_child_func(void* arg) {
   if (stdin_fd != 0 || stdout_fd != 1 || stderr_fd != 2) {
     klogf("Couldn't boot %s: opened wrong fds for stdin/stdout/stderr "
           " (stdin: %d, stdout: %d, stderr: %d)\n",
-          args->argv[1], stdin_fd, stdout_fd, stderr_fd);
+          args->argv[0], stdin_fd, stdout_fd, stderr_fd);
     proc_exit(1);
   }
 
   char* envp[] = { NULL };
-  int result = do_execve(args->argv[1], args->argv + 1, envp, NULL, NULL);
+  int result = do_execve(args->path, args->argv, envp, NULL, NULL);
   if (result) {
     klogf("Couldn't boot %s: %s\n", (char*)arg, errorname(-result));
     proc_exit(1);
   }
 }
 
-void boot_cmd(int argc, char** argv) {
-  if (argc < 2) {
-    klogf("Usage: boot <binary> <args...>\n");
-    return;
-  }
+void do_boot_cmd(const char* path, int argc, char** argv) {
+  KASSERT(argc >= 1);
 
   boot_child_args_t args;
+  args.path = path;
   args.argc = argc;
   args.argv = argv;
 
@@ -712,6 +717,14 @@ void boot_cmd(int argc, char** argv) {
     klogf("<child process %d exited with status %d>\n",
           wait_pid, exit_status);
   }
+}
+
+void boot_cmd(int argc, char** argv) {
+  if (argc < 2) {
+    klogf("Usage: boot <binary> <args...>\n");
+    return;
+  }
+  do_boot_cmd(argv[1], argc - 1, argv + 1);
 }
 
 #if ENABLE_USB
@@ -880,7 +893,18 @@ static void parse_and_dispatch(char* cmd) {
     cmd_data++;
   }
 
-  ksh_printf("error: known command '%s'\n", argv[0]);
+  // Search for a binary to run.
+  char* path = kmalloc(VFS_MAX_PATH_LENGTH * 2);
+  for (int i = 0; PATH[i] != NULL; ++i) {
+    ksprintf(path, "%s/%s", PATH[i], argv[0]);
+    if (vfs_access(path, X_OK) == 0) {
+      do_boot_cmd(path, argc, argv);
+      return;
+    }
+  }
+  kfree(path);
+
+  ksh_printf("error: unknown command '%s'\n", argv[0]);
 }
 
 void kshell_main(apos_dev_t tty) {
