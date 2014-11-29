@@ -14,9 +14,18 @@
 
 #include "test/ktest.h"
 
+#include "common/config.h"
 #include "common/kstring.h"
 #include "common/klog.h"
 #include "dev/timer.h"
+
+#if ENABLE_TERM_COLOR
+# define FAILED "\x1b[1;31m[FAILED]\x1b[0m"
+# define PASSED "\x1b[1;32m[PASSED]\x1b[0m"
+#else
+# define FAILED "[FAILED]"
+# define PASSED "[PASSED]"
+#endif
 
 // Track statistics about passing and failing tests.
 static int num_suites = 0;
@@ -81,7 +90,7 @@ void kexpect_(uint32_t cond, const char* name,
               const char* val_surrounders, const char* opstr,
               const char* file, const char* line) {
   if (cond) {
-    klogm(KL_TEST, INFO, "[PASSED] ");
+    klogm(KL_TEST, INFO, PASSED " ");
     klogm(KL_TEST, INFO, name);
     klogm(KL_TEST, INFO, "(");
     klogm(KL_TEST, INFO, astr);
@@ -91,7 +100,7 @@ void kexpect_(uint32_t cond, const char* name,
   } else {
     current_test_passing = 0;
     current_suite_passing = 0;
-    klogm(KL_TEST, INFO, "[FAILED] ");
+    klogm(KL_TEST, INFO, FAILED " ");
     klogm(KL_TEST, INFO, name);
     klogm(KL_TEST, INFO, "(");
     klogm(KL_TEST, INFO, astr);
@@ -134,11 +143,11 @@ void ktest_finish_all() {
   KLOG("---------------------------------------\n");
   KLOG("KERNEL UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
-    KLOG("[PASSED] passed %d/%d suites and %d/%d tests in %d ms\n",
+    KLOG(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
          num_suites_passing, num_suites, num_tests_passing, num_tests,
          end_time - test_start_time);
   } else {
-    KLOG("[FAILED] passed %d/%d suites and %d/%d tests in %d ms\n",
+    KLOG(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
          num_suites_passing, num_suites, num_tests_passing, num_tests,
          end_time - test_start_time);
     KLOG("Failed tests:\n");

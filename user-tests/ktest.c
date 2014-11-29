@@ -18,6 +18,14 @@
 
 #include "ktest.h"
 
+#if ENABLE_TERM_COLOR
+# define FAILED "\x1b[1;31m[FAILED]\x1b[0m"
+# define PASSED "\x1b[1;32m[PASSED]\x1b[0m"
+#else
+# define FAILED "[FAILED]"
+# define PASSED "[PASSED]"
+#endif
+
 // Track statistics about passing and failing tests.
 static int num_suites = 0;
 static int num_tests = 0;
@@ -77,13 +85,13 @@ void kexpect_(uint32_t cond, const char* name,
               const char* val_surrounders, const char* opstr,
               const char* file, const char* line) {
   if (cond) {
-    printf("[PASSED] %s(%s, %s)\n", name, astr, bstr);
+    printf(PASSED " %s(%s, %s)\n", name, astr, bstr);
   } else {
     current_test_passing = 0;
     current_suite_passing = 0;
-    printf("[FAILED] %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n",
-          name, astr, bstr, file, line, val_surrounders, aval, val_surrounders,
-          opstr, val_surrounders, bval, val_surrounders);
+    printf(FAILED " %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n",
+           name, astr, bstr, file, line, val_surrounders, aval, val_surrounders,
+           opstr, val_surrounders, bval, val_surrounders);
   }
 }
 
@@ -108,11 +116,11 @@ void ktest_finish_all() {
   printf("---------------------------------------\n");
   printf("KERNEL UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
-    printf("[PASSED] passed %d/%d suites and %d/%d tests in %d ms\n",
+    printf(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
            num_suites_passing, num_suites, num_tests_passing, num_tests,
            end_time - test_start_time);
   } else {
-    printf("[FAILED] passed %d/%d suites and %d/%d tests in %d ms\n",
+    printf(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
            num_suites_passing, num_suites, num_tests_passing, num_tests,
            end_time - test_start_time);
     printf("Failed tests:\n");

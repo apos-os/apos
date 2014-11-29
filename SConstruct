@@ -87,6 +87,7 @@ env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
+user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
 
 def AposAddSources(env, srcs, subdirs):
   """Helper for subdirectories."""
