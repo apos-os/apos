@@ -919,6 +919,9 @@ void kshell_main(apos_dev_t tty) {
 
   char read_buf[READ_BUF_SIZE];
   while (1) {
+#if ENABLE_TERM_COLOR
+    ksh_printf("\x1b[0m");  // Reset before each prompt.
+#endif
     ksh_printf("> ");
     int read_len = tty_dev->read(tty_dev, read_buf, READ_BUF_SIZE);
 

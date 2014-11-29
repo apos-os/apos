@@ -33,9 +33,10 @@ vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 FEATURES = [
   'EXT2',
   'TESTS',
+  'TERM_COLOR',
   'USB',
   'USER_DUMMY_LIB',
-  'USER_TESTS'
+  'USER_TESTS',
 ]
 
 for feature in FEATURES:

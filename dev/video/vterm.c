@@ -14,8 +14,10 @@
 
 #include <stdint.h>
 
+#include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "dev/video/ansi_escape.h"
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
 #include "memory/kmalloc.h"
@@ -35,6 +37,12 @@ struct vterm {
 
   // The line-length of each line on the display.
   int* line_length;
+
+#if ENABLE_TERM_COLOR
+  // Current escape code we're working on.
+  char escape_buffer[ANSI_MAX_ESCAPE_SEQUENCE_LEN];
+  size_t escape_buffer_idx;
+#endif
 };
 
 __attribute__((always_inline))
@@ -92,6 +100,9 @@ vterm_t* vterm_create(video_t* v) {
   term->vwidth = video_get_width(v);
   term->vheight = video_get_height(v);
   term->cattr = VGA_DEFAULT_ATTR;
+#if ENABLE_TERM_COLOR
+  term->escape_buffer_idx = 0;
+#endif
 
   term->line_length = (int*)kmalloc(sizeof(int) * term->vheight);
   for (int i = 0; i < term->vheight; i++) {
@@ -112,6 +123,20 @@ vterm_t* vterm_create(video_t* v) {
 }
 
 void vterm_putc(vterm_t* t, uint8_t c) {
+#if ENABLE_TERM_COLOR
+  if (c == '\x1b' || t->escape_buffer_idx > 0) {
+    t->escape_buffer[t->escape_buffer_idx++] = c;
+    int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx,
+                                   &t->cattr);
+    if (result == ANSI_SUCCESS || result == ANSI_INVALID) {
+      // TODO(aoates): on error, handle the characters in the escape buffer
+      // normally.
+      t->escape_buffer_idx = 0;
+    }
+    return;
+  }
+#endif
+
   // First calculate new cursor position if needed.
   if (c == '\r') {
     t->cursor_x = 0;
