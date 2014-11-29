@@ -59,21 +59,74 @@ void video_vga_init(void);
 video_t* video_get_default(void);
 
 // Return the width/height of the display.
-int video_get_width(video_t* v);
-int video_get_height(video_t* v);
+static inline int video_get_width(video_t* v);
+static inline int video_get_height(video_t* v);
 
 // Sets the character at a given position on the display.
-void video_setc(video_t* v, int row, int col, uint8_t c);
-void video_set_attr(video_t* v, int row, int col, video_attr_t attr);
+static inline void video_setc(video_t* v, int row, int col, uint8_t c);
+static inline void video_set_attr(
+    video_t* v, int row, int col, video_attr_t attr);
 
 // Returns the character at the given position.
-uint8_t video_getc(video_t* v, int row, int col);
-video_attr_t video_get_attr(video_t* v, int row, int col);
+static inline uint8_t video_getc(video_t* v, int row, int col);
+static inline video_attr_t video_get_attr(video_t* v, int row, int col);
 
 // Clears the display.
 void video_clear(video_t* v);
 
 // Moves the cursor.
 void video_move_cursor(video_t* v, int row, int col);
+
+// ******** Implementation *********
+
+// This struct is sort of a lie...there's only one VGA display available.
+struct video {
+  uint8_t* videoram;
+  int width;
+  int height;
+};
+
+__attribute__((always_inline))
+static inline int video_get_width(video_t* v) {
+  return v->width;
+}
+
+__attribute__((always_inline))
+static inline int video_get_height(video_t* v) {
+  return v->height;
+}
+
+__attribute__((always_inline))
+static inline void video_setc(video_t* v, int row, int col, uint8_t c) {
+  if (col >= v->width || row >= v->height) {
+    return;
+  }
+  v->videoram[2 * (row * v->width + col)] = c;
+}
+
+__attribute__((always_inline))
+static inline void video_set_attr(video_t* v, int row, int col,
+                                  video_attr_t attr) {
+  if (col >= v->width || row >= v->height) {
+    return;
+  }
+  v->videoram[2 * (row * v->width + col) + 1] = attr;
+}
+
+__attribute__((always_inline))
+static inline uint8_t video_getc(video_t* v, int row, int col) {
+  if (col >= v->width || row >= v->height) {
+    return 0;
+  }
+  return v->videoram[2 * (row * v->width + col)];
+}
+
+__attribute__((always_inline))
+static inline video_attr_t video_get_attr(video_t* v, int row, int col) {
+  if (col >= v->width || row >= v->height) {
+    return 0;
+  }
+  return v->videoram[2 * (row * v->width + col) + 1];
+}
 
 #endif
