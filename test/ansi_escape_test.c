@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/config.h"
 #include "dev/video/ansi_escape.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -207,4 +208,23 @@ void ansi_escape_test(void) {
   KEXPECT_EQ(VGA_CYAN, video_attr_bg(attr));
   KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape(CSI "47m", 5, &attr));
   KEXPECT_EQ(VGA_WHITE, video_attr_bg(attr));
+
+#if ENABLE_TERM_COLOR
+  KTEST_BEGIN("Color rendering in vterm");
+#define K(m) klogm(KL_TEST, INFO, m)
+  for (int i = 0; i < 2; ++i) {
+    K(i == 0 ? "Normal:\n" : "\nBright:\n");
+    if (i == 1) K(CSI "1m");
+    K(CSI "30mBLACK FG" CSI "0m      " CSI "37;40mBLACK BG" CSI "0m\n");
+    K(CSI "31mRED FG" CSI "0m        " CSI "41mRED BG" CSI "0m\n");
+    K(CSI "32mGREEN FG" CSI "0m      " CSI "42mGREEN BG" CSI "0m\n");
+    K(CSI "33mYELLOW FG" CSI "0m     " CSI "43mYELLOW BG" CSI "0m\n");
+    K(CSI "34mBLUE FG" CSI "0m       " CSI "44mBLUE BG" CSI "0m\n");
+    K(CSI "35mMAGENTA FG" CSI "0m    " CSI "45mMAGENTA BG" CSI "0m\n");
+    K(CSI "36mCYAN FG" CSI "0m       " CSI "46mCYAN BG" CSI "0m\n");
+    K(CSI "37mWHITE FG" CSI "0m      " CSI "30;47mWHITE BG" CSI "0m\n");
+    K(CSI "0m");
+  }
+#undef K
+#endif
 }
