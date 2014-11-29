@@ -18,7 +18,7 @@
 #include "ktest.h"
 #include "all_tests.h"
 
-#define EXEC_PROGRAM "ls"
+#define EXEC_PROGRAM "/bin/ls"
 
 void execve_test(void) {
   KTEST_SUITE_BEGIN("execve() test");
