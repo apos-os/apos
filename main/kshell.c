@@ -824,14 +824,14 @@ static cmd_t CMDS[] = {
   { "outl", &outl_cmd },
 
   { "timer", &timer_cmd },
-  { "sleep", &sleep_cmd },
+  { "_sleep", &sleep_cmd },
 
-  { "ls", &ls_cmd },
+  { "_ls", &ls_cmd },
   { "mkdir", &mkdir_cmd },
   { "rmdir", &rmdir_cmd },
   { "pwd", &pwd_cmd },
   { "cd", &cd_cmd },
-  { "cat", &cat_cmd },
+  { "_cat", &cat_cmd },
   { "write", &write_cmd },
   { "rm", &rm_cmd },
   { "cp", &cp_cmd },
