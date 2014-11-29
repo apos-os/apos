@@ -57,7 +57,7 @@ void video_vga_init() {
 }
 
 video_t* video_get_default() {
-  g_video.videoram = (uint8_t*)(get_global_meminfo()->phys_map_start + 0xB8000);
+  g_video.videoram = (uint16_t*)(get_global_meminfo()->phys_map_start + 0xB8000);
   g_video.width = 80;
   g_video.height = 24;
   return &g_video;
@@ -66,8 +66,7 @@ video_t* video_get_default() {
 void video_clear(video_t* v) {
   int i;
   for (i = 0; i < v->width * v->height; ++i) {
-    v->videoram[i*2] = ' ';
-    v->videoram[i*2+1] = 0x07;
+    v->videoram[i] = ' ' | (0x07 << 8);
   }
 }
 

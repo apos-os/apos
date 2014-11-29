@@ -63,9 +63,8 @@ static inline int video_get_width(video_t* v);
 static inline int video_get_height(video_t* v);
 
 // Sets the character at a given position on the display.
-static inline void video_setc(video_t* v, int row, int col, uint8_t c);
-static inline void video_set_attr(
-    video_t* v, int row, int col, video_attr_t attr);
+static inline void video_setc(video_t* v, int row, int col, uint8_t c,
+                              video_attr_t attr);
 
 // Returns the character at the given position.
 static inline uint8_t video_getc(video_t* v, int row, int col);
@@ -81,7 +80,7 @@ void video_move_cursor(video_t* v, int row, int col);
 
 // This struct is sort of a lie...there's only one VGA display available.
 struct video {
-  uint8_t* videoram;
+  uint16_t* videoram;
   int width;
   int height;
 };
@@ -97,20 +96,12 @@ static inline int video_get_height(video_t* v) {
 }
 
 __attribute__((always_inline))
-static inline void video_setc(video_t* v, int row, int col, uint8_t c) {
+static inline void video_setc(video_t* v, int row, int col, uint8_t c,
+                              video_attr_t attr) {
   if (col >= v->width || row >= v->height) {
     return;
   }
-  v->videoram[2 * (row * v->width + col)] = c;
-}
-
-__attribute__((always_inline))
-static inline void video_set_attr(video_t* v, int row, int col,
-                                  video_attr_t attr) {
-  if (col >= v->width || row >= v->height) {
-    return;
-  }
-  v->videoram[2 * (row * v->width + col) + 1] = attr;
+  v->videoram[row * v->width + col] = c | (attr << 8);
 }
 
 __attribute__((always_inline))
@@ -118,7 +109,7 @@ static inline uint8_t video_getc(video_t* v, int row, int col) {
   if (col >= v->width || row >= v->height) {
     return 0;
   }
-  return v->videoram[2 * (row * v->width + col)];
+  return v->videoram[row * v->width + col] & 0xFF;
 }
 
 __attribute__((always_inline))
@@ -126,7 +117,7 @@ static inline video_attr_t video_get_attr(video_t* v, int row, int col) {
   if (col >= v->width || row >= v->height) {
     return 0;
   }
-  return v->videoram[2 * (row * v->width + col) + 1];
+  return v->videoram[row * v->width + col] >> 8;
 }
 
 #endif

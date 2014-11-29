@@ -44,7 +44,7 @@ static void scroll(vterm_t* t, int amt) {
       if (row + amt < t->vheight) {
         newc = video_getc(t->video, row + amt, col);
       }
-      video_setc(t->video, row, col, newc);
+      video_setc(t->video, row, col, newc, VGA_DEFAULT_ATTR);
       t->line_text[row][col] = newc;
     }
 
@@ -85,7 +85,7 @@ vterm_t* vterm_create(video_t* v) {
 // Sets a character in the video and in the vterm's stored version.
 static inline void vterm_setc(vterm_t* t, int row,
                               int col, uint8_t c) {
-  video_setc(t->video, row, col, c);
+  video_setc(t->video, row, col, c, VGA_DEFAULT_ATTR);
   t->line_text[row][col] = c;
 }
 
@@ -149,7 +149,7 @@ void vterm_clear(vterm_t* t) {
 void vterm_redraw(vterm_t* t) {
   for (int row = 0; row < t->vheight; row++) {
     for (int col = 0; col < t->vwidth; col++) {
-      video_setc(t->video, row, col, t->line_text[row][col]);
+      video_setc(t->video, row, col, t->line_text[row][col], VGA_DEFAULT_ATTR);
     }
   }
   video_move_cursor(t->video, t->cursor_y, t->cursor_x);
