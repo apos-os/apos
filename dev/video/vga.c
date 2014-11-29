@@ -85,11 +85,25 @@ void video_setc(video_t* v, int row, int col, uint8_t c) {
   v->videoram[2 * (row * v->width + col)] = c;
 }
 
+void video_set_attr(video_t* v, int row, int col, video_attr_t attr) {
+  if (col >= v->width || row >= v->height) {
+    return;
+  }
+  v->videoram[2 * (row * v->width + col) + 1] = attr;
+}
+
 uint8_t video_getc(video_t* v, int row, int col) {
   if (col >= v->width || row >= v->height) {
     return 0;
   }
   return v->videoram[2 * (row * v->width + col)];
+}
+
+video_attr_t video_get_attr(video_t* v, int row, int col) {
+  if (col >= v->width || row >= v->height) {
+    return 0;
+  }
+  return v->videoram[2 * (row * v->width + col) + 1];
 }
 
 void video_clear(video_t* v) {
