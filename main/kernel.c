@@ -64,7 +64,7 @@ static void tick(void* arg) {
   static const char* beat = "oO";
   i = (i + 1) % 2;
 
-  video_setc(g_video, 0, video_get_width(g_video)-1, beat[i]);
+  video_setc(g_video, 0, video_get_width(g_video)-1, beat[i], VGA_DEFAULT_ATTR);
 }
 
 static void add_timers(void) {

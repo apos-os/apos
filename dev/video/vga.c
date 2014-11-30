@@ -39,13 +39,6 @@
 #define CRT_CURSOR_LOW_ADDR  0x0F
 #define CRT_CURSOR_HIGH_ADDR 0x0E
 
-// This struct is sort of a lie...there's only one VGA display available.
-struct video {
-  uint8_t* videoram;
-  int width;
-  int height;
-};
-
 static video_t g_video;
 
 void video_vga_init() {
@@ -64,39 +57,16 @@ void video_vga_init() {
 }
 
 video_t* video_get_default() {
-  g_video.videoram = (uint8_t*)(get_global_meminfo()->phys_map_start + 0xB8000);
+  g_video.videoram = (uint16_t*)(get_global_meminfo()->phys_map_start + 0xB8000);
   g_video.width = 80;
   g_video.height = 24;
   return &g_video;
 }
 
-int video_get_width(video_t* v) {
-  return v->width;
-}
-
-int video_get_height(video_t* v) {
-  return v->height;
-}
-
-void video_setc(video_t* v, int row, int col, uint8_t c) {
-  if (col >= v->width || row >= v->height) {
-    return;
-  }
-  v->videoram[2 * (row * v->width + col)] = c;
-}
-
-uint8_t video_getc(video_t* v, int row, int col) {
-  if (col >= v->width || row >= v->height) {
-    return 0;
-  }
-  return v->videoram[2 * (row * v->width + col)];
-}
-
 void video_clear(video_t* v) {
   int i;
   for (i = 0; i < v->width * v->height; ++i) {
-    v->videoram[i*2] = ' ';
-    v->videoram[i*2+1] = 0x07;
+    v->videoram[i] = ' ' | (0x07 << 8);
   }
 }
 

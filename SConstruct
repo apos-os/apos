@@ -33,9 +33,10 @@ vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 FEATURES = [
   'EXT2',
   'TESTS',
+  'TERM_COLOR',
   'USB',
   'USER_DUMMY_LIB',
-  'USER_TESTS'
+  'USER_TESTS',
 ]
 
 for feature in FEATURES:
@@ -86,6 +87,7 @@ env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
+user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
 
 def AposAddSources(env, srcs, subdirs):
   """Helper for subdirectories."""

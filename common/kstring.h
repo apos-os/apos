@@ -46,4 +46,16 @@ const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);
 const char* kstrchrnul(const char* s, int c);
 
+static inline int kisdigit(int c) {
+  return c >= '0' && c <= '9';
+}
+
+static inline int kisalpha(int c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+static inline int kisalnum(int c) {
+  return kisdigit(c) || kisalpha(c);
+}
+
 #endif
