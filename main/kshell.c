@@ -924,6 +924,11 @@ void kshell_main(apos_dev_t tty) {
 #endif
     ksh_printf("> ");
     int read_len = tty_dev->read(tty_dev, read_buf, READ_BUF_SIZE);
+    if (read_len < 0) {
+      if (read_len != -EINTR)
+        ksh_printf("error: %s\n", errorname(-read_len));
+      continue;
+    }
 
     read_buf[read_len] = '\0';
     //klogf("kshell: read %d bytes:\n%s\n", read_len, read_buf);

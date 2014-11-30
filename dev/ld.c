@@ -24,6 +24,7 @@
 #include "dev/ld.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
@@ -129,6 +130,7 @@ void ld_provide(ld_t* l, char c) {
       l->read_buf[l->raw_idx] = '#';  // DEBUG
       break;
 
+    case ASCII_ETX:
     case ASCII_EOT:
       echo = 0;
       break;
@@ -159,6 +161,10 @@ void ld_provide(ld_t* l, char c) {
   if (c == '\n' || c == ASCII_EOT) {
     cook_buffer(l);
   }
+
+  if (c == ASCII_ETX) {
+    proc_force_signal(proc_current(), SIGINT);
+  }
 }
 
 void ld_set_sink(ld_t* l, char_sink_t sink, void* arg) {
@@ -182,15 +188,20 @@ int ld_read(ld_t* l, char* buf, int n) {
   PUSH_AND_DISABLE_INTERRUPTS();
   // Note: this means that if multiple threads are blocking on an ld_read()
   // here, we could return 0 for some of them even though we didn't see an EOF!
+  int result = 0;
   if (l->start_idx == l->cooked_idx) {
     // Block until data is available.
-    scheduler_wait_on(&l->wait_queue);
+    int interrupted = scheduler_wait_on_interruptable(&l->wait_queue);
+    if (interrupted) result = -EINTR;
   }
 
-  // TODO(aoates): handle end-of-stream.
-  int copied = ld_read_internal(l, buf, n);
+  if (!result) {
+    // TODO(aoates): handle end-of-stream.
+    result = ld_read_internal(l, buf, n);
+  }
+
   POP_INTERRUPTS();
-  return copied;
+  return result;
 }
 
 int ld_read_async(ld_t* l, char* buf, int n) {
