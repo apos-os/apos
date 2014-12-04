@@ -51,5 +51,6 @@ void proc_group_test(void);
 void exec_test(void);
 void cbfs_test(void);
 void ansi_escape_test(void);
+void circbuf_test(void);
 
 #endif
