@@ -16,6 +16,7 @@ Import('env AposAddSources')
 
 srcs = [
   'cbfs.c',
+  'fifo.c',
   'vfs.c',
   'ramfs.c',
   'file.c',
