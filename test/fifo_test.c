@@ -151,7 +151,38 @@ static void open_test(void) {
   fifo_cleanup(&fifo);
 }
 
+static void read_test(void) {
+  apos_fifo_t f;
+  char buf[100];
+
+  KTEST_BEGIN("fifo_read(): basic read [blocking]");
+  fifo_init(&f);
+  fifo_open(&f, FIFO_WRITE, false);
+
+  KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
+  KEXPECT_EQ(5, fifo_read(&f, buf, 100, true));
+  buf[5] = '\0';
+  KEXPECT_STREQ("abcde", buf);
+
+  KTEST_BEGIN("fifo_read(): basic read [non-blocking]");
+  KEXPECT_EQ(5, circbuf_write(&f.cbuf, "ABCDE", 5));
+  KEXPECT_EQ(5, fifo_read(&f, buf, 100, false));
+  buf[5] = '\0';
+  KEXPECT_STREQ("ABCDE", buf);
+
+
+  // TODO tests
+  //  - read normal
+  //    buffer too big, and too small, and exact
+  //  - read empty (blocking): block
+  //  - read empty (non-blocking): EAGAIN
+  //  - read empty (blocking) without writer: 0
+  //  - read empty (non-blocking) without writer: 0
+  //  - read blocking, then writer closes (wakes up and returns 0)
+}
+
 void fifo_test(void) {
   KTEST_SUITE_BEGIN("FIFO");
   open_test();
+  read_test();
 }

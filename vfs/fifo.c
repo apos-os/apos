@@ -76,7 +76,7 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
 }
 
 ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
-  return -ENOTSUP;
+  return circbuf_read(&fifo->cbuf, buf, len);
 }
 
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
