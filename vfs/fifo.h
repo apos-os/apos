@@ -22,8 +22,10 @@
 #include "proc/kthread.h"
 #include "user/include/apos/posix_types.h"
 
-// TODO(aoates): provide the atomicity guarantees required by PIPE_BUF.
-#define APOS_FIFO_BUF_SIZE 512
+#define APOS_FIFO_BUF_SIZE 1024
+
+// Equivalent to POSIX's PIPE_BUF.
+#define APOS_FIFO_MAX_ATOMIC_WRITE 512
 
 typedef enum {
   FIFO_READ,

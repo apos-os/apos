@@ -64,10 +64,12 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
   switch (mode) {
     case FIFO_READ:
       fifo->num_readers--;
+      // TODO wake writers
       break;
 
     case FIFO_WRITE:
       fifo->num_writers--;
+      scheduler_wake_all(&fifo->read_queue);
       break;
   }
 
@@ -76,11 +78,47 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
 }
 
 ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
-  return circbuf_read(&fifo->cbuf, buf, len);
+  KASSERT(fifo->num_readers > 0);
+  if (len == 0) return 0;
+  else if (fifo->cbuf.len == 0 && fifo->num_writers == 0) return 0;
+  else if (fifo->cbuf.len == 0 && !block) return -EAGAIN;
+
+  while (block && fifo->num_writers > 0 && fifo->cbuf.len == 0) {
+    // TODO(aoates): make this interruptable and handle signals.
+    scheduler_wait_on(&fifo->read_queue);
+  }
+
+  int result = circbuf_read(&fifo->cbuf, buf, len);
+  if (result > 0) {
+    scheduler_wake_all(&fifo->write_queue);
+  }
+  return result;
 }
 
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
-  return -ENOTSUP;
+  KASSERT(fifo->num_writers > 0);
+
+  // TODO(aoates): ensure writes less than APOS_FIFO_MAX_ATOMIC_WRITE are
+  // atomic.
+  ssize_t bytes_written = 0;
+  while (len > 0) {
+    while (block && fifo->cbuf.len == APOS_FIFO_BUF_SIZE) {
+      // TODO(aoates): make this interruptable and handle signals.
+      scheduler_wait_on(&fifo->write_queue);
+    }
+
+    ssize_t result = circbuf_write(&fifo->cbuf, buf, len);
+    if (result > 0) {
+      scheduler_wake_all(&fifo->read_queue);
+      bytes_written += result;
+
+      buf += result;
+      len -= result;
+    }
+
+    if (!block) break;
+  }
+  return bytes_written;
 }
 
 

@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/kassert.h"
+#include "common/kstring.h"
+#include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
@@ -151,14 +154,46 @@ static void open_test(void) {
   fifo_cleanup(&fifo);
 }
 
+typedef struct {
+  apos_fifo_t* fifo;
+  char* buf;
+  size_t len;
+  bool started;
+  bool finished;
+  int result;
+} op_args_t;
+
+static void* do_read(void* arg) {
+  op_args_t* args = (op_args_t*)arg;
+  args->finished = false;
+  args->result = -1;
+  args->started = true;
+  args->result = fifo_read(args->fifo, args->buf, args->len, true);
+  args->finished = true;
+  return 0x0;
+}
+
+static void op_wait_start(op_args_t* args) {
+  args->started = false;
+  for (int i = 0; i < 10 && !args->started; ++i) scheduler_yield();
+  KEXPECT_EQ(true, args->started);
+}
+
+static void op_wait_finish(const op_args_t* args) {
+  for (int i = 0; i < 10 && !args->finished; ++i) scheduler_yield();
+  KEXPECT_EQ(true, args->finished);
+}
+
 static void read_test(void) {
   apos_fifo_t f;
   char buf[100];
+  kthread_t thread;
 
   KTEST_BEGIN("fifo_read(): basic read [blocking]");
   fifo_init(&f);
   fifo_open(&f, FIFO_WRITE, false);
 
+  fifo_open(&f, FIFO_READ, false);
   KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
   KEXPECT_EQ(5, fifo_read(&f, buf, 100, true));
   buf[5] = '\0';
@@ -171,18 +206,248 @@ static void read_test(void) {
   KEXPECT_STREQ("ABCDE", buf);
 
 
-  // TODO tests
-  //  - read normal
-  //    buffer too big, and too small, and exact
-  //  - read empty (blocking): block
-  //  - read empty (non-blocking): EAGAIN
-  //  - read empty (blocking) without writer: 0
-  //  - read empty (non-blocking) without writer: 0
-  //  - read blocking, then writer closes (wakes up and returns 0)
+  KTEST_BEGIN("fifo_read(): buffer too small [blocking]");
+  kmemset(buf, '\0', 100);
+  KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
+  KEXPECT_EQ(3, fifo_read(&f, buf, 3, true));
+  KEXPECT_STREQ("abc", buf);
+
+
+  KTEST_BEGIN("fifo_read(): buffer too small [non-blocking]");
+  kmemset(buf, '\0', 100);
+  f.cbuf.len = 0;  // TODO(aoates): write circbuf_clear()
+  KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
+  KEXPECT_EQ(3, fifo_read(&f, buf, 3, false));
+  KEXPECT_STREQ("abc", buf);
+
+
+  KTEST_BEGIN("fifo_read(): no data -> block until available");
+  f.cbuf.len = 0;
+  op_args_t args;
+  args.fifo = &f;
+  args.buf = buf;
+  args.len = 100;
+
+  kmemset(buf, '\0', 100);
+  KEXPECT_EQ(0, kthread_create(&thread, &do_read, &args));
+  scheduler_make_runnable(thread);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+
+  KEXPECT_EQ(3, fifo_write(&f, "123", 3, true));
+  op_wait_finish(&args);
+  KEXPECT_EQ(3, args.result);
+  buf[3] = '\0';
+  KEXPECT_STREQ("123", buf);
+  kthread_join(thread);
+
+
+  KTEST_BEGIN("fifo_read(): no data [non-blocking] -> return EAGAIN");
+  KEXPECT_EQ(-EAGAIN, fifo_read(&f, buf, 100, false));
+
+
+  KTEST_BEGIN("fifo_read(): no data and no writers -> return 0");
+  fifo_close(&f, FIFO_WRITE);
+  KEXPECT_EQ(0, fifo_read(&f, buf, 100, true));
+
+
+  KTEST_BEGIN("fifo_read(): no data and no writers [non-blocking] -> return 0");
+  KEXPECT_EQ(0, fifo_read(&f, buf, 100, false));
+
+  KTEST_BEGIN("fifo_read(): blocking until writer closes -> return 0");
+  fifo_open(&f, FIFO_WRITE, false);
+  f.cbuf.len = 0;
+  args.fifo = &f;
+  args.buf = buf;
+  args.len = 100;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_read, &args));
+  scheduler_make_runnable(thread);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+
+  fifo_close(&f, FIFO_WRITE);
+  op_wait_finish(&args);
+  KEXPECT_EQ(0, args.result);
+  kthread_join(thread);
+
+
+  KTEST_BEGIN("fifo_read(): no writers but has data");
+  kmemset(buf, '\0', 100);
+  f.cbuf.len = 0;  // TODO(aoates): write circbuf_clear()
+  KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
+  KEXPECT_EQ(0, f.num_writers);
+  KEXPECT_EQ(3, fifo_read(&f, buf, 3, true));
+  KEXPECT_STREQ("abc", buf);
+
+  KEXPECT_EQ(2, fifo_read(&f, buf, 5, true));
+  KEXPECT_STREQ("dec", buf);
+
+  KEXPECT_EQ(0, fifo_read(&f, buf, 5, true));
+
+  KTEST_BEGIN("fifo_read(): given len is 0 (should never block)");
+  KEXPECT_EQ(0, fifo_read(&f, buf, 0, true));
+  KEXPECT_EQ(0, fifo_read(&f, buf, 0, false));
+  KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
+  KEXPECT_EQ(0, fifo_read(&f, buf, 0, true));
+  KEXPECT_EQ(0, fifo_read(&f, buf, 0, false));
+  fifo_open(&f, FIFO_WRITE, false);
+  KEXPECT_EQ(0, fifo_read(&f, buf, 0, true));
+  KEXPECT_EQ(0, fifo_read(&f, buf, 0, false));
+  fifo_close(&f, FIFO_WRITE);
+
+  fifo_close(&f, FIFO_READ);
+  fifo_cleanup(&f);
+}
+
+static void* do_write(void* arg) {
+  op_args_t* args = (op_args_t*)arg;
+  args->finished = false;
+  args->result = -1;
+  args->started = true;
+  args->result = fifo_write(args->fifo, args->buf, args->len, true);
+  args->finished = true;
+  return 0x0;
+}
+
+static int check_buffer(const void* buf, char c1, int len1, char c2, int len2) {
+  for (int i = 0; i < len1; ++i) {
+    if (((const char*)buf)[i] != c1) return 1;
+  }
+  for (int i = 0; i < len2; ++i) {
+    if (((const char*)buf)[i + len1] != c2) return 1;
+  }
+  return 0;
+}
+
+static void circbuf_realign(circbuf_t* cbuf) {
+  void* tmp = kmalloc(cbuf->buflen);
+  int orig_len = cbuf->len;
+  KEXPECT_EQ(orig_len, circbuf_read(cbuf, tmp, orig_len));
+  KASSERT(cbuf->len == 0);
+  cbuf->pos = 0;
+  KEXPECT_EQ(orig_len, circbuf_write(cbuf, tmp, orig_len));
+  kfree(tmp);
+}
+
+static void write_test(void) {
+  apos_fifo_t f;
+  char buf[100];
+  kthread_t thread;
+
+  KTEST_BEGIN("fifo_write(): basic write [blocking]");
+  fifo_init(&f);
+  fifo_open(&f, FIFO_READ, false);
+
+  fifo_open(&f, FIFO_WRITE, false);
+  KEXPECT_EQ(5, fifo_write(&f, "abcde", 5, true));
+  KEXPECT_EQ(5, circbuf_read(&f.cbuf, buf, 100));
+  buf[5] = '\0';
+  KEXPECT_STREQ("abcde", buf);
+
+  KTEST_BEGIN("fifo_write(): basic write [non-blocking]");
+  KEXPECT_EQ(5, fifo_write(&f, "ABCDE", 5, false));
+  KEXPECT_EQ(5, circbuf_read(&f.cbuf, buf, 100));
+  buf[5] = '\0';
+  KEXPECT_STREQ("ABCDE", buf);
+
+  KTEST_BEGIN("fifo_write(): can write partial data [blocking]");
+  const int kBigBufSize = 2 * APOS_FIFO_BUF_SIZE;
+  void* big_buf = kmalloc(kBigBufSize);
+  void* big_buf2 = kmalloc(kBigBufSize);
+  kmemset(big_buf, 'x', kBigBufSize);
+  const int write_size = APOS_FIFO_BUF_SIZE - APOS_FIFO_MAX_ATOMIC_WRITE - 200;
+  KEXPECT_EQ(write_size, circbuf_write(&f.cbuf, big_buf, write_size));
+  kmemset(big_buf, 'X', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_MAX_ATOMIC_WRITE + 200,
+             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 200, true));
+  kmemset(big_buf2, 'y', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, circbuf_read(&f.cbuf, big_buf2, kBigBufSize));
+  kmemset(big_buf, 'x', write_size);
+  kmemset(big_buf + write_size, 'X', APOS_FIFO_MAX_ATOMIC_WRITE + 200);
+  KEXPECT_EQ(0, kstrncmp(big_buf, big_buf2, APOS_FIFO_BUF_SIZE));
+
+
+  KTEST_BEGIN("fifo_write(): can write partial data [non-blocking]");
+  kmemset(big_buf2, 'x', kBigBufSize);
+  KEXPECT_EQ(write_size, circbuf_write(&f.cbuf, big_buf, write_size));
+  kmemset(big_buf2, 'X', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_MAX_ATOMIC_WRITE + 200,
+             fifo_write(&f, big_buf2, APOS_FIFO_MAX_ATOMIC_WRITE + 200, false));
+  kmemset(big_buf2, 'y', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, circbuf_read(&f.cbuf, big_buf2, kBigBufSize));
+  KEXPECT_EQ(0, kstrncmp(big_buf, big_buf2, APOS_FIFO_BUF_SIZE));
+
+
+  KTEST_BEGIN("fifo_write(): buffer too small [blocking]");
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'x', kBigBufSize);
+  KEXPECT_EQ(200, circbuf_write(&f.cbuf, big_buf, 200));
+  kmemset(big_buf, 'X', kBigBufSize);
+
+  op_args_t args;
+  args.fifo = &f;
+  args.buf = big_buf;
+  args.len = APOS_FIFO_BUF_SIZE - 100;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
+  scheduler_make_runnable(thread);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+
+  // Open up some space, but not enough.
+  KEXPECT_EQ(50, fifo_read(&f, big_buf2, 50, true));
+  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  KEXPECT_EQ(false, args.finished);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(0, check_buffer(big_buf2, 'x', 50, 'X', 0));
+  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(0,
+             check_buffer(f.cbuf.buf, 'x', 150, 'X', APOS_FIFO_BUF_SIZE - 150));
+
+  // Open up the rest.
+  KEXPECT_EQ(160, fifo_read(&f, big_buf2, 160, true));
+  op_wait_finish(&args);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100, args.result);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 110, f.cbuf.len);
+  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(0, check_buffer(big_buf2, 'x', 150, 'X', 10));
+  KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 10));
+
+
+  KTEST_BEGIN("fifo_write(): buffer too small [non-blocking]");
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'x', kBigBufSize);
+  KEXPECT_EQ(200, circbuf_write(&f.cbuf, big_buf, 200));
+  kmemset(big_buf, 'X', kBigBufSize);
+
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 200,
+             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+
+  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(0,
+             check_buffer(f.cbuf.buf, 'x', 200, 'X', APOS_FIFO_BUF_SIZE - 200));
+
+  // TODO
+  // - PIPE_BUF
+  // - atomic test where you write atomic amount, then read enough to open up
+  // less than the atomic amount and verify it's not written
+  // - write that partially succeeds (blocknig and non-blocking)
+  // - write that cannot succeed at all (blocking and non-blocking)
+  // - write that is too big for the whole buffer (must be done in chunks)
+
+  fifo_close(&f, FIFO_WRITE);
+  fifo_close(&f, FIFO_READ);
+  fifo_cleanup(&f);
+  kfree(big_buf);
+  kfree(big_buf2);
 }
 
 void fifo_test(void) {
   KTEST_SUITE_BEGIN("FIFO");
   open_test();
   read_test();
+  write_test();
 }
