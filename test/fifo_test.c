@@ -14,6 +14,7 @@
 
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -310,14 +311,22 @@ static void* do_write(void* arg) {
   return 0x0;
 }
 
-static int check_buffer(const void* buf, char c1, int len1, char c2, int len2) {
+static int check_buffer3(const void* buf, char c1, int len1, char c2, int len2,
+                         char c3, int len3) {
   for (int i = 0; i < len1; ++i) {
     if (((const char*)buf)[i] != c1) return 1;
   }
   for (int i = 0; i < len2; ++i) {
     if (((const char*)buf)[i + len1] != c2) return 1;
   }
+  for (int i = 0; i < len3; ++i) {
+    if (((const char*)buf)[i + len1 + len2] != c3) return 1;
+  }
   return 0;
+}
+
+static int check_buffer(const void* buf, char c1, int len1, char c2, int len2) {
+  return check_buffer3(buf, c1, len1, c2, len2, '!', 0);
 }
 
 static void circbuf_realign(circbuf_t* cbuf) {
@@ -414,6 +423,7 @@ static void write_test(void) {
   circbuf_realign(&f.cbuf);
   KEXPECT_EQ(0, check_buffer(big_buf2, 'x', 150, 'X', 10));
   KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 10));
+  kthread_join(thread);
 
 
   KTEST_BEGIN("fifo_write(): buffer too small [non-blocking]");
@@ -464,6 +474,7 @@ static void write_test(void) {
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 150, f.cbuf.len);
   KEXPECT_EQ(0,
              check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 150));
+  kthread_join(thread);
 
 
   KTEST_BEGIN("fifo_write(): buffer full [non-blocking]");
@@ -473,13 +484,98 @@ static void write_test(void) {
              circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE));
   kmemset(big_buf, 'X', kBigBufSize);
 
-  KEXPECT_EQ(0, fifo_write(&f, big_buf, 100, false));
-  KEXPECT_EQ(0, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
-  KEXPECT_EQ(0, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 100, false));
+  KEXPECT_EQ(-EAGAIN,
+             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE, false));
 
   circbuf_realign(&f.cbuf);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
   KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
+
+
+
+  KTEST_BEGIN("fifo_write(): atomic write into buffer too small [blocking]");
+  // Atomic write sizes to test.  Tuples of atomic write size, how much space to
+  // leave in the buffer before writing, and how much to read to make sure a
+  // partial read doesn't cause a non-atomic write.
+  const int kAtomicWriteSizes[][3] = {
+      {1, 0, 0},
+      {200, 100, 50},
+      {APOS_FIFO_MAX_ATOMIC_WRITE - 1, 200, 100},
+      {APOS_FIFO_MAX_ATOMIC_WRITE, 200, 100},
+      {-1, -1, -1}};
+  for (int i = 0; kAtomicWriteSizes[i][0] > 0; ++i) {
+    KLOG("Testing atomic write of %d bytes\n", kAtomicWriteSizes[i][0]);
+    KASSERT(kAtomicWriteSizes[i][1] + kAtomicWriteSizes[i][2] <
+            kAtomicWriteSizes[i][0]);
+    f.cbuf.pos = f.cbuf.len = 0;
+    kmemset(big_buf, 'x', kBigBufSize);
+    const int orig_write_size = APOS_FIFO_BUF_SIZE - kAtomicWriteSizes[i][1];
+    KEXPECT_EQ(orig_write_size,
+               circbuf_write(&f.cbuf, big_buf, orig_write_size));
+    kmemset(big_buf, 'X', kBigBufSize);
+    args.len = kAtomicWriteSizes[i][0];
+
+    KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
+    scheduler_make_runnable(thread);
+    op_wait_start(&args);
+    KEXPECT_EQ(false, args.finished);
+    KEXPECT_EQ(orig_write_size, f.cbuf.len);
+
+    const int read_size1 = kAtomicWriteSizes[i][2];
+    if (read_size1 > 0) {
+      // Open up some space, but not enough.
+      KEXPECT_EQ(read_size1, fifo_read(&f, big_buf2, read_size1, true));
+      for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+      KEXPECT_EQ(false, args.finished);
+      KEXPECT_EQ(orig_write_size - read_size1, f.cbuf.len);
+      KEXPECT_EQ(0, check_buffer(big_buf2, 'x', read_size1, 'X', 0));
+      circbuf_realign(&f.cbuf);
+      KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', orig_write_size - read_size1,
+                                 'X', 0));
+    }
+
+    const int num_ys = min(read_size1, 7);
+    if (num_ys > 0) {
+      // Make a second write.
+      KEXPECT_EQ(7, fifo_write(&f, "yyyyyyy", 7, false));
+    }
+
+    // Open up the rest.
+    const int read_size2 = kAtomicWriteSizes[i][0] - read_size1 + 10;
+    KEXPECT_EQ(read_size2, fifo_read(&f, big_buf2, read_size2, true));
+    op_wait_finish(&args);
+    KEXPECT_EQ(kAtomicWriteSizes[i][0], args.result);
+    KEXPECT_EQ(orig_write_size - read_size1 - read_size2 + num_ys +
+                   kAtomicWriteSizes[i][0],
+               f.cbuf.len);
+    circbuf_realign(&f.cbuf);
+    KEXPECT_EQ(0, check_buffer(big_buf2, 'x', read_size2, 'X', 0));
+    KEXPECT_EQ(0, check_buffer3(f.cbuf.buf, 'x',
+                                orig_write_size - read_size1 - read_size2, 'y',
+                                num_ys, 'X', kAtomicWriteSizes[i][0]));
+    kthread_join(thread);
+  }
+
+
+
+  KTEST_BEGIN(
+      "fifo_write(): atomic write into buffer too small [non-blocking]");
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'x', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
+             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
+  kmemset(big_buf, 'X', kBigBufSize);
+
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 101, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 200, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 300, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 500, false));
+  KEXPECT_EQ(100, fifo_write(&f, big_buf, 600, false));
+
+
 
   // TODO
   // - PIPE_BUF

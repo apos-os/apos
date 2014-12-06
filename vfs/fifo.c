@@ -98,13 +98,16 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   KASSERT(fifo->num_writers > 0);
 
-  // TODO(aoates): ensure writes less than APOS_FIFO_MAX_ATOMIC_WRITE are
-  // atomic.
   ssize_t bytes_written = 0;
+  const size_t min_write = (len <= APOS_FIFO_MAX_ATOMIC_WRITE ? len : 1);
   while (len > 0) {
-    while (block && fifo->cbuf.len == APOS_FIFO_BUF_SIZE) {
+    while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write) {
       // TODO(aoates): make this interruptable and handle signals.
       scheduler_wait_on(&fifo->write_queue);
+    }
+
+    if (!block && fifo->cbuf.buflen - fifo->cbuf.len < min_write) {
+      return -EAGAIN;
     }
 
     ssize_t result = circbuf_write(&fifo->cbuf, buf, len);
