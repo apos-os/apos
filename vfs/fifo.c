@@ -101,14 +101,9 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   KASSERT(fifo->num_writers > 0);
 
-  if (fifo->num_readers == 0) {
-    proc_force_signal(proc_current(), SIGPIPE);
-    return -EPIPE;
-  }
-
   ssize_t bytes_written = 0;
   const size_t min_write = (len <= APOS_FIFO_MAX_ATOMIC_WRITE ? len : 1);
-  while (len > 0) {
+  do {
     while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write &&
            fifo->num_readers > 0) {
       // TODO(aoates): make this interruptable and handle signals.
@@ -132,8 +127,7 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
       buf += result;
       len -= result;
     }
+  } while (block && len > 0);
 
-    if (!block) break;
-  }
   return bytes_written;
 }
