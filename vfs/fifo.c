@@ -33,13 +33,14 @@ void fifo_cleanup(apos_fifo_t* fifo) {
   KASSERT(kthread_queue_empty(&fifo->write_queue));
 }
 
-void fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block) {
+int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
   switch (mode) {
     case FIFO_READ:
       fifo->num_readers++;
       break;
 
     case FIFO_WRITE:
+      if (fifo->num_readers == 0 && !block && !force) return -ENXIO;
       fifo->num_writers++;
       break;
   }
@@ -58,6 +59,7 @@ void fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block) {
   kthread_queue_t* queue =
       (mode == FIFO_READ) ? &fifo->write_queue : &fifo->read_queue;
   scheduler_wake_all(queue);
+  return 0;
 }
 
 void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {

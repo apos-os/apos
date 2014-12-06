@@ -30,7 +30,7 @@
 static bool reader_open_finished = false;
 static void* do_reader_open(void* arg) {
   apos_fifo_t* fifo = (apos_fifo_t*)arg;
-  fifo_open(fifo, FIFO_READ, true);
+  KEXPECT_EQ(0, fifo_open(fifo, FIFO_READ, true, false));
   reader_open_finished = true;
   return 0x0;
 }
@@ -38,7 +38,7 @@ static void* do_reader_open(void* arg) {
 static bool writer_open_finished = false;
 static void* do_writer_open(void* arg) {
   apos_fifo_t* fifo = (apos_fifo_t*)arg;
-  fifo_open(fifo, FIFO_WRITE, true);
+  KEXPECT_EQ(0, fifo_open(fifo, FIFO_WRITE, true, false));
   writer_open_finished = true;
   return 0x0;
 }
@@ -50,27 +50,33 @@ static void open_test(void) {
   KEXPECT_EQ(0, fifo.num_writers);
 
   KTEST_BEGIN("fifo_open(): non-blocking reader with no writers");
-  fifo_open(&fifo, FIFO_READ, false);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, false, false));
   KEXPECT_EQ(1, fifo.num_readers);
   KEXPECT_EQ(0, fifo.num_writers);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, false, true));
+  KEXPECT_EQ(2, fifo.num_readers);
+  KEXPECT_EQ(0, fifo.num_writers);
+  fifo_close(&fifo, FIFO_READ);
   fifo_close(&fifo, FIFO_READ);
   KEXPECT_EQ(0, fifo.num_readers);
   KEXPECT_EQ(0, fifo.num_writers);
 
   KTEST_BEGIN("fifo_open(): non-blocking writer with no readers");
-  fifo_open(&fifo, FIFO_WRITE, false);
+  KEXPECT_EQ(-ENXIO, fifo_open(&fifo, FIFO_WRITE, false, false));
   KEXPECT_EQ(0, fifo.num_readers);
-  KEXPECT_EQ(1, fifo.num_writers);
+  KEXPECT_EQ(0, fifo.num_writers);
+
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, false, true));
   fifo_close(&fifo, FIFO_WRITE);
   KEXPECT_EQ(0, fifo.num_readers);
   KEXPECT_EQ(0, fifo.num_writers);
 
   KTEST_BEGIN("fifo_open(): blocking reader with a writer");
-  fifo_open(&fifo, FIFO_WRITE, false);
-  fifo_open(&fifo, FIFO_READ, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, false, true));
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
   KEXPECT_EQ(1, fifo.num_readers);
   KEXPECT_EQ(1, fifo.num_writers);
-  fifo_open(&fifo, FIFO_READ, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
   KEXPECT_EQ(2, fifo.num_readers);
   KEXPECT_EQ(1, fifo.num_writers);
   fifo_close(&fifo, FIFO_READ);
@@ -78,11 +84,11 @@ static void open_test(void) {
   fifo_close(&fifo, FIFO_WRITE);
 
   KTEST_BEGIN("fifo_open(): blocking writer with a reader");
-  fifo_open(&fifo, FIFO_READ, false);
-  fifo_open(&fifo, FIFO_WRITE, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
   KEXPECT_EQ(1, fifo.num_readers);
   KEXPECT_EQ(1, fifo.num_writers);
-  fifo_open(&fifo, FIFO_WRITE, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
   KEXPECT_EQ(1, fifo.num_readers);
   KEXPECT_EQ(2, fifo.num_writers);
   fifo_close(&fifo, FIFO_WRITE);
@@ -91,7 +97,7 @@ static void open_test(void) {
 
 
   KTEST_BEGIN("fifo_open(): blocking reader with no writer");
-  fifo_open(&fifo, FIFO_READ, false);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, false, false));
 
   kthread_t thread;
   reader_open_finished = false;
@@ -104,7 +110,7 @@ static void open_test(void) {
   KEXPECT_EQ(thread, fifo.read_queue.head);
 
   // Opening then closing immediately shouldn't make the original call return.
-  fifo_open(&fifo, FIFO_WRITE, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
   fifo_close(&fifo, FIFO_WRITE);
   for (int i = 0; i < 10 && !kthread_queue_empty(&fifo.write_queue); ++i)
     scheduler_yield();
@@ -112,7 +118,7 @@ static void open_test(void) {
     scheduler_yield();
   KEXPECT_EQ(false, reader_open_finished);
 
-  fifo_open(&fifo, FIFO_WRITE, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
   KEXPECT_EQ(1, kthread_queue_empty(&fifo.read_queue));
   kthread_join(thread);
   KEXPECT_EQ(true, reader_open_finished);
@@ -122,7 +128,7 @@ static void open_test(void) {
 
 
   KTEST_BEGIN("fifo_open(): blocking writer with no reader");
-  fifo_open(&fifo, FIFO_WRITE, false);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, false, true));
 
   writer_open_finished = false;
   KEXPECT_EQ(0, kthread_create(&thread, do_writer_open, &fifo));
@@ -134,7 +140,7 @@ static void open_test(void) {
   KEXPECT_EQ(thread, fifo.write_queue.head);
 
   // Opening then closing immediately shouldn't make the original call return.
-  fifo_open(&fifo, FIFO_READ, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
   fifo_close(&fifo, FIFO_READ);
   for (int i = 0; i < 10 && !kthread_queue_empty(&fifo.read_queue); ++i)
     scheduler_yield();
@@ -142,7 +148,7 @@ static void open_test(void) {
     scheduler_yield();
   KEXPECT_EQ(false, writer_open_finished);
 
-  fifo_open(&fifo, FIFO_READ, true);
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
   KEXPECT_EQ(1, kthread_queue_empty(&fifo.write_queue));
   kthread_join(thread);
   KEXPECT_EQ(true, writer_open_finished);
@@ -192,9 +198,9 @@ static void read_test(void) {
 
   KTEST_BEGIN("fifo_read(): basic read [blocking]");
   fifo_init(&f);
-  fifo_open(&f, FIFO_WRITE, false);
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, true));
 
-  fifo_open(&f, FIFO_READ, false);
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
   KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
   KEXPECT_EQ(5, fifo_read(&f, buf, 100, true));
   buf[5] = '\0';
@@ -256,7 +262,7 @@ static void read_test(void) {
   KEXPECT_EQ(0, fifo_read(&f, buf, 100, false));
 
   KTEST_BEGIN("fifo_read(): blocking until writer closes -> return 0");
-  fifo_open(&f, FIFO_WRITE, false);
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, true));
   f.cbuf.len = 0;
   args.fifo = &f;
   args.buf = buf;
@@ -292,7 +298,7 @@ static void read_test(void) {
   KEXPECT_EQ(5, circbuf_write(&f.cbuf, "abcde", 5));
   KEXPECT_EQ(0, fifo_read(&f, buf, 0, true));
   KEXPECT_EQ(0, fifo_read(&f, buf, 0, false));
-  fifo_open(&f, FIFO_WRITE, false);
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, false));
   KEXPECT_EQ(0, fifo_read(&f, buf, 0, true));
   KEXPECT_EQ(0, fifo_read(&f, buf, 0, false));
   fifo_close(&f, FIFO_WRITE);
@@ -346,9 +352,9 @@ static void write_test(void) {
 
   KTEST_BEGIN("fifo_write(): basic write [blocking]");
   fifo_init(&f);
-  fifo_open(&f, FIFO_READ, false);
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
 
-  fifo_open(&f, FIFO_WRITE, false);
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, true));
   KEXPECT_EQ(5, fifo_write(&f, "abcde", 5, true));
   KEXPECT_EQ(5, circbuf_read(&f.cbuf, buf, 100));
   buf[5] = '\0';

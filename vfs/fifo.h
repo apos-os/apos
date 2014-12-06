@@ -52,8 +52,9 @@ void fifo_cleanup(apos_fifo_t* fifo);
 
 // Open the FIFO in the current process.  If no readers (for FIFO_WRITE) or
 // writers (for FIFO_READ) are available, it will block until one is (if |block|
-// is true).
-void fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block);
+// is true).  If |block| is false, the FIFO is being opened for writing, and
+// there are no readers, returns an error unless |force| is true;
+int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force);
 
 // Close the FIFO.  The given mode must match the mode given with fifo_open().
 void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode);
