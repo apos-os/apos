@@ -16,9 +16,12 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 #include "vfs/fifo.h"
 
@@ -31,17 +34,31 @@ static bool has_sigpipe(void) {
 static bool reader_open_finished = false;
 static void* do_reader_open(void* arg) {
   apos_fifo_t* fifo = (apos_fifo_t*)arg;
-  KEXPECT_EQ(0, fifo_open(fifo, FIFO_READ, true, false));
+  int result = fifo_open(fifo, FIFO_READ, true, false);
   reader_open_finished = true;
-  return 0x0;
+  return (void*)result;
 }
 
 static bool writer_open_finished = false;
 static void* do_writer_open(void* arg) {
   apos_fifo_t* fifo = (apos_fifo_t*)arg;
-  KEXPECT_EQ(0, fifo_open(fifo, FIFO_WRITE, true, false));
+  int result = fifo_open(fifo, FIFO_WRITE, true, false);
   writer_open_finished = true;
-  return 0x0;
+  return (void*)result;
+}
+
+static void do_reader_open_proc(void* arg) {
+  apos_fifo_t* fifo = (apos_fifo_t*)arg;
+  int result = fifo_open(fifo, FIFO_READ, true, false);
+  reader_open_finished = true;
+  proc_exit(result);
+}
+
+static void do_writer_open_proc(void* arg) {
+  apos_fifo_t* fifo = (apos_fifo_t*)arg;
+  int result = fifo_open(fifo, FIFO_WRITE, true, false);
+  writer_open_finished = true;
+  proc_exit(result);
 }
 
 static void open_test(void) {
@@ -121,7 +138,7 @@ static void open_test(void) {
 
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
   KEXPECT_EQ(1, kthread_queue_empty(&fifo.read_queue));
-  kthread_join(thread);
+  KEXPECT_EQ(0, (int)kthread_join(thread));
   KEXPECT_EQ(true, reader_open_finished);
   fifo_close(&fifo, FIFO_READ);
   fifo_close(&fifo, FIFO_READ);
@@ -151,11 +168,49 @@ static void open_test(void) {
 
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
   KEXPECT_EQ(1, kthread_queue_empty(&fifo.write_queue));
-  kthread_join(thread);
+  KEXPECT_EQ(0, (int)kthread_join(thread));
   KEXPECT_EQ(true, writer_open_finished);
   fifo_close(&fifo, FIFO_READ);
   fifo_close(&fifo, FIFO_WRITE);
   fifo_close(&fifo, FIFO_WRITE);
+
+
+  KTEST_BEGIN("fifo_open(): EINTR on signal (FIFO_READ)");
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, false, true));
+  reader_open_finished = false;
+  pid_t child = proc_fork(&do_reader_open_proc, &fifo);
+  KEXPECT_GE(child, 0);
+  for (int i = 0; i < 10 && fifo.num_readers == 1; ++i) scheduler_yield();
+  KEXPECT_EQ(false, reader_open_finished);
+  KEXPECT_EQ(2, fifo.num_readers);
+
+  proc_force_signal(proc_get(child), SIGUSR1);
+  for (int i = 0; i < 10 && fifo.num_readers == 2; ++i) scheduler_yield();
+  KEXPECT_EQ(true, reader_open_finished);
+  KEXPECT_EQ(1, fifo.num_readers);
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(-EINTR, status);
+  fifo_close(&fifo, FIFO_READ);
+
+
+  KTEST_BEGIN("fifo_open(): EINTR on signal (FIFO_WRITE)");
+  KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, false, true));
+  writer_open_finished = false;
+  child = proc_fork(&do_writer_open_proc, &fifo);
+  KEXPECT_GE(child, 0);
+  for (int i = 0; i < 10 && fifo.num_writers == 1; ++i) scheduler_yield();
+  KEXPECT_EQ(false, writer_open_finished);
+  KEXPECT_EQ(2, fifo.num_writers);
+
+  proc_force_signal(proc_get(child), SIGUSR1);
+  for (int i = 0; i < 10 && fifo.num_writers == 2; ++i) scheduler_yield();
+  KEXPECT_EQ(true, writer_open_finished);
+  KEXPECT_EQ(1, fifo.num_writers);
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(-EINTR, status);
+  fifo_close(&fifo, FIFO_WRITE);
+
 
   // TODO(aoates): test that it's wake all, not wake one
 

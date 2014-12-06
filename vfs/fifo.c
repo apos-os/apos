@@ -53,8 +53,14 @@ int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
   while (block && (fifo->num_readers == 0 || fifo->num_writers == 0)) {
     kthread_queue_t* queue =
         (mode == FIFO_READ) ? &fifo->read_queue : &fifo->write_queue;
-    // TODO(aoates): make this interruptable and handle signals.
-    scheduler_wait_on(queue);
+    int interrupted = scheduler_wait_on_interruptable(queue);
+    if (interrupted) {
+      switch (mode) {
+        case FIFO_READ: fifo->num_readers--; break;
+        case FIFO_WRITE: fifo->num_writers--; break;
+      }
+      return -EINTR;
+    }
   }
 
   kthread_queue_t* queue =
