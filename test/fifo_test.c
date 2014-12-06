@@ -430,6 +430,41 @@ static void write_test(void) {
   KEXPECT_EQ(0,
              check_buffer(f.cbuf.buf, 'x', 200, 'X', APOS_FIFO_BUF_SIZE - 200));
 
+
+  KTEST_BEGIN("fifo_write(): buffer full [blocking]");
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'x', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
+             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE));
+  kmemset(big_buf, 'X', kBigBufSize);
+
+  args.len = APOS_FIFO_BUF_SIZE - 100;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
+  scheduler_make_runnable(thread);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(0, check_buffer(f.buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
+
+  // Open up some space, but not enough.
+  KEXPECT_EQ(50, fifo_read(&f, big_buf2, 50, true));
+  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(0,
+             check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE - 50, 'X', 50));
+
+  // Open up the rest.
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
+             fifo_read(&f, big_buf2, APOS_FIFO_BUF_SIZE, true));
+  op_wait_finish(&args);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE- 100, args.result);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 150, f.cbuf.len);
+  KEXPECT_EQ(0,
+             check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 150));
+
   // TODO
   // - PIPE_BUF
   // - atomic test where you write atomic amount, then read enough to open up
