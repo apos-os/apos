@@ -465,6 +465,22 @@ static void write_test(void) {
   KEXPECT_EQ(0,
              check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 150));
 
+
+  KTEST_BEGIN("fifo_write(): buffer full [non-blocking]");
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'x', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
+             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE));
+  kmemset(big_buf, 'X', kBigBufSize);
+
+  KEXPECT_EQ(0, fifo_write(&f, big_buf, 100, false));
+  KEXPECT_EQ(0, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+  KEXPECT_EQ(0, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE, false));
+
+  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
+
   // TODO
   // - PIPE_BUF
   // - atomic test where you write atomic amount, then read enough to open up
