@@ -229,6 +229,11 @@ int proc_sigpending(sigset_t* set) {
   return 0;
 }
 
+void proc_suppress_signal(process_t* proc, int sig) {
+  ksigdelset(&proc->pending_signals, sig);
+  ksigdelset(&proc->thread->assigned_signals, sig);
+}
+
 // Dispatch a particular signal in the current process.  May not return.
 static void dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();

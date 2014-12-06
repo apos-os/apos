@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "vfs/fifo.h"
 
 void fifo_init(apos_fifo_t* fifo) {
@@ -66,7 +67,7 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
   switch (mode) {
     case FIFO_READ:
       fifo->num_readers--;
-      // TODO wake writers
+      scheduler_wake_all(&fifo->write_queue);
       break;
 
     case FIFO_WRITE:
@@ -100,12 +101,23 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   KASSERT(fifo->num_writers > 0);
 
+  if (fifo->num_readers == 0) {
+    proc_force_signal(proc_current(), SIGPIPE);
+    return -EPIPE;
+  }
+
   ssize_t bytes_written = 0;
   const size_t min_write = (len <= APOS_FIFO_MAX_ATOMIC_WRITE ? len : 1);
   while (len > 0) {
-    while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write) {
+    while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write &&
+           fifo->num_readers > 0) {
       // TODO(aoates): make this interruptable and handle signals.
       scheduler_wait_on(&fifo->write_queue);
+    }
+
+    if (fifo->num_readers == 0) {
+      proc_force_signal(proc_current(), SIGPIPE);
+      return -EPIPE;
     }
 
     if (!block && fifo->cbuf.buflen - fifo->cbuf.len < min_write) {
@@ -125,5 +137,3 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   }
   return bytes_written;
 }
-
-

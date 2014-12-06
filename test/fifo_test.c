@@ -18,13 +18,14 @@
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "test/ktest.h"
 #include "vfs/fifo.h"
 
-// Tests to write:
-//  - open: non-blocking reader, non-blocking writer
-//  - open: blocking reader, blocking writer (doesn't block)
-//  - open: blocking reader, blocking writer (does block)
+static bool has_sigpipe(void) {
+  const sigset_t sigset = proc_pending_signals(proc_current());
+  return ksigismember(&sigset, SIGPIPE);
+}
 
 // TODO(aoates): use signals to synchronize the threads.
 static bool reader_open_finished = false;
@@ -621,8 +622,120 @@ static void write_test(void) {
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
              fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE * 1.5, false));
 
-  fifo_close(&f, FIFO_WRITE);
+
+
+  KTEST_BEGIN("fifo_write(): write when there are no readers [non-blocking]");
   fifo_close(&f, FIFO_READ);
+  KEXPECT_EQ(false, has_sigpipe());
+
+  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 0, false));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 100, false));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(-EPIPE,
+             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 10, false));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE + 10, false));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+
+
+  KTEST_BEGIN("fifo_write(): write when there are no readers [blocking]");
+  KEXPECT_EQ(false, has_sigpipe());
+
+  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 0, true));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 100, true));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(-EPIPE,
+             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 10, true));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE + 10, true));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+
+
+  KTEST_BEGIN("fifo_write(): blocking write when last reader closes");
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'X', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
+             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE, false));
+
+  args.len = 100;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
+  scheduler_make_runnable(thread);
+  op_wait_start(&args);
+
+  // Close second-to-last reader.
+  fifo_close(&f, FIFO_READ);
+  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  KEXPECT_EQ(false, args.finished);
+
+  // Close last reader.
+  KEXPECT_EQ(false, has_sigpipe());
+  fifo_close(&f, FIFO_READ);
+  op_wait_finish(&args);
+  KEXPECT_EQ(-EPIPE, args.result);
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  kthread_join(thread);
+
+
+
+  KTEST_BEGIN(
+      "fifo_write(): blocking write when last reader closes (data already "
+      "written)");
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  f.cbuf.pos = f.cbuf.len = 0;
+  kmemset(big_buf, 'x', kBigBufSize);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
+             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+  kmemset(big_buf, 'X', kBigBufSize);
+
+  args.len = APOS_FIFO_BUF_SIZE;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
+  scheduler_make_runnable(thread);
+  op_wait_start(&args);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+
+  // Close second-to-last reader.
+  fifo_close(&f, FIFO_READ);
+  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  KEXPECT_EQ(false, args.finished);
+
+  // Close last reader.
+  KEXPECT_EQ(false, has_sigpipe());
+  fifo_close(&f, FIFO_READ);
+  op_wait_finish(&args);
+  KEXPECT_EQ(-EPIPE, args.result);
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(0,
+             check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE - 100, 'X', 100));
+
+  kthread_join(thread);
+
+
+  fifo_close(&f, FIFO_WRITE);
   fifo_cleanup(&f);
   kfree(big_buf);
   kfree(big_buf2);
