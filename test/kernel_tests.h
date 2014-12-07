@@ -53,5 +53,6 @@ void cbfs_test(void);
 void ansi_escape_test(void);
 void circbuf_test(void);
 void fifo_test(void);
+void vfs_fifo_test(void);
 
 #endif

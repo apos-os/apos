@@ -35,11 +35,11 @@ typedef enum {
   VNODE_BLOCKDEV = 4,
   VNODE_CHARDEV = 5,
   VNODE_SYMLINK = 6,
+  VNODE_FIFO = 7,
 } vnode_type_t;
-// TODO(aoates): symlinks, etc.
 
 static const char* const VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
+  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR", "FIFO",
 };
 
 // A virtual node in the filesystem.  It is expected that concete filesystems

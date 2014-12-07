@@ -557,9 +557,8 @@ int vfs_mkdir(const char* path, mode_t mode) {
 }
 
 int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
-  const mode_t node_type = mode & VFS_S_IFMT;
-  if (node_type != VFS_S_IFREG && node_type != VFS_S_IFCHR &&
-      node_type != VFS_S_IFBLK) {
+  if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
+      !VFS_S_ISFIFO(mode)) {
     return -EINVAL;
   }
 
@@ -590,6 +589,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   if (VFS_S_ISREG(mode)) type = VNODE_REGULAR;
   else if (VFS_S_ISBLK(mode)) type = VNODE_BLOCKDEV;
   else if (VFS_S_ISCHR(mode)) type = VNODE_CHARDEV;
+  else if (VFS_S_ISFIFO(mode)) type = VNODE_FIFO;
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);

@@ -128,6 +128,7 @@ static test_entry_t TESTS[] = {
   { "ansi_escape", &ansi_escape_test, 1 },
   { "circbuf", &circbuf_test, 1 },
   { "fifo", &fifo_test, 1 },
+  { "vfs_fifo", &vfs_fifo_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
