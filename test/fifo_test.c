@@ -393,6 +393,10 @@ static void* do_write(void* arg) {
   return 0x0;
 }
 
+static void do_write_proc(void* arg) {
+  do_write(arg);
+}
+
 static int check_buffer3(const void* buf, char c1, int len1, char c2, int len2,
                          char c3, int len3) {
   for (int i = 0; i < len1; ++i) {
@@ -810,6 +814,42 @@ static void write_test(void) {
   kthread_join(thread);
 
 
+  KTEST_BEGIN("fifo_write(): interrupted by signal (no data written)");
+  f.cbuf.pos = f.cbuf.len = 0;
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
+             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
+  args.len = 200;
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  pid_t child = proc_fork(do_write_proc, &args);
+  KEXPECT_GE(child, 0);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+
+  proc_force_signal(proc_get(child), SIGUSR1);
+  op_wait_finish(&args);
+  KEXPECT_EQ(-EINTR, args.result);
+  KEXPECT_EQ(child, proc_wait(NULL));
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100, f.cbuf.len);
+
+
+  KTEST_BEGIN("fifo_write(): interrupted by signal (data already written)");
+  f.cbuf.pos = f.cbuf.len = 0;
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
+             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
+  args.len = APOS_FIFO_MAX_ATOMIC_WRITE + 100;
+  child = proc_fork(do_write_proc, &args);
+  KEXPECT_GE(child, 0);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+
+  proc_force_signal(proc_get(child), SIGUSR1);
+  op_wait_finish(&args);
+  KEXPECT_EQ(100, args.result);
+  KEXPECT_EQ(child, proc_wait(NULL));
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+
+
+  fifo_close(&f, FIFO_READ);
   fifo_close(&f, FIFO_WRITE);
   fifo_cleanup(&f);
   kfree(big_buf);

@@ -112,8 +112,8 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   do {
     while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write &&
            fifo->num_readers > 0) {
-      // TODO(aoates): make this interruptable and handle signals.
-      scheduler_wait_on(&fifo->write_queue);
+      int interrupted = scheduler_wait_on_interruptable(&fifo->write_queue);
+      if (interrupted) return bytes_written > 0 ? bytes_written : -EINTR;
     }
 
     if (fifo->num_readers == 0) {
