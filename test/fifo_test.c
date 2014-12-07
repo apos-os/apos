@@ -247,6 +247,10 @@ static void op_wait_finish(const op_args_t* args) {
   KEXPECT_EQ(true, args->finished);
 }
 
+static void do_read_proc(void* arg) {
+  do_read(arg);
+}
+
 static void read_test(void) {
   apos_fifo_t f;
   char buf[100];
@@ -359,6 +363,22 @@ static void read_test(void) {
   KEXPECT_EQ(0, fifo_read(&f, buf, 0, false));
   fifo_close(&f, FIFO_WRITE);
 
+
+  KTEST_BEGIN("fifo_read(): interrupted by signal");
+  f.cbuf.pos = f.cbuf.len = 0;
+  args.len = 10;
+  KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, true));
+  pid_t child = proc_fork(do_read_proc, &args);
+  KEXPECT_GE(child, 0);
+  op_wait_start(&args);
+  KEXPECT_EQ(false, args.finished);
+
+  proc_force_signal(proc_get(child), SIGUSR1);
+  op_wait_finish(&args);
+  KEXPECT_EQ(-EINTR, args.result);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  fifo_close(&f, FIFO_WRITE);
   fifo_close(&f, FIFO_READ);
   fifo_cleanup(&f);
 }

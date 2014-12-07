@@ -93,8 +93,8 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
   else if (fifo->cbuf.len == 0 && !block) return -EAGAIN;
 
   while (block && fifo->num_writers > 0 && fifo->cbuf.len == 0) {
-    // TODO(aoates): make this interruptable and handle signals.
-    scheduler_wait_on(&fifo->read_queue);
+    int interrupted = scheduler_wait_on_interruptable(&fifo->read_queue);
+    if (interrupted) return -EINTR;
   }
 
   int result = circbuf_read(&fifo->cbuf, buf, len);
