@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
@@ -65,12 +67,55 @@ static void stat_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+static void* do_open(void* arg) {
+  int mode = (int)arg;
+  int result = vfs_open("fifo_test/fifo", mode);
+  return (void*)result;
+}
+
+static void open_test(void) {
+  KTEST_BEGIN("open() FIFO test (O_RDONLY)");
+  KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
+  scheduler_make_runnable(thread);
+
+  int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+  fd = (int)kthread_join(thread);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+
+  KTEST_BEGIN("open() FIFO test (O_WRONLY)");
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_RDONLY));
+  scheduler_make_runnable(thread);
+
+  fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+  fd = (int)kthread_join(thread);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+
+  KTEST_BEGIN("open() FIFO test (O_RDWR)");
+  KEXPECT_EQ(-EINVAL, vfs_open("fifo_test/fifo", VFS_O_RDWR));
+
+  KTEST_BEGIN("open() test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
+  KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
+}
+
 void vfs_fifo_test(void) {
   KTEST_SUITE_BEGIN("VFS FIFO test");
   const int initial_cache_size = vfs_cache_size();
 
   mknod_test();
   stat_test();
+  open_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

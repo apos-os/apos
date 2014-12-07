@@ -21,6 +21,7 @@
 #include "user/include/apos/dev.h"
 #include "user/include/apos/posix_types.h"
 #include "user/include/apos/vfs/stat.h"
+#include "vfs/fifo.h"
 #include "vfs/fsid.h"
 
 struct fs;
@@ -74,8 +75,13 @@ struct vnode {
   char fstype[10];
   fs_t* fs;
 
-  // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
-  apos_dev_t dev;
+  union {
+    // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
+    apos_dev_t dev;
+
+    // If type == VNODE_FIFO, the underlying FIFO.
+    apos_fifo_t* fifo;
+  };
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;
