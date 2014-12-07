@@ -903,7 +903,6 @@ int vfs_isatty(int fd) {
 }
 
 static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
-  // TODO(aoates): do st_rdev.
   stat->st_dev = vnode->dev;
   stat->st_ino = vnode->num;
   stat->st_mode = 0;
