@@ -109,6 +109,41 @@ static void open_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+static void read_write_test(void) {
+  KTEST_BEGIN("read() and write() FIFO basic test");
+  KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
+  scheduler_make_runnable(thread);
+
+  int read_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
+  KEXPECT_GE(read_fd, 0);
+  int write_fd = (int)kthread_join(thread);
+  KEXPECT_GE(write_fd, 0);
+
+  KEXPECT_EQ(5, vfs_write(write_fd, "abcde", 5));
+
+  char buf[100];
+  KEXPECT_EQ(5, vfs_read(read_fd, buf, 5));
+  buf[5] = '\0';
+  KEXPECT_STREQ("abcde", buf);
+
+  KTEST_BEGIN("read() on write-only FIFO");
+  KEXPECT_EQ(-EBADF, vfs_read(write_fd, buf, 5));
+
+  KTEST_BEGIN("write() on read-only FIFO");
+  KEXPECT_EQ(-EBADF, vfs_write(read_fd, buf, 5));
+
+  KTEST_BEGIN("read()/write() test cleanup");
+  KEXPECT_EQ(0, vfs_close(read_fd));
+  KEXPECT_EQ(0, vfs_close(write_fd));
+
+  KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
+  KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
+}
+
 void vfs_fifo_test(void) {
   KTEST_SUITE_BEGIN("VFS FIFO test");
   const int initial_cache_size = vfs_cache_size();
@@ -116,6 +151,7 @@ void vfs_fifo_test(void) {
   mknod_test();
   stat_test();
   open_test();
+  read_write_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
