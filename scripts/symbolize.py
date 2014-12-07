@@ -31,6 +31,7 @@ def symbolize(frame_num, addr):
 try:
   while True:
     line = sys.stdin.readline()
+    if not line: sys.exit(0)
     m = re.match(" #(\d*) (0x[a-zA-Z0-9]*)\n", line)
     if m:
       line = symbolize(m.group(1), m.group(2))
