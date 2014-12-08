@@ -38,6 +38,12 @@ static void mknod_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+static void* do_open(void* arg) {
+  int mode = (int)arg;
+  int result = vfs_open("fifo_test/fifo", mode);
+  return (void*)result;
+}
+
 static void stat_test(void) {
   KTEST_BEGIN("stat() FIFO test");
   KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
@@ -61,17 +67,28 @@ static void stat_test(void) {
   KEXPECT_EQ(0, vfs_lstat("fifo_test/fifo", &stat));
   KEXPECT_EQ(0, kmemcmp(&stat, &orig_stat, sizeof(apos_stat_t)));
 
-  // TODO(aoates): test fstat
+
+  KTEST_BEGIN("fstat() FIFO test");
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
+  scheduler_make_runnable(thread);
+
+  int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(0, kmemcmp(&stat, &orig_stat, sizeof(apos_stat_t)));
+  if (0 != kmemcmp(&stat, &orig_stat, sizeof(apos_stat_t)))
+    klog("break");
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  fd = (int)kthread_join(thread);
+  KEXPECT_EQ(0, vfs_close(fd));
+
 
   KTEST_BEGIN("stat() test cleanup");
   KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
-}
-
-static void* do_open(void* arg) {
-  int mode = (int)arg;
-  int result = vfs_open("fifo_test/fifo", mode);
-  return (void*)result;
 }
 
 static void open_test(void) {
