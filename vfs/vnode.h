@@ -75,13 +75,13 @@ struct vnode {
   char fstype[10];
   fs_t* fs;
 
-  union {
-    // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
-    apos_dev_t dev;
+  // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
+  // TODO(aoates): put this and fifo in a union (and update usage sites to only
+  // read one).
+  apos_dev_t dev;
 
-    // If type == VNODE_FIFO, the underlying FIFO.
-    apos_fifo_t* fifo;
-  };
+  // If type == VNODE_FIFO, the underlying FIFO.
+  apos_fifo_t* fifo;
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;
