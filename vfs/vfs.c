@@ -761,18 +761,17 @@ int vfs_read(int fd, void* buf, size_t count) {
   }
   file->refcount++;
 
-  {
+  if (file->vnode->type == VNODE_FIFO) {
+    result = fifo_read(file->vnode->fifo, buf, count, true);
+  } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
-    } else if (file->vnode->type == VNODE_FIFO) {
-      result = fifo_read(file->vnode->fifo, buf, count, true);
     } else {
       result = special_device_read(file->vnode->type, file->vnode->dev,
                                    file->pos, buf, count);
     }
-    if (result >= 0 && file->vnode->type != VNODE_CHARDEV &&
-        file->vnode->type != VNODE_FIFO) {
+    if (result >= 0 && file->vnode->type != VNODE_CHARDEV) {
       file->pos += result;
     }
   }
@@ -799,18 +798,17 @@ int vfs_write(int fd, const void* buf, size_t count) {
   }
   file->refcount++;
 
-  {
+  if (file->vnode->type == VNODE_FIFO) {
+    result = fifo_write(file->vnode->fifo, buf, count, true);
+  } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
-    } else if (file->vnode->type == VNODE_FIFO) {
-      result = fifo_write(file->vnode->fifo, buf, count, true);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,
                                     file->pos, buf, count);
     }
-    if (result >= 0 && file->vnode->type != VNODE_CHARDEV &&
-        file->vnode->type != VNODE_FIFO) {
+    if (result >= 0 && file->vnode->type != VNODE_CHARDEV) {
       file->pos += result;
     }
   }

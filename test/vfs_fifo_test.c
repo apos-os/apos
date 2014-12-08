@@ -16,6 +16,7 @@
 #include "proc/scheduler.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "vfs/fifo.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
 
@@ -109,6 +110,27 @@ static void open_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+typedef struct {
+  int fd;
+  bool started;
+  bool finished;
+  bool is_read;
+} args_t;
+
+static void* do_op(void* args) {
+  args_t* op = (args_t*)args;
+  op->started = true;
+  op->finished = false;
+  char buf[APOS_FIFO_BUF_SIZE + 5];
+  int result;
+  if (op->is_read)
+    result = vfs_read(op->fd, buf, 50);
+  else
+    result = vfs_write(op->fd, buf, APOS_FIFO_BUF_SIZE + 5);
+  op->finished = true;
+  return (void*)result;
+}
+
 static void read_write_test(void) {
   KTEST_BEGIN("read() and write() FIFO basic test");
   KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
@@ -135,6 +157,48 @@ static void read_write_test(void) {
 
   KTEST_BEGIN("write() on read-only FIFO");
   KEXPECT_EQ(-EBADF, vfs_write(read_fd, buf, 5));
+
+
+  KTEST_BEGIN("read() blocks on empty FIFO");
+  args_t op;
+  op.fd = read_fd;
+  op.finished = op.started = false;
+  op.is_read = true;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_op, &op));
+  scheduler_make_runnable(thread);
+
+  for (int i = 0; i < 10 && !op.started; ++i) scheduler_yield();
+
+  KEXPECT_EQ(true, op.started);
+  KEXPECT_EQ(false, op.finished);
+
+  KEXPECT_EQ(5, vfs_write(write_fd, "12345", 5));
+
+  for (int i = 0; i < 10 && !op.finished; ++i) scheduler_yield();
+  KEXPECT_EQ(true, op.finished);
+  KEXPECT_EQ(5, (int)kthread_join(thread));
+
+
+  KTEST_BEGIN("write() blocks on full FIFO");
+  op.fd = write_fd;
+  op.finished = op.started = false;
+  op.is_read = false;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_op, &op));
+  scheduler_make_runnable(thread);
+
+  for (int i = 0; i < 10 && !op.started; ++i) scheduler_yield();
+
+  KEXPECT_EQ(true, op.started);
+  KEXPECT_EQ(false, op.finished);
+
+  KEXPECT_EQ(10, vfs_read(read_fd, buf, 10));
+
+  for (int i = 0; i < 10 && !op.finished; ++i) scheduler_yield();
+  KEXPECT_EQ(true, op.finished);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE + 5, (int)kthread_join(thread));
+
 
   KTEST_BEGIN("read()/write() test cleanup");
   KEXPECT_EQ(0, vfs_close(read_fd));
