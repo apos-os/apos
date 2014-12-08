@@ -217,6 +217,13 @@ static void read_write_test(void) {
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE + 5, (int)kthread_join(thread));
 
 
+  KTEST_BEGIN("seek() on FIFO test");
+  KEXPECT_EQ(-ESPIPE, vfs_seek(read_fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-ESPIPE, vfs_seek(write_fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-ESPIPE, vfs_seek(read_fd, 50, VFS_SEEK_SET));
+  KEXPECT_EQ(-ESPIPE, vfs_seek(write_fd, 50, VFS_SEEK_SET));
+
+
   KTEST_BEGIN("read()/write() test cleanup");
   KEXPECT_EQ(0, vfs_close(read_fd));
   KEXPECT_EQ(0, vfs_close(write_fd));

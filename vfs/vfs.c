@@ -827,6 +827,7 @@ off_t vfs_seek(int fd, off_t offset, int whence) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
+  if (file->vnode->type == VNODE_FIFO) return -ESPIPE;
   if (file->vnode->type != VNODE_REGULAR &&
       file->vnode->type != VNODE_CHARDEV &&
       file->vnode->type != VNODE_BLOCKDEV) {
