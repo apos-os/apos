@@ -133,14 +133,14 @@ static user_context_t extract_interrupt_context(addr_t ebp) {
   user_context_t context;
 
 #if ENABLE_KERNEL_SAFETY_NETS
-  const addr_t cs = *((addr_t*)ebp + 5);
+  const addr_t cs = *((addr_t*)ebp + 6);
   KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
 #endif
 
   context.type = USER_CONTEXT_INTERRUPT;
-  context.esp = *((addr_t*)ebp + 7);
+  context.esp = *((addr_t*)ebp + 8);
   context.ebp = *((addr_t*)ebp);
-  context.eip = *((addr_t*)ebp + 4);
+  context.eip = *((addr_t*)ebp + 5);
   context.eax = *((addr_t*)ebp - 1);
   context.ebx = *((addr_t*)ebp - 4);
   context.ecx = *((addr_t*)ebp - 2);
@@ -148,7 +148,7 @@ static user_context_t extract_interrupt_context(addr_t ebp) {
   context.esi = *((addr_t*)ebp - 7);
   context.edi = *((addr_t*)ebp - 8);
 
-  context.eflags = *((addr_t*)ebp + 6);
+  context.eflags = *((addr_t*)ebp + 7);
 
   return context;
 }
