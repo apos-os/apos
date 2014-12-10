@@ -12,8 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "memory/kmalloc.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
+#include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/fifo.h"
@@ -232,15 +237,113 @@ static void read_write_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+static void interrupt_handler(int sig) {}
+
+static void setup_interrupt(void) {
+  struct sigaction act;
+  act.sa_handler = &interrupt_handler;
+  act.sa_flags = 0;
+  ksigemptyset(&act.sa_mask);
+  KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, NULL));
+}
+
+static void do_open_proc(void* arg) {
+  setup_interrupt();
+  *(bool*)arg = true;
+  proc_exit(vfs_open("fifo_test/fifo", VFS_O_RDONLY));
+}
+
+static void do_read_proc(void* arg) {
+  setup_interrupt();
+
+  char buf[20];
+  int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
+  *(bool*)arg = true;
+  proc_exit(vfs_read(fd, buf, 5));
+}
+
+static void do_write_proc(void* arg) {
+  setup_interrupt();
+
+  void* buf = kmalloc(APOS_FIFO_BUF_SIZE);
+  int fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY);
+  vfs_write(fd, buf, APOS_FIFO_BUF_SIZE);
+  *(bool*)arg = true;
+  int result = vfs_write(fd, "toomuch", 7);
+  kfree(buf);
+  proc_exit(result);
+}
+
+static void interrupt_test(void) {
+  KTEST_BEGIN("read() and write() FIFO basic test");
+  KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
+
+
+  KTEST_BEGIN("open() on FIFO interrupted");
+  bool flag = false;
+  pid_t child = proc_fork(do_open_proc, &flag);
+  KEXPECT_GE(child, 0);
+
+  for (int i = 0; i < 10 && !flag; ++i) scheduler_yield();
+  KEXPECT_EQ(true, flag);
+  KEXPECT_EQ(0, proc_force_signal(proc_get(child), SIGUSR1));
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(status, -EINTR);
+
+
+  KTEST_BEGIN("read() on FIFO interrupted");
+  flag = false;
+  child = proc_fork(do_read_proc, &flag);
+  KEXPECT_GE(child, 0);
+
+  int fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY);
+  KEXPECT_GE(fd, 0);
+  for (int i = 0; i < 10 && !flag; ++i) scheduler_yield();
+  KEXPECT_EQ(true, flag);
+  KEXPECT_EQ(0, proc_force_signal(proc_get(child), SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(status, -EINTR);
+  vfs_close(fd);
+
+
+  KTEST_BEGIN("write() on FIFO interrupted");
+  flag = false;
+  child = proc_fork(do_write_proc, &flag);
+  KEXPECT_GE(child, 0);
+
+  fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  for (int i = 0; i < 10 && !flag; ++i) scheduler_yield();
+  KEXPECT_EQ(true, flag);
+  KEXPECT_EQ(0, proc_force_signal(proc_get(child), SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(status, -EINTR);
+  vfs_close(fd);
+
+
+  KTEST_BEGIN("FIFO interrupt test cleanup");
+  KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
+  KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
+}
+
 void vfs_fifo_test(void) {
   KTEST_SUITE_BEGIN("VFS FIFO test");
   const int initial_cache_size = vfs_cache_size();
+  sigset_t old_mask, new_mask;
+  ksigemptyset(&new_mask);
+  ksigaddset(&new_mask, SIGCHLD);
+  proc_sigprocmask(SIG_BLOCK, &new_mask, &old_mask);
 
   mknod_test();
   stat_test();
   open_test();
   read_write_test();
+  interrupt_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
+
+  proc_sigprocmask(SIG_SETMASK, &old_mask, 0x0);
 }
