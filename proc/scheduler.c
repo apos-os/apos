@@ -20,6 +20,7 @@
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/signal/signal.h"
 #include "memory/memory.h"
 #include "proc/scheduler.h"
 
@@ -86,6 +87,16 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue,
                                       int interruptable) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
+
+  if (interruptable) {
+    const sigset_t dispatchable = proc_dispatchable_signals();
+    if (!ksigisemptyset(&dispatchable)) {
+      current->interrupted = 1;
+      POP_INTERRUPTS();
+      return 1;
+    }
+  }
+
   current->state = KTHREAD_PENDING;
   current->interruptable = interruptable;
   current->interrupted = 0;
