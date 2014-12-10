@@ -81,6 +81,23 @@ static bool signal_deliverable(kthread_t thread, int signum) {
   return true;
 }
 
+sigset_t proc_dispatchable_signals(void) {
+  sigset_t set;
+  ksigemptyset(&set);
+  kthread_t thread = kthread_current_thread();
+  if (thread == KTHREAD_NO_THREAD || !thread->process) return set;
+
+  // TODO(aoates): rather than iterating through all the signals, track the set
+  // of currently-ignored signals and use that here.
+  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+    if (ksigismember(&thread->assigned_signals, signum) &&
+        signal_deliverable(thread, signum))
+      ksigaddset(&set, signum);
+  }
+
+  return set;
+}
+
 // Force assign the given signal to the thread.  If the signal isn't masked, and
 // will be delivered to the thread, try to wake it up.
 static void do_assign_signal(kthread_t thread, int signum) {
