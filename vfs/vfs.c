@@ -348,6 +348,49 @@ static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
   fifo_close(vnode->fifo, fifo_mode);
 }
 
+int vfs_open_vnode(vnode_t* child, mode_t mode) {
+  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
+      child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
+      child->type != VNODE_FIFO) {
+    return -ENOTSUP;
+  }
+
+  // Directories must be opened read-only.
+  if (child->type == VNODE_DIRECTORY && mode != VFS_O_RDONLY) {
+    return -EISDIR;
+  }
+
+  if (child->type == VNODE_FIFO) {
+    int result = vfs_open_fifo(child, mode);
+    if (result) {
+      return result;
+    }
+  }
+
+  // Allocate a new file_t in the global file table.
+  int idx = next_free_file_idx();
+  if (idx < 0) {
+    return -ENFILE;
+  }
+
+  process_t* proc = proc_current();
+  int fd = next_free_fd(proc);
+  if (fd < 0) {
+    return fd;
+  }
+
+  KASSERT(g_file_table[idx] == 0x0);
+  g_file_table[idx] = file_alloc();
+  file_init_file(g_file_table[idx]);
+  g_file_table[idx]->vnode = VFS_COPY_REF(child);
+  g_file_table[idx]->refcount = 1;
+  g_file_table[idx]->mode = mode;
+
+  KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
+  proc->fds[fd] = idx;
+  return fd;
+}
+
 int vfs_open(const char* path, int flags, ...) {
   // Check arguments.
   const uint32_t mode = flags & VFS_MODE_MASK;
@@ -456,51 +499,9 @@ int vfs_open(const char* path, int flags, ...) {
     return -EIO;
   }
 
-  if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
-      child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
-      child->type != VNODE_FIFO) {
-    VFS_PUT_AND_CLEAR(child);
-    return -ENOTSUP;
-  }
-
-  // Directories must be opened read-only.
-  if (child->type == VNODE_DIRECTORY && mode != VFS_O_RDONLY) {
-    VFS_PUT_AND_CLEAR(child);
-    return -EISDIR;
-  }
-
-  if (child->type == VNODE_FIFO) {
-    int result = vfs_open_fifo(child, mode);
-    if (result) {
-      VFS_PUT_AND_CLEAR(child);
-      return result;
-    }
-  }
-
-  // Allocate a new file_t in the global file table.
-  int idx = next_free_file_idx();
-  if (idx < 0) {
-    VFS_PUT_AND_CLEAR(child);
-    return -ENFILE;
-  }
-
-  process_t* proc = proc_current();
-  int fd = next_free_fd(proc);
-  if (fd < 0) {
-    VFS_PUT_AND_CLEAR(child);
-    return fd;
-  }
-
-  KASSERT(g_file_table[idx] == 0x0);
-  g_file_table[idx] = file_alloc();
-  file_init_file(g_file_table[idx]);
-  g_file_table[idx]->vnode = VFS_MOVE_REF(child);
-  g_file_table[idx]->refcount = 1;
-  g_file_table[idx]->mode = mode;
-
-  KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
-  proc->fds[fd] = idx;
-  return fd;
+  int result = vfs_open_vnode(child, mode);
+  VFS_PUT_AND_CLEAR(child);
+  return result;
 }
 
 int vfs_close(int fd) {
