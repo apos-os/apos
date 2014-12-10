@@ -46,8 +46,9 @@
 #include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
-#include "proc/wait.h"
+#include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/wait.h"
 #if ENABLE_TESTS
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -928,8 +929,11 @@ void kshell_main(apos_dev_t tty) {
     ksh_printf("> ");
     int read_len = tty_dev->read(tty_dev, read_buf, READ_BUF_SIZE);
     if (read_len < 0) {
-      if (read_len != -EINTR)
+      if (read_len == -EINTR) {
+        proc_suppress_signal(proc_current(), SIGINT);
+      } else {
         ksh_printf("error: %s\n", errorname(-read_len));
+      }
       continue;
     }
 
