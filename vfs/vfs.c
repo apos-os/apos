@@ -26,6 +26,7 @@
 #include "proc/process.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
+#include "vfs/anonfs.h"
 #include "vfs/file.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
@@ -144,6 +145,12 @@ void vfs_init() {
     g_fs_table[VFS_ROOT_FS].fs = ramfs_create_fs(1);
 
   g_fs_table[VFS_ROOT_FS].fs->id = VFS_ROOT_FS;
+
+  // Create the anonymous FIFO filesystem (for pipes).
+  g_fs_table[VFS_FIFO_FS].mount_point = NULL;
+  g_fs_table[VFS_FIFO_FS].mounted_root = NULL;
+  g_fs_table[VFS_FIFO_FS].fs = anonfs_create(VNODE_FIFO);
+  g_fs_table[VFS_FIFO_FS].fs->id = VFS_FIFO_FS;
 
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
@@ -326,7 +333,7 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
   return size_out;
 }
 
-static int vfs_open_fifo(vnode_t* vnode, mode_t mode) {
+static int vfs_open_fifo(vnode_t* vnode, mode_t mode, bool block) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
 
   fifo_mode_t fifo_mode;
@@ -334,7 +341,7 @@ static int vfs_open_fifo(vnode_t* vnode, mode_t mode) {
   else if (mode == VFS_O_WRONLY) fifo_mode = FIFO_WRITE;
   else return -EINVAL;
 
-  return fifo_open(vnode->fifo, fifo_mode, true /* block */, false /* force */);
+  return fifo_open(vnode->fifo, fifo_mode, block, false /* force */);
 }
 
 static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
@@ -348,7 +355,7 @@ static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
   fifo_close(vnode->fifo, fifo_mode);
 }
 
-int vfs_open_vnode(vnode_t* child, mode_t mode) {
+int vfs_open_vnode(vnode_t* child, mode_t mode, bool block) {
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
       child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
       child->type != VNODE_FIFO) {
@@ -361,7 +368,7 @@ int vfs_open_vnode(vnode_t* child, mode_t mode) {
   }
 
   if (child->type == VNODE_FIFO) {
-    int result = vfs_open_fifo(child, mode);
+    int result = vfs_open_fifo(child, mode, block);
     if (result) {
       return result;
     }
@@ -499,7 +506,7 @@ int vfs_open(const char* path, int flags, ...) {
     return -EIO;
   }
 
-  int result = vfs_open_vnode(child, mode);
+  int result = vfs_open_vnode(child, mode, true);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }

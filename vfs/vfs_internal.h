@@ -152,6 +152,6 @@ vnode_t* get_root_for_path_with_parent(const char* path,
                                        vnode_t* relative_root);
 
 // Open the given vnode_t, allocating a file descriptor and file_t, etc.
-int vfs_open_vnode(vnode_t* vnode, mode_t mode);
+int vfs_open_vnode(vnode_t* vnode, mode_t mode, bool block);
 
 #endif

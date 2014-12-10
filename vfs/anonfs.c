@@ -105,6 +105,11 @@ static int anonfs_put_vnode(vnode_t* vnode) {
   return 0;
 }
 
+static int anonfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
+  // TODO(aoates): anything to do here?
+  return 0;
+}
+
 #define ANONFS_UNIMPLEMENTED(name, args) \
     static int name args { \
       klogfm(KL_VFS, DFATAL, #name " unimplemented\n"); \
@@ -121,7 +126,6 @@ ANONFS_UNIMPLEMENTED(anonfs_write, (vnode_t* vnode, int offset, const void* buf,
 ANONFS_UNIMPLEMENTED(anonfs_link, (vnode_t* parent, vnode_t* vnode, const char* name))
 ANONFS_UNIMPLEMENTED(anonfs_unlink, (vnode_t* parent, const char* name))
 ANONFS_UNIMPLEMENTED(anonfs_getdents, (vnode_t* vnode, int offset, void* buf, int bufsize))
-ANONFS_UNIMPLEMENTED(anonfs_stat, (vnode_t* vnode, apos_stat_t* stat_out))
 ANONFS_UNIMPLEMENTED(anonfs_symlink, (vnode_t* parent, const char* name, const char* path))
 ANONFS_UNIMPLEMENTED(anonfs_readlink, (vnode_t* node, char* buf, int bufsize))
 ANONFS_UNIMPLEMENTED(anonfs_read_page, (vnode_t* vnode, int page_offset, void* buf))
