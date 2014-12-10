@@ -50,7 +50,7 @@ void kthread_arch_init_thread(kthread_t thread,
   // when it calls "ret".
   *(stack--) = (addr_t)(arg);
   *(stack--) = (addr_t)(start_routine);
-  *(stack--) = 0xDEADEADD;  // Fake saved eip.
+  *(stack--) = 0x0;  // Fake saved eip.
   *(stack--) = (addr_t)(trampoline);
 
   // Set set up the stack as if we'd called swap_context().
