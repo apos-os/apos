@@ -70,5 +70,6 @@
 #define SYS_READLINK 43
 #define SYS_SLEEP_MS 44
 #define SYS_APOS_GET_TIME 51
+#define SYS_PIPE 54
 
 #endif
