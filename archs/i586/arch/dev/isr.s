@@ -26,9 +26,10 @@ int\intr :
 
   # The machine has pushed the first copy of the error number onto the stack,
   # currently at the top.
+  push $0  # will be copy of interrupted EIP (see below)
 
   push $\intr
-  jmp int_common_handler
+  call int_common_handler
 .endm
 
 # Same as above, but for interrupt handlers that don't push an error code.  We
@@ -39,9 +40,10 @@ int\intr :
   cli
 
   push $0  # fake error code
+  push $0  # will be copy of interrupted EIP (see below)
 
   push $\intr
-  jmp int_common_handler
+  call int_common_handler
 .endm
 
 INT_NOERROR   0
@@ -83,7 +85,6 @@ INT_NOERROR   46
 INT_NOERROR   47
 
 int_common_handler:
-  push $0  # Will hold the interrupted EIP, see below.
   push %ebp
   mov %esp, %ebp
 
@@ -96,14 +97,14 @@ int_common_handler:
   # Copy the interrupted EIP into our "stack frame" so that GDB gives useful
   # stack traces.  We can't do this before we pusha because we need to clobber a
   # register.
-  mov 0x10(%ebp), %eax
-  mov %eax, 0x4(%ebp)
+  mov 0x14(%ebp), %eax
+  mov %eax, 0xc(%ebp)
 
   # Copy the %ebp as a funtion arg.
   push %ebp
 
   # Copy the error code pushed for us onto the top of the stack as a function arg.
-  mov 0xc(%ebp), %eax
+  mov 0x10(%ebp), %eax
   push %eax
 
   # Copy the interrupt number as a function arg.
@@ -125,7 +126,7 @@ int_common_handler:
   # Pop the fake stack frame EIP, the interrupt number, and the other copy of
   # the error number (the one pushed by the processor, or the fake one we pushed
   # to simulate it).
-  add $0xc, %esp
+  add $0x10, %esp
 
   sti
   iret

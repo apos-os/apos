@@ -95,17 +95,18 @@ static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
 // interrupt occurred in user or kernel mode.
 static int is_user_interrupt(addr_t ebp) {
   // The contents of the stack are,
-  //  ebp+0x20 SS       (if a user interrupt)
-  //  ebp+0x1c ESP      (if a user interrupt)
-  //  ebp+0x18 EFLAGS
-  //  ebp+0x14 CS
-  //  ebp+0x10 EIP
-  //  ebp+0xc  Error code
+  //  ebp+0x24 SS       (if a user interrupt)
+  //  ebp+0x20 ESP      (if a user interrupt)
+  //  ebp+0x1c EFLAGS
+  //  ebp+0x18 CS
+  //  ebp+0x14 Interrupted EIP
+  //  ebp+0x10 Error code
+  //  ebp+0xc  Interrupted EIP (again)
   //  ebp+0x8  Interrupt number
-  //  ebp+0x4  EIP (again)
+  //  ebp+0x4  Interrupt handler (pushed by 'call int_handler_common')
   //  ebp      Saved EBP          <-- *ebp
   //   <saved registers>
-  const addr_t cs = *((addr_t*)ebp + 5);
+  const addr_t cs = *((addr_t*)ebp + 6);
   if (cs != segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) &&
       cs != segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL)) {
     klogf("unknown code segment: 0x%x\n", cs);
@@ -116,10 +117,10 @@ static int is_user_interrupt(addr_t ebp) {
   // Do some sanity checking on the rest of the stack frame.
   if (ENABLE_KERNEL_SAFETY_NETS) {
     if (is_user) {
-      const addr_t ss = *((addr_t*)ebp + 8);
+      const addr_t ss = *((addr_t*)ebp + 9);
       KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
     }
-    KASSERT(*((addr_t*)ebp + 1) == *((addr_t*)ebp + 4));
+    KASSERT(*((addr_t*)ebp + 3) == *((addr_t*)ebp + 5));
     KASSERT(*((addr_t*)ebp + 2) < 256);
   }
 
