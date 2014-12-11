@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include "arch/common/io.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "memory/memory.h"
@@ -110,17 +111,26 @@ static void klog_puts(const char* s) {
 }
 
 void klogm(klog_module_t module, klog_level_t level, const char* s) {
+  if (level == DFATAL) {
+    if (ENABLE_KERNEL_SAFETY_NETS) level = FATAL;
+    else level = ERROR;
+  }
+
   if (!klog_enabled(module, level)) {
     return;
   }
 
   switch (level) {
+    case FATAL: klog_puts("FATAL: "); break;
     case ERROR: klog_puts("ERROR: "); break;
     case WARNING: klog_puts("WARNING: "); break;
     default: break;
   }
 
   klog_puts(s);
+
+  if (level == FATAL)
+    die("fatal error");
 }
 
 void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {

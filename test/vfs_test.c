@@ -32,6 +32,7 @@
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
 #include "vfs/fs.h"
+#include "vfs/pipe.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/vfs.h"
@@ -2994,6 +2995,79 @@ static void dup2_test(void) {
   // TODO(aoates): test vfs_dup2() when closing the second file descriptor fails
 }
 
+static void pipe_test(void) {
+  KTEST_BEGIN("vfs_pipe(): basic test");
+  int fds[2];
+  KEXPECT_EQ(0, vfs_pipe(fds));
+  KEXPECT_GE(fds[0], 0);
+  KEXPECT_GE(fds[1], 0);
+
+  KEXPECT_EQ(5, vfs_write(fds[1], "abcde", 5));
+
+  char buf[10];
+  KEXPECT_EQ(5, vfs_read(fds[0], buf, 10));
+  buf[5] = '\0';
+  KEXPECT_STREQ("abcde", buf);
+
+  vfs_close(fds[0]);
+  vfs_close(fds[1]);
+
+
+  KTEST_BEGIN("vfs_pipe(): read and write on wrong ends");
+  KEXPECT_EQ(0, vfs_pipe(fds));
+  KEXPECT_EQ(-EBADF, vfs_write(fds[0], "abcde", 5));
+  KEXPECT_EQ(-EBADF, vfs_read(fds[1], buf, 5));
+
+
+  KTEST_BEGIN("vfs_pipe(): dup() pipe fd");
+  int other_read = vfs_dup(fds[0]);
+  KEXPECT_GE(other_read, 0);
+  KEXPECT_EQ(5, vfs_write(fds[1], "abcde", 5));
+  KEXPECT_EQ(3, vfs_read(fds[0], buf, 3));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ(2, vfs_read(other_read, buf, 10));
+  buf[2] = '\0';
+  KEXPECT_STREQ("de", buf);
+
+  vfs_close(other_read);
+
+
+  KTEST_BEGIN("vfs_pipe(): stat pipe fd");
+  struct stat stat;
+  KEXPECT_EQ(0, vfs_fstat(fds[0], &stat));
+  KEXPECT_EQ(0, vfs_fstat(fds[1], &stat));
+  // TODO(aoates): what should the other mode bits be?
+  KEXPECT_EQ(1, VFS_S_ISFIFO(stat.st_mode));
+  // TODO(aoates): test the other stat fields.
+
+
+  KTEST_BEGIN("vfs_pipe(): vfs_seek() on pipe fd");
+  KEXPECT_EQ(-ESPIPE, vfs_seek(fds[0], 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-ESPIPE, vfs_seek(fds[0], 5, VFS_SEEK_SET));
+  KEXPECT_EQ(-ESPIPE, vfs_seek(fds[1], 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-ESPIPE, vfs_seek(fds[1], 5, VFS_SEEK_SET));
+
+
+  KTEST_BEGIN("vfs_pipe(): vfs_getdents() on pipe fd");
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], (dirent_t*)buf, 10));
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], (dirent_t*)buf, 10));
+
+
+  KTEST_BEGIN("vfs_pipe(): vfs_isatty() on pipe fd");
+  KEXPECT_EQ(0, vfs_isatty(fds[0]));
+  KEXPECT_EQ(0, vfs_isatty(fds[1]));
+
+  KTEST_BEGIN("vfs_pipe(): test cleanup");
+  KEXPECT_EQ(0, vfs_close(fds[0]));
+  KEXPECT_EQ(0, vfs_close(fds[1]));
+
+  // TODO(aoates): other tests to write:
+  //  - error conditions (running out of fds)
+  //  - write or read from unconnected pipe
+  //  - fchown, fchmod
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -3051,6 +3125,7 @@ void vfs_test(void) {
   dup_test();
   dup2_test();
 
+  pipe_test();
   reverse_path_test();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {

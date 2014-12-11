@@ -366,3 +366,6 @@ AddSyscall('sleep_ms', 44, 'ksleep', 'proc/sleep.h', '<apos/sleep.h>',
 AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
     '<apos/syscall_decls.h>', 'int',
     ['struct apos_tm*:t:bw:sizeof(struct apos_tm)'])
+
+AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
+    'int', ['int*:fildes:bw:sizeof(int[2])'])

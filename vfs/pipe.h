@@ -12,20 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_VFS_FSID_H
-#define APOO_VFS_FSID_H
+#ifndef APOO_VFS_PIPE_H
+#define APOO_VFS_PIPE_H
 
-// A unique ID assigned to each mounted filesystem.  Corresponds to the
-// filesystem's index in the filesystem table.
-typedef int fsid_t;
-
-// fsid_t corresponding to no mounted filesystem.
-#define VFS_FSID_NONE -1
-
-// The root fsid.
-#define VFS_ROOT_FS 0
-
-// The FIFO anonymous fsid.
-#define VFS_FIFO_FS 1
+// Create an anonymous pipe in the current process.
+int vfs_pipe(int fds[2]);
 
 #endif

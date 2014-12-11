@@ -16,6 +16,7 @@
 #ifndef APOO_KLOG_H
 #define APOO_KLOG_H
 
+#include "common/debug.h"
 #include "common/klog_modules.h"
 #include "dev/video/vterm.h"
 
@@ -25,6 +26,8 @@
 typedef enum {
   LOG_NONE = 0,
 
+  FATAL,
+  DFATAL,
   ERROR,
   WARNING,
   INFO,
