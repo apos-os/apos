@@ -45,6 +45,10 @@ static inline sigset_t ksigunionset(const sigset_t* A, const sigset_t* B) {
 // Returns all the pending or assigned signals on the given process.
 sigset_t proc_pending_signals(const process_t* proc);
 
+// Returns all the signals that are assigned, unmasked, and not ignored in the
+// current thread (i.e., ones that will be dispatched next).
+sigset_t proc_dispatchable_signals(void);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
@@ -68,6 +72,10 @@ int proc_sigprocmask(int how, const sigset_t* restrict set,
 
 // Return the current set of pending signals in the process.
 int proc_sigpending(sigset_t* set);
+
+// Cancel/suppress the given signal in the given process and its threads.
+// Useful in tests.
+void proc_suppress_signal(process_t* proc, int sig);
 
 // Attempts to assign any pending signals in the current process to the current
 // thread.  It returns 1 if the thread has any assigned signals (newly assigned

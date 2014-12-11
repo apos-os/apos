@@ -19,6 +19,7 @@
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
 
@@ -444,6 +445,18 @@ static void scheduler_interrupt_test(void) {
     KEXPECT_EQ((void*)0, kthread_join(thread1));
   }
 
+  KTEST_BEGIN(
+      "scheduler_interrupt_thread(): immediate return with pending signals");
+  {
+    proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
+                                SIGUSR1);
+    KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue));
+    KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue));
+    KEXPECT_EQ(1, kthread_current_thread()->interrupted);
+
+    proc_suppress_signal(proc_current(), SIGUSR1);
+    kthread_current_thread()->interrupted = 0;
+  }
 
   KTEST_BEGIN("scheduler_interrupt_thread(): current thread (running)");
   KEXPECT_EQ((void*)0x0, kthread_current_thread()->queue);

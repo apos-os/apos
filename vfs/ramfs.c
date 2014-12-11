@@ -308,7 +308,7 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
 int ramfs_mknod(vnode_t* parent, const char* name,
                 vnode_type_t type, apos_dev_t dev) {
   KASSERT(type == VNODE_REGULAR || type == VNODE_BLOCKDEV ||
-          type == VNODE_CHARDEV);
+          type == VNODE_CHARDEV || type == VNODE_FIFO);
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);

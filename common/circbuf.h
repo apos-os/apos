@@ -12,30 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Common types required by POSIX to be defined in <sys/types.h>.
-#ifndef APOO_USER_POSIX_TYPES_H
-#define APOO_USER_POSIX_TYPES_H
+#ifndef APOO_COMMON_CIRCBUF_H
+#define APOO_COMMON_CIRCBUF_H
 
-// Process ID.
-typedef int pid_t;
+#include <stddef.h>
 
-// User and group IDs.
-typedef int uid_t;
-typedef int gid_t;
+#include "user/include/apos/posix_types.h"
 
-typedef int mode_t;
+typedef struct {
+  void* buf;
+  size_t buflen;  // Length of the buffer overall.
+  size_t pos;  // Start position of the data in the buffer.
+  size_t len;  // Length of the data in the buffer.
+} circbuf_t;
 
-typedef int blksize_t;
-typedef int blkcnt_t;
+void circbuf_init(circbuf_t* cbuf, void* buf, size_t buflen);
 
-typedef long off_t;
-typedef long ino_t;
-typedef unsigned short nlink_t;
-
-typedef long time_t;
-typedef unsigned long useconds_t;
-typedef long suseconds_t;
-
-typedef long ssize_t;
+ssize_t circbuf_read(circbuf_t* cbuf, void* buf, size_t nbytes);
+ssize_t circbuf_write(circbuf_t* cbuf, const void* buf, size_t nbytes);
 
 #endif

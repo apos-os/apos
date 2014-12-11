@@ -21,6 +21,7 @@
 #include "user/include/apos/dev.h"
 #include "user/include/apos/posix_types.h"
 #include "user/include/apos/vfs/stat.h"
+#include "vfs/fifo.h"
 #include "vfs/fsid.h"
 
 struct fs;
@@ -35,11 +36,11 @@ typedef enum {
   VNODE_BLOCKDEV = 4,
   VNODE_CHARDEV = 5,
   VNODE_SYMLINK = 6,
+  VNODE_FIFO = 7,
 } vnode_type_t;
-// TODO(aoates): symlinks, etc.
 
 static const char* const VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR"
+  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR", "FIFO",
 };
 
 // A virtual node in the filesystem.  It is expected that concete filesystems
@@ -75,7 +76,12 @@ struct vnode {
   fs_t* fs;
 
   // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
+  // TODO(aoates): put this and fifo in a union (and update usage sites to only
+  // read one).
   apos_dev_t dev;
+
+  // If type == VNODE_FIFO, the underlying FIFO.
+  apos_fifo_t* fifo;
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;

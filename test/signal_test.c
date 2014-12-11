@@ -901,6 +901,86 @@ static void sigpending_test(void) {
   ksigdelset(&kthread_current_thread()->assigned_signals, SIGUSR1);
 }
 
+static sigset_t make_empty_sigset(void) {
+  sigset_t s;
+  ksigemptyset(&s);
+  return s;
+}
+
+static sigset_t make_sigset(int sig) {
+  sigset_t s;
+  ksigemptyset(&s);
+  ksigaddset(&s, sig);
+  return s;
+}
+
+static sigset_t make_sigset2(int sig1, int sig2) {
+  sigset_t s = make_sigset(sig1);
+  ksigaddset(&s, sig2);
+  return s;
+}
+
+static sigset_t make_sigset3(int sig1, int sig2, int sig3) {
+  sigset_t s = make_sigset2(sig1, sig2);
+  ksigaddset(&s, sig3);
+  return s;
+}
+
+static void dispatchable_test(void) {
+  KTEST_BEGIN("proc_dispatchable_signals(): basic test");
+  KEXPECT_EQ(make_empty_sigset(), proc_dispatchable_signals());
+
+  proc_force_signal(proc_current(), SIGUSR1);
+  KEXPECT_EQ(make_sigset(SIGUSR1), proc_dispatchable_signals());
+
+  proc_force_signal(proc_current(), SIGUSR2);
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+
+
+  KTEST_BEGIN("proc_dispatchable_signals(): ignores masked signals");
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+
+  sigset_t mask = make_sigset(SIGUSR2);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  KEXPECT_EQ(make_sigset(SIGUSR1), proc_dispatchable_signals());
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &mask, NULL));
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+
+
+  KTEST_BEGIN("proc_dispatchable_signals(): ignores ignored signals");
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+
+  struct sigaction action;
+  action.sa_handler = SIG_IGN;
+  action.sa_flags = 0;
+  ksigemptyset(&action.sa_mask);
+
+  KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &action, NULL));
+  KEXPECT_EQ(make_sigset(SIGUSR2), proc_dispatchable_signals());
+
+  action.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &action, NULL));
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+
+
+  KTEST_BEGIN("proc_dispatchable_signals(): ignores default-ignored signals");
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+  proc_force_signal(proc_current(), SIGURG);
+
+  action.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGURG, &action, NULL));
+  KEXPECT_EQ(make_sigset2(SIGUSR1, SIGUSR2), proc_dispatchable_signals());
+
+  action.sa_handler = sighandler;
+  KEXPECT_EQ(0, proc_sigaction(SIGURG, &action, NULL));
+  KEXPECT_EQ(make_sigset3(SIGUSR1, SIGUSR2, SIGURG),
+             proc_dispatchable_signals());
+
+  proc_suppress_signal(proc_current(), SIGUSR1);
+  proc_suppress_signal(proc_current(), SIGUSR2);
+  proc_suppress_signal(proc_current(), SIGURG);
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -932,6 +1012,8 @@ void signal_test(void) {
   ksleep_interrupted_test();
   sigprocmask_test();
   sigpending_test();
+
+  dispatchable_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {

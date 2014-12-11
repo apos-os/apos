@@ -97,6 +97,23 @@ static int is_valid_create_mode(mode_t mode) {
                    VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX)) == 0;
 }
 
+static void init_fifo_vnode(vnode_t* vnode) {
+  KASSERT_DBG(vnode->type == VNODE_FIFO);
+  KASSERT_DBG(vnode->refcount == 1);
+
+  vnode->fifo = (apos_fifo_t*)kmalloc(sizeof(apos_fifo_t));
+  fifo_init(vnode->fifo);
+}
+
+static void cleanup_fifo_vnode(vnode_t* vnode) {
+  KASSERT_DBG(vnode->type == VNODE_FIFO);
+  KASSERT_DBG(vnode->refcount == 0);
+
+  fifo_cleanup(vnode->fifo);
+  kfree(vnode->fifo);
+  vnode->fifo = NULL;
+}
+
 void vfs_init() {
   KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
 
@@ -199,6 +216,9 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
       return 0x0;
     }
 
+    if (vnode->type == VNODE_FIFO)
+      init_fifo_vnode(vnode);
+
     kmutex_unlock(&vnode->mutex);
     return vnode;
   }
@@ -218,6 +238,8 @@ void vfs_put(vnode_t* vnode) {
   if (vnode->refcount == 0) {
     KASSERT(vnode->memobj.refcount == 0);
     KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+    if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
+
     // Only put the node back into the fs if we were able to fully initialize
     // it.
     if (vnode->type != VNODE_UNINITIALIZED) {
@@ -302,6 +324,28 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
   }
 
   return size_out;
+}
+
+static int vfs_open_fifo(vnode_t* vnode, mode_t mode) {
+  KASSERT_DBG(vnode->type == VNODE_FIFO);
+
+  fifo_mode_t fifo_mode;
+  if (mode == VFS_O_RDONLY) fifo_mode = FIFO_READ;
+  else if (mode == VFS_O_WRONLY) fifo_mode = FIFO_WRITE;
+  else return -EINVAL;
+
+  return fifo_open(vnode->fifo, fifo_mode, true /* block */, false /* force */);
+}
+
+static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
+  KASSERT_DBG(vnode->type == VNODE_FIFO);
+
+  fifo_mode_t fifo_mode;
+  if (mode == VFS_O_RDONLY) fifo_mode = FIFO_READ;
+  else if (mode == VFS_O_WRONLY) fifo_mode = FIFO_WRITE;
+  else die("invalid mode seen in vfs_close_fifo");
+
+  fifo_close(vnode->fifo, fifo_mode);
 }
 
 int vfs_open(const char* path, int flags, ...) {
@@ -413,7 +457,8 @@ int vfs_open(const char* path, int flags, ...) {
   }
 
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
-      child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV) {
+      child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
+      child->type != VNODE_FIFO) {
     VFS_PUT_AND_CLEAR(child);
     return -ENOTSUP;
   }
@@ -422,6 +467,14 @@ int vfs_open(const char* path, int flags, ...) {
   if (child->type == VNODE_DIRECTORY && mode != VFS_O_RDONLY) {
     VFS_PUT_AND_CLEAR(child);
     return -EISDIR;
+  }
+
+  if (child->type == VNODE_FIFO) {
+    int result = vfs_open_fifo(child, mode);
+    if (result) {
+      VFS_PUT_AND_CLEAR(child);
+      return result;
+    }
   }
 
   // Allocate a new file_t in the global file table.
@@ -462,6 +515,9 @@ int vfs_close(int fd) {
   file->refcount--;
   KASSERT(file->refcount >= 0);
   if (file->refcount == 0) {
+    if (file->vnode->type == VNODE_FIFO)
+      vfs_close_fifo(file->vnode, file->mode);
+
     // TODO(aoates): is there a race here? Does vfs_put block?  Could another
     // thread reference this fd/file during that time?  Maybe we need to remove
     // it from the table, and mark the GD as PROC_UNUSED_FD first?
@@ -557,9 +613,8 @@ int vfs_mkdir(const char* path, mode_t mode) {
 }
 
 int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
-  const mode_t node_type = mode & VFS_S_IFMT;
-  if (node_type != VFS_S_IFREG && node_type != VFS_S_IFCHR &&
-      node_type != VFS_S_IFBLK) {
+  if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
+      !VFS_S_ISFIFO(mode)) {
     return -EINVAL;
   }
 
@@ -590,6 +645,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   if (VFS_S_ISREG(mode)) type = VNODE_REGULAR;
   else if (VFS_S_ISBLK(mode)) type = VNODE_BLOCKDEV;
   else if (VFS_S_ISCHR(mode)) type = VNODE_CHARDEV;
+  else if (VFS_S_ISFIFO(mode)) type = VNODE_FIFO;
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
@@ -696,7 +752,8 @@ int vfs_read(int fd, void* buf, size_t count) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
-             file->vnode->type != VNODE_BLOCKDEV) {
+             file->vnode->type != VNODE_BLOCKDEV &&
+             file->vnode->type != VNODE_FIFO) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
@@ -704,7 +761,9 @@ int vfs_read(int fd, void* buf, size_t count) {
   }
   file->refcount++;
 
-  {
+  if (file->vnode->type == VNODE_FIFO) {
+    result = fifo_read(file->vnode->fifo, buf, count, true);
+  } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
@@ -730,7 +789,8 @@ int vfs_write(int fd, const void* buf, size_t count) {
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
-             file->vnode->type != VNODE_BLOCKDEV) {
+             file->vnode->type != VNODE_BLOCKDEV &&
+             file->vnode->type != VNODE_FIFO) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
@@ -738,7 +798,9 @@ int vfs_write(int fd, const void* buf, size_t count) {
   }
   file->refcount++;
 
-  {
+  if (file->vnode->type == VNODE_FIFO) {
+    result = fifo_write(file->vnode->fifo, buf, count, true);
+  } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
@@ -765,6 +827,7 @@ off_t vfs_seek(int fd, off_t offset, int whence) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
+  if (file->vnode->type == VNODE_FIFO) return -ESPIPE;
   if (file->vnode->type != VNODE_REGULAR &&
       file->vnode->type != VNODE_CHARDEV &&
       file->vnode->type != VNODE_BLOCKDEV) {
@@ -903,7 +966,6 @@ int vfs_isatty(int fd) {
 }
 
 static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
-  // TODO(aoates): do st_rdev.
   stat->st_dev = vnode->dev;
   stat->st_ino = vnode->num;
   stat->st_mode = 0;
@@ -913,8 +975,15 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_BLOCKDEV: stat->st_mode |= VFS_S_IFBLK; break;
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     case VNODE_SYMLINK: stat->st_mode |= VFS_S_IFLNK; break;
-    default: die("Invalid vnode type seen in vfs_lstat");
+    case VNODE_FIFO: stat->st_mode |= VFS_S_IFIFO; break;
+
+    case VNODE_INVALID:
+    case VNODE_UNINITIALIZED:
+      break;
   }
+  if (stat->st_mode == 0)
+    die("Invalid vnode type seen in vfs_lstat");
+
   stat->st_mode |= vnode->mode;
   stat->st_uid = vnode->uid;
   stat->st_gid = vnode->gid;

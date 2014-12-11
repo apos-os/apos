@@ -1027,6 +1027,8 @@ static int ext2_get_vnode(vnode_t* vnode) {
     vnode->dev = ext2_get_device(&inode);
   } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFLNK) {
     vnode->type = VNODE_SYMLINK;
+  } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFIFO) {
+    vnode->type = VNODE_FIFO;
   } else {
     KLOG(WARNING, "ext2: unsupported inode type: 0x%x\n", inode.i_mode);
     return -ENOTSUP;
@@ -1071,6 +1073,7 @@ static int ext2_put_vnode(vnode_t* vnode) {
     case VNODE_BLOCKDEV:  KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFBLK); break;
     case VNODE_CHARDEV:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFCHR); break;
     case VNODE_SYMLINK:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFLNK); break;
+    case VNODE_FIFO:      KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFIFO); break;
   }
 
   inode.i_mode &= EXT2_S_MASK;  // Clear non-type inode bits.
@@ -1149,6 +1152,7 @@ static int ext2_mknod(vnode_t* parent, const char* name,
     case VNODE_REGULAR: ext2_mode = EXT2_S_IFREG; break;
     case VNODE_BLOCKDEV: ext2_mode = EXT2_S_IFBLK; break;
     case VNODE_CHARDEV: ext2_mode = EXT2_S_IFCHR; break;
+    case VNODE_FIFO: ext2_mode = EXT2_S_IFIFO; break;
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
     case VNODE_DIRECTORY:

@@ -46,8 +46,9 @@
 #include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
-#include "proc/wait.h"
+#include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/wait.h"
 #if ENABLE_TESTS
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -126,6 +127,9 @@ static test_entry_t TESTS[] = {
   { "exec", &exec_test, 1 },
   { "cbfs", &cbfs_test, 1 },
   { "ansi_escape", &ansi_escape_test, 1 },
+  { "circbuf", &circbuf_test, 1 },
+  { "fifo", &fifo_test, 1 },
+  { "vfs_fifo", &vfs_fifo_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
@@ -925,8 +929,11 @@ void kshell_main(apos_dev_t tty) {
     ksh_printf("> ");
     int read_len = tty_dev->read(tty_dev, read_buf, READ_BUF_SIZE);
     if (read_len < 0) {
-      if (read_len != -EINTR)
+      if (read_len == -EINTR) {
+        proc_suppress_signal(proc_current(), SIGINT);
+      } else {
         ksh_printf("error: %s\n", errorname(-read_len));
+      }
       continue;
     }
 
