@@ -338,7 +338,7 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
 static void vfs_set_created_metadata(vnode_t* vnode, mode_t mode) {
   vnode->uid = geteuid();
   vnode->gid = getegid();
-  vnode->mode = mode;
+  vnode->mode = (mode & ~proc_current()->umask) & ~VFS_S_IFMT;
 }
 
 static int vfs_open_fifo(vnode_t* vnode, mode_t mode, bool block) {

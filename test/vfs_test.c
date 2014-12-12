@@ -3092,6 +3092,46 @@ static void umask_test(void) {
   KEXPECT_EQ(child, proc_wait(&status));
   KEXPECT_EQ(0123, status);
   proc_umask(orig_umask);
+
+
+  KTEST_BEGIN("umask: applied by open()");
+  proc_umask(VFS_S_IFIFO | 0026);
+  int fd = vfs_open("umask_test_file", VFS_O_CREAT | VFS_O_RDONLY,
+                    VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  struct stat st;
+  KEXPECT_EQ(0, vfs_stat("umask_test_file", &st));
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRGRP |
+             VFS_S_IXGRP | VFS_S_IXOTH, st.st_mode);
+  KEXPECT_EQ(0, vfs_unlink("umask_test_file"));
+
+
+  KTEST_BEGIN("umask: applied by mkdir()");
+  proc_umask(VFS_S_IFIFO | 0026);
+  KEXPECT_EQ(0, vfs_mkdir("umask_test_dir", VFS_S_IWUSR | VFS_S_IXUSR |
+                                                VFS_S_IRWXG | VFS_S_IRWXO));
+  kmemset(&st, 0, sizeof(struct stat));
+  KEXPECT_EQ(0, vfs_stat("umask_test_dir", &st));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRGRP |
+             VFS_S_IXGRP | VFS_S_IXOTH, st.st_mode);
+  KEXPECT_EQ(0, vfs_rmdir("umask_test_dir"));
+
+
+  KTEST_BEGIN("umask: applied by mknod()");
+  proc_umask(VFS_S_IFIFO | 0026);
+  KEXPECT_EQ(
+      0, vfs_mknod("umask_test_node", VFS_S_IFCHR | VFS_S_IWUSR | VFS_S_IXUSR |
+                                          VFS_S_IRWXG | VFS_S_IRWXO,
+                   makedev(0, 0)));
+  kmemset(&st, 0, sizeof(struct stat));
+  KEXPECT_EQ(0, vfs_stat("umask_test_node", &st));
+  KEXPECT_EQ(VFS_S_IFCHR | VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRGRP |
+             VFS_S_IXGRP | VFS_S_IXOTH, st.st_mode);
+  KEXPECT_EQ(0, vfs_unlink("umask_test_node"));
+
+  proc_umask(orig_umask);
 }
 
 // TODO(aoates): multi-threaded test for creating a file in directory that is
@@ -3106,6 +3146,8 @@ void vfs_test(void) {
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_enable_blocking(vfs_get_root_fs());
   }
+
+  const mode_t orig_umask = proc_umask(0);
 
   dev_test();
 
@@ -3153,6 +3195,8 @@ void vfs_test(void) {
 
   pipe_test();
   reverse_path_test();
+
+  proc_umask(orig_umask);
 
   umask_test();
 
