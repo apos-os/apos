@@ -26,6 +26,7 @@ srcs = [
   'procfs.c',
   'sleep.c',
   'kthread_pool.c',
+  'umask.c',
   'user.c',
   'wait.c',
 ]

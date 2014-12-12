@@ -27,6 +27,8 @@
 #include "proc/signal/signal.h"
 #include "proc/user.h"
 
+#define PROC_DEFAULT_UMASK 022
+
 // We statically allocate the first process_t, so that proc_init() can run
 // before kmalloc_init(), and therefore kmalloc_init() can set up its memory
 // area.
@@ -68,6 +70,7 @@ static void proc_init_process(process_t* p) {
   p->rgid = p->egid = p->sgid = -1;
   p->pgroup = -1;
   p->pgroup_link = LIST_LINK_INIT;
+  p->umask = PROC_DEFAULT_UMASK;
   p->execed = false;
   p->parent = 0x0;
   p->children_list = LIST_INIT;
