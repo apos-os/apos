@@ -70,6 +70,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
 
       // Ignore the root lost+found, dev, and proc directories.
       if (kstrcmp(ent->d_name, "lost+found") == 0 ||
+          kstrcmp(ent->d_name, "bin") == 0 ||
           kstrcmp(ent->d_name, "dev") == 0 ||
           kstrcmp(ent->d_name, "proc") == 0) {
         num_dirents--;
