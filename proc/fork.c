@@ -78,6 +78,8 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->suid = proc_current()->suid;
   new_process->sgid = proc_current()->sgid;
 
+  new_process->umask = proc_current()->umask;
+
   new_process->pgroup = proc_current()->pgroup;
   list_push(proc_group_get(new_process->pgroup), &new_process->pgroup_link);
 

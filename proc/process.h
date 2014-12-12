@@ -81,6 +81,9 @@ struct process {
   // Link on the process group list.
   list_link_t pgroup_link;
 
+  // The process's umask.
+  mode_t umask;
+
   // Has this process exec()'d since it was created.
   bool execed;
 

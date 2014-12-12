@@ -369,3 +369,6 @@ AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
 
 AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
     'int', ['int*:fildes:bw:sizeof(int[2])'])
+
+AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
+    'mode_t', ['mode_t:cmask:u'])

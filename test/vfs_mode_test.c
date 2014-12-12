@@ -28,6 +28,7 @@
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/umask.h"
 #include "proc/user.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
@@ -921,11 +922,15 @@ void vfs_mode_test(void) {
   KTEST_SUITE_BEGIN("vfs mode test");
   const int orig_refcount = vfs_get_vnode_refcount_for_path("/");
 
+  const mode_t orig_umask = proc_umask(0);
+
   check_mode_test();
   basic_rwx_test();
   root_mode_test();
   syscall_mode_test();
   access_mode_test();
+
+  proc_umask(orig_umask);
 
   KEXPECT_EQ(orig_refcount, vfs_get_vnode_refcount_for_path("/"));
 

@@ -65,5 +65,6 @@ int readlink(const char* path, char* buf, size_t bufsize);
 int sleep_ms(unsigned int seconds);
 int apos_get_time(struct apos_tm* t);
 int pipe(int* fildes);
+mode_t umask(mode_t cmask);
 
 #endif

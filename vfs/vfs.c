@@ -333,6 +333,14 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
   return size_out;
 }
 
+// Set the appropriate metadata (mode, owner, group, etc) on the given vnode,
+// which is newly created.
+static void vfs_set_created_metadata(vnode_t* vnode, mode_t mode) {
+  vnode->uid = geteuid();
+  vnode->gid = getegid();
+  vnode->mode = (mode & ~proc_current()->umask) & ~VFS_S_IFMT;
+}
+
 static int vfs_open_fifo(vnode_t* vnode, mode_t mode, bool block) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
 
@@ -464,9 +472,7 @@ int vfs_open(const char* path, int flags, ...) {
       }
 
       child = vfs_get(parent->fs, child_inode);
-      child->uid = geteuid();
-      child->gid = getegid();
-      child->mode = create_mode;
+      vfs_set_created_metadata(child, create_mode);
       created = 1;
     }
 
@@ -610,9 +616,7 @@ int vfs_mkdir(const char* path, mode_t mode) {
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
-  child->uid = geteuid();
-  child->gid = getegid();
-  child->mode = mode;
+  vfs_set_created_metadata(child, mode);
   VFS_PUT_AND_CLEAR(child);
 
   // We're done!
@@ -663,9 +667,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
-  child->uid = geteuid();
-  child->gid = getegid();
-  child->mode = mode & ~VFS_S_IFMT;
+  vfs_set_created_metadata(child, mode & ~VFS_S_IFMT);
   VFS_PUT_AND_CLEAR(child);
 
   // We're done!

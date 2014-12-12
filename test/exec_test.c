@@ -16,6 +16,7 @@
 #include "proc/exec.h"
 #include "proc/fork.h"
 #include "proc/wait.h"
+#include "proc/umask.h"
 #include "proc/user.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
@@ -70,7 +71,9 @@ static void exec_mode_test(void) {
 void exec_test(void) {
   KTEST_SUITE_BEGIN("exec() tests");
 
+  const mode_t orig_umask = proc_umask(0);
   exec_mode_test();
+  proc_umask(orig_umask);
 
   // TODO(aoates): do much more extensive tests, including,
   //  * bad path
