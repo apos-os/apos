@@ -71,5 +71,6 @@
 #define SYS_SLEEP_MS 44
 #define SYS_APOS_GET_TIME 51
 #define SYS_PIPE 54
+#define SYS_UMASK 55
 
 #endif
