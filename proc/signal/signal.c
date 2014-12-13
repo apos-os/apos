@@ -372,11 +372,12 @@ _Static_assert(SYS_SIGRETURN == 21,
                "SYS_SIGRETURN must match the constant in syscall_trampoline.s");
 
 int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
-  // TODO(aoates): allow SIGCONT between processes in the same session, once we
-  // have process groups and sessions.
   return (proc_is_superuser(A) ||
           A->ruid == B->ruid ||
           A->euid == B->ruid ||
           A->ruid == B->suid ||
-          A->euid == B->suid);
+          A->euid == B->suid ||
+          (proc_group_get(A->pgroup)->session ==
+           proc_group_get(B->pgroup)->session &&
+           signal == SIGCONT));
 }

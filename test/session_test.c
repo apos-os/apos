@@ -20,6 +20,7 @@
 #include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/user.h"
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
@@ -85,6 +86,31 @@ static void set_pgid_across_sessions_test(void* arg) {
   KEXPECT_EQ(-EPERM, setpgid(child, orig_pgroup));
   KEXPECT_EQ(child, proc_wait(NULL));
   KEXPECT_EQ(orig_session, proc_group_get(orig_pgroup)->session);
+}
+
+static void change_user(void* arg) {
+  KEXPECT_EQ(0, setuid(4));
+  *(bool*)arg = true;
+  ksleep(10);
+}
+
+static void change_user_test(void* arg) {
+  bool wait = false;
+  pid_t child = proc_fork(&change_user, &wait);
+  for (int i = 0; i < 10 && !wait; ++i) scheduler_yield();
+
+  KEXPECT_EQ(0, setuid(3));
+  KEXPECT_EQ(-EPERM, proc_kill(child, SIGSTOP));
+  KEXPECT_EQ(-EPERM, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(-EPERM, proc_kill(child, SIGURG));
+  KEXPECT_EQ(-EPERM, proc_kill(child, SIGSTOP));
+  KEXPECT_EQ(0, proc_kill(child, SIGCONT));
+
+  KTEST_BEGIN("cannot send SIGCONT across sessions");
+  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(-EPERM, proc_kill(child, SIGCONT));
+
+  KEXPECT_EQ(child, proc_wait(NULL));
 }
 
 static void do_session_test(void* arg) {
@@ -170,6 +196,11 @@ static void do_session_test(void* arg) {
 
   KTEST_BEGIN("setpgid(): cannot change to process group in another session");
   child = proc_fork(&set_pgid_across_sessions_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("kill() can send SIGCONT across users within a session");
+  child = proc_fork(&change_user_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   // TODO(aoates): test adding a process to a process group in a different

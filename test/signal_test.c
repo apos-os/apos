@@ -248,6 +248,8 @@ static void signal_allowed_test(void) {
   B_default.euid = 3002; B_default.egid = 4002;
   B_default.suid = 3003; B_default.sgid = 4003;
 
+  A_default.pgroup = B_default.pgroup = proc_current()->pgroup;
+
   KTEST_BEGIN("proc_signal_allowed(): root can send any signal");
   A = A_default; B = B_default;
   A.euid = SUPERUSER_UID;
@@ -260,7 +262,7 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGTERM));
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGKILL));
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGSTOP));
-  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGCONT));
+  KEXPECT_EQ(1, proc_signal_allowed(&B, &A, SIGCONT));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches ruid");
   A = A_default; B = B_default;
@@ -293,7 +295,8 @@ static void signal_allowed_test(void) {
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
   A = A_default; B = B_default;
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
 
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches ruid");
   A = A_default; B = B_default;
@@ -317,7 +320,8 @@ static void signal_allowed_test(void) {
   A.sgid = B.sgid;
 
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
 }
 
 // Child process that sleeps then exits, to let us test if signals were
