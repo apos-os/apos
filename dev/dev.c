@@ -69,10 +69,6 @@ static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR],
   return 0;
 }
 
-apos_dev_t makedev(unsigned int major, unsigned int minor) {
-  return (major << 16) | (minor & 0xFFFF);
-}
-
 int dev_register_block(block_dev_t* dev, apos_dev_t* id) {
   int result = check_register(dev, id);
   if (result) {
