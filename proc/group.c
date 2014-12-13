@@ -52,14 +52,14 @@ int setpgid(pid_t pid, pid_t pgid) {
     return -EPERM;
   }
 
-  if (cur_pgroup->session != proc_group_get(proc_current()->pgroup)->session) {
+  proc_group_t* my_pgroup = proc_group_get(proc_current()->pgroup);
+  if (cur_pgroup->session != my_pgroup->session) {
     return -EPERM;  // Child, but in a different session.
   }
 
   proc_group_t* pgroup = proc_group_get(pgid);
-  // TODO(aoates): test if any of the processes in the group are in the current
-  // session.
-  if (pgid != pid && list_empty(&pgroup->procs)) {
+  if (pgid != pid &&
+      (list_empty(&pgroup->procs) || pgroup->session != my_pgroup->session)) {
     return -EPERM;
   }
 
