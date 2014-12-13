@@ -142,7 +142,7 @@ static void do_session_test(void* arg) {
   KEXPECT_EQ(proc_current()->id, proc_getsid(0));
   KEXPECT_EQ(proc_current()->id, proc_getsid(proc_current()->id));
 
-  // TODO(aoates): verify no controlling terminal.
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
 
   KTEST_BEGIN("setsid() fails if already process group leader");
   KEXPECT_EQ(-EPERM, proc_setsid());
@@ -218,6 +218,8 @@ static void do_session_test(void* arg) {
 
   // TODO(aoates): test reusing an process group ID, and that the session is
   // updated nonetheless.
+  // TODO(aoates): test if there's an existing ctty, that its reset when a new
+  // session is created.
 }
 
 void session_test(void) {

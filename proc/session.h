@@ -17,10 +17,20 @@
 
 #include "user/include/apos/posix_types.h"
 
+#define PROC_SESSION_NO_CTTY -1
+
+typedef struct {
+  // The ID of the session's controlling terminal, or -1 if none.
+  int ctty;
+} proc_session_t;
+
 // Create a new session, as per setsid(2).
 pid_t proc_setsid(void);
 
 // Return the process group ID of the session leader of the given process.
 pid_t proc_getsid(pid_t pid);
+
+// Return the given session, or NULL if it doesn't exist.
+proc_session_t* proc_session_get(sid_t sid);
 
 #endif

@@ -18,6 +18,10 @@
 #include "proc/process.h"
 #include "proc/session.h"
 
+// TODO(aoates): this (as well as the process group table) will be extremely
+// sparse.  Use a hashtable or something instead.
+static proc_session_t g_session_table[PROC_MAX_PROCS];
+
 pid_t proc_setsid(void) {
   process_t* proc = proc_current();
   if (proc->pgroup == proc->id) return -EPERM;
@@ -31,7 +35,10 @@ pid_t proc_setsid(void) {
   proc_group_t* pgroup = proc_group_get(proc->pgroup);
   pgroup->session = proc->id;
 
-  // TODO(aoates): reset the controlling terminal.
+  proc_session_t* session = proc_session_get(proc->id);
+  session->ctty = PROC_SESSION_NO_CTTY;
+
+  // TODO(aoates): reset the controlling terminal's session id as well.
 
   return 0;
 }
@@ -47,4 +54,12 @@ pid_t proc_getsid(pid_t pid) {
   if (pgroup->session != cur_pgroup->session) return -EPERM;
 
   return pgroup->session;
+}
+
+proc_session_t* proc_session_get(sid_t sid) {
+  if (sid < 0 || sid >= PROC_MAX_PROCS) {
+    return NULL;
+  }
+
+  return &g_session_table[sid];
 }

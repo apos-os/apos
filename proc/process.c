@@ -25,6 +25,7 @@
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
+#include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
 
@@ -110,8 +111,13 @@ void proc_init_stage1() {
   KASSERT(g_proc_init_stage == 0);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
-    proc_group_get(i)->procs = LIST_INIT;
-    proc_group_get(i)->session = -1;
+
+    proc_group_t* pgroup = proc_group_get(i);
+    pgroup->procs = LIST_INIT;
+    pgroup->session = -1;
+
+    proc_session_t* session = proc_session_get(i);
+    session->ctty = -100;
   }
 
   // Create first process.
