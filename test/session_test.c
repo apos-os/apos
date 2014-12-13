@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/kassert.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
@@ -203,12 +204,20 @@ static void do_session_test(void* arg) {
   child = proc_fork(&change_user_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  // TODO(aoates): test adding a process to a process group in a different
-  // session (should fail).
+
+  KTEST_BEGIN("setpgid(): on another process updates session");
+  child = proc_fork(&do_nothing, NULL);
+  KASSERT(list_empty(&proc_group_get(child)->procs));
+  proc_group_get(child)->session = PROC_MAX_PROCS - 1;
+
+  KEXPECT_EQ(0, setpgid(child, 0));
+  KEXPECT_EQ(child, getpgid(child));
+  KEXPECT_EQ(proc_current()->id, proc_group_get(child)->session);
+
+  KEXPECT_EQ(child, proc_wait(NULL));
+
   // TODO(aoates): test reusing an process group ID, and that the session is
   // updated nonetheless.
-  // TODO(aoates): setpgid on another process, creating a new pgroup (check
-  // session)
 }
 
 void session_test(void) {
