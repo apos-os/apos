@@ -24,6 +24,7 @@ srcs = [
   'scheduler.c',
   'process.c',
   'procfs.c',
+  'session.c',
   'sleep.c',
   'kthread_pool.c',
   'umask.c',

@@ -125,6 +125,7 @@ void proc_init_stage1() {
       SUPERUSER_GID;
   g_proc_table[0]->pgroup = 0;
   list_push(&proc_group_get(0)->procs, &g_proc_table[0]->pgroup_link);
+  proc_group_get(0)->session = 0;
   g_current_proc = 0;
 
   const memory_info_t* meminfo = get_global_meminfo();
