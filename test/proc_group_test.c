@@ -58,7 +58,7 @@ static void loop_until_done(void* arg) {
 }
 
 static int group_contains(pid_t pgid, pid_t pid) {
-  for (list_link_t* link = proc_group_get(pgid)->head;
+  for (list_link_t* link = proc_group_get(pgid)->procs.head;
        link != 0x0;
        link = link->next) {
     process_t* proc = container_of(link, process_t, pgroup_link);

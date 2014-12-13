@@ -19,7 +19,7 @@
 
 // Process groups.  Each element of the table is a list of processes in that
 // group.
-list_t g_proc_group_table[PROC_MAX_PROCS];
+proc_group_t g_proc_group_table[PROC_MAX_PROCS];
 
 pid_t getpgid(pid_t pid) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) {
@@ -47,7 +47,7 @@ int setpgid(pid_t pid, pid_t pgid) {
     return -ESRCH;
   }
 
-  list_t* pgroup = proc_group_get(pgid);
+  list_t* pgroup = &proc_group_get(pgid)->procs;
   // TODO(aoates): test if any of the processes in the group are in the current
   // session.
   if (pgid != pid && list_empty(pgroup)) {
@@ -59,14 +59,14 @@ int setpgid(pid_t pid, pid_t pgid) {
   }
 
   // Remove the process from its current group and add it to the new one.
-  list_remove(proc_group_get(proc->pgroup), &proc->pgroup_link);
+  list_remove(&proc_group_get(proc->pgroup)->procs, &proc->pgroup_link);
   list_push(pgroup, &proc->pgroup_link);
   proc->pgroup = pgid;
 
   return 0;
 }
 
-list_t* proc_group_get(pid_t gid) {
+proc_group_t* proc_group_get(pid_t gid) {
   if (gid < 0 || gid >= PROC_MAX_PROCS)
     return NULL;
   else

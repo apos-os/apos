@@ -166,7 +166,7 @@ int proc_kill(pid_t pid, int sig) {
   } else if (pid <= 0) {
     if (pid == 0) pid = -proc_current()->pgroup;
 
-    list_t* pgroup = proc_group_get(-pid);
+    list_t* pgroup = &proc_group_get(-pid)->procs;
     if (!pgroup || list_empty(pgroup)) {
       return -ESRCH;
     }

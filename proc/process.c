@@ -78,7 +78,7 @@ static void proc_init_process(process_t* p) {
 process_t* proc_alloc() {
   int id = -1;
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
-    if (g_proc_table[i] == NULL && list_empty(proc_group_get(i))) {
+    if (g_proc_table[i] == NULL && list_empty(&proc_group_get(i)->procs)) {
       id = i;
       break;
     }
@@ -110,7 +110,8 @@ void proc_init_stage1() {
   KASSERT(g_proc_init_stage == 0);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
-    *proc_group_get(i) = LIST_INIT;
+    proc_group_get(i)->procs = LIST_INIT;
+    proc_group_get(i)->session = -1;
   }
 
   // Create first process.
@@ -123,7 +124,7 @@ void proc_init_stage1() {
   g_proc_table[0]->rgid = g_proc_table[0]->egid = g_proc_table[0]->sgid =
       SUPERUSER_GID;
   g_proc_table[0]->pgroup = 0;
-  list_push(proc_group_get(0), &g_proc_table[0]->pgroup_link);
+  list_push(&proc_group_get(0)->procs, &g_proc_table[0]->pgroup_link);
   g_current_proc = 0;
 
   const memory_info_t* meminfo = get_global_meminfo();

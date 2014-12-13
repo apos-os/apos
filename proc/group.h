@@ -19,6 +19,14 @@
 #include "common/list.h"
 #include "user/include/apos/posix_types.h"
 
+typedef struct {
+  // The processes in the group.
+  list_t procs;
+
+  // The session of the group.
+  sid_t session;
+} proc_group_t;
+
 // Return the given process's process group, as per getpgid(2).
 //
 // Returns the process group ID on success, or -errno on error.
@@ -30,6 +38,6 @@ pid_t getpgid(pid_t pid);
 int setpgid(pid_t pid, pid_t pgid);
 
 // Return the process group with the given ID.
-list_t* proc_group_get(pid_t gid);
+proc_group_t* proc_group_get(pid_t gid);
 
 #endif

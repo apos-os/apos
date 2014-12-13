@@ -57,7 +57,7 @@ void proc_exit(int status) {
   proc_alarm(0);
 
   // Remove it from the process group list.
-  list_remove(proc_group_get(p->pgroup), &p->pgroup_link);
+  list_remove(&proc_group_get(p->pgroup)->procs, &p->pgroup_link);
   p->pgroup = -1;
 
   // Move any pending children to the root process.

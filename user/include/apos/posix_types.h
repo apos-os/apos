@@ -18,6 +18,7 @@
 
 // Process ID.
 typedef int pid_t;
+typedef int sid_t;
 
 // User and group IDs.
 typedef int uid_t;
