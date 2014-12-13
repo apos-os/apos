@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include "common/kassert.h"
+#include "dev/ld.h"
+#include "dev/tty.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
@@ -25,6 +27,7 @@
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "vfs/vfs.h"
 
 static void do_nothing(void* arg) {}
 
@@ -222,9 +225,45 @@ static void do_session_test(void* arg) {
   // session is created.
 }
 
+static void do_open_ctty(void* arg) {
+  KTEST_BEGIN("vfs_open() sets ctty");
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+
+  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(-1, tty_get(test_tty)->session);
+
+  char name[20];
+  ksprintf(name, "/dev/tty%d", minor(test_tty));
+  int fd = vfs_open(name, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
+}
+
+static void ctty_test(void* arg) {
+  ld_t* const test_ld = ld_create(100);
+  const apos_dev_t test_tty = tty_create(test_ld);
+
+  pid_t child = proc_fork(&do_open_ctty, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  KEXPECT_EQ(-1, tty_get(test_tty)->session);
+
+  // TODO(aoates): test openinig a TTY that is already a controlling terminal
+  // TODO(aoates): test exit of a non-controlling process
+
+  tty_destroy(test_tty);
+  ld_destroy(test_ld);
+}
+
 void session_test(void) {
   KTEST_SUITE_BEGIN("process session tests");
 
   pid_t child = proc_fork(&do_session_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&ctty_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }

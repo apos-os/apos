@@ -34,6 +34,7 @@ typedef enum {
   KL_USB,
   KL_USB_HUB,
   KL_USB_UHCI,
+  KL_TTY,
 
   KL_TEST,
 

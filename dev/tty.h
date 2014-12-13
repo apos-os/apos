@@ -17,9 +17,23 @@
 
 #include "dev/ld.h"
 #include "user/include/apos/dev.h"
+#include "user/include/apos/posix_types.h"
+
+typedef struct {
+  // The session that this is the controlling terminal for, or -1.
+  sid_t session;
+} tty_t;
 
 // Create a TTY character device over the given ld.  Returns the apos_dev_t of
 // the new device.
 apos_dev_t tty_create(ld_t* ld);
+
+// Remove the given TTY device, destroying the underlying character device.  It
+// must not currently be the controlling terminal of a session.
+void tty_destroy(apos_dev_t dev);
+
+// Returns the TTY info struct for the given TTY (which must have been
+// previously created with tty_create()).
+tty_t* tty_get(apos_dev_t dev);
 
 #endif

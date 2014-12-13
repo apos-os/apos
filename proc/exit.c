@@ -14,12 +14,15 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "dev/dev.h"
+#include "dev/tty.h"
 #include "proc/exit.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "vfs/vfs.h"
 
@@ -49,6 +52,21 @@ void proc_exit(int status) {
   if (p->cwd) {
     vfs_put(p->cwd);
     p->cwd = 0x0;
+  }
+
+  const sid_t sid = proc_getsid(0);
+  if (sid == p->id) {  // Controlling process/session leader.
+    proc_session_t* session = proc_session_get(sid);
+    if (session->ctty != PROC_SESSION_NO_CTTY) {
+      // TODO(aoates): send SIGHUP to processes in the foreground process group.
+      tty_t* tty = tty_get(makedev(DEVICE_MAJOR_TTY, session->ctty));
+      if (!tty) {
+        klogfm(KL_PROC, DFATAL, "tty_get() in proc_exit() failed\n");
+      } else {
+        session->ctty = PROC_SESSION_NO_CTTY;
+        tty->session = -1;
+      }
+    }
   }
 
   // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
