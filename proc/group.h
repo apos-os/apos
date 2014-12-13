@@ -16,6 +16,7 @@
 #ifndef APOO_PROC_GROUP_H
 #define APOO_PROC_GROUP_H
 
+#include "common/list.h"
 #include "user/include/apos/posix_types.h"
 
 // Return the given process's process group, as per getpgid(2).
@@ -27,5 +28,8 @@ pid_t getpgid(pid_t pid);
 //
 // Returns 0 on success, or -errno on error.
 int setpgid(pid_t pid, pid_t pgid);
+
+// Return the process group with the given ID.
+list_t* proc_group_get(pid_t gid);
 
 #endif

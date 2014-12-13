@@ -17,6 +17,7 @@
 #include "arch/proc/signal/signal_enter.h"
 #include "common/kassert.h"
 #include "proc/exit.h"
+#include "proc/group.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/user.h"

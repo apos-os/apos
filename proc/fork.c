@@ -19,6 +19,7 @@
 #include "memory/vm.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"

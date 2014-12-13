@@ -124,9 +124,6 @@ process_t* proc_current(void);
 // Return the process_t with the given ID, or NULL if there is none.
 process_t* proc_get(pid_t id);
 
-// Return the process group with the given ID.
-list_t* proc_group_get(pid_t gid);
-
 
 // Implementations.
 

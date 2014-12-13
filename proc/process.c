@@ -20,6 +20,7 @@
 #include "memory/kmalloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
@@ -43,10 +44,6 @@ static vm_area_t g_physical_mapped_vm_area;
 process_t* g_proc_table[PROC_MAX_PROCS];
 static pid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
-
-// Process groups.  Each element of the table is a list of processes in that
-// group.
-list_t g_proc_group_table[PROC_MAX_PROCS];
 
 static void proc_init_process(process_t* p) {
   p->id = -1;
@@ -81,7 +78,7 @@ static void proc_init_process(process_t* p) {
 process_t* proc_alloc() {
   int id = -1;
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
-    if (g_proc_table[i] == NULL && list_empty(&g_proc_group_table[i])) {
+    if (g_proc_table[i] == NULL && list_empty(proc_group_get(i))) {
       id = i;
       break;
     }
@@ -113,7 +110,7 @@ void proc_init_stage1() {
   KASSERT(g_proc_init_stage == 0);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
-    g_proc_group_table[i] = LIST_INIT;
+    *proc_group_get(i) = LIST_INIT;
   }
 
   // Create first process.
@@ -177,11 +174,4 @@ void proc_set_current(process_t* process) {
               "bad process ID: %d", process->id);
   KASSERT(g_proc_table[process->id] == process);
   g_current_proc = process->id;
-}
-
-list_t* proc_group_get(pid_t gid) {
-  if (gid < 0 || gid >= PROC_MAX_PROCS)
-    return NULL;
-  else
-    return &g_proc_group_table[gid];
 }

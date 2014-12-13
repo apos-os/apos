@@ -17,6 +17,10 @@
 #include "common/errno.h"
 #include "proc/process.h"
 
+// Process groups.  Each element of the table is a list of processes in that
+// group.
+list_t g_proc_group_table[PROC_MAX_PROCS];
+
 pid_t getpgid(pid_t pid) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) {
     return -EINVAL;
@@ -60,4 +64,11 @@ int setpgid(pid_t pid, pid_t pgid) {
   proc->pgroup = pgid;
 
   return 0;
+}
+
+list_t* proc_group_get(pid_t gid) {
+  if (gid < 0 || gid >= PROC_MAX_PROCS)
+    return NULL;
+  else
+    return &g_proc_group_table[gid];
 }

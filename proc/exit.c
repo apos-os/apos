@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "proc/exit.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
