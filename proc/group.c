@@ -47,8 +47,13 @@ int setpgid(pid_t pid, pid_t pgid) {
     return -ESRCH;
   }
 
-  if (proc_group_get(proc->pgroup)->session == proc->id) {
+  proc_group_t* cur_pgroup = proc_group_get(proc->pgroup);
+  if (cur_pgroup->session == proc->id) {  // Is session leader?
     return -EPERM;
+  }
+
+  if (cur_pgroup->session != proc_group_get(proc_current()->pgroup)->session) {
+    return -EPERM;  // Child, but in a different session.
   }
 
   proc_group_t* pgroup = proc_group_get(pgid);

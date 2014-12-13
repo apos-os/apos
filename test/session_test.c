@@ -57,6 +57,20 @@ static void session_leader_pgid(void* arg) {
   ksleep(10);
 }
 
+static void child_different_session_test(void* arg) {
+  // We run this in a different session to ensure that the parent process (this
+  // process) isn't a session leader (so we can setsid() after forking the
+  // child).
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(proc_getsid(0), proc_getsid(child));
+  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_NE(proc_getsid(0), proc_getsid(child));
+  KEXPECT_EQ(-EPERM, setpgid(child, child));
+  KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->id));
+  KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->parent->id));
+  KEXPECT_EQ(child, proc_wait(NULL));
+}
+
 static void do_session_test(void* arg) {
   KTEST_BEGIN("getsid() basic test");
   KEXPECT_GE(proc_getsid(proc_current()->id), 0);
@@ -130,6 +144,11 @@ static void do_session_test(void* arg) {
   KEXPECT_EQ(0, proc_kill(child, SIGKILL));
   KEXPECT_EQ(child, proc_wait(NULL));
 
+
+  KTEST_BEGIN("setpgid(): cannot change process group of a child in a "
+              "different session (but not a session leader)");
+  child = proc_fork(&child_different_session_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
 
   // TODO(aoates): test adding a process to a process group in a different
   // session (should fail).
