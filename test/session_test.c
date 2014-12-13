@@ -46,6 +46,17 @@ static void do_setpgid(void* arg) {
   ksleep(10);
 }
 
+static void session_leader_pgid(void* arg) {
+  KEXPECT_EQ(0, proc_setsid());
+
+  KEXPECT_EQ(-EPERM, setpgid(0, 0));
+  KEXPECT_EQ(-EPERM, setpgid(proc_current()->id, proc_current()->id));
+  KEXPECT_EQ(-EPERM, setpgid(proc_current()->id, proc_current()->parent->id));
+  KEXPECT_EQ(proc_current()->id, getpgid(0));
+  *(bool*)arg = true;
+  ksleep(10);
+}
+
 static void do_session_test(void* arg) {
   KTEST_BEGIN("getsid() basic test");
   KEXPECT_GE(proc_getsid(proc_current()->id), 0);
@@ -107,6 +118,18 @@ static void do_session_test(void* arg) {
   KEXPECT_EQ(-EPERM, proc_getsid(child));
   KEXPECT_EQ(0, proc_kill(child, SIGKILL));
   KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("setpgid(): cannot change the process group of a session leader");
+  wait = false;
+  child = proc_fork(&session_leader_pgid, &wait);
+  for (int i = 0; i < 10 && !wait; ++i) scheduler_yield();
+  KEXPECT_EQ(-EPERM, setpgid(child, child));
+  KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->id));
+  KEXPECT_EQ(child, proc_get(child)->pgroup);
+  KEXPECT_EQ(0, proc_kill(child, SIGKILL));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
 
   // TODO(aoates): test adding a process to a process group in a different
   // session (should fail).

@@ -43,9 +43,12 @@ int setpgid(pid_t pid, pid_t pgid) {
   if (pgid == 0) pgid = pid;
 
   process_t* proc = proc_get(pid);
-  // TODO(aoates): check if the process is a session leader.
   if (!proc || (proc != proc_current() && proc->parent != proc_current())) {
     return -ESRCH;
+  }
+
+  if (proc_group_get(proc->pgroup)->session == proc->id) {
+    return -EPERM;
   }
 
   proc_group_t* pgroup = proc_group_get(pgid);
