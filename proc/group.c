@@ -31,6 +31,11 @@ pid_t getpgid(pid_t pid) {
     return -ESRCH;
   }
 
+  if (proc_group_get(proc->pgroup)->session !=
+      proc_group_get(proc_current()->pgroup)->session) {
+    return -EPERM;
+  }
+
   return proc->pgroup;
 }
 

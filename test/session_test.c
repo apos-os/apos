@@ -139,13 +139,14 @@ static void do_session_test(void* arg) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
 
-  KTEST_BEGIN("getsid() fails on process in different session");
+  KTEST_BEGIN("getsid() and getpgid() fail on process in different session");
   wait = false;
   child = proc_fork(&do_setsid2, &wait);
   KEXPECT_EQ(proc_getsid(0), proc_getsid(child));
   for (int i = 0; i < 10 && !wait; ++i) scheduler_yield();
   KEXPECT_EQ(true, wait);
   KEXPECT_EQ(-EPERM, proc_getsid(child));
+  KEXPECT_EQ(-EPERM, getpgid(child));
   KEXPECT_EQ(0, proc_kill(child, SIGKILL));
   KEXPECT_EQ(child, proc_wait(NULL));
 
