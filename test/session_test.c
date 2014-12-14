@@ -226,10 +226,10 @@ static void do_session_test(void* arg) {
 }
 
 // Helper for the below.  Open the given TTY and return the fd.
-static int open_tty(apos_dev_t test_tty) {
+static int open_tty(apos_dev_t test_tty, int flags) {
   char name[20];
   ksprintf(name, "/dev/tty%d", minor(test_tty));
-  int fd = vfs_open(name, VFS_O_RDONLY);
+  int fd = vfs_open(name, VFS_O_RDONLY | flags);
   KEXPECT_GE(fd, 0);
   return fd;
 }
@@ -239,7 +239,7 @@ static int setsid_and_open_tty(apos_dev_t test_tty) {
   KEXPECT_EQ(0, proc_setsid());
   KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
 
-  return open_tty(test_tty);
+  return open_tty(test_tty, 0);
 }
 
 static void do_open_ctty(void* arg) {
@@ -285,7 +285,7 @@ static void open_second_tty(void* arg) {
   const apos_dev_t test_tty = (apos_dev_t)arg;
   setsid_and_open_tty(test_tty);
 
-  open_tty(test_tty2);
+  open_tty(test_tty2, 0);
 
   KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
@@ -296,7 +296,7 @@ static void open_second_tty(void* arg) {
 }
 
 static void open_tty_subproc(void* arg) {
-  open_tty((apos_dev_t)arg);
+  open_tty((apos_dev_t)arg, 0);
 }
 
 static void non_leader_exit_doesnt_release_ctty(void* arg) {
@@ -324,6 +324,19 @@ static void non_leader_open_doesnt_set_ctty(void* arg) {
   KEXPECT_EQ(-1, tty_get((apos_dev_t)arg)->session);
 }
 
+static void no_ctty_flag(void* arg) {
+  KTEST_BEGIN("open(O_NOCTTY) doesn't set the CTTY");
+  KEXPECT_EQ(0, proc_setsid());
+
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(-1, tty_get((apos_dev_t)arg)->session);
+
+  open_tty((apos_dev_t)arg, VFS_O_NOCTTY);
+
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(-1, tty_get((apos_dev_t)arg)->session);
+}
+
 static void ctty_test(void* arg) {
   ld_t* const test_ld = ld_create(100);
   const apos_dev_t test_tty = tty_create(test_ld);
@@ -342,6 +355,9 @@ static void ctty_test(void* arg) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&non_leader_open_doesnt_set_ctty, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&no_ctty_flag, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);

@@ -365,7 +365,8 @@ static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
   fifo_close(vnode->fifo, fifo_mode);
 }
 
-int vfs_open_vnode(vnode_t* child, mode_t mode, bool block) {
+int vfs_open_vnode(vnode_t* child, int flags, bool block) {
+  const mode_t mode = flags & VFS_MODE_MASK;
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
       child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
       child->type != VNODE_FIFO) {
@@ -396,7 +397,8 @@ int vfs_open_vnode(vnode_t* child, mode_t mode, bool block) {
     return fd;
   }
 
-  if (child->type == VNODE_CHARDEV && major(child->dev) == DEVICE_MAJOR_TTY) {
+  if (child->type == VNODE_CHARDEV && major(child->dev) == DEVICE_MAJOR_TTY &&
+      !(flags & VFS_O_NOCTTY)) {
     tty_t* tty = tty_get(child->dev);
     if (!tty) {
       KLOG(DFATAL, "tty_get() failed in vnode open\n");
@@ -531,7 +533,7 @@ int vfs_open(const char* path, int flags, ...) {
     return -EIO;
   }
 
-  int result = vfs_open_vnode(child, mode, true);
+  int result = vfs_open_vnode(child, flags, true);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
