@@ -89,6 +89,7 @@ static void io_init(void) {
 
   // Create a TTY device.
   g_tty_dev = tty_create(ld);
+  ld_set_tty(ld, g_tty_dev);
 }
 
 static void kshell_trampoline(void* arg) {

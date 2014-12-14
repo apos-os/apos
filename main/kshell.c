@@ -46,8 +46,11 @@
 #include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/group.h"
+#include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/tcgroup.h"
 #include "proc/wait.h"
 #if ENABLE_TESTS
 #include "test/kernel_tests.h"
@@ -65,6 +68,7 @@ const char* PATH[] = {
 #define READ_BUF_SIZE 1024
 
 static apos_dev_t g_tty;
+static int g_tty_fd = -1;
 
 void ksh_printf(const char* fmt, ...) {
   char buf[1024];
@@ -685,6 +689,8 @@ typedef struct {
 } boot_child_args_t;
 
 static void boot_child_func(void* arg) {
+  setpgid(0, 0);
+
   boot_child_args_t* args = (boot_child_args_t*)arg;
   char tty_name[100];
   ksprintf(tty_name, "/dev/tty%d", minor(g_tty));
@@ -719,10 +725,15 @@ void do_boot_cmd(const char* path, int argc, char** argv) {
   if (child_pid < 0) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {
+    setpgid(child_pid, child_pid);
+    proc_tcsetpgrp(g_tty_fd, child_pid);
+
     int exit_status;
     pid_t wait_pid = proc_wait(&exit_status);
     klogf("<child process %d exited with status %d>\n",
           wait_pid, exit_status);
+
+    proc_tcsetpgrp(g_tty_fd, getpgid(0));
   }
 }
 
@@ -917,6 +928,21 @@ static void parse_and_dispatch(char* cmd) {
 void kshell_main(apos_dev_t tty) {
   g_tty = tty;
   char_dev_t* tty_dev = dev_get_char(g_tty);
+
+  proc_setsid();
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(tty));
+  g_tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
+  KASSERT(g_tty_fd == 0);
+  g_tty_fd = vfs_dup2(g_tty_fd, PROC_MAX_FDS - 1);
+  KASSERT(g_tty_fd == PROC_MAX_FDS - 1);
+  vfs_close(0);
+
+  sigset_t mask;
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGTTOU);
+  proc_sigprocmask(SIG_BLOCK, &mask, NULL);
+  KASSERT(0 == proc_tcsetpgrp(g_tty_fd, getpgid(0)));
 
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   ksh_printf("@                     APOS                       @\n");
