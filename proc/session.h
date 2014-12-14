@@ -22,6 +22,9 @@
 typedef struct {
   // The ID of the session's controlling terminal, or -1 if none.
   int ctty;
+
+  // The foreground process group of the session, or -1 if none.
+  pid_t fggrp;
 } proc_session_t;
 
 // Create a new session, as per setsid(2).

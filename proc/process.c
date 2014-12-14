@@ -118,6 +118,7 @@ void proc_init_stage1() {
 
     proc_session_t* session = proc_session_get(i);
     session->ctty = -100;
+    session->fggrp = -100;
   }
 
   // Create first process.
