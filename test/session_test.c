@@ -225,18 +225,53 @@ static void do_session_test(void* arg) {
   // session is created.
 }
 
-static void do_open_ctty(void* arg) {
-  KTEST_BEGIN("vfs_open() sets ctty");
-  const apos_dev_t test_tty = (apos_dev_t)arg;
-
-  KEXPECT_EQ(0, proc_setsid());
-  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
-  KEXPECT_EQ(-1, tty_get(test_tty)->session);
-
+// Helper for the below.  Open the given TTY and return the fd.
+static int open_tty(apos_dev_t test_tty) {
   char name[20];
   ksprintf(name, "/dev/tty%d", minor(test_tty));
   int fd = vfs_open(name, VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
+  return fd;
+}
+
+// Helper for the below.  Create a new session and open the given TTY.
+static int setsid_and_open_tty(apos_dev_t test_tty) {
+  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+
+  return open_tty(test_tty);
+}
+
+static void do_open_ctty(void* arg) {
+  KTEST_BEGIN("vfs_open() sets ctty");
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  KEXPECT_EQ(-1, tty_get(test_tty)->session);
+  setsid_and_open_tty(test_tty);
+
+  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
+}
+
+static void open_tty_shouldnt_set_ctty(void* arg) {
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  const sid_t orig_tty_session = tty_get(test_tty)->session;
+  setsid_and_open_tty(test_tty);
+
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(orig_tty_session, tty_get(test_tty)->session);
+}
+
+static void do_open_another_ctty_test(void* arg) {
+  KTEST_BEGIN("vfs_open() doesn't poach another session's ctty");
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  KEXPECT_EQ(-1, tty_get(test_tty)->session);
+  setsid_and_open_tty(test_tty);
+
+  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
+
+  pid_t child = proc_fork(&open_tty_shouldnt_set_ctty, arg);
+  KEXPECT_EQ(child, proc_wait(NULL));
 
   KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
@@ -251,7 +286,10 @@ static void ctty_test(void* arg) {
 
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
 
-  // TODO(aoates): test openinig a TTY that is already a controlling terminal
+
+  child = proc_fork(&do_open_another_ctty_test, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
   // TODO(aoates): test exit of a non-controlling process
 
   tty_destroy(test_tty);
