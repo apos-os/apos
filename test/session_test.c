@@ -295,6 +295,25 @@ static void open_second_tty(void* arg) {
   ld_destroy(test_ld2);
 }
 
+static void open_tty_subproc(void* arg) {
+  open_tty((apos_dev_t)arg);
+}
+
+static void non_leader_exit_doesnt_release_ctty(void* arg) {
+  KTEST_BEGIN("exit() from a non-session-leader doesn't release the CTTY");
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  setsid_and_open_tty(test_tty);
+
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&open_tty_subproc, arg);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
+}
+
 static void ctty_test(void* arg) {
   ld_t* const test_ld = ld_create(100);
   const apos_dev_t test_tty = tty_create(test_ld);
@@ -309,7 +328,8 @@ static void ctty_test(void* arg) {
   child = proc_fork(&open_second_tty, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  // TODO(aoates): test exit of a non-controlling process
+  child = proc_fork(&non_leader_exit_doesnt_release_ctty, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);
   ld_destroy(test_ld);
