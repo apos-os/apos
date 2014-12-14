@@ -277,17 +277,36 @@ static void do_open_another_ctty_test(void* arg) {
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
+static void open_second_tty(void* arg) {
+  KTEST_BEGIN("vfs_open() doesn't change ctty if the session already has one");
+  ld_t* const test_ld2 = ld_create(100);
+  const apos_dev_t test_tty2 = tty_create(test_ld2);
+
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  setsid_and_open_tty(test_tty);
+
+  open_tty(test_tty2);
+
+  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
+  KEXPECT_EQ(-1, tty_get(test_tty2)->session);
+
+  tty_destroy(test_tty2);
+  ld_destroy(test_ld2);
+}
+
 static void ctty_test(void* arg) {
   ld_t* const test_ld = ld_create(100);
   const apos_dev_t test_tty = tty_create(test_ld);
 
   pid_t child = proc_fork(&do_open_ctty, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
-
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
 
-
   child = proc_fork(&do_open_another_ctty_test, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&open_second_tty, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   // TODO(aoates): test exit of a non-controlling process
