@@ -23,6 +23,7 @@
 #include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/tcgroup.h"
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
@@ -30,6 +31,9 @@
 #include "vfs/vfs.h"
 
 static void do_nothing(void* arg) {}
+static void do_sleep(void* arg) {
+  ksleep(10000);
+}
 
 static void do_setsid(void* arg) {
   KEXPECT_EQ(0, setpgid(0, 0));
@@ -364,6 +368,202 @@ static void ctty_test(void* arg) {
   ld_destroy(test_ld);
 }
 
+static int sig_is_pending(process_t* proc, int sig) {
+  sigset_t pending = proc_pending_signals(proc);
+  return ksigismember(&pending, sig);
+}
+
+static void empty_sig_handler(int sig) {}
+
+static void tcsetpgrp_test_inner(void* arg) {
+  sigset_t sigset_mask_ttou, old_sigset;
+  ksigemptyset(&sigset_mask_ttou);
+  ksigaddset(&sigset_mask_ttou, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset_mask_ttou, &old_sigset));
+
+  ld_t* const test_ldB = ld_create(100);
+  const apos_dev_t test_tty = *(apos_dev_t*)arg;
+  const apos_dev_t test_ttyB = tty_create(test_ldB);
+  char tty_name[20], tty_nameB[20];
+  ksprintf(tty_name, "/dev/tty%u", minor(test_tty));
+  ksprintf(tty_nameB, "/dev/tty%u", minor(test_ttyB));
+
+  KTEST_BEGIN("tcsetpgrp(): no controlling terminal");
+  KEXPECT_EQ(0, proc_setsid());
+  int fd = vfs_open(tty_name, VFS_O_RDONLY | VFS_O_NOCTTY);
+  KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd, proc_current()->pgroup));
+
+  KTEST_BEGIN("tcgetpgrp(): no controlling terminal");
+  KEXPECT_EQ(-ENOTTY, proc_tcgetpgrp(fd));
+  vfs_close(fd);
+
+
+  KTEST_BEGIN("tcgetpgrp(): no foregroup process group");
+  fd = vfs_open(tty_name, VFS_O_RDONLY);
+  KEXPECT_EQ(PROC_NO_FGGRP, proc_tcgetpgrp(fd));
+
+
+  KTEST_BEGIN("tcgetpgrp()/tcsetpgrp(): fd is not a controlling terminal");
+  int fd2 = vfs_open(tty_nameB, VFS_O_RDONLY | VFS_O_NOCTTY);
+  KEXPECT_EQ(-ENOTTY, proc_tcgetpgrp(fd2));
+  KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd2, getpgid(0)));
+  vfs_close(fd2);
+  fd2 = vfs_open("ctty_test_file", VFS_O_CREAT | VFS_O_RDONLY, VFS_S_IRWXU);
+  KEXPECT_EQ(-ENOTTY, proc_tcgetpgrp(fd2));
+  KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd2, getpgid(0)));
+  vfs_close(fd2);
+  KEXPECT_EQ(0, vfs_unlink("ctty_test_file"));
+
+
+  KTEST_BEGIN("tcsetpgrp(): bad process group ID");
+  KEXPECT_EQ(-EINVAL, proc_tcsetpgrp(fd, -1));
+  KEXPECT_EQ(-EINVAL, proc_tcsetpgrp(fd, PROC_MAX_PROCS));
+  KEXPECT_EQ(-EINVAL, proc_tcsetpgrp(fd, PROC_MAX_PROCS + 1));
+  KEXPECT_EQ(-EINVAL, proc_tcsetpgrp(fd, PROC_MAX_PROCS + 5));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set initial group");
+  KEXPECT_EQ(0, proc_tcsetpgrp(fd, getpgid(0)));
+  KEXPECT_EQ(getpgid(0), proc_tcgetpgrp(fd));
+
+
+  // Restore the signal mask.
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &old_sigset, NULL));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group from fg group to same group");
+  const pid_t childA = proc_fork(&do_sleep, NULL);
+  const pid_t childB = proc_fork(&do_sleep, NULL);
+  const pid_t childC = proc_fork(&do_sleep, NULL);
+  KEXPECT_EQ(0, proc_tcsetpgrp(fd, getpgid(0)));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
+  KEXPECT_EQ(getpgid(0), proc_tcgetpgrp(fd));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group from fg group to another group");
+  // Put the child in another pgroup and make it the foreground.
+  KEXPECT_EQ(0, setpgid(childA, childA));
+  KEXPECT_EQ(0, proc_tcsetpgrp(fd, childA));
+  KEXPECT_EQ(childA, proc_tcgetpgrp(fd));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childC), SIGTTOU));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group from bg group with SIGTTOU blocked");
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset_mask_ttou, NULL));
+  KEXPECT_EQ(0, setpgid(childB, childB));
+  KEXPECT_EQ(0, proc_tcsetpgrp(fd, childB));
+  KEXPECT_EQ(childB, proc_tcgetpgrp(fd));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childC), SIGTTOU));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &sigset_mask_ttou, NULL));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group from bg group with SIGTTOU ignored");
+  struct sigaction sigact = {SIG_IGN, 0, 0}, oldact;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &sigact, &oldact));
+
+  KEXPECT_EQ(0, proc_tcsetpgrp(fd, childA));
+  KEXPECT_EQ(childA, proc_tcgetpgrp(fd));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childC), SIGTTOU));
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &oldact, NULL));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group from bg group with SIGTTOU default");
+  KEXPECT_EQ(-EINTR, proc_tcsetpgrp(fd, childB));
+  KEXPECT_EQ(childA, proc_tcgetpgrp(fd));  // Shouldn't have gone through.
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(childC), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(childC), SIGTTOU);
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group from bg group with SIGTTOU handled");
+  sigact.sa_handler = &empty_sig_handler;
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(-EINTR, proc_tcsetpgrp(fd, childB));
+  KEXPECT_EQ(childA, proc_tcgetpgrp(fd));  // Shouldn't have gone through.
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(childC), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(childC), SIGTTOU);
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group to non-existant pgroup");
+  const pid_t childD = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(childD, proc_wait(NULL));
+
+  KEXPECT_EQ(-EPERM, proc_tcsetpgrp(fd, childD));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+
+  KTEST_BEGIN("tcsetpgrp(): set fg group to pgroup in another session");
+  bool wait = false;
+  const pid_t childE = proc_fork(&do_setsid2, &wait);
+  for (int i = 0; i < 10 && !wait; ++i) scheduler_yield();
+
+  KEXPECT_EQ(-EPERM, proc_tcsetpgrp(fd, childE));
+  KEXPECT_EQ(childE, proc_wait(NULL));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+
+  vfs_close(fd);
+  KEXPECT_EQ(0, proc_force_signal(proc_get(childA), SIGKILL));
+  KEXPECT_EQ(childA, proc_wait(NULL));
+  KEXPECT_EQ(0, proc_force_signal(proc_get(childB), SIGKILL));
+  KEXPECT_EQ(childB, proc_wait(NULL));
+  KEXPECT_EQ(0, proc_force_signal(proc_get(childC), SIGKILL));
+  KEXPECT_EQ(childC, proc_wait(NULL));
+
+
+  KTEST_BEGIN("tcsetpgrp(): bad file descriptor");
+  fd = vfs_open(tty_name, VFS_O_RDONLY | VFS_O_NOCTTY);
+  vfs_close(fd);
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(-5, proc_current()->pgroup));
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(PROC_MAX_FDS, proc_current()->pgroup));
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(PROC_MAX_FDS + 1, proc_current()->pgroup));
+  KEXPECT_EQ(-EBADF, proc_tcsetpgrp(fd, proc_current()->pgroup));
+
+  KTEST_BEGIN("tcgetpgrp(): bad file descriptor");
+  KEXPECT_EQ(-EBADF, proc_tcgetpgrp(-5));
+  KEXPECT_EQ(-EBADF, proc_tcgetpgrp(PROC_MAX_FDS));
+  KEXPECT_EQ(-EBADF, proc_tcgetpgrp(PROC_MAX_FDS + 1));
+  KEXPECT_EQ(-EBADF, proc_tcgetpgrp(fd));
+
+  // TODO(aoates): test orphaned pgroup with SIGTTOU
+  // TODO(aoates): for both get and set: valid fd that's not a terminal,
+  //  valid fd that's another session's ctty
+
+  tty_destroy(test_ttyB);
+  ld_destroy(test_ldB);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &old_sigset, NULL));
+}
+
+static void tcsetpgrp_test(void* arg) {
+  ld_t* const test_ld = ld_create(100);
+  apos_dev_t test_tty = tty_create(test_ld);
+
+  const pid_t child = proc_fork(&tcsetpgrp_test_inner, &test_tty);
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(0, status);
+
+  tty_destroy(test_tty);
+  ld_destroy(test_ld);
+}
+
 void session_test(void) {
   KTEST_SUITE_BEGIN("process session tests");
 
@@ -371,5 +571,8 @@ void session_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&ctty_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&tcsetpgrp_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }
