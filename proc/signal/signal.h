@@ -53,6 +53,9 @@ sigset_t proc_dispatchable_signals(void);
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
 
+// As above, but sends a signal to every process in the given group.
+int proc_force_signal_group(pid_t pgid, int sig);
+
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
 int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);

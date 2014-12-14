@@ -128,6 +128,27 @@ int proc_force_signal(process_t* proc, int sig) {
   return result;
 }
 
+int proc_force_signal_group(pid_t pgid, int sig) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  proc_group_t* pgroup = proc_group_get(pgid);
+  if (!pgroup) {
+    klogfm(KL_PROC, DFATAL, "invalid pgid in proc_force_signal_group(): %d\n",
+           pgid);
+    POP_INTERRUPTS();
+    return -EINVAL;
+  }
+
+  int result = 0;
+  for (list_link_t* link = pgroup->procs.head; link != 0x0; link = link->next) {
+    result =
+        proc_force_signal(container_of(link, process_t, pgroup_link), sig);
+    if (result) break;
+  }
+
+  POP_INTERRUPTS();
+  return result;
+}
+
 int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
   // This isn't very interesting until we have multiple threads in a process.
   KASSERT_DBG(thread == proc->thread);
