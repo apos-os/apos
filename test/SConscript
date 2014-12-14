@@ -48,6 +48,7 @@ srcs = [
   'session_test.c',
   'signal_test.c',
   'slab_alloc_test.c',
+  'tty_test.c',
   'user_test.c',
   'vm_test.c',
   'vfs_fifo_test.c',

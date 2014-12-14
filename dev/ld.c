@@ -22,8 +22,10 @@
 #include "dev/char_dev.h"
 #include "dev/interrupts.h"
 #include "dev/ld.h"
+#include "dev/tty.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/session.h"
 #include "proc/signal/signal.h"
 
 struct ld {
@@ -44,6 +46,8 @@ struct ld {
 
   // Threads that are waiting for cooked data to be available in the buffer.
   kthread_queue_t wait_queue;
+
+  apos_dev_t tty;
 };
 
 ld_t* ld_create(int buf_size) {
@@ -54,6 +58,7 @@ ld_t* ld_create(int buf_size) {
   l->sink = 0x0;
   l->sink_arg = 0x0;
   kthread_queue_init(&l->wait_queue);
+  l->tty = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   return l;
 }
 
@@ -162,14 +167,27 @@ void ld_provide(ld_t* l, char c) {
     cook_buffer(l);
   }
 
-  if (c == ASCII_ETX) {
-    proc_force_signal(proc_current(), SIGINT);
+  if (c == ASCII_ETX && minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    const tty_t* tty = tty_get(l->tty);
+    KASSERT_DBG(tty != NULL);
+    if (tty->session >= 0) {
+      const proc_session_t* session = proc_session_get(tty->session);
+      KASSERT_DBG(session->ctty == (int)minor(l->tty));
+      if (session->fggrp >= 0) {
+        int result = proc_force_signal_group(session->fggrp, SIGINT);
+        KASSERT_DBG(result == 0);
+      }
+    }
   }
 }
 
 void ld_set_sink(ld_t* l, char_sink_t sink, void* arg) {
   l->sink = sink;
   l->sink_arg = arg;
+}
+
+void ld_set_tty(ld_t* l, apos_dev_t tty) {
+  l->tty = tty;
 }
 
 static int ld_read_internal(ld_t* l, char* buf, int n) {
