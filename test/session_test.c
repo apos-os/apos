@@ -314,6 +314,16 @@ static void non_leader_exit_doesnt_release_ctty(void* arg) {
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
+static void non_leader_open_doesnt_set_ctty(void* arg) {
+  KTEST_BEGIN("open(TTY) from a non-session-leader doesn't set the CTTY");
+  KEXPECT_EQ(0, proc_setsid());
+  pid_t child = proc_fork(&open_tty_subproc, arg);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(-1, tty_get((apos_dev_t)arg)->session);
+}
+
 static void ctty_test(void* arg) {
   ld_t* const test_ld = ld_create(100);
   const apos_dev_t test_tty = tty_create(test_ld);
@@ -329,6 +339,9 @@ static void ctty_test(void* arg) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&non_leader_exit_doesnt_release_ctty, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&non_leader_open_doesnt_set_ctty, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);
