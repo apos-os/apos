@@ -372,3 +372,9 @@ AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
 
 AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
     'mode_t', ['mode_t:cmask:u'])
+
+AddSyscall('setsid', 56, 'proc_setsid', 'proc/session.h', '<unistd.h>',
+    'pid_t', [])
+
+AddSyscall('getsid', 57, 'proc_getsid', 'proc/session.h', '<unistd.h>',
+    'pid_t', ['pid_t:pid:u'])

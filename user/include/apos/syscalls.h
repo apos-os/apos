@@ -72,5 +72,7 @@
 #define SYS_APOS_GET_TIME 51
 #define SYS_PIPE 54
 #define SYS_UMASK 55
+#define SYS_SETSID 56
+#define SYS_GETSID 57
 
 #endif

@@ -66,5 +66,7 @@ int sleep_ms(unsigned int seconds);
 int apos_get_time(struct apos_tm* t);
 int pipe(int* fildes);
 mode_t umask(mode_t cmask);
+pid_t setsid(void);
+pid_t getsid(pid_t pid);
 
 #endif
