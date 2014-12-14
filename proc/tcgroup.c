@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/kassert.h"
 #include "common/errno.h"
 #include "dev/dev.h"
 #include "proc/group.h"
@@ -90,4 +91,16 @@ int proc_tcgetpgrp(int fd) {
     return PROC_NO_FGGRP;
   else
     return session->fggrp;
+}
+
+pid_t proc_tcgetsid(int fd) {
+  sid_t sid;
+  proc_session_t* session = NULL;
+  int result = check_fd(fd, &sid, &session);
+  if (result) {
+    return result;
+  }
+
+  KASSERT_DBG(sid == proc_getsid(0));
+  return sid;
 }

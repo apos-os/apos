@@ -70,5 +70,6 @@ pid_t setsid(void);
 pid_t getsid(pid_t pid);
 pid_t tcgetpgrp(int fd);
 int tcsetpgrp(int fd, pid_t pgid);
+pid_t tcgetsid(int fd);
 
 #endif

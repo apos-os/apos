@@ -402,15 +402,17 @@ static void tcsetpgrp_test_inner(void* arg) {
   fd = vfs_open(tty_name, VFS_O_RDONLY);
   KEXPECT_EQ(PROC_NO_FGGRP, proc_tcgetpgrp(fd));
 
-
-  KTEST_BEGIN("tcgetpgrp()/tcsetpgrp(): fd is not a controlling terminal");
+  KTEST_BEGIN(
+      "tcgetpgrp()/tcsetpgrp()/tcgetsid(): fd is not a controlling terminal");
   int fd2 = vfs_open(tty_nameB, VFS_O_RDONLY | VFS_O_NOCTTY);
   KEXPECT_EQ(-ENOTTY, proc_tcgetpgrp(fd2));
   KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd2, getpgid(0)));
+  KEXPECT_EQ(-ENOTTY, proc_tcgetsid(fd2));
   vfs_close(fd2);
   fd2 = vfs_open("ctty_test_file", VFS_O_CREAT | VFS_O_RDONLY, VFS_S_IRWXU);
   KEXPECT_EQ(-ENOTTY, proc_tcgetpgrp(fd2));
   KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd2, getpgid(0)));
+  KEXPECT_EQ(-ENOTTY, proc_tcgetsid(fd2));
   vfs_close(fd2);
   KEXPECT_EQ(0, vfs_unlink("ctty_test_file"));
 
@@ -425,6 +427,7 @@ static void tcsetpgrp_test_inner(void* arg) {
   KTEST_BEGIN("tcsetpgrp(): set initial group");
   KEXPECT_EQ(0, proc_tcsetpgrp(fd, getpgid(0)));
   KEXPECT_EQ(getpgid(0), proc_tcgetpgrp(fd));
+  KEXPECT_EQ(proc_getsid(0), proc_tcgetsid(fd));
 
 
   // Restore the signal mask.
@@ -446,6 +449,7 @@ static void tcsetpgrp_test_inner(void* arg) {
   KEXPECT_EQ(0, setpgid(childA, childA));
   KEXPECT_EQ(0, proc_tcsetpgrp(fd, childA));
   KEXPECT_EQ(childA, proc_tcgetpgrp(fd));
+  KEXPECT_EQ(proc_getsid(0), proc_tcgetsid(fd));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
@@ -470,6 +474,7 @@ static void tcsetpgrp_test_inner(void* arg) {
 
   KEXPECT_EQ(0, proc_tcsetpgrp(fd, childA));
   KEXPECT_EQ(childA, proc_tcgetpgrp(fd));
+  KEXPECT_EQ(proc_getsid(0), proc_tcgetsid(fd));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGTTOU));
@@ -541,6 +546,13 @@ static void tcsetpgrp_test_inner(void* arg) {
   KEXPECT_EQ(-EBADF, proc_tcgetpgrp(PROC_MAX_FDS));
   KEXPECT_EQ(-EBADF, proc_tcgetpgrp(PROC_MAX_FDS + 1));
   KEXPECT_EQ(-EBADF, proc_tcgetpgrp(fd));
+
+  KTEST_BEGIN("tcgetsid(): bad file descriptor");
+  KEXPECT_EQ(-EBADF, proc_tcgetsid(-5));
+  KEXPECT_EQ(-EBADF, proc_tcgetsid(PROC_MAX_FDS));
+  KEXPECT_EQ(-EBADF, proc_tcgetsid(PROC_MAX_FDS + 1));
+  KEXPECT_EQ(-EBADF, proc_tcgetsid(fd));
+
 
   // TODO(aoates): test orphaned pgroup with SIGTTOU
   // TODO(aoates): for both get and set: valid fd that's not a terminal,

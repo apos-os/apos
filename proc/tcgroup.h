@@ -31,4 +31,9 @@ int proc_tcsetpgrp(int fd, pid_t pgid);
 // process group, returns PROC_NO_FGGRP.
 int proc_tcgetpgrp(int fd);
 
+// Returns the process group ID of the session leader of the session for whom fd
+// points to the controlling terminal.  This is essentially the same as
+// getsid(0).
+pid_t proc_tcgetsid(int fd);
+
 #endif

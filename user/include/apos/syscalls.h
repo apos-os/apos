@@ -76,5 +76,6 @@
 #define SYS_GETSID 57
 #define SYS_TCGETPGRP 58
 #define SYS_TCSETPGRP 59
+#define SYS_TCGETSID 60
 
 #endif

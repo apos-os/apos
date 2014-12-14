@@ -384,3 +384,6 @@ AddSyscall('tcgetpgrp', 58, 'proc_tcgetpgrp', 'proc/tcgroup.h', '<unistd.h>',
 
 AddSyscall('tcsetpgrp', 59, 'proc_tcsetpgrp', 'proc/tcgroup.h', '<unistd.h>',
     'int', ['int:fd:u', 'pid_t:pgid:u'])
+
+AddSyscall('tcgetsid', 60, 'proc_tcgetsid', 'proc/tcgroup.h', '<unistd.h>',
+    'pid_t', ['int:fd:u'])
