@@ -378,3 +378,9 @@ AddSyscall('setsid', 56, 'proc_setsid', 'proc/session.h', '<unistd.h>',
 
 AddSyscall('getsid', 57, 'proc_getsid', 'proc/session.h', '<unistd.h>',
     'pid_t', ['pid_t:pid:u'])
+
+AddSyscall('tcgetpgrp', 58, 'proc_tcgetpgrp', 'proc/tcgroup.h', '<unistd.h>',
+    'pid_t', ['int:fd:u'])
+
+AddSyscall('tcsetpgrp', 59, 'proc_tcsetpgrp', 'proc/tcgroup.h', '<unistd.h>',
+    'int', ['int:fd:u', 'pid_t:pgid:u'])

@@ -74,5 +74,7 @@
 #define SYS_UMASK 55
 #define SYS_SETSID 56
 #define SYS_GETSID 57
+#define SYS_TCGETPGRP 58
+#define SYS_TCSETPGRP 59
 
 #endif

@@ -68,5 +68,7 @@ int pipe(int* fildes);
 mode_t umask(mode_t cmask);
 pid_t setsid(void);
 pid_t getsid(pid_t pid);
+pid_t tcgetpgrp(int fd);
+int tcsetpgrp(int fd, pid_t pgid);
 
 #endif
