@@ -58,7 +58,10 @@ void proc_exit(int status) {
   if (sid == p->id) {  // Controlling process/session leader.
     proc_session_t* session = proc_session_get(sid);
     if (session->ctty != PROC_SESSION_NO_CTTY) {
-      // TODO(aoates): send SIGHUP to processes in the foreground process group.
+      if (session->fggrp >= 0) {
+        proc_force_signal_group(session->fggrp, SIGHUP);
+      }
+
       tty_t* tty = tty_get(makedev(DEVICE_MAJOR_TTY, session->ctty));
       if (!tty) {
         klogfm(KL_PROC, DFATAL, "tty_get() in proc_exit() failed\n");
@@ -68,6 +71,8 @@ void proc_exit(int status) {
       }
     }
   }
+
+  // TODO(aoates): if this is orphaning a process group, send SIGHUP to it.
 
   // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
 

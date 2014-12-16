@@ -576,6 +576,112 @@ static void tcsetpgrp_test(void* arg) {
   ld_destroy(test_ld);
 }
 
+typedef struct {
+  bool set_ctty;
+  bool make_fg;
+  struct child {
+    sigset_t signals;
+    bool ran;
+  } child[3];
+  apos_dev_t tty;
+} controlling_exit_args;
+
+static void controlling_process_exit_subproc(void* arg) {
+  struct child* x = (struct child*)arg;
+  x->signals = proc_pending_signals(proc_current());
+  x->ran = true;
+}
+
+static void controlling_process_exit_helper(void* arg) {
+  controlling_exit_args* args = (controlling_exit_args*)arg;
+  KEXPECT_GE(proc_setsid(), 0);
+
+  int tty_fd = -1;
+  if (args->set_ctty) {
+    char tty_name[20];
+    ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+    tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
+    KEXPECT_GE(tty_fd, 0);
+  }
+
+  pid_t child[3];
+  for (int i = 0; i < 3; ++i) {
+    args->child[i].ran = false;
+    args->child[i].signals = 0;
+    child[i] =
+        proc_fork(&controlling_process_exit_subproc, &args->child[i]);
+  }
+
+  KEXPECT_EQ(0, setpgid(child[0], child[0]));
+  KEXPECT_EQ(0, setpgid(child[1], child[0]));
+  KEXPECT_EQ(0, setpgid(child[2], child[2]));
+
+  if (args->make_fg) {
+    sigset_t set = 0;
+    ksigaddset(&set, SIGTTOU);
+    proc_sigprocmask(SIG_BLOCK, &set, NULL);
+    KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child[0]));
+  }
+}
+
+static void controlling_exit_run_helper(controlling_exit_args* args) {
+  const pid_t child = proc_fork(&controlling_process_exit_helper, args);
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(0, status);
+
+  for (int i = 0; i < 10; ++i) {
+    if (args->child[0].ran && args->child[1].ran && args->child[2].ran) break;
+    scheduler_yield();
+  }
+  KEXPECT_EQ(true, args->child[0].ran);
+  KEXPECT_EQ(true, args->child[1].ran);
+  KEXPECT_EQ(true, args->child[2].ran);
+}
+
+static void controlling_process_exit_test(void* arg) {
+  const sigset_t kEmptySet = 0;
+  sigset_t kSigHupSet;
+  ksigemptyset(&kSigHupSet);
+  ksigaddset(&kSigHupSet, SIGHUP);
+
+  ld_t* const test_ld = ld_create(1);
+  apos_dev_t test_tty = tty_create(test_ld);
+
+  KTEST_BEGIN("SIGHUP to fg group when controlling proc exits (normal)");
+  controlling_exit_args args;
+  args.set_ctty = args.make_fg = true;
+  args.tty = test_tty;
+  controlling_exit_run_helper(&args);
+
+  KEXPECT_EQ(kSigHupSet, args.child[0].signals);
+  KEXPECT_EQ(kSigHupSet, args.child[1].signals);
+  KEXPECT_EQ(kEmptySet, args.child[2].signals);
+
+
+  KTEST_BEGIN("SIGHUP to fg group when controlling proc exits (no fg group)");
+  args.set_ctty = true;
+  args.make_fg = false;
+  controlling_exit_run_helper(&args);
+
+  KEXPECT_EQ(kEmptySet, args.child[0].signals);
+  KEXPECT_EQ(kEmptySet, args.child[1].signals);
+  KEXPECT_EQ(kEmptySet, args.child[2].signals);
+
+
+  KTEST_BEGIN("SIGHUP to fg group when controlling proc exits (no CTTY)");
+  args.set_ctty = false;
+  args.make_fg = false;
+  controlling_exit_run_helper(&args);
+
+  KEXPECT_EQ(kEmptySet, args.child[0].signals);
+  KEXPECT_EQ(kEmptySet, args.child[1].signals);
+  KEXPECT_EQ(kEmptySet, args.child[2].signals);
+
+  tty_destroy(test_tty);
+  ld_destroy(test_ld);
+}
+
 void session_test(void) {
   KTEST_SUITE_BEGIN("process session tests");
 
@@ -586,5 +692,8 @@ void session_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&tcsetpgrp_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&controlling_process_exit_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }
