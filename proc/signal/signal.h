@@ -49,6 +49,10 @@ sigset_t proc_pending_signals(const process_t* proc);
 // current thread (i.e., ones that will be dispatched next).
 sigset_t proc_dispatchable_signals(void);
 
+// Returns true if the given signal can be delivered to the thread (i.e. it's
+// not blocked or ignored [explicitly or by default]).
+bool proc_signal_deliverable(kthread_t thread, int signum);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);

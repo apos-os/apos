@@ -63,13 +63,7 @@ int proc_tcsetpgrp(int fd, pid_t pgid) {
 
   const pid_t my_pgid = getpgid(0);
   if (my_pgid != session->fggrp) {
-    PUSH_AND_DISABLE_INTERRUPTS();
-    bool should_send =
-        !ksigismember(&kthread_current_thread()->signal_mask, SIGTTOU) &&
-        proc_current()->signal_dispositions[SIGTTOU].sa_handler != SIG_IGN;
-    POP_INTERRUPTS();
-
-    if (should_send) {
+    if (proc_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
       proc_force_signal_group(my_pgid, SIGTTOU);
       return -EINTR;  // TODO(aoates): is this correct?
     }
