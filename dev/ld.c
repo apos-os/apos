@@ -23,6 +23,7 @@
 #include "dev/interrupts.h"
 #include "dev/ld.h"
 #include "dev/tty.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/session.h"
@@ -204,6 +205,24 @@ static int ld_read_internal(ld_t* l, char* buf, int n) {
 
 int ld_read(ld_t* l, char* buf, int n) {
   PUSH_AND_DISABLE_INTERRUPTS();
+
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    tty_t* tty = tty_get(l->tty);
+    if (tty->session == proc_getsid(0) &&
+        getpgid(0) != proc_session_get(tty->session)->fggrp) {
+      int result = -EIO;
+      if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
+        // TODO(aoates): should this just be regular proc_force_signal()?
+        proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
+                                    SIGTTIN);
+        result = -EINTR;
+      }
+
+      POP_INTERRUPTS();
+      return result;
+    }
+  }
+
   // Note: this means that if multiple threads are blocking on an ld_read()
   // here, we could return 0 for some of them even though we didn't see an EOF!
   int result = 0;

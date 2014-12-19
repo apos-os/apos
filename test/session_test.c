@@ -682,6 +682,81 @@ static void controlling_process_exit_test(void* arg) {
   ld_destroy(test_ld);
 }
 
+static void read_from_bg_test_inner(void* arg) {
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  sigset_t kSigTtinSet;
+  ksigemptyset(&kSigTtinSet);
+  ksigaddset(&kSigTtinSet, SIGTTIN);
+
+  KTEST_BEGIN("read() on CTTY from bg process (no signals blocked)");
+  KEXPECT_EQ(0, proc_setsid());
+
+  sigset_t ttou_mask;
+  ksigemptyset(&ttou_mask);
+  ksigaddset(&ttou_mask, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
+
+  char tty_name[20];
+  char buf;
+  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  int tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
+  KEXPECT_GE(tty_fd, 0);
+
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(0, setpgid(child, child));
+  KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &buf, 1));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTIN));
+  proc_suppress_signal(proc_current(), SIGTTIN);
+
+
+  KTEST_BEGIN("read() on CTTY from bg process (handler set for SIGTTIN)");
+  struct sigaction act = {&empty_sig_handler, 0, 0};
+  KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &buf, 1));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTIN));
+  proc_suppress_signal(proc_current(), SIGTTIN);
+
+
+  KTEST_BEGIN("read() on CTTY from bg process (SIGTTIN masked)");
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &kSigTtinSet, NULL));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(-EIO, vfs_read(tty_fd, &buf, 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+
+
+  KTEST_BEGIN("read() on CTTY from bg process (SIGTTIN ignored)");
+  act.sa_handler = SIG_IGN;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &kSigTtinSet, NULL));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(-EIO, vfs_read(tty_fd, &buf, 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+
+
+  KEXPECT_EQ(child, proc_wait(NULL));
+  vfs_close(tty_fd);
+}
+
+static void read_from_bg_test(void* arg) {
+  ld_t* const test_ld = ld_create(1);
+  apos_dev_t test_tty = tty_create(test_ld);
+  ld_set_tty(test_ld, test_tty);
+
+  pid_t child = proc_fork(&read_from_bg_test_inner, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  tty_destroy(test_tty);
+  ld_destroy(test_ld);
+}
+
 void session_test(void) {
   KTEST_SUITE_BEGIN("process session tests");
 
@@ -695,5 +770,8 @@ void session_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&controlling_process_exit_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&read_from_bg_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }
