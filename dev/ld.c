@@ -252,6 +252,9 @@ int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
+  // TODO(aoates): check if writing to the CTTY from a background process group,
+  // and send SIGTTOU if the TOSTOP flag is set [termios].
+
   for (int i = 0; i < n; ++i) {
     l->sink(l->sink_arg, buf[i]);
   }
