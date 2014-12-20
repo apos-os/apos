@@ -56,7 +56,6 @@ static void ld_signals_test(void* arg) {
 
 
   KTEST_BEGIN("TTY: ctrl-C ignored if TTY isn't a CTTY");
-  ld_set_tty(test_ld, test_tty);
   const pid_t childA = proc_fork(&do_nothing, NULL);
   const pid_t childB = proc_fork(&do_nothing, NULL);
   const pid_t childC = proc_fork(&do_nothing, NULL);

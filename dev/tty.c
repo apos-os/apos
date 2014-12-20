@@ -24,10 +24,13 @@ _Static_assert(DEVICE_MAX_MINOR <= 100,
 static tty_t g_ttys[DEVICE_MAX_MINOR];
 
 apos_dev_t tty_create(ld_t* ld) {
+  KASSERT(ld_get_tty(ld) == makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN));
+
   char_dev_t* ld_char_dev = (char_dev_t*)kmalloc(sizeof(char_dev_t));
   ld_init_char_dev(ld, ld_char_dev);
   apos_dev_t dev = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
   KASSERT(0 == dev_register_char(ld_char_dev, &dev));
+  ld_set_tty(ld, dev);
 
   const int tty_idx = minor(dev);
   g_ttys[tty_idx].session = -1;

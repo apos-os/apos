@@ -748,7 +748,6 @@ static void read_from_bg_test_inner(void* arg) {
 static void read_from_bg_test(void* arg) {
   ld_t* const test_ld = ld_create(1);
   apos_dev_t test_tty = tty_create(test_ld);
-  ld_set_tty(test_ld, test_tty);
 
   pid_t child = proc_fork(&read_from_bg_test_inner, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -796,7 +795,6 @@ static void null_sink(void* arg, char c) {}
 static void write_from_bg_test(void* arg) {
   ld_t* const test_ld = ld_create(1);
   apos_dev_t test_tty = tty_create(test_ld);
-  ld_set_tty(test_ld, test_tty);
   ld_set_sink(test_ld, null_sink, NULL);
 
   pid_t child = proc_fork(&write_from_bg_test_inner, (void*)test_tty);

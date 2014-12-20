@@ -191,6 +191,10 @@ void ld_set_tty(ld_t* l, apos_dev_t tty) {
   l->tty = tty;
 }
 
+apos_dev_t ld_get_tty(const ld_t* l) {
+  return l->tty;
+}
+
 static int ld_read_internal(ld_t* l, char* buf, int n) {
   int copied = 0;
   int buf_idx = 0;

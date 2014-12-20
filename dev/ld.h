@@ -57,6 +57,7 @@ void ld_set_sink(ld_t* l, char_sink_t sink, void* arg);
 //
 // The TTY must outlive the line discipline.
 void ld_set_tty(ld_t* l, apos_dev_t tty);
+apos_dev_t ld_get_tty(const ld_t* l);
 
 // **** Functions for reading and writing to the ld from client code ****
 // Reads from the ld into buf, up to n characters.  Returns the number of bytes
