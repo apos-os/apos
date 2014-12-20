@@ -39,8 +39,6 @@ pid_t proc_setsid(void) {
   session->ctty = PROC_SESSION_NO_CTTY;
   session->fggrp = -1;
 
-  // TODO(aoates): reset the controlling terminal's session id as well.
-
   return proc->id;
 }
 
