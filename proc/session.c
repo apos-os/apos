@@ -41,7 +41,7 @@ pid_t proc_setsid(void) {
 
   // TODO(aoates): reset the controlling terminal's session id as well.
 
-  return 0;
+  return proc->id;
 }
 
 pid_t proc_getsid(pid_t pid) {

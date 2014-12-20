@@ -46,7 +46,7 @@ static void ld_signals_test(void* arg) {
   const apos_dev_t test_tty = ((args_t*)arg)->tty;
 
   KTEST_BEGIN("TTY: ctrl-C ignored by ld not attached to a TTY");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   int sink_counter = 0;
   ld_set_sink(test_ld, &sink, &sink_counter);
 

@@ -44,7 +44,7 @@ static void do_setsid(void* arg) {
 }
 
 static void do_setsid2(void* arg) {
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   *(bool*)arg = true;
   ksleep(10);
 }
@@ -56,7 +56,7 @@ static void do_setpgid(void* arg) {
 }
 
 static void session_leader_pgid(void* arg) {
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
 
   KEXPECT_EQ(-EPERM, setpgid(0, 0));
   KEXPECT_EQ(-EPERM, setpgid(proc_current()->id, proc_current()->id));
@@ -72,7 +72,7 @@ static void child_different_session_test(void* arg) {
   // child).
   pid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(proc_getsid(0), proc_getsid(child));
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   KEXPECT_NE(proc_getsid(0), proc_getsid(child));
   KEXPECT_EQ(-EPERM, setpgid(child, child));
   KEXPECT_EQ(-EPERM, setpgid(child, proc_current()->id));
@@ -89,7 +89,7 @@ static void set_pgid_across_sessions_test(void* arg) {
   const sid_t orig_session = proc_getsid(0);
   const pid_t orig_pgroup = getpgid(0);
 
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   pid_t child = proc_fork(&child_set_pgid, (void*)orig_pgroup);
   KEXPECT_EQ(-EPERM, setpgid(child, orig_pgroup));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -115,7 +115,7 @@ static void change_user_test(void* arg) {
   KEXPECT_EQ(0, proc_kill(child, SIGCONT));
 
   KTEST_BEGIN("cannot send SIGCONT across sessions");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   KEXPECT_EQ(-EPERM, proc_kill(child, SIGCONT));
 
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -141,7 +141,7 @@ static void do_session_test(void* arg) {
 
   KTEST_BEGIN("setsid() basic");
   KEXPECT_NE(proc_current()->id, proc_current()->pgroup);
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   KEXPECT_EQ(proc_current()->id, proc_current()->pgroup);
   KEXPECT_EQ(proc_current()->id, getpgid(0));
   KEXPECT_EQ(proc_current()->id,
@@ -240,7 +240,7 @@ static int open_tty(apos_dev_t test_tty, int flags) {
 
 // Helper for the below.  Create a new session and open the given TTY.
 static int setsid_and_open_tty(apos_dev_t test_tty) {
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
 
   return open_tty(test_tty, 0);
@@ -320,7 +320,7 @@ static void non_leader_exit_doesnt_release_ctty(void* arg) {
 
 static void non_leader_open_doesnt_set_ctty(void* arg) {
   KTEST_BEGIN("open(TTY) from a non-session-leader doesn't set the CTTY");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   pid_t child = proc_fork(&open_tty_subproc, arg);
   KEXPECT_EQ(child, proc_wait(NULL));
 
@@ -330,7 +330,7 @@ static void non_leader_open_doesnt_set_ctty(void* arg) {
 
 static void no_ctty_flag(void* arg) {
   KTEST_BEGIN("open(O_NOCTTY) doesn't set the CTTY");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
 
   KEXPECT_EQ(PROC_SESSION_NO_CTTY, proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(-1, tty_get((apos_dev_t)arg)->session);
@@ -389,7 +389,7 @@ static void tcsetpgrp_test_inner(void* arg) {
   ksprintf(tty_nameB, "/dev/tty%u", minor(test_ttyB));
 
   KTEST_BEGIN("tcsetpgrp(): no controlling terminal");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
   int fd = vfs_open(tty_name, VFS_O_RDONLY | VFS_O_NOCTTY);
   KEXPECT_EQ(-ENOTTY, proc_tcsetpgrp(fd, proc_current()->pgroup));
 
@@ -689,7 +689,7 @@ static void read_from_bg_test_inner(void* arg) {
   ksigaddset(&kSigTtinSet, SIGTTIN);
 
   KTEST_BEGIN("read() on CTTY from bg process (no signals blocked)");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
 
   sigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
@@ -764,7 +764,7 @@ static void write_from_bg_test_inner(void* arg) {
   ksigaddset(&kSigTtinSet, SIGTTIN);
 
   KTEST_BEGIN("write() on CTTY from bg process (no signals blocked)");
-  KEXPECT_EQ(0, proc_setsid());
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
 
   sigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
