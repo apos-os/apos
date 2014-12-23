@@ -17,6 +17,7 @@
 #include "arch/proc/signal/signal_enter.h"
 #include "common/kassert.h"
 #include "proc/exit.h"
+#include "proc/group.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/user.h"
@@ -66,8 +67,7 @@ sigset_t proc_pending_signals(const process_t* proc) {
   return ksigunionset(&proc->pending_signals, &proc->thread->assigned_signals);
 }
 
-// Returns true if the given signal will be delivered to the thread.
-static bool signal_deliverable(kthread_t thread, int signum) {
+bool proc_signal_deliverable(kthread_t thread, int signum) {
   const sigaction_t* action = &thread->process->signal_dispositions[signum];
   if (action->sa_handler == SIG_IGN) {
     return false;
@@ -91,7 +91,7 @@ sigset_t proc_dispatchable_signals(void) {
   // of currently-ignored signals and use that here.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
     if (ksigismember(&thread->assigned_signals, signum) &&
-        signal_deliverable(thread, signum))
+        proc_signal_deliverable(thread, signum))
       ksigaddset(&set, signum);
   }
 
@@ -102,7 +102,7 @@ sigset_t proc_dispatchable_signals(void) {
 // will be delivered to the thread, try to wake it up.
 static void do_assign_signal(kthread_t thread, int signum) {
   ksigaddset(&thread->assigned_signals, signum);
-  if (signal_deliverable(thread, signum)) {
+  if (proc_signal_deliverable(thread, signum)) {
     scheduler_interrupt_thread(thread);
   }
 }
@@ -123,6 +123,27 @@ int proc_force_signal(process_t* proc, int sig) {
   PUSH_AND_DISABLE_INTERRUPTS();
   int result = ksigaddset(&proc->pending_signals, sig);
   proc_try_assign_signal(proc, sig);
+  POP_INTERRUPTS();
+  return result;
+}
+
+int proc_force_signal_group(pid_t pgid, int sig) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  proc_group_t* pgroup = proc_group_get(pgid);
+  if (!pgroup) {
+    klogfm(KL_PROC, DFATAL, "invalid pgid in proc_force_signal_group(): %d\n",
+           pgid);
+    POP_INTERRUPTS();
+    return -EINVAL;
+  }
+
+  int result = 0;
+  for (list_link_t* link = pgroup->procs.head; link != 0x0; link = link->next) {
+    result =
+        proc_force_signal(container_of(link, process_t, pgroup_link), sig);
+    if (result) break;
+  }
+
   POP_INTERRUPTS();
   return result;
 }
@@ -165,7 +186,7 @@ int proc_kill(pid_t pid, int sig) {
   } else if (pid <= 0) {
     if (pid == 0) pid = -proc_current()->pgroup;
 
-    list_t* pgroup = proc_group_get(-pid);
+    list_t* pgroup = &proc_group_get(-pid)->procs;
     if (!pgroup || list_empty(pgroup)) {
       return -ESRCH;
     }
@@ -246,6 +267,22 @@ int proc_sigpending(sigset_t* set) {
   return 0;
 }
 
+int proc_sigsuspend(const sigset_t* sigmask) {
+  sigset_t old_mask;
+  int result = proc_sigprocmask(SIG_SETMASK, sigmask, &old_mask);
+  KASSERT_DBG(result == 0);
+
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+  result = scheduler_wait_on_interruptable(&queue);
+  KASSERT_DBG(result);
+
+  result = proc_sigprocmask(SIG_SETMASK, &old_mask, NULL);
+  KASSERT_DBG(result == 0);
+
+  return -EINTR;
+}
+
 void proc_suppress_signal(process_t* proc, int sig) {
   ksigdelset(&proc->pending_signals, sig);
   ksigdelset(&proc->thread->assigned_signals, sig);
@@ -259,7 +296,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
-    KASSERT_DBG(!signal_deliverable(kthread_current_thread(), signum));
+    KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
     return;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
@@ -267,17 +304,17 @@ static void dispatch_signal(int signum, const user_context_t* context) {
       case SIGACT_CONTINUE:
         // TODO(aoates): implement STOP and CONTINUE once job control exists.
         klogfm(KL_PROC, WARNING, "cannot deliver stop or continue signal\n");
-        KASSERT_DBG(!signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
         return;
 
       case SIGACT_IGNORE:
-        KASSERT_DBG(!signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
         return;
 
       case SIGACT_TERM:
       case SIGACT_TERM_AND_CORE:
         // TODO(aoates): generate a core file if necessary.
-        KASSERT_DBG(signal_deliverable(kthread_current_thread(), signum));
+        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
         proc_exit(128 + signum);
         die("unreachable");
     }
@@ -285,7 +322,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
     KASSERT_DBG(proc->thread == kthread_current_thread());
-    KASSERT_DBG(signal_deliverable(kthread_current_thread(), signum));
+    KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
 
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
@@ -371,11 +408,12 @@ _Static_assert(SYS_SIGRETURN == 21,
                "SYS_SIGRETURN must match the constant in syscall_trampoline.s");
 
 int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
-  // TODO(aoates): allow SIGCONT between processes in the same session, once we
-  // have process groups and sessions.
   return (proc_is_superuser(A) ||
           A->ruid == B->ruid ||
           A->euid == B->ruid ||
           A->ruid == B->suid ||
-          A->euid == B->suid);
+          A->euid == B->suid ||
+          (proc_group_get(A->pgroup)->session ==
+           proc_group_get(B->pgroup)->session &&
+           signal == SIGCONT));
 }

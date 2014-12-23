@@ -41,8 +41,6 @@ static void basic_getgpid_test(void) {
   KEXPECT_EQ(-ESRCH, getpgid(100));
 }
 
-// TODO(aoates): test getpgid() across sessions once we have session support.
-
 // Fork and run the given the given function in the child, and wait for it to
 // exit.
 static void fork_and_run(proc_func_t f, int arg) {
@@ -58,7 +56,7 @@ static void loop_until_done(void* arg) {
 }
 
 static int group_contains(pid_t pgid, pid_t pid) {
-  for (list_link_t* link = proc_group_get(pgid)->head;
+  for (list_link_t* link = proc_group_get(pgid)->procs.head;
        link != 0x0;
        link = link->next) {
     process_t* proc = container_of(link, process_t, pgroup_link);

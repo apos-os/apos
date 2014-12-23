@@ -46,6 +46,7 @@ pid_t getppid(void);
 int sigaction(int signum, const struct sigaction* act, struct sigaction* oldact);
 int sigprocmask(int how, const sigset_t* set, sigset_t* oset);
 int sigpending(sigset_t* oset);
+int sigsuspend(const sigset_t* sigmask);
 unsigned int alarm(unsigned int seconds);
 int setuid(uid_t uid);
 int setgid(gid_t gid);
@@ -66,5 +67,10 @@ int sleep_ms(unsigned int seconds);
 int apos_get_time(struct apos_tm* t);
 int pipe(int* fildes);
 mode_t umask(mode_t cmask);
+pid_t setsid(void);
+pid_t getsid(pid_t pid);
+pid_t tcgetpgrp(int fd);
+int tcsetpgrp(int fd, pid_t pgid);
+pid_t tcgetsid(int fd);
 
 #endif

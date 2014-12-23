@@ -20,7 +20,7 @@
 #ifndef APOO_LINE_DISCIPLINE_H
 #define APOO_LINE_DISCIPLINE_H
 
-#include "dev/char_dev.h"
+#include "dev/dev.h"
 
 struct ld;
 typedef struct ld ld_t;
@@ -51,6 +51,13 @@ static inline void ld_provide_sink(void* arg, char c) {
 //
 // The character sink MAY block.
 void ld_set_sink(ld_t* l, char_sink_t sink, void* arg);
+
+// Set the TTY associated with the line discipline.  The TTY will be used to
+// send signals, e.g. on ctrl-C, etc.
+//
+// The TTY must outlive the line discipline.
+void ld_set_tty(ld_t* l, apos_dev_t tty);
+apos_dev_t ld_get_tty(const ld_t* l);
 
 // **** Functions for reading and writing to the ld from client code ****
 // Reads from the ld into buf, up to n characters.  Returns the number of bytes

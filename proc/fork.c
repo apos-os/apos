@@ -19,6 +19,7 @@
 #include "memory/vm.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
@@ -81,7 +82,8 @@ int proc_fork(proc_func_t start, void* arg) {
   new_process->umask = proc_current()->umask;
 
   new_process->pgroup = proc_current()->pgroup;
-  list_push(proc_group_get(new_process->pgroup), &new_process->pgroup_link);
+  list_push(&proc_group_get(new_process->pgroup)->procs,
+            &new_process->pgroup_link);
 
   // Create the kthread.
   proc_start_args_t* trampoline_args =

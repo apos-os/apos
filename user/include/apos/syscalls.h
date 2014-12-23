@@ -50,6 +50,7 @@
 #define SYS_SIGACTION 20
 #define SYS_SIGPROCMASK 52
 #define SYS_SIGPENDING 53
+#define SYS_SIGSUSPEND 61
 #define SYS_SIGRETURN 21
 #define SYS_ALARM 22
 #define SYS_SETUID 23
@@ -72,5 +73,10 @@
 #define SYS_APOS_GET_TIME 51
 #define SYS_PIPE 54
 #define SYS_UMASK 55
+#define SYS_SETSID 56
+#define SYS_GETSID 57
+#define SYS_TCGETPGRP 58
+#define SYS_TCSETPGRP 59
+#define SYS_TCGETSID 60
 
 #endif

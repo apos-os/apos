@@ -297,6 +297,10 @@ AddSyscall('sigpending', 53, 'proc_sigpending', 'proc/signal/signal.h',
     '<signal.h>',
     'int', ['sigset_t*:oset:bw:sizeof(sigset_t)'])
 
+AddSyscall('sigsuspend', 61, 'proc_sigsuspend', 'proc/signal/signal.h',
+    '<signal.h>',
+    'int', ['const sigset_t*:sigmask:br:sizeof(sigset_t)'])
+
 AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [
@@ -372,3 +376,18 @@ AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
 
 AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
     'mode_t', ['mode_t:cmask:u'])
+
+AddSyscall('setsid', 56, 'proc_setsid', 'proc/session.h', '<unistd.h>',
+    'pid_t', [])
+
+AddSyscall('getsid', 57, 'proc_getsid', 'proc/session.h', '<unistd.h>',
+    'pid_t', ['pid_t:pid:u'])
+
+AddSyscall('tcgetpgrp', 58, 'proc_tcgetpgrp', 'proc/tcgroup.h', '<unistd.h>',
+    'pid_t', ['int:fd:u'])
+
+AddSyscall('tcsetpgrp', 59, 'proc_tcsetpgrp', 'proc/tcgroup.h', '<unistd.h>',
+    'int', ['int:fd:u', 'pid_t:pgid:u'])
+
+AddSyscall('tcgetsid', 60, 'proc_tcgetsid', 'proc/tcgroup.h', '<unistd.h>',
+    'pid_t', ['int:fd:u'])

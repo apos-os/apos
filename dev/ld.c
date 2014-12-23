@@ -22,8 +22,11 @@
 #include "dev/char_dev.h"
 #include "dev/interrupts.h"
 #include "dev/ld.h"
+#include "dev/tty.h"
+#include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/session.h"
 #include "proc/signal/signal.h"
 
 struct ld {
@@ -44,6 +47,8 @@ struct ld {
 
   // Threads that are waiting for cooked data to be available in the buffer.
   kthread_queue_t wait_queue;
+
+  apos_dev_t tty;
 };
 
 ld_t* ld_create(int buf_size) {
@@ -54,6 +59,7 @@ ld_t* ld_create(int buf_size) {
   l->sink = 0x0;
   l->sink_arg = 0x0;
   kthread_queue_init(&l->wait_queue);
+  l->tty = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   return l;
 }
 
@@ -162,14 +168,31 @@ void ld_provide(ld_t* l, char c) {
     cook_buffer(l);
   }
 
-  if (c == ASCII_ETX) {
-    proc_force_signal(proc_current(), SIGINT);
+  if (c == ASCII_ETX && minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    const tty_t* tty = tty_get(l->tty);
+    KASSERT_DBG(tty != NULL);
+    if (tty->session >= 0) {
+      const proc_session_t* session = proc_session_get(tty->session);
+      KASSERT_DBG(session->ctty == (int)minor(l->tty));
+      if (session->fggrp >= 0) {
+        int result = proc_force_signal_group(session->fggrp, SIGINT);
+        KASSERT_DBG(result == 0);
+      }
+    }
   }
 }
 
 void ld_set_sink(ld_t* l, char_sink_t sink, void* arg) {
   l->sink = sink;
   l->sink_arg = arg;
+}
+
+void ld_set_tty(ld_t* l, apos_dev_t tty) {
+  l->tty = tty;
+}
+
+apos_dev_t ld_get_tty(const ld_t* l) {
+  return l->tty;
 }
 
 static int ld_read_internal(ld_t* l, char* buf, int n) {
@@ -186,6 +209,24 @@ static int ld_read_internal(ld_t* l, char* buf, int n) {
 
 int ld_read(ld_t* l, char* buf, int n) {
   PUSH_AND_DISABLE_INTERRUPTS();
+
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    tty_t* tty = tty_get(l->tty);
+    if (tty->session == proc_getsid(0) &&
+        getpgid(0) != proc_session_get(tty->session)->fggrp) {
+      int result = -EIO;
+      if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
+        // TODO(aoates): should this just be regular proc_force_signal()?
+        proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
+                                    SIGTTIN);
+        result = -EINTR;
+      }
+
+      POP_INTERRUPTS();
+      return result;
+    }
+  }
+
   // Note: this means that if multiple threads are blocking on an ld_read()
   // here, we could return 0 for some of them even though we didn't see an EOF!
   int result = 0;
@@ -214,6 +255,9 @@ int ld_read_async(ld_t* l, char* buf, int n) {
 int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
+
+  // TODO(aoates): check if writing to the CTTY from a background process group,
+  // and send SIGTTOU if the TOSTOP flag is set [termios].
 
   for (int i = 0; i < n; ++i) {
     l->sink(l->sink_arg, buf[i]);

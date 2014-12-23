@@ -12,28 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_DEV_TTY_H
-#define APOO_DEV_TTY_H
+#ifndef APOO_PROC_SESSION_H
+#define APOO_PROC_SESSION_H
 
-#include "dev/ld.h"
-#include "user/include/apos/dev.h"
 #include "user/include/apos/posix_types.h"
 
+#define PROC_SESSION_NO_CTTY -1
+
 typedef struct {
-  // The session that this is the controlling terminal for, or -1.
-  sid_t session;
-} tty_t;
+  // The ID of the session's controlling terminal, or -1 if none.
+  int ctty;
 
-// Create a TTY character device over the given ld.  Returns the apos_dev_t of
-// the new device.
-apos_dev_t tty_create(ld_t* ld);
+  // The foreground process group of the session, or -1 if none.
+  pid_t fggrp;
+} proc_session_t;
 
-// Remove the given TTY device, destroying the underlying character device.  It
-// must not currently be the controlling terminal of a session.
-void tty_destroy(apos_dev_t dev);
+// Create a new session, as per setsid(2).
+pid_t proc_setsid(void);
 
-// Returns the TTY info struct for the given TTY (which must have been
-// previously created with tty_create()).
-tty_t* tty_get(apos_dev_t dev);
+// Return the process group ID of the session leader of the given process.
+pid_t proc_getsid(pid_t pid);
+
+// Return the given session, or NULL if it doesn't exist.
+proc_session_t* proc_session_get(sid_t sid);
 
 #endif

@@ -28,7 +28,7 @@
 #define VFS_O_TRUNC    0x10  // TODO(aoates)
 #define VFS_O_EXCL     0x20  // TODO(aoates)
 #define VFS_O_NONBLOCK 0x40  // TODO(aoates)
-#define VFS_O_NOCTTY   0x80  // TODO(aoates)
+#define VFS_O_NOCTTY   0x80
 
 // Used internally (i.e. not exposed to userspace) to indicate a file that will
 // be executed.  If set, vfs_open will check that the file is executable.

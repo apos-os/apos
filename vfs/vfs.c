@@ -20,10 +20,12 @@
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "dev/dev.h"
+#include "dev/tty.h"
 #include "memory/kmalloc.h"
 #include "memory/memobj_vnode.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
+#include "proc/session.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/anonfs.h"
@@ -363,7 +365,8 @@ static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
   fifo_close(vnode->fifo, fifo_mode);
 }
 
-int vfs_open_vnode(vnode_t* child, mode_t mode, bool block) {
+int vfs_open_vnode(vnode_t* child, int flags, bool block) {
+  const mode_t mode = flags & VFS_MODE_MASK;
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
       child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
       child->type != VNODE_FIFO) {
@@ -392,6 +395,24 @@ int vfs_open_vnode(vnode_t* child, mode_t mode, bool block) {
   int fd = next_free_fd(proc);
   if (fd < 0) {
     return fd;
+  }
+
+  if (child->type == VNODE_CHARDEV && major(child->dev) == DEVICE_MAJOR_TTY &&
+      !(flags & VFS_O_NOCTTY)) {
+    tty_t* tty = tty_get(child->dev);
+    if (!tty) {
+      KLOG(DFATAL, "tty_get() failed in vnode open\n");
+      return -EIO;
+    }
+    const sid_t sid = proc_getsid(0);
+    proc_session_t* const session = proc_session_get(sid);
+    if (sid == proc_current()->id &&
+        session->ctty == PROC_SESSION_NO_CTTY && tty->session < 0) {
+      KLOG(DEBUG, "allocating TTY %d as controlling terminal for session %d\n",
+           minor(child->dev), sid);
+      session->ctty = minor(child->dev);
+      tty->session = sid;
+    }
   }
 
   KASSERT(g_file_table[idx] == 0x0);
@@ -512,7 +533,7 @@ int vfs_open(const char* path, int flags, ...) {
     return -EIO;
   }
 
-  int result = vfs_open_vnode(child, mode, true);
+  int result = vfs_open_vnode(child, flags, true);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }

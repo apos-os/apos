@@ -49,9 +49,16 @@ sigset_t proc_pending_signals(const process_t* proc);
 // current thread (i.e., ones that will be dispatched next).
 sigset_t proc_dispatchable_signals(void);
 
+// Returns true if the given signal can be delivered to the thread (i.e. it's
+// not blocked or ignored [explicitly or by default]).
+bool proc_signal_deliverable(kthread_t thread, int signum);
+
 // Force send a signal to the given process, without any permission checks or
 // the like.  Returns 0 on success, or -errno on error.
 int proc_force_signal(process_t* proc, int sig);
+
+// As above, but sends a signal to every process in the given group.
+int proc_force_signal_group(pid_t pgid, int sig);
 
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
@@ -72,6 +79,10 @@ int proc_sigprocmask(int how, const sigset_t* restrict set,
 
 // Return the current set of pending signals in the process.
 int proc_sigpending(sigset_t* set);
+
+// Temporarily set the current thread's signal mask, then block until a signal
+// is delivered.
+int proc_sigsuspend(const sigset_t* sigmask);
 
 // Cancel/suppress the given signal in the given process and its threads.
 // Useful in tests.

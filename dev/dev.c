@@ -43,6 +43,7 @@ static void* g_char_devices[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR];
 static int g_dev_fs_ready = 0;
 
 static void make_fs_device(int vfs_type, int major, int minor);
+static void remove_fs_device(int major, int minor);
 
 static int check_register(void* dev, apos_dev_t* id) {
   if (!dev || major(*id) >= DEVICE_MAX_MAJOR ||
@@ -138,9 +139,10 @@ int dev_unregister_block(apos_dev_t id) {
   if (g_block_devices[major(id)][minor(id)] == 0x0) {
     return -ENOENT;
   }
+  remove_fs_device(major(id), minor(id));
+
   g_block_devices[major(id)][minor(id)] = 0x0;
   kfree(g_block_memobjs[major(id)][minor(id)]);
-  // TODO(aoates): remove the entry from /dev if appropriate
   return 0;
 }
 
@@ -152,8 +154,9 @@ int dev_unregister_char(apos_dev_t id) {
   if (g_char_devices[major(id)][minor(id)] == 0x0) {
     return -ENOENT;
   }
+  remove_fs_device(major(id), minor(id));
+
   g_char_devices[major(id)][minor(id)] = 0x0;
-  // TODO(aoates): remove the entry from /dev if appropriate
   return 0;
 }
 
@@ -168,6 +171,20 @@ static void make_fs_device(int vfs_type, int major, int minor) {
   const int result = vfs_mknod(name, vfs_type, makedev(major, minor));
   if (result < 0) {
     klogf("warning: unable to create %s: %s\n", name, errorname(-result));
+  }
+}
+
+static void remove_fs_device(int major, int minor) {
+  char name[512];
+  if (!kTypeNames[major]) {
+    klogf("warning: cannot create device node for device of "
+          "unknown type (%d.%d)\n", major, minor);
+    return;
+  }
+  ksprintf(name, "/dev/%s%d", kTypeNames[major], minor);
+  const int result = vfs_unlink(name);
+  if (result < 0) {
+    klogf("warning: unable to remove %s: %s\n", name, errorname(-result));
   }
 }
 

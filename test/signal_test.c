@@ -25,6 +25,8 @@
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "vfs/pipe.h"
+#include "vfs/vfs.h"
 
 // Helper to determine if a signal is pending or assigned.
 static int is_signal_pending(const process_t* proc, int signum) {
@@ -248,6 +250,8 @@ static void signal_allowed_test(void) {
   B_default.euid = 3002; B_default.egid = 4002;
   B_default.suid = 3003; B_default.sgid = 4003;
 
+  A_default.pgroup = B_default.pgroup = proc_current()->pgroup;
+
   KTEST_BEGIN("proc_signal_allowed(): root can send any signal");
   A = A_default; B = B_default;
   A.euid = SUPERUSER_UID;
@@ -260,7 +264,7 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGTERM));
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGKILL));
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGSTOP));
-  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGCONT));
+  KEXPECT_EQ(1, proc_signal_allowed(&B, &A, SIGCONT));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches ruid");
   A = A_default; B = B_default;
@@ -293,7 +297,8 @@ static void signal_allowed_test(void) {
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
   A = A_default; B = B_default;
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
 
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches ruid");
   A = A_default; B = B_default;
@@ -317,7 +322,8 @@ static void signal_allowed_test(void) {
   A.sgid = B.sgid;
 
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
-  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
+  KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
 }
 
 // Child process that sleeps then exits, to let us test if signals were
@@ -981,6 +987,161 @@ static void dispatchable_test(void) {
   proc_suppress_signal(proc_current(), SIGURG);
 }
 
+typedef struct {
+  int read_fd;
+  int write_fd;
+} sem_t;
+
+static int sem_create(sem_t* sem) {
+  int fds[2];
+  int result = vfs_pipe(fds);
+  if (result) return result;
+  sem->read_fd = fds[0];
+  sem->write_fd = fds[1];
+  return 0;
+}
+
+static void sem_destroy(sem_t* sem) {
+  vfs_close(sem->read_fd);
+  vfs_close(sem->write_fd);
+}
+
+static int sem_wait(const sem_t* sem) {
+  char buf;
+  int result = vfs_read(sem->read_fd, &buf, 1);
+  return (result < 0) ? result : 0;
+}
+
+static int sem_signal(const sem_t* sem) {
+  int result = vfs_write(sem->write_fd, "x", 1);
+  return (result < 0) ? result : 0;
+}
+
+static bool suspend_done = false;
+static sem_t g_sem;
+static void sigsuspend_test_child(void* arg) {
+  const sigset_t orig_mask = make_sigset(SIGHUP);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));
+
+  struct sigaction act;
+  act.sa_handler = SIG_IGN;
+  act.sa_mask = 0;
+  act.sa_flags = 0;
+  KEXPECT_EQ(0, proc_sigaction(SIGALRM, &act, NULL));
+
+  KEXPECT_EQ(0, sem_signal(&g_sem));
+  suspend_done = false;
+  int result = proc_sigsuspend((const sigset_t*)arg);
+  KEXPECT_EQ(-EINTR, result);
+  suspend_done = true;
+
+  sigset_t final_mask;
+  KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &final_mask));
+  KEXPECT_EQ(orig_mask, final_mask);
+}
+
+static void sigsuspend_test(void) {
+  KTEST_BEGIN("sigsuspend(): basic test");
+  sigset_t new_mask = make_sigset(SIGUSR2), old_mask;
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &new_mask, &old_mask));
+  KEXPECT_EQ(0, sem_create(&g_sem));
+  pid_t child = proc_fork(&sigsuspend_test_child, &new_mask);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+  KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
+  KEXPECT_EQ(new_mask, proc_get(child)->thread->signal_mask);
+
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("sigsuspend(): sets and resets mask");
+  sigset_t mask2 = new_mask;
+  ksigaddset(&mask2, SIGINT);
+  child = proc_fork(&sigsuspend_test_child, &mask2);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+  KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
+  KEXPECT_EQ(mask2, proc_get(child)->thread->signal_mask);
+
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("sigsuspend(): ignores masked signals");
+  mask2 = new_mask;
+  ksigaddset(&mask2, SIGINT);
+  child = proc_fork(&sigsuspend_test_child, &mask2);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+
+  KEXPECT_EQ(0, proc_kill(child, SIGINT));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(false, suspend_done);
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("sigsuspend(): ignores default-ignored signals");
+  const struct sigaction kDefaultAction = {SIG_DFL, 0, 0};
+  KEXPECT_EQ(0, proc_sigaction(SIGURG, &kDefaultAction, NULL));
+
+  child = proc_fork(&sigsuspend_test_child, &mask2);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+
+  KEXPECT_EQ(0, proc_kill(child, SIGURG));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(false, suspend_done);
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("sigsuspend(): ignores ignored signals");
+  child = proc_fork(&sigsuspend_test_child, &mask2);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+
+  KEXPECT_EQ(0, proc_kill(child, SIGALRM));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(false, suspend_done);
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("sigsuspend(): cannot mask SIGKILL");
+  mask2 = new_mask;
+  ksigaddset(&mask2, SIGKILL);
+  child = proc_fork(&sigsuspend_test_child, &mask2);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+
+  KEXPECT_EQ(0, proc_kill(child, SIGKILL));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KTEST_BEGIN("sigsuspend(): cannot mask SIGSTOP");
+  mask2 = new_mask;
+  ksigaddset(&mask2, SIGSTOP);
+  child = proc_fork(&sigsuspend_test_child, &mask2);
+  KEXPECT_GE(child, 0);
+
+  KEXPECT_EQ(0, sem_wait(&g_sem));
+
+  KEXPECT_EQ(0, proc_kill(child, SIGSTOP));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &old_mask, NULL));
+  sem_destroy(&g_sem);
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -1014,6 +1175,7 @@ void signal_test(void) {
   sigpending_test();
 
   dispatchable_test();
+  sigsuspend_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
