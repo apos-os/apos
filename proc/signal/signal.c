@@ -267,6 +267,22 @@ int proc_sigpending(sigset_t* set) {
   return 0;
 }
 
+int proc_sigsuspend(const sigset_t* sigmask) {
+  sigset_t old_mask;
+  int result = proc_sigprocmask(SIG_SETMASK, sigmask, &old_mask);
+  KASSERT_DBG(result == 0);
+
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+  result = scheduler_wait_on_interruptable(&queue);
+  KASSERT_DBG(result);
+
+  result = proc_sigprocmask(SIG_SETMASK, &old_mask, NULL);
+  KASSERT_DBG(result == 0);
+
+  return -EINTR;
+}
+
 void proc_suppress_signal(process_t* proc, int sig) {
   ksigdelset(&proc->pending_signals, sig);
   ksigdelset(&proc->thread->assigned_signals, sig);

@@ -297,6 +297,10 @@ AddSyscall('sigpending', 53, 'proc_sigpending', 'proc/signal/signal.h',
     '<signal.h>',
     'int', ['sigset_t*:oset:bw:sizeof(sigset_t)'])
 
+AddSyscall('sigsuspend', 61, 'proc_sigsuspend', 'proc/signal/signal.h',
+    '<signal.h>',
+    'int', ['const sigset_t*:sigmask:br:sizeof(sigset_t)'])
+
 AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [

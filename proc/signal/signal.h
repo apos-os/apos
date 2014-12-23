@@ -80,6 +80,10 @@ int proc_sigprocmask(int how, const sigset_t* restrict set,
 // Return the current set of pending signals in the process.
 int proc_sigpending(sigset_t* set);
 
+// Temporarily set the current thread's signal mask, then block until a signal
+// is delivered.
+int proc_sigsuspend(const sigset_t* sigmask);
+
 // Cancel/suppress the given signal in the given process and its threads.
 // Useful in tests.
 void proc_suppress_signal(process_t* proc, int sig);
