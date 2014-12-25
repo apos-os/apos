@@ -34,6 +34,7 @@ struct vnode;
 typedef enum {
   PROC_INVALID,
   PROC_RUNNING,
+  PROC_STOPPED,
   PROC_ZOMBIE,
 } proc_state_t;
 
@@ -131,6 +132,7 @@ static inline const char* proc_state_to_string(proc_state_t state) {
   switch (state) {
     case PROC_INVALID: return "INVALID";
     case PROC_RUNNING: return "RUNNING";
+    case PROC_STOPPED: return "STOPPED";
     case PROC_ZOMBIE: return "ZOMBIE";
   }
   return "<unknown>";
