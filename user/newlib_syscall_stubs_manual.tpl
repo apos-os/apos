@@ -16,6 +16,7 @@
 
 {# Manually implemented syscall stubs. -#}
 #include <stdarg.h>
+#include <unistd.h>
 
 __attribute__((noreturn)) void _exit(int status) {
   _do_exit(status);
@@ -49,4 +50,12 @@ void* _mmap_r(struct _reent* reent_ptr, void *addr, size_t len, int prot,
 void* mmap(void *addr, size_t len, int prot,
     int flags, int fd, off_t offset) {
   return _mmap_r(_REENT, addr, len, prot, flags, fd, offset);
+}
+
+unsigned alarm(unsigned seconds) {
+  return alarm_ms(seconds * 1000);
+}
+
+unsigned int sleep(unsigned int seconds) {
+  return sleep_ms(seconds * 1000);
 }

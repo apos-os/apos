@@ -23,7 +23,7 @@
 
 static void timer_cb(void* arg) {
   process_t* proc = (process_t*)arg;
-  KASSERT_DBG(proc->state == PROC_RUNNING);
+  KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
   KASSERT_DBG(get_time_ms() >= proc->alarm.deadline_ms);
 
   proc->alarm.timer = TIMER_HANDLE_NONE;
@@ -39,9 +39,9 @@ void proc_alarm_init(proc_alarm_t* alarm) {
   alarm->timer = TIMER_HANDLE_NONE;
 }
 
-unsigned int proc_alarm(unsigned int seconds) {
+unsigned int proc_alarm_ms(unsigned int ms) {
   uint32_t ctime = get_time_ms();
-  uint32_t deadline = ctime + seconds * 1000;
+  uint32_t deadline = ctime + ms;
   process_t* const proc = proc_current();
 
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -59,7 +59,7 @@ unsigned int proc_alarm(unsigned int seconds) {
     proc->alarm.deadline_ms = 0;
   }
 
-  if (seconds > 0) {
+  if (ms > 0) {
     proc->alarm.deadline_ms = deadline;
 
     if (register_event_timer(deadline, &timer_cb, proc,

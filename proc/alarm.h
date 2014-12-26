@@ -28,7 +28,7 @@ typedef struct {
 // Initialize an alarm in a process.
 void proc_alarm_init(proc_alarm_t* alarm);
 
-// Register an alarm to trigger in |seconds|, as per alarm(2).
-unsigned int proc_alarm(unsigned int seconds);
+// Register an alarm to trigger in |ms|, as per alarm(2).
+unsigned int proc_alarm_ms(unsigned int ms);
 
 #endif

@@ -11,17 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#ifndef APOO_USER_TESTS_ALL_TESTS_H
-#define APOO_USER_TESTS_ALL_TESTS_H
 
-#include <stdbool.h>
+#ifndef APOO_PROC_USER_PREPARE_H
+#define APOO_PROC_USER_PREPARE_H
 
-extern bool run_slow_tests;
+#include "arch/proc/user_context.h"
 
-void syscall_errno_test(void);
-int exit_status_test(void);
-void basic_signal_test(void);
-void execve_test(void);
-void stop_test(void);
+// Prepare to return to userspace, e.g. from a syscall or interrupt.  Any
+// pending signals will be assigned and dispatched (if possible), the process
+// will be stopped if necessary, etc.
+//
+// The given user-context-extraction function will be called with the argument
+// if a user context is needed.
+//
+// This function may not return.
+void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg);
 
 #endif

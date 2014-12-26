@@ -34,6 +34,7 @@ struct vnode;
 typedef enum {
   PROC_INVALID,
   PROC_RUNNING,
+  PROC_STOPPED,
   PROC_ZOMBIE,
 } proc_state_t;
 
@@ -98,6 +99,9 @@ struct process {
 
   // Wait queue for the parent thread wait()'ing.
   kthread_queue_t wait_queue;
+
+  // Wait queue for the process's threads if the process is STOPPED.
+  kthread_queue_t stopped_queue;
 };
 
 // Initialize the process table, and create the first process (process 0) from
@@ -131,6 +135,7 @@ static inline const char* proc_state_to_string(proc_state_t state) {
   switch (state) {
     case PROC_INVALID: return "INVALID";
     case PROC_RUNNING: return "RUNNING";
+    case PROC_STOPPED: return "STOPPED";
     case PROC_ZOMBIE: return "ZOMBIE";
   }
   return "<unknown>";

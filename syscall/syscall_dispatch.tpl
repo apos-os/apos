@@ -34,6 +34,7 @@ case {{ common.syscall_constant(syscall) }}:
 #include "common/errno.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
+#include "proc/user_prepare.h"
 #include "user/include/apos/syscalls.h"
 
 {{ common.include_headers(SYSCALLS, 'header') }}
@@ -70,17 +71,18 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
   }
 }
 
+static user_context_t syscall_extract_context_tramp(void* arg) {
+  return syscall_extract_context(*(long*)arg);
+}
+
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     long arg4, long arg5, long arg6) {
   const long result = do_syscall_dispatch(syscall_number, arg1, arg2, arg3,
       arg4, arg5, arg6);
 
-  if (proc_assign_pending_signals()) {
-    user_context_t context = syscall_extract_context(result);
-    proc_dispatch_pending_signals(&context);
-  }
+  proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result);
 
-  // Don't do anything here!  After we call proc_dispatch_pending_signals(), we
-  // may never return.
+  // Don't do anything here!  After we call proc_prep_user_return(), we may
+  // never return.
   return result;
 }

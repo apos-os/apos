@@ -21,6 +21,7 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/user.h"
+#include "proc/user_prepare.h"
 #include "user/include/apos/syscalls.h"
 
 // Possible default actions for signals.
@@ -76,6 +77,9 @@ bool proc_signal_deliverable(kthread_t thread, int signum) {
     return false;
   } else if (ksigismember(&thread->signal_mask, signum)) {
     return false;
+  } else if (action->sa_handler != SIG_DFL &&
+             thread->process->state == PROC_STOPPED) {
+    return false;
   }
 
   return true;
@@ -108,7 +112,7 @@ static void do_assign_signal(kthread_t thread, int signum) {
 }
 
 // Try to assign the given signal to a thread in the process.  Fails if it is
-// masked.
+// masked in all threads, returning false.
 static void proc_try_assign_signal(process_t* proc, int signum) {
   const kthread_t thread = proc->thread;
 
@@ -124,6 +128,13 @@ int proc_force_signal(process_t* proc, int sig) {
   int result = ksigaddset(&proc->pending_signals, sig);
   proc_try_assign_signal(proc, sig);
   POP_INTERRUPTS();
+
+  // Wake up a stopped victim at random to handle the SIGCONT (it will update
+  // the process's state, wake up the rest of the threads, etc).
+  if (sig == SIGCONT) {
+    scheduler_wake_one(&proc->stopped_queue);
+  }
+
   return result;
 }
 
@@ -158,7 +169,7 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
 }
 
 static int proc_kill_one(process_t* proc, int sig) {
-  if (!proc || proc->state != PROC_RUNNING) {
+  if (!proc || (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED)) {
     return -ESRCH;
   }
 
@@ -186,13 +197,14 @@ int proc_kill(pid_t pid, int sig) {
   } else if (pid <= 0) {
     if (pid == 0) pid = -proc_current()->pgroup;
 
-    list_t* pgroup = &proc_group_get(-pid)->procs;
-    if (!pgroup || list_empty(pgroup)) {
+    const proc_group_t* pgroup = proc_group_get(-pid);
+    if (!pgroup || list_empty(&pgroup->procs)) {
       return -ESRCH;
     }
 
     int num_signalled = 0;
-    for (list_link_t* link = pgroup->head; link != 0x0; link = link->next) {
+    for (list_link_t* link = pgroup->procs.head; link != 0x0;
+         link = link->next) {
       int result =
           proc_kill_one(container_of(link, process_t, pgroup_link), sig);
       KASSERT_DBG(result == 0 || result == -EPERM);
@@ -289,27 +301,36 @@ void proc_suppress_signal(process_t* proc, int sig) {
 }
 
 // Dispatch a particular signal in the current process.  May not return.
-static void dispatch_signal(int signum, const user_context_t* context) {
+// Returns true if the signal was dispatched (which includes being ignored), or
+// false if it couldn't be (because the process is stopped).
+static bool dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();
+  KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
   const sigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
     KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
-    return;
+    return true;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
       case SIGACT_STOP:
+        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
+        proc->state = PROC_STOPPED;
+        // TODO(aoates): handle waitpid().
+        break;
+
       case SIGACT_CONTINUE:
-        // TODO(aoates): implement STOP and CONTINUE once job control exists.
-        klogfm(KL_PROC, WARNING, "cannot deliver stop or continue signal\n");
-        KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
-        return;
+        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        // We should have already been continued before calling this.
+        KASSERT_DBG(proc->state == PROC_RUNNING);
+        break;
 
       case SIGACT_IGNORE:
         KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
-        return;
+        return true;
 
       case SIGACT_TERM:
       case SIGACT_TERM_AND_CORE:
@@ -322,10 +343,13 @@ static void dispatch_signal(int signum, const user_context_t* context) {
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
     KASSERT_DBG(proc->thread == kthread_current_thread());
-    KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+
+    if (proc->state == PROC_STOPPED)
+      return false;
 
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
+    KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
     sigset_t old_mask = proc->thread->signal_mask;
     proc->thread->signal_mask |= action->sa_mask;
     ksigaddset(&proc->thread->signal_mask, signum);
@@ -333,6 +357,8 @@ static void dispatch_signal(int signum, const user_context_t* context) {
     proc_run_user_sighandler(signum, action, &old_mask, context);
     die("unreachable");
   }
+
+  return true;
 }
 
 // Assign any pending signals in the process to a thread that can handle them,
@@ -376,11 +402,18 @@ void proc_dispatch_pending_signals(const user_context_t* context) {
     if (ksigismember(&thread->assigned_signals, signum) &&
         !ksigismember(&thread->signal_mask, signum)) {
       ksigdelset(&thread->assigned_signals, signum);
-      dispatch_signal(signum, context);
+      if (!dispatch_signal(signum, context)) {
+        // Re-enqueue the signal for delivery later.
+        ksigaddset(&thread->assigned_signals, signum);
+      }
     }
   }
 
   POP_INTERRUPTS();
+}
+
+static user_context_t get_user_context(void* arg) {
+  return *(user_context_t*)arg;
 }
 
 int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
@@ -391,8 +424,7 @@ int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
 
   // This catches, for example, signals raised in the signal handler that were
   // blocked.
-  proc_assign_pending_signals();
-  proc_dispatch_pending_signals(context);
+  proc_prep_user_return(&get_user_context, (void*)context);
 
   POP_INTERRUPTS();
 

@@ -116,7 +116,7 @@ int list_link_on_list(list_t* list, list_link_t* link) {
   return (list->head == link || link->next != 0x0 || link->prev != 0x0);
 }
 
-int list_empty(list_t* list) {
+int list_empty(const list_t* list) {
   KASSERT_DBG((list->head == list->tail) ||
               (list->head != 0x0 && list->tail != 0x0));
   return (list->head == 0x0 && list->tail == 0x0);

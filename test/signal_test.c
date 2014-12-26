@@ -476,6 +476,12 @@ static void signal_send_to_pgroup_test(void) {
 
   child = proc_fork(&cannot_signal_any_process_in_group, 0x0);
   KEXPECT_EQ(child, proc_wait(0x0));
+
+  KTEST_BEGIN("proc_kill(): pid == -pgid with bad pgid");
+  KEXPECT_EQ(-ESRCH, proc_kill(-child, SIGKILL));
+  KEXPECT_EQ(-ESRCH, proc_kill(-PROC_MAX_PROCS, SIGKILL));
+  KEXPECT_EQ(-ESRCH, proc_kill(-PROC_MAX_PROCS - 1, SIGKILL));
+  KEXPECT_EQ(-ESRCH, proc_kill(-1000000, SIGKILL));
 }
 
 static void send_all_allowed_func(void* arg) {
