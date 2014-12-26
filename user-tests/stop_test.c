@@ -226,10 +226,49 @@ static void repeat_signals_test(void) {
   KEXPECT_EQ(child, wait(NULL));
 }
 
+static void signal_interaction_test(void) {
+  char state_buf[20];
+
+  KTEST_BEGIN("SIGKILL while stopped");
+  pid_t child = fork();
+  if (child == 0) {
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGKILL, status);
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+
+  KTEST_BEGIN("SIGUSR1 while stopped");
+  child = fork();
+  if (child == 0) {
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGUSR1));
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGUSR1, status);
+  KEXPECT_EQ(false, file_exists("child_continued"));
+}
+
 void stop_test(void) {
   KTEST_SUITE_BEGIN("SIGSTOP/SIGCONT tests");
 
   basic_stop_test();
   cont_masked_test();
   repeat_signals_test();
+  signal_interaction_test();
 }
