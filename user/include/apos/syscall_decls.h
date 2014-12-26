@@ -47,7 +47,7 @@ int sigaction(int signum, const struct sigaction* act, struct sigaction* oldact)
 int sigprocmask(int how, const sigset_t* set, sigset_t* oset);
 int sigpending(sigset_t* oset);
 int sigsuspend(const sigset_t* sigmask);
-unsigned int alarm(unsigned int seconds);
+unsigned int alarm_ms(unsigned int seconds);
 int setuid(uid_t uid);
 int setgid(gid_t gid);
 uid_t getuid(void);

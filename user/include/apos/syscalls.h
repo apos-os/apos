@@ -52,7 +52,7 @@
 #define SYS_SIGPENDING 53
 #define SYS_SIGSUSPEND 61
 #define SYS_SIGRETURN 21
-#define SYS_ALARM 22
+#define SYS_ALARM_MS 22
 #define SYS_SETUID 23
 #define SYS_SETGID 24
 #define SYS_GETUID 25

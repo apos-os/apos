@@ -308,7 +308,7 @@ AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     'const user_context_t*:context:br:sizeof(user_context_t)'],
     stubs_to_generate=[])
 
-AddSyscall('alarm', 22, 'proc_alarm', 'proc/alarm.h',
+AddSyscall('alarm_ms', 22, 'proc_alarm_ms', 'proc/alarm.h',
     '<unistd.h>',
     'unsigned int', [
     'unsigned int:seconds:u'],

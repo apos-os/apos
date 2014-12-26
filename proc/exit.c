@@ -78,7 +78,7 @@ void proc_exit(int status) {
   // Note: the vm_area_t list is torn down in the parent in proc_wait, NOT here.
 
   // Cancel any outstanding alarms.
-  proc_alarm(0);
+  proc_alarm_ms(0);
 
   // Remove it from the process group list.
   list_remove(&proc_group_get(p->pgroup)->procs, &p->pgroup_link);
