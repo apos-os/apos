@@ -195,6 +195,22 @@ static void cont_masked_test(void) {
     exit(0);
   }
   cont_masked_test_parent(child);
+
+
+  KTEST_BEGIN("SIGCONT continues but doesn't run masked handled");
+  child = fork();
+  if (child == 0) {
+    struct sigaction act = {&file_handler, 0, 0};
+    sigaction(SIGCONT, &act, NULL);
+    sigset_t mask = make_sigset(SIGCONT);
+    sigprocmask(SIG_BLOCK, &mask, NULL);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    sleep_ms(SLEEP_MS);
+    exit(0);
+  }
+  cont_masked_test_parent(child);
+  KEXPECT_EQ(false, file_exists("got_signal"));
 }
 
 static void repeat_signals_test(void) {
