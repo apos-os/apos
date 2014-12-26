@@ -246,7 +246,7 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     can_fail=False)
 
 AddSyscall('wait', 41, 'proc_wait', 'proc/wait.h', '<sys/wait.h>',
-    'pid_t', ['int*:exit_status:bw:sizeof(int)'],
+    'pid_t', ['int*:exit_status:bw?:sizeof(int)'],
     newlib_defined=True)
 
 # The execve wrapper manually checks its arguments so that it can clean up the
