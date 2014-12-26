@@ -12,7 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "proc/wait.h"
+
 #include "arch/memory/page_alloc.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/vm.h"
 #include "proc/kthread.h"
@@ -21,6 +24,13 @@
 #include "proc/scheduler.h"
 
 pid_t proc_wait(int* exit_status) {
+  return proc_waitpid(-1, exit_status, 0);
+}
+
+pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
+  if (pid != -1) return -ECHILD;
+  if (options != 0) return -EINVAL;
+
   process_t* const p = proc_current();
 
   // Look for an existing zombie child.

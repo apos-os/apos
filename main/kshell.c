@@ -136,6 +136,7 @@ static test_entry_t TESTS[] = {
   { "vfs_fifo", &vfs_fifo_test, 1 },
   { "session", &session_test, 1 },
   { "tty", &tty_test, 1 },
+  { "wait", &wait_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },

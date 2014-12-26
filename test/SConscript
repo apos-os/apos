@@ -56,6 +56,7 @@ srcs = [
   'vfs_mount_test.c',
   'vfs_test.c',
   'vfs_test_util.c',
+  'wait_test.c',
 ]
 
 subdirs = []
