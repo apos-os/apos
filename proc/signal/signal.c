@@ -197,13 +197,14 @@ int proc_kill(pid_t pid, int sig) {
   } else if (pid <= 0) {
     if (pid == 0) pid = -proc_current()->pgroup;
 
-    list_t* pgroup = &proc_group_get(-pid)->procs;
-    if (!pgroup || list_empty(pgroup)) {
+    const proc_group_t* pgroup = proc_group_get(-pid);
+    if (!pgroup || list_empty(&pgroup->procs)) {
       return -ESRCH;
     }
 
     int num_signalled = 0;
-    for (list_link_t* link = pgroup->head; link != 0x0; link = link->next) {
+    for (list_link_t* link = pgroup->procs.head; link != 0x0;
+         link = link->next) {
       int result =
           proc_kill_one(container_of(link, process_t, pgroup_link), sig);
       KASSERT_DBG(result == 0 || result == -EPERM);
