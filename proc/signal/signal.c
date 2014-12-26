@@ -21,6 +21,7 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/user.h"
+#include "proc/user_prepare.h"
 #include "user/include/apos/syscalls.h"
 
 // Possible default actions for signals.
@@ -383,6 +384,10 @@ void proc_dispatch_pending_signals(const user_context_t* context) {
   POP_INTERRUPTS();
 }
 
+static user_context_t get_user_context(void* arg) {
+  return *(user_context_t*)arg;
+}
+
 int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
@@ -391,8 +396,7 @@ int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
 
   // This catches, for example, signals raised in the signal handler that were
   // blocked.
-  proc_assign_pending_signals();
-  proc_dispatch_pending_signals(context);
+  proc_prep_user_return(&get_user_context, (void*)context);
 
   POP_INTERRUPTS();
 

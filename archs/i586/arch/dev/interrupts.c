@@ -24,6 +24,7 @@
 #include "dev/interrupts.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
+#include "proc/user_prepare.h"
 
 static uint16_t idt_entries = 0;
 static idt_entry_t* idt = 0;
@@ -129,7 +130,8 @@ static int is_user_interrupt(addr_t ebp) {
 
 // Extract a user_context_t for the current interrupt, which must be a user-mode
 // interrupt.
-static user_context_t extract_interrupt_context(addr_t ebp) {
+static user_context_t extract_interrupt_context(void* ebp_ptr) {
+  const addr_t ebp = *(addr_t*)ebp_ptr;
   user_context_t context;
 
 #if ENABLE_KERNEL_SAFETY_NETS
@@ -234,9 +236,8 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
       "movl $0, %%edi\n\t"
       ::: "eax", "ebx", "ecx", "edx", "esi", "edi");
 
-  if (is_user && proc_assign_pending_signals()) {
-    user_context_t context = extract_interrupt_context(ebp);
-    proc_dispatch_pending_signals(&context);
+  if (is_user) {
+    proc_prep_user_return(&extract_interrupt_context, &ebp);
   }
 
   // Note: we may never get here, if there were signals to dispatch.

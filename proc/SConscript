@@ -30,6 +30,7 @@ srcs = [
   'tcgroup.c',
   'umask.c',
   'user.c',
+  'user_prepare.c',
   'wait.c',
 ]
 
