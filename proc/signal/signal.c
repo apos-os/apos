@@ -77,6 +77,9 @@ bool proc_signal_deliverable(kthread_t thread, int signum) {
     return false;
   } else if (ksigismember(&thread->signal_mask, signum)) {
     return false;
+  } else if (action->sa_handler != SIG_DFL &&
+             thread->process->state == PROC_STOPPED) {
+    return false;
   }
 
   return true;
@@ -297,7 +300,9 @@ void proc_suppress_signal(process_t* proc, int sig) {
 }
 
 // Dispatch a particular signal in the current process.  May not return.
-static void dispatch_signal(int signum, const user_context_t* context) {
+// Returns true if the signal was dispatched (which includes being ignored), or
+// false if it couldn't be (because the process is stopped).
+static bool dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
@@ -306,7 +311,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
 
   if (action->sa_handler == SIG_IGN) {
     KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
-    return;
+    return true;
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
       case SIGACT_STOP:
@@ -324,7 +329,7 @@ static void dispatch_signal(int signum, const user_context_t* context) {
 
       case SIGACT_IGNORE:
         KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
-        return;
+        return true;
 
       case SIGACT_TERM:
       case SIGACT_TERM_AND_CORE:
@@ -337,10 +342,13 @@ static void dispatch_signal(int signum, const user_context_t* context) {
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
     KASSERT_DBG(proc->thread == kthread_current_thread());
-    KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+
+    if (proc->state == PROC_STOPPED)
+      return false;
 
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
+    KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
     sigset_t old_mask = proc->thread->signal_mask;
     proc->thread->signal_mask |= action->sa_mask;
     ksigaddset(&proc->thread->signal_mask, signum);
@@ -348,6 +356,8 @@ static void dispatch_signal(int signum, const user_context_t* context) {
     proc_run_user_sighandler(signum, action, &old_mask, context);
     die("unreachable");
   }
+
+  return true;
 }
 
 // Assign any pending signals in the process to a thread that can handle them,
@@ -391,7 +401,10 @@ void proc_dispatch_pending_signals(const user_context_t* context) {
     if (ksigismember(&thread->assigned_signals, signum) &&
         !ksigismember(&thread->signal_mask, signum)) {
       ksigdelset(&thread->assigned_signals, signum);
-      dispatch_signal(signum, context);
+      if (!dispatch_signal(signum, context)) {
+        // Re-enqueue the signal for delivery later.
+        ksigaddset(&thread->assigned_signals, signum);
+      }
     }
   }
 

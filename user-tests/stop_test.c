@@ -48,6 +48,7 @@ static const char* get_proc_state(pid_t pid, char* state_buf) {
     return NULL;
   }
 
+  close(fd);
   const char* line_start = buf;
   while (line_start) {
     if (sscanf(line_start, "state: %s", state_buf) > 0) {
@@ -77,6 +78,10 @@ static bool file_exists(const char* path) {
   }
   close(fd);
   return true;
+}
+
+static void file_handler(int sig) {
+  create_file("got_signal");
 }
 
 // TODO(aoates): put these in a common location.
@@ -127,7 +132,7 @@ static void basic_stop_test(void) {
   KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
   KEXPECT_EQ(false, file_exists("child_continued"));
   KEXPECT_EQ(0, kill(child, SIGCONT));
-  sleep_ms(SLEEP_MS);
+  sleep_ms(2 * SLEEP_MS);
   KEXPECT_EQ(true, file_exists("child_continued"));
   KEXPECT_EQ(0, unlink("child_continued"));
   KEXPECT_EQ(child, wait(&status));
@@ -203,6 +208,7 @@ static void repeat_signals_test(void) {
     kill(getpid(), SIGSTOP);
     create_file("child_continued");
     sleep_ms(SLEEP_MS * 100);
+    exit(1);
   }
 
   for (int i = 0; i < 5; ++i) {
@@ -229,17 +235,16 @@ static void repeat_signals_test(void) {
 static void signal_interaction_test(void) {
   char state_buf[20];
 
-  KTEST_BEGIN("SIGKILL while stopped");
-  pid_t child = fork();
-  if (child == 0) {
+  KTEST_BEGIN("SIGKILL (term) while stopped");
+  pid_t child;
+  if ((child = fork()) == 0) {
     kill(getpid(), SIGSTOP);
     create_file("child_continued");
+    exit(1);
   }
 
   sleep_ms(SLEEP_MS_SMALL);
   KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
-  KEXPECT_EQ(false, file_exists("child_continued"));
-
   KEXPECT_EQ(0, kill(child, SIGKILL));
   int status;
   KEXPECT_EQ(child, wait(&status));
@@ -247,21 +252,165 @@ static void signal_interaction_test(void) {
   KEXPECT_EQ(false, file_exists("child_continued"));
 
 
-  KTEST_BEGIN("SIGUSR1 while stopped");
-  child = fork();
-  if (child == 0) {
+  KTEST_BEGIN("SIGQUIT (term + core) while stopped");
+  if ((child = fork()) == 0) {
     kill(getpid(), SIGSTOP);
     create_file("child_continued");
+    exit(1);
   }
 
   sleep_ms(SLEEP_MS_SMALL);
   KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGQUIT));
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGQUIT, status);
   KEXPECT_EQ(false, file_exists("child_continued"));
 
+
+  KTEST_BEGIN("SIGUSR1 while stopped");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    exit(1);
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
   KEXPECT_EQ(0, kill(child, SIGUSR1));
   KEXPECT_EQ(child, wait(&status));
   KEXPECT_EQ(128 + SIGUSR1, status);
   KEXPECT_EQ(false, file_exists("child_continued"));
+
+
+  KTEST_BEGIN("SIGURG (default ignored) while stopped");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    exit(1);
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGURG));
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  }
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGKILL, status);
+
+
+  KTEST_BEGIN("Masked SIGUSR1 while stopped");
+  if ((child = fork()) == 0) {
+    sigset_t set = make_sigset(SIGUSR1);
+    sigprocmask(SIG_BLOCK, &set, NULL);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    kill(getpid(), SIGSTOP);
+    sigprocmask(SIG_UNBLOCK, &set, NULL);
+    create_file("child_continued2");
+    exit(1);
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGUSR1));
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  }
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  for (int i = 0; i < 5; ++i) sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_EQ(true, file_exists("child_continued"));
+  KEXPECT_EQ(false, file_exists("child_continued2"));
+
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGUSR1, status);
+  KEXPECT_EQ(true, file_exists("child_continued"));
+  KEXPECT_EQ(false, file_exists("child_continued2"));
+  KEXPECT_EQ(0, unlink("child_continued"));
+
+
+  KTEST_BEGIN("SIGUSR1 with handler while stopped");
+  if ((child = fork()) == 0) {
+    signal(SIGUSR1, (void (*)(int))0x1234);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    exit(0);
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGSTOP));
+  KEXPECT_EQ(0, kill(child, SIGUSR1));
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  }
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGKILL, status);
+
+
+  KTEST_BEGIN("SIGUSR1 with handler while stopped (verify queued)");
+  if ((child = fork()) == 0) {
+    signal(SIGUSR1, &file_handler);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    exit(0);
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGSTOP));
+  KEXPECT_EQ(0, kill(child, SIGUSR1));
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  }
+  KEXPECT_EQ(false, file_exists("child_continued"));
+  KEXPECT_EQ(false, file_exists("got_signal"));
+
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  for (int i = 0; i < 5; ++i) sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_EQ(true, file_exists("child_continued"));
+  KEXPECT_EQ(true, file_exists("got_signal"));
+
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
+  KEXPECT_EQ(0, unlink("child_continued"));
+  KEXPECT_EQ(0, unlink("got_signal"));
+
+
+  KTEST_BEGIN("SIGTSTP with handler while stopped");
+  if ((child = fork()) == 0) {
+    signal(SIGTSTP, (void (*)(int))0x1234);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    exit(0);
+  }
+
+  sleep_ms(SLEEP_MS_SMALL);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGSTOP));
+  KEXPECT_EQ(0, kill(child, SIGTSTP));
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  }
+  KEXPECT_EQ(false, file_exists("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(128 + SIGKILL, status);
 }
 
 void stop_test(void) {
