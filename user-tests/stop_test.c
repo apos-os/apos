@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include <apos/sleep.h>
+#include <apos/syscall_decls.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -429,6 +430,40 @@ static void signal_interaction_test(void) {
   KEXPECT_EQ(128 + SIGKILL, status);
 }
 
+static void alarm_stop_test(void) {
+  char state_buf[20];
+
+  KTEST_BEGIN("alarm() (no handler) while stopped");
+  pid_t child;
+  if ((child = fork()) == 0) {
+    alarm_ms(100);
+    kill(getpid(), SIGSTOP);
+    exit(1);
+  }
+
+  int status;
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(SIGALRM + 128, status);
+
+
+  KTEST_BEGIN("alarm() (with handler) while stopped");
+  if ((child = fork()) == 0) {
+    signal(SIGALRM, &file_handler);
+    alarm_ms(20);
+    kill(getpid(), SIGSTOP);
+    exit(1);
+  }
+  sleep_ms(100);
+  KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  KEXPECT_EQ(false, file_exists("got_signal"));
+
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(1, status);
+  KEXPECT_EQ(true, file_exists("got_signal"));
+  KEXPECT_EQ(0, unlink("got_signal"));
+}
+
 void stop_test(void) {
   KTEST_SUITE_BEGIN("SIGSTOP/SIGCONT tests");
 
@@ -436,4 +471,5 @@ void stop_test(void) {
   cont_masked_test();
   repeat_signals_test();
   signal_interaction_test();
+  alarm_stop_test();
 }

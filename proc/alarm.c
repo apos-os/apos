@@ -23,7 +23,7 @@
 
 static void timer_cb(void* arg) {
   process_t* proc = (process_t*)arg;
-  KASSERT_DBG(proc->state == PROC_RUNNING);
+  KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
   KASSERT_DBG(get_time_ms() >= proc->alarm.deadline_ms);
 
   proc->alarm.timer = TIMER_HANDLE_NONE;
