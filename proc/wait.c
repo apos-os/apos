@@ -50,7 +50,9 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
 
     // If we didn't find one, wait for a child to exit and wake us up.
     if (!zombie) {
-      scheduler_wait_on(&p->wait_queue);
+      int interrupted = scheduler_wait_on_interruptable(&p->wait_queue);
+      if (interrupted)
+        return -EINTR;
     }
   }
 
