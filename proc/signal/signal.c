@@ -109,7 +109,7 @@ static void do_assign_signal(kthread_t thread, int signum) {
 }
 
 // Try to assign the given signal to a thread in the process.  Fails if it is
-// masked.
+// masked in all threads, returning false.
 static void proc_try_assign_signal(process_t* proc, int signum) {
   const kthread_t thread = proc->thread;
 
@@ -126,8 +126,10 @@ int proc_force_signal(process_t* proc, int sig) {
   proc_try_assign_signal(proc, sig);
   POP_INTERRUPTS();
 
+  // Wake up a stopped victim at random to handle the SIGCONT (it will update
+  // the process's state, wake up the rest of the threads, etc).
   if (sig == SIGCONT) {
-    scheduler_wake_all(&proc->stopped_queue);
+    scheduler_wake_one(&proc->stopped_queue);
   }
 
   return result;
