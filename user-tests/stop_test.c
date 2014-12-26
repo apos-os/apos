@@ -27,7 +27,7 @@
 #include "all_tests.h"
 
 #define SLEEP_MS 50
-#define SLEEP_MS_SMALL 10
+#define SLEEP_MS_SMALL 20
 
 static void null_handler(int sig) {}
 
@@ -192,9 +192,44 @@ static void cont_masked_test(void) {
   cont_masked_test_parent(child);
 }
 
+static void repeat_signals_test(void) {
+  char state_buf[20];
+
+  KTEST_BEGIN("Multiple SIGSTOPs/SIGCONTs");
+  pid_t child = fork();
+  if (child == 0) {
+    sigset_t mask = make_sigset(SIGCONT);
+    sigprocmask(SIG_BLOCK, &mask, NULL);
+    kill(getpid(), SIGSTOP);
+    create_file("child_continued");
+    sleep_ms(SLEEP_MS * 100);
+  }
+
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_STREQ("STOPPED", get_proc_state(child, state_buf));
+    KEXPECT_EQ(false, file_exists("child_continued"));
+    kill(child, SIGSTOP);
+  }
+
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  for (int i = 0; i < 5; ++i) {
+    sleep_ms(SLEEP_MS_SMALL);
+    KEXPECT_EQ(0, kill(child, SIGCONT));
+  }
+  KEXPECT_STREQ("RUNNING", get_proc_state(child, state_buf));
+  KEXPECT_EQ(true, file_exists("child_continued"));
+  KEXPECT_EQ(0, unlink("child_continued"));
+
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+}
+
 void stop_test(void) {
   KTEST_SUITE_BEGIN("SIGSTOP/SIGCONT tests");
 
   basic_stop_test();
   cont_masked_test();
+  repeat_signals_test();
 }
