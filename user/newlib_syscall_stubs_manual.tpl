@@ -55,3 +55,7 @@ void* mmap(void *addr, size_t len, int prot,
 unsigned alarm(unsigned seconds) {
   return alarm_ms(seconds * 1000);
 }
+
+unsigned int sleep(unsigned int seconds) {
+  return sleep_ms(seconds * 1000);
+}
