@@ -42,6 +42,7 @@ int access(const char* path, int amode);
 int chown(const char* path, uid_t owner, gid_t group);
 int fchown(int fd, uid_t owner, gid_t group);
 int lchown(const char* path, uid_t owner, gid_t group);
+pid_t waitpid(pid_t child, int* exit_status, int options);
 pid_t getppid(void);
 int sigaction(int signum, const struct sigaction* act, struct sigaction* oldact);
 int sigprocmask(int how, const sigset_t* set, sigset_t* oset);

@@ -249,6 +249,10 @@ AddSyscall('wait', 41, 'proc_wait', 'proc/wait.h', '<sys/wait.h>',
     'pid_t', ['int*:exit_status:bw?:sizeof(int)'],
     newlib_defined=True)
 
+AddSyscall('waitpid', 62, 'proc_waitpid', 'proc/wait.h', '<sys/wait.h>',
+    'pid_t', ['pid_t:child:u', 'int*:exit_status:bw?:sizeof(int)',
+      'int:options:u'])
+
 # The execve wrapper manually checks its arguments so that it can clean up the
 # allocated kernel copies properly (since on success, do_execve will never
 # return).
