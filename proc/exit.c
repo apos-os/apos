@@ -28,7 +28,8 @@
 
 void proc_exit(int status) {
   KASSERT(kthread_current_thread() == proc_current()->thread);
-  KASSERT(proc_current()->state == PROC_RUNNING);
+  KASSERT(proc_current()->state == PROC_RUNNING ||
+          proc_current()->state == PROC_STOPPED);
 
   process_t* const p = proc_current();
 

@@ -19,5 +19,5 @@ Import('user_env')
 ktest_lib = user_env.StaticLibrary('ktest', ['ktest.c'])
 user_env.Program('all_tests',
         ['all_tests.c', 'syscall_errno.c', 'exit_status.c',
-          'basic_signal_test.c', 'execve_test.c'],
+          'basic_signal_test.c', 'execve_test.c', 'stop_test.c'],
         LIBS=[ktest_lib])

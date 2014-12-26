@@ -14,11 +14,26 @@
 
 #include "proc/user_prepare.h"
 
+#include "common/klog.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 
 void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg) {
-  if (proc_assign_pending_signals()) {
-    user_context_t context = context_fn(arg);
-    proc_dispatch_pending_signals(&context);
-  }
+  do {
+    if (ksigismember(&proc_current()->pending_signals, SIGCONT) ||
+        ksigismember(&kthread_current_thread()->assigned_signals, SIGCONT)) {
+      klogfm(KL_PROC, DEBUG, "continuing process %d", proc_current()->id);
+      proc_current()->state = PROC_RUNNING;
+      // TODO(aoates): handle waitpid().
+    }
+
+    if (proc_assign_pending_signals()) {
+      user_context_t context = context_fn(arg);
+      proc_dispatch_pending_signals(&context);
+    }
+
+    if (proc_current()->state == PROC_STOPPED) {
+      scheduler_wait_on_interruptable(&proc_current()->stopped_queue);
+    }
+  } while (proc_current()->state == PROC_STOPPED);
 }

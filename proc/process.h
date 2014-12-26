@@ -99,6 +99,9 @@ struct process {
 
   // Wait queue for the parent thread wait()'ing.
   kthread_queue_t wait_queue;
+
+  // Wait queue for the process's threads if the process is STOPPED.
+  kthread_queue_t stopped_queue;
 };
 
 // Initialize the process table, and create the first process (process 0) from

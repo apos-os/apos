@@ -125,6 +125,11 @@ int proc_force_signal(process_t* proc, int sig) {
   int result = ksigaddset(&proc->pending_signals, sig);
   proc_try_assign_signal(proc, sig);
   POP_INTERRUPTS();
+
+  if (sig == SIGCONT) {
+    scheduler_wake_all(&proc->stopped_queue);
+  }
+
   return result;
 }
 
@@ -159,7 +164,7 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
 }
 
 static int proc_kill_one(process_t* proc, int sig) {
-  if (!proc || proc->state != PROC_RUNNING) {
+  if (!proc || (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED)) {
     return -ESRCH;
   }
 
@@ -292,6 +297,7 @@ void proc_suppress_signal(process_t* proc, int sig) {
 // Dispatch a particular signal in the current process.  May not return.
 static void dispatch_signal(int signum, const user_context_t* context) {
   process_t* proc = proc_current();
+  KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
   const sigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.
@@ -302,11 +308,17 @@ static void dispatch_signal(int signum, const user_context_t* context) {
   } else if (action->sa_handler == SIG_DFL) {
     switch (kDefaultActions[signum]) {
       case SIGACT_STOP:
+        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
+        proc->state = PROC_STOPPED;
+        // TODO(aoates): handle waitpid().
+        break;
+
       case SIGACT_CONTINUE:
-        // TODO(aoates): implement STOP and CONTINUE once job control exists.
-        klogfm(KL_PROC, WARNING, "cannot deliver stop or continue signal\n");
-        KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));
-        return;
+        KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
+        // We should have already been continued before calling this.
+        KASSERT_DBG(proc->state == PROC_RUNNING);
+        break;
 
       case SIGACT_IGNORE:
         KASSERT_DBG(!proc_signal_deliverable(kthread_current_thread(), signum));

@@ -30,6 +30,7 @@ int main(int argc, char** argv) {
 
   basic_signal_test();
   execve_test();
+  stop_test();
 
   ktest_finish_all();
   return 0;

@@ -74,6 +74,7 @@ static void proc_init_process(process_t* p) {
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;
   kthread_queue_init(&p->wait_queue);
+  kthread_queue_init(&p->stopped_queue);
 }
 
 process_t* proc_alloc() {
