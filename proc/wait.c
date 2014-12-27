@@ -43,13 +43,16 @@ static bool eligable_wait(process_t* proc, int options) {
   } else if ((options & WUNTRACED) && proc->state == PROC_STOPPED &&
              WIFSTOPPED(proc->exit_status)) {
     return true;
+  } else if ((options & WCONTINUED) && proc->state == PROC_RUNNING &&
+             WIFCONTINUED(proc->exit_status)) {
+    return true;
   }
 
   return false;
 }
 
 pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
-  if ((options & ~WUNTRACED) != 0) return -EINVAL;
+  if ((options & ~WUNTRACED & ~WCONTINUED) != 0) return -EINVAL;
 
   process_t* const p = proc_current();
   if (pid == 0) pid = -p->pgroup;
@@ -87,6 +90,15 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
 
   if (zombie->state == PROC_STOPPED) {
     KASSERT_DBG(options & WUNTRACED);
+    if (exit_status)
+      *exit_status = zombie->exit_status;
+    zombie->exit_status = 0;
+    return zombie->id;
+  }
+
+  if (zombie->state == PROC_RUNNING) {
+    KASSERT_DBG(options & WCONTINUED);
+    KASSERT_DBG(WIFCONTINUED(zombie->exit_status));
     if (exit_status)
       *exit_status = zombie->exit_status;
     zombie->exit_status = 0;

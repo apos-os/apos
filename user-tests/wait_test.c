@@ -220,8 +220,144 @@ static void stopped_test(void) {
   KEXPECT_EQ(0, WIFCONTINUED(status));
 }
 
+static void continued_test(void) {
+  KTEST_BEGIN("waitpid() with WCONTINUED (exited)");
+  pid_t child;
+  if ((child = fork()) == 0) {
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_NE(0, WIFEXITED(status));
+  KEXPECT_EQ(1, WEXITSTATUS(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (killed with signal)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGKILL);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGKILL, WTERMSIG(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (running)");
+  if ((child = fork()) == 0) {
+    sleep_ms(100);
+    create_file("sleep_done");
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(true, file_exists("sleep_done"));
+  KEXPECT_EQ(0, unlink("sleep_done"));
+  KEXPECT_NE(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (stopped w/ SIGSTOP)");
+  if ((child = fork()) == 0) {
+    alarm_ms(100);
+    kill(getpid(), SIGSTOP);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (stopped then continued)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    sleep(1000);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_NE(0, WIFCONTINUED(status));
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (with status == NULL)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    sleep(1000);
+  }
+  KEXPECT_EQ(child, waitpid(-1, NULL, WUNTRACED));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+  KEXPECT_EQ(child, waitpid(-1, NULL, WCONTINUED));
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (doesn't return twice for one continue)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    sleep_ms(100);
+    exit(0);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_NE(0, WIFCONTINUED(status));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_NE(0, WIFEXITED(status));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (SIGCONT on running process)");
+  if ((child = fork()) == 0) {
+    sleep_ms(100);
+    exit(0);
+  }
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_NE(0, WIFCONTINUED(status));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_NE(0, WIFEXITED(status));
+
+
+  KTEST_BEGIN("waitpid() with WCONTINUED (SIGCONT on running process)");
+  if ((child = fork()) == 0) {
+    sleep_ms(100);
+    kill(getpid(), SIGKILL);
+  }
+  KEXPECT_EQ(0, kill(child, SIGCONT));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WCONTINUED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_NE(0, WIFCONTINUED(status));
+  KEXPECT_EQ(child, wait(NULL));
+}
+
 void wait_test(void) {
   KTEST_SUITE_BEGIN("wait() and waitpid() tests");
   exit_status_test();
   stopped_test();
+  continued_test();
 }
