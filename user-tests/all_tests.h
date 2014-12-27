@@ -23,5 +23,6 @@ int exit_status_test(void);
 void basic_signal_test(void);
 void execve_test(void);
 void stop_test(void);
+void wait_test(void);
 
 #endif

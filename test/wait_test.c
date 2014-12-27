@@ -22,6 +22,7 @@
 #include "proc/sleep.h"
 #include "test/ktest.h"
 #include "test/kernel_tests.h"
+#include "user/include/apos/wait.h"
 
 static void do_nothing(void* arg) {
   proc_exit(1);

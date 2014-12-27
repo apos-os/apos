@@ -11,28 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <fcntl.h>
 
-#include "ktest.h"
-#include "all_tests.h"
+#ifndef APOO_USER_INCLUDE_APOS_WAIT_H
+#define APOO_USER_INCLUDE_APOS_WAIT_H
 
-bool run_slow_tests = false;
+#define WIFEXITED(x) ((x & 0xF80) == 0)
+#define WEXITSTATUS(x) (x & 0x7F)
+#define WIFSIGNALED(x) (x & 0x80)
+#define WTERMSIG(x) WEXITSTATUS(x)
+#define WIFSTOPPED(x) (x & 0x100)
+#define WSTOPSIG(x) WTERMSIG(x)
+#define WIFCONTINUED(x) (x & 0x200)
 
-int main(int argc, char** argv) {
-  if (argc > 1 && strcmp(argv[1], "all") == 0)
-    run_slow_tests = true;
-
-  ktest_begin_all();
-
-  syscall_errno_test();
-  int status = exit_status_test();
-  if (status) return status;
-
-  basic_signal_test();
-  execve_test();
-  stop_test();
-  wait_test();
-
-  ktest_finish_all();
-  return 0;
-}
+#endif
