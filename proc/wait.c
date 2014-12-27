@@ -27,8 +27,15 @@ pid_t proc_wait(int* exit_status) {
   return proc_waitpid(-1, exit_status, 0);
 }
 
+// Returns true if the given process is eligable for waiting given the
+// constraints.
+static bool matches_wait(process_t* proc, pid_t wait_pid) {
+  KASSERT_DBG(proc->parent == proc_current());
+  return (wait_pid == -1 || wait_pid == proc->id);
+}
+
 pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
-  if (pid != -1) return -ECHILD;
+  if (pid != -1 && pid < 0) return -ECHILD;
   if (options != 0) return -EINVAL;
 
   process_t* const p = proc_current();
@@ -36,16 +43,24 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
   // Look for an existing zombie child.
   process_t* zombie = 0x0;
   while (!zombie) {
+    bool found_matching_child = false;
     list_link_t* child_link = p->children_list.head;
     while (child_link) {
       process_t* const child_process = container_of(child_link, process_t,
                                                     children_link);
       KASSERT(child_process->parent == p);
-      if (child_process->state == PROC_ZOMBIE) {
-        zombie = child_process;
-        break;
+      if (matches_wait(child_process, pid)) {
+        found_matching_child = true;
+        if (child_process->state == PROC_ZOMBIE) {
+          zombie = child_process;
+          break;
+        }
       }
       child_link = child_link->next;
+    }
+
+    if (!found_matching_child) {
+      return -ECHILD;
     }
 
     // If we didn't find one, wait for a child to exit and wake us up.

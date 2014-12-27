@@ -56,7 +56,7 @@ static void basic_waitpid_test(void) {
 }
 
 static void sleep_func(void* arg) {
-  ksleep(1000);
+  ksleep(arg ? (int)arg : 1000);
 }
 
 static void do_nothing_sig(int sig) {}
@@ -92,8 +92,81 @@ static void interruptable_waitpid_test(void) {
   KEXPECT_EQ(waiter, proc_wait(NULL));
 }
 
+static void do_fork(void* arg) {
+  *(pid_t*)arg = proc_fork(&sleep_func, NULL);
+}
+
+static void wait_for_specific_pid_test(void) {
+  KTEST_BEGIN("waitpid(): invalid pid (no process with that pid)");
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+  KEXPECT_EQ(-ECHILD, proc_waitpid(child, NULL, 0));
+
+
+  KTEST_BEGIN("waitpid(): invalid pid (process exists but isn't a child)");
+  pid_t grandchild = 0;
+  child = proc_fork(&do_fork, &grandchild);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  KEXPECT_NE(NULL, proc_get(grandchild));
+  KEXPECT_EQ(PROC_RUNNING, proc_get(grandchild)->state);
+  KEXPECT_EQ(-ECHILD, proc_waitpid(grandchild, NULL, 0));
+
+
+  KTEST_BEGIN("waitpid(): pid is child (already stopped)");
+  child = proc_fork(&do_nothing, NULL);
+  for (int i = 0; i < 5 && proc_get(child)->state == PROC_RUNNING; ++i)
+    scheduler_yield();
+  int status = 5;
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  KEXPECT_EQ(1, status);
+
+
+  KTEST_BEGIN("waitpid(): pid is child (not yet stopped)");
+  child = proc_fork(&sleep_func, (void*)100);
+  status = 5;
+  uint32_t start_ms = get_time_ms();
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  uint32_t end_ms = get_time_ms();
+  KEXPECT_EQ(0, status);
+  KEXPECT_GE(end_ms - start_ms, 30);
+
+
+  KTEST_BEGIN("waitpid(): multiple children (child is stopped)");
+  child = proc_fork(&sleep_func, (void*)50);
+  pid_t childB = proc_fork(&do_nothing, NULL);
+  pid_t childC = proc_fork(&do_nothing, NULL);
+  pid_t childD = proc_fork(&sleep_func, (void*)50);
+  for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
+    scheduler_yield();
+  status = 5;
+  KEXPECT_EQ(childC, proc_waitpid(childC, &status, 0));
+  KEXPECT_EQ(1, status);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(childB, proc_waitpid(childB, NULL, 0));
+  KEXPECT_EQ(childD, proc_waitpid(childD, NULL, 0));
+
+  KTEST_BEGIN("waitpid(): multiple children (child is not stopped)");
+  child = proc_fork(&sleep_func, (void*)50);
+  childB = proc_fork(&do_nothing, NULL);
+  childC = proc_fork(&sleep_func, (void*)50);
+  childD = proc_fork(&do_nothing, NULL);
+  for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
+    scheduler_yield();
+  status = 5;
+  start_ms = get_time_ms();
+  KEXPECT_EQ(childC, proc_waitpid(childC, &status, 0));
+  end_ms = get_time_ms();
+  KEXPECT_EQ(0, status);
+  KEXPECT_GE(end_ms - start_ms, 20);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(childB, proc_waitpid(childB, NULL, 0));
+  KEXPECT_EQ(childD, proc_waitpid(childD, NULL, 0));
+}
+
 void wait_test(void) {
   KTEST_SUITE_BEGIN("wait() and waitpid() tests");
   basic_waitpid_test();
   interruptable_waitpid_test();
+  wait_for_specific_pid_test();
 }
