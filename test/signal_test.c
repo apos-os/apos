@@ -416,6 +416,7 @@ static void create_group_then_kill(void* arg) {
   int got_signal = is_signal_pending(proc_current(), SIGKILL);
   if (flags & 0x1) {
     KEXPECT_EQ(1, got_signal);
+    proc_suppress_signal(proc_current(), SIGKILL);
   } else {
     KEXPECT_EQ(0, got_signal);
   }
@@ -424,6 +425,7 @@ static void create_group_then_kill(void* arg) {
   for (int i = 0; i < 3; ++i) {
     int status;
     int child = proc_wait(&status);
+    KEXPECT_GE(child, 0);
     if (child == okA || child == okB) {
       KEXPECT_EQ(1, status);
     } else {

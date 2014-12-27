@@ -24,7 +24,8 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg) {
         ksigismember(&kthread_current_thread()->assigned_signals, SIGCONT)) {
       klogfm(KL_PROC, DEBUG, "continuing process %d", proc_current()->id);
       proc_current()->state = PROC_RUNNING;
-      // TODO(aoates): handle waitpid().
+      proc_current()->exit_status = 0x200;
+      scheduler_wake_all(&proc_current()->parent->wait_queue);
       // TODO(aoates): test for this when we support multiple threads per
       // process:
       scheduler_wake_all(&proc_current()->stopped_queue);

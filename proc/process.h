@@ -46,7 +46,7 @@ struct process {
   pid_t id;  // Index into global process table.
   proc_state_t state;
   kthread_t thread;  // Main process thread.
-  int exit_status;
+  int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];

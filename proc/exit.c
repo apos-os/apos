@@ -82,7 +82,6 @@ void proc_exit(int status) {
 
   // Remove it from the process group list.
   list_remove(&proc_group_get(p->pgroup)->procs, &p->pgroup_link);
-  p->pgroup = -1;
 
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);
@@ -103,7 +102,7 @@ void proc_exit(int status) {
   KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);
 
   // Wake up parent if it's wait()'ing.
-  scheduler_wake_one(&p->parent->wait_queue);
+  scheduler_wake_all(&p->parent->wait_queue);
 
   kthread_exit(0x0);
   die("unreachable");

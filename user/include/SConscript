@@ -33,6 +33,7 @@ HEADERS = [
   'apos/vfs/dirent.h',
   'apos/vfs/stat.h',
   'apos/vfs/vfs.h',
+  'apos/wait.h',
 ]
 
 HEADER_INSTALL_DIR = os.path.join(env['HEADER_INSTALL_PREFIX'], 'include')
