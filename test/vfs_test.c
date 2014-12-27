@@ -44,7 +44,7 @@
 // Increase this to make thread safety tests run longer.
 #define THREAD_SAFETY_MULTIPLIER 1
 
-#define ROOT_VNODE_REFCOUNT 2
+#define ROOT_VNODE_REFCOUNT 3
 
 #define EXPECT_VNODE_REFCOUNT(count, path) \
     KEXPECT_EQ((count), vfs_get_vnode_refcount_for_path(path))

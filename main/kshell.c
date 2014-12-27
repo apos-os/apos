@@ -67,7 +67,6 @@ const char* PATH[] = {
 
 #define READ_BUF_SIZE 1024
 
-static apos_dev_t g_tty;
 static int g_tty_fd = -1;
 
 void ksh_printf(const char* fmt, ...) {
@@ -78,8 +77,7 @@ void ksh_printf(const char* fmt, ...) {
   kvsprintf(buf, fmt, args);
   va_end(args);
 
-  char_dev_t* dev = dev_get_char(g_tty);
-  dev->write(dev, buf, kstrlen(buf));
+  vfs_write(1, buf, kstrlen(buf));
 }
 
 #if ENABLE_TESTS
@@ -153,6 +151,25 @@ static void run_all_tests(void) {
   }
 }
 
+// We run the actual test in another process, since some tests (the VFS tests in
+// particular) make assumptions about the file descriptors they can use.
+static void do_test_cmd(void* arg) {
+  vfs_close(0);
+  vfs_close(1);
+  vfs_close(2);
+  vfs_close(g_tty_fd);
+  test_entry_t* e = (test_entry_t*)arg;
+
+  sigset_t mask;
+  ksigemptyset(&mask);
+  ksigaddset(&mask, SIGINT);
+  proc_sigprocmask(SIG_BLOCK, &mask, NULL);
+
+  ktest_begin_all();
+  e->func();
+  ktest_finish_all();
+}
+
 static void test_cmd(int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("invalid # of args for test: expected 1, got %d\n",
@@ -164,9 +181,8 @@ static void test_cmd(int argc, char* argv[]) {
   while (e->name != 0x0) {
     if (kstrcmp(argv[1], e->name) == 0) {
       ksh_printf("running test '%s'...\n", argv[1]);
-      ktest_begin_all();
-      e->func();
-      ktest_finish_all();
+      proc_fork(&do_test_cmd, e);
+      proc_wait(0);
       return;
     }
     e++;
@@ -693,19 +709,6 @@ static void boot_child_func(void* arg) {
   setpgid(0, 0);
 
   boot_child_args_t* args = (boot_child_args_t*)arg;
-  char tty_name[100];
-  ksprintf(tty_name, "/dev/tty%d", minor(g_tty));
-
-  int stdin_fd = vfs_open(tty_name, VFS_O_RDONLY);
-  int stdout_fd = vfs_open(tty_name, VFS_O_WRONLY);
-  int stderr_fd = vfs_open(tty_name, VFS_O_WRONLY);
-  if (stdin_fd != 0 || stdout_fd != 1 || stderr_fd != 2) {
-    klogf("Couldn't boot %s: opened wrong fds for stdin/stdout/stderr "
-          " (stdin: %d, stdout: %d, stderr: %d)\n",
-          args->argv[0], stdin_fd, stdout_fd, stderr_fd);
-    proc_exit(1);
-  }
-
   char* envp[] = { NULL };
   int result = do_execve(args->path, args->argv, envp, NULL, NULL);
   if (result) {
@@ -927,9 +930,6 @@ static void parse_and_dispatch(char* cmd) {
 }
 
 void kshell_main(apos_dev_t tty) {
-  g_tty = tty;
-  char_dev_t* tty_dev = dev_get_char(g_tty);
-
   proc_setsid();
   char tty_name[20];
   ksprintf(tty_name, "/dev/tty%d", minor(tty));
@@ -945,6 +945,10 @@ void kshell_main(apos_dev_t tty) {
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
   KASSERT(0 == proc_tcsetpgrp(g_tty_fd, getpgid(0)));
 
+  KASSERT(0 == vfs_open(tty_name, VFS_O_RDONLY));
+  KASSERT(1 == vfs_open(tty_name, VFS_O_WRONLY));
+  KASSERT(2 == vfs_open(tty_name, VFS_O_WRONLY));
+
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   ksh_printf("@                     APOS                       @\n");
   ksh_printf("@            (c) Andrew Oates 2012               @\n");
@@ -956,7 +960,7 @@ void kshell_main(apos_dev_t tty) {
     ksh_printf("\x1b[0m");  // Reset before each prompt.
 #endif
     ksh_printf("> ");
-    int read_len = tty_dev->read(tty_dev, read_buf, READ_BUF_SIZE);
+    int read_len = vfs_read(0, read_buf, READ_BUF_SIZE);
     if (read_len < 0) {
       if (read_len == -EINTR) {
         proc_suppress_signal(proc_current(), SIGINT);
