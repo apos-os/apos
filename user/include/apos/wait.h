@@ -17,6 +17,7 @@
 
 #define WUNTRACED 1
 #define WCONTINUED 2
+#define WNOHANG 4
 
 #define WIFEXITED(x) ((x & 0xF80) == 0)
 #define WEXITSTATUS(x) (x & 0x7F)

@@ -52,7 +52,7 @@ static bool eligable_wait(process_t* proc, int options) {
 }
 
 pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
-  if ((options & ~WUNTRACED & ~WCONTINUED) != 0) return -EINVAL;
+  if ((options & ~WUNTRACED & ~WCONTINUED & ~WNOHANG) != 0) return -EINVAL;
 
   process_t* const p = proc_current();
   if (pid == 0) pid = -p->pgroup;
@@ -82,6 +82,9 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
 
     // If we didn't find one, wait for a child to exit and wake us up.
     if (!zombie) {
+      if (options & WNOHANG)
+        return 0;
+
       int interrupted = scheduler_wait_on_interruptable(&p->wait_queue);
       if (interrupted)
         return -EINTR;

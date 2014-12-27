@@ -355,9 +355,71 @@ static void continued_test(void) {
   KEXPECT_EQ(child, wait(NULL));
 }
 
+static void no_hang_test(void) {
+  KTEST_BEGIN("waitpid(): WNOHANG without children");
+  int result = waitpid(-1, NULL, WNOHANG);
+  int err = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(ECHILD, err);
+
+  KTEST_BEGIN("waitpid(): WNOHANG with stopped child");
+  pid_t child;
+  if ((child = fork()) == 0) {
+    exit(0);
+  }
+  sleep_ms(100);
+  int status;
+  KEXPECT_EQ(child, waitpid(-1, &status, WNOHANG));
+  KEXPECT_NE(0, WIFEXITED(status));
+
+
+  KTEST_BEGIN("waitpid(): WNOHANG with running child");
+  if ((child = fork()) == 0) {
+    sleep_ms(50);
+    exit(0);
+  }
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG));
+  KEXPECT_EQ(child, waitpid(-1, &status, 0));
+  KEXPECT_NE(0, WIFEXITED(status));
+
+
+  KTEST_BEGIN("waitpid(): WNOHANG with stopped child");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    exit(0);
+  }
+  sleep_ms(10);
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG));
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG | WCONTINUED));
+  KEXPECT_EQ(child, waitpid(-1, &status, WNOHANG | WUNTRACED));
+  KEXPECT_NE(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG | WUNTRACED));
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+
+
+  KTEST_BEGIN("waitpid(): WNOHANG with continued child");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+    sleep_ms(100);
+    exit(0);
+  }
+  sleep_ms(10);
+  kill(child, SIGCONT);
+  sleep_ms(10);
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG));
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG | WUNTRACED));
+  KEXPECT_EQ(child, waitpid(-1, &status, WNOHANG | WCONTINUED));
+  KEXPECT_NE(0, WIFCONTINUED(status));
+  KEXPECT_EQ(0, waitpid(-1, &status, WNOHANG | WUNTRACED));
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  // TODO(aoates): without the above, the child segfaults.  Why?
+}
+
 void wait_test(void) {
   KTEST_SUITE_BEGIN("wait() and waitpid() tests");
   exit_status_test();
   stopped_test();
   continued_test();
+  no_hang_test();
 }
