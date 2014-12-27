@@ -94,7 +94,7 @@ typedef struct {
 
 static void run_all_tests(void);
 
-static test_entry_t TESTS[] = {
+static const test_entry_t TESTS[] = {
   { "ktest", &ktest_test, 0 },
 
   // Running kmalloc test ruins everything else since it resets malloc state.
@@ -146,7 +146,7 @@ static test_entry_t TESTS[] = {
 };
 
 static void run_all_tests(void) {
-  test_entry_t* e = &TESTS[0];
+  const test_entry_t* e = &TESTS[0];
   while (e->name != 0x0) {
     if (e->run_in_all) {
       e->func();
@@ -157,7 +157,7 @@ static void run_all_tests(void) {
 
 typedef struct {
   kshell_t* shell;
-  test_entry_t* entry;
+  const test_entry_t* entry;
 } test_cmd_args_t;
 
 // We run the actual test in another process, since some tests (the VFS tests in
@@ -186,7 +186,7 @@ static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  test_entry_t* e = &TESTS[0];
+  const test_entry_t* e = &TESTS[0];
   while (e->name != 0x0) {
     if (kstrcmp(argv[1], e->name) == 0) {
       ksh_printf("running test '%s'...\n", argv[1]);
@@ -841,7 +841,7 @@ typedef struct {
   void (*func)(kshell_t*, int, char*[]);
 } cmd_t;
 
-static cmd_t CMDS[] = {
+static const cmd_t CMDS[] = {
 #if ENABLE_TESTS
   { "test", &test_cmd },
 #endif
@@ -920,7 +920,7 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
   }
 
   // Find the command.
-  cmd_t* cmd_data = &CMDS[0];
+  const cmd_t* cmd_data = &CMDS[0];
   while (cmd_data->name != 0x0) {
     if (kstrcmp(cmd_data->name, argv[0]) == 0) {
       cmd_data->func(shell, argc, argv);
