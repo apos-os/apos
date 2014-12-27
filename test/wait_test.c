@@ -228,6 +228,20 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(child, proc_waitpid(-1, NULL, 0));
   end_ms = get_time_ms();
   KEXPECT_GE(end_ms - start_ms, 20);
+
+
+  KTEST_BEGIN("waitpid(): waitpid(0) current process group");
+  child = proc_fork(&do_nothing, NULL);
+  childB = proc_fork(&do_nothing, NULL);
+  childC = proc_fork(&sleep_func, (void*)20);
+  KEXPECT_EQ(0, setpgid(child, proc_current()->pgroup));
+  KEXPECT_EQ(0, setpgid(childB, proc_current()->pgroup));
+  KEXPECT_EQ(0, setpgid(childC, proc_current()->pgroup));
+  waitres1 = proc_waitpid(0, NULL, 0);
+  waitres2 = proc_waitpid(0, NULL, 0);
+  KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
+  KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
+  KEXPECT_EQ(childC, proc_waitpid(0, NULL, 0));
 }
 
 void wait_test(void) {

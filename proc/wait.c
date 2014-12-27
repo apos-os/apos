@@ -35,10 +35,10 @@ static bool matches_wait(process_t* proc, pid_t wait_pid) {
 }
 
 pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
-  if (pid == 0) return -ECHILD;
   if (options != 0) return -EINVAL;
 
   process_t* const p = proc_current();
+  if (pid == 0) pid = -p->pgroup;
 
   // Look for an existing zombie child.
   process_t* zombie = 0x0;
