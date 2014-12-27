@@ -67,7 +67,10 @@ const char* PATH[] = {
 
 #define READ_BUF_SIZE 1024
 
-static int g_tty_fd = -1;
+// State for the shell.
+typedef struct {
+  int tty_fd;
+} kshell_t;
 
 void ksh_printf(const char* fmt, ...) {
   char buf[1024];
@@ -151,14 +154,19 @@ static void run_all_tests(void) {
   }
 }
 
+typedef struct {
+  kshell_t* shell;
+  test_entry_t* entry;
+} test_cmd_args_t;
+
 // We run the actual test in another process, since some tests (the VFS tests in
 // particular) make assumptions about the file descriptors they can use.
 static void do_test_cmd(void* arg) {
+  test_cmd_args_t* args = (test_cmd_args_t*)arg;
   vfs_close(0);
   vfs_close(1);
   vfs_close(2);
-  vfs_close(g_tty_fd);
-  test_entry_t* e = (test_entry_t*)arg;
+  vfs_close(args->shell->tty_fd);
 
   sigset_t mask;
   ksigemptyset(&mask);
@@ -166,11 +174,11 @@ static void do_test_cmd(void* arg) {
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
 
   ktest_begin_all();
-  e->func();
+  args->entry->func();
   ktest_finish_all();
 }
 
-static void test_cmd(int argc, char* argv[]) {
+static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("invalid # of args for test: expected 1, got %d\n",
                argc - 1);
@@ -181,7 +189,8 @@ static void test_cmd(int argc, char* argv[]) {
   while (e->name != 0x0) {
     if (kstrcmp(argv[1], e->name) == 0) {
       ksh_printf("running test '%s'...\n", argv[1]);
-      proc_fork(&do_test_cmd, e);
+      test_cmd_args_t args = {shell, e};
+      proc_fork(&do_test_cmd, &args);
       proc_wait(0);
       return;
     }
@@ -193,11 +202,11 @@ static void test_cmd(int argc, char* argv[]) {
 
 #endif  // ENABLE_TESTS
 
-static void meminfo_cmd(int argc, char* argv[]) {
+static void meminfo_cmd(kshell_t* shell, int argc, char* argv[]) {
   kmalloc_log_state();
 }
 
-static void hash_cmd(int argc, char* argv[]) {
+static void hash_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: hash <number>\n");
     return;
@@ -208,7 +217,7 @@ static void hash_cmd(int argc, char* argv[]) {
 }
 
 // Reads a block from a block device.
-static void b_read_cmd(int argc, char* argv[]) {
+static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 4) {
     ksh_printf("usage: b_read <dev major> <dev minor> <block>\n");
     return;
@@ -237,7 +246,7 @@ static void b_read_cmd(int argc, char* argv[]) {
 }
 
 // Writes a block to a block device.
-static void b_write_cmd(int argc, char* argv[]) {
+static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 5) {
     ksh_printf("usage: b_write <dev major> <dev minor> <block> <data>\n");
     return;
@@ -266,7 +275,7 @@ static void b_write_cmd(int argc, char* argv[]) {
 // Simple pager for the kernel log.  With no arguments, prints the next few
 // lines of the log (and the current offset).  With one argument, prints the log
 // starting at the given offset.
-static void klog_cmd(int argc, char* argv[]) {
+static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
   static int offset = 0;
   if (argc < 1 || argc > 2) {
     ksh_printf("usage: klog [offset]\n");
@@ -308,7 +317,7 @@ static void klog_cmd(int argc, char* argv[]) {
 
 // Commands for doing {in,out}{b,s,l}.
 #define IO_IN_CMD(name, type) \
-  static void name##_cmd(int argc, char* argv[]) { \
+  static void name##_cmd(kshell_t* shell, int argc, char* argv[]) { \
     if (argc != 2) { \
       ksh_printf("usage: " #name " <port>\n"); \
       return; \
@@ -319,7 +328,7 @@ static void klog_cmd(int argc, char* argv[]) {
   }
 
 #define IO_OUT_CMD(name, type) \
-  static void name##_cmd(int argc, char* argv[]) { \
+  static void name##_cmd(kshell_t* shell, int argc, char* argv[]) { \
     if (argc != 3) { \
       ksh_printf("usage: " #name " <port> <value>\n"); \
       return; \
@@ -341,7 +350,7 @@ IO_OUT_CMD(outl, uint32_t);
 static void timer_cmd_timer_cb(void* arg) {
   ksh_printf((char*)arg);
 }
-static void timer_cmd(int argc, char* argv[]) {
+static void timer_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 4) {
     ksh_printf("usage: timer <interval_ms> <limit> <msg>\n");
     return;
@@ -358,7 +367,7 @@ static void timer_cmd(int argc, char* argv[]) {
 }
 
 // Sleeps the thread for a certain number of ms.
-static void sleep_cmd(int argc, char* argv[]) {
+static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: sleep <ms>\n");
     return;
@@ -367,7 +376,7 @@ static void sleep_cmd(int argc, char* argv[]) {
   ksleep(atou(argv[1]));
 }
 
-static void ls_cmd(int argc, char* argv[]) {
+static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc > 3) {
     ksh_printf("usage: ls [-l] [optional path]\n");
     return;
@@ -468,7 +477,7 @@ static void ls_cmd(int argc, char* argv[]) {
   vfs_close(fd);
 }
 
-static void mkdir_cmd(int argc, char* argv[]) {
+static void mkdir_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: mkdir <path>\n");
     return;
@@ -479,7 +488,7 @@ static void mkdir_cmd(int argc, char* argv[]) {
   }
 }
 
-static void rmdir_cmd(int argc, char* argv[]) {
+static void rmdir_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: rmdir <path>\n");
     return;
@@ -490,7 +499,7 @@ static void rmdir_cmd(int argc, char* argv[]) {
   }
 }
 
-static void pwd_cmd(int argc, char* argv[]) {
+static void pwd_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 1) {
     ksh_printf("usage: pwd\n");
     return;
@@ -504,7 +513,7 @@ static void pwd_cmd(int argc, char* argv[]) {
   }
 }
 
-static void cd_cmd(int argc, char* argv[]) {
+static void cd_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: cd <path>\n");
     return;
@@ -515,7 +524,7 @@ static void cd_cmd(int argc, char* argv[]) {
   }
 }
 
-static void cat_cmd(int argc, char* argv[]) {
+static void cat_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: cat <path>\n");
     return;
@@ -545,7 +554,7 @@ static void cat_cmd(int argc, char* argv[]) {
   vfs_close(fd);
 }
 
-static void write_cmd(int argc, char* argv[]) {
+static void write_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 3) {
     ksh_printf("usage: write <path> <data>\n");
     return;
@@ -572,7 +581,7 @@ static void write_cmd(int argc, char* argv[]) {
   vfs_close(fd);
 }
 
-static void cp_cmd(int argc, char* argv[]) {
+static void cp_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 3) {
     ksh_printf("usage: cp <src> <dst>\n");
     return;
@@ -628,7 +637,7 @@ static void cp_cmd(int argc, char* argv[]) {
   ksh_printf("bytes copied: %d\n", bytes_copied);
 }
 
-static void rm_cmd(int argc, char* argv[]) {
+static void rm_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: rm <path>\n");
     return;
@@ -639,7 +648,7 @@ static void rm_cmd(int argc, char* argv[]) {
   }
 }
 
-static void hash_file_cmd(int argc, char* argv[]) {
+static void hash_file_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 4) {
     ksh_printf("usage: hash_file <start> <end> <path>\n");
     return;
@@ -695,7 +704,7 @@ static void hash_file_cmd(int argc, char* argv[]) {
   ksh_printf("elapsed time: %d ms\n", elapsed);
 }
 
-void bcstats_cmd(int argc, char** argv) {
+void bcstats_cmd(kshell_t* shell, int argc, char** argv) {
   block_cache_log_stats();
 }
 
@@ -717,7 +726,7 @@ static void boot_child_func(void* arg) {
   }
 }
 
-void do_boot_cmd(const char* path, int argc, char** argv) {
+void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
   KASSERT(argc >= 1);
 
   boot_child_args_t args;
@@ -730,26 +739,31 @@ void do_boot_cmd(const char* path, int argc, char** argv) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {
     setpgid(child_pid, child_pid);
-    proc_tcsetpgrp(g_tty_fd, child_pid);
+    proc_tcsetpgrp(shell->tty_fd, child_pid);
 
     int exit_status;
     pid_t wait_pid = proc_wait(&exit_status);
     klogf("<child process %d exited with status %d>\n",
           wait_pid, exit_status);
 
-    proc_tcsetpgrp(g_tty_fd, getpgid(0));
+    proc_tcsetpgrp(shell->tty_fd, getpgid(0));
   }
 }
 
-void boot_cmd(int argc, char** argv) {
+void boot_cmd(kshell_t* shell, int argc, char** argv) {
   if (argc < 2) {
     klogf("Usage: boot <binary> <args...>\n");
     return;
   }
-  do_boot_cmd(argv[1], argc - 1, argv + 1);
+  do_boot_cmd(shell, argv[1], argc - 1, argv + 1);
 }
 
 #if ENABLE_USB
+
+static void uhci_trampoline_cmd(kshell_t* shell, int argc, char* argv[]) {
+  uhci_cmd(argc, argv);
+}
+
 static const char* lsusb_speed_str(usb_speed_t speed) {
   switch (speed) {
     case USB_LOW_SPEED: return "low";
@@ -803,7 +817,7 @@ static void lsusb_print_node(usb_device_t* dev, int indent) {
   }
 }
 
-static void lsusb_cmd(int argc, char** argv) {
+static void lsusb_cmd(kshell_t* shell, int argc, char** argv) {
   if (argc != 1) {
     ksh_printf("Usage: lsusb\n");
     return;
@@ -824,7 +838,7 @@ static void lsusb_cmd(int argc, char** argv) {
 
 typedef struct {
   const char* name;
-  void (*func)(int, char*[]);
+  void (*func)(kshell_t*, int, char*[]);
 } cmd_t;
 
 static cmd_t CMDS[] = {
@@ -861,7 +875,7 @@ static cmd_t CMDS[] = {
   { "hash_file", &hash_file_cmd },
 
 #if ENABLE_USB
-  { "uhci", &uhci_cmd },
+  { "uhci", &uhci_trampoline_cmd },
   { "lsusb", &lsusb_cmd },
 #endif
 
@@ -876,7 +890,7 @@ static int is_ws(char c) {
   return c == ' ' || c == '\n' || c == '\t';
 }
 
-static void parse_and_dispatch(char* cmd) {
+static void parse_and_dispatch(kshell_t* shell, char* cmd) {
   // Parse the command line string.
   int argc = 0;
   char* argv[100];
@@ -909,7 +923,7 @@ static void parse_and_dispatch(char* cmd) {
   cmd_t* cmd_data = &CMDS[0];
   while (cmd_data->name != 0x0) {
     if (kstrcmp(cmd_data->name, argv[0]) == 0) {
-      cmd_data->func(argc, argv);
+      cmd_data->func(shell, argc, argv);
       return;
     }
     cmd_data++;
@@ -920,7 +934,7 @@ static void parse_and_dispatch(char* cmd) {
   for (int i = 0; PATH[i] != NULL; ++i) {
     ksprintf(path, "%s/%s", PATH[i], argv[0]);
     if (vfs_access(path, X_OK) == 0) {
-      do_boot_cmd(path, argc, argv);
+      do_boot_cmd(shell, path, argc, argv);
       return;
     }
   }
@@ -930,20 +944,22 @@ static void parse_and_dispatch(char* cmd) {
 }
 
 void kshell_main(apos_dev_t tty) {
+  kshell_t shell;
+
   proc_setsid();
   char tty_name[20];
   ksprintf(tty_name, "/dev/tty%d", minor(tty));
-  g_tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
-  KASSERT(g_tty_fd == 0);
-  g_tty_fd = vfs_dup2(g_tty_fd, PROC_MAX_FDS - 1);
-  KASSERT(g_tty_fd == PROC_MAX_FDS - 1);
+  shell.tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
+  KASSERT(shell.tty_fd == 0);
+  shell.tty_fd = vfs_dup2(shell.tty_fd, PROC_MAX_FDS - 1);
+  KASSERT(shell.tty_fd == PROC_MAX_FDS - 1);
   vfs_close(0);
 
   sigset_t mask;
   ksigemptyset(&mask);
   ksigaddset(&mask, SIGTTOU);
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
-  KASSERT(0 == proc_tcsetpgrp(g_tty_fd, getpgid(0)));
+  KASSERT(0 == proc_tcsetpgrp(shell.tty_fd, getpgid(0)));
 
   KASSERT(0 == vfs_open(tty_name, VFS_O_RDONLY));
   KASSERT(1 == vfs_open(tty_name, VFS_O_WRONLY));
@@ -973,7 +989,7 @@ void kshell_main(apos_dev_t tty) {
     read_buf[read_len] = '\0';
     //klogf("kshell: read %d bytes:\n%s\n", read_len, read_buf);
 
-    parse_and_dispatch(read_buf);
+    parse_and_dispatch(&shell, read_buf);
     //ksprintf(out_buf, "You wrote: '%s'\n", read_buf);
     //ld_write(g_io, out_buf, kstrlen(out_buf));
   }
