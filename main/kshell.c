@@ -70,6 +70,7 @@ const char* PATH[] = {
 // State for the shell.
 typedef struct {
   int tty_fd;
+  off_t klog_offset;
 } kshell_t;
 
 void ksh_printf(const char* fmt, ...) {
@@ -276,17 +277,16 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
 // lines of the log (and the current offset).  With one argument, prints the log
 // starting at the given offset.
 static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
-  static int offset = 0;
   if (argc < 1 || argc > 2) {
     ksh_printf("usage: klog [offset]\n");
     return;
   }
 
   if (argc == 2) {
-    offset = atou(argv[1]);
+    shell->klog_offset = atou(argv[1]);
   }
   char buf[1024];
-  int read = klog_read(offset, buf, 1024);
+  int read = klog_read(shell->klog_offset, buf, 1024);
 
   // Find the last newline, and truncate the last line (if multi-line).
   while (buf[read] != '\n' && read > 0) read--;
@@ -309,10 +309,10 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
     }
   }
 
-  ksh_printf("offset: %d\n------", offset);
+  ksh_printf("offset: %d\n------", shell->klog_offset);
   ksh_printf(buf);
   ksh_printf("\n------\n");
-  offset += read;
+  shell->klog_offset += read;
 }
 
 // Commands for doing {in,out}{b,s,l}.
@@ -944,7 +944,7 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
 }
 
 void kshell_main(apos_dev_t tty) {
-  kshell_t shell;
+  kshell_t shell = {-1, 0};
 
   proc_setsid();
   char tty_name[20];
