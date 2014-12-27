@@ -319,7 +319,8 @@ static bool dispatch_signal(int signum, const user_context_t* context) {
         KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
         klogfm(KL_PROC, DEBUG, "stopping process %d", proc->id);
         proc->state = PROC_STOPPED;
-        // TODO(aoates): handle waitpid().
+        proc->exit_status = 0x100 | signum;
+        scheduler_wake_all(&proc->parent->wait_queue);
         break;
 
       case SIGACT_CONTINUE:

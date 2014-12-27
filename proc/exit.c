@@ -102,7 +102,7 @@ void proc_exit(int status) {
   KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);
 
   // Wake up parent if it's wait()'ing.
-  scheduler_wake_one(&p->parent->wait_queue);
+  scheduler_wake_all(&p->parent->wait_queue);
 
   kthread_exit(0x0);
   die("unreachable");

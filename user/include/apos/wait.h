@@ -15,6 +15,8 @@
 #ifndef APOO_USER_INCLUDE_APOS_WAIT_H
 #define APOO_USER_INCLUDE_APOS_WAIT_H
 
+#define WUNTRACED 1
+
 #define WIFEXITED(x) ((x & 0xF80) == 0)
 #define WEXITSTATUS(x) (x & 0x7F)
 #define WIFSIGNALED(x) (x & 0x80)

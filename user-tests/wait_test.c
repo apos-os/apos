@@ -12,12 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <sys/signal.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <apos/sleep.h>
+#include <apos/syscall_decls.h>
+
 #include "ktest.h"
+
+static bool create_file(const char* path) {
+  int fd = open(path, O_CREAT | O_RDONLY, S_IRWXU);
+  if (fd < 0) return false;
+  close(fd);
+  return true;
+}
+
+static bool file_exists(const char* path) {
+  int fd = open(path, O_RDONLY);
+  if (fd < 0 && errno == ENOENT) {
+    return false;
+  } else if (fd < 0) {
+    perror("open() in file_exists() failed");
+    return false;
+  }
+  close(fd);
+  return true;
+}
 
 static void exit_status_test(void) {
   KTEST_BEGIN("Exit status macros (normal status)");
@@ -56,7 +81,147 @@ static void exit_status_test(void) {
   }
 }
 
+static void stopped_test(void) {
+  KTEST_BEGIN("waitpid() with WUNTRACED (exited)");
+  pid_t child;
+  if ((child = fork()) == 0) {
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_NE(0, WIFEXITED(status));
+  KEXPECT_EQ(1, WEXITSTATUS(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (killed with signal)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGKILL);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGKILL, WTERMSIG(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (running)");
+  if ((child = fork()) == 0) {
+    sleep_ms(100);
+    create_file("sleep_done");
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(true, file_exists("sleep_done"));
+  KEXPECT_EQ(0, unlink("sleep_done"));
+  KEXPECT_NE(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (stopped w/ SIGSTOP)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_NE(0, WIFSTOPPED(status));
+  KEXPECT_EQ(SIGSTOP, WSTOPSIG(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (stopped w/ SIGTSTP)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGTSTP);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_NE(0, WIFSTOPPED(status));
+  KEXPECT_EQ(SIGTSTP, WSTOPSIG(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (NULL status)");
+  if ((child = fork()) == 0) {
+    kill(getpid(), SIGSTOP);
+  }
+  KEXPECT_EQ(child, waitpid(-1, NULL, WUNTRACED));
+  KEXPECT_EQ(0, kill(child, SIGKILL));
+  KEXPECT_EQ(child, wait(NULL));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (only returns once for stopped)");
+  if ((child = fork()) == 0) {
+    alarm_ms(100);
+    kill(getpid(), SIGSTOP);
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_EQ(0, WIFSIGNALED(status));
+  KEXPECT_NE(0, WIFSTOPPED(status));
+  KEXPECT_EQ(SIGSTOP, WSTOPSIG(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  // TODO(aoates): verify blocking.
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (resets stopped even if status == NULL)");
+  if ((child = fork()) == 0) {
+    alarm_ms(100);
+    kill(getpid(), SIGSTOP);
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(-1, NULL, WUNTRACED));
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  // TODO(aoates): verify blocking.
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+
+
+  KTEST_BEGIN("waitpid() with WUNTRACED (double stop)");
+  if ((child = fork()) == 0) {
+    alarm_ms(100);
+    kill(getpid(), SIGSTOP);
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_NE(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, kill(child, SIGSTOP));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  KEXPECT_NE(0, WIFSTOPPED(status));
+
+  KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
+  // TODO(aoates): verify blocking.
+  KEXPECT_EQ(0, WIFEXITED(status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
+  KEXPECT_EQ(0, WIFSTOPPED(status));
+  KEXPECT_EQ(0, WIFCONTINUED(status));
+}
+
 void wait_test(void) {
   KTEST_SUITE_BEGIN("wait() and waitpid() tests");
   exit_status_test();
+  stopped_test();
 }

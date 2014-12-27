@@ -22,20 +22,34 @@
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
+#include "user/include/apos/wait.h"
 
 pid_t proc_wait(int* exit_status) {
   return proc_waitpid(-1, exit_status, 0);
 }
 
-// Returns true if the given process is eligable for waiting given the
-// constraints.
-static bool matches_wait(process_t* proc, pid_t wait_pid) {
+// Returns true if the given process matches the pid (which has the semantics as
+// for waitpid()'s pid argument).
+static bool matches_pid(process_t* proc, pid_t wait_pid) {
   KASSERT_DBG(proc->parent == proc_current());
   return (wait_pid == -1 || wait_pid == proc->id || wait_pid == -proc->pgroup);
 }
 
+// Returns true if the given process is eligable for waiting with the given
+// waitpid() flags.
+static bool eligable_wait(process_t* proc, int options) {
+  if (proc->state == PROC_ZOMBIE) {
+    return true;
+  } else if ((options & WUNTRACED) && proc->state == PROC_STOPPED &&
+             WIFSTOPPED(proc->exit_status)) {
+    return true;
+  }
+
+  return false;
+}
+
 pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
-  if (options != 0) return -EINVAL;
+  if ((options & ~WUNTRACED) != 0) return -EINVAL;
 
   process_t* const p = proc_current();
   if (pid == 0) pid = -p->pgroup;
@@ -49,9 +63,9 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
       process_t* const child_process = container_of(child_link, process_t,
                                                     children_link);
       KASSERT(child_process->parent == p);
-      if (matches_wait(child_process, pid)) {
+      if (matches_pid(child_process, pid)) {
         found_matching_child = true;
-        if (child_process->state == PROC_ZOMBIE) {
+        if (eligable_wait(child_process, options)) {
           zombie = child_process;
           break;
         }
@@ -71,6 +85,15 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
     }
   }
 
+  if (zombie->state == PROC_STOPPED) {
+    KASSERT_DBG(options & WUNTRACED);
+    if (exit_status)
+      *exit_status = zombie->exit_status;
+    zombie->exit_status = 0;
+    return zombie->id;
+  }
+
+  KASSERT(zombie->state == PROC_ZOMBIE);
   list_remove(&p->children_list, &zombie->children_link);
 
   // Tear down the child's address space.
