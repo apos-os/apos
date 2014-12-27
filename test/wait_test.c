@@ -16,6 +16,7 @@
 
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/group.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
@@ -164,9 +165,75 @@ static void wait_for_specific_pid_test(void) {
   KEXPECT_EQ(childD, proc_waitpid(childD, NULL, 0));
 }
 
+static void create_children_in_group(void* arg) {
+  pid_t child = proc_fork(&sleep_func, (void*)500);
+  KEXPECT_EQ(0, setpgid(child, child));
+  *(pid_t*)arg = child;
+}
+
+static void wait_for_pgroup_test(void) {
+  KTEST_BEGIN("waitpid(): wait for non-existant process group");
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(-ECHILD, proc_waitpid(-child, NULL, 0));
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  KEXPECT_EQ(-ECHILD, proc_waitpid(-PROC_MAX_PROCS, NULL, 0));
+
+
+  KTEST_BEGIN("waitpid(): process group exists but has no children");
+  pid_t grandchild;
+  child = proc_fork(&create_children_in_group, &grandchild);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  KEXPECT_EQ(-ECHILD, proc_waitpid(-grandchild, NULL, 0));
+
+
+  KTEST_BEGIN("waitpid(): process group with stopped children");
+  child = proc_fork(&create_children_in_group, &grandchild);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&do_nothing, NULL);
+  pid_t childB = proc_fork(&do_nothing, NULL);
+  pid_t childC = proc_fork(&sleep_func, (void*)20);
+  KEXPECT_EQ(0, setpgid(child, grandchild));
+  KEXPECT_EQ(0, setpgid(childB, grandchild));
+  KEXPECT_EQ(0, setpgid(childC, grandchild));
+  while (proc_get(child)->state == PROC_RUNNING &&
+         proc_get(childB)->state == PROC_RUNNING)
+    scheduler_yield();
+  KEXPECT_EQ(PROC_RUNNING, proc_get(childC)->state);
+  uint32_t start_ms = get_time_ms();
+  pid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
+  pid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);
+  uint32_t end_ms = get_time_ms();
+  KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
+  KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
+  KEXPECT_LE(end_ms - start_ms, 20);
+  KEXPECT_EQ(childC, proc_waitpid(-grandchild, NULL, 0));
+
+
+  KTEST_BEGIN("waitpid(): process group with running children");
+  child = proc_fork(&create_children_in_group, &grandchild);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&do_nothing, NULL);
+  childB = proc_fork(&sleep_func, (void*)20);
+  childC = proc_fork(&sleep_func, (void*)40);
+  KEXPECT_EQ(0, setpgid(childB, grandchild));
+  KEXPECT_EQ(0, setpgid(childC, grandchild));
+  start_ms = get_time_ms();
+  KEXPECT_EQ(childB, proc_waitpid(-grandchild, NULL, 0));
+  KEXPECT_EQ(childC, proc_waitpid(-grandchild, NULL, 0));
+  KEXPECT_EQ(-ECHILD, proc_waitpid(-grandchild, NULL, 0));
+  KEXPECT_EQ(child, proc_waitpid(-1, NULL, 0));
+  end_ms = get_time_ms();
+  KEXPECT_GE(end_ms - start_ms, 20);
+}
+
 void wait_test(void) {
   KTEST_SUITE_BEGIN("wait() and waitpid() tests");
   basic_waitpid_test();
   interruptable_waitpid_test();
   wait_for_specific_pid_test();
+  wait_for_pgroup_test();
 }

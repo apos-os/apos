@@ -31,11 +31,11 @@ pid_t proc_wait(int* exit_status) {
 // constraints.
 static bool matches_wait(process_t* proc, pid_t wait_pid) {
   KASSERT_DBG(proc->parent == proc_current());
-  return (wait_pid == -1 || wait_pid == proc->id);
+  return (wait_pid == -1 || wait_pid == proc->id || wait_pid == -proc->pgroup);
 }
 
 pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
-  if (pid != -1 && pid < 0) return -ECHILD;
+  if (pid == 0) return -ECHILD;
   if (options != 0) return -EINVAL;
 
   process_t* const p = proc_current();

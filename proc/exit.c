@@ -82,7 +82,6 @@ void proc_exit(int status) {
 
   // Remove it from the process group list.
   list_remove(&proc_group_get(p->pgroup)->procs, &p->pgroup_link);
-  p->pgroup = -1;
 
   // Move any pending children to the root process.
   process_t* const root_process = proc_get(0);
