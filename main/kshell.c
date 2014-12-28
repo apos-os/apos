@@ -889,16 +889,40 @@ void boot_cmd(kshell_t* shell, int argc, char** argv) {
 
 static void fg_bg_cmd(kshell_t* shell, int argc, char** argv, bool is_fg) {
   const char* cmd_name = is_fg ? "fg" : "bg";
-  if (argc != 1) {
-    klogf("Usage: %s\n", cmd_name);
+  if (argc > 2) {
+    ksh_printf("Usage: %s [optional %%jobnum]\n", cmd_name);
     return;
   }
   if (shell->jobs.head == NULL) {
-    ksh_printf("%s: no current job\n", cmd_name);
+    ksh_printf("%s: no current jobs\n", cmd_name);
     return;
   }
 
-  job_t* job = container_of(shell->jobs.head, job_t, link);
+  int jobnum = -1;
+  if (argc == 2) {
+    if (argv[1][0] == '%') {
+      jobnum = atoi(&argv[1][1]);
+    }
+    if (jobnum <= 0) {
+      ksh_printf("invalid job number '%s'\n", argv[1]);
+      return;
+    }
+  }
+
+  job_t* job = NULL;
+  for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
+    job_t* cjob = container_of(link, job_t, link);
+    if (jobnum == -1 || cjob->jobnum == jobnum) {
+      job = cjob;
+      break;
+    }
+  }
+
+  if (job == NULL) {
+    ksh_printf("job %d not found\n", jobnum);
+    return;
+  }
+
   // TODO(aoates): move this into main loop
   print_job_state(job, JOB_CONTINUED);
   job->state = JOB_RUNNING;
