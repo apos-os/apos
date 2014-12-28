@@ -67,10 +67,45 @@ const char* PATH[] = {
 
 #define READ_BUF_SIZE 1024
 
+typedef enum {
+  JOB_RUNNING,
+  JOB_SUSPENDED,
+
+  // Jobs are never in the following states.
+  JOB_CONTINUED,
+  JOB_DONE,
+  JOB_SIGNALLED,
+} job_state_t;
+
+// A background job in the shell.
+typedef struct {
+  pid_t pid;
+  job_state_t state;
+  int jobnum;
+  char* cmd;
+  list_link_t link;
+} job_t;
+
+static void print_job_state(const job_t* job, job_state_t state) {
+  const char* state_str = "<unknown!>";
+  switch (state) {
+    case JOB_RUNNING: state_str = "running"; break;
+    case JOB_SUSPENDED: state_str = "suspended"; break;
+    case JOB_CONTINUED: state_str = "continued"; break;
+    case JOB_DONE: state_str = "done"; break;
+    // TODO(aoates): print signal description
+    case JOB_SIGNALLED: state_str = "signalled"; break;
+  }
+
+  ksh_printf("[%d]    %d %-9s  %s\n", job->jobnum, job->pid, state_str,
+             job->cmd);
+}
+
 // State for the shell.
 typedef struct {
   int tty_fd;
   off_t klog_offset;
+  list_t jobs;
 } kshell_t;
 
 void ksh_printf(const char* fmt, ...) {
@@ -726,6 +761,104 @@ static void boot_child_func(void* arg) {
   }
 }
 
+static int get_next_jobnum(const kshell_t* shell) {
+  int jobnum = 1;
+
+  for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
+    job_t* job = container_of(link, job_t, link);
+    KASSERT_DBG(job->jobnum >= jobnum);
+    if (job->jobnum > jobnum)
+      break;
+    jobnum++;
+  }
+  return jobnum;
+}
+
+static char* make_job_cmd(int argc, char** argv) {
+  size_t strlen = 0;
+  for (int i = 0; i < argc; ++i) {
+    strlen += kstrlen(argv[i]) + 1;
+  }
+  char* buf = (char*)kmalloc(strlen);
+  char* cbuf = buf;
+  for (int i = 0; i < argc; ++i) {
+    for (int j = 0; argv[i][j] != '\0'; ++j)
+      *(cbuf++) = argv[i][j];
+    *(cbuf++) = ' ';
+  }
+  *(cbuf - 1) = '\0';
+  return buf;
+}
+
+static void insert_job(job_t* new_job, kshell_t* shell) {
+  job_t* prev = NULL;
+  for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
+    job_t* job = container_of(link, job_t, link);
+    KASSERT_DBG(job->jobnum != new_job->jobnum);
+    if (job->jobnum > new_job->jobnum) {
+      break;
+    }
+    prev = job;
+  }
+  list_insert(&shell->jobs, prev ? &prev->link : NULL, &new_job->link);
+}
+
+static job_t* make_job(kshell_t* shell, pid_t pid, int argc, char** argv) {
+  job_t* job = (job_t*)kmalloc(sizeof(job_t));
+  job->pid = pid;
+  job->state = JOB_RUNNING;
+  job->jobnum = get_next_jobnum(shell);
+  job->cmd = make_job_cmd(argc, argv);
+  job->link = LIST_LINK_INIT;
+  insert_job(job, shell);
+  return job;
+}
+
+static job_t* find_job(kshell_t* shell, pid_t pid) {
+  for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
+    job_t* job = container_of(link, job_t, link);
+    if (job->pid == pid) return job;
+  }
+  return NULL;
+}
+
+static void job_done(kshell_t* shell, job_t* job) {
+  list_remove(&shell->jobs, &job->link);
+  kfree(job->cmd);
+  kfree(job);
+}
+
+static pid_t do_wait(kshell_t* shell, pid_t pid, bool block) {
+  int options = WUNTRACED;
+  if (!block) options |= WNOHANG;
+
+  int status;
+  pid_t wait_pid;
+  do {
+    wait_pid = proc_waitpid(pid, &status, options);
+  } while (wait_pid == -EINTR);
+
+  if (wait_pid > 0) {
+    job_t* job = find_job(shell, wait_pid);
+    KASSERT(job);
+
+    if (WIFEXITED(status)) {
+      if (!block) print_job_state(job, JOB_DONE);
+      job_done(shell, job);
+    } else if (WIFSIGNALED(status)) {
+      print_job_state(job, JOB_SIGNALLED);
+      job_done(shell, job);
+    } else {
+      KASSERT_DBG(WIFSTOPPED(status));
+      print_job_state(job, JOB_SUSPENDED);
+      job->state = JOB_SUSPENDED;
+    }
+    KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, getpgid(0)));
+  }
+
+  return wait_pid;
+}
+
 void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
   KASSERT(argc >= 1);
 
@@ -738,15 +871,11 @@ void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
   if (child_pid < 0) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {
-    setpgid(child_pid, child_pid);
-    proc_tcsetpgrp(shell->tty_fd, child_pid);
+    KASSERT(0 == setpgid(child_pid, child_pid));
+    KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, child_pid));
 
-    int exit_status;
-    pid_t wait_pid = proc_wait(&exit_status);
-    klogf("<child process %d exited with status %d>\n",
-          wait_pid, exit_status);
-
-    proc_tcsetpgrp(shell->tty_fd, getpgid(0));
+    make_job(shell, child_pid, argc, argv);
+    do_wait(shell, child_pid, true);
   }
 }
 
@@ -756,6 +885,48 @@ void boot_cmd(kshell_t* shell, int argc, char** argv) {
     return;
   }
   do_boot_cmd(shell, argv[1], argc - 1, argv + 1);
+}
+
+static void fg_bg_cmd(kshell_t* shell, int argc, char** argv, bool is_fg) {
+  const char* cmd_name = is_fg ? "fg" : "bg";
+  if (argc != 1) {
+    klogf("Usage: %s\n", cmd_name);
+    return;
+  }
+  if (shell->jobs.head == NULL) {
+    ksh_printf("%s: no current job\n", cmd_name);
+    return;
+  }
+
+  job_t* job = container_of(shell->jobs.head, job_t, link);
+  // TODO(aoates): move this into main loop
+  print_job_state(job, JOB_CONTINUED);
+  job->state = JOB_RUNNING;
+  if (proc_kill(job->pid, SIGCONT) == 0) {
+    if (is_fg) {
+      KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, job->pid));
+      do_wait(shell, job->pid, true);
+    }
+  }
+}
+
+void fg_cmd(kshell_t* shell, int argc, char** argv) {
+  fg_bg_cmd(shell, argc, argv, true);
+}
+
+void bg_cmd(kshell_t* shell, int argc, char** argv) {
+  fg_bg_cmd(shell, argc, argv, false);
+}
+
+void jobs_cmd(kshell_t* shell, int argc, char** argv) {
+  if (argc != 1) {
+    klogf("Usage: jobs\n");
+    return;
+  }
+  for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
+    job_t* job = container_of(link, job_t, link);
+    print_job_state(job, job->state);
+  }
 }
 
 #if ENABLE_USB
@@ -872,6 +1043,10 @@ static const cmd_t CMDS[] = {
   { "rm", &rm_cmd },
   { "cp", &cp_cmd },
 
+  { "fg", &fg_cmd },
+  { "bg", &bg_cmd },
+  { "jobs", &jobs_cmd },
+
   { "hash_file", &hash_file_cmd },
 
 #if ENABLE_USB
@@ -944,7 +1119,7 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
 }
 
 void kshell_main(apos_dev_t tty) {
-  kshell_t shell = {-1, 0};
+  kshell_t shell = {-1, 0, LIST_INIT};
 
   proc_setsid();
   char tty_name[20];
@@ -958,6 +1133,7 @@ void kshell_main(apos_dev_t tty) {
   sigset_t mask;
   ksigemptyset(&mask);
   ksigaddset(&mask, SIGTTOU);
+  ksigaddset(&mask, SIGTSTP);
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
   KASSERT(0 == proc_tcsetpgrp(shell.tty_fd, getpgid(0)));
 
@@ -992,5 +1168,7 @@ void kshell_main(apos_dev_t tty) {
     parse_and_dispatch(&shell, read_buf);
     //ksprintf(out_buf, "You wrote: '%s'\n", read_buf);
     //ld_write(g_io, out_buf, kstrlen(out_buf));
+
+    do_wait(&shell, -1, false);
   }
 }

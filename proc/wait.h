@@ -16,6 +16,7 @@
 #define APOO_PROC_WAIT_H
 
 #include "proc/process.h"
+#include "user/include/apos/wait.h"
 
 // Wait until a child exits, and return its pid (and optionally its exit
 // status).
