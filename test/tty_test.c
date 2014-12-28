@@ -102,6 +102,15 @@ static void ld_signals_test(void* arg) {
   KEXPECT_EQ(1, sig_is_pending(proc_get(childB), SIGINT));
   KEXPECT_EQ(1, sig_is_pending(proc_get(childC), SIGINT));
 
+  KTEST_BEGIN("TTY: ctrl-Z sends SIGTSTP to fg process group");
+  sink_counter = 0;
+  ld_provide(test_ld, ASCII_SUB);
+  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTSTP));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTSTP));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(childB), SIGTSTP));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(childC), SIGTSTP));
+
   proc_wait(NULL);
   proc_wait(NULL);
   proc_wait(NULL);
