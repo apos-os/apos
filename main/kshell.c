@@ -923,14 +923,23 @@ static void fg_bg_cmd(kshell_t* shell, int argc, char** argv, bool is_fg) {
     return;
   }
 
-  // TODO(aoates): move this into main loop
-  print_job_state(job, JOB_CONTINUED);
-  job->state = JOB_RUNNING;
-  if (proc_kill(job->pid, SIGCONT) == 0) {
-    if (is_fg) {
-      KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, job->pid));
-      do_wait(shell, job->pid, true);
-    }
+  if (!is_fg && job->state == JOB_RUNNING) {
+    ksh_printf("bg: job already in background\n");
+    return;
+  }
+
+  int result = 0;
+  if (job->state == JOB_RUNNING) {
+    print_job_state(job, JOB_RUNNING);
+  } else {
+    print_job_state(job, JOB_CONTINUED);
+    job->state = JOB_RUNNING;
+    result = proc_kill(job->pid, SIGCONT);
+  }
+
+  if (result == 0 && is_fg) {
+    KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, job->pid));
+    do_wait(shell, job->pid, true);
   }
 }
 
