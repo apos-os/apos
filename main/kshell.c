@@ -853,10 +853,30 @@ static pid_t do_wait(kshell_t* shell, pid_t pid, bool block) {
       print_job_state(job, JOB_SUSPENDED);
       job->state = JOB_SUSPENDED;
     }
-    KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, getpgid(0)));
   }
 
   return wait_pid;
+}
+
+static void continue_job(kshell_t* shell, job_t* job) {
+  // TODO(aoates): check for error.
+  KASSERT_DBG(job->state == JOB_SUSPENDED);
+  print_job_state(job, JOB_CONTINUED);
+  proc_kill(job->pid, SIGCONT);
+  job->state = JOB_RUNNING;
+}
+
+static void put_job_fg(kshell_t* shell, job_t* job, bool cont) {
+  // TODO(aoates): check for errors on these.
+  proc_tcsetpgrp(shell->tty_fd, job->pid);
+
+  if (cont) continue_job(shell, job);
+  do_wait(shell, job->pid, true);
+  KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, getpgid(0)));
+}
+
+static void put_job_bg(kshell_t* shell, job_t* job, bool cont) {
+  if (cont) continue_job(shell, job);
 }
 
 void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
@@ -871,11 +891,9 @@ void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
   if (child_pid < 0) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {
-    KASSERT(0 == setpgid(child_pid, child_pid));
-    KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, child_pid));
-
-    make_job(shell, child_pid, argc, argv);
-    do_wait(shell, child_pid, true);
+    job_t* job = make_job(shell, child_pid, argc, argv);
+    KASSERT(0 == setpgid(job->pid, job->pid));
+    put_job_fg(shell, job, false);
   }
 }
 
@@ -928,18 +946,12 @@ static void fg_bg_cmd(kshell_t* shell, int argc, char** argv, bool is_fg) {
     return;
   }
 
-  int result = 0;
-  if (job->state == JOB_RUNNING) {
-    print_job_state(job, JOB_RUNNING);
+  if (is_fg) {
+    if (job->state == JOB_RUNNING) print_job_state(job, JOB_RUNNING);
+    put_job_fg(shell, job, job->state == JOB_SUSPENDED);
   } else {
-    print_job_state(job, JOB_CONTINUED);
-    job->state = JOB_RUNNING;
-    result = proc_kill(job->pid, SIGCONT);
-  }
-
-  if (result == 0 && is_fg) {
-    KASSERT(0 == proc_tcsetpgrp(shell->tty_fd, job->pid));
-    do_wait(shell, job->pid, true);
+    KASSERT_DBG(job->state == JOB_SUSPENDED);
+    put_job_bg(shell, job, true);
   }
 }
 
