@@ -20,6 +20,7 @@
 #include "archs/i586/internal/memory/page_tables.h"
 #include "common/debug.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
 
@@ -51,13 +52,17 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   stack_size = free_frames * 4 + 8;
   stack_size = next_page(stack_size); // round up.
 
+  const addr_t stack_end = next_page(meminfo->kernel_end_virt) + stack_size;
+  KASSERT_MSG(meminfo->mapped_end >= stack_end,
+              "Not enough memory in kernel-mapped region for free page stack "
+              "(mapped region goes to %#x, stack would go to %#x)",
+              meminfo->mapped_end, stack_end);
+
   // The stack will live directly above the kernel (at the next page boundary).
   free_frame_stack = (phys_addr_t*)next_page(meminfo->kernel_end_virt);
 
   // Fill the stack with crap.
-  for (size_t i = 0; i < stack_size; ++i) {
-    free_frame_stack[i] = 0xDEADBEEF;
-  }
+  kmemset(free_frame_stack, 0xBC, stack_size);
 
   // Push each free frame onto the stack.  Don't count the frames we just used
   // for the stack, though.
