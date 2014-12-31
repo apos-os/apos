@@ -1201,6 +1201,7 @@ void kshell_main(apos_dev_t tty) {
     if (read_len < 0) {
       if (read_len == -EINTR) {
         proc_suppress_signal(proc_current(), SIGINT);
+        proc_suppress_signal(proc_current(), SIGQUIT);
       } else {
         ksh_printf("error: %s\n", errorname(-read_len));
       }

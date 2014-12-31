@@ -139,6 +139,7 @@ void ld_provide(ld_t* l, char c) {
     case ASCII_ETX:
     case ASCII_EOT:
     case ASCII_SUB:
+    case ASCII_FS:
       echo = 0;
       break;
 
@@ -174,6 +175,7 @@ void ld_provide(ld_t* l, char c) {
     switch (c) {
       case ASCII_ETX: signal = SIGINT; break;
       case ASCII_SUB: signal = SIGTSTP; break;
+      case ASCII_FS: signal = SIGQUIT; break;
     }
     if (signal != SIGNULL) {
       const tty_t* tty = tty_get(l->tty);
