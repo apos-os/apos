@@ -18,5 +18,7 @@
 
 #define ASCII_ETX 0x03
 #define ASCII_EOT 0x04
+#define ASCII_SUB 0x1a
+#define ASCII_FS  0x1c
 
 #endif

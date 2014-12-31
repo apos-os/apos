@@ -64,6 +64,8 @@ void vkeyboard_send_keycode(vkeyboard_t* kbd, uint8_t code, bool up) {
     }
     if (kbd->ctrl_down) {
       out = SHIFT_ASCII_LOOKUP[code];
+      // TODO(aoates): this is sort of a hack.
+      if (out == '|') out = '\\';
       if (out < '@' || out > '_') out = '\0';
       else out = out - '@';
       KASSERT_DBG(out < 32);

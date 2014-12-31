@@ -138,6 +138,8 @@ void ld_provide(ld_t* l, char c) {
 
     case ASCII_ETX:
     case ASCII_EOT:
+    case ASCII_SUB:
+    case ASCII_FS:
       echo = 0;
       break;
 
@@ -168,15 +170,23 @@ void ld_provide(ld_t* l, char c) {
     cook_buffer(l);
   }
 
-  if (c == ASCII_ETX && minor(l->tty) != DEVICE_ID_UNKNOWN) {
-    const tty_t* tty = tty_get(l->tty);
-    KASSERT_DBG(tty != NULL);
-    if (tty->session >= 0) {
-      const proc_session_t* session = proc_session_get(tty->session);
-      KASSERT_DBG(session->ctty == (int)minor(l->tty));
-      if (session->fggrp >= 0) {
-        int result = proc_force_signal_group(session->fggrp, SIGINT);
-        KASSERT_DBG(result == 0);
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int signal = SIGNULL;
+    switch (c) {
+      case ASCII_ETX: signal = SIGINT; break;
+      case ASCII_SUB: signal = SIGTSTP; break;
+      case ASCII_FS: signal = SIGQUIT; break;
+    }
+    if (signal != SIGNULL) {
+      const tty_t* tty = tty_get(l->tty);
+      KASSERT_DBG(tty != NULL);
+      if (tty->session >= 0) {
+        const proc_session_t* session = proc_session_get(tty->session);
+        KASSERT_DBG(session->ctty == (int)minor(l->tty));
+        if (session->fggrp >= 0) {
+          int result = proc_force_signal_group(session->fggrp, signal);
+          KASSERT_DBG(result == 0);
+        }
       }
     }
   }

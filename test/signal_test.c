@@ -524,7 +524,12 @@ static void signal_send_to_all_allowed_test(void) {
 
   KTEST_BEGIN("proc_kill(): pid == -1 skips processes 0 and 1");
   int child = proc_fork(&send_all_allowed_func, (void*)0);
-  KEXPECT_EQ(child, proc_wait(0x0));
+  pid_t wait_result;
+  do {
+    wait_result = proc_wait(NULL);
+    proc_suppress_signal(proc_current(), SIGKILL);
+  } while (wait_result == -EINTR);
+  KEXPECT_EQ(child, wait_result);
 
   // The signal shouldn't have been sent to processes 0 or 1.
   if (proc_get(0))
