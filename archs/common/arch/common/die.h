@@ -16,6 +16,6 @@
 #define APOO_ARCHS_COMMON_ARCH_COMMON_DIE_H
 
 // Stop the processor (or whatever makes sense for the architecture).
-void arch_die(void);
+void arch_die(void) __attribute__((noreturn));
 
 #endif

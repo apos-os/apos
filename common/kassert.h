@@ -41,7 +41,7 @@
 #endif
 
 // Kills the kernel, logging the given message first.
-void die(const char* msg);
+void die(const char* msg) __attribute__((noreturn));
 
 // Calls die() if x is zero.
 void kassert(int x);
