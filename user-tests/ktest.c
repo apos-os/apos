@@ -46,6 +46,28 @@ static const char* current_test_name = 0x0;
 static const char* failing_test_names[FAILING_TEST_NAMES_LEN];
 static int failing_test_names_idx = 0;
 
+// Convert two integer values into strings, appending the errorname if it looks
+// like an error code is being returned (one of the operands is zero, and the
+// other is between -ERRNO_MIN and -ERRNO_MAX).
+static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
+                                         char* bval_str) {
+  const int aval_in_range = 0; //aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
+  const int bval_in_range = 0; //bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
+
+  sprintf(aval_str, "%d", aval);
+  if ((bval_in_range || bval == 0) && aval_in_range) {
+    strcat(aval_str, " (");
+    strcat(aval_str, strerror(-aval));
+    strcat(aval_str, ")");
+  }
+  sprintf(bval_str, "%d", bval);
+  if ((aval_in_range || aval == 0) && bval_in_range) {
+    strcat(bval_str, " (");
+    strcat(bval_str, strerror(-bval));
+    strcat(bval_str, ")");
+  }
+}
+
 static void finish_test(void) {
   if (current_test_passing) {
     num_tests_passing++;
@@ -79,11 +101,11 @@ void KTEST_BEGIN(const char* name) {
   printf("---------------------------------------\n");
 }
 
-void kexpect_(uint32_t cond, const char* name,
-              const char* astr, const char* bstr,
-              const char* aval, const char* bval,
-              const char* val_surrounders, const char* opstr,
-              const char* file, const char* line) {
+
+void kexpect(uint32_t cond, const char* name, const char* astr,
+             const char* bstr, const char* aval, const char* bval,
+             const char* val_surrounders, const char* opstr, const char* file,
+             const char* line) {
   if (cond) {
     printf(PASSED " %s(%s, %s)\n", name, astr, bstr);
   } else {
@@ -93,6 +115,27 @@ void kexpect_(uint32_t cond, const char* name,
            name, astr, bstr, file, line, val_surrounders, aval, val_surrounders,
            opstr, val_surrounders, bval, val_surrounders);
   }
+}
+
+void kexpect_int(const char* name, const char* file, const char* line,
+                 const char* astr, const char* bstr, long aval, long bval,
+                 long result, const char* opstr, kexpect_print_t a_type,
+                 kexpect_print_t b_type) {
+  char aval_str[20];
+  char bval_str[20];
+  // If the expected value is written as hex, print the actual value as hex too.
+  if (a_type == PRINT_HEX ||
+      strncmp(astr, "0x", 2) == 0 || strncmp(bstr, "0x", 2) == 0) {
+    sprintf(aval_str, "%#x", (int)aval);
+    sprintf(bval_str, "%#x", (int)bval);
+  } else if (b_type == PRINT_SIGNED ||
+             strncmp(astr, "-", 1) == 0 || strncmp(bstr, "-", 1) == 0) {
+    kexpect_int_to_string((int)aval, (int)bval, aval_str, bval_str);
+  } else {
+    sprintf(aval_str, "%d", (int)aval);
+    sprintf(bval_str, "%d", (int)bval);
+  }
+  kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
 }
 
 void ktest_begin_all() {

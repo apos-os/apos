@@ -28,17 +28,10 @@
 void KTEST_SUITE_BEGIN(const char* name);
 void KTEST_BEGIN(const char* name);
 
-void kexpect_(uint32_t cond, const char* name,
-              const char* astr, const char* bstr,
-              const char* aval, const char* bval,
-              const char* val_surrounders, const char* opstr,
-              const char* file, const char* line);
-
-// Convert two integer values into strings, appending the errorname if it looks
-// like an error code is being returned (one of the operands is zero, and the
-// other is between -ERRNO_MIN and -ERRNO_MAX).
-static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
-                                         char* bval_str);
+void kexpect(uint32_t cond, const char* name, const char* astr,
+             const char* bstr, const char* aval, const char* bval,
+             const char* val_surrounders, const char* opstr, const char* file,
+             const char* line);
 
 typedef enum {
   PRINT_SIGNED,
@@ -46,6 +39,11 @@ typedef enum {
   PRINT_HEX,
   PRINT_UNKNOWN,
 } kexpect_print_t;
+
+void kexpect_int(const char* name, const char* file, const char* line,
+                 const char* astr, const char* bstr, long aval, long bval,
+                 long result, const char* opstr, kexpect_print_t a_type,
+                 kexpect_print_t b_type);
 
 #define PRINT_TYPE(expr) \
     _Generic((expr), \
@@ -62,32 +60,22 @@ typedef enum {
              void*: PRINT_HEX, \
              default: PRINT_HEX)
 
-#define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr) do { \
-  const char* aval = a; \
-  const char* bval = b; \
-  uint32_t cond = cond_func(aval, bval); \
-  kexpect_(cond, name, astr, bstr, aval, bval, "'", opstr, __FILE__, STR(__LINE__)); \
-} while(0)
+#define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr)                    \
+  do {                                                                        \
+    const char* aval = a;                                                     \
+    const char* bval = b;                                                     \
+    kexpect(cond_func(aval, bval), name, astr, bstr, aval, bval, "'", opstr, \
+             __FILE__, STR(__LINE__));                                        \
+  } while (0)
 
-#define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr) do { \
-  typeof(a) aval = a; \
-  typeof(a) bval = b; \
-  char aval_str[50]; \
-  char bval_str[50]; \
-  /* If the expected value is written as hex, print the actual value as hex too.*/ \
-  if (PRINT_TYPE(a) == PRINT_HEX || \
-      strncmp(astr, "0x", 2) == 0 || strncmp(bstr, "0x", 2) == 0) { \
-    sprintf(aval_str, "%#x", (int)aval); \
-    sprintf(bval_str, "%#x", (int)bval); \
-  } else if (PRINT_TYPE(a) == PRINT_SIGNED || \
-             strncmp(astr, "-", 1) == 0 || strncmp(bstr, "-", 1) == 0) { \
-    kexpect_int_to_string((int)aval, (int)bval, aval_str, bval_str); \
-  } else { \
-    sprintf(aval_str, "%d", (int)aval); \
-    sprintf(bval_str, "%d", (int)bval); \
-  } \
-  kexpect_((aval op bval), name, astr, bstr, aval_str, bval_str, "", opstr, __FILE__, STR(__LINE__)); \
-} while(0)
+#define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr)                \
+  do {                                                                 \
+    typeof(a) aval = a;                                                \
+    typeof(a) bval = b;                                                \
+    kexpect_int(name, __FILE__, STR(__LINE__), astr, bstr, (long)aval, \
+                (long)bval, (aval op bval), opstr, PRINT_TYPE(a),      \
+                PRINT_TYPE(b));                                        \
+  } while (0)
 
 #define KEXPECT_EQ(a, b) KEXPECT_INT_("KEXPECT_EQ", #a, #b, a, b, ==, " != ")
 #define KEXPECT_NE(a, b) KEXPECT_INT_("KEXPECT_NE", #a, #b, a, b, !=, " == ")
@@ -106,26 +94,5 @@ void ktest_begin_all(void);
 
 // Tear down the framework and print statistics about passing/failing tests.
 void ktest_finish_all(void);
-
-/***  Implementation details ***/
-
-static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
-                                         char* bval_str) {
-  const int aval_in_range = 0; //aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
-  const int bval_in_range = 0; //bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
-
-  sprintf(aval_str, "%d", aval);
-  if ((bval_in_range || bval == 0) && aval_in_range) {
-    strcat(aval_str, " (");
-    strcat(aval_str, strerror(-aval));
-    strcat(aval_str, ")");
-  }
-  sprintf(bval_str, "%d", bval);
-  if ((aval_in_range || aval == 0) && bval_in_range) {
-    strcat(bval_str, " (");
-    strcat(bval_str, strerror(-bval));
-    strcat(bval_str, ")");
-  }
-}
 
 #endif
