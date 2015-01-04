@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/ascii.h"
+#include "common/kprintf.h"
 #include "dev/ld.h"
 #include "dev/tty.h"
 #include "proc/fork.h"

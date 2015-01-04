@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/hash.h"
+#include "common/kprintf.h"
 #include "test/hamlet.h"
 #include "test/ktest.h"
 

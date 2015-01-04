@@ -15,6 +15,7 @@
 #include "test/ktest.h"
 
 #include "common/kassert.h"
+#include "common/kprintf.h"
 
 char* inc_char(char* x) {
   *x = *x + 1;

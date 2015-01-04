@@ -16,6 +16,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "memory/block_cache.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"

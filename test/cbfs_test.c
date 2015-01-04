@@ -18,6 +18,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
