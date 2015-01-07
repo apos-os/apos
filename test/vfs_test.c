@@ -2396,7 +2396,7 @@ static void mknod_mode_test(void) {
   vfs_rmdir(kDir);
 }
 
-static void symlink_test(void) {
+static void symlink_testA(void) {
   const int kBufSize = 100;
   char buf[kBufSize];
   int fd;
@@ -2475,7 +2475,12 @@ static void symlink_test(void) {
   KEXPECT_EQ(-ENOENT, vfs_open("symlink_test/bad_link/d1/d2",
                                VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link"));
+}
 
+static void symlink_testB(void) {
+  const int kBufSize = 100;
+  char buf[kBufSize];
+  int fd;
 
   KTEST_BEGIN("vfs_symlink(): invalid arguments");
   // TODO(aoates): test too-long paths
@@ -2535,26 +2540,30 @@ static void symlink_test(void) {
   EXPECT_FILE_EXISTS("symlink_test/link60");
   EXPECT_FILE_EXISTS("symlink_test/link61");
 
-  char very_long_path[1025];
-  for (int i = 0; i < 1020; i += 2) {
-    very_long_path[i] = '.';
-    very_long_path[i + 1] = '/';
+  {
+    char* very_long_path = kmalloc(1025);
+    for (int i = 0; i < 1020; i += 2) {
+      very_long_path[i] = '.';
+      very_long_path[i + 1] = '/';
+    }
+    very_long_path[1020] = 'f';
+    very_long_path[1021] = 'i';
+    very_long_path[1022] = 'l';
+    very_long_path[1023] = 'e';
+    very_long_path[1024] = '\0';
+    KEXPECT_EQ(0, vfs_symlink(very_long_path, "symlink_test/link_long"));
+    EXPECT_FILE_EXISTS("symlink_test/link_long");
+    kfree(very_long_path);
   }
-  very_long_path[1020] = 'f';
-  very_long_path[1021] = 'i';
-  very_long_path[1022] = 'l';
-  very_long_path[1023] = 'e';
-  very_long_path[1024] = '\0';
-  KEXPECT_EQ(0, vfs_symlink(very_long_path, "symlink_test/link_long"));
-  EXPECT_FILE_EXISTS("symlink_test/link_long");
 
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link58"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link59"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link60"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link61"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/link_long"));
+}
 
-
+static void symlink_testC(void) {
   KTEST_BEGIN("vfs_mkdir(): doesn't follow final symlink");
   KEXPECT_EQ(0, vfs_symlink("newdir", "symlink_test/mkdir_link"));
   KEXPECT_EQ(-EEXIST, vfs_mkdir("symlink_test/mkdir_link", VFS_S_IRWXU));
@@ -2601,14 +2610,17 @@ static void symlink_test(void) {
 
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
+}
 
+static void symlink_testD(void) {
+  apos_stat_t stat;
 
   KTEST_BEGIN("vfs_chdir(): follows final symlink");
   KEXPECT_EQ(0, vfs_mkdir("symlink_test/chdir_dir", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_symlink("chdir_dir", "symlink_test/chdir_link"));
   KEXPECT_EQ(0, vfs_chdir("symlink_test/chdir_link"));
 
-  char cwd[VFS_MAX_PATH_LENGTH];
+  char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   int cwd_len = vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH);
   KEXPECT_GE(cwd_len, kstrlen("symlink_test/chdir_dir"));
   KEXPECT_STREQ("symlink_test/chdir_dir",
@@ -2673,6 +2685,12 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_file"));
   KEXPECT_EQ(0, vfs_unlink("symlink_test/stat_link"));
 
+  kfree(cwd);
+}
+
+static void symlink_testE(void) {
+  apos_stat_t stat;
+  int fd;
 
   KTEST_BEGIN(
       "vfs_symlink(): vfs_open(O_CREAT) on symlink creates destination");
@@ -2725,9 +2743,10 @@ static void symlink_test(void) {
 
 
   KTEST_BEGIN("vfs_symlink(): symlink to absolute path");
+  char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   KEXPECT_LE(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
-  char link[VFS_MAX_PATH_LENGTH + 1];
-  char target[VFS_MAX_PATH_LENGTH + 1];
+  char* link = kmalloc(VFS_MAX_PATH_LENGTH + 1);
+  char* target = kmalloc(VFS_MAX_PATH_LENGTH + 1);
   kstrcpy(link, cwd);
   kstrcat(link, "/symlink_test/absolute_link");
   kstrcpy(target, cwd);
@@ -2756,6 +2775,18 @@ static void symlink_test(void) {
   KEXPECT_EQ(0, vfs_unlink("symlink_test/dir/file2"));
   KEXPECT_EQ(0, vfs_rmdir("symlink_test/dir"));
   KEXPECT_EQ(0, vfs_rmdir("symlink_test"));
+
+  kfree(cwd);
+  kfree(link);
+  kfree(target);
+}
+
+static void symlink_test(void) {
+  symlink_testA();
+  symlink_testB();
+  symlink_testC();
+  symlink_testD();
+  symlink_testE();
 }
 
 static void readlink_test(void) {
