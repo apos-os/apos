@@ -15,7 +15,11 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_PROC_STACK_TRACE_H
 #define APOO_ARCHS_COMMON_ARCH_PROC_STACK_TRACE_H
 
-// Log a stack trace from the current thread.
-void print_stack_trace(void);
+#include <stddef.h>
+#include "common/types.h"
+
+// Gather a stack trace from the current thread, storing it in the given buffer.
+// Returns how many frames were store, or -error.
+int get_stack_trace(addr_t* trace, int trace_len);
 
 #endif

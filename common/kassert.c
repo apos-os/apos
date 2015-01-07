@@ -28,8 +28,16 @@ void die(const char* msg) {
   } else {
     klog("<unknown reason :(>\n");
   }
+
+  const int kMaxStackFrames = 32;
+  addr_t stack_trace[kMaxStackFrames];
+  const int frames = get_stack_trace(stack_trace, kMaxStackFrames);
+
   klog("Stack trace: \n");
-  print_stack_trace();
+  for (int i = 0; i < frames; ++i) {
+    klogf(" #%d 0x%x\n", i, stack_trace[i]);
+  }
+
   arch_die();
 }
 

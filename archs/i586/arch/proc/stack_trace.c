@@ -20,10 +20,8 @@
 
 #define CALL_INSTRUCTION_SIZE 2
 
-void print_stack_trace(void) {
+int get_stack_trace(addr_t* frames, int trace_len) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t), "not 32-bit");
-  const int kMaxFrames = 32;
-  addr_t frames[kMaxFrames];
   int cframe = 0;
 
   // Get our current %ebp.
@@ -39,7 +37,7 @@ void print_stack_trace(void) {
     // Subtract 2 to get back to the call instruction.
     const addr_t return_addr =
         *(addr_t*)(ebp + sizeof(addr_t)) - CALL_INSTRUCTION_SIZE;
-    if (cframe >= kMaxFrames) break;
+    if (cframe >= trace_len) break;
 
     frames[cframe++] = return_addr;
     ebp = old_ebp;
@@ -51,8 +49,5 @@ void print_stack_trace(void) {
       break;
     }
   }
-
-  for (int i = 0; i < cframe; ++i) {
-    klogf(" #%d 0x%x\n", i, frames[i]);
-  }
+  return cframe;
 }
