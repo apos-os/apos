@@ -425,39 +425,36 @@ static void circbuf_realign(circbuf_t* cbuf) {
   kfree(tmp);
 }
 
-static void write_test(void) {
-  apos_fifo_t f;
+const int kBigBufSize = 2 * APOS_FIFO_BUF_SIZE;
+
+static void write_testA(apos_fifo_t* f, void* big_buf, void* big_buf2) {
   char buf[100];
   kthread_t thread;
 
   KTEST_BEGIN("fifo_write(): basic write [blocking]");
-  fifo_init(&f);
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
 
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, true));
-  KEXPECT_EQ(5, fifo_write(&f, "abcde", 5, true));
-  KEXPECT_EQ(5, circbuf_read(&f.cbuf, buf, 100));
+  KEXPECT_EQ(0, fifo_open(f, FIFO_WRITE, false, true));
+  KEXPECT_EQ(5, fifo_write(f, "abcde", 5, true));
+  KEXPECT_EQ(5, circbuf_read(&f->cbuf, buf, 100));
   buf[5] = '\0';
   KEXPECT_STREQ("abcde", buf);
 
   KTEST_BEGIN("fifo_write(): basic write [non-blocking]");
-  KEXPECT_EQ(5, fifo_write(&f, "ABCDE", 5, false));
-  KEXPECT_EQ(5, circbuf_read(&f.cbuf, buf, 100));
+  KEXPECT_EQ(5, fifo_write(f, "ABCDE", 5, false));
+  KEXPECT_EQ(5, circbuf_read(&f->cbuf, buf, 100));
   buf[5] = '\0';
   KEXPECT_STREQ("ABCDE", buf);
 
   KTEST_BEGIN("fifo_write(): can write partial data [blocking]");
-  const int kBigBufSize = 2 * APOS_FIFO_BUF_SIZE;
-  void* big_buf = kmalloc(kBigBufSize);
-  void* big_buf2 = kmalloc(kBigBufSize);
   kmemset(big_buf, 'x', kBigBufSize);
   const int write_size = APOS_FIFO_BUF_SIZE - APOS_FIFO_MAX_ATOMIC_WRITE - 200;
-  KEXPECT_EQ(write_size, circbuf_write(&f.cbuf, big_buf, write_size));
+  KEXPECT_EQ(write_size, circbuf_write(&f->cbuf, big_buf, write_size));
   kmemset(big_buf, 'X', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_MAX_ATOMIC_WRITE + 200,
-             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 200, true));
+             fifo_write(f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 200, true));
   kmemset(big_buf2, 'y', kBigBufSize);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, circbuf_read(&f.cbuf, big_buf2, kBigBufSize));
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, circbuf_read(&f->cbuf, big_buf2, kBigBufSize));
   kmemset(big_buf, 'x', write_size);
   kmemset(big_buf + write_size, 'X', APOS_FIFO_MAX_ATOMIC_WRITE + 200);
   KEXPECT_EQ(0, kstrncmp(big_buf, big_buf2, APOS_FIFO_BUF_SIZE));
@@ -465,23 +462,24 @@ static void write_test(void) {
 
   KTEST_BEGIN("fifo_write(): can write partial data [non-blocking]");
   kmemset(big_buf2, 'x', kBigBufSize);
-  KEXPECT_EQ(write_size, circbuf_write(&f.cbuf, big_buf, write_size));
+  KEXPECT_EQ(write_size, circbuf_write(&f->cbuf, big_buf, write_size));
   kmemset(big_buf2, 'X', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_MAX_ATOMIC_WRITE + 200,
-             fifo_write(&f, big_buf2, APOS_FIFO_MAX_ATOMIC_WRITE + 200, false));
+             fifo_write(f, big_buf2, APOS_FIFO_MAX_ATOMIC_WRITE + 200, false));
   kmemset(big_buf2, 'y', kBigBufSize);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, circbuf_read(&f.cbuf, big_buf2, kBigBufSize));
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, circbuf_read(&f->cbuf, big_buf2, kBigBufSize));
   KEXPECT_EQ(0, kstrncmp(big_buf, big_buf2, APOS_FIFO_BUF_SIZE));
 
 
   KTEST_BEGIN("fifo_write(): buffer too small [blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
+  kmemset(f->buf, '?', APOS_FIFO_BUF_SIZE);
   kmemset(big_buf, 'x', kBigBufSize);
-  KEXPECT_EQ(200, circbuf_write(&f.cbuf, big_buf, 200));
+  KEXPECT_EQ(200, circbuf_write(&f->cbuf, big_buf, 200));
   kmemset(big_buf, 'X', kBigBufSize);
 
   op_args_t args;
-  args.fifo = &f;
+  args.fifo = f;
   args.buf = big_buf;
   args.len = APOS_FIFO_BUF_SIZE - 100;
 
@@ -489,49 +487,56 @@ static void write_test(void) {
   scheduler_make_runnable(thread);
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
   // Open up some space, but not enough.
-  KEXPECT_EQ(50, fifo_read(&f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
+  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
   KEXPECT_EQ(false, args.finished);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
   KEXPECT_EQ(0, check_buffer(big_buf2, 'x', 50, 'X', 0));
-  circbuf_realign(&f.cbuf);
+  circbuf_realign(&f->cbuf);
   KEXPECT_EQ(0,
-             check_buffer(f.cbuf.buf, 'x', 150, 'X', APOS_FIFO_BUF_SIZE - 150));
+             check_buffer(f->cbuf.buf, 'x', 150, 'X', APOS_FIFO_BUF_SIZE - 150));
 
   // Open up the rest.
-  KEXPECT_EQ(160, fifo_read(&f, big_buf2, 160, true));
+  KEXPECT_EQ(160, fifo_read(f, big_buf2, 160, true));
   op_wait_finish(&args);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100, args.result);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 110, f.cbuf.len);
-  circbuf_realign(&f.cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 110, f->cbuf.len);
+  circbuf_realign(&f->cbuf);
   KEXPECT_EQ(0, check_buffer(big_buf2, 'x', 150, 'X', 10));
-  KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 10));
+  KEXPECT_EQ(0, check_buffer(f->cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 10));
   kthread_join(thread);
+}
 
+static void write_testB(apos_fifo_t* f, void* big_buf, void* big_buf2) {
+  kthread_t thread;
+  op_args_t args;
+  args.fifo = f;
+  args.buf = big_buf;
+  args.len = APOS_FIFO_BUF_SIZE - 100;
 
   KTEST_BEGIN("fifo_write(): buffer too small [non-blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'x', kBigBufSize);
-  KEXPECT_EQ(200, circbuf_write(&f.cbuf, big_buf, 200));
+  KEXPECT_EQ(200, circbuf_write(&f->cbuf, big_buf, 200));
   kmemset(big_buf, 'X', kBigBufSize);
 
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 200,
-             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+             fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
 
-  circbuf_realign(&f.cbuf);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  circbuf_realign(&f->cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
   KEXPECT_EQ(0,
-             check_buffer(f.cbuf.buf, 'x', 200, 'X', APOS_FIFO_BUF_SIZE - 200));
+             check_buffer(f->cbuf.buf, 'x', 200, 'X', APOS_FIFO_BUF_SIZE - 200));
 
 
   KTEST_BEGIN("fifo_write(): buffer full [blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'x', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
-             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE));
+             circbuf_write(&f->cbuf, big_buf, APOS_FIFO_BUF_SIZE));
   kmemset(big_buf, 'X', kBigBufSize);
 
   args.len = APOS_FIFO_BUF_SIZE - 100;
@@ -540,47 +545,52 @@ static void write_test(void) {
   scheduler_make_runnable(thread);
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
-  circbuf_realign(&f.cbuf);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
-  KEXPECT_EQ(0, check_buffer(f.buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
+  circbuf_realign(&f->cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
+  KEXPECT_EQ(0, check_buffer(f->buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
 
   // Open up some space, but not enough.
-  KEXPECT_EQ(50, fifo_read(&f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
-  circbuf_realign(&f.cbuf);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
+  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  circbuf_realign(&f->cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
   KEXPECT_EQ(0,
-             check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE - 50, 'X', 50));
+             check_buffer(f->cbuf.buf, 'x', APOS_FIFO_BUF_SIZE - 50, 'X', 50));
 
   // Open up the rest.
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
-             fifo_read(&f, big_buf2, APOS_FIFO_BUF_SIZE, true));
+             fifo_read(f, big_buf2, APOS_FIFO_BUF_SIZE, true));
   op_wait_finish(&args);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE- 100, args.result);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 150, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 150, f->cbuf.len);
   KEXPECT_EQ(0,
-             check_buffer(f.cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 150));
+             check_buffer(f->cbuf.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE - 150));
   kthread_join(thread);
 
 
   KTEST_BEGIN("fifo_write(): buffer full [non-blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'x', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
-             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE));
+             circbuf_write(&f->cbuf, big_buf, APOS_FIFO_BUF_SIZE));
   kmemset(big_buf, 'X', kBigBufSize);
 
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 100, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, 100, false));
   KEXPECT_EQ(-EAGAIN,
-             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE, false));
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE, false));
+             fifo_write(f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE, false));
 
-  circbuf_realign(&f.cbuf);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
-  KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
+  circbuf_realign(&f->cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
+  KEXPECT_EQ(0, check_buffer(f->cbuf.buf, 'x', APOS_FIFO_BUF_SIZE, 'X', 0));
+}
 
-
+static void write_testC(apos_fifo_t* f, void* big_buf, void* big_buf2) {
+  kthread_t thread;
+  op_args_t args;
+  args.fifo = f;
+  args.buf = big_buf;
 
   KTEST_BEGIN("fifo_write(): atomic write into buffer too small [blocking]");
   // Atomic write sizes to test.  Tuples of atomic write size, how much space to
@@ -596,11 +606,11 @@ static void write_test(void) {
     KLOG("Testing atomic write of %d bytes\n", kAtomicWriteSizes[i][0]);
     KASSERT(kAtomicWriteSizes[i][1] + kAtomicWriteSizes[i][2] <
             kAtomicWriteSizes[i][0]);
-    f.cbuf.pos = f.cbuf.len = 0;
+    f->cbuf.pos = f->cbuf.len = 0;
     kmemset(big_buf, 'x', kBigBufSize);
     const int orig_write_size = APOS_FIFO_BUF_SIZE - kAtomicWriteSizes[i][1];
     KEXPECT_EQ(orig_write_size,
-               circbuf_write(&f.cbuf, big_buf, orig_write_size));
+               circbuf_write(&f->cbuf, big_buf, orig_write_size));
     kmemset(big_buf, 'X', kBigBufSize);
     args.len = kAtomicWriteSizes[i][0];
 
@@ -608,63 +618,68 @@ static void write_test(void) {
     scheduler_make_runnable(thread);
     op_wait_start(&args);
     KEXPECT_EQ(false, args.finished);
-    KEXPECT_EQ(orig_write_size, f.cbuf.len);
+    KEXPECT_EQ(orig_write_size, f->cbuf.len);
 
     const int read_size1 = kAtomicWriteSizes[i][2];
     if (read_size1 > 0) {
       // Open up some space, but not enough.
-      KEXPECT_EQ(read_size1, fifo_read(&f, big_buf2, read_size1, true));
-      for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+      KEXPECT_EQ(read_size1, fifo_read(f, big_buf2, read_size1, true));
+      for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
       KEXPECT_EQ(false, args.finished);
-      KEXPECT_EQ(orig_write_size - read_size1, f.cbuf.len);
+      KEXPECT_EQ(orig_write_size - read_size1, f->cbuf.len);
       KEXPECT_EQ(0, check_buffer(big_buf2, 'x', read_size1, 'X', 0));
-      circbuf_realign(&f.cbuf);
-      KEXPECT_EQ(0, check_buffer(f.cbuf.buf, 'x', orig_write_size - read_size1,
+      circbuf_realign(&f->cbuf);
+      KEXPECT_EQ(0, check_buffer(f->cbuf.buf, 'x', orig_write_size - read_size1,
                                  'X', 0));
     }
 
     const int num_ys = min(read_size1, 7);
     if (num_ys > 0) {
       // Make a second write.
-      KEXPECT_EQ(7, fifo_write(&f, "yyyyyyy", 7, false));
+      KEXPECT_EQ(7, fifo_write(f, "yyyyyyy", 7, false));
     }
 
     // Open up the rest.
     const int read_size2 = kAtomicWriteSizes[i][0] - read_size1 + 10;
-    KEXPECT_EQ(read_size2, fifo_read(&f, big_buf2, read_size2, true));
+    KEXPECT_EQ(read_size2, fifo_read(f, big_buf2, read_size2, true));
     op_wait_finish(&args);
     KEXPECT_EQ(kAtomicWriteSizes[i][0], args.result);
     KEXPECT_EQ(orig_write_size - read_size1 - read_size2 + num_ys +
                    kAtomicWriteSizes[i][0],
-               f.cbuf.len);
-    circbuf_realign(&f.cbuf);
+               f->cbuf.len);
+    circbuf_realign(&f->cbuf);
     KEXPECT_EQ(0, check_buffer(big_buf2, 'x', read_size2, 'X', 0));
-    KEXPECT_EQ(0, check_buffer3(f.cbuf.buf, 'x',
+    KEXPECT_EQ(0, check_buffer3(f->cbuf.buf, 'x',
                                 orig_write_size - read_size1 - read_size2, 'y',
                                 num_ys, 'X', kAtomicWriteSizes[i][0]));
     kthread_join(thread);
   }
+}
 
-
+static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
+  kthread_t thread;
+  op_args_t args;
+  args.fifo = f;
+  args.buf = big_buf;
 
   KTEST_BEGIN(
       "fifo_write(): atomic write into buffer too small [non-blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'x', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
-             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
+             circbuf_write(&f->cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
   kmemset(big_buf, 'X', kBigBufSize);
 
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 101, false));
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 200, false));
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 300, false));
-  KEXPECT_EQ(-EAGAIN, fifo_write(&f, big_buf, 500, false));
-  KEXPECT_EQ(100, fifo_write(&f, big_buf, 600, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, 101, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, 200, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, 300, false));
+  KEXPECT_EQ(-EAGAIN, fifo_write(f, big_buf, 500, false));
+  KEXPECT_EQ(100, fifo_write(f, big_buf, 600, false));
 
 
 
   KTEST_BEGIN("fifo_write(): write bigger than buffer [blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'X', kBigBufSize);
   args.len = APOS_FIFO_BUF_SIZE * 1.5;
 
@@ -672,55 +687,55 @@ static void write_test(void) {
   scheduler_make_runnable(thread);
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
-  circbuf_realign(&f.cbuf);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
-  KEXPECT_EQ(0, check_buffer(f.buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE));
+  circbuf_realign(&f->cbuf);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
+  KEXPECT_EQ(0, check_buffer(f->buf, 'x', 0, 'X', APOS_FIFO_BUF_SIZE));
 
   // Open up some space, but not enough.
-  KEXPECT_EQ(50, fifo_read(&f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
+  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
-  KEXPECT_EQ(50, fifo_read(&f, big_buf2, 50, true));
-  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(50, fifo_read(f, big_buf2, 50, true));
+  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
-             fifo_read(&f, big_buf2, APOS_FIFO_BUF_SIZE, true));
+             fifo_read(f, big_buf2, APOS_FIFO_BUF_SIZE, true));
   op_wait_finish(&args);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE / 2 - 100, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE / 2 - 100, f->cbuf.len);
 
   kthread_join(thread);
 
 
 
   KTEST_BEGIN("fifo_write(): write bigger than buffer [non-blocking]");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'X', kBigBufSize);
 
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
-             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE * 1.5, false));
+             fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE * 1.5, false));
 
 
 
   KTEST_BEGIN("fifo_write(): write when there are no readers [non-blocking]");
-  fifo_close(&f, FIFO_READ);
+  fifo_close(f, FIFO_READ);
   KEXPECT_EQ(false, has_sigpipe());
 
-  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 0, false));
+  KEXPECT_EQ(-EPIPE, fifo_write(f, big_buf, 0, false));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
-  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 100, false));
+  KEXPECT_EQ(-EPIPE, fifo_write(f, big_buf, 100, false));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
   KEXPECT_EQ(-EPIPE,
-             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 10, false));
+             fifo_write(f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 10, false));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
-  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE + 10, false));
+  KEXPECT_EQ(-EPIPE, fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE + 10, false));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
@@ -729,32 +744,32 @@ static void write_test(void) {
   KTEST_BEGIN("fifo_write(): write when there are no readers [blocking]");
   KEXPECT_EQ(false, has_sigpipe());
 
-  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 0, true));
+  KEXPECT_EQ(-EPIPE, fifo_write(f, big_buf, 0, true));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
-  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, 100, true));
+  KEXPECT_EQ(-EPIPE, fifo_write(f, big_buf, 100, true));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
   KEXPECT_EQ(-EPIPE,
-             fifo_write(&f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 10, true));
+             fifo_write(f, big_buf, APOS_FIFO_MAX_ATOMIC_WRITE + 10, true));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
-  KEXPECT_EQ(-EPIPE, fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE + 10, true));
+  KEXPECT_EQ(-EPIPE, fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE + 10, true));
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
 
 
   KTEST_BEGIN("fifo_write(): blocking write when last reader closes");
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
-  f.cbuf.pos = f.cbuf.len = 0;
+  KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'X', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE,
-             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE, false));
+             fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE, false));
 
   args.len = 100;
   KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
@@ -762,13 +777,13 @@ static void write_test(void) {
   op_wait_start(&args);
 
   // Close second-to-last reader.
-  fifo_close(&f, FIFO_READ);
-  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  fifo_close(f, FIFO_READ);
+  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
   KEXPECT_EQ(false, args.finished);
 
   // Close last reader.
   KEXPECT_EQ(false, has_sigpipe());
-  fifo_close(&f, FIFO_READ);
+  fifo_close(f, FIFO_READ);
   op_wait_finish(&args);
   KEXPECT_EQ(-EPIPE, args.result);
   KEXPECT_EQ(true, has_sigpipe());
@@ -780,46 +795,46 @@ static void write_test(void) {
   KTEST_BEGIN(
       "fifo_write(): blocking write when last reader closes (data already "
       "written)");
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
-  f.cbuf.pos = f.cbuf.len = 0;
+  KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
+  f->cbuf.pos = f->cbuf.len = 0;
   kmemset(big_buf, 'x', kBigBufSize);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
-             fifo_write(&f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
+             fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE - 100, false));
   kmemset(big_buf, 'X', kBigBufSize);
 
   args.len = APOS_FIFO_BUF_SIZE;
   KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
   scheduler_make_runnable(thread);
   op_wait_start(&args);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
   // Close second-to-last reader.
-  fifo_close(&f, FIFO_READ);
-  for (int i = 0; i < 10 && !f.write_queue.head; ++i) scheduler_yield();
+  fifo_close(f, FIFO_READ);
+  for (int i = 0; i < 10 && !f->write_queue.head; ++i) scheduler_yield();
   KEXPECT_EQ(false, args.finished);
 
   // Close last reader.
   KEXPECT_EQ(false, has_sigpipe());
-  fifo_close(&f, FIFO_READ);
+  fifo_close(f, FIFO_READ);
   op_wait_finish(&args);
   KEXPECT_EQ(-EPIPE, args.result);
   KEXPECT_EQ(true, has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
   KEXPECT_EQ(0,
-             check_buffer(f.cbuf.buf, 'x', APOS_FIFO_BUF_SIZE - 100, 'X', 100));
+             check_buffer(f->cbuf.buf, 'x', APOS_FIFO_BUF_SIZE - 100, 'X', 100));
 
   kthread_join(thread);
 
 
   KTEST_BEGIN("fifo_write(): interrupted by signal (no data written)");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
-             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
+             circbuf_write(&f->cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
   args.len = 200;
-  KEXPECT_EQ(0, fifo_open(&f, FIFO_READ, false, false));
+  KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
   pid_t child = proc_fork(do_write_proc, &args);
   KEXPECT_GE(child, 0);
   op_wait_start(&args);
@@ -829,13 +844,13 @@ static void write_test(void) {
   op_wait_finish(&args);
   KEXPECT_EQ(-EINTR, args.result);
   KEXPECT_EQ(child, proc_wait(NULL));
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100, f->cbuf.len);
 
 
   KTEST_BEGIN("fifo_write(): interrupted by signal (data already written)");
-  f.cbuf.pos = f.cbuf.len = 0;
+  f->cbuf.pos = f->cbuf.len = 0;
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE - 100,
-             circbuf_write(&f.cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
+             circbuf_write(&f->cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
   args.len = APOS_FIFO_MAX_ATOMIC_WRITE + 100;
   child = proc_fork(do_write_proc, &args);
   KEXPECT_GE(child, 0);
@@ -846,11 +861,24 @@ static void write_test(void) {
   op_wait_finish(&args);
   KEXPECT_EQ(100, args.result);
   KEXPECT_EQ(child, proc_wait(NULL));
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f.cbuf.len);
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 
 
-  fifo_close(&f, FIFO_READ);
-  fifo_close(&f, FIFO_WRITE);
+  fifo_close(f, FIFO_READ);
+  fifo_close(f, FIFO_WRITE);
+}
+
+static void write_test(void) {
+  apos_fifo_t f;
+  void* big_buf = kmalloc(kBigBufSize);
+  void* big_buf2 = kmalloc(kBigBufSize);
+  fifo_init(&f);
+
+  write_testA(&f, big_buf, big_buf2);
+  write_testB(&f, big_buf, big_buf2);
+  write_testC(&f, big_buf, big_buf2);
+  write_testD(&f, big_buf, big_buf2);
+
   fifo_cleanup(&f);
   kfree(big_buf);
   kfree(big_buf2);
