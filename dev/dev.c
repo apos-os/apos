@@ -197,11 +197,13 @@ void dev_init_fs() {
 
   // Removing existing entries.
   char buf[kBufSize];
+  char* full_path = kmalloc(VFS_MAX_PATH_LENGTH);
   while (1) {
     const int len = vfs_getdents(dev_fd, (dirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       klogf("warning: unable to read /dev: %s\n", errorname(-len));
       vfs_close(dev_fd);
+      kfree(full_path);
       return;
     }
     if (len == 0) {
@@ -218,7 +220,6 @@ void dev_init_fs() {
         continue;
       }
 
-      char full_path[VFS_MAX_PATH_LENGTH];
       ksprintf(full_path, "/dev/%s", ent->d_name);
       const int result = vfs_unlink(full_path);
       if (result < 0) {
@@ -226,6 +227,7 @@ void dev_init_fs() {
       }
     }
   }
+  kfree(full_path);
 
   // Create new entries for each existing device.
   for (int major = 0; major < DEVICE_MAX_MAJOR; ++major) {
