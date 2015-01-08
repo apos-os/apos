@@ -677,7 +677,7 @@ static int creat(const char* path, mode_t mode, uid_t owner, gid_t group) {
   return vfs_chown(path, owner, group);
 }
 
-static void access_mode_test_func(void* arg) {
+static void access_mode_test_funcA(void) {
   const mode_t kNoRead = VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO;
   const mode_t kNoWrite = VFS_S_IRUSR | VFS_S_IXUSR | VFS_S_IRWXG | VFS_S_IRWXO;
   const mode_t kNoExec = VFS_S_IRUSR | VFS_S_IWUSR | VFS_S_IRWXG | VFS_S_IRWXO;
@@ -803,8 +803,9 @@ static void access_mode_test_func(void* arg) {
   KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_read", X_OK));
   KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_write", X_OK));
   KEXPECT_EQ(-EACCES, vfs_access("access_mode_test/no_exec/no_exec", X_OK));
+}
 
-
+static void access_mode_test_funcB(void) {
   KTEST_BEGIN("vfs_access(): uses real instead of effective uid/gid");
   KEXPECT_EQ(0, setregid(kGroupA, kGroupB));
   KEXPECT_EQ(0, setreuid(kUserB, kUserA));
@@ -879,6 +880,11 @@ static void access_mode_test_func(void* arg) {
   KTEST_BEGIN("vfs_access(): invalid symlink");
   KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/bad_link", W_OK));
   KEXPECT_EQ(-ENOENT, vfs_access("access_mode_test/bad_link/x", W_OK));
+}
+
+static void access_mode_test_func(void* arg) {
+  access_mode_test_funcA();
+  access_mode_test_funcB();
 }
 
 static void access_mode_test(void) {
