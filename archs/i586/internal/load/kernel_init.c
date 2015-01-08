@@ -59,11 +59,13 @@ void kinit(memory_info_t* meminfo) {
       "lidt (%0);"
       :: "r"((uint32_t)&idt_ptr) :);
 
-  // setup_paging() in mem_init.c identity-maps the first PDE entry.  We want to
-  // undo that.
-  // The page directory is self-mapped at the end of the address space.
+  // setup_paging() in mem_init.c identity-maps the first N PDE entries.  We
+  // want to undo that.  The page directory is self-mapped at the end of the
+  // address space.
   uint32_t* page_directory = (uint32_t*)0xFFFFF000;
-  page_directory[0] = 0 | PDE_WRITABLE;
+  for (int i = 0; i < KERNEL_MAP_4MB_REGIONS; ++i) {
+    page_directory[i] = 0 | PDE_WRITABLE;
+  }
   kmain(meminfo);
 
   // We can't ever return or we'll page fault!

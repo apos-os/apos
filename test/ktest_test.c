@@ -15,6 +15,7 @@
 #include "test/ktest.h"
 
 #include "common/kassert.h"
+#include "common/kprintf.h"
 
 char* inc_char(char* x) {
   *x = *x + 1;
@@ -36,7 +37,8 @@ void ktest_test(void) {
       kstrcpy(aval_str, utoa(aval));
       kstrcpy(bval_str, utoa(bval));
     }
-    kexpect_(aval == bval, "KEXPECT_EQ", "1", "1", aval_str, bval_str, "'", " != ", "test/ktest_test.c", "14");
+    kexpect(aval == bval, "KEXPECT_EQ", "1", "1", aval_str, bval_str, "'",
+            " != ", "test/ktest_test.c", "14");
   } while(0);
 
   KTEST_BEGIN("KEXPECT_EQ [PF]");

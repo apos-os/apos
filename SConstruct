@@ -28,6 +28,7 @@ vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
 vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
+vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = [
@@ -54,10 +55,16 @@ if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
 
 base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
+base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
+
+if not base_env['CLANG']:
+  base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
+else:
+  base_env.Replace(CC = 'clang')
+  base_env.Append(CFLAGS = ['-target', '%s' % base_env['CLANG_TARGET']])
 
 base_env.Replace(AR = '%sar' % base_env['TOOL_PREFIX'])
 base_env.Replace(AS = '%sas' % base_env['TOOL_PREFIX'])
-base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
 base_env.Replace(LD = '%sld' % base_env['TOOL_PREFIX'])
 base_env.Replace(RANLIB = '%sranlib' % base_env['TOOL_PREFIX'])
 base_env.Replace(STRIP = '%sstrip' % base_env['TOOL_PREFIX'])
@@ -65,6 +72,7 @@ base_env.Replace(STRIP = '%sstrip' % base_env['TOOL_PREFIX'])
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
+              "-mno-mmx -mno-sse " +
               "-Wstrict-prototypes"))
 base_env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
 base_env.Append(CPPPATH = ['#'])
@@ -72,13 +80,14 @@ base_env.Append(CPPPATH = ['#'])
 base_env.SetDefault(CPPDEFINES = [])
 
 if base_env['DEBUG']:
-  base_env.Append(CFLAGS = ['-g3', '-gstabs+'])
+  base_env.Append(CFLAGS = ['-g3'])
   base_env.Append(ASFLAGS = ['--gen-debug'])
 
 env = base_env.Clone()
 
-env.Append(CFLAGS =
-        Split("-nostdlib -ffreestanding -nostartfiles -nodefaultlibs"))
+env.Append(CFLAGS = Split("-Wframe-larger-than=1500 -nostdlib -ffreestanding"))
+if not env['CLANG']:
+  env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 
@@ -88,10 +97,14 @@ env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
 # Environment for userspace targets.
 user_env = base_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
+if base_env['CLANG']:
+  user_env.Append(LINKFLAGS = ['-target', '%s' % user_env['CLANG_TARGET']])
+  user_env.Append(CFLAGS =
+      ['-isystem', '%s/include' % user_env['HEADER_INSTALL_PREFIX']])
 
-def AposAddSources(env, srcs, subdirs):
+def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
-  objects = [env.Object(src) for src in srcs]
+  objects = [env.Object(src, **kwargs) for src in srcs]
   for subdir in subdirs:
     objects.append(SConscript('%s/SConscript' % subdir))
   return objects

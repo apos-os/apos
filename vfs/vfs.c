@@ -62,7 +62,7 @@ void vfs_vnode_init(vnode_t* n, int num) {
 }
 
 void vfs_fs_init(fs_t* fs) {
-  kmemset(fs, 0, sizeof(fs));
+  kmemset(fs, 0, sizeof(fs_t));
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
   fs->dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);

@@ -26,9 +26,7 @@ const char* do_printf(const char* fmt, ...) {
   return buffer;
 }
 
-void kprintf_test(void) {
-  KTEST_SUITE_BEGIN("kprintf");
-
+static void kprintf_testA(void) {
   // First test that ksprintf() itself works.
   KTEST_BEGIN("ksprintf(): basic tests");
   char buf[300];
@@ -81,7 +79,9 @@ void kprintf_test(void) {
   ksprintf(buf, "string:%s, int:%i, int:%i, hex:%X, percent:%%",
            "abc", 10, -10, 0xbeef);
   KEXPECT_STREQ("string:abc, int:10, int:-10, hex:BEEF, percent:%", buf);
+}
 
+static void kprintf_testB(void) {
   // Test field width.
   KTEST_BEGIN("ksprintf(): field width");
   KEXPECT_STREQ("5", do_printf("%1d", 5));
@@ -121,7 +121,9 @@ void kprintf_test(void) {
   KEXPECT_STREQ(" -1", do_printf("%03s", "-1"));
   KEXPECT_STREQ("-0005abc-005def-05hij",
                 do_printf("%05dabc%04ddef%03dhij", -5, -5, -5));
+}
 
+static void kprintf_testC(void) {
   // Test the ' ' flag.
   KTEST_BEGIN("ksprintf(): ' ' flag");
   KEXPECT_STREQ(" 5", do_printf("% d", 5));
@@ -167,7 +169,9 @@ void kprintf_test(void) {
   KEXPECT_STREQ("+0", do_printf("%+d", 0));
   KEXPECT_STREQ("+0000", do_printf("%+05d", 0));
   KEXPECT_STREQ("+0000", do_printf("%+05i", 0));
+}
 
+static void kprintf_testD(void) {
   // Test the '-' flag.
   KTEST_BEGIN("ksprintf(): '-' flag");
   KEXPECT_STREQ("5", do_printf("%-d", 5));
@@ -194,7 +198,9 @@ void kprintf_test(void) {
   KEXPECT_STREQ("  0", do_printf("%3X", 0));
   KEXPECT_STREQ("0  ", do_printf("%-3x", 0));
   KEXPECT_STREQ("0  ", do_printf("%-3X", 0));
+}
 
+static void kprintf_testE(void) {
   // Test the '#' flag.
   KTEST_BEGIN("ksprintf(): '#' flag");
   KEXPECT_STREQ("0", do_printf("%#d", 0));
@@ -226,4 +232,13 @@ void kprintf_test(void) {
   KEXPECT_STREQ("x", do_printf("%c", 'x'));
   KEXPECT_STREQ("  x", do_printf("%3c", 'x'));
   KEXPECT_STREQ("x  ", do_printf("%-3c", 'x'));
+}
+
+void kprintf_test(void) {
+  KTEST_SUITE_BEGIN("kprintf");
+  kprintf_testA();
+  kprintf_testB();
+  kprintf_testC();
+  kprintf_testD();
+  kprintf_testE();
 }

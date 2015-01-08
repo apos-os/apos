@@ -28,6 +28,7 @@ srcs = [
     'arch/proc/signal/sigreturn_trampoline.s',
     'arch/proc/stack_trace.c',
     'arch/proc/user_context.c',
+    'arch/proc/user_context_asm.s',
     'arch/proc/user_mode.c',
     'arch/syscall/context.c',
     'arch/syscall/init.c',

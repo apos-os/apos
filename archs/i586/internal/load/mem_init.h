@@ -27,6 +27,9 @@
 // Note: keep this is sync with the constant in linker.ld.
 #define KERNEL_VIRT_START 0xC0000000
 
+// How many 4MB regions to allocate for the kernel.
+#define KERNEL_MAP_4MB_REGIONS 2
+
 // Initialize page tables and enable paging.
 //
 // Identity maps the first 4MB of memory.  Must be called before paging has been

@@ -267,11 +267,12 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
 
   uint32_t block = atou(argv[3]);
 
-  char buf[4096];
+  char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
   int error = b->read(b, block, buf, 4096);
   if (error < 0) {
     ksh_printf("error: %s\n", errorname(-error));
+    kfree(buf);
     return;
   }
 
@@ -279,6 +280,7 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
   buf[error] = '\0';
   ksh_printf(buf);
   ksh_printf("\n");
+  kfree(buf);
 }
 
 // Writes a block to a block device.
@@ -296,16 +298,18 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
 
   uint32_t block = atou(argv[3]);
 
-  char buf[4096];
+  char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
   kstrcpy(buf, argv[4]);
   int error = b->write(b, block, buf, 4096);
   if (error < 0) {
     ksh_printf("error: %s\n", errorname(-error));
+    kfree(buf);
     return;
   }
 
   ksh_printf("wrote %d bytes\n", error);
+  kfree(buf);
 }
 
 // Simple pager for the kernel log.  With no arguments, prints the next few
@@ -438,14 +442,15 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
 
   const int kBufSize = 512;
-  char buf[kBufSize];
+  char* buf = kmalloc(kBufSize);
+  char* child_path = kmalloc(1000);
+  char* link_target = kmalloc(VFS_MAX_PATH_LENGTH + 5);
 
   while (1) {
     const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
-      vfs_close(fd);
       ksh_printf("error: vfs_getdents(): %s\n", errorname(-len));
-      return;
+      goto done;
     }
     if (len == 0) {
       break;
@@ -457,7 +462,6 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
       buf_offset += ent->d_reclen;
       if (long_mode) {
         // TODO(aoates): use fstatat()
-        char child_path[1000];
         kstrcpy(child_path, path);
         kstrcat(child_path, "/");
         kstrcat(child_path, ent->d_name);
@@ -487,7 +491,6 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
           mode[9] = stat.st_mode & VFS_S_IXOTH ? 'x' : '-';
           mode[10] = '\0';
 
-          char link_target[VFS_MAX_PATH_LENGTH + 5];
           kmemset(link_target, 0, VFS_MAX_PATH_LENGTH + 5);
           if ((stat.st_mode & VFS_S_IFMT) == VFS_S_IFLNK) {
             kstrcat(link_target, " -> ");
@@ -508,6 +511,11 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
       }
     } while (buf_offset < len);
   }
+
+done:
+  kfree(buf);
+  kfree(child_path);
+  kfree(link_target);
 
   vfs_close(fd);
 }

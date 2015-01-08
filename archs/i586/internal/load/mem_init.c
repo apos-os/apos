@@ -114,14 +114,20 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
     page_directory[i] = 0 | PDE_WRITABLE;
   }
 
-  // Create two initial PTEs as well.  Identity map the first 4MB, and map the
-  // higher-half kernel to the first physical 4MB as well.
+  // Create two initial PTEs as well.  Identity map the first n * 4MB, and map
+  // the higher-half kernel to the first physical n * 4MB as well.
   // Note: Keep this in sync with load/kernel_init.c (which undoes the first
   // mapping).
-  uint32_t* page_table1 = kalloc_page(meminfo);
-  map_linear_page_table(page_directory, page_table1, 0x0, 0x0);
-  uint32_t* page_table2 = kalloc_page(meminfo);
-  map_linear_page_table(page_directory, page_table2, KERNEL_VIRT_START, 0x0);
+  kassert_phys((uint32_t)&KERNEL_END_SYMBOL - KERNEL_VIRT_START <
+               KERNEL_MAP_4MB_REGIONS * (PAGE_SIZE * PAGE_SIZE / 4));
+  for (i = 0; i < KERNEL_MAP_4MB_REGIONS; ++i) {
+    const uint32_t offset = i * PTE_NUM_ENTRIES * PAGE_SIZE;
+    uint32_t* page_table1 = kalloc_page(meminfo);
+    map_linear_page_table(page_directory, page_table1, offset, offset);
+    uint32_t* page_table2 = kalloc_page(meminfo);
+    map_linear_page_table(page_directory, page_table2,
+                          KERNEL_VIRT_START + offset, offset);
+  }
 
   // Identity map the first KERNEL_PHYS_MAP_MAX_LENGTH bytes of physical memory
   // as well.
@@ -148,8 +154,9 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
   meminfo->kernel_start_virt = meminfo->kernel_start_phys + KERNEL_VIRT_START;
   meminfo->kernel_end_virt = meminfo->kernel_end_phys + KERNEL_VIRT_START;
   meminfo->mapped_start = KERNEL_VIRT_START;
-  // We mapped a single PTE (4MB) for use by the kernel.
-  meminfo->mapped_end = KERNEL_VIRT_START + PTE_NUM_ENTRIES * PAGE_SIZE;
+  // We mapped a N PTEs (4MB each) for use by the kernel.
+  meminfo->mapped_end =
+      KERNEL_VIRT_START + KERNEL_MAP_4MB_REGIONS * PTE_NUM_ENTRIES * PAGE_SIZE;
   meminfo->kernel_page_directory = (page_dir_ptr_t)page_directory;
 
   // Install the PDE and enable paging.

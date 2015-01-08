@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "dev/ld.h"
 #include "dev/tty.h"
 #include "proc/exit.h"

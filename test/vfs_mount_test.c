@@ -19,6 +19,7 @@
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
@@ -281,12 +282,14 @@ static void dot_dot_test(void) {
 
 // Check that the cwd is equal to orig_cwd joined with relpath.
 #define EXPECT_CWD(orig_cwd, relpath) do { \
-  char _expected_cwd[2 * VFS_MAX_PATH_LENGTH]; \
-  char _actual_cwd[VFS_MAX_PATH_LENGTH]; \
+  char* _expected_cwd = kmalloc(2 * VFS_MAX_PATH_LENGTH); \
+  char* _actual_cwd = kmalloc(VFS_MAX_PATH_LENGTH); \
   kstrcpy(_expected_cwd, (orig_cwd)); \
   append_path(_expected_cwd, (relpath)); \
   KEXPECT_GE(vfs_getcwd(_actual_cwd, VFS_MAX_PATH_LENGTH), 0); \
   KEXPECT_STREQ(_expected_cwd, _actual_cwd); \
+  kfree(_expected_cwd); \
+  kfree(_actual_cwd); \
 } while (0)
 
 static void mount_cwd_test(void) {
@@ -294,7 +297,7 @@ static void mount_cwd_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
 
-  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  char* orig_cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   KEXPECT_GE(vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH), 0);
 
   // Do the mount.
@@ -362,6 +365,7 @@ static void mount_cwd_test(void) {
 
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+  kfree(orig_cwd);
 }
 
 static void rmdir_mount_test(void) {

@@ -13,11 +13,10 @@
 // limitations under the License.
 
 #include "common/kstring.h"
+#include "memory/kmalloc.h"
 #include "test/ktest.h"
 
-void kstring_test(void) {
-  KTEST_SUITE_BEGIN("kstring");
-
+static void kstring_testA(void) {
   KTEST_BEGIN("kstrlen()");
   KEXPECT_EQ(0, kstrlen(""));
   KEXPECT_EQ(1, kstrlen("a"));
@@ -56,9 +55,10 @@ void kstring_test(void) {
   KEXPECT_GT(kstrncmp("abcz", "abcdefghiklmnop", 10), 0);
 
   // TODO(aoates): tests for kmemset, kstrcpy, kstrncpy, kstrcat
+}
 
+static void kstring_testB(char* buf) {
   KTEST_BEGIN("kstrcat()");
-  char buf[1024];
   buf[0] = '\0';
   kstrcat(buf, "a");
   KEXPECT_STREQ("a", buf);
@@ -112,7 +112,9 @@ void kstring_test(void) {
   KEXPECT_STREQ("67890", itoa_hex(0x67890));
   KEXPECT_STREQ("ABCDEF0", itoa_hex(0xABCDEF0));
   KEXPECT_STREQ("-ABCDEF0", itoa_hex(-0xABCDEF0));
+}
 
+static void kstring_testC(void) {
   KTEST_BEGIN("atoi()");
   KEXPECT_EQ(0, atoi("0"));
   KEXPECT_EQ(10, atoi("10"));
@@ -144,7 +146,9 @@ void kstring_test(void) {
   KEXPECT_EQ(0xABCDEF, atou("0xABCDEF"));
   KEXPECT_EQ(0xABCDEF, atoi("0XaBcDeF"));
   KEXPECT_EQ(0xABCDEF1, atoi("0xABCDEF1Q"));
+}
 
+static void kstring_testD(char* buf) {
   KTEST_BEGIN("kstrchr()");
   const char* s = "/abc/def";
   KEXPECT_EQ((uint32_t)s, (uint32_t)kstrchr(s, '/'));
@@ -183,7 +187,9 @@ void kstring_test(void) {
   KEXPECT_EQ('c', buf[2]);
   KEXPECT_EQ('d', buf[3]);
   KEXPECT_EQ('x', buf[4]);
+}
 
+static void kstring_testE(void) {
   KTEST_BEGIN("kisdigit()");
   KEXPECT_EQ(0, kisdigit('a'));
   KEXPECT_EQ(0, kisdigit('Q'));
@@ -238,4 +244,16 @@ void kstring_test(void) {
   KEXPECT_EQ(1, kisalnum('0'));
   KEXPECT_EQ(1, kisalnum('5'));
   KEXPECT_EQ(1, kisalnum('9'));
+}
+
+void kstring_test(void) {
+  KTEST_SUITE_BEGIN("kstring");
+
+  char* buf = kmalloc(1024);
+  kstring_testA();
+  kstring_testB(buf);
+  kstring_testC();
+  kstring_testD(buf);
+  kstring_testE();
+  kfree(buf);
 }

@@ -18,4 +18,5 @@ void arch_die() {
   asm volatile (
       "cli\n\t"
       "hlt\n\t");
+  while (1) {}  // Never get here.
 }

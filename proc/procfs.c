@@ -23,6 +23,7 @@
 #include "common/kstring.h"
 #include "common/list.h"
 #include "common/math.h"
+#include "memory/kmalloc.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
 #include "proc/user.h"
@@ -97,7 +98,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   const process_t* const proc = proc_get(pid);
   if (!proc) return -EINVAL;
 
-  char tbuf[1024];
+  char* tbuf = kmalloc(1024);
 
   list_link_t* link = proc->vm_area_list.head;
   while (link && offset < buflen) {
@@ -109,6 +110,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
     link = link->next;
   }
 
+  kfree(tbuf);
   return kstrlen(buf);
 }
 
@@ -122,7 +124,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   const process_t* const proc = proc_get(pid);
   if (!proc) return -EINVAL;
 
-  char cwd[VFS_MAX_PATH_LENGTH];
+  char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   if (proc->cwd) {
     int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
     if (result < 0)
@@ -131,7 +133,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
     kstrcpy(cwd, "<none>");
   }
 
-  char tbuf[1024];
+  char* tbuf = kmalloc(1024);
   ksprintf(tbuf,
            "pid: %d\n"
            "state: %s\n"
@@ -159,6 +161,9 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   }
   kstrncpy(buf, tbuf, buflen);
   ((char*)buf)[buflen - 1] = '\0';
+
+  kfree(tbuf);
+  kfree(cwd);
   return kstrlen(buf);
 }
 
@@ -169,11 +174,11 @@ static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
   const process_t* const proc = proc_get(pid);
   if (!proc) return -EINVAL;
 
-  char cwd[VFS_MAX_PATH_LENGTH];
+  char* cwd = kmalloc(VFS_MAX_PATH_LENGTH);
   int result = vfs_get_vnode_dir_path(proc->cwd, cwd, VFS_MAX_PATH_LENGTH);
-  if (result < 0) return result;
+  if (result >= 0) kstrncpy(buf, cwd, result);
 
-  kstrncpy(buf, cwd, result);
+  kfree(cwd);
   return result;
 }
 

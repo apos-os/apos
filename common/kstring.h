@@ -18,6 +18,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Clang will generate calls to memset(), so we must define it.
+#if defined(__clang__) && __clang__
+#  define kmemset memset
+#endif
+
 int kstrlen(const char* s);
 int kstrcmp(const char* s1, const char* s2);
 int kstrncmp(const char* s1, const char* s2, size_t n);

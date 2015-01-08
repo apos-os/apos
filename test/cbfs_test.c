@@ -18,6 +18,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
@@ -353,9 +354,9 @@ static void dynamic_directory_test(void) {
     KTEST_BEGIN("cbfs: dynamic directory (many entries)");
     KEXPECT_EQ(0, cbfs_create_directory(fs, "dir2", &dynamic_dir_getdents,
                                         (void*)2, VFS_S_IRWXU));
-    edirent_t many_expected[1002];
+    edirent_t* many_expected = kmalloc(sizeof(edirent_t) * 1002);
     const int kNamesBufSize = 20000;
-    char namesbuf[kNamesBufSize];
+    char* namesbuf = kmalloc(kNamesBufSize);
     char* cname = namesbuf;
     for (int i = 0; i < 1000; i++) {
       ksprintf(cname, "file%d", i);
@@ -369,6 +370,8 @@ static void dynamic_directory_test(void) {
     many_expected[1001].name = "..";
     KEXPECT_EQ(0,
                compare_dirents_p("cbfs_test_root/dir2", 1002, many_expected));
+    kfree(namesbuf);
+    kfree(many_expected);
   }
 
   KTEST_BEGIN("cbfs: dynamic directory getdents error");
