@@ -57,7 +57,7 @@ void kthread_arch_init_thread(kthread_t thread,
   // First push the saved %ebp, which points to the ebp used by the 'call' to
   // swap_context -- since we jump into the trampoline (which will do it's own
   // thing with ebp), this doesn't have to be valid.
-  *(stack--) = 0xDEADBADD;
+  *(stack--) = 0;
   *(stack--) = 0;  // ebx
   *(stack--) = 0;  // esi
   *(stack--) = 0;  // edi

@@ -34,6 +34,8 @@ void print_stack_trace(void) {
 
   while (ebp != 0x0) {
     const addr_t old_ebp = *(addr_t*)ebp;
+    if (old_ebp == 0) break;
+
     // Subtract 2 to get back to the call instruction.
     const addr_t return_addr =
         *(addr_t*)(ebp + sizeof(addr_t)) - CALL_INSTRUCTION_SIZE;
