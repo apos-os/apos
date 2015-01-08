@@ -85,7 +85,7 @@ if base_env['DEBUG']:
 
 env = base_env.Clone()
 
-env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
+env.Append(CFLAGS = Split("-Wframe-larger-than=1500 -nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
 env.Append(ASFLAGS = ['--gen-debug'])

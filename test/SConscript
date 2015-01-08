@@ -61,7 +61,7 @@ srcs = [
 
 subdirs = []
 
-extra_cflags = []
+extra_cflags = ['-Wframe-larger-than=5000']
 if env['CLANG']:
   extra_cflags.append('-Wno-self-assign')
 
