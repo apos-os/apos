@@ -96,18 +96,19 @@ static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
 // interrupt occurred in user or kernel mode.
 static int is_user_interrupt(addr_t ebp) {
   // The contents of the stack are,
-  //  ebp+0x24 SS       (if a user interrupt)
-  //  ebp+0x20 ESP      (if a user interrupt)
-  //  ebp+0x1c EFLAGS
-  //  ebp+0x18 CS
-  //  ebp+0x14 Interrupted EIP
-  //  ebp+0x10 Error code
-  //  ebp+0xc  Interrupted EIP (again)
+  //  ebp+0x28 SS       (if a user interrupt)
+  //  ebp+0x24 ESP      (if a user interrupt)
+  //  ebp+0x20 EFLAGS
+  //  ebp+0x1c CS
+  //  ebp+0x18 Interrupted EIP
+  //  ebp+0x14 Error code
+  //  ebp+0x10 Interrupted EIP (again)
+  //  ebp+0xc  Saved EBP
   //  ebp+0x8  Interrupt number
   //  ebp+0x4  Interrupt handler (pushed by 'call int_handler_common')
   //  ebp      Saved EBP          <-- *ebp
   //   <saved registers>
-  const addr_t cs = *((addr_t*)ebp + 6);
+  const addr_t cs = *((addr_t*)ebp + 7);
   if (cs != segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) &&
       cs != segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL)) {
     klogf("unknown code segment: 0x%x\n", cs);
@@ -118,10 +119,10 @@ static int is_user_interrupt(addr_t ebp) {
   // Do some sanity checking on the rest of the stack frame.
   if (ENABLE_KERNEL_SAFETY_NETS) {
     if (is_user) {
-      const addr_t ss = *((addr_t*)ebp + 9);
+      const addr_t ss = *((addr_t*)ebp + 10);
       KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
     }
-    KASSERT(*((addr_t*)ebp + 3) == *((addr_t*)ebp + 5));
+    KASSERT(*((addr_t*)ebp + 4) == *((addr_t*)ebp + 6));
     KASSERT(*((addr_t*)ebp + 2) < 256);
   }
 
@@ -135,14 +136,14 @@ static user_context_t extract_interrupt_context(void* ebp_ptr) {
   user_context_t context;
 
 #if ENABLE_KERNEL_SAFETY_NETS
-  const addr_t cs = *((addr_t*)ebp + 6);
+  const addr_t cs = *((addr_t*)ebp + 7);
   KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
 #endif
 
   context.type = USER_CONTEXT_INTERRUPT;
-  context.esp = *((addr_t*)ebp + 8);
+  context.esp = *((addr_t*)ebp + 9);
   context.ebp = *((addr_t*)ebp);
-  context.eip = *((addr_t*)ebp + 5);
+  context.eip = *((addr_t*)ebp + 6);
   context.eax = *((addr_t*)ebp - 1);
   context.ebx = *((addr_t*)ebp - 4);
   context.ecx = *((addr_t*)ebp - 2);
@@ -150,7 +151,7 @@ static user_context_t extract_interrupt_context(void* ebp_ptr) {
   context.esi = *((addr_t*)ebp - 7);
   context.edi = *((addr_t*)ebp - 8);
 
-  context.eflags = *((addr_t*)ebp + 7);
+  context.eflags = *((addr_t*)ebp + 8);
 
   return context;
 }
