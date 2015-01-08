@@ -88,9 +88,6 @@ env = base_env.Clone()
 env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
-else:
-  # TODO(aoates): restrict this to test files only.
-  env.Append(CFLAGS = ["-Wno-self-assign"])
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 
@@ -105,9 +102,9 @@ if base_env['CLANG']:
   user_env.Append(CFLAGS =
       ['-isystem', '%s/include' % user_env['HEADER_INSTALL_PREFIX']])
 
-def AposAddSources(env, srcs, subdirs):
+def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
-  objects = [env.Object(src) for src in srcs]
+  objects = [env.Object(src, **kwargs) for src in srcs]
   for subdir in subdirs:
     objects.append(SConscript('%s/SConscript' % subdir))
   return objects

@@ -61,5 +61,10 @@ srcs = [
 
 subdirs = []
 
-objects = AposAddSources(env, srcs, subdirs)
+extra_cflags = []
+if env['CLANG']:
+  extra_cflags.append('-Wno-self-assign')
+
+objects = AposAddSources(env, srcs, subdirs,
+    CFLAGS=env['CFLAGS'] + extra_cflags)
 Return('objects')
