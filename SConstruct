@@ -38,6 +38,7 @@ FEATURES = [
   'USB',
   'USER_DUMMY_LIB',
   'USER_TESTS',
+  'KMALLOC_HEAP_PROFILE',
 ]
 
 for feature in FEATURES:

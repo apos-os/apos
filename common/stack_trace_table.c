@@ -14,15 +14,20 @@
 
 #include "common/stack_trace_table.h"
 
-#include "common/kassert.h"
+#include "common/config.h"
 #include "common/errno.h"
 #include "common/hash.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/interrupts.h"
 
+#if ENABLE_KMALLOC_HEAP_PROFILE
 #define TRACETBL_ENTRIES 750
+#else
+#define TRACETBL_ENTRIES 1
+#endif
 
 typedef struct {
   unsigned char len;

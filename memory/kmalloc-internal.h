@@ -19,6 +19,7 @@
 
 #include <stdbool.h>
 
+#include "common/config.h"
 #include "common/types.h"
 
 // Don't bother splitting a block if it'll be smaller than this (bytes).
@@ -37,6 +38,9 @@
 struct block {
   uint8_t magic;
   bool free;
+#if ENABLE_KMALLOC_HEAP_PROFILE
+  short stack_trace;
+#endif
   addrdiff_t length;
   struct block* prev;
   struct block* next;

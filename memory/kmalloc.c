@@ -18,11 +18,13 @@
 #include <stdint.h>
 
 #include "arch/memory/page_alloc.h"
+#include "arch/proc/stack_trace.h"
 #include "common/debug.h"
 #include "common/klog.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"
+#include "common/stack_trace_table.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "memory/vm.h"
@@ -160,6 +162,14 @@ void* kmalloc(size_t n) {
 }
 
 void* kmalloc_aligned(size_t n, size_t alignment) {
+#if ENABLE_KMALLOC_HEAP_PROFILE
+  addr_t stack_trace[TRACETBL_MAX_TRACE_LEN];
+  const int stack_trace_len =
+      get_stack_trace(stack_trace, TRACETBL_MAX_TRACE_LEN);
+  KASSERT_DBG(stack_trace_len > 3);
+  const int stack_trace_id = tracetbl_put(stack_trace, stack_trace_len);
+#endif
+
   PUSH_AND_DISABLE_INTERRUPTS();
   // Try to find a free block that's big enough.
   block_t* cblock = g_block_list;
@@ -198,6 +208,9 @@ void* kmalloc_aligned(size_t n, size_t alignment) {
 
   cblock->free = false;
   cblock = split_block(cblock, n);
+#if ENABLE_KMALLOC_HEAP_PROFILE
+  cblock->stack_trace = stack_trace_id;
+#endif
 
   POP_INTERRUPTS();
 
@@ -217,6 +230,9 @@ void kfree(void* x) {
 
   PUSH_AND_DISABLE_INTERRUPTS();
   b->free = true;
+#if ENABLE_KMALLOC_HEAP_PROFILE
+  if (b->stack_trace >= 0) tracetbl_unref(b->stack_trace);
+#endif
   merge_block(b);
   POP_INTERRUPTS();
 }
@@ -243,6 +259,47 @@ void kmalloc_log_state() {
   }
   KLOG(INFO, "total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
   KLOG(INFO, "free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
+}
+
+void kmalloc_log_heap_profile() {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  size_t total_objects = 0, total_bytes = 0;
+
+  block_t* cblock = g_block_list;
+  while (cblock) {
+    if (!cblock->free) {
+      total_objects++;
+      total_bytes += cblock->length;
+    }
+    cblock = cblock->next;
+  }
+
+  KLOG(INFO, "heap profile:  %d:  %d [  %d:  %d] @ apos_heap/1\n",
+       total_objects, total_bytes, total_objects, total_bytes);
+
+  cblock = g_block_list;
+  while (cblock) {
+    if (!cblock->free) {
+      KLOG(INFO, " %d: %d [%d: %d] @", 1, cblock->length, 1, cblock->length);
+#if ENABLE_KMALLOC_HEAP_PROFILE
+      addr_t stack_trace[TRACETBL_MAX_TRACE_LEN];
+      int len = tracetbl_get(cblock->stack_trace, stack_trace);
+      if (len < 0) {
+        KLOG(INFO, " ??");
+      } else {
+        for (int i = 0; i < len; ++i) {
+          KLOG(INFO, " %#x", stack_trace[i]);
+        }
+      }
+#endif
+      KLOG(INFO, "\n");
+    }
+    cblock = cblock->next;
+  }
+
+  KLOG(INFO, "#### heap profile end ####\n");
+
+  POP_INTERRUPTS();
 }
 
 void kmalloc_enable_test_mode(void) {
