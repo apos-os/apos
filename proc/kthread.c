@@ -127,11 +127,7 @@ void kthread_destroy(kthread_t thread) {
     thread->stack = 0x0;
   }
 
-  // If we're in debug mode, leave the thread body around to we can die if we
-  // try to use it later.
-  if(!ENABLE_KERNEL_SAFETY_NETS) {
-    kfree(thread);
-  }
+  kfree(thread);
 }
 
 void kthread_detach(kthread_t thread_ptr) {
