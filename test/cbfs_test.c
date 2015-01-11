@@ -241,6 +241,8 @@ static void lookup_function_test(void) {
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+  KEXPECT_EQ(fs, unmounted_fs);
+  cbfs_free(fs);
 }
 
 static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
@@ -529,6 +531,8 @@ static void dynamic_directory_test(void) {
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+  KEXPECT_EQ(fs, unmounted_fs);
+  cbfs_free(fs);
 }
 
 static int changed_getdentsA(fs_t* fs, int vnode_num, void* arg, int offset,
@@ -610,6 +614,8 @@ static void changing_getdents_test(void) {
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+  KEXPECT_EQ(fs, unmounted_fs);
+  cbfs_free(fs);
 }
 
 static void static_vnode_limit_test(void) {
@@ -642,6 +648,8 @@ static void static_vnode_limit_test(void) {
 
   fs_t* unmounted_fs = 0x0;
   KEXPECT_EQ(0, vfs_unmount_fs("cbfs_test_root", &unmounted_fs));
+  KEXPECT_EQ(fs, unmounted_fs);
+  cbfs_free(fs);
 }
 
 void cbfs_test(void) {
