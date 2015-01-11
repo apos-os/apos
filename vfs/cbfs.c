@@ -166,7 +166,7 @@ static void init_inode(cbfs_inode_t* inode) {
 }
 
 // Create a new cbfs_inode_t with the given number.
-cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
+static cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
   cbfs_inode_t* inode = (cbfs_inode_t*)kmalloc(sizeof(cbfs_inode_t));
   init_inode(inode);
   inode->num = num;
@@ -178,7 +178,7 @@ cbfs_inode_t* create_inode(cbfs_t* cfs, int num) {
 }
 
 // Create a new cbfs_entry_t with the given name and number.
-cbfs_entry_t* create_entry(int num, const char name[]) {
+static cbfs_entry_t* create_entry(int num, const char name[]) {
   cbfs_entry_t* entry =
       (cbfs_entry_t*)kmalloc(sizeof(cbfs_entry_t) + kstrlen(name) + 1);
   kstrcpy(entry->name, name);
@@ -189,14 +189,14 @@ cbfs_entry_t* create_entry(int num, const char name[]) {
 }
 
 // Insert the given inode into the vnode table.
-void add_inode_to_vnode_table(cbfs_t* cfs, cbfs_inode_t* inode) {
+static void add_inode_to_vnode_table(cbfs_t* cfs, cbfs_inode_t* inode) {
   void* unused_val;
   KASSERT(htbl_get(&cfs->vnode_table, inode->num, &unused_val) != 0);
   htbl_put(&cfs->vnode_table, inode->num, inode);
 }
 
 // Add standard directory entries ('.' and '..') to the given node.
-void create_directory_entries(int parent_num, cbfs_inode_t* dir) {
+static void create_directory_entries(int parent_num, cbfs_inode_t* dir) {
   const char* const kNames[] = {".", ".."};
   const int inos[] = {dir->num, parent_num};
   for (int i = 0; i < 2; ++i) {
