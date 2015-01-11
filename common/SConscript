@@ -23,6 +23,7 @@ srcs = ['builtins.c', 'errno.c',
     'kprintf.c',
     'kstring.c',
     'list.c',
+    'stack_trace_table.c',
     'time.c',
     ]
 

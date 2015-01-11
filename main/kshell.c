@@ -242,6 +242,10 @@ static void meminfo_cmd(kshell_t* shell, int argc, char* argv[]) {
   kmalloc_log_state();
 }
 
+static void heap_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
+  kmalloc_log_heap_profile();
+}
+
 static void hash_cmd(kshell_t* shell, int argc, char* argv[]) {
   if (argc != 2) {
     ksh_printf("usage: hash <number>\n");
@@ -1071,6 +1075,7 @@ static const cmd_t CMDS[] = {
 #endif
 
   { "meminfo", &meminfo_cmd },
+  { "heapprof", &heap_profile_cmd },
   { "hash", &hash_cmd },
   { "b_read", &b_read_cmd },
   { "b_write", &b_write_cmd },

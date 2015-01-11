@@ -24,6 +24,7 @@ void kfree(void* x);
 void* kmalloc(size_t n);
 void* kmalloc_aligned(size_t n, size_t alignment);
 void kmalloc_log_state(void);
+void kmalloc_log_heap_profile(void);
 
 // Enable test mode.  In test mode, certain components are not re-initialized in
 // kmalloc_init(), allowing it to be called more than once.

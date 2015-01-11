@@ -17,6 +17,7 @@
 
 _syscall_enter:
   pushl %ebp  # arg6
+  mov %esp, %ebp
   pushl %edi  # arg5
   pushl %esi  # arg4
   pushl %edx  # arg3
