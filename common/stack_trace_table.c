@@ -42,7 +42,7 @@ static int g_tblsize = 0;
 extern addr_t _int_handlers_start;
 extern addr_t _int_handlers_end;
 
-int tracetbl_put(const addr_t* trace, int len) {
+trace_id_t tracetbl_put(const addr_t* trace, int len) {
   len = min(len, TRACETBL_MAX_TRACE_LEN);
 
   // Truncate the stack trace at any interrupt handlers, to prevent
@@ -88,7 +88,7 @@ int tracetbl_put(const addr_t* trace, int len) {
   return id;
 }
 
-int tracetbl_get(int id, addr_t* trace) {
+int tracetbl_get(trace_id_t id, addr_t* trace) {
   if (id < 0 || id >= TRACETBL_ENTRIES)
     return -EINVAL;
 
@@ -105,7 +105,7 @@ int tracetbl_get(int id, addr_t* trace) {
   return result;
 }
 
-void tracetbl_unref(int id) {
+void tracetbl_unref(trace_id_t id) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(id >= 0 && id < TRACETBL_ENTRIES);
   KASSERT(g_tracetbl[id].refcount > 0);

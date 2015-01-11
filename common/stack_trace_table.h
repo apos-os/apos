@@ -27,18 +27,20 @@
 
 #define TRACETBL_MAX_TRACE_LEN 16
 
+typedef short trace_id_t;
+
 // Store the given stack trace, and return the id to fetch it later, or -error.
 // Increments the stack trace's refcount.
-int tracetbl_put(const addr_t* trace, int len);
+trace_id_t tracetbl_put(const addr_t* trace, int len);
 
 // Copy the stack trace referred to by the given id into |trace|.  Returns the
 // stack trace's length, or -error.  |trace| must be at least
 // TRACETBL_MAX_TRACE_LEN entries long.
-int tracetbl_get(int id, addr_t* trace);
+int tracetbl_get(trace_id_t id, addr_t* trace);
 
 // Decrement the stack trace referred to by id's refcount.  If the refcount goes
 // to zero, the stacktrace slot may be reused (and any uses of that id are
 // invalid).
-void tracetbl_unref(int id);
+void tracetbl_unref(trace_id_t id);
 
 #endif
