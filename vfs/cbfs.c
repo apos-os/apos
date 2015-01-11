@@ -273,9 +273,15 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
   return &f->fs;
 }
 
+static void inode_cleanup_func(void* arg, uint32_t key, void* value) {
+  cbfs_t* cfs = (cbfs_t*)arg;
+  if (value != &cfs->root)
+    kfree(value);
+}
+
 void cbfs_free(fs_t* fs) {
   cbfs_t* cfs = fs_to_cbfs(fs);
-  // TODO(aoates): clean up all entries
+  htbl_iterate(&cfs->vnode_table, &inode_cleanup_func, cfs);
   htbl_cleanup(&cfs->vnode_table);
   kfree(cfs);
 }
