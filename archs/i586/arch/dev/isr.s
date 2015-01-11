@@ -50,6 +50,9 @@ int\intr :
   call int_common_handler
 .endm
 
+.global _int_handlers_start
+_int_handlers_start:
+
 INT_NOERROR   0
 INT_NOERROR   1
 INT_NOERROR   2
@@ -87,6 +90,9 @@ INT_NOERROR   44
 INT_NOERROR   45
 INT_NOERROR   46
 INT_NOERROR   47
+
+.global _int_handlers_end
+_int_handlers_end:
 
 int_common_handler:
   push %ebp

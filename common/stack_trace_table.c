@@ -39,8 +39,22 @@ typedef struct {
 static entry_t g_tracetbl[TRACETBL_ENTRIES];
 static int g_tblsize = 0;
 
+extern addr_t _int_handlers_start;
+extern addr_t _int_handlers_end;
+
 int tracetbl_put(const addr_t* trace, int len) {
   len = min(len, TRACETBL_MAX_TRACE_LEN);
+
+  // Truncate the stack trace at any interrupt handlers, to prevent
+  // combinatorial explosion of stack traces.
+  for (int i = 0; i < len; ++i) {
+    if (trace[i] >= (addr_t)&_int_handlers_start &&
+        trace[i] < (addr_t)&_int_handlers_end) {
+      len = i + 1;
+      break;
+    }
+  }
+
   const uint32_t trace_hash = fnv_hash_array(trace, sizeof(addr_t) * len);
   int id = trace_hash % TRACETBL_ENTRIES;
 

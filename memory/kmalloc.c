@@ -163,9 +163,8 @@ void* kmalloc(size_t n) {
 
 void* kmalloc_aligned(size_t n, size_t alignment) {
 #if ENABLE_KMALLOC_HEAP_PROFILE
-  addr_t stack_trace[TRACETBL_MAX_TRACE_LEN];
-  const int stack_trace_len =
-      get_stack_trace(stack_trace, TRACETBL_MAX_TRACE_LEN);
+  addr_t stack_trace[32];
+  const int stack_trace_len = get_stack_trace(stack_trace, 32);
   KASSERT_DBG(stack_trace_len > 3);
   const int stack_trace_id = tracetbl_put(stack_trace, stack_trace_len);
 #endif
