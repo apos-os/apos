@@ -25,8 +25,14 @@ static void* worker_func(void* arg) {
   kthread_pool_t* pool = (kthread_pool_t*)arg;
   while (1) {
     PUSH_AND_DISABLE_INTERRUPTS();
-    while (pool->queue_head == 0x0) {
+    while (pool->queue_head == 0x0 && pool->running) {
       scheduler_wait_on(&pool->wait_queue);
+    }
+
+    if (pool->queue_head == 0x0) {
+      KASSERT_DBG(!pool->running);
+      POP_INTERRUPTS();
+      break;
     }
 
     kthread_pool_item_t* item = pool->queue_head;
@@ -44,6 +50,7 @@ static void* worker_func(void* arg) {
 }
 
 int kthread_pool_init(kthread_pool_t* pool, int size) {
+  pool->running = true;
   pool->size = size;
   pool->threads = (kthread_t*)kmalloc(sizeof(kthread_t) * size);
   if (!pool->threads) {
@@ -65,10 +72,24 @@ int kthread_pool_init(kthread_pool_t* pool, int size) {
   }
 
   for (int i = 0; i < size; ++i) {
-    kthread_detach(pool->threads[i]);
     scheduler_make_runnable(pool->threads[i]);
   }
   return 0;
+}
+
+void kthread_pool_destroy(kthread_pool_t* pool) {
+  KASSERT(pool->running);
+  KASSERT(pool->size > 0);
+  pool->running = false;
+  scheduler_wake_all(&pool->wait_queue);
+  for (int i = 0; i < pool->size; ++i)
+    kthread_join(pool->threads[i]);
+  KASSERT(pool->queue_head == NULL);
+  KASSERT(pool->queue_tail == NULL);
+  KASSERT(kthread_queue_empty(&pool->wait_queue));
+  kfree(pool->threads);
+  pool->threads = NULL;
+  pool->size = 0;
 }
 
 int kthread_pool_push(kthread_pool_t* pool, kthread_pool_cb_t cb, void* arg) {
