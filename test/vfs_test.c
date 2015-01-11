@@ -1370,6 +1370,7 @@ static void read_page_test(const char* filename, const int size) {
   KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unlink(filename));
   page_frame_free(page_buf_phys);
+  kfree(buf);
 }
 
 // Test a vnode-backed memobj.
