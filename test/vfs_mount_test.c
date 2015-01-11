@@ -849,5 +849,6 @@ void vfs_mount_test(void) {
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 
-  // TODO(aoates): free the ramfses.
+  ramfs_destroy_fs(ramfsA);
+  ramfs_destroy_fs(ramfsB);
 }

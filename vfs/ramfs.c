@@ -225,6 +225,16 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   return (fs_t*)f;
 }
 
+void ramfs_destroy_fs(fs_t* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  KASSERT(ramfs->fs.open_vnodes == 0);
+  for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
+    if (ramfs->inodes[i].data)
+      kfree(ramfs->inodes[i].data);
+  }
+  kfree(ramfs);
+}
+
 void ramfs_enable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;

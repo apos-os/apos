@@ -234,4 +234,5 @@ void ramfs_test(void) {
 
   basic_test();
   directory_test();
+  ramfs_destroy_fs(g_fs);
 }
