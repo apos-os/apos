@@ -1168,6 +1168,7 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
     ksprintf(path, "%s/%s", PATH[i], argv[0]);
     if (vfs_access(path, X_OK) == 0) {
       do_boot_cmd(shell, path, argc, argv);
+      kfree(path);
       return;
     }
   }
