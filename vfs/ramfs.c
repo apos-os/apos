@@ -156,6 +156,7 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   // Append the new dirent.
   int result = ramfs_write(parent, parent->len, dirent, dlen);
   KASSERT(result == dlen);
+  kfree(dirent);
 
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode_ptr = &ramfs->inodes[inode];
