@@ -94,6 +94,7 @@ void proc_exit(int status) {
     list_push(&root_process->children_list, &child_process->children_link);
     child_link = list_pop(&p->children_list);
   }
+  scheduler_wake_all(&root_process->wait_queue);
 
   p->state = PROC_ZOMBIE;
   p->thread = KTHREAD_NO_THREAD;

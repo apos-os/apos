@@ -105,6 +105,37 @@ static void parent_exit_first_test(void) {
   KEXPECT_EQ((process_t*)0x0, proc_get(inner_pid));
 }
 
+static void reparent_zombie_to_root_inner(void* arg) {
+  proc_exit(6);
+}
+
+static void reparent_zombie_to_root_outer(void* arg) {
+  *(pid_t*)arg = proc_fork(&reparent_zombie_to_root_inner, 0x0);
+  for (int i = 0; i < 3; ++i) scheduler_yield();
+  KEXPECT_EQ(PROC_ZOMBIE, proc_get(*(pid_t*)arg)->state);
+  proc_exit(5);
+}
+
+static void reparent_zombie_to_root_test(void) {
+  KTEST_BEGIN("fork() parent exit reparents zombie children");
+
+  pid_t inner_pid = 0;
+  proc_fork(&reparent_zombie_to_root_outer, &inner_pid);
+
+  int exit_status = -1;
+  proc_wait(&exit_status);
+  KEXPECT_EQ(5, exit_status);
+
+  // The child should have been adopted by the root process, but it may have
+  // already been cleaned up.
+  if (proc_get(inner_pid)) {
+    KEXPECT_EQ(0, proc_get(inner_pid)->parent->id);
+    for (int i = 0; i < 3; ++i) scheduler_yield();
+  }
+
+  KEXPECT_EQ((process_t*)0x0, proc_get(inner_pid));
+}
+
 static void multi_child_func(void* arg) {
   scheduler_yield();
   scheduler_yield();
@@ -261,6 +292,7 @@ void fork_test(void) {
   basic_test();
   implicit_exit_test();
   parent_exit_first_test();
+  reparent_zombie_to_root_test();
   multi_child_test();
   mapping_test();
 }
