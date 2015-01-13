@@ -96,8 +96,9 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   thread->retval = 0x0;
   ksigemptyset(&thread->signal_mask);
 
-  // TODO(aoates): use the process from the parent thread for this thread, once
+  // TODO(aoates): add the thread to the parent process's thread list, once
   // we support multiple threads per process.
+  thread->process = proc_current();
 
   // Allocate a stack for the thread.
   addr_t* stack = (addr_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
