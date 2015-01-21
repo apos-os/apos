@@ -350,7 +350,7 @@ static void dynamic_directory_test(void) {
   vfs_close(fd);
 
   fd = vfs_open("cbfs_test_root/dir1/f4", VFS_O_RDONLY);
-  KEXPECT_GE(-ENOENT, fd);
+  KEXPECT_EQ(-ENOENT, fd);
 
   if (ENABLE_LARGE_DYNAMIC_TEST) {
     KTEST_BEGIN("cbfs: dynamic directory (many entries)");
@@ -477,6 +477,10 @@ static void dynamic_directory_test(void) {
                                                  {102, "f2"},
                                                  {103, "f3"},
                                                  {-1, "file"}}));
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "dir5/file", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "dir5/f0", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
 
   KTEST_BEGIN("cbfs: dynamic subdirectory");
   KEXPECT_EQ(0, cbfs_create_directory(fs, "dir6", &dynamic_dir_getdents,
@@ -511,6 +515,47 @@ static void dynamic_directory_test(void) {
   KEXPECT_EQ(2, stat.st_gid);
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXU, stat.st_mode);
 
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "dir6/dyndir", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST,
+             cbfs_create_directory(fs, "dir6/dyndir", &dynamic_dir_getdents,
+                                   (void*)4, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, cbfs_create_symlink(fs, "dir6/dyndir",
+                                          &dynamic_link_readlink, (void*)0x1));
+
+  KEXPECT_EQ(-ENOENT,
+             cbfs_create_file(fs, "dir6/dyndir/f0", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT,
+             cbfs_create_directory(fs, "dir6/dyndir/f0", &dynamic_dir_getdents,
+                                   (void*)4, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, cbfs_create_symlink(fs, "dir6/dyndir/f0",
+                                          &dynamic_link_readlink, (void*)0x1));
+
+  KEXPECT_EQ(-ENOENT,
+             cbfs_create_file(fs, "dir6/dyndir/file", &basic_file_read_test,
+                              (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT,
+             cbfs_create_directory(fs, "dir6/dyndir/dir", &dynamic_dir_getdents,
+                                   (void*)4, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, cbfs_create_symlink(fs, "dir6/dyndir/link",
+                                          &dynamic_link_readlink, (void*)0x1));
+  KEXPECT_EQ(-ENOENT,
+             cbfs_create_file(fs, "dir6/dyndir/dir/file2",
+                              &basic_file_read_test, (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, cbfs_create_directory(fs, "dir6/dyndir/dir/dir2",
+                                            &dynamic_dir_getdents, (void*)4,
+                                            VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, cbfs_create_symlink(fs, "dir6/dyndir/dir/link2",
+                                          &dynamic_link_readlink, (void*)0x1));
+
+  KEXPECT_EQ(-EEXIST, cbfs_create_file(fs, "dir6/dyndir", &basic_file_read_test,
+                                       (void*)0x1, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST,
+             cbfs_create_directory(fs, "dir6/dyndir", &dynamic_dir_getdents,
+                                   (void*)4, VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, cbfs_create_symlink(fs, "dir6/dyndir",
+                                          &dynamic_link_readlink, (void*)0x1));
 
   KTEST_BEGIN("cbfs: dynamic symlink");
   KEXPECT_EQ(0, cbfs_create_directory(fs, "dir7", &dynamic_dir_getdents,
