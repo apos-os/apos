@@ -58,11 +58,13 @@ void tty_destroy(apos_dev_t dev) {
     return;
   }
 
+  char_dev_t* ld_dev = dev_get_char(dev);
   int result = dev_unregister_char(dev);
   if (result) {
     klogfm(KL_TTY, DFATAL, "dev_unregister_char() failed in tty_destoy(): %d\n",
            result);
   }
+  kfree(ld_dev);
 }
 
 tty_t* tty_get(apos_dev_t dev) {

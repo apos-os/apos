@@ -21,6 +21,8 @@
 #ifndef APOO_PROC_KTHREAD_POOL_H
 #define APOO_PROC_KTHREAD_POOL_H
 
+#include <stdbool.h>
+
 #include "proc/kthread.h"
 
 struct kthread_pool;
@@ -33,6 +35,13 @@ typedef void (*kthread_pool_cb_t)(void* arg);
 //
 // Returns -errno on failure.
 int kthread_pool_init(kthread_pool_t* pool, int size);
+
+// Block until any items remaining in the queue have been processed, then join
+// the pool's threads and clean up.  New items should not be added to the pool
+// once this has been called.
+//
+// Does not free the kthread_pool_t itself.
+void kthread_pool_destroy(kthread_pool_t* pool);
 
 // Push a callback (and args) onto the thread pool's queue.  When a worker
 // thread is available, it will invoke the callback on that thread.
@@ -58,6 +67,7 @@ struct kthread_pool {
   kthread_pool_item_t* queue_head;
   kthread_pool_item_t* queue_tail;
   kthread_queue_t wait_queue;
+  bool running;
 };
 
 #endif

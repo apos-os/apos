@@ -75,4 +75,11 @@ void kthread_pool_test(void) {
   ksleep(100);
 
   KEXPECT_EQ(counter, 0);
+
+  KTEST_BEGIN("kthread_pool_destroy(): blocks for pending items");
+  counter = POOL_SIZE + 4;
+  for (int i = 0; i < POOL_SIZE + 3; ++i)
+    kthread_pool_push(&pool, &pool_cb, NULL);
+  kthread_pool_destroy(&pool);
+  KEXPECT_EQ(1, counter);
 }

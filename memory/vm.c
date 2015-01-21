@@ -202,6 +202,7 @@ int vm_fork_address_space_into(process_t* target_proc) {
 
         source_area->memobj->ops->ref(source_area->memobj);
         target_area->memobj->ops->ref(target_area->memobj);
+        orig_memobj->ops->unref(orig_memobj);
 
         // Unmap the range in our current process so we pick up the COW versions.
         // TODO(aoates): just make the current mappings read-only.

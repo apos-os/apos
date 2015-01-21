@@ -130,6 +130,7 @@ static void basic_test(void) {
   KEXPECT_EQ('4', buf[13]);
 
   KEXPECT_GE(g_fs->unlink(g_root, "testA"), 0);
+  kfree(n);
 }
 
 // TODO(aoates): get_vnode test
@@ -225,6 +226,10 @@ static void directory_test(void) {
   KEXPECT_EQ(0, g_fs->rmdir(g_root, "test_dir"));
 
   // TODO(aoates): check link count
+
+  kfree(file);
+  kfree(file2);
+  kfree(n);
 }
 
 void ramfs_test(void) {
@@ -234,4 +239,7 @@ void ramfs_test(void) {
 
   basic_test();
   directory_test();
+  ramfs_destroy_fs(g_fs);
+
+  kfree(g_root);
 }

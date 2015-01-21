@@ -24,6 +24,9 @@
 // then default system directories (e.g. '/proc') will be created.
 fs_t* ramfs_create_fs(int create_default_dirs);
 
+// Destroy the ramfs, which must be unmounted.
+void ramfs_destroy_fs(fs_t* fs);
+
 // Enable and disable artificial blocking for the ramfs.  If enabled, every call
 // that's allowed to block will do so by calling scheduler_yield.  Useful for
 // testing.

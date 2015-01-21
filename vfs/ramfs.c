@@ -156,6 +156,7 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   // Append the new dirent.
   int result = ramfs_write(parent, parent->len, dirent, dlen);
   KASSERT(result == dlen);
+  kfree(dirent);
 
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode_ptr = &ramfs->inodes[inode];
@@ -223,6 +224,16 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   }
 
   return (fs_t*)f;
+}
+
+void ramfs_destroy_fs(fs_t* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  KASSERT(ramfs->fs.open_vnodes == 0);
+  for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
+    if (ramfs->inodes[i].data)
+      kfree(ramfs->inodes[i].data);
+  }
+  kfree(ramfs);
 }
 
 void ramfs_enable_blocking(fs_t* fs) {

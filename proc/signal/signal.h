@@ -113,6 +113,7 @@ int proc_assign_pending_signals(void);
 void proc_dispatch_pending_signals(const user_context_t* context);
 
 // Return from a signal handling routine, via the trampoline.
+// Frees old_mask and context.
 int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context);
 
 // Returns 1 if process A can send the given signal to process C.

@@ -74,6 +74,7 @@ static void dmz_buffer_basic(void) {
   KTEST_BEGIN("syscall_verify_buffer() kernel memory wraparound test");
   KEXPECT_EQ(-EFAULT, syscall_verify_buffer(kernel_buf, 0xFFFFFFFE, 0, 0));
 
+  kfree(kernel_buf);
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
 

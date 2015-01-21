@@ -486,4 +486,7 @@ void ld_test(void) {
   basic_read_thread_test();
   three_thread_test();
   three_thread_test2();
+
+  ld_destroy(g_ld);
+  g_ld = NULL;
 }
