@@ -16,6 +16,7 @@
 
 #include "arch/proc/signal/signal_enter.h"
 #include "common/kassert.h"
+#include "memory/kmalloc.h"
 #include "proc/exit.h"
 #include "proc/group.h"
 #include "proc/process.h"
@@ -417,20 +418,26 @@ static user_context_t get_user_context(void* arg) {
   return *(user_context_t*)arg;
 }
 
-int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context) {
+int proc_sigreturn(const sigset_t* old_mask_ptr,
+                   const user_context_t* context_ptr) {
+  const sigset_t old_mask = *old_mask_ptr;
+  const user_context_t context = *context_ptr;
+  kfree((void*)old_mask_ptr);
+  kfree((void*)context_ptr);
+
   PUSH_AND_DISABLE_INTERRUPTS();
 
   // Restore the old signal mask, then process any outstanding signals.
-  proc_current()->thread->signal_mask = *old_mask;
+  proc_current()->thread->signal_mask = old_mask;
 
   // This catches, for example, signals raised in the signal handler that were
   // blocked.
-  proc_prep_user_return(&get_user_context, (void*)context);
+  proc_prep_user_return(&get_user_context, (void*)&context);
 
   POP_INTERRUPTS();
 
   // If there weren't any signals to be processed, restore the original context.
-  user_context_apply(context);
+  user_context_apply(&context);
   die("unreachable");
   return 0;
 }
