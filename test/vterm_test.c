@@ -58,11 +58,35 @@ static void basic_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(0, y);
 }
 
+static void ansi_escape_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: ignores invalid ANSI escape sequence");
+  vterm_clear(vt);
+  vterm_puts(vt, "ab\x1b" "[5xcd", 8);
+  KEXPECT_EQ('a', video_getc(video, 0, 0));
+  KEXPECT_EQ('b', video_getc(video, 0, 1));
+  KEXPECT_EQ('c', video_getc(video, 0, 2));
+  KEXPECT_EQ('d', video_getc(video, 0, 3));
+  KEXPECT_EQ(' ', video_getc(video, 0, 4));
+
+  KTEST_BEGIN("vterm: ANSI color escape sequence");
+  vterm_clear(vt);
+  vterm_puts(vt, "ab\x1b" "[31mcd\x1b" "[0me", 14);
+  KEXPECT_EQ('a', video_getc(video, 0, 0));
+  KEXPECT_EQ(VGA_DEFAULT_ATTR, video_get_attr(video, 0, 0));
+  KEXPECT_EQ('b', video_getc(video, 0, 1));
+  KEXPECT_EQ(VGA_DEFAULT_ATTR, video_get_attr(video, 0, 1));
+  KEXPECT_EQ('c', video_getc(video, 0, 2));
+  KEXPECT_EQ(video_mk_attr(VGA_RED, VGA_BLACK), video_get_attr(video, 0, 2));
+  KEXPECT_EQ('d', video_getc(video, 0, 3));
+  KEXPECT_EQ(video_mk_attr(VGA_RED, VGA_BLACK), video_get_attr(video, 0, 3));
+  KEXPECT_EQ('e', video_getc(video, 0, 4));
+  KEXPECT_EQ(VGA_DEFAULT_ATTR, video_get_attr(video, 0, 4));
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
 //  - newlines
 //  - backspace
-//  - colors
 //  - wrapping
 
 void vterm_test(void) {
@@ -75,6 +99,7 @@ void vterm_test(void) {
 
   vterm_t* vt = vterm_create(&test_video);
   basic_test(&test_video, vt);
+  ansi_escape_test(&test_video, vt);
 
   kfree(vt);
   kfree(test_video.videoram);
