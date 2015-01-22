@@ -68,15 +68,11 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
   return ANSI_SUCCESS;
 }
 
-int apply_ansi_escape(const char* buf, size_t len, video_attr_t* attr) {
-  ansi_seq_t seq;
-  int result = parse_ansi_escape(buf, len, &seq);
-  if (result != ANSI_SUCCESS) return result;
+int apply_ansi_color(const ansi_seq_t* seq, video_attr_t* attr) {
+  if (seq->final_letter != 'm') return ANSI_INVALID;
 
-  if (seq.final_letter != 'm') return ANSI_INVALID;
-
-  for (int i = 0; i < seq.num_codes; ++i) {
-    int code = seq.codes[i];
+  for (int i = 0; i < seq->num_codes; ++i) {
+    int code = seq->codes[i];
     if (code >= 30 && code <= 37) {
       const uint8_t bright = video_attr_fg(*attr) & VGA_BRIGHT;
       *attr = video_mk_attr(kAnsiToVgaCode[code - 30] | bright,
@@ -102,4 +98,12 @@ int apply_ansi_escape(const char* buf, size_t len, video_attr_t* attr) {
   }
 
   return ANSI_SUCCESS;
+}
+
+int apply_ansi_escape(const char* buf, size_t len, video_attr_t* attr) {
+  ansi_seq_t seq;
+  int result = parse_ansi_escape(buf, len, &seq);
+  if (result != ANSI_SUCCESS) return result;
+
+  return apply_ansi_color(&seq, attr);
 }

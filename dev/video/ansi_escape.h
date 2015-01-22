@@ -44,8 +44,13 @@ typedef struct {
 // If the escape sequence is valid and complete, *seq is updated.
 int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq);
 
+// Apply the given (parsed) ANSI escaped sequence to the given video_attr_t, if
+// the sequence is an SGR sequence.
+int apply_ansi_color(const ansi_seq_t* seq, video_attr_t* attr);
+
 // Attempt to parse an ANSI escape sequence from the given buffer.  If it is
 // valid and complete, apply it to *attr.
+// TODO(aoates): update all callers to this to use the above functions.
 int apply_ansi_escape(const char* buf, size_t len, video_attr_t* attr);
 
 #endif
