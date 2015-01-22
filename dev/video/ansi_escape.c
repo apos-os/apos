@@ -27,16 +27,7 @@ const uint8_t kAnsiToVgaCode[] = {
   VGA_WHITE,
 };
 
-#define MAX_ESCAPE_CODES 10
-
-typedef struct {
-  int codes[MAX_ESCAPE_CODES];
-  int num_codes;
-  char final_letter;
-} parsed_seq_t;
-
-static int parse_ansi_escape_internal(const char* buf, size_t len,
-                                      parsed_seq_t* seq) {
+int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
   if (len >= 1 && buf[0] != '\x1b') return ANSI_INVALID;
   if (len >= 2 && buf[1] != '[') return ANSI_INVALID;
   if (len < 3) return ANSI_PENDING;
@@ -77,9 +68,9 @@ static int parse_ansi_escape_internal(const char* buf, size_t len,
   return ANSI_SUCCESS;
 }
 
-int parse_ansi_escape(const char* buf, size_t len, video_attr_t* attr) {
-  parsed_seq_t seq;
-  int result = parse_ansi_escape_internal(buf, len, &seq);
+int apply_ansi_escape(const char* buf, size_t len, video_attr_t* attr) {
+  ansi_seq_t seq;
+  int result = parse_ansi_escape(buf, len, &seq);
   if (result != ANSI_SUCCESS) return result;
 
   if (seq.final_letter != 'm') return ANSI_INVALID;

@@ -20,11 +20,20 @@
 #include "dev/video/vga.h"
 
 #define ANSI_MAX_ESCAPE_SEQUENCE_LEN 20
+#define ANSI_MAX_ESCAPE_CODES 10
 
 // Return codes for parse_ansi_escape().
 #define ANSI_SUCCESS 0
 #define ANSI_PENDING 1
 #define ANSI_INVALID 2
+
+// A parsed ANSI escape sequence, consisting of a sequence of codes and a final
+// letter.  If a particular code is missing, the corresponding entry will be -1.
+typedef struct {
+  int codes[ANSI_MAX_ESCAPE_CODES];
+  int num_codes;
+  char final_letter;
+} ansi_seq_t;
 
 // Attempt to parse an ANSI escape sequence from the given buffer.  Returns
 // ANSI_SUCCESS if the buffer contains a valid and parseable escape sequence.
@@ -32,7 +41,11 @@
 // sequence (i.e. we haven't seen the whole thing).  Returns ANSI_INVALID if the
 // given escape sequence is invalid or unsupported.
 //
-// If the escape sequence is valid and complete, *attr is updated appropriately.
-int parse_ansi_escape(const char* buf, size_t len, video_attr_t* attr);
+// If the escape sequence is valid and complete, *seq is updated.
+int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq);
+
+// Attempt to parse an ANSI escape sequence from the given buffer.  If it is
+// valid and complete, apply it to *attr.
+int apply_ansi_escape(const char* buf, size_t len, video_attr_t* attr);
 
 #endif

@@ -126,7 +126,7 @@ void vterm_putc(vterm_t* t, uint8_t c) {
 #if ENABLE_TERM_COLOR
   if (c == '\x1b' || t->escape_buffer_idx > 0) {
     t->escape_buffer[t->escape_buffer_idx++] = c;
-    int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx,
+    int result = apply_ansi_escape(t->escape_buffer, t->escape_buffer_idx,
                                    &t->cattr);
     if (result == ANSI_SUCCESS || result == ANSI_INVALID) {
       // TODO(aoates): on error, handle the characters in the escape buffer
