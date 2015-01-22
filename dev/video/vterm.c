@@ -188,6 +188,11 @@ void vterm_putc(vterm_t* t, uint8_t c) {
   video_move_cursor(t->video, t->cursor_y, t->cursor_x);
 }
 
+void vterm_puts(vterm_t* t, const char* s, size_t len) {
+  for (size_t i = 0; i < len; ++i)
+    vterm_putc(t, s[i]);
+}
+
 void vterm_clear(vterm_t* t) {
   video_clear(t->video);
   t->cattr = VGA_DEFAULT_ATTR;
@@ -209,4 +214,9 @@ void vterm_redraw(vterm_t* t) {
     }
   }
   video_move_cursor(t->video, t->cursor_y, t->cursor_x);
+}
+
+void vterm_get_cursor(vterm_t* t, int* x, int* y) {
+  *x = t->cursor_x;
+  *y = t->cursor_y;
 }

@@ -19,6 +19,7 @@
 #define APOO_DEV_VIDEO_VTERM
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "dev/video/vga.h"
 
@@ -35,10 +36,18 @@ static inline void vterm_putc_sink(void* arg, char c) {
   vterm_putc((vterm_t*)arg, (uint8_t)c);
 }
 
+// Send a string of characters to the vterm.
+// TODO(aoates): update callers of vterm_putc() to use vterm_puts() when
+// possible.
+void vterm_puts(vterm_t* t, const char* s, size_t len);
+
 // Clear the terminal.
 void vterm_clear(vterm_t* t);
 
 // Clear the screen and redraw the current state onto the video device.
 void vterm_redraw(vterm_t* t);
+
+// Get the cursor position of the terminal.
+void vterm_get_cursor(vterm_t* t, int* x, int* y);
 
 #endif

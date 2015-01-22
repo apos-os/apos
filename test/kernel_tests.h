@@ -57,5 +57,6 @@ void vfs_fifo_test(void);
 void session_test(void);
 void tty_test(void);
 void wait_test(void);
+void vterm_test(void);
 
 #endif
