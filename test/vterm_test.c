@@ -354,6 +354,104 @@ static void ansi_escape_test(video_t* video, vterm_t* vt) {
   vterm_get_cursor(vt, &x, &y);
   KEXPECT_EQ(4, x);
   KEXPECT_EQ(3, y);
+
+
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2;8H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(7, x);
+  KEXPECT_EQ(1, y);
+  do_vterm_puts(vt, "\x1b[1;1H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (default row)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[;8H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(7, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (default col)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2;H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(1, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (default col B)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(1, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (default row/col)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (default row/col B)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[;H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (row out of bounds)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[50;8H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(7, x);
+  KEXPECT_EQ(TEST_HEIGHT - 1, y);
+  do_vterm_puts(vt, "\x1b[0;8H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(7, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (col out of bounds)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2;50H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(TEST_WIDTH - 1, x);
+  KEXPECT_EQ(1, y);
+  do_vterm_puts(vt, "\x1b[2;0H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(1, y);
+
+  KTEST_BEGIN(
+      "vterm: set cursor position escape sequence (row and col out of bounds)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[50;50H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(TEST_WIDTH - 1, x);
+  KEXPECT_EQ(TEST_HEIGHT - 1, y);
+  do_vterm_puts(vt, "\x1b[0;0H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (invalid)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[;;H");
+  do_vterm_puts(vt, "\x1b[5;2;H");
+  do_vterm_puts(vt, "\x1b[5;2;3H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: set cursor position escape sequence (alternate seq)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[5;8f");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(7, x);
+  KEXPECT_EQ(4, y);
 }
 
 // TODO(aoates): things to test,

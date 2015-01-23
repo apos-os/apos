@@ -153,6 +153,19 @@ static int move_cursor_y_to_first_col(vterm_t* t, const ansi_seq_t* seq,
   return ANSI_SUCCESS;
 }
 
+static int set_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
+  if (seq->num_codes > 2) return ANSI_INVALID;
+  int row = (seq->num_codes > 0) ? seq->codes[0] : -1;
+  int col = (seq->num_codes > 1) ? seq->codes[1] : -1;
+  if (row == -1) row = 1;
+  if (col == -1) col = 1;
+  row = max(1, min(t->vheight, row));
+  col = max(1, min(t->vwidth, col));
+  t->cursor_x = col - 1;
+  t->cursor_y = row - 1;
+  return ANSI_SUCCESS;
+}
+
 static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
@@ -187,6 +200,10 @@ static int try_ansi(vterm_t* t) {
       offset = max(1, min(t->vwidth, offset));
       t->cursor_x = offset - 1;
       return ANSI_SUCCESS;
+
+    case 'H':
+    case 'f':
+      return set_cursor_seq(t, &seq);
 
     default:
       return ANSI_INVALID;
