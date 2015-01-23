@@ -49,6 +49,7 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
 
   // We have a full escape code.
   seq->final_letter = buf[len-1];
+  len--;
 
   i = 0;
   seq->num_codes = 0;
@@ -60,9 +61,9 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
     }
     if (numidx > 3) return ANSI_INVALID;
     num[numidx] = '\0';
-    if (numidx == 0 || (buf[i] != ';' && buf[i] != 'm')) return ANSI_INVALID;
+    if (i < len && buf[i] != ';') return ANSI_INVALID;
     i++;
-    seq->codes[seq->num_codes++] = atoi(num);
+    seq->codes[seq->num_codes++] = (numidx > 0) ? atoi(num) : -1;
   }
 
   return ANSI_SUCCESS;

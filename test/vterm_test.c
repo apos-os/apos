@@ -58,6 +58,16 @@ static void basic_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(0, y);
 }
 
+static void reset(vterm_t* vt, int row, int col) {
+  vterm_clear(vt);
+  for (int i = 0; i < row * TEST_WIDTH + col; ++i)
+    vterm_putc(vt, ' ');
+}
+
+static void do_vterm_puts(vterm_t* vt, const char* s) {
+  vterm_puts(vt, s, kstrlen(s));
+}
+
 static void ansi_escape_test(video_t* video, vterm_t* vt) {
   KTEST_BEGIN("vterm: ignores invalid ANSI escape sequence");
   vterm_clear(vt);
@@ -81,6 +91,81 @@ static void ansi_escape_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(video_mk_attr(VGA_RED, VGA_BLACK), video_get_attr(video, 0, 3));
   KEXPECT_EQ('e', video_getc(video, 0, 4));
   KEXPECT_EQ(VGA_DEFAULT_ATTR, video_get_attr(video, 0, 4));
+
+
+  KTEST_BEGIN("vterm: cursor up escape sequence");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2A");
+  int x = 5, y = 5;
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(1, y);
+
+  KTEST_BEGIN("vterm: cursor up escape sequence (clamp to edge)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[7A");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(0, y);
+  do_vterm_puts(vt, "\x1b[7A");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: cursor up escape sequence (default is 1)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[A");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(2, y);
+
+  KTEST_BEGIN("vterm: cursor up escape sequence (invalid)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[5000A");
+  do_vterm_puts(vt, "\x1b[-3A");
+  do_vterm_puts(vt, "\x1b[0A");
+  do_vterm_puts(vt, "\x1b[1;2A");
+  do_vterm_puts(vt, "\x1b[;2A");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(3, y);
+
+
+  KTEST_BEGIN("vterm: cursor down escape sequence");
+  reset(vt, 1, 4);
+  do_vterm_puts(vt, "\x1b[2B");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor down escape sequence (clamp to edge)");
+  reset(vt, 1, 4);
+  do_vterm_puts(vt, "\x1b[7B");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(4, y);
+  do_vterm_puts(vt, "\x1b[7B");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(4, y);
+
+  KTEST_BEGIN("vterm: cursor down escape sequence (default is 1)");
+  reset(vt, 1, 4);
+  do_vterm_puts(vt, "\x1b[B");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(2, y);
+
+  KTEST_BEGIN("vterm: cursor down escape sequence (invalid)");
+  reset(vt, 1, 4);
+  do_vterm_puts(vt, "\x1b[5000B");
+  do_vterm_puts(vt, "\x1b[-3B");
+  do_vterm_puts(vt, "\x1b[0B");
+  do_vterm_puts(vt, "\x1b[1;2B");
+  do_vterm_puts(vt, "\x1b[;2B");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(1, y);
 }
 
 // TODO(aoates): things to test,

@@ -17,6 +17,7 @@
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/math.h"
 #include "dev/video/ansi_escape.h"
 #include "dev/video/vga.h"
 #include "dev/video/vterm.h"
@@ -122,12 +123,35 @@ vterm_t* vterm_create(video_t* v) {
   return term;
 }
 
+static int move_cursor_y(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
+  if (seq->num_codes > 1) return ANSI_INVALID;
+  int offset = (seq->num_codes == 0) ? 1 : seq->codes[0];
+  if (multiplier > 0)
+    t->cursor_y -= min(offset, t->cursor_y);
+  else
+    t->cursor_y += min(offset, t->vheight - t->cursor_y - 1);
+
+  return ANSI_SUCCESS;
+}
+
 static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
   if (result != ANSI_SUCCESS) return result;
 
-  return apply_ansi_color(&seq, &t->cattr);
+  switch (seq.final_letter) {
+    case 'm':
+      return apply_ansi_color(&seq, &t->cattr);
+
+    case 'A':
+      return move_cursor_y(t, &seq, 1);
+
+    case 'B':
+      return move_cursor_y(t, &seq, -1);
+
+    default:
+      return ANSI_INVALID;
+  }
 }
 
 void vterm_putc(vterm_t* t, uint8_t c) {

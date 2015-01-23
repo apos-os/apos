@@ -134,16 +134,6 @@ void ansi_escape_test(void) {
   KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape("\x1b]1", 3, &attr));
   KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape("\x1b]1m", 4, &attr));
 
-  KTEST_BEGIN("Invalid ';' use");
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI ";1m", 5, &attr));
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI ";m", 4, &attr));
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI ";;m", 5, &attr));
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI "32;;m", 7, &attr));
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI "32;;42m", 9, &attr));
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI ";32;42m", 9, &attr));
-  KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI "32;42;m", 9, &attr));
-  KEXPECT_EQ(kStartAttr, attr);
-
   KTEST_BEGIN("Invalid: embedded NULL");
   KEXPECT_EQ(ANSI_INVALID, apply_ansi_escape(CSI "1\0m", 5, &attr));
   KEXPECT_EQ(kStartAttr, attr);
