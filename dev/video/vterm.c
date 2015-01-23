@@ -158,6 +158,7 @@ static int try_ansi(vterm_t* t) {
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
   if (result != ANSI_SUCCESS) return result;
 
+  int offset;
   switch (seq.final_letter) {
     case 'm':
       return apply_ansi_color(&seq, &t->cattr);
@@ -179,6 +180,13 @@ static int try_ansi(vterm_t* t) {
 
     case 'F':
       return move_cursor_y_to_first_col(t, &seq, -1);
+
+    case 'G':
+      if (seq.num_codes > 1) return ANSI_INVALID;
+      offset = (seq.num_codes == 0) ? 1 : seq.codes[0];
+      offset = max(1, min(t->vwidth, offset));
+      t->cursor_x = offset - 1;
+      return ANSI_SUCCESS;
 
     default:
       return ANSI_INVALID;

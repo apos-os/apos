@@ -312,6 +312,48 @@ static void ansi_escape_test(video_t* video, vterm_t* vt) {
   vterm_get_cursor(vt, &x, &y);
   KEXPECT_EQ(6, x);
   KEXPECT_EQ(3, y);
+
+
+  KTEST_BEGIN("vterm: set cursor column escape sequence");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[7G");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(3, y);
+  do_vterm_puts(vt, "\x1b[1G");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: set cursor column escape sequence (default is 1)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[G");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: set cursor column escape sequence (too low)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[0G");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: set cursor column escape sequence (too high)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[200G");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(TEST_WIDTH - 1, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: set cursor column escape sequence (invalid)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[7;8G");
+  do_vterm_puts(vt, "\x1b[;7G");
+  do_vterm_puts(vt, "\x1b[7;G");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
 }
 
 // TODO(aoates): things to test,
