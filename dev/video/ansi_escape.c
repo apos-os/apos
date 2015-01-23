@@ -54,7 +54,9 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
   i = 0;
   seq->num_codes = 0;
   char num[ANSI_MAX_ESCAPE_SEQUENCE_LEN];
-  while (i < len) {
+  // Loop until we hit the end.  The second condition catches a trailing ';'
+  // (otherwise the final code (-1) is skipped).
+  while (i < len || (i == len && i > 0)) {
     size_t numidx = 0;
     while (buf[i] >= '0' && buf[i] <= '9' && i < len) {
       num[numidx++] = buf[i++];

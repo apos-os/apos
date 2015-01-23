@@ -19,8 +19,69 @@
 
 #define CSI "\x1b["
 
+static void parse_test(void) {
+  ansi_seq_t seq;
+  KTEST_BEGIN("ANSI escape: basic parsing");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[10;20;30x", 11, &seq));
+  KEXPECT_EQ(3, seq.num_codes);
+  KEXPECT_EQ(10, seq.codes[0]);
+  KEXPECT_EQ(20, seq.codes[1]);
+  KEXPECT_EQ(30, seq.codes[2]);
+  KEXPECT_EQ('x', seq.final_letter);
+
+  KTEST_BEGIN("ANSI escape: one code");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[5Q", 4, &seq));
+  KEXPECT_EQ(1, seq.num_codes);
+  KEXPECT_EQ(5, seq.codes[0]);
+  KEXPECT_EQ('Q', seq.final_letter);
+
+  KTEST_BEGIN("ANSI escape: no codes");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[Q", 3, &seq));
+  KEXPECT_EQ(0, seq.num_codes);
+  KEXPECT_EQ('Q', seq.final_letter);
+
+  KTEST_BEGIN("ANSI escape: missing first code");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[;5Q", 5, &seq));
+  KEXPECT_EQ(2, seq.num_codes);
+  KEXPECT_EQ(-1, seq.codes[0]);
+  KEXPECT_EQ(5, seq.codes[1]);
+  KEXPECT_EQ('Q', seq.final_letter);
+
+  KTEST_BEGIN("ANSI escape: missing last code");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[5;Q", 5, &seq));
+  KEXPECT_EQ(2, seq.num_codes);
+  KEXPECT_EQ(5, seq.codes[0]);
+  KEXPECT_EQ(-1, seq.codes[1]);
+  KEXPECT_EQ('Q', seq.final_letter);
+
+  KTEST_BEGIN("ANSI escape: missing middle code");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[5;;6Q", 7, &seq));
+  KEXPECT_EQ(3, seq.num_codes);
+  KEXPECT_EQ(5, seq.codes[0]);
+  KEXPECT_EQ(-1, seq.codes[1]);
+  KEXPECT_EQ(6, seq.codes[2]);
+  KEXPECT_EQ('Q', seq.final_letter);
+
+  KTEST_BEGIN("ANSI escape: missing all codes");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[;;Q", 5, &seq));
+  KEXPECT_EQ(3, seq.num_codes);
+  KEXPECT_EQ(-1, seq.codes[0]);
+  KEXPECT_EQ(-1, seq.codes[1]);
+  KEXPECT_EQ(-1, seq.codes[2]);
+  KEXPECT_EQ('Q', seq.final_letter);
+}
+
 void ansi_escape_test(void) {
   KTEST_SUITE_BEGIN("ANSI escape sequence parsing test");
+
+  parse_test();
 
   KTEST_BEGIN("FG color escape sequence");
   video_attr_t attr = video_mk_attr(VGA_BLUE | VGA_BRIGHT,
