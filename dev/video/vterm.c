@@ -145,6 +145,14 @@ static int move_cursor_x(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
   return ANSI_SUCCESS;
 }
 
+static int move_cursor_y_to_first_col(vterm_t* t, const ansi_seq_t* seq,
+                                      int multiplier) {
+  int result = move_cursor_y(t, seq, multiplier);
+  if (result != ANSI_SUCCESS) return result;
+  t->cursor_x = 0;
+  return ANSI_SUCCESS;
+}
+
 static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
@@ -165,6 +173,12 @@ static int try_ansi(vterm_t* t) {
 
     case 'D':
       return move_cursor_x(t, &seq, -1);
+
+    case 'E':
+      return move_cursor_y_to_first_col(t, &seq, 1);
+
+    case 'F':
+      return move_cursor_y_to_first_col(t, &seq, -1);
 
     default:
       return ANSI_INVALID;
