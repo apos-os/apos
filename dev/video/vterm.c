@@ -127,9 +127,20 @@ static int move_cursor_y(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
   if (seq->num_codes > 1) return ANSI_INVALID;
   int offset = (seq->num_codes == 0) ? 1 : seq->codes[0];
   if (multiplier > 0)
-    t->cursor_y -= min(offset, t->cursor_y);
-  else
     t->cursor_y += min(offset, t->vheight - t->cursor_y - 1);
+  else
+    t->cursor_y -= min(offset, t->cursor_y);
+
+  return ANSI_SUCCESS;
+}
+
+static int move_cursor_x(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
+  if (seq->num_codes > 1) return ANSI_INVALID;
+  int offset = (seq->num_codes == 0) ? 1 : seq->codes[0];
+  if (multiplier > 0)
+    t->cursor_x += min(offset, t->vwidth - t->cursor_x - 1);
+  else
+    t->cursor_x -= min(offset, t->cursor_x);
 
   return ANSI_SUCCESS;
 }
@@ -144,10 +155,16 @@ static int try_ansi(vterm_t* t) {
       return apply_ansi_color(&seq, &t->cattr);
 
     case 'A':
-      return move_cursor_y(t, &seq, 1);
+      return move_cursor_y(t, &seq, -1);
 
     case 'B':
-      return move_cursor_y(t, &seq, -1);
+      return move_cursor_y(t, &seq, 1);
+
+    case 'C':
+      return move_cursor_x(t, &seq, 1);
+
+    case 'D':
+      return move_cursor_x(t, &seq, -1);
 
     default:
       return ANSI_INVALID;

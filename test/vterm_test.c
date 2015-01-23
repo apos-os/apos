@@ -166,6 +166,80 @@ static void ansi_escape_test(video_t* video, vterm_t* vt) {
   vterm_get_cursor(vt, &x, &y);
   KEXPECT_EQ(6, x);
   KEXPECT_EQ(1, y);
+
+
+  KTEST_BEGIN("vterm: cursor forwards escape sequence");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2C");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor forwards escape sequence (clamp to edge)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[9C");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(9, x);
+  KEXPECT_EQ(3, y);
+  do_vterm_puts(vt, "\x1b[9C");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(9, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor forwards escape sequence (default is 1)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[C");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(5, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor forwards escape sequence (invalid)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[5000C");
+  do_vterm_puts(vt, "\x1b[-3C");
+  do_vterm_puts(vt, "\x1b[0C");
+  do_vterm_puts(vt, "\x1b[1;2C");
+  do_vterm_puts(vt, "\x1b[;2C");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(3, y);
+
+
+  KTEST_BEGIN("vterm: cursor backwards escape sequence");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[2D");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(2, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor backwards escape sequence (clamp to edge)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[9D");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(3, y);
+  do_vterm_puts(vt, "\x1b[9D");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor backwards escape sequence (default is 1)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[D");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(3, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: cursor backwards escape sequence (invalid)");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[5000D");
+  do_vterm_puts(vt, "\x1b[-3D");
+  do_vterm_puts(vt, "\x1b[0D");
+  do_vterm_puts(vt, "\x1b[1;2D");
+  do_vterm_puts(vt, "\x1b[;2D");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(3, y);
 }
 
 // TODO(aoates): things to test,
