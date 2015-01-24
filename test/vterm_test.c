@@ -740,6 +740,138 @@ static void implicit_scroll_test(video_t* video, vterm_t* vt) {
   KEXPECT_STREQ("ABCDE     ", get_line(video, 4));
 }
 
+static void wrap_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: basic wrap test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789A");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("A         ", get_line(video, 1));
+  int x, y;
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(1, y);
+
+
+  // Test that we don't wrap until the first letter of the next line is typed.
+  KTEST_BEGIN("vterm: doesn't wrap on last letter");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+
+  // The cursor should be on the right margin.
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(0, y);
+  // TODO(aoates): verify video cursor position.
+  do_vterm_puts(vt, "A");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("A         ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(1, y);
+
+
+  KTEST_BEGIN("vterm: backspace on right margin");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(0, y);
+
+  do_vterm_puts(vt, "\b");
+  KEXPECT_STREQ("012345678 ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  // TODO(aoates): verify video cursor position.
+  KEXPECT_EQ(9, x);
+  KEXPECT_EQ(0, y);
+
+
+  // Test that if we type a newline while the cursor is on the right margin (the
+  // current line is full), we go to the next line but don't consume a
+  // character.
+  KTEST_BEGIN("vterm: newline while on right margin");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(0, y);
+  // TODO(aoates): verify video cursor position.
+  do_vterm_puts(vt, "\n");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(1, y);
+  do_vterm_puts(vt, "A");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("A         ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(1, y);
+
+
+  KTEST_BEGIN("vterm: backspace across silent right margin newline");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789\n");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(1, y);
+
+  do_vterm_puts(vt, "\b");
+  KEXPECT_STREQ("012345678 ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  // TODO(aoates): verify video cursor position.
+  KEXPECT_EQ(9, x);
+  KEXPECT_EQ(0, y);
+
+
+  // Test that we don't scroll when we hit the last character of the last line.
+  KTEST_BEGIN("vterm: doesn't scroll on last letter");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "x\ny\nz\n\n0123456789");
+  KEXPECT_STREQ("x         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 4));
+
+  // The cursor should be on the right margin.
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(4, y);
+  // TODO(aoates): verify video cursor position.
+  do_vterm_puts(vt, "A");
+  KEXPECT_STREQ("y         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 3));
+  KEXPECT_STREQ("A         ", get_line(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(4, y);
+
+
+  // As above, but typing a newline.
+  KTEST_BEGIN("vterm: newline scroll on last letter");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "x\ny\nz\n\n0123456789");
+  KEXPECT_STREQ("x         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 4));
+
+  // The cursor should be on the right margin.
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(4, y);
+  // TODO(aoates): verify video cursor position.
+  do_vterm_puts(vt, "\n");
+  KEXPECT_STREQ("y         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 3));
+  KEXPECT_STREQ("          ", get_line(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(4, y);
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
 
@@ -760,6 +892,7 @@ void vterm_test(void) {
   newline_test(&test_video, vt);
   backspace_test(&test_video, vt);
   implicit_scroll_test(&test_video, vt);
+  wrap_test(&test_video, vt);
 
   vterm_destroy(vt);
   kfree(test_video.videoram);

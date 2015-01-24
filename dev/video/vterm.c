@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "common/config.h"
@@ -25,6 +26,10 @@
 
 struct vterm {
   video_t* video;
+
+  // The cursor can be at any point on the screen, or on the "right margin",
+  // where cursor_x == vwidth.  This is equivalent to the cursor being on the
+  // first column of the next line, but doesn't cause scrolling.
   int cursor_x, cursor_y;
   int saved_cursor_x, saved_cursor_y;
 
@@ -66,6 +71,13 @@ static inline void vterm_setc(vterm_t* t, int row, int col,
                               uint8_t c, video_attr_t attr) {
   video_setc(t->video, row, col, c, attr);
   set_line_text(t, row, col, c, attr);
+}
+
+static void update_video_cursor(vterm_t* t) {
+  KASSERT_DBG(t->cursor_x <= t->vwidth);
+  KASSERT_DBG(t->cursor_y < t->vheight);
+  // Clamp the cursor, since we may be on the right margin.
+  video_move_cursor(t->video, t->cursor_y, min(t->cursor_x, t->vwidth - 1));
 }
 
 // Scroll down a given nmuber of lines.
@@ -275,6 +287,19 @@ static int try_ansi(vterm_t* t) {
   }
 }
 
+// Wrap the cursor on the given terminal, scrolling if necessary.
+static void do_wrap(vterm_t* t) {
+  KASSERT_DBG(t->cursor_x <= t->vwidth);
+  if (t->cursor_x >= t->vwidth) {
+    t->cursor_x = 0;
+    t->cursor_y++;
+  }
+  if (t->cursor_y >= t->vheight) {
+    scroll(t, t->cursor_y - t->vheight + 1);
+  }
+  KASSERT_DBG(t->cursor_x < t->vwidth);
+}
+
 void vterm_putc(vterm_t* t, uint8_t c) {
 #if ENABLE_TERM_COLOR
   if (c == '\x1b' || t->escape_buffer_idx > 0) {
@@ -289,16 +314,22 @@ void vterm_putc(vterm_t* t, uint8_t c) {
   }
 #endif
 
-  // First calculate new cursor position if needed.
-  if (c == '\r') {
-    t->cursor_x = 0;
-  } else if (c == '\f') {
-    t->cursor_y++;
-  } else if (c == '\n') {
-    // TODO(aoates): do we want to handle '\n'?
-    t->cursor_x = 0;
-    t->cursor_y++;
-  } else if (c == '\b') {
+  const bool is_newline = (c == '\r' || c == '\f' || c == '\n');
+  if (is_newline) {
+    // If we're on the right margin, don't do anything; the do_wrap() below will
+    // wrap the line for us.
+    if (t->cursor_x < t->vwidth) {
+      t->cursor_x = 0;
+      t->cursor_y++;
+    }
+  }
+
+  do_wrap(t);
+
+  // Note: both xterm and iterm seem to do this weird thing where they skip over
+  // the second-to-last character in the line on backspace.  I don't see any
+  // reason to emulate that, though.
+  if (c == '\b') {
     if (t->cursor_x == 0 && t->cursor_y > 0) {
       t->cursor_x = t->vwidth - 1;
       t->cursor_y--;
@@ -306,21 +337,13 @@ void vterm_putc(vterm_t* t, uint8_t c) {
       t->cursor_x--;
     }
     vterm_setc(t, t->cursor_y, t->cursor_x, ' ', t->cattr);
-  } else {
+  } else if (!is_newline) {
     // Printable character.
     vterm_setc(t, t->cursor_y, t->cursor_x, c, t->cattr);
     t->cursor_x++;
   }
 
-  // Wrap to next line if needed.
-  if (t->cursor_x >= t->vwidth) {
-    t->cursor_x = 0;
-    t->cursor_y++;
-  }
-  if (t->cursor_y >= t->vheight) {
-    scroll(t, t->cursor_y - t->vheight + 1);
-  }
-  video_move_cursor(t->video, t->cursor_y, t->cursor_x);
+  update_video_cursor(t);
 }
 
 void vterm_puts(vterm_t* t, const char* s, size_t len) {
@@ -338,7 +361,7 @@ void vterm_clear(vterm_t* t) {
   }
 
   t->cursor_x = t->cursor_y = 0;
-  video_move_cursor(t->video, t->cursor_y, t->cursor_x);
+  update_video_cursor(t);
 }
 
 void vterm_redraw(vterm_t* t) {
@@ -348,7 +371,7 @@ void vterm_redraw(vterm_t* t) {
                  line_text_attr(t, row, col));
     }
   }
-  video_move_cursor(t->video, t->cursor_y, t->cursor_x);
+  update_video_cursor(t);
 }
 
 void vterm_get_cursor(vterm_t* t, int* x, int* y) {
