@@ -36,9 +36,6 @@ struct vterm {
   // The text of each line on the display.
   uint16_t** line_text;
 
-  // The line-length of each line on the display.
-  int* line_length;
-
 #if ENABLE_TERM_COLOR
   // Current escape code we're working on.
   char escape_buffer[ANSI_MAX_ESCAPE_SEQUENCE_LEN];
@@ -84,12 +81,6 @@ static void scroll(vterm_t* t, int amt) {
       }
       vterm_setc(t, row, col, newc, new_attr);
     }
-
-    int new_length = 0;
-    if (row + amt < t->vheight) {
-      new_length = t->line_length[row + amt];
-    }
-    t->line_length[row] = new_length;
   }
   t->cursor_y -= amt;
 }
@@ -104,11 +95,6 @@ vterm_t* vterm_create(video_t* v) {
 #if ENABLE_TERM_COLOR
   term->escape_buffer_idx = 0;
 #endif
-
-  term->line_length = (int*)kmalloc(sizeof(int) * term->vheight);
-  for (int i = 0; i < term->vheight; i++) {
-    term->line_length[i] = 0;
-  }
 
   term->line_text = (uint16_t**)kmalloc(
       sizeof(uint16_t*) * term->vheight);
@@ -277,24 +263,15 @@ void vterm_putc(vterm_t* t, uint8_t c) {
   // First calculate new cursor position if needed.
   if (c == '\r') {
     t->cursor_x = 0;
-    t->line_length[t->cursor_y] = 0;
   } else if (c == '\f') {
-    t->line_length[t->cursor_y] = t->cursor_x;
     t->cursor_y++;
   } else if (c == '\n') {
     // TODO(aoates): do we want to handle '\n'?
-    t->line_length[t->cursor_y] = t->cursor_x;
     t->cursor_x = 0;
     t->cursor_y++;
   } else if (c == '\b') {
     if (t->cursor_x == 0 && t->cursor_y > 0) {
-      if (t->line_length[t->cursor_y - 1] < t->vwidth) {
-        t->cursor_x = t->line_length[t->cursor_y - 1];
-      } else {
-        // If the last line was full, just immediately delete the last character
-        // on it.
-        t->cursor_x = t->vwidth - 1;
-      }
+      t->cursor_x = t->vwidth - 1;
       t->cursor_y--;
     } else if (t->cursor_x > 0) {
       t->cursor_x--;
@@ -308,7 +285,6 @@ void vterm_putc(vterm_t* t, uint8_t c) {
 
   // Wrap to next line if needed.
   if (t->cursor_x >= t->vwidth) {
-    t->line_length[t->cursor_y] = t->cursor_x;
     t->cursor_x = 0;
     t->cursor_y++;
   }
