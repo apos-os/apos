@@ -166,7 +166,7 @@ static int set_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
   return ANSI_SUCCESS;
 }
 
-static int clear_screen_seq(vterm_t* t, const ansi_seq_t* seq) {
+static int clear_seq(vterm_t* t, const ansi_seq_t* seq) {
   if (seq->num_codes > 1) return ANSI_INVALID;
   int mode = (seq->num_codes == 0) ? 0 : seq->codes[0];
 
@@ -193,6 +193,12 @@ static int clear_screen_seq(vterm_t* t, const ansi_seq_t* seq) {
 
     default:
       return ANSI_INVALID;
+  }
+
+  KASSERT_DBG(seq->final_letter == 'J' || seq->final_letter == 'K');
+  if (seq->final_letter == 'K') {
+    start_row = t->cursor_y;
+    end_row = start_row + 1;
   }
 
   for (int row = start_row; row < end_row; row++) {
@@ -245,8 +251,9 @@ static int try_ansi(vterm_t* t) {
     case 'f':
       return set_cursor_seq(t, &seq);
 
-    case 'J':
-      return clear_screen_seq(t, &seq);
+    case 'J':  // Clear screen.
+    case 'K':  // Clear line.
+      return clear_seq(t, &seq);
 
     default:
       return ANSI_INVALID;

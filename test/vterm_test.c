@@ -548,13 +548,82 @@ static void ansi_erase_screen_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(4, x);
   KEXPECT_EQ(3, y);
 
-  KTEST_BEGIN("vterm: erase with invalid args");
+  KTEST_BEGIN("vterm: erase screen with invalid args");
   reset_and_fill(vt, 'A', 3, 4);
   do_vterm_puts(vt, "\x1b[3J");
   do_vterm_puts(vt, "\x1b[13J");
   do_vterm_puts(vt, "\x1b[2;J");
   do_vterm_puts(vt, "\x1b[;J");
   do_vterm_puts(vt, "\x1b[;3;10J");
+  for (int i = 0; i < 4; ++i)
+    KEXPECT_STREQ("AAAAAAAAAA", get_line(video, i));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  for (int i = 0; i < 4; ++i)
+    KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, i));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+}
+
+static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: erase to end of line");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[0K");
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
+  KEXPECT_STREQ("AAAA      ", get_line(video, 3));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
+  KEXPECT_STREQ("DDDDxxxxxx", get_line_attr(video, 3));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  int x, y;
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase to end of line (default)");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[K");
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
+  KEXPECT_STREQ("AAAA      ", get_line(video, 3));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
+  KEXPECT_STREQ("DDDDxxxxxx", get_line_attr(video, 3));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase to beginning of line");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[1K");
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
+  KEXPECT_STREQ("     AAAAA", get_line(video, 3));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
+  KEXPECT_STREQ("xxxxxDDDDD", get_line_attr(video, 3));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase whole line");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[2K");
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
+  KEXPECT_STREQ("          ", get_line(video, 3));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
+  KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 3));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase line with invalid args");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[3K");
+  do_vterm_puts(vt, "\x1b[13K");
+  do_vterm_puts(vt, "\x1b[2;K");
+  do_vterm_puts(vt, "\x1b[;K");
+  do_vterm_puts(vt, "\x1b[;3;10K");
   for (int i = 0; i < 4; ++i)
     KEXPECT_STREQ("AAAAAAAAAA", get_line(video, i));
   KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
@@ -581,6 +650,7 @@ void vterm_test(void) {
   basic_test(&test_video, vt);
   ansi_escape_test(&test_video, vt);
   ansi_erase_screen_test(&test_video, vt);
+  ansi_erase_line_test(&test_video, vt);
 
   kfree(vt);
   kfree(test_video.videoram);
