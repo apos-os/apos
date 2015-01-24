@@ -33,6 +33,7 @@ struct vterm {
   // first column of the next line, but doesn't cause scrolling.
   int cursor_x, cursor_y;
   int saved_cursor_x, saved_cursor_y;
+  bool cursor_visible;
 
   // Current video attributes.
   video_attr_t cattr;
@@ -107,6 +108,7 @@ vterm_t* vterm_create(video_t* v) {
   term->video = v;
   term->cursor_x = term->cursor_y = 0;
   term->saved_cursor_x = term->saved_cursor_y = 0;
+  term->cursor_visible = true;
   term->vwidth = video_get_width(v);
   term->vheight = video_get_height(v);
   term->cattr = VGA_DEFAULT_ATTR;
@@ -259,7 +261,22 @@ static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
   if (result != ANSI_SUCCESS) return result;
-  if (seq.priv) return ANSI_INVALID;
+
+  if (seq.priv) {
+    if (seq.num_codes != 1 || seq.codes[0] != 25) return ANSI_INVALID;
+    switch (seq.final_letter) {
+      case 'l':
+        video_show_cursor(t->video, false);
+        return ANSI_SUCCESS;
+
+      case 'h':
+        video_show_cursor(t->video, true);
+        return ANSI_SUCCESS;
+
+      default:
+        return ANSI_INVALID;
+    }
+  }
 
   int offset;
   switch (seq.final_letter) {
@@ -305,8 +322,6 @@ static int try_ansi(vterm_t* t) {
 
     case 'n':
       return report_cursor_seq(t, &seq);
-
-    // TODO(aoates): handle hiding/showing the cursor.
 
     default:
       return ANSI_INVALID;
@@ -387,6 +402,9 @@ void vterm_clear(vterm_t* t) {
   }
 
   t->cursor_x = t->cursor_y = 0;
+  t->saved_cursor_x = t->saved_cursor_y = 0;
+  t->cursor_visible = true;
+  video_show_cursor(t->video, t->cursor_visible);
   update_video_cursor(t);
 }
 
@@ -397,6 +415,7 @@ void vterm_redraw(vterm_t* t) {
                  line_text_attr(t, row, col));
     }
   }
+  video_show_cursor(t->video, t->cursor_visible);
   update_video_cursor(t);
 }
 

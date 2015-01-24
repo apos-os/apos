@@ -920,6 +920,26 @@ static void ansi_report_cursor_test(video_t* video, vterm_t* vt) {
   vterm_set_sink(vt, NULL, NULL);
 }
 
+static void cursor_visibility_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: hide cursor escape sequence");
+  do_vterm_puts(vt, "\x1b[?25l");
+  // TODO(aoates): verify cursor is actually hidden.
+
+  KTEST_BEGIN("vterm: show cursor escape sequence");
+  do_vterm_puts(vt, "\x1b[?25h");
+  // TODO(aoates): verify cursor is actually shown.
+
+  KTEST_BEGIN("vterm: show/hide cursor escape sequence (invalid)");
+  do_vterm_puts(vt, "\x1b[?24h");
+  do_vterm_puts(vt, "\x1b[?24l");
+  do_vterm_puts(vt, "\x1b[?h");
+  do_vterm_puts(vt, "\x1b[?l");
+  do_vterm_puts(vt, "\x1b[?25;l");
+  do_vterm_puts(vt, "\x1b[?25;h");
+  do_vterm_puts(vt, "\x1b[?25k");
+  // TODO(aoates): verify cursor hasn't been changed.
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
 
@@ -942,6 +962,7 @@ void vterm_test(void) {
   implicit_scroll_test(&test_video, vt);
   wrap_test(&test_video, vt);
   ansi_report_cursor_test(&test_video, vt);
+  cursor_visibility_test(&test_video, vt);
 
   vterm_destroy(vt);
   kfree(test_video.videoram);
