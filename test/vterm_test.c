@@ -474,9 +474,7 @@ static const char* get_line_attr(video_t* video, int row) {
 static void reset_and_fill(vterm_t* vt, char c, int row, int col) {
   vterm_clear(vt);
   vterm_puts(vt, "\x1b[m", 3);
-  // TODO(aoates): once scrolling is fixed to not scroll when writing the last
-  // character in the line, have this write one more character.
-  for (int i = 0; i < TEST_WIDTH * TEST_HEIGHT - 1; ++i)
+  for (int i = 0; i < TEST_WIDTH * TEST_HEIGHT; ++i)
     vterm_putc(vt, c);
   char buf[100];
   ksprintf(buf, "\x1b[%d;%dH", row + 1, col + 1);
@@ -527,7 +525,7 @@ static void ansi_erase_screen_test(video_t* video, vterm_t* vt) {
   KEXPECT_STREQ("          ", get_line(video, 1));
   KEXPECT_STREQ("          ", get_line(video, 2));
   KEXPECT_STREQ("     AAAAA", get_line(video, 3));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 4));
   KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 0));
   KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 1));
   KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 2));
@@ -555,12 +553,10 @@ static void ansi_erase_screen_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "\x1b[2;J");
   do_vterm_puts(vt, "\x1b[;J");
   do_vterm_puts(vt, "\x1b[;3;10J");
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 5; ++i) {
     KEXPECT_STREQ("AAAAAAAAAA", get_line(video, i));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
-  for (int i = 0; i < 4; ++i)
     KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, i));
-  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  }
 }
 
 static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
@@ -569,7 +565,7 @@ static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "\x1b[0K");
   KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
   KEXPECT_STREQ("AAAA      ", get_line(video, 3));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 4));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
   KEXPECT_STREQ("DDDDxxxxxx", get_line_attr(video, 3));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
@@ -583,7 +579,7 @@ static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "\x1b[K");
   KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
   KEXPECT_STREQ("AAAA      ", get_line(video, 3));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 4));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
   KEXPECT_STREQ("DDDDxxxxxx", get_line_attr(video, 3));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
@@ -596,7 +592,7 @@ static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "\x1b[1K");
   KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
   KEXPECT_STREQ("     AAAAA", get_line(video, 3));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 4));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
   KEXPECT_STREQ("xxxxxDDDDD", get_line_attr(video, 3));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
@@ -609,7 +605,7 @@ static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "\x1b[2K");
   KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
   KEXPECT_STREQ("          ", get_line(video, 3));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 4));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
   KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 3));
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
@@ -624,12 +620,10 @@ static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "\x1b[2;K");
   do_vterm_puts(vt, "\x1b[;K");
   do_vterm_puts(vt, "\x1b[;3;10K");
-  for (int i = 0; i < 4; ++i)
+  for (int i = 0; i < 5; ++i) {
     KEXPECT_STREQ("AAAAAAAAAA", get_line(video, i));
-  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
-  for (int i = 0; i < 4; ++i)
     KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, i));
-  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  }
 }
 
 static void ansi_save_cursor_test(video_t* video, vterm_t* vt) {
