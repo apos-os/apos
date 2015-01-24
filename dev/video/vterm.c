@@ -111,6 +111,13 @@ vterm_t* vterm_create(video_t* v) {
   return term;
 }
 
+void vterm_destroy(vterm_t* t) {
+  for (int i = 0; i < t->vheight; i++)
+    kfree(t->line_text[i]);
+  kfree(t->line_text);
+  kfree(t);
+}
+
 static int move_cursor_y(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
   if (seq->num_codes > 1) return ANSI_INVALID;
   int offset = (seq->num_codes == 0) ? 1 : seq->codes[0];

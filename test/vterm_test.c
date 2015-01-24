@@ -704,6 +704,6 @@ void vterm_test(void) {
   ansi_erase_line_test(&test_video, vt);
   ansi_save_cursor_test(&test_video, vt);
 
-  kfree(vt);
+  vterm_destroy(vt);
   kfree(test_video.videoram);
 }

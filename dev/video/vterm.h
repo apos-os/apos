@@ -28,6 +28,9 @@ typedef struct vterm vterm_t;
 // Create a vterm attached to the given video device.
 vterm_t* vterm_create(video_t* v);
 
+// Destroy and free the vterm.
+void vterm_destroy(vterm_t* t);
+
 // Send a character to the vterm.
 void vterm_putc(vterm_t* t, uint8_t c);
 
