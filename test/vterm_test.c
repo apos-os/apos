@@ -73,7 +73,7 @@ static void do_vterm_puts(vterm_t* vt, const char* s) {
 static void ansi_escape_test(video_t* video, vterm_t* vt) {
   KTEST_BEGIN("vterm: ignores invalid ANSI escape sequence");
   vterm_clear(vt);
-  vterm_puts(vt, "ab\x1b" "[5xcd", 8);
+  do_vterm_puts(vt, "ab\x1b" "[5x" "\x1b[?2K" "cd");
   KEXPECT_EQ('a', video_getc(video, 0, 0));
   KEXPECT_EQ('b', video_getc(video, 0, 1));
   KEXPECT_EQ('c', video_getc(video, 0, 2));

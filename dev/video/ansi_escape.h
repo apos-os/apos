@@ -15,6 +15,7 @@
 #ifndef APOO_DEV_VIDEO_ANSI_ESCAPE_H
 #define APOO_DEV_VIDEO_ANSI_ESCAPE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include "dev/video/vga.h"
@@ -33,6 +34,7 @@ typedef struct {
   int codes[ANSI_MAX_ESCAPE_CODES];
   int num_codes;
   char final_letter;
+  bool priv;
 } ansi_seq_t;
 
 // Attempt to parse an ANSI escape sequence from the given buffer.  Returns

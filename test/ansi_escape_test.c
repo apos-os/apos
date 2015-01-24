@@ -29,6 +29,7 @@ static void parse_test(void) {
   KEXPECT_EQ(20, seq.codes[1]);
   KEXPECT_EQ(30, seq.codes[2]);
   KEXPECT_EQ('x', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
 
   KTEST_BEGIN("ANSI escape: one code");
   kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
@@ -36,12 +37,14 @@ static void parse_test(void) {
   KEXPECT_EQ(1, seq.num_codes);
   KEXPECT_EQ(5, seq.codes[0]);
   KEXPECT_EQ('Q', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
 
   KTEST_BEGIN("ANSI escape: no codes");
   kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
   KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[Q", 3, &seq));
   KEXPECT_EQ(0, seq.num_codes);
   KEXPECT_EQ('Q', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
 
   KTEST_BEGIN("ANSI escape: missing first code");
   kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
@@ -50,6 +53,7 @@ static void parse_test(void) {
   KEXPECT_EQ(-1, seq.codes[0]);
   KEXPECT_EQ(5, seq.codes[1]);
   KEXPECT_EQ('Q', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
 
   KTEST_BEGIN("ANSI escape: missing last code");
   kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
@@ -58,6 +62,7 @@ static void parse_test(void) {
   KEXPECT_EQ(5, seq.codes[0]);
   KEXPECT_EQ(-1, seq.codes[1]);
   KEXPECT_EQ('Q', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
 
   KTEST_BEGIN("ANSI escape: missing middle code");
   kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
@@ -67,6 +72,7 @@ static void parse_test(void) {
   KEXPECT_EQ(-1, seq.codes[1]);
   KEXPECT_EQ(6, seq.codes[2]);
   KEXPECT_EQ('Q', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
 
   KTEST_BEGIN("ANSI escape: missing all codes");
   kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
@@ -76,6 +82,34 @@ static void parse_test(void) {
   KEXPECT_EQ(-1, seq.codes[1]);
   KEXPECT_EQ(-1, seq.codes[2]);
   KEXPECT_EQ('Q', seq.final_letter);
+  KEXPECT_EQ(false, seq.priv);
+
+  KTEST_BEGIN("ANSI escape: private with no codes");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[?x", 4, &seq));
+  KEXPECT_EQ(0, seq.num_codes);
+  KEXPECT_EQ('x', seq.final_letter);
+  KEXPECT_EQ(true, seq.priv);
+
+  KTEST_BEGIN("ANSI escape: private with codes");
+  kmemset(&seq, 0xFF, sizeof(ansi_seq_t));
+  KEXPECT_EQ(ANSI_SUCCESS, parse_ansi_escape("\x1b[?;2x", 6, &seq));
+  KEXPECT_EQ(2, seq.num_codes);
+  KEXPECT_EQ(-1, seq.codes[0]);
+  KEXPECT_EQ(2, seq.codes[1]);
+  KEXPECT_EQ('x', seq.final_letter);
+  KEXPECT_EQ(true, seq.priv);
+
+  KTEST_BEGIN("ANSI escape: private prefix and invalid");
+  KEXPECT_EQ(ANSI_PENDING, parse_ansi_escape("\x1b[?", 3, &seq));
+  KEXPECT_EQ(ANSI_PENDING, parse_ansi_escape("\x1b[?4", 4, &seq));
+  KEXPECT_EQ(ANSI_PENDING, parse_ansi_escape("\x1b[?4;", 5, &seq));
+  KEXPECT_EQ(ANSI_INVALID, parse_ansi_escape("\x1b[??", 4, &seq));
+  KEXPECT_EQ(ANSI_INVALID, parse_ansi_escape("\x1b[?4?", 5, &seq));
+  KEXPECT_EQ(ANSI_INVALID, parse_ansi_escape("\x1b[4?", 4, &seq));
+  KEXPECT_EQ(ANSI_INVALID, parse_ansi_escape("\x1b[;?4", 5, &seq));
+  KEXPECT_EQ(ANSI_INVALID, parse_ansi_escape("\x1b[;?", 4, &seq));
+  KEXPECT_EQ(ANSI_INVALID, parse_ansi_escape("\x1b[;?;", 5, &seq));
 }
 
 void ansi_escape_test(void) {

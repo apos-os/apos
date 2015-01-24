@@ -38,10 +38,12 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
   // Make a pass through to verify the sequence is well-formed.
   size_t i = 0;
   for (i = 0; i < len - 1; ++i) {
+    if (i == 0 && buf[i] == '?') continue;
     if (!kisdigit((int)buf[i]) && buf[i] != ';')
       return ANSI_INVALID;
   }
-  if (!kisalnum((int)buf[len-1]) && buf[i] != ';')
+  if (!kisalnum((int)buf[len - 1]) && buf[len - 1] != ';' &&
+      !(i == 0 && buf[len - 1] == '?'))
     return ANSI_INVALID;
   if (!kisalpha((int)buf[len-1]))
     return (len < ANSI_MAX_ESCAPE_SEQUENCE_LEN - 2) ? ANSI_PENDING :
@@ -50,6 +52,14 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
   // We have a full escape code.
   seq->final_letter = buf[len-1];
   len--;
+
+  if (len > 0 && buf[0] == '?') {
+    seq->priv = true;
+    buf++;
+    len--;
+  } else {
+    seq->priv = false;
+  }
 
   i = 0;
   seq->num_codes = 0;

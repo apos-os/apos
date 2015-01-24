@@ -259,6 +259,7 @@ static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
   if (result != ANSI_SUCCESS) return result;
+  if (seq.priv) return ANSI_INVALID;
 
   int offset;
   switch (seq.final_letter) {
