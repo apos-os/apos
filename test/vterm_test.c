@@ -683,11 +683,65 @@ static void ansi_save_cursor_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(1, y);
 }
 
+static void newline_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: newline handling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\nde\n\nf");
+  KEXPECT_STREQ("abc       ", get_line(video, 0));
+  KEXPECT_STREQ("de        ", get_line(video, 1));
+  KEXPECT_STREQ("          ", get_line(video, 2));
+  KEXPECT_STREQ("f         ", get_line(video, 3));
+
+  KTEST_BEGIN("vterm: newline scrolling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\nde\n\nfg\nh\ni");
+  KEXPECT_STREQ("de        ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  KEXPECT_STREQ("fg        ", get_line(video, 2));
+  KEXPECT_STREQ("h         ", get_line(video, 3));
+  KEXPECT_STREQ("i         ", get_line(video, 4));
+}
+
+static void backspace_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: basic backspace test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abcd");
+  do_vterm_puts(vt, "\bX");
+  KEXPECT_STREQ("abcX      ", get_line(video, 0));
+
+  KTEST_BEGIN("vterm: backspace across line test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abcdefghijkl");
+  KEXPECT_STREQ("abcdefghij", get_line(video, 0));
+  KEXPECT_STREQ("kl        ", get_line(video, 1));
+  do_vterm_puts(vt, "\b");
+  KEXPECT_STREQ("k         ", get_line(video, 1));
+  do_vterm_puts(vt, "\b");
+  KEXPECT_STREQ("abcdefghij", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  do_vterm_puts(vt, "\b");
+  KEXPECT_STREQ("abcdefghi ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  int x, y;
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(9, x);
+  KEXPECT_EQ(0, y);
+}
+
+static void implicit_scroll_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: wrapping scroll test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abcd\n\n\n\n");
+  do_vterm_puts(vt, "0123456789ABCDE");
+  KEXPECT_STREQ("          ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  KEXPECT_STREQ("          ", get_line(video, 2));
+  KEXPECT_STREQ("0123456789", get_line(video, 3));
+  KEXPECT_STREQ("ABCDE     ", get_line(video, 4));
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
-//  - newlines
-//  - backspace
-//  - wrapping
 
 void vterm_test(void) {
   KTEST_SUITE_BEGIN("vterm test");
@@ -703,6 +757,9 @@ void vterm_test(void) {
   ansi_erase_screen_test(&test_video, vt);
   ansi_erase_line_test(&test_video, vt);
   ansi_save_cursor_test(&test_video, vt);
+  newline_test(&test_video, vt);
+  backspace_test(&test_video, vt);
+  implicit_scroll_test(&test_video, vt);
 
   vterm_destroy(vt);
   kfree(test_video.videoram);
