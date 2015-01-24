@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "dev/char_dev.h"
 #include "dev/video/vga.h"
 
 typedef struct vterm vterm_t;
@@ -30,6 +31,10 @@ vterm_t* vterm_create(video_t* v);
 
 // Destroy and free the vterm.
 void vterm_destroy(vterm_t* t);
+
+// Set the character sink for the vterm (used when it generates keystrokes, e.g.
+// reporting the curser location).
+void vterm_set_sink(vterm_t* t, char_sink_t sink, void* sink_arg);
 
 // Send a character to the vterm.
 void vterm_putc(vterm_t* t, uint8_t c);

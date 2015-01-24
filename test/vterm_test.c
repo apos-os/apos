@@ -14,6 +14,7 @@
 
 #include "dev/video/vterm.h"
 
+#include "common/circbuf.h"
 #include "common/kprintf.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
@@ -866,6 +867,59 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(4, y);
 }
 
+static void circbuf_putc(void* arg, char n) {
+  circbuf_write((circbuf_t*)arg, &n, 1);
+}
+
+static void ansi_report_cursor_test(video_t* video, vterm_t* vt) {
+  char buf[50];
+  circbuf_t cbuf;
+  circbuf_init(&cbuf, buf, 50);
+
+  KTEST_BEGIN("vterm: report cursor (DSR) escape sequence");
+  kmemset(buf, '\0', 50);
+  vterm_set_sink(vt, &circbuf_putc, &cbuf);
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[6n");
+  int x, y;
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+  KEXPECT_EQ(6, cbuf.len);
+  KEXPECT_EQ('\x1b', buf[0]);
+  KEXPECT_STREQ("[4;5R", buf + 1);
+
+
+  KTEST_BEGIN("vterm: report cursor (DSR) escape sequence at right margin");
+  cbuf.len = cbuf.pos = 0;
+  kmemset(buf, '\0', 50);
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "aaaaaa");
+  do_vterm_puts(vt, "\x1b[6n");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(3, y);
+  KEXPECT_EQ(7, cbuf.len);
+  KEXPECT_EQ('\x1b', buf[0]);
+  KEXPECT_STREQ("[4;11R", buf + 1);
+
+
+  KTEST_BEGIN("vterm: report cursor (DSR) escape sequence (invalid)");
+  cbuf.len = cbuf.pos = 0;
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[n");
+  do_vterm_puts(vt, "\x1b[3n");
+  do_vterm_puts(vt, "\x1b[7n");
+  do_vterm_puts(vt, "\x1b[;n");
+  do_vterm_puts(vt, "\x1b[6;n");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+  KEXPECT_EQ(0, cbuf.len);
+
+  vterm_set_sink(vt, NULL, NULL);
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
 
@@ -887,6 +941,7 @@ void vterm_test(void) {
   backspace_test(&test_video, vt);
   implicit_scroll_test(&test_video, vt);
   wrap_test(&test_video, vt);
+  ansi_report_cursor_test(&test_video, vt);
 
   vterm_destroy(vt);
   kfree(test_video.videoram);

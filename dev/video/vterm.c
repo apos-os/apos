@@ -18,6 +18,7 @@
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kprintf.h"
 #include "common/math.h"
 #include "dev/video/ansi_escape.h"
 #include "dev/video/vga.h"
@@ -47,6 +48,9 @@ struct vterm {
   char escape_buffer[ANSI_MAX_ESCAPE_SEQUENCE_LEN];
   size_t escape_buffer_idx;
 #endif
+
+  char_sink_t sink;
+  void* sink_arg;
 };
 
 __attribute__((always_inline))
@@ -109,6 +113,8 @@ vterm_t* vterm_create(video_t* v) {
 #if ENABLE_TERM_COLOR
   term->escape_buffer_idx = 0;
 #endif
+  term->sink = 0x0;
+  term->sink_arg = 0x0;
 
   term->line_text = (uint16_t**)kmalloc(
       sizeof(uint16_t*) * term->vheight);
@@ -128,6 +134,11 @@ void vterm_destroy(vterm_t* t) {
     kfree(t->line_text[i]);
   kfree(t->line_text);
   kfree(t);
+}
+
+void vterm_set_sink(vterm_t* t, char_sink_t sink, void* sink_arg) {
+  t->sink = sink;
+  t->sink_arg = sink_arg;
 }
 
 static int move_cursor_y(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
@@ -233,6 +244,17 @@ static int save_restore_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
   return ANSI_SUCCESS;
 }
 
+static int report_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
+  if (seq->num_codes != 1 || seq->codes[0] != 6) return ANSI_INVALID;
+  if (t->sink) {
+    char buf[20];
+    ksprintf(buf, "\x1b[%d;%dR", t->cursor_y + 1, t->cursor_x+1);
+    for (int i = 0; buf[i] != '\0'; ++i)
+      t->sink(t->sink_arg, buf[i]);
+  }
+  return ANSI_SUCCESS;
+}
+
 static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
@@ -280,7 +302,10 @@ static int try_ansi(vterm_t* t) {
     case 'u':
       return save_restore_cursor_seq(t, &seq);
 
-    // TODO(aoates): handle cursor reporting and hiding/showing the cursor.
+    case 'n':
+      return report_cursor_seq(t, &seq);
+
+    // TODO(aoates): handle hiding/showing the cursor.
 
     default:
       return ANSI_INVALID;
