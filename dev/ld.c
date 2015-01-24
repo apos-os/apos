@@ -150,8 +150,8 @@ void ld_provide(ld_t* l, char c) {
 
     // TODO(aoates): handle other special chars.
     default:
-      if (c < 32 && c != '\n') {
-        klogf("WARNING: ignoring unknown control char 0x%x in ld\n");
+      if (c < 32 && c != '\n' && c != '\x1b') {
+        klogf("WARNING: ignoring unknown control char 0x%x in ld\n", c);
         return;
       }
 

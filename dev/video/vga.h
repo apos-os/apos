@@ -17,6 +17,7 @@
 #ifndef DEV_VIDEO_VIDEO_H
 #define DEV_VIDEO_VIDEO_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 enum video_color {
@@ -75,6 +76,9 @@ void video_clear(video_t* v);
 
 // Moves the cursor.
 void video_move_cursor(video_t* v, int row, int col);
+
+// Show or hide the cursor.
+void video_show_cursor(video_t* v, bool visible);
 
 // ******** Implementation *********
 

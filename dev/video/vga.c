@@ -47,13 +47,7 @@ void video_vga_init() {
   c |= MISC_OUTPUT_REG_IOAS;
   outb(MISC_OUTPUT_REG_WRITE, c);
 
-  // Enable the cursor.
-  uint8_t orig_addr = inb(CRT_PORT_ADDR);
-  outb(CRT_PORT_ADDR, CRT_START_ADDR);
-  c = inb(CRT_PORT_DATA);
-  c &= ~CRT_START_CURSOR_DISABLE;
-  outb(CRT_PORT_DATA, c);
-  outb(CRT_PORT_ADDR, orig_addr);
+  video_show_cursor(NULL, true);
 }
 
 video_t* video_get_default() {
@@ -78,5 +72,17 @@ void video_move_cursor(video_t* v, int row, int col) {
   outb(CRT_PORT_DATA, cursor_pos & 0xFF);
   outb(CRT_PORT_ADDR, CRT_CURSOR_HIGH_ADDR);
   outb(CRT_PORT_DATA, (cursor_pos >> 8) & 0xFF);
+  outb(CRT_PORT_ADDR, orig_addr);
+}
+
+void video_show_cursor(video_t* v, bool visible) {
+  uint8_t orig_addr = inb(CRT_PORT_ADDR);
+  outb(CRT_PORT_ADDR, CRT_START_ADDR);
+  uint8_t c = inb(CRT_PORT_DATA);
+  if (visible)
+    c &= ~CRT_START_CURSOR_DISABLE;
+  else
+    c |= CRT_START_CURSOR_DISABLE;
+  outb(CRT_PORT_DATA, c);
   outb(CRT_PORT_ADDR, orig_addr);
 }

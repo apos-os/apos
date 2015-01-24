@@ -19,13 +19,22 @@
 #define APOO_DEV_VIDEO_VTERM
 
 #include <stdint.h>
+#include <stddef.h>
 
+#include "dev/char_dev.h"
 #include "dev/video/vga.h"
 
 typedef struct vterm vterm_t;
 
 // Create a vterm attached to the given video device.
 vterm_t* vterm_create(video_t* v);
+
+// Destroy and free the vterm.
+void vterm_destroy(vterm_t* t);
+
+// Set the character sink for the vterm (used when it generates keystrokes, e.g.
+// reporting the curser location).
+void vterm_set_sink(vterm_t* t, char_sink_t sink, void* sink_arg);
 
 // Send a character to the vterm.
 void vterm_putc(vterm_t* t, uint8_t c);
@@ -35,10 +44,18 @@ static inline void vterm_putc_sink(void* arg, char c) {
   vterm_putc((vterm_t*)arg, (uint8_t)c);
 }
 
+// Send a string of characters to the vterm.
+// TODO(aoates): update callers of vterm_putc() to use vterm_puts() when
+// possible.
+void vterm_puts(vterm_t* t, const char* s, size_t len);
+
 // Clear the terminal.
 void vterm_clear(vterm_t* t);
 
 // Clear the screen and redraw the current state onto the video device.
 void vterm_redraw(vterm_t* t);
+
+// Get the cursor position of the terminal.
+void vterm_get_cursor(vterm_t* t, int* x, int* y);
 
 #endif

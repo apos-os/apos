@@ -84,6 +84,7 @@ static void io_init(void) {
 
   ld_t* ld = ld_create(LD_BUF_SIZE);
   ld_set_sink(ld, &vterm_putc_sink, (void*)g_vterm);
+  vterm_set_sink(g_vterm, &ld_provide_sink, ld);
 
   vkeyboard_set_handler(kbd, &ld_provide_sink, (void*)ld);
 
