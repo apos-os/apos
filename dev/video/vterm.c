@@ -26,6 +26,7 @@
 struct vterm {
   video_t* video;
   int cursor_x, cursor_y;
+  int saved_cursor_x, saved_cursor_y;
 
   // Current video attributes.
   video_attr_t cattr;
@@ -89,6 +90,7 @@ vterm_t* vterm_create(video_t* v) {
   vterm_t* term = (vterm_t*)kmalloc(sizeof(vterm_t));
   term->video = v;
   term->cursor_x = term->cursor_y = 0;
+  term->saved_cursor_x = term->saved_cursor_y = 0;
   term->vwidth = video_get_width(v);
   term->vheight = video_get_height(v);
   term->cattr = VGA_DEFAULT_ATTR;
@@ -197,6 +199,20 @@ static int clear_seq(vterm_t* t, const ansi_seq_t* seq) {
   return ANSI_SUCCESS;
 }
 
+static int save_restore_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
+  if (seq->num_codes > 0) return ANSI_INVALID;
+
+  KASSERT_DBG(seq->final_letter == 's' || seq->final_letter == 'u');
+  if (seq->final_letter == 's') {
+    t->saved_cursor_x = t->cursor_x;
+    t->saved_cursor_y = t->cursor_y;
+  } else {
+    t->cursor_x = t->saved_cursor_x;
+    t->cursor_y = t->saved_cursor_y;
+  }
+
+  return ANSI_SUCCESS;
+}
 
 static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
@@ -240,6 +256,12 @@ static int try_ansi(vterm_t* t) {
     case 'J':  // Clear screen.
     case 'K':  // Clear line.
       return clear_seq(t, &seq);
+
+    case 's':
+    case 'u':
+      return save_restore_cursor_seq(t, &seq);
+
+    // TODO(aoates): handle cursor reporting and hiding/showing the cursor.
 
     default:
       return ANSI_INVALID;

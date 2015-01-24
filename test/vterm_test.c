@@ -632,6 +632,57 @@ static void ansi_erase_line_test(video_t* video, vterm_t* vt) {
   KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
 }
 
+static void ansi_save_cursor_test(video_t* video, vterm_t* vt) {
+  int x, y;
+
+  KTEST_BEGIN("vterm: default cursor restore position");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[u");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, y);
+
+  KTEST_BEGIN("vterm: save cursor position");
+  reset(vt, 3, 4);
+  do_vterm_puts(vt, "\x1b[s");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+  do_vterm_puts(vt, "\x1b[2;7H");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(1, y);
+  do_vterm_puts(vt, "\x1b[u");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+  do_vterm_puts(vt, "\x1b[2;7H\x1b[u");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+  do_vterm_puts(vt, "\x1b[2;7H\x1b[s\x1b[H\x1b[u");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(1, y);
+
+  KTEST_BEGIN("vterm: save/restore cursor position (invalid)");
+  do_vterm_puts(vt, "\x1b[4;5H");
+  do_vterm_puts(vt, "\x1b[;s");
+  do_vterm_puts(vt, "\x1b[1s");
+  do_vterm_puts(vt, "\x1b[1;2s");
+  do_vterm_puts(vt, "\x1b[1u");
+  do_vterm_puts(vt, "\x1b[;2u");
+  do_vterm_puts(vt, "\x1b[;u");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  do_vterm_puts(vt, "\x1b[u");
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(6, x);
+  KEXPECT_EQ(1, y);
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
 //  - newlines
@@ -651,6 +702,7 @@ void vterm_test(void) {
   ansi_escape_test(&test_video, vt);
   ansi_erase_screen_test(&test_video, vt);
   ansi_erase_line_test(&test_video, vt);
+  ansi_save_cursor_test(&test_video, vt);
 
   kfree(vt);
   kfree(test_video.videoram);
