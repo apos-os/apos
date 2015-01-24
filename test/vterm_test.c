@@ -14,6 +14,7 @@
 
 #include "dev/video/vterm.h"
 
+#include "common/kprintf.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
 
@@ -454,6 +455,114 @@ static void ansi_escape_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(4, y);
 }
 
+static const char* get_line(video_t* video, int row) {
+  static char line[TEST_WIDTH + 1];
+  for (int i = 0; i < TEST_WIDTH; ++i)
+    line[i] = video_getc(video, row, i);
+  line[TEST_WIDTH] = '\0';
+  return line;
+}
+
+static const char* get_line_attr(video_t* video, int row) {
+  static char line[TEST_WIDTH + 1];
+  for (int i = 0; i < TEST_WIDTH; ++i)
+    line[i] = (video_get_attr(video, row, i) == VGA_DEFAULT_ATTR) ? 'D' : 'x';
+  line[TEST_WIDTH] = '\0';
+  return line;
+}
+
+static void reset_and_fill(vterm_t* vt, char c, int row, int col) {
+  vterm_clear(vt);
+  vterm_puts(vt, "\x1b[m", 3);
+  // TODO(aoates): once scrolling is fixed to not scroll when writing the last
+  // character in the line, have this write one more character.
+  for (int i = 0; i < TEST_WIDTH * TEST_HEIGHT - 1; ++i)
+    vterm_putc(vt, c);
+  char buf[100];
+  ksprintf(buf, "\x1b[%d;%dH", row + 1, col + 1);
+  do_vterm_puts(vt, buf);
+  vterm_puts(vt, "\x1b[31m", 5);
+}
+
+static void ansi_erase_screen_test(video_t* video, vterm_t* vt) {
+  KTEST_BEGIN("vterm: erase to end of screen");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[0J");
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 0));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 1));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
+  KEXPECT_STREQ("AAAA      ", get_line(video, 3));
+  KEXPECT_STREQ("          ", get_line(video, 4));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 0));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 1));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
+  KEXPECT_STREQ("DDDDxxxxxx", get_line_attr(video, 3));
+  KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 4));
+  int x, y;
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase to end of screen (default)");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[J");
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 0));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 1));
+  KEXPECT_STREQ("AAAAAAAAAA", get_line(video, 2));
+  KEXPECT_STREQ("AAAA      ", get_line(video, 3));
+  KEXPECT_STREQ("          ", get_line(video, 4));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 0));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 1));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 2));
+  KEXPECT_STREQ("DDDDxxxxxx", get_line_attr(video, 3));
+  KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase to beginning of screen");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[1J");
+  KEXPECT_STREQ("          ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  KEXPECT_STREQ("          ", get_line(video, 2));
+  KEXPECT_STREQ("     AAAAA", get_line(video, 3));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 0));
+  KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 1));
+  KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, 2));
+  KEXPECT_STREQ("xxxxxDDDDD", get_line_attr(video, 3));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase whole screen");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[2J");
+  for (int i = 0; i < 5; ++i) {
+    KEXPECT_STREQ("          ", get_line(video, i));
+    KEXPECT_STREQ("xxxxxxxxxx", get_line_attr(video, i));
+  }
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(4, x);
+  KEXPECT_EQ(3, y);
+
+  KTEST_BEGIN("vterm: erase with invalid args");
+  reset_and_fill(vt, 'A', 3, 4);
+  do_vterm_puts(vt, "\x1b[3J");
+  do_vterm_puts(vt, "\x1b[13J");
+  do_vterm_puts(vt, "\x1b[2;J");
+  do_vterm_puts(vt, "\x1b[;J");
+  do_vterm_puts(vt, "\x1b[;3;10J");
+  for (int i = 0; i < 4; ++i)
+    KEXPECT_STREQ("AAAAAAAAAA", get_line(video, i));
+  KEXPECT_STREQ("AAAAAAAAA ", get_line(video, 4));
+  for (int i = 0; i < 4; ++i)
+    KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, i));
+  KEXPECT_STREQ("DDDDDDDDDD", get_line_attr(video, 4));
+}
+
 // TODO(aoates): things to test,
 //  - clear and redraw
 //  - newlines
@@ -471,6 +580,7 @@ void vterm_test(void) {
   vterm_t* vt = vterm_create(&test_video);
   basic_test(&test_video, vt);
   ansi_escape_test(&test_video, vt);
+  ansi_erase_screen_test(&test_video, vt);
 
   kfree(vt);
   kfree(test_video.videoram);

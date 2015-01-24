@@ -166,6 +166,46 @@ static int set_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
   return ANSI_SUCCESS;
 }
 
+static int clear_screen_seq(vterm_t* t, const ansi_seq_t* seq) {
+  if (seq->num_codes > 1) return ANSI_INVALID;
+  int mode = (seq->num_codes == 0) ? 0 : seq->codes[0];
+
+  int start_row, end_row, start_col, end_col;
+  switch (mode) {
+    case 0:
+      start_row = t->cursor_y;
+      start_col = t->cursor_x;
+      end_row = t->vheight;
+      end_col = t->vwidth;
+      break;
+
+    case 1:
+      start_row = start_col = 0;
+      end_row = t->cursor_y + 1;
+      end_col = t->cursor_x + 1;
+      break;
+
+    case 2:
+      start_row = start_col = 0;
+      end_row = t->vheight;
+      end_col = t->vwidth;
+      break;
+
+    default:
+      return ANSI_INVALID;
+  }
+
+  for (int row = start_row; row < end_row; row++) {
+    for (int col = start_col; col < (row == end_row - 1 ? end_col : t->vwidth);
+         col++) {
+      vterm_setc(t, row, col, ' ', t->cattr);
+    }
+    start_col = 0;
+  }
+  return ANSI_SUCCESS;
+}
+
+
 static int try_ansi(vterm_t* t) {
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
@@ -204,6 +244,9 @@ static int try_ansi(vterm_t* t) {
     case 'H':
     case 'f':
       return set_cursor_seq(t, &seq);
+
+    case 'J':
+      return clear_screen_seq(t, &seq);
 
     default:
       return ANSI_INVALID;
