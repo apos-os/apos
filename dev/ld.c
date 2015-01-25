@@ -183,7 +183,7 @@ void ld_provide(ld_t* l, char c) {
   }
 
   // Echo it to the screen.
-  if (echo) {
+  if (echo && (l->termios.c_lflag & ECHO)) {
     l->sink(l->sink_arg, c);
   }
 

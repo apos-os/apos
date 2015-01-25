@@ -505,6 +505,29 @@ static void termios_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
 }
 
+static void termios_echo_test(void) {
+  KTEST_BEGIN("ld: disable ECHO");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+  const struct termios orig_term = t;
+
+  ld_provide(g_ld, 'a');
+  t.c_lflag &= ~ECHO;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x7f');
+
+  KEXPECT_EQ(1, g_sink_idx);
+  KEXPECT_EQ('a', g_sink[0]);
+
+  // TODO(aoates): test ECHO in non-canonical mode when that's implemented.
+
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -527,6 +550,7 @@ void ld_test(void) {
   three_thread_test();
   three_thread_test2();
   termios_test();
+  termios_echo_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
