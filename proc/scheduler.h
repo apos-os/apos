@@ -50,8 +50,12 @@ void scheduler_yield(void);
 // queue and calles scheduler_make_runnable() on it.
 void scheduler_wait_on(kthread_queue_t* queue);
 
+#define SWAIT_DONE 0
+#define SWAIT_INTERRUPTED 1
+
 // As above, but can be interrupted by a signal delivered to the thread.
-// Returns non-zero if the wait was interrupted.
+// Returns SWAIT_INTERRUPTED if the wait was interrupted, or SWAIT_DONE
+// otherwise.
 int scheduler_wait_on_interruptable(kthread_queue_t* queue);
 
 // Wake one thread waiting on the given thread queue.

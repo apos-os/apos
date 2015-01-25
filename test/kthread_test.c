@@ -271,14 +271,14 @@ typedef struct {
 static void* queue_test_func(void* arg) {
   queue_test_funct_data_t* d = (queue_test_funct_data_t*)arg;
   d->waiting = 1;
-  int interrupted = 0;
+  int wait_result = 0;
   if (d->interruptable) {
-    interrupted = scheduler_wait_on_interruptable(d->queue);
+    wait_result = scheduler_wait_on_interruptable(d->queue);
   } else {
     scheduler_wait_on(d->queue);
   }
   d->ran = 1;
-  return (void*)interrupted;
+  return (void*)wait_result;
 }
 
 static void scheduler_wait_on_test(void) {

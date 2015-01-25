@@ -40,9 +40,9 @@ int ksleep(int ms) {
     POP_INTERRUPTS();
     return result;
   }
-  int interrupted = scheduler_wait_on_interruptable(q);
+  int wait_result = scheduler_wait_on_interruptable(q);
   const uint32_t elapsed = get_time_ms() - start_time;
-  result = interrupted ? max((ms - elapsed), 0U) : 0;
+  result = (wait_result == SWAIT_INTERRUPTED) ? max((ms - elapsed), 0U) : 0;
   POP_INTERRUPTS();
   return result;
 }

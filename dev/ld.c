@@ -265,8 +265,8 @@ int ld_read(ld_t* l, char* buf, int n) {
   int result = 0;
   if (l->start_idx == l->cooked_idx) {
     // Block until data is available.
-    int interrupted = scheduler_wait_on_interruptable(&l->wait_queue);
-    if (interrupted) result = -EINTR;
+    int wait_result = scheduler_wait_on_interruptable(&l->wait_queue);
+    if (wait_result == SWAIT_INTERRUPTED) result = -EINTR;
   }
 
   if (!result) {

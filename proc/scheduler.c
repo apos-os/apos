@@ -93,7 +93,7 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue,
     if (!ksigisemptyset(&dispatchable)) {
       current->interrupted = 1;
       POP_INTERRUPTS();
-      return 1;
+      return SWAIT_INTERRUPTED;
     }
   }
 
