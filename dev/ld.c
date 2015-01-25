@@ -140,7 +140,7 @@ void ld_provide(ld_t* l, char c) {
   KASSERT(l->sink != 0x0);
 
   // Check for overflow.
-  if (c != '\b' && circ_inc(l, l->raw_idx) == l->start_idx) {
+  if (c != '\x7f' && circ_inc(l, l->raw_idx) == l->start_idx) {
     char buf[2];
     buf[0] = c;
     buf[1] = '\0';
@@ -150,7 +150,7 @@ void ld_provide(ld_t* l, char c) {
 
   int echo = 1;
   switch (c) {
-    case '\b':
+    case '\x7f':
       if (l->cooked_idx == l->raw_idx) {
         // Ignore backspace at start of line.
         return;

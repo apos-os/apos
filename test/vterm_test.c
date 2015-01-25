@@ -701,7 +701,7 @@ static void backspace_test(video_t* video, vterm_t* vt) {
   KTEST_BEGIN("vterm: basic backspace test");
   vterm_clear(vt);
   do_vterm_puts(vt, "abcd");
-  do_vterm_puts(vt, "\bX");
+  do_vterm_puts(vt, "\x7fX");
   KEXPECT_STREQ("abcX      ", get_line(video, 0));
 
   KTEST_BEGIN("vterm: backspace across line test");
@@ -709,12 +709,12 @@ static void backspace_test(video_t* video, vterm_t* vt) {
   do_vterm_puts(vt, "abcdefghijkl");
   KEXPECT_STREQ("abcdefghij", get_line(video, 0));
   KEXPECT_STREQ("kl        ", get_line(video, 1));
-  do_vterm_puts(vt, "\b");
+  do_vterm_puts(vt, "\x7f");
   KEXPECT_STREQ("k         ", get_line(video, 1));
-  do_vterm_puts(vt, "\b");
+  do_vterm_puts(vt, "\x7f");
   KEXPECT_STREQ("abcdefghij", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
-  do_vterm_puts(vt, "\b");
+  do_vterm_puts(vt, "\x7f");
   KEXPECT_STREQ("abcdefghi ", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
   int x, y;
@@ -774,7 +774,7 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(10, x);
   KEXPECT_EQ(0, y);
 
-  do_vterm_puts(vt, "\b");
+  do_vterm_puts(vt, "\x7f");
   KEXPECT_STREQ("012345678 ", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
   vterm_get_cursor(vt, &x, &y);
@@ -816,7 +816,7 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(0, x);
   KEXPECT_EQ(1, y);
 
-  do_vterm_puts(vt, "\b");
+  do_vterm_puts(vt, "\x7f");
   KEXPECT_STREQ("012345678 ", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
   vterm_get_cursor(vt, &x, &y);

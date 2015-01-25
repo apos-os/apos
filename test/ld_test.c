@@ -54,13 +54,13 @@ static void echo_test(void) {
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
   ld_provide(g_ld, 'c');
-  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\x7f');
 
   KEXPECT_EQ(4, g_sink_idx);
   KEXPECT_EQ('a', g_sink[0]);
   KEXPECT_EQ('b', g_sink[1]);
   KEXPECT_EQ('c', g_sink[2]);
-  KEXPECT_EQ('\b', g_sink[3]);
+  KEXPECT_EQ('\x7f', g_sink[3]);
 }
 
 static void provide_sink_test(void) {
@@ -142,8 +142,8 @@ static void cook_test(void) {
   KEXPECT_EQ(0, read_len);
 
   // Delete some chars then provide new ones.
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
   ld_provide(g_ld, 'D');
   ld_provide(g_ld, 'E');
   ld_provide(g_ld, 'F');
@@ -171,11 +171,11 @@ static void cook_limit_test(void) {
   ld_provide(g_ld, 'f');
 
   // Delete too many chars.
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
   ld_provide(g_ld, 'g');
   ld_provide(g_ld, 'h');
   ld_provide(g_ld, '\n');
@@ -202,11 +202,11 @@ static void cook_limit_test2(void) {
   ld_provide(g_ld, 'f');
 
   // Delete too many chars.
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
-  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
   ld_provide(g_ld, 'g');
   ld_provide(g_ld, 'h');
   ld_provide(g_ld, '\n');
@@ -229,7 +229,7 @@ static void do_overload_test(void) {
   KEXPECT_EQ(0, read_len);
 
   // Make room then try cooking again.
-  ld_provide(g_ld, '\b');
+  ld_provide(g_ld, '\x7f');
   ld_provide(g_ld, '\n');
   read_len = ld_read_async(g_ld, buf, 100);
   KEXPECT_EQ(14, read_len);
@@ -272,7 +272,7 @@ static void wrap_deletes_test(void) {
     ld_provide(g_ld, 'a' + i);
   }
   for (int i = 0; i < 8; i++) {
-    ld_provide(g_ld, '\b');
+    ld_provide(g_ld, '\x7f');
   }
   for (int i = 0; i < 6; i++) {
     ld_provide(g_ld, 'C' + i);
