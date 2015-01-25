@@ -23,6 +23,7 @@
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
+#include "user/include/apos/termios.h"
 
 #define LD_BUF_SIZE 15
 
@@ -465,6 +466,18 @@ static void three_thread_test2(void) {
   //KEXPECT_EQ(0, kstrncmp(data[2].buf, "d\n", 2));
 }
 
+static void termios_test(void) {
+  KTEST_BEGIN("ld: default termios settings are sane");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+  KEXPECT_EQ(0, t.c_iflag);
+  KEXPECT_EQ(0, t.c_oflag);
+  KEXPECT_EQ(CS8, t.c_cflag);
+  KEXPECT_EQ(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG, t.c_lflag);
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -486,6 +499,7 @@ void ld_test(void) {
   basic_read_thread_test();
   three_thread_test();
   three_thread_test2();
+  termios_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;

@@ -28,6 +28,7 @@
 #include "proc/scheduler.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "user/include/apos/termios.h"
 
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
@@ -49,7 +50,28 @@ struct ld {
   kthread_queue_t wait_queue;
 
   apos_dev_t tty;
+  struct termios termios;
 };
+
+static void set_default_termios(struct termios* t) {
+  t->c_iflag = 0;
+  t->c_oflag = 0;
+  t->c_cflag = CS8;
+  t->c_lflag = ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG;
+
+  // TODO(aoates): implement the rest of these.
+  t->c_cc[VEOF] = ASCII_EOT;
+  t->c_cc[VEOL] = _POSIX_VDISABLE;
+  t->c_cc[VERASE] = _POSIX_VDISABLE;
+  t->c_cc[VINTR] = ASCII_ETX;
+  t->c_cc[VKILL] = _POSIX_VDISABLE;
+  t->c_cc[VMIN] = 1;
+  t->c_cc[VQUIT] = ASCII_FS;
+  t->c_cc[VSTART] = _POSIX_VDISABLE;
+  t->c_cc[VSTOP] = _POSIX_VDISABLE;
+  t->c_cc[VSUSP] = ASCII_SUB;
+  t->c_cc[VTIME] = 0;
+}
 
 ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
@@ -60,6 +82,7 @@ ld_t* ld_create(int buf_size) {
   l->sink_arg = 0x0;
   kthread_queue_init(&l->wait_queue);
   l->tty = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  set_default_termios(&l->termios);
   return l;
 }
 
@@ -289,4 +312,8 @@ void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
   dev->read = &ld_char_dev_read;
   dev->write = &ld_char_dev_write;
   dev->dev_data = l;
+}
+
+void ld_get_termios(const ld_t* l, struct termios* t) {
+  kmemcpy(t, &l->termios, sizeof(struct termios));
 }

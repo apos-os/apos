@@ -24,6 +24,7 @@
 
 struct ld;
 typedef struct ld ld_t;
+struct termios;
 
 // Allocate and initialize a new line discipline, with an internal buffer of the
 // given size.
@@ -75,5 +76,8 @@ int ld_write(ld_t* l, const char* buf, int n);
 
 // Initialize a char_dev_t for the given ld.
 void ld_init_char_dev(ld_t* l, char_dev_t* dev);
+
+// Return the ld's terminal attributes.
+void ld_get_termios(const ld_t* l, struct termios* t);
 
 #endif
