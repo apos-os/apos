@@ -62,7 +62,7 @@ static void set_default_termios(struct termios* t) {
   // TODO(aoates): implement the rest of these.
   t->c_cc[VEOF] = ASCII_EOT;
   t->c_cc[VEOL] = _POSIX_VDISABLE;
-  t->c_cc[VERASE] = _POSIX_VDISABLE;
+  t->c_cc[VERASE] = ASCII_DEL;
   t->c_cc[VINTR] = ASCII_ETX;
   t->c_cc[VKILL] = _POSIX_VDISABLE;
   t->c_cc[VMIN] = 1;
@@ -316,4 +316,20 @@ void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
 
 void ld_get_termios(const ld_t* l, struct termios* t) {
   kmemcpy(t, &l->termios, sizeof(struct termios));
+}
+
+int ld_set_termios(ld_t* l, const struct termios* t) {
+  if (t->c_iflag != 0 || t->c_oflag != 0 || t->c_cflag != CS8)
+    return -EINVAL;
+
+  if (t->c_cc[VEOL] != _POSIX_VDISABLE || t->c_cc[VKILL] != _POSIX_VDISABLE ||
+      t->c_cc[VSTART] != _POSIX_VDISABLE || t->c_cc[VSTOP] != _POSIX_VDISABLE)
+    return -EINVAL;
+
+  if (t->c_lflag & ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG))
+    return -EINVAL;
+
+  kmemcpy(&l->termios, t, sizeof(struct termios));
+
+  return 0;
 }

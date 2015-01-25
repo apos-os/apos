@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/ascii.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -472,10 +473,36 @@ static void termios_test(void) {
   struct termios t;
   kmemset(&t, 0xFF, sizeof(struct termios));
   ld_get_termios(g_ld, &t);
+  const struct termios orig_term = t;
+
   KEXPECT_EQ(0, t.c_iflag);
   KEXPECT_EQ(0, t.c_oflag);
   KEXPECT_EQ(CS8, t.c_cflag);
   KEXPECT_EQ(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG, t.c_lflag);
+
+  KTEST_BEGIN("ld: set invalid termios (c_iflag)");
+  t.c_iflag |= ISTRIP;
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+
+  KTEST_BEGIN("ld: set invalid termios (c_iflag)");
+  t = orig_term;
+  t.c_oflag |= OPOST;
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+
+  KTEST_BEGIN("ld: set invalid termios (c_cflag)");
+  t = orig_term;
+  t.c_cflag = CS5 | CREAD;
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+
+  KTEST_BEGIN("ld: set invalid termios (c_lflag)");
+  t = orig_term;
+  t.c_lflag |= IEXTEN;
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+  t = orig_term;
+  t.c_lflag |= (1 << 10);
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
 }
 
 // TODO(aoates): more tests to write:

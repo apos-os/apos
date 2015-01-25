@@ -80,4 +80,7 @@ void ld_init_char_dev(ld_t* l, char_dev_t* dev);
 // Return the ld's terminal attributes.
 void ld_get_termios(const ld_t* l, struct termios* t);
 
+// Set the ld's terminal attributes.
+int ld_set_termios(ld_t* l, const struct termios* t);
+
 #endif
