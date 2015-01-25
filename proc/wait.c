@@ -85,7 +85,7 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
       if (options & WNOHANG)
         return 0;
 
-      int wait_result = scheduler_wait_on_interruptable(&p->wait_queue);
+      int wait_result = scheduler_wait_on_interruptable(&p->wait_queue, -1);
       if (wait_result == SWAIT_INTERRUPTED)
         return -EINTR;
     }

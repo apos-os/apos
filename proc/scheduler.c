@@ -113,7 +113,8 @@ void scheduler_wait_on(kthread_queue_t* queue) {
   KASSERT_DBG(result == 0);
 }
 
-int scheduler_wait_on_interruptable(kthread_queue_t* queue) {
+int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms) {
+  KASSERT_DBG(timeout_ms < 0);
   return scheduler_wait_on_internal(queue, 1);
 }
 

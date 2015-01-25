@@ -273,7 +273,7 @@ static void* queue_test_func(void* arg) {
   d->waiting = 1;
   int wait_result = 0;
   if (d->interruptable) {
-    wait_result = scheduler_wait_on_interruptable(d->queue);
+    wait_result = scheduler_wait_on_interruptable(d->queue, -1);
   } else {
     scheduler_wait_on(d->queue);
   }
@@ -450,8 +450,8 @@ static void scheduler_interrupt_test(void) {
   {
     proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
                                 SIGUSR1);
-    KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue));
-    KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue));
+    KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue, -1));
+    KEXPECT_EQ(1, scheduler_wait_on_interruptable(&queue, -1));
     KEXPECT_EQ(1, kthread_current_thread()->interrupted);
 
     proc_suppress_signal(proc_current(), SIGUSR1);

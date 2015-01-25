@@ -37,7 +37,7 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg) {
     }
 
     if (proc_current()->state == PROC_STOPPED) {
-      scheduler_wait_on_interruptable(&proc_current()->stopped_queue);
+      scheduler_wait_on_interruptable(&proc_current()->stopped_queue, -1);
     }
   } while (proc_current()->state == PROC_STOPPED);
 }
