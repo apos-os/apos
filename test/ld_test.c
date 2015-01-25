@@ -20,9 +20,12 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/ld.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 #include "user/include/apos/termios.h"
 
@@ -528,6 +531,224 @@ static void termios_echo_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
 }
 
+typedef struct {
+  kthread_queue_t read_started;
+  bool read_done;
+  char* buf;
+  int readlen;
+  ld_t* l;
+  uint32_t elapsed;
+} noncanon_test_args_t;
+
+static void* noncanon_read(void* arg) {
+  noncanon_test_args_t* args = arg;
+  args->read_done = false;
+  scheduler_wake_all(&args->read_started);
+  uint32_t start = get_time_ms();
+  int result = ld_read(args->l, args->buf, args->readlen);
+  args->elapsed = get_time_ms() - start;
+  args->read_done = true;
+  return (void*)result;
+}
+
+static void start_read_thread(noncanon_test_args_t* args, kthread_t* thread,
+                              int read_len) {
+  args->readlen = read_len;
+  kmemset(args->buf, '\0', 10);
+  KEXPECT_EQ(0, kthread_create(thread, &noncanon_read, args));
+  scheduler_make_runnable(*thread);
+  scheduler_wait_on(&args->read_started);
+}
+
+static void termios_noncanon_test(void) {
+  KTEST_BEGIN("ld: non-canonical mode (MIN == 0, TIME == 0)");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+  const struct termios orig_term = t;
+
+  t.c_lflag &= ~ICANON;
+  t.c_cc[VMIN] = 0;
+  t.c_cc[VTIME] = 0;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  char buf[10];
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(0, ld_read(g_ld, buf, 10));
+  // TODO(aoates): verify ld_read didn't block.
+  KEXPECT_STREQ("", buf);
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ab", buf);
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, 'd');
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 1));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 1));
+
+
+  KTEST_BEGIN("ld: non-canonical mode (MIN > 0, TIME == 0)");
+  t = orig_term;
+  t.c_lflag &= ~ICANON;
+  t.c_cc[VMIN] = 3;
+  t.c_cc[VTIME] = 0;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  noncanon_test_args_t args;
+  args.buf = buf;
+  args.l = g_ld;
+  kthread_queue_init(&args.read_started);
+  kthread_t read_thread;
+
+  kmemset(buf, 0, 10);
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  KEXPECT_EQ(3, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("abc", buf);
+
+  // Test blocking behavior if fewer than MIN available.
+  ld_provide(g_ld, 'd');
+  ld_provide(g_ld, 'e');
+  start_read_thread(&args, &read_thread, 10);
+  ksleep(300);
+  KEXPECT_EQ(false, args.read_done);
+  ld_provide(g_ld, 'f');
+  KEXPECT_EQ((void*)3, kthread_join(read_thread));
+  KEXPECT_GE(args.elapsed, 300);
+  KEXPECT_LE(args.elapsed, 400);
+  KEXPECT_STREQ("def", buf);
+
+  // Test signal interruptions in blocking scenario (no initial bytes).
+  start_read_thread(&args, &read_thread, 10);
+  scheduler_interrupt_thread(read_thread);
+  KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
+
+  // Test signal interruptions in blocking scenario (<MIN initial bytes).
+  ld_provide(g_ld, 'd');
+  ld_provide(g_ld, 'e');
+  start_read_thread(&args, &read_thread, 10);
+  scheduler_interrupt_thread(read_thread);
+  KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
+  t.c_cc[VMIN] = t.c_cc[VTIME] = 0;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+
+
+  KTEST_BEGIN("ld: non-canonical mode (MIN == 0, TIME > 0)");
+  t = orig_term;
+  t.c_lflag &= ~ICANON;
+  t.c_cc[VMIN] = 0;
+  t.c_cc[VTIME] = 2;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  // Test when data never becomes available (ld_read times out).
+  kmemset(buf, 0, 10);
+  uint32_t start = get_time_ms();
+  KEXPECT_EQ(0, ld_read(g_ld, buf, 10));
+  uint32_t end = get_time_ms();
+  KEXPECT_GE(end - start, 150);
+  KEXPECT_LE(end - start, 300);
+
+  // Test when data is immediately available.
+  ld_provide(g_ld, 'a');
+  start = get_time_ms();
+  // TODO(aoates): verify this doesn't block.
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 10));
+  end = get_time_ms();
+  KEXPECT_LE(end - start, 30);
+
+  // Test when data becomes available partway through TIME.
+  start_read_thread(&args, &read_thread, 3);
+  ksleep(100);
+  KEXPECT_EQ(false, args.read_done);
+  ld_provide(g_ld, 'f');
+  KEXPECT_EQ((void*)1, kthread_join(read_thread));
+  KEXPECT_GE(args.elapsed, 100);
+  KEXPECT_LE(args.elapsed, 200);
+  KEXPECT_STREQ("f", buf);
+
+  // Test signal interruptions in blocking scenario.
+  start_read_thread(&args, &read_thread, 10);
+  scheduler_interrupt_thread(read_thread);
+  KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
+
+
+  KTEST_BEGIN("ld: non-canonical mode (MIN > 0, TIME > 0)");
+  t = orig_term;
+  t.c_lflag &= ~ICANON;
+  t.c_cc[VMIN] = 4;
+  t.c_cc[VTIME] = 2;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  // MIN bytes available initially.
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, 'd');
+  start = get_time_ms();
+  kmemset(buf, '\0', 10);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  // TODO(aoates): verify ld_read didn't block.
+  end = get_time_ms();
+  KEXPECT_LE(end - start, 30);
+  KEXPECT_STREQ("abcd", buf);
+
+  // Fewer than MIN bytes available initially, times out after TIME.
+  ld_provide(g_ld, 'e');
+  ld_provide(g_ld, 'f');
+  start = get_time_ms();
+  kmemset(buf, '\0', 10);
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  end = get_time_ms();
+  KEXPECT_GE(end - start, 180);
+  KEXPECT_LE(end - start, 250);
+  KEXPECT_STREQ("ef", buf);
+
+  // 0 bytes available initially, blocks indefinitely, then MIN bytes.
+  start_read_thread(&args, &read_thread, 5);
+  ksleep(400);
+  KEXPECT_EQ(false, args.read_done);
+  ld_provide(g_ld, 'g');
+  ld_provide(g_ld, 'h');
+  ld_provide(g_ld, 'i');
+  ksleep(50);
+  ld_provide(g_ld, 'j');
+  KEXPECT_EQ((void*)4, kthread_join(read_thread));
+  KEXPECT_GE(args.elapsed, 430);
+  KEXPECT_LE(args.elapsed, 500);
+  KEXPECT_STREQ("ghij", buf);
+
+  // 0 bytes initially, blocks, then < MIN bytes and timeout after TIME
+  start_read_thread(&args, &read_thread, 5);
+  ksleep(200);
+  KEXPECT_EQ(false, args.read_done);
+  ld_provide(g_ld, 'k');
+  KEXPECT_EQ((void*)1, kthread_join(read_thread));
+  KEXPECT_GE(args.elapsed, 380);
+  KEXPECT_LE(args.elapsed, 450);
+  KEXPECT_STREQ("k", buf);
+
+  // Test signal interruptions in blocking scenario (no initial bytes).
+  start_read_thread(&args, &read_thread, 10);
+  scheduler_interrupt_thread(read_thread);
+  KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
+
+  // Test signal interruptions in blocking scenario (waiting for MIN bytes).
+  ld_provide(g_ld, 'd');
+  ld_provide(g_ld, 'e');
+  start_read_thread(&args, &read_thread, 10);
+  scheduler_interrupt_thread(read_thread);
+  KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
+  t.c_cc[VMIN] = t.c_cc[VTIME] = 0;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -551,6 +772,7 @@ void ld_test(void) {
   three_thread_test2();
   termios_test();
   termios_echo_test();
+  termios_noncanon_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
