@@ -62,8 +62,14 @@ struct kthread_data {
   // blocked on a queue.
   bool interruptable;
 
-  // Whether the thread was interrupted and forced onto the run queue.
-  bool interrupted;
+  // SWAIT_INTERRUPTED or SWAIT_TIMEOUT if the thread was woken up from an
+  // interruptable wait and forced onto the run queue, by a signal or timeout,
+  // respectively.
+  unsigned char wait_status;
+
+  // Whether or not the wait timeout fired, regardless of if it was interrupted
+  // first.
+  bool wait_timeout_ran;
 };
 typedef struct kthread_data kthread_data_t;
 
