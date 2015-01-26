@@ -204,16 +204,20 @@ void ld_provide(ld_t* l, char c) {
         break;
     }
   }
-  if (!handled) {
+  if (!handled && l->termios.c_lflag & ISIG) {
     switch (c) {
-      // TODO(aoates): check ISIG (when appropriate) and c_cc for these.
+      // TODO(aoates): check and c_cc for these.
       case ASCII_ETX:
       case ASCII_SUB:
       case ASCII_FS:
         // Echo, but don't copy to buffer.  Clear the current buffer.
         l->start_idx = l->cooked_idx = l->raw_idx;
+        handled = true;
         break;
-
+    }
+  }
+  if (!handled) {
+    switch (c) {
       case '\r':
       case '\f':
         die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
@@ -241,7 +245,7 @@ void ld_provide(ld_t* l, char c) {
     cook_buffer(l);
   }
 
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN && l->termios.c_lflag & ISIG) {
     int signal = SIGNULL;
     switch (c) {
       case ASCII_ETX: signal = SIGINT; break;
