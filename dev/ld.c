@@ -186,22 +186,18 @@ void ld_provide(ld_t* l, char c) {
   char erased_char = 0;
   bool handled = false;
   if (l->termios.c_lflag & ICANON) {
-    switch (c) {
-      case '\x7f':
-        if (l->cooked_idx == l->raw_idx) {
-          // Ignore backspace at start of line.
-          return;
-        }
-        l->raw_idx = circ_dec(l, l->raw_idx);
-        erased_char = l->read_buf[l->raw_idx];
-        l->read_buf[l->raw_idx] = '#';  // DEBUG
-        handled = true;
-        break;
-
-      case ASCII_EOT:
-        echo = 0;
-        handled = true;
-        break;
+    if (c == '\x7f') {
+      if (l->cooked_idx == l->raw_idx) {
+        // Ignore backspace at start of line.
+        return;
+      }
+      l->raw_idx = circ_dec(l, l->raw_idx);
+      erased_char = l->read_buf[l->raw_idx];
+      l->read_buf[l->raw_idx] = '#';  // DEBUG
+      handled = true;
+    } else if (c == l->termios.c_cc[VEOF]) {
+      echo = 0;
+      handled = true;
     }
   }
   if (!handled && l->termios.c_lflag & ISIG) {
@@ -243,7 +239,8 @@ void ld_provide(ld_t* l, char c) {
   }
 
   // Cook the buffer, optionally.
-  if (c == '\n' || c == ASCII_EOT || !(l->termios.c_lflag & ICANON)) {
+  if (c == '\n' || c == l->termios.c_cc[VEOF] ||
+      !(l->termios.c_lflag & ICANON)) {
     cook_buffer(l);
   }
 

@@ -1074,6 +1074,29 @@ static void echonl_test(void) {
   KEXPECT_STREQ("ab\nc", buf);
 }
 
+static void change_control_char_test(void) {
+  KTEST_BEGIN("ld: changing EOF character");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+
+  t.c_cc[VEOF] = 'p';
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provides(g_ld, "abc\x04" "d");
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("abc^Dd", g_sink);
+  char buf[10];
+  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+
+  ld_provide(g_ld, 'p');
+  KEXPECT_EQ(6, g_sink_idx);
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(5, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("abc\x04" "d", buf);
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -1103,6 +1126,7 @@ void ld_test(void) {
   echoe_test();
   echonl_test();
   noflsh_test();
+  change_control_char_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
