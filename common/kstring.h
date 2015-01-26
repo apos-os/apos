@@ -63,4 +63,13 @@ static inline int kisalnum(int c) {
   return kisdigit(c) || kisalpha(c);
 }
 
+static inline int kisspace(int c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' ||
+         c == 'r';
+}
+
+static inline int kisprint(int c) {
+  return c > 0x1f && c < 0x7f;
+}
+
 #endif
