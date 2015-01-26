@@ -873,7 +873,51 @@ static void control_chars_test(void) {
 
   KEXPECT_EQ(7, g_sink_idx);
   KEXPECT_STREQ("a^Cc\b \b", g_sink);
-  // TODO(aoates): test that buffer is empty (ld_read() would block).
+  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+}
+
+static void noflsh_test(void) {
+  KTEST_BEGIN("ld: NOFLSH prevents clearing buffer on INT, etc");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+  const struct termios orig_term = t;
+
+  t.c_lflag |= NOFLSH;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, '\x03');
+  ld_provide(g_ld, '\x1a');
+  ld_provide(g_ld, '\x1c');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x04');
+
+  KEXPECT_EQ(9, g_sink_idx);
+  KEXPECT_STREQ("ab^C^Z^\\c", g_sink);
+
+  char buf[10];
+  KEXPECT_EQ(3, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("abc", buf);
+
+  KTEST_BEGIN("ld: backspace over signal-causing characters with NOFLSH");
+  reset_sink();
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, '\x03');
+  ld_provide(g_ld, '\x1a');
+  ld_provide(g_ld, '\x1c');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+
+  KEXPECT_EQ(14, g_sink_idx);
+  KEXPECT_STREQ("a^C^Z^\\c\b \b\b \b", g_sink);
+  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
 }
 
 static void termios_noncanon_test(void) {
@@ -1058,6 +1102,7 @@ void ld_test(void) {
   control_chars_test();
   echoe_test();
   echonl_test();
+  noflsh_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;

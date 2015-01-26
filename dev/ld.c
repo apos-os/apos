@@ -210,8 +210,10 @@ void ld_provide(ld_t* l, char c) {
       case ASCII_ETX:
       case ASCII_SUB:
       case ASCII_FS:
-        // Echo, but don't copy to buffer.  Clear the current buffer.
-        l->start_idx = l->cooked_idx = l->raw_idx;
+        if (!(l->termios.c_lflag & NOFLSH)) {
+          // Echo, but don't copy to buffer.  Clear the current buffer.
+          l->start_idx = l->cooked_idx = l->raw_idx;
+        }
         handled = true;
         break;
     }
@@ -421,7 +423,7 @@ int ld_set_termios(ld_t* l, const struct termios* t) {
       t->c_cc[VSTART] != _POSIX_VDISABLE || t->c_cc[VSTOP] != _POSIX_VDISABLE)
     return -EINVAL;
 
-  if (t->c_lflag & ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG))
+  if (t->c_lflag & ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG | NOFLSH))
     return -EINVAL;
 
   kmemcpy(&l->termios, t, sizeof(struct termios));
