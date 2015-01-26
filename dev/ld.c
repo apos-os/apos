@@ -153,7 +153,7 @@ static inline int char_term_len(char c) {
 // Send a character to terminal, translating it if necessary.  erased_char is
 // the character erased from the buffer, if any.
 static void ld_term_putc(const ld_t* l, char c, char erased_char) {
-  if (c == '\x7f') {
+  if (c == '\x7f' && l->termios.c_lflag & ICANON) {
     KASSERT_DBG(erased_char > 0);
     for (int i = 0; i < char_term_len(erased_char); ++i) {
       l->sink(l->sink_arg, '\b');
@@ -162,7 +162,7 @@ static void ld_term_putc(const ld_t* l, char c, char erased_char) {
     }
   } else if (is_ctrl(c)) {
     l->sink(l->sink_arg, '^');
-    l->sink(l->sink_arg, c + '@');
+    l->sink(l->sink_arg, (c + '@') & 0x7f);
   } else {
     l->sink(l->sink_arg, c);
   }
@@ -181,36 +181,47 @@ void ld_provide(ld_t* l, char c) {
     return;
   }
 
-  // TODO(aoates): handle characters differently in non-canonical mode.
   int echo = 1;
   char erased_char = 0;
-  switch (c) {
-    case '\x7f':
-      if (l->cooked_idx == l->raw_idx) {
-        // Ignore backspace at start of line.
-        return;
-      }
-      l->raw_idx = circ_dec(l, l->raw_idx);
-      erased_char = l->read_buf[l->raw_idx];
-      l->read_buf[l->raw_idx] = '#';  // DEBUG
-      break;
+  bool handled = false;
+  if (l->termios.c_lflag & ICANON) {
+    switch (c) {
+      case '\x7f':
+        if (l->cooked_idx == l->raw_idx) {
+          // Ignore backspace at start of line.
+          return;
+        }
+        l->raw_idx = circ_dec(l, l->raw_idx);
+        erased_char = l->read_buf[l->raw_idx];
+        l->read_buf[l->raw_idx] = '#';  // DEBUG
+        handled = true;
+        break;
 
-    // TODO(aoates): check ISIG (when appropriate) and c_cc for these.
-    case ASCII_ETX:
-    case ASCII_EOT:
-    case ASCII_SUB:
-    case ASCII_FS:
-      echo = 0;
-      break;
+      case ASCII_EOT:
+        echo = 0;
+        handled = true;
+        break;
+    }
+  }
+  if (!handled) {
+    switch (c) {
+      // TODO(aoates): check ISIG (when appropriate) and c_cc for these.
+      case ASCII_ETX:
+      case ASCII_SUB:
+      case ASCII_FS:
+        echo = 0;
+        break;
 
-    case '\r':
-    case '\f':
-      die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
-      break;
+      case '\r':
+      case '\f':
+        die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
+        break;
 
-    default:
-      l->read_buf[l->raw_idx] = c;
-      l->raw_idx = circ_inc(l, l->raw_idx);
+      default:
+        l->read_buf[l->raw_idx] = c;
+        l->raw_idx = circ_inc(l, l->raw_idx);
+        break;
+    }
   }
 
   // Echo it to the screen.
