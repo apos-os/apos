@@ -58,7 +58,7 @@ static void set_default_termios(struct termios* t) {
   t->c_iflag = 0;
   t->c_oflag = 0;
   t->c_cflag = CS8;
-  t->c_lflag = ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG;
+  t->c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG;
 
   // TODO(aoates): implement the rest of these.
   t->c_cc[VEOF] = ASCII_EOT;
@@ -182,7 +182,7 @@ void ld_provide(ld_t* l, char c) {
     return;
   }
 
-  int echo = 1;
+  int echo = (l->termios.c_lflag & ECHO);
   char erased_char = 0;
   bool handled = false;
   if (l->termios.c_lflag & ICANON) {
@@ -219,6 +219,11 @@ void ld_provide(ld_t* l, char c) {
         die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
         break;
 
+      case '\n':
+        if (l->termios.c_lflag & ECHONL)
+          echo = 1;
+        // Fall through.
+
       default:
         l->read_buf[l->raw_idx] = c;
         l->raw_idx = circ_inc(l, l->raw_idx);
@@ -227,7 +232,7 @@ void ld_provide(ld_t* l, char c) {
   }
 
   // Echo it to the screen.
-  if (echo && (l->termios.c_lflag & ECHO)) {
+  if (echo) {
     ld_term_putc(l, c, erased_char);
   }
 

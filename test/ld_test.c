@@ -56,6 +56,10 @@ static void reset(void) {
   reset_sink();
 }
 
+static void ld_provides(ld_t* l, const char* s) {
+  while (*s) ld_provide(l, *(s++));
+}
+
 static void echo_test(void) {
   KTEST_BEGIN("echo test");
   reset();
@@ -497,7 +501,7 @@ static void termios_test(void) {
   KEXPECT_EQ(0, t.c_iflag);
   KEXPECT_EQ(0, t.c_oflag);
   KEXPECT_EQ(CS8, t.c_cflag);
-  KEXPECT_EQ(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG, t.c_lflag);
+  KEXPECT_EQ(ECHO | ECHOE | ECHOK | ICANON | ISIG, t.c_lflag);
 
   KTEST_BEGIN("ld: set invalid termios (c_iflag)");
   t.c_iflag |= ISTRIP;
@@ -537,12 +541,11 @@ static void termios_echo_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
   ld_provide(g_ld, 'b');
   ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\n');
   ld_provide(g_ld, '\x7f');
 
   KEXPECT_EQ(1, g_sink_idx);
   KEXPECT_EQ('a', g_sink[0]);
-
-  // TODO(aoates): test ECHO in non-canonical mode when that's implemented.
 
   KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
 }
@@ -976,6 +979,57 @@ static void echoe_test(void) {
   KEXPECT_STREQ("ab\x7f" "c", buf);
 }
 
+static void echonl_test(void) {
+  KTEST_BEGIN("ld: disabling ECHONL");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+
+  t.c_lflag &= ~ECHONL;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provides(g_ld, "ab\nc\x04");
+  KEXPECT_EQ(4, g_sink_idx);
+  KEXPECT_STREQ("ab\nc", g_sink);
+
+  char buf[10];
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ab\nc", buf);
+
+
+  KTEST_BEGIN("ld: ECHONL but not ECHO");
+  reset();
+  ld_get_termios(g_ld, &t);
+  t.c_lflag &= ~ECHO;
+  t.c_lflag |= ECHONL;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provides(g_ld, "ab\nc\x04");
+  KEXPECT_EQ(1, g_sink_idx);
+  KEXPECT_EQ('\n', g_sink[0]);
+
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ab\nc", buf);
+
+
+  KTEST_BEGIN("ld: ECHONL but not ICANON");
+  reset();
+  ld_get_termios(g_ld, &t);
+  t.c_lflag &= ~ICANON;
+  t.c_lflag |= ECHONL;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provides(g_ld, "ab\nc");
+  KEXPECT_EQ(4, g_sink_idx);
+  KEXPECT_STREQ("ab\nc", g_sink);
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ab\nc", buf);
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -1003,6 +1057,7 @@ void ld_test(void) {
   termios_noncanon_test();
   control_chars_test();
   echoe_test();
+  echonl_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
