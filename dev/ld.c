@@ -136,6 +136,17 @@ void log_state(ld_t* l) {
   klog(buf);
 }
 
+// Send a character to terminal, translating it if necessary.
+static void ld_term_putc(const ld_t* l, char c) {
+  if (c == '\x7f') {
+    l->sink(l->sink_arg, '\b');
+    l->sink(l->sink_arg, ' ');
+    l->sink(l->sink_arg, '\b');
+  } else {
+    l->sink(l->sink_arg, c);
+  }
+}
+
 void ld_provide(ld_t* l, char c) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
@@ -186,7 +197,7 @@ void ld_provide(ld_t* l, char c) {
 
   // Echo it to the screen.
   if (echo && (l->termios.c_lflag & ECHO)) {
-    l->sink(l->sink_arg, c);
+    ld_term_putc(l, c);
   }
 
   // Cook the buffer, optionally.

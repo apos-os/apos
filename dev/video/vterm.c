@@ -370,14 +370,13 @@ void vterm_putc(vterm_t* t, uint8_t c) {
   // Note: both xterm and iterm seem to do this weird thing where they skip over
   // the second-to-last character in the line on backspace.  I don't see any
   // reason to emulate that, though.
-  if (c == '\x7f') {
+  if (c == '\b') {
     if (t->cursor_x == 0 && t->cursor_y > 0) {
       t->cursor_x = t->vwidth - 1;
       t->cursor_y--;
     } else if (t->cursor_x > 0) {
       t->cursor_x--;
     }
-    vterm_setc(t, t->cursor_y, t->cursor_x, ' ', t->cattr);
   } else if (!is_newline) {
     // Printable character.
     vterm_setc(t, t->cursor_y, t->cursor_x, c, t->cattr);

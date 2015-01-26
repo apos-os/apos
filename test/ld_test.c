@@ -58,13 +58,24 @@ static void echo_test(void) {
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
   ld_provide(g_ld, 'c');
-  ld_provide(g_ld, '\x7f');
 
-  KEXPECT_EQ(4, g_sink_idx);
+  KEXPECT_EQ(3, g_sink_idx);
   KEXPECT_EQ('a', g_sink[0]);
   KEXPECT_EQ('b', g_sink[1]);
   KEXPECT_EQ('c', g_sink[2]);
-  KEXPECT_EQ('\x7f', g_sink[3]);
+
+  KTEST_BEGIN("echo backspace test");
+  reset();
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, '\x7f');
+
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_EQ('a', g_sink[0]);
+  KEXPECT_EQ('b', g_sink[1]);
+  KEXPECT_EQ('\b', g_sink[2]);
+  KEXPECT_EQ(' ', g_sink[3]);
+  KEXPECT_EQ('\b', g_sink[4]);
 }
 
 static void provide_sink_test(void) {
