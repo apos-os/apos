@@ -52,7 +52,7 @@ static void ld_signals_test(void* arg) {
   ld_set_sink(test_ld, &sink, &sink_counter);
 
   ld_provide(test_ld, ASCII_ETX);
-  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(2, sink_counter);
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGINT));
 
 
@@ -65,7 +65,7 @@ static void ld_signals_test(void* arg) {
 
   sink_counter = 0;
   ld_provide(test_ld, 0x03);
-  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(2, sink_counter);
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGINT));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGINT));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGINT));
@@ -80,7 +80,7 @@ static void ld_signals_test(void* arg) {
 
   sink_counter = 0;
   ld_provide(test_ld, 0x03);
-  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(2, sink_counter);
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGINT));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGINT));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childB), SIGINT));
@@ -97,7 +97,7 @@ static void ld_signals_test(void* arg) {
 
   sink_counter = 0;
   ld_provide(test_ld, 0x03);
-  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(2, sink_counter);
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGINT));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGINT));
   KEXPECT_EQ(1, sig_is_pending(proc_get(childB), SIGINT));
@@ -106,7 +106,7 @@ static void ld_signals_test(void* arg) {
   KTEST_BEGIN("TTY: ctrl-Z sends SIGTSTP to fg process group");
   sink_counter = 0;
   ld_provide(test_ld, ASCII_SUB);
-  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(2, sink_counter);
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTSTP));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGTSTP));
   KEXPECT_EQ(1, sig_is_pending(proc_get(childB), SIGTSTP));
@@ -115,7 +115,7 @@ static void ld_signals_test(void* arg) {
   KTEST_BEGIN("TTY: ctrl-\\ sends SIGQUIT to fg process group");
   sink_counter = 0;
   ld_provide(test_ld, ASCII_FS);
-  KEXPECT_EQ(0, sink_counter);
+  KEXPECT_EQ(2, sink_counter);
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGQUIT));
   KEXPECT_EQ(0, sig_is_pending(proc_get(childA), SIGQUIT));
   KEXPECT_EQ(1, sig_is_pending(proc_get(childB), SIGQUIT));

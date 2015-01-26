@@ -209,7 +209,7 @@ void ld_provide(ld_t* l, char c) {
       case ASCII_ETX:
       case ASCII_SUB:
       case ASCII_FS:
-        echo = 0;
+        // Echo, but don't copy to buffer.
         break;
 
       case '\r':

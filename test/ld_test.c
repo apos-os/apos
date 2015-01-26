@@ -828,6 +828,23 @@ static void control_chars_test(void) {
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, '\x04');
   KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+
+  KTEST_BEGIN("ld: signal-causing characters echoed");
+  reset();
+  ld_provide(g_ld, '\x03');
+  ld_provide(g_ld, '\x1a');
+  ld_provide(g_ld, '\x1c');
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, '\x04');
+
+  KEXPECT_EQ(7, g_sink_idx);
+  KEXPECT_STREQ("^C^Z^\\a", g_sink);
+
+  // They shouldn't have been put in the buffer, since ISIG is set.
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+  KEXPECT_EQ('a', buf[0]);
+
+  // TODO(aoates): test backspace over the echoed signal character.
 }
 
 static void termios_noncanon_test(void) {
