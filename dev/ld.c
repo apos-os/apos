@@ -201,17 +201,13 @@ void ld_provide(ld_t* l, char c) {
     }
   }
   if (!handled && l->termios.c_lflag & ISIG) {
-    switch (c) {
-      // TODO(aoates): check and c_cc for these.
-      case ASCII_ETX:
-      case ASCII_SUB:
-      case ASCII_FS:
-        if (!(l->termios.c_lflag & NOFLSH)) {
-          // Echo, but don't copy to buffer.  Clear the current buffer.
-          l->start_idx = l->cooked_idx = l->raw_idx;
-        }
-        handled = true;
-        break;
+    if (c == l->termios.c_cc[VINTR] || c == l->termios.c_cc[VSUSP] ||
+        c == l->termios.c_cc[VQUIT]) {
+      if (!(l->termios.c_lflag & NOFLSH)) {
+        // Echo, but don't copy to buffer.  Clear the current buffer.
+        l->start_idx = l->cooked_idx = l->raw_idx;
+      }
+      handled = true;
     }
   }
   if (!handled) {
@@ -246,11 +242,10 @@ void ld_provide(ld_t* l, char c) {
 
   if (minor(l->tty) != DEVICE_ID_UNKNOWN && l->termios.c_lflag & ISIG) {
     int signal = SIGNULL;
-    switch (c) {
-      case ASCII_ETX: signal = SIGINT; break;
-      case ASCII_SUB: signal = SIGTSTP; break;
-      case ASCII_FS: signal = SIGQUIT; break;
-    }
+    if (c == l->termios.c_cc[VINTR]) signal = SIGINT;
+    else if (c == l->termios.c_cc[VSUSP]) signal = SIGTSTP;
+    else if (c == l->termios.c_cc[VQUIT]) signal = SIGQUIT;
+
     if (signal != SIGNULL) {
       const tty_t* tty = tty_get(l->tty);
       KASSERT_DBG(tty != NULL);

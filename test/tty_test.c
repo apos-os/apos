@@ -237,6 +237,105 @@ static void ld_signals_isig_flag_test(void* arg) {
   KEXPECT_EQ(0, ld_set_termios(test_ld, &orig_term));
 }
 
+// This is really an ld test, but it's easier to write here (to test the signal
+// generation).
+static void ld_signals_cc_c_test(void* arg) {
+  ld_t* const test_ld = ((args_t*)arg)->ld;
+  const apos_dev_t test_tty = ((args_t*)arg)->tty;
+
+  struct termios term;
+  ld_get_termios(test_ld, &term);
+  const struct termios orig_term = term;
+
+  KTEST_BEGIN("ld: change INTR character");
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
+  int sink_counter = 0;
+  ld_set_sink(test_ld, &sink, &sink_counter);
+
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  int fd = vfs_open(tty_name, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+
+  sigset_t sigset, old_sigmask;
+  ksigemptyset(&sigset);
+  ksigaddset(&sigset, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
+  KEXPECT_EQ(0, proc_tcsetpgrp(fd, proc_current()->id));
+
+  term.c_cc[VINTR] = 'p';
+  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+
+  sink_counter = 0;
+  ld_provide(test_ld, 'a');
+  ld_provide(test_ld, 0x03);
+  ld_provide(test_ld, 'b');
+  ld_provide(test_ld, '\x04');
+  KEXPECT_EQ(4, sink_counter);
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGINT));
+
+  char buf[10];
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_STREQ("a\x03" "b", buf);
+
+  ld_provide(test_ld, 'x');
+  ld_provide(test_ld, 'p');
+  KEXPECT_EQ(0, ld_read_async(test_ld, buf, 10));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGINT));
+
+
+  KTEST_BEGIN("ld: change QUIT character");
+  term = orig_term;
+  term.c_cc[VQUIT] = 'q';
+  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+
+  sink_counter = 0;
+  ld_provide(test_ld, 'a');
+  ld_provide(test_ld, 0x1c);
+  ld_provide(test_ld, 'b');
+  ld_provide(test_ld, '\x04');
+  KEXPECT_EQ(4, sink_counter);
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGQUIT));
+
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_STREQ("a\x1c" "b", buf);
+
+  ld_provide(test_ld, 'x');
+  ld_provide(test_ld, 'q');
+  KEXPECT_EQ(0, ld_read_async(test_ld, buf, 10));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGQUIT));
+
+
+  KTEST_BEGIN("ld: change SUSP character");
+  term = orig_term;
+  term.c_cc[VSUSP] = 'q';
+  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+
+  sink_counter = 0;
+  ld_provide(test_ld, 'a');
+  ld_provide(test_ld, 0x1a);
+  ld_provide(test_ld, 'b');
+  ld_provide(test_ld, '\x04');
+  KEXPECT_EQ(4, sink_counter);
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTSTP));
+
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_STREQ("a\x1a" "b", buf);
+
+  ld_provide(test_ld, 'x');
+  ld_provide(test_ld, 'q');
+  KEXPECT_EQ(0, ld_read_async(test_ld, buf, 10));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTSTP));
+
+
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &old_sigmask, NULL));
+
+  KEXPECT_EQ(0, ld_set_termios(test_ld, &orig_term));
+}
+
 static void ld_signals_test_runner(void* arg) {
   args_t args;
   args.ld = ld_create(5);
@@ -246,6 +345,9 @@ static void ld_signals_test_runner(void* arg) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&ld_signals_isig_flag_test, &args);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&ld_signals_cc_c_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(args.tty);
