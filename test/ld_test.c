@@ -49,6 +49,7 @@ static void reset(void) {
 
   g_sink_idx = 0;
   ld_set_sink(g_ld, &test_sink, 0x0);
+  kmemset(g_sink, 0, 1024);
 }
 
 static void echo_test(void) {
@@ -760,6 +761,71 @@ static void termios_noncanon_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
 }
 
+static void control_chars_test(void) {
+  KTEST_BEGIN("ld: echoing non-special control characters");
+  reset();
+  ld_provide(g_ld, 'x');
+  ld_provide(g_ld, '\x01');
+  ld_provide(g_ld, '\x02');
+  ld_provide(g_ld, '\x08');
+
+  KEXPECT_EQ(7, g_sink_idx);
+  KEXPECT_STREQ("x^A^B^H", g_sink);
+
+  ld_provide(g_ld, '\x04');
+  char buf[50];
+  kmemset(buf, 0, 50);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 50));
+  KEXPECT_STREQ("x\x01\x02\x08", buf);
+
+  KTEST_BEGIN("ld: backspace over non-special control characters");
+  reset();
+  ld_provide(g_ld, 'x');
+  ld_provide(g_ld, '\x01');
+  ld_provide(g_ld, 'y');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+
+  KEXPECT_EQ(13, g_sink_idx);
+  KEXPECT_STREQ("x^Ay\b \b\b \b\b \b", g_sink);
+
+  ld_provide(g_ld, '\x04');
+  kmemset(buf, 0, 50);
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+  KEXPECT_STREQ("x", buf);
+
+  KTEST_BEGIN("ld: echoing space control characters");
+  reset();
+  ld_provide(g_ld, ' ');
+  ld_provide(g_ld, '\n');
+  ld_provide(g_ld, '\t');
+  ld_provide(g_ld, '\v');
+
+  KEXPECT_EQ(4, g_sink_idx);
+  KEXPECT_STREQ(" \n\t\v", g_sink);
+
+  ld_provide(g_ld, '\x04');
+  kmemset(buf, 0, 50);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 50));
+  KEXPECT_STREQ(" \n\t\v", buf);
+
+  KTEST_BEGIN("ld: backspace over space control characters");
+  reset();
+  ld_provide(g_ld, ' ');
+  ld_provide(g_ld, '\t');
+  ld_provide(g_ld, '\v');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+
+  KEXPECT_EQ(12, g_sink_idx);
+  KEXPECT_STREQ(" \t\v\b \b\b \b\b \b", g_sink);
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, '\x04');
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -784,6 +850,7 @@ void ld_test(void) {
   termios_test();
   termios_echo_test();
   termios_noncanon_test();
+  control_chars_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;

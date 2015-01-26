@@ -136,12 +136,33 @@ void log_state(ld_t* l) {
   klog(buf);
 }
 
-// Send a character to terminal, translating it if necessary.
-static void ld_term_putc(const ld_t* l, char c) {
+static inline bool is_ctrl(char c) {
+  return !kisprint(c) && !kisspace(c);
+}
+
+// Returns the number of terminal characters the given character is rendered
+// into ('a' -> 1, '\x01' -> 2, etc).
+static inline int char_term_len(char c) {
+  if (c == '\x7f')
+    return 0;
+  else if (is_ctrl(c))
+    return 2;
+  else return 1;
+}
+
+// Send a character to terminal, translating it if necessary.  erased_char is
+// the character erased from the buffer, if any.
+static void ld_term_putc(const ld_t* l, char c, char erased_char) {
   if (c == '\x7f') {
-    l->sink(l->sink_arg, '\b');
-    l->sink(l->sink_arg, ' ');
-    l->sink(l->sink_arg, '\b');
+    KASSERT_DBG(erased_char > 0);
+    for (int i = 0; i < char_term_len(erased_char); ++i) {
+      l->sink(l->sink_arg, '\b');
+      l->sink(l->sink_arg, ' ');
+      l->sink(l->sink_arg, '\b');
+    }
+  } else if (is_ctrl(c)) {
+    l->sink(l->sink_arg, '^');
+    l->sink(l->sink_arg, c + '@');
   } else {
     l->sink(l->sink_arg, c);
   }
@@ -162,6 +183,7 @@ void ld_provide(ld_t* l, char c) {
 
   // TODO(aoates): handle characters differently in non-canonical mode.
   int echo = 1;
+  char erased_char = 0;
   switch (c) {
     case '\x7f':
       if (l->cooked_idx == l->raw_idx) {
@@ -169,9 +191,11 @@ void ld_provide(ld_t* l, char c) {
         return;
       }
       l->raw_idx = circ_dec(l, l->raw_idx);
+      erased_char = l->read_buf[l->raw_idx];
       l->read_buf[l->raw_idx] = '#';  // DEBUG
       break;
 
+    // TODO(aoates): check ISIG (when appropriate) and c_cc for these.
     case ASCII_ETX:
     case ASCII_EOT:
     case ASCII_SUB:
@@ -184,20 +208,14 @@ void ld_provide(ld_t* l, char c) {
       die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
       break;
 
-    // TODO(aoates): handle other special chars.
     default:
-      if (c < 32 && c != '\n' && c != '\x1b') {
-        klogf("WARNING: ignoring unknown control char 0x%x in ld\n", c);
-        return;
-      }
-
       l->read_buf[l->raw_idx] = c;
       l->raw_idx = circ_inc(l, l->raw_idx);
   }
 
   // Echo it to the screen.
   if (echo && (l->termios.c_lflag & ECHO)) {
-    ld_term_putc(l, c);
+    ld_term_putc(l, c, erased_char);
   }
 
   // Cook the buffer, optionally.
