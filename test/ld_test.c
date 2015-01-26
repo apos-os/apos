@@ -844,7 +844,33 @@ static void control_chars_test(void) {
   KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
   KEXPECT_EQ('a', buf[0]);
 
-  // TODO(aoates): test backspace over the echoed signal character.
+  KTEST_BEGIN("ld: signal-causing characters discard current ld buffer");
+  reset();
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, '\x03');
+  // TODO(aoates): test that an ld_read() here would block.
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x04');
+
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("ab^Cc", g_sink);
+
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ('c', buf[0]);
+
+  KTEST_BEGIN("ld: backspace over signal-causing characters");
+  reset_sink();
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, '\x03');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, '\x7f');
+
+  KEXPECT_EQ(7, g_sink_idx);
+  KEXPECT_STREQ("a^Cc\b \b", g_sink);
+  // TODO(aoates): test that buffer is empty (ld_read() would block).
 }
 
 static void termios_noncanon_test(void) {

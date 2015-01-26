@@ -209,7 +209,8 @@ void ld_provide(ld_t* l, char c) {
       case ASCII_ETX:
       case ASCII_SUB:
       case ASCII_FS:
-        // Echo, but don't copy to buffer.
+        // Echo, but don't copy to buffer.  Clear the current buffer.
+        l->start_idx = l->cooked_idx = l->raw_idx;
         break;
 
       case '\r':
