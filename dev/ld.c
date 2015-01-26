@@ -153,7 +153,8 @@ static inline int char_term_len(char c) {
 // Send a character to terminal, translating it if necessary.  erased_char is
 // the character erased from the buffer, if any.
 static void ld_term_putc(const ld_t* l, char c, char erased_char) {
-  if (c == '\x7f' && l->termios.c_lflag & ICANON) {
+  if (c == '\x7f' && l->termios.c_lflag & ICANON &&
+      l->termios.c_lflag & ECHOE) {
     KASSERT_DBG(erased_char > 0);
     for (int i = 0; i < char_term_len(erased_char); ++i) {
       l->sink(l->sink_arg, '\b');

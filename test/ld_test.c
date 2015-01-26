@@ -912,6 +912,70 @@ static void termios_noncanon_test(void) {
   ld_set_termios(g_ld, &orig_term);
 }
 
+static void echoe_test(void) {
+  KTEST_BEGIN("ld: disabling ECHOE");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+
+  t.c_lflag &= ~ECHOE;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x04');
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("ab^?c", g_sink);
+
+  // The ERASE character should have been applied to the buffer, however.
+  char buf[10];
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ac", buf);
+
+
+  KTEST_BEGIN("ld: ECHOE but not ECHO");
+  reset();
+  ld_get_termios(g_ld, &t);
+  t.c_lflag &= ~ECHO;
+  t.c_lflag |= ECHOE;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\x04');
+  KEXPECT_EQ(0, g_sink_idx);
+
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ac", buf);
+
+
+  KTEST_BEGIN("ld: ECHOE but not ICANON");
+  reset();
+  ld_get_termios(g_ld, &t);
+  t.c_lflag &= ~ICANON;
+  t.c_lflag |= ECHOE;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, '\x7f');
+  ld_provide(g_ld, 'c');
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("ab^?c", g_sink);
+
+  // The ERASE character should *not* have been applied to the buffer.
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_STREQ("ab\x7f" "c", buf);
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -938,6 +1002,7 @@ void ld_test(void) {
   termios_noncanon_read_test();
   termios_noncanon_test();
   control_chars_test();
+  echoe_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
