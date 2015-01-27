@@ -44,8 +44,6 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
 int tty_check_write(const tty_t* tty) {
   sid_t sid = proc_getsid(0);
   if (tty->session != sid) {
-    // TODO(aoates): test this by attempting to write to another terminal from
-    // the background process of another session.
     return 0;
   }
 

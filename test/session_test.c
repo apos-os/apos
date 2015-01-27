@@ -600,10 +600,7 @@ static void controlling_process_exit_helper(void* arg) {
 
   int tty_fd = -1;
   if (args->set_ctty) {
-    char tty_name[20];
-    ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
-    tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
-    KEXPECT_GE(tty_fd, 0);
+    tty_fd = open_tty(args->tty, VFS_O_RDONLY);
   }
 
   pid_t child[3];
@@ -709,11 +706,8 @@ static void read_from_bg_test_inner(void* arg) {
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
 
-  char tty_name[20];
   char buf;
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
-  int tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
-  KEXPECT_GE(tty_fd, 0);
+  int tty_fd = open_tty(test_tty, VFS_O_RDONLY);
 
   pid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(child, child));
@@ -813,11 +807,8 @@ static void write_from_bg_test_inner(void* arg) {
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
 
-  char tty_name[20];
   char buf;
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
-  int tty_fd = vfs_open(tty_name, VFS_O_WRONLY);
-  KEXPECT_GE(tty_fd, 0);
+  int tty_fd = open_tty(test_tty, VFS_O_WRONLY);
 
   pid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(child, child));
@@ -871,10 +862,7 @@ static void write_from_bg_tostop_test_inner(void* arg) {
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
 
-  char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
-  int tty_fd = vfs_open(tty_name, VFS_O_WRONLY);
-  KEXPECT_GE(tty_fd, 0);
+  int tty_fd = open_tty(test_tty, VFS_O_WRONLY);
 
   pid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(child, child));
@@ -968,8 +956,109 @@ static void write_from_bg_tostop_test(void* arg) {
   ld_destroy(test_ld);
 }
 
-// TODO(aoates): test read, write, and write w/ TOSTOP to a tty that belongs to
-// another session.
+static void read_write_across_sessions_innerB(void* arg) {
+  const apos_dev_t* test_ttys = (apos_dev_t*)arg;
+  const apos_dev_t test_tty = test_ttys[0];
+  const apos_dev_t other_test_tty = test_ttys[1];
+
+  KTEST_BEGIN("read() on cross-session CTTY (no current CTTY)");
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(0, setpgid(child, child));
+
+  int tty_fd = open_tty(test_tty, VFS_O_RDWR | VFS_O_NOCTTY);
+  int other_tty_fd = open_tty(other_test_tty, VFS_O_RDWR);
+
+  char c;
+  KEXPECT_EQ(1, vfs_read(tty_fd, &c, 1));
+  KEXPECT_EQ(1, vfs_read(other_tty_fd, &c, 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+
+  KTEST_BEGIN("write() on cross-session CTTY (no current CTTY)");
+  KEXPECT_EQ(1, vfs_write(tty_fd, "X", 1));
+  KEXPECT_EQ(1, vfs_write(other_tty_fd, "Y", 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+
+  KTEST_BEGIN("read() on cross-session CTTY from bg process");
+  sigset_t ttou_mask;
+  ksigemptyset(&ttou_mask);
+  ksigaddset(&ttou_mask, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
+
+  vfs_close(tty_fd);
+  tty_fd = open_tty(test_tty, VFS_O_WRONLY);  // Get a CTTY for us.
+
+  KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
+
+  KEXPECT_EQ(1, vfs_read(other_tty_fd, &c, 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+
+  KTEST_BEGIN("write() on cross-session CTTY from bg process");
+  KEXPECT_EQ(1, vfs_write(other_tty_fd, &c, 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+  vfs_close(tty_fd);
+  vfs_close(other_tty_fd);
+}
+
+// First layer that simply has a session and CTTY.
+static void read_write_across_sessions_inner(void* arg) {
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
+  const apos_dev_t other_test_tty = ((apos_dev_t*)arg)[1];
+  int fd = open_tty(other_test_tty, VFS_O_RDONLY);
+  vfs_close(fd);
+
+  pid_t child = proc_fork(&read_write_across_sessions_innerB, arg);
+  KEXPECT_EQ(child, proc_wait(NULL));
+}
+
+// Test read, write, and write w/ TOSTOP to a tty that belongs to another
+// session.
+static void read_write_across_sessions_test(void* arg) {
+  KTEST_BEGIN("read()/write() on cross-session CTTY [test setup]");
+  ld_t* const test_ld = ld_create(50);
+  apos_dev_t test_tty = tty_create(test_ld);
+  ld_set_sink(test_ld, null_sink, NULL);
+
+  ld_t* const other_test_ld = ld_create(50);
+  apos_dev_t other_test_tty = tty_create(other_test_ld);
+  ld_set_sink(other_test_ld, null_sink, NULL);
+
+  // Set TOSTOP on both of them, for good measure.
+  struct termios term;
+  ld_get_termios(test_ld, &term);
+  term.c_lflag |= TOSTOP;
+  ld_set_termios(test_ld, &term);
+  ld_set_termios(other_test_ld, &term);
+
+  // Make sure there's plenty of data for the tests to read.
+  for (int i = 0; i < 40; ++i) {
+    ld_provide(test_ld, 'x');
+    ld_provide(other_test_ld, 'y');
+  }
+  ld_provide(test_ld, '\x04');
+  ld_provide(other_test_ld, '\x04');
+
+  const apos_dev_t ttys[2] = {test_tty, other_test_tty};
+
+  pid_t child = proc_fork(&read_write_across_sessions_inner, (void*)ttys);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  tty_destroy(other_test_tty);
+  ld_destroy(other_test_ld);
+  tty_destroy(test_tty);
+  ld_destroy(test_ld);
+}
 
 void session_test(void) {
   KTEST_SUITE_BEGIN("process session tests");
@@ -993,5 +1082,8 @@ void session_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&write_from_bg_tostop_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&read_write_across_sessions_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }
