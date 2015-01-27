@@ -299,9 +299,7 @@ int ld_read(ld_t* l, char* buf, int n) {
         getpgid(0) != proc_session_get(tty->session)->fggrp) {
       int result = -EIO;
       if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
-        // TODO(aoates): should this just be regular proc_force_signal()?
-        proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
-                                    SIGTTIN);
+        proc_force_signal_group(getpgid(0), SIGTTIN);
         result = -EINTR;
       }
 

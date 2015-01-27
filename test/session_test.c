@@ -683,6 +683,17 @@ static void controlling_process_exit_test(void* arg) {
   ld_destroy(test_ld);
 }
 
+static void do_read_from_bg(void* arg) {
+  int tty_fd = *(int*)arg;
+  char c;
+  KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &c, 1));
+
+  sigset_t mask = 0;
+  ksigaddset(&mask, SIGTTIN);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  ksleep(10000);
+}
+
 static void read_from_bg_test_inner(void* arg) {
   const apos_dev_t test_tty = (apos_dev_t)arg;
   sigset_t kSigTtinSet;
@@ -707,19 +718,27 @@ static void read_from_bg_test_inner(void* arg) {
   KEXPECT_EQ(0, setpgid(child, child));
   KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
 
+  pid_t child_in_grp = proc_fork(&do_nothing, NULL);
+
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
   KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &buf, 1));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
   proc_suppress_signal(proc_current(), SIGTTIN);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTIN);
 
 
   KTEST_BEGIN("read() on CTTY from bg process (handler set for SIGTTIN)");
   struct sigaction act = {&empty_sig_handler, 0, 0};
   KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
   KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &buf, 1));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
   proc_suppress_signal(proc_current(), SIGTTIN);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTIN);
 
 
   KTEST_BEGIN("read() on CTTY from bg process (SIGTTIN masked)");
@@ -728,8 +747,10 @@ static void read_from_bg_test_inner(void* arg) {
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &kSigTtinSet, NULL));
 
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
   KEXPECT_EQ(-EIO, vfs_read(tty_fd, &buf, 1));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
 
 
   KTEST_BEGIN("read() on CTTY from bg process (SIGTTIN ignored)");
@@ -738,11 +759,31 @@ static void read_from_bg_test_inner(void* arg) {
   KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &kSigTtinSet, NULL));
 
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
   KEXPECT_EQ(-EIO, vfs_read(tty_fd, &buf, 1));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
 
 
-  KEXPECT_EQ(child, proc_wait(NULL));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(child_in_grp, proc_waitpid(child_in_grp, NULL, 0));
+
+
+  KTEST_BEGIN("read() on CTTY from bg process (not process group leader)");
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
+
+  pid_t read_child = proc_fork(&do_read_from_bg, &tty_fd);
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(read_child), SIGTTIN));
+  KEXPECT_GT(ksleep(100), 0);
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTIN));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(read_child), SIGTTIN));
+  proc_suppress_signal(proc_current(), SIGTTIN);
+
+  KEXPECT_EQ(0, proc_kill(read_child, SIGUSR1));
+  KEXPECT_EQ(read_child, proc_waitpid(read_child, NULL, 0));
+
   vfs_close(tty_fd);
 }
 
