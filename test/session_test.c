@@ -29,6 +29,7 @@
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "user/include/apos/termios.h"
 #include "vfs/vfs.h"
 
 static void do_nothing(void* arg) {}
@@ -846,6 +847,130 @@ static void write_from_bg_test(void* arg) {
   ld_destroy(test_ld);
 }
 
+static void do_write_from_bg_tostop(void* arg) {
+  int tty_fd = *(int*)arg;
+  KEXPECT_EQ(-EINTR, vfs_write(tty_fd, "x", 1));
+
+  sigset_t mask = 0;
+  ksigaddset(&mask, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
+  ksleep(10000);
+}
+
+static void write_from_bg_tostop_test_inner(void* arg) {
+  const apos_dev_t test_tty = (apos_dev_t)arg;
+  sigset_t kSigTtouSet;
+  ksigemptyset(&kSigTtouSet);
+  ksigaddset(&kSigTtouSet, SIGTTOU);
+
+  KTEST_BEGIN("write() on CTTY from bg process (no signals blocked) w/ TOSTOP");
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
+
+  sigset_t ttou_mask;
+  ksigemptyset(&ttou_mask);
+  ksigaddset(&ttou_mask, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
+
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  int tty_fd = vfs_open(tty_name, VFS_O_WRONLY);
+  KEXPECT_GE(tty_fd, 0);
+
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(0, setpgid(child, child));
+  KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
+
+  pid_t child_in_grp = proc_fork(&do_nothing, NULL);
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  KEXPECT_EQ(-EINTR, vfs_write(tty_fd, "x", 1));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
+
+  KTEST_BEGIN(
+      "write() on CTTY from bg process (handler set for SIGTTOU) w/ TOSTOP");
+  struct sigaction act = {&empty_sig_handler, 0, 0};
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &act, NULL));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  KEXPECT_EQ(-EINTR, vfs_write(tty_fd, "x", 1));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
+
+
+  KTEST_BEGIN("write() on CTTY from bg process (SIGTTOU masked) w/ TOSTOP");
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &act, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &kSigTtouSet, NULL));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  KEXPECT_EQ(1, vfs_write(tty_fd, "x", 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+
+
+  KTEST_BEGIN("write() on CTTY from bg process (SIGTTOU ignored) w/ TOSTOP");
+  act.sa_handler = SIG_IGN;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &act, NULL));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &kSigTtouSet, NULL));
+
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  KEXPECT_EQ(1, vfs_write(tty_fd, "x", 1));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+
+
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  KEXPECT_EQ(child_in_grp, proc_waitpid(child_in_grp, NULL, 0));
+
+  KTEST_BEGIN(
+      "write() on CTTY from bg process (not process group leader) w/ TOSTOP");
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &act, NULL));
+
+  pid_t write_child = proc_fork(&do_write_from_bg_tostop, &tty_fd);
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(write_child), SIGTTOU));
+  KEXPECT_GT(ksleep(100), 0);
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(write_child), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+
+  KEXPECT_EQ(0, proc_kill(write_child, SIGUSR1));
+  KEXPECT_EQ(write_child, proc_waitpid(write_child, NULL, 0));
+
+  vfs_close(tty_fd);
+}
+
+static void write_from_bg_tostop_test(void* arg) {
+  KTEST_BEGIN("write() on CTTY w/ TOSTOP [test setup]");
+  ld_t* const test_ld = ld_create(1);
+  apos_dev_t test_tty = tty_create(test_ld);
+  ld_set_sink(test_ld, null_sink, NULL);
+
+  struct termios term;
+  ld_get_termios(test_ld, &term);
+  term.c_lflag |= TOSTOP;
+  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+
+  pid_t child = proc_fork(&write_from_bg_tostop_test_inner, (void*)test_tty);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  tty_destroy(test_tty);
+  ld_destroy(test_ld);
+}
+
+// TODO(aoates): test read, write, and write w/ TOSTOP to a tty that belongs to
+// another session.
+
 void session_test(void) {
   KTEST_SUITE_BEGIN("process session tests");
 
@@ -865,5 +990,8 @@ void session_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&write_from_bg_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&write_from_bg_tostop_test, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }

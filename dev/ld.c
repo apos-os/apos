@@ -22,7 +22,7 @@
 #include "dev/char_dev.h"
 #include "dev/interrupts.h"
 #include "dev/ld.h"
-#include "dev/tty.h"
+#include "dev/tty_util.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -376,8 +376,12 @@ int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
-  // TODO(aoates): check if writing to the CTTY from a background process group,
-  // and send SIGTTOU if the TOSTOP flag is set [termios].
+  if (l->termios.c_lflag & TOSTOP && minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) {
+      return result;
+    }
+  }
 
   for (int i = 0; i < n; ++i) {
     l->sink(l->sink_arg, buf[i]);
@@ -413,7 +417,8 @@ int ld_set_termios(ld_t* l, const struct termios* t) {
       t->c_cc[VSTART] != _POSIX_VDISABLE || t->c_cc[VSTOP] != _POSIX_VDISABLE)
     return -EINVAL;
 
-  if (t->c_lflag & ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG | NOFLSH))
+  if (t->c_lflag &
+      ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG | NOFLSH | TOSTOP))
     return -EINVAL;
 
   kmemcpy(&l->termios, t, sizeof(struct termios));
