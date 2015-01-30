@@ -947,7 +947,7 @@ static void write_from_bg_tostop_test(void* arg) {
   struct termios term;
   ld_get_termios(test_ld, &term);
   term.c_lflag |= TOSTOP;
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
 
   pid_t child = proc_fork(&write_from_bg_tostop_test_inner, (void*)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1038,8 +1038,8 @@ static void read_write_across_sessions_test(void* arg) {
   struct termios term;
   ld_get_termios(test_ld, &term);
   term.c_lflag |= TOSTOP;
-  ld_set_termios(test_ld, &term);
-  ld_set_termios(other_test_ld, &term);
+  ld_set_termios(test_ld, TCSANOW, &term);
+  ld_set_termios(other_test_ld, TCSANOW, &term);
 
   // Make sure there's plenty of data for the tests to read.
   for (int i = 0; i < 40; ++i) {

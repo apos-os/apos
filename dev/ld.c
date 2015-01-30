@@ -74,6 +74,10 @@ static void set_default_termios(struct termios* t) {
   t->c_cc[VTIME] = 0;
 }
 
+static void ld_flush_input(ld_t* l) {
+  l->start_idx = l->cooked_idx = l->raw_idx;
+}
+
 ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
   l->read_buf = (char*)kmalloc(buf_size);
@@ -205,7 +209,7 @@ void ld_provide(ld_t* l, char c) {
         c == l->termios.c_cc[VQUIT]) {
       if (!(l->termios.c_lflag & NOFLSH)) {
         // Echo, but don't copy to buffer.  Clear the current buffer.
-        l->start_idx = l->cooked_idx = l->raw_idx;
+        ld_flush_input(l);
       }
       handled = true;
     }
@@ -409,7 +413,7 @@ void ld_get_termios(const ld_t* l, struct termios* t) {
   kmemcpy(t, &l->termios, sizeof(struct termios));
 }
 
-int ld_set_termios(ld_t* l, const struct termios* t) {
+int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
   if (t->c_iflag != 0 || t->c_oflag != 0 || t->c_cflag != CS8)
     return -EINVAL;
 
@@ -420,6 +424,13 @@ int ld_set_termios(ld_t* l, const struct termios* t) {
   if (t->c_lflag &
       ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG | NOFLSH | TOSTOP))
     return -EINVAL;
+
+  if (optional_actions != TCSANOW && optional_actions != TCSADRAIN &&
+      optional_actions != TCSAFLUSH)
+    return -EINVAL;
+
+  if (optional_actions == TCSAFLUSH)
+    ld_flush_input(l);
 
   kmemcpy(&l->termios, t, sizeof(struct termios));
 

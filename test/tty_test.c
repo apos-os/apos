@@ -138,7 +138,7 @@ static void ld_signals_isig_flag_test(void* arg) {
 
   KTEST_BEGIN("TTY: ctrl-C/SIGINT disabled if ISIG isn't set");
   term.c_lflag &= ~ISIG;
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
 
   KEXPECT_EQ(proc_current()->id, proc_setsid());
   int sink_counter = 0;
@@ -214,7 +214,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   KTEST_BEGIN("TTY: ctrl-C/SIGINT sent in non-canon mode if ISIG isn't set");
   term.c_lflag &= ~ICANON;
   term.c_lflag |= ISIG;
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
   sink_counter = 0;
   ld_provide(test_ld, 'a');
   ld_provide(test_ld, ASCII_ETX);
@@ -234,7 +234,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   proc_wait(NULL);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &old_sigmask, NULL));
 
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &orig_term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &orig_term));
 }
 
 // This is really an ld test, but it's easier to write here (to test the signal
@@ -264,7 +264,7 @@ static void ld_signals_cc_c_test(void* arg) {
   KEXPECT_EQ(0, proc_tcsetpgrp(fd, proc_current()->id));
 
   term.c_cc[VINTR] = 'p';
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
 
   sink_counter = 0;
   ld_provide(test_ld, 'a');
@@ -288,7 +288,7 @@ static void ld_signals_cc_c_test(void* arg) {
   KTEST_BEGIN("ld: change QUIT character");
   term = orig_term;
   term.c_cc[VQUIT] = 'q';
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
 
   sink_counter = 0;
   ld_provide(test_ld, 'a');
@@ -311,7 +311,7 @@ static void ld_signals_cc_c_test(void* arg) {
   KTEST_BEGIN("ld: change SUSP character");
   term = orig_term;
   term.c_cc[VSUSP] = 'q';
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
 
   sink_counter = 0;
   ld_provide(test_ld, 'a');
@@ -333,7 +333,7 @@ static void ld_signals_cc_c_test(void* arg) {
 
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &old_sigmask, NULL));
 
-  KEXPECT_EQ(0, ld_set_termios(test_ld, &orig_term));
+  KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &orig_term));
 }
 
 static void ld_signals_test_runner(void* arg) {

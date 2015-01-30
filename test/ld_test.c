@@ -505,27 +505,27 @@ static void termios_test(void) {
 
   KTEST_BEGIN("ld: set invalid termios (c_iflag)");
   t.c_iflag |= ISTRIP;
-  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, TCSANOW, &t));
 
   KTEST_BEGIN("ld: set invalid termios (c_iflag)");
   t = orig_term;
   t.c_oflag |= OPOST;
-  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, TCSANOW, &t));
 
   KTEST_BEGIN("ld: set invalid termios (c_cflag)");
   t = orig_term;
   t.c_cflag = CS5 | CREAD;
-  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, TCSANOW, &t));
 
   KTEST_BEGIN("ld: set invalid termios (c_lflag)");
   t = orig_term;
   t.c_lflag |= IEXTEN;
-  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, TCSANOW, &t));
   t = orig_term;
   t.c_lflag |= (1 << 10);
-  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, TCSANOW, &t));
 
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &orig_term));
 }
 
 static void termios_echo_test(void) {
@@ -538,7 +538,7 @@ static void termios_echo_test(void) {
 
   ld_provide(g_ld, 'a');
   t.c_lflag &= ~ECHO;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
   ld_provide(g_ld, 'b');
   ld_provide(g_ld, 'c');
   ld_provide(g_ld, '\n');
@@ -547,7 +547,7 @@ static void termios_echo_test(void) {
   KEXPECT_EQ(1, g_sink_idx);
   KEXPECT_EQ('a', g_sink[0]);
 
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &orig_term));
 }
 
 typedef struct {
@@ -590,7 +590,7 @@ static void termios_noncanon_read_test(void) {
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 0;
   t.c_cc[VTIME] = 0;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   char buf[10];
   kmemset(buf, 0, 10);
@@ -613,7 +613,7 @@ static void termios_noncanon_read_test(void) {
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 3;
   t.c_cc[VTIME] = 0;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   noncanon_test_args_t args;
   args.buf = buf;
@@ -652,7 +652,7 @@ static void termios_noncanon_read_test(void) {
   scheduler_interrupt_thread(read_thread);
   KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
   t.c_cc[VMIN] = t.c_cc[VTIME] = 0;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
   KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
 
 
@@ -661,7 +661,7 @@ static void termios_noncanon_read_test(void) {
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 0;
   t.c_cc[VTIME] = 2;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   // Test when data never becomes available (ld_read times out).
   kmemset(buf, 0, 10);
@@ -700,7 +700,7 @@ static void termios_noncanon_read_test(void) {
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 4;
   t.c_cc[VTIME] = 2;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   // MIN bytes available initially.
   ld_provide(g_ld, 'a');
@@ -762,10 +762,10 @@ static void termios_noncanon_read_test(void) {
   scheduler_interrupt_thread(read_thread);
   KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
   t.c_cc[VMIN] = t.c_cc[VTIME] = 0;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
   KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
 
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &orig_term));
 }
 
 static void control_chars_test(void) {
@@ -885,7 +885,7 @@ static void noflsh_test(void) {
   const struct termios orig_term = t;
 
   t.c_lflag |= NOFLSH;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -917,7 +917,7 @@ static void noflsh_test(void) {
   KEXPECT_STREQ("a^C^Z^\\c\b \b\b \b", g_sink);
   KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
 
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &orig_term));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &orig_term));
 }
 
 static void termios_noncanon_test(void) {
@@ -931,7 +931,7 @@ static void termios_noncanon_test(void) {
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 0;
   t.c_cc[VTIME] = 0;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, '\x04');
@@ -956,7 +956,7 @@ static void termios_noncanon_test(void) {
   KEXPECT_EQ(3, ld_read(g_ld, buf, 10));
   KEXPECT_STREQ("b\x7f\b", buf);
 
-  ld_set_termios(g_ld, &orig_term);
+  ld_set_termios(g_ld, TCSANOW, &orig_term);
 }
 
 static void echoe_test(void) {
@@ -967,7 +967,7 @@ static void echoe_test(void) {
   ld_get_termios(g_ld, &t);
 
   t.c_lflag &= ~ECHOE;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -989,7 +989,7 @@ static void echoe_test(void) {
   ld_get_termios(g_ld, &t);
   t.c_lflag &= ~ECHO;
   t.c_lflag |= ECHOE;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -1008,7 +1008,7 @@ static void echoe_test(void) {
   ld_get_termios(g_ld, &t);
   t.c_lflag &= ~ICANON;
   t.c_lflag |= ECHOE;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -1031,7 +1031,7 @@ static void echonl_test(void) {
   ld_get_termios(g_ld, &t);
 
   t.c_lflag &= ~ECHONL;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "ab\nc\x04");
   KEXPECT_EQ(4, g_sink_idx);
@@ -1048,7 +1048,7 @@ static void echonl_test(void) {
   ld_get_termios(g_ld, &t);
   t.c_lflag &= ~ECHO;
   t.c_lflag |= ECHONL;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "ab\nc\x04");
   KEXPECT_EQ(1, g_sink_idx);
@@ -1064,7 +1064,7 @@ static void echonl_test(void) {
   ld_get_termios(g_ld, &t);
   t.c_lflag &= ~ICANON;
   t.c_lflag |= ECHONL;
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "ab\nc");
   KEXPECT_EQ(4, g_sink_idx);
@@ -1082,7 +1082,7 @@ static void change_control_char_test(void) {
   ld_get_termios(g_ld, &t);
 
   t.c_cc[VEOF] = 'p';
-  KEXPECT_EQ(0, ld_set_termios(g_ld, &t));
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "abc\x04" "d");
   KEXPECT_EQ(6, g_sink_idx);
@@ -1095,6 +1095,48 @@ static void change_control_char_test(void) {
   kmemset(buf, 0, 10);
   KEXPECT_EQ(5, ld_read(g_ld, buf, 10));
   KEXPECT_STREQ("abc\x04" "d", buf);
+}
+
+static void set_attr_when_test(void) {
+  KTEST_BEGIN("ld: ld_set_termios(TCSAFLUSH) applies changes now");
+  reset();
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+
+  KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
+  ld_provides(g_ld, "xyz\x04");
+  t.c_cc[VEOF] = 'p';
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSADRAIN, &t));
+
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+  KEXPECT_EQ('p', t.c_cc[VEOF]);
+  char buf[10];
+  KEXPECT_EQ(3, ld_read_async(g_ld, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("xyz", buf);
+
+
+  KTEST_BEGIN("ld: ld_set_termios(TCSAFLUSH) flushes input");
+  reset();
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+
+  KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
+  ld_provides(g_ld, "xyz\x04");
+  t.c_cc[VEOF] = 'q';
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSAFLUSH, &t));
+
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  ld_get_termios(g_ld, &t);
+  KEXPECT_EQ('q', t.c_cc[VEOF]);
+  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+
+
+  KTEST_BEGIN("ld: ld_set_termios() with invalid optional_actions arg");
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, -1, &t));
+  KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, 50, &t));
 }
 
 // TODO(aoates): more tests to write:
@@ -1127,6 +1169,7 @@ void ld_test(void) {
   echonl_test();
   noflsh_test();
   change_control_char_test();
+  set_attr_when_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
