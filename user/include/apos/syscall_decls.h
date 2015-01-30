@@ -25,6 +25,7 @@
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
 
@@ -73,5 +74,9 @@ pid_t getsid(pid_t pid);
 pid_t tcgetpgrp(int fd);
 int tcsetpgrp(int fd, pid_t pgid);
 pid_t tcgetsid(int fd);
+int tcdrain(int fd);
+int tcflush(int fd, int action);
+int tcgetattr(int fd, struct termios* t);
+int tcsetattr(int fd, int optional_actions, const struct termios* t);
 
 #endif

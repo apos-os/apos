@@ -393,5 +393,18 @@ AddSyscall('tcgetpgrp', 58, 'proc_tcgetpgrp', 'proc/tcgroup.h', '<unistd.h>',
 AddSyscall('tcsetpgrp', 59, 'proc_tcsetpgrp', 'proc/tcgroup.h', '<unistd.h>',
     'int', ['int:fd:u', 'pid_t:pgid:u'])
 
-AddSyscall('tcgetsid', 60, 'proc_tcgetsid', 'proc/tcgroup.h', '<unistd.h>',
+AddSyscall('tcgetsid', 60, 'proc_tcgetsid', 'proc/tcgroup.h', '<termios.h>',
     'pid_t', ['int:fd:u'])
+
+AddSyscall('tcdrain', 63, 'tty_tcdrain', 'dev/termios.h', '<termios.h>',
+    'int', ['int:fd:u'])
+
+AddSyscall('tcflush', 64, 'tty_tcflush', 'dev/termios.h', '<termios.h>',
+    'int', ['int:fd:u', 'int:action:u'])
+
+AddSyscall('tcgetattr', 65, 'tty_tcgetattr', 'dev/termios.h', '<termios.h>',
+    'int', ['int:fd:u', 'struct termios*:t:bw:sizeof(struct termios)'])
+
+AddSyscall('tcsetattr', 66, 'tty_tcsetattr', 'dev/termios.h', '<termios.h>',
+    'int', ['int:fd:u', 'int:optional_actions:u',
+      'const struct termios*:t:br:sizeof(struct termios)'])

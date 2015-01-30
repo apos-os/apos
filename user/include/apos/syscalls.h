@@ -79,5 +79,9 @@
 #define SYS_TCGETPGRP 58
 #define SYS_TCSETPGRP 59
 #define SYS_TCGETSID 60
+#define SYS_TCDRAIN 63
+#define SYS_TCFLUSH 64
+#define SYS_TCGETATTR 65
+#define SYS_TCSETATTR 66
 
 #endif
