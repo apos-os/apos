@@ -21,7 +21,9 @@ srcs = [
   'rtc.c',
   'dev.c',
   'ld.c',
+  'termios.c',
   'tty.c',
+  'tty_util.c',
   ]
 
 subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk']

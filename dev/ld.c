@@ -22,12 +22,14 @@
 #include "dev/char_dev.h"
 #include "dev/interrupts.h"
 #include "dev/ld.h"
-#include "dev/tty.h"
+#include "dev/tty_util.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "proc/sleep.h"
+#include "user/include/apos/termios.h"
 
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
@@ -49,7 +51,32 @@ struct ld {
   kthread_queue_t wait_queue;
 
   apos_dev_t tty;
+  struct termios termios;
 };
+
+static void set_default_termios(struct termios* t) {
+  t->c_iflag = 0;
+  t->c_oflag = 0;
+  t->c_cflag = CS8;
+  t->c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG;
+
+  // TODO(aoates): implement the rest of these.
+  t->c_cc[VEOF] = ASCII_EOT;
+  t->c_cc[VEOL] = _POSIX_VDISABLE;
+  t->c_cc[VERASE] = ASCII_DEL;
+  t->c_cc[VINTR] = ASCII_ETX;
+  t->c_cc[VKILL] = _POSIX_VDISABLE;
+  t->c_cc[VMIN] = 1;
+  t->c_cc[VQUIT] = ASCII_FS;
+  t->c_cc[VSTART] = _POSIX_VDISABLE;
+  t->c_cc[VSTOP] = _POSIX_VDISABLE;
+  t->c_cc[VSUSP] = ASCII_SUB;
+  t->c_cc[VTIME] = 0;
+}
+
+static void ld_flush_input(ld_t* l) {
+  l->start_idx = l->cooked_idx = l->raw_idx;
+}
 
 ld_t* ld_create(int buf_size) {
   ld_t* l = (ld_t*)kmalloc(sizeof(ld_t));
@@ -60,6 +87,7 @@ ld_t* ld_create(int buf_size) {
   l->sink_arg = 0x0;
   kthread_queue_init(&l->wait_queue);
   l->tty = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  set_default_termios(&l->termios);
   return l;
 }
 
@@ -112,12 +140,45 @@ void log_state(ld_t* l) {
   klog(buf);
 }
 
+static inline bool is_ctrl(char c) {
+  return !kisprint(c) && !kisspace(c);
+}
+
+// Returns the number of terminal characters the given character is rendered
+// into ('a' -> 1, '\x01' -> 2, etc).
+static inline int char_term_len(char c) {
+  if (c == '\x7f')
+    return 0;
+  else if (is_ctrl(c))
+    return 2;
+  else return 1;
+}
+
+// Send a character to terminal, translating it if necessary.  erased_char is
+// the character erased from the buffer, if any.
+static void ld_term_putc(const ld_t* l, char c, char erased_char) {
+  if (c == '\x7f' && l->termios.c_lflag & ICANON &&
+      l->termios.c_lflag & ECHOE) {
+    KASSERT_DBG(erased_char > 0);
+    for (int i = 0; i < char_term_len(erased_char); ++i) {
+      l->sink(l->sink_arg, '\b');
+      l->sink(l->sink_arg, ' ');
+      l->sink(l->sink_arg, '\b');
+    }
+  } else if (is_ctrl(c)) {
+    l->sink(l->sink_arg, '^');
+    l->sink(l->sink_arg, (c + '@') & 0x7f);
+  } else {
+    l->sink(l->sink_arg, c);
+  }
+}
+
 void ld_provide(ld_t* l, char c) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
   // Check for overflow.
-  if (c != '\b' && circ_inc(l, l->raw_idx) == l->start_idx) {
+  if (c != '\x7f' && circ_inc(l, l->raw_idx) == l->start_idx) {
     char buf[2];
     buf[0] = c;
     buf[1] = '\0';
@@ -125,58 +186,70 @@ void ld_provide(ld_t* l, char c) {
     return;
   }
 
-  int echo = 1;
-  switch (c) {
-    case '\b':
+  int echo = (l->termios.c_lflag & ECHO);
+  char erased_char = 0;
+  bool handled = false;
+  if (l->termios.c_lflag & ICANON) {
+    if (c == '\x7f') {
       if (l->cooked_idx == l->raw_idx) {
         // Ignore backspace at start of line.
         return;
       }
       l->raw_idx = circ_dec(l, l->raw_idx);
+      erased_char = l->read_buf[l->raw_idx];
       l->read_buf[l->raw_idx] = '#';  // DEBUG
-      break;
-
-    case ASCII_ETX:
-    case ASCII_EOT:
-    case ASCII_SUB:
-    case ASCII_FS:
+      handled = true;
+    } else if (c == l->termios.c_cc[VEOF]) {
       echo = 0;
-      break;
-
-    case '\r':
-    case '\f':
-      die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
-      break;
-
-    // TODO(aoates): handle other special chars.
-    default:
-      if (c < 32 && c != '\n' && c != '\x1b') {
-        klogf("WARNING: ignoring unknown control char 0x%x in ld\n", c);
-        return;
+      handled = true;
+    }
+  }
+  if (!handled && l->termios.c_lflag & ISIG) {
+    if (c == l->termios.c_cc[VINTR] || c == l->termios.c_cc[VSUSP] ||
+        c == l->termios.c_cc[VQUIT]) {
+      if (!(l->termios.c_lflag & NOFLSH)) {
+        // Echo, but don't copy to buffer.  Clear the current buffer.
+        ld_flush_input(l);
       }
+      handled = true;
+    }
+  }
+  if (!handled) {
+    switch (c) {
+      case '\r':
+      case '\f':
+        die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
+        break;
 
-      l->read_buf[l->raw_idx] = c;
-      l->raw_idx = circ_inc(l, l->raw_idx);
+      case '\n':
+        if (l->termios.c_lflag & ECHONL)
+          echo = 1;
+        // Fall through.
+
+      default:
+        l->read_buf[l->raw_idx] = c;
+        l->raw_idx = circ_inc(l, l->raw_idx);
+        break;
+    }
   }
 
   // Echo it to the screen.
   if (echo) {
-    l->sink(l->sink_arg, c);
+    ld_term_putc(l, c, erased_char);
   }
 
   // Cook the buffer, optionally.
-  // TODO(aoates): handle ctrl-c, ctrl-d, etc.
-  if (c == '\n' || c == ASCII_EOT) {
+  if (c == '\n' || c == l->termios.c_cc[VEOF] ||
+      !(l->termios.c_lflag & ICANON)) {
     cook_buffer(l);
   }
 
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN && l->termios.c_lflag & ISIG) {
     int signal = SIGNULL;
-    switch (c) {
-      case ASCII_ETX: signal = SIGINT; break;
-      case ASCII_SUB: signal = SIGTSTP; break;
-      case ASCII_FS: signal = SIGQUIT; break;
-    }
+    if (c == l->termios.c_cc[VINTR]) signal = SIGINT;
+    else if (c == l->termios.c_cc[VSUSP]) signal = SIGTSTP;
+    else if (c == l->termios.c_cc[VQUIT]) signal = SIGQUIT;
+
     if (signal != SIGNULL) {
       const tty_t* tty = tty_get(l->tty);
       KASSERT_DBG(tty != NULL);
@@ -217,6 +290,10 @@ static int ld_read_internal(ld_t* l, char* buf, int n) {
   return copied;
 }
 
+static inline size_t readable_bytes(const ld_t* l) {
+  return (l->cooked_idx + l->buf_len - l->start_idx) % l->buf_len;
+}
+
 int ld_read(ld_t* l, char* buf, int n) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
@@ -226,9 +303,7 @@ int ld_read(ld_t* l, char* buf, int n) {
         getpgid(0) != proc_session_get(tty->session)->fggrp) {
       int result = -EIO;
       if (proc_signal_deliverable(kthread_current_thread(), SIGTTIN)) {
-        // TODO(aoates): should this just be regular proc_force_signal()?
-        proc_force_signal_on_thread(proc_current(), kthread_current_thread(),
-                                    SIGTTIN);
+        proc_force_signal_group(getpgid(0), SIGTTIN);
         result = -EINTR;
       }
 
@@ -240,10 +315,49 @@ int ld_read(ld_t* l, char* buf, int n) {
   // Note: this means that if multiple threads are blocking on an ld_read()
   // here, we could return 0 for some of them even though we didn't see an EOF!
   int result = 0;
-  if (l->start_idx == l->cooked_idx) {
-    // Block until data is available.
-    int interrupted = scheduler_wait_on_interruptable(&l->wait_queue);
-    if (interrupted) result = -EINTR;
+  if (l->termios.c_lflag & ICANON) {
+    if (l->start_idx == l->cooked_idx) {
+      // Block until data is available.
+      int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
+      if (wait_result == SWAIT_INTERRUPTED) result = -EINTR;
+    }
+  } else {
+    const unsigned int tmin = l->termios.c_cc[VMIN];
+    const unsigned int ttime = l->termios.c_cc[VTIME];
+
+    if (tmin > 0 || ttime > 0) {
+      if (readable_bytes(l) < tmin) {
+        // First block until *any* data is available.
+        while (readable_bytes(l) == 0) {
+          int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
+          if (wait_result == SWAIT_INTERRUPTED) {
+            result = -EINTR;
+            break;
+          }
+        }
+      }
+      if (result == 0) {
+        // Block until MIN bytes are available, or VTIME has elapsed.
+        // TODO(aoates): this isn't totally correct, another thread could gobble
+        // the first byte we got in the above loop (for MIN>0 && TIME>0 case)
+        uint32_t now = get_time_ms();
+        uint32_t timeout_end = ttime * 100;
+        if (timeout_end > 0) timeout_end += now;
+
+        while ((timeout_end == 0 || timeout_end > now) &&
+               (readable_bytes(l) == 0 || readable_bytes(l) < tmin)) {
+          long timeout_duration =
+              (timeout_end == 0) ? -1 : (long)(timeout_end - now);
+          int wait_result =
+              scheduler_wait_on_interruptable(&l->wait_queue, timeout_duration);
+          if (wait_result == SWAIT_INTERRUPTED) {
+            result = -EINTR;
+            break;
+          }
+          now = get_time_ms();
+        }
+      }
+    }
   }
 
   if (!result) {
@@ -266,8 +380,12 @@ int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
-  // TODO(aoates): check if writing to the CTTY from a background process group,
-  // and send SIGTTOU if the TOSTOP flag is set [termios].
+  if (l->termios.c_lflag & TOSTOP && minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) {
+      return result;
+    }
+  }
 
   for (int i = 0; i < n; ++i) {
     l->sink(l->sink_arg, buf[i]);
@@ -289,4 +407,62 @@ void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
   dev->read = &ld_char_dev_read;
   dev->write = &ld_char_dev_write;
   dev->dev_data = l;
+}
+
+void ld_get_termios(const ld_t* l, struct termios* t) {
+  kmemcpy(t, &l->termios, sizeof(struct termios));
+}
+
+int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
+  if (t->c_iflag != 0 || t->c_oflag != 0 || t->c_cflag != CS8)
+    return -EINVAL;
+
+  if (t->c_cc[VEOL] != _POSIX_VDISABLE || t->c_cc[VKILL] != _POSIX_VDISABLE ||
+      t->c_cc[VSTART] != _POSIX_VDISABLE || t->c_cc[VSTOP] != _POSIX_VDISABLE)
+    return -EINVAL;
+
+  if (t->c_lflag &
+      ~(ECHO | ECHOE | ECHOK | ECHONL | ICANON | ISIG | NOFLSH | TOSTOP))
+    return -EINVAL;
+
+  if (optional_actions != TCSANOW && optional_actions != TCSADRAIN &&
+      optional_actions != TCSAFLUSH)
+    return -EINVAL;
+
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) return result;
+  }
+
+  if (optional_actions == TCSAFLUSH)
+    ld_flush_input(l);
+
+  kmemcpy(&l->termios, t, sizeof(struct termios));
+
+  return 0;
+}
+
+int ld_drain(ld_t* l) {
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) return result;
+  }
+
+  return 0;
+}
+
+int ld_flush(ld_t* l, int queue_selector) {
+  if (queue_selector != TCIFLUSH && queue_selector != TCOFLUSH &&
+      queue_selector != TCIOFLUSH)
+    return -EINVAL;
+
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) return result;
+  }
+
+  if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH)
+    ld_flush_input(l);
+
+  return 0;
 }

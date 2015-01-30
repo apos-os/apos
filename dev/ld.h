@@ -24,6 +24,7 @@
 
 struct ld;
 typedef struct ld ld_t;
+struct termios;
 
 // Allocate and initialize a new line discipline, with an internal buffer of the
 // given size.
@@ -75,5 +76,19 @@ int ld_write(ld_t* l, const char* buf, int n);
 
 // Initialize a char_dev_t for the given ld.
 void ld_init_char_dev(ld_t* l, char_dev_t* dev);
+
+// Return the ld's terminal attributes.
+void ld_get_termios(const ld_t* l, struct termios* t);
+
+// Set the ld's terminal attributes.
+int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t);
+
+// Block until all the output from the ld is flushed.  This is currently a
+// no-op.
+int ld_drain(ld_t* l);
+
+// Flush the input and/or output of the given ld.  queue_selector must be one of
+// {TCIFLUSH, TCOFLUSH, TCIOFLUSH}.
+int ld_flush(ld_t* l, int queue_selector);
 
 #endif

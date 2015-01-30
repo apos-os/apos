@@ -287,8 +287,8 @@ int proc_sigsuspend(const sigset_t* sigmask) {
 
   kthread_queue_t queue;
   kthread_queue_init(&queue);
-  result = scheduler_wait_on_interruptable(&queue);
-  KASSERT_DBG(result);
+  result = scheduler_wait_on_interruptable(&queue, -1);
+  KASSERT_DBG(result == SWAIT_INTERRUPTED);
 
   result = proc_sigprocmask(SIG_SETMASK, &old_mask, NULL);
   KASSERT_DBG(result == 0);

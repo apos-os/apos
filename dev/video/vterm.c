@@ -377,7 +377,6 @@ void vterm_putc(vterm_t* t, uint8_t c) {
     } else if (t->cursor_x > 0) {
       t->cursor_x--;
     }
-    vterm_setc(t, t->cursor_y, t->cursor_x, ' ', t->cattr);
   } else if (!is_newline) {
     // Printable character.
     vterm_setc(t, t->cursor_y, t->cursor_x, c, t->cattr);

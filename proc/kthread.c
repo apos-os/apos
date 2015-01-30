@@ -48,7 +48,8 @@ static void kthread_init_kthread(kthread_data_t* t) {
   ksigemptyset(&t->signal_mask);
   ksigemptyset(&t->assigned_signals);
   t->interruptable = false;
-  t->interrupted = false;
+  t->wait_status = SWAIT_DONE;
+  t->wait_timeout_ran = false;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {

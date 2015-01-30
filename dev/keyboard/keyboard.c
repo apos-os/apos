@@ -168,9 +168,9 @@ static char NORMAL_ASCII_LOOKUP[] = {
   ';', // KEY_SEMICOLON
   '=', // KEY_EQUALS
   '\0', // KEY_APPS
-  '\b', // KEY_BKSP
+  '\x7f', // KEY_BKSP
   '\0', // KEY_CAPS
-  '\177', // KEY_DELETE
+  '\0', // KEY_DELETE
   '\0', // KEY_END
   '\n', // KEY_ENTER
   '\033', // KEY_ESC
@@ -275,9 +275,9 @@ static char SHIFT_ASCII_LOOKUP[] = {
   ':', // KEY_SEMICOLON
   '+', // KEY_EQUALS
   '\0', // KEY_APPS
-  '\b', // KEY_BKSP
+  '\x7f', // KEY_BKSP
   '\0', // KEY_CAPS
-  '\177', // KEY_DELETE
+  '\0', // KEY_DELETE
   '\0', // KEY_END
   '\n', // KEY_ENTER
   '\033', // KEY_ESC
@@ -381,9 +381,9 @@ static char CAPS_ASCII_LOOKUP[] = {
   ';', // KEY_SEMICOLON
   '=', // KEY_EQUALS
   '\0', // KEY_APPS
-  '\b', // KEY_BKSP
+  '\x7f', // KEY_BKSP
   '\0', // KEY_CAPS
-  '\177', // KEY_DELETE
+  '\0', // KEY_DELETE
   '\0', // KEY_END
   '\n', // KEY_ENTER
   '\033', // KEY_ESC

@@ -569,7 +569,7 @@ static void signal_interrupt_victim(void* arg) {
 
   result = 0;
   if (args->interruptable) {
-    result = scheduler_wait_on_interruptable(&args->queue);
+    result = scheduler_wait_on_interruptable(&args->queue, -1);
   } else {
     scheduler_wait_on(&args->queue);
   }

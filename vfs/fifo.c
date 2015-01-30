@@ -53,8 +53,8 @@ int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
   while (block && (fifo->num_readers == 0 || fifo->num_writers == 0)) {
     kthread_queue_t* queue =
         (mode == FIFO_READ) ? &fifo->read_queue : &fifo->write_queue;
-    int interrupted = scheduler_wait_on_interruptable(queue);
-    if (interrupted) {
+    int wait_result = scheduler_wait_on_interruptable(queue, -1);
+    if (wait_result == SWAIT_INTERRUPTED) {
       switch (mode) {
         case FIFO_READ: fifo->num_readers--; break;
         case FIFO_WRITE: fifo->num_writers--; break;
@@ -93,8 +93,8 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
   else if (fifo->cbuf.len == 0 && !block) return -EAGAIN;
 
   while (block && fifo->num_writers > 0 && fifo->cbuf.len == 0) {
-    int interrupted = scheduler_wait_on_interruptable(&fifo->read_queue);
-    if (interrupted) return -EINTR;
+    int wait_result = scheduler_wait_on_interruptable(&fifo->read_queue, -1);
+    if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
   }
 
   int result = circbuf_read(&fifo->cbuf, buf, len);
@@ -112,8 +112,9 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   do {
     while (block && fifo->cbuf.buflen - fifo->cbuf.len < min_write &&
            fifo->num_readers > 0) {
-      int interrupted = scheduler_wait_on_interruptable(&fifo->write_queue);
-      if (interrupted) return bytes_written > 0 ? bytes_written : -EINTR;
+      int wait_result = scheduler_wait_on_interruptable(&fifo->write_queue, -1);
+      if (wait_result == SWAIT_INTERRUPTED)
+        return bytes_written > 0 ? bytes_written : -EINTR;
     }
 
     if (fifo->num_readers == 0) {

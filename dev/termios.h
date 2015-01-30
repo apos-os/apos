@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// ASCII key codes.
-#ifndef APOO_ASCII_H
-#define APOO_ASCII_H
+// POSIX terminal control functions.
+#ifndef APOO_DEV_TERMIOS_H
+#define APOO_DEV_TERMIOS_H
 
-#define ASCII_ETX 0x03
-#define ASCII_EOT 0x04
-#define ASCII_SUB 0x1a
-#define ASCII_FS  0x1c
-#define ASCII_DEL 0x7f
+#include "common/types.h"
+#include "user/include/apos/termios.h"
+
+int tty_tcdrain(int fd);
+int tty_tcflush(int fd, int action);
+int tty_tcgetattr(int fd, struct termios* t);
+int tty_tcsetattr(int fd, int optional_actions, const struct termios* t);
 
 #endif

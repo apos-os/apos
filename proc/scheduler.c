@@ -60,7 +60,8 @@ void scheduler_interrupt_thread(kthread_t thread) {
     KASSERT_DBG(kthread_current_thread()->queue == 0x0);
 
     kthread_queue_remove(thread);
-    thread->interrupted = true;
+    KASSERT_DBG(thread->wait_status == SWAIT_DONE);
+    thread->wait_status = SWAIT_INTERRUPTED;
     scheduler_make_runnable(thread);
   }
   POP_INTERRUPTS();
@@ -82,39 +83,67 @@ void scheduler_yield_no_reschedule() {
   POP_INTERRUPTS();
 }
 
+static void scheduler_timeout(void* arg) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  kthread_data_t* thread = arg;
+  KASSERT_DBG(thread->wait_status != SWAIT_TIMEOUT);
+  KASSERT_DBG(thread->interruptable);
+  thread->wait_timeout_ran = true;
+  if (thread->wait_status == SWAIT_DONE) {
+    KASSERT_DBG(thread->queue != &g_run_queue);
+    KASSERT_DBG(thread->state == KTHREAD_PENDING);
+    KASSERT_DBG(kthread_current_thread()->queue == 0x0);
 
-static int scheduler_wait_on_internal(kthread_queue_t* queue,
-                                      int interruptable) {
+    kthread_queue_remove(thread);
+    thread->wait_status = SWAIT_TIMEOUT;
+    scheduler_make_runnable(thread);
+  }
+  POP_INTERRUPTS();
+}
+
+static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
+                                      long timeout_ms) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
 
+  timer_handle_t timeout_handle;
   if (interruptable) {
     const sigset_t dispatchable = proc_dispatchable_signals();
     if (!ksigisemptyset(&dispatchable)) {
-      current->interrupted = 1;
+      current->wait_status = SWAIT_INTERRUPTED;
       POP_INTERRUPTS();
-      return 1;
+      return SWAIT_INTERRUPTED;
+    }
+
+    if (timeout_ms > 0) {
+      int result =
+          register_event_timer(get_time_ms() + timeout_ms, &scheduler_timeout,
+                               current, &timeout_handle);
+      KASSERT_DBG(result == 0);
     }
   }
 
   current->state = KTHREAD_PENDING;
   current->interruptable = interruptable;
-  current->interrupted = 0;
+  current->wait_status = SWAIT_DONE;
+  current->wait_timeout_ran = false;
   kthread_queue_push(queue, current);
   scheduler_yield_no_reschedule();
-  int result = current->interrupted;
+  int result = current->wait_status;
+  if (timeout_ms > 0 && !current->wait_timeout_ran)
+    cancel_event_timer(timeout_handle);
   POP_INTERRUPTS();
 
   return result;
 }
 
 void scheduler_wait_on(kthread_queue_t* queue) {
-  int result = scheduler_wait_on_internal(queue, 0);
+  int result = scheduler_wait_on_internal(queue, 0, -1);
   KASSERT_DBG(result == 0);
 }
 
-int scheduler_wait_on_interruptable(kthread_queue_t* queue) {
-  return scheduler_wait_on_internal(queue, 1);
+int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms) {
+  return scheduler_wait_on_internal(queue, 1, timeout_ms);
 }
 
 void scheduler_wake_one(kthread_queue_t* queue) {
