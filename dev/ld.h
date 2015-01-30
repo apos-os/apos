@@ -83,4 +83,12 @@ void ld_get_termios(const ld_t* l, struct termios* t);
 // Set the ld's terminal attributes.
 int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t);
 
+// Block until all the output from the ld is flushed.  This is currently a
+// no-op.
+int ld_drain(ld_t* l);
+
+// Flush the input and/or output of the given ld.  queue_selector must be one of
+// {TCIFLUSH, TCOFLUSH, TCIOFLUSH}.
+int ld_flush(ld_t* l, int queue_selector);
+
 #endif

@@ -436,3 +436,18 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
 
   return 0;
 }
+
+int ld_drain(ld_t* l) {
+  return 0;
+}
+
+int ld_flush(ld_t* l, int queue_selector) {
+  if (queue_selector != TCIFLUSH && queue_selector != TCOFLUSH &&
+      queue_selector != TCIOFLUSH)
+    return -EINVAL;
+
+  if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH)
+    ld_flush_input(l);
+
+  return 0;
+}

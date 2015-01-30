@@ -1139,6 +1139,62 @@ static void set_attr_when_test(void) {
   KEXPECT_EQ(-EINVAL, ld_set_termios(g_ld, 50, &t));
 }
 
+static void drain_and_flush_test(void) {
+  KTEST_BEGIN("ld: ld_drain() test (doesn't do anything)");
+  reset();
+
+  KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
+  ld_provides(g_ld, "xyz\x04");
+  KEXPECT_EQ(0, ld_drain(g_ld));
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("abcxyz", g_sink);
+
+  char buf[10];
+  kmemset(buf, '\0', 10);
+  KEXPECT_EQ(3, ld_read_async(g_ld, buf, 10));
+  KEXPECT_STREQ("xyz", buf);
+
+
+  KTEST_BEGIN("ld: ld_flush(TCIFLUSH) test");
+  reset();
+
+  KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
+  ld_provides(g_ld, "xyz\x04");
+  KEXPECT_EQ(0, ld_flush(g_ld, TCIFLUSH));
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("abcxyz", g_sink);
+  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+
+
+  KTEST_BEGIN("ld: ld_flush(TCOFLUSH) test");
+  reset();
+
+  KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
+  ld_provides(g_ld, "xyz\x04");
+  KEXPECT_EQ(0, ld_flush(g_ld, TCOFLUSH));
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("abcxyz", g_sink);
+  kmemset(buf, '\0', 10);
+  KEXPECT_EQ(3, ld_read_async(g_ld, buf, 10));
+  KEXPECT_STREQ("xyz", buf);
+
+
+  KTEST_BEGIN("ld: ld_flush(TCIOFLUSH) test");
+  reset();
+
+  KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
+  ld_provides(g_ld, "xyz\x04");
+  KEXPECT_EQ(0, ld_flush(g_ld, TCIOFLUSH));
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("abcxyz", g_sink);
+  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+
+
+  KTEST_BEGIN("ld: ld_flush() invalid action test");
+  KEXPECT_EQ(-EINVAL, ld_flush(g_ld, -1));
+  KEXPECT_EQ(-EINVAL, ld_flush(g_ld, 8));
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -1170,6 +1226,7 @@ void ld_test(void) {
   noflsh_test();
   change_control_char_test();
   set_attr_when_test();
+  drain_and_flush_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;
