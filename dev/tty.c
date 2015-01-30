@@ -34,6 +34,7 @@ apos_dev_t tty_create(ld_t* ld) {
 
   const int tty_idx = minor(dev);
   g_ttys[tty_idx].session = -1;
+  g_ttys[tty_idx].ld = ld;
 
   return dev;
 }
@@ -57,6 +58,8 @@ void tty_destroy(apos_dev_t dev) {
            g_ttys[tty_idx].session);
     return;
   }
+
+  g_ttys[tty_idx].ld = NULL;
 
   char_dev_t* ld_dev = dev_get_char(dev);
   int result = dev_unregister_char(dev);

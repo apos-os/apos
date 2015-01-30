@@ -16,6 +16,7 @@
 #include "common/kprintf.h"
 #include "dev/ld.h"
 #include "dev/tty.h"
+#include "dev/termios.h"
 #include "proc/fork.h"
 #include "proc/group.h"
 #include "proc/session.h"
@@ -354,9 +355,128 @@ static void ld_signals_test_runner(void* arg) {
   ld_destroy(args.ld);
 }
 
+// Tests for the terminal control functions.  These don't test much of the
+// functionality itself, since that's covered by the underlying ld tests.
+static void termios_test(void* arg) {
+  args_t* args = (args_t*)arg;
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+
+  KTEST_BEGIN("tty: tcgetattr() defaults");
+  const int tty_fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
+  KEXPECT_GE(tty_fd, 0);
+  const int other_fd =
+      vfs_open("_tty_test_file", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_GE(other_fd, 0);
+
+  struct termios t;
+  kmemset(&t, 0xFF, sizeof(struct termios));
+  KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
+  KEXPECT_EQ(0x04, t.c_cc[VEOF]);
+  KEXPECT_NE(0, t.c_lflag & ICANON);
+
+
+  KTEST_BEGIN("tty: tcgetattr() invalid or non-TTY fd");
+  KEXPECT_EQ(-EBADF, tty_tcgetattr(-1, &t));
+  KEXPECT_EQ(-EBADF, tty_tcgetattr(other_fd + 1, &t));
+  KEXPECT_EQ(-EBADF, tty_tcgetattr(1000000, &t));
+  KEXPECT_EQ(-ENOTTY, tty_tcgetattr(other_fd, &t));
+
+
+  KTEST_BEGIN("tty: tcsetattr(TCSANOW)");
+  t.c_cc[VINTR] = 'p';
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(0, tty_tcsetattr(tty_fd, TCSANOW, &t));
+  kmemset(&t, 0, sizeof(t));
+  KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
+  KEXPECT_EQ('p', t.c_cc[VINTR]);
+  char buf[10];
+  KEXPECT_EQ(1, vfs_read(tty_fd, &buf, 10));
+
+
+  KTEST_BEGIN("tty: tcsetattr(TCSAFLUSH)");
+  t.c_cc[VINTR] = 'q';
+  ld_provide(args->ld, 'b');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(0, tty_tcsetattr(tty_fd, TCSAFLUSH, &t));
+  kmemset(&t, 0, sizeof(t));
+  KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
+  KEXPECT_EQ('q', t.c_cc[VINTR]);
+  // Ideally we'd read from the tty_fd, but that would block.
+  KEXPECT_EQ(0, ld_read_async(args->ld, buf, 10));
+
+
+  KTEST_BEGIN("tty: tcsetattr() invalid or non-TTY fd");
+  KEXPECT_EQ(-EBADF, tty_tcsetattr(-1, TCSANOW, &t));
+  KEXPECT_EQ(-EBADF, tty_tcsetattr(other_fd + 1, TCSANOW, &t));
+  KEXPECT_EQ(-EBADF, tty_tcsetattr(1000000, TCSANOW, &t));
+  KEXPECT_EQ(-ENOTTY, tty_tcsetattr(other_fd, TCSANOW, &t));
+
+  KTEST_BEGIN("tty: tcsetattr() invalid optional_actions");
+  KEXPECT_EQ(-EINVAL, tty_tcsetattr(tty_fd, 200, &t));
+
+
+  KTEST_BEGIN("tty: tcdrain()");
+  KEXPECT_EQ(0, tty_tcdrain(tty_fd));
+
+  KTEST_BEGIN("tty: tcdrain() invalid or non-TTY fd");
+  KEXPECT_EQ(-EBADF, tty_tcdrain(-1));
+  KEXPECT_EQ(-EBADF, tty_tcdrain(other_fd + 1));
+  KEXPECT_EQ(-EBADF, tty_tcdrain(1000000));
+  KEXPECT_EQ(-ENOTTY, tty_tcdrain(other_fd));
+
+
+  KTEST_BEGIN("tty: tcflush(TCIFLUSH)");
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(0, tty_tcflush(tty_fd, TCIFLUSH));
+  KEXPECT_EQ(0, ld_read_async(args->ld, buf, 10));
+
+
+  KTEST_BEGIN("tty: tcflush(TCOFLUSH)");
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(0, tty_tcflush(tty_fd, TCOFLUSH));
+  KEXPECT_EQ(1, vfs_read(tty_fd, buf, 10));
+
+
+  KTEST_BEGIN("tty: tcflush() invalid or non-TTY fd");
+  KEXPECT_EQ(-EBADF, tty_tcflush(-1, TCIFLUSH));
+  KEXPECT_EQ(-EBADF, tty_tcflush(other_fd + 1, TCIFLUSH));
+  KEXPECT_EQ(-EBADF, tty_tcflush(1000000, TCIFLUSH));
+  KEXPECT_EQ(-ENOTTY, tty_tcflush(other_fd, TCIFLUSH));
+
+  KTEST_BEGIN("tty: tcflush() invalid action");
+  KEXPECT_EQ(-EINVAL, tty_tcflush(tty_fd, 200));
+
+
+  vfs_close(tty_fd);
+  vfs_close(other_fd);
+  KEXPECT_EQ(0, vfs_unlink("_tty_test_file"));
+}
+
+static void termios_test_runner(void* arg) {
+  args_t args;
+  args.ld = ld_create(5);
+  args.tty = tty_create(args.ld);
+
+  int sink_counter = 0;
+  ld_set_sink(args.ld, &sink, &sink_counter);
+
+  pid_t child = proc_fork(&termios_test, &args);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  tty_destroy(args.tty);
+  ld_destroy(args.ld);
+}
+
 void tty_test(void) {
   KTEST_SUITE_BEGIN("TTY tests");
 
   pid_t child = proc_fork(&ld_signals_test_runner, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&termios_test_runner, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }
