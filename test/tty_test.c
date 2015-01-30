@@ -456,6 +456,90 @@ static void termios_test(void* arg) {
   KEXPECT_EQ(0, vfs_unlink("_tty_test_file"));
 }
 
+// TODO(aoates): move the read/write from bg tests here as well.
+static void termios_bg_pgrp_test(void* arg) {
+  args_t* args = (args_t*)arg;
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+
+  KTEST_BEGIN("tty: setup for background pgroup tests");
+  sigset_t kSigTtouSet;
+  ksigemptyset(&kSigTtouSet);
+  ksigaddset(&kSigTtouSet, SIGTTOU);
+
+  KEXPECT_EQ(proc_current()->id, proc_setsid());
+
+  sigset_t ttou_mask;
+  ksigemptyset(&ttou_mask);
+  ksigaddset(&ttou_mask, SIGTTOU);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
+
+  const int tty_fd = vfs_open(tty_name, VFS_O_RDWR);
+  KEXPECT_GE(tty_fd, 0);
+
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_EQ(0, setpgid(child, child));
+  KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
+
+  pid_t child_in_grp = proc_fork(&do_nothing, NULL);
+
+
+  KTEST_BEGIN("tty: tcgetattr() from background pgroup");
+  struct termios t;
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+
+
+  KTEST_BEGIN("tty: tcsetattr() from background pgroup");
+  t.c_cc[VINTR] = 'x';
+  KEXPECT_EQ(-EINTR, tty_tcsetattr(tty_fd, TCSANOW, &t));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
+
+  KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
+  KEXPECT_NE('x', t.c_cc[VINTR]);
+
+  // Verify the arg check happens first.
+  KEXPECT_EQ(-EINVAL, tty_tcsetattr(tty_fd, 50, &t));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+
+  KTEST_BEGIN("tty: tcdrain() from background pgroup");
+  KEXPECT_EQ(-EINTR, tty_tcdrain(tty_fd));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
+
+
+  KTEST_BEGIN("tty: tcflush() from background pgroup");
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(-EINTR, tty_tcflush(tty_fd, TCIOFLUSH));
+  KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTTOU));
+  KEXPECT_EQ(1, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
+  proc_suppress_signal(proc_current(), SIGTTOU);
+  proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
+
+  char buf[10];
+  KEXPECT_EQ(1, ld_read_async(args->ld, buf, 10));
+
+  // Verify the arg check happens first.
+  KEXPECT_EQ(-EINVAL, tty_tcflush(tty_fd, 50));
+  KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
+
+  KEXPECT_EQ(child_in_grp, proc_waitpid(child_in_grp, NULL, 0));
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+
+  vfs_close(tty_fd);
+}
+
 static void termios_test_runner(void* arg) {
   args_t args;
   args.ld = ld_create(5);
@@ -465,6 +549,9 @@ static void termios_test_runner(void* arg) {
   ld_set_sink(args.ld, &sink, &sink_counter);
 
   pid_t child = proc_fork(&termios_test, &args);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&termios_bg_pgrp_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(args.tty);

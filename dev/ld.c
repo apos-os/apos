@@ -429,6 +429,11 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
       optional_actions != TCSAFLUSH)
     return -EINVAL;
 
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) return result;
+  }
+
   if (optional_actions == TCSAFLUSH)
     ld_flush_input(l);
 
@@ -438,6 +443,11 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
 }
 
 int ld_drain(ld_t* l) {
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) return result;
+  }
+
   return 0;
 }
 
@@ -445,6 +455,11 @@ int ld_flush(ld_t* l, int queue_selector) {
   if (queue_selector != TCIFLUSH && queue_selector != TCOFLUSH &&
       queue_selector != TCIOFLUSH)
     return -EINVAL;
+
+  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+    int result = tty_check_write(tty_get(l->tty));
+    if (result) return result;
+  }
 
   if (queue_selector == TCIFLUSH || queue_selector == TCIOFLUSH)
     ld_flush_input(l);
