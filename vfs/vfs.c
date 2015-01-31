@@ -442,6 +442,7 @@ int vfs_open(const char* path, int flags, ...) {
   }
 
   if (!is_valid_create_mode(create_mode)) return -EINVAL;
+  if (mode == VFS_O_RDONLY && (flags & VFS_O_TRUNC)) return -EACCES;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
@@ -535,6 +536,15 @@ int vfs_open(const char* path, int flags, ...) {
 
   int result = vfs_open_vnode(child, flags, true);
   VFS_PUT_AND_CLEAR(child);
+
+  if (result >= 0 && flags & VFS_O_TRUNC) {
+    int trunc_result = vfs_ftruncate(result, 0);
+    if (trunc_result < 0) {
+      vfs_close(result);
+      result = trunc_result;
+    }
+  }
+
   return result;
 }
 

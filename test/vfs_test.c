@@ -3473,6 +3473,82 @@ static void truncate_test(void) {
   vfs_unlink(kFile);
 }
 
+static void open_truncate_test(void) {
+  const char kFile[] = "/open_trunc_test_file";
+  const int kBufSize = 512;
+  char buf[kBufSize];
+
+  KTEST_BEGIN("vfs_open(): basic O_TRUNC");
+  create_file_with_data(kFile, "abcdefghijklmnopqrstuvwxyz");
+  int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_TRUNC);
+  KEXPECT_GE(fd, 0);
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC w/ O_WRONLY");
+  create_file_with_data(kFile, "abcdefghijklmnopqrstuvwxyz");
+  fd = vfs_open(kFile, VFS_O_WRONLY | VFS_O_TRUNC);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on read-only file");
+  create_file_with_data(kFile, "abcdefghijklmnopqrstuvwxyz");
+  KEXPECT_EQ(0, vfs_chmod(kFile, VFS_S_IRUSR));
+  fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_TRUNC);
+  KEXPECT_EQ(-EACCES, fd);
+
+  KEXPECT_EQ(0, vfs_lstat(kFile, &stat));
+  KEXPECT_EQ(26, stat.st_size);
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on directory");
+  KEXPECT_EQ(0, vfs_mkdir("_trunc_test_dir", VFS_S_IRWXU));
+  fd = vfs_open("_trunc_test_dir", VFS_O_RDWR | VFS_O_TRUNC);
+  KEXPECT_EQ(-EISDIR, fd);
+  KEXPECT_EQ(0, vfs_rmdir("_trunc_test_dir"));
+
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on non-existant file");
+  KEXPECT_EQ(-ENOENT, vfs_open(kFile, VFS_O_RDWR | VFS_O_TRUNC));
+  KEXPECT_EQ(-ENOENT, vfs_lstat(kFile, &stat));
+
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on newly created file");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_TRUNC | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on already-empty file");
+  create_file_with_data(kFile, "");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_TRUNC);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  // TODO(aoates): test O_TRUNC (and ftruncate, and truncate) on all types of
+  // non-regular files.
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -3536,6 +3612,7 @@ void vfs_test(void) {
   reverse_path_test();
 
   truncate_test();
+  open_truncate_test();
 
   proc_umask(orig_umask);
 
