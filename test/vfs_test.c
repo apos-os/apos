@@ -45,6 +45,8 @@
 // Increase this to make thread safety tests run longer.
 #define THREAD_SAFETY_MULTIPLIER 1
 
+#define TRUNCATE_MANY_LARGE_FILES_TEST 0
+
 #define ROOT_VNODE_REFCOUNT 3
 
 #define EXPECT_VNODE_REFCOUNT(count, path) \
@@ -3434,6 +3436,35 @@ static void truncate_test(void) {
   KEXPECT_EQ(-EBADF, vfs_ftruncate(fd, 1000));
   KEXPECT_EQ(-EBADF, vfs_ftruncate(fd, 10));
   vfs_close(fd);
+
+
+  if (TRUNCATE_MANY_LARGE_FILES_TEST) {
+    // Allocate many large files that are truncated to small files to ensure the
+    // filesystem cleans up properly when a file is truncated.
+    KTEST_BEGIN("vfs_ftruncate(): many large -> small files");
+    const int kNumFiles = 200;
+    const int kLargeSize = kFsBlockSize * 200;
+    KEXPECT_EQ(0, vfs_mkdir("trunc_large_files_test", VFS_S_IRWXU));
+    for (int i = 0; i < kNumFiles; ++i) {
+      ksprintf(buf, "trunc_large_files_test/f%d", i);
+      fd = vfs_open(buf, VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+      KEXPECT_EQ(0, vfs_ftruncate(fd, kLargeSize));
+      for (int blk = 0; blk < kLargeSize / kFsBlockSize; blk++) {
+        vfs_seek(fd, blk * kFsBlockSize, VFS_SEEK_SET);
+        vfs_write(fd, "abc", 3);
+      }
+      vfs_close(fd);
+      fd = vfs_open(buf, VFS_O_RDWR);
+      KEXPECT_EQ(0, vfs_ftruncate(fd, 0));
+      vfs_close(fd);
+    }
+    for (int i = 0; i < kNumFiles; ++i) {
+      ksprintf(buf, "trunc_large_files_test/f%d", i);
+      KEXPECT_EQ(0, vfs_unlink(buf));
+    }
+    KEXPECT_EQ(0, vfs_rmdir("trunc_large_files_test"));
+  }
+
 
   // TODO(aoates): test truncate on non-regular files.
 
