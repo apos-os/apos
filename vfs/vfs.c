@@ -894,7 +894,7 @@ off_t vfs_seek(int fd, off_t offset, int whence) {
   }
 
   file->pos = new_pos;
-  return 0;
+  return file->pos;
 }
 
 int vfs_getdents(int fd, dirent_t* buf, int count) {

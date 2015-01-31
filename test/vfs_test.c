@@ -1035,14 +1035,14 @@ static void seek_test(void) {
 
   int fd = vfs_open(kFile, VFS_O_RDWR);
   KTEST_BEGIN("vfs_seek(): read");
-  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(3, vfs_seek(fd, 3, VFS_SEEK_SET));
   KEXPECT_EQ(4, vfs_read(fd, buf, 4));
   KEXPECT_EQ(0, kstrncmp(buf, "defg", 4));
   KEXPECT_EQ(4, vfs_read(fd, buf, 4));
   KEXPECT_EQ(0, kstrncmp(buf, "hijk", 4));
 
   KTEST_BEGIN("vfs_seek(): write");
-  KEXPECT_EQ(0, vfs_seek(fd, 5, VFS_SEEK_SET));
+  KEXPECT_EQ(5, vfs_seek(fd, 5, VFS_SEEK_SET));
   KEXPECT_EQ(2, vfs_write(fd, "12", 2));
   KEXPECT_EQ(2, vfs_write(fd, "34", 2));
   KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
@@ -1050,13 +1050,13 @@ static void seek_test(void) {
   KEXPECT_STREQ("abcde1234jklmnopqrstuvwxyz", buf);
 
   KTEST_BEGIN("vfs_seek(): SEEK_CUR");
-  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
-  KEXPECT_EQ(0, vfs_seek(fd, 2, VFS_SEEK_CUR));
+  KEXPECT_EQ(3, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(5, vfs_seek(fd, 2, VFS_SEEK_CUR));
   KEXPECT_EQ(4, vfs_read(fd, buf, 4));
   KEXPECT_EQ(0, kstrncmp(buf, "1234", 4));
 
   KTEST_BEGIN("vfs_seek(): SEEK_END");
-  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_END));
+  KEXPECT_EQ(29, vfs_seek(fd, 3, VFS_SEEK_END));
   KEXPECT_EQ(2, vfs_write(fd, "12", 2));
   KEXPECT_EQ(2, vfs_write(fd, "34", 2));
   KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
@@ -1064,23 +1064,23 @@ static void seek_test(void) {
   KEXPECT_EQ(0, kmemcmp("abcde1234jklmnopqrstuvwxyz\0\0\0" "1234", buf, 33));
 
   KTEST_BEGIN("vfs_seek(): negative seek");
-  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
-  KEXPECT_EQ(0, vfs_seek(fd, -2, VFS_SEEK_CUR));
+  KEXPECT_EQ(3, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(1, vfs_seek(fd, -2, VFS_SEEK_CUR));
   KEXPECT_EQ(4, vfs_read(fd, buf, 4));
   KEXPECT_EQ(0, kstrncmp(buf, "bcde", 4));
 
   // TODO(aoates): negative seek from end.
 
   KTEST_BEGIN("vfs_seek(): negative seek");
-  KEXPECT_EQ(0, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(3, vfs_seek(fd, 3, VFS_SEEK_SET));
   KEXPECT_EQ(-EINVAL, vfs_seek(fd, -4, VFS_SEEK_CUR));
   KEXPECT_EQ(-EINVAL, vfs_seek(fd, -1, VFS_SEEK_SET));
 
   KTEST_BEGIN("vfs_seek(): seek not shared across independent FDs");
   int fd1 = vfs_open(kFile, VFS_O_RDONLY);
   int fd2 = vfs_open(kFile, VFS_O_RDONLY);
-  KEXPECT_EQ(0, vfs_seek(fd1, 3, VFS_SEEK_SET));
-  KEXPECT_EQ(0, vfs_seek(fd2, 10, VFS_SEEK_SET));
+  KEXPECT_EQ(3, vfs_seek(fd1, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(10, vfs_seek(fd2, 10, VFS_SEEK_SET));
   KEXPECT_EQ(3, vfs_read(fd1, buf, 3));
   KEXPECT_EQ(0, kmemcmp("de1", buf, 3));
   KEXPECT_EQ(3, vfs_read(fd2, buf, 3));
@@ -1098,7 +1098,6 @@ static void seek_test(void) {
   // TODO(aoates): test,
   // seek past end with all three whences
   // seek is shared across dup()s
-  // seek is not shared across non-dup()'d fds
 
   // Clean up.
   vfs_close(fd);
@@ -1544,7 +1543,7 @@ static void block_device_test(void) {
   KEXPECT_EQ(0, kmemcmp("ramdisk\0\0\0written\0\0\0", buf, 20));
 
   KTEST_BEGIN("vfs_seek(): block device: seek within block");
-  KEXPECT_EQ(0, vfs_seek(fd, kBufSize * 2 + 5, VFS_SEEK_SET));
+  KEXPECT_EQ(kBufSize * 2 + 5, vfs_seek(fd, kBufSize * 2 + 5, VFS_SEEK_SET));
   KEXPECT_EQ(6, vfs_write(fd, "write2", 6));
   KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 2, buf, kBufSize));
   KEXPECT_EQ(0, kmemcmp("\0\0\0\0\0write2\0\0\0\0", buf, 15));

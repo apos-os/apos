@@ -59,7 +59,7 @@ static void basic_file_test(fs_t* fs) {
                                  VFS_S_IRWXU));
   int fd = vfs_open("cbfs_test_root/file", VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
-  KEXPECT_EQ(0, vfs_seek(fd, 2, VFS_SEEK_SET));
+  KEXPECT_EQ(2, vfs_seek(fd, 2, VFS_SEEK_SET));
 
   char buf[100];
   KEXPECT_EQ(6, vfs_read(fd, buf, 100));
