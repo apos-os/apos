@@ -243,6 +243,7 @@ static int cbfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int cbfs_symlink(vnode_t* parent, const char* name, const char* path);
 static int cbfs_readlink(vnode_t* node, char* buf, int bufsize);
+static int cbfs_truncate(vnode_t* node, off_t length);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -268,6 +269,7 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
   f->fs.stat = &cbfs_stat;
   f->fs.symlink = &cbfs_symlink;
   f->fs.readlink = &cbfs_readlink;
+  f->fs.truncate = &cbfs_truncate;
   f->fs.read_page = &cbfs_read_page;
   f->fs.write_page = &cbfs_write_page;
 
@@ -765,6 +767,10 @@ static int cbfs_readlink(vnode_t* vnode, char* buf, int bufsize) {
 
   KASSERT(inode->type == VNODE_SYMLINK);
   return inode->readlink_cb(vnode->fs, inode->arg, inode->num, buf, bufsize);
+}
+
+static int cbfs_truncate(vnode_t* node, off_t length) {
+  return -EACCES;
 }
 
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf) {

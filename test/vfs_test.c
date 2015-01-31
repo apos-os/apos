@@ -3166,6 +3166,282 @@ static void umask_test(void) {
   proc_umask(orig_umask);
 }
 
+static ssize_t read_all(int fd, void* buf, size_t len) {
+  kmemset(buf, 0xFF, len);
+  size_t offset = 0;
+  while (offset < len) {
+    size_t chunk_size = len - offset;
+    int read_bytes = vfs_read(fd, buf + offset, chunk_size);
+    if (read_bytes < 0) return read_bytes;
+    if (read_bytes == 0) break;
+    offset += read_bytes;
+  }
+
+  return offset;
+}
+
+static bool is_all_char(const char* buf, char c, size_t len) {
+  for (size_t i = 0; i < len; ++i) {
+    if (buf[i] != c) {
+      KLOG("char %d is %c, not %c\n", i, buf[i], c);
+      return false;
+    }
+  }
+  return true;
+}
+
+static void truncate_test(void) {
+  const char kFile[] = "/trunc_test_file";
+  const int kBufSize = 512;
+  char buf[kBufSize];
+  const int kBigBufSize = 2500;
+  char* big_buf = kmalloc(kBigBufSize);
+  kmemset(buf, 0, kBufSize);
+  create_file_with_data(kFile, "abcdefghijklmnopqrstuvwxyz");
+
+  KTEST_BEGIN("vfs_seek(): extend by a lot");
+  int fd = vfs_open(kFile, VFS_O_RDWR);
+  const int kNumZeros = 563 * 4;
+  KEXPECT_EQ(26 + kNumZeros, vfs_seek(fd, kNumZeros, VFS_SEEK_END));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(26, stat.st_size);
+
+  KEXPECT_EQ(3, vfs_write(fd, "ABC", 3));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(26 + kNumZeros + 3, stat.st_size);
+
+  vfs_close(fd);
+  block_cache_clear_unpinned();
+
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(26 + kNumZeros + 3, read_all(fd, big_buf, kBigBufSize));
+  KEXPECT_EQ(0, kstrncmp(big_buf, "abcdefghijklmnopqrstuvwxyz", 26));
+  KEXPECT_EQ(true, is_all_char(big_buf + 26, '\0', kNumZeros));
+  KEXPECT_EQ('A', big_buf[26 + kNumZeros]);
+  KEXPECT_EQ('B', big_buf[26 + kNumZeros + 1]);
+  KEXPECT_EQ('C', big_buf[26 + kNumZeros + 2]);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): extend file (small)");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 16));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  vfs_close(fd);
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(16, stat.st_size);
+  KEXPECT_EQ(16, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "0123456789\0\0\0\0\0\0", 16));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(19, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(19, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "0123456789\0\0\0\0\0\0abc", 19));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): truncate file (small)");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(3, vfs_seek(fd, 3, VFS_SEEK_SET));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 6));
+  KEXPECT_EQ(3, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  vfs_close(fd);
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(6, stat.st_size);
+  kmemset(buf, 0xFF, kBufSize);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "012345", 6));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(9, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "012345abc", 9));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): extend file over old data");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 6));
+  vfs_close(fd);
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 9));
+  KEXPECT_EQ(9, vfs_seek(fd, 0, VFS_SEEK_END));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(12, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(12, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "012345\0\0\0abc", 12));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): extend file (even block size)");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+  const int kFsBlockSize = 1024;
+  kmemset(big_buf, 'A', kFsBlockSize);
+  KEXPECT_EQ(kFsBlockSize, vfs_write(fd, big_buf, kFsBlockSize));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 2 * kFsBlockSize));
+  vfs_close(fd);
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(2 * kFsBlockSize, read_all(fd, big_buf, kBigBufSize));
+  KEXPECT_EQ(true, is_all_char(big_buf, 'A', kFsBlockSize));
+  KEXPECT_EQ(true, is_all_char(big_buf + kFsBlockSize, '\0', kFsBlockSize));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): extend file over old data (large)");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 6));
+  vfs_close(fd);
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, kNumZeros));
+  KEXPECT_EQ(kNumZeros, vfs_seek(fd, 0, VFS_SEEK_END));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(kNumZeros + 3, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(kNumZeros + 3, read_all(fd, big_buf, kBigBufSize));
+  KEXPECT_EQ(0, kstrncmp(big_buf, "012345", 6));
+  KEXPECT_EQ(true, is_all_char(big_buf + 6, '\0', kNumZeros - 6));
+  KEXPECT_EQ('a', big_buf[kNumZeros]);
+  KEXPECT_EQ('b', big_buf[kNumZeros + 1]);
+  KEXPECT_EQ('c', big_buf[kNumZeros + 2]);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): extend file (large)");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 10 + kNumZeros));
+  vfs_close(fd);
+  block_cache_clear_unpinned();
+
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(10 + kNumZeros, stat.st_size);
+  kmemset(big_buf, 0xFF, kBigBufSize);
+  KEXPECT_EQ(10 + kNumZeros, read_all(fd, big_buf, kBigBufSize));
+  KEXPECT_STREQ("0123456789", big_buf);
+  KEXPECT_EQ(true, is_all_char(big_buf + 10, '\0', kNumZeros));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(10 + kNumZeros, vfs_seek(fd, -3, VFS_SEEK_CUR));
+  kmemset(buf, '\0', kBufSize);
+  KEXPECT_EQ(3, vfs_read(fd, buf, kBufSize));
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(10 + kNumZeros + 3, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): truncate file (large)");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(10 + kNumZeros, vfs_seek(fd, 10 + kNumZeros, VFS_SEEK_SET));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 6));
+  KEXPECT_EQ(10 + kNumZeros + 3, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  vfs_close(fd);
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(6, stat.st_size);
+  kmemset(buf, 0xFF, kBufSize);
+  KEXPECT_EQ(6, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "012345", 6));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): truncate then write past end");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(10, vfs_seek(fd, 0, VFS_SEEK_END));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 6));
+  KEXPECT_EQ(0, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(3, vfs_write(fd, "abc", 3));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(13, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  kmemset(buf, 0xFF, kBufSize);
+  KEXPECT_EQ(13, vfs_read(fd, buf, kBufSize));
+  KEXPECT_EQ(0, kstrncmp(buf, "012345\0\0\0\0\0\0\0abc", 13));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): truncate to zero");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 0));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): truncate to same length");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 10));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(10, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): fd open O_WRONLY");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_WRONLY);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 2));
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(2, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): bad offset");
+  create_file_with_data(kFile, "0123456789");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(-EINVAL, vfs_ftruncate(fd, -1));
+  // TODO(aoates): test setting a too-big size.
+  vfs_close(fd);
+
+
+  KTEST_BEGIN("vfs_ftruncate(): bad fd");
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(-1, 0));
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(10000, 0));
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  vfs_close(fd);
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(fd, 0));
+
+
+  KTEST_BEGIN("vfs_ftruncate(): fd not open for writing");
+  fd = vfs_open(kFile, VFS_O_RDONLY);
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(fd, 0));
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(fd, 1000));
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(fd, 10));
+  vfs_close(fd);
+
+  // TODO(aoates): test truncate on non-regular files.
+
+  // Clean up.
+  kfree(big_buf);
+  vfs_unlink(kFile);
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -3227,6 +3503,8 @@ void vfs_test(void) {
 
   pipe_test();
   reverse_path_test();
+
+  truncate_test();
 
   proc_umask(orig_umask);
 

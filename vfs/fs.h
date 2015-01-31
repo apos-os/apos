@@ -118,6 +118,9 @@ struct fs {
   // the given buffer.
   int (*readlink)(vnode_t* node, char* buf, int bufsize);
 
+  // Truncate or extend the given node, as per ftruncate().
+  int (*truncate)(vnode_t* node, off_t length);
+
   // Read and write a single page to/from the file.  This is use by the VM
   // subsystem when mmap'ing files.  The FS should read/write a page of data at
   // the given page_offset (which is in pages, not bytes) into/from the given

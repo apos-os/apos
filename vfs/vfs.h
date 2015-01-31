@@ -147,4 +147,8 @@ int vfs_readlink(const char* path, char* buf, int bufsize);
 // on success, or -error.
 int vfs_access(const char* path, int amode);
 
+// Truncate (or extend) the given file to length bytes.  If extended, then new
+// parts of the file will be filled with zeroes.  Returns 0, or -error.
+int vfs_ftruncate(int fd, off_t length);
+
 #endif

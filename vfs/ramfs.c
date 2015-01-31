@@ -198,6 +198,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->fs.stat = &ramfs_stat;
   f->fs.symlink = &ramfs_symlink;
   f->fs.readlink = &ramfs_readlink;
+  f->fs.truncate = &ramfs_truncate;
   f->fs.read_page = &ramfs_read_page;
   f->fs.write_page = &ramfs_write_page;
 
@@ -579,6 +580,30 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
 
 int ramfs_readlink(vnode_t* node, char* buf, int bufsize) {
   return ramfs_read(node, 0, buf, bufsize);
+}
+
+int ramfs_truncate(vnode_t* vnode, off_t length) {
+  KASSERT_DBG(vnode->type == VNODE_REGULAR);
+  KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
+  maybe_block(vnode->fs);
+
+  if (vnode->len == length) return 0;
+
+  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  uint8_t* newdata = (uint8_t*)kmalloc(length);
+  KASSERT(newdata);
+  kmemcpy(newdata, node->data, min(length, vnode->len));
+  if (length > vnode->len) {
+    kmemset(newdata + vnode->len, '\0', length - vnode->len);
+  }
+
+  kfree(node->data);
+  node->data = newdata;
+  vnode->len = length;
+
+  // Write it back to "disk" as well.
+  writeback_metadata(node);
+  return 0;
 }
 
 int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {

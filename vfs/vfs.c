@@ -1259,3 +1259,26 @@ int vfs_access(const char* path, int amode) {
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
+
+int vfs_ftruncate(int fd, off_t length) {
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_REGULAR) {
+    return -EINVAL;
+  }
+  if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
+    return -EBADF;
+  }
+  if (length < 0) {
+    return -EINVAL;
+  }
+
+  file->refcount++;
+
+  KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+  result = file->vnode->fs->truncate(file->vnode, length);
+  file->refcount--;
+  return result;
+}
