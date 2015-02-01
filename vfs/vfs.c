@@ -1294,3 +1294,30 @@ int vfs_ftruncate(int fd, off_t length) {
   file->refcount--;
   return result;
 }
+
+int vfs_truncate(const char* path, off_t length) {
+  if (!path || length < 0) {
+    return -EINVAL;
+  }
+
+  vnode_t* vnode = 0x0;
+  int result = lookup_existing_path(path, lookup_opt(true), 0x0, &vnode);
+  if (result) return result;
+
+  if (vnode->type == VNODE_DIRECTORY) result = -EISDIR;
+  if (result == 0 && vnode->type != VNODE_REGULAR) result = -EINVAL;
+  if (result == 0)
+    result = vfs_check_mode(VFS_OP_WRITE, proc_current(), vnode);
+  if (result) {
+    VFS_PUT_AND_CLEAR(vnode);
+    return result;
+  }
+
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &vnode->mutex);
+    result = vnode->fs->truncate(vnode, length);
+  }
+
+  VFS_PUT_AND_CLEAR(vnode);
+  return result;
+}

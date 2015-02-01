@@ -3192,7 +3192,7 @@ static bool is_all_char(const char* buf, char c, size_t len) {
   return true;
 }
 
-static void truncate_test(void) {
+static void ftruncate_test(void) {
   const char kFile[] = "/trunc_test_file";
   const int kBufSize = 512;
   char buf[kBufSize];
@@ -3471,6 +3471,60 @@ static void truncate_test(void) {
   // Clean up.
   kfree(big_buf);
   vfs_unlink(kFile);
+}
+
+static void truncate_test(void) {
+  const char kFile[] = "/trunc_test_file";
+  apos_stat_t stat;
+
+  KTEST_BEGIN("vfs_truncate(): basic test (truncate)");
+  create_file_with_data(kFile, "abcdef");
+  KEXPECT_EQ(0, vfs_truncate(kFile, 4));
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(4, stat.st_size);
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN("vfs_truncate(): basic test (truncate to zero)");
+  create_file_with_data(kFile, "abcdef");
+  KEXPECT_EQ(0, vfs_truncate(kFile, 0));
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN("vfs_truncate(): basic test (expand)");
+  create_file_with_data(kFile, "abcdef");
+  KEXPECT_EQ(0, vfs_truncate(kFile, 10));
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(10, stat.st_size);
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN("vfs_truncate(): through symlink");
+  create_file_with_data(kFile, "abcdef");
+  KEXPECT_EQ(0, vfs_symlink(kFile, "trunc_link"));
+  KEXPECT_EQ(0, vfs_truncate("trunc_link", 10));
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(10, stat.st_size);
+  KEXPECT_EQ(0, vfs_unlink("trunc_link"));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN("vfs_truncate(): directory");
+  KEXPECT_EQ(0, vfs_mkdir("_trunc_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(-EISDIR, vfs_truncate("_trunc_dir", 3));
+  KEXPECT_EQ(-EISDIR, vfs_truncate("_trunc_dir", 0));
+  KEXPECT_EQ(0, vfs_rmdir("_trunc_dir"));
+
+  KTEST_BEGIN("vfs_truncate(): non-existant file");
+  KEXPECT_EQ(-ENOENT, vfs_truncate(kFile, 0));
+  KEXPECT_EQ(-ENOENT, vfs_truncate(kFile, 5));
+
+  KTEST_BEGIN("vfs_truncate(): invalid offset");
+  create_file_with_data(kFile, "abcdef");
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kFile, -6));
+  KEXPECT_EQ(-EINVAL, vfs_truncate(0x0, 5));
+  // TODO(aoates): test EFBIG (setting file too large).
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(6, stat.st_size);
+  KEXPECT_EQ(0, vfs_unlink(kFile));
 }
 
 static void open_truncate_test(void) {
@@ -3767,6 +3821,7 @@ void vfs_test(void) {
   pipe_test();
   reverse_path_test();
 
+  ftruncate_test();
   truncate_test();
   open_truncate_test();
   append_test();
