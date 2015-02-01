@@ -100,7 +100,7 @@ int vfs_chdir(const char* path);
 // as the fd is open, unless the caller ref()s it.  The given mode must be
 // compatible with the file's mode.  Returns 0 on success, or -error.
 // TODO(aoates): how do we handle executable?
-int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out);
+int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out);
 
 // Duplicate (as for fork()) procA's fds into procB.
 void vfs_fork_fds(process_t* procA, process_t* procB);

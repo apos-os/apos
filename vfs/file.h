@@ -27,8 +27,8 @@ struct vnode;
 struct file {
   struct vnode* vnode;
   int refcount;
-  int pos;  // Current position within the vnode.
-  uint32_t mode;
+  off_t pos;  // Current position within the vnode.
+  mode_t mode;
   int flags;
 };
 typedef struct file file_t;

@@ -966,7 +966,7 @@ int vfs_chdir(const char* path) {
   return 0;
 }
 
-int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
+int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out) {
   *memobj_out = 0x0;
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
