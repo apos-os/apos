@@ -421,6 +421,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   g_file_table[idx]->vnode = VFS_COPY_REF(child);
   g_file_table[idx]->refcount = 1;
   g_file_table[idx]->mode = mode;
+  g_file_table[idx]->flags = flags;
 
   KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
   proc->fds[fd] = idx;
@@ -850,6 +851,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
   } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
+      if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,

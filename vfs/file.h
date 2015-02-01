@@ -15,6 +15,7 @@
 #ifndef APOO_FILE_H
 #define APOO_FILE_H
 
+#include "common/types.h"
 #include "memory/kmalloc.h"
 
 struct vnode;
@@ -28,6 +29,7 @@ struct file {
   int refcount;
   int pos;  // Current position within the vnode.
   uint32_t mode;
+  int flags;
 };
 typedef struct file file_t;
 

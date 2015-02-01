@@ -3547,6 +3547,162 @@ static void open_truncate_test(void) {
 
   // TODO(aoates): test O_TRUNC (and ftruncate, and truncate) on all types of
   // non-regular files.
+  // TODO(aoates): test that owner, group, and mode are unchanged.
+}
+
+const int kMultiThreadAppendTestNumWrites = 100;
+static void* append_multi_thread_worker(void* arg) {
+  const char kFile[] = "/open_append_test_file";
+  int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_APPEND);
+  KEXPECT_GE(fd, 0);
+  for (int i = 0; i < kMultiThreadAppendTestNumWrites; ++i) {
+    char buf[2] = {0, 0};
+    buf[0] = (int)arg + '0';
+    int result = vfs_write(fd, buf, 1);
+    if (result != 1) {
+      KEXPECT_EQ(result, 1);
+      break;
+    }
+  }
+  KEXPECT_EQ(0, vfs_close(fd));
+  return NULL;
+}
+
+static void append_test(void) {
+  const char kFile[] = "/open_append_test_file";
+  const int kBufSize = 512;
+  char buf[kBufSize];
+  const int kBigBufSize = 2500;
+  char* big_buf = kmalloc(kBigBufSize);
+  kmemset(buf, 0, kBufSize);
+
+  KTEST_BEGIN("vfs_open(): basic O_APPEND");
+  create_file_with_data(kFile, "abcdef");
+  int fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_APPEND);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(3, vfs_write(fd, "123", 3));
+  KEXPECT_EQ(9, vfs_seek(fd, 0, VFS_SEEK_CUR));
+
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(2, vfs_write(fd, "45", 2));
+  KEXPECT_EQ(11, vfs_seek(fd, 0, VFS_SEEK_CUR));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(11, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  kmemset(buf, '\0', kBufSize);
+  KEXPECT_EQ(11, vfs_read(fd, buf, kBufSize));
+  KEXPECT_STREQ("abcdef12345", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_open(): O_APPEND with dup()d fd");
+  create_file_with_data(kFile, "abcdef");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_APPEND);
+  KEXPECT_GE(fd, 0);
+  int fd2 = vfs_dup(fd);
+
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(3, vfs_write(fd, "123", 3));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(2, vfs_write(fd2, "45", 2));
+  KEXPECT_EQ(11, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(11, vfs_seek(fd2, 0, VFS_SEEK_CUR));
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(11, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  kmemset(buf, '\0', kBufSize);
+  KEXPECT_EQ(11, vfs_read(fd, buf, kBufSize));
+  KEXPECT_STREQ("abcdef12345", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_close(fd2));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+
+  KTEST_BEGIN("vfs_open(): O_APPEND same file, independent fds");
+  create_file_with_data(kFile, "abcdef");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_APPEND);
+  fd2 = vfs_open(kFile, VFS_O_RDWR | VFS_O_APPEND);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_GE(fd2, 0);
+
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(3, vfs_write(fd, "123", 3));
+  KEXPECT_EQ(9, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(0, vfs_seek(fd2, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(2, vfs_write(fd2, "45", 2));
+  KEXPECT_EQ(9, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(11, vfs_seek(fd2, 0, VFS_SEEK_CUR));
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(11, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  kmemset(buf, '\0', kBufSize);
+  KEXPECT_EQ(11, vfs_read(fd, buf, kBufSize));
+  KEXPECT_STREQ("abcdef12345", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_close(fd2));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN(
+      "vfs_open(): O_APPEND same file, independent fds (only one APPENDing)");
+  create_file_with_data(kFile, "abcdef");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_APPEND);
+  fd2 = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_GE(fd2, 0);
+
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(3, vfs_write(fd, "123", 3));
+  KEXPECT_EQ(9, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(0, vfs_seek(fd2, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(2, vfs_write(fd2, "45", 2));
+  KEXPECT_EQ(9, vfs_seek(fd, 0, VFS_SEEK_CUR));
+  KEXPECT_EQ(2, vfs_seek(fd2, 0, VFS_SEEK_CUR));
+
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(9, stat.st_size);
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  kmemset(buf, '\0', kBufSize);
+  KEXPECT_EQ(9, vfs_read(fd, buf, kBufSize));
+  KEXPECT_STREQ("45cdef123", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_close(fd2));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
+
+  KTEST_BEGIN("vfs_open(): O_APPEND multi-thread atomicity test");
+  create_file_with_data(kFile, "");
+  const int kNumThreads = 3;
+  kthread_t threads[kNumThreads];
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(
+        0, kthread_create(&threads[i], &append_multi_thread_worker, (void*)i));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  fd = vfs_open(kFile, VFS_O_RDONLY);
+  int result = read_all(fd, big_buf, kBigBufSize);
+  KEXPECT_EQ(kNumThreads * kMultiThreadAppendTestNumWrites, result);
+  int counters[kNumThreads];
+  for (int i = 0; i < kNumThreads; ++i) counters[i] = 0;
+  for (int i = 0; i < result; ++i) {
+    if (big_buf[i] < '0' || big_buf[i] > '9')
+      continue;
+    counters[big_buf[i] - '0']++;
+  }
+  for (int i = 0; i < kNumThreads; ++i)
+    KEXPECT_EQ(kMultiThreadAppendTestNumWrites, counters[i]);
+  vfs_close(fd);
+  vfs_unlink(kFile);
+
+  kfree(big_buf);
 }
 
 // TODO(aoates): multi-threaded test for creating a file in directory that is
@@ -3613,6 +3769,7 @@ void vfs_test(void) {
 
   truncate_test();
   open_truncate_test();
+  append_test();
 
   proc_umask(orig_umask);
 
