@@ -83,5 +83,7 @@
 #define SYS_TCFLUSH 64
 #define SYS_TCGETATTR 65
 #define SYS_TCSETATTR 66
+#define SYS_FTRUNCATE 67
+#define SYS_TRUNCATE 68
 
 #endif

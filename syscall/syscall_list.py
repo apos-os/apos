@@ -408,3 +408,9 @@ AddSyscall('tcgetattr', 65, 'tty_tcgetattr', 'dev/termios.h', '<termios.h>',
 AddSyscall('tcsetattr', 66, 'tty_tcsetattr', 'dev/termios.h', '<termios.h>',
     'int', ['int:fd:u', 'int:optional_actions:u',
       'const struct termios*:t:br:sizeof(struct termios)'])
+
+AddSyscall('ftruncate', 67, 'vfs_ftruncate', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['int:fd:u', 'off_t:length:u'])
+
+AddSyscall('truncate', 68, 'vfs_truncate', 'vfs/vfs.h', '<unistd.h>',
+    'int', ['const char*:path:s', 'off_t:length:u'])
