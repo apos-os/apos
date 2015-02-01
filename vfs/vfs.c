@@ -449,7 +449,9 @@ int vfs_open(const char* path, int flags, ...) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(true), &parent, 0x0, base_name);
+  bool follow_final_symlink = !((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL));
+  int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
+                          0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -497,6 +499,11 @@ int vfs_open(const char* path, int flags, ...) {
       child = vfs_get(parent->fs, child_inode);
       vfs_set_created_metadata(child, create_mode);
       created = 1;
+    } else if ((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      VFS_PUT_AND_CLEAR(child);
+      return -EEXIST;
     }
 
     // Done with the parent.

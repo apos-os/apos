@@ -3759,6 +3759,73 @@ static void append_test(void) {
   kfree(big_buf);
 }
 
+const int kExclTestFiles = 10;
+
+static void* excl_test_worker(void* arg) {
+  int* counters = (int*)arg;
+  for (int i = 0; i < kExclTestFiles; ++i) {
+    char name[100];
+    ksprintf(name, "_excl_test_%d", i);
+    int fd = vfs_open(name, VFS_O_RDWR | VFS_O_CREAT | VFS_O_EXCL, VFS_S_IRWXU);
+    if (fd >= 0) {
+      counters[i]++;
+      vfs_close(fd);
+    }
+  }
+  return 0x0;
+}
+
+static void excl_test(void) {
+  KTEST_BEGIN("vfs_open(): O_EXCL test");
+  KEXPECT_EQ(-ENOENT, vfs_open("excl_path", VFS_O_RDWR | VFS_O_EXCL));
+  int fd =
+      vfs_open("excl_path", VFS_O_RDWR | VFS_O_CREAT | VFS_O_EXCL, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(-EEXIST,
+             vfs_open("excl_path", VFS_O_RDWR | VFS_O_CREAT | VFS_O_EXCL,
+                      VFS_S_IRWXU));
+  fd = vfs_open("excl_path", VFS_O_RDWR | VFS_O_EXCL, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_open(): O_EXCL symlink test");
+  KEXPECT_EQ(0, vfs_symlink("excl_path", "good_link"));
+  KEXPECT_EQ(0, vfs_symlink("excl_path_2", "bad_link"));
+  KEXPECT_EQ(0, vfs_symlink("good_link", "good_link2"));
+  KEXPECT_EQ(-EEXIST,
+             vfs_open("good_link", VFS_O_RDWR | VFS_O_CREAT | VFS_O_EXCL,
+                      VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST,
+             vfs_open("good_link2", VFS_O_RDWR | VFS_O_CREAT | VFS_O_EXCL,
+                      VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST,
+             vfs_open("bad_link", VFS_O_RDWR | VFS_O_CREAT | VFS_O_EXCL,
+                      VFS_S_IRWXU));
+  KEXPECT_EQ(-ENOENT, vfs_open("excl_path_2", VFS_O_RDWR));
+  KEXPECT_EQ(0, vfs_unlink("bad_link"));
+  KEXPECT_EQ(0, vfs_unlink("good_link"));
+  KEXPECT_EQ(0, vfs_unlink("good_link2"));
+  KEXPECT_EQ(0, vfs_unlink("excl_path"));
+
+  KTEST_BEGIN("vfs_open(): O_EXCL multi-thread test");
+  const int kExclTestThreads = 10;
+  kthread_t threads[kExclTestThreads];
+  int counters[kExclTestFiles];
+  for (int i = 0; i < kExclTestFiles; ++i) counters[i] = 0;
+  for (int i = 0; i < kExclTestThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &excl_test_worker, counters));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kExclTestThreads; ++i) kthread_join(threads[i]);
+  for (int i = 0; i < kExclTestFiles; ++i) {
+    KEXPECT_EQ(1, counters[i]);
+    char name[100];
+    ksprintf(name, "_excl_test_%d", i);
+    KEXPECT_EQ(0, vfs_unlink(name));
+  }
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -3825,6 +3892,7 @@ void vfs_test(void) {
   truncate_test();
   open_truncate_test();
   append_test();
+  excl_test();
 
   proc_umask(orig_umask);
 
