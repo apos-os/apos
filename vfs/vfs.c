@@ -378,6 +378,10 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     return -EISDIR;
   }
 
+  if ((flags & VFS_O_DIRECTORY) && child->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
   if (child->type == VNODE_FIFO) {
     int result = vfs_open_fifo(child, mode, block);
     if (result) {

@@ -3930,6 +3930,56 @@ static void excl_test(void) {
   }
 }
 
+static void o_directory_test(void) {
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on directory");
+  KEXPECT_EQ(0, vfs_mkdir("_o_dir_dir", VFS_S_IRWXU));
+  int fd = vfs_open("_o_dir_dir", VFS_O_RDONLY | VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_rmdir("_o_dir_dir"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on regular file");
+  create_file_with_data("_o_dir_file", "");
+  KEXPECT_EQ(-ENOTDIR, vfs_open("_o_dir_file", VFS_O_RDONLY | VFS_O_DIRECTORY));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_file"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on char dev");
+  KEXPECT_EQ(0, vfs_mknod("_o_dir_chr", VFS_S_IFCHR, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("_o_dir_chr", VFS_O_RDONLY | VFS_O_DIRECTORY));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_chr"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on block dev");
+  KEXPECT_EQ(0, vfs_mknod("_o_dir_blk", VFS_S_IFBLK, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("_o_dir_blk", VFS_O_RDONLY | VFS_O_DIRECTORY));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_blk"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on FIFO");
+  KEXPECT_EQ(0, vfs_mknod("_o_dir_fifo", VFS_S_IFIFO, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("_o_dir_fifo", VFS_O_RDONLY | VFS_O_DIRECTORY));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_fifo"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on symlink to file");
+  create_file_with_data("_o_dir_file", "");
+  KEXPECT_EQ(0, vfs_symlink("_o_dir_file", "_o_dir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_open("_o_dir_link", VFS_O_RDONLY | VFS_O_DIRECTORY));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_link"));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_file"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on dangling symlink");
+  KEXPECT_EQ(0, vfs_symlink("_o_dir_file", "_o_dir_link"));
+  KEXPECT_EQ(-ENOENT, vfs_open("_o_dir_link", VFS_O_RDONLY | VFS_O_DIRECTORY));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_link"));
+
+  KTEST_BEGIN("vfs_open(): O_DIRECTORY on symlink to directory");
+  KEXPECT_EQ(0, vfs_mkdir("_o_dir_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("_o_dir_dir", "_o_dir_link"));
+  fd = vfs_open("_o_dir_link", VFS_O_RDONLY | VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_rmdir("_o_dir_dir"));
+  KEXPECT_EQ(0, vfs_unlink("_o_dir_link"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -3998,6 +4048,7 @@ void vfs_test(void) {
   truncate_filetype_test();
   append_test();
   excl_test();
+  o_directory_test();
 
   proc_umask(orig_umask);
 

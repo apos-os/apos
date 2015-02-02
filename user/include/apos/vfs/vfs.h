@@ -23,12 +23,13 @@
 #define VFS_O_RDWR     0x02
 #define VFS_O_ACCMODE  VFS_MODE_MASK
 
-#define VFS_O_APPEND   0x04
-#define VFS_O_CREAT    0x08
-#define VFS_O_TRUNC    0x10
-#define VFS_O_EXCL     0x20
-#define VFS_O_NONBLOCK 0x40  // TODO(aoates)
-#define VFS_O_NOCTTY   0x80
+#define VFS_O_APPEND    0x04
+#define VFS_O_CREAT     0x08
+#define VFS_O_TRUNC     0x10
+#define VFS_O_EXCL      0x20
+#define VFS_O_NONBLOCK  0x40  // TODO(aoates)
+#define VFS_O_NOCTTY    0x80
+#define VFS_O_DIRECTORY 0x100
 
 // Used internally (i.e. not exposed to userspace) to indicate a file that will
 // be executed.  If set, vfs_open will check that the file is executable.
