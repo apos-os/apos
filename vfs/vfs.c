@@ -453,7 +453,9 @@ int vfs_open(const char* path, int flags, ...) {
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  bool follow_final_symlink = !((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL));
+  bool follow_final_symlink =
+      !((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) &&
+      !(flags & VFS_O_NOFOLLOW);
   int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
                           0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
@@ -540,10 +542,16 @@ int vfs_open(const char* path, int flags, ...) {
   }
 
   if (child->type == VNODE_SYMLINK) {
-    KLOG(ERROR, "vfs: got a symlink file in vfs_open('%s') (should have "
-         "been resolved)\n", path);
     VFS_PUT_AND_CLEAR(child);
-    return -EIO;
+    if (flags & VFS_O_NOFOLLOW) {
+      return -ELOOP;
+    } else {
+      KLOG(ERROR,
+           "vfs: got a symlink file in vfs_open('%s') (should have been "
+           "resolved)\n",
+           path);
+      return -EIO;
+    }
   }
 
   int result = vfs_open_vnode(child, flags, true);

@@ -30,6 +30,7 @@
 #define VFS_O_NONBLOCK  0x40  // TODO(aoates)
 #define VFS_O_NOCTTY    0x80
 #define VFS_O_DIRECTORY 0x100
+#define VFS_O_NOFOLLOW  0x200
 
 // Used internally (i.e. not exposed to userspace) to indicate a file that will
 // be executed.  If set, vfs_open will check that the file is executable.

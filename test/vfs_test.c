@@ -3980,6 +3980,44 @@ static void o_directory_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_o_dir_link"));
 }
 
+static void o_nofollow_test(void) {
+  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on regular file");
+  create_file_with_data("_o_noflw_file", "");
+  KEXPECT_EQ(0, vfs_mkdir("_o_noflw_dir", VFS_S_IRWXU));
+
+  int fd = vfs_open("_o_noflw_file", VFS_O_RDONLY | VFS_O_NOFOLLOW);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+
+  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on directory");
+  fd = vfs_open("_o_noflw_dir", VFS_O_RDONLY | VFS_O_NOFOLLOW);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+
+  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on symlink to file");
+  KEXPECT_EQ(0, vfs_symlink("_o_noflw_file", "_o_noflw_link"));
+  KEXPECT_EQ(-ELOOP, vfs_open("_o_noflw_link", VFS_O_RDONLY | VFS_O_NOFOLLOW));
+  KEXPECT_EQ(0, vfs_unlink("_o_noflw_link"));
+
+
+  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on dangling symlink");
+  KEXPECT_EQ(0, vfs_symlink("_o_noflw_file", "_o_noflw_link"));
+  KEXPECT_EQ(-ELOOP, vfs_open("_o_noflw_link", VFS_O_RDONLY | VFS_O_NOFOLLOW));
+  KEXPECT_EQ(0, vfs_unlink("_o_noflw_link"));
+
+
+  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on symlink to directory");
+  KEXPECT_EQ(0, vfs_symlink("_o_noflw_dir", "_o_noflw_link"));
+  KEXPECT_EQ(-ELOOP, vfs_open("_o_noflw_link", VFS_O_RDONLY | VFS_O_NOFOLLOW));
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_unlink("_o_noflw_link"));
+
+  KEXPECT_EQ(0, vfs_rmdir("_o_noflw_dir"));
+  KEXPECT_EQ(0, vfs_unlink("_o_noflw_file"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -4049,6 +4087,7 @@ void vfs_test(void) {
   append_test();
   excl_test();
   o_directory_test();
+  o_nofollow_test();
 
   proc_umask(orig_umask);
 
