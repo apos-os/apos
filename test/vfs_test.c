@@ -3610,7 +3610,37 @@ static void open_truncate_test(void) {
   KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unlink(kFile));
 
-  // TODO(aoates): test that owner, group, and mode are unchanged.
+  KTEST_BEGIN("vfs_truncate(): preserves uid, gid, and mode");
+  create_file_with_data(kFile, "abc");
+  KEXPECT_EQ(0, vfs_chown(kFile, 1, 2));
+  KEXPECT_EQ(0, vfs_chmod(kFile, VFS_S_IWGRP));
+  KEXPECT_EQ(0, vfs_truncate(kFile, 5));
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(5, stat.st_size);
+  KEXPECT_EQ(1, stat.st_uid);
+  KEXPECT_EQ(2, stat.st_gid);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IWGRP, stat.st_mode);
+
+  KTEST_BEGIN("vfs_ftruncate(): preserves uid, gid, and mode");
+  fd = vfs_open(kFile, VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 6));
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(6, stat.st_size);
+  KEXPECT_EQ(1, stat.st_uid);
+  KEXPECT_EQ(2, stat.st_gid);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IWGRP, stat.st_mode);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC preserves uid, gid, and mode");
+  fd = vfs_open(kFile, VFS_O_RDWR | VFS_O_TRUNC);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(1, stat.st_uid);
+  KEXPECT_EQ(2, stat.st_gid);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IWGRP, stat.st_mode);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink(kFile));
 }
 
 static void truncate_filetype_test(void) {
