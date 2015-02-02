@@ -1279,12 +1279,17 @@ int vfs_access(const char* path, int amode) {
   return result;
 }
 
+static bool is_truncate_type(const vnode_t* vnode) {
+  return vnode->type == VNODE_REGULAR || vnode->type == VNODE_CHARDEV ||
+         vnode->type == VNODE_FIFO;
+}
+
 int vfs_ftruncate(int fd, off_t length) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  if (file->vnode->type != VNODE_REGULAR) {
+  if (!is_truncate_type(file->vnode)) {
     return -EINVAL;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
@@ -1292,6 +1297,9 @@ int vfs_ftruncate(int fd, off_t length) {
   }
   if (length < 0) {
     return -EINVAL;
+  }
+  if (file->vnode->type == VNODE_CHARDEV || file->vnode->type == VNODE_FIFO) {
+    return 0;
   }
 
   file->refcount++;
@@ -1312,12 +1320,17 @@ int vfs_truncate(const char* path, off_t length) {
   if (result) return result;
 
   if (vnode->type == VNODE_DIRECTORY) result = -EISDIR;
-  if (result == 0 && vnode->type != VNODE_REGULAR) result = -EINVAL;
+  if (result == 0 && !is_truncate_type(vnode)) result = -EINVAL;
   if (result == 0)
     result = vfs_check_mode(VFS_OP_WRITE, proc_current(), vnode);
   if (result) {
     VFS_PUT_AND_CLEAR(vnode);
     return result;
+  }
+
+  if (vnode->type == VNODE_CHARDEV || vnode->type == VNODE_FIFO) {
+    VFS_PUT_AND_CLEAR(vnode);
+    return 0;
   }
 
   {

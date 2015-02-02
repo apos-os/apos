@@ -1553,6 +1553,17 @@ static void block_device_test(void) {
   KTEST_BEGIN("vfs_seek(): block device: seek past end of device");
   KEXPECT_EQ(-EINVAL, vfs_seek(fd, kBufSize * 30, VFS_SEEK_SET));
 
+  KTEST_BEGIN("vfs_truncate(): block device");
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kBlockDevFile, 0));
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kBlockDevFile, 5));
+
+  KTEST_BEGIN("vfs_ftruncate(): block device");
+  KEXPECT_EQ(-EINVAL, vfs_ftruncate(fd, 0));
+  KEXPECT_EQ(-EINVAL, vfs_ftruncate(fd, 5));
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on block device");
+  KEXPECT_EQ(-EINVAL, vfs_open(kBlockDevFile, VFS_O_RDWR | VFS_O_TRUNC));
+
   vfs_close(fd);
 
   // Cleanup.
@@ -3599,9 +3610,72 @@ static void open_truncate_test(void) {
   KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unlink(kFile));
 
-  // TODO(aoates): test O_TRUNC (and ftruncate, and truncate) on all types of
-  // non-regular files.
   // TODO(aoates): test that owner, group, and mode are unchanged.
+}
+
+static void truncate_filetype_test(void) {
+  KTEST_BEGIN("vfs_truncate(): directory test");
+  KEXPECT_EQ(0, vfs_mkdir("_trunc_test_dir", VFS_S_IRWXU));
+  KEXPECT_EQ(-EISDIR, vfs_truncate("_trunc_test_dir", 0));
+  KEXPECT_EQ(-EISDIR, vfs_truncate("_trunc_test_dir", 5));
+
+  KTEST_BEGIN("vfs_ftruncate(): directory test");
+  int fd = vfs_open("_trunc_test_dir", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_NE(0, vfs_ftruncate(fd, 0));
+  KEXPECT_NE(0, vfs_ftruncate(fd, 5));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC directory test");
+  KEXPECT_EQ(-EACCES, vfs_open("_trunc_test_dir", VFS_O_RDONLY | VFS_O_TRUNC));
+  KEXPECT_EQ(-EISDIR, vfs_open("_trunc_test_dir", VFS_O_RDWR | VFS_O_TRUNC));
+  KEXPECT_EQ(0, vfs_rmdir("_trunc_test_dir"));
+
+  // Truncate tested on block dev in the block dev test above.
+
+  KTEST_BEGIN("vfs_truncate(): on symlink");
+  create_file_with_data("_trunc_target", "abc");
+  KEXPECT_EQ(0, vfs_symlink("_trunc_target", "_trunc_link"));
+  KEXPECT_EQ(0, vfs_truncate("_trunc_link", 1));
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("_trunc_target", &stat));
+  KEXPECT_EQ(1, stat.st_size);
+
+  KTEST_BEGIN("vfs_ftruncate(): on symlink");
+  fd = vfs_open("_trunc_link", VFS_O_RDWR);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 5));
+  KEXPECT_EQ(0, vfs_stat("_trunc_target", &stat));
+  KEXPECT_EQ(5, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on symlink");
+  fd = vfs_open("_trunc_link", VFS_O_RDWR | VFS_O_TRUNC);
+  KEXPECT_EQ(0, vfs_stat("_trunc_target", &stat));
+  KEXPECT_EQ(0, stat.st_size);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink("_trunc_link"));
+  KEXPECT_EQ(0, vfs_unlink("_trunc_target"));
+
+  // Character device tested in TTY test.
+
+  KTEST_BEGIN("vfs_ftruncate(): on pipe test");
+  int pipe_fds[2];
+  KEXPECT_EQ(0, vfs_pipe(pipe_fds));
+  KEXPECT_EQ(3, vfs_write(pipe_fds[1], "abc", 3));
+  KEXPECT_EQ(-EBADF, vfs_ftruncate(pipe_fds[0], 1));
+  KEXPECT_EQ(0, vfs_ftruncate(pipe_fds[1], 1));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(pipe_fds[0], buf, 10));
+  KEXPECT_EQ(0, vfs_close(pipe_fds[0]));
+  KEXPECT_EQ(0, vfs_close(pipe_fds[1]));
+
+  KTEST_BEGIN("vfs_truncate(): on FIFO test");
+  KEXPECT_EQ(0, vfs_mknod("_trunc_fifo", VFS_S_IFIFO, makedev(0, 0)));
+  KEXPECT_EQ(0, vfs_truncate("_trunc_fifo", 5));
+  // We don't test the contents b/c that would be a PITA; assuming the pipe test
+  // above is sufficient.  Likewise we don't test vfs_open(VFS_O_TRUNC), since
+  // that would be a pain.
+  KEXPECT_EQ(0, vfs_unlink("_trunc_fifo"));
 }
 
 const int kMultiThreadAppendTestNumWrites = 100;
@@ -3891,6 +3965,7 @@ void vfs_test(void) {
   ftruncate_test();
   truncate_test();
   open_truncate_test();
+  truncate_filetype_test();
   append_test();
   excl_test();
 
