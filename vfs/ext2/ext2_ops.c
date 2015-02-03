@@ -48,6 +48,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int ext2_symlink(vnode_t* parent, const char* name, const char* path);
 static int ext2_readlink(vnode_t* node, char* buf, int bufsize);
+static int ext2_truncate(vnode_t* node, off_t length);
 static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -490,8 +491,9 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   return 0;
 }
 
-// Free an n-th level indirect block.
-static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level) {
+// Free an n-th level indirect block, starting at blk_offset.
+static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
+                                uint32_t blk_offset) {
   KASSERT(level >= 1);
   if (block_num == 0)
     return;
@@ -500,15 +502,55 @@ static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level) {
   KASSERT(block);
 
   const uint32_t block_size = ext2_block_size(fs);
-  for (unsigned int i = 0; i < block_size / sizeof(uint32_t); ++i) {
+  const uint32_t kBlocksPerIndirect = block_size / sizeof(uint32_t);
+
+  uint32_t blocks_per_entry = 1;
+  for (int i = 1; i < level; ++i) blocks_per_entry *= kBlocksPerIndirect;
+
+  for (unsigned int i = 0; i < kBlocksPerIndirect; ++i) {
+    if ((i + 1) * blocks_per_entry <= blk_offset) continue;
     if (level == 1 && block[i] != 0) {
       free_block(fs, block[i]);
+      block[i] = 0;
     } else if (level > 1) {
-      free_indirect_block(fs, block[i], level - 1);
+      free_indirect_block(fs, block[i], level - 1,
+                          blk_offset % blocks_per_entry);
     }
   }
   ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
-  free_block(fs, block_num);  // Free the indirect block itself.
+  if (blk_offset == 0)
+    free_block(fs, block_num);  // Free the indirect block itself.
+}
+
+// Free the blocks from the given inode starting at blk_offset.
+static void free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
+                              uint32_t blk_offset) {
+  const uint32_t block_size = ext2_block_size(fs);
+  const uint32_t kDirectBlocks = 12;
+  const uint32_t kBlocksPerIndirect = block_size / sizeof(uint32_t);
+  const uint32_t kBlocksPerDoubleIndirect =
+      kBlocksPerIndirect * kBlocksPerIndirect;
+
+  for (int i = blk_offset; i < 12; ++i) {
+    if (inode->i_block[i]) free_block(fs, inode->i_block[i]);
+    inode->i_block[i] = 0;
+  }
+  blk_offset = (blk_offset < kDirectBlocks) ? 0 : blk_offset - kDirectBlocks;
+  if (blk_offset < kBlocksPerIndirect)
+    free_indirect_block(fs, inode->i_block[12], 1, blk_offset);
+  if (blk_offset == 0) inode->i_block[12] = 0;
+
+  blk_offset =
+      (blk_offset < kBlocksPerIndirect) ? 0 : blk_offset - kBlocksPerIndirect;
+  if (blk_offset < kBlocksPerDoubleIndirect)
+    free_indirect_block(fs, inode->i_block[13], 2, blk_offset);
+  if (blk_offset == 0) inode->i_block[13] = 0;
+
+  blk_offset = (blk_offset < kBlocksPerDoubleIndirect)
+                   ? 0
+                   : blk_offset - kBlocksPerDoubleIndirect;
+  free_indirect_block(fs, inode->i_block[14], 3, blk_offset);
+  if (blk_offset == 0) inode->i_block[14] = 0;
 }
 
 // Allocate a new inode.  Depending on the type, it may be allocated in the
@@ -576,9 +618,11 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
 }
 
 // Returns 1 if a inode with the given mode has data blocks.
-static int inode_has_data_blocks(uint16_t mode) {
-  return ((mode & EXT2_S_MASK) == EXT2_S_IFREG ||
-          (mode & EXT2_S_MASK) == EXT2_S_IFDIR);
+static int inode_has_data_blocks(const ext2_inode_t* inode) {
+  return ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFREG ||
+          (inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR ||
+          ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFLNK &&
+           inode->i_size >= EXT2_SYMLINK_INLINE_LEN));
 }
 
 // Free the given inode and associated data blocks.  The inode's links_count
@@ -608,14 +652,8 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
   // Free all of its blocks.
-  if (inode_has_data_blocks(inode->i_mode)) {
-    for (int i = 0; i < 12; ++i) {
-      if (inode->i_block[i])
-        free_block(fs, inode->i_block[i]);
-    }
-    free_indirect_block(fs, inode->i_block[12], 1);
-    free_indirect_block(fs, inode->i_block[13], 2);
-    free_indirect_block(fs, inode->i_block[14], 3);
+  if (inode_has_data_blocks(inode)) {
+    free_inode_blocks(fs, inode, 0);
   }
 
   kmemset(inode, 0, sizeof(ext2_inode_t));
@@ -732,6 +770,44 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
   KASSERT(new_size >= inode->i_size);
   inode->i_size = new_size;
   return write_inode(fs, inode_num, inode);
+}
+
+// Resize the given inode, either larger or smaller.
+static int resize_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
+                        uint32_t new_size, int clear_new_blocks) {
+  if (inode->i_size == new_size)
+    return 0;
+
+  const uint32_t block_size = ext2_block_size(fs);
+  // TODO(aoates): this isn't quite right, since we may have pre-allocated
+  // additional blocks.
+  const uint32_t old_blocks = ceiling_div(inode->i_size, block_size);
+  const uint32_t new_blocks = ceiling_div(new_size, block_size);
+
+  if (new_size > inode->i_size) {
+    if (old_blocks > 0 && (inode->i_size % block_size) > 0 &&
+        clear_new_blocks) {
+      // Clear the new data region in the last block.
+      const uint32_t last_block = get_inode_block(fs, inode, old_blocks - 1);
+      void* block = ext2_block_get(fs, last_block);
+      kmemset((char*)block + inode->i_size % block_size, 0x0,
+              block_size - (inode->i_size % block_size));
+      ext2_block_put(fs, last_block, BC_FLUSH_ASYNC);
+    }
+    if (new_blocks > old_blocks) {
+      int result = extend_inode(fs, inode, inode_num, new_blocks - old_blocks,
+                                new_size, 1);
+      if (result)
+        return result;
+    }
+  } else if (new_size < inode->i_size) {
+    if (new_blocks < old_blocks) {
+      free_inode_blocks(fs, inode, new_blocks);
+    }
+  }
+  inode->i_size = new_size;
+  KASSERT(write_inode(fs, inode_num, inode) == 0);
+  return 0;
 }
 
 typedef struct {
@@ -987,6 +1063,7 @@ void ext2_set_ops(fs_t* fs) {
   fs->stat = &ext2_stat;
   fs->symlink = &ext2_symlink;
   fs->readlink = &ext2_readlink;
+  fs->truncate = &ext2_truncate;
   fs->read_page = &ext2_read_page;
   fs->write_page = &ext2_write_page;
 }
@@ -1312,7 +1389,9 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(vnode->type == VNODE_REGULAR || vnode->type == VNODE_SYMLINK);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(offset >= 0);
-  KASSERT(offset <= vnode->len);
+
+  if (offset > vnode->len)
+    return 0;
 
   ext2fs_t* fs = (ext2fs_t*)vnode->fs;
   const uint32_t inode_block = offset / ext2_block_size(fs);
@@ -1358,18 +1437,8 @@ static int ext2_write_inode(ext2fs_t* fs, int vnode_num, ext2_inode_t* inode,
   const uint32_t block_size = ext2_block_size(fs);
   if ((uint32_t)offset + bufsize > inode->i_size) {
     const uint32_t new_size = offset + bufsize;
-    // TODO(aoates): this isn't quite right, since we may have pre-allocated
-    // additional blocks.
-    const uint32_t old_blocks = ceiling_div(inode->i_size, block_size);
-    const uint32_t new_blocks = ceiling_div(new_size, block_size);
-    if (new_blocks > old_blocks) {
-      int result = extend_inode(fs, inode, vnode_num, new_blocks - old_blocks,
-                                new_size, 1);
-      if (result)
-        return result;
-    }
-    inode->i_size = new_size;
-    KASSERT(write_inode(fs, vnode_num, inode) == 0);
+    int result = resize_inode(fs, inode, vnode_num, new_size, 1);
+    if (result) return result;
   }
   KASSERT((int)inode->i_size >= offset + bufsize);
 
@@ -1637,6 +1706,29 @@ static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
   } else {
     return ext2_read(vnode, 0, buf, bufsize);
   }
+}
+
+static int ext2_truncate(vnode_t* vnode, off_t length) {
+  KASSERT(vnode->type == VNODE_REGULAR);
+  KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  KASSERT(length >= 0);
+
+  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t inode;
+  int result = get_inode(fs, vnode->num, &inode);
+  if (result) {
+    return result;
+  }
+  KASSERT(vnode->len == (int)inode.i_size);
+  // TODO(aoates): check against max length [64-bit].
+
+  result = resize_inode(fs, &inode, vnode->num, length, 1);
+  vnode->len = inode.i_size;
+  return result;
 }
 
 // Either read or write a page from the file.

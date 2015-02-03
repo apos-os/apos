@@ -321,7 +321,7 @@ static void mmap_write_test(void) {
 
   // Read the file and verify it got written.
   const int fdA2 = vfs_open(kFileA, VFS_O_RDWR);
-  KEXPECT_EQ(0, vfs_seek(fdA2, PAGE_SIZE + 100, VFS_SEEK_SET));
+  KEXPECT_EQ(PAGE_SIZE + 100, vfs_seek(fdA2, PAGE_SIZE + 100, VFS_SEEK_SET));
   char buf[50];
   KEXPECT_EQ(50, vfs_read(fdA2, buf, 50));
   KEXPECT_EQ(0, kmemcmp(buf, "written string\0BBB", 18));
@@ -605,11 +605,11 @@ static void mmap_private_writeback(void) {
   KEXPECT_EQ(9, vfs_read(fdA, buf, 9));
   KEXPECT_STREQ("AAAAAAAAA", buf);
 
-  KEXPECT_EQ(0, vfs_seek(fdA, PAGE_SIZE, VFS_SEEK_SET));
+  KEXPECT_EQ(PAGE_SIZE, vfs_seek(fdA, PAGE_SIZE, VFS_SEEK_SET));
   KEXPECT_EQ(9, vfs_read(fdA, buf, 9));
   KEXPECT_STREQ("BBBBBBBBB", buf);
 
-  KEXPECT_EQ(0, vfs_seek(fdA, 2 * PAGE_SIZE, VFS_SEEK_SET));
+  KEXPECT_EQ(2 * PAGE_SIZE, vfs_seek(fdA, 2 * PAGE_SIZE, VFS_SEEK_SET));
   KEXPECT_EQ(9, vfs_read(fdA, buf, 9));
   KEXPECT_STREQ("CCCCCCCCC", buf);
 

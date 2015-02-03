@@ -180,7 +180,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     memobj = memobj_create_anon();
     if (!memobj) return -ENOMEM;
   } else {
-    uint32_t fd_mode = 0;
+    mode_t fd_mode = 0;
     // If the mapping is private, we only need read access to the file.
     if (flags & MAP_PRIVATE) {
       fd_mode = VFS_O_RDONLY;

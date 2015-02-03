@@ -378,6 +378,10 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     return -EISDIR;
   }
 
+  if ((flags & VFS_O_DIRECTORY) && child->type != VNODE_DIRECTORY) {
+    return -ENOTDIR;
+  }
+
   if (child->type == VNODE_FIFO) {
     int result = vfs_open_fifo(child, mode, block);
     if (result) {
@@ -421,6 +425,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   g_file_table[idx]->vnode = VFS_COPY_REF(child);
   g_file_table[idx]->refcount = 1;
   g_file_table[idx]->mode = mode;
+  g_file_table[idx]->flags = flags;
 
   KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
   proc->fds[fd] = idx;
@@ -442,12 +447,17 @@ int vfs_open(const char* path, int flags, ...) {
   }
 
   if (!is_valid_create_mode(create_mode)) return -EINVAL;
+  if (mode == VFS_O_RDONLY && (flags & VFS_O_TRUNC)) return -EACCES;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(true), &parent, 0x0, base_name);
+  bool follow_final_symlink =
+      !((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) &&
+      !(flags & VFS_O_NOFOLLOW);
+  int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
+                          0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -495,6 +505,11 @@ int vfs_open(const char* path, int flags, ...) {
       child = vfs_get(parent->fs, child_inode);
       vfs_set_created_metadata(child, create_mode);
       created = 1;
+    } else if ((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      VFS_PUT_AND_CLEAR(child);
+      return -EEXIST;
     }
 
     // Done with the parent.
@@ -527,14 +542,29 @@ int vfs_open(const char* path, int flags, ...) {
   }
 
   if (child->type == VNODE_SYMLINK) {
-    KLOG(ERROR, "vfs: got a symlink file in vfs_open('%s') (should have "
-         "been resolved)\n", path);
     VFS_PUT_AND_CLEAR(child);
-    return -EIO;
+    if (flags & VFS_O_NOFOLLOW) {
+      return -ELOOP;
+    } else {
+      KLOG(ERROR,
+           "vfs: got a symlink file in vfs_open('%s') (should have been "
+           "resolved)\n",
+           path);
+      return -EIO;
+    }
   }
 
   int result = vfs_open_vnode(child, flags, true);
   VFS_PUT_AND_CLEAR(child);
+
+  if (result >= 0 && flags & VFS_O_TRUNC) {
+    int trunc_result = vfs_ftruncate(result, 0);
+    if (trunc_result < 0) {
+      vfs_close(result);
+      result = trunc_result;
+    }
+  }
+
   return result;
 }
 
@@ -840,6 +870,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
   } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
+      if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,
@@ -894,7 +925,7 @@ off_t vfs_seek(int fd, off_t offset, int whence) {
   }
 
   file->pos = new_pos;
-  return 0;
+  return file->pos;
 }
 
 int vfs_getdents(int fd, dirent_t* buf, int count) {
@@ -954,7 +985,7 @@ int vfs_chdir(const char* path) {
   return 0;
 }
 
-int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out) {
+int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out) {
   *memobj_out = 0x0;
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
@@ -1257,5 +1288,68 @@ int vfs_access(const char* path, int amode) {
   }
 
   VFS_PUT_AND_CLEAR(child);
+  return result;
+}
+
+static bool is_truncate_type(const vnode_t* vnode) {
+  return vnode->type == VNODE_REGULAR || vnode->type == VNODE_CHARDEV ||
+         vnode->type == VNODE_FIFO;
+}
+
+int vfs_ftruncate(int fd, off_t length) {
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  if (result) return result;
+
+  if (!is_truncate_type(file->vnode)) {
+    return -EINVAL;
+  }
+  if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
+    return -EBADF;
+  }
+  if (length < 0) {
+    return -EINVAL;
+  }
+  if (file->vnode->type == VNODE_CHARDEV || file->vnode->type == VNODE_FIFO) {
+    return 0;
+  }
+
+  file->refcount++;
+
+  KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
+  result = file->vnode->fs->truncate(file->vnode, length);
+  file->refcount--;
+  return result;
+}
+
+int vfs_truncate(const char* path, off_t length) {
+  if (!path || length < 0) {
+    return -EINVAL;
+  }
+
+  vnode_t* vnode = 0x0;
+  int result = lookup_existing_path(path, lookup_opt(true), 0x0, &vnode);
+  if (result) return result;
+
+  if (vnode->type == VNODE_DIRECTORY) result = -EISDIR;
+  if (result == 0 && !is_truncate_type(vnode)) result = -EINVAL;
+  if (result == 0)
+    result = vfs_check_mode(VFS_OP_WRITE, proc_current(), vnode);
+  if (result) {
+    VFS_PUT_AND_CLEAR(vnode);
+    return result;
+  }
+
+  if (vnode->type == VNODE_CHARDEV || vnode->type == VNODE_FIFO) {
+    VFS_PUT_AND_CLEAR(vnode);
+    return 0;
+  }
+
+  {
+    KMUTEX_AUTO_LOCK(node_lock, &vnode->mutex);
+    result = vnode->fs->truncate(vnode, length);
+  }
+
+  VFS_PUT_AND_CLEAR(vnode);
   return result;
 }

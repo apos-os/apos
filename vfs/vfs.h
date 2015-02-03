@@ -100,7 +100,7 @@ int vfs_chdir(const char* path);
 // as the fd is open, unless the caller ref()s it.  The given mode must be
 // compatible with the file's mode.  Returns 0 on success, or -error.
 // TODO(aoates): how do we handle executable?
-int vfs_get_memobj(int fd, uint32_t mode, memobj_t** memobj_out);
+int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out);
 
 // Duplicate (as for fork()) procA's fds into procB.
 void vfs_fork_fds(process_t* procA, process_t* procB);
@@ -136,9 +136,9 @@ int vfs_chmod(const char* path, mode_t mode);
 // Changes the file mode of the given fd.  Returns 0 on success, or -error.
 int vfs_fchmod(int fd, mode_t mode);
 
-// Create a symlink at path2 pointing to (containing) path1.  Returns 0 on
+// Create a symlink at link pointing to (containing) target.  Returns 0 on
 // success, or -error.
-int vfs_symlink(const char* path1, const char* path2);
+int vfs_symlink(const char* target, const char* link);
 
 // Read the contents of a symlink into the given buffer.
 int vfs_readlink(const char* path, char* buf, int bufsize);
@@ -146,5 +146,12 @@ int vfs_readlink(const char* path, char* buf, int bufsize);
 // Checks if the current [real] user ID has access to the given file.  Returns 0
 // on success, or -error.
 int vfs_access(const char* path, int amode);
+
+// Truncate (or extend) the given file to length bytes.  If extended, then new
+// parts of the file will be filled with zeroes.  Returns 0, or -error.
+int vfs_ftruncate(int fd, off_t length);
+
+// As above, but on the given path.
+int vfs_truncate(const char* path, off_t length);
 
 #endif

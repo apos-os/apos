@@ -19,4 +19,5 @@ void file_init_file(file_t* f) {
   f->refcount = 0;
   f->pos = 0;
   f->mode = 0xFF;  // A bad mode.
+  f->flags = 0;
 }

@@ -540,6 +540,40 @@ static void termios_bg_pgrp_test(void* arg) {
   vfs_close(tty_fd);
 }
 
+static void tty_truncate_test(void* arg) {
+  args_t* args = (args_t*)arg;
+  char tty_name[20];
+  char buf[10];
+  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+
+  KTEST_BEGIN("vfs_truncate(): on TTY test");
+  int tty_fd = vfs_open(tty_name, VFS_O_RDWR);
+  KEXPECT_GE(tty_fd, 0);
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, 'b');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(0, vfs_truncate(tty_name, 1));
+  KEXPECT_EQ(2, vfs_read(tty_fd, buf, 10));
+
+  KTEST_BEGIN("vfs_ftruncate(): on TTY test");
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, 'b');
+  ld_provide(args->ld, '\x04');
+  KEXPECT_EQ(0, vfs_ftruncate(tty_fd, 1));
+  KEXPECT_EQ(2, vfs_read(tty_fd, buf, 10));
+
+  KTEST_BEGIN("vfs_open(): O_TRUNC on TTY test");
+  ld_provide(args->ld, 'a');
+  ld_provide(args->ld, 'b');
+  ld_provide(args->ld, '\x04');
+  int trunc_fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_TRUNC);
+  KEXPECT_GE(trunc_fd, 0);
+  KEXPECT_EQ(0, vfs_close(trunc_fd));
+  KEXPECT_EQ(2, vfs_read(tty_fd, buf, 10));
+
+  vfs_close(tty_fd);
+}
+
 static void termios_test_runner(void* arg) {
   args_t args;
   args.ld = ld_create(5);
@@ -552,6 +586,9 @@ static void termios_test_runner(void* arg) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&termios_bg_pgrp_test, &args);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  child = proc_fork(&tty_truncate_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(args.tty);

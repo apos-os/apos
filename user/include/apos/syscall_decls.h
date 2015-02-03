@@ -78,5 +78,7 @@ int tcdrain(int fd);
 int tcflush(int fd, int action);
 int tcgetattr(int fd, struct termios* t);
 int tcsetattr(int fd, int optional_actions, const struct termios* t);
+int ftruncate(int fd, off_t length);
+int truncate(const char* path, off_t length);
 
 #endif
