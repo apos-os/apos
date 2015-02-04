@@ -274,7 +274,7 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
 
   char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
-  int error = b->read(b, block, buf, 4096);
+  int error = b->read(b, block, buf, 4096, 0);
   if (error < 0) {
     ksh_printf("error: %s\n", errorname(-error));
     kfree(buf);
@@ -306,7 +306,7 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
   char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
   kstrcpy(buf, argv[4]);
-  int error = b->write(b, block, buf, 4096);
+  int error = b->write(b, block, buf, 4096, 0);
   if (error < 0) {
     ksh_printf("error: %s\n", errorname(-error));
     kfree(buf);

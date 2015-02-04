@@ -20,8 +20,8 @@
 
 // Read and write to/from a device special file.  Used internally by the VFS.
 int special_device_read(vnode_type_t type, apos_dev_t dev, int offset,
-                        void* buf, int len);
+                        void* buf, int len, int flags);
 int special_device_write(vnode_type_t type, apos_dev_t dev, int offset,
-                         const void* buf, int len);
+                         const void* buf, int len, int flags);
 
 #endif

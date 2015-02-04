@@ -1529,25 +1529,25 @@ static void block_device_test(void) {
 
   // Zero out the entire ramdisk.
   for (int i = 0; i < kRamdiskSize / kBufSize; ++i) {
-    KEXPECT_EQ(kBufSize, ramdisk_bd.write(&ramdisk_bd, i, buf, kBufSize));
+    KEXPECT_EQ(kBufSize, ramdisk_bd.write(&ramdisk_bd, i, buf, kBufSize, 0));
   }
 
   KTEST_BEGIN("vfs_read(): block device");
   kstrcpy(buf, "ramdisk");
-  KEXPECT_EQ(kBufSize, ramdisk_bd.write(&ramdisk_bd, 0, buf, kBufSize));
+  KEXPECT_EQ(kBufSize, ramdisk_bd.write(&ramdisk_bd, 0, buf, kBufSize, 0));
   kmemset(buf, 0, kBufSize);
   KEXPECT_EQ(10, vfs_read(fd, buf, 10));
   KEXPECT_EQ(0, kmemcmp("ramdisk\0\0\0", buf, 10));
 
   KTEST_BEGIN("vfs_write(): block device");
   KEXPECT_EQ(7, vfs_write(fd, "written", 7));
-  KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 0, buf, kBufSize));
+  KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 0, buf, kBufSize, 0));
   KEXPECT_EQ(0, kmemcmp("ramdisk\0\0\0written\0\0\0", buf, 20));
 
   KTEST_BEGIN("vfs_seek(): block device: seek within block");
   KEXPECT_EQ(kBufSize * 2 + 5, vfs_seek(fd, kBufSize * 2 + 5, VFS_SEEK_SET));
   KEXPECT_EQ(6, vfs_write(fd, "write2", 6));
-  KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 2, buf, kBufSize));
+  KEXPECT_EQ(kBufSize, ramdisk_bd.read(&ramdisk_bd, 2, buf, kBufSize, 0));
   KEXPECT_EQ(0, kmemcmp("\0\0\0\0\0write2\0\0\0\0", buf, 15));
 
   KTEST_BEGIN("vfs_seek(): block device: seek past end of device");

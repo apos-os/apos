@@ -63,7 +63,7 @@ void ramdisk_destroy(ramdisk_t* d) {
 }
 
 static int ramdisk_read(struct block_dev* dev, size_t offset,
-                        void* buf, size_t len) {
+                        void* buf, size_t len, int flags) {
   if (len % dev->sector_size != 0) {
     return -EINVAL;
   }
@@ -85,7 +85,7 @@ static int ramdisk_read(struct block_dev* dev, size_t offset,
 }
 
 static int ramdisk_write(struct block_dev* dev, size_t offset,
-                         const void* buf, size_t len) {
+                         const void* buf, size_t len, int flags) {
   if (len % dev->sector_size != 0) {
     return -EINVAL;
   }

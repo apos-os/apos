@@ -826,14 +826,14 @@ int vfs_read(int fd, void* buf, size_t count) {
     result = fifo_read(file->vnode->fifo, buf, count, true);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
-                                 buf, count);
+                                 buf, count, file->flags);
   } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_read(file->vnode->type, file->vnode->dev,
-                                   file->pos, buf, count);
+                                   file->pos, buf, count, file->flags);
     }
     if (result >= 0) {
       file->pos += result;
@@ -866,7 +866,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
     result = fifo_write(file->vnode->fifo, buf, count, true);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
-                                  file->pos, buf, count);
+                                  file->pos, buf, count, file->flags);
   } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
@@ -874,7 +874,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,
-                                    file->pos, buf, count);
+                                    file->pos, buf, count, file->flags);
     }
     if (result >= 0) {
       file->pos += result;

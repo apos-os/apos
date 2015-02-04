@@ -29,8 +29,8 @@ void bd_standard_test(block_dev_t* bd) {
 
   KTEST_BEGIN("non-aligned parameters");
   char buf[1024];
-  KEXPECT_EQ(-EINVAL, bd->read(bd, 0, buf, 768));
-  KEXPECT_EQ(-EINVAL, bd->write(bd, 0, buf, 768));
+  KEXPECT_EQ(-EINVAL, bd->read(bd, 0, buf, 768, 0));
+  KEXPECT_EQ(-EINVAL, bd->write(bd, 0, buf, 768, 0));
 
   kmemset(buf, 1, 256);
   kmemset(buf + 256, 2, 256);
@@ -38,60 +38,60 @@ void bd_standard_test(block_dev_t* bd) {
   kmemset(buf + 768, 3, 256);
 
   KTEST_BEGIN("zero-length read()");
-  KEXPECT_EQ(0, bd->read(bd, 0, buf, 0));
+  KEXPECT_EQ(0, bd->read(bd, 0, buf, 0, 0));
 
   KTEST_BEGIN("zero-length write()");
-  KEXPECT_EQ(0, bd->write(bd, 0, buf, 0));
+  KEXPECT_EQ(0, bd->write(bd, 0, buf, 0, 0));
 
   char golden_buf[1024];
   kmemcpy(golden_buf, buf, 1024);
 
   KTEST_BEGIN("write() then read()");
-  KEXPECT_EQ(1024, bd->write(bd, 5, buf, 1024));
+  KEXPECT_EQ(1024, bd->write(bd, 5, buf, 1024, 0));
   kmemset(buf, 0, 1024);
 
-  KEXPECT_EQ(1024, bd->read(bd, 5, buf, 1024));
+  KEXPECT_EQ(1024, bd->read(bd, 5, buf, 1024, 0));
   KEXPECT_EQ(0, kmemcmp(buf, golden_buf, 1024));
 
   KTEST_BEGIN("small read()");
   kmemset(buf, 0, 1024);
-  KEXPECT_EQ(512, bd->read(bd, 5, buf, 512));
+  KEXPECT_EQ(512, bd->read(bd, 5, buf, 512, 0));
   KEXPECT_NE(0, kmemcmp(buf, golden_buf, 1024));
   KEXPECT_EQ(0, kmemcmp(buf, golden_buf, 512));
 
   KTEST_BEGIN("past-end-of-file read()");
-  KEXPECT_EQ(0, bd->read(bd, bd->sectors + 1, buf, 1024));
+  KEXPECT_EQ(0, bd->read(bd, bd->sectors + 1, buf, 1024, 0));
 
   KTEST_BEGIN("past-end-of-file write()");
-  KEXPECT_EQ(0, bd->write(bd, bd->sectors + 1, buf, 1024));
+  KEXPECT_EQ(0, bd->write(bd, bd->sectors + 1, buf, 1024, 0));
 
   KTEST_BEGIN("runs past-end-of-file write()");
-  KEXPECT_EQ(512, bd->write(bd, bd->sectors - 1, golden_buf, 1024));
+  KEXPECT_EQ(512, bd->write(bd, bd->sectors - 1, golden_buf, 1024, 0));
 
   KTEST_BEGIN("runs past-end-of-file read()");
   kmemset(buf, 0, 1024);
-  KEXPECT_EQ(512, bd->read(bd, bd->sectors - 1, buf, 1024));
+  KEXPECT_EQ(512, bd->read(bd, bd->sectors - 1, buf, 1024, 0));
   KEXPECT_EQ(0, kmemcmp(buf, golden_buf, 512));
 
   KTEST_BEGIN("overlapping write()s");
   kmemset(buf, 0, 1024);
-  KEXPECT_EQ(1024, bd->write(bd, 5, golden_buf, 1024));
-  KEXPECT_EQ(1024, bd->write(bd, 6, golden_buf, 1024));
+  KEXPECT_EQ(1024, bd->write(bd, 5, golden_buf, 1024, 0));
+  KEXPECT_EQ(1024, bd->write(bd, 6, golden_buf, 1024, 0));
 
   kmemset(buf, 0, 1024);
-  KEXPECT_EQ(1024, bd->read(bd, 5, buf, 1024));
+  KEXPECT_EQ(1024, bd->read(bd, 5, buf, 1024, 0));
   // Should be the first and second 256-byte blocks repeated twice.
   KEXPECT_EQ(0, kmemcmp(buf, golden_buf, 512));
   KEXPECT_EQ(0, kmemcmp(buf + 512, golden_buf, 512));
 
   KTEST_BEGIN("multi write() then read() test");
   kmemset(buf, 1, 1024);
-  KEXPECT_EQ(512, bd->write(bd, 0, buf, 512));
+  KEXPECT_EQ(512, bd->write(bd, 0, buf, 512, 0));
   kmemset(buf, 2, 1024);
-  KEXPECT_EQ(512, bd->write(bd, 1, buf, 512));
+  KEXPECT_EQ(512, bd->write(bd, 1, buf, 512, 0));
 
   kmemset(buf, 0, 1024);
-  KEXPECT_EQ(1024, bd->read(bd, 0, buf, 1024));
+  KEXPECT_EQ(1024, bd->read(bd, 0, buf, 1024, 0));
 
   char golden2[1024];
   kmemset(golden2, 1, 512);
@@ -107,13 +107,13 @@ void bd_standard_test(block_dev_t* bd) {
     kmemset(big_buf + i * bd->sector_size, i, bd->sector_size);
   }
 
-  int result = bd->write(bd, 0, big_buf, BIG_BUF_SIZE);
+  int result = bd->write(bd, 0, big_buf, BIG_BUF_SIZE, 0);
   // Make sure we wrote at least a page of it.
   KEXPECT_GE(result, 4096);
 
   // Read and verify.
   kmemset(big_buf, 0, BIG_BUF_SIZE);
-  result = bd->read(bd, 0, big_buf, BIG_BUF_SIZE);
+  result = bd->read(bd, 0, big_buf, BIG_BUF_SIZE, 0);
   KEXPECT_GE(result, 4096);
 
   // Verify what we got back.
@@ -168,7 +168,7 @@ void* bd_thread_test_func(void* arg) {
     if (THREAD_TEST_VERBOSE) {
       KLOG("thread %d writing block %u (actual block %u)\n", t->id, i, block);
     }
-    int result = t->bd->write(t->bd, block, buf, t->bd->sector_size);
+    int result = t->bd->write(t->bd, block, buf, t->bd->sector_size, 0);
     if (result != t->bd->sector_size) {
       KLOG("failed: block %d on dev %d in thread %d didn't match: "
            "write failed (expected %d, got %d)\n",
@@ -187,7 +187,7 @@ void* bd_thread_test_func(void* arg) {
     if (THREAD_TEST_VERBOSE) {
       KLOG("thread %d reading block %u (actual block %u)\n", t->id, i, block);
     }
-    int result = t->bd->read(t->bd, block, buf, t->bd->sector_size);
+    int result = t->bd->read(t->bd, block, buf, t->bd->sector_size, 0);
     if (result != t->bd->sector_size) {
       KLOG("failed: block %d on dev %d in thread %d didn't match: "
            "read failed (expected %d, got %d)\n",

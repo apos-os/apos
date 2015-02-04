@@ -394,12 +394,13 @@ int ld_write(ld_t* l, const char* buf, int n) {
   return n;
 }
 
-static int ld_char_dev_read(struct char_dev* dev, void* buf, size_t len) {
+static int ld_char_dev_read(struct char_dev* dev, void* buf, size_t len,
+                            int flags) {
   return ld_read((ld_t*)dev->dev_data, buf, len);
 }
 
 static int ld_char_dev_write(struct char_dev* dev, const void* buf,
-                             size_t len) {
+                             size_t len, int flags) {
   return ld_write((ld_t*)dev->dev_data, buf, len);
 }
 
