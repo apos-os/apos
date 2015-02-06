@@ -527,8 +527,13 @@ static void termios_bg_pgrp_test(void* arg) {
   proc_suppress_signal(proc_current(), SIGTTOU);
   proc_suppress_signal(proc_get(child_in_grp), SIGTTOU);
 
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
+  KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, proc_current()->id));
+
   char buf[10];
   KEXPECT_EQ(1, ld_read_async(args->ld, buf, 10));
+  KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
 
   // Verify the arg check happens first.
   KEXPECT_EQ(-EINVAL, tty_tcflush(tty_fd, 50));
