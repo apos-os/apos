@@ -340,7 +340,7 @@ static int ld_read_block(ld_t* l) {
   return 0;
 }
 
-static int ld_read_internal(ld_t* l, char* buf, int n, int flags) {
+int ld_read(ld_t* l, char* buf, int n, int flags) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
   if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
@@ -371,14 +371,6 @@ static int ld_read_internal(ld_t* l, char* buf, int n, int flags) {
   return result;
 }
 
-int ld_read(ld_t* l, char* buf, int n) {
-  return ld_read_internal(l, buf, n, 0);
-}
-
-int ld_read_async(ld_t* l, char* buf, int n) {
-  return ld_read_internal(l, buf, n, VFS_O_NONBLOCK);
-}
-
 int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
@@ -399,8 +391,13 @@ int ld_write(ld_t* l, const char* buf, int n) {
 
 static int ld_char_dev_read(struct char_dev* dev, void* buf, size_t len,
                             int flags) {
-  return ld_read((ld_t*)dev->dev_data, buf, len);
+  return ld_read((ld_t*)dev->dev_data, buf, len, flags);
 }
+
+// For some reason, adding the flags parameter above causes a 1.5x-2x slowdown,
+// though I'm not sure why.  Adding a little bit of extra code fixes it.
+// TODO(aoates): remove this when not needed any longer.
+void _ld_pad(void) {}
 
 static int ld_char_dev_write(struct char_dev* dev, const void* buf,
                              size_t len, int flags) {

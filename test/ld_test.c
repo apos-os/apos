@@ -28,6 +28,7 @@
 #include "proc/sleep.h"
 #include "test/ktest.h"
 #include "user/include/apos/termios.h"
+#include "user/include/apos/vfs/vfs.h"
 
 #define LD_BUF_SIZE 15
 
@@ -58,6 +59,10 @@ static void reset(void) {
 
 static void ld_provides(ld_t* l, const char* s) {
   while (*s) ld_provide(l, *(s++));
+}
+
+static int ld_read_async(ld_t* l, char* buf, int n) {
+  return ld_read(l, buf, n, VFS_O_NONBLOCK);
 }
 
 static void echo_test(void) {
@@ -350,7 +355,7 @@ typedef struct {
 static void* basic_read_test_func(void* arg) {
   read_test_data_t* d = (read_test_data_t*)arg;
   KLOG("ld_read() thread %d started\n", d->idx);
-  d->out_len = ld_read(d->l, d->buf, d->len);
+  d->out_len = ld_read(d->l, d->buf, d->len, 0);
   KLOG("ld_read() thread %d read %d bytes\n", d->idx, d->out_len);
   return 0;
 }
@@ -432,7 +437,7 @@ static void three_thread_test(void) {
   KEXPECT_EQ(0, kstrncmp(data[2].buf, "c", 1));
 
   char buf[10];
-  int read_len = ld_read(g_ld, buf, 10);
+  int read_len = ld_read(g_ld, buf, 10, 0);
   KEXPECT_EQ(1, read_len);
 }
 
@@ -564,7 +569,7 @@ static void* noncanon_read(void* arg) {
   args->read_done = false;
   scheduler_wake_all(&args->read_started);
   uint32_t start = get_time_ms();
-  int result = ld_read(args->l, args->buf, args->readlen);
+  int result = ld_read(args->l, args->buf, args->readlen, 0);
   args->elapsed = get_time_ms() - start;
   args->read_done = true;
   return (void*)result;
@@ -594,18 +599,18 @@ static void termios_noncanon_read_test(void) {
 
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(0, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(g_ld, buf, 10, 0));
   // TODO(aoates): verify ld_read didn't block.
   KEXPECT_STREQ("", buf);
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ab", buf);
   ld_provide(g_ld, 'c');
   ld_provide(g_ld, 'd');
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 1));
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 1));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 1, 0));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 1, 0));
 
 
   KTEST_BEGIN("ld: non-canonical mode (MIN > 0, TIME == 0)");
@@ -625,7 +630,7 @@ static void termios_noncanon_read_test(void) {
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
   ld_provide(g_ld, 'c');
-  KEXPECT_EQ(3, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("abc", buf);
 
   // Test blocking behavior if fewer than MIN available.
@@ -653,7 +658,7 @@ static void termios_noncanon_read_test(void) {
   KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
   t.c_cc[VMIN] = t.c_cc[VTIME] = 0;
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
 
 
   KTEST_BEGIN("ld: non-canonical mode (MIN == 0, TIME > 0)");
@@ -666,7 +671,7 @@ static void termios_noncanon_read_test(void) {
   // Test when data never becomes available (ld_read times out).
   kmemset(buf, 0, 10);
   uint32_t start = get_time_ms();
-  KEXPECT_EQ(0, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(g_ld, buf, 10, 0));
   uint32_t end = get_time_ms();
   KEXPECT_GE(end - start, 150);
   KEXPECT_LE(end - start, 300);
@@ -675,7 +680,7 @@ static void termios_noncanon_read_test(void) {
   ld_provide(g_ld, 'a');
   start = get_time_ms();
   // TODO(aoates): verify this doesn't block.
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 10, 0));
   end = get_time_ms();
   KEXPECT_LE(end - start, 30);
 
@@ -709,7 +714,7 @@ static void termios_noncanon_read_test(void) {
   ld_provide(g_ld, 'd');
   start = get_time_ms();
   kmemset(buf, '\0', 10);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
   // TODO(aoates): verify ld_read didn't block.
   end = get_time_ms();
   KEXPECT_LE(end - start, 30);
@@ -720,7 +725,7 @@ static void termios_noncanon_read_test(void) {
   ld_provide(g_ld, 'f');
   start = get_time_ms();
   kmemset(buf, '\0', 10);
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
   end = get_time_ms();
   KEXPECT_GE(end - start, 180);
   KEXPECT_LE(end - start, 250);
@@ -763,7 +768,7 @@ static void termios_noncanon_read_test(void) {
   KEXPECT_EQ((void*)(-EINTR), kthread_join(read_thread));
   t.c_cc[VMIN] = t.c_cc[VTIME] = 0;
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
 
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &orig_term));
 }
@@ -782,7 +787,7 @@ static void control_chars_test(void) {
   ld_provide(g_ld, '\x04');
   char buf[50];
   kmemset(buf, 0, 50);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 50));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 50, 0));
   KEXPECT_STREQ("x\x01\x02\x08", buf);
 
   KTEST_BEGIN("ld: backspace over non-special control characters");
@@ -798,7 +803,7 @@ static void control_chars_test(void) {
 
   ld_provide(g_ld, '\x04');
   kmemset(buf, 0, 50);
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 50, 0));
   KEXPECT_STREQ("x", buf);
 
   KTEST_BEGIN("ld: echoing space control characters");
@@ -813,7 +818,7 @@ static void control_chars_test(void) {
 
   ld_provide(g_ld, '\x04');
   kmemset(buf, 0, 50);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 50));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 50, 0));
   KEXPECT_STREQ(" \n\t\v", buf);
 
   KTEST_BEGIN("ld: backspace over space control characters");
@@ -830,7 +835,7 @@ static void control_chars_test(void) {
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, '\x04');
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 50, 0));
 
   KTEST_BEGIN("ld: signal-causing characters echoed");
   reset();
@@ -844,7 +849,7 @@ static void control_chars_test(void) {
   KEXPECT_STREQ("^C^Z^\\a", g_sink);
 
   // They shouldn't have been put in the buffer, since ISIG is set.
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 50));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 50, 0));
   KEXPECT_EQ('a', buf[0]);
 
   KTEST_BEGIN("ld: signal-causing characters discard current ld buffer");
@@ -859,7 +864,7 @@ static void control_chars_test(void) {
   KEXPECT_EQ(5, g_sink_idx);
   KEXPECT_STREQ("ab^Cc", g_sink);
 
-  KEXPECT_EQ(1, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(1, ld_read(g_ld, buf, 10, 0));
   KEXPECT_EQ('c', buf[0]);
 
   KTEST_BEGIN("ld: backspace over signal-causing characters");
@@ -899,7 +904,7 @@ static void noflsh_test(void) {
   KEXPECT_STREQ("ab^C^Z^\\c", g_sink);
 
   char buf[10];
-  KEXPECT_EQ(3, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("abc", buf);
 
   KTEST_BEGIN("ld: backspace over signal-causing characters with NOFLSH");
@@ -940,7 +945,7 @@ static void termios_noncanon_test(void) {
 
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x04", buf);
 
 
@@ -953,7 +958,7 @@ static void termios_noncanon_test(void) {
   KEXPECT_STREQ("b^?^H", g_sink);
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("b\x7f\b", buf);
 
   ld_set_termios(g_ld, TCSANOW, &orig_term);
@@ -980,7 +985,7 @@ static void echoe_test(void) {
   // The ERASE character should have been applied to the buffer, however.
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ac", buf);
 
 
@@ -999,7 +1004,7 @@ static void echoe_test(void) {
   KEXPECT_EQ(0, g_sink_idx);
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(2, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(2, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ac", buf);
 
 
@@ -1019,7 +1024,7 @@ static void echoe_test(void) {
 
   // The ERASE character should *not* have been applied to the buffer.
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ab\x7f" "c", buf);
 }
 
@@ -1039,7 +1044,7 @@ static void echonl_test(void) {
 
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ab\nc", buf);
 
 
@@ -1055,7 +1060,7 @@ static void echonl_test(void) {
   KEXPECT_EQ('\n', g_sink[0]);
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ab\nc", buf);
 
 
@@ -1070,7 +1075,7 @@ static void echonl_test(void) {
   KEXPECT_EQ(4, g_sink_idx);
   KEXPECT_STREQ("ab\nc", g_sink);
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(4, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ab\nc", buf);
 }
 
@@ -1093,7 +1098,7 @@ static void change_control_char_test(void) {
   ld_provide(g_ld, 'p');
   KEXPECT_EQ(6, g_sink_idx);
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(5, ld_read(g_ld, buf, 10));
+  KEXPECT_EQ(5, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("abc\x04" "d", buf);
 }
 

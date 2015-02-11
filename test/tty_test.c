@@ -176,7 +176,7 @@ static void ld_signals_isig_flag_test(void* arg) {
 
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x03" "b", buf);
 
 
@@ -193,7 +193,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   KEXPECT_EQ(0, sig_is_pending(proc_get(childC), SIGTSTP));
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x1a" "b", buf);
 
   KTEST_BEGIN("TTY: ctrl-\\/SIGQUIT disabled if ISIG isn't set");
@@ -209,7 +209,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   KEXPECT_EQ(0, sig_is_pending(proc_get(childC), SIGQUIT));
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x1c" "b", buf);
 
   KTEST_BEGIN("TTY: ctrl-C/SIGINT sent in non-canon mode if ISIG isn't set");
@@ -227,7 +227,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   KEXPECT_EQ(0, sig_is_pending(proc_get(childC), SIGINT));
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(1, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(1, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("b", buf);
 
   proc_wait(NULL);
@@ -277,12 +277,12 @@ static void ld_signals_cc_c_test(void* arg) {
 
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x03" "b", buf);
 
   ld_provide(test_ld, 'x');
   ld_provide(test_ld, 'p');
-  KEXPECT_EQ(0, ld_read_async(test_ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGINT));
 
 
@@ -300,12 +300,12 @@ static void ld_signals_cc_c_test(void* arg) {
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGQUIT));
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x1c" "b", buf);
 
   ld_provide(test_ld, 'x');
   ld_provide(test_ld, 'q');
-  KEXPECT_EQ(0, ld_read_async(test_ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGQUIT));
 
 
@@ -323,12 +323,12 @@ static void ld_signals_cc_c_test(void* arg) {
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTSTP));
 
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(3, ld_read(test_ld, buf, 10));
+  KEXPECT_EQ(3, ld_read(test_ld, buf, 10, 0));
   KEXPECT_STREQ("a\x1a" "b", buf);
 
   ld_provide(test_ld, 'x');
   ld_provide(test_ld, 'q');
-  KEXPECT_EQ(0, ld_read_async(test_ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTSTP));
 
 
@@ -404,7 +404,7 @@ static void termios_test(void* arg) {
   KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
   KEXPECT_EQ('q', t.c_cc[VINTR]);
   // Ideally we'd read from the tty_fd, but that would block.
-  KEXPECT_EQ(0, ld_read_async(args->ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
 
 
   KTEST_BEGIN("tty: tcsetattr() invalid or non-TTY fd");
@@ -431,7 +431,7 @@ static void termios_test(void* arg) {
   ld_provide(args->ld, 'a');
   ld_provide(args->ld, '\x04');
   KEXPECT_EQ(0, tty_tcflush(tty_fd, TCIFLUSH));
-  KEXPECT_EQ(0, ld_read_async(args->ld, buf, 10));
+  KEXPECT_EQ(0, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
 
 
   KTEST_BEGIN("tty: tcflush(TCOFLUSH)");
@@ -531,7 +531,7 @@ static void termios_bg_pgrp_test(void* arg) {
   KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, proc_current()->id));
 
   char buf[10];
-  KEXPECT_EQ(1, ld_read_async(args->ld, buf, 10));
+  KEXPECT_EQ(1, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
   KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
 
