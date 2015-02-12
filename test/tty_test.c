@@ -282,7 +282,7 @@ static void ld_signals_cc_c_test(void* arg) {
 
   ld_provide(test_ld, 'x');
   ld_provide(test_ld, 'p');
-  KEXPECT_EQ(0, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
+  KEXPECT_EQ(-EAGAIN, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGINT));
 
 
@@ -305,7 +305,7 @@ static void ld_signals_cc_c_test(void* arg) {
 
   ld_provide(test_ld, 'x');
   ld_provide(test_ld, 'q');
-  KEXPECT_EQ(0, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
+  KEXPECT_EQ(-EAGAIN, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGQUIT));
 
 
@@ -328,7 +328,7 @@ static void ld_signals_cc_c_test(void* arg) {
 
   ld_provide(test_ld, 'x');
   ld_provide(test_ld, 'q');
-  KEXPECT_EQ(0, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
+  KEXPECT_EQ(-EAGAIN, ld_read(test_ld, buf, 10, VFS_O_NONBLOCK));
   KEXPECT_EQ(1, sig_is_pending(proc_current(), SIGTSTP));
 
 
@@ -404,7 +404,7 @@ static void termios_test(void* arg) {
   KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
   KEXPECT_EQ('q', t.c_cc[VINTR]);
   // Ideally we'd read from the tty_fd, but that would block.
-  KEXPECT_EQ(0, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
+  KEXPECT_EQ(-EAGAIN, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
 
 
   KTEST_BEGIN("tty: tcsetattr() invalid or non-TTY fd");
@@ -431,7 +431,7 @@ static void termios_test(void* arg) {
   ld_provide(args->ld, 'a');
   ld_provide(args->ld, '\x04');
   KEXPECT_EQ(0, tty_tcflush(tty_fd, TCIFLUSH));
-  KEXPECT_EQ(0, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
+  KEXPECT_EQ(-EAGAIN, ld_read(args->ld, buf, 10, VFS_O_NONBLOCK));
 
 
   KTEST_BEGIN("tty: tcflush(TCOFLUSH)");

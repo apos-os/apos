@@ -366,6 +366,7 @@ int ld_read(ld_t* l, char* buf, int n, int flags) {
   if (!result) {
     result = ld_do_read(l, buf, n);
   }
+  if (result == 0) result = -EAGAIN;
 
   POP_INTERRUPTS();
   return result;

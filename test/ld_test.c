@@ -131,7 +131,7 @@ static void basic_read_test(void) {
 
   char buf[100];
   int read_len = ld_read_async(g_ld, buf, 100);
-  KEXPECT_EQ(0, read_len);
+  KEXPECT_EQ(-EAGAIN, read_len);
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -148,7 +148,7 @@ static void eof_read_test(void) {
 
   char buf[100];
   int read_len = ld_read_async(g_ld, buf, 100);
-  KEXPECT_EQ(0, read_len);
+  KEXPECT_EQ(-EAGAIN, read_len);
 
   ld_provide(g_ld, 'a');
   ld_provide(g_ld, 'b');
@@ -168,7 +168,7 @@ static void cook_test(void) {
   ld_provide(g_ld, 'b');
   ld_provide(g_ld, 'c');
   int read_len = ld_read_async(g_ld, buf, 100);
-  KEXPECT_EQ(0, read_len);
+  KEXPECT_EQ(-EAGAIN, read_len);
 
   // Delete some chars then provide new ones.
   ld_provide(g_ld, '\x7f');
@@ -177,7 +177,7 @@ static void cook_test(void) {
   ld_provide(g_ld, 'E');
   ld_provide(g_ld, 'F');
   read_len = ld_read_async(g_ld, buf, 100);
-  KEXPECT_EQ(0, read_len);
+  KEXPECT_EQ(-EAGAIN, read_len);
 
   ld_provide(g_ld, '\n');
   read_len = ld_read_async(g_ld, buf, 100);
@@ -255,7 +255,7 @@ static void do_overload_test(void) {
   // We should have exceeded the limit, so the newline was dropped.
   char buf[100];
   int read_len = ld_read_async(g_ld, buf, 100);
-  KEXPECT_EQ(0, read_len);
+  KEXPECT_EQ(-EAGAIN, read_len);
 
   // Make room then try cooking again.
   ld_provide(g_ld, '\x7f');
@@ -341,7 +341,7 @@ static void read_limit_test(void) {
   KEXPECT_EQ(0, kstrncmp(buf, "\n", 1));
 
   read_len = ld_read_async(g_ld, buf, 1);
-  KEXPECT_EQ(0, read_len);
+  KEXPECT_EQ(-EAGAIN, read_len);
 }
 
 typedef struct {
@@ -482,7 +482,7 @@ static void three_thread_test2(void) {
   KEXPECT_EQ(2, data[1].out_len);
   KEXPECT_EQ(0, kstrncmp(data[1].buf, "c\n", 2));
 
-  KEXPECT_EQ(0, data[2].out_len);
+  KEXPECT_EQ(-EAGAIN, data[2].out_len);
 
   ld_provide(g_ld, 'd');
   ld_provide(g_ld, '\n');
@@ -599,7 +599,7 @@ static void termios_noncanon_read_test(void) {
 
   char buf[10];
   kmemset(buf, 0, 10);
-  KEXPECT_EQ(0, ld_read(g_ld, buf, 10, 0));
+  KEXPECT_EQ(-EAGAIN, ld_read(g_ld, buf, 10, 0));
   // TODO(aoates): verify ld_read didn't block.
   KEXPECT_STREQ("", buf);
 
@@ -671,7 +671,7 @@ static void termios_noncanon_read_test(void) {
   // Test when data never becomes available (ld_read times out).
   kmemset(buf, 0, 10);
   uint32_t start = get_time_ms();
-  KEXPECT_EQ(0, ld_read(g_ld, buf, 10, 0));
+  KEXPECT_EQ(-EAGAIN, ld_read(g_ld, buf, 10, 0));
   uint32_t end = get_time_ms();
   KEXPECT_GE(end - start, 150);
   KEXPECT_LE(end - start, 300);
@@ -878,7 +878,7 @@ static void control_chars_test(void) {
 
   KEXPECT_EQ(7, g_sink_idx);
   KEXPECT_STREQ("a^Cc\b \b", g_sink);
-  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+  KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
 }
 
 static void noflsh_test(void) {
@@ -920,7 +920,7 @@ static void noflsh_test(void) {
 
   KEXPECT_EQ(14, g_sink_idx);
   KEXPECT_STREQ("a^C^Z^\\c\b \b\b \b", g_sink);
-  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+  KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
 
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &orig_term));
 }
@@ -1093,7 +1093,7 @@ static void change_control_char_test(void) {
   KEXPECT_EQ(6, g_sink_idx);
   KEXPECT_STREQ("abc^Dd", g_sink);
   char buf[10];
-  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+  KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
 
   ld_provide(g_ld, 'p');
   KEXPECT_EQ(6, g_sink_idx);
@@ -1136,7 +1136,7 @@ static void set_attr_when_test(void) {
   kmemset(&t, 0xFF, sizeof(struct termios));
   ld_get_termios(g_ld, &t);
   KEXPECT_EQ('q', t.c_cc[VEOF]);
-  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+  KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
 
 
   KTEST_BEGIN("ld: ld_set_termios() with invalid optional_actions arg");
@@ -1168,7 +1168,7 @@ static void drain_and_flush_test(void) {
   KEXPECT_EQ(0, ld_flush(g_ld, TCIFLUSH));
   KEXPECT_EQ(6, g_sink_idx);
   KEXPECT_STREQ("abcxyz", g_sink);
-  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+  KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
 
 
   KTEST_BEGIN("ld: ld_flush(TCOFLUSH) test");
@@ -1192,7 +1192,7 @@ static void drain_and_flush_test(void) {
   KEXPECT_EQ(0, ld_flush(g_ld, TCIOFLUSH));
   KEXPECT_EQ(6, g_sink_idx);
   KEXPECT_STREQ("abcxyz", g_sink);
-  KEXPECT_EQ(0, ld_read_async(g_ld, buf, 10));
+  KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
 
 
   KTEST_BEGIN("ld: ld_flush() invalid action test");
