@@ -600,6 +600,35 @@ static void termios_test_runner(void* arg) {
   ld_destroy(args.ld);
 }
 
+static void tty_nonblock_test(void) {
+  args_t args;
+  args.ld = ld_create(5);
+  args.tty = tty_create(args.ld);
+
+  int sink_counter = 0;
+  ld_set_sink(args.ld, &sink, &sink_counter);
+
+  KTEST_BEGIN("TTY: O_NONBLOCK (reading)");
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(args.tty));
+  int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NONBLOCK | VFS_O_NOCTTY);
+  KEXPECT_GE(fd, 0);
+  char buf[10];
+  KEXPECT_EQ(-EAGAIN, vfs_read(fd, buf, 10));
+  ld_provide(args.ld, 'x');
+  ld_provide(args.ld, '\n');
+  KEXPECT_EQ(2, vfs_read(fd, buf, 10));
+  KEXPECT_EQ(-EAGAIN, vfs_read(fd, buf, 10));
+
+  KTEST_BEGIN("TTY: O_NONBLOCK (writing)");
+  KEXPECT_EQ(5, vfs_write(fd, "abcde", 5));
+
+  vfs_close(fd);
+
+  tty_destroy(args.tty);
+  ld_destroy(args.ld);
+}
+
 void tty_test(void) {
   KTEST_SUITE_BEGIN("TTY tests");
 
@@ -608,4 +637,6 @@ void tty_test(void) {
 
   child = proc_fork(&termios_test_runner, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
+
+  tty_nonblock_test();
 }
