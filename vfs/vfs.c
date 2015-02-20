@@ -824,7 +824,8 @@ int vfs_read(int fd, void* buf, size_t count) {
   file->refcount++;
 
   if (file->vnode->type == VNODE_FIFO) {
-    result = fifo_read(file->vnode->fifo, buf, count, true);
+    result = fifo_read(file->vnode->fifo, buf, count,
+                       !(file->flags & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
                                  buf, count, file->flags);
@@ -864,7 +865,8 @@ int vfs_write(int fd, const void* buf, size_t count) {
   file->refcount++;
 
   if (file->vnode->type == VNODE_FIFO) {
-    result = fifo_write(file->vnode->fifo, buf, count, true);
+    result = fifo_write(file->vnode->fifo, buf, count,
+                        !(file->flags & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);

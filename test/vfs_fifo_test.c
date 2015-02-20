@@ -354,7 +354,44 @@ static void nonblock_test(void) {
   vfs_close(fd2);
   vfs_close(fd3);
 
+
+  KTEST_BEGIN("FIFO: read() with no writers (non-block)");
+  int rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(rd_fd, buf, 10));
+
+
+  KTEST_BEGIN("FIFO: read() with writer but no data (non-block)");
+  int wr_fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY | VFS_O_NONBLOCK);
+  KEXPECT_EQ(-EAGAIN, vfs_read(rd_fd, buf, 10));
+
+
+  KTEST_BEGIN("FIFO: read() with writer and data (non-block)");
+  KEXPECT_EQ(5, vfs_write(wr_fd, "abcde", 5));
+  KEXPECT_EQ(5, vfs_read(rd_fd, buf, 10));
+
+
+  KTEST_BEGIN("FIFO: write() with no readers (non-block)");
+  vfs_close(rd_fd);
+  KEXPECT_EQ(-EPIPE, vfs_write(wr_fd, "abcde", 5));
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+
+  KTEST_BEGIN("FIFO: write() with reader (non-block)");
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  KEXPECT_EQ(5, vfs_write(wr_fd, "abcde", 5));
+
+
+  KTEST_BEGIN("FIFO: write() with reader; FIFO full (non-block)");
+  char* big_buf = kmalloc(5000);
+  KEXPECT_LT(0, vfs_write(wr_fd, big_buf, 5000));
+  KEXPECT_EQ(-EAGAIN, vfs_write(wr_fd, big_buf, 5000));
+  kfree(big_buf);
+
+
   KTEST_BEGIN("FIFO: non-block test cleanup");
+  vfs_close(rd_fd);
+  vfs_close(wr_fd);
   KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
