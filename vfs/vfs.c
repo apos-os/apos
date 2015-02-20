@@ -554,7 +554,8 @@ int vfs_open(const char* path, int flags, ...) {
     }
   }
 
-  int result = vfs_open_vnode(child, flags, true);
+  const bool block = !(flags & VFS_O_NONBLOCK);
+  int result = vfs_open_vnode(child, flags, block);
   VFS_PUT_AND_CLEAR(child);
 
   if (result >= 0 && flags & VFS_O_TRUNC) {
