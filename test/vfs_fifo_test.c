@@ -328,6 +328,74 @@ static void interrupt_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+static void nonblock_test(void) {
+  KTEST_BEGIN("FIFO: open(O_NONBLOCK | O_RDONLY) without writers");
+  KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
+
+  int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  KEXPECT_GE(fd, 0);
+  vfs_close(fd);
+
+
+  KTEST_BEGIN("FIFO: open(O_NONBLOCK | O_WRONLY) without readers");
+  KEXPECT_EQ(-ENXIO, vfs_open("fifo_test/fifo", VFS_O_WRONLY | VFS_O_NONBLOCK));
+
+
+  KTEST_BEGIN("FIFO: open(O_NONBLOCK) with readers and writers");
+  fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  int fd2 = vfs_open("fifo_test/fifo", VFS_O_WRONLY | VFS_O_NONBLOCK);
+  int fd3 = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_GE(fd2, 0);
+  KEXPECT_GE(fd3, 0);
+
+  vfs_close(fd);
+  vfs_close(fd2);
+  vfs_close(fd3);
+
+
+  KTEST_BEGIN("FIFO: read() with no writers (non-block)");
+  int rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(rd_fd, buf, 10));
+
+
+  KTEST_BEGIN("FIFO: read() with writer but no data (non-block)");
+  int wr_fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY | VFS_O_NONBLOCK);
+  KEXPECT_EQ(-EAGAIN, vfs_read(rd_fd, buf, 10));
+
+
+  KTEST_BEGIN("FIFO: read() with writer and data (non-block)");
+  KEXPECT_EQ(5, vfs_write(wr_fd, "abcde", 5));
+  KEXPECT_EQ(5, vfs_read(rd_fd, buf, 10));
+
+
+  KTEST_BEGIN("FIFO: write() with no readers (non-block)");
+  vfs_close(rd_fd);
+  KEXPECT_EQ(-EPIPE, vfs_write(wr_fd, "abcde", 5));
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+
+  KTEST_BEGIN("FIFO: write() with reader (non-block)");
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  KEXPECT_EQ(5, vfs_write(wr_fd, "abcde", 5));
+
+
+  KTEST_BEGIN("FIFO: write() with reader; FIFO full (non-block)");
+  char* big_buf = kmalloc(5000);
+  KEXPECT_LT(0, vfs_write(wr_fd, big_buf, 5000));
+  KEXPECT_EQ(-EAGAIN, vfs_write(wr_fd, big_buf, 5000));
+  kfree(big_buf);
+
+
+  KTEST_BEGIN("FIFO: non-block test cleanup");
+  vfs_close(rd_fd);
+  vfs_close(wr_fd);
+  KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
+  KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
+}
+
 void vfs_fifo_test(void) {
   KTEST_SUITE_BEGIN("VFS FIFO test");
   const int initial_cache_size = vfs_cache_size();
@@ -341,6 +409,7 @@ void vfs_fifo_test(void) {
   open_test();
   read_write_test();
   interrupt_test();
+  nonblock_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

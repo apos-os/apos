@@ -58,7 +58,7 @@ static int block_dev_op(int is_write, apos_dev_t dev, int offset,
 }
 
 int special_device_read(vnode_type_t type, apos_dev_t dev, int offset,
-                        void* buf, int len) {
+                        void* buf, int len, int flags) {
   KASSERT(type == VNODE_BLOCKDEV || type == VNODE_CHARDEV);
   if (type == VNODE_BLOCKDEV) {
     return block_dev_op(0, dev, offset, buf, len);
@@ -66,12 +66,12 @@ int special_device_read(vnode_type_t type, apos_dev_t dev, int offset,
     KASSERT(offset == 0);  // Can't seek in character devices.
     char_dev_t* chardev = dev_get_char(dev);
     if (!chardev) return -ENXIO;
-    return chardev->read(chardev, buf, len);
+    return chardev->read(chardev, buf, len, flags);
   }
 }
 
 int special_device_write(vnode_type_t type, apos_dev_t dev, int offset,
-                         const void* buf, int len) {
+                         const void* buf, int len, int flags) {
   KASSERT(type == VNODE_BLOCKDEV || type == VNODE_CHARDEV);
   if (type == VNODE_BLOCKDEV) {
     return block_dev_op(1, dev, offset, (void*)buf, len);
@@ -79,6 +79,6 @@ int special_device_write(vnode_type_t type, apos_dev_t dev, int offset,
     KASSERT(offset == 0);  // Can't seek in character devices.
     char_dev_t* chardev = dev_get_char(dev);
     if (!chardev) return -ENXIO;
-    return chardev->write(chardev, buf, len);
+    return chardev->write(chardev, buf, len, flags);
   }
 }

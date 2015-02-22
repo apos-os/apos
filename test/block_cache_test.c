@@ -50,7 +50,7 @@ static void setup_disk(apos_dev_t dev) {
     ksprintf(&data[BLOCK_CACHE_BLOCK_SIZE - 10], "end%i", i);
     const int sector_offset = block2sector(bd, i);
     KASSERT(BLOCK_CACHE_BLOCK_SIZE ==
-            bd->write(bd, sector_offset, data, BLOCK_CACHE_BLOCK_SIZE));
+            bd->write(bd, sector_offset, data, BLOCK_CACHE_BLOCK_SIZE, 0));
   }
 }
 
@@ -137,13 +137,13 @@ static void basic_write_test(apos_dev_t dev) {
   char buf[RAMDISK_SECTOR_SIZE];
   block_dev_t* bd = dev_get_block(dev);
   KASSERT(RAMDISK_SECTOR_SIZE ==
-          bd->read(bd, block2sector(bd, 1), buf, RAMDISK_SECTOR_SIZE));
+          bd->read(bd, block2sector(bd, 1), buf, RAMDISK_SECTOR_SIZE, 0));
   KEXPECT_EQ(0, kstrcmp(buf, "written block"));
 
   // Write to the raw disk.
   kstrcpy(buf, "WRITTEN BLOCK");
   KASSERT(BLOCK_CACHE_BLOCK_SIZE ==
-          bd->write(bd, block2sector(bd, 1), buf, BLOCK_CACHE_BLOCK_SIZE));
+          bd->write(bd, block2sector(bd, 1), buf, BLOCK_CACHE_BLOCK_SIZE, 0));
 
   // Verify that if we get() it again we see the new data.
   block_cache_clear_unpinned();
@@ -165,7 +165,7 @@ static void write_at_end_test(apos_dev_t dev) {
   char buf[BLOCK_CACHE_BLOCK_SIZE];
   block_dev_t* bd = dev_get_block(dev);
   KASSERT(BLOCK_CACHE_BLOCK_SIZE ==
-          bd->read(bd, block2sector(bd, 1), buf, BLOCK_CACHE_BLOCK_SIZE));
+          bd->read(bd, block2sector(bd, 1), buf, BLOCK_CACHE_BLOCK_SIZE, 0));
   KEXPECT_STREQ("written end", &buf[BLOCK_CACHE_BLOCK_SIZE - 20]);
 }
 

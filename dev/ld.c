@@ -30,6 +30,7 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "user/include/apos/termios.h"
+#include "user/include/apos/vfs/vfs.h"
 
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
@@ -278,7 +279,7 @@ apos_dev_t ld_get_tty(const ld_t* l) {
   return l->tty;
 }
 
-static int ld_read_internal(ld_t* l, char* buf, int n) {
+static int ld_do_read(ld_t* l, char* buf, int n) {
   int copied = 0;
   int buf_idx = 0;
   while (l->start_idx != l->cooked_idx && copied < n) {
@@ -294,7 +295,52 @@ static inline size_t readable_bytes(const ld_t* l) {
   return (l->cooked_idx + l->buf_len - l->start_idx) % l->buf_len;
 }
 
-int ld_read(ld_t* l, char* buf, int n) {
+// Block until ld_read() should return, as determined by the ld's configuration.
+static int ld_read_block(ld_t* l) {
+  if (l->termios.c_lflag & ICANON) {
+    // Note: this means that if multiple threads are blocking on an ld_read()
+    // here, we could return 0 for some of them even though we didn't see an
+    // EOF!
+    if (l->start_idx == l->cooked_idx) {
+      // Block until data is available.
+      int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
+      if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
+    }
+  } else {
+    const unsigned int tmin = l->termios.c_cc[VMIN];
+    const unsigned int ttime = l->termios.c_cc[VTIME];
+
+    if (tmin > 0 || ttime > 0) {
+      if (readable_bytes(l) < tmin) {
+        // First block until *any* data is available.
+        while (readable_bytes(l) == 0) {
+          int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
+          if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
+        }
+      }
+      // Block until MIN bytes are available, or VTIME has elapsed.
+      // TODO(aoates): this isn't totally correct, another thread could gobble
+      // the first byte we got in the above loop (for MIN>0 && TIME>0 case)
+      uint32_t now = get_time_ms();
+      uint32_t timeout_end = ttime * 100;
+      if (timeout_end > 0) timeout_end += now;
+
+      while ((timeout_end == 0 || timeout_end > now) &&
+             (readable_bytes(l) == 0 || readable_bytes(l) < tmin)) {
+        long timeout_duration =
+            (timeout_end == 0) ? -1 : (long)(timeout_end - now);
+        int wait_result =
+            scheduler_wait_on_interruptable(&l->wait_queue, timeout_duration);
+        if (wait_result == SWAIT_INTERRUPTED) return -EINTR;
+        now = get_time_ms();
+      }
+    }
+  }
+
+  return 0;
+}
+
+int ld_read(ld_t* l, char* buf, int n, int flags) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
   if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
@@ -312,68 +358,18 @@ int ld_read(ld_t* l, char* buf, int n) {
     }
   }
 
-  // Note: this means that if multiple threads are blocking on an ld_read()
-  // here, we could return 0 for some of them even though we didn't see an EOF!
   int result = 0;
-  if (l->termios.c_lflag & ICANON) {
-    if (l->start_idx == l->cooked_idx) {
-      // Block until data is available.
-      int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
-      if (wait_result == SWAIT_INTERRUPTED) result = -EINTR;
-    }
-  } else {
-    const unsigned int tmin = l->termios.c_cc[VMIN];
-    const unsigned int ttime = l->termios.c_cc[VTIME];
-
-    if (tmin > 0 || ttime > 0) {
-      if (readable_bytes(l) < tmin) {
-        // First block until *any* data is available.
-        while (readable_bytes(l) == 0) {
-          int wait_result = scheduler_wait_on_interruptable(&l->wait_queue, -1);
-          if (wait_result == SWAIT_INTERRUPTED) {
-            result = -EINTR;
-            break;
-          }
-        }
-      }
-      if (result == 0) {
-        // Block until MIN bytes are available, or VTIME has elapsed.
-        // TODO(aoates): this isn't totally correct, another thread could gobble
-        // the first byte we got in the above loop (for MIN>0 && TIME>0 case)
-        uint32_t now = get_time_ms();
-        uint32_t timeout_end = ttime * 100;
-        if (timeout_end > 0) timeout_end += now;
-
-        while ((timeout_end == 0 || timeout_end > now) &&
-               (readable_bytes(l) == 0 || readable_bytes(l) < tmin)) {
-          long timeout_duration =
-              (timeout_end == 0) ? -1 : (long)(timeout_end - now);
-          int wait_result =
-              scheduler_wait_on_interruptable(&l->wait_queue, timeout_duration);
-          if (wait_result == SWAIT_INTERRUPTED) {
-            result = -EINTR;
-            break;
-          }
-          now = get_time_ms();
-        }
-      }
-    }
+  if (!(flags & VFS_O_NONBLOCK)) {
+    result = ld_read_block(l);
   }
 
   if (!result) {
-    // TODO(aoates): handle end-of-stream.
-    result = ld_read_internal(l, buf, n);
+    result = ld_do_read(l, buf, n);
   }
+  if (result == 0) result = -EAGAIN;
 
   POP_INTERRUPTS();
   return result;
-}
-
-int ld_read_async(ld_t* l, char* buf, int n) {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  int copied = ld_read_internal(l, buf, n);
-  POP_INTERRUPTS();
-  return copied;
 }
 
 int ld_write(ld_t* l, const char* buf, int n) {
@@ -394,12 +390,18 @@ int ld_write(ld_t* l, const char* buf, int n) {
   return n;
 }
 
-static int ld_char_dev_read(struct char_dev* dev, void* buf, size_t len) {
-  return ld_read((ld_t*)dev->dev_data, buf, len);
+static int ld_char_dev_read(struct char_dev* dev, void* buf, size_t len,
+                            int flags) {
+  return ld_read((ld_t*)dev->dev_data, buf, len, flags);
 }
 
+// For some reason, adding the flags parameter above causes a 1.5x-2x slowdown,
+// though I'm not sure why.  Adding a little bit of extra code fixes it.
+// TODO(aoates): remove this when not needed any longer.
+void _ld_pad(void) {}
+
 static int ld_char_dev_write(struct char_dev* dev, const void* buf,
-                             size_t len) {
+                             size_t len, int flags) {
   return ld_write((ld_t*)dev->dev_data, buf, len);
 }
 

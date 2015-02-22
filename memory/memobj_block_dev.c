@@ -77,7 +77,8 @@ static int bd_read_page(memobj_t* obj, int page_offset, void* buffer) {
     return -ERANGE;
   }
 
-  int result = bd->read(bd, page_offset * kSectorsPerPage, buffer, PAGE_SIZE);
+  int result =
+      bd->read(bd, page_offset * kSectorsPerPage, buffer, PAGE_SIZE, 0);
   if (result < 0) return result;
 
   // TODO(aoates): handle partial reads more gracefully.
@@ -97,7 +98,8 @@ static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer) {
     return -ERANGE;
   }
 
-  int result = bd->write(bd, page_offset * kSectorsPerPage, buffer, PAGE_SIZE);
+  int result =
+      bd->write(bd, page_offset * kSectorsPerPage, buffer, PAGE_SIZE, 0);
   if (result < 0) return result;
 
   // TODO(aoates): handle partial writes more gracefully.

@@ -33,12 +33,12 @@ struct char_dev {
   // read.
   //
   // Returns the number of bytes read on success, 0 for EOF, or -error on error.
-  int (*read)(struct char_dev* dev, void* buf, size_t len);
+  int (*read)(struct char_dev* dev, void* buf, size_t len, int flags);
 
   // Write up to len bytes to the device. Blocks until the write is complete.
   //
   // Returns the number of bytes written on success, or -error on error.
-  int (*write)(struct char_dev* dev, const void* buf, size_t len);
+  int (*write)(struct char_dev* dev, const void* buf, size_t len, int flags);
 
   // Device-specific private data.
   void* dev_data;

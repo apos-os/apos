@@ -554,7 +554,8 @@ int vfs_open(const char* path, int flags, ...) {
     }
   }
 
-  int result = vfs_open_vnode(child, flags, true);
+  const bool block = !(flags & VFS_O_NONBLOCK);
+  int result = vfs_open_vnode(child, flags, block);
   VFS_PUT_AND_CLEAR(child);
 
   if (result >= 0 && flags & VFS_O_TRUNC) {
@@ -823,17 +824,18 @@ int vfs_read(int fd, void* buf, size_t count) {
   file->refcount++;
 
   if (file->vnode->type == VNODE_FIFO) {
-    result = fifo_read(file->vnode->fifo, buf, count, true);
+    result = fifo_read(file->vnode->fifo, buf, count,
+                       !(file->flags & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
-                                 buf, count);
+                                 buf, count, file->flags);
   } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       result = file->vnode->fs->read(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_read(file->vnode->type, file->vnode->dev,
-                                   file->pos, buf, count);
+                                   file->pos, buf, count, file->flags);
     }
     if (result >= 0) {
       file->pos += result;
@@ -863,10 +865,11 @@ int vfs_write(int fd, const void* buf, size_t count) {
   file->refcount++;
 
   if (file->vnode->type == VNODE_FIFO) {
-    result = fifo_write(file->vnode->fifo, buf, count, true);
+    result = fifo_write(file->vnode->fifo, buf, count,
+                        !(file->flags & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
-                                  file->pos, buf, count);
+                                  file->pos, buf, count, file->flags);
   } else {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
@@ -874,7 +877,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,
-                                    file->pos, buf, count);
+                                    file->pos, buf, count, file->flags);
     }
     if (result >= 0) {
       file->pos += result;

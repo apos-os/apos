@@ -152,6 +152,8 @@ vnode_t* get_root_for_path_with_parent(const char* path,
                                        vnode_t* relative_root);
 
 // Open the given vnode_t, allocating a file descriptor and file_t, etc.
-int vfs_open_vnode(vnode_t* vnode, mode_t mode, bool block);
+// block is independent of (flags & VFS_O_NONBLOCK), since callers may want to
+// create a non-blocking fd, but not block during opening (e.g. pipes).
+int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
 
 #endif
