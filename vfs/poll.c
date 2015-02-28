@@ -18,6 +18,7 @@
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "proc/scheduler.h"
+#include "vfs/vfs_internal.h"
 
 // Events that are always triggered, even if not requested by the caller.
 #define ALWAYS_EVENTS (POLLHUP | POLLERR | POLLNVAL)
@@ -68,4 +69,69 @@ void poll_cancel(poll_state_t* poll) {
     kfree(ref);
   }
   POP_INTERRUPTS();
+}
+
+// Helper for vfs_poll().  Performs a poll() on a single file descriptor.
+// Returns the set of pending events (>0) if there are any pending, 0 if there
+// aren't any events currently, and < 0 on error.
+//
+// If state is non-NULL, and there are no pending events, sets up a delayed
+// trigger on the given fd.
+static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
+  file_t* file = NULL;
+  int result = lookup_fd(fd, &file);
+  if (result == -EBADF) return 0;
+
+  // TODO(aoates): implement each file type.
+  return 0;
+}
+
+int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
+  int result = 0;
+  poll_state_t poll;
+  kthread_queue_init(&poll.q);
+  poll.triggered = false;
+  poll.refs = LIST_INIT;
+
+  // TODO(aoates): test nfds against OPEN_MAX.
+  for (size_t i = 0; i < nfds; ++i) fds[i].revents = 0;
+
+  int fds_selected = 0;
+  uint32_t end_time = get_time_ms() + timeout_ms;
+  poll_state_t* poll_ptr = (timeout_ms == 0) ? NULL : &poll;
+  do {
+    poll_cancel(&poll);
+    for (size_t i = 0; i < nfds; ++i) {
+      result = vfs_poll_fd(fds[i].fd, fds[i].events, poll_ptr);
+      if (result < 0) break;
+      if (result > 0) {
+        fds[i].revents = result;
+        fds_selected++;
+        poll_ptr = NULL;  // No need to set up polls for other fds.
+      }
+    }
+
+    if (fds_selected > 0) {
+      result = fds_selected;
+      break;
+    }
+
+    uint32_t now = get_time_ms();
+    if (timeout_ms != 0 && now < end_time) {
+      // TODO(aoates): atomically test poll.triggered
+      result = scheduler_wait_on_interruptable(&poll.q, timeout_ms);
+      if (result == SWAIT_INTERRUPTED) {
+        result = -EINTR;
+        break;
+      } else if (result == SWAIT_TIMEOUT) {
+        result = 0;
+        break;
+      }
+    }
+  } while (fds_selected == 0 && timeout_ms != 0);
+  poll_cancel(&poll);
+
+  if (result == 0) result = fds_selected;
+
+  return result;
 }
