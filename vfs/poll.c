@@ -82,7 +82,27 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   int result = lookup_fd(fd, &file);
   if (result == -EBADF) return 0;
 
-  // TODO(aoates): implement each file type.
+  switch (file->vnode->type) {
+    case VNODE_REGULAR:
+      return (POLLIN | POLLOUT) & event_mask;
+
+    case VNODE_DIRECTORY:
+      if (event_mask & ~ALWAYS_EVENTS)
+        return POLLNVAL;
+      else
+        return 0;
+
+    case VNODE_BLOCKDEV:
+    case VNODE_CHARDEV:
+    case VNODE_FIFO:
+      // TODO(aoates): implement
+      break;
+
+    case VNODE_SYMLINK:
+    case VNODE_INVALID:
+    case VNODE_UNINITIALIZED:
+      die("invalid or unitialized vnode");
+  }
   return 0;
 }
 
