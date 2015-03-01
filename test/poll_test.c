@@ -143,6 +143,20 @@ static void set_cd_events(chardev_args_t* args, int idx, short events) {
   args->dev[idx].dev_data = (void*)((intptr_t)events);
 }
 
+static int cd_staticval_poll(char_dev_t* dev, short event_mask,
+                             poll_state_t* poll) {
+  return ((short)dev->dev_data) & event_mask;
+}
+
+static int cd_async_poll(char_dev_t* dev, short event_mask,
+                         poll_state_t* poll) {
+  return poll_add_event(poll, (poll_event_t*)dev->dev_data, event_mask);
+}
+
+static void trigger_event_cb(void* arg) {
+  poll_trigger_event((poll_event_t*)arg, POLLIN);
+}
+
 static void basic_cd_test(chardev_args_t* args) {
   struct pollfd pfds[5];
 
@@ -168,11 +182,29 @@ static void basic_cd_test(chardev_args_t* args) {
   pfds[0].revents = 521;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
-}
 
-static int cd_staticval_poll(char_dev_t* dev, short event_mask,
-                             poll_state_t* poll) {
-  return ((short)dev->dev_data) & event_mask;
+  KTEST_BEGIN("poll(): basic timeout test");
+  set_cd_events(args, 0, 0);
+  pfds[0].revents = 521;
+  uint32_t start = get_time_ms();
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 100));
+  KEXPECT_GE(get_time_ms() - start, 100);
+  KEXPECT_EQ(0, pfds[0].revents);
+
+  KTEST_BEGIN("poll(): delayed trigger wake up but no event test");
+  poll_event_t event;
+  poll_init_event(&event);
+  args->dev[0].poll = &cd_async_poll;
+  args->dev[0].dev_data = &event;
+  register_event_timer(get_time_ms() + 50, &trigger_event_cb, &event, NULL);
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = POLLIN | POLLOUT;
+  start = get_time_ms();
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 100));
+  uint32_t elapsed = get_time_ms() - start;
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_GE(elapsed, 100);
+  KEXPECT_LE(elapsed, 120);
 }
 
 static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {

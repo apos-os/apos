@@ -24,6 +24,10 @@
 // Events that are always triggered, even if not requested by the caller.
 #define ALWAYS_EVENTS (POLLHUP | POLLERR | POLLNVAL)
 
+void poll_init_event(poll_event_t* event) {
+  event->refs = LIST_INIT;
+}
+
 int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask) {
   poll_ref_t* ref = kmalloc(sizeof(poll_ref_t));
   if (!ref) return -ENOMEM;
@@ -31,6 +35,8 @@ int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask) {
   ref->event_mask = event_mask;
   ref->poll = poll;
   ref->event = event;
+  ref->event_link = LIST_LINK_INIT;
+  ref->poll_link = LIST_LINK_INIT;
 
   PUSH_AND_DISABLE_INTERRUPTS();
   list_push(&poll->refs, &ref->poll_link);
@@ -145,7 +151,7 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
     uint32_t now = get_time_ms();
     if (timeout_ms != 0 && now < end_time) {
       // TODO(aoates): atomically test poll.triggered
-      result = scheduler_wait_on_interruptable(&poll.q, timeout_ms);
+      result = scheduler_wait_on_interruptable(&poll.q, end_time - now);
       if (result == SWAIT_INTERRUPTED) {
         result = -EINTR;
         break;

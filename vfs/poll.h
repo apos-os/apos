@@ -60,6 +60,8 @@ typedef struct {
   list_link_t event_link;
 } poll_ref_t;
 
+void poll_init_event(poll_event_t* event);
+
 // Add the given event to the poll (presumably to be triggered later).
 int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask);
 
