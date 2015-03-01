@@ -134,27 +134,54 @@ static void poll_dir_test(void) {
 #define CHARDEV_NUM_DEVS 1
 
 typedef struct {
+  poll_event_t event;
+  short events;
+  short future_events;
+} fake_dev_t;
+
+typedef struct {
+  fake_dev_t fake_devs[CHARDEV_NUM_DEVS];
   char_dev_t dev[CHARDEV_NUM_DEVS];
   apos_dev_t dev_id[CHARDEV_NUM_DEVS];
   int fd[CHARDEV_NUM_DEVS];
 } chardev_args_t;
 
 static void set_cd_events(chardev_args_t* args, int idx, short events) {
-  args->dev[idx].dev_data = (void*)((intptr_t)events);
+  poll_init_event(&args->fake_devs[idx].event);
+  args->fake_devs[idx].events = events;
+  args->dev[idx].dev_data = &args->fake_devs[idx];
 }
 
-static int cd_staticval_poll(char_dev_t* dev, short event_mask,
-                             poll_state_t* poll) {
-  return ((short)dev->dev_data) & event_mask;
+static int cd_fake_dev_poll(char_dev_t* dev, short event_mask,
+                            poll_state_t* poll) {
+  fake_dev_t* fdev = (fake_dev_t*)dev->dev_data;
+  if (fdev->events)
+    return fdev->events & event_mask;
+  else
+    return poll_add_event(poll, &fdev->event, event_mask);
 }
 
-static int cd_async_poll(char_dev_t* dev, short event_mask,
-                         poll_state_t* poll) {
-  return poll_add_event(poll, (poll_event_t*)dev->dev_data, event_mask);
+static void do_trigger_fake_dev(void* arg) {
+  fake_dev_t* fdev = (fake_dev_t*)arg;
+  fdev->events = fdev->future_events;
+  poll_trigger_event(&fdev->event, fdev->events);
 }
 
-static void trigger_event_cb(void* arg) {
-  poll_trigger_event((poll_event_t*)arg, POLLIN);
+// Trigger a fake_dev's event, either synchronously or in the future.
+static void trigger_fake_dev(fake_dev_t* fdev, short events, int delay_ms) {
+  fdev->future_events = events;
+  if (delay_ms <= 0)
+    do_trigger_fake_dev(fdev);
+  else
+    register_event_timer(get_time_ms() + delay_ms, &do_trigger_fake_dev, fdev,
+                         NULL);
+}
+
+// As above, but doesn't update the events (to simulate triggering the event,
+// but someone else consuming it before the poll() gets around).
+static void do_trigger_fake_devB(void* arg) {
+  fake_dev_t* fdev = (fake_dev_t*)arg;
+  poll_trigger_event(&fdev->event, fdev->future_events);
 }
 
 static void basic_cd_test(chardev_args_t* args) {
@@ -192,16 +219,45 @@ static void basic_cd_test(chardev_args_t* args) {
   KEXPECT_EQ(0, pfds[0].revents);
 
   KTEST_BEGIN("poll(): delayed trigger wake up but no event test");
-  poll_event_t event;
-  poll_init_event(&event);
-  args->dev[0].poll = &cd_async_poll;
-  args->dev[0].dev_data = &event;
-  register_event_timer(get_time_ms() + 50, &trigger_event_cb, &event, NULL);
+  set_cd_events(args, 0, 0);
+  args->fake_devs[0].future_events = POLLIN;
+  register_event_timer(get_time_ms() + 50, &do_trigger_fake_devB,
+                       &args->fake_devs[0], NULL);
+
   pfds[0].fd = args->fd[0];
   pfds[0].events = POLLIN | POLLOUT;
   start = get_time_ms();
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 100));
   uint32_t elapsed = get_time_ms() - start;
+
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_GE(elapsed, 100);
+  KEXPECT_LE(elapsed, 120);
+
+
+  KTEST_BEGIN("poll(): basic delayed trigger");
+  set_cd_events(args, 0, 0);
+  trigger_fake_dev(&args->fake_devs[0], POLLIN, 50);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = POLLIN | POLLOUT;
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 100));
+  elapsed = get_time_ms() - start;
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_GE(elapsed, 50);
+  KEXPECT_LE(elapsed, 70);
+
+
+  KTEST_BEGIN("poll(): basic delayed trigger (masked event)");
+  set_cd_events(args, 0, 0);
+  trigger_fake_dev(&args->fake_devs[0], POLLIN, 50);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = POLLOUT;
+  start = get_time_ms();
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 100));
+  elapsed = get_time_ms() - start;
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_GE(elapsed, 100);
   KEXPECT_LE(elapsed, 120);
@@ -210,7 +266,7 @@ static void basic_cd_test(chardev_args_t* args) {
 static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {
   dev->read = NULL;
   dev->write = NULL;
-  dev->poll = &cd_staticval_poll;
+  dev->poll = &cd_fake_dev_poll;
   dev->dev_data = 0;
 
   *id = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
