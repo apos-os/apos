@@ -15,6 +15,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "dev/dev.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "proc/scheduler.h"
@@ -92,8 +93,13 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
       else
         return 0;
 
+    case VNODE_CHARDEV: {
+      char_dev_t* chardev = dev_get_char(file->vnode->dev);
+      if (!chardev) return 0;
+      return chardev->poll(chardev, event_mask, poll);
+    }
+
     case VNODE_BLOCKDEV:
-    case VNODE_CHARDEV:
     case VNODE_FIFO:
       // TODO(aoates): implement
       break;

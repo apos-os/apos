@@ -18,6 +18,8 @@
 
 #include <stddef.h>
 
+#include "vfs/poll.h"
+
 // A char_sink_t is a function accepting an opaque arg and a character to be
 // processed.
 //
@@ -39,6 +41,10 @@ struct char_dev {
   //
   // Returns the number of bytes written on success, or -error on error.
   int (*write)(struct char_dev* dev, const void* buf, size_t len, int flags);
+
+  // Poll the device.  Returns the (masked) set of pending events, as per
+  // poll.h, or establishes a poll.
+  int (*poll)(struct char_dev* dev, short event_mask, poll_state_t* poll);
 
   // Device-specific private data.
   void* dev_data;

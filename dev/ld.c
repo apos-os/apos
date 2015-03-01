@@ -405,9 +405,16 @@ static int ld_char_dev_write(struct char_dev* dev, const void* buf,
   return ld_write((ld_t*)dev->dev_data, buf, len);
 }
 
+static int ld_char_dev_poll(struct char_dev* dev, short event_mask,
+                            poll_state_t* poll) {
+  // TODO(aoates): implement.
+  return 0;
+}
+
 void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
   dev->read = &ld_char_dev_read;
   dev->write = &ld_char_dev_write;
+  dev->poll = &ld_char_dev_poll;
   dev->dev_data = l;
 }
 

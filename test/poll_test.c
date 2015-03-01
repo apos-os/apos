@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "vfs/poll.h"
 
+#include "common/kprintf.h"
+#include "dev/dev.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
@@ -37,6 +39,7 @@
 //  - all file types: directory, etc
 //  - timeout
 //  - pipes
+//  - bad device
 
 static void poll_file_test(void) {
   KTEST_BEGIN("poll(): regular file test");
@@ -128,12 +131,89 @@ static void poll_dir_test(void) {
   KEXPECT_EQ(POLLNVAL, pfd.revents);
 }
 
+#define CHARDEV_NUM_DEVS 1
+
+typedef struct {
+  char_dev_t dev[CHARDEV_NUM_DEVS];
+  apos_dev_t dev_id[CHARDEV_NUM_DEVS];
+  int fd[CHARDEV_NUM_DEVS];
+} chardev_args_t;
+
+static void set_cd_events(chardev_args_t* args, int idx, short events) {
+  args->dev[idx].dev_data = (void*)((intptr_t)events);
+}
+
+static void basic_cd_test(chardev_args_t* args) {
+  struct pollfd pfds[5];
+
+  KTEST_BEGIN("poll(): basic POLLIN chardev test");
+  set_cd_events(args, 0, POLLIN);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].revents = 521;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(args->fd[0], pfds[0].fd);
+  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].events);
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+
+  KTEST_BEGIN("poll(): basic POLLOUT chardev test");
+  set_cd_events(args, 0, POLLOUT);
+  pfds[0].revents = 521;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+
+  KTEST_BEGIN("poll(): basic POLLIN/POLLOUT chardev test");
+  set_cd_events(args, 0, POLLIN | POLLOUT);
+  pfds[0].revents = 521;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
+}
+
+static int cd_staticval_poll(char_dev_t* dev, short event_mask,
+                             poll_state_t* poll) {
+  return ((short)dev->dev_data) & event_mask;
+}
+
+static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {
+  dev->read = NULL;
+  dev->write = NULL;
+  dev->poll = &cd_staticval_poll;
+  dev->dev_data = 0;
+
+  *id = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
+  KEXPECT_EQ(0, dev_register_char(dev, id));
+
+  char dev_name[20];
+  ksprintf(dev_name, "/dev/tty%d", minor(*id));
+  *fd = vfs_open(dev_name, VFS_O_RDONLY);
+  KEXPECT_GE(*fd, 0);
+}
+
+static void destroy_staticval_dev(const apos_dev_t id, const int fd) {
+  KEXPECT_EQ(0, dev_unregister_char(id));
+  KEXPECT_EQ(0, vfs_close(fd));
+}
+
+static void char_dev_tests(void) {
+  chardev_args_t args;
+
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i)
+    make_staticval_dev(&args.dev[i], &args.dev_id[i], &args.fd[i]);
+
+  basic_cd_test(&args);
+
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i)
+    destroy_staticval_dev(args.dev_id[i], args.fd[i]);
+}
+
 void poll_test(void) {
   KTEST_SUITE_BEGIN("poll() tests");
   vfs_mkdir("_poll_test_dir", VFS_S_IRWXU);
 
   poll_file_test();
   poll_dir_test();
+  char_dev_tests();
 
   KEXPECT_EQ(0, vfs_rmdir("_poll_test_dir"));
 }
