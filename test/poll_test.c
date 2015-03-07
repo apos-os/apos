@@ -15,7 +15,10 @@
 
 #include "common/kprintf.h"
 #include "dev/dev.h"
+#include "proc/fork.h"
 #include "proc/sleep.h"
+#include "proc/signal/signal.h"
+#include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
@@ -29,7 +32,6 @@
 //  - masked (already triggered)
 //  - masked (delayed triggered)
 //  - mixed mask (already and delayed)
-//  - interrupted by signal
 //  - much too-high fd (EINVAL)
 //  - fd changes underneath the call
 //  - read-only, write-only, etc (looks like it should succeed? at least on
@@ -539,6 +541,66 @@ static void weird_fd_test(chardev_args_t* args) {
   KEXPECT_LE(end - start, 40);
 }
 
+static void do_signal(void* arg) {
+  KEXPECT_EQ(0, proc_force_signal((process_t*)arg, SIGUSR1));
+}
+
+static void interrupt_test(void* x) {
+  chardev_args_t* args = x;
+  struct pollfd pfds[5];
+  KTEST_BEGIN("poll(): interrupted by signal test (standard timeout)");
+  for (int i= 0; i < 3; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].fd = args->fd[i];
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  register_event_timer(get_time_ms() + 30, &do_signal, proc_current(), NULL);
+  uint32_t start = get_time_ms();
+  KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, 100));
+  uint32_t end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+  proc_suppress_signal(proc_current(), SIGUSR1);
+
+
+  KTEST_BEGIN("poll(): interrupted by signal test (infinite timeout)");
+  for (int i= 0; i < 3; ++i) {
+    pfds[i].revents = 123;
+  }
+
+  register_event_timer(get_time_ms() + 30, &do_signal, proc_current(), NULL);
+  start = get_time_ms();
+  KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+  proc_suppress_signal(proc_current(), SIGUSR1);
+
+
+  KTEST_BEGIN("poll(): interrupted by signal test (pending signal)");
+  for (int i= 0; i < 3; ++i) {
+    pfds[i].revents = 123;
+  }
+
+  do_signal(proc_current());
+  start = get_time_ms();
+  KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_LE(end - start, 10);
+  proc_suppress_signal(proc_current(), SIGUSR1);
+}
+
 static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {
   dev->read = NULL;
   dev->write = NULL;
@@ -568,6 +630,9 @@ static void char_dev_tests(void) {
   basic_cd_test(&args);
   multi_fd_test(&args);
   weird_fd_test(&args);
+
+  pid_t child = proc_fork(&interrupt_test, &args);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
 
   for (int i = 0; i < CHARDEV_NUM_DEVS; ++i)
     destroy_staticval_dev(args.dev_id[i], args.fd[i]);
