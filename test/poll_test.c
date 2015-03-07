@@ -131,7 +131,7 @@ static void poll_dir_test(void) {
   KEXPECT_EQ(POLLNVAL, pfd.revents);
 }
 
-#define CHARDEV_NUM_DEVS 1
+#define CHARDEV_NUM_DEVS 3
 
 typedef struct {
   poll_event_t event;
@@ -155,7 +155,7 @@ static void set_cd_events(chardev_args_t* args, int idx, short events) {
 static int cd_fake_dev_poll(char_dev_t* dev, short event_mask,
                             poll_state_t* poll) {
   fake_dev_t* fdev = (fake_dev_t*)dev->dev_data;
-  if (fdev->events)
+  if ((fdev->events & event_mask) || !poll)
     return fdev->events & event_mask;
   else
     return poll_add_event(poll, &fdev->event, event_mask);
@@ -167,6 +167,11 @@ static void do_trigger_fake_dev(void* arg) {
   poll_trigger_event(&fdev->event, fdev->events);
 }
 
+static void do_non_trigger_fake_dev(void* arg) {
+  fake_dev_t* fdev = (fake_dev_t*)arg;
+  fdev->events = fdev->future_events;
+}
+
 // Trigger a fake_dev's event, either synchronously or in the future.
 static void trigger_fake_dev(fake_dev_t* fdev, short events, int delay_ms) {
   fdev->future_events = events;
@@ -175,6 +180,15 @@ static void trigger_fake_dev(fake_dev_t* fdev, short events, int delay_ms) {
   else
     register_event_timer(get_time_ms() + delay_ms, &do_trigger_fake_dev, fdev,
                          NULL);
+}
+
+// Schedule an event to happen on the device in the future that won't trigger
+// the poll (this shouldn't happen in practice, but is useful for tests).
+static void fake_dev_non_trigger_event(fake_dev_t* fdev, short events,
+                                       int delay_ms) {
+  fdev->future_events = events;
+  register_event_timer(get_time_ms() + delay_ms, &do_non_trigger_fake_dev, fdev,
+                       NULL);
 }
 
 // As above, but doesn't update the events (to simulate triggering the event,
@@ -245,7 +259,7 @@ static void basic_cd_test(chardev_args_t* args) {
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 100));
   elapsed = get_time_ms() - start;
   KEXPECT_EQ(POLLIN, pfds[0].revents);
-  KEXPECT_GE(elapsed, 50);
+  KEXPECT_GE(elapsed, 40);
   KEXPECT_LE(elapsed, 70);
 
 
@@ -261,6 +275,177 @@ static void basic_cd_test(chardev_args_t* args) {
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_GE(elapsed, 100);
   KEXPECT_LE(elapsed, 120);
+}
+
+static void multi_fd_test(chardev_args_t* args) {
+  struct pollfd pfds[5];
+  KTEST_BEGIN("poll(): basic multi-fd test");
+  set_cd_events(args, 0, POLLIN);
+  set_cd_events(args, 1, POLLOUT);
+  set_cd_events(args, 2, POLLOUT);
+
+  for (int i= 0; i < 3; ++i) {
+    pfds[i].fd = args->fd[i];
+    pfds[i].revents = 123;
+  }
+  pfds[0].events = POLLIN | POLLOUT;
+  pfds[1].events = POLLIN;
+  pfds[2].events = POLLOUT;
+  KEXPECT_EQ(2, vfs_poll(pfds, 3, 0));
+  KEXPECT_EQ(2, vfs_poll(pfds, 3, -1));
+
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(POLLOUT, pfds[2].revents);
+
+
+  KTEST_BEGIN("poll(): delayed multi-fd");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].fd = args->fd[i];
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 30);
+  uint32_t start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  uint32_t end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+
+
+  KTEST_BEGIN("poll(): delayed multi-fd (positive timeout)");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 30);
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, 60));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+
+
+  KTEST_BEGIN("poll(): delayed multi-fd (multiple fds ready)");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 40);
+  fake_dev_non_trigger_event(&args->fake_devs[2], POLLIN, 20);
+  start = get_time_ms();
+  KEXPECT_EQ(2, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(POLLIN, pfds[2].revents);
+  KEXPECT_GE(end - start, 30);
+  KEXPECT_LE(end - start, 50);
+
+
+  KTEST_BEGIN("poll(): delayed multi-fd (another fd w/ masked event)");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 40);
+  fake_dev_non_trigger_event(&args->fake_devs[2], POLLIN, 20);
+  pfds[2].events = POLLOUT;
+
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 30);
+  KEXPECT_LE(end - start, 50);
+
+
+  KTEST_BEGIN("poll(): delayed multi-fd (fd w/ masked then unmasked event)");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  set_cd_events(args, 1, POLLIN);
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 40);
+
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 30);
+  KEXPECT_LE(end - start, 50);
+
+
+  KTEST_BEGIN("poll(): delayed multi-fd B");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  set_cd_events(args, 1, POLLIN);
+  set_cd_events(args, 2, POLLIN);
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 40);
+  fake_dev_non_trigger_event(&args->fake_devs[2], POLLOUT, 20);
+
+  start = get_time_ms();
+  KEXPECT_EQ(2, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(POLLOUT, pfds[2].revents);
+  KEXPECT_GE(end - start, 30);
+  KEXPECT_LE(end - start, 50);
+
+
+  KTEST_BEGIN("poll(): non-blocking multi-fd (no events)");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  KEXPECT_EQ(0, vfs_poll(pfds, 3, 0));
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+
+
+  KTEST_BEGIN("poll(): timeout multi-fd");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  start = get_time_ms();
+  KEXPECT_EQ(0, vfs_poll(pfds, 3, 30));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
 }
 
 static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {
@@ -290,6 +475,7 @@ static void char_dev_tests(void) {
     make_staticval_dev(&args.dev[i], &args.dev_id[i], &args.fd[i]);
 
   basic_cd_test(&args);
+  multi_fd_test(&args);
 
   for (int i = 0; i < CHARDEV_NUM_DEVS; ++i)
     destroy_staticval_dev(args.dev_id[i], args.fd[i]);
