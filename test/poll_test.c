@@ -15,6 +15,7 @@
 
 #include "common/kprintf.h"
 #include "dev/dev.h"
+#include "proc/sleep.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
@@ -137,6 +138,7 @@ typedef struct {
   poll_event_t event;
   short events;
   short future_events;
+  int poll_sleep_ms;
 } fake_dev_t;
 
 typedef struct {
@@ -149,12 +151,16 @@ typedef struct {
 static void set_cd_events(chardev_args_t* args, int idx, short events) {
   poll_init_event(&args->fake_devs[idx].event);
   args->fake_devs[idx].events = events;
+  args->fake_devs[idx].poll_sleep_ms = 0;
   args->dev[idx].dev_data = &args->fake_devs[idx];
 }
 
 static int cd_fake_dev_poll(char_dev_t* dev, short event_mask,
                             poll_state_t* poll) {
   fake_dev_t* fdev = (fake_dev_t*)dev->dev_data;
+  if (fdev->poll_sleep_ms > 0)
+    ksleep(fdev->poll_sleep_ms);
+
   if ((fdev->events & event_mask) || !poll)
     return fdev->events & event_mask;
   else
@@ -446,6 +452,27 @@ static void multi_fd_test(chardev_args_t* args) {
   KEXPECT_EQ(0, pfds[2].revents);
   KEXPECT_GE(end - start, 20);
   KEXPECT_LE(end - start, 40);
+
+
+  // Test if an event isn't pending, but triggers before the poll finishes going
+  // through all the fds and enters its sleep.
+  KTEST_BEGIN("poll(): delayed multi-fd, triggers before sleep");
+  for (int i = 0; i < CHARDEV_NUM_DEVS; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  trigger_fake_dev(&args->fake_devs[1], POLLOUT, 20);
+  args->fake_devs[2].poll_sleep_ms = 40;
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
+  KEXPECT_GE(end - start, 70);
+  KEXPECT_LE(end - start, 90);
 }
 
 static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {

@@ -67,6 +67,7 @@ void poll_trigger_event(poll_event_t* event, short events) {
 
 void poll_cancel(poll_state_t* poll) {
   PUSH_AND_DISABLE_INTERRUPTS();
+  poll->triggered = false;
   while (!list_empty(&poll->refs)) {
     list_link_t* link = list_pop(&poll->refs);
     poll_ref_t* ref = container_of(link, poll_ref_t, poll_link);
@@ -150,8 +151,13 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
 
     uint32_t now = get_time_ms();
     if (timeout_ms < 0 || now < end_time) {
-      // TODO(aoates): atomically test poll.triggered
-      result = scheduler_wait_on_interruptable(&poll.q, end_time - now);
+      PUSH_AND_DISABLE_INTERRUPTS();
+      if (poll.triggered)
+        result = SWAIT_DONE;
+      else
+        result = scheduler_wait_on_interruptable(&poll.q, end_time - now);
+      POP_INTERRUPTS();
+
       if (result == SWAIT_INTERRUPTED) {
         result = -EINTR;
         break;
