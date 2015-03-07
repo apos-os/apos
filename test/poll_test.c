@@ -26,13 +26,10 @@
 //  - already triggered
 //  - delayed trigger
 //  - mixed delayed and normal trigger
-//  - negative fd
 //  - masked (already triggered)
 //  - masked (delayed triggered)
 //  - mixed mask (already and delayed)
 //  - interrupted by signal
-//  - too-high fd (ignored)
-//  - too-low fd (ignored)
 //  - much too-high fd (EINVAL)
 //  - fd changes underneath the call
 //  - read-only, write-only, etc (looks like it should succeed? at least on
@@ -475,6 +472,73 @@ static void multi_fd_test(chardev_args_t* args) {
   KEXPECT_LE(end - start, 90);
 }
 
+static void weird_fd_test(chardev_args_t* args) {
+  struct pollfd pfds[5];
+  KTEST_BEGIN("poll(): negative and too-high fd test");
+  for (int i= 0; i < 3; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].fd = args->fd[i];
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  pfds[0].fd = -5;
+  pfds[1].fd = 200;
+
+  trigger_fake_dev(&args->fake_devs[2], POLLOUT, 30);
+  uint32_t start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  uint32_t end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(POLLOUT, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+
+
+  KTEST_BEGIN("poll(): not-open fd test");
+  for (int i= 0; i < 3; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].fd = args->fd[i];
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  pfds[1].fd = vfs_dup(args->fd[1]);
+  vfs_close(pfds[1].fd);
+
+  trigger_fake_dev(&args->fake_devs[2], POLLOUT, 30);
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(POLLOUT, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+
+
+  KTEST_BEGIN("poll(): duplicate fd test");
+  for (int i= 0; i < 3; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].fd = args->fd[i];
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  pfds[2].fd = vfs_dup(pfds[0].fd);
+
+  trigger_fake_dev(&args->fake_devs[0], POLLOUT, 30);
+  start = get_time_ms();
+  KEXPECT_EQ(2, vfs_poll(pfds, 3, -1));
+  end = get_time_ms();
+  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+  KEXPECT_EQ(POLLOUT, pfds[2].revents);
+  KEXPECT_GE(end - start, 20);
+  KEXPECT_LE(end - start, 40);
+}
+
 static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {
   dev->read = NULL;
   dev->write = NULL;
@@ -503,6 +567,7 @@ static void char_dev_tests(void) {
 
   basic_cd_test(&args);
   multi_fd_test(&args);
+  weird_fd_test(&args);
 
   for (int i = 0; i < CHARDEV_NUM_DEVS; ++i)
     destroy_staticval_dev(args.dev_id[i], args.fd[i]);
