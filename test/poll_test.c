@@ -24,20 +24,12 @@
 #include "vfs/vfs.h"
 
 // Tests
-//  - always events
 //  - out-of-memory
-//  - already triggered
-//  - delayed trigger
-//  - mixed delayed and normal trigger
-//  - masked (already triggered)
-//  - masked (delayed triggered)
-//  - mixed mask (already and delayed)
 //  - much too-high fd (EINVAL)
 //  - fd changes underneath the call
 //  - read-only, write-only, etc (looks like it should succeed? at least on
 //  normal files)
 //  - all file types: directory, etc
-//  - timeout
 //  - pipes
 //  - bad device
 
