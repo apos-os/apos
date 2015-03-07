@@ -149,7 +149,7 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
     }
 
     uint32_t now = get_time_ms();
-    if (timeout_ms != 0 && now < end_time) {
+    if (timeout_ms < 0 || now < end_time) {
       // TODO(aoates): atomically test poll.triggered
       result = scheduler_wait_on_interruptable(&poll.q, end_time - now);
       if (result == SWAIT_INTERRUPTED) {
