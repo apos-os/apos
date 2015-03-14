@@ -29,6 +29,7 @@ void poll_init_event(poll_event_t* event) {
 }
 
 int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask) {
+  KASSERT_DBG(poll != NULL);
   poll_ref_t* ref = kmalloc(sizeof(poll_ref_t));
   if (!ref) return -ENOMEM;
 
