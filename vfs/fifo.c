@@ -19,12 +19,21 @@
 #include "proc/signal/signal.h"
 #include "vfs/fifo.h"
 
+static short fifo_poll_events(const apos_fifo_t* fifo) {
+  short events = 0;
+  if (fifo->cbuf.len > 0) events |= POLLIN;
+  if (fifo->cbuf.len < fifo->cbuf.buflen) events |= POLLOUT;
+  // TODO(aoates): handle POLLHUP
+  return events;
+}
+
 void fifo_init(apos_fifo_t* fifo) {
   circbuf_init(&fifo->cbuf, fifo->buf, APOS_FIFO_BUF_SIZE);
   kthread_queue_init(&fifo->read_queue);
   kthread_queue_init(&fifo->write_queue);
   fifo->num_readers = 0;
   fifo->num_writers = 0;
+  poll_init_event(&fifo->poll_event);
 }
 
 void fifo_cleanup(apos_fifo_t* fifo) {
@@ -32,6 +41,7 @@ void fifo_cleanup(apos_fifo_t* fifo) {
   KASSERT(fifo->num_writers == 0);
   KASSERT(kthread_queue_empty(&fifo->read_queue));
   KASSERT(kthread_queue_empty(&fifo->write_queue));
+  KASSERT(list_empty(&fifo->poll_event.refs));
 }
 
 int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
@@ -100,6 +110,7 @@ ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block) {
   int result = circbuf_read(&fifo->cbuf, buf, len);
   if (result > 0) {
     scheduler_wake_all(&fifo->write_queue);
+    poll_trigger_event(&fifo->poll_event, fifo_poll_events(fifo));
   }
   return result;
 }
@@ -129,6 +140,7 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
     ssize_t result = circbuf_write(&fifo->cbuf, buf, len);
     if (result > 0) {
       scheduler_wake_all(&fifo->read_queue);
+      poll_trigger_event(&fifo->poll_event, fifo_poll_events(fifo));
       bytes_written += result;
 
       buf += result;
@@ -137,4 +149,12 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   } while (block && len > 0);
 
   return bytes_written;
+}
+
+int fifo_poll(apos_fifo_t* fifo, short event_mask, poll_state_t* poll) {
+  const short masked_events = fifo_poll_events(fifo) & event_mask;
+  if (masked_events || !poll)
+    return masked_events;
+
+  return poll_add_event(poll, &fifo->poll_event, event_mask);
 }

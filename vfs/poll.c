@@ -107,8 +107,10 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
       return chardev->poll(chardev, event_mask, poll);
     }
 
-    case VNODE_BLOCKDEV:
     case VNODE_FIFO:
+      return fifo_poll(file->vnode->fifo, event_mask, poll);
+
+    case VNODE_BLOCKDEV:
       // TODO(aoates): implement
       break;
 
