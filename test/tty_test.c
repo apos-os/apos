@@ -785,9 +785,42 @@ static void tty_poll_test(void) {
   vfs_close(nonblock_fd);
 
 
+  KTEST_BEGIN("TTY: poll() in non-canonical mode");
+  struct termios term;
+  ld_get_termios(args.ld, &term);
+  const struct termios orig_term = term;
+  term.c_lflag &= ~ICANON;
+  KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &term));
+
+  pfds[0].fd = fd;
+  pfds[0].events = POLLIN | POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
+  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+
+  pfds[0].events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(0, pfds[0].revents);
+
+  pt_args.pfds = pfds;
+  pt_args.nfds = 1;
+  pt_args.timeout = -1;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, 'x');
+  kthread_join(thread);
+  KEXPECT_EQ(true, pt_args.finished);
+  KEXPECT_EQ(1, pt_args.result);
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(1, vfs_read(fd, buf, 10));
+
+  KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &orig_term));
+
   // TODO(aoates): test SIGTTOU/non-writable
   // TODO(aoates): destroy TTY/ld while poll is pending
-  // TODO(aoates): non-canonical mode
 
   vfs_close(fd);
 
