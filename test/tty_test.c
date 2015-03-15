@@ -750,8 +750,42 @@ static void tty_poll_test(void) {
 
   vfs_close(pfds[1].fd);
 
+
+  KTEST_BEGIN("TTY: poll() on non-blocking fd");
+  int nonblock_fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NONBLOCK | VFS_O_NOCTTY);
+  KEXPECT_GE(nonblock_fd, 0);
+
+  pfds[0].fd = nonblock_fd;
+  pfds[0].events = POLLIN | POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
+
+  pfds[0].events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
+
+  pt_args.pfds = pfds;
+  pt_args.nfds = 1;
+  pt_args.timeout = -1;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, 'x');
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, '\n');
+  kthread_join(thread);
+  KEXPECT_EQ(true, pt_args.finished);
+  KEXPECT_EQ(1, pt_args.result);
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(2, vfs_read(fd, buf, 10));
+
+  vfs_close(nonblock_fd);
+
+
   // TODO(aoates): test SIGTTOU/non-writable
-  // TODO(aoates): test non-blocking fd
   // TODO(aoates): destroy TTY/ld while poll is pending
   // TODO(aoates): non-canonical mode
 
