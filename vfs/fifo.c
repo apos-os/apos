@@ -21,8 +21,9 @@
 
 static short fifo_poll_events(const apos_fifo_t* fifo) {
   short events = 0;
-  if (fifo->cbuf.len > 0) events |= POLLIN;
+  if (fifo->cbuf.len > 0 && fifo->num_readers > 0) events |= POLLIN;
   if (fifo->cbuf.len < fifo->cbuf.buflen) events |= POLLOUT;
+  if (fifo->num_readers == 0) events |= POLLERR;
   // TODO(aoates): handle POLLHUP
   return events;
 }
@@ -91,6 +92,7 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode) {
       scheduler_wake_all(&fifo->read_queue);
       break;
   }
+  poll_trigger_event(&fifo->poll_event, fifo_poll_events(fifo));
 
   KASSERT(fifo->num_readers >= 0);
   KASSERT(fifo->num_writers >= 0);

@@ -549,16 +549,65 @@ static void fifo_poll_test(void) {
   KEXPECT_EQ(2, pt_args.result);
   KEXPECT_EQ(POLLOUT, pfds[0].revents);
   KEXPECT_EQ(POLLOUT, pfds[1].revents);
-  do {
-    result = vfs_read(rd_fd, buf, 1000);
-  } while (result > 0);
+  do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
+
+
+  KTEST_BEGIN("FIFO: poll(POLLOUT) with no readers");
+  pfds[0].events = pfds[1].events = POLLOUT;
+  vfs_close(rd_fd);
+  KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
+  KEXPECT_EQ(POLLOUT | POLLERR, pfds[1].revents);
+
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  do { result = vfs_write(wr_fd, buf, 1000); } while (result > 0);
+  vfs_close(rd_fd);
+  KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
+  KEXPECT_EQ(POLLERR, pfds[1].revents);
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
+
+
+  KTEST_BEGIN("FIFO: poll(POLLIN | POLLOUT) with no readers");
+  pfds[0].events = pfds[1].events = POLLIN | POLLOUT;
+  vfs_close(rd_fd);
+  KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
+  KEXPECT_EQ(POLLOUT | POLLERR, pfds[1].revents);
+
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  do { result = vfs_write(wr_fd, buf, 1000); } while (result > 0);
+  vfs_close(rd_fd);
+  KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
+  KEXPECT_EQ(POLLERR, pfds[1].revents);
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
+
+
+  KTEST_BEGIN("FIFO: delayed poll(POLLOUT) when last reader goes away");
+  pfds[0].events = pfds[1].events = POLLOUT;
+  pt_args.pfds = pfds + 1;
+  pt_args.nfds = 1;
+  pt_args.timeout = -1;
+
+  do { result = vfs_write(wr_fd, buf, 1000); } while (result > 0);
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  vfs_close(rd_fd);
+  kthread_join(thread);
+  KEXPECT_EQ(1, pt_args.result);
+  KEXPECT_EQ(POLLERR, pfds[1].revents);
+
+  rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
 
   // Tests
   //  - reader without writers: POLLHUP (and maybe POLLIN) if there was once a
   //  writer, no-event if there was never a writer.  No POLLOUT if no writers,
   //  even if writable.
-  //  - writer without readers: POLLERR (and maybe POLLOUT).  No POLLIN even if
-  //  there's data if no readers.
+  //  - last writer goes away during POLLIN poll --> POLLHUP
   //  - delayed readable and writable polls (check for mask).
   //  - delayed POLLHUP.
 
