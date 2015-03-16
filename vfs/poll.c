@@ -52,7 +52,8 @@ void poll_trigger_event(poll_event_t* event, short events) {
   while (link != NULL) {
     poll_ref_t* ref = container_of(link, poll_ref_t, event_link);
     KASSERT_DBG(ref->event == event);
-    short masked_events = (ref->event_mask | ALWAYS_EVENTS) & events;
+    KASSERT_DBG((ref->event_mask & ALWAYS_EVENTS) == ALWAYS_EVENTS);
+    short masked_events = ref->event_mask & events;
     if (masked_events) {
       ref->poll->triggered = true;
       scheduler_wake_one(&ref->poll->q);
@@ -104,11 +105,11 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     case VNODE_CHARDEV: {
       char_dev_t* chardev = dev_get_char(file->vnode->dev);
       if (!chardev) return 0;
-      return chardev->poll(chardev, event_mask, poll);
+      return chardev->poll(chardev, event_mask | ALWAYS_EVENTS, poll);
     }
 
     case VNODE_FIFO:
-      return fifo_poll(file->vnode->fifo, event_mask, poll);
+      return fifo_poll(file->vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
 
     case VNODE_BLOCKDEV:
       // TODO(aoates): implement

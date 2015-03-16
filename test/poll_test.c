@@ -533,6 +533,87 @@ static void weird_fd_test(chardev_args_t* args) {
   KEXPECT_LE(end - start, 40);
 }
 
+static void unmaskable_events_test(chardev_args_t* args) {
+  struct pollfd pfds[5];
+
+  KTEST_BEGIN("poll(): POLLERR ignores mask");
+  set_cd_events(args, 0, POLLERR);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = 0;
+  pfds[0].revents = 521;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(args->fd[0], pfds[0].fd);
+  KEXPECT_EQ(0, pfds[0].events);
+  KEXPECT_EQ(POLLERR, pfds[0].revents);
+
+
+  KTEST_BEGIN("poll(): POLLHUP ignores mask");
+  set_cd_events(args, 0, POLLHUP);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = 0;
+  pfds[0].revents = 521;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(args->fd[0], pfds[0].fd);
+  KEXPECT_EQ(0, pfds[0].events);
+  KEXPECT_EQ(POLLHUP, pfds[0].revents);
+
+
+  KTEST_BEGIN("poll(): POLLNVAL ignores mask");
+  set_cd_events(args, 0, POLLNVAL);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = 0;
+  pfds[0].revents = 521;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(args->fd[0], pfds[0].fd);
+  KEXPECT_EQ(0, pfds[0].events);
+  KEXPECT_EQ(POLLNVAL, pfds[0].revents);
+
+
+  KTEST_BEGIN("poll(): delayed POLLERR ignores mask");
+  set_cd_events(args, 0, 0);
+  trigger_fake_dev(&args->fake_devs[0], POLLERR, 50);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = 0;
+  uint32_t start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 100));
+  uint32_t elapsed = get_time_ms() - start;
+  KEXPECT_EQ(POLLERR, pfds[0].revents);
+  KEXPECT_GE(elapsed, 40);
+  KEXPECT_LE(elapsed, 70);
+
+
+  KTEST_BEGIN("poll(): delayed POLLHUP ignores mask");
+  set_cd_events(args, 0, 0);
+  trigger_fake_dev(&args->fake_devs[0], POLLHUP, 50);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = 0;
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 100));
+  elapsed = get_time_ms() - start;
+  KEXPECT_EQ(POLLHUP, pfds[0].revents);
+  KEXPECT_GE(elapsed, 40);
+  KEXPECT_LE(elapsed, 70);
+
+
+  KTEST_BEGIN("poll(): delayed POLLNVAL ignores mask");
+  set_cd_events(args, 0, 0);
+  trigger_fake_dev(&args->fake_devs[0], POLLNVAL, 50);
+
+  pfds[0].fd = args->fd[0];
+  pfds[0].events = 0;
+  start = get_time_ms();
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 100));
+  elapsed = get_time_ms() - start;
+  KEXPECT_EQ(POLLNVAL, pfds[0].revents);
+  KEXPECT_GE(elapsed, 40);
+  KEXPECT_LE(elapsed, 70);
+}
+
 static void do_signal(void* arg) {
   KEXPECT_EQ(0, proc_force_signal((process_t*)arg, SIGUSR1));
 }
@@ -622,6 +703,7 @@ static void char_dev_tests(void) {
   basic_cd_test(&args);
   multi_fd_test(&args);
   weird_fd_test(&args);
+  unmaskable_events_test(&args);
 
   pid_t child = proc_fork(&interrupt_test, &args);
   KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
