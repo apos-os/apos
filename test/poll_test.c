@@ -712,6 +712,38 @@ static void char_dev_tests(void) {
     destroy_staticval_dev(args.dev_id[i], args.fd[i]);
 }
 
+static void block_dev_test(void) {
+  KTEST_BEGIN("poll(): block device test");
+  block_dev_t bd = {1, 512, NULL, NULL, NULL};
+  apos_dev_t bd_id = makedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  KEXPECT_EQ(0, dev_register_block(&bd, &bd_id));
+
+  char dev_name[20];
+  ksprintf(dev_name, "/dev/ram%d", minor(bd_id));
+  int fd = vfs_open(dev_name, VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+
+  struct pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = POLLIN | POLLOUT | POLLPRI;
+  pfd.revents = 123;
+
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, -1));
+  KEXPECT_EQ(POLLIN | POLLOUT | POLLPRI, pfd.events);
+  KEXPECT_EQ(POLLIN | POLLOUT, pfd.revents);
+
+  pfd.events = POLLIN | POLLPRI;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, -1));
+  KEXPECT_EQ(POLLIN, pfd.revents);
+
+  pfd.events = POLLOUT | POLLPRI;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, -1));
+  KEXPECT_EQ(POLLOUT, pfd.revents);
+
+  vfs_close(fd);
+  KEXPECT_EQ(0, dev_unregister_block(bd_id));
+}
+
 void poll_test(void) {
   KTEST_SUITE_BEGIN("poll() tests");
   vfs_mkdir("_poll_test_dir", VFS_S_IRWXU);
@@ -719,6 +751,7 @@ void poll_test(void) {
   poll_file_test();
   poll_dir_test();
   char_dev_tests();
+  block_dev_test();
 
   KEXPECT_EQ(0, vfs_rmdir("_poll_test_dir"));
 }

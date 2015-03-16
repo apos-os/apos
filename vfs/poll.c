@@ -112,8 +112,8 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
       return fifo_poll(file->vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
 
     case VNODE_BLOCKDEV:
-      // TODO(aoates): implement
-      break;
+      // TODO(aoates): verify the device is valid.
+      return (POLLIN | POLLOUT) & event_mask;
 
     case VNODE_SYMLINK:
     case VNODE_INVALID:
