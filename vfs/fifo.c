@@ -22,9 +22,10 @@
 static short fifo_poll_events(const apos_fifo_t* fifo) {
   short events = 0;
   if (fifo->cbuf.len > 0 && fifo->num_readers > 0) events |= POLLIN;
-  if (fifo->cbuf.len < fifo->cbuf.buflen) events |= POLLOUT;
+  if (fifo->cbuf.len < fifo->cbuf.buflen && fifo->num_writers > 0)
+    events |= POLLOUT;
   if (fifo->num_readers == 0) events |= POLLERR;
-  // TODO(aoates): handle POLLHUP
+  if (fifo->num_writers == 0 && fifo->hup) events |= POLLHUP;
   return events;
 }
 
@@ -35,6 +36,7 @@ void fifo_init(apos_fifo_t* fifo) {
   fifo->num_readers = 0;
   fifo->num_writers = 0;
   poll_init_event(&fifo->poll_event);
+  fifo->hup = false;
 }
 
 void fifo_cleanup(apos_fifo_t* fifo) {
@@ -54,6 +56,7 @@ int fifo_open(apos_fifo_t* fifo, fifo_mode_t mode, bool block, bool force) {
     case FIFO_WRITE:
       if (fifo->num_readers == 0 && !block && !force) return -ENXIO;
       fifo->num_writers++;
+      fifo->hup = true;
       break;
   }
 
