@@ -27,10 +27,10 @@ typedef unsigned long nfds_t;
 #define POLLRDBAND  0x004  // Priority data may be read without blocking.
 #define POLLPRI     0x008  // High priority data may be read without blocking.
 #define POLLOUT     0x010  // Normal data may be written without blocking.
-#define POLLWRNORM  0x020  // Equivalent to POLLOUT.
-#define POLLWRBAND  0x040  // Priority data may be written.
-#define POLLERR     0x080  // An error has occurred (revents only).
-#define POLLHUP     0x100  // Device has been disconnected (revents only).
-#define POLLNVAL    0x200  // Invalid fd member (revents only).
+#define POLLWRNORM  0x010  // Equivalent to POLLOUT.
+#define POLLWRBAND  0x020  // Priority data may be written.
+#define POLLERR     0x040  // An error has occurred (revents only).
+#define POLLHUP     0x080  // Device has been disconnected (revents only).
+#define POLLNVAL    0x100  // Invalid fd member (revents only).
 
 #endif
