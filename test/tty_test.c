@@ -668,7 +668,7 @@ static void tty_poll_test(void) {
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(POLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = POLLIN | POLLRDNORM;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
@@ -684,9 +684,21 @@ static void tty_poll_test(void) {
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(POLLIN, pfds[0].revents);
 
+  pfds[0].events = POLLIN | POLLRDNORM;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN | POLLRDNORM, pfds[0].revents);
+
+  pfds[0].events = POLLRDNORM;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLRDNORM, pfds[0].revents);
+
   pfds[0].events = POLLIN | POLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
+
+  pfds[0].events = POLLIN | POLLOUT | POLLRDNORM;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM, pfds[0].revents);
 
   char buf[10];
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
