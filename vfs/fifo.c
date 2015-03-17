@@ -21,7 +21,8 @@
 
 static short fifo_poll_events(const apos_fifo_t* fifo) {
   short events = 0;
-  if (fifo->cbuf.len > 0 && fifo->num_readers > 0) events |= POLLIN;
+  if (fifo->cbuf.len > 0 && fifo->num_readers > 0)
+    events |= POLLIN | POLLRDNORM;
   if (fifo->cbuf.len < fifo->cbuf.buflen && fifo->num_writers > 0)
     events |= POLLOUT;
   if (fifo->num_readers == 0) events |= POLLERR;

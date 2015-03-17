@@ -421,7 +421,7 @@ static void fifo_poll_no_writers_test(void) {
   int rd_fd = vfs_open("fifo_test/fifo2", VFS_O_RDONLY | VFS_O_NONBLOCK);
   KEXPECT_GE(rd_fd, 0);
   pfds[0].fd = rd_fd;
-  pfds[0].events = POLLIN;
+  pfds[0].events = POLLIN | POLLRDNORM;
   pfds[0].revents = 123;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
@@ -520,7 +520,8 @@ static void fifo_poll_test(void) {
   struct pollfd pfds[2];
   pfds[0].fd = rd_fd;
   pfds[1].fd = wr_fd;
-  pfds[0].events = pfds[1].events = POLLIN | POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events =
+      POLLIN | POLLOUT | POLLPRI | POLLRDNORM | POLLWRNORM;
 
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
   KEXPECT_EQ(POLLOUT, pfds[0].revents);
@@ -544,6 +545,12 @@ static void fifo_poll_test(void) {
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
   KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
   KEXPECT_EQ(POLLIN | POLLOUT, pfds[1].revents);
+
+  pfds[0].events = pfds[1].events =
+      POLLIN | POLLOUT | POLLPRI | POLLRDNORM | POLLWRNORM;
+  KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
+  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM, pfds[0].revents);
+  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM, pfds[1].revents);
 
   pfds[0].events = pfds[1].events = POLLIN | POLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
