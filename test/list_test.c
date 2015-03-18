@@ -93,7 +93,8 @@ static void list_remove_test(void) {
   for (int i = 0; i < kNumLinks; ++i) list_push(&list, &links[i]);
 
   const int kIdxToRemove = 2;
-  list_remove(&list, &links[kIdxToRemove]);
+  KEXPECT_EQ(&links[kIdxToRemove + 1],
+             list_remove(&list, &links[kIdxToRemove]));
   KEXPECT_EQ(0, list_link_on_list(&list, &links[kIdxToRemove]));
   for (int i = 0; i < kNumLinks; ++i) {
     if (i == kIdxToRemove) continue;
@@ -104,21 +105,21 @@ static void list_remove_test(void) {
 
   KTEST_BEGIN("list_remove() first element");
   for (int i = 0; i < kNumLinks; ++i) list_push(&list, &links[i]);
-  list_remove(&list, &links[0]);
+  KEXPECT_EQ(&links[1], list_remove(&list, &links[0]));
   KEXPECT_EQ(0, list_link_on_list(&list, &links[0]));
   KEXPECT_EQ(&links[1], list_pop(&list));
   KEXPECT_EQ(kNumLinks - 2, pop_all(&list));
 
   KTEST_BEGIN("list_remove() last element");
   for (int i = 0; i < kNumLinks; ++i) list_push(&list, &links[i]);
-  list_remove(&list, &links[kNumLinks - 1]);
+  KEXPECT_EQ(NULL, list_remove(&list, &links[kNumLinks - 1]));
   KEXPECT_EQ(0, list_link_on_list(&list, &links[kNumLinks - 1]));
   KEXPECT_EQ(&links[0], list_pop(&list));
   KEXPECT_EQ(kNumLinks - 2, pop_all(&list));
 
   KTEST_BEGIN("list_remove() only element");
   list_push(&list, &links[0]);
-  list_remove(&list, &links[0]);
+  KEXPECT_EQ(NULL, list_remove(&list, &links[0]));
   KEXPECT_NE(0, list_empty(&list));
   KEXPECT_EQ((list_link_t*)0x0, list_pop(&list));
   KEXPECT_EQ(0, list_link_on_list(&list, &links[0]));

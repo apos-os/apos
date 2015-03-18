@@ -21,11 +21,13 @@
 #include "proc/group.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
+#include "proc/scheduler.h"
 #include "proc/tcgroup.h"
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "user/include/apos/termios.h"
+#include "vfs/poll.h"
 #include "vfs/vfs.h"
 
 static void do_nothing(void* arg) {}
@@ -629,6 +631,215 @@ static void tty_nonblock_test(void) {
   ld_destroy(args.ld);
 }
 
+typedef struct {
+  struct pollfd* pfds;
+  int nfds;
+  int timeout;
+  bool finished;
+  int result;
+} poll_thread_args_t;
+
+static void* do_poll(void* arg) {
+  poll_thread_args_t* args = (poll_thread_args_t*)arg;
+  args->finished = false;
+  args->result = vfs_poll(args->pfds, args->nfds, args->timeout);
+  args->finished = true;
+  return 0;
+}
+
+static void tty_poll_test(void) {
+  args_t args;
+  args.ld = ld_create(5);
+  args.tty = tty_create(args.ld);
+
+  int sink_counter = 0;
+  ld_set_sink(args.ld, &sink, &sink_counter);
+
+  KTEST_BEGIN("TTY: basic poll (writable but not readable)");
+  char tty_name[20];
+  ksprintf(tty_name, "/dev/tty%d", minor(args.tty));
+  int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
+  KEXPECT_GE(fd, 0);
+
+  struct pollfd pfds[2];
+  pfds[0].fd = fd;
+  pfds[0].events = POLLIN | POLLOUT;
+
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+
+  pfds[0].events = POLLIN | POLLRDNORM;
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(0, pfds[0].revents);
+
+
+  KTEST_BEGIN("TTY: basic poll (readable and writable)");
+  ld_provide(args.ld, 'x');
+
+  pfds[0].events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(0, pfds[0].revents);
+
+  ld_provide(args.ld, '\n');
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+
+  pfds[0].events = POLLIN | POLLRDNORM;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN | POLLRDNORM, pfds[0].revents);
+
+  pfds[0].events = POLLRDNORM;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLRDNORM, pfds[0].revents);
+
+  pfds[0].events = POLLIN | POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
+
+  pfds[0].events = POLLIN | POLLOUT | POLLRDNORM;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM, pfds[0].revents);
+
+  char buf[10];
+  KEXPECT_EQ(2, vfs_read(fd, buf, 10));
+
+
+  KTEST_BEGIN("TTY: delayed poll");
+  pfds[0].events = POLLIN;
+  poll_thread_args_t pt_args;
+  pt_args.pfds = pfds;
+  pt_args.nfds = 1;
+  pt_args.timeout = -1;
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, 'x');
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, '\n');
+  kthread_join(thread);
+  KEXPECT_EQ(true, pt_args.finished);
+  KEXPECT_EQ(1, pt_args.result);
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(2, vfs_read(fd, buf, 10));
+
+
+  KTEST_BEGIN("TTY: delayed poll (masked event, then timeout)");
+  pfds[0].events = POLLPRI;
+  pt_args.timeout = 50;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, 'x');
+  scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, '\n');
+  scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+  kthread_join(thread);
+  KEXPECT_EQ(true, pt_args.finished);
+  KEXPECT_EQ(0, pt_args.result);
+  KEXPECT_EQ(2, vfs_read(fd, buf, 10));
+
+
+  KTEST_BEGIN("TTY: non-sleeping poll (NULL poll_state_t)");
+  pfds[0].events = POLLIN | POLLOUT;
+  pfds[1].fd = vfs_dup(fd);
+  pfds[1].events = POLLIN;
+
+  KEXPECT_EQ(1, vfs_poll(pfds, 2, 0));
+  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(0, pfds[1].revents);
+
+  vfs_close(pfds[1].fd);
+
+
+  KTEST_BEGIN("TTY: poll() on non-blocking fd");
+  int nonblock_fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NONBLOCK | VFS_O_NOCTTY);
+  KEXPECT_GE(nonblock_fd, 0);
+
+  pfds[0].fd = nonblock_fd;
+  pfds[0].events = POLLIN | POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
+
+  pfds[0].events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
+
+  pt_args.pfds = pfds;
+  pt_args.nfds = 1;
+  pt_args.timeout = -1;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, 'x');
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, '\n');
+  kthread_join(thread);
+  KEXPECT_EQ(true, pt_args.finished);
+  KEXPECT_EQ(1, pt_args.result);
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(2, vfs_read(fd, buf, 10));
+
+  vfs_close(nonblock_fd);
+
+
+  KTEST_BEGIN("TTY: poll() in non-canonical mode");
+  struct termios term;
+  ld_get_termios(args.ld, &term);
+  const struct termios orig_term = term;
+  term.c_lflag &= ~ICANON;
+  KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &term));
+
+  pfds[0].fd = fd;
+  pfds[0].events = POLLIN | POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
+  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+
+  pfds[0].events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
+  KEXPECT_EQ(0, pfds[0].revents);
+
+  pt_args.pfds = pfds;
+  pt_args.nfds = 1;
+  pt_args.timeout = -1;
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
+  scheduler_make_runnable(thread);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, pt_args.finished);
+
+  ld_provide(args.ld, 'x');
+  kthread_join(thread);
+  KEXPECT_EQ(true, pt_args.finished);
+  KEXPECT_EQ(1, pt_args.result);
+  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(1, vfs_read(fd, buf, 10));
+
+  KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &orig_term));
+
+  // TODO(aoates): test SIGTTOU/non-writable
+  // TODO(aoates): destroy TTY/ld while poll is pending
+
+  vfs_close(fd);
+
+  tty_destroy(args.tty);
+  ld_destroy(args.ld);
+}
+
 void tty_test(void) {
   KTEST_SUITE_BEGIN("TTY tests");
 
@@ -639,4 +850,5 @@ void tty_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_nonblock_test();
+  tty_poll_test();
 }

@@ -74,8 +74,9 @@ void list_insert(list_t* list, list_link_t* prev, list_link_t* link);
 // empty.
 list_link_t* list_pop(list_t* list);
 
-// Remove a link from the given list.
-void list_remove(list_t* list, list_link_t* link);
+// Remove a link from the given list.  Returns the next link (the one after the
+// link that was just deleted), or NULL if it was the last link in the list.
+list_link_t* list_remove(list_t* list, list_link_t* link);
 
 // Return non-zero if the given link is on the list.
 //

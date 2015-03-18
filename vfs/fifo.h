@@ -21,6 +21,7 @@
 #include "common/circbuf.h"
 #include "proc/kthread.h"
 #include "user/include/apos/posix_types.h"
+#include "vfs/poll.h"
 
 #define APOS_FIFO_BUF_SIZE 1024
 
@@ -42,6 +43,9 @@ typedef struct {
 
   int num_readers;
   int num_writers;
+
+  poll_event_t poll_event;
+  bool hup;  // Have we ever had a writer?
 } apos_fifo_t;
 
 void fifo_init(apos_fifo_t* fifo);
@@ -61,5 +65,6 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode);
 
 ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block);
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block);
+int fifo_poll(apos_fifo_t* fifo, short event_mask, poll_state_t* poll);
 
 #endif

@@ -24,6 +24,7 @@ srcs = [
   'mount.c',
   'mount_table.c',
   'pipe.c',
+  'poll.c',
   'testfs.c',
   'util.c',
   'special.c',

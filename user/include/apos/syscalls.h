@@ -85,5 +85,6 @@
 #define SYS_TCSETATTR 66
 #define SYS_FTRUNCATE 67
 #define SYS_TRUNCATE 68
+#define SYS_POLL 69
 
 #endif

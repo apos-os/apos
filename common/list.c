@@ -80,11 +80,12 @@ void list_insert(list_t* list, list_link_t* prev, list_link_t* link) {
   }
 }
 
-void list_remove(list_t* list, list_link_t* link) {
+list_link_t* list_remove(list_t* list, list_link_t* link) {
   KASSERT_DBG(list->head != 0x0);
   KASSERT_DBG(list->tail != 0x0);
   if (list->head == link) {
     list_pop(list);
+    return list->head;
   } else if (list->tail == link) {
     KASSERT_DBG(link->next == 0x0);
     KASSERT_DBG(link->prev != 0x0);
@@ -93,12 +94,15 @@ void list_remove(list_t* list, list_link_t* link) {
     KASSERT_DBG(list->tail->next == link);
     list->tail->next = 0x0;
     link->prev = 0x0;
+    return NULL;
   } else {
     KASSERT_DBG(link->prev != 0x0);
     KASSERT_DBG(link->next != 0x0);
+    list_link_t* next = link->next;
     link->prev->next = link->next;
     link->next->prev = link->prev;
     link->prev = link->next = 0x0;
+    return next;
   }
 }
 

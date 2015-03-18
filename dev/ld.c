@@ -31,6 +31,7 @@
 #include "proc/sleep.h"
 #include "user/include/apos/termios.h"
 #include "user/include/apos/vfs/vfs.h"
+#include "vfs/poll.h"
 
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
@@ -53,6 +54,8 @@ struct ld {
 
   apos_dev_t tty;
   struct termios termios;
+
+  poll_event_t poll_event;
 };
 
 static void set_default_termios(struct termios* t) {
@@ -89,6 +92,7 @@ ld_t* ld_create(int buf_size) {
   kthread_queue_init(&l->wait_queue);
   l->tty = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   set_default_termios(&l->termios);
+  poll_init_event(&l->poll_event);
   return l;
 }
 
@@ -108,11 +112,19 @@ static inline size_t circ_dec(ld_t* l, size_t x) {
   else return x - 1;
 }
 
+static int ld_get_poll_events(const ld_t* l) {
+  int events = POLLOUT;  // Always writable.
+  if (l->start_idx != l->cooked_idx) events |= POLLIN | POLLRDNORM;
+  return events;
+}
+
 static void cook_buffer(ld_t* l) {
   l->cooked_idx = l->raw_idx;
 
   // Wake up all the waiting threads.
   scheduler_wake_all(&l->wait_queue);
+
+  poll_trigger_event(&l->poll_event, ld_get_poll_events(l));
 }
 
 void log_state(ld_t* l) {
@@ -405,9 +417,19 @@ static int ld_char_dev_write(struct char_dev* dev, const void* buf,
   return ld_write((ld_t*)dev->dev_data, buf, len);
 }
 
+static int ld_char_dev_poll(struct char_dev* dev, short event_mask,
+                            poll_state_t* poll) {
+  ld_t* l = (ld_t*)dev->dev_data;
+  int events = ld_get_poll_events(l) & event_mask;
+  if (events || !poll) return events;
+
+  return poll_add_event(poll, &l->poll_event, event_mask);
+}
+
 void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
   dev->read = &ld_char_dev_read;
   dev->write = &ld_char_dev_write;
+  dev->poll = &ld_char_dev_poll;
   dev->dev_data = l;
 }
 
