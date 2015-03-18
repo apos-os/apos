@@ -21,6 +21,7 @@
 #include <apos/test.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <signal.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -80,5 +81,6 @@ int tcgetattr(int fd, struct termios* t);
 int tcsetattr(int fd, int optional_actions, const struct termios* t);
 int ftruncate(int fd, off_t length);
 int truncate(const char* path, off_t length);
+int poll(struct pollfd* fds, nfds_t nfds, int timeout);
 
 #endif

@@ -414,3 +414,7 @@ AddSyscall('ftruncate', 67, 'vfs_ftruncate', 'vfs/vfs.h', '<unistd.h>',
 
 AddSyscall('truncate', 68, 'vfs_truncate', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'off_t:length:u'])
+
+AddSyscall('poll', 69, 'vfs_poll', 'vfs/poll.h', '<poll.h>',
+    'int', ['struct pollfd*:fds:brw:sizeof(struct pollfd) * nfds',
+            'nfds_t:nfds:u', 'int:timeout:u'])
