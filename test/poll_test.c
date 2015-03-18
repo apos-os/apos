@@ -614,6 +614,28 @@ static void unmaskable_events_test(chardev_args_t* args) {
   KEXPECT_LE(elapsed, 70);
 }
 
+static void deleted_cd_test(void) {
+  KTEST_BEGIN("poll(): underlying char device destroyed");
+  char_dev_t cd = {NULL, NULL, NULL, NULL};
+  apos_dev_t cd_id = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
+  KEXPECT_EQ(0, dev_register_char(&cd, &cd_id));
+
+  char dev_name[20];
+  ksprintf(dev_name, "/dev/tty%d", minor(cd_id));
+  int fd = vfs_open(dev_name, VFS_O_RDONLY | VFS_O_NOCTTY);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, dev_unregister_char(cd_id));
+
+  struct pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = POLLIN | POLLOUT | POLLPRI;
+  pfd.revents = 123;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, -1));
+  KEXPECT_EQ(POLLERR, pfd.revents);
+  vfs_close(fd);
+}
+
 static void do_signal(void* arg) {
   KEXPECT_EQ(0, proc_force_signal((process_t*)arg, SIGUSR1));
 }
@@ -704,6 +726,7 @@ static void char_dev_tests(void) {
   multi_fd_test(&args);
   weird_fd_test(&args);
   unmaskable_events_test(&args);
+  deleted_cd_test();
 
   pid_t child = proc_fork(&interrupt_test, &args);
   KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
@@ -740,8 +763,13 @@ static void block_dev_test(void) {
   KEXPECT_EQ(1, vfs_poll(&pfd, 1, -1));
   KEXPECT_EQ(POLLOUT, pfd.revents);
 
-  vfs_close(fd);
   KEXPECT_EQ(0, dev_unregister_block(bd_id));
+
+  KTEST_BEGIN("poll(): block device test (underlying block device gone)");
+  pfd.events = POLLIN | POLLOUT | POLLPRI;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, -1));
+  KEXPECT_EQ(POLLERR, pfd.revents);
+  vfs_close(fd);
 }
 
 void poll_test(void) {
