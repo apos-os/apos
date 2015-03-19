@@ -39,6 +39,8 @@
 #define SYS_CHOWN 48
 #define SYS_FCHOWN 49
 #define SYS_LCHOWN 50
+#define SYS_CHMOD 70
+#define SYS_FCHMOD 71
 #define SYS_FORK 13
 #define SYS_EXIT 14
 #define SYS_WAIT 41

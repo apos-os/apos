@@ -235,6 +235,12 @@ AddSyscall('fchown', 49, 'vfs_fchown', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('lchown', 50, 'vfs_lchown', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'uid_t:owner:u', 'gid_t:group:u'])
 
+AddSyscall('chmod', 70, 'vfs_chmod', 'vfs/vfs.h', '<sys/stat.h>',
+    'int', ['const char*:path:s', 'mode_t:mode:u'])
+
+AddSyscall('fchmod', 71, 'vfs_fchmod', 'vfs/vfs.h', '<sys/stat.h>',
+    'int', ['int:fd:u', 'mode_t:mode:u'])
+
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'pid_t', [], newlib_defined=True)
 
