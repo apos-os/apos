@@ -4018,6 +4018,109 @@ static void o_nofollow_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_o_noflw_file"));
 }
 
+static void link_test(void) {
+  KTEST_BEGIN("vfs_link(): basic file test (link to same directory)");
+  KEXPECT_EQ(0, vfs_mkdir("_link_test", VFS_S_IRWXU));
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(0, vfs_link("_link_test/file", "_link_test/fileB"));
+  apos_stat_t statA, statB;
+  KEXPECT_EQ(0, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_stat("_link_test/fileB", &statB));
+
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(statA.st_mode, statB.st_mode);
+  KEXPECT_EQ(2, statA.st_nlink);
+  KEXPECT_EQ(2, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_stat("_link_test/fileB", &statB));
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_link_test/fileB"));
+
+
+  KTEST_BEGIN("vfs_link(): basic file test (link to different directory)");
+  KEXPECT_EQ(0, vfs_mkdir("_link_test2", VFS_S_IRWXU));
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(0, vfs_link("_link_test/file", "_link_test2/fileB"));
+  KEXPECT_EQ(0, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_stat("_link_test2/fileB", &statB));
+
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(statA.st_mode, statB.st_mode);
+  KEXPECT_EQ(2, statA.st_nlink);
+  KEXPECT_EQ(2, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_stat("_link_test2/fileB", &statB));
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_link_test2/fileB"));
+
+
+  KTEST_BEGIN("vfs_link(): can't link directory");
+  KEXPECT_EQ(-EPERM, vfs_link("_link_test", "_link_test3"));
+  KEXPECT_EQ(-EPERM, vfs_link("_link_test", "_link_test2/abc"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_link_test3", &statA));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_link_test2/abc", &statA));
+
+
+  KTEST_BEGIN("vfs_link(): can't link over existing file (same directory)");
+  create_file_with_data("_link_test/file", "abc");
+  create_file_with_data("_link_test/fileB", "abc");
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/file", "_link_test/fileB"));
+  KEXPECT_EQ(0, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_stat("_link_test/fileB", &statB));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(1, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/fileB"));
+
+
+  KTEST_BEGIN("vfs_link(): can't link file to self");
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/file", "_link_test/file"));
+  KEXPECT_EQ(0, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+
+
+  KTEST_BEGIN(
+      "vfs_link(): can't link over existing file (different directory)");
+  create_file_with_data("_link_test/file", "abc");
+  create_file_with_data("_link_test2/fileB", "abc");
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/file", "_link_test2/fileB"));
+  KEXPECT_EQ(0, vfs_stat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_stat("_link_test2/fileB", &statB));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(1, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test2/fileB"));
+
+
+  // TODO tests
+  //  - link each non-dir file type
+  //  - src is symlink (should link symlink, but impl. defined behavior)
+  //
+  // Error cases,
+  //  - dst already exists (and is file vs dir)
+  //  - dst is symlink (good and broken)
+  //  - src is directory
+  //  - one or both empty strings
+  //  - different filesystems
+  //  - no access to src dir
+  //  - cannot read src file (impl. defined.  I think this should be OK?)
+  //  - no write access to dst dir (same and different)
+  KEXPECT_EQ(0, vfs_rmdir("_link_test"));
+  KEXPECT_EQ(0, vfs_rmdir("_link_test2"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -4088,6 +4191,8 @@ void vfs_test(void) {
   excl_test();
   o_directory_test();
   o_nofollow_test();
+
+  link_test();
 
   proc_umask(orig_umask);
 
