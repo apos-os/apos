@@ -88,23 +88,22 @@ static void init_inode(ramfs_t* ramfs, ramfs_inode_t* node) {
 
 // Given an in-memory inode, write its metadata back to "disk".  Call this
 // whenever you change things like len, link_count, data ptr, etc.
-static void writeback_metadata(ramfs_inode_t* inode) {
+static void writeback_metadata(vnode_t* vnode) {
   ramfs_inode_t* disk_inode =
-      &((ramfs_t*)inode->vnode.fs)->inodes[inode->vnode.num];
-  KASSERT(disk_inode->vnode.num == inode->vnode.num);
-  KASSERT(disk_inode->vnode.type == inode->vnode.type);
-  disk_inode->vnode.len = inode->vnode.len;
-  disk_inode->vnode.uid = inode->vnode.uid;
-  disk_inode->vnode.gid = inode->vnode.gid;
-  disk_inode->vnode.mode = inode->vnode.mode;
-  disk_inode->data = inode->data;
-  disk_inode->link_count = inode->link_count;
+      &((ramfs_t*)vnode->fs)->inodes[vnode->num];
+  KASSERT(disk_inode->vnode.num == vnode->num);
+  KASSERT(disk_inode->vnode.type == vnode->type);
+  disk_inode->vnode.len = vnode->len;
+  disk_inode->vnode.uid = vnode->uid;
+  disk_inode->vnode.gid = vnode->gid;
+  disk_inode->vnode.mode = vnode->mode;
 }
 
 // Find the dirent in the parent's data with the given name, or NULL.
 static dirent_t* find_dirent(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
-  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  ramfs_inode_t* inode = &ramfs->inodes[parent->num];
 
   int offset = 0;
   while (offset < parent->len) {
@@ -124,7 +123,8 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
 // Return the number of entries (including '.' and '..') in a directory.
 static int count_dirents(vnode_t* parent) {
   KASSERT(parent->type == VNODE_DIRECTORY);
-  ramfs_inode_t* inode = (ramfs_inode_t*)parent;
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  ramfs_inode_t* inode = &ramfs->inodes[parent->num];
 
   int offset = 0, count = 0;
   while (offset < parent->len) {
@@ -250,9 +250,9 @@ void ramfs_disable_blocking(fs_t* fs) {
 }
 
 vnode_t* ramfs_alloc_vnode(struct fs* fs) {
-  ramfs_inode_t* node = (ramfs_inode_t*)kmalloc(sizeof(ramfs_inode_t));
-  kmemset(node, 0, sizeof(ramfs_inode_t));
-  return (vnode_t*)node;
+  vnode_t* node = (vnode_t*)kmalloc(sizeof(vnode_t));
+  kmemset(node, 0, sizeof(vnode_t));
+  return node;
 }
 
 int ramfs_get_root(struct fs* fs) {
@@ -278,8 +278,6 @@ int ramfs_get_vnode(vnode_t* n) {
   n->mode = inode->vnode.mode;
   n->dev = inode->vnode.dev;
   kstrcpy(n->fstype, "ramfs");
-  ((ramfs_inode_t*)n)->data = inode->data;
-  ((ramfs_inode_t*)n)->link_count = inode->link_count;
 
   return 0;
 }
@@ -289,11 +287,9 @@ int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(vnode->refcount == 0);
   maybe_block(vnode->fs);
 
-  // TODO(aoates): consider that directories must be treated differently.  Does
-  // that mean that the self-linking of directories should go in ramfs, not vfs?
-  // Probably.
-  ramfs_inode_t* inode = (ramfs_inode_t*)vnode;
-  writeback_metadata(inode);
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* inode = &ramfs->inodes[vnode->num];
+  writeback_metadata(vnode);
 
   if (inode->link_count == 0) {
     vnode->type = VNODE_INVALID;
@@ -399,12 +395,12 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
-  vnode_t* dir_vnode = (vnode_t*)&ramfs->inodes[d->d_ino];
-  if (dir_vnode->type != VNODE_DIRECTORY) {
+  ramfs_inode_t* dir_inode = &ramfs->inodes[d->d_ino];
+  if (dir_inode->vnode.type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
 
-  const int dirents = count_dirents(dir_vnode);
+  const int dirents = count_dirents(&dir_inode->vnode);
   KASSERT(dirents >= 2);
   if (dirents > 2) {
     return -ENOTEMPTY;
@@ -412,13 +408,13 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
   // One each for the parent and '.'.
   // TODO(aoates): if link_count == 0, recollect the inode.
-  ((ramfs_inode_t*)dir_vnode)->link_count -= 2;
+  dir_inode->link_count -= 2;
 
   // Remove '.' and '..'.
-  dirent_t* child_dirent = find_dirent(dir_vnode, ".");
+  dirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".");
   child_dirent->d_ino = -1;
   child_dirent->d_name[0] = '\0';
-  child_dirent = find_dirent(dir_vnode, "..");
+  child_dirent = find_dirent(&dir_inode->vnode, "..");
   child_dirent->d_ino = -1;
   child_dirent->d_name[0] = '\0';
 
@@ -431,7 +427,8 @@ int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
   int len = MAX(0, MIN(vnode->len - offset, bufsize));
   kmemcpy(buf, node->data + offset, len);
   return len;
@@ -441,7 +438,8 @@ int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
   const int newlen = offset + bufsize;
 
   // Resize buffer if need be.
@@ -455,7 +453,7 @@ int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize) {
     vnode->len = newlen;
 
     // Write it back to "disk" as well.
-    writeback_metadata(node);
+    writeback_metadata(vnode);
   }
 
   kmemcpy(node->data + offset, buf, bufsize);
@@ -494,8 +492,6 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
     return -EISDIR;
   }
 
-  // TODO(aoates): how do we propagate this back to all the vnode_t*s floating
-  // around pointing to this inode?
   ramfs->inodes[d->d_ino].link_count--;
 
   d->d_ino = -1;
@@ -510,7 +506,8 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
     return -ENOTDIR;
   }
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
 
   // In ramfs, we store dirent_ts directly.
   int bytes_read = 0;  // Our current index into buf.
@@ -541,7 +538,8 @@ int ramfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
   stat_out->st_nlink = node->link_count;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = ceiling_div(vnode->len, 512);
@@ -589,7 +587,8 @@ int ramfs_truncate(vnode_t* vnode, off_t length) {
 
   if (vnode->len == length) return 0;
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
   uint8_t* newdata = (uint8_t*)kmalloc(length);
   KASSERT(newdata);
   kmemcpy(newdata, node->data, min(length, vnode->len));
@@ -602,7 +601,7 @@ int ramfs_truncate(vnode_t* vnode, off_t length) {
   vnode->len = length;
 
   // Write it back to "disk" as well.
-  writeback_metadata(node);
+  writeback_metadata(vnode);
   return 0;
 }
 
@@ -614,7 +613,8 @@ int ramfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
     return -EISDIR;
   }
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
   int len = MAX(0, MIN(vnode->len - (page_offset * PAGE_SIZE), PAGE_SIZE));
   kmemcpy(buf, node->data + (page_offset * PAGE_SIZE), len);
   return 0;
@@ -628,7 +628,8 @@ int ramfs_write_page(vnode_t* vnode, int page_offset, const void* buf) {
     return -EISDIR;
   }
 
-  ramfs_inode_t* node = (ramfs_inode_t*)vnode;
+  ramfs_t* ramfs = (ramfs_t*)vnode->fs;
+  ramfs_inode_t* node = &ramfs->inodes[vnode->num];
   int len = MAX(0, MIN(vnode->len - (page_offset * PAGE_SIZE), PAGE_SIZE));
   kmemcpy(node->data + (page_offset * PAGE_SIZE), buf, len);
   return 0;
