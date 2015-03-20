@@ -1490,7 +1490,44 @@ static int ext2_write(vnode_t* vnode, int offset,
 }
 
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
-  return -EROFS;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+  KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+
+  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  if (fs->read_only) {
+    return -EROFS;
+  }
+
+  ext2_inode_t parent_inode;
+  // TODO(aoates): do we want to store the inode in the vnode?
+  int result = get_inode(fs, parent->num, &parent_inode);
+  if (result) {
+    return result;
+  }
+
+  result = lookup_internal(fs, &parent_inode, name, 0x0, 0x0);
+  if (result == 0) {
+    return -EEXIST;
+  } else if (result != -ENOENT) {
+    return result;
+  }
+
+  // Link it into the directory.
+  result = link_internal(fs, &parent_inode, parent->num, name, vnode->num);
+  parent->len = parent_inode.i_size;
+
+  if (result == 0) {
+    ext2_inode_t child_inode;
+    // TODO(aoates): do we want to store the inode in the vnode?
+    result = get_inode(fs, vnode->num, &child_inode);
+    if (result) {
+      return result;
+    }
+    child_inode.i_links_count++;
+    result = write_inode(fs, vnode->num, &child_inode);
+  }
+
+  return result;
 }
 
 static int ext2_unlink(vnode_t* parent, const char* name) {
