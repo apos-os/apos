@@ -818,6 +818,18 @@ static void symlink_mount_test(void) {
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/mountlink"));
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/dir"));
 
+
+  KTEST_BEGIN("vfs mount: hard link across mounts");
+  create_file("vfs_mount_test/a/file", "rwxrwxrwx");
+  KEXPECT_EQ(-EXDEV, vfs_link("vfs_mount_test/a/file", "vfs_mount_test/b/lnk"));
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("vfs_mount_test/a/file", &stat));
+  KEXPECT_EQ(1, stat.st_nlink);
+  KEXPECT_NE(0, VFS_S_ISREG(stat.st_mode));
+  KEXPECT_EQ(-ENOENT, vfs_stat("vfs_mount_test/b/lnk", &stat));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file"));
+
+
   // Cleanup.
   KTEST_BEGIN("vfs mount: basic test cleanup");
   fs_t* unmounted_fs = 0x0;

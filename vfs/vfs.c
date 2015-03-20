@@ -799,6 +799,13 @@ int vfs_link(const char* path1, const char* path2) {
     return error;
   }
 
+  if (vnode1->fs != parent2->fs) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return -EXDEV;
+  }
+
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2);
   if (mode_check) {
     VFS_PUT_AND_CLEAR(vnode1);
