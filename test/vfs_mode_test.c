@@ -653,6 +653,19 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(-EACCES, vfs_chmod("syscall_mode_test/no_exec/f", 0));
 
 
+  // link()
+  KTEST_BEGIN("vfs mode test: vfs_link() succeeds in non-readable directory");
+  KEXPECT_EQ(0,
+             vfs_link("syscall_mode_test/no_read/f", "syscall_mode_test/lnk"));
+  KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/lnk"));
+
+  KTEST_BEGIN("vfs mode test: vfs_link() fails in non-writable directory");
+  KEXPECT_EQ(-EACCES, vfs_link("syscall_mode_test/no_read/f",
+                               "syscall_mode_test/no_write/link"));
+  KEXPECT_EQ(-EACCES, vfs_link("syscall_mode_test/no_write/f",
+                               "syscall_mode_test/no_write/link"));
+
+
   // Teardown for metadata syscall tests.
   KTEST_BEGIN("vfs mode test: metadata syscall test teardown");
   KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_read/f"));
