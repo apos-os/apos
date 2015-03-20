@@ -4019,11 +4019,12 @@ static void o_nofollow_test(void) {
 }
 
 static void link_test(void) {
+  apos_stat_t statA, statB, statC;
+
   KTEST_BEGIN("vfs_link(): basic file test (link to same directory)");
   KEXPECT_EQ(0, vfs_mkdir("_link_test", VFS_S_IRWXU));
   create_file_with_data("_link_test/file", "abc");
   KEXPECT_EQ(0, vfs_link("_link_test/file", "_link_test/fileB"));
-  apos_stat_t statA, statB;
   KEXPECT_EQ(0, vfs_stat("_link_test/file", &statA));
   KEXPECT_EQ(0, vfs_stat("_link_test/fileB", &statB));
 
@@ -4102,6 +4103,124 @@ static void link_test(void) {
 
   KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
   KEXPECT_EQ(0, vfs_unlink("_link_test2/fileB"));
+
+
+  KTEST_BEGIN("vfs_link(): source is a symlink");
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(0, vfs_symlink("file", "_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_link("_link_test/symlink", "_link_test/symlink2"));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink", &statB));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink2", &statC));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(2, statC.st_nlink);
+  KEXPECT_EQ(VFS_S_IFLNK, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statC.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink2"));
+
+
+  KTEST_BEGIN("vfs_link(): source is a broken symlink");
+  KEXPECT_EQ(0, vfs_symlink("file", "_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_link("_link_test/symlink", "_link_test/symlink2"));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink", &statB));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink2", &statC));
+
+  KEXPECT_EQ(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(2, statC.st_nlink);
+  KEXPECT_EQ(VFS_S_IFLNK, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statC.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink2"));
+
+
+  KTEST_BEGIN("vfs_link(): target is a symlink");
+  create_file_with_data("_link_test/file", "abc");
+  create_file_with_data("_link_test/file2", "abc");
+  KEXPECT_EQ(0, vfs_symlink("file2", "_link_test/symlink"));
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/file", "_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink", &statB));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/file2", &statC));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(1, statC.st_nlink);
+  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFREG, statC.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file2"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink"));
+
+
+  KTEST_BEGIN("vfs_link(): target is a broken symlink");
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(0, vfs_symlink("file2", "_link_test/symlink"));
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/file", "_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink", &statB));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("_link_test/file2", &statB));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statB.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink"));
+
+
+  KTEST_BEGIN("vfs_link(): target is a symlink");
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(0, vfs_symlink("file", "_link_test/symlink"));
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/file", "_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink", &statB));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statB.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink"));
+
+
+  KTEST_BEGIN("vfs_link(): source and target are symlinks");
+  create_file_with_data("_link_test/file", "abc");
+  KEXPECT_EQ(0, vfs_symlink("file", "_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_symlink("file", "_link_test/symlink2"));
+  KEXPECT_EQ(-EEXIST, vfs_link("_link_test/symlink", "_link_test/symlink2"));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/file", &statA));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink", &statB));
+  KEXPECT_EQ(0, vfs_lstat("_link_test/symlink2", &statC));
+
+  KEXPECT_NE(statA.st_ino, statB.st_ino);
+  KEXPECT_NE(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(1, statC.st_nlink);
+  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(VFS_S_IFLNK, statC.st_mode & VFS_S_IFMT);
+
+  KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink"));
+  KEXPECT_EQ(0, vfs_unlink("_link_test/symlink2"));
+
 
 
   // TODO tests
