@@ -168,7 +168,10 @@ static int lookup_path_internal(vnode_t* root, const char* path,
                                 lookup_options_t opt, vnode_t** parent_out,
                                 vnode_t** child_out, char* base_name_out,
                                 int max_recursion) {
-  if (!*path || !root || !base_name_out) {
+  if (!*path) {
+    return -ENOENT;
+  }
+  if (!root || !base_name_out) {
     return -EINVAL;
   }
 

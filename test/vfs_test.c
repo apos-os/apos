@@ -264,6 +264,9 @@ static void open_test(void) {
   KTEST_BEGIN("vfs_open(): invalid mode");
   KEXPECT_EQ(-EINVAL, vfs_open("/test1", VFS_O_RDWR | VFS_O_WRONLY));
 
+  KTEST_BEGIN("vfs_open(): empty path");
+  KEXPECT_EQ(-ENOENT, vfs_open("", VFS_O_RDWR));
+
   // Clean up.
   KEXPECT_EQ(0, vfs_unlink("/test1"));
   KEXPECT_EQ(0, vfs_unlink("/test2"));
@@ -620,7 +623,7 @@ static void cwd_test(void) {
   EXPECT_CWD("/cwd_test");
 
   KTEST_BEGIN("vfs_chdir(): bad arguments");
-  KEXPECT_EQ(-EINVAL, vfs_chdir(""));
+  KEXPECT_EQ(-ENOENT, vfs_chdir(""));
 
   KTEST_BEGIN("vfs_getcwd(): bad arguments");
   KEXPECT_EQ(-EINVAL, vfs_getcwd(0x0, 5));
@@ -1462,7 +1465,7 @@ static void mknod_test(void) {
   vfs_close(fd);
 
   KTEST_BEGIN("mknod(): empty path test");
-  KEXPECT_EQ(-EINVAL, vfs_mknod("", VFS_S_IFREG, makedev(0, 0)));
+  KEXPECT_EQ(-ENOENT, vfs_mknod("", VFS_S_IFREG, makedev(0, 0)));
 
   KTEST_BEGIN("mknod(): existing file test");
   KEXPECT_EQ(-EEXIST, vfs_mknod(kRegFile, VFS_S_IFREG, makedev(0, 0)));
@@ -4240,14 +4243,13 @@ static void link_test(void) {
 
 
   KTEST_BEGIN("vfs_link(): source is empty string");
-  // TODO(aoates): this should be ENOENT, not EINVAL.
-  KEXPECT_EQ(-EINVAL, vfs_link("", "_link_test/symlink"));
+  KEXPECT_EQ(-ENOENT, vfs_link("", "_link_test/symlink"));
   KEXPECT_EQ(-ENOENT, vfs_lstat("_link_test/symlink", &statA));
 
 
   KTEST_BEGIN("vfs_link(): target is empty string");
   create_file_with_data("_link_test/file", "abc");
-  KEXPECT_EQ(-EINVAL, vfs_link("_link_test/file", ""));
+  KEXPECT_EQ(-ENOENT, vfs_link("_link_test/file", ""));
   KEXPECT_EQ(0, vfs_lstat("_link_test/file", &statA));
   KEXPECT_EQ(0, vfs_unlink("_link_test/file"));
 
