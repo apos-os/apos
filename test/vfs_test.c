@@ -4297,6 +4297,41 @@ static void link_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_link_test2"));
 }
 
+static void rename_test(void) {
+  // Tests -
+  //  - normal file -> file (target doesn't exist)
+  //  - normal file -> file (target exists)
+  //  - rename in same dir, and in different dir
+  //  - src doesn't exist (target doesn't exist)
+  //  - src doesn't exist (target exists; both dir and non-dir)
+  //  - symlink to file -> file (target doesn't exist)
+  //  - symlink to file -> file (target exists, is file)
+  //  - symlink to file -> file (target exists, is dir)
+  //  - symlink to file -> file (target exists, is symlink to {file, dir,
+  //  broken})
+  //  - broken symlink -> xxx
+  //  - src and dst both symlinks to same file (same dirent)
+  //  - src and dst both symlinks to same file (different dirents, hard links)
+  //  - src and dst both symlinks to same dir
+  //  - write perms
+  //  - atomic (if replacing existing file, an entry (old or new) is always
+  //  visible)
+  //  - src dir -> dst is dir
+  //  - src dir -> dst is non-empty dir
+  //  - src dir -> dst doesn't exist
+  //  - src dir -> dst is non-dir (file, fifo, dev, etc)
+  //  - src or dst ending in '.' or '..' -> fail
+  //  - src anscestor of dst -> fail
+  //  - dst is a file that's open --> succeeds, but file is still usable through
+  //  fd
+  //
+  // Edge cases:
+  //  - dst ends in slash but isn't directory
+  //  - dst ends in slash but doesn't exist
+  //  - across filesystems
+  //  - someone renames into a directory that is simultaneously rmdir'd()
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -4369,6 +4404,7 @@ void vfs_test(void) {
   o_nofollow_test();
 
   link_test();
+  rename_test();
 
   proc_umask(orig_umask);
 
