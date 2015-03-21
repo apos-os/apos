@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// A very basic kernel-mode shell.  Currently just for testing ld I/O.
+// A very basic kernel-mode shell.
 #include "main/kshell.h"
 
 #include <stddef.h>
@@ -1225,11 +1225,7 @@ void kshell_main(apos_dev_t tty) {
     }
 
     read_buf[read_len] = '\0';
-    //klogf("kshell: read %d bytes:\n%s\n", read_len, read_buf);
-
     parse_and_dispatch(&shell, read_buf);
-    //ksprintf(out_buf, "You wrote: '%s'\n", read_buf);
-    //ld_write(g_io, out_buf, kstrlen(out_buf));
 
     do_wait(&shell, -1, false);
   }
