@@ -986,6 +986,39 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
   return 0;
 }
 
+// Relink the given entry in the parent to the new inode.  Does NOT update the
+// link count of the old or new child.
+static int relink_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
+                           uint32_t new_inode, uint32_t* old_inode_out) {
+  KASSERT((parent->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
+  const uint32_t block_size = ext2_block_size(fs);
+
+  // Lookup the child and find its dirent.
+  uint32_t child_inode, child_offset;
+  int result = lookup_internal(fs, parent, name, &child_inode, &child_offset);
+  if (result) {
+    return result;
+  }
+
+  const uint32_t inode_block = child_offset / block_size;
+  const uint32_t block_offset = child_offset % block_size;
+  const uint32_t block_num = get_inode_block(fs, parent, inode_block);
+  void* block = ext2_block_get(fs, block_num);
+  if (!block) {
+    return -ENOMEM;
+  }
+
+  // Update the dirent.
+  ext2_dirent_t* child_dirent = (ext2_dirent_t*)(block + block_offset);
+  KASSERT_DBG(ltoh32(child_dirent->inode) == child_inode);
+  KASSERT_DBG(kstrncmp(child_dirent->name, name, child_dirent->name_len) == 0);
+  if (old_inode_out) *old_inode_out = ltoh32(child_dirent->inode);
+  child_dirent->inode = htol32(new_inode);
+
+  ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
+  return 0;
+}
+
 // Extract a device from an inode (stored in the first block pointer).
 static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
 #if ENABLE_KERNEL_SAFETY_NETS
@@ -1527,10 +1560,11 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 
     if (vnode->type == VNODE_DIRECTORY) {
       uint32_t orig_dotdot_ino = 0;
-      // TODO(aoates): update in place, roll back if any of these fail.
-      result = lookup_internal(fs, &child_inode, "..", &orig_dotdot_ino, NULL);
-      if ((int)orig_dotdot_ino != parent->num) {
-        if (result) return result;
+      result = relink_internal(fs, &child_inode, "..", parent->num,
+                               &orig_dotdot_ino);
+      if (result) return result;
+      if (orig_dotdot_ino != (uint32_t)parent->num) {
+        // Update link counts if necessary.
         ext2_inode_t orig_parent_inode;
         result = get_inode(fs, orig_dotdot_ino, &orig_parent_inode);
         if (result) return result;
@@ -1539,16 +1573,6 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
         result = write_inode(fs, orig_dotdot_ino, &orig_parent_inode);
         if (result) return result;
 
-        result = unlink_internal(fs, &child_inode, "..");
-        if (result) {
-          // TODO(aoates): roll back update.
-          return result;
-        }
-        result = link_internal(fs, &child_inode, vnode->num, "..", parent->num);
-        if (result) {
-          // TODO(aoates): roll back update.
-          return result;
-        }
         parent_inode.i_links_count++;
         result = write_inode(fs, parent->num, &parent_inode);
         if (result) return result;
