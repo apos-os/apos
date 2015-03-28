@@ -368,6 +368,67 @@ static void mkdir_test(void) {
   // Should still fail even though it's empty.
   KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
 
+  KTEST_BEGIN("mkdir(): link count");
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent", VFS_S_IRWXU));
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(3, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/A", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(3, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/A", &stat));
+  KEXPECT_EQ(3, stat.st_nlink);
+
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/C", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(4, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/C", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("_mkdir_parent/A", VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("_mkdir_parent/A/B", VFS_S_IRWXU));
+  KEXPECT_EQ(-EEXIST, vfs_mkdir("_mkdir_parent/C", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(4, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/A", &stat));
+  KEXPECT_EQ(3, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/C", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+
+
+  KTEST_BEGIN("rmdir(): link count");
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("_mkdir_parent"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("_mkdir_parent/A"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("_mkdir_parent/A/.."));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(4, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/A", &stat));
+  KEXPECT_EQ(3, stat.st_nlink);
+
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B"));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(4, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/A", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A"));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(3, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent/C", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/C"));
+  KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
+  KEXPECT_EQ(2, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent"));
+
   // Cleanup.
   vfs_close(test1_fd);
   KEXPECT_EQ(0, vfs_unlink("/test1"));
