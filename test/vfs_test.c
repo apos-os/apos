@@ -4863,9 +4863,81 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_rename_test/fifo"));
 
 
+  KTEST_BEGIN("vfs_rename(): both src and dst don't exist (same parent)");
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(4, statB.st_nlink);
+
+
+  KTEST_BEGIN("vfs_rename(): both src and dst don't exist (different parent)");
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/dirA/A", "_rename_test/dirB/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
+
+
+  KTEST_BEGIN("vfs_rename(): src doesn't exist, dst is file (same parent)");
+  create_file_with_data("_rename_test/B", "abc");
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statA));
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(3, statB.st_size);
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(4, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
+
+
+  KTEST_BEGIN(
+      "vfs_rename(): src doesn't exist, dst is file (different parent)");
+  create_file_with_data("_rename_test/dirB/B", "abc");
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statA));
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/dirA/A", "_rename_test/dirB/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(3, statB.st_size);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/dirB/B"));
+
+
+  KTEST_BEGIN("vfs_rename(): src doesn't exist, dst is dir (same parent)");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statA));
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(5, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
+
+
+  KTEST_BEGIN("vfs_rename(): src doesn't exist, dst is dir (different parent)");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirB/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statA));
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/dirA/A", "_rename_test/dirB/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
+  KEXPECT_EQ(3, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
+
   // Tests -
-  //  - src doesn't exist (target doesn't exist)
-  //  - src doesn't exist (target exists; both dir and non-dir)
   //  - symlink to file -> file (target doesn't exist)
   //  - symlink to file -> file (target exists, is file)
   //  - symlink to file -> file (target exists, is dir)
