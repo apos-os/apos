@@ -821,6 +821,85 @@ int vfs_link(const char* path1, const char* path2) {
   return error;
 }
 
+int vfs_rename(const char* path1, const char* path2) {
+  vnode_t* parent1 = 0x0, *parent2 = 0x0;
+  vnode_t* vnode1 = 0x0;
+  char base_name1[VFS_MAX_FILENAME_LENGTH];
+  char base_name2[VFS_MAX_FILENAME_LENGTH];
+
+  vnode_t* root1 = get_root_for_path(path1);
+  int error = lookup_path(root1, path1, lookup_opt(false), &parent1, &vnode1,
+                          base_name1);
+  VFS_PUT_AND_CLEAR(root1);
+  if (error == 0 && !vnode1) {
+    VFS_PUT_AND_CLEAR(parent1);
+    return -ENOENT;
+  } else if (error) {
+    VFS_PUT_AND_CLEAR(parent1);
+    return error;
+  }
+
+  vnode_t* root2 = get_root_for_path(path2);
+  error =
+      lookup_path(root2, path2, lookup_opt(false), &parent2, 0x0, base_name2);
+  VFS_PUT_AND_CLEAR(root2);
+  if (error) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    return error;
+  }
+
+  if (vnode1->fs != parent2->fs) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return -EXDEV;
+  }
+
+  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2);
+  if (mode_check) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return mode_check;
+  }
+
+  // TODO(aoates): lock
+  vnode_t* vnode2 = 0x0;
+  error = lookup(&parent2, base_name2, &vnode2);
+  if (error != 0 && error != -ENOENT) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return error;
+  }
+
+  if (vnode2) {
+    // TODO(aoates): check validity
+    error = parent2->fs->unlink(parent2, base_name2);
+    VFS_PUT_AND_CLEAR(vnode2);
+    if (error) {
+      VFS_PUT_AND_CLEAR(vnode1);
+      VFS_PUT_AND_CLEAR(parent1);
+      VFS_PUT_AND_CLEAR(parent2);
+    }
+  }
+
+  error = parent1->fs->unlink(parent1, base_name1);
+  if (error) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return error;
+  }
+
+  error = parent2->fs->link(parent2, vnode1, base_name2);
+  VFS_PUT_AND_CLEAR(vnode1);
+  VFS_PUT_AND_CLEAR(parent1);
+  VFS_PUT_AND_CLEAR(parent2);
+  return error;
+}
+
 int vfs_unlink(const char* path) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
