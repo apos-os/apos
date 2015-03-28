@@ -488,9 +488,6 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
-  if (ramfs->inodes[d->d_ino].vnode.type == VNODE_DIRECTORY) {
-    return -EISDIR;
-  }
 
   ramfs->inodes[d->d_ino].link_count--;
 
