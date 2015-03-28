@@ -847,6 +847,12 @@ int vfs_unlink(const char* path) {
     return error;
   }
 
+  if (child->type == VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(child);
+    VFS_PUT_AND_CLEAR(parent);
+    return -EISDIR;
+  }
+
   error = parent->fs->unlink(parent, base_name);
   VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);
