@@ -4492,9 +4492,63 @@ static void rename_test(void) {
   KEXPECT_EQ(3, statB.st_nlink);
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
 
+  KTEST_BEGIN("vfs_rename(): file rename (over existing file; same directory)");
+  create_file_with_data("_rename_test/A", "abc");
+  create_file_with_data("_rename_test/B", "de");
+  KEXPECT_EQ(0, vfs_link("_rename_test/B", "_rename_test/C"));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/A", &statA));
+  int orig_A_ino = statA.st_ino;
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(3, statA.st_size);;
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
+  int orig_B_ino = statB.st_ino;
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(2, statB.st_size);
+
+  KEXPECT_EQ(0, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
+  KEXPECT_EQ(VFS_S_IFREG, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(3, statB.st_size);
+  KEXPECT_EQ(orig_A_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/C", &statB));
+  KEXPECT_EQ(2, statB.st_size);
+  KEXPECT_EQ(orig_B_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(4, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/C"));
+
+
+  KTEST_BEGIN("vfs_rename(): file rename (over file; different directory)");
+  create_file_with_data("_rename_test/dirA/A", "abc");
+  create_file_with_data("_rename_test/dirB/B", "de");
+  KEXPECT_EQ(0, vfs_link("_rename_test/dirB/B", "_rename_test/dirA/C"));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/A", &statA));
+  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(3, statA.st_size);
+  KEXPECT_EQ(1, statA.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  orig_B_ino = statB.st_ino;
+  KEXPECT_EQ(2, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_rename("_rename_test/dirA/A", "_rename_test/dirB/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/B", &statB));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirB/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  KEXPECT_EQ(VFS_S_IFREG, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(3, statB.st_size);
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/C", &statB));
+  KEXPECT_EQ(orig_B_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/dirB/B"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/dirA/C"));
+
   // Tests -
-  //  - normal file -> file (target doesn't exist)
-  //  - normal file -> file (target exists)
   //  - normal file -> existing dir (should fail)
   //  - src doesn't exist (target doesn't exist)
   //  - src doesn't exist (target exists; both dir and non-dir)
@@ -4512,7 +4566,6 @@ static void rename_test(void) {
   //  visible)
   //  - src dir -> dst is dir
   //  - src dir -> dst is non-empty dir
-  //  - src dir -> dst doesn't exist
   //  - src dir -> dst is non-dir (file, fifo, dev, etc)
   //  - src or dst ending in '.' or '..' -> fail
   //  - src anscestor of dst -> fail
