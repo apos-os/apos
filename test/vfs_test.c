@@ -4366,13 +4366,17 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_stat("_rename_test/A", &statA));
   KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
   KEXPECT_EQ(3, statA.st_size);
+  KEXPECT_EQ(1, statA.st_nlink);
 
   KEXPECT_EQ(0, vfs_rename("_rename_test/A", "_rename_test/B"));
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/A", &statB));
   KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
-  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
-  KEXPECT_EQ(3, statA.st_size);
+  KEXPECT_EQ(VFS_S_IFREG, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(3, statB.st_size);
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
   KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
 
 
@@ -4393,10 +4397,15 @@ static void rename_test(void) {
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/B", &statB));
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirB/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
   KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
-  KEXPECT_EQ(VFS_S_IFREG, statA.st_mode & VFS_S_IFMT);
-  KEXPECT_EQ(3, statA.st_size);
+  KEXPECT_EQ(VFS_S_IFREG, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(3, statB.st_size);
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(1, statB.st_nlink);
   KEXPECT_EQ(0, vfs_unlink("_rename_test/dirB/B"));
 
 
@@ -4436,6 +4445,7 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_stat("_rename_test/A/..", &statA));
   int orig_dotdot_ino  = statA.st_ino;
+  KEXPECT_EQ(5, statA.st_nlink);
   KEXPECT_EQ(0, vfs_stat("_rename_test/A", &statA));
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/B", &statB));
 
@@ -4444,11 +4454,16 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
   KEXPECT_EQ(VFS_S_IFDIR, statA.st_mode & VFS_S_IFMT);
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
   KEXPECT_EQ(0, vfs_stat("_rename_test/B/.", &statB));
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
   KEXPECT_EQ(0, vfs_stat("_rename_test/B/..", &statB));
   KEXPECT_EQ(orig_dotdot_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(5, statB.st_nlink);
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(4, statB.st_nlink);
 
 
   KTEST_BEGIN("vfs_rename(): basic directory rename (different directory)");
@@ -4463,14 +4478,18 @@ static void rename_test(void) {
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/B", &statB));
   KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirB/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA", &statB));
+  KEXPECT_EQ(2, statB.st_nlink);
   KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
   KEXPECT_EQ(VFS_S_IFDIR, statA.st_mode & VFS_S_IFMT);
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
   KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/.", &statB));
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
   KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/..", &statB));
   KEXPECT_NE(orig_dotdot_ino, statB.st_ino);
   KEXPECT_EQ(dirB_ino, statB.st_ino);
+  KEXPECT_EQ(3, statB.st_nlink);
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
 
   // Tests -
