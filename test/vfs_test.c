@@ -4599,6 +4599,115 @@ static void rename_test(void) {
   KEXPECT_EQ(3, statB.st_nlink);
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
 
+
+  KTEST_BEGIN("vfs_rename(): dir rename (over non-empty dir; same parent)");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B/X", VFS_S_IRWXU));
+  create_file_with_data("_rename_test/B/Y", "abc");
+  KEXPECT_EQ(0, vfs_stat("_rename_test/A", &statA));
+  KEXPECT_EQ(2, statA.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/A/..", &statB));
+  KEXPECT_EQ(6, statB.st_nlink);
+  KEXPECT_EQ(parent_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
+  KEXPECT_EQ(3, statB.st_nlink);
+  orig_B_ino = statB.st_ino;
+
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B/X"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B/X", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B/Y"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rename("_rename_test/A", "_rename_test/B"));
+
+  KEXPECT_EQ(0, vfs_stat("_rename_test/A", &statB));
+  KEXPECT_EQ(VFS_S_IFDIR, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/A/..", &statB));
+  KEXPECT_EQ(parent_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B", &statB));
+  KEXPECT_EQ(VFS_S_IFDIR, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(orig_B_ino, statB.st_ino);
+  KEXPECT_EQ(3, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/B/..", &statB));
+  KEXPECT_EQ(parent_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test", &statB));
+  KEXPECT_EQ(6, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B/X"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
+
+
+  KTEST_BEGIN(
+      "vfs_rename(): dir rename (over non-empty dir; different parent)");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirA/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirB/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirB/B/X", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/A", &statA));
+  KEXPECT_EQ(2, statA.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  KEXPECT_EQ(3, statB.st_nlink);
+  orig_B_ino = statB.st_ino;
+
+  KEXPECT_EQ(-ENOTEMPTY,
+             vfs_rename("_rename_test/dirA/A", "_rename_test/dirB/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/B", &statB));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirB/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/A", &statB));
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/A/..", &statB));
+  KEXPECT_EQ(dirA_ino, statB.st_ino);
+  KEXPECT_EQ(3, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  KEXPECT_EQ(VFS_S_IFDIR, statB.st_mode & VFS_S_IFMT);
+  KEXPECT_EQ(orig_B_ino, statB.st_ino);
+  KEXPECT_EQ(3, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/X", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/X/..", &statB));
+  KEXPECT_EQ(orig_B_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/..", &statB));
+  KEXPECT_EQ(dirB_ino, statB.st_ino);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA", &statB));
+  KEXPECT_EQ(3, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
+  KEXPECT_EQ(3, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B/X"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirA/A"));
+
+
+  KTEST_BEGIN("vfs_rename(): non-empty dir rename");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirA/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirB/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/dirA/A/X", VFS_S_IRWXU));
+  create_file_with_data("_rename_test/dirA/A/Y", "abc");
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/A", &statA));
+  KEXPECT_EQ(3, statA.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirA/A/X", &statB));
+  int orig_X_ino = statB.st_ino;
+
+  KEXPECT_EQ(0, vfs_rename("_rename_test/dirA/A", "_rename_test/dirB/B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/A", &statB));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirA/B", &statB));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_rename_test/dirB/A", &statB));
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B", &statB));
+  KEXPECT_EQ(statA.st_ino, statB.st_ino);
+  KEXPECT_EQ(3, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/X", &statB));
+  KEXPECT_EQ(orig_X_ino, statB.st_ino);
+  KEXPECT_EQ(2, statB.st_nlink);
+  KEXPECT_EQ(0, vfs_stat("_rename_test/dirB/B/Y", &statB));
+  KEXPECT_EQ(3, statB.st_size);
+  KEXPECT_EQ(1, statB.st_nlink);
+
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B/X"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/dirB/B/Y"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
+
   // Tests -
   //  - normal file -> existing dir (should fail)
   //  - src doesn't exist (target doesn't exist)
@@ -4615,7 +4724,6 @@ static void rename_test(void) {
   //  - write perms
   //  - atomic (if replacing existing file, an entry (old or new) is always
   //  visible)
-  //  - src dir -> dst is non-empty dir
   //  - src dir -> dst is non-dir (file, fifo, dev, etc)
   //  - src or dst ending in '.' or '..' -> fail
   //  - src anscestor of dst -> fail
