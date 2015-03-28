@@ -1521,7 +1521,38 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
     // TODO(aoates): do we want to store the inode in the vnode?
     result = get_inode(fs, vnode->num, &child_inode);
     if (result) {
+      // TODO(aoates): roll back update.
       return result;
+    }
+
+    if (vnode->type == VNODE_DIRECTORY) {
+      uint32_t orig_dotdot_ino = 0;
+      // TODO(aoates): update in place, roll back if any of these fail.
+      result = lookup_internal(fs, &child_inode, "..", &orig_dotdot_ino, NULL);
+      if ((int)orig_dotdot_ino != parent->num) {
+        if (result) return result;
+        ext2_inode_t orig_parent_inode;
+        result = get_inode(fs, orig_dotdot_ino, &orig_parent_inode);
+        if (result) return result;
+        orig_parent_inode.i_links_count--;
+        KASSERT_DBG(orig_parent_inode.i_links_count >= 2);
+        result = write_inode(fs, orig_dotdot_ino, &orig_parent_inode);
+        if (result) return result;
+
+        result = unlink_internal(fs, &child_inode, "..");
+        if (result) {
+          // TODO(aoates): roll back update.
+          return result;
+        }
+        result = link_internal(fs, &child_inode, vnode->num, "..", parent->num);
+        if (result) {
+          // TODO(aoates): roll back update.
+          return result;
+        }
+        parent_inode.i_links_count++;
+        result = write_inode(fs, parent->num, &parent_inode);
+        if (result) return result;
+      }
     }
     child_inode.i_links_count++;
     result = write_inode(fs, vnode->num, &child_inode);
