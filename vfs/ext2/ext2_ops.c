@@ -1553,8 +1553,6 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
   result = get_inode(fs, child_inode_num, &child_inode);
   if (result)
     return result;
-  if ((child_inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR)
-    return -EISDIR;
 
   KASSERT(child_inode.i_links_count >= 1);
 
