@@ -875,8 +875,12 @@ int vfs_rename(const char* path1, const char* path2) {
   }
 
   if (vnode2) {
-    // TODO(aoates): check validity
-    if (vnode2->type == VNODE_DIRECTORY) {
+    if (vnode1->type != VNODE_DIRECTORY && vnode2->type == VNODE_DIRECTORY) {
+      error = -EISDIR;
+    } else if (vnode1->type == VNODE_DIRECTORY &&
+               vnode2->type != VNODE_DIRECTORY) {
+      error = -ENOTDIR;
+    } else if (vnode2->type == VNODE_DIRECTORY) {
       error = parent2->fs->rmdir(parent2, base_name2);
     } else {
       error = parent2->fs->unlink(parent2, base_name2);
