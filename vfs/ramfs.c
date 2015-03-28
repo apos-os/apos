@@ -406,6 +406,10 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
     return -ENOTEMPTY;
   }
 
+  ramfs_inode_t* parent_inode = &ramfs->inodes[parent->num];
+  KASSERT(parent_inode->link_count >= 3);
+  parent_inode->link_count--;
+
   // One each for the parent and '.'.
   // TODO(aoates): if link_count == 0, recollect the inode.
   dir_inode->link_count -= 2;
@@ -415,6 +419,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   child_dirent->d_ino = -1;
   child_dirent->d_name[0] = '\0';
   child_dirent = find_dirent(&dir_inode->vnode, "..");
+  KASSERT(child_dirent->d_ino == parent->num);
   child_dirent->d_ino = -1;
   child_dirent->d_name[0] = '\0';
 
