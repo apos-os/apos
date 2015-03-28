@@ -464,10 +464,25 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(parent->type == VNODE_DIRECTORY);
-  KASSERT(vnode->type != VNODE_DIRECTORY);
   maybe_block(vnode->fs);
 
-  return ramfs_link_internal(parent, vnode->num, name);
+  int result = ramfs_link_internal(parent, vnode->num, name);
+  if (result) return result;
+
+  if (vnode->type == VNODE_DIRECTORY) {
+    dirent_t* d = find_dirent(vnode, "..");
+    KASSERT_DBG(d != NULL);
+    int orig_dotdot_ino = d->d_ino;
+    ramfs_t* ramfs = (ramfs_t*)parent->fs;
+    ramfs_inode_t* orig_dotdot_inode = &ramfs->inodes[orig_dotdot_ino];
+    orig_dotdot_inode->link_count--;
+
+    d->d_ino = parent->num;
+    ramfs_inode_t* new_dotdot_inode = &ramfs->inodes[parent->num];
+    new_dotdot_inode->link_count++;
+  }
+
+  return 0;
 }
 
 // TODO(aoates): a good test: create a file, unlink it, create a new one with
