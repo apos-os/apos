@@ -4999,20 +4999,92 @@ static void rename_testB(void) {
   KEXPECT_EQ(0, vfs_unlink("_rename_test/Y"));
 }
 
-static void rename_test(void) {
-  rename_testA();
-  rename_testB();
+static void rename_symlink_test(void) {
+  apos_stat_t statA, statB, statC;
+  char path[VFS_MAX_PATH_LENGTH];
 
-  // Tests -
-  //  - symlink to file -> file (target doesn't exist)
-  //  - symlink to file -> file (target exists, is file)
-  //  - symlink to file -> file (target exists, is dir)
+  KTEST_BEGIN("vfs_rename(): rename symlink (target doesn't exist)");
+  create_file_with_data("_rename_test/A", "abc");
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statA));
+  KEXPECT_EQ(0, vfs_symlink("A", "_rename_test/B"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/B", &statB));
+
+  KEXPECT_EQ(0, vfs_rename("_rename_test/B", "_rename_test/C"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statC));
+  KEXPECT_EQ(statA.st_ino, statC.st_ino);
+  KEXPECT_EQ(3, statC.st_size);
+  KEXPECT_EQ(-ENOENT, vfs_lstat("_rename_test/B", &statC));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/C", &statC));
+  KEXPECT_EQ(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(1, vfs_readlink("_rename_test/C", path, VFS_MAX_PATH_LENGTH));
+  path[1] = '\0';
+  KEXPECT_STREQ("A", path);
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/C"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
+
+
+  KTEST_BEGIN("vfs_rename(): broken rename symlink (target doesn't exist)");
+  KEXPECT_EQ(0, vfs_symlink("bad", "_rename_test/B"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/B", &statB));
+
+  KEXPECT_EQ(0, vfs_rename("_rename_test/B", "_rename_test/C"));
+  KEXPECT_EQ(-ENOENT, vfs_lstat("_rename_test/B", &statC));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/C", &statC));
+  KEXPECT_EQ(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(3, vfs_readlink("_rename_test/C", path, VFS_MAX_PATH_LENGTH));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/C"));
+
+
+  KTEST_BEGIN("vfs_rename(): rename symlink (target is file)");
+  create_file_with_data("_rename_test/A", "abc");
+  create_file_with_data("_rename_test/C", "x");
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statA));
+  KEXPECT_EQ(0, vfs_symlink("A", "_rename_test/B"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/B", &statB));
+
+  KEXPECT_EQ(0, vfs_rename("_rename_test/B", "_rename_test/C"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statC));
+  KEXPECT_EQ(statA.st_ino, statC.st_ino);
+  KEXPECT_EQ(3, statC.st_size);
+  KEXPECT_EQ(-ENOENT, vfs_lstat("_rename_test/B", &statC));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/C", &statC));
+  KEXPECT_EQ(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(1, vfs_readlink("_rename_test/C", path, VFS_MAX_PATH_LENGTH));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/C"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
+
+
+  KTEST_BEGIN("vfs_rename(): rename symlink (target is dir)");
+  create_file_with_data("_rename_test/A", "abc");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statA));
+  KEXPECT_EQ(0, vfs_symlink("A", "_rename_test/B"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/B", &statB));
+
+  KEXPECT_EQ(-EISDIR, vfs_rename("_rename_test/B", "_rename_test/C"));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statC));
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/B", &statC));
+  KEXPECT_EQ(statB.st_ino, statC.st_ino);
+  KEXPECT_EQ(0, vfs_lstat("_rename_test/C", &statC));
+  KEXPECT_EQ(1, vfs_readlink("_rename_test/B", path, VFS_MAX_PATH_LENGTH));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/C"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
+
+  // Other symlink tests,
   //  - symlink to file -> file (target exists, is symlink to {file, dir,
   //  broken})
-  //  - broken symlink -> xxx
   //  - src and dst both symlinks to same file (same dirent)
   //  - src and dst both symlinks to same file (different dirents, hard links)
   //  - src and dst both symlinks to same dir
+}
+
+static void rename_test(void) {
+  rename_testA();
+  rename_testB();
+  rename_symlink_test();
+
+  // Tests -
   //  - write perms
   //  - atomic (if replacing existing file, an entry (old or new) is always
   //  visible)
