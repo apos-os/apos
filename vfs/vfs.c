@@ -876,7 +876,11 @@ int vfs_rename(const char* path1, const char* path2) {
 
   if (vnode2) {
     // TODO(aoates): check validity
-    error = parent2->fs->unlink(parent2, base_name2);
+    if (vnode2->type == VNODE_DIRECTORY) {
+      error = parent2->fs->rmdir(parent2, base_name2);
+    } else {
+      error = parent2->fs->unlink(parent2, base_name2);
+    }
     VFS_PUT_AND_CLEAR(vnode2);
     if (error) {
       VFS_PUT_AND_CLEAR(vnode1);
