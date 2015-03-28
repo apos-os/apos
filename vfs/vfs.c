@@ -875,6 +875,14 @@ int vfs_rename(const char* path1, const char* path2) {
   }
 
   if (vnode2) {
+    if (vnode1 == vnode2) {
+      VFS_PUT_AND_CLEAR(vnode2);
+      VFS_PUT_AND_CLEAR(vnode1);
+      VFS_PUT_AND_CLEAR(parent1);
+      VFS_PUT_AND_CLEAR(parent2);
+      return 0;
+    }
+
     if (vnode1->type != VNODE_DIRECTORY && vnode2->type == VNODE_DIRECTORY) {
       error = -EISDIR;
     } else if (vnode1->type == VNODE_DIRECTORY &&
