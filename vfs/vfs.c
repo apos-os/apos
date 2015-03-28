@@ -835,7 +835,6 @@ int vfs_rename(const char* path1, const char* path2) {
     VFS_PUT_AND_CLEAR(parent1);
     return -ENOENT;
   } else if (error) {
-    VFS_PUT_AND_CLEAR(parent1);
     return error;
   }
 

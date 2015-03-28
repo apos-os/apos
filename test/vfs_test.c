@@ -4983,6 +4983,20 @@ static void rename_testB(void) {
   KEXPECT_EQ(0, vfs_unlink("_rename_test/D"));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/E1"));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/E2"));
+
+
+  KTEST_BEGIN("vfs_rename(): source path is bad");
+  create_file_with_data("_rename_test/X", "abc");
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/A/X", "_rename_test/B"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/X/A", "_rename_test/B"));
+
+  KTEST_BEGIN("vfs_rename(): destination path is bad");
+  create_file_with_data("_rename_test/Y", "abc");
+  KEXPECT_EQ(-ENOENT, vfs_rename("_rename_test/X", "_rename_test/A/X"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/X", "_rename_test/X/A"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/Y", "_rename_test/X/A"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/X"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/Y"));
 }
 
 static void rename_test(void) {
