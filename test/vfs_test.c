@@ -5192,15 +5192,76 @@ static void rename_symlink_test(void) {
   //  - src and dst both symlinks to same dir
 }
 
+const int RENAME_THREAD_ITERS = 100 * THREAD_SAFETY_MULTIPLIER;
+static void* rename_symlink_func(void* arg) {
+  int result = 0, i;
+  for (i = 0; i < RENAME_THREAD_ITERS; ++i) {
+    result = vfs_symlink("A", "_rename_test/templink");
+    if (result) break;
+    result = vfs_rename("_rename_test/templink", "_rename_test/link");
+    if (result) break;
+    result = vfs_symlink("B", "_rename_test/templink");
+    if (result) break;
+    result = vfs_rename("_rename_test/templink", "_rename_test/link");
+    if (result) break;
+    scheduler_yield();
+  }
+  KEXPECT_EQ(0, result);
+  KEXPECT_EQ(RENAME_THREAD_ITERS, i);
+  return NULL;
+}
+
+static void* rename_symlink_open_func(void* arg) {
+  int result = 0, i;
+  for (i = 0; i < RENAME_THREAD_ITERS * 2; ++i) {
+    result = vfs_open("_rename_test/link/C", VFS_O_RDONLY);
+    if (result < 0) break;
+    vfs_close(result);
+    scheduler_yield();
+  }
+  KEXPECT_EQ(0, result);
+  KEXPECT_EQ(RENAME_THREAD_ITERS * 2, i);
+  return NULL;
+}
+
+static void rename_thread_test(void) {
+  KTEST_BEGIN("vfs_rename(): destination always visible (atomic)");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_symlink("A", "_rename_test/link"));
+  create_file_with_data("_rename_test/A/C", "");
+  create_file_with_data("_rename_test/B/C", "");
+
+  const int NUM_OPENERS = 5;
+  kthread_t threads[1 + NUM_OPENERS];
+  KEXPECT_EQ(0, kthread_create(&threads[0], &rename_symlink_func, NULL));
+  scheduler_make_runnable(threads[0]);
+  for (int i = 0; i < NUM_OPENERS; ++i) {
+    KEXPECT_EQ(
+        0, kthread_create(&threads[1 + i], &rename_symlink_open_func, NULL));
+    scheduler_make_runnable(threads[1 + i]);
+  }
+  for (int i = 0; i < 1 + NUM_OPENERS; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A/C"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B/C"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/link"));
+}
+
 static void rename_test(void) {
   rename_testA();
   rename_testB();
   rename_symlink_test();
+  rename_thread_test();
 
   // Tests -
   //  - write perms
-  //  - atomic (if replacing existing file, an entry (old or new) is always
-  //  visible)
+  //  - rename lock
+  //  - other interesting race conditions
   //
   // Edge cases:
   //  - across filesystems

@@ -853,6 +853,30 @@ static bool vfs_is_ancestor(const vnode_t* A, vnode_t* B) {
   return false;
 }
 
+static void lock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_lock(&A->mutex);
+  } else if (A < B) {
+    kmutex_lock(&A->mutex);
+    kmutex_lock(&B->mutex);
+  } else {
+    kmutex_lock(&B->mutex);
+    kmutex_lock(&A->mutex);
+  }
+}
+
+static void unlock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_unlock(&A->mutex);
+  } else if (A < B) {
+    kmutex_unlock(&B->mutex);
+    kmutex_unlock(&A->mutex);
+  } else {
+    kmutex_unlock(&A->mutex);
+    kmutex_unlock(&B->mutex);
+  }
+}
+
 int vfs_rename(const char* path1, const char* path2) {
   vnode_t* parent1 = 0x0, *parent2 = 0x0;
   vnode_t* vnode1 = 0x0;
@@ -910,10 +934,15 @@ int vfs_rename(const char* path1, const char* path2) {
     return -EINVAL;
   }
 
-  // TODO(aoates): lock
+  lock_vnodes(parent1, parent2);
+
+  // N.B. this bypasses the resolve_mounts_up() call that lookup() does, but
+  // that's fine, since base_name2 will never be ".." (and therefore we'll never
+  // be traversing past a mount point).
   vnode_t* vnode2 = 0x0;
-  error = lookup(&parent2, base_name2, &vnode2);
+  error = lookup_locked(parent2, base_name2, &vnode2);
   if (error != 0 && error != -ENOENT) {
+    unlock_vnodes(parent1, parent2);
     VFS_PUT_AND_CLEAR(vnode1);
     VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
@@ -928,6 +957,7 @@ int vfs_rename(const char* path1, const char* path2) {
         (vnode2 && vnode2->type != VNODE_DIRECTORY)))) {
     // TODO(aoates): this should test for symlinks to directories as well.
     if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    unlock_vnodes(parent1, parent2);
     VFS_PUT_AND_CLEAR(vnode1);
     VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
@@ -936,6 +966,7 @@ int vfs_rename(const char* path1, const char* path2) {
 
   if (vnode2) {
     if (vnode1 == vnode2) {
+      unlock_vnodes(parent1, parent2);
       VFS_PUT_AND_CLEAR(vnode2);
       VFS_PUT_AND_CLEAR(vnode1);
       VFS_PUT_AND_CLEAR(parent1);
@@ -955,6 +986,7 @@ int vfs_rename(const char* path1, const char* path2) {
     }
     VFS_PUT_AND_CLEAR(vnode2);
     if (error) {
+      unlock_vnodes(parent1, parent2);
       VFS_PUT_AND_CLEAR(vnode1);
       VFS_PUT_AND_CLEAR(parent1);
       VFS_PUT_AND_CLEAR(parent2);
@@ -964,6 +996,7 @@ int vfs_rename(const char* path1, const char* path2) {
 
   error = parent1->fs->unlink(parent1, base_name1);
   if (error) {
+    unlock_vnodes(parent1, parent2);
     VFS_PUT_AND_CLEAR(vnode1);
     VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
@@ -971,6 +1004,7 @@ int vfs_rename(const char* path1, const char* path2) {
   }
 
   error = parent2->fs->link(parent2, vnode1, base_name2);
+  unlock_vnodes(parent1, parent2);
   VFS_PUT_AND_CLEAR(vnode1);
   VFS_PUT_AND_CLEAR(parent1);
   VFS_PUT_AND_CLEAR(parent2);
