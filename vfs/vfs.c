@@ -821,6 +821,38 @@ int vfs_link(const char* path1, const char* path2) {
   return error;
 }
 
+// Returns true if A is an ancestor of B.
+static bool vfs_is_ancestor(const vnode_t* A, vnode_t* B) {
+  KASSERT(A);
+  KASSERT(A->type == VNODE_DIRECTORY);
+  KASSERT(B);
+  KASSERT(B->type == VNODE_DIRECTORY);
+
+  vnode_t* n = VFS_COPY_REF(B);
+
+  fs_t* root_fs = vfs_get_root_fs();
+  while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
+    if (n == A) {
+      VFS_PUT_AND_CLEAR(n);
+      return true;
+    }
+
+    // First find the parent vnode.
+    vnode_t* parent = 0x0;
+    int result = lookup(&n, "..", &parent);
+    VFS_PUT_AND_CLEAR(n);
+    if (result < 0) {
+      return result;
+    }
+
+    n = VFS_MOVE_REF(parent);
+  }
+
+  VFS_PUT_AND_CLEAR(n);
+
+  return false;
+}
+
 int vfs_rename(const char* path1, const char* path2) {
   vnode_t* parent1 = 0x0, *parent2 = 0x0;
   vnode_t* vnode1 = 0x0;
@@ -865,6 +897,13 @@ int vfs_rename(const char* path1, const char* path2) {
 
   if (kstrcmp(base_name1, ".") == 0 || kstrcmp(base_name1, "..") == 0 ||
       kstrcmp(base_name2, ".") == 0 || kstrcmp(base_name2, "..") == 0) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return -EINVAL;
+  }
+
+  if (vnode1->type == VNODE_DIRECTORY && vfs_is_ancestor(vnode1, parent2)) {
     VFS_PUT_AND_CLEAR(vnode1);
     VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);

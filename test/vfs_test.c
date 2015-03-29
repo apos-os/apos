@@ -5033,6 +5033,35 @@ static void rename_testB(void) {
   KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/F"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/Z"));
+
+
+  KTEST_BEGIN("vfs_rename(): src is ancestor of dst");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A/B/C", VFS_S_IRWXU));
+  create_file_with_data("_rename_test/A/B/C/F", "abc");
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A", "_rename_test/A/x"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A", "_rename_test/A/B"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A", "_rename_test/A/B/x"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A", "_rename_test/A/B/C/x"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test", "_rename_test/A/B/C/x"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test", "_rename_test/A/B/C"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A/B", "_rename_test/A/B/C/x"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A/B", "_rename_test/A/B/C/x/"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A/B", "_rename_test/A/B/C"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A/B", "_rename_test/A/B/C/"));
+  KEXPECT_NE(0, vfs_rename("_rename_test/A/B", "_rename_test/A/B/C/F"));
+  char cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_LT(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
+  KEXPECT_EQ(0, vfs_chdir("_rename_test/A/B"));
+  kstrcat(cwd, "/_rename_test/A");
+  KEXPECT_EQ(-EINVAL, vfs_rename(cwd, "x"));
+  KEXPECT_EQ(-EINVAL, vfs_rename(cwd, "C/x"));
+  KEXPECT_EQ(0, vfs_chdir("../../.."));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A/B/C/F"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/A/B/C"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/A/B"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
 }
 
 static void rename_symlink_test(void) {
@@ -5124,7 +5153,6 @@ static void rename_test(void) {
   //  - write perms
   //  - atomic (if replacing existing file, an entry (old or new) is always
   //  visible)
-  //  - src anscestor of dst -> fail
   //  - dst is a file that's open --> succeeds, but file is still usable through
   //  fd
   //
