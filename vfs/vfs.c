@@ -863,6 +863,14 @@ int vfs_rename(const char* path1, const char* path2) {
     return mode_check;
   }
 
+  if (kstrcmp(base_name1, ".") == 0 || kstrcmp(base_name1, "..") == 0 ||
+      kstrcmp(base_name2, ".") == 0 || kstrcmp(base_name2, "..") == 0) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return -EINVAL;
+  }
+
   // TODO(aoates): lock
   vnode_t* vnode2 = 0x0;
   error = lookup(&parent2, base_name2, &vnode2);

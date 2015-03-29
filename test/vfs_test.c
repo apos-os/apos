@@ -4997,6 +4997,19 @@ static void rename_testB(void) {
   KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/Y", "_rename_test/X/A"));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/X"));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/Y"));
+
+
+  KTEST_BEGIN("vfs_rename(): reject paths ending in '.' or '..'");
+  create_file_with_data("_rename_test/A", "abc");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/B/.", "_rename_test/C"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/B/..", "_rename_test/C"));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A", "_rename_test/B/."));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/A", "_rename_test/B/.."));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/B", "_rename_test/B/."));
+  KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/B", "_rename_test/B/.."));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
 }
 
 static void rename_symlink_test(void) {
@@ -5088,7 +5101,6 @@ static void rename_test(void) {
   //  - write perms
   //  - atomic (if replacing existing file, an entry (old or new) is always
   //  visible)
-  //  - src or dst ending in '.' or '..' -> fail
   //  - src anscestor of dst -> fail
   //  - dst is a file that's open --> succeeds, but file is still usable through
   //  fd
