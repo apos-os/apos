@@ -5010,6 +5010,29 @@ static void rename_testB(void) {
   KEXPECT_EQ(-EINVAL, vfs_rename("_rename_test/B", "_rename_test/B/.."));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
+
+
+  KTEST_BEGIN("vfs_rename(): reject non-dir paths ending in '/'");
+  create_file_with_data("_rename_test/A", "abc");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
+  create_file_with_data("_rename_test/F", "abc");
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/A/", "_rename_test/C"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/A", "_rename_test/C/"));
+  KEXPECT_EQ(-EISDIR, vfs_rename("_rename_test/A", "_rename_test/B/"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/A", "_rename_test/F/"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/B", "_rename_test/F/"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rename("_rename_test/B/", "_rename_test/F/"));
+
+  KTEST_BEGIN("vfs_rename(): allow dir paths ending in '/'");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/Z", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_rename("_rename_test/B/", "_rename_test/C"));
+  KEXPECT_EQ(0, vfs_rename("_rename_test/C", "_rename_test/D/"));
+  KEXPECT_EQ(0, vfs_rename("_rename_test/D/", "_rename_test/E/"));
+  KEXPECT_EQ(0, vfs_rename("_rename_test/E//", "_rename_test/G//"));
+  KEXPECT_EQ(0, vfs_rename("_rename_test/G", "_rename_test/Z/"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/A"));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/F"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/Z"));
 }
 
 static void rename_symlink_test(void) {
@@ -5106,8 +5129,6 @@ static void rename_test(void) {
   //  fd
   //
   // Edge cases:
-  //  - dst ends in slash but isn't directory
-  //  - dst ends in slash but doesn't exist
   //  - across filesystems
   //  - someone renames into a directory that is simultaneously rmdir'd()
   //  - abs vs rel path each way

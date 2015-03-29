@@ -881,6 +881,20 @@ int vfs_rename(const char* path1, const char* path2) {
     return error;
   }
 
+  KASSERT_DBG(path1[0] != '\0');
+  KASSERT_DBG(path2[0] != '\0');
+  if ((path1[kstrlen(path1) - 1] == '/' && vnode1->type != VNODE_DIRECTORY) ||
+      (path2[kstrlen(path2) - 1] == '/' &&
+       ((!vnode2 && vnode1->type != VNODE_DIRECTORY) ||
+        (vnode2 && vnode2->type != VNODE_DIRECTORY)))) {
+    // TODO(aoates): this should test for symlinks to directories as well.
+    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return -ENOTDIR;
+  }
+
   if (vnode2) {
     if (vnode1 == vnode2) {
       VFS_PUT_AND_CLEAR(vnode2);
