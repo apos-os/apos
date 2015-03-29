@@ -5062,6 +5062,54 @@ static void rename_testB(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/A/B/C"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/A/B"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
+
+
+  KTEST_BEGIN("vfs_rename(): rename open file");
+  create_file_with_data("_rename_test/A", "abc");
+  char buf[100];
+  kmemset(buf, '\0', 100);
+  int fd = vfs_open("_rename_test/A", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(1, vfs_read(fd, buf, 1));
+  KEXPECT_STREQ("a", buf);
+  KEXPECT_EQ(0, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(2, vfs_read(fd, buf, 100));
+  KEXPECT_STREQ("bc", buf);
+  KEXPECT_EQ(3, vfs_write(fd, "def", 3));
+  KEXPECT_EQ(0, vfs_close(fd));
+  fd = vfs_open("_rename_test/B", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(6, vfs_read(fd, buf, 100));
+  KEXPECT_STREQ("abcdef", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
+
+
+  KTEST_BEGIN("vfs_rename(): rename over open file");
+  create_file_with_data("_rename_test/A", "abc");
+  create_file_with_data("_rename_test/B", "defg");
+  kmemset(buf, '\0', 100);
+  fd = vfs_open("_rename_test/B", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(2, vfs_read(fd, buf, 2));
+  KEXPECT_STREQ("de", buf);
+  KEXPECT_EQ(0, vfs_rename("_rename_test/A", "_rename_test/B"));
+  KEXPECT_EQ(2, vfs_read(fd, buf, 100));
+  KEXPECT_STREQ("fg", buf);
+  KEXPECT_EQ(3, vfs_write(fd, "hij", 3));
+  int fd2 = vfs_open("_rename_test/B", VFS_O_RDWR);
+  KEXPECT_EQ(3, vfs_read(fd2, buf, 100));
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  fd = vfs_open("_rename_test/B", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  kmemset(buf, '\0', 100);
+  KEXPECT_EQ(3, vfs_read(fd, buf, 100));
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
 }
 
 static void rename_symlink_test(void) {
@@ -5153,8 +5201,6 @@ static void rename_test(void) {
   //  - write perms
   //  - atomic (if replacing existing file, an entry (old or new) is always
   //  visible)
-  //  - dst is a file that's open --> succeeds, but file is still usable through
-  //  fd
   //
   // Edge cases:
   //  - across filesystems
