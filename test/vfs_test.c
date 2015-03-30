@@ -5255,6 +5255,23 @@ static void* lock_order_func(void* arg) {
   return NULL;
 }
 
+const int ANCESTOR_THREAD_ITERS = 100 * THREAD_SAFETY_MULTIPLIER;
+static void* ancestor_thread_funcA(void* arg) {
+  for (int i = 0; i < ANCESTOR_THREAD_ITERS; ++i) {
+    vfs_rename("_rename_test/A", "_rename_test/C/D/x");
+    vfs_rename("_rename_test/C/D/x", "_rename_test/A");
+  }
+  return NULL;
+}
+
+static void* ancestor_thread_funcB(void* arg) {
+  for (int i = 0; i < ANCESTOR_THREAD_ITERS; ++i) {
+    vfs_rename("_rename_test/C", "_rename_test/A/B/y");
+    vfs_rename("_rename_test/A/B/y", "_rename_test/C");
+  }
+  return NULL;
+}
+
 static void rename_thread_test(void) {
   KTEST_BEGIN("vfs_rename(): destination always visible (atomic)");
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
@@ -5298,6 +5315,35 @@ static void rename_thread_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/C"));
+
+
+  KTEST_BEGIN("vfs_rename(): ancestor race condition test");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/C/D", VFS_S_IRWXU));
+  KEXPECT_EQ(0, kthread_create(&threads[0], ancestor_thread_funcA, NULL));
+  KEXPECT_EQ(0, kthread_create(&threads[1], ancestor_thread_funcB, NULL));
+  scheduler_make_runnable(threads[0]);
+  scheduler_make_runnable(threads[1]);
+  kthread_join(threads[0]);
+  kthread_join(threads[1]);
+
+  const char* kPaths[] = {
+    "_rename_test/A/B/y/D",
+    "_rename_test/C/D/x/B",
+    "_rename_test/A/B/y",
+    "_rename_test/C/D/x",
+    "_rename_test/A/B",
+    "_rename_test/C/D",
+    "_rename_test/A",
+    "_rename_test/C",
+  };
+  int count = 0;
+  for (unsigned int i = 0; i < sizeof(kPaths) / sizeof(const char*); ++i) {
+    if (vfs_rmdir(kPaths[i]) == 0) count++;
+  }
+  KEXPECT_EQ(4, count);
 }
 
 static void rename_test(void) {
@@ -5308,7 +5354,6 @@ static void rename_test(void) {
 
   // Tests -
   //  - write perms
-  //  - rename lock
   //  - other interesting race conditions
   //
   // Edge cases:
