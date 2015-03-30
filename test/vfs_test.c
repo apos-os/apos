@@ -5224,6 +5224,37 @@ static void* rename_symlink_open_func(void* arg) {
   return NULL;
 }
 
+const int LOCK_ORDER_THREAD_ITERS = 20 * THREAD_SAFETY_MULTIPLIER;
+static void* lock_order_func(void* arg) {
+  const int id = (int)arg;
+  int result = 0, i;
+
+  char pathA[50], pathB[50], pathC[50];
+  ksprintf(pathA, "_rename_test/A/%d", id);
+  ksprintf(pathB, "_rename_test/B/%d", id);
+  ksprintf(pathC, "_rename_test/C/%d", id);
+  create_file_with_data(pathA, "");
+
+  for (i = 0; i < LOCK_ORDER_THREAD_ITERS; ++i) {
+    if (id % 2 == 0) {
+      result = vfs_rename(pathA, pathB);
+      if (result) break;
+      result = vfs_rename(pathB, pathC);
+      if (result) break;
+      result = vfs_rename(pathC, pathA);
+      if (result) break;
+    } else {
+      result = vfs_rename(pathA, pathB);
+      if (result) break;
+      result = vfs_rename(pathB, pathA);
+      if (result) break;
+    }
+  }
+  KEXPECT_EQ(0, result);
+  KEXPECT_EQ(0, vfs_unlink(pathA));
+  return NULL;
+}
+
 static void rename_thread_test(void) {
   KTEST_BEGIN("vfs_rename(): destination always visible (atomic)");
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
@@ -5250,6 +5281,23 @@ static void rename_thread_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/link"));
+
+
+  KTEST_BEGIN("vfs_rename(): lock order test");
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
+
+  for (int i = 0; i < NUM_OPENERS; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &lock_order_func, (void*)i));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < NUM_OPENERS; ++i) {
+    kthread_join(threads[i]);
+  }
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/A"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("_rename_test/C"));
 }
 
 static void rename_test(void) {
