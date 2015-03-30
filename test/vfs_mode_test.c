@@ -665,6 +665,19 @@ static void do_syscall_mode_test(void* arg) {
   KEXPECT_EQ(-EACCES, vfs_link("syscall_mode_test/no_write/f",
                                "syscall_mode_test/no_write/link"));
 
+  // rename()
+  KTEST_BEGIN("vfs mode test: vfs_rename() fails if src is non-writable");
+  KEXPECT_EQ(-EACCES, vfs_rename("syscall_mode_test/no_write/f",
+                                 "syscall_mode_test/f"));
+
+  KTEST_BEGIN("vfs mode test: vfs_rename() fails if dst is non-writable");
+  KEXPECT_EQ(-EACCES, vfs_rename("syscall_mode_test/no_read/f",
+                                 "syscall_mode_test/no_write/f"));
+  KEXPECT_EQ(-EACCES, vfs_rename("syscall_mode_test/no_write/f",
+                                 "syscall_mode_test/no_write/f"));
+  KEXPECT_EQ(-EACCES, vfs_rename("syscall_mode_test/no_write/f",
+                                 "syscall_mode_test/no_write/f2"));
+
 
   // Teardown for metadata syscall tests.
   KTEST_BEGIN("vfs mode test: metadata syscall test teardown");

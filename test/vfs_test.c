@@ -5353,13 +5353,10 @@ static void rename_test(void) {
   rename_thread_test();
 
   // Tests -
-  //  - write perms
-  //  - other interesting race conditions
-  //
-  // Edge cases:
   //  - across filesystems
   //  - someone renames into a directory that is simultaneously rmdir'd()
   //  - abs vs rel path each way
+  //  - other interesting race conditions
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirA"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test"));

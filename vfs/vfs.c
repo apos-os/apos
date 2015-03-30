@@ -914,13 +914,13 @@ int vfs_rename(const char* path1, const char* path2) {
 
   kmutex_lock(&vnode1->fs->rename_lock);
 
-  int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2);
-  if (mode_check) {
+  if (vfs_check_mode(VFS_OP_WRITE, proc_current(), parent1) ||
+      vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2)) {
     kmutex_unlock(&vnode1->fs->rename_lock);
     VFS_PUT_AND_CLEAR(vnode1);
     VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
-    return mode_check;
+    return -EACCES;
   }
 
   if (kstrcmp(base_name1, ".") == 0 || kstrcmp(base_name1, "..") == 0 ||
