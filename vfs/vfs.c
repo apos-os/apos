@@ -932,6 +932,8 @@ int vfs_rename(const char* path1, const char* path2) {
   }
 
   lock_vnodes(parent1, parent2);
+  // TODO(aoates): there's a race with unlink(), where vnode1 can be unlinked
+  // after it was looked up above, but before we lock the parent.
 
   // N.B. this bypasses the resolve_mounts_up() call that lookup() does, but
   // that's fine, since base_name2 will never be ".." (and therefore we'll never
