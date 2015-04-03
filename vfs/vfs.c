@@ -908,38 +908,27 @@ int vfs_rename(const char* path1, const char* path2) {
   }
 
   if (vnode1->fs != parent2->fs) {
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return -EXDEV;
+    error = -EXDEV;
+    goto done;
   }
 
   kmutex_lock(&vnode1->fs->rename_lock);
 
   if (vfs_check_mode(VFS_OP_WRITE, proc_current(), parent1) ||
       vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2)) {
-    kmutex_unlock(&vnode1->fs->rename_lock);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return -EACCES;
+    error = -EACCES;
+    goto done2;
   }
 
   if (kstrcmp(base_name1, ".") == 0 || kstrcmp(base_name1, "..") == 0 ||
       kstrcmp(base_name2, ".") == 0 || kstrcmp(base_name2, "..") == 0) {
-    kmutex_unlock(&vnode1->fs->rename_lock);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return -EINVAL;
+    error = -EINVAL;
+    goto done2;
   }
 
   if (vnode1->type == VNODE_DIRECTORY && vfs_is_ancestor(vnode1, parent2)) {
-    kmutex_unlock(&vnode1->fs->rename_lock);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return -EINVAL;
+    error = -EINVAL;
+    goto done2;
   }
 
   lock_vnodes(parent1, parent2);
@@ -950,12 +939,7 @@ int vfs_rename(const char* path1, const char* path2) {
   vnode_t* vnode2 = 0x0;
   error = lookup_locked(parent2, base_name2, &vnode2);
   if (error != 0 && error != -ENOENT) {
-    unlock_vnodes(parent1, parent2);
-    kmutex_unlock(&vnode1->fs->rename_lock);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return error;
+    goto done3;
   }
 
   KASSERT_DBG(path1[0] != '\0');
@@ -966,36 +950,24 @@ int vfs_rename(const char* path1, const char* path2) {
         (vnode2 && vnode2->type != VNODE_DIRECTORY)))) {
     // TODO(aoates): this should test for symlinks to directories as well.
     if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
-    unlock_vnodes(parent1, parent2);
-    kmutex_unlock(&vnode1->fs->rename_lock);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return -ENOTDIR;
+    error = -ENOTDIR;
+    goto done3;
   }
 
   KASSERT_DBG(vnode1->parent_mount_point == NULL);
   KASSERT_DBG(!vnode2 || vnode2->parent_mount_point == NULL);
   if (vnode1->mounted_fs != VFS_FSID_NONE ||
       (vnode2 && vnode2->mounted_fs != VFS_FSID_NONE)) {
-    unlock_vnodes(parent1, parent2);
-    kmutex_unlock(&vnode1->fs->rename_lock);
     if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return -EBUSY;
+    error = -EBUSY;
+    goto done3;
   }
 
   if (vnode2) {
     if (vnode1 == vnode2) {
-      unlock_vnodes(parent1, parent2);
-      kmutex_unlock(&vnode1->fs->rename_lock);
       VFS_PUT_AND_CLEAR(vnode2);
-      VFS_PUT_AND_CLEAR(vnode1);
-      VFS_PUT_AND_CLEAR(parent1);
-      VFS_PUT_AND_CLEAR(parent2);
-      return 0;
+      error = 0;
+      goto done3;
     }
 
     if (vnode1->type != VNODE_DIRECTORY && vnode2->type == VNODE_DIRECTORY) {
@@ -1009,29 +981,19 @@ int vfs_rename(const char* path1, const char* path2) {
       error = parent2->fs->unlink(parent2, base_name2);
     }
     VFS_PUT_AND_CLEAR(vnode2);
-    if (error) {
-      unlock_vnodes(parent1, parent2);
-      kmutex_unlock(&vnode1->fs->rename_lock);
-      VFS_PUT_AND_CLEAR(vnode1);
-      VFS_PUT_AND_CLEAR(parent1);
-      VFS_PUT_AND_CLEAR(parent2);
-      return error;
-    }
+    if (error) goto done3;
   }
 
   error = parent1->fs->unlink(parent1, base_name1);
-  if (error) {
-    unlock_vnodes(parent1, parent2);
-    kmutex_unlock(&vnode1->fs->rename_lock);
-    VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
-    VFS_PUT_AND_CLEAR(parent2);
-    return error;
-  }
+  if (error) goto done3;
 
   error = parent2->fs->link(parent2, vnode1, base_name2);
+
+done3:
   unlock_vnodes(parent1, parent2);
+done2:
   kmutex_unlock(&vnode1->fs->rename_lock);
+done:
   VFS_PUT_AND_CLEAR(vnode1);
   VFS_PUT_AND_CLEAR(parent1);
   VFS_PUT_AND_CLEAR(parent2);
