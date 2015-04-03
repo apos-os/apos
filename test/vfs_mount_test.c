@@ -430,8 +430,6 @@ static void rmdir_mount_test(void) {
   KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
-
-  // TODO(aoates): test rename()ing a mount point if that's implemented.
 }
 
 static void chown_chmod_test(void) {
@@ -841,6 +839,53 @@ static void symlink_mount_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void rename_mount_test(void) {
+  KTEST_BEGIN("vfs mount: rename mount test");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/b", VFS_S_IRWXU));
+
+  char orig_cwd[VFS_MAX_PATH_LENGTH];
+  KEXPECT_GE(vfs_getcwd(orig_cwd, VFS_MAX_PATH_LENGTH), 0);
+
+  // Do the mount.
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsB));
+
+  KTEST_BEGIN("vfs mount: rename() across filesystems fails");
+  create_file("vfs_mount_test/a/f", "rwxrwxrwx");
+  create_file("vfs_mount_test/b/f2", "rwxrwxrwx");
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/f", "vfs_mount_test/b/f"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/f", "vfs_mount_test/b/f2"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a", "vfs_mount_test/b/c"));
+
+  KTEST_BEGIN("vfs mount: rename() filesystem mount point");
+  KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/a", "vfs_mount_test/c"));
+  KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/a", "vfs_mount_test/b"));
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("vfs_mount_test/a", &stat));
+  KEXPECT_EQ(0, vfs_stat("vfs_mount_test/b", &stat));
+  KEXPECT_EQ(-ENOENT, vfs_stat("vfs_mount_test/c", &stat));
+  KEXPECT_EQ(-ENOENT, vfs_stat("vfs_mount_test/c/f", &stat));
+
+  KTEST_BEGIN("vfs mount: rename() over filesystem mount point");
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/f2"));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/dir", VFS_S_IRWXU));
+  KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/dir", "vfs_mount_test/b"));
+  KEXPECT_EQ(0, vfs_stat("vfs_mount_test/a", &stat));
+  KEXPECT_EQ(0, vfs_stat("vfs_mount_test/b", &stat));
+  KEXPECT_EQ(0, vfs_stat("vfs_mount_test/dir", &stat));
+
+  KTEST_BEGIN("vfs mount test: rename cleanup");
+  fs_t* unmounted_fs = 0x0;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/b", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/dir"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -858,6 +903,7 @@ void vfs_mount_test(void) {
   double_mount_test();
   too_many_mounts_test();
   symlink_mount_test();
+  rename_mount_test();
 
   KEXPECT_EQ(orig_cache_size, vfs_cache_size());
 

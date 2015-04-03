@@ -885,7 +885,9 @@ int vfs_rename(const char* path1, const char* path2) {
   char base_name2[VFS_MAX_FILENAME_LENGTH];
 
   vnode_t* root1 = get_root_for_path(path1);
-  int error = lookup_path(root1, path1, lookup_opt(false), &parent1, &vnode1,
+  lookup_options_t lookup = lookup_opt(false);
+  lookup.resolve_final_mount = false;
+  int error = lookup_path(root1, path1, lookup, &parent1, &vnode1,
                           base_name1);
   VFS_PUT_AND_CLEAR(root1);
   if (error == 0 && !vnode1) {
@@ -897,7 +899,7 @@ int vfs_rename(const char* path1, const char* path2) {
 
   vnode_t* root2 = get_root_for_path(path2);
   error =
-      lookup_path(root2, path2, lookup_opt(false), &parent2, 0x0, base_name2);
+      lookup_path(root2, path2, lookup, &parent2, 0x0, base_name2);
   VFS_PUT_AND_CLEAR(root2);
   if (error) {
     VFS_PUT_AND_CLEAR(vnode1);
@@ -970,6 +972,19 @@ int vfs_rename(const char* path1, const char* path2) {
     VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
     return -ENOTDIR;
+  }
+
+  KASSERT_DBG(vnode1->parent_mount_point == NULL);
+  KASSERT_DBG(!vnode2 || vnode2->parent_mount_point == NULL);
+  if (vnode1->mounted_fs != VFS_FSID_NONE ||
+      (vnode2 && vnode2->mounted_fs != VFS_FSID_NONE)) {
+    unlock_vnodes(parent1, parent2);
+    kmutex_unlock(&vnode1->fs->rename_lock);
+    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    VFS_PUT_AND_CLEAR(parent2);
+    return -EBUSY;
   }
 
   if (vnode2) {

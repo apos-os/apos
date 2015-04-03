@@ -5353,7 +5353,6 @@ static void rename_test(void) {
   rename_thread_test();
 
   // Tests -
-  //  - across filesystems
   //  - someone renames into a directory that is simultaneously rmdir'd()
   //  - abs vs rel path each way
   //  - other interesting race conditions
