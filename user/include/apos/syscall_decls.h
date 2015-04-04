@@ -48,6 +48,7 @@ int fchown(int fd, uid_t owner, gid_t group);
 int lchown(const char* path, uid_t owner, gid_t group);
 int chmod(const char* path, mode_t mode);
 int fchmod(int fd, mode_t mode);
+pid_t vfork(void);
 pid_t waitpid(pid_t child, int* exit_status, int options);
 pid_t getppid(void);
 int sigaction(int signum, const struct sigaction* act, struct sigaction* oldact);

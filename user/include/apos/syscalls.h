@@ -44,6 +44,7 @@
 #define SYS_CHMOD 70
 #define SYS_FCHMOD 71
 #define SYS_FORK 13
+#define SYS_VFORK 74
 #define SYS_EXIT 14
 #define SYS_WAIT 41
 #define SYS_WAITPID 62

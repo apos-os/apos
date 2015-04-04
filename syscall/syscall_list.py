@@ -251,6 +251,9 @@ AddSyscall('fchmod', 71, 'vfs_fchmod', 'vfs/vfs.h', '<sys/stat.h>',
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
     'pid_t', [], newlib_defined=True)
 
+AddSyscall('vfork', 74, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
+    'pid_t', [])
+
 AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     '',
     'int', [
