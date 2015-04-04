@@ -70,6 +70,9 @@ int vfs_rmdir(const char* path);
 // Create a new hardlink to path1 at path2.
 int vfs_link(const char* path1, const char* path2);
 
+// Rename path1 to path2.
+int vfs_rename(const char* path1, const char* path2);
+
 // Unlink an entry from a directory.
 int vfs_unlink(const char* path);
 

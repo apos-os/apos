@@ -211,9 +211,6 @@ static void directory_test(void) {
   KEXPECT_EQ(0, g_fs->unlink(n, "file1"));
   EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file2", file2->num);
 
-  KTEST_BEGIN("unlink() a directory test");
-  KEXPECT_EQ(-EISDIR, g_fs->unlink(g_root, "test_dir"));
-
   KTEST_BEGIN("rmdir() a file test");
   KEXPECT_EQ(-ENOENT, g_fs->rmdir(n, "file1"));
   KEXPECT_EQ(-ENOTDIR, g_fs->rmdir(n, "file2"));

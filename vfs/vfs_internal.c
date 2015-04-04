@@ -259,10 +259,12 @@ static int lookup_path_internal(vnode_t* root, const char* path,
     if (at_last_element && parent_out) *parent_out = VFS_COPY_REF(n);
     VFS_PUT_AND_CLEAR(n);
 
-    error = resolve_mounts(&child);
-    if (error) {
-      VFS_PUT_AND_CLEAR(child);
-      return error;
+    if (!at_last_element || opt.resolve_final_mount) {
+      error = resolve_mounts(&child);
+      if (error) {
+        VFS_PUT_AND_CLEAR(child);
+        return error;
+      }
     }
 
     // If we're done, we're done.

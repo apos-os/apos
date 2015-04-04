@@ -66,6 +66,7 @@ void vfs_fs_init(fs_t* fs) {
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
   fs->dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  kmutex_init(&fs->rename_lock);
 }
 
 #define VNODE_CACHE_SIZE 1000
@@ -821,6 +822,186 @@ int vfs_link(const char* path1, const char* path2) {
   return error;
 }
 
+// Returns true if A is an ancestor of B.
+static bool vfs_is_ancestor(const vnode_t* A, vnode_t* B) {
+  KASSERT(A);
+  KASSERT(A->type == VNODE_DIRECTORY);
+  KASSERT(B);
+  KASSERT(B->type == VNODE_DIRECTORY);
+
+  vnode_t* n = VFS_COPY_REF(B);
+
+  fs_t* root_fs = vfs_get_root_fs();
+  while (n->fs != root_fs || n->num != root_fs->get_root(root_fs)) {
+    if (n == A) {
+      VFS_PUT_AND_CLEAR(n);
+      return true;
+    }
+
+    // First find the parent vnode.
+    vnode_t* parent = 0x0;
+    int result = lookup(&n, "..", &parent);
+    VFS_PUT_AND_CLEAR(n);
+    if (result < 0) {
+      return result;
+    }
+
+    n = VFS_MOVE_REF(parent);
+  }
+
+  VFS_PUT_AND_CLEAR(n);
+
+  return false;
+}
+
+static void lock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_lock(&A->mutex);
+  } else if (A < B) {
+    kmutex_lock(&A->mutex);
+    kmutex_lock(&B->mutex);
+  } else {
+    kmutex_lock(&B->mutex);
+    kmutex_lock(&A->mutex);
+  }
+}
+
+static void unlock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_unlock(&A->mutex);
+  } else if (A < B) {
+    kmutex_unlock(&B->mutex);
+    kmutex_unlock(&A->mutex);
+  } else {
+    kmutex_unlock(&A->mutex);
+    kmutex_unlock(&B->mutex);
+  }
+}
+
+int vfs_rename(const char* path1, const char* path2) {
+  vnode_t* parent1 = 0x0, *parent2 = 0x0;
+  vnode_t* vnode1 = 0x0;
+  char base_name1[VFS_MAX_FILENAME_LENGTH];
+  char base_name2[VFS_MAX_FILENAME_LENGTH];
+
+  vnode_t* root1 = get_root_for_path(path1);
+  lookup_options_t lookup = lookup_opt(false);
+  lookup.resolve_final_mount = false;
+  int error = lookup_path(root1, path1, lookup, &parent1, &vnode1,
+                          base_name1);
+  VFS_PUT_AND_CLEAR(root1);
+  if (error == 0 && !vnode1) {
+    VFS_PUT_AND_CLEAR(parent1);
+    return -ENOENT;
+  } else if (error) {
+    return error;
+  }
+
+  vnode_t* root2 = get_root_for_path(path2);
+  error =
+      lookup_path(root2, path2, lookup, &parent2, 0x0, base_name2);
+  VFS_PUT_AND_CLEAR(root2);
+  if (error) {
+    VFS_PUT_AND_CLEAR(vnode1);
+    VFS_PUT_AND_CLEAR(parent1);
+    return error;
+  }
+
+  if (vnode1->fs != parent2->fs) {
+    error = -EXDEV;
+    goto done;
+  }
+
+  kmutex_lock(&vnode1->fs->rename_lock);
+
+  if (vfs_check_mode(VFS_OP_WRITE, proc_current(), parent1) ||
+      vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2)) {
+    error = -EACCES;
+    goto done2;
+  }
+
+  if (kstrcmp(base_name1, ".") == 0 || kstrcmp(base_name1, "..") == 0 ||
+      kstrcmp(base_name2, ".") == 0 || kstrcmp(base_name2, "..") == 0) {
+    error = -EINVAL;
+    goto done2;
+  }
+
+  if (vnode1->type == VNODE_DIRECTORY && vfs_is_ancestor(vnode1, parent2)) {
+    error = -EINVAL;
+    goto done2;
+  }
+
+  lock_vnodes(parent1, parent2);
+  // TODO(aoates): there's a race with unlink(), where vnode1 can be unlinked
+  // after it was looked up above, but before we lock the parent.
+
+  // N.B. this bypasses the resolve_mounts_up() call that lookup() does, but
+  // that's fine, since base_name2 will never be ".." (and therefore we'll never
+  // be traversing past a mount point).
+  vnode_t* vnode2 = 0x0;
+  error = lookup_locked(parent2, base_name2, &vnode2);
+  if (error != 0 && error != -ENOENT) {
+    goto done3;
+  }
+
+  KASSERT_DBG(path1[0] != '\0');
+  KASSERT_DBG(path2[0] != '\0');
+  if ((path1[kstrlen(path1) - 1] == '/' && vnode1->type != VNODE_DIRECTORY) ||
+      (path2[kstrlen(path2) - 1] == '/' &&
+       ((!vnode2 && vnode1->type != VNODE_DIRECTORY) ||
+        (vnode2 && vnode2->type != VNODE_DIRECTORY)))) {
+    // TODO(aoates): this should test for symlinks to directories as well.
+    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    error = -ENOTDIR;
+    goto done3;
+  }
+
+  KASSERT_DBG(vnode1->parent_mount_point == NULL);
+  KASSERT_DBG(!vnode2 || vnode2->parent_mount_point == NULL);
+  if (vnode1->mounted_fs != VFS_FSID_NONE ||
+      (vnode2 && vnode2->mounted_fs != VFS_FSID_NONE)) {
+    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    error = -EBUSY;
+    goto done3;
+  }
+
+  if (vnode2) {
+    if (vnode1 == vnode2) {
+      VFS_PUT_AND_CLEAR(vnode2);
+      error = 0;
+      goto done3;
+    }
+
+    if (vnode1->type != VNODE_DIRECTORY && vnode2->type == VNODE_DIRECTORY) {
+      error = -EISDIR;
+    } else if (vnode1->type == VNODE_DIRECTORY &&
+               vnode2->type != VNODE_DIRECTORY) {
+      error = -ENOTDIR;
+    } else if (vnode2->type == VNODE_DIRECTORY) {
+      error = parent2->fs->rmdir(parent2, base_name2);
+    } else {
+      error = parent2->fs->unlink(parent2, base_name2);
+    }
+    VFS_PUT_AND_CLEAR(vnode2);
+    if (error) goto done3;
+  }
+
+  error = parent1->fs->unlink(parent1, base_name1);
+  if (error) goto done3;
+
+  error = parent2->fs->link(parent2, vnode1, base_name2);
+
+done3:
+  unlock_vnodes(parent1, parent2);
+done2:
+  kmutex_unlock(&vnode1->fs->rename_lock);
+done:
+  VFS_PUT_AND_CLEAR(vnode1);
+  VFS_PUT_AND_CLEAR(parent1);
+  VFS_PUT_AND_CLEAR(parent2);
+  return error;
+}
+
 int vfs_unlink(const char* path) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
@@ -845,6 +1026,12 @@ int vfs_unlink(const char* path) {
   if (error) {
     VFS_PUT_AND_CLEAR(parent);
     return error;
+  }
+
+  if (child->type == VNODE_DIRECTORY) {
+    VFS_PUT_AND_CLEAR(child);
+    VFS_PUT_AND_CLEAR(parent);
+    return -EISDIR;
   }
 
   error = parent->fs->unlink(parent, base_name);

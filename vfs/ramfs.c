@@ -406,6 +406,10 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
     return -ENOTEMPTY;
   }
 
+  ramfs_inode_t* parent_inode = &ramfs->inodes[parent->num];
+  KASSERT(parent_inode->link_count >= 3);
+  parent_inode->link_count--;
+
   // One each for the parent and '.'.
   // TODO(aoates): if link_count == 0, recollect the inode.
   dir_inode->link_count -= 2;
@@ -415,6 +419,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   child_dirent->d_ino = -1;
   child_dirent->d_name[0] = '\0';
   child_dirent = find_dirent(&dir_inode->vnode, "..");
+  KASSERT(child_dirent->d_ino == parent->num);
   child_dirent->d_ino = -1;
   child_dirent->d_name[0] = '\0';
 
@@ -464,10 +469,25 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(parent->type == VNODE_DIRECTORY);
-  KASSERT(vnode->type != VNODE_DIRECTORY);
   maybe_block(vnode->fs);
 
-  return ramfs_link_internal(parent, vnode->num, name);
+  int result = ramfs_link_internal(parent, vnode->num, name);
+  if (result) return result;
+
+  if (vnode->type == VNODE_DIRECTORY) {
+    dirent_t* d = find_dirent(vnode, "..");
+    KASSERT_DBG(d != NULL);
+    int orig_dotdot_ino = d->d_ino;
+    ramfs_t* ramfs = (ramfs_t*)parent->fs;
+    ramfs_inode_t* orig_dotdot_inode = &ramfs->inodes[orig_dotdot_ino];
+    orig_dotdot_inode->link_count--;
+
+    d->d_ino = parent->num;
+    ramfs_inode_t* new_dotdot_inode = &ramfs->inodes[parent->num];
+    new_dotdot_inode->link_count++;
+  }
+
+  return 0;
 }
 
 // TODO(aoates): a good test: create a file, unlink it, create a new one with
@@ -488,9 +508,6 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
-  if (ramfs->inodes[d->d_ino].vnode.type == VNODE_DIRECTORY) {
-    return -EISDIR;
-  }
 
   ramfs->inodes[d->d_ino].link_count--;
 

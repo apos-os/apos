@@ -31,6 +31,7 @@ struct fs {
   apos_dev_t dev;  // The underlying device.
   fsid_t id;
   int open_vnodes;  // The number of open vnodes.
+  kmutex_t rename_lock;
 
   // TODO(aoates): how does allocating the root inode/vnode work?
 

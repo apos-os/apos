@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
+#include <stdio.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -37,6 +38,7 @@ int dup2(int fd1, int fd2);
 int mkdir(const char* path, mode_t mode);
 int mknod(const char* path, mode_t mode, apos_dev_t dev);
 int rmdir(const char* path);
+int rename(const char* path1, const char* path2);
 int getdents(int fd, dirent_t* buf, int count);
 int lstat(const char* path, apos_stat_t* stat);
 int chdir(const char* path);
