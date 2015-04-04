@@ -110,7 +110,7 @@ static uint8_t NORMAL_TRANSLATION_TABLE[] = {
   KEY_CAPS, // 0x58
   KEY_R_SHFT, // 0x59
   KEY_ENTER, // 0x5A
-  KEY_LBRACKET, // 0x5B
+  KEY_RBRACKET, // 0x5B
   NONE, // 0x5c
   KEY_BSLASH, // 0x5D
   NONE, // 0x5e
