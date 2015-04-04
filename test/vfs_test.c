@@ -5110,6 +5110,45 @@ static void rename_testB(void) {
   KEXPECT_STREQ("abc", buf);
   KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unlink("_rename_test/B"));
+
+
+  KTEST_BEGIN("vfs_rename(): src is absolute path, dst is relative");
+  KEXPECT_EQ(0, vfs_chdir("_rename_test"));
+  create_file_with_data("A", "");
+  KEXPECT_LT(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
+  kstrcat(cwd, "/A");
+  KEXPECT_EQ(0, vfs_rename(cwd, "B"));
+  KEXPECT_EQ(-ENOENT, vfs_stat("A", &statA));
+  KEXPECT_EQ(0, vfs_stat("B", &statA));
+  KEXPECT_EQ(0, vfs_unlink("B"));
+  KEXPECT_EQ(0, vfs_chdir(".."));
+
+
+  KTEST_BEGIN("vfs_rename(): src is relative path, dst is absolute");
+  KEXPECT_EQ(0, vfs_chdir("_rename_test"));
+  create_file_with_data("A", "");
+  KEXPECT_LT(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
+  kstrcat(cwd, "/B");
+  KEXPECT_EQ(0, vfs_rename("A", cwd));
+  KEXPECT_EQ(-ENOENT, vfs_stat("A", &statA));
+  KEXPECT_EQ(0, vfs_stat("B", &statA));
+  KEXPECT_EQ(0, vfs_unlink("B"));
+  KEXPECT_EQ(0, vfs_chdir(".."));
+
+
+  KTEST_BEGIN("vfs_rename(): src and dst are absolute paths");
+  KEXPECT_EQ(0, vfs_chdir("_rename_test"));
+  create_file_with_data("A", "");
+  KEXPECT_LT(0, vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH));
+  char cwd2[VFS_MAX_PATH_LENGTH];
+  kstrcpy(cwd2, cwd);
+  kstrcat(cwd, "/A");
+  kstrcat(cwd2, "/B");
+  KEXPECT_EQ(0, vfs_rename(cwd, cwd2));
+  KEXPECT_EQ(-ENOENT, vfs_stat("A", &statA));
+  KEXPECT_EQ(0, vfs_stat("B", &statA));
+  KEXPECT_EQ(0, vfs_unlink("B"));
+  KEXPECT_EQ(0, vfs_chdir(".."));
 }
 
 static void rename_symlink_test(void) {
@@ -5354,7 +5393,6 @@ static void rename_test(void) {
 
   // Tests -
   //  - someone renames into a directory that is simultaneously rmdir'd()
-  //  - abs vs rel path each way
   //  - other interesting race conditions
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirA"));
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB"));
