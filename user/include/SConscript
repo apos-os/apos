@@ -24,6 +24,7 @@ HEADERS = [
   'apos/mmap.h',
   'apos/posix_signal.h',
   'apos/posix_types.h',
+  'apos/resource.h',
   'apos/sleep.h',
   'apos/syscall.h',
   'apos/syscalls.h',

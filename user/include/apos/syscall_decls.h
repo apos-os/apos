@@ -25,6 +25,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -87,5 +88,7 @@ int tcsetattr(int fd, int optional_actions, const struct termios* t);
 int ftruncate(int fd, off_t length);
 int truncate(const char* path, off_t length);
 int poll(struct pollfd* fds, nfds_t nfds, int timeout);
+int getrlimit(int resource, struct rlimit* lim);
+int setrlimit(int resource, const struct rlimit* lim);
 
 #endif

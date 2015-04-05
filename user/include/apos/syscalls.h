@@ -91,5 +91,7 @@
 #define SYS_FTRUNCATE 67
 #define SYS_TRUNCATE 68
 #define SYS_POLL 69
+#define SYS_GETRLIMIT 75
+#define SYS_SETRLIMIT 76
 
 #endif
