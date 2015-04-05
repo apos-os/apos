@@ -59,5 +59,6 @@ void tty_test(void);
 void wait_test(void);
 void vterm_test(void);
 void poll_test(void);
+void limit_test(void);
 
 #endif

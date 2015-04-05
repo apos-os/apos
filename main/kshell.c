@@ -176,6 +176,7 @@ static const test_entry_t TESTS[] = {
   { "wait", &wait_test, 1 },
   { "vterm", &vterm_test, 1 },
   { "poll", &poll_test, 1 },
+  { "limit", &limit_test, 1 },
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
