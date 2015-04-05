@@ -19,6 +19,7 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/dev.h"
 #include "dev/tty.h"
 #include "memory/kmalloc.h"
@@ -86,7 +87,10 @@ static int next_free_file_idx(void) {
 
 // Return the lowest free fd in the process.
 static int next_free_fd(process_t* p) {
-  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+  int max_fd = PROC_MAX_FDS;
+  if (p->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY)
+    max_fd = min(max_fd, (int)p->limits[RLIMIT_NOFILE].rlim_cur);
+  for (int i = 0; i < max_fd; ++i) {
     if (p->fds[i] == PROC_UNUSED_FD) {
       return i;
     }
@@ -620,6 +624,9 @@ int vfs_dup2(int fd1, int fd2) {
   if (result) return result;
 
   if (!is_valid_fd(fd2)) return -EBADF;
+  if (proc_current()->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY &&
+      fd2 >= (int)proc_current()->limits[RLIMIT_NOFILE].rlim_cur)
+    return -EMFILE;
 
   if (fd1 == fd2) return fd2;
 

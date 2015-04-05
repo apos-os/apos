@@ -19,6 +19,7 @@
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "vfs/vfs.h"
 
 static void basic_test(void* arg) {
   KTEST_BEGIN("getrlimit(): initial values");
@@ -111,6 +112,56 @@ static void limit_perm_test(void* arg) {
   KEXPECT_EQ(300, lim.rlim_max);
 }
 
+static void limit_nofile_test(void* arg) {
+  KTEST_BEGIN("setrlimit(): RLIMIT_NOFILE enforced by vfs_open()");
+  const int kNumFds = 10;
+  int fds[kNumFds + 1];
+  struct rlimit lim = {kNumFds, RLIM_INFINITY};
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+
+  for (int i = 0; i < kNumFds + 1; ++i) {
+    fds[i] = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
+    if (fds[i] < 0)
+      KEXPECT_EQ(-EMFILE, fds[i]);
+    else
+      KEXPECT_LT(fds[i], kNumFds);
+  }
+  KEXPECT_EQ(-EMFILE, vfs_open("_tmp_test_f", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_close(fds[3]));
+  KEXPECT_EQ(fds[3], vfs_open("_tmp_test_f", VFS_O_RDONLY));
+  for (int i = 0; i < kNumFds + 1; ++i) {
+    if (fds[i] >= 0) vfs_close(fds[i]);
+  }
+
+  KTEST_BEGIN("setrlimit(): RLIMIT_NOFILE enforced by vfs_dup()");
+  int initial_fd = vfs_open("_tmp_test_f", VFS_O_RDONLY);
+  for (int i = 0; i < kNumFds + 1; ++i) {
+    fds[i] = vfs_dup(initial_fd);
+    if (fds[i] < 0)
+      KEXPECT_EQ(-EMFILE, fds[i]);
+    else
+      KEXPECT_LT(fds[i], kNumFds);
+  }
+  KEXPECT_EQ(-EMFILE, vfs_open("_tmp_test_f", VFS_O_RDONLY));
+  KEXPECT_EQ(0, vfs_close(fds[3]));
+  KEXPECT_EQ(fds[3], vfs_dup(initial_fd));
+  for (int i = 0; i < kNumFds + 1; ++i) {
+    if (fds[i] >= 0) vfs_close(fds[i]);
+  }
+  KEXPECT_EQ(0, vfs_close(initial_fd));
+
+  KTEST_BEGIN("setrlimit(): RLIMIT_NOFILE enforced by vfs_dup2()");
+  initial_fd = vfs_open("_tmp_test_f", VFS_O_RDONLY);
+  KEXPECT_EQ(kNumFds - 1, vfs_dup2(initial_fd, kNumFds - 1));
+  KEXPECT_EQ(0, vfs_close(kNumFds - 1));
+  KEXPECT_EQ(-EMFILE, vfs_dup2(initial_fd, kNumFds));
+  KEXPECT_EQ(-EMFILE, vfs_dup2(initial_fd, kNumFds + 1));
+  KEXPECT_EQ(-EMFILE, vfs_dup2(initial_fd, kNumFds + 2));
+  KEXPECT_EQ(0, vfs_close(initial_fd));
+
+  KEXPECT_EQ(0, vfs_unlink("_tmp_test_f"));
+}
+
 void limit_test(void) {
   KTEST_SUITE_BEGIN("process limit tests");
 
@@ -121,5 +172,8 @@ void limit_test(void) {
   KEXPECT_GE(proc_wait(NULL), 0);
 
   KEXPECT_GE(proc_fork(&limit_perm_test, NULL), 0);
+  KEXPECT_GE(proc_wait(NULL), 0);
+
+  KEXPECT_GE(proc_fork(&limit_nofile_test, NULL), 0);
   KEXPECT_GE(proc_wait(NULL), 0);
 }
