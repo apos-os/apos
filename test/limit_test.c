@@ -15,11 +15,17 @@
 #include "common/errno.h"
 #include "proc/fork.h"
 #include "proc/limit.h"
+#include "proc/signal/signal.h"
 #include "proc/user.h"
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
+
+static int sig_is_pending(int sig) {
+  sigset_t pending = proc_pending_signals(proc_current());
+  return ksigismember(&pending, sig);
+}
 
 static void basic_test(void* arg) {
   KTEST_BEGIN("getrlimit(): initial values");
@@ -162,6 +168,133 @@ static void limit_nofile_test(void* arg) {
   KEXPECT_EQ(0, vfs_unlink("_tmp_test_f"));
 }
 
+static void limit_filesize_test(void* arg) {
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE large file, below limit");
+  KEXPECT_EQ(0, vfs_mkdir("_rlim_test", VFS_S_IRWXU));
+  int fd = vfs_open("_rlim_test/A", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  char buf[100];
+  kmemset(buf, 'a', 100);
+  for (int i = 0; i < 20; ++i)
+    KEXPECT_EQ(100, vfs_write(fd, buf, 100));
+
+  struct rlimit lim;
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(500, vfs_seek(fd, 500, VFS_SEEK_SET));
+  KEXPECT_EQ(100, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE large file, across limit");
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(950, vfs_seek(fd, 950, VFS_SEEK_SET));
+  KEXPECT_EQ(100, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE large file, above limit");
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(1200, vfs_seek(fd, 1200, VFS_SEEK_SET));
+  KEXPECT_EQ(100, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_write()/RLIMIT_FSIZE large file, extends above limit");
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(1950, vfs_seek(fd, 1950, VFS_SEEK_SET));
+  KEXPECT_EQ(-EFBIG, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE large file O_APPEND");
+  KEXPECT_EQ(0, vfs_close(fd));
+  fd = vfs_open("_rlim_test/A", VFS_O_RDWR | VFS_O_APPEND, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(-EFBIG, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE small file, below limit");
+  fd = vfs_open("_rlim_test/A", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 100));
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(500, vfs_seek(fd, 500, VFS_SEEK_SET));
+  KEXPECT_EQ(100, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_write()/RLIMIT_FSIZE small file to exact limit");
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 900));
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(900, vfs_seek(fd, 900, VFS_SEEK_SET));
+  KEXPECT_EQ(100, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE small file, across limit");
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 950));
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(975, vfs_seek(fd, 975, VFS_SEEK_SET));
+  KEXPECT_EQ(25, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+  KEXPECT_EQ(-EFBIG, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE small file, above limit");
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 950));
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(1200, vfs_seek(fd, 1200, VFS_SEEK_SET));
+  KEXPECT_EQ(-EFBIG, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN("setrlimit(): vfs_write()/RLIMIT_FSIZE small file O_APPEND");
+  KEXPECT_EQ(0, vfs_close(fd));
+  fd = vfs_open("_rlim_test/A", VFS_O_RDWR | VFS_O_APPEND, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 950));
+  KEXPECT_EQ(0, vfs_seek(fd, 0, VFS_SEEK_SET));
+  KEXPECT_EQ(50, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(-EFBIG, vfs_write(fd, buf, 100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KEXPECT_EQ(0, vfs_unlink("_rlim_test/A"));
+  KEXPECT_EQ(0, vfs_rmdir("_rlim_test"));
+}
+
+
 void limit_test(void) {
   KTEST_SUITE_BEGIN("process limit tests");
 
@@ -175,5 +308,8 @@ void limit_test(void) {
   KEXPECT_GE(proc_wait(NULL), 0);
 
   KEXPECT_GE(proc_fork(&limit_nofile_test, NULL), 0);
+  KEXPECT_GE(proc_wait(NULL), 0);
+
+  KEXPECT_GE(proc_fork(&limit_filesize_test, NULL), 0);
   KEXPECT_GE(proc_wait(NULL), 0);
 }

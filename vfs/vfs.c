@@ -27,6 +27,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/session.h"
+#include "proc/signal/signal.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/anonfs.h"
@@ -1116,6 +1117,19 @@ int vfs_write(int fd, const void* buf, size_t count) {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
+      const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
+      if (limit != RLIM_INFINITY) {
+        off_t new_len = max(file->vnode->len, file->pos + (off_t)count);
+        if (new_len > file->vnode->len && (rlim_t)new_len > limit) {
+          if ((rlim_t)file->pos >= limit) {
+            file->refcount--;
+            proc_force_signal(proc_current(), SIGXFSZ);
+            return -EFBIG;
+          } else {
+            count = limit - file->pos;
+          }
+        }
+      }
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,
