@@ -1572,6 +1572,11 @@ int vfs_ftruncate(int fd, off_t length) {
   if (file->vnode->type == VNODE_CHARDEV || file->vnode->type == VNODE_FIFO) {
     return 0;
   }
+  const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
+  if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
+    proc_force_signal(proc_current(), SIGXFSZ);
+    return -EFBIG;
+  }
 
   file->refcount++;
 

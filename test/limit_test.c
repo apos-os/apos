@@ -290,6 +290,61 @@ static void limit_filesize_test(void* arg) {
   proc_suppress_signal(proc_current(), SIGXFSZ);
   KEXPECT_EQ(0, vfs_close(fd));
 
+
+  KTEST_BEGIN("setrlimit(): vfs_ftruncate()/RLIMIT_FSIZE under limit");
+  fd = vfs_open("_rlim_test/A", VFS_O_RDWR | VFS_O_APPEND, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 0));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 50));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 950));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 1000));
+
+
+  KTEST_BEGIN("setrlimit(): vfs_ftruncate()/RLIMIT_FSIZE over limit");
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(-EFBIG, vfs_ftruncate(fd, 1100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_ftruncate()/RLIMIT_FSIZE reduce size across limit");
+  lim.rlim_cur = 2000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 1100));
+  lim.rlim_cur = 1000;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 900));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_ftruncate()/RLIMIT_FSIZE reduce size over limit");
+  lim.rlim_cur = 2000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_ftruncate(fd, 1100));
+  lim.rlim_cur = 1000;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(-EFBIG, vfs_ftruncate(fd, 1050));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_ftruncate()/RLIMIT_FSIZE increase size over limit");
+  KEXPECT_EQ(-EFBIG, vfs_ftruncate(fd, 1200));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+  KEXPECT_EQ(0, vfs_close(fd));
+
+
   KEXPECT_EQ(0, vfs_unlink("_rlim_test/A"));
   KEXPECT_EQ(0, vfs_rmdir("_rlim_test"));
 }
