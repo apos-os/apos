@@ -1609,6 +1609,13 @@ int vfs_truncate(const char* path, off_t length) {
     return 0;
   }
 
+  const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
+  if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
+    VFS_PUT_AND_CLEAR(vnode);
+    proc_force_signal(proc_current(), SIGXFSZ);
+    return -EFBIG;
+  }
+
   {
     KMUTEX_AUTO_LOCK(node_lock, &vnode->mutex);
     result = vnode->fs->truncate(vnode, length);

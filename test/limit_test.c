@@ -21,6 +21,7 @@
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 static int sig_is_pending(int sig) {
   sigset_t pending = proc_pending_signals(proc_current());
@@ -345,6 +346,57 @@ static void limit_filesize_test(void* arg) {
   KEXPECT_EQ(0, vfs_close(fd));
 
 
+  KTEST_BEGIN("setrlimit(): vfs_truncate()/RLIMIT_FSIZE under limit");
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 0));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 50));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 950));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 1000));
+
+
+  KTEST_BEGIN("setrlimit(): vfs_truncate()/RLIMIT_FSIZE over limit");
+  lim.rlim_cur = 1000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(-EFBIG, vfs_truncate("_rlim_test/A", 1100));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_truncate()/RLIMIT_FSIZE reduce size across limit");
+  lim.rlim_cur = 2000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 1100));
+  lim.rlim_cur = 1000;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 900));
+  KEXPECT_EQ(0, sig_is_pending(SIGXFSZ));
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_truncate()/RLIMIT_FSIZE reduce size over limit");
+  lim.rlim_cur = 2000;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(0, vfs_truncate("_rlim_test/A", 1100));
+  lim.rlim_cur = 1000;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_FSIZE, &lim));
+  KEXPECT_EQ(-EFBIG, vfs_truncate("_rlim_test/A", 1050));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
+  KTEST_BEGIN(
+      "setrlimit(): vfs_truncate()/RLIMIT_FSIZE increase size over limit");
+  KEXPECT_EQ(-EFBIG, vfs_truncate("_rlim_test/A", 1200));
+  KEXPECT_EQ(1, sig_is_pending(SIGXFSZ));
+  proc_suppress_signal(proc_current(), SIGXFSZ);
+
+
   KEXPECT_EQ(0, vfs_unlink("_rlim_test/A"));
   KEXPECT_EQ(0, vfs_rmdir("_rlim_test"));
 }
@@ -352,6 +404,7 @@ static void limit_filesize_test(void* arg) {
 
 void limit_test(void) {
   KTEST_SUITE_BEGIN("process limit tests");
+  const int initial_cache_size = vfs_cache_size();
 
   KEXPECT_GE(proc_fork(&basic_test, NULL), 0);
   KEXPECT_GE(proc_wait(NULL), 0);
@@ -367,4 +420,7 @@ void limit_test(void) {
 
   KEXPECT_GE(proc_fork(&limit_filesize_test, NULL), 0);
   KEXPECT_GE(proc_wait(NULL), 0);
+
+  KTEST_BEGIN("vfs: vnode leak verification");
+  KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }
