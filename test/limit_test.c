@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/errno.h"
+#include "memory/mmap.h"
 #include "proc/fork.h"
 #include "proc/limit.h"
 #include "proc/signal/signal.h"
@@ -401,6 +402,41 @@ static void limit_filesize_test(void* arg) {
   KEXPECT_EQ(0, vfs_rmdir("_rlim_test"));
 }
 
+static void limit_as_test(void* arg) {
+  KTEST_BEGIN("setrlimit(): mmap() obeys RLIMIT_AS");
+  struct rlimit lim;
+  lim.rlim_cur = 10 * PAGE_SIZE;
+  lim.rlim_max = RLIM_INFINITY;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_AS, &lim));
+
+  void* mappings[4];
+  KEXPECT_EQ(0, do_mmap(0x0, 5 * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[0]));
+  KEXPECT_EQ(0, do_mmap(0x0, 3 * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[1]));
+  KEXPECT_EQ(-ENOMEM, do_mmap(0x0, 3 * PAGE_SIZE, PROT_ALL,
+                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[2]));
+  KEXPECT_EQ(0, do_mmap(0x0, 2 * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[2]));
+  KEXPECT_EQ(-ENOMEM, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
+                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[2]));
+
+  KEXPECT_EQ(
+      0, do_munmap((void*)((addr_t)mappings[0] + PAGE_SIZE), 2 * PAGE_SIZE));
+  KEXPECT_EQ(-ENOMEM, do_mmap(0x0, 3 * PAGE_SIZE, PROT_ALL,
+                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[3]));
+  KEXPECT_EQ(0, do_mmap(0x0, 2 * PAGE_SIZE, PROT_ALL,
+                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[3]));
+  KEXPECT_EQ(-ENOMEM, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
+                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[3]));
+
+  KEXPECT_EQ(0, do_munmap(mappings[0], PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap((void*)((addr_t)mappings[0] + 3 * PAGE_SIZE),
+                          2 * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(mappings[1], 3 * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(mappings[2], 2 * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(mappings[3], 2 * PAGE_SIZE));
+}
 
 void limit_test(void) {
   KTEST_SUITE_BEGIN("process limit tests");
@@ -419,6 +455,9 @@ void limit_test(void) {
   KEXPECT_GE(proc_wait(NULL), 0);
 
   KEXPECT_GE(proc_fork(&limit_filesize_test, NULL), 0);
+  KEXPECT_GE(proc_wait(NULL), 0);
+
+  KEXPECT_GE(proc_fork(&limit_as_test, NULL), 0);
   KEXPECT_GE(proc_wait(NULL), 0);
 
   KTEST_BEGIN("vfs: vnode leak verification");
