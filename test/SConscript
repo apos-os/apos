@@ -37,6 +37,7 @@ srcs = [
   'kthread_pool_test.c',
   'kthread_test.c',
   'ld_test.c',
+  'limit_test.c',
   'list_test.c',
   'load_test.c',
   'mmap_test.c',

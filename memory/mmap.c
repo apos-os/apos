@@ -147,6 +147,23 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     return -EINVAL;
   }
 
+  // Check address space limits.
+  const rlim_t limit = proc_current()->limits[RLIMIT_AS].rlim_cur;
+  if (limit != RLIM_INFINITY) {
+    list_link_t* link = proc_current()->vm_area_list.head;
+    addrdiff_t total_as = 0;
+    while (link) {
+      const vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
+      if (area->access == MEM_ACCESS_KERNEL_AND_USER) {
+        total_as += area->vm_length;
+      }
+      link = link->next;
+    }
+    if (total_as + length > limit) {
+      return -ENOMEM;
+    }
+  }
+
   // Find an appropriate address.
   addr_t hole_addr = 0x0;
   if (flags & MAP_FIXED) {

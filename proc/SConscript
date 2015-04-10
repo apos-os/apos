@@ -32,6 +32,7 @@ srcs = [
   'user.c',
   'user_prepare.c',
   'wait.c',
+  'limit.c',
 ]
 
 subdirs = [

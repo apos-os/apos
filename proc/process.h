@@ -23,6 +23,7 @@
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "user/include/apos/posix_signal.h"
+#include "user/include/apos/resource.h"
 
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32
@@ -102,6 +103,9 @@ struct process {
 
   // Wait queue for the process's threads if the process is STOPPED.
   kthread_queue_t stopped_queue;
+
+  // Resource limits.
+  struct rlimit limits[RLIMIT_NUM_RESOURCES];
 };
 
 // Initialize the process table, and create the first process (process 0) from

@@ -85,6 +85,10 @@ int proc_fork(proc_func_t start, void* arg) {
   list_push(&proc_group_get(new_process->pgroup)->procs,
             &new_process->pgroup_link);
 
+  for (int i = 0; i < RLIMIT_NUM_RESOURCES; ++i) {
+    new_process->limits[i] = proc_current()->limits[i];
+  }
+
   // Create the kthread.
   proc_start_args_t* trampoline_args =
       (proc_start_args_t*)kmalloc(sizeof(proc_start_args_t));

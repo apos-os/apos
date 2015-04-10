@@ -434,3 +434,11 @@ AddSyscall('truncate', 68, 'vfs_truncate', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('poll', 69, 'vfs_poll', 'vfs/poll.h', '<poll.h>',
     'int', ['struct pollfd*:fds:brw:sizeof(struct pollfd) * nfds',
             'nfds_t:nfds:u', 'int:timeout:u'])
+
+AddSyscall('getrlimit', 75, 'proc_getrlimit', 'proc/limit.h',
+    '<sys/resource.h>', 'int',
+    ['int:resource:u', 'struct rlimit*:lim:bw:sizeof(struct rlimit)'])
+
+AddSyscall('setrlimit', 76, 'proc_setrlimit', 'proc/limit.h',
+    '<sys/resource.h>', 'int',
+    ['int:resource:u', 'const struct rlimit*:lim:br:sizeof(struct rlimit)'])

@@ -19,6 +19,7 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/dev.h"
 #include "dev/tty.h"
 #include "memory/kmalloc.h"
@@ -26,6 +27,7 @@
 #include "proc/kthread.h"
 #include "proc/process.h"
 #include "proc/session.h"
+#include "proc/signal/signal.h"
 #include "proc/user.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/anonfs.h"
@@ -86,7 +88,10 @@ static int next_free_file_idx(void) {
 
 // Return the lowest free fd in the process.
 static int next_free_fd(process_t* p) {
-  for (int i = 0; i < PROC_MAX_FDS; ++i) {
+  int max_fd = PROC_MAX_FDS;
+  if (p->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY)
+    max_fd = min(max_fd, (int)p->limits[RLIMIT_NOFILE].rlim_cur);
+  for (int i = 0; i < max_fd; ++i) {
     if (p->fds[i] == PROC_UNUSED_FD) {
       return i;
     }
@@ -620,6 +625,9 @@ int vfs_dup2(int fd1, int fd2) {
   if (result) return result;
 
   if (!is_valid_fd(fd2)) return -EBADF;
+  if (proc_current()->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY &&
+      fd2 >= (int)proc_current()->limits[RLIMIT_NOFILE].rlim_cur)
+    return -EMFILE;
 
   if (fd1 == fd2) return fd2;
 
@@ -1109,6 +1117,19 @@ int vfs_write(int fd, const void* buf, size_t count) {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
+      const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
+      if (limit != RLIM_INFINITY) {
+        off_t new_len = max(file->vnode->len, file->pos + (off_t)count);
+        if (new_len > file->vnode->len && (rlim_t)new_len > limit) {
+          if ((rlim_t)file->pos >= limit) {
+            file->refcount--;
+            proc_force_signal(proc_current(), SIGXFSZ);
+            return -EFBIG;
+          } else {
+            count = limit - file->pos;
+          }
+        }
+      }
       result = file->vnode->fs->write(file->vnode, file->pos, buf, count);
     } else {
       result = special_device_write(file->vnode->type, file->vnode->dev,
@@ -1551,6 +1572,11 @@ int vfs_ftruncate(int fd, off_t length) {
   if (file->vnode->type == VNODE_CHARDEV || file->vnode->type == VNODE_FIFO) {
     return 0;
   }
+  const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
+  if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
+    proc_force_signal(proc_current(), SIGXFSZ);
+    return -EFBIG;
+  }
 
   file->refcount++;
 
@@ -1581,6 +1607,13 @@ int vfs_truncate(const char* path, off_t length) {
   if (vnode->type == VNODE_CHARDEV || vnode->type == VNODE_FIFO) {
     VFS_PUT_AND_CLEAR(vnode);
     return 0;
+  }
+
+  const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
+  if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
+    VFS_PUT_AND_CLEAR(vnode);
+    proc_force_signal(proc_current(), SIGXFSZ);
+    return -EFBIG;
   }
 
   {
