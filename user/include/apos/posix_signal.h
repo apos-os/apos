@@ -60,6 +60,7 @@ typedef void (*sighandler_t)(int);
 #define SIGXFSZ   26  // File size limit exceeded.
 
 #define SIGMAX 26
+#define NSIG (SIGMAX + 1)
 
 // sighandler_t constants.
 #define SIG_DFL ((sighandler_t)0x0)
