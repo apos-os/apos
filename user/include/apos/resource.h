@@ -28,6 +28,7 @@ struct rlimit {
   rlim_t rlim_max;  // The hard limit.
 };
 
+// TODO(aoates): implement all of these.
 #define RLIMIT_CORE 0  // Limit on size of core file.
 #define RLIMIT_CPU 1  // Limit on CPU time per process.
 #define RLIMIT_DATA 2  // Limit on data segment size.
