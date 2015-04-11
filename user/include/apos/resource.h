@@ -29,12 +29,12 @@ struct rlimit {
 };
 
 // TODO(aoates): implement all of these.
-#define RLIMIT_CORE 0  // Limit on size of core file.
-#define RLIMIT_CPU 1  // Limit on CPU time per process.
-#define RLIMIT_DATA 2  // Limit on data segment size.
+// #define RLIMIT_CORE 0  // Limit on size of core file.
+// #define RLIMIT_CPU 1  // Limit on CPU time per process.
+// #define RLIMIT_DATA 2  // Limit on data segment size.
 #define RLIMIT_FSIZE 3  // Limit on file size.
 #define RLIMIT_NOFILE 4  // Limit on number of open files.
-#define RLIMIT_STACK 5  // Limit on stack size.
+// #define RLIMIT_STACK 5  // Limit on stack size.
 #define RLIMIT_AS 6  // Limit on address space size.
 #define RLIMIT_NUM_RESOURCES 7
 
