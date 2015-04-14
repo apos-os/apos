@@ -356,7 +356,7 @@ static bool dispatch_signal(int signum, const user_context_t* context) {
     proc->thread->signal_mask |= action->sa_mask;
     ksigaddset(&proc->thread->signal_mask, signum);
 
-    proc_run_user_sighandler(signum, action, &old_mask, context);
+    proc_run_user_sighandler(signum, action, &old_mask, context, NULL);
     die("unreachable");
   }
 
@@ -419,7 +419,8 @@ static user_context_t get_user_context(void* arg) {
 }
 
 int proc_sigreturn(const sigset_t* old_mask_ptr,
-                   const user_context_t* context_ptr) {
+                   const user_context_t* context_ptr,
+                   const syscall_context_t* syscall_ctx) {
   const sigset_t old_mask = *old_mask_ptr;
   const user_context_t context = *context_ptr;
   kfree((void*)old_mask_ptr);

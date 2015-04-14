@@ -325,7 +325,8 @@ AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [
     'const sigset_t*:old_mask:br:sizeof(sigset_t)',
-    'const user_context_t*:context:br:sizeof(user_context_t)'],
+    'const user_context_t*:context:br:sizeof(user_context_t)',
+    'const syscall_context_t*:syscall_context:br?:sizeof(syscall_context_t)'],
     stubs_to_generate=[])
 
 AddSyscall('alarm_ms', 22, 'proc_alarm_ms', 'proc/alarm.h',

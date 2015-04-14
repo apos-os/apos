@@ -32,6 +32,7 @@
 #include "common/errno.h"
 #include "common/types.h"
 #include "proc/process.h"
+#include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
 
 static inline int ksigisemptyset(const sigset_t* set) {
@@ -114,7 +115,8 @@ void proc_dispatch_pending_signals(const user_context_t* context);
 
 // Return from a signal handling routine, via the trampoline.
 // Frees old_mask and context.
-int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context);
+int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context,
+                   const syscall_context_t* syscall_ctx);
 
 // Returns 1 if process A can send the given signal to process C.
 int proc_signal_allowed(const process_t* A, const process_t* B, int signal);
