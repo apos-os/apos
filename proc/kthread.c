@@ -47,6 +47,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->process = 0x0;
   ksigemptyset(&t->signal_mask);
   ksigemptyset(&t->assigned_signals);
+  kmemset(&t->syscall_ctx, 0, sizeof(syscall_context_t));
   t->interruptable = false;
   t->wait_status = SWAIT_DONE;
   t->wait_timeout_ran = false;

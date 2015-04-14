@@ -16,6 +16,7 @@
 #define APOO_PROC_SIGNAL_SIGNAL_ENTER_H
 
 #include "arch/proc/user_context.h"
+#include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
 
 // Enter user-space to run the given signal handler.  Deals with the
@@ -28,6 +29,7 @@
 // Does not return.
 void proc_run_user_sighandler(int signum, const sigaction_t* action,
                               const sigset_t* old_mask,
-                              const user_context_t* context);
+                              const user_context_t* context,
+                              const syscall_context_t* syscall_ctx);
 
 #endif

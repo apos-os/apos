@@ -43,7 +43,8 @@ static inline addr_t* push(addr_t value, addr_t* stack) {
 
 void proc_run_user_sighandler(int signum, const sigaction_t* action,
                               const sigset_t* old_mask,
-                              const user_context_t* context) {
+                              const user_context_t* context,
+                              const syscall_context_t* syscall_ctx) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
                  "Invalid addr_t size for i386 code");
 
@@ -59,6 +60,10 @@ void proc_run_user_sighandler(int signum, const sigaction_t* action,
   stack = push_buffer(context, sizeof(user_context_t), stack);
   const addr_t context_addr = (addr_t)stack;
 
+  if (syscall_ctx)
+    stack = push_buffer(syscall_ctx, sizeof(syscall_context_t), stack);
+  const addr_t syscall_context_addr = syscall_ctx ? (addr_t)stack : 0x0;
+
   const size_t tramp_len = (addr_t)&sigreturn_trampoline_end -
       (addr_t)&sigreturn_trampoline_start;
   stack = push_buffer(&sigreturn_trampoline_start, tramp_len, stack);
@@ -68,6 +73,7 @@ void proc_run_user_sighandler(int signum, const sigaction_t* action,
   // access.
   stack = push(old_mask_addr, stack);
   stack = push(context_addr, stack);
+  stack = push(syscall_context_addr, stack);
 
   // Then push the call frame for the signal handler (signum arg and return
   // address, which is the trampoline).

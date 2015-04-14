@@ -77,10 +77,13 @@ static user_context_t syscall_extract_context_tramp(void* arg) {
 
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     long arg4, long arg5, long arg6) {
+  kthread_current_thread()->syscall_ctx.flags = 0;
+
   const long result = do_syscall_dispatch(syscall_number, arg1, arg2, arg3,
       arg4, arg5, arg6);
 
-  proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result);
+  proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result,
+                        &kthread_current_thread()->syscall_ctx);
 
   // Don't do anything here!  After we call proc_prep_user_return(), we may
   // never return.

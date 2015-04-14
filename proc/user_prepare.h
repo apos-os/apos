@@ -16,15 +16,18 @@
 #define APOO_PROC_USER_PREPARE_H
 
 #include "arch/proc/user_context.h"
+#include "syscall/context.h"
 
 // Prepare to return to userspace, e.g. from a syscall or interrupt.  Any
 // pending signals will be assigned and dispatched (if possible), the process
 // will be stopped if necessary, etc.
 //
 // The given user-context-extraction function will be called with the argument
-// if a user context is needed.
+// if a user context is needed.  The syscall context describes the current
+// syscall, or is NULL.
 //
 // This function may not return.
-void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg);
+void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
+                           const syscall_context_t* syscall_ctx);
 
 #endif

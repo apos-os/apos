@@ -17,8 +17,9 @@
 
 sigreturn_trampoline_start:
   mov $21, %eax  # SYS_SIGRETURN
-  mov 8(%esp), %ebx  # address of old signal mask (arg1)
-  mov 4(%esp), %ecx  # address of user context (arg2)
+  mov 12(%esp), %ebx  # address of old signal mask (arg1)
+  mov 8(%esp), %ecx   # address of user context (arg2)
+  mov 4(%esp), %edx   # address of syscall context (arg3)
   lcall  $0x33, $0
   hlt  # Should never get here.
 sigreturn_trampoline_end:

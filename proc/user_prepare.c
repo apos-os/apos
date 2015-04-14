@@ -14,11 +14,13 @@
 
 #include "proc/user_prepare.h"
 
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 
-void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg) {
+void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
+                           const syscall_context_t* syscall_ctx) {
   do {
     if (ksigismember(&proc_current()->pending_signals, SIGCONT) ||
         ksigismember(&kthread_current_thread()->assigned_signals, SIGCONT)) {
@@ -33,11 +35,20 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg) {
 
     if (proc_assign_pending_signals()) {
       user_context_t context = context_fn(arg);
-      proc_dispatch_pending_signals(&context);
+      proc_dispatch_pending_signals(&context, syscall_ctx);
     }
 
     if (proc_current()->state == PROC_STOPPED) {
       scheduler_wait_on_interruptable(&proc_current()->stopped_queue, -1);
     }
   } while (proc_current()->state == PROC_STOPPED);
+
+  if (syscall_ctx) {
+    KASSERT_DBG((syscall_ctx->flags & ~SCCTX_RESTORE_MASK) == 0);
+    if (syscall_ctx->flags & SCCTX_RESTORE_MASK) {
+      int result =
+          proc_sigprocmask(SIG_SETMASK, &syscall_ctx->restore_mask, NULL);
+      KASSERT_DBG(result == 0);
+    }
+  }
 }
