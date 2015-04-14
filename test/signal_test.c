@@ -1049,8 +1049,13 @@ static void sigsuspend_test_child(void* arg) {
   suspend_done = true;
 
   sigset_t final_mask;
+  KEXPECT_EQ(orig_mask, kthread_current_thread()->syscall_ctx.restore_mask);
+  KEXPECT_NE(0,
+             kthread_current_thread()->syscall_ctx.flags & SCCTX_RESTORE_MASK);
   KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &final_mask));
-  KEXPECT_EQ(orig_mask, final_mask);
+  KEXPECT_EQ(*(const sigset_t*)arg & ~make_sigset2(SIGKILL, SIGSTOP),
+             final_mask);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));
 }
 
 static void sigsuspend_test(void) {

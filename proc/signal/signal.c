@@ -284,14 +284,18 @@ int proc_sigsuspend(const sigset_t* sigmask) {
   sigset_t old_mask;
   int result = proc_sigprocmask(SIG_SETMASK, sigmask, &old_mask);
   KASSERT_DBG(result == 0);
+  proc_assign_pending_signals();
 
   kthread_queue_t queue;
   kthread_queue_init(&queue);
   result = scheduler_wait_on_interruptable(&queue, -1);
   KASSERT_DBG(result == SWAIT_INTERRUPTED);
 
-  result = proc_sigprocmask(SIG_SETMASK, &old_mask, NULL);
-  KASSERT_DBG(result == 0);
+  // We can't restore the original mask now, since that would prevent
+  // dispatching the signals we just woke up from.  So we save it to restore
+  // just before returning to userspace.
+  kthread_current_thread()->syscall_ctx.restore_mask = old_mask;
+  kthread_current_thread()->syscall_ctx.flags |= SCCTX_RESTORE_MASK;
 
   return -EINTR;
 }
@@ -304,7 +308,8 @@ void proc_suppress_signal(process_t* proc, int sig) {
 // Dispatch a particular signal in the current process.  May not return.
 // Returns true if the signal was dispatched (which includes being ignored), or
 // false if it couldn't be (because the process is stopped).
-static bool dispatch_signal(int signum, const user_context_t* context) {
+static bool dispatch_signal(int signum, const user_context_t* context,
+                            const syscall_context_t* syscall_ctx) {
   process_t* proc = proc_current();
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
@@ -356,7 +361,7 @@ static bool dispatch_signal(int signum, const user_context_t* context) {
     proc->thread->signal_mask |= action->sa_mask;
     ksigaddset(&proc->thread->signal_mask, signum);
 
-    proc_run_user_sighandler(signum, action, &old_mask, context, NULL);
+    proc_run_user_sighandler(signum, action, &old_mask, context, syscall_ctx);
     die("unreachable");
   }
 
@@ -386,7 +391,8 @@ int proc_assign_pending_signals(void) {
   return result;
 }
 
-void proc_dispatch_pending_signals(const user_context_t* context) {
+void proc_dispatch_pending_signals(const user_context_t* context,
+                                   const syscall_context_t* syscall_ctx) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
   const kthread_t thread = proc_current()->thread;
@@ -404,7 +410,7 @@ void proc_dispatch_pending_signals(const user_context_t* context) {
     if (ksigismember(&thread->assigned_signals, signum) &&
         !ksigismember(&thread->signal_mask, signum)) {
       ksigdelset(&thread->assigned_signals, signum);
-      if (!dispatch_signal(signum, context)) {
+      if (!dispatch_signal(signum, context, syscall_ctx)) {
         // Re-enqueue the signal for delivery later.
         ksigaddset(&thread->assigned_signals, signum);
       }
@@ -420,11 +426,14 @@ static user_context_t get_user_context(void* arg) {
 
 int proc_sigreturn(const sigset_t* old_mask_ptr,
                    const user_context_t* context_ptr,
-                   const syscall_context_t* syscall_ctx) {
+                   const syscall_context_t* syscall_ctx_ptr) {
   const sigset_t old_mask = *old_mask_ptr;
   const user_context_t context = *context_ptr;
+  syscall_context_t syscall_ctx;
+  if (syscall_ctx_ptr) syscall_ctx = *syscall_ctx_ptr;
   kfree((void*)old_mask_ptr);
   kfree((void*)context_ptr);
+  if (syscall_ctx_ptr) kfree((void*)syscall_ctx_ptr);
 
   PUSH_AND_DISABLE_INTERRUPTS();
 
@@ -433,7 +442,8 @@ int proc_sigreturn(const sigset_t* old_mask_ptr,
 
   // This catches, for example, signals raised in the signal handler that were
   // blocked.
-  proc_prep_user_return(&get_user_context, (void*)&context);
+  proc_prep_user_return(&get_user_context, (void*)&context,
+                        syscall_ctx_ptr ? &syscall_ctx : NULL);
 
   POP_INTERRUPTS();
 

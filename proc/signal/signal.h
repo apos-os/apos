@@ -111,7 +111,8 @@ int proc_assign_pending_signals(void);
 // ensure it outlives the call).
 //
 // Will not return if any signal handlers need to be invoked.
-void proc_dispatch_pending_signals(const user_context_t* context);
+void proc_dispatch_pending_signals(const user_context_t* context,
+                                   const syscall_context_t* syscall_ctx);
 
 // Return from a signal handling routine, via the trampoline.
 // Frees old_mask and context.

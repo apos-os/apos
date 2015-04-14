@@ -402,6 +402,77 @@ static void sa_mask_test(void) {
   KEXPECT_EQ(128 + SIGKILL, status);
 }
 
+static int sigsuspend_handled = 0;
+void sigsuspend_handler(int sig) {
+  KEXPECT_EQ(SIGALRM, sig);
+  sigset_t current_mask;
+  KEXPECT_EQ(0, sigprocmask(0, NULL, &current_mask));
+  KEXPECT_EQ(1, sigismember(&current_mask, SIGALRM));
+  KEXPECT_EQ(1, sigismember(&current_mask, SIGUSR1));
+  sigaddset(&current_mask, SIGUSR2);
+  sigaddset(&current_mask, SIGURG);
+  KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &current_mask, NULL));
+
+  raise(SIGURG);
+  sigdelset(&current_mask, SIGURG);
+  KEXPECT_EQ(-1, sigsuspend(&current_mask));
+  KEXPECT_EQ(2, sigsuspend_handled);
+
+  sigsuspend_handled = 1;
+}
+
+void sigsuspend_handler2(int sig) {
+  KEXPECT_EQ(SIGURG, sig);
+  sigset_t current_mask;
+  KEXPECT_EQ(0, sigprocmask(0, NULL, &current_mask));
+  KEXPECT_EQ(1, sigismember(&current_mask, SIGALRM));
+  KEXPECT_EQ(1, sigismember(&current_mask, SIGUSR1));
+  KEXPECT_EQ(1, sigismember(&current_mask, SIGUSR2));
+  KEXPECT_EQ(1, sigismember(&current_mask, SIGURG));
+  sigaddset(&current_mask, SIGINT);
+  KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &current_mask, NULL));
+  sigsuspend_handled = 2;
+}
+
+static void sigsuspend_test(void) {
+  KTEST_BEGIN("sigsuspend() test");
+  struct sigaction act;
+  act.sa_handler = &sigsuspend_handler;
+  sigemptyset(&act.sa_mask);
+  act.sa_flags = 0;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+
+  act.sa_handler = &sigsuspend_handler2;
+  KEXPECT_EQ(0, sigaction(SIGURG, &act, NULL));
+
+  sigset_t mask;
+  KEXPECT_EQ(0, sigprocmask(0, NULL, &mask));
+  const sigset_t orig_mask = mask;
+  sigaddset(&mask, SIGALRM);
+  sigprocmask(SIG_SETMASK, &mask, NULL);
+
+  raise(SIGALRM);
+  sigdelset(&mask, SIGALRM);
+  sigaddset(&mask, SIGUSR1);
+  KEXPECT_EQ(0, sigsuspend_handled);
+  int result = sigsuspend(&mask);
+  int error = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EINTR, error);
+  KEXPECT_EQ(1, sigsuspend_handled);
+
+  KEXPECT_EQ(0, sigprocmask(0, NULL, &mask));
+  KEXPECT_EQ(1, sigismember(&mask, SIGALRM));
+  KEXPECT_EQ(0, sigismember(&mask, SIGUSR1));
+  KEXPECT_EQ(0, sigismember(&mask, SIGUSR2));
+
+  // Reset things.
+  KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &orig_mask, NULL));
+  act.sa_handler = SIG_DFL;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+  KEXPECT_EQ(0, sigaction(SIGURG, &act, NULL));
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -422,6 +493,8 @@ void basic_signal_test(void) {
   blocked_signal_test();
   blocked_signal_raised_in_handler_test();
   sa_mask_test();
+
+  sigsuspend_test();
 
   // TODO(aoates): test nested signal handling.
 }

@@ -238,7 +238,7 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
       ::: "eax", "ebx", "ecx", "edx", "esi", "edi");
 
   if (is_user) {
-    proc_prep_user_return(&extract_interrupt_context, &ebp);
+    proc_prep_user_return(&extract_interrupt_context, &ebp, NULL);
   }
 
   // Note: we may never get here, if there were signals to dispatch.

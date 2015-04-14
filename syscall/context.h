@@ -17,7 +17,16 @@
 
 #include "user/include/apos/posix_signal.h"
 
+// Indicates that there is a separate signal mask that should be set just before
+// returning to userspace (as per sigsuspend() and friends).
+#define SCCTX_RESTORE_MASK 1
+
 typedef struct {
+  // Signal mask to restore just before returning to userspace, if flags
+  // includes SCCTX_RESTORE_MASK.
+  sigset_t restore_mask;
+
+  int flags;
 } syscall_context_t;
 
 #endif

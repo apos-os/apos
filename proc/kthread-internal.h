@@ -24,6 +24,7 @@
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "user/include/apos/posix_signal.h"
+#include "syscall/context.h"
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
@@ -57,6 +58,9 @@ struct kthread_data {
 
   // The set of signals assigned to this thread for handling.
   sigset_t assigned_signals;
+
+  // Context for the currently-executing syscall, if any.
+  syscall_context_t syscall_ctx;
 
   // Whether or not the thread can be interrupted (e.g. by a signal) if it's
   // blocked on a queue.
