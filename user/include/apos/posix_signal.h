@@ -66,6 +66,9 @@ typedef void (*sighandler_t)(int);
 #define SIG_DFL ((sighandler_t)0x0)
 #define SIG_IGN ((sighandler_t)0x1)
 
+// sa_flags flags.
+#define SA_RESTART 1
+
 // Actions for sigprocmask().
 #define SIG_BLOCK 1
 #define SIG_UNBLOCK 2

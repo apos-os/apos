@@ -15,6 +15,7 @@
 #include "proc/signal/signal.h"
 
 #include "arch/proc/signal/signal_enter.h"
+#include "arch/syscall/context.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "proc/exit.h"
@@ -309,7 +310,7 @@ void proc_suppress_signal(process_t* proc, int sig) {
 // Returns true if the signal was dispatched (which includes being ignored), or
 // false if it couldn't be (because the process is stopped).
 static bool dispatch_signal(int signum, const user_context_t* context,
-                            const syscall_context_t* syscall_ctx) {
+                            syscall_context_t* syscall_ctx) {
   process_t* proc = proc_current();
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
@@ -361,6 +362,9 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     proc->thread->signal_mask |= action->sa_mask;
     ksigaddset(&proc->thread->signal_mask, signum);
 
+    if (syscall_ctx && !(action->sa_flags & SA_RESTART))
+      syscall_ctx->flags &= ~SCCTX_RESTARTABLE;
+
     proc_run_user_sighandler(signum, action, &old_mask, context, syscall_ctx);
     die("unreachable");
   }
@@ -392,7 +396,7 @@ int proc_assign_pending_signals(void) {
 }
 
 void proc_dispatch_pending_signals(const user_context_t* context,
-                                   const syscall_context_t* syscall_ctx) {
+                                   syscall_context_t* syscall_ctx) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
   const kthread_t thread = proc_current()->thread;
@@ -428,7 +432,7 @@ int proc_sigreturn(const sigset_t* old_mask_ptr,
                    const user_context_t* context_ptr,
                    const syscall_context_t* syscall_ctx_ptr) {
   const sigset_t old_mask = *old_mask_ptr;
-  const user_context_t context = *context_ptr;
+  user_context_t context = *context_ptr;
   syscall_context_t syscall_ctx;
   if (syscall_ctx_ptr) syscall_ctx = *syscall_ctx_ptr;
   kfree((void*)old_mask_ptr);
@@ -446,6 +450,12 @@ int proc_sigreturn(const sigset_t* old_mask_ptr,
                         syscall_ctx_ptr ? &syscall_ctx : NULL);
 
   POP_INTERRUPTS();
+
+  // TODO(aoates): ideally we'd do this in proc_prep_user_return().
+  if (syscall_ctx_ptr && (syscall_ctx.flags & SCCTX_RESTARTABLE) &&
+      syscall_get_result(&context) == -EINTR) {
+    syscall_set_result(&context, -EINTR_RESTART);
+  }
 
   // If there weren't any signals to be processed, restore the original context.
   user_context_apply(&context);

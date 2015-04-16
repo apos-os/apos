@@ -21,6 +21,7 @@
 
 #include <apos/sleep.h>
 #include <apos/syscall.h>
+#include <apos/syscall_decls.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -473,6 +474,62 @@ static void sigsuspend_test(void) {
   KEXPECT_EQ(0, sigaction(SIGURG, &act, NULL));
 }
 
+#define KEXPECT_ERRNO(e, expr) do { \
+  int _result_val = (expr); \
+  int _saved_errno = errno; \
+  KEXPECT_EQ(-1, _result_val); \
+  KEXPECT_EQ((e), _saved_errno); \
+} while (0)
+
+static int g_counter = 0;
+static void counter_handler(int sig) {
+  g_counter++;
+}
+
+static void restartable_syscall_test(void) {
+  KTEST_BEGIN("read(): interrupted by SIGALRM");
+  struct sigaction act = make_sigaction(&counter_handler);
+  struct sigaction orig_act;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, &orig_act));
+
+  int fds[2];
+  char buf[10];
+  KEXPECT_EQ(0, pipe(fds));
+  alarm_ms(200);
+  KEXPECT_ERRNO(EINTR, read(fds[0], buf, 10));
+  KEXPECT_EQ(1, g_counter);
+
+
+  KTEST_BEGIN("read(): restarted on SIGALRM with SA_RESTART");
+  g_counter = 0;
+  act = make_sigaction(&counter_handler);
+  act.sa_flags = SA_RESTART;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+
+  if (fork() == 0) {
+    sleep_ms(100);
+    write(fds[1], "abc", 3);
+    exit(0);
+  }
+
+  // TODO(aoates): test timing.
+  alarm_ms(20);
+  alarm_ms(50);
+  KEXPECT_EQ(3, read(fds[0], buf, 10));
+
+  int status;
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_EQ(0, status);
+
+  KEXPECT_EQ(0, close(fds[0]));
+  KEXPECT_EQ(0, close(fds[1]));
+
+  KEXPECT_EQ(0, sigaction(SIGALRM, &orig_act, NULL));
+
+  // TODO(aoates): test multiple signals (restartable and not), delivered in
+  // different orders.
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -495,6 +552,7 @@ void basic_signal_test(void) {
   sa_mask_test();
 
   sigsuspend_test();
+  restartable_syscall_test();
 
   // TODO(aoates): test nested signal handling.
 }

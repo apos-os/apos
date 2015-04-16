@@ -20,7 +20,7 @@
 #include "proc/signal/signal.h"
 
 void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
-                           const syscall_context_t* syscall_ctx) {
+                           syscall_context_t* syscall_ctx) {
   do {
     if (ksigismember(&proc_current()->pending_signals, SIGCONT) ||
         ksigismember(&kthread_current_thread()->assigned_signals, SIGCONT)) {
@@ -44,7 +44,8 @@ void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
   } while (proc_current()->state == PROC_STOPPED);
 
   if (syscall_ctx) {
-    KASSERT_DBG((syscall_ctx->flags & ~SCCTX_RESTORE_MASK) == 0);
+    KASSERT_DBG(
+        (syscall_ctx->flags & ~SCCTX_RESTORE_MASK & ~SCCTX_RESTARTABLE) == 0);
     if (syscall_ctx->flags & SCCTX_RESTORE_MASK) {
       int result =
           proc_sigprocmask(SIG_SETMASK, &syscall_ctx->restore_mask, NULL);

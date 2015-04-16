@@ -21,6 +21,9 @@
 // returning to userspace (as per sigsuspend() and friends).
 #define SCCTX_RESTORE_MASK 1
 
+// Indicates the current syscall can be restarted if it returns -EINTR.
+#define SCCTX_RESTARTABLE 2
+
 typedef struct {
   // Signal mask to restore just before returning to userspace, if flags
   // includes SCCTX_RESTORE_MASK.

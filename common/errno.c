@@ -14,7 +14,7 @@
 
 #include "common/errno.h"
 
-static const char* ERROR_STRINGS[] = {
+static const char* ERROR_STRINGS[ERRNO_MAX + 1] = {
   "OK",              // 0
   "E2BIG",           // 1
   "EACCES",          // 2
@@ -91,12 +91,11 @@ static const char* ERROR_STRINGS[] = {
   "ETXTBSY",         // 73
 //  "EWOULDBLOCK",     // 6
   "EXDEV",           // 74
+  "EINTR_RESTART",   // 75
 };
 
-#define MAX_ERROR 74
-
 const char* errorname(int err) {
-  if (err >= 0 && err <= MAX_ERROR) {
+  if (err >= 0 && err <= ERRNO_MAX) {
     return ERROR_STRINGS[err];
   } else {
     return "<invalid error code>";
