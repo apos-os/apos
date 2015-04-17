@@ -62,4 +62,4 @@ i586_userret_interrupt:
   mov 0x20(%ebp), %esi
   mov 0x24(%ebp), %edi
   mov 0x28(%ebp), %ebp
-  lret
+  iret

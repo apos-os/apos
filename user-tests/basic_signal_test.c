@@ -41,7 +41,7 @@ static void signal_action(int sig) {
 }
 
 static void alarm_test(void) {
-  KTEST_BEGIN("alarm() test");
+  KTEST_BEGIN("alarm() interrupted syscall test");
   got_signal = false;
 
   struct sigaction new_action, old_action;
@@ -53,6 +53,47 @@ static void alarm_test(void) {
   KEXPECT_EQ(true, got_signal);
 
   KEXPECT_EQ(0, sigaction(SIGALRM, &old_action, NULL));
+
+  KTEST_BEGIN("alarm() interrupted syscall test (terminated)");
+  if (fork() == 0) {
+    alarm_ms(100);
+    sleep(1);
+    exit(1);
+  }
+  int status;
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
+}
+
+// Test when a signal is delivered after interrupting the user-space program (as
+// opposed to interrupting a blocking syscall).
+static void alarm_interrupt_test(void) {
+  KTEST_BEGIN("alarm() interrupted user-space program test");
+  got_signal = false;
+
+  struct sigaction new_action, old_action;
+  new_action = make_sigaction(&signal_action);
+  KEXPECT_EQ(0, sigaction(SIGALRM, &new_action, &old_action));
+  alarm_ms(100);
+  int i = 5;
+  while (!got_signal || i-- > 0) {
+    // Verify we didn't clobber $ebp.
+    int ebp_val;
+    asm volatile ("movl (%%ebp), %0" : "=r"(ebp_val));
+  }
+
+  KEXPECT_EQ(0, sigaction(SIGALRM, &old_action, NULL));
+
+  KTEST_BEGIN("alarm() interrupted user-space program test (terminated)");
+  if (fork() == 0) {
+    alarm_ms(100);
+    while (true) {}
+  }
+  int status;
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
 }
 
 static void signal_test(void) {
@@ -536,6 +577,7 @@ void basic_signal_test(void) {
   if (run_slow_tests) {
     alarm_test();
   }
+  alarm_interrupt_test();
 
   signal_test();
   sigfpe_test();
