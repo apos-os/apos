@@ -523,15 +523,17 @@ static void sigsuspend_test(void) {
 } while (0)
 
 static int g_counter = 0;
+static int g_counter_by_sig[SIGMAX + 1];
 static void counter_handler(int sig) {
-  g_counter++;
+  g_counter_by_sig[sig] = ++g_counter;
 }
 
 static void restartable_syscall_test(void) {
   KTEST_BEGIN("read(): interrupted by SIGALRM");
   struct sigaction act = make_sigaction(&counter_handler);
-  struct sigaction orig_act;
-  KEXPECT_EQ(0, sigaction(SIGALRM, &act, &orig_act));
+  struct sigaction orig_act_alrm, orig_act_abrt;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, &orig_act_alrm));
+  KEXPECT_EQ(0, sigaction(SIGABRT, &act, &orig_act_abrt));
 
   int fds[2];
   char buf[10];
@@ -562,13 +564,63 @@ static void restartable_syscall_test(void) {
   KEXPECT_LE(0, wait(&status));
   KEXPECT_EQ(0, status);
 
+
+  KTEST_BEGIN("read(): EINTR with mixed SA_RESTART signals (set then unset)");
+  for (int i = 0; i <= SIGMAX; ++i) g_counter_by_sig[i] = 0;
+  act = make_sigaction(counter_handler);
+  g_counter = 0;
+  act.sa_flags = SA_RESTART;
+  sigaddset(&act.sa_mask, SIGABRT);
+  sigaddset(&act.sa_mask, SIGALRM);
+  KEXPECT_EQ(0, sigaction(SIGABRT, &act, NULL));
+  act.sa_flags = 0;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+  if (fork() == 0) {
+    sleep_ms(100);
+    kill(getppid(), SIGABRT);
+    kill(getppid(), SIGALRM);
+    exit(0);
+  }
+
+  KEXPECT_ERRNO(EINTR, read(fds[0], buf, 10));
+  KEXPECT_EQ(1, g_counter_by_sig[SIGABRT]);
+  KEXPECT_EQ(2, g_counter_by_sig[SIGALRM]);
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_EQ(0, status);
+
+
+  KTEST_BEGIN("read(): EINTR with mixed SA_RESTART signals (unset then set)");
+  for (int i = 0; i <= SIGMAX; ++i) g_counter_by_sig[i] = 0;
+  g_counter = 0;
+  act = make_sigaction(counter_handler);
+  act.sa_flags = 0;
+  sigaddset(&act.sa_mask, SIGABRT);
+  sigaddset(&act.sa_mask, SIGALRM);
+  KEXPECT_EQ(0, sigaction(SIGABRT, &act, NULL));
+  act.sa_flags = SA_RESTART;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+  if (fork() == 0) {
+    sleep_ms(100);
+    kill(getppid(), SIGABRT);
+    kill(getppid(), SIGALRM);
+    exit(0);
+  }
+
+  KEXPECT_ERRNO(EINTR, read(fds[0], buf, 10));
+  KEXPECT_EQ(1, g_counter_by_sig[SIGABRT]);
+  KEXPECT_EQ(2, g_counter_by_sig[SIGALRM]);
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_EQ(0, status);
+  act = make_sigaction(counter_handler);
+
+
   KEXPECT_EQ(0, close(fds[0]));
   KEXPECT_EQ(0, close(fds[1]));
 
-  KEXPECT_EQ(0, sigaction(SIGALRM, &orig_act, NULL));
+  KEXPECT_EQ(0, sigaction(SIGALRM, &orig_act_alrm, NULL));
+  KEXPECT_EQ(0, sigaction(SIGABRT, &orig_act_abrt, NULL));
 
-  // TODO(aoates): test multiple signals (restartable and not), delivered in
-  // different orders.
+  // TODO(aoates): test nested signal delivery and syscalls (mixed restartable).
 }
 
 void basic_signal_test(void) {
