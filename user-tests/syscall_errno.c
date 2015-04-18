@@ -76,6 +76,7 @@ void syscall_errno_test() {
 
   KTEST_BEGIN("getcwd() errno");
   ERRNO_TEST(getcwd(NULL, 100), NULL, EFAULT);
+  KEXPECT_EQ(&buf[0], getcwd(buf, 100));
 
   KTEST_BEGIN("mmap() errno");
   ERRNO_TEST(mmap(0x0, 1000, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0),
