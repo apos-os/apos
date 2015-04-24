@@ -360,7 +360,8 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
     sigset_t old_mask = proc->thread->signal_mask;
     proc->thread->signal_mask |= action->sa_mask;
-    ksigaddset(&proc->thread->signal_mask, signum);
+    if (!(action->sa_flags & SA_NODEFER))
+      ksigaddset(&proc->thread->signal_mask, signum);
 
     if (syscall_ctx && !(action->sa_flags & SA_RESTART))
       syscall_ctx->flags &= ~SCCTX_RESTARTABLE;

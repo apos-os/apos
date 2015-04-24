@@ -411,6 +411,11 @@ static void sa_mask_test_handler(int sig) {
   raise(SIGKILL);
 }
 
+static sigset_t handler_mask;
+static void sa_mask_test_handler2(int sig) {
+  sigprocmask(0, NULL, &handler_mask);
+}
+
 static void sa_mask_test(void) {
   KTEST_BEGIN("signal handler sa_mask test");
 
@@ -442,6 +447,40 @@ static void sa_mask_test(void) {
   KEXPECT_EQ(child, wait(&status));
   // TODO(aoates): use the portable macros for this.
   KEXPECT_EQ(128 + SIGKILL, status);
+
+
+  KTEST_BEGIN("signal handler respects SA_NODEFER");
+  if ((child = fork()) == 0) {
+    sigset_t sigset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGURG);
+    sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+    struct sigaction action = make_sigaction(&sa_mask_test_handler2);
+    action.sa_flags |= SA_NODEFER;
+    sigemptyset(&handler_mask);
+    sigaddset(&action.sa_mask, SIGUSR1);
+    sigaddset(&action.sa_mask, SIGFPE);
+    sigaction(SIGUSR2, &action, NULL);
+
+    raise(SIGUSR2);
+    if (!sigismember(&handler_mask, SIGUSR1) ||
+        !sigismember(&handler_mask, SIGFPE)) {
+      fprintf(stderr, "sa_mask not set when SA_NODEFER used\n");
+      exit(1);
+    }
+    if (!sigismember(&handler_mask, SIGURG)) {
+      fprintf(stderr, "existing mask overwritten when SA_NODEFER used\n");
+      exit(1);
+    }
+    if (sigismember(&handler_mask, SIGUSR2)) {
+      fprintf(stderr, "SIGUSR2 masked when SA_NODEFER set\n");
+      exit(1);
+    }
+    exit(0);
+  }
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
 }
 
 static int sigsuspend_handled = 0;
