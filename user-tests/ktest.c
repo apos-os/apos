@@ -114,6 +114,8 @@ void kexpect(uint32_t cond, const char* name, const char* astr,
     printf(FAILED " %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n",
            name, astr, bstr, file, line, val_surrounders, aval, val_surrounders,
            opstr, val_surrounders, bval, val_surrounders);
+    printf("<press enter to continue>");
+    getchar();
   }
 }
 

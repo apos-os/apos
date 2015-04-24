@@ -26,6 +26,7 @@ void user_mode_enter(addr_t stack, addr_t entry) {
   const uint32_t new_code_seg =
       segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER);
   asm volatile (
+      "sti\n\t"
       "mov %0, %%eax\n\t"
       "mov %%ax, %%ds\n\t"
       "mov %%ax, %%es\n\t"

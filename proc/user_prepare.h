@@ -28,6 +28,6 @@
 //
 // This function may not return.
 void proc_prep_user_return(user_context_t (*context_fn)(void*), void* arg,
-                           const syscall_context_t* syscall_ctx);
+                           syscall_context_t* syscall_ctx);
 
 #endif

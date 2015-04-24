@@ -49,3 +49,16 @@ user_context_t syscall_extract_context(long retval) {
   KASSERT(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
   return context;
 }
+
+long syscall_get_result(const user_context_t* ctx) {
+  _Static_assert(sizeof(long) == sizeof(uint32_t),
+                 "x86 syscall_extract_context used on incompatible platform");
+  return (long)ctx->eax;
+}
+
+void syscall_set_result(user_context_t* ctx, long retval) {
+  _Static_assert(sizeof(long) == sizeof(uint32_t),
+                 "x86 syscall_extract_context used on incompatible platform");
+  KASSERT_DBG(ctx->type == USER_CONTEXT_CALL_GATE);
+  ctx->eax = (uint32_t)retval;
+}

@@ -21,6 +21,7 @@
 
 #include <apos/sleep.h>
 #include <apos/syscall.h>
+#include <apos/syscall_decls.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -40,7 +41,7 @@ static void signal_action(int sig) {
 }
 
 static void alarm_test(void) {
-  KTEST_BEGIN("alarm() test");
+  KTEST_BEGIN("alarm() interrupted syscall test");
   got_signal = false;
 
   struct sigaction new_action, old_action;
@@ -52,6 +53,47 @@ static void alarm_test(void) {
   KEXPECT_EQ(true, got_signal);
 
   KEXPECT_EQ(0, sigaction(SIGALRM, &old_action, NULL));
+
+  KTEST_BEGIN("alarm() interrupted syscall test (terminated)");
+  if (fork() == 0) {
+    alarm_ms(100);
+    sleep(1);
+    exit(1);
+  }
+  int status;
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
+}
+
+// Test when a signal is delivered after interrupting the user-space program (as
+// opposed to interrupting a blocking syscall).
+static void alarm_interrupt_test(void) {
+  KTEST_BEGIN("alarm() interrupted user-space program test");
+  got_signal = false;
+
+  struct sigaction new_action, old_action;
+  new_action = make_sigaction(&signal_action);
+  KEXPECT_EQ(0, sigaction(SIGALRM, &new_action, &old_action));
+  alarm_ms(100);
+  int i = 5;
+  while (!got_signal || i-- > 0) {
+    // Verify we didn't clobber $ebp.
+    int ebp_val;
+    asm volatile ("movl (%%ebp), %0" : "=r"(ebp_val));
+  }
+
+  KEXPECT_EQ(0, sigaction(SIGALRM, &old_action, NULL));
+
+  KTEST_BEGIN("alarm() interrupted user-space program test (terminated)");
+  if (fork() == 0) {
+    alarm_ms(100);
+    while (true) {}
+  }
+  int status;
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_NE(0, WIFSIGNALED(status));
+  KEXPECT_EQ(SIGALRM, WTERMSIG(status));
 }
 
 static void signal_test(void) {
@@ -369,6 +411,11 @@ static void sa_mask_test_handler(int sig) {
   raise(SIGKILL);
 }
 
+static sigset_t handler_mask;
+static void sa_mask_test_handler2(int sig) {
+  sigprocmask(0, NULL, &handler_mask);
+}
+
 static void sa_mask_test(void) {
   KTEST_BEGIN("signal handler sa_mask test");
 
@@ -400,6 +447,40 @@ static void sa_mask_test(void) {
   KEXPECT_EQ(child, wait(&status));
   // TODO(aoates): use the portable macros for this.
   KEXPECT_EQ(128 + SIGKILL, status);
+
+
+  KTEST_BEGIN("signal handler respects SA_NODEFER");
+  if ((child = fork()) == 0) {
+    sigset_t sigset;
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGURG);
+    sigprocmask(SIG_BLOCK, &sigset, NULL);
+
+    struct sigaction action = make_sigaction(&sa_mask_test_handler2);
+    action.sa_flags |= SA_NODEFER;
+    sigemptyset(&handler_mask);
+    sigaddset(&action.sa_mask, SIGUSR1);
+    sigaddset(&action.sa_mask, SIGFPE);
+    sigaction(SIGUSR2, &action, NULL);
+
+    raise(SIGUSR2);
+    if (!sigismember(&handler_mask, SIGUSR1) ||
+        !sigismember(&handler_mask, SIGFPE)) {
+      fprintf(stderr, "sa_mask not set when SA_NODEFER used\n");
+      exit(1);
+    }
+    if (!sigismember(&handler_mask, SIGURG)) {
+      fprintf(stderr, "existing mask overwritten when SA_NODEFER used\n");
+      exit(1);
+    }
+    if (sigismember(&handler_mask, SIGUSR2)) {
+      fprintf(stderr, "SIGUSR2 masked when SA_NODEFER set\n");
+      exit(1);
+    }
+    exit(0);
+  }
+  KEXPECT_EQ(child, wait(&status));
+  KEXPECT_EQ(0, status);
 }
 
 static int sigsuspend_handled = 0;
@@ -473,12 +554,121 @@ static void sigsuspend_test(void) {
   KEXPECT_EQ(0, sigaction(SIGURG, &act, NULL));
 }
 
+#define KEXPECT_ERRNO(e, expr) do { \
+  int _result_val = (expr); \
+  int _saved_errno = errno; \
+  KEXPECT_EQ(-1, _result_val); \
+  KEXPECT_EQ((e), _saved_errno); \
+} while (0)
+
+static int g_counter = 0;
+static int g_counter_by_sig[SIGMAX + 1];
+static void counter_handler(int sig) {
+  g_counter_by_sig[sig] = ++g_counter;
+}
+
+static void restartable_syscall_test(void) {
+  KTEST_BEGIN("read(): interrupted by SIGALRM");
+  struct sigaction act = make_sigaction(&counter_handler);
+  struct sigaction orig_act_alrm, orig_act_abrt;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, &orig_act_alrm));
+  KEXPECT_EQ(0, sigaction(SIGABRT, &act, &orig_act_abrt));
+
+  int fds[2];
+  char buf[10];
+  KEXPECT_EQ(0, pipe(fds));
+  alarm_ms(200);
+  KEXPECT_ERRNO(EINTR, read(fds[0], buf, 10));
+  KEXPECT_EQ(1, g_counter);
+
+
+  KTEST_BEGIN("read(): restarted on SIGALRM with SA_RESTART");
+  g_counter = 0;
+  act = make_sigaction(&counter_handler);
+  act.sa_flags = SA_RESTART;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+
+  if (fork() == 0) {
+    sleep_ms(100);
+    write(fds[1], "abc", 3);
+    exit(0);
+  }
+
+  // TODO(aoates): test timing.
+  alarm_ms(20);
+  alarm_ms(50);
+  KEXPECT_EQ(3, read(fds[0], buf, 10));
+
+  int status;
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_EQ(0, status);
+
+
+  KTEST_BEGIN("read(): EINTR with mixed SA_RESTART signals (set then unset)");
+  for (int i = 0; i <= SIGMAX; ++i) g_counter_by_sig[i] = 0;
+  act = make_sigaction(counter_handler);
+  g_counter = 0;
+  act.sa_flags = SA_RESTART;
+  sigaddset(&act.sa_mask, SIGABRT);
+  sigaddset(&act.sa_mask, SIGALRM);
+  KEXPECT_EQ(0, sigaction(SIGABRT, &act, NULL));
+  act.sa_flags = 0;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+  if (fork() == 0) {
+    sleep_ms(100);
+    kill(getppid(), SIGABRT);
+    kill(getppid(), SIGALRM);
+    exit(0);
+  }
+
+  KEXPECT_ERRNO(EINTR, read(fds[0], buf, 10));
+  KEXPECT_EQ(1, g_counter_by_sig[SIGABRT]);
+  KEXPECT_EQ(2, g_counter_by_sig[SIGALRM]);
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_EQ(0, status);
+
+
+  KTEST_BEGIN("read(): EINTR with mixed SA_RESTART signals (unset then set)");
+  for (int i = 0; i <= SIGMAX; ++i) g_counter_by_sig[i] = 0;
+  g_counter = 0;
+  act = make_sigaction(counter_handler);
+  act.sa_flags = 0;
+  sigaddset(&act.sa_mask, SIGABRT);
+  sigaddset(&act.sa_mask, SIGALRM);
+  KEXPECT_EQ(0, sigaction(SIGABRT, &act, NULL));
+  act.sa_flags = SA_RESTART;
+  KEXPECT_EQ(0, sigaction(SIGALRM, &act, NULL));
+  if (fork() == 0) {
+    sleep_ms(100);
+    kill(getppid(), SIGABRT);
+    kill(getppid(), SIGALRM);
+    exit(0);
+  }
+
+  KEXPECT_ERRNO(EINTR, read(fds[0], buf, 10));
+  KEXPECT_EQ(1, g_counter_by_sig[SIGABRT]);
+  KEXPECT_EQ(2, g_counter_by_sig[SIGALRM]);
+  KEXPECT_LE(0, wait(&status));
+  KEXPECT_EQ(0, status);
+  act = make_sigaction(counter_handler);
+
+
+  KEXPECT_EQ(0, close(fds[0]));
+  KEXPECT_EQ(0, close(fds[1]));
+
+  KEXPECT_EQ(0, sigaction(SIGALRM, &orig_act_alrm, NULL));
+  KEXPECT_EQ(0, sigaction(SIGABRT, &orig_act_abrt, NULL));
+
+  // TODO(aoates): test nested signal delivery and syscalls (mixed restartable).
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
   if (run_slow_tests) {
     alarm_test();
   }
+  alarm_interrupt_test();
 
   signal_test();
   sigfpe_test();
@@ -495,6 +685,7 @@ void basic_signal_test(void) {
   sa_mask_test();
 
   sigsuspend_test();
+  restartable_syscall_test();
 
   // TODO(aoates): test nested signal handling.
 }

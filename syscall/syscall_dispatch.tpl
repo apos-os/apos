@@ -27,6 +27,9 @@
 {# Generates the case statement for dispatching a particular syscall. #}
 {% macro syscall_dispatch_case(syscall) -%}
 case {{ common.syscall_constant(syscall) }}:
+  {% if not syscall.can_fail %}
+  kthread_current_thread()->syscall_ctx.flags &= ~SCCTX_RESTARTABLE;
+  {% endif %}
   return SYSCALL_DMZ_{{ syscall.name }}({{ cast_args(syscall.args) }});
 {%- endmacro %}
 
@@ -77,7 +80,7 @@ static user_context_t syscall_extract_context_tramp(void* arg) {
 
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     long arg4, long arg5, long arg6) {
-  kthread_current_thread()->syscall_ctx.flags = 0;
+  kthread_current_thread()->syscall_ctx.flags = SCCTX_RESTARTABLE;
 
   const long result = do_syscall_dispatch(syscall_number, arg1, arg2, arg3,
       arg4, arg5, arg6);

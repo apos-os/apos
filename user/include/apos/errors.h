@@ -92,6 +92,9 @@
 #define ETXTBSY          73  // Text file busy.
 #define EWOULDBLOCK       6  // Operation would block (may be the same value as [EAGAIN]).
 #define EXDEV            74  // Cross-device link.
-#define ERRNO_MAX        74
+
+// Internal errors.
+#define EINTR_RESTART    75  // Interrupted syscall should be restarted.
+#define ERRNO_MAX        75
 
 #endif

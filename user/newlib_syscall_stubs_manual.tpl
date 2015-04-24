@@ -26,7 +26,7 @@ __attribute__((noreturn)) void _exit(int status) {
 
 char* _getcwd_r(struct _reent* reent_ptr, char* buf, size_t size) {
   int result = _do_getcwd(buf, size);
-  if (result) {
+  if (result < 0) {
     reent_ptr->_errno = -result;
     return NULL;
   }

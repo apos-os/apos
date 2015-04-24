@@ -142,7 +142,7 @@ static user_context_t extract_interrupt_context(void* ebp_ptr) {
 
   context.type = USER_CONTEXT_INTERRUPT;
   context.esp = *((addr_t*)ebp + 9);
-  context.ebp = *((addr_t*)ebp);
+  context.ebp = *((addr_t*)*((addr_t*)ebp));
   context.eip = *((addr_t*)ebp + 6);
   context.eax = *((addr_t*)ebp - 1);
   context.ebx = *((addr_t*)ebp - 4);

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/proc/user_context.h"
+#include "arch/dev/interrupts.h"
 #include "archs/i586/internal/memory/gdt.h"
 #include "common/kassert.h"
 #include "common/types.h"
@@ -34,11 +35,13 @@ void user_context_apply(const user_context_t* ctx) {
   // TODO(aoates): merge this with the code in proc/user_mode.c
   switch (ctx->type) {
     case USER_CONTEXT_CALL_GATE:
+      KASSERT_DBG(get_interrupts_state());
       i586_userret_callgate(ctx->esp, ctx->eip, ctx->eax, ctx->ebx, ctx->ecx,
                             ctx->edx, ctx->esi, ctx->edi, ctx->ebp);
       break;
 
     case USER_CONTEXT_INTERRUPT:
+      KASSERT_DBG(ctx->eflags & IF_FLAG);
       i586_userret_interrupt(ctx->esp, ctx->eip, ctx->eax, ctx->ebx, ctx->ecx,
                              ctx->edx, ctx->esi, ctx->edi, ctx->ebp,
                              ctx->eflags);

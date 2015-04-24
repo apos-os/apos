@@ -23,4 +23,12 @@
 // REQUIRES: a syscall be executing currently.
 user_context_t syscall_extract_context(long retval);
 
+// Returns the return value for a previously-extracted user_context_t, which
+// must have been returned from a call to syscall_extract_context().
+long syscall_get_result(const user_context_t* ctx);
+
+// Sets the return value for a previously-extracted user_context_t, which must
+// have been returned from a call to syscall_extract_context().
+void syscall_set_result(user_context_t* ctx, long retval);
+
 #endif

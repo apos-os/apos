@@ -33,7 +33,17 @@
 {#- Implement a user-space syscall. #}
 {%- macro syscall_impl(syscall) -%}
 static inline {{ common.syscall_decl(syscall, '_do_') }} {
-  return do_syscall({{ common.syscall_constant(syscall) }}, {{ cast_args(syscall.args) }});
+  {{ syscall.return_type }} result;
+  {% if syscall.can_fail -%}
+  do {
+  {% endif -%}
+
+  result = do_syscall({{ common.syscall_constant(syscall) }}, {{ cast_args(syscall.args) }});
+
+  {% if syscall.can_fail -%}
+  } while (result == -EINTR_RESTART);
+  {% endif -%}
+  return result;
 }
 {%- endmacro %}
 
