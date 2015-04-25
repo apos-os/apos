@@ -502,9 +502,9 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    uint32_t start = get_time_ms();
+    apos_ms_t start = get_time_ms();
     for (int i = 0; i < 20 && !d1.ran; ++i) ksleep(20);
-    uint32_t end = get_time_ms();
+    apos_ms_t end = get_time_ms();
     KEXPECT_GE(end-start, 180);
     KEXPECT_LE(end-start, 250);
     KEXPECT_EQ(1, d1.ran);
@@ -523,7 +523,7 @@ static void scheduler_interrupt_timeout_test(void) {
     KEXPECT_EQ(&queue, thread1->queue);
     ksleep(100);
     scheduler_wake_all(&queue);
-    uint32_t start = get_time_ms();
+    apos_ms_t start = get_time_ms();
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_LE(get_time_ms() - start, 30);
     KEXPECT_EQ(1, d1.ran);
@@ -557,7 +557,7 @@ static void scheduler_interrupt_timeout_test(void) {
 
     KEXPECT_EQ(&queue, thread1->queue);
     scheduler_interrupt_thread(thread1);
-    uint32_t start = get_time_ms();
+    apos_ms_t start = get_time_ms();
     // Spin until the timeout (should have) fired.  We can't yield, since we
     // must ensure the thread we interrupted doesn't get a chance to run.
     while (get_time_ms() - start < 50);

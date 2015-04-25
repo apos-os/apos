@@ -561,14 +561,14 @@ typedef struct {
   char* buf;
   int readlen;
   ld_t* l;
-  uint32_t elapsed;
+  apos_ms_t elapsed;
 } noncanon_test_args_t;
 
 static void* noncanon_read(void* arg) {
   noncanon_test_args_t* args = arg;
   args->read_done = false;
   scheduler_wake_all(&args->read_started);
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   int result = ld_read(args->l, args->buf, args->readlen, 0);
   args->elapsed = get_time_ms() - start;
   args->read_done = true;
@@ -670,9 +670,9 @@ static void termios_noncanon_read_test(void) {
 
   // Test when data never becomes available (ld_read times out).
   kmemset(buf, 0, 10);
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(-EAGAIN, ld_read(g_ld, buf, 10, 0));
-  uint32_t end = get_time_ms();
+  apos_ms_t end = get_time_ms();
   KEXPECT_GE(end - start, 150);
   KEXPECT_LE(end - start, 300);
 

@@ -333,8 +333,8 @@ static int ld_read_block(ld_t* l) {
       // Block until MIN bytes are available, or VTIME has elapsed.
       // TODO(aoates): this isn't totally correct, another thread could gobble
       // the first byte we got in the above loop (for MIN>0 && TIME>0 case)
-      uint32_t now = get_time_ms();
-      uint32_t timeout_end = ttime * 100;
+      apos_ms_t now = get_time_ms();
+      apos_ms_t timeout_end = ttime * 100;
       if (timeout_end > 0) timeout_end += now;
 
       while ((timeout_end == 0 || timeout_end > now) &&

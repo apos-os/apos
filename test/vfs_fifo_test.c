@@ -439,9 +439,9 @@ static void fifo_poll_no_writers_test(void) {
 
   KTEST_BEGIN("FIFO: timing-out poll(POLLIN) with no writers (never had writer)");
   pfds[0].events = POLLIN;
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 50));
-  uint32_t end = get_time_ms();
+  apos_ms_t end = get_time_ms();
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_GE(end - start, 40);
   KEXPECT_LE(end - start, 60);

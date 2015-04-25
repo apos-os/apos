@@ -18,6 +18,8 @@
 
 #include <stdint.h>
 
+typedef uint32_t apos_ms_t;
+
 #define KMAX_TIMERS 10
 #define KTIMESLICE_MS 10
 
@@ -44,7 +46,7 @@ typedef void* timer_handle_t;
 //
 // TODO(aoates): convert remaining users of this to use register_event_timer()
 // instead.
-int register_timer_callback(uint32_t period_ms, int limit,
+int register_timer_callback(int period_ms, int limit,
                             timer_handler_t cb, void* arg);
 
 // Register a one-shot time that calls the given handler at the given deadline
@@ -57,7 +59,7 @@ int register_timer_callback(uint32_t period_ms, int limit,
 // cancel the timer before it fires.
 //
 // REQUIRES: kmalloc_init()
-int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg,
+int register_event_timer(apos_ms_t deadline_ms, timer_handler_t cb, void* arg,
                          timer_handle_t* handle);
 
 // Cancel a timer created with register_event_timer.
@@ -73,6 +75,6 @@ void cancel_event_timer(timer_handle_t handle);
 void cancel_all_event_timers_for_tests(void);
 
 // Return the approximate time since timer initialization, in ms.
-uint32_t get_time_ms(void);
+apos_ms_t get_time_ms(void);
 
 #endif

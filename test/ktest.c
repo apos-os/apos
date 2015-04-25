@@ -39,7 +39,7 @@ static int num_tests_passing = 0;
 static int current_suite_passing = 0;
 static int current_test_passing = 0;
 
-static uint32_t test_start_time;
+static apos_ms_t test_start_time;
 
 static const char* current_test_name = 0x0;
 
@@ -180,7 +180,7 @@ void ktest_begin_all() {
 }
 
 void ktest_finish_all() {
-  uint32_t end_time = get_time_ms();
+  apos_ms_t end_time = get_time_ms();
   finish_test();
   finish_suite();
 

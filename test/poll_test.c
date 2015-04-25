@@ -224,7 +224,7 @@ static void basic_cd_test(chardev_args_t* args) {
   KTEST_BEGIN("poll(): basic timeout test");
   set_cd_events(args, 0, 0);
   pfds[0].revents = 521;
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 100));
   KEXPECT_GE(get_time_ms() - start, 100);
   KEXPECT_EQ(0, pfds[0].revents);
@@ -239,7 +239,7 @@ static void basic_cd_test(chardev_args_t* args) {
   pfds[0].events = POLLIN | POLLOUT;
   start = get_time_ms();
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 100));
-  uint32_t elapsed = get_time_ms() - start;
+  apos_ms_t elapsed = get_time_ms() - start;
 
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_GE(elapsed, 100);
@@ -305,9 +305,9 @@ static void multi_fd_test(chardev_args_t* args) {
   }
 
   trigger_fake_dev(&args->fake_devs[1], POLLOUT, 30);
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
-  uint32_t end = get_time_ms();
+  apos_ms_t end = get_time_ms();
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_EQ(POLLOUT, pfds[1].revents);
   KEXPECT_EQ(0, pfds[2].revents);
@@ -480,9 +480,9 @@ static void weird_fd_test(chardev_args_t* args) {
   pfds[1].fd = 200;
 
   trigger_fake_dev(&args->fake_devs[2], POLLOUT, 30);
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
-  uint32_t end = get_time_ms();
+  apos_ms_t end = get_time_ms();
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_EQ(0, pfds[1].revents);
   KEXPECT_EQ(POLLOUT, pfds[2].revents);
@@ -578,9 +578,9 @@ static void unmaskable_events_test(chardev_args_t* args) {
 
   pfds[0].fd = args->fd[0];
   pfds[0].events = 0;
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 100));
-  uint32_t elapsed = get_time_ms() - start;
+  apos_ms_t elapsed = get_time_ms() - start;
   KEXPECT_EQ(POLLERR, pfds[0].revents);
   KEXPECT_GE(elapsed, 40);
   KEXPECT_LE(elapsed, 70);
@@ -652,9 +652,9 @@ static void interrupt_test(void* x) {
   }
 
   register_event_timer(get_time_ms() + 30, &do_signal, proc_current(), NULL);
-  uint32_t start = get_time_ms();
+  apos_ms_t start = get_time_ms();
   KEXPECT_EQ(-EINTR, vfs_poll(pfds, 3, 100));
-  uint32_t end = get_time_ms();
+  apos_ms_t end = get_time_ms();
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_EQ(0, pfds[1].revents);
   KEXPECT_EQ(0, pfds[2].revents);

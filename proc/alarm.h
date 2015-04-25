@@ -21,7 +21,7 @@
 
 // An alarm in a process.  Each process has exactly one alarm.
 typedef struct {
-  uint32_t deadline_ms;
+  apos_ms_t deadline_ms;
   timer_handle_t timer;
 } proc_alarm_t;
 

@@ -328,7 +328,7 @@ static void large_interrupt_test(void) {
   KTEST_BEGIN("kmalloc large interrupt safety test");
 
   const int kTestLengthMs = 10000;
-  const uint32_t start_time = get_time_ms();
+  const apos_ms_t start_time = get_time_ms();
 
   register_timer_callback(10, kTestLengthMs / 10,
                           &large_interrupt_test_timer_cb, 0x0);
