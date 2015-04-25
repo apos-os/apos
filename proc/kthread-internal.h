@@ -38,8 +38,10 @@ typedef enum {
 struct process;
 typedef struct process process_t;
 
+typedef int kthread_id_t;
+
 struct kthread_data {
-  uint32_t id;
+  kthread_id_t id;
   kthread_state_t state;
   kthread_arch_context_t context;
   void* retval;
