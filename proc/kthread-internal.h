@@ -28,17 +28,19 @@
 
 #define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
-#define KTHREAD_RUNNING 0 // Currently running.
-#define KTHREAD_PENDING 1 // Waiting on a run queue of some sort.
-#define KTHREAD_DONE    2 // Finished.
-#define KTHREAD_DESTROYED 3 // Destroyed.  Should never be seen.
+typedef enum {
+  KTHREAD_RUNNING = 0,    // Currently running.
+  KTHREAD_PENDING = 1,    // Waiting on a run queue of some sort.
+  KTHREAD_DONE = 2,       // Finished.
+  KTHREAD_DESTROYED = 3,  // Destroyed.  Should never be seen.
+} kthread_state_t;
 
 struct process;
 typedef struct process process_t;
 
 struct kthread_data {
   uint32_t id;
-  uint32_t state;
+  kthread_state_t state;
   kthread_arch_context_t context;
   void* retval;
   struct kthread_data* prev;
