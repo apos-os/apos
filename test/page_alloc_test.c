@@ -29,14 +29,14 @@
 // we don't allocate them all and the test will fail.
 #define MAX_MEMORY 512
 
-static void fill_frame(uint32_t frame_start, uint32_t x) {
+static void fill_frame(phys_addr_t frame_start, uint32_t x) {
   uint32_t* frame = (uint32_t*)(phys2virt(frame_start));
   for (uint32_t i = 0; i < PAGE_SIZE / 4; ++i) {
     frame[i] = x;
   }
 }
 
-static void check_frame(uint32_t frame_start, uint32_t x) {
+static void check_frame(phys_addr_t frame_start, uint32_t x) {
   uint32_t matched_words = 0;
   uint32_t* frame = (uint32_t*)(phys2virt(frame_start));
   for (uint32_t i = 0; i < PAGE_SIZE / 4; ++i) {
@@ -52,7 +52,7 @@ void test_alloc_all(void) {
 
   // This test will only work up to 100MB of ram.
   const uint32_t MAX_PAGES = MAX_MEMORY * 1024 * 1024 / PAGE_SIZE;
-  uint32_t* pages = kmalloc(sizeof(uint32_t) * MAX_PAGES);
+  phys_addr_t* pages = kmalloc(sizeof(phys_addr_t) * MAX_PAGES);
   KASSERT(pages != 0x0);
 
   uint32_t i = 0;
@@ -78,9 +78,9 @@ void test_alloc_all(void) {
 void test_basic(void) {
   KTEST_BEGIN("basic test");
 
-  uint32_t page1 = page_frame_alloc();
-  uint32_t page2 = page_frame_alloc();
-  uint32_t page3 = page_frame_alloc();
+  phys_addr_t page1 = page_frame_alloc();
+  phys_addr_t page2 = page_frame_alloc();
+  phys_addr_t page3 = page_frame_alloc();
 
   // Make sure we got physical, not virtual, page addresses.
   KEXPECT_LT(page1, 0xC0000000);
@@ -123,9 +123,9 @@ void test_basic(void) {
     check_frame(page3, 0xDEADBEEF);
   }
 
-  uint32_t page4 = page_frame_alloc();
-  uint32_t page5 = page_frame_alloc();
-  uint32_t page6 = page_frame_alloc();
+  phys_addr_t page4 = page_frame_alloc();
+  phys_addr_t page5 = page_frame_alloc();
+  phys_addr_t page6 = page_frame_alloc();
 
   // Pages 4-6 should be equal to pages 1-3 in reverse order.
   KEXPECT_EQ(page1, page6);
