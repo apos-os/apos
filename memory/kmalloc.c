@@ -249,10 +249,10 @@ void kmalloc_log_state() {
     KLOG(INFO, "  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
          cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
     KLOG(DEBUG, "             < %x %x %x %x >\n",
-         ((uint32_t*)(&cblock->data))[0],
-         ((uint32_t*)(&cblock->data))[1],
-         ((uint32_t*)(&cblock->data))[2],
-         ((uint32_t*)(&cblock->data))[3]);
+         ((unsigned int*)(&cblock->data))[0],
+         ((unsigned int*)(&cblock->data))[1],
+         ((unsigned int*)(&cblock->data))[2],
+         ((unsigned int*)(&cblock->data))[3]);
 
     cblock = cblock->next;
   }

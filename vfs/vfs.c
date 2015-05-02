@@ -440,7 +440,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
 
 int vfs_open(const char* path, int flags, ...) {
   // Check arguments.
-  const uint32_t mode = flags & VFS_MODE_MASK;
+  const mode_t mode = flags & VFS_MODE_MASK;
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
     return -EINVAL;
   }

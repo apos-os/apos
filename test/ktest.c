@@ -108,7 +108,7 @@ void KTEST_BEGIN(const char* name) {
   klogm(KL_TEST, INFO, "---------------------------------------\n");
 }
 
-void kexpect(uint32_t cond, const char* name, const char* astr,
+void kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
@@ -154,14 +154,14 @@ void kexpect_int(const char* name, const char* file, const char* line,
   // If the expected value is written as hex, print the actual value as hex too.
   if (a_type == PRINT_HEX ||
       kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) {
-    ksprintf(aval_str, "0x%s", utoa_hex((uint32_t)aval));
-    ksprintf(bval_str, "0x%s", utoa_hex((uint32_t)bval));
+    ksprintf(aval_str, "0x%s", utoa_hex(aval));
+    ksprintf(bval_str, "0x%s", utoa_hex(bval));
   } else if (b_type == PRINT_SIGNED ||
              kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) {
     kexpect_int_to_string((int)aval, (int)bval, aval_str, bval_str);
   } else {
-    kstrcpy(aval_str, utoa((uint32_t)aval));
-    kstrcpy(bval_str, utoa((uint32_t)bval));
+    kstrcpy(aval_str, utoa(aval));
+    kstrcpy(bval_str, utoa(bval));
   }
   kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
 }

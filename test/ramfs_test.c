@@ -188,7 +188,7 @@ static void directory_test(void) {
   int dir_vnode = g_fs->mkdir(g_root, "test_dir");
   KEXPECT_GE(dir_vnode, 0);
   n = get_vnode(dir_vnode);
-  KEXPECT_NE(0, (uint32_t)n);
+  KEXPECT_NE(NULL, n);
 
   KTEST_BEGIN("create() test");
   vnode_t* file = get_vnode(g_fs->mknod(n, "file1", VNODE_REGULAR, makedev(0,0)));

@@ -174,19 +174,19 @@ static void kstring_testC(void) {
 static void kstring_testD(char* buf) {
   KTEST_BEGIN("kstrchr()");
   const char* s = "/abc/def";
-  KEXPECT_EQ((uint32_t)s, (uint32_t)kstrchr(s, '/'));
-  KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrchr(s, 'a'));
-  KEXPECT_EQ(0, (uint32_t)kstrchr(s, 'x'));
+  KEXPECT_EQ(s, kstrchr(s, '/'));
+  KEXPECT_EQ(s+1, kstrchr(s, 'a'));
+  KEXPECT_EQ((const char*)0, kstrchr(s, 'x'));
 
   KTEST_BEGIN("kstrrchr()");
-  KEXPECT_EQ((uint32_t)(s+4), (uint32_t)kstrrchr(s, '/'));
-  KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrrchr(s, 'a'));
-  KEXPECT_EQ(0, (uint32_t)kstrrchr(s, 'x'));
+  KEXPECT_EQ(s+4, kstrrchr(s, '/'));
+  KEXPECT_EQ(s+1, kstrrchr(s, 'a'));
+  KEXPECT_EQ((const char*)0, kstrrchr(s, 'x'));
 
   KTEST_BEGIN("kstrchrnul()");
-  KEXPECT_EQ((uint32_t)s, (uint32_t)kstrchrnul(s, '/'));
-  KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrchrnul(s, 'a'));
-  KEXPECT_EQ((uint32_t)(s+8), (uint32_t)kstrchrnul(s, 'x'));
+  KEXPECT_EQ(s, kstrchrnul(s, '/'));
+  KEXPECT_EQ(s+1, kstrchrnul(s, 'a'));
+  KEXPECT_EQ(s+8, kstrchrnul(s, 'x'));
 
   KTEST_BEGIN("kmemcmp()");
   KEXPECT_EQ(0, kmemcmp("abc", "abc", 3));

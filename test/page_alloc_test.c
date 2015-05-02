@@ -51,11 +51,11 @@ void test_alloc_all(void) {
   KTEST_BEGIN("allocate all pages test");
 
   // This test will only work up to 100MB of ram.
-  const uint32_t MAX_PAGES = MAX_MEMORY * 1024 * 1024 / PAGE_SIZE;
+  const unsigned long MAX_PAGES = MAX_MEMORY * 1024 * 1024 / PAGE_SIZE;
   phys_addr_t* pages = kmalloc(sizeof(phys_addr_t) * MAX_PAGES);
   KASSERT(pages != 0x0);
 
-  uint32_t i = 0;
+  unsigned long i = 0;
   while (i < MAX_PAGES) {
     pages[i] = page_frame_alloc();
     if (!pages[i]) {
@@ -69,7 +69,7 @@ void test_alloc_all(void) {
 
   // Free all those pages we just allocated, in opposite order (for the hell of
   // it).
-  for (uint32_t i2 = 0; i2 < i; i2++) {
+  for (unsigned long i2 = 0; i2 < i; i2++) {
     page_frame_free_nocheck(pages[i2]);
   }
   kfree(pages);

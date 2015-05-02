@@ -28,7 +28,7 @@
 void KTEST_SUITE_BEGIN(const char* name);
 void KTEST_BEGIN(const char* name);
 
-void kexpect(uint32_t cond, const char* name, const char* astr,
+void kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line);

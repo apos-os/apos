@@ -19,7 +19,7 @@
 #define EXPECT_IN_TABLE(tbl, key, value) do { \
   void* _OUT; \
   KEXPECT_EQ(0, htbl_get(tbl, key, &_OUT)); \
-  KEXPECT_EQ(value, (uint32_t)_OUT); \
+  KEXPECT_EQ(value, (intptr_t)_OUT); \
 } while(0);
 
 static void do_table_test(htbl_t* tbl) {

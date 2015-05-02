@@ -392,7 +392,7 @@ static void create_process_group(pid_t* okA, pid_t* okB, pid_t* bad) {
 // expected to receive the SIGKILL as well).  If bit 2 is set, then the signal
 // is sent to pgid 0 (i.e. the current process group).
 static void create_group_then_kill(void* arg) {
-  uint32_t flags = (uint32_t)arg;
+  unsigned int flags = (unsigned int)arg;
 
   // Ensure we're not the superuser.
   KEXPECT_EQ(0, setuid(500));
