@@ -35,7 +35,7 @@ void die(const char* msg) {
 
   klog("Stack trace: \n");
   for (int i = 0; i < frames; ++i) {
-    klogf(" #%d %#zx\n", i, stack_trace[i]);
+    klogf(" #%d %#" PRIxADDR "\n", i, stack_trace[i]);
   }
 
   arch_die();

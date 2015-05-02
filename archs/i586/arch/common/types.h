@@ -30,4 +30,7 @@ typedef addr_t addrdiff_t;
 // An IO port address.
 typedef uint16_t ioport_t;
 
+#define PRIxADDR "zx"
+#define PRIuADDR "zu"
+
 #endif
