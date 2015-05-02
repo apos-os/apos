@@ -79,7 +79,7 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   if (*fmt == 'h' && *(fmt + 1) == 'h') {
     spec->length_mod = 'C';
     fmt += 2;
-  } else if (*fmt == 'h' || *fmt == 'l') {
+  } else if (*fmt == 'h' || *fmt == 'l' || *fmt == 'z') {
     spec->length_mod = *fmt;
     fmt++;
   }
@@ -154,6 +154,9 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
           case 'l':
             sint = va_arg(args, long);
             break;
+          case 'z':
+            sint = va_arg(args, ssize_t);
+            break;
           default:
             klogm(KL_GENERAL, DFATAL,
                   "invalid length modifier (shouldn't have been parsed)\n");
@@ -176,6 +179,9 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
             break;
           case 'l':
             uint = va_arg(args, unsigned long);
+            break;
+          case 'z':
+            uint = va_arg(args, size_t);
             break;
           default:
             klogm(KL_GENERAL, DFATAL,

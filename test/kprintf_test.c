@@ -273,6 +273,11 @@ static void kprintf_testF(void) {
   KEXPECT_STREQ("-00123", do_printf("%06lld", -123));
 #endif
 
+  KTEST_BEGIN("ksprintf(): 'z' modifier");
+  KEXPECT_STREQ("55", do_printf("%zi", 55));
+  KEXPECT_STREQ("-55", do_printf("%zi", -55));
+  KEXPECT_STREQ("55", do_printf("%zu", 55));
+
   KTEST_BEGIN("ksprintf(): bad length modifiers");
   KEXPECT_STREQ("u", do_printf("%qu", 5));
   KEXPECT_STREQ("h", do_printf("%h", 5));
