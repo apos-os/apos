@@ -28,8 +28,8 @@
 // TODO(aoates): clean this up and unify the one-shot and recurring timers.
 
 typedef struct {
-  uint32_t counter;
-  uint32_t period_slices;  // the timers period in units of timeslices
+  unsigned long counter;
+  unsigned long period_slices;  // the timers period in units of timeslices
   timer_handler_t handler;
   void* handler_arg;
   int limit;
@@ -42,7 +42,7 @@ typedef struct {
 // This is actually a linked list of timers, with static allocation to prevent a
 // dependency on kmalloc or slab_alloc.
 static timer_t timers[KMAX_TIMERS];
-static uint32_t num_timers = 0;
+static unsigned int num_timers = 0;
 static apos_ms_t time_ms = 0;  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
 
