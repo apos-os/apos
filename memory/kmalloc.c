@@ -246,7 +246,7 @@ void kmalloc_log_state() {
     if (cblock->free) {
       free += cblock->length;
     }
-    KLOG(INFO, "  %p < free: %d len: 0x%x prev: %p next: %p >\n",
+    KLOG(INFO, "  %p < free: %d len: 0x%zx prev: %p next: %p >\n",
          cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
     KLOG(DEBUG, "             < %x %x %x %x >\n",
          ((unsigned int*)(&cblock->data))[0],
@@ -256,8 +256,8 @@ void kmalloc_log_state() {
 
     cblock = cblock->next;
   }
-  KLOG(INFO, "total memory: 0x%x bytes (%u MB)\n", total, total / 1024 / 1024);
-  KLOG(INFO, "free memory: 0x%x bytes (%u MB)\n", free, free / 1024 / 1024);
+  KLOG(INFO, "total memory: 0x%zx bytes (%zu MB)\n", total, total / 1024 / 1024);
+  KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
 
 void kmalloc_log_heap_profile() {
@@ -273,13 +273,13 @@ void kmalloc_log_heap_profile() {
     cblock = cblock->next;
   }
 
-  KLOG(INFO, "heap profile:  %d:  %d [  %d:  %d] @ apos_heap/1\n",
+  KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ apos_heap/1\n",
        total_objects, total_bytes, total_objects, total_bytes);
 
   cblock = g_block_list;
   while (cblock) {
     if (!cblock->free) {
-      KLOG(INFO, " %d: %d [%d: %d] @", 1, cblock->length, 1, cblock->length);
+      KLOG(INFO, " %d: %zu [%d: %zu] @", 1, cblock->length, 1, cblock->length);
 #if ENABLE_KMALLOC_HEAP_PROFILE
       addr_t stack_trace[TRACETBL_MAX_TRACE_LEN];
       int len = tracetbl_get(cblock->stack_trace, stack_trace);
@@ -287,7 +287,7 @@ void kmalloc_log_heap_profile() {
         KLOG(INFO, " ??");
       } else {
         for (int i = 0; i < len; ++i) {
-          KLOG(INFO, " %#x", stack_trace[i]);
+          KLOG(INFO, " %#zx", stack_trace[i]);
         }
       }
 #endif

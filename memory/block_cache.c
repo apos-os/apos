@@ -201,7 +201,7 @@ static void free_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(entry->flushed);
   KASSERT_DBG(!entry->flushing);
 
-  KLOG(DEBUG2, "<block cache free block %d>\n", entry->pub.offset);
+  KLOG(DEBUG2, "<block cache free block %zu>\n", entry->pub.offset);
   g_size--;
   const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
   KASSERT(htbl_remove(&g_table, h) == 0);

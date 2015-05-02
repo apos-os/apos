@@ -105,12 +105,12 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
   if (!fault_allowed(area, type, op, mode)) {
     switch (mode) {
       case VM_FAULT_KERNEL:
-        KLOG(ERROR, "kernel page fault: addr: 0x%x\n", address);
+        KLOG(ERROR, "kernel page fault: addr: 0x%zx\n", address);
         die("unhandled kernel page fault");
         break;
 
       case VM_FAULT_USER:
-        KLOG(INFO, "SIGSEGV: bad access to address %#x (pid %d)\n", address,
+        KLOG(INFO, "SIGSEGV: bad access to address %#zx (pid %d)\n", address,
              proc->id);
         KASSERT(proc_force_signal_on_thread(
                 proc_current(), kthread_current_thread(), SIGSEGV) == 0);

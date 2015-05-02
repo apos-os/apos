@@ -111,7 +111,7 @@ static int is_user_interrupt(addr_t ebp) {
   const addr_t cs = *((addr_t*)ebp + 7);
   if (cs != segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) &&
       cs != segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL)) {
-    klogf("unknown code segment: 0x%x\n", cs);
+    klogf("unknown code segment: %#zx\n", cs);
     die("unknown code segment");
   }
   const int is_user = (cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));

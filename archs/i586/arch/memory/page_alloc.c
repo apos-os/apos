@@ -55,7 +55,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   const addr_t stack_end = next_page(meminfo->kernel_end_virt) + stack_size;
   KASSERT_MSG(meminfo->mapped_end >= stack_end,
               "Not enough memory in kernel-mapped region for free page stack "
-              "(mapped region goes to %#x, stack would go to %#x)",
+              "(mapped region goes to %#zx, stack would go to %#zx",
               meminfo->mapped_end, stack_end);
 
   // The stack will live directly above the kernel (at the next page boundary).
