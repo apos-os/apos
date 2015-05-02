@@ -23,13 +23,14 @@
 // A single printf component in the format string.
 typedef struct {
   // Flags.
-  int zero_flag;
-  int space_flag;
-  int plus_flag;
-  int left_justify;
-  int alternate_flag;
+  bool zero_flag;
+  bool space_flag;
+  bool plus_flag;
+  bool left_justify_flag;
+  bool alternate_flag;
 
   int field_width;
+  char length_mod;  // 'C' for 'hh', 'Q' for 'll'.
   char type;
 } printf_spec_t;
 
@@ -48,20 +49,21 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   KASSERT(*fmt == '%');
   fmt++;
 
-  spec->zero_flag = 0;
-  spec->space_flag = 0;
+  spec->zero_flag = false;
+  spec->space_flag = false;
   spec->field_width = 0;
-  spec->plus_flag = 0;
-  spec->left_justify = 0;
-  spec->alternate_flag = 0;
+  spec->plus_flag = false;
+  spec->left_justify_flag = false;
+  spec->alternate_flag = false;
+  spec->length_mod = ' ';
 
   // Parse flags.
   while (*fmt && is_flag(*fmt)) {
-    if (*fmt == '0') spec->zero_flag = 1;
-    else if (*fmt == ' ') spec->space_flag = 1;
-    else if (*fmt == '+') spec->plus_flag = 1;
-    else if (*fmt == '-') spec->left_justify = 1;
-    else if (*fmt == '#') spec->alternate_flag = 1;
+    if (*fmt == '0') spec->zero_flag = true;
+    else if (*fmt == ' ') spec->space_flag = true;
+    else if (*fmt == '+') spec->plus_flag = true;
+    else if (*fmt == '-') spec->left_justify_flag = true;
+    else if (*fmt == '#') spec->alternate_flag = true;
     fmt++;
   }
 
@@ -69,6 +71,16 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   while (*fmt && is_digit(*fmt)) {
     spec->field_width *= 10;
     spec->field_width += *fmt - '0';
+    fmt++;
+  }
+
+  if (!*fmt) return -1;
+
+  if (*fmt == 'h' && *(fmt + 1) == 'h') {
+    spec->length_mod = 'C';
+    fmt += 2;
+  } else if (*fmt == 'h' || *fmt == 'l') {
+    spec->length_mod = *fmt;
     fmt++;
   }
 
@@ -104,55 +116,89 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     }
 
     const char* s;
-    unsigned int uint;
-    int sint;
+    unsigned long uint;
+    long sint;
     void* ptr;
     char chr[2];
 
-    int numeric = 1;
-    int positive_number = 0;
+    bool numeric = true;
+    bool positive_number = false;
     const char* prefix = "";
 
     switch (spec.type) {
       case '%':
         s = "%";
-        numeric = 0;
+        numeric = false;
         break;
 
       case 's':
         s = va_arg(args, const char*);
-        numeric = 0;
+        numeric = false;
         break;
 
       case 'c':
         chr[0] = (char)va_arg(args, int);
         chr[1] = '\0';
         s = chr;
-        numeric = 0;
+        numeric = false;
         break;
 
       case 'd':
       case 'i':
-        sint = va_arg(args, int);
+        switch (spec.length_mod) {
+          case ' ':
+          case 'C':
+          case 'h':
+            sint = va_arg(args, int);
+            break;
+          case 'l':
+            sint = va_arg(args, long);
+            break;
+          default:
+            klogm(KL_GENERAL, DFATAL,
+                  "invalid length modifier (shouldn't have been parsed)\n");
+            sint = 0;
+            break;
+        }
+
         positive_number = sint >= 0;
         s = itoa(sint);
         break;
 
       case 'u':
-        uint = va_arg(args, unsigned int);
-        s = utoa(uint);
-        break;
-
       case 'x':
-        uint = va_arg(args, unsigned int);
-        s = utoa_hex_lower(uint);
-        if (uint != 0 && spec.alternate_flag) prefix = "0x";
-        break;
-
       case 'X':
-        uint = va_arg(args, unsigned int);
-        s = utoa_hex(uint);
-        if (uint != 0 && spec.alternate_flag) prefix = "0X";
+        switch (spec.length_mod) {
+          case ' ':
+          case 'C':
+          case 'h':
+            uint = va_arg(args, unsigned int);
+            break;
+          case 'l':
+            uint = va_arg(args, unsigned long);
+            break;
+          default:
+            klogm(KL_GENERAL, DFATAL,
+                  "invalid length modifier (shouldn't have been parsed)\n");
+            uint = 0;
+            break;
+        }
+
+        switch (spec.type) {
+          case 'u':
+            s = utoa(uint);
+            break;
+
+          case 'x':
+            s = utoa_hex_lower(uint);
+            if (uint != 0 && spec.alternate_flag) prefix = "0x";
+            break;
+
+          case 'X':
+            s = utoa_hex(uint);
+            if (uint != 0 && spec.alternate_flag) prefix = "0X";
+            break;
+        }
         break;
 
       case 'p':
@@ -192,7 +238,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     len += kstrlen(prefix);
 
     // Left space padding.
-    if (!spec.left_justify && (!spec.zero_flag || !numeric)) {
+    if (!spec.left_justify_flag && (!spec.zero_flag || !numeric)) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
     }
 
@@ -203,7 +249,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     while (*prefix) *str++ = *prefix++;
 
     // Zero padding.
-    if (!spec.left_justify && spec.zero_flag && numeric) {
+    if (!spec.left_justify_flag && spec.zero_flag && numeric) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = '0';
     }
 
@@ -211,7 +257,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     while (*s) *str++ = *s++;
 
     // Second space padding.
-    if (spec.left_justify) {
+    if (spec.left_justify_flag) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
     }
 

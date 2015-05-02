@@ -234,6 +234,54 @@ static void kprintf_testE(void) {
   KEXPECT_STREQ("x  ", do_printf("%-3c", 'x'));
 }
 
+static void kprintf_testF(void) {
+  KTEST_BEGIN("ksprintf(): 'hh' modifier");
+  KEXPECT_STREQ("23", do_printf("%hhi", (char)23));
+  KEXPECT_STREQ("-10", do_printf("%hhi", (char)-10));
+  KEXPECT_STREQ("-26", do_printf("%hhi", (char)230));
+  KEXPECT_STREQ("230", do_printf("%hhu", (unsigned char)230));
+  KEXPECT_STREQ("44", do_printf("%hhu", (unsigned char)300));
+
+  KTEST_BEGIN("ksprintf(): 'h' modifier");
+  KEXPECT_STREQ("16000", do_printf("%hi", (short)16000));
+  KEXPECT_STREQ("-16000", do_printf("%hi", (short)-16000));
+  KEXPECT_STREQ("-13536", do_printf("%hi", (short)52000));
+  KEXPECT_STREQ("52000", do_printf("%hu", (unsigned short)52000));
+  KEXPECT_STREQ("4464", do_printf("%hu", (unsigned short)70000));
+
+  KTEST_BEGIN("ksprintf(): 'l' modifier");
+  KEXPECT_STREQ("2147483600", do_printf("%li", 2147483600L));
+  KEXPECT_STREQ("2147483600", do_printf("%lu", 2147483600L));
+  KEXPECT_STREQ("-2147483600", do_printf("%li", -2147483600L));
+  KEXPECT_STREQ("-1294967296", do_printf("%li", (long)3000000000L));
+  KEXPECT_STREQ("2147483600", do_printf("%lu", 2147483600UL));
+  KEXPECT_STREQ("3000000000", do_printf("%lu", 3000000000UL));
+  KEXPECT_STREQ("705032704", do_printf("%lu", (unsigned long)5000000000));
+  KEXPECT_STREQ("-00123", do_printf("%06ld", -123));
+
+  // TODO(aoates): implement 'll' support.
+#if 0
+  KTEST_BEGIN("ksprintf(): 'll' modifier");
+  KEXPECT_STREQ("9223372036854775807", do_printf("%lli", 9223372036854775807));
+  KEXPECT_STREQ("9223372036854775807", do_printf("%llu", 9223372036854775807));
+  KEXPECT_STREQ("18446744073709551615",
+                do_printf("%llu", 18446744073709551615U));
+  KEXPECT_STREQ("-9223372036854775807",
+                do_printf("%lli", -9223372036854775807));
+  KEXPECT_STREQ("9223372036854775807",
+                do_printf("%lli", (long long)9223372036854775807));
+  KEXPECT_STREQ("-00123", do_printf("%06lld", -123));
+#endif
+
+  KTEST_BEGIN("ksprintf(): bad length modifiers");
+  KEXPECT_STREQ("u", do_printf("%qu", 5));
+  KEXPECT_STREQ("h", do_printf("%h", 5));
+  KEXPECT_STREQ("l", do_printf("%l", 5));
+  KEXPECT_STREQ("", do_printf("%hhh", 5));
+  KEXPECT_STREQ("u", do_printf("%lhu", 5));
+  KEXPECT_STREQ("u", do_printf("%hlu", 5));
+}
+
 void kprintf_test(void) {
   KTEST_SUITE_BEGIN("kprintf");
   kprintf_testA();
@@ -241,4 +289,5 @@ void kprintf_test(void) {
   kprintf_testC();
   kprintf_testD();
   kprintf_testE();
+  kprintf_testF();
 }

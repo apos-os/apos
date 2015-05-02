@@ -65,7 +65,7 @@ void test_alloc_all(void) {
   }
 
   KEXPECT_LT(i, MAX_PAGES);
-  KLOG("total allocated pages: %d (%d bytes)\n", i, i * PAGE_SIZE);
+  KLOG("total allocated pages: %lu (%lu bytes)\n", i, i * PAGE_SIZE);
 
   // Free all those pages we just allocated, in opposite order (for the hell of
   // it).

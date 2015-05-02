@@ -600,7 +600,7 @@ static int cbfs_lookup(vnode_t* parent, const char* name) {
   int result = get_inode(cfs, parent->num, &generated_inode, &parent_inode);
   if (result) {
     klogfm(KL_VFS, WARNING,
-           "cbfs: unable to get parent inode in cbfs_lookup(): %s\n", result);
+           "cbfs: unable to get parent inode in cbfs_lookup(): %d\n", result);
     return result;
   }
 

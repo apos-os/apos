@@ -25,7 +25,7 @@
 static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
   KASSERT(key == vnode_hash_n(vnode));
-  KLOG(INFO, "  0x%x { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
+  KLOG(INFO, "  %p { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
        vnode, vnode->fs->id, vnode->num, VNODE_TYPE_NAME[vnode->type],
        vnode->len, vnode->refcount);
 }

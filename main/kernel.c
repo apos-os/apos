@@ -178,7 +178,7 @@ void kmain(memory_info_t* meminfo) {
 
   const pid_t shell_pid = proc_fork(&kshell_trampoline, 0x0);
   if (shell_pid < 0) {
-    klogf("proc_fork error: %d\n", errorname(-shell_pid));
+    klogf("proc_fork error: %s\n", errorname(-shell_pid));
     die("unable to fork process 0 to create kshell");
   }
 
