@@ -30,6 +30,7 @@ typedef struct {
   bool alternate_flag;
 
   int field_width;
+  char length_mod;  // 'C' for 'hh', 'Q' for 'll'.
   char type;
 } printf_spec_t;
 
@@ -54,6 +55,7 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   spec->plus_flag = false;
   spec->left_justify_flag = false;
   spec->alternate_flag = false;
+  spec->length_mod = ' ';
 
   // Parse flags.
   while (*fmt && is_flag(*fmt)) {
@@ -69,6 +71,16 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   while (*fmt && is_digit(*fmt)) {
     spec->field_width *= 10;
     spec->field_width += *fmt - '0';
+    fmt++;
+  }
+
+  if (!*fmt) return -1;
+
+  if (*fmt == 'h' && *(fmt + 1) == 'h') {
+    spec->length_mod = 'C';
+    fmt += 2;
+  } else if (*fmt == 'h' || *fmt == 'l') {
+    spec->length_mod = *fmt;
     fmt++;
   }
 
@@ -104,8 +116,8 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     }
 
     const char* s;
-    unsigned int uint;
-    int sint;
+    unsigned long uint;
+    long sint;
     void* ptr;
     char chr[2];
 
@@ -133,26 +145,60 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
       case 'd':
       case 'i':
-        sint = va_arg(args, int);
+        switch (spec.length_mod) {
+          case ' ':
+          case 'C':
+          case 'h':
+            sint = va_arg(args, int);
+            break;
+          case 'l':
+            sint = va_arg(args, long);
+            break;
+          default:
+            klogm(KL_GENERAL, DFATAL,
+                  "invalid length modifier (shouldn't have been parsed)\n");
+            sint = 0;
+            break;
+        }
+
         positive_number = sint >= 0;
         s = itoa(sint);
         break;
 
       case 'u':
-        uint = va_arg(args, unsigned int);
-        s = utoa(uint);
-        break;
-
       case 'x':
-        uint = va_arg(args, unsigned int);
-        s = utoa_hex_lower(uint);
-        if (uint != 0 && spec.alternate_flag) prefix = "0x";
-        break;
-
       case 'X':
-        uint = va_arg(args, unsigned int);
-        s = utoa_hex(uint);
-        if (uint != 0 && spec.alternate_flag) prefix = "0X";
+        switch (spec.length_mod) {
+          case ' ':
+          case 'C':
+          case 'h':
+            uint = va_arg(args, unsigned int);
+            break;
+          case 'l':
+            uint = va_arg(args, unsigned long);
+            break;
+          default:
+            klogm(KL_GENERAL, DFATAL,
+                  "invalid length modifier (shouldn't have been parsed)\n");
+            uint = 0;
+            break;
+        }
+
+        switch (spec.type) {
+          case 'u':
+            s = utoa(uint);
+            break;
+
+          case 'x':
+            s = utoa_hex_lower(uint);
+            if (uint != 0 && spec.alternate_flag) prefix = "0x";
+            break;
+
+          case 'X':
+            s = utoa_hex(uint);
+            if (uint != 0 && spec.alternate_flag) prefix = "0X";
+            break;
+        }
         break;
 
       case 'p':
