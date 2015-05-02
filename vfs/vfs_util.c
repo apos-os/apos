@@ -39,7 +39,7 @@ static void vfs_print_vnode_cache_iter(void* arg, uint32_t key, void* val) {
   KASSERT_DBG(key == vnode_hash_n(vnode));
   char buf[1024];
   const int printlen = ksprintf(
-      buf, "  0x%x { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
+      buf, "  %p { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
       vnode, vnode->fs->id, vnode->num, VNODE_TYPE_NAME[vnode->type],
       vnode->len, vnode->refcount);
 

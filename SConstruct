@@ -89,6 +89,8 @@ env = base_env.Clone()
 env.Append(CFLAGS = Split("-Wframe-larger-than=1500 -nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
+  # TODO(aoates): get format-string checking to work with both GCC and clang.
+  env.Append(CFLAGS = Split("-Wno-format"))
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 

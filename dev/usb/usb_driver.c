@@ -317,7 +317,7 @@ static void usb_set_address(usb_init_state_t* state) {
     return;
   }
 
-  KLOG(DEBUG, "USB assigning address %d to device %x\n",
+  KLOG(DEBUG, "USB assigning address %d to device %p\n",
        state->address, state->dev);
 
   state->request = usb_alloc_request();
@@ -353,7 +353,7 @@ static void usb_set_address_done(usb_irp_t* irp, void* arg) {
   }
   KASSERT(irp->outlen == 0);
 
-  KLOG(DEBUG, "SET_ADDRESS for device %x successful\n", state->dev);
+  KLOG(DEBUG, "SET_ADDRESS for device %p successful\n", state->dev);
 
   KASSERT(state->dev->address == USB_DEFAULT_ADDRESS);
   KASSERT(state->dev->bus->default_address_in_use);
@@ -369,7 +369,7 @@ static void usb_get_device_desc(usb_init_state_t* state) {
   KASSERT(state->dev->state == USB_DEV_ADDRESS);
   KASSERT(state->dev->address != USB_DEFAULT_ADDRESS);
 
-  KLOG(DEBUG, "USB getting device descriptor for device %x\n", state->dev);
+  KLOG(DEBUG, "USB getting device descriptor for device %p\n", state->dev);
 
   usb_make_GET_DESCRIPTOR(state->request,
                           USB_DESC_DEVICE, 0, sizeof(usb_desc_dev_t));
@@ -402,7 +402,7 @@ static void usb_get_device_desc_done(usb_irp_t* irp, void* arg) {
 
   // TODO(aoates): process descriptor (e.g. max packet size, etc).
 
-  KLOG(DEBUG2, "USB read device descriptor for device %x:\n", state->dev);
+  KLOG(DEBUG2, "USB read device descriptor for device %p:\n", state->dev);
   usb_print_desc_dev(DEBUG2, &state->dev->dev_desc);
 
   KASSERT(state->dev->dev_desc.bNumConfigurations > 0);
@@ -416,7 +416,7 @@ static void usb_get_config_desc(usb_init_state_t* state) {
   KASSERT_DBG(state->dev->address != USB_DEFAULT_ADDRESS);
   KASSERT(state->next_config_idx < kNumConfigs);
 
-  KLOG(DEBUG, "USB getting config descriptor #%d for device %x\n",
+  KLOG(DEBUG, "USB getting config descriptor #%d for device %p\n",
        state->next_config_idx, state->dev);
 
   // If it doesn't already exist, allocate the configuration descriptor array.
@@ -461,7 +461,7 @@ static void usb_get_config_desc_done(usb_irp_t* irp, void* arg) {
     return;
   }
 
-  KLOG(DEBUG, "USB read %d bytes of config descriptor for device %x\n",
+  KLOG(DEBUG, "USB read %d bytes of config descriptor for device %p\n",
        state->irp.outlen, state->dev);
 
   KASSERT_DBG(state->dev->configs[state->next_config_idx].desc == 0x0);

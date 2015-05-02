@@ -31,7 +31,7 @@ static pid_t child_pid = -1;
 static void basic_child_func(void* arg) {
   KEXPECT_EQ(0x1234, (uint32_t)arg);
   char cwd[VFS_MAX_PATH_LENGTH];
-  KLOG("child proc:  id: %d  arg: %d\n", proc_current()->id, arg);
+  KLOG("child proc:  id: %d  arg: %p\n", proc_current()->id, arg);
   vfs_getcwd(cwd, VFS_MAX_PATH_LENGTH);
   KLOG("child proc:  cwd: %s\n", cwd);
 

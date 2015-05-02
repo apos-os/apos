@@ -103,7 +103,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   list_link_t* link = proc->vm_area_list.head;
   while (link && offset < buflen) {
     vm_area_t* area = container_of(link, vm_area_t, vm_proc_list);
-    ksprintf(tbuf, "< start: 0x%x  end: 0x%x  memobj: 0x%x >\n", area->vm_base,
+    ksprintf(tbuf, "< start: 0x%x  end: 0x%x  memobj: %p >\n", area->vm_base,
              area->vm_base + area->vm_length, area->memobj);
     kstrncpy(buf + offset, tbuf, buflen - offset);
     offset += kstrlen(tbuf);

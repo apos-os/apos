@@ -97,9 +97,9 @@ static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
       if (expected[idx].fd >= 0) {
         KEXPECT_EQ(memobj, area->memobj);
       }
-      KLOG("FAILURE:\n expected: <base: 0x%x  len: 0x%x  memobj: 0x%x>\n",
+      KLOG("FAILURE:\n expected: <base: 0x%x  len: 0x%x  memobj: %p>\n",
            expected[idx].base, expected[idx].length, memobj);
-      KLOG(" found:    <base: 0x%x  len: 0x%x  memobj: 0x%x>\n",
+      KLOG(" found:    <base: 0x%x  len: 0x%x  memobj: %p>\n",
            area->vm_base, area->vm_length, area->memobj);
       return;
     }

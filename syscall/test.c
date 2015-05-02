@@ -19,7 +19,7 @@ long do_syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                      long arg6) {
   const long args[] = { arg1, arg2, arg3, arg4, arg5, arg6 };
   uint32_t hash = fnv_hash_array(args, sizeof(long) * 6);
-  klogf("SYSCALL(test): %d, %d, %d, %d, %d, %d --> %d\n",
+  klogf("SYSCALL(test): %ld, %ld, %ld, %ld, %ld, %ld --> %d\n",
         arg1, arg2, arg3, arg4, arg5, arg6, hash);
   return hash;
 }

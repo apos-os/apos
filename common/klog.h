@@ -41,11 +41,12 @@ typedef enum {
 // Log the given string for the KL_GENERAL module.  Deprecated.
 // TODO(aoates): update all call sites for these functions to use klogfm().
 void klog(const char* s);
-void klogf(const char* fmt, ...);
+void klogf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 
 // Log the given string with the given module and log level.
 void klogm(klog_module_t module, klog_level_t level, const char* s);
-void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...);
+void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...)
+    __attribute__((format(printf, 3, 4)));
 
 // Set the current global log level.
 void klog_set_level(klog_level_t level);

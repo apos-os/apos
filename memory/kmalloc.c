@@ -246,7 +246,7 @@ void kmalloc_log_state() {
     if (cblock->free) {
       free += cblock->length;
     }
-    KLOG(INFO, "  0x%x < free: %d len: 0x%x prev: 0x%x next: 0x%x >\n",
+    KLOG(INFO, "  %p < free: %d len: 0x%x prev: %p next: %p >\n",
          cblock, cblock->free, cblock->length, cblock->prev, cblock->next);
     KLOG(DEBUG, "             < %x %x %x %x >\n",
          ((unsigned int*)(&cblock->data))[0],

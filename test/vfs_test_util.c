@@ -66,7 +66,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
       num_dirents++;
       buf_offset += ent->d_reclen;
 
-      KLOG("dirent: %d -> %s\n", ent->d_ino, ent->d_name);
+      KLOG("dirent: %ld -> %s\n", ent->d_ino, ent->d_name);
 
       // Ignore the root lost+found, dev, and proc directories.
       if (kstrcmp(ent->d_name, "lost+found") == 0 ||
@@ -85,7 +85,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
         }
       }
       if (i == expected_num) {
-        KLOG("Error: dirent <%d, %s> doesn't match any expected dirents\n",
+        KLOG("Error: dirent <%ld, %s> doesn't match any expected dirents\n",
              ent->d_ino, ent->d_name);
         return 1;
       }
