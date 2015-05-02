@@ -23,11 +23,11 @@
 // A single printf component in the format string.
 typedef struct {
   // Flags.
-  int zero_flag;
-  int space_flag;
-  int plus_flag;
-  int left_justify;
-  int alternate_flag;
+  bool zero_flag;
+  bool space_flag;
+  bool plus_flag;
+  bool left_justify_flag;
+  bool alternate_flag;
 
   int field_width;
   char type;
@@ -48,20 +48,20 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
   KASSERT(*fmt == '%');
   fmt++;
 
-  spec->zero_flag = 0;
-  spec->space_flag = 0;
+  spec->zero_flag = false;
+  spec->space_flag = false;
   spec->field_width = 0;
-  spec->plus_flag = 0;
-  spec->left_justify = 0;
-  spec->alternate_flag = 0;
+  spec->plus_flag = false;
+  spec->left_justify_flag = false;
+  spec->alternate_flag = false;
 
   // Parse flags.
   while (*fmt && is_flag(*fmt)) {
-    if (*fmt == '0') spec->zero_flag = 1;
-    else if (*fmt == ' ') spec->space_flag = 1;
-    else if (*fmt == '+') spec->plus_flag = 1;
-    else if (*fmt == '-') spec->left_justify = 1;
-    else if (*fmt == '#') spec->alternate_flag = 1;
+    if (*fmt == '0') spec->zero_flag = true;
+    else if (*fmt == ' ') spec->space_flag = true;
+    else if (*fmt == '+') spec->plus_flag = true;
+    else if (*fmt == '-') spec->left_justify_flag = true;
+    else if (*fmt == '#') spec->alternate_flag = true;
     fmt++;
   }
 
@@ -109,26 +109,26 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     void* ptr;
     char chr[2];
 
-    int numeric = 1;
-    int positive_number = 0;
+    bool numeric = true;
+    bool positive_number = false;
     const char* prefix = "";
 
     switch (spec.type) {
       case '%':
         s = "%";
-        numeric = 0;
+        numeric = false;
         break;
 
       case 's':
         s = va_arg(args, const char*);
-        numeric = 0;
+        numeric = false;
         break;
 
       case 'c':
         chr[0] = (char)va_arg(args, int);
         chr[1] = '\0';
         s = chr;
-        numeric = 0;
+        numeric = false;
         break;
 
       case 'd':
@@ -192,7 +192,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     len += kstrlen(prefix);
 
     // Left space padding.
-    if (!spec.left_justify && (!spec.zero_flag || !numeric)) {
+    if (!spec.left_justify_flag && (!spec.zero_flag || !numeric)) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
     }
 
@@ -203,7 +203,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     while (*prefix) *str++ = *prefix++;
 
     // Zero padding.
-    if (!spec.left_justify && spec.zero_flag && numeric) {
+    if (!spec.left_justify_flag && spec.zero_flag && numeric) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = '0';
     }
 
@@ -211,7 +211,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
     while (*s) *str++ = *s++;
 
     // Second space padding.
-    if (spec.left_justify) {
+    if (spec.left_justify_flag) {
       for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
     }
 
