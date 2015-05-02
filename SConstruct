@@ -23,7 +23,7 @@ if 'configure' in COMMAND_LINE_TARGETS:
 else:
   vars = Variables(CONFIG_CACHE_FILE)
 
-vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
+vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586', 'x86_64']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
@@ -83,6 +83,9 @@ base_env.SetDefault(CPPDEFINES = [])
 if base_env['DEBUG']:
   base_env.Append(CFLAGS = ['-g3'])
   base_env.Append(ASFLAGS = ['--gen-debug'])
+
+if base_env['ARCH'] == 'x86_64':
+  base_env.Append(CFLAGS = Split("-mcmodel=large -m64"))
 
 env = base_env.Clone()
 
