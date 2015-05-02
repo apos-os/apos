@@ -67,7 +67,7 @@ static void interruptable_helper(void* arg) {
   struct sigaction act = {&do_nothing_sig, 0, 0};
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, NULL));
   pid_t sleeper = proc_fork(&sleep_func, NULL);
-  const uint32_t start = get_time_ms();
+  const apos_ms_t start = get_time_ms();
   int result;
   if ((int)arg)
     result = proc_waitpid(-1, NULL, 0);
@@ -75,7 +75,7 @@ static void interruptable_helper(void* arg) {
     result = proc_wait(NULL);
   KEXPECT_EQ(0, proc_kill(sleeper, SIGKILL));
   KEXPECT_EQ(-EINTR, result);
-  const uint32_t end = get_time_ms();
+  const apos_ms_t end = get_time_ms();
   KEXPECT_LE(end - start, 200);
 }
 
@@ -127,9 +127,9 @@ static void wait_for_specific_pid_test(void) {
   KTEST_BEGIN("waitpid(): pid is child (not yet stopped)");
   child = proc_fork(&sleep_func, (void*)100);
   status = 5;
-  uint32_t start_ms = get_time_ms();
+  apos_ms_t start_ms = get_time_ms();
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
-  uint32_t end_ms = get_time_ms();
+  apos_ms_t end_ms = get_time_ms();
   KEXPECT_EQ(0, status);
   KEXPECT_GE(end_ms - start_ms, 30);
 
@@ -203,10 +203,10 @@ static void wait_for_pgroup_test(void) {
          proc_get(childB)->state == PROC_RUNNING)
     scheduler_yield();
   KEXPECT_EQ(PROC_RUNNING, proc_get(childC)->state);
-  uint32_t start_ms = get_time_ms();
+  apos_ms_t start_ms = get_time_ms();
   pid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
   pid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);
-  uint32_t end_ms = get_time_ms();
+  apos_ms_t end_ms = get_time_ms();
   KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
   KEXPECT_LE(end_ms - start_ms, 20);

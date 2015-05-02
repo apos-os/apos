@@ -188,7 +188,7 @@ void kthread_exit(void* x) {
 void kthread_switch(kthread_t new_thread) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread->state != KTHREAD_RUNNING);
-  uint32_t my_id = g_current_thread->id;
+  kthread_id_t my_id = g_current_thread->id;
 
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;

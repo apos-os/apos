@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <limits.h>
+
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "test/ktest.h"
@@ -74,6 +76,8 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("100", utoa(100));
   KEXPECT_STREQ("123", utoa(123));
   KEXPECT_STREQ("1234567890", utoa(1234567890));
+  KEXPECT_STREQ("4294967295", utoa(0xFFFFFFFF));
+  _Static_assert(UINT_MAX == 0xFFFFFFFF, "add 64-bit utoa() tests");
 
   KTEST_BEGIN("utoa_hex()");
   KEXPECT_STREQ("0", utoa_hex(0));
@@ -83,6 +87,8 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("12345", utoa_hex(0x12345));
   KEXPECT_STREQ("67890", utoa_hex(0x67890));
   KEXPECT_STREQ("ABCDEF0", utoa_hex(0xABCDEF0));
+  KEXPECT_STREQ("FFFFFFFF", utoa_hex(0xFFFFFFFF));
+  _Static_assert(UINT_MAX == 0xFFFFFFFF, "add 64-bit utoa_hex() tests");
 
   KTEST_BEGIN("utoa_hex_lower()");
   KEXPECT_STREQ("0", utoa_hex_lower(0));
@@ -102,6 +108,11 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("123", itoa(123));
   KEXPECT_STREQ("1234567890", itoa(1234567890));
   KEXPECT_STREQ("-1234567890", itoa(-1234567890));
+  KEXPECT_STREQ("2147483647", itoa(0x7FFFFFFF));
+  KEXPECT_STREQ("-2147483648", itoa(0x80000000));
+  // TODO(aoates): add 64-bit tests.
+  _Static_assert(INT_MAX == 0x7FFFFFFF, "add 64-bit itoa() tests");
+  _Static_assert(INT_MIN == (int)0x80000000, "add 64-bit itoa() tests");
 
   KTEST_BEGIN("itoa_hex()");
   KEXPECT_STREQ("0", itoa_hex(0));
@@ -112,6 +123,11 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("67890", itoa_hex(0x67890));
   KEXPECT_STREQ("ABCDEF0", itoa_hex(0xABCDEF0));
   KEXPECT_STREQ("-ABCDEF0", itoa_hex(-0xABCDEF0));
+  KEXPECT_STREQ("7FFFFFFF", itoa_hex(0x7FFFFFFF));
+  KEXPECT_STREQ("-80000000", itoa_hex(0x80000000));
+  // TODO(aoates): add 64-bit tests.
+  _Static_assert(INT_MAX == 0x7FFFFFFF, "add 64-bit itoa_hex() tests");
+  _Static_assert(INT_MIN == (int)0x80000000, "add 64-bit itoa_hex() tests");
 }
 
 static void kstring_testC(void) {
@@ -123,6 +139,9 @@ static void kstring_testC(void) {
   KEXPECT_EQ(7890, atoi("7890"));
   KEXPECT_EQ(-7890, atoi("-7890"));
   KEXPECT_EQ(-7890, atoi("-7890abc"));
+  KEXPECT_EQ(0x7FFFFFFF, atoi("2147483647"));
+  KEXPECT_EQ(-0x80000000, atoi("-2147483648"));
+  // TODO(aoates): add 64-bit tests.
 
   KTEST_BEGIN("atoi() -- hex");
   KEXPECT_EQ(0x10, atoi("0x10"));
@@ -131,6 +150,8 @@ static void kstring_testC(void) {
   KEXPECT_EQ(-0xABCDEF, atoi("-0xABCDEF"));
   KEXPECT_EQ(-0xABCDEF, atoi("-0XaBcDeF"));
   KEXPECT_EQ(0xABCDEF1, atoi("0xABCDEF1Q"));
+  KEXPECT_EQ(0x7FFFFFFF, atoi("0x7FFFFFFF"));
+  KEXPECT_EQ(-0x80000000, atoi("-0x80000000"));
 
   KTEST_BEGIN("atou()");
   KEXPECT_EQ(0, atou("0"));
@@ -138,32 +159,34 @@ static void kstring_testC(void) {
   KEXPECT_EQ(12345, atou("12345"));
   KEXPECT_EQ(7890, atou("7890"));
   KEXPECT_EQ(1234567890, atou("1234567890"));
-  KEXPECT_EQ(7890, atoi("7890abc"));
+  KEXPECT_EQ(7890, atou("7890abc"));
+  KEXPECT_EQ(0xFFFFFFFF, atou("4294967295"));
 
   KTEST_BEGIN("atou() -- hex");
   KEXPECT_EQ(0x10, atou("0x10"));
   KEXPECT_EQ(0x12345, atou("0x12345"));
   KEXPECT_EQ(0xABCDEF, atou("0xABCDEF"));
-  KEXPECT_EQ(0xABCDEF, atoi("0XaBcDeF"));
-  KEXPECT_EQ(0xABCDEF1, atoi("0xABCDEF1Q"));
+  KEXPECT_EQ(0xABCDEF, atou("0XaBcDeF"));
+  KEXPECT_EQ(0xABCDEF1, atou("0xABCDEF1Q"));
+  KEXPECT_EQ(0xFFFFFFFF, atou("0xFFFFFFFF"));
 }
 
 static void kstring_testD(char* buf) {
   KTEST_BEGIN("kstrchr()");
   const char* s = "/abc/def";
-  KEXPECT_EQ((uint32_t)s, (uint32_t)kstrchr(s, '/'));
-  KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrchr(s, 'a'));
-  KEXPECT_EQ(0, (uint32_t)kstrchr(s, 'x'));
+  KEXPECT_EQ(s, kstrchr(s, '/'));
+  KEXPECT_EQ(s+1, kstrchr(s, 'a'));
+  KEXPECT_EQ((const char*)0, kstrchr(s, 'x'));
 
   KTEST_BEGIN("kstrrchr()");
-  KEXPECT_EQ((uint32_t)(s+4), (uint32_t)kstrrchr(s, '/'));
-  KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrrchr(s, 'a'));
-  KEXPECT_EQ(0, (uint32_t)kstrrchr(s, 'x'));
+  KEXPECT_EQ(s+4, kstrrchr(s, '/'));
+  KEXPECT_EQ(s+1, kstrrchr(s, 'a'));
+  KEXPECT_EQ((const char*)0, kstrrchr(s, 'x'));
 
   KTEST_BEGIN("kstrchrnul()");
-  KEXPECT_EQ((uint32_t)s, (uint32_t)kstrchrnul(s, '/'));
-  KEXPECT_EQ((uint32_t)(s+1), (uint32_t)kstrchrnul(s, 'a'));
-  KEXPECT_EQ((uint32_t)(s+8), (uint32_t)kstrchrnul(s, 'x'));
+  KEXPECT_EQ(s, kstrchrnul(s, '/'));
+  KEXPECT_EQ(s+1, kstrchrnul(s, 'a'));
+  KEXPECT_EQ(s+8, kstrchrnul(s, 'x'));
 
   KTEST_BEGIN("kmemcmp()");
   KEXPECT_EQ(0, kmemcmp("abc", "abc", 3));

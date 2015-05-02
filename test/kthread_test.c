@@ -171,7 +171,7 @@ static void queue_test(void) {
   kthread_queue_t queue;
   kthread_queue_init(&queue);
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
-  KEXPECT_EQ(0, (uint32_t)kthread_queue_pop(&queue));
+  KEXPECT_EQ(NULL, kthread_queue_pop(&queue));
 
   kthread_queue_push(&queue, thread1);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
@@ -182,20 +182,20 @@ static void queue_test(void) {
   KEXPECT_EQ(&queue, thread2->queue);
 
   kthread_t popped = kthread_queue_pop(&queue);
-  KEXPECT_EQ(0x0, (uint32_t)popped->next);
-  KEXPECT_EQ(0x0, (uint32_t)popped->prev);
-  KEXPECT_EQ((void*)0x0, popped->queue);
-  KEXPECT_EQ((uint32_t)thread1, (uint32_t)popped);
+  KEXPECT_EQ(NULL, popped->next);
+  KEXPECT_EQ(NULL, popped->prev);
+  KEXPECT_EQ(NULL, popped->queue);
+  KEXPECT_EQ(thread1, popped);
   KEXPECT_EQ(0, kthread_queue_empty(&queue));
 
   popped = kthread_queue_pop(&queue);
-  KEXPECT_EQ(0x0, (uint32_t)popped->next);
-  KEXPECT_EQ(0x0, (uint32_t)popped->prev);
-  KEXPECT_EQ((void*)0x0, popped->queue);
-  KEXPECT_EQ((uint32_t)thread2, (uint32_t)popped);
+  KEXPECT_EQ(NULL, popped->next);
+  KEXPECT_EQ(NULL, popped->prev);
+  KEXPECT_EQ(NULL, popped->queue);
+  KEXPECT_EQ(thread2, popped);
   KEXPECT_EQ(1, kthread_queue_empty(&queue));
 
-  KEXPECT_EQ(0, (uint32_t)kthread_queue_pop(&queue));
+  KEXPECT_EQ(NULL, kthread_queue_pop(&queue));
 
   KTEST_BEGIN("kthread_queue_remove(): only element on list");
   kthread_queue_push(&queue, thread1);
@@ -261,8 +261,8 @@ static void queue_test(void) {
 }
 
 typedef struct {
-  uint32_t waiting;
-  uint32_t ran;
+  bool waiting;
+  bool ran;
   kthread_queue_t* queue;
   bool interruptable;
   long timeout;
@@ -502,9 +502,9 @@ static void scheduler_interrupt_timeout_test(void) {
     scheduler_make_runnable(thread1);
     while (!d1.waiting) scheduler_yield();
 
-    uint32_t start = get_time_ms();
+    apos_ms_t start = get_time_ms();
     for (int i = 0; i < 20 && !d1.ran; ++i) ksleep(20);
-    uint32_t end = get_time_ms();
+    apos_ms_t end = get_time_ms();
     KEXPECT_GE(end-start, 180);
     KEXPECT_LE(end-start, 250);
     KEXPECT_EQ(1, d1.ran);
@@ -523,7 +523,7 @@ static void scheduler_interrupt_timeout_test(void) {
     KEXPECT_EQ(&queue, thread1->queue);
     ksleep(100);
     scheduler_wake_all(&queue);
-    uint32_t start = get_time_ms();
+    apos_ms_t start = get_time_ms();
     for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
     KEXPECT_LE(get_time_ms() - start, 30);
     KEXPECT_EQ(1, d1.ran);
@@ -557,7 +557,7 @@ static void scheduler_interrupt_timeout_test(void) {
 
     KEXPECT_EQ(&queue, thread1->queue);
     scheduler_interrupt_thread(thread1);
-    uint32_t start = get_time_ms();
+    apos_ms_t start = get_time_ms();
     // Spin until the timeout (should have) fired.  We can't yield, since we
     // must ensure the thread we interrupted doesn't get a chance to run.
     while (get_time_ms() - start < 50);

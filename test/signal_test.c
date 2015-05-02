@@ -392,7 +392,7 @@ static void create_process_group(pid_t* okA, pid_t* okB, pid_t* bad) {
 // expected to receive the SIGKILL as well).  If bit 2 is set, then the signal
 // is sent to pgid 0 (i.e. the current process group).
 static void create_group_then_kill(void* arg) {
-  uint32_t flags = (uint32_t)arg;
+  unsigned int flags = (unsigned int)arg;
 
   // Ensure we're not the superuser.
   KEXPECT_EQ(0, setuid(500));
@@ -732,14 +732,14 @@ static void ksleep_interrupted_test(void) {
 
   int child = proc_fork(&ksleep_interrupted_func, (void*)200);
 
-  const int start_time = get_time_ms();
+  const apos_ms_t start_time = get_time_ms();
   ksleep(20);
 
   KEXPECT_EQ(0, proc_kill(child, SIGALRM));
 
   int exit_status = 0;
   KEXPECT_EQ(child, proc_wait(&exit_status));
-  const int end_time = get_time_ms();
+  const apos_ms_t end_time = get_time_ms();
 
   KEXPECT_GE(end_time - start_time, 20);
   KEXPECT_LE(end_time - start_time, 40);

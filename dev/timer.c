@@ -28,8 +28,8 @@
 // TODO(aoates): clean this up and unify the one-shot and recurring timers.
 
 typedef struct {
-  uint32_t counter;
-  uint32_t period_slices;  // the timers period in units of timeslices
+  unsigned long counter;
+  unsigned long period_slices;  // the timers period in units of timeslices
   timer_handler_t handler;
   void* handler_arg;
   int limit;
@@ -42,8 +42,8 @@ typedef struct {
 // This is actually a linked list of timers, with static allocation to prevent a
 // dependency on kmalloc or slab_alloc.
 static timer_t timers[KMAX_TIMERS];
-static uint32_t num_timers = 0;
-static uint32_t time_ms = 0;  // Time (in ms) since timer initialization.
+static unsigned int num_timers = 0;
+static apos_ms_t time_ms = 0;  // Time (in ms) since timer initialization.
 static int list_head = -1;  // Head (idx) of linked list.
 
 #if ENABLE_KERNEL_SAFETY_NETS
@@ -54,7 +54,7 @@ const int kEventTimerValidMagic = 0x52187AB;
 // For the event timers, we're allowed to used kmalloc(), so a true linked list
 // of timers.
 typedef struct {
-  uint32_t deadline_ms;
+  apos_ms_t deadline_ms;
   timer_handler_t handler;
   void* handler_arg;
 
@@ -128,7 +128,7 @@ void timer_init() {
   num_timers = 0;
 }
 
-int register_timer_callback(uint32_t period, int limit,
+int register_timer_callback(int period, int limit,
                             timer_handler_t cb, void* arg) {
   // TODO(aoates): disable interrupts!
   if (num_timers >= KMAX_TIMERS) {
@@ -165,7 +165,7 @@ int register_timer_callback(uint32_t period, int limit,
   return 0;
 }
 
-int register_event_timer(uint32_t deadline_ms, timer_handler_t cb, void* arg,
+int register_event_timer(apos_ms_t deadline_ms, timer_handler_t cb, void* arg,
                          timer_handle_t* handle) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
@@ -227,6 +227,6 @@ void cancel_all_event_timers_for_tests(void) {
   }
 }
 
-uint32_t get_time_ms() {
+apos_ms_t get_time_ms() {
   return time_ms;
 }

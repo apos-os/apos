@@ -52,8 +52,8 @@ static int list_length(block_t* lst) {
 
 // Returns the size (in bytes) of the list (including data and headers of each
 // element).
-static int list_size(block_t* lst) {
-  int len = 0;
+static size_t list_size(block_t* lst) {
+  size_t len = 0;
   while (lst) {
     len += sizeof(block_t);
     len += lst->length;
@@ -63,8 +63,8 @@ static int list_size(block_t* lst) {
 }
 
 // Return the DATA (no headers) size of all used space on the list.
-static int list_used_size(block_t* lst) {
-  int len = 0;
+static size_t list_used_size(block_t* lst) {
+  size_t len = 0;
   while (lst) {
     if (!lst->free) {
       len += lst->length;
@@ -81,8 +81,8 @@ static void macros_test(void) {
   block_t* block = (block_t*)&block_mem;
   block->length = 100;
 
-  KEXPECT_EQ((uint32_t)block, BLOCK_START(block));
-  KEXPECT_EQ((uint32_t)block + sizeof(block_t) + 100, BLOCK_END(block));
+  KEXPECT_EQ((addr_t)block, BLOCK_START(block));
+  KEXPECT_EQ((addr_t)block + sizeof(block_t) + 100, BLOCK_END(block));
   KEXPECT_EQ(sizeof(block_t) + 100, BLOCK_SIZE(block));
 }
 
@@ -91,9 +91,9 @@ static void init_test(void) {
 
   kmalloc_init();
   block_t* list = kmalloc_internal_get_block_list();
-  KEXPECT_NE(0, (uint32_t)list);
-  KEXPECT_EQ(0, (uint32_t)list->prev);
-  KEXPECT_EQ(0, (uint32_t)list->next);
+  KEXPECT_NE(NULL, list);
+  KEXPECT_EQ(NULL, list->prev);
+  KEXPECT_EQ(NULL, list->next);
   KEXPECT_EQ(HEAP_SIZE - sizeof(block_t), list->length);
   KEXPECT_EQ(1, list->free);
 }
@@ -103,7 +103,7 @@ static void basic_test(void) {
 
   kmalloc_init();
   void* x = kmalloc(100);
-  block_t* x_block = (block_t*)((uint32_t)x - sizeof(block_t));
+  block_t* x_block = (block_t*)((addr_t)x - sizeof(block_t));
   KEXPECT_EQ(0, x_block->free);
   KEXPECT_EQ(100, x_block->length);
 
@@ -111,7 +111,7 @@ static void basic_test(void) {
   block_t* list_root = kmalloc_internal_get_block_list();
   verify_list(list_root);
   KEXPECT_EQ(2, list_length(list_root));
-  KEXPECT_EQ((uint32_t)x_block, (uint32_t)list_root);
+  KEXPECT_EQ((addr_t)x_block, (addr_t)list_root);
   KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
   KEXPECT_EQ(100, list_used_size(list_root));
 
@@ -174,10 +174,10 @@ static void large_alloc_test(void) {
   kmalloc_log_state();
   verify_list(kmalloc_internal_get_block_list());
 
-  KEXPECT_NE(0x0, (uint32_t)x1);
-  KEXPECT_NE(0x0, (uint32_t)x2);
-  KEXPECT_NE(0x0, (uint32_t)x3);
-  KEXPECT_NE(0x0, (uint32_t)x4);
+  KEXPECT_NE(NULL, x1);
+  KEXPECT_NE(NULL, x2);
+  KEXPECT_NE(NULL, x3);
+  KEXPECT_NE(NULL, x4);
 
   if (x1 && x2 && x3 && x4) {
     kfree(x1);
@@ -197,7 +197,7 @@ static void tiny_alloc_test(void) {
   void* x[100];
   for (int i = 0; i < 100; ++i) {
     x[i] = kmalloc(i % 3 + 1);
-    KEXPECT_NE(0x0, (uint32_t)x[i]);
+    KEXPECT_NE(NULL, x[i]);
   }
   kmalloc_log_state();
   verify_list(kmalloc_internal_get_block_list());
@@ -296,7 +296,7 @@ static void interrupt_test(void) {
     for (int i = 0; i < 100; ++i) {
       x[i] = kmalloc(i % 3 + 1);
       if (!x[i]) {
-        KEXPECT_NE(0x0, (uint32_t)x[i]);
+        KEXPECT_NE(NULL, x[i]);
       }
     }
     verify_list(kmalloc_internal_get_block_list());
@@ -328,7 +328,7 @@ static void large_interrupt_test(void) {
   KTEST_BEGIN("kmalloc large interrupt safety test");
 
   const int kTestLengthMs = 10000;
-  const uint32_t start_time = get_time_ms();
+  const apos_ms_t start_time = get_time_ms();
 
   register_timer_callback(10, kTestLengthMs / 10,
                           &large_interrupt_test_timer_cb, 0x0);

@@ -40,8 +40,8 @@ void proc_alarm_init(proc_alarm_t* alarm) {
 }
 
 unsigned int proc_alarm_ms(unsigned int ms) {
-  uint32_t ctime = get_time_ms();
-  uint32_t deadline = ctime + ms;
+  apos_ms_t ctime = get_time_ms();
+  apos_ms_t deadline = ctime + ms;
   process_t* const proc = proc_current();
 
   PUSH_AND_DISABLE_INTERRUPTS();

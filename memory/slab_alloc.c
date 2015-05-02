@@ -138,7 +138,7 @@ void* slab_alloc(slab_alloc_t* s) {
   uint8_t* bitmap = get_bitmap(num_objects, s->pages[i]);
   int bitmap_idx = 0;
   while (bitmap[bitmap_idx] == 0x00) bitmap_idx++;
-  KASSERT((uint32_t)bitmap + bitmap_idx < (uint32_t)s->pages[i] + PAGE_SIZE);
+  KASSERT((addr_t)bitmap + bitmap_idx < (addr_t)s->pages[i] + PAGE_SIZE);
 
   // Get a free page from that 8-block.
   int obj_idx = bitmap_idx * 8;

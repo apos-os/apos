@@ -138,10 +138,7 @@ void rtc_to_string(char* buf, rtc_time_t* t) {
   buf[0] = '\0';
   uint8_t disp_hours = t->hours % 12;
   if (disp_hours == 0) disp_hours = 12;
-  ksprintf(buf, "%d/%d/%d %d:%d:%d %s",
-           (uint32_t)t->month, (uint32_t)t->day_of_month,
-           (uint32_t)(t->century * 100 + t->year),
-           (uint32_t)disp_hours, (uint32_t)t->minutes,
-           (uint32_t)t->seconds,
+  ksprintf(buf, "%d/%d/%d %d:%d:%d %s", t->month, t->day_of_month,
+           (t->century * 100 + t->year), disp_hours, t->minutes, t->seconds,
            t->hours < 12 ? "AM" : "PM");
 }

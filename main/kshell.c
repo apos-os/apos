@@ -650,7 +650,7 @@ static void cp_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  const uint32_t time_start = get_time_ms();
+  const apos_ms_t time_start = get_time_ms();
   size_t bytes_copied = 0;
   const int kBufSize = 900;
   char buf[kBufSize];
@@ -682,7 +682,7 @@ static void cp_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
   vfs_close(src_fd);
   vfs_close(dst_fd);
-  const uint32_t elapsed = get_time_ms() - time_start;
+  const apos_ms_t elapsed = get_time_ms() - time_start;
   ksh_printf("elapsed time: %d ms\n", elapsed);
   ksh_printf("bytes copied: %d\n", bytes_copied);
 }
@@ -716,7 +716,7 @@ static void hash_file_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  const uint32_t time_start = get_time_ms();
+  const apos_ms_t time_start = get_time_ms();
   const int result = vfs_seek(fd, start, VFS_SEEK_SET);
   if (result < 0) {
     ksh_printf("error: couldn't seek: %s\n", errorname(-result));
@@ -750,7 +750,7 @@ static void hash_file_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
   ksh_printf("hash: 0x%x\n", h);
   vfs_close(fd);
-  const uint32_t elapsed = get_time_ms() - time_start;
+  const apos_ms_t elapsed = get_time_ms() - time_start;
   ksh_printf("elapsed time: %d ms\n", elapsed);
 }
 
