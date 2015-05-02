@@ -16,7 +16,6 @@
 #define APOO_KSTRING_H
 
 #include <stddef.h>
-#include <stdint.h>
 
 // Clang will generate calls to memset(), so we must define it.
 #if defined(__clang__) && __clang__
@@ -36,16 +35,16 @@ char* kstrncpy(char* dst, const char* src, size_t n);
 
 char *kstrcat(char *dest, const char *src);
 
-const char* itoa(int32_t x);
-const char* itoa_hex(int32_t x);
+const char* itoa(int x);
+const char* itoa_hex(int x);
 
-const char* utoa(uint32_t x);
-const char* utoa_hex(uint32_t x);
-const char* utoa_hex_lower(uint32_t x);  // As above, but lower case.
+const char* utoa(unsigned int x);
+const char* utoa_hex(unsigned int x);
+const char* utoa_hex_lower(unsigned int x);  // As above, but lower case.
 
 // Note: these only support decimal.
-int32_t atoi(const char* s);
-uint32_t atou(const char* s);
+int atoi(const char* s);
+unsigned int atou(const char* s);
 
 const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);

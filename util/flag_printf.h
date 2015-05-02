@@ -30,6 +30,8 @@
 #ifndef APOO_UTIL_FLAG_PRINTF_H
 #define APOO_UTIL_FLAG_PRINTF_H
 
+#include <stdint.h>
+
 enum flag_spec_type {
   FLAG,   // A bit flag, which can be either on or off.
   FIELD,  // A bit-stuffed field, with an offset and mask.

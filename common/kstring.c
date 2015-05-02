@@ -112,7 +112,7 @@ static unsigned long abs(long x) {
   return x < 0 ? -x : x;
 }
 
-const char* itoa(int32_t x) {
+const char* itoa(int x) {
   static char buf[256];
   buf[0] = '\0';
 
@@ -123,7 +123,7 @@ const char* itoa(int32_t x) {
   return buf;
 }
 
-const char* itoa_hex(int32_t x) {
+const char* itoa_hex(int x) {
   static char buf[256];
   buf[0] = '\0';
 
@@ -136,7 +136,7 @@ const char* itoa_hex(int32_t x) {
 
 // Helper for utoa/utoa_hex that takes a number, a base, and a lookup table of
 // characters.
-static const char* utoa_internal(uint32_t x, uint32_t base, const char* tbl) {
+static const char* utoa_internal(unsigned int x, unsigned int base, const char* tbl) {
   static char buf[256];
   int i = 0;
   if (x == 0) {
@@ -158,23 +158,23 @@ static const char* utoa_internal(uint32_t x, uint32_t base, const char* tbl) {
   return buf;
 }
 
-const char* utoa(uint32_t x) {
+const char* utoa(unsigned int x) {
   return utoa_internal(x, 10, "0123456789");
 }
 
-const char* utoa_hex(uint32_t x) {
+const char* utoa_hex(unsigned int x) {
   return utoa_internal(x, 16, "0123456789ABCDEF");
 }
 
-const char* utoa_hex_lower(uint32_t x) {
+const char* utoa_hex_lower(unsigned int x) {
   return utoa_internal(x, 16, "0123456789abcdef");
 }
 
-static uint32_t atou_internal_base(const char* s, int base) {
+static unsigned int atou_internal_base(const char* s, int base) {
   if (base != 10 && base != 16) {
     return 0;
   }
-  uint32_t out = 0;
+  unsigned int out = 0;
   while (*s) {
     int digit = 0;
     if (*s >= '0' && *s <= '9') {
@@ -193,7 +193,7 @@ static uint32_t atou_internal_base(const char* s, int base) {
   return out;
 }
 
-static uint32_t atou_internal(const char* s) {
+static unsigned int atou_internal(const char* s) {
   if (kstrncmp(s, "0x", 2) == 0 ||
       kstrncmp(s, "0X", 2) == 0) {
     return atou_internal_base(s + 2, 16);
@@ -202,15 +202,15 @@ static uint32_t atou_internal(const char* s) {
   }
 }
 
-int32_t atoi(const char* s) {
+int atoi(const char* s) {
   if (*s == '-') {
-    return -(int32_t)atou_internal(s+1);
+    return -(int)atou_internal(s+1);
   } else {
-    return (int32_t)atou_internal(s);
+    return (int)atou_internal(s);
   }
 }
 
-uint32_t atou(const char* s) {
+unsigned int atou(const char* s) {
   return atou_internal(s);
 }
 
