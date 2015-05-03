@@ -51,7 +51,7 @@ case {{ common.syscall_constant(syscall) }}:
 {%- endfor -%}
 
 {% for arg_type in arg_types %}
-_Static_assert(sizeof({{ arg_type }}) == sizeof(long),
+_Static_assert(sizeof({{ arg_type }}) <= sizeof(long),
     "invalid argument type: {{ arg_type }} (sizeof({{ arg_type }}) != sizeof(long))");
 {% endfor %}
 
