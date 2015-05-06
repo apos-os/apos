@@ -80,7 +80,7 @@ static void do_table_test(htbl_t* tbl) {
 
   KTEST_BEGIN("cleanup test");
   // Add a bunch of nodes (twice per key) then don't remove them.
-  for (int i = 0; i < 100; ++i) {
+  for (intptr_t i = 0; i < 100; ++i) {
     htbl_put(tbl, i, (void*)i);
     htbl_put(tbl, i, (void*)i);
   }

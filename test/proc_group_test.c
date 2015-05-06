@@ -43,7 +43,7 @@ static void basic_getgpid_test(void) {
 
 // Fork and run the given the given function in the child, and wait for it to
 // exit.
-static void fork_and_run(proc_func_t f, int arg) {
+static void fork_and_run(proc_func_t f, intptr_t arg) {
   int child_pid = proc_fork(f, (void*)arg);
   KEXPECT_EQ(child_pid, proc_wait(0x0));
 }

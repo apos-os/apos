@@ -92,7 +92,7 @@ static void set_pgid_across_sessions_test(void* arg) {
   const pid_t orig_pgroup = getpgid(0);
 
   KEXPECT_EQ(proc_current()->id, proc_setsid());
-  pid_t child = proc_fork(&child_set_pgid, (void*)orig_pgroup);
+  pid_t child = proc_fork(&child_set_pgid, (void*)(intptr_t)orig_pgroup);
   KEXPECT_EQ(-EPERM, setpgid(child, orig_pgroup));
   KEXPECT_EQ(child, proc_wait(NULL));
   KEXPECT_EQ(orig_session, proc_group_get(orig_pgroup)->session);
@@ -347,23 +347,25 @@ static void ctty_test(void* arg) {
   ld_t* const test_ld = ld_create(100);
   const apos_dev_t test_tty = tty_create(test_ld);
 
-  pid_t child = proc_fork(&do_open_ctty, (void*)test_tty);
+  pid_t child = proc_fork(&do_open_ctty, (void*)(intptr_t)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
 
-  child = proc_fork(&do_open_another_ctty_test, (void*)test_tty);
+  child = proc_fork(&do_open_another_ctty_test, (void*)(intptr_t)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  child = proc_fork(&open_second_tty, (void*)test_tty);
+  child = proc_fork(&open_second_tty, (void*)(intptr_t)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  child = proc_fork(&non_leader_exit_doesnt_release_ctty, (void*)test_tty);
+  child = proc_fork(&non_leader_exit_doesnt_release_ctty,
+                    (void*)(intptr_t) test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  child = proc_fork(&non_leader_open_doesnt_set_ctty, (void*)test_tty);
+  child =
+      proc_fork(&non_leader_open_doesnt_set_ctty, (void*)(intptr_t) test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  child = proc_fork(&no_ctty_flag, (void*)test_tty);
+  child = proc_fork(&no_ctty_flag, (void*)(intptr_t)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);
@@ -786,7 +788,7 @@ static void read_from_bg_test(void* arg) {
   ld_t* const test_ld = ld_create(1);
   apos_dev_t test_tty = tty_create(test_ld);
 
-  pid_t child = proc_fork(&read_from_bg_test_inner, (void*)test_tty);
+  pid_t child = proc_fork(&read_from_bg_test_inner, (void*)(intptr_t)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);
@@ -831,7 +833,7 @@ static void write_from_bg_test(void* arg) {
   apos_dev_t test_tty = tty_create(test_ld);
   ld_set_sink(test_ld, null_sink, NULL);
 
-  pid_t child = proc_fork(&write_from_bg_test_inner, (void*)test_tty);
+  pid_t child = proc_fork(&write_from_bg_test_inner, (void*)(intptr_t)test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);
@@ -949,7 +951,8 @@ static void write_from_bg_tostop_test(void* arg) {
   term.c_lflag |= TOSTOP;
   KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
 
-  pid_t child = proc_fork(&write_from_bg_tostop_test_inner, (void*)test_tty);
+  pid_t child =
+      proc_fork(&write_from_bg_tostop_test_inner, (void*)(intptr_t) test_tty);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   tty_destroy(test_tty);

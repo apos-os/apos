@@ -105,7 +105,7 @@ static void* join_test_func(void* arg) {
   scheduler_yield();
   scheduler_yield();
   if (t) {
-    return (void*)((int)kthread_join(t) + 1);
+    return (void*)((intptr_t)kthread_join(t) + 1);
   } else {
     return 0;
   }
@@ -131,14 +131,14 @@ static void join_chain_test(void) {
 
 // Similar to above, but *create* the next thread in the sequence.
 static void* join_test2_func(void* arg) {
-  int x = (int)arg;
+  intptr_t x = (intptr_t)arg;
   if (!x) {
     return 0;
   }
   kthread_t next;
   KASSERT(kthread_create(&next, &join_test2_func, (void*)(x-1)) == 0);
   scheduler_make_runnable(next);
-  return (void*)(1 + (int)kthread_join(next));
+  return (void*)(1 + (intptr_t)kthread_join(next));
 }
 
 // Chain together a bunch of joined threads.  This time, each thread CREATES the
@@ -272,7 +272,7 @@ typedef struct {
 static void* queue_test_func(void* arg) {
   queue_test_funct_data_t* d = (queue_test_funct_data_t*)arg;
   d->waiting = 1;
-  int wait_result = 0;
+  intptr_t wait_result = 0;
   if (d->interruptable) {
     wait_result = scheduler_wait_on_interruptable(d->queue, d->timeout);
   } else {
@@ -588,7 +588,7 @@ static void stress_test(void) {
   KTEST_BEGIN("stress test");
   kthread_t threads[STRESS_TEST_THREADS];
 
-  for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
+  for (intptr_t i = 0; i < STRESS_TEST_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
   }

@@ -924,8 +924,8 @@ static void write_thread_test(void) {
   kthread_t threads[WRITE_SAFETY_THREADS];
 
   create_file("/vfs_write_thread_safety_test", RWX);
-  int fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
-  for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
+  intptr_t fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
+  for (intptr_t i = 0; i < WRITE_SAFETY_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i],
                            &write_thread_test_func, (void*)fd) == 0);
     scheduler_make_runnable(threads[i]);
@@ -1277,7 +1277,7 @@ static void create_thread_test(void) {
   kthread_t threads[CREATE_SAFETY_THREADS];
 
   KEXPECT_EQ(0, vfs_mkdir(kTestDir, 0));
-  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+  for (intptr_t i = 0; i < CREATE_SAFETY_THREADS; ++i) {
     KASSERT(
         kthread_create(&threads[i], &create_thread_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
@@ -1307,7 +1307,7 @@ static void create_thread_test(void) {
   }
 
   KTEST_BEGIN("vfs_unlink(): thread-safety test");
-  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+  for (intptr_t i = 0; i < CREATE_SAFETY_THREADS; ++i) {
     KASSERT(
         kthread_create(&threads[i], &unlink_thread_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
@@ -3260,7 +3260,7 @@ static ssize_t read_all(int fd, void* buf, size_t len) {
 static bool is_all_char(const char* buf, char c, size_t len) {
   for (size_t i = 0; i < len; ++i) {
     if (buf[i] != c) {
-      KLOG("char %d is %c, not %c\n", i, buf[i], c);
+      KLOG("char %zu is %c, not %c\n", i, buf[i], c);
       return false;
     }
   }
@@ -3901,7 +3901,7 @@ static void append_test(void) {
   create_file_with_data(kFile, "");
   const int kNumThreads = 3;
   kthread_t threads[kNumThreads];
-  for (int i = 0; i < kNumThreads; ++i) {
+  for (intptr_t i = 0; i < kNumThreads; ++i) {
     KEXPECT_EQ(
         0, kthread_create(&threads[i], &append_multi_thread_worker, (void*)i));
     scheduler_make_runnable(threads[i]);
@@ -5344,7 +5344,7 @@ static void rename_thread_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
 
-  for (int i = 0; i < NUM_OPENERS; ++i) {
+  for (intptr_t i = 0; i < NUM_OPENERS; ++i) {
     KEXPECT_EQ(0, kthread_create(&threads[i], &lock_order_func, (void*)i));
     scheduler_make_runnable(threads[i]);
   }

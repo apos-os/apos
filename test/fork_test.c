@@ -148,7 +148,7 @@ static void multi_child_test(void) {
   KTEST_BEGIN("fork() multi-child test");
 
   int exited[SIZE];
-  for (int i = 0; i < SIZE; ++i) {
+  for (intptr_t i = 0; i < SIZE; ++i) {
     proc_fork(&multi_child_func, (void*)i);
     exited[i] = 0;
   }

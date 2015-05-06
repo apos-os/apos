@@ -45,7 +45,7 @@ static void mknod_test(void) {
 
 static void* do_open(void* arg) {
   int mode = (int)arg;
-  int result = vfs_open("fifo_test/fifo", mode);
+  intptr_t result = vfs_open("fifo_test/fifo", mode);
   return (void*)result;
 }
 
@@ -144,7 +144,7 @@ static void* do_op(void* args) {
   op->started = true;
   op->finished = false;
   char buf[APOS_FIFO_BUF_SIZE + 5];
-  int result;
+  intptr_t result;
   if (op->is_read)
     result = vfs_read(op->fd, buf, 50);
   else
