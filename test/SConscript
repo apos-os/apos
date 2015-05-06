@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 Import('env AposAddSources')
 
 srcs = [
@@ -27,7 +29,6 @@ srcs = [
   'flag_printf_test.c',
   'hash_test.c',
   'hashtable_test.c',
-  'interrupt_test.c',
   'fork_test.c',
   'kmalloc_test.c',
   'kprintf_test.c',
@@ -41,7 +42,6 @@ srcs = [
   'list_test.c',
   'load_test.c',
   'mmap_test.c',
-  'page_alloc_map_test.c',
   'page_alloc_test.c',
   'poll_test.c',
   'proc_group_test.c',
@@ -63,6 +63,9 @@ srcs = [
 ]
 
 subdirs = []
+
+if FindFile(os.path.join(env['ARCH'], 'SConscript'), '.') is not None:
+  subdirs.append(env['ARCH'])
 
 extra_cflags = ['-Wframe-larger-than=5000']
 if env['CLANG']:

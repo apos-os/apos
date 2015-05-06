@@ -22,4 +22,8 @@
 #define ENABLE_TERM_COLOR %(TERM_COLOR)d
 #define ENABLE_KMALLOC_HEAP_PROFILE %(KMALLOC_HEAP_PROFILE)d
 
+#define ARCH_i586 1
+#define ARCH_x86_64 2
+#define ARCH ARCH_%(ARCH)s
+
 #endif
