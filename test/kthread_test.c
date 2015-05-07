@@ -586,7 +586,7 @@ static void* stress_test_func(void* arg) {
 // TODO(aoates): make this random.
 static void stress_test(void) {
   KTEST_BEGIN("stress test");
-  kthread_t threads[STRESS_TEST_THREADS];
+  kthread_t* threads = (kthread_t*)kmalloc(sizeof(kthread_t) * STRESS_TEST_THREADS);
 
   for (intptr_t i = 0; i < STRESS_TEST_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i) == 0);
@@ -596,6 +596,8 @@ static void stress_test(void) {
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
     KEXPECT_EQ(i, (int)kthread_join(threads[i]));
   }
+
+  kfree(threads);
 }
 
 
