@@ -39,7 +39,7 @@ SECTIONS
 
     .init-text ALIGN(0x1000) :
     {
-        libkernel_phys.a(.text .rodata .data .bss)
+        libkernel_phys.a(.text .rodata* .data .bss)
     }
 
     /* Load the main part of the kernel at VMA 0xC0000000. */
