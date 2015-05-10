@@ -32,7 +32,7 @@ void idt_init(void) {
     idt_entries[i].offset_low = 0;
     idt_entries[i].selector = IDT_SELECTOR_VALUE;
     idt_entries[i].zero = 0;
-    idt_entries[i].type_attr = IDT_DPL_RING0 | IDT_TYPE_32_INT;
+    idt_entries[i].type_attr = IDT_DPL_RING0 | IDT_TYPE_64_INT;
     idt_entries[i].offset_high = 0;
     idt_entries[i].offset_high2 = 0;
     idt_entries[i].reserved = 0;
