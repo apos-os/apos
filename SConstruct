@@ -84,10 +84,10 @@ if base_env['DEBUG']:
   base_env.Append(CFLAGS = ['-g3'])
   base_env.Append(ASFLAGS = ['--gen-debug'])
 
-if base_env['ARCH'] == 'x86_64':
-  base_env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
-
 env = base_env.Clone()
+
+if env['ARCH'] == 'x86_64':
+  env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
 
 env.Append(CFLAGS = Split("-Wframe-larger-than=1500 -nostdlib -ffreestanding"))
 if not env['CLANG']:
