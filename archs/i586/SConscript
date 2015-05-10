@@ -16,7 +16,6 @@ Import('env AposAddSources')
 
 srcs = [
     'arch/common/die.c',
-    'arch/common/io.c',
     'arch/dev/interrupts.c',
     'arch/dev/irq.c',
     'arch/dev/isr.s',
@@ -38,7 +37,7 @@ srcs = [
     'internal/proc/tss.c',
     ]
 
-subdirs = ['internal/load']
+subdirs = ['internal/load', '../x86-common']
 
 objects = AposAddSources(env, srcs, subdirs)
 objects.append(env.PhysObject('internal/memory/gdt.c'))
