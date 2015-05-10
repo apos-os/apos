@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
+#include "arch/memory/page_map.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/block_cache.h"

@@ -20,6 +20,7 @@ srcs = [
     'arch/dev/isr.s',
     'arch/memory/page_alloc.c',
     'arch/memory/page_fault.c',
+    'arch/memory/page_map.c',
     'arch/proc/kthread.c',
     'arch/proc/kthread_asm.s',
     'arch/proc/signal/signal_enter.c',
