@@ -15,6 +15,7 @@
 Import('env AposAddSources')
 
 srcs = [
+    'arch/common/die.c',
     'arch/common/io.c',
 ]
 
