@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
     'arch/common/die.c',
     'arch/common/io.c',
+    'arch/memory/page_alloc.c',
 ]
 
 subdirs = []

@@ -18,7 +18,6 @@ srcs = [
     'arch/dev/interrupts.c',
     'arch/dev/irq.c',
     'arch/dev/isr.s',
-    'arch/memory/page_alloc.c',
     'arch/memory/page_fault.c',
     'arch/memory/page_map.c',
     'arch/proc/kthread.c',
