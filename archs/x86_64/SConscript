@@ -33,6 +33,7 @@ srcs = [
     'arch/syscall/syscall_enter.s',
     'internal/dev/faults.c',
     'internal/memory/gdt.c',
+    'internal/proc/kthread_trampoline.s',
     'internal/proc/tss.c',
     ]
 
