@@ -115,8 +115,8 @@ int MULTILINK(gdt_entry_create_gate) (
 }
 
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr) {
-#define _str2(x) #x
-#define _str(x) _str2(x)
+  KASSERT_DBG(segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL) == 0x08);
+  KASSERT_DBG(segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL) == 0x10);
   asm("    movq %0, %%rax\n"
       "    lgdt (%%rax)\n"
       ""
@@ -127,11 +127,11 @@ void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr) {
       "    mov %%ax, %%fs\n"
       "    mov %%ax, %%gs\n"
       "    mov %%ax, %%ss\n"
-      //"    ljmp $0x08, $.flush" _str(_MULTILINK_SUFFIX) "\n"
-      //"    ljmp $0x08, $.flush%=\n"
-      ".flush%=:\n" :: "g"(gdt_ptr) : "rax");
-#undef _str
-#undef _str2
+      ""
+      "    pushq $0x08\n"
+      "    pushq $gdt_flush%=\n"
+      "    lretq\n"
+      "gdt_flush%=:\n" :: "g"(gdt_ptr) : "rax");
 }
 
 void MULTILINK(gdt_install_segment) (int index, gdt_entry_t entry) {
