@@ -15,8 +15,8 @@
 .global loader                          # making entry point visible to linker
 
 # reserve initial kernel stack space
-.set STACKSIZE, 0x4000                  # that is, 16k.
-.lcomm stack, STACKSIZE                 # reserve 16k stack on a doubleword boundary
+.set STACKSIZE, 0x8000                  # that is, 32k.
+.lcomm stack, STACKSIZE                 # reserve stack on a doubleword boundary
 .lcomm  mbd, 4                          # we will use this in kmain
 .lcomm  magic, 4                        # we will use this in kmain
 
