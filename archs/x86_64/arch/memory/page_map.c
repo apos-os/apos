@@ -165,14 +165,16 @@ void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
 page_dir_ptr_t page_frame_alloc_directory() {
   phys_addr_t dir_phys = page_frame_alloc();
   KASSERT(dir_phys);
-  KASSERT_DBG((dir_phys & PDE_ADDRESS_MASK) == dir_phys);
+  KASSERT_DBG((dir_phys & PML4E_ADDRESS_MASK) == dir_phys);
 
   pde_t* dir = (pde_t*)phys2virt(dir_phys);
-  for (size_t i = 0; i < PD_NUM_ENTRIES; ++i) {
+  for (size_t i = 0; i < PML4_NUM_ENTRIES; ++i) {
     dir[i] = 0;
   }
 
-  // TODO(aoates): map shared kernel page at end.
+  // Map shared kernel PDPT at end.
+  pml4e_t* pml4 = get_pml4();
+  dir[PML4_NUM_ENTRIES - 1] = pml4[PML4_NUM_ENTRIES - 1];
 
   return dir_phys;
 }
