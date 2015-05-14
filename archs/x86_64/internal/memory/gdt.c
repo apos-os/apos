@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "archs/x86_64/internal/memory/gdt.h"
+#include "archs/x86_64/internal/proc/tss.h"
 #include "common/kassert.h"
 
 typedef struct {
@@ -66,7 +67,6 @@ gdt_entry_t MULTILINK(gdt_entry_create_segment) (
   switch (type) {
     case SEG_CODE: entry->type = 0x8 | flags; break;
     case SEG_DATA: entry->type = flags; break;
-    case SEG_TSS: entry->type = 0x9; break;
   }
 
   switch (type) {
@@ -80,18 +80,32 @@ gdt_entry_t MULTILINK(gdt_entry_create_segment) (
       entry->sys = 1;
       entry->db = 0;
       break;
-
-    case SEG_TSS:
-      // TODO(aoates): TSS entries are 16 bytes long for x86-64.
-      entry->sys = 0;
-      entry->db = 0;
-      break;
   }
 
   entry->dpl = dpl;
   entry->present = 1;
   entry->granularity = granularity;
   return entry_data;
+}
+
+void MULTILINK(gdt_entry_create_tss) (addr_t base, gdt_entry_t entry[2]) {
+  gdt_segment_entry_t* entry_lower = (gdt_segment_entry_t*)(&entry[0]);
+  entry_lower->base_low = base & 0x0000FFFF;
+  entry_lower->base_middle = (base >> 16) & 0x000000FF;
+  entry_lower->base_high = (base >> 24) & 0x000000FF;
+  entry_lower->limit_low = (sizeof(tss_t) - 1) & 0x0000FFFF;
+  entry_lower->limit_high = ((sizeof(tss_t) - 1) >> 16) & 0x0000000F;
+  entry_lower->type = 0x9;
+
+  entry_lower->l = 0;
+  entry_lower->sys = 0;
+  entry_lower->db = 0;
+  entry_lower->dpl = 0;
+  entry_lower->present = 1;
+  entry_lower->granularity = 0;
+
+  entry[1].data[0] = base >> 32;
+  entry[1].data[1] = 0;
 }
 
 int MULTILINK(gdt_entry_create_gate) (

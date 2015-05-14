@@ -21,7 +21,7 @@
 #include "common/types.h"
 
 // Common segment indices.
-#define GDT_NUM_ENTRIES 7
+#define GDT_NUM_ENTRIES 8
 
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
@@ -29,7 +29,8 @@
 #define GDT_USER_CODE_SEGMENT 3
 #define GDT_USER_DATA_SEGMENT 4
 #define GDT_TSS 5
-#define GDT_SYSCALL_CALL_GATE 6
+#define GDT_TSS_UPPER 6
+#define GDT_SYSCALL_CALL_GATE 7
 
 #define RPL_KERNEL 0
 #define RPL_USER 3
@@ -42,7 +43,6 @@ static inline uint16_t segment_selector(uint16_t segment, uint16_t rpl) {
 typedef enum {
   SEG_CODE,
   SEG_DATA,
-  SEG_TSS,
 } gdt_seg_type_t;
 
 typedef enum {
@@ -61,6 +61,8 @@ _Static_assert(sizeof(gdt_ptr_t) == 10, "gdt_ptr_t incorrect size");
 gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
     uint8_t flags, uint8_t dpl, uint8_t granularity);
+
+void MULTILINK(gdt_entry_create_tss) (addr_t base, gdt_entry_t entry[2]);
 
 // Create a GDT gate entry with the given parameters.  Returns how many entries
 // (of 8 bytes each) are consumed.
