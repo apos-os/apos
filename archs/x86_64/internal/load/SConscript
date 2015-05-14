@@ -19,6 +19,7 @@ srcs = [
 ]
 
 phys_srcs = [
+  'gdt.c',
   'idt.c',
   'loader.s',
   'mem_init.c',

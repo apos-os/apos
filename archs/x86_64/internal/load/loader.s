@@ -97,7 +97,8 @@ tgt64:
     mov %ax, %gs
     mov %ax, %ss
 
-    # Set up IDT.
+    # Set up GDT and IDT.
+    call gdt_init
     call idt_init
 
     movl magic, %edi
