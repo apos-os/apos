@@ -193,7 +193,7 @@ static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
 
 static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
                             cbfs_inode_t* inode_out) {
-  KEXPECT_EQ(0x5, (int)arg);
+  KEXPECT_EQ(0x5, (intptr_t)arg);
   if (vnode >= 100 && vnode <= 105) {
     cbfs_inode_create_file(inode_out, vnode, &no_read, 0, 1, 2, VFS_S_IRWXU);
     return 0;
@@ -247,7 +247,7 @@ static void lookup_function_test(void) {
 
 static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                                 list_t* list_out, void* buf, int buflen) {
-  if ((int)arg == 1) {
+  if ((intptr_t)arg == 1) {
     // Mode 1: create several file entries and return them one by one.
     if (offset < 4) {
       char name[100];
@@ -258,7 +258,7 @@ static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
       list_push(list_out, &((cbfs_entry_t*)buf)->link);
     }
     return 0;
-  } else if ((int) arg == 2) {
+  } else if ((intptr_t)arg == 2) {
     // Mode 2: as many files as we can in the given buffer.
     int fileidx = offset;
     while (fileidx < 1000) {
@@ -277,10 +277,10 @@ static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
     }
     if (fileidx == offset && fileidx < 1000) return -ENOMEM;
     return 0;
-  } else if ((int) arg == 3) {
+  } else if ((intptr_t)arg == 3) {
     // Mode 3: return an error
     return -EIO;
-  } else if ((int)arg == 4) {
+  } else if ((intptr_t)arg == 4) {
     // Mode 4: create a dynamic subdirectory.
     if (offset == 0) {
       const int entry_size = cbfs_entry_size("dyndir");
@@ -290,7 +290,7 @@ static int dynamic_dir_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
       list_push(list_out, &entry->link);
     }
     return 0;
-  } else if ((int)arg == 5) {
+  } else if ((intptr_t)arg == 5) {
     // Mode 5: dynamic symlink.
     if (offset == 0) {
       const int entry_size = cbfs_entry_size("dynlink");
@@ -582,7 +582,7 @@ static void dynamic_directory_test(void) {
 
 static int changed_getdentsA(fs_t* fs, int vnode_num, void* arg, int offset,
                              list_t* list_out, void* buf, int buflen) {
-  KEXPECT_EQ(5, (int)arg);
+  KEXPECT_EQ(5, (intptr_t)arg);
   if (offset > 0) return 0;
   cbfs_entry_t* entry = (cbfs_entry_t*)buf;
   cbfs_create_entry(entry, "A", 100);
@@ -592,7 +592,7 @@ static int changed_getdentsA(fs_t* fs, int vnode_num, void* arg, int offset,
 
 static int changed_getdentsB(fs_t* fs, int vnode_num, void* arg, int offset,
                              list_t* list_out, void* buf, int buflen) {
-  KEXPECT_EQ(6, (int)arg);
+  KEXPECT_EQ(6, (intptr_t)arg);
   if (offset > 0) return 0;
   cbfs_entry_t* entry = (cbfs_entry_t*)buf;
   cbfs_create_entry(entry, "B", 100);

@@ -138,7 +138,7 @@ static void open_test(void) {
 
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, true, false));
   KEXPECT_EQ(1, kthread_queue_empty(&fifo.read_queue));
-  KEXPECT_EQ(0, (int)kthread_join(thread));
+  KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
   KEXPECT_EQ(true, reader_open_finished);
   fifo_close(&fifo, FIFO_READ);
   fifo_close(&fifo, FIFO_READ);
@@ -168,7 +168,7 @@ static void open_test(void) {
 
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, true, false));
   KEXPECT_EQ(1, kthread_queue_empty(&fifo.write_queue));
-  KEXPECT_EQ(0, (int)kthread_join(thread));
+  KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
   KEXPECT_EQ(true, writer_open_finished);
   fifo_close(&fifo, FIFO_READ);
   fifo_close(&fifo, FIFO_WRITE);

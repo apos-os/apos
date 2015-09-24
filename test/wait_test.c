@@ -58,7 +58,7 @@ static void basic_waitpid_test(void) {
 }
 
 static void sleep_func(void* arg) {
-  ksleep(arg ? (int)arg : 1000);
+  ksleep(arg ? (intptr_t)arg : 1000);
 }
 
 static void do_nothing_sig(int sig) {}
@@ -69,7 +69,7 @@ static void interruptable_helper(void* arg) {
   pid_t sleeper = proc_fork(&sleep_func, NULL);
   const apos_ms_t start = get_time_ms();
   int result;
-  if ((int)arg)
+  if ((intptr_t)arg)
     result = proc_waitpid(-1, NULL, 0);
   else
     result = proc_wait(NULL);

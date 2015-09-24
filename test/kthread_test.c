@@ -27,7 +27,7 @@
 //  * multiple threads join()'d onto one thread
 
 static void* thread_func(void* arg) {
-  int id = (int)arg;
+  int id = (intptr_t)arg;
   KLOG("THREAD STARTED: %d\n", id);
   for (int i = 0; i < 3; ++i) {
     KLOG("THREAD ITER: %d (iter %d)\n", id, i);
@@ -81,7 +81,7 @@ static void kthread_exit_test(void) {
 
   KASSERT(!kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
   scheduler_make_runnable(thread1);
-  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
+  KEXPECT_EQ(0xabcd, (intptr_t)kthread_join(thread1));
 }
 
 static void* kthread_return_thread_func(void* arg) {
@@ -95,7 +95,7 @@ static void kthread_return_test(void) {
   KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd)
           == 0);
   scheduler_make_runnable(thread1);
-  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
+  KEXPECT_EQ(0xabcd, (intptr_t)kthread_join(thread1));
 }
 
 static void* join_test_func(void* arg) {
@@ -125,7 +125,7 @@ static void join_chain_test(void) {
     scheduler_make_runnable(threads[i]);
   }
 
-  int out = (int)kthread_join(threads[JOIN_CHAIN_TEST_SIZE-1]);
+  int out = (intptr_t)kthread_join(threads[JOIN_CHAIN_TEST_SIZE-1]);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE - 1, out);
 }
 
@@ -152,7 +152,7 @@ static void join_chain_test2(void) {
   KASSERT(result == 0);
   scheduler_make_runnable(thread);
 
-  int out = (int)kthread_join(thread);
+  int out = (intptr_t)kthread_join(thread);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
 }
 
@@ -575,11 +575,11 @@ static void scheduler_interrupt_timeout_test(void) {
 #define STRESS_TEST_THREADS 1000
 
 static void* stress_test_func(void* arg) {
-  KLOG("THREAD %d START\n", (int)arg);
+  KLOG("THREAD %d START\n", (int)(intptr_t)arg);
   for (int i = 0; i < STRESS_TEST_ITERS; ++i) {
     scheduler_yield();
   }
-  KLOG("THREAD %d DONE\n", (int)arg);
+  KLOG("THREAD %d DONE\n", (int)(intptr_t)arg);
   return arg;
 }
 
@@ -594,7 +594,7 @@ static void stress_test(void) {
   }
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
-    KEXPECT_EQ(i, (int)kthread_join(threads[i]));
+    KEXPECT_EQ(i, (intptr_t)kthread_join(threads[i]));
   }
 
   kfree(threads);

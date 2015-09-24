@@ -91,7 +91,7 @@ static int g_iterate_vals[10];
 static void iterate_func(void* arg, uint32_t key, void* val) {
   int* counter = (int*)arg;
   KASSERT(key < ITERATE_SIZE);
-  g_iterate_vals[key] = (int)val;
+  g_iterate_vals[key] = (intptr_t)val;
   (*counter)++;
 }
 

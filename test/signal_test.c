@@ -392,7 +392,7 @@ static void create_process_group(pid_t* okA, pid_t* okB, pid_t* bad) {
 // expected to receive the SIGKILL as well).  If bit 2 is set, then the signal
 // is sent to pgid 0 (i.e. the current process group).
 static void create_group_then_kill(void* arg) {
-  unsigned int flags = (unsigned int)arg;
+  unsigned int flags = (intptr_t)arg;
 
   // Ensure we're not the superuser.
   KEXPECT_EQ(0, setuid(500));
@@ -487,7 +487,7 @@ static void signal_send_to_pgroup_test(void) {
 }
 
 static void send_all_allowed_func(void* arg) {
-  KEXPECT_EQ(0, setuid((uid_t)arg));
+  KEXPECT_EQ(0, setuid((intptr_t)arg));
   KEXPECT_EQ(0, proc_kill(-1, SIGKILL));
   proc_exit(is_signal_pending(proc_current(), SIGKILL));
 }
@@ -724,7 +724,7 @@ static void signal_interrupt_thread_test(void) {
 }
 
 static void ksleep_interrupted_func(void* arg) {
-  proc_exit(ksleep((int)arg));
+  proc_exit(ksleep((intptr_t)arg));
 }
 
 static void ksleep_interrupted_test(void) {

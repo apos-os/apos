@@ -905,7 +905,7 @@ static void write_large_test(void) {
 #define WRITE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
 #define WRITE_SAFETY_THREADS 5
 static void* write_thread_test_func(void* arg) {
-  const int fd = (int)arg;
+  const int fd = (intptr_t)arg;
   for (int i = 0; i < WRITE_SAFETY_ITERS; ++i) {
     int result = vfs_write(fd, "abc", 3);
     if (result != 3) {
@@ -1175,7 +1175,7 @@ static void seek_test(void) {
 static void* bad_inode_thread_test_func(void* arg) {
   for (int i = 0; i < BAD_INODE_SAFETY_ITERS; ++i) {
     vnode_t* node = vfs_get(vfs_get_root_fs(), 52187 + (i % 3));
-    KEXPECT_EQ(0x0, (int)node);
+    KEXPECT_EQ(0x0, (intptr_t)node);
   }
   return 0x0;
 }
@@ -1199,7 +1199,7 @@ static void bad_inode_thread_test(void) {
 static void get_bad_inode_test(void) {
   KTEST_BEGIN("vfs_get(): bad inode");
   vnode_t* node = vfs_get(vfs_get_root_fs(), 52187);
-  KEXPECT_EQ(0x0, (int)node);
+  KEXPECT_EQ(0x0, (intptr_t)node);
 
   bad_inode_thread_test();
 
@@ -1243,7 +1243,7 @@ void reverse_path_test(void) {
 #define CREATE_SAFETY_THREADS 5
 static void* create_thread_test_func(void* arg) {
   const char kTestDir[] = "/create_thread_test";
-  const int thread_num = (int)arg;
+  const int thread_num = (intptr_t)arg;
   for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
     char buf[512];
     ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
@@ -1259,7 +1259,7 @@ static void* create_thread_test_func(void* arg) {
 
 static void* unlink_thread_test_func(void* arg) {
   const char kTestDir[] = "/create_thread_test";
-  const int thread_num = (int)arg;
+  const int thread_num = (intptr_t)arg;
   for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
     char buf[512];
     ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
@@ -3779,7 +3779,7 @@ static void* append_multi_thread_worker(void* arg) {
   KEXPECT_GE(fd, 0);
   for (int i = 0; i < kMultiThreadAppendTestNumWrites; ++i) {
     char buf[2] = {0, 0};
-    buf[0] = (int)arg + '0';
+    buf[0] = (intptr_t)arg + '0';
     int result = vfs_write(fd, buf, 1);
     if (result != 1) {
       KEXPECT_EQ(result, 1);
@@ -5265,7 +5265,7 @@ static void* rename_symlink_open_func(void* arg) {
 
 const int LOCK_ORDER_THREAD_ITERS = 20 * THREAD_SAFETY_MULTIPLIER;
 static void* lock_order_func(void* arg) {
-  const int id = (int)arg;
+  const int id = (intptr_t)arg;
   int result = 0, i;
 
   char pathA[50], pathB[50], pathC[50];
