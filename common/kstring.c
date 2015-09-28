@@ -112,7 +112,7 @@ static unsigned long abs(long x) {
   return x < 0 ? -x : x;
 }
 
-const char* itoa(int x) {
+const char* itoa(long x) {
   static char buf[256];
   buf[0] = '\0';
 
@@ -123,7 +123,7 @@ const char* itoa(int x) {
   return buf;
 }
 
-const char* itoa_hex(int x) {
+const char* itoa_hex(long x) {
   static char buf[256];
   buf[0] = '\0';
 
@@ -136,7 +136,7 @@ const char* itoa_hex(int x) {
 
 // Helper for utoa/utoa_hex that takes a number, a base, and a lookup table of
 // characters.
-static const char* utoa_internal(unsigned int x, unsigned int base, const char* tbl) {
+static const char* utoa_internal(unsigned long x, unsigned long base, const char* tbl) {
   static char buf[256];
   int i = 0;
   if (x == 0) {
@@ -158,23 +158,23 @@ static const char* utoa_internal(unsigned int x, unsigned int base, const char* 
   return buf;
 }
 
-const char* utoa(unsigned int x) {
+const char* utoa(unsigned long x) {
   return utoa_internal(x, 10, "0123456789");
 }
 
-const char* utoa_hex(unsigned int x) {
+const char* utoa_hex(unsigned long x) {
   return utoa_internal(x, 16, "0123456789ABCDEF");
 }
 
-const char* utoa_hex_lower(unsigned int x) {
+const char* utoa_hex_lower(unsigned long x) {
   return utoa_internal(x, 16, "0123456789abcdef");
 }
 
-static unsigned int atou_internal_base(const char* s, int base) {
+static unsigned long atou_internal_base(const char* s, int base) {
   if (base != 10 && base != 16) {
     return 0;
   }
-  unsigned int out = 0;
+  unsigned long out = 0;
   while (*s) {
     int digit = 0;
     if (*s >= '0' && *s <= '9') {
@@ -193,7 +193,7 @@ static unsigned int atou_internal_base(const char* s, int base) {
   return out;
 }
 
-static unsigned int atou_internal(const char* s) {
+static unsigned long atou_internal(const char* s) {
   if (kstrncmp(s, "0x", 2) == 0 ||
       kstrncmp(s, "0X", 2) == 0) {
     return atou_internal_base(s + 2, 16);
@@ -202,15 +202,15 @@ static unsigned int atou_internal(const char* s) {
   }
 }
 
-int atoi(const char* s) {
+long atoi(const char* s) {
   if (*s == '-') {
-    return -(int)atou_internal(s+1);
+    return -(long)atou_internal(s+1);
   } else {
-    return (int)atou_internal(s);
+    return (long)atou_internal(s);
   }
 }
 
-unsigned int atou(const char* s) {
+unsigned long atou(const char* s) {
   return atou_internal(s);
 }
 
