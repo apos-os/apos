@@ -38,10 +38,10 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   // frames before the kernel (<1MB).
   const size_t free_frames = total_frames - (kernel_end_page / PAGE_SIZE);
 
-  // Allocate a stack of the appropriate size.  We need 4 bytes per free frame,
-  // plus 8 bytes for guard addresses.  Round up to use an even number of pages
-  // for the stack.
-  stack_size = free_frames * 4 + 8;
+  // Allocate a stack of the appropriate size.  We need sizeof(phys_addr_t)
+  // bytes per free frame, plus twice that for guard addresses.  Round up to use
+  // an even number of pages for the stack.
+  stack_size = (free_frames + 2) * sizeof(phys_addr_t);
   stack_size = next_page(stack_size); // round up.
 
   const addr_t stack_end = next_page(meminfo->kernel_end_virt) + stack_size;
@@ -78,6 +78,8 @@ phys_addr_t page_frame_alloc() {
   phys_addr_t frame = free_frame_stack[--stack_idx];
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
+    KASSERT_DBG(frame < get_global_meminfo()->lower_memory +
+                            get_global_meminfo()->upper_memory);
     // Fill the page with crap.
     addr_t virt_frame = phys2virt(frame);
     for (size_t i = 0; i < PAGE_SIZE / sizeof(uint32_t); ++i) {
@@ -93,6 +95,8 @@ void page_frame_free(phys_addr_t frame_addr) {
   KASSERT(stack_idx <= stack_size);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
+    KASSERT_DBG(frame_addr < get_global_meminfo()->lower_memory +
+                                 get_global_meminfo()->upper_memory);
     // Check that the page frame isn't already free.
     for (size_t i = 0; i < stack_idx; ++i) {
       KASSERT(free_frame_stack[i] != frame_addr);
