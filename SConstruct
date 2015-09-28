@@ -29,6 +29,8 @@ vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
 vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
+vars.Add('KSHELL_INITIAL_COMMAND',
+  'command to automatically run when kshell starts', '')
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = [

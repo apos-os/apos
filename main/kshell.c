@@ -1212,6 +1212,11 @@ void kshell_main(apos_dev_t tty) {
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 
   char read_buf[READ_BUF_SIZE];
+
+  if (KSHELL_INITIAL_COMMAND[0]) {
+    parse_and_dispatch(&shell, KSHELL_INITIAL_COMMAND);
+  }
+
   while (1) {
 #if ENABLE_TERM_COLOR
     ksh_printf("\x1b[0m");  // Reset before each prompt.

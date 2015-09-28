@@ -26,4 +26,6 @@
 #define ARCH_x86_64 2
 #define ARCH ARCH_%(ARCH)s
 
+#define KSHELL_INITIAL_COMMAND "%(KSHELL_INITIAL_COMMAND)s"
+
 #endif
