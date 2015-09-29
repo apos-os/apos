@@ -569,6 +569,30 @@ static void scheduler_interrupt_timeout_test(void) {
     KEXPECT_EQ(SWAIT_INTERRUPTED, thread1->wait_status);
     KEXPECT_EQ((void*)1, kthread_join(thread1));
   }
+
+  KTEST_BEGIN(
+      "scheduler sleep: timeout fires after normal wakeup before it's "
+      "cancelled.");
+  {
+    queue_test_funct_data_t d1 = {0, 0, &queue, true, 20};
+    kthread_create(&thread1, &queue_test_func, &d1);
+    scheduler_make_runnable(thread1);
+    while (!d1.waiting) scheduler_yield();
+
+    KEXPECT_EQ(&queue, thread1->queue);
+    scheduler_wake_all(&queue);
+    apos_ms_t start = get_time_ms();
+    // Spin until the timeout (should have) fired.  We can't yield, since we
+    // must ensure the thread we woke up doesn't get a chance to run.
+    while (get_time_ms() - start < 50);
+
+    // Even though the timeout fired, the wakeup happened first.
+    for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
+    KEXPECT_EQ(1, d1.ran);
+    KEXPECT_EQ(true, thread1->wait_timeout_ran);
+    KEXPECT_EQ(SWAIT_DONE, thread1->wait_status);
+    KEXPECT_EQ((void*)SWAIT_DONE, kthread_join(thread1));
+  }
 }
 
 #define STRESS_TEST_ITERS 1000
