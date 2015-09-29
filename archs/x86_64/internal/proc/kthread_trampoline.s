@@ -19,4 +19,4 @@ kthread_x64_trampoline:
   movq 16(%rsp), %rdi
   movq 24(%rsp), %rsi
   movq 8(%rsp), %rax
-  call %rax
+  call *%rax
