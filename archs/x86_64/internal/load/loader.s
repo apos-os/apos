@@ -70,7 +70,7 @@ loader:
 
     # Enable paging.
     movl %cr0, %eax
-    or $0x80000000, %eax
+    or $0x80010000, %eax
     movl %eax, %cr0
 
     # Create a GDT.

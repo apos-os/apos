@@ -100,7 +100,7 @@ static void map_linear_page_table(memory_info_t* meminfo, uint64_t* pml4,
     for (int i = 0; i < PDPT_NUM_ENTRIES; ++i) {
       pdpt[i] = 0;
     }
-    pml4[pdpt_idx] = (uint64_t)pdpt | PML4E_PRESENT;
+    pml4[pdpt_idx] = (uint64_t)pdpt | PML4E_WRITABLE | PML4E_PRESENT;
   }
 
   uint64_t* pdpt = (uint64_t*)(pml4[pdpt_idx] & PML4E_ADDRESS_MASK);
@@ -109,13 +109,15 @@ static void map_linear_page_table(memory_info_t* meminfo, uint64_t* pml4,
     for (int i = 0; i < PD_NUM_ENTRIES; ++i) {
       pd[i] = 0;
     }
-    pdpt[pd_idx % PDPT_NUM_ENTRIES] = (uint64_t)pd | PDPTE_PRESENT;
+    pdpt[pd_idx % PDPT_NUM_ENTRIES] =
+        (uint64_t)pd | PDPTE_WRITABLE | PDPTE_PRESENT;
   }
 
   uint64_t* pd =
       (uint64_t*)(pdpt[pd_idx % PDPT_NUM_ENTRIES] & PDPTE_ADDRESS_MASK);
   // TODO(aoates): set global flag.
-  pd[pt_idx % PD_NUM_ENTRIES] = phys_base | PDE_LARGE_PAGES | PDE_PRESENT;
+  pd[pt_idx % PD_NUM_ENTRIES] =
+      phys_base | PDE_LARGE_PAGES | PDE_WRITABLE | PDE_PRESENT;
 }
 
 // Set up page tables and enable paging.  Updates meminfo as it allocates and

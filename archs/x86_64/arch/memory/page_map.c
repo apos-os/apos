@@ -83,10 +83,7 @@ static pte_t* get_or_create_page_table_entry(addr_t virt, bool create, int prot,
   pml4e_t* pml4 = get_pml4();
   KASSERT(virt % PAGE_SIZE == 0);
 
-  uint64_t entry_flags = PTE_PRESENT;
-  if (prot & MEM_PROT_WRITE) entry_flags |= PTE_WRITABLE;
-  if (access == MEM_ACCESS_KERNEL_AND_USER) entry_flags |= PTE_USER_ACCESS;
-  if (mapping_flags & MEM_GLOBAL) entry_flags |= PTE_GLOBAL;
+  const uint64_t entry_flags = PTE_PRESENT | PTE_WRITABLE | PTE_USER_ACCESS;
 
   // Mask out the leading bits of the canonicalized address, then calculate
   // indices (from the start of memory).
@@ -134,7 +131,8 @@ void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
   // The PDE entry we may create will automatically get the most permissive
   // flags.
   pte_t* pte = get_or_create_page_table_entry(virt, true, prot, access, flags);
-  KASSERT_DBG((*pte & PTE_PRESENT) == 0);
+  // TODO(aoates): plumb through an "allow overwrite" bit, and KASSERT that the
+  // PTE_PRESENT flag is unset if that bit is false.
   *pte = phys | PTE_PRESENT;
   if (prot & MEM_PROT_WRITE) *pte |= PTE_WRITABLE;
   if (access == MEM_ACCESS_KERNEL_AND_USER) *pte |= PTE_USER_ACCESS;
@@ -154,7 +152,7 @@ void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
                                                 false, 0, 0, 0);
     if (pte) {
       // Mark the page as non-present.
-      *pte &= ~PTE_PRESENT;
+      *pte = 0;
       invalidate_tlb(virt);
       // TODO(aoates): walk up the page hierarchy and claim empty mid-level
       // tables.
