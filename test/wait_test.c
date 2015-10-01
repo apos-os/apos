@@ -195,7 +195,7 @@ static void wait_for_pgroup_test(void) {
 
   child = proc_fork(&do_nothing, NULL);
   pid_t childB = proc_fork(&do_nothing, NULL);
-  pid_t childC = proc_fork(&sleep_func, (void*)20);
+  pid_t childC = proc_fork(&sleep_func, (void*)50);
   KEXPECT_EQ(0, setpgid(child, grandchild));
   KEXPECT_EQ(0, setpgid(childB, grandchild));
   KEXPECT_EQ(0, setpgid(childC, grandchild));
@@ -209,7 +209,7 @@ static void wait_for_pgroup_test(void) {
   apos_ms_t end_ms = get_time_ms();
   KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
-  KEXPECT_LE(end_ms - start_ms, 20);
+  KEXPECT_LE(end_ms - start_ms, 50);
   KEXPECT_EQ(childC, proc_waitpid(-grandchild, NULL, 0));
 
 
