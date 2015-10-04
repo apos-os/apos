@@ -32,7 +32,6 @@ void user_context_apply(const user_context_t* ctx) {
   KASSERT_DBG(segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER) == 0x23);
   KASSERT_DBG(segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) == 0x1b);
 
-  // TODO(aoates): merge this with the code in proc/user_mode.c
   switch (ctx->type) {
     case USER_CONTEXT_CALL_GATE:
       KASSERT_DBG(get_interrupts_state());

@@ -13,33 +13,27 @@
 // limitations under the License.
 
 #include "archs/i586/internal/memory/gdt.h"
+#include "arch/dev/interrupts.h"
 #include "arch/proc/user_mode.h"
+#include "arch/proc/user_context.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "common/types.h"
 
 void user_mode_enter(addr_t stack, addr_t entry) {
-  _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
+  user_context_t ctx;
+  _Static_assert(sizeof(addr_t) == sizeof(ctx.esp),
                  "Invalid addr_t size for i386 code");
-
-  const uint32_t new_data_seg =
-      segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER);
-  const uint32_t new_code_seg =
-      segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER);
-  asm volatile (
-      "sti\n\t"
-      "mov %0, %%eax\n\t"
-      "mov %%ax, %%ds\n\t"
-      "mov %%ax, %%es\n\t"
-      "mov %%ax, %%fs\n\t"
-      "mov %%ax, %%gs\n\t"
-      "pushl %0\n\t"
-      "pushl %1\n\t"
+  kmemset(&ctx, 0, sizeof(user_context_t));
+  ctx.type = USER_CONTEXT_INTERRUPT;
+  ctx.esp = stack;
+  ctx.eip = entry;
+  asm volatile(
       "pushf\n\t"
-      "pushl %2\n\t"
-      "pushl %3\n\t"
-      "iret"
-      :: "r"(new_data_seg), "r"(stack),
-         "r"(new_code_seg), "r"(entry) : "eax");
+      "pop %0\n\t"
+      : "=r"(ctx.eflags));
+  ctx.eflags |= IF_FLAG;
 
+  user_context_apply(&ctx);
   // Never get here.
 }
