@@ -20,8 +20,6 @@
 #include "common/kstring.h"
 #include "memory/mmap.h"
 
-#define MAX_ARGV_ENVP_SIZE (MEM_USER_STACK_SIZE / 4)
-
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
 
 typedef uint32_t addr_32_t;

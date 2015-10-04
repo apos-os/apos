@@ -22,12 +22,6 @@
 #include "arch/memory/layout.h"
 #include "common/types.h"
 
-_Static_assert(MEM_USER_STACK_SIZE % PAGE_SIZE == 0,
-               "MEM_USER_STACK_SIZE must be an even multiple of PAGE_SIZE");
-
-_Static_assert(MEM_USER_STACK_BOTTOM % PAGE_SIZE == 0,
-               "MEM_USER_STACK_BOTTOM must be page aligned");
-
 // A top-level page directory pointer.
 typedef addr_t page_dir_ptr_t;
 

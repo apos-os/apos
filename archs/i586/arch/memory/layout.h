@@ -27,8 +27,8 @@
 #define MEM_LAST_MAPPABLE_ADDR      0xFFFFFFFF
 
 // Location and size of the user-mode process stack.
-#define MEM_USER_STACK_SIZE (8 * 1024 * 1024)  // 8MB
-#define MEM_USER_STACK_BOTTOM \
-    (MEM_LAST_USER_MAPPABLE_ADDR + 1 - MEM_USER_STACK_SIZE)
+#define MEM_USER_STACK_SIZE_32 (8 * 1024 * 1024)  // 8MB
+#define MEM_USER_STACK_BOTTOM_32 \
+    (MEM_LAST_USER_MAPPABLE_ADDR + 1 - MEM_USER_STACK_SIZE_32)
 
 #endif
