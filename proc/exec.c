@@ -14,6 +14,7 @@
 
 #include <stddef.h>
 
+#include "arch/proc/exec.h"
 #include "arch/proc/user_mode.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -93,6 +94,10 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     KLOG(INFO, "exec error: couldn't load binary from file '%s': %s\n", path,
          errorname(-result));
     return result;
+  }
+
+  if (!arch_binary_supported(binary)) {
+    return -EINVAL;
   }
 
   // Unmap the current user address space.
