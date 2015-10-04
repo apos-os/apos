@@ -17,8 +17,17 @@
 #include <stdbool.h>
 
 #include "proc/load/load.h"
+#include "arch/proc/user_context.h"
 
 // Returns true if the current architecture can run the given binary.
 bool arch_binary_supported(const load_binary_t* bin);
+
+// Prepare to run a usermode binary (by creating the stack, preparing the
+// arguments, etc), and populate |ctx| with the context to be applied when the
+// binary is run.
+//
+// Returns -error on failure.
+int arch_prep_exec(const load_binary_t* bin, char* const argv[],
+                   char* const envp[], user_context_t* ctx);
 
 #endif

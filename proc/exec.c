@@ -27,54 +27,7 @@
 #include "proc/load/load.h"
 #include "vfs/vfs.h"
 
-#define MAX_ARGV_ENVP_SIZE (MEM_USER_STACK_SIZE / 4)
-
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
-
-// Copy the given string table to the stack, updating the stack top pointer.
-// A copy of the table (with updated pointers) will be placed near the original
-// stack top, pointing to copies of all the strings located in the stack.  The
-// actual address of the table copy will be stored in |table_out_ptr|.
-static int copy_string_table(addr_t* stack_top_ptr, char* const table[],
-                             addr_t* table_out_ptr) {
-  KASSERT((*stack_top_ptr) % sizeof(addr_t) == 0);
-
-  addr_t* table_copy = (addr_t*)(*stack_top_ptr);
-  int copied = 0;
-
-  // Make a copy of the table first.
-  for (int i = 0; table[i] != NULL; ++i) {
-    copied += sizeof(addr_t);
-    if (copied >= MAX_ARGV_ENVP_SIZE) return -E2BIG;
-
-    *(table_copy - i) = 0x0;
-    (*stack_top_ptr) -= sizeof(addr_t);
-  }
-
-  // Final NULL entry.
-  copied += sizeof(addr_t);
-  if (copied >= MAX_ARGV_ENVP_SIZE) return -E2BIG;
-  *((addr_t*)(*stack_top_ptr)) = 0x0;
-  (*stack_top_ptr) -= sizeof(addr_t);
-
-  *table_out_ptr = *stack_top_ptr;
-
-  // Copy each string.
-  for (int i = 0; table[i] != NULL; ++i) {
-    const int len = kstrlen(table[i]);
-    if (copied + len >= MAX_ARGV_ENVP_SIZE) return -E2BIG;
-    (*stack_top_ptr) -= len + 1;
-    kstrcpy((void*)(*stack_top_ptr), table[i]);
-    ((addr_t*)(*table_out_ptr))[i] = (addr_t)(*stack_top_ptr);
-  }
-
-  // Align the stack top appropriately.  Align to next lowest word, then add a
-  // padding word for good measure.
-  // TODO(aoates): how do we do this in a platform-independent way?
-  (*stack_top_ptr) -= sizeof(addr_t) + (*stack_top_ptr) % sizeof(addr_t);
-
-  return 0;
-}
 
 int do_execve(const char* path, char* const argv[], char* const envp[],
               void (*cleanup)(const char* path,
@@ -136,52 +89,21 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
   proc_current()->suid = proc_current()->euid;
   proc_current()->sgid = proc_current()->egid;
 
-  // Create the stack.
-  void* stack_addr_out;
-  result = do_mmap((void*)MEM_USER_STACK_BOTTOM, MEM_USER_STACK_SIZE,
-                   PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS,
-                   -1, 0, &stack_addr_out);
-  if (result) {
-    kfree(binary);
-    KLOG(INFO, "exec error: couldn't create mapping for kernel stack: %s\n",
-         errorname(-result));
-    return result;
-  }
-
-  // Copy argv and envp to the new stack.
-  addr_t stack_top =
-      (MEM_USER_STACK_BOTTOM + MEM_USER_STACK_SIZE - sizeof(addr_t));
-  addr_t argv_addr = 0x0;
-  result = copy_string_table(&stack_top, argv, &argv_addr);
+  user_context_t ctx;
+  result = arch_prep_exec(binary, argv, envp, &ctx);
   if (result) {
     kfree(binary);
     return result;
   }
-  addr_t envp_addr = 0x0;
-  result = copy_string_table(&stack_top, envp, &envp_addr);
-  if (result) {
-    kfree(binary);
-    return result;
-  }
-
-  // Push argv and envp onto the stack to pass to the program.
-  stack_top -= stack_top % sizeof(addr_t);
-  *(addr_t*)(stack_top -= sizeof(addr_t)) = envp_addr;
-  *(addr_t*)(stack_top -= sizeof(addr_t)) = argv_addr;
-  *(addr_t*)(stack_top -= sizeof(addr_t)) = 0x0;  // Fake return address.
 
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);
   }
 
   // Jump to the entry point.
-  const addr_t entry = binary->entry;
   kfree(binary);
-
   proc_current()->execed = true;
-
-  user_mode_enter(stack_top, entry);
+  user_context_apply(&ctx);
 
   // We shouldn't ever get here, since we can't return from user space.
   die("Returned to exec() after jmp into user mode!");

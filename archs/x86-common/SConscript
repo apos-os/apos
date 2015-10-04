@@ -19,6 +19,7 @@ srcs = [
     'arch/common/io.c',
     'arch/memory/page_alloc.c',
     'arch/proc/stack_trace.c',
+    'internal/proc/exec.c',
 ]
 
 subdirs = []
