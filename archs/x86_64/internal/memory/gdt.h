@@ -15,6 +15,7 @@
 #ifndef APOO_ARCHS_X86_64_ARCH_MEMORY_GDT_H
 #define APOO_ARCHS_X86_64_ARCH_MEMORY_GDT_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "common/multilink.h"
@@ -26,8 +27,8 @@
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
 #define GDT_KERNEL_DATA_SEGMENT 2
-#define GDT_USER_CODE_SEGMENT 3
-#define GDT_USER_DATA_SEGMENT 4
+#define GDT_USER_CODE_SEGMENT_32 3
+#define GDT_USER_DATA_SEGMENT_32 4
 #define GDT_TSS 5
 #define GDT_TSS_UPPER 6
 #define GDT_SYSCALL_CALL_GATE 7
@@ -60,7 +61,8 @@ _Static_assert(sizeof(gdt_ptr_t) == 10, "gdt_ptr_t incorrect size");
 // Create a GDT segment entry with the given parameters.
 gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
-    uint8_t flags, uint8_t dpl, uint8_t granularity);
+    uint8_t flags, uint8_t dpl, uint8_t granularity,
+    bool is64bit);
 
 void MULTILINK(gdt_entry_create_tss) (addr_t base, gdt_entry_t entry[2]);
 

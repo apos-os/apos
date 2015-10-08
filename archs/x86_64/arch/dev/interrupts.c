@@ -111,20 +111,23 @@ static int is_user_interrupt(addr_t rbp) {
   //  rbp      Saved RBP          <-- *rbp
   //   <saved registers>
   const addr_t cs = *((addr_t*)rbp + 7);
-  if (cs != segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER) &&
+  if (cs != segment_selector(GDT_USER_CODE_SEGMENT_32, RPL_USER) &&
       cs != segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL)) {
     klogf("unknown code segment: 0x%lx\n", cs);
     die("unknown code segment");
   }
-  const int is_user = (cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+  const int is_user =
+      (cs == segment_selector(GDT_USER_CODE_SEGMENT_32, RPL_USER));
 
   // Do some sanity checking on the rest of the stack frame.
   if (ENABLE_KERNEL_SAFETY_NETS) {
       const addr_t ss = *((addr_t*)rbp + 10);
     if (is_user) {
-      KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT, RPL_USER));
+      KASSERT(ss == segment_selector(GDT_USER_DATA_SEGMENT_32, RPL_USER));
     } else {
-      KASSERT(ss == segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL));
+      // On a 32-to-64-bit transition via a call gate, the ss will be set to 0.
+      KASSERT(ss == segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL) ||
+              ss == 0x0);
     }
     KASSERT(*((addr_t*)rbp + 4) == *((addr_t*)rbp + 6));
     KASSERT(*((addr_t*)rbp + 2) < 256);
@@ -141,7 +144,7 @@ static user_context_t extract_interrupt_context(void* rbp_ptr) {
 
 #if ENABLE_KERNEL_SAFETY_NETS
   const addr_t cs = *((addr_t*)rbp + 7);
-  KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT, RPL_USER));
+  KASSERT_DBG(cs == segment_selector(GDT_USER_CODE_SEGMENT_32, RPL_USER));
 #endif
 
   context.type = USER_CONTEXT_INTERRUPT;

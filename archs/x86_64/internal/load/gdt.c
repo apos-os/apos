@@ -25,13 +25,13 @@ void gdt_init(void) {
   // See section 3.4.5.1 of the Intel manuals for a description of the type
   // field.
   g_gdt[GDT_KERNEL_CODE_SEGMENT] =
-      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_CODE, 0x2, 0, 0);
+      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_CODE, 0x2, 0, 0, true);
   g_gdt[GDT_KERNEL_DATA_SEGMENT] =
-      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_DATA, 0x2, 0, 0);
-  g_gdt[GDT_USER_CODE_SEGMENT] =
-      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_CODE, 0x2, 3, 0);
-  g_gdt[GDT_USER_DATA_SEGMENT] =
-      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_DATA, 0x2, 3, 0);
+      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_DATA, 0x2, 0, 0, true);
+  g_gdt[GDT_USER_CODE_SEGMENT_32] =
+      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_CODE, 0x2, 3, 0, false);
+  g_gdt[GDT_USER_DATA_SEGMENT_32] =
+      gdt_entry_create_segment_PHYS(0x0, 0x0, SEG_DATA, 0x2, 3, 0, false);
 
   gdt_ptr_t gdtptr;
   gdtptr.base = (addr_t)(&g_gdt);

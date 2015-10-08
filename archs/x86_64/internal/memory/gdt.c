@@ -55,7 +55,7 @@ _Static_assert(sizeof(gdt_gate_entry_t) == 2 * sizeof(gdt_entry_t),
 
 gdt_entry_t MULTILINK(gdt_entry_create_segment) (
     uint32_t base, uint32_t limit, gdt_seg_type_t type,
-    uint8_t flags, uint8_t dpl, uint8_t granularity) {
+    uint8_t flags, uint8_t dpl, uint8_t granularity, bool is64bit) {
   gdt_entry_t entry_data;
   gdt_segment_entry_t* entry = (gdt_segment_entry_t*)(&entry_data);
   entry->base_low = base & 0x0000FFFF;
@@ -71,14 +71,14 @@ gdt_entry_t MULTILINK(gdt_entry_create_segment) (
 
   switch (type) {
     case SEG_CODE:
-      entry->l = 1;
+      entry->l = is64bit;
       entry->sys = 1;
-      entry->db = 0;
+      entry->db = is64bit ? 0 : 1;
       break;
 
     case SEG_DATA:
       entry->sys = 1;
-      entry->db = 0;
+      entry->db = 1;
       break;
   }
 
