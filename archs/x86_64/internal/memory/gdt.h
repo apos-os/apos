@@ -22,16 +22,17 @@
 #include "common/types.h"
 
 // Common segment indices.
-#define GDT_NUM_ENTRIES 8
+#define GDT_NUM_ENTRIES 10
 
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
 #define GDT_KERNEL_DATA_SEGMENT 2
 #define GDT_USER_CODE_SEGMENT_32 3
 #define GDT_USER_DATA_SEGMENT_32 4
-#define GDT_TSS 5
-#define GDT_TSS_UPPER 6
-#define GDT_SYSCALL_CALL_GATE 7
+#define GDT_SYSCALL_CALL_GATE 6
+#define GDT_SYSCALL_CALL_GATE_UPPER 7
+#define GDT_TSS 8
+#define GDT_TSS_UPPER 9
 
 #define RPL_KERNEL 0
 #define RPL_USER 3
