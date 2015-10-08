@@ -148,6 +148,7 @@ static user_context_t extract_interrupt_context(void* rbp_ptr) {
 #endif
 
   context.type = USER_CONTEXT_INTERRUPT;
+  context.is64 = false;
   context.rsp = *((addr_t*)rbp + 9);
   context.rbp = *((addr_t*)*((addr_t*)rbp));
   context.rip = *((addr_t*)rbp + 6);
