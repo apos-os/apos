@@ -53,12 +53,12 @@ base_env = Environment(
 
 base_env.Alias('configure', [])
 
+base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
+base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
+
 # If the user did a 'configure', save their configuration for later.
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
-
-base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
-base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
 
 if not base_env['CLANG']:
   base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
