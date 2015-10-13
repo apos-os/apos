@@ -25,6 +25,7 @@ typedef enum {
   KL_PAGE_FAULT,
 
   KL_PROC,
+  KL_SYSCALL,
 
   // VFS modules.
   KL_EXT2,

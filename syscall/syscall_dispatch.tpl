@@ -35,6 +35,7 @@ case {{ common.syscall_constant(syscall) }}:
 
 #include "arch/syscall/context.h"
 #include "common/errno.h"
+#include "common/klog.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
@@ -82,8 +83,15 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     long arg4, long arg5, long arg6) {
   kthread_current_thread()->syscall_ctx.flags = SCCTX_RESTARTABLE;
 
+  klogfm(KL_SYSCALL, DEBUG, "SYSCALL %ld (%#lx, %#lx, %#lx, %#lx, %#lx, %#lx)",
+         syscall_number, (unsigned long)arg1, (unsigned long)arg2,
+         (unsigned long)arg3, (unsigned long)arg4, (unsigned long)arg5,
+         (unsigned long)arg6);
+
   const long result = do_syscall_dispatch(syscall_number, arg1, arg2, arg3,
       arg4, arg5, arg6);
+
+  klogfm(KL_SYSCALL, DEBUG, " --> %ld (%#lx)\n", result, (unsigned long)result);
 
   proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result,
                         &kthread_current_thread()->syscall_ctx);
