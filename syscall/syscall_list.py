@@ -246,19 +246,20 @@ AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('stat', 35, 'vfs_stat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'],
-    newlib_defined=True)
+    'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
+    needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('lstat', 36, 'vfs_lstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+    'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
+    needs_32bit_conv=True)
 
 AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'int:fd:u',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'],
-    newlib_defined=True)
+    'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
+    needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('lseek', 38, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'off_t', [
