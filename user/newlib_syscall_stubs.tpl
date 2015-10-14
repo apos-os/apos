@@ -26,6 +26,7 @@
 {# Next, generate L2 stubs (that call the L1 stubs) for all syscalls that want
   an automatically generated user-mode stub. #}
 {% for syscall in SYSCALLS if 'L2' in syscall.stubs_to_generate %}
+{% set syscall = syscall.native() %}
 {{ syscall.return_type }} _{{ syscall.name }}_r(struct _reent* reent_ptr{% if syscall.args %}, {{ common.decl_args(syscall.args) }}{% endif %}) {
   {{ syscall.return_type }} result = _do_{{ syscall.name }}({{ syscall.args | join(', ', 'name') }});
   {% if syscall.can_fail -%}
@@ -44,6 +45,7 @@
 {# Finally, generate L3 stubs (that call the L2 reentrant stubs) for syscalls
   that newlib doesn't define itself. #}
 {% for syscall in SYSCALLS if 'L3' in syscall.stubs_to_generate %}
+{% set syscall = syscall.native() %}
 {{ common.syscall_decl(syscall, '') }} {
   return _{{ syscall.name }}_r(_REENT{% if syscall.args %}, {{ syscall.args |
       join(', ', 'name') }}{% endif %});

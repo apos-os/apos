@@ -150,7 +150,8 @@ def filter_tpl(nodes):
 tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
     recursive=filter_tpl)
 
-tpl_bld = Builder(action = 'util/tpl_gen.py $SOURCE > $TARGET',
+tpl_bld = Builder(
+    action = 'APOS_ARCH=%s util/tpl_gen.py $SOURCE > $TARGET' % env['ARCH'],
     suffix = '.tpl.c',
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)

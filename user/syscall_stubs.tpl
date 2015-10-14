@@ -59,6 +59,6 @@ static inline {{ common.syscall_decl(syscall, '_do_') }} {
 
 {# First, generate L1 stubs for most syscalls. #}
 {% for syscall in SYSCALLS if 'L1' in syscall.stubs_to_generate %}
-{{ syscall_impl(syscall) }}
+{{ syscall_impl(syscall.native()) }}
 
 {% endfor %}

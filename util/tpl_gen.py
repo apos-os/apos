@@ -36,7 +36,7 @@ def main(argv):
   tpl_file = argv[1]
 
   # Find modules to import.
-  python_env = {}
+  python_env = {'ARCH': os.getenv('APOS_ARCH')}
   with open(tpl_file) as f:
     for line in f.readlines():
       m = re.search('\{#\s*PY_IMPORT\s*(\S*)', line)
