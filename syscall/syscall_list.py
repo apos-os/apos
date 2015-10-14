@@ -413,9 +413,9 @@ AddSyscall('setpgid', 34, 'setpgid', 'proc/group.h', '<unistd.h>',
     'int', ['pid_t:pid:u', 'pid_t:pgid:u'])
 
 AddSyscall('mmap', 39, 'mmap_wrapper', 'syscall/wrappers.h', '<sys/mman.h>',
-        'int', ['void**:addr_inout:brw:sizeof(void*)', 'size_t:length:u',
+        'int', ['void*:addr_inout:brw:sizeof(void*)', 'size_t:length:u',
                  'int:prot:u', 'int:flags:u', 'int:fd:u', 'off_t:offset:u'],
-        stubs_to_generate=['L1'])
+        stubs_to_generate=['L1'], needs_32bit_conv=True)
 
 AddSyscall('munmap', 40, 'do_munmap', 'memory/mmap.h', '<sys/mman.h>',
         'int', ['void*:addr:u', 'size_t:length:u'])

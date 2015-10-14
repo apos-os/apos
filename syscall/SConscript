@@ -21,6 +21,7 @@ srcs = [
   'syscall_dmz.tpl.c',
   'test.c',
   'wrappers.c',
+  'wrappers32.c',
 ]
 
 subdirs = []

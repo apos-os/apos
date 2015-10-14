@@ -39,6 +39,7 @@ case {{ common.syscall_constant(syscall) }}:
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
+#include "syscall/wrappers32.h"
 #include "user/include/apos/syscalls.h"
 
 {{ common.include_headers(SYSCALLS, 'header') }}

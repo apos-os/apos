@@ -124,8 +124,8 @@ pid_t getppid_wrapper() {
   }
 }
 
-int mmap_wrapper(void** addr_inout, addr_t length, int prot, int flags,
+int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
                  int fd, addr_t offset) {
-  void* addr = *addr_inout;
-  return do_mmap(addr, length, prot, flags, fd, offset, addr_inout);
+  void* addr = *(void**)addr_inout;
+  return do_mmap(addr, length, prot, flags, fd, offset, (void**)addr_inout);
 }

@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "syscall/dmz.h"
+#include "syscall/wrappers32.h"
 
 {{ common.include_headers(SYSCALLS, 'header') }}
 

@@ -40,7 +40,7 @@ pid_t getppid_wrapper(void);
 
 // Wrapper for do_mmap that combines the address in and out arguments to squeeze
 // into the syscall limit.
-int mmap_wrapper(void** addr_inout, addr_t length, int prot, int flags,
+int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
                  int fd, addr_t offset);
 
 #endif
