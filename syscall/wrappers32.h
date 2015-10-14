@@ -18,8 +18,10 @@
 
 #include "common/config.h"
 #include "common/types.h"
+#include "user/include/apos/posix_signal.h"
 #include "user/include/apos/vfs/stat.h"
 
+// stat() wrappers.
 struct timespec_32 {
   int32_t tv_sec;
   int32_t tv_nsec;
@@ -53,6 +55,21 @@ _Static_assert(sizeof(apos_stat_32_t) == sizeof(apos_stat_t),
 int vfs_stat_32(const char* path, apos_stat_32_t* stat);
 int vfs_lstat_32(const char* path, apos_stat_32_t* stat);
 int vfs_fstat_32(int fd, apos_stat_32_t* stat);
+
+// Signal handling wrappers.
+struct sigaction_32 {
+  /* sighandler_t */ uint32_t sa_handler;
+  sigset_t sa_mask;
+  int sa_flags;
+};
+_Static_assert(sizeof(struct sigaction_32) == 12, "sigaction_32_t wrong size!");
+#if ARCH == ARCH_i586
+_Static_assert(sizeof(struct sigaction_32) == sizeof(struct sigaction),
+               "struct timespec_32 wrong size!");
+#endif
+
+int proc_sigaction_32(int signum, const struct sigaction_32* act,
+                      struct sigaction_32* oldact);
 
 int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
                     int fd, addr_t offset);

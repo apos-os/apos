@@ -347,8 +347,9 @@ AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     '<signal.h>',
     'int', [
     'int:signum:u',
-    'const struct sigaction*:act:br?:sizeof(struct sigaction)',
-    'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
+    'const struct sigaction%(s32)s*:act:br?:sizeof(struct sigaction%(s32)s)',
+    'struct sigaction%(s32)s*:oldact:bw?:sizeof(struct sigaction%(s32)s)'],
+    needs_32bit_conv=True)
 
 AddSyscall('sigprocmask', 52, 'proc_sigprocmask', 'proc/signal/signal.h',
     '<signal.h>',

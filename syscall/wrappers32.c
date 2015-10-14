@@ -14,7 +14,9 @@
 
 #include <stddef.h>
 
+#include "common/kassert.h"
 #include "memory/mmap.h"
+#include "proc/signal/signal.h"
 #include "syscall/wrappers32.h"
 #include "vfs/vfs.h"
 
@@ -60,6 +62,36 @@ int vfs_fstat_32(int fd, apos_stat_32_t* stat) {
   apos_stat_t stat64;
   int result = vfs_fstat(fd, &stat64);
   stat64to32(&stat64, stat);
+  return result;
+}
+
+static void sigaction32to64(const struct sigaction_32* sa32,
+                            struct sigaction* sa64) {
+  _Static_assert(sizeof(struct sigaction_32) == 12,
+                 "sigaction32to64 needs to be updated");
+  sa64->sa_handler = (sighandler_t)(intptr_t)sa32->sa_handler;
+  sa64->sa_mask = sa32->sa_mask;
+  sa64->sa_flags = sa32->sa_flags;
+}
+
+static void sigaction64to32(const struct sigaction* sa64,
+                            struct sigaction_32* sa32) {
+  _Static_assert(sizeof(struct sigaction_32) == 12,
+                 "sigaction64to32 needs to be updated");
+  // TODO(aoates): test signal handling after a 64-to-32-bit exec().
+  KASSERT_DBG(((addr_t)sa64->sa_handler & 0xFFFFFFFF00000000) == 0);
+  sa32->sa_handler = (uint32_t)(addr_t)sa64->sa_handler;
+  sa32->sa_mask = sa64->sa_mask;
+  sa32->sa_flags = sa64->sa_flags;
+}
+
+int proc_sigaction_32(int signum, const struct sigaction_32* act32,
+                      struct sigaction_32* oldact32) {
+  struct sigaction act, oldact;
+  if (act32) sigaction32to64(act32, &act);
+  int result =
+      proc_sigaction(signum, act32 ? &act : NULL, oldact32 ? &oldact : NULL);
+  if (oldact32) sigaction64to32(&oldact, oldact32);
   return result;
 }
 
