@@ -19,6 +19,9 @@
 bool run_slow_tests = false;
 
 int main(int argc, char** argv) {
+  if (strcmp(argv[0], "execve_test_helper") == 0)
+    return execve_helper(argc, argv);
+
   if (argc > 1 && strcmp(argv[1], "all") == 0)
     run_slow_tests = true;
 

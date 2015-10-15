@@ -25,4 +25,7 @@ void execve_test(void);
 void stop_test(void);
 void wait_test(void);
 
+// Helper when self-exec'ing in execve() tests.
+int execve_helper(int argc, char** argv);
+
 #endif
