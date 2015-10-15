@@ -29,12 +29,6 @@ static inline int proc_exit_wrapper(int status) {
   return 0;  // Should never get here.
 }
 
-// Wrapper to manually verify and copy the string tables, and clean up the
-// memory before entering the new process.
-int execve_wrapper(const char* path_checked,
-                   char* const* argv_unchecked,
-                   char* const* envp_unchecked);
-
 pid_t getpid_wrapper(void);
 pid_t getppid_wrapper(void);
 

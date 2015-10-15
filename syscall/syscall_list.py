@@ -314,7 +314,7 @@ AddSyscall('waitpid', 62, 'proc_waitpid', 'proc/wait.h', '<sys/wait.h>',
 # The execve wrapper manually checks its arguments so that it can clean up the
 # allocated kernel copies properly (since on success, do_execve will never
 # return).
-AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
+AddSyscall('execve', 15, 'execve_wrapper', 'syscall/execve_wrapper.h',
     '<unistd.h>',
     'int', [
     'const char*:path:u', # Manually checked by the wrapper.
