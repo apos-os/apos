@@ -21,4 +21,7 @@ int execve_wrapper(const char* path_checked,
                    char* const* argv_unchecked,
                    char* const* envp_unchecked);
 
+int execve_wrapper_32(const char* path_checked,
+                      char* const* argv_unchecked,
+                      char* const* envp_unchecked);
 #endif

@@ -35,10 +35,13 @@ static void free_string_table(char** KERNEL_table) {
 // or -errno.
 // TODO(aoates): standardize this if it comes up in other syscalls.  Or possibly
 // move it to dmz.h/c as a general utility (and unit test it).
-static int copy_string_table(char* const* table_unchecked,
-                             char*** table_out_ptr) {
+static int copy_string_table(const void* table_unchecked,
+                             char*** table_out_ptr, bool is64bit) {
+  if (is64bit) {
+    KASSERT_DBG(sizeof(void*) >= 8);
+  }
   *table_out_ptr = NULL;
-  const int size = syscall_verify_ptr_table(table_unchecked, false);
+  const int size = syscall_verify_ptr_table(table_unchecked, is64bit);
   KASSERT(size != 0);
   if (size < 0) return size;
 
@@ -50,7 +53,9 @@ static int copy_string_table(char* const* table_unchecked,
 
   // Copy each string in the table.
   for (int i = 0; i < size - 1; ++i) {
-    const int string_size = syscall_verify_string(table_unchecked[i]);
+    addr_t string_addr = is64bit ? ((addr64_t*)table_unchecked)[i]
+                                 : ((addr32_t*)table_unchecked)[i];
+    const int string_size = syscall_verify_string((const char*)string_addr);
     if (string_size < 0) {
       free_string_table(KERNEL_table);
       return string_size;
@@ -62,7 +67,7 @@ static int copy_string_table(char* const* table_unchecked,
       return -ENOMEM;
     }
 
-    kmemcpy(KERNEL_table[i], table_unchecked[i], string_size);
+    kmemcpy(KERNEL_table[i], (void*)string_addr, string_size);
     KERNEL_table[i][string_size - 1] = '\0';
   }
 
@@ -78,9 +83,9 @@ static void cleanup(const char* path, char* const argv[], char* const envp[],
   if (envp) free_string_table((char**)envp);
 }
 
-int execve_wrapper(const char* path_unchecked,
-                   char* const* argv_unchecked,
-                   char* const* envp_unchecked) {
+static int execve_wrapper_internal(const char* path_unchecked,
+                                   char* const* argv_unchecked,
+                                   char* const* envp_unchecked, bool is64bit) {
   // Make a kernel copy of path.
   const int SIZE_path = syscall_verify_string(path_unchecked);
   if (SIZE_path < 0) return SIZE_path;
@@ -93,13 +98,13 @@ int execve_wrapper(const char* path_unchecked,
   // Make kernel copies of the tables.
   char** KERNEL_argv = NULL;
   char** KERNEL_envp = NULL;
-  int result = copy_string_table(argv_unchecked, &KERNEL_argv);
+  int result = copy_string_table(argv_unchecked, &KERNEL_argv, is64bit);
   if (result) {
     cleanup(KERNEL_path, KERNEL_argv, KERNEL_envp, NULL);
     return result;
   }
 
-  result = copy_string_table(envp_unchecked, &KERNEL_envp);
+  result = copy_string_table(envp_unchecked, &KERNEL_envp, is64bit);
   if (result) {
     cleanup(KERNEL_path, KERNEL_argv, KERNEL_envp, NULL);
     return result;
@@ -109,4 +114,17 @@ int execve_wrapper(const char* path_unchecked,
   KASSERT(result != 0);
   cleanup(KERNEL_path, KERNEL_argv, KERNEL_envp, NULL);
   return result;
+}
+
+int execve_wrapper(const char* path_unchecked, char* const* argv_unchecked,
+                   char* const* envp_unchecked) {
+  const bool is64bit = (sizeof(addr_t) == 8);
+  return execve_wrapper_internal(path_unchecked, argv_unchecked, envp_unchecked,
+                                 is64bit);
+}
+
+int execve_wrapper_32(const char* path_unchecked, char* const* argv_unchecked,
+                      char* const* envp_unchecked) {
+  return execve_wrapper_internal(path_unchecked, argv_unchecked, envp_unchecked,
+                                 false);
 }

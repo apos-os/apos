@@ -321,7 +321,7 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/execve_wrapper.h',
     'char* const*:argv:u',  # Manually checked by the wrapper.
     'char* const*:envp:u',  # Manually checked by the wrapper.
     ],
-    newlib_defined=True)
+    needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
