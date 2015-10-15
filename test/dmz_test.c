@@ -142,9 +142,10 @@ static void dmz_string_basic(void) {
 
 static void dmz_table_basic(void) {
   const addr_t kRegionSize = 2 * PAGE_SIZE;
+  const bool is64bit = (sizeof(addr_t) == 8);
 
   KTEST_BEGIN("syscall_verify_ptr_table() invalid args test");
-  KEXPECT_EQ(-EINVAL, syscall_verify_ptr_table(NULL));
+  KEXPECT_EQ(-EINVAL, syscall_verify_ptr_table(NULL, is64bit));
 
   KTEST_BEGIN("syscall_verify_ptr_table() basic test");
   void* addrA = 0x0;
@@ -154,21 +155,88 @@ static void dmz_table_basic(void) {
   ((addr_t*)addrA)[0] = 1;
   ((addr_t*)addrA)[1] = 2;
   ((addr_t*)addrA)[2] = 0x0;
-  KEXPECT_EQ(3, syscall_verify_ptr_table(addrA));
+  KEXPECT_EQ(3, syscall_verify_ptr_table(addrA, is64bit));
 
-  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 1));
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 1, is64bit));
 
   KTEST_BEGIN("syscall_verify_ptr_table() zero-length test");
   ((addr_t*)addrA)[0] = 0x0;
-  KEXPECT_EQ(1, syscall_verify_ptr_table(addrA));
+  KEXPECT_EQ(1, syscall_verify_ptr_table(addrA, is64bit));
 
   KTEST_BEGIN("syscall_verify_ptr_table() full region (unterminated) test");
   kmemset(addrA, 'x', kRegionSize);
-  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA));
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA, is64bit));
 
   KTEST_BEGIN("syscall_verify_ptr_table() full region (terminated) test");
   ((addr_t*)addrA)[kRegionSize / sizeof(addr_t) - 1] = 0x0;
-  KEXPECT_EQ(kRegionSize / sizeof(addr_t), syscall_verify_ptr_table(addrA));
+  KEXPECT_EQ(kRegionSize / sizeof(addr_t),
+             syscall_verify_ptr_table(addrA, is64bit));
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+}
+
+static void dmz_table_different_ptr_size(void) {
+  const addr_t kRegionSize = 2 * PAGE_SIZE;
+
+  KTEST_BEGIN("syscall_verify_ptr_table() basic test [32-bit]");
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
+                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+
+  ((addr32_t*)addrA)[0] = 1;
+  ((addr32_t*)addrA)[1] = 2;
+  ((addr32_t*)addrA)[2] = 0x80000000;
+  ((addr32_t*)addrA)[3] = 0x0;
+  KEXPECT_EQ(4, syscall_verify_ptr_table(addrA, false));
+
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 1, false));
+
+  KTEST_BEGIN("syscall_verify_ptr_table() zero-length test [32-bit]");
+  ((addr32_t*)addrA)[0] = 0x0;
+  KEXPECT_EQ(1, syscall_verify_ptr_table(addrA, false));
+
+  KTEST_BEGIN(
+      "syscall_verify_ptr_table() full region (unterminated) test [32-bit]");
+  kmemset(addrA, 'x', kRegionSize);
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA, false));
+
+  KTEST_BEGIN(
+      "syscall_verify_ptr_table() full region (terminated) test [32-bit]");
+  ((addr32_t*)addrA)[kRegionSize / sizeof(addr32_t) - 1] = 0x0;
+  KEXPECT_EQ(kRegionSize / sizeof(addr32_t),
+             syscall_verify_ptr_table(addrA, false));
+
+  // Test 64-bit.
+  KTEST_BEGIN("syscall_verify_ptr_table() basic test [64-bit]");
+  kmemset(addrA, 0, 2 * PAGE_SIZE);
+  ((addr64_t*)addrA)[0] = 1;
+  ((addr64_t*)addrA)[1] = 2;
+  ((addr64_t*)addrA)[2] = 0x00020000;
+  ((addr64_t*)addrA)[3] = 0x80000000;
+  ((addr64_t*)addrA)[4] = 0x0000000100000000;
+  ((addr64_t*)addrA)[5] = 0x8000000000000000;
+  ((addr64_t*)addrA)[6] = 3;
+  ((addr64_t*)addrA)[7] = 0x0;
+  KEXPECT_EQ(8, syscall_verify_ptr_table(addrA, true));
+
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 1, true));
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 4, true));
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA - 8, true));
+
+  KTEST_BEGIN("syscall_verify_ptr_table() zero-length test [64-bit]");
+  ((addr64_t*)addrA)[0] = 0x0;
+  KEXPECT_EQ(1, syscall_verify_ptr_table(addrA, true));
+
+  KTEST_BEGIN(
+      "syscall_verify_ptr_table() full region (unterminated) test [64-bit]");
+  kmemset(addrA, 'x', kRegionSize);
+  KEXPECT_EQ(-EFAULT, syscall_verify_ptr_table(addrA, true));
+
+  KTEST_BEGIN(
+      "syscall_verify_ptr_table() full region (terminated) test [64-bit]");
+  ((addr64_t*)addrA)[kRegionSize / sizeof(addr64_t) - 1] = 0x0;
+  KEXPECT_EQ(kRegionSize / sizeof(addr64_t),
+             syscall_verify_ptr_table(addrA, true));
 
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 }
@@ -185,4 +253,5 @@ void dmz_test(void) {
   dmz_string_basic();
 
   dmz_table_basic();
+  dmz_table_different_ptr_size();
 }

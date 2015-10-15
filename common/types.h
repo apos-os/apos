@@ -21,4 +21,7 @@
 #include "arch/common/types.h"
 #include "user/include/apos/posix_types.h"
 
+typedef uint32_t addr32_t;
+typedef uint64_t addr64_t;
+
 #endif

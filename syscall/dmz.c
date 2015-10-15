@@ -15,6 +15,8 @@
 #include <stddef.h>
 
 #include "common/errno.h"
+#include "common/kassert.h"
+#include "common/kstring.h"
 #include "common/types.h"
 #include "memory/vm.h"
 #include "syscall/dmz.h"
@@ -55,7 +57,7 @@ int syscall_verify_string(const char* str) {
 
 // TODO(aoates): combine this somehow with syscall_verify_string, which is
 // nearly identical.
-int syscall_verify_ptr_table(void* table[]) {
+int syscall_verify_ptr_table(const void* table, bool is64bit) {
   if (!table) {
     return -EINVAL;
   }
@@ -68,8 +70,11 @@ int syscall_verify_ptr_table(void* table[]) {
   // Look for a NULL in the valid region.
   // TODO(aoates): there's a race here if the user concurrently munmap()s the
   // region containing the string.
-  for (addr_t i = 0; (addr_t)table + sizeof(void*) * i < region_end; ++i) {
-    if (table[i] == '\0') {
+  const addr_t table_base = (addr_t)table;
+  const size_t ptr_size = is64bit ? sizeof(addr64_t) : sizeof(addr32_t);
+  for (addr_t i = 0; table_base + i * ptr_size < region_end; ++i) {
+    addr64_t ptr = is64bit ? ((addr64_t*)table)[i] : ((addr32_t*)table)[i];
+    if (ptr == 0x0) {
       return i + 1;
     }
   }

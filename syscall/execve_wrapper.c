@@ -38,7 +38,7 @@ static void free_string_table(char** KERNEL_table) {
 static int copy_string_table(char* const* table_unchecked,
                              char*** table_out_ptr) {
   *table_out_ptr = NULL;
-  const int size = syscall_verify_ptr_table((void**)table_unchecked);
+  const int size = syscall_verify_ptr_table(table_unchecked, false);
   KASSERT(size != 0);
   if (size < 0) return size;
 
