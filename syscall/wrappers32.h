@@ -19,6 +19,7 @@
 #include "common/config.h"
 #include "common/types.h"
 #include "user/include/apos/posix_signal.h"
+#include "user/include/apos/termios.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "user/include/apos/vfs/stat.h"
 
@@ -89,5 +90,8 @@ int vfs_getdents_32(int fd, dirent_32_t* buf, int count);
 
 int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
                     int fd, addr_t offset);
+
+// Some types we want to ensure are always the same size on all architectures.
+_Static_assert(sizeof(struct termios) == 28, "struct termios wrong size!");
 
 #endif

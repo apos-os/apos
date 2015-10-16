@@ -904,6 +904,7 @@ static void noflsh_test(void) {
   KEXPECT_STREQ("ab^C^Z^\\c", g_sink);
 
   char buf[10];
+  kmemset(buf, 0, sizeof(buf));
   KEXPECT_EQ(3, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("abc", buf);
 

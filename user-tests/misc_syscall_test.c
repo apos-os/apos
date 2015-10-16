@@ -14,10 +14,13 @@
 
 #include <apos/syscall_decls.h>
 #include <apos/time_types.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
 
 #include "ktest.h"
 
-void misc_syscall_test(void) {
+static void apos_get_time_test(void) {
   KTEST_SUITE_BEGIN("apos_get_time() test");
   KTEST_BEGIN("apos_get_time(): basic test");
   struct apos_tm tm;
@@ -42,4 +45,71 @@ void misc_syscall_test(void) {
   KEXPECT_EQ(EFAULT, errno);
   KEXPECT_EQ(-1, apos_get_time((struct apos_tm*)0x1cfff));
   KEXPECT_EQ(-1, apos_get_time((struct apos_tm*)0xc1000000));
+}
+
+static void termios_test(void) {
+  KTEST_SUITE_BEGIN("termios tests");
+  KTEST_BEGIN("tcgetattr()/tcsetattr(): basic test");
+  struct termios t;
+  memset(&t, 0, sizeof(t));
+
+  int fd = open("/dev/tty0", O_RDWR);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(0, tcgetattr(fd, &t));
+  const tcflag_t kAllIFlag = BRKINT | ICRNL | IGNBRK | IGNCR | IGNPAR | INLCR |
+                             INPCK | ISTRIP | IXANY | IXOFF | IXON | PARMRK;
+  const tcflag_t kAllOFlag =
+      OPOST | ONLCR | OCRNL | ONOCR | ONLRET | OFDEL | OFILL | NLDLY | NL0 |
+      NL1 | CRDLY | CR0 | CR1 | CR2 | CR3 | TABDLY | TAB0 | TAB1 | TAB2 | TAB3 |
+      BSDLY | BS0 | BS1 | VTDLY | VT0 | VT1 | FFDLY | FF0 | FF1;
+  const tcflag_t kAllCFlag =
+      CSIZE | CSTOPB | CREAD | PARENB | PARODD | HUPCL | CLOCAL;
+  const tcflag_t kAllLFlag =
+      ECHO | ECHOE | ECHOK | ECHONL | ICANON | IEXTEN | ISIG | NOFLSH | TOSTOP;
+
+  KEXPECT_EQ(0, t.c_iflag & ~kAllIFlag);
+  KEXPECT_EQ(0, t.c_oflag & ~kAllOFlag);
+  KEXPECT_EQ(0, t.c_cflag & ~kAllCFlag);
+  KEXPECT_EQ(0, t.c_lflag & ~kAllLFlag);
+
+  const struct termios orig_t = t;
+  t.c_lflag ^= ECHO;
+  KEXPECT_EQ(0, tcsetattr(fd, TCSANOW, &t));
+  memset(&t, 0, sizeof(t));
+  KEXPECT_EQ(0, tcgetattr(fd, &t));
+  KEXPECT_EQ(orig_t.c_iflag, t.c_iflag);
+  KEXPECT_EQ(orig_t.c_oflag, t.c_oflag);
+  KEXPECT_EQ(orig_t.c_cflag, t.c_cflag);
+  KEXPECT_NE(orig_t.c_lflag, t.c_lflag);
+  KEXPECT_EQ(orig_t.c_lflag, t.c_lflag ^ ECHO);
+  t.c_lflag = orig_t.c_lflag;
+  KEXPECT_EQ(0, tcsetattr(fd, TCSANOW, &t));
+
+  KTEST_BEGIN("tcgetattr()/tcsetattr(): bad arguments test");
+  KEXPECT_EQ(-1, tcgetattr(-5, &t));
+  KEXPECT_EQ(EBADF, errno);
+  KEXPECT_EQ(-1, tcgetattr(fd, NULL));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, tcgetattr(fd, (struct termios*)0x1fff));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, tcgetattr(fd, (struct termios*)0xc1000000));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, tcsetattr(-5, TCSANOW, &t));
+  KEXPECT_EQ(EBADF, errno);
+  KEXPECT_EQ(-1, tcsetattr(fd, 55, &t));
+  KEXPECT_EQ(EINVAL, errno);
+  KEXPECT_EQ(-1, tcsetattr(fd, TCSANOW, NULL));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, tcsetattr(fd, TCSANOW, (struct termios*)0x1fff));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, tcsetattr(fd, TCSANOW, (struct termios*)0xc1000000));
+  KEXPECT_EQ(EFAULT, errno);
+
+  KEXPECT_EQ(0, close(fd));
+}
+
+void misc_syscall_test(void) {
+  apos_get_time_test();
+  termios_test();
 }
