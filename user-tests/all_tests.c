@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
   stop_test();
   wait_test();
   fs_test();
+  misc_syscall_test();
 
   ktest_finish_all();
   return 0;
