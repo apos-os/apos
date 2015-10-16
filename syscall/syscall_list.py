@@ -482,8 +482,11 @@ AddSyscall('poll', 69, 'vfs_poll', 'vfs/poll.h', '<poll.h>',
 
 AddSyscall('getrlimit', 75, 'proc_getrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',
-    ['int:resource:u', 'struct rlimit*:lim:bw:sizeof(struct rlimit)'])
+    ['int:resource:u', 'struct rlimit%(s32)s*:lim:bw:sizeof(struct rlimit)'],
+    needs_32bit_conv=True)
 
 AddSyscall('setrlimit', 76, 'proc_setrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',
-    ['int:resource:u', 'const struct rlimit*:lim:br:sizeof(struct rlimit)'])
+    ['int:resource:u',
+      'const struct rlimit%(s32)s*:lim:br:sizeof(struct rlimit)'],
+    needs_32bit_conv=True)

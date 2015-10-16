@@ -18,6 +18,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "memory/mmap.h"
+#include "proc/limit.h"
 #include "proc/signal/signal.h"
 #include "syscall/wrappers32.h"
 #include "vfs/vfs.h"
@@ -126,6 +127,25 @@ int vfs_getdents_32(int fd, dirent_32_t* buf_in, int count) {
 
   kfree(buf64);
   return out_offset;
+}
+
+int proc_getrlimit_32(int resource, struct rlimit_32* lim) {
+  struct rlimit lim64;
+  int result = proc_getrlimit(resource, &lim64);
+  if (result == 0) {
+    // TODO(aoates): verify this handles overflow correctly.
+    lim->rlim_cur = lim64.rlim_cur;
+    lim->rlim_max = lim64.rlim_max;
+  }
+  return result;
+}
+
+int proc_setrlimit_32(int resource, const struct rlimit_32* lim) {
+  struct rlimit lim64;
+  lim64.rlim_cur = lim->rlim_cur;
+  lim64.rlim_max = lim->rlim_max;
+
+  return proc_setrlimit(resource, &lim64);
 }
 
 int mmap_wrapper_32(void* addr_inout32, addr_t length, int prot, int flags,

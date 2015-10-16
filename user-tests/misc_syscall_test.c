@@ -15,6 +15,7 @@
 #include <apos/syscall_decls.h>
 #include <apos/time_types.h>
 #include <fcntl.h>
+#include <sys/resource.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -109,7 +110,46 @@ static void termios_test(void) {
   KEXPECT_EQ(0, close(fd));
 }
 
+static void rlimit_test(void) {
+  KTEST_SUITE_BEGIN("get/setrlimit() tests");
+
+  KTEST_BEGIN("get/setrlimit() basic test");
+  struct rlimit rl = {0, 0};
+  KEXPECT_EQ(0, getrlimit(RLIMIT_NOFILE, &rl));
+  KEXPECT_GE(rl.rlim_max, rl.rlim_cur);
+  const struct rlimit orig_rl = rl;
+  rl.rlim_cur = 5;
+
+  KEXPECT_EQ(0, setrlimit(RLIMIT_NOFILE, &rl));
+  rl.rlim_max = rl.rlim_cur = 0;
+  KEXPECT_EQ(0, getrlimit(RLIMIT_NOFILE, &rl));
+  KEXPECT_EQ(5, rl.rlim_cur);
+  KEXPECT_EQ(orig_rl.rlim_max, rl.rlim_max);
+
+  KEXPECT_EQ(0, setrlimit(RLIMIT_NOFILE, &orig_rl));
+
+  KTEST_BEGIN("get/setrlimit() bad argument test");
+  KEXPECT_EQ(-1, getrlimit(-5, &rl));
+  KEXPECT_EQ(EINVAL, errno);
+  KEXPECT_EQ(-1, getrlimit(100, &rl));
+  KEXPECT_EQ(EINVAL, errno);
+  KEXPECT_EQ(-1, getrlimit(RLIMIT_NOFILE, NULL));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, getrlimit(100, (struct rlimit*)0x1fff));
+  KEXPECT_EQ(EFAULT, errno);
+
+  KEXPECT_EQ(-1, setrlimit(-5, &rl));
+  KEXPECT_EQ(EINVAL, errno);
+  KEXPECT_EQ(-1, setrlimit(100, &rl));
+  KEXPECT_EQ(EINVAL, errno);
+  KEXPECT_EQ(-1, setrlimit(RLIMIT_NOFILE, NULL));
+  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_EQ(-1, setrlimit(100, (struct rlimit*)0x1fff));
+  KEXPECT_EQ(EFAULT, errno);
+}
+
 void misc_syscall_test(void) {
   apos_get_time_test();
   termios_test();
+  rlimit_test();
 }
