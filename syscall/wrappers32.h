@@ -21,6 +21,7 @@
 #include "user/include/apos/posix_signal.h"
 #include "user/include/apos/termios.h"
 #include "user/include/apos/vfs/dirent.h"
+#include "user/include/apos/vfs/poll.h"
 #include "user/include/apos/vfs/stat.h"
 
 // stat() wrappers.
@@ -93,5 +94,6 @@ int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
 
 // Some types we want to ensure are always the same size on all architectures.
 _Static_assert(sizeof(struct termios) == 28, "struct termios wrong size!");
+_Static_assert(sizeof(struct pollfd) == 8, "struct pollfd wrong size!");
 
 #endif
