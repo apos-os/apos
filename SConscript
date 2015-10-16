@@ -50,5 +50,8 @@ kernel = env.Kernel('kernel.bin', Flatten(objects))
 env.Depends(kernel, physlib)
 env.Command('kernel.bin.stripped', 'kernel.bin', '%s -s $SOURCE -o $TARGET' % env['STRIP'])
 
+env.Install(os.path.join('#', env['BUILD_DIR']), 'kernel.bin')
+env.Install(os.path.join('#', env['BUILD_DIR']), 'kernel.bin.stripped')
+
 for subdir in NON_KERNEL_SUBDIRS:
   SConscript(os.path.join(subdir, 'SConscript'))

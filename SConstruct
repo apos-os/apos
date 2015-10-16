@@ -53,6 +53,8 @@ base_env = Environment(
 
 base_env.Alias('configure', [])
 
+base_env.SetDefault(BUILD_CFG_DIR =
+  os.path.join(base_env['BUILD_DIR'], base_env['ARCH']))
 base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
 base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
 
@@ -100,7 +102,7 @@ env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 
 env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
-                      '#/%s' % env['BUILD_DIR']])
+                      '#/%s' % env['BUILD_CFG_DIR']])
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
@@ -162,4 +164,4 @@ env.AddMethod(kernel_program, 'Kernel')
 
 Export('env user_env AposAddSources')
 
-SConscript('SConscript', variant_dir=env['BUILD_DIR'], duplicate=False)
+SConscript('SConscript', variant_dir=env['BUILD_CFG_DIR'], duplicate=False)
