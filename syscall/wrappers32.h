@@ -19,6 +19,7 @@
 #include "common/config.h"
 #include "common/types.h"
 #include "user/include/apos/posix_signal.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "user/include/apos/vfs/stat.h"
 
 // stat() wrappers.
@@ -70,6 +71,21 @@ _Static_assert(sizeof(struct sigaction_32) == sizeof(struct sigaction),
 
 int proc_sigaction_32(int signum, const struct sigaction_32* act,
                       struct sigaction_32* oldact);
+
+// getdents wrappers.
+typedef struct {
+  /* ino_t */ int32_t d_ino;
+  /* off_t */ int32_t d_offset;
+  /* size_t */ uint32_t d_reclen;
+  char d_name[];  // Null-terminated filename
+} dirent_32_t;
+_Static_assert(sizeof(dirent_32_t) == 12, "dirent_32_t wrong size!");
+#if ARCH == ARCH_i586
+_Static_assert(sizeof(dirent_32_t) == sizeof(dirent_t),
+               "dirent_32_t wrong size!");
+#endif
+
+int vfs_getdents_32(int fd, dirent_32_t* buf, int count);
 
 int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
                     int fd, addr_t offset);

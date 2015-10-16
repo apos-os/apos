@@ -24,6 +24,7 @@ void basic_signal_test(void);
 void execve_test(void);
 void stop_test(void);
 void wait_test(void);
+void fs_test(void);
 
 // Helper when self-exec'ing in execve() tests.
 int execve_helper(int argc, char** argv);

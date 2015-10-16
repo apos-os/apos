@@ -35,6 +35,7 @@ int main(int argc, char** argv) {
   execve_test();
   stop_test();
   wait_test();
+  fs_test();
 
   ktest_finish_all();
   return 0;

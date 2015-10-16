@@ -234,8 +234,9 @@ AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
     'int', [
     'int:fd:u',
-    'dirent_t*:buf:bw:count',
-    'int:count:u'])
+    'dirent%(s32)s_t*:buf:bw:count',
+    'int:count:u'],
+    needs_32bit_conv=True)
 
 AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
     'int', [
