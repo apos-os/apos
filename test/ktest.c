@@ -52,7 +52,7 @@ static int failing_test_names_idx = 0;
 // Convert two integer values into strings, appending the errorname if it looks
 // like an error code is being returned (one of the operands is zero, and the
 // other is between -ERRNO_MIN and -ERRNO_MAX).
-static inline void kexpect_int_to_string(int aval, int bval, char* aval_str,
+static inline void kexpect_int_to_string(long aval, long bval, char* aval_str,
                                          char* bval_str) {
   const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
   const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
@@ -149,8 +149,8 @@ void kexpect_int(const char* name, const char* file, const char* line,
                  const char* astr, const char* bstr, long aval, long bval,
                  long result, const char* opstr, kexpect_print_t a_type,
                  kexpect_print_t b_type) {
-  char aval_str[20];
-  char bval_str[20];
+  char aval_str[40];
+  char bval_str[40];
   // If the expected value is written as hex, print the actual value as hex too.
   if (a_type == PRINT_HEX ||
       kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) {
@@ -158,7 +158,7 @@ void kexpect_int(const char* name, const char* file, const char* line,
     ksprintf(bval_str, "0x%s", utoa_hex(bval));
   } else if (b_type == PRINT_SIGNED ||
              kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) {
-    kexpect_int_to_string((int)aval, (int)bval, aval_str, bval_str);
+    kexpect_int_to_string(aval, bval, aval_str, bval_str);
   } else {
     kstrcpy(aval_str, utoa(aval));
     kstrcpy(bval_str, utoa(bval));
