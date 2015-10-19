@@ -54,7 +54,8 @@ base_env = Environment(
 base_env.Alias('configure', [])
 
 base_env.SetDefault(BUILD_CFG_DIR =
-  os.path.join(base_env['BUILD_DIR'], base_env['ARCH']))
+  os.path.join(base_env['BUILD_DIR'], '%s-%s' %
+    (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc')))
 base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
 base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
 
