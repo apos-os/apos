@@ -19,8 +19,22 @@ import re
 import sys
 import subprocess
 
-def symbolize(frame_num, addr):
-  p = subprocess.Popen(["i586-pc-apos-addr2line", "-f", "-s", "-e",
+def get_tool_prefix():
+  try:
+    conf = open('build-config.conf').read()
+  except IOError:
+    print >> sys.stderr, ('Unable to open build-config.conf; '
+        'please run scons configure')
+    sys.exit(1)
+
+  m = re.search('TOOL_PREFIX\s*=\s*\'([^\']*)\'', conf)
+  if not m:
+    print >> sys.stderr, 'TOOL_PREFIX not in build-config.conf'
+    sys.exit(1)
+  return m.group(1)
+
+def symbolize(tool_prefix, frame_num, addr):
+  p = subprocess.Popen(["%saddr2line" % tool_prefix, "-f", "-s", "-e",
                         "build-scons/kernel.bin", addr],
                        stdout=subprocess.PIPE)
   output = p.communicate()[0].split('\n')
@@ -28,13 +42,15 @@ def symbolize(frame_num, addr):
   file_line = output[1]
   return ' #%s %s in %s() [%s]\n' % (frame_num, addr, function, file_line)
 
+TOOL_PREFIX = get_tool_prefix()
+
 try:
   while True:
     line = sys.stdin.readline()
     if not line: sys.exit(0)
     m = re.match(" #(\d*) (0x[a-zA-Z0-9]*)\n", line)
     if m:
-      line = symbolize(m.group(1), m.group(2))
+      line = symbolize(TOOL_PREFIX, m.group(1), m.group(2))
     print line,
 except KeyboardInterrupt:
   sys.stdout.flush()

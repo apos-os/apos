@@ -905,7 +905,7 @@ static void write_large_test(void) {
 #define WRITE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
 #define WRITE_SAFETY_THREADS 5
 static void* write_thread_test_func(void* arg) {
-  const int fd = (int)arg;
+  const int fd = (intptr_t)arg;
   for (int i = 0; i < WRITE_SAFETY_ITERS; ++i) {
     int result = vfs_write(fd, "abc", 3);
     if (result != 3) {
@@ -924,8 +924,8 @@ static void write_thread_test(void) {
   kthread_t threads[WRITE_SAFETY_THREADS];
 
   create_file("/vfs_write_thread_safety_test", RWX);
-  int fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
-  for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
+  intptr_t fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
+  for (intptr_t i = 0; i < WRITE_SAFETY_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i],
                            &write_thread_test_func, (void*)fd) == 0);
     scheduler_make_runnable(threads[i]);
@@ -1175,7 +1175,7 @@ static void seek_test(void) {
 static void* bad_inode_thread_test_func(void* arg) {
   for (int i = 0; i < BAD_INODE_SAFETY_ITERS; ++i) {
     vnode_t* node = vfs_get(vfs_get_root_fs(), 52187 + (i % 3));
-    KEXPECT_EQ(0x0, (int)node);
+    KEXPECT_EQ(0x0, (intptr_t)node);
   }
   return 0x0;
 }
@@ -1199,7 +1199,7 @@ static void bad_inode_thread_test(void) {
 static void get_bad_inode_test(void) {
   KTEST_BEGIN("vfs_get(): bad inode");
   vnode_t* node = vfs_get(vfs_get_root_fs(), 52187);
-  KEXPECT_EQ(0x0, (int)node);
+  KEXPECT_EQ(0x0, (intptr_t)node);
 
   bad_inode_thread_test();
 
@@ -1243,7 +1243,7 @@ void reverse_path_test(void) {
 #define CREATE_SAFETY_THREADS 5
 static void* create_thread_test_func(void* arg) {
   const char kTestDir[] = "/create_thread_test";
-  const int thread_num = (int)arg;
+  const int thread_num = (intptr_t)arg;
   for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
     char buf[512];
     ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
@@ -1259,7 +1259,7 @@ static void* create_thread_test_func(void* arg) {
 
 static void* unlink_thread_test_func(void* arg) {
   const char kTestDir[] = "/create_thread_test";
-  const int thread_num = (int)arg;
+  const int thread_num = (intptr_t)arg;
   for (int i = 0; i < CREATE_SAFETY_ITERS; ++i) {
     char buf[512];
     ksprintf(buf, "%s/%d.%d", kTestDir, thread_num, i);
@@ -1277,7 +1277,7 @@ static void create_thread_test(void) {
   kthread_t threads[CREATE_SAFETY_THREADS];
 
   KEXPECT_EQ(0, vfs_mkdir(kTestDir, 0));
-  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+  for (intptr_t i = 0; i < CREATE_SAFETY_THREADS; ++i) {
     KASSERT(
         kthread_create(&threads[i], &create_thread_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
@@ -1307,7 +1307,7 @@ static void create_thread_test(void) {
   }
 
   KTEST_BEGIN("vfs_unlink(): thread-safety test");
-  for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
+  for (intptr_t i = 0; i < CREATE_SAFETY_THREADS; ++i) {
     KASSERT(
         kthread_create(&threads[i], &unlink_thread_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
@@ -3260,7 +3260,7 @@ static ssize_t read_all(int fd, void* buf, size_t len) {
 static bool is_all_char(const char* buf, char c, size_t len) {
   for (size_t i = 0; i < len; ++i) {
     if (buf[i] != c) {
-      KLOG("char %d is %c, not %c\n", i, buf[i], c);
+      KLOG("char %zu is %c, not %c\n", i, buf[i], c);
       return false;
     }
   }
@@ -3779,7 +3779,7 @@ static void* append_multi_thread_worker(void* arg) {
   KEXPECT_GE(fd, 0);
   for (int i = 0; i < kMultiThreadAppendTestNumWrites; ++i) {
     char buf[2] = {0, 0};
-    buf[0] = (int)arg + '0';
+    buf[0] = (intptr_t)arg + '0';
     int result = vfs_write(fd, buf, 1);
     if (result != 1) {
       KEXPECT_EQ(result, 1);
@@ -3901,7 +3901,7 @@ static void append_test(void) {
   create_file_with_data(kFile, "");
   const int kNumThreads = 3;
   kthread_t threads[kNumThreads];
-  for (int i = 0; i < kNumThreads; ++i) {
+  for (intptr_t i = 0; i < kNumThreads; ++i) {
     KEXPECT_EQ(
         0, kthread_create(&threads[i], &append_multi_thread_worker, (void*)i));
     scheduler_make_runnable(threads[i]);
@@ -5265,7 +5265,7 @@ static void* rename_symlink_open_func(void* arg) {
 
 const int LOCK_ORDER_THREAD_ITERS = 20 * THREAD_SAFETY_MULTIPLIER;
 static void* lock_order_func(void* arg) {
-  const int id = (int)arg;
+  const int id = (intptr_t)arg;
   int result = 0, i;
 
   char pathA[50], pathB[50], pathC[50];
@@ -5344,7 +5344,7 @@ static void rename_thread_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/B", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
 
-  for (int i = 0; i < NUM_OPENERS; ++i) {
+  for (intptr_t i = 0; i < NUM_OPENERS; ++i) {
     KEXPECT_EQ(0, kthread_create(&threads[i], &lock_order_func, (void*)i));
     scheduler_make_runnable(threads[i]);
   }

@@ -63,7 +63,7 @@ static void basic_get_test(apos_dev_t dev) {
   for (int i = 0; i < RAMDISK_BLOCKS; ++i) {
     bc_entry_t* block = 0x0;
     KEXPECT_EQ(0, block_cache_get(obj, i, &block));
-    KEXPECT_NE(0x0, (int)block);
+    KEXPECT_NE(NULL, block);
     KEXPECT_EQ(virt2phys((addr_t)block->block), block->block_phys);
     KEXPECT_GT(obj->refcount, start_obj_refcount);
 
@@ -81,8 +81,8 @@ static void basic_get_test(apos_dev_t dev) {
   KEXPECT_EQ(0, block_cache_get(obj, 0, &block0a));
   KEXPECT_EQ(0, block_cache_get(obj, 0, &block0b));
   KEXPECT_EQ(0, block_cache_get(obj, 1, &block1));
-  KEXPECT_EQ((int)block0a, (int)block0b);
-  KEXPECT_NE((int)block0a, (int)block1);
+  KEXPECT_EQ(block0a, block0b);
+  KEXPECT_NE(block0a, block1);
   block_cache_put(block0a, BC_FLUSH_SYNC);
   block_cache_put(block0b, BC_FLUSH_SYNC);
   block_cache_put(block1, BC_FLUSH_SYNC);
@@ -203,10 +203,10 @@ static void cache_size_test(apos_dev_t dev) {
   KEXPECT_EQ(0, block_cache_get(obj, 1, &block1));
   KEXPECT_EQ(0, block_cache_get(obj, 2, &block2));
   KEXPECT_EQ(-ENOMEM, block_cache_get(obj, 3, &block3));
-  KEXPECT_NE(0x0, (int)block0a);
-  KEXPECT_NE(0x0, (int)block0b);
-  KEXPECT_NE(0x0, (int)block1);
-  KEXPECT_NE(0x0, (int)block2);
+  KEXPECT_NE(NULL, block0a);
+  KEXPECT_NE(NULL, block0b);
+  KEXPECT_NE(NULL, block1);
+  KEXPECT_NE(NULL, block2);
 
   // Put back one of the refs to the first block and make sure we still can't
   // get a new block.
@@ -218,7 +218,7 @@ static void cache_size_test(apos_dev_t dev) {
   if (block0a != 0x0 || block0b != 0x0)
     block_cache_put(block0b, BC_FLUSH_SYNC);
   KEXPECT_EQ(0, block_cache_get(obj, 3, &block3));
-  KEXPECT_NE(0x0, (int)block3);
+  KEXPECT_NE(NULL, block3);
 
   // Clean up.
   if (block1) block_cache_put(block1, BC_FLUSH_SYNC);
@@ -269,16 +269,16 @@ static void get_thread_test(apos_dev_t dev) {
     blocks[i] = kthread_join(threads[i]);
   }
 
-  KEXPECT_NE(0x0, (int)blocks[0]);
+  KEXPECT_NE(NULL, blocks[0]);
   block_cache_put(blocks[0], BC_FLUSH_SYNC);
   for (int i = 1; i < kThreads; ++i) {
-    KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
+    KEXPECT_EQ(blocks[0], blocks[i]);
     if (blocks[i]) block_cache_put(blocks[i], BC_FLUSH_SYNC);
   }
 
   for (int i = kThreads; i < kThreads * 2; ++i) {
     if (blocks[i] != 0x0) {
-      KEXPECT_EQ((int)blocks[0], (int)blocks[i]);
+      KEXPECT_EQ(blocks[0], blocks[i]);
       block_cache_put(blocks[i], BC_FLUSH_SYNC);
     }
   }

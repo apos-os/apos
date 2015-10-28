@@ -19,6 +19,13 @@
 #include "common/types.h"
 #include "memory/flags.h"
 
+// Architecture of a binary.  A particular kernel architecture may support
+// multiple binary architectures (e.g. x86-64 supports both 32- and 64-bit x86
+// binaries).
+typedef enum {
+  BIN_X86_32 = 0,
+} bin_arch_t;
+
 // A region to load into memory.  It consists of a portion to load from a file,
 // followed by a portion to be anonymously mapped, either of which may be
 // zero-length.  The address and length do not have to be page-aligned (but see
@@ -56,6 +63,7 @@ typedef struct {
 // The mappings do not have to start and end on page boundaries, but they must
 // not overlap on the same page.
 typedef struct {
+  bin_arch_t arch;  // The architecture of the binary.
   addr_t entry;  // The binary's entry point, or 0x0 if none.
   int num_regions;  // How many regions to load;
   load_region_t regions[];  // num_regions load_region_ts.

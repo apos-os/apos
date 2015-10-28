@@ -80,7 +80,7 @@ static void do_table_test(htbl_t* tbl) {
 
   KTEST_BEGIN("cleanup test");
   // Add a bunch of nodes (twice per key) then don't remove them.
-  for (int i = 0; i < 100; ++i) {
+  for (intptr_t i = 0; i < 100; ++i) {
     htbl_put(tbl, i, (void*)i);
     htbl_put(tbl, i, (void*)i);
   }
@@ -91,7 +91,7 @@ static int g_iterate_vals[10];
 static void iterate_func(void* arg, uint32_t key, void* val) {
   int* counter = (int*)arg;
   KASSERT(key < ITERATE_SIZE);
-  g_iterate_vals[key] = (int)val;
+  g_iterate_vals[key] = (intptr_t)val;
   (*counter)++;
 }
 

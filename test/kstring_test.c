@@ -77,7 +77,14 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("123", utoa(123));
   KEXPECT_STREQ("1234567890", utoa(1234567890));
   KEXPECT_STREQ("4294967295", utoa(0xFFFFFFFF));
-  _Static_assert(UINT_MAX == 0xFFFFFFFF, "add 64-bit utoa() tests");
+  if (sizeof(unsigned long) == 8) {
+    // The explicit casts here and below are to keep gcc happy in 32-bit mode
+    // with -Woverflow (even those these lines won't be executed).
+    KEXPECT_STREQ("18446744073709551615",
+                  utoa((unsigned long)0xFFFFFFFFFFFFFFFF));
+  }
+  _Static_assert(sizeof(unsigned long) == 4 || sizeof(unsigned long) == 8,
+                 "Unsupported sizeof(unsigned long)");
 
   KTEST_BEGIN("utoa_hex()");
   KEXPECT_STREQ("0", utoa_hex(0));
@@ -88,7 +95,12 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("67890", utoa_hex(0x67890));
   KEXPECT_STREQ("ABCDEF0", utoa_hex(0xABCDEF0));
   KEXPECT_STREQ("FFFFFFFF", utoa_hex(0xFFFFFFFF));
-  _Static_assert(UINT_MAX == 0xFFFFFFFF, "add 64-bit utoa_hex() tests");
+  if (sizeof(unsigned long) == 8) {
+    KEXPECT_STREQ("FFFFFFFFFFFFFFFF",
+                  utoa_hex((unsigned long)0xFFFFFFFFFFFFFFFF));
+  }
+  _Static_assert(sizeof(unsigned long) == 4 || sizeof(unsigned long) == 8,
+                 "Unsupported sizeof(unsigned long)");
 
   KTEST_BEGIN("utoa_hex_lower()");
   KEXPECT_STREQ("0", utoa_hex_lower(0));
@@ -98,6 +110,10 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("12345", utoa_hex_lower(0x12345));
   KEXPECT_STREQ("67890", utoa_hex_lower(0x67890));
   KEXPECT_STREQ("abcdef0", utoa_hex_lower(0xABCDEF0));
+  if (sizeof(unsigned long) == 8) {
+    KEXPECT_STREQ("ffffffffffffffff",
+                  utoa_hex_lower((unsigned long)0xFFFFFFFFFFFFFFFF));
+  }
 
   KTEST_BEGIN("itoa()");
   KEXPECT_STREQ("0", itoa(0));
@@ -109,10 +125,17 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("1234567890", itoa(1234567890));
   KEXPECT_STREQ("-1234567890", itoa(-1234567890));
   KEXPECT_STREQ("2147483647", itoa(0x7FFFFFFF));
-  KEXPECT_STREQ("-2147483648", itoa(0x80000000));
-  // TODO(aoates): add 64-bit tests.
-  _Static_assert(INT_MAX == 0x7FFFFFFF, "add 64-bit itoa() tests");
-  _Static_assert(INT_MIN == (int)0x80000000, "add 64-bit itoa() tests");
+  if (sizeof(long) == 4) {
+    KEXPECT_STREQ("-2147483648", itoa(0x80000000));
+    KEXPECT_STREQ("-2147483647", itoa(0x80000001));
+  } else if (sizeof(long) == 8) {
+    KEXPECT_STREQ("2147483648", itoa(0x80000000));
+    KEXPECT_STREQ("2147483649", itoa(0x80000001));
+    KEXPECT_STREQ("-9223372036854775808", itoa((long)0x8000000000000000));
+    KEXPECT_STREQ("-9223372036854775807", itoa((long)0x8000000000000001));
+  }
+  _Static_assert(sizeof(long) == 4 || sizeof(long) == 8,
+                 "Unsupported sizeof(long)");
 
   KTEST_BEGIN("itoa_hex()");
   KEXPECT_STREQ("0", itoa_hex(0));
@@ -124,10 +147,17 @@ static void kstring_testB(char* buf) {
   KEXPECT_STREQ("ABCDEF0", itoa_hex(0xABCDEF0));
   KEXPECT_STREQ("-ABCDEF0", itoa_hex(-0xABCDEF0));
   KEXPECT_STREQ("7FFFFFFF", itoa_hex(0x7FFFFFFF));
-  KEXPECT_STREQ("-80000000", itoa_hex(0x80000000));
-  // TODO(aoates): add 64-bit tests.
-  _Static_assert(INT_MAX == 0x7FFFFFFF, "add 64-bit itoa_hex() tests");
-  _Static_assert(INT_MIN == (int)0x80000000, "add 64-bit itoa_hex() tests");
+  if (sizeof(long) == 4) {
+    KEXPECT_STREQ("-80000000", itoa_hex(0x80000000));
+    KEXPECT_STREQ("-7FFFFFFF", itoa_hex(0x80000001));
+  } else if (sizeof(long) == 8) {
+    KEXPECT_STREQ("80000000", itoa_hex(0x80000000));
+    KEXPECT_STREQ("80000001", itoa_hex(0x80000001));
+    KEXPECT_STREQ("-8000000000000000", itoa_hex((long)0x8000000000000000));
+    KEXPECT_STREQ("-7FFFFFFFFFFFFFFF", itoa_hex((long)0x8000000000000001));
+  }
+  _Static_assert(sizeof(long) == 4 || sizeof(long) == 8,
+                 "Unsupported sizeof(long)");
 }
 
 static void kstring_testC(void) {

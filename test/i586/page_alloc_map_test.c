@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "arch/memory/page_alloc.h"
+#include "arch/memory/page_map.h"
 #include "archs/i586/internal/dev/interrupts-x86.h"
 #include "archs/i586/internal/memory/page_fault-x86.h"
 #include "archs/i586/internal/memory/page_tables.h"

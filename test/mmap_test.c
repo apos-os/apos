@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
+#include "arch/memory/page_map.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "memory/block_cache.h"
@@ -97,10 +97,10 @@ static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
       if (expected[idx].fd >= 0) {
         KEXPECT_EQ(memobj, area->memobj);
       }
-      KLOG("FAILURE:\n expected: <base: 0x%x  len: 0x%x  memobj: %p>\n",
-           expected[idx].base, expected[idx].length, memobj);
-      KLOG(" found:    <base: 0x%x  len: 0x%x  memobj: %p>\n",
-           area->vm_base, area->vm_length, area->memobj);
+      KLOG("FAILURE:\n expected: <base: %p  len: %p  memobj: %p>\n",
+           (void*)expected[idx].base, (void*)expected[idx].length, memobj);
+      KLOG(" found:    <base: %p  len: %p  memobj: %p>\n",
+           (void*)area->vm_base, (void*)area->vm_length, area->memobj);
       return;
     }
     link = link->next;

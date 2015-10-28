@@ -89,8 +89,7 @@ static void scheduler_timeout(void* arg) {
   KASSERT_DBG(thread->wait_status != SWAIT_TIMEOUT);
   KASSERT_DBG(thread->interruptable);
   thread->wait_timeout_ran = true;
-  if (thread->wait_status == SWAIT_DONE) {
-    KASSERT_DBG(thread->queue != &g_run_queue);
+  if (thread->wait_status == SWAIT_DONE && thread->queue != &g_run_queue) {
     KASSERT_DBG(thread->state == KTHREAD_PENDING);
     KASSERT_DBG(kthread_current_thread()->queue == 0x0);
 

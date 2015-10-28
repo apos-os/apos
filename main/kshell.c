@@ -138,11 +138,8 @@ static const test_entry_t TESTS[] = {
   { "ld", &ld_test, 1 },
   { "kassert", &kassert_test, 1 },
   { "page_alloc", &page_alloc_test, 1 },
-  { "page_alloc_map", &page_alloc_map_test, 1 },
   { "kthread", &kthread_test, 1 },
   { "kthread_pool", &kthread_pool_test, 1 },
-  { "interrupt_clobber", &interrupt_clobber_test, 1 },
-  { "interrupt_save", &interrupt_save_test, 1 },
   { "kstring", &kstring_test, 1 },
   { "kprintf", &kprintf_test, 1 },
   { "hashtable", &hashtable_test, 1 },
@@ -177,6 +174,12 @@ static const test_entry_t TESTS[] = {
   { "vterm", &vterm_test, 1 },
   { "poll", &poll_test, 1 },
   { "limit", &limit_test, 1 },
+
+#if ARCH == ARCH_i586
+  { "page_alloc_map", &page_alloc_map_test, 1 },
+  { "interrupt_clobber", &interrupt_clobber_test, 1 },
+  { "interrupt_save", &interrupt_save_test, 1 },
+#endif
 
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
@@ -1209,6 +1212,11 @@ void kshell_main(apos_dev_t tty) {
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 
   char read_buf[READ_BUF_SIZE];
+
+  if (KSHELL_INITIAL_COMMAND[0]) {
+    parse_and_dispatch(&shell, KSHELL_INITIAL_COMMAND);
+  }
+
   while (1) {
 #if ENABLE_TERM_COLOR
     ksh_printf("\x1b[0m");  // Reset before each prompt.

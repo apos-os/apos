@@ -16,11 +16,13 @@ Import('env AposAddSources')
 
 srcs = [
   'dmz.c',
+  'execve_wrapper.c',
   'fork.c',
   'syscall_dispatch.tpl.c',
   'syscall_dmz.tpl.c',
   'test.c',
   'wrappers.c',
+  'wrappers32.c',
 ]
 
 subdirs = []

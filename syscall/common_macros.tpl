@@ -18,7 +18,7 @@
 
 {# Returns the constant-ified name of the syscall. #}
 {% macro syscall_constant(syscall) -%}
-SYS_{{ syscall.name | upper}}
+SYS_{{ syscall.native().name | upper}}
 {%- endmacro %}
 
 {#- Formats the arguments for use in a function declaration. #}

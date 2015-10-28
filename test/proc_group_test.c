@@ -43,7 +43,7 @@ static void basic_getgpid_test(void) {
 
 // Fork and run the given the given function in the child, and wait for it to
 // exit.
-static void fork_and_run(proc_func_t f, int arg) {
+static void fork_and_run(proc_func_t f, intptr_t arg) {
   int child_pid = proc_fork(f, (void*)arg);
   KEXPECT_EQ(child_pid, proc_wait(0x0));
 }
@@ -66,7 +66,7 @@ static int group_contains(pid_t pgid, pid_t pid) {
 }
 
 static void basic_setgpid_test(void* arg) {
-  const pid_t group = (pid_t)arg;
+  const pid_t group = (intptr_t)arg;
 
   // To ensure it's not looked at or carried to children.
   proc_current()->execed = true;
@@ -116,7 +116,7 @@ static void basic_setgpid_test(void* arg) {
 }
 
 static void invalid_params_setgpid_test(void* arg) {
-  const pid_t group = (pid_t)arg;
+  const pid_t group = (intptr_t)arg;
   const pid_t orig_group = getpgid(0);
 
   KTEST_BEGIN("setgpid() invalid pgid");
@@ -140,7 +140,7 @@ static void invalid_params_setgpid_test(void* arg) {
 }
 
 static void child_setgpid_test(void* arg) {
-  const pid_t group = (pid_t)arg;
+  const pid_t group = (intptr_t)arg;
   int test_done = 0;
 
   // To ensure it's not looked at or carried to children.

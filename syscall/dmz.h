@@ -25,6 +25,7 @@
 #ifndef APOO_SYSCALL_DMZ_H
 #define APOO_SYSCALL_DMZ_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 // Verify that the given buffer is allowed for a syscall (that is, that its
@@ -54,10 +55,11 @@ int syscall_verify_buffer(const void* buf, size_t len, int is_write,
 // Strings are assumed to be read-only.
 int syscall_verify_string(const char* str);
 
-// Verify a NULL-terminated pointer array of the form 'void* array[]'.
+// Verify a NULL-terminated pointer array of the form 'void* array[]', where
+// a 'void*' is taken to be either 32 or 64-bits, depending on is64bit.
 //
 // Returns the length of the table (in pointer entries, not bytes), INCLUDING
 // the terminating NULL on success, or -errno on error.
-int syscall_verify_ptr_table(void* table[]);
+int syscall_verify_ptr_table(const void* table, bool is64bit);
 
 #endif

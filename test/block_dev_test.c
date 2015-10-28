@@ -243,7 +243,7 @@ void bd_thread_test(block_dev_t** bds, int len,
 
   // Make sure each thread succeeds.
   for (int i = 0; i < idx; ++i) {
-    KEXPECT_EQ(0, (int)kthread_join(threads[i]));
+    KEXPECT_EQ(NULL, kthread_join(threads[i]));
   }
 
   kfree(ts);

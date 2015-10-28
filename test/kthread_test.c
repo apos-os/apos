@@ -27,7 +27,7 @@
 //  * multiple threads join()'d onto one thread
 
 static void* thread_func(void* arg) {
-  int id = (int)arg;
+  int id = (intptr_t)arg;
   KLOG("THREAD STARTED: %d\n", id);
   for (int i = 0; i < 3; ++i) {
     KLOG("THREAD ITER: %d (iter %d)\n", id, i);
@@ -81,7 +81,7 @@ static void kthread_exit_test(void) {
 
   KASSERT(!kthread_create(&thread1, &kthread_exit_thread_func, (void*)0xabcd));
   scheduler_make_runnable(thread1);
-  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
+  KEXPECT_EQ(0xabcd, (intptr_t)kthread_join(thread1));
 }
 
 static void* kthread_return_thread_func(void* arg) {
@@ -95,7 +95,7 @@ static void kthread_return_test(void) {
   KASSERT(kthread_create(&thread1, &kthread_return_thread_func, (void*)0xabcd)
           == 0);
   scheduler_make_runnable(thread1);
-  KEXPECT_EQ(0xabcd, (uint32_t)kthread_join(thread1));
+  KEXPECT_EQ(0xabcd, (intptr_t)kthread_join(thread1));
 }
 
 static void* join_test_func(void* arg) {
@@ -105,7 +105,7 @@ static void* join_test_func(void* arg) {
   scheduler_yield();
   scheduler_yield();
   if (t) {
-    return (void*)((int)kthread_join(t) + 1);
+    return (void*)((intptr_t)kthread_join(t) + 1);
   } else {
     return 0;
   }
@@ -125,20 +125,20 @@ static void join_chain_test(void) {
     scheduler_make_runnable(threads[i]);
   }
 
-  int out = (int)kthread_join(threads[JOIN_CHAIN_TEST_SIZE-1]);
+  int out = (intptr_t)kthread_join(threads[JOIN_CHAIN_TEST_SIZE-1]);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE - 1, out);
 }
 
 // Similar to above, but *create* the next thread in the sequence.
 static void* join_test2_func(void* arg) {
-  int x = (int)arg;
+  intptr_t x = (intptr_t)arg;
   if (!x) {
     return 0;
   }
   kthread_t next;
   KASSERT(kthread_create(&next, &join_test2_func, (void*)(x-1)) == 0);
   scheduler_make_runnable(next);
-  return (void*)(1 + (int)kthread_join(next));
+  return (void*)(1 + (intptr_t)kthread_join(next));
 }
 
 // Chain together a bunch of joined threads.  This time, each thread CREATES the
@@ -152,7 +152,7 @@ static void join_chain_test2(void) {
   KASSERT(result == 0);
   scheduler_make_runnable(thread);
 
-  int out = (int)kthread_join(thread);
+  int out = (intptr_t)kthread_join(thread);
   KEXPECT_EQ(JOIN_CHAIN_TEST_SIZE, out);
 }
 
@@ -272,7 +272,7 @@ typedef struct {
 static void* queue_test_func(void* arg) {
   queue_test_funct_data_t* d = (queue_test_funct_data_t*)arg;
   d->waiting = 1;
-  int wait_result = 0;
+  intptr_t wait_result = 0;
   if (d->interruptable) {
     wait_result = scheduler_wait_on_interruptable(d->queue, d->timeout);
   } else {
@@ -569,33 +569,59 @@ static void scheduler_interrupt_timeout_test(void) {
     KEXPECT_EQ(SWAIT_INTERRUPTED, thread1->wait_status);
     KEXPECT_EQ((void*)1, kthread_join(thread1));
   }
+
+  KTEST_BEGIN(
+      "scheduler sleep: timeout fires after normal wakeup before it's "
+      "cancelled.");
+  {
+    queue_test_funct_data_t d1 = {0, 0, &queue, true, 20};
+    kthread_create(&thread1, &queue_test_func, &d1);
+    scheduler_make_runnable(thread1);
+    while (!d1.waiting) scheduler_yield();
+
+    KEXPECT_EQ(&queue, thread1->queue);
+    scheduler_wake_all(&queue);
+    apos_ms_t start = get_time_ms();
+    // Spin until the timeout (should have) fired.  We can't yield, since we
+    // must ensure the thread we woke up doesn't get a chance to run.
+    while (get_time_ms() - start < 50);
+
+    // Even though the timeout fired, the wakeup happened first.
+    for (int i = 0; i < 5 && !d1.ran; ++i) scheduler_yield();
+    KEXPECT_EQ(1, d1.ran);
+    KEXPECT_EQ(true, thread1->wait_timeout_ran);
+    KEXPECT_EQ(SWAIT_DONE, thread1->wait_status);
+    KEXPECT_EQ((void*)SWAIT_DONE, kthread_join(thread1));
+  }
 }
 
 #define STRESS_TEST_ITERS 1000
 #define STRESS_TEST_THREADS 1000
 
 static void* stress_test_func(void* arg) {
-  KLOG("THREAD %d START\n", (int)arg);
+  KLOG("THREAD %d START\n", (int)(intptr_t)arg);
   for (int i = 0; i < STRESS_TEST_ITERS; ++i) {
     scheduler_yield();
   }
-  KLOG("THREAD %d DONE\n", (int)arg);
+  KLOG("THREAD %d DONE\n", (int)(intptr_t)arg);
   return arg;
 }
 
 // TODO(aoates): make this random.
 static void stress_test(void) {
   KTEST_BEGIN("stress test");
-  kthread_t threads[STRESS_TEST_THREADS];
+  kthread_t* threads = (kthread_t*)kmalloc(sizeof(kthread_t) * STRESS_TEST_THREADS);
 
-  for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
+  for (intptr_t i = 0; i < STRESS_TEST_THREADS; ++i) {
     KASSERT(kthread_create(&threads[i], &stress_test_func, (void*)i) == 0);
     scheduler_make_runnable(threads[i]);
   }
 
   for (int i = 0; i < STRESS_TEST_THREADS; ++i) {
-    KEXPECT_EQ(i, (int)kthread_join(threads[i]));
+    KEXPECT_EQ(i, (intptr_t)kthread_join(threads[i]));
   }
+
+  kfree(threads);
 }
 
 

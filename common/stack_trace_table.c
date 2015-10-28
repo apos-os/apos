@@ -62,7 +62,8 @@ trace_id_t tracetbl_put(const addr_t* trace, int len) {
   KASSERT_DBG(g_tblsize >= 0 && g_tblsize <= TRACETBL_ENTRIES);
   if (g_tblsize == TRACETBL_ENTRIES) {
     klogfm(KL_GENERAL, DEBUG, "Stack trace table full; dropping trace @");
-    for (int i = 0; i < len; ++i) klogfm(KL_GENERAL, DEBUG, " %#x", trace[i]);
+    for (int i = 0; i < len; ++i)
+      klogfm(KL_GENERAL, DEBUG, " %#" PRIxADDR, trace[i]);
     klogfm(KL_GENERAL, DEBUG, "\n");
     POP_INTERRUPTS();
     return -ENOMEM;

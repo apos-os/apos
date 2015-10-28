@@ -23,12 +23,14 @@ if 'configure' in COMMAND_LINE_TARGETS:
 else:
   vars = Variables(CONFIG_CACHE_FILE)
 
-vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586']))
+vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586', 'x86_64']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
 vars.Add('HEADER_INSTALL_PREFIX', 'where to install userspace headers', '')
 vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
+vars.Add('KSHELL_INITIAL_COMMAND',
+  'command to automatically run when kshell starts', '')
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = [
@@ -51,12 +53,15 @@ base_env = Environment(
 
 base_env.Alias('configure', [])
 
+base_env.SetDefault(BUILD_CFG_DIR =
+  os.path.join(base_env['BUILD_DIR'], '%s-%s' %
+    (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc')))
+base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
+base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
+
 # If the user did a 'configure', save their configuration for later.
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
-
-base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
-base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
 
 if not base_env['CLANG']:
   base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
@@ -86,6 +91,9 @@ if base_env['DEBUG']:
 
 env = base_env.Clone()
 
+if env['ARCH'] == 'x86_64':
+  env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
+
 env.Append(CFLAGS = Split("-Wframe-larger-than=1500 -nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
@@ -95,7 +103,7 @@ env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 
 env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
-                      '#/%s' % env['BUILD_DIR']])
+                      '#/%s' % env['BUILD_CFG_DIR']])
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
@@ -145,7 +153,8 @@ def filter_tpl(nodes):
 tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
     recursive=filter_tpl)
 
-tpl_bld = Builder(action = 'util/tpl_gen.py $SOURCE > $TARGET',
+tpl_bld = Builder(
+    action = 'APOS_ARCH=%s util/tpl_gen.py $SOURCE > $TARGET' % env['ARCH'],
     suffix = '.tpl.c',
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)
@@ -156,4 +165,4 @@ env.AddMethod(kernel_program, 'Kernel')
 
 Export('env user_env AposAddSources')
 
-SConscript('SConscript', variant_dir=env['BUILD_DIR'], duplicate=False)
+SConscript('SConscript', variant_dir=env['BUILD_CFG_DIR'], duplicate=False)

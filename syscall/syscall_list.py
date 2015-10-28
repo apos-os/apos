@@ -38,6 +38,18 @@
 #
 # The buffer types can be followed by a '?', which means that the argument is
 # allowed to be NULL.
+#
+# If needs_32bit_conv is set on the syscall, this indicates that the syscall
+# depends on type sizes that differ between 32 and 64-bit modes (such as
+# 'long'), generally by pointing to a struct containing the type(s).
+#
+# If set, different copies of the syscall kernel handlers will be generated in
+# 32 and 64 bit kernels.  For 64-bit kernels, if the 32-bit version of syscall
+# is invoked (e.g. from a 32-bit program), a special wrapper will be run (see
+# wrappers32.{h,c}) that converts to/from the native 64-bit versions of the
+# arguments.
+
+import copy
 
 # Maximum number of arguments.
 MAX_ARGS = 6
@@ -46,13 +58,14 @@ MAX_ARGS = 6
 SYSCALLS = []
 
 class SyscallArg(object):
-  def __init__(self, desc):
+  def __init__(self, desc, needs_32bit_conv):
+    self.needs_32bit_conv = needs_32bit_conv
     split = desc.split(':')
-    self.ctype = split[0]
+    self._ctype = split[0]
     self.name = split[1]
     self.arg_type = split[2]
     if len(split) == 4:
-      self.size_name = split[3]
+      self._size_name = split[3]
 
     if self.arg_type[-1] == '?':
       self.arg_type = self.arg_type[:-1]
@@ -86,12 +99,19 @@ class SyscallArg(object):
   def AllowNull(self):
     return self.allow_null
 
+  @property
+  def ctype(self):
+    return self._ctype % {'s32': '_32' if self.needs_32bit_conv else ''}
+
+  @property
+  def size_name(self):
+    return self._size_name  % {'s32': '_32' if self.needs_32bit_conv else ''}
 
 class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
       header, user_header, return_type, args,
       stubs_to_generate=None, can_fail=True,
-      newlib_defined=False):
+      needs_32bit_conv=False, newlib_defined=False):
     assert len(args) <= MAX_ARGS
     if stubs_to_generate is None:
       # syscalls defined in newlib will have their own 'L3' stubs already.
@@ -100,16 +120,37 @@ class SyscallDef(object):
       else:
         stubs_to_generate = ['L1', 'L2', 'L3']
 
-    self.name = name
+    self.needs_32bit_conv = (needs_32bit_conv and ARCH == 'x86_64')
+    self._name = name
     self.number = number
-    self.kernel_name = kernel_name
+    self._kernel_name = kernel_name
     self.header = header
     self.user_header = user_header
     self.return_type = return_type
-    self.args = [SyscallArg(x) for x in args]
+    self.args = [SyscallArg(x, self.needs_32bit_conv) for x in args]
     self.stubs_to_generate = stubs_to_generate
     # Determines if we do errno conversion.
     self.can_fail = can_fail
+
+  @property
+  def name(self):
+    return self._name + ('_32' if self.needs_32bit_conv else '')
+
+  @property
+  def kernel_name(self):
+    return self._kernel_name + ('_32' if self.needs_32bit_conv else '')
+
+  def native(self):
+    """Returns a version of the syscall without any 32/64 bit conversions.
+
+    Use if you need to generate something seen by userspace (which will always
+    use the 'native' types and syscall names).
+    """
+    native = copy.deepcopy(self)
+    native.needs_32bit_conv = False
+    for arg in native.args:
+      arg.needs_32bit_conv = False
+    return native
 
 
 def AddSyscall(*args, **kwargs):
@@ -193,8 +234,9 @@ AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
     'int', [
     'int:fd:u',
-    'dirent_t*:buf:bw:count',
-    'int:count:u'])
+    'dirent%(s32)s_t*:buf:bw:count',
+    'int:count:u'],
+    needs_32bit_conv=True)
 
 AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -205,19 +247,20 @@ AddSyscall('getcwd', 11, 'vfs_getcwd', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('stat', 35, 'vfs_stat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'],
-    newlib_defined=True)
+    'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
+    needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('lstat', 36, 'vfs_lstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'])
+    'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
+    needs_32bit_conv=True)
 
 AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'int:fd:u',
-    'apos_stat_t*:stat:bw:sizeof(apos_stat_t)'],
-    newlib_defined=True)
+    'apos_stat%(s32)s_t*:stat:bw:sizeof(apos_stat%(s32)s_t)'],
+    needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('lseek', 38, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
     'off_t', [
@@ -272,14 +315,14 @@ AddSyscall('waitpid', 62, 'proc_waitpid', 'proc/wait.h', '<sys/wait.h>',
 # The execve wrapper manually checks its arguments so that it can clean up the
 # allocated kernel copies properly (since on success, do_execve will never
 # return).
-AddSyscall('execve', 15, 'execve_wrapper', 'syscall/wrappers.h',
+AddSyscall('execve', 15, 'execve_wrapper', 'syscall/execve_wrapper.h',
     '<unistd.h>',
     'int', [
     'const char*:path:u', # Manually checked by the wrapper.
     'char* const*:argv:u',  # Manually checked by the wrapper.
     'char* const*:envp:u',  # Manually checked by the wrapper.
     ],
-    newlib_defined=True)
+    needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
@@ -305,8 +348,9 @@ AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     '<signal.h>',
     'int', [
     'int:signum:u',
-    'const struct sigaction*:act:br?:sizeof(struct sigaction)',
-    'struct sigaction*:oldact:bw?:sizeof(struct sigaction)'])
+    'const struct sigaction%(s32)s*:act:br?:sizeof(struct sigaction%(s32)s)',
+    'struct sigaction%(s32)s*:oldact:bw?:sizeof(struct sigaction%(s32)s)'],
+    needs_32bit_conv=True)
 
 AddSyscall('sigprocmask', 52, 'proc_sigprocmask', 'proc/signal/signal.h',
     '<signal.h>',
@@ -372,9 +416,9 @@ AddSyscall('setpgid', 34, 'setpgid', 'proc/group.h', '<unistd.h>',
     'int', ['pid_t:pid:u', 'pid_t:pgid:u'])
 
 AddSyscall('mmap', 39, 'mmap_wrapper', 'syscall/wrappers.h', '<sys/mman.h>',
-        'int', ['void**:addr_inout:brw:sizeof(void*)', 'size_t:length:u',
+        'int', ['void*:addr_inout:brw:sizeof(void*)', 'size_t:length:u',
                  'int:prot:u', 'int:flags:u', 'int:fd:u', 'off_t:offset:u'],
-        stubs_to_generate=['L1'])
+        stubs_to_generate=['L1'], needs_32bit_conv=True)
 
 AddSyscall('munmap', 40, 'do_munmap', 'memory/mmap.h', '<sys/mman.h>',
         'int', ['void*:addr:u', 'size_t:length:u'])
@@ -438,8 +482,11 @@ AddSyscall('poll', 69, 'vfs_poll', 'vfs/poll.h', '<poll.h>',
 
 AddSyscall('getrlimit', 75, 'proc_getrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',
-    ['int:resource:u', 'struct rlimit*:lim:bw:sizeof(struct rlimit)'])
+    ['int:resource:u', 'struct rlimit%(s32)s*:lim:bw:sizeof(struct rlimit)'],
+    needs_32bit_conv=True)
 
 AddSyscall('setrlimit', 76, 'proc_setrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',
-    ['int:resource:u', 'const struct rlimit*:lim:br:sizeof(struct rlimit)'])
+    ['int:resource:u',
+      'const struct rlimit%(s32)s*:lim:br:sizeof(struct rlimit)'],
+    needs_32bit_conv=True)

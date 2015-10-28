@@ -14,6 +14,7 @@
 
 #include "arch/proc/stack_trace.h"
 
+#include "common/config.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "memory/memory.h"
@@ -21,14 +22,21 @@
 #define CALL_INSTRUCTION_SIZE 2
 
 int get_stack_trace(addr_t* frames, int trace_len) {
-  _Static_assert(sizeof(addr_t) == sizeof(uint32_t), "not 32-bit");
   int cframe = 0;
 
   // Get our current %ebp.
   addr_t ebp;
+#if ARCH == ARCH_i586
   asm volatile (
       "mov %%ebp, %0"
       : "=g"(ebp));
+#elif ARCH == ARCH_x86_64
+  asm volatile (
+      "mov %%rbp, %0"
+      : "=g"(ebp));
+#else
+#error WTF? Unknown x86 architecture.
+#endif
 
   while (ebp != 0x0) {
     const addr_t old_ebp = *(addr_t*)ebp;

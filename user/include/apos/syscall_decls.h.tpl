@@ -22,7 +22,7 @@
 
 // Declare the userspace functions.
 {% for syscall in SYSCALLS if "L3" in syscall.stubs_to_generate %}
-{{ common.syscall_decl(syscall, "") }};
+{{ common.syscall_decl(syscall.native(), "") }};
 {% endfor %}
 
 #endif

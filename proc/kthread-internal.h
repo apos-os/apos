@@ -20,13 +20,12 @@
 #include <stdint.h>
 
 #include "arch/proc/kthread-context.h"
+#include "arch/proc/kthread-stack.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
-
-#define KTHREAD_STACK_SIZE (4 * 4096)  // 16k
 
 typedef enum {
   KTHREAD_RUNNING = 0,    // Currently running.

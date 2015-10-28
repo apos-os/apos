@@ -16,7 +16,7 @@
 
 #include <stddef.h>
 
-#include "archs/i586/internal/proc/kthread.h"
+#include "archs/x86-common/internal/proc/kthread.h"
 #include "archs/i586/internal/proc/tss.h"
 #include "proc/kthread-internal.h"
 

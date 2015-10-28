@@ -44,8 +44,8 @@ static void mknod_test(void) {
 }
 
 static void* do_open(void* arg) {
-  int mode = (int)arg;
-  int result = vfs_open("fifo_test/fifo", mode);
+  int mode = (intptr_t)arg;
+  intptr_t result = vfs_open("fifo_test/fifo", mode);
   return (void*)result;
 }
 
@@ -87,7 +87,7 @@ static void stat_test(void) {
     klog("break");
 
   KEXPECT_EQ(0, vfs_close(fd));
-  fd = (int)kthread_join(thread);
+  fd = (intptr_t)kthread_join(thread);
   KEXPECT_EQ(0, vfs_close(fd));
 
 
@@ -108,7 +108,7 @@ static void open_test(void) {
   int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_close(fd));
-  fd = (int)kthread_join(thread);
+  fd = (intptr_t)kthread_join(thread);
   KEXPECT_EQ(0, vfs_close(fd));
 
 
@@ -120,7 +120,7 @@ static void open_test(void) {
   fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_close(fd));
-  fd = (int)kthread_join(thread);
+  fd = (intptr_t)kthread_join(thread);
   KEXPECT_EQ(0, vfs_close(fd));
 
 
@@ -144,7 +144,7 @@ static void* do_op(void* args) {
   op->started = true;
   op->finished = false;
   char buf[APOS_FIFO_BUF_SIZE + 5];
-  int result;
+  intptr_t result;
   if (op->is_read)
     result = vfs_read(op->fd, buf, 50);
   else
@@ -164,7 +164,7 @@ static void read_write_test(void) {
 
   int read_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
   KEXPECT_GE(read_fd, 0);
-  int write_fd = (int)kthread_join(thread);
+  int write_fd = (intptr_t)kthread_join(thread);
   KEXPECT_GE(write_fd, 0);
 
   KEXPECT_EQ(5, vfs_write(write_fd, "abcde", 5));
@@ -199,7 +199,7 @@ static void read_write_test(void) {
 
   for (int i = 0; i < 10 && !op.finished; ++i) scheduler_yield();
   KEXPECT_EQ(true, op.finished);
-  KEXPECT_EQ(5, (int)kthread_join(thread));
+  KEXPECT_EQ(5, (intptr_t)kthread_join(thread));
 
 
   KTEST_BEGIN("write() blocks on full FIFO");
@@ -219,7 +219,7 @@ static void read_write_test(void) {
 
   for (int i = 0; i < 10 && !op.finished; ++i) scheduler_yield();
   KEXPECT_EQ(true, op.finished);
-  KEXPECT_EQ(APOS_FIFO_BUF_SIZE + 5, (int)kthread_join(thread));
+  KEXPECT_EQ(APOS_FIFO_BUF_SIZE + 5, (intptr_t)kthread_join(thread));
 
 
   KTEST_BEGIN("seek() on FIFO test");

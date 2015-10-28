@@ -14,7 +14,7 @@
 
 #include "arch/syscall/context.h"
 #include "archs/i586/internal/memory/gdt.h"
-#include "archs/i586/internal/proc/kthread.h"
+#include "archs/x86-common/internal/proc/kthread.h"
 #include "common/kassert.h"
 #include "common/types.h"
 #include "proc/kthread.h"

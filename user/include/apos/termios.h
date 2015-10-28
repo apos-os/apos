@@ -16,7 +16,7 @@
 
 typedef unsigned char cc_t;
 typedef unsigned short speed_t;
-typedef unsigned long tcflag_t;
+typedef unsigned int tcflag_t;
 
 // Control characters.
 #define VEOF 0

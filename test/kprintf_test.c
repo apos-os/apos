@@ -253,11 +253,28 @@ static void kprintf_testF(void) {
   KEXPECT_STREQ("2147483600", do_printf("%li", 2147483600L));
   KEXPECT_STREQ("2147483600", do_printf("%lu", 2147483600L));
   KEXPECT_STREQ("-2147483600", do_printf("%li", -2147483600L));
-  KEXPECT_STREQ("-1294967296", do_printf("%li", (long)3000000000L));
   KEXPECT_STREQ("2147483600", do_printf("%lu", 2147483600UL));
   KEXPECT_STREQ("3000000000", do_printf("%lu", 3000000000UL));
-  KEXPECT_STREQ("705032704", do_printf("%lu", (unsigned long)5000000000));
-  KEXPECT_STREQ("-00123", do_printf("%06ld", -123));
+  KEXPECT_STREQ("-00123", do_printf("%06ld", -123L));
+
+  if (sizeof(long) == 4) {
+    KTEST_BEGIN("ksprintf(): 'l' modifier (32-bit)");
+    KEXPECT_STREQ("-1294967296", do_printf("%li", (long)3000000000L));
+    KEXPECT_STREQ("705032704", do_printf("%lu", (unsigned long)5000000000));
+  }
+
+  if (sizeof(long) == 8) {
+    KTEST_BEGIN("ksprintf(): 'l' modifier (64-bit)");
+    KEXPECT_STREQ("18446744069720004216",
+                  do_printf("%lu", 0xFFFFFFFF12345678L));
+    KEXPECT_STREQ("3000000000", do_printf("%li", 3000000000L));
+    KEXPECT_STREQ("-1", do_printf("%li", 0xFFFFFFFFFFFFFFFFL));
+    KEXPECT_STREQ("3000000000", do_printf("%lu", (long)3000000000UL));
+    KEXPECT_STREQ("18446744073709551615",
+                  do_printf("%lu", 0xFFFFFFFFFFFFFFFFUL));
+    KEXPECT_STREQ("-9223372036854775808", do_printf("%ld", 0x8000000000000000));
+    KEXPECT_STREQ("0", do_printf("%d", 0x8000000000000000));
+  }
 
   // TODO(aoates): implement 'll' support.
 #if 0
@@ -272,6 +289,11 @@ static void kprintf_testF(void) {
                 do_printf("%lli", (long long)9223372036854775807));
   KEXPECT_STREQ("-00123", do_printf("%06lld", -123));
 #endif
+
+  KTEST_BEGIN("ksprintf(): 'z' modifier");
+  KEXPECT_STREQ("55", do_printf("%zi", (addr_t)55));
+  KEXPECT_STREQ("-55", do_printf("%zi", (addr_t)-55));
+  KEXPECT_STREQ("55", do_printf("%zu", (addr_t)55));
 
   KTEST_BEGIN("ksprintf(): bad length modifiers");
   KEXPECT_STREQ("u", do_printf("%qu", 5));

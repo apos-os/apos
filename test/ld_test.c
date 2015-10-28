@@ -569,7 +569,7 @@ static void* noncanon_read(void* arg) {
   args->read_done = false;
   scheduler_wake_all(&args->read_started);
   apos_ms_t start = get_time_ms();
-  int result = ld_read(args->l, args->buf, args->readlen, 0);
+  intptr_t result = ld_read(args->l, args->buf, args->readlen, 0);
   args->elapsed = get_time_ms() - start;
   args->read_done = true;
   return (void*)result;
@@ -904,6 +904,7 @@ static void noflsh_test(void) {
   KEXPECT_STREQ("ab^C^Z^\\c", g_sink);
 
   char buf[10];
+  kmemset(buf, 0, sizeof(buf));
   KEXPECT_EQ(3, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("abc", buf);
 

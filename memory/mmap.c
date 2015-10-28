@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "arch/memory/page_alloc.h"
+#include "arch/memory/page_map.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/math.h"

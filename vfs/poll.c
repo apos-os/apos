@@ -161,7 +161,8 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
       if (poll.triggered)
         result = SWAIT_DONE;
       else
-        result = scheduler_wait_on_interruptable(&poll.q, end_time - now);
+        result = scheduler_wait_on_interruptable(
+            &poll.q, timeout_ms < 0 ? -1 : (long)(end_time - now));
       POP_INTERRUPTS();
 
       if (result == SWAIT_INTERRUPTED) {
