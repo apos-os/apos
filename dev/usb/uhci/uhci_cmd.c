@@ -212,7 +212,7 @@ static void uhci_cmd_td(int argc, char* argv[]) {
     ksh_printf("usage: uhci td <address>\n");
     return;
   }
-  uint32_t address = atou(argv[2]);
+  addr_t address = atou(argv[2]);
   print_td((uhci_td_t*)address);
 }
 
@@ -221,7 +221,7 @@ static void uhci_cmd_qh(int argc, char* argv[]) {
     ksh_printf("usage: uhci qh <address>\n");
     return;
   }
-  uint32_t address = atou(argv[2]);
+  addr_t address = atou(argv[2]);
   print_qh((uhci_qh_t*)address);
 }
 

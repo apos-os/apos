@@ -127,9 +127,10 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
   uhci_td_t* head_td = 0x0;
   phys_addr_t buf_phys =
       irp->buffer == 0x0 ? 0 : virt2phys((addr_t)irp->buffer);
-  // TODO(aoates): this needs to be fixed to support 64-bit.
-  _Static_assert(sizeof(buf_phys) == sizeof(uint32_t),
-                 "Physical address not the same size as USB buffer pointer");
+  // TODO(aoates): solve this is a better way (e.g. by requiring that the buffer
+  // we allocate is in the lower 32-bits of physical address space).
+  KASSERT((buf_phys & ~0xFFFFFFFF) == 0);
+
   // Create at least 1 TD (even if the data length is 0).
   do {
     ctd = alloc_td();
@@ -336,7 +337,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   }
 
   phys_addr_t frame_list_phys = page_frame_alloc();
-  c->frame_list = (addr_t*)phys2virt(frame_list_phys);
+  c->frame_list = (addr32_t*)phys2virt(frame_list_phys);
 
   // Do a global reset on the bus.
   uint16_t cmd = ins(c->base_port + USBCMD);

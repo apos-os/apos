@@ -18,16 +18,23 @@
 #include <stdint.h>
 
 #include "arch/common/types.h"
+#include "common/config.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/uhci/uhci_hub.h"
 
+#if ARCH_IS_64_BIT
+#  define EXTRA_ADDRESS_MASK_BITS 0xFFFFFFFF00000000
+#else
+#  define EXTRA_ADDRESS_MASK_BITS 0
+#endif
+
 // Bits in a frame list entry.
-#define FL_PTR_MASK 0xFFFFFFF0
+#define FL_PTR_MASK (EXTRA_ADDDRESS_MASK_BITS | 0xFFFFFFF0)
 #define FL_PTR_QH   0x00000002
 #define FL_PTR_TERM 0x00000001
 
 // A UHCI transfer descriptor (TD).
-#define TD_LINK_PTR_ADDR_MASK  0xFFFFFFF0
+#define TD_LINK_PTR_ADDR_MASK  (EXTRA_ADDRESS_MASK_BITS | 0xFFFFFFF0)
 #define TD_LINK_PTR_VF 0x04     // 1 = depth first, 0 = breadth-first
 #define TD_LINK_PTR_QH 0x02     // Link ptr type.  1 = QH, 0 = TD
 #define TD_LINK_PTR_TERM 0x01   // Terminate (1 = last entry)
@@ -75,7 +82,7 @@ typedef struct uhci_td uhci_td_t;
 
 // A queue head.  These bits and masks apply to both head and element pointers
 // in the QH struct.
-#define QH_LINK_PTR_MASK 0xFFFFFFF0  // Mask for the pointer value
+#define QH_LINK_PTR_MASK (EXTRA_ADDRESS_MASK_BITS | 0xFFFFFFF0)  // Mask for the pointer value
 #define QH_QH            0x00000002  // Type of link.  1=QH, 0=TD
 #define QH_TERM          0x00000001  // Terminal element
 
@@ -84,8 +91,6 @@ struct uhci_qh {
   uint32_t elt_link_ptr;   // Vertical link, and flags.
 };
 typedef struct uhci_qh uhci_qh_t;
-_Static_assert(sizeof(phys_addr_t) == sizeof(uint32_t),
-               "phys_addr_t doesn't match UHCI buffer pointer types");
 
 // A pending IRP.  Pointed to by the hcd_data field of a usb_hcdi_irp_t struct.
 struct uhci_pending_irp {
@@ -99,7 +104,7 @@ typedef struct uhci_pending_irp uhci_pending_irp_t;
 struct usb_uhci {
   ioport_t base_port;  // USBBASE register.
   int irq;
-  uint32_t* frame_list;  // Pointer to the frame list.
+  addr32_t* frame_list;  // Pointer to the frame list.
 
   // Queue heads for the three queues of transfers.
   uhci_qh_t* interrupt_qh;
