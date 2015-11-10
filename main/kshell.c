@@ -774,7 +774,7 @@ static void boot_child_func(void* arg) {
   char* envp[] = { NULL };
   int result = do_execve(args->path, args->argv, envp, NULL, NULL);
   if (result) {
-    klogf("Couldn't boot %s: %s\n", (char*)arg, errorname(-result));
+    klogf("Couldn't boot %s: %s\n", args->path, errorname(-result));
     proc_exit(1);
   }
 }
