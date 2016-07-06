@@ -59,7 +59,10 @@ typedef void (*sighandler_t)(int);
 #define SIGXCPU   25  // CPU time limit exceeded.
 #define SIGXFSZ   26  // File size limit exceeded.
 
-#define SIGMAX 26
+// The following signals are not specified in POSIX.
+#define SIGWINCH  27  // Controlling terminal changed size.
+
+#define SIGMAX 27
 #define NSIG (SIGMAX + 1)
 
 // sighandler_t constants.
