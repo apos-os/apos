@@ -26,7 +26,7 @@
 #include "ktest.h"
 #include "all_tests.h"
 
-struct sigaction make_sigaction(void (*handler)(int)) {
+static struct sigaction make_sigaction(void (*handler)(int)) {
   struct sigaction new_action;
   new_action.sa_handler = handler;
   sigemptyset(&new_action.sa_mask);

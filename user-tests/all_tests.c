@@ -39,6 +39,7 @@ int main(int argc, char** argv) {
   misc_syscall_test();
   socket_test();
   setjmp_test();
+  cpu_exception_test();
 
   ktest_finish_all();
   return 0;
