@@ -37,11 +37,14 @@ typedef enum {
   VNODE_CHARDEV = 5,
   VNODE_SYMLINK = 6,
   VNODE_FIFO = 7,
+  VNODE_MAX,
 } vnode_type_t;
 
 static const char* const VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR", "FIFO",
+  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR", "SYM", "FIFO",
 };
+_Static_assert(sizeof(VNODE_TYPE_NAME) / sizeof(const char*) == VNODE_MAX,
+               "VNODE_TYPE_NAME doesn't match vnode_type_t");
 
 // A virtual node in the filesystem.  It is expected that concete filesystems
 // will embed the vnode_t structure in their own, custom structure with

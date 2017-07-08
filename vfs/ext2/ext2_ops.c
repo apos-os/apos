@@ -1177,6 +1177,7 @@ static int ext2_put_vnode(vnode_t* vnode) {
   switch (vnode->type) {
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
+    case VNODE_MAX:
       die("ext2: invalid vnode type"); break;
     case VNODE_REGULAR:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFREG); break;
     case VNODE_DIRECTORY: KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR); break;
@@ -1267,6 +1268,7 @@ static int ext2_mknod(vnode_t* parent, const char* name,
     case VNODE_INVALID:
     case VNODE_DIRECTORY:
     case VNODE_SYMLINK:
+    case VNODE_MAX:
       die("invalid vnode type in ext2_mknod");
   }
 

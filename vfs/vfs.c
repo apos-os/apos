@@ -1306,6 +1306,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
 
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:
+    case VNODE_MAX:
       break;
   }
   if (stat->st_mode == 0)

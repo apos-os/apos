@@ -120,6 +120,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     case VNODE_SYMLINK:
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:
+    case VNODE_MAX:
       die("invalid or unitialized vnode");
   }
   return 0;
