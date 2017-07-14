@@ -1178,6 +1178,7 @@ static int ext2_put_vnode(vnode_t* vnode) {
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
     case VNODE_MAX:
+    case VNODE_SOCKET:  // TODO(aoates): implement
       die("ext2: invalid vnode type"); break;
     case VNODE_REGULAR:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFREG); break;
     case VNODE_DIRECTORY: KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR); break;
@@ -1264,6 +1265,7 @@ static int ext2_mknod(vnode_t* parent, const char* name,
     case VNODE_BLOCKDEV: ext2_mode = EXT2_S_IFBLK; break;
     case VNODE_CHARDEV: ext2_mode = EXT2_S_IFCHR; break;
     case VNODE_FIFO: ext2_mode = EXT2_S_IFIFO; break;
+    case VNODE_SOCKET:  // TODO(aoates): implement
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
     case VNODE_DIRECTORY:

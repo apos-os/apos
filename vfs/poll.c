@@ -117,6 +117,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
       return (POLLIN | POLLOUT) & event_mask;
     }
 
+    case VNODE_SOCKET:  // TODO(aoates): implement
     case VNODE_SYMLINK:
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:
