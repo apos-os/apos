@@ -27,7 +27,6 @@
 #include "user/include/apos/vfs/stat.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "vfs/fs.h"
-#include "vfs/vnode.h"
 
 #define VFS_MAX_FILENAME_LENGTH 256
 #define VFS_MAX_PATH_LENGTH 1024

@@ -1554,11 +1554,45 @@ static void mknod_test(void) {
   KEXPECT_GE(fd, 0);
   vfs_close(fd);
 
+  KTEST_BEGIN("mknod(): socket file type test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFSOCK, makedev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
   // TODO(aoates): test character device functionality.
 
   vfs_unlink(kBlockDevFile);
   vfs_unlink(kCharDevFile);
   vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
+static void mksocket_test(void) {
+  const char kDir[] = "mksocket_test_dir";
+  const char kFile[] = "mksocket_test_dir/sock";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  KTEST_BEGIN("vfs_mksocket(): invalid file type test");
+  vnode_t* vnode = NULL;
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, VFS_S_IFMT, &vnode));
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, 0xffff, &vnode));
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, VFS_S_IFREG, &vnode));
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, VFS_S_IFIFO, &vnode));
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
+  KTEST_BEGIN("vfs_mksocket(): basic test");
+  KEXPECT_EQ(0, vfs_mksocket(kFile, VFS_S_IFSOCK, &vnode));
+  KEXPECT_NE(NULL, vnode);
+  KEXPECT_EQ(VNODE_SOCKET, vnode->type);
+
+  struct stat stat;
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(stat.st_ino, vnode->num);
+  KEXPECT_EQ(1, stat.st_nlink);
+  VFS_PUT_AND_CLEAR(vnode);
+
+  vfs_unlink(kFile);
   vfs_rmdir(kDir);
 }
 
@@ -5437,6 +5471,7 @@ void vfs_test(void) {
   memobj_test();
 
   mknod_test();
+  mksocket_test();
   block_device_test();
 
   fs_dev_test();

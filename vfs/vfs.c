@@ -685,12 +685,8 @@ int vfs_mkdir(const char* path, mode_t mode) {
   return 0;
 }
 
-int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
-  if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
-      !VFS_S_ISFIFO(mode)) {
-    return -EINVAL;
-  }
-
+static int vfs_mknod_internal(const char* path, mode_t mode, apos_dev_t dev,
+                              vnode_t** vnode_out) {
   if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
@@ -719,6 +715,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   else if (VFS_S_ISBLK(mode)) type = VNODE_BLOCKDEV;
   else if (VFS_S_ISCHR(mode)) type = VNODE_CHARDEV;
   else if (VFS_S_ISFIFO(mode)) type = VNODE_FIFO;
+  else if (VFS_S_ISSOCK(mode)) type = VNODE_SOCKET;
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
@@ -729,11 +726,31 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
   vfs_set_created_metadata(child, mode & ~VFS_S_IFMT);
-  VFS_PUT_AND_CLEAR(child);
+  *vnode_out = child;
 
   // We're done!
   VFS_PUT_AND_CLEAR(parent);
   return 0;
+}
+
+int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
+  if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
+      !VFS_S_ISFIFO(mode)) {
+    return -EINVAL;
+  }
+  vnode_t* node = NULL;
+  int result = vfs_mknod_internal(path, mode, dev, &node);
+  if (result == 0) {
+    VFS_PUT_AND_CLEAR(node);
+  }
+  return result;
+}
+
+int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out) {
+  if (!VFS_S_ISSOCK(mode)) {
+    return -EINVAL;
+  }
+  return vfs_mknod_internal(path, mode, 0, vnode_out);
 }
 
 int vfs_rmdir(const char* path) {

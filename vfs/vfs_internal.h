@@ -158,4 +158,8 @@ vnode_t* get_root_for_path_with_parent(const char* path,
 // create a non-blocking fd, but not block during opening (e.g. pipes).
 int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
 
+// Creates a socket file or returns an error.  If successful, returns the open
+// node with a reference in |vnode_out|.
+int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out);
+
 #endif
