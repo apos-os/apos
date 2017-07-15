@@ -174,6 +174,8 @@ static const test_entry_t TESTS[] = {
   { "vterm", &vterm_test, 1 },
   { "poll", &poll_test, 1 },
   { "limit", &limit_test, 1 },
+  { "socket", &socket_test, 1 },
+  { "socket_unix", &socket_unix_test, 1 },
 
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },

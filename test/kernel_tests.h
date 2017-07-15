@@ -60,5 +60,7 @@ void wait_test(void);
 void vterm_test(void);
 void poll_test(void);
 void limit_test(void);
+void socket_test(void);
+void socket_unix_test(void);
 
 #endif
