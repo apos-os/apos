@@ -1303,8 +1303,7 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     case VNODE_SYMLINK: stat->st_mode |= VFS_S_IFLNK; break;
     case VNODE_FIFO: stat->st_mode |= VFS_S_IFIFO; break;
-
-    case VNODE_SOCKET:  // TODO(aoates): implement
+    case VNODE_SOCKET: stat->st_mode |= VFS_S_IFSOCK; break;
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:
     case VNODE_MAX:

@@ -1139,6 +1139,8 @@ static int ext2_get_vnode(vnode_t* vnode) {
     vnode->type = VNODE_SYMLINK;
   } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFIFO) {
     vnode->type = VNODE_FIFO;
+  } else if ((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFSOCK) {
+    vnode->type = VNODE_SOCKET;
   } else {
     KLOG(WARNING, "ext2: unsupported inode type: 0x%x\n", inode.i_mode);
     return -ENOTSUP;
@@ -1178,7 +1180,6 @@ static int ext2_put_vnode(vnode_t* vnode) {
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
     case VNODE_MAX:
-    case VNODE_SOCKET:  // TODO(aoates): implement
       die("ext2: invalid vnode type"); break;
     case VNODE_REGULAR:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFREG); break;
     case VNODE_DIRECTORY: KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFDIR); break;
@@ -1186,6 +1187,7 @@ static int ext2_put_vnode(vnode_t* vnode) {
     case VNODE_CHARDEV:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFCHR); break;
     case VNODE_SYMLINK:   KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFLNK); break;
     case VNODE_FIFO:      KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFIFO); break;
+    case VNODE_SOCKET:    KASSERT((inode.i_mode & EXT2_S_MASK) == EXT2_S_IFSOCK); break;
   }
 
   inode.i_mode &= EXT2_S_MASK;  // Clear non-type inode bits.
@@ -1265,7 +1267,7 @@ static int ext2_mknod(vnode_t* parent, const char* name,
     case VNODE_BLOCKDEV: ext2_mode = EXT2_S_IFBLK; break;
     case VNODE_CHARDEV: ext2_mode = EXT2_S_IFCHR; break;
     case VNODE_FIFO: ext2_mode = EXT2_S_IFIFO; break;
-    case VNODE_SOCKET:  // TODO(aoates): implement
+    case VNODE_SOCKET: ext2_mode = EXT2_S_IFSOCK; break;
     case VNODE_UNINITIALIZED:
     case VNODE_INVALID:
     case VNODE_DIRECTORY:
