@@ -1605,14 +1605,53 @@ static void mksocket_test(void) {
   KEXPECT_NE(NULL, vnode);
   KEXPECT_EQ(VNODE_SOCKET, vnode->type);
 
-  struct stat stat;
+  KTEST_BEGIN("vfs_stat(): on socket file");
+  apos_stat_t stat;
   KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(stat.st_ino, vnode->num);
+  KEXPECT_EQ(1, stat.st_nlink);
+
+  KTEST_BEGIN("vfs_lstat(): on socket file");
+  kmemset(&stat, 0, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kFile, &stat));
   KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
   KEXPECT_EQ(stat.st_ino, vnode->num);
   KEXPECT_EQ(1, stat.st_nlink);
   VFS_PUT_AND_CLEAR(vnode);
 
-  vfs_unlink(kFile);
+  KTEST_BEGIN("vfs_open(): fails on socket file");
+  KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_RDONLY));
+  KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_WRONLY));
+  KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_RDWR));
+
+  KTEST_BEGIN("vfs_rmdir(): fails on socket file");
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir(kFile));
+
+  KTEST_BEGIN("vfs_mkdir(): fails over socket file");
+  KEXPECT_EQ(-EEXIST, vfs_mkdir(kFile, VFS_S_IRUSR));
+
+  KTEST_BEGIN("vfs_mknod(): fails over socket file");
+  KEXPECT_EQ(-EEXIST, vfs_mknod(kFile, VFS_S_IFIFO, 0));
+
+  KTEST_BEGIN("vfs_rmdir(): fails on socket file");
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir(kFile));
+
+  KTEST_BEGIN("vfs_chdir(): fails on socket file");
+  KEXPECT_EQ(-ENOTDIR, vfs_chdir(kFile));
+
+  KTEST_BEGIN("vfs_readlink(): fails on socket file");
+  char buf[100];
+  KEXPECT_EQ(-EINVAL, vfs_readlink(kFile, buf, 100));
+
+  KTEST_BEGIN("vfs_truncate(): fails on socket file");
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kFile, 0));
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kFile, 100));
+
+  // TODO(aoates): test other path-taking syscalls: vfs_link, vfs_rename,
+  // vfs_chown, vfs_lchown, vfs_chmod, vfs_symlink.
+
+  KEXPECT_EQ(0, vfs_unlink(kFile));
   vfs_rmdir(kDir);
 }
 

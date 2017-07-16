@@ -560,6 +560,11 @@ int vfs_open(const char* path, int flags, ...) {
     }
   }
 
+  if (child->type == VNODE_SOCKET) {
+    VFS_PUT_AND_CLEAR(child);
+    return -EOPNOTSUPP;
+  }
+
   const bool block = !(flags & VFS_O_NONBLOCK);
   int result = vfs_open_vnode(child, flags, block);
   VFS_PUT_AND_CLEAR(child);
