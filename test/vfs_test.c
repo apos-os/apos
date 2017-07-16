@@ -339,6 +339,26 @@ static void mkdir_test(void) {
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   // TODO(aoates): test nested not-a-dir
 
+  KTEST_BEGIN("rmdir(): not a directory (chardev file)");
+  KEXPECT_EQ(0, vfs_mknod("chr_file", VFS_S_IFCHR, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("chr_file"));
+  KEXPECT_EQ(0, vfs_unlink("chr_file"));
+
+  KTEST_BEGIN("rmdir(): not a directory (blockdev file)");
+  KEXPECT_EQ(0, vfs_mknod("blk_file", VFS_S_IFBLK, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("blk_file"));
+  KEXPECT_EQ(0, vfs_unlink("blk_file"));
+
+  KTEST_BEGIN("rmdir(): not a directory (symlink)");
+  KEXPECT_EQ(0, vfs_symlink("/dir1", "dir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("dir_link"));
+  KEXPECT_EQ(0, vfs_unlink("dir_link"));
+
+  KTEST_BEGIN("rmdir(): not a directory (FIFO)");
+  KEXPECT_EQ(0, vfs_mknod("_rmdir_fifo", VFS_S_IFIFO, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("_rmdir_fifo"));
+  KEXPECT_EQ(0, vfs_unlink("_rmdir_fifo"));
+
   KTEST_BEGIN("rmdir(): root directory");
   KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");

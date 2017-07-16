@@ -1384,7 +1384,7 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
   ext2_inode_t child_inode;
   result = get_inode(fs, child_inode_num, &child_inode);
   if (result) return result;
-  if ((child_inode.i_mode & EXT2_S_IFDIR) == 0)
+  if ((child_inode.i_mode & EXT2_S_MASK) != EXT2_S_IFDIR)
     return -ENOTDIR;
 
   // Make sure it is empty.
