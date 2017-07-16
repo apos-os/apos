@@ -17,9 +17,13 @@
 #define APOO_NET_SOCKET_UNIX_H
 
 #include "net/socket/socket.h"
+#include "vfs/vnode.h"
 
 typedef struct {
   socket_t base;
+
+  // The bind point of the socket, if its bound.
+  vnode_t* bind_point;
 } socket_unix_t;
 
 int sock_unix_create(int type, int protocol, socket_t** out);

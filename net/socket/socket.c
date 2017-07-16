@@ -37,7 +37,7 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
 }
 
 void net_socket_destroy(socket_t* sock) {
-  // TODO(aoates): need to handle domain-specific shutdown.
+  sock->s_ops->cleanup(sock);
   kfree(sock);
 }
 
@@ -61,4 +61,21 @@ int net_socket(int domain, int type, int protocol) {
   int fd = vfs_open_vnode(socket_vnode, VFS_O_RDWR, false);
   VFS_PUT_AND_CLEAR(socket_vnode);
   return fd;
+}
+
+int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file->refcount++;
+
+  KASSERT(file->vnode->socket != NULL);
+  result =
+      file->vnode->socket->s_ops->bind(file->vnode->socket, addr, addr_len);
+  file->refcount--;
+  return result;
 }

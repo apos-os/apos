@@ -93,6 +93,10 @@ struct vnode {
   // real filesystems.
   socket_t* socket;
 
+  // If type == VNODE_SOCKET and this is an actual socket file bound to a real
+  // socket, then the bound socket.  Mutually exclusive with |socket| (above).
+  socket_t* bound_socket;
+
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;
 

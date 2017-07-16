@@ -131,6 +131,9 @@ static void cleanup_socket_vnode(vnode_t* vnode) {
     net_socket_destroy(vnode->socket);
     vnode->socket = NULL;
   }
+  // If a socket is bound to this address, it should have a reference on the
+  // vnode (and therefore we shouldn't be cleaning it up).
+  KASSERT(vnode->bound_socket == NULL);
 }
 
 void vfs_init() {
@@ -250,6 +253,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     if (vnode->type == VNODE_FIFO)
       init_fifo_vnode(vnode);
     vnode->socket = NULL;
+    vnode->bound_socket = NULL;
 
     kmutex_unlock(&vnode->mutex);
     return vnode;

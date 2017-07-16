@@ -28,6 +28,17 @@ typedef struct {
   const socket_ops_t* s_ops;
 } socket_t;
 
+// Operations all socket types support.
+struct socket_ops {
+  // Clean up and free any underlying resources on the socket.
+  // TODO(aoates): should this close the socket?
+  void (*cleanup)(socket_t* socket);
+
+  // Bind the socket to a particular address.
+  int (*bind)(socket_t* socket, const struct sockaddr* address,
+              socklen_t address_len);
+};
+
 // Creates a new unbound socket, per the POSIX socket() function.
 int net_socket_create(int domain, int type, int protocol, socket_t** out);
 
@@ -37,5 +48,8 @@ void net_socket_destroy(socket_t* sock);
 // Creates a new unbound socket and a new file descriptor pointing to it, per
 // socket().  Returns the new fd or an error.
 int net_socket(int domain, int type, int protocol);
+
+// Binds a socket to the given address.
+int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len);
 
 #endif

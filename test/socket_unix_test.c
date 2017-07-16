@@ -16,8 +16,11 @@
 
 #include "memory/kmalloc.h"
 #include "net/socket/socket.h"
+#include "proc/umask.h"
 #include "test/ktest.h"
+#include "test/vfs_test_util.h"
 #include "user/include/apos/errors.h"
+#include "user/include/apos/net/socket/unix.h"
 #include "vfs/vfs.h"
 
 static void create_test(void) {
@@ -69,7 +72,138 @@ static void create_test(void) {
   // TODO(aoates): test failures in net_socket().
 }
 
+static void bind_test(void) {
+  const char kPath[] = "_socket_bind";
+
+  KTEST_BEGIN("net_bind(AF_UNIX): basic bind test");
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat(kPath, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  int ino = stat.st_ino;
+
+  KEXPECT_EQ(0, vfs_close(sock));
+  // The file should still exist after closing the socket.
+  KEXPECT_EQ(0, vfs_stat(kPath, &stat));
+  KEXPECT_EQ(ino, stat.st_ino);
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): bind to wrong address family");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  addr.sun_family = AF_UNSPEC;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  addr.sun_family = -1;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  addr.sun_family = 5;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): empty path");
+  addr.sun_family = AF_UNIX;
+  addr.sun_path[0] = '\0';
+  KEXPECT_EQ(-ENOENT, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): path isn't null-terminated");
+  addr.sun_family = AF_UNIX;
+  kmemset(&addr.sun_path, 'a', sizeof(addr.sun_path));
+  KEXPECT_EQ(-ENAMETOOLONG,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): path to invalid directory");
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, "bad_dir/socket");
+  KEXPECT_EQ(-ENOENT, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): path over non-directory");
+  create_file("_not_dir", "rwxrwxrwx");
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, "_not_dir/socket");
+  KEXPECT_EQ(-ENOTDIR, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_unlink("_not_dir"));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): binding already-bound socket (same addr)");
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): binding already-bound socket (new addr)");
+  kstrcpy(addr.sun_path, "_new_path");
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(-ENOENT, vfs_stat("_new_path", &stat));
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): binding to existing path (regular file)");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  create_file(kPath, "rwxrwxrwx");
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): binding to existing path (directory)");
+  KEXPECT_EQ(0, vfs_mkdir(kPath, VFS_S_IRWXU));
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_rmdir(kPath));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): binding to existing path (bound socket)");
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  int sock2 = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): binding to existing path (unbound socket)");
+  KEXPECT_EQ(0, vfs_close(sock));
+  sock = -1;
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_close(sock2));
+  sock2 = -1;
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): respects umask");
+  const mode_t orig_umask = proc_umask(0);
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_stat(kPath, &stat));
+  KEXPECT_EQ(VFS_S_IFSOCK | VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO,
+             stat.st_mode);
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+  proc_umask(0777);
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_stat(kPath, &stat));
+  KEXPECT_EQ(VFS_S_IFSOCK, stat.st_mode);
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+  proc_umask(orig_umask);
+
+  // TODO(aoates): test these:
+  //  - symbolic link (dangling and not)
+  //  - symlink loop
+  //  - no write access
+  //  - bad file descriptor
+  //  - not socket file descriptor
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   create_test();
+  bind_test();
 }
