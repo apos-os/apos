@@ -25,4 +25,9 @@ void socket_test(void) {
   socket_t* sock = NULL;
   KEXPECT_EQ(-EAFNOSUPPORT, net_socket_create(-1, SOCK_STREAM, 0, &sock));
   KEXPECT_EQ(-EAFNOSUPPORT, net_socket_create(5, SOCK_STREAM, 0, &sock));
+  KEXPECT_EQ(NULL, sock);
+
+  KTEST_BEGIN("net_socket() with invalid domain");
+  KEXPECT_EQ(-EAFNOSUPPORT, net_socket(-1, SOCK_STREAM, 0));
+  KEXPECT_EQ(-EAFNOSUPPORT, net_socket(5, SOCK_STREAM, 0));
 }

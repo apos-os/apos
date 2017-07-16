@@ -18,6 +18,7 @@
 #include "net/socket/socket.h"
 #include "test/ktest.h"
 #include "user/include/apos/errors.h"
+#include "vfs/vfs.h"
 
 static void create_test(void) {
   KTEST_BEGIN("net_socket_create(AF_UNIX): basic creation");
@@ -44,6 +45,28 @@ static void create_test(void) {
   KEXPECT_EQ(-EPROTONOSUPPORT,
              net_socket_create(AF_UNIX, SOCK_STREAM, 1, &sock));
   KEXPECT_EQ(NULL, sock);
+
+  KTEST_BEGIN("net_socket(AF_UNIX): basic creation");
+  int fd = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(fd, 0);
+
+  KTEST_BEGIN("net_socket(AF_UNIX): fstat() on open AF_UNIX socket");
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(0, VFS_S_ISSOCK(stat.st_size));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  KTEST_BEGIN("net_socket(AF_UNIX): bad type");
+  KEXPECT_EQ(-EPROTOTYPE, net_socket(AF_UNIX, -1, 0));
+  KEXPECT_EQ(-EPROTOTYPE, net_socket(AF_UNIX, 5, 0));
+  // TODO(aoates): test SOCK_DGRAM, etc when they're defined.
+
+  KTEST_BEGIN("net_socket(AF_UNIX): bad protocol");
+  KEXPECT_EQ(-EPROTONOSUPPORT, net_socket(AF_UNIX, SOCK_STREAM, -1));
+  KEXPECT_EQ(-EPROTONOSUPPORT, net_socket(AF_UNIX, SOCK_STREAM, 1));
+
+  // TODO(aoates): test failures in net_socket().
 }
 
 void socket_unix_test(void) {

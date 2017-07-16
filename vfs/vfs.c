@@ -123,6 +123,16 @@ static void cleanup_fifo_vnode(vnode_t* vnode) {
   vnode->fifo = NULL;
 }
 
+static void cleanup_socket_vnode(vnode_t* vnode) {
+  KASSERT_DBG(vnode->type == VNODE_SOCKET);
+  KASSERT_DBG(vnode->refcount == 0);
+
+  if (vnode->socket) {
+    net_socket_destroy(vnode->socket);
+    vnode->socket = NULL;
+  }
+}
+
 void vfs_init() {
   KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
 
@@ -159,6 +169,12 @@ void vfs_init() {
   g_fs_table[VFS_FIFO_FS].mounted_root = NULL;
   g_fs_table[VFS_FIFO_FS].fs = anonfs_create(VNODE_FIFO);
   g_fs_table[VFS_FIFO_FS].fs->id = VFS_FIFO_FS;
+
+  // Create the anonymous socket filesystem.
+  g_fs_table[VFS_SOCKET_FS].mount_point = NULL;
+  g_fs_table[VFS_SOCKET_FS].mounted_root = NULL;
+  g_fs_table[VFS_SOCKET_FS].fs = anonfs_create(VNODE_SOCKET);
+  g_fs_table[VFS_SOCKET_FS].fs->id = VFS_SOCKET_FS;
 
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
@@ -233,6 +249,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
 
     if (vnode->type == VNODE_FIFO)
       init_fifo_vnode(vnode);
+    vnode->socket = NULL;
 
     kmutex_unlock(&vnode->mutex);
     return vnode;
@@ -254,6 +271,7 @@ void vfs_put(vnode_t* vnode) {
     KASSERT(vnode->memobj.refcount == 0);
     KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
+    if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
 
     // Only put the node back into the fs if we were able to fully initialize
     // it.
@@ -375,7 +393,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   const mode_t mode = flags & VFS_MODE_MASK;
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
       child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
-      child->type != VNODE_FIFO) {
+      child->type != VNODE_FIFO && child->type != VNODE_SOCKET) {
     return -ENOTSUP;
   }
 

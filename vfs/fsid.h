@@ -28,4 +28,7 @@ typedef int fsid_t;
 // The FIFO anonymous fsid.
 #define VFS_FIFO_FS 1
 
+// The socket anonymous fsid.
+#define VFS_SOCKET_FS 2
+
 #endif

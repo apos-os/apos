@@ -15,7 +15,11 @@
 
 #include "common/kassert.h"
 #include "user/include/apos/errors.h"
+#include "user/include/apos/vfs/vfs.h"
 #include "net/socket/unix.h"
+#include "vfs/anonfs.h"
+#include "vfs/fsid.h"
+#include "vfs/vfs_internal.h"
 
 int net_socket_create(int domain, int type, int protocol, socket_t** out) {
   int result;
@@ -30,4 +34,31 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
     KASSERT_DBG((*out)->s_protocol == protocol);
   }
   return result;
+}
+
+void net_socket_destroy(socket_t* sock) {
+  // TODO(aoates): need to handle domain-specific shutdown.
+  kfree(sock);
+}
+
+int net_socket(int domain, int type, int protocol) {
+  socket_t* sock = NULL;
+  int result = net_socket_create(domain, type, protocol, &sock);
+  if (result) return result;
+
+  fs_t* const fs = g_fs_table[VFS_SOCKET_FS].fs;
+  const ino_t socket_ino = anonfs_create_vnode(fs);
+
+  vnode_t* socket_vnode = vfs_get(fs, socket_ino);
+  if (!socket_vnode) {
+    kfree(sock);
+    klogfm(KL_VFS, DFATAL, "vfs_get() on socket anonfs failed");
+    return -EIO;
+  }
+  KASSERT_DBG(socket_vnode->type == VNODE_SOCKET);
+  socket_vnode->socket = sock;
+
+  int fd = vfs_open_vnode(socket_vnode, VFS_O_RDWR, false);
+  VFS_PUT_AND_CLEAR(socket_vnode);
+  return fd;
 }

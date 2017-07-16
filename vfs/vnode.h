@@ -17,6 +17,7 @@
 #define APOO_VFS_VNODE_H
 
 #include "memory/memobj.h"
+#include "net/socket/socket.h"
 #include "proc/kthread.h"
 #include "user/include/apos/dev.h"
 #include "user/include/apos/posix_types.h"
@@ -86,6 +87,11 @@ struct vnode {
 
   // If type == VNODE_FIFO, the underlying FIFO.
   apos_fifo_t* fifo;
+
+  // If type == VNODE_SOCKET, the underlying socket.  This will only be set for
+  // actual sockets (sockets in the anonymous socket FS), not socket files on
+  // real filesystems.
+  socket_t* socket;
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;

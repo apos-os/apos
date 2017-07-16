@@ -31,4 +31,11 @@ typedef struct {
 // Creates a new unbound socket, per the POSIX socket() function.
 int net_socket_create(int domain, int type, int protocol, socket_t** out);
 
+// Cleans up (closing/shutting down if necessary) and frees the given socket.
+void net_socket_destroy(socket_t* sock);
+
+// Creates a new unbound socket and a new file descriptor pointing to it, per
+// socket().  Returns the new fd or an error.
+int net_socket(int domain, int type, int protocol);
+
 #endif
