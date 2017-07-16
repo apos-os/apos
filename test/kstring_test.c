@@ -25,6 +25,13 @@ static void kstring_testA(void) {
   KEXPECT_EQ(6, kstrlen("abcdef"));
   KEXPECT_EQ(3, kstrlen("abc\0def"));
 
+  KTEST_BEGIN("kstrnlen()");
+  KEXPECT_EQ(0, kstrnlen("", 5));
+  KEXPECT_EQ(-1, kstrnlen("", 0));
+  KEXPECT_EQ(3, kstrnlen("abc", 5));
+  KEXPECT_EQ(3, kstrnlen("abc", 4));
+  KEXPECT_EQ(-1, kstrnlen("abc", 3));
+
   KTEST_BEGIN("kstrcmp()");
   KEXPECT_EQ(kstrcmp("abc", "abc"), 0);
   KEXPECT_LT(kstrcmp("abc", "def"), 0);

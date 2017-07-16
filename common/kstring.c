@@ -25,6 +25,17 @@ int kstrlen(const char* s) {
   return x;
 }
 
+int kstrnlen(const char* s, int max) {
+  int x = 0;
+  while (*s && max > 0) {
+    ++s;
+    ++x;
+    --max;
+  }
+  if (max == 0) return -1;
+  return x;
+}
+
 int kstrcmp(const char* s1, const char* s2) {
   while (*s1 && *s2) {
     if (*s1 != *s2) {
