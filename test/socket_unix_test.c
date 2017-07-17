@@ -16,7 +16,10 @@
 
 #include "memory/kmalloc.h"
 #include "net/socket/socket.h"
+#include "proc/fork.h"
 #include "proc/umask.h"
+#include "proc/user.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
 #include "user/include/apos/errors.h"
@@ -70,6 +73,33 @@ static void create_test(void) {
   KEXPECT_EQ(-EPROTONOSUPPORT, net_socket(AF_UNIX, SOCK_STREAM, 1));
 
   // TODO(aoates): test failures in net_socket().
+}
+
+static void do_bind_mode_test(void* arg) {
+  const int kUserA = 1;
+  const int kUserB = 2;
+  const int kGroupA = 4;
+  const int kGroupB = 5;
+
+  KTEST_BEGIN("net_bind(AF_UNIX): bind in non-writable directory");
+  KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
+  KEXPECT_EQ(0, setreuid(kUserB, kUserA));
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, "_socket_dir/sock");
+
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  KEXPECT_EQ(0, vfs_mkdir("_socket_dir", VFS_S_IRUSR | VFS_S_IXUSR));
+  KEXPECT_EQ(-EACCES, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_rmdir("_socket_dir"));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): bind in non-executable directory");
+  KEXPECT_EQ(0, vfs_mkdir("_socket_dir", VFS_S_IRUSR | VFS_S_IWUSR));
+  KEXPECT_EQ(-EACCES, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_rmdir("_socket_dir"));
 }
 
 static void bind_test(void) {
@@ -219,10 +249,21 @@ static void bind_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kPath));
   KEXPECT_EQ(0, vfs_close(sock));
 
-  // TODO(aoates): test these:
-  //  - no write access
-  //  - bad file descriptor
-  //  - not socket file descriptor
+  KTEST_BEGIN("net_bind(AF_UNIX): bind on bad file descriptor");
+  KEXPECT_EQ(-EBADF, net_bind(-1, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(-EBADF, net_bind(100, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): bind on non-socket file descriptor");
+  int file_fd = vfs_open("_non_socket", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_GE(file_fd, 0);
+  KEXPECT_EQ(-ENOTSOCK,
+             net_bind(file_fd, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_close(file_fd));
+  KEXPECT_EQ(0, vfs_unlink("_non_socket"));
+
+  pid_t child_pid = proc_fork(&do_bind_mode_test, 0x0);
+  KEXPECT_GE(child_pid, 0);
+  proc_wait(0x0);
 }
 
 void socket_unix_test(void) {
