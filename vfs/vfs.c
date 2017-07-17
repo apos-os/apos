@@ -713,14 +713,15 @@ int vfs_mkdir(const char* path, mode_t mode) {
 }
 
 static int vfs_mknod_internal(const char* path, mode_t mode, apos_dev_t dev,
-                              vnode_t** vnode_out) {
+                              bool follow_final_symlink, vnode_t** vnode_out) {
   if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(false), &parent, 0x0, base_name);
+  int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
+                          0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -766,7 +767,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
     return -EINVAL;
   }
   vnode_t* node = NULL;
-  int result = vfs_mknod_internal(path, mode, dev, &node);
+  int result = vfs_mknod_internal(path, mode, dev, false, &node);
   if (result == 0) {
     VFS_PUT_AND_CLEAR(node);
   }
@@ -777,7 +778,7 @@ int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out) {
   if (!VFS_S_ISSOCK(mode)) {
     return -EINVAL;
   }
-  return vfs_mknod_internal(path, mode, 0, vnode_out);
+  return vfs_mknod_internal(path, mode, 0, true, vnode_out);
 }
 
 int vfs_rmdir(const char* path) {

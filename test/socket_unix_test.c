@@ -194,9 +194,32 @@ static void bind_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kPath));
   proc_umask(orig_umask);
 
+  KTEST_BEGIN("net_bind(AF_UNIX): bind to symlink");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+  KEXPECT_EQ(0, vfs_symlink("_symlink_target", kPath));
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_lstat(kPath, &stat));
+  KEXPECT_EQ(1, VFS_S_ISLNK(stat.st_mode));
+  KEXPECT_EQ(0, vfs_lstat("_symlink_target", &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): bind to symlink (target exists)");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_unlink("_symlink_target"));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_bind(AF_UNIX): bind to symlink (loop)");
+  KEXPECT_EQ(0, vfs_symlink(kPath, kPath));
+  KEXPECT_EQ(-ELOOP, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+  KEXPECT_EQ(0, vfs_close(sock));
+
   // TODO(aoates): test these:
-  //  - symbolic link (dangling and not)
-  //  - symlink loop
   //  - no write access
   //  - bad file descriptor
   //  - not socket file descriptor
