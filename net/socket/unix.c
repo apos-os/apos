@@ -40,7 +40,10 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->base.s_type = type;
   sock->base.s_protocol = protocol;
   sock->base.s_ops = &g_unix_socket_ops;
+  sock->state = SUN_UNCONNECTED;
   sock->bind_point = NULL;
+  sock->listen_backlog = 0;
+  sock->incoming_conns = LIST_INIT;
   *out = &sock->base;
   return 0;
 }
@@ -87,7 +90,23 @@ static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
   return 0;
 }
 
+static int sock_unix_listen(socket_t* socket_base, int backlog) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+  if (socket->bind_point == NULL) {
+    return -EDESTADDRREQ;
+  } else if (socket->state != SUN_UNCONNECTED) {
+    return -EINVAL;
+  }
+
+  socket->state = SUN_LISTENING;
+  socket->listen_backlog = backlog;
+
+  return 0;
+}
+
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
   &sock_unix_bind,
+  &sock_unix_listen,
 };

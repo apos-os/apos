@@ -79,3 +79,19 @@ int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   file->refcount--;
   return result;
 }
+
+int net_listen(int socket, int backlog) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file->refcount++;
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->listen(file->vnode->socket, backlog);
+  file->refcount--;
+  return result;
+}

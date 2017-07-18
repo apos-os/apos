@@ -266,8 +266,67 @@ static void bind_test(void) {
   proc_wait(0x0);
 }
 
+static void listen_test(void) {
+  const char kPath[] = "_socket_path";
+
+  KTEST_BEGIN("net_listen(AF_UNIX): basic listen");
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KEXPECT_EQ(0, net_listen(sock, 5));
+
+  KTEST_BEGIN("net_listen(AF_UNIX): already listening socket");
+  KEXPECT_EQ(-EINVAL, net_listen(sock, 5));
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_listen(AF_UNIX): unbound socket");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-EDESTADDRREQ, net_listen(sock, 5));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+  KTEST_BEGIN("net_listen(AF_UNIX): negative backlog");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, net_listen(sock, -5));
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+  // TODO(aoates): verify default value?
+
+  KTEST_BEGIN("net_listen(AF_UNIX): zero backlog");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, net_listen(sock, 0));
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+  // TODO(aoates): verify default value?
+
+  KTEST_BEGIN("net_listen(AF_UNIX): bad fd");
+  KEXPECT_EQ(-EBADF, net_listen(-5, 5));
+  KEXPECT_EQ(-EBADF, net_listen(100, 5));
+
+  KTEST_BEGIN("net_listen(AF_UNIX): non-socket fd");
+  create_file(kPath, "rwxrwxrwx");
+  sock = vfs_open(kPath, VFS_O_RDWR);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-ENOTSOCK, net_listen(sock, 5));
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  // TODO(aoates): things to test:
+  //  - listen on connected socket
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   create_test();
   bind_test();
+  listen_test();
 }

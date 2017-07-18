@@ -37,6 +37,9 @@ struct socket_ops {
   // Bind the socket to a particular address.
   int (*bind)(socket_t* socket, const struct sockaddr* address,
               socklen_t address_len);
+
+  // Start listening on the given socket.
+  int (*listen)(socket_t* socket, int backlog);
 };
 
 // Creates a new unbound socket, per the POSIX socket() function.
@@ -51,5 +54,8 @@ int net_socket(int domain, int type, int protocol);
 
 // Binds a socket to the given address.
 int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len);
+
+// Starts listening on the given socket.
+int net_listen(int socket, int backlog);
 
 #endif

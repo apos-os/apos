@@ -19,11 +19,25 @@
 #include "net/socket/socket.h"
 #include "vfs/vnode.h"
 
+typedef enum {
+  SUN_UNCONNECTED,
+  SUN_LISTENING,
+} sockun_state_t;
+
 typedef struct {
   socket_t base;
 
+  // Current state of the socket.
+  sockun_state_t state;
+
   // The bind point of the socket, if its bound.
   vnode_t* bind_point;
+
+  // Maximum connection backlog (if listening).
+  int listen_backlog;
+
+  // Sockets that are connecting to this (if listening).
+  list_t incoming_conns;
 } socket_unix_t;
 
 int sock_unix_create(int type, int protocol, socket_t** out);
