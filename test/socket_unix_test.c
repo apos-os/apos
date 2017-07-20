@@ -16,7 +16,9 @@
 
 #include "memory/kmalloc.h"
 #include "net/socket/socket.h"
+#include "proc/kthread.h"
 #include "proc/fork.h"
+#include "proc/scheduler.h"
 #include "proc/umask.h"
 #include "proc/user.h"
 #include "proc/wait.h"
@@ -324,9 +326,73 @@ static void listen_test(void) {
   //  - listen on connected socket
 }
 
+static void connect_test(void) {
+  const char kServerPath[] = "_socket_server_path";
+
+  struct sockaddr_un server_addr;
+  server_addr.sun_family = AF_UNIX;
+  kstrcpy(server_addr.sun_path, kServerPath);
+
+  KTEST_BEGIN("net_connect(AF_UNIX): basic connect");
+  int server_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(server_sock, 0);
+  KEXPECT_EQ(0, net_bind(server_sock, (struct sockaddr*)&server_addr,
+                         sizeof(server_addr)));
+  KEXPECT_EQ(0, net_listen(server_sock, 5));
+
+  int client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, net_connect(client_sock, (struct sockaddr*)&server_addr,
+                            sizeof(server_addr)));
+
+  struct sockaddr_un accept_addr;
+  socklen_t addr_len = 2 * sizeof(struct sockaddr_un);  // A lie!
+  int accepted_sock =
+      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  KEXPECT_STREQ("", accept_addr.sun_path);
+  KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
+
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+
+  // TODO(aoates): things to test:
+  //  - connect w/ wrong address family
+  //  - connect through symlink
+  //  - non-blocking connect
+  //  - listen backlog
+  //  - connect blocks until accept()
+  //  - accept() blocks until connect()
+  //  - connect from bound address
+  //  - self-connect (connect to same address as is bound)
+  //  - connect to non-existing address
+  //  - connect to non-socket address
+  //  - connect to address that was bound, but socket is closed
+  //  - connect to bound but not listening address
+  //  - connect to connected socket
+  //  - connect to address that was bound and listening, then file was removed
+  //  - connect on already-connecting socket
+  //  - connect on already-connected socket
+  //  - connect on listening socket
+  //  - connect interrupted by signal
+  //  - test renamed and unlinked client address (post-bind, pre-connect: in
+  //    both cases, should use old name, rename/unlink doesn't affect)
+  //  - accept interrupted by signal
+  //  - accept with too-small address struct
+  //  - accept with null address struct and/or length
+  //  - bad fd (connect)
+  //  - bad fd (accept)
+  //  - forked sockets
+  //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   create_test();
   bind_test();
   listen_test();
+  connect_test();
 }

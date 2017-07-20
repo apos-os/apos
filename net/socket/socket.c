@@ -21,6 +21,27 @@
 #include "vfs/fsid.h"
 #include "vfs/vfs_internal.h"
 
+// Given a socket object, creates a new file descriptor for it.  On error, frees
+// the socket object and returns an error.  In other words, after calling this,
+// the caller should not touch the socket object either way.
+static int create_socket_fd(socket_t* sock) {
+  fs_t* const fs = g_fs_table[VFS_SOCKET_FS].fs;
+  const ino_t socket_ino = anonfs_create_vnode(fs);
+
+  vnode_t* socket_vnode = vfs_get(fs, socket_ino);
+  if (!socket_vnode) {
+    kfree(sock);
+    klogfm(KL_VFS, DFATAL, "vfs_get() on socket anonfs failed");
+    return -EIO;
+  }
+  KASSERT_DBG(socket_vnode->type == VNODE_SOCKET);
+  socket_vnode->socket = sock;
+
+  int fd = vfs_open_vnode(socket_vnode, VFS_O_RDWR, false);
+  VFS_PUT_AND_CLEAR(socket_vnode);
+  return fd;
+}
+
 int net_socket_create(int domain, int type, int protocol, socket_t** out) {
   int result;
   if (domain == AF_UNIX) {
@@ -46,21 +67,7 @@ int net_socket(int domain, int type, int protocol) {
   int result = net_socket_create(domain, type, protocol, &sock);
   if (result) return result;
 
-  fs_t* const fs = g_fs_table[VFS_SOCKET_FS].fs;
-  const ino_t socket_ino = anonfs_create_vnode(fs);
-
-  vnode_t* socket_vnode = vfs_get(fs, socket_ino);
-  if (!socket_vnode) {
-    kfree(sock);
-    klogfm(KL_VFS, DFATAL, "vfs_get() on socket anonfs failed");
-    return -EIO;
-  }
-  KASSERT_DBG(socket_vnode->type == VNODE_SOCKET);
-  socket_vnode->socket = sock;
-
-  int fd = vfs_open_vnode(socket_vnode, VFS_O_RDWR, false);
-  VFS_PUT_AND_CLEAR(socket_vnode);
-  return fd;
+  return create_socket_fd(sock);
 }
 
 int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
@@ -92,6 +99,45 @@ int net_listen(int socket, int backlog) {
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->listen(file->vnode->socket, backlog);
+  file->refcount--;
+  return result;
+}
+
+int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file->refcount++;
+
+  KASSERT(file->vnode->socket != NULL);
+  socket_t* new_socket = NULL;
+  result = file->vnode->socket->s_ops->accept(file->vnode->socket, addr,
+                                              addr_len, &new_socket);
+  file->refcount--;
+  if (result) {
+    return result;
+  }
+
+  return create_socket_fd(new_socket);
+}
+
+int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file->refcount++;
+
+  KASSERT(file->vnode->socket != NULL);
+  result =
+      file->vnode->socket->s_ops->connect(file->vnode->socket, addr, addr_len);
   file->refcount--;
   return result;
 }

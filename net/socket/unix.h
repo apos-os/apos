@@ -22,9 +22,11 @@
 typedef enum {
   SUN_UNCONNECTED,
   SUN_LISTENING,
+  SUN_CONNECTING,
+  SUN_CONNECTED,
 } sockun_state_t;
 
-typedef struct {
+typedef struct socket_unix {
   socket_t base;
 
   // Current state of the socket.
@@ -33,11 +35,17 @@ typedef struct {
   // The bind point of the socket, if its bound.
   vnode_t* bind_point;
 
+  // If connected, our peer.
+  struct socket_unix* peer;
+
   // Maximum connection backlog (if listening).
   int listen_backlog;
 
   // Sockets that are connecting to this (if listening).
   list_t incoming_conns;
+
+  // Link on the destination socket's queue, if connecting.
+  list_link_t connecting_link;
 } socket_unix_t;
 
 int sock_unix_create(int type, int protocol, socket_t** out);

@@ -40,6 +40,17 @@ struct socket_ops {
 
   // Start listening on the given socket.
   int (*listen)(socket_t* socket, int backlog);
+
+  // Accept a connection on the given socket, returning the new peer socket in
+  // |socket_out| on success.
+  // TODO(aoates): add blocking flag.
+  int (*accept)(socket_t* socket, struct sockaddr* address,
+                socklen_t* address_len, socket_t** socket_out);
+
+  // Connect the socket to the given address.
+  // TODO(aoates): add blocking flag.
+  int (*connect)(socket_t* socket, const struct sockaddr* address,
+                 socklen_t address_len);
 };
 
 // Creates a new unbound socket, per the POSIX socket() function.
@@ -57,5 +68,11 @@ int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len);
 
 // Starts listening on the given socket.
 int net_listen(int socket, int backlog);
+
+// Accepts a connection on the given socket.
+int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len);
+
+// Connects a socket to the given address.
+int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len);
 
 #endif

@@ -42,8 +42,10 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->base.s_ops = &g_unix_socket_ops;
   sock->state = SUN_UNCONNECTED;
   sock->bind_point = NULL;
+  sock->peer = NULL;
   sock->listen_backlog = 0;
   sock->incoming_conns = LIST_INIT;
+  sock->connecting_link = LIST_LINK_INIT;
   *out = &sock->base;
   return 0;
 }
@@ -74,7 +76,7 @@ static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
     return -EINVAL;
   }
 
-  struct sockaddr_un* addr_un = (struct sockaddr_un*)address;
+  const struct sockaddr_un* addr_un = (const struct sockaddr_un*)address;
   if (kstrnlen(addr_un->sun_path,
                sizeof(struct sockaddr_un) - sizeof(sa_family_t)) < 0) {
     return -ENAMETOOLONG;
@@ -105,8 +107,106 @@ static int sock_unix_listen(socket_t* socket_base, int backlog) {
   return 0;
 }
 
+static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
+                            socklen_t* address_len, socket_t** socket_out) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  // TODO(aoates): handle sockets in other states.
+  KASSERT(socket->state == SUN_LISTENING);
+  if (list_empty(&socket->incoming_conns)) {
+    // TODO(aoates): block until connecting sockets are available.
+    return -EWOULDBLOCK;
+  }
+
+  list_link_t* peer_link = list_pop(&socket->incoming_conns);
+  socket_unix_t* peer = container_of(peer_link, socket_unix_t, connecting_link);
+  int result = sock_unix_create(socket_base->s_type, socket_base->s_protocol,
+                                socket_out);
+  if (result) {
+    return result;
+  }
+
+  socket_unix_t* new_socket = (socket_unix_t*)*socket_out;
+
+  peer->state = SUN_CONNECTED;
+  peer->peer = new_socket;
+  new_socket->state = SUN_CONNECTED;
+  new_socket->peer = peer;
+  // TODO(aoates): should we set bind_point or the bound name?
+
+  // TODO(aoates): actually copy over the bind point (if it exists).
+  // TODO(aoates): check size of address
+  if (address) {
+    struct sockaddr_un* addr_un = (struct sockaddr_un*)address;
+    addr_un->sun_family = AF_UNIX;
+    kstrcpy(addr_un->sun_path, "");
+    *address_len = sizeof(struct sockaddr_un);
+  }
+
+  return 0;
+}
+
+static int sock_unix_connect(socket_t* socket_base,
+                             const struct sockaddr* address,
+                             socklen_t address_len) {
+  if (address->sa_family != AF_UNIX) {
+    return -EAFNOSUPPORT;
+  }
+
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+  // TODO(aoates): ensure we have test coverage for all of these.
+  switch (socket->state) {
+    case SUN_UNCONNECTED:
+      break;
+    case SUN_LISTENING:
+      return -EOPNOTSUPP;
+    case SUN_CONNECTING:
+      return -EALREADY;
+    case SUN_CONNECTED:
+      return -EISCONN;
+  }
+
+  const struct sockaddr_un* addr_un = (const struct sockaddr_un*)address;
+  if (kstrnlen(addr_un->sun_path,
+               sizeof(struct sockaddr_un) - sizeof(sa_family_t)) < 0) {
+    return -ENAMETOOLONG;
+  }
+
+  vnode_t* target = NULL;
+  int result =
+      lookup_existing_path(addr_un->sun_path, lookup_opt(true), NULL, &target);
+  if (result) {
+    return result;
+  }
+
+  if (target->type != VNODE_SOCKET) {
+    return -ENOTSOCK;  // TODO(aoates): confirm this error is correct.
+  }
+
+  KASSERT_DBG(target->socket == NULL);
+  if (target->bound_socket == NULL) {
+    return -ECONNREFUSED;
+  }
+
+  KASSERT_DBG(target->bound_socket->s_domain == AF_UNIX);
+  socket_unix_t* target_sock = (socket_unix_t*)target->bound_socket;
+  if (target_sock->state != SUN_LISTENING) {
+    return -ECONNREFUSED;
+  }
+
+  // TODO(aoates): check backlog length.
+  list_push(&target_sock->incoming_conns, &socket->connecting_link);
+  socket->state = SUN_CONNECTING;
+
+  return 0;
+}
+
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
   &sock_unix_bind,
   &sock_unix_listen,
+  &sock_unix_accept,
+  &sock_unix_connect,
 };
