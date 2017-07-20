@@ -42,6 +42,7 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->base.s_ops = &g_unix_socket_ops;
   sock->state = SUN_UNCONNECTED;
   sock->bind_point = NULL;
+  sock->bind_address.sun_path[0] = '\0';
   sock->peer = NULL;
   sock->listen_backlog = 0;
   sock->incoming_conns = LIST_INIT;
@@ -89,6 +90,7 @@ static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
   else if (result) return result;
 
   socket->bind_point->bound_socket = socket_base;
+  kmemcpy(&socket->bind_address, address, address_len);
   return 0;
 }
 
@@ -135,13 +137,17 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
   new_socket->peer = peer;
   // TODO(aoates): should we set bind_point or the bound name?
 
-  // TODO(aoates): actually copy over the bind point (if it exists).
   // TODO(aoates): check size of address
   if (address) {
     struct sockaddr_un* addr_un = (struct sockaddr_un*)address;
     addr_un->sun_family = AF_UNIX;
-    kstrcpy(addr_un->sun_path, "");
     *address_len = sizeof(struct sockaddr_un);
+    if (peer->bind_point) {
+      KASSERT_DBG(peer->bind_address.sun_family == AF_UNIX);
+      kstrcpy(addr_un->sun_path, peer->bind_address.sun_path);
+    } else {
+      addr_un->sun_path[0] = '\0';
+    }
   }
 
   return 0;

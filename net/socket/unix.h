@@ -17,6 +17,7 @@
 #define APOO_NET_SOCKET_UNIX_H
 
 #include "net/socket/socket.h"
+#include "user/include/apos/net/socket/unix.h"
 #include "vfs/vnode.h"
 
 typedef enum {
@@ -34,6 +35,9 @@ typedef struct socket_unix {
 
   // The bind point of the socket, if its bound.
   vnode_t* bind_point;
+
+  // The actual address we bound to, if any.
+  struct sockaddr_un bind_address;
 
   // If connected, our peer.
   struct socket_unix* peer;

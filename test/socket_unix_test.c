@@ -326,7 +326,69 @@ static void listen_test(void) {
   //  - listen on connected socket
 }
 
+// Helper to create a socket that's bound to the given path.
+int create_bound_socket(const char* path) {
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) {
+    return sock;
+  }
+  if (*path != '\0') {
+    struct sockaddr_un server_addr;
+    server_addr.sun_family = AF_UNIX;
+    kstrcpy(server_addr.sun_path, path);
+    int result =
+        net_bind(sock, (struct sockaddr*)&server_addr, sizeof(server_addr));
+    if (result < 0) {
+      return result;
+    }
+  }
+  return sock;
+}
+
+// Helper to create a socket that's bound to the given path and listening.
+int create_listening_socket(const char* path, int backlog) {
+  int server_sock = create_bound_socket(path);
+  if (server_sock < 0) {
+    return server_sock;
+  }
+  int result = net_listen(server_sock, backlog);
+  if (result < 0) {
+    return result;
+  }
+  return server_sock;
+}
+
+// Helper to create two sockets, a client socket and a server socket, bound to
+// the given addresses.
+int create_socket_pair(const char* client_addr, const char* server_addr,
+                       int backlog, int* client_sock_out,
+                       int* server_sock_out) {
+  *server_sock_out = create_listening_socket(server_addr, backlog);
+  if (*server_sock_out < 0) {
+    return *server_sock_out;
+  }
+
+  *client_sock_out = create_bound_socket(client_addr);
+  if (*client_sock_out < 0) {
+    return *client_sock_out;
+  }
+  return 0;
+}
+
+static int do_connect(int sock, const char* path) {
+  struct sockaddr_un server_addr;
+  server_addr.sun_family = AF_UNIX;
+  kstrcpy(server_addr.sun_path, path);
+  return net_connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr));
+}
+
+static int do_accept(int sock, struct sockaddr_un* addr) {
+  socklen_t addr_len = sizeof(struct sockaddr_un);
+  return net_accept(sock, (struct sockaddr*)addr, &addr_len);
+}
+
 static void connect_test(void) {
+  const char kClientPath[] = "_socket_client_path";
   const char kServerPath[] = "_socket_server_path";
 
   struct sockaddr_un server_addr;
@@ -359,14 +421,88 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_close(server_sock));
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
 
+  KTEST_BEGIN("net_connect(AF_UNIX): connect from bound socket");
+  KEXPECT_EQ(0, create_socket_pair(kClientPath, kServerPath, 5, &client_sock,
+                                   &server_sock));
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  accepted_sock = do_accept(server_sock, &accept_addr);
+  KEXPECT_GE(accepted_sock, 0);
+
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  KEXPECT_STREQ(kClientPath, accept_addr.sun_path);
+
+  vfs_close(accepted_sock);
+  vfs_close(client_sock);
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+
+  KTEST_BEGIN(
+      "net_connect(AF_UNIX): connect from bound socket (renamed before "
+      "connection)");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, vfs_rename(kClientPath, "_client_socket2"));
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  accepted_sock = do_accept(server_sock, &accept_addr);
+  KEXPECT_GE(accepted_sock, 0);
+
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  // We should get the pre-rename path.
+  KEXPECT_STREQ(kClientPath, accept_addr.sun_path);
+
+  vfs_close(accepted_sock);
+  vfs_close(client_sock);
+  KEXPECT_EQ(0, vfs_unlink("_client_socket2"));
+
+  KTEST_BEGIN(
+      "net_connect(AF_UNIX): connect from bound socket (deleted before "
+      "connection)");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  accepted_sock = do_accept(server_sock, &accept_addr);
+  KEXPECT_GE(accepted_sock, 0);
+
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  // We should get the pre-delete path.
+  KEXPECT_STREQ(kClientPath, accept_addr.sun_path);
+
+  vfs_close(accepted_sock);
+  vfs_close(client_sock);
+
+  KTEST_BEGIN(
+      "net_connect(AF_UNIX): connect from bound socket (linked before "
+      "connection)");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, vfs_link(kClientPath, "_client_socket2"));
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  accepted_sock = do_accept(server_sock, &accept_addr);
+  KEXPECT_GE(accepted_sock, 0);
+
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  // We should get the pre-link path.
+  KEXPECT_STREQ(kClientPath, accept_addr.sun_path);
+
+  vfs_close(accepted_sock);
+  vfs_close(client_sock);
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+  KEXPECT_EQ(0, vfs_unlink("_client_socket2"));
+
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+
   // TODO(aoates): things to test:
   //  - connect w/ wrong address family
   //  - connect through symlink
+  //  - connect from client bound through symlink (should give symlink address,
+  //  not symlink target address)
+  //  - as above, but remove target and try to rebind (this fails on OS X? I
+  //  think should succeed)
   //  - non-blocking connect
   //  - listen backlog
   //  - connect blocks until accept()
   //  - accept() blocks until connect()
-  //  - connect from bound address
   //  - self-connect (connect to same address as is bound)
   //  - connect to non-existing address
   //  - connect to non-socket address
@@ -378,8 +514,6 @@ static void connect_test(void) {
   //  - connect on already-connected socket
   //  - connect on listening socket
   //  - connect interrupted by signal
-  //  - test renamed and unlinked client address (post-bind, pre-connect: in
-  //    both cases, should use old name, rename/unlink doesn't affect)
   //  - accept interrupted by signal
   //  - accept with too-small address struct
   //  - accept with null address struct and/or length
