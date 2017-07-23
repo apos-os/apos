@@ -44,10 +44,10 @@ typedef struct socket_unix {
   // Maximum connection backlog (if listening).
   int listen_backlog;
 
-  // Sockets that are connecting to this (if listening).
+  // If listening, new connection sockets to be returned by accept().
   list_t incoming_conns;
 
-  // Link on the destination socket's queue, if connecting.
+  // Link on the parent/server socket's queue, if an unaccepted connection.
   list_link_t connecting_link;
 } socket_unix_t;
 

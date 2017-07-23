@@ -63,6 +63,23 @@ static void sock_unix_cleanup(socket_t* socket_base) {
     socket->bind_point->bound_socket = NULL;
     VFS_PUT_AND_CLEAR(socket->bind_point);
   }
+  if (socket->peer) {
+    KASSERT_DBG(socket->state == SUN_CONNECTED);
+    KASSERT_DBG(socket->peer->state == SUN_CONNECTED);
+    KASSERT_DBG(socket->peer->peer == socket);
+    socket->peer->peer = NULL;
+    socket->peer = NULL;
+  }
+  if (!list_empty(&socket->incoming_conns)) {
+    KASSERT_DBG(socket->state == SUN_LISTENING);
+    while (!list_empty(&socket->incoming_conns)) {
+      list_link_t* peer_link = list_pop(&socket->incoming_conns);
+      socket_unix_t* incoming_socket =
+          container_of(peer_link, socket_unix_t, connecting_link);
+      sock_unix_cleanup((socket_t*)incoming_socket);
+      kfree(incoming_socket);
+    }
+  }
 }
 
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
@@ -121,28 +138,24 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
     return -EWOULDBLOCK;
   }
 
-  list_link_t* peer_link = list_pop(&socket->incoming_conns);
-  socket_unix_t* peer = container_of(peer_link, socket_unix_t, connecting_link);
-  int result = sock_unix_create(socket_base->s_type, socket_base->s_protocol,
-                                socket_out);
-  if (result) {
-    return result;
+  list_link_t* new_socket_link = list_pop(&socket->incoming_conns);
+  socket_unix_t* new_socket =
+      container_of(new_socket_link, socket_unix_t, connecting_link);
+  *socket_out = (socket_t*)new_socket;
+
+  KASSERT_DBG(new_socket->state == SUN_CONNECTED);
+  if (new_socket->peer) {
+    KASSERT_DBG(new_socket->peer->state == SUN_CONNECTED);
+    KASSERT_DBG(new_socket->peer->peer == new_socket);
   }
-
-  socket_unix_t* new_socket = (socket_unix_t*)*socket_out;
-
-  KASSERT_DBG(peer->state == SUN_CONNECTED);
-  peer->peer = new_socket;
-  new_socket->state = SUN_CONNECTED;
-  new_socket->peer = peer;
-  // TODO(aoates): should we set bind_point or the bound name?
 
   // TODO(aoates): check size of address
   if (address) {
     struct sockaddr_un* addr_un = (struct sockaddr_un*)address;
     addr_un->sun_family = AF_UNIX;
     *address_len = sizeof(struct sockaddr_un);
-    if (peer->bind_point) {
+    const socket_unix_t* peer = new_socket->peer;
+    if (peer && peer->bind_point) {
       KASSERT_DBG(peer->bind_address.sun_family == AF_UNIX);
       kstrcpy(addr_un->sun_path, peer->bind_address.sun_path);
     } else {
@@ -197,16 +210,29 @@ static int sock_unix_connect(socket_t* socket_base,
 
   KASSERT_DBG(target->bound_socket->s_domain == AF_UNIX);
   socket_unix_t* target_sock = (socket_unix_t*)target->bound_socket;
+  VFS_PUT_AND_CLEAR(target);
   if (target_sock->state != SUN_LISTENING) {
-    VFS_PUT_AND_CLEAR(target);
     return -ECONNREFUSED;
   }
 
+  // Create the new peer socket.
+  socket_t* new_socket_base = NULL;
+  result = sock_unix_create(socket_base->s_type, socket_base->s_protocol,
+                            &new_socket_base);
+  if (result) {
+    return result;
+  }
+
   // TODO(aoates): check backlog length.
-  list_push(&target_sock->incoming_conns, &socket->connecting_link);
+  socket_unix_t* new_socket = (socket_unix_t*)new_socket_base;
+  new_socket->state = SUN_CONNECTED;
+  new_socket->peer = socket;
+  // TODO(aoates): should we set bind_point or the bound name?
+
+  list_push(&target_sock->incoming_conns, &new_socket->connecting_link);
+  socket->peer = new_socket;
   socket->state = SUN_CONNECTED;
 
-  VFS_PUT_AND_CLEAR(target);
   return 0;
 }
 

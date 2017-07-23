@@ -604,6 +604,32 @@ static void connect_test(void) {
   KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, kServerPath));
   KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, "_another_path"));
 
+  KTEST_BEGIN("net_accept(AF_UNIX): accept when peer has already closed");
+  KEXPECT_EQ(0, net_accept_queue_length(server_sock));
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+
+  kmemset(&accept_addr, 0xFF, sizeof(accept_addr));
+  client_sock2 = do_accept(server_sock, &accept_addr);
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  KEXPECT_STREQ("", accept_addr.sun_path);
+  KEXPECT_EQ(-EISCONN, do_connect(client_sock2, kServerPath));
+  // TODO(aoates): test read/write and other operations on this socket.
+  KEXPECT_EQ(0, vfs_close(client_sock2));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): close server with unaccepted connections");
+  KEXPECT_EQ(0, create_socket_pair(kClientPath, "_server_sock2", 5,
+                                   &client_sock, &server_sock2));
+  KEXPECT_EQ(0, do_connect(client_sock, "_server_sock2"));
+  KEXPECT_EQ(1, net_accept_queue_length(server_sock2));
+  KEXPECT_EQ(0, vfs_close(server_sock2));
+  // TODO(aoates): test read/write and other operations on this socket.
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+  KEXPECT_EQ(0, vfs_unlink("_server_sock2"));
+
   // Tests for invalid parameters to connect() and accept().
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with wrong addr family");
@@ -645,6 +671,7 @@ static void connect_test(void) {
   //  - as above, but remove target and try to rebind (this fails on OS X? I
   //  think should succeed)
   //  - non-blocking connect
+  //  - bind on connected socket
   //  - listen backlog
   //  - accept() blocks until connect()
   //  - connect on already-connecting socket
@@ -656,6 +683,9 @@ static void connect_test(void) {
   //  - forked sockets
   //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
   //  - read/write on connected but not accepted sockets
+  //  - as above, but server socket was closed/deleted
+  //  - read/write on sockets accepted after client was closed
+  //  - all ops on accepted sockets (connect, listen, bind, etc)
 }
 
 void socket_unix_test(void) {
