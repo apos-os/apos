@@ -157,17 +157,21 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
     KASSERT_DBG(new_socket->peer->peer == new_socket);
   }
 
-  // TODO(aoates): check size of address
-  if (address) {
-    struct sockaddr_un* addr_un = (struct sockaddr_un*)address;
-    addr_un->sun_family = AF_UNIX;
+  if (address && address_len) {
+    const int max_path_len =
+        *address_len - (int)offsetof(struct sockaddr_un, sun_path) - 1;
     *address_len = sizeof(struct sockaddr_un);
-    const socket_unix_t* peer = new_socket->peer;
-    if (peer && peer->bind_point) {
-      KASSERT_DBG(peer->bind_address.sun_family == AF_UNIX);
-      kstrcpy(addr_un->sun_path, peer->bind_address.sun_path);
-    } else {
-      addr_un->sun_path[0] = '\0';
+    if (max_path_len > 0) {
+      struct sockaddr_un* addr_un = (struct sockaddr_un*)address;
+      addr_un->sun_family = AF_UNIX;
+      const socket_unix_t* peer = new_socket->peer;
+      if (peer && peer->bind_point) {
+        KASSERT_DBG(peer->bind_address.sun_family == AF_UNIX);
+        kstrncpy(addr_un->sun_path, peer->bind_address.sun_path, max_path_len);
+        addr_un->sun_path[max_path_len] = '\0';
+      } else {
+        addr_un->sun_path[0] = '\0';
+      }
     }
   }
   socket->listen_backlog++;

@@ -389,6 +389,22 @@ static int do_accept(int sock, struct sockaddr_un* addr) {
   return net_accept(sock, (struct sockaddr*)addr, &addr_len);
 }
 
+static int connect_and_close(const char* addr) {
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) return sock;
+  int result = do_connect(sock, addr);
+  vfs_close(sock);
+  return result;
+}
+
+static int accept_and_close(int server_sock) {
+  int client_sock = do_accept(server_sock, NULL);
+  if (client_sock < 0) return client_sock;
+
+  vfs_close(client_sock);
+  return 0;
+}
+
 static void connect_test(void) {
   const char kClientPath[] = "_socket_client_path";
   const char kServerPath[] = "_socket_server_path";
@@ -630,6 +646,75 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
   KEXPECT_EQ(0, vfs_unlink("_server_sock2"));
 
+  KTEST_BEGIN("net_accept(AF_UNIX): NULL/NULL addr/len parameters");
+  KEXPECT_EQ(0, connect_and_close(kServerPath));
+  accepted_sock = net_accept(server_sock, NULL, NULL);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): NULL/not-NULL addr/len parameters");
+  KEXPECT_EQ(0, connect_and_close(kServerPath));
+  addr_len = 3;
+  accepted_sock = net_accept(server_sock, NULL, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(3, addr_len);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): not-NULL/NULL addr/len parameters");
+  KEXPECT_EQ(0, connect_and_close(kServerPath));
+  kmemset(&accept_addr, 0xFF, sizeof(accept_addr));
+  accepted_sock = net_accept(server_sock, (struct sockaddr*)&accept_addr, NULL);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): too-small address struct");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  kmemset(&accept_addr, 0xFF, sizeof(accept_addr));
+  addr_len = 10;
+  accepted_sock =
+      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
+  KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
+  char truncated_str[50];
+  kmemset(truncated_str, 0, 50);
+  kstrncpy(truncated_str, kClientPath,
+           10 - offsetof(struct sockaddr_un, sun_path) - 1);
+  KEXPECT_STREQ(truncated_str, accept_addr.sun_path);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+
+  KTEST_BEGIN(
+      "net_accept(AF_UNIX): too-small address struct (just enough for family)");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  kmemset(&accept_addr, 'a', sizeof(accept_addr));
+  addr_len = offsetof(struct sockaddr_un, sun_path) + 1;
+  accepted_sock =
+      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
+  KEXPECT_EQ('a', ((const char*)&accept_addr)[0]);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): too-small address struct (less than path)");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  kmemset(&accept_addr, 'a', sizeof(accept_addr));
+  addr_len = offsetof(struct sockaddr_un, sun_path) - 1;
+  accepted_sock =
+      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
+  KEXPECT_EQ('a', ((const char*)&accept_addr)[0]);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+
   // Tests for invalid parameters to connect() and accept().
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with wrong addr family");
@@ -675,30 +760,12 @@ static void connect_test(void) {
   //  - accept() blocks until connect()
   //  - connect interrupted by signal
   //  - accept interrupted by signal
-  //  - accept with too-small address struct
-  //  - accept with null address struct and/or length
   //  - forked sockets
   //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
   //  - read/write on connected but not accepted sockets
   //  - as above, but server socket was closed/deleted
   //  - read/write on sockets accepted after client was closed
   //  - all ops on accepted sockets (connect, listen, bind, etc)
-}
-
-static int connect_and_close(const char* addr) {
-  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
-  if (sock < 0) return sock;
-  int result = do_connect(sock, addr);
-  vfs_close(sock);
-  return result;
-}
-
-static int accept_and_close(int server_sock) {
-  int client_sock = do_accept(server_sock, NULL);
-  if (client_sock < 0) return client_sock;
-
-  vfs_close(client_sock);
-  return 0;
 }
 
 static int find_backlog_length(const char* path) {
