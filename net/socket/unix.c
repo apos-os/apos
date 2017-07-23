@@ -188,17 +188,20 @@ static int sock_unix_connect(socket_t* socket_base,
   }
 
   if (target->type != VNODE_SOCKET) {
+    VFS_PUT_AND_CLEAR(target);
     return -ENOTSOCK;  // TODO(aoates): confirm this error is correct.
   }
 
   KASSERT_DBG(target->socket == NULL);
   if (target->bound_socket == NULL) {
+    VFS_PUT_AND_CLEAR(target);
     return -ECONNREFUSED;
   }
 
   KASSERT_DBG(target->bound_socket->s_domain == AF_UNIX);
   socket_unix_t* target_sock = (socket_unix_t*)target->bound_socket;
   if (target_sock->state != SUN_LISTENING) {
+    VFS_PUT_AND_CLEAR(target);
     return -ECONNREFUSED;
   }
 
@@ -206,6 +209,7 @@ static int sock_unix_connect(socket_t* socket_base,
   list_push(&target_sock->incoming_conns, &socket->connecting_link);
   socket->state = SUN_CONNECTING;
 
+  VFS_PUT_AND_CLEAR(target);
   return 0;
 }
 

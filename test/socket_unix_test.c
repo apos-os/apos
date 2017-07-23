@@ -513,6 +513,75 @@ static void connect_test(void) {
   vfs_close(client_sock);
   KEXPECT_EQ(0, vfs_unlink("_server_sock_link"));
 
+  // Tests for connecting to bad or invalid addresses.
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect to non-socket");
+  create_file("_file_server_dst", "rwxrwxrwx");
+  vfs_mkdir("_dir_server_dst", VFS_S_IRWXU);
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(-ENOTSOCK, do_connect(client_sock, "_file_server_dst"));
+  KEXPECT_EQ(-ENOTSOCK, do_connect(client_sock, "_dir_server_dst"));
+  KEXPECT_EQ(0, vfs_unlink("_file_server_dst"));
+  KEXPECT_EQ(0, vfs_rmdir("_dir_server_dst"));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect to non-existent address");
+  KEXPECT_EQ(-ENOENT, do_connect(client_sock, "_doesnt_exist"));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect to unbound socket address");
+  int server_sock2 = create_bound_socket("_bound_socket_path");
+  KEXPECT_GE(server_sock2, 0);
+  KEXPECT_EQ(0, vfs_close(server_sock2));
+  KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
+
+  KTEST_BEGIN(
+      "net_connect(AF_UNIX): connect to previously-listening unbound socket "
+      "address");
+  server_sock2 = create_listening_socket("_bound_socket_path", 5);
+  KEXPECT_GE(server_sock2, 0);
+  KEXPECT_EQ(0, vfs_close(server_sock2));
+  KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect to non-listening socket");
+  server_sock2 = create_bound_socket("_bound_socket_path");
+  KEXPECT_GE(server_sock2, 0);
+  KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_close(server_sock2));
+  KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect to connected socket");
+  int client_sock2 = create_bound_socket("_bound_socket_path");
+  KEXPECT_GE(client_sock2, 0);
+  KEXPECT_EQ(0, do_connect(client_sock2, kServerPath));;
+  KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_close(client_sock2));
+  KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
+
+  KTEST_BEGIN(
+      "net_connect(AF_UNIX): connect to removed file where server socket is "
+      "still listening");
+  server_sock2 = create_listening_socket("_bound_socket_path", 5);
+  KEXPECT_GE(server_sock2, 0);
+  KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
+  KEXPECT_EQ(-ENOENT, do_connect(client_sock, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_close(server_sock2));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect to self address");
+  client_sock2 = create_bound_socket("_bound_socket_path");
+  KEXPECT_GE(client_sock2, 0);
+  KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock2, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_close(client_sock2));
+  KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
+
+  KEXPECT_EQ(0, vfs_close(client_sock));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect on listening socket");
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, kServerPath));
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, "_another_path"));
+
+  // Tests for invalid parameters to connect() and accept().
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with wrong addr family");
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
@@ -555,16 +624,8 @@ static void connect_test(void) {
   //  - non-blocking connect
   //  - listen backlog
   //  - accept() blocks until connect()
-  //  - self-connect (connect to same address as is bound)
-  //  - connect to non-existing address
-  //  - connect to non-socket address
-  //  - connect to address that was bound, but socket is closed
-  //  - connect to bound but not listening address
-  //  - connect to connected socket
-  //  - connect to address that was bound and listening, then file was removed
   //  - connect on already-connecting socket
   //  - connect on already-connected socket
-  //  - connect on listening socket
   //  - connect interrupted by signal
   //  - accept interrupted by signal
   //  - accept with too-small address struct
