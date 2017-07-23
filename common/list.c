@@ -125,3 +125,13 @@ int list_empty(const list_t* list) {
               (list->head != 0x0 && list->tail != 0x0));
   return (list->head == 0x0 && list->tail == 0x0);
 }
+
+int list_size(const list_t* list) {
+  int size = 0;
+  list_link_t* link = list->head;
+  while (link) {
+    size++;
+    link = link->next;
+  }
+  return size;
+}
