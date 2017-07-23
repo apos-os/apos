@@ -22,6 +22,8 @@
 #include "user/include/apos/net/socket/unix.h"
 #include "vfs/vfs_internal.h"
 
+#define DEFAULT_LISTEN_BACKLOG 10
+
 static const socket_ops_t g_unix_socket_ops;
 
 int sock_unix_create(int type, int protocol, socket_t** out) {
@@ -44,7 +46,7 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->bind_point = NULL;
   sock->bind_address.sun_path[0] = '\0';
   sock->peer = NULL;
-  sock->listen_backlog = 0;
+  sock->listen_backlog = -1;
   sock->incoming_conns = LIST_INIT;
   sock->connecting_link = LIST_LINK_INIT;
   *out = &sock->base;
@@ -120,6 +122,12 @@ static int sock_unix_listen(socket_t* socket_base, int backlog) {
     return -EINVAL;
   }
 
+  if (backlog <= 0) {
+    backlog = DEFAULT_LISTEN_BACKLOG;
+  } else if (backlog > SOMAXCONN) {
+    backlog = SOMAXCONN;
+  }
+
   socket->state = SUN_LISTENING;
   socket->listen_backlog = backlog;
 
@@ -162,6 +170,7 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
       addr_un->sun_path[0] = '\0';
     }
   }
+  socket->listen_backlog++;
 
   return 0;
 }
@@ -215,6 +224,11 @@ static int sock_unix_connect(socket_t* socket_base,
     return -ECONNREFUSED;
   }
 
+  KASSERT_DBG(target_sock->listen_backlog >= 0);
+  if (target_sock->listen_backlog == 0) {
+    return -ECONNREFUSED;
+  }
+
   // Create the new peer socket.
   socket_t* new_socket_base = NULL;
   result = sock_unix_create(socket_base->s_type, socket_base->s_protocol,
@@ -223,13 +237,13 @@ static int sock_unix_connect(socket_t* socket_base,
     return result;
   }
 
-  // TODO(aoates): check backlog length.
   socket_unix_t* new_socket = (socket_unix_t*)new_socket_base;
   new_socket->state = SUN_CONNECTED;
   new_socket->peer = socket;
   // TODO(aoates): should we set bind_point or the bound name?
 
   list_push(&target_sock->incoming_conns, &new_socket->connecting_link);
+  target_sock->listen_backlog--;
   socket->peer = new_socket;
   socket->state = SUN_CONNECTED;
 

@@ -672,10 +672,7 @@ static void connect_test(void) {
   //  think should succeed)
   //  - non-blocking connect
   //  - bind on connected socket
-  //  - listen backlog
   //  - accept() blocks until connect()
-  //  - connect on already-connecting socket
-  //  - connect on already-connected socket
   //  - connect interrupted by signal
   //  - accept interrupted by signal
   //  - accept with too-small address struct
@@ -688,6 +685,85 @@ static void connect_test(void) {
   //  - all ops on accepted sockets (connect, listen, bind, etc)
 }
 
+static int connect_and_close(const char* addr) {
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  if (sock < 0) return sock;
+  int result = do_connect(sock, addr);
+  vfs_close(sock);
+  return result;
+}
+
+static int accept_and_close(int server_sock) {
+  int client_sock = do_accept(server_sock, NULL);
+  if (client_sock < 0) return client_sock;
+
+  vfs_close(client_sock);
+  return 0;
+}
+
+static int find_backlog_length(const char* path) {
+  for (int i = 0; i < 1000; i++) {
+    int result = connect_and_close(path);
+    if (result == -ECONNREFUSED) {
+      return i;
+    } else if (result < 0) {
+      return result;
+    }
+  }
+  return -EINVAL;
+}
+
+static void connect_backlog_test(void) {
+  const char kPath[] = "_server_sock";
+  KTEST_BEGIN("net_accept(AF_UNIX): enforces backlog");
+  int server_sock = create_listening_socket(kPath, 3);
+  KEXPECT_GE(server_sock, 0);
+  for (int i = 0; i < 3; ++i) {
+    KEXPECT_EQ(0, connect_and_close(kPath));
+  }
+  KEXPECT_EQ(-ECONNREFUSED, connect_and_close(kPath));
+  KEXPECT_EQ(0, accept_and_close(server_sock));
+  KEXPECT_EQ(0, connect_and_close(kPath));
+  KEXPECT_EQ(-ECONNREFUSED, connect_and_close(kPath));
+  KEXPECT_EQ(0, accept_and_close(server_sock));
+  KEXPECT_EQ(0, accept_and_close(server_sock));
+  KEXPECT_EQ(0, connect_and_close(kPath));
+  KEXPECT_EQ(0, connect_and_close(kPath));
+  KEXPECT_EQ(-ECONNREFUSED, connect_and_close(kPath));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): enforces backlog #2");
+  server_sock = create_listening_socket(kPath, 8);
+  KEXPECT_EQ(8, find_backlog_length(kPath));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): enforces backlog higher than default");
+  server_sock = create_listening_socket(kPath, 20);
+  KEXPECT_EQ(20, find_backlog_length(kPath));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): caps backlog to 128");
+  server_sock = create_listening_socket(kPath, 500);
+  KEXPECT_EQ(128, find_backlog_length(kPath));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): backlog of 0 gets default");
+  server_sock = create_listening_socket(kPath, 0);
+  KEXPECT_EQ(10, find_backlog_length(kPath));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): negative backlog gets default");
+  server_sock = create_listening_socket(kPath, -5);
+  KEXPECT_EQ(10, find_backlog_length(kPath));
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_unlink(kPath));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -697,6 +773,7 @@ void socket_unix_test(void) {
   bind_test();
   listen_test();
   connect_test();
+  connect_backlog_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

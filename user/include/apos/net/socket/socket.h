@@ -40,4 +40,6 @@ struct sockaddr {
 // TODO(aoates): define socket option constants.
 // TODO(aoates): this is supposed to define size_t and ssize_t.
 
+#define SOMAXCONN 128
+
 #endif
