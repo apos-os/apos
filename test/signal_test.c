@@ -1160,6 +1160,25 @@ static void sigsuspend_test(void) {
   sem_destroy(&g_sem);
 }
 
+static void do_nothing(void* arg) {}
+
+static void zombie_test(void) {
+  KTEST_BEGIN("kill(): sending a signal to a zombie process");
+  pid_t child = proc_fork(&do_nothing, NULL);
+  KEXPECT_GE(child, 0);
+  while (proc_get(child)->state != PROC_ZOMBIE) {
+    scheduler_yield();
+  }
+
+  KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
+  KEXPECT_EQ(0, proc_kill(child, SIGTERM));
+  KEXPECT_EQ(0, proc_force_signal(proc_get(child), SIGUSR2));
+
+  int status;
+  KEXPECT_EQ(child, proc_wait(&status));
+  KEXPECT_EQ(1, WIFEXITED(status));
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -1194,6 +1213,7 @@ void signal_test(void) {
 
   dispatchable_test();
   sigsuspend_test();
+  zombie_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {

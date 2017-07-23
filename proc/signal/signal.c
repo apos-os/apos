@@ -116,6 +116,9 @@ static void do_assign_signal(kthread_t thread, int signum) {
 // Try to assign the given signal to a thread in the process.  Fails if it is
 // masked in all threads, returning false.
 static void proc_try_assign_signal(process_t* proc, int signum) {
+  if (proc->state == PROC_ZOMBIE) {
+    return;
+  }
   const kthread_t thread = proc->thread;
 
   KASSERT_DBG(ksigismember(&proc->pending_signals, signum));
@@ -171,7 +174,8 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
 }
 
 static int proc_kill_one(process_t* proc, int sig) {
-  if (!proc || (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED)) {
+  if (!proc || (proc->state != PROC_RUNNING && proc->state != PROC_STOPPED &&
+                proc->state != PROC_ZOMBIE)) {
     return -ESRCH;
   }
 
