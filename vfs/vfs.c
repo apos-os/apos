@@ -208,7 +208,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     // Increment the refcount, then lock the mutex.  This ensures that the node
     // is initialized (since the thread creating it locks the mutex *before*
     // putting it in the table, and doesn't unlock it until it's initialized).
-    vnode->refcount++;
+    vfs_ref(vnode);
     if (vnode->type == VNODE_UNINITIALIZED) {
       // TODO(aoates): use a semaphore for this.
       kmutex_lock(&vnode->mutex);
