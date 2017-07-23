@@ -51,6 +51,9 @@ struct socket_ops {
   // TODO(aoates): add blocking flag.
   int (*connect)(socket_t* socket, const struct sockaddr* address,
                  socklen_t address_len);
+
+  // Returns the number of sockets queued on a listening socket.
+  int (*accept_queue_length)(const socket_t* socket);
 };
 
 // Creates a new unbound socket, per the POSIX socket() function.
@@ -74,5 +77,8 @@ int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len);
 
 // Connects a socket to the given address.
 int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len);
+
+// Returns the number of sockets queued on a listening socket.
+int net_accept_queue_length(int socket);
 
 #endif

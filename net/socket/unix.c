@@ -210,10 +210,17 @@ static int sock_unix_connect(socket_t* socket_base,
   return 0;
 }
 
+static int sock_unix_accept_queue_length(const socket_t* socket_base) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+  return list_size(&socket->incoming_conns);
+}
+
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
   &sock_unix_bind,
   &sock_unix_listen,
   &sock_unix_accept,
   &sock_unix_connect,
+  &sock_unix_accept_queue_length,
 };

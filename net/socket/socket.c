@@ -141,3 +141,19 @@ int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   file->refcount--;
   return result;
 }
+
+int net_accept_queue_length(int socket) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file->refcount++;
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->accept_queue_length(file->vnode->socket);
+  file->refcount--;
+  return result;
+}

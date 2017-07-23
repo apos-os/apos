@@ -556,6 +556,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock2, 0);
   KEXPECT_EQ(0, do_connect(client_sock2, kServerPath));;
   KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock, "_bound_socket_path"));
+  KEXPECT_EQ(0, vfs_close(net_accept(server_sock, NULL, NULL)));
   KEXPECT_EQ(0, vfs_close(client_sock2));
   KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
 
@@ -578,11 +579,23 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_close(client_sock));
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect on already-connected socket");
+  KEXPECT_EQ(0, net_accept_queue_length(server_sock));
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
   KEXPECT_EQ(-EISCONN, do_connect(client_sock, kServerPath));
+  KEXPECT_EQ(0, vfs_close(net_accept(server_sock, NULL, NULL)));
   KEXPECT_EQ(0, vfs_close(client_sock));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect on already-accepted socket");
+  KEXPECT_EQ(0, net_accept_queue_length(server_sock));
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  client_sock2 = net_accept(server_sock, NULL, NULL);
+  KEXPECT_EQ(-EISCONN, do_connect(client_sock, kServerPath));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_close(client_sock2));
 
   // TODO(aoates): test multiple simultaneous calls to connect() (should be
   // atomic).
