@@ -131,7 +131,7 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
 
   socket_unix_t* new_socket = (socket_unix_t*)*socket_out;
 
-  peer->state = SUN_CONNECTED;
+  KASSERT_DBG(peer->state == SUN_CONNECTED);
   peer->peer = new_socket;
   new_socket->state = SUN_CONNECTED;
   new_socket->peer = peer;
@@ -162,14 +162,11 @@ static int sock_unix_connect(socket_t* socket_base,
 
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
-  // TODO(aoates): ensure we have test coverage for all of these.
   switch (socket->state) {
     case SUN_UNCONNECTED:
       break;
     case SUN_LISTENING:
       return -EOPNOTSUPP;
-    case SUN_CONNECTING:
-      return -EALREADY;
     case SUN_CONNECTED:
       return -EISCONN;
   }
@@ -207,7 +204,7 @@ static int sock_unix_connect(socket_t* socket_base,
 
   // TODO(aoates): check backlog length.
   list_push(&target_sock->incoming_conns, &socket->connecting_link);
-  socket->state = SUN_CONNECTING;
+  socket->state = SUN_CONNECTED;
 
   VFS_PUT_AND_CLEAR(target);
   return 0;

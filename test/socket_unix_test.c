@@ -577,6 +577,16 @@ static void connect_test(void) {
 
   KEXPECT_EQ(0, vfs_close(client_sock));
 
+  KTEST_BEGIN("net_connect(AF_UNIX): connect on already-connected socket");
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  KEXPECT_EQ(-EISCONN, do_connect(client_sock, kServerPath));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+
+  // TODO(aoates): test multiple simultaneous calls to connect() (should be
+  // atomic).
+
   KTEST_BEGIN("net_connect(AF_UNIX): connect on listening socket");
   KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, kServerPath));
   KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, "_another_path"));
@@ -632,6 +642,7 @@ static void connect_test(void) {
   //  - accept with null address struct and/or length
   //  - forked sockets
   //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
+  //  - read/write on connected but not accepted sockets
 }
 
 void socket_unix_test(void) {

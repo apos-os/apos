@@ -23,7 +23,6 @@
 typedef enum {
   SUN_UNCONNECTED,
   SUN_LISTENING,
-  SUN_CONNECTING,
   SUN_CONNECTED,
 } sockun_state_t;
 
