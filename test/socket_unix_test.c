@@ -28,6 +28,7 @@
 #include "user/include/apos/net/socket/unix.h"
 #include "vfs/pipe.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 static void create_test(void) {
   KTEST_BEGIN("net_socket_create(AF_UNIX): basic creation");
@@ -574,8 +575,14 @@ static void connect_test(void) {
 
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
+  block_cache_clear_unpinned();
+  const int initial_cache_size = vfs_cache_size();
+
   create_test();
   bind_test();
   listen_test();
   connect_test();
+
+  KTEST_BEGIN("vfs: vnode leak verification");
+  KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }
