@@ -26,6 +26,7 @@
 #include "test/vfs_test_util.h"
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/unix.h"
+#include "vfs/pipe.h"
 #include "vfs/vfs.h"
 
 static void create_test(void) {
@@ -489,19 +490,69 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
   KEXPECT_EQ(0, vfs_unlink("_client_socket2"));
 
+  KTEST_BEGIN("net_connect(AF_UNIX): connect through symlink");
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, vfs_symlink(kServerPath, "_server_sock_link"));
+  KEXPECT_EQ(0, do_connect(client_sock, "_server_sock_link"));
+  accepted_sock = do_accept(server_sock, &accept_addr);
+  KEXPECT_GE(accepted_sock, 0);
+  vfs_close(accepted_sock);
+  vfs_close(client_sock);
+  KEXPECT_EQ(0, vfs_unlink("_server_sock_link"));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect through hard link");
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, vfs_link(kServerPath, "_server_sock_link"));
+  KEXPECT_EQ(0, do_connect(client_sock, "_server_sock_link"));
+  accepted_sock = do_accept(server_sock, &accept_addr);
+  KEXPECT_GE(accepted_sock, 0);
+  vfs_close(accepted_sock);
+  vfs_close(client_sock);
+  KEXPECT_EQ(0, vfs_unlink("_server_sock_link"));
+
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect with wrong addr family");
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  server_addr.sun_family = AF_UNSPEC;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_connect(client_sock, (struct sockaddr*)&server_addr,
+                         sizeof(server_addr)));
+  vfs_close(client_sock);
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect with bad FD");
+  KEXPECT_EQ(-EBADF, net_connect(-1, (struct sockaddr*)&server_addr,
+                                 sizeof(server_addr)));
+  KEXPECT_EQ(-EBADF, net_connect(100, (struct sockaddr*)&server_addr,
+                                 sizeof(server_addr)));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect with non-socket FD");
+  int pipe_fds[2];
+  KEXPECT_EQ(0, vfs_pipe(pipe_fds));
+  KEXPECT_EQ(-ENOTSOCK, net_connect(pipe_fds[0], (struct sockaddr*)&server_addr,
+                                    sizeof(server_addr)));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): accept with bad FD");
+  KEXPECT_EQ(-EBADF, do_accept(-1, &accept_addr));
+  KEXPECT_EQ(-EBADF, do_accept(100, &accept_addr));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): accept with non-socket FD");
+  KEXPECT_EQ(-ENOTSOCK, do_accept(pipe_fds[0], &accept_addr));
+  KEXPECT_EQ(0, vfs_close(pipe_fds[0]));
+  KEXPECT_EQ(0, vfs_close(pipe_fds[1]));
+
   KEXPECT_EQ(0, vfs_close(server_sock));
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
 
   // TODO(aoates): things to test:
-  //  - connect w/ wrong address family
-  //  - connect through symlink
   //  - connect from client bound through symlink (should give symlink address,
   //  not symlink target address)
   //  - as above, but remove target and try to rebind (this fails on OS X? I
   //  think should succeed)
   //  - non-blocking connect
   //  - listen backlog
-  //  - connect blocks until accept()
   //  - accept() blocks until connect()
   //  - self-connect (connect to same address as is bound)
   //  - connect to non-existing address
@@ -517,8 +568,6 @@ static void connect_test(void) {
   //  - accept interrupted by signal
   //  - accept with too-small address struct
   //  - accept with null address struct and/or length
-  //  - bad fd (connect)
-  //  - bad fd (accept)
   //  - forked sockets
   //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
 }
