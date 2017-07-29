@@ -747,6 +747,33 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_close(pipe_fds[0]));
   KEXPECT_EQ(0, vfs_close(pipe_fds[1]));
 
+  KTEST_BEGIN("net_accept(AF_UNIX): accept on unbound socket");
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(-EINVAL, do_accept(client_sock, &accept_addr));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): accept on non-listening socket");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(-EINVAL, do_accept(client_sock, &accept_addr));
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): accept on connected socket (client)");
+  client_sock = create_bound_socket(kClientPath);
+  KEXPECT_GE(client_sock, 0);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  KEXPECT_EQ(-EINVAL, do_accept(client_sock, &accept_addr));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): accept on connected socket (server)");
+  accepted_sock = do_accept(server_sock, NULL);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(-EINVAL, do_accept(accepted_sock, &accept_addr));
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+  KEXPECT_EQ(0, vfs_unlink(kClientPath));
+
   KEXPECT_EQ(0, vfs_close(server_sock));
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
 

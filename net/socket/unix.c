@@ -139,8 +139,9 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
-  // TODO(aoates): handle sockets in other states.
-  KASSERT(socket->state == SUN_LISTENING);
+  if (socket->state != SUN_LISTENING) {
+    return -EINVAL;
+  }
   if (list_empty(&socket->incoming_conns)) {
     // TODO(aoates): block until connecting sockets are available.
     return -EWOULDBLOCK;
