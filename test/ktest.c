@@ -185,7 +185,6 @@ void ktest_finish_all() {
   finish_suite();
 
   KLOG("---------------------------------------\n");
-  KLOG("KERNEL UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
     KLOG(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
          num_suites_passing, num_suites, num_tests_passing, num_tests,
@@ -203,4 +202,6 @@ void ktest_finish_all() {
       KLOG("  ...and %d more\n", num_leftover);
     }
   }
+  KLOG("KERNEL UNIT TESTS FINISHED\n");
+  KLOG("---------------------------------------\n");
 }
