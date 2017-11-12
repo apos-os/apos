@@ -13,13 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GREEN=$'\e[32;1m'
-RED=$'\e[31;1m'
-BLUE=$'\e[36;1m'
-NC=$'\e[0m'
-
 tail -c +0 -f log.txt | \
-  sed -E -l "s/\[PASSED\]/${GREEN}&${NC}/g" | \
-  sed -E -l "s/\[FAILED\]/${RED}&${NC}/g" | \
-  sed -E -l "s/^@.*@$/${BLUE}&${NC}/g" | \
+  sed -u "s/\[PASSED\]/\x1b[32;1m\0\x1b[0m/g" | \
+  sed -u "s/\[FAILED\]/\x1b[31;1m\0\x1b[0m/g" | \
+  sed -u "s/^@.*@$/\x1b[36;1m\0\x1b[0m/g" | \
   ./scripts/symbolize.py
