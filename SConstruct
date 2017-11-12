@@ -94,11 +94,13 @@ env = base_env.Clone()
 if env['ARCH'] == 'x86_64':
   env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
 
-env.Append(CFLAGS = Split("-Wframe-larger-than=1500 -nostdlib -ffreestanding"))
+env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
   # TODO(aoates): get format-string checking to work with both GCC and clang.
   env.Append(CFLAGS = Split("-Wno-format"))
+  # TODO(aoates): get frame sizes under clang small enough to enable this.
+  env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
 

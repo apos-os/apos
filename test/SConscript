@@ -67,9 +67,12 @@ subdirs = []
 if FindFile(os.path.join(env['ARCH'], 'SConscript'), '.') is not None:
   subdirs.append(env['ARCH'])
 
-extra_cflags = ['-Wframe-larger-than=5000']
+extra_cflags = []
 if env['CLANG']:
   extra_cflags.append('-Wno-self-assign')
+else:
+  # TODO(aoates): get frame sizes under clang small enough to enable this.
+  extra_cflags.append('-Wframe-larger-than=5000')
 
 objects = AposAddSources(env, srcs, subdirs,
     CFLAGS=env['CFLAGS'] + extra_cflags)
