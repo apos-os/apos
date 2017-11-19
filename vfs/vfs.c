@@ -393,6 +393,35 @@ static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
   fifo_close(vnode->fifo, fifo_mode);
 }
 
+// TODO(aoates): move these to vfs_internal.c (requires moving some helpers).
+void file_ref(file_t* file) {
+  KASSERT(file->refcount >= 0);
+  KASSERT(file->index >= 0);
+  KASSERT(file->index < VFS_MAX_FILES);
+  KASSERT(g_file_table[file->index] == file);
+  file->refcount++;
+}
+
+void file_unref(file_t* file) {
+  KASSERT(file->refcount >= 1);
+  KASSERT(file->index >= 0);
+  KASSERT(file->index < VFS_MAX_FILES);
+  KASSERT(g_file_table[file->index] == file);
+
+  file->refcount--;
+  if (file->refcount == 0) {
+    if (file->vnode->type == VNODE_FIFO)
+      vfs_close_fifo(file->vnode, file->mode);
+
+    // TODO(aoates): is there a race here? Does vfs_put block?  Could another
+    // thread reference this fd/file during that time?  Maybe we need to remove
+    // it from the table, and mark the GD as PROC_UNUSED_FD first?
+    g_file_table[file->index] = 0x0;
+    VFS_PUT_AND_CLEAR(file->vnode);
+    file_free(file);
+  }
+}
+
 int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   const mode_t mode = flags & VFS_MODE_MASK;
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
@@ -611,21 +640,7 @@ int vfs_close(int fd) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
-
-  file->refcount--;
-  KASSERT(file->refcount >= 0);
-  if (file->refcount == 0) {
-    if (file->vnode->type == VNODE_FIFO)
-      vfs_close_fifo(file->vnode, file->mode);
-
-    // TODO(aoates): is there a race here? Does vfs_put block?  Could another
-    // thread reference this fd/file during that time?  Maybe we need to remove
-    // it from the table, and mark the GD as PROC_UNUSED_FD first?
-    KASSERT(g_file_table[proc->fds[fd]]->index == proc->fds[fd]);
-    g_file_table[proc->fds[fd]] = 0x0;
-    VFS_PUT_AND_CLEAR(file->vnode);
-    file_free(file);
-  }
+  file_unref(file);
 
   proc->fds[fd] = PROC_UNUSED_FD;
   return 0;

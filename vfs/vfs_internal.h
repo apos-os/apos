@@ -140,6 +140,14 @@ int lookup_existing_path(const char* path, lookup_options_t options,
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
 
+// Reference and unreference a file.  You must use these rather than manipulate
+// the refcount directly.
+//
+// If the file's refcount hits zero, the associated resources are closed and
+// freed.
+void file_ref(file_t* f);
+void file_unref(file_t* f);
+
 static inline int is_valid_fd(int fd) {
   return fd >= 0 && fd < PROC_MAX_FDS;
 }
