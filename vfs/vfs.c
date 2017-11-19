@@ -450,6 +450,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   KASSERT(g_file_table[idx] == 0x0);
   g_file_table[idx] = file_alloc();
   file_init_file(g_file_table[idx]);
+  g_file_table[idx]->index = idx;
   g_file_table[idx]->vnode = VFS_COPY_REF(child);
   g_file_table[idx]->refcount = 1;
   g_file_table[idx]->mode = mode;
@@ -620,6 +621,7 @@ int vfs_close(int fd) {
     // TODO(aoates): is there a race here? Does vfs_put block?  Could another
     // thread reference this fd/file during that time?  Maybe we need to remove
     // it from the table, and mark the GD as PROC_UNUSED_FD first?
+    KASSERT(g_file_table[proc->fds[fd]]->index == proc->fds[fd]);
     g_file_table[proc->fds[fd]] = 0x0;
     VFS_PUT_AND_CLEAR(file->vnode);
     file_free(file);

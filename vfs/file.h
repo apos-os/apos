@@ -25,6 +25,7 @@ struct vnode;
 // file_t (if dup() is called).  Moreover, a given file_t might be shared across
 // multiple processes.
 struct file {
+  int index;  // Index in the global file table.
   struct vnode* vnode;
   int refcount;
   off_t pos;  // Current position within the vnode.
