@@ -657,7 +657,7 @@ int vfs_dup(int orig_fd) {
     return new_fd;
   }
 
-  file->refcount++;
+  file_ref(file);
   KASSERT_DBG(proc->fds[new_fd] == PROC_UNUSED_FD);
   proc->fds[new_fd] = proc->fds[orig_fd];
   return new_fd;
@@ -684,7 +684,7 @@ int vfs_dup2(int fd1, int fd2) {
 
   process_t* proc = proc_current();
 
-  file1->refcount++;
+  file_ref(file1);
   KASSERT_DBG(proc->fds[fd2] == PROC_UNUSED_FD);
   proc->fds[fd2] = proc->fds[fd1];
   return fd2;
@@ -1126,7 +1126,7 @@ int vfs_read(int fd, void* buf, size_t count) {
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
     return -EBADF;
   }
-  file->refcount++;
+  file_ref(file);
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_read(file->vnode->fifo, buf, count,
@@ -1147,7 +1147,7 @@ int vfs_read(int fd, void* buf, size_t count) {
     }
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1167,7 +1167,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
     return -EBADF;
   }
-  file->refcount++;
+  file_ref(file);
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_write(file->vnode->fifo, buf, count,
@@ -1184,7 +1184,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
         off_t new_len = max(file->vnode->len, file->pos + (off_t)count);
         if (new_len > file->vnode->len && (rlim_t)new_len > limit) {
           if ((rlim_t)file->pos >= limit) {
-            file->refcount--;
+            file_unref(file);
             proc_force_signal(proc_current(), SIGXFSZ);
             return -EFBIG;
           } else {
@@ -1202,7 +1202,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
     }
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1257,7 +1257,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
   if (file->vnode->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
@@ -1274,7 +1274,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
     }
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1335,7 +1335,7 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     if (procA->fds[i] != PROC_UNUSED_FD) {
       procB->fds[i] = procA->fds[i];
-      g_file_table[procA->fds[i]]->refcount++;
+      file_ref(g_file_table[procA->fds[i]]);
     }
   }
 }
@@ -1416,14 +1416,14 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1472,14 +1472,14 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1510,14 +1510,14 @@ int vfs_fchmod(int fd, mode_t mode) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chmod_internal(file->vnode, mode);
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1641,11 +1641,11 @@ int vfs_ftruncate(int fd, off_t length) {
     return -EFBIG;
   }
 
-  file->refcount++;
+  file_ref(file);
 
   KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
   result = file->vnode->fs->truncate(file->vnode, length);
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 

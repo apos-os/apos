@@ -5492,6 +5492,40 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test"));
 }
 
+static void* fd_concurrent_close_test_helper(void* arg) {
+  int fd = (intptr_t)arg;
+  char buf[10];
+  int result = vfs_read(fd, buf, 10);
+  return (void*)(intptr_t) result;
+}
+
+// A test for closing a file descriptor in one thread concurrently with a
+// blocking operation in another thread.  Ideally we'd have such a test for
+// every blocking operation, but for now just use a pipe as an examplar.
+//
+// This is undefined behavior from the userspace perspective, but we need to
+// ensure we clean up properly.
+// TODO(aoates): write a userpsace tests for this when we support multiple
+// threads per process in userspace.
+static void fd_concurrent_close_test(void) {
+  KTEST_BEGIN("vfs: closing fd during blocking pipe read");
+
+  int fds[2];
+  KEXPECT_EQ(0, vfs_pipe(fds));
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &fd_concurrent_close_test_helper,
+                               (void*)(intptr_t) fds[0]));
+  scheduler_make_runnable(thread);
+
+  // Ensure the thread gets into the read() call.
+  for (int i = 0; i < 10; i++) scheduler_yield();
+  KEXPECT_EQ(0, vfs_close(fds[0]));
+  for (int i = 0; i < 10; i++) scheduler_yield();
+  KEXPECT_EQ(0, vfs_close(fds[1]));
+  KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -5570,6 +5604,8 @@ void vfs_test(void) {
   proc_umask(orig_umask);
 
   umask_test();
+
+  fd_concurrent_close_test();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_disable_blocking(vfs_get_root_fs());

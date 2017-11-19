@@ -78,12 +78,12 @@ int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   if (file->vnode->type != VNODE_SOCKET) {
     return -ENOTSOCK;
   }
-  file->refcount++;
+  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result =
       file->vnode->socket->s_ops->bind(file->vnode->socket, addr, addr_len);
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -95,11 +95,11 @@ int net_listen(int socket, int backlog) {
   if (file->vnode->type != VNODE_SOCKET) {
     return -ENOTSOCK;
   }
-  file->refcount++;
+  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->listen(file->vnode->socket, backlog);
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -111,13 +111,13 @@ int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   if (file->vnode->type != VNODE_SOCKET) {
     return -ENOTSOCK;
   }
-  file->refcount++;
+  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   socket_t* new_socket = NULL;
   result = file->vnode->socket->s_ops->accept(file->vnode->socket, addr,
                                               addr_len, &new_socket);
-  file->refcount--;
+  file_unref(file);
   if (result) {
     return result;
   }
@@ -133,12 +133,12 @@ int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   if (file->vnode->type != VNODE_SOCKET) {
     return -ENOTSOCK;
   }
-  file->refcount++;
+  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result =
       file->vnode->socket->s_ops->connect(file->vnode->socket, addr, addr_len);
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -150,10 +150,10 @@ int net_accept_queue_length(int socket) {
   if (file->vnode->type != VNODE_SOCKET) {
     return -ENOTSOCK;
   }
-  file->refcount++;
+  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->accept_queue_length(file->vnode->socket);
-  file->refcount--;
+  file_unref(file);
   return result;
 }
