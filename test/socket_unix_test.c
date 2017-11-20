@@ -19,6 +19,8 @@
 #include "proc/kthread.h"
 #include "proc/fork.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
+#include "proc/sleep.h"
 #include "proc/umask.h"
 #include "proc/user.h"
 #include "proc/wait.h"
@@ -784,9 +786,7 @@ static void connect_test(void) {
   //  think should succeed)
   //  - non-blocking connect
   //  - bind on connected socket
-  //  - accept() blocks until connect()
   //  - connect interrupted by signal
-  //  - accept interrupted by signal
   //  - forked sockets
   //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
   //  - read/write on connected but not accepted sockets
@@ -858,6 +858,130 @@ static void connect_backlog_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kPath));
 }
 
+typedef struct {
+  int fd;
+  kthread_queue_t started_queue;
+  bool done;
+  int result;
+} accept_thread_args_t;
+
+static void* do_accept_thread(void* arg) {
+  accept_thread_args_t* args = (accept_thread_args_t*)arg;
+  KEXPECT_EQ(false, args->done);
+
+  scheduler_wake_all(&args->started_queue);
+  args->result = do_accept(args->fd, NULL);
+  args->done = true;
+  return 0x0;
+}
+
+static void do_accept_thread_proc(void* arg) {
+  do_accept_thread(arg);
+}
+
+static void accept_blocking_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("net_accept(AF_UNIX): blocks until a connection is ready");
+  int server_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(server_sock, 0);
+  int client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+
+  kthread_t thread;
+  accept_thread_args_t args;
+  args.fd = server_sock;
+  kthread_queue_init(&args.started_queue);
+  args.done = false;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_accept_thread, &args));
+  scheduler_make_runnable(thread);
+  scheduler_wait_on(&args.started_queue);
+  // Give accept() some more time to run.
+  ksleep(50);
+  KEXPECT_EQ(false, args.done);
+
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  kthread_join(thread);
+  KEXPECT_EQ(true, args.done);
+  KEXPECT_GE(args.result, 0);
+  // TODO(aoates): test read/write between the sockets.
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_close(args.result));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): signal during blocking accept()");
+  args.done = false;
+  // For this one, we use fork for consistent signal delivery.
+  pid_t child_pid = proc_fork(&do_accept_thread_proc, &args);
+  KEXPECT_GE(child_pid, 0);
+  scheduler_wait_on(&args.started_queue);
+  proc_force_signal(proc_get(child_pid), SIGUSR1);
+  KEXPECT_EQ(child_pid, proc_wait(0x0));
+  KEXPECT_EQ(true, args.done);
+  KEXPECT_GE(args.result, -EINTR);
+
+  KTEST_BEGIN("net_accept(AF_UNIX): accept() in many threads");
+  const int kThreads = 5;
+  pid_t child_pids[kThreads];
+  accept_thread_args_t multi_args[kThreads];
+  for (int i = 0; i < kThreads; ++i) {
+    multi_args[i].fd = server_sock;
+    kthread_queue_init(&multi_args[i].started_queue);
+    multi_args[i].done = false;
+    child_pids[i] = proc_fork(&do_accept_thread_proc, &multi_args[i]);
+    KEXPECT_GE(child_pids[i], 0);
+    scheduler_wait_on(&multi_args[i].started_queue);
+  }
+
+  // Connect, and make sure that only one thread wins.
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  for (int i = 0; i < 100; ++i) scheduler_yield();  // Let everyone run.
+  for (int i = 0; i < kThreads; ++i) {
+    proc_force_signal(proc_get(child_pids[i]), SIGUSR1);
+    KEXPECT_GE(proc_waitpid(child_pids[i], NULL, 0), 0);
+  }
+  int total_done = 0;
+  for (int i = 0; i < kThreads; ++i) {
+    if (multi_args[i].result >= 0) {
+      total_done++;
+    } else {
+      KEXPECT_EQ(-EINTR, multi_args[i].result);
+    }
+  }
+  KEXPECT_EQ(1, total_done);
+  KEXPECT_EQ(0, vfs_close(client_sock));
+
+  KTEST_BEGIN("net_accept(AF_UNIX): close() FD while blocked in accept()");
+  client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(client_sock, 0);
+  args.done = false;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_accept_thread, &args));
+  scheduler_make_runnable(thread);
+  scheduler_wait_on(&args.started_queue);
+  // Make sure we get good and stuck in accept()
+  for (int i = 0; i < 20; ++i) scheduler_yield();
+  KEXPECT_EQ(false, args.done);
+  KEXPECT_EQ(0, vfs_close(server_sock));
+  server_sock = -1;
+  for (int i = 0; i < 20; ++i) scheduler_yield();
+
+  // accept() should still be pending, even though the fd was closed.
+  KEXPECT_EQ(false, kthread_is_done(thread));
+
+  // connect() should still work, even though the accepting fd was closed.
+  KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
+  kthread_join(thread);
+  KEXPECT_EQ(true, args.done);
+  KEXPECT_GE(args.result, 0);
+  // TODO(aoates): test reading/writing between them.
+  KEXPECT_EQ(0, vfs_close(client_sock));
+  KEXPECT_EQ(0, vfs_close(args.result));
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+
+  // TODO(aoates): test shutdown call during blocking accept()
+  // TODO(aoates): test accept() on dup'd socket (and after shutting down the
+  // twin fd.
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -868,6 +992,7 @@ void socket_unix_test(void) {
   listen_test();
   connect_test();
   connect_backlog_test();
+  accept_blocking_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "proc/scheduler.h"
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/unix.h"
@@ -48,6 +49,7 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->peer = NULL;
   sock->listen_backlog = -1;
   sock->incoming_conns = LIST_INIT;
+  kthread_queue_init(&sock->accept_wait_queue);
   sock->connecting_link = LIST_LINK_INIT;
   *out = &sock->base;
   return 0;
@@ -82,6 +84,9 @@ static void sock_unix_cleanup(socket_t* socket_base) {
       kfree(incoming_socket);
     }
   }
+  // We are cleaning up the socket, which means that any fds/files pointing to
+  // it must have been closed.  So there must be no waiters.
+  KASSERT_DBG(kthread_queue_empty(&socket->accept_wait_queue));
 }
 
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
@@ -142,9 +147,13 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
   if (socket->state != SUN_LISTENING) {
     return -EINVAL;
   }
-  if (list_empty(&socket->incoming_conns)) {
-    // TODO(aoates): block until connecting sockets are available.
-    return -EWOULDBLOCK;
+  while (list_empty(&socket->incoming_conns)) {
+    // TODO(aoates): handle O_NONBLOCK fds.
+    int result =
+        scheduler_wait_on_interruptable(&socket->accept_wait_queue, -1);
+    if (result == SWAIT_INTERRUPTED) {
+      return -EINTR;
+    }
   }
 
   list_link_t* new_socket_link = list_pop(&socket->incoming_conns);
@@ -251,6 +260,7 @@ static int sock_unix_connect(socket_t* socket_base,
   target_sock->listen_backlog--;
   socket->peer = new_socket;
   socket->state = SUN_CONNECTED;
+  scheduler_wake_all(&target_sock->accept_wait_queue);
 
   return 0;
 }

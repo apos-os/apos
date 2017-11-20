@@ -17,6 +17,7 @@
 #define APOO_NET_SOCKET_UNIX_H
 
 #include "net/socket/socket.h"
+#include "proc/kthread.h"
 #include "user/include/apos/net/socket/unix.h"
 #include "vfs/vnode.h"
 
@@ -46,6 +47,9 @@ typedef struct socket_unix {
 
   // If listening, new connection sockets to be returned by accept().
   list_t incoming_conns;
+
+  // Thread queue to wait on for incoming connections.
+  kthread_queue_t accept_wait_queue;
 
   // Link on the parent/server socket's queue, if an unaccepted connection.
   list_link_t connecting_link;
