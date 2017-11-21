@@ -1144,9 +1144,7 @@ static void send_recv_test(void) {
   //  - shutdown(RD) when socket has data in buffer
   //  - duplicate close tests with shutdown
   //  - recv/send on different types of unconnected sockets
-  //  - recvfrmo and sendto do addresses
   //  - read() and write()
-  //  - bad addresses
   //  - bad flags
   //  - recv/send interrupted by a signal.
   //  - send/recv after shutdown on _same_ socket
@@ -1154,6 +1152,51 @@ static void send_recv_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
   KEXPECT_EQ(0, vfs_close(listen_sock));
   kfree(bigbuf);
+}
+
+static void send_recv_addr_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("net_sendto(): address ignored");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+  int s1, s2;
+  make_connected_pair(listen_sock, &s1, &s2);
+
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kServerPath);
+  KEXPECT_EQ(2,
+             net_sendto(s1, "ab", 2, 0, (struct sockaddr*)&addr, sizeof(addr)));
+  kstrcpy(addr.sun_path, "other-path");
+  KEXPECT_EQ(1,
+             net_sendto(s1, "c", 1, 0, (struct sockaddr*)&addr, sizeof(addr)));
+  addr.sun_family = 1234;
+  KEXPECT_EQ(1,
+             net_sendto(s1, "d", 1, 0, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(1, net_sendto(s1, "e", 1, 0, (struct sockaddr*)&addr, 1));
+  KEXPECT_EQ(1, net_sendto(s1, "f", 1, 0, 0x0, 15));
+  KEXPECT_EQ(1, net_sendto(s1, "g", 1, 0, 0x0, 0));
+
+  KTEST_BEGIN("net_recvfrom(): zeroes out the address");
+  kmemset(&addr, 1, sizeof(addr));
+  socklen_t addr_len = sizeof(addr);
+  char buf[5];
+  KEXPECT_EQ(1,
+             net_recvfrom(s2, buf, 1, 0, (struct sockaddr*)&addr, &addr_len));
+  KEXPECT_EQ(0, addr_len);
+  addr_len = 0;
+  KEXPECT_EQ(1,
+             net_recvfrom(s2, buf, 1, 0, (struct sockaddr*)&addr, &addr_len));
+  KEXPECT_EQ(0, addr_len);
+  addr_len = 5;
+  KEXPECT_EQ(1, net_recvfrom(s2, buf, 1, 0, NULL, &addr_len));
+  KEXPECT_EQ(1, net_recvfrom(s2, buf, 1, 0, NULL, NULL));
+
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
 }
 
 void socket_unix_test(void) {
@@ -1168,6 +1211,7 @@ void socket_unix_test(void) {
   connect_backlog_test();
   accept_blocking_test();
   send_recv_test();
+  send_recv_addr_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

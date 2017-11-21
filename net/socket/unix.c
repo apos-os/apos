@@ -314,7 +314,11 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, void* buffer, size_t length,
     scheduler_wake_all(&socket->peer->write_wait_queue);
   }
 
-  // TODO(aoates): handle address out param
+  if (address_len) {
+    // Not required to set the address for SOCK_STREAM sockets.
+    *address_len = 0;
+  }
+
   // TODO(aoates): handle EWOULDBLOCK.
   return circbuf_read(&socket->readbuf, buffer, length);
 }
@@ -345,7 +349,6 @@ ssize_t sock_unix_sendto(socket_t* socket_base, const void* buffer,
   }
 
   scheduler_wake_all(&socket->peer->read_wait_queue);
-  // TODO(aoates): handle address out param
   // TODO(aoates): handle EWOULDBLOCK.
   return circbuf_write(&socket->peer->readbuf, buffer, length);
 }
