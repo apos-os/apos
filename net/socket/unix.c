@@ -22,6 +22,7 @@
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/unix.h"
+#include "user/include/apos/vfs/vfs.h"
 #include "vfs/vfs_internal.h"
 
 #define DEFAULT_LISTEN_BACKLOG 10
@@ -155,8 +156,9 @@ static int sock_unix_listen(socket_t* socket_base, int backlog) {
   return 0;
 }
 
-static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
-                            socklen_t* address_len, socket_t** socket_out) {
+static int sock_unix_accept(socket_t* socket_base, int fflags,
+                            struct sockaddr* address, socklen_t* address_len,
+                            socket_t** socket_out) {
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -164,7 +166,9 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
     return -EINVAL;
   }
   while (list_empty(&socket->incoming_conns)) {
-    // TODO(aoates): handle O_NONBLOCK fds.
+    if (fflags & VFS_O_NONBLOCK) {
+      return -EAGAIN;
+    }
     int result =
         scheduler_wait_on_interruptable(&socket->accept_wait_queue, -1);
     if (result == SWAIT_INTERRUPTED) {
@@ -205,7 +209,7 @@ static int sock_unix_accept(socket_t* socket_base, struct sockaddr* address,
   return 0;
 }
 
-static int sock_unix_connect(socket_t* socket_base,
+static int sock_unix_connect(socket_t* socket_base, int fflags,
                              const struct sockaddr* address,
                              socklen_t address_len) {
   if (address->sa_family != AF_UNIX) {
@@ -291,13 +295,13 @@ static int sock_unix_accept_queue_length(const socket_t* socket_base) {
   return list_size(&socket->incoming_conns);
 }
 
-ssize_t sock_unix_recvfrom(socket_t* socket_base, void* buffer, size_t length,
-                           int flags, struct sockaddr* address,
+ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
+                           size_t length, int sflags, struct sockaddr* address,
                            socklen_t* address_len) {
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
-  if (!buffer || flags != 0) {
+  if (!buffer || sflags != 0) {
     return -EINVAL;
   }
 
@@ -307,7 +311,9 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, void* buffer, size_t length,
   KASSERT_DBG(socket->readbuf_raw != 0x0);
 
   while (socket->readbuf.len == 0 && !socket->read_fin) {
-    // TODO(aoates): handle O_NONBLOCK fds.
+    if (fflags & VFS_O_NONBLOCK) {
+      return -EAGAIN;
+    }
     int result = scheduler_wait_on_interruptable(&socket->read_wait_queue, -1);
     if (result == SWAIT_INTERRUPTED) {
       return -EINTR;
@@ -323,17 +329,16 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, void* buffer, size_t length,
     *address_len = 0;
   }
 
-  // TODO(aoates): handle EWOULDBLOCK.
   return circbuf_read(&socket->readbuf, buffer, length);
 }
 
-ssize_t sock_unix_sendto(socket_t* socket_base, const void* buffer,
-                         size_t length, int flags,
+ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
+                         size_t length, int sflags,
                          const struct sockaddr* dest_addr, socklen_t dest_len) {
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
-  if (!buffer || flags != 0) {
+  if (!buffer || sflags != 0) {
     return -EINVAL;
   }
 
@@ -345,7 +350,9 @@ ssize_t sock_unix_sendto(socket_t* socket_base, const void* buffer,
   while (socket->peer &&
          socket->peer->readbuf.buflen - socket->peer->readbuf.len == 0 &&
          !socket->peer->read_fin) {
-    // TODO(aoates): handle O_NONBLOCK fds.
+    if (fflags & VFS_O_NONBLOCK) {
+      return -EAGAIN;
+    }
     int result = scheduler_wait_on_interruptable(&socket->write_wait_queue, -1);
     if (result == SWAIT_INTERRUPTED) {
       return -EINTR;
@@ -357,7 +364,6 @@ ssize_t sock_unix_sendto(socket_t* socket_base, const void* buffer,
   }
 
   scheduler_wake_all(&socket->peer->read_wait_queue);
-  // TODO(aoates): handle EWOULDBLOCK.
   return circbuf_write(&socket->peer->readbuf, buffer, length);
 }
 

@@ -1134,8 +1134,8 @@ int vfs_read(int fd, void* buf, size_t count) {
                        !(file->flags & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_SOCKET) {
     KASSERT(file->vnode->socket != NULL);
-    result = file->vnode->socket->s_ops->recvfrom(file->vnode->socket, buf,
-                                                  count, 0, NULL, 0);
+    result = file->vnode->socket->s_ops->recvfrom(
+        file->vnode->socket, file->flags, buf, count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
                                  buf, count, file->flags);
@@ -1180,8 +1180,8 @@ int vfs_write(int fd, const void* buf, size_t count) {
                         !(file->flags & VFS_O_NONBLOCK));
   } else if (file->vnode->type == VNODE_SOCKET) {
     KASSERT(file->vnode->socket != NULL);
-    result = file->vnode->socket->s_ops->sendto(file->vnode->socket, buf, count,
-                                                0, NULL, 0);
+    result = file->vnode->socket->s_ops->sendto(
+        file->vnode->socket, file->flags, buf, count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);

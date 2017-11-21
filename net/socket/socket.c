@@ -115,8 +115,8 @@ int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
 
   KASSERT(file->vnode->socket != NULL);
   socket_t* new_socket = NULL;
-  result = file->vnode->socket->s_ops->accept(file->vnode->socket, addr,
-                                              addr_len, &new_socket);
+  result = file->vnode->socket->s_ops->accept(file->vnode->socket, file->flags,
+                                              addr, addr_len, &new_socket);
   file_unref(file);
   if (result) {
     return result;
@@ -136,8 +136,8 @@ int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
-  result =
-      file->vnode->socket->s_ops->connect(file->vnode->socket, addr, addr_len);
+  result = file->vnode->socket->s_ops->connect(file->vnode->socket, file->flags,
+                                               addr, addr_len);
   file_unref(file);
   return result;
 }
@@ -174,8 +174,8 @@ ssize_t net_recvfrom(int socket, void* buf, size_t len, int flags,
   file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
-  result = file->vnode->socket->s_ops->recvfrom(file->vnode->socket, buf, len,
-                                                flags, address, address_len);
+  result = file->vnode->socket->s_ops->recvfrom(
+      file->vnode->socket, file->flags, buf, len, flags, address, address_len);
   file_unref(file);
   return result;
 }
@@ -196,8 +196,8 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
   file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
-  result = file->vnode->socket->s_ops->sendto(file->vnode->socket, buf, len,
-                                              flags, dest_addr, dest_len);
+  result = file->vnode->socket->s_ops->sendto(
+      file->vnode->socket, file->flags, buf, len, flags, dest_addr, dest_len);
   file_unref(file);
   return result;
 }

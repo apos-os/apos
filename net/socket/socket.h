@@ -46,25 +46,24 @@ struct socket_ops {
 
   // Accept a connection on the given socket, returning the new peer socket in
   // |socket_out| on success.
-  // TODO(aoates): add blocking flag.
-  int (*accept)(socket_t* socket, struct sockaddr* address,
+  int (*accept)(socket_t* socket, int fflags, struct sockaddr* address,
                 socklen_t* address_len, socket_t** socket_out);
 
   // Connect the socket to the given address.
-  // TODO(aoates): add blocking flag.
-  int (*connect)(socket_t* socket, const struct sockaddr* address,
+  int (*connect)(socket_t* socket, int fflags, const struct sockaddr* address,
                  socklen_t address_len);
 
   // Returns the number of sockets queued on a listening socket.
   int (*accept_queue_length)(const socket_t* socket);
 
   // Receive data from the socket.
-  ssize_t (*recvfrom)(socket_t* socket, void* buffer, size_t length, int flags,
-                      struct sockaddr* address, socklen_t* address_len);
+  ssize_t (*recvfrom)(socket_t* socket, int fflags, void* buffer, size_t length,
+                      int sflags, struct sockaddr* address,
+                      socklen_t* address_len);
 
   // Send data on the socket.
-  ssize_t (*sendto)(socket_t* socket, const void* message, size_t length,
-                    int flags, const struct sockaddr* dest_addr,
+  ssize_t (*sendto)(socket_t* socket, int fflags, const void* message,
+                    size_t length, int sflags, const struct sockaddr* dest_addr,
                     socklen_t dest_len);
 };
 

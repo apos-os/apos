@@ -14,6 +14,7 @@
 
 #include "test/kernel_tests.h"
 
+#include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "net/socket/socket.h"
 #include "proc/kthread.h"
@@ -28,13 +29,24 @@
 #include "test/vfs_test_util.h"
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/unix.h"
+#include "vfs/file.h"
 #include "vfs/pipe.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_internal.h"
 #include "vfs/vfs_test_util.h"
 
 static bool has_sigpipe(void) {
   const sigset_t sigset = proc_pending_signals(proc_current());
   return ksigismember(&sigset, SIGPIPE);
+}
+
+// TODO(aoates): ditch this when fcntl() is implemented.
+static void make_nonblock(int fd) {
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  KASSERT(result == 0);
+  KASSERT((file->flags & VFS_O_NONBLOCK) == 0);
+  file->flags |= VFS_O_NONBLOCK;
 }
 
 static void create_test(void) {
@@ -789,7 +801,6 @@ static void connect_test(void) {
   //  not symlink target address)
   //  - as above, but remove target and try to rebind (this fails on OS X? I
   //  think should succeed)
-  //  - non-blocking connect
   //  - bind on connected socket
   //  - connect interrupted by signal
   //  - forked sockets
@@ -1287,6 +1298,62 @@ static void send_recv_bad_args_test(void) {
   KEXPECT_EQ(0, vfs_close(listen_sock));
 }
 
+static void nonblock_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("net_accept(AF_UNIX): O_NONBLOCK");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+
+  make_nonblock(listen_sock);
+  KEXPECT_EQ(-EAGAIN, net_accept(listen_sock, NULL, NULL));
+  KEXPECT_EQ(-EAGAIN, net_accept(listen_sock, NULL, NULL));
+
+  int s1 = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(s1, 0);
+  KEXPECT_EQ(0, do_connect(s1, kServerPath));
+
+  int s2 = net_accept(listen_sock, NULL, NULL);
+  KEXPECT_GE(s2, 0);
+  KEXPECT_EQ(-EAGAIN, net_accept(listen_sock, NULL, NULL));
+
+  KTEST_BEGIN("net_recv(AF_UNIX): O_NONBLOCK");
+  make_nonblock(s1);
+  char buf[10];
+  KEXPECT_EQ(-EAGAIN, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(-EAGAIN, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(5, net_send(s2, "abcde", 5, 0));
+  KEXPECT_EQ(5, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(-EAGAIN, net_recv(s1, buf, 10, 0));
+
+  KTEST_BEGIN("net_send(AF_UNIX): O_NONBLOCK");
+  void* bigbuf = kmalloc(1024);
+  int result;
+  do {
+    result = net_send(s1, bigbuf, 1024, 0);
+  } while (result > 0);
+  KEXPECT_EQ(-EAGAIN, result);
+  KEXPECT_EQ(-EAGAIN, net_send(s1, buf, 10, 0));
+  KEXPECT_EQ(5, net_recv(s2, buf, 5, 0));
+  KEXPECT_EQ(5, net_send(s1, bigbuf, 1024, 0));
+  KEXPECT_EQ(-EAGAIN, net_send(s1, buf, 10, 0));
+
+  KTEST_BEGIN("net_recv(AF_UNIX): O_NONBLOCK but shutdown");
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+
+  KTEST_BEGIN("net_send(AF_UNIX): O_NONBLOCK but shutdown");
+  KEXPECT_EQ(-EPIPE, net_send(s1, buf, 10, 0));
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  // TODO(aoates): test the above after shutdown() once that's implemented.
+
+  kfree(bigbuf);
+  KEXPECT_EQ(0, vfs_close(s1));
+
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -1301,6 +1368,7 @@ void socket_unix_test(void) {
   send_recv_test();
   send_recv_addr_test();
   send_recv_bad_args_test();
+  nonblock_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
