@@ -297,6 +297,10 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, void* buffer, size_t length,
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
+  if (!buffer || flags != 0) {
+    return -EINVAL;
+  }
+
   if (socket->state != SUN_CONNECTED) {
     return -ENOTCONN;
   }
@@ -328,6 +332,10 @@ ssize_t sock_unix_sendto(socket_t* socket_base, const void* buffer,
                          const struct sockaddr* dest_addr, socklen_t dest_len) {
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  if (!buffer || flags != 0) {
+    return -EINVAL;
+  }
 
   if (socket->state != SUN_CONNECTED) {
     return -ENOTCONN;

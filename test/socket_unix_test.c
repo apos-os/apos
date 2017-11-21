@@ -1145,7 +1145,6 @@ static void send_recv_test(void) {
   //  - duplicate close tests with shutdown
   //  - recv/send on different types of unconnected sockets
   //  - read() and write()
-  //  - bad flags
   //  - recv/send interrupted by a signal.
   //  - send/recv after shutdown on _same_ socket
 
@@ -1199,6 +1198,49 @@ static void send_recv_addr_test(void) {
   KEXPECT_EQ(0, vfs_close(listen_sock));
 }
 
+static void send_recv_bad_args_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("net_send(): bad fd");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+  int s1, s2;
+  make_connected_pair(listen_sock, &s1, &s2);
+
+  char buf[5];
+  KEXPECT_EQ(-EBADF, net_send(-5, buf, 5, 0));
+
+  KTEST_BEGIN("net_send(): non-socket fd");
+  int pipe_fds[2];
+  KEXPECT_EQ(0, vfs_pipe(pipe_fds));
+  KEXPECT_EQ(-ENOTSOCK, net_send(pipe_fds[0], buf, 5, 0));
+
+  KTEST_BEGIN("net_send(): bad buffer");
+  KEXPECT_EQ(-EINVAL, net_send(s1, NULL, 5, 0));
+
+  KTEST_BEGIN("net_send(): bad flags");
+  KEXPECT_EQ(-EINVAL, net_send(s1, buf, 5, 5));
+
+  KTEST_BEGIN("net_recv(): bad fd");
+  KEXPECT_EQ(-EBADF, net_recv(-5, buf, 5, 0));
+
+  KTEST_BEGIN("net_recv(): non-socket fd");
+  KEXPECT_EQ(-ENOTSOCK, net_recv(pipe_fds[0], buf, 5, 0));
+
+  KTEST_BEGIN("net_recv(): bad buffer");
+  KEXPECT_EQ(-EINVAL, net_recv(s1, NULL, 5, 0));
+
+  KTEST_BEGIN("net_recv(): bad flags");
+  KEXPECT_EQ(-EINVAL, net_recv(s1, buf, 5, 5));
+
+  KEXPECT_EQ(0, vfs_close(pipe_fds[0]));
+  KEXPECT_EQ(0, vfs_close(pipe_fds[1]));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -1212,6 +1254,7 @@ void socket_unix_test(void) {
   accept_blocking_test();
   send_recv_test();
   send_recv_addr_test();
+  send_recv_bad_args_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
