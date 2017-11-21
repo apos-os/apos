@@ -70,6 +70,22 @@ int net_socket(int domain, int type, int protocol) {
   return create_socket_fd(sock);
 }
 
+int net_shutdown(int socket, int how) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file_ref(file);
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->shutdown(file->vnode->socket, how);
+  file_unref(file);
+  return result;
+}
+
 int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);

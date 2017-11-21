@@ -804,7 +804,6 @@ static void connect_test(void) {
   //  - bind on connected socket
   //  - connect interrupted by signal
   //  - forked sockets
-  //  - write on disconnected socket (closed) -> SIGPIPE (is this POSIX?)
   //  - read/write on connected but not accepted sockets
   //  - as above, but server socket was closed/deleted
   //  - read/write on sockets accepted after client was closed
@@ -1200,10 +1199,8 @@ static void send_recv_test(void) {
   KEXPECT_EQ(0, vfs_close(s2));
 
   // TODO(aoates): things to test for basic r/w:
-  //  - shutdown(RD) when socket has data in buffer
   //  - duplicate close tests with shutdown
   //  - recv/send on different types of unconnected sockets
-  //  - send/recv after shutdown on _same_ socket
 
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
   KEXPECT_EQ(0, vfs_close(listen_sock));
@@ -1354,6 +1351,335 @@ static void nonblock_test(void) {
   KEXPECT_EQ(0, vfs_close(listen_sock));
 }
 
+static void shutdown_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("sockets (AF_UNIX): s2.shutdown(SHUT_WR) then s1.recv()");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+  int s1, s2;
+  make_connected_pair(listen_sock, &s1, &s2);
+
+  char buf[100];
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(1, net_send(s1, "d", 1, 0));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_WR));
+  KEXPECT_EQ(2, net_recv(s1, buf, 2, 0));
+  KEXPECT_EQ(1, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s2.shutdown(SHUT_WR) then s2.send()");
+  KEXPECT_EQ(-EPIPE, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_WR) then s1.send()/s2.recv() "
+      "(opposite dir)");
+  KEXPECT_EQ(2, net_send(s1, "ef", 2, 0));
+  KEXPECT_EQ(3, net_recv(s2, buf, 10, 0));
+  buf[3] = '\0';
+  KEXPECT_STREQ("def", buf);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s2.shutdown(SHUT_RDWR) then s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RDWR));
+  KEXPECT_EQ(3, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s2.shutdown(SHUT_RDWR) then s2.send()");
+  KEXPECT_EQ(-EPIPE, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s1.shutdown(SHUT_RD) then s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  // Pending data should be thrown away.
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s1.shutdown(SHUT_RD) then s2.send()");
+  KEXPECT_EQ(-EPIPE, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_RD) then s1.send()/s2.recv() "
+      "(opposite dir)");
+  KEXPECT_EQ(3, net_send(s1, "abc", 3, 0));
+  KEXPECT_EQ(3, net_recv(s2, buf, 10, 0));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s1.shutdown(SHUT_RDWR) then s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
+  // Pending data should be thrown away.
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 10, 0));
+
+  KTEST_BEGIN("sockets (AF_UNIX): s1.shutdown(SHUT_RDWR) then s2.send()");
+  KEXPECT_EQ(-EPIPE, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(true, has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  // Start blocking tests---shutdown() on other side during a blocking recv().
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_RD) during blocking s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  async_args_t async_args;
+  async_args.sock = s1;
+  async_args.buf = buf;
+  async_args.len = 100;
+  kmemset(buf, 0, 100);
+  kthread_t thread = start_async(&recv_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RD));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  // Blocking recv() shouldn't return.
+  KEXPECT_EQ(false, kthread_is_done(thread));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_WR) during blocking s1.recv()");
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_WR));
+  kthread_join(thread);
+  KEXPECT_EQ(0, async_args.result);
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_RDWR) during blocking s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  async_args.sock = s1;
+  thread = start_async(&recv_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RDWR));
+  kthread_join(thread);
+  KEXPECT_EQ(0, async_args.result);
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  // Tests for shutdown() on _this_ side during a blocking recv().
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_WR) during blocking s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  async_args.sock = s1;
+  thread = start_async(&recv_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_WR));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  // Blocking recv() shouldn't return.
+  KEXPECT_EQ(false, kthread_is_done(thread));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_RD) during blocking s1.recv()");
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  kthread_join(thread);
+  KEXPECT_EQ(0, async_args.result);
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_RDWR) during blocking s1.recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  async_args.sock = s1;
+  thread = start_async(&recv_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
+  kthread_join(thread);
+  KEXPECT_EQ(0, async_args.result);
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  // Tests for shutdown() on other side during a blocking send().
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_WR) during blocking s1.send()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  const int kBigBufSize = 32 * 1024;
+  void* bigbuf = kmalloc(kBigBufSize);
+  int max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+  async_args.sock = s1;
+  thread = start_async(&send_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_WR));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  // Blocking send() shouldn't return.
+  KEXPECT_EQ(false, kthread_is_done(thread));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_RD) during blocking s1.send()");
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RD));
+  kthread_join(thread);
+  KEXPECT_EQ(-EPIPE, async_args.result);
+  KEXPECT_EQ(-EPIPE, net_send(s1, "a", 1, 0));
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s2.shutdown(SHUT_RDWR) during blocking s1.send()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+  async_args.sock = s1;
+  thread = start_async(&send_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RDWR));
+  kthread_join(thread);
+  KEXPECT_EQ(-EPIPE, async_args.result);
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  // Tests for shutdown() on _this_ side during a blocking send().
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_RD) during blocking s1.send()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+  async_args.sock = s1;
+  thread = start_async(&send_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  // Blocking recv() shouldn't return.
+  KEXPECT_EQ(false, kthread_is_done(thread));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_WR) during blocking s1.send()");
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_WR));
+  kthread_join(thread);
+  KEXPECT_EQ(-EPIPE, async_args.result);
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN(
+      "sockets (AF_UNIX): s1.shutdown(SHUT_RDWR) during blocking s1.send()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  async_args.sock = s1;
+  thread = start_async(&send_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
+  kthread_join(thread);
+  KEXPECT_EQ(-EPIPE, async_args.result);
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  kfree(bigbuf);
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+}
+
+static void double_shutdown_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("net_shutdown(AF_UNIX): double shutdown");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+  int s1, s2;
+  make_connected_pair(listen_sock, &s1, &s2);
+
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s1, SHUT_RD));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s1, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s1, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): shutdown after other side has shutdown");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_WR));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): shutdown after other side has closed");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s2, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+}
+
+static void shutdown_error_test(void) {
+  const char kServerPath[] = "_socket_server_path";
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): on new socket");
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): on only-bound socket");
+  sock = create_bound_socket(kServerPath);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(sock));
+  vfs_unlink(kServerPath);
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): on listening socket");
+  sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(sock));
+  vfs_unlink(kServerPath);
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): on bad fd");
+  KEXPECT_EQ(-EBADF, net_shutdown(-5, SHUT_RD));
+  KEXPECT_EQ(-EBADF, net_shutdown(sock, SHUT_RD));
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): on non-socket fd");
+  int pipe_fds[2];
+  KEXPECT_EQ(0, vfs_pipe(pipe_fds));
+  KEXPECT_EQ(-ENOTSOCK, net_shutdown(pipe_fds[0], SHUT_RD));
+  vfs_close(pipe_fds[0]);
+  vfs_close(pipe_fds[1]);
+
+  KTEST_BEGIN("net_shutdown(AF_UNIX): bad how argument");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_EQ(-EINVAL, net_shutdown(pipe_fds[0], -1));
+  KEXPECT_EQ(-EINVAL, net_shutdown(pipe_fds[0], 5));
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -1369,6 +1695,9 @@ void socket_unix_test(void) {
   send_recv_addr_test();
   send_recv_bad_args_test();
   nonblock_test();
+  shutdown_test();
+  double_shutdown_test();
+  shutdown_error_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

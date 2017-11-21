@@ -106,6 +106,39 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   KASSERT_DBG(kthread_queue_empty(&socket->write_wait_queue));
 }
 
+static int sock_unix_shutdown(socket_t* socket_base, int how) {
+  if (how != SHUT_RD && how != SHUT_WR && how != SHUT_RDWR) {
+    return -EINVAL;
+  }
+
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+  if (socket->state != SUN_CONNECTED) {
+    return -ENOTCONN;
+  }
+
+  if (how == SHUT_RD || how == SHUT_RDWR) {
+    // read_fin is set if the peer is shutdown _or_ closed.
+    if (socket->read_fin) {
+      return -ENOTCONN;
+    }
+    // Throw away any pending data.
+    socket->readbuf.len = 0;
+    socket->read_fin = true;
+    scheduler_wake_all(&socket->read_wait_queue);
+    scheduler_wake_all(&socket->peer->write_wait_queue);
+  }
+  if (how == SHUT_WR || how == SHUT_RDWR) {
+    if (!socket->peer || socket->peer->read_fin) {
+      return -ENOTCONN;
+    }
+    socket->peer->read_fin = true;
+    scheduler_wake_all(&socket->peer->read_wait_queue);
+    scheduler_wake_all(&socket->write_wait_queue);
+  }
+  return 0;
+}
+
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
                           socklen_t address_len) {
   if (address->sa_family != AF_UNIX) {
@@ -369,6 +402,7 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
 
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
+  &sock_unix_shutdown,
   &sock_unix_bind,
   &sock_unix_listen,
   &sock_unix_accept,

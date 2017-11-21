@@ -37,6 +37,9 @@ struct socket_ops {
   // TODO(aoates): should this close the socket?
   void (*cleanup)(socket_t* socket);
 
+  // Shutdown the socket in one or both directions.
+  int (*shutdown)(socket_t* socket, int how);
+
   // Bind the socket to a particular address.
   int (*bind)(socket_t* socket, const struct sockaddr* address,
               socklen_t address_len);
@@ -76,6 +79,9 @@ void net_socket_destroy(socket_t* sock);
 // Creates a new unbound socket and a new file descriptor pointing to it, per
 // socket().  Returns the new fd or an error.
 int net_socket(int domain, int type, int protocol);
+
+// Shuts down the socket in one or both directions.
+int net_shutdown(int socket, int how);
 
 // Binds a socket to the given address.
 int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len);
