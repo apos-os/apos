@@ -111,13 +111,16 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     case VNODE_FIFO:
       return fifo_poll(file->vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
 
+    case VNODE_SOCKET:
+      return file->vnode->socket->s_ops->poll(file->vnode->socket,
+                                              event_mask | ALWAYS_EVENTS, poll);
+
     case VNODE_BLOCKDEV: {
       block_dev_t* blockdev = dev_get_block(file->vnode->dev);
       if (!blockdev) return POLLERR;
       return (POLLIN | POLLOUT) & event_mask;
     }
 
-    case VNODE_SOCKET:  // TODO(aoates): implement
     case VNODE_SYMLINK:
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:

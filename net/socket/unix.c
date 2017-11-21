@@ -32,6 +32,34 @@
 
 static const socket_ops_t g_unix_socket_ops;
 
+static short sun_poll_events(const socket_unix_t* socket) {
+  short events = 0;
+  switch (socket->state) {
+    case SUN_LISTENING:
+      if (!list_empty(&socket->incoming_conns)) {
+        events |= POLLIN | POLLRDNORM;
+      }
+      break;
+
+    case SUN_CONNECTED:
+      if (socket->readbuf.len > 0 || socket->read_fin) {
+        events |= POLLIN | POLLRDNORM;
+      }
+      if (!socket->peer || socket->peer->read_fin) {
+        // TODO(aoates): this isn't quite right---if the other side does a
+        // shutdown(SHUT_RD) we don't want to have POLLHUP on our side.
+        events |= POLLHUP;
+      } else if (socket->peer->readbuf.len < socket->peer->readbuf.buflen) {
+        events |= POLLOUT | POLLWRNORM | POLLWRBAND;
+      }
+      break;
+
+    case SUN_UNCONNECTED:
+      break;
+  }
+  return events;
+}
+
 int sock_unix_create(int type, int protocol, socket_t** out) {
   if (type != SOCK_STREAM) {
     return -EPROTOTYPE;
@@ -60,6 +88,7 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->read_fin = false;
   kthread_queue_init(&sock->read_wait_queue);
   kthread_queue_init(&sock->write_wait_queue);
+  poll_init_event(&sock->poll_event);
   *out = &sock->base;
   return 0;
 }
@@ -84,6 +113,8 @@ static void sock_unix_cleanup(socket_t* socket_base) {
     scheduler_wake_all(&socket->peer->read_wait_queue);
     scheduler_wake_all(&socket->peer->write_wait_queue);
     socket->peer->peer = NULL;
+    poll_trigger_event(&socket->peer->poll_event,
+                       sun_poll_events(socket->peer));
     socket->peer = NULL;
   }
   if (!list_empty(&socket->incoming_conns)) {
@@ -104,6 +135,8 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   KASSERT_DBG(kthread_queue_empty(&socket->accept_wait_queue));
   KASSERT_DBG(kthread_queue_empty(&socket->read_wait_queue));
   KASSERT_DBG(kthread_queue_empty(&socket->write_wait_queue));
+  // TODO(aoates): consider scenario where the socket/fd is closed while a
+  // poll() is outstanding on it.
 }
 
 static int sock_unix_shutdown(socket_t* socket_base, int how) {
@@ -127,6 +160,9 @@ static int sock_unix_shutdown(socket_t* socket_base, int how) {
     socket->read_fin = true;
     scheduler_wake_all(&socket->read_wait_queue);
     scheduler_wake_all(&socket->peer->write_wait_queue);
+    poll_trigger_event(&socket->poll_event, sun_poll_events(socket));
+    poll_trigger_event(&socket->peer->poll_event,
+                       sun_poll_events(socket->peer));
   }
   if (how == SHUT_WR || how == SHUT_RDWR) {
     if (!socket->peer || socket->peer->read_fin) {
@@ -135,6 +171,9 @@ static int sock_unix_shutdown(socket_t* socket_base, int how) {
     socket->peer->read_fin = true;
     scheduler_wake_all(&socket->peer->read_wait_queue);
     scheduler_wake_all(&socket->write_wait_queue);
+    poll_trigger_event(&socket->poll_event, sun_poll_events(socket));
+    poll_trigger_event(&socket->peer->poll_event,
+                       sun_poll_events(socket->peer));
   }
   return 0;
 }
@@ -318,6 +357,7 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
   socket->readbuf_raw = kmalloc(SOCKET_READBUF);
   circbuf_init(&socket->readbuf, socket->readbuf_raw, SOCKET_READBUF);
   scheduler_wake_all(&target_sock->accept_wait_queue);
+  poll_trigger_event(&target_sock->poll_event, sun_poll_events(target_sock));
 
   return 0;
 }
@@ -353,8 +393,11 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
     }
   }
 
+  int result = circbuf_read(&socket->readbuf, buffer, length);
   if (socket->peer) {
     scheduler_wake_all(&socket->peer->write_wait_queue);
+    poll_trigger_event(&socket->peer->poll_event,
+                       sun_poll_events(socket->peer));
   }
 
   if (address_len) {
@@ -362,7 +405,7 @@ ssize_t sock_unix_recvfrom(socket_t* socket_base, int fflags, void* buffer,
     *address_len = 0;
   }
 
-  return circbuf_read(&socket->readbuf, buffer, length);
+  return result;
 }
 
 ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
@@ -396,8 +439,22 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
     return -EPIPE;
   }
 
+  int result = circbuf_write(&socket->peer->readbuf, buffer, length);
   scheduler_wake_all(&socket->peer->read_wait_queue);
-  return circbuf_write(&socket->peer->readbuf, buffer, length);
+  poll_trigger_event(&socket->peer->poll_event, sun_poll_events(socket->peer));
+  return result;
+}
+
+static int sock_unix_poll(socket_t* socket_base, short event_mask,
+                          poll_state_t* poll) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  const short masked_events = sun_poll_events(socket) & event_mask;
+  if (masked_events || !poll)
+    return masked_events;
+
+  return poll_add_event(poll, &socket->poll_event, event_mask);
 }
 
 static const socket_ops_t g_unix_socket_ops = {
@@ -410,4 +467,5 @@ static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_accept_queue_length,
   &sock_unix_recvfrom,
   &sock_unix_sendto,
+  &sock_unix_poll,
 };

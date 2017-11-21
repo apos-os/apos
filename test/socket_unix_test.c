@@ -1680,6 +1680,222 @@ static void shutdown_error_test(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+static int do_poll(int fd) {
+  struct pollfd pfd;
+  pfd.fd = fd;
+  pfd.events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLOUT |
+               POLLWRNORM | POLLWRBAND | POLLERR | POLLHUP | POLLNVAL;
+  pfd.revents = 0;
+  int result = vfs_poll(&pfd, 1, 0);
+  KEXPECT_GE(result, 0);
+  return result ? pfd.revents : 0;
+}
+
+static void sock_unix_poll_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("vfs_poll(): unbound AF_UNIX socket");
+  int listen_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(listen_sock, 0);
+  KEXPECT_EQ(0, do_poll(listen_sock));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+
+  KTEST_BEGIN("vfs_poll(): bound AF_UNIX socket");
+  listen_sock = create_bound_socket(kServerPath);
+  KEXPECT_EQ(0, do_poll(listen_sock));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+  vfs_unlink(kServerPath);
+
+  KTEST_BEGIN("vfs_poll(): listening AF_UNIX socket (no connections)");
+  listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+  KEXPECT_EQ(0, do_poll(listen_sock));
+
+  KTEST_BEGIN("vfs_poll(): listening AF_UNIX socket (pending connection)");
+  int s1 = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(s1, 0);
+  KEXPECT_EQ(0, do_connect(s1, kServerPath));
+  KEXPECT_EQ(POLLIN | POLLRDNORM, do_poll(listen_sock));
+
+  int s2 = net_accept(listen_sock, NULL, 0);
+  KEXPECT_GE(s2, 0);
+  KEXPECT_EQ(0, do_poll(listen_sock));
+
+  KTEST_BEGIN("vfs_poll(): fresh connected sockets (AF_UNIX)");
+  KEXPECT_EQ(POLLOUT | POLLWRNORM | POLLWRBAND, do_poll(s1));
+  KEXPECT_EQ(POLLOUT | POLLWRNORM | POLLWRBAND, do_poll(s2));
+
+  KTEST_BEGIN("vfs_poll(): data available (AF_UNIX)");
+  KEXPECT_EQ(1, vfs_write(s1, "a", 1));
+  KEXPECT_EQ(POLLOUT | POLLWRNORM | POLLWRBAND, do_poll(s1));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLWRBAND,
+             do_poll(s2));
+
+  KTEST_BEGIN("vfs_poll(): filled buffer, can't send (AF_UNIX)");
+  const int kBigBufSize = 32 * 1024;
+  void* bigbuf = kmalloc(kBigBufSize);
+  int max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+  KEXPECT_EQ(0, do_poll(s1));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLWRBAND,
+             do_poll(s2));
+
+  KEXPECT_EQ(3, vfs_write(s2, "abc", 3));
+  KEXPECT_EQ(POLLIN | POLLRDNORM, do_poll(s1));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLWRBAND,
+             do_poll(s2));
+
+  // Drain the buffer a bit.
+  net_recv(s2, bigbuf, 1000, 0);
+
+  KTEST_BEGIN("vfs_poll(): after shutdown(SHUT_RD) (AF_UNIX)");
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM | POLLWRBAND,
+             do_poll(s1));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLHUP, do_poll(s2));
+
+  KTEST_BEGIN("vfs_poll(): after shutdown(SHUT_WR) (AF_UNIX)");
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_WR));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLHUP, do_poll(s1));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLHUP, do_poll(s2));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("vfs_poll(): after close() (AF_UNIX)");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(3, net_send(s1, "abc", 3, 0));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLHUP, do_poll(s2));
+  KEXPECT_EQ(3, net_recv(s2, bigbuf, 100, 0));
+  // Should get POLLIN even if there's not data.
+  KEXPECT_EQ(POLLIN | POLLRDNORM | POLLHUP, do_poll(s2));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  kfree(bigbuf);
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+}
+
+typedef struct {
+  struct pollfd pfd;
+  int result;
+  kthread_queue_t started_queue;
+  kthread_t thread;
+} async_poll_args_t;
+
+static void* do_async_poll(void* x) {
+  async_poll_args_t* args = (async_poll_args_t*)x;
+  scheduler_wake_all(&args->started_queue);
+  args->result = vfs_poll(&args->pfd, 1, -1);
+  KEXPECT_GE(args->result, 0);
+  return NULL;
+}
+
+static void start_async_poll(async_poll_args_t* args, int fd,
+                             short int events) {
+  args->pfd.fd = fd;
+  args->pfd.events = events;
+  args->pfd.revents = 0;
+  kthread_queue_init(&args->started_queue);
+  int result = kthread_create(&args->thread, &do_async_poll, args);
+  KASSERT(result == 0);
+  scheduler_make_runnable(args->thread);
+  scheduler_wait_on(&args->started_queue);
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  KEXPECT_EQ(false, kthread_is_done(args->thread));
+}
+
+static int finish_async_poll(async_poll_args_t* args) {
+  kthread_join(args->thread);
+  KEXPECT_GE(args->result, 0);
+  return args->result ? args->pfd.revents : 0;
+}
+
+static void sock_unix_poll_blocking_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("vfs_poll(): connect() triggers POLLIN while blocked (AF_UNIX)");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+
+  async_poll_args_t pa;
+  start_async_poll(&pa, listen_sock, POLLIN);
+
+  int s1 = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(s1, 0);
+  KEXPECT_EQ(0, do_connect(s1, kServerPath));
+
+  KEXPECT_EQ(POLLIN, finish_async_poll(&pa));
+
+  // TODO(aoates): spin off a separate process so we can test event masking.
+  // Need another process so we can send a signal to stop the accept() call.
+
+  KTEST_BEGIN("vfs_poll(): data triggers POLLIN while blocked (AF_UNIX)");
+  int s2 = net_accept(listen_sock, NULL, 0);
+  KEXPECT_GE(s2, 0);
+
+  start_async_poll(&pa, s1, POLLIN);
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(POLLIN, finish_async_poll(&pa));
+
+  KTEST_BEGIN(
+      "vfs_poll(): free buffer space triggers POLLOUT while blocked (AF_UNIX)");
+  const int kBigBufSize = 32 * 1024;
+  void* bigbuf = kmalloc(kBigBufSize);
+  int max_send_buf = net_send(s2, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+
+  start_async_poll(&pa, s2, POLLOUT);
+  KEXPECT_EQ(3, net_recv(s1, bigbuf, 3, 0));
+  KEXPECT_EQ(POLLOUT, finish_async_poll(&pa));
+
+  KTEST_BEGIN(
+      "vfs_poll(): shutdown(WR) triggers POLLIN on other socket (AF_UNIX)");
+  KEXPECT_GE(net_recv(s1, bigbuf, kBigBufSize, 0), 0);  // Drain the buffer.
+  start_async_poll(&pa, s1, POLLIN);
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_WR));
+  KEXPECT_EQ(POLLIN, finish_async_poll(&pa));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN(
+      "vfs_poll(): shutdown(WR) triggers POLLHUP on same socket (AF_UNIX)");
+  make_connected_pair(listen_sock, &s1, &s2);
+  start_async_poll(&pa, s1, POLLIN);
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_WR));
+  KEXPECT_EQ(POLLHUP, finish_async_poll(&pa));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN(
+      "vfs_poll(): shutdown(RD) triggers POLLIN on same socket (AF_UNIX)");
+  make_connected_pair(listen_sock, &s1, &s2);
+  start_async_poll(&pa, s1, POLLIN);
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RD));
+  KEXPECT_EQ(POLLIN, finish_async_poll(&pa));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  // TODO(aoates): I don't think this is right.
+  KTEST_BEGIN(
+      "vfs_poll(): shutdown(RD) triggers POLLHUP on other socket (AF_UNIX)");
+  make_connected_pair(listen_sock, &s1, &s2);
+  start_async_poll(&pa, s1, POLLIN);
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RD));
+  KEXPECT_EQ(POLLHUP, finish_async_poll(&pa));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+  KTEST_BEGIN("vfs_poll(): close() triggers POLLHUP on other socket (AF_UNIX)");
+  make_connected_pair(listen_sock, &s1, &s2);
+  start_async_poll(&pa, s1, POLLIN);
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(POLLIN | POLLHUP, finish_async_poll(&pa));
+  KEXPECT_EQ(0, vfs_close(s1));
+
+  kfree(bigbuf);
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -1698,6 +1914,8 @@ void socket_unix_test(void) {
   shutdown_test();
   double_shutdown_test();
   shutdown_error_test();
+  sock_unix_poll_test();
+  sock_unix_poll_blocking_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

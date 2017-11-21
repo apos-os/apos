@@ -18,6 +18,7 @@
 
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/posix_types.h"
+#include "vfs/poll.h"
 
 struct socket_ops;
 typedef struct socket_ops socket_ops_t;
@@ -68,6 +69,9 @@ struct socket_ops {
   ssize_t (*sendto)(socket_t* socket, int fflags, const void* message,
                     size_t length, int sflags, const struct sockaddr* dest_addr,
                     socklen_t dest_len);
+
+  // Called from poll() to handle polls of sockets.
+  int (*poll)(socket_t* socket, short event_mask, poll_state_t* poll);
 };
 
 // Creates a new unbound socket, per the POSIX socket() function.
