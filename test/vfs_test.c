@@ -1620,6 +1620,15 @@ static void mksocket_test(void) {
   KEXPECT_EQ(1, stat.st_nlink);
   VFS_PUT_AND_CLEAR(vnode);
 
+  KTEST_BEGIN("vfs_fstat(): on socket file");
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  kmemset(&stat, 0, sizeof(stat));
+  KEXPECT_EQ(0, vfs_fstat(sock, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(0, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_close(sock));
+
   KTEST_BEGIN("vfs_open(): fails on socket file");
   KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_RDONLY));
   KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_WRONLY));
