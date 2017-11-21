@@ -135,8 +135,10 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   KASSERT_DBG(kthread_queue_empty(&socket->accept_wait_queue));
   KASSERT_DBG(kthread_queue_empty(&socket->read_wait_queue));
   KASSERT_DBG(kthread_queue_empty(&socket->write_wait_queue));
-  // TODO(aoates): consider scenario where the socket/fd is closed while a
-  // poll() is outstanding on it.
+
+  // Our socket is about to disappear.  Tell any pending poll()s as much.
+  poll_trigger_event(&socket->poll_event, POLLNVAL);
+  KASSERT(list_empty(&socket->poll_event.refs));
 }
 
 static int sock_unix_shutdown(socket_t* socket_base, int how) {

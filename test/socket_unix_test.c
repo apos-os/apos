@@ -1776,7 +1776,8 @@ static void sock_unix_poll_test(void) {
 }
 
 typedef struct {
-  struct pollfd pfd;
+  struct pollfd pfd[2];
+  int nfds;
   int result;
   kthread_queue_t started_queue;
   kthread_t thread;
@@ -1785,16 +1786,12 @@ typedef struct {
 static void* do_async_poll(void* x) {
   async_poll_args_t* args = (async_poll_args_t*)x;
   scheduler_wake_all(&args->started_queue);
-  args->result = vfs_poll(&args->pfd, 1, -1);
+  args->result = vfs_poll(&args->pfd[0], args->nfds, -1);
   KEXPECT_GE(args->result, 0);
   return NULL;
 }
 
-static void start_async_poll(async_poll_args_t* args, int fd,
-                             short int events) {
-  args->pfd.fd = fd;
-  args->pfd.events = events;
-  args->pfd.revents = 0;
+static void start_async_poll_internal(async_poll_args_t* args) {
   kthread_queue_init(&args->started_queue);
   int result = kthread_create(&args->thread, &do_async_poll, args);
   KASSERT(result == 0);
@@ -1804,10 +1801,28 @@ static void start_async_poll(async_poll_args_t* args, int fd,
   KEXPECT_EQ(false, kthread_is_done(args->thread));
 }
 
+static void start_async_poll(async_poll_args_t* args, int fd,
+                             short int events) {
+  args->pfd[0].fd = fd;
+  args->pfd[0].events = events;
+  args->nfds = 1;
+  start_async_poll_internal(args);
+}
+
+static void start_async_poll2(async_poll_args_t* args, int fd1, int fd2,
+                              short int events) {
+  args->pfd[0].fd = fd1;
+  args->pfd[0].events = events;
+  args->pfd[1].fd = fd2;
+  args->pfd[1].events = events;
+  args->nfds = 2;
+  start_async_poll_internal(args);
+}
+
 static int finish_async_poll(async_poll_args_t* args) {
   kthread_join(args->thread);
   KEXPECT_GE(args->result, 0);
-  return args->result ? args->pfd.revents : 0;
+  return args->result ? args->pfd[0].revents : 0;
 }
 
 static void sock_unix_poll_blocking_test(void) {
@@ -1896,6 +1911,36 @@ static void sock_unix_poll_blocking_test(void) {
   KEXPECT_EQ(0, vfs_close(listen_sock));
 }
 
+// Test what happens when we close() a socket while there's an outstanding poll
+// on it.
+static void sock_unix_close_during_poll_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("vfs_poll(): close socket while poll is pending");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+
+  int s1, s2;
+  make_connected_pair(listen_sock, &s1, &s2);
+
+  // Do an async poll with 2 fds.  The listen FD is the one we'll close.  The
+  // other fd (s1) is what we'll use to actually wake up the poll (not strictly
+  // necessary, but makes the error case clearer).
+  async_poll_args_t pa;
+  start_async_poll2(&pa, listen_sock, s1, POLLIN);
+
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+  KEXPECT_EQ(2, net_send(s2, "ab", 2, 0));
+
+  kthread_join(pa.thread);
+  KEXPECT_EQ(2, pa.result);
+  KEXPECT_EQ(POLLNVAL, pa.pfd[0].revents);
+  KEXPECT_EQ(POLLIN, pa.pfd[1].revents);
+
+  vfs_close(s1);
+  vfs_close(s2);
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -1916,6 +1961,7 @@ void socket_unix_test(void) {
   shutdown_error_test();
   sock_unix_poll_test();
   sock_unix_poll_blocking_test();
+  sock_unix_close_during_poll_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
