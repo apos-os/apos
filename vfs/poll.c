@@ -88,9 +88,10 @@ void poll_cancel(poll_state_t* poll) {
 // If state is non-NULL, and there are no pending events, sets up a delayed
 // trigger on the given fd.
 static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
+  if (fd < 0) return 0;
   file_t* file = NULL;
   int result = lookup_fd(fd, &file);
-  if (result == -EBADF) return 0;
+  if (result == -EBADF) return POLLNVAL;
 
   switch (file->vnode->type) {
     case VNODE_REGULAR:

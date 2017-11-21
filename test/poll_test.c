@@ -468,7 +468,7 @@ static void multi_fd_test(chardev_args_t* args) {
 
 static void weird_fd_test(chardev_args_t* args) {
   struct pollfd pfds[5];
-  KTEST_BEGIN("poll(): negative and too-high fd test");
+  KTEST_BEGIN("poll(): negative fds test");
   for (int i= 0; i < 3; ++i) {
     set_cd_events(args, i, 0);
     pfds[i].fd = args->fd[i];
@@ -477,7 +477,7 @@ static void weird_fd_test(chardev_args_t* args) {
   }
 
   pfds[0].fd = -5;
-  pfds[1].fd = 200;
+  pfds[1].fd = -200;
 
   trigger_fake_dev(&args->fake_devs[2], POLLOUT, 30);
   apos_ms_t start = get_time_ms();
@@ -489,6 +489,23 @@ static void weird_fd_test(chardev_args_t* args) {
   KEXPECT_GE(end - start, 20);
   KEXPECT_LE(end - start, 40);
 
+  KEXPECT_EQ(0, vfs_poll(pfds, 2, 10));  // Should time out.
+
+  KTEST_BEGIN("poll(): too-high fd test");
+  for (int i= 0; i < 3; ++i) {
+    set_cd_events(args, i, 0);
+    pfds[i].fd = args->fd[i];
+    pfds[i].events = POLLIN | POLLOUT;
+    pfds[i].revents = 123;
+  }
+
+  pfds[0].fd = -5;
+  pfds[1].fd = 200;
+
+  KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(POLLNVAL, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
 
   KTEST_BEGIN("poll(): not-open fd test");
   for (int i= 0; i < 3; ++i) {
@@ -501,15 +518,10 @@ static void weird_fd_test(chardev_args_t* args) {
   pfds[1].fd = vfs_dup(args->fd[1]);
   vfs_close(pfds[1].fd);
 
-  trigger_fake_dev(&args->fake_devs[2], POLLOUT, 30);
-  start = get_time_ms();
   KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
-  end = get_time_ms();
   KEXPECT_EQ(0, pfds[0].revents);
-  KEXPECT_EQ(0, pfds[1].revents);
-  KEXPECT_EQ(POLLOUT, pfds[2].revents);
-  KEXPECT_GE(end - start, 20);
-  KEXPECT_LE(end - start, 40);
+  KEXPECT_EQ(POLLNVAL, pfds[1].revents);
+  KEXPECT_EQ(0, pfds[2].revents);
 
 
   KTEST_BEGIN("poll(): duplicate fd test");
