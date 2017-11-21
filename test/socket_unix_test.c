@@ -1179,11 +1179,19 @@ static void send_recv_test(void) {
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(s2));
 
+  KTEST_BEGIN("sockets (AF_UNIX): vfs_read() and vfs_write()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(5, vfs_write(s1, "abcde", 5));
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(5, vfs_read(s2, buf, 50));
+  KEXPECT_STREQ("abcde", buf);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
   // TODO(aoates): things to test for basic r/w:
   //  - shutdown(RD) when socket has data in buffer
   //  - duplicate close tests with shutdown
   //  - recv/send on different types of unconnected sockets
-  //  - read() and write()
   //  - send/recv after shutdown on _same_ socket
 
   KEXPECT_EQ(0, vfs_unlink(kServerPath));

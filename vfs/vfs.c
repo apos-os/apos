@@ -1120,7 +1120,8 @@ int vfs_read(int fd, void* buf, size_t count) {
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
              file->vnode->type != VNODE_BLOCKDEV &&
-             file->vnode->type != VNODE_FIFO) {
+             file->vnode->type != VNODE_FIFO &&
+             file->vnode->type != VNODE_SOCKET) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
@@ -1131,6 +1132,10 @@ int vfs_read(int fd, void* buf, size_t count) {
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_read(file->vnode->fifo, buf, count,
                        !(file->flags & VFS_O_NONBLOCK));
+  } else if (file->vnode->type == VNODE_SOCKET) {
+    KASSERT(file->vnode->socket != NULL);
+    result = file->vnode->socket->s_ops->recvfrom(file->vnode->socket, buf,
+                                                  count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
                                  buf, count, file->flags);
@@ -1161,7 +1166,8 @@ int vfs_write(int fd, const void* buf, size_t count) {
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
              file->vnode->type != VNODE_BLOCKDEV &&
-             file->vnode->type != VNODE_FIFO) {
+             file->vnode->type != VNODE_FIFO &&
+             file->vnode->type != VNODE_SOCKET) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
@@ -1172,6 +1178,10 @@ int vfs_write(int fd, const void* buf, size_t count) {
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_write(file->vnode->fifo, buf, count,
                         !(file->flags & VFS_O_NONBLOCK));
+  } else if (file->vnode->type == VNODE_SOCKET) {
+    KASSERT(file->vnode->socket != NULL);
+    result = file->vnode->socket->s_ops->sendto(file->vnode->socket, buf, count,
+                                                0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);
