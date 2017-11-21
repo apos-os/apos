@@ -995,17 +995,25 @@ typedef struct {
   int result;
 } async_args_t;
 
-static void* recv_thread(void* x) {
+static void recv_proc(void* x) {
   async_args_t* args = (async_args_t*)x;
   args->started = true;
   args->result = net_recv(args->sock, args->buf, args->len, 0);
+}
+
+static void* recv_thread(void* x) {
+  recv_proc(x);
   return NULL;
 }
 
-static void* send_thread(void* x) {
+static void send_proc(void* x) {
   async_args_t* args = (async_args_t*)x;
   args->started = true;
   args->result = net_send(args->sock, args->buf, args->len, 0);
+}
+
+static void* send_thread(void* x) {
+  send_proc(x);
   return NULL;
 }
 
@@ -1017,6 +1025,15 @@ static kthread_t start_async(void* (*func)(void*), async_args_t* args) {
   scheduler_make_runnable(thread);
   while (!args->started) scheduler_yield();
   return thread;
+}
+
+static pid_t start_async_proc(void (*func)(void*), async_args_t* args) {
+  args->result = -100;
+  args->started = false;
+  pid_t child_pid = proc_fork(func, args);
+  KEXPECT_GE(child_pid, 0);
+  while (!args->started) scheduler_yield();
+  return child_pid;
 }
 
 void make_connected_pair(int listen, int* s1, int* s2) {
@@ -1140,12 +1157,33 @@ static void send_recv_test(void) {
   proc_suppress_signal(proc_current(), SIGPIPE);
   vfs_close(s1);
 
+  KTEST_BEGIN("sockets (AF_UNIX): signal during blocking recv()");
+  make_connected_pair(listen_sock, &s1, &s2);
+  async_args.sock = s1;
+  async_args.buf = buf;
+  async_args.len = 100;
+  kmemset(buf, 0, 100);
+  // For this one, we use fork for consistent signal delivery.
+  pid_t child_pid = start_async_proc(&recv_proc, &async_args);
+  proc_force_signal(proc_get(child_pid), SIGUSR1);
+  KEXPECT_EQ(child_pid, proc_wait(0x0));
+  KEXPECT_GE(async_args.result, -EINTR);
+
+  KTEST_BEGIN("sockets (AF_UNIX): signal during blocking send()");
+  max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+  child_pid = start_async_proc(&send_proc, &async_args);
+  proc_force_signal(proc_get(child_pid), SIGUSR1);
+  KEXPECT_EQ(child_pid, proc_wait(0x0));
+  KEXPECT_GE(async_args.result, -EINTR);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
   // TODO(aoates): things to test for basic r/w:
   //  - shutdown(RD) when socket has data in buffer
   //  - duplicate close tests with shutdown
   //  - recv/send on different types of unconnected sockets
   //  - read() and write()
-  //  - recv/send interrupted by a signal.
   //  - send/recv after shutdown on _same_ socket
 
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
