@@ -45,6 +45,11 @@ void fifo_cleanup(apos_fifo_t* fifo) {
   KASSERT(fifo->num_writers == 0);
   KASSERT(kthread_queue_empty(&fifo->read_queue));
   KASSERT(kthread_queue_empty(&fifo->write_queue));
+  // This isn't strictly necessary---for us to be cleaning up this fifo, we must
+  // have previously closed the last reference, meaning we'd generate a POLLERR
+  // when num_readers goes to zero.  But generating a POLLNVAL here is correct,
+  // if redundant.
+  poll_trigger_event(&fifo->poll_event, POLLNVAL);
   KASSERT(list_empty(&fifo->poll_event.refs));
 }
 
