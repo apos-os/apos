@@ -53,6 +53,14 @@ typedef struct socket_unix {
 
   // Link on the parent/server socket's queue, if an unaccepted connection.
   list_link_t connecting_link;
+
+  // Data to be read.
+  void* readbuf_raw;
+  circbuf_t readbuf;
+  bool read_fin;  // Has the other side shutdown or closed?
+  // TODO(aoates): combine this with accept_wait_queue?
+  kthread_queue_t read_wait_queue;  // Is there data in _our_ buffer?
+  kthread_queue_t write_wait_queue;  // Is there room in _their_ buffer?
 } socket_unix_t;
 
 int sock_unix_create(int type, int protocol, socket_t** out);

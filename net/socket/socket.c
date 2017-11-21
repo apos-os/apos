@@ -157,3 +157,47 @@ int net_accept_queue_length(int socket) {
   file_unref(file);
   return result;
 }
+
+ssize_t net_recv(int socket, void* buf, size_t len, int flags) {
+  return net_recvfrom(socket, buf, len, flags, NULL, 0);
+}
+
+ssize_t net_recvfrom(int socket, void* buf, size_t len, int flags,
+                     struct sockaddr* address, socklen_t* address_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file_ref(file);
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->recvfrom(file->vnode->socket, buf, len,
+                                                flags, address, address_len);
+  file_unref(file);
+  return result;
+}
+
+ssize_t net_send(int socket, const void* buf, size_t len, int flags) {
+  return net_sendto(socket, buf, len, flags, NULL, 0);
+}
+
+ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
+                   const struct sockaddr* dest_addr, socklen_t dest_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file_ref(file);
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->sendto(file->vnode->socket, buf, len,
+                                              flags, dest_addr, dest_len);
+  file_unref(file);
+  return result;
+}

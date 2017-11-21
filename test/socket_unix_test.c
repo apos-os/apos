@@ -32,6 +32,11 @@
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
 
+static bool has_sigpipe(void) {
+  const sigset_t sigset = proc_pending_signals(proc_current());
+  return ksigismember(&sigset, SIGPIPE);
+}
+
 static void create_test(void) {
   KTEST_BEGIN("net_socket_create(AF_UNIX): basic creation");
   socket_t* sock = NULL;
@@ -982,6 +987,175 @@ static void accept_blocking_test(void) {
   // twin fd.
 }
 
+typedef struct {
+  int sock;
+  void* buf;
+  size_t len;
+  bool started;
+  int result;
+} async_args_t;
+
+static void* recv_thread(void* x) {
+  async_args_t* args = (async_args_t*)x;
+  args->started = true;
+  args->result = net_recv(args->sock, args->buf, args->len, 0);
+  return NULL;
+}
+
+static void* send_thread(void* x) {
+  async_args_t* args = (async_args_t*)x;
+  args->started = true;
+  args->result = net_send(args->sock, args->buf, args->len, 0);
+  return NULL;
+}
+
+static kthread_t start_async(void* (*func)(void*), async_args_t* args) {
+  kthread_t thread;
+  args->result = -100;
+  args->started = false;
+  KEXPECT_EQ(0, kthread_create(&thread, func, args));
+  scheduler_make_runnable(thread);
+  while (!args->started) scheduler_yield();
+  return thread;
+}
+
+void make_connected_pair(int listen, int* s1, int* s2) {
+  *s1 = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(*s1, 0);
+  KEXPECT_EQ(0, do_connect(*s1, "_server_sock"));
+  *s2 = do_accept(listen, NULL);
+  KEXPECT_GE(*s2, 0);
+}
+
+static void send_recv_test(void) {
+  const char kServerPath[] = "_server_sock";
+  KTEST_BEGIN("sockets (AF_UNIX): basic send/recv");
+  int listen_sock = create_listening_socket(kServerPath, 5);
+  KEXPECT_GE(listen_sock, 0);
+  int s1, s2;
+  make_connected_pair(listen_sock, &s1, &s2);
+
+  KEXPECT_EQ(2, net_send(s1, "ab", 2, 0));
+  KEXPECT_EQ(3, net_send(s1, "cde", 3, 0));
+
+  char buf[100];
+  KEXPECT_EQ(3, net_recv(s2, buf, 3, 0));
+  KEXPECT_EQ(2, net_recv(s2, buf + 3, 100, 0));
+  buf[5] = '\0';
+  KEXPECT_STREQ("abcde", buf);
+
+  // Try the other direction
+  KEXPECT_EQ(2, net_send(s2, "ab", 2, 0));
+  KEXPECT_EQ(3, net_send(s2, "cde", 3, 0));
+
+  kmemset(buf, 0, 100);
+  KEXPECT_EQ(3, net_recv(s1, buf, 3, 0));
+  KEXPECT_EQ(2, net_recv(s1, buf + 3, 100, 0));
+  KEXPECT_STREQ("abcde", buf);
+
+  KTEST_BEGIN("sockets (AF_UNIX): recv() blocks until data");
+  async_args_t async_args;
+  async_args.sock = s1;
+  async_args.buf = buf;
+  async_args.len = 100;
+  kmemset(buf, 0, 100);
+  kthread_t thread = start_async(&recv_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  kthread_join(thread);
+  KEXPECT_EQ(3, async_args.result);
+  KEXPECT_STREQ("abc", buf);
+
+  KTEST_BEGIN("sockets (AF_UNIX): send() blocks until buffer room");
+  const int kBigBufSize = 32 * 1024;
+  void* bigbuf = kmalloc(kBigBufSize);
+  int max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+
+  async_args.sock = s1;
+  async_args.buf = bigbuf;
+  async_args.len = kBigBufSize;
+  thread = start_async(&send_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(3, net_recv(s2, buf, 3, 0));
+  kthread_join(thread);
+  KEXPECT_EQ(3, async_args.result);
+  // Drain the rest of the buffer.
+  KEXPECT_EQ(max_send_buf, net_recv(s2, bigbuf, kBigBufSize, 0));
+
+  KTEST_BEGIN("sockets (AF_UNIX): close() during blocking recv()");
+  async_args.sock = s1;
+  async_args.buf = buf;
+  async_args.len = 100;
+  kmemset(buf, 0, 100);
+  thread = start_async(&recv_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, vfs_close(s2));
+  kthread_join(thread);
+  KEXPECT_EQ(0, async_args.result);
+  vfs_close(s1);
+
+  KTEST_BEGIN("sockets (AF_UNIX): close() during blocking send()");
+  KEXPECT_EQ(false, has_sigpipe());
+  make_connected_pair(listen_sock, &s1, &s2);
+  max_send_buf = net_send(s1, bigbuf, kBigBufSize, 0);
+  KEXPECT_GE(max_send_buf, 1024);
+  async_args.sock = s1;
+  async_args.buf = bigbuf;
+  async_args.len = kBigBufSize;
+  thread = start_async(&send_thread, &async_args);
+  KEXPECT_EQ(false, kthread_is_done(thread));
+  KEXPECT_EQ(0, vfs_close(s2));
+  kthread_join(thread);
+  KEXPECT_EQ(true, has_sigpipe());
+  KEXPECT_EQ(-EPIPE, async_args.result);
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  vfs_close(s1);
+
+  KTEST_BEGIN("sockets (AF_UNIX): recv() on closed connection");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(3, net_send(s2, "abc", 3, 0));
+  KEXPECT_EQ(0, vfs_close(s2));
+  kmemset(buf, 0, 100);
+  KEXPECT_EQ(3, net_recv(s1, buf, 100, 0));
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  vfs_close(s1);
+
+  // Now try when there's no data on the socket at the start of the call.
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  KEXPECT_EQ(0, net_recv(s1, buf, 100, 0));
+  vfs_close(s1);
+
+  KTEST_BEGIN("sockets (AF_UNIX): send() on closed connection");
+  make_connected_pair(listen_sock, &s1, &s2);
+  KEXPECT_EQ(false, has_sigpipe());
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(-EPIPE, net_send(s1, buf, 100, 0));
+  KEXPECT_EQ(true, has_sigpipe());
+  KEXPECT_EQ(-EPIPE, net_send(s1, buf, 100, 0));
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  vfs_close(s1);
+
+  // TODO(aoates): things to test for basic r/w:
+  //  - shutdown(RD) when socket has data in buffer
+  //  - duplicate close tests with shutdown
+  //  - recv/send on different types of unconnected sockets
+  //  - recvfrmo and sendto do addresses
+  //  - read() and write()
+  //  - bad addresses
+  //  - bad flags
+  //  - recv/send interrupted by a signal.
+  //  - send/recv after shutdown on _same_ socket
+
+  KEXPECT_EQ(0, vfs_unlink(kServerPath));
+  KEXPECT_EQ(0, vfs_close(listen_sock));
+  kfree(bigbuf);
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -993,6 +1167,7 @@ void socket_unix_test(void) {
   connect_test();
   connect_backlog_test();
   accept_blocking_test();
+  send_recv_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

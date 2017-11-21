@@ -14,7 +14,10 @@
 #ifndef APOO_NET_SOCKET_SOCKET_H
 #define APOO_NET_SOCKET_SOCKET_H
 
+#include <stddef.h>
+
 #include "user/include/apos/net/socket/socket.h"
+#include "user/include/apos/posix_types.h"
 
 struct socket_ops;
 typedef struct socket_ops socket_ops_t;
@@ -54,6 +57,15 @@ struct socket_ops {
 
   // Returns the number of sockets queued on a listening socket.
   int (*accept_queue_length)(const socket_t* socket);
+
+  // Receive data from the socket.
+  ssize_t (*recvfrom)(socket_t* socket, void* buffer, size_t length, int flags,
+                      struct sockaddr* address, socklen_t* address_len);
+
+  // Send data on the socket.
+  ssize_t (*sendto)(socket_t* socket, const void* message, size_t length,
+                    int flags, const struct sockaddr* dest_addr,
+                    socklen_t dest_len);
 };
 
 // Creates a new unbound socket, per the POSIX socket() function.
@@ -80,5 +92,15 @@ int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len);
 
 // Returns the number of sockets queued on a listening socket.
 int net_accept_queue_length(int socket);
+
+// Receives data from the given socket.
+ssize_t net_recv(int socket, void* buf, size_t len, int flags);
+ssize_t net_recvfrom(int socket, void* buf, size_t len, int flags,
+                     struct sockaddr* address, socklen_t* address_len);
+
+// Sends data on the given socket.
+ssize_t net_send(int socket, const void* buf, size_t len, int flags);
+ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
+                   const struct sockaddr* dest_addr, socklen_t dest_len);
 
 #endif

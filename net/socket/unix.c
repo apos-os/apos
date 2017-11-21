@@ -18,12 +18,16 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "user/include/apos/errors.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/unix.h"
 #include "vfs/vfs_internal.h"
 
 #define DEFAULT_LISTEN_BACKLOG 10
+
+// TODO(aoates): make this a socket option.
+#define SOCKET_READBUF (16 * 1024)
 
 static const socket_ops_t g_unix_socket_ops;
 
@@ -51,6 +55,10 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->incoming_conns = LIST_INIT;
   kthread_queue_init(&sock->accept_wait_queue);
   sock->connecting_link = LIST_LINK_INIT;
+  sock->readbuf_raw = 0x0;
+  sock->read_fin = false;
+  kthread_queue_init(&sock->read_wait_queue);
+  kthread_queue_init(&sock->write_wait_queue);
   *out = &sock->base;
   return 0;
 }
@@ -71,6 +79,9 @@ static void sock_unix_cleanup(socket_t* socket_base) {
     KASSERT_DBG(socket->state == SUN_CONNECTED);
     KASSERT_DBG(socket->peer->state == SUN_CONNECTED);
     KASSERT_DBG(socket->peer->peer == socket);
+    socket->peer->read_fin = true;
+    scheduler_wake_all(&socket->peer->read_wait_queue);
+    scheduler_wake_all(&socket->peer->write_wait_queue);
     socket->peer->peer = NULL;
     socket->peer = NULL;
   }
@@ -84,9 +95,14 @@ static void sock_unix_cleanup(socket_t* socket_base) {
       kfree(incoming_socket);
     }
   }
+  if (socket->readbuf_raw) {
+    kfree(socket->readbuf_raw);
+  }
   // We are cleaning up the socket, which means that any fds/files pointing to
   // it must have been closed.  So there must be no waiters.
   KASSERT_DBG(kthread_queue_empty(&socket->accept_wait_queue));
+  KASSERT_DBG(kthread_queue_empty(&socket->read_wait_queue));
+  KASSERT_DBG(kthread_queue_empty(&socket->write_wait_queue));
 }
 
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
@@ -254,12 +270,16 @@ static int sock_unix_connect(socket_t* socket_base,
   socket_unix_t* new_socket = (socket_unix_t*)new_socket_base;
   new_socket->state = SUN_CONNECTED;
   new_socket->peer = socket;
+  new_socket->readbuf_raw = kmalloc(SOCKET_READBUF);
+  circbuf_init(&new_socket->readbuf, new_socket->readbuf_raw, SOCKET_READBUF);
   // TODO(aoates): should we set bind_point or the bound name?
 
   list_push(&target_sock->incoming_conns, &new_socket->connecting_link);
   target_sock->listen_backlog--;
   socket->peer = new_socket;
   socket->state = SUN_CONNECTED;
+  socket->readbuf_raw = kmalloc(SOCKET_READBUF);
+  circbuf_init(&socket->readbuf, socket->readbuf_raw, SOCKET_READBUF);
   scheduler_wake_all(&target_sock->accept_wait_queue);
 
   return 0;
@@ -271,6 +291,65 @@ static int sock_unix_accept_queue_length(const socket_t* socket_base) {
   return list_size(&socket->incoming_conns);
 }
 
+ssize_t sock_unix_recvfrom(socket_t* socket_base, void* buffer, size_t length,
+                           int flags, struct sockaddr* address,
+                           socklen_t* address_len) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  if (socket->state != SUN_CONNECTED) {
+    return -ENOTCONN;
+  }
+  KASSERT_DBG(socket->readbuf_raw != 0x0);
+
+  while (socket->readbuf.len == 0 && !socket->read_fin) {
+    // TODO(aoates): handle O_NONBLOCK fds.
+    int result = scheduler_wait_on_interruptable(&socket->read_wait_queue, -1);
+    if (result == SWAIT_INTERRUPTED) {
+      return -EINTR;
+    }
+  }
+
+  if (socket->peer) {
+    scheduler_wake_all(&socket->peer->write_wait_queue);
+  }
+
+  // TODO(aoates): handle address out param
+  // TODO(aoates): handle EWOULDBLOCK.
+  return circbuf_read(&socket->readbuf, buffer, length);
+}
+
+ssize_t sock_unix_sendto(socket_t* socket_base, const void* buffer,
+                         size_t length, int flags,
+                         const struct sockaddr* dest_addr, socklen_t dest_len) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  if (socket->state != SUN_CONNECTED) {
+    return -ENOTCONN;
+  }
+
+  if (socket->peer) KASSERT(socket->peer->readbuf_raw != 0x0);
+  while (socket->peer &&
+         socket->peer->readbuf.buflen - socket->peer->readbuf.len == 0 &&
+         !socket->peer->read_fin) {
+    // TODO(aoates): handle O_NONBLOCK fds.
+    int result = scheduler_wait_on_interruptable(&socket->write_wait_queue, -1);
+    if (result == SWAIT_INTERRUPTED) {
+      return -EINTR;
+    }
+  }
+  if (socket->peer == 0x0 || socket->peer->read_fin) {
+    proc_force_signal(proc_current(), SIGPIPE);
+    return -EPIPE;
+  }
+
+  scheduler_wake_all(&socket->peer->read_wait_queue);
+  // TODO(aoates): handle address out param
+  // TODO(aoates): handle EWOULDBLOCK.
+  return circbuf_write(&socket->peer->readbuf, buffer, length);
+}
+
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
   &sock_unix_bind,
@@ -278,4 +357,6 @@ static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_accept,
   &sock_unix_connect,
   &sock_unix_accept_queue_length,
+  &sock_unix_recvfrom,
+  &sock_unix_sendto,
 };
