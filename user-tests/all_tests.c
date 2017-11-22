@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
   wait_test();
   fs_test();
   misc_syscall_test();
+  socket_test();
 
   ktest_finish_all();
   return 0;
