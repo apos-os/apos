@@ -37,4 +37,9 @@ pid_t getppid_wrapper(void);
 int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
                  int fd, addr_t offset);
 
+// Wrappers for syscalls that pass a R/W buffer with the size of another buffer
+// inside them.  If there are more of these we should consider autogenerating
+// this.
+int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len);
+
 #endif

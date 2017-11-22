@@ -39,3 +39,29 @@ int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
   void* addr = *(void**)addr_inout;
   return do_mmap(addr, length, prot, flags, fd, offset, (void**)addr_inout);
 }
+
+int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
+  // Everything is checked but the 'addr' argument.  Do that now.
+  struct sockaddr* KERNEL_addr = 0x0;
+
+  if (addr_len != NULL) {
+    const int CHECK_addr = syscall_verify_buffer(
+        addr, *addr_len, 1 /* is_write */, 1 /* allow_null */);
+    if (CHECK_addr < 0) return CHECK_addr;
+  } else {
+    // If the length is NULL, ignore the addr buffer.
+    addr = NULL;
+  }
+
+  KERNEL_addr = !addr ? 0x0 : (struct sockaddr*)kmalloc(*addr_len);
+  if (addr && !KERNEL_addr) {
+    return -ENOMEM;
+  }
+
+  const int result = net_accept(socket, KERNEL_addr, addr_len);
+
+  if (addr) kmemcpy(addr, KERNEL_addr, *addr_len);
+  if (KERNEL_addr) kfree((void*)KERNEL_addr);
+
+  return result;
+}

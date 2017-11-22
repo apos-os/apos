@@ -508,9 +508,9 @@ AddSyscall('listen', 80, 'net_listen', 'net/socket/socket.h',
     '<sys/socket.h>', 'int',
     ['int:socket:u', 'int:backlog:u'])
 
-AddSyscall('accept', 81, 'net_accept', 'net/socket/socket.h',
+AddSyscall('accept', 81, 'accept_wrapper', 'net/socket/socket.h',
     '<sys/socket.h>', 'int',
-    ['int:socket:u', 'struct sockaddr*:addr:bw?:*addr_len',
+    ['int:socket:u', 'struct sockaddr*:addr:u',
       'socklen_t*:addr_len:brw?:sizeof(socklen_t)'])
 
 AddSyscall('connect', 82, 'net_connect', 'net/socket/socket.h',

@@ -64,6 +64,40 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(0, close(s2));
   KEXPECT_EQ(0, close(sock));
   KEXPECT_EQ(0, unlink("_socket_bind"));
+
+  KTEST_BEGIN("accept(): bad buffer parameters");
+  sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  int result = accept(sock, NULL, NULL);
+  int e = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EINVAL, e);
+
+  result = accept(sock, (struct sockaddr*)&addr, NULL);
+  e = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EINVAL, e);
+
+  result = accept(sock, NULL, &addr_len);
+  e = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EINVAL, e);
+
+  result = accept(sock, (struct sockaddr*)&addr, (socklen_t*)0x123);
+  e = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EFAULT, e);
+
+  result = accept(sock, (struct sockaddr*)0x123, &addr_len);
+  e = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EFAULT, e);
+
+  result = accept(sock, (struct sockaddr*)0x123, (socklen_t*)0x123);
+  e = errno;
+  KEXPECT_EQ(-1, result);
+  KEXPECT_EQ(EFAULT, e);
+
+  KEXPECT_EQ(0, close(sock));
 }
 
 void socket_test(void) {
