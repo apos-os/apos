@@ -16,6 +16,7 @@
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/limit.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/wait.h"
@@ -746,6 +747,30 @@ static void concurrent_close_poll_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }
 
+static void out_of_resources_test(void) {
+  KTEST_BEGIN("FIFO: out of files in open()");
+  KEXPECT_EQ(0, vfs_mkdir("fifo_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
+
+  vfs_set_force_no_files(true);
+  int result = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  KEXPECT_EQ(-ENFILE, result);
+  vfs_set_force_no_files(false);
+
+  KTEST_BEGIN("FIFO: out of FDs in open()");
+  struct rlimit lim;
+  KEXPECT_EQ(0, proc_getrlimit(RLIMIT_NOFILE, &lim));
+  const struct rlimit orig_lim = lim;
+  lim.rlim_cur = 0;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  result = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
+  KEXPECT_EQ(-EMFILE, result);
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &orig_lim));
+
+  KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
+  KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
+}
+
 void vfs_fifo_test(void) {
   KTEST_SUITE_BEGIN("VFS FIFO test");
   const int initial_cache_size = vfs_cache_size();
@@ -762,6 +787,7 @@ void vfs_fifo_test(void) {
   nonblock_test();
   fifo_poll_test();
   concurrent_close_poll_test();
+  out_of_resources_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

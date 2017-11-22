@@ -16,6 +16,8 @@
 #ifndef APOO_VFS_VFS_TEST_UTIL_H
 #define APOO_VFS_VFS_TEST_UTIL_H
 
+#include <stdbool.h>
+
 // Log the current vnode cache.
 void vfs_log_cache(void);
 
@@ -34,5 +36,9 @@ int vfs_get_vnode_refcount_for_path(const char* path);
 //
 // Should only be used in tests.
 int vfs_get_vnode_for_path(const char* path);
+
+// Force an out-of-files or out-of-fds condition for tests.
+void vfs_set_force_no_files(bool f);
+bool vfs_get_force_no_files(void);
 
 #endif

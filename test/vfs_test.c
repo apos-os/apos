@@ -27,6 +27,7 @@
 #include "memory/memobj.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/limit.h"
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
@@ -3275,8 +3276,31 @@ static void pipe_test(void) {
   KEXPECT_EQ(0, vfs_close(fds[0]));
   KEXPECT_EQ(0, vfs_close(fds[1]));
 
+  KTEST_BEGIN("vfs_pipe(): too many files open");
+  vfs_set_force_no_files(true);
+  fds[0] = 100;
+  fds[1] = 100;
+  KEXPECT_EQ(-ENFILE, vfs_pipe(fds));
+  vfs_set_force_no_files(false);
+
+  KTEST_BEGIN("vfs_pipe(): too many FDs open");
+  struct rlimit lim;
+  KEXPECT_EQ(0, proc_getrlimit(RLIMIT_NOFILE, &lim));
+  const struct rlimit orig_lim = lim;
+
+  // Hit first fd.
+  lim.rlim_cur = 0;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
+
+  // Hit second fd.
+  lim.rlim_cur = 1;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
+
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &orig_lim));
+
   // TODO(aoates): other tests to write:
-  //  - error conditions (running out of fds)
   //  - write or read from unconnected pipe
   //  - fchown, fchmod
 }

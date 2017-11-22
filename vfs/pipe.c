@@ -19,6 +19,7 @@
 #include "vfs/anonfs.h"
 #include "vfs/vfs_internal.h"
 #include "vfs/vnode.h"
+#include "vfs/vfs.h"
 
 int vfs_pipe(int fds[2]) {
   fs_t* const fs = g_fs_table[VFS_FIFO_FS].fs;
@@ -40,6 +41,9 @@ int vfs_pipe(int fds[2]) {
   fds[1] = vfs_open_vnode(fifo_vnode, VFS_O_WRONLY, false);
   if (fds[1] < 0) {
     VFS_PUT_AND_CLEAR(fifo_vnode);
+    if (vfs_close(fds[0])) {
+      klogfm(KL_VFS, DFATAL, "vfs_pipe(): unable to close first fd");
+    }
     return fds[1];
   }
 

@@ -78,6 +78,7 @@ void vfs_fs_init(fs_t* fs) {
 //
 // TODO(aoates): this could be much more efficient.
 static int next_free_file_idx(void) {
+  if (vfs_get_force_no_files()) return -1;
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
     if (g_file_table[i] == 0x0) {
       return i;
@@ -446,18 +447,6 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     }
   }
 
-  // Allocate a new file_t in the global file table.
-  int idx = next_free_file_idx();
-  if (idx < 0) {
-    return -ENFILE;
-  }
-
-  process_t* proc = proc_current();
-  int fd = next_free_fd(proc);
-  if (fd < 0) {
-    return fd;
-  }
-
   if (child->type == VNODE_CHARDEV && major(child->dev) == DEVICE_MAJOR_TTY &&
       !(flags & VFS_O_NOCTTY)) {
     tty_t* tty = tty_get(child->dev);
@@ -474,6 +463,20 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
       session->ctty = minor(child->dev);
       tty->session = sid;
     }
+  }
+
+  // Allocate a new file_t in the global file table.
+  int idx = next_free_file_idx();
+  if (idx < 0) {
+    if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
+    return -ENFILE;
+  }
+
+  process_t* proc = proc_current();
+  int fd = next_free_fd(proc);
+  if (fd < 0) {
+    if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
+    return fd;
   }
 
   KASSERT(g_file_table[idx] == 0x0);
