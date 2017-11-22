@@ -490,3 +490,49 @@ AddSyscall('setrlimit', 76, 'proc_setrlimit', 'proc/limit.h',
     ['int:resource:u',
       'const struct rlimit%(s32)s*:lim:br:sizeof(struct rlimit)'],
     needs_32bit_conv=True)
+
+AddSyscall('socket', 77, 'net_socket', 'net/socket/socket.h',
+    '<sys/socket.h>', 'int',
+    ['int:domain:u', 'int:type:u', 'int:protocol:u'])
+
+AddSyscall('shutdown', 78, 'net_shutdown', 'net/socket/socket.h',
+    '<sys/socket.h>', 'int',
+    ['int:socket:u', 'int:how:u'])
+
+AddSyscall('bind', 79, 'net_bind', 'net/socket/socket.h',
+    '<sys/socket.h>', 'int',
+    ['int:socket:u', 'const struct sockaddr*:addr:br:addr_len',
+      'socklen_t:addr_len:u'])
+
+AddSyscall('listen', 80, 'net_listen', 'net/socket/socket.h',
+    '<sys/socket.h>', 'int',
+    ['int:socket:u', 'int:backlog:u'])
+
+AddSyscall('accept', 81, 'net_accept', 'net/socket/socket.h',
+    '<sys/socket.h>', 'int',
+    ['int:socket:u', 'struct sockaddr*:addr:bw?:*addr_len',
+      'socklen_t*:addr_len:brw?:sizeof(socklen_t)'])
+
+AddSyscall('connect', 82, 'net_connect', 'net/socket/socket.h',
+    '<sys/socket.h>', 'int',
+    ['int:socket:u', 'const struct sockaddr*:addr:br:addr_len',
+     'socklen_t:addr_len:u'])
+
+AddSyscall('recv', 83, 'net_recv', 'net/socket/socket.h',
+    '<sys/socket.h>', 'ssize_t',
+    ['int:socket:u', 'void*:buf:bw:len', 'size_t:len:u', 'int:flags:u'])
+
+AddSyscall('recvfrom', 84, 'net_recvfrom', 'net/socket/socket.h',
+    '<sys/socket.h>', 'ssize_t',
+    ['int:socket:u', 'void*:buf:bw:len', 'size_t:len:u', 'int:flags:u',
+      'struct sockaddr*:address:bw?:*address_len',
+      'socklen_t*:address_len:brw?:sizeof(socklen_t)'])
+
+AddSyscall('send', 85, 'net_send', 'net/socket/socket.h',
+    '<sys/socket.h>', 'ssize_t',
+    ['int:socket:u', 'const void*:buf:br:len', 'size_t:len:u', 'int:flags:u'])
+
+AddSyscall('sendto', 86, 'net_sendto', 'net/socket/socket.h',
+    '<sys/socket.h>', 'ssize_t',
+    ['int:socket:u', 'const void*:buf:br:len', 'size_t:len:u', 'int:flags:u',
+      'const struct sockaddr*:dest_addr:br?:dest_len', 'socklen_t:dest_len:u'])

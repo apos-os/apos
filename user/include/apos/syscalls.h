@@ -93,5 +93,15 @@
 #define SYS_POLL 69
 #define SYS_GETRLIMIT 75
 #define SYS_SETRLIMIT 76
+#define SYS_SOCKET 77
+#define SYS_SHUTDOWN 78
+#define SYS_BIND 79
+#define SYS_LISTEN 80
+#define SYS_ACCEPT 81
+#define SYS_CONNECT 82
+#define SYS_RECV 83
+#define SYS_RECVFROM 84
+#define SYS_SEND 85
+#define SYS_SENDTO 86
 
 #endif
