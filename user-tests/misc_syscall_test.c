@@ -127,6 +127,11 @@ static void rlimit_test(void) {
   KEXPECT_EQ(orig_rl.rlim_max, rl.rlim_max);
 
   KEXPECT_EQ(0, setrlimit(RLIMIT_NOFILE, &orig_rl));
+  // We should be able to open a file now.
+  int fds[2];
+  KEXPECT_EQ(0, pipe(fds));
+  KEXPECT_EQ(0, close(fds[0]));
+  KEXPECT_EQ(0, close(fds[1]));
 
   KTEST_BEGIN("get/setrlimit() bad argument test");
   KEXPECT_EQ(-1, getrlimit(-5, &rl));

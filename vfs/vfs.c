@@ -91,7 +91,7 @@ static int next_free_file_idx(void) {
 static int next_free_fd(process_t* p) {
   int max_fd = PROC_MAX_FDS;
   if (p->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY)
-    max_fd = min(max_fd, (int)p->limits[RLIMIT_NOFILE].rlim_cur);
+    max_fd = min((rlim_t)max_fd, p->limits[RLIMIT_NOFILE].rlim_cur);
   for (int i = 0; i < max_fd; ++i) {
     if (p->fds[i] == PROC_UNUSED_FD) {
       return i;
