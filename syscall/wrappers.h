@@ -41,5 +41,7 @@ int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
 // inside them.  If there are more of these we should consider autogenerating
 // this.
 int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len);
+ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
+                         struct sockaddr* address, socklen_t* address_len);
 
 #endif

@@ -65,3 +65,30 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
 
   return result;
 }
+
+ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
+                         struct sockaddr* address, socklen_t* address_len) {
+  struct sockaddr* KERNEL_address = 0x0;
+
+  if (address_len != NULL) {
+    const int CHECK_address = syscall_verify_buffer(
+        address, *address_len, 1 /* is_write */, 1 /* allow_null */);
+    if (CHECK_address < 0) return CHECK_address;
+  } else {
+    // If the length is NULL, ignore the addr buffer.
+    address = NULL;
+  }
+
+  KERNEL_address = !address ? 0x0 : (struct sockaddr*)kmalloc(*address_len);
+  if (address && !KERNEL_address) {
+    return -ENOMEM;
+  }
+
+  const int result =
+      net_recvfrom(socket, buf, len, flags, KERNEL_address, address_len);
+
+  if (address) kmemcpy(address, KERNEL_address, *address_len);
+  if (KERNEL_address) kfree((void*)KERNEL_address);
+
+  return result;
+}

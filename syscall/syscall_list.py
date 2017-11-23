@@ -522,10 +522,10 @@ AddSyscall('recv', 83, 'net_recv', 'net/socket/socket.h',
     '<sys/socket.h>', 'ssize_t',
     ['int:socket:u', 'void*:buf:bw:len', 'size_t:len:u', 'int:flags:u'])
 
-AddSyscall('recvfrom', 84, 'net_recvfrom', 'net/socket/socket.h',
+AddSyscall('recvfrom', 84, 'recvfrom_wrapper', 'net/socket/socket.h',
     '<sys/socket.h>', 'ssize_t',
     ['int:socket:u', 'void*:buf:bw:len', 'size_t:len:u', 'int:flags:u',
-      'struct sockaddr*:address:bw?:*address_len',
+      'struct sockaddr*:address:u',
       'socklen_t*:address_len:brw?:sizeof(socklen_t)'])
 
 AddSyscall('send', 85, 'net_send', 'net/socket/socket.h',
