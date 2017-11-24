@@ -46,8 +46,10 @@ static short sun_poll_events(const socket_unix_t* socket) {
         events |= POLLIN | POLLRDNORM;
       }
       if (!socket->peer || socket->peer->read_fin) {
-        // TODO(aoates): this isn't quite right---if the other side does a
-        // shutdown(SHUT_RD) we don't want to have POLLHUP on our side.
+        // TODO(aoates): this may not be ideal---if the other side does a
+        // shutdown(SHUT_RD), should we get a POLLHUP on our side?  POLLHUP is
+        // impossible to mask, so we can't poll for readable data in that
+        // scenario.
         events |= POLLHUP;
       } else if (socket->peer->readbuf.len < socket->peer->readbuf.buflen) {
         events |= POLLOUT | POLLWRNORM | POLLWRBAND;
@@ -316,7 +318,7 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
 
   if (target->type != VNODE_SOCKET) {
     VFS_PUT_AND_CLEAR(target);
-    return -ENOTSOCK;  // TODO(aoates): confirm this error is correct.
+    return -ENOTSOCK;
   }
 
   KASSERT_DBG(target->socket == NULL);

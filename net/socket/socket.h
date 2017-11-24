@@ -34,8 +34,8 @@ typedef struct {
 
 // Operations all socket types support.
 struct socket_ops {
-  // Clean up and free any underlying resources on the socket.
-  // TODO(aoates): should this close the socket?
+  // Clean up and free any underlying resources on the socket.  If the socket is
+  // still connected, forcefully closes it.
   void (*cleanup)(socket_t* socket);
 
   // Shutdown the socket in one or both directions.
