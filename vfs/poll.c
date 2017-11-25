@@ -88,9 +88,10 @@ void poll_cancel(poll_state_t* poll) {
 // If state is non-NULL, and there are no pending events, sets up a delayed
 // trigger on the given fd.
 static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
+  if (fd < 0) return 0;
   file_t* file = NULL;
   int result = lookup_fd(fd, &file);
-  if (result == -EBADF) return 0;
+  if (result == -EBADF) return POLLNVAL;
 
   switch (file->vnode->type) {
     case VNODE_REGULAR:
@@ -111,6 +112,10 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     case VNODE_FIFO:
       return fifo_poll(file->vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
 
+    case VNODE_SOCKET:
+      return file->vnode->socket->s_ops->poll(file->vnode->socket,
+                                              event_mask | ALWAYS_EVENTS, poll);
+
     case VNODE_BLOCKDEV: {
       block_dev_t* blockdev = dev_get_block(file->vnode->dev);
       if (!blockdev) return POLLERR;
@@ -120,6 +125,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     case VNODE_SYMLINK:
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:
+    case VNODE_MAX:
       die("invalid or unitialized vnode");
   }
   return 0;

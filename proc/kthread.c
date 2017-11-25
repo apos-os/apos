@@ -159,6 +159,10 @@ void* kthread_join(kthread_t thread_ptr) {
   return retval;
 }
 
+bool kthread_is_done(kthread_t thread) {
+  return thread->state == KTHREAD_DONE;
+}
+
 void kthread_exit(void* x) {
   PUSH_AND_DISABLE_INTERRUPTS();
   // kthread_exit is basically the same as kthread_yield, but we don't put

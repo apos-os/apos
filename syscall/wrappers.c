@@ -39,3 +39,56 @@ int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
   void* addr = *(void**)addr_inout;
   return do_mmap(addr, length, prot, flags, fd, offset, (void**)addr_inout);
 }
+
+int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
+  // Everything is checked but the 'addr' argument.  Do that now.
+  struct sockaddr* KERNEL_addr = 0x0;
+
+  if (addr_len != NULL) {
+    const int CHECK_addr = syscall_verify_buffer(
+        addr, *addr_len, 1 /* is_write */, 1 /* allow_null */);
+    if (CHECK_addr < 0) return CHECK_addr;
+  } else {
+    // If the length is NULL, ignore the addr buffer.
+    addr = NULL;
+  }
+
+  KERNEL_addr = !addr ? 0x0 : (struct sockaddr*)kmalloc(*addr_len);
+  if (addr && !KERNEL_addr) {
+    return -ENOMEM;
+  }
+
+  const int result = net_accept(socket, KERNEL_addr, addr_len);
+
+  if (addr) kmemcpy(addr, KERNEL_addr, *addr_len);
+  if (KERNEL_addr) kfree((void*)KERNEL_addr);
+
+  return result;
+}
+
+ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
+                         struct sockaddr* address, socklen_t* address_len) {
+  struct sockaddr* KERNEL_address = 0x0;
+
+  if (address_len != NULL) {
+    const int CHECK_address = syscall_verify_buffer(
+        address, *address_len, 1 /* is_write */, 1 /* allow_null */);
+    if (CHECK_address < 0) return CHECK_address;
+  } else {
+    // If the length is NULL, ignore the addr buffer.
+    address = NULL;
+  }
+
+  KERNEL_address = !address ? 0x0 : (struct sockaddr*)kmalloc(*address_len);
+  if (address && !KERNEL_address) {
+    return -ENOMEM;
+  }
+
+  const int result =
+      net_recvfrom(socket, buf, len, flags, KERNEL_address, address_len);
+
+  if (address) kmemcpy(address, KERNEL_address, *address_len);
+  if (KERNEL_address) kfree((void*)KERNEL_address);
+
+  return result;
+}

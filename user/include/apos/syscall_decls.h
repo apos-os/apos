@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -90,5 +91,15 @@ int truncate(const char* path, off_t length);
 int poll(struct pollfd* fds, nfds_t nfds, int timeout);
 int getrlimit(int resource, struct rlimit* lim);
 int setrlimit(int resource, const struct rlimit* lim);
+int socket(int domain, int type, int protocol);
+int shutdown(int socket, int how);
+int bind(int socket, const struct sockaddr* addr, socklen_t addr_len);
+int listen(int socket, int backlog);
+int accept(int socket, struct sockaddr* addr, socklen_t* addr_len);
+int connect(int socket, const struct sockaddr* addr, socklen_t addr_len);
+ssize_t recv(int socket, void* buf, size_t len, int flags);
+ssize_t recvfrom(int socket, void* buf, size_t len, int flags, struct sockaddr* address, socklen_t* address_len);
+ssize_t send(int socket, const void* buf, size_t len, int flags);
+ssize_t sendto(int socket, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t dest_len);
 
 #endif

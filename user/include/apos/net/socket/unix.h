@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2017 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_VFS_FSID_H
-#define APOO_VFS_FSID_H
+// Definitions for POSIX's <sys/un.h>
+#ifndef APOO_USER_NET_SOCKET_UNIX_H
+#define APOO_USER_NET_SOCKET_UNIX_H
 
-// A unique ID assigned to each mounted filesystem.  Corresponds to the
-// filesystem's index in the filesystem table.
-typedef int fsid_t;
+#if __APOS_BUILDING_IN_TREE__
+#  include "user/include/apos/net/socket/socket.h"
+#else
+#  include <apos/net/socket/socket.h>
+#endif
 
-// fsid_t corresponding to no mounted filesystem.
-#define VFS_FSID_NONE -1
-
-// The root fsid.
-#define VFS_ROOT_FS 0
-
-// The FIFO anonymous fsid.
-#define VFS_FIFO_FS 1
-
-// The socket anonymous fsid.
-#define VFS_SOCKET_FS 2
+struct sockaddr_un {
+  sa_family_t sun_family;  // Address family.
+  char sun_path[108];      //  Socket pathname.
+};
 
 #endif

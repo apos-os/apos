@@ -22,6 +22,8 @@
 
 #define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
+static bool g_force_no_files = false;
+
 static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
   KASSERT(key == vnode_hash_n(vnode));
@@ -95,4 +97,12 @@ int vfs_get_vnode_for_path(const char* path) {
   const int num = vnode->num;
   VFS_PUT_AND_CLEAR(vnode);
   return num;
+}
+
+void vfs_set_force_no_files(bool f) {
+  g_force_no_files = f;
+}
+
+bool vfs_get_force_no_files() {
+  return g_force_no_files;
 }

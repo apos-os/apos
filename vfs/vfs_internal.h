@@ -140,6 +140,14 @@ int lookup_existing_path(const char* path, lookup_options_t options,
 // |file_out| WITHOUT A REFERENCE, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
 
+// Reference and unreference a file.  You must use these rather than manipulate
+// the refcount directly.
+//
+// If the file's refcount hits zero, the associated resources are closed and
+// freed.
+void file_ref(file_t* f);
+void file_unref(file_t* f);
+
 static inline int is_valid_fd(int fd) {
   return fd >= 0 && fd < PROC_MAX_FDS;
 }
@@ -157,5 +165,9 @@ vnode_t* get_root_for_path_with_parent(const char* path,
 // block is independent of (flags & VFS_O_NONBLOCK), since callers may want to
 // create a non-blocking fd, but not block during opening (e.g. pipes).
 int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
+
+// Creates a socket file or returns an error.  If successful, returns the open
+// node with a reference in |vnode_out|.
+int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out);
 
 #endif

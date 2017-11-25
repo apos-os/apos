@@ -52,7 +52,7 @@ static int list_length(block_t* lst) {
 
 // Returns the size (in bytes) of the list (including data and headers of each
 // element).
-static size_t list_size(block_t* lst) {
+static size_t list_bytesize(block_t* lst) {
   size_t len = 0;
   while (lst) {
     len += sizeof(block_t);
@@ -112,7 +112,7 @@ static void basic_test(void) {
   verify_list(list_root);
   KEXPECT_EQ(2, list_length(list_root));
   KEXPECT_EQ((addr_t)x_block, (addr_t)list_root);
-  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_bytesize(list_root));
   KEXPECT_EQ(100, list_used_size(list_root));
 
   // Allocate some more blocks.
@@ -122,7 +122,7 @@ static void basic_test(void) {
 
   // We should still have only allocated one page.
   verify_list(list_root);
-  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_bytesize(list_root));
   KEXPECT_EQ(100 + 128 + 145 + 160, list_used_size(list_root));
 
   // Allocate a big chunk.
@@ -130,7 +130,7 @@ static void basic_test(void) {
   verify_list(list_root);
 
   // We should have needed another page for that.
-  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_bytesize(list_root));
   KEXPECT_EQ(0xf00 + 100 + 128 + 145 + 160, list_used_size(list_root));
   KEXPECT_EQ(6, list_length(list_root));
 
@@ -138,7 +138,7 @@ static void basic_test(void) {
   kfree(x3);
   verify_list(list_root);
 
-  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_bytesize(list_root));
   KEXPECT_EQ(0xf00 + 100 + 128 + 160, list_used_size(list_root));
   KEXPECT_EQ(6, list_length(list_root));
 
@@ -154,7 +154,7 @@ static void basic_test(void) {
   verify_list(list_root);
 
   // Make sure it's all merged together.
-  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_bytesize(list_root));
   KEXPECT_EQ(0, list_used_size(list_root));
   KEXPECT_EQ(1, list_length(list_root));
 
@@ -269,7 +269,7 @@ static void stress_test(void) {
 
   block_t* list_root = kmalloc_internal_get_block_list();
   KEXPECT_EQ(1, list_length(list_root));
-  KEXPECT_EQ(HEAP_SIZE, list_size(list_root));
+  KEXPECT_EQ(HEAP_SIZE, list_bytesize(list_root));
   KEXPECT_EQ(0, list_used_size(list_root));
 }
 

@@ -27,6 +27,7 @@
 #include "memory/memobj.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/limit.h"
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
@@ -338,6 +339,26 @@ static void mkdir_test(void) {
   EXPECT_VNODE_REFCOUNT(ROOT_VNODE_REFCOUNT, "/");
   EXPECT_VNODE_REFCOUNT(1, "/test1");
   // TODO(aoates): test nested not-a-dir
+
+  KTEST_BEGIN("rmdir(): not a directory (chardev file)");
+  KEXPECT_EQ(0, vfs_mknod("chr_file", VFS_S_IFCHR, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("chr_file"));
+  KEXPECT_EQ(0, vfs_unlink("chr_file"));
+
+  KTEST_BEGIN("rmdir(): not a directory (blockdev file)");
+  KEXPECT_EQ(0, vfs_mknod("blk_file", VFS_S_IFBLK, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("blk_file"));
+  KEXPECT_EQ(0, vfs_unlink("blk_file"));
+
+  KTEST_BEGIN("rmdir(): not a directory (symlink)");
+  KEXPECT_EQ(0, vfs_symlink("/dir1", "dir_link"));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("dir_link"));
+  KEXPECT_EQ(0, vfs_unlink("dir_link"));
+
+  KTEST_BEGIN("rmdir(): not a directory (FIFO)");
+  KEXPECT_EQ(0, vfs_mknod("_rmdir_fifo", VFS_S_IFIFO, makedev(0, 0)));
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir("_rmdir_fifo"));
+  KEXPECT_EQ(0, vfs_unlink("_rmdir_fifo"));
 
   KTEST_BEGIN("rmdir(): root directory");
   KEXPECT_EQ(-EPERM, vfs_rmdir("/"));
@@ -1554,11 +1575,93 @@ static void mknod_test(void) {
   KEXPECT_GE(fd, 0);
   vfs_close(fd);
 
+  KTEST_BEGIN("mknod(): socket file type test");
+  KEXPECT_EQ(-EINVAL, vfs_mknod(kRegFile, VFS_S_IFSOCK, makedev(0, 0)));
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
   // TODO(aoates): test character device functionality.
 
   vfs_unlink(kBlockDevFile);
   vfs_unlink(kCharDevFile);
   vfs_unlink(kRegFile);
+  vfs_rmdir(kDir);
+}
+
+static void mksocket_test(void) {
+  const char kDir[] = "mksocket_test_dir";
+  const char kFile[] = "mksocket_test_dir/sock";
+
+  KEXPECT_EQ(0, vfs_mkdir(kDir, 0));
+
+  KTEST_BEGIN("vfs_mksocket(): invalid file type test");
+  vnode_t* vnode = NULL;
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, VFS_S_IFMT, &vnode));
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, 0xffff, &vnode));
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, VFS_S_IFREG, &vnode));
+  KEXPECT_EQ(-EINVAL, vfs_mksocket(kFile, VFS_S_IFIFO, &vnode));
+  EXPECT_VNODE_REFCOUNT(0, kDir);
+
+  KTEST_BEGIN("vfs_mksocket(): basic test");
+  KEXPECT_EQ(0, vfs_mksocket(kFile, VFS_S_IFSOCK, &vnode));
+  KEXPECT_NE(NULL, vnode);
+  KEXPECT_EQ(VNODE_SOCKET, vnode->type);
+
+  KTEST_BEGIN("vfs_stat(): on socket file");
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat(kFile, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(stat.st_ino, vnode->num);
+  KEXPECT_EQ(1, stat.st_nlink);
+
+  KTEST_BEGIN("vfs_lstat(): on socket file");
+  kmemset(&stat, 0, sizeof(stat));
+  KEXPECT_EQ(0, vfs_lstat(kFile, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(stat.st_ino, vnode->num);
+  KEXPECT_EQ(1, stat.st_nlink);
+  VFS_PUT_AND_CLEAR(vnode);
+
+  KTEST_BEGIN("vfs_fstat(): on socket file");
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  kmemset(&stat, 0, sizeof(stat));
+  KEXPECT_EQ(0, vfs_fstat(sock, &stat));
+  KEXPECT_EQ(1, VFS_S_ISSOCK(stat.st_mode));
+  KEXPECT_EQ(0, stat.st_nlink);
+  KEXPECT_EQ(0, vfs_close(sock));
+
+  KTEST_BEGIN("vfs_open(): fails on socket file");
+  KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_RDONLY));
+  KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_WRONLY));
+  KEXPECT_EQ(-EOPNOTSUPP, vfs_open(kFile, VFS_O_RDWR));
+
+  KTEST_BEGIN("vfs_rmdir(): fails on socket file");
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir(kFile));
+
+  KTEST_BEGIN("vfs_mkdir(): fails over socket file");
+  KEXPECT_EQ(-EEXIST, vfs_mkdir(kFile, VFS_S_IRUSR));
+
+  KTEST_BEGIN("vfs_mknod(): fails over socket file");
+  KEXPECT_EQ(-EEXIST, vfs_mknod(kFile, VFS_S_IFIFO, 0));
+
+  KTEST_BEGIN("vfs_rmdir(): fails on socket file");
+  KEXPECT_EQ(-ENOTDIR, vfs_rmdir(kFile));
+
+  KTEST_BEGIN("vfs_chdir(): fails on socket file");
+  KEXPECT_EQ(-ENOTDIR, vfs_chdir(kFile));
+
+  KTEST_BEGIN("vfs_readlink(): fails on socket file");
+  char buf[100];
+  KEXPECT_EQ(-EINVAL, vfs_readlink(kFile, buf, 100));
+
+  KTEST_BEGIN("vfs_truncate(): fails on socket file");
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kFile, 0));
+  KEXPECT_EQ(-EINVAL, vfs_truncate(kFile, 100));
+
+  // TODO(aoates): test other path-taking syscalls: vfs_link, vfs_rename,
+  // vfs_chown, vfs_lchown, vfs_chmod, vfs_symlink.
+
+  KEXPECT_EQ(0, vfs_unlink(kFile));
   vfs_rmdir(kDir);
 }
 
@@ -3173,8 +3276,31 @@ static void pipe_test(void) {
   KEXPECT_EQ(0, vfs_close(fds[0]));
   KEXPECT_EQ(0, vfs_close(fds[1]));
 
+  KTEST_BEGIN("vfs_pipe(): too many files open");
+  vfs_set_force_no_files(true);
+  fds[0] = 100;
+  fds[1] = 100;
+  KEXPECT_EQ(-ENFILE, vfs_pipe(fds));
+  vfs_set_force_no_files(false);
+
+  KTEST_BEGIN("vfs_pipe(): too many FDs open");
+  struct rlimit lim;
+  KEXPECT_EQ(0, proc_getrlimit(RLIMIT_NOFILE, &lim));
+  const struct rlimit orig_lim = lim;
+
+  // Hit first fd.
+  lim.rlim_cur = 0;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
+
+  // Hit second fd.
+  lim.rlim_cur = 1;
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
+
+  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &orig_lim));
+
   // TODO(aoates): other tests to write:
-  //  - error conditions (running out of fds)
   //  - write or read from unconnected pipe
   //  - fchown, fchmod
 }
@@ -5399,6 +5525,40 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test"));
 }
 
+static void* fd_concurrent_close_test_helper(void* arg) {
+  int fd = (intptr_t)arg;
+  char buf[10];
+  int result = vfs_read(fd, buf, 10);
+  return (void*)(intptr_t) result;
+}
+
+// A test for closing a file descriptor in one thread concurrently with a
+// blocking operation in another thread.  Ideally we'd have such a test for
+// every blocking operation, but for now just use a pipe as an examplar.
+//
+// This is undefined behavior from the userspace perspective, but we need to
+// ensure we clean up properly.
+// TODO(aoates): write a userpsace tests for this when we support multiple
+// threads per process in userspace.
+static void fd_concurrent_close_test(void) {
+  KTEST_BEGIN("vfs: closing fd during blocking pipe read");
+
+  int fds[2];
+  KEXPECT_EQ(0, vfs_pipe(fds));
+
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &fd_concurrent_close_test_helper,
+                               (void*)(intptr_t) fds[0]));
+  scheduler_make_runnable(thread);
+
+  // Ensure the thread gets into the read() call.
+  for (int i = 0; i < 10; i++) scheduler_yield();
+  KEXPECT_EQ(0, vfs_close(fds[0]));
+  for (int i = 0; i < 10; i++) scheduler_yield();
+  KEXPECT_EQ(0, vfs_close(fds[1]));
+  KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -5437,6 +5597,7 @@ void vfs_test(void) {
   memobj_test();
 
   mknod_test();
+  mksocket_test();
   block_device_test();
 
   fs_dev_test();
@@ -5476,6 +5637,8 @@ void vfs_test(void) {
   proc_umask(orig_umask);
 
   umask_test();
+
+  fd_concurrent_close_test();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_disable_blocking(vfs_get_root_fs());

@@ -1,4 +1,4 @@
-# Copyright 2014 Andrew Oates.  All Rights Reserved.
+# Copyright 2017 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# A set of tests that run in userspace.
+Import('env AposAddSources')
 
-Import('user_env')
+srcs = [
+    'socket.c',
+    'unix.c',
+]
 
-ktest_lib = user_env.StaticLibrary('ktest', ['ktest.c'])
-user_env.Program('all_tests',
-        ['all_tests.c', 'syscall_errno.c', 'exit_status.c',
-          'basic_signal_test.c', 'execve_test.c', 'fs_test.c',
-          'misc_syscall_test.c', 'socket_test.c', 'stop_test.c', 'wait_test.c'],
-        LIBS=[ktest_lib])
+subdirs = []
+
+objects = AposAddSources(env, srcs, subdirs)
+Return('objects')

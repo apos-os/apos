@@ -78,6 +78,7 @@ void vfs_fs_init(fs_t* fs) {
 //
 // TODO(aoates): this could be much more efficient.
 static int next_free_file_idx(void) {
+  if (vfs_get_force_no_files()) return -1;
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
     if (g_file_table[i] == 0x0) {
       return i;
@@ -90,7 +91,7 @@ static int next_free_file_idx(void) {
 static int next_free_fd(process_t* p) {
   int max_fd = PROC_MAX_FDS;
   if (p->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY)
-    max_fd = min(max_fd, (int)p->limits[RLIMIT_NOFILE].rlim_cur);
+    max_fd = min((rlim_t)max_fd, p->limits[RLIMIT_NOFILE].rlim_cur);
   for (int i = 0; i < max_fd; ++i) {
     if (p->fds[i] == PROC_UNUSED_FD) {
       return i;
@@ -121,6 +122,19 @@ static void cleanup_fifo_vnode(vnode_t* vnode) {
   fifo_cleanup(vnode->fifo);
   kfree(vnode->fifo);
   vnode->fifo = NULL;
+}
+
+static void cleanup_socket_vnode(vnode_t* vnode) {
+  KASSERT_DBG(vnode->type == VNODE_SOCKET);
+  KASSERT_DBG(vnode->refcount == 0);
+
+  if (vnode->socket) {
+    net_socket_destroy(vnode->socket);
+    vnode->socket = NULL;
+  }
+  // If a socket is bound to this address, it should have a reference on the
+  // vnode (and therefore we shouldn't be cleaning it up).
+  KASSERT(vnode->bound_socket == NULL);
 }
 
 void vfs_init() {
@@ -160,6 +174,12 @@ void vfs_init() {
   g_fs_table[VFS_FIFO_FS].fs = anonfs_create(VNODE_FIFO);
   g_fs_table[VFS_FIFO_FS].fs->id = VFS_FIFO_FS;
 
+  // Create the anonymous socket filesystem.
+  g_fs_table[VFS_SOCKET_FS].mount_point = NULL;
+  g_fs_table[VFS_SOCKET_FS].mounted_root = NULL;
+  g_fs_table[VFS_SOCKET_FS].fs = anonfs_create(VNODE_SOCKET);
+  g_fs_table[VFS_SOCKET_FS].fs->id = VFS_SOCKET_FS;
+
   htbl_init(&g_vnode_cache, VNODE_CACHE_SIZE);
 
   for (int i = 0; i < VFS_MAX_FILES; ++i) {
@@ -189,7 +209,7 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     // Increment the refcount, then lock the mutex.  This ensures that the node
     // is initialized (since the thread creating it locks the mutex *before*
     // putting it in the table, and doesn't unlock it until it's initialized).
-    vnode->refcount++;
+    vfs_ref(vnode);
     if (vnode->type == VNODE_UNINITIALIZED) {
       // TODO(aoates): use a semaphore for this.
       kmutex_lock(&vnode->mutex);
@@ -233,6 +253,8 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
 
     if (vnode->type == VNODE_FIFO)
       init_fifo_vnode(vnode);
+    vnode->socket = NULL;
+    vnode->bound_socket = NULL;
 
     kmutex_unlock(&vnode->mutex);
     return vnode;
@@ -254,6 +276,7 @@ void vfs_put(vnode_t* vnode) {
     KASSERT(vnode->memobj.refcount == 0);
     KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
+    if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
 
     // Only put the node back into the fs if we were able to fully initialize
     // it.
@@ -371,11 +394,40 @@ static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
   fifo_close(vnode->fifo, fifo_mode);
 }
 
+// TODO(aoates): move these to vfs_internal.c (requires moving some helpers).
+void file_ref(file_t* file) {
+  KASSERT(file->refcount >= 0);
+  KASSERT(file->index >= 0);
+  KASSERT(file->index < VFS_MAX_FILES);
+  KASSERT(g_file_table[file->index] == file);
+  file->refcount++;
+}
+
+void file_unref(file_t* file) {
+  KASSERT(file->refcount >= 1);
+  KASSERT(file->index >= 0);
+  KASSERT(file->index < VFS_MAX_FILES);
+  KASSERT(g_file_table[file->index] == file);
+
+  file->refcount--;
+  if (file->refcount == 0) {
+    if (file->vnode->type == VNODE_FIFO)
+      vfs_close_fifo(file->vnode, file->mode);
+
+    // TODO(aoates): is there a race here? Does vfs_put block?  Could another
+    // thread reference this fd/file during that time?  Maybe we need to remove
+    // it from the table, and mark the GD as PROC_UNUSED_FD first?
+    g_file_table[file->index] = 0x0;
+    VFS_PUT_AND_CLEAR(file->vnode);
+    file_free(file);
+  }
+}
+
 int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   const mode_t mode = flags & VFS_MODE_MASK;
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
       child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
-      child->type != VNODE_FIFO) {
+      child->type != VNODE_FIFO && child->type != VNODE_SOCKET) {
     return -ENOTSUP;
   }
 
@@ -393,18 +445,6 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     if (result) {
       return result;
     }
-  }
-
-  // Allocate a new file_t in the global file table.
-  int idx = next_free_file_idx();
-  if (idx < 0) {
-    return -ENFILE;
-  }
-
-  process_t* proc = proc_current();
-  int fd = next_free_fd(proc);
-  if (fd < 0) {
-    return fd;
   }
 
   if (child->type == VNODE_CHARDEV && major(child->dev) == DEVICE_MAJOR_TTY &&
@@ -425,9 +465,24 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     }
   }
 
+  // Allocate a new file_t in the global file table.
+  int idx = next_free_file_idx();
+  if (idx < 0) {
+    if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
+    return -ENFILE;
+  }
+
+  process_t* proc = proc_current();
+  int fd = next_free_fd(proc);
+  if (fd < 0) {
+    if (child->type == VNODE_FIFO) vfs_close_fifo(child, mode);
+    return fd;
+  }
+
   KASSERT(g_file_table[idx] == 0x0);
   g_file_table[idx] = file_alloc();
   file_init_file(g_file_table[idx]);
+  g_file_table[idx]->index = idx;
   g_file_table[idx]->vnode = VFS_COPY_REF(child);
   g_file_table[idx]->refcount = 1;
   g_file_table[idx]->mode = mode;
@@ -560,6 +615,11 @@ int vfs_open(const char* path, int flags, ...) {
     }
   }
 
+  if (child->type == VNODE_SOCKET) {
+    VFS_PUT_AND_CLEAR(child);
+    return -EOPNOTSUPP;
+  }
+
   const bool block = !(flags & VFS_O_NONBLOCK);
   int result = vfs_open_vnode(child, flags, block);
   VFS_PUT_AND_CLEAR(child);
@@ -583,20 +643,7 @@ int vfs_close(int fd) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
-
-  file->refcount--;
-  KASSERT(file->refcount >= 0);
-  if (file->refcount == 0) {
-    if (file->vnode->type == VNODE_FIFO)
-      vfs_close_fifo(file->vnode, file->mode);
-
-    // TODO(aoates): is there a race here? Does vfs_put block?  Could another
-    // thread reference this fd/file during that time?  Maybe we need to remove
-    // it from the table, and mark the GD as PROC_UNUSED_FD first?
-    g_file_table[proc->fds[fd]] = 0x0;
-    VFS_PUT_AND_CLEAR(file->vnode);
-    file_free(file);
-  }
+  file_unref(file);
 
   proc->fds[fd] = PROC_UNUSED_FD;
   return 0;
@@ -613,7 +660,7 @@ int vfs_dup(int orig_fd) {
     return new_fd;
   }
 
-  file->refcount++;
+  file_ref(file);
   KASSERT_DBG(proc->fds[new_fd] == PROC_UNUSED_FD);
   proc->fds[new_fd] = proc->fds[orig_fd];
   return new_fd;
@@ -640,7 +687,7 @@ int vfs_dup2(int fd1, int fd2) {
 
   process_t* proc = proc_current();
 
-  file1->refcount++;
+  file_ref(file1);
   KASSERT_DBG(proc->fds[fd2] == PROC_UNUSED_FD);
   proc->fds[fd2] = proc->fds[fd1];
   return fd2;
@@ -685,19 +732,16 @@ int vfs_mkdir(const char* path, mode_t mode) {
   return 0;
 }
 
-int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
-  if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
-      !VFS_S_ISFIFO(mode)) {
-    return -EINVAL;
-  }
-
+static int vfs_mknod_internal(const char* path, mode_t mode, apos_dev_t dev,
+                              bool follow_final_symlink, vnode_t** vnode_out) {
   if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(false), &parent, 0x0, base_name);
+  int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
+                          0x0, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -719,6 +763,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   else if (VFS_S_ISBLK(mode)) type = VNODE_BLOCKDEV;
   else if (VFS_S_ISCHR(mode)) type = VNODE_CHARDEV;
   else if (VFS_S_ISFIFO(mode)) type = VNODE_FIFO;
+  else if (VFS_S_ISSOCK(mode)) type = VNODE_SOCKET;
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
@@ -729,11 +774,31 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
   vfs_set_created_metadata(child, mode & ~VFS_S_IFMT);
-  VFS_PUT_AND_CLEAR(child);
+  *vnode_out = child;
 
   // We're done!
   VFS_PUT_AND_CLEAR(parent);
   return 0;
+}
+
+int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
+  if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
+      !VFS_S_ISFIFO(mode)) {
+    return -EINVAL;
+  }
+  vnode_t* node = NULL;
+  int result = vfs_mknod_internal(path, mode, dev, false, &node);
+  if (result == 0) {
+    VFS_PUT_AND_CLEAR(node);
+  }
+  return result;
+}
+
+int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out) {
+  if (!VFS_S_ISSOCK(mode)) {
+    return -EINVAL;
+  }
+  return vfs_mknod_internal(path, mode, 0, true, vnode_out);
 }
 
 int vfs_rmdir(const char* path) {
@@ -1058,17 +1123,22 @@ int vfs_read(int fd, void* buf, size_t count) {
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
              file->vnode->type != VNODE_BLOCKDEV &&
-             file->vnode->type != VNODE_FIFO) {
+             file->vnode->type != VNODE_FIFO &&
+             file->vnode->type != VNODE_SOCKET) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
     return -EBADF;
   }
-  file->refcount++;
+  file_ref(file);
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_read(file->vnode->fifo, buf, count,
                        !(file->flags & VFS_O_NONBLOCK));
+  } else if (file->vnode->type == VNODE_SOCKET) {
+    KASSERT(file->vnode->socket != NULL);
+    result = file->vnode->socket->s_ops->recvfrom(
+        file->vnode->socket, file->flags, buf, count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_read(file->vnode->type, file->vnode->dev, file->pos,
                                  buf, count, file->flags);
@@ -1085,7 +1155,7 @@ int vfs_read(int fd, void* buf, size_t count) {
     }
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1099,17 +1169,22 @@ int vfs_write(int fd, const void* buf, size_t count) {
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
              file->vnode->type != VNODE_BLOCKDEV &&
-             file->vnode->type != VNODE_FIFO) {
+             file->vnode->type != VNODE_FIFO &&
+             file->vnode->type != VNODE_SOCKET) {
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
     return -EBADF;
   }
-  file->refcount++;
+  file_ref(file);
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_write(file->vnode->fifo, buf, count,
                         !(file->flags & VFS_O_NONBLOCK));
+  } else if (file->vnode->type == VNODE_SOCKET) {
+    KASSERT(file->vnode->socket != NULL);
+    result = file->vnode->socket->s_ops->sendto(
+        file->vnode->socket, file->flags, buf, count, 0, NULL, 0);
   } else if (file->vnode->type == VNODE_CHARDEV) {
     result = special_device_write(file->vnode->type, file->vnode->dev,
                                   file->pos, buf, count, file->flags);
@@ -1122,7 +1197,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
         off_t new_len = max(file->vnode->len, file->pos + (off_t)count);
         if (new_len > file->vnode->len && (rlim_t)new_len > limit) {
           if ((rlim_t)file->pos >= limit) {
-            file->refcount--;
+            file_unref(file);
             proc_force_signal(proc_current(), SIGXFSZ);
             return -EFBIG;
           } else {
@@ -1140,7 +1215,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
     }
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1195,7 +1270,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
   if (file->vnode->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
@@ -1212,7 +1287,7 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
     }
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1273,7 +1348,7 @@ void vfs_fork_fds(process_t* procA, process_t* procB) {
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     if (procA->fds[i] != PROC_UNUSED_FD) {
       procB->fds[i] = procA->fds[i];
-      g_file_table[procA->fds[i]]->refcount++;
+      file_ref(g_file_table[procA->fds[i]]);
     }
   }
 }
@@ -1303,9 +1378,10 @@ static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
     case VNODE_CHARDEV: stat->st_mode |= VFS_S_IFCHR; break;
     case VNODE_SYMLINK: stat->st_mode |= VFS_S_IFLNK; break;
     case VNODE_FIFO: stat->st_mode |= VFS_S_IFIFO; break;
-
+    case VNODE_SOCKET: stat->st_mode |= VFS_S_IFSOCK; break;
     case VNODE_INVALID:
     case VNODE_UNINITIALIZED:
+    case VNODE_MAX:
       break;
   }
   if (stat->st_mode == 0)
@@ -1353,14 +1429,14 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1409,14 +1485,14 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1447,14 +1523,14 @@ int vfs_fchmod(int fd, mode_t mode) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file->refcount++;
+  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chmod_internal(file->vnode, mode);
   }
 
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 
@@ -1578,11 +1654,11 @@ int vfs_ftruncate(int fd, off_t length) {
     return -EFBIG;
   }
 
-  file->refcount++;
+  file_ref(file);
 
   KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
   result = file->vnode->fs->truncate(file->vnode, length);
-  file->refcount--;
+  file_unref(file);
   return result;
 }
 

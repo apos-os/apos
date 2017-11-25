@@ -88,4 +88,7 @@ int list_link_on_list(list_t* list, list_link_t* link);
 // Returns non-zero if the list is empty.
 int list_empty(const list_t* list);
 
+// Returns the size of the list.
+int list_size(const list_t* list);
+
 #endif

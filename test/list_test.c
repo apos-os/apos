@@ -33,16 +33,6 @@ static void push_all(list_t* list, list_link_t links[], int num) {
   }
 }
 
-static int list_size(list_t* list) {
-  int size = 0;
-  list_link_t* link = list->head;
-  while (link) {
-    size++;
-    link = link->next;
-  }
-  return size;
-}
-
 static void basic_list_test(void) {
   const int kNumLinks = 10;
   list_t list = LIST_INIT;
@@ -51,15 +41,18 @@ static void basic_list_test(void) {
 
   KTEST_BEGIN("empty list test");
   KEXPECT_NE(0, list_empty(&list));
+  KEXPECT_EQ(0, list_size(&list));
   KEXPECT_EQ((list_link_t*)0x0, list_pop(&list));
 
   KTEST_BEGIN("list_push()/list_pop() test");
 
   list_push(&list, &links[0]);
+  KEXPECT_EQ(1, list_size(&list));
 
   KEXPECT_EQ(0, list_empty(&list));
   KEXPECT_EQ(&links[0], list_pop(&list));
   KEXPECT_NE(0, list_empty(&list));
+  KEXPECT_EQ(0, list_size(&list));
 
   KTEST_BEGIN("list multi-push");
   for (int i = 0; i < kNumLinks; ++i) {

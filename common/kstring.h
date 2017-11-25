@@ -23,6 +23,10 @@
 #endif
 
 int kstrlen(const char* s);
+// Returns the length of the string, or -1 if it would be greater than the given
+// maximum (NULL included).  Use to check the length of strings of a known-max
+// length to prevent going off the end.
+int kstrnlen(const char* s, int max);
 int kstrcmp(const char* s1, const char* s2);
 int kstrncmp(const char* s1, const char* s2, size_t n);
 

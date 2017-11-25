@@ -24,6 +24,7 @@ SUBDIRS = [
   'dev',
   'main',
   'memory',
+  'net',
   'proc',
   'syscall',
   'util',

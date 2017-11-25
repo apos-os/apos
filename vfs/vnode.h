@@ -17,6 +17,7 @@
 #define APOO_VFS_VNODE_H
 
 #include "memory/memobj.h"
+#include "net/socket/socket.h"
 #include "proc/kthread.h"
 #include "user/include/apos/dev.h"
 #include "user/include/apos/posix_types.h"
@@ -37,11 +38,15 @@ typedef enum {
   VNODE_CHARDEV = 5,
   VNODE_SYMLINK = 6,
   VNODE_FIFO = 7,
+  VNODE_SOCKET = 8,
+  VNODE_MAX,
 } vnode_type_t;
 
 static const char* const VNODE_TYPE_NAME[] = {
-  "UNINIT", "INV", "REG", "DIR", "BLK", "CHR", "FIFO",
+    "UNINIT", "INV", "REG", "DIR", "BLK", "CHR", "SYM", "FIFO", "SOCK",
 };
+_Static_assert(sizeof(VNODE_TYPE_NAME) / sizeof(const char*) == VNODE_MAX,
+               "VNODE_TYPE_NAME doesn't match vnode_type_t");
 
 // A virtual node in the filesystem.  It is expected that concete filesystems
 // will embed the vnode_t structure in their own, custom structure with
@@ -82,6 +87,15 @@ struct vnode {
 
   // If type == VNODE_FIFO, the underlying FIFO.
   apos_fifo_t* fifo;
+
+  // If type == VNODE_SOCKET, the underlying socket.  This will only be set for
+  // actual sockets (sockets in the anonymous socket FS), not socket files on
+  // real filesystems.
+  socket_t* socket;
+
+  // If type == VNODE_SOCKET and this is an actual socket file bound to a real
+  // socket, then the bound socket.  Mutually exclusive with |socket| (above).
+  socket_t* bound_socket;
 
   // The memobj_t corresponding to this vnode.
   memobj_t memobj;

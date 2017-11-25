@@ -15,6 +15,7 @@
 #include "vfs/file.h"
 
 void file_init_file(file_t* f) {
+  f->index = -1;
   f->vnode = 0x0;
   f->refcount = 0;
   f->pos = 0;

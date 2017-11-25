@@ -21,6 +21,8 @@
 #ifndef APOO_KTHREAD_T
 #define APOO_KTHREAD_T
 
+#include <stdbool.h>
+
 #include "common/types.h"
 
 typedef struct kthread_data* kthread_t;
@@ -50,6 +52,10 @@ int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 // not safe for multiple threads to join() on a single other thread, UNLESS they
 // all call kthread_join() before the target thread has been scheduled.
 void* kthread_join(kthread_t thread);
+
+// Returns true if the other thread has exited (i.e. kthread_join() will return
+// without blocking).
+bool kthread_is_done(kthread_t thread);
 
 // Detach the given thread.  When the thread exits, its resources will be
 // collected immediately.
