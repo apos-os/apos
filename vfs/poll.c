@@ -142,7 +142,8 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
   for (size_t i = 0; i < nfds; ++i) fds[i].revents = 0;
 
   int fds_selected = 0;
-  apos_ms_t end_time = get_time_ms() + timeout_ms;
+  apos_ms_t now = get_time_ms();
+  apos_ms_t end_time = now + timeout_ms;
   poll_state_t* poll_ptr = (timeout_ms == 0) ? NULL : &poll;
   do {
     poll_cancel(&poll);
@@ -161,7 +162,7 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
       break;
     }
 
-    apos_ms_t now = get_time_ms();
+    now = get_time_ms();
     if (timeout_ms < 0 || now < end_time) {
       PUSH_AND_DISABLE_INTERRUPTS();
       if (poll.triggered)
@@ -179,7 +180,7 @@ int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
         break;
       }
     }
-  } while (fds_selected == 0 && timeout_ms != 0);
+  } while (fds_selected == 0 && (timeout_ms < 0 || now < end_time));
   poll_cancel(&poll);
 
   if (result == 0) result = fds_selected;

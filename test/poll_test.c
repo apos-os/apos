@@ -15,12 +15,14 @@
 
 #include "common/kprintf.h"
 #include "dev/dev.h"
+#include "memory/kmalloc.h"
 #include "proc/fork.h"
 #include "proc/sleep.h"
 #include "proc/signal/signal.h"
 #include "proc/wait.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "vfs/pipe.h"
 #include "vfs/vfs.h"
 
 // Tests
@@ -516,6 +518,7 @@ static void weird_fd_test(chardev_args_t* args) {
   }
 
   pfds[1].fd = vfs_dup(args->fd[1]);
+  KEXPECT_GE(pfds[1].fd, 0);
   vfs_close(pfds[1].fd);
 
   KEXPECT_EQ(1, vfs_poll(pfds, 3, -1));
@@ -784,6 +787,25 @@ static void block_dev_test(void) {
   vfs_close(fd);
 }
 
+static void poll_timeout_race_test(void) {
+  const int kNumFds = 1000;
+  KTEST_BEGIN("poll(): short timeout race condition");
+  int fds[2];
+  KEXPECT_EQ(0, vfs_pipe(fds));
+  struct pollfd* pfds =
+      (struct pollfd*)kmalloc(sizeof(struct pollfd) * kNumFds);
+  for (int i = 0; i < kNumFds; ++i) {
+    pfds[i].fd = fds[0];
+    pfds[i].events = POLLIN;
+  }
+  // Do a poll with a very short timeout---the goal is for the timeout to
+  // expire while we're processing the initial poll state.
+  KEXPECT_EQ(0, vfs_poll(pfds, kNumFds, 1));
+  kfree(pfds);
+  KEXPECT_EQ(0, vfs_close(fds[0]));
+  KEXPECT_EQ(0, vfs_close(fds[1]));
+}
+
 void poll_test(void) {
   KTEST_SUITE_BEGIN("poll() tests");
   vfs_mkdir("_poll_test_dir", VFS_S_IRWXU);
@@ -792,6 +814,7 @@ void poll_test(void) {
   poll_dir_test();
   char_dev_tests();
   block_dev_test();
+  poll_timeout_race_test();
 
   KEXPECT_EQ(0, vfs_rmdir("_poll_test_dir"));
 }
