@@ -27,6 +27,7 @@ void wait_test(void);
 void fs_test(void);
 void misc_syscall_test(void);
 void socket_test(void);
+void setjmp_test(void);
 
 // Helper when self-exec'ing in execve() tests.
 int execve_helper(int argc, char** argv);

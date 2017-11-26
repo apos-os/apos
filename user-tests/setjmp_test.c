@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2017 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,35 +11,32 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <fcntl.h>
+
+#include <assert.h>
+#include <unistd.h>
+#include <setjmp.h>
 
 #include "ktest.h"
 #include "all_tests.h"
 
-bool run_slow_tests = false;
+static void basic_test(void) {
+  KTEST_BEGIN("setjmp()/longjmp(): basic test");
 
-int main(int argc, char** argv) {
-  if (strcmp(argv[0], "execve_test_helper") == 0)
-    return execve_helper(argc, argv);
+  jmp_buf env;
+  int result = setjmp(env);
+  if (result == 0) {
+    printf("In initial branch, running longjmp.\n");
+    longjmp(env, 5);
+    fprintf(stderr, "should NOT get here!");
+    KEXPECT_EQ(1, 2);
+  }
+  KEXPECT_EQ(5, result);
 
-  if (argc > 1 && strcmp(argv[1], "all") == 0)
-    run_slow_tests = true;
+  // TODO(aoates): test sigsetjmp()/siglongjmp().
+}
 
-  ktest_begin_all();
+void setjmp_test(void) {
+  KTEST_SUITE_BEGIN("setjmp()/longjmp() tests");
 
-  syscall_errno_test();
-  int status = exit_status_test();
-  if (status) return status;
-
-  basic_signal_test();
-  execve_test();
-  stop_test();
-  wait_test();
-  fs_test();
-  misc_syscall_test();
-  socket_test();
-  setjmp_test();
-
-  ktest_finish_all();
-  return 0;
+  basic_test();
 }
