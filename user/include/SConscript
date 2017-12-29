@@ -22,6 +22,7 @@ HEADERS = [
   'apos/dev.h',
   'apos/errors.h',
   'apos/mmap.h',
+  'apos/net/socket/inet.h',
   'apos/net/socket/socket.h',
   'apos/net/socket/unix.h',
   'apos/posix_signal.h',
