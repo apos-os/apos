@@ -25,8 +25,6 @@
 // Index into the PCI base address array for the IDE bus-master base address.
 #define PIIX_BUS_MASTER_BASE_ADDR 4
 
-#define PIIX_BUSMASTER_ENABLE 0x04
-
 void pci_piix_driver_init(pci_device_t* pcidev) {
   // Return any device functions that aren't the IDE interface.
   if (pcidev->device_id != 0x7010) {
@@ -40,7 +38,7 @@ void pci_piix_driver_init(pci_device_t* pcidev) {
 
   // Enable bus-master function.
   pci_read_status(pcidev);
-  pcidev->command |= PIIX_BUSMASTER_ENABLE;
+  pcidev->command |= PCI_CMD_BUSMASTER_ENABLE;
   pci_write_status(pcidev);
 
   // The base address should have been configured by the BIOS.

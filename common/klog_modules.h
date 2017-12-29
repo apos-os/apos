@@ -32,6 +32,7 @@ typedef enum {
   KL_VFS,
 
   // Device modules.
+  KL_NET,
   KL_USB,
   KL_USB_HUB,
   KL_USB_UHCI,
