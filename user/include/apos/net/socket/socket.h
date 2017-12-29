@@ -20,11 +20,14 @@ typedef int socklen_t;
 typedef unsigned int sa_family_t;
 
 struct sockaddr {
-  sa_family_t sa_family;  // Addressfamily.
+  sa_family_t sa_family;  // Address family.
   char sa_data[];         // Socket address (variable-length data).
 };
 
-// TODO(aoates): define struct sockaddr_storage.
+struct sockaddr_storage {
+  sa_family_t sa_family;  // Address family.
+  char _sa_pad[108];
+};
 
 #define SOCK_STREAM 1     // Byte­stream socket.
 // TODO(aoates): define SOCK_DGRAM, SOCK_RAW, and SOCK_SEQPACKET.

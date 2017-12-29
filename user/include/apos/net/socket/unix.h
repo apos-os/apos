@@ -27,4 +27,7 @@ struct sockaddr_un {
   char sun_path[108];      //  Socket pathname.
 };
 
+_Static_assert(sizeof(struct sockaddr_un) <= sizeof(struct sockaddr_storage),
+               "struct sockaddr_un too large for struct sockaddr_storage");
+
 #endif
