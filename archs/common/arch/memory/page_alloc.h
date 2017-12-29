@@ -18,6 +18,7 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_MEMORY_PAGE_ALLOC_H
 #define APOO_ARCHS_COMMON_ARCH_MEMORY_PAGE_ALLOC_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "common/types.h"
@@ -39,5 +40,11 @@ void page_frame_free(phys_addr_t frame);
 // we're doing large blocks of allocations and want to avoid the overhead (since
 // it can be globally disabled with a #define).
 void page_frame_free_nocheck(phys_addr_t frame);
+
+// Allocates a continuous block of N pages that is suitable for DMA usage by
+// device drivers.  Returns the first frame in the block, or 0 if unable.
+// TODO(aoates): design a more flexible memory allocation system to support
+// this natively.
+phys_addr_t page_frame_dma_alloc(size_t pages);
 
 #endif
