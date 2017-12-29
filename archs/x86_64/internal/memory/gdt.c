@@ -133,6 +133,8 @@ void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr) {
   KASSERT_DBG(segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL) == 0x10);
   asm("    movq %0, %%rax\n"
       "    lgdt (%%rax)\n"
+      "    mov $0, %%ax\n"
+      "    lldt %%ax\n"
       ""
       "    # Load the ring-0 segments into the segment registers.\n"
       "    mov $0x10, %%ax\n"

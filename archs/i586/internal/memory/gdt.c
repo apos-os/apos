@@ -103,6 +103,8 @@ gdt_entry_t MULTILINK(gdt_entry_create_gate) (
 void MULTILINK(gdt_flush) (gdt_ptr_t* gdt_ptr) {
   asm("    movl %0, %%eax\n"
       "    lgdt (%%eax)\n"
+      "    mov $0, %%ax\n"
+      "    lldt %%ax\n"
       ""
       "    # Load the ring-0 segments into the segment registers.\n"
       "    mov $0x10, %%ax\n"
