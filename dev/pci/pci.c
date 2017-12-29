@@ -18,6 +18,9 @@
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#if ENABLE_ETHERNET
+#include "dev/net/rtl8139.h"
+#endif
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
@@ -76,6 +79,11 @@ static pci_driver_t PCI_DRIVERS[] = {
 #if ENABLE_USB
   // UHCI USB Host Controller.
   { PCI_DRIVER_CLASS, 0x0, 0x0, 0x0C, 0x03, 0x00, &usb_uhci_pci_init },
+#endif
+
+#if ENABLE_ETHERNET
+  // RTL 8139 network card.
+  { PCI_DRIVER_VENDOR, 0x8139, 0x10ec, 0, 0, 0, &pci_rtl8139_init },
 #endif
 
   { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},

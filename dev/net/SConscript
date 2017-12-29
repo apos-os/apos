@@ -1,4 +1,4 @@
-# Copyright 2014 Andrew Oates.  All Rights Reserved.
+# Copyright 2017 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,21 +15,13 @@
 Import('env AposAddSources')
 
 srcs = [
-  'interrupts.c',
-  'ps2.c',
-  'timer.c',
-  'rtc.c',
-  'dev.c',
-  'ld.c',
-  'termios.c',
-  'tty.c',
-  'tty_util.c',
-  ]
+  'nic.c',
+]
 
-subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk', 'net']
+subdirs = []
 
-if env['USB']:
-  subdirs.append('usb')
+if env['ETHERNET']:
+  srcs.append('rtl8139.c')
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')
