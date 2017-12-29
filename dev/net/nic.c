@@ -62,10 +62,16 @@ static void find_free_name(nic_t* nic, const char* name_prefix) {
   }
 }
 
+void nic_init(nic_t* nic) {
+  kmemset(&nic->name, 0, NIC_MAX_NAME_LEN);
+  nic->type = NIC_UNKNOWN;
+  kmemset(&nic->mac, 0, NIC_MAC_LEN);
+  nic->nic_link = LIST_LINK_INIT;
+}
+
 void nic_create(nic_t* nic, const char* name_prefix) {
   char buf[NIC_MAC_PRETTY_LEN];
   find_free_name(nic, name_prefix);
   klogf("net: added NIC %s with MAC %s\n", nic->name, mac2str(nic->mac, buf));
-  nic->nic_link = LIST_LINK_INIT;
   list_push(&g_nic_list, &nic->nic_link);
 }

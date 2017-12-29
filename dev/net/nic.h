@@ -23,17 +23,22 @@
 #define NIC_MAC_LEN 6        // Length of MACs
 
 typedef enum {
+  NIC_UNKNOWN = 0,
   NIC_ETHERNET = 1,
 } nic_type_t;
 
 typedef struct {
+  // Fields maintained by the NIC driver.
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
   nic_type_t type;              // What kind of NIC
   uint8_t mac[NIC_MAC_LEN];     // Hardware address.
 
-  // Used internally.
+  // Fields used internally for NIC management.
   list_link_t nic_link;
 } nic_t;
+
+// Initialize a nic_t structure.  Call this before calling nic_create().
+void nic_init(nic_t* nic);
 
 // Create a new NIC with the given name prefix.  Sets the name of the given
 // nic_t, initializes internal fields, and inserts the NIC into the system

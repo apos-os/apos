@@ -214,6 +214,7 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   KASSERT((pcidev->base_address[1] & 0x1) == 0);
 
   rtl8139_t* nic = kmalloc(sizeof(rtl8139_t));
+  nic_init(&nic->public);
   nic->public.type = NIC_ETHERNET;
   nic->iobase = pcidev->base_address[0] & ~0x3;
 
