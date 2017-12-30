@@ -31,6 +31,8 @@ typedef struct {
   uint32_t iobase;  // Base IO register address
   uint16_t rxstart;
   void* rxbuf;
+  int txdesc;
+  void* txbuf[4];
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -41,6 +43,14 @@ typedef enum {
   RTLRG_IDR3 = 0x0003,         // ID register 3
   RTLRG_IDR4 = 0x0004,         // ID register 4
   RTLRG_IDR5 = 0x0005,         // ID register 5
+  RTLRG_TXSTATUS0 = 0x0010,    // Transmit status of desc 0 (TSD0)
+  RTLRG_TXSTATUS1 = 0x0014,    // Transmit status of desc 1 (TSD1)
+  RTLRG_TXSTATUS2 = 0x0018,    // Transmit status of desc 2 (TSD2)
+  RTLRG_TXSTATUS3 = 0x001c,    // Transmit status of desc 3 (TSD3)
+  RTLRG_TXBUF0 = 0x0020,       // Transmit buf start address of desc 0 (TSAD0)
+  RTLRG_TXBUF1 = 0x0024,       // Transmit buf start address of desc 1 (TSAD1)
+  RTLRG_TXBUF2 = 0x0028,       // Transmit buf start address of desc 2 (TSAD2)
+  RTLRG_TXBUF3 = 0x002c,       // Transmit buf start address of desc 3 (TSAD3)
   RTLRG_RBSTART = 0x0030,      // Receive buffer start (physical addr)
   RTLRG_CMD = 0x0037,          // Command register
   RTLRG_RXBUF_START = 0x0038,  // Receive buffer start/how much is read (CAPR)
@@ -185,7 +195,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
 
   // Set interrupt mask (rx and tx aren't enabled yet).
   // TODO(aoates): enable other interrupts (errors, in particular).
-  outs(nic->iobase + RTLRG_INTMASK, RTL_IMR_ROK);
+  outs(nic->iobase + RTLRG_INTMASK, RTL_IMR_TOK | RTL_IMR_ROK);
 
   // Set reasonable default receive config.  Receive some packets, non-wrap
   // mode, 8k+16 recv buffer size.
@@ -196,9 +206,29 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   KASSERT(pcidev->interrupt_line <= IRQ15);
   register_irq_handler(pcidev->interrupt_line, &rtl_irq_handler, nic);
 
-  // Enable receiving.
-  KLOG(DEBUG, "Enabling packet receiver\n");
-  outb(nic->iobase + RTLRG_CMD, RTL_CMD_RX_ENABLE);
+  // Configure transmission.
+  KASSERT(PAGE_SIZE / 2 >= 1500);
+  phys_addr_t txframe1 = page_frame_alloc();
+  KASSERT(txframe1 > 0);
+  phys_addr_t txframe2 = page_frame_alloc();
+  KASSERT(txframe2 > 0);
+  const phys_addr_t txbuf0 = txframe1;
+  const phys_addr_t txbuf1 = txframe1 + PAGE_SIZE / 2;
+  const phys_addr_t txbuf2 = txframe2;
+  const phys_addr_t txbuf3 = txframe2 + PAGE_SIZE / 2;
+  nic->txbuf[0] = (void*)phys2virt(txbuf0);
+  nic->txbuf[1] = (void*)phys2virt(txbuf1);
+  nic->txbuf[2] = (void*)phys2virt(txbuf2);
+  nic->txbuf[3] = (void*)phys2virt(txbuf3);
+  outl(nic->iobase + RTLRG_TXBUF0, htol32((uint32_t)txbuf0));
+  outl(nic->iobase + RTLRG_TXBUF1, htol32((uint32_t)txbuf1));
+  outl(nic->iobase + RTLRG_TXBUF2, htol32((uint32_t)txbuf2));
+  outl(nic->iobase + RTLRG_TXBUF3, htol32((uint32_t)txbuf3));
+  nic->txdesc = 0;
+
+  // Enable receiving and transmitting.
+  KLOG(DEBUG, "Enabling packet rx/tx\n");
+  outb(nic->iobase + RTLRG_CMD, RTL_CMD_RX_ENABLE | RTL_CMD_TX_ENABLE);
 }
 
 void pci_rtl8139_init(pci_device_t* pcidev) {
