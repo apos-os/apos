@@ -100,8 +100,8 @@ typedef enum {
 
 #define RTL_RXBUF_SIZE 8192
 #define RTL_RX_PACKET_HDR_SIZE 4
-// TODO(aoates): confirm this is correct
-#define RTL_TX_MAX_PACKET_SIZE 1500
+// 1500 bytes plus 14 bytes of ethernet header
+#define RTL_TX_MAX_PACKET_SIZE 1514
 
 // Bits in the received packet header set by the NIC.
 typedef enum {
