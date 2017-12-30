@@ -23,7 +23,12 @@
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
 #define NIC_MAC_LEN 6        // Length of MACs
+#define NIC_MAC_PRETTY_LEN (3 * NIC_MAC_LEN)
 #define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
+
+// Pretty-print the given MAC address, using the given buffer (which must be at
+// least NIC_MAC_PRETTY_LEN bytes big).
+const char* mac2str(const uint8_t* mac, char* buf);
 
 struct nic;
 typedef struct nic nic_t;

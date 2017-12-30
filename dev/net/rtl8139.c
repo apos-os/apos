@@ -24,6 +24,7 @@
 #include "dev/pci/pci-driver.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
+#include "net/eth/eth.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -162,7 +163,15 @@ static void rtl_handle_recv_one(rtl8139_t* nic) {
   // pointer.
   if (rx_status & RTL_RXHDR_ROK) {
     KLOG(DEBUG2, "received packet len=%d\n", plen);
-    // TODO(aoates): actually, you know, handle the packet.
+    // TODO(aoates): should we discard the CRC?
+    pbuf_t* pb = pbuf_create(0, plen);
+    KASSERT(pb != NULL); // TODO(aoates): handle OOM here?
+
+    // Since we set the wrap bit, we can just read the whole packet without
+    // worrying about wrapping around the end.
+    kmemcpy(pbuf_get(pb), nic->rxbuf + nic->rxstart + RTL_RX_PACKET_HDR_SIZE,
+            plen);
+    eth_rx(&nic->public, pb);
   } else {
     // TODO(aoates): increment stats.
     KLOG(DEBUG, "received bad packet (status: %#x, len: %d)\n",

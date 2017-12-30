@@ -15,11 +15,10 @@
 Import('env AposAddSources')
 
 srcs = [
-  'init.c',
-  'pbuf.c',
+  'arp.c',
 ]
 
-subdirs = ['eth', 'socket']
+subdirs = []
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

@@ -21,16 +21,13 @@
 #include "common/kstring.h"
 #include "common/list.h"
 
-#define NIC_MAC_PRETTY_LEN (3 * NIC_MAC_LEN)
-
 static list_t g_nic_list = LIST_INIT_STATIC;
 
 static nic_t* link2nic(list_link_t* link) {
   return container_of(link, nic_t, nic_link);
 }
 
-// Pretty-print the given MAC address, using the given buffer.
-static const char* mac2str(const uint8_t* mac, char* buf) {
+const char* mac2str(const uint8_t* mac, char* buf) {
   ksprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
            mac[4], mac[5]);
   return buf;
