@@ -18,9 +18,11 @@
 #include <stdint.h>
 
 #include "common/list.h"
+#include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
 #define NIC_MAC_LEN 6        // Length of MACs
+#define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
 
 typedef enum {
   NIC_UNKNOWN = 0,
@@ -32,6 +34,9 @@ typedef struct {
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
   nic_type_t type;              // What kind of NIC
   uint8_t mac[NIC_MAC_LEN];     // Hardware address.
+
+  // Fields maintained by the network subsystem.
+  struct sockaddr_storage addrs[NIC_MAX_ADDRS];  // Configured network addresses
 
   // Fields used internally for NIC management.
   list_link_t nic_link;
@@ -47,5 +52,11 @@ void nic_init(nic_t* nic);
 // TODO(aoates): come up with a better unified device model, rather than these
 // type-specific registries.
 void nic_create(nic_t* nic, const char* name_prefix);
+
+// Returns the number of configured NICs.
+int nic_count(void);
+
+// Returns the NIC at the given index, or NULL.
+nic_t* nic_get(int idx);
 
 #endif

@@ -67,6 +67,11 @@ void nic_init(nic_t* nic) {
   nic->type = NIC_UNKNOWN;
   kmemset(&nic->mac, 0, NIC_MAC_LEN);
   nic->nic_link = LIST_LINK_INIT;
+
+  for (size_t i = 0; i < NIC_MAX_ADDRS; ++i) {
+    kmemset(&nic->addrs[i], 0, sizeof(struct sockaddr_storage));
+    nic->addrs[i].sa_family = AF_UNSPEC;
+  }
 }
 
 void nic_create(nic_t* nic, const char* name_prefix) {
@@ -74,4 +79,21 @@ void nic_create(nic_t* nic, const char* name_prefix) {
   find_free_name(nic, name_prefix);
   klogf("net: added NIC %s with MAC %s\n", nic->name, mac2str(nic->mac, buf));
   list_push(&g_nic_list, &nic->nic_link);
+}
+
+int nic_count(void) {
+  return list_size(&g_nic_list);
+}
+
+nic_t* nic_get(int idx) {
+  // TODO(aoates): allow iterating over all NICs in a way that isn't O(N^2).
+  list_link_t* link = NULL;
+  for (link = g_nic_list.head; idx != 0 && link != NULL; link = link->next) {
+    idx--;
+  }
+  if (link) {
+    return link2nic(link);
+  } else {
+    return NULL;
+  }
 }
