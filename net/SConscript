@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
   'init.c',
   'pbuf.c',
+  'util.c',
 ]
 
 subdirs = ['eth', 'socket']

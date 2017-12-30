@@ -14,7 +14,9 @@
 
 #include "test/kernel_tests.h"
 
+#include "arch/common/endian.h"
 #include "net/socket/socket.h"
+#include "net/util.h"
 #include "test/ktest.h"
 #include "user/include/apos/errors.h"
 
@@ -30,4 +32,14 @@ void socket_test(void) {
   KTEST_BEGIN("net_socket() with invalid domain");
   KEXPECT_EQ(-EAFNOSUPPORT, net_socket(-1, SOCK_STREAM, 0));
   KEXPECT_EQ(-EAFNOSUPPORT, net_socket(5, SOCK_STREAM, 0));
+
+  KTEST_BEGIN("inet2str() tests");
+  char buf[INET_PRETTY_LEN];
+  const char* bufptr = &buf[0];
+  KEXPECT_EQ(bufptr, inet2str(0xffffffff, buf));
+  KEXPECT_STREQ("255.255.255.255", buf);
+  KEXPECT_EQ(bufptr, inet2str(0x0, buf));
+  KEXPECT_STREQ("0.0.0.0", buf);
+  KEXPECT_EQ(bufptr, inet2str(htob32(0x01020304), buf));
+  KEXPECT_STREQ("1.2.3.4", buf);
 }
