@@ -18,29 +18,40 @@
 #include <stdint.h>
 
 #include "common/list.h"
+#include "net/pbuf.h"
 #include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
 #define NIC_MAC_LEN 6        // Length of MACs
 #define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
 
+struct nic;
+typedef struct nic nic_t;
+
+typedef struct {
+  // Enqueue the given packet (which should be an L2 frame) for transmission.
+  // Returns 0 on success.
+  int (*nic_tx)(nic_t* nic, pbuf_t* buf);
+} nic_ops_t;
+
 typedef enum {
   NIC_UNKNOWN = 0,
   NIC_ETHERNET = 1,
 } nic_type_t;
 
-typedef struct {
+struct nic {
   // Fields maintained by the NIC driver.
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
   nic_type_t type;              // What kind of NIC
   uint8_t mac[NIC_MAC_LEN];     // Hardware address.
+  nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
   struct sockaddr_storage addrs[NIC_MAX_ADDRS];  // Configured network addresses
 
   // Fields used internally for NIC management.
   list_link_t nic_link;
-} nic_t;
+};
 
 // Initialize a nic_t structure.  Call this before calling nic_create().
 void nic_init(nic_t* nic);

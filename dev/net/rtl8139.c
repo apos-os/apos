@@ -16,6 +16,7 @@
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
 #include "arch/memory/page_alloc.h"
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -26,13 +27,20 @@
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
+static nic_ops_t rtl_ops;
+
+#define RTL_NUM_TX_DESCS 4
+
+// TODO(aoates): lots of parts of this are touched in an interrupt context---go
+// through and ensure the appropriate memory barriers are in place.
 typedef struct {
   nic_t public;     // Public NIC fields
   uint32_t iobase;  // Base IO register address
   uint16_t rxstart;
   void* rxbuf;
   int txdesc;
-  void* txbuf[4];
+  void* txbuf[RTL_NUM_TX_DESCS];
+  bool txbuf_active[RTL_NUM_TX_DESCS];
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -83,8 +91,16 @@ typedef enum {
   RTL_RCR_WRAP = 1 << 7,  // Wrap bit (disables wrapping large packets)
 } rtl_rcr_reg_bits_t;
 
+// Bits in the transmitter status register.
+typedef enum {
+  RTL_TSD_OWN = 1 << 13,  // "Own" bit (1 = driven owned)
+  RTL_TSD_TOK = 1 << 15,  // TX OK
+} rtl_tsd_bits_t;
+
 #define RTL_RXBUF_SIZE 8192
 #define RTL_RX_PACKET_HDR_SIZE 4
+// TODO(aoates): confirm this is correct
+#define RTL_TX_MAX_PACKET_SIZE 1500
 
 // Bits in the received packet header set by the NIC.
 typedef enum {
@@ -93,6 +109,46 @@ typedef enum {
   RTL_RXHDR_PAM = 1 << 14,  // Physical address matched
   RTL_RXHDR_MAR = 1 << 15,  // Multicast address recieved
 } rtl_rx_header_bits_t;
+
+static int rtl_tx(nic_t* base, pbuf_t* pb) {
+  rtl8139_t* nic = (rtl8139_t*)base;
+
+  // TODO(aoates): queue packets when the NIC is busy.
+  if (nic->txbuf_active[nic->txdesc]) {
+    KLOG(DEBUG, "tx(%s): unable to tx, next descriptor (%d) is still active\n",
+         nic->public.name, nic->txdesc);
+    return -EBUSY;
+  }
+
+  if (pbuf_size(pb) > RTL_TX_MAX_PACKET_SIZE) {
+    return -EINVAL;
+  }
+
+  // TODO(aoates): we own the pbuf...let's try to just use it directly rather
+  // than copy.  That would require that it not cross a page boundary.
+  KLOG(DEBUG2, "tx(%s): sending packet len %zu on desc %d\n", nic->public.name,
+       pbuf_size(pb), nic->txdesc);
+  kmemcpy(nic->txbuf[nic->txdesc], pbuf_get(pb), pbuf_size(pb));
+  uint16_t tx_port = 0;
+  switch (nic->txdesc) {
+    case 0: tx_port = RTLRG_TXSTATUS0; break;
+    case 1: tx_port = RTLRG_TXSTATUS1; break;
+    case 2: tx_port = RTLRG_TXSTATUS2; break;
+    case 3: tx_port = RTLRG_TXSTATUS3; break;
+    default: die("bad nic state");
+  }
+  KASSERT((inl(nic->iobase + tx_port) & RTL_TSD_OWN) != 0);
+  nic->txbuf_active[nic->txdesc] = true;
+  // TODO(aoates): need an appropriate memory barrier here.
+  // This sets the size in the lower 12 bits (value checked above), and sets the
+  // OWN bit to zero, transferring the buffer to the NIC.
+  outl(nic->iobase + tx_port, pbuf_size(pb));
+  nic->txdesc++;
+  nic->txdesc %= RTL_NUM_TX_DESCS;
+  pbuf_free(pb);
+
+  return 0;
+}
 
 static void rtl_handle_recv_one(rtl8139_t* nic) {
   // Read the packet header.
@@ -141,6 +197,27 @@ static void rtl_handle_recv(rtl8139_t* nic) {
   KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
 }
 
+static void rtl_handle_tx_irq(rtl8139_t* nic) {
+  for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) {
+    const uint16_t tx_status =
+        inl(nic->iobase + RTLRG_TXSTATUS0 + (sizeof(uint32_t) * i));
+    if (nic->txbuf_active[i]) {
+      if (tx_status & RTL_TSD_TOK) {
+        KASSERT_DBG(tx_status & RTL_TSD_OWN); // HW error
+        KLOG(DEBUG2, "tx(%s): tx OK on descriptor %d\n", nic->public.name, i);
+        nic->txbuf_active[i] = false;
+      } else {
+        // TODO(aoates): handle other scenarios where this assertion would fail
+        // (in particular, transmission errors; also potentially a race when
+        // setting TOK).
+        KASSERT_DBG((tx_status & RTL_TSD_OWN) == 0);
+      }
+    } else {
+      KASSERT_DBG(tx_status & RTL_TSD_OWN);
+    }
+  }
+}
+
 static void rtl_irq_handler(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   const uint16_t interrupts = ins(nic->iobase + RTLRG_INTSTATUS);
@@ -157,6 +234,9 @@ static void rtl_irq_handler(void* arg) {
   // TODO(aoates): we should _not_ be doing this in an interrupt context.
   if (interrupts & RTL_IMR_ROK) {
     rtl_handle_recv(nic);
+  }
+  if (interrupts & RTL_IMR_TOK) {
+    rtl_handle_tx_irq(nic);
   }
   // TODO(aoates): handle other interrupts (in particular, error cases).
 }
@@ -207,7 +287,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   register_irq_handler(pcidev->interrupt_line, &rtl_irq_handler, nic);
 
   // Configure transmission.
-  KASSERT(PAGE_SIZE / 2 >= 1500);
+  KASSERT(PAGE_SIZE / 2 >= RTL_TX_MAX_PACKET_SIZE);
   phys_addr_t txframe1 = page_frame_alloc();
   KASSERT(txframe1 > 0);
   phys_addr_t txframe2 = page_frame_alloc();
@@ -225,6 +305,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   outl(nic->iobase + RTLRG_TXBUF2, htol32((uint32_t)txbuf2));
   outl(nic->iobase + RTLRG_TXBUF3, htol32((uint32_t)txbuf3));
   nic->txdesc = 0;
+  for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) nic->txbuf_active[i] = false;
 
   // Enable receiving and transmitting.
   KLOG(DEBUG, "Enabling packet rx/tx\n");
@@ -246,6 +327,7 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   rtl8139_t* nic = kmalloc(sizeof(rtl8139_t));
   nic_init(&nic->public);
   nic->public.type = NIC_ETHERNET;
+  nic->public.ops = &rtl_ops;
   nic->iobase = pcidev->base_address[0] & ~0x3;
 
   // Find the MAC address of the device.
@@ -262,3 +344,7 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   nic_create(&nic->public, "eth");
   rtl_init(pcidev, nic);
 }
+
+static nic_ops_t rtl_ops = {
+  &rtl_tx,
+};
