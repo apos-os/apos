@@ -18,6 +18,7 @@
 #include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "dev/net/nic.h"
 #include "dev/pci/pci-driver.h"
 #include "memory/kmalloc.h"
@@ -28,6 +29,7 @@
 typedef struct {
   nic_t public;     // Public NIC fields
   uint32_t iobase;  // Base IO register address
+  uint16_t rxstart;
   void* rxbuf;
 } rtl8139_t;
 
@@ -71,6 +73,64 @@ typedef enum {
   RTL_RCR_WRAP = 1 << 7,  // Wrap bit (disables wrapping large packets)
 } rtl_rcr_reg_bits_t;
 
+#define RTL_RXBUF_SIZE 8192
+#define RTL_RX_PACKET_HDR_SIZE 4
+
+// Bits in the received packet header set by the NIC.
+typedef enum {
+  RTL_RXHDR_ROK = 1 << 0,   // Receive OK
+  RTL_RXHDR_BAR = 1 << 13,  // Broadcast address received
+  RTL_RXHDR_PAM = 1 << 14,  // Physical address matched
+  RTL_RXHDR_MAR = 1 << 15,  // Multicast address recieved
+} rtl_rx_header_bits_t;
+
+static void rtl_handle_recv_one(rtl8139_t* nic) {
+  // Read the packet header.
+  uint32_t header;
+  kmemcpy(&header, nic->rxbuf + nic->rxstart, RTL_RX_PACKET_HDR_SIZE);
+  header = ltoh32(header);
+  KLOG(DEBUG2, "packet header: %#x\n", header);
+  const uint16_t rx_status = header & 0xFFFF;
+  const uint16_t plen = header >> 16;
+  // TODO(aoates): sanity check that the packet isn't longer than the end
+  // pointer.
+  if (rx_status & RTL_RXHDR_ROK) {
+    KLOG(DEBUG2, "received packet len=%d\n", plen);
+    // TODO(aoates): actually, you know, handle the packet.
+  } else {
+    // TODO(aoates): increment stats.
+    KLOG(DEBUG, "received bad packet (status: %#x, len: %d)\n",
+         rx_status, plen);
+  }
+
+  // Release the buffer space to the NIC.
+  nic->rxstart += plen + RTL_RX_PACKET_HDR_SIZE;
+  nic->rxstart %= RTL_RXBUF_SIZE;
+  // N.B.(aoates): it's unclear why we need to offset this by 0x10, but qemu has
+  // the reverse transformation in its emulated NIC, and other drivers seem to
+  // do this as well.  God forbid the RTL8139 datasheet actually be useful and
+  // document this...
+  outs(nic->iobase + RTLRG_RXBUF_START, nic->rxstart - 0x10);
+}
+
+static void rtl_handle_recv(rtl8139_t* nic) {
+  int packets = 0;
+  uint16_t rxbuf_end = ltoh16(ins(nic->iobase + RTLRG_RXBUF_END));
+  while (rxbuf_end != nic->rxstart) {
+    // TODO(aoates): increment stats?
+    packets++;
+    KLOG(DEBUG2, "recv(%s): start=%#x end=%#x\n", nic->public.name,
+         nic->rxstart, rxbuf_end);
+    if (rxbuf_end - nic->rxstart < RTL_RX_PACKET_HDR_SIZE) {
+      KLOG(INFO, "recv(%s): data in buffer too small!\n", nic->public.name);
+      break;
+    }
+    rtl_handle_recv_one(nic);
+    rxbuf_end = ltoh16(ins(nic->iobase + RTLRG_RXBUF_END));
+  }
+  KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
+}
+
 static void rtl_irq_handler(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   const uint16_t interrupts = ins(nic->iobase + RTLRG_INTSTATUS);
@@ -84,7 +144,11 @@ static void rtl_irq_handler(void* arg) {
   // necessary....but qemu disagrees.
   outs(nic->iobase + RTLRG_INTSTATUS, interrupts);
 
-  // TODO(aoates): handle interrupts.
+  // TODO(aoates): we should _not_ be doing this in an interrupt context.
+  if (interrupts & RTL_IMR_ROK) {
+    rtl_handle_recv(nic);
+  }
+  // TODO(aoates): handle other interrupts (in particular, error cases).
 }
 
 static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
@@ -114,6 +178,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   KLOG(DEBUG, "Setting up receive buffer\n");
   phys_addr_t phys_rxbuf = page_frame_dma_alloc(3);  // 8k + 16
   nic->rxbuf = (void*)phys2virt(phys_rxbuf);
+  nic->rxstart = 0;
   // TODO(aoates): find a better way for this kind of check and constraint.
   KASSERT(phys_rxbuf < UINT32_MAX);
   outl(nic->iobase + RTLRG_RBSTART, htol32((uint32_t)phys_rxbuf));
