@@ -17,12 +17,6 @@
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 
-struct pbuf {
-  size_t reserved;
-  size_t total_len;
-  uint8_t data[];
-};
-
 pbuf_t* pbuf_create(size_t headers_reserve, size_t len) {
   KASSERT(headers_reserve + len > 0);
   pbuf_t* pb = (pbuf_t*)kmalloc(sizeof(pbuf_t) + headers_reserve + len);

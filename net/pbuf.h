@@ -16,6 +16,7 @@
 #define APOO_NET_PBUF_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 // A flexible packet buffer that allows header manipulation as it moves up and
 // down the stack.  Each pbuf has an underlying buffer that consists of some
@@ -40,8 +41,11 @@
 //   | <20 bytes >  | <28 bytes>  |
 //   | reseved      |    data     |
 //                  ^ pbuf_get() returns this
-struct pbuf;
-typedef struct pbuf pbuf_t;
+typedef struct {
+  size_t reserved;
+  size_t total_len;
+  uint8_t data[];
+} pbuf_t;
 
 // Allocate a pbuf of the given size.  Reserves |headers_reserve| bytes at the
 // start of the buffer for future headers.
