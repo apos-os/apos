@@ -16,6 +16,7 @@
 
 #include "common/kstring.h"
 #include "dev/net/nic.h"
+#include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 
 void net_init(void) {
@@ -28,11 +29,7 @@ void net_init(void) {
       struct sockaddr_in* addr = (struct sockaddr_in*)&nic->addrs[0];
       addr->sin_family = AF_INET;
       addr->sin_port = 0;
-      uint8_t* addr_bytes = (uint8_t*)&addr->sin_addr.s_addr;
-      addr_bytes[0] = 10;
-      addr_bytes[1] = 0;
-      addr_bytes[2] = 2;
-      addr_bytes[3] = 8;
+      addr->sin_addr.s_addr = str2inet("10.0.2.8");
     }
   }
 }

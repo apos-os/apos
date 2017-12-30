@@ -14,10 +14,52 @@
 
 #include "net/util.h"
 
+#include <stdbool.h>
+
 #include "common/kprintf.h"
+#include "common/kstring.h"
 
 char* inet2str(in_addr_t addr, char* buf) {
   const uint8_t* bytes = (uint8_t*)&addr;
   ksprintf(buf, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
   return buf;
+}
+
+static bool atol_internal(const char** s, long* out) {
+  *out = 0;
+  // Use do/while to fail if we _start_ with a period or NULL.
+  do {
+    if (!kisdigit(**s)) {
+      return false;
+    }
+    *out = *out * 10 + (**s - '0');
+    (*s)++;
+  } while (**s && **s != '.');
+  return true;
+}
+
+in_addr_t str2inet(const char* s) {
+  // TODO(aoates): rewrite this with strtol.
+  uint8_t bytes[4];
+
+  for (int i = 0; i < 4; ++i) {
+    long val;
+    if (!atol_internal(&s, &val)) {
+      return 0;  // Unparseable as number!
+    }
+    if (val < 0 || val > (long)UINT8_MAX) {
+      return 0;  // Out of range!
+    }
+    if (*s != '.' && i < 3) {
+      return 0;  // Non-period in the middle!
+    } else if (*s != 0 && i == 3) {
+      return 0;  // Too long!
+    }
+    s++;  // Skip the period.
+    bytes[i] = val;
+  }
+
+  in_addr_t addr;
+  kmemcpy(&addr, bytes, 4);
+  return addr;
 }

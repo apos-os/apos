@@ -42,4 +42,29 @@ void socket_test(void) {
   KEXPECT_STREQ("0.0.0.0", buf);
   KEXPECT_EQ(bufptr, inet2str(htob32(0x01020304), buf));
   KEXPECT_STREQ("1.2.3.4", buf);
+
+  KTEST_BEGIN("str2inet() tests");
+  KEXPECT_EQ(0, str2inet("0.0.0.0"));
+  KEXPECT_EQ(htob32(0x01020304), str2inet("1.2.3.4"));
+  KEXPECT_EQ(htob32(0xFFFEFDFC), str2inet("255.254.253.252"));
+  KEXPECT_EQ(htob32(0x00000001), str2inet("0.0.0.1"));
+  KEXPECT_EQ(htob32(0x01000000), str2inet("1.0.0.0"));
+  KEXPECT_EQ(0, str2inet("256.254.253.252"));
+  KEXPECT_EQ(0, str2inet("1.256.253.252"));
+  KEXPECT_EQ(0, str2inet("-1.1.2.1"));
+  KEXPECT_EQ(0, str2inet("1.-1.253.252"));
+  KEXPECT_EQ(0, str2inet("1.a1.1.1"));
+  KEXPECT_EQ(0, str2inet("a1.1.1.1"));
+  KEXPECT_EQ(0, str2inet("1.1.1.1.1"));
+  KEXPECT_EQ(0, str2inet("1.a.1.1"));
+  KEXPECT_EQ(0, str2inet("1.z.1.1"));
+  KEXPECT_EQ(0, str2inet("abcd"));
+  KEXPECT_EQ(0, str2inet(""));
+  KEXPECT_EQ(0, str2inet(".1.1.1"));
+  KEXPECT_EQ(0, str2inet(".1.1.1.1"));
+  KEXPECT_EQ(0, str2inet("1"));
+  KEXPECT_EQ(0, str2inet("1."));
+  KEXPECT_EQ(0, str2inet("1.1"));
+  KEXPECT_EQ(0, str2inet("1.1.1"));
+  KEXPECT_EQ(0, str2inet("1.1.1."));
 }

@@ -26,4 +26,7 @@
 // Pretty-print an inet address.
 char* inet2str(in_addr_t addr, char* buf);
 
+// Parse an inet address.  Returns 0 if unparseable.
+in_addr_t str2inet(const char* s);
+
 #endif
