@@ -12,17 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ARP_ARP_H
-#define APOO_NET_ETH_ARP_ARP_H
+#ifndef APOO_NET_ETH_MAC_H
+#define APOO_NET_ETH_MAC_H
 
-#include "dev/net/nic.h"
-#include "net/pbuf.h"
-#include "user/include/apos/net/socket/inet.h"
+#include <stdint.h>
 
-// Handle an inbound ARP packet.
-void arp_rx(nic_t* nic, pbuf_t* pb);
+#define ETH_MAC_LEN 6
 
-// Send a request for the given address on the nic.
-void arp_send_request(nic_t* nic, in_addr_t addr);
+// Copy the broadcast address into the given buffer.
+void eth_mkbroadcast(uint8_t* mac);
 
 #endif

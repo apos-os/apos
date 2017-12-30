@@ -21,6 +21,10 @@
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
+void eth_mkbroadcast(uint8_t* mac) {
+  kmemset(mac, 0xFF, 6);
+}
+
 void eth_rx(nic_t* nic, pbuf_t* pb) {
   if (pbuf_size(pb) < sizeof(eth_hdr_t)) {
     // TODO(aoates): increment a counter

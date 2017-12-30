@@ -12,17 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ARP_ARP_H
-#define APOO_NET_ETH_ARP_ARP_H
+#ifndef APOO_NET_ETH_ARP_ARP_CACHE_H
+#define APOO_NET_ETH_ARP_ARP_CACHE_H
 
-#include "dev/net/nic.h"
-#include "net/pbuf.h"
-#include "user/include/apos/net/socket/inet.h"
+#include "common/hashtable.h"
+#include "dev/timer.h"
+#include "net/eth/mac.h"
+#include "proc/kthread.h"
 
-// Handle an inbound ARP packet.
-void arp_rx(nic_t* nic, pbuf_t* pb);
+typedef struct {
+  htbl_t cache;
+  kthread_queue_t wait;
+} arp_cache_t;
 
-// Send a request for the given address on the nic.
-void arp_send_request(nic_t* nic, in_addr_t addr);
+typedef struct {
+  uint8_t mac[ETH_MAC_LEN];
+  apos_ms_t last_used;
+} arp_cache_entry_t;
+
+// Initialize an empty ARP cache.
+void arp_cache_init(arp_cache_t* cache);
 
 #endif

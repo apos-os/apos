@@ -18,9 +18,8 @@
 #include <stdint.h>
 
 #include "dev/net/nic.h"
+#include "net/eth/mac.h"
 #include "net/pbuf.h"
-
-#define ETH_MAC_LEN 6
 
 // An ethernet frame header.  Everything assumed to be in network byte order.
 typedef struct __attribute__((packed)) {

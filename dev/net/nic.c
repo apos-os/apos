@@ -69,6 +69,7 @@ void nic_init(nic_t* nic) {
     kmemset(&nic->addrs[i], 0, sizeof(struct sockaddr_storage));
     nic->addrs[i].sa_family = AF_UNSPEC;
   }
+  arp_cache_init(&nic->arp_cache);
 }
 
 void nic_create(nic_t* nic, const char* name_prefix) {

@@ -12,17 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ARP_ARP_H
-#define APOO_NET_ETH_ARP_ARP_H
+#ifndef APOO_NET_ETH_ARP_ARP_CACHE_OPS_H
+#define APOO_NET_ETH_ARP_ARP_CACHE_OPS_H
 
 #include "dev/net/nic.h"
-#include "net/pbuf.h"
+#include "net/eth/arp/arp_cache.h"
 #include "user/include/apos/net/socket/inet.h"
 
-// Handle an inbound ARP packet.
-void arp_rx(nic_t* nic, pbuf_t* pb);
+// Do an ARP lookup.  Returns 0 on success, or -error.  If the timeout is 0,
+// returns without blocking.
+int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
+                     int timeout_ms);
 
-// Send a request for the given address on the nic.
-void arp_send_request(nic_t* nic, in_addr_t addr);
+// Add an entry to the given ARP cache.
+// Interrupt-safe.
+// TODO(aoates): make this deferred-interrupt-safe when that's a thing.
+void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac);
 
 #endif

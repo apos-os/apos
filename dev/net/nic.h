@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "common/list.h"
+#include "net/eth/arp/arp_cache.h"
 #include "net/pbuf.h"
 #include "user/include/apos/net/socket/socket.h"
 
@@ -53,6 +54,7 @@ struct nic {
 
   // Fields maintained by the network subsystem.
   struct sockaddr_storage addrs[NIC_MAX_ADDRS];  // Configured network addresses
+  arp_cache_t arp_cache;
 
   // Fields used internally for NIC management.
   list_link_t nic_link;

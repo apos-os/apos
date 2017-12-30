@@ -21,7 +21,9 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "net/eth/arp/arp_cache_ops.h"
 #include "net/eth/eth.h"
+#include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -71,12 +73,17 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
   // See if the NIC the request came in on has a matching IP address.
   in_addr_t target_addr;
   kmemcpy(&target_addr, packet->tpa, sizeof(in_addr_t));
+  char inetbuf[INET_PRETTY_LEN];
+  KLOG(DEBUG2, "ARP: got request for IP %s on %s\n",
+       inet2str(target_addr, inetbuf), nic->name);
+
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
     if (nic->addrs[addr_idx].sa_family == AF_INET) {
       const struct sockaddr_in* addr =
           (const struct sockaddr_in*)&nic->addrs[addr_idx];
       if (addr->sin_addr.s_addr == target_addr) {
-        KLOG(DEBUG, "ARP: found NIC %s with matching IP\n", nic->name);
+        KLOG(DEBUG, "ARP: found NIC %s with matching IP (%s)\n", nic->name,
+             inet2str(target_addr, inetbuf));
 
         pbuf_t* reply_buf = arp_mkpacket(ARP_OPER_REPLY);
         arp_packet_t* reply = (arp_packet_t*)pbuf_get(reply_buf);
@@ -98,6 +105,16 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
       }
     }
   }
+}
+
+static void arp_handle_reply(nic_t* nic, const arp_packet_t* packet) {
+  KASSERT(nic->type == NIC_ETHERNET);
+
+  // TODO(aoates): verify that the source addresses are valid (i.e. aren't
+  // broadcast or multicast addresses, etc).
+  in_addr_t src_addr;
+  kmemcpy(&src_addr, packet->spa, sizeof(src_addr));
+  arp_cache_insert(nic, src_addr, packet->sha);
 }
 
 void arp_rx(nic_t* nic, pbuf_t* pb) {
@@ -124,7 +141,7 @@ void arp_rx(nic_t* nic, pbuf_t* pb) {
       arp_handle_request(nic, &packet);
 
     case ARP_OPER_REPLY:
-      // TODO(aoates): handle replies and gratuitous ARP.
+      arp_handle_reply(nic, &packet);
       break;
 
     default:
@@ -134,4 +151,43 @@ void arp_rx(nic_t* nic, pbuf_t* pb) {
   }
 
   pbuf_free(pb);
+}
+
+void arp_send_request(nic_t* nic, in_addr_t addr) {
+  char inetbuf[INET_PRETTY_LEN];
+  KLOG(DEBUG, "ARP: sending request for %s on %s\n", inet2str(addr, inetbuf),
+       nic->name);
+
+  in_addr_t nic_addr = 0;
+  // TODO(aoates): consider some NIC helper functions to find particular
+  // addresses, or an address of a particular family.
+  for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
+    if (nic->addrs[addr_idx].sa_family == AF_INET) {
+      struct sockaddr_in* inet_addr =
+          (struct sockaddr_in*)&nic->addrs[addr_idx];
+      nic_addr = inet_addr->sin_addr.s_addr;
+      break;
+    }
+  }
+  if (nic_addr == 0) {
+    KLOG(INFO,
+         "ARP: unable to request request on NIC %s, which doesn't have an IPv4 "
+         "address configured",
+         nic->name);
+    return;  // TODO(aoates): signal error up the stack?
+  }
+
+  pbuf_t* request_buf = arp_mkpacket(ARP_OPER_REQUEST);
+  arp_packet_t* req = (arp_packet_t*)pbuf_get(request_buf);
+  kmemcpy(&req->sha, nic->mac, ETH_MAC_LEN);
+  kmemcpy(&req->spa, &nic_addr, sizeof(nic_addr));
+  eth_mkbroadcast(req->tha);
+  kmemcpy(&req->tpa, &addr, sizeof(addr));
+  eth_add_hdr(request_buf, req->tha, nic->mac, ET_ARP);
+  int result = nic->ops->nic_tx(nic, request_buf);
+  if (result) {
+    KLOG(INFO, "ARP: unable to send request on %s: %s\n", nic->name,
+         errorname(-result));
+    pbuf_free(request_buf);
+  }
 }
