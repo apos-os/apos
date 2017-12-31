@@ -20,18 +20,22 @@ typedef int socklen_t;
 typedef unsigned int sa_family_t;
 
 struct sockaddr {
-  sa_family_t sa_family;  // Addressfamily.
+  sa_family_t sa_family;  // Address family.
   char sa_data[];         // Socket address (variable-length data).
 };
 
-// TODO(aoates): define struct sockaddr_storage.
+struct sockaddr_storage {
+  sa_family_t sa_family;  // Address family.
+  char _sa_pad[108];
+};
 
 #define SOCK_STREAM 1     // Byte­stream socket.
 // TODO(aoates): define SOCK_DGRAM, SOCK_RAW, and SOCK_SEQPACKET.
 
 #define AF_UNSPEC 1  // Unspecified.
 #define AF_UNIX 2    // UNIX domain sockets.
-// TODO(aoates): define AF_INET and AF_INET6
+#define AF_INET 3    // IPv4 sockets.
+// TODO(aoates): define AF_INET6
 
 #define SHUT_RD 1    // Disables further receive operations.
 #define SHUT_RDWR 2  // Disables further send and receive operations.

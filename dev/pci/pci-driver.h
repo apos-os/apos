@@ -18,6 +18,10 @@
 
 #include <stdint.h>
 
+typedef enum {
+  PCI_CMD_BUSMASTER_ENABLE = 0x04,
+} pci_command_bits_t;
+
 // Represents a single (bus, device, function) tuple.  Drivers are given one of
 // structures, and can manipulate and re-read portions of it using the functions
 // below.

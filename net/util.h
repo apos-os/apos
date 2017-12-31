@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2017 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,35 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_COMMON_KLOG_MODULES_H
-#define APOO_COMMON_KLOG_MODULES_H
+#ifndef APOO_NET_UTIL_H
+#define APOO_NET_UTIL_H
 
-// Modules that can be logged at different levels independently.
-typedef enum {
-  KL_GENERAL = 0,
+#include "user/include/apos/net/socket/inet.h"
 
-  // Memory modules.
-  KL_BLOCK_CACHE,
-  KL_KMALLOC,
-  KL_PAGE_FAULT,
+// Minimum length of a buffer for pretty-printing an IPv4 address.
+#define INET_PRETTY_LEN (4 * 4)
 
-  KL_PROC,
-  KL_SYSCALL,
+// TODO(aoates): should these go somewhere that can be shared with userspace
+// libraries?
 
-  // VFS modules.
-  KL_EXT2,
-  KL_VFS,
+// Pretty-print an inet address.
+char* inet2str(in_addr_t addr, char* buf);
 
-  // Device modules.
-  KL_NET,
-  KL_USB,
-  KL_USB_HUB,
-  KL_USB_UHCI,
-  KL_TTY,
-
-  KL_TEST,
-
-  KL_MODULE_MAX,
-} klog_module_t;
+// Parse an inet address.  Returns 0 if unparseable.
+in_addr_t str2inet(const char* s);
 
 #endif

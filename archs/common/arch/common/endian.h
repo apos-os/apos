@@ -25,4 +25,11 @@ static inline uint32_t htol32(uint32_t val);
 static inline uint16_t ltoh16(uint16_t val);
 static inline uint32_t ltoh32(uint32_t val);
 
+// Convert host-to-big endian values.
+static inline uint16_t htob16(uint16_t val);
+static inline uint32_t htob32(uint32_t val);
+
+static inline uint16_t btoh16(uint16_t val);
+static inline uint32_t btoh32(uint32_t val);
+
 #endif

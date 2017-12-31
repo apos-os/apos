@@ -34,6 +34,7 @@ vars.Add('KSHELL_INITIAL_COMMAND',
 
 # List of modules that can be enabled/disabled.  All are enabled by default.
 FEATURES = [
+  'ETHERNET',
   'EXT2',
   'TESTS',
   'TERM_COLOR',

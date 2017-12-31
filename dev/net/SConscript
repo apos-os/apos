@@ -15,12 +15,13 @@
 Import('env AposAddSources')
 
 srcs = [
-  'init.c',
-  'pbuf.c',
-  'util.c',
+  'nic.c',
 ]
 
-subdirs = ['eth', 'socket']
+subdirs = []
+
+if env['ETHERNET']:
+  srcs.append('rtl8139.c')
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

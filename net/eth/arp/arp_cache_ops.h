@@ -12,22 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Definitions for POSIX's <sys/un.h>
-#ifndef APOO_USER_NET_SOCKET_UNIX_H
-#define APOO_USER_NET_SOCKET_UNIX_H
+#ifndef APOO_NET_ETH_ARP_ARP_CACHE_OPS_H
+#define APOO_NET_ETH_ARP_ARP_CACHE_OPS_H
 
-#if __APOS_BUILDING_IN_TREE__
-#  include "user/include/apos/net/socket/socket.h"
-#else
-#  include <apos/net/socket/socket.h>
-#endif
+#include "dev/net/nic.h"
+#include "net/eth/arp/arp_cache.h"
+#include "user/include/apos/net/socket/inet.h"
 
-struct sockaddr_un {
-  sa_family_t sun_family;  // Address family.
-  char sun_path[108];      //  Socket pathname.
-};
+// Do an ARP lookup.  Returns 0 on success, or -error.  If the timeout is 0,
+// returns without blocking.
+int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
+                     int timeout_ms);
 
-_Static_assert(sizeof(struct sockaddr_un) <= sizeof(struct sockaddr_storage),
-               "struct sockaddr_un too large for struct sockaddr_storage");
+// Add an entry to the given ARP cache.
+// Interrupt-safe.
+// TODO(aoates): make this deferred-interrupt-safe when that's a thing.
+void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac);
 
 #endif

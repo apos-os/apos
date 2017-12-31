@@ -24,6 +24,7 @@
 #include "common/kstring.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "net/init.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
@@ -156,6 +157,9 @@ void kmain(memory_info_t* meminfo) {
   dev_init_fs();
 
   vfs_apply_mount_table();
+
+  klog("net_init()\n");
+  net_init();
 
   klog("initialization finished...\n");
 

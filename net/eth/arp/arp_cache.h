@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2017 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,35 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_COMMON_KLOG_MODULES_H
-#define APOO_COMMON_KLOG_MODULES_H
+#ifndef APOO_NET_ETH_ARP_ARP_CACHE_H
+#define APOO_NET_ETH_ARP_ARP_CACHE_H
 
-// Modules that can be logged at different levels independently.
-typedef enum {
-  KL_GENERAL = 0,
+#include "common/hashtable.h"
+#include "dev/timer.h"
+#include "net/eth/mac.h"
+#include "proc/kthread.h"
 
-  // Memory modules.
-  KL_BLOCK_CACHE,
-  KL_KMALLOC,
-  KL_PAGE_FAULT,
+typedef struct {
+  htbl_t cache;
+  kthread_queue_t wait;
+} arp_cache_t;
 
-  KL_PROC,
-  KL_SYSCALL,
+typedef struct {
+  uint8_t mac[ETH_MAC_LEN];
+  apos_ms_t last_used;
+} arp_cache_entry_t;
 
-  // VFS modules.
-  KL_EXT2,
-  KL_VFS,
-
-  // Device modules.
-  KL_NET,
-  KL_USB,
-  KL_USB_HUB,
-  KL_USB_UHCI,
-  KL_TTY,
-
-  KL_TEST,
-
-  KL_MODULE_MAX,
-} klog_module_t;
+// Initialize an empty ARP cache.
+void arp_cache_init(arp_cache_t* cache);
 
 #endif

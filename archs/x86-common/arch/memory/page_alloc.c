@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -21,11 +22,24 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 
+// The number of frames we reserve for DMA by device drivers.  This is a crappy
+// way to do this---it's static, so it limits the number of devices that can be
+// used, but also wastes memory if we don't use it all.
+#define DMA_RESERVED_FRAMES 32
+
 // The current stack of free page frame addresses.  The stack is guarded on both
 // ends by an invalid (non-aligned) page frames.
 static phys_addr_t* free_frame_stack = 0;
 static size_t stack_size = -1;
 static size_t stack_idx = -1;  // points to the next free element on the stack.
+
+// Address of the first DMA-reserved page frame (corresponds to index 0 in the
+// above array).
+static phys_addr_t dma_reserved_first_frame;
+
+// Index of the first free DMA-reserved frame.  We don't (currently) support
+// de-allocating the DMA ranges, so we just keep a high-water mark as we go.
+static size_t dma_reserved_first_free_idx = 0;
 
 // Initialize the allocator with the given meminfo.
 void page_frame_alloc_init(memory_info_t* meminfo) {
@@ -33,10 +47,17 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
       (meminfo->lower_memory + meminfo->upper_memory) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
   const phys_addr_t kernel_end_page = next_page(meminfo->kernel_end_phys);
+  phys_addr_t next_free_frame = kernel_end_page;
+
+  // Reserve same frames for DMA usage.  The DMA pages will live directly above
+  // the kernel (at the next page boundary).
+  dma_reserved_first_frame = next_free_frame;
+  next_free_frame += DMA_RESERVED_FRAMES * PAGE_SIZE;
 
   // Take all the frames above what the kernel is already using.  Don't include
   // frames before the kernel (<1MB).
-  const size_t free_frames = total_frames - (kernel_end_page / PAGE_SIZE);
+  const size_t free_frames =
+      total_frames - (kernel_end_page / PAGE_SIZE) - DMA_RESERVED_FRAMES;
 
   // Allocate a stack of the appropriate size.  We need sizeof(phys_addr_t)
   // bytes per free frame, plus twice that for guard addresses.  Round up to use
@@ -44,15 +65,16 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   stack_size = (free_frames + 2) * sizeof(phys_addr_t);
   stack_size = next_page(stack_size); // round up.
 
-  const addr_t stack_end = next_page(meminfo->kernel_end_virt) + stack_size;
-  KASSERT_MSG(meminfo->mapped_end >= stack_end,
-              "Not enough memory in kernel-mapped region for free page stack "
+  const addr_t stack_end = next_page(phys2virt(next_free_frame)) + stack_size;
+  KASSERT_MSG(meminfo->phys_map_start + meminfo->phys_map_length >= stack_end,
+              "Not enough memory in physical-mapped region for free page stack "
               "(mapped region goes to %#" PRIxADDR
               ", stack would go to %#" PRIxADDR,
-              meminfo->mapped_end, stack_end);
+              meminfo->phys_map_start + meminfo->phys_map_length, stack_end);
 
-  // The stack will live directly above the kernel (at the next page boundary).
-  free_frame_stack = (phys_addr_t*)next_page(meminfo->kernel_end_virt);
+  // The stack will live directly above the DMA-reserved block.
+  free_frame_stack = (phys_addr_t*)phys2virt(next_free_frame);
+  next_free_frame += stack_size;
 
   // Fill the stack with crap.
   kmemset(free_frame_stack, 0xBC, stack_size);
@@ -60,7 +82,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   // Push each free frame onto the stack.  Don't count the frames we just used
   // for the stack, though.
   stack_idx = 0;
-  phys_addr_t address = kernel_end_page + stack_size;
+  phys_addr_t address = next_free_frame;
   for (size_t i = 0; i < free_frames - (stack_size / PAGE_SIZE); ++i) {
     KASSERT(is_page_aligned(address));
     KASSERT(address + PAGE_SIZE <= total_frames * PAGE_SIZE);
@@ -117,4 +139,14 @@ void page_frame_free_nocheck(phys_addr_t frame_addr) {
   KASSERT(stack_idx <= stack_size);
 
   free_frame_stack[stack_idx++] = frame_addr;
+}
+
+phys_addr_t page_frame_dma_alloc(size_t pages) {
+  if (pages == 0 || pages > DMA_RESERVED_FRAMES - dma_reserved_first_free_idx) {
+    return 0;
+  }
+  const phys_addr_t result =
+      dma_reserved_first_frame + dma_reserved_first_free_idx * PAGE_SIZE;
+  dma_reserved_first_free_idx += pages;
+  return result;
 }

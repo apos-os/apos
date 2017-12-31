@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2017 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,35 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_COMMON_KLOG_MODULES_H
-#define APOO_COMMON_KLOG_MODULES_H
+#ifndef APOO_NET_ETH_MAC_H
+#define APOO_NET_ETH_MAC_H
 
-// Modules that can be logged at different levels independently.
-typedef enum {
-  KL_GENERAL = 0,
+#include <stdint.h>
 
-  // Memory modules.
-  KL_BLOCK_CACHE,
-  KL_KMALLOC,
-  KL_PAGE_FAULT,
+#define ETH_MAC_LEN 6
 
-  KL_PROC,
-  KL_SYSCALL,
-
-  // VFS modules.
-  KL_EXT2,
-  KL_VFS,
-
-  // Device modules.
-  KL_NET,
-  KL_USB,
-  KL_USB_HUB,
-  KL_USB_UHCI,
-  KL_TTY,
-
-  KL_TEST,
-
-  KL_MODULE_MAX,
-} klog_module_t;
+// Copy the broadcast address into the given buffer.
+void eth_mkbroadcast(uint8_t* mac);
 
 #endif

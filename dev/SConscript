@@ -26,7 +26,7 @@ srcs = [
   'tty_util.c',
   ]
 
-subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk']
+subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk', 'net']
 
 if env['USB']:
   subdirs.append('usb')

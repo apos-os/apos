@@ -26,4 +26,19 @@ static inline uint32_t htol32(uint32_t val) { return val; }
 static inline uint16_t ltoh16(uint16_t val) { return val; }
 static inline uint32_t ltoh32(uint32_t val) { return val; }
 
+// Convert host-to-big endian values.
+// TODO(aoates): these can be in an arch-independent place.
+static inline uint16_t htob16(uint16_t val) {
+  return ((val & 0xFF) << 8) | ((val >> 8) & 0xFF);
+}
+
+static inline uint32_t htob32(uint32_t val) {
+  return ((val & 0xFF) << 24) | ((val & 0xFF00) << 8) |
+         ((val & 0xFF0000) >> 8) | ((val & 0xFF000000) >> 24);
+}
+
+static inline uint16_t btoh16(uint16_t val) { return htob16(val); }
+
+static inline uint32_t btoh32(uint32_t val) { return htob32(val); }
+
 #endif
