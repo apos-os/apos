@@ -20,6 +20,7 @@
 #include "common/list.h"
 #include "net/eth/arp/arp_cache.h"
 #include "net/pbuf.h"
+#include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
@@ -45,6 +46,16 @@ typedef enum {
   NIC_ETHERNET = 1,
 } nic_type_t;
 
+// A network configured on a NIC.
+typedef struct {
+  // TODO(aoates): support IPv6 addresses.
+  sa_family_t family;  // Address family of the network
+  union {
+    struct in_addr ip4;      // IPv4 address
+  } addr;                    // The NIC's configured address.
+  int prefix_len;            // Length of the network's prefix (i.e. netmask)
+} nic_addr_t;
+
 struct nic {
   // Fields maintained by the NIC driver.
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
@@ -53,7 +64,7 @@ struct nic {
   nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
-  struct sockaddr_storage addrs[NIC_MAX_ADDRS];  // Configured network addresses
+  nic_addr_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   arp_cache_t arp_cache;
 
   // Fields used internally for NIC management.

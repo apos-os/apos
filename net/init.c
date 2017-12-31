@@ -26,10 +26,9 @@ void net_init(void) {
   for (int nic_idx = 0; nic_idx < nic_count(); ++nic_idx) {
     nic_t* nic = nic_get(nic_idx);
     if (kstrcmp(nic->name, "eth0") == 0) {
-      struct sockaddr_in* addr = (struct sockaddr_in*)&nic->addrs[0];
-      addr->sin_family = AF_INET;
-      addr->sin_port = 0;
-      addr->sin_addr.s_addr = str2inet("10.0.2.8");
+      nic->addrs[0].family = AF_INET;
+      nic->addrs[0].addr.ip4.s_addr = str2inet("10.0.2.8");
+      nic->addrs[0].prefix_len = 24;
     }
   }
 }
