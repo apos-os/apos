@@ -16,6 +16,7 @@
 
 #include "arch/common/endian.h"
 #include "common/kassert.h"
+#include "net/ip/checksum.h"
 
 #define IP_DEFAULT_TTL 64
 
@@ -33,18 +34,7 @@ void ip4_add_hdr(pbuf_t* pb, in_addr_t src, in_addr_t dst, uint8_t protocol) {
   hdr->src_addr = src;
   hdr->dst_addr = dst;
 
-  // Calculate the checksum.
   // TODO(aoates): only do this if needed (i.e. because we can't offload it to
   // the NIC, or ignore it on the loopback device, etc).
-  uint32_t checksum = 0;
-  const uint8_t* hdr_data = pbuf_get(pb);
-  const size_t hdr_len = sizeof(ip4_hdr_t);
-  KASSERT_DBG(hdr_len % 2 == 0);
-  for (size_t i = 0; i < sizeof(ip4_hdr_t) / 2; ++i) {
-    checksum += (hdr_data[2 * i] << 8) | hdr_data[2 * i + 1];
-    checksum = (checksum >> 16) + (checksum & 0xFFFF);  // End-around carry.
-  }
-  KASSERT_DBG((checksum & 0xFFFF0000) == 0);
-  checksum = ~checksum;
-  hdr->hdr_checksum = htob16(checksum);
+  hdr->hdr_checksum = ip_checksum(hdr, sizeof(ip4_hdr_t));
 }
