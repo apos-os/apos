@@ -78,8 +78,8 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
        inet2str(target_addr, inetbuf), nic->name);
 
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
-    if (nic->addrs[addr_idx].family == AF_INET) {
-      if (nic->addrs[addr_idx].addr.ip4.s_addr == target_addr) {
+    if (nic->addrs[addr_idx].addr.family == AF_INET) {
+      if (nic->addrs[addr_idx].addr.a.ip4.s_addr == target_addr) {
         KLOG(DEBUG, "ARP: found NIC %s with matching IP (%s)\n", nic->name,
              inet2str(target_addr, inetbuf));
 
@@ -160,8 +160,8 @@ void arp_send_request(nic_t* nic, in_addr_t addr) {
   // TODO(aoates): consider some NIC helper functions to find particular
   // addresses, or an address of a particular family.
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
-    if (nic->addrs[addr_idx].family == AF_INET) {
-      nic_addr = nic->addrs[addr_idx].addr.ip4.s_addr;
+    if (nic->addrs[addr_idx].addr.family == AF_INET) {
+      nic_addr = nic->addrs[addr_idx].addr.a.ip4.s_addr;
       break;
     }
   }

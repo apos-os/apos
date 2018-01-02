@@ -26,8 +26,8 @@ void net_init(void) {
   for (int nic_idx = 0; nic_idx < nic_count(); ++nic_idx) {
     nic_t* nic = nic_get(nic_idx);
     if (kstrcmp(nic->name, "eth0") == 0) {
-      nic->addrs[0].family = AF_INET;
-      nic->addrs[0].addr.ip4.s_addr = str2inet("10.0.2.8");
+      nic->addrs[0].addr.family = ADDR_INET;
+      nic->addrs[0].addr.a.ip4.s_addr = str2inet("10.0.2.8");
       nic->addrs[0].prefix_len = 24;
     }
   }

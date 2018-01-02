@@ -66,8 +66,8 @@ void nic_init(nic_t* nic) {
   nic->nic_link = LIST_LINK_INIT;
 
   for (size_t i = 0; i < NIC_MAX_ADDRS; ++i) {
-    kmemset(&nic->addrs[i], 0, sizeof(nic_addr_t));
-    nic->addrs[i].family = AF_UNSPEC;
+    kmemset(&nic->addrs[i], 0, sizeof(network_t));
+    nic->addrs[i].addr.family = AF_UNSPEC;
   }
   arp_cache_init(&nic->arp_cache);
 }
