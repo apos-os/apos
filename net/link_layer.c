@@ -14,10 +14,26 @@
 
 #include "net/link_layer.h"
 
+#include "common/errno.h"
 #include "common/klog.h"
 #include "net/eth/arp/arp.h"
+#include "net/eth/eth.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
+
+int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
+                  ethertype_t protocol) {
+  switch (nic->type) {
+    case NIC_ETHERNET:
+      return eth_send(nic, next_hop, pb, protocol);
+
+    case NIC_UNKNOWN:
+      break;
+  }
+
+  KLOG(DFATAL, "Dropping packet for unknown NIC type\n");
+  return -EINVAL;
+}
 
 void net_link_recv(nic_t* nic, pbuf_t* pb, ethertype_t protocol) {
   switch (protocol) {

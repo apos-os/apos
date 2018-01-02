@@ -31,8 +31,14 @@ typedef struct __attribute__((packed)) {
 
 _Static_assert(sizeof(eth_hdr_t) == 14, "wrong eth_hdr_t size");
 
+// Handle and dispatch an outbound packet for the given NIC.  Does an ARP (or
+// equivalent) lookup to find the link-layer address.  May block.
+//
+// The packet should NOT have an ethernet frame header on it already.
+int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol);
+
 // Handle and dispatch an inbound packet.  Takes ownership of the buffer.
-void eth_rx(nic_t* nic, pbuf_t* pb);
+void eth_recv(nic_t* nic, pbuf_t* pb);
 
 // Adds (prepends) an ethernet header to the given packet.
 void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
