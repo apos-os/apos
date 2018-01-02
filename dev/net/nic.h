@@ -57,9 +57,6 @@ struct nic {
   // Fields maintained by the network subsystem.
   network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   arp_cache_t arp_cache;
-
-  // Fields used internally for NIC management.
-  list_link_t nic_link;
 };
 
 // Initialize a nic_t structure.  Call this before calling nic_create().
@@ -78,5 +75,8 @@ int nic_count(void);
 
 // Returns the NIC at the given index, or NULL.
 nic_t* nic_get(int idx);
+
+// Returns the NIC with the given name, or NULL.
+nic_t* nic_get_nm(const char* name);
 
 #endif
