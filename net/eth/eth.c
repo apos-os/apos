@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "net/eth/arp/arp.h"
+#include "net/link_layer.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -42,21 +43,11 @@ void eth_rx(nic_t* nic, pbuf_t* pb) {
        mac2str(hdr.mac_src, buf1), mac2str(hdr.mac_dst, buf2), hdr.ethertype);
 
   pbuf_pop_header(pb, sizeof(eth_hdr_t));
-  switch (hdr.ethertype) {
-    case ET_ARP:
-      arp_rx(nic, pb);
-      return;
-
-    default:
-      KLOG(INFO, "rx(%s): dropping packet with unknown ethertype %#06x\n",
-           nic->name, hdr.ethertype);
-      pbuf_free(pb);
-      return;
-  }
+  net_link_recv(nic, pb, hdr.ethertype);
 }
 
 void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
-                 ethertype_vals_t ethertype) {
+                 ethertype_t ethertype) {
   pbuf_push_header(pb, sizeof(eth_hdr_t));
   eth_hdr_t* hdr = (eth_hdr_t*)pbuf_get(pb);
   kmemcpy(hdr->mac_dst, mac_dst, ETH_MAC_LEN);

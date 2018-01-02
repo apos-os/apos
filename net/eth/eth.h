@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "dev/net/nic.h"
+#include "net/eth/ethertype.h"
 #include "net/eth/mac.h"
 #include "net/pbuf.h"
 
@@ -30,16 +31,11 @@ typedef struct __attribute__((packed)) {
 
 _Static_assert(sizeof(eth_hdr_t) == 14, "wrong eth_hdr_t size");
 
-typedef enum {
-  ET_IPV4 = 0x0800,
-  ET_ARP = 0x0806,
-} ethertype_vals_t;
-
 // Handle and dispatch an inbound packet.  Takes ownership of the buffer.
 void eth_rx(nic_t* nic, pbuf_t* pb);
 
 // Adds (prepends) an ethernet header to the given packet.
 void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
-                 ethertype_vals_t ethertype);
+                 ethertype_t ethertype);
 
 #endif
