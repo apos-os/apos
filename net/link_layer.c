@@ -27,6 +27,10 @@ int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
     case NIC_ETHERNET:
       return eth_send(nic, next_hop, pb, protocol);
 
+    case NIC_LOOPBACK:
+      net_link_recv(nic, pb, protocol);
+      return 0;
+
     case NIC_UNKNOWN:
       break;
   }

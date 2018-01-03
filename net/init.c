@@ -16,6 +16,7 @@
 
 #include "common/kstring.h"
 #include "dev/net/nic.h"
+#include "dev/net/loopback.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -23,6 +24,11 @@ void net_init(void) {
   // Basic static configuration to get things going.  This should not be in the
   // kernel, and _definitely_ not be hard-coded.
   // TODO(aoates): do better than this.
+  nic_t* lo = loopback_create();
+  lo->addrs[0].addr.family = ADDR_INET;
+  lo->addrs[0].addr.a.ip4.s_addr = str2inet("127.0.0.1");
+  lo->addrs[0].prefix_len = 8;
+
   nic_t* nic = nic_get_nm("eth0");
   if (nic) {
     nic->addrs[0].addr.family = ADDR_INET;

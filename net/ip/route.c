@@ -16,6 +16,7 @@
 
 #include "arch/common/endian.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "dev/net/nic.h"
 
 typedef struct {
@@ -96,6 +97,13 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
     for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
                               nic->addrs[addridx].addr.family != AF_UNSPEC;
          addridx++) {
+      if (kmemcmp(&nic->addrs[addridx].addr, &dst, sizeof(dst)) == 0) {
+        // Sending to the NIC's own address---reroute via the loopback.
+        // TODO(aoates): don't hard-code the loopback device name here.
+        result->nic = nic_get_nm("lo0");
+        result->nexthop = dst;
+        return (result->nic != NULL);
+      }
       if (nic->addrs[addridx].prefix_len > longest_prefix &&
           netmatch(&dst, &nic->addrs[addridx])) {
         result->nic = nic;
