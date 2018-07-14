@@ -30,8 +30,8 @@ srcs = ['builtins.c', 'errno.c',
 def config_h_builder(target, source, env):
   """Builder for a config.h header file."""
   for a_target, a_source in zip(target, source):
-      config_h = file(str(a_target), "w")
-      config_h_in = file(str(a_source), "r")
+      config_h = open(str(a_target), "w")
+      config_h_in = open(str(a_source), "r")
       config_h.write(config_h_in.read() % env.Dictionary())
       config_h_in.close()
       config_h.close()

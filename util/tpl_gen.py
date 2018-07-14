@@ -50,7 +50,7 @@ def main(argv):
       undefined=jinja2.StrictUndefined,
       extensions=['jinja2.ext.do'])
   template = env.get_template(tpl_file)
-  print template.render(python_env)
+  print(template.render(python_env))
 
 if __name__ == '__main__':
   main(sys.argv)
