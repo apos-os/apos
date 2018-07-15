@@ -15,17 +15,42 @@
 #include "net/eth/eth.h"
 
 #include "arch/common/endian.h"
+#include "common/errno.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "net/eth/arp/arp.h"
+#include "net/eth/arp/arp_cache_ops.h"
+#include "net/link_layer.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
+
+// TODO(aoates): this should be configurable.  Per NIC?  Per socket?  How would
+// we plumb that?
+#define ARP_TIMEOUT_MS 500
 
 void eth_mkbroadcast(uint8_t* mac) {
   kmemset(mac, 0xFF, 6);
 }
 
-void eth_rx(nic_t* nic, pbuf_t* pb) {
+int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol) {
+  if (protocol != ET_IPV4) {
+    KLOG(INFO, "send(%s): dropping packet with unsupported protocol %#06x\n",
+         nic->name, protocol);
+    return -EINVAL;
+  }
+  KASSERT(next_hop.family == ADDR_INET);
+  arp_cache_entry_t arp_result;
+  int result =
+      arp_cache_lookup(nic, next_hop.a.ip4.s_addr, &arp_result, ARP_TIMEOUT_MS);
+  if (result != 0) {
+    return result;
+  }
+
+  eth_add_hdr(pb, arp_result.mac, nic->mac, protocol);
+  return nic->ops->nic_tx(nic, pb);
+}
+
+void eth_recv(nic_t* nic, pbuf_t* pb) {
   if (pbuf_size(pb) < sizeof(eth_hdr_t)) {
     // TODO(aoates): increment a counter
     KLOG(INFO, "recv(%s): dropping too-short packet (%zu bytes)\n", nic->name,
@@ -42,21 +67,11 @@ void eth_rx(nic_t* nic, pbuf_t* pb) {
        mac2str(hdr.mac_src, buf1), mac2str(hdr.mac_dst, buf2), hdr.ethertype);
 
   pbuf_pop_header(pb, sizeof(eth_hdr_t));
-  switch (hdr.ethertype) {
-    case ET_ARP:
-      arp_rx(nic, pb);
-      return;
-
-    default:
-      KLOG(INFO, "rx(%s): dropping packet with unknown ethertype %#06x\n",
-           nic->name, hdr.ethertype);
-      pbuf_free(pb);
-      return;
-  }
+  net_link_recv(nic, pb, hdr.ethertype);
 }
 
 void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
-                 ethertype_vals_t ethertype) {
+                 ethertype_t ethertype) {
   pbuf_push_header(pb, sizeof(eth_hdr_t));
   eth_hdr_t* hdr = (eth_hdr_t*)pbuf_get(pb);
   kmemcpy(hdr->mac_dst, mac_dst, ETH_MAC_LEN);

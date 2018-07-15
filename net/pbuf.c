@@ -36,6 +36,10 @@ void* pbuf_get(pbuf_t* pb) {
   return &pb->data[pb->reserved];
 }
 
+const void* pbuf_getc(const pbuf_t* pb) {
+  return &pb->data[pb->reserved];
+}
+
 size_t pbuf_size(const pbuf_t* pb) {
   return pb->total_len - pb->reserved;
 }

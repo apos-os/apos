@@ -19,7 +19,9 @@
 
 #include "common/list.h"
 #include "net/eth/arp/arp_cache.h"
+#include "net/addr.h"
 #include "net/pbuf.h"
+#include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
@@ -43,6 +45,7 @@ typedef struct {
 typedef enum {
   NIC_UNKNOWN = 0,
   NIC_ETHERNET = 1,
+  NIC_LOOPBACK = 2,
 } nic_type_t;
 
 struct nic {
@@ -53,11 +56,8 @@ struct nic {
   nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
-  struct sockaddr_storage addrs[NIC_MAX_ADDRS];  // Configured network addresses
+  network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   arp_cache_t arp_cache;
-
-  // Fields used internally for NIC management.
-  list_link_t nic_link;
 };
 
 // Initialize a nic_t structure.  Call this before calling nic_create().
@@ -76,5 +76,8 @@ int nic_count(void);
 
 // Returns the NIC at the given index, or NULL.
 nic_t* nic_get(int idx);
+
+// Returns the NIC with the given name, or NULL.
+nic_t* nic_get_nm(const char* name);
 
 #endif

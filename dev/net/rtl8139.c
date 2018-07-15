@@ -171,7 +171,7 @@ static void rtl_handle_recv_one(rtl8139_t* nic) {
     // worrying about wrapping around the end.
     kmemcpy(pbuf_get(pb), nic->rxbuf + nic->rxstart + RTL_RX_PACKET_HDR_SIZE,
             plen);
-    eth_rx(&nic->public, pb);
+    eth_recv(&nic->public, pb);
   } else {
     // TODO(aoates): increment stats.
     KLOG(DEBUG, "received bad packet (status: %#x, len: %d)\n",
