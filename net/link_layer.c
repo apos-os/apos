@@ -18,6 +18,7 @@
 #include "common/klog.h"
 #include "net/eth/arp/arp.h"
 #include "net/eth/eth.h"
+#include "net/ip/ip.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -42,8 +43,8 @@ int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
 void net_link_recv(nic_t* nic, pbuf_t* pb, ethertype_t protocol) {
   switch (protocol) {
     case ET_IPV4:
-      // TODO(aoates): handle IP packets.
-      break;
+      ip_recv(nic, pb);
+      return;
 
     case ET_ARP:
       arp_rx(nic, pb);

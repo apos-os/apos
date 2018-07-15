@@ -56,6 +56,7 @@ void pbuf_free(pbuf_t* pb);
 
 // Returns the data portion of the pbuf.
 void* pbuf_get(pbuf_t* pb);
+const void* pbuf_getc(const pbuf_t* pb);
 
 // Returns the size of the data portion of the pbuf.
 size_t pbuf_size(const pbuf_t* pb);

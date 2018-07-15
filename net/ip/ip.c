@@ -14,14 +14,48 @@
 
 #include "net/ip/ip.h"
 
+#include "arch/common/endian.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/klog.h"
+#include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
 #include "net/link_layer.h"
 #include "net/util.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
+
+static bool validate_hdr_v4(const pbuf_t* pb) {
+  if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
+    KLOG(DEBUG, "net: truncated IP packet\n");
+    return false;
+  }
+  const ip4_hdr_t* hdr = (const ip4_hdr_t*)pbuf_getc(pb);
+  if (ip4_version(*hdr) != 4) {
+    KLOG(DEBUG, "net: IP packet with bad version %d\n", ip4_version(*hdr));
+    return false;
+  }
+  if (ip4_ihl(*hdr) < 5) {
+    KLOG(DEBUG, "net: IP packet with bad IHL %d\n", ip4_ihl(*hdr));
+    return false;
+  }
+  const size_t hdr_len = ip4_ihl(*hdr) * sizeof(uint32_t);
+  const size_t total_len = btoh16(hdr->total_len);
+  if (total_len < hdr_len || total_len > pbuf_size(pb)) {
+    KLOG(DEBUG, "net: IP packet with bad length %d\n", hdr->total_len);
+    return false;
+  }
+  if ((ip4_flags(*hdr) & IPV4_FLAG_MF) || ip4_fragoff(*hdr) > 0) {
+    KLOG(DEBUG, "net: fragmented IP packet\n");
+    return false;
+  }
+  if (ip_checksum(hdr, hdr_len) != 0) {
+    KLOG(DEBUG, "net: IP packet with bad checksum\n");
+    return false;
+  }
+  return true;
+}
 
 int ip_send(pbuf_t* pb) {
   if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
@@ -48,4 +82,22 @@ int ip_send(pbuf_t* pb) {
   }
 
   return net_link_send(route.nic, route.nexthop, pb, ET_IPV4);
+}
+
+void ip_recv(nic_t* nic, pbuf_t* pb) {
+  // Verify the packet.
+  if (!validate_hdr_v4(pb)) {
+    KLOG(INFO, "net: dropping invalid IP packet\n");
+    // TODO(aoates): increment stats.
+    pbuf_free(pb);
+    return;
+  }
+
+  const ip4_hdr_t* hdr = (const ip4_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(ip4_version(*hdr) == 4);
+  char buf1[INET_PRETTY_LEN], buf2[INET_PRETTY_LEN];
+  KLOG(DEBUG2, "ip rx(%s): %s -> %s, protocol=%d\n", nic->name,
+       inet2str(hdr->src_addr, buf1), inet2str(hdr->dst_addr, buf2),
+       hdr->protocol);
+  pbuf_free(pb);
 }
