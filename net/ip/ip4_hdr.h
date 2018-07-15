@@ -41,8 +41,11 @@ _Static_assert(sizeof(ip4_hdr_t) == 20, "ip4_hdr_t wrong size");
 #define ip4_ihl(h) ((h).version_ihl & 0x0f)
 #define ip4_dscp(h) ((h).dscp_ecn >> 2)
 #define ip4_ecn(h) ((h).dscp_ecn & 0x03)
-#define ip4_flags(h) ((h).flags_fragoff >> 13)
-#define ip4_fragoff(h) ((h).flags_fragoff & 0x1fff)
+#define ip4_flags(h) (btoh16((h).flags_fragoff) >> 13)
+#define ip4_fragoff(h) (btoh16((h).flags_fragoff) & 0x1fff)
+
+#define IPV4_FLAG_MF 0x1
+#define IPV4_FLAG_DF 0x2
 
 // Adds (prepends) an IP header to the given packet.  Calculates the checksum.
 void ip4_add_hdr(pbuf_t* pb, in_addr_t src, in_addr_t dst, uint8_t protocol);
