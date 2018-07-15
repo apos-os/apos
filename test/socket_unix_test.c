@@ -57,7 +57,7 @@ static void create_test(void) {
   KEXPECT_EQ(AF_UNIX, sock->s_domain);
   KEXPECT_EQ(SOCK_STREAM, sock->s_type);
   KEXPECT_EQ(0, sock->s_protocol);
-  kfree(sock);
+  net_socket_destroy(sock);
 
   KTEST_BEGIN("net_socket_create(AF_UNIX): bad type");
   sock = NULL;
