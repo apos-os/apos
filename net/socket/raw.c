@@ -15,13 +15,80 @@
 #include "net/socket/raw.h"
 
 #include "common/errno.h"
+#include "common/hash.h"
+#include "common/hashtable.h"
 #include "common/kassert.h"
+#include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "net/eth/ethertype.h"
 #include "user/include/apos/net/socket/inet.h"
+
+typedef struct {
+  pbuf_t* pb;
+  list_link_t link;
+} queued_pkt_t;
 
 static const socket_ops_t g_raw_socket_ops;
 
+// Table of lists of raw sockets, indexed by (ethertype, protocol) pair.
+static htbl_t g_raw_sockets;
+static bool g_raw_sockets_init = false;
+
+static void init_raw_sockets(void) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  if (!g_raw_sockets_init) {
+    htbl_init(&g_raw_sockets, 10);
+    g_raw_sockets_init = true;
+  }
+  POP_INTERRUPTS();
+}
+
+static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
+  KASSERT(g_raw_sockets_init);
+
+  const uint32_t key = ((uint16_t)ethertype << 16) | (uint16_t)protocol;
+  const uint32_t hash = fnv_hash(key);
+  void* value = NULL;
+  if (htbl_get(&g_raw_sockets, hash, &value) != 0) {
+    value = kmalloc(sizeof(list_t));
+    KASSERT(value != NULL);  // TODO(aoates): handle OOM?
+    *((list_t*)value) = LIST_INIT;
+    htbl_put(&g_raw_sockets, hash, value);
+  }
+  return (list_t*)value;
+}
+
+static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb) {
+  KASSERT(g_raw_sockets_init);
+
+  queued_pkt_t* qpkt = (queued_pkt_t*)kmalloc(sizeof(queued_pkt_t));
+  KASSERT(qpkt != NULL);  // TODO(aoates): handle OOM?
+  qpkt->link = LIST_LINK_INIT;
+  qpkt->pb = pbuf_dup(pb, /* headers= */ false);
+  KASSERT(qpkt->pb != NULL);  // TODO(aoates): handle OOM?
+
+  list_push(&sock->rx_queue, &qpkt->link);
+
+  // TODO(aoates): wake up any waiting threads and notify pollers.
+}
+
+void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
+  init_raw_sockets();
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  list_t* sock_list = get_socket_list(ethertype, protocol);
+  list_link_t* link = sock_list->head;
+  while (link) {
+    socket_raw_t* sock = container_of(link, socket_raw_t, link);
+    sock_raw_dispatch_one(sock, pb);
+    link = link->next;
+  }
+  POP_INTERRUPTS();
+}
+
 int sock_raw_create(int domain, int type, int protocol, socket_t** out) {
+  init_raw_sockets();
+
   if (domain != AF_INET) {
     return -EPROTONOSUPPORT;
   }
@@ -38,12 +105,34 @@ int sock_raw_create(int domain, int type, int protocol, socket_t** out) {
   sock->base.s_type = type;
   sock->base.s_protocol = protocol;
   sock->base.s_ops = &g_raw_socket_ops;
+  sock->rx_queue = LIST_INIT;
+  sock->link = LIST_LINK_INIT;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT(domain == AF_INET);
+  list_t* sock_list = get_socket_list(ET_IPV4, protocol);
+  list_push(sock_list, &sock->link);
+  sock->sock_list = sock_list;
+  POP_INTERRUPTS();
+
   *out = &sock->base;
   return 0;
 }
 
 static void sock_raw_cleanup(socket_t* socket_base) {
   KASSERT(socket_base->s_type == SOCK_RAW);
+  socket_raw_t* socket = (socket_raw_t*)socket_base;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  list_remove(socket->sock_list, &socket->link);
+  POP_INTERRUPTS();
+
+  while (!list_empty(&socket->rx_queue)) {
+    list_link_t* link = list_pop(&socket->rx_queue);
+    queued_pkt_t* pkt = container_of(link, queued_pkt_t, link);
+    pbuf_free(pkt->pb);
+    kfree(pkt);
+  }
 }
 
 static int sock_raw_shutdown(socket_t* socket_base, int how) {

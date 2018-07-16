@@ -22,6 +22,7 @@
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
 #include "net/link_layer.h"
+#include "net/socket/raw.h"
 #include "net/util.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -99,5 +100,7 @@ void ip_recv(nic_t* nic, pbuf_t* pb) {
   KLOG(DEBUG2, "ip rx(%s): %s -> %s, protocol=%d\n", nic->name,
        inet2str(hdr->src_addr, buf1), inet2str(hdr->dst_addr, buf2),
        hdr->protocol);
+
+  sock_raw_dispatch(pb, ET_IPV4, hdr->protocol);
   pbuf_free(pb);
 }

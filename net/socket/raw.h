@@ -16,13 +16,32 @@
 #ifndef APOO_NET_SOCKET_RAW_H
 #define APOO_NET_SOCKET_RAW_H
 
+#include "common/list.h"
 #include "net/socket/socket.h"
+#include "net/eth/ethertype.h"
+#include "net/pbuf.h"
 
 typedef struct socket_raw {
   socket_t base;
+
+  // List of queued packets.
+  // TODO(aoates): cap amount of buffered data.
+  list_t rx_queue;
+
+  // Link on raw socket linked list.
+  list_t* sock_list;
+  list_link_t link;
 } socket_raw_t;
 
 // Create a raw socket.
 int sock_raw_create(int domain, int type, int protocol, socket_t** out);
+
+// Handle a IP-layer (or equivalent) packet.  If necessary, it will be
+// dispatched to any active raw sockets for the given protocol.  Ownership is
+// _not_ taken.
+//
+// Interrupt safe.
+// TODO(aoates): switch this to use deferred interrupts when they exist.
+void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
 
 #endif
