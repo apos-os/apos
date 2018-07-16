@@ -15,6 +15,7 @@
 #include "net/pbuf.h"
 
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "memory/kmalloc.h"
 
 pbuf_t* pbuf_create(size_t headers_reserve, size_t len) {
@@ -30,6 +31,22 @@ pbuf_t* pbuf_create(size_t headers_reserve, size_t len) {
 
 void pbuf_free(pbuf_t* pb) {
   kfree(pb);
+}
+
+pbuf_t* pbuf_dup(const pbuf_t* pb, bool headers) {
+  if (headers) {
+    pbuf_t* result = pbuf_create(pb->reserved, pb->total_len - pb->reserved);
+    if (result) {
+      kmemcpy(&result->data, pb->data, pb->total_len);
+    }
+    return result;
+  } else {
+    pbuf_t* result = pbuf_create(0, pb->total_len - pb->reserved);
+    if (result) {
+      kmemcpy(pbuf_get(result), pbuf_getc(pb), pbuf_size(pb));
+    }
+    return result;
+  }
 }
 
 void* pbuf_get(pbuf_t* pb) {
