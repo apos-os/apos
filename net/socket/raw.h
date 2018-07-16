@@ -20,6 +20,7 @@
 #include "net/socket/socket.h"
 #include "net/eth/ethertype.h"
 #include "net/pbuf.h"
+#include "proc/kthread.h"
 
 typedef struct socket_raw {
   socket_t base;
@@ -27,6 +28,9 @@ typedef struct socket_raw {
   // List of queued packets.
   // TODO(aoates): cap amount of buffered data.
   list_t rx_queue;
+
+  // Wait queue for packets to be received.
+  kthread_queue_t wait_queue;
 
   // Link on raw socket linked list.
   list_t* sock_list;

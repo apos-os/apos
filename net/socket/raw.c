@@ -18,10 +18,14 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "net/eth/ethertype.h"
+#include "proc/scheduler.h"
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/vfs/vfs.h"
 
 typedef struct {
   pbuf_t* pb;
@@ -68,8 +72,8 @@ static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb) {
   KASSERT(qpkt->pb != NULL);  // TODO(aoates): handle OOM?
 
   list_push(&sock->rx_queue, &qpkt->link);
-
-  // TODO(aoates): wake up any waiting threads and notify pollers.
+  scheduler_wake_one(&sock->wait_queue);
+  // TODO(aoates): notify pollers.
 }
 
 void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
@@ -107,6 +111,7 @@ int sock_raw_create(int domain, int type, int protocol, socket_t** out) {
   sock->base.s_ops = &g_raw_socket_ops;
   sock->rx_queue = LIST_INIT;
   sock->link = LIST_LINK_INIT;
+  kthread_queue_init(&sock->wait_queue);
 
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(domain == AF_INET);
@@ -174,7 +179,33 @@ ssize_t sock_raw_recvfrom(socket_t* socket_base, int fflags, void* buffer,
                           size_t length, int sflags, struct sockaddr* address,
                           socklen_t* address_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
-  return -ENOTSUP;  // TODO(aoates): implement
+  socket_raw_t* sock = (socket_raw_t*)socket_base;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  while (list_empty(&sock->rx_queue)) {
+    // TODO(aoates): ensure both of these are tested.
+    if (fflags & VFS_O_NONBLOCK) {
+      POP_INTERRUPTS();
+      return -EAGAIN;
+    }
+    int result = scheduler_wait_on_interruptable(&sock->wait_queue, -1);
+    if (result == SWAIT_INTERRUPTED) {
+      POP_INTERRUPTS();
+      return -EINTR;
+    }
+  }
+
+  // We have a packet!
+  list_link_t* link = list_pop(&sock->rx_queue);
+  POP_INTERRUPTS();
+
+  queued_pkt_t* pkt = container_of(link, queued_pkt_t, link);
+  // TODO(aoates): fill in the address info.
+  const ssize_t result = min(pbuf_size(pkt->pb), length);
+  kmemcpy(buffer, pbuf_getc(pkt->pb), result);
+  pbuf_free(pkt->pb);
+  kfree(pkt);
+  return result;
 }
 
 ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
