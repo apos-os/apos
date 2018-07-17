@@ -183,7 +183,6 @@ ssize_t sock_raw_recvfrom(socket_t* socket_base, int fflags, void* buffer,
 
   PUSH_AND_DISABLE_INTERRUPTS();
   while (list_empty(&sock->rx_queue)) {
-    // TODO(aoates): ensure both of these are tested.
     if (fflags & VFS_O_NONBLOCK) {
       POP_INTERRUPTS();
       return -EAGAIN;
