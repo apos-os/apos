@@ -40,15 +40,6 @@ static bool has_sigpipe(void) {
   return ksigismember(&sigset, SIGPIPE);
 }
 
-// TODO(aoates): ditch this when fcntl() is implemented.
-static void make_nonblock(int fd) {
-  file_t* file = 0x0;
-  int result = lookup_fd(fd, &file);
-  KASSERT(result == 0);
-  KASSERT((file->flags & VFS_O_NONBLOCK) == 0);
-  file->flags |= VFS_O_NONBLOCK;
-}
-
 static void create_test(void) {
   KTEST_BEGIN("net_socket_create(AF_UNIX): basic creation");
   socket_t* sock = NULL;
@@ -1301,7 +1292,7 @@ static void nonblock_test(void) {
   int listen_sock = create_listening_socket(kServerPath, 5);
   KEXPECT_GE(listen_sock, 0);
 
-  make_nonblock(listen_sock);
+  vfs_make_nonblock(listen_sock);
   KEXPECT_EQ(-EAGAIN, net_accept(listen_sock, NULL, NULL));
   KEXPECT_EQ(-EAGAIN, net_accept(listen_sock, NULL, NULL));
 
@@ -1314,7 +1305,7 @@ static void nonblock_test(void) {
   KEXPECT_EQ(-EAGAIN, net_accept(listen_sock, NULL, NULL));
 
   KTEST_BEGIN("net_recv(AF_UNIX): O_NONBLOCK");
-  make_nonblock(s1);
+  vfs_make_nonblock(s1);
   char buf[10];
   KEXPECT_EQ(-EAGAIN, net_recv(s1, buf, 10, 0));
   KEXPECT_EQ(-EAGAIN, net_recv(s1, buf, 10, 0));
