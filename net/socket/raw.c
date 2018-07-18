@@ -29,6 +29,8 @@
 
 typedef struct {
   pbuf_t* pb;
+  struct sockaddr_storage src_addr;
+  socklen_t src_addr_len;
   list_link_t link;
 } queued_pkt_t;
 
@@ -62,7 +64,9 @@ static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
   return (list_t*)value;
 }
 
-static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb) {
+static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb,
+                                  const struct sockaddr* addr,
+                                  socklen_t addrlen) {
   KASSERT(g_raw_sockets_init);
 
   queued_pkt_t* qpkt = (queued_pkt_t*)kmalloc(sizeof(queued_pkt_t));
@@ -70,13 +74,17 @@ static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb) {
   qpkt->link = LIST_LINK_INIT;
   qpkt->pb = pbuf_dup(pb, /* headers= */ false);
   KASSERT(qpkt->pb != NULL);  // TODO(aoates): handle OOM?
+  KASSERT_DBG(addrlen <= (long)sizeof(struct sockaddr_storage));
+  kmemcpy(&qpkt->src_addr, addr, addrlen);
+  qpkt->src_addr_len = addrlen;
 
   list_push(&sock->rx_queue, &qpkt->link);
   scheduler_wake_one(&sock->wait_queue);
   // TODO(aoates): notify pollers.
 }
 
-void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
+void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
+                       const struct sockaddr* addr, socklen_t addrlen) {
   init_raw_sockets();
 
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -84,7 +92,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   list_link_t* link = sock_list->head;
   while (link) {
     socket_raw_t* sock = container_of(link, socket_raw_t, link);
-    sock_raw_dispatch_one(sock, pb);
+    sock_raw_dispatch_one(sock, pb, addr, addrlen);
     link = link->next;
   }
   POP_INTERRUPTS();
@@ -199,7 +207,10 @@ ssize_t sock_raw_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   POP_INTERRUPTS();
 
   queued_pkt_t* pkt = container_of(link, queued_pkt_t, link);
-  // TODO(aoates): fill in the address info.
+  if (address && address_len && *address_len >= pkt->src_addr_len) {
+    kmemcpy(address, &pkt->src_addr, pkt->src_addr_len);
+    *address_len = pkt->src_addr_len;
+  }
   const ssize_t result = min(pbuf_size(pkt->pb), length);
   kmemcpy(buffer, pbuf_getc(pkt->pb), result);
   pbuf_free(pkt->pb);

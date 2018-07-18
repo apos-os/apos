@@ -101,6 +101,11 @@ void ip_recv(nic_t* nic, pbuf_t* pb) {
        inet2str(hdr->src_addr, buf1), inet2str(hdr->dst_addr, buf2),
        hdr->protocol);
 
-  sock_raw_dispatch(pb, ET_IPV4, hdr->protocol);
+  struct sockaddr_in src_addr;
+  src_addr.sin_family = AF_INET;
+  src_addr.sin_addr.s_addr = hdr->src_addr;
+  src_addr.sin_port = 0;
+  sock_raw_dispatch(pb, ET_IPV4, hdr->protocol, (struct sockaddr*)&src_addr,
+                    sizeof(src_addr));
   pbuf_free(pb);
 }

@@ -46,6 +46,7 @@ int sock_raw_create(int domain, int type, int protocol, socket_t** out);
 //
 // Interrupt safe.
 // TODO(aoates): switch this to use deferred interrupts when they exist.
-void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
+void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
+                       const struct sockaddr* src_addr, socklen_t addrlen);
 
 #endif
