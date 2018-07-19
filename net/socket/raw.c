@@ -98,7 +98,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
   POP_INTERRUPTS();
 }
 
-int sock_raw_create(int domain, int type, int protocol, socket_t** out) {
+int sock_raw_create(int domain, int protocol, socket_t** out) {
   init_raw_sockets();
 
   if (domain != AF_INET) {
@@ -114,7 +114,7 @@ int sock_raw_create(int domain, int type, int protocol, socket_t** out) {
   }
 
   sock->base.s_domain = domain;
-  sock->base.s_type = type;
+  sock->base.s_type = SOCK_RAW;
   sock->base.s_protocol = protocol;
   sock->base.s_ops = &g_raw_socket_ops;
   sock->rx_queue = LIST_INIT;

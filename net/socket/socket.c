@@ -46,7 +46,7 @@ static int create_socket_fd(socket_t* sock) {
 int net_socket_create(int domain, int type, int protocol, socket_t** out) {
   int result;
   if (type == SOCK_RAW) {
-    result = sock_raw_create(domain, type, protocol, out);
+    result = sock_raw_create(domain, protocol, out);
   } else if (domain == AF_UNIX) {
     result = sock_unix_create(type, protocol, out);
   } else {

@@ -38,7 +38,7 @@ typedef struct socket_raw {
 } socket_raw_t;
 
 // Create a raw socket.
-int sock_raw_create(int domain, int type, int protocol, socket_t** out);
+int sock_raw_create(int domain, int protocol, socket_t** out);
 
 // Handle a IP-layer (or equivalent) packet.  If necessary, it will be
 // dispatched to any active raw sockets for the given protocol.  Ownership is
