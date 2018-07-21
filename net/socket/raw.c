@@ -166,7 +166,7 @@ static void sock_raw_cleanup(socket_t* socket_base) {
 
 static int sock_raw_shutdown(socket_t* socket_base, int how) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
-  return -ENOTSUP;  // TODO(aoates): implement
+  return 0;
 }
 
 static int sock_raw_bind(socket_t* socket_base, const struct sockaddr* address,
