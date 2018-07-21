@@ -22,7 +22,9 @@
 #include "common/math.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "net/bind.h"
 #include "net/eth/ethertype.h"
+#include "net/util.h"
 #include "proc/scheduler.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
@@ -117,6 +119,7 @@ int sock_raw_create(int domain, int protocol, socket_t** out) {
   sock->base.s_type = SOCK_RAW;
   sock->base.s_protocol = protocol;
   sock->base.s_ops = &g_raw_socket_ops;
+  sock->bind_addr.family = AF_UNSPEC;
   sock->rx_queue = LIST_INIT;
   sock->link = LIST_LINK_INIT;
   kthread_queue_init(&sock->wait_queue);
@@ -156,7 +159,24 @@ static int sock_raw_shutdown(socket_t* socket_base, int how) {
 static int sock_raw_bind(socket_t* socket_base, const struct sockaddr* address,
                          socklen_t address_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
-  return -ENOTSUP;  // TODO(aoates): implement
+  socket_raw_t* socket = (socket_raw_t*)socket_base;
+  if (socket->bind_addr.family != AF_UNSPEC) {
+    return -EINVAL;
+  }
+
+  if ((sa_family_t)socket->base.s_domain != address->sa_family) {
+    return -EAFNOSUPPORT;
+  }
+
+  netaddr_t naddr;
+  if (sock2netaddr(address, address_len, &naddr, NULL)) {
+    return -EADDRNOTAVAIL;
+  }
+  int result = inet_bindable(&naddr);
+  if (result) return result;
+
+  socket->bind_addr = naddr;
+  return 0;
 }
 
 static int sock_raw_listen(socket_t* socket_base, int backlog) {

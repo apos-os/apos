@@ -16,7 +16,9 @@
 #include "test/kernel_tests.h"
 
 #include "common/errno.h"
+#include "dev/net/nic.h"
 #include "memory/kmalloc.h"
+#include "net/bind.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/socket/raw.h"
 #include "net/socket/socket.h"
@@ -233,6 +235,56 @@ static void recv_test(void) {
   pbuf_free(pb2);
 }
 
+static void bind_test(void) {
+  KTEST_BEGIN("bind(SOCK_RAW): can bind to NIC's address");
+  int sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  KEXPECT_GE(sock, 0);
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+
+  netaddr_t netaddr;
+  KEXPECT_GE(inet_choose_bind(ADDR_INET, &netaddr), 0);
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+
+  KTEST_BEGIN("bind(SOCK_RAW): already bound socket");
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("bind(SOCK_RAW): bind to bad address");
+  sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  addr.sin_addr.s_addr = str2inet("0.0.0.0");
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  addr.sin_addr.s_addr = str2inet("8.8.8.8");
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  // Too-short address.
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr) - 5));
+
+
+  KTEST_BEGIN("bind(SOCK_RAW): wrong address family");
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+  addr.sin_family = AF_UNIX;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+
+  KTEST_BEGIN("bind(SOCK_RAW): bad FD");
+  addr.sin_family = AF_UNIX;
+  addr.sin_addr.s_addr = str2inet("0.0.0.0");
+  KEXPECT_EQ(-EBADF, net_bind(100, (struct sockaddr*)&addr, sizeof(addr)));
+
+  vfs_close(sock);
+}
+
 void socket_raw_test(void) {
   KTEST_SUITE_BEGIN("Socket (raw)");
   block_cache_clear_unpinned();
@@ -241,6 +293,7 @@ void socket_raw_test(void) {
   create_test();
   unsupported_ops_test();
   recv_test();
+  bind_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

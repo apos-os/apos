@@ -15,6 +15,7 @@
 #ifndef APOO_NET_UTIL_H
 #define APOO_NET_UTIL_H
 
+#include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 
 // How much buffer space to allocate for headers.
@@ -33,5 +34,15 @@ char* inet2str(in_addr_t addr, char* buf);
 
 // Parse an inet address.  Returns 0 if unparseable.
 in_addr_t str2inet(const char* s);
+
+// Convert a netaddr_t and port to a struct sockaddr, and vice versa.  |saddr|
+// should point to a `struct sockaddr` (void* used to prevent casts).  Returns 0
+// on success.
+int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
+                 socklen_t saddr_len);
+
+// Either naddr or port may be NULL.
+int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
+                 netaddr_t* naddr, int* port);
 
 #endif

@@ -17,6 +17,7 @@
 #define APOO_NET_SOCKET_RAW_H
 
 #include "common/list.h"
+#include "net/addr.h"
 #include "net/socket/socket.h"
 #include "net/eth/ethertype.h"
 #include "net/pbuf.h"
@@ -24,6 +25,9 @@
 
 typedef struct socket_raw {
   socket_t base;
+
+  // The local bound address.  If unbound, family will be AF_UNSPEC.
+  netaddr_t bind_addr;
 
   // List of queued packets.
   // TODO(aoates): cap amount of buffered data.
