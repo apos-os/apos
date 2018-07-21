@@ -21,6 +21,7 @@
 // Address family.  Corresponds to AF_* values, but as an enum.
 // TODO(aoates): support IPv6 addresses.
 typedef enum {
+  ADDR_UNSPEC = AF_UNSPEC,
   ADDR_INET = AF_INET,
 } addrfam_t;
 

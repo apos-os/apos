@@ -24,6 +24,9 @@
 #include "memory/kmalloc.h"
 #include "net/bind.h"
 #include "net/eth/ethertype.h"
+#include "net/ip/ip.h"
+#include "net/ip/ip4_hdr.h"
+#include "net/ip/route.h"
 #include "net/util.h"
 #include "proc/scheduler.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -242,7 +245,58 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
                         size_t length, int sflags,
                         const struct sockaddr* dest_addr, socklen_t dest_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
-  return -ENOTSUP;  // TODO(aoates): implement
+  socket_raw_t* sock = (socket_raw_t*)socket_base;
+
+  if (sock->base.s_domain != AF_INET) {
+    // Shouldn't get here until we support other protocols anyways.
+    return -EAFNOSUPPORT;
+  }
+  // TODO(aoates): support connect() for raw sockets.
+  if (!dest_addr) {
+    return -EDESTADDRREQ;
+  }
+  if (sflags != 0) {
+    return -EINVAL;
+  }
+
+  netaddr_t dest;
+  int result = sock2netaddr(dest_addr, dest_len, &dest, NULL);
+  if (result) return result;
+
+  if ((int)dest.family != sock->base.s_domain) {
+    return -EAFNOSUPPORT;
+  }
+
+  // Pick a source address, either by using the bind address or doing a route
+  // calculation.
+  ip_routed_t route;
+  const netaddr_t* src = NULL;
+  if (sock->bind_addr.family != AF_UNSPEC) {
+    KASSERT_DBG(sock->bind_addr.family == ADDR_INET);
+    src = &sock->bind_addr;
+  } else {
+    if (!ip_route(dest, &route)) {
+      return -ENETUNREACH;
+    }
+    src = &route.src;
+  }
+
+  // Actually generate and send the packet.
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE, length);
+  if (!pb) {
+    return -ENOMEM;
+  }
+
+  kmemcpy(pbuf_get(pb), buffer, length);
+  KASSERT_DBG(src->family == ADDR_INET);
+  KASSERT_DBG(dest.family == ADDR_INET);
+  ip4_add_hdr(pb, src->a.ip4.s_addr, dest.a.ip4.s_addr,
+              socket_base->s_protocol);
+  result = ip_send(pb);
+  if (result < 0) {
+    return result;
+  }
+  return length;
 }
 
 static int sock_raw_poll(socket_t* socket_base, short event_mask,

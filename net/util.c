@@ -78,6 +78,9 @@ int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
       addr_in->sin_port = port;
       return 0;
     }
+
+    case ADDR_UNSPEC:
+      break;
   }
 
   return -EAFNOSUPPORT;

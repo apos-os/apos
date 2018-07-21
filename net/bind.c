@@ -22,6 +22,9 @@ static bool addr_eq(const netaddr_t* a, const netaddr_t* b) {
   switch (a->family) {
     case ADDR_INET:
       return a->a.ip4.s_addr == b->a.ip4.s_addr;
+
+    case ADDR_UNSPEC:
+      break;
   }
 
   return false;
