@@ -26,6 +26,8 @@
 #include "net/util.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/wait.h"
@@ -441,6 +443,68 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_close(recv_sock));
 }
 
+static void* do_poll_helper(void* arg) {
+  struct pollfd pfd;
+  pfd.fd = *(int*)arg;
+  pfd.revents = 0;
+  pfd.events = POLLIN;
+  void* result = (void*)(intptr_t)vfs_poll(&pfd, 1, 1000);
+  KEXPECT_EQ(POLLIN, pfd.revents);
+  return result;
+}
+
+static void raw_poll_test(void) {
+  KTEST_BEGIN("vfs_poll(SOCK_RAW): POLLIN on empty raw socket");
+  int send_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  int recv_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  KEXPECT_GE(send_sock, 0);
+  KEXPECT_GE(recv_sock, 0);
+
+  struct sockaddr_in dst_addr;
+  dst_addr.sin_family = AF_INET;
+  dst_addr.sin_addr.s_addr = str2inet("127.0.0.5");
+
+  struct pollfd pfd;
+  pfd.fd = recv_sock;
+  pfd.revents = 0;
+  pfd.events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 10));
+
+
+  KTEST_BEGIN("vfs_poll(SOCK_RAW): POLLIN on readable raw socket");
+  KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                           sizeof(dst_addr)));
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 10));
+
+  char buf[100];
+  KEXPECT_GT(net_recv(recv_sock, buf, 100, 0), 0);
+
+
+  KTEST_BEGIN("vfs_poll(SOCK_RAW): blocking for POLLIN on readable raw socket");
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll_helper, &recv_sock));
+  scheduler_make_runnable(thread);
+  // Make sure we get good and stuck in vfs_poll()
+  for (int i = 0; i < 20; ++i) scheduler_yield();
+  KEXPECT_NE(NULL, thread->queue);
+
+  KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                           sizeof(dst_addr)));
+  KEXPECT_EQ(1, (intptr_t)kthread_join(thread));
+
+
+  KTEST_BEGIN("vfs_poll(SOCK_RAW): POLLOUT on raw socket");
+  pfd.events = POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(POLLOUT, pfd.revents);
+
+
+  KEXPECT_EQ(0, vfs_close(send_sock));
+  KEXPECT_EQ(0, vfs_close(recv_sock));
+}
+
 void socket_raw_test(void) {
   KTEST_SUITE_BEGIN("Socket (raw)");
   block_cache_clear_unpinned();
@@ -452,6 +516,7 @@ void socket_raw_test(void) {
   bind_test();
   sendto_test();
   connect_test();
+  raw_poll_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

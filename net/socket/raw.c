@@ -69,6 +69,14 @@ static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
   return (list_t*)value;
 }
 
+static short raw_poll_events(const socket_raw_t* socket) {
+  short events = POLLOUT;
+  if (!list_empty(&socket->rx_queue)) {
+    events |= POLLIN;
+  }
+  return events;
+}
+
 static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb,
                                   const struct sockaddr* addr,
                                   socklen_t addrlen) {
@@ -85,7 +93,7 @@ static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb,
 
   list_push(&sock->rx_queue, &qpkt->link);
   scheduler_wake_one(&sock->wait_queue);
-  // TODO(aoates): notify pollers.
+  poll_trigger_event(&sock->poll_event, raw_poll_events(sock));
 }
 
 void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
@@ -127,6 +135,7 @@ int sock_raw_create(int domain, int protocol, socket_t** out) {
   sock->rx_queue = LIST_INIT;
   sock->link = LIST_LINK_INIT;
   kthread_queue_init(&sock->wait_queue);
+  poll_init_event(&sock->poll_event);
 
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(domain == AF_INET);
@@ -318,7 +327,13 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
 static int sock_raw_poll(socket_t* socket_base, short event_mask,
                          poll_state_t* poll) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
-  return -ENOTSUP;  // TODO(aoates): implement
+  socket_raw_t* sock = (socket_raw_t*)socket_base;
+
+  const short masked_events = raw_poll_events(sock) & event_mask;
+  if (masked_events || !poll)
+    return masked_events;
+
+  return poll_add_event(poll, &sock->poll_event, event_mask);
 }
 
 static const socket_ops_t g_raw_socket_ops = {

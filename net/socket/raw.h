@@ -22,6 +22,7 @@
 #include "net/eth/ethertype.h"
 #include "net/pbuf.h"
 #include "proc/kthread.h"
+#include "vfs/poll.h"
 
 typedef struct socket_raw {
   socket_t base;
@@ -38,6 +39,8 @@ typedef struct socket_raw {
 
   // Wait queue for packets to be received.
   kthread_queue_t wait_queue;
+
+  poll_event_t poll_event;
 
   // Link on raw socket linked list.
   list_t* sock_list;
