@@ -123,6 +123,7 @@ int sock_raw_create(int domain, int protocol, socket_t** out) {
   sock->base.s_protocol = protocol;
   sock->base.s_ops = &g_raw_socket_ops;
   sock->bind_addr.family = AF_UNSPEC;
+  sock->connected_addr.family = AF_UNSPEC;
   sock->rx_queue = LIST_INIT;
   sock->link = LIST_LINK_INIT;
   kthread_queue_init(&sock->wait_queue);
@@ -198,7 +199,20 @@ static int sock_raw_connect(socket_t* socket_base, int fflags,
                             const struct sockaddr* address,
                             socklen_t address_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
-  return -EOPNOTSUPP;
+  socket_raw_t* sock = (socket_raw_t*)socket_base;
+  if (!address) return -EDESTADDRREQ;
+
+  netaddr_t dest;
+  int result = sock2netaddr(address, address_len, &dest, NULL);
+  if (result == -EAFNOSUPPORT) return result;
+  else if (result) return -EDESTADDRREQ;
+  // TODO(aoates): add a way to test this:
+  if (dest.family != (addrfam_t)sock->base.s_domain) return -EAFNOSUPPORT;
+
+  if (sock->connected_addr.family != ADDR_UNSPEC) return -EISCONN;
+
+  sock->connected_addr = dest;
+  return 0;
 }
 
 static int sock_raw_accept_queue_length(const socket_t* socket_base) {
@@ -251,20 +265,25 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
     // Shouldn't get here until we support other protocols anyways.
     return -EAFNOSUPPORT;
   }
-  // TODO(aoates): support connect() for raw sockets.
-  if (!dest_addr) {
-    return -EDESTADDRREQ;
-  }
   if (sflags != 0) {
     return -EINVAL;
   }
-
   netaddr_t dest;
-  int result = sock2netaddr(dest_addr, dest_len, &dest, NULL);
-  if (result) return result;
+  if (dest_addr) {
+    if (sock->connected_addr.family != ADDR_UNSPEC) {
+      return -EISCONN;
+    }
+    int result = sock2netaddr(dest_addr, dest_len, &dest, NULL);
+    if (result) return result;
 
-  if ((int)dest.family != sock->base.s_domain) {
-    return -EAFNOSUPPORT;
+    if ((int)dest.family != sock->base.s_domain) {
+      return -EAFNOSUPPORT;
+    }
+  } else if (sock->connected_addr.family != ADDR_UNSPEC) {
+    KASSERT_DBG(sock->connected_addr.family == (addrfam_t)sock->base.s_domain);
+    dest = sock->connected_addr;
+  } else {
+    return -EDESTADDRREQ;
   }
 
   // Pick a source address, either by using the bind address or doing a route
@@ -292,7 +311,7 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
   KASSERT_DBG(dest.family == ADDR_INET);
   ip4_add_hdr(pb, src->a.ip4.s_addr, dest.a.ip4.s_addr,
               socket_base->s_protocol);
-  result = ip_send(pb);
+  int result = ip_send(pb);
   if (result < 0) {
     return result;
   }

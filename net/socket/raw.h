@@ -29,6 +29,9 @@ typedef struct socket_raw {
   // The local bound address.  If unbound, family will be AF_UNSPEC.
   netaddr_t bind_addr;
 
+  // The connected address.  If unconnected, family will be AF_UNSPEC.
+  netaddr_t connected_addr;
+
   // List of queued packets.
   // TODO(aoates): cap amount of buffered data.
   list_t rx_queue;

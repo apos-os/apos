@@ -74,9 +74,6 @@ static void unsupported_ops_test(void) {
   KTEST_BEGIN("Raw sockets: accept() unsupported");
   KEXPECT_EQ(-EOPNOTSUPP, net_accept(sock, NULL, NULL));
 
-  KTEST_BEGIN("Raw sockets: connect() unsupported");
-  KEXPECT_EQ(-EOPNOTSUPP, net_connect(sock, NULL, 0));
-
   KTEST_BEGIN("Raw sockets: accept_queue_length() unsupported");
   KEXPECT_EQ(-EOPNOTSUPP, net_accept_queue_length(sock));
 
@@ -370,6 +367,80 @@ static void sendto_test(void) {
   KEXPECT_EQ(0, vfs_close(recv_sock));
 }
 
+static void connect_test(void) {
+  KTEST_BEGIN("connect(SOCK_RAW): basic connect() and send()");
+  int send_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  int recv_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  KEXPECT_GE(send_sock, 0);
+  KEXPECT_GE(recv_sock, 0);
+  vfs_make_nonblock(recv_sock);
+
+  struct sockaddr_in dst_addr;
+  dst_addr.sin_family = AF_INET;
+  dst_addr.sin_addr.s_addr = str2inet("127.0.0.5");
+  KEXPECT_EQ(
+      0, net_connect(send_sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(3, net_send(send_sock, "abc", 3, 0));
+
+  char buf[100];
+  int result = net_recv(recv_sock, buf, 100, 0);
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, result);
+  buf[result] = '\0';
+  ip4_hdr_t* hdr = (ip4_hdr_t*)buf;
+  char prettybuf[INET_PRETTY_LEN];
+  KEXPECT_STREQ("127.0.0.1", inet2str(hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.5", inet2str(hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(IPPROTO_ICMP, hdr->protocol);
+  KEXPECT_EQ(0, ip_checksum(hdr, sizeof(ip4_hdr_t)));
+  KEXPECT_STREQ(buf + sizeof(ip4_hdr_t), "abc");
+
+
+  KTEST_BEGIN("connect(SOCK_RAW): already connected socket");
+  KEXPECT_EQ(-EISCONN, net_connect(send_sock, (struct sockaddr*)&dst_addr,
+                                   sizeof(dst_addr)));
+
+  KTEST_BEGIN("connect(SOCK_RAW): sendto() with NULL address");
+  KEXPECT_EQ(3, net_sendto(send_sock, "def", 3, 0, NULL, 0));
+  result = net_recv(recv_sock, buf, 100, 0);
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, result);
+  buf[result] = '\0';
+  KEXPECT_STREQ("127.0.0.1", inet2str(hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.5", inet2str(hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(IPPROTO_ICMP, hdr->protocol);
+  KEXPECT_EQ(0, ip_checksum(hdr, sizeof(ip4_hdr_t)));
+  KEXPECT_STREQ(buf + sizeof(ip4_hdr_t), "def");
+
+
+  KTEST_BEGIN("connect(SOCK_RAW): sendto() with address fails");
+  KEXPECT_EQ(-EISCONN,
+             net_sendto(send_sock, "def", 3, 0, (struct sockaddr*)&dst_addr,
+                        sizeof(dst_addr)));
+  KEXPECT_EQ(-EAGAIN, net_recv(recv_sock, buf, 100, 0));
+  KEXPECT_EQ(0, vfs_close(send_sock));
+
+
+  KTEST_BEGIN("connect(SOCK_RAW): wrong address family");
+  send_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  KEXPECT_GE(send_sock, 0);
+
+  dst_addr.sin_family = AF_UNIX;
+  KEXPECT_EQ(-EAFNOSUPPORT, net_connect(send_sock, (struct sockaddr*)&dst_addr,
+                                        sizeof(dst_addr)));
+
+
+  KTEST_BEGIN("connect(SOCK_RAW): bad addres");
+  dst_addr.sin_family = AF_INET;
+  KEXPECT_EQ(-EDESTADDRREQ, net_connect(send_sock, (struct sockaddr*)&dst_addr,
+                                        sizeof(dst_addr) - 5));
+  KEXPECT_EQ(-EDESTADDRREQ, net_connect(send_sock, NULL, sizeof(dst_addr)));
+
+  // TODO(aoates): add test for connecting to an address that's unreachable from
+  // the bound address.)
+  KEXPECT_EQ(0, vfs_close(send_sock));
+  KEXPECT_EQ(0, vfs_close(recv_sock));
+}
+
 void socket_raw_test(void) {
   KTEST_SUITE_BEGIN("Socket (raw)");
   block_cache_clear_unpinned();
@@ -380,6 +451,7 @@ void socket_raw_test(void) {
   recv_test();
   bind_test();
   sendto_test();
+  connect_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
