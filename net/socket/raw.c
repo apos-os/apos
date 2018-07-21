@@ -168,15 +168,12 @@ static int sock_raw_bind(socket_t* socket_base, const struct sockaddr* address,
     return -EINVAL;
   }
 
-  if ((sa_family_t)socket->base.s_domain != address->sa_family) {
-    return -EAFNOSUPPORT;
-  }
-
   netaddr_t naddr;
-  if (sock2netaddr(address, address_len, &naddr, NULL)) {
-    return -EADDRNOTAVAIL;
-  }
-  int result = inet_bindable(&naddr);
+  int result = sock2netaddr(address, address_len, &naddr, NULL);
+  if (result == -EAFNOSUPPORT) return result;
+  else if (result) return -EADDRNOTAVAIL;
+
+  result = inet_bindable(&naddr);
   if (result) return result;
 
   socket->bind_addr = naddr;
