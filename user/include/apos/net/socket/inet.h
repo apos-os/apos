@@ -37,6 +37,8 @@ struct sockaddr_in {
   struct in_addr sin_addr;  // IP address.
 };
 
+#define IPPROTO_ICMP 1
+
 // TODO(aoates): define various IPPROTO_* constants.
 // TODO(aoates): define INADDR_ANY and INADDR_BROADCAST.
 

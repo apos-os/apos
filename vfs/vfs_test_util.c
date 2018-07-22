@@ -106,3 +106,11 @@ void vfs_set_force_no_files(bool f) {
 bool vfs_get_force_no_files() {
   return g_force_no_files;
 }
+
+void vfs_make_nonblock(int fd) {
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  KASSERT(result == 0);
+  KASSERT((file->flags & VFS_O_NONBLOCK) == 0);
+  file->flags |= VFS_O_NONBLOCK;
+}

@@ -24,6 +24,7 @@ typedef struct {
   nic_t* nic;  // The NIC to send the packet on, or NULL if we can't route.
   netaddr_t nexthop;  // The next hop to go through.  May be the destination
                       // itself, or a gateway address.
+  netaddr_t src;      // The source address to use, if necessary.
 } ip_routed_t;
 
 // Find a route for the given destination address.

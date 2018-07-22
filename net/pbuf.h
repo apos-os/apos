@@ -15,6 +15,7 @@
 #ifndef APOO_NET_PBUF_H
 #define APOO_NET_PBUF_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -53,6 +54,10 @@ pbuf_t* pbuf_create(size_t headers_reserve, size_t len);
 
 // Free the given pbuf.
 void pbuf_free(pbuf_t* pb);
+
+// Duplicate the given pbuf.  If |headers| is false, only the currently-readable
+// portion of the packet will be copied, and any prefix will be discarded.
+pbuf_t* pbuf_dup(const pbuf_t* pb, bool headers);
 
 // Returns the data portion of the pbuf.
 void* pbuf_get(pbuf_t* pb);

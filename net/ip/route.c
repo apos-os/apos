@@ -80,6 +80,9 @@ static bool netmatch(const netaddr_t* addr, const network_t* network) {
       const in_addr_t mask = htob32(kNetMasks[network->prefix_len]);
       return (addr->a.ip4.s_addr & mask) == (network->addr.a.ip4.s_addr & mask);
     }
+
+    case ADDR_UNSPEC:
+      break;
   }
 
   // Unknown address type.
@@ -102,11 +105,13 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
         // TODO(aoates): don't hard-code the loopback device name here.
         result->nic = nic_get_nm("lo0");
         result->nexthop = dst;
+        result->src = nic->addrs[addridx].addr;
         return (result->nic != NULL);
       }
       if (nic->addrs[addridx].prefix_len > longest_prefix &&
           netmatch(&dst, &nic->addrs[addridx])) {
         result->nic = nic;
+        result->src = nic->addrs[addridx].addr;
         longest_prefix = nic->addrs[addridx].prefix_len;
       }
     }
@@ -120,6 +125,22 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   if (g_default_route.nexthop.family == dst.family) {
     result->nexthop = g_default_route.nexthop;
     result->nic = nic_get_nm(g_default_route.nic_name);
+    if (result->nic) {
+      result->src.family = ADDR_UNSPEC;
+      for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+        if (result->nic->addrs[i].addr.family == dst.family) {
+          result->src = result->nic->addrs[0].addr;
+          break;
+        }
+      }
+      if (result->src.family == ADDR_UNSPEC) {
+        klogfm(KL_NET, WARNING,
+               "unable to route packet with address family %d to default route "
+               "NIC %s\n",
+               dst.family, result->nic->name);
+        return false;
+      }
+    }
     return (result->nic != NULL);
   }
 

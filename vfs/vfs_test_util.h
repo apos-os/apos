@@ -41,4 +41,8 @@ int vfs_get_vnode_for_path(const char* path);
 void vfs_set_force_no_files(bool f);
 bool vfs_get_force_no_files(void);
 
+// Make the given file descriptor non-blocking.
+// TODO(aoates): ditch this when fcntl() is implemented.
+void vfs_make_nonblock(int fd);
+
 #endif

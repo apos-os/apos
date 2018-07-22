@@ -12,31 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ADDR_H
-#define APOO_NET_ADDR_H
+#ifndef APOO_NET_BIND_H
+#define APOO_NET_BIND_H
 
+#include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
-#include "user/include/apos/net/socket/socket.h"
 
-// Address family.  Corresponds to AF_* values, but as an enum.
-// TODO(aoates): support IPv6 addresses.
-typedef enum {
-  ADDR_UNSPEC = AF_UNSPEC,
-  ADDR_INET = AF_INET,
-} addrfam_t;
+// Returns 0 if the given address is bindable, or -error.
+int inet_bindable(const netaddr_t* addr);
 
-// A generic network address, agnostic to the underlying protocol.
-typedef struct {
-  addrfam_t family;
-  union {
-    struct in_addr ip4;
-  } a;
-} netaddr_t;
-
-// A network spec (for IP, address plus netmask).
-typedef struct {
-  netaddr_t addr;  // The address or prefix.
-  int prefix_len;  // Length of the network's prefix (i.e. netmask)
-} network_t;
+// Chooses a default bind address for the given address family.  Returns the
+// address of the chosen NIC if successful, or -error if an address isn't found.
+int inet_choose_bind(addrfam_t family, netaddr_t* addr_out);
 
 #endif

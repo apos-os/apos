@@ -87,7 +87,7 @@ base_env.Append(CPPPATH = ['#'])
 base_env.SetDefault(CPPDEFINES = [])
 
 if base_env['DEBUG']:
-  base_env.Append(CFLAGS = ['-g3'])
+  base_env.Append(CFLAGS = ['-g3', '-gdwarf-2'])
   base_env.Append(ASFLAGS = ['--gen-debug'])
 
 env = base_env.Clone()

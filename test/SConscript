@@ -50,6 +50,7 @@ srcs = [
   'session_test.c',
   'signal_test.c',
   'slab_alloc_test.c',
+  'socket_raw_test.c',
   'socket_test.c',
   'socket_unix_test.c',
   'tty_test.c',
