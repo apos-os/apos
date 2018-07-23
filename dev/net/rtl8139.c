@@ -32,6 +32,8 @@ static nic_ops_t rtl_ops;
 
 #define RTL_NUM_TX_DESCS 4
 
+#define DWORD_ALIGN(x) (((x) + 3) & ~0x3)
+
 // TODO(aoates): lots of parts of this are touched in an interrupt context---go
 // through and ensure the appropriate memory barriers are in place.
 typedef struct {
@@ -179,7 +181,7 @@ static void rtl_handle_recv_one(rtl8139_t* nic) {
   }
 
   // Release the buffer space to the NIC.
-  nic->rxstart += plen + RTL_RX_PACKET_HDR_SIZE;
+  nic->rxstart += DWORD_ALIGN(plen + RTL_RX_PACKET_HDR_SIZE);
   nic->rxstart %= RTL_RXBUF_SIZE;
   // N.B.(aoates): it's unclear why we need to offset this by 0x10, but qemu has
   // the reverse transformation in its emulated NIC, and other drivers seem to
