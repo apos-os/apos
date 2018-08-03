@@ -37,11 +37,22 @@ static void segv_handler(uint32_t interrupt, uint32_t error, bool is_user) {
           proc_current(), kthread_current_thread(), SIGSEGV) == 0);
 }
 
+static void sigbus_handler(uint32_t interrupt, uint32_t error, bool is_user) {
+  if (!is_user) {
+    die("sigbus in kernel code");
+  }
+
+  KASSERT(proc_force_signal_on_thread(
+          proc_current(), kthread_current_thread(), SIGBUS) == 0);
+}
+
 void register_fault_handlers(void) {
   register_interrupt_handler(0, &fpe_handler);
   register_interrupt_handler(7, &fpe_handler);
   register_interrupt_handler(9, &fpe_handler);
-  register_interrupt_handler(13, &segv_handler);  // #GP (General Protection)
+  register_interrupt_handler(10, &segv_handler);    // #TS (Invalid TSS)
+  register_interrupt_handler(11, &sigbus_handler);  // #NP (Not Present)
+  register_interrupt_handler(13, &segv_handler);    // #GP (General Protection)
   register_interrupt_handler(16, &fpe_handler);
   register_interrupt_handler(19, &fpe_handler);
 }

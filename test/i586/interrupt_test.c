@@ -75,7 +75,7 @@ void interrupt_clobber_test(void) {
       "push %%cs\n\t"
       "push $post_int\n\t"  // resume at 'post_int' below
       "push $0xCC\n\t"  // fake the error number
-      "jmp int11\n\t"
+      "jmp int99\n\t"
       "post_int:\n\t"
       "movl %%eax, %0\n\t"
       "movl %%ebx, %1\n\t"

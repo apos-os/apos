@@ -91,6 +91,9 @@ INT_NOERROR   45
 INT_NOERROR   46
 INT_NOERROR   47
 
+# For tests:
+INT_ERROR     99
+
 .global _int_handlers_end
 _int_handlers_end:
 
