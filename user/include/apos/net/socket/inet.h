@@ -38,6 +38,7 @@ struct sockaddr_in {
 };
 
 #define IPPROTO_ICMP 1
+#define IPPROTO_UDP 17
 
 // TODO(aoates): define various IPPROTO_* constants.
 // TODO(aoates): define INADDR_ANY and INADDR_BROADCAST.

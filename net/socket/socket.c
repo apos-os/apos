@@ -17,6 +17,7 @@
 #include "user/include/apos/errors.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "net/socket/raw.h"
+#include "net/socket/udp.h"
 #include "net/socket/unix.h"
 #include "vfs/anonfs.h"
 #include "vfs/fsid.h"
@@ -45,17 +46,28 @@ static int create_socket_fd(socket_t* sock) {
 
 int net_socket_create(int domain, int type, int protocol, socket_t** out) {
   int result;
+  // TODO(aoates): properly handle protocol parameter and generalize this.
   if (type == SOCK_RAW) {
     result = sock_raw_create(domain, protocol, out);
   } else if (domain == AF_UNIX) {
     result = sock_unix_create(type, protocol, out);
+  } else if (domain == AF_INET) {
+    if (type == SOCK_DGRAM) {
+      if (protocol == 0 || protocol == IPPROTO_UDP) {
+        result = sock_udp_create(out);
+      } else {
+        result = -EPROTONOSUPPORT;
+      }
+    } else {
+      result = -EPROTOTYPE;
+    }
   } else {
     result = -EAFNOSUPPORT;
   }
   if (result == 0) {
     KASSERT_DBG((*out)->s_domain == domain);
     KASSERT_DBG((*out)->s_type == type);
-    KASSERT_DBG((*out)->s_protocol == protocol);
+    KASSERT_DBG(protocol == 0 || protocol == (*out)->s_protocol);
   }
   return result;
 }
