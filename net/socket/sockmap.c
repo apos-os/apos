@@ -26,6 +26,11 @@ typedef struct {
   list_link_t link;
 } sm_entry_t;
 
+#define SM_MAX_PROTOCOL 20
+#define SM_MAX_AF 4
+// TODO(aoates): this is incredibly inefficient.
+static sockmap_t* g_sockmaps[SM_MAX_AF][SM_MAX_PROTOCOL];
+
 // TODO(aoates): these helpers are probably useful elsewhere.  Refactor them
 // out.
 static size_t sizeof_addr(const struct sockaddr* addr) {
@@ -135,4 +140,13 @@ socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr) {
   }
 
   return NULL;
+}
+
+sockmap_t* net_get_sockmap(sa_family_t family, int protocol) {
+  KASSERT(family < SM_MAX_AF);
+  KASSERT(protocol < SM_MAX_PROTOCOL);
+  if (g_sockmaps[family][protocol] == NULL) {
+    g_sockmaps[family][protocol] = sockmap_create(family);
+  }
+  return g_sockmaps[family][protocol];
 }

@@ -56,4 +56,8 @@ socket_t* sockmap_find(const sockmap_t* sm, const struct sockaddr* addr);
 // Returns the socket that was removed, or NULL if none was found.
 socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr);
 
+// Returns the global socket map associated with the given protocol and address
+// family.
+sockmap_t* net_get_sockmap(sa_family_t family, int protocol);
+
 #endif
