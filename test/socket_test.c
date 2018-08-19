@@ -15,13 +15,40 @@
 #include "test/kernel_tests.h"
 
 #include "arch/common/endian.h"
+#include "memory/block_cache.h"
 #include "net/socket/socket.h"
 #include "net/util.h"
 #include "test/ktest.h"
 #include "user/include/apos/errors.h"
+#include "vfs/pipe.h"
+#include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
+
+static void getsockname_test(void) {
+  struct sockaddr_storage addr;
+
+  KTEST_BEGIN("net_getsockname(): bad FD");
+  KEXPECT_EQ(-EBADF, net_getsockname(-5, (struct sockaddr*)&addr));
+
+  KTEST_BEGIN("net_getpeername(): bad FD");
+  KEXPECT_EQ(-EBADF, net_getpeername(-5, (struct sockaddr*)&addr));
+
+  KTEST_BEGIN("net_getsockname(): non-socket FD");
+  int pipe[2];
+  KEXPECT_EQ(0, vfs_pipe(pipe));
+  KEXPECT_EQ(-ENOTSOCK, net_getsockname(pipe[0], (struct sockaddr*)&addr));
+
+  KTEST_BEGIN("net_getpeername(): non-socket FD");
+  KEXPECT_EQ(-ENOTSOCK, net_getpeername(pipe[0], (struct sockaddr*)&addr));
+
+  vfs_close(pipe[0]);
+  vfs_close(pipe[1]);
+}
 
 void socket_test(void) {
   KTEST_SUITE_BEGIN("Socket");
+  block_cache_clear_unpinned();
+  const int initial_cache_size = vfs_cache_size();
 
   KTEST_BEGIN("net_socket_create() with invalid domain");
   socket_t* sock = NULL;
@@ -67,4 +94,9 @@ void socket_test(void) {
   KEXPECT_EQ(0, str2inet("1.1"));
   KEXPECT_EQ(0, str2inet("1.1.1"));
   KEXPECT_EQ(0, str2inet("1.1.1."));
+
+  getsockname_test();
+
+  KTEST_BEGIN("vfs: vnode leak verification");
+  KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }

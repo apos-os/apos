@@ -232,3 +232,37 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
   file_unref(file);
   return result;
 }
+
+int net_getsockname(int socket, struct sockaddr* address) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file_ref(file);
+
+  KASSERT(file->vnode->socket != NULL);
+  result =
+      file->vnode->socket->s_ops->getsockname(file->vnode->socket, address);
+  file_unref(file);
+  return result;
+}
+
+int net_getpeername(int socket, struct sockaddr* address) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    return -ENOTSOCK;
+  }
+  file_ref(file);
+
+  KASSERT(file->vnode->socket != NULL);
+  result =
+      file->vnode->socket->s_ops->getpeername(file->vnode->socket, address);
+  file_unref(file);
+  return result;
+}

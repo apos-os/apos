@@ -16,6 +16,7 @@
 
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
@@ -80,6 +81,7 @@ int sock_unix_create(int type, int protocol, socket_t** out) {
   sock->base.s_ops = &g_unix_socket_ops;
   sock->state = SUN_UNCONNECTED;
   sock->bind_point = NULL;
+  sock->bind_address.sun_family = AF_UNIX;
   sock->bind_address.sun_path[0] = '\0';
   sock->peer = NULL;
   sock->listen_backlog = -1;
@@ -352,7 +354,9 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
   new_socket->peer = socket;
   new_socket->readbuf_raw = kmalloc(SOCKET_READBUF);
   circbuf_init(&new_socket->readbuf, new_socket->readbuf_raw, SOCKET_READBUF);
-  // TODO(aoates): should we set bind_point or the bound name?
+  kmemcpy(&new_socket->bind_address, &target_sock->bind_address,
+          sizeof(struct sockaddr_un));
+  // TODO(aoates): should we set bind_point?
 
   list_push(&target_sock->incoming_conns, &new_socket->connecting_link);
   target_sock->listen_backlog--;
@@ -449,6 +453,28 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
   return result;
 }
 
+static int sock_unix_getsockname(socket_t* socket_base,
+                                 struct sockaddr* address) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  kmemcpy(address, &socket->bind_address, sizeof(struct sockaddr_un));
+  return 0;
+}
+
+static int sock_unix_getpeername(socket_t* socket_base,
+                                 struct sockaddr* address) {
+  KASSERT(socket_base->s_domain == AF_UNIX);
+  socket_unix_t* const socket = (socket_unix_t*)socket_base;
+
+  if (!socket->peer) {
+    return -ENOTCONN;
+  }
+
+  kmemcpy(address, &socket->peer->bind_address, sizeof(struct sockaddr_un));
+  return 0;
+}
+
 static int sock_unix_poll(socket_t* socket_base, short event_mask,
                           poll_state_t* poll) {
   KASSERT(socket_base->s_domain == AF_UNIX);
@@ -471,5 +497,7 @@ static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_accept_queue_length,
   &sock_unix_recvfrom,
   &sock_unix_sendto,
+  &sock_unix_getsockname,
+  &sock_unix_getpeername,
   &sock_unix_poll,
 };

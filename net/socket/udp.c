@@ -86,6 +86,16 @@ static int sock_udp_accept_queue_length(const socket_t* socket_base) {
   return -EOPNOTSUPP;
 }
 
+static int sock_udp_getsockname(socket_t* socket_base,
+                                struct sockaddr* address) {
+  return -EOPNOTSUPP;
+}
+
+static int sock_udp_getpeername(socket_t* socket_base,
+                                struct sockaddr* address) {
+  return -EOPNOTSUPP;
+}
+
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
   NULL,
@@ -96,5 +106,7 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_accept_queue_length,
   NULL,
   NULL,
+  &sock_udp_getsockname,
+  &sock_udp_getpeername,
   NULL,
 };

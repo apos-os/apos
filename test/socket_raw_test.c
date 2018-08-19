@@ -79,6 +79,11 @@ static void unsupported_ops_test(void) {
   KTEST_BEGIN("Raw sockets: accept_queue_length() unsupported");
   KEXPECT_EQ(-EOPNOTSUPP, net_accept_queue_length(sock));
 
+  KTEST_BEGIN("Raw sockets: get{sock,peer}name() unsupported");
+  struct sockaddr_storage addr;
+  KEXPECT_EQ(-EOPNOTSUPP, net_getsockname(sock, (struct sockaddr*)&addr));
+  KEXPECT_EQ(-EOPNOTSUPP, net_getpeername(sock, (struct sockaddr*)&addr));
+
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
