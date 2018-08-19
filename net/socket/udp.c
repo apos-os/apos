@@ -88,12 +88,16 @@ static int sock_udp_accept_queue_length(const socket_t* socket_base) {
 
 static int sock_udp_getsockname(socket_t* socket_base,
                                 struct sockaddr* address) {
-  return -EOPNOTSUPP;
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+  kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
+  return 0;
 }
 
 static int sock_udp_getpeername(socket_t* socket_base,
                                 struct sockaddr* address) {
-  return -EOPNOTSUPP;
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  return -ENOTCONN;
 }
 
 static const socket_ops_t g_udp_socket_ops = {

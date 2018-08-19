@@ -14,6 +14,7 @@
 
 #include "test/kernel_tests.h"
 
+#include "common/kprintf.h"
 #include "memory/block_cache.h"
 #include "net/addr.h"
 #include "net/bind.h"
@@ -79,9 +80,29 @@ static void bind_test(void) {
   netaddr_t netaddr;
   KEXPECT_GE(inet_choose_bind(ADDR_INET, &netaddr), 0);
   KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+  addr.sin_port = 1234;
+
+  KTEST_BEGIN("getsockname(SOCK_DGRAM): unbound socket");
+  struct sockaddr_storage result_addr_storage;
+  struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_UNSPEC, result_addr->sin_family);
+
+  KTEST_BEGIN("getpeername(SOCK_DGRAM): unbound socket");
+  KEXPECT_EQ(-ENOTCONN,
+             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
 
   KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
 
+  KTEST_BEGIN("getsockname(SOCK_DGRAM): bound socket");
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_EQ(addr.sin_addr.s_addr, result_addr->sin_addr.s_addr);
+  KEXPECT_EQ(1234, result_addr->sin_port);
+
+  KTEST_BEGIN("getpeername(SOCK_DGRAM): bound socket");
+  KEXPECT_EQ(-ENOTCONN,
+             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
 
   KTEST_BEGIN("bind(SOCK_DGRAM): already bound socket");
   KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
