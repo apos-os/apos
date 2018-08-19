@@ -16,9 +16,13 @@
 #define APOO_NET_SOCKET_UDP_H
 
 #include "net/socket/socket.h"
+#include "user/include/apos/net/socket/inet.h"
 
 typedef struct socket_udp {
   socket_t base;
+
+  // The local bound address.  If unbound, family will be AF_UNSPEC.
+  struct sockaddr_storage bind_addr;
 } socket_udp_t;
 
 int sock_udp_create(socket_t** out);

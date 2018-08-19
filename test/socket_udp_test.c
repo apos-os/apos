@@ -15,6 +15,9 @@
 #include "test/kernel_tests.h"
 
 #include "memory/block_cache.h"
+#include "net/addr.h"
+#include "net/bind.h"
+#include "net/util.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "vfs/vfs.h"
@@ -65,6 +68,56 @@ static void unsupported_ops_test(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+static void bind_test(void) {
+  KTEST_BEGIN("bind(SOCK_DGRAM): can bind to NIC's address");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+
+  netaddr_t netaddr;
+  KEXPECT_GE(inet_choose_bind(ADDR_INET, &netaddr), 0);
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): already bound socket");
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): bind to bad address");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  addr.sin_addr.s_addr = str2inet("0.0.0.0");
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  addr.sin_addr.s_addr = str2inet("8.8.8.8");
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  // Too-short address.
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr) - 5));
+
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): wrong address family");
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+  addr.sin_family = AF_UNIX;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): bad FD");
+  addr.sin_family = AF_UNIX;
+  addr.sin_addr.s_addr = str2inet("0.0.0.0");
+  KEXPECT_EQ(-EBADF, net_bind(100, (struct sockaddr*)&addr, sizeof(addr)));
+
+  vfs_close(sock);
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -72,6 +125,7 @@ void socket_udp_test(void) {
 
   create_test();
   unsupported_ops_test();
+  bind_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

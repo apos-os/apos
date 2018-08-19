@@ -16,7 +16,11 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "net/addr.h"
+#include "net/bind.h"
+#include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 
 static const socket_ops_t g_udp_socket_ops;
@@ -30,6 +34,8 @@ int sock_udp_create(socket_t** out) {
   sock->base.s_protocol = IPPROTO_UDP;
   sock->base.s_ops = &g_udp_socket_ops;
 
+  sock->bind_addr.sa_family = AF_UNSPEC;
+
   *out = &(sock->base);
   return 0;
 }
@@ -37,6 +43,30 @@ int sock_udp_create(socket_t** out) {
 static void sock_udp_cleanup(socket_t* socket_base) {
   KASSERT_DBG(socket_base->s_domain == AF_INET);
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+}
+
+static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
+                         socklen_t address_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+  if (socket->bind_addr.sa_family != AF_UNSPEC) {
+    return -EINVAL;
+  }
+
+  netaddr_t naddr;
+  int result = sock2netaddr(address, address_len, &naddr, NULL);
+  if (result == -EAFNOSUPPORT) return result;
+  else if (result) return -EADDRNOTAVAIL;
+
+  result = inet_bindable(&naddr);
+  if (result) return result;
+
+  // TODO(aoates): check there aren't any conflicting sockets already bound.
+  // TODO(aoates): pick port if necessary.
+
+  kmemset(&socket->bind_addr, 0, sizeof(struct sockaddr_storage));
+  kmemcpy(&socket->bind_addr, address, address_len);
+  return 0;
 }
 
 static int sock_udp_listen(socket_t* socket_base, int backlog) {
@@ -59,7 +89,7 @@ static int sock_udp_accept_queue_length(const socket_t* socket_base) {
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
   NULL,
-  NULL,
+  &sock_udp_bind,
   &sock_udp_listen,
   &sock_udp_accept,
   NULL,
