@@ -39,14 +39,31 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
 }
 
+static int sock_udp_listen(socket_t* socket_base, int backlog) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  return -EOPNOTSUPP;
+}
+
+static int sock_udp_accept(socket_t* socket_base, int fflags,
+                           struct sockaddr* address, socklen_t* address_len,
+                           socket_t** socket_out) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  return -EOPNOTSUPP;
+}
+
+static int sock_udp_accept_queue_length(const socket_t* socket_base) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  return -EOPNOTSUPP;
+}
+
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
   NULL,
   NULL,
+  &sock_udp_listen,
+  &sock_udp_accept,
   NULL,
-  NULL,
-  NULL,
-  NULL,
+  &sock_udp_accept_queue_length,
   NULL,
   NULL,
   NULL,

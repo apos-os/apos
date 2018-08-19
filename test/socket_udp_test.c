@@ -50,12 +50,28 @@ static void create_test(void) {
   KEXPECT_EQ(-EPROTONOSUPPORT, net_socket(AF_INET, SOCK_DGRAM, 1));
 }
 
+static void unsupported_ops_test(void) {
+  KTEST_BEGIN("UDP sockets: listen() unsupported");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-EOPNOTSUPP, net_listen(sock, 10));
+
+  KTEST_BEGIN("UDP sockets: accept() unsupported");
+  KEXPECT_EQ(-EOPNOTSUPP, net_accept(sock, NULL, NULL));
+
+  KTEST_BEGIN("UDP sockets: accept_queue_length() unsupported");
+  KEXPECT_EQ(-EOPNOTSUPP, net_accept_queue_length(sock));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
   const int initial_cache_size = vfs_cache_size();
 
   create_test();
+  unsupported_ops_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
