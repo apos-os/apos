@@ -108,7 +108,7 @@ socket_t* sockmap_find(const sockmap_t* sm, const struct sockaddr* addr) {
   KASSERT(sm->family == addr->sa_family);
   list_link_t* link = sm->socks.head;
   const in_port_t port = get_port(addr);
-  while (link) {
+  for (; link; link = link->next) {
     const sm_entry_t* entry = container_of(link, sm_entry_t, link);
     KASSERT_DBG(entry->addr.sa_family == sm->family);
     if (get_port((struct sockaddr*)&entry->addr) != port) {
@@ -120,8 +120,6 @@ socket_t* sockmap_find(const sockmap_t* sm, const struct sockaddr* addr) {
         equal((struct sockaddr*)&entry->addr, addr)) {
       return entry->socket;
     }
-
-    link = link->next;
   }
 
   return NULL;
@@ -131,7 +129,7 @@ socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr) {
   KASSERT(sm->family == addr->sa_family);
   list_link_t* link = sm->socks.head;
   const in_port_t port = get_port(addr);
-  while (link) {
+  for (; link; link = link->next) {
     sm_entry_t* entry = container_of(link, sm_entry_t, link);
     KASSERT_DBG(entry->addr.sa_family == sm->family);
     if (get_port((struct sockaddr*)&entry->addr) != port) {
@@ -145,8 +143,6 @@ socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr) {
       kfree(entry);
       return sock;
     }
-
-    link = link->next;
   }
 
   return NULL;
@@ -157,7 +153,7 @@ in_port_t sockmap_free_port(const sockmap_t* sm, const struct sockaddr* addr) {
   struct sockaddr_storage addr_port;
   kmemcpy(&addr_port, addr, sizeof_addr(addr));
   // TODO(aoates): this is crazy inefficient; do something better.
-  for (in_port_t p = INET_PORT_EPHMIN; p <= INET_PORT_EPHMAX; p++) {
+  for (int p = INET_PORT_EPHMIN; p <= INET_PORT_EPHMAX; p++) {
     set_port((struct sockaddr*)&addr_port, p);
     if (sockmap_find(sm, (struct sockaddr*)&addr_port) == NULL) {
       return p;
