@@ -19,6 +19,7 @@
 
 #include "common/list.h"
 #include "net/socket/socket.h"
+#include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
 // A socket map data structure.  Allows querying for sockets bound to particular
@@ -55,6 +56,11 @@ socket_t* sockmap_find(const sockmap_t* sm, const struct sockaddr* addr);
 //
 // Returns the socket that was removed, or NULL if none was found.
 socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr);
+
+// Finds a free port for the given address in the sockmap and returns it.  That
+// is, returns a port such that sockmap_find(sm, addr, <port>) would return
+// NULL.  Ignores the port in the address.  Returns 0 if no port is available.
+in_port_t sockmap_free_port(const sockmap_t* sm, const struct sockaddr* addr);
 
 // Returns the global socket map associated with the given protocol and address
 // family.

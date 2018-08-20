@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
+#include "net/inet.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/unix.h"
 
@@ -44,7 +45,7 @@ static size_t sizeof_addr(const struct sockaddr* addr) {
 static bool is_any(const struct sockaddr* addr) {
   switch (addr->sa_family) {
     case AF_INET:
-      return ((struct sockaddr_in*)addr)->sin_addr.s_addr == INADDR_ANY;
+      return ((const struct sockaddr_in*)addr)->sin_addr.s_addr == INADDR_ANY;
   }
   klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
   return false;
@@ -53,10 +54,19 @@ static bool is_any(const struct sockaddr* addr) {
 static in_port_t get_port(const struct sockaddr* addr) {
   switch (addr->sa_family) {
     case AF_INET:
-      return ((struct sockaddr_in*)addr)->sin_port;
+      return ((const struct sockaddr_in*)addr)->sin_port;
   }
   klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
   return 0;
+}
+
+static void set_port(struct sockaddr* addr, in_port_t port) {
+  switch (addr->sa_family) {
+    case AF_INET:
+      ((struct sockaddr_in*)addr)->sin_port = port;
+      return;
+  }
+  klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
 }
 
 static in_port_t equal(const struct sockaddr* A, const struct sockaddr* B) {
@@ -140,6 +150,20 @@ socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr) {
   }
 
   return NULL;
+}
+
+in_port_t sockmap_free_port(const sockmap_t* sm, const struct sockaddr* addr) {
+  KASSERT(sm->family == addr->sa_family);
+  struct sockaddr_storage addr_port;
+  kmemcpy(&addr_port, addr, sizeof_addr(addr));
+  // TODO(aoates): this is crazy inefficient; do something better.
+  for (in_port_t p = INET_PORT_EPHMIN; p <= INET_PORT_EPHMAX; p++) {
+    set_port((struct sockaddr*)&addr_port, p);
+    if (sockmap_find(sm, (struct sockaddr*)&addr_port) == NULL) {
+      return p;
+    }
+  }
+  return 0;
 }
 
 sockmap_t* net_get_sockmap(sa_family_t family, int protocol) {
