@@ -18,6 +18,7 @@
 #include "memory/block_cache.h"
 #include "net/addr.h"
 #include "net/bind.h"
+#include "net/inet.h"
 #include "net/util.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -210,6 +211,125 @@ static void multi_bind_test(void) {
   KEXPECT_EQ(0, vfs_close(sock2));
 }
 
+static void connect_test(void) {
+  char prettybuf[INET_PRETTY_LEN];
+  KTEST_BEGIN("connect(SOCK_DGRAM): connect unbound socket");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  struct sockaddr_in dst_addr;
+  dst_addr.sin_family = AF_INET;
+
+  dst_addr.sin_addr.s_addr = str2inet("1.2.3.4");
+  dst_addr.sin_port = 1234;
+
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  // We should have implicitly bound the socket to INADDR_ANY and an unused
+  // port.
+  struct sockaddr_storage result_addr_storage;
+  struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("0.0.0.0", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_GE(result_addr->sin_port, INET_PORT_EPHMIN);
+  KEXPECT_LE(result_addr->sin_port, INET_PORT_EPHMAX);
+  in_port_t orig_bound_port = result_addr->sin_port;
+
+  // getpeername() should give us the right peer.
+  KTEST_BEGIN("getpeername(SOCK_DGRAM): connected socket");
+  KEXPECT_EQ(0, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("1.2.3.4", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(1234, result_addr->sin_port);
+
+
+  KTEST_BEGIN("connect(SOCK_DGRAM): re-connect to new address");
+  dst_addr.sin_addr.s_addr = str2inet("5.6.7.8");
+  dst_addr.sin_port = 5678;
+
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("0.0.0.0", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(orig_bound_port, result_addr->sin_port);
+
+  // getpeername() should give us the right peer.
+  KEXPECT_EQ(0, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("5.6.7.8", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(5678, result_addr->sin_port);
+
+  KTEST_BEGIN(
+      "connect(SOCK_DGRAM): connect to bad address (doesn't disconnect)");
+  dst_addr.sin_family = AF_UNIX;
+
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+  dst_addr.sin_family = AF_INET;
+  // Test too-short address.
+  KEXPECT_EQ(-EDESTADDRREQ, net_connect(sock, (struct sockaddr*)&dst_addr,
+                                        sizeof(dst_addr) - 5));
+
+  // getpeername() should give us the same peer.
+  KEXPECT_EQ(0, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("5.6.7.8", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(5678, result_addr->sin_port);
+
+
+  KTEST_BEGIN("connect(SOCK_DGRAM): connect to NULL address (disconnects)");
+  dst_addr.sin_family = AF_INET;
+  dst_addr.sin_addr.s_addr = str2inet("5.6.7.8");
+  dst_addr.sin_port = 5678;
+
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  dst_addr.sin_family = AF_UNSPEC;
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(-ENOTCONN,
+             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+
+  vfs_close(sock);
+
+
+  KTEST_BEGIN("connect(SOCK_DGRAM): connect bound socket");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  struct sockaddr_in src_addr;
+  src_addr.sin_family = AF_INET;
+  netaddr_t netaddr;
+  KEXPECT_GE(inet_choose_bind(ADDR_INET, &netaddr), 0);
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &src_addr, sizeof(src_addr)));
+  src_addr.sin_port = 5678;
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&src_addr, sizeof(src_addr)));
+
+  dst_addr.sin_family = AF_INET;
+  dst_addr.sin_addr.s_addr = str2inet("1.2.3.4");
+  dst_addr.sin_port = 1234;
+
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_EQ(src_addr.sin_addr.s_addr, result_addr->sin_addr.s_addr);
+  KEXPECT_EQ(5678, result_addr->sin_port);
+
+  KEXPECT_EQ(0, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("1.2.3.4", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(1234, result_addr->sin_port);
+  vfs_close(sock);
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -219,6 +339,7 @@ void socket_udp_test(void) {
   unsupported_ops_test();
   bind_test();
   multi_bind_test();
+  connect_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

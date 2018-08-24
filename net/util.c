@@ -88,6 +88,9 @@ int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
 
 int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
                  netaddr_t* naddr, int* port) {
+  if ((size_t)saddr_len < sizeof(sa_family_t)) {
+    return -EINVAL;
+  }
   switch (saddr->sa_family) {
     case ADDR_INET: {
       if (saddr_len < (int)sizeof(struct sockaddr_in)) {
@@ -103,6 +106,13 @@ int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
       }
       return 0;
     }
+
+    case ADDR_UNSPEC:
+      naddr->family = ADDR_UNSPEC;
+      if (port) {
+        *port = -1;
+      }
+      return 0;
   }
 
   return -EAFNOSUPPORT;

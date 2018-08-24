@@ -38,6 +38,7 @@ int sock_udp_create(socket_t** out) {
   sock->base.s_ops = &g_udp_socket_ops;
 
   sock->bind_addr.sa_family = AF_UNSPEC;
+  sock->connected_addr.sa_family = AF_UNSPEC;
 
   *out = &(sock->base);
   return 0;
@@ -120,6 +121,39 @@ static int sock_udp_accept(socket_t* socket_base, int fflags,
   return -EOPNOTSUPP;
 }
 
+static int sock_udp_connect(socket_t* socket_base, int fflags,
+                            const struct sockaddr* address,
+                            socklen_t address_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* sock = (socket_udp_t*)socket_base;
+  if (!address) return -EDESTADDRREQ;
+
+  netaddr_t dest;
+  int result = sock2netaddr(address, address_len, &dest, NULL);
+  if (result == -EAFNOSUPPORT) return result;
+  else if (result) return -EDESTADDRREQ;
+  if (dest.family != AF_UNSPEC &&
+      dest.family != (addrfam_t)sock->base.s_domain) {
+    return -EAFNOSUPPORT;
+  }
+
+  // If we're unbound, bind to the any address.
+  if (sock->bind_addr.sa_family == AF_UNSPEC) {
+    KASSERT(address->sa_family == AF_INET);
+    // TODO(aoates): make a generic make_any_addr() helper.
+    struct sockaddr_in bind_addr;
+    bind_addr.sin_family = AF_INET;
+    bind_addr.sin_addr.s_addr = INADDR_ANY;
+    bind_addr.sin_port = 0;
+    result = sock_udp_bind(socket_base, (struct sockaddr*)&bind_addr,
+                           sizeof(bind_addr));
+    if (result) return result;
+  }
+
+  kmemcpy(&sock->connected_addr, address, address_len);
+  return 0;
+}
+
 static int sock_udp_accept_queue_length(const socket_t* socket_base) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   return -EOPNOTSUPP;
@@ -136,7 +170,12 @@ static int sock_udp_getsockname(socket_t* socket_base,
 static int sock_udp_getpeername(socket_t* socket_base,
                                 struct sockaddr* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
-  return -ENOTCONN;
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+  if (socket->connected_addr.sa_family == AF_UNSPEC) {
+    return -ENOTCONN;
+  }
+  kmemcpy(address, &socket->connected_addr, sizeof(socket->connected_addr));
+  return 0;
 }
 
 static const socket_ops_t g_udp_socket_ops = {
@@ -145,7 +184,7 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_bind,
   &sock_udp_listen,
   &sock_udp_accept,
-  NULL,
+  &sock_udp_connect,
   &sock_udp_accept_queue_length,
   NULL,
   NULL,

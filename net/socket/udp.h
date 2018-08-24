@@ -23,6 +23,9 @@ typedef struct socket_udp {
 
   // The local bound address.  If unbound, family will be AF_UNSPEC.
   struct sockaddr_storage bind_addr;
+
+  // The connected peer address.  If unconnected, family will be AF_UNSPEC.
+  struct sockaddr_storage connected_addr;
 } socket_udp_t;
 
 int sock_udp_create(socket_t** out);
