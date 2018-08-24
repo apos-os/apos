@@ -17,9 +17,12 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/bind.h"
+#include "net/inet.h"
+#include "net/socket/sockmap.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -43,6 +46,18 @@ int sock_udp_create(socket_t** out) {
 static void sock_udp_cleanup(socket_t* socket_base) {
   KASSERT_DBG(socket_base->s_domain == AF_INET);
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_UDP);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+  if (socket->bind_addr.sa_family != AF_UNSPEC) {
+    KASSERT_DBG(socket->bind_addr.sa_family ==
+                (sa_family_t)socket_base->s_domain);
+    PUSH_AND_DISABLE_INTERRUPTS();
+    sockmap_t* sm = net_get_sockmap(socket->bind_addr.sa_family, IPPROTO_UDP);
+    socket_t* removed =
+        sockmap_remove(sm, (struct sockaddr*)&socket->bind_addr);
+    KASSERT(removed == socket_base);
+    POP_INTERRUPTS();
+  }
 }
 
 static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
@@ -54,18 +69,42 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
   }
 
   netaddr_t naddr;
-  int result = sock2netaddr(address, address_len, &naddr, NULL);
+  int naddr_port;
+  int result = sock2netaddr(address, address_len, &naddr, &naddr_port);
   if (result == -EAFNOSUPPORT) return result;
   else if (result) return -EADDRNOTAVAIL;
 
   result = inet_bindable(&naddr);
   if (result) return result;
 
-  // TODO(aoates): check there aren't any conflicting sockets already bound.
-  // TODO(aoates): pick port if necessary.
+  PUSH_AND_DISABLE_INTERRUPTS();
+  sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
+  if (naddr_port == 0) {
+    in_port_t free_port = sockmap_free_port(sm, address);
+    if (free_port == 0) {
+      klogfm(KL_NET, WARNING, "net: out of ephemeral ports\n");
+      POP_INTERRUPTS();
+      return -EADDRINUSE;
+    }
+    naddr_port = free_port;
+  }
+  KASSERT_DBG(naddr_port >= INET_PORT_MIN);
+  KASSERT_DBG(naddr_port <= INET_PORT_MAX);
+
+  // TODO(aoates): check for permission to bind to low-numbered ports.
+
+  struct sockaddr_storage addr_with_port;
+  KASSERT(net2sockaddr(&naddr, naddr_port, &addr_with_port,
+                       sizeof(addr_with_port)) == 0);
+  bool inserted =
+      sockmap_insert(sm, (struct sockaddr*)&addr_with_port, socket_base);
+  POP_INTERRUPTS();
+  if (!inserted) {
+    return -EADDRINUSE;
+  }
 
   kmemset(&socket->bind_addr, 0, sizeof(struct sockaddr_storage));
-  kmemcpy(&socket->bind_addr, address, address_len);
+  kmemcpy(&socket->bind_addr, &addr_with_port, address_len);
   return 0;
 }
 

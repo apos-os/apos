@@ -262,9 +262,6 @@ static void bind_test(void) {
 
   KTEST_BEGIN("bind(SOCK_RAW): bind to bad address");
   sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
-  addr.sin_addr.s_addr = str2inet("0.0.0.0");
-  KEXPECT_EQ(-EADDRNOTAVAIL,
-             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
   addr.sin_addr.s_addr = str2inet("8.8.8.8");
   KEXPECT_EQ(-EADDRNOTAVAIL,
              net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));

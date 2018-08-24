@@ -111,7 +111,7 @@ static void bind_test(void) {
 
   KTEST_BEGIN("bind(SOCK_DGRAM): bind to bad address");
   sock = net_socket(AF_INET, SOCK_DGRAM, 0);
-  addr.sin_addr.s_addr = str2inet("0.0.0.0");
+  addr.sin_addr.s_addr = str2inet("0.0.0.1");
   KEXPECT_EQ(-EADDRNOTAVAIL,
              net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
   addr.sin_addr.s_addr = str2inet("8.8.8.8");
@@ -139,6 +139,77 @@ static void bind_test(void) {
   vfs_close(sock);
 }
 
+static void multi_bind_test(void) {
+  KTEST_BEGIN("bind(SOCK_DGRAM): bind to already-bound address");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = str2inet("127.0.0.1");
+  addr.sin_port = 1234;
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  int sock2 = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock2, 0);
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): bind to INADDR_ANY on already-used port");
+  addr.sin_addr.s_addr = INADDR_ANY;
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): can bind to previously-used port after close");
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, vfs_close(sock2));
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  sock2 = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock2, 0);
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): bind to addr on already-used INADDR_ANY port");
+  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_port = 1234;
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  addr.sin_addr.s_addr = str2inet("127.0.0.1");
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("bind(SOCK_DGRAM): bind to port 0 (specific IP)");
+  addr.sin_addr.s_addr = str2inet("127.0.0.1");
+  addr.sin_port = 0;
+  KEXPECT_EQ(0, vfs_close(sock));
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  struct sockaddr_storage sockname_addr;
+  char prettybuf[INET_PRETTY_LEN];
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&sockname_addr));
+  KEXPECT_STREQ("127.0.0.1",
+                inet2str(((struct sockaddr_in*)&sockname_addr)->sin_addr.s_addr,
+                         prettybuf));
+  in_port_t port1 = ((struct sockaddr_in*)&sockname_addr)->sin_port;
+  KEXPECT_NE(0, port1);
+
+  KEXPECT_EQ(0, net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, net_getsockname(sock2, (struct sockaddr*)&sockname_addr));
+  KEXPECT_STREQ("127.0.0.1",
+                inet2str(((struct sockaddr_in*)&sockname_addr)->sin_addr.s_addr,
+                         prettybuf));
+  in_port_t port2 = ((struct sockaddr_in*)&sockname_addr)->sin_port;
+  KEXPECT_NE(0, port2);
+  KEXPECT_NE(port1, port2);
+
+  // TODO(aoates): test binding to the same port on two different addresses.
+
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_close(sock2));
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -147,6 +218,7 @@ void socket_udp_test(void) {
   create_test();
   unsupported_ops_test();
   bind_test();
+  multi_bind_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
