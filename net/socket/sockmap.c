@@ -14,6 +14,7 @@
 
 #include "net/socket/sockmap.h"
 
+#include "arch/common/endian.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
@@ -54,7 +55,7 @@ static bool is_any(const struct sockaddr* addr) {
 static in_port_t get_port(const struct sockaddr* addr) {
   switch (addr->sa_family) {
     case AF_INET:
-      return ((const struct sockaddr_in*)addr)->sin_port;
+      return btoh16(((const struct sockaddr_in*)addr)->sin_port);
   }
   klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
   return 0;
@@ -63,7 +64,7 @@ static in_port_t get_port(const struct sockaddr* addr) {
 static void set_port(struct sockaddr* addr, in_port_t port) {
   switch (addr->sa_family) {
     case AF_INET:
-      ((struct sockaddr_in*)addr)->sin_port = port;
+      ((struct sockaddr_in*)addr)->sin_port = htob16(port);
       return;
   }
   klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);

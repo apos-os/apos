@@ -16,6 +16,7 @@
 
 #include <stdbool.h>
 
+#include "arch/common/endian.h"
 #include "common/errno.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
@@ -75,7 +76,7 @@ int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
       struct sockaddr_in* addr_in = (struct sockaddr_in*)saddr;
       addr_in->sin_family = AF_INET;
       addr_in->sin_addr = naddr->a.ip4;
-      addr_in->sin_port = port;
+      addr_in->sin_port = htob16(port);
       return 0;
     }
 
@@ -102,7 +103,7 @@ int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
         naddr->a.ip4 = addr_in->sin_addr;
       }
       if (port) {
-        *port = addr_in->sin_port;
+        *port = btoh16(addr_in->sin_port);
       }
       return 0;
     }

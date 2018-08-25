@@ -14,6 +14,7 @@
 
 #include "test/kernel_tests.h"
 
+#include "arch/common/endian.h"
 #include "common/kprintf.h"
 #include "memory/block_cache.h"
 #include "net/addr.h"
@@ -233,8 +234,8 @@ static void connect_test(void) {
   KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", inet2str(result_addr->sin_addr.s_addr, prettybuf));
-  KEXPECT_GE(result_addr->sin_port, INET_PORT_EPHMIN);
-  KEXPECT_LE(result_addr->sin_port, INET_PORT_EPHMAX);
+  KEXPECT_GE(btoh16(result_addr->sin_port), INET_PORT_EPHMIN);
+  KEXPECT_LE(btoh16(result_addr->sin_port), INET_PORT_EPHMAX);
   in_port_t orig_bound_port = result_addr->sin_port;
 
   // getpeername() should give us the right peer.
