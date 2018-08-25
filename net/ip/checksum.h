@@ -24,5 +24,7 @@
 // the checksum will end up (when written out as a uint16_t) matching the
 // endianness of the input data.
 uint16_t ip_checksum(const void* buf, size_t len);
+uint16_t ip_checksum2(const void* buf, size_t len, const void* buf2,
+                      size_t len2);
 
 #endif

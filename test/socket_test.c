@@ -16,6 +16,7 @@
 
 #include "arch/common/endian.h"
 #include "memory/block_cache.h"
+#include "net/ip/checksum.h"
 #include "net/socket/socket.h"
 #include "net/util.h"
 #include "test/ktest.h"
@@ -43,6 +44,21 @@ static void getsockname_test(void) {
 
   vfs_close(pipe[0]);
   vfs_close(pipe[1]);
+}
+
+static void ip_checksum_test(void) {
+  KTEST_BEGIN("ip_checksum() tests");
+  const uint8_t kPacket[] = {192, 168, 0, 31, 192, 168, 0,   30,
+                             0,   17,  0, 10, 0,   20,  0,   10,
+                             0,   10,  0, 0,  'H', 'i', 'l', 0};
+  KEXPECT_EQ(btoh16(0x35c5), ip_checksum(kPacket, sizeof(kPacket) - 2));
+  KEXPECT_EQ(btoh16(0xc9c4), ip_checksum(kPacket, sizeof(kPacket) - 1));
+  KEXPECT_EQ(btoh16(0xc9c4), ip_checksum(kPacket, sizeof(kPacket)));
+  for (size_t i = 0; i < 10; ++i) {
+    KEXPECT_EQ(btoh16(0xc9c4),
+               ip_checksum2(kPacket, i, kPacket + i, sizeof(kPacket) - i - 1));
+  }
+  KEXPECT_EQ(0xfffe, ip_checksum("\xff\xff\xff\xff\x01\x00", 6));
 }
 
 void socket_test(void) {
@@ -96,6 +112,7 @@ void socket_test(void) {
   KEXPECT_EQ(0, str2inet("1.1.1."));
 
   getsockname_test();
+  ip_checksum_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
