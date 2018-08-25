@@ -346,9 +346,9 @@ static void sendto_test(void) {
 
   KTEST_BEGIN("sendto(SOCK_RAW): after bind");
   struct sockaddr_in bind_addr;
-  netaddr_t bind_netaddr;
-  KEXPECT_GE(inet_choose_bind(ADDR_INET, &bind_netaddr), 0);
-  KEXPECT_EQ(0, net2sockaddr(&bind_netaddr, 0, &bind_addr, sizeof(bind_addr)));
+  bind_addr.sin_family = AF_INET;
+  bind_addr.sin_addr.s_addr = str2inet("127.0.0.1");
+  bind_addr.sin_port = 0;
   KEXPECT_EQ(
       0, net_bind(send_sock, (struct sockaddr*)&bind_addr, sizeof(bind_addr)));
   KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
@@ -357,9 +357,7 @@ static void sendto_test(void) {
   result = net_recv(recv_sock, buf, 100, 0);
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, result);
 
-  char prettybuf2[INET_PRETTY_LEN];
-  KEXPECT_STREQ(inet2str(bind_netaddr.a.ip4.s_addr, prettybuf),
-                inet2str(hdr->src_addr, prettybuf2));
+  KEXPECT_STREQ("127.0.0.1", inet2str(hdr->src_addr, prettybuf));
   KEXPECT_STREQ("127.0.0.5", inet2str(hdr->dst_addr, prettybuf));
   KEXPECT_EQ(IPPROTO_ICMP, hdr->protocol);
   KEXPECT_EQ(0, ip_checksum(hdr, sizeof(ip4_hdr_t)));

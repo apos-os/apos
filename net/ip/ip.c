@@ -59,6 +59,7 @@ static bool validate_hdr_v4(const pbuf_t* pb) {
 }
 
 int ip_send(pbuf_t* pb) {
+  char addrbuf[INET_PRETTY_LEN];
   if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
     KLOG(INFO, "net: rejecting too-short IP packet\n");
     return -EINVAL;
@@ -76,10 +77,15 @@ int ip_send(pbuf_t* pb) {
   dst.a.ip4.s_addr = hdr->dst_addr;
   ip_routed_t route;
   if (ip_route(dst, &route) == false) {
-    char addrbuf[INET_PRETTY_LEN];
     KLOG(INFO, "net: unable to route packet to %s\n",
          inet2str(hdr->dst_addr, addrbuf));
     return -EINVAL;  // TODO
+  }
+
+  if (route.src.a.ip4.s_addr != hdr->src_addr) {
+    KLOG(INFO, "net: unable to route packet with src %s on iface %s\n",
+         inet2str(hdr->src_addr, addrbuf), route.nic->name);
+    return -EADDRNOTAVAIL;
   }
 
   return net_link_send(route.nic, route.nexthop, pb, ET_IPV4);
