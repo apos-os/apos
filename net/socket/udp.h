@@ -18,6 +18,13 @@
 #include "net/socket/socket.h"
 #include "user/include/apos/net/socket/inet.h"
 
+typedef struct {
+  uint16_t src_port;
+  uint16_t dst_port;
+  uint16_t len;
+  uint16_t checksum;
+} __attribute__((packed)) udp_hdr_t;
+
 typedef struct socket_udp {
   socket_t base;
 

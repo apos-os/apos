@@ -14,6 +14,7 @@
 
 #include "net/socket/udp.h"
 
+#include "arch/common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
@@ -22,9 +23,22 @@
 #include "net/addr.h"
 #include "net/bind.h"
 #include "net/inet.h"
+#include "net/ip/checksum.h"
+#include "net/ip/ip.h"
+#include "net/ip/ip4_hdr.h"
+#include "net/pbuf.h"
 #include "net/socket/sockmap.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
+
+// Pseudo-header for calculating checksums.
+typedef struct {
+  uint32_t src_addr;
+  uint32_t dst_addr;
+  uint8_t zeroes;
+  uint8_t protocol;
+  uint16_t udp_length;
+} __attribute__((packed)) ip4_pseudo_hdr_t;
 
 static const socket_ops_t g_udp_socket_ops;
 
@@ -159,6 +173,71 @@ static int sock_udp_accept_queue_length(const socket_t* socket_base) {
   return -EOPNOTSUPP;
 }
 
+ssize_t sock_udp_sendto(socket_t* socket_base, int fflags, const void* buffer,
+                        size_t length, int sflags,
+                        const struct sockaddr* dest_addr, socklen_t dest_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+
+  const struct sockaddr* actual_dst;
+  if (dest_addr) {
+    if (socket->connected_addr.sa_family != AF_UNSPEC) {
+      return -EISCONN;
+    }
+    actual_dst = dest_addr;
+    if (dest_len < (socklen_t)sizeof(struct sockaddr_in) ||
+        actual_dst->sa_family != AF_INET) {
+      return -EAFNOSUPPORT;
+    }
+  } else if (socket->connected_addr.sa_family != AF_UNSPEC) {
+    KASSERT_DBG(socket->connected_addr.sa_family == AF_INET);
+    actual_dst = (struct sockaddr*)&socket->connected_addr;
+  } else {
+    return -EDESTADDRREQ;
+  }
+
+  // TODO(aoates): auto-bind to INADDR_ANY if the socket is unbound.
+  if (socket->bind_addr.sa_family != AF_INET) {
+    return -EINVAL;
+  }
+
+  // Actually generate and send the packet.
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(udp_hdr_t), length);
+  if (!pb) {
+    return -ENOMEM;
+  }
+
+  // Copy data and build the UDP header (minus checksum).
+  kmemcpy(pbuf_get(pb), buffer, length);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
+  KASSERT_DBG(socket->bind_addr.sa_family == AF_INET);
+  KASSERT_DBG(actual_dst->sa_family == AF_INET);
+  udp_hdr->src_port = ((struct sockaddr_in*)&socket->bind_addr)->sin_port;
+  udp_hdr->dst_port = ((struct sockaddr_in*)actual_dst)->sin_port;
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + length);
+  udp_hdr->checksum = 0;
+
+  // Calculate the checksum.
+  ip4_pseudo_hdr_t pseudo_ip;
+  pseudo_ip.src_addr =
+      ((struct sockaddr_in*)&socket->bind_addr)->sin_addr.s_addr;
+  pseudo_ip.dst_addr = ((struct sockaddr_in*)actual_dst)->sin_addr.s_addr;
+  pseudo_ip.zeroes = 0;
+  pseudo_ip.protocol = IPPROTO_UDP;
+  pseudo_ip.udp_length = udp_hdr->len;
+
+  udp_hdr->checksum =
+      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+
+  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
+  int result = ip_send(pb);
+  if (result < 0) {
+    return result;
+  }
+  return length;
+}
+
 static int sock_udp_getsockname(socket_t* socket_base,
                                 struct sockaddr* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
@@ -187,7 +266,7 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_connect,
   &sock_udp_accept_queue_length,
   NULL,
-  NULL,
+  &sock_udp_sendto,
   &sock_udp_getsockname,
   &sock_udp_getpeername,
   NULL,

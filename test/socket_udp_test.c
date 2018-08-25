@@ -20,11 +20,31 @@
 #include "net/addr.h"
 #include "net/bind.h"
 #include "net/inet.h"
+#include "net/ip/ip4_hdr.h"
+#include "net/socket/udp.h"
 #include "net/util.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
+
+static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
+  saddr->sin_family = AF_INET;
+  saddr->sin_addr.s_addr = str2inet(addr);
+  saddr->sin_port = htob16(port);
+}
+
+static int do_bind(int sock, const char* addr, int port) {
+  struct sockaddr_in saddr;
+  make_saddr(&saddr, addr, port);
+  return net_bind(sock, (struct sockaddr*)&saddr, sizeof(saddr));
+}
+
+static int do_connect(int sock, const char* addr, int port) {
+  struct sockaddr_in saddr;
+  make_saddr(&saddr, addr, port);
+  return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
+}
 
 static void create_test(void) {
   KTEST_BEGIN("net_socket_create(UDP): basic creation");
@@ -331,6 +351,104 @@ static void connect_test(void) {
   vfs_close(sock);
 }
 
+static void sendto_test(void) {
+  KTEST_BEGIN("net_sendto(UDP): basic send");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int recv_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+  KEXPECT_GE(recv_sock, 0);
+
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 1234));
+  KEXPECT_EQ(0, do_connect(sock, "127.0.0.2", 5678));
+  KEXPECT_EQ(3, net_sendto(sock, "abc", 3, 0, NULL, 0));
+
+  char recv_buf[100];
+  char prettybuf[INET_PRETTY_LEN];
+  struct sockaddr_in recv_addr;
+  socklen_t recv_addr_len = sizeof(recv_addr);
+  int result = net_recvfrom(recv_sock, recv_buf, 100, 0,
+                            (struct sockaddr*)&recv_addr, &recv_addr_len);
+  KEXPECT_EQ(result, sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3);
+  const ip4_hdr_t* ip_hdr = (ip4_hdr_t*)recv_buf;
+  KEXPECT_EQ(0x45, ip_hdr->version_ihl);
+  KEXPECT_EQ(0x0, ip_hdr->dscp_ecn);
+  KEXPECT_EQ(result, btoh16(ip_hdr->total_len));
+  KEXPECT_EQ(0, ip_hdr->id);
+  KEXPECT_EQ(0, ip_hdr->flags_fragoff);
+  KEXPECT_GE(ip_hdr->ttl, 10);
+  KEXPECT_EQ(IPPROTO_UDP, ip_hdr->protocol);
+  KEXPECT_EQ(0x7ccb, btoh16(ip_hdr->hdr_checksum));
+  KEXPECT_STREQ("127.0.0.1", inet2str(ip_hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.2", inet2str(ip_hdr->dst_addr, prettybuf));
+
+  const udp_hdr_t* udp_hdr = (udp_hdr_t*)&recv_buf[sizeof(ip4_hdr_t)];
+  KEXPECT_EQ(1234, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(5678, btoh16(udp_hdr->dst_port));
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(udp_hdr->len));
+  KEXPECT_EQ(0x2272, btoh16(udp_hdr->checksum));
+  recv_buf[result] = '\0';
+  KEXPECT_STREQ("abc", &recv_buf[sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)]);
+
+  KTEST_BEGIN("net_sendto(UDP): address on connected socket");
+  struct sockaddr_in dst_addr;
+  KEXPECT_EQ(-EISCONN,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                        sizeof(dst_addr)));
+  vfs_close(sock);
+
+  KTEST_BEGIN("net_sendto(UDP): send on unconnected socket");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 1234));
+  make_saddr(&dst_addr, "127.0.0.3", 7890);
+  KEXPECT_EQ(3, net_sendto(sock, "def", 3, 0, (struct sockaddr*)&dst_addr,
+                           sizeof(dst_addr)));
+  result = net_recvfrom(recv_sock, recv_buf, 100, 0,
+                        (struct sockaddr*)&recv_addr, &recv_addr_len);
+  KEXPECT_EQ(result, sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3);
+  KEXPECT_STREQ("127.0.0.1", inet2str(ip_hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.3", inet2str(ip_hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(1234, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(7890, btoh16(udp_hdr->dst_port));
+  KEXPECT_STREQ("def", &recv_buf[sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)]);
+
+  KTEST_BEGIN("net_sendto(UDP): send without addr on unconnected socket");
+  KEXPECT_EQ(-EDESTADDRREQ, net_sendto(sock, "def", 3, 0, NULL, 0));
+
+  KTEST_BEGIN("net_sendto(UDP): send to wrong address family");
+  dst_addr.sin_family = AF_UNIX;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(sock, "def", 3, 0, (struct sockaddr*)&dst_addr,
+                        sizeof(dst_addr)));
+
+  KTEST_BEGIN("net_sendto(UDP): send to too-short address");
+  dst_addr.sin_family = AF_INET;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                        sizeof(dst_addr) - 1));
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01,
+                        sizeof(dst_addr) - 1));
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 3));
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, -1));
+
+  vfs_close(sock);
+
+  // TODO(aoates): this should succeed and autobind.
+  KTEST_BEGIN("net_sendto(UDP): send on unbound socket");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                                 sizeof(dst_addr)));
+
+  vfs_close(recv_sock);
+  vfs_close(sock);
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -341,6 +459,7 @@ void socket_udp_test(void) {
   bind_test();
   multi_bind_test();
   connect_test();
+  sendto_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
