@@ -438,12 +438,50 @@ static void sendto_test(void) {
 
   vfs_close(sock);
 
-  // TODO(aoates): this should succeed and autobind.
+
+  KTEST_BEGIN("net_sendto(UDP): send on socket bound to INADDR_ANY");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "0.0.0.0", 1234));
+  KEXPECT_EQ(3, net_sendto(sock, "XYZ", 3, 0, (struct sockaddr*)&dst_addr,
+                           sizeof(dst_addr)));
+
+  result = net_recvfrom(recv_sock, recv_buf, 100, 0,
+                        (struct sockaddr*)&recv_addr, &recv_addr_len);
+  KEXPECT_EQ(result, sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3);
+  KEXPECT_STREQ("127.0.0.1", inet2str(ip_hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.3", inet2str(ip_hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(1234, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(7890, btoh16(udp_hdr->dst_port));
+  KEXPECT_STREQ("XYZ", &recv_buf[sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)]);
+  vfs_close(sock);
+
+
   KTEST_BEGIN("net_sendto(UDP): send on unbound socket");
   sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(sock, 0);
-  KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
-                                 sizeof(dst_addr)));
+  KEXPECT_EQ(3, net_sendto(sock, "XYZ", 3, 0, (struct sockaddr*)&dst_addr,
+                           sizeof(dst_addr)));
+
+  // We should have implicitly bound the socket to INADDR_ANY and an unused
+  // port.
+  struct sockaddr_storage result_addr_storage;
+  struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("0.0.0.0", inet2str(result_addr->sin_addr.s_addr, prettybuf));
+  KEXPECT_GE(btoh16(result_addr->sin_port), INET_PORT_EPHMIN);
+  KEXPECT_LE(btoh16(result_addr->sin_port), INET_PORT_EPHMAX);
+  in_port_t orig_bound_port = btoh16(result_addr->sin_port);
+
+  result = net_recvfrom(recv_sock, recv_buf, 100, 0,
+                        (struct sockaddr*)&recv_addr, &recv_addr_len);
+  KEXPECT_EQ(result, sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3);
+  KEXPECT_STREQ("127.0.0.1", inet2str(ip_hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.3", inet2str(ip_hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(orig_bound_port, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(7890, btoh16(udp_hdr->dst_port));
+  KEXPECT_STREQ("XYZ", &recv_buf[sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)]);
 
   vfs_close(recv_sock);
   vfs_close(sock);

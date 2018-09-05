@@ -26,6 +26,8 @@
 #include "net/ip/checksum.h"
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/route.h"
+#include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
 #include "net/util.h"
@@ -41,6 +43,20 @@ typedef struct {
 } __attribute__((packed)) ip4_pseudo_hdr_t;
 
 static const socket_ops_t g_udp_socket_ops;
+
+static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
+                         socklen_t address_len);
+
+static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
+  KASSERT(dst_addr->sa_family == AF_INET);
+  // TODO(aoates): make a generic make_any_addr() helper.
+  struct sockaddr_in bind_addr;
+  bind_addr.sin_family = AF_INET;
+  bind_addr.sin_addr.s_addr = INADDR_ANY;
+  bind_addr.sin_port = 0;
+  return sock_udp_bind(&socket->base, (struct sockaddr*)&bind_addr,
+                       sizeof(bind_addr));
+}
 
 int sock_udp_create(socket_t** out) {
   socket_udp_t* sock = (socket_udp_t*)kmalloc(sizeof(socket_udp_t));
@@ -153,14 +169,7 @@ static int sock_udp_connect(socket_t* socket_base, int fflags,
 
   // If we're unbound, bind to the any address.
   if (sock->bind_addr.sa_family == AF_UNSPEC) {
-    KASSERT(address->sa_family == AF_INET);
-    // TODO(aoates): make a generic make_any_addr() helper.
-    struct sockaddr_in bind_addr;
-    bind_addr.sin_family = AF_INET;
-    bind_addr.sin_addr.s_addr = INADDR_ANY;
-    bind_addr.sin_port = 0;
-    result = sock_udp_bind(socket_base, (struct sockaddr*)&bind_addr,
-                           sizeof(bind_addr));
+    result = bind_to_any(sock, address);
     if (result) return result;
   }
 
@@ -180,11 +189,13 @@ ssize_t sock_udp_sendto(socket_t* socket_base, int fflags, const void* buffer,
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
   const struct sockaddr* actual_dst;
+  socklen_t actual_dst_len;
   if (dest_addr) {
     if (socket->connected_addr.sa_family != AF_UNSPEC) {
       return -EISCONN;
     }
     actual_dst = dest_addr;
+    actual_dst_len = dest_len;
     if (dest_len < (socklen_t)sizeof(struct sockaddr_in) ||
         actual_dst->sa_family != AF_INET) {
       return -EAFNOSUPPORT;
@@ -192,13 +203,28 @@ ssize_t sock_udp_sendto(socket_t* socket_base, int fflags, const void* buffer,
   } else if (socket->connected_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->connected_addr.sa_family == AF_INET);
     actual_dst = (struct sockaddr*)&socket->connected_addr;
+    actual_dst_len = sizeof(struct sockaddr_storage);
   } else {
     return -EDESTADDRREQ;
   }
+  dest_addr = NULL;
+  dest_len = -1;
 
-  // TODO(aoates): auto-bind to INADDR_ANY if the socket is unbound.
-  if (socket->bind_addr.sa_family != AF_INET) {
-    return -EINVAL;
+  // If we're unbound, bind to the any address.
+  if (socket->bind_addr.sa_family == AF_UNSPEC) {
+    int result = bind_to_any(socket, actual_dst);
+    if (result) return result;
+  }
+
+  // Pick an IP to send from.
+  struct sockaddr_in* src = (struct sockaddr_in*)&socket->bind_addr;
+  struct sockaddr_storage src_if_any;
+  if (src->sin_addr.s_addr == INADDR_ANY) {
+    int result = ip_pick_src(actual_dst, actual_dst_len, &src_if_any);
+    if (result) return result;
+    KASSERT(src_if_any.sa_family == AF_INET);
+    src = (struct sockaddr_in*)&src_if_any;
+    src->sin_port = ((struct sockaddr_in*)&socket->bind_addr)->sin_port;
   }
 
   // Actually generate and send the packet.
@@ -211,17 +237,16 @@ ssize_t sock_udp_sendto(socket_t* socket_base, int fflags, const void* buffer,
   kmemcpy(pbuf_get(pb), buffer, length);
   pbuf_push_header(pb, sizeof(udp_hdr_t));
   udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
-  KASSERT_DBG(socket->bind_addr.sa_family == AF_INET);
+  KASSERT_DBG(src->sin_family == AF_INET);
   KASSERT_DBG(actual_dst->sa_family == AF_INET);
-  udp_hdr->src_port = ((struct sockaddr_in*)&socket->bind_addr)->sin_port;
+  udp_hdr->src_port = src->sin_port;
   udp_hdr->dst_port = ((struct sockaddr_in*)actual_dst)->sin_port;
   udp_hdr->len = htob16(sizeof(udp_hdr_t) + length);
   udp_hdr->checksum = 0;
 
   // Calculate the checksum.
   ip4_pseudo_hdr_t pseudo_ip;
-  pseudo_ip.src_addr =
-      ((struct sockaddr_in*)&socket->bind_addr)->sin_addr.s_addr;
+  pseudo_ip.src_addr = src->sin_addr.s_addr;
   pseudo_ip.dst_addr = ((struct sockaddr_in*)actual_dst)->sin_addr.s_addr;
   pseudo_ip.zeroes = 0;
   pseudo_ip.protocol = IPPROTO_UDP;
