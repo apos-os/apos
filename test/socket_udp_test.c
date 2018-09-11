@@ -177,6 +177,16 @@ static void multi_bind_test(void) {
   KEXPECT_EQ(-EADDRINUSE,
              net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
 
+  KTEST_BEGIN("bind(SOCK_DGRAM): bind to already-bound and connected address");
+  struct sockaddr_in connected_addr;
+  connected_addr.sin_family = AF_INET;
+  connected_addr.sin_addr.s_addr = str2inet("127.0.0.5");
+  connected_addr.sin_port = 8888;
+  KEXPECT_EQ(
+      0, net_connect(sock, (struct sockaddr*)&connected_addr, sizeof(addr)));
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
+
   KTEST_BEGIN("bind(SOCK_DGRAM): bind to INADDR_ANY on already-used port");
   addr.sin_addr.s_addr = INADDR_ANY;
   KEXPECT_EQ(-EADDRINUSE,
