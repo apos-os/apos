@@ -622,6 +622,7 @@ static void recvfrom_test(void) {
              net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
                         (struct sockaddr*)&send_addr, sizeof(send_addr)));
   KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
+  KEXPECT_LT(0, vfs_read(raw_sock, recv_buf, 100));
 
 
   KTEST_BEGIN("net_recvfrom(UDP): packet with disabled (zero) checksum");
@@ -638,12 +639,35 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
              vfs_read(raw_sock, recv_buf, 100));
 
+
+  KTEST_BEGIN("net_recvfrom(UDP): receive on connected socket");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 1234));
+  KEXPECT_EQ(0, do_connect(sock, "127.0.0.1", 1122));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(3, vfs_read(sock, recv_buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(raw_sock, recv_buf, 100));
+
+  // If connected to a different port, should _not_ be received.
+  KEXPECT_EQ(0, do_connect(sock, "127.0.0.1", 1123));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(raw_sock, recv_buf, 100));
+
+  // If connected to a different address, should _not_ be received.
+  KEXPECT_EQ(0, do_connect(sock, "127.0.0.2", 1122));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(raw_sock, recv_buf, 100));
+
+  KEXPECT_EQ(0, vfs_close(sock));
   KEXPECT_EQ(0, vfs_close(send_sock));
   KEXPECT_EQ(0, vfs_close(raw_sock));
 
   // TODO(aoates): other tests:
-  //  - send to connected socket (matches connected addr)
-  //  - send to connected socket (doesn't match connected addr)
   //  - send to INADDR_ANY-bound socket
   //  - too-small buffer
   //  - recvfrom blocks until data

@@ -146,6 +146,19 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
+  // If the socket is connected, the source address must exactly match the
+  // connected-to address.
+  if (socket->connected_addr.sa_family != AF_UNSPEC) {
+    if (socket->connected_addr.sa_family != AF_INET ||
+        ((struct sockaddr_in*)&socket->connected_addr)->sin_addr.s_addr !=
+            ip_hdr->src_addr ||
+        ((struct sockaddr_in*)&socket->connected_addr)->sin_port !=
+            udp_hdr->src_port) {
+      POP_INTERRUPTS();
+      return false;
+    }
+  }
+
   list_push(&socket->rx_queue, &pb->link);
 
   POP_INTERRUPTS();
