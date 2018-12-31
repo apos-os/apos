@@ -662,13 +662,26 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
   KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
              vfs_read(raw_sock, recv_buf, 100));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): receive on unbound socket");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): receive on INADDR_ANY socket");
+  KEXPECT_EQ(0, do_bind(sock, "0.0.0.0", 1234));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(3, vfs_read(sock, recv_buf, 100));
+
 
   KEXPECT_EQ(0, vfs_close(sock));
   KEXPECT_EQ(0, vfs_close(send_sock));
   KEXPECT_EQ(0, vfs_close(raw_sock));
 
   // TODO(aoates): other tests:
-  //  - send to INADDR_ANY-bound socket
   //  - too-small buffer
   //  - recvfrom blocks until data
   //  - signal interrupts block
