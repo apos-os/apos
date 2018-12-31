@@ -512,7 +512,7 @@ static void recvfrom_test(void) {
   udp_hdr->src_port = htob16(5678);
   udp_hdr->dst_port = htob16(1234);
   udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
-  udp_hdr->checksum = htob16(0xfe1f);
+  udp_hdr->checksum = htob16(0x2273);
   kstrcpy(&send_buf[sizeof(udp_hdr_t)], "abc");
   struct sockaddr_in send_addr;
   send_addr.sin_family = AF_INET;
@@ -522,6 +522,7 @@ static void recvfrom_test(void) {
              net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
                         (struct sockaddr*)&send_addr, sizeof(send_addr)));
   kstrcpy(&send_buf[sizeof(udp_hdr_t)], "def");
+  udp_hdr->checksum = htob16(0x1c70);
   KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
              net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
                         (struct sockaddr*)&send_addr, sizeof(send_addr)));
@@ -565,6 +566,72 @@ static void recvfrom_test(void) {
   KEXPECT_STREQ("123", recv_buf);
 
 
+  KTEST_BEGIN("net_recvfrom(UDP): packet with truncated UDP header");
+  KEXPECT_EQ(3, net_sendto(raw_sock, send_buf, /* too-short packet length */ 3,
+                           0, (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, vfs_read(raw_sock, recv_buf, 100));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): packet with too-small len in UDP header");
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) - 1);
+  udp_hdr->checksum = htob16(0x1c78);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(raw_sock, recv_buf, 100));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): packet with too-large len in UDP header");
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(100);  // Larger than underlying packet.
+  udp_hdr->checksum = htob16(0x1bbe);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(raw_sock, recv_buf, 100));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): packet with smaller UDP len than IP len");
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 1);
+  udp_hdr->checksum = htob16(0xf45f);
+  kstrcpy(&send_buf[sizeof(udp_hdr_t)], "xyz");
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  // This should be valid, and we should get the UDP-reported length (ignoring
+  // any extra data at the end).
+  kmemset(recv_buf, 0, 10);
+  KEXPECT_EQ(1, vfs_read(sock, recv_buf, 100));
+  KEXPECT_STREQ("x", recv_buf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(raw_sock, recv_buf, 100));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): packet with bad UDP checksum");
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = htob16(0x1234);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): packet with disabled (zero) checksum");
+  udp_hdr->checksum = 0;
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  KEXPECT_EQ(3, vfs_read(sock, recv_buf, 100));
+
+
   KTEST_BEGIN("net_recvfrom(UDP): packet received after socket closed");
   KEXPECT_EQ(0, vfs_close(sock));
   KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
@@ -575,18 +642,13 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(0, vfs_close(raw_sock));
 
   // TODO(aoates): other tests:
-  //  - bad checksum
   //  - send to connected socket (matches connected addr)
   //  - send to connected socket (doesn't match connected addr)
   //  - send to INADDR_ANY-bound socket
   //  - too-small buffer
   //  - recvfrom blocks until data
-  //  - non-blocking socket
   //  - signal interrupts block
   //  - poll
-  //  - send to unbound addr (and recv on raw socket)
-  //  - invalid packet length
-  //  - too-short UDP packet
   //  - too-short address buffer (truncated)
 }
 

@@ -49,9 +49,13 @@ static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
   return (const ip4_hdr_t*)pbuf_getc(pb);
 }
 
-static const udp_hdr_t* pb_udp_hdr(const pbuf_t* pb) {
+static int pb_ip4_hdr_len(const pbuf_t* pb) {
   const ip4_hdr_t* ip_hdr = pb_ip4_hdr(pb);
-  const size_t ip_hdr_len = ip4_ihl(*ip_hdr) * sizeof(uint32_t);
+  return ip4_ihl(*ip_hdr) * sizeof(uint32_t);
+}
+
+static const udp_hdr_t* pb_udp_hdr(const pbuf_t* pb) {
+  const size_t ip_hdr_len = pb_ip4_hdr_len(pb);
   return (const udp_hdr_t*)(pbuf_getc(pb) + ip_hdr_len);
 }
 
@@ -91,12 +95,39 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   KASSERT_DBG(protocol == IPPROTO_UDP);
 
   // Validate the packet.
-  KASSERT(pbuf_size(pb) >= sizeof(ip4_hdr_t) + sizeof(udp_hdr_t));
+  KASSERT_DBG(pbuf_size(pb) >= sizeof(ip4_hdr_t));
+  if (pbuf_size(pb) < sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)) {
+    klogfm(KL_NET, DEBUG, "net: dropping truncated UDP packet\n");
+    return false;
+  }
   const ip4_hdr_t* ip_hdr = pb_ip4_hdr(pb);
   const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);
 
-  // TODO(aoates): check length in both IP and UDP headers
-  // TODO(aoates): check the checksum
+  KASSERT_DBG(btoh16(ip_hdr->total_len) >=
+              sizeof(ip4_hdr_t) + sizeof(udp_hdr_t));
+  if (btoh16(udp_hdr->len) < sizeof(udp_hdr_t) ||
+      btoh16(udp_hdr->len) > pb_ip4_hdr_len(pb)) {
+    klogfm(KL_NET, DEBUG, "net: dropping UDP packet with invalid size\n");
+    return false;
+  }
+
+  // Validate the checksum, if present.
+  if (udp_hdr->checksum != 0) {
+    ip4_pseudo_hdr_t pseudo_ip;
+    pseudo_ip.src_addr = ip_hdr->src_addr;
+    pseudo_ip.dst_addr = ip_hdr->dst_addr;
+    pseudo_ip.zeroes = 0;
+    pseudo_ip.protocol = IPPROTO_UDP;
+    pseudo_ip.udp_length = udp_hdr->len;
+
+    uint16_t checksum = ip_checksum2(&pseudo_ip, sizeof(pseudo_ip),
+                                     /* really UDP header _and_ data */ udp_hdr,
+                                     pbuf_size(pb) - sizeof(ip4_hdr_t));
+    if (checksum != 0) {
+      klogfm(KL_NET, DEBUG, "net: dropping UDP packet with bad checksum\n");
+      return false;
+    }
+  }
 
   // Find a matching socket.
   struct sockaddr_in dst_addr;
@@ -335,6 +366,7 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
 
   udp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+  // TODO(aoates): adjust checksum if it's all zeroes.
 
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
   int result = ip_send(pb);
