@@ -180,6 +180,11 @@ static void sock_udp_cleanup(socket_t* socket_base) {
     KASSERT(removed == socket_base);
     POP_INTERRUPTS();
   }
+  while (!list_empty(&socket->rx_queue)) {
+    list_link_t* link = list_pop(&socket->rx_queue);
+    pbuf_t* pb = container_of(link, pbuf_t, link);
+    pbuf_free(pb);
+  }
 }
 
 static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,

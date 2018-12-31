@@ -677,7 +677,12 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(3, vfs_read(sock, recv_buf, 100));
 
 
+  KTEST_BEGIN("net_recvfrom(UDP): cleanup of unrecv'd packets");
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(3, net_sendto(send_sock, "456", 3, 0, NULL, 0));
+  KEXPECT_EQ(3, net_sendto(send_sock, "789", 3, 0, NULL, 0));
   KEXPECT_EQ(0, vfs_close(sock));
+
   KEXPECT_EQ(0, vfs_close(send_sock));
   KEXPECT_EQ(0, vfs_close(raw_sock));
 
