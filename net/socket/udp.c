@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "net/addr.h"
@@ -44,6 +45,16 @@ typedef struct {
 
 static const socket_ops_t g_udp_socket_ops;
 
+static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
+  return (const ip4_hdr_t*)pbuf_getc(pb);
+}
+
+static const udp_hdr_t* pb_udp_hdr(const pbuf_t* pb) {
+  const ip4_hdr_t* ip_hdr = pb_ip4_hdr(pb);
+  const size_t ip_hdr_len = ip4_ihl(*ip_hdr) * sizeof(uint32_t);
+  return (const udp_hdr_t*)(pbuf_getc(pb) + ip_hdr_len);
+}
+
 static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
                          socklen_t address_len);
 
@@ -69,9 +80,45 @@ int sock_udp_create(socket_t** out) {
 
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
+  sock->rx_queue = LIST_INIT;
 
   *out = &(sock->base);
   return 0;
+}
+
+bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
+  KASSERT_DBG(ethertype == ET_IPV4);
+  KASSERT_DBG(protocol == IPPROTO_UDP);
+
+  // Validate the packet.
+  KASSERT(pbuf_size(pb) >= sizeof(ip4_hdr_t) + sizeof(udp_hdr_t));
+  const ip4_hdr_t* ip_hdr = pb_ip4_hdr(pb);
+  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);
+
+  // TODO(aoates): check length in both IP and UDP headers
+  // TODO(aoates): check the checksum
+
+  // Find a matching socket.
+  struct sockaddr_in dst_addr;
+  dst_addr.sin_family = AF_INET;
+  dst_addr.sin_addr.s_addr = ip_hdr->dst_addr;
+  dst_addr.sin_port = udp_hdr->dst_port;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
+  socket_t* socket_base = sockmap_find(sm, (const struct sockaddr*)&dst_addr);
+  if (!socket_base) {
+    POP_INTERRUPTS();
+    return false;
+  }
+
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+
+  list_push(&socket->rx_queue, &pb->link);
+
+  POP_INTERRUPTS();
+  return true;
 }
 
 static void sock_udp_cleanup(socket_t* socket_base) {
@@ -182,9 +229,43 @@ static int sock_udp_accept_queue_length(const socket_t* socket_base) {
   return -EOPNOTSUPP;
 }
 
-ssize_t sock_udp_sendto(socket_t* socket_base, int fflags, const void* buffer,
-                        size_t length, int sflags,
-                        const struct sockaddr* dest_addr, socklen_t dest_len) {
+static ssize_t sock_udp_recvfrom(socket_t* socket_base, int fflags,
+                                 void* buffer, size_t length, int sflags,
+                                 struct sockaddr* address,
+                                 socklen_t* address_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  list_link_t* link = list_pop(&socket->rx_queue);
+  POP_INTERRUPTS();
+  if (!link) {
+    // TODO(aoates): handle blocking sockets.
+    return -EAGAIN;
+  }
+
+  pbuf_t* pb = container_of(link, pbuf_t, link);
+  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);
+
+  if (address && address_len) {
+    struct sockaddr_in src_addr;
+    src_addr.sin_family = AF_INET;
+    src_addr.sin_addr.s_addr = pb_ip4_hdr(pb)->src_addr;
+    src_addr.sin_port = udp_hdr->src_port;
+    kmemcpy(address, &src_addr, min(sizeof(src_addr), (size_t)*address_len));
+    *address_len = sizeof(struct sockaddr_in);
+  }
+
+  size_t bytes_to_copy = min(length, btoh16(udp_hdr->len) - sizeof(udp_hdr_t));
+  kmemcpy(buffer, ((const char*)udp_hdr) + sizeof(udp_hdr_t), bytes_to_copy);
+  pbuf_free(pb);
+  return bytes_to_copy;
+}
+
+static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
+                               const void* buffer, size_t length, int sflags,
+                               const struct sockaddr* dest_addr,
+                               socklen_t dest_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
@@ -290,7 +371,7 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_accept,
   &sock_udp_connect,
   &sock_udp_accept_queue_length,
-  NULL,
+  &sock_udp_recvfrom,
   &sock_udp_sendto,
   &sock_udp_getsockname,
   &sock_udp_getpeername,

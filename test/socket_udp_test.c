@@ -497,6 +497,99 @@ static void sendto_test(void) {
   vfs_close(sock);
 }
 
+static void recvfrom_test(void) {
+  KTEST_BEGIN("net_recvfrom(UDP): basic recv");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int raw_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
+  KEXPECT_GE(raw_sock, 0);
+
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 1234));
+
+  char send_buf[100];
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)send_buf;
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = htob16(0xfe1f);
+  kstrcpy(&send_buf[sizeof(udp_hdr_t)], "abc");
+  struct sockaddr_in send_addr;
+  send_addr.sin_family = AF_INET;
+  send_addr.sin_addr.s_addr = str2inet("127.0.0.1");
+  send_addr.sin_port = htob16(1234);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  kstrcpy(&send_buf[sizeof(udp_hdr_t)], "def");
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+
+  char recv_buf[100];
+  char prettybuf[INET_PRETTY_LEN];
+  struct sockaddr_in recv_addr;
+  socklen_t recv_addr_len = sizeof(recv_addr);
+  KEXPECT_EQ(3, net_recvfrom(sock, recv_buf, 10, 0,
+                             (struct sockaddr*)&recv_addr, &recv_addr_len));
+  KEXPECT_EQ(sizeof(recv_addr), recv_addr_len);
+  KEXPECT_EQ(AF_INET, recv_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", inet2str(recv_addr.sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(5678, btoh16(recv_addr.sin_port));
+  recv_buf[3] = '\0';
+  KEXPECT_STREQ("abc", recv_buf);
+
+  KEXPECT_EQ(3, net_recvfrom(sock, recv_buf, 10, 0,
+                             (struct sockaddr*)&recv_addr, &recv_addr_len));
+  KEXPECT_STREQ("def", recv_buf);
+
+  // The packet should not have been dispatched to the raw socket.
+  vfs_make_nonblock(raw_sock);
+  KEXPECT_EQ(-EAGAIN, net_recvfrom(raw_sock, recv_buf, 10, 0, NULL, NULL));
+
+  KTEST_BEGIN("net_recvfrom(UDP): sendto()/recvfrom() paired");
+  int send_sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(send_sock, 0);
+  KEXPECT_EQ(0, do_bind(send_sock, "127.0.0.1", 1122));
+  KEXPECT_EQ(0, do_connect(send_sock, "127.0.0.1", 1234));
+
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  recv_addr_len = sizeof(recv_addr);
+  KEXPECT_EQ(3, net_recvfrom(sock, recv_buf, 10, 0,
+                             (struct sockaddr*)&recv_addr, &recv_addr_len));
+  KEXPECT_EQ(sizeof(recv_addr), recv_addr_len);
+  KEXPECT_EQ(AF_INET, recv_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", inet2str(recv_addr.sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(1122, btoh16(recv_addr.sin_port));
+  recv_buf[3] = '\0';
+  KEXPECT_STREQ("123", recv_buf);
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): packet received after socket closed");
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(raw_sock, recv_buf, 100));
+
+  KEXPECT_EQ(0, vfs_close(send_sock));
+  KEXPECT_EQ(0, vfs_close(raw_sock));
+
+  // TODO(aoates): other tests:
+  //  - bad checksum
+  //  - send to connected socket (matches connected addr)
+  //  - send to connected socket (doesn't match connected addr)
+  //  - send to INADDR_ANY-bound socket
+  //  - too-small buffer
+  //  - recvfrom blocks until data
+  //  - non-blocking socket
+  //  - signal interrupts block
+  //  - poll
+  //  - send to unbound addr (and recv on raw socket)
+  //  - invalid packet length
+  //  - too-short UDP packet
+  //  - too-short address buffer (truncated)
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -508,6 +601,7 @@ void socket_udp_test(void) {
   multi_bind_test();
   connect_test();
   sendto_test();
+  recvfrom_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

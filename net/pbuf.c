@@ -14,6 +14,7 @@
 
 #include "net/pbuf.h"
 
+#include "common/list.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
@@ -26,6 +27,7 @@ pbuf_t* pbuf_create(size_t headers_reserve, size_t len) {
   }
   pb->reserved = headers_reserve;
   pb->total_len = headers_reserve + len;
+  pb->link = LIST_LINK_INIT;
   return pb;
 }
 

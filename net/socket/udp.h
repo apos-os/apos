@@ -15,6 +15,8 @@
 #ifndef APOO_NET_SOCKET_UDP_H
 #define APOO_NET_SOCKET_UDP_H
 
+#include "net/eth/ethertype.h"
+#include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -33,8 +35,20 @@ typedef struct socket_udp {
 
   // The connected peer address.  If unconnected, family will be AF_UNSPEC.
   struct sockaddr_storage connected_addr;
+
+  // List of queued packets.
+  // TODO(aoates): cap amount of buffered data.
+  list_t rx_queue;
 } socket_udp_t;
 
 int sock_udp_create(socket_t** out);
+
+// Handles an IP packet.  The packet is dispatched to a matching socket (if one
+// exists).  Returns true if the packet was dispatched, false if not.  If false
+// is returned, the caller retains ownership of the packet.
+//
+// Interrupt safe.
+// TODO(aoates): switch this to use deferred interrupts when they exist.
+bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
 
 #endif

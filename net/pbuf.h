@@ -19,11 +19,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/list.h"
+
 // A flexible packet buffer that allows header manipulation as it moves up and
 // down the stack.  Each pbuf has an underlying buffer that consists of some
 // reserved space for future headers followed by the data buffer.  Clients can
 // use pbuf_push_header() and pbuf_pop_header() to "add" space to the start of
 // the data buffer (or remove it).
+//
+// Each pbuf has an intrinsic list link that can be used by the code owning
+// the pbuf.
 //
 // Example (not to scale):
 //
@@ -45,6 +50,7 @@
 typedef struct {
   size_t reserved;
   size_t total_len;
+  list_link_t link;
   uint8_t data[];
 } pbuf_t;
 
