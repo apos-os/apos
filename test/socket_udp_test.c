@@ -677,6 +677,26 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(3, vfs_read(sock, recv_buf, 100));
 
 
+  KTEST_BEGIN("net_recvfrom(UDP): data buffer too small");
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  kmemset(recv_buf, 0, 10);
+  KEXPECT_EQ(2, net_recvfrom(sock, recv_buf, 2, 0, NULL, NULL));
+  KEXPECT_STREQ("12", recv_buf);
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): address buffer too small");
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  recv_addr_len = sizeof(sa_family_t) + sizeof(in_port_t);
+  kmemset(&recv_addr, 0, sizeof(recv_addr));
+  kmemset(recv_buf, 0, 10);
+  KEXPECT_EQ(3, net_recvfrom(sock, recv_buf, 10, 0,
+                             (struct sockaddr*)&recv_addr, &recv_addr_len));
+  KEXPECT_STREQ("123", recv_buf);
+  KEXPECT_EQ(AF_INET, recv_addr.sin_family);
+  KEXPECT_EQ(btoh16(1122), recv_addr.sin_port);
+  KEXPECT_EQ(0, recv_addr.sin_addr.s_addr);
+
+
   KTEST_BEGIN("net_recvfrom(UDP): cleanup of unrecv'd packets");
   KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
   KEXPECT_EQ(3, net_sendto(send_sock, "456", 3, 0, NULL, 0));
@@ -687,11 +707,9 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(0, vfs_close(raw_sock));
 
   // TODO(aoates): other tests:
-  //  - too-small buffer
   //  - recvfrom blocks until data
   //  - signal interrupts block
   //  - poll
-  //  - too-short address buffer (truncated)
 }
 
 void socket_udp_test(void) {
