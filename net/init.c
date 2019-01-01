@@ -14,9 +14,9 @@
 
 #include "net/init.h"
 
-#include "common/kstring.h"
-#include "dev/net/nic.h"
 #include "dev/net/loopback.h"
+#include "dev/net/nic.h"
+#include "net/ip/route.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -35,4 +35,9 @@ void net_init(void) {
     nic->addrs[0].addr.a.ip4.s_addr = str2inet("10.0.2.8");
     nic->addrs[0].prefix_len = 24;
   }
+
+  netaddr_t def;
+  def.family = AF_INET;
+  def.a.ip4.s_addr = str2inet("10.0.2.2");
+  ip_set_default_route(def, "eth0");
 }
