@@ -844,6 +844,25 @@ static void recv_poll_test(void) {
   KEXPECT_EQ(0, vfs_close(send_sock));
 }
 
+static void shutdown_test(void) {
+  KTEST_BEGIN("net_shutdown(UDP): shutdown on unconnected UDP socket");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(sock));
+
+  KTEST_BEGIN("net_shutdown(UDP): shutdown on connected UDP socket");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_connect(sock, "127.0.0.1", 1234));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(sock, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -857,6 +876,7 @@ void socket_udp_test(void) {
   sendto_test();
   recvfrom_test();
   recv_poll_test();
+  shutdown_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

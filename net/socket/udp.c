@@ -209,6 +209,13 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   KASSERT(list_empty(&socket->poll_event.refs));
 }
 
+static int sock_udp_shutdown(socket_t* socket_base, int how) {
+  // N.B.(aoates): ostensibly we should check if the socket is connected, and
+  // mark it as shutdown if so.  POSIX is ambiguous on if that's required,
+  // though, so we take the lazy route.
+  return -ENOTCONN;
+}
+
 static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
                          socklen_t address_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
@@ -463,7 +470,7 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
 
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
-  NULL,
+  &sock_udp_shutdown,
   &sock_udp_bind,
   &sock_udp_listen,
   &sock_udp_accept,
