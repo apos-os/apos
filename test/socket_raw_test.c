@@ -94,13 +94,13 @@ static void do_recv(void* arg) {
 }
 
 // Helper to avoid having to specify the address each time.
-static void do_ip_dispatch(const pbuf_t* pb, ethertype_t ethertype, int protocol) {
+static void do_ip_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = str2inet("1.2.3.4");
   addr.sin_port = 0;
-  sock_raw_dispatch(pbuf_dup(pb, true), ethertype, protocol,
-                    (struct sockaddr*)&addr, sizeof(addr));
+  sock_raw_dispatch(pb, ethertype, protocol, (struct sockaddr*)&addr,
+                    sizeof(addr));
 }
 
 static void recv_test(void) {
@@ -115,8 +115,8 @@ static void recv_test(void) {
   kmemcpy(pbuf_get(pb2), "defg", 4);
   ip4_add_hdr(pb2, str2inet("5.6.7.8"), str2inet("1.2.3.4"), IPPROTO_ICMP);
 
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
-  do_ip_dispatch(pbuf_dup(pb2, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb2, ET_IPV4, IPPROTO_ICMP);
 
   char buf[200];
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, net_recv(sock, buf, 200, 0));
@@ -126,8 +126,8 @@ static void recv_test(void) {
 
 
   KTEST_BEGIN("recv(SOCK_RAW): buffer too small");
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
-  do_ip_dispatch(pbuf_dup(pb2, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb2, ET_IPV4, IPPROTO_ICMP);
 
   kmemset(buf, 0, 200);
   KEXPECT_EQ(10, net_recv(sock, buf, 10, 0));
@@ -145,7 +145,7 @@ static void recv_test(void) {
   pid_t child = proc_fork(&do_recv, &arg);
   ksleep(20);
   KEXPECT_EQ(0, proc_waitpid(child, &result, WNOHANG));
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   KEXPECT_EQ(child, proc_waitpid(child, &result, 0));
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, result);
 
@@ -164,17 +164,17 @@ static void recv_test(void) {
   KEXPECT_GE(nonblock_sock, 0);
   vfs_make_nonblock(nonblock_sock);
   KEXPECT_EQ(-EAGAIN, net_recv(nonblock_sock, buf, 200, 0));
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, net_recv(nonblock_sock, buf, 200, 0));
 
 
   KTEST_BEGIN("recv(SOCK_RAW): ignores mismatched ethertype packets");
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_ARP, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_ARP, IPPROTO_ICMP);
   KEXPECT_EQ(-EAGAIN, net_recv(nonblock_sock, buf, 200, 0));
 
 
   KTEST_BEGIN("recv(SOCK_RAW): ignores mismatched protocol packets");
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, 6);
+  do_ip_dispatch(pb1, ET_IPV4, 6);
   KEXPECT_EQ(-EAGAIN, net_recv(nonblock_sock, buf, 200, 0));
 
 
@@ -182,7 +182,7 @@ static void recv_test(void) {
   int sock2 = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
   KEXPECT_GE(sock2, 0);
 
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, net_recv(sock, buf, 200, 0));
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, net_recv(nonblock_sock, buf, 200, 0));
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, net_recv(sock2, buf, 200, 0));
@@ -191,7 +191,7 @@ static void recv_test(void) {
 
 
   KTEST_BEGIN("recvfrom(SOCK_RAW): basic test (sets address)");
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   struct sockaddr_in addr;
   kmemset(&addr, 0xFF, sizeof(addr));
   socklen_t addrlen = sizeof(addr) * 2;
@@ -207,13 +207,13 @@ static void recv_test(void) {
 
 
   KTEST_BEGIN("recvfrom(SOCK_RAW): NULL address parameters");
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   addrlen = 123;
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3,
              net_recvfrom(sock, buf, 200, 0, NULL, &addrlen));
   KEXPECT_EQ(123, addrlen);
 
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   addr.sin_family = 123;
   KEXPECT_EQ(sizeof(ip4_hdr_t) + 3,
              net_recvfrom(sock, buf, 200, 0, (struct sockaddr*)&addr, NULL));
@@ -221,7 +221,7 @@ static void recv_test(void) {
 
 
   KTEST_BEGIN("recvfrom(SOCK_RAW): address buffer too small");
-  do_ip_dispatch(pbuf_dup(pb1, true), ET_IPV4, IPPROTO_ICMP);
+  do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
   addr.sin_family = 123;
   addrlen = 10;
   KEXPECT_EQ(
