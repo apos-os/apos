@@ -25,6 +25,7 @@
 #include "net/util.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/wait.h"
@@ -765,9 +766,82 @@ static void recvfrom_test(void) {
 
   KEXPECT_EQ(0, vfs_close(send_sock));
   KEXPECT_EQ(0, vfs_close(raw_sock));
+}
 
-  // TODO(aoates): other tests:
-  //  - poll
+static void* do_poll_helper(void* arg) {
+  struct pollfd pfd;
+  pfd.fd = *(int*)arg;
+  pfd.revents = 0;
+  pfd.events = POLLIN;
+  void* result = (void*)(intptr_t)vfs_poll(&pfd, 1, 1000);
+  KEXPECT_EQ(POLLIN, pfd.revents);
+  return result;
+}
+
+static void* deferred_close(void* arg) {
+  int fd = *(int*)arg;
+  ksleep(50);
+  KEXPECT_EQ(0, vfs_close(fd));
+  return 0;
+}
+
+static void recv_poll_test(void) {
+  KTEST_BEGIN("vfs_poll(UDP): POLLIN on empty socket");
+  int send_sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  int recv_sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(send_sock, 0);
+  KEXPECT_GE(recv_sock, 0);
+
+  KEXPECT_EQ(0, do_bind(recv_sock, "0.0.0.0", 1234));
+  KEXPECT_EQ(0, do_connect(send_sock, "127.0.0.1", 1234));
+
+  struct pollfd pfd;
+  pfd.fd = recv_sock;
+  pfd.revents = 0;
+  pfd.events = POLLIN;
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 10));
+
+
+  KTEST_BEGIN("vfs_poll(UDP): POLLIN on readable socket");
+  KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, NULL, 0));
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 10));
+
+  char buf[100];
+  KEXPECT_EQ(3, net_recv(recv_sock, buf, 100, 0));
+
+
+  KTEST_BEGIN("vfs_poll(UDP): blocking for POLLIN on readable socket");
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &do_poll_helper, &recv_sock));
+  scheduler_make_runnable(thread);
+  // Make sure we get good and stuck in vfs_poll()
+  for (int i = 0; i < 20; ++i) scheduler_yield();
+  KEXPECT_NE(NULL, thread->queue);
+
+  KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, NULL, 0));
+  KEXPECT_EQ(1, (intptr_t)kthread_join(thread));
+  KEXPECT_EQ(3, net_recv(recv_sock, buf, 100, 0));
+
+
+  KTEST_BEGIN("vfs_poll(UDP): POLLOUT on socket");
+  pfd.events = POLLIN | POLLOUT;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(POLLOUT, pfd.revents);
+
+
+  KTEST_BEGIN("vfs_poll(UDP): underlying socket closed during poll");
+  KEXPECT_EQ(0, kthread_create(&thread, &deferred_close, &recv_sock));
+  scheduler_make_runnable(thread);
+
+  pfd.events = POLLIN;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));
+  KEXPECT_EQ(POLLNVAL, pfd.revents);
+
+  KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
+
+  KEXPECT_EQ(0, vfs_close(send_sock));
 }
 
 void socket_udp_test(void) {
@@ -782,6 +856,7 @@ void socket_udp_test(void) {
   connect_test();
   sendto_test();
   recvfrom_test();
+  recv_poll_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

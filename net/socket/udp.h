@@ -43,6 +43,7 @@ typedef struct socket_udp {
 
   // Wait queue for packets to be received.
   kthread_queue_t wait_queue;
+  poll_event_t poll_event;
 } socket_udp_t;
 
 int sock_udp_create(socket_t** out);

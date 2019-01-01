@@ -76,6 +76,15 @@ static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
                        sizeof(bind_addr));
 }
 
+static short udp_poll_events(const socket_udp_t* socket) {
+  short events = POLLOUT;
+  KASSERT_DBG(get_interrupts_state() == 0);
+  if (!list_empty(&socket->rx_queue)) {
+    events |= POLLIN;
+  }
+  return events;
+}
+
 int sock_udp_create(socket_t** out) {
   socket_udp_t* sock = (socket_udp_t*)kmalloc(sizeof(socket_udp_t));
   if (!sock) return -ENOMEM;
@@ -89,6 +98,7 @@ int sock_udp_create(socket_t** out) {
   sock->connected_addr.sa_family = AF_UNSPEC;
   sock->rx_queue = LIST_INIT;
   kthread_queue_init(&sock->wait_queue);
+  poll_init_event(&sock->poll_event);
 
   *out = &(sock->base);
   return 0;
@@ -165,6 +175,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
 
   list_push(&socket->rx_queue, &pb->link);
   scheduler_wake_one(&socket->wait_queue);
+  poll_trigger_event(&socket->poll_event, udp_poll_events(socket));
 
   POP_INTERRUPTS();
   return true;
@@ -191,6 +202,11 @@ static void sock_udp_cleanup(socket_t* socket_base) {
     pbuf_free(pb);
   }
   KASSERT(kthread_queue_empty(&socket->wait_queue));
+  // TODO(aoates): is this the proper way to handle this, or should vfs_poll()
+  // retain a reference to the file containing this socket (and other pollables)
+  // to ensure the file isn't destroyed while someone is polling it?
+  poll_trigger_event(&socket->poll_event, POLLNVAL);
+  KASSERT(list_empty(&socket->poll_event.refs));
 }
 
 static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
@@ -428,6 +444,23 @@ static int sock_udp_getpeername(socket_t* socket_base,
   return 0;
 }
 
+static int sock_udp_poll(socket_t* socket_base, short event_mask,
+                         poll_state_t* poll) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  socket_udp_t* socket = (socket_udp_t*)socket_base;
+
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int result;
+  const short masked_events = udp_poll_events(socket) & event_mask;
+  if (masked_events || !poll) {
+    result = masked_events;
+  } else {
+    result = poll_add_event(poll, &socket->poll_event, event_mask);
+  }
+  POP_INTERRUPTS();
+  return result;
+}
+
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
   NULL,
@@ -440,5 +473,5 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_sendto,
   &sock_udp_getsockname,
   &sock_udp_getpeername,
-  NULL,
+  &sock_udp_poll,
 };
