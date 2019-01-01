@@ -19,6 +19,7 @@ srcs = [
   'ip.c',
   'ip4_hdr.c',
   'route.c',
+  'util.c',
 ]
 
 subdirs = []

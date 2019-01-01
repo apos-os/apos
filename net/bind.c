@@ -31,6 +31,14 @@ static bool addr_eq(const netaddr_t* a, const netaddr_t* b) {
 }
 
 int inet_bindable(const netaddr_t* addr) {
+  switch (addr->family) {
+    case AF_INET:
+      if (addr->a.ip4.s_addr == INADDR_ANY) return 0;
+      break;
+
+    case AF_UNSPEC:
+      break;  // Will error out.
+  }
   for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
     nic_t* nic = nic_get(nicidx);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {

@@ -12,19 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_IP_CHECKSUM_H
-#define APOO_NET_IP_CHECKSUM_H
+#include "net/ip/util.h"
 
-#include <stddef.h>
-#include <stdint.h>
+#include "common/errno.h"
+#include "net/ip/route.h"
+#include "net/util.h"
 
-// Calculates the internet checksum (RFC 1071) of the given buffer.
-//
-// The result should not be adjusted for endianness---through the magic of Math,
-// the checksum will end up (when written out as a uint16_t) matching the
-// endianness of the input data.
-uint16_t ip_checksum(const void* buf, size_t len);
-uint16_t ip_checksum2(const void* buf, size_t len, const void* buf2,
-                      size_t len2);
+int ip_pick_src(const struct sockaddr* dst, socklen_t dst_len,
+                struct sockaddr_storage* src_out) {
+  netaddr_t ndst;
+  int result = sock2netaddr(dst, dst_len, &ndst, NULL);
+  if (result) return result;
 
-#endif
+  ip_routed_t route;
+  if (!ip_route(ndst, &route)) {
+    return -ENETUNREACH;
+  }
+  return net2sockaddr(&route.src, 0, src_out, sizeof(struct sockaddr_storage));
+}

@@ -30,8 +30,9 @@ struct sockaddr_storage {
 };
 
 #define SOCK_STREAM 1     // Byte­stream socket.
+#define SOCK_DGRAM 2      // Datagram socket
 #define SOCK_RAW 3        // Raw socket.
-// TODO(aoates): define SOCK_DGRAM and SOCK_SEQPACKET.
+// TODO(aoates): define SOCK_SEQPACKET.
 
 #define AF_UNSPEC 1  // Unspecified.
 #define AF_UNIX 2    // UNIX domain sockets.

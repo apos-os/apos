@@ -12,19 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_IP_CHECKSUM_H
-#define APOO_NET_IP_CHECKSUM_H
+#ifndef APOO_NET_INET_H
+#define APOO_NET_INET_H
 
-#include <stddef.h>
-#include <stdint.h>
+// Minimum and maximum ports.
+#define INET_PORT_ANY 0
+#define INET_PORT_MIN 1
+#define INET_PORT_MAX 65535
 
-// Calculates the internet checksum (RFC 1071) of the given buffer.
-//
-// The result should not be adjusted for endianness---through the magic of Math,
-// the checksum will end up (when written out as a uint16_t) matching the
-// endianness of the input data.
-uint16_t ip_checksum(const void* buf, size_t len);
-uint16_t ip_checksum2(const void* buf, size_t len, const void* buf2,
-                      size_t len2);
+// Range of ephemeral ports.  This should be configurable.
+#define INET_PORT_EPHMIN 32768
+#define INET_PORT_EPHMAX 65535
 
 #endif

@@ -17,6 +17,8 @@ Import('env AposAddSources')
 srcs = [
     'raw.c',
     'socket.c',
+    'sockmap.c',
+    'udp.c',
     'unix.c',
 ]
 

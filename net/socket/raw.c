@@ -324,6 +324,16 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
   return length;
 }
 
+static int sock_raw_getsockname(socket_t* socket_base,
+                                struct sockaddr* address) {
+  return -EOPNOTSUPP;
+}
+
+static int sock_raw_getpeername(socket_t* socket_base,
+                                struct sockaddr* address) {
+  return -EOPNOTSUPP;
+}
+
 static int sock_raw_poll(socket_t* socket_base, short event_mask,
                          poll_state_t* poll) {
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
@@ -346,5 +356,7 @@ static const socket_ops_t g_raw_socket_ops = {
   &sock_raw_accept_queue_length,
   &sock_raw_recvfrom,
   &sock_raw_sendto,
+  &sock_raw_getsockname,
+  &sock_raw_getpeername,
   &sock_raw_poll,
 };
