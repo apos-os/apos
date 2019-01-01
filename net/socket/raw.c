@@ -71,6 +71,7 @@ static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
 
 static short raw_poll_events(const socket_raw_t* socket) {
   short events = POLLOUT;
+  KASSERT_DBG(get_interrupts_state() == 0);
   if (!list_empty(&socket->rx_queue)) {
     events |= POLLIN;
   }
@@ -344,11 +345,16 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
   socket_raw_t* sock = (socket_raw_t*)socket_base;
 
+  PUSH_AND_DISABLE_INTERRUPTS();
+  int result;
   const short masked_events = raw_poll_events(sock) & event_mask;
-  if (masked_events || !poll)
-    return masked_events;
-
-  return poll_add_event(poll, &sock->poll_event, event_mask);
+  if (masked_events || !poll) {
+    result = masked_events;
+  } else {
+    result = poll_add_event(poll, &sock->poll_event, event_mask);
+  }
+  POP_INTERRUPTS();
+  return result;
 }
 
 static const socket_ops_t g_raw_socket_ops = {
