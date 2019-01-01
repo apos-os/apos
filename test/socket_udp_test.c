@@ -406,6 +406,14 @@ static void sendto_test(void) {
   recv_buf[result] = '\0';
   KEXPECT_STREQ("abc", &recv_buf[sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)]);
 
+  KTEST_BEGIN("net_sendto(UDP): packet with all-zeroes checksum");
+  KEXPECT_EQ(2, net_sendto(sock, "\xe6\xd6", 2, 0, NULL, 0));
+
+  result = net_recvfrom(recv_sock, recv_buf, 100, 0, NULL, NULL);
+  KEXPECT_EQ(result, sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 2);
+  udp_hdr = (udp_hdr_t*)&recv_buf[sizeof(ip4_hdr_t)];
+  KEXPECT_EQ(0xffff, btoh16(udp_hdr->checksum));
+
   KTEST_BEGIN("net_sendto(UDP): address on connected socket");
   struct sockaddr_in dst_addr;
   KEXPECT_EQ(-EISCONN,

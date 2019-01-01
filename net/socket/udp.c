@@ -422,7 +422,7 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
 
   udp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
-  // TODO(aoates): adjust checksum if it's all zeroes.
+  if (udp_hdr->checksum == 0) udp_hdr->checksum = 0xffff;
 
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
   int result = ip_send(pb);
