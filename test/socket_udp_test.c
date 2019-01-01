@@ -587,6 +587,11 @@ static void recvfrom_test(void) {
   KEXPECT_STREQ("123", recv_buf);
 
 
+  KTEST_BEGIN("net_recvfrom(UDP): medium-sized packet");
+  KEXPECT_EQ(100, net_sendto(send_sock, recv_buf, 100, 0, NULL, 0));
+  KEXPECT_EQ(100, net_recvfrom(sock, recv_buf, 100, 0, NULL, NULL));
+
+
   KTEST_BEGIN("net_recvfrom(UDP): packet with truncated UDP header");
   KEXPECT_EQ(3, net_sendto(raw_sock, send_buf, /* too-short packet length */ 3,
                            0, (struct sockaddr*)&send_addr, sizeof(send_addr)));
@@ -610,6 +615,16 @@ static void recvfrom_test(void) {
   udp_hdr->dst_port = htob16(1234);
   udp_hdr->len = htob16(100);  // Larger than underlying packet.
   udp_hdr->checksum = htob16(0x1bbe);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
+             net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
+                        (struct sockaddr*)&send_addr, sizeof(send_addr)));
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(raw_sock, recv_buf, 100));
+
+  // This time use a length that's longer than the data portion of the IP packet
+  // but within the bounds of the packet itself.
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3 + 1);
+  udp_hdr->checksum = 0;
   KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
              net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
                         (struct sockaddr*)&send_addr, sizeof(send_addr)));

@@ -120,7 +120,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   KASSERT_DBG(btoh16(ip_hdr->total_len) >=
               sizeof(ip4_hdr_t) + sizeof(udp_hdr_t));
   if (btoh16(udp_hdr->len) < sizeof(udp_hdr_t) ||
-      btoh16(udp_hdr->len) > pb_ip4_hdr_len(pb)) {
+      btoh16(udp_hdr->len) > btoh16(ip_hdr->total_len) - pb_ip4_hdr_len(pb)) {
     klogfm(KL_NET, DEBUG, "net: dropping UDP packet with invalid size\n");
     return false;
   }
