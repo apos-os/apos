@@ -453,6 +453,13 @@ static void* do_poll_helper(void* arg) {
   return result;
 }
 
+static void* deferred_close(void* arg) {
+  int fd = *(int*)arg;
+  ksleep(50);
+  KEXPECT_EQ(0, vfs_close(fd));
+  return 0;
+}
+
 static void raw_poll_test(void) {
   KTEST_BEGIN("vfs_poll(SOCK_RAW): POLLIN on empty raw socket");
   int send_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
@@ -501,8 +508,17 @@ static void raw_poll_test(void) {
   KEXPECT_EQ(POLLOUT, pfd.revents);
 
 
+  KTEST_BEGIN("vfs_poll(UDP): underlying socket closed during poll");
+  KEXPECT_EQ(0, kthread_create(&thread, &deferred_close, &recv_sock));
+  scheduler_make_runnable(thread);
+
+  pfd.events = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));
+  KEXPECT_EQ(POLLNVAL, pfd.revents);
+
+  KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
+
   KEXPECT_EQ(0, vfs_close(send_sock));
-  KEXPECT_EQ(0, vfs_close(recv_sock));
 }
 
 void socket_raw_test(void) {
