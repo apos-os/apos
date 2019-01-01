@@ -134,9 +134,12 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     pseudo_ip.protocol = IPPROTO_UDP;
     pseudo_ip.udp_length = udp_hdr->len;
 
+    KASSERT_DBG((size_t)pb_ip4_hdr_len(pb) >= sizeof(ip4_hdr_t));
+    KASSERT_DBG(pbuf_size(pb) >=
+                btoh16(udp_hdr->len) + (size_t)pb_ip4_hdr_len(pb));
     uint16_t checksum = ip_checksum2(&pseudo_ip, sizeof(pseudo_ip),
                                      /* really UDP header _and_ data */ udp_hdr,
-                                     pbuf_size(pb) - sizeof(ip4_hdr_t));
+                                     btoh16(udp_hdr->len));
     if (checksum != 0) {
       klogfm(KL_NET, DEBUG, "net: dropping UDP packet with bad checksum\n");
       return false;

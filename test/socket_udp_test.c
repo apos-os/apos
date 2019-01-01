@@ -636,7 +636,7 @@ static void recvfrom_test(void) {
   udp_hdr->src_port = htob16(5678);
   udp_hdr->dst_port = htob16(1234);
   udp_hdr->len = htob16(sizeof(udp_hdr_t) + 1);
-  udp_hdr->checksum = htob16(0xf45f);
+  udp_hdr->checksum = htob16(0x6ed9);
   kstrcpy(&send_buf[sizeof(udp_hdr_t)], "xyz");
   KEXPECT_EQ(sizeof(udp_hdr_t) + 3,
              net_sendto(raw_sock, send_buf, sizeof(udp_hdr_t) + 3, 0,
