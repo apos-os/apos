@@ -23,6 +23,11 @@
 #include "net/ip/ip4_hdr.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
+#include "proc/signal/signal.h"
+#include "proc/sleep.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "vfs/vfs.h"
@@ -497,10 +502,17 @@ static void sendto_test(void) {
   vfs_close(sock);
 }
 
+static void do_recv(void* arg) {
+  char buf[200];
+  int sock = *(int*)arg;
+  proc_exit(net_recv(sock, buf, 200, 0));
+}
+
 static void recvfrom_test(void) {
   KTEST_BEGIN("net_recvfrom(UDP): basic recv");
   int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(sock, 0);
+  vfs_make_nonblock(sock);
 
   int raw_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_UDP);
   KEXPECT_GE(raw_sock, 0);
@@ -643,6 +655,7 @@ static void recvfrom_test(void) {
   KTEST_BEGIN("net_recvfrom(UDP): receive on connected socket");
   sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(sock, 0);
+  vfs_make_nonblock(sock);
   KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 1234));
   KEXPECT_EQ(0, do_connect(sock, "127.0.0.1", 1122));
   KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
@@ -668,6 +681,8 @@ static void recvfrom_test(void) {
   KTEST_BEGIN("net_recvfrom(UDP): receive on unbound socket");
   sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(sock, 0);
+  vfs_make_nonblock(sock);
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
   KEXPECT_EQ(-EAGAIN, vfs_read(sock, recv_buf, 100));
 
 
@@ -697,18 +712,61 @@ static void recvfrom_test(void) {
   KEXPECT_EQ(0, recv_addr.sin_addr.s_addr);
 
 
+  KTEST_BEGIN("net_recvfrom(UDP): blocks until data available");
+  KEXPECT_EQ(0, vfs_close(sock));
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 1234));
+
+  int arg = sock;
+  int result;
+  pid_t child = proc_fork(&do_recv, &arg);
+  ksleep(20);
+  KEXPECT_EQ(0, proc_waitpid(child, &result, WNOHANG));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  KEXPECT_EQ(2, net_sendto(send_sock, "45", 2, 0, NULL, 0));
+  KEXPECT_EQ(child, proc_waitpid(child, &result, 0));
+  KEXPECT_EQ(3, result);
+  KEXPECT_EQ(2, net_recvfrom(sock, recv_buf, 10, 0, NULL, NULL));
+
+
+  KTEST_BEGIN(
+      "net_recvfrom(UDP): blocks until data available (multiple waiters)");
+  child = proc_fork(&do_recv, &arg);
+  pid_t child2 = proc_fork(&do_recv, &arg);
+  ksleep(20);
+  KEXPECT_EQ(0, proc_waitpid(child, &result, WNOHANG));
+  KEXPECT_EQ(0, proc_waitpid(child2, &result, WNOHANG));
+  KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
+  pid_t done_child = proc_waitpid(-1, &result, 0);
+  KEXPECT_EQ(true, done_child == child || done_child == child2);
+  pid_t other_child = (done_child == child) ? child2 : child;
+  KEXPECT_EQ(0, proc_waitpid(-1, &result, WNOHANG));
+  KEXPECT_EQ(2, net_sendto(send_sock, "45", 2, 0, NULL, 0));
+  KEXPECT_EQ(other_child, proc_waitpid(other_child, &result, 0));
+  KEXPECT_EQ(2, result);
+
+
+  KTEST_BEGIN("recv(SOCK_RAW): signal while blocking");
+  arg = sock;
+  child = proc_fork(&do_recv, &arg);
+  ksleep(10);
+  proc_force_signal(proc_get(child), SIGUSR1);
+  KEXPECT_EQ(child, proc_waitpid(child, &result, 0));
+  KEXPECT_EQ(-EINTR, result);
+
+
   KTEST_BEGIN("net_recvfrom(UDP): cleanup of unrecv'd packets");
   KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
   KEXPECT_EQ(3, net_sendto(send_sock, "456", 3, 0, NULL, 0));
   KEXPECT_EQ(3, net_sendto(send_sock, "789", 3, 0, NULL, 0));
   KEXPECT_EQ(0, vfs_close(sock));
 
+
   KEXPECT_EQ(0, vfs_close(send_sock));
   KEXPECT_EQ(0, vfs_close(raw_sock));
 
   // TODO(aoates): other tests:
-  //  - recvfrom blocks until data
-  //  - signal interrupts block
   //  - poll
 }
 

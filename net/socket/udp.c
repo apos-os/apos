@@ -32,7 +32,10 @@
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
 #include "net/util.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/vfs/vfs.h"
 
 // Pseudo-header for calculating checksums.
 typedef struct {
@@ -85,6 +88,7 @@ int sock_udp_create(socket_t** out) {
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
   sock->rx_queue = LIST_INIT;
+  kthread_queue_init(&sock->wait_queue);
 
   *out = &(sock->base);
   return 0;
@@ -160,6 +164,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   }
 
   list_push(&socket->rx_queue, &pb->link);
+  scheduler_wake_one(&socket->wait_queue);
 
   POP_INTERRUPTS();
   return true;
@@ -185,6 +190,7 @@ static void sock_udp_cleanup(socket_t* socket_base) {
     pbuf_t* pb = container_of(link, pbuf_t, link);
     pbuf_free(pb);
   }
+  KASSERT(kthread_queue_empty(&socket->wait_queue));
 }
 
 static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
@@ -286,12 +292,21 @@ static ssize_t sock_udp_recvfrom(socket_t* socket_base, int fflags,
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
   PUSH_AND_DISABLE_INTERRUPTS();
+  while (list_empty(&socket->rx_queue)) {
+    if (fflags & VFS_O_NONBLOCK) {
+      POP_INTERRUPTS();
+      return -EAGAIN;
+    }
+    int result = scheduler_wait_on_interruptable(&socket->wait_queue, -1);
+    if (result == SWAIT_INTERRUPTED) {
+      POP_INTERRUPTS();
+      return -EINTR;
+    }
+  }
+
+  // We have a packet!
   list_link_t* link = list_pop(&socket->rx_queue);
   POP_INTERRUPTS();
-  if (!link) {
-    // TODO(aoates): handle blocking sockets.
-    return -EAGAIN;
-  }
 
   pbuf_t* pb = container_of(link, pbuf_t, link);
   const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);

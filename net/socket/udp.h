@@ -18,6 +18,7 @@
 #include "net/eth/ethertype.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
+#include "proc/kthread.h"
 #include "user/include/apos/net/socket/inet.h"
 
 typedef struct {
@@ -39,6 +40,9 @@ typedef struct socket_udp {
   // List of queued packets.
   // TODO(aoates): cap amount of buffered data.
   list_t rx_queue;
+
+  // Wait queue for packets to be received.
+  kthread_queue_t wait_queue;
 } socket_udp_t;
 
 int sock_udp_create(socket_t** out);
