@@ -35,10 +35,15 @@
 // while another is running, it won't run until the first one finishes).
 //
 // Any code that runs with interrupts disabled is guaranteed not to be preempted
-// by a defint (that is, interrupt-safe code is also defint-safe code).
+// by a defint (that is, interrupt-safe code is also defint-safe code).  Defint
+// state (enabled or disabled) is per-thread, same as interrupts.  A thread
+// protecting state with defint_disable() must not block or yield unless the
+// state is valid.
 
 // Function signature for a defint.
 typedef void (*defint_func_t)(void*);
+
+typedef bool defint_state_t;
 
 // Schedule a deferred interrupt.  Should generally be called from an interrupt
 // context.  The deferred interrupt will be run as soon as the current interrupt
@@ -47,18 +52,14 @@ typedef void (*defint_func_t)(void*);
 // Interrupt-safe.
 void defint_schedule(defint_func_t f, void* arg);
 
-// Enable deferred interrupts.  Requires that they're currently disabled.  Any
-// pending defints will be run immediately in the current thread's context.
+// Returns the current defint state.
+defint_state_t defint_state(void);
+
+// Enables or disables deferred interrupts.  If enabling, any pending defints
+// will be run immediately in the current thread's context.
 //
-// See also macro version below.
-void defint_enable(void);
-
-// Disable deferred interrupts, which may be disabled or enabled currently.
-// Returns the current state.
-bool defint_disable(void);
-
-// Returns true if defints are enabled.
-bool defint_is_enabled(void);
+// Most code should use DEFINT_PUSH_AND_DISABLE() and DEFINT_POP() below.
+defint_state_t defint_set_state(defint_state_t s);
 
 // Process any enqueued defints.
 //
@@ -69,25 +70,22 @@ void defint_process_queued(void);
 // If safety nets are enabled, verify that defint state is restorted properly at
 // the end of the code block where they're disabled.
 void _defint_disabled_die(void);
-static inline void _defint_cleanup_verify(bool* saved) {
-  if (*saved != defint_is_enabled()) {
+static inline void _defint_cleanup_verify(defint_state_t* saved) {
+  if (*saved != defint_state()) {
     _defint_disabled_die();
   }
 }
 
 #define DEFINT_PUSH_AND_DISABLE()                                       \
   bool _defint_state __attribute__((cleanup(_defint_cleanup_verify))) = \
-      defint_disable()
+      defint_set_state(false)
 
 #else  // ENABLE_KERNEL_SAFETY_NETS
 
-#define DEFINT_PUSH_AND_DISABLE() bool _defint_state = defint_disable()
+#define DEFINT_PUSH_AND_DISABLE() bool _defint_state = defint_set_state(false)
 
 #endif  // ENABLE_KERNEL_SAFETY_NETS
 
-#define DEFINT_POP()                    \
-  do {                                  \
-    if (_defint_state) defint_enable(); \
-  } while (0)
+#define DEFINT_POP() defint_set_state(_defint_state)
 
 #endif

@@ -40,31 +40,32 @@ void defint_schedule(void (*f)(void*), void* arg) {
   POP_INTERRUPTS();
 }
 
-void defint_enable() {
+defint_state_t defint_state() {
   PUSH_AND_DISABLE_INTERRUPTS();
-  g_defints_enabled = true;
-  defint_process_queued();
-  POP_INTERRUPTS();
-}
-
-bool defint_disable() {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  bool old = g_defints_enabled;
-  g_defints_enabled = false;
-  POP_INTERRUPTS();
-  return old;
-}
-
-bool defint_is_enabled() {
-  PUSH_AND_DISABLE_INTERRUPTS();
-  bool result = g_defints_enabled;
+  defint_state_t result = g_defints_enabled;
   POP_INTERRUPTS();
   return result;
+}
+
+defint_state_t defint_set_state(defint_state_t s) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  bool old = g_defints_enabled;
+  if (s) {
+    g_defints_enabled = true;
+    defint_process_queued();
+  } else {
+    g_defints_enabled = false;
+  }
+  POP_INTERRUPTS();
+  return old;
 }
 
 void defint_process_queued() {
   KASSERT(!interrupts_enabled());
   if (!g_defints_enabled) return;
+
+  // Prevent any new defints from being processed while we're working.
+  g_defints_enabled = false;
 
   // TODO(aoates): consider capping the number of defints we run at a given time
   // to minimize impact on the thread we're victimizing.
@@ -78,6 +79,7 @@ void defint_process_queued() {
 
     disable_interrupts();
   }
+  g_defints_enabled = true;
 }
 
 void _defint_disabled_die() {

@@ -23,6 +23,7 @@
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "memory/memory.h"
+#include "proc/defint.h"
 #include "proc/process-internal.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
@@ -193,6 +194,7 @@ void kthread_switch(kthread_t new_thread) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread->state != KTHREAD_RUNNING);
   kthread_id_t my_id = g_current_thread->id;
+  defint_state_t defint = defint_state();
 
   kthread_data_t* old_thread = g_current_thread;
   g_current_thread = new_thread;
@@ -216,6 +218,8 @@ void kthread_switch(kthread_t new_thread) {
 
   // Verify that we're back on the proper stack!
   KASSERT(g_current_thread->id == my_id);
+
+  defint_set_state(defint);
 
   // Clean up any thread stacks waiting to be reaped.
   kthread_t t = kthread_queue_pop(&g_reap_queue);
