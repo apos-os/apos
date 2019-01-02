@@ -17,11 +17,11 @@
 #include "common/errno.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "net/eth/arp/arp.h"
 #include "net/util.h"
+#include "proc/defint.h"
 #include "proc/scheduler.h"
 
 #define ARP_CACHE_INITIAL_SIZE 10
@@ -44,7 +44,7 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
   const apos_ms_t start = get_time_ms();
   const apos_ms_t end = start + timeout_ms;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   apos_ms_t now;
   do {
     now = get_time_ms();
@@ -53,7 +53,7 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
       arp_cache_entry_t* entry = (arp_cache_entry_t*)value;
       if (now - entry->last_used <= ARP_CACHE_TIMEOUT_MS) {
         kmemcpy(result, entry, sizeof(arp_cache_entry_t));
-        POP_INTERRUPTS();
+        DEFINT_POP();
         return 0;
       } else {
         KLOG(DEBUG, "ARP: ignoring expired entry %s -> %s (%d ms old)\n",
@@ -71,16 +71,16 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
       int result =
           scheduler_wait_on_interruptable(&nic->arp_cache.wait, end - now);
       if (result == SWAIT_TIMEOUT) {
-        POP_INTERRUPTS();
+        DEFINT_POP();
         return -ETIMEDOUT;
       } else if (result == SWAIT_INTERRUPTED) {
-        POP_INTERRUPTS();
+        DEFINT_POP();
         return -EINTR;
       }
     }
   } while (timeout_ms > 0 && now < end);
 
-  POP_INTERRUPTS();
+  DEFINT_POP();
   return -EAGAIN;
 }
 
@@ -90,7 +90,7 @@ void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
   arp_cache_entry_t* entry;
   void* val;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   if (htbl_get(&nic->arp_cache.cache, addr, &val) == 0) {
     KLOG(DEBUG, "ARP: updating cache entry %s -> %s\n",
          inet2str(addr, inetbuf), mac2str(mac, macbuf));
@@ -104,5 +104,5 @@ void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
   kmemcpy(&entry->mac, mac, ETH_MAC_LEN);
   entry->last_used = get_time_ms();
   scheduler_wake_all(&nic->arp_cache.wait);
-  POP_INTERRUPTS();
+  DEFINT_POP();
 }
