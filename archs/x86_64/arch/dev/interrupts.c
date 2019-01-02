@@ -22,6 +22,7 @@
 #include "common/klog.h"
 #include "common/types.h"
 #include "dev/interrupts.h"
+#include "proc/defint.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
@@ -241,6 +242,8 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t rbp) {
   } else {
     klogf("unhandled interrupt: 0x%x  error: 0x%x\n", interrupt, error);
   }
+
+  defint_process_queued();
 
   // Clobber some registers to cause loud failures if we don't restore them
   // properly.

@@ -16,6 +16,7 @@ Import('env AposAddSources')
 
 srcs = [
   'alarm.c',
+  'defint.c',
   'exec.c',
   'exit.c',
   'fork.c',
