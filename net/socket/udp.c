@@ -19,7 +19,6 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"
-#include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/bind.h"
@@ -32,6 +31,7 @@
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
 #include "net/util.h"
+#include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -78,7 +78,7 @@ static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
 
 static short udp_poll_events(const socket_udp_t* socket) {
   short events = POLLOUT;
-  KASSERT_DBG(get_interrupts_state() == 0);
+  KASSERT_DBG(!defint_state());
   if (!list_empty(&socket->rx_queue)) {
     events |= POLLIN;
   }
@@ -152,11 +152,11 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   dst_addr.sin_addr.s_addr = ip_hdr->dst_addr;
   dst_addr.sin_port = udp_hdr->dst_port;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
   socket_t* socket_base = sockmap_find(sm, (const struct sockaddr*)&dst_addr);
   if (!socket_base) {
-    POP_INTERRUPTS();
+    DEFINT_POP();
     return false;
   }
 
@@ -171,7 +171,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
             ip_hdr->src_addr ||
         ((struct sockaddr_in*)&socket->connected_addr)->sin_port !=
             udp_hdr->src_port) {
-      POP_INTERRUPTS();
+      DEFINT_POP();
       return false;
     }
   }
@@ -180,7 +180,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   scheduler_wake_one(&socket->wait_queue);
   poll_trigger_event(&socket->poll_event, udp_poll_events(socket));
 
-  POP_INTERRUPTS();
+  DEFINT_POP();
   return true;
 }
 
@@ -192,12 +192,12 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->bind_addr.sa_family ==
                 (sa_family_t)socket_base->s_domain);
-    PUSH_AND_DISABLE_INTERRUPTS();
+    DEFINT_PUSH_AND_DISABLE();
     sockmap_t* sm = net_get_sockmap(socket->bind_addr.sa_family, IPPROTO_UDP);
     socket_t* removed =
         sockmap_remove(sm, (struct sockaddr*)&socket->bind_addr);
     KASSERT(removed == socket_base);
-    POP_INTERRUPTS();
+    DEFINT_POP();
   }
   while (!list_empty(&socket->rx_queue)) {
     list_link_t* link = list_pop(&socket->rx_queue);
@@ -236,13 +236,13 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
   result = inet_bindable(&naddr);
   if (result) return result;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
   if (naddr_port == 0) {
     in_port_t free_port = sockmap_free_port(sm, address);
     if (free_port == 0) {
       klogfm(KL_NET, WARNING, "net: out of ephemeral ports\n");
-      POP_INTERRUPTS();
+      DEFINT_POP();
       return -EADDRINUSE;
     }
     naddr_port = free_port;
@@ -257,7 +257,7 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
                        sizeof(addr_with_port)) == 0);
   bool inserted =
       sockmap_insert(sm, (struct sockaddr*)&addr_with_port, socket_base);
-  POP_INTERRUPTS();
+  DEFINT_POP();
   if (!inserted) {
     return -EADDRINUSE;
   }
@@ -317,22 +317,22 @@ static ssize_t sock_udp_recvfrom(socket_t* socket_base, int fflags,
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   while (list_empty(&socket->rx_queue)) {
     if (fflags & VFS_O_NONBLOCK) {
-      POP_INTERRUPTS();
+      DEFINT_POP();
       return -EAGAIN;
     }
     int result = scheduler_wait_on_interruptable(&socket->wait_queue, -1);
     if (result == SWAIT_INTERRUPTED) {
-      POP_INTERRUPTS();
+      DEFINT_POP();
       return -EINTR;
     }
   }
 
   // We have a packet!
   list_link_t* link = list_pop(&socket->rx_queue);
-  POP_INTERRUPTS();
+  DEFINT_POP();
 
   pbuf_t* pb = container_of(link, pbuf_t, link);
   const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);
@@ -459,7 +459,7 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   int result;
   const short masked_events = udp_poll_events(socket) & event_mask;
   if (masked_events || !poll) {
@@ -467,7 +467,7 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
   } else {
     result = poll_add_event(poll, &socket->poll_event, event_mask);
   }
-  POP_INTERRUPTS();
+  DEFINT_POP();
   return result;
 }
 
