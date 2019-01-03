@@ -54,8 +54,7 @@ int sock_raw_create(int domain, int protocol, socket_t** out);
 // dispatched to any active raw sockets for the given protocol.  Ownership is
 // _not_ taken.
 //
-// Interrupt safe.
-// TODO(aoates): switch this to use deferred interrupts when they exist.
+// Deferred-interrupt safe.
 void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
                        const struct sockaddr* src_addr, socklen_t addrlen);
 

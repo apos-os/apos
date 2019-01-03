@@ -20,7 +20,6 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"
-#include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "net/bind.h"
 #include "net/eth/ethertype.h"
@@ -28,6 +27,7 @@
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
 #include "net/util.h"
+#include "proc/defint.h"
 #include "proc/scheduler.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
@@ -46,12 +46,12 @@ static htbl_t g_raw_sockets;
 static bool g_raw_sockets_init = false;
 
 static void init_raw_sockets(void) {
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   if (!g_raw_sockets_init) {
     htbl_init(&g_raw_sockets, 10);
     g_raw_sockets_init = true;
   }
-  POP_INTERRUPTS();
+  DEFINT_POP();
 }
 
 static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
@@ -71,7 +71,7 @@ static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
 
 static short raw_poll_events(const socket_raw_t* socket) {
   short events = POLLOUT;
-  KASSERT_DBG(get_interrupts_state() == 0);
+  KASSERT_DBG(!defint_state());
   if (!list_empty(&socket->rx_queue)) {
     events |= POLLIN;
   }
@@ -101,7 +101,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
                        const struct sockaddr* addr, socklen_t addrlen) {
   init_raw_sockets();
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   list_t* sock_list = get_socket_list(ethertype, protocol);
   list_link_t* link = sock_list->head;
   while (link) {
@@ -109,7 +109,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
     sock_raw_dispatch_one(sock, pb, addr, addrlen);
     link = link->next;
   }
-  POP_INTERRUPTS();
+  DEFINT_POP();
 }
 
 int sock_raw_create(int domain, int protocol, socket_t** out) {
@@ -138,12 +138,12 @@ int sock_raw_create(int domain, int protocol, socket_t** out) {
   kthread_queue_init(&sock->wait_queue);
   poll_init_event(&sock->poll_event);
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   KASSERT(domain == AF_INET);
   list_t* sock_list = get_socket_list(ET_IPV4, protocol);
   list_push(sock_list, &sock->link);
   sock->sock_list = sock_list;
-  POP_INTERRUPTS();
+  DEFINT_POP();
 
   *out = &sock->base;
   return 0;
@@ -153,9 +153,9 @@ static void sock_raw_cleanup(socket_t* socket_base) {
   KASSERT(socket_base->s_type == SOCK_RAW);
   socket_raw_t* socket = (socket_raw_t*)socket_base;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   list_remove(socket->sock_list, &socket->link);
-  POP_INTERRUPTS();
+  DEFINT_POP();
 
   while (!list_empty(&socket->rx_queue)) {
     list_link_t* link = list_pop(&socket->rx_queue);
@@ -238,22 +238,22 @@ ssize_t sock_raw_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
   socket_raw_t* sock = (socket_raw_t*)socket_base;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   while (list_empty(&sock->rx_queue)) {
     if (fflags & VFS_O_NONBLOCK) {
-      POP_INTERRUPTS();
+      DEFINT_POP();
       return -EAGAIN;
     }
     int result = scheduler_wait_on_interruptable(&sock->wait_queue, -1);
     if (result == SWAIT_INTERRUPTED) {
-      POP_INTERRUPTS();
+      DEFINT_POP();
       return -EINTR;
     }
   }
 
   // We have a packet!
   list_link_t* link = list_pop(&sock->rx_queue);
-  POP_INTERRUPTS();
+  DEFINT_POP();
 
   queued_pkt_t* pkt = container_of(link, queued_pkt_t, link);
   if (address && address_len && *address_len >= pkt->src_addr_len) {
@@ -345,7 +345,7 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
   socket_raw_t* sock = (socket_raw_t*)socket_base;
 
-  PUSH_AND_DISABLE_INTERRUPTS();
+  DEFINT_PUSH_AND_DISABLE();
   int result;
   const short masked_events = raw_poll_events(sock) & event_mask;
   if (masked_events || !poll) {
@@ -353,7 +353,7 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   } else {
     result = poll_add_event(poll, &sock->poll_event, event_mask);
   }
-  POP_INTERRUPTS();
+  DEFINT_POP();
   return result;
 }
 
