@@ -130,8 +130,9 @@ void timer_init() {
 
 int register_timer_callback(int period, int limit,
                             timer_handler_t cb, void* arg) {
-  // TODO(aoates): disable interrupts!
+  PUSH_AND_DISABLE_INTERRUPTS();
   if (num_timers >= KMAX_TIMERS) {
+    POP_INTERRUPTS();
     return -ENOMEM;
   }
   // Find a free slot.
@@ -162,6 +163,7 @@ int register_timer_callback(int period, int limit,
   timers[idx].handler = cb;
   timers[idx].handler_arg = arg;
   timers[idx].limit = limit;
+  POP_INTERRUPTS();
   return 0;
 }
 
