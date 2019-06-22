@@ -177,8 +177,7 @@ static void null_lookup_test(fs_t* fs) {
   KTEST_BEGIN("cbfs: unknown vnode with no lookup function");
 
   vnode_t vnode;
-  vfs_vnode_init(&vnode, 999);
-  vnode.fs = fs;
+  vfs_vnode_init(&vnode, fs, 999);
   KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
 }
 
@@ -219,24 +218,20 @@ static void lookup_function_test(void) {
 
 
   vnode_t vnode;
-  vfs_vnode_init(&vnode, 99);
-  vnode.fs = fs;
+  vfs_vnode_init(&vnode, fs, 99);
   KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
 
-  vfs_vnode_init(&vnode, 102);
-  vnode.fs = fs;
+  vfs_vnode_init(&vnode, fs, 102);
   KEXPECT_EQ(0, fs->get_vnode(&vnode));
   KEXPECT_EQ(VNODE_REGULAR, vnode.type);
   KEXPECT_EQ(1, vnode.uid);
   KEXPECT_EQ(2, vnode.gid);
   KEXPECT_EQ(VFS_S_IRWXU, vnode.mode);
 
-  vfs_vnode_init(&vnode, 106);
-  vnode.fs = fs;
+  vfs_vnode_init(&vnode, fs, 106);
   KEXPECT_EQ(-ENOMEM, fs->get_vnode(&vnode));
 
-  vfs_vnode_init(&vnode, 107);
-  vnode.fs = fs;
+  vfs_vnode_init(&vnode, fs, 107);
   KEXPECT_EQ(-ENOENT, fs->get_vnode(&vnode));
 
   fs_t* unmounted_fs = 0x0;

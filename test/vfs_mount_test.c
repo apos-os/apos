@@ -886,6 +886,62 @@ static void rename_mount_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void mmap_same_vnode_test(void) {
+  KTEST_BEGIN("vfs mount: mmap the same vnode");
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/b", VFS_S_IRWXU));
+
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsB));
+
+  // Create a file in each.
+  int fd1 =
+      vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd1, 0);
+  KEXPECT_EQ(2, vfs_write(fd1, "a", 2));
+  int fd2 =
+      vfs_open("vfs_mount_test/b/file", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd2, 0);
+  KEXPECT_EQ(2, vfs_write(fd2, "b", 2));
+
+  // They should have the same vnode.
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/file", &stat));
+  ino_t a_ino = stat.st_ino;
+  KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b/file", &stat));
+  ino_t b_ino = stat.st_ino;
+  KEXPECT_EQ(a_ino, b_ino);
+
+  void* addr1_out = NULL;
+  KEXPECT_EQ(
+      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, MAP_PRIVATE, fd1, 0, &addr1_out));
+  void* addr2_out = NULL;
+  KEXPECT_EQ(
+      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, MAP_PRIVATE, fd2, 0, &addr2_out));
+  KEXPECT_STREQ("a", (char*)addr1_out);
+  KEXPECT_STREQ("b", (char*)addr2_out);
+  KEXPECT_EQ(0, do_munmap(addr1_out, PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addr2_out, PAGE_SIZE));
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  // Cleanup.
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/a/file"));
+  KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/file"));
+
+  // We'll still have vnodes pinned in the block cache from the mmaps (which
+  // will cause the unmount to fail if not cleaned up).
+  block_cache_clear_unpinned();
+  fs_t* unmounted_fs = NULL;
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/a", &unmounted_fs));
+  KEXPECT_EQ(0, vfs_unmount_fs("vfs_mount_test/b", &unmounted_fs));
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/b"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
+}
+
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
   const int orig_cache_size = vfs_cache_size();
@@ -893,6 +949,7 @@ void vfs_mount_test(void) {
   ramfsA = ramfs_create_fs(0);
   ramfsB = ramfs_create_fs(0);
 
+  mmap_same_vnode_test();  // Must be first.
   basic_mount_test();
   dot_dot_test();
   mount_cwd_test();

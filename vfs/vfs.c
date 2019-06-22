@@ -47,8 +47,8 @@
 
 #define KLOG(...) klogfm(KL_VFS, __VA_ARGS__)
 
-void vfs_vnode_init(vnode_t* n, int num) {
-  n->fs = 0x0;
+void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
+  n->fs = fs;
   n->fstype[0] = 0x0;
   n->num = num;
   n->type = VNODE_UNINITIALIZED;
@@ -228,9 +228,8 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
   } else {
     // We need to create the vnode and backfill it from disk.
     vnode = fs->alloc_vnode(fs);
-    vfs_vnode_init(vnode, vnode_num);
+    vfs_vnode_init(vnode, fs, vnode_num);
     vnode->refcount = 1;
-    vnode->fs = fs;
     fs->open_vnodes++;
     kmutex_lock(&vnode->mutex);
 

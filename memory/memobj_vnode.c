@@ -90,8 +90,11 @@ void memobj_init_vnode(vnode_t* vnode) {
   kmemset(obj, 0, sizeof(memobj_t));
 
   obj->type = MEMOBJ_VNODE;
-  // TODO(aoates): include filesystem number when mounting is supported.
-  obj->id = fnv_hash(vnode->num);
+  uint8_t id_array[sizeof(vnode->num) + sizeof(vnode->fs->id)];
+  kmemcpy(id_array, &vnode->num, sizeof(vnode->num));
+  kmemcpy(&id_array[sizeof(vnode->num)], &vnode->fs->id, sizeof(vnode->fs->id));
+  obj->id =
+      fnv_hash_array(id_array, sizeof(vnode->num) + sizeof(vnode->fs->id));
   obj->refcount = 0;
   obj->data = vnode;
 
