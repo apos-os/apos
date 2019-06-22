@@ -25,6 +25,7 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "net/eth/eth.h"
+#include "proc/defint.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -114,16 +115,19 @@ typedef enum {
 } rtl_rx_header_bits_t;
 
 static int rtl_tx(nic_t* base, pbuf_t* pb) {
+  DEFINT_PUSH_AND_DISABLE();
   rtl8139_t* nic = (rtl8139_t*)base;
 
   // TODO(aoates): queue packets when the NIC is busy.
   if (nic->txbuf_active[nic->txdesc]) {
     KLOG(DEBUG, "tx(%s): unable to tx, next descriptor (%d) is still active\n",
          nic->public.name, nic->txdesc);
+    DEFINT_POP();
     return -EBUSY;
   }
 
   if (pbuf_size(pb) > RTL_TX_MAX_PACKET_SIZE) {
+    DEFINT_POP();
     return -EINVAL;
   }
 
@@ -150,6 +154,7 @@ static int rtl_tx(nic_t* base, pbuf_t* pb) {
   nic->txdesc %= RTL_NUM_TX_DESCS;
   pbuf_free(pb);
 
+  DEFINT_POP();
   return 0;
 }
 
@@ -190,7 +195,9 @@ static void rtl_handle_recv_one(rtl8139_t* nic) {
   outs(nic->iobase + RTLRG_RXBUF_START, nic->rxstart - 0x10);
 }
 
-static void rtl_handle_recv(rtl8139_t* nic) {
+// Deferred interrupt.
+static void rtl_handle_recv(void* arg) {
+  rtl8139_t* nic = (rtl8139_t*)arg;
   int packets = 0;
   uint16_t rxbuf_end = ltoh16(ins(nic->iobase + RTLRG_RXBUF_END));
   while (rxbuf_end != nic->rxstart) {
@@ -208,7 +215,9 @@ static void rtl_handle_recv(rtl8139_t* nic) {
   KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
 }
 
-static void rtl_handle_tx_irq(rtl8139_t* nic) {
+// Deferred interrupt.
+static void rtl_handle_tx_irq(void* arg) {
+  rtl8139_t* nic = (rtl8139_t*)arg;
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) {
     const uint16_t tx_status =
         inl(nic->iobase + RTLRG_TXSTATUS0 + (sizeof(uint32_t) * i));
@@ -242,12 +251,11 @@ static void rtl_irq_handler(void* arg) {
   // necessary....but qemu disagrees.
   outs(nic->iobase + RTLRG_INTSTATUS, interrupts);
 
-  // TODO(aoates): we should _not_ be doing this in an interrupt context.
   if (interrupts & RTL_IMR_ROK) {
-    rtl_handle_recv(nic);
+    defint_schedule(&rtl_handle_recv, nic);
   }
   if (interrupts & RTL_IMR_TOK) {
-    rtl_handle_tx_irq(nic);
+    defint_schedule(&rtl_handle_tx_irq, nic);
   }
   // TODO(aoates): handle other interrupts (in particular, error cases).
 }

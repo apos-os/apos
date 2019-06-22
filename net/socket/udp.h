@@ -52,8 +52,7 @@ int sock_udp_create(socket_t** out);
 // exists).  Returns true if the packet was dispatched, false if not.  If false
 // is returned, the caller retains ownership of the packet.
 //
-// Interrupt safe.
-// TODO(aoates): switch this to use deferred interrupts when they exist.
+// Deferred-interrupt safe.
 bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
 
 #endif

@@ -16,6 +16,7 @@
 #ifndef APOO_INTERRUPTS_H
 #define APOO_INTERRUPTS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "arch/dev/interrupts.h"
@@ -50,5 +51,10 @@ static inline void _interrupts_cleanup_verify(interrupt_state_t* saved) {
 
 #define POP_INTERRUPTS() \
     restore_interrupts(_SAVED_INTERRUPTS);
+
+// Returns true if interrupts are currently enabled.
+static inline bool interrupts_enabled(void) {
+  return get_interrupts_state() != 0;
+}
 
 #endif
