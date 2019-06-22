@@ -19,24 +19,27 @@
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 
+#define MAX_QUEUED_DEFINTS 100
+
 typedef struct {
   defint_func_t f;
   void* arg;
-  list_link_t link;
 } defint_data_t;
 
-static list_t g_queued_defints = LIST_INIT_STATIC;
+static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS];
+static int g_queue_start = 0;
+static int g_queue_len = 0;
 static bool g_defints_enabled = true;
 
 void defint_schedule(void (*f)(void*), void* arg) {
-  defint_data_t* defint = (defint_data_t*)kmalloc(sizeof(defint_data_t));
-  KASSERT(defint);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT(g_queue_len < MAX_QUEUED_DEFINTS);
+  int idx = (g_queue_start + g_queue_len) % MAX_QUEUED_DEFINTS;
+  KASSERT_DBG(g_defint_queue[idx].f == NULL);
+  defint_data_t* defint = &g_defint_queue[idx];
   defint->f = f;
   defint->arg = arg;
-  defint->link = LIST_LINK_INIT;
-
-  PUSH_AND_DISABLE_INTERRUPTS();
-  list_push(&g_queued_defints, &defint->link);
+  g_queue_len++;
   POP_INTERRUPTS();
 }
 
@@ -69,15 +72,16 @@ void defint_process_queued() {
 
   // TODO(aoates): consider capping the number of defints we run at a given time
   // to minimize impact on the thread we're victimizing.
-  while (!list_empty(&g_queued_defints)) {
-    list_link_t* link = list_pop(&g_queued_defints);
+  while (g_queue_len > 0) {
+    defint_data_t* data = &g_defint_queue[g_queue_start];
+
     enable_interrupts();
-
-    defint_data_t* data = container_of(link, defint_data_t, link);
     data->f(data->arg);
-    kfree(data);
-
     disable_interrupts();
+
+    data->f = NULL;
+    g_queue_start = (g_queue_start + 1) % MAX_QUEUED_DEFINTS;
+    g_queue_len--;
   }
   g_defints_enabled = true;
 }
