@@ -102,25 +102,19 @@ void KTEST_BEGIN(const char* name) {
   current_test_name = name;
   current_test_passing = 1;
   num_tests++;
-  klogm(KL_TEST, INFO, "\nTEST: ");
-  klogm(KL_TEST, INFO, name);
-  klogm(KL_TEST, INFO, "\n");
-  klogm(KL_TEST, INFO, "---------------------------------------\n");
 }
 
 void kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
-  if (cond) {
-    klogm(KL_TEST, INFO, PASSED " ");
-    klogm(KL_TEST, INFO, name);
-    klogm(KL_TEST, INFO, "(");
-    klogm(KL_TEST, INFO, astr);
-    klogm(KL_TEST, INFO, ", ");
-    klogm(KL_TEST, INFO, bstr);
-    klogm(KL_TEST, INFO, ")\n");
-  } else {
+  if (!cond) {
+    if (current_test_passing) {
+      klogm(KL_TEST, INFO, "\nTEST: ");
+      klogm(KL_TEST, INFO, current_test_name);
+      klogm(KL_TEST, INFO, "\n");
+      klogm(KL_TEST, INFO, "---------------------------------------\n");
+    }
     current_test_passing = 0;
     current_suite_passing = 0;
     klogm(KL_TEST, INFO, FAILED " ");
