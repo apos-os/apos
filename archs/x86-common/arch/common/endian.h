@@ -17,7 +17,7 @@
 
 #include <stdint.h>
 
-#include "arch/common/endian.h"
+#include "archs/common/arch/common/endian.h"
 
 // Convert host-to-little endian values.
 static inline uint16_t htol16(uint16_t val) { return val; }
