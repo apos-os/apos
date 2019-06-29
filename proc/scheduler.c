@@ -105,6 +105,8 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
                                       long timeout_ms) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
+  // We should never be blocking if we're holding a spinlock.
+  KASSERT_DBG(current->spinlocks_held == 0);
 
   timer_handle_t timeout_handle;
   if (interruptable) {

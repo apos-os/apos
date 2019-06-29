@@ -21,6 +21,7 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "test/ktest.h"
 
 // TODO(aoates): other things to test:
@@ -745,13 +746,19 @@ static void ksleep_test(void) {
   }
 }
 
+typedef struct {
+  int x;
+  kspinlock_t lock;
+} preemption_test_args_t;
+
 static void* preemption_test_worker(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
   KEXPECT_EQ(1, kthread_current_thread()->preemption_disables);
   kthread_current_thread()->preemption_disables = 0;
-  int* x = (int*)arg;
-  for (int i = 0; i < 1000; ++i) {
-    // TODO(aoates): use spinlock here.
-    (*x)++;
+  for (int i = 0; i < 100000; ++i) {
+    kspin_lock(&args->lock);
+    args->x++;
+    kspin_unlock(&args->lock);
   }
   return NULL;
 }
@@ -760,20 +767,33 @@ static void* preemption_test_tester(void* arg) {
   KEXPECT_EQ(1, kthread_current_thread()->preemption_disables);
   kthread_current_thread()->preemption_disables = 0;
 
-  int worker_data = 0;
+  preemption_test_args_t args;
+  args.x = 0;
+  args.lock = KSPINLOCK_INIT;
   kthread_t worker = 0x0;
-  int result = kthread_create(&worker, &preemption_test_worker, &worker_data);
+  int result = kthread_create(&worker, &preemption_test_worker, &args);
   KEXPECT_EQ(0, result);
   scheduler_make_runnable(worker);
 
   for (int i = 0; i < 1000; ++i) {
     for (volatile int j = 0; j < 1000000; ++j)
       ;
-    // TODO(aoates): use spinlock here.
-    if (worker_data > 0) break;
+    kspin_lock(&args.lock);
+    int xval = args.x;
+    kspin_unlock(&args.lock);
+    if (xval) break;
   }
-  sched_disable_preemption();
-  KEXPECT_GT(worker_data, 0);
+  kspin_lock(&args.lock);
+  KEXPECT_GT(args.x, 0);
+  kspin_unlock(&args.lock);
+
+  // With a spinlock held, the value should _not_ be updated.
+  kspin_lock(&args.lock);
+  int init_val = args.x;
+  for (volatile int i = 0; i < 100000; ++i)
+    ;
+  KEXPECT_EQ(init_val, args.x);
+  kspin_unlock(&args.lock);
 
   kthread_join(worker);
   return NULL;

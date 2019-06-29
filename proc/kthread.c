@@ -54,6 +54,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->wait_timeout_ran = false;
   // TODO(aoates): enable preemption by default.
   t->preemption_disables = 1;
+  t->spinlocks_held = 0;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -168,6 +169,8 @@ bool kthread_is_done(kthread_t thread) {
 
 void kthread_exit(void* x) {
   PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT(g_current_thread->spinlocks_held == 0);
+
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
   g_current_thread->retval = x;

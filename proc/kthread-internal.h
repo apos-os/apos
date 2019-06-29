@@ -80,6 +80,9 @@ struct kthread_data {
 
   // Current preemption-disabled counter.  If zero, preemption is allowed.
   int preemption_disables;
+
+  // How many spinlocks we're holding, for bug-catching.
+  int spinlocks_held;
 };
 typedef struct kthread_data kthread_data_t;
 
