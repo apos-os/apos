@@ -753,8 +753,7 @@ typedef struct {
 
 static void* preemption_test_worker(void* arg) {
   preemption_test_args_t* args = (preemption_test_args_t*)arg;
-  KEXPECT_EQ(1, kthread_current_thread()->preemption_disables);
-  kthread_current_thread()->preemption_disables = 0;
+  sched_enable_preemption_for_test();
   for (int i = 0; i < 100000; ++i) {
     kspin_lock(&args->lock);
     args->x++;
@@ -764,8 +763,7 @@ static void* preemption_test_worker(void* arg) {
 }
 
 static void* preemption_test_tester(void* arg) {
-  KEXPECT_EQ(1, kthread_current_thread()->preemption_disables);
-  kthread_current_thread()->preemption_disables = 0;
+  sched_enable_preemption_for_test();
 
   preemption_test_args_t args;
   args.x = 0;

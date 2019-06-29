@@ -78,6 +78,9 @@ void sched_disable_preemption(void);
 // sched_disable_preemption() call.
 void sched_restore_preemption(void);
 
+// Enables preemption.  Should only be used when a thread is created.
+void sched_enable_preemption_for_test(void);
+
 // Tick the scheduler.  Called from an interrupt context.
 void sched_tick(void);
 

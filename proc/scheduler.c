@@ -174,6 +174,13 @@ void sched_restore_preemption() {
   POP_INTERRUPTS();
 }
 
+void sched_enable_preemption_for_test() {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KASSERT(kthread_current_thread()->preemption_disables == 1);
+  kthread_current_thread()->preemption_disables = 0;
+  POP_INTERRUPTS();
+}
+
 void sched_tick() {
   // TODO(aoates): move g_run_queue short-circuit into scheduler_yield() after
   // verifying it won't break any tests.
