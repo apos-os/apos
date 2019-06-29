@@ -23,6 +23,7 @@
 #include "common/list.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
+#include "proc/scheduler.h"
 #include "memory/kmalloc.h"
 
 // TODO(aoates): clean this up and unify the one-shot and recurring timers.
@@ -108,6 +109,8 @@ static void internal_timer_handler(void* arg) {
 #endif
     kfree(timer);
   }
+
+  sched_tick();
 }
 
 void timer_init() {

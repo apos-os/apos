@@ -77,6 +77,9 @@ struct kthread_data {
   // Whether or not the wait timeout fired, regardless of if it was interrupted
   // first.
   bool wait_timeout_ran;
+
+  // Current preemption-disabled counter.  If zero, preemption is allowed.
+  int preemption_disables;
 };
 typedef struct kthread_data kthread_data_t;
 

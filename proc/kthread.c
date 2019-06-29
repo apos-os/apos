@@ -52,6 +52,8 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->interruptable = false;
   t->wait_status = SWAIT_DONE;
   t->wait_timeout_ran = false;
+  // TODO(aoates): enable preemption by default.
+  t->preemption_disables = 1;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {

@@ -745,6 +745,52 @@ static void ksleep_test(void) {
   }
 }
 
+static void* preemption_test_worker(void* arg) {
+  KEXPECT_EQ(1, kthread_current_thread()->preemption_disables);
+  kthread_current_thread()->preemption_disables = 0;
+  int* x = (int*)arg;
+  for (int i = 0; i < 1000; ++i) {
+    // TODO(aoates): use spinlock here.
+    (*x)++;
+  }
+  return NULL;
+}
+
+static void* preemption_test_tester(void* arg) {
+  KEXPECT_EQ(1, kthread_current_thread()->preemption_disables);
+  kthread_current_thread()->preemption_disables = 0;
+
+  int worker_data = 0;
+  kthread_t worker = 0x0;
+  int result = kthread_create(&worker, &preemption_test_worker, &worker_data);
+  KEXPECT_EQ(0, result);
+  scheduler_make_runnable(worker);
+
+  for (int i = 0; i < 1000; ++i) {
+    for (volatile int j = 0; j < 1000000; ++j)
+      ;
+    // TODO(aoates): use spinlock here.
+    if (worker_data > 0) break;
+  }
+  sched_disable_preemption();
+  KEXPECT_GT(worker_data, 0);
+
+  kthread_join(worker);
+  return NULL;
+}
+
+static void preemption_test(void) {
+  KTEST_BEGIN("kthread preemption test");
+
+  // Spin the test off in another thread to ensure preemption state is preserved
+  // for the main thread.
+  kthread_t tester = 0x0;
+  int result = kthread_create(&tester, &preemption_test_tester, NULL);
+  KEXPECT_EQ(0, result);
+  scheduler_make_runnable(tester);
+  kthread_join(tester);
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -766,4 +812,5 @@ void kthread_test(void) {
   kmutex_test();
   kmutex_auto_lock_test();
   ksleep_test();
+  preemption_test();
 }

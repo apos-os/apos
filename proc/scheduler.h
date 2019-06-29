@@ -66,4 +66,19 @@ void scheduler_wake_one(kthread_queue_t* queue);
 // Wake *all* threads waiting on the given thread queue.
 void scheduler_wake_all(kthread_queue_t* queue);
 
+// Disable preemption for the current thread.  This stacks with previous calls
+// (must be paired with sched_restore_preemption()).
+//
+// Preemption state follows the current thread (for example, if the current
+// thread yields after calling this another thread may be scheduled with
+// preemption enabled).
+void sched_disable_preemption(void);
+
+// Restore the previous preemption state from before the paired
+// sched_disable_preemption() call.
+void sched_restore_preemption(void);
+
+// Tick the scheduler.  Called from an interrupt context.
+void sched_tick(void);
+
 #endif

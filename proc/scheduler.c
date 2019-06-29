@@ -28,6 +28,7 @@ static kthread_t g_idle_thread = 0;
 static kthread_queue_t g_run_queue;
 
 static void* idle_thread_body(void* arg) {
+  sched_disable_preemption();
   while(1) {
     kthread_current_thread()->state = KTHREAD_PENDING;
     scheduler_yield_no_reschedule();
@@ -154,5 +155,28 @@ void scheduler_wake_one(kthread_queue_t* queue) {
 void scheduler_wake_all(kthread_queue_t* queue) {
   while (!kthread_queue_empty(queue)) {
     scheduler_make_runnable(kthread_queue_pop(queue));
+  }
+}
+
+void sched_disable_preemption() {
+  // TODO(aoates): use an interrupt-safe atomic here.
+  PUSH_AND_DISABLE_INTERRUPTS();
+  kthread_current_thread()->preemption_disables++;
+  POP_INTERRUPTS();
+}
+
+void sched_restore_preemption() {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  kthread_current_thread()->preemption_disables--;
+  KASSERT(kthread_current_thread()->preemption_disables >= 0);
+  POP_INTERRUPTS();
+}
+
+void sched_tick() {
+  // TODO(aoates): move g_run_queue short-circuit into scheduler_yield() after
+  // verifying it won't break any tests.
+  if (kthread_current_thread()->preemption_disables == 0 &&
+      !kthread_queue_empty(&g_run_queue)) {
+    scheduler_yield();
   }
 }
