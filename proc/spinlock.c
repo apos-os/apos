@@ -14,10 +14,11 @@
 
 #include "proc/spinlock.h"
 
+#include "dev/interrupts.h"
 #include "common/kassert.h"
 #include "proc/scheduler.h"
 
-const kspinlock_t KSPINLOCK_INIT = {-1};
+const kspinlock_t KSPINLOCK_INIT = {-1, 0};
 
 void kspin_lock(kspinlock_t* l) {
   KASSERT(l->holder == -1);
@@ -34,4 +35,17 @@ void kspin_unlock(kspinlock_t* l) {
   l->holder = -1;
   me->spinlocks_held--;
   sched_restore_preemption();
+}
+
+void kspin_lock_int(kspinlock_t* l) {
+  interrupt_state_t ints = save_and_disable_interrupts();
+  kspin_lock(l);
+  l->int_state = ints;
+}
+
+void kspin_unlock_int(kspinlock_t* l) {
+  KASSERT_DBG(interrupts_enabled() == false);
+  interrupt_state_t ints = l->int_state;
+  kspin_unlock(l);
+  restore_interrupts(ints);
 }
