@@ -16,6 +16,7 @@
 #define APOO_PROC_SPINLOCK_H
 
 #include "arch/dev/interrupts.h"
+#include "proc/defint.h"
 #include "proc/kthread-internal.h"
 
 // TODO(aoates): define a proper spinlock when SMP is possible.
@@ -23,6 +24,9 @@
 typedef struct {
   // The thread currently holding the spinlock, or -1 if free.
   kthread_id_t holder;
+
+  // Defint state when the spinlock was locked.
+  defint_state_t defint_state;
 
   // Interrupt state when the spinlock was locked.
   interrupt_state_t int_state;

@@ -15,7 +15,9 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
@@ -762,6 +764,18 @@ static void* preemption_test_worker(void* arg) {
   return NULL;
 }
 
+static void preemption_test_defintA(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  args->x++;
+}
+
+static void preemption_test_defintB(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  kspin_lock(&args->lock);
+  args->x++;
+  kspin_unlock(&args->lock);
+}
+
 static void* preemption_test_tester(void* arg) {
   sched_enable_preemption_for_test();
 
@@ -792,8 +806,30 @@ static void* preemption_test_tester(void* arg) {
     ;
   KEXPECT_EQ(init_val, args.x);
   kspin_unlock(&args.lock);
-
   kthread_join(worker);
+
+  KTEST_BEGIN("kthread: spinlock disables defints");
+  kspin_lock(&args.lock);
+  {
+    DEFINT_PUSH_AND_DISABLE();
+    args.x = 0;
+    // One just increments, the other does so with a spinlock.
+    defint_schedule(&preemption_test_defintA, &args);
+    defint_schedule(&preemption_test_defintB, &args);
+    DEFINT_POP();
+  }
+  apos_ms_t start = get_time_ms();
+  for (volatile int i = 0; (get_time_ms() - start) < 30; ++i);
+  KEXPECT_EQ(0, args.x);
+
+  // Let the defints run.
+  while (args.x < 2) {
+    kspin_unlock(&args.lock);
+    ksleep(1);
+    kspin_lock(&args.lock);
+  }
+  kspin_unlock(&args.lock);
+
   return NULL;
 }
 

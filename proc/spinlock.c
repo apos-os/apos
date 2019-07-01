@@ -18,11 +18,15 @@
 #include "common/kassert.h"
 #include "proc/scheduler.h"
 
-const kspinlock_t KSPINLOCK_INIT = {-1, 0};
+const kspinlock_t KSPINLOCK_INIT = {-1, false, 0};
 
 void kspin_lock(kspinlock_t* l) {
-  KASSERT(l->holder == -1);
+  // TODO(aoates): write a test that that catches the scenario where we modify
+  // the lock before we actually hold it (preemption and defints are disabled).
+  bool defint_state = defint_set_state(false);
   sched_disable_preemption();
+  KASSERT(l->holder == -1);
+  l->defint_state = defint_state;
   kthread_t me = kthread_current_thread();
   l->holder = me->id;
   me->spinlocks_held++;
@@ -32,9 +36,12 @@ void kspin_unlock(kspinlock_t* l) {
   kthread_t me = kthread_current_thread();
   KASSERT(l->holder == me->id);
   KASSERT(me->spinlocks_held > 0);
+  bool defint_state = l->defint_state;
   l->holder = -1;
   me->spinlocks_held--;
   sched_restore_preemption();
+  bool defint_prev_state = defint_set_state(defint_state);
+  KASSERT(defint_prev_state == false);
 }
 
 void kspin_lock_int(kspinlock_t* l) {
