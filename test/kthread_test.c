@@ -755,7 +755,6 @@ typedef struct {
 
 static void* preemption_test_worker(void* arg) {
   preemption_test_args_t* args = (preemption_test_args_t*)arg;
-  sched_enable_preemption_for_test();
   for (int i = 0; i < 100000; ++i) {
     kspin_lock(&args->lock);
     args->x++;
@@ -774,6 +773,10 @@ static void preemption_test_defintB(void* arg) {
   kspin_lock(&args->lock);
   args->x++;
   kspin_unlock(&args->lock);
+}
+
+static void* preemption_test_check_enabled(void* arg) {
+  return (void*)(intptr_t)kthread_current_thread()->preemption_disables;
 }
 
 static void* preemption_test_tester(void* arg) {
@@ -829,6 +832,21 @@ static void* preemption_test_tester(void* arg) {
     kspin_lock(&args.lock);
   }
   kspin_unlock(&args.lock);
+
+  KTEST_BEGIN("kthread: preemption state inherited in child threads");
+  kthread_t child = NULL;
+  {
+    sched_disable_preemption();
+    sched_disable_preemption();
+    KEXPECT_EQ(0, kthread_create(&child, &preemption_test_check_enabled, NULL));
+    scheduler_make_runnable(child);
+    KEXPECT_EQ(1, (intptr_t)kthread_join(child));
+    sched_restore_preemption();
+    sched_restore_preemption();
+  }
+  KEXPECT_EQ(0, kthread_create(&child, &preemption_test_check_enabled, NULL));
+  scheduler_make_runnable(child);
+  KEXPECT_EQ(0, (intptr_t)kthread_join(child));
 
   return NULL;
 }

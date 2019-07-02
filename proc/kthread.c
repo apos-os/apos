@@ -120,6 +120,10 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   thread->stack = stack;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
+
+  if (kthread_current_thread()->preemption_disables == 0) {
+    thread->preemption_disables = 0;
+  }
   POP_INTERRUPTS();
   return 0;
 }
