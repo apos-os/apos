@@ -779,6 +779,13 @@ static void* preemption_test_check_enabled(void* arg) {
   return (void*)(intptr_t)kthread_current_thread()->preemption_disables;
 }
 
+static void preemption_test_interrupt_cb(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  kspin_lock(&args->lock);
+  args->x++;
+  kspin_unlock(&args->lock);
+}
+
 static void* preemption_test_tester(void* arg) {
   sched_enable_preemption_for_test();
 
@@ -847,6 +854,26 @@ static void* preemption_test_tester(void* arg) {
   KEXPECT_EQ(0, kthread_create(&child, &preemption_test_check_enabled, NULL));
   scheduler_make_runnable(child);
   KEXPECT_EQ(0, (intptr_t)kthread_join(child));
+
+  KTEST_BEGIN("kthread: SPINLOCK_INTERRUPT_SAFE blocks interrupts");
+  preemption_test_args_t interrupt_args;
+  interrupt_args.lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  interrupt_args.x = 0;
+  const int kTimerLimit = 50;
+  KEXPECT_EQ(
+      0, register_timer_callback(1, kTimerLimit, &preemption_test_interrupt_cb,
+                                 &interrupt_args));
+  int my_counter = 0;
+  while (*(volatile int*)&interrupt_args.x - my_counter < kTimerLimit &&
+         my_counter < 10000000) {
+    // Do an explicit two-stage increment.
+    kspin_lock(&interrupt_args.lock);
+    int cval = *(volatile int*)&interrupt_args.x;
+    *(volatile int*)&interrupt_args.x = cval + 1;
+    my_counter++;
+    kspin_unlock(&interrupt_args.lock);
+  }
+  KEXPECT_EQ(my_counter + kTimerLimit, interrupt_args.x);
 
   return NULL;
 }
