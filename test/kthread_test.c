@@ -784,7 +784,7 @@ static void* preemption_test_tester(void* arg) {
 
   preemption_test_args_t args;
   args.x = 0;
-  args.lock = KSPINLOCK_INIT;
+  args.lock = KSPINLOCK_NORMAL_INIT;
   kthread_t worker = 0x0;
   int result = kthread_create(&worker, &preemption_test_worker, &args);
   KEXPECT_EQ(0, result);

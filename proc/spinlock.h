@@ -21,7 +21,20 @@
 
 // TODO(aoates): define a proper spinlock when SMP is possible.
 
+typedef enum {
+  // A spinlock that disables preemption and deferred interrupts.  Must not be
+  // used from an interrupt context.
+  SPINLOCK_NORMAL,
+
+  // A spinlock that also disables interrupts (and therefore can be used from an
+  // interrupt context, and to protect state shared between normal code and
+  // interrupts).
+  SPINLOCK_INTERRUPT_SAFE,
+} kspinlock_type_t;
+
 typedef struct {
+  kspinlock_type_t type;
+
   // The thread currently holding the spinlock, or -1 if free.
   kthread_id_t holder;
 
@@ -32,18 +45,15 @@ typedef struct {
   interrupt_state_t int_state;
 } kspinlock_t;
 
-extern const kspinlock_t KSPINLOCK_INIT;
+extern const kspinlock_t KSPINLOCK_NORMAL_INIT;
+extern const kspinlock_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 
 // Lock the given spinlock.  In a non-SMP environment, simply disables
-// preemption.  Threads must not block while holding a spinlock.
+// preemption, defints, and optionally interrupts (depending on the type).
+// Threads must not block while holding a spinlock.
 void kspin_lock(kspinlock_t* l);
 
 // Unlock the spinlock.
 void kspin_unlock(kspinlock_t* l);
-
-// As above, but also disables interrupts.  Use this for code that needs to
-// coordinate with interrupt handlers.
-void kspin_lock_int(kspinlock_t* l);
-void kspin_unlock_int(kspinlock_t* l);
 
 #endif
