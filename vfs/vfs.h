@@ -101,9 +101,13 @@ int vfs_getcwd(char* path_out, size_t size);
 // Change the current working directory.  Returns 0 on success, or -error.
 int vfs_chdir(const char* path);
 
-// Get the memobj_t associated with the given fd.  It will remain valid as long
-// as the fd is open, unless the caller ref()s it.  The given mode must be
-// compatible with the file's mode.  Returns 0 on success, or -error.
+// Get the memobj_t associated with the given fd.  If successful, the memobj
+// will be returned with a reference on it (for the caller).  This function
+// binds the current binding of the fd to a particular vnode, and so long as the
+// caller keeps their reference to the memobj that vnode is guaranteed to live.
+//
+// The given mode must be compatible with the file's mode.  Returns 0 on
+// success, or -error.
 // TODO(aoates): how do we handle executable?
 int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out);
 

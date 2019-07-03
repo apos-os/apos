@@ -1333,6 +1333,7 @@ int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out) {
     return -EACCES;
   }
 
+  file->vnode->memobj.ops->ref(&file->vnode->memobj);
   *memobj_out = &file->vnode->memobj;
   return 0;
 }
