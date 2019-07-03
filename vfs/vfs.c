@@ -272,7 +272,7 @@ void vfs_put(vnode_t* vnode) {
   // and only free it later, if we need to.
   KASSERT(vnode->refcount >= 0);
   if (vnode->refcount == 0) {
-    KASSERT(vnode->memobj.refcount == 0);
+    KASSERT(vnode->memobj.refcount == 1);
     KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
     if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);

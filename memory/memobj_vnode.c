@@ -42,6 +42,7 @@ static memobj_ops_t g_vnode_ops = {
 
 static void vnode_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_VNODE);
+  KASSERT(obj->refcount > 0);
   obj->refcount++;
   vnode_t* vnode = (vnode_t*)obj->data;
   vfs_ref(vnode);
@@ -95,7 +96,7 @@ void memobj_init_vnode(vnode_t* vnode) {
   kmemcpy(&id_array[sizeof(vnode->num)], &vnode->fs->id, sizeof(vnode->fs->id));
   obj->id =
       fnv_hash_array(id_array, sizeof(vnode->num) + sizeof(vnode->fs->id));
-  obj->refcount = 0;
+  obj->refcount = 1;
   obj->data = vnode;
 
   obj->ops = &g_vnode_ops;

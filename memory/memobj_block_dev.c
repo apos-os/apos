@@ -43,6 +43,7 @@ static memobj_ops_t g_block_dev_ops = {
 
 static void bd_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  KASSERT(obj->refcount > 0);
   obj->refcount++;
 }
 
@@ -111,7 +112,7 @@ int memobj_create_block_dev(memobj_t* obj, apos_dev_t dev) {
   kmemset(obj, 0, sizeof(memobj_t));
   obj->type = MEMOBJ_BLOCK_DEV;
   obj->id = fnv_hash_array(&dev, sizeof(apos_dev_t));
-  obj->refcount = 0;
+  obj->refcount = 1;
   obj->data = dev_get_block(dev);
   if (!obj->data) {
     return -ENODEV;

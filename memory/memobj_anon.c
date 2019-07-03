@@ -42,6 +42,7 @@ static memobj_ops_t g_anon_ops = {
 
 static void anon_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_ANON);
+  KASSERT(obj->refcount > 0);
   obj->refcount++;
 }
 
@@ -88,6 +89,6 @@ memobj_t* memobj_create_anon(void) {
   anon_obj->type = MEMOBJ_ANON;
   anon_obj->id = fnv_hash_array(&anon_obj, sizeof(memobj_t*));
   anon_obj->ops = &g_anon_ops;
-  anon_obj->refcount = 0;
+  anon_obj->refcount = 1;
   return anon_obj;
 }

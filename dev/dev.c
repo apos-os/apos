@@ -123,6 +123,8 @@ char_dev_t* dev_get_char(apos_dev_t id) {
   return g_char_devices[major(id)][minor(id)];
 }
 
+// TODO(aoates): return this memobj with a reference and audit everything to
+// ensure no chance of dangling references.
 memobj_t* dev_get_block_memobj(apos_dev_t id) {
   if (major(id) >= DEVICE_MAX_MAJOR ||
       minor(id) >= DEVICE_MAX_MINOR) {

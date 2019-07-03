@@ -201,9 +201,6 @@ int vm_fork_address_space_into(process_t* target_proc) {
         memobj_t* orig_memobj = source_area->memobj;
         source_area->memobj = memobj_create_shadow(orig_memobj);
         target_area->memobj = memobj_create_shadow(orig_memobj);
-
-        source_area->memobj->ops->ref(source_area->memobj);
-        target_area->memobj->ops->ref(target_area->memobj);
         orig_memobj->ops->unref(orig_memobj);
 
         // Unmap the range in our current process so we pick up the COW versions.

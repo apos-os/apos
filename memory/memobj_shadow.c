@@ -42,6 +42,7 @@ static memobj_ops_t g_shadow_ops = {
 
 static void shadow_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
+  KASSERT(obj->refcount > 0);
   obj->refcount++;
 }
 
@@ -126,7 +127,7 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   shadow_obj->type = MEMOBJ_SHADOW;
   shadow_obj->id = fnv_hash_array(&shadow_obj, sizeof(memobj_t*));
   shadow_obj->ops = &g_shadow_ops;
-  shadow_obj->refcount = 0;
+  shadow_obj->refcount = 1;
   shadow_obj->data = subobj;
 
   subobj->ops->ref(subobj);
