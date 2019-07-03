@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "memory/block_cache.h"
+#include "proc/spinlock.h"
 
 struct memobj_ops;
 typedef struct memobj_ops memobj_ops_t;
@@ -42,7 +43,9 @@ typedef struct memobj {
 
   // Refcount.  Do not modify directly --- use ref() and unref() instead.  The
   // meaning may very depending on the memobj type.
+  // TODO(aoates): switch this to use appropriate atomics.
   int refcount;
+  kspinlock_t lock;
 
   // Data specific to the type memory object.
   void* data;

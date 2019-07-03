@@ -42,16 +42,22 @@ static memobj_ops_t g_vnode_ops = {
 
 static void vnode_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_VNODE);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
   obj->refcount++;
+  kspin_unlock(&obj->lock);
+
   vnode_t* vnode = (vnode_t*)obj->data;
   vfs_ref(vnode);
 }
 
 static void vnode_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_VNODE);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
   obj->refcount--;
+  kspin_unlock(&obj->lock);
+
   vnode_t* vnode = (vnode_t*)obj->data;
   vfs_put(vnode);
   // obj may now be invalid!
@@ -97,6 +103,7 @@ void memobj_init_vnode(vnode_t* vnode) {
   obj->id =
       fnv_hash_array(id_array, sizeof(vnode->num) + sizeof(vnode->fs->id));
   obj->refcount = 1;
+  obj->lock = KSPINLOCK_NORMAL_INIT;
   obj->data = vnode;
 
   obj->ops = &g_vnode_ops;

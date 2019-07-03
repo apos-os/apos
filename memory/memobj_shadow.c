@@ -42,17 +42,21 @@ static memobj_ops_t g_shadow_ops = {
 
 static void shadow_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
   obj->refcount++;
+  kspin_unlock(&obj->lock);
 }
 
 static void shadow_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
-  obj->refcount--;
+  int new_refcount = --obj->refcount;
+  kspin_unlock(&obj->lock);
   // TODO(aoates): check if the only remaining refs are resident pages; if so,
   // flush and delete them, unref the underlying object, and delete this one.
-  if (obj->refcount == 0) {
+  if (new_refcount == 0) {
     memobj_t* subobj = (memobj_t*)obj->data;
     subobj->ops->unref(subobj);
     kfree(obj);
@@ -128,6 +132,7 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   shadow_obj->id = fnv_hash_array(&shadow_obj, sizeof(memobj_t*));
   shadow_obj->ops = &g_shadow_ops;
   shadow_obj->refcount = 1;
+  shadow_obj->lock = KSPINLOCK_NORMAL_INIT;
   shadow_obj->data = subobj;
 
   subobj->ops->ref(subobj);

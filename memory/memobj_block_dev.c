@@ -43,14 +43,18 @@ static memobj_ops_t g_block_dev_ops = {
 
 static void bd_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
   obj->refcount++;
+  kspin_unlock(&obj->lock);
 }
 
 static void bd_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_BLOCK_DEV);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
   obj->refcount--;
+  kspin_unlock(&obj->lock);
 }
 
 static int bd_get_page(memobj_t* obj, int page_offset, int writable,
@@ -113,6 +117,7 @@ int memobj_create_block_dev(memobj_t* obj, apos_dev_t dev) {
   obj->type = MEMOBJ_BLOCK_DEV;
   obj->id = fnv_hash_array(&dev, sizeof(apos_dev_t));
   obj->refcount = 1;
+  obj->lock = KSPINLOCK_NORMAL_INIT;
   obj->data = dev_get_block(dev);
   if (!obj->data) {
     return -ENODEV;
