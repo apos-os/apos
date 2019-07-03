@@ -56,4 +56,7 @@ void kspin_lock(kspinlock_t* l);
 // Unlock the spinlock.
 void kspin_unlock(kspinlock_t* l);
 
+// Returns true if the spinlock is held by the current thread.
+bool kspin_is_held(const kspinlock_t* l);
+
 #endif

@@ -61,3 +61,7 @@ void kspin_unlock(kspinlock_t* l) {
   bool defint_prev_state = defint_set_state(defint_state);
   KASSERT(defint_prev_state == false);
 }
+
+bool kspin_is_held(const kspinlock_t* l) {
+  return (l->holder == kthread_current_thread()->id);
+}
