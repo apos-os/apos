@@ -20,7 +20,13 @@
 #include "common/kstring.h"
 #include "memory/memory.h"
 
+static bool g_dying = false;
+
 void die(const char* msg) {
+  if (g_dying) {
+    klog_set_mode(KLOG_RAW_VIDEO);
+  }
+  g_dying = true;
   klog("PANIC: ");
   if (msg) {
     klog(msg);
