@@ -890,6 +890,68 @@ static void preemption_test(void) {
   kthread_join(tester);
 }
 
+typedef struct {
+  kmutex_t* mu;
+  kthread_queue_t* queue;
+  bool* val;  // Shared state between the test threads.
+  bool who_am_i;  // Different for each test thread.
+} wait_on_locked_test_args;
+
+static void* wait_on_locked_test_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  wait_on_locked_test_args* args = (wait_on_locked_test_args*)arg;
+
+  for (int i = 0; i < 3000; ++i) {
+    kmutex_lock(args->mu);
+    while (*args->val != args->who_am_i) {
+      scheduler_wait_on_locked(args->queue, -1, args->mu);
+    }
+    *args->val = !args->who_am_i;
+    scheduler_wake_all(args->queue);
+    kmutex_unlock(args->mu);
+  }
+  return NULL;
+}
+
+static void wait_on_locked_test(void) {
+  KTEST_BEGIN("scheduler_wait_on_locked test");
+
+  kthread_t threadA, threadB;
+  kmutex_t mu;
+  kthread_queue_t queue;
+  bool shared_val = false;
+
+  wait_on_locked_test_args argsA, argsB;
+  argsA.mu = &mu;
+  argsA.queue = &queue;
+  argsA.val = &shared_val;
+  argsA.who_am_i = false;
+  argsB = argsA;
+  argsB.who_am_i = true;
+
+  kmutex_init(&mu);
+  kthread_queue_init(&queue);
+  KEXPECT_EQ(0, kthread_create(&threadA, &wait_on_locked_test_thread, &argsA));
+  KEXPECT_EQ(0, kthread_create(&threadB, &wait_on_locked_test_thread, &argsB));
+  scheduler_make_runnable(threadA);
+  scheduler_make_runnable(threadB);
+
+  kthread_join(threadA);
+  kthread_join(threadB);
+
+  KTEST_BEGIN("scheduler_wait_on_locked interruptable test");
+  proc_alarm_ms(50);
+  kmutex_lock(&mu);
+  KEXPECT_EQ(SWAIT_INTERRUPTED, scheduler_wait_on_locked(&queue, -1, &mu));
+  proc_suppress_signal(proc_current(), SIGALRM);
+  kmutex_unlock(&mu);
+
+  KTEST_BEGIN("scheduler_wait_on_locked timeout test");
+  kmutex_lock(&mu);
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_locked(&queue, 30, &mu));
+  kmutex_unlock(&mu);
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -912,4 +974,5 @@ void kthread_test(void) {
   kmutex_auto_lock_test();
   ksleep_test();
   preemption_test();
+  wait_on_locked_test();
 }

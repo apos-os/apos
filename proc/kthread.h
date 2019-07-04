@@ -110,6 +110,10 @@ void kmutex_lock(kmutex_t* m);
 // Unlock the mutex.
 void kmutex_unlock(kmutex_t* m);
 
+// As above, but will never yield.  Only used internally to kthread and the
+// scheduler.
+void kmutex_unlock_no_yield(kmutex_t* m);
+
 // Returns non-zero if the mutex is currently locked.
 int kmutex_is_locked(kmutex_t* m);
 

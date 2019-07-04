@@ -60,6 +60,14 @@ void scheduler_wait_on(kthread_queue_t* queue);
 // otherwise.
 int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms);
 
+// As above, but atomically unlocks the given mutex while starting to wait, and
+// re-locks when woken.  In other words, treats the queue as a condition
+// variable.
+//
+// Always interruptable.  Returns as scheduler_wait_on_interruptable().
+int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
+                             kmutex_t* mu);
+
 // Wake one thread waiting on the given thread queue.
 void scheduler_wake_one(kthread_queue_t* queue);
 

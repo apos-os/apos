@@ -334,7 +334,7 @@ void kmutex_lock(kmutex_t* m) {
   POP_INTERRUPTS();
 }
 
-void kmutex_unlock(kmutex_t* m) {
+static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
   KASSERT(m->locked == 1);
@@ -342,12 +342,20 @@ void kmutex_unlock(kmutex_t* m) {
   if (!kthread_queue_empty(&m->wait_queue)) {
     kthread_t next_holder = kthread_queue_pop(&m->wait_queue);
     scheduler_make_runnable(next_holder);
-    scheduler_yield();
+    if (yield) scheduler_yield();
   } else {
     m->locked = 0;
     m->holder = 0x0;
   }
   POP_INTERRUPTS();
+}
+
+void kmutex_unlock(kmutex_t* m) {
+  kmutex_unlock_internal(m, true);
+}
+
+void kmutex_unlock_no_yield(kmutex_t* m) {
+  kmutex_unlock_internal(m, false);
 }
 
 int kmutex_is_locked(kmutex_t* m) {

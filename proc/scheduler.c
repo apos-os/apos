@@ -102,7 +102,7 @@ static void scheduler_timeout(void* arg) {
 }
 
 static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
-                                      long timeout_ms) {
+                                      long timeout_ms, kmutex_t* mu) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_t current = kthread_current_thread();
   // We should never be blocking if we're holding a spinlock.
@@ -130,22 +130,33 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   current->wait_status = SWAIT_DONE;
   current->wait_timeout_ran = false;
   kthread_queue_push(queue, current);
+  if (mu) {
+    kmutex_unlock_no_yield(mu);
+  }
   scheduler_yield_no_reschedule();
   int result = current->wait_status;
   if (timeout_ms > 0 && !current->wait_timeout_ran)
     cancel_event_timer(timeout_handle);
+  if (mu) {
+    kmutex_lock(mu);
+  }
   POP_INTERRUPTS();
 
   return result;
 }
 
 void scheduler_wait_on(kthread_queue_t* queue) {
-  int result = scheduler_wait_on_internal(queue, 0, -1);
+  int result = scheduler_wait_on_internal(queue, 0, -1, NULL);
   KASSERT_DBG(result == 0);
 }
 
 int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms) {
-  return scheduler_wait_on_internal(queue, 1, timeout_ms);
+  return scheduler_wait_on_internal(queue, 1, timeout_ms, NULL);
+}
+
+int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
+                             kmutex_t* mu) {
+  return scheduler_wait_on_internal(queue, 1, timeout_ms, mu);
 }
 
 void scheduler_wake_one(kthread_queue_t* queue) {
