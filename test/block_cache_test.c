@@ -348,15 +348,29 @@ static void put_thread_test(ramdisk_t* rd, apos_dev_t dev) {
   ramdisk_set_blocking(rd, 1, 1);
 }
 
-// TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
+static void unflushed_lru_block_test(apos_dev_t dev) {
+  memobj_t* obj = dev_get_block_memobj(dev);
+  block_dev_t* bd = dev_get_block(dev);
 
-// TODO(aoates): a good test:
-//  get()
-//  put(BC_FLUSH_ASYNC)
-//  get()  // runs before the flush thread
-//  put(BC_FLUSH_NONE)
-//  wait_for_flush()
-//  * verify that the second put() didn't cancel the first's flush *
+  uint8_t buf[RAMDISK_SECTOR_SIZE];
+  for (int i = 0; i < 10; ++i) {
+    bc_entry_t* entry = NULL;
+    KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+    KEXPECT_EQ(1, block_cache_get_pin_count(obj, 0));
+    *((uint8_t*)entry->block) = i;
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_ASYNC));
+    KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_NONE));
+    block_cache_clear_unpinned();  // Force a flush cycle.
+
+    // Ensure the write actually flushed.
+    KEXPECT_EQ(RAMDISK_SECTOR_SIZE,
+               bd->read(bd, 0, buf, RAMDISK_SECTOR_SIZE, 0));
+    KEXPECT_EQ(i, buf[0]);
+  }
+}
+
+// TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
   KTEST_SUITE_BEGIN("block_cache test");
@@ -383,6 +397,7 @@ void block_cache_test(void) {
   cache_size_test(dev);
   get_thread_test(dev);
   put_thread_test(ramdisk, dev);
+  unflushed_lru_block_test(dev);
 
   // Cleanup.
   block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.

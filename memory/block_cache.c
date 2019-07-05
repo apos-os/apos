@@ -284,7 +284,6 @@ static void block_cache_get_internal(bc_entry_internal_t* entry) {
     list_remove(&g_lru_queue, &entry->lruq);
     KASSERT(entry->lruq.next == 0x0);
     KASSERT(entry->lruq.prev == 0x0);
-    entry->flushed = 1;
   }
 }
 
