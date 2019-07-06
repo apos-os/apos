@@ -45,6 +45,9 @@ static bool g_initialized = false;
 static int g_max_size = DEFAULT_CACHE_SIZE;
 // TODO(aoates): make this an atomic.
 static int g_flush_queue_period_ms = 5000;
+// A dummy thread queue that the flush thread waits on, allowing it to be woken
+// up (e.g. by tests changing the flush interval).
+static kthread_queue_t g_flush_queue_wakeup_queue;
 
 static htbl_t g_table;
 
@@ -179,7 +182,8 @@ static kthread_t g_flush_queue_thread;
 static void* flush_queue_thread(void* arg) {
   const int kMaxFlushesPerCycle = 1000;
   while (1) {
-    ksleep(g_flush_queue_period_ms);
+    scheduler_wait_on_interruptable(&g_flush_queue_wakeup_queue,
+                                    g_flush_queue_period_ms);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
       bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
@@ -267,6 +271,7 @@ static void maybe_free_cache_space(int max_entries) {
 static void init_block_cache(void) {
   KASSERT(!g_initialized);
   htbl_init(&g_table, g_max_size * 2);
+  kthread_queue_init(&g_flush_queue_wakeup_queue);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
   scheduler_make_runnable(g_flush_queue_thread);
   g_initialized = true;
@@ -512,5 +517,10 @@ void block_cache_log_stats() {
 int block_cache_set_bg_flush_period(int period_ms) {
   int old = g_flush_queue_period_ms;
   g_flush_queue_period_ms = period_ms;
+  block_cache_wakeup_flush_thread();
   return old;
+}
+
+void block_cache_wakeup_flush_thread(void) {
+  scheduler_wake_all(&g_flush_queue_wakeup_queue);
 }

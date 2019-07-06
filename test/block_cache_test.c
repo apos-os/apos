@@ -386,13 +386,20 @@ static void* multithread_test_worker(void* arg) {
 
   const int kNumIters = 1000 * CONCURRENCY_TEST_ITERS_MULT;
   for (int round = 0; round < kNumIters; ++round) {
-    bool should_get = rand % 2;
+    int action = rand % 3;  // get, lookup, or put.
     rand = fnv_hash(rand);
-    if (entry_end_idx == 0 || (should_get && entry_end_idx < kMaxEntries)) {
+    if (entry_end_idx == 0 || (action == 0 && entry_end_idx < kMaxEntries)) {
       int block = rand % RAMDISK_BLOCKS;
       rand = fnv_hash(rand);
       KEXPECT_EQ(0, block_cache_get(obj, block, &entries[entry_end_idx]));
       entry_end_idx++;
+    } else if (action == 1 && entry_end_idx < kMaxEntries) {
+      int block = rand % RAMDISK_BLOCKS;
+      rand = fnv_hash(rand);
+      KEXPECT_EQ(0, block_cache_lookup(obj, block, &entries[entry_end_idx]));
+      if (entries[entry_end_idx] != NULL) {
+        entry_end_idx++;
+      }
     } else {
       int entry_to_put = rand % entry_end_idx;
       rand = fnv_hash(rand);
@@ -409,6 +416,9 @@ static void* multithread_test_worker(void* arg) {
       }
       entries[entry_end_idx - 1] = NULL;
       entry_end_idx--;
+    }
+    if (rand % 100 == 0) {
+      block_cache_wakeup_flush_thread();
     }
   }
 
