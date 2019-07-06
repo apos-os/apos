@@ -66,6 +66,10 @@ void kthread_detach(kthread_t thread);
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
 
+// Run the given function on all threads in the kernel.  Use sparingly, must not
+// block.
+void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg);
+
 /******************************* Thread Queues ********************************/
 
 // Thread queues are simple linked lists of threads, which can be pushed on the

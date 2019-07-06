@@ -18,26 +18,12 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "memory/memory.h"
+#include "proc/kthread-internal.h"
 
 #define CALL_INSTRUCTION_SIZE 2
 
-int get_stack_trace(addr_t* frames, int trace_len) {
+static int get_stack_trace_internal(addr_t ebp, addr_t* frames, int trace_len) {
   int cframe = 0;
-
-  // Get our current %ebp.
-  addr_t ebp;
-#if ARCH == ARCH_i586
-  asm volatile (
-      "mov %%ebp, %0"
-      : "=g"(ebp));
-#elif ARCH == ARCH_x86_64
-  asm volatile (
-      "mov %%rbp, %0"
-      : "=g"(ebp));
-#else
-#error WTF? Unknown x86 architecture.
-#endif
-
   while (ebp != 0x0) {
     const addr_t old_ebp = *(addr_t*)ebp;
     if (old_ebp == 0) break;
@@ -58,4 +44,34 @@ int get_stack_trace(addr_t* frames, int trace_len) {
     }
   }
   return cframe;
+}
+
+int get_stack_trace(addr_t* frames, int trace_len) {
+  // Get our current %ebp.
+  addr_t ebp;
+#if ARCH == ARCH_i586
+  asm volatile (
+      "mov %%ebp, %0"
+      : "=g"(ebp));
+#elif ARCH == ARCH_x86_64
+  asm volatile (
+      "mov %%rbp, %0"
+      : "=g"(ebp));
+#else
+#error WTF? Unknown x86 architecture.
+#endif
+
+  return get_stack_trace_internal(ebp, frames, trace_len);
+}
+
+int get_stack_trace_for_thread(kthread_t thread, addr_t* trace, int trace_len) {
+  addr_t ebp = thread->context;
+#if ARCH == ARCH_i586
+  ebp += sizeof(addr_t) * 4;
+#elif ARCH == ARCH_x86_64
+  ebp += sizeof(addr_t) * 6;
+#else
+#error WTF? Unknown x86 architecture.
+#endif
+  return get_stack_trace_internal(ebp, trace, trace_len);
 }

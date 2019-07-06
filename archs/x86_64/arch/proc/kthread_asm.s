@@ -20,6 +20,7 @@ kthread_arch_swap_context:
   movq %rsp, %rbp
 
   # Push all the callee-registers
+  # Note: kthread switching and stack trace code dependings on this.
   pushq %rbx
   pushq %r12
   pushq %r13

@@ -21,6 +21,7 @@
 
 #include "arch/proc/kthread-context.h"
 #include "arch/proc/kthread-stack.h"
+#include "common/list.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
@@ -83,6 +84,11 @@ struct kthread_data {
 
   // How many spinlocks we're holding, for bug-catching.
   int spinlocks_held;
+
+  // Link on the global thread list.
+  // TODO(aoates): once we support multiple threads per process, consider using
+  // a per-process thread list rather than a global one.
+  list_link_t all_threads_link;
 };
 typedef struct kthread_data kthread_data_t;
 

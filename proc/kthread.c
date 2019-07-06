@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
@@ -31,6 +32,7 @@
 
 static kthread_data_t* g_current_thread = 0;
 static int g_next_id = 0;
+static list_t g_all_threads = LIST_INIT_STATIC;
 
 // A queue of threads that have exited and we can clean up.
 static kthread_queue_t g_reap_queue;
@@ -55,6 +57,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   // TODO(aoates): enable preemption by default.
   t->preemption_disables = 1;
   t->spinlocks_held = 0;
+  t->all_threads_link = LIST_LINK_INIT;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -76,6 +79,7 @@ void kthread_init() {
   first->state = KTHREAD_RUNNING;
   first->id = g_next_id++;
   first->stack = (addr_t*)get_global_meminfo()->kernel_stack_base;
+  list_push(&g_all_threads, &first->all_threads_link);
 
   KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + KTHREAD_STACK_SIZE);
 
@@ -101,6 +105,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   thread->state = KTHREAD_PENDING;
   thread->retval = 0x0;
   ksigemptyset(&thread->signal_mask);
+  list_push(&g_all_threads, &thread->all_threads_link);
 
   // TODO(aoates): add the thread to the parent process's thread list, once
   // we support multiple threads per process.
@@ -129,6 +134,11 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 }
 
 void kthread_destroy(kthread_t thread) {
+  KASSERT(thread->state == KTHREAD_DONE);
+  PUSH_AND_DISABLE_INTERRUPTS();
+  list_remove(&g_all_threads, &thread->all_threads_link);
+  POP_INTERRUPTS();
+
   // Write gargbage to crash anyone that tries to use the thread later.
   kmemset(&thread->context, 0xAB, sizeof(kthread_arch_context_t));
   thread->state = KTHREAD_DESTROYED;
@@ -196,6 +206,17 @@ void kthread_exit(void* x) {
 
   // Never get here!
   KASSERT(0);
+  POP_INTERRUPTS();
+}
+
+void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
+  PUSH_AND_DISABLE_INTERRUPTS();
+  for (list_link_t* link = g_all_threads.head; link != NULL;
+       link = link->next) {
+    kthread_t thread =
+        container_of(link, struct kthread_data, all_threads_link);
+    f(thread, arg);
+  }
   POP_INTERRUPTS();
 }
 
