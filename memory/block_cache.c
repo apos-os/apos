@@ -43,6 +43,8 @@
 static int g_size = 0;
 static bool g_initialized = false;
 static int g_max_size = DEFAULT_CACHE_SIZE;
+// TODO(aoates): make this an atomic.
+static int g_flush_queue_period_ms = 5000;
 
 static htbl_t g_table;
 
@@ -175,10 +177,9 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
 // and sleeping.
 static kthread_t g_flush_queue_thread;
 static void* flush_queue_thread(void* arg) {
-  const int kSleepMs = 5000;
   const int kMaxFlushesPerCycle = 1000;
   while (1) {
-    ksleep(kSleepMs);
+    ksleep(g_flush_queue_period_ms);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
       bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
@@ -506,4 +507,10 @@ void block_cache_log_stats() {
   KLOG(INFO, "         on lru: %d\n", stats.lru);
   KLOG(INFO, "        flushed: %d\n", stats.flushed);
   KLOG(INFO, "       flushing: %d\n", stats.flushing);
+}
+
+int block_cache_set_bg_flush_period(int period_ms) {
+  int old = g_flush_queue_period_ms;
+  g_flush_queue_period_ms = period_ms;
+  return old;
 }

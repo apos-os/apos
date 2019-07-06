@@ -90,6 +90,9 @@ void block_cache_clear_unpinned(void);
 
 void block_cache_log_stats(void);
 
+// Sets the period of the background flush thread.  Returns the old value.
+int block_cache_set_bg_flush_period(int period_ms);
+
 // TODO(aoates): support sync operations on pinned cache entries.
 
 #endif

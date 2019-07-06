@@ -15,21 +15,24 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "memory/block_cache.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
+#include "dev/timer.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 
 // TODO(aoates): rewrite this test to use a custom memobj so we don't have to
 // use a ramdisk.
 
-#define RAMDISK_SIZE (PAGE_SIZE * 4)
+#define RAMDISK_SIZE (PAGE_SIZE * 8)
 #define RAMDISK_BLOCKS (RAMDISK_SIZE / BLOCK_CACHE_BLOCK_SIZE)
 
 #define RAMDISK_SECTOR_SIZE 512
@@ -370,6 +373,70 @@ static void unflushed_lru_block_test(apos_dev_t dev) {
   }
 }
 
+static void* multithread_test_worker(void* arg) {
+  uint32_t rand = fnv_hash(get_time_ms());
+  rand = fnv_hash_concat(rand, fnv_hash(kthread_current_thread()->id));
+  memobj_t* obj = (memobj_t*)arg;
+  const int kMaxEntries = 10;
+  bc_entry_t* entries[kMaxEntries];
+  int entry_end_idx = 0;
+  for (int i = 0; i < kMaxEntries; ++i) {
+    entries[i] = NULL;
+  }
+
+  const int kNumIters = 1000 * CONCURRENCY_TEST_ITERS_MULT;
+  for (int round = 0; round < kNumIters; ++round) {
+    bool should_get = rand % 2;
+    rand = fnv_hash(rand);
+    if (entry_end_idx == 0 || (should_get && entry_end_idx < kMaxEntries)) {
+      int block = rand % RAMDISK_BLOCKS;
+      rand = fnv_hash(rand);
+      KEXPECT_EQ(0, block_cache_get(obj, block, &entries[entry_end_idx]));
+      entry_end_idx++;
+    } else {
+      int entry_to_put = rand % entry_end_idx;
+      rand = fnv_hash(rand);
+      int flush_mode_idx = rand % 3;
+      rand = fnv_hash(rand);
+      block_cache_flush_t flush_mode =
+          (flush_mode_idx == 0) ? BC_FLUSH_NONE : (flush_mode_idx == 1)
+                                                      ? BC_FLUSH_SYNC
+                                                      : BC_FLUSH_ASYNC;
+      KEXPECT_EQ(0, block_cache_put(entries[entry_to_put], flush_mode));
+      KASSERT(entry_end_idx > 0);
+      for (int i = entry_to_put; i < entry_end_idx - 1; ++i) {
+        entries[i] = entries[i + 1];
+      }
+      entries[entry_end_idx - 1] = NULL;
+      entry_end_idx--;
+    }
+  }
+
+  for (int i = 0; i < entry_end_idx; ++i) {
+    KEXPECT_EQ(0, block_cache_put(entries[i], BC_FLUSH_NONE));
+  }
+
+  return NULL;
+}
+
+static void multithread_test(ramdisk_t* rd, apos_dev_t dev) {
+  KTEST_BEGIN("block cache: multithreaded stress test");
+  ramdisk_set_blocking(rd, 0, 0);
+  const int kNumThreads = 10 * CONCURRENCY_TEST_THREADS_MULT;
+
+  kthread_t threads[kNumThreads];
+  memobj_t* obj = dev_get_block_memobj(dev);
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], multithread_test_worker, obj));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  ramdisk_set_blocking(rd, 1, 1);
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -389,6 +456,7 @@ void block_cache_test(void) {
   const int start_obj_refcount = obj->refcount;
 
   // Run tests.
+  int old_flush_period_ms = block_cache_set_bg_flush_period(100);
   basic_get_test(dev);
   basic_lookup_test(dev);
   basic_write_test(dev);
@@ -398,6 +466,9 @@ void block_cache_test(void) {
   get_thread_test(dev);
   put_thread_test(ramdisk, dev);
   unflushed_lru_block_test(dev);
+
+  multithread_test(ramdisk, dev);
+  block_cache_set_bg_flush_period(old_flush_period_ms);
 
   // Cleanup.
   block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.
