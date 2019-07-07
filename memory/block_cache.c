@@ -75,10 +75,14 @@ static addr_t g_free_block_stack[FREE_BLOCK_STACK_SIZE];
 static int g_free_block_stack_idx = 0;  // First free entry.
 
 // Queue of cache entries that need to be flushed.
-static list_t g_flush_queue = {0x0, 0x0};
+static list_t g_flush_queue = LIST_INIT_STATIC;
 
 // LRU queue of cache entries that *might* be freeable.
-static list_t g_lru_queue = {0x0, 0x0};
+static list_t g_lru_queue = LIST_INIT_STATIC;
+
+// List of entries that have been cleaned up (removed from the table) but still
+// need to have their memory freed and underlying memobjs unref'd.
+static list_t g_cleanup_list = LIST_INIT_STATIC;
 
 #define cache_entry_pop(list, link_name) \
     container_of(list_pop(list), bc_entry_internal_t, link_name)
@@ -198,8 +202,11 @@ static void* flush_queue_thread(void* arg) {
 }
 
 // Remove the given (flushed and unpinned) cache entry from the table, release
-// it's block, and free the entry object.
-static void free_cache_entry(bc_entry_internal_t* entry) {
+// its block, and queue it to be freed later.
+// TODO(aoates): reexamine this two-stage deletion process after the
+// memobj/block cache/bc_entry_t relationship is reexamined to solve the bug
+// with abandoned shadow entries.
+static void cleanup_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(list_link_on_list(&g_flush_queue, &entry->flushq) == 0);
   KASSERT_DBG(list_link_on_list(&g_lru_queue, &entry->lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
@@ -210,12 +217,28 @@ static void free_cache_entry(bc_entry_internal_t* entry) {
   g_size--;
   const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
   KASSERT(htbl_remove(&g_table, h) == 0);
-
-  entry->pub.obj->ops->unref(entry->pub.obj);
-  entry->pub.obj = 0x0;
-
   put_free_block(entry->pub.block);
-  kfree(entry);
+
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    entry->pub.block = NULL;
+    entry->pub.block_phys = 0;
+    entry->pub.offset = (size_t)-1;
+    entry->initialized = false;
+  }
+  list_push(&g_cleanup_list, &entry->lruq);
+}
+
+// Free any entries queued for cleanup and unref the underlying memobjs.
+// May block.
+static void free_dead_entries(void) {
+  while (!list_empty(&g_cleanup_list)) {
+    bc_entry_internal_t* entry = cache_entry_pop(&g_cleanup_list, lruq);
+    KASSERT_DBG(entry->initialized == false);
+    KASSERT_DBG(entry->pin_count == 0);
+    entry->pub.obj->ops->unref(entry->pub.obj);  // May block.
+    entry->pub.obj = 0x0;
+    kfree(entry);
+  }
 }
 
 // Go through the cache and look for unpinned entries we can free.  Attempt to
@@ -231,7 +254,7 @@ static void maybe_free_cache_space(int max_entries) {
       list_remove(&g_lru_queue, &entry->lruq);
 
       // No-one else has it, so free it.
-      free_cache_entry(entry);
+      cleanup_cache_entry(entry);
       entries_freed++;
     }
     entry = next;
@@ -258,12 +281,16 @@ static void maybe_free_cache_space(int max_entries) {
         KASSERT_DBG(!entry->flushing);
         KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
         // No-one else has it, so free it.
-        free_cache_entry(entry);
+        cleanup_cache_entry(entry);
         entries_freed++;
       }
     }
     entry = next_entry;
   }
+
+  // Actually free the entries and unref memobjs associated with any blocks we
+  // just freed.  May block.
+  free_dead_entries();
 
   // TODO(aoates): if something is currently flushing, block for it to finish.
 }
@@ -464,9 +491,10 @@ void block_cache_clear_unpinned() {
 
       bc_entry_internal_t* next_entry = cache_entry_next(entry, lruq);
       list_remove(&g_lru_queue, &entry->lruq);
-      free_cache_entry(entry);
+      cleanup_cache_entry(entry);
       entry = next_entry;
     }
+    free_dead_entries();  // May block.
   } while (!list_empty(&g_flush_queue));
 
   KASSERT(list_empty(&g_flush_queue));
