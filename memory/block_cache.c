@@ -287,6 +287,7 @@ static void maybe_free_cache_space(int max_entries) {
     }
     entry = next_entry;
   }
+  KLOG(DEBUG2, "block cache freed %d entries\n", entries_freed);
 
   // Actually free the entries and unref memobjs associated with any blocks we
   // just freed.  May block.
@@ -334,7 +335,11 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
         return -ENOMEM;
       }
     }
+  }
 
+  // While freeing cache space above, someone else may have come along and
+  // created the entry, so check again.
+  if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
     if (!block) {
