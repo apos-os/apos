@@ -159,6 +159,11 @@ int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
   return scheduler_wait_on_internal(queue, 1, timeout_ms, mu);
 }
 
+void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu) {
+  int result = scheduler_wait_on_internal(queue, 0, -1, mu);
+  KASSERT_DBG(result == 0);
+}
+
 void scheduler_wake_one(kthread_queue_t* queue) {
   if (!kthread_queue_empty(queue)) {
     scheduler_make_runnable(kthread_queue_pop(queue));

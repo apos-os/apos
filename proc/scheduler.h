@@ -68,6 +68,10 @@ int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms);
 int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
                              kmutex_t* mu);
 
+// As above, but not interruptable.  Will be replaced post-cleanup.
+// TODO(aoates): make all callers of this able to handle and propagate signals.
+void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu);
+
 // Wake one thread waiting on the given thread queue.
 void scheduler_wake_one(kthread_queue_t* queue);
 

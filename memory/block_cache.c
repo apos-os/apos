@@ -51,6 +51,8 @@ static kthread_queue_t g_flush_queue_wakeup_queue;
 
 static htbl_t g_table;
 
+static kmutex_t g_mu;  // Protects all global state.
+
 // A cache entry.
 typedef struct bc_entry_internal {
   bc_entry_t pub;
@@ -95,6 +97,7 @@ static list_t g_cleanup_list = LIST_INIT_STATIC;
 
 // Acquire more free blocks and add them to the free block stack.
 static void get_more_free_blocks(void) {
+  kmutex_assert_is_held(&g_mu);
   KASSERT(FREE_BLOCK_STACK_SIZE - g_free_block_stack_idx > BLOCKS_PER_PAGE);
   const phys_addr_t phys_page = page_frame_alloc();
   if (phys_page == 0x0) {
@@ -111,6 +114,7 @@ static void get_more_free_blocks(void) {
 
 // Return a free block for a new cache entry.
 static void* get_free_block(void) {
+  kmutex_assert_is_held(&g_mu);
   if (g_free_block_stack_idx == 0) {
     get_more_free_blocks();
   }
@@ -125,6 +129,7 @@ static void* get_free_block(void) {
 
 // Return a free block to the stack.
 static void put_free_block(void* block) {
+  kmutex_assert_is_held(&g_mu);
   if (g_free_block_stack_idx == FREE_BLOCK_STACK_SIZE) {
     KLOG(WARNING, "dropping free block because the free block cache "
          "is full!\n");
@@ -155,7 +160,10 @@ static int entry_is_sane(bc_entry_internal_t* entry) {
 }
 
 // Flush the given cache entry to disk.
+// May block and release the state mutex.  Callers must ensure block cache state
+// is consistent across this call.
 static void flush_cache_entry(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
   KASSERT_DBG(!entry->flushing);
   KASSERT_DBG(!entry->flushed);
   KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
@@ -166,9 +174,11 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
     // Write the data back to disk.  This may block.
     KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
     KASSERT_DBG(entry_is_sane(entry));
+    kmutex_unlock(&g_mu);
     const int result =
         entry->pub.obj->ops->write_page(
             entry->pub.obj, entry->pub.offset, entry->pub.block);
+    kmutex_lock(&g_mu);
     KASSERT_DBG(entry_is_sane(entry));
     KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
 
@@ -184,12 +194,14 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
 // and sleeping.
 static kthread_t g_flush_queue_thread;
 static void* flush_queue_thread(void* arg) {
+  sched_enable_preemption_for_test();
   const int kMaxFlushesPerCycle = 1000;
   while (1) {
     scheduler_wait_on_interruptable(&g_flush_queue_wakeup_queue,
                                     g_flush_queue_period_ms);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
+      KMUTEX_AUTO_LOCK(lock, &g_mu);
       bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
       if (!entry) break;
       flush_cache_entry(entry);
@@ -207,6 +219,7 @@ static void* flush_queue_thread(void* arg) {
 // memobj/block cache/bc_entry_t relationship is reexamined to solve the bug
 // with abandoned shadow entries.
 static void cleanup_cache_entry(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
   KASSERT_DBG(list_link_on_list(&g_flush_queue, &entry->flushq) == 0);
   KASSERT_DBG(list_link_on_list(&g_lru_queue, &entry->lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
@@ -229,21 +242,27 @@ static void cleanup_cache_entry(bc_entry_internal_t* entry) {
 }
 
 // Free any entries queued for cleanup and unref the underlying memobjs.
-// May block.
+// May block and release/acquire the state mutex.
 static void free_dead_entries(void) {
+  kmutex_assert_is_held(&g_mu);
   while (!list_empty(&g_cleanup_list)) {
     bc_entry_internal_t* entry = cache_entry_pop(&g_cleanup_list, lruq);
+    kmutex_unlock(&g_mu);
+
     KASSERT_DBG(entry->initialized == false);
     KASSERT_DBG(entry->pin_count == 0);
     entry->pub.obj->ops->unref(entry->pub.obj);  // May block.
     entry->pub.obj = 0x0;
     kfree(entry);
+
+    kmutex_lock(&g_mu);
   }
 }
 
 // Go through the cache and look for unpinned entries we can free.  Attempt to
 // free up to max_entries of them.
 static void maybe_free_cache_space(int max_entries) {
+  kmutex_assert_is_held(&g_mu);
   bc_entry_internal_t* entry = cache_entry_head(g_lru_queue, lruq);
   int entries_freed = 0;
   while (entry && entries_freed < max_entries) {
@@ -298,6 +317,7 @@ static void maybe_free_cache_space(int max_entries) {
 
 static void init_block_cache(void) {
   KASSERT(!g_initialized);
+  kmutex_init(&g_mu);
   htbl_init(&g_table, g_max_size * 2);
   kthread_queue_init(&g_flush_queue_wakeup_queue);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
@@ -308,9 +328,10 @@ static void init_block_cache(void) {
 // Given an existing table entry, wait for it to be initialized (if applicable)
 // and add a pin.
 static void block_cache_get_internal(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
   entry->pin_count++;
   if (!entry->initialized) {
-    scheduler_wait_on(&entry->wait_queue);
+    scheduler_wait_on_locked_no_signals(&entry->wait_queue,  &g_mu);
   }
   KASSERT(entry->initialized);
   if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
@@ -326,12 +347,14 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     init_block_cache();
   }
 
+  kmutex_lock(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
     if (g_size >= g_max_size) {
       maybe_free_cache_space(g_size - g_max_size + 1);
       if (g_size >= g_max_size) {
+        kmutex_unlock(&g_mu);
         return -ENOMEM;
       }
     }
@@ -343,6 +366,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
     if (!block) {
+      kmutex_unlock(&g_mu);
       return -ENOMEM;
     }
 
@@ -360,13 +384,19 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->lruq = LIST_LINK_INIT;
     kthread_queue_init(&entry->wait_queue);
 
+    // Put the uninitialized entry into the table.
+    htbl_put(&g_table, h, entry);
+
+    // Unlock mutex around reentrant and blocking operations.
+    kmutex_unlock(&g_mu);
+
     // N.B.(aoates): this means that we'll potentially keep the obj (and
     // underlying objects like vnodes) around indefinitely after we're done with
     // them, as long as the bc entries haven't been forced out of the cache.
+    // Safe to call without lock because it doesn't touch our state (unless
+    // calls back into block cache) and we already hold a ref to the memobj in
+    // `obj`, so it will stay live.
     obj->ops->ref(obj);
-
-    // Put the uninitialized entry into the table.
-    htbl_put(&g_table, h, entry);
 
     // Read data from the block device into the cache.
     // Note: this may block.
@@ -374,18 +404,19 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     const int result =
         obj->ops->read_page(obj, offset, entry->pub.block);
     KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
+    kmutex_lock(&g_mu);
 
     entry->initialized = true;
     scheduler_wake_all(&entry->wait_queue);
 
     *entry_out = &entry->pub;
-    return 0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
     block_cache_get_internal(entry);
     *entry_out = &entry->pub;
-    return 0;
   }
+  kmutex_unlock(&g_mu);
+  return 0;
 }
 
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
@@ -393,6 +424,7 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
     init_block_cache();
   }
 
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
@@ -408,6 +440,7 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
 int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KASSERT(g_initialized);
 
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
 
@@ -416,7 +449,7 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
       if (entry->flushing) {
-        scheduler_wait_on(&entry->wait_queue);
+        scheduler_wait_on_locked_no_signals(&entry->wait_queue, &g_mu);
       } else {
         if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
           list_remove(&g_flush_queue, &entry->flushq);
@@ -449,6 +482,7 @@ int block_cache_get_pin_count(memobj_t* obj, int offset) {
     return 0;
   }
 
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
@@ -459,10 +493,12 @@ int block_cache_get_pin_count(memobj_t* obj, int offset) {
 }
 
 void block_cache_set_size(int blocks) {
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   g_max_size = blocks;
 }
 
 int block_cache_get_size() {
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   return g_max_size;
 }
 
@@ -470,6 +506,7 @@ void block_cache_clear_unpinned() {
   // Since freeing entries from the LRU queue may cause dirtying of additional
   // entries (e.g. this happens with ext2), keep trying until the flush queue is
   // empty.
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   do {
     // Flush everything on the flush queue.
     bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
@@ -482,7 +519,7 @@ void block_cache_clear_unpinned() {
     entry = cache_entry_head(g_lru_queue, lruq);
     while (entry) {
       if (entry->flushing) {
-        scheduler_wait_on(&entry->wait_queue);
+        scheduler_wait_on_locked_no_signals(&entry->wait_queue, &g_mu);
       }
       if (!entry->flushed) {
         // Skip it, we'll flush it above and get it the next time around.
@@ -534,6 +571,7 @@ static void stats_counter_func(void* arg, uint32_t key, void* value) {
   }
 }
 void block_cache_log_stats() {
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   stats_t stats;
   kmemset(&stats, 0, sizeof(stats_t));
   htbl_iterate(&g_table, &stats_counter_func, &stats);
