@@ -120,9 +120,9 @@ vterm_t* vterm_create(video_t* v) {
 #endif
   term->sink = 0x0;
   term->sink_arg = 0x0;
-  // TODO(aoates): make this an interrupt-safe spinlock, which arguably needs a
-  // more fine-grained locking strategy to reduce critical sections.
-  term->lock = KSPINLOCK_NORMAL_INIT;
+  // TODO(aoates): use a more fine-grained locking strategy to reduce critical
+  // sections.
+  term->lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
 
   term->line_text = (uint16_t**)kmalloc(
       sizeof(uint16_t*) * term->vheight);
