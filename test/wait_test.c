@@ -98,6 +98,22 @@ static void do_fork(void* arg) {
   *(pid_t*)arg = proc_fork(&sleep_func, NULL);
 }
 
+// Send a signal to the process then wait until it's exited and cleaned up.
+// There's no proper way to do this with POSIX semantics.
+static void cleanup_grandchild(pid_t grandchild) {
+  KEXPECT_EQ(0, proc_kill(grandchild, SIGKILL));
+  apos_ms_t start = get_time_ms();
+  scheduler_yield();
+  // TODO(aoates): this takes a very long time on i586-gcc.  a) figure out why,
+  // and/or b) parallelize this cleanup at the end of the test suite so we don't
+  // pay the cost each time
+  while (proc_get(grandchild)) {
+    ksleep(50);
+  }
+  klogf("cleanup of grandchild %d took %d ms...\n", grandchild,
+        get_time_ms() - start);
+}
+
 static void wait_for_specific_pid_test(void) {
   KTEST_BEGIN("waitpid(): invalid pid (no process with that pid)");
   pid_t child = proc_fork(&do_nothing, NULL);
@@ -113,6 +129,7 @@ static void wait_for_specific_pid_test(void) {
   KEXPECT_NE(NULL, proc_get(grandchild));
   KEXPECT_EQ(PROC_RUNNING, proc_get(grandchild)->state);
   KEXPECT_EQ(-ECHILD, proc_waitpid(grandchild, NULL, 0));
+  cleanup_grandchild(grandchild);
 
 
   KTEST_BEGIN("waitpid(): pid is child (already stopped)");
@@ -187,6 +204,7 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   KEXPECT_EQ(-ECHILD, proc_waitpid(-grandchild, NULL, 0));
+  cleanup_grandchild(grandchild);
 
 
   KTEST_BEGIN("waitpid(): process group with stopped children");
@@ -211,6 +229,7 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);
   KEXPECT_LE(end_ms - start_ms, 50);
   KEXPECT_EQ(childC, proc_waitpid(-grandchild, NULL, 0));
+  cleanup_grandchild(grandchild);
 
 
   KTEST_BEGIN("waitpid(): process group with running children");
@@ -229,6 +248,7 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(child, proc_waitpid(-1, NULL, 0));
   end_ms = get_time_ms();
   KEXPECT_GE(end_ms - start_ms, 20);
+  cleanup_grandchild(grandchild);
 
 
   KTEST_BEGIN("waitpid(): waitpid(0) current process group");
