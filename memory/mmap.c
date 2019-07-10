@@ -63,7 +63,8 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
   if (new_area_end > new_area_start) {
     KASSERT(new_area_start >= area->vm_base);
     KASSERT(new_area_end <= area->vm_base + area->vm_length);
-    const int result = vm_area_create(new_area_end - new_area_start, &new_area);
+    const int result = vm_area_create(new_area_end - new_area_start,
+                                      /*needs_pages=*/true, &new_area);
     if (result) return result;
 
     new_area->memobj = area->memobj;
@@ -84,6 +85,7 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
     const addr_t new_area_pages_offset =
         (new_area_start - area->vm_base) / PAGE_SIZE;
     for (unsigned int page_idx = 0; page_idx < new_area_pages; ++page_idx) {
+      KASSERT_DBG(new_area->pages[page_idx] == NULL);
       new_area->pages[page_idx] = area->pages[new_area_pages_offset + page_idx];
       area->pages[new_area_pages_offset + page_idx] = 0x0;
     }
@@ -218,7 +220,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   // Create the new vm_area_t.
   vm_area_t* area = 0x0;
-  result = vm_area_create(length, &area);
+  result = vm_area_create(length, /*needs_pages=*/true, &area);
   if (result) return result;
 
   // TODO(aoates): check against length of file

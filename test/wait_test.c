@@ -103,12 +103,8 @@ static void do_fork(void* arg) {
 static void cleanup_grandchild(pid_t grandchild) {
   KEXPECT_EQ(0, proc_kill(grandchild, SIGKILL));
   apos_ms_t start = get_time_ms();
-  scheduler_yield();
-  // TODO(aoates): this takes a very long time on i586-gcc.  a) figure out why,
-  // and/or b) parallelize this cleanup at the end of the test suite so we don't
-  // pay the cost each time
   while (proc_get(grandchild)) {
-    ksleep(50);
+    ksleep(10);
   }
   klogf("cleanup of grandchild %d took %d ms...\n", grandchild,
         get_time_ms() - start);

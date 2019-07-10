@@ -180,7 +180,9 @@ int vm_fork_address_space_into(process_t* target_proc) {
   while (link) {
     vm_area_t* const source_area = container_of(link, vm_area_t, vm_proc_list);
     vm_area_t* target_area = NULL;
-    const int result = vm_area_create(source_area->vm_length, &target_area);
+    const int result = vm_area_create(
+        source_area->vm_length, /*needs_pages=*/source_area->memobj != NULL,
+        &target_area);
     if (result) return result;
 
     target_area->allow_allocation = source_area->allow_allocation;
