@@ -15,12 +15,15 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "test/ktest.h"
 
 // TODO(aoates): other things to test:
@@ -745,6 +748,210 @@ static void ksleep_test(void) {
   }
 }
 
+typedef struct {
+  int x;
+  kspinlock_t lock;
+} preemption_test_args_t;
+
+static void* preemption_test_worker(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  for (int i = 0; i < 100000; ++i) {
+    kspin_lock(&args->lock);
+    args->x++;
+    kspin_unlock(&args->lock);
+  }
+  return NULL;
+}
+
+static void preemption_test_defintA(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  args->x++;
+}
+
+static void preemption_test_defintB(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  kspin_lock(&args->lock);
+  args->x++;
+  kspin_unlock(&args->lock);
+}
+
+static void* preemption_test_check_enabled(void* arg) {
+  return (void*)(intptr_t)kthread_current_thread()->preemption_disables;
+}
+
+static void preemption_test_interrupt_cb(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  kspin_lock(&args->lock);
+  args->x++;
+  kspin_unlock(&args->lock);
+}
+
+static void* preemption_test_tester(void* arg) {
+  sched_enable_preemption_for_test();
+
+  preemption_test_args_t args;
+  args.x = 0;
+  args.lock = KSPINLOCK_NORMAL_INIT;
+  kthread_t worker = 0x0;
+  int result = kthread_create(&worker, &preemption_test_worker, &args);
+  KEXPECT_EQ(0, result);
+  scheduler_make_runnable(worker);
+
+  for (int i = 0; i < 1000; ++i) {
+    for (volatile int j = 0; j < 1000000; ++j)
+      ;
+    kspin_lock(&args.lock);
+    int xval = args.x;
+    kspin_unlock(&args.lock);
+    if (xval) break;
+  }
+  kspin_lock(&args.lock);
+  KEXPECT_GT(args.x, 0);
+  kspin_unlock(&args.lock);
+
+  // With a spinlock held, the value should _not_ be updated.
+  kspin_lock(&args.lock);
+  int init_val = args.x;
+  for (volatile int i = 0; i < 100000; ++i)
+    ;
+  KEXPECT_EQ(init_val, args.x);
+  kspin_unlock(&args.lock);
+  kthread_join(worker);
+
+  KTEST_BEGIN("kthread: spinlock disables defints");
+  kspin_lock(&args.lock);
+  {
+    DEFINT_PUSH_AND_DISABLE();
+    args.x = 0;
+    // One just increments, the other does so with a spinlock.
+    defint_schedule(&preemption_test_defintA, &args);
+    defint_schedule(&preemption_test_defintB, &args);
+    DEFINT_POP();
+  }
+  apos_ms_t start = get_time_ms();
+  for (volatile int i = 0; (get_time_ms() - start) < 30; ++i);
+  KEXPECT_EQ(0, args.x);
+
+  // Let the defints run.
+  while (args.x < 2) {
+    kspin_unlock(&args.lock);
+    ksleep(1);
+    kspin_lock(&args.lock);
+  }
+  kspin_unlock(&args.lock);
+
+  KTEST_BEGIN("kthread: preemption state inherited in child threads");
+  kthread_t child = NULL;
+  {
+    sched_disable_preemption();
+    sched_disable_preemption();
+    KEXPECT_EQ(0, kthread_create(&child, &preemption_test_check_enabled, NULL));
+    scheduler_make_runnable(child);
+    KEXPECT_EQ(1, (intptr_t)kthread_join(child));
+    sched_restore_preemption();
+    sched_restore_preemption();
+  }
+  KEXPECT_EQ(0, kthread_create(&child, &preemption_test_check_enabled, NULL));
+  scheduler_make_runnable(child);
+  KEXPECT_EQ(0, (intptr_t)kthread_join(child));
+
+  KTEST_BEGIN("kthread: SPINLOCK_INTERRUPT_SAFE blocks interrupts");
+  preemption_test_args_t interrupt_args;
+  interrupt_args.lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  interrupt_args.x = 0;
+  const int kTimerLimit = 50;
+  KEXPECT_EQ(
+      0, register_timer_callback(1, kTimerLimit, &preemption_test_interrupt_cb,
+                                 &interrupt_args));
+  int my_counter = 0;
+  while (*(volatile int*)&interrupt_args.x - my_counter < kTimerLimit &&
+         my_counter < 10000000) {
+    // Do an explicit two-stage increment.
+    kspin_lock(&interrupt_args.lock);
+    int cval = *(volatile int*)&interrupt_args.x;
+    *(volatile int*)&interrupt_args.x = cval + 1;
+    my_counter++;
+    kspin_unlock(&interrupt_args.lock);
+  }
+  KEXPECT_EQ(my_counter + kTimerLimit, interrupt_args.x);
+
+  return NULL;
+}
+
+static void preemption_test(void) {
+  KTEST_BEGIN("kthread preemption test");
+
+  // Spin the test off in another thread to ensure preemption state is preserved
+  // for the main thread.
+  kthread_t tester = 0x0;
+  int result = kthread_create(&tester, &preemption_test_tester, NULL);
+  KEXPECT_EQ(0, result);
+  scheduler_make_runnable(tester);
+  kthread_join(tester);
+}
+
+typedef struct {
+  kmutex_t* mu;
+  kthread_queue_t* queue;
+  bool* val;  // Shared state between the test threads.
+  bool who_am_i;  // Different for each test thread.
+} wait_on_locked_test_args;
+
+static void* wait_on_locked_test_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  wait_on_locked_test_args* args = (wait_on_locked_test_args*)arg;
+
+  for (int i = 0; i < 3000; ++i) {
+    kmutex_lock(args->mu);
+    while (*args->val != args->who_am_i) {
+      scheduler_wait_on_locked(args->queue, -1, args->mu);
+    }
+    *args->val = !args->who_am_i;
+    scheduler_wake_all(args->queue);
+    kmutex_unlock(args->mu);
+  }
+  return NULL;
+}
+
+static void wait_on_locked_test(void) {
+  KTEST_BEGIN("scheduler_wait_on_locked test");
+
+  kthread_t threadA, threadB;
+  kmutex_t mu;
+  kthread_queue_t queue;
+  bool shared_val = false;
+
+  wait_on_locked_test_args argsA, argsB;
+  argsA.mu = &mu;
+  argsA.queue = &queue;
+  argsA.val = &shared_val;
+  argsA.who_am_i = false;
+  argsB = argsA;
+  argsB.who_am_i = true;
+
+  kmutex_init(&mu);
+  kthread_queue_init(&queue);
+  KEXPECT_EQ(0, kthread_create(&threadA, &wait_on_locked_test_thread, &argsA));
+  KEXPECT_EQ(0, kthread_create(&threadB, &wait_on_locked_test_thread, &argsB));
+  scheduler_make_runnable(threadA);
+  scheduler_make_runnable(threadB);
+
+  kthread_join(threadA);
+  kthread_join(threadB);
+
+  KTEST_BEGIN("scheduler_wait_on_locked interruptable test");
+  proc_alarm_ms(50);
+  kmutex_lock(&mu);
+  KEXPECT_EQ(SWAIT_INTERRUPTED, scheduler_wait_on_locked(&queue, -1, &mu));
+  proc_suppress_signal(proc_current(), SIGALRM);
+  kmutex_unlock(&mu);
+
+  KTEST_BEGIN("scheduler_wait_on_locked timeout test");
+  kmutex_lock(&mu);
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_locked(&queue, 30, &mu));
+  kmutex_unlock(&mu);
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -766,4 +973,6 @@ void kthread_test(void) {
   kmutex_test();
   kmutex_auto_lock_test();
   ksleep_test();
+  preemption_test();
+  wait_on_locked_test();
 }

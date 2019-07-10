@@ -66,6 +66,10 @@ void kthread_detach(kthread_t thread);
 // Exits the current thread, setting it's return value to x.
 void kthread_exit(void* x);
 
+// Run the given function on all threads in the kernel.  Use sparingly, must not
+// block.
+void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg);
+
 /******************************* Thread Queues ********************************/
 
 // Thread queues are simple linked lists of threads, which can be pushed on the
@@ -109,6 +113,10 @@ void kmutex_lock(kmutex_t* m);
 
 // Unlock the mutex.
 void kmutex_unlock(kmutex_t* m);
+
+// As above, but will never yield.  Only used internally to kthread and the
+// scheduler.
+void kmutex_unlock_no_yield(kmutex_t* m);
 
 // Returns non-zero if the mutex is currently locked.
 int kmutex_is_locked(kmutex_t* m);

@@ -42,14 +42,19 @@ static memobj_ops_t g_anon_ops = {
 
 static void anon_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_ANON);
+  kspin_lock(&obj->lock);
+  KASSERT(obj->refcount > 0);
   obj->refcount++;
+  kspin_unlock(&obj->lock);
 }
 
 static void anon_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_ANON);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
-  obj->refcount--;
-  if (obj->refcount == 0) {
+  int new_refcount = --obj->refcount;
+  kspin_unlock(&obj->lock);
+  if (new_refcount == 0) {
     kfree(obj);
   }
 }
@@ -88,6 +93,7 @@ memobj_t* memobj_create_anon(void) {
   anon_obj->type = MEMOBJ_ANON;
   anon_obj->id = fnv_hash_array(&anon_obj, sizeof(memobj_t*));
   anon_obj->ops = &g_anon_ops;
-  anon_obj->refcount = 0;
+  anon_obj->lock = KSPINLOCK_NORMAL_INIT;
+  anon_obj->refcount = 1;
   return anon_obj;
 }

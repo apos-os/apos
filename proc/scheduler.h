@@ -60,10 +60,40 @@ void scheduler_wait_on(kthread_queue_t* queue);
 // otherwise.
 int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms);
 
+// As above, but atomically unlocks the given mutex while starting to wait, and
+// re-locks when woken.  In other words, treats the queue as a condition
+// variable.
+//
+// Always interruptable.  Returns as scheduler_wait_on_interruptable().
+int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
+                             kmutex_t* mu);
+
+// As above, but not interruptable.  Will be replaced post-cleanup.
+// TODO(aoates): make all callers of this able to handle and propagate signals.
+void scheduler_wait_on_locked_no_signals(kthread_queue_t* queue, kmutex_t* mu);
+
 // Wake one thread waiting on the given thread queue.
 void scheduler_wake_one(kthread_queue_t* queue);
 
 // Wake *all* threads waiting on the given thread queue.
 void scheduler_wake_all(kthread_queue_t* queue);
+
+// Disable preemption for the current thread.  This stacks with previous calls
+// (must be paired with sched_restore_preemption()).
+//
+// Preemption state follows the current thread (for example, if the current
+// thread yields after calling this another thread may be scheduled with
+// preemption enabled).
+void sched_disable_preemption(void);
+
+// Restore the previous preemption state from before the paired
+// sched_disable_preemption() call.
+void sched_restore_preemption(void);
+
+// Enables preemption.  Should only be used when a thread is created.
+void sched_enable_preemption_for_test(void);
+
+// Tick the scheduler.  Called from an interrupt context.
+void sched_tick(void);
 
 #endif

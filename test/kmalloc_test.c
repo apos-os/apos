@@ -14,12 +14,15 @@
 
 #include <stdint.h>
 
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/types.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "memory/kmalloc-internal.h"
 #include "memory/memory.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "test/ktest.h"
 
 #define HEAP_SIZE 0x10000000
@@ -378,8 +381,53 @@ static void kmalloc_aligned_test(void) {
   kmalloc_log_state();
 }
 
+static void* multi_threaded_test_worker(void* arg) {
+  uint32_t rand = fnv_hash(get_time_ms());
+  const int kStackSize = 10;
+  void* stack[kStackSize];
+  int stack_ptr = 0;
+  for (int i = 0; i < 10000; ++i) {
+    bool should_alloc = (rand % 2);
+    rand = fnv_hash(rand);
+    if (stack_ptr == 0 || (stack_ptr < kStackSize && should_alloc)) {
+      int size = rand % 500;
+      rand = fnv_hash(rand);
+      stack[stack_ptr++] = kmalloc(size);
+    } else {
+      KASSERT(stack_ptr > 0);
+      kfree(stack[--stack_ptr]);
+    }
+  }
+  while (stack_ptr) {
+    kfree(stack[--stack_ptr]);
+  }
+  return NULL;
+}
+
+static void multi_threaded_test(void) {
+  KTEST_BEGIN("kmalloc multithreaded safety test");
+
+  const int kNumThreads = 10;
+  kthread_t threads[kNumThreads];
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0,
+               kthread_create(&threads[i], &multi_threaded_test_worker, 0x0));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  verify_list(kmalloc_internal_get_block_list());
+  kmalloc_log_state();
+}
+
 void kmalloc_test(void) {
   KTEST_SUITE_BEGIN("kmalloc");
+
+  // Must be first.
+  sched_enable_preemption_for_test();
+  multi_threaded_test();
+  sched_disable_preemption();
 
   kmalloc_enable_test_mode();
   cancel_all_event_timers_for_tests();

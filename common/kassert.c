@@ -18,9 +18,37 @@
 #include "arch/proc/stack_trace.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "dev/interrupts.h"
 #include "memory/memory.h"
+#include "proc/kthread-internal.h"
+
+static bool g_dying = false;
+const int kMaxStackFrames = 32;
+
+static void print_stack_trace(addr_t* stack_trace, int frames) {
+  for (int i = 0; i < frames; ++i) {
+    klogf(" #%d %#" PRIxADDR "\n", i, stack_trace[i]);
+  }
+}
+
+static void do_print_stack(kthread_t thread, void* arg) {
+  if (thread == kthread_current_thread()) return;
+
+  addr_t* stack_trace = (addr_t*)arg;
+  const int frames =
+      get_stack_trace_for_thread(thread, stack_trace, kMaxStackFrames);
+
+  klogf("Thread %d:\n", thread->id);
+  print_stack_trace(stack_trace, frames);
+}
 
 void die(const char* msg) {
+  disable_interrupts();
+
+  if (g_dying) {
+    klog_set_mode(KLOG_RAW_VIDEO);
+  }
+  g_dying = true;
   klog("PANIC: ");
   if (msg) {
     klog(msg);
@@ -29,15 +57,15 @@ void die(const char* msg) {
     klog("<unknown reason :(>\n");
   }
 
-  const int kMaxStackFrames = 32;
   addr_t stack_trace[kMaxStackFrames];
+  kthread_run_on_all(&do_print_stack, stack_trace);
+
   const int frames = get_stack_trace(stack_trace, kMaxStackFrames);
+  klogf("Thread %d (crashing):\n", kthread_current_thread()->id);
+  print_stack_trace(stack_trace, frames);
 
-  klog("Stack trace: \n");
-  for (int i = 0; i < frames; ++i) {
-    klogf(" #%d %#" PRIxADDR "\n", i, stack_trace[i]);
-  }
-
+  // Print the panic again for ease of reading the logs.
+  klogf("PANIC: %s\n", msg ? msg : "<unknown>");
   arch_die();
 }
 

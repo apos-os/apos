@@ -121,6 +121,9 @@ void kmain(memory_info_t* meminfo) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
+  klog("kthread_init()\n");
+  kthread_init();
+
   klog("pci_init()\n");
   pci_init();
 
@@ -136,8 +139,6 @@ void kmain(memory_info_t* meminfo) {
   timer_init();
   add_timers();
 
-  klog("kthread_init()\n");
-  kthread_init();
   klog("scheduler_init()\n");
   scheduler_init();
   klog("proc_init_stage2()\n");

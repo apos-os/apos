@@ -16,10 +16,16 @@
 #define APOO_ARCHS_COMMON_ARCH_PROC_STACK_TRACE_H
 
 #include <stddef.h>
+
 #include "common/types.h"
+#include "proc/kthread.h"
 
 // Gather a stack trace from the current thread, storing it in the given buffer.
 // Returns how many frames were store, or -error.
 int get_stack_trace(addr_t* trace, int trace_len);
+
+// As above, but get the stack trace for the given thread (which must not be
+// running).
+int get_stack_trace_for_thread(kthread_t thread, addr_t* trace, int trace_len);
 
 #endif

@@ -15,21 +15,25 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "memory/block_cache.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
+#include "dev/timer.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 
 // TODO(aoates): rewrite this test to use a custom memobj so we don't have to
 // use a ramdisk.
 
-#define RAMDISK_SIZE (PAGE_SIZE * 4)
+#define RAMDISK_SIZE (PAGE_SIZE * 8)
 #define RAMDISK_BLOCKS (RAMDISK_SIZE / BLOCK_CACHE_BLOCK_SIZE)
 
 #define RAMDISK_SECTOR_SIZE 512
@@ -348,15 +352,224 @@ static void put_thread_test(ramdisk_t* rd, apos_dev_t dev) {
   ramdisk_set_blocking(rd, 1, 1);
 }
 
-// TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
+static void unflushed_lru_block_test(apos_dev_t dev) {
+  memobj_t* obj = dev_get_block_memobj(dev);
+  block_dev_t* bd = dev_get_block(dev);
 
-// TODO(aoates): a good test:
-//  get()
-//  put(BC_FLUSH_ASYNC)
-//  get()  // runs before the flush thread
-//  put(BC_FLUSH_NONE)
-//  wait_for_flush()
-//  * verify that the second put() didn't cancel the first's flush *
+  uint8_t buf[RAMDISK_SECTOR_SIZE];
+  for (int i = 0; i < 10; ++i) {
+    bc_entry_t* entry = NULL;
+    KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+    KEXPECT_EQ(1, block_cache_get_pin_count(obj, 0));
+    *((uint8_t*)entry->block) = i;
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_ASYNC));
+    KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_NONE));
+    block_cache_clear_unpinned();  // Force a flush cycle.
+
+    // Ensure the write actually flushed.
+    KEXPECT_EQ(RAMDISK_SECTOR_SIZE,
+               bd->read(bd, 0, buf, RAMDISK_SECTOR_SIZE, 0));
+    KEXPECT_EQ(i, buf[0]);
+  }
+}
+
+static void reentrant_memobj_ref_unref(memobj_t* obj) {
+  // In normal code, having the ref/unref try to touch the same entry as is
+  // being get/put would obviously deadlock (barring a more interesting API).
+  // But, for example, ext2 must read the inode tables when it writes back an
+  // inode, which it does when a vnode memobj backed by that inode is
+  // freed/unref'd.
+  //
+  // Here, we don't actually know what the underlying block being referenced is,
+  // so we can't do any interesting operations on any blocks :/
+  block_cache_get_pin_count(obj, 0);
+}
+
+static int reentrant_memobj_write_page(memobj_t* obj, int page_offset,
+                                       const void* buffer) {
+  bc_entry_t* entry = NULL;
+  KEXPECT_LE(page_offset, 3);
+  switch (page_offset) {
+    case 0:
+      return 0;
+
+    case 1:
+      KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+      KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_NONE));
+      return 0;
+
+    case 2:
+      KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+      KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_SYNC));
+      return 0;
+
+    case 3:
+      KEXPECT_EQ(0, block_cache_get(obj, 0, &entry));
+      KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_ASYNC));
+      return 0;
+
+    default:
+      return -EINVAL;
+  }
+}
+static int reentrant_memobj_read_page(memobj_t* obj, int page_offset,
+                                      void* buffer) {
+  return reentrant_memobj_write_page(obj, page_offset, buffer);
+}
+
+// Test with a backing memobj that calls back into the block cache on reads and
+// writes.
+static void reentrant_memobj_test(void) {
+  KTEST_BEGIN("block cache reentrant memobj test");
+  memobj_ops_t fake_obj_ops;
+  fake_obj_ops.ref = &reentrant_memobj_ref_unref;
+  fake_obj_ops.unref = &reentrant_memobj_ref_unref;
+  fake_obj_ops.get_page = NULL;
+  fake_obj_ops.put_page = NULL;
+  fake_obj_ops.read_page = &reentrant_memobj_read_page;
+  fake_obj_ops.write_page = &reentrant_memobj_write_page;
+  memobj_t fake_obj;
+  fake_obj.type = MEMOBJ_FAKE;
+  fake_obj.id = 1;
+  fake_obj.ops = &fake_obj_ops;
+
+  for (int i = 0; i < 4; ++i) {
+    bc_entry_t* entry;
+    KEXPECT_EQ(0, block_cache_get(&fake_obj, i, &entry));
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_NONE));
+    KEXPECT_EQ(0, block_cache_get(&fake_obj, i, &entry));
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_SYNC));
+    KEXPECT_EQ(0, block_cache_get(&fake_obj, i, &entry));
+    KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_ASYNC));
+    block_cache_wakeup_flush_thread();
+  }
+
+  block_cache_clear_unpinned();
+}
+
+static void* multithread_test_worker(void* arg) {
+  sched_enable_preemption_for_test();
+  uint32_t rand = fnv_hash(get_time_ms());
+  rand = fnv_hash_concat(rand, fnv_hash(kthread_current_thread()->id));
+  memobj_t* obj = (memobj_t*)arg;
+  const int kMaxEntries = 10;
+  bc_entry_t* entries[kMaxEntries];
+  int entry_end_idx = 0;
+  for (int i = 0; i < kMaxEntries; ++i) {
+    entries[i] = NULL;
+  }
+
+  const int kNumIters = 1000 * CONCURRENCY_TEST_ITERS_MULT;
+  for (int round = 0; round < kNumIters; ++round) {
+    int action = rand % 3;  // get, lookup, or put.
+    rand = fnv_hash(rand);
+    if (entry_end_idx == 0 || (action == 0 && entry_end_idx < kMaxEntries)) {
+      int block = rand % RAMDISK_BLOCKS;
+      rand = fnv_hash(rand);
+      KEXPECT_EQ(0, block_cache_get(obj, block, &entries[entry_end_idx]));
+      entry_end_idx++;
+    } else if (action == 1 && entry_end_idx < kMaxEntries) {
+      int block = rand % RAMDISK_BLOCKS;
+      rand = fnv_hash(rand);
+      KEXPECT_EQ(0, block_cache_lookup(obj, block, &entries[entry_end_idx]));
+      if (entries[entry_end_idx] != NULL) {
+        entry_end_idx++;
+      }
+    } else {
+      int entry_to_put = rand % entry_end_idx;
+      rand = fnv_hash(rand);
+      int flush_mode_idx = rand % 3;
+      rand = fnv_hash(rand);
+      block_cache_flush_t flush_mode =
+          (flush_mode_idx == 0) ? BC_FLUSH_NONE : (flush_mode_idx == 1)
+                                                      ? BC_FLUSH_SYNC
+                                                      : BC_FLUSH_ASYNC;
+      KEXPECT_EQ(0, block_cache_put(entries[entry_to_put], flush_mode));
+      KASSERT(entry_end_idx > 0);
+      for (int i = entry_to_put; i < entry_end_idx - 1; ++i) {
+        entries[i] = entries[i + 1];
+      }
+      entries[entry_end_idx - 1] = NULL;
+      entry_end_idx--;
+    }
+    if (rand % 100 == 0) {
+      block_cache_wakeup_flush_thread();
+    }
+  }
+
+  for (int i = 0; i < entry_end_idx; ++i) {
+    KEXPECT_EQ(0, block_cache_put(entries[i], BC_FLUSH_NONE));
+  }
+
+  return NULL;
+}
+
+static void multithread_test(ramdisk_t* rd, apos_dev_t dev) {
+  KTEST_BEGIN("block cache: multithreaded stress test");
+  ramdisk_set_blocking(rd, 0, 0);
+  const int kNumThreads = 10 * CONCURRENCY_TEST_THREADS_MULT;
+
+  kthread_t threads[kNumThreads];
+  memobj_t* obj = dev_get_block_memobj(dev);
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], multithread_test_worker, obj));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  ramdisk_set_blocking(rd, 1, 1);
+}
+
+static void* multithread_pressure_test_worker(void* arg) {
+  sched_enable_preemption_for_test();
+  uint32_t rand = fnv_hash(get_time_ms());
+  rand = fnv_hash_concat(rand, fnv_hash(kthread_current_thread()->id));
+  memobj_t* obj = (memobj_t*)arg;
+
+  const int kNumIters = 1000 * CONCURRENCY_TEST_ITERS_MULT;
+  for (int round = 0; round < kNumIters; ++round) {
+    bc_entry_t* entry = NULL;
+    rand = fnv_hash(rand);
+    int block = rand % 4;
+    int result = block_cache_get(obj, block, &entry);
+    if (result != 0 && result != -ENOMEM) {
+      KEXPECT_EQ(0, result);
+    }
+    if (entry) {
+      KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_NONE));
+    }
+  }
+
+  return NULL;
+}
+
+static void multithread_pressure_test(ramdisk_t* rd, apos_dev_t dev) {
+  KTEST_BEGIN("block cache: multithreaded stress test with small cache size");
+  block_cache_clear_unpinned();
+  // We want the ramdisk blocking for this test.
+  int orig_max_size = block_cache_get_size();
+  block_cache_set_size(3);
+  const int kNumThreads = 4; // Don't scale with the test multipliers.
+
+  kthread_t threads[kNumThreads];
+  memobj_t* obj = dev_get_block_memobj(dev);
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(
+        0, kthread_create(&threads[i], multithread_pressure_test_worker, obj));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  block_cache_set_size(orig_max_size);
+  block_cache_clear_unpinned();
+}
+
+// TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
   KTEST_SUITE_BEGIN("block_cache test");
@@ -375,6 +588,7 @@ void block_cache_test(void) {
   const int start_obj_refcount = obj->refcount;
 
   // Run tests.
+  int old_flush_period_ms = block_cache_set_bg_flush_period(100);
   basic_get_test(dev);
   basic_lookup_test(dev);
   basic_write_test(dev);
@@ -383,6 +597,12 @@ void block_cache_test(void) {
   cache_size_test(dev);
   get_thread_test(dev);
   put_thread_test(ramdisk, dev);
+  unflushed_lru_block_test(dev);
+  reentrant_memobj_test();
+
+  multithread_test(ramdisk, dev);
+  multithread_pressure_test(ramdisk, dev);
+  block_cache_set_bg_flush_period(old_flush_period_ms);
 
   // Cleanup.
   block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.

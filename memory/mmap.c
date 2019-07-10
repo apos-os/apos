@@ -214,6 +214,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     // For private mappings, create a shadow object.
     if (flags & MAP_PRIVATE) {
       memobj_t* shadow_obj = memobj_create_shadow(memobj);
+      memobj->ops->unref(memobj);  // Don't need the parent.
       memobj = shadow_obj;
     }
   }
@@ -225,7 +226,6 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   // TODO(aoates): check against length of file
 
-  memobj->ops->ref(memobj);
   area->memobj = memobj;
   area->allow_allocation = true;
   area->is_private = (flags & MAP_PRIVATE);

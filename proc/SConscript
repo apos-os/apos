@@ -27,6 +27,7 @@ srcs = [
   'procfs.c',
   'session.c',
   'sleep.c',
+  'spinlock.c',
   'kthread_pool.c',
   'tcgroup.c',
   'umask.c',

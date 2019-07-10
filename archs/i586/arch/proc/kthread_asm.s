@@ -20,6 +20,7 @@ kthread_arch_swap_context:
   movl %esp, %ebp
 
   # Push all the callee-registers
+  # Note: kthread switching and stack trace code dependings on this.
   pushl %ebx
   pushl %esi
   pushl %edi

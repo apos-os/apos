@@ -21,6 +21,7 @@
 
 #include "arch/proc/kthread-context.h"
 #include "arch/proc/kthread-stack.h"
+#include "common/list.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
@@ -77,6 +78,17 @@ struct kthread_data {
   // Whether or not the wait timeout fired, regardless of if it was interrupted
   // first.
   bool wait_timeout_ran;
+
+  // Current preemption-disabled counter.  If zero, preemption is allowed.
+  int preemption_disables;
+
+  // How many spinlocks we're holding, for bug-catching.
+  int spinlocks_held;
+
+  // Link on the global thread list.
+  // TODO(aoates): once we support multiple threads per process, consider using
+  // a per-process thread list rather than a global one.
+  list_link_t all_threads_link;
 };
 typedef struct kthread_data kthread_data_t;
 

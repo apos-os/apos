@@ -1443,6 +1443,10 @@ static void read_page_test(const char* filename, const int size) {
   // Get a memobj.
   memobj_t* memobj = 0x0;
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &memobj));
+  int orig_refcount = memobj->refcount;  // Not really supposed to read this...
+  KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &memobj));
+  KEXPECT_EQ(orig_refcount + 1, memobj->refcount);
+  memobj->ops->unref(memobj);
 
   // Read the page and make sure it matches.
   kmemset(page_buf, 0, PAGE_SIZE);
@@ -1454,6 +1458,7 @@ static void read_page_test(const char* filename, const int size) {
   }
 
   KEXPECT_EQ(0, vfs_close(fd));
+  memobj->ops->unref(memobj);
   KEXPECT_EQ(0, vfs_unlink(filename));
   page_frame_free(page_buf_phys);
   kfree(buf);
@@ -1482,6 +1487,7 @@ static void memobj_test(void) {
   int fd = vfs_open(kFile, VFS_O_RDONLY | VFS_O_CREAT, 0);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
+  unused_memobj->ops->unref(unused_memobj);
   KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
   KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
   KEXPECT_EQ(0, vfs_close(fd));
@@ -1490,14 +1496,18 @@ static void memobj_test(void) {
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
+  unused_memobj->ops->unref(unused_memobj);
   KEXPECT_EQ(-EACCES, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
   KEXPECT_EQ(0, vfs_close(fd));
 
   fd = vfs_open(kFile, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDONLY, &unused_memobj));
+  unused_memobj->ops->unref(unused_memobj);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_WRONLY, &unused_memobj));
+  unused_memobj->ops->unref(unused_memobj);
   KEXPECT_EQ(0, vfs_get_memobj(fd, VFS_O_RDWR, &unused_memobj));
+  unused_memobj->ops->unref(unused_memobj);
   KEXPECT_EQ(0, vfs_close(fd));
 
   KTEST_BEGIN("vfs_get_memobj(): read_page() full page");

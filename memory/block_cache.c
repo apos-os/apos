@@ -43,8 +43,15 @@
 static int g_size = 0;
 static bool g_initialized = false;
 static int g_max_size = DEFAULT_CACHE_SIZE;
+// TODO(aoates): make this an atomic.
+static int g_flush_queue_period_ms = 5000;
+// A dummy thread queue that the flush thread waits on, allowing it to be woken
+// up (e.g. by tests changing the flush interval).
+static kthread_queue_t g_flush_queue_wakeup_queue;
 
 static htbl_t g_table;
+
+static kmutex_t g_mu;  // Protects all global state.
 
 // A cache entry.
 typedef struct bc_entry_internal {
@@ -70,10 +77,14 @@ static addr_t g_free_block_stack[FREE_BLOCK_STACK_SIZE];
 static int g_free_block_stack_idx = 0;  // First free entry.
 
 // Queue of cache entries that need to be flushed.
-static list_t g_flush_queue = {0x0, 0x0};
+static list_t g_flush_queue = LIST_INIT_STATIC;
 
 // LRU queue of cache entries that *might* be freeable.
-static list_t g_lru_queue = {0x0, 0x0};
+static list_t g_lru_queue = LIST_INIT_STATIC;
+
+// List of entries that have been cleaned up (removed from the table) but still
+// need to have their memory freed and underlying memobjs unref'd.
+static list_t g_cleanup_list = LIST_INIT_STATIC;
 
 #define cache_entry_pop(list, link_name) \
     container_of(list_pop(list), bc_entry_internal_t, link_name)
@@ -86,6 +97,7 @@ static list_t g_lru_queue = {0x0, 0x0};
 
 // Acquire more free blocks and add them to the free block stack.
 static void get_more_free_blocks(void) {
+  kmutex_assert_is_held(&g_mu);
   KASSERT(FREE_BLOCK_STACK_SIZE - g_free_block_stack_idx > BLOCKS_PER_PAGE);
   const phys_addr_t phys_page = page_frame_alloc();
   if (phys_page == 0x0) {
@@ -102,6 +114,7 @@ static void get_more_free_blocks(void) {
 
 // Return a free block for a new cache entry.
 static void* get_free_block(void) {
+  kmutex_assert_is_held(&g_mu);
   if (g_free_block_stack_idx == 0) {
     get_more_free_blocks();
   }
@@ -116,6 +129,7 @@ static void* get_free_block(void) {
 
 // Return a free block to the stack.
 static void put_free_block(void* block) {
+  kmutex_assert_is_held(&g_mu);
   if (g_free_block_stack_idx == FREE_BLOCK_STACK_SIZE) {
     KLOG(WARNING, "dropping free block because the free block cache "
          "is full!\n");
@@ -146,7 +160,10 @@ static int entry_is_sane(bc_entry_internal_t* entry) {
 }
 
 // Flush the given cache entry to disk.
+// May block and release the state mutex.  Callers must ensure block cache state
+// is consistent across this call.
 static void flush_cache_entry(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
   KASSERT_DBG(!entry->flushing);
   KASSERT_DBG(!entry->flushed);
   KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
@@ -157,9 +174,11 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
     // Write the data back to disk.  This may block.
     KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
     KASSERT_DBG(entry_is_sane(entry));
+    kmutex_unlock(&g_mu);
     const int result =
         entry->pub.obj->ops->write_page(
             entry->pub.obj, entry->pub.offset, entry->pub.block);
+    kmutex_lock(&g_mu);
     KASSERT_DBG(entry_is_sane(entry));
     KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
 
@@ -175,12 +194,14 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
 // and sleeping.
 static kthread_t g_flush_queue_thread;
 static void* flush_queue_thread(void* arg) {
-  const int kSleepMs = 5000;
+  sched_enable_preemption_for_test();
   const int kMaxFlushesPerCycle = 1000;
   while (1) {
-    ksleep(kSleepMs);
+    scheduler_wait_on_interruptable(&g_flush_queue_wakeup_queue,
+                                    g_flush_queue_period_ms);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
+      KMUTEX_AUTO_LOCK(lock, &g_mu);
       bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
       if (!entry) break;
       flush_cache_entry(entry);
@@ -193,8 +214,12 @@ static void* flush_queue_thread(void* arg) {
 }
 
 // Remove the given (flushed and unpinned) cache entry from the table, release
-// it's block, and free the entry object.
-static void free_cache_entry(bc_entry_internal_t* entry) {
+// its block, and queue it to be freed later.
+// TODO(aoates): reexamine this two-stage deletion process after the
+// memobj/block cache/bc_entry_t relationship is reexamined to solve the bug
+// with abandoned shadow entries.
+static void cleanup_cache_entry(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
   KASSERT_DBG(list_link_on_list(&g_flush_queue, &entry->flushq) == 0);
   KASSERT_DBG(list_link_on_list(&g_lru_queue, &entry->lruq) == 0);
   KASSERT_DBG(entry->pin_count == 0);
@@ -205,17 +230,39 @@ static void free_cache_entry(bc_entry_internal_t* entry) {
   g_size--;
   const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
   KASSERT(htbl_remove(&g_table, h) == 0);
-
-  entry->pub.obj->ops->unref(entry->pub.obj);
-  entry->pub.obj = 0x0;
-
   put_free_block(entry->pub.block);
-  kfree(entry);
+
+  if (ENABLE_KERNEL_SAFETY_NETS) {
+    entry->pub.block = NULL;
+    entry->pub.block_phys = 0;
+    entry->pub.offset = (size_t)-1;
+    entry->initialized = false;
+  }
+  list_push(&g_cleanup_list, &entry->lruq);
+}
+
+// Free any entries queued for cleanup and unref the underlying memobjs.
+// May block and release/acquire the state mutex.
+static void free_dead_entries(void) {
+  kmutex_assert_is_held(&g_mu);
+  while (!list_empty(&g_cleanup_list)) {
+    bc_entry_internal_t* entry = cache_entry_pop(&g_cleanup_list, lruq);
+    kmutex_unlock(&g_mu);
+
+    KASSERT_DBG(entry->initialized == false);
+    KASSERT_DBG(entry->pin_count == 0);
+    entry->pub.obj->ops->unref(entry->pub.obj);  // May block.
+    entry->pub.obj = 0x0;
+    kfree(entry);
+
+    kmutex_lock(&g_mu);
+  }
 }
 
 // Go through the cache and look for unpinned entries we can free.  Attempt to
 // free up to max_entries of them.
 static void maybe_free_cache_space(int max_entries) {
+  kmutex_assert_is_held(&g_mu);
   bc_entry_internal_t* entry = cache_entry_head(g_lru_queue, lruq);
   int entries_freed = 0;
   while (entry && entries_freed < max_entries) {
@@ -226,7 +273,7 @@ static void maybe_free_cache_space(int max_entries) {
       list_remove(&g_lru_queue, &entry->lruq);
 
       // No-one else has it, so free it.
-      free_cache_entry(entry);
+      cleanup_cache_entry(entry);
       entries_freed++;
     }
     entry = next;
@@ -253,19 +300,26 @@ static void maybe_free_cache_space(int max_entries) {
         KASSERT_DBG(!entry->flushing);
         KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
         // No-one else has it, so free it.
-        free_cache_entry(entry);
+        cleanup_cache_entry(entry);
         entries_freed++;
       }
     }
     entry = next_entry;
   }
+  KLOG(DEBUG2, "block cache freed %d entries\n", entries_freed);
+
+  // Actually free the entries and unref memobjs associated with any blocks we
+  // just freed.  May block.
+  free_dead_entries();
 
   // TODO(aoates): if something is currently flushing, block for it to finish.
 }
 
 static void init_block_cache(void) {
   KASSERT(!g_initialized);
+  kmutex_init(&g_mu);
   htbl_init(&g_table, g_max_size * 2);
+  kthread_queue_init(&g_flush_queue_wakeup_queue);
   KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
   scheduler_make_runnable(g_flush_queue_thread);
   g_initialized = true;
@@ -274,9 +328,10 @@ static void init_block_cache(void) {
 // Given an existing table entry, wait for it to be initialized (if applicable)
 // and add a pin.
 static void block_cache_get_internal(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
   entry->pin_count++;
   if (!entry->initialized) {
-    scheduler_wait_on(&entry->wait_queue);
+    scheduler_wait_on_locked_no_signals(&entry->wait_queue,  &g_mu);
   }
   KASSERT(entry->initialized);
   if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
@@ -284,7 +339,6 @@ static void block_cache_get_internal(bc_entry_internal_t* entry) {
     list_remove(&g_lru_queue, &entry->lruq);
     KASSERT(entry->lruq.next == 0x0);
     KASSERT(entry->lruq.prev == 0x0);
-    entry->flushed = 1;
   }
 }
 
@@ -293,19 +347,26 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     init_block_cache();
   }
 
+  kmutex_lock(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
     if (g_size >= g_max_size) {
       maybe_free_cache_space(g_size - g_max_size + 1);
       if (g_size >= g_max_size) {
+        kmutex_unlock(&g_mu);
         return -ENOMEM;
       }
     }
+  }
 
+  // While freeing cache space above, someone else may have come along and
+  // created the entry, so check again.
+  if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
     if (!block) {
+      kmutex_unlock(&g_mu);
       return -ENOMEM;
     }
 
@@ -323,13 +384,19 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->lruq = LIST_LINK_INIT;
     kthread_queue_init(&entry->wait_queue);
 
+    // Put the uninitialized entry into the table.
+    htbl_put(&g_table, h, entry);
+
+    // Unlock mutex around reentrant and blocking operations.
+    kmutex_unlock(&g_mu);
+
     // N.B.(aoates): this means that we'll potentially keep the obj (and
     // underlying objects like vnodes) around indefinitely after we're done with
     // them, as long as the bc entries haven't been forced out of the cache.
+    // Safe to call without lock because it doesn't touch our state (unless
+    // calls back into block cache) and we already hold a ref to the memobj in
+    // `obj`, so it will stay live.
     obj->ops->ref(obj);
-
-    // Put the uninitialized entry into the table.
-    htbl_put(&g_table, h, entry);
 
     // Read data from the block device into the cache.
     // Note: this may block.
@@ -337,18 +404,19 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     const int result =
         obj->ops->read_page(obj, offset, entry->pub.block);
     KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
+    kmutex_lock(&g_mu);
 
     entry->initialized = true;
     scheduler_wake_all(&entry->wait_queue);
 
     *entry_out = &entry->pub;
-    return 0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
     block_cache_get_internal(entry);
     *entry_out = &entry->pub;
-    return 0;
   }
+  kmutex_unlock(&g_mu);
+  return 0;
 }
 
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
@@ -356,6 +424,7 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
     init_block_cache();
   }
 
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
@@ -371,6 +440,7 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
 int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KASSERT(g_initialized);
 
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
 
@@ -379,7 +449,7 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
       if (entry->flushing) {
-        scheduler_wait_on(&entry->wait_queue);
+        scheduler_wait_on_locked_no_signals(&entry->wait_queue, &g_mu);
       } else {
         if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
           list_remove(&g_flush_queue, &entry->flushq);
@@ -412,6 +482,7 @@ int block_cache_get_pin_count(memobj_t* obj, int offset) {
     return 0;
   }
 
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   if (htbl_get(&g_table, h, &tbl_value) != 0) {
@@ -422,10 +493,12 @@ int block_cache_get_pin_count(memobj_t* obj, int offset) {
 }
 
 void block_cache_set_size(int blocks) {
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   g_max_size = blocks;
 }
 
 int block_cache_get_size() {
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   return g_max_size;
 }
 
@@ -433,6 +506,7 @@ void block_cache_clear_unpinned() {
   // Since freeing entries from the LRU queue may cause dirtying of additional
   // entries (e.g. this happens with ext2), keep trying until the flush queue is
   // empty.
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   do {
     // Flush everything on the flush queue.
     bc_entry_internal_t* entry = cache_entry_pop(&g_flush_queue, flushq);
@@ -445,7 +519,7 @@ void block_cache_clear_unpinned() {
     entry = cache_entry_head(g_lru_queue, lruq);
     while (entry) {
       if (entry->flushing) {
-        scheduler_wait_on(&entry->wait_queue);
+        scheduler_wait_on_locked_no_signals(&entry->wait_queue, &g_mu);
       }
       if (!entry->flushed) {
         // Skip it, we'll flush it above and get it the next time around.
@@ -459,9 +533,10 @@ void block_cache_clear_unpinned() {
 
       bc_entry_internal_t* next_entry = cache_entry_next(entry, lruq);
       list_remove(&g_lru_queue, &entry->lruq);
-      free_cache_entry(entry);
+      cleanup_cache_entry(entry);
       entry = next_entry;
     }
+    free_dead_entries();  // May block.
   } while (!list_empty(&g_flush_queue));
 
   KASSERT(list_empty(&g_flush_queue));
@@ -496,6 +571,7 @@ static void stats_counter_func(void* arg, uint32_t key, void* value) {
   }
 }
 void block_cache_log_stats() {
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
   stats_t stats;
   kmemset(&stats, 0, sizeof(stats_t));
   htbl_iterate(&g_table, &stats_counter_func, &stats);
@@ -507,4 +583,15 @@ void block_cache_log_stats() {
   KLOG(INFO, "         on lru: %d\n", stats.lru);
   KLOG(INFO, "        flushed: %d\n", stats.flushed);
   KLOG(INFO, "       flushing: %d\n", stats.flushing);
+}
+
+int block_cache_set_bg_flush_period(int period_ms) {
+  int old = g_flush_queue_period_ms;
+  g_flush_queue_period_ms = period_ms;
+  block_cache_wakeup_flush_thread();
+  return old;
+}
+
+void block_cache_wakeup_flush_thread(void) {
+  scheduler_wake_all(&g_flush_queue_wakeup_queue);
 }

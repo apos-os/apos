@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "memory/block_cache.h"
+#include "proc/spinlock.h"
 
 struct memobj_ops;
 typedef struct memobj_ops memobj_ops_t;
@@ -28,6 +29,7 @@ typedef enum {
   MEMOBJ_VNODE = 2,
   MEMOBJ_SHADOW = 3,
   MEMOBJ_ANON = 4,
+  MEMOBJ_FAKE = 5,
 } memobj_type_t;
 
 // A memobj_t is an in-memory object backed by another data source, such as a
@@ -42,7 +44,9 @@ typedef struct memobj {
 
   // Refcount.  Do not modify directly --- use ref() and unref() instead.  The
   // meaning may very depending on the memobj type.
+  // TODO(aoates): switch this to use appropriate atomics.
   int refcount;
+  kspinlock_t lock;
 
   // Data specific to the type memory object.
   void* data;

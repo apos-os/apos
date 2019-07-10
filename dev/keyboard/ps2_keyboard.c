@@ -19,6 +19,8 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
+#include "proc/defint.h"
+#include "proc/spinlock.h"
 
 #include "dev/ps2.h"
 #include "dev/keyboard/keyboard.h"
@@ -26,21 +28,30 @@
 
 #define PS2_DATA_TIMEOUT 10000
 
+#define PS2_SCANCODE_BUF_SIZE 100
+
 static vkeyboard_t* g_vkbd = 0x0;
+static uint8_t g_scancode_buf[PS2_SCANCODE_BUF_SIZE];
+static int g_scancode_buf_len = 0;
+static kspinlock_t g_scancode_buf_lock;
+
+typedef struct {
+  uint32_t keycode;
+  bool is_up_event;
+  bool is_extended;
+} ps2_kbd_event_t;
 
 // Given a buffer of scancodes, process it and potentially generate a keypress.
-// Returns the new (potentially truncated) buffer length.
-static int process_scancode_buffer(uint8_t* buf, int len) {
-  if (len > 3) {
-    klogf("WARNING: unknown long scancode sequence (%d bytes)\n", len);
-  }
-
+// Returns the start of the unprocessed portion of the buffer (zero if nothing
+// was consumed).
+static int process_scancode_buffer(uint8_t* buf, int len, ps2_kbd_event_t* event) {
   uint8_t c = 0;
   bool is_up_evt = 0;
   bool is_extended = 0;
   bool done = 0;
 
-  for (int i = 0; i < len; ++i) {
+  int i;
+  for (i = 0; i < len && !done; ++i) {
     switch (buf[i]) {
       case 0xE0:
         is_extended = true;
@@ -58,38 +69,56 @@ static int process_scancode_buffer(uint8_t* buf, int len) {
   }
 
   if (!done) {
-    return len;
+    return 0;
   }
 
-  uint32_t keycode = ps2_convert_scancode(c, is_extended);
-  if (keycode == NONE) {
+  event->keycode = ps2_convert_scancode(c, is_extended);
+  if (event->keycode == NONE) {
     klogf("WARNING: ignoring unknown scancode: 0x%x (extended: %d)\n",
         c, is_extended);
-  } else if (g_vkbd) {
-    vkeyboard_send_keycode(g_vkbd, keycode, is_up_evt);
+  } else {
+    event->is_up_event = is_up_evt;
+    event->is_extended = is_extended;
   }
 
-  return 0;
+  return i;
+}
+
+static void process_scancodes_defint(void* arg) {
+  ps2_kbd_event_t event;
+  kspin_lock(&g_scancode_buf_lock);
+  int consumed =
+      process_scancode_buffer(g_scancode_buf, g_scancode_buf_len, &event);
+
+  if (consumed) {
+    for (int i = consumed; i < g_scancode_buf_len; ++i) {
+      g_scancode_buf[i - consumed] = g_scancode_buf[i];
+    }
+    g_scancode_buf_len -= consumed;
+  }
+  kspin_unlock(&g_scancode_buf_lock);
+
+  if (consumed && event.keycode != NONE && g_vkbd) {
+    vkeyboard_send_keycode(g_vkbd, event.keycode, event.is_up_event);
+  }
 }
 
 static void irq_handler(void* arg) {
-  static uint8_t scancode_buffer[10];
-  static int buf_idx = 0;
-
   uint8_t c;
   if (!ps2_read_byte_async(PS2_PORT1, &c, PS2_DATA_TIMEOUT)) {
     klogf("WARNING: expected data byte from PS/2 keyboard controller "
           "but timed out.\n");
     return;
   }
-  KASSERT(buf_idx < 9);
-  scancode_buffer[buf_idx++] = c;
+  KASSERT(g_scancode_buf_len < PS2_SCANCODE_BUF_SIZE);
+  g_scancode_buf[g_scancode_buf_len++] = c;
 
-  // Process the buffer.
-  buf_idx = process_scancode_buffer(scancode_buffer, buf_idx);
+  defint_schedule(&process_scancodes_defint, NULL);
 }
 
 int ps2_keyboard_init(vkeyboard_t* vkbd) {
+  g_scancode_buf_lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+
   if (ps2_get_device_type(PS2_PORT1) != PS2_DEVICE_KEYBOARD) {
     klogf("keyboard initalization FAILED (no keyboard found on port1)\n");
     return 0;

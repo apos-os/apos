@@ -88,6 +88,7 @@ static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
     memobj_t* memobj = 0x0;
     if (expected[idx].fd >= 0) {
       KASSERT(vfs_get_memobj(expected[idx].fd, VFS_O_RDONLY, &memobj) == 0);
+      memobj->ops->unref(memobj);  // Not really correct, but meh in a test.
     }
     if (area->vm_base != expected[idx].base ||
         area->vm_length != expected[idx].length ||
