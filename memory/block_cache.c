@@ -197,8 +197,9 @@ static void* flush_queue_thread(void* arg) {
   sched_enable_preemption_for_test();
   const int kMaxFlushesPerCycle = 1000;
   while (1) {
-    scheduler_wait_on_interruptable(&g_flush_queue_wakeup_queue,
-                                    g_flush_queue_period_ms);
+    int result = scheduler_wait_on_interruptable(&g_flush_queue_wakeup_queue,
+                                                 g_flush_queue_period_ms);
+    KASSERT(result != SWAIT_INTERRUPTED);
     int flushed = 0;
     while (flushed < kMaxFlushesPerCycle) {
       KMUTEX_AUTO_LOCK(lock, &g_mu);
@@ -326,12 +327,17 @@ static void init_block_cache(void) {
 }
 
 // Given an existing table entry, wait for it to be initialized (if applicable)
-// and add a pin.
-static void block_cache_get_internal(bc_entry_internal_t* entry) {
+// and add a pin.  Succeeds (returns 0) unless interrupted.
+static int block_cache_get_internal(bc_entry_internal_t* entry) {
   kmutex_assert_is_held(&g_mu);
   entry->pin_count++;
   if (!entry->initialized) {
-    scheduler_wait_on_locked_no_signals(&entry->wait_queue,  &g_mu);
+    int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+    KASSERT_DBG(result != SWAIT_TIMEOUT);
+    if (result == SWAIT_INTERRUPTED) {
+      entry->pin_count--;
+      return -EINTR;
+    }
   }
   KASSERT(entry->initialized);
   if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
@@ -340,6 +346,7 @@ static void block_cache_get_internal(bc_entry_internal_t* entry) {
     KASSERT(entry->lruq.next == 0x0);
     KASSERT(entry->lruq.prev == 0x0);
   }
+  return 0;
 }
 
 int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
@@ -412,7 +419,12 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     *entry_out = &entry->pub;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    block_cache_get_internal(entry);
+    int result = block_cache_get_internal(entry);
+    if (result) {
+      kmutex_unlock(&g_mu);
+      *entry_out = NULL;
+      return result;
+    }
     *entry_out = &entry->pub;
   }
   kmutex_unlock(&g_mu);
@@ -431,7 +443,11 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
     *entry_out = 0x0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    block_cache_get_internal(entry);
+    int result = block_cache_get_internal(entry);
+    if (result) {
+      *entry_out = NULL;
+      return result;
+    }
     *entry_out = &entry->pub;
   }
   return 0;
@@ -449,7 +465,11 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
       if (entry->flushing) {
-        scheduler_wait_on_locked_no_signals(&entry->wait_queue, &g_mu);
+        int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+        KASSERT_DBG(result != SWAIT_TIMEOUT);
+        if (result == SWAIT_INTERRUPTED) {
+          return -EINTR;
+        }
       } else {
         if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
           list_remove(&g_flush_queue, &entry->flushq);
@@ -519,7 +539,8 @@ void block_cache_clear_unpinned() {
     entry = cache_entry_head(g_lru_queue, lruq);
     while (entry) {
       if (entry->flushing) {
-        scheduler_wait_on_locked_no_signals(&entry->wait_queue, &g_mu);
+        int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+        KASSERT(result == 0);
       }
       if (!entry->flushed) {
         // Skip it, we'll flush it above and get it the next time around.

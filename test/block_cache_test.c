@@ -24,9 +24,13 @@
 #include "dev/ramdisk/ramdisk.h"
 #include "dev/timer.h"
 #include "memory/memory.h"
+#include "proc/exit.h"
+#include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "proc/sleep.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 #include "test/test_params.h"
 
@@ -418,21 +422,23 @@ static int reentrant_memobj_read_page(memobj_t* obj, int page_offset,
   return reentrant_memobj_write_page(obj, page_offset, buffer);
 }
 
+static memobj_ops_t reentrant_memobj_ops = {
+    reentrant_memobj_ref_unref,  //
+    reentrant_memobj_ref_unref,  //
+    NULL,                        // get_page
+    NULL,                        // put_page
+    reentrant_memobj_read_page,  //
+    reentrant_memobj_write_page,
+};
+
 // Test with a backing memobj that calls back into the block cache on reads and
 // writes.
 static void reentrant_memobj_test(void) {
   KTEST_BEGIN("block cache reentrant memobj test");
-  memobj_ops_t fake_obj_ops;
-  fake_obj_ops.ref = &reentrant_memobj_ref_unref;
-  fake_obj_ops.unref = &reentrant_memobj_ref_unref;
-  fake_obj_ops.get_page = NULL;
-  fake_obj_ops.put_page = NULL;
-  fake_obj_ops.read_page = &reentrant_memobj_read_page;
-  fake_obj_ops.write_page = &reentrant_memobj_write_page;
   memobj_t fake_obj;
   fake_obj.type = MEMOBJ_FAKE;
   fake_obj.id = 1;
-  fake_obj.ops = &fake_obj_ops;
+  fake_obj.ops = &reentrant_memobj_ops;
 
   for (int i = 0; i < 4; ++i) {
     bc_entry_t* entry;
@@ -569,6 +575,170 @@ static void multithread_pressure_test(ramdisk_t* rd, apos_dev_t dev) {
   block_cache_clear_unpinned();
 }
 
+typedef struct {
+  memobj_t obj;
+  kthread_queue_t obj_queue;
+  bool block_reads;
+  bool block_writes;
+  // TODO(aoates): use atomics for these.
+  int waiting_readers;
+  int waiting_writers;
+} blocking_memobj_t;
+
+static void blocking_memobj_ref_unref(memobj_t* obj) {}
+
+static int blocking_memobj_write_page(memobj_t* obj, int page_offset,
+                                       const void* buffer) {
+  blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
+  if (!blocking_obj->block_writes) return 0;
+
+  blocking_obj->waiting_writers++;
+  int result = scheduler_wait_on_interruptable(&blocking_obj->obj_queue, 1000);
+  KEXPECT_NE(result, SWAIT_TIMEOUT);
+  blocking_obj->waiting_writers--;
+  if (result == SWAIT_INTERRUPTED) return -EINTR;
+  return 0;
+}
+
+static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
+                                     void* buffer) {
+  blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
+  if (!blocking_obj->block_reads) return 0;
+
+  blocking_obj->waiting_readers++;
+  int result = scheduler_wait_on_interruptable(&blocking_obj->obj_queue, 1000);
+  KEXPECT_NE(result, SWAIT_TIMEOUT);
+  blocking_obj->waiting_readers--;
+  if (result == SWAIT_INTERRUPTED) return -EINTR;
+  return 0;
+}
+
+static memobj_ops_t blocking_memobj_ops = {
+    blocking_memobj_ref_unref,  //
+    blocking_memobj_ref_unref,  //
+    NULL,                        // get_page
+    NULL,                        // put_page
+    blocking_memobj_read_page,  //
+    blocking_memobj_write_page,
+};
+
+static void create_blocking_memobj(blocking_memobj_t* obj) {
+  obj->obj.type = MEMOBJ_FAKE;
+  obj->obj.id = get_time_ms();
+  obj->obj.ops = &blocking_memobj_ops;
+  obj->obj.refcount = 1;
+  obj->obj.lock = KSPINLOCK_NORMAL_INIT;
+  obj->obj.data = obj;
+  kthread_queue_init(&obj->obj_queue);
+  obj->block_reads = true;
+  obj->block_writes = true;
+  obj->waiting_readers = 0;
+  obj->waiting_writers = 0;
+}
+
+static void do_block_cache_get_proc(void* arg) {
+  memobj_t* obj = (memobj_t*)arg;
+  bc_entry_t* entry = NULL;
+  int result = block_cache_get(obj, 0, &entry);
+  if (result == 0) {
+    block_cache_put(entry, BC_FLUSH_NONE);
+  }
+  proc_exit(result);
+}
+
+static void do_block_cache_lookup_proc(void* arg) {
+  memobj_t* obj = (memobj_t*)arg;
+  bc_entry_t* entry = NULL;
+  int result = block_cache_lookup(obj, 0, &entry);
+  if (result == 0) {
+    block_cache_put(entry, BC_FLUSH_NONE);
+  }
+  proc_exit(result);
+}
+
+static void do_block_cache_put_proc(void* arg) {
+  memobj_t* obj = (memobj_t*)arg;
+  bc_entry_t* entry = NULL;
+  int result = block_cache_get(obj, 0, &entry);
+  KEXPECT_EQ(0, result);
+  result = block_cache_put(entry, BC_FLUSH_SYNC);
+  if (result) {
+    int result2 = block_cache_put(entry, BC_FLUSH_NONE);
+    KEXPECT_EQ(0, result2);
+  }
+  proc_exit(result);
+}
+
+static void signal_interrupt_test(void) {
+  // Test for when get() is waiting for another thread to initialize the entry
+  // in question, and is interrupted during that wait.
+  KTEST_BEGIN(
+      "block_cache_{get,lookup}(): interrupted while waiting for entry "
+      "initialization");
+
+  blocking_memobj_t blocking_memobj;
+  create_blocking_memobj(&blocking_memobj);
+
+  // First child: start the initialization.
+  pid_t child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child1, 0);
+  // Let 'er run and start.  Would be better to synchronize explicitly.
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  // Second child: block on the initialization started by the first.
+  pid_t child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child2, 0);
+
+  // Third child: block as well, but in lookup.
+  pid_t child3 = proc_fork(&do_block_cache_lookup_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child3, 0);
+  ksleep(10);  // Get them blocking.
+  // Shouldn't be blocking on the underlying device.
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  KEXPECT_EQ(0, proc_kill(child2, SIGINT));
+  KEXPECT_EQ(0, proc_kill(child3, SIGINT));
+
+  int status;
+  KEXPECT_EQ(child2, proc_waitpid(child2, &status, 0));
+  KEXPECT_EQ(-EINTR, status);
+  KEXPECT_EQ(child3, proc_waitpid(child3, &status, 0));
+  KEXPECT_EQ(-EINTR, status);
+
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
+  KEXPECT_EQ(0, status);
+
+  // TODO(aoates): this only tests when one thread is waiting on another that is
+  // actually doing the flush.  Also test (and fix) interruptions when this
+  // thread is the one flushing.
+  KTEST_BEGIN(
+      "block_cache_put(): interrupted while waiting on synchronous flush");
+  blocking_memobj.block_reads = false;
+  pid_t child4 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child4, 0);
+  // Let 'er run and start.  Would be better to synchronize explicitly.
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_writers);
+
+  // Second child: block on the flush started by the first.
+  pid_t child5 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child5, 0);
+  ksleep(10);  // Get them blocking.
+  KEXPECT_EQ(1, blocking_memobj.waiting_writers);
+
+  KEXPECT_EQ(0, proc_kill(child5, SIGINT));
+  KEXPECT_EQ(child5, proc_waitpid(child5, &status, 0));
+  KEXPECT_EQ(-EINTR, status);
+  blocking_memobj.block_writes = false;
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_EQ(child4, proc_waitpid(child4, &status, 0));
+  KEXPECT_EQ(0, status);
+
+  block_cache_clear_unpinned();
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -602,6 +772,9 @@ void block_cache_test(void) {
 
   multithread_test(ramdisk, dev);
   multithread_pressure_test(ramdisk, dev);
+
+  signal_interrupt_test();
+
   block_cache_set_bg_flush_period(old_flush_period_ms);
 
   // Cleanup.

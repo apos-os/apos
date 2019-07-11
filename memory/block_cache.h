@@ -55,6 +55,7 @@ typedef struct bc_entry {
 int block_cache_get(struct memobj* obj, int offset, bc_entry_t** entry_out);
 
 // Like block_cache_get, but sets *entry_out to NULL if the page isn't resident.
+// May still block!
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out);
 
 // Unpin the given cached block.  It may later be reclaimed if memory is needed.
@@ -71,7 +72,8 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out);
 // Most callers should probably use BC_FLUSH_ASYNC.
 //
 // Returns 0 on success, or -errno on error.  The caller must not use the
-// bc_entry_t after this call unless it has another pin.
+// bc_entry_t after this call unless it has another pin.  On failure the caller
+// retains a pin in the entry (and must put it again, e.g. forgoing a flush).
 int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
 
 // Returns the current pin count of the given block, or 0 if it is not in the
