@@ -34,6 +34,7 @@
 #include "proc/umask.h"
 #include "proc/user.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 #include "test/vfs_test_util.h"
 #include "vfs/fs.h"
 #include "vfs/pipe.h"
@@ -5569,6 +5570,52 @@ static void fd_concurrent_close_test(void) {
   KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
 }
 
+static void* multithread_path_walk_deadlock_test_worker(void* arg) {
+  uint32_t rand = fnv_hash(get_time_ms());
+  rand = fnv_hash_concat(rand, kthread_current_thread()->id);
+  const char* paths[] = {
+    "A/B/C",
+    "A/../A/B/C",
+    "A/B/../../A/B/C",
+    "A/B/../B/C",
+    "A/./B/C",
+    "A/../A/B/./C",
+  };
+  const int kNumPaths = sizeof(paths) / sizeof(const char*);
+  for (int i = 0; i < 20 * CONCURRENCY_TEST_ITERS_MULT; ++i) {
+    int path_idx = rand % kNumPaths;
+    rand = fnv_hash(rand);
+    int fd = vfs_open(paths[path_idx], 0);
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_close(fd));
+    if (rand % 10 == 0) scheduler_yield();
+    rand = fnv_hash(rand);
+  }
+  return NULL;
+}
+
+static void multithread_path_walk_deadlock_test(void) {
+  KTEST_BEGIN("vfs: multiple threads walking cyclical paths");
+  const int kNumThreads = 5 * CONCURRENCY_TEST_THREADS_MULT;
+  kthread_t threads[kNumThreads];
+  KEXPECT_EQ(0, vfs_mkdir("A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("A/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mknod("A/B/C", VFS_S_IFREG | VFS_S_IRWXU, 0));
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(
+        0, kthread_create(&threads[i],
+                          &multithread_path_walk_deadlock_test_worker, NULL));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(NULL, kthread_join(threads[i]));
+  }
+
+  KEXPECT_EQ(0, vfs_unlink("A/B/C"));
+  KEXPECT_EQ(0, vfs_rmdir("A/B"));
+  KEXPECT_EQ(0, vfs_rmdir("A"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -5644,11 +5691,13 @@ void vfs_test(void) {
   link_test();
   rename_test();
 
+  fd_concurrent_close_test();
+  multithread_path_walk_deadlock_test();
+
   proc_umask(orig_umask);
 
   umask_test();
 
-  fd_concurrent_close_test();
 
   if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
     ramfs_disable_blocking(vfs_get_root_fs());
