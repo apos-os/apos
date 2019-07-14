@@ -3202,6 +3202,14 @@ static void dup2_test(void) {
   int orig_fd1_idx = proc_current()->fds[fd1];
   KEXPECT_EQ(-EBADF, vfs_dup2(-5, fd1));
   KEXPECT_EQ(-EBADF, vfs_dup2(PROC_MAX_FDS + 1, fd1));
+  int unused_fd = 0;
+  for (unused_fd = 0; unused_fd < PROC_MAX_FDS; ++unused_fd) {
+    if (proc_current()->fds[unused_fd] == PROC_UNUSED_FD) break;
+  }
+  KEXPECT_LT(unused_fd, PROC_MAX_FDS);
+  KEXPECT_EQ(-EBADF, vfs_dup2(unused_fd, fd1));
+  KEXPECT_EQ(-EBADF, vfs_dup2(unused_fd, unused_fd));
+  KEXPECT_EQ(PROC_UNUSED_FD, proc_current()->fds[unused_fd]);
   KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
 
   KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd2)");
