@@ -113,4 +113,5 @@ void vfs_make_nonblock(int fd) {
   KASSERT(result == 0);
   KASSERT((file->flags & VFS_O_NONBLOCK) == 0);
   file->flags |= VFS_O_NONBLOCK;
+  file_unref(file);
 }

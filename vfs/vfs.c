@@ -656,39 +656,46 @@ int vfs_dup(int orig_fd) {
   process_t* proc = proc_current();
   int new_fd = next_free_fd(proc);
   if (new_fd < 0) {
+    file_unref(file);
     return new_fd;
   }
 
-  file_ref(file);
   KASSERT_DBG(proc->fds[new_fd] == PROC_UNUSED_FD);
-  proc->fds[new_fd] = proc->fds[orig_fd];
+  proc->fds[new_fd] = proc->fds[orig_fd];  // Transfer our ref on |file|.
   return new_fd;
 }
 
 int vfs_dup2(int fd1, int fd2) {
   file_t* file1 = 0x0, *file2 = 0x0;
-  int result = lookup_fd(fd1, &file1);
-  if (result) return result;
 
   if (!is_valid_fd(fd2)) return -EBADF;
   if (proc_current()->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY &&
       fd2 >= (int)proc_current()->limits[RLIMIT_NOFILE].rlim_cur)
     return -EMFILE;
 
-  if (fd1 == fd2) return fd2;
+  int result = lookup_fd(fd1, &file1);
+  if (result) return result;
+
+  if (fd1 == fd2) {
+    file_unref(file1);
+    return fd2;
+  }
 
   // Close fd2 if it already exists.
   result = lookup_fd(fd2, &file2);
   if (result == 0) {
+    file_unref(file2);
     result = vfs_close(fd2);
-    if (result) return result;
+    if (result) {
+      file_unref(file1);
+      return result;
+    }
   }
 
   process_t* proc = proc_current();
 
-  file_ref(file1);
   KASSERT_DBG(proc->fds[fd2] == PROC_UNUSED_FD);
-  proc->fds[fd2] = proc->fds[fd1];
+  proc->fds[fd2] = proc->fds[fd1];  // Transfer our ref on |file1|.
   return fd2;
 }
 
@@ -1118,18 +1125,20 @@ int vfs_read(int fd, void* buf, size_t count) {
   if (result) return result;
 
   if (file->vnode->type == VNODE_DIRECTORY) {
+    file_unref(file);
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
              file->vnode->type != VNODE_BLOCKDEV &&
              file->vnode->type != VNODE_FIFO &&
              file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDONLY && file->mode != VFS_O_RDWR) {
+    file_unref(file);
     return -EBADF;
   }
-  file_ref(file);
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_read(file->vnode->fifo, buf, count,
@@ -1164,18 +1173,20 @@ int vfs_write(int fd, const void* buf, size_t count) {
   if (result) return result;
 
   if (file->vnode->type == VNODE_DIRECTORY) {
+    file_unref(file);
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR &&
              file->vnode->type != VNODE_CHARDEV &&
              file->vnode->type != VNODE_BLOCKDEV &&
              file->vnode->type != VNODE_FIFO &&
              file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
+    file_unref(file);
     return -EBADF;
   }
-  file_ref(file);
 
   if (file->vnode->type == VNODE_FIFO) {
     result = fifo_write(file->vnode->fifo, buf, count,
@@ -1228,15 +1239,20 @@ off_t vfs_seek(int fd, off_t offset, int whence) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  if (file->vnode->type == VNODE_FIFO) return -ESPIPE;
+  if (file->vnode->type == VNODE_FIFO) {
+    file_unref(file);
+    return -ESPIPE;
+  }
   if (file->vnode->type != VNODE_REGULAR &&
       file->vnode->type != VNODE_CHARDEV &&
       file->vnode->type != VNODE_BLOCKDEV) {
+    file_unref(file);
     return -ENOTSUP;
   }
 
   if (file->vnode->type == VNODE_CHARDEV) {
     KASSERT_DBG(file->pos == 0);
+    file_unref(file);
     return 0;
   }
 
@@ -1248,16 +1264,24 @@ off_t vfs_seek(int fd, off_t offset, int whence) {
   }
 
   if (new_pos < 0) {
+    file_unref(file);
     return -EINVAL;
   } else if (file->vnode->type == VNODE_BLOCKDEV) {
     // Verify that we're in bounds for the device.
     KASSERT(file->vnode->len == 0);
     block_dev_t* dev = dev_get_block(file->vnode->dev);
-    if (!dev) return -ENXIO;
-    if (new_pos >= dev->sectors * dev->sector_size) return -EINVAL;
+    if (!dev) {
+      file_unref(file);
+      return -ENXIO;
+    }
+    if (new_pos >= dev->sectors * dev->sector_size) {
+      file_unref(file);
+      return -EINVAL;
+    }
   }
 
   file->pos = new_pos;
+  file_unref(file);
   return file->pos;
 }
 
@@ -1267,9 +1291,9 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_DIRECTORY) {
+    file_unref(file);
     return -ENOTDIR;
   }
-  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
@@ -1325,16 +1349,20 @@ int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out) {
   if (result) return result;
 
   if (file->vnode->type == VNODE_DIRECTORY) {
+    file_unref(file);
     return -EISDIR;
   } else if (file->vnode->type != VNODE_REGULAR) {
+    file_unref(file);
     return -ENOTSUP;
   }
   if (file->mode != VFS_O_RDWR && file->mode != mode) {
+    file_unref(file);
     return -EACCES;
   }
 
   file->vnode->memobj.ops->ref(&file->vnode->memobj);
   *memobj_out = &file->vnode->memobj;
+  file_unref(file);
   return 0;
 }
 
@@ -1359,12 +1387,13 @@ int vfs_isatty(int fd) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
+  result = 0;
   if (file->vnode->type == VNODE_CHARDEV &&
       major(file->vnode->dev) == DEVICE_MAJOR_TTY) {
-    return 1;
-  } else {
-    return 0;
+    result = 1;
   }
+  file_unref(file);
+  return result;
 }
 
 static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
@@ -1429,8 +1458,6 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file_ref(file);
-
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_stat_internal(file->vnode, stat);
@@ -1485,8 +1512,6 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   int result = lookup_fd(fd, &file);
   if (result) return result;
 
-  file_ref(file);
-
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = vfs_chown_internal(file->vnode, owner, group);
@@ -1522,8 +1547,6 @@ int vfs_fchmod(int fd, mode_t mode) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
-
-  file_ref(file);
 
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
@@ -1637,24 +1660,27 @@ int vfs_ftruncate(int fd, off_t length) {
   if (result) return result;
 
   if (!is_truncate_type(file->vnode)) {
+    file_unref(file);
     return -EINVAL;
   }
   if (file->mode != VFS_O_WRONLY && file->mode != VFS_O_RDWR) {
+    file_unref(file);
     return -EBADF;
   }
   if (length < 0) {
+    file_unref(file);
     return -EINVAL;
   }
   if (file->vnode->type == VNODE_CHARDEV || file->vnode->type == VNODE_FIFO) {
+    file_unref(file);
     return 0;
   }
   const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
   if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
     proc_force_signal(proc_current(), SIGXFSZ);
+    file_unref(file);
     return -EFBIG;
   }
-
-  file_ref(file);
 
   KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
   result = file->vnode->fs->truncate(file->vnode, length);

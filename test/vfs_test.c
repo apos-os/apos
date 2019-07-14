@@ -78,7 +78,9 @@ static int get_file_refcount(int fd) {
   file_t* file;
   int result = lookup_fd(fd, &file);
   if (result < 0) return result;
-  return file->refcount;
+  result = file->refcount - 1;
+  file_unref(file);
+  return result;
 }
 
 static void dev_test(void) {
@@ -3049,6 +3051,9 @@ static void dup_test(void) {
   KEXPECT_EQ(0, lookup_fd(fd1, &file1));
   KEXPECT_EQ(0, lookup_fd(fd2, &file2));
   KEXPECT_EQ(file1, file2);
+  KEXPECT_EQ(4, file1->refcount);
+  file_unref(file1);
+  file_unref(file2);
   KEXPECT_EQ(2, file1->refcount);
 
   char c;
@@ -3119,7 +3124,9 @@ static void dup2_test(void) {
   KEXPECT_EQ(0, lookup_fd(fd1, &file1));
   KEXPECT_EQ(0, lookup_fd(fd2, &file2));
   KEXPECT_EQ(file1, file2);
-  KEXPECT_EQ(2, file1->refcount);
+  KEXPECT_EQ(4, file1->refcount);
+  file_unref(file1);
+  file_unref(file2);
 
   char c;
   KEXPECT_EQ(1, vfs_read(fd1, &c, 1));

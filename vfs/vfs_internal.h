@@ -137,7 +137,7 @@ int lookup_existing_path(const char* path, lookup_options_t options,
                          vnode_t** parent_out, vnode_t** child_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
-// |file_out| WITHOUT A REFERENCE, or -error otherwise.
+// |file_out| with a reference, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
 
 // Reference and unreference a file.  You must use these rather than manipulate

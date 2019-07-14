@@ -91,9 +91,9 @@ int net_shutdown(int socket, int how) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->shutdown(file->vnode->socket, how);
@@ -107,9 +107,9 @@ int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result =
@@ -124,9 +124,9 @@ int net_listen(int socket, int backlog) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->listen(file->vnode->socket, backlog);
@@ -140,9 +140,9 @@ int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   socket_t* new_socket = NULL;
@@ -162,9 +162,9 @@ int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->connect(file->vnode->socket, file->flags,
@@ -179,9 +179,9 @@ int net_accept_queue_length(int socket) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->accept_queue_length(file->vnode->socket);
@@ -200,9 +200,9 @@ ssize_t net_recvfrom(int socket, void* buf, size_t len, int flags,
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->recvfrom(
@@ -222,9 +222,9 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result = file->vnode->socket->s_ops->sendto(
@@ -239,9 +239,9 @@ int net_getsockname(int socket, struct sockaddr* address) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result =
@@ -256,9 +256,9 @@ int net_getpeername(int socket, struct sockaddr* address) {
   if (result) return result;
 
   if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
     return -ENOTSOCK;
   }
-  file_ref(file);
 
   KASSERT(file->vnode->socket != NULL);
   result =

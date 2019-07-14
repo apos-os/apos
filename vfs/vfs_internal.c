@@ -317,6 +317,7 @@ int lookup_fd(int fd, file_t** file_out) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
+  file_ref(file);
   *file_out = file;
   return 0;
 }
