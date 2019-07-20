@@ -5631,6 +5631,70 @@ static void multithread_path_walk_deadlock_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("A"));
 }
 
+static void* multithread_vnode_get_test_worker(void* arg) {
+  // TODO(aoates): enable preemption here when safe for VFS.
+  uint32_t rand = fnv_hash(get_time_ms());
+  rand = fnv_hash_concat(rand, kthread_current_thread()->id);
+  const int* arg_array = (int*)arg;
+  const int num_vnodes = *arg_array;
+  arg_array++;
+  for (int i = 0; i < 100 * CONCURRENCY_TEST_ITERS_MULT; ++i) {
+    int vnode_num = arg_array[rand % num_vnodes];
+    rand = fnv_hash(rand);
+    vnode_t* vnode = vfs_get(vfs_get_root_fs(), vnode_num);
+    vfs_put(vnode);
+  }
+  return NULL;
+}
+
+static void multithread_vnode_get_test(void) {
+  KTEST_BEGIN("vfs: multiple threads getting and putting vnodes (2 threads)");
+  // Only 2 threads to ensure we're frequently exercising the refcount==0 case.
+  const int kNumThreadsA = 2;
+  const int kNumThreadsB = 10 * CONCURRENCY_TEST_THREADS_MULT;
+  const int kNumVnodes = 5;
+  kthread_t threads[kNumThreadsB];
+  KEXPECT_EQ(0, vfs_mkdir("vnode_tests", VFS_S_IRWXU));
+  int vnodes[kNumVnodes + 1];
+  vnodes[0] = kNumVnodes;
+
+  char path[20];
+  apos_stat_t stat;
+  for (int i = 0; i < kNumVnodes; ++i) {
+    ksprintf(path, "vnode_tests/v%d", i);
+    create_file(path, RWX);
+    KEXPECT_EQ(0, vfs_stat(path, &stat));
+    vnodes[i + 1] = stat.st_ino;
+  }
+
+  for (int i = 0; i < kNumThreadsA; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i],
+                                 &multithread_vnode_get_test_worker, vnodes));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreadsA; ++i) {
+    KEXPECT_EQ(NULL, kthread_join(threads[i]));
+  }
+
+  // Run the test again, but with many threads to exercise refcounting logic.
+  KTEST_BEGIN("vfs: multiple threads getting and putting vnodes (N threads)");
+
+  for (int i = 0; i < kNumThreadsB; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i],
+                                 &multithread_vnode_get_test_worker, vnodes));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreadsB; ++i) {
+    KEXPECT_EQ(NULL, kthread_join(threads[i]));
+  }
+
+  for (int i = 0; i < kNumVnodes; ++i) {
+    ksprintf(path, "vnode_tests/v%d", i);
+    KEXPECT_EQ(0, vfs_unlink(path));
+  }
+  KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -5708,6 +5772,7 @@ void vfs_test(void) {
 
   fd_concurrent_close_test();
   multithread_path_walk_deadlock_test();
+  multithread_vnode_get_test();
 
   proc_umask(orig_umask);
 

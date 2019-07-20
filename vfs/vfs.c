@@ -201,6 +201,7 @@ vnode_t* vfs_get_root_vnode() {
 
 vnode_t* vfs_get(fs_t* fs, int vnode_num) {
   vnode_t* vnode;
+  kspin_lock(&g_vnode_cache_lock);
   int error = htbl_get(&g_vnode_cache, vnode_hash(fs, vnode_num),
                        (void**)(&vnode));
   if (!error) {
@@ -209,7 +210,9 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     // Increment the refcount, then lock the mutex.  This ensures that the node
     // is initialized (since the thread creating it locks the mutex *before*
     // putting it in the table, and doesn't unlock it until it's initialized).
-    vfs_ref(vnode);
+    vnode->refcount++;
+    kspin_unlock(&g_vnode_cache_lock);
+    // TODO(aoates): need to lock around this check (or use atomic).
     if (vnode->type == VNODE_UNINITIALIZED) {
       // TODO(aoates): use a semaphore for this.
       kmutex_lock(&vnode->mutex);
@@ -231,10 +234,11 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     vfs_vnode_init(vnode, fs, vnode_num);
     vnode->refcount = 1;
     fs->open_vnodes++;
-    kmutex_lock(&vnode->mutex);
+    kmutex_lock(&vnode->mutex);  // This can't block: no-one else sees the vnode
 
     // Put the (unitialized but locked) vnode into the table.
     htbl_put(&g_vnode_cache, vnode_hash_n(vnode), (void*)vnode);
+    kspin_unlock(&g_vnode_cache_lock);
 
     // This call could block, at which point other threads attempting to access
     // this node will block until we release the mutex.
@@ -261,11 +265,15 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
 }
 
 void vfs_ref(vnode_t* n) {
+  // TODO(aoates): use atomic for refcount.
+  kspin_lock(&g_vnode_cache_lock);
   n->refcount++;
+  kspin_unlock(&g_vnode_cache_lock);
 }
 
 void vfs_put(vnode_t* vnode) {
   KASSERT(vnode->type != VNODE_INVALID);
+  kspin_lock(&g_vnode_cache_lock);
   vnode->refcount--;
 
   // TODO(aoates): instead of greedily freeing the vnode, mark it as unnecessary
@@ -274,6 +282,7 @@ void vfs_put(vnode_t* vnode) {
   if (vnode->refcount == 0) {
     KASSERT(vnode->memobj.refcount == 1);
     KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+    kspin_unlock(&g_vnode_cache_lock);
     if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
     if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
 
@@ -282,10 +291,13 @@ void vfs_put(vnode_t* vnode) {
     if (vnode->type != VNODE_UNINITIALIZED) {
       vnode->fs->put_vnode(vnode);
     }
+    // TODO(aoates): lock for fs data.
     vnode->fs->open_vnodes--;
     KASSERT_DBG(vnode->fs->open_vnodes >= 0);
     vnode->type = VNODE_INVALID;
     kfree(vnode);
+  } else {
+    kspin_unlock(&g_vnode_cache_lock);
   }
 }
 
