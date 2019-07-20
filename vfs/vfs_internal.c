@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/vfs_mode.h"
@@ -25,6 +26,7 @@
 
 mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 htbl_t g_vnode_cache;
+kspinlock_t g_vnode_cache_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 file_t* g_file_table[VFS_MAX_FILES];
 
 static int lookup_path_internal(vnode_t* root, const char* path,
@@ -317,6 +319,7 @@ int lookup_fd(int fd, file_t** file_out) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
+  file_ref(file);
   *file_out = file;
   return 0;
 }

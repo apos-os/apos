@@ -18,9 +18,9 @@
 #include "common/kassert.h"
 #include "proc/scheduler.h"
 
-const kspinlock_t KSPINLOCK_NORMAL_INIT = {SPINLOCK_NORMAL, -1, false, 0};
-const kspinlock_t KSPINLOCK_INTERRUPT_SAFE_INIT = {SPINLOCK_INTERRUPT_SAFE, -1,
-                                                   false, 0};
+const kspinlock_t KSPINLOCK_NORMAL_INIT = KSPINLOCK_NORMAL_INIT_STATIC;
+const kspinlock_t KSPINLOCK_INTERRUPT_SAFE_INIT =
+    KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC;
 
 void kspin_lock(kspinlock_t* l) {
   interrupt_state_t int_state = 0;

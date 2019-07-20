@@ -48,6 +48,11 @@ typedef struct {
 extern const kspinlock_t KSPINLOCK_NORMAL_INIT;
 extern const kspinlock_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 
+#define KSPINLOCK_NORMAL_INIT_STATIC \
+  { SPINLOCK_NORMAL, -1, false, 0 }
+#define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC \
+  { SPINLOCK_INTERRUPT_SAFE, -1, false, 0 };
+
 // Lock the given spinlock.  In a non-SMP environment, simply disables
 // preemption, defints, and optionally interrupts (depending on the type).
 // Threads must not block while holding a spinlock.

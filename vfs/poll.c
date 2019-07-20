@@ -93,31 +93,42 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   int result = lookup_fd(fd, &file);
   if (result == -EBADF) return POLLNVAL;
 
-  switch (file->vnode->type) {
+  vnode_t* vnode = VFS_COPY_REF(file->vnode);
+  file_unref(file);
+  file = NULL;
+  switch (vnode->type) {
     case VNODE_REGULAR:
+      VFS_PUT_AND_CLEAR(vnode);
       return (POLLIN | POLLOUT) & event_mask;
 
     case VNODE_DIRECTORY:
+      VFS_PUT_AND_CLEAR(vnode);
       if (event_mask & ~ALWAYS_EVENTS)
         return POLLNVAL;
       else
         return 0;
 
     case VNODE_CHARDEV: {
-      char_dev_t* chardev = dev_get_char(file->vnode->dev);
+      char_dev_t* chardev = dev_get_char(vnode->dev);
+      VFS_PUT_AND_CLEAR(vnode);
       if (!chardev) return POLLERR;
       return chardev->poll(chardev, event_mask | ALWAYS_EVENTS, poll);
     }
 
     case VNODE_FIFO:
-      return fifo_poll(file->vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
+      result = fifo_poll(vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
+      VFS_PUT_AND_CLEAR(vnode);
+      return result;
 
     case VNODE_SOCKET:
-      return file->vnode->socket->s_ops->poll(file->vnode->socket,
-                                              event_mask | ALWAYS_EVENTS, poll);
+      result = vnode->socket->s_ops->poll(
+          vnode->socket, event_mask | ALWAYS_EVENTS, poll);
+      VFS_PUT_AND_CLEAR(vnode);
+      return result;
 
     case VNODE_BLOCKDEV: {
-      block_dev_t* blockdev = dev_get_block(file->vnode->dev);
+      block_dev_t* blockdev = dev_get_block(vnode->dev);
+      VFS_PUT_AND_CLEAR(vnode);
       if (!blockdev) return POLLERR;
       return (POLLIN | POLLOUT) & event_mask;
     }

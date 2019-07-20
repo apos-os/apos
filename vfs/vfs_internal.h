@@ -37,6 +37,7 @@ typedef struct {
 
 extern mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
 extern htbl_t g_vnode_cache;
+extern kspinlock_t g_vnode_cache_lock;
 extern file_t* g_file_table[VFS_MAX_FILES];
 
 // Given a pointer to a vnode, if it is a mount point, replace it with the
@@ -137,7 +138,7 @@ int lookup_existing_path(const char* path, lookup_options_t options,
                          vnode_t** parent_out, vnode_t** child_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
-// |file_out| WITHOUT A REFERENCE, or -error otherwise.
+// |file_out| with a reference, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
 
 // Reference and unreference a file.  You must use these rather than manipulate
