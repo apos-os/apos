@@ -16,7 +16,12 @@ import os
 
 Import('env AposAddSources')
 
-objs = []
+# Execute architecture-specific pre-build hooks, if any.
+arch_pre_sconscript = FindFile('SConscript.pre', env.subst('archs/$ARCH'))
+if arch_pre_sconscript:
+  SConscript(arch_pre_sconscript)
+
+srcs = []
 
 SUBDIRS = [
   'archs',
@@ -41,7 +46,7 @@ if env['TESTS']:
 if env['USER_TESTS']:
   NON_KERNEL_SUBDIRS.append('user-tests')
 
-all_objects = Flatten(AposAddSources(env, objs, SUBDIRS))
+all_objects = Flatten(AposAddSources(env, srcs, SUBDIRS))
 
 objects = [obj for obj in all_objects if obj.name.count('PHYS') == 0]
 phys_objects = [obj for obj in all_objects if obj.name.count('PHYS') > 0]

@@ -20,3 +20,13 @@ Architecture-specific code that doesn't implement the generic interface goes in
 a separate 'internal' directory under each arch.  This keeps it seperate from
 code that is generic, and prevents architecture-independent code from
 accidentally including it.
+
+
+SConscript.pre
+==============
+
+Architectures may include an SConscript.pre file in their root
+directory that will be executed before any other normal build actions.
+This can be used to modify the build in ways that must be done before
+other SConscripts are executed (e.g. to disable features that cause
+those SConscripts to be included in the first place).

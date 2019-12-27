@@ -32,7 +32,8 @@ vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
 vars.Add('KSHELL_INITIAL_COMMAND',
   'command to automatically run when kshell starts', '')
 
-# List of modules that can be enabled/disabled.  All are enabled by default.
+# List of modules that can be enabled/disabled.  All are enabled by default,
+# unless unsupported by the current architecture.
 FEATURES = [
   'ETHERNET',
   'EXT2',
@@ -44,8 +45,8 @@ FEATURES = [
   'KMALLOC_HEAP_PROFILE',
 ]
 
-for feature in FEATURES:
-  vars.Add(BoolVariable(feature, 'enable %s' % feature, True))
+vars.Add(ListVariable('enable', 'features to force-enable', [], FEATURES))
+vars.Add(ListVariable('disable', 'features to force-disable', [], FEATURES))
 
 base_env = Environment(
     variables = vars,
@@ -53,6 +54,20 @@ base_env = Environment(
     ENV = {'PATH' : os.environ['PATH']})
 
 base_env.Alias('configure', [])
+
+# Validate that the same features are not simultaneously enabled and disabled.
+def _ValidateFeatures(env):
+  feature_overlap = set(env['enable']).intersection(env['disable'])
+  if feature_overlap:
+    print('Features cannot be force-enabled and force-disabled: %s' %
+        ' '.join(feature_overlap))
+    Exit(1)
+_ValidateFeatures(base_env)
+
+# Insert non-disabled features into the environment (this can be overridden by
+# other SConscript files, in particular architecture-specific ones).
+for feature in FEATURES:
+  base_env.SetDefault(**{feature: feature not in base_env['disable']})
 
 base_env.SetDefault(BUILD_CFG_DIR =
   os.path.join(base_env['BUILD_DIR'], '%s-%s' %
@@ -122,6 +137,15 @@ def AposAddSources(env, srcs, subdirs, **kwargs):
     objects.append(SConscript('%s/SConscript' % subdir))
   return objects
 
+def DisableFeature(env, feature):
+  """Causes the given feature to be disabled by default.
+
+  This can be overridden by explicitly enabling the feature with the
+  `enable=FOO` build option.
+  """
+  assert(feature in FEATURES)
+  env.Replace(**{feature: feature in env['enable']})
+
 def kernel_program(env, target, source):
   """Builder for the main kernel file."""
   return [
@@ -165,6 +189,6 @@ env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
 
-Export('env user_env AposAddSources')
+Export('env user_env AposAddSources DisableFeature')
 
 SConscript('SConscript', variant_dir=env['BUILD_CFG_DIR'], duplicate=False)
