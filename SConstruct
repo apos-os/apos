@@ -94,7 +94,6 @@ base_env.Replace(STRIP = '${TOOL_PREFIX}strip')
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
-              "-mno-mmx -mno-sse " +
               "-Wstrict-prototypes"))
 base_env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
 base_env.Append(CPPPATH = ['#'])

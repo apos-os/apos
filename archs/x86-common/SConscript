@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env AposAddSources')
+Import('env user_env AposAddSources')
+
+env.Append(CFLAGS = Split("-mno-mmx -mno-sse"))
+user_env.Append(CFLAGS = Split("-mno-mmx -mno-sse"))
 
 srcs = [
     'arch/common/die.c',
