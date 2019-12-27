@@ -57,24 +57,24 @@ base_env.Alias('configure', [])
 base_env.SetDefault(BUILD_CFG_DIR =
   os.path.join(base_env['BUILD_DIR'], '%s-%s' %
     (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc')))
-base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
-base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
+base_env.SetDefault(TOOL_PREFIX = '$ARCH-pc-apos-')
+base_env.SetDefault(CLANG_TARGET = '$ARCH-pc-apos')
 
 # If the user did a 'configure', save their configuration for later.
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
 
 if not base_env['CLANG']:
-  base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
+  base_env.Replace(CC = '${TOOL_PREFIX}gcc')
 else:
   base_env.Replace(CC = 'clang')
-  base_env.Append(CFLAGS = ['-target', '%s' % base_env['CLANG_TARGET']])
+  base_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
 
-base_env.Replace(AR = '%sar' % base_env['TOOL_PREFIX'])
-base_env.Replace(AS = '%sas' % base_env['TOOL_PREFIX'])
-base_env.Replace(LD = '%sld' % base_env['TOOL_PREFIX'])
-base_env.Replace(RANLIB = '%sranlib' % base_env['TOOL_PREFIX'])
-base_env.Replace(STRIP = '%sstrip' % base_env['TOOL_PREFIX'])
+base_env.Replace(AR = '${TOOL_PREFIX}ar')
+base_env.Replace(AS = '${TOOL_PREFIX}as')
+base_env.Replace(LD = '${TOOL_PREFIX}ld')
+base_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
+base_env.Replace(STRIP = '${TOOL_PREFIX}strip')
 
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
@@ -103,18 +103,17 @@ if not env['CLANG']:
   # TODO(aoates): get frame sizes under clang small enough to enable this.
   env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
 env.Append(ASFLAGS = ['--gen-debug'])
-env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
+env.Replace(LINK = '${TOOL_PREFIX}ld')
 
-env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
-                      '#/%s' % env['BUILD_CFG_DIR']])
+env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
 if base_env['CLANG']:
-  user_env.Append(LINKFLAGS = ['-target', '%s' % user_env['CLANG_TARGET']])
+  user_env.Append(LINKFLAGS = ['-target', '$CLANG_TARGET'])
   user_env.Append(CFLAGS =
-      ['-isystem', '%s/include' % user_env['HEADER_INSTALL_PREFIX']])
+      ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
 
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
@@ -126,10 +125,10 @@ def AposAddSources(env, srcs, subdirs, **kwargs):
 def kernel_program(env, target, source):
   """Builder for the main kernel file."""
   return [
-      env.Depends(target, 'archs/%s/build/linker.ld' % env['ARCH']),
+      env.Depends(target, 'archs/$ARCH/build/linker.ld'),
       env.Program(target, source,
         LINKFLAGS=env['LINKFLAGS'] + [
-          '-T', 'archs/%s/build/linker.ld' % env['ARCH'], '-L', Dir('.')])]
+          '-T', 'archs/$ARCH/build/linker.ld', '-L', Dir('.')])]
 
 def phys_object(env, source):
   """Builder for object files that need to be linked in the physical (not
@@ -157,7 +156,7 @@ tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
     recursive=filter_tpl)
 
 tpl_bld = Builder(
-    action = 'APOS_ARCH=%s util/tpl_gen.py $SOURCE > $TARGET' % env['ARCH'],
+    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE > $TARGET',
     suffix = '.tpl.c',
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)
