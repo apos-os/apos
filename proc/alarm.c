@@ -16,6 +16,7 @@
 
 #include "common/kassert.h"
 #include "common/math.h"
+#include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/process.h"
