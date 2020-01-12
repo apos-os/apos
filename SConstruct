@@ -106,9 +106,6 @@ if base_env['DEBUG']:
 
 env = base_env.Clone()
 
-if env['ARCH'] == 'x86_64':
-  env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
-
 env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
