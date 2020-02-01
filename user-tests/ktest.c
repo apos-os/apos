@@ -97,8 +97,6 @@ void KTEST_BEGIN(const char* name) {
   current_test_name = name;
   current_test_passing = 1;
   num_tests++;
-  printf("\nTEST: %s\n", name);
-  printf("---------------------------------------\n");
 }
 
 
@@ -106,9 +104,11 @@ void kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
-  if (cond) {
-    printf(PASSED " %s(%s, %s)\n", name, astr, bstr);
-  } else {
+  if (!cond) {
+    if (current_test_passing) {
+      printf("\nTEST: %s\n", current_test_name);
+      printf("---------------------------------------\n");
+    }
     current_test_passing = 0;
     current_suite_passing = 0;
     printf(FAILED " %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n",
