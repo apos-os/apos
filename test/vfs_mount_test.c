@@ -944,6 +944,7 @@ static void mmap_same_vnode_test(void) {
 
 void vfs_mount_test(void) {
   KTEST_SUITE_BEGIN("vfs mount test");
+  block_cache_clear_unpinned();
   const int orig_cache_size = vfs_cache_size();
 
   ramfsA = ramfs_create_fs(0);
