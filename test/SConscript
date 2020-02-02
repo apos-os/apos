@@ -47,6 +47,7 @@ srcs = [
   'proc_group_test.c',
   'ramdisk_test.c',
   'ramfs_test.c',
+  'run_user_tests.c',
   'session_test.c',
   'signal_test.c',
   'slab_alloc_test.c',

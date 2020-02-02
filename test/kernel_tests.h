@@ -64,5 +64,6 @@ void socket_test(void);
 void socket_unix_test(void);
 void socket_raw_test(void);
 void socket_udp_test(void);
+void run_user_tests(void);
 
 #endif

@@ -153,7 +153,7 @@ void ktest_begin_all() {
   printf("KERNEL UNIT TESTS");
 }
 
-void ktest_finish_all() {
+int ktest_finish_all() {
   int end_time = 0;  // TODO get_time_ms();
   finish_test();
   finish_suite();
@@ -164,6 +164,7 @@ void ktest_finish_all() {
     printf(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
            num_suites_passing, num_suites, num_tests_passing, num_tests,
            end_time - test_start_time);
+    return 0;
   } else {
     printf(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
            num_suites_passing, num_suites, num_tests_passing, num_tests,
@@ -176,5 +177,6 @@ void ktest_finish_all() {
     if (num_leftover > 0) {
       printf("  ...and %d more\n", num_leftover);
     }
+    return 1;
   }
 }

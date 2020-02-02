@@ -93,6 +93,7 @@ void kexpect_int(const char* name, const char* file, const char* line,
 void ktest_begin_all(void);
 
 // Tear down the framework and print statistics about passing/failing tests.
-void ktest_finish_all(void);
+// Returns 0 if all tests passed, 1 otherwise.
+int ktest_finish_all(void);
 
 #endif
