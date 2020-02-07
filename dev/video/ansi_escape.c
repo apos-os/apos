@@ -75,7 +75,7 @@ int parse_ansi_escape(const char* buf, size_t len, ansi_seq_t* seq) {
     num[numidx] = '\0';
     if (i < len && buf[i] != ';') return ANSI_INVALID;
     i++;
-    seq->codes[seq->num_codes++] = (numidx > 0) ? atoi(num) : -1;
+    seq->codes[seq->num_codes++] = (numidx > 0) ? katoi(num) : -1;
   }
 
   return ANSI_SUCCESS;

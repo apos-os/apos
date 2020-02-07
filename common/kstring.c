@@ -247,7 +247,7 @@ static unsigned long atou_internal(const char* s) {
   }
 }
 
-long atoi(const char* s) {
+long katoi(const char* s) {
   if (*s == '-') {
     return -(long)atou_internal(s+1);
   } else {
@@ -255,7 +255,7 @@ long atoi(const char* s) {
   }
 }
 
-unsigned long atou(const char* s) {
+unsigned long katou(const char* s) {
   return atou_internal(s);
 }
 

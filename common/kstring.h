@@ -52,8 +52,8 @@ const char* utoa_hex_lower(unsigned long x);  // As above, but lower case.
 const char* utoa_hex_lower_r(unsigned long x, char* buf, size_t len);
 
 // Note: these only support decimal.
-long atoi(const char* s);
-unsigned long atou(const char* s);
+long katoi(const char* s);
+unsigned long katou(const char* s);
 
 const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);

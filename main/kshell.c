@@ -284,7 +284,7 @@ static void hash_cmd(kshell_t* shell, int argc, char* argv[]) {
     ksh_printf("usage: hash <number>\n");
     return;
   }
-  uint32_t x = atou(argv[1]);
+  uint32_t x = katou(argv[1]);
   uint32_t h = fnv_hash(x);
   ksh_printf("%u (0x%x)\n", h, h);
 }
@@ -296,13 +296,13 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[3]);
+  uint32_t block = katou(argv[3]);
 
   char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
@@ -327,13 +327,13 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[3]);
+  uint32_t block = katou(argv[3]);
 
   char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
@@ -359,7 +359,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
 
   if (argc == 2) {
-    shell->klog_offset = atou(argv[1]);
+    shell->klog_offset = katou(argv[1]);
   }
   char buf[1024];
   int read = klog_read(shell->klog_offset, buf, 1024);
@@ -398,7 +398,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port>\n"); \
       return; \
     } \
-    ioport_t port = atou(argv[1]); \
+    ioport_t port = katou(argv[1]); \
     type val = name(port); \
     ksh_printf("0x%x\n", val); \
   }
@@ -409,8 +409,8 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port> <value>\n"); \
       return; \
     } \
-    ioport_t port = atou(argv[1]); \
-    type value = (type)atou(argv[2]); \
+    ioport_t port = katou(argv[1]); \
+    type value = (type)katou(argv[2]); \
     name(port, value); \
   }
 
@@ -434,7 +434,7 @@ static void timer_cmd(kshell_t* shell, int argc, char* argv[]) {
 
   char* buf = (char*)kmalloc(kstrlen(argv[3])+1);
   kstrcpy(buf, argv[3]);
-  int result = register_timer_callback(atou(argv[1]), atou(argv[2]),
+  int result = register_timer_callback(katou(argv[1]), katou(argv[2]),
                                        &timer_cmd_timer_cb, buf);
   if (result < 0) {
     ksh_printf("Could not register timer: %s\n", errorname(-result));
@@ -449,7 +449,7 @@ static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  ksleep(atou(argv[1]));
+  ksleep(katou(argv[1]));
 }
 
 static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -734,8 +734,8 @@ static void hash_file_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  const int start = atoi(argv[1]);
-  int end = atoi(argv[2]);
+  const int start = katoi(argv[1]);
+  int end = katoi(argv[2]);
   if (end < 0) {
     end = INT_MAX;
   }
@@ -964,7 +964,7 @@ static void fg_bg_cmd(kshell_t* shell, int argc, char** argv, bool is_fg) {
   int jobnum = -1;
   if (argc == 2) {
     if (argv[1][0] == '%') {
-      jobnum = atoi(&argv[1][1]);
+      jobnum = katoi(&argv[1][1]);
     }
     if (jobnum <= 0) {
       ksh_printf("invalid job number '%s'\n", argv[1]);

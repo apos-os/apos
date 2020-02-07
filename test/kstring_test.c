@@ -168,44 +168,44 @@ static void kstring_testB(char* buf) {
 }
 
 static void kstring_testC(void) {
-  KTEST_BEGIN("atoi()");
-  KEXPECT_EQ(0, atoi("0"));
-  KEXPECT_EQ(10, atoi("10"));
-  KEXPECT_EQ(-10, atoi("-10"));
-  KEXPECT_EQ(12345, atoi("12345"));
-  KEXPECT_EQ(7890, atoi("7890"));
-  KEXPECT_EQ(-7890, atoi("-7890"));
-  KEXPECT_EQ(-7890, atoi("-7890abc"));
-  KEXPECT_EQ(0x7FFFFFFF, atoi("2147483647"));
-  KEXPECT_EQ(-0x80000000, atoi("-2147483648"));
+  KTEST_BEGIN("katoi()");
+  KEXPECT_EQ(0, katoi("0"));
+  KEXPECT_EQ(10, katoi("10"));
+  KEXPECT_EQ(-10, katoi("-10"));
+  KEXPECT_EQ(12345, katoi("12345"));
+  KEXPECT_EQ(7890, katoi("7890"));
+  KEXPECT_EQ(-7890, katoi("-7890"));
+  KEXPECT_EQ(-7890, katoi("-7890abc"));
+  KEXPECT_EQ(0x7FFFFFFF, katoi("2147483647"));
+  KEXPECT_EQ(-0x80000000, katoi("-2147483648"));
   // TODO(aoates): add 64-bit tests.
 
-  KTEST_BEGIN("atoi() -- hex");
-  KEXPECT_EQ(0x10, atoi("0x10"));
-  KEXPECT_EQ(-0x10, atoi("-0x10"));
-  KEXPECT_EQ(0x12345, atoi("0x12345"));
-  KEXPECT_EQ(-0xABCDEF, atoi("-0xABCDEF"));
-  KEXPECT_EQ(-0xABCDEF, atoi("-0XaBcDeF"));
-  KEXPECT_EQ(0xABCDEF1, atoi("0xABCDEF1Q"));
-  KEXPECT_EQ(0x7FFFFFFF, atoi("0x7FFFFFFF"));
-  KEXPECT_EQ(-0x80000000, atoi("-0x80000000"));
+  KTEST_BEGIN("katoi() -- hex");
+  KEXPECT_EQ(0x10, katoi("0x10"));
+  KEXPECT_EQ(-0x10, katoi("-0x10"));
+  KEXPECT_EQ(0x12345, katoi("0x12345"));
+  KEXPECT_EQ(-0xABCDEF, katoi("-0xABCDEF"));
+  KEXPECT_EQ(-0xABCDEF, katoi("-0XaBcDeF"));
+  KEXPECT_EQ(0xABCDEF1, katoi("0xABCDEF1Q"));
+  KEXPECT_EQ(0x7FFFFFFF, katoi("0x7FFFFFFF"));
+  KEXPECT_EQ(-0x80000000, katoi("-0x80000000"));
 
   KTEST_BEGIN("atou()");
-  KEXPECT_EQ(0, atou("0"));
-  KEXPECT_EQ(10, atou("10"));
-  KEXPECT_EQ(12345, atou("12345"));
-  KEXPECT_EQ(7890, atou("7890"));
-  KEXPECT_EQ(1234567890, atou("1234567890"));
-  KEXPECT_EQ(7890, atou("7890abc"));
-  KEXPECT_EQ(0xFFFFFFFF, atou("4294967295"));
+  KEXPECT_EQ(0, katou("0"));
+  KEXPECT_EQ(10, katou("10"));
+  KEXPECT_EQ(12345, katou("12345"));
+  KEXPECT_EQ(7890, katou("7890"));
+  KEXPECT_EQ(1234567890, katou("1234567890"));
+  KEXPECT_EQ(7890, katou("7890abc"));
+  KEXPECT_EQ(0xFFFFFFFF, katou("4294967295"));
 
   KTEST_BEGIN("atou() -- hex");
-  KEXPECT_EQ(0x10, atou("0x10"));
-  KEXPECT_EQ(0x12345, atou("0x12345"));
-  KEXPECT_EQ(0xABCDEF, atou("0xABCDEF"));
-  KEXPECT_EQ(0xABCDEF, atou("0XaBcDeF"));
-  KEXPECT_EQ(0xABCDEF1, atou("0xABCDEF1Q"));
-  KEXPECT_EQ(0xFFFFFFFF, atou("0xFFFFFFFF"));
+  KEXPECT_EQ(0x10, katou("0x10"));
+  KEXPECT_EQ(0x12345, katou("0x12345"));
+  KEXPECT_EQ(0xABCDEF, katou("0xABCDEF"));
+  KEXPECT_EQ(0xABCDEF, katou("0XaBcDeF"));
+  KEXPECT_EQ(0xABCDEF1, katou("0xABCDEF1Q"));
+  KEXPECT_EQ(0xFFFFFFFF, katou("0xFFFFFFFF"));
 }
 
 static void kstring_testD(char* buf) {
