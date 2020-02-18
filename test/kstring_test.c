@@ -328,6 +328,68 @@ static void kstring_testE(void) {
   KEXPECT_EQ(0, kisprint('\x1f'));
 }
 
+static void kstring_testF(void) {
+  KTEST_BEGIN("itoa_r()");
+  char buf[100];
+
+  KEXPECT_STREQ("123", itoa_r(123, buf, 100));
+  KEXPECT_STREQ("-123", itoa_r(-123, buf, 100));
+  kmemset(buf, 'A', 50);
+  KEXPECT_STREQ("5678", itoa_r(45678, buf, 5));
+  KEXPECT_EQ('A', buf[5]);
+  KEXPECT_STREQ("-345", itoa_r(-12345, buf, 5));
+  KEXPECT_EQ('A', buf[5]);
+  kmemset(buf, 'A', 50);
+  KEXPECT_STREQ("-5", itoa_r(-12345, buf, 3));
+  KEXPECT_EQ('A', buf[3]);
+  buf[2] = '!';
+  KEXPECT_STREQ("-", itoa_r(-12346, buf, 2));
+  KEXPECT_EQ('!', buf[2]);
+  KEXPECT_STREQ("", itoa_r(-12346, buf, 1));
+  kmemset(buf, 'A', 50);
+  KEXPECT_STREQ("", itoa_r(0, buf, 1));
+  KEXPECT_EQ('A', buf[1]);
+
+  KTEST_BEGIN("itoa_hex_r()");
+  KEXPECT_STREQ("1A", itoa_hex_r(0x1a, buf, 100));
+  KEXPECT_STREQ("-1A", itoa_hex_r(-0x1a, buf, 100));
+  KEXPECT_STREQ("-A", itoa_hex_r(-0x1a, buf, 3));
+  kmemset(buf, '!', 50);
+  KEXPECT_STREQ("-", itoa_hex_r(-0x1a, buf, 2));
+  KEXPECT_EQ('!', buf[2]);
+  buf[1] = '!';
+  KEXPECT_STREQ("", itoa_hex_r(-0x1a, buf, 1));
+  KEXPECT_EQ('!', buf[1]);
+  buf[1] = '!';
+  KEXPECT_STREQ("", itoa_hex_r(0, buf, 1));
+  KEXPECT_EQ('!', buf[1]);
+
+  KTEST_BEGIN("utoa_r()");
+  KEXPECT_STREQ("123", utoa_r(123, buf, 100));
+  kmemset(buf, '!', 50);
+  KEXPECT_STREQ("234", utoa_r(1234, buf, 4));
+  KEXPECT_EQ('!', buf[4]);
+  KEXPECT_STREQ("4", utoa_r(1234, buf, 2));
+  KEXPECT_STREQ("", utoa_r(1234, buf, 1));
+  buf[1] = '!';
+  KEXPECT_STREQ("", utoa_r(0, buf, 1));
+  KEXPECT_EQ('!', buf[1]);
+
+  KTEST_BEGIN("utoa_hex_r()");
+  KEXPECT_STREQ("123", utoa_hex_r(0x123, buf, 100));
+  kmemset(buf, '!', 50);
+  KEXPECT_STREQ("234", utoa_hex_r(0x1234, buf, 4));
+  KEXPECT_EQ('!', buf[4]);
+  KEXPECT_STREQ("B12", utoa_hex_r(0xab12, buf, 4));
+
+  KTEST_BEGIN("utoa_hex_lower_r()");
+  KEXPECT_STREQ("123", utoa_hex_lower_r(0x123, buf, 100));
+  kmemset(buf, '!', 50);
+  KEXPECT_STREQ("234", utoa_hex_lower_r(0x1234, buf, 4));
+  KEXPECT_EQ('!', buf[4]);
+  KEXPECT_STREQ("b12", utoa_hex_lower_r(0xab12, buf, 4));
+}
+
 void kstring_test(void) {
   KTEST_SUITE_BEGIN("kstring");
 
@@ -337,5 +399,6 @@ void kstring_test(void) {
   kstring_testC();
   kstring_testD(buf);
   kstring_testE();
+  kstring_testF();
   kfree(buf);
 }
