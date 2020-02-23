@@ -19,19 +19,30 @@ import re
 import sys
 import subprocess
 
-def get_tool_prefix():
+def read_config():
   try:
-    conf = open('build-config.conf').read()
+    conf_str = open('build-config.conf').read()
   except IOError:
     print >> sys.stderr, ('Unable to open build-config.conf; '
         'please run scons configure')
     sys.exit(1)
 
-  m = re.search('TOOL_PREFIX\s*=\s*\'([^\']*)\'', conf)
-  if not m:
+  conf = {}
+  exec(conf_str, {}, conf)
+  expanded_conf = {}
+  for k, v in conf.items():
+    if type(v) == type(''):
+      expanded_conf[k] = v.replace('$ARCH', conf['ARCH'])
+    else:
+      expanded_conf[k] = v
+  return expanded_conf
+
+def get_tool_prefix():
+  conf = read_config()
+  if 'TOOL_PREFIX' not in conf:
     print >> sys.stderr, 'TOOL_PREFIX not in build-config.conf'
     sys.exit(1)
-  return m.group(1)
+  return conf['TOOL_PREFIX']
 
 def symbolize(tool_prefix, frame_num, addr):
   p = subprocess.Popen(["%saddr2line" % tool_prefix, "-f", "-s", "-e",
