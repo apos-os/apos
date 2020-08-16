@@ -97,8 +97,6 @@ void KTEST_BEGIN(const char* name) {
   current_test_name = name;
   current_test_passing = 1;
   num_tests++;
-  printf("\nTEST: %s\n", name);
-  printf("---------------------------------------\n");
 }
 
 
@@ -106,9 +104,11 @@ void kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
-  if (cond) {
-    printf(PASSED " %s(%s, %s)\n", name, astr, bstr);
-  } else {
+  if (!cond) {
+    if (current_test_passing) {
+      printf("\nTEST: %s\n", current_test_name);
+      printf("---------------------------------------\n");
+    }
     current_test_passing = 0;
     current_suite_passing = 0;
     printf(FAILED " %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n",
@@ -153,7 +153,7 @@ void ktest_begin_all() {
   printf("KERNEL UNIT TESTS");
 }
 
-void ktest_finish_all() {
+int ktest_finish_all() {
   int end_time = 0;  // TODO get_time_ms();
   finish_test();
   finish_suite();
@@ -164,6 +164,7 @@ void ktest_finish_all() {
     printf(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
            num_suites_passing, num_suites, num_tests_passing, num_tests,
            end_time - test_start_time);
+    return 0;
   } else {
     printf(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
            num_suites_passing, num_suites, num_tests_passing, num_tests,
@@ -176,5 +177,6 @@ void ktest_finish_all() {
     if (num_leftover > 0) {
       printf("  ...and %d more\n", num_leftover);
     }
+    return 1;
   }
 }

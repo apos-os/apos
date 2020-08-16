@@ -29,6 +29,7 @@
 #include "vfs/vnode.h"
 
 #define RAMFS_MAX_INODES 1024
+#define INVALID_INO ((ino_t)-1)
 
 // TODO(aoates): put this in a common location.
 #define MIN(a, b) ({ \
@@ -110,7 +111,7 @@ static dirent_t* find_dirent(vnode_t* parent, const char* name) {
     dirent_t* d = (dirent_t*)(inode->data + offset);
 
     if (kstrcmp(d->d_name, name) == 0) {
-      KASSERT(d->d_ino >= 0);
+      KASSERT(d->d_ino != INVALID_INO);
       return d;
     }
 
@@ -129,7 +130,7 @@ static int count_dirents(vnode_t* parent) {
   int offset = 0, count = 0;
   while (offset < parent->len) {
     dirent_t* d = (dirent_t*)(inode->data + offset);
-    if (d->d_ino >= 0) {
+    if (d->d_ino != INVALID_INO) {
       count++;
     }
     offset += d->d_reclen;
@@ -393,7 +394,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
-  KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
+  KASSERT(d->d_ino != INVALID_INO && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
   ramfs_inode_t* dir_inode = &ramfs->inodes[d->d_ino];
   if (dir_inode->vnode.type != VNODE_DIRECTORY) {
@@ -416,14 +417,14 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
   // Remove '.' and '..'.
   dirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".");
-  child_dirent->d_ino = -1;
+  child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
   child_dirent = find_dirent(&dir_inode->vnode, "..");
-  KASSERT(child_dirent->d_ino == parent->num);
-  child_dirent->d_ino = -1;
+  KASSERT(child_dirent->d_ino == (ino_t)parent->num);
+  child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
 
-  d->d_ino = -1;
+  d->d_ino = INVALID_INO;
   d->d_name[0] = '\0';
   return 0;
 }
@@ -506,12 +507,12 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
-  KASSERT(d->d_ino >= 0 && d->d_ino < RAMFS_MAX_INODES);
+  KASSERT(d->d_ino != INVALID_INO && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
 
   ramfs->inodes[d->d_ino].link_count--;
 
-  d->d_ino = -1;
+  d->d_ino = INVALID_INO;
   d->d_name[0] = '\0';
   return 0;
 }
@@ -530,7 +531,8 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
     dirent_t* d = (dirent_t*)(node->data + offset);
-    if (d->d_ino != -1 && bytes_read + d->d_reclen >= (size_t)bufsize) {
+    if (d->d_ino != INVALID_INO &&
+        bytes_read + d->d_reclen >= (size_t)bufsize) {
       // If the buffer is too small to fit even one entry, return -EINVAL.
       if (bytes_read == 0) {
         return -EINVAL;
@@ -541,7 +543,7 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
     d->d_offset = offset;
 
     // Skip dirents that have been unlinked.
-    if (d->d_ino == -1) {
+    if (d->d_ino == INVALID_INO) {
       continue;
     }
     kmemcpy(buf + bytes_read, d, d->d_reclen);

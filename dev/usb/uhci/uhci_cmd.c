@@ -152,8 +152,8 @@ static void uhci_cmd_test(int argc, char* argv[]) {
     ksh_printf("usage: uhci test <controller idx> <port>\n");
     return;
   }
-  int idx = atoi(argv[2]);
-  int port = atoi(argv[3]);
+  int idx = katoi(argv[2]);
+  int port = katoi(argv[3]);
   if (idx >= usb_num_buses()) {
     ksh_printf("error: invalid controller %d\n", idx);
     return;
@@ -175,7 +175,7 @@ static void uhci_cmd_ls(int argc, char* argv[]) {
       ksh_printf("USB %d: port: 0x%x\n", i, hc->base_port);
     }
   } else {
-    int idx = atoi(argv[2]);
+    int idx = katoi(argv[2]);
     if (idx >= usb_num_buses()) {
       ksh_printf("error: invalid controller %d\n", idx);
       return;
@@ -212,7 +212,7 @@ static void uhci_cmd_td(int argc, char* argv[]) {
     ksh_printf("usage: uhci td <address>\n");
     return;
   }
-  addr_t address = atou(argv[2]);
+  addr_t address = katou(argv[2]);
   print_td((uhci_td_t*)address);
 }
 
@@ -221,7 +221,7 @@ static void uhci_cmd_qh(int argc, char* argv[]) {
     ksh_printf("usage: uhci qh <address>\n");
     return;
   }
-  addr_t address = atou(argv[2]);
+  addr_t address = katou(argv[2]);
   print_qh((uhci_qh_t*)address);
 }
 

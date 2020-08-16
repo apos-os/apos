@@ -1,4 +1,4 @@
-# Copyright 2014 Andrew Oates.  All Rights Reserved.
+# Copyright 2019 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,20 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env user_env AposAddSources')
+Import('env DisableFeature')
 
-env.Append(CFLAGS = Split("-mno-mmx -mno-sse"))
-user_env.Append(CFLAGS = Split("-mno-mmx -mno-sse"))
-
-srcs = [
-    'arch/common/die.c',
-    'arch/common/io.c',
-    'arch/memory/page_alloc.c',
-    'arch/proc/stack_trace.c',
-    'internal/proc/exec.c',
-]
-
-subdirs = []
-
-objects = AposAddSources(env, srcs, subdirs)
-Return('objects')
+DisableFeature(env, 'USER_DUMMY_LIB')
+DisableFeature(env, 'USER_TESTS')

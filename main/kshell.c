@@ -103,6 +103,7 @@ static void print_job_state(const job_t* job, job_state_t state) {
 
 // State for the shell.
 typedef struct {
+  char tty_name[20];
   int tty_fd;
   off_t klog_offset;
   list_t jobs;
@@ -128,6 +129,7 @@ typedef struct {
 } test_entry_t;
 
 static void run_all_tests(void);
+static void do_run_user_tests(void);
 
 static const test_entry_t TESTS[] = {
   { "ktest", &ktest_test, 0 },
@@ -178,6 +180,7 @@ static const test_entry_t TESTS[] = {
   { "socket_unix", &socket_unix_test, 1 },
   { "socket_raw", &socket_raw_test, 1 },
   { "socket_udp", &socket_udp_test, 1 },
+  { "user_tests", &do_run_user_tests, 1 },
 
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },
@@ -200,6 +203,23 @@ static void run_all_tests(void) {
   }
 }
 
+// Shell for currently-running tests.  Test framework already has plenty of
+// global state.
+static kshell_t* g_current_test_shell = NULL;
+
+// Trampoline that reopens std{in,out,err} then runs user tests.
+static void do_run_user_tests(void) {
+  vfs_close(0);
+  vfs_close(1);
+  vfs_close(2);
+
+  KASSERT(0 == vfs_open(g_current_test_shell->tty_name, VFS_O_RDONLY));
+  KASSERT(1 == vfs_open(g_current_test_shell->tty_name, VFS_O_WRONLY));
+  KASSERT(2 == vfs_open(g_current_test_shell->tty_name, VFS_O_WRONLY));
+
+  run_user_tests();
+}
+
 typedef struct {
   kshell_t* shell;
   const test_entry_t* entry;
@@ -219,9 +239,12 @@ static void do_test_cmd(void* arg) {
   ksigaddset(&mask, SIGINT);
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
 
+  KASSERT(g_current_test_shell == NULL);
+  g_current_test_shell = args->shell;
   ktest_begin_all();
   args->entry->func();
   ktest_finish_all();
+  g_current_test_shell = NULL;
 }
 
 static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -261,7 +284,7 @@ static void hash_cmd(kshell_t* shell, int argc, char* argv[]) {
     ksh_printf("usage: hash <number>\n");
     return;
   }
-  uint32_t x = atou(argv[1]);
+  uint32_t x = katou(argv[1]);
   uint32_t h = fnv_hash(x);
   ksh_printf("%u (0x%x)\n", h, h);
 }
@@ -273,13 +296,13 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[3]);
+  uint32_t block = katou(argv[3]);
 
   char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
@@ -304,13 +327,13 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(atou(argv[1]), atou(argv[2])));
+  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
   }
 
-  uint32_t block = atou(argv[3]);
+  uint32_t block = katou(argv[3]);
 
   char* buf = kmalloc(4096);
   kmemset(buf, 0x0, 4096);
@@ -336,7 +359,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
 
   if (argc == 2) {
-    shell->klog_offset = atou(argv[1]);
+    shell->klog_offset = katou(argv[1]);
   }
   char buf[1024];
   int read = klog_read(shell->klog_offset, buf, 1024);
@@ -375,7 +398,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port>\n"); \
       return; \
     } \
-    ioport_t port = atou(argv[1]); \
+    ioport_t port = katou(argv[1]); \
     type val = name(port); \
     ksh_printf("0x%x\n", val); \
   }
@@ -386,8 +409,8 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
       ksh_printf("usage: " #name " <port> <value>\n"); \
       return; \
     } \
-    ioport_t port = atou(argv[1]); \
-    type value = (type)atou(argv[2]); \
+    ioport_t port = katou(argv[1]); \
+    type value = (type)katou(argv[2]); \
     name(port, value); \
   }
 
@@ -411,7 +434,7 @@ static void timer_cmd(kshell_t* shell, int argc, char* argv[]) {
 
   char* buf = (char*)kmalloc(kstrlen(argv[3])+1);
   kstrcpy(buf, argv[3]);
-  int result = register_timer_callback(atou(argv[1]), atou(argv[2]),
+  int result = register_timer_callback(katou(argv[1]), katou(argv[2]),
                                        &timer_cmd_timer_cb, buf);
   if (result < 0) {
     ksh_printf("Could not register timer: %s\n", errorname(-result));
@@ -426,7 +449,7 @@ static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  ksleep(atou(argv[1]));
+  ksleep(katou(argv[1]));
 }
 
 static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -711,8 +734,8 @@ static void hash_file_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  const int start = atoi(argv[1]);
-  int end = atoi(argv[2]);
+  const int start = katoi(argv[1]);
+  int end = katoi(argv[2]);
   if (end < 0) {
     end = INT_MAX;
   }
@@ -941,7 +964,7 @@ static void fg_bg_cmd(kshell_t* shell, int argc, char** argv, bool is_fg) {
   int jobnum = -1;
   if (argc == 2) {
     if (argv[1][0] == '%') {
-      jobnum = atoi(&argv[1][1]);
+      jobnum = katoi(&argv[1][1]);
     }
     if (jobnum <= 0) {
       ksh_printf("invalid job number '%s'\n", argv[1]);
@@ -1188,12 +1211,11 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
 }
 
 void kshell_main(apos_dev_t tty) {
-  kshell_t shell = {-1, 0, LIST_INIT};
+  kshell_t shell = {"", -1, 0, LIST_INIT};
 
   proc_setsid();
-  char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(tty));
-  shell.tty_fd = vfs_open(tty_name, VFS_O_RDONLY);
+  ksprintf(shell.tty_name, "/dev/tty%d", minor(tty));
+  shell.tty_fd = vfs_open(shell.tty_name, VFS_O_RDONLY);
   KASSERT(shell.tty_fd == 0);
   shell.tty_fd = vfs_dup2(shell.tty_fd, PROC_MAX_FDS - 1);
   KASSERT(shell.tty_fd == PROC_MAX_FDS - 1);
@@ -1206,9 +1228,9 @@ void kshell_main(apos_dev_t tty) {
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
   KASSERT(0 == proc_tcsetpgrp(shell.tty_fd, getpgid(0)));
 
-  KASSERT(0 == vfs_open(tty_name, VFS_O_RDONLY));
-  KASSERT(1 == vfs_open(tty_name, VFS_O_WRONLY));
-  KASSERT(2 == vfs_open(tty_name, VFS_O_WRONLY));
+  KASSERT(0 == vfs_open(shell.tty_name, VFS_O_RDONLY));
+  KASSERT(1 == vfs_open(shell.tty_name, VFS_O_WRONLY));
+  KASSERT(2 == vfs_open(shell.tty_name, VFS_O_WRONLY));
 
   ksh_printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   ksh_printf("@                     APOS                       @\n");

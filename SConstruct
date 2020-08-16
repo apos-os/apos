@@ -23,7 +23,7 @@ if 'configure' in COMMAND_LINE_TARGETS:
 else:
   vars = Variables(CONFIG_CACHE_FILE)
 
-vars.Add(EnumVariable('ARCH', 'architecture to target', 'i586', ['i586', 'x86_64']))
+vars.Add(EnumVariable('ARCH', 'architecture to target', None, ['i586', 'x86_64']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
@@ -32,7 +32,8 @@ vars.Add(BoolVariable('CLANG', 'whether to compile with clang', False))
 vars.Add('KSHELL_INITIAL_COMMAND',
   'command to automatically run when kshell starts', '')
 
-# List of modules that can be enabled/disabled.  All are enabled by default.
+# List of modules that can be enabled/disabled.  All are enabled by default,
+# unless unsupported by the current architecture.
 FEATURES = [
   'ETHERNET',
   'EXT2',
@@ -44,8 +45,8 @@ FEATURES = [
   'KMALLOC_HEAP_PROFILE',
 ]
 
-for feature in FEATURES:
-  vars.Add(BoolVariable(feature, 'enable %s' % feature, True))
+vars.Add(ListVariable('enable', 'features to force-enable', [], FEATURES))
+vars.Add(ListVariable('disable', 'features to force-disable', [], FEATURES))
 
 base_env = Environment(
     variables = vars,
@@ -54,32 +55,45 @@ base_env = Environment(
 
 base_env.Alias('configure', [])
 
+# Validate that the same features are not simultaneously enabled and disabled.
+def _ValidateFeatures(env):
+  feature_overlap = set(env['enable']).intersection(env['disable'])
+  if feature_overlap:
+    print('Features cannot be force-enabled and force-disabled: %s' %
+        ' '.join(feature_overlap))
+    Exit(1)
+_ValidateFeatures(base_env)
+
+# Insert non-disabled features into the environment (this can be overridden by
+# other SConscript files, in particular architecture-specific ones).
+for feature in FEATURES:
+  base_env.SetDefault(**{feature: feature not in base_env['disable']})
+
 base_env.SetDefault(BUILD_CFG_DIR =
   os.path.join(base_env['BUILD_DIR'], '%s-%s' %
     (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc')))
-base_env.SetDefault(TOOL_PREFIX = '%s-pc-apos-' % base_env['ARCH'])
-base_env.SetDefault(CLANG_TARGET = '%s-pc-apos' % base_env['ARCH'])
+base_env.SetDefault(TOOL_PREFIX = '$ARCH-pc-apos-')
+base_env.SetDefault(CLANG_TARGET = '$ARCH-pc-apos')
 
 # If the user did a 'configure', save their configuration for later.
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
 
 if not base_env['CLANG']:
-  base_env.Replace(CC = '%sgcc' % base_env['TOOL_PREFIX'])
+  base_env.Replace(CC = '${TOOL_PREFIX}gcc')
 else:
   base_env.Replace(CC = 'clang')
-  base_env.Append(CFLAGS = ['-target', '%s' % base_env['CLANG_TARGET']])
+  base_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
 
-base_env.Replace(AR = '%sar' % base_env['TOOL_PREFIX'])
-base_env.Replace(AS = '%sas' % base_env['TOOL_PREFIX'])
-base_env.Replace(LD = '%sld' % base_env['TOOL_PREFIX'])
-base_env.Replace(RANLIB = '%sranlib' % base_env['TOOL_PREFIX'])
-base_env.Replace(STRIP = '%sstrip' % base_env['TOOL_PREFIX'])
+base_env.Replace(AR = '${TOOL_PREFIX}ar')
+base_env.Replace(AS = '${TOOL_PREFIX}as')
+base_env.Replace(LD = '${TOOL_PREFIX}ld')
+base_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
+base_env.Replace(STRIP = '${TOOL_PREFIX}strip')
 
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
-              "-mno-mmx -mno-sse " +
               "-Wstrict-prototypes"))
 base_env.Append(CPPDEFINES = ['__APOS_BUILDING_IN_TREE__=1'])
 base_env.Append(CPPPATH = ['#'])
@@ -92,9 +106,6 @@ if base_env['DEBUG']:
 
 env = base_env.Clone()
 
-if env['ARCH'] == 'x86_64':
-  env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
-
 env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
 if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
@@ -103,18 +114,17 @@ if not env['CLANG']:
   # TODO(aoates): get frame sizes under clang small enough to enable this.
   env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
 env.Append(ASFLAGS = ['--gen-debug'])
-env.Replace(LINK = '%sld' % env['TOOL_PREFIX'])
+env.Replace(LINK = '${TOOL_PREFIX}ld')
 
-env.Append(CPPPATH = ['#/archs/%s' % env['ARCH'], '#/archs/common',
-                      '#/%s' % env['BUILD_CFG_DIR']])
+env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 
 # Environment for userspace targets.
 user_env = base_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
 if base_env['CLANG']:
-  user_env.Append(LINKFLAGS = ['-target', '%s' % user_env['CLANG_TARGET']])
+  user_env.Append(LINKFLAGS = ['-target', '$CLANG_TARGET'])
   user_env.Append(CFLAGS =
-      ['-isystem', '%s/include' % user_env['HEADER_INSTALL_PREFIX']])
+      ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
 
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
@@ -123,13 +133,22 @@ def AposAddSources(env, srcs, subdirs, **kwargs):
     objects.append(SConscript('%s/SConscript' % subdir))
   return objects
 
+def DisableFeature(env, feature):
+  """Causes the given feature to be disabled by default.
+
+  This can be overridden by explicitly enabling the feature with the
+  `enable=FOO` build option.
+  """
+  assert(feature in FEATURES)
+  env.Replace(**{feature: feature in env['enable']})
+
 def kernel_program(env, target, source):
   """Builder for the main kernel file."""
   return [
-      env.Depends(target, 'archs/%s/build/linker.ld' % env['ARCH']),
+      env.Depends(target, 'archs/$ARCH/build/linker.ld'),
       env.Program(target, source,
         LINKFLAGS=env['LINKFLAGS'] + [
-          '-T', 'archs/%s/build/linker.ld' % env['ARCH'], '-L', Dir('.')])]
+          '-T', 'archs/$ARCH/build/linker.ld', '-L', Dir('.')])]
 
 def phys_object(env, source):
   """Builder for object files that need to be linked in the physical (not
@@ -157,7 +176,7 @@ tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
     recursive=filter_tpl)
 
 tpl_bld = Builder(
-    action = 'APOS_ARCH=%s util/tpl_gen.py $SOURCE > $TARGET' % env['ARCH'],
+    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE > $TARGET',
     suffix = '.tpl.c',
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)
@@ -166,6 +185,6 @@ env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
 
-Export('env user_env AposAddSources')
+Export('env user_env AposAddSources DisableFeature')
 
 SConscript('SConscript', variant_dir=env['BUILD_CFG_DIR'], duplicate=False)

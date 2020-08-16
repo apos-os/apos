@@ -168,17 +168,17 @@ void kmain(memory_info_t* meminfo) {
   klog("APOO\n");
 
   klog("meminfo: 0x");
-  klog(utoa_hex((addr_t)meminfo));
-  klog("\nmeminfo->kernel_start_phys: 0x"); klog(utoa_hex(meminfo->kernel_start_phys));
-  klog("\nmeminfo->kernel_end_phys:   0x"); klog(utoa_hex(meminfo->kernel_end_phys));
-  klog("\nmeminfo->kernel_start_virt: 0x"); klog(utoa_hex(meminfo->kernel_start_virt));
-  klog("\nmeminfo->kernel_end_virt:   0x"); klog(utoa_hex(meminfo->kernel_end_virt));
-  klog("\nmeminfo->mapped_start:      0x"); klog(utoa_hex(meminfo->mapped_start));
-  klog("\nmeminfo->mapped_end:        0x"); klog(utoa_hex(meminfo->mapped_end));
-  klog("\nmeminfo->lower_memory:      0x"); klog(utoa_hex(meminfo->lower_memory));
-  klog("\nmeminfo->upper_memory:      0x"); klog(utoa_hex(meminfo->upper_memory));
-  klog("\nmeminfo->phys_map_start:    0x"); klog(utoa_hex(meminfo->phys_map_start));
-  klog("\nmeminfo->phys_map_length:   0x"); klog(utoa_hex(meminfo->phys_map_length));
+  klog(kutoa_hex((addr_t)meminfo));
+  klog("\nmeminfo->kernel_start_phys: 0x"); klog(kutoa_hex(meminfo->kernel_start_phys));
+  klog("\nmeminfo->kernel_end_phys:   0x"); klog(kutoa_hex(meminfo->kernel_end_phys));
+  klog("\nmeminfo->kernel_start_virt: 0x"); klog(kutoa_hex(meminfo->kernel_start_virt));
+  klog("\nmeminfo->kernel_end_virt:   0x"); klog(kutoa_hex(meminfo->kernel_end_virt));
+  klog("\nmeminfo->mapped_start:      0x"); klog(kutoa_hex(meminfo->mapped_start));
+  klog("\nmeminfo->mapped_end:        0x"); klog(kutoa_hex(meminfo->mapped_end));
+  klog("\nmeminfo->lower_memory:      0x"); klog(kutoa_hex(meminfo->lower_memory));
+  klog("\nmeminfo->upper_memory:      0x"); klog(kutoa_hex(meminfo->upper_memory));
+  klog("\nmeminfo->phys_map_start:    0x"); klog(kutoa_hex(meminfo->phys_map_start));
+  klog("\nmeminfo->phys_map_length:   0x"); klog(kutoa_hex(meminfo->phys_map_length));
   klog("\n");
 
   const pid_t shell_pid = proc_fork(&kshell_trampoline, 0x0);

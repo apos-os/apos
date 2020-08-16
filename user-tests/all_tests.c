@@ -41,6 +41,5 @@ int main(int argc, char** argv) {
   setjmp_test();
   cpu_exception_test();
 
-  ktest_finish_all();
-  return 0;
+  return ktest_finish_all();
 }

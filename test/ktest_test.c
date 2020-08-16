@@ -31,11 +31,11 @@ void ktest_test(void) {
     char aval_str[50];
     char bval_str[50];
     if (kstrncmp("1", "0x", 2) == 0 || kstrncmp("1", "0x", 2) == 0) {
-      ksprintf(aval_str, "0x%s", utoa_hex(aval));
-      ksprintf(bval_str, "0x%s", utoa_hex(bval));
+      ksprintf(aval_str, "0x%s", kutoa_hex(aval));
+      ksprintf(bval_str, "0x%s", kutoa_hex(bval));
     } else {
-      kstrcpy(aval_str, utoa(aval));
-      kstrcpy(bval_str, utoa(bval));
+      kstrcpy(aval_str, kutoa(aval));
+      kstrcpy(bval_str, kutoa(bval));
     }
     kexpect(aval == bval, "KEXPECT_EQ", "1", "1", aval_str, bval_str, "'",
             " != ", "test/ktest_test.c", "14");

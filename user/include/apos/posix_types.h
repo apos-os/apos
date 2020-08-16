@@ -30,7 +30,7 @@ typedef int blksize_t;
 typedef int blkcnt_t;
 
 typedef long off_t;
-typedef long ino_t;
+typedef unsigned long ino_t;
 typedef unsigned short nlink_t;
 
 typedef long time_t;

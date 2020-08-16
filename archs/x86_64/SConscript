@@ -40,6 +40,7 @@ srcs = [
 subdirs = ['internal/load', '../x86-common']
 
 env.Prepend(CPPPATH = ['#/archs/x86-common'])
+env.Append(CFLAGS = Split("-mcmodel=large -m64 -mno-red-zone"))
 
 objects = AposAddSources(env, srcs, subdirs)
 objects.append(env.PhysObject('internal/memory/gdt.c'))

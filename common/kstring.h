@@ -39,16 +39,21 @@ char* kstrncpy(char* dst, const char* src, size_t n);
 
 char *kstrcat(char *dest, const char *src);
 
-const char* itoa(long x);
-const char* itoa_hex(long x);
+const char* kitoa(long x);
+const char* kitoa_r(long x, char* buf, size_t len);
+const char* kitoa_hex(long x);
+const char* kitoa_hex_r(long x, char* buf, size_t len);
 
-const char* utoa(unsigned long x);
-const char* utoa_hex(unsigned long x);
-const char* utoa_hex_lower(unsigned long x);  // As above, but lower case.
+const char* kutoa(unsigned long x);
+const char* kutoa_r(unsigned long x, char* buf, size_t len);
+const char* kutoa_hex(unsigned long x);
+const char* kutoa_hex_r(unsigned long x, char* buf, size_t len);
+const char* kutoa_hex_lower(unsigned long x);  // As above, but lower case.
+const char* kutoa_hex_lower_r(unsigned long x, char* buf, size_t len);
 
 // Note: these only support decimal.
-long atoi(const char* s);
-unsigned long atou(const char* s);
+long katoi(const char* s);
+unsigned long katou(const char* s);
 
 const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);

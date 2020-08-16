@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 
+#include "arch/dev/interrupts.h"
 #include "archs/x86-common/internal/proc/kthread.h"
 #include "archs/x86_64/internal/proc/tss.h"
 #include "proc/kthread-internal.h"

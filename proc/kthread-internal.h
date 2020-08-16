@@ -22,7 +22,6 @@
 #include "arch/proc/kthread-context.h"
 #include "arch/proc/kthread-stack.h"
 #include "common/list.h"
-#include "dev/interrupts.h"
 #include "memory/memory.h"
 #include "proc/kthread.h"
 #include "user/include/apos/posix_signal.h"
