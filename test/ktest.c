@@ -57,13 +57,13 @@ static inline void kexpect_int_to_string(long aval, long bval, char* aval_str,
   const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
   const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
 
-  kstrcpy(aval_str, itoa(aval));
+  kstrcpy(aval_str, kitoa(aval));
   if ((bval_in_range || bval == 0) && aval_in_range) {
     kstrcat(aval_str, " (");
     kstrcat(aval_str, errorname(-aval));
     kstrcat(aval_str, ")");
   }
-  kstrcpy(bval_str, itoa(bval));
+  kstrcpy(bval_str, kitoa(bval));
   if ((aval_in_range || aval == 0) && bval_in_range) {
     kstrcat(bval_str, " (");
     kstrcat(bval_str, errorname(-bval));
@@ -148,14 +148,14 @@ void kexpect_int(const char* name, const char* file, const char* line,
   // If the expected value is written as hex, print the actual value as hex too.
   if (a_type == PRINT_HEX ||
       kstrncmp(astr, "0x", 2) == 0 || kstrncmp(bstr, "0x", 2) == 0) {
-    ksprintf(aval_str, "0x%s", utoa_hex(aval));
-    ksprintf(bval_str, "0x%s", utoa_hex(bval));
+    ksprintf(aval_str, "0x%s", kutoa_hex(aval));
+    ksprintf(bval_str, "0x%s", kutoa_hex(bval));
   } else if (b_type == PRINT_SIGNED ||
              kstrncmp(astr, "-", 1) == 0 || kstrncmp(bstr, "-", 1) == 0) {
     kexpect_int_to_string(aval, bval, aval_str, bval_str);
   } else {
-    kstrcpy(aval_str, utoa(aval));
-    kstrcpy(bval_str, utoa(bval));
+    kstrcpy(aval_str, kutoa(aval));
+    kstrcpy(bval_str, kutoa(bval));
   }
   kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
 }

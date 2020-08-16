@@ -76,92 +76,92 @@ static void kstring_testB(char* buf) {
   kstrcat(buf, "ABCDEFG");
   KEXPECT_STREQ("abABCDEFG", buf);
 
-  KTEST_BEGIN("utoa()");
-  KEXPECT_STREQ("0", utoa(0));
-  KEXPECT_STREQ("0", utoa(00));
-  KEXPECT_STREQ("10", utoa(10));
-  KEXPECT_STREQ("100", utoa(100));
-  KEXPECT_STREQ("123", utoa(123));
-  KEXPECT_STREQ("1234567890", utoa(1234567890));
-  KEXPECT_STREQ("4294967295", utoa(0xFFFFFFFF));
+  KTEST_BEGIN("kutoa()");
+  KEXPECT_STREQ("0", kutoa(0));
+  KEXPECT_STREQ("0", kutoa(00));
+  KEXPECT_STREQ("10", kutoa(10));
+  KEXPECT_STREQ("100", kutoa(100));
+  KEXPECT_STREQ("123", kutoa(123));
+  KEXPECT_STREQ("1234567890", kutoa(1234567890));
+  KEXPECT_STREQ("4294967295", kutoa(0xFFFFFFFF));
   if (sizeof(unsigned long) == 8) {
     // The explicit casts here and below are to keep gcc happy in 32-bit mode
     // with -Woverflow (even those these lines won't be executed).
     KEXPECT_STREQ("18446744073709551615",
-                  utoa((unsigned long)0xFFFFFFFFFFFFFFFF));
+                  kutoa((unsigned long)0xFFFFFFFFFFFFFFFF));
   }
   _Static_assert(sizeof(unsigned long) == 4 || sizeof(unsigned long) == 8,
                  "Unsupported sizeof(unsigned long)");
 
-  KTEST_BEGIN("utoa_hex()");
-  KEXPECT_STREQ("0", utoa_hex(0));
-  KEXPECT_STREQ("0", utoa_hex(00));
-  KEXPECT_STREQ("10", utoa_hex(0x10));
-  KEXPECT_STREQ("DEADBEEF", utoa_hex(0xDEADBEEF));
-  KEXPECT_STREQ("12345", utoa_hex(0x12345));
-  KEXPECT_STREQ("67890", utoa_hex(0x67890));
-  KEXPECT_STREQ("ABCDEF0", utoa_hex(0xABCDEF0));
-  KEXPECT_STREQ("FFFFFFFF", utoa_hex(0xFFFFFFFF));
+  KTEST_BEGIN("kutoa_hex()");
+  KEXPECT_STREQ("0", kutoa_hex(0));
+  KEXPECT_STREQ("0", kutoa_hex(00));
+  KEXPECT_STREQ("10", kutoa_hex(0x10));
+  KEXPECT_STREQ("DEADBEEF", kutoa_hex(0xDEADBEEF));
+  KEXPECT_STREQ("12345", kutoa_hex(0x12345));
+  KEXPECT_STREQ("67890", kutoa_hex(0x67890));
+  KEXPECT_STREQ("ABCDEF0", kutoa_hex(0xABCDEF0));
+  KEXPECT_STREQ("FFFFFFFF", kutoa_hex(0xFFFFFFFF));
   if (sizeof(unsigned long) == 8) {
     KEXPECT_STREQ("FFFFFFFFFFFFFFFF",
-                  utoa_hex((unsigned long)0xFFFFFFFFFFFFFFFF));
+                  kutoa_hex((unsigned long)0xFFFFFFFFFFFFFFFF));
   }
   _Static_assert(sizeof(unsigned long) == 4 || sizeof(unsigned long) == 8,
                  "Unsupported sizeof(unsigned long)");
 
-  KTEST_BEGIN("utoa_hex_lower()");
-  KEXPECT_STREQ("0", utoa_hex_lower(0));
-  KEXPECT_STREQ("0", utoa_hex_lower(00));
-  KEXPECT_STREQ("10", utoa_hex_lower(0x10));
-  KEXPECT_STREQ("deadbeef", utoa_hex_lower(0xDEADBEEF));
-  KEXPECT_STREQ("12345", utoa_hex_lower(0x12345));
-  KEXPECT_STREQ("67890", utoa_hex_lower(0x67890));
-  KEXPECT_STREQ("abcdef0", utoa_hex_lower(0xABCDEF0));
+  KTEST_BEGIN("kutoa_hex_lower()");
+  KEXPECT_STREQ("0", kutoa_hex_lower(0));
+  KEXPECT_STREQ("0", kutoa_hex_lower(00));
+  KEXPECT_STREQ("10", kutoa_hex_lower(0x10));
+  KEXPECT_STREQ("deadbeef", kutoa_hex_lower(0xDEADBEEF));
+  KEXPECT_STREQ("12345", kutoa_hex_lower(0x12345));
+  KEXPECT_STREQ("67890", kutoa_hex_lower(0x67890));
+  KEXPECT_STREQ("abcdef0", kutoa_hex_lower(0xABCDEF0));
   if (sizeof(unsigned long) == 8) {
     KEXPECT_STREQ("ffffffffffffffff",
-                  utoa_hex_lower((unsigned long)0xFFFFFFFFFFFFFFFF));
+                  kutoa_hex_lower((unsigned long)0xFFFFFFFFFFFFFFFF));
   }
 
-  KTEST_BEGIN("itoa()");
-  KEXPECT_STREQ("0", itoa(0));
-  KEXPECT_STREQ("0", itoa(-0));
-  KEXPECT_STREQ("10", itoa(10));
-  KEXPECT_STREQ("-10", itoa(-10));
-  KEXPECT_STREQ("100", itoa(100));
-  KEXPECT_STREQ("123", itoa(123));
-  KEXPECT_STREQ("1234567890", itoa(1234567890));
-  KEXPECT_STREQ("-1234567890", itoa(-1234567890));
-  KEXPECT_STREQ("2147483647", itoa(0x7FFFFFFF));
+  KTEST_BEGIN("kitoa()");
+  KEXPECT_STREQ("0", kitoa(0));
+  KEXPECT_STREQ("0", kitoa(-0));
+  KEXPECT_STREQ("10", kitoa(10));
+  KEXPECT_STREQ("-10", kitoa(-10));
+  KEXPECT_STREQ("100", kitoa(100));
+  KEXPECT_STREQ("123", kitoa(123));
+  KEXPECT_STREQ("1234567890", kitoa(1234567890));
+  KEXPECT_STREQ("-1234567890", kitoa(-1234567890));
+  KEXPECT_STREQ("2147483647", kitoa(0x7FFFFFFF));
   if (sizeof(long) == 4) {
-    KEXPECT_STREQ("-2147483648", itoa(0x80000000));
-    KEXPECT_STREQ("-2147483647", itoa(0x80000001));
+    KEXPECT_STREQ("-2147483648", kitoa(0x80000000));
+    KEXPECT_STREQ("-2147483647", kitoa(0x80000001));
   } else if (sizeof(long) == 8) {
-    KEXPECT_STREQ("2147483648", itoa(0x80000000));
-    KEXPECT_STREQ("2147483649", itoa(0x80000001));
-    KEXPECT_STREQ("-9223372036854775808", itoa((long)0x8000000000000000));
-    KEXPECT_STREQ("-9223372036854775807", itoa((long)0x8000000000000001));
+    KEXPECT_STREQ("2147483648", kitoa(0x80000000));
+    KEXPECT_STREQ("2147483649", kitoa(0x80000001));
+    KEXPECT_STREQ("-9223372036854775808", kitoa((long)0x8000000000000000));
+    KEXPECT_STREQ("-9223372036854775807", kitoa((long)0x8000000000000001));
   }
   _Static_assert(sizeof(long) == 4 || sizeof(long) == 8,
                  "Unsupported sizeof(long)");
 
-  KTEST_BEGIN("itoa_hex()");
-  KEXPECT_STREQ("0", itoa_hex(0));
-  KEXPECT_STREQ("0", itoa_hex(-0));
-  KEXPECT_STREQ("10", itoa_hex(0x10));
-  KEXPECT_STREQ("DEAD", itoa_hex(0xDEAD));
-  KEXPECT_STREQ("12345", itoa_hex(0x12345));
-  KEXPECT_STREQ("67890", itoa_hex(0x67890));
-  KEXPECT_STREQ("ABCDEF0", itoa_hex(0xABCDEF0));
-  KEXPECT_STREQ("-ABCDEF0", itoa_hex(-0xABCDEF0));
-  KEXPECT_STREQ("7FFFFFFF", itoa_hex(0x7FFFFFFF));
+  KTEST_BEGIN("kitoa_hex()");
+  KEXPECT_STREQ("0", kitoa_hex(0));
+  KEXPECT_STREQ("0", kitoa_hex(-0));
+  KEXPECT_STREQ("10", kitoa_hex(0x10));
+  KEXPECT_STREQ("DEAD", kitoa_hex(0xDEAD));
+  KEXPECT_STREQ("12345", kitoa_hex(0x12345));
+  KEXPECT_STREQ("67890", kitoa_hex(0x67890));
+  KEXPECT_STREQ("ABCDEF0", kitoa_hex(0xABCDEF0));
+  KEXPECT_STREQ("-ABCDEF0", kitoa_hex(-0xABCDEF0));
+  KEXPECT_STREQ("7FFFFFFF", kitoa_hex(0x7FFFFFFF));
   if (sizeof(long) == 4) {
-    KEXPECT_STREQ("-80000000", itoa_hex(0x80000000));
-    KEXPECT_STREQ("-7FFFFFFF", itoa_hex(0x80000001));
+    KEXPECT_STREQ("-80000000", kitoa_hex(0x80000000));
+    KEXPECT_STREQ("-7FFFFFFF", kitoa_hex(0x80000001));
   } else if (sizeof(long) == 8) {
-    KEXPECT_STREQ("80000000", itoa_hex(0x80000000));
-    KEXPECT_STREQ("80000001", itoa_hex(0x80000001));
-    KEXPECT_STREQ("-8000000000000000", itoa_hex((long)0x8000000000000000));
-    KEXPECT_STREQ("-7FFFFFFFFFFFFFFF", itoa_hex((long)0x8000000000000001));
+    KEXPECT_STREQ("80000000", kitoa_hex(0x80000000));
+    KEXPECT_STREQ("80000001", kitoa_hex(0x80000001));
+    KEXPECT_STREQ("-8000000000000000", kitoa_hex((long)0x8000000000000000));
+    KEXPECT_STREQ("-7FFFFFFFFFFFFFFF", kitoa_hex((long)0x8000000000000001));
   }
   _Static_assert(sizeof(long) == 4 || sizeof(long) == 8,
                  "Unsupported sizeof(long)");
@@ -329,65 +329,65 @@ static void kstring_testE(void) {
 }
 
 static void kstring_testF(void) {
-  KTEST_BEGIN("itoa_r()");
+  KTEST_BEGIN("kitoa_r()");
   char buf[100];
 
-  KEXPECT_STREQ("123", itoa_r(123, buf, 100));
-  KEXPECT_STREQ("-123", itoa_r(-123, buf, 100));
+  KEXPECT_STREQ("123", kitoa_r(123, buf, 100));
+  KEXPECT_STREQ("-123", kitoa_r(-123, buf, 100));
   kmemset(buf, 'A', 50);
-  KEXPECT_STREQ("5678", itoa_r(45678, buf, 5));
+  KEXPECT_STREQ("5678", kitoa_r(45678, buf, 5));
   KEXPECT_EQ('A', buf[5]);
-  KEXPECT_STREQ("-345", itoa_r(-12345, buf, 5));
+  KEXPECT_STREQ("-345", kitoa_r(-12345, buf, 5));
   KEXPECT_EQ('A', buf[5]);
   kmemset(buf, 'A', 50);
-  KEXPECT_STREQ("-5", itoa_r(-12345, buf, 3));
+  KEXPECT_STREQ("-5", kitoa_r(-12345, buf, 3));
   KEXPECT_EQ('A', buf[3]);
   buf[2] = '!';
-  KEXPECT_STREQ("-", itoa_r(-12346, buf, 2));
+  KEXPECT_STREQ("-", kitoa_r(-12346, buf, 2));
   KEXPECT_EQ('!', buf[2]);
-  KEXPECT_STREQ("", itoa_r(-12346, buf, 1));
+  KEXPECT_STREQ("", kitoa_r(-12346, buf, 1));
   kmemset(buf, 'A', 50);
-  KEXPECT_STREQ("", itoa_r(0, buf, 1));
+  KEXPECT_STREQ("", kitoa_r(0, buf, 1));
   KEXPECT_EQ('A', buf[1]);
 
-  KTEST_BEGIN("itoa_hex_r()");
-  KEXPECT_STREQ("1A", itoa_hex_r(0x1a, buf, 100));
-  KEXPECT_STREQ("-1A", itoa_hex_r(-0x1a, buf, 100));
-  KEXPECT_STREQ("-A", itoa_hex_r(-0x1a, buf, 3));
+  KTEST_BEGIN("kitoa_hex_r()");
+  KEXPECT_STREQ("1A", kitoa_hex_r(0x1a, buf, 100));
+  KEXPECT_STREQ("-1A", kitoa_hex_r(-0x1a, buf, 100));
+  KEXPECT_STREQ("-A", kitoa_hex_r(-0x1a, buf, 3));
   kmemset(buf, '!', 50);
-  KEXPECT_STREQ("-", itoa_hex_r(-0x1a, buf, 2));
+  KEXPECT_STREQ("-", kitoa_hex_r(-0x1a, buf, 2));
   KEXPECT_EQ('!', buf[2]);
   buf[1] = '!';
-  KEXPECT_STREQ("", itoa_hex_r(-0x1a, buf, 1));
+  KEXPECT_STREQ("", kitoa_hex_r(-0x1a, buf, 1));
   KEXPECT_EQ('!', buf[1]);
   buf[1] = '!';
-  KEXPECT_STREQ("", itoa_hex_r(0, buf, 1));
+  KEXPECT_STREQ("", kitoa_hex_r(0, buf, 1));
   KEXPECT_EQ('!', buf[1]);
 
-  KTEST_BEGIN("utoa_r()");
-  KEXPECT_STREQ("123", utoa_r(123, buf, 100));
+  KTEST_BEGIN("kutoa_r()");
+  KEXPECT_STREQ("123", kutoa_r(123, buf, 100));
   kmemset(buf, '!', 50);
-  KEXPECT_STREQ("234", utoa_r(1234, buf, 4));
+  KEXPECT_STREQ("234", kutoa_r(1234, buf, 4));
   KEXPECT_EQ('!', buf[4]);
-  KEXPECT_STREQ("4", utoa_r(1234, buf, 2));
-  KEXPECT_STREQ("", utoa_r(1234, buf, 1));
+  KEXPECT_STREQ("4", kutoa_r(1234, buf, 2));
+  KEXPECT_STREQ("", kutoa_r(1234, buf, 1));
   buf[1] = '!';
-  KEXPECT_STREQ("", utoa_r(0, buf, 1));
+  KEXPECT_STREQ("", kutoa_r(0, buf, 1));
   KEXPECT_EQ('!', buf[1]);
 
-  KTEST_BEGIN("utoa_hex_r()");
-  KEXPECT_STREQ("123", utoa_hex_r(0x123, buf, 100));
+  KTEST_BEGIN("kutoa_hex_r()");
+  KEXPECT_STREQ("123", kutoa_hex_r(0x123, buf, 100));
   kmemset(buf, '!', 50);
-  KEXPECT_STREQ("234", utoa_hex_r(0x1234, buf, 4));
+  KEXPECT_STREQ("234", kutoa_hex_r(0x1234, buf, 4));
   KEXPECT_EQ('!', buf[4]);
-  KEXPECT_STREQ("B12", utoa_hex_r(0xab12, buf, 4));
+  KEXPECT_STREQ("B12", kutoa_hex_r(0xab12, buf, 4));
 
-  KTEST_BEGIN("utoa_hex_lower_r()");
-  KEXPECT_STREQ("123", utoa_hex_lower_r(0x123, buf, 100));
+  KTEST_BEGIN("kutoa_hex_lower_r()");
+  KEXPECT_STREQ("123", kutoa_hex_lower_r(0x123, buf, 100));
   kmemset(buf, '!', 50);
-  KEXPECT_STREQ("234", utoa_hex_lower_r(0x1234, buf, 4));
+  KEXPECT_STREQ("234", kutoa_hex_lower_r(0x1234, buf, 4));
   KEXPECT_EQ('!', buf[4]);
-  KEXPECT_STREQ("b12", utoa_hex_lower_r(0xab12, buf, 4));
+  KEXPECT_STREQ("b12", kutoa_hex_lower_r(0xab12, buf, 4));
 }
 
 void kstring_test(void) {

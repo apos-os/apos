@@ -168,7 +168,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
         }
 
         positive_number = sint >= 0;
-        s = itoa_r(sint, num_buf, kNumBufSize);
+        s = kitoa_r(sint, num_buf, kNumBufSize);
         break;
 
       case 'u':
@@ -195,16 +195,16 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
         switch (spec.type) {
           case 'u':
-            s = utoa_r(uint, num_buf, kNumBufSize);
+            s = kutoa_r(uint, num_buf, kNumBufSize);
             break;
 
           case 'x':
-            s = utoa_hex_lower_r(uint, num_buf, kNumBufSize);
+            s = kutoa_hex_lower_r(uint, num_buf, kNumBufSize);
             if (uint != 0 && spec.alternate_flag) prefix = "0x";
             break;
 
           case 'X':
-            s = utoa_hex_r(uint, num_buf, kNumBufSize);
+            s = kutoa_hex_r(uint, num_buf, kNumBufSize);
             if (uint != 0 && spec.alternate_flag) prefix = "0X";
             break;
         }
@@ -212,7 +212,7 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
       case 'p':
         ptr = va_arg(args, void*);
-        s = utoa_hex_lower_r((intptr_t)ptr, num_buf, kNumBufSize);
+        s = kutoa_hex_lower_r((intptr_t)ptr, num_buf, kNumBufSize);
         prefix = "0x";
         break;
 

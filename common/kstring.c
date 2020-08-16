@@ -123,12 +123,12 @@ static unsigned long abs(long x) {
   return x < 0 ? -x : x;
 }
 
-const char* itoa(long x) {
+const char* kitoa(long x) {
   static char buf[256];
-  return itoa_r(x, buf, 256);
+  return kitoa_r(x, buf, 256);
 }
 
-const char* itoa_r(long x, char* buf, size_t len) {
+const char* kitoa_r(long x, char* buf, size_t len) {
   buf[0] = '\0';
 
   char* orig_buf = buf;
@@ -137,16 +137,16 @@ const char* itoa_r(long x, char* buf, size_t len) {
     len--;
     buf++;
   }
-  utoa_r(abs(x), buf, len);
+  kutoa_r(abs(x), buf, len);
   return orig_buf;
 }
 
-const char* itoa_hex(long x) {
+const char* kitoa_hex(long x) {
   static char buf[256];
-  return itoa_hex_r(x, buf, 256);
+  return kitoa_hex_r(x, buf, 256);
 }
 
-const char* itoa_hex_r(long x, char* buf, size_t len) {
+const char* kitoa_hex_r(long x, char* buf, size_t len) {
   buf[0] = '\0';
 
   char* orig_buf = buf;
@@ -155,13 +155,13 @@ const char* itoa_hex_r(long x, char* buf, size_t len) {
     len--;
     buf++;
   }
-  utoa_hex_r(abs(x), buf, len);
+  kutoa_hex_r(abs(x), buf, len);
   return orig_buf;
 }
 
 // Helper for utoa/utoa_hex that takes a number, a base, and a lookup table of
 // characters.
-static const char* utoa_internal(unsigned long x, unsigned long base,
+static const char* kutoa_internal(unsigned long x, unsigned long base,
                                  const char* tbl, char* buf, size_t buflen) {
   int i = 0;
   if (buflen == 1) {
@@ -188,31 +188,31 @@ static const char* utoa_internal(unsigned long x, unsigned long base,
   return buf;
 }
 
-const char* utoa(unsigned long x) {
+const char* kutoa(unsigned long x) {
   static char buf[256];
-  return utoa_r(x, buf, 256);
+  return kutoa_r(x, buf, 256);
 }
 
-const char* utoa_r(unsigned long x, char* buf, size_t len) {
-  return utoa_internal(x, 10, "0123456789", buf, len);
+const char* kutoa_r(unsigned long x, char* buf, size_t len) {
+  return kutoa_internal(x, 10, "0123456789", buf, len);
 }
 
-const char* utoa_hex(unsigned long x) {
+const char* kutoa_hex(unsigned long x) {
   static char buf[256];
-  return utoa_hex_r(x, buf, 256);
+  return kutoa_hex_r(x, buf, 256);
 }
 
-const char* utoa_hex_r(unsigned long x, char* buf, size_t len) {
-  return utoa_internal(x, 16, "0123456789ABCDEF", buf, len);
+const char* kutoa_hex_r(unsigned long x, char* buf, size_t len) {
+  return kutoa_internal(x, 16, "0123456789ABCDEF", buf, len);
 }
 
-const char* utoa_hex_lower(unsigned long x) {
+const char* kutoa_hex_lower(unsigned long x) {
   static char buf[256];
-  return utoa_hex_lower_r(x, buf, 256);
+  return kutoa_hex_lower_r(x, buf, 256);
 }
 
-const char* utoa_hex_lower_r(unsigned long x, char* buf, size_t len) {
-  return utoa_internal(x, 16, "0123456789abcdef", buf, len);
+const char* kutoa_hex_lower_r(unsigned long x, char* buf, size_t len) {
+  return kutoa_internal(x, 16, "0123456789abcdef", buf, len);
 }
 
 static unsigned long atou_internal_base(const char* s, int base) {
