@@ -16,3 +16,5 @@ TODO
 /.sconsign.dblite
 /build-scons
 /build-config.conf
+/.gdbinit
+/.lldbinit
