@@ -14,13 +14,19 @@
 #ifndef APOO_USER_INCLUDE_APOS_VFS_POLL_H
 #define APOO_USER_INCLUDE_APOS_VFS_POLL_H
 
-struct pollfd {
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_POLLFD apos_pollfd
+#else
+#  define _APOS_POLLFD pollfd
+#endif
+struct _APOS_POLLFD {
   int fd;
   short events;
   short revents;
 };
+#undef _APOS_POLLFD
 
-typedef unsigned long nfds_t;
+typedef unsigned long apos_nfds_t;
 
 #define POLLIN      0x001  // Data other than high-priority data may be read without blocking.
 #define POLLRDNORM  0x002  // Normal data may be read without blocking.
@@ -32,5 +38,10 @@ typedef unsigned long nfds_t;
 #define POLLERR     0x040  // An error has occurred (revents only).
 #define POLLHUP     0x080  // Device has been disconnected (revents only).
 #define POLLNVAL    0x100  // Invalid fd member (revents only).
+
+#if !__APOS_BUILDING_KERNEL__
+  typedef apos_nfds_t nfds_t;
+# define apos_pollfd pollfd
+#endif
 
 #endif

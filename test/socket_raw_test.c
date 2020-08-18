@@ -444,7 +444,7 @@ static void connect_test(void) {
 }
 
 static void* do_poll_helper(void* arg) {
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = *(int*)arg;
   pfd.revents = 0;
   pfd.events = POLLIN;
@@ -471,7 +471,7 @@ static void raw_poll_test(void) {
   dst_addr.sin_family = AF_INET;
   dst_addr.sin_addr.s_addr = str2inet("127.0.0.5");
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = recv_sock;
   pfd.revents = 0;
   pfd.events = POLLIN;

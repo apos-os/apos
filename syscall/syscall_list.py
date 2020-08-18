@@ -477,8 +477,8 @@ AddSyscall('truncate', 68, 'vfs_truncate', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'off_t:length:u'])
 
 AddSyscall('poll', 69, 'vfs_poll', 'vfs/poll.h', '<poll.h>',
-    'int', ['struct pollfd*:fds:brw:sizeof(struct pollfd) * nfds',
-            'nfds_t:nfds:u', 'int:timeout:u'])
+    'int', ['struct apos_pollfd*:fds:brw:sizeof(struct apos_pollfd) * nfds',
+            'apos_nfds_t:nfds:u', 'int:timeout:u'])
 
 AddSyscall('getrlimit', 75, 'proc_getrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',

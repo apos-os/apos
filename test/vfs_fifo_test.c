@@ -398,7 +398,7 @@ static void nonblock_test(void) {
 }
 
 typedef struct {
-  struct pollfd* pfds;
+  struct apos_pollfd* pfds;
   int nfds;
   int timeout;
   bool finished;
@@ -416,7 +416,7 @@ static void* do_poll(void* arg) {
 // Run from fifo_poll_test().
 static void fifo_poll_no_writers_test(void) {
   KTEST_BEGIN("FIFO: poll(POLLIN) with no writers (never had writer)");
-  struct pollfd pfds[1];
+  struct apos_pollfd pfds[1];
   KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo2", VFS_S_IFIFO | VFS_S_IRWXU, 0));
 
   int rd_fd = vfs_open("fifo_test/fifo2", VFS_O_RDONLY | VFS_O_NONBLOCK);
@@ -518,7 +518,7 @@ static void fifo_poll_test(void) {
   KEXPECT_GE(rd_fd, 0);
   KEXPECT_GE(wr_fd, 0);
 
-  struct pollfd pfds[2];
+  struct apos_pollfd pfds[2];
   pfds[0].fd = rd_fd;
   pfds[1].fd = wr_fd;
   pfds[0].events = pfds[1].events =
@@ -724,7 +724,7 @@ static void concurrent_close_poll_test(void) {
   int rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   KEXPECT_GE(rd_fd, 0);
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = rd_fd;
   pfd.events = POLLIN | POLLOUT | POLLPRI | POLLRDNORM | POLLWRNORM;
 

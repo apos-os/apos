@@ -41,7 +41,7 @@ static void poll_file_test(void) {
       vfs_open("_poll_test_dir/file", VFS_O_CREAT | VFS_O_RDONLY, VFS_S_IRWXU);
   KEXPECT_GE(fd, 0);
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = fd;
   pfd.events = POLLIN | POLLOUT | POLLERR | POLLNVAL | POLLPRI;
   pfd.revents = 123;
@@ -75,7 +75,7 @@ static void poll_dir_test(void) {
   int fd = vfs_open("_poll_test_dir", VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = fd;
   pfd.events = 0;
   pfd.revents = 123;
@@ -198,7 +198,7 @@ static void do_trigger_fake_devB(void* arg) {
 }
 
 static void basic_cd_test(chardev_args_t* args) {
-  struct pollfd pfds[5];
+  struct apos_pollfd pfds[5];
 
   KTEST_BEGIN("poll(): basic POLLIN chardev test");
   set_cd_events(args, 0, POLLIN);
@@ -277,7 +277,7 @@ static void basic_cd_test(chardev_args_t* args) {
 }
 
 static void multi_fd_test(chardev_args_t* args) {
-  struct pollfd pfds[5];
+  struct apos_pollfd pfds[5];
   KTEST_BEGIN("poll(): basic multi-fd test");
   set_cd_events(args, 0, POLLIN);
   set_cd_events(args, 1, POLLOUT);
@@ -469,7 +469,7 @@ static void multi_fd_test(chardev_args_t* args) {
 }
 
 static void weird_fd_test(chardev_args_t* args) {
-  struct pollfd pfds[5];
+  struct apos_pollfd pfds[5];
   KTEST_BEGIN("poll(): negative fds test");
   for (int i= 0; i < 3; ++i) {
     set_cd_events(args, i, 0);
@@ -549,7 +549,7 @@ static void weird_fd_test(chardev_args_t* args) {
 }
 
 static void unmaskable_events_test(chardev_args_t* args) {
-  struct pollfd pfds[5];
+  struct apos_pollfd pfds[5];
 
   KTEST_BEGIN("poll(): POLLERR ignores mask");
   set_cd_events(args, 0, POLLERR);
@@ -642,7 +642,7 @@ static void deleted_cd_test(void) {
 
   KEXPECT_EQ(0, dev_unregister_char(cd_id));
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = fd;
   pfd.events = POLLIN | POLLOUT | POLLPRI;
   pfd.revents = 123;
@@ -657,7 +657,7 @@ static void do_signal(void* arg) {
 
 static void interrupt_test(void* x) {
   chardev_args_t* args = x;
-  struct pollfd pfds[5];
+  struct apos_pollfd pfds[5];
   KTEST_BEGIN("poll(): interrupted by signal test (standard timeout)");
   for (int i= 0; i < 3; ++i) {
     set_cd_events(args, i, 0);
@@ -761,7 +761,7 @@ static void block_dev_test(void) {
   int fd = vfs_open(dev_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = fd;
   pfd.events = POLLIN | POLLOUT | POLLPRI;
   pfd.revents = 123;
@@ -792,8 +792,8 @@ static void poll_timeout_race_test(void) {
   KTEST_BEGIN("poll(): short timeout race condition");
   int fds[2];
   KEXPECT_EQ(0, vfs_pipe(fds));
-  struct pollfd* pfds =
-      (struct pollfd*)kmalloc(sizeof(struct pollfd) * kNumFds);
+  struct apos_pollfd* pfds =
+      (struct apos_pollfd*)kmalloc(sizeof(struct apos_pollfd) * kNumFds);
   for (int i = 0; i < kNumFds; ++i) {
     pfds[i].fd = fds[0];
     pfds[i].events = POLLIN;

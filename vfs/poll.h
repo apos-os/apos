@@ -77,6 +77,6 @@ void poll_trigger_event(poll_event_t* event, short events);
 void poll_cancel(poll_state_t* poll);
 
 // Perform a poll, as per the poll() syscall.
-int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout);
+int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout);
 
 #endif

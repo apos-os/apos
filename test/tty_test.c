@@ -632,7 +632,7 @@ static void tty_nonblock_test(void) {
 }
 
 typedef struct {
-  struct pollfd* pfds;
+  struct apos_pollfd* pfds;
   int nfds;
   int timeout;
   bool finished;
@@ -661,7 +661,7 @@ static void tty_poll_test(void) {
   int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
   KEXPECT_GE(fd, 0);
 
-  struct pollfd pfds[2];
+  struct apos_pollfd pfds[2];
   pfds[0].fd = fd;
   pfds[0].events = POLLIN | POLLOUT;
 

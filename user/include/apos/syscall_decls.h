@@ -88,7 +88,7 @@ int tcgetattr(int fd, struct termios* t);
 int tcsetattr(int fd, int optional_actions, const struct termios* t);
 int ftruncate(int fd, off_t length);
 int truncate(const char* path, off_t length);
-int poll(struct pollfd* fds, nfds_t nfds, int timeout);
+int poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout);
 int getrlimit(int resource, struct rlimit* lim);
 int setrlimit(int resource, const struct rlimit* lim);
 int socket(int domain, int type, int protocol);

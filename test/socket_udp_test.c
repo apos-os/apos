@@ -792,7 +792,7 @@ static void recvfrom_test(void) {
 }
 
 static void* do_poll_helper(void* arg) {
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = *(int*)arg;
   pfd.revents = 0;
   pfd.events = POLLIN;
@@ -818,7 +818,7 @@ static void recv_poll_test(void) {
   KEXPECT_EQ(0, do_bind(recv_sock, "0.0.0.0", 1234));
   KEXPECT_EQ(0, do_connect(send_sock, "127.0.0.1", 1234));
 
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = recv_sock;
   pfd.revents = 0;
   pfd.events = POLLIN;

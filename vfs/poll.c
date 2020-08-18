@@ -142,7 +142,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   return 0;
 }
 
-int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
+int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout_ms) {
   int result = 0;
   poll_state_t poll;
   kthread_queue_init(&poll.q);

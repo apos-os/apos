@@ -1672,7 +1672,7 @@ static void shutdown_error_test(void) {
 }
 
 static int do_poll(int fd) {
-  struct pollfd pfd;
+  struct apos_pollfd pfd;
   pfd.fd = fd;
   pfd.events = POLLIN | POLLRDNORM | POLLRDBAND | POLLPRI | POLLOUT |
                POLLWRNORM | POLLWRBAND | POLLERR | POLLHUP | POLLNVAL;
@@ -1767,7 +1767,7 @@ static void sock_unix_poll_test(void) {
 }
 
 typedef struct {
-  struct pollfd pfd[2];
+  struct apos_pollfd pfd[2];
   int nfds;
   int result;
   kthread_queue_t started_queue;
