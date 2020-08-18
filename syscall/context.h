@@ -27,7 +27,7 @@
 typedef struct {
   // Signal mask to restore just before returning to userspace, if flags
   // includes SCCTX_RESTORE_MASK.
-  sigset_t restore_mask;
+  ksigset_t restore_mask;
 
   int flags;
 } syscall_context_t;

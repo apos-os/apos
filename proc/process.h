@@ -61,10 +61,10 @@ struct process {
   page_dir_ptr_t page_directory;
 
   // Set of pending signals.
-  sigset_t pending_signals;
+  ksigset_t pending_signals;
 
   // Current signal dispositions.
-  sigaction_t signal_dispositions[SIGMAX + 1];
+  ksigaction_t signal_dispositions[SIGMAX + 1];
 
   // Pending alarm, if any.
   proc_alarm_t alarm;

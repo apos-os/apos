@@ -373,14 +373,14 @@ static void ctty_test(void* arg) {
 }
 
 static int sig_is_pending(process_t* proc, int sig) {
-  sigset_t pending = proc_pending_signals(proc);
+  ksigset_t pending = proc_pending_signals(proc);
   return ksigismember(&pending, sig);
 }
 
 static void empty_sig_handler(int sig) {}
 
 static void tcsetpgrp_test_inner(void* arg) {
-  sigset_t sigset_mask_ttou, old_sigset;
+  ksigset_t sigset_mask_ttou, old_sigset;
   ksigemptyset(&sigset_mask_ttou);
   ksigaddset(&sigset_mask_ttou, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset_mask_ttou, &old_sigset));
@@ -473,7 +473,7 @@ static void tcsetpgrp_test_inner(void* arg) {
 
 
   KTEST_BEGIN("tcsetpgrp(): set fg group from bg group with SIGTTOU ignored");
-  struct sigaction sigact = {SIG_IGN, 0, 0}, oldact;
+  struct ksigaction sigact = {SIG_IGN, 0, 0}, oldact;
   KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &sigact, &oldact));
 
   KEXPECT_EQ(0, proc_tcsetpgrp(fd, childA));
@@ -584,7 +584,7 @@ typedef struct {
   bool set_ctty;
   bool make_fg;
   struct child {
-    sigset_t signals;
+    ksigset_t signals;
     bool ran;
   } child[3];
   apos_dev_t tty;
@@ -618,7 +618,7 @@ static void controlling_process_exit_helper(void* arg) {
   KEXPECT_EQ(0, setpgid(child[2], child[2]));
 
   if (args->make_fg) {
-    sigset_t set = 0;
+    ksigset_t set = 0;
     ksigaddset(&set, SIGTTOU);
     proc_sigprocmask(SIG_BLOCK, &set, NULL);
     KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child[0]));
@@ -641,8 +641,8 @@ static void controlling_exit_run_helper(controlling_exit_args* args) {
 }
 
 static void controlling_process_exit_test(void* arg) {
-  const sigset_t kEmptySet = 0;
-  sigset_t kSigHupSet;
+  const ksigset_t kEmptySet = 0;
+  ksigset_t kSigHupSet;
   ksigemptyset(&kSigHupSet);
   ksigaddset(&kSigHupSet, SIGHUP);
 
@@ -688,7 +688,7 @@ static void do_read_from_bg(void* arg) {
   char c;
   KEXPECT_EQ(-EINTR, vfs_read(tty_fd, &c, 1));
 
-  sigset_t mask = 0;
+  ksigset_t mask = 0;
   ksigaddset(&mask, SIGTTIN);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
   ksleep(10000);
@@ -696,14 +696,14 @@ static void do_read_from_bg(void* arg) {
 
 static void read_from_bg_test_inner(void* arg) {
   const apos_dev_t test_tty = (intptr_t)arg;
-  sigset_t kSigTtinSet;
+  ksigset_t kSigTtinSet;
   ksigemptyset(&kSigTtinSet);
   ksigaddset(&kSigTtinSet, SIGTTIN);
 
   KTEST_BEGIN("read() on CTTY from bg process (no signals blocked)");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
 
-  sigset_t ttou_mask;
+  ksigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
@@ -727,7 +727,7 @@ static void read_from_bg_test_inner(void* arg) {
 
 
   KTEST_BEGIN("read() on CTTY from bg process (handler set for SIGTTIN)");
-  struct sigaction act = {&empty_sig_handler, 0, 0};
+  struct ksigaction act = {&empty_sig_handler, 0, 0};
   KEXPECT_EQ(0, proc_sigaction(SIGTTIN, &act, NULL));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTIN));
   KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTIN));
@@ -797,14 +797,14 @@ static void read_from_bg_test(void* arg) {
 
 static void write_from_bg_test_inner(void* arg) {
   const apos_dev_t test_tty = (intptr_t)arg;
-  sigset_t kSigTtinSet;
+  ksigset_t kSigTtinSet;
   ksigemptyset(&kSigTtinSet);
   ksigaddset(&kSigTtinSet, SIGTTIN);
 
   KTEST_BEGIN("write() on CTTY from bg process (no signals blocked)");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
 
-  sigset_t ttou_mask;
+  ksigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
@@ -844,7 +844,7 @@ static void do_write_from_bg_tostop(void* arg) {
   int tty_fd = *(int*)arg;
   KEXPECT_EQ(-EINTR, vfs_write(tty_fd, "x", 1));
 
-  sigset_t mask = 0;
+  ksigset_t mask = 0;
   ksigaddset(&mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &mask, NULL));
   ksleep(10000);
@@ -852,14 +852,14 @@ static void do_write_from_bg_tostop(void* arg) {
 
 static void write_from_bg_tostop_test_inner(void* arg) {
   const apos_dev_t test_tty = (intptr_t)arg;
-  sigset_t kSigTtouSet;
+  ksigset_t kSigTtouSet;
   ksigemptyset(&kSigTtouSet);
   ksigaddset(&kSigTtouSet, SIGTTOU);
 
   KTEST_BEGIN("write() on CTTY from bg process (no signals blocked) w/ TOSTOP");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
 
-  sigset_t ttou_mask;
+  ksigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
@@ -883,7 +883,7 @@ static void write_from_bg_tostop_test_inner(void* arg) {
 
   KTEST_BEGIN(
       "write() on CTTY from bg process (handler set for SIGTTOU) w/ TOSTOP");
-  struct sigaction act = {&empty_sig_handler, 0, 0};
+  struct ksigaction act = {&empty_sig_handler, 0, 0};
   KEXPECT_EQ(0, proc_sigaction(SIGTTOU, &act, NULL));
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
@@ -987,7 +987,7 @@ static void read_write_across_sessions_innerB(void* arg) {
 
 
   KTEST_BEGIN("read() on cross-session CTTY from bg process");
-  sigset_t ttou_mask;
+  ksigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));

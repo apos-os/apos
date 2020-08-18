@@ -61,19 +61,20 @@ int vfs_lstat_32(const char* path, apos_stat_32_t* stat);
 int vfs_fstat_32(int fd, apos_stat_32_t* stat);
 
 // Signal handling wrappers.
-struct sigaction_32 {
+struct ksigaction_32 {
   /* sighandler_t */ uint32_t sa_handler;
-  sigset_t sa_mask;
+  ksigset_t sa_mask;
   int sa_flags;
 };
-_Static_assert(sizeof(struct sigaction_32) == 12, "sigaction_32_t wrong size!");
+_Static_assert(sizeof(struct ksigaction_32) == 12,
+               "ksigaction_32_t wrong size!");
 #if ARCH == ARCH_i586
-_Static_assert(sizeof(struct sigaction_32) == sizeof(struct sigaction),
+_Static_assert(sizeof(struct ksigaction_32) == sizeof(struct ksigaction),
                "struct timespec_32 wrong size!");
 #endif
 
-int proc_sigaction_32(int signum, const struct sigaction_32* act,
-                      struct sigaction_32* oldact);
+int proc_sigaction_32(int signum, const struct ksigaction_32* act,
+                      struct ksigaction_32* oldact);
 
 // getdents wrappers.
 typedef struct {

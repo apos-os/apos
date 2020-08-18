@@ -27,8 +27,8 @@
 // user context running when the signal was first dispatched.
 //
 // Does not return.
-void proc_run_user_sighandler(int signum, const sigaction_t* action,
-                              const sigset_t* old_mask,
+void proc_run_user_sighandler(int signum, const ksigaction_t* action,
+                              const ksigset_t* old_mask,
                               const user_context_t* context,
                               const syscall_context_t* syscall_ctx);
 

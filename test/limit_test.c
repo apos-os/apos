@@ -25,7 +25,7 @@
 #include "vfs/vfs_test_util.h"
 
 static int sig_is_pending(int sig) {
-  sigset_t pending = proc_pending_signals(proc_current());
+  ksigset_t pending = proc_pending_signals(proc_current());
   return ksigismember(&pending, sig);
 }
 

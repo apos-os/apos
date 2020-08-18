@@ -33,7 +33,7 @@
 static void do_nothing(void* arg) {}
 
 static int sig_is_pending(process_t* proc, int sig) {
-  sigset_t pending = proc_pending_signals(proc);
+  ksigset_t pending = proc_pending_signals(proc);
   return ksigismember(&pending, sig);
 }
 
@@ -92,7 +92,7 @@ static void ld_signals_test(void* arg) {
 
 
   KTEST_BEGIN("TTY: ctrl-C sends SIGINT to fg process group");
-  sigset_t sigset, old_sigmask;
+  ksigset_t sigset, old_sigmask;
   ksigemptyset(&sigset);
   ksigaddset(&sigset, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
@@ -158,7 +158,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
-  sigset_t sigset, old_sigmask;
+  ksigset_t sigset, old_sigmask;
   ksigemptyset(&sigset);
   ksigaddset(&sigset, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
@@ -260,7 +260,7 @@ static void ld_signals_cc_c_test(void* arg) {
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
-  sigset_t sigset, old_sigmask;
+  ksigset_t sigset, old_sigmask;
   ksigemptyset(&sigset);
   ksigaddset(&sigset, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
@@ -465,13 +465,13 @@ static void termios_bg_pgrp_test(void* arg) {
   ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
 
   KTEST_BEGIN("tty: setup for background pgroup tests");
-  sigset_t kSigTtouSet;
+  ksigset_t kSigTtouSet;
   ksigemptyset(&kSigTtouSet);
   ksigaddset(&kSigTtouSet, SIGTTOU);
 
   KEXPECT_EQ(proc_current()->id, proc_setsid());
 
-  sigset_t ttou_mask;
+  ksigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));

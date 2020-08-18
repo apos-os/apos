@@ -25,8 +25,8 @@
 #  include <apos/errors.h>
 #endif
 
-typedef uint32_t sigset_t;
-typedef void (*sighandler_t)(int);
+typedef uint32_t ksigset_t;
+typedef void (*ksighandler_t)(int);
 
 // Signal numbers.
 #define SIGNULL 0
@@ -66,8 +66,8 @@ typedef void (*sighandler_t)(int);
 #define NSIG (SIGMAX + 1)
 
 // sighandler_t constants.
-#define SIG_DFL ((sighandler_t)0x0)
-#define SIG_IGN ((sighandler_t)0x1)
+#define SIG_DFL ((ksighandler_t)0x0)
+#define SIG_IGN ((ksighandler_t)0x1)
 
 // sa_flags flags.
 #define SA_RESTART 1
@@ -78,29 +78,39 @@ typedef void (*sighandler_t)(int);
 #define SIG_UNBLOCK 2
 #define SIG_SETMASK 3
 
-typedef struct sigaction {
-  sighandler_t sa_handler;
-  sigset_t sa_mask;
+// sigaction is the name of both the type and the syscall, so a basic
+// '#define sigaction ksigaction' creates problems in compilation (we end up
+// with the wrong syscall name in libc).  So do the name selection manually.
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_SIGACTION ksigaction
+#else
+#  define _APOS_SIGACTION sigaction
+#endif
+struct _APOS_SIGACTION {
+  ksighandler_t sa_handler;
+  ksigset_t sa_mask;
   int sa_flags;
   // TODO(aoates): support sa_sigaction.
-} sigaction_t;
+};
+typedef struct _APOS_SIGACTION ksigaction_t;
+#undef _APOS_SIGACTION
 
-_Static_assert(sizeof(sigset_t) * 8 >= SIGMAX,
+_Static_assert(sizeof(ksigset_t) * 8 >= SIGMAX,
                "sigset_t too small to hold all signals");
 
-static inline int ksigemptyset(sigset_t* set) {
+static inline int ksigemptyset(ksigset_t* set) {
   *set = 0;
   return 0;
 }
 
-static inline int ksigfillset(sigset_t* set) {
-  _Static_assert(sizeof(sigset_t) == sizeof(uint32_t),
+static inline int ksigfillset(ksigset_t* set) {
+  _Static_assert(sizeof(ksigset_t) == sizeof(uint32_t),
                  "ksigfillset only implemented for uint32_t");
   *set = 0xFFFFFFFF;
   return 0;
 }
 
-static inline int ksigaddset(sigset_t* set, int signum) {
+static inline int ksigaddset(ksigset_t* set, int signum) {
   if (signum <= SIGNULL || signum > SIGMAX) {
     return -EINVAL;
   }
@@ -108,7 +118,7 @@ static inline int ksigaddset(sigset_t* set, int signum) {
   return 0;
 }
 
-static inline int ksigdelset(sigset_t* set, int signum) {
+static inline int ksigdelset(ksigset_t* set, int signum) {
   if (signum <= SIGNULL || signum > SIGMAX) {
     return -EINVAL;
   }
@@ -116,7 +126,7 @@ static inline int ksigdelset(sigset_t* set, int signum) {
   return 0;
 }
 
-static inline int ksigismember(const sigset_t* set, int signum) {
+static inline int ksigismember(const ksigset_t* set, int signum) {
   if (signum <= SIGNULL || signum > SIGMAX) {
     return -EINVAL;
   }
@@ -126,5 +136,22 @@ static inline int ksigismember(const sigset_t* set, int signum) {
     return 0;
   }
 }
+
+// Rename types and functions to POSIX names for user code.
+#if !__APOS_BUILDING_KERNEL__
+  typedef ksigset_t sigset_t;
+
+# define sigaddset(set, sig) ksigaddset(set, sig)
+# define sigdelset(set, sig) ksigdelset(set, sig)
+# define sigemptyset(set) ksigemptyset(set)
+# define sigfillset(set) ksigfillset(set)
+# define sigismember(set, sig) ksigismember(set, sig)
+
+  // Unlike the above types/names, in user mode ksigaction/ksigaction_t is _not_
+  // defined (see comment above for why).  But we reference it in syscall stubs.
+  // So define it to be the same as sigaction/sigaction_t, which _is_ defined
+# define ksigaction sigaction
+
+#endif // !__APOS_BUILDING_KERNEL__
 
 #endif

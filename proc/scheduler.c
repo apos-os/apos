@@ -111,7 +111,7 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
 
   timer_handle_t timeout_handle;
   if (interruptable) {
-    const sigset_t dispatchable = proc_dispatchable_signals();
+    const ksigset_t dispatchable = proc_dispatchable_signals();
     if (!ksigisemptyset(&dispatchable)) {
       current->wait_status = SWAIT_INTERRUPTED;
       POP_INTERRUPTS();

@@ -41,8 +41,8 @@ static inline addr_t* push(addr_t value, addr_t* stack) {
   return push_buffer(&value, sizeof(addr_t), stack);
 }
 
-void proc_run_user_sighandler(int signum, const sigaction_t* action,
-                              const sigset_t* old_mask,
+void proc_run_user_sighandler(int signum, const ksigaction_t* action,
+                              const ksigset_t* old_mask,
                               const user_context_t* context,
                               const syscall_context_t* syscall_ctx) {
   _Static_assert(sizeof(addr_t) == sizeof(uint32_t),
@@ -54,7 +54,7 @@ void proc_run_user_sighandler(int signum, const sigaction_t* action,
   addr_t* stack = (addr_t*)context->esp;
 
   // First push the old signal mask, context, and trampoline.
-  stack = push_buffer(old_mask, sizeof(sigset_t), stack);
+  stack = push_buffer(old_mask, sizeof(ksigset_t), stack);
   const addr_t old_mask_addr = (addr_t)stack;
 
   stack = push_buffer(context, sizeof(user_context_t), stack);

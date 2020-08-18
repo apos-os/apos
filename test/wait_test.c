@@ -64,7 +64,7 @@ static void sleep_func(void* arg) {
 static void do_nothing_sig(int sig) {}
 
 static void interruptable_helper(void* arg) {
-  struct sigaction act = {&do_nothing_sig, 0, 0};
+  struct ksigaction act = {&do_nothing_sig, 0, 0};
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, NULL));
   pid_t sleeper = proc_fork(&sleep_func, NULL);
   const apos_ms_t start = get_time_ms();

@@ -26,7 +26,7 @@
 #include "vfs/fifo.h"
 
 static bool has_sigpipe(void) {
-  const sigset_t sigset = proc_pending_signals(proc_current());
+  const ksigset_t sigset = proc_pending_signals(proc_current());
   return ksigismember(&sigset, SIGPIPE);
 }
 

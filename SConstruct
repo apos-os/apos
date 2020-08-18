@@ -105,6 +105,7 @@ if base_env['DEBUG']:
   base_env.Append(ASFLAGS = ['--gen-debug'])
 
 env = base_env.Clone()
+env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
 
 env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
 if not env['CLANG']:

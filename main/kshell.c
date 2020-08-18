@@ -234,7 +234,7 @@ static void do_test_cmd(void* arg) {
   vfs_close(2);
   vfs_close(args->shell->tty_fd);
 
-  sigset_t mask;
+  ksigset_t mask;
   ksigemptyset(&mask);
   ksigaddset(&mask, SIGINT);
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
@@ -1221,7 +1221,7 @@ void kshell_main(apos_dev_t tty) {
   KASSERT(shell.tty_fd == PROC_MAX_FDS - 1);
   vfs_close(0);
 
-  sigset_t mask;
+  ksigset_t mask;
   ksigemptyset(&mask);
   ksigaddset(&mask, SIGTTOU);
   ksigaddset(&mask, SIGTSTP);

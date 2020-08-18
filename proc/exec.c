@@ -78,7 +78,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
 
   // Reset any custom signal handlers to the default.
   for (int signo = SIGMIN; signo <= SIGMAX; ++signo) {
-    sigaction_t* action = &proc_current()->signal_dispositions[signo];
+    ksigaction_t* action = &proc_current()->signal_dispositions[signo];
     if (action->sa_handler != SIG_DFL && action->sa_handler != SIG_IGN) {
       // TODO(aoates): should we reset the flags and mask as well?
       action->sa_handler = SIG_DFL;

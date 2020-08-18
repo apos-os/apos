@@ -67,12 +67,12 @@ static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
-sigset_t proc_pending_signals(const process_t* proc) {
+ksigset_t proc_pending_signals(const process_t* proc) {
   return ksigunionset(&proc->pending_signals, &proc->thread->assigned_signals);
 }
 
 bool proc_signal_deliverable(kthread_t thread, int signum) {
-  const sigaction_t* action = &thread->process->signal_dispositions[signum];
+  const ksigaction_t* action = &thread->process->signal_dispositions[signum];
   if (action->sa_handler == SIG_IGN) {
     return false;
   } else if (action->sa_handler == SIG_DFL &&
@@ -88,8 +88,8 @@ bool proc_signal_deliverable(kthread_t thread, int signum) {
   return true;
 }
 
-sigset_t proc_dispatchable_signals(void) {
-  sigset_t set;
+ksigset_t proc_dispatchable_signals(void) {
+  ksigset_t set;
   ksigemptyset(&set);
   kthread_t thread = kthread_current_thread();
   if (thread == KTHREAD_NO_THREAD || !thread->process) return set;
@@ -224,8 +224,8 @@ int proc_kill(pid_t pid, int sig) {
   }
 }
 
-int proc_sigaction(int signum, const struct sigaction* act,
-                   struct sigaction* oldact) {
+int proc_sigaction(int signum, const struct ksigaction* act,
+                   struct ksigaction* oldact) {
   if (signum < SIGMIN || signum > SIGMAX) {
     return -EINVAL;
   }
@@ -247,13 +247,13 @@ int proc_sigaction(int signum, const struct sigaction* act,
   return 0;
 }
 
-int proc_sigprocmask(int how, const sigset_t* restrict set,
-                     sigset_t* restrict oset) {
+int proc_sigprocmask(int how, const ksigset_t* restrict set,
+                     ksigset_t* restrict oset) {
   if (oset) {
     *oset = kthread_current_thread()->signal_mask;
   }
 
-  sigset_t new_mask = kthread_current_thread()->signal_mask;
+  ksigset_t new_mask = kthread_current_thread()->signal_mask;
   if (set) {
     switch (how) {
       case SIG_BLOCK:
@@ -278,7 +278,7 @@ int proc_sigprocmask(int how, const sigset_t* restrict set,
   return 0;
 }
 
-int proc_sigpending(sigset_t* set) {
+int proc_sigpending(ksigset_t* set) {
   process_t* proc = proc_current();
   kthread_t thread = proc->thread;
   *set = proc->pending_signals |
@@ -286,8 +286,8 @@ int proc_sigpending(sigset_t* set) {
   return 0;
 }
 
-int proc_sigsuspend(const sigset_t* sigmask) {
-  sigset_t old_mask;
+int proc_sigsuspend(const ksigset_t* sigmask) {
+  ksigset_t old_mask;
   int result = proc_sigprocmask(SIG_SETMASK, sigmask, &old_mask);
   KASSERT_DBG(result == 0);
   proc_assign_pending_signals();
@@ -319,7 +319,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
   process_t* proc = proc_current();
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
-  const sigaction_t* action = &proc->signal_dispositions[signum];
+  const ksigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
@@ -363,7 +363,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
     KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
-    sigset_t old_mask = proc->thread->signal_mask;
+    ksigset_t old_mask = proc->thread->signal_mask;
     proc->thread->signal_mask |= action->sa_mask;
     if (!(action->sa_flags & SA_NODEFER))
       ksigaddset(&proc->thread->signal_mask, signum);
@@ -434,10 +434,10 @@ static user_context_t get_user_context(void* arg) {
   return *(user_context_t*)arg;
 }
 
-int proc_sigreturn(const sigset_t* old_mask_ptr,
+int proc_sigreturn(const ksigset_t* old_mask_ptr,
                    const user_context_t* context_ptr,
                    const syscall_context_t* syscall_ctx_ptr) {
-  const sigset_t old_mask = *old_mask_ptr;
+  const ksigset_t old_mask = *old_mask_ptr;
   user_context_t context = *context_ptr;
   syscall_context_t syscall_ctx;
   if (syscall_ctx_ptr) syscall_ctx = *syscall_ctx_ptr;

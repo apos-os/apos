@@ -241,7 +241,7 @@ static void read_write_test(void) {
 static void interrupt_handler(int sig) {}
 
 static void setup_interrupt(void) {
-  struct sigaction act;
+  struct ksigaction act;
   act.sa_handler = &interrupt_handler;
   act.sa_flags = 0;
   ksigemptyset(&act.sa_mask);
@@ -774,7 +774,7 @@ static void out_of_resources_test(void) {
 void vfs_fifo_test(void) {
   KTEST_SUITE_BEGIN("VFS FIFO test");
   const int initial_cache_size = vfs_cache_size();
-  sigset_t old_mask, new_mask;
+  ksigset_t old_mask, new_mask;
   ksigemptyset(&new_mask);
   ksigaddset(&new_mask, SIGCHLD);
   proc_sigprocmask(SIG_BLOCK, &new_mask, &old_mask);

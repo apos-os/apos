@@ -348,27 +348,27 @@ AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     '<signal.h>',
     'int', [
     'int:signum:u',
-    'const struct sigaction%(s32)s*:act:br?:sizeof(struct sigaction%(s32)s)',
-    'struct sigaction%(s32)s*:oldact:bw?:sizeof(struct sigaction%(s32)s)'],
+    'const struct ksigaction%(s32)s*:act:br?:sizeof(struct ksigaction%(s32)s)',
+    'struct ksigaction%(s32)s*:oldact:bw?:sizeof(struct ksigaction%(s32)s)'],
     needs_32bit_conv=True)
 
 AddSyscall('sigprocmask', 52, 'proc_sigprocmask', 'proc/signal/signal.h',
     '<signal.h>',
-    'int', ['int:how:u', 'const sigset_t*:set:br?:sizeof(sigset_t)',
-            'sigset_t*:oset:bw?:sizeof(sigset_t)'])
+    'int', ['int:how:u', 'const ksigset_t*:set:br?:sizeof(ksigset_t)',
+            'ksigset_t*:oset:bw?:sizeof(ksigset_t)'])
 
 AddSyscall('sigpending', 53, 'proc_sigpending', 'proc/signal/signal.h',
     '<signal.h>',
-    'int', ['sigset_t*:oset:bw:sizeof(sigset_t)'])
+    'int', ['ksigset_t*:oset:bw:sizeof(ksigset_t)'])
 
 AddSyscall('sigsuspend', 61, 'proc_sigsuspend', 'proc/signal/signal.h',
     '<signal.h>',
-    'int', ['const sigset_t*:sigmask:br:sizeof(sigset_t)'])
+    'int', ['const ksigset_t*:sigmask:br:sizeof(ksigset_t)'])
 
 AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [
-    'const sigset_t*:old_mask:br:sizeof(sigset_t)',
+    'const ksigset_t*:old_mask:br:sizeof(ksigset_t)',
     'const user_context_t*:context:br:sizeof(user_context_t)',
     'const syscall_context_t*:syscall_context:br?:sizeof(syscall_context_t)'],
     stubs_to_generate=[])
