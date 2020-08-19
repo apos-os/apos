@@ -3310,21 +3310,21 @@ static void pipe_test(void) {
   vfs_set_force_no_files(false);
 
   KTEST_BEGIN("vfs_pipe(): too many FDs open");
-  struct rlimit lim;
-  KEXPECT_EQ(0, proc_getrlimit(RLIMIT_NOFILE, &lim));
-  const struct rlimit orig_lim = lim;
+  struct apos_rlimit lim;
+  KEXPECT_EQ(0, proc_getrlimit(APOS_RLIMIT_NOFILE, &lim));
+  const struct apos_rlimit orig_lim = lim;
 
   // Hit first fd.
   lim.rlim_cur = 0;
-  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
 
   // Hit second fd.
   lim.rlim_cur = 1;
-  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
 
-  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &orig_lim));
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &orig_lim));
 
   // TODO(aoates): other tests to write:
   //  - write or read from unconnected pipe

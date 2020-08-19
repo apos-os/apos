@@ -758,14 +758,14 @@ static void out_of_resources_test(void) {
   vfs_set_force_no_files(false);
 
   KTEST_BEGIN("FIFO: out of FDs in open()");
-  struct rlimit lim;
-  KEXPECT_EQ(0, proc_getrlimit(RLIMIT_NOFILE, &lim));
-  const struct rlimit orig_lim = lim;
+  struct apos_rlimit lim;
+  KEXPECT_EQ(0, proc_getrlimit(APOS_RLIMIT_NOFILE, &lim));
+  const struct apos_rlimit orig_lim = lim;
   lim.rlim_cur = 0;
-  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &lim));
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   result = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   KEXPECT_EQ(-EMFILE, result);
-  KEXPECT_EQ(0, proc_setrlimit(RLIMIT_NOFILE, &orig_lim));
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &orig_lim));
 
   KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));

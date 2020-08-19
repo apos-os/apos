@@ -90,8 +90,8 @@ static int next_free_file_idx(void) {
 // Return the lowest free fd in the process.
 static int next_free_fd(process_t* p) {
   int max_fd = PROC_MAX_FDS;
-  if (p->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY)
-    max_fd = min((rlim_t)max_fd, p->limits[RLIMIT_NOFILE].rlim_cur);
+  if (p->limits[APOS_RLIMIT_NOFILE].rlim_cur != APOS_RLIM_INFINITY)
+    max_fd = min((apos_rlim_t)max_fd, p->limits[APOS_RLIMIT_NOFILE].rlim_cur);
   for (int i = 0; i < max_fd; ++i) {
     if (p->fds[i] == PROC_UNUSED_FD) {
       return i;
@@ -681,8 +681,9 @@ int vfs_dup2(int fd1, int fd2) {
   file_t* file1 = 0x0, *file2 = 0x0;
 
   if (!is_valid_fd(fd2)) return -EBADF;
-  if (proc_current()->limits[RLIMIT_NOFILE].rlim_cur != RLIM_INFINITY &&
-      fd2 >= (int)proc_current()->limits[RLIMIT_NOFILE].rlim_cur)
+  if (proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur !=
+          APOS_RLIM_INFINITY &&
+      fd2 >= (int)proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur)
     return -EMFILE;
 
   int result = lookup_fd(fd1, &file1);
@@ -1214,11 +1215,12 @@ int vfs_write(int fd, const void* buf, size_t count) {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     if (file->vnode->type == VNODE_REGULAR) {
       if (file->flags & VFS_O_APPEND) file->pos = file->vnode->len;
-      const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
-      if (limit != RLIM_INFINITY) {
+      const apos_rlim_t limit =
+          proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+      if (limit != APOS_RLIM_INFINITY) {
         off_t new_len = max(file->vnode->len, file->pos + (off_t)count);
-        if (new_len > file->vnode->len && (rlim_t)new_len > limit) {
-          if ((rlim_t)file->pos >= limit) {
+        if (new_len > file->vnode->len && (apos_rlim_t)new_len > limit) {
+          if ((apos_rlim_t)file->pos >= limit) {
             file_unref(file);
             proc_force_signal(proc_current(), SIGXFSZ);
             return -EFBIG;
@@ -1687,8 +1689,8 @@ int vfs_ftruncate(int fd, off_t length) {
     file_unref(file);
     return 0;
   }
-  const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
-  if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
+  const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+  if (limit != APOS_RLIM_INFINITY && (apos_rlim_t)length > limit) {
     proc_force_signal(proc_current(), SIGXFSZ);
     file_unref(file);
     return -EFBIG;
@@ -1723,8 +1725,8 @@ int vfs_truncate(const char* path, off_t length) {
     return 0;
   }
 
-  const rlim_t limit = proc_current()->limits[RLIMIT_FSIZE].rlim_cur;
-  if (limit != RLIM_INFINITY && (rlim_t)length > limit) {
+  const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
+  if (limit != APOS_RLIM_INFINITY && (apos_rlim_t)length > limit) {
     VFS_PUT_AND_CLEAR(vnode);
     proc_force_signal(proc_current(), SIGXFSZ);
     return -EFBIG;

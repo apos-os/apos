@@ -76,9 +76,9 @@ static void proc_init_process(process_t* p) {
   kthread_queue_init(&p->wait_queue);
   kthread_queue_init(&p->stopped_queue);
 
-  for (int i = 0; i < RLIMIT_NUM_RESOURCES; ++i) {
-    p->limits[i].rlim_cur = RLIM_INFINITY;
-    p->limits[i].rlim_max = RLIM_INFINITY;
+  for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
+    p->limits[i].rlim_cur = APOS_RLIM_INFINITY;
+    p->limits[i].rlim_max = APOS_RLIM_INFINITY;
   }
 }
 

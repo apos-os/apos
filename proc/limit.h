@@ -18,9 +18,9 @@
 #include "user/include/apos/resource.h"
 
 // Get a current resource limit.
-int proc_getrlimit(int resource, struct rlimit* lim);
+int proc_getrlimit(int resource, struct apos_rlimit* lim);
 
 // Set a resource limit.
-int proc_setrlimit(int resource, const struct rlimit* lim);
+int proc_setrlimit(int resource, const struct apos_rlimit* lim);
 
 #endif

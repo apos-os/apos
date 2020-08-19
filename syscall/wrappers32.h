@@ -92,17 +92,18 @@ _Static_assert(sizeof(dirent_32_t) == sizeof(dirent_t),
 int vfs_getdents_32(int fd, dirent_32_t* buf, int count);
 
 // rlimit wrappers.
-struct rlimit_32 {
+struct apos_rlimit_32 {
   /* rlim_t */ uint32_t rlim_cur;  // The current (soft) limit.
   /* rlim_t */ uint32_t rlim_max;  // The hard limit.
 };
-_Static_assert(sizeof(struct rlimit_32) == 8, "struct rlimit_32 wrong size!");
+_Static_assert(sizeof(struct apos_rlimit_32) == 8,
+               "struct rlimit_32 wrong size!");
 #if ARCH == ARCH_i586
-_Static_assert(sizeof(struct rlimit_32) == sizeof(struct rlimit),
+_Static_assert(sizeof(struct apos_rlimit_32) == sizeof(struct apos_rlimit),
                "struct rlimit_32 wrong size!");
 #endif
-int proc_getrlimit_32(int resource, struct rlimit_32* lim);
-int proc_setrlimit_32(int resource, const struct rlimit_32* lim);
+int proc_getrlimit_32(int resource, struct apos_rlimit_32* lim);
+int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim);
 
 int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
                     int fd, addr_t offset);

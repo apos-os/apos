@@ -150,8 +150,8 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   }
 
   // Check address space limits.
-  const rlim_t limit = proc_current()->limits[RLIMIT_AS].rlim_cur;
-  if (limit != RLIM_INFINITY) {
+  const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_AS].rlim_cur;
+  if (limit != APOS_RLIM_INFINITY) {
     list_link_t* link = proc_current()->vm_area_list.head;
     addrdiff_t total_as = 0;
     while (link) {

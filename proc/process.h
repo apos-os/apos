@@ -105,7 +105,7 @@ struct process {
   kthread_queue_t stopped_queue;
 
   // Resource limits.
-  struct rlimit limits[RLIMIT_NUM_RESOURCES];
+  struct apos_rlimit limits[APOS_RLIMIT_NUM_RESOURCES];
 };
 
 // Initialize the process table, and create the first process (process 0) from

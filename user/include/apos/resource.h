@@ -17,25 +17,40 @@
 
 #include <limits.h>
 
-typedef unsigned long rlim_t;
+typedef unsigned long apos_rlim_t;
 
-#define RLIM_INFINITY ULONG_MAX
-#define RLIM_SAVED_MAX ULONG_MAX
-#define RLIM_SAVED_CUR ULONG_MAX
+#define APOS_RLIM_INFINITY ULONG_MAX
+#define APOS_RLIM_SAVED_MAX ULONG_MAX
+#define APOS_RLIM_SAVED_CUR ULONG_MAX
 
-struct rlimit {
-  rlim_t rlim_cur;  // The current (soft) limit.
-  rlim_t rlim_max;  // The hard limit.
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_RLIMIT apos_rlimit
+#else
+#  define _APOS_RLIMIT rlimit
+#endif
+struct _APOS_RLIMIT {
+  apos_rlim_t rlim_cur;  // The current (soft) limit.
+  apos_rlim_t rlim_max;  // The hard limit.
 };
+#undef _APOS_RLIMIT
 
 // TODO(aoates): implement all of these.
-// #define RLIMIT_CORE 0  // Limit on size of core file.
-// #define RLIMIT_CPU 1  // Limit on CPU time per process.
-// #define RLIMIT_DATA 2  // Limit on data segment size.
-#define RLIMIT_FSIZE 3  // Limit on file size.
-#define RLIMIT_NOFILE 4  // Limit on number of open files.
-// #define RLIMIT_STACK 5  // Limit on stack size.
-#define RLIMIT_AS 6  // Limit on address space size.
-#define RLIMIT_NUM_RESOURCES 7
+// #define APOS_RLIMIT_CORE 0  // Limit on size of core file.
+// #define APOS_RLIMIT_CPU 1  // Limit on CPU time per process.
+// #define APOS_RLIMIT_DATA 2  // Limit on data segment size.
+#define APOS_RLIMIT_FSIZE 3  // Limit on file size.
+#define APOS_RLIMIT_NOFILE 4  // Limit on number of open files.
+// #define APOS_RLIMIT_STACK 5  // Limit on stack size.
+#define APOS_RLIMIT_AS 6  // Limit on address space size.
+#define APOS_RLIMIT_NUM_RESOURCES 7
+
+#if !__APOS_BUILDING_KERNEL__
+  typedef apos_rlim_t rlim_t;
+# define apos_rlimit rlimit
+
+# define RLIMIT_FSIZE APOS_RLIMIT_FSIZE
+# define RLIMIT_NOFILE APOS_RLIMIT_NOFILE
+# define RLIMIT_AS APOS_RLIMIT_AS
+#endif
 
 #endif
