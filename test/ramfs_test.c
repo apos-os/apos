@@ -43,7 +43,7 @@ static vnode_t* get_vnode(int inode) {
 
 static void basic_test(void) {
   KTEST_BEGIN("basic read/write test");
-  int vnode_num = g_fs->mknod(g_root, "testA", VNODE_REGULAR, makedev(0,0));
+  int vnode_num = g_fs->mknod(g_root, "testA", VNODE_REGULAR, kmakedev(0,0));
   vnode_t* n = get_vnode(vnode_num);
 
   // Empty read test.
@@ -191,14 +191,14 @@ static void directory_test(void) {
   KEXPECT_NE(NULL, n);
 
   KTEST_BEGIN("create() test");
-  vnode_t* file = get_vnode(g_fs->mknod(n, "file1", VNODE_REGULAR, makedev(0,0)));
+  vnode_t* file = get_vnode(g_fs->mknod(n, "file1", VNODE_REGULAR, kmakedev(0,0)));
 
   // TODO(aoates): verify link counts.
   EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file1", file->num);
 
   // Create another file.
   vnode_t* file2 =
-      get_vnode(g_fs->mknod(n, "file2", VNODE_REGULAR, makedev(0, 0)));
+      get_vnode(g_fs->mknod(n, "file2", VNODE_REGULAR, kmakedev(0, 0)));
   EXPECT_DIRENTS(n, 4, ".", n->num, "..", g_root->num,
                  "file1", file->num, "file2", file2->num);
 

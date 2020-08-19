@@ -296,7 +296,7 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
+  block_dev_t* b = dev_get_block(kmakedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -327,7 +327,7 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
+  block_dev_t* b = dev_get_block(kmakedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -1214,7 +1214,7 @@ void kshell_main(apos_dev_t tty) {
   kshell_t shell = {"", -1, 0, LIST_INIT};
 
   proc_setsid();
-  ksprintf(shell.tty_name, "/dev/tty%d", minor(tty));
+  ksprintf(shell.tty_name, "/dev/tty%d", kminor(tty));
   shell.tty_fd = vfs_open(shell.tty_name, VFS_O_RDONLY);
   KASSERT(shell.tty_fd == 0);
   shell.tty_fd = vfs_dup2(shell.tty_fd, PROC_MAX_FDS - 1);

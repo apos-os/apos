@@ -489,7 +489,7 @@ void ata_init() {
 
   // Register all the devices.
   for (int i = 0; i < g_num_ata_block_devs; ++i) {
-    apos_dev_t dev = makedev(DEVICE_MAJOR_ATA, DEVICE_ID_UNKNOWN);
+    apos_dev_t dev = kmakedev(DEVICE_MAJOR_ATA, DEVICE_ID_UNKNOWN);
     KASSERT(dev_register_block(&g_ata_block_devs[i], &dev) == 0);
   }
 }

@@ -490,16 +490,16 @@ static void do_syscall_mode_test(void* arg) {
   // mknod()
   KTEST_BEGIN("vfs mode test: vfs_mknod() succeeds in non-readable directory");
   KEXPECT_EQ(0, vfs_mknod("syscall_mode_test/no_read/chr", VFS_S_IFCHR,
-                          makedev(1, 2)));
+                          kmakedev(1, 2)));
   KEXPECT_EQ(0, vfs_unlink("syscall_mode_test/no_read/chr"));
 
   KTEST_BEGIN("vfs mode test: vfs_mknod() fails in non-writable directory");
   KEXPECT_EQ(-EACCES, vfs_mknod("syscall_mode_test/no_write/chr", VFS_S_IFCHR,
-                          makedev(1, 2)));
+                          kmakedev(1, 2)));
 
   KTEST_BEGIN("vfs mode test: vfs_mknod() fails in non-executable directory");
   KEXPECT_EQ(-EACCES, vfs_mknod("syscall_mode_test/no_exec/chr", VFS_S_IFCHR,
-                          makedev(1, 2)));
+                          kmakedev(1, 2)));
 
 
   // rmdir()

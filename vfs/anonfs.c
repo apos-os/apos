@@ -54,7 +54,7 @@ fs_t* anonfs_create(vnode_type_t type) {
   kmemset(fs, 0, sizeof(anonfs_t));
 
   kstrcpy(fs->fs.fstype, "anonfs");
-  fs->fs.dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  fs->fs.dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   fs->fs.open_vnodes = 0;
   fs->type = type;
   fs->next_inode = 0;

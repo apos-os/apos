@@ -751,7 +751,7 @@ void block_cache_test(void) {
   ramdisk_set_blocking(ramdisk, 1, 1);
   ramdisk_dev(ramdisk, &ramdisk_bd);
 
-  apos_dev_t dev = makedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  apos_dev_t dev = kmakedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KASSERT(dev_register_block(&ramdisk_bd, &dev) == 0);
 
   memobj_t* obj = dev_get_block_memobj(dev);

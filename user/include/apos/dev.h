@@ -19,11 +19,18 @@
 // A device identifier.
 typedef uint32_t apos_dev_t;
 
-static inline apos_dev_t makedev(unsigned int major, unsigned int minor) {
+static inline apos_dev_t kmakedev(unsigned int major, unsigned int minor) {
   return (major << 16) | (minor & 0xFFFF);
 }
 
-static inline unsigned int major(apos_dev_t dev) { return dev >> 16; }
-static inline unsigned int minor(apos_dev_t dev) { return dev & 0xFFFF; }
+static inline unsigned int kmajor(apos_dev_t dev) { return dev >> 16; }
+static inline unsigned int kminor(apos_dev_t dev) { return dev & 0xFFFF; }
+
+#if !__APOS_BUILDING_KERNEL__
+  typedef apos_dev_t dev_t;
+# define makedev(major, minor) kmakedev(major, minor)
+# define major(dev) kmajor(dev)
+# define minor(dev) kminor(dev)
+#endif
 
 #endif

@@ -27,7 +27,7 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
     return result;
   }
 
-  if (!VFS_S_ISCHR(stat.st_mode) || major(stat.st_rdev) != DEVICE_MAJOR_TTY) {
+  if (!VFS_S_ISCHR(stat.st_mode) || kmajor(stat.st_rdev) != DEVICE_MAJOR_TTY) {
     return -ENOTTY;
   }
 

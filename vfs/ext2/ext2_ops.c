@@ -1027,7 +1027,7 @@ static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
 #endif
   const int major = (inode->i_block[0] >> 16) & 0xFFFF;
   const int minor = inode->i_block[0] & 0xFFFF;
-  return makedev(major, minor);
+  return kmakedev(major, minor);
 }
 
 // Set the device for an inode.
@@ -1036,7 +1036,7 @@ static void ext2_set_device(ext2_inode_t* inode, apos_dev_t dev) {
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
 #endif
-  const uint32_t block = (major(dev) << 16) | (minor(dev) & 0xFFFF);
+  const uint32_t block = (kmajor(dev) << 16) | (kminor(dev) & 0xFFFF);
   inode->i_block[0] = block;
 }
 
@@ -1319,7 +1319,7 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
 
   ext2_inode_t child_inode;
   const int child_inode_num =
-      make_inode(fs, parent->num, EXT2_S_IFDIR, makedev(0, 0), &child_inode);
+      make_inode(fs, parent->num, EXT2_S_IFDIR, kmakedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }
@@ -1747,7 +1747,7 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
                  EXT2_S_IFLNK | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR |
                      EXT2_S_IRGRP | EXT2_S_IWGRP | EXT2_S_IXGRP | EXT2_S_IROTH |
                      EXT2_S_IWOTH | EXT2_S_IXOTH,
-                 makedev(0, 0), &child_inode);
+                 kmakedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }

@@ -234,7 +234,7 @@ static void do_session_test(void* arg) {
 // Helper for the below.  Open the given TTY and return the fd.
 static int open_tty(apos_dev_t test_tty, int flags) {
   char name[20];
-  ksprintf(name, "/dev/tty%d", minor(test_tty));
+  ksprintf(name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(name, VFS_O_RDONLY | flags);
   KEXPECT_GE(fd, 0);
   return fd;
@@ -254,7 +254,7 @@ static void do_open_ctty(void* arg) {
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
   setsid_and_open_tty(test_tty);
 
-  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
@@ -273,13 +273,13 @@ static void do_open_another_ctty_test(void* arg) {
   KEXPECT_EQ(-1, tty_get(test_tty)->session);
   setsid_and_open_tty(test_tty);
 
-  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 
   kpid_t child = proc_fork(&open_tty_shouldnt_set_ctty, arg);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
@@ -293,7 +293,7 @@ static void open_second_tty(void* arg) {
 
   open_tty(test_tty2, 0);
 
-  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
   KEXPECT_EQ(-1, tty_get(test_tty2)->session);
 
@@ -316,7 +316,7 @@ static void non_leader_exit_doesnt_release_ctty(void* arg) {
   child = proc_fork(&open_tty_subproc, arg);
   KEXPECT_EQ(child, proc_wait(NULL));
 
-  KEXPECT_EQ(minor(test_tty), proc_session_get(proc_getsid(0))->ctty);
+  KEXPECT_EQ(kminor(test_tty), proc_session_get(proc_getsid(0))->ctty);
   KEXPECT_EQ(proc_getsid(0), tty_get(test_tty)->session);
 }
 
@@ -389,8 +389,8 @@ static void tcsetpgrp_test_inner(void* arg) {
   const apos_dev_t test_tty = *(apos_dev_t*)arg;
   const apos_dev_t test_ttyB = tty_create(test_ldB);
   char tty_name[20], tty_nameB[20];
-  ksprintf(tty_name, "/dev/tty%u", minor(test_tty));
-  ksprintf(tty_nameB, "/dev/tty%u", minor(test_ttyB));
+  ksprintf(tty_name, "/dev/tty%u", kminor(test_tty));
+  ksprintf(tty_nameB, "/dev/tty%u", kminor(test_ttyB));
 
   KTEST_BEGIN("tcsetpgrp(): no controlling terminal");
   KEXPECT_EQ(proc_current()->id, proc_setsid());

@@ -90,7 +90,7 @@ ld_t* ld_create(int buf_size) {
   l->sink = 0x0;
   l->sink_arg = 0x0;
   kthread_queue_init(&l->wait_queue);
-  l->tty = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  l->tty = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   set_default_termios(&l->termios);
   poll_init_event(&l->poll_event);
   return l;
@@ -257,7 +257,7 @@ void ld_provide(ld_t* l, char c) {
     cook_buffer(l);
   }
 
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN && l->termios.c_lflag & ISIG) {
+  if (kminor(l->tty) != DEVICE_ID_UNKNOWN && l->termios.c_lflag & ISIG) {
     int signal = SIGNULL;
     if (c == l->termios.c_cc[VINTR]) signal = SIGINT;
     else if (c == l->termios.c_cc[VSUSP]) signal = SIGTSTP;
@@ -268,7 +268,7 @@ void ld_provide(ld_t* l, char c) {
       KASSERT_DBG(tty != NULL);
       if (tty->session >= 0) {
         const proc_session_t* session = proc_session_get(tty->session);
-        KASSERT_DBG(session->ctty == (int)minor(l->tty));
+        KASSERT_DBG(session->ctty == (int)kminor(l->tty));
         if (session->fggrp >= 0) {
           int result = proc_force_signal_group(session->fggrp, signal);
           KASSERT_DBG(result == 0);
@@ -355,7 +355,7 @@ static int ld_read_block(ld_t* l) {
 int ld_read(ld_t* l, char* buf, int n, int flags) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     tty_t* tty = tty_get(l->tty);
     if (tty->session == proc_getsid(0) &&
         getpgid(0) != proc_session_get(tty->session)->fggrp) {
@@ -388,7 +388,7 @@ int ld_write(ld_t* l, const char* buf, int n) {
   KASSERT(l != 0x0);
   KASSERT(l->sink != 0x0);
 
-  if (l->termios.c_lflag & TOSTOP && minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (l->termios.c_lflag & TOSTOP && kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     int result = tty_check_write(tty_get(l->tty));
     if (result) {
       return result;
@@ -453,7 +453,7 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
       optional_actions != TCSAFLUSH)
     return -EINVAL;
 
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     int result = tty_check_write(tty_get(l->tty));
     if (result) return result;
   }
@@ -467,7 +467,7 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
 }
 
 int ld_drain(ld_t* l) {
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     int result = tty_check_write(tty_get(l->tty));
     if (result) return result;
   }
@@ -480,7 +480,7 @@ int ld_flush(ld_t* l, int queue_selector) {
       queue_selector != TCIOFLUSH)
     return -EINVAL;
 
-  if (minor(l->tty) != DEVICE_ID_UNKNOWN) {
+  if (kminor(l->tty) != DEVICE_ID_UNKNOWN) {
     int result = tty_check_write(tty_get(l->tty));
     if (result) return result;
   }

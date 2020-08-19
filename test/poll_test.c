@@ -632,11 +632,11 @@ static void unmaskable_events_test(chardev_args_t* args) {
 static void deleted_cd_test(void) {
   KTEST_BEGIN("poll(): underlying char device destroyed");
   char_dev_t cd = {NULL, NULL, NULL, NULL};
-  apos_dev_t cd_id = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
+  apos_dev_t cd_id = kmakedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
   KEXPECT_EQ(0, dev_register_char(&cd, &cd_id));
 
   char dev_name[20];
-  ksprintf(dev_name, "/dev/tty%d", minor(cd_id));
+  ksprintf(dev_name, "/dev/tty%d", kminor(cd_id));
   int fd = vfs_open(dev_name, VFS_O_RDONLY | VFS_O_NOCTTY);
   KEXPECT_GE(fd, 0);
 
@@ -717,11 +717,11 @@ static void make_staticval_dev(char_dev_t* dev, apos_dev_t* id, int* fd) {
   dev->poll = &cd_fake_dev_poll;
   dev->dev_data = 0;
 
-  *id = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
+  *id = kmakedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
   KEXPECT_EQ(0, dev_register_char(dev, id));
 
   char dev_name[20];
-  ksprintf(dev_name, "/dev/tty%d", minor(*id));
+  ksprintf(dev_name, "/dev/tty%d", kminor(*id));
   *fd = vfs_open(dev_name, VFS_O_RDONLY);
   KEXPECT_GE(*fd, 0);
 }
@@ -753,11 +753,11 @@ static void char_dev_tests(void) {
 static void block_dev_test(void) {
   KTEST_BEGIN("poll(): block device test");
   block_dev_t bd = {1, 512, NULL, NULL, NULL};
-  apos_dev_t bd_id = makedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  apos_dev_t bd_id = kmakedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KEXPECT_EQ(0, dev_register_block(&bd, &bd_id));
 
   char dev_name[20];
-  ksprintf(dev_name, "/dev/ram%d", minor(bd_id));
+  ksprintf(dev_name, "/dev/ram%d", kminor(bd_id));
   int fd = vfs_open(dev_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 

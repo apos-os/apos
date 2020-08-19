@@ -78,7 +78,7 @@ static void ld_signals_test(void* arg) {
 
   KTEST_BEGIN("TTY: ctrl-C ignored if no fg process group");
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
@@ -154,7 +154,7 @@ static void ld_signals_isig_flag_test(void* arg) {
   KEXPECT_EQ(0, setpgid(childC, childB));
 
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
@@ -256,7 +256,7 @@ static void ld_signals_cc_c_test(void* arg) {
   ld_set_sink(test_ld, &sink, &sink_counter);
 
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
@@ -362,7 +362,7 @@ static void ld_signals_test_runner(void* arg) {
 static void termios_test(void* arg) {
   args_t* args = (args_t*)arg;
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args->tty));
 
   KTEST_BEGIN("tty: tcgetattr() defaults");
   const int tty_fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
@@ -462,7 +462,7 @@ static void termios_test(void* arg) {
 static void termios_bg_pgrp_test(void* arg) {
   args_t* args = (args_t*)arg;
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args->tty));
 
   KTEST_BEGIN("tty: setup for background pgroup tests");
   ksigset_t kSigTtouSet;
@@ -551,7 +551,7 @@ static void tty_truncate_test(void* arg) {
   args_t* args = (args_t*)arg;
   char tty_name[20];
   char buf[10];
-  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args->tty));
 
   KTEST_BEGIN("vfs_truncate(): on TTY test");
   int tty_fd = vfs_open(tty_name, VFS_O_RDWR);
@@ -612,7 +612,7 @@ static void tty_nonblock_test(void) {
 
   KTEST_BEGIN("TTY: O_NONBLOCK (reading)");
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args.tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args.tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NONBLOCK | VFS_O_NOCTTY);
   KEXPECT_GE(fd, 0);
   char buf[10];
@@ -657,7 +657,7 @@ static void tty_poll_test(void) {
 
   KTEST_BEGIN("TTY: basic poll (writable but not readable)");
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args.tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args.tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
   KEXPECT_GE(fd, 0);
 

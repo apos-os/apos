@@ -63,7 +63,7 @@ void proc_exit(int status) {
         proc_force_signal_group(session->fggrp, SIGHUP);
       }
 
-      tty_t* tty = tty_get(makedev(DEVICE_MAJOR_TTY, session->ctty));
+      tty_t* tty = tty_get(kmakedev(DEVICE_MAJOR_TTY, session->ctty));
       if (!tty) {
         klogfm(KL_PROC, DFATAL, "tty_get() in proc_exit() failed\n");
       } else {

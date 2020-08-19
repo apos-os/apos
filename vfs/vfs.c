@@ -67,7 +67,7 @@ void vfs_fs_init(fs_t* fs) {
   kmemset(fs, 0, sizeof(fs_t));
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
-  fs->dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  fs->dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   kmutex_init(&fs->rename_lock);
 }
 
@@ -145,11 +145,11 @@ void vfs_init() {
   fs_t* ext2fs = ext2_create_fs();
   int success = 0;
   for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
-    const apos_dev_t dev = makedev(DEVICE_MAJOR_ATA, i);
+    const apos_dev_t dev = kmakedev(DEVICE_MAJOR_ATA, i);
     if (dev_get_block(dev)) {
       const int result = ext2_mount(ext2fs, dev);
       if (result == 0) {
-        KLOG(INFO, "Found ext2 FS on device %d.%d\n", major(dev), minor(dev));
+        KLOG(INFO, "Found ext2 FS on device %d.%d\n", kmajor(dev), kminor(dev));
         g_fs_table[VFS_ROOT_FS].fs = ext2fs;
         success = 1;
         break;
@@ -458,7 +458,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     }
   }
 
-  if (child->type == VNODE_CHARDEV && major(child->dev) == DEVICE_MAJOR_TTY &&
+  if (child->type == VNODE_CHARDEV && kmajor(child->dev) == DEVICE_MAJOR_TTY &&
       !(flags & VFS_O_NOCTTY)) {
     tty_t* tty = tty_get(child->dev);
     if (!tty) {
@@ -470,8 +470,8 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
     if (sid == proc_current()->id &&
         session->ctty == PROC_SESSION_NO_CTTY && tty->session < 0) {
       KLOG(DEBUG, "allocating TTY %d as controlling terminal for session %d\n",
-           minor(child->dev), sid);
-      session->ctty = minor(child->dev);
+           kminor(child->dev), sid);
+      session->ctty = kminor(child->dev);
       tty->session = sid;
     }
   }
@@ -567,7 +567,7 @@ int vfs_open(const char* path, int flags, ...) {
 
       // Create it.
       int child_inode =
-          parent->fs->mknod(parent, base_name, VNODE_REGULAR, makedev(0, 0));
+          parent->fs->mknod(parent, base_name, VNODE_REGULAR, kmakedev(0, 0));
       if (child_inode < 0) {
         kmutex_unlock(&parent->mutex);
         VFS_PUT_AND_CLEAR(parent);
@@ -1403,7 +1403,7 @@ int vfs_isatty(int fd) {
 
   result = 0;
   if (file->vnode->type == VNODE_CHARDEV &&
-      major(file->vnode->dev) == DEVICE_MAJOR_TTY) {
+      kmajor(file->vnode->dev) == DEVICE_MAJOR_TTY) {
     result = 1;
   }
   file_unref(file);
