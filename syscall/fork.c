@@ -26,7 +26,7 @@ static void proc_fork_syscall_trampoline(void* arg) {
   user_context_apply(&context);
 }
 
-pid_t proc_fork_syscall() {
+kpid_t proc_fork_syscall() {
   user_context_t* context_ptr =
       (user_context_t*)kmalloc(sizeof(user_context_t));
   if (!context_ptr) return -ENOMEM;

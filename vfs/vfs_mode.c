@@ -19,7 +19,7 @@
 
 static int vfs_check_mode_internal(vfs_mode_op_t op,
                                    const vnode_t* vnode, bool is_superuser,
-                                   uid_t uid, gid_t gid) {
+                                   kuid_t uid, kgid_t gid) {
   if (is_superuser) {
     if (op == VFS_OP_EXEC && !(vnode->mode & VFS_S_IXUSR) &&
         !(vnode->mode & VFS_S_IXGRP) && !(vnode->mode & VFS_S_IXOTH)) {

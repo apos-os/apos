@@ -44,7 +44,7 @@ static inline const char* proc_state_to_string(proc_state_t state);
 // Note: any fields added here (and potentially in kthread_t) must be properly
 // handled in fork(), execve(), and exit().
 struct process {
-  pid_t id;  // Index into global process table.
+  kpid_t id;  // Index into global process table.
   proc_state_t state;
   kthread_t thread;  // Main process thread.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
@@ -70,21 +70,21 @@ struct process {
   proc_alarm_t alarm;
 
   // Real, effective, and saved uid and gid.
-  uid_t ruid;
-  gid_t rgid;
-  uid_t euid;
-  gid_t egid;
-  uid_t suid;
-  gid_t sgid;
+  kuid_t ruid;
+  kgid_t rgid;
+  kuid_t euid;
+  kgid_t egid;
+  kuid_t suid;
+  kgid_t sgid;
 
   // The current process group.
-  pid_t pgroup;
+  kpid_t pgroup;
 
   // Link on the process group list.
   list_link_t pgroup_link;
 
   // The process's umask.
-  mode_t umask;
+  kmode_t umask;
 
   // Has this process exec()'d since it was created.
   bool execed;
@@ -130,7 +130,7 @@ void proc_init_stage2(void);
 process_t* proc_current(void);
 
 // Return the process_t with the given ID, or NULL if there is none.
-process_t* proc_get(pid_t id);
+process_t* proc_get(kpid_t id);
 
 
 // Implementations.

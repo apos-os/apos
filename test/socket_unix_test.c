@@ -219,7 +219,7 @@ static void bind_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kPath));
 
   KTEST_BEGIN("net_bind(AF_UNIX): respects umask");
-  const mode_t orig_umask = proc_umask(0);
+  const kmode_t orig_umask = proc_umask(0);
   sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   addr.sun_family = AF_UNIX;
   kstrcpy(addr.sun_path, kPath);
@@ -275,7 +275,7 @@ static void bind_test(void) {
   KEXPECT_EQ(0, vfs_close(file_fd));
   KEXPECT_EQ(0, vfs_unlink("_non_socket"));
 
-  pid_t child_pid = proc_fork(&do_bind_mode_test, 0x0);
+  kpid_t child_pid = proc_fork(&do_bind_mode_test, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
 }
@@ -916,7 +916,7 @@ static void accept_blocking_test(void) {
   KTEST_BEGIN("net_accept(AF_UNIX): signal during blocking accept()");
   args.done = false;
   // For this one, we use fork for consistent signal delivery.
-  pid_t child_pid = proc_fork(&do_accept_thread_proc, &args);
+  kpid_t child_pid = proc_fork(&do_accept_thread_proc, &args);
   KEXPECT_GE(child_pid, 0);
   scheduler_wait_on(&args.started_queue);
   proc_force_signal(proc_get(child_pid), SIGUSR1);
@@ -926,7 +926,7 @@ static void accept_blocking_test(void) {
 
   KTEST_BEGIN("net_accept(AF_UNIX): accept() in many threads");
   const int kThreads = 5;
-  pid_t child_pids[kThreads];
+  kpid_t child_pids[kThreads];
   accept_thread_args_t multi_args[kThreads];
   for (int i = 0; i < kThreads; ++i) {
     multi_args[i].fd = server_sock;
@@ -1028,10 +1028,10 @@ static kthread_t start_async(void* (*func)(void*), async_args_t* args) {
   return thread;
 }
 
-static pid_t start_async_proc(void (*func)(void*), async_args_t* args) {
+static kpid_t start_async_proc(void (*func)(void*), async_args_t* args) {
   args->result = -100;
   args->started = false;
-  pid_t child_pid = proc_fork(func, args);
+  kpid_t child_pid = proc_fork(func, args);
   KEXPECT_GE(child_pid, 0);
   while (!args->started) scheduler_yield();
   return child_pid;
@@ -1165,7 +1165,7 @@ static void send_recv_test(void) {
   async_args.len = 100;
   kmemset(buf, 0, 100);
   // For this one, we use fork for consistent signal delivery.
-  pid_t child_pid = start_async_proc(&recv_proc, &async_args);
+  kpid_t child_pid = start_async_proc(&recv_proc, &async_args);
   proc_force_signal(proc_get(child_pid), SIGUSR1);
   KEXPECT_EQ(child_pid, proc_wait(0x0));
   KEXPECT_GE(async_args.result, -EINTR);

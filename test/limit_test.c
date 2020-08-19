@@ -81,7 +81,7 @@ static void limit_fork_test(void* arg) {
   KTEST_BEGIN("limits: propagated in fork()");
   struct apos_rlimit lim = {200, 300};
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_AS, &lim));
-  pid_t child = proc_fork(&fork_test_child, NULL);
+  kpid_t child = proc_fork(&fork_test_child, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 }
 

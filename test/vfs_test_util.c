@@ -18,14 +18,14 @@
 #include "test/ktest.h"
 #include "vfs/vfs.h"
 
-mode_t str_to_mode(const char* mode_str) {
+kmode_t str_to_mode(const char* mode_str) {
   KASSERT(kstrlen(mode_str) == 9);
   for (int i = 0; i < 9; ++i) {
     KASSERT(mode_str[i] == 'r' || mode_str[i] == 'w' || mode_str[i] == 'x' ||
             mode_str[i] == '-');
   }
 
-  mode_t mode = 0;
+  kmode_t mode = 0;
   if (mode_str[0] == 'r') mode |= VFS_S_IRUSR;
   if (mode_str[1] == 'w') mode |= VFS_S_IWUSR;
   if (mode_str[2] == 'x') mode |= VFS_S_IXUSR;

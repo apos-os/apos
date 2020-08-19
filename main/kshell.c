@@ -79,7 +79,7 @@ typedef enum {
 
 // A background job in the shell.
 typedef struct {
-  pid_t pid;
+  kpid_t pid;
   job_state_t state;
   int jobnum;
   char* cmd;
@@ -105,7 +105,7 @@ static void print_job_state(const job_t* job, job_state_t state) {
 typedef struct {
   char tty_name[20];
   int tty_fd;
-  off_t klog_offset;
+  koff_t klog_offset;
   list_t jobs;
 } kshell_t;
 
@@ -848,7 +848,7 @@ static void insert_job(job_t* new_job, kshell_t* shell) {
   list_insert(&shell->jobs, prev ? &prev->link : NULL, &new_job->link);
 }
 
-static job_t* make_job(kshell_t* shell, pid_t pid, int argc, char** argv) {
+static job_t* make_job(kshell_t* shell, kpid_t pid, int argc, char** argv) {
   job_t* job = (job_t*)kmalloc(sizeof(job_t));
   job->pid = pid;
   job->state = JOB_RUNNING;
@@ -859,7 +859,7 @@ static job_t* make_job(kshell_t* shell, pid_t pid, int argc, char** argv) {
   return job;
 }
 
-static job_t* find_job(kshell_t* shell, pid_t pid) {
+static job_t* find_job(kshell_t* shell, kpid_t pid) {
   for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
     job_t* job = container_of(link, job_t, link);
     if (job->pid == pid) return job;
@@ -873,12 +873,12 @@ static void job_done(kshell_t* shell, job_t* job) {
   kfree(job);
 }
 
-static pid_t do_wait(kshell_t* shell, pid_t pid, bool block) {
+static kpid_t do_wait(kshell_t* shell, kpid_t pid, bool block) {
   int options = WUNTRACED;
   if (!block) options |= WNOHANG;
 
   int status;
-  pid_t wait_pid;
+  kpid_t wait_pid;
   do {
     wait_pid = proc_waitpid(pid, &status, options);
   } while (wait_pid == -EINTR);
@@ -932,7 +932,7 @@ void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
   args.argc = argc;
   args.argv = argv;
 
-  pid_t child_pid = proc_fork(&boot_child_func, &args);
+  kpid_t child_pid = proc_fork(&boot_child_func, &args);
   if (child_pid < 0) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {

@@ -42,7 +42,7 @@ int tty_get_fd(int fd, bool require_ctty, tty_t** tty) {
 }
 
 int tty_check_write(const tty_t* tty) {
-  sid_t sid = proc_getsid(0);
+  ksid_t sid = proc_getsid(0);
   if (tty->session != sid) {
     return 0;
   }
@@ -50,7 +50,7 @@ int tty_check_write(const tty_t* tty) {
   // TODO(aoates): check if the process group is orphaned and SIGTTOU isn't
   // blocked or ignored, and return EIO.
 
-  const pid_t my_pgid = getpgid(0);
+  const kpid_t my_pgid = getpgid(0);
   if (my_pgid != proc_session_get(sid)->fggrp) {
     if (proc_signal_deliverable(kthread_current_thread(), SIGTTOU)) {
       proc_force_signal_group(my_pgid, SIGTTOU);

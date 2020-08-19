@@ -28,8 +28,8 @@
 #  define apos_timespec timespec
 #endif
 struct _APOS_TIMESPEC {
-  time_t  tv_sec;
-  long    tv_nsec;
+  apos_time_t tv_sec;
+  long tv_nsec;
 };
 #undef _APOS_TIMESPEC
 

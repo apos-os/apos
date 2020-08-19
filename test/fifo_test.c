@@ -178,7 +178,7 @@ static void open_test(void) {
   KTEST_BEGIN("fifo_open(): EINTR on signal (FIFO_READ)");
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_READ, false, true));
   reader_open_finished = false;
-  pid_t child = proc_fork(&do_reader_open_proc, &fifo);
+  kpid_t child = proc_fork(&do_reader_open_proc, &fifo);
   KEXPECT_GE(child, 0);
   for (int i = 0; i < 10 && fifo.num_readers == 1; ++i) scheduler_yield();
   KEXPECT_EQ(false, reader_open_finished);
@@ -368,7 +368,7 @@ static void read_test(void) {
   f.cbuf.pos = f.cbuf.len = 0;
   args.len = 10;
   KEXPECT_EQ(0, fifo_open(&f, FIFO_WRITE, false, true));
-  pid_t child = proc_fork(do_read_proc, &args);
+  kpid_t child = proc_fork(do_read_proc, &args);
   KEXPECT_GE(child, 0);
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
@@ -835,7 +835,7 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
              circbuf_write(&f->cbuf, big_buf, APOS_FIFO_BUF_SIZE - 100));
   args.len = 200;
   KEXPECT_EQ(0, fifo_open(f, FIFO_READ, false, false));
-  pid_t child = proc_fork(do_write_proc, &args);
+  kpid_t child = proc_fork(do_write_proc, &args);
   KEXPECT_GE(child, 0);
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);

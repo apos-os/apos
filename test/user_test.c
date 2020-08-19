@@ -71,7 +71,7 @@ static void fork_test_func(void* arg) {
   proc_current()->egid = kTestGroupB;
   proc_current()->sgid = kTestGroupC;
 
-  pid_t child_pid = proc_fork(&fork_test_func2, 0x0);
+  kpid_t child_pid = proc_fork(&fork_test_func2, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
@@ -81,7 +81,7 @@ static void fork_test(void) {
   KTEST_BEGIN("Identity preserved across fork() test");
 
   // Fork.
-  pid_t child_pid = proc_fork(&fork_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&fork_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
@@ -163,7 +163,7 @@ static void setuid_test_func(void* arg) {
 }
 
 static void setuid_test(void) {
-  pid_t child_pid = proc_fork(&setuid_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&setuid_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
@@ -245,7 +245,7 @@ static void seteuid_test_func(void* arg) {
 }
 
 static void seteuid_test(void) {
-  pid_t child_pid = proc_fork(&seteuid_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&seteuid_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
@@ -492,7 +492,7 @@ static void setreuid_test_func(void* arg) {
 }
 
 static void setreuid_test(void) {
-  pid_t child_pid = proc_fork(&setreuid_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&setreuid_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);

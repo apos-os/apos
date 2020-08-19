@@ -43,7 +43,7 @@ static vm_area_t g_kernel_mapped_vm_area;
 static vm_area_t g_physical_mapped_vm_area;
 
 process_t* g_proc_table[PROC_MAX_PROCS];
-static pid_t g_current_proc = -1;
+static kpid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
 
 static void proc_init_process(process_t* p) {
@@ -177,7 +177,7 @@ process_t* proc_current() {
   return g_proc_table[g_current_proc];
 }
 
-process_t* proc_get(pid_t id) {
+process_t* proc_get(kpid_t id) {
   if (id < 0 || id >= PROC_MAX_PROCS)
     return NULL;
   else

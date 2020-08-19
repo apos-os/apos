@@ -31,7 +31,7 @@ static void run_tests_func(void* arg) {
 void run_user_tests(void) {
   KTEST_SUITE_BEGIN("user-mode tests");
   KTEST_BEGIN("user-mode tests");
-  pid_t child_pid = proc_fork(&run_tests_func, 0x0);
+  kpid_t child_pid = proc_fork(&run_tests_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   int exit_status;

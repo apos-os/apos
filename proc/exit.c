@@ -55,7 +55,7 @@ void proc_exit(int status) {
     p->cwd = 0x0;
   }
 
-  const sid_t sid = proc_getsid(0);
+  const ksid_t sid = proc_getsid(0);
   if (sid == p->id) {  // Controlling process/session leader.
     proc_session_t* session = proc_session_get(sid);
     if (session->ctty != PROC_SESSION_NO_CTTY) {

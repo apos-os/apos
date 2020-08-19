@@ -24,13 +24,13 @@
 #include "proc/scheduler.h"
 #include "user/include/apos/wait.h"
 
-pid_t proc_wait(int* exit_status) {
+kpid_t proc_wait(int* exit_status) {
   return proc_waitpid(-1, exit_status, 0);
 }
 
 // Returns true if the given process matches the pid (which has the semantics as
 // for waitpid()'s pid argument).
-static bool matches_pid(process_t* proc, pid_t wait_pid) {
+static bool matches_pid(process_t* proc, kpid_t wait_pid) {
   KASSERT_DBG(proc->parent == proc_current());
   return (wait_pid == -1 || wait_pid == proc->id || wait_pid == -proc->pgroup);
 }
@@ -51,7 +51,7 @@ static bool eligable_wait(process_t* proc, int options) {
   return false;
 }
 
-pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
+kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   if ((options & ~WUNTRACED & ~WCONTINUED & ~WNOHANG) != 0) return -EINVAL;
 
   process_t* const p = proc_current();
@@ -129,7 +129,7 @@ pid_t proc_waitpid(pid_t pid, int* exit_status, int options) {
   if (exit_status) {
     *exit_status = zombie->exit_status;
   }
-  pid_t zombie_pid = zombie->id;
+  kpid_t zombie_pid = zombie->id;
   proc_destroy(zombie);
   return zombie_pid;
 }

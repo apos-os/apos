@@ -22,11 +22,11 @@
 #include "syscall/dmz.h"
 #include "syscall/wrappers.h"
 
-pid_t getpid_wrapper() {
+kpid_t getpid_wrapper() {
   return proc_current()->id;
 }
 
-pid_t getppid_wrapper() {
+kpid_t getppid_wrapper() {
   if (proc_current()->parent) {
     return proc_current()->parent->id;
   } else {

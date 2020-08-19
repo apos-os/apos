@@ -1979,10 +1979,10 @@ static void stat_test(void) {
 }
 
 static void initial_owner_test_func(void* arg) {
-  const uid_t kTestUserA = 1;
-  const uid_t kTestUserB = 2;
-  const gid_t kTestGroupA = 3;
-  const gid_t kTestGroupB = 4;
+  const kuid_t kTestUserA = 1;
+  const kuid_t kTestUserB = 2;
+  const kgid_t kTestGroupA = 3;
+  const kgid_t kTestGroupB = 4;
 
   const char kDir[] = "owner_test_dir";
   const char kSubDir[] = "owner_test_dir/dir";
@@ -2017,7 +2017,7 @@ static void initial_owner_test_func(void* arg) {
 }
 
 static void initial_owner_test(void) {
-  pid_t child_pid = proc_fork(&initial_owner_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&initial_owner_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
 
   proc_wait(0x0);
@@ -2026,7 +2026,7 @@ static void initial_owner_test(void) {
 
 // Helper that opens the given file, runs vfs_fchown() on the file descriptor,
 // then closes it and returns the result.
-static int do_fchown(const char* path, uid_t owner, gid_t group) {
+static int do_fchown(const char* path, kuid_t owner, kgid_t group) {
   int fd = vfs_open(path, VFS_O_RDWR);
   if (fd < 0) return fd;
   int result = vfs_fchown(fd, owner, group);
@@ -2036,12 +2036,12 @@ static int do_fchown(const char* path, uid_t owner, gid_t group) {
 
 static void non_root_chown_test_func(void* arg) {
   // TODO(aoates): consolidate these constants?
-  const uid_t kTestUserA = 1;
-  const uid_t kTestUserB = 2;
-  const uid_t kTestUserC = 3;
-  const gid_t kTestGroupA = 4;
-  const gid_t kTestGroupB = 5;
-  const gid_t kTestGroupC = 6;
+  const kuid_t kTestUserA = 1;
+  const kuid_t kTestUserB = 2;
+  const kuid_t kTestUserC = 3;
+  const kgid_t kTestGroupA = 4;
+  const kgid_t kTestGroupB = 5;
+  const kgid_t kTestGroupC = 6;
 
   const char kRootFile[] = "chown_test_dir/rootfile";
   const char kUAGA[] = "chown_test_dir/userAgrpA";
@@ -2167,10 +2167,10 @@ static void non_root_chown_test_func(void* arg) {
 
 // TODO(aoates): rewrite fchown tests to use helper
 static void lchown_test(void) {
-  const uid_t kTestUserA = 1;
-  const uid_t kTestUserB = 2;
-  const gid_t kTestGroupA = 3;
-  const gid_t kTestGroupB = 4;
+  const kuid_t kTestUserA = 1;
+  const kuid_t kTestUserB = 2;
+  const kgid_t kTestGroupA = 3;
+  const kgid_t kTestGroupB = 4;
 
   const char kDir[] = "chown_test_dir";
   const char kRegFile[] = "chown_test_dir/reg";
@@ -2253,7 +2253,7 @@ static void lchown_test(void) {
   KEXPECT_EQ(0, vfs_close(fd));
 
   // Run tests as an unpriviledged user.
-  pid_t child_pid = proc_fork(&non_root_chown_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&non_root_chown_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
 
@@ -2270,10 +2270,10 @@ static void lchown_test(void) {
 }
 
 static void chown_test(void) {
-  const uid_t kTestUserA = 1;
-  const uid_t kTestUserB = 2;
-  const gid_t kTestGroupA = 3;
-  const gid_t kTestGroupB = 4;
+  const kuid_t kTestUserA = 1;
+  const kuid_t kTestUserB = 2;
+  const kgid_t kTestGroupA = 3;
+  const kgid_t kTestGroupB = 4;
 
   const char kDir[] = "chown_test_dir";
   const char kRegFile[] = "chown_test_dir/reg";
@@ -2342,17 +2342,17 @@ static void chown_test(void) {
 }
 
 static void mode_flags_test(void) {
-  KTEST_BEGIN("vfs mode_t flags test");
+  KTEST_BEGIN("vfs kmode_t flags test");
   KEXPECT_EQ(VFS_S_IRWXU, VFS_S_IRUSR | VFS_S_IWUSR | VFS_S_IXUSR);
   KEXPECT_EQ(VFS_S_IRWXG, VFS_S_IRGRP | VFS_S_IWGRP | VFS_S_IXGRP);
   KEXPECT_EQ(VFS_S_IRWXO, VFS_S_IROTH | VFS_S_IWOTH | VFS_S_IXOTH);
 
-  const mode_t kUniqueFlags[] = {
+  const kmode_t kUniqueFlags[] = {
     VFS_S_IRUSR, VFS_S_IWUSR, VFS_S_IXUSR, VFS_S_IRGRP, VFS_S_IWGRP,
     VFS_S_IXGRP, VFS_S_IROTH, VFS_S_IWOTH, VFS_S_IXOTH, VFS_S_ISUID,
     VFS_S_ISGID, VFS_S_ISVTX,
   };
-  const int kNumUniqueFlags = sizeof(kUniqueFlags) / sizeof(mode_t);
+  const int kNumUniqueFlags = sizeof(kUniqueFlags) / sizeof(kmode_t);
 
   for (int i = 0; i < kNumUniqueFlags; ++i) {
     int count = 0;
@@ -2387,10 +2387,10 @@ static void mode_flags_test(void) {
 } while (0);
 
 static void non_root_chmod_test_func(void* arg) {
-  const uid_t kTestUserA = 1;
-  const uid_t kTestUserB = 2;
-  const uid_t kTestGroupA = 4;
-  const uid_t kTestGroupB = 5;
+  const kuid_t kTestUserA = 1;
+  const kuid_t kTestUserB = 2;
+  const kuid_t kTestGroupA = 4;
+  const kuid_t kTestGroupB = 5;
 
   const char kRegFileA[] = "chmod_test_dir/regA";
   const char kRegFileB[] = "chmod_test_dir/regB";
@@ -2468,7 +2468,7 @@ static void chmod_test(void) {
              VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX, get_mode(kRegFile));
 
   KTEST_BEGIN("vfs_chmod(): keep same permissions");
-  const mode_t kAllPerms = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
+  const kmode_t kAllPerms = VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
       VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX;
   KEXPECT_EQ(0, vfs_chmod(kRegFile, kAllPerms));
   KEXPECT_EQ(VFS_S_IFREG | kAllPerms, get_mode(kRegFile));
@@ -2477,7 +2477,7 @@ static void chmod_test(void) {
 
   // Run tests as an unpriviledged user.
   KEXPECT_EQ(0, vfs_chmod(kDir, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
-  pid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
+  kpid_t child_pid = proc_fork(&non_root_chmod_test_func, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
 
@@ -2838,7 +2838,7 @@ static void symlink_testD(void) {
   KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
-  const uid_t orig_file_owner = stat.st_uid;
+  const kuid_t orig_file_owner = stat.st_uid;
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
   KEXPECT_EQ(orig_file_owner, stat.st_uid);
@@ -2860,7 +2860,7 @@ static void symlink_testD(void) {
   KEXPECT_EQ(0, vfs_symlink("stat_file", "symlink_test/stat_link"));
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_file", &stat));
-  const mode_t orig_file_mode = stat.st_mode & ~VFS_S_IFMT;
+  const kmode_t orig_file_mode = stat.st_mode & ~VFS_S_IFMT;
 
   KEXPECT_EQ(0, vfs_lstat("symlink_test/stat_link", &stat));
   KEXPECT_NE(stat.st_mode & ~VFS_S_IFMT, orig_file_mode | VFS_S_IRWXO);
@@ -3337,7 +3337,7 @@ static void umask_test_child(void* arg) {
 
 static void umask_test(void) {
   KTEST_BEGIN("umask: default value");
-  const mode_t orig_umask = proc_umask(0);
+  const kmode_t orig_umask = proc_umask(0);
   KEXPECT_EQ(022, orig_umask);
   proc_umask(orig_umask);
 
@@ -3347,7 +3347,7 @@ static void umask_test(void) {
 
   KTEST_BEGIN("umask: inherited on fork()");
   proc_umask(0123);
-  pid_t child = proc_fork(&umask_test_child, NULL);
+  kpid_t child = proc_fork(&umask_test_child, NULL);
   KEXPECT_GE(child, 0);
   int status;
   KEXPECT_EQ(child, proc_wait(&status));
@@ -5708,7 +5708,7 @@ void vfs_test(void) {
     ramfs_enable_blocking(vfs_get_root_fs());
   }
 
-  const mode_t orig_umask = proc_umask(0);
+  const kmode_t orig_umask = proc_umask(0);
 
   dev_test();
 

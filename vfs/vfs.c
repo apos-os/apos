@@ -102,7 +102,7 @@ static int next_free_fd(process_t* p) {
 
 // Returns non-zero if the given mode is a valid create mode_t (i.e. can be
 // passed to chmod() or as the mode argument to open()).
-static int is_valid_create_mode(mode_t mode) {
+static int is_valid_create_mode(kmode_t mode) {
   return (mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
                    VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX)) == 0;
 }
@@ -377,13 +377,13 @@ int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
 
 // Set the appropriate metadata (mode, owner, group, etc) on the given vnode,
 // which is newly created.
-static void vfs_set_created_metadata(vnode_t* vnode, mode_t mode) {
+static void vfs_set_created_metadata(vnode_t* vnode, kmode_t mode) {
   vnode->uid = geteuid();
   vnode->gid = getegid();
   vnode->mode = (mode & ~proc_current()->umask) & ~VFS_S_IFMT;
 }
 
-static int vfs_open_fifo(vnode_t* vnode, mode_t mode, bool block) {
+static int vfs_open_fifo(vnode_t* vnode, kmode_t mode, bool block) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
 
   fifo_mode_t fifo_mode;
@@ -394,7 +394,7 @@ static int vfs_open_fifo(vnode_t* vnode, mode_t mode, bool block) {
   return fifo_open(vnode->fifo, fifo_mode, block, false /* force */);
 }
 
-static void vfs_close_fifo(vnode_t* vnode, mode_t mode) {
+static void vfs_close_fifo(vnode_t* vnode, kmode_t mode) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
 
   fifo_mode_t fifo_mode;
@@ -435,7 +435,7 @@ void file_unref(file_t* file) {
 }
 
 int vfs_open_vnode(vnode_t* child, int flags, bool block) {
-  const mode_t mode = flags & VFS_MODE_MASK;
+  const kmode_t mode = flags & VFS_MODE_MASK;
   if (child->type != VNODE_REGULAR && child->type != VNODE_DIRECTORY &&
       child->type != VNODE_CHARDEV && child->type != VNODE_BLOCKDEV &&
       child->type != VNODE_FIFO && child->type != VNODE_SOCKET) {
@@ -465,7 +465,7 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
       KLOG(DFATAL, "tty_get() failed in vnode open\n");
       return -EIO;
     }
-    const sid_t sid = proc_getsid(0);
+    const ksid_t sid = proc_getsid(0);
     proc_session_t* const session = proc_session_get(sid);
     if (sid == proc_current()->id &&
         session->ctty == PROC_SESSION_NO_CTTY && tty->session < 0) {
@@ -506,15 +506,15 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
 
 int vfs_open(const char* path, int flags, ...) {
   // Check arguments.
-  const mode_t mode = flags & VFS_MODE_MASK;
+  const kmode_t mode = flags & VFS_MODE_MASK;
   if (mode != VFS_O_RDONLY && mode != VFS_O_WRONLY && mode != VFS_O_RDWR) {
     return -EINVAL;
   }
-  mode_t create_mode = 0;
+  kmode_t create_mode = 0;
   if (flags & VFS_O_CREAT) {
     va_list args;
     va_start(args, flags);
-    create_mode = va_arg(args, mode_t);
+    create_mode = va_arg(args, kmode_t);
     va_end(args);
   }
 
@@ -712,7 +712,7 @@ int vfs_dup2(int fd1, int fd2) {
   return fd2;
 }
 
-int vfs_mkdir(const char* path, mode_t mode) {
+int vfs_mkdir(const char* path, kmode_t mode) {
   if (!is_valid_create_mode(mode)) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
@@ -751,7 +751,7 @@ int vfs_mkdir(const char* path, mode_t mode) {
   return 0;
 }
 
-static int vfs_mknod_internal(const char* path, mode_t mode, apos_dev_t dev,
+static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
                               bool follow_final_symlink, vnode_t** vnode_out) {
   if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
 
@@ -800,7 +800,7 @@ static int vfs_mknod_internal(const char* path, mode_t mode, apos_dev_t dev,
   return 0;
 }
 
-int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
+int vfs_mknod(const char* path, kmode_t mode, apos_dev_t dev) {
   if (!VFS_S_ISREG(mode) && !VFS_S_ISCHR(mode) && !VFS_S_ISBLK(mode) &&
       !VFS_S_ISFIFO(mode)) {
     return -EINVAL;
@@ -813,7 +813,7 @@ int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev) {
   return result;
 }
 
-int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out) {
+int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out) {
   if (!VFS_S_ISSOCK(mode)) {
     return -EINVAL;
   }
@@ -1218,7 +1218,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
       const apos_rlim_t limit =
           proc_current()->limits[APOS_RLIMIT_FSIZE].rlim_cur;
       if (limit != APOS_RLIM_INFINITY) {
-        off_t new_len = max(file->vnode->len, file->pos + (off_t)count);
+        koff_t new_len = max(file->vnode->len, file->pos + (koff_t)count);
         if (new_len > file->vnode->len && (apos_rlim_t)new_len > limit) {
           if ((apos_rlim_t)file->pos >= limit) {
             file_unref(file);
@@ -1243,7 +1243,7 @@ int vfs_write(int fd, const void* buf, size_t count) {
   return result;
 }
 
-off_t vfs_seek(int fd, off_t offset, int whence) {
+koff_t vfs_seek(int fd, koff_t offset, int whence) {
   if (whence != VFS_SEEK_SET && whence != VFS_SEEK_CUR &&
       whence != VFS_SEEK_END) {
     return -EINVAL;
@@ -1356,7 +1356,7 @@ int vfs_chdir(const char* path) {
   return 0;
 }
 
-int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out) {
+int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
   *memobj_out = 0x0;
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
@@ -1481,7 +1481,7 @@ int vfs_fstat(int fd, apos_stat_t* stat) {
   return result;
 }
 
-static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
+static int vfs_chown_internal(vnode_t* vnode, kuid_t owner, kgid_t group) {
   if (owner < -1 || group < -1) return -EINVAL;
 
   if (!proc_is_superuser(proc_current())) {
@@ -1497,7 +1497,7 @@ static int vfs_chown_internal(vnode_t* vnode, uid_t owner, gid_t group) {
   return 0;
 }
 
-static int vfs_chown_path_internal(const char* path, uid_t owner, gid_t group,
+static int vfs_chown_path_internal(const char* path, kuid_t owner, kgid_t group,
                                    int resolve_final_symlink) {
   if (!path || owner < -1 || group < -1) {
     return -EINVAL;
@@ -1513,15 +1513,15 @@ static int vfs_chown_path_internal(const char* path, uid_t owner, gid_t group,
   return result;
 }
 
-int vfs_chown(const char* path, uid_t owner, gid_t group) {
+int vfs_chown(const char* path, kuid_t owner, kgid_t group) {
   return vfs_chown_path_internal(path, owner, group, 1);
 }
 
-int vfs_lchown(const char* path, uid_t owner, gid_t group) {
+int vfs_lchown(const char* path, kuid_t owner, kgid_t group) {
   return vfs_chown_path_internal(path, owner, group, 0);
 }
 
-int vfs_fchown(int fd, uid_t owner, gid_t group) {
+int vfs_fchown(int fd, kuid_t owner, kgid_t group) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -1535,7 +1535,7 @@ int vfs_fchown(int fd, uid_t owner, gid_t group) {
   return result;
 }
 
-static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
+static int vfs_chmod_internal(vnode_t* vnode, kmode_t mode) {
   if (!is_valid_create_mode(mode)) return -EINVAL;
 
   if (!proc_is_superuser(proc_current()) &&
@@ -1547,7 +1547,7 @@ static int vfs_chmod_internal(vnode_t* vnode, mode_t mode) {
   return 0;
 }
 
-int vfs_chmod(const char* path, mode_t mode) {
+int vfs_chmod(const char* path, kmode_t mode) {
   vnode_t* child = 0x0;
   int result = lookup_existing_path(path, lookup_opt(true), 0x0, &child);
   if (result) return result;
@@ -1557,7 +1557,7 @@ int vfs_chmod(const char* path, mode_t mode) {
   return result;
 }
 
-int vfs_fchmod(int fd, mode_t mode) {
+int vfs_fchmod(int fd, kmode_t mode) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -1668,7 +1668,7 @@ static bool is_truncate_type(const vnode_t* vnode) {
          vnode->type == VNODE_FIFO;
 }
 
-int vfs_ftruncate(int fd, off_t length) {
+int vfs_ftruncate(int fd, koff_t length) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -1702,7 +1702,7 @@ int vfs_ftruncate(int fd, off_t length) {
   return result;
 }
 
-int vfs_truncate(const char* path, off_t length) {
+int vfs_truncate(const char* path, koff_t length) {
   if (!path || length < 0) {
     return -EINVAL;
   }

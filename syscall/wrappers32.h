@@ -35,18 +35,18 @@ _Static_assert(sizeof(struct apos_timespec_32) == 8,
 
 typedef struct {
   apos_dev_t st_dev;
-  /* ino_t */ int32_t st_ino;
-  mode_t st_mode;
-  nlink_t st_nlink;
-  uid_t st_uid;
-  gid_t st_gid;
+  /* apos_ino_t */ int32_t st_ino;
+  apos_mode_t st_mode;
+  apos_nlink_t st_nlink;
+  apos_uid_t st_uid;
+  apos_gid_t st_gid;
   apos_dev_t st_rdev;
-  /* off_t */ int32_t st_size;
+  /* apos_off_t */ int32_t st_size;
   struct apos_timespec_32 st_atim;
   struct apos_timespec_32 st_mtim;
   struct apos_timespec_32 st_ctim;
-  blksize_t st_blksize;
-  blkcnt_t st_blocks;
+  apos_blksize_t st_blksize;
+  apos_blkcnt_t st_blocks;
 } apos_stat_32_t;
 _Static_assert(sizeof(apos_stat_32_t) == 64, "apos_stat_32_t wrong size!");
 
@@ -79,8 +79,8 @@ int proc_sigaction_32(int signum, const struct ksigaction_32* act,
 
 // getdents wrappers.
 typedef struct {
-  /* ino_t */ int32_t d_ino;
-  /* off_t */ int32_t d_offset;
+  /* apos_ino_t */ int32_t d_ino;
+  /* apos_off_t */ int32_t d_offset;
   /* size_t */ uint32_t d_reclen;
   char d_name[];  // Null-terminated filename
 } dirent_32_t;

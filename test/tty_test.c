@@ -61,9 +61,9 @@ static void ld_signals_test(void* arg) {
 
 
   KTEST_BEGIN("TTY: ctrl-C ignored if TTY isn't a CTTY");
-  const pid_t childA = proc_fork(&do_nothing, NULL);
-  const pid_t childB = proc_fork(&do_nothing, NULL);
-  const pid_t childC = proc_fork(&do_nothing, NULL);
+  const kpid_t childA = proc_fork(&do_nothing, NULL);
+  const kpid_t childB = proc_fork(&do_nothing, NULL);
+  const kpid_t childC = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(childB, 0));
   KEXPECT_EQ(0, setpgid(childC, childB));
 
@@ -147,9 +147,9 @@ static void ld_signals_isig_flag_test(void* arg) {
   int sink_counter = 0;
   ld_set_sink(test_ld, &sink, &sink_counter);
 
-  const pid_t childA = proc_fork(&do_nothing, NULL);
-  const pid_t childB = proc_fork(&do_nothing, NULL);
-  const pid_t childC = proc_fork(&do_nothing, NULL);
+  const kpid_t childA = proc_fork(&do_nothing, NULL);
+  const kpid_t childB = proc_fork(&do_nothing, NULL);
+  const kpid_t childC = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(childB, 0));
   KEXPECT_EQ(0, setpgid(childC, childB));
 
@@ -344,7 +344,7 @@ static void ld_signals_test_runner(void* arg) {
   args.ld = ld_create(5);
   args.tty = tty_create(args.ld);
 
-  pid_t child = proc_fork(&ld_signals_test, &args);
+  kpid_t child = proc_fork(&ld_signals_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&ld_signals_isig_flag_test, &args);
@@ -479,12 +479,12 @@ static void termios_bg_pgrp_test(void* arg) {
   const int tty_fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(tty_fd, 0);
 
-  pid_t child = proc_fork(&do_nothing, NULL);
+  kpid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(child, child));
   KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
   KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
 
-  pid_t child_in_grp = proc_fork(&do_nothing, NULL);
+  kpid_t child_in_grp = proc_fork(&do_nothing, NULL);
 
 
   KTEST_BEGIN("tty: tcgetattr() from background pgroup");
@@ -589,7 +589,7 @@ static void termios_test_runner(void* arg) {
   int sink_counter = 0;
   ld_set_sink(args.ld, &sink, &sink_counter);
 
-  pid_t child = proc_fork(&termios_test, &args);
+  kpid_t child = proc_fork(&termios_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&termios_bg_pgrp_test, &args);
@@ -843,7 +843,7 @@ static void tty_poll_test(void) {
 void tty_test(void) {
   KTEST_SUITE_BEGIN("TTY tests");
 
-  pid_t child = proc_fork(&ld_signals_test_runner, NULL);
+  kpid_t child = proc_fork(&ld_signals_test_runner, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&termios_test_runner, NULL);

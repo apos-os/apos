@@ -26,10 +26,10 @@
 
 // A single directory entry, as produced by a concrete filesystem.
 struct dirent {
-  ino_t d_ino;  // vnode number
-  off_t d_offset;  // Offset from *start* of directory to the next dirent_t.
-  size_t d_reclen; // Length of this dirent_t
-  char d_name[];  // Null-terminated filename
+  apos_ino_t d_ino;     // vnode number
+  apos_off_t d_offset;  // Offset from *start* of directory to next dirent_t.
+  size_t d_reclen;      // Length of this dirent_t
+  char d_name[];        // Null-terminated filename
 };
 typedef struct dirent dirent_t;
 

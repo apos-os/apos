@@ -28,7 +28,7 @@
 // the caller should not touch the socket object either way.
 static int create_socket_fd(socket_t* sock) {
   fs_t* const fs = g_fs_table[VFS_SOCKET_FS].fs;
-  const ino_t socket_ino = anonfs_create_vnode(fs);
+  const kino_t socket_ino = anonfs_create_vnode(fs);
 
   vnode_t* socket_vnode = vfs_get(fs, socket_ino);
   if (!socket_vnode) {

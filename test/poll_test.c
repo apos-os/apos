@@ -743,7 +743,7 @@ static void char_dev_tests(void) {
   unmaskable_events_test(&args);
   deleted_cd_test();
 
-  pid_t child = proc_fork(&interrupt_test, &args);
+  kpid_t child = proc_fork(&interrupt_test, &args);
   KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
 
   for (int i = 0; i < CHARDEV_NUM_DEVS; ++i)

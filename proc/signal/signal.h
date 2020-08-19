@@ -59,7 +59,7 @@ bool proc_signal_deliverable(kthread_t thread, int signum);
 int proc_force_signal(process_t* proc, int sig);
 
 // As above, but sends a signal to every process in the given group.
-int proc_force_signal_group(pid_t pgid, int sig);
+int proc_force_signal_group(kpid_t pgid, int sig);
 
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
@@ -67,7 +67,7 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
 
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
-int proc_kill(pid_t pid, int sig);
+int proc_kill(kpid_t pid, int sig);
 
 // Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
 // success, or -errno on error.

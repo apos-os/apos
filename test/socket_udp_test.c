@@ -744,7 +744,7 @@ static void recvfrom_test(void) {
 
   int arg = sock;
   int result;
-  pid_t child = proc_fork(&do_recv, &arg);
+  kpid_t child = proc_fork(&do_recv, &arg);
   ksleep(20);
   KEXPECT_EQ(0, proc_waitpid(child, &result, WNOHANG));
   KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
@@ -757,14 +757,14 @@ static void recvfrom_test(void) {
   KTEST_BEGIN(
       "net_recvfrom(UDP): blocks until data available (multiple waiters)");
   child = proc_fork(&do_recv, &arg);
-  pid_t child2 = proc_fork(&do_recv, &arg);
+  kpid_t child2 = proc_fork(&do_recv, &arg);
   ksleep(20);
   KEXPECT_EQ(0, proc_waitpid(child, &result, WNOHANG));
   KEXPECT_EQ(0, proc_waitpid(child2, &result, WNOHANG));
   KEXPECT_EQ(3, net_sendto(send_sock, "123", 3, 0, NULL, 0));
-  pid_t done_child = proc_waitpid(-1, &result, 0);
+  kpid_t done_child = proc_waitpid(-1, &result, 0);
   KEXPECT_EQ(true, done_child == child || done_child == child2);
-  pid_t other_child = (done_child == child) ? child2 : child;
+  kpid_t other_child = (done_child == child) ? child2 : child;
   KEXPECT_EQ(0, proc_waitpid(-1, &result, WNOHANG));
   KEXPECT_EQ(2, net_sendto(send_sock, "45", 2, 0, NULL, 0));
   KEXPECT_EQ(other_child, proc_waitpid(other_child, &result, 0));

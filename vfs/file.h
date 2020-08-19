@@ -28,8 +28,8 @@ struct file {
   int index;  // Index in the global file table.
   struct vnode* vnode;
   int refcount;
-  off_t pos;  // Current position within the vnode.
-  mode_t mode;
+  koff_t pos;  // Current position within the vnode.
+  kmode_t mode;
   int flags;
 };
 typedef struct file file_t;

@@ -445,7 +445,7 @@ static void chown_chmod_test(void) {
   kstrcpy(abs_mount_a, orig_cwd);
   append_path(abs_mount_a, "vfs_mount_test/a");
 
-  const mode_t orig_a_mode = get_mode("vfs_mount_test/a");
+  const kmode_t orig_a_mode = get_mode("vfs_mount_test/a");
 
   // Do the mount.
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
@@ -908,9 +908,9 @@ static void mmap_same_vnode_test(void) {
   // They should have the same vnode.
   apos_stat_t stat;
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/file", &stat));
-  ino_t a_ino = stat.st_ino;
+  kino_t a_ino = stat.st_ino;
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b/file", &stat));
-  ino_t b_ino = stat.st_ino;
+  kino_t b_ino = stat.st_ino;
   KEXPECT_EQ(a_ino, b_ino);
 
   void* addr1_out = NULL;

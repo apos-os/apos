@@ -20,9 +20,9 @@
 
 // Wait until a child exits, and return its pid (and optionally its exit
 // status).
-pid_t proc_wait(int* exit_status);
+kpid_t proc_wait(int* exit_status);
 
 // As above, but respects pid and flags as per waitpid(2).
-pid_t proc_waitpid(pid_t pid, int* exit_status, int options);
+kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options);
 
 #endif

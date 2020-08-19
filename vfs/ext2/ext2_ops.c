@@ -48,7 +48,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int ext2_symlink(vnode_t* parent, const char* name, const char* path);
 static int ext2_readlink(vnode_t* node, char* buf, int bufsize);
-static int ext2_truncate(vnode_t* node, off_t length);
+static int ext2_truncate(vnode_t* node, koff_t length);
 static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -1804,7 +1804,7 @@ static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
   }
 }
 
-static int ext2_truncate(vnode_t* vnode, off_t length) {
+static int ext2_truncate(vnode_t* vnode, koff_t length) {
   KASSERT(vnode->type == VNODE_REGULAR);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(length >= 0);

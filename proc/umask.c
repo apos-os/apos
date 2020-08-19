@@ -15,8 +15,8 @@
 #include "proc/umask.h"
 #include "proc/process.h"
 
-mode_t proc_umask(mode_t cmask) {
-  const mode_t orig_mode = proc_current()->umask;
+kmode_t proc_umask(kmode_t cmask) {
+  const kmode_t orig_mode = proc_current()->umask;
   proc_current()->umask = cmask;
   return orig_mode;
 }

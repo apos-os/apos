@@ -60,7 +60,7 @@ static void exec_mode_test(void) {
   KTEST_BEGIN("exec(): mode test setup");
   KEXPECT_EQ(0, vfs_mkdir(kDir, str_to_mode("rwxrwxrwx")));
 
-  pid_t child_pid = proc_fork(&do_exec_mode_test, 0x0);
+  kpid_t child_pid = proc_fork(&do_exec_mode_test, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
 
@@ -71,7 +71,7 @@ static void exec_mode_test(void) {
 void exec_test(void) {
   KTEST_SUITE_BEGIN("exec() tests");
 
-  const mode_t orig_umask = proc_umask(0);
+  const kmode_t orig_umask = proc_umask(0);
   exec_mode_test();
   proc_umask(orig_umask);
 

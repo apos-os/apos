@@ -24,7 +24,7 @@
 
 // Set the foreground process group of the current session, if there is a
 // controlling terminal.  fd must point at the controlling terminal.
-int proc_tcsetpgrp(int fd, pid_t pgid);
+int proc_tcsetpgrp(int fd, kpid_t pgid);
 
 // Returns the foreground process group of the current session, if there is a
 // controlling terminal and foreground process group.  If there is no foregroup
@@ -34,6 +34,6 @@ int proc_tcgetpgrp(int fd);
 // Returns the process group ID of the session leader of the session for whom fd
 // points to the controlling terminal.  This is essentially the same as
 // getsid(0).
-pid_t proc_tcgetsid(int fd);
+kpid_t proc_tcgetsid(int fd);
 
 #endif

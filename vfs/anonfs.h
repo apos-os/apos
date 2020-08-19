@@ -30,6 +30,6 @@ fs_t* anonfs_create(vnode_type_t type);
 // Allocate and return an unused vnode on the given anonfs.  This doesn't do
 // anything besides guarantee the returned vnode is unique; it will presumably
 // be later passed to vfs_get()  to get a vnode.
-ino_t anonfs_create_vnode(fs_t* fs);
+kino_t anonfs_create_vnode(fs_t* fs);
 
 #endif

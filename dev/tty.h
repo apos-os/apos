@@ -21,7 +21,7 @@
 
 typedef struct {
   // The session that this is the controlling terminal for, or -1.
-  sid_t session;
+  ksid_t session;
 
   // The underlying line discipline.
   ld_t* ld;

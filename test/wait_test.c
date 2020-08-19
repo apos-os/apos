@@ -30,7 +30,7 @@ static void do_nothing(void* arg) {
 
 static void basic_waitpid_test(void) {
   KTEST_BEGIN("waitpid(): basic child test");
-  pid_t child = proc_fork(&do_nothing, NULL);
+  kpid_t child = proc_fork(&do_nothing, NULL);
   int status;
   KEXPECT_EQ(child, proc_waitpid(-1, &status, 0));
   KEXPECT_EQ(1, status);
@@ -66,7 +66,7 @@ static void do_nothing_sig(int sig) {}
 static void interruptable_helper(void* arg) {
   struct ksigaction act = {&do_nothing_sig, 0, 0};
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, NULL));
-  pid_t sleeper = proc_fork(&sleep_func, NULL);
+  kpid_t sleeper = proc_fork(&sleep_func, NULL);
   const apos_ms_t start = get_time_ms();
   int result;
   if ((intptr_t)arg)
@@ -81,7 +81,7 @@ static void interruptable_helper(void* arg) {
 
 static void interruptable_waitpid_test(void) {
   KTEST_BEGIN("wait(): interrupted by signal");
-  pid_t waiter = proc_fork(&interruptable_helper, (void*)0);
+  kpid_t waiter = proc_fork(&interruptable_helper, (void*)0);
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(0, proc_kill(waiter, SIGUSR1));
   KEXPECT_EQ(waiter, proc_wait(NULL));
@@ -95,12 +95,12 @@ static void interruptable_waitpid_test(void) {
 }
 
 static void do_fork(void* arg) {
-  *(pid_t*)arg = proc_fork(&sleep_func, NULL);
+  *(kpid_t*)arg = proc_fork(&sleep_func, NULL);
 }
 
 // Send a signal to the process then wait until it's exited and cleaned up.
 // There's no proper way to do this with POSIX semantics.
-static void cleanup_grandchild(pid_t grandchild) {
+static void cleanup_grandchild(kpid_t grandchild) {
   KEXPECT_EQ(0, proc_kill(grandchild, SIGKILL));
   apos_ms_t start = get_time_ms();
   while (proc_get(grandchild)) {
@@ -112,13 +112,13 @@ static void cleanup_grandchild(pid_t grandchild) {
 
 static void wait_for_specific_pid_test(void) {
   KTEST_BEGIN("waitpid(): invalid pid (no process with that pid)");
-  pid_t child = proc_fork(&do_nothing, NULL);
+  kpid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
   KEXPECT_EQ(-ECHILD, proc_waitpid(child, NULL, 0));
 
 
   KTEST_BEGIN("waitpid(): invalid pid (process exists but isn't a child)");
-  pid_t grandchild = 0;
+  kpid_t grandchild = 0;
   child = proc_fork(&do_fork, &grandchild);
   KEXPECT_EQ(child, proc_wait(NULL));
 
@@ -149,9 +149,9 @@ static void wait_for_specific_pid_test(void) {
 
   KTEST_BEGIN("waitpid(): multiple children (child is stopped)");
   child = proc_fork(&sleep_func, (void*)50);
-  pid_t childB = proc_fork(&do_nothing, NULL);
-  pid_t childC = proc_fork(&do_nothing, NULL);
-  pid_t childD = proc_fork(&sleep_func, (void*)50);
+  kpid_t childB = proc_fork(&do_nothing, NULL);
+  kpid_t childC = proc_fork(&do_nothing, NULL);
+  kpid_t childD = proc_fork(&sleep_func, (void*)50);
   for (int i = 0; i < 5 && proc_get(childC)->state == PROC_RUNNING; ++i)
     scheduler_yield();
   status = 5;
@@ -180,14 +180,14 @@ static void wait_for_specific_pid_test(void) {
 }
 
 static void create_children_in_group(void* arg) {
-  pid_t child = proc_fork(&sleep_func, (void*)500);
+  kpid_t child = proc_fork(&sleep_func, (void*)500);
   KEXPECT_EQ(0, setpgid(child, child));
-  *(pid_t*)arg = child;
+  *(kpid_t*)arg = child;
 }
 
 static void wait_for_pgroup_test(void) {
   KTEST_BEGIN("waitpid(): wait for non-existant process group");
-  pid_t child = proc_fork(&do_nothing, NULL);
+  kpid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(-ECHILD, proc_waitpid(-child, NULL, 0));
   KEXPECT_EQ(child, proc_wait(NULL));
 
@@ -195,7 +195,7 @@ static void wait_for_pgroup_test(void) {
 
 
   KTEST_BEGIN("waitpid(): process group exists but has no children");
-  pid_t grandchild;
+  kpid_t grandchild;
   child = proc_fork(&create_children_in_group, &grandchild);
   KEXPECT_EQ(child, proc_wait(NULL));
 
@@ -208,8 +208,8 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&do_nothing, NULL);
-  pid_t childB = proc_fork(&do_nothing, NULL);
-  pid_t childC = proc_fork(&sleep_func, (void*)50);
+  kpid_t childB = proc_fork(&do_nothing, NULL);
+  kpid_t childC = proc_fork(&sleep_func, (void*)50);
   KEXPECT_EQ(0, setpgid(child, grandchild));
   KEXPECT_EQ(0, setpgid(childB, grandchild));
   KEXPECT_EQ(0, setpgid(childC, grandchild));
@@ -218,8 +218,8 @@ static void wait_for_pgroup_test(void) {
     scheduler_yield();
   KEXPECT_EQ(PROC_RUNNING, proc_get(childC)->state);
   apos_ms_t start_ms = get_time_ms();
-  pid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
-  pid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);
+  kpid_t waitres1 = proc_waitpid(-grandchild, NULL, 0);
+  kpid_t waitres2 = proc_waitpid(-grandchild, NULL, 0);
   apos_ms_t end_ms = get_time_ms();
   KEXPECT_EQ(1, waitres1 == child || waitres1 == childB);
   KEXPECT_EQ(1, waitres2 == child || waitres2 == childB);

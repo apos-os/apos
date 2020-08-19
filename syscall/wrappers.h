@@ -29,8 +29,8 @@ static inline int proc_exit_wrapper(int status) {
   return 0;  // Should never get here.
 }
 
-pid_t getpid_wrapper(void);
-pid_t getppid_wrapper(void);
+kpid_t getpid_wrapper(void);
+kpid_t getppid_wrapper(void);
 
 // Wrapper for do_mmap that combines the address in and out arguments to squeeze
 // into the syscall limit.

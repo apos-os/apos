@@ -144,7 +144,7 @@ int proc_force_signal(process_t* proc, int sig) {
   return result;
 }
 
-int proc_force_signal_group(pid_t pgid, int sig) {
+int proc_force_signal_group(kpid_t pgid, int sig) {
   PUSH_AND_DISABLE_INTERRUPTS();
   proc_group_t* pgroup = proc_group_get(pgid);
   if (!pgroup) {
@@ -191,13 +191,13 @@ static int proc_kill_one(process_t* proc, int sig) {
   return proc_force_signal(proc, sig);
 }
 
-int proc_kill(pid_t pid, int sig) {
+int proc_kill(kpid_t pid, int sig) {
   if (sig < SIGNULL || sig > SIGMAX) {
     return -EINVAL;
   }
 
   if (pid == -1) {
-    for (pid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
+    for (kpid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
       proc_kill_one(proc_get(pid), sig);
     }
     return 0;

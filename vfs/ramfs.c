@@ -29,7 +29,7 @@
 #include "vfs/vnode.h"
 
 #define RAMFS_MAX_INODES 1024
-#define INVALID_INO ((ino_t)-1)
+#define INVALID_INO ((kino_t)-1)
 
 // TODO(aoates): put this in a common location.
 #define MIN(a, b) ({ \
@@ -420,7 +420,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
   child_dirent = find_dirent(&dir_inode->vnode, "..");
-  KASSERT(child_dirent->d_ino == (ino_t)parent->num);
+  KASSERT(child_dirent->d_ino == (kino_t)parent->num);
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
 
@@ -599,7 +599,7 @@ int ramfs_readlink(vnode_t* node, char* buf, int bufsize) {
   return ramfs_read(node, 0, buf, bufsize);
 }
 
-int ramfs_truncate(vnode_t* vnode, off_t length) {
+int ramfs_truncate(vnode_t* vnode, koff_t length) {
   KASSERT_DBG(vnode->type == VNODE_REGULAR);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);

@@ -23,7 +23,7 @@
 #include "proc/tcgroup.h"
 #include "vfs/vfs.h"
 
-int proc_tcsetpgrp(int fd, pid_t pgid) {
+int proc_tcsetpgrp(int fd, kpid_t pgid) {
   tty_t* tty = NULL;
   int result = tty_get_fd(fd, true, &tty);
   if (result) return result;
@@ -33,7 +33,7 @@ int proc_tcsetpgrp(int fd, pid_t pgid) {
     return -EINVAL;
   }
 
-  sid_t sid = proc_getsid(0);
+  ksid_t sid = proc_getsid(0);
   if (list_empty(&pgroup->procs) || pgroup->session != sid) {
     return -EPERM;
   }
@@ -58,7 +58,7 @@ int proc_tcgetpgrp(int fd) {
     return session->fggrp;
 }
 
-pid_t proc_tcgetsid(int fd) {
+kpid_t proc_tcgetsid(int fd) {
   tty_t* tty = NULL;
   int result = tty_get_fd(fd, true, &tty);
   if (result) return result;

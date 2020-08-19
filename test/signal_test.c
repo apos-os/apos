@@ -108,7 +108,7 @@ static void ksigismember_test(void) {
 }
 
 static void kill_test(void) {
-  const pid_t my_pid = proc_current()->id;
+  const kpid_t my_pid = proc_current()->id;
 
   KTEST_BEGIN("proc_kill() invalid pid test");
   // TODO(aoates): figure out a better way to generate a guaranteed-unused PID.
@@ -375,7 +375,7 @@ static void signal_permission_test(void) {
 // Helper that sets up a process group with several processes.  |okA| and |okB|
 // will be set to pids in the new group that can receive signals from the
 // current process; |bad| will be set to a pid in the current group that cannot.
-static void create_process_group(pid_t* okA, pid_t* okB, pid_t* bad) {
+static void create_process_group(kpid_t* okA, kpid_t* okB, kpid_t* bad) {
   *okA = proc_fork(&signal_child_func, 0x0);
   *okB = proc_fork(&signal_child_func, 0x0);
   *bad = proc_fork(&signal_child_func, 0x0);
@@ -397,7 +397,7 @@ static void create_group_then_kill(void* arg) {
   // Ensure we're not the superuser.
   KEXPECT_EQ(0, setuid(500));
 
-  pid_t okA, okB, bad;
+  kpid_t okA, okB, bad;
   create_process_group(&okA, &okB, &bad);
 
   if (flags & 0x1) {
@@ -439,7 +439,7 @@ static void cannot_signal_any_process_in_group(void* arg) {
   // Ensure we're not the superuser.
   KEXPECT_EQ(0, setuid(500));
 
-  pid_t okA, okB, bad;
+  kpid_t okA, okB, bad;
   create_process_group(&okA, &okB, &bad);
 
   KEXPECT_EQ(0, setpgid(bad, bad));
@@ -524,7 +524,7 @@ static void signal_send_to_all_allowed_test(void) {
 
   KTEST_BEGIN("proc_kill(): pid == -1 skips processes 0 and 1");
   int child = proc_fork(&send_all_allowed_func, (void*)0);
-  pid_t wait_result;
+  kpid_t wait_result;
   do {
     wait_result = proc_wait(NULL);
     proc_suppress_signal(proc_current(), SIGKILL);
@@ -1063,7 +1063,7 @@ static void sigsuspend_test(void) {
   ksigset_t new_mask = make_sigset(SIGUSR2), old_mask;
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &new_mask, &old_mask));
   KEXPECT_EQ(0, sem_create(&g_sem));
-  pid_t child = proc_fork(&sigsuspend_test_child, &new_mask);
+  kpid_t child = proc_fork(&sigsuspend_test_child, &new_mask);
   KEXPECT_GE(child, 0);
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
@@ -1164,7 +1164,7 @@ static void do_nothing(void* arg) {}
 
 static void zombie_test(void) {
   KTEST_BEGIN("kill(): sending a signal to a zombie process");
-  pid_t child = proc_fork(&do_nothing, NULL);
+  kpid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_GE(child, 0);
   while (proc_get(child)->state != PROC_ZOMBIE) {
     scheduler_yield();

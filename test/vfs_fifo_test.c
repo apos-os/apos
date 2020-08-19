@@ -283,7 +283,7 @@ static void interrupt_test(void) {
 
   KTEST_BEGIN("open() on FIFO interrupted");
   bool flag = false;
-  pid_t child = proc_fork(do_open_proc, &flag);
+  kpid_t child = proc_fork(do_open_proc, &flag);
   KEXPECT_GE(child, 0);
 
   for (int i = 0; i < 10 && !flag; ++i) scheduler_yield();

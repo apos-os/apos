@@ -142,7 +142,7 @@ static void recv_test(void) {
   KTEST_BEGIN("recv(SOCK_RAW): blocks until ready");
   int arg = sock;
   int result;
-  pid_t child = proc_fork(&do_recv, &arg);
+  kpid_t child = proc_fork(&do_recv, &arg);
   ksleep(20);
   KEXPECT_EQ(0, proc_waitpid(child, &result, WNOHANG));
   do_ip_dispatch(pb1, ET_IPV4, IPPROTO_ICMP);
