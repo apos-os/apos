@@ -1632,7 +1632,7 @@ int vfs_readlink(const char* path, char* buf, int bufsize) {
 int vfs_access(const char* path, int amode) {
   if (!path) return -EINVAL;
   if (amode == 0 ||
-      (amode & ~(F_OK | R_OK | W_OK | X_OK)) != 0) {
+      (amode & ~(VFS_F_OK | VFS_R_OK | VFS_W_OK | VFS_X_OK)) != 0) {
     return -EINVAL;
   }
 
@@ -1643,16 +1643,16 @@ int vfs_access(const char* path, int amode) {
   if (result) return result;
 
   result = 0;
-  if (!result && (amode & R_OK)) {
+  if (!result && (amode & VFS_R_OK)) {
     result = vfs_check_mode_rugid(VFS_OP_READ, proc_current(), child);
   }
-  if (!result && (amode & W_OK)) {
+  if (!result && (amode & VFS_W_OK)) {
     result = vfs_check_mode_rugid(VFS_OP_WRITE, proc_current(), child);
   }
-  if (!result && (amode & X_OK)) {
+  if (!result && (amode & VFS_X_OK)) {
     result = vfs_check_mode_rugid(VFS_OP_EXEC, proc_current(), child);
   }
-  if (!result && (amode & X_OK)) {
+  if (!result && (amode & VFS_X_OK)) {
     // TODO(aoates): should we assume that the VFS_OP_EXEC check is sufficient?
     result = vfs_check_mode_rugid(VFS_OP_SEARCH, proc_current(), child);
   }

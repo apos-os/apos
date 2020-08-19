@@ -1199,7 +1199,7 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
   char* path = kmalloc(VFS_MAX_PATH_LENGTH * 2);
   for (int i = 0; PATH[i] != NULL; ++i) {
     ksprintf(path, "%s/%s", PATH[i], argv[0]);
-    if (vfs_access(path, X_OK) == 0) {
+    if (vfs_access(path, VFS_X_OK) == 0) {
       do_boot_cmd(shell, path, argc, argv);
       kfree(path);
       return;
