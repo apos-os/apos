@@ -45,4 +45,30 @@
 #define VFS_W_OK 0x4
 #define VFS_X_OK 0x8
 
+// Export POSIX names for user code.
+#if !__APOS_BUILDING_KERNEL__
+# define O_RDONLY VFS_O_RDONLY
+# define O_WRONLY VFS_O_WRONLY
+# define O_RDWR VFS_O_RDWR
+# define O_ACCMODE VFS_O_ACCMODE
+
+# define O_APPEND VFS_O_APPEND
+# define O_CREAT VFS_O_CREAT
+# define O_TRUNC VFS_O_TRUNC
+# define O_EXCL VFS_O_EXCL
+# define O_NONBLOCK VFS_O_NONBLOCK
+# define O_NOCTTY VFS_O_NOCTTY
+# define O_DIRECTORY VFS_O_DIRECTORY
+# define O_NOFOLLOW VFS_O_NOFOLLOW
+
+# define SEEK_SET VFS_SEEK_SET
+# define SEEK_CUR VFS_SEEK_CUR
+# define SEEK_END VFS_SEEK_END
+
+# define F_OK VFS_F_OK
+# define R_OK VFS_R_OK
+# define W_OK VFS_W_OK
+# define X_OK VFS_X_OK
+#endif
+
 #endif
