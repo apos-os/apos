@@ -21,10 +21,17 @@
 #  include <apos/posix_types.h>
 #endif
 
-struct timespec {
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_TIMESPEC apos_timespec
+#else
+#  define _APOS_TIMESPEC timespec
+#  define apos_timespec timespec
+#endif
+struct _APOS_TIMESPEC {
   time_t  tv_sec;
   long    tv_nsec;
 };
+#undef _APOS_TIMESPEC
 
 // Similar to POSIX struct tm.
 struct apos_tm {

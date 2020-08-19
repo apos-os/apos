@@ -67,19 +67,19 @@
 
 // Information about a vnode.
 struct stat {
-  apos_dev_t st_dev;         // Device containing the file.
-  ino_t st_ino;              // Inode number.
-  mode_t st_mode;            // File type and mode.
-  nlink_t st_nlink;          // Number of hard links.
-  uid_t st_uid;              // File owner.
-  gid_t st_gid;              // File group.
-  apos_dev_t st_rdev;        // Device ID (if special file).
-  off_t st_size;             // Size, in bytes.
-  struct timespec st_atim;   // Last data access timestamp.
-  struct timespec st_mtim;   // Last data modification timestamp.
-  struct timespec st_ctim;   // Last file status change timestamp.
-  blksize_t st_blksize;      // File system block size.
-  blkcnt_t st_blocks;        // Number of 512B blocks allocated.
+  apos_dev_t st_dev;              // Device containing the file.
+  ino_t st_ino;                   // Inode number.
+  mode_t st_mode;                 // File type and mode.
+  nlink_t st_nlink;               // Number of hard links.
+  uid_t st_uid;                   // File owner.
+  gid_t st_gid;                   // File group.
+  apos_dev_t st_rdev;             // Device ID (if special file).
+  off_t st_size;                  // Size, in bytes.
+  struct apos_timespec st_atim;   // Last data access timestamp.
+  struct apos_timespec st_mtim;   // Last data modification timestamp.
+  struct apos_timespec st_ctim;   // Last file status change timestamp.
+  blksize_t st_blksize;           // File system block size.
+  blkcnt_t st_blocks;             // Number of 512B blocks allocated.
 
   // For backwards compatibility.
 # define st_atime st_atim.tv_sec

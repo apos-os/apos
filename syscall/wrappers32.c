@@ -23,8 +23,8 @@
 #include "syscall/wrappers32.h"
 #include "vfs/vfs.h"
 
-static struct timespec_32 timespec64to32(struct timespec ts64) {
-  struct timespec_32 ts32;
+static struct apos_timespec_32 timespec64to32(struct apos_timespec ts64) {
+  struct apos_timespec_32 ts32;
   ts32.tv_sec = ts64.tv_sec;
   ts32.tv_nsec = ts64.tv_nsec;
   return ts32;
