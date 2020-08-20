@@ -19,6 +19,7 @@ env.Tpl('#/user/include/apos/syscalls.h', 'apos/syscalls.h.tpl')
 env.Tpl('#/user/include/apos/syscall_decls.h', 'apos/syscall_decls.h.tpl')
 
 HEADERS = [
+  'apos/_posix_signal_constants.h',
   'apos/dev.h',
   'apos/errors.h',
   'apos/mmap.h',

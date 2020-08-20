@@ -21,60 +21,14 @@
 
 #if __APOS_BUILDING_IN_TREE__
 #  include "user/include/apos/errors.h"
+#  include "user/include/apos/_posix_signal_constants.h"
 #else
 #  include <apos/errors.h>
+#  include <apos/_posix_signal_constants.h>
 #endif
 
 typedef uint32_t ksigset_t;
 typedef void (*ksighandler_t)(int);
-
-// Signal numbers.
-#define SIGABRT   1   // Process abort signal.
-#define SIGALRM   2   // Alarm clock.
-#define SIGBUS    3   // Access to an undefined portion of a memory object.
-#define SIGCHLD   4   // Child process terminated, stopped, or continued.
-#define SIGCONT   5   // Continue executing, if stopped.
-#define SIGFPE    6   // Erroneous arithmetic operation.
-#define SIGHUP    7   // Hangup.
-#define SIGILL    8   // Illegal instruction.
-#define SIGINT    9   // Terminal interrupt signal.
-#define SIGKILL   10  // Kill (cannot be caught or ignored).
-#define SIGPIPE   11  // Write on a pipe with no one to read it.
-#define SIGQUIT   12  // Terminal quit signal.
-#define SIGSEGV   13  // Invalid memory reference.
-#define SIGSTOP   14  // Stop executing (cannot be caught or ignored).
-#define SIGTERM   15  // Termination signal.
-#define SIGTSTP   16  // Terminal stop signal.
-#define SIGTTIN   17  // Background process attempting read.
-#define SIGTTOU   18  // Background process attempting write.
-#define SIGUSR1   19  // User-defined signal 1.
-#define SIGUSR2   20  // User-defined signal 2.
-#define SIGSYS    21  // Bad system call.
-#define SIGTRAP   22  // Trace/breakpoint trap.
-#define SIGURG    23  // High bandwidth data is available at a socket.
-#define SIGVTALRM 24  // Virtual timer expired.
-#define SIGXCPU   25  // CPU time limit exceeded.
-#define SIGXFSZ   26  // File size limit exceeded.
-
-// The following signals are not specified in POSIX.
-#define SIGWINCH  27  // Controlling terminal changed size.
-
-#define APOS_SIGNULL 0
-#define APOS_SIGMIN 1
-#define APOS_SIGMAX 27
-
-// sighandler_t constants.
-#define SIG_DFL ((ksighandler_t)0x0)
-#define SIG_IGN ((ksighandler_t)0x1)
-
-// sa_flags flags.
-#define SA_RESTART 1
-#define SA_NODEFER 2
-
-// Actions for sigprocmask().
-#define SIG_BLOCK 1
-#define SIG_UNBLOCK 2
-#define SIG_SETMASK 3
 
 // sigaction is the name of both the type and the syscall, so a basic
 // '#define sigaction ksigaction' creates problems in compilation (we end up
