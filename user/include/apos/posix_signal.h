@@ -63,7 +63,6 @@ typedef void (*ksighandler_t)(int);
 #define SIGWINCH  27  // Controlling terminal changed size.
 
 #define SIGMAX 27
-#define NSIG (SIGMAX + 1)
 
 // sighandler_t constants.
 #define SIG_DFL ((ksighandler_t)0x0)
