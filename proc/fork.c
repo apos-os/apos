@@ -64,7 +64,7 @@ int proc_fork(proc_func_t start, void* arg) {
 
   // Duplicate any signal handlers.  The set of pending signals in the child
   // is set to empty, however.
-  for (int signo = SIGMIN; signo <= SIGMAX; ++signo) {
+  for (int signo = APOS_SIGMIN; signo <= APOS_SIGMAX; ++signo) {
     new_process->signal_dispositions[signo] =
         proc_current()->signal_dispositions[signo];
   }

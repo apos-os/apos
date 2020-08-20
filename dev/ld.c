@@ -258,12 +258,12 @@ void ld_provide(ld_t* l, char c) {
   }
 
   if (kminor(l->tty) != DEVICE_ID_UNKNOWN && l->termios.c_lflag & ISIG) {
-    int signal = SIGNULL;
+    int signal = APOS_SIGNULL;
     if (c == l->termios.c_cc[VINTR]) signal = SIGINT;
     else if (c == l->termios.c_cc[VSUSP]) signal = SIGTSTP;
     else if (c == l->termios.c_cc[VQUIT]) signal = SIGQUIT;
 
-    if (signal != SIGNULL) {
+    if (signal != APOS_SIGNULL) {
       const tty_t* tty = tty_get(l->tty);
       KASSERT_DBG(tty != NULL);
       if (tty->session >= 0) {

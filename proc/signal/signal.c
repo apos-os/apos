@@ -37,7 +37,7 @@ typedef enum {
 } signal_default_action_t;
 
 // Table of default signal actions.
-static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
+static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
   SIGACT_IGNORE,        // SIGNULL
   SIGACT_TERM_AND_CORE, // SIGABRT
   SIGACT_TERM,          // SIGALRM
@@ -96,7 +96,7 @@ ksigset_t proc_dispatchable_signals(void) {
 
   // TODO(aoates): rather than iterating through all the signals, track the set
   // of currently-ignored signals and use that here.
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&thread->assigned_signals, signum) &&
         proc_signal_deliverable(thread, signum))
       ksigaddset(&set, signum);
@@ -184,7 +184,7 @@ static int proc_kill_one(process_t* proc, int sig) {
     return -EPERM;
   }
 
-  if (sig == SIGNULL) {
+  if (sig == APOS_SIGNULL) {
     return 0;
   }
 
@@ -192,7 +192,7 @@ static int proc_kill_one(process_t* proc, int sig) {
 }
 
 int proc_kill(kpid_t pid, int sig) {
-  if (sig < SIGNULL || sig > SIGMAX) {
+  if (sig < APOS_SIGNULL || sig > APOS_SIGMAX) {
     return -EINVAL;
   }
 
@@ -226,7 +226,7 @@ int proc_kill(kpid_t pid, int sig) {
 
 int proc_sigaction(int signum, const struct ksigaction* act,
                    struct ksigaction* oldact) {
-  if (signum < SIGMIN || signum > SIGMAX) {
+  if (signum < APOS_SIGMIN || signum > APOS_SIGMAX) {
     return -EINVAL;
   }
 
@@ -382,7 +382,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
 // if any.  Since we currently only have one thread per process, this is pretty
 // straightforward.
 static void signal_assign_pending(process_t* proc) {
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&proc->pending_signals, signum)) {
       proc_try_assign_signal(proc, signum);
     }
@@ -413,7 +413,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
     return;
   }
 
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     // We need to check the thread's signal mask again, since there may be
     // signals that are assigned to the thread even though they're masked (e.g.
     // one sent with pthread_kill()).

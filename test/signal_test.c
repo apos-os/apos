@@ -41,7 +41,7 @@ static void ksigemptyset_test(void) {
   KEXPECT_EQ(0, ksigemptyset(&set));
   KEXPECT_EQ(1, ksigisemptyset(&set));
 
-  for (int i = SIGMIN; i <= SIGMAX; ++i) {
+  for (int i = APOS_SIGMIN; i <= APOS_SIGMAX; ++i) {
     KEXPECT_EQ(0, ksigismember(&set, i));
   }
 }
@@ -54,7 +54,7 @@ static void ksigfillset_test(void) {
   KEXPECT_EQ(0, ksigisemptyset(&set));
 
 
-  for (int i = SIGMIN; i <= SIGMAX; ++i) {
+  for (int i = APOS_SIGMIN; i <= APOS_SIGMAX; ++i) {
     KEXPECT_EQ(1, ksigismember(&set, i));
   }
 }
@@ -73,9 +73,9 @@ static void ksigaddset_test(void) {
 
   KTEST_BEGIN("ksigaddset() invalid signum test");
   ksigset_t old_set = set;
-  KEXPECT_EQ(-EINVAL, ksigaddset(&set, SIGNULL));
+  KEXPECT_EQ(-EINVAL, ksigaddset(&set, APOS_SIGNULL));
   KEXPECT_EQ(-EINVAL, ksigaddset(&set, -1));
-  KEXPECT_EQ(-EINVAL, ksigaddset(&set, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, ksigaddset(&set, APOS_SIGMAX + 1));
   KEXPECT_EQ(old_set, set);
 }
 
@@ -92,9 +92,9 @@ static void ksigdelset_test(void) {
 
   KTEST_BEGIN("ksigdelset() invalid signum test");
   ksigset_t old_set = set;
-  KEXPECT_EQ(-EINVAL, ksigdelset(&set, SIGNULL));
+  KEXPECT_EQ(-EINVAL, ksigdelset(&set, APOS_SIGNULL));
   KEXPECT_EQ(-EINVAL, ksigdelset(&set, -1));
-  KEXPECT_EQ(-EINVAL, ksigdelset(&set, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, ksigdelset(&set, APOS_SIGMAX + 1));
   KEXPECT_EQ(old_set, set);
 }
 
@@ -102,9 +102,9 @@ static void ksigismember_test(void) {
   KTEST_BEGIN("ksigismember() invalid signum test");
 
   ksigset_t set;
-  KEXPECT_EQ(-EINVAL, ksigismember(&set, SIGNULL));
+  KEXPECT_EQ(-EINVAL, ksigismember(&set, APOS_SIGNULL));
   KEXPECT_EQ(-EINVAL, ksigismember(&set, -1));
-  KEXPECT_EQ(-EINVAL, ksigismember(&set, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, ksigismember(&set, APOS_SIGMAX + 1));
 }
 
 static void kill_test(void) {
@@ -121,7 +121,7 @@ static void kill_test(void) {
 
   KTEST_BEGIN("proc_kill() invalid signal test");
   KEXPECT_EQ(-EINVAL, proc_kill(my_pid, -1));
-  KEXPECT_EQ(-EINVAL, proc_kill(my_pid, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, proc_kill(my_pid, APOS_SIGMAX + 1));
 
   KTEST_BEGIN("proc_kill() SIGNULL test");
   KEXPECT_EQ(0, proc_kill(my_pid, 0));
@@ -152,9 +152,9 @@ static void sigaction_test(void) {
   ksigaction_t oact;
 
   KTEST_BEGIN("proc_sigaction(): invalid signum");
-  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGNULL, 0x0, 0x0));
-  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGMIN - 1, 0x0, 0x0));
-  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGMAX + 1, 0x0, 0x0));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(APOS_SIGNULL, 0x0, 0x0));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(APOS_SIGMIN - 1, 0x0, 0x0));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(APOS_SIGMAX + 1, 0x0, 0x0));
   KEXPECT_EQ(-EINVAL, proc_sigaction(-5, 0x0, 0x0));
 
   // POSIX seems to indicate that setting invalid flags should succeed.
@@ -406,10 +406,10 @@ static void create_group_then_kill(void* arg) {
 
   if (flags & 0x2) {
     KEXPECT_EQ(0, proc_kill(0, SIGKILL));
-    KEXPECT_EQ(0, proc_kill(0, SIGNULL));  // Try SIGNULL too, for kicks.
+    KEXPECT_EQ(0, proc_kill(0, APOS_SIGNULL));  // Try SIGNULL too, for kicks.
   } else {
     KEXPECT_EQ(0, proc_kill(-okA, SIGKILL));
-    KEXPECT_EQ(0, proc_kill(-okA, SIGNULL));  // Try SIGNULL too, for kicks.
+    KEXPECT_EQ(0, proc_kill(-okA, APOS_SIGNULL));  // Try SIGNULL too, for kicks
   }
 
   // We should have received the signal if we're in the group.
@@ -449,9 +449,9 @@ static void cannot_signal_any_process_in_group(void* arg) {
   KTEST_BEGIN("proc_kill(): invalid signal to process group");
   KEXPECT_EQ(0, setpgid(0, okA));
   KEXPECT_EQ(-EINVAL, proc_kill(0, -1));
-  KEXPECT_EQ(-EINVAL, proc_kill(0, SIGMAX + 1));
-  KEXPECT_EQ(-EINVAL, proc_kill(-okA, SIGMAX + 1));
-  KEXPECT_EQ(-EINVAL, proc_kill(-bad, SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, proc_kill(0, APOS_SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, proc_kill(-okA, APOS_SIGMAX + 1));
+  KEXPECT_EQ(-EINVAL, proc_kill(-bad, APOS_SIGMAX + 1));
 
   // No-one should have received any signals.
   for (int i = 0; i < 3; ++i) {
@@ -1183,8 +1183,8 @@ void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
   // Save the current signal handlers to restore at the end.
-  ksigaction_t saved_handlers[SIGMAX + 1];
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  ksigaction_t saved_handlers[APOS_SIGMAX + 1];
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
   ksigset_t saved_pending_signals = proc_current()->pending_signals;
@@ -1216,7 +1216,7 @@ void signal_test(void) {
   zombie_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (signum != SIGSTOP && signum != SIGKILL) {
       KASSERT(proc_sigaction(signum, &saved_handlers[signum], 0x0) == 0);
     }

@@ -59,7 +59,7 @@ static void proc_init_process(process_t* p) {
   p->page_directory = 0;
   ksigemptyset(&p->pending_signals);
   proc_alarm_init(&p->alarm);
-  for (int i = 0; i <= SIGMAX; ++i) {
+  for (int i = 0; i <= APOS_SIGMAX; ++i) {
     ksigemptyset(&p->signal_dispositions[i].sa_mask);
     p->signal_dispositions[i].sa_flags = 0;
     p->signal_dispositions[i].sa_handler = SIG_DFL;

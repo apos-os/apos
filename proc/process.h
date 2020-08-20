@@ -64,7 +64,7 @@ struct process {
   ksigset_t pending_signals;
 
   // Current signal dispositions.
-  ksigaction_t signal_dispositions[SIGMAX + 1];
+  ksigaction_t signal_dispositions[APOS_SIGMAX + 1];
 
   // Pending alarm, if any.
   proc_alarm_t alarm;

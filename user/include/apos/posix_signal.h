@@ -29,9 +29,6 @@ typedef uint32_t ksigset_t;
 typedef void (*ksighandler_t)(int);
 
 // Signal numbers.
-#define SIGNULL 0
-#define SIGMIN 1
-
 #define SIGABRT   1   // Process abort signal.
 #define SIGALRM   2   // Alarm clock.
 #define SIGBUS    3   // Access to an undefined portion of a memory object.
@@ -62,7 +59,9 @@ typedef void (*ksighandler_t)(int);
 // The following signals are not specified in POSIX.
 #define SIGWINCH  27  // Controlling terminal changed size.
 
-#define SIGMAX 27
+#define APOS_SIGNULL 0
+#define APOS_SIGMIN 1
+#define APOS_SIGMAX 27
 
 // sighandler_t constants.
 #define SIG_DFL ((ksighandler_t)0x0)
@@ -94,7 +93,7 @@ struct _APOS_SIGACTION {
 typedef struct _APOS_SIGACTION ksigaction_t;
 #undef _APOS_SIGACTION
 
-_Static_assert(sizeof(ksigset_t) * 8 >= SIGMAX,
+_Static_assert(sizeof(ksigset_t) * 8 >= APOS_SIGMAX,
                "sigset_t too small to hold all signals");
 
 static inline int ksigemptyset(ksigset_t* set) {
@@ -110,7 +109,7 @@ static inline int ksigfillset(ksigset_t* set) {
 }
 
 static inline int ksigaddset(ksigset_t* set, int signum) {
-  if (signum <= SIGNULL || signum > SIGMAX) {
+  if (signum < APOS_SIGMIN || signum > APOS_SIGMAX) {
     return -EINVAL;
   }
   *set |= (1 << (signum - 1));
@@ -118,7 +117,7 @@ static inline int ksigaddset(ksigset_t* set, int signum) {
 }
 
 static inline int ksigdelset(ksigset_t* set, int signum) {
-  if (signum <= SIGNULL || signum > SIGMAX) {
+  if (signum < APOS_SIGMIN || signum > APOS_SIGMAX) {
     return -EINVAL;
   }
   *set &= ~(1 << (signum - 1));
@@ -126,7 +125,7 @@ static inline int ksigdelset(ksigset_t* set, int signum) {
 }
 
 static inline int ksigismember(const ksigset_t* set, int signum) {
-  if (signum <= SIGNULL || signum > SIGMAX) {
+  if (signum < APOS_SIGMIN || signum > APOS_SIGMAX) {
     return -EINVAL;
   }
   if (*set & (1 << (signum - 1))) {
