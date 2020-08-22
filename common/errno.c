@@ -14,90 +14,97 @@
 
 #include "common/errno.h"
 
-static const char* ERROR_STRINGS[ERRNO_MAX + 1] = {
-  "OK",              // 0
-  "E2BIG",           // 1
-  "EACCES",          // 2
-  "EADDRINUSE",      // 3
-  "EADDRNOTAVAIL",   // 4
-  "EAFNOSUPPORT",    // 5
-  "EAGAIN",          // 6
-  "EALREADY",        // 7
-  "EBADF",           // 8
-  "EBADMSG",         // 9
-  "EBUSY",           // 10
-  "ECANCELED",       // 11
-  "ECHILD",          // 12
-  "ECONNABORTED",    // 13
-  "ECONNREFUSED",    // 14
-  "ECONNRESET",      // 15
-  "EDEADLK",         // 16
-  "EDESTADDRREQ",    // 17
-  "EDOM",            // 18
-  "EDQUOT",          // 19
-  "EEXIST",          // 20
-  "EFAULT",          // 21
-  "EFBIG",           // 22
-  "EHOSTUNREACH",    // 23
-  "EIDRM",           // 24
-  "EILSEQ",          // 25
-  "EINPROGRESS",     // 26
-  "EINTR",           // 27
-  "EINVAL",          // 28
-  "EIO",             // 29
-  "EISCONN",         // 30
-  "EISDIR",          // 31
-  "ELOOP",           // 32
-  "EMFILE",          // 33
-  "EMLINK",          // 34
-  "EMSGSIZE",        // 35
-  "EMULTIHOP",       // 36
-  "ENAMETOOLONG",    // 37
-  "ENETDOWN",        // 38
-  "ENETRESET",       // 39
-  "ENETUNREACH",     // 40
-  "ENFILE",          // 41
-  "ENOBUFS",         // 42
-  "ENODEV",          // 43
-  "ENOENT",          // 44
-  "ENOEXEC",         // 45
-  "ENOLCK",          // 46
-  "ENOLINK",         // 47
-  "ENOMEM",          // 48
-  "ENOMSG",          // 49
-  "ENOPROTOOPT",     // 50
-  "ENOSPC",          // 51
-  "ENOSYS",          // 52
-  "ENOTCONN",        // 53
-  "ENOTDIR",         // 54
-  "ENOTEMPTY",       // 55
-  "ENOTSOCK",        // 56
-  "ENOTSUP",         // 57
-  "ENOTTY",          // 58
-  "ENXIO",           // 59
-  "EOPNOTSUPP",      // 60
-  "EOVERFLOW",       // 61
-  "EPERM",           // 62
-  "EPIPE",           // 63
-  "EPROTO",          // 64
-  "EPROTONOSUPPORT", // 65
-  "EPROTOTYPE",      // 66
-  "ERANGE",          // 67
-  "EROFS",           // 68
-  "ESPIPE",          // 69
-  "ESRCH",           // 70
-  "ESTALE",          // 71
-  "ETIMEDOUT",       // 72
-  "ETXTBSY",         // 73
-//  "EWOULDBLOCK",     // 6
-  "EXDEV",           // 74
-  "EINTR_RESTART",   // 75
-};
-
 const char* errorname(int err) {
-  if (err >= 0 && err <= ERRNO_MAX) {
-    return ERROR_STRINGS[err];
-  } else {
-    return "<invalid error code>";
+#define HANDLE(ERR)                                    \
+  _Static_assert(ERR >= ERRNO_MIN && ERR <= ERRNO_MAX, \
+                 "Error " #ERR " out of bounds");      \
+  case ERR:                                            \
+    return #ERR;
+
+  switch(err) {
+    case 0: return "OK";
+
+    HANDLE(E2BIG);
+    HANDLE(EACCES);
+    HANDLE(EADDRINUSE);
+    HANDLE(EADDRNOTAVAIL);
+    HANDLE(EAFNOSUPPORT);
+    HANDLE(EAGAIN);
+    HANDLE(EALREADY);
+    HANDLE(EBADF);
+    HANDLE(EBADMSG);
+    HANDLE(EBUSY);
+    HANDLE(ECANCELED);
+    HANDLE(ECHILD);
+    HANDLE(ECONNABORTED);
+    HANDLE(ECONNREFUSED);
+    HANDLE(ECONNRESET);
+    HANDLE(EDEADLK);
+    HANDLE(EDESTADDRREQ);
+    HANDLE(EDOM);
+    HANDLE(EDQUOT);
+    HANDLE(EEXIST);
+    HANDLE(EFAULT);
+    HANDLE(EFBIG);
+    HANDLE(EHOSTUNREACH);
+    HANDLE(EIDRM);
+    HANDLE(EILSEQ);
+    HANDLE(EINPROGRESS);
+    HANDLE(EINTR);
+    HANDLE(EINVAL);
+    HANDLE(EIO);
+    HANDLE(EISCONN);
+    HANDLE(EISDIR);
+    HANDLE(ELOOP);
+    HANDLE(EMFILE);
+    HANDLE(EMLINK);
+    HANDLE(EMSGSIZE);
+    HANDLE(EMULTIHOP);
+    HANDLE(ENAMETOOLONG);
+    HANDLE(ENETDOWN);
+    HANDLE(ENETRESET);
+    HANDLE(ENETUNREACH);
+    HANDLE(ENFILE);
+    HANDLE(ENOBUFS);
+    HANDLE(ENODEV);
+    HANDLE(ENOENT);
+    HANDLE(ENOEXEC);
+    HANDLE(ENOLCK);
+    HANDLE(ENOLINK);
+    HANDLE(ENOMEM);
+    HANDLE(ENOMSG);
+    HANDLE(ENOPROTOOPT);
+    HANDLE(ENOSPC);
+    HANDLE(ENOSYS);
+    HANDLE(ENOTCONN);
+    HANDLE(ENOTDIR);
+    HANDLE(ENOTEMPTY);
+    HANDLE(ENOTSOCK);
+    HANDLE(ENOTSUP);
+    HANDLE(ENOTTY);
+    HANDLE(ENXIO);
+    HANDLE(EOPNOTSUPP);
+    HANDLE(EOVERFLOW);
+    HANDLE(EPERM);
+    HANDLE(EPIPE);
+    HANDLE(EPROTO);
+    HANDLE(EPROTONOSUPPORT);
+    HANDLE(EPROTOTYPE);
+    HANDLE(ERANGE);
+    HANDLE(EROFS);
+    HANDLE(ESPIPE);
+    HANDLE(ESRCH);
+    HANDLE(ESTALE);
+    HANDLE(ETIMEDOUT);
+    HANDLE(ETXTBSY);
+#if EWOULDBLOCK != EAGAIN
+    HANDLE(EWOULDBLOCK);
+#endif
+    HANDLE(EXDEV);
+    HANDLE(EINTR_RESTART);
+
+    default:
+      return "<invalid error code>";
   }
+# undef HANDLE
 }
