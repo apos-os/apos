@@ -1299,7 +1299,7 @@ koff_t vfs_seek(int fd, koff_t offset, int whence) {
   return file->pos;
 }
 
-int vfs_getdents(int fd, dirent_t* buf, int count) {
+int vfs_getdents(int fd, kdirent_t* buf, int count) {
   file_t* file = 0x0;
   int result = lookup_fd(fd, &file);
   if (result) return result;
@@ -1314,10 +1314,10 @@ int vfs_getdents(int fd, dirent_t* buf, int count) {
     result = file->vnode->fs->getdents(file->vnode, file->pos, buf, count);
     if (result >= 0) {
       // Find the last returned dirent_t, and use it's offset.
-      dirent_t* ent = buf;
+      kdirent_t* ent = buf;
       int bufpos = 0;
       while (bufpos < result) {
-        ent = (dirent_t*)((char*)buf + bufpos);
+        ent = (kdirent_t*)((char*)buf + bufpos);
         bufpos += ent->d_reclen;
       }
       file->pos = ent->d_offset;

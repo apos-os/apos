@@ -83,14 +83,14 @@ typedef struct {
   /* apos_off_t */ int32_t d_offset;
   /* size_t */ uint32_t d_reclen;
   char d_name[];  // Null-terminated filename
-} dirent_32_t;
-_Static_assert(sizeof(dirent_32_t) == 12, "dirent_32_t wrong size!");
+} kdirent_32_t;
+_Static_assert(sizeof(kdirent_32_t) == 12, "kdirent_32_t wrong size!");
 #if ARCH == ARCH_i586
-_Static_assert(sizeof(dirent_32_t) == sizeof(dirent_t),
-               "dirent_32_t wrong size!");
+_Static_assert(sizeof(kdirent_32_t) == sizeof(kdirent_t),
+               "kdirent_32_t wrong size!");
 #endif
 
-int vfs_getdents_32(int fd, dirent_32_t* buf, int count);
+int vfs_getdents_32(int fd, kdirent_32_t* buf, int count);
 
 // rlimit wrappers.
 struct apos_rlimit_32 {

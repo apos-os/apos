@@ -484,7 +484,7 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
   char* link_target = kmalloc(VFS_MAX_PATH_LENGTH + 5);
 
   while (1) {
-    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    const int len = vfs_getdents(fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       ksh_printf("error: vfs_getdents(): %s\n", errorname(-len));
       goto done;
@@ -495,7 +495,7 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
 
     int buf_offset = 0;
     do {
-      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      kdirent_t* ent = (kdirent_t*)(&buf[buf_offset]);
       buf_offset += ent->d_reclen;
       if (long_mode) {
         // TODO(aoates): use fstatat()

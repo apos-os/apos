@@ -46,12 +46,12 @@ void create_file(const char* path, const char* mode) {
 }
 
 int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
-  const int kBufSize = sizeof(dirent_t) * 3;  // Ensure we have several calls.
+  const int kBufSize = sizeof(kdirent_t) * 3;  // Ensure we have several calls.
   char buf[kBufSize];
   int num_dirents = 0;
 
   while (1) {
-    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    const int len = vfs_getdents(fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       KEXPECT_GE(len, -0);
       break;
@@ -62,7 +62,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
 
     int buf_offset = 0;
     do {
-      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      kdirent_t* ent = (kdirent_t*)(&buf[buf_offset]);
       num_dirents++;
       buf_offset += ent->d_reclen;
 

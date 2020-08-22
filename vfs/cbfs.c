@@ -676,10 +676,10 @@ static int getdents_from_list(const list_t* list, const int entries_to_skip,
     if (!n) break;
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
 
-    const int dirent_len = sizeof(dirent_t) + kstrlen(entry->name) + 1;
+    const int dirent_len = sizeof(kdirent_t) + kstrlen(entry->name) + 1;
     if (bytes_written + dirent_len > outbufsize) break;
 
-    dirent_t* d = (dirent_t*)(((const char*)outbuf) + bytes_written);
+    kdirent_t* d = (kdirent_t*)(((const char*)outbuf) + bytes_written);
     d->d_ino = entry->num;
     d->d_offset = offset + idx + 1;
     d->d_reclen = dirent_len;
@@ -747,7 +747,7 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   stat_out->st_mode |= inode->mode;
   stat_out->st_nlink = (inode->type == VNODE_DIRECTORY) ? 2 : 1;
   stat_out->st_rdev = kmakedev(0, 0);
-  stat_out->st_size = 2 * sizeof(dirent_t) + 5;
+  stat_out->st_size = 2 * sizeof(kdirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;
   return 0;

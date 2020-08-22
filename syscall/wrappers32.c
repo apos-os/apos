@@ -98,15 +98,15 @@ int proc_sigaction_32(int signum, const struct ksigaction_32* act32,
   return result;
 }
 
-int vfs_getdents_32(int fd, dirent_32_t* buf_in, int count) {
-  _Static_assert(sizeof(dirent_32_t) == 12, "vfs_getdents_32 must be updated.");
+int vfs_getdents_32(int fd, kdirent_32_t* buf_in, int count) {
+  _Static_assert(sizeof(kdirent_32_t) == 12, "vfs_getdents_32 must be updated.");
 
   // This could probably be written without the new buffer (just compacting into
   // the user-supplied buffer entry by entry), but this makes things easier to
   // reason about.
   char* buf64 = (char*)kmalloc(count);
   if (!buf64) return -ENOMEM;
-  int result = vfs_getdents(fd, (dirent_t*)buf64, count);
+  int result = vfs_getdents(fd, (kdirent_t*)buf64, count);
   if (result < 0) {
     kfree(buf64);
     return result;
@@ -115,11 +115,11 @@ int vfs_getdents_32(int fd, dirent_32_t* buf_in, int count) {
   char* buf32 = (char*)buf_in;
   ssize_t in_offset = 0, out_offset = 0;
   while (in_offset < result) {
-    const dirent_t* d64 = (dirent_t*)(buf64 + in_offset);
-    dirent_32_t* d32 = (dirent_32_t*)(buf32 + out_offset);
+    const kdirent_t* d64 = (kdirent_t*)(buf64 + in_offset);
+    kdirent_32_t* d32 = (kdirent_32_t*)(buf32 + out_offset);
     d32->d_ino = d64->d_ino;
     d32->d_offset = d64->d_offset;
-    d32->d_reclen = sizeof(dirent_32_t) + kstrlen(d64->d_name) + 1;
+    d32->d_reclen = sizeof(kdirent_32_t) + kstrlen(d64->d_name) + 1;
     kstrcpy(d32->d_name, d64->d_name);
     in_offset += d64->d_reclen;
     out_offset += d32->d_reclen;

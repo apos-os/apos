@@ -1631,7 +1631,7 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
 typedef struct {
   void* buf;
   int bufsize;
-  dirent_t* last_dirent;  // The last dirent we put into the buffer.
+  kdirent_t* last_dirent;  // The last dirent we put into the buffer.
 } ext2_getdents_iter_arg_t;
 static int ext2_getdents_iter_func(void* arg,
                                    ext2_dirent_t* little_endian_dirent,
@@ -1649,13 +1649,13 @@ static int ext2_getdents_iter_func(void* arg,
   }
 
   const int dirent_out_size =
-      sizeof(dirent_t) + little_endian_dirent->name_len + 1;
+      sizeof(kdirent_t) + little_endian_dirent->name_len + 1;
   if (dirent_out_size > getdents_args->bufsize) {
     // Out of room, we're done.
     return 1;
   }
 
-  dirent_t* dirent_out = (dirent_t*)getdents_args->buf;
+  kdirent_t* dirent_out = (kdirent_t*)getdents_args->buf;
   dirent_out->d_ino = ltoh32(little_endian_dirent->inode);
   dirent_out->d_offset = -1;  // We'll update this in the next iteration.
   dirent_out->d_reclen = dirent_out_size;

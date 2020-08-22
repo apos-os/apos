@@ -25,12 +25,18 @@
 #include <stddef.h>
 
 // A single directory entry, as produced by a concrete filesystem.
-struct dirent {
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_DIRENT kdirent
+#else
+#  define _APOS_DIRENT dirent
+#endif
+struct _APOS_DIRENT {
   apos_ino_t d_ino;     // vnode number
   apos_off_t d_offset;  // Offset from *start* of directory to next dirent_t.
   size_t d_reclen;      // Length of this dirent_t
   char d_name[];        // Null-terminated filename
 };
-typedef struct dirent dirent_t;
+typedef struct _APOS_DIRENT kdirent_t;
+#undef _APOS_DIRENT
 
 #endif

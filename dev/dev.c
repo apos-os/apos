@@ -203,7 +203,7 @@ void dev_init_fs() {
   char buf[kBufSize];
   char* full_path = kmalloc(VFS_MAX_PATH_LENGTH);
   while (1) {
-    const int len = vfs_getdents(dev_fd, (dirent_t*)(&buf[0]), kBufSize);
+    const int len = vfs_getdents(dev_fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       klogf("warning: unable to read /dev: %s\n", errorname(-len));
       vfs_close(dev_fd);
@@ -216,7 +216,7 @@ void dev_init_fs() {
 
     int buf_offset = 0;
     while (buf_offset < len) {
-      dirent_t* ent = (dirent_t*)(buf + buf_offset);
+      kdirent_t* ent = (kdirent_t*)(buf + buf_offset);
       buf_offset += ent->d_reclen;
 
       if (kstrcmp(ent->d_name, ".") == 0 ||

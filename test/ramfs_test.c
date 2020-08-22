@@ -156,7 +156,7 @@ void EXPECT_DIRENTS(vnode_t* node, int n, ...) {
   while (result > 0) {
     int bufidx = 0;
     while (bufidx < result) {
-      dirent_t* d = (dirent_t*)&dirents_buf[bufidx];
+      kdirent_t* d = (kdirent_t*)&dirents_buf[bufidx];
       offset = d->d_offset;
       dirents_seen++;
       if (expected_idx < n) {

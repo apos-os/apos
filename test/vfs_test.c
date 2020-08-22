@@ -3290,8 +3290,8 @@ static void pipe_test(void) {
 
 
   KTEST_BEGIN("vfs_pipe(): vfs_getdents() on pipe fd");
-  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], (dirent_t*)buf, 10));
-  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], (dirent_t*)buf, 10));
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[0], (kdirent_t*)buf, 10));
+  KEXPECT_EQ(-ENOTDIR, vfs_getdents(fds[1], (kdirent_t*)buf, 10));
 
 
   KTEST_BEGIN("vfs_pipe(): vfs_isatty() on pipe fd");

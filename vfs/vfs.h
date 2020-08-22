@@ -89,10 +89,10 @@ int vfs_write(int fd, const void* buf, size_t count);
 // or -error.
 koff_t vfs_seek(int fd, koff_t offset, int whence);
 
-// Read several dirent_t structures from the file descriptor into the given
+// Read several kdirent_t structures from the file descriptor into the given
 // buffer.  count is the size of the buffer in bytes.  Returns the number of
 // bytes read on success, or -error.
-int vfs_getdents(int fd, dirent_t* buf, int count);
+int vfs_getdents(int fd, kdirent_t* buf, int count);
 
 // Return the full pathname of the current working directory in the given
 // buffer.  Returns the length of the string on success, or -error on error.

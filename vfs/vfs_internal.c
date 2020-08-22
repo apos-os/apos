@@ -139,7 +139,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
   char dirent_buf[kBufSize];
 
   int offset = 0;
-  dirent_t* ent;
+  kdirent_t* ent;
   do {
     const int len = parent->fs->getdents(parent, offset, dirent_buf, kBufSize);
     if (len == 0) {
@@ -150,7 +150,7 @@ int lookup_by_inode(vnode_t* parent, int inode, char* name_out, int len) {
     // Look for a matching dirent.
     int buf_offset = 0;
     do {
-      ent = (dirent_t*)(&dirent_buf[buf_offset]);
+      ent = (kdirent_t*)(&dirent_buf[buf_offset]);
       buf_offset += ent->d_reclen;
     } while (ent->d_ino != (kino_t)inode && buf_offset < len);
     // Keep going until we find a match.

@@ -142,18 +142,18 @@ static int testfs_getdents(vnode_t* vnode, int offset, void* outbuf,
                            int outbufsize) {
   KASSERT(vnode->num == 0);
 
-  const int kBufLen = 2 * sizeof(dirent_t) + 2 + 3;
+  const int kBufLen = 2 * sizeof(kdirent_t) + 2 + 3;
   char buf[kBufLen];
-  dirent_t* d = (dirent_t*)(&buf[0]);
+  kdirent_t* d = (kdirent_t*)(&buf[0]);
   d->d_ino = 0;
-  d->d_offset = sizeof(dirent_t) + 2;
+  d->d_offset = sizeof(kdirent_t) + 2;
   d->d_reclen = d->d_offset;
   kstrcpy(d->d_name, ".");
 
-  d = (dirent_t*)(&buf[d->d_offset]);
+  d = (kdirent_t*)(&buf[d->d_offset]);
   d->d_ino = 0;
   d->d_offset = kBufLen;
-  d->d_reclen = sizeof(dirent_t) + 3;
+  d->d_reclen = sizeof(kdirent_t) + 3;
   kstrcpy(d->d_name, "..");
 
   if (offset >= kBufLen) return 0;
@@ -167,7 +167,7 @@ static int testfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   stat_out->st_mode = VFS_S_IFDIR | VFS_S_IRUSR | VFS_S_IXUSR;
   stat_out->st_nlink = 2;
   stat_out->st_rdev = kmakedev(0, 0);
-  stat_out->st_size = 2 * sizeof(dirent_t) + 5;
+  stat_out->st_size = 2 * sizeof(kdirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;
   return 0;

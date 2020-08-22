@@ -376,7 +376,7 @@ static void dynamic_directory_test(void) {
                                       (void*)3, VFS_S_IRWXU));
 
   fd = vfs_open("cbfs_test_root/dir3", VFS_O_RDONLY);
-  KEXPECT_EQ(-EIO, vfs_getdents(fd, (dirent_t*)tmp, 100));
+  KEXPECT_EQ(-EIO, vfs_getdents(fd, (kdirent_t*)tmp, 100));
   vfs_close(fd);
 
   KTEST_BEGIN("cbfs: dynamic directory parent directory creation");
