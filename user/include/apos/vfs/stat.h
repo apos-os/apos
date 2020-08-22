@@ -66,7 +66,12 @@
 #define VFS_S_ISSOCK(m) (((m) & VFS_S_IFMT) == VFS_S_IFSOCK)
 
 // Information about a vnode.
-struct stat {
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_STAT apos_stat
+#else
+#  define _APOS_STAT stat
+#endif
+struct _APOS_STAT {
   apos_dev_t st_dev;                   // Device containing the file.
   apos_ino_t st_ino;                   // Inode number.
   apos_mode_t st_mode;                 // File type and mode.
@@ -86,7 +91,7 @@ struct stat {
 # define st_mtime st_mtim.tv_sec
 # define st_ctime st_ctim.tv_sec
 };
-// TODO(aoates): replace all instances of apos_stat_t with stat_t.
-typedef struct stat apos_stat_t;
+typedef struct _APOS_STAT apos_stat_t;
+#undef _APOS_STAT
 
 #endif

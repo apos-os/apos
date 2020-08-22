@@ -3274,7 +3274,7 @@ static void pipe_test(void) {
 
 
   KTEST_BEGIN("vfs_pipe(): stat pipe fd");
-  struct stat stat;
+  apos_stat_t stat;
   KEXPECT_EQ(0, vfs_fstat(fds[0], &stat));
   KEXPECT_EQ(0, vfs_fstat(fds[1], &stat));
   // TODO(aoates): what should the other mode bits be?
@@ -3362,7 +3362,7 @@ static void umask_test(void) {
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_close(fd));
 
-  struct stat st;
+  apos_stat_t st;
   KEXPECT_EQ(0, vfs_stat("umask_test_file", &st));
   KEXPECT_EQ(VFS_S_IFREG | VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRGRP |
              VFS_S_IXGRP | VFS_S_IXOTH, st.st_mode);
@@ -3373,7 +3373,7 @@ static void umask_test(void) {
   proc_umask(VFS_S_IFIFO | 0026);
   KEXPECT_EQ(0, vfs_mkdir("umask_test_dir", VFS_S_IWUSR | VFS_S_IXUSR |
                                                 VFS_S_IRWXG | VFS_S_IRWXO));
-  kmemset(&st, 0, sizeof(struct stat));
+  kmemset(&st, 0, sizeof(apos_stat_t));
   KEXPECT_EQ(0, vfs_stat("umask_test_dir", &st));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRGRP |
              VFS_S_IXGRP | VFS_S_IXOTH, st.st_mode);
@@ -3386,7 +3386,7 @@ static void umask_test(void) {
       0, vfs_mknod("umask_test_node", VFS_S_IFCHR | VFS_S_IWUSR | VFS_S_IXUSR |
                                           VFS_S_IRWXG | VFS_S_IRWXO,
                    kmakedev(0, 0)));
-  kmemset(&st, 0, sizeof(struct stat));
+  kmemset(&st, 0, sizeof(apos_stat_t));
   KEXPECT_EQ(0, vfs_stat("umask_test_node", &st));
   KEXPECT_EQ(VFS_S_IFCHR | VFS_S_IWUSR | VFS_S_IXUSR | VFS_S_IRGRP |
              VFS_S_IXGRP | VFS_S_IXOTH, st.st_mode);
