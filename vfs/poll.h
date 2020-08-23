@@ -66,7 +66,7 @@ void poll_init_event(poll_event_t* event);
 int poll_add_event(poll_state_t* poll, poll_event_t* event, short event_mask);
 
 // Trigger the given event, triggering each poll that is waiting on it whose
-// event mask contains the event(s) in question.  Passing POLLNVAL indicates
+// event mask contains the event(s) in question.  Passing KPOLLNVAL indicates
 // that the resource owning the poll_event_t is going away, and the event must
 // not be referenced again.
 //

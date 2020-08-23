@@ -28,20 +28,31 @@ struct _APOS_POLLFD {
 
 typedef unsigned long apos_nfds_t;
 
-#define POLLIN      0x001  // Data other than high-priority data may be read without blocking.
-#define POLLRDNORM  0x002  // Normal data may be read without blocking.
-#define POLLRDBAND  0x004  // Priority data may be read without blocking.
-#define POLLPRI     0x008  // High priority data may be read without blocking.
-#define POLLOUT     0x010  // Normal data may be written without blocking.
-#define POLLWRNORM  0x010  // Equivalent to POLLOUT.
-#define POLLWRBAND  0x020  // Priority data may be written.
-#define POLLERR     0x040  // An error has occurred (revents only).
-#define POLLHUP     0x080  // Device has been disconnected (revents only).
-#define POLLNVAL    0x100  // Invalid fd member (revents only).
+#define KPOLLIN      0x001  // Data other than high-priority data may be read without blocking.
+#define KPOLLRDNORM  0x002  // Normal data may be read without blocking.
+#define KPOLLRDBAND  0x004  // Priority data may be read without blocking.
+#define KPOLLPRI     0x008  // High priority data may be read without blocking.
+#define KPOLLOUT     0x010  // Normal data may be written without blocking.
+#define KPOLLWRNORM  0x010  // Equivalent to POLLOUT.
+#define KPOLLWRBAND  0x020  // Priority data may be written.
+#define KPOLLERR     0x040  // An error has occurred (revents only).
+#define KPOLLHUP     0x080  // Device has been disconnected (revents only).
+#define KPOLLNVAL    0x100  // Invalid fd member (revents only).
 
 #if !__APOS_BUILDING_KERNEL__
   typedef apos_nfds_t nfds_t;
 # define apos_pollfd pollfd
+
+# define POLLIN KPOLLIN
+# define POLLRDNORM KPOLLRDNORM
+# define POLLRDBAND KPOLLRDBAND
+# define POLLPRI KPOLLPRI
+# define POLLOUT KPOLLOUT
+# define POLLWRNORM KPOLLWRNORM
+# define POLLWRBAND KPOLLWRBAND
+# define POLLERR KPOLLERR
+# define POLLHUP KPOLLHUP
+# define POLLNVAL KPOLLNVAL
 #endif
 
 #endif

@@ -663,12 +663,12 @@ static void tty_poll_test(void) {
 
   struct apos_pollfd pfds[2];
   pfds[0].fd = fd;
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
 
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLRDNORM;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
@@ -676,36 +676,36 @@ static void tty_poll_test(void) {
   KTEST_BEGIN("TTY: basic poll (readable and writable)");
   ld_provide(args.ld, 'x');
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
   ld_provide(args.ld, '\n');
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLRDNORM;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN | POLLRDNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfds[0].revents);
 
-  pfds[0].events = POLLRDNORM;
+  pfds[0].events = KPOLLRDNORM;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLRDNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLRDNORM, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLOUT | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLOUT | KPOLLRDNORM;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT | KPOLLRDNORM, pfds[0].revents);
 
   char buf[10];
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
 
 
   KTEST_BEGIN("TTY: delayed poll");
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   poll_thread_args_t pt_args;
   pt_args.pfds = pfds;
   pt_args.nfds = 1;
@@ -725,12 +725,12 @@ static void tty_poll_test(void) {
   kthread_join(thread);
   KEXPECT_EQ(true, pt_args.finished);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
 
 
   KTEST_BEGIN("TTY: delayed poll (masked event, then timeout)");
-  pfds[0].events = POLLPRI;
+  pfds[0].events = KPOLLPRI;
   pt_args.timeout = 50;
 
   KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
@@ -752,12 +752,12 @@ static void tty_poll_test(void) {
 
 
   KTEST_BEGIN("TTY: non-sleeping poll (NULL poll_state_t)");
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   pfds[1].fd = vfs_dup(fd);
-  pfds[1].events = POLLIN;
+  pfds[1].events = KPOLLIN;
 
   KEXPECT_EQ(1, vfs_poll(pfds, 2, 0));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
   KEXPECT_EQ(0, pfds[1].revents);
 
   vfs_close(pfds[1].fd);
@@ -768,10 +768,10 @@ static void tty_poll_test(void) {
   KEXPECT_GE(nonblock_fd, 0);
 
   pfds[0].fd = nonblock_fd;
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
 
   pt_args.pfds = pfds;
@@ -791,7 +791,7 @@ static void tty_poll_test(void) {
   kthread_join(thread);
   KEXPECT_EQ(true, pt_args.finished);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
 
   vfs_close(nonblock_fd);
@@ -805,11 +805,11 @@ static void tty_poll_test(void) {
   KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &term));
 
   pfds[0].fd = fd;
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
@@ -826,7 +826,7 @@ static void tty_poll_test(void) {
   kthread_join(thread);
   KEXPECT_EQ(true, pt_args.finished);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
   KEXPECT_EQ(1, vfs_read(fd, buf, 10));
 
   KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &orig_term));

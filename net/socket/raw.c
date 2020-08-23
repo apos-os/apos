@@ -70,10 +70,10 @@ static list_t* get_socket_list(ethertype_t ethertype, int protocol) {
 }
 
 static short raw_poll_events(const socket_raw_t* socket) {
-  short events = POLLOUT;
+  short events = KPOLLOUT;
   KASSERT_DBG(!defint_state());
   if (!list_empty(&socket->rx_queue)) {
-    events |= POLLIN;
+    events |= KPOLLIN;
   }
   return events;
 }
@@ -166,7 +166,7 @@ static void sock_raw_cleanup(socket_t* socket_base) {
   KASSERT_DBG(kthread_queue_empty(&socket->wait_queue));
 
   // Our socket is about to disappear.  Tell any pending poll()s as much.
-  poll_trigger_event(&socket->poll_event, POLLNVAL);
+  poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
 }
 

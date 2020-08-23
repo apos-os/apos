@@ -22,11 +22,11 @@
 static short fifo_poll_events(const apos_fifo_t* fifo) {
   short events = 0;
   if (fifo->cbuf.len > 0 && fifo->num_readers > 0)
-    events |= POLLIN | POLLRDNORM;
+    events |= KPOLLIN | KPOLLRDNORM;
   if (fifo->cbuf.len < fifo->cbuf.buflen && fifo->num_writers > 0)
-    events |= POLLOUT;
-  if (fifo->num_readers == 0) events |= POLLERR;
-  if (fifo->num_writers == 0 && fifo->hup) events |= POLLHUP;
+    events |= KPOLLOUT;
+  if (fifo->num_readers == 0) events |= KPOLLERR;
+  if (fifo->num_writers == 0 && fifo->hup) events |= KPOLLHUP;
   return events;
 }
 
@@ -46,10 +46,10 @@ void fifo_cleanup(apos_fifo_t* fifo) {
   KASSERT(kthread_queue_empty(&fifo->read_queue));
   KASSERT(kthread_queue_empty(&fifo->write_queue));
   // This isn't strictly necessary---for us to be cleaning up this fifo, we must
-  // have previously closed the last reference, meaning we'd generate a POLLERR
-  // when num_readers goes to zero.  But generating a POLLNVAL here is correct,
+  // have previously closed the last reference, meaning we'd generate a KPOLLERR
+  // when num_readers goes to zero.  But generating a KPOLLNVAL here is correct,
   // if redundant.
-  poll_trigger_event(&fifo->poll_event, POLLNVAL);
+  poll_trigger_event(&fifo->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&fifo->poll_event.refs));
 }
 

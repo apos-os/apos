@@ -415,14 +415,14 @@ static void* do_poll(void* arg) {
 
 // Run from fifo_poll_test().
 static void fifo_poll_no_writers_test(void) {
-  KTEST_BEGIN("FIFO: poll(POLLIN) with no writers (never had writer)");
+  KTEST_BEGIN("FIFO: poll(KPOLLIN) with no writers (never had writer)");
   struct apos_pollfd pfds[1];
   KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo2", VFS_S_IFIFO | VFS_S_IRWXU, 0));
 
   int rd_fd = vfs_open("fifo_test/fifo2", VFS_O_RDONLY | VFS_O_NONBLOCK);
   KEXPECT_GE(rd_fd, 0);
   pfds[0].fd = rd_fd;
-  pfds[0].events = POLLIN | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLRDNORM;
   pfds[0].revents = 123;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
@@ -432,14 +432,14 @@ static void fifo_poll_no_writers_test(void) {
   KEXPECT_EQ(0, pfds[0].revents);
 
 
-  KTEST_BEGIN("FIFO: poll(POLLIN | POLLOUT) with no writers (never had writer)");
-  pfds[0].events = POLLIN | POLLOUT;
+  KTEST_BEGIN("FIFO: poll(KPOLLIN | KPOLLOUT) with no writers (never had writer)");
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
 
-  KTEST_BEGIN("FIFO: timing-out poll(POLLIN) with no writers (never had writer)");
-  pfds[0].events = POLLIN;
+  KTEST_BEGIN("FIFO: timing-out poll(KPOLLIN) with no writers (never had writer)");
+  pfds[0].events = KPOLLIN;
   apos_ms_t start = get_time_ms();
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 50));
   apos_ms_t end = get_time_ms();
@@ -448,46 +448,46 @@ static void fifo_poll_no_writers_test(void) {
   KEXPECT_LE(end - start, 60);
 
 
-  KTEST_BEGIN("FIFO: poll(POLLIN) with no writers (writer closed)");
+  KTEST_BEGIN("FIFO: poll(KPOLLIN) with no writers (writer closed)");
   int wr_fd = vfs_open("fifo_test/fifo2", VFS_O_WRONLY | VFS_O_NONBLOCK);
   KEXPECT_GE(wr_fd, 0);
   KEXPECT_EQ(3, vfs_write(wr_fd, "abc", 3));
   vfs_close(wr_fd);
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
-  KEXPECT_EQ(POLLIN | POLLHUP, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLHUP, pfds[0].revents);
 
   char buf[10];
   KEXPECT_EQ(3, vfs_read(rd_fd, buf, 10));
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
-  KEXPECT_EQ(POLLHUP, pfds[0].revents);
+  KEXPECT_EQ(KPOLLHUP, pfds[0].revents);
 
   pfds[0].events = 0;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLHUP, pfds[0].revents);
+  KEXPECT_EQ(KPOLLHUP, pfds[0].revents);
 
 
-  KTEST_BEGIN("FIFO: poll(POLLIN | POLLOUT) with no writers (writer closed)");
+  KTEST_BEGIN("FIFO: poll(KPOLLIN | KPOLLOUT) with no writers (writer closed)");
   wr_fd = vfs_open("fifo_test/fifo2", VFS_O_WRONLY | VFS_O_NONBLOCK);
   KEXPECT_GE(wr_fd, 0);
   KEXPECT_EQ(3, vfs_write(wr_fd, "abc", 3));
   vfs_close(wr_fd);
 
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
-  KEXPECT_EQ(POLLIN | POLLHUP, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLHUP, pfds[0].revents);
 
   KEXPECT_EQ(3, vfs_read(rd_fd, buf, 10));
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
-  KEXPECT_EQ(POLLHUP, pfds[0].revents);
+  KEXPECT_EQ(KPOLLHUP, pfds[0].revents);
 
 
-  KTEST_BEGIN("FIFO: delayed poll(POLLIN) when last writer goes away");
+  KTEST_BEGIN("FIFO: delayed poll(KPOLLIN) when last writer goes away");
   wr_fd = vfs_open("fifo_test/fifo2", VFS_O_WRONLY | VFS_O_NONBLOCK);
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   poll_thread_args_t pt_args;
   pt_args.pfds = pfds;
   pt_args.nfds = 1;
@@ -502,7 +502,7 @@ static void fifo_poll_no_writers_test(void) {
   vfs_close(wr_fd);
   kthread_join(thread);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLHUP, pfds[0].revents);
+  KEXPECT_EQ(KPOLLHUP, pfds[0].revents);
 
   KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo2"));
   vfs_close(rd_fd);
@@ -522,46 +522,46 @@ static void fifo_poll_test(void) {
   pfds[0].fd = rd_fd;
   pfds[1].fd = wr_fd;
   pfds[0].events = pfds[1].events =
-      POLLIN | POLLOUT | POLLPRI | POLLRDNORM | POLLWRNORM;
+      KPOLLIN | KPOLLOUT | KPOLLPRI | KPOLLRDNORM | KPOLLWRNORM;
 
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLPRI;
   KEXPECT_EQ(0, vfs_poll(pfds, 2, 0));
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_EQ(0, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
 
 
   KTEST_BEGIN("FIFO: poll on FIFO with some data (readable and writable)");
   KEXPECT_EQ(3, vfs_write(wr_fd, "abc", 3));
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLIN | POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfds[1].revents);
 
   pfds[0].events = pfds[1].events =
-      POLLIN | POLLOUT | POLLPRI | POLLRDNORM | POLLWRNORM;
+      KPOLLIN | KPOLLOUT | KPOLLPRI | KPOLLRDNORM | KPOLLWRNORM;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM, pfds[0].revents);
-  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM | POLLWRNORM, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT | KPOLLRDNORM | KPOLLWRNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT | KPOLLRDNORM | KPOLLWRNORM, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
-  KEXPECT_EQ(POLLIN, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
 
 
   KTEST_BEGIN("FIFO: poll on almost-full FIFO (readable and writable)");
@@ -572,20 +572,20 @@ static void fifo_poll_test(void) {
   char* buf = kmalloc(1000);
   KEXPECT_EQ(3, vfs_read(rd_fd, buf, 3));
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLIN | POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
-  KEXPECT_EQ(POLLIN, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
 
 
   KTEST_BEGIN("FIFO: poll on full FIFO (readable, not writable)");
@@ -593,17 +593,17 @@ static void fifo_poll_test(void) {
     result = vfs_write(wr_fd, "abc", 3);
   } while (result > 0);
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
-  KEXPECT_EQ(POLLIN, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLIN | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLPRI;
   KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
-  KEXPECT_EQ(POLLIN, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[1].revents);
 
-  pfds[0].events = pfds[1].events = POLLOUT | POLLPRI;
+  pfds[0].events = pfds[1].events = KPOLLOUT | KPOLLPRI;
   KEXPECT_EQ(0, vfs_poll(pfds, 2, 0));
   KEXPECT_EQ(0, pfds[0].revents);
   KEXPECT_EQ(0, pfds[1].revents);
@@ -613,7 +613,7 @@ static void fifo_poll_test(void) {
 
 
   KTEST_BEGIN("FIFO: delayed poll (becomes readable)");
-  pfds[0].events = pfds[1].events = POLLIN;
+  pfds[0].events = pfds[1].events = KPOLLIN;
   poll_thread_args_t pt_args;
   pt_args.pfds = pfds;
   pt_args.nfds = 2;
@@ -628,8 +628,8 @@ static void fifo_poll_test(void) {
   KEXPECT_EQ(3, vfs_write(wr_fd, "abc", 3));
   kthread_join(thread);
   KEXPECT_EQ(2, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
-  KEXPECT_EQ(POLLIN, pfds[1].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[1].revents);
   KEXPECT_EQ(3, vfs_read(rd_fd, buf, 10));
 
 
@@ -637,7 +637,7 @@ static void fifo_poll_test(void) {
   do {
     result = vfs_write(wr_fd, buf, 1000);
   } while (result > 0);
-  pfds[0].events = pfds[1].events = POLLOUT;
+  pfds[0].events = pfds[1].events = KPOLLOUT;
   pt_args.pfds = pfds;
   pt_args.nfds = 2;
   pt_args.timeout = -1;
@@ -650,43 +650,43 @@ static void fifo_poll_test(void) {
   KEXPECT_EQ(3, vfs_read(rd_fd, buf, 3));
   kthread_join(thread);
   KEXPECT_EQ(2, pt_args.result);
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
-  KEXPECT_EQ(POLLOUT, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
   do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
 
 
-  KTEST_BEGIN("FIFO: poll(POLLOUT) with no readers");
-  pfds[0].events = pfds[1].events = POLLOUT;
+  KTEST_BEGIN("FIFO: poll(KPOLLOUT) with no readers");
+  pfds[0].events = pfds[1].events = KPOLLOUT;
   vfs_close(rd_fd);
   KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
-  KEXPECT_EQ(POLLOUT | POLLERR, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT | KPOLLERR, pfds[1].revents);
 
   rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   do { result = vfs_write(wr_fd, buf, 1000); } while (result > 0);
   vfs_close(rd_fd);
   KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
-  KEXPECT_EQ(POLLERR, pfds[1].revents);
+  KEXPECT_EQ(KPOLLERR, pfds[1].revents);
   rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
 
 
-  KTEST_BEGIN("FIFO: poll(POLLIN | POLLOUT) with no readers");
-  pfds[0].events = pfds[1].events = POLLIN | POLLOUT;
+  KTEST_BEGIN("FIFO: poll(KPOLLIN | KPOLLOUT) with no readers");
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLOUT;
   vfs_close(rd_fd);
   KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
-  KEXPECT_EQ(POLLOUT | POLLERR, pfds[1].revents);
+  KEXPECT_EQ(KPOLLOUT | KPOLLERR, pfds[1].revents);
 
   rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   do { result = vfs_write(wr_fd, buf, 1000); } while (result > 0);
   vfs_close(rd_fd);
   KEXPECT_EQ(1, vfs_poll(pfds + 1, 1, -1));
-  KEXPECT_EQ(POLLERR, pfds[1].revents);
+  KEXPECT_EQ(KPOLLERR, pfds[1].revents);
   rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
 
 
-  KTEST_BEGIN("FIFO: delayed poll(POLLOUT) when last reader goes away");
-  pfds[0].events = pfds[1].events = POLLOUT;
+  KTEST_BEGIN("FIFO: delayed poll(KPOLLOUT) when last reader goes away");
+  pfds[0].events = pfds[1].events = KPOLLOUT;
   pt_args.pfds = pfds + 1;
   pt_args.nfds = 1;
   pt_args.timeout = -1;
@@ -701,7 +701,7 @@ static void fifo_poll_test(void) {
   vfs_close(rd_fd);
   kthread_join(thread);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLERR, pfds[1].revents);
+  KEXPECT_EQ(KPOLLERR, pfds[1].revents);
 
   rd_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY | VFS_O_NONBLOCK);
   do { result = vfs_read(rd_fd, buf, 1000); } while (result > 0);
@@ -726,7 +726,7 @@ static void concurrent_close_poll_test(void) {
 
   struct apos_pollfd pfd;
   pfd.fd = rd_fd;
-  pfd.events = POLLIN | POLLOUT | POLLPRI | POLLRDNORM | POLLWRNORM;
+  pfd.events = KPOLLIN | KPOLLOUT | KPOLLPRI | KPOLLRDNORM | KPOLLWRNORM;
 
   poll_thread_args_t pt_args;
   pt_args.pfds = &pfd;
@@ -742,7 +742,7 @@ static void concurrent_close_poll_test(void) {
   vfs_close(rd_fd);
   kthread_join(thread);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLNVAL, pfd.revents);
+  KEXPECT_EQ(KPOLLNVAL, pfd.revents);
   KEXPECT_EQ(0, vfs_unlink("fifo_test/fifo"));
   KEXPECT_EQ(0, vfs_rmdir("fifo_test"));
 }

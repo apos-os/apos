@@ -795,9 +795,9 @@ static void* do_poll_helper(void* arg) {
   struct apos_pollfd pfd;
   pfd.fd = *(int*)arg;
   pfd.revents = 0;
-  pfd.events = POLLIN;
+  pfd.events = KPOLLIN;
   void* result = (void*)(intptr_t)vfs_poll(&pfd, 1, 1000);
-  KEXPECT_EQ(POLLIN, pfd.revents);
+  KEXPECT_EQ(KPOLLIN, pfd.revents);
   return result;
 }
 
@@ -809,7 +809,7 @@ static void* deferred_close(void* arg) {
 }
 
 static void recv_poll_test(void) {
-  KTEST_BEGIN("vfs_poll(UDP): POLLIN on empty socket");
+  KTEST_BEGIN("vfs_poll(UDP): KPOLLIN on empty socket");
   int send_sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   int recv_sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(send_sock, 0);
@@ -821,12 +821,12 @@ static void recv_poll_test(void) {
   struct apos_pollfd pfd;
   pfd.fd = recv_sock;
   pfd.revents = 0;
-  pfd.events = POLLIN;
+  pfd.events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
   KEXPECT_EQ(0, vfs_poll(&pfd, 1, 10));
 
 
-  KTEST_BEGIN("vfs_poll(UDP): POLLIN on readable socket");
+  KTEST_BEGIN("vfs_poll(UDP): KPOLLIN on readable socket");
   KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, NULL, 0));
   KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
   KEXPECT_EQ(1, vfs_poll(&pfd, 1, 10));
@@ -835,7 +835,7 @@ static void recv_poll_test(void) {
   KEXPECT_EQ(3, net_recv(recv_sock, buf, 100, 0));
 
 
-  KTEST_BEGIN("vfs_poll(UDP): blocking for POLLIN on readable socket");
+  KTEST_BEGIN("vfs_poll(UDP): blocking for KPOLLIN on readable socket");
   kthread_t thread;
   KEXPECT_EQ(0, kthread_create(&thread, &do_poll_helper, &recv_sock));
   scheduler_make_runnable(thread);
@@ -848,19 +848,19 @@ static void recv_poll_test(void) {
   KEXPECT_EQ(3, net_recv(recv_sock, buf, 100, 0));
 
 
-  KTEST_BEGIN("vfs_poll(UDP): POLLOUT on socket");
-  pfd.events = POLLIN | POLLOUT;
+  KTEST_BEGIN("vfs_poll(UDP): KPOLLOUT on socket");
+  pfd.events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
-  KEXPECT_EQ(POLLOUT, pfd.revents);
+  KEXPECT_EQ(KPOLLOUT, pfd.revents);
 
 
   KTEST_BEGIN("vfs_poll(UDP): underlying socket closed during poll");
   KEXPECT_EQ(0, kthread_create(&thread, &deferred_close, &recv_sock));
   scheduler_make_runnable(thread);
 
-  pfd.events = POLLIN;
+  pfd.events = KPOLLIN;
   KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));
-  KEXPECT_EQ(POLLNVAL, pfd.revents);
+  KEXPECT_EQ(KPOLLNVAL, pfd.revents);
 
   KEXPECT_EQ(0, (intptr_t)kthread_join(thread));
 

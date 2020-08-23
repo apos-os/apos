@@ -113,8 +113,8 @@ static inline size_t circ_dec(ld_t* l, size_t x) {
 }
 
 static int ld_get_poll_events(const ld_t* l) {
-  int events = POLLOUT;  // Always writable.
-  if (l->start_idx != l->cooked_idx) events |= POLLIN | POLLRDNORM;
+  int events = KPOLLOUT;  // Always writable.
+  if (l->start_idx != l->cooked_idx) events |= KPOLLIN | KPOLLRDNORM;
   return events;
 }
 
