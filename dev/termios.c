@@ -34,7 +34,7 @@ int tty_tcflush(int fd, int action) {
   return ld_flush(tty->ld, action);
 }
 
-int tty_tcgetattr(int fd, struct termios* t) {
+int tty_tcgetattr(int fd, struct ktermios* t) {
   tty_t* tty = NULL;
   int result = tty_get_fd(fd, false, &tty);
   if (result) return result;
@@ -43,7 +43,7 @@ int tty_tcgetattr(int fd, struct termios* t) {
   return 0;
 }
 
-int tty_tcsetattr(int fd, int optional_actions, const struct termios* t) {
+int tty_tcsetattr(int fd, int optional_actions, const struct ktermios* t) {
   tty_t* tty = NULL;
   int result = tty_get_fd(fd, false, &tty);
   if (result) return result;

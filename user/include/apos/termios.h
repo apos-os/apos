@@ -20,16 +20,30 @@
 #  include <apos/_posix_termios_constants.h>
 #endif
 
-typedef unsigned char cc_t;
-typedef unsigned short speed_t;
-typedef unsigned int tcflag_t;
+typedef unsigned char kcc_t;
+typedef unsigned short kspeed_t;
+typedef unsigned int ktcflag_t;
 
-struct termios {
-  tcflag_t c_iflag;  // Input mode flags.
-  tcflag_t c_oflag;  // Output mode flags.
-  tcflag_t c_cflag;  // Control mode flags.
-  tcflag_t c_lflag;  // Local mode flags.
-  cc_t     c_cc[NCCS];  // Control characters.
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_TERMIOS ktermios
+#else
+#  define _APOS_TERMIOS termios
+#endif
+struct _APOS_TERMIOS {
+  ktcflag_t c_iflag;  // Input mode flags.
+  ktcflag_t c_oflag;  // Output mode flags.
+  ktcflag_t c_cflag;  // Control mode flags.
+  ktcflag_t c_lflag;  // Local mode flags.
+  kcc_t     c_cc[NCCS];  // Control characters.
 };
+#undef _APOS_TERMIOS
+
+// Rename types and functions to POSIX names for user code.
+#if !__APOS_BUILDING_KERNEL__
+  typedef kcc_t cc_t;
+  typedef kspeed_t speed_t;
+  typedef ktcflag_t tcflag_t;
+# define ktermios termios
+#endif // !__APOS_BUILDING_KERNEL__
 
 #endif

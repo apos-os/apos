@@ -135,9 +135,9 @@ static void ld_signals_isig_flag_test(void* arg) {
   ld_t* const test_ld = ((args_t*)arg)->ld;
   const apos_dev_t test_tty = ((args_t*)arg)->tty;
 
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(test_ld, &term);
-  const struct termios orig_term = term;
+  const struct ktermios orig_term = term;
 
   KTEST_BEGIN("TTY: ctrl-C/SIGINT disabled if ISIG isn't set");
   term.c_lflag &= ~ISIG;
@@ -246,9 +246,9 @@ static void ld_signals_cc_c_test(void* arg) {
   ld_t* const test_ld = ((args_t*)arg)->ld;
   const apos_dev_t test_tty = ((args_t*)arg)->tty;
 
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(test_ld, &term);
-  const struct termios orig_term = term;
+  const struct ktermios orig_term = term;
 
   KTEST_BEGIN("ld: change INTR character");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
@@ -371,8 +371,8 @@ static void termios_test(void* arg) {
       vfs_open("_tty_test_file", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(other_fd, 0);
 
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
   KEXPECT_EQ(0x04, t.c_cc[VEOF]);
   KEXPECT_NE(0, t.c_lflag & ICANON);
@@ -488,7 +488,7 @@ static void termios_bg_pgrp_test(void* arg) {
 
 
   KTEST_BEGIN("tty: tcgetattr() from background pgroup");
-  struct termios t;
+  struct ktermios t;
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
   KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
@@ -798,9 +798,9 @@ static void tty_poll_test(void) {
 
 
   KTEST_BEGIN("TTY: poll() in non-canonical mode");
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(args.ld, &term);
-  const struct termios orig_term = term;
+  const struct ktermios orig_term = term;
   term.c_lflag &= ~ICANON;
   KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &term));
 

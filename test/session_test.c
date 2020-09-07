@@ -946,7 +946,7 @@ static void write_from_bg_tostop_test(void* arg) {
   apos_dev_t test_tty = tty_create(test_ld);
   ld_set_sink(test_ld, null_sink, NULL);
 
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(test_ld, &term);
   term.c_lflag |= TOSTOP;
   KEXPECT_EQ(0, ld_set_termios(test_ld, TCSANOW, &term));
@@ -1038,7 +1038,7 @@ static void read_write_across_sessions_test(void* arg) {
   ld_set_sink(other_test_ld, null_sink, NULL);
 
   // Set TOSTOP on both of them, for good measure.
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(test_ld, &term);
   term.c_lflag |= TOSTOP;
   ld_set_termios(test_ld, TCSANOW, &term);

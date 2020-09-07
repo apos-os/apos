@@ -53,12 +53,12 @@ struct ld {
   kthread_queue_t wait_queue;
 
   apos_dev_t tty;
-  struct termios termios;
+  struct ktermios termios;
 
   poll_event_t poll_event;
 };
 
-static void set_default_termios(struct termios* t) {
+static void set_default_termios(struct ktermios* t) {
   t->c_iflag = 0;
   t->c_oflag = 0;
   t->c_cflag = CS8;
@@ -433,11 +433,11 @@ void ld_init_char_dev(ld_t* l, char_dev_t* dev) {
   dev->dev_data = l;
 }
 
-void ld_get_termios(const ld_t* l, struct termios* t) {
-  kmemcpy(t, &l->termios, sizeof(struct termios));
+void ld_get_termios(const ld_t* l, struct ktermios* t) {
+  kmemcpy(t, &l->termios, sizeof(struct ktermios));
 }
 
-int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
+int ld_set_termios(ld_t* l, int optional_actions, const struct ktermios* t) {
   if (t->c_iflag != 0 || t->c_oflag != 0 || t->c_cflag != CS8)
     return -EINVAL;
 
@@ -461,7 +461,7 @@ int ld_set_termios(ld_t* l, int optional_actions, const struct termios* t) {
   if (optional_actions == TCSAFLUSH)
     ld_flush_input(l);
 
-  kmemcpy(&l->termios, t, sizeof(struct termios));
+  kmemcpy(&l->termios, t, sizeof(struct ktermios));
 
   return 0;
 }

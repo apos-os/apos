@@ -110,7 +110,7 @@ int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
                     int fd, addr_t offset);
 
 // Some types we want to ensure are always the same size on all architectures.
-_Static_assert(sizeof(struct termios) == 28, "struct termios wrong size!");
+_Static_assert(sizeof(struct ktermios) == 28, "struct ktermios wrong size!");
 _Static_assert(sizeof(struct apos_pollfd) == 8, "struct pollfd wrong size!");
 
 #endif
