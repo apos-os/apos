@@ -39,14 +39,14 @@ static int anonfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int anonfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int anonfs_symlink(vnode_t* parent, const char* name, const char* path);
 static int anonfs_readlink(vnode_t* node, char* buf, int bufsize);
-static int anonfs_truncate(vnode_t* node, off_t length);
+static int anonfs_truncate(vnode_t* node, koff_t length);
 static int anonfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int anonfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
 typedef struct {
   fs_t fs;
   vnode_type_t type;
-  ino_t next_inode;
+  kino_t next_inode;
 } anonfs_t;
 
 fs_t* anonfs_create(vnode_type_t type) {
@@ -54,7 +54,7 @@ fs_t* anonfs_create(vnode_type_t type) {
   kmemset(fs, 0, sizeof(anonfs_t));
 
   kstrcpy(fs->fs.fstype, "anonfs");
-  fs->fs.dev = makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
+  fs->fs.dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   fs->fs.open_vnodes = 0;
   fs->type = type;
   fs->next_inode = 0;
@@ -82,7 +82,7 @@ fs_t* anonfs_create(vnode_type_t type) {
   return &fs->fs;
 }
 
-ino_t anonfs_create_vnode(fs_t* fs) {
+kino_t anonfs_create_vnode(fs_t* fs) {
   anonfs_t* afs = (anonfs_t*)fs;
   return afs->next_inode++;
 }
@@ -130,6 +130,6 @@ ANONFS_UNIMPLEMENTED(anonfs_unlink, (vnode_t* parent, const char* name))
 ANONFS_UNIMPLEMENTED(anonfs_getdents, (vnode_t* vnode, int offset, void* buf, int bufsize))
 ANONFS_UNIMPLEMENTED(anonfs_symlink, (vnode_t* parent, const char* name, const char* path))
 ANONFS_UNIMPLEMENTED(anonfs_readlink, (vnode_t* node, char* buf, int bufsize))
-ANONFS_UNIMPLEMENTED(anonfs_truncate, (vnode_t* node, off_t length));
+ANONFS_UNIMPLEMENTED(anonfs_truncate, (vnode_t* node, koff_t length));
 ANONFS_UNIMPLEMENTED(anonfs_read_page, (vnode_t* vnode, int page_offset, void* buf))
 ANONFS_UNIMPLEMENTED(anonfs_write_page, (vnode_t* vnode, int page_offset, const void* buf))

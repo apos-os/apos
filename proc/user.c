@@ -21,7 +21,7 @@ int proc_is_superuser(const process_t* proc) {
   return proc->euid == SUPERUSER_UID;
 }
 
-int setuid(uid_t uid) {
+int setuid(kuid_t uid) {
   if (proc_is_superuser(proc_current())) {
     proc_current()->ruid = uid;
     proc_current()->euid = uid;
@@ -35,7 +35,7 @@ int setuid(uid_t uid) {
   return 0;
 }
 
-int setgid(gid_t gid) {
+int setgid(kgid_t gid) {
   if (proc_is_superuser(proc_current())) {
     proc_current()->rgid = gid;
     proc_current()->egid = gid;
@@ -49,15 +49,15 @@ int setgid(gid_t gid) {
   return 0;
 }
 
-uid_t getuid(void) {
+kuid_t getuid(void) {
   return proc_current()->ruid;
 }
 
-gid_t getgid(void) {
+kgid_t getgid(void) {
   return proc_current()->rgid;
 }
 
-int seteuid(uid_t uid) {
+int seteuid(kuid_t uid) {
   if (proc_is_superuser(proc_current()) || uid == proc_current()->ruid ||
       uid == proc_current()->suid) {
     proc_current()->euid = uid;
@@ -67,7 +67,7 @@ int seteuid(uid_t uid) {
   }
 }
 
-int setegid(gid_t gid) {
+int setegid(kgid_t gid) {
   if (proc_is_superuser(proc_current()) || gid == proc_current()->rgid ||
       gid == proc_current()->sgid) {
     proc_current()->egid = gid;
@@ -77,21 +77,21 @@ int setegid(gid_t gid) {
   }
 }
 
-uid_t geteuid(void) {
+kuid_t geteuid(void) {
   return proc_current()->euid;
 }
 
-gid_t getegid(void) {
+kgid_t getegid(void) {
   return proc_current()->egid;
 }
 
-int setreuid(uid_t ruid, uid_t euid) {
+int setreuid(kuid_t ruid, kuid_t euid) {
   const int super = proc_is_superuser(proc_current());
-  const uid_t old_ruid = proc_current()->ruid;
-  const uid_t old_euid = proc_current()->euid;
-  const uid_t old_suid = proc_current()->suid;
-  uid_t new_ruid = old_ruid;
-  uid_t new_euid = old_euid;
+  const kuid_t old_ruid = proc_current()->ruid;
+  const kuid_t old_euid = proc_current()->euid;
+  const kuid_t old_suid = proc_current()->suid;
+  kuid_t new_ruid = old_ruid;
+  kuid_t new_euid = old_euid;
   if (ruid != -1 && ruid != old_ruid) {
     if (super || ruid == old_euid || ruid == old_suid) {
       new_ruid = ruid;
@@ -114,13 +114,13 @@ int setreuid(uid_t ruid, uid_t euid) {
   return 0;
 }
 
-int setregid(gid_t rgid, gid_t egid) {
+int setregid(kgid_t rgid, kgid_t egid) {
   const int super = proc_is_superuser(proc_current());
-  const gid_t old_rgid = proc_current()->rgid;
-  const gid_t old_egid = proc_current()->egid;
-  const gid_t old_sgid = proc_current()->sgid;
-  gid_t new_rgid = old_rgid;
-  gid_t new_egid = old_egid;
+  const kgid_t old_rgid = proc_current()->rgid;
+  const kgid_t old_egid = proc_current()->egid;
+  const kgid_t old_sgid = proc_current()->sgid;
+  kgid_t new_rgid = old_rgid;
+  kgid_t new_egid = old_egid;
   if (rgid != -1 && rgid != old_rgid) {
     if (super || rgid == old_egid || rgid == old_sgid) {
       new_rgid = rgid;

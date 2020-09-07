@@ -21,7 +21,7 @@
 
 int tty_tcdrain(int fd);
 int tty_tcflush(int fd, int action);
-int tty_tcgetattr(int fd, struct termios* t);
-int tty_tcsetattr(int fd, int optional_actions, const struct termios* t);
+int tty_tcgetattr(int fd, struct ktermios* t);
+int tty_tcsetattr(int fd, int optional_actions, const struct ktermios* t);
 
 #endif

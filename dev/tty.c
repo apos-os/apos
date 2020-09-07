@@ -24,15 +24,15 @@ _Static_assert(DEVICE_MAX_MINOR <= 100,
 static tty_t g_ttys[DEVICE_MAX_MINOR];
 
 apos_dev_t tty_create(ld_t* ld) {
-  KASSERT(ld_get_tty(ld) == makedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN));
+  KASSERT(ld_get_tty(ld) == kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN));
 
   char_dev_t* ld_char_dev = (char_dev_t*)kmalloc(sizeof(char_dev_t));
   ld_init_char_dev(ld, ld_char_dev);
-  apos_dev_t dev = makedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
+  apos_dev_t dev = kmakedev(DEVICE_MAJOR_TTY, DEVICE_ID_UNKNOWN);
   KASSERT(0 == dev_register_char(ld_char_dev, &dev));
   ld_set_tty(ld, dev);
 
-  const int tty_idx = minor(dev);
+  const int tty_idx = kminor(dev);
   g_ttys[tty_idx].session = -1;
   g_ttys[tty_idx].ld = ld;
 
@@ -40,12 +40,12 @@ apos_dev_t tty_create(ld_t* ld) {
 }
 
 void tty_destroy(apos_dev_t dev) {
-  if (major(dev) != DEVICE_MAJOR_TTY) {
+  if (kmajor(dev) != DEVICE_MAJOR_TTY) {
     klogfm(KL_TTY, DFATAL, "tty_destroy() called with non-TTY device\n");
     return;
   }
 
-  const int tty_idx = minor(dev);
+  const int tty_idx = kminor(dev);
   if (tty_idx <= 0 || tty_idx > DEVICE_MAX_MINOR) {
     klogfm(KL_TTY, DFATAL, "tty_destroy() called with invalid device\n");
     return;
@@ -71,12 +71,12 @@ void tty_destroy(apos_dev_t dev) {
 }
 
 tty_t* tty_get(apos_dev_t dev) {
-  if (major(dev) != DEVICE_MAJOR_TTY) {
+  if (kmajor(dev) != DEVICE_MAJOR_TTY) {
     klogfm(KL_TTY, DFATAL, "tty_get() called with non-TTY device\n");
     return NULL;
   }
 
-  const int tty_idx = minor(dev);
+  const int tty_idx = kminor(dev);
   if (tty_idx < 0 || tty_idx >= DEVICE_MAX_MINOR) {
     return NULL;
   }

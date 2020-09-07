@@ -22,7 +22,7 @@
 // group.
 proc_group_t g_proc_group_table[PROC_MAX_PROCS];
 
-pid_t getpgid(pid_t pid) {
+kpid_t getpgid(kpid_t pid) {
   if (pid < 0 || pid >= PROC_MAX_PROCS) {
     return -EINVAL;
   }
@@ -39,7 +39,7 @@ pid_t getpgid(pid_t pid) {
   return proc->pgroup;
 }
 
-int setpgid(pid_t pid, pid_t pgid) {
+int setpgid(kpid_t pid, kpid_t pgid) {
   if (pgid < 0 || pgid >= PROC_MAX_PROCS) {
     return -EINVAL;
   }
@@ -87,7 +87,7 @@ int setpgid(pid_t pid, pid_t pgid) {
   return 0;
 }
 
-proc_group_t* proc_group_get(pid_t gid) {
+proc_group_t* proc_group_get(kpid_t gid) {
   if (gid < 0 || gid >= PROC_MAX_PROCS)
     return NULL;
   else

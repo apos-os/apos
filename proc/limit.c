@@ -17,16 +17,16 @@
 #include "proc/process.h"
 #include "proc/user.h"
 
-int proc_getrlimit(int resource, struct rlimit* lim) {
-  if (resource < 0 || resource >= RLIMIT_NUM_RESOURCES)
+int proc_getrlimit(int resource, struct apos_rlimit* lim) {
+  if (resource < 0 || resource >= APOS_RLIMIT_NUM_RESOURCES)
     return -EINVAL;
 
   *lim = proc_current()->limits[resource];
   return 0;
 }
 
-int proc_setrlimit(int resource, const struct rlimit* lim) {
-  if (resource < 0 || resource >= RLIMIT_NUM_RESOURCES)
+int proc_setrlimit(int resource, const struct apos_rlimit* lim) {
+  if (resource < 0 || resource >= APOS_RLIMIT_NUM_RESOURCES)
     return -EINVAL;
 
   if (lim->rlim_cur > lim->rlim_max)

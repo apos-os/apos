@@ -55,7 +55,7 @@ void proc_exit(int status) {
     p->cwd = 0x0;
   }
 
-  const sid_t sid = proc_getsid(0);
+  const ksid_t sid = proc_getsid(0);
   if (sid == p->id) {  // Controlling process/session leader.
     proc_session_t* session = proc_session_get(sid);
     if (session->ctty != PROC_SESSION_NO_CTTY) {
@@ -63,7 +63,7 @@ void proc_exit(int status) {
         proc_force_signal_group(session->fggrp, SIGHUP);
       }
 
-      tty_t* tty = tty_get(makedev(DEVICE_MAJOR_TTY, session->ctty));
+      tty_t* tty = tty_get(kmakedev(DEVICE_MAJOR_TTY, session->ctty));
       if (!tty) {
         klogfm(KL_PROC, DFATAL, "tty_get() in proc_exit() failed\n");
       } else {

@@ -43,7 +43,7 @@ static vm_area_t g_kernel_mapped_vm_area;
 static vm_area_t g_physical_mapped_vm_area;
 
 process_t* g_proc_table[PROC_MAX_PROCS];
-static pid_t g_current_proc = -1;
+static kpid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
 
 static void proc_init_process(process_t* p) {
@@ -59,7 +59,7 @@ static void proc_init_process(process_t* p) {
   p->page_directory = 0;
   ksigemptyset(&p->pending_signals);
   proc_alarm_init(&p->alarm);
-  for (int i = 0; i <= SIGMAX; ++i) {
+  for (int i = 0; i <= APOS_SIGMAX; ++i) {
     ksigemptyset(&p->signal_dispositions[i].sa_mask);
     p->signal_dispositions[i].sa_flags = 0;
     p->signal_dispositions[i].sa_handler = SIG_DFL;
@@ -76,9 +76,9 @@ static void proc_init_process(process_t* p) {
   kthread_queue_init(&p->wait_queue);
   kthread_queue_init(&p->stopped_queue);
 
-  for (int i = 0; i < RLIMIT_NUM_RESOURCES; ++i) {
-    p->limits[i].rlim_cur = RLIM_INFINITY;
-    p->limits[i].rlim_max = RLIM_INFINITY;
+  for (int i = 0; i < APOS_RLIMIT_NUM_RESOURCES; ++i) {
+    p->limits[i].rlim_cur = APOS_RLIM_INFINITY;
+    p->limits[i].rlim_max = APOS_RLIM_INFINITY;
   }
 }
 
@@ -177,7 +177,7 @@ process_t* proc_current() {
   return g_proc_table[g_current_proc];
 }
 
-process_t* proc_get(pid_t id) {
+process_t* proc_get(kpid_t id) {
   if (id < 0 || id >= PROC_MAX_PROCS)
     return NULL;
   else

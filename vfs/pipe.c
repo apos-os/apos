@@ -23,7 +23,7 @@
 
 int vfs_pipe(int fds[2]) {
   fs_t* const fs = g_fs_table[VFS_FIFO_FS].fs;
-  const ino_t fifo_ino = anonfs_create_vnode(fs);
+  const kino_t fifo_ino = anonfs_create_vnode(fs);
 
   vnode_t* fifo_vnode = vfs_get(fs, fifo_ino);
   if (!fifo_vnode) {

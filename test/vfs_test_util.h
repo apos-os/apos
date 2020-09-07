@@ -20,7 +20,7 @@
 #include "test/ktest.h"
 
 // Convert a "rwxr-xrw-"-style string into a mode_t.
-mode_t str_to_mode(const char* mode_str);
+kmode_t str_to_mode(const char* mode_str);
 
 // Create the given file with the given mode.
 void create_file(const char* path, const char* mode);
@@ -52,7 +52,7 @@ static void EXPECT_FILE_DOESNT_EXIST(const char* path) {
   if (fd >= 0) vfs_close(fd);
 }
 
-static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
+static void EXPECT_OWNER_IS(const char* path, kuid_t uid, kgid_t gid) {
   apos_stat_t stat;
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(path, &stat));
@@ -60,7 +60,7 @@ static void EXPECT_OWNER_IS(const char* path, uid_t uid, gid_t gid) {
   KEXPECT_EQ(gid, stat.st_gid);
 }
 
-static mode_t get_mode(const char* path) {
+static kmode_t get_mode(const char* path) {
   apos_stat_t stat;
   kmemset(&stat, 0xFF, sizeof(stat));
   KEXPECT_EQ(0, vfs_lstat(path, &stat));

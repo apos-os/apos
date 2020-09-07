@@ -169,6 +169,6 @@ int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
 
 // Creates a socket file or returns an error.  If successful, returns the open
 // node with a reference in |vnode_out|.
-int vfs_mksocket(const char* path, mode_t mode, vnode_t** vnode_out);
+int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out);
 
 #endif

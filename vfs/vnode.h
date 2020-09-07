@@ -64,9 +64,9 @@ struct vnode {
   // TODO(aoates): add an explicit (optional?) put_metadata() function that will
   // let the concrete fs proactively writeback metadata changes while the vnode
   // is still open.
-  uid_t uid;
-  gid_t gid;
-  mode_t mode;  // Doesn't include type bits (just permissions + sticky)
+  kuid_t uid;
+  kgid_t gid;
+  kmode_t mode;  // Doesn't include type bits (just permissions + sticky)
 
   // If this vnode is a mount point, the fsid_t of the mounted filesystem.
   fsid_t mounted_fs;

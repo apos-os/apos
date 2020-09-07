@@ -57,11 +57,11 @@ int vfs_dup(int fd);
 int vfs_dup2(int fd1, int fd2);
 
 // Make a directory at the given path.  Returns 0 on success, or -error.
-int vfs_mkdir(const char* path, mode_t mode);
+int vfs_mkdir(const char* path, kmode_t mode);
 
 // Create a file system node (regular file or special file).  mode must be one
 // of the supported file types, bitwise OR'd with the mode of the file.
-int vfs_mknod(const char* path, mode_t mode, apos_dev_t dev);
+int vfs_mknod(const char* path, kmode_t mode, apos_dev_t dev);
 
 // Remove an empty directory. Returns 0 on success, or -error.
 int vfs_rmdir(const char* path);
@@ -87,12 +87,12 @@ int vfs_write(int fd, const void* buf, size_t count);
 
 // Seek the fd to the given offset, relative to whence.  Returns 0 on success,
 // or -error.
-off_t vfs_seek(int fd, off_t offset, int whence);
+koff_t vfs_seek(int fd, koff_t offset, int whence);
 
-// Read several dirent_t structures from the file descriptor into the given
+// Read several kdirent_t structures from the file descriptor into the given
 // buffer.  count is the size of the buffer in bytes.  Returns the number of
 // bytes read on success, or -error.
-int vfs_getdents(int fd, dirent_t* buf, int count);
+int vfs_getdents(int fd, kdirent_t* buf, int count);
 
 // Return the full pathname of the current working directory in the given
 // buffer.  Returns the length of the string on success, or -error on error.
@@ -109,7 +109,7 @@ int vfs_chdir(const char* path);
 // The given mode must be compatible with the file's mode.  Returns 0 on
 // success, or -error.
 // TODO(aoates): how do we handle executable?
-int vfs_get_memobj(int fd, mode_t mode, memobj_t** memobj_out);
+int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out);
 
 // Duplicate (as for fork()) procA's fds into procB.
 void vfs_fork_fds(process_t* procA, process_t* procB);
@@ -129,21 +129,21 @@ int vfs_fstat(int fd, apos_stat_t* stat);
 
 // Changes the owner and/or group of the given path.  Returns 0 on success, or
 // -error.
-int vfs_chown(const char* path, uid_t owner, gid_t group);
+int vfs_chown(const char* path, kuid_t owner, kgid_t group);
 
 // Changes the owner and/or group of the given path, but doesn't resolve path if
 // it is a symlink.  Returns 0 on success, or -error.
-int vfs_lchown(const char* path, uid_t owner, gid_t group);
+int vfs_lchown(const char* path, kuid_t owner, kgid_t group);
 
 // Changes the owner and/or group of the given fd.  Returns 0 on success, or
 // -error.
-int vfs_fchown(int fd, uid_t owner, gid_t group);
+int vfs_fchown(int fd, kuid_t owner, kgid_t group);
 
 // Changes the file mode of the given path.  Returns 0 on success, or -error.
-int vfs_chmod(const char* path, mode_t mode);
+int vfs_chmod(const char* path, kmode_t mode);
 
 // Changes the file mode of the given fd.  Returns 0 on success, or -error.
-int vfs_fchmod(int fd, mode_t mode);
+int vfs_fchmod(int fd, kmode_t mode);
 
 // Create a symlink at link pointing to (containing) target.  Returns 0 on
 // success, or -error.
@@ -158,9 +158,9 @@ int vfs_access(const char* path, int amode);
 
 // Truncate (or extend) the given file to length bytes.  If extended, then new
 // parts of the file will be filled with zeroes.  Returns 0, or -error.
-int vfs_ftruncate(int fd, off_t length);
+int vfs_ftruncate(int fd, koff_t length);
 
 // As above, but on the given path.
-int vfs_truncate(const char* path, off_t length);
+int vfs_truncate(const char* path, koff_t length);
 
 #endif

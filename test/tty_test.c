@@ -33,7 +33,7 @@
 static void do_nothing(void* arg) {}
 
 static int sig_is_pending(process_t* proc, int sig) {
-  sigset_t pending = proc_pending_signals(proc);
+  ksigset_t pending = proc_pending_signals(proc);
   return ksigismember(&pending, sig);
 }
 
@@ -61,9 +61,9 @@ static void ld_signals_test(void* arg) {
 
 
   KTEST_BEGIN("TTY: ctrl-C ignored if TTY isn't a CTTY");
-  const pid_t childA = proc_fork(&do_nothing, NULL);
-  const pid_t childB = proc_fork(&do_nothing, NULL);
-  const pid_t childC = proc_fork(&do_nothing, NULL);
+  const kpid_t childA = proc_fork(&do_nothing, NULL);
+  const kpid_t childB = proc_fork(&do_nothing, NULL);
+  const kpid_t childC = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(childB, 0));
   KEXPECT_EQ(0, setpgid(childC, childB));
 
@@ -78,7 +78,7 @@ static void ld_signals_test(void* arg) {
 
   KTEST_BEGIN("TTY: ctrl-C ignored if no fg process group");
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
@@ -92,7 +92,7 @@ static void ld_signals_test(void* arg) {
 
 
   KTEST_BEGIN("TTY: ctrl-C sends SIGINT to fg process group");
-  sigset_t sigset, old_sigmask;
+  ksigset_t sigset, old_sigmask;
   ksigemptyset(&sigset);
   ksigaddset(&sigset, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
@@ -135,9 +135,9 @@ static void ld_signals_isig_flag_test(void* arg) {
   ld_t* const test_ld = ((args_t*)arg)->ld;
   const apos_dev_t test_tty = ((args_t*)arg)->tty;
 
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(test_ld, &term);
-  const struct termios orig_term = term;
+  const struct ktermios orig_term = term;
 
   KTEST_BEGIN("TTY: ctrl-C/SIGINT disabled if ISIG isn't set");
   term.c_lflag &= ~ISIG;
@@ -147,18 +147,18 @@ static void ld_signals_isig_flag_test(void* arg) {
   int sink_counter = 0;
   ld_set_sink(test_ld, &sink, &sink_counter);
 
-  const pid_t childA = proc_fork(&do_nothing, NULL);
-  const pid_t childB = proc_fork(&do_nothing, NULL);
-  const pid_t childC = proc_fork(&do_nothing, NULL);
+  const kpid_t childA = proc_fork(&do_nothing, NULL);
+  const kpid_t childB = proc_fork(&do_nothing, NULL);
+  const kpid_t childC = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(childB, 0));
   KEXPECT_EQ(0, setpgid(childC, childB));
 
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
-  sigset_t sigset, old_sigmask;
+  ksigset_t sigset, old_sigmask;
   ksigemptyset(&sigset);
   ksigaddset(&sigset, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
@@ -246,9 +246,9 @@ static void ld_signals_cc_c_test(void* arg) {
   ld_t* const test_ld = ((args_t*)arg)->ld;
   const apos_dev_t test_tty = ((args_t*)arg)->tty;
 
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(test_ld, &term);
-  const struct termios orig_term = term;
+  const struct ktermios orig_term = term;
 
   KTEST_BEGIN("ld: change INTR character");
   KEXPECT_EQ(proc_current()->id, proc_setsid());
@@ -256,11 +256,11 @@ static void ld_signals_cc_c_test(void* arg) {
   ld_set_sink(test_ld, &sink, &sink_counter);
 
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(test_tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(test_tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(fd, 0);
 
-  sigset_t sigset, old_sigmask;
+  ksigset_t sigset, old_sigmask;
   ksigemptyset(&sigset);
   ksigaddset(&sigset, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &sigset, &old_sigmask));
@@ -344,7 +344,7 @@ static void ld_signals_test_runner(void* arg) {
   args.ld = ld_create(5);
   args.tty = tty_create(args.ld);
 
-  pid_t child = proc_fork(&ld_signals_test, &args);
+  kpid_t child = proc_fork(&ld_signals_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&ld_signals_isig_flag_test, &args);
@@ -362,7 +362,7 @@ static void ld_signals_test_runner(void* arg) {
 static void termios_test(void* arg) {
   args_t* args = (args_t*)arg;
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args->tty));
 
   KTEST_BEGIN("tty: tcgetattr() defaults");
   const int tty_fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
@@ -371,8 +371,8 @@ static void termios_test(void* arg) {
       vfs_open("_tty_test_file", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(other_fd, 0);
 
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
   KEXPECT_EQ(0x04, t.c_cc[VEOF]);
   KEXPECT_NE(0, t.c_lflag & ICANON);
@@ -462,16 +462,16 @@ static void termios_test(void* arg) {
 static void termios_bg_pgrp_test(void* arg) {
   args_t* args = (args_t*)arg;
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args->tty));
 
   KTEST_BEGIN("tty: setup for background pgroup tests");
-  sigset_t kSigTtouSet;
+  ksigset_t kSigTtouSet;
   ksigemptyset(&kSigTtouSet);
   ksigaddset(&kSigTtouSet, SIGTTOU);
 
   KEXPECT_EQ(proc_current()->id, proc_setsid());
 
-  sigset_t ttou_mask;
+  ksigset_t ttou_mask;
   ksigemptyset(&ttou_mask);
   ksigaddset(&ttou_mask, SIGTTOU);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &ttou_mask, NULL));
@@ -479,16 +479,16 @@ static void termios_bg_pgrp_test(void* arg) {
   const int tty_fd = vfs_open(tty_name, VFS_O_RDWR);
   KEXPECT_GE(tty_fd, 0);
 
-  pid_t child = proc_fork(&do_nothing, NULL);
+  kpid_t child = proc_fork(&do_nothing, NULL);
   KEXPECT_EQ(0, setpgid(child, child));
   KEXPECT_EQ(0, proc_tcsetpgrp(tty_fd, child));
   KEXPECT_EQ(0, proc_sigprocmask(SIG_UNBLOCK, &ttou_mask, NULL));
 
-  pid_t child_in_grp = proc_fork(&do_nothing, NULL);
+  kpid_t child_in_grp = proc_fork(&do_nothing, NULL);
 
 
   KTEST_BEGIN("tty: tcgetattr() from background pgroup");
-  struct termios t;
+  struct ktermios t;
   KEXPECT_EQ(0, sig_is_pending(proc_current(), SIGTTOU));
   KEXPECT_EQ(0, sig_is_pending(proc_get(child_in_grp), SIGTTOU));
   KEXPECT_EQ(0, tty_tcgetattr(tty_fd, &t));
@@ -551,7 +551,7 @@ static void tty_truncate_test(void* arg) {
   args_t* args = (args_t*)arg;
   char tty_name[20];
   char buf[10];
-  ksprintf(tty_name, "/dev/tty%d", minor(args->tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args->tty));
 
   KTEST_BEGIN("vfs_truncate(): on TTY test");
   int tty_fd = vfs_open(tty_name, VFS_O_RDWR);
@@ -589,7 +589,7 @@ static void termios_test_runner(void* arg) {
   int sink_counter = 0;
   ld_set_sink(args.ld, &sink, &sink_counter);
 
-  pid_t child = proc_fork(&termios_test, &args);
+  kpid_t child = proc_fork(&termios_test, &args);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&termios_bg_pgrp_test, &args);
@@ -612,7 +612,7 @@ static void tty_nonblock_test(void) {
 
   KTEST_BEGIN("TTY: O_NONBLOCK (reading)");
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args.tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args.tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NONBLOCK | VFS_O_NOCTTY);
   KEXPECT_GE(fd, 0);
   char buf[10];
@@ -632,7 +632,7 @@ static void tty_nonblock_test(void) {
 }
 
 typedef struct {
-  struct pollfd* pfds;
+  struct apos_pollfd* pfds;
   int nfds;
   int timeout;
   bool finished;
@@ -657,18 +657,18 @@ static void tty_poll_test(void) {
 
   KTEST_BEGIN("TTY: basic poll (writable but not readable)");
   char tty_name[20];
-  ksprintf(tty_name, "/dev/tty%d", minor(args.tty));
+  ksprintf(tty_name, "/dev/tty%d", kminor(args.tty));
   int fd = vfs_open(tty_name, VFS_O_RDWR | VFS_O_NOCTTY);
   KEXPECT_GE(fd, 0);
 
-  struct pollfd pfds[2];
+  struct apos_pollfd pfds[2];
   pfds[0].fd = fd;
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
 
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLRDNORM;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
@@ -676,36 +676,36 @@ static void tty_poll_test(void) {
   KTEST_BEGIN("TTY: basic poll (readable and writable)");
   ld_provide(args.ld, 'x');
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
   ld_provide(args.ld, '\n');
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLRDNORM;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN | POLLRDNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfds[0].revents);
 
-  pfds[0].events = POLLRDNORM;
+  pfds[0].events = KPOLLRDNORM;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLRDNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLRDNORM, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN | POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN | POLLOUT | POLLRDNORM;
+  pfds[0].events = KPOLLIN | KPOLLOUT | KPOLLRDNORM;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, 0));
-  KEXPECT_EQ(POLLIN | POLLOUT | POLLRDNORM, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT | KPOLLRDNORM, pfds[0].revents);
 
   char buf[10];
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
 
 
   KTEST_BEGIN("TTY: delayed poll");
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   poll_thread_args_t pt_args;
   pt_args.pfds = pfds;
   pt_args.nfds = 1;
@@ -725,12 +725,12 @@ static void tty_poll_test(void) {
   kthread_join(thread);
   KEXPECT_EQ(true, pt_args.finished);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
 
 
   KTEST_BEGIN("TTY: delayed poll (masked event, then timeout)");
-  pfds[0].events = POLLPRI;
+  pfds[0].events = KPOLLPRI;
   pt_args.timeout = 50;
 
   KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
@@ -752,12 +752,12 @@ static void tty_poll_test(void) {
 
 
   KTEST_BEGIN("TTY: non-sleeping poll (NULL poll_state_t)");
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   pfds[1].fd = vfs_dup(fd);
-  pfds[1].events = POLLIN;
+  pfds[1].events = KPOLLIN;
 
   KEXPECT_EQ(1, vfs_poll(pfds, 2, 0));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
   KEXPECT_EQ(0, pfds[1].revents);
 
   vfs_close(pfds[1].fd);
@@ -768,10 +768,10 @@ static void tty_poll_test(void) {
   KEXPECT_GE(nonblock_fd, 0);
 
   pfds[0].fd = nonblock_fd;
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
 
   pt_args.pfds = pfds;
@@ -791,25 +791,25 @@ static void tty_poll_test(void) {
   kthread_join(thread);
   KEXPECT_EQ(true, pt_args.finished);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
   KEXPECT_EQ(2, vfs_read(fd, buf, 10));
 
   vfs_close(nonblock_fd);
 
 
   KTEST_BEGIN("TTY: poll() in non-canonical mode");
-  struct termios term;
+  struct ktermios term;
   ld_get_termios(args.ld, &term);
-  const struct termios orig_term = term;
+  const struct ktermios orig_term = term;
   term.c_lflag &= ~ICANON;
   KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &term));
 
   pfds[0].fd = fd;
-  pfds[0].events = POLLIN | POLLOUT;
+  pfds[0].events = KPOLLIN | KPOLLOUT;
   KEXPECT_EQ(1, vfs_poll(pfds, 1, -1));
-  KEXPECT_EQ(POLLOUT, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[0].revents);
 
-  pfds[0].events = POLLIN;
+  pfds[0].events = KPOLLIN;
   KEXPECT_EQ(0, vfs_poll(pfds, 1, 0));
   KEXPECT_EQ(0, pfds[0].revents);
 
@@ -826,7 +826,7 @@ static void tty_poll_test(void) {
   kthread_join(thread);
   KEXPECT_EQ(true, pt_args.finished);
   KEXPECT_EQ(1, pt_args.result);
-  KEXPECT_EQ(POLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
   KEXPECT_EQ(1, vfs_read(fd, buf, 10));
 
   KEXPECT_EQ(0, ld_set_termios(args.ld, TCSANOW, &orig_term));
@@ -843,7 +843,7 @@ static void tty_poll_test(void) {
 void tty_test(void) {
   KTEST_SUITE_BEGIN("TTY tests");
 
-  pid_t child = proc_fork(&ld_signals_test_runner, NULL);
+  kpid_t child = proc_fork(&ld_signals_test_runner, NULL);
   KEXPECT_EQ(child, proc_wait(NULL));
 
   child = proc_fork(&termios_test_runner, NULL);

@@ -680,18 +680,18 @@ static void signal_interrupt_test(void) {
   create_blocking_memobj(&blocking_memobj);
 
   // First child: start the initialization.
-  pid_t child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  kpid_t child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
   KEXPECT_GE(child1, 0);
   // Let 'er run and start.  Would be better to synchronize explicitly.
   ksleep(10);
   KEXPECT_EQ(1, blocking_memobj.waiting_readers);
 
   // Second child: block on the initialization started by the first.
-  pid_t child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  kpid_t child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
   KEXPECT_GE(child2, 0);
 
   // Third child: block as well, but in lookup.
-  pid_t child3 = proc_fork(&do_block_cache_lookup_proc, &blocking_memobj.obj);
+  kpid_t child3 = proc_fork(&do_block_cache_lookup_proc, &blocking_memobj.obj);
   KEXPECT_GE(child3, 0);
   ksleep(10);  // Get them blocking.
   // Shouldn't be blocking on the underlying device.
@@ -716,14 +716,14 @@ static void signal_interrupt_test(void) {
   KTEST_BEGIN(
       "block_cache_put(): interrupted while waiting on synchronous flush");
   blocking_memobj.block_reads = false;
-  pid_t child4 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
+  kpid_t child4 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
   KEXPECT_GE(child4, 0);
   // Let 'er run and start.  Would be better to synchronize explicitly.
   ksleep(10);
   KEXPECT_EQ(1, blocking_memobj.waiting_writers);
 
   // Second child: block on the flush started by the first.
-  pid_t child5 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
+  kpid_t child5 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
   KEXPECT_GE(child5, 0);
   ksleep(10);  // Get them blocking.
   KEXPECT_EQ(1, blocking_memobj.waiting_writers);
@@ -751,7 +751,7 @@ void block_cache_test(void) {
   ramdisk_set_blocking(ramdisk, 1, 1);
   ramdisk_dev(ramdisk, &ramdisk_bd);
 
-  apos_dev_t dev = makedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
+  apos_dev_t dev = kmakedev(DEVICE_MAJOR_RAMDISK, DEVICE_ID_UNKNOWN);
   KASSERT(dev_register_block(&ramdisk_bd, &dev) == 0);
 
   memobj_t* obj = dev_get_block_memobj(dev);

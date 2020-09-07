@@ -181,14 +181,14 @@ void kmain(memory_info_t* meminfo) {
   klog("\nmeminfo->phys_map_length:   0x"); klog(kutoa_hex(meminfo->phys_map_length));
   klog("\n");
 
-  const pid_t shell_pid = proc_fork(&kshell_trampoline, 0x0);
+  const kpid_t shell_pid = proc_fork(&kshell_trampoline, 0x0);
   if (shell_pid < 0) {
     klogf("proc_fork error: %s\n", errorname(-shell_pid));
     die("unable to fork process 0 to create kshell");
   }
 
   // Collect zombie children until the shell exits.
-  pid_t child_pid;
+  kpid_t child_pid;
   do {
     child_pid = proc_wait(0x0);
   } while (child_pid != shell_pid);

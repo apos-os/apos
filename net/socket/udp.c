@@ -77,10 +77,10 @@ static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
 }
 
 static short udp_poll_events(const socket_udp_t* socket) {
-  short events = POLLOUT;
+  short events = KPOLLOUT;
   KASSERT_DBG(!defint_state());
   if (!list_empty(&socket->rx_queue)) {
-    events |= POLLIN;
+    events |= KPOLLIN;
   }
   return events;
 }
@@ -208,7 +208,7 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   // TODO(aoates): is this the proper way to handle this, or should vfs_poll()
   // retain a reference to the file containing this socket (and other pollables)
   // to ensure the file isn't destroyed while someone is polling it?
-  poll_trigger_event(&socket->poll_event, POLLNVAL);
+  poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
 }
 

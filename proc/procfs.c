@@ -44,11 +44,11 @@
 #define PROC_VNODE_STATUS_OFFSET  2
 #define PROC_VNODE_CWD_OFFSET  3
 
-static inline int proc_dir_vnode(pid_t pid) {
+static inline int proc_dir_vnode(kpid_t pid) {
   return PROC_VNODE_OFFSET + pid * PROC_VNODES_PER_PROC + PROC_VNODE_DIR_OFFSET;
 }
 
-static inline pid_t proc_vnode_to_pid(int vnode) {
+static inline kpid_t proc_vnode_to_pid(int vnode) {
   return (vnode - PROC_VNODE_OFFSET) / PROC_VNODES_PER_PROC;
 }
 
@@ -93,7 +93,7 @@ static int vm_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   // TODO(aoates): handle non-zero offsets
   if (offset > 0) return 0;
 
-  const pid_t pid = proc_vnode_to_pid(vnode);
+  const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
   const process_t* const proc = proc_get(pid);
   if (!proc) return -EINVAL;
@@ -120,7 +120,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
   // TODO(aoates): handle non-zero offsets
   if (offset > 0) return 0;
 
-  const pid_t pid = proc_vnode_to_pid(vnode);
+  const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
   const process_t* const proc = proc_get(pid);
   if (!proc) return -EINVAL;
@@ -169,7 +169,7 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
 }
 
 static int cwd_readlink(fs_t* fs, void* arg, int vnode, void* buf, int buflen) {
-  const pid_t pid = proc_vnode_to_pid(vnode);
+  const kpid_t pid = proc_vnode_to_pid(vnode);
   if (pid < 0 || pid >= PROC_MAX_PROCS) return -EINVAL;
 
   const process_t* const proc = proc_get(pid);
@@ -234,7 +234,7 @@ static int procfs_get_vnode(fs_t* fs, void* arg, int vnode,
 static int proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                          list_t* list_out, void* buf, int buflen) {
   int process_idx = -1;
-  for (pid_t pid = 0; pid < PROC_MAX_PROCS; ++pid) {
+  for (kpid_t pid = 0; pid < PROC_MAX_PROCS; ++pid) {
     process_t* proc = proc_get(pid);
     if (!proc) continue;
     process_idx++;
@@ -258,7 +258,7 @@ static int proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
 
 static int single_proc_getdents(fs_t* fs, int vnode_num, void* arg, int offset,
                                 list_t* list_out, void* buf, int buflen) {
-  const pid_t pid = proc_vnode_to_pid(vnode_num);
+  const kpid_t pid = proc_vnode_to_pid(vnode_num);
   for (unsigned int i = offset; i < kNumStaticEntries; ++i) {
     const proc_entry_spec_t* entry_spec = &kStaticPerProcEntries[i];
     const int entry_size = cbfs_entry_size(entry_spec->name);

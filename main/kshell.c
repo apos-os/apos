@@ -79,7 +79,7 @@ typedef enum {
 
 // A background job in the shell.
 typedef struct {
-  pid_t pid;
+  kpid_t pid;
   job_state_t state;
   int jobnum;
   char* cmd;
@@ -105,7 +105,7 @@ static void print_job_state(const job_t* job, job_state_t state) {
 typedef struct {
   char tty_name[20];
   int tty_fd;
-  off_t klog_offset;
+  koff_t klog_offset;
   list_t jobs;
 } kshell_t;
 
@@ -234,7 +234,7 @@ static void do_test_cmd(void* arg) {
   vfs_close(2);
   vfs_close(args->shell->tty_fd);
 
-  sigset_t mask;
+  ksigset_t mask;
   ksigemptyset(&mask);
   ksigaddset(&mask, SIGINT);
   proc_sigprocmask(SIG_BLOCK, &mask, NULL);
@@ -296,7 +296,7 @@ static void b_read_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
+  block_dev_t* b = dev_get_block(kmakedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -327,7 +327,7 @@ static void b_write_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  block_dev_t* b = dev_get_block(makedev(katou(argv[1]), katou(argv[2])));
+  block_dev_t* b = dev_get_block(kmakedev(katou(argv[1]), katou(argv[2])));
   if (!b) {
     ksh_printf("error: unknown block device %s.%s\n", argv[1], argv[2]);
     return;
@@ -484,7 +484,7 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
   char* link_target = kmalloc(VFS_MAX_PATH_LENGTH + 5);
 
   while (1) {
-    const int len = vfs_getdents(fd, (dirent_t*)(&buf[0]), kBufSize);
+    const int len = vfs_getdents(fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       ksh_printf("error: vfs_getdents(): %s\n", errorname(-len));
       goto done;
@@ -495,7 +495,7 @@ static void ls_cmd(kshell_t* shell, int argc, char* argv[]) {
 
     int buf_offset = 0;
     do {
-      dirent_t* ent = (dirent_t*)(&buf[buf_offset]);
+      kdirent_t* ent = (kdirent_t*)(&buf[buf_offset]);
       buf_offset += ent->d_reclen;
       if (long_mode) {
         // TODO(aoates): use fstatat()
@@ -848,7 +848,7 @@ static void insert_job(job_t* new_job, kshell_t* shell) {
   list_insert(&shell->jobs, prev ? &prev->link : NULL, &new_job->link);
 }
 
-static job_t* make_job(kshell_t* shell, pid_t pid, int argc, char** argv) {
+static job_t* make_job(kshell_t* shell, kpid_t pid, int argc, char** argv) {
   job_t* job = (job_t*)kmalloc(sizeof(job_t));
   job->pid = pid;
   job->state = JOB_RUNNING;
@@ -859,7 +859,7 @@ static job_t* make_job(kshell_t* shell, pid_t pid, int argc, char** argv) {
   return job;
 }
 
-static job_t* find_job(kshell_t* shell, pid_t pid) {
+static job_t* find_job(kshell_t* shell, kpid_t pid) {
   for (list_link_t* link = shell->jobs.head; link != NULL; link = link->next) {
     job_t* job = container_of(link, job_t, link);
     if (job->pid == pid) return job;
@@ -873,12 +873,12 @@ static void job_done(kshell_t* shell, job_t* job) {
   kfree(job);
 }
 
-static pid_t do_wait(kshell_t* shell, pid_t pid, bool block) {
+static kpid_t do_wait(kshell_t* shell, kpid_t pid, bool block) {
   int options = WUNTRACED;
   if (!block) options |= WNOHANG;
 
   int status;
-  pid_t wait_pid;
+  kpid_t wait_pid;
   do {
     wait_pid = proc_waitpid(pid, &status, options);
   } while (wait_pid == -EINTR);
@@ -932,7 +932,7 @@ void do_boot_cmd(kshell_t* shell, const char* path, int argc, char** argv) {
   args.argc = argc;
   args.argv = argv;
 
-  pid_t child_pid = proc_fork(&boot_child_func, &args);
+  kpid_t child_pid = proc_fork(&boot_child_func, &args);
   if (child_pid < 0) {
     klogf("Unable to fork(): %s\n", errorname(-child_pid));
   } else {
@@ -1199,7 +1199,7 @@ static void parse_and_dispatch(kshell_t* shell, char* cmd) {
   char* path = kmalloc(VFS_MAX_PATH_LENGTH * 2);
   for (int i = 0; PATH[i] != NULL; ++i) {
     ksprintf(path, "%s/%s", PATH[i], argv[0]);
-    if (vfs_access(path, X_OK) == 0) {
+    if (vfs_access(path, VFS_X_OK) == 0) {
       do_boot_cmd(shell, path, argc, argv);
       kfree(path);
       return;
@@ -1214,14 +1214,14 @@ void kshell_main(apos_dev_t tty) {
   kshell_t shell = {"", -1, 0, LIST_INIT};
 
   proc_setsid();
-  ksprintf(shell.tty_name, "/dev/tty%d", minor(tty));
+  ksprintf(shell.tty_name, "/dev/tty%d", kminor(tty));
   shell.tty_fd = vfs_open(shell.tty_name, VFS_O_RDONLY);
   KASSERT(shell.tty_fd == 0);
   shell.tty_fd = vfs_dup2(shell.tty_fd, PROC_MAX_FDS - 1);
   KASSERT(shell.tty_fd == PROC_MAX_FDS - 1);
   vfs_close(0);
 
-  sigset_t mask;
+  ksigset_t mask;
   ksigemptyset(&mask);
   ksigaddset(&mask, SIGTTOU);
   ksigaddset(&mask, SIGTSTP);

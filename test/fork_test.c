@@ -26,7 +26,7 @@
 #include "test/ktest.h"
 #include "vfs/vfs.h"
 
-static pid_t child_pid = -1;
+static kpid_t child_pid = -1;
 
 static void basic_child_func(void* arg) {
   KEXPECT_EQ(0x1234, (intptr_t)arg);
@@ -44,7 +44,7 @@ static void basic_test(void) {
   KTEST_BEGIN("fork() basic test");
 
   // Fork.
-  pid_t parent_pid = proc_current()->id;
+  kpid_t parent_pid = proc_current()->id;
   child_pid = proc_fork(&basic_child_func, (void*)0x1234);
   KEXPECT_GE(child_pid, 0);
   KEXPECT_NE(parent_pid, child_pid);
@@ -57,7 +57,7 @@ static void basic_test(void) {
   KEXPECT_EQ(proc_current(), child_proc->parent);
 
   int exit_status = -1;
-  const pid_t child_pid_wait = proc_wait(&exit_status);
+  const kpid_t child_pid_wait = proc_wait(&exit_status);
   KEXPECT_EQ(child_pid, child_pid_wait);
   KEXPECT_EQ(0x5678, exit_status);
 }
@@ -83,14 +83,14 @@ static void parent_exit_first_child_func_inner(void* arg) {
 }
 
 static void parent_exit_first_child_func_outer(void* arg) {
-  *(pid_t*)arg = proc_fork(&parent_exit_first_child_func_inner, 0x0);
+  *(kpid_t*)arg = proc_fork(&parent_exit_first_child_func_inner, 0x0);
   proc_exit(5);
 }
 
 static void parent_exit_first_test(void) {
   KTEST_BEGIN("fork() parent exit first test");
 
-  pid_t inner_pid = 0;
+  kpid_t inner_pid = 0;
   proc_fork(&parent_exit_first_child_func_outer, &inner_pid);
 
   int exit_status = -1;
@@ -110,16 +110,16 @@ static void reparent_zombie_to_root_inner(void* arg) {
 }
 
 static void reparent_zombie_to_root_outer(void* arg) {
-  *(pid_t*)arg = proc_fork(&reparent_zombie_to_root_inner, 0x0);
+  *(kpid_t*)arg = proc_fork(&reparent_zombie_to_root_inner, 0x0);
   for (int i = 0; i < 3; ++i) scheduler_yield();
-  KEXPECT_EQ(PROC_ZOMBIE, proc_get(*(pid_t*)arg)->state);
+  KEXPECT_EQ(PROC_ZOMBIE, proc_get(*(kpid_t*)arg)->state);
   proc_exit(5);
 }
 
 static void reparent_zombie_to_root_test(void) {
   KTEST_BEGIN("fork() parent exit reparents zombie children");
 
-  pid_t inner_pid = 0;
+  kpid_t inner_pid = 0;
   proc_fork(&reparent_zombie_to_root_outer, &inner_pid);
 
   int exit_status = -1;
@@ -184,7 +184,7 @@ static void multi_child_test(void) {
 static void make_separate_mapping(void) {
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
-                        MAP_FIXED | MAP_ANONYMOUS | MAP_SHARED,
+                        KMAP_FIXED | KMAP_ANONYMOUS | KMAP_SHARED,
                         -1, 0, &addr));
 }
 
@@ -231,10 +231,10 @@ static void mapping_test(void) {
   // Create a shared and a private mapping.
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SHARED_MAP_BASE, MAP_LENGTH, PROT_ALL,
-                        MAP_FIXED | MAP_ANONYMOUS | MAP_SHARED,
+                        KMAP_FIXED | KMAP_ANONYMOUS | KMAP_SHARED,
                         -1, 0, &addr));
   KEXPECT_EQ(0, do_mmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
-                        MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE,
+                        KMAP_FIXED | KMAP_ANONYMOUS | KMAP_PRIVATE,
                         -1, 0, &addr));
 
   // Write some values into the mappings.
@@ -246,7 +246,7 @@ static void mapping_test(void) {
   *(uint32_t*)(PRIVATE_ADDR3) = 6;
 
   // Fork.
-  pid_t child_pid = proc_fork(&child_func, (void*)0xABCD);
+  kpid_t child_pid = proc_fork(&child_func, (void*)0xABCD);
   KEXPECT_GE(child_pid, 0);
 
   // Make a new mapping that shouldn't be shared in the child.

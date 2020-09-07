@@ -48,7 +48,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int ext2_symlink(vnode_t* parent, const char* name, const char* path);
 static int ext2_readlink(vnode_t* node, char* buf, int bufsize);
-static int ext2_truncate(vnode_t* node, off_t length);
+static int ext2_truncate(vnode_t* node, koff_t length);
 static int ext2_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -1027,7 +1027,7 @@ static apos_dev_t ext2_get_device(const ext2_inode_t* inode) {
 #endif
   const int major = (inode->i_block[0] >> 16) & 0xFFFF;
   const int minor = inode->i_block[0] & 0xFFFF;
-  return makedev(major, minor);
+  return kmakedev(major, minor);
 }
 
 // Set the device for an inode.
@@ -1036,7 +1036,7 @@ static void ext2_set_device(ext2_inode_t* inode, apos_dev_t dev) {
   const uint32_t type = inode->i_mode & EXT2_S_MASK;
   KASSERT_DBG((type == EXT2_S_IFBLK) || (type == EXT2_S_IFCHR));
 #endif
-  const uint32_t block = (major(dev) << 16) | (minor(dev) & 0xFFFF);
+  const uint32_t block = (kmajor(dev) << 16) | (kminor(dev) & 0xFFFF);
   inode->i_block[0] = block;
 }
 
@@ -1319,7 +1319,7 @@ static int ext2_mkdir(vnode_t* parent, const char* name) {
 
   ext2_inode_t child_inode;
   const int child_inode_num =
-      make_inode(fs, parent->num, EXT2_S_IFDIR, makedev(0, 0), &child_inode);
+      make_inode(fs, parent->num, EXT2_S_IFDIR, kmakedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }
@@ -1631,7 +1631,7 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
 typedef struct {
   void* buf;
   int bufsize;
-  dirent_t* last_dirent;  // The last dirent we put into the buffer.
+  kdirent_t* last_dirent;  // The last dirent we put into the buffer.
 } ext2_getdents_iter_arg_t;
 static int ext2_getdents_iter_func(void* arg,
                                    ext2_dirent_t* little_endian_dirent,
@@ -1649,13 +1649,13 @@ static int ext2_getdents_iter_func(void* arg,
   }
 
   const int dirent_out_size =
-      sizeof(dirent_t) + little_endian_dirent->name_len + 1;
+      sizeof(kdirent_t) + little_endian_dirent->name_len + 1;
   if (dirent_out_size > getdents_args->bufsize) {
     // Out of room, we're done.
     return 1;
   }
 
-  dirent_t* dirent_out = (dirent_t*)getdents_args->buf;
+  kdirent_t* dirent_out = (kdirent_t*)getdents_args->buf;
   dirent_out->d_ino = ltoh32(little_endian_dirent->inode);
   dirent_out->d_offset = -1;  // We'll update this in the next iteration.
   dirent_out->d_reclen = dirent_out_size;
@@ -1747,7 +1747,7 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
                  EXT2_S_IFLNK | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR |
                      EXT2_S_IRGRP | EXT2_S_IWGRP | EXT2_S_IXGRP | EXT2_S_IROTH |
                      EXT2_S_IWOTH | EXT2_S_IXOTH,
-                 makedev(0, 0), &child_inode);
+                 kmakedev(0, 0), &child_inode);
   if (child_inode_num < 0) {
     return child_inode_num;
   }
@@ -1804,7 +1804,7 @@ static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
   }
 }
 
-static int ext2_truncate(vnode_t* vnode, off_t length) {
+static int ext2_truncate(vnode_t* vnode, koff_t length) {
   KASSERT(vnode->type == VNODE_REGULAR);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(length >= 0);

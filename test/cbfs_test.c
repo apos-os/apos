@@ -149,7 +149,7 @@ static void basic_file_test(fs_t* fs) {
 
   KTEST_BEGIN("cbfs: can't create file with vfs_mknod");
   KEXPECT_EQ(-EACCES,
-             vfs_mknod("cbfs_test_root/file1", VFS_S_IFREG, makedev(0, 0)));
+             vfs_mknod("cbfs_test_root/file1", VFS_S_IFREG, kmakedev(0, 0)));
 
   KTEST_BEGIN("cbfs: can't create directory with vfs_mkdir()");
   KEXPECT_EQ(-EACCES, vfs_mkdir("cbfs_test_root/dir4", VFS_S_IRWXU));
@@ -376,7 +376,7 @@ static void dynamic_directory_test(void) {
                                       (void*)3, VFS_S_IRWXU));
 
   fd = vfs_open("cbfs_test_root/dir3", VFS_O_RDONLY);
-  KEXPECT_EQ(-EIO, vfs_getdents(fd, (dirent_t*)tmp, 100));
+  KEXPECT_EQ(-EIO, vfs_getdents(fd, (kdirent_t*)tmp, 100));
   vfs_close(fd);
 
   KTEST_BEGIN("cbfs: dynamic directory parent directory creation");

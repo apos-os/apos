@@ -38,22 +38,22 @@ static short sun_poll_events(const socket_unix_t* socket) {
   switch (socket->state) {
     case SUN_LISTENING:
       if (!list_empty(&socket->incoming_conns)) {
-        events |= POLLIN | POLLRDNORM;
+        events |= KPOLLIN | KPOLLRDNORM;
       }
       break;
 
     case SUN_CONNECTED:
       if (socket->readbuf.len > 0 || socket->read_fin) {
-        events |= POLLIN | POLLRDNORM;
+        events |= KPOLLIN | KPOLLRDNORM;
       }
       if (!socket->peer || socket->peer->read_fin) {
         // TODO(aoates): this may not be ideal---if the other side does a
-        // shutdown(SHUT_RD), should we get a POLLHUP on our side?  POLLHUP is
+        // shutdown(SHUT_RD), should we get a KPOLLHUP on our side?  KPOLLHUP is
         // impossible to mask, so we can't poll for readable data in that
         // scenario.
-        events |= POLLHUP;
+        events |= KPOLLHUP;
       } else if (socket->peer->readbuf.len < socket->peer->readbuf.buflen) {
-        events |= POLLOUT | POLLWRNORM | POLLWRBAND;
+        events |= KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND;
       }
       break;
 
@@ -141,7 +141,7 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   KASSERT_DBG(kthread_queue_empty(&socket->write_wait_queue));
 
   // Our socket is about to disappear.  Tell any pending poll()s as much.
-  poll_trigger_event(&socket->poll_event, POLLNVAL);
+  poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
 }
 

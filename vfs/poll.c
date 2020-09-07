@@ -22,7 +22,7 @@
 #include "vfs/vfs_internal.h"
 
 // Events that are always triggered, even if not requested by the caller.
-#define ALWAYS_EVENTS (POLLHUP | POLLERR | POLLNVAL)
+#define ALWAYS_EVENTS (KPOLLHUP | KPOLLERR | KPOLLNVAL)
 
 void poll_init_event(poll_event_t* event) {
   event->refs = LIST_INIT;
@@ -91,7 +91,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   if (fd < 0) return 0;
   file_t* file = NULL;
   int result = lookup_fd(fd, &file);
-  if (result == -EBADF) return POLLNVAL;
+  if (result == -EBADF) return KPOLLNVAL;
 
   vnode_t* vnode = VFS_COPY_REF(file->vnode);
   file_unref(file);
@@ -99,19 +99,19 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   switch (vnode->type) {
     case VNODE_REGULAR:
       VFS_PUT_AND_CLEAR(vnode);
-      return (POLLIN | POLLOUT) & event_mask;
+      return (KPOLLIN | KPOLLOUT) & event_mask;
 
     case VNODE_DIRECTORY:
       VFS_PUT_AND_CLEAR(vnode);
       if (event_mask & ~ALWAYS_EVENTS)
-        return POLLNVAL;
+        return KPOLLNVAL;
       else
         return 0;
 
     case VNODE_CHARDEV: {
       char_dev_t* chardev = dev_get_char(vnode->dev);
       VFS_PUT_AND_CLEAR(vnode);
-      if (!chardev) return POLLERR;
+      if (!chardev) return KPOLLERR;
       return chardev->poll(chardev, event_mask | ALWAYS_EVENTS, poll);
     }
 
@@ -129,8 +129,8 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     case VNODE_BLOCKDEV: {
       block_dev_t* blockdev = dev_get_block(vnode->dev);
       VFS_PUT_AND_CLEAR(vnode);
-      if (!blockdev) return POLLERR;
-      return (POLLIN | POLLOUT) & event_mask;
+      if (!blockdev) return KPOLLERR;
+      return (KPOLLIN | KPOLLOUT) & event_mask;
     }
 
     case VNODE_SYMLINK:
@@ -142,7 +142,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   return 0;
 }
 
-int vfs_poll(struct pollfd fds[], nfds_t nfds, int timeout_ms) {
+int vfs_poll(struct apos_pollfd fds[], apos_nfds_t nfds, int timeout_ms) {
   int result = 0;
   poll_state_t poll;
   kthread_queue_init(&poll.q);

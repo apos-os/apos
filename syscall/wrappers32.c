@@ -23,8 +23,8 @@
 #include "syscall/wrappers32.h"
 #include "vfs/vfs.h"
 
-static struct timespec_32 timespec64to32(struct timespec ts64) {
-  struct timespec_32 ts32;
+static struct apos_timespec_32 timespec64to32(struct apos_timespec ts64) {
+  struct apos_timespec_32 ts32;
   ts32.tv_sec = ts64.tv_sec;
   ts32.tv_nsec = ts64.tv_nsec;
   return ts32;
@@ -68,18 +68,18 @@ int vfs_fstat_32(int fd, apos_stat_32_t* stat) {
   return result;
 }
 
-static void sigaction32to64(const struct sigaction_32* sa32,
-                            struct sigaction* sa64) {
-  _Static_assert(sizeof(struct sigaction_32) == 12,
+static void sigaction32to64(const struct ksigaction_32* sa32,
+                            struct ksigaction* sa64) {
+  _Static_assert(sizeof(struct ksigaction_32) == 12,
                  "sigaction32to64 needs to be updated");
-  sa64->sa_handler = (sighandler_t)(intptr_t)sa32->sa_handler;
+  sa64->sa_handler = (ksighandler_t)(intptr_t)sa32->sa_handler;
   sa64->sa_mask = sa32->sa_mask;
   sa64->sa_flags = sa32->sa_flags;
 }
 
-static void sigaction64to32(const struct sigaction* sa64,
-                            struct sigaction_32* sa32) {
-  _Static_assert(sizeof(struct sigaction_32) == 12,
+static void sigaction64to32(const struct ksigaction* sa64,
+                            struct ksigaction_32* sa32) {
+  _Static_assert(sizeof(struct ksigaction_32) == 12,
                  "sigaction64to32 needs to be updated");
   // TODO(aoates): test signal handling after a 64-to-32-bit exec().
   KASSERT_DBG(((addr_t)sa64->sa_handler & 0xFFFFFFFF00000000) == 0);
@@ -88,9 +88,9 @@ static void sigaction64to32(const struct sigaction* sa64,
   sa32->sa_flags = sa64->sa_flags;
 }
 
-int proc_sigaction_32(int signum, const struct sigaction_32* act32,
-                      struct sigaction_32* oldact32) {
-  struct sigaction act, oldact;
+int proc_sigaction_32(int signum, const struct ksigaction_32* act32,
+                      struct ksigaction_32* oldact32) {
+  struct ksigaction act, oldact;
   if (act32) sigaction32to64(act32, &act);
   int result =
       proc_sigaction(signum, act32 ? &act : NULL, oldact32 ? &oldact : NULL);
@@ -98,15 +98,15 @@ int proc_sigaction_32(int signum, const struct sigaction_32* act32,
   return result;
 }
 
-int vfs_getdents_32(int fd, dirent_32_t* buf_in, int count) {
-  _Static_assert(sizeof(dirent_32_t) == 12, "vfs_getdents_32 must be updated.");
+int vfs_getdents_32(int fd, kdirent_32_t* buf_in, int count) {
+  _Static_assert(sizeof(kdirent_32_t) == 12, "vfs_getdents_32 must be updated.");
 
   // This could probably be written without the new buffer (just compacting into
   // the user-supplied buffer entry by entry), but this makes things easier to
   // reason about.
   char* buf64 = (char*)kmalloc(count);
   if (!buf64) return -ENOMEM;
-  int result = vfs_getdents(fd, (dirent_t*)buf64, count);
+  int result = vfs_getdents(fd, (kdirent_t*)buf64, count);
   if (result < 0) {
     kfree(buf64);
     return result;
@@ -115,11 +115,11 @@ int vfs_getdents_32(int fd, dirent_32_t* buf_in, int count) {
   char* buf32 = (char*)buf_in;
   ssize_t in_offset = 0, out_offset = 0;
   while (in_offset < result) {
-    const dirent_t* d64 = (dirent_t*)(buf64 + in_offset);
-    dirent_32_t* d32 = (dirent_32_t*)(buf32 + out_offset);
+    const kdirent_t* d64 = (kdirent_t*)(buf64 + in_offset);
+    kdirent_32_t* d32 = (kdirent_32_t*)(buf32 + out_offset);
     d32->d_ino = d64->d_ino;
     d32->d_offset = d64->d_offset;
-    d32->d_reclen = sizeof(dirent_32_t) + kstrlen(d64->d_name) + 1;
+    d32->d_reclen = sizeof(kdirent_32_t) + kstrlen(d64->d_name) + 1;
     kstrcpy(d32->d_name, d64->d_name);
     in_offset += d64->d_reclen;
     out_offset += d32->d_reclen;
@@ -129,8 +129,8 @@ int vfs_getdents_32(int fd, dirent_32_t* buf_in, int count) {
   return out_offset;
 }
 
-int proc_getrlimit_32(int resource, struct rlimit_32* lim) {
-  struct rlimit lim64;
+int proc_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
+  struct apos_rlimit lim64;
   int result = proc_getrlimit(resource, &lim64);
   if (result == 0) {
     // TODO(aoates): verify this handles overflow correctly.
@@ -140,8 +140,8 @@ int proc_getrlimit_32(int resource, struct rlimit_32* lim) {
   return result;
 }
 
-int proc_setrlimit_32(int resource, const struct rlimit_32* lim) {
-  struct rlimit lim64;
+int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
+  struct apos_rlimit lim64;
   lim64.rlim_cur = lim->rlim_cur;
   lim64.rlim_max = lim->rlim_max;
 

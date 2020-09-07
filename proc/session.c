@@ -22,7 +22,7 @@
 // sparse.  Use a hashtable or something instead.
 static proc_session_t g_session_table[PROC_MAX_PROCS];
 
-pid_t proc_setsid(void) {
+kpid_t proc_setsid(void) {
   process_t* proc = proc_current();
   if (proc->pgroup == proc->id) return -EPERM;
 
@@ -42,7 +42,7 @@ pid_t proc_setsid(void) {
   return proc->id;
 }
 
-pid_t proc_getsid(pid_t pid) {
+kpid_t proc_getsid(kpid_t pid) {
   if (pid == 0) pid = proc_current()->id;
 
   process_t* proc = proc_get(pid);
@@ -55,7 +55,7 @@ pid_t proc_getsid(pid_t pid) {
   return pgroup->session;
 }
 
-proc_session_t* proc_session_get(sid_t sid) {
+proc_session_t* proc_session_get(ksid_t sid) {
   if (sid < 0 || sid >= PROC_MAX_PROCS) {
     return NULL;
   }

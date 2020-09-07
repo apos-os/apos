@@ -20,6 +20,6 @@
 // Syscall version of proc_fork().  Extracts the current syscall context, and
 // uses that to trampoline back into userspace at the same point in the child
 // process.
-pid_t proc_fork_syscall(void);
+kpid_t proc_fork_syscall(void);
 
 #endif

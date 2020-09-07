@@ -35,20 +35,20 @@
 #include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
 
-static inline int ksigisemptyset(const sigset_t* set) {
+static inline int ksigisemptyset(const ksigset_t* set) {
   return (*set == 0) ? 1 : 0;
 }
 
-static inline sigset_t ksigunionset(const sigset_t* A, const sigset_t* B) {
+static inline ksigset_t ksigunionset(const ksigset_t* A, const ksigset_t* B) {
   return *A | *B;
 }
 
 // Returns all the pending or assigned signals on the given process.
-sigset_t proc_pending_signals(const process_t* proc);
+ksigset_t proc_pending_signals(const process_t* proc);
 
 // Returns all the signals that are assigned, unmasked, and not ignored in the
 // current thread (i.e., ones that will be dispatched next).
-sigset_t proc_dispatchable_signals(void);
+ksigset_t proc_dispatchable_signals(void);
 
 // Returns true if the given signal can be delivered to the thread (i.e. it's
 // not blocked or ignored [explicitly or by default]).
@@ -59,7 +59,7 @@ bool proc_signal_deliverable(kthread_t thread, int signum);
 int proc_force_signal(process_t* proc, int sig);
 
 // As above, but sends a signal to every process in the given group.
-int proc_force_signal_group(pid_t pgid, int sig);
+int proc_force_signal_group(kpid_t pgid, int sig);
 
 // As above, but forces the signal to be handled on the given thread.  Returns 0
 // on success, or -errno on error.
@@ -67,23 +67,23 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
 
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
-int proc_kill(pid_t pid, int sig);
+int proc_kill(kpid_t pid, int sig);
 
 // Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
 // success, or -errno on error.
-int proc_sigaction(int signum, const struct sigaction* act,
-                   struct sigaction* oldact);
+int proc_sigaction(int signum, const struct ksigaction* act,
+                   struct ksigaction* oldact);
 
 // Adjust the current thread's signal mask.  Returns 0 on success, or -error.
-int proc_sigprocmask(int how, const sigset_t* restrict set,
-                     sigset_t* restrict oset);
+int proc_sigprocmask(int how, const ksigset_t* restrict set,
+                     ksigset_t* restrict oset);
 
 // Return the current set of pending signals in the process.
-int proc_sigpending(sigset_t* set);
+int proc_sigpending(ksigset_t* set);
 
 // Temporarily set the current thread's signal mask, then block until a signal
 // is delivered.
-int proc_sigsuspend(const sigset_t* sigmask);
+int proc_sigsuspend(const ksigset_t* sigmask);
 
 // Cancel/suppress the given signal in the given process and its threads.
 // Useful in tests.
@@ -116,7 +116,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
 
 // Return from a signal handling routine, via the trampoline.
 // Frees old_mask and context.
-int proc_sigreturn(const sigset_t* old_mask, const user_context_t* context,
+int proc_sigreturn(const ksigset_t* old_mask, const user_context_t* context,
                    const syscall_context_t* syscall_ctx);
 
 // Returns 1 if process A can send the given signal to process C.

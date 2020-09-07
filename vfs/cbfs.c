@@ -43,9 +43,9 @@ struct cbfs_inode {
 
   void* arg;
 
-  uid_t uid;
-  gid_t gid;
-  mode_t mode;
+  kuid_t uid;
+  kgid_t gid;
+  kmode_t mode;
 };
 
 const cbfs_inode_t INIT_INODE = {
@@ -243,7 +243,7 @@ static int cbfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int cbfs_symlink(vnode_t* parent, const char* name, const char* path);
 static int cbfs_readlink(vnode_t* node, char* buf, int bufsize);
-static int cbfs_truncate(vnode_t* node, off_t length);
+static int cbfs_truncate(vnode_t* node, koff_t length);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
@@ -310,7 +310,7 @@ void cbfs_free(fs_t* fs) {
 }
 
 void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
-                            void* read_arg, uid_t uid, gid_t gid, mode_t mode) {
+                            void* read_arg, kuid_t uid, kgid_t gid, kmode_t mode) {
   init_inode(inode);
   inode->type = VNODE_REGULAR;
   inode->num = num;
@@ -323,8 +323,8 @@ void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
 
 void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
                                  cbfs_getdents_t getdents_cb,
-                                 void* getdents_arg, uid_t uid, gid_t gid,
-                                 mode_t mode) {
+                                 void* getdents_arg, kuid_t uid, kgid_t gid,
+                                 kmode_t mode) {
   init_inode(inode);
   inode->type = VNODE_DIRECTORY;
   inode->num = num;
@@ -339,7 +339,7 @@ void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
 
 void cbfs_inode_create_symlink(cbfs_inode_t* inode, int num,
                                cbfs_readlink_t readlink_cb, void* readlink_arg,
-                               uid_t uid, gid_t gid) {
+                               kuid_t uid, kgid_t gid) {
   init_inode(inode);
   inode->type = VNODE_SYMLINK;
   inode->num = num;
@@ -419,7 +419,7 @@ static int create_path(cbfs_t* cfs, const char* name,
 }
 
 int cbfs_create_file(fs_t* fs, const char* path,
-                     cbfs_read_t read_cb, void* arg, mode_t mode) {
+                     cbfs_read_t read_cb, void* arg, kmode_t mode) {
   cbfs_t* cfs = fs_to_cbfs(fs);
 
   char name_start[VFS_MAX_FILENAME_LENGTH];
@@ -453,7 +453,8 @@ int cbfs_create_file(fs_t* fs, const char* path,
 }
 
 int cbfs_create_directory(fs_t* fs, const char* path,
-                          cbfs_getdents_t getdents_cb, void* arg, mode_t mode) {
+                          cbfs_getdents_t getdents_cb, void* arg,
+                          kmode_t mode) {
   cbfs_t* cfs = fs_to_cbfs(fs);
 
   char name_start[VFS_MAX_FILENAME_LENGTH];
@@ -675,10 +676,10 @@ static int getdents_from_list(const list_t* list, const int entries_to_skip,
     if (!n) break;
     cbfs_entry_t* entry = container_of(n, cbfs_entry_t, link);
 
-    const int dirent_len = sizeof(dirent_t) + kstrlen(entry->name) + 1;
+    const int dirent_len = sizeof(kdirent_t) + kstrlen(entry->name) + 1;
     if (bytes_written + dirent_len > outbufsize) break;
 
-    dirent_t* d = (dirent_t*)(((const char*)outbuf) + bytes_written);
+    kdirent_t* d = (kdirent_t*)(((const char*)outbuf) + bytes_written);
     d->d_ino = entry->num;
     d->d_offset = offset + idx + 1;
     d->d_reclen = dirent_len;
@@ -745,8 +746,8 @@ static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   }
   stat_out->st_mode |= inode->mode;
   stat_out->st_nlink = (inode->type == VNODE_DIRECTORY) ? 2 : 1;
-  stat_out->st_rdev = makedev(0, 0);
-  stat_out->st_size = 2 * sizeof(dirent_t) + 5;
+  stat_out->st_rdev = kmakedev(0, 0);
+  stat_out->st_size = 2 * sizeof(kdirent_t) + 5;
   stat_out->st_blksize = 512;
   stat_out->st_blocks = 1;
   return 0;
@@ -769,7 +770,7 @@ static int cbfs_readlink(vnode_t* vnode, char* buf, int bufsize) {
   return inode->readlink_cb(vnode->fs, inode->arg, inode->num, buf, bufsize);
 }
 
-static int cbfs_truncate(vnode_t* node, off_t length) {
+static int cbfs_truncate(vnode_t* node, koff_t length) {
   return -EACCES;
 }
 

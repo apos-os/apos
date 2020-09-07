@@ -29,7 +29,7 @@
 #include "vfs/vnode.h"
 
 #define RAMFS_MAX_INODES 1024
-#define INVALID_INO ((ino_t)-1)
+#define INVALID_INO ((kino_t)-1)
 
 // TODO(aoates): put this in a common location.
 #define MIN(a, b) ({ \
@@ -101,14 +101,14 @@ static void writeback_metadata(vnode_t* vnode) {
 }
 
 // Find the dirent in the parent's data with the given name, or NULL.
-static dirent_t* find_dirent(vnode_t* parent, const char* name) {
+static kdirent_t* find_dirent(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode = &ramfs->inodes[parent->num];
 
   int offset = 0;
   while (offset < parent->len) {
-    dirent_t* d = (dirent_t*)(inode->data + offset);
+    kdirent_t* d = (kdirent_t*)(inode->data + offset);
 
     if (kstrcmp(d->d_name, name) == 0) {
       KASSERT(d->d_ino != INVALID_INO);
@@ -129,7 +129,7 @@ static int count_dirents(vnode_t* parent) {
 
   int offset = 0, count = 0;
   while (offset < parent->len) {
-    dirent_t* d = (dirent_t*)(inode->data + offset);
+    kdirent_t* d = (kdirent_t*)(inode->data + offset);
     if (d->d_ino != INVALID_INO) {
       count++;
     }
@@ -140,16 +140,16 @@ static int count_dirents(vnode_t* parent) {
 }
 
 static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
-  // TODO(aoates): look for deleted dirent_t slots to reuse.
-  dirent_t* d = find_dirent(parent, name);
+  // TODO(aoates): look for deleted kdirent_t slots to reuse.
+  kdirent_t* d = find_dirent(parent, name);
   if (d) {
     return -EEXIST;
   }
 
   // This is sorta inefficient....there's really no need to create it on the
   // heap then copy it over, but whatever.
-  const int dlen = sizeof(dirent_t) + kstrlen(name) + 1;
-  dirent_t* dirent = (dirent_t*)kmalloc(dlen);
+  const int dlen = sizeof(kdirent_t) + kstrlen(name) + 1;
+  kdirent_t* dirent = (kdirent_t*)kmalloc(dlen);
   dirent->d_ino = inode;
   dirent->d_reclen = dlen;
   kstrcpy(dirent->d_name, name);
@@ -307,7 +307,7 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  dirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name);
   if (!d) {
     return -ENOENT;
   }
@@ -387,7 +387,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  dirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name);
   if (!d) {
     return -ENOENT;
   }
@@ -416,11 +416,11 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   dir_inode->link_count -= 2;
 
   // Remove '.' and '..'.
-  dirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".");
+  kdirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".");
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
   child_dirent = find_dirent(&dir_inode->vnode, "..");
-  KASSERT(child_dirent->d_ino == (ino_t)parent->num);
+  KASSERT(child_dirent->d_ino == (kino_t)parent->num);
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
 
@@ -476,7 +476,7 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   if (result) return result;
 
   if (vnode->type == VNODE_DIRECTORY) {
-    dirent_t* d = find_dirent(vnode, "..");
+    kdirent_t* d = find_dirent(vnode, "..");
     KASSERT_DBG(d != NULL);
     int orig_dotdot_ino = d->d_ino;
     ramfs_t* ramfs = (ramfs_t*)parent->fs;
@@ -500,7 +500,7 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  dirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name);
   if (!d) {
     return -ENOENT;
   }
@@ -530,7 +530,7 @@ int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   // In ramfs, we store dirent_ts directly.
   int bytes_read = 0;  // Our current index into buf.
   while (offset < vnode->len) {
-    dirent_t* d = (dirent_t*)(node->data + offset);
+    kdirent_t* d = (kdirent_t*)(node->data + offset);
     if (d->d_ino != INVALID_INO &&
         bytes_read + d->d_reclen >= (size_t)bufsize) {
       // If the buffer is too small to fit even one entry, return -EINVAL.
@@ -599,7 +599,7 @@ int ramfs_readlink(vnode_t* node, char* buf, int bufsize) {
   return ramfs_read(node, 0, buf, bufsize);
 }
 
-int ramfs_truncate(vnode_t* vnode, off_t length) {
+int ramfs_truncate(vnode_t* vnode, koff_t length) {
   KASSERT_DBG(vnode->type == VNODE_REGULAR);
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   maybe_block(vnode->fs);

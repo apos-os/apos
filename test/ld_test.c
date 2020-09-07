@@ -498,10 +498,10 @@ static void three_thread_test2(void) {
 static void termios_test(void) {
   KTEST_BEGIN("ld: default termios settings are sane");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
-  const struct termios orig_term = t;
+  const struct ktermios orig_term = t;
 
   KEXPECT_EQ(0, t.c_iflag);
   KEXPECT_EQ(0, t.c_oflag);
@@ -536,10 +536,10 @@ static void termios_test(void) {
 static void termios_echo_test(void) {
   KTEST_BEGIN("ld: disable ECHO");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
-  const struct termios orig_term = t;
+  const struct ktermios orig_term = t;
 
   ld_provide(g_ld, 'a');
   t.c_lflag &= ~ECHO;
@@ -587,10 +587,10 @@ static void start_read_thread(noncanon_test_args_t* args, kthread_t* thread,
 static void termios_noncanon_read_test(void) {
   KTEST_BEGIN("ld: non-canonical mode (MIN == 0, TIME == 0)");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
-  const struct termios orig_term = t;
+  const struct ktermios orig_term = t;
 
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 0;
@@ -884,10 +884,10 @@ static void control_chars_test(void) {
 static void noflsh_test(void) {
   KTEST_BEGIN("ld: NOFLSH prevents clearing buffer on INT, etc");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
-  const struct termios orig_term = t;
+  const struct ktermios orig_term = t;
 
   t.c_lflag |= NOFLSH;
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
@@ -929,10 +929,10 @@ static void noflsh_test(void) {
 static void termios_noncanon_test(void) {
   KTEST_BEGIN("ld: <C-D> is printed in non-canonical mode");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
-  const struct termios orig_term = t;
+  const struct ktermios orig_term = t;
 
   t.c_lflag &= ~ICANON;
   t.c_cc[VMIN] = 0;
@@ -968,8 +968,8 @@ static void termios_noncanon_test(void) {
 static void echoe_test(void) {
   KTEST_BEGIN("ld: disabling ECHOE");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
 
   t.c_lflag &= ~ECHOE;
@@ -1032,8 +1032,8 @@ static void echoe_test(void) {
 static void echonl_test(void) {
   KTEST_BEGIN("ld: disabling ECHONL");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
 
   t.c_lflag &= ~ECHONL;
@@ -1083,8 +1083,8 @@ static void echonl_test(void) {
 static void change_control_char_test(void) {
   KTEST_BEGIN("ld: changing EOF character");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
 
   t.c_cc[VEOF] = 'p';
@@ -1106,8 +1106,8 @@ static void change_control_char_test(void) {
 static void set_attr_when_test(void) {
   KTEST_BEGIN("ld: ld_set_termios(TCSAFLUSH) applies changes now");
   reset();
-  struct termios t;
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
 
   KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
@@ -1115,7 +1115,7 @@ static void set_attr_when_test(void) {
   t.c_cc[VEOF] = 'p';
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSADRAIN, &t));
 
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
   KEXPECT_EQ('p', t.c_cc[VEOF]);
   char buf[10];
@@ -1126,7 +1126,7 @@ static void set_attr_when_test(void) {
 
   KTEST_BEGIN("ld: ld_set_termios(TCSAFLUSH) flushes input");
   reset();
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
 
   KEXPECT_EQ(3, ld_write(g_ld, "abc", 3));
@@ -1134,7 +1134,7 @@ static void set_attr_when_test(void) {
   t.c_cc[VEOF] = 'q';
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSAFLUSH, &t));
 
-  kmemset(&t, 0xFF, sizeof(struct termios));
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
   ld_get_termios(g_ld, &t);
   KEXPECT_EQ('q', t.c_cc[VEOF]);
   KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));

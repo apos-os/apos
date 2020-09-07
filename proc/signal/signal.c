@@ -37,7 +37,7 @@ typedef enum {
 } signal_default_action_t;
 
 // Table of default signal actions.
-static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
+static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
   SIGACT_IGNORE,        // SIGNULL
   SIGACT_TERM_AND_CORE, // SIGABRT
   SIGACT_TERM,          // SIGALRM
@@ -67,12 +67,12 @@ static signal_default_action_t kDefaultActions[SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
 };
 
-sigset_t proc_pending_signals(const process_t* proc) {
+ksigset_t proc_pending_signals(const process_t* proc) {
   return ksigunionset(&proc->pending_signals, &proc->thread->assigned_signals);
 }
 
 bool proc_signal_deliverable(kthread_t thread, int signum) {
-  const sigaction_t* action = &thread->process->signal_dispositions[signum];
+  const ksigaction_t* action = &thread->process->signal_dispositions[signum];
   if (action->sa_handler == SIG_IGN) {
     return false;
   } else if (action->sa_handler == SIG_DFL &&
@@ -88,15 +88,15 @@ bool proc_signal_deliverable(kthread_t thread, int signum) {
   return true;
 }
 
-sigset_t proc_dispatchable_signals(void) {
-  sigset_t set;
+ksigset_t proc_dispatchable_signals(void) {
+  ksigset_t set;
   ksigemptyset(&set);
   kthread_t thread = kthread_current_thread();
   if (thread == KTHREAD_NO_THREAD || !thread->process) return set;
 
   // TODO(aoates): rather than iterating through all the signals, track the set
   // of currently-ignored signals and use that here.
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&thread->assigned_signals, signum) &&
         proc_signal_deliverable(thread, signum))
       ksigaddset(&set, signum);
@@ -144,7 +144,7 @@ int proc_force_signal(process_t* proc, int sig) {
   return result;
 }
 
-int proc_force_signal_group(pid_t pgid, int sig) {
+int proc_force_signal_group(kpid_t pgid, int sig) {
   PUSH_AND_DISABLE_INTERRUPTS();
   proc_group_t* pgroup = proc_group_get(pgid);
   if (!pgroup) {
@@ -184,20 +184,20 @@ static int proc_kill_one(process_t* proc, int sig) {
     return -EPERM;
   }
 
-  if (sig == SIGNULL) {
+  if (sig == APOS_SIGNULL) {
     return 0;
   }
 
   return proc_force_signal(proc, sig);
 }
 
-int proc_kill(pid_t pid, int sig) {
-  if (sig < SIGNULL || sig > SIGMAX) {
+int proc_kill(kpid_t pid, int sig) {
+  if (sig < APOS_SIGNULL || sig > APOS_SIGMAX) {
     return -EINVAL;
   }
 
   if (pid == -1) {
-    for (pid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
+    for (kpid_t pid = 2; pid < PROC_MAX_PROCS; pid++) {
       proc_kill_one(proc_get(pid), sig);
     }
     return 0;
@@ -224,9 +224,9 @@ int proc_kill(pid_t pid, int sig) {
   }
 }
 
-int proc_sigaction(int signum, const struct sigaction* act,
-                   struct sigaction* oldact) {
-  if (signum < SIGMIN || signum > SIGMAX) {
+int proc_sigaction(int signum, const struct ksigaction* act,
+                   struct ksigaction* oldact) {
+  if (signum < APOS_SIGMIN || signum > APOS_SIGMAX) {
     return -EINVAL;
   }
 
@@ -247,13 +247,13 @@ int proc_sigaction(int signum, const struct sigaction* act,
   return 0;
 }
 
-int proc_sigprocmask(int how, const sigset_t* restrict set,
-                     sigset_t* restrict oset) {
+int proc_sigprocmask(int how, const ksigset_t* restrict set,
+                     ksigset_t* restrict oset) {
   if (oset) {
     *oset = kthread_current_thread()->signal_mask;
   }
 
-  sigset_t new_mask = kthread_current_thread()->signal_mask;
+  ksigset_t new_mask = kthread_current_thread()->signal_mask;
   if (set) {
     switch (how) {
       case SIG_BLOCK:
@@ -278,7 +278,7 @@ int proc_sigprocmask(int how, const sigset_t* restrict set,
   return 0;
 }
 
-int proc_sigpending(sigset_t* set) {
+int proc_sigpending(ksigset_t* set) {
   process_t* proc = proc_current();
   kthread_t thread = proc->thread;
   *set = proc->pending_signals |
@@ -286,8 +286,8 @@ int proc_sigpending(sigset_t* set) {
   return 0;
 }
 
-int proc_sigsuspend(const sigset_t* sigmask) {
-  sigset_t old_mask;
+int proc_sigsuspend(const ksigset_t* sigmask) {
+  ksigset_t old_mask;
   int result = proc_sigprocmask(SIG_SETMASK, sigmask, &old_mask);
   KASSERT_DBG(result == 0);
   proc_assign_pending_signals();
@@ -319,7 +319,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
   process_t* proc = proc_current();
   KASSERT_DBG(proc->state == PROC_RUNNING || proc->state == PROC_STOPPED);
 
-  const sigaction_t* action = &proc->signal_dispositions[signum];
+  const ksigaction_t* action = &proc->signal_dispositions[signum];
   // TODO(aoates): support sigaction flags.
 
   if (action->sa_handler == SIG_IGN) {
@@ -363,7 +363,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
     KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
-    sigset_t old_mask = proc->thread->signal_mask;
+    ksigset_t old_mask = proc->thread->signal_mask;
     proc->thread->signal_mask |= action->sa_mask;
     if (!(action->sa_flags & SA_NODEFER))
       ksigaddset(&proc->thread->signal_mask, signum);
@@ -382,7 +382,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
 // if any.  Since we currently only have one thread per process, this is pretty
 // straightforward.
 static void signal_assign_pending(process_t* proc) {
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&proc->pending_signals, signum)) {
       proc_try_assign_signal(proc, signum);
     }
@@ -413,7 +413,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
     return;
   }
 
-  for (int signum = SIGMIN; signum <= SIGMAX; ++signum) {
+  for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     // We need to check the thread's signal mask again, since there may be
     // signals that are assigned to the thread even though they're masked (e.g.
     // one sent with pthread_kill()).
@@ -434,10 +434,10 @@ static user_context_t get_user_context(void* arg) {
   return *(user_context_t*)arg;
 }
 
-int proc_sigreturn(const sigset_t* old_mask_ptr,
+int proc_sigreturn(const ksigset_t* old_mask_ptr,
                    const user_context_t* context_ptr,
                    const syscall_context_t* syscall_ctx_ptr) {
-  const sigset_t old_mask = *old_mask_ptr;
+  const ksigset_t old_mask = *old_mask_ptr;
   user_context_t context = *context_ptr;
   syscall_context_t syscall_ctx;
   if (syscall_ctx_ptr) syscall_ctx = *syscall_ctx_ptr;

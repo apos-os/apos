@@ -102,7 +102,7 @@ static void basic_mount_test(void) {
   KEXPECT_NE(0, stat.st_mode & VFS_S_IFDIR);
 
   KTEST_BEGIN("vfs mount: creating character device in mounted fs");
-  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/a/chr", VFS_S_IFCHR, makedev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/a/chr", VFS_S_IFCHR, kmakedev(0, 0)));
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/chr", &stat));
   KEXPECT_NE(0, stat.st_mode & VFS_S_IFCHR);
 
@@ -150,13 +150,13 @@ static void basic_mount_test(void) {
 
 
   KTEST_BEGIN("vfs mount: cannot mount on character device");
-  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/chr", VFS_S_IFCHR, makedev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/chr", VFS_S_IFCHR, kmakedev(0, 0)));
   KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/chr", ramfsB));
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/chr"));
 
 
   KTEST_BEGIN("vfs mount: cannot mount on block device");
-  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/blk", VFS_S_IFBLK, makedev(0, 0)));
+  KEXPECT_EQ(0, vfs_mknod("vfs_mount_test/blk", VFS_S_IFBLK, kmakedev(0, 0)));
   KEXPECT_EQ(-ENOTDIR, vfs_mount_fs("vfs_mount_test/blk", ramfsB));
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/blk"));
 
@@ -445,7 +445,7 @@ static void chown_chmod_test(void) {
   kstrcpy(abs_mount_a, orig_cwd);
   append_path(abs_mount_a, "vfs_mount_test/a");
 
-  const mode_t orig_a_mode = get_mode("vfs_mount_test/a");
+  const kmode_t orig_a_mode = get_mode("vfs_mount_test/a");
 
   // Do the mount.
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
@@ -563,7 +563,7 @@ static void unmount_busy_test(void) {
   fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
 
   void* map_addr = 0x0;
-  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, PROT_EXEC | PROT_READ, MAP_PRIVATE,
+  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, KPROT_EXEC | KPROT_READ, KMAP_PRIVATE,
                         fd, 0, &map_addr));
   KEXPECT_EQ(0, vfs_close(fd));
 
@@ -908,17 +908,17 @@ static void mmap_same_vnode_test(void) {
   // They should have the same vnode.
   apos_stat_t stat;
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/file", &stat));
-  ino_t a_ino = stat.st_ino;
+  kino_t a_ino = stat.st_ino;
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/b/file", &stat));
-  ino_t b_ino = stat.st_ino;
+  kino_t b_ino = stat.st_ino;
   KEXPECT_EQ(a_ino, b_ino);
 
   void* addr1_out = NULL;
   KEXPECT_EQ(
-      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, MAP_PRIVATE, fd1, 0, &addr1_out));
+      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, KMAP_PRIVATE, fd1, 0, &addr1_out));
   void* addr2_out = NULL;
   KEXPECT_EQ(
-      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, MAP_PRIVATE, fd2, 0, &addr2_out));
+      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, KMAP_PRIVATE, fd2, 0, &addr2_out));
   KEXPECT_STREQ("a", (char*)addr1_out);
   KEXPECT_STREQ("b", (char*)addr2_out);
   KEXPECT_EQ(0, do_munmap(addr1_out, PAGE_SIZE));

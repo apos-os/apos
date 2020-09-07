@@ -55,7 +55,7 @@ static void loop_until_done(void* arg) {
   }
 }
 
-static int group_contains(pid_t pgid, pid_t pid) {
+static int group_contains(kpid_t pgid, kpid_t pid) {
   for (list_link_t* link = proc_group_get(pgid)->procs.head;
        link != 0x0;
        link = link->next) {
@@ -66,7 +66,7 @@ static int group_contains(pid_t pgid, pid_t pid) {
 }
 
 static void basic_setgpid_test(void* arg) {
-  const pid_t group = (intptr_t)arg;
+  const kpid_t group = (intptr_t)arg;
 
   // To ensure it's not looked at or carried to children.
   proc_current()->execed = true;
@@ -116,8 +116,8 @@ static void basic_setgpid_test(void* arg) {
 }
 
 static void invalid_params_setgpid_test(void* arg) {
-  const pid_t group = (intptr_t)arg;
-  const pid_t orig_group = getpgid(0);
+  const kpid_t group = (intptr_t)arg;
+  const kpid_t orig_group = getpgid(0);
 
   KTEST_BEGIN("setgpid() invalid pgid");
   KEXPECT_EQ(-EINVAL, setpgid(0, -5));
@@ -140,7 +140,7 @@ static void invalid_params_setgpid_test(void* arg) {
 }
 
 static void child_setgpid_test(void* arg) {
-  const pid_t group = (intptr_t)arg;
+  const kpid_t group = (intptr_t)arg;
   int test_done = 0;
 
   // To ensure it's not looked at or carried to children.

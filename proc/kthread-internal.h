@@ -57,10 +57,10 @@ struct kthread_data {
   process_t* process;  // The process owning this thread.
 
   // The current signal mask (i.e. the signals blocked in this thread).
-  sigset_t signal_mask;
+  ksigset_t signal_mask;
 
   // The set of signals assigned to this thread for handling.
-  sigset_t assigned_signals;
+  ksigset_t assigned_signals;
 
   // Context for the currently-executing syscall, if any.
   syscall_context_t syscall_ctx;

@@ -59,20 +59,21 @@ void cbfs_create_entry(cbfs_entry_t* entry, const char* name, int num);
 // Create a cbfs_inode_t that represents a file.  Fills in the given
 // cbfs_inode_t.
 void cbfs_inode_create_file(cbfs_inode_t* inode, int num, cbfs_read_t read_cb,
-                            void* read_arg, uid_t uid, gid_t gid, mode_t mode);
+                            void* read_arg, kuid_t uid, kgid_t gid,
+                            kmode_t mode);
 
 // Create a cbfs_inode_t that represents a directory.  Fills in the given
 // cbfs_inode_t.
 void cbfs_inode_create_directory(cbfs_inode_t* inode, int num, int parent_num,
                                  cbfs_getdents_t getdents_cb,
-                                 void* getdents_arg, uid_t uid, gid_t gid,
-                                 mode_t mode);
+                                 void* getdents_arg, kuid_t uid, kgid_t gid,
+                                 kmode_t mode);
 
 // Create a cbfs_inode_t that represents a dynamic symlink.  Fills in the given
 // cbfs_inode_t.
 void cbfs_inode_create_symlink(cbfs_inode_t* inode, int num,
                                cbfs_readlink_t readlink_cb, void* readlink_arg,
-                               uid_t uid, gid_t gid);
+                               kuid_t uid, kgid_t gid);
 
 // Create a cbfs.  The given callback, if non-NULL, will be run when looking up
 // an unknown vnode.  It can be used to generate vnodes dynamically.
@@ -88,14 +89,14 @@ void cbfs_free(fs_t* fs);
 // Create a file in the given cbfs.  When the file is read, the given callback
 // will be run.
 int cbfs_create_file(fs_t* fs, const char* name,
-                     cbfs_read_t read_cb, void* arg, mode_t mode);
+                     cbfs_read_t read_cb, void* arg, kmode_t mode);
 
 // Create a directory in the given cbfs.  If the getdents callback is non-NULL,
 // it will be run when the directory is listed or a lookup is needed, and should
 // return any dynamic directory entries in the directory (which shouldn't
 // include '.' and '..').
 int cbfs_create_directory(fs_t* fs, const char* path,
-                          cbfs_getdents_t getdents_cb, void* arg, mode_t mode);
+                          cbfs_getdents_t getdents_cb, void* arg, kmode_t mode);
 
 // Create a symlink in the given cbfs.  When the symlink is read, the given
 // callback will be run.

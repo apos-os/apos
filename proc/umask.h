@@ -18,6 +18,6 @@
 #include "user/include/apos/posix_types.h"
 
 // Sets the umask, and returns the old one.
-mode_t proc_umask(mode_t cmask);
+kmode_t proc_umask(kmode_t cmask);
 
 #endif

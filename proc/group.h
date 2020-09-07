@@ -24,20 +24,20 @@ typedef struct {
   list_t procs;
 
   // The session of the group.
-  sid_t session;
+  ksid_t session;
 } proc_group_t;
 
 // Return the given process's process group, as per getpgid(2).
 //
 // Returns the process group ID on success, or -errno on error.
-pid_t getpgid(pid_t pid);
+kpid_t getpgid(kpid_t pid);
 
 // Set the given process's process group, as per setpgid(2).
 //
 // Returns 0 on success, or -errno on error.
-int setpgid(pid_t pid, pid_t pgid);
+int setpgid(kpid_t pid, kpid_t pgid);
 
 // Return the process group with the given ID.
-proc_group_t* proc_group_get(pid_t gid);
+proc_group_t* proc_group_get(kpid_t gid);
 
 #endif

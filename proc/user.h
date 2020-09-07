@@ -32,26 +32,26 @@ int proc_is_superuser(const process_t* proc);
 // saved uids.
 //
 // Returns 0 on success, or -errno on error.
-int setuid(uid_t uid);
+int setuid(kuid_t uid);
 
 // Set the current group ID, as per setuid().
-int setgid(gid_t gid);
+int setgid(kgid_t gid);
 
 // Return the current real user and group IDs.
-uid_t getuid(void);
-gid_t getgid(void);
+kuid_t getuid(void);
+kgid_t getgid(void);
 
 // Set the effective user or group ID.  If the user is not the superuser, the
 // new uid/gid must be the real or saved uid/gid.
-int seteuid(uid_t uid);
-int setegid(gid_t gid);
+int seteuid(kuid_t uid);
+int setegid(kgid_t gid);
 
 // Return the current effective user and group IDs.
-uid_t geteuid(void);
-gid_t getegid(void);
+kuid_t geteuid(void);
+kgid_t getegid(void);
 
 // Set the real and effective user/group IDs, if allowed.
-int setreuid(uid_t ruid, uid_t euid);
-int setregid(gid_t rgid, gid_t egid);
+int setreuid(kuid_t ruid, kuid_t euid);
+int setregid(kgid_t rgid, kgid_t egid);
 
 #endif

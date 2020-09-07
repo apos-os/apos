@@ -46,8 +46,8 @@ static void make_fs_device(int vfs_type, int major, int minor);
 static void remove_fs_device(int major, int minor);
 
 static int check_register(void* dev, apos_dev_t* id) {
-  if (!dev || major(*id) >= DEVICE_MAX_MAJOR ||
-      (minor(*id) >= DEVICE_MAX_MINOR && minor(*id) != DEVICE_ID_UNKNOWN)) {
+  if (!dev || kmajor(*id) >= DEVICE_MAX_MAJOR ||
+      (kminor(*id) >= DEVICE_MAX_MINOR && kminor(*id) != DEVICE_ID_UNKNOWN)) {
     return -EINVAL;
   }
   return 0;
@@ -56,17 +56,18 @@ static int check_register(void* dev, apos_dev_t* id) {
 // Finds and fills the id, returning 0 on success.
 static int find_id(void* array[DEVICE_MAX_MAJOR][DEVICE_MAX_MINOR],
                    apos_dev_t* id) {
-  if (minor(*id) != DEVICE_ID_UNKNOWN && array[major(*id)][minor(*id)] != 0x0) {
+  if (kminor(*id) != DEVICE_ID_UNKNOWN &&
+      array[kmajor(*id)][kminor(*id)] != 0x0) {
     return -EEXIST;
-  } else if (minor(*id) == DEVICE_ID_UNKNOWN) {
+  } else if (kminor(*id) == DEVICE_ID_UNKNOWN) {
     for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
-      if (array[major(*id)][i] == 0x0) {
-        *id = makedev(major(*id), i);
+      if (array[kmajor(*id)][i] == 0x0) {
+        *id = kmakedev(kmajor(*id), i);
         break;
       }
     }
   }
-  KASSERT(array[major(*id)][minor(*id)] == 0x0);
+  KASSERT(array[kmajor(*id)][kminor(*id)] == 0x0);
   return 0;
 }
 
@@ -80,12 +81,13 @@ int dev_register_block(block_dev_t* dev, apos_dev_t* id) {
     return result;
   }
 
-  g_block_devices[major(*id)][minor(*id)] = dev;
-  g_block_memobjs[major(*id)][minor(*id)] = (memobj_t*)kmalloc(sizeof(memobj_t));
-  KASSERT(
-      0 == memobj_create_block_dev(g_block_memobjs[major(*id)][minor(*id)], *id));
+  g_block_devices[kmajor(*id)][kminor(*id)] = dev;
+  g_block_memobjs[kmajor(*id)][kminor(*id)] =
+      (memobj_t*)kmalloc(sizeof(memobj_t));
+  KASSERT(0 == memobj_create_block_dev(
+                   g_block_memobjs[kmajor(*id)][kminor(*id)], *id));
   if (g_dev_fs_ready) {
-    make_fs_device(VFS_S_IFBLK, major(*id), minor(*id));
+    make_fs_device(VFS_S_IFBLK, kmajor(*id), kminor(*id));
   }
   return 0;
 }
@@ -100,65 +102,65 @@ int dev_register_char(char_dev_t* dev, apos_dev_t* id) {
     return result;
   }
 
-  g_char_devices[major(*id)][minor(*id)] = dev;
+  g_char_devices[kmajor(*id)][kminor(*id)] = dev;
   if (g_dev_fs_ready) {
-    make_fs_device(VFS_S_IFCHR, major(*id), minor(*id));
+    make_fs_device(VFS_S_IFCHR, kmajor(*id), kminor(*id));
   }
   return 0;
 }
 
 block_dev_t* dev_get_block(apos_dev_t id) {
-  if (major(id) >= DEVICE_MAX_MAJOR ||
-      minor(id) >= DEVICE_MAX_MINOR) {
+  if (kmajor(id) >= DEVICE_MAX_MAJOR ||
+      kminor(id) >= DEVICE_MAX_MINOR) {
     return 0x0;
   }
-  return g_block_devices[major(id)][minor(id)];
+  return g_block_devices[kmajor(id)][kminor(id)];
 }
 
 char_dev_t* dev_get_char(apos_dev_t id) {
-  if (major(id) >= DEVICE_MAX_MAJOR ||
-      minor(id) >= DEVICE_MAX_MINOR) {
+  if (kmajor(id) >= DEVICE_MAX_MAJOR ||
+      kminor(id) >= DEVICE_MAX_MINOR) {
     return 0x0;
   }
-  return g_char_devices[major(id)][minor(id)];
+  return g_char_devices[kmajor(id)][kminor(id)];
 }
 
 // TODO(aoates): return this memobj with a reference and audit everything to
 // ensure no chance of dangling references.
 memobj_t* dev_get_block_memobj(apos_dev_t id) {
-  if (major(id) >= DEVICE_MAX_MAJOR ||
-      minor(id) >= DEVICE_MAX_MINOR) {
+  if (kmajor(id) >= DEVICE_MAX_MAJOR ||
+      kminor(id) >= DEVICE_MAX_MINOR) {
     return 0x0;
   }
-  return g_block_memobjs[major(id)][minor(id)];
+  return g_block_memobjs[kmajor(id)][kminor(id)];
 }
 
 int dev_unregister_block(apos_dev_t id) {
-  if (major(id) >= DEVICE_MAX_MAJOR ||
-      minor(id) >= DEVICE_MAX_MINOR) {
+  if (kmajor(id) >= DEVICE_MAX_MAJOR ||
+      kminor(id) >= DEVICE_MAX_MINOR) {
     return -ERANGE;
   }
-  if (g_block_devices[major(id)][minor(id)] == 0x0) {
+  if (g_block_devices[kmajor(id)][kminor(id)] == 0x0) {
     return -ENOENT;
   }
-  remove_fs_device(major(id), minor(id));
+  remove_fs_device(kmajor(id), kminor(id));
 
-  g_block_devices[major(id)][minor(id)] = 0x0;
-  kfree(g_block_memobjs[major(id)][minor(id)]);
+  g_block_devices[kmajor(id)][kminor(id)] = 0x0;
+  kfree(g_block_memobjs[kmajor(id)][kminor(id)]);
   return 0;
 }
 
 int dev_unregister_char(apos_dev_t id) {
-  if (major(id) >= DEVICE_MAX_MAJOR ||
-      minor(id) >= DEVICE_MAX_MINOR) {
+  if (kmajor(id) >= DEVICE_MAX_MAJOR ||
+      kminor(id) >= DEVICE_MAX_MINOR) {
     return -ERANGE;
   }
-  if (g_char_devices[major(id)][minor(id)] == 0x0) {
+  if (g_char_devices[kmajor(id)][kminor(id)] == 0x0) {
     return -ENOENT;
   }
-  remove_fs_device(major(id), minor(id));
+  remove_fs_device(kmajor(id), kminor(id));
 
-  g_char_devices[major(id)][minor(id)] = 0x0;
+  g_char_devices[kmajor(id)][kminor(id)] = 0x0;
   return 0;
 }
 
@@ -170,7 +172,7 @@ static void make_fs_device(int vfs_type, int major, int minor) {
     return;
   }
   ksprintf(name, "/dev/%s%d", kTypeNames[major], minor);
-  const int result = vfs_mknod(name, vfs_type, makedev(major, minor));
+  const int result = vfs_mknod(name, vfs_type, kmakedev(major, minor));
   if (result < 0) {
     klogf("warning: unable to create %s: %s\n", name, errorname(-result));
   }
@@ -201,7 +203,7 @@ void dev_init_fs() {
   char buf[kBufSize];
   char* full_path = kmalloc(VFS_MAX_PATH_LENGTH);
   while (1) {
-    const int len = vfs_getdents(dev_fd, (dirent_t*)(&buf[0]), kBufSize);
+    const int len = vfs_getdents(dev_fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
       klogf("warning: unable to read /dev: %s\n", errorname(-len));
       vfs_close(dev_fd);
@@ -214,7 +216,7 @@ void dev_init_fs() {
 
     int buf_offset = 0;
     while (buf_offset < len) {
-      dirent_t* ent = (dirent_t*)(buf + buf_offset);
+      kdirent_t* ent = (kdirent_t*)(buf + buf_offset);
       buf_offset += ent->d_reclen;
 
       if (kstrcmp(ent->d_name, ".") == 0 ||

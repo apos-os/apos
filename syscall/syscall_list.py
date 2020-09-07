@@ -174,7 +174,7 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'int', [
     'const char*:path:s',
     'int:flags:u',
-    'mode_t:mode:u'],
+    'apos_mode_t:mode:u'],
     newlib_defined=True)
 
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
@@ -191,14 +191,14 @@ AddSyscall('dup2', 46, 'vfs_dup2', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('mkdir', 3, 'vfs_mkdir', 'vfs/vfs.h', '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'mode_t:mode:u',
+    'apos_mode_t:mode:u',
     ])
 
 AddSyscall('mknod', 4, 'vfs_mknod', 'vfs/vfs.h',
     '<sys/stat.h>',
     'int', [
     'const char*:path:s',
-    'mode_t:mode:u',
+    'apos_mode_t:mode:u',
     'apos_dev_t:dev:u'])
 
 AddSyscall('rmdir', 5, 'vfs_rmdir', 'vfs/vfs.h', '<unistd.h>',
@@ -234,7 +234,7 @@ AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
 AddSyscall('getdents', 10, 'vfs_getdents', 'vfs/vfs.h', '<dirent.h>',
     'int', [
     'int:fd:u',
-    'dirent%(s32)s_t*:buf:bw:count',
+    'kdirent%(s32)s_t*:buf:bw:count',
     'int:count:u'],
     needs_32bit_conv=True)
 
@@ -263,9 +263,9 @@ AddSyscall('fstat', 37, 'vfs_fstat', 'vfs/vfs.h', '<sys/stat.h>',
     needs_32bit_conv=True, newlib_defined=True)
 
 AddSyscall('lseek', 38, 'vfs_seek', 'vfs/vfs.h', '<unistd.h>',
-    'off_t', [
+    'apos_off_t', [
     'int:fd:u',
-    'off_t:offset:u',
+    'apos_off_t:offset:u',
     'int:whence:u'],
     newlib_defined=True)
 
@@ -277,25 +277,25 @@ AddSyscall('access', 47, 'vfs_access', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'int:amode:u'])
 
 AddSyscall('chown', 48, 'vfs_chown', 'vfs/vfs.h', '<unistd.h>',
-    'int', ['const char*:path:s', 'uid_t:owner:u', 'gid_t:group:u'])
+    'int', ['const char*:path:s', 'apos_uid_t:owner:u', 'apos_gid_t:group:u'])
 
 AddSyscall('fchown', 49, 'vfs_fchown', 'vfs/vfs.h', '<unistd.h>',
-    'int', ['int:fd:u', 'uid_t:owner:u', 'gid_t:group:u'])
+    'int', ['int:fd:u', 'apos_uid_t:owner:u', 'apos_gid_t:group:u'])
 
 AddSyscall('lchown', 50, 'vfs_lchown', 'vfs/vfs.h', '<unistd.h>',
-    'int', ['const char*:path:s', 'uid_t:owner:u', 'gid_t:group:u'])
+    'int', ['const char*:path:s', 'apos_uid_t:owner:u', 'apos_gid_t:group:u'])
 
 AddSyscall('chmod', 70, 'vfs_chmod', 'vfs/vfs.h', '<sys/stat.h>',
-    'int', ['const char*:path:s', 'mode_t:mode:u'])
+    'int', ['const char*:path:s', 'apos_mode_t:mode:u'])
 
 AddSyscall('fchmod', 71, 'vfs_fchmod', 'vfs/vfs.h', '<sys/stat.h>',
-    'int', ['int:fd:u', 'mode_t:mode:u'])
+    'int', ['int:fd:u', 'apos_mode_t:mode:u'])
 
 AddSyscall('fork', 13, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
-    'pid_t', [], newlib_defined=True)
+    'apos_pid_t', [], newlib_defined=True)
 
 AddSyscall('vfork', 74, 'proc_fork_syscall', 'syscall/fork.h', '<unistd.h>',
-    'pid_t', [])
+    'apos_pid_t', [])
 
 AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     '',
@@ -305,11 +305,11 @@ AddSyscall('exit', 14, 'proc_exit_wrapper', 'syscall/wrappers.h',
     can_fail=False)
 
 AddSyscall('wait', 41, 'proc_wait', 'proc/wait.h', '<sys/wait.h>',
-    'pid_t', ['int*:exit_status:bw?:sizeof(int)'],
+    'apos_pid_t', ['int*:exit_status:bw?:sizeof(int)'],
     newlib_defined=True)
 
 AddSyscall('waitpid', 62, 'proc_waitpid', 'proc/wait.h', '<sys/wait.h>',
-    'pid_t', ['pid_t:child:u', 'int*:exit_status:bw?:sizeof(int)',
+    'apos_pid_t', ['apos_pid_t:child:u', 'int*:exit_status:bw?:sizeof(int)',
       'int:options:u'])
 
 # The execve wrapper manually checks its arguments so that it can clean up the
@@ -326,12 +326,12 @@ AddSyscall('execve', 15, 'execve_wrapper', 'syscall/execve_wrapper.h',
 
 AddSyscall('getpid', 16, 'getpid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'pid_t', [], can_fail=False,
+    'apos_pid_t', [], can_fail=False,
     newlib_defined=True)
 
 AddSyscall('getppid', 17, 'getppid_wrapper', 'syscall/wrappers.h',
     '<unistd.h>',
-    'pid_t', [], can_fail=False)
+    'apos_pid_t', [], can_fail=False)
 
 AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -340,7 +340,7 @@ AddSyscall('isatty', 18, 'vfs_isatty', 'vfs/vfs.h', '<unistd.h>',
 
 AddSyscall('kill', 19, 'proc_kill', 'proc/signal/signal.h', '<signal.h>',
     'int', [
-    'pid_t:pid:u',
+    'apos_pid_t:pid:u',
     'int:sig:u'],
     newlib_defined=True)
 
@@ -348,27 +348,27 @@ AddSyscall('sigaction', 20, 'proc_sigaction', 'proc/signal/signal.h',
     '<signal.h>',
     'int', [
     'int:signum:u',
-    'const struct sigaction%(s32)s*:act:br?:sizeof(struct sigaction%(s32)s)',
-    'struct sigaction%(s32)s*:oldact:bw?:sizeof(struct sigaction%(s32)s)'],
+    'const struct ksigaction%(s32)s*:act:br?:sizeof(struct ksigaction%(s32)s)',
+    'struct ksigaction%(s32)s*:oldact:bw?:sizeof(struct ksigaction%(s32)s)'],
     needs_32bit_conv=True)
 
 AddSyscall('sigprocmask', 52, 'proc_sigprocmask', 'proc/signal/signal.h',
     '<signal.h>',
-    'int', ['int:how:u', 'const sigset_t*:set:br?:sizeof(sigset_t)',
-            'sigset_t*:oset:bw?:sizeof(sigset_t)'])
+    'int', ['int:how:u', 'const ksigset_t*:set:br?:sizeof(ksigset_t)',
+            'ksigset_t*:oset:bw?:sizeof(ksigset_t)'])
 
 AddSyscall('sigpending', 53, 'proc_sigpending', 'proc/signal/signal.h',
     '<signal.h>',
-    'int', ['sigset_t*:oset:bw:sizeof(sigset_t)'])
+    'int', ['ksigset_t*:oset:bw:sizeof(ksigset_t)'])
 
 AddSyscall('sigsuspend', 61, 'proc_sigsuspend', 'proc/signal/signal.h',
     '<signal.h>',
-    'int', ['const sigset_t*:sigmask:br:sizeof(sigset_t)'])
+    'int', ['const ksigset_t*:sigmask:br:sizeof(ksigset_t)'])
 
 AddSyscall('sigreturn', 21, 'proc_sigreturn', 'proc/signal/signal.h',
     '',
     'int', [
-    'const sigset_t*:old_mask:br:sizeof(sigset_t)',
+    'const ksigset_t*:old_mask:br:sizeof(ksigset_t)',
     'const user_context_t*:context:br:sizeof(user_context_t)',
     'const syscall_context_t*:syscall_context:br?:sizeof(syscall_context_t)'],
     stubs_to_generate=[])
@@ -380,44 +380,44 @@ AddSyscall('alarm_ms', 22, 'proc_alarm_ms', 'proc/alarm.h',
     can_fail=False)
 
 AddSyscall('setuid', 23, 'setuid', 'proc/user.h', '<unistd.h>',
-    'int', ['uid_t:uid:u'])
+    'int', ['apos_uid_t:uid:u'])
 
 AddSyscall('setgid', 24, 'setgid', 'proc/user.h', '<unistd.h>',
-    'int', ['gid_t:gid:u'])
+    'int', ['apos_gid_t:gid:u'])
 
 AddSyscall('getuid', 25, 'getuid', 'proc/user.h', '<unistd.h>',
-    'uid_t', [], can_fail=False)
+    'apos_uid_t', [], can_fail=False)
 
 AddSyscall('getgid', 26, 'getgid', 'proc/user.h', '<unistd.h>',
-    'gid_t', [], can_fail=False)
+    'apos_gid_t', [], can_fail=False)
 
 AddSyscall('seteuid', 27, 'seteuid', 'proc/user.h', '<unistd.h>',
-    'int', ['uid_t:uid:u'])
+    'int', ['apos_uid_t:uid:u'])
 
 AddSyscall('setegid', 28, 'setegid', 'proc/user.h', '<unistd.h>',
-    'int', ['gid_t:gid:u'])
+    'int', ['apos_gid_t:gid:u'])
 
 AddSyscall('geteuid', 29, 'geteuid', 'proc/user.h', '<unistd.h>',
-    'uid_t', [], can_fail=False)
+    'apos_uid_t', [], can_fail=False)
 
 AddSyscall('getegid', 30, 'getegid', 'proc/user.h', '<unistd.h>',
-    'gid_t', [], can_fail=False)
+    'apos_gid_t', [], can_fail=False)
 
 AddSyscall('setreuid', 31, 'setreuid', 'proc/user.h', '<unistd.h>',
-    'int', ['uid_t:ruid:u', 'uid_t:euid:u'])
+    'int', ['apos_uid_t:ruid:u', 'apos_uid_t:euid:u'])
 
 AddSyscall('setregid', 32, 'setregid', 'proc/user.h', '<unistd.h>',
-    'int', ['gid_t:rgid:u', 'gid_t:egid:u'])
+    'int', ['apos_gid_t:rgid:u', 'apos_gid_t:egid:u'])
 
 AddSyscall('getpgid', 33, 'getpgid', 'proc/group.h', '<unistd.h>',
-    'pid_t', ['pid_t:pid:u'])
+    'apos_pid_t', ['apos_pid_t:pid:u'])
 
 AddSyscall('setpgid', 34, 'setpgid', 'proc/group.h', '<unistd.h>',
-    'int', ['pid_t:pid:u', 'pid_t:pgid:u'])
+    'int', ['apos_pid_t:pid:u', 'apos_pid_t:pgid:u'])
 
 AddSyscall('mmap', 39, 'mmap_wrapper', 'syscall/wrappers.h', '<sys/mman.h>',
         'int', ['void*:addr_inout:brw:sizeof(void*)', 'size_t:length:u',
-                 'int:prot:u', 'int:flags:u', 'int:fd:u', 'off_t:offset:u'],
+                 'int:prot:u', 'int:flags:u', 'int:fd:u', 'apos_off_t:offset:u'],
         stubs_to_generate=['L1'], needs_32bit_conv=True)
 
 AddSyscall('munmap', 40, 'do_munmap', 'memory/mmap.h', '<sys/mman.h>',
@@ -440,22 +440,22 @@ AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
     'int', ['int*:fildes:bw:sizeof(int[2])'])
 
 AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
-    'mode_t', ['mode_t:cmask:u'])
+    'apos_mode_t', ['apos_mode_t:cmask:u'])
 
 AddSyscall('setsid', 56, 'proc_setsid', 'proc/session.h', '<unistd.h>',
-    'pid_t', [])
+    'apos_pid_t', [])
 
 AddSyscall('getsid', 57, 'proc_getsid', 'proc/session.h', '<unistd.h>',
-    'pid_t', ['pid_t:pid:u'])
+    'apos_pid_t', ['apos_pid_t:pid:u'])
 
 AddSyscall('tcgetpgrp', 58, 'proc_tcgetpgrp', 'proc/tcgroup.h', '<unistd.h>',
-    'pid_t', ['int:fd:u'])
+    'apos_pid_t', ['int:fd:u'])
 
 AddSyscall('tcsetpgrp', 59, 'proc_tcsetpgrp', 'proc/tcgroup.h', '<unistd.h>',
-    'int', ['int:fd:u', 'pid_t:pgid:u'])
+    'int', ['int:fd:u', 'apos_pid_t:pgid:u'])
 
 AddSyscall('tcgetsid', 60, 'proc_tcgetsid', 'proc/tcgroup.h', '<termios.h>',
-    'pid_t', ['int:fd:u'])
+    'apos_pid_t', ['int:fd:u'])
 
 AddSyscall('tcdrain', 63, 'tty_tcdrain', 'dev/termios.h', '<termios.h>',
     'int', ['int:fd:u'])
@@ -464,31 +464,32 @@ AddSyscall('tcflush', 64, 'tty_tcflush', 'dev/termios.h', '<termios.h>',
     'int', ['int:fd:u', 'int:action:u'])
 
 AddSyscall('tcgetattr', 65, 'tty_tcgetattr', 'dev/termios.h', '<termios.h>',
-    'int', ['int:fd:u', 'struct termios*:t:bw:sizeof(struct termios)'])
+    'int', ['int:fd:u', 'struct ktermios*:t:bw:sizeof(struct ktermios)'])
 
 AddSyscall('tcsetattr', 66, 'tty_tcsetattr', 'dev/termios.h', '<termios.h>',
     'int', ['int:fd:u', 'int:optional_actions:u',
-      'const struct termios*:t:br:sizeof(struct termios)'])
+      'const struct ktermios*:t:br:sizeof(struct ktermios)'])
 
 AddSyscall('ftruncate', 67, 'vfs_ftruncate', 'vfs/vfs.h', '<unistd.h>',
-    'int', ['int:fd:u', 'off_t:length:u'])
+    'int', ['int:fd:u', 'apos_off_t:length:u'])
 
 AddSyscall('truncate', 68, 'vfs_truncate', 'vfs/vfs.h', '<unistd.h>',
-    'int', ['const char*:path:s', 'off_t:length:u'])
+    'int', ['const char*:path:s', 'apos_off_t:length:u'])
 
 AddSyscall('poll', 69, 'vfs_poll', 'vfs/poll.h', '<poll.h>',
-    'int', ['struct pollfd*:fds:brw:sizeof(struct pollfd) * nfds',
-            'nfds_t:nfds:u', 'int:timeout:u'])
+    'int', ['struct apos_pollfd*:fds:brw:sizeof(struct apos_pollfd) * nfds',
+            'apos_nfds_t:nfds:u', 'int:timeout:u'])
 
 AddSyscall('getrlimit', 75, 'proc_getrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',
-    ['int:resource:u', 'struct rlimit%(s32)s*:lim:bw:sizeof(struct rlimit)'],
+    ['int:resource:u',
+      'struct apos_rlimit%(s32)s*:lim:bw:sizeof(struct apos_rlimit)'],
     needs_32bit_conv=True)
 
 AddSyscall('setrlimit', 76, 'proc_setrlimit', 'proc/limit.h',
     '<sys/resource.h>', 'int',
     ['int:resource:u',
-      'const struct rlimit%(s32)s*:lim:br:sizeof(struct rlimit)'],
+      'const struct apos_rlimit%(s32)s*:lim:br:sizeof(struct apos_rlimit)'],
     needs_32bit_conv=True)
 
 AddSyscall('socket', 77, 'net_socket', 'net/socket/socket.h',
