@@ -184,7 +184,7 @@ static void multi_child_test(void) {
 static void make_separate_mapping(void) {
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
-                        MAP_FIXED | MAP_ANONYMOUS | MAP_SHARED,
+                        KMAP_FIXED | KMAP_ANONYMOUS | KMAP_SHARED,
                         -1, 0, &addr));
 }
 
@@ -231,10 +231,10 @@ static void mapping_test(void) {
   // Create a shared and a private mapping.
   void* addr;
   KEXPECT_EQ(0, do_mmap((void*)SHARED_MAP_BASE, MAP_LENGTH, PROT_ALL,
-                        MAP_FIXED | MAP_ANONYMOUS | MAP_SHARED,
+                        KMAP_FIXED | KMAP_ANONYMOUS | KMAP_SHARED,
                         -1, 0, &addr));
   KEXPECT_EQ(0, do_mmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
-                        MAP_FIXED | MAP_ANONYMOUS | MAP_PRIVATE,
+                        KMAP_FIXED | KMAP_ANONYMOUS | KMAP_PRIVATE,
                         -1, 0, &addr));
 
   // Write some values into the mappings.

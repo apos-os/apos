@@ -140,21 +140,21 @@ static void mmap_invalid_args(void) {
   // Not page-aligned length, and offset.
   KTEST_BEGIN("mmap(): unaligned args test");
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, 0x15, PROT_ALL,
-                              MAP_SHARED, fd, 0, &addr_out));
+                              KMAP_SHARED, fd, 0, &addr_out));
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED, fd, 0x15, &addr_out));
+                              KMAP_SHARED, fd, 0x15, &addr_out));
 
   KTEST_BEGIN("mmap(): length == 0 test");
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, 0, PROT_ALL,
-                              MAP_SHARED, fd, 0, &addr_out));
+                              KMAP_SHARED, fd, 0, &addr_out));
 
   KTEST_BEGIN("mmap(): invalid fd test");
   KEXPECT_EQ(-EBADF, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                             MAP_SHARED, -5, 0, &addr_out));
+                             KMAP_SHARED, -5, 0, &addr_out));
   KEXPECT_EQ(-EBADF, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                             MAP_SHARED, fd + 1, 0, &addr_out));
+                             KMAP_SHARED, fd + 1, 0, &addr_out));
   KEXPECT_EQ(-EBADF, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                             MAP_SHARED, 532333, 0, &addr_out));
+                             KMAP_SHARED, 532333, 0, &addr_out));
 
   KTEST_BEGIN("mmap(): invalid flags test");
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
@@ -164,7 +164,7 @@ static void mmap_invalid_args(void) {
 
   KTEST_BEGIN("mmap(): MAP_SHARED and MAP_PRIVATE test");
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED | MAP_PRIVATE, fd, 0, &addr_out));
+                              KMAP_SHARED | KMAP_PRIVATE, fd, 0, &addr_out));
 
   EXPECT_MMAP(0, (emmap_t[]){});
 
@@ -187,10 +187,10 @@ static void mmap_basic(void) {
   const int fdB = vfs_open(kFileB, VFS_O_RDWR);
   void* addrA = 0x0, *addrB = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA));
+                        KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdB, 0, &addrB));
+                        KMAP_SHARED, fdB, 0, &addrB));
   KEXPECT_NE((void*)0x0, addrB);
 
   EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, fdA}, {0x4000, 0x3000, fdB}});
@@ -219,7 +219,7 @@ static void map_offset_test(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, (kTestFilePages - 1) * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, PAGE_SIZE, &addrA));
+                        KMAP_SHARED, fdA, PAGE_SIZE, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
 
   KEXPECT_EQ('B', bufcmp(addrA, 'B', PAGE_SIZE));
@@ -237,7 +237,7 @@ static void partial_unmap_test(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA));
+                        KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
 
   // Unmap the middle page of the fileA mapping.
@@ -260,7 +260,7 @@ static void run_hole_test(int page_to_unmap, char expected[]) {
   const int fdB = vfs_open(kFileB, VFS_O_RDWR);
   void* addrA = 0x0, *addrB = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA));
+                        KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
 
   // Unmap one page of the fileA mapping.
@@ -269,7 +269,7 @@ static void run_hole_test(int page_to_unmap, char expected[]) {
 
   // Map the last page of fileB into the hole.
   KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdB, 2 * PAGE_SIZE, &addrB));
+                        KMAP_SHARED, fdB, 2 * PAGE_SIZE, &addrB));
   KEXPECT_EQ((char*)addrA + (page_to_unmap * PAGE_SIZE), addrB);
 
   // Check the contents.
@@ -312,7 +312,7 @@ static void mmap_write_test(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA));
+                        KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
 
   // Write to the middle page.
@@ -338,9 +338,9 @@ static void mmap_multi_map_test(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA1 = 0x0, *addrA2 = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA1));
+                        KMAP_SHARED, fdA, 0, &addrA1));
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA2));
+                        KMAP_SHARED, fdA, 0, &addrA2));
   KEXPECT_NE((void*)0x0, addrA1);
   KEXPECT_NE((void*)0x0, addrA2);
   KEXPECT_NE(addrA1, addrA2);
@@ -374,21 +374,21 @@ static void map_file_mode_test(void) {
   void* addrA = 0x0;
   KEXPECT_EQ(-EACCES,
              do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                     MAP_SHARED, fdA, 0, &addrA));
+                     KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_EQ(0,
-             do_mmap(0x0, PAGE_SIZE, PROT_READ | PROT_EXEC,
-                     MAP_SHARED, fdA, 0, &addrA));
+             do_mmap(0x0, PAGE_SIZE, KPROT_READ | KPROT_EXEC,
+                     KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
   vfs_close(fdA);
 
   fdA = vfs_open(kFileA, VFS_O_WRONLY);
   KEXPECT_EQ(-EACCES,
              do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                     MAP_SHARED, fdA, 0, &addrA));
+                     KMAP_SHARED, fdA, 0, &addrA));
 
   KEXPECT_EQ(-EACCES,
-             do_mmap(0x0, PAGE_SIZE, PROT_READ | PROT_EXEC,
-                     MAP_SHARED, fdA, 0, &addrA));
+             do_mmap(0x0, PAGE_SIZE, KPROT_READ | KPROT_EXEC,
+                     KMAP_SHARED, fdA, 0, &addrA));
   vfs_close(fdA);
 
   // For a private mapping, we should be able to create a R/W mapping even if
@@ -397,7 +397,7 @@ static void map_file_mode_test(void) {
   fdA = vfs_open(kFileA, VFS_O_RDONLY);
   KEXPECT_EQ(0,
              do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                     MAP_PRIVATE, fdA, 0, &addrA));
+                     KMAP_PRIVATE, fdA, 0, &addrA));
   KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
 
   vfs_close(fdA);
@@ -412,12 +412,12 @@ static void addr_hint_test(void) {
   const int fdB = vfs_open(kFileB, VFS_O_RDWR);
   void* addrA = 0x0, *addrB = 0x0;
   KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA));
+                        KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_EQ((void*)0x5000, addrA);
 
   // Test that the hint won't cause an existing mapping to be overwritten.
   KEXPECT_EQ(0, do_mmap((void*)0x6000, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdB, 0, &addrB));
+                        KMAP_SHARED, fdB, 0, &addrB));
   KEXPECT_EQ((void*)0x8000, addrB);
 
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
@@ -434,7 +434,7 @@ static void unaligned_addr_hint_test(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap((void*)0x5432, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA));
+                        KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_EQ((void*)0x5000, addrA);
 
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
@@ -451,18 +451,18 @@ static void map_fixed_test(void) {
   KTEST_BEGIN("mmap(): unaligned MAP_FIXED test");
   KEXPECT_EQ(-EINVAL,
              do_mmap((void*)0x5432, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                     MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+                     KMAP_SHARED | KMAP_FIXED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): MAP_FIXED test");
   KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+                        KMAP_SHARED | KMAP_FIXED, fdA, 0, &addrA));
   KEXPECT_EQ((void*)0x5000, addrA);
 
   EXPECT_MMAP(1, (emmap_t[]){{0x5000, 0x3000, fdA}});
 
   KTEST_BEGIN("mmap(): MAP_FIXED overlapping existing mapping test");
   KEXPECT_EQ(0, do_mmap((void*)0x7000, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_FIXED, fdB, 0, &addrB));
+                        KMAP_SHARED | KMAP_FIXED, fdB, 0, &addrB));
   KEXPECT_EQ((void*)0x7000, addrB);
 
   EXPECT_MMAP(2, (emmap_t[]){{0x5000, 0x2000, fdA}, {0x7000, 0x3000, fdB}});
@@ -482,32 +482,32 @@ static void map_unmap_kernel_memory(void) {
   KTEST_BEGIN("mmap(): map in kernel memory (partial/hint)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - PAGE_SIZE),
-          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED, fdA, 0, &addrA));
+          10 * PAGE_SIZE, PROT_ALL, KMAP_SHARED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): map in kernel memory (partial/fixed)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - PAGE_SIZE),
-          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+          10 * PAGE_SIZE, PROT_ALL, KMAP_SHARED | KMAP_FIXED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): map in kernel memory (total/hint)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) + 5 * PAGE_SIZE),
-          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED, fdA, 0, &addrA));
+          10 * PAGE_SIZE, PROT_ALL, KMAP_SHARED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): map in kernel memory (total/fixed)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) + 5 * PAGE_SIZE),
-          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+          10 * PAGE_SIZE, PROT_ALL, KMAP_SHARED | KMAP_FIXED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): map in kernel memory (overflow/hint)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)addr2page(MEM_LAST_MAPPABLE_ADDR),
-          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED, fdA, 0, &addrA));
+          10 * PAGE_SIZE, PROT_ALL, KMAP_SHARED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): map in kernel memory (overflow/fixed)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)addr2page(MEM_LAST_MAPPABLE_ADDR),
-          10 * PAGE_SIZE, PROT_ALL, MAP_SHARED | MAP_FIXED, fdA, 0, &addrA));
+          10 * PAGE_SIZE, PROT_ALL, KMAP_SHARED | KMAP_FIXED, fdA, 0, &addrA));
 
   KTEST_BEGIN("mmap(): unmap in kernel memory (partial)");
   KEXPECT_EQ(-EINVAL, do_munmap(
@@ -538,10 +538,10 @@ static void mmap_private_basic(void) {
   const int fdB = vfs_open(kFileB, VFS_O_RDWR);
   void* addrA = 0x0, *addrB = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_PRIVATE, fdA, 0, &addrA));
+                        KMAP_PRIVATE, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_PRIVATE, fdB, 0, &addrB));
+                        KMAP_PRIVATE, fdB, 0, &addrB));
   KEXPECT_NE((void*)0x0, addrB);
 
   EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, -1}, {0x4000, 0x3000, -1}});
@@ -570,10 +570,10 @@ static void mmap_private_writeback(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA1 = 0x0, *addrA2 = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_PRIVATE, fdA, 0, &addrA1));
+                        KMAP_PRIVATE, fdA, 0, &addrA1));
   KEXPECT_NE((void*)0x0, addrA1);
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_PRIVATE, fdA, 0, &addrA2));
+                        KMAP_PRIVATE, fdA, 0, &addrA2));
   KEXPECT_NE((void*)0x0, addrA2);
 
   EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, -1}, {0x4000, 0x3000, -1}});
@@ -625,10 +625,10 @@ static void mmap_copy_on_write(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA1 = 0x0, *addrA2 = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_PRIVATE, fdA, 0, &addrA1));
+                        KMAP_PRIVATE, fdA, 0, &addrA1));
   KEXPECT_NE((void*)0x0, addrA1);
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED, fdA, 0, &addrA2));
+                        KMAP_SHARED, fdA, 0, &addrA2));
   KEXPECT_NE((void*)0x0, addrA2);
 
   // Write to the private mapping, verify it's not in the shared mapping.
@@ -666,10 +666,10 @@ static void mmap_anonymous(void) {
 
   void* addrA = 0x0, *addrB = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &addrA));
+                        KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &addrB));
+                        KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &addrB));
   KEXPECT_NE((void*)0x0, addrB);
 
   EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, -1}, {0x4000, 0x3000, -1}});
@@ -701,7 +701,7 @@ static void mmap_first_and_last_page(void) {
 
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap((void*)MEM_FIRST_MAPPABLE_ADDR, PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED, -1, 0, &addrA));
+                        KMAP_SHARED | KMAP_ANONYMOUS | KMAP_FIXED, -1, 0, &addrA));
   KEXPECT_EQ((void*)MEM_FIRST_MAPPABLE_ADDR, addrA);
   EXPECT_MMAP(1, (emmap_t[]){{MEM_FIRST_MAPPABLE_ADDR, 0x1000, -1}});
   KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
@@ -711,7 +711,7 @@ static void mmap_first_and_last_page(void) {
   addrA = 0x0;
   KEXPECT_EQ(0, do_mmap((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR),
                         PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS,
+                        KMAP_SHARED | KMAP_ANONYMOUS,
                         -1, 0, &addrA));
   KEXPECT_EQ((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR), addrA);
   EXPECT_MMAP(1, (emmap_t[])
@@ -723,7 +723,7 @@ static void mmap_first_and_last_page(void) {
   addrA = 0x0;
   KEXPECT_EQ(0, do_mmap((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR),
                         PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS | MAP_FIXED,
+                        KMAP_SHARED | KMAP_ANONYMOUS | KMAP_FIXED,
                         -1, 0, &addrA));
   KEXPECT_EQ((void*)addr2page(MEM_LAST_USER_MAPPABLE_ADDR), addrA);
   EXPECT_MMAP(1, (emmap_t[])

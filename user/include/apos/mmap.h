@@ -16,17 +16,29 @@
 #define APOO_USER_MMAP_H
 
 // Memory protection flags.
-#define PROT_NONE 0x00
-#define PROT_READ 0x01
-#define PROT_WRITE 0x02
-#define PROT_EXEC 0x04
+#define KPROT_NONE 0x00
+#define KPROT_READ 0x01
+#define KPROT_WRITE 0x02
+#define KPROT_EXEC 0x04
 
 // Exactly one of MAP_SHARED and MAP_PRIVATE must be given.
-#define MAP_SHARED 0x01
-#define MAP_PRIVATE 0x02
+#define KMAP_SHARED 0x01
+#define KMAP_PRIVATE 0x02
 
 // Other flags.
-#define MAP_FIXED 0x04
-#define MAP_ANONYMOUS 0x08
+#define KMAP_FIXED 0x04
+#define KMAP_ANONYMOUS 0x08
+
+// Export POSIX names for user code.
+#if !__APOS_BUILDING_KERNEL__
+# define PROT_NONE KPROT_NONE
+# define PROT_READ KPROT_READ
+# define PROT_WRITE KPROT_WRITE
+# define PROT_EXEC KPROT_EXEC
+# define MAP_SHARED KMAP_SHARED
+# define MAP_PRIVATE KMAP_PRIVATE
+# define MAP_FIXED KMAP_FIXED
+# define MAP_ANONYMOUS KMAP_ANONYMOUS
+#endif
 
 #endif

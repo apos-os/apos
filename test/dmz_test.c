@@ -40,7 +40,7 @@ static void dmz_buffer_basic(void) {
   KTEST_BEGIN("syscall_verify_buffer() basic test");
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
-                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
   void* const addrAEnd = (void*)((addr_t)addrA + kRegionSize);
 
   KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 0, 0));
@@ -83,8 +83,8 @@ static void dmz_buffer_read_only(void) {
 
   KTEST_BEGIN("syscall_verify_buffer() read-only test");
   void* addrA = 0x0;
-  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_READ | PROT_EXEC,
-                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, KPROT_READ | KPROT_EXEC,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
 
   KEXPECT_EQ(0, syscall_verify_buffer(addrA, kRegionSize, 0, 0));
   KEXPECT_EQ(-EFAULT, syscall_verify_buffer(addrA, kRegionSize, 1, 0));
@@ -101,7 +101,7 @@ static void dmz_string_basic(void) {
   KTEST_BEGIN("syscall_verify_string() basic test");
   void* addrA = 0x0, *addrB = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
-                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
 
   kstrcpy(addrA, "test");
   KEXPECT_EQ(5, syscall_verify_string(addrA));
@@ -122,7 +122,7 @@ static void dmz_string_basic(void) {
 
   KTEST_BEGIN("syscall_verify_string() cross-region region test");
   KEXPECT_EQ(0, do_mmap(addrA + kRegionSize, kRegionSize, PROT_ALL,
-                        MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE | KMAP_FIXED,
                         -1, 0, &addrB));
   kmemset(addrA, 'x', kRegionSize);
   kmemset(addrB, 'x', kRegionSize);
@@ -150,7 +150,7 @@ static void dmz_table_basic(void) {
   KTEST_BEGIN("syscall_verify_ptr_table() basic test");
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
-                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
 
   ((addr_t*)addrA)[0] = 1;
   ((addr_t*)addrA)[1] = 2;
@@ -181,7 +181,7 @@ static void dmz_table_different_ptr_size(void) {
   KTEST_BEGIN("syscall_verify_ptr_table() basic test [32-bit]");
   void* addrA = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
-                        MAP_ANONYMOUS | MAP_PRIVATE, -1, 0, &addrA));
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
 
   ((addr32_t*)addrA)[0] = 1;
   ((addr32_t*)addrA)[1] = 2;

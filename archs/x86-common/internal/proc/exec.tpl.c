@@ -87,8 +87,8 @@ static int PREP_FUNC(const load_binary_t* bin, char* const argv[],
   // Create the stack.
   void* stack_addr_out;
   int result = do_mmap((void*)STK_BOTTOM, STK_SIZE,
-                       PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS,
+                       KPROT_READ | KPROT_WRITE,
+                       KMAP_PRIVATE | KMAP_FIXED | KMAP_ANONYMOUS,
                        -1, 0, &stack_addr_out);
   if (result) {
     KLOG(INFO, "exec error: couldn't create mapping for kernel stack: %s\n",

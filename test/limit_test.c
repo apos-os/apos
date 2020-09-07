@@ -438,24 +438,24 @@ static void limit_as_test(void* arg) {
 
   void* mappings[4];
   KEXPECT_EQ(0, do_mmap(0x0, 5 * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[0]));
+                        KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[0]));
   KEXPECT_EQ(0, do_mmap(0x0, 3 * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[1]));
+                        KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[1]));
   KEXPECT_EQ(-ENOMEM, do_mmap(0x0, 3 * PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[2]));
+                              KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[2]));
   KEXPECT_EQ(0, do_mmap(0x0, 2 * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[2]));
+                        KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[2]));
   KEXPECT_EQ(-ENOMEM, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[2]));
+                              KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[2]));
 
   KEXPECT_EQ(
       0, do_munmap((void*)((addr_t)mappings[0] + PAGE_SIZE), 2 * PAGE_SIZE));
   KEXPECT_EQ(-ENOMEM, do_mmap(0x0, 3 * PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[3]));
+                              KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[3]));
   KEXPECT_EQ(0, do_mmap(0x0, 2 * PAGE_SIZE, PROT_ALL,
-                        MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[3]));
+                        KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[3]));
   KEXPECT_EQ(-ENOMEM, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
-                              MAP_SHARED | MAP_ANONYMOUS, -1, 0, &mappings[3]));
+                              KMAP_SHARED | KMAP_ANONYMOUS, -1, 0, &mappings[3]));
 
   KEXPECT_EQ(0, do_munmap(mappings[0], PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap((void*)((addr_t)mappings[0] + 3 * PAGE_SIZE),

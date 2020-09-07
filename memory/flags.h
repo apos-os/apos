@@ -19,10 +19,10 @@
 #include "user/include/apos/mmap.h"
 
 // Protection flags.  Not all are supported on all platforms.
-#define MEM_PROT_NONE PROT_NONE
-#define MEM_PROT_READ PROT_READ
-#define MEM_PROT_WRITE PROT_WRITE
-#define MEM_PROT_EXEC PROT_EXEC
+#define MEM_PROT_NONE KPROT_NONE
+#define MEM_PROT_READ KPROT_READ
+#define MEM_PROT_WRITE KPROT_WRITE
+#define MEM_PROT_EXEC KPROT_EXEC
 #define MEM_PROT_ALL (MEM_PROT_READ | MEM_PROT_WRITE | MEM_PROT_EXEC)
 
 // TODO(aoates): get rid of this one.

@@ -563,7 +563,7 @@ static void unmount_busy_test(void) {
   fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
 
   void* map_addr = 0x0;
-  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, PROT_EXEC | PROT_READ, MAP_PRIVATE,
+  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, KPROT_EXEC | KPROT_READ, KMAP_PRIVATE,
                         fd, 0, &map_addr));
   KEXPECT_EQ(0, vfs_close(fd));
 
@@ -915,10 +915,10 @@ static void mmap_same_vnode_test(void) {
 
   void* addr1_out = NULL;
   KEXPECT_EQ(
-      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, MAP_PRIVATE, fd1, 0, &addr1_out));
+      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, KMAP_PRIVATE, fd1, 0, &addr1_out));
   void* addr2_out = NULL;
   KEXPECT_EQ(
-      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, MAP_PRIVATE, fd2, 0, &addr2_out));
+      0, do_mmap(NULL, PAGE_SIZE, PROT_ALL, KMAP_PRIVATE, fd2, 0, &addr2_out));
   KEXPECT_STREQ("a", (char*)addr1_out);
   KEXPECT_STREQ("b", (char*)addr2_out);
   KEXPECT_EQ(0, do_munmap(addr1_out, PAGE_SIZE));

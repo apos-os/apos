@@ -96,8 +96,8 @@ int load_map_binary(int fd, const load_binary_t* binary) {
       KASSERT(map_regions[i].vaddr % PAGE_SIZE == 0);
       KASSERT(map_regions[i].file_offset % PAGE_SIZE == 0);
 
-      int flags = MAP_PRIVATE | MAP_FIXED;
-      if (map_regions[i].file_len == 0) flags |= MAP_ANONYMOUS;
+      int flags = KMAP_PRIVATE | KMAP_FIXED;
+      if (map_regions[i].file_len == 0) flags |= KMAP_ANONYMOUS;
 
       // Round up the mem_len to be an even page multiple.
       // TODO(aoates): mmap should support non-even page lengths, to match the
@@ -107,7 +107,7 @@ int load_map_binary(int fd, const load_binary_t* binary) {
       void* addr_out = 0x0;
       int result = do_mmap((void*)map_regions[i].vaddr, mem_len,
                            map_regions[i].prot, flags,
-                           (flags & MAP_ANONYMOUS) ? -1 : fd,
+                           (flags & KMAP_ANONYMOUS) ? -1 : fd,
                            map_regions[i].file_offset, &addr_out);
       KASSERT(result < 0 || addr_out == (void*)map_regions[i].vaddr);
       if (result < 0) {

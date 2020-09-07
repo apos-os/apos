@@ -134,14 +134,14 @@ static int unmap_area(vm_area_t* area, addr_t unmap_start, addr_t unmap_end) {
 
 int do_mmap(void* addr, addr_t length, int prot, int flags,
             int fd, addr_t offset, void** addr_out) {
-  if ((!(flags & MAP_PRIVATE) && !(flags & MAP_SHARED)) ||
-      ((flags & MAP_PRIVATE) && (flags & MAP_SHARED))) {
+  if ((!(flags & KMAP_PRIVATE) && !(flags & KMAP_SHARED)) ||
+      ((flags & KMAP_PRIVATE) && (flags & KMAP_SHARED))) {
     return -EINVAL;
   }
   if (length == 0 || length % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0) {
     return -EINVAL;
   }
-  if (flags & ~(MAP_SHARED | MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS)) {
+  if (flags & ~(KMAP_SHARED | KMAP_PRIVATE | KMAP_FIXED | KMAP_ANONYMOUS)) {
     return -EINVAL;
   }
 
@@ -168,7 +168,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   // Find an appropriate address.
   addr_t hole_addr = 0x0;
-  if (flags & MAP_FIXED) {
+  if (flags & KMAP_FIXED) {
     if ((addr_t)addr % PAGE_SIZE != 0) {
       return -EINVAL;
     }
@@ -192,7 +192,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   // Get the underlying memobj.
   memobj_t* memobj = 0x0;
   int result;
-  if (flags & MAP_ANONYMOUS) {
+  if (flags & KMAP_ANONYMOUS) {
     // Note that it doesn't matter if it's private or shared.
     // TODO(aoates): allow anonymous mappings to share read-only pages of
     // zeroes, and only create new ones on writes.
@@ -201,18 +201,18 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   } else {
     kmode_t fd_mode = 0;
     // If the mapping is private, we only need read access to the file.
-    if (flags & MAP_PRIVATE) {
+    if (flags & KMAP_PRIVATE) {
       fd_mode = VFS_O_RDONLY;
     } else {
-      if ((prot & PROT_READ) && (prot & PROT_WRITE)) fd_mode = VFS_O_RDWR;
-      else if (prot & PROT_READ) fd_mode = VFS_O_RDONLY;
-      else if (prot & PROT_WRITE) fd_mode = VFS_O_WRONLY;
+      if ((prot & KPROT_READ) && (prot & KPROT_WRITE)) fd_mode = VFS_O_RDWR;
+      else if (prot & KPROT_READ) fd_mode = VFS_O_RDONLY;
+      else if (prot & KPROT_WRITE) fd_mode = VFS_O_WRONLY;
     }
     result = vfs_get_memobj(fd, fd_mode, &memobj);
     if (result) return result;
 
     // For private mappings, create a shadow object.
-    if (flags & MAP_PRIVATE) {
+    if (flags & KMAP_PRIVATE) {
       memobj_t* shadow_obj = memobj_create_shadow(memobj);
       memobj->ops->unref(memobj);  // Don't need the parent.
       memobj = shadow_obj;
@@ -228,7 +228,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
   area->memobj = memobj;
   area->allow_allocation = true;
-  area->is_private = (flags & MAP_PRIVATE);
+  area->is_private = (flags & KMAP_PRIVATE);
   area->vm_base = hole_addr;
   area->vm_length = length;
   area->memobj_base = offset;
