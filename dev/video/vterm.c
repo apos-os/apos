@@ -54,7 +54,7 @@ struct vterm {
   char_sink_t sink;
   void* sink_arg;
 
-  kspinlock_t lock;
+  kspinlock_intsafe_t lock;
 };
 
 __attribute__((always_inline))
@@ -150,7 +150,7 @@ void vterm_set_sink(vterm_t* t, char_sink_t sink, void* sink_arg) {
 }
 
 static int move_cursor_y(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   if (seq->num_codes > 1) return ANSI_INVALID;
   int offset = (seq->num_codes == 0) ? 1 : seq->codes[0];
   if (multiplier > 0)
@@ -162,7 +162,7 @@ static int move_cursor_y(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
 }
 
 static int move_cursor_x(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   if (seq->num_codes > 1) return ANSI_INVALID;
   int offset = (seq->num_codes == 0) ? 1 : seq->codes[0];
   if (multiplier > 0)
@@ -175,7 +175,7 @@ static int move_cursor_x(vterm_t* t, const ansi_seq_t* seq, int multiplier) {
 
 static int move_cursor_y_to_first_col(vterm_t* t, const ansi_seq_t* seq,
                                       int multiplier) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   int result = move_cursor_y(t, seq, multiplier);
   if (result != ANSI_SUCCESS) return result;
   t->cursor_x = 0;
@@ -183,7 +183,7 @@ static int move_cursor_y_to_first_col(vterm_t* t, const ansi_seq_t* seq,
 }
 
 static int set_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   if (seq->num_codes > 2) return ANSI_INVALID;
   int row = (seq->num_codes > 0) ? seq->codes[0] : -1;
   int col = (seq->num_codes > 1) ? seq->codes[1] : -1;
@@ -197,7 +197,7 @@ static int set_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
 }
 
 static int clear_seq(vterm_t* t, const ansi_seq_t* seq) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   if (seq->num_codes > 1) return ANSI_INVALID;
   int mode = (seq->num_codes == 0) ? 0 : seq->codes[0];
 
@@ -243,7 +243,7 @@ static int clear_seq(vterm_t* t, const ansi_seq_t* seq) {
 }
 
 static int save_restore_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   if (seq->num_codes > 0) return ANSI_INVALID;
 
   KASSERT_DBG(seq->final_letter == 's' || seq->final_letter == 'u');
@@ -259,7 +259,7 @@ static int save_restore_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
 }
 
 static int report_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   if (seq->num_codes != 1 || seq->codes[0] != 6) return ANSI_INVALID;
   if (t->sink) {
     char buf[20];
@@ -271,7 +271,7 @@ static int report_cursor_seq(vterm_t* t, const ansi_seq_t* seq) {
 }
 
 static int try_ansi(vterm_t* t) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   ansi_seq_t seq;
   int result = parse_ansi_escape(t->escape_buffer, t->escape_buffer_idx, &seq);
   if (result != ANSI_SUCCESS) return result;
@@ -344,7 +344,7 @@ static int try_ansi(vterm_t* t) {
 
 // Wrap the cursor on the given terminal, scrolling if necessary.
 static void do_wrap(vterm_t* t) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
   KASSERT_DBG(t->cursor_x <= t->vwidth);
   if (t->cursor_x >= t->vwidth) {
     t->cursor_x = 0;
@@ -357,7 +357,7 @@ static void do_wrap(vterm_t* t) {
 }
 
 static void vterm_putc_locked(vterm_t* t, uint8_t c) {
-  KASSERT_DBG(kspin_is_held(&t->lock));
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
 #if ENABLE_TERM_COLOR
   if (c == '\x1b' || t->escape_buffer_idx > 0) {
     t->escape_buffer[t->escape_buffer_idx++] = c;
@@ -403,20 +403,20 @@ static void vterm_putc_locked(vterm_t* t, uint8_t c) {
 }
 
 void vterm_putc(vterm_t* t, uint8_t c) {
-  kspin_lock(&t->lock);
+  kspin_lock_int(&t->lock);
   vterm_putc_locked(t, c);
-  kspin_unlock(&t->lock);
+  kspin_unlock_int(&t->lock);
 }
 
 void vterm_puts(vterm_t* t, const char* s, size_t len) {
-  kspin_lock(&t->lock);
+  kspin_lock_int(&t->lock);
   for (size_t i = 0; i < len; ++i)
     vterm_putc_locked(t, s[i]);
-  kspin_unlock(&t->lock);
+  kspin_unlock_int(&t->lock);
 }
 
 void vterm_clear(vterm_t* t) {
-  kspin_lock(&t->lock);
+  kspin_lock_int(&t->lock);
   video_clear(t->video);
   t->cattr = VGA_DEFAULT_ATTR;
   for (int row = 0; row < t->vheight; row++) {
@@ -430,11 +430,11 @@ void vterm_clear(vterm_t* t) {
   t->cursor_visible = true;
   video_show_cursor(t->video, t->cursor_visible);
   update_video_cursor(t);
-  kspin_unlock(&t->lock);
+  kspin_unlock_int(&t->lock);
 }
 
 void vterm_redraw(vterm_t* t) {
-  kspin_lock(&t->lock);
+  kspin_lock_int(&t->lock);
   for (int row = 0; row < t->vheight; row++) {
     for (int col = 0; col < t->vwidth; col++) {
       video_setc(t->video, row, col, line_text_c(t, row, col),
@@ -443,12 +443,12 @@ void vterm_redraw(vterm_t* t) {
   }
   video_show_cursor(t->video, t->cursor_visible);
   update_video_cursor(t);
-  kspin_unlock(&t->lock);
+  kspin_unlock_int(&t->lock);
 }
 
 void vterm_get_cursor(vterm_t* t, int* x, int* y) {
-  kspin_lock(&t->lock);
+  kspin_lock_int(&t->lock);
   *x = t->cursor_x;
   *y = t->cursor_y;
-  kspin_unlock(&t->lock);
+  kspin_unlock_int(&t->lock);
 }

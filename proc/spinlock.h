@@ -21,47 +21,56 @@
 
 // TODO(aoates): define a proper spinlock when SMP is possible.
 
-typedef enum {
-  // A spinlock that disables preemption and deferred interrupts.  Must not be
-  // used from an interrupt context.
-  SPINLOCK_NORMAL,
+// There are two types of spinlocks:
+//  - Normal: disables preemption and deferred interrupts, and must not be used
+//      from an interrupt context.
+//  - Interrupt-safe: also disables interrupts (and therefore can be used from
+//      an interrupt context, and to protect state shared between normal code
+//      and interrupts)
+//
+// They are implemented similarly, but given different types so that the
+// typesystem can enforce correct usage.
 
-  // A spinlock that also disables interrupts (and therefore can be used from an
-  // interrupt context, and to protect state shared between normal code and
-  // interrupts).
-  SPINLOCK_INTERRUPT_SAFE,
-} kspinlock_type_t;
-
+// Internal implementation struct.
 typedef struct {
-  kspinlock_type_t type;
-
   // The thread currently holding the spinlock, or -1 if free.
   kthread_id_t holder;
+} kspinlock_impl_t;
+
+// A normal spinlock.
+typedef struct {
+  kspinlock_impl_t _lock;
 
   // Defint state when the spinlock was locked.
   defint_state_t defint_state;
+} kspinlock_t;
+
+// An interrupt-safe spinlock.
+typedef struct {
+  kspinlock_impl_t _lock;
 
   // Interrupt state when the spinlock was locked.
   interrupt_state_t int_state;
-} kspinlock_t;
+} kspinlock_intsafe_t;
 
 extern const kspinlock_t KSPINLOCK_NORMAL_INIT;
-extern const kspinlock_t KSPINLOCK_INTERRUPT_SAFE_INIT;
+extern const kspinlock_intsafe_t KSPINLOCK_INTERRUPT_SAFE_INIT;
 
-#define KSPINLOCK_NORMAL_INIT_STATIC \
-  { SPINLOCK_NORMAL, -1, false, 0 }
-#define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC \
-  { SPINLOCK_INTERRUPT_SAFE, -1, false, 0 };
+#define KSPINLOCK_NORMAL_INIT_STATIC {{ -1 }, false }
+#define KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC {{ -1 }, 0 }
 
 // Lock the given spinlock.  In a non-SMP environment, simply disables
 // preemption, defints, and optionally interrupts (depending on the type).
 // Threads must not block while holding a spinlock.
 void kspin_lock(kspinlock_t* l);
+void kspin_lock_int(kspinlock_intsafe_t* l);
 
 // Unlock the spinlock.
 void kspin_unlock(kspinlock_t* l);
+void kspin_unlock_int(kspinlock_intsafe_t* l);
 
 // Returns true if the spinlock is held by the current thread.
 bool kspin_is_held(const kspinlock_t* l);
+bool kspin_is_held_int(const kspinlock_intsafe_t* l);
 
 #endif

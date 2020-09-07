@@ -751,12 +751,14 @@ static void ksleep_test(void) {
 typedef struct {
   int x;
   kspinlock_t lock;
+  kspinlock_intsafe_t intsafe_lock;
 } preemption_test_args_t;
 
 static void* preemption_test_worker(void* arg) {
   preemption_test_args_t* args = (preemption_test_args_t*)arg;
   for (int i = 0; i < 100000; ++i) {
     kspin_lock(&args->lock);
+    for (volatile int i = 0; i < 1000; ++i);
     args->x++;
     kspin_unlock(&args->lock);
   }
@@ -781,9 +783,9 @@ static void* preemption_test_check_enabled(void* arg) {
 
 static void preemption_test_interrupt_cb(void* arg) {
   preemption_test_args_t* args = (preemption_test_args_t*)arg;
-  kspin_lock(&args->lock);
+  kspin_lock_int(&args->intsafe_lock);
   args->x++;
-  kspin_unlock(&args->lock);
+  kspin_unlock_int(&args->intsafe_lock);
 }
 
 static void* preemption_test_tester(void* arg) {
@@ -857,21 +859,26 @@ static void* preemption_test_tester(void* arg) {
 
   KTEST_BEGIN("kthread: SPINLOCK_INTERRUPT_SAFE blocks interrupts");
   preemption_test_args_t interrupt_args;
-  interrupt_args.lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  interrupt_args.intsafe_lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
   interrupt_args.x = 0;
   const int kTimerLimit = 50;
+  const unsigned int kDurationLimitMs = 10 * 1000;
   KEXPECT_EQ(
       0, register_timer_callback(1, kTimerLimit, &preemption_test_interrupt_cb,
                                  &interrupt_args));
   int my_counter = 0;
-  while (*(volatile int*)&interrupt_args.x - my_counter < kTimerLimit &&
-         my_counter < 10000000) {
+  int last_val = 0;
+  start = get_time_ms();
+  while (last_val - my_counter < kTimerLimit &&
+         get_time_ms() - start < kDurationLimitMs) {
     // Do an explicit two-stage increment.
-    kspin_lock(&interrupt_args.lock);
+    kspin_lock_int(&interrupt_args.intsafe_lock);
     int cval = *(volatile int*)&interrupt_args.x;
+    for (volatile int i = 0; i < 1000; ++i);
     *(volatile int*)&interrupt_args.x = cval + 1;
+    last_val = cval + 1;
     my_counter++;
-    kspin_unlock(&interrupt_args.lock);
+    kspin_unlock_int(&interrupt_args.intsafe_lock);
   }
   KEXPECT_EQ(my_counter + kTimerLimit, interrupt_args.x);
 

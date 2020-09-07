@@ -33,7 +33,7 @@
 static vkeyboard_t* g_vkbd = 0x0;
 static uint8_t g_scancode_buf[PS2_SCANCODE_BUF_SIZE];
 static int g_scancode_buf_len = 0;
-static kspinlock_t g_scancode_buf_lock;
+static kspinlock_intsafe_t g_scancode_buf_lock;
 
 typedef struct {
   uint32_t keycode;
@@ -86,7 +86,7 @@ static int process_scancode_buffer(uint8_t* buf, int len, ps2_kbd_event_t* event
 
 static void process_scancodes_defint(void* arg) {
   ps2_kbd_event_t event;
-  kspin_lock(&g_scancode_buf_lock);
+  kspin_lock_int(&g_scancode_buf_lock);
   int consumed =
       process_scancode_buffer(g_scancode_buf, g_scancode_buf_len, &event);
 
@@ -96,7 +96,7 @@ static void process_scancodes_defint(void* arg) {
     }
     g_scancode_buf_len -= consumed;
   }
-  kspin_unlock(&g_scancode_buf_lock);
+  kspin_unlock_int(&g_scancode_buf_lock);
 
   if (consumed && event.keycode != NONE && g_vkbd) {
     vkeyboard_send_keycode(g_vkbd, event.keycode, event.is_up_event);
