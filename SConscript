@@ -16,6 +16,8 @@ import os
 
 Import('env AposAddSources')
 
+env.CompilationDatabase()
+
 # Execute architecture-specific pre-build hooks, if any.
 arch_pre_sconscript = FindFile('SConscript.pre', env.subst('archs/$ARCH'))
 if arch_pre_sconscript:

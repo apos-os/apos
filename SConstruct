@@ -104,6 +104,10 @@ if base_env['DEBUG']:
   base_env.Append(CFLAGS = ['-g3', '-gdwarf-2'])
   base_env.Append(ASFLAGS = ['--gen-debug'])
 
+# Ensure all envs have CompilationDatabase loaded.  Only one will trigger it,
+# though, from SConscript.
+base_env.Tool('compilation_db')
+
 env = base_env.Clone()
 env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
 
