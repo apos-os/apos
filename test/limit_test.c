@@ -176,13 +176,13 @@ static void limit_nofile_test(void* arg) {
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_close(fd));
 
-  lim.rlim_cur = APOS_RLIM_INFINITY * 0.75;
+  lim.rlim_cur = (double)APOS_RLIM_INFINITY * 0.75;
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   fd = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(fd, 0);
   KEXPECT_EQ(0, vfs_close(fd));
 
-  lim.rlim_cur = APOS_RLIM_INFINITY * 0.5 + 20;
+  lim.rlim_cur = (double)APOS_RLIM_INFINITY * 0.5 + 20;
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   fd = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(fd, 0);
