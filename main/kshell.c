@@ -33,7 +33,6 @@
 #include "dev/block_dev.h"
 #include "dev/char_dev.h"
 #include "dev/dev.h"
-#include "dev/timer.h"
 #if ENABLE_USB
 #include "dev/usb/bus.h"
 #include "dev/usb/device.h"
@@ -421,26 +420,6 @@ IO_IN_CMD(inl, uint32_t);
 IO_OUT_CMD(outb, uint8_t);
 IO_OUT_CMD(outs, uint16_t);
 IO_OUT_CMD(outl, uint32_t);
-
-// Registers a timer to print a message at the given interval.
-static void timer_cmd_timer_cb(void* arg) {
-  ksh_printf((char*)arg);
-}
-static void timer_cmd(kshell_t* shell, int argc, char* argv[]) {
-  if (argc != 4) {
-    ksh_printf("usage: timer <interval_ms> <limit> <msg>\n");
-    return;
-  }
-
-  char* buf = (char*)kmalloc(kstrlen(argv[3])+1);
-  kstrcpy(buf, argv[3]);
-  int result = register_timer_callback(katou(argv[1]), katou(argv[2]),
-                                       &timer_cmd_timer_cb, buf);
-  if (result < 0) {
-    ksh_printf("Could not register timer: %s\n", errorname(-result));
-    kfree(buf);
-  }
-}
 
 // Sleeps the thread for a certain number of ms.
 static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -1121,7 +1100,6 @@ static const cmd_t CMDS[] = {
   { "outs", &outs_cmd },
   { "outl", &outl_cmd },
 
-  { "timer", &timer_cmd },
   { "_sleep", &sleep_cmd },
 
   { "_ls", &ls_cmd },
