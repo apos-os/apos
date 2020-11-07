@@ -73,7 +73,7 @@ static inline void bg_bitmap_clear(void* bitmap, int n) {
 
 // Given a block-sized bitmap, return the index of the first unset bit, or -1 if
 // all bits are set.
-static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
+static int bg_bitmap_find_free(const ext2fs_t* fs, const uint8_t* bitmap) {
   const unsigned int block_size = ext2_block_size(fs);
   unsigned int idx = 0;
   for (idx = 0; idx < block_size; ++idx) {
@@ -94,18 +94,18 @@ static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
 }
 
 // Return the block group that the given inode is in.
-static inline int get_inode_bg(ext2fs_t* fs, uint32_t inode_num) {
+static inline int get_inode_bg(const ext2fs_t* fs, uint32_t inode_num) {
   return (inode_num - 1) / fs->sb.s_inodes_per_group;
 }
-static inline int get_inode_bg_idx(ext2fs_t* fs, uint32_t inode_num) {
+static inline int get_inode_bg_idx(const ext2fs_t* fs, uint32_t inode_num) {
   return (inode_num - 1) % fs->sb.s_inodes_per_group;
 }
 
 // Return the block group that the given block is in.
-static inline int get_block_bg(ext2fs_t* fs, uint32_t block_num) {
+static inline int get_block_bg(const ext2fs_t* fs, uint32_t block_num) {
   return (block_num - fs->sb.s_first_data_block) / fs->sb.s_blocks_per_group;
 }
-static inline int get_block_bg_idx(ext2fs_t* fs, uint32_t block_num) {
+static inline int get_block_bg_idx(const ext2fs_t* fs, uint32_t block_num) {
   return (block_num - fs->sb.s_first_data_block) % fs->sb.s_blocks_per_group;
 }
 
@@ -115,7 +115,7 @@ static inline int get_block_bg_idx(ext2fs_t* fs, uint32_t block_num) {
 // number and byte index of the corresponding block in the appropriate block
 // group's inode table.
 // TODO(aoates): use this for allocate_inode as well.
-static void get_inode_info(ext2fs_t* fs, uint32_t inode_num,
+static void get_inode_info(const ext2fs_t* fs, uint32_t inode_num,
                            uint32_t* block_group_out,
                            uint32_t* inode_bg_idx_out,
                            uint32_t* inode_bitmap_block_out,
@@ -146,7 +146,8 @@ static void get_inode_info(ext2fs_t* fs, uint32_t inode_num,
 // 128 bytes, ignoring anything after that.
 //
 // Returns 0 on success, or -errno on error.
-static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
+static int get_inode(const ext2fs_t* fs, uint32_t inode_num,
+                     ext2_inode_t* inode) {
   if (inode_num <= 0) {
     return -ERANGE;
   }
@@ -185,7 +186,7 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 
   // TODO(aoates): we needto check the inode bitmap again!
 
-  ext2_inode_t* disk_inode = (ext2_inode_t*)(
+  const ext2_inode_t* disk_inode = (const ext2_inode_t*)(
       inode_table + inode_table_offset);
   kmemcpy(inode, disk_inode, sizeof(ext2_inode_t));
   ext2_block_put(fs, inode_table_block, BC_FLUSH_ASYNC);
@@ -201,7 +202,7 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 }
 
 // Given an inode number and data, copy it back to disk.
-static int write_inode(ext2fs_t* fs, uint32_t inode_num,
+static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
                        const ext2_inode_t* inode) {
   if (inode_num <= 0) {
     return -ERANGE;
@@ -236,7 +237,8 @@ static int write_inode(ext2fs_t* fs, uint32_t inode_num,
 }
 
 // Given a block number, return the ith uint32_t of that block.
-static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
+static uint32_t get_block_idx(const ext2fs_t* fs, uint32_t block_num,
+                              uint32_t idx) {
   KASSERT(block_num != 0);
   void* block = ext2_block_get(fs, block_num);
   KASSERT(block);
@@ -246,7 +248,7 @@ static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
 }
 
 // Given a block number, set the ith uint32_t of that block.
-static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
+static void set_block_idx(const ext2fs_t* fs, uint32_t block_num, uint32_t idx,
                           uint32_t value) {
   KASSERT(block_num != 0);
   void* block = ext2_block_get(fs, block_num);
@@ -258,7 +260,7 @@ static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
 // Given an inode block index, return the level (0 for direct, 1 for indirect,
 // etc), and the offset to get to that level (0 for direct, 12 for indirect, 12
 // + 1024 for double indirect, etc).
-static void get_inode_level_and_offset(ext2fs_t* fs, uint32_t inode_block,
+static void get_inode_level_and_offset(const ext2fs_t* fs, uint32_t inode_block,
                                        int* level_out, uint32_t* offset_out) {
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
@@ -293,7 +295,7 @@ static void get_inode_level_and_offset(ext2fs_t* fs, uint32_t inode_block,
 // If we reach a '0' block number before we get to the final level, we set the
 // arguments and return early.  *level_out will be set to the last level that
 // had a valid block number (which is level + 1 if base_block == 0).
-static void get_indirect_block(ext2fs_t* fs, int level,
+static void get_indirect_block(const ext2fs_t* fs, int level,
                                uint32_t base_block, uint32_t index,
                                int* level_out,
                                uint32_t* indirect_block_out,
@@ -335,7 +337,7 @@ static void get_indirect_block(ext2fs_t* fs, int level,
 
 // Given an inode and a block number in that inode, return the absolute block
 // number of that block (in the filesystem), or -errno on error.
-static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
+static uint32_t get_inode_block(const ext2fs_t* fs, const ext2_inode_t* inode,
                                 uint32_t inode_block) {
   int level;
   uint32_t offset;
@@ -372,8 +374,8 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
 // little endian form), and the absolute offset of that dirent from the
 // beginning of the directory inode.
 typedef int (*inode_iter_func_t)(void*, ext2_dirent_t*, uint32_t);
-static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
-                          inode_iter_func_t func, void* arg) {
+static int dirent_iterate(const ext2fs_t* fs, ext2_inode_t* inode,
+                          uint32_t offset, inode_iter_func_t func, void* arg) {
   KASSERT((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
   // Look for an appropriate entry.
@@ -836,7 +838,7 @@ static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
 // the dirent_t within the parent inode.  Returns 0 on success, -errno on error.
 // TODO(aoates): support filetype extension, and return it here.
 // TODO(aoates): make this take a const ext2_inode_t*.
-static int lookup_internal(ext2fs_t* fs, ext2_inode_t* parent_inode,
+static int lookup_internal(const ext2fs_t* fs, ext2_inode_t* parent_inode,
                            const char* name, uint32_t* inode_out,
                            uint32_t* offset_out) {
   KASSERT((parent_inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
