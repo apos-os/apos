@@ -54,7 +54,7 @@ static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
 // Given a block-sized bitmap (i.e. a block group's block or inode bitmap),
 // return the value of the Nth entry.
-static inline int bg_bitmap_get(ext2fs_t* fs, const void* bitmap, int n) {
+static inline int bg_bitmap_get(const void* bitmap, int n) {
   KASSERT_DBG(n >= 0);
   return (((uint8_t*)bitmap)[n / 8] >> (n % 8)) & 0x01;
 }
@@ -169,7 +169,7 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
          "group %d (block %d)\n", block_group, inode_bitmap_block);
     return -ENOENT;
   }
-  if (!bg_bitmap_get(fs, inode_bitmap, inode_bg_idx)) {
+  if (!bg_bitmap_get(inode_bitmap, inode_bg_idx)) {
     ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_ASYNC);
     return -ENOENT;
   }
@@ -484,7 +484,7 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   if (!block_bitmap) {
     return -ENOMEM;
   }
-  KASSERT(bg_bitmap_get(fs, block_bitmap, bg_block_idx));
+  KASSERT(bg_bitmap_get(block_bitmap, bg_block_idx));
   bg_bitmap_clear(block_bitmap, bg_block_idx);
   ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
 
@@ -647,7 +647,7 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   if (!inode_bitmap) {
     return -ENOMEM;
   }
-  KASSERT(bg_bitmap_get(fs, inode_bitmap, bg_inode_idx));
+  KASSERT(bg_bitmap_get(inode_bitmap, bg_inode_idx));
   bg_bitmap_clear(inode_bitmap, bg_inode_idx);
   ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
