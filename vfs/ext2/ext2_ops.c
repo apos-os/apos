@@ -164,20 +164,20 @@ static int get_inode(const ext2fs_t* fs, uint32_t inode_num,
                  &inode_bitmap_block, &inode_table_block, &inode_table_offset);
 
   // Find the block group and load it's inode bitmap.
-  void* inode_bitmap = ext2_block_get(fs, inode_bitmap_block);
+  const void* inode_bitmap = ext2_block_get(fs, inode_bitmap_block);
   if (!inode_bitmap) {
     KLOG(WARNING, "ext2: couldn't get inode bitmap for block "
          "group %d (block %d)\n", block_group, inode_bitmap_block);
     return -ENOENT;
   }
   if (!bg_bitmap_get(inode_bitmap, inode_bg_idx)) {
-    ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_ASYNC);
+    ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_NONE);
     return -ENOENT;
   }
-  ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_NONE);
 
   // We know that the inode is allocated, now get it from the inode table.
-  void* inode_table = ext2_block_get(fs, inode_table_block);
+  const void* inode_table = ext2_block_get(fs, inode_table_block);
   if (!inode_table) {
     KLOG(WARNING, "ext2: couldn't get inode table for block "
          "group %d (block %d)\n", block_group, inode_table_block);
@@ -189,7 +189,7 @@ static int get_inode(const ext2fs_t* fs, uint32_t inode_num,
   const ext2_inode_t* disk_inode = (const ext2_inode_t*)(
       inode_table + inode_table_offset);
   kmemcpy(inode, disk_inode, sizeof(ext2_inode_t));
-  ext2_block_put(fs, inode_table_block, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, inode_table_block, BC_FLUSH_NONE);
 
   ext2_inode_ltoh(inode);
 
@@ -240,10 +240,10 @@ static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
 static uint32_t get_block_idx(const ext2fs_t* fs, uint32_t block_num,
                               uint32_t idx) {
   KASSERT(block_num != 0);
-  void* block = ext2_block_get(fs, block_num);
+  const void* block = ext2_block_get(fs, block_num);
   KASSERT(block);
-  uint32_t value = ((uint32_t*)block)[idx];
-  ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
+  uint32_t value = ((const uint32_t*)block)[idx];
+  ext2_block_put(fs, block_num, BC_FLUSH_NONE);
   return ltoh32(value);
 }
 
@@ -456,7 +456,7 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   for (unsigned int i = 0; i < nblocks; ++i) {
     int idx_in_bg_bmp = bg_bitmap_find_free(fs, block_bitmap);
     if (idx_in_bg_bmp < 0) {
-      ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
+      ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_NONE);
       KLOG(WARNING, "ext2: block group desc indicated free blocks, but none "
            "found in block bitmap!\n");
       fs->unhealthy = 1;
@@ -603,7 +603,7 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   }
   int idx_in_bg = bg_bitmap_find_free(fs, inode_bitmap);
   if (idx_in_bg < 0) {
-    ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
+    ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_NONE);
     KLOG(WARNING, "ext2: block group desc indicated free inodes, but none found "
          "in inode bitmap!\n");
     fs->unhealthy = 1;
@@ -1456,7 +1456,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   const uint32_t block = get_inode_block(fs, &inode, inode_block);
   KASSERT(block > 0);
 
-  void* block_data = ext2_block_get(fs, block);
+  const void* block_data = ext2_block_get(fs, block);
   if (!block_data) {
     return -ENOMEM;
   }
@@ -1464,7 +1464,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT_DBG(len <= bufsize);
   kmemcpy(buf, block_data + block_offset, len);
 
-  ext2_block_put(fs, block, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, block, BC_FLUSH_NONE);
   return len;
 }
 
@@ -1870,11 +1870,12 @@ static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write
     void* buf_offset = (char*)buf + (block_idx * ext2_block_size(fs));
     if (is_write) {
       kmemcpy(block_data, buf_offset, bytes_to_copy);
+      ext2_block_put(fs, block, BC_FLUSH_ASYNC);
     } else {
       kmemcpy(buf_offset, block_data, bytes_to_copy);
+      ext2_block_put(fs, block, BC_FLUSH_NONE);
     }
 
-    ext2_block_put(fs, block, BC_FLUSH_ASYNC);
     bytes_left -= ext2_block_size(fs);
   }
   return 0;
