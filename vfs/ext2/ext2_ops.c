@@ -990,8 +990,9 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
 
 // Relink the given entry in the parent to the new inode.  Does NOT update the
 // link count of the old or new child.
-static int relink_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
-                           uint32_t new_inode, uint32_t* old_inode_out) {
+static int relink_internal(const ext2fs_t* fs, ext2_inode_t* parent,
+                           const char* name, uint32_t new_inode,
+                           uint32_t* old_inode_out) {
   KASSERT((parent->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
   const uint32_t block_size = ext2_block_size(fs);
 
@@ -1112,7 +1113,7 @@ static int ext2_get_root(struct fs* fs) {
 }
 
 static int ext2_get_vnode(vnode_t* vnode) {
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   kstrcpy(vnode->fstype, "ext2");
   // Fill in the vnode_t with data from the filesystem.  The vnode_t will have
   // been allocated with alloc_vnode and had the following fields initalized:
@@ -1223,7 +1224,7 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
 
-  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)parent->fs;
   ext2_inode_t inode;
   int result = get_inode(fs, parent->num, &inode);
   if (result) {
@@ -1434,7 +1435,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   if (offset > vnode->len)
     return 0;
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   const uint32_t inode_block = offset / ext2_block_size(fs);
   const uint32_t block_offset = offset % ext2_block_size(fs);
 
@@ -1675,7 +1676,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(vnode->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   ext2_inode_t inode;
   // TODO(aoates): do we want to store the inode in the vnode?
   int result = get_inode(fs, vnode->num, &inode);
@@ -1706,7 +1707,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
 int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   ext2_inode_t inode;
   int result = get_inode(fs, vnode->num, &inode);
   if (result) {
@@ -1791,7 +1792,7 @@ static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
 
   if (vnode->len < EXT2_SYMLINK_INLINE_LEN) {
-    ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+    const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
     ext2_inode_t inode;
     // TODO(aoates): do we want to store the inode in the vnode?
     int result = get_inode(fs, vnode->num, &inode);
@@ -1836,7 +1837,7 @@ static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write
   KASSERT(page_offset >= 0);
   KASSERT(page_offset * PAGE_SIZE <= vnode->len);
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   KASSERT(PAGE_SIZE % ext2_block_size(fs) == 0);
   const uint32_t inode_block = (page_offset * PAGE_SIZE) / ext2_block_size(fs);
 
