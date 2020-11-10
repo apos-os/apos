@@ -139,9 +139,9 @@ void ext2_superblock_log(klog_level_t level, ext2_superblock_t* sb);
 void ext2_superblock_ltoh(ext2_superblock_t* sb);
 
 typedef struct {
-  uint32_t bg_block_bitmap;
-  uint32_t bg_inode_bitmap;
-  uint32_t bg_inode_table;
+  uint32_t bg_block_bitmap;  // const after creation
+  uint32_t bg_inode_bitmap;  // const after creation
+  uint32_t bg_inode_table;   // const after creation
   uint16_t bg_free_blocks_count;
   uint16_t bg_free_inodes_count;
   uint16_t bg_used_dirs_count;
