@@ -32,6 +32,7 @@ fs_t* ext2_create_fs() {
 
   fs->mounted = 0;
   fs->unhealthy = 0;
+  kmutex_init(&fs->mu);
   return (fs_t*)fs;
 }
 
