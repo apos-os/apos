@@ -73,7 +73,7 @@ int ext2_read_superblock(ext2fs_t* fs) {
 
   kmemcpy(&fs->sb, sb_block->block + sb_block_offset, sizeof(ext2_superblock_t));
   ext2_superblock_ltoh(&fs->sb);
-  block_cache_put(sb_block, BC_FLUSH_ASYNC);
+  block_cache_put(sb_block, BC_FLUSH_NONE);
 
   // Check magic number and version.
   if (fs->sb.s_magic != EXT2_SUPER_MAGIC) {
@@ -151,7 +151,7 @@ int ext2_read_block_groups(ext2fs_t* fs) {
       ext2_block_group_desc_ltoh(cbg);
       bgs_remaining--;
     }
-    ext2_block_put(fs, block, BC_FLUSH_ASYNC);
+    ext2_block_put(fs, block, BC_FLUSH_NONE);
   }
 
   for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
