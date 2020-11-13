@@ -237,8 +237,8 @@ static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
 }
 
 // Given a block number, return the ith uint32_t of that block.
-static uint32_t get_block_idx(const ext2fs_t* fs, uint32_t block_num,
-                              uint32_t idx) {
+static uint32_t read_block_u32(const ext2fs_t* fs, uint32_t block_num,
+                               uint32_t idx) {
   KASSERT(block_num != 0);
   const void* block = ext2_block_get(fs, block_num);
   KASSERT(block);
@@ -248,8 +248,8 @@ static uint32_t get_block_idx(const ext2fs_t* fs, uint32_t block_num,
 }
 
 // Given a block number, set the ith uint32_t of that block.
-static void set_block_idx(const ext2fs_t* fs, uint32_t block_num, uint32_t idx,
-                          uint32_t value) {
+static void write_block_u32(const ext2fs_t* fs, uint32_t block_num,
+                            uint32_t idx, uint32_t value) {
   KASSERT(block_num != 0);
   void* block = ext2_block_get(fs, block_num);
   KASSERT(block);
@@ -327,7 +327,7 @@ static void get_indirect_block(const ext2fs_t* fs, int level,
     *indirect_block_offset_out = next_level_block_idx;
     *level_out = level;
     get_indirect_block(fs, level - 1,
-                       get_block_idx(fs, base_block, next_level_block_idx),
+                       read_block_u32(fs, base_block, next_level_block_idx),
                        next_level_index,
                        level_out,
                        indirect_block_out,
@@ -361,7 +361,7 @@ static uint32_t get_inode_block(const ext2fs_t* fs, const ext2_inode_t* inode,
       return 0;
     }
 
-    return get_block_idx(fs, indirect_block, indirect_block_offset);
+    return read_block_u32(fs, indirect_block, indirect_block_offset);
   }
 }
 
@@ -743,8 +743,8 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
           KASSERT(inode->i_block[11 + level] == 0);
           inode->i_block[11 + level] = new_indirect_block;
         } else {
-          set_block_idx(fs, indirect_block, indirect_block_offset,
-                        new_indirect_block);
+          write_block_u32(fs, indirect_block, indirect_block_offset,
+                          new_indirect_block);
         }
         get_indirect_block(fs, level, inode->i_block[11 + level],
                            inode_block - offset,
@@ -753,8 +753,7 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
                            &indirect_block_offset);
       }
 
-      set_block_idx(fs, indirect_block, indirect_block_offset,
-                    new_blocks[i]);
+      write_block_u32(fs, indirect_block, indirect_block_offset, new_blocks[i]);
     }
     if (clear_new_blocks) {
       // TODO(aoates): there's no actual need to read this from disk if it's not
