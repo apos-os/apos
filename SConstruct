@@ -51,7 +51,7 @@ vars.Add(ListVariable('disable', 'features to force-disable', [], FEATURES))
 base_env = Environment(
     variables = vars,
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
-    ENV = {'PATH' : os.environ['PATH']})
+    ENV = {'PATH' : os.environ['PATH'], 'TERM': os.environ['TERM']})
 
 base_env.Alias('configure', [])
 
