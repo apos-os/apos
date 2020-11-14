@@ -451,9 +451,25 @@ static void mkdir_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/C"));
   KEXPECT_EQ(0, vfs_stat("_mkdir_parent", &stat));
   KEXPECT_EQ(2, stat.st_nlink);
-  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent"));
+
+  KTEST_BEGIN("mkdir(): deep directory tree test");
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B/C", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B/C/D", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B/C/D/E", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B/C/D/E/F", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mkdir("_mkdir_parent/A/B/C/D/E/F/G", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B/C/D/E/F/G"));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B/C/D/E/F"));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B/C/D/E"));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B/C/D"));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B/C"));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A/B"));
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent/A"));
 
   // Cleanup.
+  KEXPECT_EQ(0, vfs_rmdir("_mkdir_parent"));
   vfs_close(test1_fd);
   KEXPECT_EQ(0, vfs_unlink("/test1"));
 }
