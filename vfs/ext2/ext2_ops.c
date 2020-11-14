@@ -635,14 +635,15 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   const uint32_t bg = get_inode_bg(fs, inode_num);
   const uint32_t bg_inode_idx = get_inode_bg_idx(fs, inode_num);
 
-  // Increment the free inode count in the superblock and bgd, then flush them.
-  fs->sb.s_free_inodes_count++;
-  fs->block_groups[bg].bg_free_inodes_count++;
-  if ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
-    fs->block_groups[bg].bg_used_dirs_count--;
+  // Free all of its blocks.
+  if (inode_has_data_blocks(inode)) {
+    free_inode_blocks(fs, inode, 0);
   }
-  ext2_flush_superblock(fs);
-  ext2_flush_block_group(fs, bg);
+  const bool is_dir = ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
+
+  kmemset(inode, 0, sizeof(ext2_inode_t));
+  write_inode(fs, inode_num, inode);
+  inode = NULL;
 
   // Mark the inode as free in the bitmap
   uint8_t* inode_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_inode_bitmap);
@@ -653,13 +654,15 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   bg_bitmap_clear(inode_bitmap, bg_inode_idx);
   ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
-  // Free all of its blocks.
-  if (inode_has_data_blocks(inode)) {
-    free_inode_blocks(fs, inode, 0);
+  // Increment the free inode count in the superblock and bgd, then flush them.
+  fs->sb.s_free_inodes_count++;
+  fs->block_groups[bg].bg_free_inodes_count++;
+  if (is_dir) {
+    fs->block_groups[bg].bg_used_dirs_count--;
   }
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
 
-  kmemset(inode, 0, sizeof(ext2_inode_t));
-  write_inode(fs, inode_num, inode);
   return 0;
 }
 
