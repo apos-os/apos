@@ -587,8 +587,9 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
 
   // If we're not creating a directory, try to allocate in the parent's bg.
   // TODO(aoates): choose a random block group!
-  uint32_t bg =
-      ((mode & EXT2_S_IFDIR) == 0) ? get_inode_bg(fs, parent_inode) : 0;
+  uint32_t bg = ((mode & EXT2_S_MASK) == EXT2_S_IFDIR)
+                    ? 0
+                    : get_inode_bg(fs, parent_inode);
 
   // Starting with bg, find a block group with a free inode.
   unsigned int block_groups_checked = 0;
