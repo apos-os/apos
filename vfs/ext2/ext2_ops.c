@@ -838,6 +838,7 @@ static int resize_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
   } else if (new_size < inode->i_size) {
     if (new_blocks < old_blocks) {
       free_inode_blocks(fs, inode, new_blocks);
+      inode->i_blocks = new_blocks * (ext2_block_size(fs) / 512);
     }
   }
   inode->i_size = new_size;
