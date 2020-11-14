@@ -510,12 +510,13 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   return 0;
 }
 
-// Free an n-th level indirect block, starting at blk_offset.
-static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
-                                uint32_t blk_offset) {
+// Free an n-th level indirect block, starting at blk_offset.  Returns the
+// number of blocks freed (possibly including the indirect block itself).
+static uint32_t free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
+                                    uint32_t blk_offset) {
   KASSERT(level >= 1);
   if (block_num == 0)
-    return;
+    return 0;
 
   uint32_t* block = ext2_block_get(fs, block_num);
   KASSERT(block);
@@ -526,50 +527,62 @@ static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
   uint32_t blocks_per_entry = 1;
   for (int i = 1; i < level; ++i) blocks_per_entry *= kBlocksPerIndirect;
 
+  uint32_t freed = 0;
   for (unsigned int i = 0; i < kBlocksPerIndirect; ++i) {
     if ((i + 1) * blocks_per_entry <= blk_offset) continue;
     if (level == 1 && block[i] != 0) {
+      freed++;
       free_block(fs, block[i]);
       block[i] = 0;
     } else if (level > 1) {
-      free_indirect_block(fs, block[i], level - 1,
-                          blk_offset % blocks_per_entry);
+      freed += free_indirect_block(fs, block[i], level - 1,
+                                   blk_offset % blocks_per_entry);
     }
   }
   ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
-  if (blk_offset == 0)
+  if (blk_offset == 0) {
     free_block(fs, block_num);  // Free the indirect block itself.
+    freed++;
+  }
+  return freed;
 }
 
-// Free the blocks from the given inode starting at blk_offset.
-static void free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
-                              uint32_t blk_offset) {
+// Free the blocks from the given inode starting at blk_offset.  Returns the
+// number of blocks freed (which may include non-data indirect blocks).
+static uint32_t free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
+                                  uint32_t blk_offset) {
   const uint32_t block_size = ext2_block_size(fs);
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = block_size / sizeof(uint32_t);
   const uint32_t kBlocksPerDoubleIndirect =
       kBlocksPerIndirect * kBlocksPerIndirect;
+  uint32_t freed = 0;
 
   for (int i = blk_offset; i < 12; ++i) {
-    if (inode->i_block[i]) free_block(fs, inode->i_block[i]);
-    inode->i_block[i] = 0;
+    if (inode->i_block[i]) {
+      freed++;
+      free_block(fs, inode->i_block[i]);
+      inode->i_block[i] = 0;
+    }
   }
   blk_offset = (blk_offset < kDirectBlocks) ? 0 : blk_offset - kDirectBlocks;
   if (blk_offset < kBlocksPerIndirect)
-    free_indirect_block(fs, inode->i_block[12], 1, blk_offset);
+    freed += free_indirect_block(fs, inode->i_block[12], 1, blk_offset);
   if (blk_offset == 0) inode->i_block[12] = 0;
 
   blk_offset =
       (blk_offset < kBlocksPerIndirect) ? 0 : blk_offset - kBlocksPerIndirect;
   if (blk_offset < kBlocksPerDoubleIndirect)
-    free_indirect_block(fs, inode->i_block[13], 2, blk_offset);
+    freed += free_indirect_block(fs, inode->i_block[13], 2, blk_offset);
   if (blk_offset == 0) inode->i_block[13] = 0;
 
   blk_offset = (blk_offset < kBlocksPerDoubleIndirect)
                    ? 0
                    : blk_offset - kBlocksPerDoubleIndirect;
-  free_indirect_block(fs, inode->i_block[14], 3, blk_offset);
+  freed += free_indirect_block(fs, inode->i_block[14], 3, blk_offset);
   if (blk_offset == 0) inode->i_block[14] = 0;
+
+  return freed;
 }
 
 // Allocate a new inode.  Depending on the type, it may be allocated in the
@@ -666,7 +679,9 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 
   // Free all of its blocks.
   if (inode_has_data_blocks(inode)) {
-    free_inode_blocks(fs, inode, 0);
+    uint32_t freed = free_inode_blocks(fs, inode, 0);
+    // TODO(aoates): don't assert on external data.
+    KASSERT_DBG(freed * (ext2_block_size(fs) / 512) == inode->i_blocks);
   }
   const bool is_dir = ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
@@ -837,8 +852,11 @@ static int resize_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
     }
   } else if (new_size < inode->i_size) {
     if (new_blocks < old_blocks) {
-      free_inode_blocks(fs, inode, new_blocks);
-      inode->i_blocks = new_blocks * (ext2_block_size(fs) / 512);
+      uint32_t freed = free_inode_blocks(fs, inode, new_blocks);
+      uint32_t freed_iblocks = freed * (ext2_block_size(fs) / 512);
+      // TODO(aoates): don't assert on external data.
+      KASSERT_DBG(freed_iblocks <= inode->i_blocks);
+      inode->i_blocks -= freed_iblocks;
     }
   }
   inode->i_size = new_size;
