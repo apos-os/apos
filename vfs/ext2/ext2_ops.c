@@ -325,8 +325,7 @@ static void get_indirect_block(const ext2fs_t* fs, int level,
     return;
   } else {
     const uint32_t next_level_block_idx = index / blocks_in_next_level;
-    const uint32_t next_level_index =
-        index - (next_level_block_idx * blocks_in_next_level);
+    const uint32_t next_level_index = index % blocks_in_next_level;
     *indirect_block_out = base_block;
     *indirect_block_offset_out = next_level_block_idx;
     *level_out = level;
@@ -360,8 +359,6 @@ static uint32_t get_inode_block(const ext2fs_t* fs, const ext2_inode_t* inode,
                        &indirect_block,
                        &indirect_block_offset);
     if (final_level != 1) {
-      //klogf("ext2: warning: cannot get block (%d) in unallocated indirect "
-      //      "block (level %d)\n", inode_block, final_level);
       return 0;
     }
 
@@ -558,7 +555,7 @@ static uint32_t free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
       kBlocksPerIndirect * kBlocksPerIndirect;
   uint32_t freed = 0;
 
-  for (int i = blk_offset; i < 12; ++i) {
+  for (unsigned int i = blk_offset; i < kDirectBlocks; ++i) {
     if (inode->i_block[i]) {
       freed++;
       free_block(fs, inode->i_block[i]);
