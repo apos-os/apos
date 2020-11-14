@@ -2509,9 +2509,17 @@ static void open_mode_test(void) {
   vfs_close(fd);
   vfs_unlink(kRegFile);
 
+  KTEST_BEGIN("vfs_open(): O_CREAT with file type bits set");
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IFREG | VFS_S_IRUSR);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+  vfs_unlink(kRegFile);
+  fd = vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IFDIR | VFS_S_IRUSR);
+  KEXPECT_EQ(VFS_S_IFREG | VFS_S_IRUSR, get_mode(kRegFile));
+  vfs_close(fd);
+  vfs_unlink(kRegFile);
+
   KTEST_BEGIN("vfs_open(): O_CREAT with invalid mode test");
-  KEXPECT_EQ(-EINVAL,
-             vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, VFS_S_IFREG));
   KEXPECT_EQ(-EINVAL, vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, 0xFFFFF));
   KEXPECT_EQ(-EINVAL, vfs_open(kRegFile, VFS_O_CREAT | VFS_O_RDWR, -1));
 
@@ -2540,12 +2548,19 @@ static void mkdir_mode_test(void) {
 
   KTEST_BEGIN("vfs_mkdir(): invalid mode test");
   KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, -1));
-  KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, VFS_S_IFDIR | VFS_S_IRWXG));
+  KEXPECT_EQ(-EINVAL, vfs_mkdir(kDir, 0x1ff00));
 
   KTEST_BEGIN("vfs_mkdir(): mode test");
   KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID));
   KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID,
              get_mode(kDir));
+  vfs_rmdir(kDir);
+  KTEST_BEGIN("vfs_mkdir(): mode test with file type bits");
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IFDIR | VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG | VFS_S_IRWXO, get_mode(kDir));
+  vfs_rmdir(kDir);
+  KEXPECT_EQ(0, vfs_mkdir(kDir, VFS_S_IFREG | VFS_S_IRWXG | VFS_S_IRWXO));
+  KEXPECT_EQ(VFS_S_IFDIR | VFS_S_IRWXG | VFS_S_IRWXO, get_mode(kDir));
   vfs_rmdir(kDir);
 
   KTEST_BEGIN("vfs_mkdir(): mode test w/ existing directory");
