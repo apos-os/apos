@@ -978,7 +978,8 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
   new_dirent->name_len = name_len;
   // TODO(aoates): use filetype extension.
   new_dirent->file_type = EXT2_FT_UNKNOWN;
-  kstrncpy(new_dirent->name, name, name_len);
+  size_t max_name_len = new_dirent_len - offsetof(ext2_dirent_t, name);
+  kstrncpy(new_dirent->name, name, max_name_len);
 
   ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
   return 0;
