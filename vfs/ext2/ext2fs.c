@@ -73,7 +73,7 @@ int ext2_read_superblock(ext2fs_t* fs) {
 
   kmemcpy(&fs->sb, sb_block->block + sb_block_offset, sizeof(ext2_superblock_t));
   ext2_superblock_ltoh(&fs->sb);
-  block_cache_put(sb_block, BC_FLUSH_ASYNC);
+  block_cache_put(sb_block, BC_FLUSH_NONE);
 
   // Check magic number and version.
   if (fs->sb.s_magic != EXT2_SUPER_MAGIC) {
@@ -151,7 +151,7 @@ int ext2_read_block_groups(ext2fs_t* fs) {
       ext2_block_group_desc_ltoh(cbg);
       bgs_remaining--;
     }
-    ext2_block_put(fs, block, BC_FLUSH_ASYNC);
+    ext2_block_put(fs, block, BC_FLUSH_NONE);
   }
 
   for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
@@ -175,14 +175,25 @@ static int flush_superblock_in_bg(const ext2fs_t* fs, unsigned int bg) {
     return -ENOMEM;
   }
 
-  // TODO(aoates): is it really safe to write it to the disk, *then* endian-swap
-  // it?  OTOH, it seems silly to copy it to an intermediate buffer, then fix
-  // endianess, then copy again.
-  ext2_superblock_t* on_disk_sb = (ext2_superblock_t*)(sb_block + sb_block_offset);
+  // TODO(aoates): it would be more efficient to get all the relevant superblock
+  // blocks _first_, then only do this lock/fix-endian dance once before
+  // memcpy'ing into the on-disk blocks.
+  ext2fs_lock(fs);
+  const ext2_superblock_t* sb_endian_correct_ptr = &fs->sb;
+  ext2_superblock_t sb_endian_correct;
+  if (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__) {
+    sb_endian_correct = fs->sb;
+    ext2_superblock_ltoh(&sb_endian_correct);
+    sb_endian_correct_ptr = &sb_endian_correct;
+  }
+
+  ext2_superblock_t* on_disk_sb =
+      (ext2_superblock_t*)(sb_block + sb_block_offset);
   KASSERT(on_disk_sb->s_magic == htol16(EXT2_SUPER_MAGIC));
 
-  kmemcpy(on_disk_sb, &fs->sb, sizeof(ext2_superblock_t));
-  ext2_superblock_ltoh(on_disk_sb);
+  kmemcpy(on_disk_sb, sb_endian_correct_ptr, sizeof(ext2_superblock_t));
+  ext2fs_unlock(fs);
+
   ext2_block_put(fs, sb_block_num, BC_FLUSH_ASYNC);
   return 0;
 }
@@ -227,6 +238,16 @@ static int flush_bgdt_in_bg(const ext2fs_t* fs,
     return -ENOMEM;
   }
 
+  // TODO(aoates): same efficiency note as above, with the superblock.
+  ext2fs_lock(fs);
+  const ext2_block_group_desc_t* bg_endian_correct_ptr = bgd_to_flush;
+  ext2_block_group_desc_t bg_endian_correct;
+  if (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__) {
+    bg_endian_correct = *bgd_to_flush;
+    ext2_block_group_desc_ltoh(&bg_endian_correct);
+    bg_endian_correct_ptr = &bg_endian_correct;
+  }
+
   ext2_block_group_desc_t* on_disk_bgd = &bgdt_block[flush_bg_bgdt_idx_in_block];
 
   // Sanity check the on-disk bgd to make sure we didn't pick the wrong block.
@@ -234,8 +255,9 @@ static int flush_bgdt_in_bg(const ext2fs_t* fs,
   KASSERT(on_disk_bgd->bg_inode_bitmap == htol32(bgd_to_flush->bg_inode_bitmap));
   KASSERT(on_disk_bgd->bg_inode_table == htol32(bgd_to_flush->bg_inode_table));
 
-  kmemcpy(on_disk_bgd, bgd_to_flush, sizeof(ext2_block_group_desc_t));
-  ext2_block_group_desc_ltoh(on_disk_bgd);
+  kmemcpy(on_disk_bgd, bg_endian_correct_ptr, sizeof(ext2_block_group_desc_t));
+  ext2fs_unlock(fs);
+
   ext2_block_put(fs, bgdt_block_num, BC_FLUSH_ASYNC);
   return 0;
 }
@@ -277,4 +299,12 @@ int ext2_flush_block_group(const ext2fs_t* fs, unsigned int bg) {
     }
   }
   return 0;
+}
+
+void ext2fs_lock(const ext2fs_t* fs) {
+  kmutex_lock(&((ext2fs_t*)fs)->mu);
+}
+
+void ext2fs_unlock(const ext2fs_t* fs) {
+  kmutex_unlock(&((ext2fs_t*)fs)->mu);
 }

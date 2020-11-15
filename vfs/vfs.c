@@ -103,8 +103,8 @@ static int next_free_fd(process_t* p) {
 // Returns non-zero if the given mode is a valid create mode_t (i.e. can be
 // passed to chmod() or as the mode argument to open()).
 static int is_valid_create_mode(kmode_t mode) {
-  return (mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO |
-                   VFS_S_ISUID | VFS_S_ISGID | VFS_S_ISVTX)) == 0;
+  return (mode & ~(VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO | VFS_S_ISUID |
+                   VFS_S_ISGID | VFS_S_ISVTX | VFS_S_IFMT)) == 0;
 }
 
 static void init_fifo_vnode(vnode_t* vnode) {
@@ -753,7 +753,7 @@ int vfs_mkdir(const char* path, kmode_t mode) {
 
 static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
                               bool follow_final_symlink, vnode_t** vnode_out) {
-  if (!is_valid_create_mode(mode & ~VFS_S_IFMT)) return -EINVAL;
+  if (!is_valid_create_mode(mode)) return -EINVAL;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;

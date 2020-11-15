@@ -54,7 +54,7 @@ static int ext2_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
 // Given a block-sized bitmap (i.e. a block group's block or inode bitmap),
 // return the value of the Nth entry.
-static inline int bg_bitmap_get(ext2fs_t* fs, const void* bitmap, int n) {
+static inline int bg_bitmap_get(const void* bitmap, int n) {
   KASSERT_DBG(n >= 0);
   return (((uint8_t*)bitmap)[n / 8] >> (n % 8)) & 0x01;
 }
@@ -73,7 +73,8 @@ static inline void bg_bitmap_clear(void* bitmap, int n) {
 
 // Given a block-sized bitmap, return the index of the first unset bit, or -1 if
 // all bits are set.
-static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
+static int bg_bitmap_find_free(const ext2fs_t* fs, const uint8_t* bitmap) {
+  kmutex_assert_is_held(&fs->mu);
   const unsigned int block_size = ext2_block_size(fs);
   unsigned int idx = 0;
   for (idx = 0; idx < block_size; ++idx) {
@@ -94,18 +95,18 @@ static int bg_bitmap_find_free(ext2fs_t* fs, uint8_t* bitmap) {
 }
 
 // Return the block group that the given inode is in.
-static inline int get_inode_bg(ext2fs_t* fs, uint32_t inode_num) {
+static inline int get_inode_bg(const ext2fs_t* fs, uint32_t inode_num) {
   return (inode_num - 1) / fs->sb.s_inodes_per_group;
 }
-static inline int get_inode_bg_idx(ext2fs_t* fs, uint32_t inode_num) {
+static inline int get_inode_bg_idx(const ext2fs_t* fs, uint32_t inode_num) {
   return (inode_num - 1) % fs->sb.s_inodes_per_group;
 }
 
 // Return the block group that the given block is in.
-static inline int get_block_bg(ext2fs_t* fs, uint32_t block_num) {
+static inline int get_block_bg(const ext2fs_t* fs, uint32_t block_num) {
   return (block_num - fs->sb.s_first_data_block) / fs->sb.s_blocks_per_group;
 }
-static inline int get_block_bg_idx(ext2fs_t* fs, uint32_t block_num) {
+static inline int get_block_bg_idx(const ext2fs_t* fs, uint32_t block_num) {
   return (block_num - fs->sb.s_first_data_block) % fs->sb.s_blocks_per_group;
 }
 
@@ -115,7 +116,7 @@ static inline int get_block_bg_idx(ext2fs_t* fs, uint32_t block_num) {
 // number and byte index of the corresponding block in the appropriate block
 // group's inode table.
 // TODO(aoates): use this for allocate_inode as well.
-static void get_inode_info(ext2fs_t* fs, uint32_t inode_num,
+static void get_inode_info(const ext2fs_t* fs, uint32_t inode_num,
                            uint32_t* block_group_out,
                            uint32_t* inode_bg_idx_out,
                            uint32_t* inode_bitmap_block_out,
@@ -146,7 +147,8 @@ static void get_inode_info(ext2fs_t* fs, uint32_t inode_num,
 // 128 bytes, ignoring anything after that.
 //
 // Returns 0 on success, or -errno on error.
-static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
+static int get_inode(const ext2fs_t* fs, uint32_t inode_num,
+                     ext2_inode_t* inode) {
   if (inode_num <= 0) {
     return -ERANGE;
   }
@@ -163,20 +165,23 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
                  &inode_bitmap_block, &inode_table_block, &inode_table_offset);
 
   // Find the block group and load it's inode bitmap.
-  void* inode_bitmap = ext2_block_get(fs, inode_bitmap_block);
+  const void* inode_bitmap = ext2_block_get(fs, inode_bitmap_block);
   if (!inode_bitmap) {
     KLOG(WARNING, "ext2: couldn't get inode bitmap for block "
          "group %d (block %d)\n", block_group, inode_bitmap_block);
     return -ENOENT;
   }
-  if (!bg_bitmap_get(fs, inode_bitmap, inode_bg_idx)) {
-    ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_ASYNC);
+
+  ext2fs_lock(fs);
+  int bitmap_data = bg_bitmap_get(inode_bitmap, inode_bg_idx);
+  ext2fs_unlock(fs);
+  ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_NONE);
+  if (!bitmap_data) {
     return -ENOENT;
   }
-  ext2_block_put(fs, inode_bitmap_block, BC_FLUSH_ASYNC);
 
   // We know that the inode is allocated, now get it from the inode table.
-  void* inode_table = ext2_block_get(fs, inode_table_block);
+  const void* inode_table = ext2_block_get(fs, inode_table_block);
   if (!inode_table) {
     KLOG(WARNING, "ext2: couldn't get inode table for block "
          "group %d (block %d)\n", block_group, inode_table_block);
@@ -185,10 +190,10 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 
   // TODO(aoates): we needto check the inode bitmap again!
 
-  ext2_inode_t* disk_inode = (ext2_inode_t*)(
+  const ext2_inode_t* disk_inode = (const ext2_inode_t*)(
       inode_table + inode_table_offset);
   kmemcpy(inode, disk_inode, sizeof(ext2_inode_t));
-  ext2_block_put(fs, inode_table_block, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, inode_table_block, BC_FLUSH_NONE);
 
   ext2_inode_ltoh(inode);
 
@@ -201,7 +206,7 @@ static int get_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
 }
 
 // Given an inode number and data, copy it back to disk.
-static int write_inode(ext2fs_t* fs, uint32_t inode_num,
+static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
                        const ext2_inode_t* inode) {
   if (inode_num <= 0) {
     return -ERANGE;
@@ -226,28 +231,35 @@ static int write_inode(ext2fs_t* fs, uint32_t inode_num,
     return -ENOENT;
   }
 
+  const ext2_inode_t* inode_endian_correct_ptr = inode;
+  ext2_inode_t inode_endian_correct;
+  if (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__) {
+    inode_endian_correct = *inode;
+    ext2_inode_ltoh(&inode_endian_correct);
+    inode_endian_correct_ptr = &inode_endian_correct;
+  }
   ext2_inode_t* disk_inode = (ext2_inode_t*)(
       inode_table + inode_table_offset);
-  kmemcpy(disk_inode, inode, sizeof(ext2_inode_t));
-  ext2_inode_ltoh(disk_inode);
+  kmemcpy(disk_inode, inode_endian_correct_ptr, sizeof(ext2_inode_t));
 
   ext2_block_put(fs, inode_table_block, BC_FLUSH_ASYNC);
   return 0;
 }
 
 // Given a block number, return the ith uint32_t of that block.
-static uint32_t get_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx) {
+static uint32_t read_block_u32(const ext2fs_t* fs, uint32_t block_num,
+                               uint32_t idx) {
   KASSERT(block_num != 0);
-  void* block = ext2_block_get(fs, block_num);
+  const void* block = ext2_block_get(fs, block_num);
   KASSERT(block);
-  uint32_t value = ((uint32_t*)block)[idx];
-  ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
+  uint32_t value = ((const uint32_t*)block)[idx];
+  ext2_block_put(fs, block_num, BC_FLUSH_NONE);
   return ltoh32(value);
 }
 
 // Given a block number, set the ith uint32_t of that block.
-static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
-                          uint32_t value) {
+static void write_block_u32(const ext2fs_t* fs, uint32_t block_num,
+                            uint32_t idx, uint32_t value) {
   KASSERT(block_num != 0);
   void* block = ext2_block_get(fs, block_num);
   KASSERT(block);
@@ -258,7 +270,7 @@ static void set_block_idx(ext2fs_t* fs, uint32_t block_num, uint32_t idx,
 // Given an inode block index, return the level (0 for direct, 1 for indirect,
 // etc), and the offset to get to that level (0 for direct, 12 for indirect, 12
 // + 1024 for double indirect, etc).
-static void get_inode_level_and_offset(ext2fs_t* fs, uint32_t inode_block,
+static void get_inode_level_and_offset(const ext2fs_t* fs, uint32_t inode_block,
                                        int* level_out, uint32_t* offset_out) {
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = ext2_block_size(fs) / sizeof(uint32_t);
@@ -293,7 +305,7 @@ static void get_inode_level_and_offset(ext2fs_t* fs, uint32_t inode_block,
 // If we reach a '0' block number before we get to the final level, we set the
 // arguments and return early.  *level_out will be set to the last level that
 // had a valid block number (which is level + 1 if base_block == 0).
-static void get_indirect_block(ext2fs_t* fs, int level,
+static void get_indirect_block(const ext2fs_t* fs, int level,
                                uint32_t base_block, uint32_t index,
                                int* level_out,
                                uint32_t* indirect_block_out,
@@ -319,13 +331,12 @@ static void get_indirect_block(ext2fs_t* fs, int level,
     return;
   } else {
     const uint32_t next_level_block_idx = index / blocks_in_next_level;
-    const uint32_t next_level_index =
-        index - (next_level_block_idx * blocks_in_next_level);
+    const uint32_t next_level_index = index % blocks_in_next_level;
     *indirect_block_out = base_block;
     *indirect_block_offset_out = next_level_block_idx;
     *level_out = level;
     get_indirect_block(fs, level - 1,
-                       get_block_idx(fs, base_block, next_level_block_idx),
+                       read_block_u32(fs, base_block, next_level_block_idx),
                        next_level_index,
                        level_out,
                        indirect_block_out,
@@ -335,7 +346,7 @@ static void get_indirect_block(ext2fs_t* fs, int level,
 
 // Given an inode and a block number in that inode, return the absolute block
 // number of that block (in the filesystem), or -errno on error.
-static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
+static uint32_t get_inode_block(const ext2fs_t* fs, const ext2_inode_t* inode,
                                 uint32_t inode_block) {
   int level;
   uint32_t offset;
@@ -354,12 +365,10 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
                        &indirect_block,
                        &indirect_block_offset);
     if (final_level != 1) {
-      //klogf("ext2: warning: cannot get block (%d) in unallocated indirect "
-      //      "block (level %d)\n", inode_block, final_level);
       return 0;
     }
 
-    return get_block_idx(fs, indirect_block, indirect_block_offset);
+    return read_block_u32(fs, indirect_block, indirect_block_offset);
   }
 }
 
@@ -372,8 +381,8 @@ static uint32_t get_inode_block(ext2fs_t* fs, ext2_inode_t* inode,
 // little endian form), and the absolute offset of that dirent from the
 // beginning of the directory inode.
 typedef int (*inode_iter_func_t)(void*, ext2_dirent_t*, uint32_t);
-static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
-                          inode_iter_func_t func, void* arg) {
+static int dirent_iterate(const ext2fs_t* fs, ext2_inode_t* inode,
+                          uint32_t offset, inode_iter_func_t func, void* arg) {
   KASSERT((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
 
   // Look for an appropriate entry.
@@ -419,13 +428,15 @@ static int dirent_iterate(ext2fs_t* fs, ext2_inode_t* inode, uint32_t offset,
 // finding free nodes in a block group's bitmap.
 static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
                            uint32_t* blocks_out) {
+  ext2fs_lock(fs);
   if (fs->sb.s_free_blocks_count < nblocks) {
+    ext2fs_unlock(fs);
     return -ENOSPC;
   }
 
   // Starting with the inode's block group, look for one with enough free
   // blocks.
-  uint32_t bg = (inode_num - 1) / fs->sb.s_inodes_per_group;
+  uint32_t bg = get_inode_bg(fs, inode_num);
   unsigned int block_groups_checked = 0;
   while (fs->block_groups[bg].bg_free_blocks_count < nblocks &&
          block_groups_checked < fs->num_block_groups) {
@@ -434,6 +445,7 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   }
   // TODO(aoates): allocate the blocks amongst several block groups.
   if (block_groups_checked == fs->num_block_groups) {
+    ext2fs_unlock(fs);
     KLOG(WARNING, "ext2: no block groups found with %d free blocks\n", nblocks);
     return -ENOSPC;
   }
@@ -442,6 +454,10 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   KASSERT(fs->block_groups[bg].bg_free_blocks_count >= nblocks);
   fs->sb.s_free_blocks_count -= nblocks;
   fs->block_groups[bg].bg_free_blocks_count -= nblocks;
+
+  // We've "reserved" our blocks; unlock and flush before figuring out which
+  // blocks specifically in the group to allocate.
+  ext2fs_unlock(fs);
   ext2_flush_superblock(fs);
   ext2_flush_block_group(fs, bg);
 
@@ -451,10 +467,13 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
     // TODO(aoates): roll back the decrement of the counters.
     return -ENOMEM;
   }
+
+  ext2fs_lock(fs);
   for (unsigned int i = 0; i < nblocks; ++i) {
     int idx_in_bg_bmp = bg_bitmap_find_free(fs, block_bitmap);
     if (idx_in_bg_bmp < 0) {
-      ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
+      ext2fs_unlock(fs);
+      ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_NONE);
       KLOG(WARNING, "ext2: block group desc indicated free blocks, but none "
            "found in block bitmap!\n");
       fs->unhealthy = 1;
@@ -464,6 +483,7 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
     blocks_out[i] = fs->sb.s_first_data_block + bg * fs->sb.s_blocks_per_group +
         idx_in_bg_bmp;
   }
+  ext2fs_unlock(fs);
   ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
   return 0;
 }
@@ -473,30 +493,33 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   const uint32_t bg = get_block_bg(fs, block);
   const uint32_t bg_block_idx = get_block_bg_idx(fs, block);
 
-  // Increment the free block count in the superblock and bgd, then flush them.
-  fs->sb.s_free_blocks_count++;
-  fs->block_groups[bg].bg_free_blocks_count++;
-  ext2_flush_superblock(fs);
-  ext2_flush_block_group(fs, bg);
-
   // Mark the block as free in the bitmap
   uint8_t* block_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_block_bitmap);
   if (!block_bitmap) {
     return -ENOMEM;
   }
-  KASSERT(bg_bitmap_get(fs, block_bitmap, bg_block_idx));
+  ext2fs_lock(fs);
+  KASSERT(bg_bitmap_get(block_bitmap, bg_block_idx));
   bg_bitmap_clear(block_bitmap, bg_block_idx);
   ext2_block_put(fs, fs->block_groups[bg].bg_block_bitmap, BC_FLUSH_ASYNC);
+
+  // Increment the free block count in the superblock and bgd, then flush them.
+  fs->sb.s_free_blocks_count++;
+  fs->block_groups[bg].bg_free_blocks_count++;
+  ext2fs_unlock(fs);
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
 
   return 0;
 }
 
-// Free an n-th level indirect block, starting at blk_offset.
-static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
-                                uint32_t blk_offset) {
+// Free an n-th level indirect block, starting at blk_offset.  Returns the
+// number of blocks freed (possibly including the indirect block itself).
+static uint32_t free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
+                                    uint32_t blk_offset) {
   KASSERT(level >= 1);
   if (block_num == 0)
-    return;
+    return 0;
 
   uint32_t* block = ext2_block_get(fs, block_num);
   KASSERT(block);
@@ -507,50 +530,62 @@ static void free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
   uint32_t blocks_per_entry = 1;
   for (int i = 1; i < level; ++i) blocks_per_entry *= kBlocksPerIndirect;
 
+  uint32_t freed = 0;
   for (unsigned int i = 0; i < kBlocksPerIndirect; ++i) {
     if ((i + 1) * blocks_per_entry <= blk_offset) continue;
     if (level == 1 && block[i] != 0) {
+      freed++;
       free_block(fs, block[i]);
       block[i] = 0;
     } else if (level > 1) {
-      free_indirect_block(fs, block[i], level - 1,
-                          blk_offset % blocks_per_entry);
+      freed += free_indirect_block(fs, block[i], level - 1,
+                                   blk_offset % blocks_per_entry);
     }
   }
   ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
-  if (blk_offset == 0)
+  if (blk_offset == 0) {
     free_block(fs, block_num);  // Free the indirect block itself.
+    freed++;
+  }
+  return freed;
 }
 
-// Free the blocks from the given inode starting at blk_offset.
-static void free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
-                              uint32_t blk_offset) {
+// Free the blocks from the given inode starting at blk_offset.  Returns the
+// number of blocks freed (which may include non-data indirect blocks).
+static uint32_t free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
+                                  uint32_t blk_offset) {
   const uint32_t block_size = ext2_block_size(fs);
   const uint32_t kDirectBlocks = 12;
   const uint32_t kBlocksPerIndirect = block_size / sizeof(uint32_t);
   const uint32_t kBlocksPerDoubleIndirect =
       kBlocksPerIndirect * kBlocksPerIndirect;
+  uint32_t freed = 0;
 
-  for (int i = blk_offset; i < 12; ++i) {
-    if (inode->i_block[i]) free_block(fs, inode->i_block[i]);
-    inode->i_block[i] = 0;
+  for (unsigned int i = blk_offset; i < kDirectBlocks; ++i) {
+    if (inode->i_block[i]) {
+      freed++;
+      free_block(fs, inode->i_block[i]);
+      inode->i_block[i] = 0;
+    }
   }
   blk_offset = (blk_offset < kDirectBlocks) ? 0 : blk_offset - kDirectBlocks;
   if (blk_offset < kBlocksPerIndirect)
-    free_indirect_block(fs, inode->i_block[12], 1, blk_offset);
+    freed += free_indirect_block(fs, inode->i_block[12], 1, blk_offset);
   if (blk_offset == 0) inode->i_block[12] = 0;
 
   blk_offset =
       (blk_offset < kBlocksPerIndirect) ? 0 : blk_offset - kBlocksPerIndirect;
   if (blk_offset < kBlocksPerDoubleIndirect)
-    free_indirect_block(fs, inode->i_block[13], 2, blk_offset);
+    freed += free_indirect_block(fs, inode->i_block[13], 2, blk_offset);
   if (blk_offset == 0) inode->i_block[13] = 0;
 
   blk_offset = (blk_offset < kBlocksPerDoubleIndirect)
                    ? 0
                    : blk_offset - kBlocksPerDoubleIndirect;
-  free_indirect_block(fs, inode->i_block[14], 3, blk_offset);
+  freed += free_indirect_block(fs, inode->i_block[14], 3, blk_offset);
   if (blk_offset == 0) inode->i_block[14] = 0;
+
+  return freed;
 }
 
 // Allocate a new inode.  Depending on the type, it may be allocated in the
@@ -560,23 +595,28 @@ static void free_inode_blocks(ext2fs_t* fs, ext2_inode_t* inode,
 // returns the new inode's number.  Returns -errno (and doesn't mark any inodes
 // as in-use) on error.
 static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
+  ext2fs_lock(fs);
   if (fs->sb.s_free_inodes_count == 0) {
+    ext2fs_unlock(fs);
     return -ENOSPC;
   }
 
   // If we're not creating a directory, try to allocate in the parent's bg.
-  // TODO(aoates): choose a random block group!
-  uint32_t bg = ((mode & EXT2_S_IFDIR) == 0) ?
-      ((parent_inode - 1) / fs->sb.s_inodes_per_group) : 0;
+  uint32_t bg = get_inode_bg(fs, parent_inode);
+  if ((mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
+    bg = (bg + 1) % fs->num_block_groups;
+  }
 
   // Starting with bg, find a block group with a free inode.
   unsigned int block_groups_checked = 0;
+  KASSERT_DBG(bg < fs->num_block_groups);
   while (fs->block_groups[bg].bg_free_inodes_count == 0 &&
          block_groups_checked < fs->num_block_groups) {
     block_groups_checked++;
     bg = (bg + 1) % fs->num_block_groups;
   }
   if (block_groups_checked == fs->num_block_groups) {
+    ext2fs_unlock(fs);
     KLOG(WARNING, "ext2: superblock indicated free inodes, but none found "
          "in block groups!\n");
     fs->unhealthy = 1;
@@ -590,6 +630,10 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   if ((mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
     fs->block_groups[bg].bg_used_dirs_count++;
   }
+
+  // We've "reserved" the inode; unlock and flush before figuring out which
+  // inode specifically to allocate.
+  ext2fs_unlock(fs);
   ext2_flush_superblock(fs);
   ext2_flush_block_group(fs, bg);
 
@@ -599,9 +643,11 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
     // TODO(aoates): roll back the decrement of the counters.
     return -ENOMEM;
   }
+  ext2fs_lock(fs);
   int idx_in_bg = bg_bitmap_find_free(fs, inode_bitmap);
   if (idx_in_bg < 0) {
-    ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
+    ext2fs_unlock(fs);
+    ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_NONE);
     KLOG(WARNING, "ext2: block group desc indicated free inodes, but none found "
          "in inode bitmap!\n");
     fs->unhealthy = 1;
@@ -610,6 +656,7 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
 
   // Mark the inode as used and return it's index.
   bg_bitmap_set(inode_bitmap, idx_in_bg);
+  ext2fs_unlock(fs);
   ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
   // Inode numbers are 1-indexed.
@@ -633,31 +680,38 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   const uint32_t bg = get_inode_bg(fs, inode_num);
   const uint32_t bg_inode_idx = get_inode_bg_idx(fs, inode_num);
 
-  // Increment the free inode count in the superblock and bgd, then flush them.
-  fs->sb.s_free_inodes_count++;
-  fs->block_groups[bg].bg_free_inodes_count++;
-  if ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR) {
-    fs->block_groups[bg].bg_used_dirs_count--;
+  // Free all of its blocks.
+  if (inode_has_data_blocks(inode)) {
+    uint32_t freed = free_inode_blocks(fs, inode, 0);
+    // TODO(aoates): don't assert on external data.
+    KASSERT_DBG(freed * (ext2_block_size(fs) / 512) == inode->i_blocks);
   }
-  ext2_flush_superblock(fs);
-  ext2_flush_block_group(fs, bg);
+  const bool is_dir = ((inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
+
+  kmemset(inode, 0, sizeof(ext2_inode_t));
+  write_inode(fs, inode_num, inode);
+  inode = NULL;
 
   // Mark the inode as free in the bitmap
   uint8_t* inode_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_inode_bitmap);
   if (!inode_bitmap) {
     return -ENOMEM;
   }
-  KASSERT(bg_bitmap_get(fs, inode_bitmap, bg_inode_idx));
+  ext2fs_lock(fs);
+  KASSERT(bg_bitmap_get(inode_bitmap, bg_inode_idx));
   bg_bitmap_clear(inode_bitmap, bg_inode_idx);
   ext2_block_put(fs, fs->block_groups[bg].bg_inode_bitmap, BC_FLUSH_ASYNC);
 
-  // Free all of its blocks.
-  if (inode_has_data_blocks(inode)) {
-    free_inode_blocks(fs, inode, 0);
+  // Increment the free inode count in the superblock and bgd, then flush them.
+  fs->sb.s_free_inodes_count++;
+  fs->block_groups[bg].bg_free_inodes_count++;
+  if (is_dir) {
+    fs->block_groups[bg].bg_used_dirs_count--;
   }
+  ext2fs_unlock(fs);
+  ext2_flush_superblock(fs);
+  ext2_flush_block_group(fs, bg);
 
-  kmemset(inode, 0, sizeof(ext2_inode_t));
-  write_inode(fs, inode_num, inode);
   return 0;
 }
 
@@ -741,8 +795,8 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
           KASSERT(inode->i_block[11 + level] == 0);
           inode->i_block[11 + level] = new_indirect_block;
         } else {
-          set_block_idx(fs, indirect_block, indirect_block_offset,
-                        new_indirect_block);
+          write_block_u32(fs, indirect_block, indirect_block_offset,
+                          new_indirect_block);
         }
         get_indirect_block(fs, level, inode->i_block[11 + level],
                            inode_block - offset,
@@ -751,8 +805,7 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
                            &indirect_block_offset);
       }
 
-      set_block_idx(fs, indirect_block, indirect_block_offset,
-                    new_blocks[i]);
+      write_block_u32(fs, indirect_block, indirect_block_offset, new_blocks[i]);
     }
     if (clear_new_blocks) {
       // TODO(aoates): there's no actual need to read this from disk if it's not
@@ -802,7 +855,11 @@ static int resize_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
     }
   } else if (new_size < inode->i_size) {
     if (new_blocks < old_blocks) {
-      free_inode_blocks(fs, inode, new_blocks);
+      uint32_t freed = free_inode_blocks(fs, inode, new_blocks);
+      uint32_t freed_iblocks = freed * (ext2_block_size(fs) / 512);
+      // TODO(aoates): don't assert on external data.
+      KASSERT_DBG(freed_iblocks <= inode->i_blocks);
+      inode->i_blocks -= freed_iblocks;
     }
   }
   inode->i_size = new_size;
@@ -836,7 +893,7 @@ static int ext2_lookup_iter_func(void* arg, ext2_dirent_t* little_endian_dirent,
 // the dirent_t within the parent inode.  Returns 0 on success, -errno on error.
 // TODO(aoates): support filetype extension, and return it here.
 // TODO(aoates): make this take a const ext2_inode_t*.
-static int lookup_internal(ext2fs_t* fs, ext2_inode_t* parent_inode,
+static int lookup_internal(const ext2fs_t* fs, ext2_inode_t* parent_inode,
                            const char* name, uint32_t* inode_out,
                            uint32_t* offset_out) {
   KASSERT((parent_inode->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
@@ -944,7 +1001,8 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
   new_dirent->name_len = name_len;
   // TODO(aoates): use filetype extension.
   new_dirent->file_type = EXT2_FT_UNKNOWN;
-  kstrncpy(new_dirent->name, name, name_len);
+  size_t max_name_len = new_dirent_len - offsetof(ext2_dirent_t, name);
+  kstrncpy(new_dirent->name, name, max_name_len);
 
   ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
   return 0;
@@ -988,8 +1046,9 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
 
 // Relink the given entry in the parent to the new inode.  Does NOT update the
 // link count of the old or new child.
-static int relink_internal(ext2fs_t* fs, ext2_inode_t* parent, const char* name,
-                           uint32_t new_inode, uint32_t* old_inode_out) {
+static int relink_internal(const ext2fs_t* fs, ext2_inode_t* parent,
+                           const char* name, uint32_t new_inode,
+                           uint32_t* old_inode_out) {
   KASSERT((parent->i_mode & EXT2_S_MASK) == EXT2_S_IFDIR);
   const uint32_t block_size = ext2_block_size(fs);
 
@@ -1110,7 +1169,7 @@ static int ext2_get_root(struct fs* fs) {
 }
 
 static int ext2_get_vnode(vnode_t* vnode) {
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   kstrcpy(vnode->fstype, "ext2");
   // Fill in the vnode_t with data from the filesystem.  The vnode_t will have
   // been allocated with alloc_vnode and had the following fields initalized:
@@ -1221,7 +1280,7 @@ static int ext2_lookup(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
 
-  ext2fs_t* fs = (ext2fs_t*)parent->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)parent->fs;
   ext2_inode_t inode;
   int result = get_inode(fs, parent->num, &inode);
   if (result) {
@@ -1432,7 +1491,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   if (offset > vnode->len)
     return 0;
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   const uint32_t inode_block = offset / ext2_block_size(fs);
   const uint32_t block_offset = offset % ext2_block_size(fs);
 
@@ -1454,7 +1513,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   const uint32_t block = get_inode_block(fs, &inode, inode_block);
   KASSERT(block > 0);
 
-  void* block_data = ext2_block_get(fs, block);
+  const void* block_data = ext2_block_get(fs, block);
   if (!block_data) {
     return -ENOMEM;
   }
@@ -1462,7 +1521,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT_DBG(len <= bufsize);
   kmemcpy(buf, block_data + block_offset, len);
 
-  ext2_block_put(fs, block, BC_FLUSH_ASYNC);
+  ext2_block_put(fs, block, BC_FLUSH_NONE);
   return len;
 }
 
@@ -1673,7 +1732,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(vnode->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   ext2_inode_t inode;
   // TODO(aoates): do we want to store the inode in the vnode?
   int result = get_inode(fs, vnode->num, &inode);
@@ -1704,7 +1763,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
 int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   ext2_inode_t inode;
   int result = get_inode(fs, vnode->num, &inode);
   if (result) {
@@ -1789,7 +1848,7 @@ static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
 
   if (vnode->len < EXT2_SYMLINK_INLINE_LEN) {
-    ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+    const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
     ext2_inode_t inode;
     // TODO(aoates): do we want to store the inode in the vnode?
     int result = get_inode(fs, vnode->num, &inode);
@@ -1834,7 +1893,7 @@ static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write
   KASSERT(page_offset >= 0);
   KASSERT(page_offset * PAGE_SIZE <= vnode->len);
 
-  ext2fs_t* fs = (ext2fs_t*)vnode->fs;
+  const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   KASSERT(PAGE_SIZE % ext2_block_size(fs) == 0);
   const uint32_t inode_block = (page_offset * PAGE_SIZE) / ext2_block_size(fs);
 
@@ -1868,11 +1927,12 @@ static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write
     void* buf_offset = (char*)buf + (block_idx * ext2_block_size(fs));
     if (is_write) {
       kmemcpy(block_data, buf_offset, bytes_to_copy);
+      ext2_block_put(fs, block, BC_FLUSH_ASYNC);
     } else {
       kmemcpy(buf_offset, block_data, bytes_to_copy);
+      ext2_block_put(fs, block, BC_FLUSH_NONE);
     }
 
-    ext2_block_put(fs, block, BC_FLUSH_ASYNC);
     bytes_left -= ext2_block_size(fs);
   }
   return 0;

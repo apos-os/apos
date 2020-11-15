@@ -17,6 +17,7 @@
 
 #include "memory/block_cache.h"
 #include "memory/memobj.h"
+#include "proc/kthread.h"
 #include "user/include/apos/dev.h"
 #include "vfs/fs.h"
 
@@ -40,6 +41,10 @@ typedef struct {
   // How many block groups there are, and the corresponding descriptors.
   unsigned int num_block_groups;
   ext2_block_group_desc_t* block_groups;
+
+  // Lock that protects the mutable portions of the global data structures (sb
+  // and block_groups).
+  kmutex_t mu;
 } ext2fs_t;
 
 // Returns the block size in bytes.
@@ -65,5 +70,9 @@ int ext2_read_block_groups(ext2fs_t* fs);
 // ext2fs_t back to disk.
 int ext2_flush_superblock(const ext2fs_t* fs);
 int ext2_flush_block_group(const ext2fs_t* fs, unsigned int bg);
+
+// Lock and unlock a const ext2fs_t* (which must not point to a const object).
+void ext2fs_lock(const ext2fs_t* fs);
+void ext2fs_unlock(const ext2fs_t* fs);
 
 #endif

@@ -124,8 +124,8 @@ int kmutex_is_locked(kmutex_t* m);
 // Asserts that the mutex is currently held by this thread.
 // Note: may have false negatives in non-debug builds, where we don't track
 // which thread is holding a mutex.
-void kmutex_assert_is_held(kmutex_t* m);
-void kmutex_assert_is_not_held(kmutex_t* m);
+void kmutex_assert_is_held(const kmutex_t* m);
+void kmutex_assert_is_not_held(const kmutex_t* m);
 
 // An auto-unlocking mutex lock.
 //

@@ -119,6 +119,8 @@ void ksh_printf(const char* fmt, ...) {
   vfs_write(1, buf, kstrlen(buf));
 }
 
+static void parse_and_dispatch(kshell_t* shell, char* cmd);
+
 #if ENABLE_TESTS
 
 typedef struct {
@@ -763,6 +765,62 @@ static void hash_file_cmd(kshell_t* shell, int argc, char* argv[]) {
   ksh_printf("elapsed time: %d ms\n", elapsed);
 }
 
+// A non-hermetic command to run various operations on the filesystem.  The idea
+// is to run fsck externally on the resulting image afterwards.
+static void stress_fs_cmd(kshell_t* shell, int argc, char* argv[]) {
+  if (argc != 1) {
+    ksh_printf("usage: stress_fs\n");
+    return;
+  }
+
+  const char* cmds[] = {
+    // Copy a large file then make a directory (hopefully reusing the same data
+    // blocks for the dirents as we dirtied with the file).
+    "/bin/cp /bin/cat x",
+    "/bin/rm x",
+    "mkdir a",
+    "mkdir a/b",
+
+    // Create some dirents that fit exactly into the smallest dirent size (with
+    // 4-char names).
+    "mkdir a/b/aaaa",
+    "mkdir a/b/bbbb",
+    "rmdir a/b/aaaa",
+    "mkdir a/b/cccc",
+
+    // Copy a large file over itself repeatedly.
+    "/bin/cp /bin/cat x",
+    "/bin/cp /bin/cat x",
+    NULL,
+  };
+
+  for (int i = 0; cmds[i] != NULL; ++i) {
+    char cmd[256];
+    kstrcpy(cmd, cmds[i]);
+    ksh_printf("Running '%s'\n", cmd);
+    parse_and_dispatch(shell, cmd);
+  }
+
+  // Truncate and resize a large file a couple times.
+  int fd = vfs_open("_large_file", VFS_O_CREAT, VFS_S_IRWXU);
+  if (fd < 0) {
+    ksh_printf("Unable to create file\n");
+    return;
+  }
+  vfs_close(fd);
+  if (vfs_truncate("_large_file", 4096 * 100)) {
+    ksh_printf("Unable to ftruncate file #1\n");
+    return;
+  }
+  if (vfs_truncate("_large_file", 4096 * 80)) {
+    ksh_printf("Unable to ftruncate file #2\n");
+    return;
+  }
+
+  // Finish by flushing all the block cache entries.
+  block_cache_clear_unpinned();
+}
+
 void bcstats_cmd(kshell_t* shell, int argc, char** argv) {
   block_cache_log_stats();
 }
@@ -1105,18 +1163,20 @@ static const cmd_t CMDS[] = {
   { "_ls", &ls_cmd },
   { "mkdir", &mkdir_cmd },
   { "rmdir", &rmdir_cmd },
-  { "pwd", &pwd_cmd },
+  { "_pwd", &pwd_cmd },
   { "cd", &cd_cmd },
   { "_cat", &cat_cmd },
   { "write", &write_cmd },
-  { "rm", &rm_cmd },
-  { "cp", &cp_cmd },
+  { "_rm", &rm_cmd },
+  { "_cp", &cp_cmd },
 
   { "fg", &fg_cmd },
   { "bg", &bg_cmd },
   { "jobs", &jobs_cmd },
 
   { "hash_file", &hash_file_cmd },
+
+  { "stress_fs", &stress_fs_cmd },
 
 #if ENABLE_USB
   { "uhci", &uhci_trampoline_cmd },
