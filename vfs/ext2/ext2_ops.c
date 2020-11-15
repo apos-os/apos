@@ -231,10 +231,16 @@ static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
     return -ENOENT;
   }
 
+  const ext2_inode_t* inode_endian_correct_ptr = inode;
+  ext2_inode_t inode_endian_correct;
+  if (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__) {
+    inode_endian_correct = *inode;
+    ext2_inode_ltoh(&inode_endian_correct);
+    inode_endian_correct_ptr = &inode_endian_correct;
+  }
   ext2_inode_t* disk_inode = (ext2_inode_t*)(
       inode_table + inode_table_offset);
-  kmemcpy(disk_inode, inode, sizeof(ext2_inode_t));
-  ext2_inode_ltoh(disk_inode);
+  kmemcpy(disk_inode, inode_endian_correct_ptr, sizeof(ext2_inode_t));
 
   ext2_block_put(fs, inode_table_block, BC_FLUSH_ASYNC);
   return 0;
