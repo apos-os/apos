@@ -203,6 +203,13 @@ static void basic_mount_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+static void do_fstat_path(const char* path, apos_stat_t* stat) {
+  int fd = vfs_open(path, VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_fstat(fd, stat));
+  KEXPECT_EQ(0, vfs_close(fd));
+}
+
 static void dot_dot_test(void) {
   KTEST_BEGIN("vfs mount: '..' handling test");
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
@@ -245,6 +252,19 @@ static void dot_dot_test(void) {
   KEXPECT_EQ(a_ino, stat.st_ino);
 
   KEXPECT_EQ(0, vfs_lstat("vfs_mount_test/a/../a/.", &stat));
+  KEXPECT_EQ(a_ino, stat.st_ino);
+
+  // As above, but do open()+fstat() rather than lstat.
+  do_fstat_path("vfs_mount_test/a/..", &stat);
+  KEXPECT_EQ(vfs_mount_test_ino, stat.st_ino);
+
+  do_fstat_path("vfs_mount_test/a/../.", &stat);
+  KEXPECT_EQ(vfs_mount_test_ino, stat.st_ino);
+
+  do_fstat_path("vfs_mount_test/a/../a", &stat);
+  KEXPECT_EQ(a_ino, stat.st_ino);
+
+  do_fstat_path("vfs_mount_test/a/../a/.", &stat);
   KEXPECT_EQ(a_ino, stat.st_ino);
 
   KEXPECT_EQ(0, compare_dirents_p("vfs_mount_test/a", 5, getdents_a_expected));

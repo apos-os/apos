@@ -535,9 +535,6 @@ int vfs_open(const char* path, int flags, ...) {
     return error;
   }
 
-  // If the final component is a '..', try to traverse the mount point.
-  resolve_mounts_up(&parent, base_name);
-
   // Lookup the child inode.
   vnode_t* child;
   int created = 0;
