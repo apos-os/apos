@@ -1094,27 +1094,28 @@ done:
 int vfs_unlink(const char* path) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
+  vnode_t* child = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(false), &parent, 0x0, base_name);
+  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
+  // collect the inode if it's now unused.
+  // TODO(aoates): adapt lookup_existing_path so it can be used (w/ basename)
+  int error =
+      lookup_path(root, path, lookup_opt(false), &parent, &child, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
+  if (!child) {
+    VFS_PUT_AND_CLEAR(parent);
+    return -ENOENT;
+  }
 
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
-  }
-
-  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
-  // collect the inode if it's now unused.
-  vnode_t* child = 0x0;
-  error = lookup(&parent, base_name, &child);
-  if (error) {
-    VFS_PUT_AND_CLEAR(parent);
-    return error;
   }
 
   if (child->type == VNODE_DIRECTORY) {
@@ -1124,6 +1125,7 @@ int vfs_unlink(const char* path) {
   }
 
   error = parent->fs->unlink(parent, base_name);
+  // This actually collects the inode in the fs (if this is the last ref).
   VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);
   return error;
