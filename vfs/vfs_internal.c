@@ -296,17 +296,15 @@ int lookup_path(vnode_t* root, const char* path, lookup_options_t opt,
                               child_out, base_name_out, VFS_MAX_LINK_RECURSION);
 }
 
-
 int lookup_existing_path(const char* path, lookup_options_t opt,
-                         vnode_t** parent_out, vnode_t** child_out) {
+                         vnode_t** child_out) {
   if (!path) return -EINVAL;
   vnode_t* root = get_root_for_path(path);
   char unused_basename[VFS_MAX_FILENAME_LENGTH];
-  int result = lookup_path(root, path, opt, parent_out,
+  int result = lookup_path(root, path, opt, NULL,
                            child_out, unused_basename);
   VFS_PUT_AND_CLEAR(root);
   if (!result && !*child_out) {
-    if (parent_out) VFS_PUT_AND_CLEAR(*parent_out);
     return -ENOENT;
   }
   return result;

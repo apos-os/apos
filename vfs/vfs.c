@@ -871,7 +871,7 @@ int vfs_link(const char* path1, const char* path2) {
   vnode_t* vnode1 = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_existing_path(path1, lookup_opt(false), 0x0, &vnode1);
+  int error = lookup_existing_path(path1, lookup_opt(false), &vnode1);
   if (error) {
     return error;
   }
@@ -1332,7 +1332,7 @@ int vfs_getcwd(char* path_out, size_t size) {
 
 int vfs_chdir(const char* path) {
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, lookup_opt(true), 0x0, &new_cwd);
+  int error = lookup_existing_path(path, lookup_opt(true), &new_cwd);
   if (error) return error;
 
   if (new_cwd->type != VNODE_DIRECTORY) {
@@ -1447,8 +1447,8 @@ static int vfs_path_stat_internal(const char* path, apos_stat_t* stat,
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(resolve_final_symlink),
-                                    0x0, &child);
+  int result =
+      lookup_existing_path(path, lookup_opt(resolve_final_symlink), &child);
   if (result) return result;
 
   result = vfs_stat_internal(child, stat);
@@ -1501,8 +1501,8 @@ static int vfs_chown_path_internal(const char* path, kuid_t owner, kgid_t group,
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(resolve_final_symlink),
-                                    0x0, &child);
+  int result =
+      lookup_existing_path(path, lookup_opt(resolve_final_symlink), &child);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
@@ -1546,7 +1546,7 @@ static int vfs_chmod_internal(vnode_t* vnode, kmode_t mode) {
 
 int vfs_chmod(const char* path, kmode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(true), 0x0, &child);
+  int result = lookup_existing_path(path, lookup_opt(true), &child);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);
@@ -1619,7 +1619,7 @@ int vfs_readlink(const char* path, char* buf, int bufsize) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(false), 0x0, &child);
+  int result = lookup_existing_path(path, lookup_opt(false), &child);
   if (result) return result;
 
   if (child->type != VNODE_SYMLINK) {
@@ -1647,7 +1647,7 @@ int vfs_access(const char* path, int amode) {
   vnode_t* child = 0x0;
   lookup_options_t opt = lookup_opt(true);
   opt.check_real_ugid = true;
-  int result = lookup_existing_path(path, opt, 0x0, &child);
+  int result = lookup_existing_path(path, opt, &child);
   if (result) return result;
 
   result = 0;
@@ -1714,7 +1714,7 @@ int vfs_truncate(const char* path, koff_t length) {
   }
 
   vnode_t* vnode = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(true), 0x0, &vnode);
+  int result = lookup_existing_path(path, lookup_opt(true), &vnode);
   if (result) return result;
 
   if (vnode->type == VNODE_DIRECTORY) result = -EISDIR;
