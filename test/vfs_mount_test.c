@@ -871,6 +871,7 @@ static void rename_mount_test(void) {
   // Do the mount.
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/b", ramfsB));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/a2", VFS_S_IRWXU));
 
   KTEST_BEGIN("vfs mount: rename() across filesystems fails");
   create_file("vfs_mount_test/a/f", "rwxrwxrwx");
@@ -880,8 +881,21 @@ static void rename_mount_test(void) {
   KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a", "vfs_mount_test/b/c"));
 
   KTEST_BEGIN("vfs mount: rename() filesystem mount point");
+  // Note: many of these could be EBUSY, EXDEV, or EINVAL depending on the order
+  // of checks and mount resolutions.
   KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/a", "vfs_mount_test/c"));
+  KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/a/", "vfs_mount_test/c"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/.", "vfs_mount_test/c"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/a2/..", "vfs_mount_test/c"));
   KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/a", "vfs_mount_test/b"));
+  KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/a/", "vfs_mount_test/b"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/.", "vfs_mount_test/b"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/a2/..", "vfs_mount_test/b"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a", "vfs_mount_test/a/."));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a", "vfs_mount_test/a/a2"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a", "vfs_mount_test/a/a2/"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a", "vfs_mount_test/a/a2/c"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/a/", "vfs_mount_test/a/a2/c"));
   apos_stat_t stat;
   KEXPECT_EQ(0, vfs_stat("vfs_mount_test/a", &stat));
   KEXPECT_EQ(0, vfs_stat("vfs_mount_test/b", &stat));
@@ -892,6 +906,9 @@ static void rename_mount_test(void) {
   KEXPECT_EQ(0, vfs_unlink("vfs_mount_test/b/f2"));
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/dir", VFS_S_IRWXU));
   KEXPECT_EQ(-EBUSY, vfs_rename("vfs_mount_test/dir", "vfs_mount_test/b"));
+  KEXPECT_EQ(-EXDEV, vfs_rename("vfs_mount_test/dir", "vfs_mount_test/b/."));
+  KEXPECT_EQ(-EXDEV,
+             vfs_rename("vfs_mount_test/dir", "vfs_mount_test/a/a2/.."));
   KEXPECT_EQ(0, vfs_stat("vfs_mount_test/a", &stat));
   KEXPECT_EQ(0, vfs_stat("vfs_mount_test/b", &stat));
   KEXPECT_EQ(0, vfs_stat("vfs_mount_test/dir", &stat));

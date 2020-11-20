@@ -42,6 +42,7 @@ int resolve_mounts(vnode_t** vnode) {
     // TODO(aoates): check that each of these is valid.
     fs_t* const child_fs = g_fs_table[n->mounted_fs].fs;
     vnode_t* child_fs_root = vfs_get(child_fs, child_fs->get_root(child_fs));
+    KASSERT_DBG(child_fs_root->parent_mount_point == n);
     VFS_PUT_AND_CLEAR(n);
     n = VFS_MOVE_REF(child_fs_root);
   }
