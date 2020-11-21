@@ -522,75 +522,57 @@ int vfs_open(const char* path, int flags, ...) {
   if (mode == VFS_O_RDONLY && (flags & VFS_O_TRUNC)) return -EACCES;
 
   vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
+  vnode_t* parent = 0x0, *child = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   bool follow_final_symlink =
       !((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) &&
       !(flags & VFS_O_NOFOLLOW);
-  int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
-                          0x0, base_name);
+  lookup_options_t lookup = lookup_opt(follow_final_symlink);
+  lookup.lock_on_noent = true;
+  int error = lookup_path(root, path, lookup, &parent, &child, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
 
-  // Lookup the child inode.
-  vnode_t* child;
   int created = 0;
-  if (base_name[0] == '\0') {
-    child = VFS_COPY_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0 && error != -ENOENT) {
+  if (child == NULL) {
+    if (!(flags & VFS_O_CREAT)) {
       kmutex_unlock(&parent->mutex);
       VFS_PUT_AND_CLEAR(parent);
-      return error;
-    } else if (error == -ENOENT) {
-      if (!(flags & VFS_O_CREAT)) {
-        kmutex_unlock(&parent->mutex);
-        VFS_PUT_AND_CLEAR(parent);
-        return error;
-      }
-
-      int mode_check = 0;
-      mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
-      if (mode_check) {
-        kmutex_unlock(&parent->mutex);
-        VFS_PUT_AND_CLEAR(parent);
-        return mode_check;
-      }
-
-      // Create it.
-      int child_inode =
-          parent->fs->mknod(parent, base_name, VNODE_REGULAR, kmakedev(0, 0));
-      if (child_inode < 0) {
-        kmutex_unlock(&parent->mutex);
-        VFS_PUT_AND_CLEAR(parent);
-        return child_inode;
-      }
-
-      child = vfs_get(parent->fs, child_inode);
-      vfs_set_created_metadata(child, create_mode);
-      created = 1;
-    } else if ((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      VFS_PUT_AND_CLEAR(child);
-      return -EEXIST;
+      return -ENOENT;
     }
 
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-  }
-  VFS_PUT_AND_CLEAR(parent);
+    int mode_check = 0;
+    mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+    if (mode_check) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return mode_check;
+    }
 
-  error = resolve_mounts(&child);
-  if (error) {
+    // Create it.
+    int child_inode =
+        parent->fs->mknod(parent, base_name, VNODE_REGULAR, kmakedev(0, 0));
+    if (child_inode < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return child_inode;
+    }
+
+    child = vfs_get(parent->fs, child_inode);
+    vfs_set_created_metadata(child, create_mode);
+    created = 1;
+    kmutex_unlock(&parent->mutex);  // Locked because of lock_on_noent.
+  } else if ((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) {
+    VFS_PUT_AND_CLEAR(parent);
     VFS_PUT_AND_CLEAR(child);
-    return error;
+    return -EEXIST;
   }
+
+  // Done with the parent.
+  VFS_PUT_AND_CLEAR(parent);
 
   // Check permissions on the file if it already exists.
   if (!created) {

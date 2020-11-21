@@ -3096,12 +3096,81 @@ static void symlink_testE(void) {
   kfree(target);
 }
 
+static void* vfs_swap_test_helper(void* arg) {
+  // TODO(aoates): use spinlock, mutex, or notification.
+  const bool* done = (const bool*)arg;
+  while (!(*done)) {
+    KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
+    KEXPECT_EQ(0, vfs_symlink("file2", "symlink_swap_test/target"));
+    scheduler_yield();
+    KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
+    KEXPECT_EQ(0,
+               vfs_link("symlink_swap_test/file1", "symlink_swap_test/target"));
+    scheduler_yield();
+  }
+  return NULL;
+}
+
+static void vfs_open_symlink_swap_test(void) {
+  KTEST_BEGIN("vfs: file replaced with symlink during open()");
+  // Setup two files that will stay put.  Link the first file and a create a
+  // symlink to that linked version.
+  KEXPECT_EQ(0, vfs_mkdir("symlink_swap_test", VFS_S_IRWXU));
+  create_file_with_data("symlink_swap_test/file1", "");
+  create_file_with_data("symlink_swap_test/file2", "");
+  KEXPECT_EQ(0,
+             vfs_link("symlink_swap_test/file1", "symlink_swap_test/target"));
+  KEXPECT_EQ(0, vfs_symlink("target", "symlink_swap_test/link"));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("symlink_swap_test/file1", &stat));
+  const apos_ino_t file1_ino = stat.st_ino;
+  KEXPECT_EQ(0, vfs_stat("symlink_swap_test/file2", &stat));
+  const apos_ino_t file2_ino = stat.st_ino;
+
+  kthread_t thread1, thread2;
+  chaos_args_t args;
+  args.path = "symlink_swap_test";
+  args.done = false;
+  KEXPECT_EQ(0, kthread_create(&thread1, &vfs_swap_test_helper, &args.done));
+  scheduler_make_runnable(thread1);
+  KEXPECT_EQ(0, kthread_create(&thread2, &chaos_helper, &args));
+  scheduler_make_runnable(thread2);
+  const int kIters = 100 * CONCURRENCY_TEST_ITERS_MULT;
+  for (int i = 0; i < kIters; ++i) {
+    if (i % 3 == 0) scheduler_yield();
+    int fd = vfs_open("symlink_swap_test/link", VFS_O_RDONLY);
+    // ENOENT is fine, if we happened to catch between the link/symlink steps.
+    if (fd == -ENOENT) continue;
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+    // Otherwise, we should always see either file1 or file2.
+    if (stat.st_ino != file1_ino) {
+      KEXPECT_EQ(file2_ino, stat.st_ino);
+    } else {
+      KEXPECT_EQ(file1_ino, stat.st_ino);
+    }
+    KEXPECT_EQ(0, vfs_close(fd));
+  }
+
+  args.done = true;
+  kthread_join(thread1);
+  kthread_join(thread2);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/file1"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_swap_test"));
+}
+
 static void symlink_test(void) {
   symlink_testA();
   symlink_testB();
   symlink_testC();
   symlink_testD();
   symlink_testE();
+  vfs_open_symlink_swap_test();
 }
 
 static void readlink_test(void) {
