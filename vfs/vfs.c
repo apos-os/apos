@@ -651,9 +651,8 @@ int vfs_close(int fd) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
-  file_unref(file);
-
   proc->fds[fd] = PROC_UNUSED_FD;
+  file_unref(file);
   return 0;
 }
 
