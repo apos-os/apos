@@ -940,30 +940,6 @@ static bool vfs_is_ancestor(const vnode_t* A, vnode_t* B) {
   return false;
 }
 
-static void lock_vnodes(vnode_t* A, vnode_t* B) {
-  if (A == B) {
-    kmutex_lock(&A->mutex);
-  } else if (A < B) {
-    kmutex_lock(&A->mutex);
-    kmutex_lock(&B->mutex);
-  } else {
-    kmutex_lock(&B->mutex);
-    kmutex_lock(&A->mutex);
-  }
-}
-
-static void unlock_vnodes(vnode_t* A, vnode_t* B) {
-  if (A == B) {
-    kmutex_unlock(&A->mutex);
-  } else if (A < B) {
-    kmutex_unlock(&B->mutex);
-    kmutex_unlock(&A->mutex);
-  } else {
-    kmutex_unlock(&A->mutex);
-    kmutex_unlock(&B->mutex);
-  }
-}
-
 int vfs_rename(const char* path1, const char* path2) {
   vnode_t* parent1 = 0x0, *parent2 = 0x0;
   vnode_t* vnode1 = 0x0;
@@ -1017,7 +993,7 @@ int vfs_rename(const char* path1, const char* path2) {
     goto done2;
   }
 
-  lock_vnodes(parent1, parent2);
+  vfs_lock_vnodes(parent1, parent2);
   // TODO(aoates): there's a race with unlink(), where vnode1 can be unlinked
   // after it was looked up above, but before we lock the parent.
 
@@ -1078,7 +1054,7 @@ int vfs_rename(const char* path1, const char* path2) {
   error = parent2->fs->link(parent2, vnode1, base_name2);
 
 done3:
-  unlock_vnodes(parent1, parent2);
+  vfs_unlock_vnodes(parent1, parent2);
 done2:
   kmutex_unlock(&vnode1->fs->rename_lock);
 done:

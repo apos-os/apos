@@ -341,3 +341,27 @@ vnode_t* get_root_for_path_with_parent(const char* path,
     return VFS_COPY_REF(relative_root);
   }
 }
+
+void vfs_lock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_lock(&A->mutex);
+  } else if (A < B) {
+    kmutex_lock(&A->mutex);
+    kmutex_lock(&B->mutex);
+  } else {
+    kmutex_lock(&B->mutex);
+    kmutex_lock(&A->mutex);
+  }
+}
+
+void vfs_unlock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_unlock(&A->mutex);
+  } else if (A < B) {
+    kmutex_unlock(&B->mutex);
+    kmutex_unlock(&A->mutex);
+  } else {
+    kmutex_unlock(&A->mutex);
+    kmutex_unlock(&B->mutex);
+  }
+}

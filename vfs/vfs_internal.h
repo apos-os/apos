@@ -170,4 +170,8 @@ int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
 // node with a reference in |vnode_out|.
 int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out);
 
+// Lock or unlock the two vnodes in a deadlock-free way.
+void vfs_lock_vnodes(vnode_t* A, vnode_t* B);
+void vfs_unlock_vnodes(vnode_t* A, vnode_t* B);
+
 #endif
