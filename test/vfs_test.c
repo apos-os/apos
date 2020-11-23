@@ -2026,6 +2026,18 @@ static void initial_owner_test_func(void* arg) {
   KEXPECT_EQ(0, vfs_mknod(kBlockDevFile, VFS_S_IFBLK, kmakedev(3, 4)));
   EXPECT_OWNER_IS(kBlockDevFile, kTestUserB, kTestGroupB);
 
+  // TODO(aoates): test time metadata (and mode?) as well.
+  KTEST_BEGIN("vfs_symlink() sets uid/gid");
+  KEXPECT_EQ(0, vfs_symlink("not_a_path", "owner_test_dir/link1"));
+  EXPECT_OWNER_IS("owner_test_dir/link1", kTestUserB, kTestGroupB);
+  KEXPECT_EQ(0, vfs_symlink(kRegFile, "owner_test_dir/link2"));
+  EXPECT_OWNER_IS("owner_test_dir/link2", kTestUserB, kTestGroupB);
+  KEXPECT_EQ(0, vfs_symlink(kSubDir, "owner_test_dir/link3"));
+  EXPECT_OWNER_IS("owner_test_dir/link3", kTestUserB, kTestGroupB);
+
+  vfs_unlink("owner_test_dir/link1");
+  vfs_unlink("owner_test_dir/link2");
+  vfs_unlink("owner_test_dir/link3");
   vfs_unlink(kBlockDevFile);
   vfs_unlink(kCharDevFile);
   vfs_unlink(kRegFile);
@@ -2665,12 +2677,18 @@ static void symlink_testA(void) {
           4,
           (edirent_t[]) {{-1, "."}, {-1, ".."}, {-1, "file1"}, {-1, "file2"}}));
 
-  KTEST_BEGIN("vfs_symlink(): symlink over existing file");
+  KTEST_BEGIN("vfs_symlink(): symlink over existing file/dir/etc");
+  KEXPECT_EQ(0, vfs_symlink("not_a_file", "symlink_test/bad_link1"));
+  KEXPECT_EQ(0, vfs_symlink("../bad/bath", "symlink_test/bad_link2"));
   KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "/"));
   KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/link_to_file"));
   KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/link_to_dir"));
   KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/file"));
   KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/dir"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/bad_link1"));
+  KEXPECT_EQ(-EEXIST, vfs_symlink("dir", "symlink_test/bad_link2"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link1"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_test/bad_link2"));
 
   KTEST_BEGIN("vfs_symlink(): symlink at bad path");
   KEXPECT_EQ(-ENOENT, vfs_symlink("dir", "noent/dir/x"));

@@ -1599,9 +1599,18 @@ int vfs_symlink(const char* path1, const char* path2) {
     return -EPERM;
   }
 
-  error = parent->fs->symlink(parent, base_name, path1);
+  int child_inode = parent->fs->symlink(parent, base_name, path1);
+  if (child_inode < 0) {
+    VFS_PUT_AND_CLEAR(parent);
+    return child_inode;
+  }
+
+  vnode_t* child = vfs_get(parent->fs, child_inode);
+  vfs_set_created_metadata(child, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO);
   VFS_PUT_AND_CLEAR(parent);
-  return error;
+  VFS_PUT_AND_CLEAR(child);
+
+  return 0;
 }
 
 int vfs_readlink(const char* path, char* buf, int bufsize) {

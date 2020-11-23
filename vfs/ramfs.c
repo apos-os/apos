@@ -593,7 +593,7 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
 
   result = ramfs_link(parent, (vnode_t*)n, name);
   if (result >= 0) {
-    return 0;
+    return new_inode;
   } else {
     // TODO(aoates): destroy vnode on error!
     return result;

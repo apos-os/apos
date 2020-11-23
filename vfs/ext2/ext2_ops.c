@@ -1840,7 +1840,7 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
     return result;
   }
 
-  return 0;
+  return child_inode_num;
 }
 
 static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
