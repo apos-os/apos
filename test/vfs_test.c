@@ -83,6 +83,29 @@ static int get_file_refcount(int fd) {
   return result;
 }
 
+typedef struct {
+  const char* path;
+  // TODO(aoates): use spinlock, mutex, or notification.
+  bool done;
+} chaos_args_t;
+
+// A thread that just tries to get mutexes locked to force other threads to
+// block at inopportune times.
+static void* chaos_helper(void* arg) {
+  const chaos_args_t* args = (const chaos_args_t*)arg;
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat(args->path, &stat));
+  const apos_ino_t dir_ino = stat.st_ino;
+  vnode_t* dir_vnode = vfs_get(vfs_get_root_fs(), dir_ino);
+  while (!args->done) {
+    kmutex_lock(&dir_vnode->mutex);
+    scheduler_yield();
+    kmutex_unlock(&dir_vnode->mutex);
+  }
+  vfs_put(dir_vnode);
+  return NULL;
+}
+
 static void dev_test(void) {
   KTEST_BEGIN("device numbering test");
   apos_dev_t dev = kmakedev(0, 0);
