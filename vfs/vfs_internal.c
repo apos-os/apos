@@ -319,6 +319,83 @@ int lookup_existing_path(const char* path, lookup_options_t opt,
   return result;
 }
 
+int lookup_existing_path_and_lock(vnode_t* root, const char* path,
+                                  lookup_options_t options,
+                                  vnode_t** parent_out, vnode_t** child_out,
+                                  char* base_name_out) {
+  const int kMaxRetries = 10;
+  KASSERT_DBG(parent_out != NULL);
+  KASSERT_DBG(child_out != NULL);
+  KASSERT_DBG(options.resolve_final_symlink == false);
+  KASSERT_DBG(options.resolve_final_mount == false);
+
+  int result =
+      lookup_path(root, path, options, parent_out, child_out, base_name_out);
+  if (result) {
+    return result;
+  } else if (*child_out == NULL) {
+    VFS_PUT_AND_CLEAR(*parent_out);
+    return -ENOENT;
+  }
+
+  // We have a parent and child.  Lock them both, then redo the lookup to ensure
+  // confirm the child we have is still bound to that name.  This technically is
+  // susceptible to ABA problems, but they're harmless.
+  //
+  // Note: in theory this could be inlined in lookup_path(), and possibly save
+  // ourselves a second lookup, but that would make lookup_path pretty
+  // (more?) spaghetti-ish.
+  int attempts_left = kMaxRetries;
+  while (--attempts_left > 0) {
+    // N.B.(aoates): we don't do a resolve_mounts_up call here, though maybe we
+    // should for consistency with what happens in lookup_path() --- e.g. if the
+    // directory we're in is the root directory of a mounted filesystem that is
+    // being moved.
+    vfs_lock_vnodes(*parent_out, *child_out);
+
+    // TODO(aoates): need to re-check search perms on the parent here.
+
+    if (*base_name_out == '\0') {
+      // Root directory.
+      KASSERT_DBG(*parent_out == *child_out);
+      return 0;
+    }
+
+    vnode_t* new_child = NULL;
+    result = lookup_locked(*parent_out, base_name_out, &new_child);
+    if (result < 0) {
+      vfs_unlock_vnodes(*parent_out, *child_out);
+      VFS_PUT_AND_CLEAR(*parent_out);
+      VFS_PUT_AND_CLEAR(*child_out);
+      return result;
+    }
+
+    if (new_child == *child_out) {
+      KASSERT_DBG(*child_out != NULL);
+      VFS_PUT_AND_CLEAR(new_child);  // Ditch second ref.
+      // Return with parent and child locked.
+      return 0;
+    }
+
+    // The binding changed from under us...unlock, unref the old child, and try
+    // again.
+    klogfm(KL_VFS, DEBUG,
+           "vfs: child changed during lookup (fs=%d parent=%d name='%s' "
+           "old_child=%d new_child=%d)\n",
+           (*parent_out)->fs->id, (*parent_out)->num, base_name_out,
+           (*child_out)->num, new_child->num);
+    vfs_unlock_vnodes(*parent_out, *child_out);
+    VFS_PUT_AND_CLEAR(*child_out);
+    *child_out = VFS_MOVE_REF(new_child);
+  }
+
+  klogfm(KL_VFS, WARNING, "vfs: hit max retries trying to lookup path '%s'\n",
+         path);
+  VFS_PUT_AND_CLEAR(*parent_out);
+  VFS_PUT_AND_CLEAR(*child_out);
+  return -EIO;
+}
+
 int lookup_fd(int fd, file_t** file_out) {
   process_t* proc = proc_current();
   if (!is_valid_fd(fd) || proc->fds[fd] == PROC_UNUSED_FD) {
@@ -354,11 +431,11 @@ void vfs_lock_vnodes(vnode_t* A, vnode_t* B) {
   if (A == B) {
     kmutex_lock(&A->mutex);
   } else if (A < B) {
-    kmutex_lock(&A->mutex);
-    kmutex_lock(&B->mutex);
+    if (A) kmutex_lock(&A->mutex);
+    if (B) kmutex_lock(&B->mutex);
   } else {
-    kmutex_lock(&B->mutex);
-    kmutex_lock(&A->mutex);
+    if (B) kmutex_lock(&B->mutex);
+    if (A) kmutex_lock(&A->mutex);
   }
 }
 
@@ -366,10 +443,10 @@ void vfs_unlock_vnodes(vnode_t* A, vnode_t* B) {
   if (A == B) {
     kmutex_unlock(&A->mutex);
   } else if (A < B) {
-    kmutex_unlock(&B->mutex);
-    kmutex_unlock(&A->mutex);
+    if (B) kmutex_unlock(&B->mutex);
+    if (A) kmutex_unlock(&A->mutex);
   } else {
-    kmutex_unlock(&A->mutex);
-    kmutex_unlock(&B->mutex);
+    if (A) kmutex_unlock(&A->mutex);
+    if (B) kmutex_unlock(&B->mutex);
   }
 }

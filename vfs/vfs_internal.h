@@ -143,6 +143,22 @@ int lookup_path(vnode_t* root, const char* path, lookup_options_t options,
 int lookup_existing_path(const char* path, lookup_options_t options,
                          vnode_t** child_out);
 
+// As lookup_existing_path(), but locks both the parent and child before
+// returning.  On success, ensures that the final entry in the parent is the
+// given child (or lack of child), and cannot be changed until the parent is
+// unlocked.
+//
+// Requires options.resolve_final_symlink and options.resolve_final_mount are
+// false.  There is currently no way to atomically lock parent and child during
+// a lookup and also resolve symlinks and mounts.
+//
+// If the final element of the path is ".." and the parent is the root of a
+// mounted filesystem, it is unspecified whether the mount is reverse-resolved.
+int lookup_existing_path_and_lock(vnode_t* root, const char* path,
+                                  lookup_options_t options,
+                                  vnode_t** parent_out, vnode_t** child_out,
+                                  char* base_name_out);
+
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| with a reference, or -error otherwise.
 int lookup_fd(int fd, file_t** file_out);
