@@ -354,18 +354,18 @@ static void do_basic_rwx_test(void* arg) {
   KEXPECT_EQ(0, vfs_chmod(kDirUnSearchableB, str_to_mode("rwxrwxrwx")));
 
   KTEST_BEGIN("vfs_truncate(): unwritable file");
-  create_file("trunc_read",  "r--r--r--");
-  create_file("trunc_write", "-w--w--w-");
-  create_file("trunc_exec",  "--x--x--x");
-  KEXPECT_EQ(-EACCES, vfs_truncate("trunc_read", 123));
-  KEXPECT_EQ(0, vfs_truncate("trunc_write", 123));
-  KEXPECT_EQ(-EACCES, vfs_truncate("trunc_exec", 123));
-  KEXPECT_EQ(0, get_file_size("trunc_read"));
-  KEXPECT_EQ(123, get_file_size("trunc_write"));
-  KEXPECT_EQ(0, get_file_size("trunc_exec"));
-  KEXPECT_EQ(0, vfs_unlink("trunc_read"));
-  KEXPECT_EQ(0, vfs_unlink("trunc_write"));
-  KEXPECT_EQ(0, vfs_unlink("trunc_exec"));
+  create_file("mode_test/trunc_read",  "r--r--r--");
+  create_file("mode_test/trunc_write", "-w--w--w-");
+  create_file("mode_test/trunc_exec",  "--x--x--x");
+  KEXPECT_EQ(-EACCES, vfs_truncate("mode_test/trunc_read", 123));
+  KEXPECT_EQ(0, vfs_truncate("mode_test/trunc_write", 123));
+  KEXPECT_EQ(-EACCES, vfs_truncate("mode_test/trunc_exec", 123));
+  KEXPECT_EQ(0, get_file_size("mode_test/trunc_read"));
+  KEXPECT_EQ(123, get_file_size("mode_test/trunc_write"));
+  KEXPECT_EQ(0, get_file_size("mode_test/trunc_exec"));
+  KEXPECT_EQ(0, vfs_unlink("mode_test/trunc_read"));
+  KEXPECT_EQ(0, vfs_unlink("mode_test/trunc_write"));
+  KEXPECT_EQ(0, vfs_unlink("mode_test/trunc_exec"));
 
   // Run tests as an unpriviledged user.
   kpid_t child_pid = proc_fork(&do_cwd_unsearchable_test,
