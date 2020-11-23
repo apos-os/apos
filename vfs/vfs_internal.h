@@ -82,10 +82,12 @@ static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
 // |base_name_out|.  If the node isn't a symlink, |base_name_out| is left
 // unchanged.
 //
-// If |allow_nonexistant_final| is non-zero, and the final element of the
-// symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
-// but will set |*child_ptr| to 0x0.
-int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+// If |at_last_element| is true, the symlink will be treated as if it is at the
+// last element of a path (and therefore _its_ last element is the true last
+// element).  For example, if the final element of the symlink doesn't exist,
+// resolve_symlink() will return 0 instead of -ENOENT, but will set |*child_ptr|
+// to 0x0.
+int resolve_symlink(bool at_last_element, lookup_options_t opt,
                     vnode_t** parent_ptr, vnode_t** child_ptr,
                     char* base_name_out, int max_recursion);
 

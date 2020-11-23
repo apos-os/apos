@@ -62,7 +62,7 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
-int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+int resolve_symlink(bool at_last_element, lookup_options_t opt,
                     vnode_t** parent_ptr, vnode_t** child_ptr,
                     char* base_name_out, int max_recursion) {
   vnode_t* child = *child_ptr;
@@ -84,7 +84,7 @@ int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
     vnode_t* new_parent = 0x0;
     vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
     opt.resolve_final_symlink = false;
-    opt.lock_on_noent = opt.lock_on_noent && allow_nonexistant_final;
+    opt.lock_on_noent = opt.lock_on_noent && at_last_element;
     error = lookup_path_internal(root, symlink_target, opt,
                                  &new_parent, &symlink_target_node,
                                  base_name_out, max_recursion - 1);
@@ -94,7 +94,7 @@ int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
       kfree(symlink_target);
       return error;
     }
-    if (!allow_nonexistant_final && !error && !symlink_target_node) {
+    if (!at_last_element && !error && !symlink_target_node) {
       kfree(symlink_target);
       VFS_PUT_AND_CLEAR(new_parent);
       return -ENOENT;
