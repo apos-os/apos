@@ -57,6 +57,10 @@ typedef struct lookup_options {
   // the euid/egid.  Most syscalls don't want this.  It defaults to false.
   bool check_real_ugid;
   bool resolve_final_mount;
+
+  // If true, if the final element is non-existent, then the parent will be
+  // returned locked.
+  bool lock_on_noent;
 } lookup_options_t;
 
 static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
@@ -64,6 +68,7 @@ static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
   opt.resolve_final_symlink = resolve_final_symlink;
   opt.check_real_ugid = false;
   opt.resolve_final_mount = true;
+  opt.lock_on_noent = false;
   return opt;
 }
 

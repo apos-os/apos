@@ -84,6 +84,7 @@ int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
     vnode_t* new_parent = 0x0;
     vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
     opt.resolve_final_symlink = false;
+    opt.lock_on_noent = opt.lock_on_noent && allow_nonexistant_final;
     error = lookup_path_internal(root, symlink_target, opt,
                                  &new_parent, &symlink_target_node,
                                  base_name_out, max_recursion - 1);
@@ -230,16 +231,23 @@ static int lookup_path_internal(vnode_t* root, const char* path,
     // Lookup the next element.  If it can't be found, and we're at the last
     // element, save the parent and succeed anyways.
     vnode_t* child = 0x0;
-    int error = lookup(&n, base_name_out, &child);
+    resolve_mounts_up(&n, base_name_out);
+    kmutex_lock(&n->mutex);
+    int error = lookup_locked(n, base_name_out, &child);
     if (error && (!at_last_element || error != -ENOENT)) {
+      kmutex_unlock(&n->mutex);
       VFS_PUT_AND_CLEAR(n);
       return error;
     } else if (at_last_element && error == -ENOENT) {
+      if (!opt.lock_on_noent)  {
+        kmutex_unlock(&n->mutex);
+      }
       if (parent_out) *parent_out = VFS_COPY_REF(n);
       if (child_out) *child_out = 0x0;
       VFS_PUT_AND_CLEAR(n);
       return 0;
     }
+    kmutex_unlock(&n->mutex);
 
     // If we're not at the end, or we want to follow the final symlink, attempt
     // to resolve it.
