@@ -100,8 +100,8 @@ int proc_fork(proc_func_t start, void* arg) {
   trampoline_args->start = start;
   trampoline_args->arg = arg;
 
-  result = kthread_create(&new_process->thread, &proc_fork_trampoline,
-                              trampoline_args);
+  result = kthread_create_kernel(&new_process->thread, &proc_fork_trampoline,
+                                 trampoline_args);
   if (result) {
     // TODO(aoates): clean up partial proc on failure.
     kfree(trampoline_args);

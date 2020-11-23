@@ -45,6 +45,12 @@ void kthread_init(void);
 // RETURNS: 0 if successful, or -errno if unable to create the thread.
 int kthread_create(kthread_t* thread, void *(*start_routine)(void*), void *arg);
 
+// As above, but the thread is unknowned by any process (a kernel thread that
+// can run in any context).  It must not reference user memory, file
+// descriptors, etc.
+int kthread_create_kernel(kthread_t* thread, void* (*start_routine)(void*),
+                          void* arg);
+
 // Join the given thread.  Will return once the other thread has exited
 // (implicitly or explicitly), and return's the thread's return value.
 //

@@ -94,8 +94,8 @@ kthread_t kthread_current_thread() {
   return g_current_thread;
 }
 
-int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
-                   void *arg) {
+static int kthread_create_internal(process_t* parent, kthread_t* thread_ptr,
+                                   void* (*start_routine)(void*), void* arg) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* thread = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
   *thread_ptr = thread;
@@ -109,7 +109,7 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
 
   // TODO(aoates): add the thread to the parent process's thread list, once
   // we support multiple threads per process.
-  thread->process = proc_current();
+  thread->process = parent;
 
   // Allocate a stack for the thread.
   addr_t* stack = (addr_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
@@ -131,6 +131,20 @@ int kthread_create(kthread_t *thread_ptr, void *(*start_routine)(void*),
   }
   POP_INTERRUPTS();
   return 0;
+}
+
+int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
+                   void* arg) {
+  return kthread_create_internal(proc_current(), thread_ptr, start_routine,
+                                 arg);
+}
+
+int kthread_create_kernel(kthread_t* thread_ptr, void* (*start_routine)(void*),
+                          void* arg) {
+  // TODO(aoates): reconsider the notion of unattached "kernel" threads ---
+  // they're efficient (no need to swap address spaces when they run), but are
+  // weird; they can live/run in any address space/file descriptor space/etc.
+  return kthread_create_internal(NULL, thread_ptr, start_routine, arg);
 }
 
 void kthread_destroy(kthread_t thread) {
