@@ -68,6 +68,8 @@ typedef struct ramfs ramfs_t;
 static int find_free_inode(ramfs_t* ramfs) {
   int inode = -1;
   for (inode = 0; inode < RAMFS_MAX_INODES; ++inode) {
+    KASSERT_DBG(ramfs->inodes[inode].vnode.num == inode ||
+                ramfs->inodes[inode].vnode.num == -1);
     if (ramfs->inodes[inode].vnode.num == -1) {
       return inode;
     }
@@ -286,14 +288,17 @@ int ramfs_get_vnode(vnode_t* n) {
 int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
   KASSERT(vnode->refcount == 0);
+  KASSERT(vnode->num >= 0 && vnode->num < RAMFS_MAX_INODES);
   maybe_block(vnode->fs);
 
   ramfs_t* ramfs = (ramfs_t*)vnode->fs;
   ramfs_inode_t* inode = &ramfs->inodes[vnode->num];
   writeback_metadata(vnode);
 
+  KASSERT(inode->link_count >= 0);
   if (inode->link_count == 0) {
-    vnode->type = VNODE_INVALID;
+    vnode->num = inode->vnode.num = -1;
+    vnode->type = inode->vnode.type = VNODE_INVALID;
     kfree(inode->data);
     inode->data = 0x0;
   }
