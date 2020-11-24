@@ -450,3 +450,49 @@ void vfs_unlock_vnodes(vnode_t* A, vnode_t* B) {
     if (B) kmutex_unlock(&B->mutex);
   }
 }
+
+static void sort_vnode_ptrs(vnode_t** nodes, size_t n) {
+  // Do insertion sort on the array of nodes; it is expected to be small (and,
+  // when passed to unlock, likely pre-sorted).
+  for (size_t i = 1; i < n; ++i) {
+    // Invariant: array up to index |i| is already sorted.
+    // Starting at the current "top", move the top element down to its place.
+    size_t j = i;
+    vnode_t* current = nodes[j];
+    while (j > 0 && current < nodes[j-1]) {
+      nodes[j] = nodes[j-1];
+      j--;
+    }
+    nodes[j] = current;
+  }
+}
+
+void vfs_lock_vnodes2(vnode_t** nodes, size_t n) {
+  sort_vnode_ptrs(nodes, n);
+
+  for (size_t i = 0; i < n; ++i) {
+    if (i < n - 1) {
+      KASSERT_DBG(nodes[i] <= nodes[i+1]);
+    }
+    if (i > 0 && nodes[i] == nodes[i - 1]) continue;
+    if (nodes[i]) {
+      kmutex_lock(&nodes[i]->mutex);
+    }
+  }
+}
+
+void vfs_unlock_vnodes2(vnode_t** nodes, size_t n) {
+  // We have to sort because there may be duplicates and we don't want to
+  // double-unlock.
+  sort_vnode_ptrs(nodes, n);
+
+  for (size_t i = 0; i < n; ++i) {
+    if (i < n - 1) {
+      KASSERT_DBG(nodes[i] <= nodes[i+1]);
+    }
+    if (i > 0 && nodes[i] == nodes[i - 1]) continue;
+    if (nodes[i]) {
+      kmutex_unlock(&nodes[i]->mutex);
+    }
+  }
+}

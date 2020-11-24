@@ -197,4 +197,8 @@ int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out);
 void vfs_lock_vnodes(vnode_t* A, vnode_t* B);
 void vfs_unlock_vnodes(vnode_t* A, vnode_t* B);
 
+// Lock an array of vnodes.  The order of the array may be mutated.
+void vfs_lock_vnodes2(vnode_t** nodes, size_t n);
+void vfs_unlock_vnodes2(vnode_t** nodes, size_t n);
+
 #endif
