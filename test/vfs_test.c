@@ -673,10 +673,88 @@ static void unlink_test(void) {
 
   KTEST_BEGIN("vfs_unlink(): unlinking directory");
   KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/.."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a/"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a/."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a/.."));
 
   // Clean up.
   vfs_rmdir("/unlink/a");
   vfs_rmdir("/unlink");
+}
+
+static void* unlink_race_test_func1(void* arg) {
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    // Alternate creating the file with open() or link() for variety.
+    if (i % 2 == 0) {
+      int fd =
+          vfs_open("thread_safety_test/file2", VFS_O_CREAT | VFS_O_RDWR, 0);
+      KEXPECT_GE(fd, 0);
+      KEXPECT_EQ(0, vfs_close(fd));
+    } else {
+      KEXPECT_EQ(
+          0, vfs_link("thread_safety_test/file1", "thread_safety_test/file2"));
+    }
+    if (i % 3 == 0) scheduler_yield();
+    // Could fail if other thread deletes first.
+    int result = vfs_unlink("thread_safety_test/file2");
+    if (result < 0) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+  }
+  return 0;
+}
+
+static void* unlink_race_test_func2(void* arg) {
+  // TODO(aoates): use lock, atomic, or notification.
+  bool* done = (bool*)arg;
+  while (!*done) {
+    int result = vfs_unlink("thread_safety_test/file2");
+    if (result < 0) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    scheduler_yield();
+  }
+  return 0;
+}
+
+static void unlink_race_test(void) {
+  KTEST_BEGIN("vfs_unlink() race test");
+  kthread_t creating_thread, chaos_thread;
+  kthread_t unlink_threads[THREAD_SAFETY_TEST_THREADS];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  create_file("thread_safety_test/file1", "rwxrwxrwx");
+
+  chaos_args_t chaos_args;
+  chaos_args.path = "thread_safety_test";
+  chaos_args.done = false;
+  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
+  scheduler_make_runnable(chaos_thread);
+
+  KEXPECT_EQ(0,
+             kthread_create(&creating_thread, &unlink_race_test_func1, NULL));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    KEXPECT_EQ(0, kthread_create(&unlink_threads[i], &unlink_race_test_func2,
+                                 &chaos_args.done));
+    scheduler_make_runnable(unlink_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  chaos_args.done = true;
+  kthread_join(chaos_thread);
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    kthread_join(unlink_threads[i]);
+  }
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
 }
 
 static void get_path_test(void) {
@@ -5909,6 +5987,7 @@ void vfs_test(void) {
   vfs_open_thread_safety_test();
   vfs_open_create_race_test();
   unlink_test();
+  unlink_race_test();
   get_path_test();
   cwd_test();
   rw_test();

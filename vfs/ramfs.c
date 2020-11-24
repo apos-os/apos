@@ -102,6 +102,13 @@ static void writeback_metadata(vnode_t* vnode) {
   disk_inode->vnode.mode = vnode->mode;
 }
 
+static void maybe_block(struct fs* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  if (ramfs->enable_blocking) {
+    scheduler_yield();
+  }
+}
+
 // Find the dirent in the parent's data with the given name, or NULL.  If none
 // is found, returns a pointer to an empty dirent that could fit the given name
 // (or NULL if no such slot exists) in |free_dirent|.
@@ -118,10 +125,12 @@ static kdirent_t* find_dirent(vnode_t* parent, const char* name,
     if (kstrcmp(d->d_name, name) == 0) {
       KASSERT(d->d_ino != INVALID_INO);
       if (free_dirent) *free_dirent = NULL;
+      maybe_block(parent->fs);
       return d;
     } else if (d->d_ino == INVALID_INO && free_dirent && !(*free_dirent) &&
                d->d_reclen >= sizeof(kdirent_t) + kstrlen(name) + 1) {
       *free_dirent = d;
+      maybe_block(parent->fs);
     }
 
     offset += d->d_reclen;
@@ -177,13 +186,6 @@ static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
   ramfs_inode_t* inode_ptr = &ramfs->inodes[inode];
   inode_ptr->link_count++;
   return 0;
-}
-
-static void maybe_block(struct fs* fs) {
-  ramfs_t* ramfs = (ramfs_t*)fs;
-  if (ramfs->enable_blocking) {
-    scheduler_yield();
-  }
 }
 
 fs_t* ramfs_create_fs(int create_default_dirs) {
@@ -406,8 +408,10 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
 
   kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
-    return -ENOENT;
+    return -EIO;
   }
+
+  maybe_block(parent->fs);
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
@@ -513,19 +517,20 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 int ramfs_unlink(vnode_t* parent, const char* name) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   maybe_block(parent->fs);
-  if (parent->type != VNODE_DIRECTORY) {
-    return -ENOTDIR;
-  }
+  KASSERT(parent->type == VNODE_DIRECTORY);
 
   kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
-    return -ENOENT;
+    return -EIO;
   }
+
+  maybe_block(parent->fs);
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   KASSERT(d->d_ino != INVALID_INO && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
+  KASSERT_DBG(kstrcmp(name, d->d_name) == 0);
 
   KASSERT(ramfs->inodes[d->d_ino].link_count >= 1);
   ramfs->inodes[d->d_ino].link_count--;

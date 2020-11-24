@@ -212,7 +212,7 @@ static void directory_test(void) {
   EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file2", file2->num);
 
   KTEST_BEGIN("rmdir() a file test");
-  KEXPECT_EQ(-ENOENT, g_fs->rmdir(n, "file1"));
+  KEXPECT_EQ(-EIO, g_fs->rmdir(n, "file1"));
   KEXPECT_EQ(-ENOTDIR, g_fs->rmdir(n, "file2"));
 
   KTEST_BEGIN("rmdir() a non-empty directory");
