@@ -102,8 +102,11 @@ static void writeback_metadata(vnode_t* vnode) {
   disk_inode->vnode.mode = vnode->mode;
 }
 
-// Find the dirent in the parent's data with the given name, or NULL.
-static kdirent_t* find_dirent(vnode_t* parent, const char* name) {
+// Find the dirent in the parent's data with the given name, or NULL.  If none
+// is found, returns a pointer to an empty dirent that could fit the given name
+// (or NULL if no such slot exists) in |free_dirent|.
+static kdirent_t* find_dirent(vnode_t* parent, const char* name,
+                              kdirent_t** free_dirent) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode = &ramfs->inodes[parent->num];
@@ -114,7 +117,11 @@ static kdirent_t* find_dirent(vnode_t* parent, const char* name) {
 
     if (kstrcmp(d->d_name, name) == 0) {
       KASSERT(d->d_ino != INVALID_INO);
+      if (free_dirent) *free_dirent = NULL;
       return d;
+    } else if (d->d_ino == INVALID_INO && free_dirent && !(*free_dirent) &&
+               d->d_reclen >= sizeof(kdirent_t) + kstrlen(name) + 1) {
+      *free_dirent = d;
     }
 
     offset += d->d_reclen;
@@ -142,24 +149,29 @@ static int count_dirents(vnode_t* parent) {
 }
 
 static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
-  // TODO(aoates): look for deleted kdirent_t slots to reuse.
-  kdirent_t* d = find_dirent(parent, name);
+  kdirent_t* free_dirent = NULL;
+  kdirent_t* d = find_dirent(parent, name, &free_dirent);
   if (d) {
     return -EEXIST;
   }
 
-  // This is sorta inefficient....there's really no need to create it on the
-  // heap then copy it over, but whatever.
-  const int dlen = sizeof(kdirent_t) + kstrlen(name) + 1;
-  kdirent_t* dirent = (kdirent_t*)kmalloc(dlen);
-  dirent->d_ino = inode;
-  dirent->d_reclen = dlen;
-  kstrcpy(dirent->d_name, name);
+  if (free_dirent) {
+    free_dirent->d_ino = inode;
+    kstrcpy(free_dirent->d_name, name);
+  } else {
+    // This is sorta inefficient....there's really no need to create it on the
+    // heap then copy it over, but whatever.
+    const int dlen = sizeof(kdirent_t) + kstrlen(name) + 1;
+    kdirent_t* dirent = (kdirent_t*)kmalloc(dlen);
+    dirent->d_ino = inode;
+    dirent->d_reclen = dlen;
+    kstrcpy(dirent->d_name, name);
 
-  // Append the new dirent.
-  int result = ramfs_write(parent, parent->len, dirent, dlen);
-  KASSERT(result == dlen);
-  kfree(dirent);
+    // Append the new dirent.
+    int result = ramfs_write(parent, parent->len, dirent, dlen);
+    KASSERT(result == dlen);
+    kfree(dirent);
+  }
 
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode_ptr = &ramfs->inodes[inode];
@@ -312,7 +324,7 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  kdirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
     return -ENOENT;
   }
@@ -392,7 +404,7 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  kdirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
     return -ENOENT;
   }
@@ -421,10 +433,10 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   dir_inode->link_count -= 2;
 
   // Remove '.' and '..'.
-  kdirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".");
+  kdirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".", NULL);
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
-  child_dirent = find_dirent(&dir_inode->vnode, "..");
+  child_dirent = find_dirent(&dir_inode->vnode, "..", NULL);
   KASSERT(child_dirent->d_ino == (kino_t)parent->num);
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
@@ -481,7 +493,7 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   if (result) return result;
 
   if (vnode->type == VNODE_DIRECTORY) {
-    kdirent_t* d = find_dirent(vnode, "..");
+    kdirent_t* d = find_dirent(vnode, "..", NULL);
     KASSERT_DBG(d != NULL);
     int orig_dotdot_ino = d->d_ino;
     ramfs_t* ramfs = (ramfs_t*)parent->fs;
@@ -505,7 +517,7 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  kdirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
     return -ENOENT;
   }
@@ -515,6 +527,7 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
   KASSERT(d->d_ino != INVALID_INO && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
 
+  KASSERT(ramfs->inodes[d->d_ino].link_count >= 1);
   ramfs->inodes[d->d_ino].link_count--;
 
   d->d_ino = INVALID_INO;
