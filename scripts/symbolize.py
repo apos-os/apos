@@ -15,6 +15,7 @@
 
 # Given a log file, look for stack traces and symbolize them.
 
+import errno
 import re
 import sys
 import subprocess
@@ -63,6 +64,11 @@ try:
     if m:
       line = symbolize(TOOL_PREFIX, m.group(1), m.group(2))
     print line,
+    sys.stdout.flush()
 except KeyboardInterrupt:
   sys.stdout.flush()
   pass
+except IOError as e:
+  if e.errno == errno.EPIPE:
+    sys.exit(0)
+  raise e
