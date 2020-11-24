@@ -934,7 +934,7 @@ int vfs_rename(const char* path1, const char* path2) {
 
 int vfs_rename_unique(const char* path1, const char* path2) {
   vnode_t* parent1 = 0x0, *parent2 = 0x0;
-  vnode_t* vnode1 = 0x0;
+  vnode_t* vnode1 = 0x0, *vnode2 = 0x0;
   char base_name1[VFS_MAX_FILENAME_LENGTH];
   char base_name2[VFS_MAX_FILENAME_LENGTH];
 
@@ -952,8 +952,7 @@ int vfs_rename_unique(const char* path1, const char* path2) {
   }
 
   vnode_t* root2 = get_root_for_path(path2);
-  error =
-      lookup_path(root2, path2, lookup, &parent2, 0x0, base_name2);
+  error = lookup_path(root2, path2, lookup, &parent2, &vnode2, base_name2);
   VFS_PUT_AND_CLEAR(root2);
   if (error) {
     VFS_PUT_AND_CLEAR(vnode1);
@@ -966,6 +965,7 @@ int vfs_rename_unique(const char* path1, const char* path2) {
     goto done;
   }
 
+  // Lock the rename lock to prevent topology changes.
   kmutex_lock(&vnode1->fs->rename_lock);
 
   if (vfs_check_mode(VFS_OP_WRITE, proc_current(), parent1) ||
@@ -995,27 +995,81 @@ int vfs_rename_unique(const char* path1, const char* path2) {
     goto done2;
   }
 
-  vfs_lock_vnodes(parent1, parent2);
-  // TODO(aoates): there's a race with unlink(), where vnode1 can be unlinked
-  // after it was looked up above, but before we lock the parent.
+  // Now lock all four vnodes and stabilize the lookups.  See
+  // lookup_existing_path_and_lock() for more comments on this approach.
 
-  // N.B. this bypasses the resolve_mounts_up() call that lookup() does, but
-  // that's fine, since base_name2 will never be ".." (and therefore we'll never
-  // be traversing past a mount point).
-  vnode_t* vnode2 = 0x0;
-  error = lookup_locked(parent2, base_name2, &vnode2);
-  if (error != 0 && error != -ENOENT) {
+  // This array will, after this point, always hold a set of up to 4 distinct
+  // locked vnodes.
+  vnode_t* vnodes_to_lock[4] = {parent1, vnode1, parent2, vnode2};
+  vfs_lock_vnodes2(vnodes_to_lock, 4);
+
+  const int kMaxRetries = 10;
+  int attempts_left = kMaxRetries;
+  while (--attempts_left > 0) {
+    // N.B.(aoates): no need for resolving symlinks or mounts (up or down) ---
+    // symlinks are operated on directly and both ".." (up) and mount points
+    // (down) are rejected.
+
+    // TODO(aoates): need to re-check search perms on the parent1 here.
+
+    vnode_t *new_vnode1 = NULL, *new_vnode2 = NULL;
+    int result = lookup_locked(parent1, base_name1, &new_vnode1);
+    if (result < 0) {
+      if (result != -ENOENT) {
+        klogfm(KL_VFS, INFO,
+               "vfs: child1 changed during rename lookup; lookup error: %s\n",
+               errorname(-result));
+      }
+      error = result;
+      goto done3;
+    }
+
+    result = lookup_locked(parent2, base_name2, &new_vnode2);
+    if (result < 0 && result != -ENOENT) {
+      klogfm(KL_VFS, INFO,
+             "vfs: child2 changed during rename lookup; lookup error: %s\n",
+             errorname(-result));
+      error = result;
+      VFS_PUT_AND_CLEAR(new_vnode1);
+      goto done3;
+    }
+
+    if (new_vnode1 == vnode1 && new_vnode2 == vnode2) {
+      // We're done!  Ditch second refs.
+      VFS_PUT_AND_CLEAR(new_vnode1);
+      if (new_vnode2) VFS_PUT_AND_CLEAR(new_vnode2);
+      break;
+    }
+
+    // Binding changed.  Unlock, update children, relock, and try again.
+    klogfm(KL_VFS, DEBUG,
+           "vfs: child changed during rename lookup (fs=%d "
+           "parent1=%d name1='%s' old_child1=%d new_child1=%d "
+           "parent2=%d name2='%s' old_child2=%d new_child2=%d)\n",
+           parent1->fs->id, parent1->num, base_name1, vnode1->num,
+           new_vnode1->num, parent2->num, base_name2,
+           (vnode2 ? vnode2->num : -1), (new_vnode2 ? new_vnode2->num : -1));
+    vfs_unlock_vnodes2(vnodes_to_lock, 4);
+    VFS_PUT_AND_CLEAR(vnode1);
+    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    vnode1 = VFS_MOVE_REF(new_vnode1);
+    vnode2 = VFS_MOVE_REF(new_vnode2);
+    vnodes_to_lock[0] = parent1; vnodes_to_lock[1] = vnode1;
+    vnodes_to_lock[2] = parent2; vnodes_to_lock[3] = vnode2;
+    vfs_lock_vnodes2(vnodes_to_lock, 4);
+  }
+  if (attempts_left <= 0) {
+    klogfm(KL_VFS, WARNING,
+           "vfs: unable to stabilize lookups for rename('%s', '%s')\n", path1,
+           path2);
+    error = -EIO;
     goto done3;
   }
 
-  KASSERT_DBG(path1[0] != '\0');
-  KASSERT_DBG(path2[0] != '\0');
   if ((path1[kstrlen(path1) - 1] == '/' && vnode1->type != VNODE_DIRECTORY) ||
       (path2[kstrlen(path2) - 1] == '/' &&
        ((!vnode2 && vnode1->type != VNODE_DIRECTORY) ||
         (vnode2 && vnode2->type != VNODE_DIRECTORY)))) {
-    // TODO(aoates): this should test for symlinks to directories as well.
-    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
     error = -ENOTDIR;
     goto done3;
   }
@@ -1031,7 +1085,6 @@ int vfs_rename_unique(const char* path1, const char* path2) {
 
   if (vnode2) {
     if (vnode1 == vnode2) {
-      VFS_PUT_AND_CLEAR(vnode2);
       error = -ERENAMESAMEVNODE;
       goto done3;
     }
@@ -1046,7 +1099,6 @@ int vfs_rename_unique(const char* path1, const char* path2) {
     } else {
       error = parent2->fs->unlink(parent2, base_name2);
     }
-    VFS_PUT_AND_CLEAR(vnode2);
     if (error) goto done3;
   }
 
@@ -1056,11 +1108,12 @@ int vfs_rename_unique(const char* path1, const char* path2) {
   error = parent2->fs->link(parent2, vnode1, base_name2);
 
 done3:
-  vfs_unlock_vnodes(parent1, parent2);
+  vfs_unlock_vnodes2(vnodes_to_lock, 4);
 done2:
   kmutex_unlock(&vnode1->fs->rename_lock);
 done:
   VFS_PUT_AND_CLEAR(vnode1);
+  if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
   VFS_PUT_AND_CLEAR(parent1);
   VFS_PUT_AND_CLEAR(parent2);
   return error;

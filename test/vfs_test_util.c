@@ -40,7 +40,10 @@ kmode_t str_to_mode(const char* mode_str) {
 }
 
 void create_file(const char* path, const char* mode) {
-  int fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, str_to_mode(mode));
+  int fd;
+  do {
+    fd = vfs_open(path, VFS_O_CREAT | VFS_O_RDWR, str_to_mode(mode));
+  } while (fd == -EINJECTEDFAULT);
   KEXPECT_GE(fd, 0);
   vfs_close(fd);
 }

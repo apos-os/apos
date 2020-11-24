@@ -94,7 +94,11 @@ typedef struct {
 static void* chaos_helper(void* arg) {
   const chaos_args_t* args = (const chaos_args_t*)arg;
   apos_stat_t stat;
-  KEXPECT_EQ(0, vfs_stat(args->path, &stat));
+  int result;
+  do {
+    result = vfs_stat(args->path, &stat);
+  } while (result == -EINJECTEDFAULT);
+  KEXPECT_EQ(0, result);
   const apos_ino_t dir_ino = stat.st_ino;
   vnode_t* dir_vnode = vfs_get(vfs_get_root_fs(), dir_ino);
   while (!args->done) {
@@ -5895,6 +5899,174 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test"));
 }
 
+typedef struct {
+  kspinlock_t lock;
+  int creations;
+  int num_dests;
+  int rename_successes;
+  int rename_attempts;
+  bool* done;
+} rename_simultaneous_race_test_args;
+
+static void* rename_simultaneous_race_test_func1(void* arg) {
+  rename_simultaneous_race_test_args* args =
+      (rename_simultaneous_race_test_args*)arg;
+  for (int i = 0; i < args->creations; ++i) {
+    // Usually create new files, but occasionally link existing ones.
+    if (i % 5 != 0) {
+      create_file("thread_safety_test/A/src", "rwxrwxrwx");
+    } else {
+      int result;
+      do {
+        result =
+            vfs_link("thread_safety_test/file1", "thread_safety_test/A/src");
+      } while (result == -EINJECTEDFAULT);
+      KEXPECT_EQ(0, result);
+    }
+    // Occasionally create a new dest file as well.
+    if (i % 3 == 0) {
+      char dest_path[40];
+      ksprintf(dest_path, "thread_safety_test/B/dst%d",
+               (i % 7) % args->num_dests);
+      create_file(dest_path, "rwxrwxrwx");
+    }
+    apos_stat_t stat;
+    while (vfs_lstat("thread_safety_test/A/src", &stat) != -ENOENT) {
+      scheduler_yield();
+    }
+  }
+  return 0;
+}
+
+static void* rename_simultaneous_race_test_func2(void* arg) {
+  rename_simultaneous_race_test_args* args =
+      (rename_simultaneous_race_test_args*)arg;
+  char dest_path[40];
+  const char* dest_dir = (kthread_current_thread()->id % 2) ? "A" : "B";
+  ksprintf(dest_path, "thread_safety_test/%s/dst%d", dest_dir,
+           kthread_current_thread()->id % args->num_dests);
+  // TODO(aoates): use lock, atomic, or notification.
+  bool me_done = false;
+  uint32_t rand = fnv_hash((uint32_t)kthread_current_thread()->id);
+  while (!me_done) {
+    // Once the creating thread finishes, try one final rename.
+    if (*(args->done)) me_done = true;
+
+    rand = fnv_hash(rand);
+    int result;
+    // Occasionally try a normal unlink() rather than a rename.
+    if (rand % 5 == 0) {
+      result = vfs_unlink("thread_safety_test/A/src");
+    } else {
+      // We have to use the _unique() version --- otherwise a same-to-same-vnode
+      // rename would register as a successful rename and screw up our
+      // creation-vs-rename count.  This occurs only rarely, but introduces
+      // spurious failures if the iterations on this test are cranked up.
+      result = vfs_rename_unique("thread_safety_test/A/src", dest_path);
+    }
+    if (result < 0 && result != -ERENAMESAMEVNODE &&
+        result != -EINJECTEDFAULT) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    kspin_lock(&args->lock);
+    args->rename_attempts++;
+    if (result == 0) args->rename_successes++;
+    kspin_unlock(&args->lock);
+
+    // Occasionally unlink the dest as well.
+    if (rand % 2 == 0) {
+      result = vfs_unlink(dest_path);
+      if (result < 0 && result != -EINJECTEDFAULT) {
+        KEXPECT_EQ(-ENOENT, result);
+      }
+    }
+    scheduler_yield();
+  }
+  return 0;
+}
+
+// A basic rename race test that has a bunch of threads all trying to rename the
+// same file.  We verify that only one succeeds each time.
+// TODO(aoates): consider a more advanced version of this that also includes
+// renaming directories.
+static void rename_simultaneous_race_test(void) {
+  const int kNumRenameThreads = THREAD_SAFETY_TEST_THREADS;
+  KTEST_BEGIN("vfs_rename() simultaneous race test");
+  kthread_t creating_thread, chaos_thread[2];
+  kthread_t rename_threads[kNumRenameThreads];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/A", 0));
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/B", 0));
+  create_file("thread_safety_test/file1", "rwxrwxrwx");
+
+  int old_ramfs_fault_pct;
+  if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
+    old_ramfs_fault_pct = ramfs_set_fault_percent(vfs_get_root_fs(), 1);
+  }
+
+  chaos_args_t chaos_args[2];
+  chaos_args[0].path = "thread_safety_test/A";
+  chaos_args[0].done = false;
+  chaos_args[1].path = "thread_safety_test/B";
+  chaos_args[1].done = false;
+  for (int i = 0; i < 2; ++i) {
+    KEXPECT_EQ(0,
+               kthread_create(&chaos_thread[i], &chaos_helper, &chaos_args[i]));
+    scheduler_make_runnable(chaos_thread[i]);
+  }
+
+  rename_simultaneous_race_test_args args;
+  args.done = &chaos_args[0].done;
+  args.lock = KSPINLOCK_NORMAL_INIT;
+  args.rename_attempts = args.rename_successes = 0;
+  args.creations = THREAD_SAFETY_TEST_ITERS / 10;
+  args.num_dests = kNumRenameThreads / 10;
+  KEXPECT_EQ(0, kthread_create(&creating_thread,
+                               &rename_simultaneous_race_test_func1, &args));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < kNumRenameThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&rename_threads[i],
+                                 &rename_simultaneous_race_test_func2, &args));
+    scheduler_make_runnable(rename_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  for (int i = 0; i < 2; ++i) {
+    chaos_args[i].done = true;
+    kthread_join(chaos_thread[i]);
+  }
+  for (int i = 0; i < kNumRenameThreads; ++i) {
+    kthread_join(rename_threads[i]);
+  }
+
+  if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
+    ramfs_set_fault_percent(vfs_get_root_fs(), old_ramfs_fault_pct);
+  }
+
+  // At the end of the day, we should have been able to rename (or unlink)
+  // successfully exactly as many times as we created a file.
+  KEXPECT_EQ(args.creations, args.rename_successes);
+  klogf("rename race test: %d successful renames out of %d attempts\n",
+        args.rename_successes, args.rename_attempts);
+  KEXPECT_EQ(-ENOENT, vfs_unlink("thread_safety_test/A/src"));
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
+  char dest_path[40];
+  for (int i = 0; i < args.num_dests; ++i) {
+    ksprintf(dest_path, "thread_safety_test/A/dst%d", i);
+    vfs_unlink(dest_path);
+    ksprintf(dest_path, "thread_safety_test/B/dst%d", i);
+    vfs_unlink(dest_path);
+  }
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/A"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
 static void* fd_concurrent_close_test_helper(void* arg) {
   int fd = (intptr_t)arg;
   char buf[10];
@@ -6117,6 +6289,7 @@ void vfs_test(void) {
   link_test();
   rename_test();
 
+  rename_simultaneous_race_test();
   fd_concurrent_close_test();
   multithread_path_walk_deadlock_test();
   multithread_vnode_get_test();
