@@ -57,6 +57,8 @@ struct ramfs {
   // For each inode number, we just store a ramfs_inode_t directly.  We don't
   // use all the fields of the vnode_t, though.
   ramfs_inode_t inodes[RAMFS_MAX_INODES];
+  // Where to start our search for the next free inode.
+  int next_free_inode;
 
   // Whether or not the appropriate syscalls should block.
   bool enable_blocking;
@@ -66,13 +68,16 @@ typedef struct ramfs ramfs_t;
 
 // Find and return a free inode number, or -1 on failure.
 static int find_free_inode(ramfs_t* ramfs) {
-  int inode = -1;
-  for (inode = 0; inode < RAMFS_MAX_INODES; ++inode) {
+  int inode = ramfs->next_free_inode;
+  for (int idx = 0; idx < RAMFS_MAX_INODES; ++idx) {
     KASSERT_DBG(ramfs->inodes[inode].vnode.num == inode ||
                 ramfs->inodes[inode].vnode.num == -1);
     if (ramfs->inodes[inode].vnode.num == -1) {
+      // Not true of course, but start our next search here.
+      ramfs->next_free_inode = inode;
       return inode;
     }
+    inode = (inode + 1) % RAMFS_MAX_INODES;
   }
   // Out of inodes :(
   return -1;
@@ -196,6 +201,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     f->inodes[i].vnode.num = -1;
   }
+  f->next_free_inode = 0;
   f->enable_blocking = false;
 
   kstrcpy(f->fs.fstype, "ramfs");
