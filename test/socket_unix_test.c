@@ -96,24 +96,27 @@ static void do_bind_mode_test(void* arg) {
   const int kGroupB = 5;
 
   KTEST_BEGIN("net_bind(AF_UNIX): bind in non-writable directory");
+  proc_umask(0);
+  KEXPECT_EQ(0,
+             vfs_mkdir("_socket_dir", VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO));
   KEXPECT_EQ(0, setregid(kGroupB, kGroupA));
   KEXPECT_EQ(0, setreuid(kUserB, kUserA));
 
   struct sockaddr_un addr;
   addr.sun_family = AF_UNIX;
-  kstrcpy(addr.sun_path, "_socket_dir/sock");
+  kstrcpy(addr.sun_path, "_socket_dir/subdir/sock");
 
   int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(sock, 0);
 
-  KEXPECT_EQ(0, vfs_mkdir("_socket_dir", VFS_S_IRUSR | VFS_S_IXUSR));
+  KEXPECT_EQ(0, vfs_mkdir("_socket_dir/subdir", VFS_S_IRUSR | VFS_S_IXUSR));
   KEXPECT_EQ(-EACCES, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
-  KEXPECT_EQ(0, vfs_rmdir("_socket_dir"));
+  KEXPECT_EQ(0, vfs_rmdir("_socket_dir/subdir"));
 
   KTEST_BEGIN("net_bind(AF_UNIX): bind in non-executable directory");
-  KEXPECT_EQ(0, vfs_mkdir("_socket_dir", VFS_S_IRUSR | VFS_S_IWUSR));
+  KEXPECT_EQ(0, vfs_mkdir("_socket_dir/subdir", VFS_S_IRUSR | VFS_S_IWUSR));
   KEXPECT_EQ(-EACCES, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
-  KEXPECT_EQ(0, vfs_rmdir("_socket_dir"));
+  KEXPECT_EQ(0, vfs_rmdir("_socket_dir/subdir"));
 }
 
 static void bind_test(void) {
@@ -278,6 +281,7 @@ static void bind_test(void) {
   kpid_t child_pid = proc_fork(&do_bind_mode_test, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
+  KEXPECT_EQ(0, vfs_rmdir("_socket_dir"));
 }
 
 static void listen_test(void) {
