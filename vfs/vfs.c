@@ -927,6 +927,12 @@ static bool vfs_is_ancestor(const vnode_t* A, vnode_t* B) {
 }
 
 int vfs_rename(const char* path1, const char* path2) {
+  int result = vfs_rename_unique(path1, path2);
+  if (result == -ERENAMESAMEVNODE) result = 0;
+  return result;
+}
+
+int vfs_rename_unique(const char* path1, const char* path2) {
   vnode_t* parent1 = 0x0, *parent2 = 0x0;
   vnode_t* vnode1 = 0x0;
   char base_name1[VFS_MAX_FILENAME_LENGTH];
@@ -1016,7 +1022,7 @@ int vfs_rename(const char* path1, const char* path2) {
   if (vnode2) {
     if (vnode1 == vnode2) {
       VFS_PUT_AND_CLEAR(vnode2);
-      error = 0;
+      error = -ERENAMESAMEVNODE;
       goto done3;
     }
 

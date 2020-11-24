@@ -103,7 +103,8 @@ const char* errorname(int err) {
     HANDLE(EXDEV);
     HANDLE(EINTR_RESTART);
     HANDLE(EINJECTEDFAULT);
-#if ERRNO_MAX != 76
+    HANDLE(ERENAMESAMEVNODE);
+#if ERRNO_MAX != 77
 #error Need to update errorname()
 #endif
 

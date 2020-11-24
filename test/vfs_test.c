@@ -5442,6 +5442,12 @@ static void rename_testB(void) {
   KEXPECT_EQ(0, vfs_rename("_rename_test/E1", "_rename_test/E1"));
   KEXPECT_EQ(0, vfs_rename("_rename_test/E1", "_rename_test/E2"));
   KEXPECT_EQ(0, vfs_rename("_rename_test/E2", "_rename_test/E2"));
+  KEXPECT_EQ(-ERENAMESAMEVNODE,
+             vfs_rename_unique("_rename_test/E1", "_rename_test/E1"));
+  KEXPECT_EQ(-ERENAMESAMEVNODE,
+             vfs_rename_unique("_rename_test/E1", "_rename_test/E2"));
+  KEXPECT_EQ(-ERENAMESAMEVNODE,
+             vfs_rename_unique("_rename_test/E2", "_rename_test/E2"));
 
   KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statB));
   KEXPECT_EQ(statA.st_ino, statB.st_ino);

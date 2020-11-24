@@ -72,6 +72,10 @@ int vfs_link(const char* path1, const char* path2);
 // Rename path1 to path2.
 int vfs_rename(const char* path1, const char* path2);
 
+// As above, but returns -ERENAMESAMEVNODE if the paths resolve to the same
+// vnode.  POSIX requires the vfs_rename() behavior.
+int vfs_rename_unique(const char* path1, const char* path2);
+
 // Unlink an entry from a directory.
 int vfs_unlink(const char* path);
 
