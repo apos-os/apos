@@ -5418,6 +5418,14 @@ static void rename_testA(void) {
   KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
   KEXPECT_EQ(3, statB.st_nlink);
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
+
+  KTEST_BEGIN("vfs_rename(): rename root directory");
+  // None should be possible.
+  KEXPECT_NE(0, vfs_rename("/", "/A"));
+  KEXPECT_NE(0, vfs_rename("/", "/"));
+  KEXPECT_NE(0, vfs_rename("/", "/."));
+  KEXPECT_NE(0, vfs_rename("_rename_test/dirB", "/"));
+  KEXPECT_NE(0, vfs_rename("_rename_test/dirB", "/."));
 }
 
 static void rename_testB(void) {

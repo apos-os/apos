@@ -985,6 +985,16 @@ int vfs_rename_unique(const char* path1, const char* path2) {
     goto done2;
   }
 
+  // Renaming to or from the root directory can never be useful --- it is
+  // probably non-empty (in which case it can't be removed as a target).  If it
+  // _is_ empty, it can only be moved onto itself, which is a no-op.  And it
+  // can't ever be the source of a rename, because it is an ancestor of
+  // everything.  Just reject it here to make logic below simpler.
+  if (base_name1[0] == '\0' || base_name2[0] == '\0') {
+    error = -EINVAL;
+    goto done2;
+  }
+
   vfs_lock_vnodes(parent1, parent2);
   // TODO(aoates): there's a race with unlink(), where vnode1 can be unlinked
   // after it was looked up above, but before we lock the parent.
