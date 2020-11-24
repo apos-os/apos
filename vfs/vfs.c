@@ -807,22 +807,22 @@ int vfs_rmdir(const char* path) {
 
   // Get the child so we can vfs_put() it after calling fs->unlink(), which will
   // collect the inode if it's now unused.
-  int error =
-      lookup_path(root, path, lookup_opt(false), &parent, &child, base_name);
+  lookup_options_t lookup = lookup_opt(false);
+  lookup.resolve_final_mount = false;
+  int error = lookup_existing_path_and_lock(root, path, lookup, &parent, &child,
+                                            base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
-  if (!child) {
-    VFS_PUT_AND_CLEAR(parent);
-    return -ENOENT;
-  }
 
   if (base_name[0] == '\0') {
+    vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EPERM;  // Root directory!
   } else if (kstrcmp(base_name, ".") == 0) {
+    vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EINVAL;
@@ -830,18 +830,21 @@ int vfs_rmdir(const char* path) {
 
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
-  if (child->parent_mount_point != NULL) {
+  if (child->mounted_fs != VFS_FSID_NONE) {
+    vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EBUSY;
   }
 
   error = parent->fs->rmdir(parent, base_name);
+  vfs_unlock_vnodes(parent, child);
   // This actually collects the inode in the fs (if this is the last ref).
   VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);

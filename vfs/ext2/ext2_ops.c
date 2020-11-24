@@ -1438,7 +1438,13 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
 
   // Get the child inode.
   const int child_inode_num = ext2_lookup(parent, name);
-  if (child_inode_num < 0) return child_inode_num;
+  if (child_inode_num == -ENOENT) {
+    KLOG(WARNING, "ext2: rmdir('%s') called on inode %d but entry not found\n",
+         name, parent->num);
+    return -EIO;
+  } else if (child_inode_num < 0) {
+    return child_inode_num;
+  }
 
   ext2_inode_t child_inode;
   result = get_inode(fs, child_inode_num, &child_inode);

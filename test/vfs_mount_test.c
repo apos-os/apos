@@ -405,6 +405,13 @@ static void rmdir_mount_test(void) {
   KEXPECT_EQ(-EBUSY, vfs_rmdir("vfs_mount_test/a"));
   KEXPECT_NE(0, vfs_rmdir("vfs_mount_test/a/."));  // Could be EBUSY or EINVAL
   KEXPECT_EQ(-EBUSY, vfs_rmdir("vfs_mount_test/a/../a"));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("vfs_mount_test/a/.."));
+  KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test/a/b", VFS_S_IRWXU));
+  KEXPECT_EQ(-EBUSY, vfs_rmdir("vfs_mount_test/a"));
+  KEXPECT_EQ(-EINVAL, vfs_rmdir("vfs_mount_test/a/."));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("vfs_mount_test/a/b/.."));
+  KEXPECT_EQ(-ENOTEMPTY, vfs_rmdir("vfs_mount_test/a/b/../"));
+  KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test/a/b/"));
 
   // Now cd into the directory above the mount point.
   KEXPECT_EQ(0, vfs_chdir("vfs_mount_test"));
