@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"
@@ -62,6 +63,9 @@ struct ramfs {
 
   // Whether or not the appropriate syscalls should block.
   bool enable_blocking;
+
+  int fault_percent;
+  uint32_t random;
 };
 typedef struct ramfs ramfs_t;
 
@@ -203,6 +207,8 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   }
   f->next_free_inode = 0;
   f->enable_blocking = false;
+  f->fault_percent = 0;
+  f->random = (uint32_t)(intptr_t)f;
 
   kstrcpy(f->fs.fstype, "ramfs");
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
@@ -272,6 +278,14 @@ void ramfs_disable_blocking(fs_t* fs) {
   ramfs->enable_blocking = false;
 }
 
+int ramfs_set_fault_percent(fs_t* fs, int percent) {
+  KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  int old = ramfs->fault_percent;
+  ramfs->fault_percent = percent;
+  return old;
+}
+
 vnode_t* ramfs_alloc_vnode(struct fs* fs) {
   vnode_t* node = (vnode_t*)kmalloc(sizeof(vnode_t));
   kmemset(node, 0, sizeof(vnode_t));
@@ -330,6 +344,14 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   maybe_block(parent->fs);
   if (parent->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
+  }
+
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  if (ramfs->fault_percent > 0) {
+    ramfs->random = fnv_hash(ramfs->random);
+    if ((int)(ramfs->random % 100) < ramfs->fault_percent) {
+      return -EINJECTEDFAULT;
+    }
   }
 
   kdirent_t* d = find_dirent(parent, name, NULL);

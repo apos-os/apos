@@ -33,6 +33,10 @@ void ramfs_destroy_fs(fs_t* fs);
 void ramfs_enable_blocking(fs_t* fs);
 void ramfs_disable_blocking(fs_t* fs);
 
+// If set, the given portion of certain calls will return -EINJECTEDFAULT.
+// Returns the old percentage.
+int ramfs_set_fault_percent(fs_t* fs, int percent);
+
 vnode_t* ramfs_alloc_vnode(struct fs* fs);
 int ramfs_get_root(struct fs* fs);
 int ramfs_get_vnode(vnode_t* vnode);

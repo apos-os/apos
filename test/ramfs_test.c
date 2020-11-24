@@ -229,6 +229,20 @@ static void directory_test(void) {
   kfree(n);
 }
 
+static void fault_test(void) {
+  KTEST_BEGIN("ramfs: fault injection");
+  KEXPECT_EQ(0, ramfs_set_fault_percent(g_fs, 50));
+  const int kIters = 200;
+  int faults = 0;
+  for (int i = 0; i < kIters; ++i) {
+    int result = g_fs->lookup(g_root, ".");
+    if (result == -EINJECTEDFAULT) faults++;
+  }
+  KEXPECT_GE(faults, kIters * 0.4);
+  KEXPECT_LE(faults, kIters * 0.6);
+  KEXPECT_EQ(50, ramfs_set_fault_percent(g_fs, 0));
+}
+
 void ramfs_test(void) {
   KTEST_SUITE_BEGIN("ramfs()");
   g_fs = ramfs_create_fs(0);
@@ -236,6 +250,7 @@ void ramfs_test(void) {
 
   basic_test();
   directory_test();
+  fault_test();
   ramfs_destroy_fs(g_fs);
 
   kfree(g_root);

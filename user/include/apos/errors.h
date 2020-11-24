@@ -95,6 +95,7 @@
 
 // Internal errors.
 #define EINTR_RESTART    75  // Interrupted syscall should be restarted.
-#define ERRNO_MAX        75
+#define EINJECTEDFAULT   76  // An artificially-injected error for tests.
+#define ERRNO_MAX        76
 
 #endif
