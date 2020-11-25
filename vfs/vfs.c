@@ -881,14 +881,17 @@ int vfs_link(const char* path1, const char* path2) {
     return -EXDEV;
   }
 
+  vfs_lock_vnodes(parent2, vnode1);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2);
   if (mode_check) {
+    vfs_unlock_vnodes(parent2, vnode1);
     VFS_PUT_AND_CLEAR(vnode1);
     VFS_PUT_AND_CLEAR(parent2);
     return mode_check;
   }
 
   error = parent2->fs->link(parent2, vnode1, base_name);
+  vfs_unlock_vnodes(parent2, vnode1);
   VFS_PUT_AND_CLEAR(vnode1);
   VFS_PUT_AND_CLEAR(parent2);
   return error;

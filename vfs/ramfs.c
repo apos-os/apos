@@ -130,11 +130,13 @@ static kdirent_t* find_dirent(vnode_t* parent, const char* name,
   int offset = 0;
   while (offset < parent->len) {
     kdirent_t* d = (kdirent_t*)(inode->data + offset);
+    KASSERT((int)d->d_ino >= 0 || d->d_ino == INVALID_INO);
 
     if (kstrcmp(d->d_name, name) == 0) {
       KASSERT(d->d_ino != INVALID_INO);
       if (free_dirent) *free_dirent = NULL;
       maybe_block(parent->fs);
+      KASSERT((int)d->d_ino >= 0);
       return d;
     } else if (d->d_ino == INVALID_INO && free_dirent && !(*free_dirent) &&
                d->d_reclen >= sizeof(kdirent_t) + kstrlen(name) + 1) {
@@ -358,6 +360,7 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   if (!d) {
     return -ENOENT;
   }
+  KASSERT((int)d->d_ino >= 0);
   return d->d_ino;
 }
 

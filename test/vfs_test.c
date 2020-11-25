@@ -6070,6 +6070,152 @@ static void rename_simultaneous_race_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
 }
 
+typedef struct {
+  kspinlock_t lock;
+  int num_dests;
+  int unlinks_target;
+  int unlink_successes;
+  int unlink_attempts;
+  int link_successes;
+  int link_attempts;
+  bool* done;
+} link_simultaneous_race_test_args;
+
+// Have several length paths to add some randomness to first-fitting-dirent
+// logic.  Have both same directory as the source, and a different one.
+#define kNumLinkSimulDestRoots 6
+const char* kLinkSimulDestRoots[kNumLinkSimulDestRoots] = {
+  "thread_safety_test/dest.a",
+  "thread_safety_test/dest.aaaaaa",
+  "thread_safety_test/dest.aaaaaaaaaaa",
+  "thread_safety_test/B/dest.a",
+  "thread_safety_test/B/dest.aaaaaa",
+  "thread_safety_test/B/dest.aaaaaaaaaaa",
+};
+
+static void* link_simultaneous_race_test_func1(void* arg) {
+  link_simultaneous_race_test_args* args =
+      (link_simultaneous_race_test_args*)arg;
+  uint32_t rand = fnv_hash((uint32_t)(intptr_t)args);
+  char dest[100];
+  while (args->unlink_successes < args->unlinks_target) {
+    rand = fnv_hash(rand);
+    const char* root = kLinkSimulDestRoots[rand % kNumLinkSimulDestRoots];
+    rand = fnv_hash(rand);
+    ksprintf(dest, "%s.%d", root, rand % args->num_dests);
+    int result = vfs_unlink(dest);
+
+    // Only reader/writer of these fields, no need to lock.
+    args->unlink_attempts++;
+    if (result == 0) args->unlink_successes++;
+    scheduler_yield();
+  }
+  return 0;
+}
+
+static void* link_simultaneous_race_test_func2(void* arg) {
+  link_simultaneous_race_test_args* args =
+      (link_simultaneous_race_test_args*)arg;
+  const char* kSourcePaths[2] = {"thread_safety_test/file1",
+                                 "thread_safety_test/file2"};
+
+  // TODO(aoates): use lock, atomic, or notification.
+  uint32_t rand = fnv_hash((uint32_t)kthread_current_thread()->id);
+  char dest[100];
+  while (!(*args->done)) {
+    rand = fnv_hash(rand);
+    const char* src = kSourcePaths[rand % 2];
+    rand = fnv_hash(rand);
+    const char* root = kLinkSimulDestRoots[rand % kNumLinkSimulDestRoots];
+    rand = fnv_hash(rand);
+    ksprintf(dest, "%s.%d", root, rand % args->num_dests);
+
+    int result = vfs_link(src, dest);
+    if (result < 0 && result != -EINJECTEDFAULT) {
+      KEXPECT_EQ(-EEXIST, result);
+    }
+    kspin_lock(&args->lock);
+    args->link_attempts++;
+    if (result == 0) args->link_successes++;
+    kspin_unlock(&args->lock);
+
+    scheduler_yield();
+  }
+  return 0;
+}
+
+// A basic link race test that has a bunch of threads all trying to link the
+// same source and destination paths.  We verify that only one succeeds each
+// time.  This should test both fan-in and fan-out scenarios.
+static void link_simultaneous_race_test(void) {
+  // We want some contention on the destination files, but not complete fan-in.
+  // More contention stresses single-node locking, while less contention
+  // stresses parent node locking.
+  const int kNumDests = 5;
+  const int kNumLinkThreads = THREAD_SAFETY_TEST_THREADS;
+  KTEST_BEGIN("vfs_link() simultaneous race test");
+  // Note: we specifically _don't_ want chaos threads that lock files for this
+  // test --- it introduces sequencing between the threads that makes the test
+  // ineffective.
+  kthread_t creating_thread;
+  kthread_t link_threads[kNumLinkThreads];
+
+  // Set things up.  We pre-create all the destination files to ensure that the
+  // number of successful links should exactly equal the number of unlinks.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/B", 0));
+  create_file("thread_safety_test/file1", "rwxrwxrwx");
+  create_file("thread_safety_test/file2", "rwxrwxrwx");
+  char dest[100];
+
+  bool done = false;
+  link_simultaneous_race_test_args args;
+  args.done = &done;
+  args.lock = KSPINLOCK_NORMAL_INIT;
+  args.unlink_successes = args.unlink_attempts = args.link_attempts =
+      args.link_successes = 0;
+  args.unlinks_target = THREAD_SAFETY_TEST_ITERS / 10;
+  args.num_dests = kNumDests;
+  KEXPECT_EQ(0, kthread_create(&creating_thread,
+                               &link_simultaneous_race_test_func1, &args));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < kNumLinkThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&link_threads[i],
+                                 &link_simultaneous_race_test_func2, &args));
+    scheduler_make_runnable(link_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  done = true;
+  for (int i = 0; i < kNumLinkThreads; ++i) {
+    kthread_join(link_threads[i]);
+  }
+
+  for (int i = 0; i < kNumLinkSimulDestRoots; ++i) {
+    for (int j = 0; j < kNumDests; ++j) {
+      ksprintf(dest, "%s.%d", kLinkSimulDestRoots[i], j);
+      args.unlink_attempts++;
+      if (vfs_unlink(dest) == 0) args.unlink_successes++;
+    }
+  }
+
+  // At the end of the day, we should have been able to link successfully
+  // exactly as many times as we unlinked.
+  KEXPECT_EQ(args.unlink_successes, args.link_successes);
+  klogf(
+      "link race test: %d successful links out of %d attempts; %d unlinks out "
+      "of %d attempts\n",
+      args.link_successes, args.link_attempts, args.unlink_successes,
+      args.unlink_attempts);
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
 static void* fd_concurrent_close_test_helper(void* arg) {
   int fd = (intptr_t)arg;
   char buf[10];
@@ -6293,6 +6439,7 @@ void vfs_test(void) {
   rename_test();
 
   rename_simultaneous_race_test();
+  link_simultaneous_race_test();
   fd_concurrent_close_test();
   multithread_path_walk_deadlock_test();
   multithread_vnode_get_test();
