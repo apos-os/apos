@@ -562,7 +562,7 @@ static void sigsuspend_test(void) {
 } while (0)
 
 static int g_counter = 0;
-static int g_counter_by_sig[SIGMAX + 1];
+static int g_counter_by_sig[APOS_SIGMAX + 1];
 static void counter_handler(int sig) {
   g_counter_by_sig[sig] = ++g_counter;
 }
@@ -605,7 +605,7 @@ static void restartable_syscall_test(void) {
 
 
   KTEST_BEGIN("read(): EINTR with mixed SA_RESTART signals (set then unset)");
-  for (int i = 0; i <= SIGMAX; ++i) g_counter_by_sig[i] = 0;
+  for (int i = 0; i <= APOS_SIGMAX; ++i) g_counter_by_sig[i] = 0;
   act = make_sigaction(counter_handler);
   g_counter = 0;
   act.sa_flags = SA_RESTART;
@@ -629,7 +629,7 @@ static void restartable_syscall_test(void) {
 
 
   KTEST_BEGIN("read(): EINTR with mixed SA_RESTART signals (unset then set)");
-  for (int i = 0; i <= SIGMAX; ++i) g_counter_by_sig[i] = 0;
+  for (int i = 0; i <= APOS_SIGMAX; ++i) g_counter_by_sig[i] = 0;
   g_counter = 0;
   act = make_sigaction(counter_handler);
   act.sa_flags = 0;
