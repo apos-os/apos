@@ -84,6 +84,7 @@ if not base_env['CLANG']:
 else:
   base_env.Replace(CC = 'clang')
   base_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
+  base_env.Append(CFLAGS = ['-fdebug-macro'])
 
 base_env.Replace(AR = '${TOOL_PREFIX}ar')
 base_env.Replace(AS = '${TOOL_PREFIX}as')
