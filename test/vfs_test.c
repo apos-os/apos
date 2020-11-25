@@ -1329,8 +1329,12 @@ static void create_thread_test(void) {
 
   // Make sure they're all created correctly.
   const int kNumExpected = CREATE_SAFETY_ITERS * CREATE_SAFETY_THREADS + 2;
-  char expected_names[kNumExpected][30];
-  edirent_t expected_dirents[kNumExpected];
+  char** expected_names = (char**)kmalloc(sizeof(char*) * kNumExpected);
+  for (int i = 0; i < kNumExpected; ++i) {
+    expected_names[i] = (char*)kmalloc(30);
+  }
+  edirent_t* expected_dirents =
+      (edirent_t*)kmalloc(sizeof(edirent_t) * kNumExpected);
   expected_dirents[0].vnode = expected_dirents[1].vnode = -1;
   expected_dirents[0].name = ".";
   expected_dirents[1].name = "..";
@@ -1364,6 +1368,11 @@ static void create_thread_test(void) {
   }
 
   KEXPECT_EQ(0, vfs_rmdir(kTestDir));
+  kfree(expected_dirents);
+  for (int i = 0; i < kNumExpected; ++i) {
+    kfree(expected_names[i]);
+  }
+  kfree(expected_names);
 }
 
 // Test that if we create a file, then unlink it before closing it, we can still
