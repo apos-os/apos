@@ -1149,7 +1149,7 @@ static void write_large_test(void) {
 // Multi-thread vfs_write() test.  Each thread repeatedly writes 'abc' and
 // '1234' to a file descriptor, and at the end we verify that the writes didn't
 // step on each other (i.e., each happened atomically).
-#define WRITE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define WRITE_SAFETY_ITERS (10 * THREAD_SAFETY_MULTIPLIER)
 #define WRITE_SAFETY_THREADS 5
 static void* write_thread_test_func(void* arg) {
   const int fd = (intptr_t)arg;
@@ -1417,7 +1417,7 @@ static void seek_test(void) {
   vfs_unlink(kFile);
 }
 
-#define BAD_INODE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define BAD_INODE_SAFETY_ITERS (10 * THREAD_SAFETY_MULTIPLIER)
 #define BAD_INODE_SAFETY_THREADS 5
 static void* bad_inode_thread_test_func(void* arg) {
   for (int i = 0; i < BAD_INODE_SAFETY_ITERS; ++i) {
@@ -1486,7 +1486,7 @@ void reverse_path_test(void) {
 
 // Multi-thread vfs_open(VFS_O_CREAT) test.  Each thread creates a series of
 // files in a particular directory.
-#define CREATE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define CREATE_SAFETY_ITERS (10 * THREAD_SAFETY_MULTIPLIER)
 #define CREATE_SAFETY_THREADS 5
 static void* create_thread_test_func(void* arg) {
   const char kTestDir[] = "/create_thread_test";
