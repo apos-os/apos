@@ -1186,39 +1186,42 @@ static void write_thread_test(void) {
   vfs_close(fd);
   fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   char buf[512];
+  char buf2[10];
+  int start_offset = 0;
   int letters = 0, nums = 0;
   while (1) {
-    int len = vfs_read(fd, buf, 3);
+    int len = vfs_read(fd, buf + start_offset, 100);
     if (len == 0) {
       break;
     }
-
-    if (buf[0] == '1') {
-      const int len2 = vfs_read(fd, &buf[3], 1);
-      if (len2 != 1) {
-        KEXPECT_EQ(1, len2);
+    len += start_offset;
+    int idx = 0;
+    while (idx < len) {
+      if (buf[idx] == '1') {
+        if (len - idx < 4) break;
+        kstrncpy(buf2, buf + idx, 4);
+        buf2[4] = '\0';
+        KEXPECT_STREQ(buf2, "1234");
+        idx += 4;
+        nums++;
+      } else if (buf[idx] == 'a') {
+        if (len - idx < 3) break;
+        kstrncpy(buf2, buf + idx, 3);
+        buf2[3] = '\0';
+        KEXPECT_STREQ(buf2, "abc");
+        idx += 3;
+        letters++;
+      } else {
+        // TODO(aoates): add a better way to expect this.
+        KEXPECT_EQ(0, 1);
+        break;
       }
-      len += len2;
     }
-    buf[len] = '\0';
-
-    if (buf[0] == 'a') {
-      if (len != 3 || kstrncmp(buf, "abc", 3) != 0) {
-        KEXPECT_EQ(3, len);
-        KEXPECT_STREQ("abc", buf);
-      }
-      letters++;
-    } else if (buf[0] == '1') {
-      if (len != 4 || kstrncmp(buf, "1234", 4) != 0) {
-        KEXPECT_EQ(4, len);
-        KEXPECT_STREQ("1234", buf);
-      }
-      nums++;
-    } else {
-      // TODO(aoates): add a better way to expect this.
-      KEXPECT_EQ(0, 1);
-      break;
+    for (int i = 0; i < (len - idx); ++i) {
+      buf[i] = buf[i + idx];
     }
+    start_offset = (len - idx);
+    kmemset(buf + start_offset, '\0', len - start_offset);
   }
   vfs_close(fd);
 
