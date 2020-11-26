@@ -430,6 +430,9 @@ vnode_t* get_root_for_path_with_parent(const char* path,
 }
 
 void vfs_lock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A && B) {
+    KASSERT_DBG(A->fs == B->fs);
+  }
   if (A == B) {
     kmutex_lock(&A->mutex);
   } else if (A < B) {
@@ -472,12 +475,18 @@ static void sort_vnode_ptrs(vnode_t** nodes, size_t n) {
 void vfs_lock_vnodes2(vnode_t** nodes, size_t n) {
   sort_vnode_ptrs(nodes, n);
 
+  fs_t* fs = NULL;
   for (size_t i = 0; i < n; ++i) {
     if (i < n - 1) {
       KASSERT_DBG(nodes[i] <= nodes[i+1]);
     }
     if (i > 0 && nodes[i] == nodes[i - 1]) continue;
     if (nodes[i]) {
+      if (!fs) {
+        fs = nodes[i]->fs;
+      } else {
+        KASSERT_DBG(nodes[i]->fs == fs);
+      }
       kmutex_lock(&nodes[i]->mutex);
     }
   }
