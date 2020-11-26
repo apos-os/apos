@@ -1279,6 +1279,7 @@ static int ext2_put_vnode(vnode_t* vnode) {
 static int ext2_lookup(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
 
   const ext2fs_t* fs = (const ext2fs_t*)parent->fs;
   ext2_inode_t inode;
@@ -1300,6 +1301,7 @@ static int ext2_mknod(vnode_t* parent, const char* name,
                       vnode_type_t type, apos_dev_t dev) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
 
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
   if (fs->read_only) {
@@ -1356,6 +1358,7 @@ static int ext2_mknod(vnode_t* parent, const char* name,
 static int ext2_mkdir(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
 
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
   if (fs->read_only) {
@@ -1425,6 +1428,7 @@ static int ext2_rmdir_iter_func(void* arg,
 static int ext2_rmdir(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
 
   // Get the parent inode.
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
@@ -1493,6 +1497,7 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(vnode->type == VNODE_REGULAR || vnode->type == VNODE_SYMLINK);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(offset >= 0);
+  kmutex_assert_is_held(&vnode->mutex);
 
   if (offset > vnode->len)
     return 0;
@@ -1575,6 +1580,7 @@ static int ext2_write(vnode_t* vnode, int offset,
   KASSERT(vnode->type == VNODE_REGULAR);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(offset >= 0);
+  kmutex_assert_is_held(&vnode->mutex);
 
   ext2fs_t* fs = (ext2fs_t*)vnode->fs;
   if (fs->read_only) {
@@ -1596,6 +1602,8 @@ static int ext2_write(vnode_t* vnode, int offset,
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
+  kmutex_assert_is_held(&vnode->mutex);
 
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
   if (fs->read_only) {
@@ -1659,6 +1667,7 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 static int ext2_unlink(vnode_t* parent, const char* name) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
 
   // Get the parent inode.
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
@@ -1742,6 +1751,7 @@ static int ext2_getdents_iter_func(void* arg,
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
   KASSERT(vnode->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&vnode->mutex);
 
   const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   ext2_inode_t inode;
@@ -1773,6 +1783,7 @@ static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize) {
 
 int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out) {
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&vnode->mutex);
 
   const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   ext2_inode_t inode;
@@ -1791,6 +1802,7 @@ int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out) {
 static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&parent->mutex);
 
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
   if (fs->read_only) {
@@ -1857,6 +1869,7 @@ static int ext2_symlink(vnode_t* parent, const char* name, const char* path) {
 static int ext2_readlink(vnode_t* vnode, char* buf, int bufsize) {
   KASSERT(vnode->type == VNODE_SYMLINK);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
+  kmutex_assert_is_held(&vnode->mutex);
 
   if (vnode->len < EXT2_SYMLINK_INLINE_LEN) {
     const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
@@ -1878,6 +1891,7 @@ static int ext2_truncate(vnode_t* vnode, koff_t length) {
   KASSERT(vnode->type == VNODE_REGULAR);
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(length >= 0);
+  kmutex_assert_is_held(&vnode->mutex);
 
   ext2fs_t* fs = (ext2fs_t*)vnode->fs;
   if (fs->read_only) {
@@ -1903,6 +1917,7 @@ static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write
   KASSERT_DBG(kstrcmp(vnode->fstype, "ext2") == 0);
   KASSERT(page_offset >= 0);
   KASSERT(page_offset * PAGE_SIZE <= vnode->len);
+  kmutex_assert_is_held(&vnode->mutex);
 
   const ext2fs_t* fs = (const ext2fs_t*)vnode->fs;
   KASSERT(PAGE_SIZE % ext2_block_size(fs) == 0);

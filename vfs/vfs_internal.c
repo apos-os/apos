@@ -71,7 +71,9 @@ int resolve_symlink(bool at_last_element, lookup_options_t opt,
   while (child && child->type == VNODE_SYMLINK) {
     if (!symlink_target) symlink_target = kmalloc(VFS_MAX_PATH_LENGTH + 1);
 
+    kmutex_lock(&child->mutex);
     int error = child->fs->readlink(child, symlink_target, VFS_MAX_PATH_LENGTH);
+    kmutex_unlock(&child->mutex);
     if (error < 0) {
       kfree(symlink_target);
       VFS_PUT_AND_CLEAR(parent);

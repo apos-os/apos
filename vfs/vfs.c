@@ -709,13 +709,16 @@ int vfs_mkdir(const char* path, kmode_t mode) {
     return -EEXIST;  // Root directory!
   }
 
+  kmutex_lock(&parent->mutex);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
   int child_inode = parent->fs->mkdir(parent, base_name);
+  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
@@ -750,8 +753,10 @@ static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
     return -EEXIST;  // Root directory!
   }
 
+  kmutex_lock(&parent->mutex);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
@@ -765,6 +770,7 @@ static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
+  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
@@ -1441,6 +1447,7 @@ int vfs_isatty(int fd) {
 }
 
 static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
+  kmutex_assert_is_held(&vnode->mutex);
   stat->st_dev = vnode->dev;
   stat->st_ino = vnode->num;
   stat->st_mode = 0;
@@ -1484,7 +1491,9 @@ static int vfs_path_stat_internal(const char* path, apos_stat_t* stat,
       lookup_existing_path(path, lookup_opt(resolve_final_symlink), &child);
   if (result) return result;
 
+  kmutex_lock(&child->mutex);
   result = vfs_stat_internal(child, stat);
+  kmutex_unlock(&child->mutex);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
@@ -1621,18 +1630,22 @@ int vfs_symlink(const char* path1, const char* path2) {
     return -EEXIST;  // Root directory!
   }
 
+  kmutex_lock(&parent->mutex);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
   if (!parent->fs->symlink) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return -EPERM;
   }
 
   int child_inode = parent->fs->symlink(parent, base_name, path1);
+  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;
@@ -1665,7 +1678,9 @@ int vfs_readlink(const char* path, char* buf, int bufsize) {
     return -EPERM;
   }
 
+  kmutex_lock(&child->mutex);
   result = child->fs->readlink(child, buf, bufsize);
+  kmutex_unlock(&child->mutex);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
