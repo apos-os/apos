@@ -55,6 +55,13 @@ typedef struct ramfs_inode ramfs_inode_t;
 struct ramfs {
   fs_t fs;  // Embedded fs interface.
 
+  // Protects fs-wide inode data, including the num field of all inodes (i.e.
+  // their validity)and next_free_inode --- but not the rest of the inode data.
+  kmutex_t mu;
+
+  // Protects small state (enable_blocking, fault_percent, random);
+  kspinlock_t spinlock;
+
   // For each inode number, we just store a ramfs_inode_t directly.  We don't
   // use all the fields of the vnode_t, though.
   ramfs_inode_t inodes[RAMFS_MAX_INODES];
@@ -72,6 +79,7 @@ typedef struct ramfs ramfs_t;
 
 // Find and return a free inode number, or -1 on failure.
 static int find_free_inode(ramfs_t* ramfs) {
+  kmutex_assert_is_held(&ramfs->mu);
   int inode = ramfs->next_free_inode;
   for (int idx = 0; idx < RAMFS_MAX_INODES; ++idx) {
     KASSERT_DBG(ramfs->inodes[inode].vnode.num == inode ||
@@ -113,7 +121,10 @@ static void writeback_metadata(vnode_t* vnode) {
 
 static void maybe_block(struct fs* fs) {
   ramfs_t* ramfs = (ramfs_t*)fs;
-  if (ramfs->enable_blocking) {
+  kspin_lock(&ramfs->spinlock);
+  bool val = ramfs->enable_blocking;
+  kspin_unlock(&ramfs->spinlock);
+  if (val) {
     scheduler_yield();
   }
 }
@@ -211,6 +222,8 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->enable_blocking = false;
   f->fault_percent = 0;
   f->random = (uint32_t)(intptr_t)f;
+  kmutex_init(&f->mu);
+  f->spinlock = KSPINLOCK_NORMAL_INIT;
 
   kstrcpy(f->fs.fstype, "ramfs");
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
@@ -234,6 +247,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->fs.write_page = &ramfs_write_page;
 
   // Allocate the root inode.
+  kmutex_lock(&f->mu);
   int root_inode = find_free_inode(f);
   KASSERT(root_inode == 0);
   ramfs_inode_t* root = &f->inodes[root_inode];
@@ -246,6 +260,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   root->vnode.gid = SUPERUSER_GID;
   root->vnode.mode =
       VFS_S_IRWXU | VFS_S_IRGRP | VFS_S_IXGRP | VFS_S_IROTH | VFS_S_IXOTH;
+  kmutex_unlock(&f->mu);
 
   // Link it to itself.
   ramfs_link_internal((vnode_t*)root, root_inode, ".");
@@ -271,20 +286,26 @@ void ramfs_destroy_fs(fs_t* fs) {
 void ramfs_enable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
   ramfs->enable_blocking = true;
+  kspin_unlock(&ramfs->spinlock);
 }
 
 void ramfs_disable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
   ramfs->enable_blocking = false;
+  kspin_unlock(&ramfs->spinlock);
 }
 
 int ramfs_set_fault_percent(fs_t* fs, int percent) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
   int old = ramfs->fault_percent;
   ramfs->fault_percent = percent;
+  kspin_unlock(&ramfs->spinlock);
   return old;
 }
 
@@ -333,10 +354,12 @@ int ramfs_put_vnode(vnode_t* vnode) {
 
   KASSERT(inode->link_count >= 0);
   if (inode->link_count == 0) {
+    kmutex_lock(&ramfs->mu);
     vnode->num = inode->vnode.num = -1;
     vnode->type = inode->vnode.type = VNODE_INVALID;
     kfree(inode->data);
     inode->data = 0x0;
+    kmutex_unlock(&ramfs->mu);
   }
   return 0;
 }
@@ -349,12 +372,15 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
   }
 
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  kspin_lock(&ramfs->spinlock);
   if (ramfs->fault_percent > 0) {
     ramfs->random = fnv_hash(ramfs->random);
     if ((int)(ramfs->random % 100) < ramfs->fault_percent) {
+      kspin_unlock(&ramfs->spinlock);
       return -EINJECTEDFAULT;
     }
   }
+  kspin_unlock(&ramfs->spinlock);
 
   kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
@@ -372,14 +398,17 @@ int ramfs_mknod(vnode_t* parent, const char* name,
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
 
+  kmutex_lock(&ramfs->mu);
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
+    kmutex_unlock(&ramfs->mu);
     return -ENOSPC;
   }
 
   ramfs_inode_t* n = &ramfs->inodes[new_inode];
   KASSERT(n->vnode.num == -1);
   n->vnode.num = new_inode;
+  kmutex_unlock(&ramfs->mu);
   init_inode(ramfs, n);
 
   n->vnode.type = type;
@@ -398,14 +427,17 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
 
+  kmutex_lock(&ramfs->mu);
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
+    kmutex_unlock(&ramfs->mu);
     return -ENOSPC;
   }
 
   ramfs_inode_t* n = &ramfs->inodes[new_inode];
   KASSERT(n->vnode.num == -1);
   n->vnode.num = new_inode;
+  kmutex_unlock(&ramfs->mu);
   init_inode(ramfs, n);
 
   n->vnode.type = VNODE_DIRECTORY;
@@ -625,14 +657,17 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
 
+  kmutex_lock(&ramfs->mu);
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
+    kmutex_unlock(&ramfs->mu);
     return -ENOSPC;
   }
 
   ramfs_inode_t* n = &ramfs->inodes[new_inode];
   KASSERT(n->vnode.num == -1);
   n->vnode.num = new_inode;
+  kmutex_unlock(&ramfs->mu);
   init_inode(ramfs, n);
 
   n->vnode.type = VNODE_SYMLINK;
