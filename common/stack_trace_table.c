@@ -69,7 +69,8 @@ trace_id_t tracetbl_put(const addr_t* trace, int len) {
     return -ENOMEM;
   }
 
-  while (g_tracetbl[id].refcount > 0 && g_tracetbl[id].hash != trace_hash) {
+  while (g_tracetbl[id].refcount > 0 &&
+         (g_tracetbl[id].hash != trace_hash || g_tracetbl[id].len != len)) {
     id = (id + 1) % TRACETBL_ENTRIES;
   }
 
