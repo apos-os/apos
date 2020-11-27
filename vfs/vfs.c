@@ -52,6 +52,7 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
   n->fstype[0] = 0x0;
   n->num = num;
   n->type = VNODE_UNINITIALIZED;
+  n->state = VNODE_ST_WTF;
   n->len = -1;
   n->uid = -1;
   n->mode = 0;
@@ -60,6 +61,7 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
+  kmutex_init(&n->state_mu);
   memobj_init_vnode(n);
 }
 
@@ -199,59 +201,94 @@ vnode_t* vfs_get_root_vnode() {
   return vfs_get(root_fs, root_fs->get_root(root_fs));
 }
 
-vnode_t* vfs_get(fs_t* fs, int vnode_num) {
+// As vfs_get(), but the returned vnode *may* not be fully initialized.  This
+// operation binds a particular (fs, vnode_num) tuple to a particular identity
+// by creating a vnode_t object and putting it in the vnode table.
+//
+// The only operations that are valid on an uninitialized vnode are,
+//  - comparing its pointer identity to another vnode
+//  - reading its vnode number
+//  - initializing it
+//  - manipulating its refcount with vfs_ref() or vfs_put()
+static vnode_t* vfs_get_uninitialized(fs_t* fs, int vnode_num) {
   vnode_t* vnode;
   kspin_lock(&g_vnode_cache_lock);
   int error = htbl_get(&g_vnode_cache, vnode_hash(fs, vnode_num),
                        (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
+    KASSERT(vnode->refcount > 0);
 
-    // Increment the refcount, then lock the mutex.  This ensures that the node
-    // is initialized (since the thread creating it locks the mutex *before*
-    // putting it in the table, and doesn't unlock it until it's initialized).
+    // Increment the refcount, then return the (possibly uninitialized!) vnode.
     vnode->refcount++;
     kspin_unlock(&g_vnode_cache_lock);
-    // TODO(aoates): need to lock around this check (or use atomic).
-    if (vnode->type == VNODE_UNINITIALIZED) {
-      // TODO(aoates): use a semaphore for this.
-      kmutex_lock(&vnode->mutex);
-      kmutex_unlock(&vnode->mutex);
-    }
 
-    // If initialization failed, put the node back.  This will free it if we're
-    // the last one waiting on it.
-    if (vnode->type == VNODE_UNINITIALIZED) {
-      vfs_put(vnode);
-      return 0x0;
-    }
-
-    KASSERT(vnode->type != VNODE_UNINITIALIZED && vnode->type != VNODE_INVALID);
     return vnode;
   } else {
-    // We need to create the vnode and backfill it from disk.
+    // We need to create the vnode.
     vnode = fs->alloc_vnode(fs);
     vfs_vnode_init(vnode, fs, vnode_num);
     vnode->refcount = 1;
+    vnode->state = VNODE_ST_BOUND;
     fs->open_vnodes++;
-    kmutex_lock(&vnode->mutex);  // This can't block: no-one else sees the vnode
 
-    // Put the (unitialized but locked) vnode into the table.
+    // Put the unitialized vnode into the table.
     htbl_put(&g_vnode_cache, vnode_hash_n(vnode), (void*)vnode);
     kspin_unlock(&g_vnode_cache_lock);
 
-    // This call could block, at which point other threads attempting to access
-    // this node will block until we release the mutex.
-    error = fs->get_vnode(vnode);
+    // This is all we can do right now, without being able to take the vnode's
+    // mutex.
+    return vnode;
+  }
+}
+
+// Force a vnode_t to be fully initialized if it is not already.  There are
+// three outcomes:
+//  1) success --- the vnode is now valid, pointer is unmodified.  Returns 0.
+//     May block.
+//  2) transient failure --- another thread put() the vnode simultaneously, and
+//     we can't determine if it's valid or not.  Returns 0 and clears the vnode
+//     pointer.  Call get and init again to find out.
+//  3) error --- returns the error, vnode is pointer is cleared.
+static int vfs_vnode_finish_init(vnode_t** n_ptr) {
+  vnode_t* vnode = *n_ptr;
+  KASSERT_DBG(vnode->refcount >= 1);
+
+  kmutex_lock(&vnode->state_mu);
+  if (vnode->state == VNODE_ST_VALID) {
+    // Easy (and usual) case.  We're done.
+    kmutex_unlock(&vnode->state_mu);
+    return 0;
+  } else if (vnode->state == VNODE_ST_BOUND) {
+    KASSERT_DBG(vnode->type == VNODE_UNINITIALIZED);
+    // The node needs to be initialized.  We won the lock, so we get to do it.
+    // This call could block, at which point other threads attempting to
+    // acquire/initialize this node will block until we release the mutex.
+    int error = vnode->fs->get_vnode(vnode);
 
     if (error) {
       // In case the fs overwrote this.  We must do this before we unlock.
       vnode->type = VNODE_UNINITIALIZED;
+      // TODO(aoates): consider signalling the error back to other callers via
+      // the vnode object (whether here, or in vfs_put()).
+      vnode->state = VNODE_ST_LAMED;
       KLOG(WARNING, "error when getting inode %d: %s\n",
-           vnode_num, errorname(-error));
-      kmutex_unlock(&vnode->mutex);
+           vnode->num, errorname(-error));
+
+      // TODO(aoates): it's sorta gross that we do the htbl_remove in two spots
+      // (here and in vfs_put, when node is transitioned to VNODE_ST_LAMED).  Is
+      // there a nice way to unify those flows?
+      // Remove lamed node from table.  Other threads are now free to attempt to
+      // get+init it again; anyone who was waiting for us to finish this call
+      // will vfs_put() as well, and one of us will clean up the vnode object.
+      kspin_lock(&g_vnode_cache_lock);
+      KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+      kspin_unlock(&g_vnode_cache_lock);
+
+      kmutex_unlock(&vnode->state_mu);
       vfs_put(vnode);
-      return 0x0;
+      *n_ptr = NULL;
+      return error;
     }
 
     if (vnode->type == VNODE_FIFO)
@@ -259,9 +296,45 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     vnode->socket = NULL;
     vnode->bound_socket = NULL;
 
-    kmutex_unlock(&vnode->mutex);
-    return vnode;
+    vnode->state = VNODE_ST_VALID;
+    kmutex_unlock(&vnode->state_mu);
+    return 0;
+  } else if (vnode->state == VNODE_ST_LAMED) {
+    // Another thread has put() the vnode.  It is invalid and no longer in the
+    // table, but we still have a ref.
+    if (ENABLE_KERNEL_SAFETY_NETS) {
+      kspin_lock(&g_vnode_cache_lock);
+      // Sanity check: this vnode should not be in the table (a new, non-LAMED
+      // version may be, however).
+      void* val;
+      if (htbl_get(&g_vnode_cache, vnode_hash(vnode->fs, vnode->num), &val) ==
+          0) {
+        KASSERT(val != vnode);
+      }
+      kspin_unlock(&g_vnode_cache_lock);
+    }
+    kmutex_unlock(&vnode->state_mu);
+    vfs_put(vnode);
+    *n_ptr = NULL;
+    return 0;  // Caller should try again.
+  } else {
+    KLOG(FATAL, "unexpected vnode state %d on inode %d\n", vnode->state,
+         vnode->num);
+    return -EINVAL;  // Unreachable.
   }
+}
+
+vnode_t* vfs_get(fs_t* fs, int vnode_num) {
+  vnode_t* vnode = NULL;
+  while (vnode == NULL) {
+    vnode = vfs_get_uninitialized(fs, vnode_num);
+    int result = vfs_vnode_finish_init(&vnode);
+    if (result) {
+      return NULL;  // Error already logged in vfs_vnode_finish_init().
+    }
+    // if vnode is NULL now, there was a put() race so we want to simply retry.
+  }
+  return vnode;
 }
 
 void vfs_ref(vnode_t* n) {
@@ -272,34 +345,84 @@ void vfs_ref(vnode_t* n) {
 }
 
 void vfs_put(vnode_t* vnode) {
-  KASSERT(vnode->type != VNODE_INVALID);
-  kspin_lock(&g_vnode_cache_lock);
-  vnode->refcount--;
+  // TODO(aoates): consider a fast path where we just manipulate the refcount
+  // without needing to take any locks.
+  kmutex_lock(&vnode->state_mu);
 
-  // TODO(aoates): instead of greedily freeing the vnode, mark it as unnecessary
-  // and only free it later, if we need to.
-  KASSERT(vnode->refcount >= 0);
-  if (vnode->refcount == 0) {
+  kspin_lock(&g_vnode_cache_lock);
+  KASSERT_DBG(vnode->memobj.refcount >= 1);
+  if (vnode->refcount > 1) {
+    // We're definitely not the last.  Nothing else matters --- this vnode is
+    // someone else's problem.
+    vnode->refcount--;
+    kspin_unlock(&g_vnode_cache_lock);
+    kmutex_unlock(&vnode->state_mu);
+    // vnode may now be invalid.
+    return;
+  }
+
+  // We are currently holding the last reference, so we're responsible for
+  // transitioning the vnode to the next state if needed.
+  KASSERT(vnode->type != VNODE_INVALID);
+  KASSERT(vnode->state == VNODE_ST_BOUND || vnode->state == VNODE_ST_VALID ||
+          vnode->state == VNODE_ST_LAMED);
+
+  if (vnode->state == VNODE_ST_VALID) {
+    // The hard case.  vnode is valid and must be flushed/put.  Other threads
+    // may acquire this vnode via the table, but they can't finish initializing
+    // until we release state_mu.
+    // TODO(aoates): instead of greedily freeing the vnode, mark it as
+    // unnecessary and only free it later, if we need to.
     KASSERT(!kmutex_is_locked(&vnode->mutex));
     KASSERT(vnode->memobj.refcount == 1);
-    KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
     kspin_unlock(&g_vnode_cache_lock);
-    if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
-    if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
 
-    // Only put the node back into the fs if we were able to fully initialize
-    // it.
-    if (vnode->type != VNODE_UNINITIALIZED) {
-      vnode->fs->put_vnode(vnode);
+    // TODO(aoates): look at return code from put_vnode() and do something if it
+    // fails.
+    vnode->fs->put_vnode(vnode);  // May block or call back into VFS.
+    vnode->state = VNODE_ST_LAMED;
+
+    // We've finished flushing, so another thread is free to get() a new copy of
+    // this vnode.  Remove it from the table.
+    kspin_lock(&g_vnode_cache_lock);
+
+    // Note that other threads may have gotten this vnode from the table while
+    // we were blocked in fs->put_vnode().
+    KASSERT_DBG(vnode->refcount >= 1);
+    KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+    // At this point it's guaranteed that no one new can get to the vnode.
+
+    if (vnode->refcount > 1) {
+      // Someone else came along while we were put()ing and tried to get the
+      // node.  Let them clean it up.
+      vnode->refcount--;
+      kspin_unlock(&g_vnode_cache_lock);
+      kmutex_unlock(&vnode->state_mu);
+      // vnode may now be invalid.
+      return;
     }
-    // TODO(aoates): lock for fs data.
-    vnode->fs->open_vnodes--;
-    KASSERT_DBG(vnode->fs->open_vnodes >= 0);
-    vnode->type = VNODE_INVALID;
-    kfree(vnode);
-  } else {
-    kspin_unlock(&g_vnode_cache_lock);
+    // ...otherwise fall through and clean up ourselves.
   }
+
+  // We're now in a terminal and non-blocking state (either found this way, or
+  // because we just put the vnode and moved it to VNODE_ST_LAMED).
+  // We're terminal AND holding the last reference.  Truly the end of the line.
+  // Note: if we ever expose the get/init split externally, will need to handle
+  // BOUND here as well (and remove from vnode table).
+  KASSERT(vnode->state == VNODE_ST_LAMED);
+  KASSERT(vnode->refcount == 1);
+
+  // TODO(aoates): lock for fs data.
+  vnode->fs->open_vnodes--;
+  KASSERT_DBG(vnode->fs->open_vnodes >= 0);
+  kspin_unlock(&g_vnode_cache_lock);
+  kmutex_unlock(&vnode->state_mu);
+  vnode->refcount--;
+  if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
+  if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
+
+  vnode->type = VNODE_INVALID;
+  kfree(vnode);
 }
 
 int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {

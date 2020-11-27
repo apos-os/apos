@@ -6454,6 +6454,77 @@ static void multithread_vnode_get_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
 }
 
+static void* multithread_vnode_get_put_race_test_func(void* arg) {
+  const char kPath[] = "vnode_tests/file";
+  vnode_t* node = NULL;
+  int result = lookup_existing_path(kPath, lookup_opt(false), &node);
+  KEXPECT_EQ(0, result);
+  if (result != 0) return 0x0;
+
+  fs_t* const vnode_fs = node->fs;
+  const int vnode_num = node->num;
+  vfs_put(node);
+
+  const int iters = (intptr_t)arg;
+  uint32_t rand = fnv_hash((uint32_t)(intptr_t)&vnode_fs);
+  for (int i = 0; i < iters; ++i) {
+    node = vfs_get(vnode_fs, vnode_num);
+    KEXPECT_NE(node, NULL);
+    if (!node) return 0x0;
+    KEXPECT_EQ(vnode_fs, node->fs);
+    KEXPECT_EQ(vnode_num, node->num);
+    KEXPECT_EQ(VNODE_REGULAR, node->type);
+
+    // Try and set up the race.
+    if (node->refcount > 1) scheduler_yield();
+
+    kmutex_lock(&node->mutex);
+    node->uid++;
+    kmutex_unlock(&node->mutex);
+    vfs_put(node);
+
+    // This yield is necessary for the test to catch the get/put race bug.
+    // Randomizing isn't strictly necessary, but makes it more effective.
+    rand = fnv_hash(rand);
+    if (rand % 2 == 0) scheduler_yield();
+  }
+  return 0x0;
+}
+
+// A test that ensures vfs_get() and vfs_put() ensure atomicity between them.
+static void multithread_vnode_get_put_race_test(void) {
+  KTEST_BEGIN("vfs: multiple threads getting and putting a single vnode");
+  // Only 2 threads to ensure we're frequently exercising the refcount==0 case.
+  const int kNumThreads = 2;
+  const int kIters = THREAD_SAFETY_TEST_ITERS;
+  KEXPECT_EQ(0, vfs_mkdir("vnode_tests", VFS_S_IRWXU));
+  create_file("vnode_tests/file", RWX);
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("vnode_tests/file", &stat));
+  apos_uid_t starting_uid = stat.st_uid;
+
+  kthread_t threads[kNumThreads];
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i],
+                                 &multithread_vnode_get_put_race_test_func,
+                                 (void*)(intptr_t)kIters));
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KEXPECT_EQ(0, vfs_stat("vnode_tests/file", &stat));
+  KEXPECT_EQ(stat.st_uid, starting_uid + kIters * kNumThreads);
+
+  // Cleanup.
+  KEXPECT_EQ(0, vfs_unlink("vnode_tests/file"));
+  KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -6538,6 +6609,7 @@ void vfs_test(void) {
   fd_concurrent_close_test();
   multithread_path_walk_deadlock_test();
   multithread_vnode_get_test();
+  multithread_vnode_get_put_race_test();
 
   proc_umask(orig_umask);
 

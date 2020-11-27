@@ -344,8 +344,10 @@ int ramfs_get_vnode(vnode_t* n) {
 
 int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
-  KASSERT(vnode->refcount == 0);
   KASSERT(vnode->num >= 0 && vnode->num < RAMFS_MAX_INODES);
+  // Maybe-block twice (vs once with get_vnode()) for get/put race test to be
+  // effective.  This is sorta a gross hack.
+  maybe_block(vnode->fs);
   maybe_block(vnode->fs);
 
   ramfs_t* ramfs = (ramfs_t*)vnode->fs;
@@ -355,7 +357,7 @@ int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(inode->link_count >= 0);
   if (inode->link_count == 0) {
     kmutex_lock(&ramfs->mu);
-    vnode->num = inode->vnode.num = -1;
+    inode->vnode.num = -1;
     vnode->type = inode->vnode.type = VNODE_INVALID;
     kfree(inode->data);
     inode->data = 0x0;
