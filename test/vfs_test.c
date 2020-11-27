@@ -651,6 +651,100 @@ static void vfs_open_create_race_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
 }
 
+static void* vfs_get_fifo_socket_test_func(void* arg) {
+  const char* path = (const char*)arg;
+  vnode_t* vnode = NULL;
+  KEXPECT_EQ(0, lookup_existing_path(path, lookup_opt(false), &vnode));
+  if (!vnode) return 0x0;
+  fs_t* fs = vnode->fs;
+  apos_ino_t vnode_num = vnode->num;
+  vfs_put(vnode);
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    vnode = vfs_get(fs, vnode_num);
+    KEXPECT_NE(NULL, vnode);
+    KEXPECT_EQ(vnode_num, vnode->num);
+    vfs_put(vnode);
+  }
+  return 0;
+}
+
+static void* vfs_open_fifo_socket_test_func(void* arg) {
+  const char* path = (const char*)arg;
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    int fd = vfs_open(path, VFS_O_RDONLY | VFS_O_NONBLOCK, 0);
+    if (fd == 0) {
+      KEXPECT_EQ(0, vfs_close(fd));
+    } else {
+      KEXPECT_EQ(-EOPNOTSUPP, fd);  // Can't open sockets.
+    }
+  }
+  return 0;
+}
+
+// Test for vfs_get() and vfs_open() which have custom logic for FIFOs and
+// sockets.
+static void vfs_open_get_fifo_socket_test(void) {
+  KTEST_BEGIN("vfs_get(): FIFO get race test ");
+  const int kThreads = 2;  // Only two threads to exercise 0->1 and 1->0 cases.
+  kthread_t threads[kThreads];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  KEXPECT_EQ(0,
+             vfs_mknod("thread_safety_test/fifo", VFS_S_IFIFO, kmakedev(0, 0)));
+
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_get_fifo_socket_test_func,
+                                 "thread_safety_test/fifo"));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KTEST_BEGIN("vfs_get(): socket get race test ");
+  vnode_t* vnode = NULL;
+  KEXPECT_EQ(0,
+             vfs_mksocket("thread_safety_test/socket", VFS_S_IFSOCK, &vnode));
+  vfs_put(vnode);
+
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_get_fifo_socket_test_func,
+                                 "thread_safety_test/socket"));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+
+  KTEST_BEGIN("vfs_open(): FIFO open race test ");
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_open_fifo_socket_test_func,
+                                 "thread_safety_test/fifo"));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KTEST_BEGIN("vfs_open(): socket open race test ");
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_open_fifo_socket_test_func,
+                                 "thread_safety_test/socket"));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/fifo"));
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/socket"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
 static void unlink_test(void) {
   KTEST_BEGIN("vfs_unlink(): basic test");
   int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR, 0);
@@ -6382,6 +6476,7 @@ void vfs_test(void) {
   file_table_reclaim_test();
   vfs_open_thread_safety_test();
   vfs_open_create_race_test();
+  vfs_open_get_fifo_socket_test();
   unlink_test();
   unlink_race_test();
   rmdir_race_test();

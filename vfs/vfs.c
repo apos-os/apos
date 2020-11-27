@@ -109,7 +109,7 @@ static int is_valid_create_mode(kmode_t mode) {
 
 static void init_fifo_vnode(vnode_t* vnode) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
-  KASSERT_DBG(vnode->refcount == 1);
+  KASSERT_DBG(vnode->refcount >= 1);
 
   vnode->fifo = (apos_fifo_t*)kmalloc(sizeof(apos_fifo_t));
   fifo_init(vnode->fifo);
