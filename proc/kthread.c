@@ -361,11 +361,12 @@ void kmutex_lock(kmutex_t* m) {
                 "Mutexs are non-reentrant: cannot lock mutex already held by "
                 "the current thread!");
     scheduler_wait_on(&m->wait_queue);
+    KASSERT(m->holder == kthread_current_thread());
   } else {
     m->locked = 1;
+    m->holder = kthread_current_thread();
   }
   KASSERT(m->locked == 1);
-  m->holder = kthread_current_thread();
   POP_INTERRUPTS();
 }
 
@@ -376,6 +377,7 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
   KASSERT(m->holder == kthread_current_thread());
   if (!kthread_queue_empty(&m->wait_queue)) {
     kthread_t next_holder = kthread_queue_pop(&m->wait_queue);
+    m->holder = next_holder;
     scheduler_make_runnable(next_holder);
     if (yield) scheduler_yield();
   } else {
