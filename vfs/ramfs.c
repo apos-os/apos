@@ -106,6 +106,20 @@ static void init_inode(ramfs_t* ramfs, ramfs_inode_t* node) {
   vnode->fs = (fs_t*)ramfs;
 }
 
+static void free_inode(ramfs_t* ramfs, ramfs_inode_t* inode) {
+  KASSERT(inode->link_count == 0);
+
+  kmutex_lock(&ramfs->mu);
+  KASSERT(inode->vnode.num != (int)INVALID_INO && inode->vnode.num >= 0 &&
+          inode->vnode.num < RAMFS_MAX_INODES);
+  KASSERT(inode == &ramfs->inodes[inode->vnode.num]);
+  inode->vnode.num = -1;
+  inode->vnode.type = VNODE_INVALID;
+  kfree(inode->data);
+  inode->data = 0x0;
+  kmutex_unlock(&ramfs->mu);
+}
+
 // Given an in-memory inode, write its metadata back to "disk".  Call this
 // whenever you change things like len, link_count, data ptr, etc.
 static void writeback_metadata(vnode_t* vnode) {
@@ -356,12 +370,7 @@ int ramfs_put_vnode(vnode_t* vnode) {
 
   KASSERT(inode->link_count >= 0);
   if (inode->link_count == 0) {
-    kmutex_lock(&ramfs->mu);
-    inode->vnode.num = -1;
-    vnode->type = inode->vnode.type = VNODE_INVALID;
-    kfree(inode->data);
-    inode->data = 0x0;
-    kmutex_unlock(&ramfs->mu);
+    free_inode(ramfs, inode);
   }
   return 0;
 }
@@ -445,7 +454,7 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   n->vnode.type = VNODE_DIRECTORY;
   int result = ramfs_link_internal(parent, n->vnode.num, name);
   if (result < 0) {
-    // TODO(aoates): destroy vnode on error!
+    free_inode(ramfs, n);
     return result;
   }
 
