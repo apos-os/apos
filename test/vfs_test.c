@@ -6525,6 +6525,54 @@ static void multithread_vnode_get_put_race_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
 }
 
+static void* multithread_create_delete_race_test_mkdir_func(void* arg) {
+  // TODO(aoates): use atomic or notification.
+  bool* done = (bool*)arg;
+  while (!(*done)) {
+    int result = vfs_mkdir("vfs_race_test/dir", VFS_S_IRWXU);
+    if (result != 0) {
+      KEXPECT_EQ(-EEXIST, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  return 0x0;
+}
+
+// A series of tests where one thread continuously creates entries (files,
+// directories, symlinks, etc), while another deletes them.
+static void multithread_create_delete_race_test(void) {
+  KTEST_BEGIN("vfs: create+delete race tests (mkdir/rmdir)");
+  const int kIters = THREAD_SAFETY_TEST_ITERS / 2;
+  KEXPECT_EQ(0, vfs_mkdir("vfs_race_test", VFS_S_IRWXU));
+
+  kthread_t create_thread;
+  bool done = false;
+  KEXPECT_EQ(0, kthread_create(&create_thread,
+                               &multithread_create_delete_race_test_mkdir_func,
+                               &done));
+  scheduler_make_runnable(create_thread);
+
+  int deletions = 0;
+  while (deletions < kIters) {
+    int result = vfs_rmdir("vfs_race_test/dir");
+    if (result == 0) {
+      deletions++;
+    } else {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  done = true;
+  kthread_join(create_thread);
+  vfs_rmdir("vfs_race_test/dir");
+
+  // TODO(aoates): do link(), mknod(), symlink(), open(CREAT), etc.
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_race_test"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -6610,6 +6658,7 @@ void vfs_test(void) {
   multithread_path_walk_deadlock_test();
   multithread_vnode_get_test();
   multithread_vnode_get_put_race_test();
+  multithread_create_delete_race_test();
 
   proc_umask(orig_umask);
 

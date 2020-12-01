@@ -841,13 +841,14 @@ int vfs_mkdir(const char* path, kmode_t mode) {
   }
 
   int child_inode = parent->fs->mkdir(parent, base_name);
-  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
+  kmutex_unlock(&parent->mutex);
   vfs_set_created_metadata(child, mode);
   VFS_PUT_AND_CLEAR(child);
 
