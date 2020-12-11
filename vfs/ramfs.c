@@ -428,7 +428,7 @@ int ramfs_mknod(vnode_t* parent, const char* name,
   if (result >= 0) {
     return n->vnode.num;
   } else {
-    // TODO(aoates): destroy vnode on error!
+    free_inode(ramfs, n);
     return result;
   }
 }
@@ -690,7 +690,7 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
   if (result >= 0) {
     return new_inode;
   } else {
-    // TODO(aoates): destroy vnode on error!
+    free_inode(ramfs, n);
     return result;
   }
 }
