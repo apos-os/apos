@@ -1770,13 +1770,14 @@ int vfs_symlink(const char* path1, const char* path2) {
   }
 
   int child_inode = parent->fs->symlink(parent, base_name, path1);
-  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
+  kmutex_unlock(&parent->mutex);
   vfs_set_created_metadata(child, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO);
   VFS_PUT_AND_CLEAR(parent);
   VFS_PUT_AND_CLEAR(child);
