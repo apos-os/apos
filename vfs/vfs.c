@@ -894,13 +894,14 @@ static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
   else die("unknown node type");
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
-  kmutex_unlock(&parent->mutex);
   if (child_inode < 0) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
+  kmutex_unlock(&parent->mutex);
   vfs_set_created_metadata(child, mode & ~VFS_S_IFMT);
   *vnode_out = child;
 

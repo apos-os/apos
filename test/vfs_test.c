@@ -6525,11 +6525,30 @@ static void multithread_vnode_get_put_race_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
 }
 
-static void* multithread_create_delete_race_test_mkdir_func(void* arg) {
+typedef enum {
+  TEST_CREATE_MKDIR = 1,
+  TEST_CREATE_MKNOD = 2,
+} test_create_type_t;
+
+typedef struct {
+  bool done;
+  test_create_type_t type;
+} mtcdrt_args_t;
+
+static void* multithread_create_delete_race_test_make_func(void* arg) {
+  mtcdrt_args_t* args = (mtcdrt_args_t*)arg;
   // TODO(aoates): use atomic or notification.
-  bool* done = (bool*)arg;
-  while (!(*done)) {
-    int result = vfs_mkdir("vfs_race_test/dir", VFS_S_IRWXU);
+  while (!args->done) {
+    int result;
+    switch (args->type) {
+      case TEST_CREATE_MKDIR:
+        result = vfs_mkdir("vfs_race_test/dir", VFS_S_IRWXU);
+        break;
+      case TEST_CREATE_MKNOD:
+        result = vfs_mknod("vfs_race_test/file", VFS_S_IFREG | VFS_S_IRWXU,
+                           kmakedev(0, 0));
+        break;
+    }
     if (result != 0) {
       KEXPECT_EQ(-EEXIST, result);
     }
@@ -6547,10 +6566,12 @@ static void multithread_create_delete_race_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("vfs_race_test", VFS_S_IRWXU));
 
   kthread_t create_thread;
-  bool done = false;
-  KEXPECT_EQ(0, kthread_create(&create_thread,
-                               &multithread_create_delete_race_test_mkdir_func,
-                               &done));
+  mtcdrt_args_t args;
+  args.done = false;
+  args.type = TEST_CREATE_MKDIR;
+  KEXPECT_EQ(
+      0, kthread_create(&create_thread,
+                        &multithread_create_delete_race_test_make_func, &args));
   scheduler_make_runnable(create_thread);
 
   int deletions = 0;
@@ -6564,11 +6585,35 @@ static void multithread_create_delete_race_test(void) {
     // TODO(aoates): remove this when preemption or randomized scheduler is in.
     scheduler_yield();
   }
-  done = true;
+  args.done = true;
   kthread_join(create_thread);
   vfs_rmdir("vfs_race_test/dir");
 
-  // TODO(aoates): do link(), mknod(), symlink(), open(CREAT), etc.
+
+  KTEST_BEGIN("vfs: create+delete race tests (mknod/unlink)");
+  args.done = false;
+  args.type = TEST_CREATE_MKNOD;
+  KEXPECT_EQ(
+      0, kthread_create(&create_thread,
+                        &multithread_create_delete_race_test_make_func, &args));
+  scheduler_make_runnable(create_thread);
+
+  deletions = 0;
+  while (deletions < kIters) {
+    int result = vfs_unlink("vfs_race_test/file");
+    if (result == 0) {
+      deletions++;
+    } else {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  args.done = true;
+  kthread_join(create_thread);
+  vfs_unlink("vfs_race_test/file");
+
+  // TODO(aoates): do link(), symlink(), open(CREAT), etc.
 
   KEXPECT_EQ(0, vfs_rmdir("vfs_race_test"));
 }
