@@ -6529,6 +6529,7 @@ typedef enum {
   TEST_CREATE_MKDIR = 1,
   TEST_CREATE_MKNOD = 2,
   TEST_CREATE_SYMLINK = 3,
+  TEST_CREATE_OPEN = 4,
 } test_create_type_t;
 
 typedef struct {
@@ -6552,6 +6553,13 @@ static void* multithread_create_delete_race_test_make_func(void* arg) {
       case TEST_CREATE_SYMLINK:
         result = vfs_symlink("abc", "vfs_race_test/link");
         break;
+      case TEST_CREATE_OPEN:
+        result = vfs_open("vfs_race_test/file", VFS_O_CREAT | VFS_O_RDONLY,
+                          VFS_S_IRWXU);
+        if (result == 0) {
+          vfs_close(result);
+        }
+        break;
     }
     if (result != 0) {
       KEXPECT_EQ(-EEXIST, result);
@@ -6560,6 +6568,34 @@ static void* multithread_create_delete_race_test_make_func(void* arg) {
     scheduler_yield();
   }
   return 0x0;
+}
+
+// Helper to do a create/delete race test using vfs_unlink() to remove the path.
+static void do_create_unlink_race_test(int iters, const char* path,
+                                       test_create_type_t type) {
+  kthread_t create_thread;
+  mtcdrt_args_t args;
+  args.done = false;
+  args.type = type;
+  KEXPECT_EQ(
+      0, kthread_create(&create_thread,
+                        &multithread_create_delete_race_test_make_func, &args));
+  scheduler_make_runnable(create_thread);
+
+  int deletions = 0;
+  while (deletions < iters) {
+    int result = vfs_unlink(path);
+    if (result == 0) {
+      deletions++;
+    } else {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  args.done = true;
+  kthread_join(create_thread);
+  vfs_unlink(path);
 }
 
 // A series of tests where one thread continuously creates entries (files,
@@ -6595,53 +6631,18 @@ static void multithread_create_delete_race_test(void) {
 
 
   KTEST_BEGIN("vfs: create+delete race tests (mknod/unlink)");
-  args.done = false;
-  args.type = TEST_CREATE_MKNOD;
-  KEXPECT_EQ(
-      0, kthread_create(&create_thread,
-                        &multithread_create_delete_race_test_make_func, &args));
-  scheduler_make_runnable(create_thread);
-
-  deletions = 0;
-  while (deletions < kIters) {
-    int result = vfs_unlink("vfs_race_test/file");
-    if (result == 0) {
-      deletions++;
-    } else {
-      KEXPECT_EQ(-ENOENT, result);
-    }
-    // TODO(aoates): remove this when preemption or randomized scheduler is in.
-    scheduler_yield();
-  }
-  args.done = true;
-  kthread_join(create_thread);
-  vfs_unlink("vfs_race_test/file");
-
+  do_create_unlink_race_test(kIters, "vfs_race_test/file", TEST_CREATE_MKNOD);
 
   KTEST_BEGIN("vfs: create+delete race tests (symlink/unlink)");
-  args.done = false;
-  args.type = TEST_CREATE_SYMLINK;
-  KEXPECT_EQ(
-      0, kthread_create(&create_thread,
-                        &multithread_create_delete_race_test_make_func, &args));
-  scheduler_make_runnable(create_thread);
+  do_create_unlink_race_test(kIters, "vfs_race_test/link", TEST_CREATE_SYMLINK);
 
-  deletions = 0;
-  while (deletions < kIters) {
-    int result = vfs_unlink("vfs_race_test/link");
-    if (result == 0) {
-      deletions++;
-    } else {
-      KEXPECT_EQ(-ENOENT, result);
-    }
-    // TODO(aoates): remove this when preemption or randomized scheduler is in.
-    scheduler_yield();
-  }
-  args.done = true;
-  kthread_join(create_thread);
-  vfs_unlink("vfs_race_test/link");
+  KTEST_BEGIN("vfs: create+delete race tests (open/unlink)");
+  do_create_unlink_race_test(kIters, "vfs_race_test/file", TEST_CREATE_OPEN);
 
-  // TODO(aoates): do link(), open(CREAT), etc.
+  // TODO(aoates): do similar tests for link() and rename(). These are more
+  // complicated operations that wouldn't manifest bugs as simply as the above
+  // creation functions, so a more thorough test would be needed to be
+  // comprehensive.
 
   KEXPECT_EQ(0, vfs_rmdir("vfs_race_test"));
 }
