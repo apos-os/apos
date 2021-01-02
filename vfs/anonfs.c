@@ -29,12 +29,12 @@ static int anonfs_lookup(vnode_t* parent, const char* name);
 static int anonfs_mknod(vnode_t* parent, const char* name, vnode_type_t type,
                         apos_dev_t dev);
 static int anonfs_mkdir(vnode_t* parent, const char* name);
-static int anonfs_rmdir(vnode_t* parent, const char* name);
+static int anonfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
 static int anonfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int anonfs_write(vnode_t* vnode, int offset, const void* buf,
                         int bufsize);
 static int anonfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-static int anonfs_unlink(vnode_t* parent, const char* name);
+static int anonfs_unlink(vnode_t* parent, const char* name, const vnode_t* child);
 static int anonfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int anonfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int anonfs_symlink(vnode_t* parent, const char* name, const char* path);
@@ -122,11 +122,11 @@ ANONFS_UNIMPLEMENTED(anonfs_get_root, (struct fs* fs))
 ANONFS_UNIMPLEMENTED(anonfs_lookup, (vnode_t* parent, const char* name))
 ANONFS_UNIMPLEMENTED(anonfs_mknod, (vnode_t* parent, const char* name, vnode_type_t type, apos_dev_t dev))
 ANONFS_UNIMPLEMENTED(anonfs_mkdir, (vnode_t* parent, const char* name))
-ANONFS_UNIMPLEMENTED(anonfs_rmdir, (vnode_t* parent, const char* name))
+ANONFS_UNIMPLEMENTED(anonfs_rmdir, (vnode_t* parent, const char* name, const vnode_t* child))
 ANONFS_UNIMPLEMENTED(anonfs_read, (vnode_t* vnode, int offset, void* buf, int bufsize))
 ANONFS_UNIMPLEMENTED(anonfs_write, (vnode_t* vnode, int offset, const void* buf, int bufsize))
 ANONFS_UNIMPLEMENTED(anonfs_link, (vnode_t* parent, vnode_t* vnode, const char* name))
-ANONFS_UNIMPLEMENTED(anonfs_unlink, (vnode_t* parent, const char* name))
+ANONFS_UNIMPLEMENTED(anonfs_unlink, (vnode_t* parent, const char* name, const vnode_t* child))
 ANONFS_UNIMPLEMENTED(anonfs_getdents, (vnode_t* vnode, int offset, void* buf, int bufsize))
 ANONFS_UNIMPLEMENTED(anonfs_symlink, (vnode_t* parent, const char* name, const char* path))
 ANONFS_UNIMPLEMENTED(anonfs_readlink, (vnode_t* node, char* buf, int bufsize))

@@ -45,11 +45,12 @@ int ramfs_lookup(vnode_t* parent, const char* name);
 int ramfs_mknod(vnode_t* parent, const char* name,
                 vnode_type_t type, apos_dev_t dev);
 int ramfs_mkdir(vnode_t* parent, const char* name);
-int ramfs_rmdir(vnode_t* parent, const char* name);
+int ramfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-int ramfs_unlink(vnode_t* parent, const char* name);
+int ramfs_unlink(vnode_t* parent, const char* name,
+                 const vnode_t* expected_child);
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 int ramfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 int ramfs_symlink(vnode_t* parent, const char* name, const char* path);

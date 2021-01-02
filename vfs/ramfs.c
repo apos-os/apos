@@ -473,7 +473,7 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   return n->vnode.num;
 }
 
-int ramfs_rmdir(vnode_t* parent, const char* name) {
+int ramfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   maybe_block(parent->fs);
   if (parent->type != VNODE_DIRECTORY) {
@@ -483,6 +483,10 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
     return -EIO;
+  }
+
+  if (child) {
+    KASSERT(d->d_ino == (apos_ino_t)child->num);
   }
 
   maybe_block(parent->fs);
@@ -588,7 +592,8 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 
 // TODO(aoates): a good test: create a file, unlink it, create a new one with
 // the same name, do stuff to it and verify it's a totaly new file.
-int ramfs_unlink(vnode_t* parent, const char* name) {
+int ramfs_unlink(vnode_t* parent, const char* name,
+                 const vnode_t* expected_child) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   maybe_block(parent->fs);
   KASSERT(parent->type == VNODE_DIRECTORY);
@@ -596,6 +601,10 @@ int ramfs_unlink(vnode_t* parent, const char* name) {
   kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
     return -EIO;
+  }
+
+  if (expected_child) {
+    KASSERT(d->d_ino == (apos_ino_t)expected_child->num);
   }
 
   maybe_block(parent->fs);

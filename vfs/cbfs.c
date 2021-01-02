@@ -233,12 +233,12 @@ static int cbfs_lookup(vnode_t* parent, const char* name);
 static int cbfs_mknod(vnode_t* parent, const char* name,
                         vnode_type_t type, apos_dev_t dev);
 static int cbfs_mkdir(vnode_t* parent, const char* name);
-static int cbfs_rmdir(vnode_t* parent, const char* name);
+static int cbfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
 static int cbfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int cbfs_write(vnode_t* vnode, int offset, const void* buf,
                         int bufsize);
 static int cbfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-static int cbfs_unlink(vnode_t* parent, const char* name);
+static int cbfs_unlink(vnode_t* parent, const char* name, const vnode_t* child);
 static int cbfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int cbfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int cbfs_symlink(vnode_t* parent, const char* name, const char* path);
@@ -623,7 +623,7 @@ static int cbfs_mkdir(vnode_t* parent, const char* name) {
   return -EACCES;
 }
 
-static int cbfs_rmdir(vnode_t* parent, const char* name) {
+static int cbfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child) {
   return -EACCES;
 }
 
@@ -648,7 +648,7 @@ static int cbfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   return -EACCES;
 }
 
-static int cbfs_unlink(vnode_t* parent, const char* name) {
+static int cbfs_unlink(vnode_t* parent, const char* name, const vnode_t* child) {
   return -EACCES;
 }
 

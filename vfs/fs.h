@@ -77,7 +77,11 @@ struct fs {
   //
   // The filesystem must remove the '.' and '..' entries from the child before
   // rmdir() returns, but must not free the underlying inode.
-  int (*rmdir)(vnode_t* parent, const char* name);
+  //
+  // child is the vnode that the caller expects to be removed from the parent
+  // (per a previous call to lookup()).  The filesystem may validate that the
+  // removed dirent matches the expected child.
+  int (*rmdir)(vnode_t* parent, const char* name, const vnode_t* child);
 
   // Read up to bufsize bytes from the given vnode at the given offset.  Returns
   // the number of bytes read.
@@ -96,7 +100,9 @@ struct fs {
   // Unlink the vnode in the parent (which must be a directory) that has the
   // given name.  The underlying inode must not be destroyed if it's link count
   // is 0, since there may be outstanding VFS references.
-  int (*unlink)(vnode_t* parent, const char* name);
+  //
+  // The expected child is passed as with rmdir above.
+  int (*unlink)(vnode_t* parent, const char* name, const vnode_t* child);
 
   // Read several dirent_ts from the given (directory) vnode and fill the given
   // buffer.  Returns the number of bytes read into the buffer.  For subsequent

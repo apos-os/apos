@@ -974,7 +974,7 @@ int vfs_rmdir(const char* path) {
     return -EBUSY;
   }
 
-  error = parent->fs->rmdir(parent, base_name);
+  error = parent->fs->rmdir(parent, base_name, child);
   vfs_unlock_vnodes(parent, child);
   // This actually collects the inode in the fs (if this is the last ref).
   VFS_PUT_AND_CLEAR(child);
@@ -1229,14 +1229,14 @@ int vfs_rename_unique(const char* path1, const char* path2) {
                vnode2->type != VNODE_DIRECTORY) {
       error = -ENOTDIR;
     } else if (vnode2->type == VNODE_DIRECTORY) {
-      error = parent2->fs->rmdir(parent2, base_name2);
+      error = parent2->fs->rmdir(parent2, base_name2, vnode2);
     } else {
-      error = parent2->fs->unlink(parent2, base_name2);
+      error = parent2->fs->unlink(parent2, base_name2, vnode2);
     }
     if (error) goto done3;
   }
 
-  error = parent1->fs->unlink(parent1, base_name1);
+  error = parent1->fs->unlink(parent1, base_name1, vnode1);
   if (error) goto done3;
 
   error = parent2->fs->link(parent2, vnode1, base_name2);
@@ -1285,7 +1285,7 @@ int vfs_unlink(const char* path) {
     return -EISDIR;
   }
 
-  error = parent->fs->unlink(parent, base_name);
+  error = parent->fs->unlink(parent, base_name, child);
   vfs_unlock_vnodes(parent, child);
   // This actually collects the inode in the fs (if this is the last ref).
   VFS_PUT_AND_CLEAR(child);

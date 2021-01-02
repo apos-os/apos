@@ -39,11 +39,11 @@ static int ext2_lookup(vnode_t* parent, const char* name);
 static int ext2_mknod(vnode_t* parent, const char* name,
                       vnode_type_t type, apos_dev_t dev);
 static int ext2_mkdir(vnode_t* parent, const char* name);
-static int ext2_rmdir(vnode_t* parent, const char* name);
+static int ext2_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
 static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int ext2_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name);
-static int ext2_unlink(vnode_t* parent, const char* name);
+static int ext2_unlink(vnode_t* parent, const char* name, const vnode_t* child);
 static int ext2_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int ext2_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int ext2_symlink(vnode_t* parent, const char* name, const char* path);
@@ -1425,10 +1425,11 @@ static int ext2_rmdir_iter_func(void* arg,
   return 0;
 }
 
-static int ext2_rmdir(vnode_t* parent, const char* name) {
+static int ext2_rmdir(vnode_t* parent, const char* name, const vnode_t* child) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
   kmutex_assert_is_held(&parent->mutex);
+  kmutex_assert_is_held(&child->mutex);
 
   // Get the parent inode.
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
@@ -1448,6 +1449,14 @@ static int ext2_rmdir(vnode_t* parent, const char* name) {
     return -EIO;
   } else if (child_inode_num < 0) {
     return child_inode_num;
+  }
+
+  if (child_inode_num != child->num) {
+    // Indicates either a bug in VFS code or a corrupted filesystem.
+    KLOG(WARNING,
+         "ext2: unlink('%s') on inode %d found inode %d, expected inode %d\n",
+         name, parent->num, child_inode_num, child->num);
+    return -EIO;
   }
 
   ext2_inode_t child_inode;
@@ -1664,10 +1673,12 @@ static int ext2_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   return result;
 }
 
-static int ext2_unlink(vnode_t* parent, const char* name) {
+static int ext2_unlink(vnode_t* parent, const char* name,
+                       const vnode_t* child) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   KASSERT_DBG(kstrcmp(parent->fstype, "ext2") == 0);
   kmutex_assert_is_held(&parent->mutex);
+  kmutex_assert_is_held(&child->mutex);
 
   // Get the parent inode.
   ext2fs_t* fs = (ext2fs_t*)parent->fs;
@@ -1687,6 +1698,14 @@ static int ext2_unlink(vnode_t* parent, const char* name) {
     return -EIO;
   } else if (child_inode_num < 0) {
     return child_inode_num;
+  }
+
+  if (child_inode_num != child->num) {
+    // Indicates either a bug in VFS code or a corrupted filesystem.
+    KLOG(WARNING,
+         "ext2: unlink('%s') on inode %d found inode %d, expected inode %d\n",
+         name, parent->num, child_inode_num, child->num);
+    return -EIO;
   }
 
   ext2_inode_t child_inode;

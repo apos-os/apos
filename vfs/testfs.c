@@ -29,12 +29,12 @@ static int testfs_lookup(vnode_t* parent, const char* name);
 static int testfs_mknod(vnode_t* parent, const char* name,
                         vnode_type_t type, apos_dev_t dev);
 static int testfs_mkdir(vnode_t* parent, const char* name);
-static int testfs_rmdir(vnode_t* parent, const char* name);
+static int testfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
 static int testfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int testfs_write(vnode_t* vnode, int offset, const void* buf,
                         int bufsize);
 static int testfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-static int testfs_unlink(vnode_t* parent, const char* name);
+static int testfs_unlink(vnode_t* parent, const char* name, const vnode_t* child);
 static int testfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 static int testfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 static int testfs_read_page(vnode_t* vnode, int page_offset, void* buf);
@@ -112,7 +112,7 @@ static int testfs_mkdir(vnode_t* parent, const char* name) {
   return -EACCES;
 }
 
-static int testfs_rmdir(vnode_t* parent, const char* name) {
+static int testfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child) {
   KASSERT(parent->num == 0);
   return -EACCES;
 }
@@ -133,7 +133,7 @@ static int testfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   return -EACCES;
 }
 
-static int testfs_unlink(vnode_t* parent, const char* name) {
+static int testfs_unlink(vnode_t* parent, const char* name, const vnode_t* child) {
   KASSERT(parent->num == 0);
   return -EACCES;
 }
