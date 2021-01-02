@@ -192,29 +192,4 @@ bool kmutex_is_locked(const kmutex_t* m);
 void kmutex_assert_is_held(const kmutex_t* m) KM_ASSERT_CAPABILITY(m);
 void kmutex_assert_is_not_held(const kmutex_t* m);
 
-// An auto-unlocking mutex lock.
-//
-// Example usage:
-//  {
-//    KMUTEX_AUTO_LOCK(my_x_lock, &x->lock);
-//    ...
-//    // x->lock is automatically unlocked here when my_x_lock goes out of
-//    // scope.
-//  }
-static inline kmutex_t* _kmutex_autolock_lock(kmutex_t* m)
-    NO_THREAD_SAFETY_ANALYSIS {
-  kmutex_lock(m);
-  return m;
-}
-static inline void _kmutex_autolock_unlock(kmutex_t** m)
-    NO_THREAD_SAFETY_ANALYSIS {
-  kmutex_unlock(*m);
-}
-#ifndef ENABLE_KMUTEX_THREAD_SAFETY
-#define KMUTEX_AUTO_LOCK(name, lock) \
-  kmutex_t* name __attribute__((cleanup(_kmutex_autolock_unlock))) = \
-    _kmutex_autolock_lock(lock); \
-  (void)name;
-#endif
-
 #endif
