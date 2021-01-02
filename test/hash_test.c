@@ -33,6 +33,10 @@ static void fnv_array_test(void) {
   for (uint32_t i = 0; i < 10; ++i) {
     KEXPECT_EQ(fnv_hash(i), fnv_hash_array(&i, sizeof(uint32_t)));
   }
+
+  KEXPECT_EQ(0xd58b3fa7, fnv_hash_array("hello world", 11));
+  KEXPECT_EQ(0x02186e67, fnv_hash_array("HELLO WORLD", 11));
+  KEXPECT_EQ(0x65c5fd60, fnv_hash_array("abcd12345", 9));
 }
 
 static void fnv_concat_test(void) {

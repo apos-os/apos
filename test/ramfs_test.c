@@ -129,7 +129,7 @@ static void basic_test(void) {
   KEXPECT_EQ('3', buf[12]);
   KEXPECT_EQ('4', buf[13]);
 
-  KEXPECT_GE(g_fs->unlink(g_root, "testA"), 0);
+  KEXPECT_GE(g_fs->unlink(g_root, "testA", NULL), 0);
   kfree(n);
 }
 
@@ -208,25 +208,39 @@ static void directory_test(void) {
   // to getdents() with increasing offsets.
 
   KTEST_BEGIN("unlink() test");
-  KEXPECT_EQ(0, g_fs->unlink(n, "file1"));
+  KEXPECT_EQ(0, g_fs->unlink(n, "file1", NULL));
   EXPECT_DIRENTS(n, 3, ".", n->num, "..", g_root->num, "file2", file2->num);
 
   KTEST_BEGIN("rmdir() a file test");
-  KEXPECT_EQ(-ENOENT, g_fs->rmdir(n, "file1"));
-  KEXPECT_EQ(-ENOTDIR, g_fs->rmdir(n, "file2"));
+  KEXPECT_EQ(-EIO, g_fs->rmdir(n, "file1", NULL));
+  KEXPECT_EQ(-ENOTDIR, g_fs->rmdir(n, "file2", NULL));
 
   KTEST_BEGIN("rmdir() a non-empty directory");
-  KEXPECT_EQ(-ENOTEMPTY, g_fs->rmdir(g_root, "test_dir"));
+  KEXPECT_EQ(-ENOTEMPTY, g_fs->rmdir(g_root, "test_dir", NULL));
 
   KTEST_BEGIN("rmdir() test");
-  KEXPECT_EQ(0, g_fs->unlink(n, "file2"));
-  KEXPECT_EQ(0, g_fs->rmdir(g_root, "test_dir"));
+  KEXPECT_EQ(0, g_fs->unlink(n, "file2", NULL));
+  KEXPECT_EQ(0, g_fs->rmdir(g_root, "test_dir", NULL));
 
   // TODO(aoates): check link count
 
   kfree(file);
   kfree(file2);
   kfree(n);
+}
+
+static void fault_test(void) {
+  KTEST_BEGIN("ramfs: fault injection");
+  KEXPECT_EQ(0, ramfs_set_fault_percent(g_fs, 50));
+  const int kIters = 200;
+  int faults = 0;
+  for (int i = 0; i < kIters; ++i) {
+    int result = g_fs->lookup(g_root, ".");
+    if (result == -EINJECTEDFAULT) faults++;
+  }
+  KEXPECT_GE(faults, kIters * 0.4);
+  KEXPECT_LE(faults, kIters * 0.6);
+  KEXPECT_EQ(50, ramfs_set_fault_percent(g_fs, 0));
 }
 
 void ramfs_test(void) {
@@ -236,6 +250,7 @@ void ramfs_test(void) {
 
   basic_test();
   directory_test();
+  fault_test();
   ramfs_destroy_fs(g_fs);
 
   kfree(g_root);

@@ -19,6 +19,7 @@
 #include "memory/memobj_vnode.h"
 #include "memory/memobj.h"
 #include "memory/memory.h"
+#include "proc/kthread.h"
 #include "vfs/fs.h"
 #include "vfs/vnode.h"
 
@@ -81,6 +82,7 @@ static int vnode_read_page(memobj_t* obj, int offset, void* buffer) {
   KASSERT(obj->data != 0x0);
 
   vnode_t* vnode = (vnode_t*)obj->data;
+  KMUTEX_AUTO_LOCK(vnode_lock, &vnode->mutex);
   return vnode->fs->read_page(vnode, offset, buffer);
 }
 
@@ -89,6 +91,7 @@ static int vnode_write_page(memobj_t* obj, int offset, const void* buffer) {
   KASSERT(obj->data != 0x0);
 
   vnode_t* vnode = (vnode_t*)obj->data;
+  KMUTEX_AUTO_LOCK(vnode_lock, &vnode->mutex);
   return vnode->fs->write_page(vnode, offset, buffer);
 }
 

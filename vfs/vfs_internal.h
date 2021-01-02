@@ -57,6 +57,10 @@ typedef struct lookup_options {
   // the euid/egid.  Most syscalls don't want this.  It defaults to false.
   bool check_real_ugid;
   bool resolve_final_mount;
+
+  // If true, if the final element is non-existent, then the parent will be
+  // returned locked.
+  bool lock_on_noent;
 } lookup_options_t;
 
 static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
@@ -64,6 +68,7 @@ static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
   opt.resolve_final_symlink = resolve_final_symlink;
   opt.check_real_ugid = false;
   opt.resolve_final_mount = true;
+  opt.lock_on_noent = false;
   return opt;
 }
 
@@ -77,10 +82,12 @@ static inline lookup_options_t lookup_opt(bool resolve_final_symlink) {
 // |base_name_out|.  If the node isn't a symlink, |base_name_out| is left
 // unchanged.
 //
-// If |allow_nonexistant_final| is non-zero, and the final element of the
-// symlink doesn't exist, resolve_symlink() will return 0 instead of -ENOENT,
-// but will set |*child_ptr| to 0x0.
-int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+// If |at_last_element| is true, the symlink will be treated as if it is at the
+// last element of a path (and therefore _its_ last element is the true last
+// element).  For example, if the final element of the symlink doesn't exist,
+// resolve_symlink() will return 0 instead of -ENOENT, but will set |*child_ptr|
+// to 0x0.
+int resolve_symlink(bool at_last_element, lookup_options_t opt,
                     vnode_t** parent_ptr, vnode_t** child_ptr,
                     char* base_name_out, int max_recursion);
 
@@ -132,10 +139,25 @@ int lookup_path(vnode_t* root, const char* path, lookup_options_t options,
 // about the path root, basename, parent directory, etc.
 //
 // Returns the child WITH A REFERENCE in |child_out| if it exists, or -error
-// otherwise.  Returns the parent of the child, also with a reference in
-// |parent_out|, unless |parent_out| is null.
+// otherwise.
 int lookup_existing_path(const char* path, lookup_options_t options,
-                         vnode_t** parent_out, vnode_t** child_out);
+                         vnode_t** child_out);
+
+// As lookup_existing_path(), but locks both the parent and child before
+// returning.  On success, ensures that the final entry in the parent is the
+// given child (or lack of child), and cannot be changed until the parent is
+// unlocked.
+//
+// Requires options.resolve_final_symlink and options.resolve_final_mount are
+// false.  There is currently no way to atomically lock parent and child during
+// a lookup and also resolve symlinks and mounts.
+//
+// If the final element of the path is ".." and the parent is the root of a
+// mounted filesystem, it is unspecified whether the mount is reverse-resolved.
+int lookup_existing_path_and_lock(vnode_t* root, const char* path,
+                                  lookup_options_t options,
+                                  vnode_t** parent_out, vnode_t** child_out,
+                                  char* base_name_out);
 
 // Lookup a file_t from an open fd.  Returns the corresponding file_t* in
 // |file_out| with a reference, or -error otherwise.
@@ -170,5 +192,13 @@ int vfs_open_vnode(vnode_t* vnode, int flags, bool block);
 // Creates a socket file or returns an error.  If successful, returns the open
 // node with a reference in |vnode_out|.
 int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out);
+
+// Lock or unlock the two vnodes in a deadlock-free way.
+void vfs_lock_vnodes(vnode_t* A, vnode_t* B);
+void vfs_unlock_vnodes(vnode_t* A, vnode_t* B);
+
+// Lock an array of vnodes.  The order of the array may be mutated.
+void vfs_lock_vnodes2(vnode_t** nodes, size_t n);
+void vfs_unlock_vnodes2(vnode_t** nodes, size_t n);
 
 #endif

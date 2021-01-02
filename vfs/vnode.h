@@ -48,12 +48,47 @@ static const char* const VNODE_TYPE_NAME[] = {
 _Static_assert(sizeof(VNODE_TYPE_NAME) / sizeof(const char*) == VNODE_MAX,
                "VNODE_TYPE_NAME doesn't match vnode_type_t");
 
+// Internal state of the vnode.  Outside of vfs_get(), vfs_put(), and friends,
+// clients should mostly only deal with VALID vnodes, or occasionally BOUND.
+// There are two additional "implicit" states: INITIALIZING (between BOUND and
+// VALID) and PUTTING (between VALID and LAMED).  If the vnode is in one of
+// those states, state_mu will be held until the transition is complete.
+typedef enum {
+  // Sentinel state that should never be observed.
+  VNODE_ST_WTF = 0,
+
+  // The vnode has been bound to a particular (fs, inode) tuple in the global
+  // table.  It is not initialized, however, and may not be valid or actually
+  // exist in the underlying filesystem.
+  VNODE_ST_BOUND = 1,
+
+  // The vnode is bound and valid.  Have fun.
+  VNODE_ST_VALID = 2,
+
+  // The vnode has been put() and should no longer be considered valid.  The
+  // only thing that can be done is examine the error field (if applicable) and
+  // put your reference.
+  VNODE_ST_LAMED = 3,
+} vnode_state_t;
+
 // A virtual node in the filesystem.  It is expected that concete filesystems
 // will embed the vnode_t structure in their own, custom structure with
 // additional metadata.
+//
+// const after creation: may be read without a lock at any time
+// const after initialization: may be read without a lock after initialization
+//   (after vfs_get() returns)
+// other: must not be accessed without lock held or via appropriate helper.
 struct vnode {
-  int num;
-  vnode_type_t type;
+  int num;            // const after creation
+  vnode_type_t type;  // const after initialization
+  vnode_state_t state;
+
+  // Lock for just the state of the vnode.  Will not be held across blocking
+  // operations unless the vnode is being initialized or flushed/put (in which
+  // case no other thread can be holding this mutex and attempting to take
+  // another, unless there's a dependency cycle between filesystems).
+  kmutex_t state_mu;
 
   // The length is cached here.  It will not be updated by the VFS code.
   int len;
@@ -78,7 +113,7 @@ struct vnode {
   int refcount;
 
   char fstype[10];
-  fs_t* fs;
+  fs_t* fs;  // const after creation
 
   // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
   // TODO(aoates): put this and fifo in a union (and update usage sites to only
@@ -102,9 +137,6 @@ struct vnode {
 
   // Protects the vnode across blocking IO calls.
   kmutex_t mutex;
-  // VFS impl pointer.
-  //
-  // TODO(aoates): mutex?
 };
 typedef struct vnode vnode_t;
 
@@ -114,8 +146,11 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num);
 // Given a filesystem and a vnode number, return the corresponding vnode_t.
 // This increments the vnode's refcount, which must be decremented later vith
 // vfs_put.
-vnode_t* vfs_get(fs_t* fs, int vnode);
 //
+// May block if the vnode is uninitialized or being initialized.  Safe to call
+// with other vnodes locked.
+vnode_t* vfs_get(fs_t* fs, int vnode);
+
 // Increment the given node's refcount.
 void vfs_ref(vnode_t* n);
 

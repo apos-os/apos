@@ -42,6 +42,7 @@ int resolve_mounts(vnode_t** vnode) {
     // TODO(aoates): check that each of these is valid.
     fs_t* const child_fs = g_fs_table[n->mounted_fs].fs;
     vnode_t* child_fs_root = vfs_get(child_fs, child_fs->get_root(child_fs));
+    KASSERT_DBG(child_fs_root->parent_mount_point == n);
     VFS_PUT_AND_CLEAR(n);
     n = VFS_MOVE_REF(child_fs_root);
   }
@@ -61,7 +62,7 @@ void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   }
 }
 
-int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
+int resolve_symlink(bool at_last_element, lookup_options_t opt,
                     vnode_t** parent_ptr, vnode_t** child_ptr,
                     char* base_name_out, int max_recursion) {
   vnode_t* child = *child_ptr;
@@ -70,7 +71,9 @@ int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
   while (child && child->type == VNODE_SYMLINK) {
     if (!symlink_target) symlink_target = kmalloc(VFS_MAX_PATH_LENGTH + 1);
 
+    kmutex_lock(&child->mutex);
     int error = child->fs->readlink(child, symlink_target, VFS_MAX_PATH_LENGTH);
+    kmutex_unlock(&child->mutex);
     if (error < 0) {
       kfree(symlink_target);
       VFS_PUT_AND_CLEAR(parent);
@@ -83,6 +86,7 @@ int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
     vnode_t* new_parent = 0x0;
     vnode_t* root = get_root_for_path_with_parent(symlink_target, parent);
     opt.resolve_final_symlink = false;
+    opt.lock_on_noent = opt.lock_on_noent && at_last_element;
     error = lookup_path_internal(root, symlink_target, opt,
                                  &new_parent, &symlink_target_node,
                                  base_name_out, max_recursion - 1);
@@ -92,7 +96,7 @@ int resolve_symlink(int allow_nonexistant_final, lookup_options_t opt,
       kfree(symlink_target);
       return error;
     }
-    if (!allow_nonexistant_final && !error && !symlink_target_node) {
+    if (!at_last_element && !error && !symlink_target_node) {
       kfree(symlink_target);
       VFS_PUT_AND_CLEAR(new_parent);
       return -ENOENT;
@@ -229,16 +233,23 @@ static int lookup_path_internal(vnode_t* root, const char* path,
     // Lookup the next element.  If it can't be found, and we're at the last
     // element, save the parent and succeed anyways.
     vnode_t* child = 0x0;
-    int error = lookup(&n, base_name_out, &child);
+    resolve_mounts_up(&n, base_name_out);
+    kmutex_lock(&n->mutex);
+    int error = lookup_locked(n, base_name_out, &child);
     if (error && (!at_last_element || error != -ENOENT)) {
+      kmutex_unlock(&n->mutex);
       VFS_PUT_AND_CLEAR(n);
       return error;
     } else if (at_last_element && error == -ENOENT) {
+      if (!opt.lock_on_noent)  {
+        kmutex_unlock(&n->mutex);
+      }
       if (parent_out) *parent_out = VFS_COPY_REF(n);
       if (child_out) *child_out = 0x0;
       VFS_PUT_AND_CLEAR(n);
       return 0;
     }
+    kmutex_unlock(&n->mutex);
 
     // If we're not at the end, or we want to follow the final symlink, attempt
     // to resolve it.
@@ -296,20 +307,95 @@ int lookup_path(vnode_t* root, const char* path, lookup_options_t opt,
                               child_out, base_name_out, VFS_MAX_LINK_RECURSION);
 }
 
-
 int lookup_existing_path(const char* path, lookup_options_t opt,
-                         vnode_t** parent_out, vnode_t** child_out) {
+                         vnode_t** child_out) {
   if (!path) return -EINVAL;
   vnode_t* root = get_root_for_path(path);
   char unused_basename[VFS_MAX_FILENAME_LENGTH];
-  int result = lookup_path(root, path, opt, parent_out,
+  int result = lookup_path(root, path, opt, NULL,
                            child_out, unused_basename);
   VFS_PUT_AND_CLEAR(root);
   if (!result && !*child_out) {
-    if (parent_out) VFS_PUT_AND_CLEAR(*parent_out);
     return -ENOENT;
   }
   return result;
+}
+
+int lookup_existing_path_and_lock(vnode_t* root, const char* path,
+                                  lookup_options_t options,
+                                  vnode_t** parent_out, vnode_t** child_out,
+                                  char* base_name_out) {
+  const int kMaxRetries = 10;
+  KASSERT_DBG(parent_out != NULL);
+  KASSERT_DBG(child_out != NULL);
+  KASSERT_DBG(options.resolve_final_symlink == false);
+  KASSERT_DBG(options.resolve_final_mount == false);
+
+  int result =
+      lookup_path(root, path, options, parent_out, child_out, base_name_out);
+  if (result) {
+    return result;
+  } else if (*child_out == NULL) {
+    VFS_PUT_AND_CLEAR(*parent_out);
+    return -ENOENT;
+  }
+
+  // We have a parent and child.  Lock them both, then redo the lookup to ensure
+  // confirm the child we have is still bound to that name.  This technically is
+  // susceptible to ABA problems, but they're harmless.
+  //
+  // Note: in theory this could be inlined in lookup_path(), and possibly save
+  // ourselves a second lookup, but that would make lookup_path pretty
+  // (more?) spaghetti-ish.
+  int attempts_left = kMaxRetries;
+  while (--attempts_left > 0) {
+    // N.B.(aoates): we don't do a resolve_mounts_up call here, though maybe we
+    // should for consistency with what happens in lookup_path() --- e.g. if the
+    // directory we're in is the root directory of a mounted filesystem that is
+    // being moved.
+    vfs_lock_vnodes(*parent_out, *child_out);
+
+    // TODO(aoates): need to re-check search perms on the parent here.
+
+    if (*base_name_out == '\0') {
+      // Root directory.
+      KASSERT_DBG(*parent_out == *child_out);
+      return 0;
+    }
+
+    vnode_t* new_child = NULL;
+    result = lookup_locked(*parent_out, base_name_out, &new_child);
+    if (result < 0) {
+      vfs_unlock_vnodes(*parent_out, *child_out);
+      VFS_PUT_AND_CLEAR(*parent_out);
+      VFS_PUT_AND_CLEAR(*child_out);
+      return result;
+    }
+
+    if (new_child == *child_out) {
+      KASSERT_DBG(*child_out != NULL);
+      VFS_PUT_AND_CLEAR(new_child);  // Ditch second ref.
+      // Return with parent and child locked.
+      return 0;
+    }
+
+    // The binding changed from under us...unlock, unref the old child, and try
+    // again.
+    klogfm(KL_VFS, DEBUG,
+           "vfs: child changed during lookup (fs=%d parent=%d name='%s' "
+           "old_child=%d new_child=%d)\n",
+           (*parent_out)->fs->id, (*parent_out)->num, base_name_out,
+           (*child_out)->num, new_child->num);
+    vfs_unlock_vnodes(*parent_out, *child_out);
+    VFS_PUT_AND_CLEAR(*child_out);
+    *child_out = VFS_MOVE_REF(new_child);
+  }
+
+  klogfm(KL_VFS, WARNING, "vfs: hit max retries trying to lookup path '%s'\n",
+         path);
+  VFS_PUT_AND_CLEAR(*parent_out);
+  VFS_PUT_AND_CLEAR(*child_out);
+  return -EIO;
 }
 
 int lookup_fd(int fd, file_t** file_out) {
@@ -340,5 +426,84 @@ vnode_t* get_root_for_path_with_parent(const char* path,
     return vfs_get(root_fs, root_fs->get_root(root_fs));
   } else {
     return VFS_COPY_REF(relative_root);
+  }
+}
+
+void vfs_lock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A && B) {
+    KASSERT_DBG(A->fs == B->fs);
+  }
+  if (A == B) {
+    kmutex_lock(&A->mutex);
+  } else if (A < B) {
+    if (A) kmutex_lock(&A->mutex);
+    if (B) kmutex_lock(&B->mutex);
+  } else {
+    if (B) kmutex_lock(&B->mutex);
+    if (A) kmutex_lock(&A->mutex);
+  }
+}
+
+void vfs_unlock_vnodes(vnode_t* A, vnode_t* B) {
+  if (A == B) {
+    kmutex_unlock(&A->mutex);
+  } else if (A < B) {
+    if (B) kmutex_unlock(&B->mutex);
+    if (A) kmutex_unlock(&A->mutex);
+  } else {
+    if (A) kmutex_unlock(&A->mutex);
+    if (B) kmutex_unlock(&B->mutex);
+  }
+}
+
+static void sort_vnode_ptrs(vnode_t** nodes, size_t n) {
+  // Do insertion sort on the array of nodes; it is expected to be small (and,
+  // when passed to unlock, likely pre-sorted).
+  for (size_t i = 1; i < n; ++i) {
+    // Invariant: array up to index |i| is already sorted.
+    // Starting at the current "top", move the top element down to its place.
+    size_t j = i;
+    vnode_t* current = nodes[j];
+    while (j > 0 && current < nodes[j-1]) {
+      nodes[j] = nodes[j-1];
+      j--;
+    }
+    nodes[j] = current;
+  }
+}
+
+void vfs_lock_vnodes2(vnode_t** nodes, size_t n) {
+  sort_vnode_ptrs(nodes, n);
+
+  fs_t* fs = NULL;
+  for (size_t i = 0; i < n; ++i) {
+    if (i < n - 1) {
+      KASSERT_DBG(nodes[i] <= nodes[i+1]);
+    }
+    if (i > 0 && nodes[i] == nodes[i - 1]) continue;
+    if (nodes[i]) {
+      if (!fs) {
+        fs = nodes[i]->fs;
+      } else {
+        KASSERT_DBG(nodes[i]->fs == fs);
+      }
+      kmutex_lock(&nodes[i]->mutex);
+    }
+  }
+}
+
+void vfs_unlock_vnodes2(vnode_t** nodes, size_t n) {
+  // We have to sort because there may be duplicates and we don't want to
+  // double-unlock.
+  sort_vnode_ptrs(nodes, n);
+
+  for (size_t i = 0; i < n; ++i) {
+    if (i < n - 1) {
+      KASSERT_DBG(nodes[i] <= nodes[i+1]);
+    }
+    if (i > 0 && nodes[i] == nodes[i - 1]) continue;
+    if (nodes[i]) {
+      kmutex_unlock(&nodes[i]->mutex);
+    }
   }
 }

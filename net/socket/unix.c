@@ -313,7 +313,7 @@ static int sock_unix_connect(socket_t* socket_base, int fflags,
 
   vnode_t* target = NULL;
   int result =
-      lookup_existing_path(addr_un->sun_path, lookup_opt(true), NULL, &target);
+      lookup_existing_path(addr_un->sun_path, lookup_opt(true), &target);
   if (result) {
     return result;
   }

@@ -83,6 +83,33 @@ static int get_file_refcount(int fd) {
   return result;
 }
 
+typedef struct {
+  const char* path;
+  // TODO(aoates): use spinlock, mutex, or notification.
+  bool done;
+} chaos_args_t;
+
+// A thread that just tries to get mutexes locked to force other threads to
+// block at inopportune times.
+static void* chaos_helper(void* arg) {
+  const chaos_args_t* args = (const chaos_args_t*)arg;
+  apos_stat_t stat;
+  int result;
+  do {
+    result = vfs_stat(args->path, &stat);
+  } while (result == -EINJECTEDFAULT);
+  KEXPECT_EQ(0, result);
+  const apos_ino_t dir_ino = stat.st_ino;
+  vnode_t* dir_vnode = vfs_get(vfs_get_root_fs(), dir_ino);
+  while (!args->done) {
+    kmutex_lock(&dir_vnode->mutex);
+    scheduler_yield();
+    kmutex_unlock(&dir_vnode->mutex);
+  }
+  vfs_put(dir_vnode);
+  return NULL;
+}
+
 static void dev_test(void) {
   KTEST_BEGIN("device numbering test");
   apos_dev_t dev = kmakedev(0, 0);
@@ -583,6 +610,141 @@ static void vfs_open_thread_safety_test(void) {
   vfs_rmdir("/thread_safety_test");
 }
 
+static void* vfs_open_create_race_test_func(void* arg) {
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    if (i % 3 == 0) scheduler_yield();
+    int fd = vfs_open("thread_safety_test/file", VFS_O_CREAT | VFS_O_RDWR, 0);
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_close(fd));
+    // Could fail if other thread deletes first.
+    vfs_unlink("thread_safety_test/file");
+  }
+  return 0;
+}
+
+static void vfs_open_create_race_test(void) {
+  KTEST_BEGIN("vfs_open() creation race test");
+  kthread_t threads[THREAD_SAFETY_TEST_THREADS];
+  kthread_t chaos_thread;
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    KEXPECT_EQ(
+        0, kthread_create(&threads[i], &vfs_open_create_race_test_func, NULL));
+    scheduler_make_runnable(threads[i]);
+  }
+  chaos_args_t chaos_args;
+  chaos_args.path = "thread_safety_test";
+  chaos_args.done = false;
+  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
+  scheduler_make_runnable(chaos_thread);
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    kthread_join(threads[i]);
+  }
+  chaos_args.done = true;
+  kthread_join(chaos_thread);
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
+static void* vfs_get_fifo_socket_test_func(void* arg) {
+  const char* path = (const char*)arg;
+  vnode_t* vnode = NULL;
+  KEXPECT_EQ(0, lookup_existing_path(path, lookup_opt(false), &vnode));
+  if (!vnode) return 0x0;
+  fs_t* fs = vnode->fs;
+  apos_ino_t vnode_num = vnode->num;
+  vfs_put(vnode);
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    vnode = vfs_get(fs, vnode_num);
+    KEXPECT_NE(NULL, vnode);
+    KEXPECT_EQ(vnode_num, vnode->num);
+    vfs_put(vnode);
+  }
+  return 0;
+}
+
+static void* vfs_open_fifo_socket_test_func(void* arg) {
+  const char* path = (const char*)arg;
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    int fd = vfs_open(path, VFS_O_RDONLY | VFS_O_NONBLOCK, 0);
+    if (fd == 0) {
+      KEXPECT_EQ(0, vfs_close(fd));
+    } else {
+      KEXPECT_EQ(-EOPNOTSUPP, fd);  // Can't open sockets.
+    }
+  }
+  return 0;
+}
+
+// Test for vfs_get() and vfs_open() which have custom logic for FIFOs and
+// sockets.
+static void vfs_open_get_fifo_socket_test(void) {
+  KTEST_BEGIN("vfs_get(): FIFO get race test ");
+  const int kThreads = 2;  // Only two threads to exercise 0->1 and 1->0 cases.
+  kthread_t threads[kThreads];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  KEXPECT_EQ(0,
+             vfs_mknod("thread_safety_test/fifo", VFS_S_IFIFO, kmakedev(0, 0)));
+
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_get_fifo_socket_test_func,
+                                 "thread_safety_test/fifo"));
+    scheduler_make_runnable(threads[i]);
+  }
+
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KTEST_BEGIN("vfs_get(): socket get race test ");
+  vnode_t* vnode = NULL;
+  KEXPECT_EQ(0,
+             vfs_mksocket("thread_safety_test/socket", VFS_S_IFSOCK, &vnode));
+  vfs_put(vnode);
+
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_get_fifo_socket_test_func,
+                                 "thread_safety_test/socket"));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+
+  KTEST_BEGIN("vfs_open(): FIFO open race test ");
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_open_fifo_socket_test_func,
+                                 "thread_safety_test/fifo"));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KTEST_BEGIN("vfs_open(): socket open race test ");
+  for (int i = 0; i < kThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_open_fifo_socket_test_func,
+                                 "thread_safety_test/socket"));
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/fifo"));
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/socket"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
 static void unlink_test(void) {
   KTEST_BEGIN("vfs_unlink(): basic test");
   int fd = vfs_open("/unlink", VFS_O_CREAT | VFS_O_RDWR, 0);
@@ -609,10 +771,149 @@ static void unlink_test(void) {
 
   KTEST_BEGIN("vfs_unlink(): unlinking directory");
   KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/.."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a/"));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a/."));
+  KEXPECT_EQ(-EISDIR, vfs_unlink("/unlink/a/.."));
 
   // Clean up.
   vfs_rmdir("/unlink/a");
   vfs_rmdir("/unlink");
+}
+
+static void* unlink_race_test_func1(void* arg) {
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    // Alternate creating the file with open() or link() for variety.
+    if (i % 2 == 0) {
+      int fd =
+          vfs_open("thread_safety_test/file2", VFS_O_CREAT | VFS_O_RDWR, 0);
+      KEXPECT_GE(fd, 0);
+      KEXPECT_EQ(0, vfs_close(fd));
+    } else {
+      KEXPECT_EQ(
+          0, vfs_link("thread_safety_test/file1", "thread_safety_test/file2"));
+    }
+    if (i % 3 == 0) scheduler_yield();
+    // Could fail if other thread deletes first.
+    int result = vfs_unlink("thread_safety_test/file2");
+    if (result < 0) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+  }
+  return 0;
+}
+
+static void* unlink_race_test_func2(void* arg) {
+  // TODO(aoates): use lock, atomic, or notification.
+  bool* done = (bool*)arg;
+  while (!*done) {
+    int result = vfs_unlink("thread_safety_test/file2");
+    if (result < 0) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    scheduler_yield();
+  }
+  return 0;
+}
+
+static void unlink_race_test(void) {
+  KTEST_BEGIN("vfs_unlink() race test");
+  kthread_t creating_thread, chaos_thread;
+  kthread_t unlink_threads[THREAD_SAFETY_TEST_THREADS];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  create_file("thread_safety_test/file1", "rwxrwxrwx");
+
+  chaos_args_t chaos_args;
+  chaos_args.path = "thread_safety_test";
+  chaos_args.done = false;
+  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
+  scheduler_make_runnable(chaos_thread);
+
+  KEXPECT_EQ(0,
+             kthread_create(&creating_thread, &unlink_race_test_func1, NULL));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    KEXPECT_EQ(0, kthread_create(&unlink_threads[i], &unlink_race_test_func2,
+                                 &chaos_args.done));
+    scheduler_make_runnable(unlink_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  chaos_args.done = true;
+  kthread_join(chaos_thread);
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    kthread_join(unlink_threads[i]);
+  }
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
+static void* rmdir_race_test_func1(void* arg) {
+  for (int i = 0; i < THREAD_SAFETY_TEST_ITERS / 10; ++i) {
+    KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/dir", VFS_S_IRWXU));
+    if (i % 2 == 0) scheduler_yield();
+    // Could fail if other thread deletes first.
+    int result = vfs_rmdir("thread_safety_test/dir");
+    if (result < 0) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+  }
+  return 0;
+}
+
+static void* rmdir_race_test_func2(void* arg) {
+  // TODO(aoates): use lock, atomic, or notification.
+  bool* done = (bool*)arg;
+  while (!*done) {
+    int result = vfs_rmdir("thread_safety_test/dir");
+    if (result < 0) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    scheduler_yield();
+  }
+  return 0;
+}
+
+static void rmdir_race_test(void) {
+  KTEST_BEGIN("vfs_rmdir() race test");
+  kthread_t creating_thread, chaos_thread;
+  kthread_t rmdir_threads[THREAD_SAFETY_TEST_THREADS];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+
+  chaos_args_t chaos_args;
+  chaos_args.path = "thread_safety_test";
+  chaos_args.done = false;
+  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
+  scheduler_make_runnable(chaos_thread);
+
+  KEXPECT_EQ(0,
+             kthread_create(&creating_thread, &rmdir_race_test_func1, NULL));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    KEXPECT_EQ(0, kthread_create(&rmdir_threads[i], &rmdir_race_test_func2,
+                                 &chaos_args.done));
+    scheduler_make_runnable(rmdir_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  chaos_args.done = true;
+  kthread_join(chaos_thread);
+  for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
+    kthread_join(rmdir_threads[i]);
+  }
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
 }
 
 static void get_path_test(void) {
@@ -942,7 +1243,7 @@ static void write_large_test(void) {
 // Multi-thread vfs_write() test.  Each thread repeatedly writes 'abc' and
 // '1234' to a file descriptor, and at the end we verify that the writes didn't
 // step on each other (i.e., each happened atomically).
-#define WRITE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define WRITE_SAFETY_ITERS (10 * THREAD_SAFETY_MULTIPLIER)
 #define WRITE_SAFETY_THREADS 5
 static void* write_thread_test_func(void* arg) {
   const int fd = (intptr_t)arg;
@@ -979,39 +1280,42 @@ static void write_thread_test(void) {
   vfs_close(fd);
   fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   char buf[512];
+  char buf2[10];
+  int start_offset = 0;
   int letters = 0, nums = 0;
   while (1) {
-    int len = vfs_read(fd, buf, 3);
+    int len = vfs_read(fd, buf + start_offset, 100);
     if (len == 0) {
       break;
     }
-
-    if (buf[0] == '1') {
-      const int len2 = vfs_read(fd, &buf[3], 1);
-      if (len2 != 1) {
-        KEXPECT_EQ(1, len2);
+    len += start_offset;
+    int idx = 0;
+    while (idx < len) {
+      if (buf[idx] == '1') {
+        if (len - idx < 4) break;
+        kstrncpy(buf2, buf + idx, 4);
+        buf2[4] = '\0';
+        KEXPECT_STREQ(buf2, "1234");
+        idx += 4;
+        nums++;
+      } else if (buf[idx] == 'a') {
+        if (len - idx < 3) break;
+        kstrncpy(buf2, buf + idx, 3);
+        buf2[3] = '\0';
+        KEXPECT_STREQ(buf2, "abc");
+        idx += 3;
+        letters++;
+      } else {
+        // TODO(aoates): add a better way to expect this.
+        KEXPECT_EQ(0, 1);
+        break;
       }
-      len += len2;
     }
-    buf[len] = '\0';
-
-    if (buf[0] == 'a') {
-      if (len != 3 || kstrncmp(buf, "abc", 3) != 0) {
-        KEXPECT_EQ(3, len);
-        KEXPECT_STREQ("abc", buf);
-      }
-      letters++;
-    } else if (buf[0] == '1') {
-      if (len != 4 || kstrncmp(buf, "1234", 4) != 0) {
-        KEXPECT_EQ(4, len);
-        KEXPECT_STREQ("1234", buf);
-      }
-      nums++;
-    } else {
-      // TODO(aoates): add a better way to expect this.
-      KEXPECT_EQ(0, 1);
-      break;
+    for (int i = 0; i < (len - idx); ++i) {
+      buf[i] = buf[i + idx];
     }
+    start_offset = (len - idx);
+    kmemset(buf + start_offset, '\0', len - start_offset);
   }
   vfs_close(fd);
 
@@ -1210,7 +1514,7 @@ static void seek_test(void) {
   vfs_unlink(kFile);
 }
 
-#define BAD_INODE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define BAD_INODE_SAFETY_ITERS (10 * THREAD_SAFETY_MULTIPLIER)
 #define BAD_INODE_SAFETY_THREADS 5
 static void* bad_inode_thread_test_func(void* arg) {
   for (int i = 0; i < BAD_INODE_SAFETY_ITERS; ++i) {
@@ -1279,7 +1583,7 @@ void reverse_path_test(void) {
 
 // Multi-thread vfs_open(VFS_O_CREAT) test.  Each thread creates a series of
 // files in a particular directory.
-#define CREATE_SAFETY_ITERS 10 * THREAD_SAFETY_MULTIPLIER
+#define CREATE_SAFETY_ITERS (10 * THREAD_SAFETY_MULTIPLIER)
 #define CREATE_SAFETY_THREADS 5
 static void* create_thread_test_func(void* arg) {
   const char kTestDir[] = "/create_thread_test";
@@ -3032,12 +3336,81 @@ static void symlink_testE(void) {
   kfree(target);
 }
 
+static void* vfs_swap_test_helper(void* arg) {
+  // TODO(aoates): use spinlock, mutex, or notification.
+  const bool* done = (const bool*)arg;
+  while (!(*done)) {
+    KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
+    KEXPECT_EQ(0, vfs_symlink("file2", "symlink_swap_test/target"));
+    scheduler_yield();
+    KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
+    KEXPECT_EQ(0,
+               vfs_link("symlink_swap_test/file1", "symlink_swap_test/target"));
+    scheduler_yield();
+  }
+  return NULL;
+}
+
+static void vfs_open_symlink_swap_test(void) {
+  KTEST_BEGIN("vfs: file replaced with symlink during open()");
+  // Setup two files that will stay put.  Link the first file and a create a
+  // symlink to that linked version.
+  KEXPECT_EQ(0, vfs_mkdir("symlink_swap_test", VFS_S_IRWXU));
+  create_file_with_data("symlink_swap_test/file1", "");
+  create_file_with_data("symlink_swap_test/file2", "");
+  KEXPECT_EQ(0,
+             vfs_link("symlink_swap_test/file1", "symlink_swap_test/target"));
+  KEXPECT_EQ(0, vfs_symlink("target", "symlink_swap_test/link"));
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("symlink_swap_test/file1", &stat));
+  const apos_ino_t file1_ino = stat.st_ino;
+  KEXPECT_EQ(0, vfs_stat("symlink_swap_test/file2", &stat));
+  const apos_ino_t file2_ino = stat.st_ino;
+
+  kthread_t thread1, thread2;
+  chaos_args_t args;
+  args.path = "symlink_swap_test";
+  args.done = false;
+  KEXPECT_EQ(0, kthread_create(&thread1, &vfs_swap_test_helper, &args.done));
+  scheduler_make_runnable(thread1);
+  KEXPECT_EQ(0, kthread_create(&thread2, &chaos_helper, &args));
+  scheduler_make_runnable(thread2);
+  const int kIters = 100 * CONCURRENCY_TEST_ITERS_MULT;
+  for (int i = 0; i < kIters; ++i) {
+    if (i % 3 == 0) scheduler_yield();
+    int fd = vfs_open("symlink_swap_test/link", VFS_O_RDONLY);
+    // ENOENT is fine, if we happened to catch between the link/symlink steps.
+    if (fd == -ENOENT) continue;
+    KEXPECT_GE(fd, 0);
+    KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+    // Otherwise, we should always see either file1 or file2.
+    if (stat.st_ino != file1_ino) {
+      KEXPECT_EQ(file2_ino, stat.st_ino);
+    } else {
+      KEXPECT_EQ(file1_ino, stat.st_ino);
+    }
+    KEXPECT_EQ(0, vfs_close(fd));
+  }
+
+  args.done = true;
+  kthread_join(thread1);
+  kthread_join(thread2);
+
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/link"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/target"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/file1"));
+  KEXPECT_EQ(0, vfs_unlink("symlink_swap_test/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("symlink_swap_test"));
+}
+
 static void symlink_test(void) {
   symlink_testA();
   symlink_testB();
   symlink_testC();
   symlink_testD();
   symlink_testE();
+  vfs_open_symlink_swap_test();
 }
 
 static void readlink_test(void) {
@@ -5146,6 +5519,14 @@ static void rename_testA(void) {
   KEXPECT_EQ(0, vfs_stat("_rename_test/dirB", &statB));
   KEXPECT_EQ(3, statB.st_nlink);
   KEXPECT_EQ(0, vfs_rmdir("_rename_test/dirB/B"));
+
+  KTEST_BEGIN("vfs_rename(): rename root directory");
+  // None should be possible.
+  KEXPECT_NE(0, vfs_rename("/", "/A"));
+  KEXPECT_NE(0, vfs_rename("/", "/"));
+  KEXPECT_NE(0, vfs_rename("/", "/."));
+  KEXPECT_NE(0, vfs_rename("_rename_test/dirB", "/"));
+  KEXPECT_NE(0, vfs_rename("_rename_test/dirB", "/."));
 }
 
 static void rename_testB(void) {
@@ -5170,6 +5551,12 @@ static void rename_testB(void) {
   KEXPECT_EQ(0, vfs_rename("_rename_test/E1", "_rename_test/E1"));
   KEXPECT_EQ(0, vfs_rename("_rename_test/E1", "_rename_test/E2"));
   KEXPECT_EQ(0, vfs_rename("_rename_test/E2", "_rename_test/E2"));
+  KEXPECT_EQ(-ERENAMESAMEVNODE,
+             vfs_rename_unique("_rename_test/E1", "_rename_test/E1"));
+  KEXPECT_EQ(-ERENAMESAMEVNODE,
+             vfs_rename_unique("_rename_test/E1", "_rename_test/E2"));
+  KEXPECT_EQ(-ERENAMESAMEVNODE,
+             vfs_rename_unique("_rename_test/E2", "_rename_test/E2"));
 
   KEXPECT_EQ(0, vfs_lstat("_rename_test/A", &statB));
   KEXPECT_EQ(statA.st_ino, statB.st_ino);
@@ -5609,6 +5996,320 @@ static void rename_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("_rename_test"));
 }
 
+typedef struct {
+  kspinlock_t lock;
+  int creations;
+  int num_dests;
+  int rename_successes;
+  int rename_attempts;
+  bool* done;
+} rename_simultaneous_race_test_args;
+
+static void* rename_simultaneous_race_test_func1(void* arg) {
+  rename_simultaneous_race_test_args* args =
+      (rename_simultaneous_race_test_args*)arg;
+  for (int i = 0; i < args->creations; ++i) {
+    // Usually create new files, but occasionally link existing ones.
+    if (i % 5 != 0) {
+      create_file("thread_safety_test/A/src", "rwxrwxrwx");
+    } else {
+      int result;
+      do {
+        result =
+            vfs_link("thread_safety_test/file1", "thread_safety_test/A/src");
+      } while (result == -EINJECTEDFAULT);
+      KEXPECT_EQ(0, result);
+    }
+    // Occasionally create a new dest file as well.
+    if (i % 3 == 0) {
+      char dest_path[40];
+      ksprintf(dest_path, "thread_safety_test/B/dst%d",
+               (i % 7) % args->num_dests);
+      create_file(dest_path, "rwxrwxrwx");
+    }
+    apos_stat_t stat;
+    while (vfs_lstat("thread_safety_test/A/src", &stat) != -ENOENT) {
+      scheduler_yield();
+    }
+  }
+  return 0;
+}
+
+static void* rename_simultaneous_race_test_func2(void* arg) {
+  rename_simultaneous_race_test_args* args =
+      (rename_simultaneous_race_test_args*)arg;
+  char dest_path[40];
+  const char* dest_dir = (kthread_current_thread()->id % 2) ? "A" : "B";
+  ksprintf(dest_path, "thread_safety_test/%s/dst%d", dest_dir,
+           kthread_current_thread()->id % args->num_dests);
+  // TODO(aoates): use lock, atomic, or notification.
+  bool me_done = false;
+  uint32_t rand = fnv_hash((uint32_t)kthread_current_thread()->id);
+  while (!me_done) {
+    // Once the creating thread finishes, try one final rename.
+    if (*(args->done)) me_done = true;
+
+    rand = fnv_hash(rand);
+    int result;
+    // Occasionally try a normal unlink() rather than a rename.
+    if (rand % 5 == 0) {
+      result = vfs_unlink("thread_safety_test/A/src");
+    } else {
+      // We have to use the _unique() version --- otherwise a same-to-same-vnode
+      // rename would register as a successful rename and screw up our
+      // creation-vs-rename count.  This occurs only rarely, but introduces
+      // spurious failures if the iterations on this test are cranked up.
+      result = vfs_rename_unique("thread_safety_test/A/src", dest_path);
+    }
+    if (result < 0 && result != -ERENAMESAMEVNODE &&
+        result != -EINJECTEDFAULT) {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    kspin_lock(&args->lock);
+    args->rename_attempts++;
+    if (result == 0) args->rename_successes++;
+    kspin_unlock(&args->lock);
+
+    // Occasionally unlink the dest as well.
+    if (rand % 2 == 0) {
+      result = vfs_unlink(dest_path);
+      if (result < 0 && result != -EINJECTEDFAULT) {
+        KEXPECT_EQ(-ENOENT, result);
+      }
+    }
+    scheduler_yield();
+  }
+  return 0;
+}
+
+// A basic rename race test that has a bunch of threads all trying to rename the
+// same file.  We verify that only one succeeds each time.
+// TODO(aoates): consider a more advanced version of this that also includes
+// renaming directories.
+static void rename_simultaneous_race_test(void) {
+  const int kNumRenameThreads = THREAD_SAFETY_TEST_THREADS;
+  KTEST_BEGIN("vfs_rename() simultaneous race test");
+  kthread_t creating_thread, chaos_thread[2];
+  kthread_t rename_threads[kNumRenameThreads];
+
+  // Set things up.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/A", 0));
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/B", 0));
+  create_file("thread_safety_test/file1", "rwxrwxrwx");
+
+  int old_ramfs_fault_pct;
+  if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
+    old_ramfs_fault_pct = ramfs_set_fault_percent(vfs_get_root_fs(), 1);
+  }
+
+  chaos_args_t chaos_args[2];
+  chaos_args[0].path = "thread_safety_test/A";
+  chaos_args[0].done = false;
+  chaos_args[1].path = "thread_safety_test/B";
+  chaos_args[1].done = false;
+  for (int i = 0; i < 2; ++i) {
+    KEXPECT_EQ(0,
+               kthread_create(&chaos_thread[i], &chaos_helper, &chaos_args[i]));
+    scheduler_make_runnable(chaos_thread[i]);
+  }
+
+  rename_simultaneous_race_test_args args;
+  args.done = &chaos_args[0].done;
+  args.lock = KSPINLOCK_NORMAL_INIT;
+  args.rename_attempts = args.rename_successes = 0;
+  args.creations = THREAD_SAFETY_TEST_ITERS / 10;
+  args.num_dests = kNumRenameThreads / 10;
+  KEXPECT_EQ(0, kthread_create(&creating_thread,
+                               &rename_simultaneous_race_test_func1, &args));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < kNumRenameThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&rename_threads[i],
+                                 &rename_simultaneous_race_test_func2, &args));
+    scheduler_make_runnable(rename_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  for (int i = 0; i < 2; ++i) {
+    chaos_args[i].done = true;
+    kthread_join(chaos_thread[i]);
+  }
+  for (int i = 0; i < kNumRenameThreads; ++i) {
+    kthread_join(rename_threads[i]);
+  }
+
+  if (kstrcmp(vfs_get_root_fs()->fstype, "ramfs") == 0) {
+    ramfs_set_fault_percent(vfs_get_root_fs(), old_ramfs_fault_pct);
+  }
+
+  // At the end of the day, we should have been able to rename (or unlink)
+  // successfully exactly as many times as we created a file.
+  KEXPECT_EQ(args.creations, args.rename_successes);
+  klogf("rename race test: %d successful renames out of %d attempts\n",
+        args.rename_successes, args.rename_attempts);
+  KEXPECT_EQ(-ENOENT, vfs_unlink("thread_safety_test/A/src"));
+
+  // Clean up
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
+  char dest_path[40];
+  for (int i = 0; i < args.num_dests; ++i) {
+    ksprintf(dest_path, "thread_safety_test/A/dst%d", i);
+    vfs_unlink(dest_path);
+    ksprintf(dest_path, "thread_safety_test/B/dst%d", i);
+    vfs_unlink(dest_path);
+  }
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/A"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
+typedef struct {
+  kspinlock_t lock;
+  int num_dests;
+  int unlinks_target;
+  int unlink_successes;
+  int unlink_attempts;
+  int link_successes;
+  int link_attempts;
+  bool* done;
+} link_simultaneous_race_test_args;
+
+// Have several length paths to add some randomness to first-fitting-dirent
+// logic.  Have both same directory as the source, and a different one.
+#define kNumLinkSimulDestRoots 6
+const char* kLinkSimulDestRoots[kNumLinkSimulDestRoots] = {
+  "thread_safety_test/dest.a",
+  "thread_safety_test/dest.aaaaaa",
+  "thread_safety_test/dest.aaaaaaaaaaa",
+  "thread_safety_test/B/dest.a",
+  "thread_safety_test/B/dest.aaaaaa",
+  "thread_safety_test/B/dest.aaaaaaaaaaa",
+};
+
+static void* link_simultaneous_race_test_func1(void* arg) {
+  link_simultaneous_race_test_args* args =
+      (link_simultaneous_race_test_args*)arg;
+  uint32_t rand = fnv_hash((uint32_t)(intptr_t)args);
+  char dest[100];
+  while (args->unlink_successes < args->unlinks_target) {
+    rand = fnv_hash(rand);
+    const char* root = kLinkSimulDestRoots[rand % kNumLinkSimulDestRoots];
+    rand = fnv_hash(rand);
+    ksprintf(dest, "%s.%d", root, rand % args->num_dests);
+    int result = vfs_unlink(dest);
+
+    // Only reader/writer of these fields, no need to lock.
+    args->unlink_attempts++;
+    if (result == 0) args->unlink_successes++;
+    scheduler_yield();
+  }
+  return 0;
+}
+
+static void* link_simultaneous_race_test_func2(void* arg) {
+  link_simultaneous_race_test_args* args =
+      (link_simultaneous_race_test_args*)arg;
+  const char* kSourcePaths[2] = {"thread_safety_test/file1",
+                                 "thread_safety_test/file2"};
+
+  // TODO(aoates): use lock, atomic, or notification.
+  uint32_t rand = fnv_hash((uint32_t)kthread_current_thread()->id);
+  char dest[100];
+  while (!(*args->done)) {
+    rand = fnv_hash(rand);
+    const char* src = kSourcePaths[rand % 2];
+    rand = fnv_hash(rand);
+    const char* root = kLinkSimulDestRoots[rand % kNumLinkSimulDestRoots];
+    rand = fnv_hash(rand);
+    ksprintf(dest, "%s.%d", root, rand % args->num_dests);
+
+    int result = vfs_link(src, dest);
+    if (result < 0 && result != -EINJECTEDFAULT) {
+      KEXPECT_EQ(-EEXIST, result);
+    }
+    kspin_lock(&args->lock);
+    args->link_attempts++;
+    if (result == 0) args->link_successes++;
+    kspin_unlock(&args->lock);
+
+    scheduler_yield();
+  }
+  return 0;
+}
+
+// A basic link race test that has a bunch of threads all trying to link the
+// same source and destination paths.  We verify that only one succeeds each
+// time.  This should test both fan-in and fan-out scenarios.
+static void link_simultaneous_race_test(void) {
+  // We want some contention on the destination files, but not complete fan-in.
+  // More contention stresses single-node locking, while less contention
+  // stresses parent node locking.
+  const int kNumDests = 5;
+  const int kNumLinkThreads = THREAD_SAFETY_TEST_THREADS;
+  KTEST_BEGIN("vfs_link() simultaneous race test");
+  // Note: we specifically _don't_ want chaos threads that lock files for this
+  // test --- it introduces sequencing between the threads that makes the test
+  // ineffective.
+  kthread_t creating_thread;
+  kthread_t link_threads[kNumLinkThreads];
+
+  // Set things up.  We pre-create all the destination files to ensure that the
+  // number of successful links should exactly equal the number of unlinks.
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
+  KEXPECT_EQ(0, vfs_mkdir("thread_safety_test/B", 0));
+  create_file("thread_safety_test/file1", "rwxrwxrwx");
+  create_file("thread_safety_test/file2", "rwxrwxrwx");
+  char dest[100];
+
+  bool done = false;
+  link_simultaneous_race_test_args args;
+  args.done = &done;
+  args.lock = KSPINLOCK_NORMAL_INIT;
+  args.unlink_successes = args.unlink_attempts = args.link_attempts =
+      args.link_successes = 0;
+  args.unlinks_target = THREAD_SAFETY_TEST_ITERS / 10;
+  args.num_dests = kNumDests;
+  KEXPECT_EQ(0, kthread_create(&creating_thread,
+                               &link_simultaneous_race_test_func1, &args));
+  scheduler_make_runnable(creating_thread);
+
+  for (int i = 0; i < kNumLinkThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&link_threads[i],
+                                 &link_simultaneous_race_test_func2, &args));
+    scheduler_make_runnable(link_threads[i]);
+  }
+
+  kthread_join(creating_thread);
+  done = true;
+  for (int i = 0; i < kNumLinkThreads; ++i) {
+    kthread_join(link_threads[i]);
+  }
+
+  for (int i = 0; i < kNumLinkSimulDestRoots; ++i) {
+    for (int j = 0; j < kNumDests; ++j) {
+      ksprintf(dest, "%s.%d", kLinkSimulDestRoots[i], j);
+      args.unlink_attempts++;
+      if (vfs_unlink(dest) == 0) args.unlink_successes++;
+    }
+  }
+
+  // At the end of the day, we should have been able to link successfully
+  // exactly as many times as we unlinked.
+  KEXPECT_EQ(args.unlink_successes, args.link_successes);
+  klogf(
+      "link race test: %d successful links out of %d attempts; %d unlinks out "
+      "of %d attempts\n",
+      args.link_successes, args.link_attempts, args.unlink_successes,
+      args.unlink_attempts);
+
+  // Clean up.
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file1"));
+  KEXPECT_EQ(0, vfs_unlink("thread_safety_test/file2"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test/B"));
+  KEXPECT_EQ(0, vfs_rmdir("thread_safety_test"));
+}
+
 static void* fd_concurrent_close_test_helper(void* arg) {
   int fd = (intptr_t)arg;
   char buf[10];
@@ -5753,6 +6454,199 @@ static void multithread_vnode_get_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
 }
 
+static void* multithread_vnode_get_put_race_test_func(void* arg) {
+  const char kPath[] = "vnode_tests/file";
+  vnode_t* node = NULL;
+  int result = lookup_existing_path(kPath, lookup_opt(false), &node);
+  KEXPECT_EQ(0, result);
+  if (result != 0) return 0x0;
+
+  fs_t* const vnode_fs = node->fs;
+  const int vnode_num = node->num;
+  vfs_put(node);
+
+  const int iters = (intptr_t)arg;
+  uint32_t rand = fnv_hash((uint32_t)(intptr_t)&vnode_fs);
+  for (int i = 0; i < iters; ++i) {
+    node = vfs_get(vnode_fs, vnode_num);
+    KEXPECT_NE(node, NULL);
+    if (!node) return 0x0;
+    KEXPECT_EQ(vnode_fs, node->fs);
+    KEXPECT_EQ(vnode_num, node->num);
+    KEXPECT_EQ(VNODE_REGULAR, node->type);
+
+    // Try and set up the race.
+    if (node->refcount > 1) scheduler_yield();
+
+    kmutex_lock(&node->mutex);
+    node->uid++;
+    kmutex_unlock(&node->mutex);
+    vfs_put(node);
+
+    // This yield is necessary for the test to catch the get/put race bug.
+    // Randomizing isn't strictly necessary, but makes it more effective.
+    rand = fnv_hash(rand);
+    if (rand % 2 == 0) scheduler_yield();
+  }
+  return 0x0;
+}
+
+// A test that ensures vfs_get() and vfs_put() ensure atomicity between them.
+static void multithread_vnode_get_put_race_test(void) {
+  KTEST_BEGIN("vfs: multiple threads getting and putting a single vnode");
+  // Only 2 threads to ensure we're frequently exercising the refcount==0 case.
+  const int kNumThreads = 2;
+  const int kIters = THREAD_SAFETY_TEST_ITERS;
+  KEXPECT_EQ(0, vfs_mkdir("vnode_tests", VFS_S_IRWXU));
+  create_file("vnode_tests/file", RWX);
+
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_stat("vnode_tests/file", &stat));
+  apos_uid_t starting_uid = stat.st_uid;
+
+  kthread_t threads[kNumThreads];
+  for (int i = 0; i < kNumThreads; ++i) {
+    KEXPECT_EQ(0, kthread_create(&threads[i],
+                                 &multithread_vnode_get_put_race_test_func,
+                                 (void*)(intptr_t)kIters));
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+
+  KEXPECT_EQ(0, vfs_stat("vnode_tests/file", &stat));
+  KEXPECT_EQ(stat.st_uid, starting_uid + kIters * kNumThreads);
+
+  // Cleanup.
+  KEXPECT_EQ(0, vfs_unlink("vnode_tests/file"));
+  KEXPECT_EQ(0, vfs_rmdir("vnode_tests"));
+}
+
+typedef enum {
+  TEST_CREATE_MKDIR = 1,
+  TEST_CREATE_MKNOD = 2,
+  TEST_CREATE_SYMLINK = 3,
+  TEST_CREATE_OPEN = 4,
+} test_create_type_t;
+
+typedef struct {
+  bool done;
+  test_create_type_t type;
+} mtcdrt_args_t;
+
+static void* multithread_create_delete_race_test_make_func(void* arg) {
+  mtcdrt_args_t* args = (mtcdrt_args_t*)arg;
+  // TODO(aoates): use atomic or notification.
+  while (!args->done) {
+    int result;
+    switch (args->type) {
+      case TEST_CREATE_MKDIR:
+        result = vfs_mkdir("vfs_race_test/dir", VFS_S_IRWXU);
+        break;
+      case TEST_CREATE_MKNOD:
+        result = vfs_mknod("vfs_race_test/file", VFS_S_IFREG | VFS_S_IRWXU,
+                           kmakedev(0, 0));
+        break;
+      case TEST_CREATE_SYMLINK:
+        result = vfs_symlink("abc", "vfs_race_test/link");
+        break;
+      case TEST_CREATE_OPEN:
+        result = vfs_open("vfs_race_test/file", VFS_O_CREAT | VFS_O_RDONLY,
+                          VFS_S_IRWXU);
+        if (result == 0) {
+          vfs_close(result);
+        }
+        break;
+    }
+    if (result != 0) {
+      KEXPECT_EQ(-EEXIST, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  return 0x0;
+}
+
+// Helper to do a create/delete race test using vfs_unlink() to remove the path.
+static void do_create_unlink_race_test(int iters, const char* path,
+                                       test_create_type_t type) {
+  kthread_t create_thread;
+  mtcdrt_args_t args;
+  args.done = false;
+  args.type = type;
+  KEXPECT_EQ(
+      0, kthread_create(&create_thread,
+                        &multithread_create_delete_race_test_make_func, &args));
+  scheduler_make_runnable(create_thread);
+
+  int deletions = 0;
+  while (deletions < iters) {
+    int result = vfs_unlink(path);
+    if (result == 0) {
+      deletions++;
+    } else {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  args.done = true;
+  kthread_join(create_thread);
+  vfs_unlink(path);
+}
+
+// A series of tests where one thread continuously creates entries (files,
+// directories, symlinks, etc), while another deletes them.
+static void multithread_create_delete_race_test(void) {
+  KTEST_BEGIN("vfs: create+delete race tests (mkdir/rmdir)");
+  const int kIters = THREAD_SAFETY_TEST_ITERS / 2;
+  KEXPECT_EQ(0, vfs_mkdir("vfs_race_test", VFS_S_IRWXU));
+
+  kthread_t create_thread;
+  mtcdrt_args_t args;
+  args.done = false;
+  args.type = TEST_CREATE_MKDIR;
+  KEXPECT_EQ(
+      0, kthread_create(&create_thread,
+                        &multithread_create_delete_race_test_make_func, &args));
+  scheduler_make_runnable(create_thread);
+
+  int deletions = 0;
+  while (deletions < kIters) {
+    int result = vfs_rmdir("vfs_race_test/dir");
+    if (result == 0) {
+      deletions++;
+    } else {
+      KEXPECT_EQ(-ENOENT, result);
+    }
+    // TODO(aoates): remove this when preemption or randomized scheduler is in.
+    scheduler_yield();
+  }
+  args.done = true;
+  kthread_join(create_thread);
+  vfs_rmdir("vfs_race_test/dir");
+
+
+  KTEST_BEGIN("vfs: create+delete race tests (mknod/unlink)");
+  do_create_unlink_race_test(kIters, "vfs_race_test/file", TEST_CREATE_MKNOD);
+
+  KTEST_BEGIN("vfs: create+delete race tests (symlink/unlink)");
+  do_create_unlink_race_test(kIters, "vfs_race_test/link", TEST_CREATE_SYMLINK);
+
+  KTEST_BEGIN("vfs: create+delete race tests (open/unlink)");
+  do_create_unlink_race_test(kIters, "vfs_race_test/file", TEST_CREATE_OPEN);
+
+  // TODO(aoates): do similar tests for link() and rename(). These are more
+  // complicated operations that wouldn't manifest bugs as simply as the above
+  // creation functions, so a more thorough test would be needed to be
+  // comprehensive.
+
+  KEXPECT_EQ(0, vfs_rmdir("vfs_race_test"));
+}
+
 // TODO(aoates): multi-threaded test for creating a file in directory that is
 // being unlinked.  There may currently be a race condition where a new entry is
 // creating while the directory is being deleted.
@@ -5774,7 +6668,11 @@ void vfs_test(void) {
   mkdir_test();
   file_table_reclaim_test();
   vfs_open_thread_safety_test();
+  vfs_open_create_race_test();
+  vfs_open_get_fifo_socket_test();
   unlink_test();
+  unlink_race_test();
+  rmdir_race_test();
   get_path_test();
   cwd_test();
   rw_test();
@@ -5828,9 +6726,13 @@ void vfs_test(void) {
   link_test();
   rename_test();
 
+  rename_simultaneous_race_test();
+  link_simultaneous_race_test();
   fd_concurrent_close_test();
   multithread_path_walk_deadlock_test();
   multithread_vnode_get_test();
+  multithread_vnode_get_put_race_test();
+  multithread_create_delete_race_test();
 
   proc_umask(orig_umask);
 

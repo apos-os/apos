@@ -102,6 +102,11 @@ const char* errorname(int err) {
 #endif
     HANDLE(EXDEV);
     HANDLE(EINTR_RESTART);
+    HANDLE(EINJECTEDFAULT);
+    HANDLE(ERENAMESAMEVNODE);
+#if ERRNO_MAX != 77
+#error Need to update errorname()
+#endif
 
     default:
       return "<invalid error code>";

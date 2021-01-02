@@ -52,6 +52,7 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
   n->fstype[0] = 0x0;
   n->num = num;
   n->type = VNODE_UNINITIALIZED;
+  n->state = VNODE_ST_WTF;
   n->len = -1;
   n->uid = -1;
   n->mode = 0;
@@ -60,6 +61,7 @@ void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
   n->gid = -1;
   n->refcount = 0;
   kmutex_init(&n->mutex);
+  kmutex_init(&n->state_mu);
   memobj_init_vnode(n);
 }
 
@@ -109,7 +111,7 @@ static int is_valid_create_mode(kmode_t mode) {
 
 static void init_fifo_vnode(vnode_t* vnode) {
   KASSERT_DBG(vnode->type == VNODE_FIFO);
-  KASSERT_DBG(vnode->refcount == 1);
+  KASSERT_DBG(vnode->refcount >= 1);
 
   vnode->fifo = (apos_fifo_t*)kmalloc(sizeof(apos_fifo_t));
   fifo_init(vnode->fifo);
@@ -199,59 +201,94 @@ vnode_t* vfs_get_root_vnode() {
   return vfs_get(root_fs, root_fs->get_root(root_fs));
 }
 
-vnode_t* vfs_get(fs_t* fs, int vnode_num) {
+// As vfs_get(), but the returned vnode *may* not be fully initialized.  This
+// operation binds a particular (fs, vnode_num) tuple to a particular identity
+// by creating a vnode_t object and putting it in the vnode table.
+//
+// The only operations that are valid on an uninitialized vnode are,
+//  - comparing its pointer identity to another vnode
+//  - reading its vnode number
+//  - initializing it
+//  - manipulating its refcount with vfs_ref() or vfs_put()
+static vnode_t* vfs_get_uninitialized(fs_t* fs, int vnode_num) {
   vnode_t* vnode;
   kspin_lock(&g_vnode_cache_lock);
   int error = htbl_get(&g_vnode_cache, vnode_hash(fs, vnode_num),
                        (void**)(&vnode));
   if (!error) {
     KASSERT(vnode->num == vnode_num);
+    KASSERT(vnode->refcount > 0);
 
-    // Increment the refcount, then lock the mutex.  This ensures that the node
-    // is initialized (since the thread creating it locks the mutex *before*
-    // putting it in the table, and doesn't unlock it until it's initialized).
+    // Increment the refcount, then return the (possibly uninitialized!) vnode.
     vnode->refcount++;
     kspin_unlock(&g_vnode_cache_lock);
-    // TODO(aoates): need to lock around this check (or use atomic).
-    if (vnode->type == VNODE_UNINITIALIZED) {
-      // TODO(aoates): use a semaphore for this.
-      kmutex_lock(&vnode->mutex);
-      kmutex_unlock(&vnode->mutex);
-    }
 
-    // If initialization failed, put the node back.  This will free it if we're
-    // the last one waiting on it.
-    if (vnode->type == VNODE_UNINITIALIZED) {
-      vfs_put(vnode);
-      return 0x0;
-    }
-
-    KASSERT(vnode->type != VNODE_UNINITIALIZED && vnode->type != VNODE_INVALID);
     return vnode;
   } else {
-    // We need to create the vnode and backfill it from disk.
+    // We need to create the vnode.
     vnode = fs->alloc_vnode(fs);
     vfs_vnode_init(vnode, fs, vnode_num);
     vnode->refcount = 1;
+    vnode->state = VNODE_ST_BOUND;
     fs->open_vnodes++;
-    kmutex_lock(&vnode->mutex);  // This can't block: no-one else sees the vnode
 
-    // Put the (unitialized but locked) vnode into the table.
+    // Put the unitialized vnode into the table.
     htbl_put(&g_vnode_cache, vnode_hash_n(vnode), (void*)vnode);
     kspin_unlock(&g_vnode_cache_lock);
 
-    // This call could block, at which point other threads attempting to access
-    // this node will block until we release the mutex.
-    error = fs->get_vnode(vnode);
+    // This is all we can do right now, without being able to take the vnode's
+    // mutex.
+    return vnode;
+  }
+}
+
+// Force a vnode_t to be fully initialized if it is not already.  There are
+// three outcomes:
+//  1) success --- the vnode is now valid, pointer is unmodified.  Returns 0.
+//     May block.
+//  2) transient failure --- another thread put() the vnode simultaneously, and
+//     we can't determine if it's valid or not.  Returns 0 and clears the vnode
+//     pointer.  Call get and init again to find out.
+//  3) error --- returns the error, vnode is pointer is cleared.
+static int vfs_vnode_finish_init(vnode_t** n_ptr) {
+  vnode_t* vnode = *n_ptr;
+  KASSERT_DBG(vnode->refcount >= 1);
+
+  kmutex_lock(&vnode->state_mu);
+  if (vnode->state == VNODE_ST_VALID) {
+    // Easy (and usual) case.  We're done.
+    kmutex_unlock(&vnode->state_mu);
+    return 0;
+  } else if (vnode->state == VNODE_ST_BOUND) {
+    KASSERT_DBG(vnode->type == VNODE_UNINITIALIZED);
+    // The node needs to be initialized.  We won the lock, so we get to do it.
+    // This call could block, at which point other threads attempting to
+    // acquire/initialize this node will block until we release the mutex.
+    int error = vnode->fs->get_vnode(vnode);
 
     if (error) {
       // In case the fs overwrote this.  We must do this before we unlock.
       vnode->type = VNODE_UNINITIALIZED;
+      // TODO(aoates): consider signalling the error back to other callers via
+      // the vnode object (whether here, or in vfs_put()).
+      vnode->state = VNODE_ST_LAMED;
       KLOG(WARNING, "error when getting inode %d: %s\n",
-           vnode_num, errorname(-error));
-      kmutex_unlock(&vnode->mutex);
+           vnode->num, errorname(-error));
+
+      // TODO(aoates): it's sorta gross that we do the htbl_remove in two spots
+      // (here and in vfs_put, when node is transitioned to VNODE_ST_LAMED).  Is
+      // there a nice way to unify those flows?
+      // Remove lamed node from table.  Other threads are now free to attempt to
+      // get+init it again; anyone who was waiting for us to finish this call
+      // will vfs_put() as well, and one of us will clean up the vnode object.
+      kspin_lock(&g_vnode_cache_lock);
+      KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+      kspin_unlock(&g_vnode_cache_lock);
+
+      kmutex_unlock(&vnode->state_mu);
       vfs_put(vnode);
-      return 0x0;
+      *n_ptr = NULL;
+      return error;
     }
 
     if (vnode->type == VNODE_FIFO)
@@ -259,9 +296,45 @@ vnode_t* vfs_get(fs_t* fs, int vnode_num) {
     vnode->socket = NULL;
     vnode->bound_socket = NULL;
 
-    kmutex_unlock(&vnode->mutex);
-    return vnode;
+    vnode->state = VNODE_ST_VALID;
+    kmutex_unlock(&vnode->state_mu);
+    return 0;
+  } else if (vnode->state == VNODE_ST_LAMED) {
+    // Another thread has put() the vnode.  It is invalid and no longer in the
+    // table, but we still have a ref.
+    if (ENABLE_KERNEL_SAFETY_NETS) {
+      kspin_lock(&g_vnode_cache_lock);
+      // Sanity check: this vnode should not be in the table (a new, non-LAMED
+      // version may be, however).
+      void* val;
+      if (htbl_get(&g_vnode_cache, vnode_hash(vnode->fs, vnode->num), &val) ==
+          0) {
+        KASSERT(val != vnode);
+      }
+      kspin_unlock(&g_vnode_cache_lock);
+    }
+    kmutex_unlock(&vnode->state_mu);
+    vfs_put(vnode);
+    *n_ptr = NULL;
+    return 0;  // Caller should try again.
+  } else {
+    KLOG(FATAL, "unexpected vnode state %d on inode %d\n", vnode->state,
+         vnode->num);
+    return -EINVAL;  // Unreachable.
   }
+}
+
+vnode_t* vfs_get(fs_t* fs, int vnode_num) {
+  vnode_t* vnode = NULL;
+  while (vnode == NULL) {
+    vnode = vfs_get_uninitialized(fs, vnode_num);
+    int result = vfs_vnode_finish_init(&vnode);
+    if (result) {
+      return NULL;  // Error already logged in vfs_vnode_finish_init().
+    }
+    // if vnode is NULL now, there was a put() race so we want to simply retry.
+  }
+  return vnode;
 }
 
 void vfs_ref(vnode_t* n) {
@@ -272,33 +345,84 @@ void vfs_ref(vnode_t* n) {
 }
 
 void vfs_put(vnode_t* vnode) {
-  KASSERT(vnode->type != VNODE_INVALID);
+  // TODO(aoates): consider a fast path where we just manipulate the refcount
+  // without needing to take any locks.
+  kmutex_lock(&vnode->state_mu);
+
   kspin_lock(&g_vnode_cache_lock);
-  vnode->refcount--;
-
-  // TODO(aoates): instead of greedily freeing the vnode, mark it as unnecessary
-  // and only free it later, if we need to.
-  KASSERT(vnode->refcount >= 0);
-  if (vnode->refcount == 0) {
-    KASSERT(vnode->memobj.refcount == 1);
-    KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+  KASSERT_DBG(vnode->memobj.refcount >= 1);
+  if (vnode->refcount > 1) {
+    // We're definitely not the last.  Nothing else matters --- this vnode is
+    // someone else's problem.
+    vnode->refcount--;
     kspin_unlock(&g_vnode_cache_lock);
-    if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
-    if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
-
-    // Only put the node back into the fs if we were able to fully initialize
-    // it.
-    if (vnode->type != VNODE_UNINITIALIZED) {
-      vnode->fs->put_vnode(vnode);
-    }
-    // TODO(aoates): lock for fs data.
-    vnode->fs->open_vnodes--;
-    KASSERT_DBG(vnode->fs->open_vnodes >= 0);
-    vnode->type = VNODE_INVALID;
-    kfree(vnode);
-  } else {
-    kspin_unlock(&g_vnode_cache_lock);
+    kmutex_unlock(&vnode->state_mu);
+    // vnode may now be invalid.
+    return;
   }
+
+  // We are currently holding the last reference, so we're responsible for
+  // transitioning the vnode to the next state if needed.
+  KASSERT(vnode->type != VNODE_INVALID);
+  KASSERT(vnode->state == VNODE_ST_BOUND || vnode->state == VNODE_ST_VALID ||
+          vnode->state == VNODE_ST_LAMED);
+
+  if (vnode->state == VNODE_ST_VALID) {
+    // The hard case.  vnode is valid and must be flushed/put.  Other threads
+    // may acquire this vnode via the table, but they can't finish initializing
+    // until we release state_mu.
+    // TODO(aoates): instead of greedily freeing the vnode, mark it as
+    // unnecessary and only free it later, if we need to.
+    KASSERT(!kmutex_is_locked(&vnode->mutex));
+    KASSERT(vnode->memobj.refcount == 1);
+    kspin_unlock(&g_vnode_cache_lock);
+
+    // TODO(aoates): look at return code from put_vnode() and do something if it
+    // fails.
+    vnode->fs->put_vnode(vnode);  // May block or call back into VFS.
+    vnode->state = VNODE_ST_LAMED;
+
+    // We've finished flushing, so another thread is free to get() a new copy of
+    // this vnode.  Remove it from the table.
+    kspin_lock(&g_vnode_cache_lock);
+
+    // Note that other threads may have gotten this vnode from the table while
+    // we were blocked in fs->put_vnode().
+    KASSERT_DBG(vnode->refcount >= 1);
+    KASSERT(0 == htbl_remove(&g_vnode_cache, vnode_hash_n(vnode)));
+    // At this point it's guaranteed that no one new can get to the vnode.
+
+    if (vnode->refcount > 1) {
+      // Someone else came along while we were put()ing and tried to get the
+      // node.  Let them clean it up.
+      vnode->refcount--;
+      kspin_unlock(&g_vnode_cache_lock);
+      kmutex_unlock(&vnode->state_mu);
+      // vnode may now be invalid.
+      return;
+    }
+    // ...otherwise fall through and clean up ourselves.
+  }
+
+  // We're now in a terminal and non-blocking state (either found this way, or
+  // because we just put the vnode and moved it to VNODE_ST_LAMED).
+  // We're terminal AND holding the last reference.  Truly the end of the line.
+  // Note: if we ever expose the get/init split externally, will need to handle
+  // BOUND here as well (and remove from vnode table).
+  KASSERT(vnode->state == VNODE_ST_LAMED);
+  KASSERT(vnode->refcount == 1);
+
+  // TODO(aoates): lock for fs data.
+  vnode->fs->open_vnodes--;
+  KASSERT_DBG(vnode->fs->open_vnodes >= 0);
+  kspin_unlock(&g_vnode_cache_lock);
+  kmutex_unlock(&vnode->state_mu);
+  vnode->refcount--;
+  if (vnode->type == VNODE_FIFO) cleanup_fifo_vnode(vnode);
+  if (vnode->type == VNODE_SOCKET) cleanup_socket_vnode(vnode);
+
+  vnode->type = VNODE_INVALID;
+  kfree(vnode);
 }
 
 int vfs_get_vnode_dir_path(vnode_t* vnode, char* path_out, int size) {
@@ -522,75 +646,57 @@ int vfs_open(const char* path, int flags, ...) {
   if (mode == VFS_O_RDONLY && (flags & VFS_O_TRUNC)) return -EACCES;
 
   vnode_t* root = get_root_for_path(path);
-  vnode_t* parent = 0x0;
+  vnode_t* parent = 0x0, *child = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
   bool follow_final_symlink =
       !((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) &&
       !(flags & VFS_O_NOFOLLOW);
-  int error = lookup_path(root, path, lookup_opt(follow_final_symlink), &parent,
-                          0x0, base_name);
+  lookup_options_t lookup = lookup_opt(follow_final_symlink);
+  lookup.lock_on_noent = true;
+  int error = lookup_path(root, path, lookup, &parent, &child, base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
 
-  // Lookup the child inode.
-  vnode_t* child;
   int created = 0;
-  if (base_name[0] == '\0') {
-    child = VFS_COPY_REF(parent);
-  } else {
-    kmutex_lock(&parent->mutex);
-    error = lookup_locked(parent, base_name, &child);
-    if (error < 0 && error != -ENOENT) {
+  if (child == NULL) {
+    if (!(flags & VFS_O_CREAT)) {
       kmutex_unlock(&parent->mutex);
       VFS_PUT_AND_CLEAR(parent);
-      return error;
-    } else if (error == -ENOENT) {
-      if (!(flags & VFS_O_CREAT)) {
-        kmutex_unlock(&parent->mutex);
-        VFS_PUT_AND_CLEAR(parent);
-        return error;
-      }
-
-      int mode_check = 0;
-      mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
-      if (mode_check) {
-        kmutex_unlock(&parent->mutex);
-        VFS_PUT_AND_CLEAR(parent);
-        return mode_check;
-      }
-
-      // Create it.
-      int child_inode =
-          parent->fs->mknod(parent, base_name, VNODE_REGULAR, kmakedev(0, 0));
-      if (child_inode < 0) {
-        kmutex_unlock(&parent->mutex);
-        VFS_PUT_AND_CLEAR(parent);
-        return child_inode;
-      }
-
-      child = vfs_get(parent->fs, child_inode);
-      vfs_set_created_metadata(child, create_mode);
-      created = 1;
-    } else if ((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) {
-      kmutex_unlock(&parent->mutex);
-      VFS_PUT_AND_CLEAR(parent);
-      VFS_PUT_AND_CLEAR(child);
-      return -EEXIST;
+      return -ENOENT;
     }
 
-    // Done with the parent.
-    kmutex_unlock(&parent->mutex);
-  }
-  VFS_PUT_AND_CLEAR(parent);
+    int mode_check = 0;
+    mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
+    if (mode_check) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return mode_check;
+    }
 
-  error = resolve_mounts(&child);
-  if (error) {
+    // Create it.
+    int child_inode =
+        parent->fs->mknod(parent, base_name, VNODE_REGULAR, kmakedev(0, 0));
+    if (child_inode < 0) {
+      kmutex_unlock(&parent->mutex);
+      VFS_PUT_AND_CLEAR(parent);
+      return child_inode;
+    }
+
+    child = vfs_get(parent->fs, child_inode);
+    vfs_set_created_metadata(child, create_mode);
+    created = 1;
+    kmutex_unlock(&parent->mutex);  // Locked because of lock_on_noent.
+  } else if ((flags & VFS_O_CREAT) && (flags & VFS_O_EXCL)) {
+    VFS_PUT_AND_CLEAR(parent);
     VFS_PUT_AND_CLEAR(child);
-    return error;
+    return -EEXIST;
   }
+
+  // Done with the parent.
+  VFS_PUT_AND_CLEAR(parent);
 
   // Check permissions on the file if it already exists.
   if (!created) {
@@ -651,9 +757,8 @@ int vfs_close(int fd) {
 
   file_t* file = g_file_table[proc->fds[fd]];
   KASSERT(file != 0x0);
-  file_unref(file);
-
   proc->fds[fd] = PROC_UNUSED_FD;
+  file_unref(file);
   return 0;
 }
 
@@ -727,19 +832,23 @@ int vfs_mkdir(const char* path, kmode_t mode) {
     return -EEXIST;  // Root directory!
   }
 
+  kmutex_lock(&parent->mutex);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
   int child_inode = parent->fs->mkdir(parent, base_name);
   if (child_inode < 0) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
+  kmutex_unlock(&parent->mutex);
   vfs_set_created_metadata(child, mode);
   VFS_PUT_AND_CLEAR(child);
 
@@ -768,8 +877,10 @@ static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
     return -EEXIST;  // Root directory!
   }
 
+  kmutex_lock(&parent->mutex);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
@@ -784,11 +895,13 @@ static int vfs_mknod_internal(const char* path, kmode_t mode, apos_dev_t dev,
 
   int child_inode = parent->fs->mknod(parent, base_name, type, dev);
   if (child_inode < 0) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;  // Error :(
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
+  kmutex_unlock(&parent->mutex);
   vfs_set_created_metadata(child, mode & ~VFS_S_IFMT);
   *vnode_out = child;
 
@@ -820,61 +933,66 @@ int vfs_mksocket(const char* path, kmode_t mode, vnode_t** vnode_out) {
 int vfs_rmdir(const char* path) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
+  vnode_t* child = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(false), &parent, 0x0, base_name);
+  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
+  // collect the inode if it's now unused.
+  lookup_options_t lookup = lookup_opt(false);
+  lookup.resolve_final_mount = false;
+  int error = lookup_existing_path_and_lock(root, path, lookup, &parent, &child,
+                                            base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
   }
 
   if (base_name[0] == '\0') {
+    vfs_unlock_vnodes(parent, child);
+    VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EPERM;  // Root directory!
   } else if (kstrcmp(base_name, ".") == 0) {
+    vfs_unlock_vnodes(parent, child);
+    VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EINVAL;
   }
 
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    vfs_unlock_vnodes(parent, child);
+    VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
-  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
-  // collect the inode if it's now unused.
-  vnode_t* child = 0x0;
-  error = lookup(&parent, base_name, &child);
-  if (error) {
-    VFS_PUT_AND_CLEAR(parent);
-    return error;
-  }
-
   if (child->mounted_fs != VFS_FSID_NONE) {
+    vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EBUSY;
   }
 
-  error = parent->fs->rmdir(parent, base_name);
+  error = parent->fs->rmdir(parent, base_name, child);
+  vfs_unlock_vnodes(parent, child);
+  // This actually collects the inode in the fs (if this is the last ref).
   VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);
   return error;
 }
 
 int vfs_link(const char* path1, const char* path2) {
-  vnode_t* parent1 = 0x0, *parent2 = 0x0;
+  vnode_t* parent2 = 0x0;
   vnode_t* vnode1 = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_existing_path(path1, lookup_opt(false), &parent1, &vnode1);
+  int error = lookup_existing_path(path1, lookup_opt(false), &vnode1);
   if (error) {
     return error;
   }
 
   if (vnode1->type == VNODE_DIRECTORY) {
-    VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(vnode1);
     return -EPERM;
   }
@@ -885,28 +1003,27 @@ int vfs_link(const char* path1, const char* path2) {
   VFS_PUT_AND_CLEAR(root2);
   if (error) {
     VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
     return error;
   }
 
   if (vnode1->fs != parent2->fs) {
     VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
     return -EXDEV;
   }
 
+  vfs_lock_vnodes(parent2, vnode1);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent2);
   if (mode_check) {
+    vfs_unlock_vnodes(parent2, vnode1);
     VFS_PUT_AND_CLEAR(vnode1);
-    VFS_PUT_AND_CLEAR(parent1);
     VFS_PUT_AND_CLEAR(parent2);
     return mode_check;
   }
 
   error = parent2->fs->link(parent2, vnode1, base_name);
+  vfs_unlock_vnodes(parent2, vnode1);
   VFS_PUT_AND_CLEAR(vnode1);
-  VFS_PUT_AND_CLEAR(parent1);
   VFS_PUT_AND_CLEAR(parent2);
   return error;
 }
@@ -943,33 +1060,15 @@ static bool vfs_is_ancestor(const vnode_t* A, vnode_t* B) {
   return false;
 }
 
-static void lock_vnodes(vnode_t* A, vnode_t* B) {
-  if (A == B) {
-    kmutex_lock(&A->mutex);
-  } else if (A < B) {
-    kmutex_lock(&A->mutex);
-    kmutex_lock(&B->mutex);
-  } else {
-    kmutex_lock(&B->mutex);
-    kmutex_lock(&A->mutex);
-  }
-}
-
-static void unlock_vnodes(vnode_t* A, vnode_t* B) {
-  if (A == B) {
-    kmutex_unlock(&A->mutex);
-  } else if (A < B) {
-    kmutex_unlock(&B->mutex);
-    kmutex_unlock(&A->mutex);
-  } else {
-    kmutex_unlock(&A->mutex);
-    kmutex_unlock(&B->mutex);
-  }
-}
-
 int vfs_rename(const char* path1, const char* path2) {
+  int result = vfs_rename_unique(path1, path2);
+  if (result == -ERENAMESAMEVNODE) result = 0;
+  return result;
+}
+
+int vfs_rename_unique(const char* path1, const char* path2) {
   vnode_t* parent1 = 0x0, *parent2 = 0x0;
-  vnode_t* vnode1 = 0x0;
+  vnode_t* vnode1 = 0x0, *vnode2 = 0x0;
   char base_name1[VFS_MAX_FILENAME_LENGTH];
   char base_name2[VFS_MAX_FILENAME_LENGTH];
 
@@ -987,8 +1086,7 @@ int vfs_rename(const char* path1, const char* path2) {
   }
 
   vnode_t* root2 = get_root_for_path(path2);
-  error =
-      lookup_path(root2, path2, lookup, &parent2, 0x0, base_name2);
+  error = lookup_path(root2, path2, lookup, &parent2, &vnode2, base_name2);
   VFS_PUT_AND_CLEAR(root2);
   if (error) {
     VFS_PUT_AND_CLEAR(vnode1);
@@ -1001,6 +1099,7 @@ int vfs_rename(const char* path1, const char* path2) {
     goto done;
   }
 
+  // Lock the rename lock to prevent topology changes.
   kmutex_lock(&vnode1->fs->rename_lock);
 
   if (vfs_check_mode(VFS_OP_WRITE, proc_current(), parent1) ||
@@ -1020,27 +1119,91 @@ int vfs_rename(const char* path1, const char* path2) {
     goto done2;
   }
 
-  lock_vnodes(parent1, parent2);
-  // TODO(aoates): there's a race with unlink(), where vnode1 can be unlinked
-  // after it was looked up above, but before we lock the parent.
+  // Renaming to or from the root directory can never be useful --- it is
+  // probably non-empty (in which case it can't be removed as a target).  If it
+  // _is_ empty, it can only be moved onto itself, which is a no-op.  And it
+  // can't ever be the source of a rename, because it is an ancestor of
+  // everything.  Just reject it here to make logic below simpler.
+  if (base_name1[0] == '\0' || base_name2[0] == '\0') {
+    error = -EINVAL;
+    goto done2;
+  }
 
-  // N.B. this bypasses the resolve_mounts_up() call that lookup() does, but
-  // that's fine, since base_name2 will never be ".." (and therefore we'll never
-  // be traversing past a mount point).
-  vnode_t* vnode2 = 0x0;
-  error = lookup_locked(parent2, base_name2, &vnode2);
-  if (error != 0 && error != -ENOENT) {
+  // Now lock all four vnodes and stabilize the lookups.  See
+  // lookup_existing_path_and_lock() for more comments on this approach.
+
+  // This array will, after this point, always hold a set of up to 4 distinct
+  // locked vnodes.
+  vnode_t* vnodes_to_lock[4] = {parent1, vnode1, parent2, vnode2};
+  vfs_lock_vnodes2(vnodes_to_lock, 4);
+
+  const int kMaxRetries = 10;
+  int attempts_left = kMaxRetries;
+  while (--attempts_left > 0) {
+    // N.B.(aoates): no need for resolving symlinks or mounts (up or down) ---
+    // symlinks are operated on directly and both ".." (up) and mount points
+    // (down) are rejected.
+
+    // TODO(aoates): need to re-check search perms on the parent1 here.
+
+    vnode_t *new_vnode1 = NULL, *new_vnode2 = NULL;
+    int result = lookup_locked(parent1, base_name1, &new_vnode1);
+    if (result < 0) {
+      if (result != -ENOENT) {
+        klogfm(KL_VFS, INFO,
+               "vfs: child1 changed during rename lookup; lookup error: %s\n",
+               errorname(-result));
+      }
+      error = result;
+      goto done3;
+    }
+
+    result = lookup_locked(parent2, base_name2, &new_vnode2);
+    if (result < 0 && result != -ENOENT) {
+      klogfm(KL_VFS, INFO,
+             "vfs: child2 changed during rename lookup; lookup error: %s\n",
+             errorname(-result));
+      error = result;
+      VFS_PUT_AND_CLEAR(new_vnode1);
+      goto done3;
+    }
+
+    if (new_vnode1 == vnode1 && new_vnode2 == vnode2) {
+      // We're done!  Ditch second refs.
+      VFS_PUT_AND_CLEAR(new_vnode1);
+      if (new_vnode2) VFS_PUT_AND_CLEAR(new_vnode2);
+      break;
+    }
+
+    // Binding changed.  Unlock, update children, relock, and try again.
+    klogfm(KL_VFS, DEBUG,
+           "vfs: child changed during rename lookup (fs=%d "
+           "parent1=%d name1='%s' old_child1=%d new_child1=%d "
+           "parent2=%d name2='%s' old_child2=%d new_child2=%d)\n",
+           parent1->fs->id, parent1->num, base_name1, vnode1->num,
+           new_vnode1->num, parent2->num, base_name2,
+           (vnode2 ? vnode2->num : -1), (new_vnode2 ? new_vnode2->num : -1));
+    vfs_unlock_vnodes2(vnodes_to_lock, 4);
+    VFS_PUT_AND_CLEAR(vnode1);
+    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
+    vnode1 = VFS_MOVE_REF(new_vnode1);
+    vnode2 = VFS_MOVE_REF(new_vnode2);
+    vnodes_to_lock[0] = parent1; vnodes_to_lock[1] = vnode1;
+    vnodes_to_lock[2] = parent2; vnodes_to_lock[3] = vnode2;
+    vfs_lock_vnodes2(vnodes_to_lock, 4);
+  }
+  if (attempts_left <= 0) {
+    klogfm(KL_VFS, WARNING,
+           "vfs: unable to stabilize lookups for rename('%s', '%s')\n", path1,
+           path2);
+    error = -EIO;
     goto done3;
   }
 
-  KASSERT_DBG(path1[0] != '\0');
-  KASSERT_DBG(path2[0] != '\0');
   if ((path1[kstrlen(path1) - 1] == '/' && vnode1->type != VNODE_DIRECTORY) ||
       (path2[kstrlen(path2) - 1] == '/' &&
        ((!vnode2 && vnode1->type != VNODE_DIRECTORY) ||
         (vnode2 && vnode2->type != VNODE_DIRECTORY)))) {
-    // TODO(aoates): this should test for symlinks to directories as well.
-    if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
     error = -ENOTDIR;
     goto done3;
   }
@@ -1056,8 +1219,7 @@ int vfs_rename(const char* path1, const char* path2) {
 
   if (vnode2) {
     if (vnode1 == vnode2) {
-      VFS_PUT_AND_CLEAR(vnode2);
-      error = 0;
+      error = -ERENAMESAMEVNODE;
       goto done3;
     }
 
@@ -1067,25 +1229,25 @@ int vfs_rename(const char* path1, const char* path2) {
                vnode2->type != VNODE_DIRECTORY) {
       error = -ENOTDIR;
     } else if (vnode2->type == VNODE_DIRECTORY) {
-      error = parent2->fs->rmdir(parent2, base_name2);
+      error = parent2->fs->rmdir(parent2, base_name2, vnode2);
     } else {
-      error = parent2->fs->unlink(parent2, base_name2);
+      error = parent2->fs->unlink(parent2, base_name2, vnode2);
     }
-    VFS_PUT_AND_CLEAR(vnode2);
     if (error) goto done3;
   }
 
-  error = parent1->fs->unlink(parent1, base_name1);
+  error = parent1->fs->unlink(parent1, base_name1, vnode1);
   if (error) goto done3;
 
   error = parent2->fs->link(parent2, vnode1, base_name2);
 
 done3:
-  unlock_vnodes(parent1, parent2);
+  vfs_unlock_vnodes2(vnodes_to_lock, 4);
 done2:
   kmutex_unlock(&vnode1->fs->rename_lock);
 done:
   VFS_PUT_AND_CLEAR(vnode1);
+  if (vnode2) VFS_PUT_AND_CLEAR(vnode2);
   VFS_PUT_AND_CLEAR(parent1);
   VFS_PUT_AND_CLEAR(parent2);
   return error;
@@ -1094,9 +1256,15 @@ done:
 int vfs_unlink(const char* path) {
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0;
+  vnode_t* child = 0x0;
   char base_name[VFS_MAX_FILENAME_LENGTH];
 
-  int error = lookup_path(root, path, lookup_opt(false), &parent, 0x0, base_name);
+  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
+  // collect the inode if it's now unused.
+  lookup_options_t lookup = lookup_opt(false);
+  lookup.resolve_final_mount = false;
+  int error = lookup_existing_path_and_lock(root, path, lookup, &parent, &child,
+                                            base_name);
   VFS_PUT_AND_CLEAR(root);
   if (error) {
     return error;
@@ -1104,26 +1272,22 @@ int vfs_unlink(const char* path) {
 
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    vfs_unlock_vnodes(parent, child);
+    VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
-  // Get the child so we can vfs_put() it after calling fs->unlink(), which will
-  // collect the inode if it's now unused.
-  vnode_t* child = 0x0;
-  error = lookup(&parent, base_name, &child);
-  if (error) {
-    VFS_PUT_AND_CLEAR(parent);
-    return error;
-  }
-
   if (child->type == VNODE_DIRECTORY) {
+    vfs_unlock_vnodes(parent, child);
     VFS_PUT_AND_CLEAR(child);
     VFS_PUT_AND_CLEAR(parent);
     return -EISDIR;
   }
 
-  error = parent->fs->unlink(parent, base_name);
+  error = parent->fs->unlink(parent, base_name, child);
+  vfs_unlock_vnodes(parent, child);
+  // This actually collects the inode in the fs (if this is the last ref).
   VFS_PUT_AND_CLEAR(child);
   VFS_PUT_AND_CLEAR(parent);
   return error;
@@ -1332,7 +1496,7 @@ int vfs_getcwd(char* path_out, size_t size) {
 
 int vfs_chdir(const char* path) {
   vnode_t* new_cwd = 0x0;
-  int error = lookup_existing_path(path, lookup_opt(true), 0x0, &new_cwd);
+  int error = lookup_existing_path(path, lookup_opt(true), &new_cwd);
   if (error) return error;
 
   if (new_cwd->type != VNODE_DIRECTORY) {
@@ -1408,6 +1572,7 @@ int vfs_isatty(int fd) {
 }
 
 static int vfs_stat_internal(vnode_t* vnode, apos_stat_t* stat) {
+  kmutex_assert_is_held(&vnode->mutex);
   stat->st_dev = vnode->dev;
   stat->st_ino = vnode->num;
   stat->st_mode = 0;
@@ -1447,11 +1612,13 @@ static int vfs_path_stat_internal(const char* path, apos_stat_t* stat,
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(resolve_final_symlink),
-                                    0x0, &child);
+  int result =
+      lookup_existing_path(path, lookup_opt(resolve_final_symlink), &child);
   if (result) return result;
 
+  kmutex_lock(&child->mutex);
   result = vfs_stat_internal(child, stat);
+  kmutex_unlock(&child->mutex);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
@@ -1501,8 +1668,8 @@ static int vfs_chown_path_internal(const char* path, kuid_t owner, kgid_t group,
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(resolve_final_symlink),
-                                    0x0, &child);
+  int result =
+      lookup_existing_path(path, lookup_opt(resolve_final_symlink), &child);
   if (result) return result;
 
   result = vfs_chown_internal(child, owner, group);
@@ -1546,7 +1713,7 @@ static int vfs_chmod_internal(vnode_t* vnode, kmode_t mode) {
 
 int vfs_chmod(const char* path, kmode_t mode) {
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(true), 0x0, &child);
+  int result = lookup_existing_path(path, lookup_opt(true), &child);
   if (result) return result;
 
   result = vfs_chmod_internal(child, mode);
@@ -1588,24 +1755,29 @@ int vfs_symlink(const char* path1, const char* path2) {
     return -EEXIST;  // Root directory!
   }
 
+  kmutex_lock(&parent->mutex);
   int mode_check = vfs_check_mode(VFS_OP_WRITE, proc_current(), parent);
   if (mode_check) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return mode_check;
   }
 
   if (!parent->fs->symlink) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return -EPERM;
   }
 
   int child_inode = parent->fs->symlink(parent, base_name, path1);
   if (child_inode < 0) {
+    kmutex_unlock(&parent->mutex);
     VFS_PUT_AND_CLEAR(parent);
     return child_inode;
   }
 
   vnode_t* child = vfs_get(parent->fs, child_inode);
+  kmutex_unlock(&parent->mutex);
   vfs_set_created_metadata(child, VFS_S_IRWXU | VFS_S_IRWXG | VFS_S_IRWXO);
   VFS_PUT_AND_CLEAR(parent);
   VFS_PUT_AND_CLEAR(child);
@@ -1619,7 +1791,7 @@ int vfs_readlink(const char* path, char* buf, int bufsize) {
   }
 
   vnode_t* child = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(false), 0x0, &child);
+  int result = lookup_existing_path(path, lookup_opt(false), &child);
   if (result) return result;
 
   if (child->type != VNODE_SYMLINK) {
@@ -1632,7 +1804,9 @@ int vfs_readlink(const char* path, char* buf, int bufsize) {
     return -EPERM;
   }
 
+  kmutex_lock(&child->mutex);
   result = child->fs->readlink(child, buf, bufsize);
+  kmutex_unlock(&child->mutex);
   VFS_PUT_AND_CLEAR(child);
   return result;
 }
@@ -1647,7 +1821,7 @@ int vfs_access(const char* path, int amode) {
   vnode_t* child = 0x0;
   lookup_options_t opt = lookup_opt(true);
   opt.check_real_ugid = true;
-  int result = lookup_existing_path(path, opt, 0x0, &child);
+  int result = lookup_existing_path(path, opt, &child);
   if (result) return result;
 
   result = 0;
@@ -1714,7 +1888,7 @@ int vfs_truncate(const char* path, koff_t length) {
   }
 
   vnode_t* vnode = 0x0;
-  int result = lookup_existing_path(path, lookup_opt(true), 0x0, &vnode);
+  int result = lookup_existing_path(path, lookup_opt(true), &vnode);
   if (result) return result;
 
   if (vnode->type == VNODE_DIRECTORY) result = -EISDIR;

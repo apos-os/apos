@@ -95,6 +95,8 @@
 
 // Internal errors.
 #define EINTR_RESTART    75  // Interrupted syscall should be restarted.
-#define ERRNO_MAX        75
+#define EINJECTEDFAULT   76  // An artificially-injected error for tests.
+#define ERENAMESAMEVNODE 77  // rename(A, B) resolved A and B to the same vnode.
+#define ERRNO_MAX        77
 
 #endif

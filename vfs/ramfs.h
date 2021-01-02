@@ -33,6 +33,10 @@ void ramfs_destroy_fs(fs_t* fs);
 void ramfs_enable_blocking(fs_t* fs);
 void ramfs_disable_blocking(fs_t* fs);
 
+// If set, the given portion of certain calls will return -EINJECTEDFAULT.
+// Returns the old percentage.
+int ramfs_set_fault_percent(fs_t* fs, int percent);
+
 vnode_t* ramfs_alloc_vnode(struct fs* fs);
 int ramfs_get_root(struct fs* fs);
 int ramfs_get_vnode(vnode_t* vnode);
@@ -41,11 +45,12 @@ int ramfs_lookup(vnode_t* parent, const char* name);
 int ramfs_mknod(vnode_t* parent, const char* name,
                 vnode_type_t type, apos_dev_t dev);
 int ramfs_mkdir(vnode_t* parent, const char* name);
-int ramfs_rmdir(vnode_t* parent, const char* name);
+int ramfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
 int ramfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
 int ramfs_write(vnode_t* vnode, int offset, const void* buf, int bufsize);
 int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-int ramfs_unlink(vnode_t* parent, const char* name);
+int ramfs_unlink(vnode_t* parent, const char* name,
+                 const vnode_t* expected_child);
 int ramfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
 int ramfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
 int ramfs_symlink(vnode_t* parent, const char* name, const char* path);

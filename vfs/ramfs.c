@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"
@@ -54,25 +55,41 @@ typedef struct ramfs_inode ramfs_inode_t;
 struct ramfs {
   fs_t fs;  // Embedded fs interface.
 
+  // Protects fs-wide inode data, including the num field of all inodes (i.e.
+  // their validity)and next_free_inode --- but not the rest of the inode data.
+  kmutex_t mu;
+
+  // Protects small state (enable_blocking, fault_percent, random);
+  kspinlock_t spinlock;
+
   // For each inode number, we just store a ramfs_inode_t directly.  We don't
   // use all the fields of the vnode_t, though.
   ramfs_inode_t inodes[RAMFS_MAX_INODES];
+  // Where to start our search for the next free inode.
+  int next_free_inode;
 
   // Whether or not the appropriate syscalls should block.
   bool enable_blocking;
+
+  int fault_percent;
+  uint32_t random;
 };
 typedef struct ramfs ramfs_t;
 
 
 // Find and return a free inode number, or -1 on failure.
 static int find_free_inode(ramfs_t* ramfs) {
-  int inode = -1;
-  for (inode = 0; inode < RAMFS_MAX_INODES; ++inode) {
+  kmutex_assert_is_held(&ramfs->mu);
+  int inode = ramfs->next_free_inode;
+  for (int idx = 0; idx < RAMFS_MAX_INODES; ++idx) {
     KASSERT_DBG(ramfs->inodes[inode].vnode.num == inode ||
                 ramfs->inodes[inode].vnode.num == -1);
     if (ramfs->inodes[inode].vnode.num == -1) {
+      // Not true of course, but start our next search here.
+      ramfs->next_free_inode = inode;
       return inode;
     }
+    inode = (inode + 1) % RAMFS_MAX_INODES;
   }
   // Out of inodes :(
   return -1;
@@ -89,6 +106,20 @@ static void init_inode(ramfs_t* ramfs, ramfs_inode_t* node) {
   vnode->fs = (fs_t*)ramfs;
 }
 
+static void free_inode(ramfs_t* ramfs, ramfs_inode_t* inode) {
+  KASSERT(inode->link_count == 0);
+
+  kmutex_lock(&ramfs->mu);
+  KASSERT(inode->vnode.num != (int)INVALID_INO && inode->vnode.num >= 0 &&
+          inode->vnode.num < RAMFS_MAX_INODES);
+  KASSERT(inode == &ramfs->inodes[inode->vnode.num]);
+  inode->vnode.num = -1;
+  inode->vnode.type = VNODE_INVALID;
+  kfree(inode->data);
+  inode->data = 0x0;
+  kmutex_unlock(&ramfs->mu);
+}
+
 // Given an in-memory inode, write its metadata back to "disk".  Call this
 // whenever you change things like len, link_count, data ptr, etc.
 static void writeback_metadata(vnode_t* vnode) {
@@ -102,8 +133,21 @@ static void writeback_metadata(vnode_t* vnode) {
   disk_inode->vnode.mode = vnode->mode;
 }
 
-// Find the dirent in the parent's data with the given name, or NULL.
-static kdirent_t* find_dirent(vnode_t* parent, const char* name) {
+static void maybe_block(struct fs* fs) {
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
+  bool val = ramfs->enable_blocking;
+  kspin_unlock(&ramfs->spinlock);
+  if (val) {
+    scheduler_yield();
+  }
+}
+
+// Find the dirent in the parent's data with the given name, or NULL.  If none
+// is found, returns a pointer to an empty dirent that could fit the given name
+// (or NULL if no such slot exists) in |free_dirent|.
+static kdirent_t* find_dirent(vnode_t* parent, const char* name,
+                              kdirent_t** free_dirent) {
   KASSERT(parent->type == VNODE_DIRECTORY);
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode = &ramfs->inodes[parent->num];
@@ -111,10 +155,18 @@ static kdirent_t* find_dirent(vnode_t* parent, const char* name) {
   int offset = 0;
   while (offset < parent->len) {
     kdirent_t* d = (kdirent_t*)(inode->data + offset);
+    KASSERT((int)d->d_ino >= 0 || d->d_ino == INVALID_INO);
 
     if (kstrcmp(d->d_name, name) == 0) {
       KASSERT(d->d_ino != INVALID_INO);
+      if (free_dirent) *free_dirent = NULL;
+      maybe_block(parent->fs);
+      KASSERT((int)d->d_ino >= 0);
       return d;
+    } else if (d->d_ino == INVALID_INO && free_dirent && !(*free_dirent) &&
+               d->d_reclen >= sizeof(kdirent_t) + kstrlen(name) + 1) {
+      *free_dirent = d;
+      maybe_block(parent->fs);
     }
 
     offset += d->d_reclen;
@@ -142,36 +194,34 @@ static int count_dirents(vnode_t* parent) {
 }
 
 static int ramfs_link_internal(vnode_t* parent, int inode, const char* name) {
-  // TODO(aoates): look for deleted kdirent_t slots to reuse.
-  kdirent_t* d = find_dirent(parent, name);
+  kdirent_t* free_dirent = NULL;
+  kdirent_t* d = find_dirent(parent, name, &free_dirent);
   if (d) {
     return -EEXIST;
   }
 
-  // This is sorta inefficient....there's really no need to create it on the
-  // heap then copy it over, but whatever.
-  const int dlen = sizeof(kdirent_t) + kstrlen(name) + 1;
-  kdirent_t* dirent = (kdirent_t*)kmalloc(dlen);
-  dirent->d_ino = inode;
-  dirent->d_reclen = dlen;
-  kstrcpy(dirent->d_name, name);
+  if (free_dirent) {
+    free_dirent->d_ino = inode;
+    kstrcpy(free_dirent->d_name, name);
+  } else {
+    // This is sorta inefficient....there's really no need to create it on the
+    // heap then copy it over, but whatever.
+    const int dlen = sizeof(kdirent_t) + kstrlen(name) + 1;
+    kdirent_t* dirent = (kdirent_t*)kmalloc(dlen);
+    dirent->d_ino = inode;
+    dirent->d_reclen = dlen;
+    kstrcpy(dirent->d_name, name);
 
-  // Append the new dirent.
-  int result = ramfs_write(parent, parent->len, dirent, dlen);
-  KASSERT(result == dlen);
-  kfree(dirent);
+    // Append the new dirent.
+    int result = ramfs_write(parent, parent->len, dirent, dlen);
+    KASSERT(result == dlen);
+    kfree(dirent);
+  }
 
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   ramfs_inode_t* inode_ptr = &ramfs->inodes[inode];
   inode_ptr->link_count++;
   return 0;
-}
-
-static void maybe_block(struct fs* fs) {
-  ramfs_t* ramfs = (ramfs_t*)fs;
-  if (ramfs->enable_blocking) {
-    scheduler_yield();
-  }
 }
 
 fs_t* ramfs_create_fs(int create_default_dirs) {
@@ -182,7 +232,12 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   for (int i = 0; i < RAMFS_MAX_INODES; ++i) {
     f->inodes[i].vnode.num = -1;
   }
+  f->next_free_inode = 0;
   f->enable_blocking = false;
+  f->fault_percent = 0;
+  f->random = (uint32_t)(intptr_t)f;
+  kmutex_init(&f->mu);
+  f->spinlock = KSPINLOCK_NORMAL_INIT;
 
   kstrcpy(f->fs.fstype, "ramfs");
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
@@ -206,6 +261,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->fs.write_page = &ramfs_write_page;
 
   // Allocate the root inode.
+  kmutex_lock(&f->mu);
   int root_inode = find_free_inode(f);
   KASSERT(root_inode == 0);
   ramfs_inode_t* root = &f->inodes[root_inode];
@@ -218,6 +274,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   root->vnode.gid = SUPERUSER_GID;
   root->vnode.mode =
       VFS_S_IRWXU | VFS_S_IRGRP | VFS_S_IXGRP | VFS_S_IROTH | VFS_S_IXOTH;
+  kmutex_unlock(&f->mu);
 
   // Link it to itself.
   ramfs_link_internal((vnode_t*)root, root_inode, ".");
@@ -243,13 +300,27 @@ void ramfs_destroy_fs(fs_t* fs) {
 void ramfs_enable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
   ramfs->enable_blocking = true;
+  kspin_unlock(&ramfs->spinlock);
 }
 
 void ramfs_disable_blocking(fs_t* fs) {
   KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
   ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
   ramfs->enable_blocking = false;
+  kspin_unlock(&ramfs->spinlock);
+}
+
+int ramfs_set_fault_percent(fs_t* fs, int percent) {
+  KASSERT(kstrcmp(fs->fstype, "ramfs") == 0);
+  ramfs_t* ramfs = (ramfs_t*)fs;
+  kspin_lock(&ramfs->spinlock);
+  int old = ramfs->fault_percent;
+  ramfs->fault_percent = percent;
+  kspin_unlock(&ramfs->spinlock);
+  return old;
 }
 
 vnode_t* ramfs_alloc_vnode(struct fs* fs) {
@@ -287,8 +358,10 @@ int ramfs_get_vnode(vnode_t* n) {
 
 int ramfs_put_vnode(vnode_t* vnode) {
   KASSERT(kstrcmp(vnode->fstype, "ramfs") == 0);
-  KASSERT(vnode->refcount == 0);
   KASSERT(vnode->num >= 0 && vnode->num < RAMFS_MAX_INODES);
+  // Maybe-block twice (vs once with get_vnode()) for get/put race test to be
+  // effective.  This is sorta a gross hack.
+  maybe_block(vnode->fs);
   maybe_block(vnode->fs);
 
   ramfs_t* ramfs = (ramfs_t*)vnode->fs;
@@ -297,10 +370,7 @@ int ramfs_put_vnode(vnode_t* vnode) {
 
   KASSERT(inode->link_count >= 0);
   if (inode->link_count == 0) {
-    vnode->num = inode->vnode.num = -1;
-    vnode->type = inode->vnode.type = VNODE_INVALID;
-    kfree(inode->data);
-    inode->data = 0x0;
+    free_inode(ramfs, inode);
   }
   return 0;
 }
@@ -312,10 +382,22 @@ int ramfs_lookup(vnode_t* parent, const char* name) {
     return -ENOTDIR;
   }
 
-  kdirent_t* d = find_dirent(parent, name);
+  ramfs_t* ramfs = (ramfs_t*)parent->fs;
+  kspin_lock(&ramfs->spinlock);
+  if (ramfs->fault_percent > 0) {
+    ramfs->random = fnv_hash(ramfs->random);
+    if ((int)(ramfs->random % 100) < ramfs->fault_percent) {
+      kspin_unlock(&ramfs->spinlock);
+      return -EINJECTEDFAULT;
+    }
+  }
+  kspin_unlock(&ramfs->spinlock);
+
+  kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
     return -ENOENT;
   }
+  KASSERT((int)d->d_ino >= 0);
   return d->d_ino;
 }
 
@@ -327,14 +409,17 @@ int ramfs_mknod(vnode_t* parent, const char* name,
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
 
+  kmutex_lock(&ramfs->mu);
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
+    kmutex_unlock(&ramfs->mu);
     return -ENOSPC;
   }
 
   ramfs_inode_t* n = &ramfs->inodes[new_inode];
   KASSERT(n->vnode.num == -1);
   n->vnode.num = new_inode;
+  kmutex_unlock(&ramfs->mu);
   init_inode(ramfs, n);
 
   n->vnode.type = type;
@@ -343,7 +428,7 @@ int ramfs_mknod(vnode_t* parent, const char* name,
   if (result >= 0) {
     return n->vnode.num;
   } else {
-    // TODO(aoates): destroy vnode on error!
+    free_inode(ramfs, n);
     return result;
   }
 }
@@ -353,20 +438,23 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
 
+  kmutex_lock(&ramfs->mu);
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
+    kmutex_unlock(&ramfs->mu);
     return -ENOSPC;
   }
 
   ramfs_inode_t* n = &ramfs->inodes[new_inode];
   KASSERT(n->vnode.num == -1);
   n->vnode.num = new_inode;
+  kmutex_unlock(&ramfs->mu);
   init_inode(ramfs, n);
 
   n->vnode.type = VNODE_DIRECTORY;
   int result = ramfs_link_internal(parent, n->vnode.num, name);
   if (result < 0) {
-    // TODO(aoates): destroy vnode on error!
+    free_inode(ramfs, n);
     return result;
   }
 
@@ -385,17 +473,23 @@ int ramfs_mkdir(vnode_t* parent, const char* name) {
   return n->vnode.num;
 }
 
-int ramfs_rmdir(vnode_t* parent, const char* name) {
+int ramfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   maybe_block(parent->fs);
   if (parent->type != VNODE_DIRECTORY) {
     return -ENOTDIR;
   }
 
-  kdirent_t* d = find_dirent(parent, name);
+  kdirent_t* d = find_dirent(parent, name, NULL);
   if (!d) {
-    return -ENOENT;
+    return -EIO;
   }
+
+  if (child) {
+    KASSERT(d->d_ino == (apos_ino_t)child->num);
+  }
+
+  maybe_block(parent->fs);
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
@@ -421,10 +515,10 @@ int ramfs_rmdir(vnode_t* parent, const char* name) {
   dir_inode->link_count -= 2;
 
   // Remove '.' and '..'.
-  kdirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".");
+  kdirent_t* child_dirent = find_dirent(&dir_inode->vnode, ".", NULL);
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
-  child_dirent = find_dirent(&dir_inode->vnode, "..");
+  child_dirent = find_dirent(&dir_inode->vnode, "..", NULL);
   KASSERT(child_dirent->d_ino == (kino_t)parent->num);
   child_dirent->d_ino = INVALID_INO;
   child_dirent->d_name[0] = '\0';
@@ -481,7 +575,7 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
   if (result) return result;
 
   if (vnode->type == VNODE_DIRECTORY) {
-    kdirent_t* d = find_dirent(vnode, "..");
+    kdirent_t* d = find_dirent(vnode, "..", NULL);
     KASSERT_DBG(d != NULL);
     int orig_dotdot_ino = d->d_ino;
     ramfs_t* ramfs = (ramfs_t*)parent->fs;
@@ -498,23 +592,30 @@ int ramfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
 
 // TODO(aoates): a good test: create a file, unlink it, create a new one with
 // the same name, do stuff to it and verify it's a totaly new file.
-int ramfs_unlink(vnode_t* parent, const char* name) {
+int ramfs_unlink(vnode_t* parent, const char* name,
+                 const vnode_t* expected_child) {
   KASSERT(kstrcmp(parent->fstype, "ramfs") == 0);
   maybe_block(parent->fs);
-  if (parent->type != VNODE_DIRECTORY) {
-    return -ENOTDIR;
+  KASSERT(parent->type == VNODE_DIRECTORY);
+
+  kdirent_t* d = find_dirent(parent, name, NULL);
+  if (!d) {
+    return -EIO;
   }
 
-  kdirent_t* d = find_dirent(parent, name);
-  if (!d) {
-    return -ENOENT;
+  if (expected_child) {
+    KASSERT(d->d_ino == (apos_ino_t)expected_child->num);
   }
+
+  maybe_block(parent->fs);
 
   // Record that it was deleted.
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   KASSERT(d->d_ino != INVALID_INO && d->d_ino < RAMFS_MAX_INODES);
   KASSERT(ramfs->inodes[d->d_ino].vnode.num != -1);
+  KASSERT_DBG(kstrcmp(name, d->d_name) == 0);
 
+  KASSERT(ramfs->inodes[d->d_ino].link_count >= 1);
   ramfs->inodes[d->d_ino].link_count--;
 
   d->d_ino = INVALID_INO;
@@ -576,14 +677,17 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
   ramfs_t* ramfs = (ramfs_t*)parent->fs;
   maybe_block(parent->fs);
 
+  kmutex_lock(&ramfs->mu);
   int new_inode = find_free_inode(ramfs);
   if (new_inode < 0) {
+    kmutex_unlock(&ramfs->mu);
     return -ENOSPC;
   }
 
   ramfs_inode_t* n = &ramfs->inodes[new_inode];
   KASSERT(n->vnode.num == -1);
   n->vnode.num = new_inode;
+  kmutex_unlock(&ramfs->mu);
   init_inode(ramfs, n);
 
   n->vnode.type = VNODE_SYMLINK;
@@ -595,7 +699,7 @@ int ramfs_symlink(vnode_t* parent, const char* name, const char* path) {
   if (result >= 0) {
     return new_inode;
   } else {
-    // TODO(aoates): destroy vnode on error!
+    free_inode(ramfs, n);
     return result;
   }
 }
