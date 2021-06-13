@@ -1,4 +1,4 @@
-# Copyright 2019 Andrew Oates.  All Rights Reserved.
+# Copyright 2021 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,8 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env DisableFeature')
+Import('user_env native_env')
 
-DisableFeature(env, 'USER_DUMMY_LIB')
-DisableFeature(env, 'USER_OS')
-DisableFeature(env, 'USER_TESTS')
+COMMON_SOURCES = [
+    'passwd.c',
+]
+user_env.Library('common', COMMON_SOURCES)
+native_common_lib = native_env.Library('common', COMMON_SOURCES)
+
+native_env.Program('passwd_test',
+                   ['passwd_test.c'],
+                   LIBS=[native_common_lib])
