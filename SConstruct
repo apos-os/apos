@@ -147,6 +147,11 @@ if user_env['CLANG']:
   user_env.Append(CFLAGS =
       ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
 
+# Environment for build-system native targets.
+native_env = base_env.Clone()
+native_env['OBJPREFIX'] = 'native-'
+native_env['LIBPREFIX'] = 'native-'
+
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
   objects = [env.Object(src, **kwargs) for src in srcs]
@@ -206,6 +211,6 @@ env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
 
-Export('env user_env AposAddSources DisableFeature')
+Export('env user_env native_env AposAddSources DisableFeature')
 
 SConscript('SConscript', variant_dir=env['BUILD_CFG_DIR'], duplicate=False)
