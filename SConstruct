@@ -48,6 +48,8 @@ FEATURES = [
 vars.Add(ListVariable('enable', 'features to force-enable', [], FEATURES))
 vars.Add(ListVariable('disable', 'features to force-disable', [], FEATURES))
 
+# base_env captures common parameters and configuration across _all_ target
+# types --- kernel code, user code, and native (build system) code.
 base_env = Environment(
     variables = vars,
     tools = ['ar', 'as', 'cc', 'textfile', 'default'],
@@ -79,19 +81,6 @@ base_env.SetDefault(CLANG_TARGET = '$ARCH-pc-apos')
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
 
-if not base_env['CLANG']:
-  base_env.Replace(CC = '${TOOL_PREFIX}gcc')
-else:
-  base_env.Replace(CC = 'clang')
-  base_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
-  base_env.Append(CFLAGS = ['-fdebug-macro'])
-
-base_env.Replace(AR = '${TOOL_PREFIX}ar')
-base_env.Replace(AS = '${TOOL_PREFIX}as')
-base_env.Replace(LD = '${TOOL_PREFIX}ld')
-base_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
-base_env.Replace(STRIP = '${TOOL_PREFIX}strip')
-
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
               "-Wno-unused-parameter -Wno-error=unused-function " +
@@ -109,7 +98,23 @@ if base_env['DEBUG']:
 # though, from SConscript.
 base_env.Tool('compilation_db')
 
-env = base_env.Clone()
+# target_env is for targets built for the APOS target (kernel and user code).
+target_env = base_env.Clone()
+
+if not target_env['CLANG']:
+  target_env.Replace(CC = '${TOOL_PREFIX}gcc')
+else:
+  target_env.Replace(CC = 'clang')
+  target_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
+  target_env.Append(CFLAGS = ['-fdebug-macro'])
+
+target_env.Replace(AR = '${TOOL_PREFIX}ar')
+target_env.Replace(AS = '${TOOL_PREFIX}as')
+target_env.Replace(LD = '${TOOL_PREFIX}ld')
+target_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
+target_env.Replace(STRIP = '${TOOL_PREFIX}strip')
+
+env = target_env.Clone()
 env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
 
 env.Append(CFLAGS = Split("-nostdlib -ffreestanding"))
@@ -125,9 +130,9 @@ env.Replace(LINK = '${TOOL_PREFIX}ld')
 env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 
 # Environment for userspace targets.
-user_env = base_env.Clone()
+user_env = target_env.Clone()
 user_env.Append(CPPDEFINES='ENABLE_TERM_COLOR=%d' % user_env['TERM_COLOR'])
-if base_env['CLANG']:
+if user_env['CLANG']:
   user_env.Append(LINKFLAGS = ['-target', '$CLANG_TARGET'])
   user_env.Append(CFLAGS =
       ['-isystem', '$HEADER_INSTALL_PREFIX/include'])
