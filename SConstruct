@@ -71,15 +71,25 @@ _ValidateFeatures(base_env)
 for feature in FEATURES:
   base_env.SetDefault(**{feature: feature not in base_env['disable']})
 
+base_env.SetDefault(BUILD_VARIANT_NAME = '%s-%s' %
+    (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc'))
 base_env.SetDefault(BUILD_CFG_DIR =
-  os.path.join(base_env['BUILD_DIR'], '%s-%s' %
-    (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc')))
+  os.path.join(base_env['BUILD_DIR'], base_env['BUILD_VARIANT_NAME']))
 base_env.SetDefault(TOOL_PREFIX = '$ARCH-pc-apos-')
 base_env.SetDefault(CLANG_TARGET = '$ARCH-pc-apos')
 
 # If the user did a 'configure', save their configuration for later.
 if 'configure' in COMMAND_LINE_TARGETS:
   vars.Save(CONFIG_CACHE_FILE, base_env)
+
+# TODO(aoates): figure out the right way to express these as part of the build
+# system (e.g. as a root dependency for everything else?)
+def do_link(symlink_path):
+  if os.path.exists(symlink_path):
+    os.remove(symlink_path)
+  os.symlink(base_env['BUILD_VARIANT_NAME'], symlink_path)
+do_link(os.path.join(base_env['BUILD_DIR'], 'latest'))
+do_link(os.path.join(base_env['BUILD_DIR'], 'latest-%s' % base_env['ARCH']))
 
 base_env.Append(CFLAGS =
         Split("-Wall -Wextra -Werror -Wundef -std=gnu11 " +
