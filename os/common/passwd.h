@@ -23,4 +23,10 @@ int apos_get_pwent_f(FILE* passwd_file, const char* user, struct passwd* pwd,
 int apos_get_pwent(const char* user, struct passwd* pwd, char* buf,
                    size_t bufsize);
 
+// Read the shadow password entry for the given user into the buffer.  Returns
+// the number of characters read, or -1 on error.
+int apos_get_shpwent_f(FILE* shadow_file, const char* user, char* buf,
+                       size_t bufsize);
+int apos_get_shpwent(const char* user, char* buf, size_t bufsize);
+
 #endif

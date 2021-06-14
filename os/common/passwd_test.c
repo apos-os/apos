@@ -119,8 +119,62 @@ static void passwd_test(void) {
   fclose(pfile);
 }
 
+static const char kTestShadow[] =
+    ":$a$123$5552\n"  // Missing username.
+    "invalid2\n"      // Missing password.
+    "us:xy\n"
+    "user1:abc\n"
+    "user2:\n"
+    "user3:def:xyz\n"
+    "toolong:def:" SUPER_LONG_NAME "\n"
+    "user4:$1$528$a53f3:5";
+
+static void shadow_test(void) {
+  FILE* pfile = fmemopen((void*)kTestShadow, strlen(kTestShadow), "r");
+  assert(pfile != NULL);
+
+  const int kBufSize = 1024;
+  char buf[kBufSize];
+
+  assert(-1 == apos_get_shpwent_f(pfile, "a", buf, kBufSize));
+  assert(errno == ENOENT);
+  assert(-1 == apos_get_shpwent_f(pfile, "user1:", buf, kBufSize));
+  assert(errno == ENOENT);
+  assert(-1 == apos_get_shpwent_f(pfile, "invalid2", buf, kBufSize));
+  assert(errno == ENOENT);
+  assert(-1 == apos_get_shpwent_f(pfile, "invalid2:", buf, kBufSize));
+  assert(errno == ENOENT);
+
+  assert(2 == apos_get_shpwent_f(pfile, "us", buf, kBufSize));
+  assert(0 == strcmp(buf, "xy"));
+  assert(3 == apos_get_shpwent_f(pfile, "user1", buf, kBufSize));
+  assert(0 == strcmp(buf, "abc"));
+  assert(2 == apos_get_shpwent_f(pfile, "user1", buf, 3));
+  assert(0 == strcmp(buf, "ab"));
+  assert(1 == apos_get_shpwent_f(pfile, "user1", buf, 2));
+  assert(0 == strcmp(buf, "a"));
+  assert(0 == apos_get_shpwent_f(pfile, "user1", buf, 1));
+  assert(0 == strcmp(buf, ""));
+  assert(0 == apos_get_shpwent_f(pfile, "user2", buf, kBufSize));
+  assert(0 == strcmp(buf, ""));
+  assert(3 == apos_get_shpwent_f(pfile, "user3", buf, kBufSize));
+  assert(0 == strcmp(buf, "def"));
+  assert(12 == apos_get_shpwent_f(pfile, "user4", buf, kBufSize));
+  assert(0 == strcmp(buf, "$1$528$a53f3"));
+  assert(-1 == apos_get_shpwent_f(pfile, "user", buf, kBufSize));
+  assert(errno == ENOENT);
+  assert(-1 == apos_get_shpwent_f(pfile, "toolong", buf, kBufSize));
+  assert(errno == ENOENT);
+
+  assert(-1 == apos_get_shpwent_f(pfile, LONG_NAME, buf, kBufSize));
+  assert(errno == EINVAL);
+
+  fclose(pfile);
+}
+
 int main(int argc, char** argv) {
   passwd_test();
+  shadow_test();
   printf("PASSED\n");
   return 0;
 }
