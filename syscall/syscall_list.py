@@ -537,3 +537,6 @@ AddSyscall('sendto', 86, 'net_sendto', 'net/socket/socket.h',
     '<sys/socket.h>', 'ssize_t',
     ['int:socket:u', 'const void*:buf:br:len', 'size_t:len:u', 'int:flags:u',
       'const struct sockaddr*:dest_addr:br?:dest_len', 'socklen_t:dest_len:u'])
+
+AddSyscall('apos_klog', 87, 'klog_wrapper', 'syscall/wrappers.h',
+           '', 'int', ['const char*:msg:s'], can_fail=False)

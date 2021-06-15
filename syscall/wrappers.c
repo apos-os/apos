@@ -92,3 +92,9 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
 
   return result;
 }
+
+int klog_wrapper(const char* msg) {
+  // TODO(aoates): consider checking a capability of some sort.
+  klogm(KL_USER, INFO, msg);
+  return 0;
+}
