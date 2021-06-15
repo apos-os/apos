@@ -81,9 +81,9 @@ int ext2_read_superblock(ext2fs_t* fs) {
     return -EINVAL;
   }
 
-  KLOG(INFO, "ext2 superblock found on dev %d.%d:\n",
+  KLOG(DEBUG, "ext2 superblock found on dev %d.%d:\n",
        kmajor(fs->fs.dev), kminor(fs->fs.dev));
-  ext2_superblock_log(INFO, &fs->sb);
+  ext2_superblock_log(DEBUG, &fs->sb);
 
   if (fs->sb.s_rev_level != EXT2_DYNAMIC_REV) {
     KLOG(INFO, "ext2: unsupported ext2 version: %d\n", fs->sb.s_rev_level);
@@ -155,9 +155,9 @@ int ext2_read_block_groups(ext2fs_t* fs) {
   }
 
   for (unsigned int i = 0; i < fs->num_block_groups; ++i) {
-    KLOG(INFO, "block group %d:\n", i);
-    ext2_block_group_desc_log(INFO, &fs->block_groups[i]);
-    KLOG(INFO, "\n");
+    KLOG(DEBUG, "block group %d:\n", i);
+    ext2_block_group_desc_log(DEBUG, &fs->block_groups[i]);
+    KLOG(DEBUG, "\n");
   }
 
   return 0;
