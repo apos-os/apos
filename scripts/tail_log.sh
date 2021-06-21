@@ -14,7 +14,4 @@
 # limitations under the License.
 
 tail -c +0 -f log.txt | \
-  sed -u "s/\[PASSED\]/\x1b[32;1m\0\x1b[0m/g" | \
-  sed -u "s/\[FAILED\]/\x1b[31;1m\0\x1b[0m/g" | \
-  sed -u "s/^@.*@$/\x1b[36;1m\0\x1b[0m/g" | \
   ./scripts/symbolize.py
