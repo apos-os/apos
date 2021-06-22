@@ -25,6 +25,7 @@
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "net/init.h"
+#include "proc/exec.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/process.h"
@@ -53,6 +54,9 @@
 #endif
 
 #define LD_BUF_SIZE 1024
+
+// TODO(aoates): launch from /sbin instead.
+#define INIT_PATH "/bin/init"
 
 void pic_init(void);
 
@@ -93,7 +97,13 @@ static void io_init(void) {
   g_tty_dev = tty_create(ld);
 }
 
-static void kshell_trampoline(void* arg) {
+static void init_trampoline(void* arg) {
+  char* argv[] = {INIT_PATH, NULL};
+  char* envp[] = {NULL};
+  int result = do_execve(INIT_PATH, argv, envp, NULL, NULL);
+  KASSERT(result != 0);
+  klogf("Unable to exec " INIT_PATH ": %s\n", errorname(-result));
+  klogf("Launching kshell instead.\n");
   kshell_main(g_tty_dev);
 }
 
@@ -181,7 +191,9 @@ void kmain(memory_info_t* meminfo) {
   klog("\nmeminfo->phys_map_length:   0x"); klog(kutoa_hex(meminfo->phys_map_length));
   klog("\n");
 
-  const kpid_t shell_pid = proc_fork(&kshell_trampoline, 0x0);
+  // TODO(aoates): reparent processes to the init process rather than the kernel
+  // process?  Or run init in the kernel process (exec without fork below)?
+  const kpid_t shell_pid = proc_fork(&init_trampoline, 0x0);
   if (shell_pid < 0) {
     klogf("proc_fork error: %s\n", errorname(-shell_pid));
     die("unable to fork process 0 to create kshell");
@@ -193,6 +205,5 @@ void kmain(memory_info_t* meminfo) {
     child_pid = proc_wait(0x0);
   } while (child_pid != shell_pid);
 
-  //page_frame_alloc_test();
   klog("DONE\n");
 }

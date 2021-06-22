@@ -152,6 +152,7 @@ if user_env['CLANG']:
 native_env = base_env.Clone()
 native_env['OBJPREFIX'] = 'native-'
 native_env['LIBPREFIX'] = 'native-'
+native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
 
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
