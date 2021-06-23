@@ -23,7 +23,7 @@
 
 #include "os/common/apos_klog.h"
 
-#define GETTY_PATH "/bin/getty"
+#define GETTY_PATH "/sbin/getty"
 #define TTY0 "/dev/tty0"
 
 static pid_t do_getty(const char* tty) {

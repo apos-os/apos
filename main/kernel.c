@@ -55,8 +55,7 @@
 
 #define LD_BUF_SIZE 1024
 
-// TODO(aoates): launch from /sbin instead.
-#define INIT_PATH "/bin/init"
+#define INIT_PATH "/sbin/init"
 
 void pic_init(void);
 
