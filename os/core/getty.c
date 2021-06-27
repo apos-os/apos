@@ -12,15 +12,51 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <assert.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <termios.h>
 
+#include "common/ascii.h"  // Should this be allowed?
 #include "os/common/apos_klog.h"
 
 #define LOGIN_PATH "/bin/login"
+
+static int setup_tty(int fd) {
+  assert(isatty(fd));
+  struct termios t;
+  if (tcgetattr(fd, &t) < 0) {
+    perror("Unable to tcgetattr()");
+    return -1;
+  }
+
+  // TODO(aoates): consolidate this with the version in ld.c.
+  t.c_iflag = 0;
+  t.c_oflag = 0;
+  t.c_cflag = CS8;
+  t.c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG;
+
+  t.c_cc[VEOF] = ASCII_EOT;
+  t.c_cc[VEOL] = _POSIX_VDISABLE;
+  t.c_cc[VERASE] = ASCII_DEL;
+  t.c_cc[VINTR] = ASCII_ETX;
+  t.c_cc[VKILL] = _POSIX_VDISABLE;
+  t.c_cc[VMIN] = 1;
+  t.c_cc[VQUIT] = ASCII_FS;
+  t.c_cc[VSTART] = _POSIX_VDISABLE;
+  t.c_cc[VSTOP] = _POSIX_VDISABLE;
+  t.c_cc[VSUSP] = ASCII_SUB;
+  t.c_cc[VTIME] = 0;
+
+  if (tcsetattr(fd, TCSANOW, &t) < 0) {
+    perror("Unable to tcsetattr()");
+    return -1;
+  }
+  return 0;
+}
 
 int main(int argc, char** argv) {
   if (argc != 2) {
@@ -56,7 +92,6 @@ int main(int argc, char** argv) {
   dup2(fd, 2);
   if (fd > 2) close(fd);
 
-  // TODO(aoates): set up standard TTY configuration.
   // TODO(aoates): confirm or force CTTY.
 
   // Ignore job control signals; this sets the default behavior for shells
@@ -76,6 +111,11 @@ int main(int argc, char** argv) {
   if (tcsetpgrp(0, me) < 0) {
     perror("Unable to tcsetpgrp()");
     apos_klogf("getty unable to tcsetpgrp()\n");
+    exit(1);
+  }
+
+  if (setup_tty(fd) < 0) {
+    apos_klogf("getty unable to set up TTY\n");
     exit(1);
   }
 
