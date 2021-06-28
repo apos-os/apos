@@ -16,6 +16,7 @@ Import('user_env native_env')
 
 COMMON_SOURCES = [
     'apos_klog.c',
+    'list.c',
     'md5.c',
     'passwd.c',
 ]
