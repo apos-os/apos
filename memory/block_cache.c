@@ -523,6 +523,13 @@ int block_cache_get_size() {
   return g_max_size;
 }
 
+int block_cache_get_num_entries() {
+  kmutex_lock(&g_mu);
+  int result = g_size;
+  kmutex_unlock(&g_mu);
+  return result;
+}
+
 void block_cache_clear_unpinned() {
   // Since freeing entries from the LRU queue may cause dirtying of additional
   // entries (e.g. this happens with ext2), keep trying until the flush queue is

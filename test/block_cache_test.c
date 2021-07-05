@@ -201,8 +201,12 @@ static void cache_size_test(apos_dev_t dev) {
   KTEST_BEGIN("block_cache_get(): cache size");
   setup_disk(dev);
   memobj_t* obj = dev_get_block_memobj(dev);
+
+  const int starting_entries = block_cache_get_num_entries();
   const int old_size = block_cache_get_size();
-  block_cache_set_size(3);
+  const int new_size = starting_entries + 3;
+  klogf("Resizing block cache from %d to %d\n", starting_entries, new_size);
+  block_cache_set_size(new_size);
 
   bc_entry_t *block0a = 0x0, *block0b = 0x0, *block1 = 0x0, *block2 = 0x0,
              *block3 = 0x0;

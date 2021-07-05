@@ -85,6 +85,9 @@ int block_cache_get_pin_count(struct memobj* obj, int offset);
 void block_cache_set_size(int blocks);
 int block_cache_get_size(void);
 
+// Get current number of entries in the block cache.
+int block_cache_get_num_entries(void);
+
 // Clear the block cache of all unpinned entries, flushing all unflushed entries
 // to disk.  Behavior is undefined if any other block cache methods are called
 // simultaneously, and is therefore probably only useful for tests.
