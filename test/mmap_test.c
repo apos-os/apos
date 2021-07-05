@@ -22,6 +22,8 @@
 #include "memory/memory.h"
 #include "memory/mmap.h"
 #include "memory/vm_area.h"
+#include "proc/fork.h"
+#include "proc/wait.h"
 #include "proc/process.h"
 #include "vfs/vfs.h"
 #include "test/ktest.h"
@@ -739,8 +741,12 @@ static void mmap_first_and_last_page(void) {
 // * MAP_SHARED | MAP_ANONYMOUS after fork()
 // * requested protection level is given
 
-void mmap_test(void) {
+static void do_mmap_test(void* unused_arg) {
   KTEST_SUITE_BEGIN("mmap()/munmap() tests");
+
+  KTEST_BEGIN("Cleanup existing user mappings");
+  KEXPECT_EQ(0, do_munmap(0x0, MEM_LAST_USER_MAPPABLE_ADDR + 1));
+  EXPECT_MMAP(0, (emmap_t[]){});
 
   mmap_invalid_args();
   munmap_invalid_args();
@@ -769,4 +775,12 @@ void mmap_test(void) {
   vfs_unlink(kFileB);
 
   block_cache_log_stats();
+}
+
+void mmap_test(void) {
+  // Run mmap tests in a separate process so we can wipe current mappings with
+  // impunity.  This isn't strictly necessary (ktests already run in separate
+  // processes anyway), but ensures the mmap tests are self-contained.
+  kpid_t child = proc_fork(&do_mmap_test, NULL);
+  KEXPECT_EQ(child, proc_wait(NULL));
 }
