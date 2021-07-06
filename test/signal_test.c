@@ -39,7 +39,7 @@ static void ksigemptyset_test(void) {
 
   ksigset_t set;
   KEXPECT_EQ(0, ksigemptyset(&set));
-  KEXPECT_EQ(1, ksigisemptyset(&set));
+  KEXPECT_EQ(1, ksigisemptyset(set));
 
   for (int i = APOS_SIGMIN; i <= APOS_SIGMAX; ++i) {
     KEXPECT_EQ(0, ksigismember(&set, i));
@@ -51,7 +51,7 @@ static void ksigfillset_test(void) {
 
   ksigset_t set;
   KEXPECT_EQ(0, ksigfillset(&set));
-  KEXPECT_EQ(0, ksigisemptyset(&set));
+  KEXPECT_EQ(0, ksigisemptyset(set));
 
 
   for (int i = APOS_SIGMIN; i <= APOS_SIGMAX; ++i) {
@@ -66,7 +66,7 @@ static void ksigaddset_test(void) {
   ksigemptyset(&set);
 
   KEXPECT_EQ(0, ksigaddset(&set, SIGABRT));
-  KEXPECT_EQ(0, ksigisemptyset(&set));
+  KEXPECT_EQ(0, ksigisemptyset(set));
 
   KEXPECT_EQ(1, ksigismember(&set, SIGABRT));
   KEXPECT_EQ(0, ksigismember(&set, SIGALRM));
@@ -890,7 +890,7 @@ static void sigpending_test(void) {
   KEXPECT_EQ(0, proc_sigpending(&pending));
   KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
   ksigdelset(&pending, SIGUSR1);
-  KEXPECT_EQ(1, ksigisemptyset(&pending));
+  KEXPECT_EQ(1, ksigisemptyset(pending));
 
   KTEST_BEGIN("sigpending() test -- assigned and unblocked signal");
   ksigemptyset(&mask);
@@ -902,7 +902,7 @@ static void sigpending_test(void) {
   pending = 123;
   KEXPECT_EQ(0, proc_sigpending(&pending));
   // Not blocked, so shouldn't be present.
-  KEXPECT_EQ(1, ksigisemptyset(&pending));
+  KEXPECT_EQ(1, ksigisemptyset(pending));
 
   KTEST_BEGIN("sigpending() test -- assigned and blocked signal");
   ksigemptyset(&mask);
@@ -915,7 +915,7 @@ static void sigpending_test(void) {
   KEXPECT_EQ(0, proc_sigpending(&pending));
   KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
   ksigemptyset(&pending);
-  KEXPECT_EQ(1, ksigisemptyset(&pending));
+  KEXPECT_EQ(1, ksigisemptyset(pending));
 
   // Cleanup.
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));

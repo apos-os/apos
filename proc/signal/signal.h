@@ -35,12 +35,12 @@
 #include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
 
-static inline int ksigisemptyset(const ksigset_t* set) {
-  return (*set == 0) ? 1 : 0;
+static inline int ksigisemptyset(ksigset_t set) {
+  return (set == 0) ? 1 : 0;
 }
 
-static inline ksigset_t ksigunionset(const ksigset_t* A, const ksigset_t* B) {
-  return *A | *B;
+static inline ksigset_t ksigunionset(ksigset_t A, ksigset_t B) {
+  return A | B;
 }
 
 // Returns all the pending or assigned signals on the given process.

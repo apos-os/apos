@@ -70,7 +70,7 @@ static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
 };
 
 ksigset_t proc_pending_signals(const process_t* proc) {
-  return ksigunionset(&proc->pending_signals, &proc->thread->assigned_signals);
+  return ksigunionset(proc->pending_signals, proc->thread->assigned_signals);
 }
 
 bool proc_signal_deliverable(kthread_t thread, int signum) {
@@ -397,7 +397,7 @@ int proc_assign_pending_signals(void) {
   KASSERT_DBG(proc_current()->thread == kthread_current_thread());
 
   signal_assign_pending(proc_current());
-  int result = !ksigisemptyset(&kthread_current_thread()->assigned_signals);
+  int result = !ksigisemptyset(kthread_current_thread()->assigned_signals);
 
   POP_INTERRUPTS();
   return result;
@@ -410,7 +410,7 @@ void proc_dispatch_pending_signals(const user_context_t* context,
   const kthread_t thread = proc_current()->thread;
   KASSERT_DBG(thread == kthread_current_thread());
 
-  if (ksigisemptyset(&thread->assigned_signals)) {
+  if (ksigisemptyset(thread->assigned_signals)) {
     POP_INTERRUPTS();
     return;
   }
