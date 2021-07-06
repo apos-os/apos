@@ -432,7 +432,7 @@ static void limit_filesize_test(void* arg) {
 static void limit_as_test(void* arg) {
   KTEST_BEGIN("setrlimit(): mmap() obeys RLIMIT_AS");
   struct apos_rlimit lim;
-  lim.rlim_cur = 10 * PAGE_SIZE;
+  lim.rlim_cur = mmap_get_usage() + 10 * PAGE_SIZE;
   lim.rlim_max = APOS_RLIM_INFINITY;
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_AS, &lim));
 
