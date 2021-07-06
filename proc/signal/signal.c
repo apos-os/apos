@@ -65,6 +65,7 @@ static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
   SIGACT_TERM,          // SIGVTALRM
   SIGACT_TERM_AND_CORE, // SIGXCPU
   SIGACT_TERM_AND_CORE, // SIGXFSZ
+  SIGACT_IGNORE,        // SIGWINCH
 };
 
 ksigset_t proc_pending_signals(const process_t* proc) {
