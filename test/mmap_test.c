@@ -183,6 +183,7 @@ static void munmap_invalid_args(void) {
 static void mmap_basic(void) {
   KTEST_BEGIN("mmap(): basic test");
   setup_test_files();
+  KEXPECT_EQ(0, mmap_get_usage());
 
   // Map both files in.
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
@@ -191,9 +192,11 @@ static void mmap_basic(void) {
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
                         KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
+  KEXPECT_EQ(kTestFilePages * PAGE_SIZE, mmap_get_usage());
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
                         KMAP_SHARED, fdB, 0, &addrB));
   KEXPECT_NE((void*)0x0, addrB);
+  KEXPECT_EQ(2 * kTestFilePages * PAGE_SIZE, mmap_get_usage());
 
   EXPECT_MMAP(2, (emmap_t[]){{0x1000, 0x3000, fdA}, {0x4000, 0x3000, fdB}});
 
@@ -241,15 +244,18 @@ static void partial_unmap_test(void) {
   KEXPECT_EQ(0, do_mmap(0x0, kTestFilePages * PAGE_SIZE, PROT_ALL,
                         KMAP_SHARED, fdA, 0, &addrA));
   KEXPECT_NE((void*)0x0, addrA);
+  KEXPECT_EQ(kTestFilePages * PAGE_SIZE, mmap_get_usage());
 
   // Unmap the middle page of the fileA mapping.
   KEXPECT_EQ(0, do_munmap((char*)addrA + PAGE_SIZE, PAGE_SIZE));
+  KEXPECT_EQ((kTestFilePages - 1) * PAGE_SIZE, mmap_get_usage());
   // Verify we can still read the first and last pages.
   KEXPECT_EQ('A', bufcmp(addrA, 'A', PAGE_SIZE));
   KEXPECT_EQ('C', bufcmp((char*)addrA + 2 * PAGE_SIZE, 'C', PAGE_SIZE));
 
   KTEST_BEGIN("mmap(): unmap with hole test");
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, mmap_get_usage());
   vfs_close(fdA);
 }
 

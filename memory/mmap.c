@@ -152,15 +152,7 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   // Check address space limits.
   const apos_rlim_t limit = proc_current()->limits[APOS_RLIMIT_AS].rlim_cur;
   if (limit != APOS_RLIM_INFINITY) {
-    list_link_t* link = proc_current()->vm_area_list.head;
-    addrdiff_t total_as = 0;
-    while (link) {
-      const vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
-      if (area->access == MEM_ACCESS_KERNEL_AND_USER) {
-        total_as += area->vm_length;
-      }
-      link = link->next;
-    }
+    size_t total_as = mmap_get_usage();
     if (total_as + length > limit) {
       return -ENOMEM;
     }
@@ -268,4 +260,17 @@ int do_munmap(void* addr_ptr, addr_t length) {
   }
 
   return 0;
+}
+
+size_t mmap_get_usage(void) {
+  list_link_t* link = proc_current()->vm_area_list.head;
+  addrdiff_t total_as = 0;
+  while (link) {
+    const vm_area_t* const area = container_of(link, vm_area_t, vm_proc_list);
+    if (area->access == MEM_ACCESS_KERNEL_AND_USER) {
+      total_as += area->vm_length;
+    }
+    link = link->next;
+  }
+  return (size_t)total_as;
 }

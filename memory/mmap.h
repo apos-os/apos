@@ -15,6 +15,7 @@
 #ifndef APOO_MEMORY_MMAP_H
 #define APOO_MEMORY_MMAP_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "common/types.h"
@@ -30,5 +31,8 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
 
 // Unmap a portion of a previous mapping.
 int do_munmap(void* addr, addr_t length);
+
+// Return current mmap usage (as limited by RLIMIT_AS).
+size_t mmap_get_usage(void);
 
 #endif
