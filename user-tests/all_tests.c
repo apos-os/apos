@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include <fcntl.h>
+#include <signal.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -24,6 +25,14 @@ int main(int argc, char** argv) {
 
   if (argc > 1 && strcmp(argv[1], "all") == 0)
     run_slow_tests = true;
+
+  // Some of the tests rely on these signals, so ensure they're enabled.
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigprocmask(SIG_SETMASK, &mask, NULL);
+  signal(SIGTTIN, SIG_DFL);
+  signal(SIGTTOU, SIG_DFL);
+  signal(SIGTSTP, SIG_DFL);
 
   ktest_begin_all();
 

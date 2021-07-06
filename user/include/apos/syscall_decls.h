@@ -102,5 +102,6 @@ ssize_t recvfrom(int socket, void* buf, size_t len, int flags, struct sockaddr* 
 ssize_t send(int socket, const void* buf, size_t len, int flags);
 ssize_t sendto(int socket, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t dest_len);
 int apos_klog(const char* msg);
+int apos_run_ktest(const char* name);
 
 #endif

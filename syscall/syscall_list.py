@@ -540,3 +540,6 @@ AddSyscall('sendto', 86, 'net_sendto', 'net/socket/socket.h',
 
 AddSyscall('apos_klog', 87, 'klog_wrapper', 'syscall/wrappers.h',
            '', 'int', ['const char*:msg:s'], can_fail=False)
+
+AddSyscall('apos_run_ktest', 88, 'kernel_run_ktest', 'test/kernel_tests.h',
+    '', 'int', ['const char*:name:s'])

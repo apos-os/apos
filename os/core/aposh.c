@@ -27,6 +27,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <apos/syscall_decls.h>
+
 #include "os/common/list.h"
 
 #define ENABLE_TERM_COLOR 1
@@ -81,6 +83,22 @@ typedef struct {
 } kshell_t;
 
 static void parse_and_dispatch(kshell_t* shell, char* cmd);
+
+static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
+  if (argc != 2) {
+    printf("invalid # of args for test: expected 1, got %d\n", argc - 1);
+    return;
+  }
+
+  pid_t child;
+  if ((child = fork()) == 0) {
+    close(shell->tty_fd);
+    apos_run_ktest(argv[1]);
+    exit(0);
+  }
+
+  assert(child == waitpid(child, NULL, 0));
+}
 
 // Sleeps the thread for a certain number of ms.
 static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -341,6 +359,8 @@ static const cmd_t CMDS[] = {
   { "bg", &bg_cmd },
   { "jobs", &jobs_cmd },
 
+  { "test", &test_cmd },
+
   { 0x0, 0x0 },
 };
 
@@ -409,6 +429,8 @@ int main(int argc, char** argv) {
   // TODO(aoates): get the TTY a better way
   shell.tty_fd = dup(0);
 
+  // TODO(aoates): is this redundant with the SIG_IGN in getty?  Should likely
+  // only have one.
   sigset_t mask;
   sigemptyset(&mask);
   sigaddset(&mask, SIGTTOU);
