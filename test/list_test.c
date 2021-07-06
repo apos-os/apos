@@ -169,10 +169,75 @@ static void list_insert_test(void) {
   KEXPECT_NE(0, list_empty(&list));
 }
 
+struct test_datum {
+  int x;
+  list_link_t td_link;
+};
+typedef struct test_datum test_datum_t;
+
+static void list_iterate_test(void) {
+  KTEST_BEGIN("Basic list iteration");
+  test_datum_t nodes[4];
+  int result[4] = {0, 0, 0, 0};
+  list_t list = LIST_INIT;
+  for (int i =0; i < 4; ++i) {
+    nodes[i].x = (i + 1) * 10;
+    nodes[i].td_link = LIST_LINK_INIT;
+    list_push(&list, &nodes[i].td_link);
+  }
+
+  int i = 0;
+  FOR_EACH_LIST(td_iter, &list) {
+    test_datum_t* td = LIST_ENTRY(td_iter, test_datum_t, td_link);
+    result[i++] = td->x;
+  }
+  KEXPECT_EQ(10, result[0]);
+  KEXPECT_EQ(20, result[1]);
+  KEXPECT_EQ(30, result[2]);
+  KEXPECT_EQ(40, result[3]);
+
+  KTEST_BEGIN("Basic const value, non-const list iteration");
+  i = 0;
+  FOR_EACH_LIST(td_iter, &list) {
+    const test_datum_t* td = LIST_ENTRY(td_iter, test_datum_t, td_link);
+    result[i++] = td->x;
+  }
+  KEXPECT_EQ(10, result[0]);
+  KEXPECT_EQ(20, result[1]);
+  KEXPECT_EQ(30, result[2]);
+  KEXPECT_EQ(40, result[3]);
+  KTEST_BEGIN("Basic const list iteration");
+  const list_t* const_list = &list;
+  i = 0;
+  FOR_EACH_LIST(td_iter, const_list) {
+    const test_datum_t* td = LIST_ENTRY(td_iter, test_datum_t, td_link);
+    result[i++] = td->x;
+  }
+  KEXPECT_EQ(10, result[0]);
+  KEXPECT_EQ(20, result[1]);
+  KEXPECT_EQ(30, result[2]);
+  KEXPECT_EQ(40, result[3]);
+
+  KTEST_BEGIN("List iteration expression evaluates once");
+  int list_idx = 0;
+  const list_t* list_array[2] = {&list, NULL};
+  i = 0;
+  FOR_EACH_LIST(td_iter, list_array[list_idx++]) {
+    test_datum_t* td = LIST_ENTRY(td_iter, test_datum_t, td_link);
+    result[i++] = td->x * 10;
+  }
+  KEXPECT_EQ(1, list_idx);
+  KEXPECT_EQ(100, result[0]);
+  KEXPECT_EQ(200, result[1]);
+  KEXPECT_EQ(300, result[2]);
+  KEXPECT_EQ(400, result[3]);
+}
+
 void list_test(void) {
   KTEST_SUITE_BEGIN("list test");
 
   basic_list_test();
   list_remove_test();
   list_insert_test();
+  list_iterate_test();
 }
