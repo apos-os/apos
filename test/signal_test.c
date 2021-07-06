@@ -330,7 +330,7 @@ static void signal_allowed_test(void) {
 // delivered or not.
 static void signal_child_func(void* arg) {
   ksleep(10);
-  proc_exit(is_signal_pending(proc_current(), SIGUSR1));
+  proc_exit(is_signal_pending(proc_current(), SIGAPOSTEST));
 }
 
 static void signal_setuid_then_kill_func(void* arg) {
@@ -346,7 +346,7 @@ static void signal_setuid_then_kill_func(void* arg) {
   proc_get(child_pid)->suid = 101;
 
   KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGKILL));
-  KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGUSR1));
+  KEXPECT_EQ(-EPERM, proc_kill(child_pid, SIGAPOSTEST));
   int exit_code;
   KEXPECT_EQ(child_pid, proc_wait(&exit_code));
   KEXPECT_EQ(0, exit_code);  // Should not have received signal.
@@ -362,7 +362,7 @@ static void signal_permission_test(void) {
   proc_get(child_pid)->euid = 101;
   proc_get(child_pid)->suid = 101;
 
-  KEXPECT_EQ(0, proc_kill(child_pid, SIGUSR1));
+  KEXPECT_EQ(0, proc_kill(child_pid, SIGAPOSTEST));
   int exit_code;
   KEXPECT_EQ(child_pid, proc_wait(&exit_code));
   KEXPECT_EQ(1, exit_code);  // Should have received signal.
@@ -406,18 +406,18 @@ static void create_group_then_kill(void* arg) {
   }
 
   if (flags & 0x2) {
-    KEXPECT_EQ(0, proc_kill(0, SIGUSR1));
+    KEXPECT_EQ(0, proc_kill(0, SIGAPOSTEST));
     KEXPECT_EQ(0, proc_kill(0, APOS_SIGNULL));  // Try SIGNULL too, for kicks.
   } else {
-    KEXPECT_EQ(0, proc_kill(-okA, SIGUSR1));
+    KEXPECT_EQ(0, proc_kill(-okA, SIGAPOSTEST));
     KEXPECT_EQ(0, proc_kill(-okA, APOS_SIGNULL));  // Try SIGNULL too, for kicks
   }
 
   // We should have received the signal if we're in the group.
-  int got_signal = is_signal_pending(proc_current(), SIGUSR1);
+  int got_signal = is_signal_pending(proc_current(), SIGAPOSTEST);
   if (flags & 0x1) {
     KEXPECT_EQ(1, got_signal);
-    proc_suppress_signal(proc_current(), SIGUSR1);
+    proc_suppress_signal(proc_current(), SIGAPOSTEST);
   } else {
     KEXPECT_EQ(0, got_signal);
   }
@@ -446,7 +446,7 @@ static void cannot_signal_any_process_in_group(void* arg) {
   KEXPECT_EQ(0, setpgid(bad, bad));
 
   KEXPECT_EQ(-EPERM, proc_kill(-bad, SIGKILL));
-  KEXPECT_EQ(-EPERM, proc_kill(-bad, SIGUSR1));
+  KEXPECT_EQ(-EPERM, proc_kill(-bad, SIGAPOSTEST));
 
   KTEST_BEGIN("proc_kill(): invalid signal to process group");
   KEXPECT_EQ(0, setpgid(0, okA));
@@ -490,8 +490,8 @@ static void signal_send_to_pgroup_test(void) {
 
 static void send_all_allowed_func(void* arg) {
   KEXPECT_EQ(0, setuid((intptr_t)arg));
-  KEXPECT_EQ(0, proc_kill(-1, SIGUSR1));
-  proc_exit(is_signal_pending(proc_current(), SIGUSR1));
+  KEXPECT_EQ(0, proc_kill(-1, SIGAPOSTEST));
+  proc_exit(is_signal_pending(proc_current(), SIGAPOSTEST));
 }
 
 static void signal_send_to_all_allowed_test(void) {
@@ -529,15 +529,15 @@ static void signal_send_to_all_allowed_test(void) {
   kpid_t wait_result;
   do {
     wait_result = proc_wait(NULL);
-    proc_suppress_signal(proc_current(), SIGUSR1);
+    proc_suppress_signal(proc_current(), SIGAPOSTEST);
   } while (wait_result == -EINTR);
   KEXPECT_EQ(child, wait_result);
 
   // The signal shouldn't have been sent to processes 0 or 1.
   if (proc_get(0))
-    KEXPECT_EQ(0, is_signal_pending(proc_get(0), SIGUSR1));
+    KEXPECT_EQ(0, is_signal_pending(proc_get(0), SIGAPOSTEST));
   if (proc_get(1))
-    KEXPECT_EQ(0, is_signal_pending(proc_get(1), SIGUSR1));
+    KEXPECT_EQ(0, is_signal_pending(proc_get(1), SIGAPOSTEST));
 
   // TODO(aoates): is there any scenario in which a process wouldn't be able to
   // send a signal to itself, and therefore proc_kill(-1, X) would return
