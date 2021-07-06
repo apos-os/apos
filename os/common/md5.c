@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2021 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,13 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "os/common/md5.h"
 
-#include "common/hash.h"
+#include <assert.h>
+#include <string.h>
 
-#include "common/kassert.h"
-#include "common/kstring.h"
-
-#define MD5_ASSERT KASSERT_DBG
-#define MD5_MEMCPY kmemcpy
-#define MD5_MEMSET kmemset
+#define MD5_ASSERT assert
+#define MD5_MEMCPY memcpy
+#define MD5_MEMSET memset
 #include "common/md5-impl.c"

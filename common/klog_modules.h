@@ -39,6 +39,7 @@ typedef enum {
   KL_TTY,
 
   KL_TEST,
+  KL_USER,  // From userspace.
 
   KL_MODULE_MAX,
 } klog_module_t;

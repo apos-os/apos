@@ -66,4 +66,6 @@ void socket_raw_test(void);
 void socket_udp_test(void);
 void run_user_tests(void);
 
+int kernel_run_ktest(const char* name);
+
 #endif

@@ -103,5 +103,7 @@
 #define SYS_RECVFROM 84
 #define SYS_SEND 85
 #define SYS_SENDTO 86
+#define SYS_APOS_KLOG 87
+#define SYS_APOS_RUN_KTEST 88
 
 #endif

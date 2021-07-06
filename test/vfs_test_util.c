@@ -53,6 +53,13 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
   char buf[kBufSize];
   int num_dirents = 0;
 
+  apos_stat_t stat;
+  KEXPECT_EQ(0, vfs_fstat(fd, &stat));
+  vnode_t* root_vnode = vfs_get_root_vnode();
+  const bool is_root = (stat.st_dev == root_vnode->dev &&
+                        stat.st_ino == (apos_ino_t)root_vnode->num);
+  VFS_PUT_AND_CLEAR(root_vnode);
+
   while (1) {
     const int len = vfs_getdents(fd, (kdirent_t*)(&buf[0]), kBufSize);
     if (len < 0) {
@@ -71,11 +78,13 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
 
       KLOG("dirent: %lu -> %s\n", ent->d_ino, ent->d_name);
 
-      // Ignore the root lost+found, dev, and proc directories.
-      if (kstrcmp(ent->d_name, "lost+found") == 0 ||
-          kstrcmp(ent->d_name, "bin") == 0 ||
-          kstrcmp(ent->d_name, "dev") == 0 ||
-          kstrcmp(ent->d_name, "proc") == 0) {
+      // Ignore the standard root directories.
+      if (is_root && (kstrcmp(ent->d_name, "lost+found") == 0 ||
+                      kstrcmp(ent->d_name, "bin") == 0 ||
+                      kstrcmp(ent->d_name, "dev") == 0 ||
+                      kstrcmp(ent->d_name, "proc") == 0 ||
+                      kstrcmp(ent->d_name, "etc") == 0 ||
+                      kstrcmp(ent->d_name, "sbin") == 0)) {
         num_dirents--;
         continue;
       }

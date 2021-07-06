@@ -48,6 +48,9 @@ if env['TESTS']:
 if env['USER_TESTS']:
   NON_KERNEL_SUBDIRS.append('user-tests')
 
+if env['USER_OS']:
+  NON_KERNEL_SUBDIRS.append('os')
+
 all_objects = Flatten(AposAddSources(env, srcs, SUBDIRS))
 
 objects = [obj for obj in all_objects if obj.name.count('PHYS') == 0]

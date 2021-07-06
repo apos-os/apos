@@ -126,6 +126,7 @@ static void stopped_test(void) {
   KTEST_BEGIN("waitpid() with WUNTRACED (stopped w/ SIGSTOP)");
   if ((child = fork()) == 0) {
     kill(getpid(), SIGSTOP);
+    exit(1);  // Shouldn't get here.
   }
   KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
   KEXPECT_EQ(0, WIFEXITED(status));
@@ -140,6 +141,7 @@ static void stopped_test(void) {
   KTEST_BEGIN("waitpid() with WUNTRACED (stopped w/ SIGTSTP)");
   if ((child = fork()) == 0) {
     kill(getpid(), SIGTSTP);
+    exit(1);  // Shouldn't get here.
   }
   KEXPECT_EQ(child, waitpid(-1, &status, WUNTRACED));
   KEXPECT_EQ(0, WIFEXITED(status));
@@ -154,6 +156,7 @@ static void stopped_test(void) {
   KTEST_BEGIN("waitpid() with WUNTRACED (NULL status)");
   if ((child = fork()) == 0) {
     kill(getpid(), SIGSTOP);
+    exit(1);  // Shouldn't get here.
   }
   KEXPECT_EQ(child, waitpid(-1, NULL, WUNTRACED));
   KEXPECT_EQ(0, kill(child, SIGKILL));

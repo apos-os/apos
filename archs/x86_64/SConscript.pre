@@ -15,4 +15,5 @@
 Import('env DisableFeature')
 
 DisableFeature(env, 'USER_DUMMY_LIB')
+DisableFeature(env, 'USER_OS')
 DisableFeature(env, 'USER_TESTS')
