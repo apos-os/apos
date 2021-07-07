@@ -69,20 +69,14 @@ static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
   SIGACT_IGNORE,        // SIGAPOSTEST
 };
 
-// TODO(aoates): remove these helpers when proper multi-thread support is in.
-static kthread_data_t* get_proc_thread(process_t* proc) {
-  // Only look at first thread (for now).
-  return container_of(proc->threads.head, kthread_data_t, proc_threads_link);
-}
-
-static const kthread_data_t* get_proc_threadc(const process_t* proc) {
-  // Only look at first thread (for now).
-  return container_of(proc->threads.head, kthread_data_t, proc_threads_link);
-}
-
 ksigset_t proc_pending_signals(const process_t* proc) {
-  return ksigunionset(proc->pending_signals,
-                      get_proc_threadc(proc)->assigned_signals);
+  ksigset_t set = proc->pending_signals;
+  FOR_EACH_LIST(iter_link, &proc->threads) {
+    const kthread_data_t* thread =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    set = ksigunionset(set, thread->assigned_signals);
+  }
+  return set;
 }
 
 bool proc_signal_deliverable(kthread_t thread, int signum) {
@@ -134,12 +128,19 @@ static void proc_try_assign_signal(process_t* proc, int signum) {
   if (proc->state == PROC_ZOMBIE) {
     return;
   }
-  const kthread_t thread = get_proc_thread(proc);
 
   KASSERT_DBG(ksigismember(&proc->pending_signals, signum));
-  if (!ksigismember(&thread->signal_mask, signum)) {
-    ksigdelset(&proc->pending_signals, signum);
-    do_assign_signal(thread, signum);
+
+  // Ideally this would be non-deterministic to prevent anyone from relying on
+  // the signal always being assigned to the first thread without it masked.
+  FOR_EACH_LIST(iter_link, &proc->threads) {
+    kthread_data_t* thread =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    if (!ksigismember(&thread->signal_mask, signum)) {
+      ksigdelset(&proc->pending_signals, signum);
+      do_assign_signal(thread, signum);
+      break;
+    }
   }
 }
 
@@ -181,7 +182,8 @@ int proc_force_signal_group(kpid_t pgid, int sig) {
 
 int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig) {
   // This isn't very interesting until we have multiple threads in a process.
-  KASSERT_DBG(thread == get_proc_thread(proc));
+  KASSERT(thread->process == proc);
+  KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
   PUSH_AND_DISABLE_INTERRUPTS();
   do_assign_signal(thread, sig);
   POP_INTERRUPTS();
@@ -294,7 +296,9 @@ int proc_sigprocmask(int how, const ksigset_t* restrict set,
 
 int proc_sigpending(ksigset_t* set) {
   process_t* proc = proc_current();
-  kthread_t thread = get_proc_thread(proc);
+  kthread_data_t* thread = kthread_current_thread();
+  KASSERT(thread->process == proc);
+  KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
   *set = proc->pending_signals |
       (thread->assigned_signals & thread->signal_mask);
   return 0;
@@ -322,7 +326,11 @@ int proc_sigsuspend(const ksigset_t* sigmask) {
 
 void proc_suppress_signal(process_t* proc, int sig) {
   ksigdelset(&proc->pending_signals, sig);
-  ksigdelset(&get_proc_thread(proc)->assigned_signals, sig);
+  FOR_EACH_LIST(iter_link, &proc->threads) {
+    kthread_data_t* thread =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    ksigdelset(&thread->assigned_signals, sig);
+  }
 }
 
 // Dispatch a particular signal in the current process.  May not return.
@@ -369,18 +377,20 @@ static bool dispatch_signal(int signum, const user_context_t* context,
   } else {
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
-    KASSERT_DBG(get_proc_thread(proc) == kthread_current_thread());
+    kthread_data_t* thread = kthread_current_thread();
+    KASSERT(thread->process == proc);
+    KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
 
     if (proc->state == PROC_STOPPED)
       return false;
 
     // Save the old signal mask, apply the mask from the action, and mask out
     // the current signal as well.
-    KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
-    ksigset_t old_mask = get_proc_thread(proc)->signal_mask;
-    get_proc_thread(proc)->signal_mask |= action->sa_mask;
+    KASSERT_DBG(proc_signal_deliverable(thread, signum));
+    ksigset_t old_mask = thread->signal_mask;
+    thread->signal_mask |= action->sa_mask;
     if (!(action->sa_flags & SA_NODEFER))
-      ksigaddset(&get_proc_thread(proc)->signal_mask, signum);
+      ksigaddset(&thread->signal_mask, signum);
 
     if (syscall_ctx && !(action->sa_flags & SA_RESTART))
       syscall_ctx->flags &= ~SCCTX_RESTARTABLE;
@@ -405,11 +415,13 @@ static void signal_assign_pending(process_t* proc) {
 
 int proc_assign_pending_signals(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
-  KASSERT_DBG(kthread_current_thread()->process == proc_current());
-  KASSERT_DBG(get_proc_threadc(proc_current()) == kthread_current_thread());
+  kthread_data_t* thread = kthread_current_thread();
+  KASSERT(thread->process == proc_current());
+  KASSERT_DBG(
+      list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
 
   signal_assign_pending(proc_current());
-  int result = !ksigisemptyset(kthread_current_thread()->assigned_signals);
+  int result = !ksigisemptyset(thread->assigned_signals);
 
   POP_INTERRUPTS();
   return result;
@@ -419,8 +431,10 @@ void proc_dispatch_pending_signals(const user_context_t* context,
                                    syscall_context_t* syscall_ctx) {
   PUSH_AND_DISABLE_INTERRUPTS();
 
-  const kthread_t thread = get_proc_thread(proc_current());
-  KASSERT_DBG(thread == kthread_current_thread());
+  const kthread_t thread = kthread_current_thread();
+  KASSERT_DBG(thread->process == proc_current());
+  KASSERT_DBG(
+      list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
 
   if (ksigisemptyset(thread->assigned_signals)) {
     POP_INTERRUPTS();
@@ -462,7 +476,11 @@ int proc_sigreturn(const ksigset_t* old_mask_ptr,
   PUSH_AND_DISABLE_INTERRUPTS();
 
   // Restore the old signal mask, then process any outstanding signals.
-  get_proc_thread(proc_current())->signal_mask = old_mask;
+  kthread_t thread = kthread_current_thread();
+  KASSERT_DBG(thread->process == proc_current());
+  KASSERT_DBG(
+      list_link_on_list(&proc_current()->threads, &thread->proc_threads_link));
+  thread->signal_mask = old_mask;
 
   // This catches, for example, signals raised in the signal handler that were
   // blocked.

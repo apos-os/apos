@@ -78,7 +78,7 @@ int proc_sigaction(int signum, const struct ksigaction* act,
 int proc_sigprocmask(int how, const ksigset_t* restrict set,
                      ksigset_t* restrict oset);
 
-// Return the current set of pending signals in the process.
+// Return the current set of pending signals in the calling thread.
 int proc_sigpending(ksigset_t* set);
 
 // Temporarily set the current thread's signal mask, then block until a signal

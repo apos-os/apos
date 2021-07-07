@@ -898,6 +898,7 @@ static void sigpending_test(void) {
   KEXPECT_EQ(1, ksigismember(&proc_current()->pending_signals, SIGUSR1));
   ksigset_t pending;
   KEXPECT_EQ(0, proc_sigpending(&pending));
+  KEXPECT_EQ(pending, proc_pending_signals(proc_current()));
   KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
   ksigdelset(&pending, SIGUSR1);
   KEXPECT_EQ(1, ksigisemptyset(pending));
@@ -924,7 +925,7 @@ static void sigpending_test(void) {
   pending = 123;
   KEXPECT_EQ(0, proc_sigpending(&pending));
   KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
-  ksigemptyset(&pending);
+  ksigdelset(&pending, SIGUSR1);
   KEXPECT_EQ(1, ksigisemptyset(pending));
 
   // Cleanup.
