@@ -49,7 +49,7 @@ static int g_proc_init_stage = 0;
 static void proc_init_process(process_t* p) {
   p->id = -1;
   p->state = PROC_INVALID;
-  p->thread = KTHREAD_NO_THREAD;
+  p->threads = LIST_INIT;
   p->exit_status = -0xABCD;
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     p->fds[i] = -1;
@@ -103,7 +103,7 @@ process_t* proc_alloc() {
 
 void proc_destroy(process_t* process) {
   KASSERT(process->state == PROC_INVALID);
-  KASSERT(process->thread == KTHREAD_NO_THREAD);
+  KASSERT(list_empty(&process->threads));
   KASSERT(process->page_directory == 0x0);
   KASSERT(process->id > 0 && process->id < PROC_MAX_PROCS);
   KASSERT(g_proc_table[process->id] == process);
@@ -165,8 +165,9 @@ void proc_init_stage2() {
   KASSERT(g_current_proc == 0);
 
   // Create first process.
-  g_proc_table[0]->thread = kthread_current_thread();
-  g_proc_table[0]->thread->process = g_proc_table[0];
+  list_push(&g_proc_table[0]->threads,
+            &kthread_current_thread()->proc_threads_link);
+  kthread_current_thread()->process = g_proc_table[0];
 
   g_proc_init_stage = 2;
 }

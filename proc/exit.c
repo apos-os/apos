@@ -27,7 +27,10 @@
 #include "vfs/vfs.h"
 
 void proc_exit(int status) {
-  KASSERT(kthread_current_thread() == proc_current()->thread);
+  KASSERT(&kthread_current_thread()->proc_threads_link ==
+          proc_current()->threads.head);
+  // Require only one thread, the main thread, for now.
+  KASSERT(proc_current()->threads.head == proc_current()->threads.tail);
   KASSERT(proc_current()->state == PROC_RUNNING ||
           proc_current()->state == PROC_STOPPED);
 
@@ -97,7 +100,6 @@ void proc_exit(int status) {
   scheduler_wake_all(&root_process->wait_queue);
 
   p->state = PROC_ZOMBIE;
-  p->thread = KTHREAD_NO_THREAD;
 
   // Send SIGCHLD to the parent.
   KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);

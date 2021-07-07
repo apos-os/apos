@@ -46,7 +46,7 @@ static inline const char* proc_state_to_string(proc_state_t state);
 struct process {
   kpid_t id;  // Index into global process table.
   proc_state_t state;
-  kthread_t thread;  // Main process thread.
+  list_t threads;  // All process threads.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
 
   // File descriptors.  Indexes into the global file table.

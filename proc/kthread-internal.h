@@ -88,6 +88,9 @@ struct kthread_data {
   // TODO(aoates): once we support multiple threads per process, consider using
   // a per-process thread list rather than a global one.
   list_link_t all_threads_link;
+
+  // Link on the per-process thread list.
+  list_link_t proc_threads_link;
 };
 typedef struct kthread_data kthread_data_t;
 

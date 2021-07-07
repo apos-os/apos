@@ -100,17 +100,20 @@ int proc_fork(proc_func_t start, void* arg) {
   trampoline_args->start = start;
   trampoline_args->arg = arg;
 
-  result = kthread_create_kernel(&new_process->thread, &proc_fork_trampoline,
+  kthread_t new_thread;
+  result = kthread_create_kernel(&new_thread, &proc_fork_trampoline,
                                  trampoline_args);
   if (result) {
     // TODO(aoates): clean up partial proc on failure.
     kfree(trampoline_args);
     return result;
   }
-  new_process->thread->process = new_process;
-  kthread_detach(new_process->thread);
+  // TODO(aoates): move this into a middle layer of thread management.
+  new_thread->process = new_process;
+  list_push(&new_process->threads, &new_thread->proc_threads_link);
+  kthread_detach(new_thread);
 
-  scheduler_make_runnable(new_process->thread);
+  scheduler_make_runnable(new_thread);
 
   new_process->parent = proc_current();
   list_push(&proc_current()->children_list,

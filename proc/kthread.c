@@ -58,6 +58,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->preemption_disables = 1;
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
+  t->proc_threads_link = LIST_LINK_INIT;
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -107,9 +108,13 @@ static int kthread_create_internal(process_t* parent, kthread_t* thread_ptr,
   ksigemptyset(&thread->signal_mask);
   list_push(&g_all_threads, &thread->all_threads_link);
 
-  // TODO(aoates): add the thread to the parent process's thread list, once
-  // we support multiple threads per process.
+  // TODO(aoates): consider moving all process thread list management out ofthis
+  // module for better layering (i.e. this module only handles kernel threads,
+  // and user-visible threads are handled in something layered on top).
   thread->process = parent;
+  if (parent) {
+    list_push(&parent->threads, &thread->proc_threads_link);
+  }
 
   // Allocate a stack for the thread.
   addr_t* stack = (addr_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
@@ -203,6 +208,14 @@ void kthread_exit(void* x) {
   // ourselves back on the run queue.
   g_current_thread->retval = x;
   g_current_thread->state = KTHREAD_DONE;
+
+  if (g_current_thread->process) {
+    KASSERT_DBG(list_link_on_list(&g_current_thread->process->threads,
+                                  &g_current_thread->proc_threads_link));
+    list_remove(&g_current_thread->process->threads,
+                &g_current_thread->proc_threads_link);
+    g_current_thread->process = NULL;
+  }
 
   // Schedule all the waiting threads.
   kthread_data_t* t = kthread_queue_pop(&g_current_thread->join_list);

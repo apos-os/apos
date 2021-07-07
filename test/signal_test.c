@@ -28,6 +28,16 @@
 #include "vfs/pipe.h"
 #include "vfs/vfs.h"
 
+// TODO(aoates): remove these helpers when proper multi-thread support is in.
+static kthread_data_t* get_proc_thread(process_t* proc) {
+  KASSERT_DBG(proc->threads.head == proc->threads.tail);
+  return container_of(proc->threads.head, kthread_data_t, proc_threads_link);
+}
+
+static kthread_data_t* proc_current_thread(void) {
+  return get_proc_thread(proc_current());
+}
+
 // Helper to determine if a signal is pending or assigned.
 static int is_signal_pending(const process_t* proc, int signum) {
   ksigset_t pending = proc_pending_signals(proc);
@@ -560,7 +570,7 @@ static void signal_interrupt_victim(void* arg) {
   struct victim_args* args = (struct victim_args*)arg;
 
   // TODO(aoates): use the appropriate syscall when available.
-  proc_current()->thread->signal_mask = args->mask;
+  proc_current_thread()->signal_mask = args->mask;
 
   int result = proc_sigaction(args->signum, &args->action, NULL);
   if (result) {
@@ -693,8 +703,8 @@ static void signal_interrupt_thread_test(void) {
 
     int child = proc_fork(&signal_interrupt_victim, &args);
     scheduler_yield();
-    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
-                                args.signum);
+    proc_force_signal_on_thread(proc_get(child),
+                                get_proc_thread(proc_get(child)), args.signum);
 
     KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
     scheduler_wake_all(&args.queue);
@@ -711,8 +721,8 @@ static void signal_interrupt_thread_test(void) {
 
     int child = proc_fork(&signal_interrupt_victim, &args);
     scheduler_yield();
-    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
-                                args.signum);
+    proc_force_signal_on_thread(proc_get(child),
+                                get_proc_thread(proc_get(child)), args.signum);
 
     KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
     scheduler_wake_all(&args.queue);
@@ -874,7 +884,7 @@ static void sigprocmask_test(void) {
 
 static void sigpending_test(void) {
   KTEST_BEGIN("sigpending() test -- unassigned signal");
-  ksigemptyset(&proc_current()->thread->assigned_signals);
+  ksigemptyset(&proc_current_thread()->assigned_signals);
 
   ksigset_t orig_mask;
   KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &orig_mask));
@@ -1070,7 +1080,7 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
-  KEXPECT_EQ(new_mask, proc_get(child)->thread->signal_mask);
+  KEXPECT_EQ(new_mask, get_proc_thread(proc_get(child))->signal_mask);
 
   KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1084,7 +1094,7 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
-  KEXPECT_EQ(mask2, proc_get(child)->thread->signal_mask);
+  KEXPECT_EQ(mask2, get_proc_thread(proc_get(child))->signal_mask);
 
   KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1190,7 +1200,7 @@ void signal_test(void) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
   ksigset_t saved_pending_signals = proc_current()->pending_signals;
-  ksigset_t saved_assigned_signals = proc_current()->thread->assigned_signals;
+  ksigset_t saved_assigned_signals = proc_current_thread()->assigned_signals;
   // TODO(aoates): do we want to save/restore the signal mask as well?
 
   ksigemptyset_test();
@@ -1224,5 +1234,5 @@ void signal_test(void) {
     }
   }
   proc_current()->pending_signals = saved_pending_signals;
-  proc_current()->thread->assigned_signals = saved_assigned_signals;
+  proc_current_thread()->assigned_signals = saved_assigned_signals;
 }
