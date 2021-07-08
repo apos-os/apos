@@ -49,12 +49,13 @@
 
 // Signals that are used internally within the kernel.
 #if __APOS_BUILDING_KERNEL__
-#define SIGAPOSTEST 28  // Test signal.
+#define SIGAPOSTEST 28  // Internal: test signal.
+#define SIGAPOSTKILL 29  // Internal: kill a thread.
 #endif
 
 #define APOS_SIGNULL 0
 #define APOS_SIGMIN 1
-#define APOS_SIGMAX 28
+#define APOS_SIGMAX 29
 
 // sighandler_t constants.
 #define SIG_DFL ((ksighandler_t)0x0)

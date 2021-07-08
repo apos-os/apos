@@ -31,6 +31,7 @@
 typedef enum {
   SIGACT_TERM,
   SIGACT_TERM_AND_CORE,
+  SIGACT_TERM_THREAD,
   SIGACT_IGNORE,
   SIGACT_STOP,
   SIGACT_CONTINUE,
@@ -67,7 +68,11 @@ static signal_default_action_t kDefaultActions[APOS_SIGMAX + 1] = {
   SIGACT_TERM_AND_CORE, // SIGXFSZ
   SIGACT_IGNORE,        // SIGWINCH
   SIGACT_IGNORE,        // SIGAPOSTEST
+  SIGACT_TERM_THREAD,   // SIGAPOSTKILL
 };
+
+static const ksigset_t kUnblockableSignals =
+    (1 << (SIGKILL - 1)) | (1 << (SIGSTOP - 1)) | (1 << (SIGAPOSTKILL - 1));
 
 ksigset_t proc_pending_signals(const process_t* proc) {
   ksigset_t set = proc->pending_signals;
@@ -145,6 +150,8 @@ static void proc_try_assign_signal(process_t* proc, int signum) {
 }
 
 int proc_force_signal(process_t* proc, int sig) {
+  KASSERT_DBG(sig != SIGAPOSTKILL);  // Must be sent to specific thread.
+
   PUSH_AND_DISABLE_INTERRUPTS();
   int result = ksigaddset(&proc->pending_signals, sig);
   proc_try_assign_signal(proc, sig);
@@ -246,7 +253,7 @@ int proc_sigaction(int signum, const struct ksigaction* act,
     return -EINVAL;
   }
 
-  if ((signum == SIGKILL || signum == SIGSTOP) && act != 0x0) {
+  if (ksigismember(&kUnblockableSignals, signum) && act != 0x0) {
     return -EINVAL;
   }
 
@@ -288,8 +295,7 @@ int proc_sigprocmask(int how, const ksigset_t* restrict set,
         return -EINVAL;
     }
   }
-  ksigdelset(&new_mask, SIGKILL);
-  ksigdelset(&new_mask, SIGSTOP);
+  new_mask = ksigsubtractset(new_mask, kUnblockableSignals);
   kthread_current_thread()->signal_mask = new_mask;
   return 0;
 }
@@ -373,10 +379,14 @@ static bool dispatch_signal(int signum, const user_context_t* context,
         KASSERT_DBG(proc_signal_deliverable(kthread_current_thread(), signum));
         proc_exit(128 + signum);
         die("unreachable");
+
+      case SIGACT_TERM_THREAD:
+        die("unimplemented");
     }
   } else {
     KASSERT_DBG(signum != SIGKILL);
     KASSERT_DBG(signum != SIGSTOP);
+    KASSERT_DBG(signum != SIGAPOSTKILL);
     kthread_data_t* thread = kthread_current_thread();
     KASSERT(thread->process == proc);
     KASSERT_DBG(list_link_on_list(&proc->threads, &thread->proc_threads_link));
@@ -507,6 +517,9 @@ _Static_assert(SYS_SIGRETURN == 21,
                "SYS_SIGRETURN must match the constant in syscall_trampoline.s");
 
 int proc_signal_allowed(const process_t* A, const process_t* B, int signal) {
+  // SIGAPOSTKILL is never allowed to be sent (except internally, to a specific
+  // thread, which bypasses this check).
+  if (signal == SIGAPOSTKILL) return 0;
   return (proc_is_superuser(A) ||
           A->ruid == B->ruid ||
           A->euid == B->ruid ||

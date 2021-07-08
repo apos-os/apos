@@ -43,6 +43,10 @@ static inline ksigset_t ksigunionset(ksigset_t A, ksigset_t B) {
   return A | B;
 }
 
+static inline ksigset_t ksigsubtractset(ksigset_t A, ksigset_t B) {
+  return A & ~B;
+}
+
 // Returns all the pending or assigned signals on the given process.
 ksigset_t proc_pending_signals(const process_t* proc);
 
