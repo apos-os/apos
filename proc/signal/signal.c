@@ -381,7 +381,8 @@ static bool dispatch_signal(int signum, const user_context_t* context,
         die("unreachable");
 
       case SIGACT_TERM_THREAD:
-        die("unimplemented");
+        proc_thread_exit(NULL);
+        die("unreachable");
     }
   } else {
     KASSERT_DBG(signum != SIGKILL);

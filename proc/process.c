@@ -20,11 +20,13 @@
 #include "memory/kmalloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "proc/exit.h"
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
+#include "proc/scheduler.h"
 #include "proc/session.h"
 #include "proc/signal/signal.h"
 #include "proc/user.h"
@@ -50,7 +52,7 @@ static void proc_init_process(process_t* p) {
   p->id = -1;
   p->state = PROC_INVALID;
   p->threads = LIST_INIT;
-  p->exit_status = -0xABCD;
+  p->exit_status = 0;
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     p->fds[i] = -1;
   }
@@ -190,4 +192,60 @@ void proc_set_current(process_t* process) {
               "bad process ID: %d", process->id);
   KASSERT(g_proc_table[process->id] == process);
   g_current_proc = process->id;
+}
+
+typedef struct {
+  void* (*start_routine)(void*);
+  void* arg;
+} proc_thread_tramp_args_t;
+
+// TODO(aoates): seems a bit silly to have a dedicated trampoline for this (in
+// addition to the standard kthread trampoline, which calls this); is there a
+// way to avoid it?
+// Trampolines to the start routine, calling proc_thread_exit() after rather
+// than kthread_exit().
+static void* proc_thread_trampoline(void* arg) {
+  proc_thread_tramp_args_t args = *(proc_thread_tramp_args_t*)arg;
+  kfree(arg);
+
+  proc_thread_exit(args.start_routine(args.arg));
+  die("unreachable");
+}
+
+int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
+                       void* arg) {
+  proc_thread_tramp_args_t* pt_args =
+      (proc_thread_tramp_args_t*)kmalloc(sizeof(proc_thread_tramp_args_t));
+  pt_args->start_routine = start_routine;
+  pt_args->arg = arg;
+  int result = kthread_create(thread, &proc_thread_trampoline, pt_args);
+  if (result) {
+    kfree(pt_args);
+    return result;
+  }
+
+  scheduler_make_runnable(*thread);
+
+  // TODO(aoates): move process thread list management from kthread to here.
+  return 0;
+}
+
+void proc_thread_exit(void* x) {
+  process_t* const p = proc_current();
+  kthread_t thread = kthread_current_thread();
+  KASSERT(thread->process == p);
+  KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
+  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
+  // TODO(aoates): move process thread list management from kthread to here.
+
+  // If we're the last thread left in the process, exit the process.
+  if (p->threads.head == p->threads.tail) {
+    KASSERT_DBG(p->threads.head == &thread->proc_threads_link);
+    proc_finish_exit();
+    die("unreachable");
+  }
+
+  // Someone else will clean up.
+  kthread_exit(x);
+  die("unreachable");
 }

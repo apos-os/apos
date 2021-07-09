@@ -65,6 +65,7 @@ void socket_unix_test(void);
 void socket_raw_test(void);
 void socket_udp_test(void);
 void run_user_tests(void);
+void proc_thread_test(void);
 
 int kernel_run_ktest(const char* name);
 
