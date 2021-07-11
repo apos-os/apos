@@ -105,5 +105,7 @@
 #define SYS_SENDTO 86
 #define SYS_APOS_KLOG 87
 #define SYS_APOS_RUN_KTEST 88
+#define SYS_APOS_THREAD_CREATE 89
+#define SYS_APOS_THREAD_EXIT 90
 
 #endif

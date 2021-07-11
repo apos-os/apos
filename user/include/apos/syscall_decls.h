@@ -31,6 +31,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#include "apos/thread.h"
 
 
 // Declare the userspace functions.
@@ -103,5 +104,7 @@ ssize_t send(int socket, const void* buf, size_t len, int flags);
 ssize_t sendto(int socket, const void* buf, size_t len, int flags, const struct sockaddr* dest_addr, socklen_t dest_len);
 int apos_klog(const char* msg);
 int apos_run_ktest(const char* name);
+int apos_thread_create(apos_uthread_id_t* id, void* stack, void* entry);
+int apos_thread_exit(void);
 
 #endif
