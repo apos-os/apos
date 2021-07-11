@@ -48,6 +48,7 @@ struct process {
   proc_state_t state;
   list_t threads;  // All process threads.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
+  bool exiting;  // Whether the process is exiting.
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];

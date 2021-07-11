@@ -53,6 +53,7 @@ static void proc_init_process(process_t* p) {
   p->state = PROC_INVALID;
   p->threads = LIST_INIT;
   p->exit_status = 0;
+  p->exiting = false;
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
     p->fds[i] = -1;
   }
@@ -214,6 +215,9 @@ static void* proc_thread_trampoline(void* arg) {
 
 int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
                        void* arg) {
+  if (proc_current()->exiting) {
+    return -EINTR;
+  }
   proc_thread_tramp_args_t* pt_args =
       (proc_thread_tramp_args_t*)kmalloc(sizeof(proc_thread_tramp_args_t));
   pt_args->start_routine = start_routine;

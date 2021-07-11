@@ -41,7 +41,10 @@ void proc_exit(int status) {
   // this....that's fine.
   p->exit_status = status;
 
-  // TODO(aoates): prevent creation of new threads after this point.
+  // Prevent any new threads from being created.  In the last-thread-exits
+  // scenario where proc_exit() isn't called, this is unnecessary because the
+  // only thread that could be creating new threads is itself exiting.
+  p->exiting = true;
 
   // Terminate all threads in the process, then exit this one (which will clean
   // up the process if it's the last one running).

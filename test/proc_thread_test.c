@@ -119,6 +119,31 @@ static void trampoline_exits2(void* x) {
   proc_thread_exit(NULL);  // Let the other thread exit the process..
 }
 
+// Simulates a thread creation call that happens after or simultaneously with
+// another thread calling proc_exit().  This can't currently happen (because the
+// kernel is single-threaded and non-preemptible), but could in the future.
+static void* sleep_then_create_thread(void* x) {
+  ksleep(10);
+  KEXPECT_EQ(true, has_sigtkill());
+  kthread_t B;
+  // This new thread probably shouldn't run.  If it _does_ run, it should be
+  // immediately killed.
+  int result = proc_thread_create(&B, sleep_and_be_killed, (void*)0x1234);
+  if (result == 0) {
+    kthread_detach(B);
+  } else {
+    KEXPECT_EQ(-EINTR, result);
+  }
+  proc_thread_exit(NULL);
+}
+
+static void new_thread_after_exit(void* x) {
+  kthread_t A;
+  KEXPECT_EQ(0, proc_thread_create(&A, sleep_then_create_thread, NULL));
+  kthread_detach(A);
+  proc_exit(0);
+}
+
 static void basic_tests(void) {
   KTEST_BEGIN("proc threads: one thread, exits with proc_thread_exit()");
   kpid_t pid = proc_fork(&one_thread_exit_test, (void*)0x1234);
@@ -164,6 +189,12 @@ static void basic_tests(void) {
 
   KTEST_BEGIN("proc threads: trampoline exits process");
   pid = proc_fork(&trampoline_exits2, NULL);
+  status = -1;
+  KEXPECT_EQ(pid, proc_waitpid(pid, &status, 0));
+  KEXPECT_EQ(0, status);
+
+  KTEST_BEGIN("proc threads: thread created during exit");
+  pid = proc_fork(&new_thread_after_exit, NULL);
   status = -1;
   KEXPECT_EQ(pid, proc_waitpid(pid, &status, 0));
   KEXPECT_EQ(0, status);
