@@ -278,12 +278,115 @@ static void invalid_args_tests(void) {
   KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
 }
 
+static void sleep_then_write(void* arg) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGTSTP);
+  assert(0 == sigprocmask(SIG_BLOCK, &mask, NULL));
+
+  sleep_ms(10);
+  sleep_ms(10);
+  char file[100];
+  sprintf(file, "thread%d", (int)arg);
+  int fd = open(file, O_CREAT | O_RDWR, S_IRWXU);
+  assert(fd >= 0);
+  close(fd);
+  apos_thread_exit();
+}
+
+static bool file_exists(const char* path) {
+  int fd = open(path, O_RDONLY);
+  if (fd >= 0) {
+    close(fd);
+    return true;
+  }
+  assert(errno == ENOENT);
+  return false;
+}
+
+static void multi_threaded_stop_test(void) {
+  KTEST_BEGIN("threads: SIGSTOP stops all threads");
+  pid_t pid = fork();
+  if (pid == 0) {
+    apos_uthread_id_t ids[3];
+    create_thread(&ids[0], &sleep_then_write, (void*)1);
+    create_thread(&ids[1], &sleep_then_write, (void*)2);
+    create_thread(&ids[2], &sleep_then_write, (void*)3);
+    apos_thread_exit();
+  }
+  sleep_ms(1);
+  kill(pid, SIGSTOP);
+  sleep_ms(30);
+  KEXPECT_FALSE(file_exists("thread1"));
+  KEXPECT_FALSE(file_exists("thread2"));
+  KEXPECT_FALSE(file_exists("thread3"));
+  kill(pid, SIGCONT);
+  sleep_ms(30);
+  KEXPECT_TRUE(file_exists("thread1"));
+  KEXPECT_TRUE(file_exists("thread2"));
+  KEXPECT_TRUE(file_exists("thread3"));
+  kill(pid, SIGKILL);
+  KEXPECT_EQ(0, unlink("thread1"));
+  KEXPECT_EQ(0, unlink("thread2"));
+  KEXPECT_EQ(0, unlink("thread3"));
+
+
+  KTEST_BEGIN("threads: SIGTSTP stops all threads (even if masked in some)");
+  pid = fork();
+  if (pid == 0) {
+    apos_uthread_id_t ids[3];
+    create_thread(&ids[0], &sleep_then_write, (void*)1);
+    create_thread(&ids[1], &sleep_then_write, (void*)2);
+    create_thread(&ids[2], &sleep_then_write, (void*)3);
+    sleep(10);  // This thread will handle the SIGTSTP.
+    apos_thread_exit();
+  }
+  sleep_ms(1);
+  kill(pid, SIGTSTP);
+  sleep_ms(30);
+  KEXPECT_FALSE(file_exists("thread1"));
+  KEXPECT_FALSE(file_exists("thread2"));
+  KEXPECT_FALSE(file_exists("thread3"));
+  kill(pid, SIGCONT);
+  sleep_ms(30);
+  KEXPECT_TRUE(file_exists("thread1"));
+  KEXPECT_TRUE(file_exists("thread2"));
+  KEXPECT_TRUE(file_exists("thread3"));
+  kill(pid, SIGKILL);
+  KEXPECT_EQ(0, unlink("thread1"));
+  KEXPECT_EQ(0, unlink("thread2"));
+  KEXPECT_EQ(0, unlink("thread3"));
+
+
+  KTEST_BEGIN("threads: SIGTSTP masked in all threads");
+  pid = fork();
+  KEXPECT_FALSE(file_exists("thread1"));
+  if (pid == 0) {
+    apos_uthread_id_t ids[3];
+    create_thread(&ids[0], &sleep_then_write, (void*)1);
+    create_thread(&ids[1], &sleep_then_write, (void*)2);
+    create_thread(&ids[2], &sleep_then_write, (void*)3);
+    apos_thread_exit();
+  }
+  sleep_ms(1);
+  kill(pid, SIGTSTP);
+  sleep_ms(30);
+  KEXPECT_TRUE(file_exists("thread1"));
+  KEXPECT_TRUE(file_exists("thread2"));
+  KEXPECT_TRUE(file_exists("thread3"));
+  kill(pid, SIGKILL);
+  KEXPECT_EQ(0, unlink("thread1"));
+  KEXPECT_EQ(0, unlink("thread2"));
+  KEXPECT_EQ(0, unlink("thread3"));
+}
+
 void thread_test(void) {
   KTEST_SUITE_BEGIN("thread tests");
 
   basic_thread_test();
   more_tests();
   invalid_args_tests();
+  multi_threaded_stop_test();
 
   // TODO(aoates): other interesting tests:
   //  - signal masks and delivery
