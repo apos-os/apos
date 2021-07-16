@@ -369,6 +369,7 @@ static void multi_threaded_stop_test(void) {
     apos_thread_exit();
   }
   sleep_ms(1);
+  sleep_ms(1);
   kill(pid, SIGTSTP);
   sleep_ms(30);
   KEXPECT_TRUE(file_exists("thread1"));
@@ -380,6 +381,86 @@ static void multi_threaded_stop_test(void) {
   KEXPECT_EQ(0, unlink("thread3"));
 }
 
+typedef struct {
+  sigset_t set;
+  int result;
+  int sig;
+  bool thread_done;
+} threadtest_data_t;
+
+static void thread_sigwait(void* arg) {
+  threadtest_data_t* data = (threadtest_data_t*)arg;
+  assert(0 == sigprocmask(SIG_BLOCK, &data->set, NULL));
+  data->result = sigwait(&data->set, &data->sig);
+  data->thread_done = true;
+}
+
+static int count_done(const threadtest_data_t* data, int n) {
+  int count = 0;
+  for (int i = 0; i < n; ++i) {
+    if (data[i].thread_done) count++;
+  }
+  return count;
+}
+
+static void basic_thread_signal_test(void) {
+  KTEST_BEGIN("threads: signals are only delivered to one thread");
+  sigset_t set, orig_set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  sigaddset(&set, SIGUSR2);
+  sigaddset(&set, SIGHUP);
+  sigprocmask(SIG_BLOCK, &set, &orig_set);
+
+  apos_uthread_id_t threads[3];
+  threadtest_data_t data[3];
+  for (int i = 0; i < 3; ++i) {
+    data[i].set = set;
+    data[i].sig = -1;
+    data[i].result = -1;
+    data[i].thread_done = false;
+    KEXPECT_EQ(0, create_thread(&threads[i], &thread_sigwait, &data[i]));
+  }
+  sleep_ms(10);
+  KEXPECT_EQ(0, count_done(data, 3));
+
+  KEXPECT_EQ(0, kill(getpid(), SIGUSR1));
+  sleep_ms(10);
+  KEXPECT_EQ(1, count_done(data, 3));
+  int sigusr1_thread = 0;
+  for (int i = 0; i < 3; ++i) {
+    if (data[i].thread_done) {
+      KEXPECT_EQ(0, data[i].result);
+      KEXPECT_EQ(SIGUSR1, data[i].sig);
+      sigusr1_thread = i;
+    }
+  }
+
+  KEXPECT_EQ(0, kill(getpid(), SIGUSR2));
+  sleep_ms(10);
+  KEXPECT_EQ(2, count_done(data, 3));
+  int sigusr2_thread = 0;
+  for (int i = 0; i < 3; ++i) {
+    if (data[i].thread_done && i != sigusr1_thread) {
+      KEXPECT_EQ(0, data[i].result);
+      KEXPECT_EQ(SIGUSR2, data[i].sig);
+      sigusr2_thread = i;
+    }
+  }
+
+  KEXPECT_EQ(0, kill(getpid(), SIGHUP));
+  sleep_ms(10);
+  KEXPECT_EQ(3, count_done(data, 3));
+  for (int i = 0; i < 3; ++i) {
+    if (data[i].thread_done && i != sigusr1_thread && i != sigusr2_thread) {
+      KEXPECT_EQ(0, data[i].result);
+      KEXPECT_EQ(SIGHUP, data[i].sig);
+    }
+  }
+
+  KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &orig_set, NULL));
+}
+
 void thread_test(void) {
   KTEST_SUITE_BEGIN("thread tests");
 
@@ -387,6 +468,8 @@ void thread_test(void) {
   more_tests();
   invalid_args_tests();
   multi_threaded_stop_test();
+
+  basic_thread_signal_test();
 
   // TODO(aoates): other interesting tests:
   //  - signal masks and delivery

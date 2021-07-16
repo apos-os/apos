@@ -25,3 +25,4 @@ thread_test_create_tramp:
   # Thread function arg and address were pushed.  Pop the address and call it.
   popl %eax
   call %eax
+  call apos_thread_exit
