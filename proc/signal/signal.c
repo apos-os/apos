@@ -352,15 +352,16 @@ int proc_sigwait(const ksigset_t* set, int* sig_out) {
   result = -EINTR;
   if (!ksigisemptyset(waitable_signals)) {
     for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
-      if (ksigismember(&waitable_signals, signum)) {
+      // We use proc_signal_deliverable() as well as checking the mask to ignore
+      // signals that are ignored.
+      if (ksigismember(&waitable_signals, signum) &&
+          proc_signal_deliverable(thread, signum)) {
+        ksigdelset(&thread->assigned_signals, signum);
         *sig_out = signum;
         result = 0;
         break;
       }
     }
-    KASSERT(result == 0);
-
-    ksigdelset(&thread->assigned_signals, *sig_out);
   }
 
   KASSERT(0 == proc_sigprocmask(SIG_SETMASK, &old_mask, NULL));
@@ -451,8 +452,7 @@ static bool dispatch_signal(int signum, const user_context_t* context,
 }
 
 // Assign any pending signals in the process to a thread that can handle them,
-// if any.  Since we currently only have one thread per process, this is pretty
-// straightforward.
+// if any.
 static void signal_assign_pending(process_t* proc) {
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
     if (ksigismember(&proc->pending_signals, signum)) {
