@@ -89,6 +89,9 @@ int proc_sigpending(ksigset_t* set);
 // is delivered.
 int proc_sigsuspend(const ksigset_t* sigmask);
 
+// Waits for one of the given signals to be delivered, then returns.
+int proc_sigwait(const ksigset_t* set, int* sig);
+
 // Cancel/suppress the given signal in the given process and its threads.
 // Useful in tests.
 void proc_suppress_signal(process_t* proc, int sig);

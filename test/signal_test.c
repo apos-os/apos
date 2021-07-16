@@ -1215,6 +1215,112 @@ static void zombie_test(void) {
   KEXPECT_EQ(1, WIFEXITED(status));
 }
 
+typedef struct {
+  bool done[3];
+  int sig[3];
+} sigwait_test_helper_args;
+
+static void* sigwait_test_helper1(void* arg) {
+  sigwait_test_helper_args* args = (sigwait_test_helper_args*)arg;
+
+  ksigset_t set, orig_set;
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGUSR2);
+  ksigaddset(&set, SIGTERM);  // For kicks.
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &set, &orig_set));
+
+  ksigdelset(&set, SIGTERM);
+  KEXPECT_EQ(0, proc_sigwait(&set, &args->sig[0]));
+  args->done[0] = true;
+  KEXPECT_TRUE(args->sig[0] == SIGUSR1 || args->sig[0] == SIGUSR2);
+  KEXPECT_FALSE(ksigismember(&kthread_current_thread()->assigned_signals,
+                             args->sig[0]));
+
+  KEXPECT_EQ(0, proc_sigwait(&set, &args->sig[1]));
+  args->done[1] = true;
+  KEXPECT_TRUE(args->sig[1] == SIGUSR1 || args->sig[1] == SIGUSR2);
+  KEXPECT_NE(args->sig[0], args->sig[1]);
+  KEXPECT_FALSE(ksigismember(&kthread_current_thread()->assigned_signals,
+                             args->sig[1]));
+
+  args->sig[2] = -1;
+  KEXPECT_EQ(-EINTR, proc_sigwait(&set, &args->sig[2]));
+  args->done[2] = true;
+  KEXPECT_EQ(-1, args->sig[2]);
+  return NULL;
+}
+
+static void sigwait_test_proc(void* arg) {
+  KTEST_BEGIN("sigwait(): basic test");
+  ksigset_t set;
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGUSR2);
+  ksigaddset(&set, SIGTERM);
+  ksigaddset(&set, SIGINT);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &set, NULL));
+
+  kthread_t thread;
+  sigwait_test_helper_args args;
+  for (int i = 0; i < 3; ++i) args.done[i] = false;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &sigwait_test_helper1, &args));
+
+  ksleep(10);
+  KEXPECT_FALSE(args.done[0]);
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGUSR1));
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGUSR2));
+  ksleep(10);
+  KEXPECT_TRUE(args.done[0]);
+  ksleep(10);
+  KEXPECT_TRUE(args.done[1]);
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGTERM));
+  ksleep(10);
+  KEXPECT_FALSE(args.done[2]);
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGINT));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  KTEST_BEGIN("sigwait(): rejects if mask contains unblocked signals");
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGURG);
+  int sig;
+  KEXPECT_EQ(-EINVAL, proc_sigwait(&set, &sig));
+  ksigdelset(&set, SIGURG);
+  ksigaddset(&set, SIGKILL);
+  KEXPECT_EQ(-EINVAL, proc_sigwait(&set, &sig));
+
+  KTEST_BEGIN("sigwait(): returns already-pending signal");
+  ksigset_t orig_set;
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGUSR2);
+  proc_sigprocmask(SIG_BLOCK, &set, &orig_set);
+  proc_kill(proc_current()->id, SIGUSR1);
+  proc_kill(proc_current()->id, SIGUSR2);
+  KEXPECT_TRUE(ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  KEXPECT_TRUE(ksigismember(&proc_current()->pending_signals, SIGUSR2));
+  KEXPECT_EQ(0, proc_sigwait(&set, &sig));
+  // Note: the SIGUSR1 then SIGUSR2 ordering isn't guaranteed, but the current
+  // implementation will always do it this way.
+  KEXPECT_EQ(SIGUSR1, sig);
+  KEXPECT_FALSE(is_signal_pending(proc_current(), SIGUSR1));
+  KEXPECT_EQ(0, proc_sigwait(&set, &sig));
+  KEXPECT_EQ(SIGUSR2, sig);
+  KEXPECT_FALSE(is_signal_pending(proc_current(), SIGUSR2));
+
+  KTEST_BEGIN("sigwait(): restores old signal mask");
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, NULL, &set));
+  KEXPECT_EQ(set, orig_set);
+}
+
+static void sigwait_test(void) {
+  KTEST_BEGIN("sigwait(): test setup");
+  kpid_t child = proc_fork(&sigwait_test_proc, NULL);
+  KEXPECT_GE(child, 0);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -1250,6 +1356,7 @@ void signal_test(void) {
   dispatchable_test();
   sigsuspend_test();
   zombie_test();
+  sigwait_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {

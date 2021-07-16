@@ -330,6 +330,43 @@ int proc_sigsuspend(const ksigset_t* sigmask) {
   return -EINTR;
 }
 
+int proc_sigwait(const ksigset_t* set, int* sig_out) {
+  // All requested signals must already be blocked.
+  kthread_t thread = kthread_current_thread();
+  if ((*set & thread->signal_mask) != *set) {
+    return -EINVAL;
+  }
+
+  ksigset_t old_mask;
+  int result = proc_sigprocmask(SIG_UNBLOCK, set, &old_mask);
+  KASSERT_DBG(result == 0);
+  proc_assign_pending_signals();
+
+  kthread_queue_t queue;
+  kthread_queue_init(&queue);
+  result = scheduler_wait_on_interruptable(&queue, -1);
+  KASSERT_DBG(result == SWAIT_INTERRUPTED);
+
+  // Find a signal to pass back.
+  ksigset_t waitable_signals = *set & thread->assigned_signals;
+  result = -EINTR;
+  if (!ksigisemptyset(waitable_signals)) {
+    for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
+      if (ksigismember(&waitable_signals, signum)) {
+        *sig_out = signum;
+        result = 0;
+        break;
+      }
+    }
+    KASSERT(result == 0);
+
+    ksigdelset(&thread->assigned_signals, *sig_out);
+  }
+
+  KASSERT(0 == proc_sigprocmask(SIG_SETMASK, &old_mask, NULL));
+  return result;
+}
+
 void proc_suppress_signal(process_t* proc, int sig) {
   ksigdelset(&proc->pending_signals, sig);
   FOR_EACH_LIST(iter_link, &proc->threads) {
