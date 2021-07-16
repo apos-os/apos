@@ -106,5 +106,6 @@ int apos_klog(const char* msg);
 int apos_run_ktest(const char* name);
 int apos_thread_create(apos_uthread_id_t* id, void* stack, void* entry);
 int apos_thread_exit(void);
+int sigwait(const ksigset_t* sigmask, int* sig);
 
 #endif

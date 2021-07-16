@@ -662,6 +662,36 @@ static void restartable_syscall_test(void) {
   // TODO(aoates): test nested signal delivery and syscalls (mixed restartable).
 }
 
+static void sigwait_test(void) {
+  KTEST_BEGIN("sigwait(): invalid arguments tests");
+  sigset_t set;
+  sigemptyset(&set);
+  int sig;
+  KEXPECT_ERRNO(EFAULT, sigwait(&set, NULL));
+  KEXPECT_ERRNO(EFAULT, sigwait(&set, (int*)0x12345));
+  KEXPECT_ERRNO(EFAULT, sigwait(NULL, &sig));
+  KEXPECT_ERRNO(EFAULT, sigwait((sigset_t*)0x12345, &sig));
+
+
+  KTEST_BEGIN("sigwait(): basic test");
+  pid_t child = fork();
+  if (child == 0) {
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    assert(0 == sigprocmask(SIG_BLOCK, &set, NULL));
+    assert(0 == sigwait(&set, &sig));
+    assert(sig == SIGUSR1);
+    exit(0);
+  }
+
+  sleep_ms(10);
+  kill(child, SIGUSR1);
+
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -686,6 +716,7 @@ void basic_signal_test(void) {
 
   sigsuspend_test();
   restartable_syscall_test();
+  sigwait_test();
 
   // TODO(aoates): test nested signal handling.
 }
