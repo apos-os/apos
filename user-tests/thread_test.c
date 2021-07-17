@@ -461,6 +461,97 @@ static void basic_thread_signal_test(void) {
   KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &orig_set, NULL));
 }
 
+static void get_signal(void* arg) {
+  *(int*)arg = 0;
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  sigaddset(&set, SIGUSR2);
+  assert(0 == sigprocmask(SIG_SETMASK, &set, NULL));
+
+  sigdelset(&set, SIGUSR2);
+  int sig;
+  assert(0 == sigwait(&set, &sig));
+  assert(sig == SIGUSR1);
+  *(int*)arg = 1;
+
+  sigdelset(&set, SIGUSR1);
+  sigaddset(&set, SIGUSR2);
+  assert(0 == sigwait(&set, &sig));
+  assert(sig == SIGUSR2);
+  *(int*)arg = 2;
+}
+
+static void send_signal_to_thread_test(void) {
+  KTEST_BEGIN("apos_thread_kill(): send SIGNULL checks perms");
+  apos_uthread_id_t ids[3];
+  int status[3];
+  for (int i = 0; i < 3; ++i) {
+    status[i] = -1;
+    KEXPECT_EQ(0, create_thread(&ids[i], &get_signal, &status[i]));
+  }
+
+  KEXPECT_EQ(0, apos_thread_kill(&ids[0], 0));
+
+  KTEST_BEGIN("apos_thread_kill(): sending invalid signals");
+  KEXPECT_ERRNO(EPERM, apos_thread_kill(&ids[0], 29 /* SIGAPOSTKILL */));
+  KEXPECT_ERRNO(EINVAL, apos_thread_kill(&ids[0], 100));
+  KEXPECT_ERRNO(EINVAL, apos_thread_kill(&ids[0], -1));
+  KEXPECT_ERRNO(EINVAL, apos_thread_kill(&ids[0], APOS_SIGMAX + 1));
+  KEXPECT_ERRNO(EINVAL, apos_thread_kill(&ids[0], APOS_SIGMIN - 2));
+
+  KTEST_BEGIN("apos_thread_kill(): invalid IDs");
+  apos_uthread_id_t bad_id;
+  bad_id._id = -1;
+  KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
+  KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, SIGINT));
+  bad_id._id = 1;
+  KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
+  bad_id._id = ids[2]._id + 1;
+  KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
+  bad_id._id = 10000;  // In theory this could actually be one of the above IDs
+  KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
+  KEXPECT_ERRNO(EFAULT, apos_thread_kill(NULL, 0));
+  KEXPECT_ERRNO(EFAULT, apos_thread_kill((const apos_uthread_id_t*)0x12345, 0));
+
+  // Despite all the above tests, the threads should not have progressed.
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  KEXPECT_EQ(0, status[0]);
+  KEXPECT_EQ(0, status[1]);
+  KEXPECT_EQ(0, status[2]);
+
+  KTEST_BEGIN("apos_thread_kill(): send to particular thread");
+  KEXPECT_EQ(0, apos_thread_kill(&ids[1], SIGUSR2));
+  // It was masked, none of them should have woken up.
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  KEXPECT_EQ(0, status[0]);
+  KEXPECT_EQ(0, status[1]);
+  KEXPECT_EQ(0, status[2]);
+
+  KEXPECT_EQ(0, apos_thread_kill(&ids[2], SIGUSR1));
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  KEXPECT_EQ(0, status[0]);
+  KEXPECT_EQ(0, status[1]);
+  KEXPECT_EQ(1, status[2]);
+
+  KEXPECT_EQ(0, apos_thread_kill(&ids[1], SIGUSR1));
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  KEXPECT_EQ(0, status[0]);
+  KEXPECT_EQ(2, status[1]);
+  KEXPECT_EQ(1, status[2]);
+
+  KEXPECT_EQ(0, apos_thread_kill(&ids[0], SIGUSR1));
+  KEXPECT_EQ(0, apos_thread_kill(&ids[2], SIGUSR2));
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  KEXPECT_EQ(1, status[0]);
+  KEXPECT_EQ(2, status[1]);
+  KEXPECT_EQ(2, status[2]);
+
+  KEXPECT_EQ(0, apos_thread_kill(&ids[0], SIGUSR2));
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  KEXPECT_EQ(2, status[0]);
+}
+
 void thread_test(void) {
   KTEST_SUITE_BEGIN("thread tests");
 
@@ -470,6 +561,7 @@ void thread_test(void) {
   multi_threaded_stop_test();
 
   basic_thread_signal_test();
+  send_signal_to_thread_test();
 
   // TODO(aoates): other interesting tests:
   //  - signal masks and delivery

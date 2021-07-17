@@ -17,6 +17,7 @@
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "proc/process.h"
+#include "proc/signal/signal.h"
 
 typedef struct {
   addr_t stack;
@@ -54,4 +55,15 @@ int proc_thread_create_user(apos_uthread_id_t* id_out, void* stack,
 
 int proc_thread_exit_user() {
   proc_thread_exit(NULL);
+}
+
+int proc_thread_kill_user(const apos_uthread_id_t* id, int sig) {
+  FOR_EACH_LIST(iter_link, &proc_current()->threads) {
+    kthread_data_t* thread =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    if (thread->id == id->_id) {
+      return proc_kill_thread(thread, sig);
+    }
+  }
+  return -ESRCH;
 }

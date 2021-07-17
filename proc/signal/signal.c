@@ -247,6 +247,24 @@ int proc_kill(kpid_t pid, int sig) {
   }
 }
 
+int proc_kill_thread(kthread_t thread, int sig) {
+  KASSERT(thread->process);
+
+  if (sig < APOS_SIGNULL || sig > APOS_SIGMAX) {
+    return -EINVAL;
+  }
+
+  if (!proc_signal_allowed(proc_current(), thread->process, sig)) {
+    return -EPERM;
+  }
+
+  if (sig == APOS_SIGNULL) {
+    return 0;
+  }
+
+  return proc_force_signal_on_thread(thread->process, thread, sig);
+}
+
 int proc_sigaction(int signum, const struct ksigaction* act,
                    struct ksigaction* oldact) {
   if (signum < APOS_SIGMIN || signum > APOS_SIGMAX) {

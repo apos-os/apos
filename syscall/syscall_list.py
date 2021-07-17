@@ -555,3 +555,8 @@ AddSyscall('apos_thread_exit', 90, 'proc_thread_exit_user',
 AddSyscall('sigwait', 91, 'proc_sigwait', 'proc/signal/signal.h', '<signal.h>',
            'int', ['const ksigset_t*:sigmask:br:sizeof(ksigset_t)',
              'int*:sig:bw:sizeof(int)'])
+
+AddSyscall('apos_thread_kill', 92, 'proc_thread_kill_user',
+           'proc/user_thread.h', 'apos/thread.h', 'int',
+           ['const apos_uthread_id_t*:id:br:sizeof(apos_uthread_id_t)',
+            'int:sig:u'])

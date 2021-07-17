@@ -72,6 +72,7 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
 int proc_kill(kpid_t pid, int sig);
+int proc_kill_thread(kthread_t thread, int sig);
 
 // Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
 // success, or -errno on error.

@@ -95,6 +95,13 @@ void kexpect_int(const char* name, const char* file, const char* line,
 #define KEXPECT_FALSE(b) \
   KEXPECT_INT_("KEXPECT_FALSE", "false", #b, false, ((bool)(b)), ==, " != ")
 
+#define KEXPECT_ERRNO(e, expr) do { \
+  int _result_val = (expr); \
+  int _saved_errno = errno; \
+  KEXPECT_EQ(-1, _result_val); \
+  KEXPECT_EQ((e), _saved_errno); \
+} while (0)
+
 // Initialize the testing framework.
 void ktest_begin_all(void);
 

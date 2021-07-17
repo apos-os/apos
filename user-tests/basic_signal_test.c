@@ -554,13 +554,6 @@ static void sigsuspend_test(void) {
   KEXPECT_EQ(0, sigaction(SIGURG, &act, NULL));
 }
 
-#define KEXPECT_ERRNO(e, expr) do { \
-  int _result_val = (expr); \
-  int _saved_errno = errno; \
-  KEXPECT_EQ(-1, _result_val); \
-  KEXPECT_EQ((e), _saved_errno); \
-} while (0)
-
 static int g_counter = 0;
 static int g_counter_by_sig[APOS_SIGMAX + 1];
 static void counter_handler(int sig) {
