@@ -119,8 +119,7 @@ static void open_test(void) {
 
   kthread_t thread;
   reader_open_finished = false;
-  KEXPECT_EQ(0, kthread_create(&thread, do_reader_open, &fifo));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, do_reader_open, &fifo));
   for (int i = 0; i < 10 && fifo.num_readers == 1; ++i) scheduler_yield();
   KEXPECT_EQ(false, reader_open_finished);
   KEXPECT_EQ(2, fifo.num_readers);
@@ -149,8 +148,7 @@ static void open_test(void) {
   KEXPECT_EQ(0, fifo_open(&fifo, FIFO_WRITE, false, true));
 
   writer_open_finished = false;
-  KEXPECT_EQ(0, kthread_create(&thread, do_writer_open, &fifo));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, do_writer_open, &fifo));
   for (int i = 0; i < 10 && fifo.num_writers == 1; ++i) scheduler_yield();
   KEXPECT_EQ(false, writer_open_finished);
   KEXPECT_EQ(0, fifo.num_readers);
@@ -296,8 +294,7 @@ static void read_test(void) {
   args.len = 100;
 
   kmemset(buf, '\0', 100);
-  KEXPECT_EQ(0, kthread_create(&thread, &do_read, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_read, &args));
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
 
@@ -328,8 +325,7 @@ static void read_test(void) {
   args.buf = buf;
   args.len = 100;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_read, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_read, &args));
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
 
@@ -483,8 +479,7 @@ static void write_testA(apos_fifo_t* f, void* big_buf, void* big_buf2) {
   args.buf = big_buf;
   args.len = APOS_FIFO_BUF_SIZE - 100;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_write, &args));
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
@@ -541,8 +536,7 @@ static void write_testB(apos_fifo_t* f, void* big_buf, void* big_buf2) {
 
   args.len = APOS_FIFO_BUF_SIZE - 100;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_write, &args));
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
   circbuf_realign(&f->cbuf);
@@ -614,8 +608,7 @@ static void write_testC(apos_fifo_t* f, void* big_buf, void* big_buf2) {
     kmemset(big_buf, 'X', kBigBufSize);
     args.len = kAtomicWriteSizes[i][0];
 
-    KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
-    scheduler_make_runnable(thread);
+    KEXPECT_EQ(0, proc_thread_create(&thread, &do_write, &args));
     op_wait_start(&args);
     KEXPECT_EQ(false, args.finished);
     KEXPECT_EQ(orig_write_size, f->cbuf.len);
@@ -683,8 +676,7 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
   kmemset(big_buf, 'X', kBigBufSize);
   args.len = APOS_FIFO_BUF_SIZE * 1.5;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_write, &args));
   op_wait_start(&args);
   KEXPECT_EQ(false, args.finished);
   circbuf_realign(&f->cbuf);
@@ -772,8 +764,7 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
              fifo_write(f, big_buf, APOS_FIFO_BUF_SIZE, false));
 
   args.len = 100;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_write, &args));
   op_wait_start(&args);
 
   // Close second-to-last reader.
@@ -804,8 +795,7 @@ static void write_testD(apos_fifo_t* f, void* big_buf, void* big_buf2) {
   kmemset(big_buf, 'X', kBigBufSize);
 
   args.len = APOS_FIFO_BUF_SIZE;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_write, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_write, &args));
   op_wait_start(&args);
   KEXPECT_EQ(APOS_FIFO_BUF_SIZE, f->cbuf.len);
 

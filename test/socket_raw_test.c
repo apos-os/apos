@@ -491,8 +491,7 @@ static void raw_poll_test(void) {
 
   KTEST_BEGIN("vfs_poll(SOCK_RAW): blocking for KPOLLIN on readable raw socket");
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll_helper, &recv_sock));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll_helper, &recv_sock));
   // Make sure we get good and stuck in vfs_poll()
   for (int i = 0; i < 20; ++i) scheduler_yield();
   KEXPECT_NE(NULL, thread->queue);
@@ -509,8 +508,7 @@ static void raw_poll_test(void) {
 
 
   KTEST_BEGIN("vfs_poll(UDP): underlying socket closed during poll");
-  KEXPECT_EQ(0, kthread_create(&thread, &deferred_close, &recv_sock));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &deferred_close, &recv_sock));
 
   pfd.events = 0;
   KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));

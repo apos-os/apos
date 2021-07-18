@@ -76,8 +76,7 @@ static void stat_test(void) {
 
   KTEST_BEGIN("fstat() FIFO test");
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
 
   int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
@@ -103,8 +102,7 @@ static void open_test(void) {
   KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
 
   int fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
   KEXPECT_GE(fd, 0);
@@ -115,8 +113,7 @@ static void open_test(void) {
 
   KTEST_BEGIN("open() FIFO test (O_WRONLY)");
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_RDONLY));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_open, (void*)VFS_O_RDONLY));
 
   fd = vfs_open("fifo_test/fifo", VFS_O_WRONLY);
   KEXPECT_GE(fd, 0);
@@ -160,8 +157,7 @@ static void read_write_test(void) {
   KEXPECT_EQ(0, vfs_mknod("fifo_test/fifo", VFS_S_IFIFO | VFS_S_IRWXU, 0));
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_open, (void*)VFS_O_WRONLY));
 
   int read_fd = vfs_open("fifo_test/fifo", VFS_O_RDONLY);
   KEXPECT_GE(read_fd, 0);
@@ -188,8 +184,7 @@ static void read_write_test(void) {
   op.finished = op.started = false;
   op.is_read = true;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_op, &op));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_op, &op));
 
   for (int i = 0; i < 10 && !op.started; ++i) scheduler_yield();
 
@@ -208,8 +203,7 @@ static void read_write_test(void) {
   op.finished = op.started = false;
   op.is_read = false;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_op, &op));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_op, &op));
 
   for (int i = 0; i < 10 && !op.started; ++i) scheduler_yield();
 
@@ -494,8 +488,7 @@ static void fifo_poll_no_writers_test(void) {
   pt_args.timeout = 50;
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -620,8 +613,7 @@ static void fifo_poll_test(void) {
   pt_args.timeout = -1;
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -642,8 +634,7 @@ static void fifo_poll_test(void) {
   pt_args.nfds = 2;
   pt_args.timeout = -1;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -693,8 +684,7 @@ static void fifo_poll_test(void) {
 
   do { result = vfs_write(wr_fd, buf, 1000); } while (result > 0);
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -734,8 +724,7 @@ static void concurrent_close_poll_test(void) {
   pt_args.timeout = -1;
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
