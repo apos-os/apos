@@ -95,8 +95,11 @@ kthread_t kthread_current_thread() {
   return g_current_thread;
 }
 
-static int kthread_create_internal(process_t* parent, kthread_t* thread_ptr,
-                                   void* (*start_routine)(void*), void* arg) {
+// TODO(aoates): reconsider the notion of unattached "kernel" threads ---
+// they're efficient (no need to swap address spaces when they run), but are
+// weird; they can live/run in any address space/file descriptor space/etc.
+int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
+                   void* arg) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* thread = (kthread_data_t*)kmalloc(sizeof(kthread_data_t));
   *thread_ptr = thread;
@@ -107,14 +110,6 @@ static int kthread_create_internal(process_t* parent, kthread_t* thread_ptr,
   thread->retval = 0x0;
   ksigemptyset(&thread->signal_mask);
   list_push(&g_all_threads, &thread->all_threads_link);
-
-  // TODO(aoates): consider moving all process thread list management out ofthis
-  // module for better layering (i.e. this module only handles kernel threads,
-  // and user-visible threads are handled in something layered on top).
-  thread->process = parent;
-  if (parent) {
-    list_push(&parent->threads, &thread->proc_threads_link);
-  }
 
   // Allocate a stack for the thread.
   addr_t* stack = (addr_t*)kmalloc_aligned(KTHREAD_STACK_SIZE, PAGE_SIZE);
@@ -136,20 +131,6 @@ static int kthread_create_internal(process_t* parent, kthread_t* thread_ptr,
   }
   POP_INTERRUPTS();
   return 0;
-}
-
-int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
-                   void* arg) {
-  return kthread_create_internal(proc_current(), thread_ptr, start_routine,
-                                 arg);
-}
-
-int kthread_create_kernel(kthread_t* thread_ptr, void* (*start_routine)(void*),
-                          void* arg) {
-  // TODO(aoates): reconsider the notion of unattached "kernel" threads ---
-  // they're efficient (no need to swap address spaces when they run), but are
-  // weird; they can live/run in any address space/file descriptor space/etc.
-  return kthread_create_internal(NULL, thread_ptr, start_routine, arg);
 }
 
 void kthread_destroy(kthread_t thread) {
@@ -203,19 +184,12 @@ bool kthread_is_done(kthread_t thread) {
 void kthread_exit(void* x) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(g_current_thread->spinlocks_held == 0);
+  KASSERT(g_current_thread->process == NULL);
 
   // kthread_exit is basically the same as kthread_yield, but we don't put
   // ourselves back on the run queue.
   g_current_thread->retval = x;
   g_current_thread->state = KTHREAD_DONE;
-
-  if (g_current_thread->process) {
-    KASSERT_DBG(list_link_on_list(&g_current_thread->process->threads,
-                                  &g_current_thread->proc_threads_link));
-    list_remove(&g_current_thread->process->threads,
-                &g_current_thread->proc_threads_link);
-    g_current_thread->process = NULL;
-  }
 
   // Schedule all the waiting threads.
   kthread_data_t* t = kthread_queue_pop(&g_current_thread->join_list);

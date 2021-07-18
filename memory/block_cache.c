@@ -321,8 +321,7 @@ static void init_block_cache(void) {
   kmutex_init(&g_mu);
   htbl_init(&g_table, g_max_size * 2);
   kthread_queue_init(&g_flush_queue_wakeup_queue);
-  KASSERT(kthread_create_kernel(&g_flush_queue_thread, &flush_queue_thread,
-                                0x0) == 0);
+  KASSERT(kthread_create(&g_flush_queue_thread, &flush_queue_thread, 0x0) == 0);
   scheduler_make_runnable(g_flush_queue_thread);
   g_initialized = true;
 }

@@ -61,13 +61,10 @@ void proc_exit(int status) {
 
 void proc_finish_exit() {
   // We must be the only thread remaining.
-  KASSERT(&kthread_current_thread()->proc_threads_link ==
-          proc_current()->threads.head);
-  KASSERT(proc_current()->threads.head == proc_current()->threads.tail);
-  KASSERT(proc_current()->state == PROC_RUNNING ||
-          proc_current()->state == PROC_STOPPED);
-
   process_t* const p = proc_current();
+  KASSERT(list_empty(&p->threads));
+  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
+
   KASSERT(p->id != 0);
 
   // Close all open fds.

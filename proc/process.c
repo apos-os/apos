@@ -178,6 +178,8 @@ void proc_init_stage2() {
 process_t* proc_current() {
   KASSERT(g_current_proc >= 0 && g_current_proc < PROC_MAX_PROCS);
   KASSERT(g_proc_init_stage >= 1);
+  // TODO(aoates): consider a check here to verify raw kernel threads don't
+  // reference process data (such as file descriptors).
   return g_proc_table[g_current_proc];
 }
 
@@ -228,9 +230,11 @@ int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
     return result;
   }
 
+  (*thread)->process = proc_current();
+  list_push(&proc_current()->threads, &(*thread)->proc_threads_link);
+
   scheduler_make_runnable(*thread);
 
-  // TODO(aoates): move process thread list management from kthread to here.
   return 0;
 }
 
@@ -240,11 +244,12 @@ void proc_thread_exit(void* x) {
   KASSERT(thread->process == p);
   KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
   KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
-  // TODO(aoates): move process thread list management from kthread to here.
+
+  list_remove(&p->threads, &thread->proc_threads_link);
+  thread->process = NULL;
 
   // If we're the last thread left in the process, exit the process.
-  if (p->threads.head == p->threads.tail) {
-    KASSERT_DBG(p->threads.head == &thread->proc_threads_link);
+  if (list_empty(&p->threads)) {
     proc_finish_exit();
     die("unreachable");
   }
