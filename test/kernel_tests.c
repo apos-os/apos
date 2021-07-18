@@ -83,6 +83,7 @@ static const test_entry_t TESTS[] = {
   { "socket_raw", &socket_raw_test, 1 },
   { "socket_udp", &socket_udp_test, 1 },
   { "user_tests", &do_run_user_tests, 1 },
+  { "proc_thread", &proc_thread_test, 1 },
 
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },

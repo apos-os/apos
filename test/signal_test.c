@@ -28,6 +28,16 @@
 #include "vfs/pipe.h"
 #include "vfs/vfs.h"
 
+// TODO(aoates): remove these helpers when proper multi-thread support is in.
+static kthread_data_t* get_proc_thread(process_t* proc) {
+  KASSERT_DBG(proc->threads.head == proc->threads.tail);
+  return container_of(proc->threads.head, kthread_data_t, proc_threads_link);
+}
+
+static kthread_data_t* proc_current_thread(void) {
+  return get_proc_thread(proc_current());
+}
+
 // Helper to determine if a signal is pending or assigned.
 static int is_signal_pending(const process_t* proc, int signum) {
   ksigset_t pending = proc_pending_signals(proc);
@@ -39,7 +49,7 @@ static void ksigemptyset_test(void) {
 
   ksigset_t set;
   KEXPECT_EQ(0, ksigemptyset(&set));
-  KEXPECT_EQ(1, ksigisemptyset(&set));
+  KEXPECT_EQ(1, ksigisemptyset(set));
 
   for (int i = APOS_SIGMIN; i <= APOS_SIGMAX; ++i) {
     KEXPECT_EQ(0, ksigismember(&set, i));
@@ -51,7 +61,7 @@ static void ksigfillset_test(void) {
 
   ksigset_t set;
   KEXPECT_EQ(0, ksigfillset(&set));
-  KEXPECT_EQ(0, ksigisemptyset(&set));
+  KEXPECT_EQ(0, ksigisemptyset(set));
 
 
   for (int i = APOS_SIGMIN; i <= APOS_SIGMAX; ++i) {
@@ -66,7 +76,7 @@ static void ksigaddset_test(void) {
   ksigemptyset(&set);
 
   KEXPECT_EQ(0, ksigaddset(&set, SIGABRT));
-  KEXPECT_EQ(0, ksigisemptyset(&set));
+  KEXPECT_EQ(0, ksigisemptyset(set));
 
   KEXPECT_EQ(1, ksigismember(&set, SIGABRT));
   KEXPECT_EQ(0, ksigismember(&set, SIGALRM));
@@ -176,17 +186,22 @@ static void sigaction_test(void) {
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGKILL, &dfl_action, &oact));
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGSTOP, &dfl_action, 0x0));
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGSTOP, &dfl_action, &oact));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGAPOSTKILL, &dfl_action, 0x0));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGAPOSTKILL, &dfl_action, &oact));
 
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGKILL, &ign_action, 0x0));
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGSTOP, &ign_action, 0x0));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGAPOSTKILL, &ign_action, 0x0));
 
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGKILL, &custom_action, 0x0));
   KEXPECT_EQ(-EINVAL, proc_sigaction(SIGSTOP, &custom_action, 0x0));
+  KEXPECT_EQ(-EINVAL, proc_sigaction(SIGAPOSTKILL, &custom_action, 0x0));
 
 
   KTEST_BEGIN("proc_sigaction(): getting SIGKILL/SIGSTOP");
   KEXPECT_EQ(0, proc_sigaction(SIGKILL, 0x0, 0x0));
   KEXPECT_EQ(0, proc_sigaction(SIGSTOP, 0x0, 0x0));
+  KEXPECT_EQ(0, proc_sigaction(SIGAPOSTKILL, 0x0, 0x0));
 
   oact = garbage_action;
   KEXPECT_EQ(0, proc_sigaction(SIGKILL, 0x0, &oact));
@@ -194,6 +209,10 @@ static void sigaction_test(void) {
 
   oact = garbage_action;
   KEXPECT_EQ(0, proc_sigaction(SIGSTOP, 0x0, &oact));
+  KEXPECT_EQ(SIG_DFL, oact.sa_handler);
+
+  oact = garbage_action;
+  KEXPECT_EQ(0, proc_sigaction(SIGAPOSTKILL, 0x0, &oact));
   KEXPECT_EQ(SIG_DFL, oact.sa_handler);
 
 
@@ -204,6 +223,7 @@ static void sigaction_test(void) {
   act = dfl_action;
   ksigaddset(&act.sa_mask, SIGKILL);
   ksigaddset(&act.sa_mask, SIGSTOP);
+  ksigaddset(&act.sa_mask, SIGAPOSTKILL);
   KEXPECT_EQ(0, proc_sigaction(SIGUSR1, &act, 0x0));
 
   oact = garbage_action;
@@ -211,6 +231,7 @@ static void sigaction_test(void) {
 
   KEXPECT_EQ(1, ksigismember(&oact.sa_mask, SIGKILL));
   KEXPECT_EQ(1, ksigismember(&oact.sa_mask, SIGSTOP));
+  KEXPECT_EQ(1, ksigismember(&oact.sa_mask, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_sigaction(): set and get simultaneously");
   // Set up a new signal handler, then reset it and do a get at the same time,
@@ -266,12 +287,17 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGSTOP));
   KEXPECT_EQ(1, proc_signal_allowed(&B, &A, SIGCONT));
 
+  KTEST_BEGIN("proc_signal_allowed(): root can't send SIGAPOSTKILL");
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
+  KEXPECT_EQ(0, proc_signal_allowed(&B, &A, SIGAPOSTKILL));
+
   KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches ruid");
   A = A_default; B = B_default;
   A.ruid = B.ruid;
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches ruid");
   A = A_default; B = B_default;
@@ -279,6 +305,7 @@ static void signal_allowed_test(void) {
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if ruid matches suid");
   A = A_default; B = B_default;
@@ -286,6 +313,7 @@ static void signal_allowed_test(void) {
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): allowed if euid matches suid");
   A = A_default; B = B_default;
@@ -293,12 +321,14 @@ static void signal_allowed_test(void) {
 
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
   A = A_default; B = B_default;
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed even if suid matches ruid");
   A = A_default; B = B_default;
@@ -324,6 +354,7 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGUSR1));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
+  KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
 }
 
 // Child process that sleeps then exits, to let us test if signals were
@@ -560,7 +591,7 @@ static void signal_interrupt_victim(void* arg) {
   struct victim_args* args = (struct victim_args*)arg;
 
   // TODO(aoates): use the appropriate syscall when available.
-  proc_current()->thread->signal_mask = args->mask;
+  proc_current_thread()->signal_mask = args->mask;
 
   int result = proc_sigaction(args->signum, &args->action, NULL);
   if (result) {
@@ -693,8 +724,8 @@ static void signal_interrupt_thread_test(void) {
 
     int child = proc_fork(&signal_interrupt_victim, &args);
     scheduler_yield();
-    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
-                                args.signum);
+    proc_force_signal_on_thread(proc_get(child),
+                                get_proc_thread(proc_get(child)), args.signum);
 
     KEXPECT_EQ(0, kthread_queue_empty(&args.queue));
     scheduler_wake_all(&args.queue);
@@ -711,8 +742,8 @@ static void signal_interrupt_thread_test(void) {
 
     int child = proc_fork(&signal_interrupt_victim, &args);
     scheduler_yield();
-    proc_force_signal_on_thread(proc_get(child), proc_get(child)->thread,
-                                args.signum);
+    proc_force_signal_on_thread(proc_get(child),
+                                get_proc_thread(proc_get(child)), args.signum);
 
     KEXPECT_EQ(1, kthread_queue_empty(&args.queue));
     scheduler_wake_all(&args.queue);
@@ -854,12 +885,14 @@ static void sigprocmask_test(void) {
   ksigaddset(&mask, SIGUSR1);
   ksigaddset(&mask, SIGKILL);
   ksigaddset(&mask, SIGSTOP);
+  ksigaddset(&mask, SIGAPOSTKILL);
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &mask, NULL));
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, NULL, &mask2));
 
   KEXPECT_EQ(1, ksigismember(&mask2, SIGUSR1));
   KEXPECT_EQ(0, ksigismember(&mask2, SIGKILL));
   KEXPECT_EQ(0, ksigismember(&mask2, SIGSTOP));
+  KEXPECT_EQ(0, ksigismember(&mask2, SIGAPOSTKILL));
 
 
   KTEST_BEGIN("sigprocmask(): invalid how arg");
@@ -874,7 +907,7 @@ static void sigprocmask_test(void) {
 
 static void sigpending_test(void) {
   KTEST_BEGIN("sigpending() test -- unassigned signal");
-  ksigemptyset(&proc_current()->thread->assigned_signals);
+  ksigemptyset(&proc_current_thread()->assigned_signals);
 
   ksigset_t orig_mask;
   KEXPECT_EQ(0, proc_sigprocmask(0, NULL, &orig_mask));
@@ -888,9 +921,10 @@ static void sigpending_test(void) {
   KEXPECT_EQ(1, ksigismember(&proc_current()->pending_signals, SIGUSR1));
   ksigset_t pending;
   KEXPECT_EQ(0, proc_sigpending(&pending));
+  KEXPECT_EQ(pending, proc_pending_signals(proc_current()));
   KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
   ksigdelset(&pending, SIGUSR1);
-  KEXPECT_EQ(1, ksigisemptyset(&pending));
+  KEXPECT_EQ(1, ksigisemptyset(pending));
 
   KTEST_BEGIN("sigpending() test -- assigned and unblocked signal");
   ksigemptyset(&mask);
@@ -902,7 +936,7 @@ static void sigpending_test(void) {
   pending = 123;
   KEXPECT_EQ(0, proc_sigpending(&pending));
   // Not blocked, so shouldn't be present.
-  KEXPECT_EQ(1, ksigisemptyset(&pending));
+  KEXPECT_EQ(1, ksigisemptyset(pending));
 
   KTEST_BEGIN("sigpending() test -- assigned and blocked signal");
   ksigemptyset(&mask);
@@ -914,8 +948,8 @@ static void sigpending_test(void) {
   pending = 123;
   KEXPECT_EQ(0, proc_sigpending(&pending));
   KEXPECT_EQ(1, ksigismember(&pending, SIGUSR1));
-  ksigemptyset(&pending);
-  KEXPECT_EQ(1, ksigisemptyset(&pending));
+  ksigdelset(&pending, SIGUSR1);
+  KEXPECT_EQ(1, ksigisemptyset(pending));
 
   // Cleanup.
   KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &orig_mask, NULL));
@@ -1070,7 +1104,7 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
-  KEXPECT_EQ(new_mask, proc_get(child)->thread->signal_mask);
+  KEXPECT_EQ(new_mask, get_proc_thread(proc_get(child))->signal_mask);
 
   KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1084,7 +1118,7 @@ static void sigsuspend_test(void) {
 
   KEXPECT_EQ(0, sem_wait(&g_sem));
   KEXPECT_EQ(PROC_RUNNING, proc_get(child)->state);
-  KEXPECT_EQ(mask2, proc_get(child)->thread->signal_mask);
+  KEXPECT_EQ(mask2, get_proc_thread(proc_get(child))->signal_mask);
 
   KEXPECT_EQ(0, proc_kill(child, SIGUSR1));
   KEXPECT_EQ(child, proc_wait(NULL));
@@ -1181,6 +1215,112 @@ static void zombie_test(void) {
   KEXPECT_EQ(1, WIFEXITED(status));
 }
 
+typedef struct {
+  bool done[3];
+  int sig[3];
+} sigwait_test_helper_args;
+
+static void* sigwait_test_helper1(void* arg) {
+  sigwait_test_helper_args* args = (sigwait_test_helper_args*)arg;
+
+  ksigset_t set, orig_set;
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGUSR2);
+  ksigaddset(&set, SIGTERM);  // For kicks.
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &set, &orig_set));
+
+  ksigdelset(&set, SIGTERM);
+  KEXPECT_EQ(0, proc_sigwait(&set, &args->sig[0]));
+  args->done[0] = true;
+  KEXPECT_TRUE(args->sig[0] == SIGUSR1 || args->sig[0] == SIGUSR2);
+  KEXPECT_FALSE(ksigismember(&kthread_current_thread()->assigned_signals,
+                             args->sig[0]));
+
+  KEXPECT_EQ(0, proc_sigwait(&set, &args->sig[1]));
+  args->done[1] = true;
+  KEXPECT_TRUE(args->sig[1] == SIGUSR1 || args->sig[1] == SIGUSR2);
+  KEXPECT_NE(args->sig[0], args->sig[1]);
+  KEXPECT_FALSE(ksigismember(&kthread_current_thread()->assigned_signals,
+                             args->sig[1]));
+
+  args->sig[2] = -1;
+  KEXPECT_EQ(-EINTR, proc_sigwait(&set, &args->sig[2]));
+  args->done[2] = true;
+  KEXPECT_EQ(-1, args->sig[2]);
+  return NULL;
+}
+
+static void sigwait_test_proc(void* arg) {
+  KTEST_BEGIN("sigwait(): basic test");
+  ksigset_t set;
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGUSR2);
+  ksigaddset(&set, SIGTERM);
+  ksigaddset(&set, SIGINT);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &set, NULL));
+
+  kthread_t thread;
+  sigwait_test_helper_args args;
+  for (int i = 0; i < 3; ++i) args.done[i] = false;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &sigwait_test_helper1, &args));
+
+  ksleep(10);
+  KEXPECT_FALSE(args.done[0]);
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGUSR1));
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGUSR2));
+  ksleep(10);
+  KEXPECT_TRUE(args.done[0]);
+  ksleep(10);
+  KEXPECT_TRUE(args.done[1]);
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGTERM));
+  ksleep(10);
+  KEXPECT_FALSE(args.done[2]);
+  KEXPECT_EQ(0, proc_kill(proc_current()->id, SIGINT));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  KTEST_BEGIN("sigwait(): rejects if mask contains unblocked signals");
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGURG);
+  int sig;
+  KEXPECT_EQ(-EINVAL, proc_sigwait(&set, &sig));
+  ksigdelset(&set, SIGURG);
+  ksigaddset(&set, SIGKILL);
+  KEXPECT_EQ(-EINVAL, proc_sigwait(&set, &sig));
+
+  KTEST_BEGIN("sigwait(): returns already-pending signal");
+  ksigset_t orig_set;
+  ksigemptyset(&set);
+  ksigaddset(&set, SIGUSR1);
+  ksigaddset(&set, SIGUSR2);
+  proc_sigprocmask(SIG_BLOCK, &set, &orig_set);
+  proc_kill(proc_current()->id, SIGUSR1);
+  proc_kill(proc_current()->id, SIGUSR2);
+  KEXPECT_TRUE(ksigismember(&proc_current()->pending_signals, SIGUSR1));
+  KEXPECT_TRUE(ksigismember(&proc_current()->pending_signals, SIGUSR2));
+  KEXPECT_EQ(0, proc_sigwait(&set, &sig));
+  // Note: the SIGUSR1 then SIGUSR2 ordering isn't guaranteed, but the current
+  // implementation will always do it this way.
+  KEXPECT_EQ(SIGUSR1, sig);
+  KEXPECT_FALSE(is_signal_pending(proc_current(), SIGUSR1));
+  KEXPECT_EQ(0, proc_sigwait(&set, &sig));
+  KEXPECT_EQ(SIGUSR2, sig);
+  KEXPECT_FALSE(is_signal_pending(proc_current(), SIGUSR2));
+
+  KTEST_BEGIN("sigwait(): restores old signal mask");
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, NULL, &set));
+  KEXPECT_EQ(set, orig_set);
+}
+
+static void sigwait_test(void) {
+  KTEST_BEGIN("sigwait(): test setup");
+  kpid_t child = proc_fork(&sigwait_test_proc, NULL);
+  KEXPECT_GE(child, 0);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+}
+
 void signal_test(void) {
   KTEST_SUITE_BEGIN("signals");
 
@@ -1190,7 +1330,7 @@ void signal_test(void) {
     KASSERT(proc_sigaction(signum, 0x0, &saved_handlers[signum]) == 0);
   }
   ksigset_t saved_pending_signals = proc_current()->pending_signals;
-  ksigset_t saved_assigned_signals = proc_current()->thread->assigned_signals;
+  ksigset_t saved_assigned_signals = proc_current_thread()->assigned_signals;
   // TODO(aoates): do we want to save/restore the signal mask as well?
 
   ksigemptyset_test();
@@ -1216,13 +1356,14 @@ void signal_test(void) {
   dispatchable_test();
   sigsuspend_test();
   zombie_test();
+  sigwait_test();
 
   // Restore all the signal handlers in case any of the tests didn't clean up.
   for (int signum = APOS_SIGMIN; signum <= APOS_SIGMAX; ++signum) {
-    if (signum != SIGSTOP && signum != SIGKILL) {
+    if (signum != SIGSTOP && signum != SIGKILL && signum != SIGAPOSTKILL) {
       KASSERT(proc_sigaction(signum, &saved_handlers[signum], 0x0) == 0);
     }
   }
   proc_current()->pending_signals = saved_pending_signals;
-  proc_current()->thread->assigned_signals = saved_assigned_signals;
+  proc_current_thread()->assigned_signals = saved_assigned_signals;
 }

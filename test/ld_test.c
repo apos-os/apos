@@ -369,8 +369,7 @@ static void basic_read_thread_test(void) {
   data.out_len = 0;
 
   kthread_t thread;
-  kthread_create(&thread, &basic_read_test_func, &data);
-  scheduler_make_runnable(thread);
+  proc_thread_create(&thread, &basic_read_test_func, &data);
 
   scheduler_yield();
 
@@ -404,8 +403,7 @@ static void three_thread_test(void) {
 
   kthread_t threads[3];
   for (int i = 0; i < 3; ++i) {
-    kthread_create(&threads[i], &basic_read_test_func, &data[i]);
-    scheduler_make_runnable(threads[i]);
+    proc_thread_create(&threads[i], &basic_read_test_func, &data[i]);
   }
 
   scheduler_yield();
@@ -454,8 +452,7 @@ static void three_thread_test2(void) {
 
   kthread_t threads[3];
   for (int i = 0; i < 3; ++i) {
-    kthread_create(&threads[i], &basic_read_test_func, &data[i]);
-    scheduler_make_runnable(threads[i]);
+    proc_thread_create(&threads[i], &basic_read_test_func, &data[i]);
   }
 
   scheduler_yield();
@@ -579,8 +576,7 @@ static void start_read_thread(noncanon_test_args_t* args, kthread_t* thread,
                               int read_len) {
   args->readlen = read_len;
   kmemset(args->buf, '\0', 10);
-  KEXPECT_EQ(0, kthread_create(thread, &noncanon_read, args));
-  scheduler_make_runnable(*thread);
+  KEXPECT_EQ(0, proc_thread_create(thread, &noncanon_read, args));
   scheduler_wait_on(&args->read_started);
 }
 

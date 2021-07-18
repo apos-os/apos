@@ -44,6 +44,21 @@
       __member == 0x0 ? 0x0 : \
        ((type*)((char*)(__member) - offsetof(type, member_name)));})
 
+// Helper macros to iterate over a list.  Example:
+//
+// list_t some_list;
+// FOR_EACH_LIST(&some_list, link_iter) {
+//   node_t* val = LIST_ENTRY(link_iter, node_t, link);
+//   klogf(val->x);
+// }
+//
+// is roughly equivalent to the following C++-style iteration,
+// for (node_t* val : some_list) { ... }
+#define FOR_EACH_LIST(iter_name, list_expr)                           \
+  for (list_link_t* iter_name = (list_expr)->head; iter_name != NULL; \
+       iter_name = iter_name->next)
+#define LIST_ENTRY container_of
+
 // A link in the list.  Embed this in your value struct.
 typedef struct list_link {
   struct list_link* prev;

@@ -35,12 +35,16 @@
 #include "syscall/context.h"
 #include "user/include/apos/posix_signal.h"
 
-static inline int ksigisemptyset(const ksigset_t* set) {
-  return (*set == 0) ? 1 : 0;
+static inline int ksigisemptyset(ksigset_t set) {
+  return (set == 0) ? 1 : 0;
 }
 
-static inline ksigset_t ksigunionset(const ksigset_t* A, const ksigset_t* B) {
-  return *A | *B;
+static inline ksigset_t ksigunionset(ksigset_t A, ksigset_t B) {
+  return A | B;
+}
+
+static inline ksigset_t ksigsubtractset(ksigset_t A, ksigset_t B) {
+  return A & ~B;
 }
 
 // Returns all the pending or assigned signals on the given process.
@@ -68,6 +72,7 @@ int proc_force_signal_on_thread(process_t* proc, kthread_t thread, int sig);
 // Send a signal to the given process, as per kill(2).  Returns 0 on success, or
 // -errno on error.
 int proc_kill(kpid_t pid, int sig);
+int proc_kill_thread(kthread_t thread, int sig);
 
 // Examine and/or change a signal action, as per sigaction(2).  Returns 0 on
 // success, or -errno on error.
@@ -78,12 +83,15 @@ int proc_sigaction(int signum, const struct ksigaction* act,
 int proc_sigprocmask(int how, const ksigset_t* restrict set,
                      ksigset_t* restrict oset);
 
-// Return the current set of pending signals in the process.
+// Return the current set of pending signals in the calling thread.
 int proc_sigpending(ksigset_t* set);
 
 // Temporarily set the current thread's signal mask, then block until a signal
 // is delivered.
 int proc_sigsuspend(const ksigset_t* sigmask);
+
+// Waits for one of the given signals to be delivered, then returns.
+int proc_sigwait(const ksigset_t* set, int* sig);
 
 // Cancel/suppress the given signal in the given process and its threads.
 // Useful in tests.

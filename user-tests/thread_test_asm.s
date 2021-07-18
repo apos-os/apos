@@ -1,4 +1,4 @@
-# Copyright 2014 Andrew Oates.  All Rights Reserved.
+# Copyright 2021 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,36 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env AposAddSources')
+.global basic_thread_test_tramp_fn
+.global basic_thread_test_fn
+.global thread_test_create_tramp
 
-srcs = [
-  'alarm.c',
-  'defint.c',
-  'exec.c',
-  'exit.c',
-  'fork.c',
-  'group.c',
-  'kthread.c',
-  'scheduler.c',
-  'process.c',
-  'procfs.c',
-  'session.c',
-  'sleep.c',
-  'spinlock.c',
-  'kthread_pool.c',
-  'tcgroup.c',
-  'umask.c',
-  'user.c',
-  'user_prepare.c',
-  'user_thread.c',
-  'wait.c',
-  'limit.c',
-]
+basic_thread_test_tramp_fn:
+  pushl %esp
+  call basic_thread_test_fn
+  hlt
 
-subdirs = [
-  'load',
-  'signal',
-]
-
-objects = AposAddSources(env, srcs, subdirs)
-Return('objects')
+thread_test_create_tramp:
+  # Thread function arg and address were pushed.  Pop the address and call it.
+  popl %eax
+  call %eax
+  call apos_thread_exit

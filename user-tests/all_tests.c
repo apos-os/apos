@@ -49,6 +49,7 @@ int main(int argc, char** argv) {
   socket_test();
   setjmp_test();
   cpu_exception_test();
+  thread_test();
 
   return ktest_finish_all();
 }

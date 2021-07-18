@@ -17,7 +17,19 @@
 
 // Exit the current process, recording the given exit status.
 //
+// This signals all other threads to terminate and begins the teardown process,
+// but the process itself won't be terminated until all threads have terminated.
+//
+// In certain circumstances, proc_exit() itself may never be called, only
+// proc_finish_exit() (see below).
+//
 // This function will not return.
-void proc_exit(int status);
+void proc_exit(int status) __attribute__((noreturn));
+
+// Finalize the exiting process.  Must be called from the last thread running
+// the process once all others have exited.
+//
+// Do not use outside proc code.
+void proc_finish_exit(void) __attribute__((noreturn));
 
 #endif

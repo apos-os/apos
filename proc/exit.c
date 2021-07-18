@@ -27,17 +27,45 @@
 #include "vfs/vfs.h"
 
 void proc_exit(int status) {
-  KASSERT(kthread_current_thread() == proc_current()->thread);
-  KASSERT(proc_current()->state == PROC_RUNNING ||
-          proc_current()->state == PROC_STOPPED);
-
   process_t* const p = proc_current();
+  kthread_t thread = kthread_current_thread();
+  KASSERT(thread->process == p);
+  KASSERT_DBG(list_link_on_list(&p->threads, &thread->proc_threads_link));
+  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
 
   if (p->id == 0) {
     die("Cannot exit() the root thread");
   }
 
+  // Note: another thread might be simultaneously calling exit() and overwrite
+  // this....that's fine.
   p->exit_status = status;
+
+  // Prevent any new threads from being created.  In the last-thread-exits
+  // scenario where proc_exit() isn't called, this is unnecessary because the
+  // only thread that could be creating new threads is itself exiting.
+  p->exiting = true;
+
+  // Terminate all threads in the process, then exit this one (which will clean
+  // up the process if it's the last one running).
+  FOR_EACH_LIST(iter_link, &p->threads) {
+    kthread_data_t* thread_iter =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    if (thread_iter == thread) continue;
+
+    proc_force_signal_on_thread(p, thread_iter, SIGAPOSTKILL);
+  }
+
+  proc_thread_exit(NULL);
+}
+
+void proc_finish_exit() {
+  // We must be the only thread remaining.
+  process_t* const p = proc_current();
+  KASSERT(list_empty(&p->threads));
+  KASSERT(p->state == PROC_RUNNING || p->state == PROC_STOPPED);
+
+  KASSERT(p->id != 0);
 
   // Close all open fds.
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
@@ -97,7 +125,6 @@ void proc_exit(int status) {
   scheduler_wake_all(&root_process->wait_queue);
 
   p->state = PROC_ZOMBIE;
-  p->thread = KTHREAD_NO_THREAD;
 
   // Send SIGCHLD to the parent.
   KASSERT(proc_force_signal(p->parent, SIGCHLD) == 0);

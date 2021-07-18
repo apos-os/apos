@@ -46,8 +46,9 @@ static inline const char* proc_state_to_string(proc_state_t state);
 struct process {
   kpid_t id;  // Index into global process table.
   proc_state_t state;
-  kthread_t thread;  // Main process thread.
+  list_t threads;  // All process threads.
   int exit_status;  // Exit status if PROC_ZOMBIE, or PROC_STOPPED.
+  bool exiting;  // Whether the process is exiting.
 
   // File descriptors.  Indexes into the global file table.
   int fds[PROC_MAX_FDS];
@@ -132,6 +133,18 @@ process_t* proc_current(void);
 // Return the process_t with the given ID, or NULL if there is none.
 process_t* proc_get(kpid_t id);
 
+// Spawn a new thread associated with the current process.  The new thread
+// _must_ either return from the called function, or call proc_thread_exit(),
+// _not_ kthread_exit().
+//
+// Unlike kthread_create(), makes the thread runnable immediately.
+int proc_thread_create(kthread_t* thread, void* (*start_routine)(void*),
+                       void* arg);
+
+// Exit the current thread, which must have been created with
+// proc_thread_create().  If this thread is the last one in the current process,
+// exits the process (with status 0).
+void proc_thread_exit(void* x) __attribute__((noreturn));
 
 // Implementations.
 

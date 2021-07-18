@@ -712,8 +712,7 @@ static void tty_poll_test(void) {
   pt_args.timeout = -1;
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -733,8 +732,7 @@ static void tty_poll_test(void) {
   pfds[0].events = KPOLLPRI;
   pt_args.timeout = 50;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -778,8 +776,7 @@ static void tty_poll_test(void) {
   pt_args.nfds = 1;
   pt_args.timeout = -1;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 
@@ -817,8 +814,7 @@ static void tty_poll_test(void) {
   pt_args.nfds = 1;
   pt_args.timeout = -1;
 
-  KEXPECT_EQ(0, kthread_create(&thread, &do_poll, &pt_args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &pt_args));
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, pt_args.finished);
 

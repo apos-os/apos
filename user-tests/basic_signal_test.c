@@ -554,13 +554,6 @@ static void sigsuspend_test(void) {
   KEXPECT_EQ(0, sigaction(SIGURG, &act, NULL));
 }
 
-#define KEXPECT_ERRNO(e, expr) do { \
-  int _result_val = (expr); \
-  int _saved_errno = errno; \
-  KEXPECT_EQ(-1, _result_val); \
-  KEXPECT_EQ((e), _saved_errno); \
-} while (0)
-
 static int g_counter = 0;
 static int g_counter_by_sig[APOS_SIGMAX + 1];
 static void counter_handler(int sig) {
@@ -662,6 +655,73 @@ static void restartable_syscall_test(void) {
   // TODO(aoates): test nested signal delivery and syscalls (mixed restartable).
 }
 
+static void sigwait_test(void) {
+  KTEST_BEGIN("sigwait(): invalid arguments tests");
+  sigset_t set;
+  sigemptyset(&set);
+  int sig;
+  KEXPECT_ERRNO(EFAULT, sigwait(&set, NULL));
+  KEXPECT_ERRNO(EFAULT, sigwait(&set, (int*)0x12345));
+  KEXPECT_ERRNO(EFAULT, sigwait(NULL, &sig));
+  KEXPECT_ERRNO(EFAULT, sigwait((sigset_t*)0x12345, &sig));
+
+
+  KTEST_BEGIN("sigwait(): basic test");
+  pid_t child = fork();
+  if (child == 0) {
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    assert(0 == sigprocmask(SIG_BLOCK, &set, NULL));
+    assert(0 == sigwait(&set, &sig));
+    assert(sig == SIGUSR1);
+    exit(0);
+  }
+
+  sleep_ms(10);
+  kill(child, SIGUSR1);
+
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_EQ(0, status);
+
+
+  KTEST_BEGIN("sigwait(): doesn't wake for ignored signals");
+  child = fork();
+  if (child == 0) {
+    got_signal = false;
+    signal(SIGINT, &signal_action);
+    sigemptyset(&set);
+    sigaddset(&set, SIGUSR1);
+    sigaddset(&set, SIGUSR2);
+    assert(0 == sigprocmask(SIG_BLOCK, &set, NULL));
+    assert(signal(SIGUSR1, SIG_IGN) != SIG_ERR);
+    assert(0 == sigwait(&set, &sig));
+    assert(sig == SIGUSR2);
+    int result;
+    while ((result = sigwait(&set, &sig)) != 0) {
+      assert(errno == EINTR);
+      assert(got_signal);
+    }
+    // Shouldn't get here (SIGKILL should kill us).
+    exit(1);
+  }
+
+  sleep_ms(10);
+  kill(child, SIGUSR1);
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  kill(child, SIGUSR2);
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  kill(child, SIGURG);
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+  kill(child, SIGINT);
+  for (int i = 0; i < 3; ++i) sleep_ms(1);
+
+  KEXPECT_EQ(0, waitpid(child, &status, WNOHANG));
+  kill(child, SIGKILL);
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+}
+
 void basic_signal_test(void) {
   KTEST_SUITE_BEGIN("basic signal tests");
 
@@ -686,6 +746,7 @@ void basic_signal_test(void) {
 
   sigsuspend_test();
   restartable_syscall_test();
+  sigwait_test();
 
   // TODO(aoates): test nested signal handling.
 }

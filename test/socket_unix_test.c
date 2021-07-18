@@ -902,8 +902,7 @@ static void accept_blocking_test(void) {
   args.fd = server_sock;
   kthread_queue_init(&args.started_queue);
   args.done = false;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_accept_thread, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_accept_thread, &args));
   scheduler_wait_on(&args.started_queue);
   // Give accept() some more time to run.
   ksleep(50);
@@ -964,8 +963,7 @@ static void accept_blocking_test(void) {
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
   args.done = false;
-  KEXPECT_EQ(0, kthread_create(&thread, &do_accept_thread, &args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_accept_thread, &args));
   scheduler_wait_on(&args.started_queue);
   // Make sure we get good and stuck in accept()
   for (int i = 0; i < 20; ++i) scheduler_yield();
@@ -1026,8 +1024,7 @@ static kthread_t start_async(void* (*func)(void*), async_args_t* args) {
   kthread_t thread;
   args->result = -100;
   args->started = false;
-  KEXPECT_EQ(0, kthread_create(&thread, func, args));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, func, args));
   while (!args->started) scheduler_yield();
   return thread;
 }
@@ -1788,9 +1785,8 @@ static void* do_async_poll(void* x) {
 
 static void start_async_poll_internal(async_poll_args_t* args) {
   kthread_queue_init(&args->started_queue);
-  int result = kthread_create(&args->thread, &do_async_poll, args);
+  int result = proc_thread_create(&args->thread, &do_async_poll, args);
   KASSERT(result == 0);
-  scheduler_make_runnable(args->thread);
   scheduler_wait_on(&args->started_queue);
   for (int i = 0; i < 5; ++i) scheduler_yield();
   KEXPECT_EQ(false, kthread_is_done(args->thread));

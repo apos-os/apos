@@ -585,9 +585,8 @@ static void vfs_open_thread_safety_test(void) {
   }
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i],
-                           &vfs_open_thread_safety_test_func, &test) == 0);
-    scheduler_make_runnable(threads[i]);
+    KASSERT(proc_thread_create(&threads[i], &vfs_open_thread_safety_test_func,
+                               &test) == 0);
   }
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
@@ -632,15 +631,13 @@ static void vfs_open_create_race_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("thread_safety_test", 0));
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
-    KEXPECT_EQ(
-        0, kthread_create(&threads[i], &vfs_open_create_race_test_func, NULL));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(&threads[i],
+                                     &vfs_open_create_race_test_func, NULL));
   }
   chaos_args_t chaos_args;
   chaos_args.path = "thread_safety_test";
   chaos_args.done = false;
-  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
-  scheduler_make_runnable(chaos_thread);
+  KEXPECT_EQ(0, proc_thread_create(&chaos_thread, &chaos_helper, &chaos_args));
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
     kthread_join(threads[i]);
@@ -695,9 +692,9 @@ static void vfs_open_get_fifo_socket_test(void) {
              vfs_mknod("thread_safety_test/fifo", VFS_S_IFIFO, kmakedev(0, 0)));
 
   for (int i = 0; i < kThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_get_fifo_socket_test_func,
-                                 "thread_safety_test/fifo"));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&threads[i], &vfs_get_fifo_socket_test_func,
+                                  "thread_safety_test/fifo"));
   }
 
   for (int i = 0; i < kThreads; ++i) {
@@ -711,9 +708,9 @@ static void vfs_open_get_fifo_socket_test(void) {
   vfs_put(vnode);
 
   for (int i = 0; i < kThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_get_fifo_socket_test_func,
-                                 "thread_safety_test/socket"));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&threads[i], &vfs_get_fifo_socket_test_func,
+                                  "thread_safety_test/socket"));
   }
   for (int i = 0; i < kThreads; ++i) {
     kthread_join(threads[i]);
@@ -722,9 +719,9 @@ static void vfs_open_get_fifo_socket_test(void) {
 
   KTEST_BEGIN("vfs_open(): FIFO open race test ");
   for (int i = 0; i < kThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_open_fifo_socket_test_func,
-                                 "thread_safety_test/fifo"));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&threads[i], &vfs_open_fifo_socket_test_func,
+                                  "thread_safety_test/fifo"));
   }
   for (int i = 0; i < kThreads; ++i) {
     kthread_join(threads[i]);
@@ -732,9 +729,9 @@ static void vfs_open_get_fifo_socket_test(void) {
 
   KTEST_BEGIN("vfs_open(): socket open race test ");
   for (int i = 0; i < kThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i], &vfs_open_fifo_socket_test_func,
-                                 "thread_safety_test/socket"));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&threads[i], &vfs_open_fifo_socket_test_func,
+                                  "thread_safety_test/socket"));
   }
   for (int i = 0; i < kThreads; ++i) {
     kthread_join(threads[i]);
@@ -831,17 +828,15 @@ static void unlink_race_test(void) {
   chaos_args_t chaos_args;
   chaos_args.path = "thread_safety_test";
   chaos_args.done = false;
-  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
-  scheduler_make_runnable(chaos_thread);
+  KEXPECT_EQ(0, proc_thread_create(&chaos_thread, &chaos_helper, &chaos_args));
 
-  KEXPECT_EQ(0,
-             kthread_create(&creating_thread, &unlink_race_test_func1, NULL));
-  scheduler_make_runnable(creating_thread);
+  KEXPECT_EQ(
+      0, proc_thread_create(&creating_thread, &unlink_race_test_func1, NULL));
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
-    KEXPECT_EQ(0, kthread_create(&unlink_threads[i], &unlink_race_test_func2,
-                                 &chaos_args.done));
-    scheduler_make_runnable(unlink_threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&unlink_threads[i], &unlink_race_test_func2,
+                                  &chaos_args.done));
   }
 
   kthread_join(creating_thread);
@@ -893,17 +888,14 @@ static void rmdir_race_test(void) {
   chaos_args_t chaos_args;
   chaos_args.path = "thread_safety_test";
   chaos_args.done = false;
-  KEXPECT_EQ(0, kthread_create(&chaos_thread, &chaos_helper, &chaos_args));
-  scheduler_make_runnable(chaos_thread);
+  KEXPECT_EQ(0, proc_thread_create(&chaos_thread, &chaos_helper, &chaos_args));
 
-  KEXPECT_EQ(0,
-             kthread_create(&creating_thread, &rmdir_race_test_func1, NULL));
-  scheduler_make_runnable(creating_thread);
+  KEXPECT_EQ(
+      0, proc_thread_create(&creating_thread, &rmdir_race_test_func1, NULL));
 
   for (int i = 0; i < THREAD_SAFETY_TEST_THREADS; ++i) {
-    KEXPECT_EQ(0, kthread_create(&rmdir_threads[i], &rmdir_race_test_func2,
-                                 &chaos_args.done));
-    scheduler_make_runnable(rmdir_threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(&rmdir_threads[i], &rmdir_race_test_func2,
+                                     &chaos_args.done));
   }
 
   kthread_join(creating_thread);
@@ -1268,9 +1260,8 @@ static void write_thread_test(void) {
   create_file("/vfs_write_thread_safety_test", RWX);
   intptr_t fd = vfs_open("/vfs_write_thread_safety_test", VFS_O_RDWR);
   for (intptr_t i = 0; i < WRITE_SAFETY_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i],
-                           &write_thread_test_func, (void*)fd) == 0);
-    scheduler_make_runnable(threads[i]);
+    KASSERT(proc_thread_create(&threads[i], &write_thread_test_func,
+                               (void*)fd) == 0);
   }
 
   for (int i = 0; i < WRITE_SAFETY_THREADS; ++i) {
@@ -1530,8 +1521,8 @@ static void bad_inode_thread_test(void) {
   kthread_t threads[BAD_INODE_SAFETY_THREADS];
 
   for (int i = 0; i < BAD_INODE_SAFETY_THREADS; ++i) {
-    KASSERT(kthread_create(&threads[i], &bad_inode_thread_test_func, 0x0) == 0);
-    scheduler_make_runnable(threads[i]);
+    KASSERT(proc_thread_create(&threads[i], &bad_inode_thread_test_func, 0x0) ==
+            0);
   }
 
   for (int i = 0; i < BAD_INODE_SAFETY_THREADS; ++i) {
@@ -1623,9 +1614,8 @@ static void create_thread_test(void) {
 
   KEXPECT_EQ(0, vfs_mkdir(kTestDir, 0));
   for (intptr_t i = 0; i < CREATE_SAFETY_THREADS; ++i) {
-    KASSERT(
-        kthread_create(&threads[i], &create_thread_test_func, (void*)i) == 0);
-    scheduler_make_runnable(threads[i]);
+    KASSERT(proc_thread_create(&threads[i], &create_thread_test_func,
+                               (void*)i) == 0);
   }
 
   for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
@@ -1657,9 +1647,8 @@ static void create_thread_test(void) {
 
   KTEST_BEGIN("vfs_unlink(): thread-safety test");
   for (intptr_t i = 0; i < CREATE_SAFETY_THREADS; ++i) {
-    KASSERT(
-        kthread_create(&threads[i], &unlink_thread_test_func, (void*)i) == 0);
-    scheduler_make_runnable(threads[i]);
+    KASSERT(proc_thread_create(&threads[i], &unlink_thread_test_func,
+                               (void*)i) == 0);
   }
 
   for (int i = 0; i < CREATE_SAFETY_THREADS; ++i) {
@@ -3373,10 +3362,9 @@ static void vfs_open_symlink_swap_test(void) {
   chaos_args_t args;
   args.path = "symlink_swap_test";
   args.done = false;
-  KEXPECT_EQ(0, kthread_create(&thread1, &vfs_swap_test_helper, &args.done));
-  scheduler_make_runnable(thread1);
-  KEXPECT_EQ(0, kthread_create(&thread2, &chaos_helper, &args));
-  scheduler_make_runnable(thread2);
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread1, &vfs_swap_test_helper, &args.done));
+  KEXPECT_EQ(0, proc_thread_create(&thread2, &chaos_helper, &args));
   const int kIters = 100 * CONCURRENCY_TEST_ITERS_MULT;
   for (int i = 0; i < kIters; ++i) {
     if (i % 3 == 0) scheduler_yield();
@@ -4486,9 +4474,8 @@ static void append_test(void) {
   const int kNumThreads = 3;
   kthread_t threads[kNumThreads];
   for (intptr_t i = 0; i < kNumThreads; ++i) {
-    KEXPECT_EQ(
-        0, kthread_create(&threads[i], &append_multi_thread_worker, (void*)i));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(&threads[i], &append_multi_thread_worker,
+                                     (void*)i));
   }
   for (int i = 0; i < kNumThreads; ++i) {
     kthread_join(threads[i]);
@@ -4566,8 +4553,7 @@ static void excl_test(void) {
   int counters[kExclTestFiles];
   for (int i = 0; i < kExclTestFiles; ++i) counters[i] = 0;
   for (int i = 0; i < kExclTestThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i], &excl_test_worker, counters));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(&threads[i], &excl_test_worker, counters));
   }
   for (int i = 0; i < kExclTestThreads; ++i) kthread_join(threads[i]);
   for (int i = 0; i < kExclTestFiles; ++i) {
@@ -5919,12 +5905,10 @@ static void rename_thread_test(void) {
 
   const int NUM_OPENERS = 5;
   kthread_t threads[1 + NUM_OPENERS];
-  KEXPECT_EQ(0, kthread_create(&threads[0], &rename_symlink_func, NULL));
-  scheduler_make_runnable(threads[0]);
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], &rename_symlink_func, NULL));
   for (int i = 0; i < NUM_OPENERS; ++i) {
-    KEXPECT_EQ(
-        0, kthread_create(&threads[1 + i], &rename_symlink_open_func, NULL));
-    scheduler_make_runnable(threads[1 + i]);
+    KEXPECT_EQ(0, proc_thread_create(&threads[1 + i], &rename_symlink_open_func,
+                                     NULL));
   }
   for (int i = 0; i < 1 + NUM_OPENERS; ++i) {
     kthread_join(threads[i]);
@@ -5943,8 +5927,7 @@ static void rename_thread_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
 
   for (intptr_t i = 0; i < NUM_OPENERS; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i], &lock_order_func, (void*)i));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(&threads[i], &lock_order_func, (void*)i));
   }
   for (int i = 0; i < NUM_OPENERS; ++i) {
     kthread_join(threads[i]);
@@ -5959,10 +5942,8 @@ static void rename_thread_test(void) {
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/A/B", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/C", VFS_S_IRWXU));
   KEXPECT_EQ(0, vfs_mkdir("_rename_test/C/D", VFS_S_IRWXU));
-  KEXPECT_EQ(0, kthread_create(&threads[0], ancestor_thread_funcA, NULL));
-  KEXPECT_EQ(0, kthread_create(&threads[1], ancestor_thread_funcB, NULL));
-  scheduler_make_runnable(threads[0]);
-  scheduler_make_runnable(threads[1]);
+  KEXPECT_EQ(0, proc_thread_create(&threads[0], ancestor_thread_funcA, NULL));
+  KEXPECT_EQ(0, proc_thread_create(&threads[1], ancestor_thread_funcB, NULL));
   kthread_join(threads[0]);
   kthread_join(threads[1]);
 
@@ -6110,9 +6091,8 @@ static void rename_simultaneous_race_test(void) {
   chaos_args[1].path = "thread_safety_test/B";
   chaos_args[1].done = false;
   for (int i = 0; i < 2; ++i) {
-    KEXPECT_EQ(0,
-               kthread_create(&chaos_thread[i], &chaos_helper, &chaos_args[i]));
-    scheduler_make_runnable(chaos_thread[i]);
+    KEXPECT_EQ(
+        0, proc_thread_create(&chaos_thread[i], &chaos_helper, &chaos_args[i]));
   }
 
   rename_simultaneous_race_test_args args;
@@ -6121,14 +6101,14 @@ static void rename_simultaneous_race_test(void) {
   args.rename_attempts = args.rename_successes = 0;
   args.creations = THREAD_SAFETY_TEST_ITERS / 10;
   args.num_dests = kNumRenameThreads / 10;
-  KEXPECT_EQ(0, kthread_create(&creating_thread,
-                               &rename_simultaneous_race_test_func1, &args));
-  scheduler_make_runnable(creating_thread);
+  KEXPECT_EQ(0,
+             proc_thread_create(&creating_thread,
+                                &rename_simultaneous_race_test_func1, &args));
 
   for (int i = 0; i < kNumRenameThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&rename_threads[i],
-                                 &rename_simultaneous_race_test_func2, &args));
-    scheduler_make_runnable(rename_threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&rename_threads[i],
+                                  &rename_simultaneous_race_test_func2, &args));
   }
 
   kthread_join(creating_thread);
@@ -6271,14 +6251,13 @@ static void link_simultaneous_race_test(void) {
       args.link_successes = 0;
   args.unlinks_target = THREAD_SAFETY_TEST_ITERS / 10;
   args.num_dests = kNumDests;
-  KEXPECT_EQ(0, kthread_create(&creating_thread,
-                               &link_simultaneous_race_test_func1, &args));
-  scheduler_make_runnable(creating_thread);
+  KEXPECT_EQ(0, proc_thread_create(&creating_thread,
+                                   &link_simultaneous_race_test_func1, &args));
 
   for (int i = 0; i < kNumLinkThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&link_threads[i],
-                                 &link_simultaneous_race_test_func2, &args));
-    scheduler_make_runnable(link_threads[i]);
+    KEXPECT_EQ(0,
+               proc_thread_create(&link_threads[i],
+                                  &link_simultaneous_race_test_func2, &args));
   }
 
   kthread_join(creating_thread);
@@ -6333,9 +6312,8 @@ static void fd_concurrent_close_test(void) {
   KEXPECT_EQ(0, vfs_pipe(fds));
 
   kthread_t thread;
-  KEXPECT_EQ(0, kthread_create(&thread, &fd_concurrent_close_test_helper,
-                               (void*)(intptr_t) fds[0]));
-  scheduler_make_runnable(thread);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &fd_concurrent_close_test_helper,
+                                   (void*)(intptr_t)fds[0]));
 
   // Ensure the thread gets into the read() call.
   for (int i = 0; i < 10; i++) scheduler_yield();
@@ -6378,9 +6356,8 @@ static void multithread_path_walk_deadlock_test(void) {
   KEXPECT_EQ(0, vfs_mknod("A/B/C", VFS_S_IFREG | VFS_S_IRWXU, 0));
   for (int i = 0; i < kNumThreads; ++i) {
     KEXPECT_EQ(
-        0, kthread_create(&threads[i],
-                          &multithread_path_walk_deadlock_test_worker, NULL));
-    scheduler_make_runnable(threads[i]);
+        0, proc_thread_create(
+               &threads[i], &multithread_path_walk_deadlock_test_worker, NULL));
   }
   for (int i = 0; i < kNumThreads; ++i) {
     KEXPECT_EQ(NULL, kthread_join(threads[i]));
@@ -6428,9 +6405,8 @@ static void multithread_vnode_get_test(void) {
   }
 
   for (int i = 0; i < kNumThreadsA; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i],
-                                 &multithread_vnode_get_test_worker, vnodes));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(
+                      &threads[i], &multithread_vnode_get_test_worker, vnodes));
   }
   for (int i = 0; i < kNumThreadsA; ++i) {
     KEXPECT_EQ(NULL, kthread_join(threads[i]));
@@ -6440,9 +6416,8 @@ static void multithread_vnode_get_test(void) {
   KTEST_BEGIN("vfs: multiple threads getting and putting vnodes (N threads)");
 
   for (int i = 0; i < kNumThreadsB; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i],
-                                 &multithread_vnode_get_test_worker, vnodes));
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(
+                      &threads[i], &multithread_vnode_get_test_worker, vnodes));
   }
   for (int i = 0; i < kNumThreadsB; ++i) {
     KEXPECT_EQ(NULL, kthread_join(threads[i]));
@@ -6507,12 +6482,9 @@ static void multithread_vnode_get_put_race_test(void) {
 
   kthread_t threads[kNumThreads];
   for (int i = 0; i < kNumThreads; ++i) {
-    KEXPECT_EQ(0, kthread_create(&threads[i],
-                                 &multithread_vnode_get_put_race_test_func,
-                                 (void*)(intptr_t)kIters));
-  }
-  for (int i = 0; i < kNumThreads; ++i) {
-    scheduler_make_runnable(threads[i]);
+    KEXPECT_EQ(0, proc_thread_create(&threads[i],
+                                     &multithread_vnode_get_put_race_test_func,
+                                     (void*)(intptr_t)kIters));
   }
   for (int i = 0; i < kNumThreads; ++i) {
     kthread_join(threads[i]);
@@ -6578,10 +6550,9 @@ static void do_create_unlink_race_test(int iters, const char* path,
   mtcdrt_args_t args;
   args.done = false;
   args.type = type;
-  KEXPECT_EQ(
-      0, kthread_create(&create_thread,
-                        &multithread_create_delete_race_test_make_func, &args));
-  scheduler_make_runnable(create_thread);
+  KEXPECT_EQ(0, proc_thread_create(
+                    &create_thread,
+                    &multithread_create_delete_race_test_make_func, &args));
 
   int deletions = 0;
   while (deletions < iters) {
@@ -6610,10 +6581,9 @@ static void multithread_create_delete_race_test(void) {
   mtcdrt_args_t args;
   args.done = false;
   args.type = TEST_CREATE_MKDIR;
-  KEXPECT_EQ(
-      0, kthread_create(&create_thread,
-                        &multithread_create_delete_race_test_make_func, &args));
-  scheduler_make_runnable(create_thread);
+  KEXPECT_EQ(0, proc_thread_create(
+                    &create_thread,
+                    &multithread_create_delete_race_test_make_func, &args));
 
   int deletions = 0;
   while (deletions < kIters) {

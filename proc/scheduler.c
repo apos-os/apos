@@ -44,7 +44,7 @@ void scheduler_init() {
   kthread_queue_init(&g_run_queue);
 
   // Make the idle thread.
-  int ret = kthread_create_kernel(&g_idle_thread, &idle_thread_body, 0);
+  int ret = kthread_create(&g_idle_thread, &idle_thread_body, 0);
   KASSERT(ret == 0);
   POP_INTERRUPTS();
 }
@@ -112,7 +112,7 @@ static int scheduler_wait_on_internal(kthread_queue_t* queue, int interruptable,
   timer_handle_t timeout_handle;
   if (interruptable) {
     const ksigset_t dispatchable = proc_dispatchable_signals();
-    if (!ksigisemptyset(&dispatchable)) {
+    if (!ksigisemptyset(dispatchable)) {
       current->wait_status = SWAIT_INTERRUPTED;
       POP_INTERRUPTS();
       return SWAIT_INTERRUPTED;

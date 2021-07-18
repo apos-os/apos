@@ -88,6 +88,12 @@ void kexpect_int(const char* name, const char* file, const char* line,
 #define KEXPECT_GT(a, b) KEXPECT_INT_("KEXPECT_GT", #a, #b, a, b, >, " <= ")
 #define KEXPECT_GE(a, b) KEXPECT_INT_("KEXPECT_GE", #a, #b, a, b, >=, " < ")
 
+#define KEXPECT_TRUE(b) \
+  KEXPECT_INT_("KEXPECT_TRUE", "true", #b, true, ((bool)(b)), ==, " != ")
+
+#define KEXPECT_FALSE(b) \
+  KEXPECT_INT_("KEXPECT_FALSE", "false", #b, false, ((bool)(b)), ==, " != ")
+
 // Initialize the testing framework.
 void ktest_begin_all(void);
 
