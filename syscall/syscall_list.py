@@ -560,3 +560,7 @@ AddSyscall('apos_thread_kill', 92, 'proc_thread_kill_user',
            'proc/user_thread.h', 'apos/thread.h', 'int',
            ['const apos_uthread_id_t*:id:br:sizeof(apos_uthread_id_t)',
             'int:sig:u'])
+
+AddSyscall('apos_thread_self', 93, 'proc_thread_self',
+           'proc/user_thread.h', 'apos/thread.h', 'int',
+           ['apos_uthread_id_t*:id:bw:sizeof(apos_uthread_id_t)'])

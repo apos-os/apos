@@ -552,6 +552,40 @@ static void send_signal_to_thread_test(void) {
   KEXPECT_EQ(2, status[0]);
 }
 
+static void send_signal_to_thread(void* arg) {
+  apos_uthread_id_t* id = (apos_uthread_id_t*)arg;
+  KEXPECT_EQ(0, apos_thread_kill(id, SIGUSR1));
+  KEXPECT_EQ(0, apos_thread_self(id));
+}
+
+static void self_test(void) {
+  KTEST_BEGIN("apos_thread_self(): basic test");
+  sigset_t set, old_set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGUSR1);
+  KEXPECT_EQ(0, sigprocmask(SIG_BLOCK, &set, &old_set));
+
+  apos_uthread_id_t me, other;
+  KEXPECT_EQ(0, apos_thread_self(&me));
+  KEXPECT_EQ(0, create_thread(&other, &send_signal_to_thread, &me));
+  KEXPECT_NE(0, memcmp(&me, &other, sizeof(apos_uthread_id_t)));
+  KEXPECT_NE(me._id, other._id);
+
+  int sig;
+  KEXPECT_EQ(0, sigwait(&set, &sig));
+  KEXPECT_EQ(SIGUSR1, sig);
+  sleep_ms(10);
+
+  // The other thread should have overwritten `me` with its ID.
+  KEXPECT_EQ(0, memcmp(&me, &other, sizeof(apos_uthread_id_t)));
+
+  KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &old_set, NULL));
+
+  KTEST_BEGIN("apos_thread_self(): invalid arguments");
+  KEXPECT_ERRNO(EFAULT, apos_thread_self(NULL));
+  KEXPECT_ERRNO(EFAULT, apos_thread_self((apos_uthread_id_t*)0x12345));
+}
+
 void thread_test(void) {
   KTEST_SUITE_BEGIN("thread tests");
 
@@ -562,6 +596,7 @@ void thread_test(void) {
 
   basic_thread_signal_test();
   send_signal_to_thread_test();
+  self_test();
 
   // TODO(aoates): other interesting tests:
   //  - signal masks and delivery

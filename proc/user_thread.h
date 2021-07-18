@@ -36,4 +36,8 @@ int proc_thread_exit_user(void) __attribute__((noreturn));
 // Send a signal to a particular thread.
 int proc_thread_kill_user(const apos_uthread_id_t* id, int sig);
 
+// Get the ID of the current thread.
+// TODO(aoates): make this return void.
+int proc_thread_self(apos_uthread_id_t* id);
+
 #endif

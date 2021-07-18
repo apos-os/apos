@@ -67,3 +67,8 @@ int proc_thread_kill_user(const apos_uthread_id_t* id, int sig) {
   }
   return -ESRCH;
 }
+
+int proc_thread_self(apos_uthread_id_t* id) {
+  id->_id = kthread_current_thread()->id;
+  return 0;
+}
