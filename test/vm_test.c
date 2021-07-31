@@ -359,6 +359,220 @@ static void vm_address_invalid_args(void) {
              vm_verify_address(proc_current(), (addr_t)&x, 0, 0, NULL));
 }
 
+static void vm_resolve_test(void) {
+  KTEST_BEGIN("vm_resolve_address(): invalid args");
+  int x;
+  phys_addr_t resolved, resolved2;
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(NULL, (addr_t)&x, 4, 0, 0, &resolved));
+  KEXPECT_EQ(-EINVAL,
+             vm_resolve_address(proc_current(), (addr_t)&x, 4, 0, 0, NULL));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)&x, 3, 0, 0,
+                                         &resolved));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)&x, 5, 0, 0,
+                                         &resolved));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)&x, 12, 0, 0,
+                                         &resolved));
+
+  KTEST_BEGIN("vm_resolve_address(): basic");
+  void* mmaped_addr = NULL;
+  // Map three pages, then unmap the third .
+  KEXPECT_EQ(0, do_mmap(NULL, 3 * PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_PRIVATE | KMAP_ANONYMOUS, -1, 0, &mmaped_addr));
+  KEXPECT_EQ(
+      0, do_munmap((void*)((addr_t)mmaped_addr + 2 * PAGE_SIZE), PAGE_SIZE));
+
+  // At first, the page isn't mapped, so the call should fail.
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT,
+             vm_resolve_address(proc_current(), (addr_t)mmaped_addr + 32, 4,
+                                /*is_write=*/false,
+                                /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + PAGE_SIZE, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + 2 * PAGE_SIZE, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+
+  // Touch the memory, forcing a page fault, then retry.
+  *(uint32_t*)mmaped_addr = 0x1234;
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved));
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr + 4, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(resolved + 4, resolved2);
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 1,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(resolved, resolved2);
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 2,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(resolved, resolved2);
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 8,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(resolved, resolved2);
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 3,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 5,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 6,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 7,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 9,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(-EINVAL,
+             vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 16,
+                                /*is_write=*/false,
+                                /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + PAGE_SIZE, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + 2 * PAGE_SIZE, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+
+  // Last address on first page.
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + PAGE_SIZE - 1, 1,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved));
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + PAGE_SIZE - 4, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved));
+
+  *(uint32_t*)(mmaped_addr + PAGE_SIZE + 64) = 0x5678;
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + PAGE_SIZE + 64, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved));
+
+  KEXPECT_EQ(0x5678, *(uint32_t*)(phys2virt(resolved)));
+
+  // Last address on second page.
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + 2 * PAGE_SIZE - 1, 1,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + 2 * PAGE_SIZE - 4, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved2));
+
+  // Test is_write = 1.
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + PAGE_SIZE + 64, 4,
+                                   /*is_write=*/true,
+                                   /*is_user=*/false, &resolved2));
+  KEXPECT_EQ(resolved, resolved2);
+
+  KTEST_BEGIN("vm_resolve_address(): unaligned accesses");
+  KEXPECT_EQ(-EINVAL,
+             vm_resolve_address(proc_current(), (addr_t)mmaped_addr + 2, 4,
+                                /*is_write=*/false,
+                                /*is_user=*/false, &resolved));
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + PAGE_SIZE - 4, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved));
+  // EFAULT could also be returned here.
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + PAGE_SIZE - 2, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + PAGE_SIZE - 4, 8,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EINVAL, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr + PAGE_SIZE - 3, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+
+  KTEST_BEGIN("vm_resolve_address(): access to kernel heap");
+  // N.B.: in theory this could be allowed, but we don't track these mappings so
+  // can't resolve to a physical address.
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), (addr_t)&x, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), (addr_t)&x, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/true, &resolved));
+  void* heap = kmalloc(10);
+  addr_t aligned_heap_addr = ((addr_t)heap & ~0x3) + 4;
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), aligned_heap_addr, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), aligned_heap_addr, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/true, &resolved));
+  kfree(heap);
+
+  KTEST_BEGIN("vm_resolve_address(): user access to kernel mappings");
+  void* mmaped_addr_kernel_only = NULL;
+  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_PRIVATE | KMAP_ANONYMOUS | KMAP_KERNEL_ONLY, -1, 0,
+                        &mmaped_addr_kernel_only));
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(),
+                                   (addr_t)mmaped_addr + PAGE_SIZE - 4, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/true, &resolved));
+  *(uint32_t*)mmaped_addr_kernel_only = 0;
+  KEXPECT_EQ(
+      0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr_kernel_only, 4,
+                            /*is_write=*/false,
+                            /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr_kernel_only, 4,
+                                         /*is_write=*/false,
+                                         /*is_user=*/true, &resolved));
+  KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
+                                         (addr_t)mmaped_addr_kernel_only, 4,
+                                         /*is_write=*/true,
+                                         /*is_user=*/true, &resolved));
+  KEXPECT_EQ(0, do_munmap(mmaped_addr_kernel_only, PAGE_SIZE));
+
+  KTEST_BEGIN("vm_resolve_address(): write not allowed in read-only mapping");
+  void* mmaped_addr_ro = NULL;
+  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_READ,
+                        KMAP_PRIVATE | KMAP_ANONYMOUS, -1, 0, &mmaped_addr_ro));
+  *(volatile uint32_t*)mmaped_addr_ro;  // Force page-in.
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/false, &resolved));
+  KEXPECT_EQ(-EFAULT,
+             vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
+                                /*is_write=*/true,
+                                /*is_user=*/false, &resolved));
+  KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
+                                   /*is_write=*/false,
+                                   /*is_user=*/true, &resolved));
+  KEXPECT_EQ(-EFAULT,
+             vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
+                                /*is_write=*/true,
+                                /*is_user=*/true, &resolved));
+
+  // Cleanup
+  KEXPECT_EQ(0, do_munmap(mmaped_addr, 2 * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(mmaped_addr_ro, PAGE_SIZE));
+}
+
 // TODO(aoates): test KPROT_EXEC once it's supported
 
 void vm_test(void) {
@@ -375,4 +589,6 @@ void vm_test(void) {
   vm_address_mmap_ro();
   vm_address_mmap_hole();
   vm_address_invalid_args();
+
+  vm_resolve_test();
 }
