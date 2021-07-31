@@ -50,6 +50,7 @@ int main(int argc, char** argv) {
   setjmp_test();
   cpu_exception_test();
   thread_test();
+  memory_test();
 
   return ktest_finish_all();
 }
