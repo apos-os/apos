@@ -36,7 +36,7 @@ static void basic_thread_test(void) {
   if (child == 0) {
     assert(0 == apos_thread_create(&thread, &thread_stack[9999],
                                    &basic_thread_test_tramp_fn));
-    sleep_ms(10);
+    for (int i = 0; i < 3; ++i) sleep_ms(10);
     assert(thread_stack_ptr == (void*)((size_t)&thread_stack + 9999));
     exit(0);
   }
