@@ -33,3 +33,7 @@ int apos_get_time(struct apos_tm* t) {
 
   return 0;
 }
+
+long timespec2ms(const struct apos_timespec* ts) {
+  return ts->tv_sec * 1000 + ts->tv_nsec / 1000000;
+}
