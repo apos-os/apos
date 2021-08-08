@@ -16,6 +16,7 @@
 
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "vfs/fs_types.h"
 #include "vfs/vfs_internal.h"
 
 int vfs_mount_fs(const char* path, fs_t* fs) {
@@ -119,6 +120,34 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   mount_point->mounted_fs = VFS_FSID_NONE;
   VFS_PUT_AND_CLEAR(mount_point);
 
+  return 0;
+}
+
+int vfs_mount(const char* source, const char* mount_path, const char* type,
+              unsigned long flags, const void* data, size_t data_len) {
+  fs_t* fs = NULL;
+  int result = fs_create(type, source, flags, data, data_len, &fs);
+  if (result) {
+    return result;
+  }
+
+  result = vfs_mount_fs(mount_path, fs);
+  if (result) {
+    fs->destroy_fs(fs);
+    return result;
+  }
+
+  return 0;
+}
+
+int vfs_unmount(const char* mount_path, unsigned long flags) {
+  fs_t* fs = NULL;
+  int result = vfs_unmount_fs(mount_path, &fs);
+  if (result) {
+    return result;
+  }
+
+  fs->destroy_fs(fs);
   return 0;
 }
 

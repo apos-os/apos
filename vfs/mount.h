@@ -26,6 +26,11 @@ int vfs_mount_fs(const char* path, fs_t* fs);
 // which has now been removed from the filesystem table).
 int vfs_unmount_fs(const char* path, fs_t** fs_out);
 
+// As above, but creates the filesystem as well using syscall mount arguments.
+int vfs_mount(const char* source, const char* mount_path, const char* type,
+              unsigned long flags, const void* data, size_t data_len);
+int vfs_unmount(const char* mount_path, unsigned long flags);
+
 // Return the number of currently-mounted filesystems, including the root
 // filesystem.
 int vfs_mounted_fs_count(void);

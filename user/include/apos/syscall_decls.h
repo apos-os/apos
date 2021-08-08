@@ -111,5 +111,7 @@ int sigwait(const ksigset_t* sigmask, int* sig);
 int apos_thread_kill(const apos_uthread_id_t* id, int sig);
 int apos_thread_self(apos_uthread_id_t* id);
 int futex_ts(uint32_t* uaddr, int op, uint32_t val, const struct apos_timespec* timespec, uint32_t* uaddr2, uint32_t val3);
+int mount(const char* source, const char* mount_path, const char* type, unsigned long flags, const void* data, size_t data_len);
+int unmount(const char* mount_path, unsigned long flags);
 
 #endif

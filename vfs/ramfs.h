@@ -24,6 +24,10 @@
 // then default system directories (e.g. '/proc') will be created.
 fs_t* ramfs_create_fs(int create_default_dirs);
 
+// Create a ramfs per standard creation args.
+int ramfs_create_path(const char* source, unsigned long flags, const void* data,
+                      size_t data_len, fs_t** fs_out);
+
 // Destroy the ramfs, which must be unmounted.
 void ramfs_destroy_fs(fs_t* fs);
 

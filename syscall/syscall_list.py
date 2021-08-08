@@ -570,3 +570,11 @@ AddSyscall('futex_ts', 94, 'futex_op', 'proc/futex.h', 'apos/futex.h',
                    'const struct apos_timespec%(s32)s*:timespec:br?:' +
                    'sizeof(struct apos_timespec%(s32)s)', 'uint32_t*:uaddr2:u',
                    'uint32_t:val3:u'])
+
+AddSyscall('mount', 95, 'vfs_mount', 'vfs/mount.h', '', 'int',
+    ['const char*:source:s', 'const char*:mount_path:s',
+      'const char*:type:s', 'unsigned long:flags:u',
+      'const void*:data:br?:data_len', 'size_t:data_len:u'])
+
+AddSyscall('unmount', 96, 'vfs_unmount', 'vfs/mount.h', '', 'int',
+    ['const char*:mount_path:s', 'unsigned long:flags:u'])

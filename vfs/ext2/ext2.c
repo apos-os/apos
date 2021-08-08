@@ -24,6 +24,7 @@
 #include "vfs/ext2/ext2_ops.h"
 #include "vfs/ext2/ext2fs.h"
 #include "vfs/fs.h"
+#include "vfs/vfs.h"
 
 fs_t* ext2_create_fs() {
   ext2fs_t* fs = kmalloc(sizeof(ext2fs_t));
@@ -68,5 +69,25 @@ int ext2_mount(fs_t* fs, apos_dev_t dev) {
 
   // TODO
   ext2fs->mounted = 1;
+  return 0;
+}
+
+int ext2_create_path(const char* source, unsigned long flags, const void* data,
+                     size_t data_len, fs_t** fs_out) {
+  apos_stat_t stat;
+  int result = vfs_stat(source, &stat);
+  if (result) return result;
+
+  if (!VFS_S_ISBLK(stat.st_mode)) {
+    return -ENOTSUP;
+  }
+
+  *fs_out = ext2_create_fs();
+  result = ext2_mount(*fs_out, stat.st_rdev);
+  if (result) {
+    ext2_destroy_fs(*fs_out);
+    return result;
+  }
+
   return 0;
 }

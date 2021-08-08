@@ -288,6 +288,16 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   return (fs_t*)f;
 }
 
+int ramfs_create_path(const char* source, unsigned long flags, const void* data,
+                      size_t data_len, fs_t** fs_out) {
+  if (kstrcmp(source, "") != 0) {
+    return -EINVAL;
+  }
+
+  *fs_out = ramfs_create_fs(0);
+  return 0;
+}
+
 void ramfs_destroy_fs(fs_t* fs) {
   ramfs_t* ramfs = (ramfs_t*)fs;
   KASSERT(ramfs->fs.open_vnodes == 0);

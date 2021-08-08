@@ -30,4 +30,9 @@ void ext2_destroy_fs(fs_t* fs);
 // on success.
 int ext2_mount(fs_t* fs, apos_dev_t dev);
 
+// Create an ext2 filesystem from the given path, which should be a block
+// device.  Returns -error on failure.
+int ext2_create_path(const char* source, unsigned long flags, const void* data,
+                     size_t data_len, fs_t** fs_out);
+
 #endif

@@ -66,6 +66,16 @@ fs_t* testfs_create(void) {
   return f;
 }
 
+int testfs_create_path(const char* source, unsigned long flags,
+                       const void* data, size_t data_len, fs_t** fs_out) {
+  if (kstrcmp(source, "") != 0) {
+    return -EINVAL;
+  }
+
+  *fs_out = testfs_create();
+  return 0;
+}
+
 void testfs_free(fs_t* fs) {
   kfree(fs);
 }

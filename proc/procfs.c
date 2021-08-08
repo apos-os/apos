@@ -301,3 +301,12 @@ fs_t* procfs_create(void) {
   return fs;
 }
 
+int procfs_create_path(const char* source, unsigned long flags,
+                       const void* data, size_t data_len, fs_t** fs_out) {
+  if (kstrcmp(source, "") != 0) {
+    return -EINVAL;
+  }
+
+  *fs_out = procfs_create();
+  return 0;
+}
