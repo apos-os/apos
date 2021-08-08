@@ -16,11 +16,13 @@
 
 Import('user_env')
 
+COMMON_LIB_PATH = '#/$BUILD_CFG_DIR/os/common'
+
 ktest_lib = user_env.StaticLibrary('ktest', ['ktest.c'])
 user_env.Program('all_tests',
         ['all_tests.c', 'syscall_errno.c', 'exit_status.c',
          'basic_signal_test.c', 'execve_test.c', 'fs_test.c',
          'misc_syscall_test.c', 'socket_test.c', 'stop_test.c', 'wait_test.c',
          'setjmp_test.c', 'cpu_exception_test.c', 'thread_test.c',
-         'thread_test_asm.s'],
-    LIBS=[ktest_lib])
+         'thread_test_asm.s', 'memory_test.c'],
+    LIBS=[ktest_lib, 'common'], LIBPATH=COMMON_LIB_PATH)

@@ -141,7 +141,8 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   if (length == 0 || length % PAGE_SIZE != 0 || offset % PAGE_SIZE != 0) {
     return -EINVAL;
   }
-  if (flags & ~(KMAP_SHARED | KMAP_PRIVATE | KMAP_FIXED | KMAP_ANONYMOUS)) {
+  if (flags & ~(KMAP_SHARED | KMAP_PRIVATE | KMAP_FIXED | KMAP_ANONYMOUS |
+                KMAP_KERNEL_ONLY)) {
     return -EINVAL;
   }
 
@@ -225,7 +226,8 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
   area->vm_length = length;
   area->memobj_base = offset;
   area->prot = prot;
-  area->access = MEM_ACCESS_KERNEL_AND_USER;
+  area->access = (flags & KMAP_KERNEL_ONLY) ? MEM_ACCESS_KERNEL_ONLY
+                                            : MEM_ACCESS_KERNEL_AND_USER;
   area->flags = 0x0;
 
   area->proc = proc_current();
@@ -252,7 +254,6 @@ int do_munmap(void* addr_ptr, addr_t length) {
     const addr_t overlap_end =
         min(addr + length, area->vm_base + area->vm_length);
     if (overlap_end > overlap_start) {
-      KASSERT(area->access == MEM_ACCESS_KERNEL_AND_USER);
       unmap_area(area, overlap_start, overlap_end);
       // area may no longer be valid.
     }

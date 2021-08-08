@@ -16,6 +16,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include "os/common/apos_klog.h"
+
 #include "ktest.h"
 
 #if ENABLE_TERM_COLOR
@@ -88,8 +90,8 @@ void KTEST_SUITE_BEGIN(const char* name) {
   finish_suite();  // Finish the previous suite, if running.
   current_suite_passing = 1;
   num_suites++;
-  printf("\n\nTEST SUITE: %s\n", name);
-  printf("#######################################\n");
+  apos_klogf("\n\nTEST SUITE: %s\n", name);
+  apos_klogf("#######################################\n");
 }
 
 void KTEST_BEGIN(const char* name) {
@@ -106,16 +108,14 @@ void kexpect(int cond, const char* name, const char* astr,
              const char* line) {
   if (!cond) {
     if (current_test_passing) {
-      printf("\nTEST: %s\n", current_test_name);
-      printf("---------------------------------------\n");
+      apos_klogf("\nTEST: %s\n", current_test_name);
+      apos_klogf("---------------------------------------\n");
     }
     current_test_passing = 0;
     current_suite_passing = 0;
-    printf(FAILED " %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n",
-           name, astr, bstr, file, line, val_surrounders, aval, val_surrounders,
-           opstr, val_surrounders, bval, val_surrounders);
-    printf("<press enter to continue>");
-    getchar();
+    apos_klogf(FAILED " %s(%s, %s) at %s:%s: %s%s%s%s%s%s%s\n", name, astr,
+               bstr, file, line, val_surrounders, aval, val_surrounders, opstr,
+               val_surrounders, bval, val_surrounders);
   }
 }
 
@@ -150,7 +150,7 @@ void ktest_begin_all() {
   failing_test_names_idx = 0;
   test_start_time = 0;  // TODO get_time_ms();
 
-  printf("KERNEL UNIT TESTS");
+  apos_klogf("USERSPACE UNIT TESTS");
 }
 
 int ktest_finish_all() {
@@ -158,24 +158,24 @@ int ktest_finish_all() {
   finish_test();
   finish_suite();
 
-  printf("---------------------------------------\n");
-  printf("KERNEL UNIT TESTS FINISHED\n");
+  apos_klogf("---------------------------------------\n");
+  apos_klogf("USERSPACE UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
-    printf(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
-           num_suites_passing, num_suites, num_tests_passing, num_tests,
-           end_time - test_start_time);
+    apos_klogf(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
+               num_suites_passing, num_suites, num_tests_passing, num_tests,
+               end_time - test_start_time);
     return 0;
   } else {
-    printf(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
-           num_suites_passing, num_suites, num_tests_passing, num_tests,
-           end_time - test_start_time);
-    printf("Failed tests:\n");
+    apos_klogf(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
+               num_suites_passing, num_suites, num_tests_passing, num_tests,
+               end_time - test_start_time);
+    apos_klogf("Failed tests:\n");
     for (int i = 0; i < failing_test_names_idx; ++i) {
-      printf("  %s\n", failing_test_names[i]);
+      apos_klogf("  %s\n", failing_test_names[i]);
     }
     int num_leftover = num_tests - num_tests_passing - failing_test_names_idx;
     if (num_leftover > 0) {
-      printf("  ...and %d more\n", num_leftover);
+      apos_klogf("  ...and %d more\n", num_leftover);
     }
     return 1;
   }

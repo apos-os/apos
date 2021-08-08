@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2021 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,17 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#ifndef APOO_USER_INCLUDE_APOS_FUTEX_H
+#define APOO_USER_INCLUDE_APOS_FUTEX_H
 
-#ifndef APOO_COMMON_TIME_H
-#define APOO_COMMON_TIME_H
-
-#include "user/include/apos/posix_types.h"
-#include "user/include/apos/time_types.h"
-
-// Return the current time can best be determined.
-int apos_get_time(struct apos_tm* t);
-
-// Convert an apos_timespec into a milliseconds count.
-long timespec2ms(const struct apos_timespec* ts);
+#define APOS_FUTEX_WAIT 0x1
+#define APOS_FUTEX_WAKE 0x2
 
 #endif

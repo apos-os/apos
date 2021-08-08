@@ -18,6 +18,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "memory/mmap.h"
+#include "proc/futex.h"
 #include "proc/limit.h"
 #include "proc/signal/signal.h"
 #include "syscall/wrappers32.h"
@@ -28,6 +29,13 @@ static struct apos_timespec_32 timespec64to32(struct apos_timespec ts64) {
   ts32.tv_sec = ts64.tv_sec;
   ts32.tv_nsec = ts64.tv_nsec;
   return ts32;
+}
+
+static struct apos_timespec timespec32to64(struct apos_timespec_32 ts32) {
+  struct apos_timespec ts64;
+  ts64.tv_sec = ts32.tv_sec;
+  ts64.tv_nsec = ts32.tv_nsec;
+  return ts64;
 }
 
 static void stat64to32(const apos_stat_t* stat64, apos_stat_32_t* stat32) {
@@ -156,4 +164,11 @@ int mmap_wrapper_32(void* addr_inout32, addr_t length, int prot, int flags,
   // TODO(aoates): enforce 32-bit only mappings in mmap.
   *(uint32_t*)addr_inout32 = (addr_t)addr_out;
   return result;
+}
+
+int futex_op_32(uint32_t* uaddr, int op, uint32_t val,
+                const struct apos_timespec_32* timeout, uint32_t* uaddr2,
+                uint32_t val3) {
+  struct apos_timespec timeout64 = timespec32to64(*timeout);
+  return futex_op(uaddr, op, val, &timeout64, uaddr2, val3);
 }

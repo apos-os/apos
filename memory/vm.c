@@ -68,7 +68,7 @@ void vm_insert_area(process_t* proc, vm_area_t* area) {
 
 // Check if access is allowed to the given region.
 // TODO(aoates): unify this with fault_allowed() in vm_page_fault.c
-static int verify_access(vm_area_t* area, bool is_write, bool is_user) {
+static int verify_access(const vm_area_t* area, bool is_write, bool is_user) {
   if (is_write && (!(area->prot & MEM_PROT_WRITE)))
     return -EFAULT;
   if (is_user && (area->access != MEM_ACCESS_KERNEL_AND_USER))
@@ -148,6 +148,60 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
   } while (link &&
            contig_area->vm_base == prev_area->vm_base + prev_area->vm_length &&
            verify_access(contig_area, is_write, is_user) == 0);
+  return 0;
+}
+
+int vm_resolve_address(process_t* proc, addr_t start, size_t size,
+                       bool is_write, bool is_user, phys_addr_t* resolved_out) {
+  if (!proc || !resolved_out) {
+    return -EINVAL;
+  }
+  // No real reason we couldn't support other sizes in theory, if the underlying
+  // architecture allowed reads from those sizes, but disallow for simplicity.
+  if (size != 1 && size != 2 && size != 4 && size != 8) {
+    return -EINVAL;
+  }
+  // Force aligned accesses (again, could be allowed on some architectures if
+  // necessary).
+  if (start % size != 0) {
+    return -EINVAL;
+  }
+
+  // Find the last area, if any, that starts before the requested address.
+  // TODO(aoates): combine this with logic in other functions as helper.
+  const list_link_t* link = proc->vm_area_list.head;
+  const vm_area_t* last_area = NULL;
+  while (link) {
+    const vm_area_t* const area =
+        container_of(link, const vm_area_t, vm_proc_list);
+    if (area->vm_base > start) {
+      break;
+    }
+    last_area = area;
+    link = link->next;
+  }
+
+  if (!last_area || last_area->vm_base + last_area->vm_length < start + size) {
+    return -EFAULT;
+  }
+
+  const int result = verify_access(last_area, is_write, is_user);
+  if (result) return result;
+
+  if (!last_area->memobj) {
+    return -EFAULT;
+  }
+
+  const addr_t virt_page = addr2page(start);
+  const size_t area_page_offset = (virt_page - last_area->vm_base) / PAGE_SIZE;
+  const size_t offset_in_page = start % PAGE_SIZE;
+  const bc_entry_t* bce = last_area->pages[area_page_offset];
+  if (!bce) {
+    // The access _would_ be valid, but that address isn't currently swapped in.
+    return -EFAULT;
+  }
+
+  *resolved_out = bce->block_phys + offset_in_page;
   return 0;
 }
 

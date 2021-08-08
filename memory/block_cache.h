@@ -40,7 +40,7 @@ typedef struct bc_entry {
   void* block;
 
   // Physical address of the memory block.  Will be block-size-aligned.
-  addr_t block_phys;
+  phys_addr_t block_phys;
 } bc_entry_t;
 
 // Return a pointer to the block cache for the given block.  If no entry exists,

@@ -20,6 +20,7 @@ srcs = [
   'exec.c',
   'exit.c',
   'fork.c',
+  'futex.c',
   'group.c',
   'kthread.c',
   'scheduler.c',

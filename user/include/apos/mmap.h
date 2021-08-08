@@ -28,6 +28,7 @@
 // Other flags.
 #define KMAP_FIXED 0x04
 #define KMAP_ANONYMOUS 0x08
+#define KMAP_KERNEL_ONLY 0x10
 
 // Export POSIX names for user code.
 #if !__APOS_BUILDING_KERNEL__

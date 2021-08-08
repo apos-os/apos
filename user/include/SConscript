@@ -23,6 +23,7 @@ HEADERS = [
   'apos/_posix_termios_constants.h',
   'apos/dev.h',
   'apos/errors.h',
+  'apos/futex.h',
   'apos/mmap.h',
   'apos/net/socket/inet.h',
   'apos/net/socket/socket.h',
