@@ -35,6 +35,9 @@ struct fs {
 
   // TODO(aoates): how does allocating the root inode/vnode work?
 
+  // Destroy the (unmounted) filesystem.
+  void (*destroy_fs)(struct fs* fs);
+
   // Allocate a vnode_t, with enough extra space for whatever data the FS will
   // want to store there.  The FS doesn't have to initialize any fields.
   vnode_t* (*alloc_vnode)(struct fs* fs);

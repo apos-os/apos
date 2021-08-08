@@ -253,6 +253,7 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
   vfs_fs_init(&f->fs);
 
   kstrcpy(f->fs.fstype, "cbfs");
+  f->fs.destroy_fs = &cbfs_free;
   f->fs.alloc_vnode = &cbfs_alloc_vnode;
   f->fs.get_root = &cbfs_get_root;
   f->fs.get_vnode = &cbfs_get_vnode;

@@ -45,6 +45,7 @@ fs_t* testfs_create(void) {
   vfs_fs_init(f);
 
   kstrcpy(f->fstype, "testfs");
+  f->destroy_fs = &testfs_free;
   f->alloc_vnode = &testfs_alloc_vnode;
   f->get_root = &testfs_get_root;
   f->get_vnode = &testfs_get_vnode;

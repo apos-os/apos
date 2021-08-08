@@ -49,6 +49,10 @@ typedef struct {
   kino_t next_inode;
 } anonfs_t;
 
+void anonfs_destroy(fs_t* fs) {
+  kfree(fs);
+}
+
 fs_t* anonfs_create(vnode_type_t type) {
   anonfs_t* fs = (anonfs_t*)kmalloc(sizeof(anonfs_t));
   kmemset(fs, 0, sizeof(anonfs_t));
@@ -59,6 +63,7 @@ fs_t* anonfs_create(vnode_type_t type) {
   fs->type = type;
   fs->next_inode = 0;
 
+  fs->fs.destroy_fs = &anonfs_destroy;
   fs->fs.alloc_vnode = &anonfs_alloc_vnode;
   fs->fs.get_root = &anonfs_get_root;
   fs->fs.get_vnode = &anonfs_get_vnode;

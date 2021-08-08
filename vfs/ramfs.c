@@ -240,6 +240,7 @@ fs_t* ramfs_create_fs(int create_default_dirs) {
   f->spinlock = KSPINLOCK_NORMAL_INIT;
 
   kstrcpy(f->fs.fstype, "ramfs");
+  f->fs.destroy_fs = &ramfs_destroy_fs;
   f->fs.alloc_vnode = &ramfs_alloc_vnode;
   f->fs.get_root = &ramfs_get_root;
   f->fs.get_vnode = &ramfs_get_vnode;
