@@ -564,3 +564,9 @@ AddSyscall('apos_thread_kill', 92, 'proc_thread_kill_user',
 AddSyscall('apos_thread_self', 93, 'proc_thread_self',
            'proc/user_thread.h', 'apos/thread.h', 'int',
            ['apos_uthread_id_t*:id:bw:sizeof(apos_uthread_id_t)'])
+
+AddSyscall('futex_ts', 94, 'futex_op', 'proc/futex.h', 'apos/futex.h',
+           'int', ['uint32_t*:uaddr:u', 'int:op:u', 'uint32_t:val:u',
+                   'const struct apos_timespec%(s32)s*:timespec:br?:' +
+                   'sizeof(struct apos_timespec%(s32)s)', 'uint32_t*:uaddr2:u',
+                   'uint32_t:val3:u'])

@@ -31,6 +31,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#include "apos/futex.h"
 #include "apos/thread.h"
 
 
@@ -109,5 +110,6 @@ int apos_thread_exit(void);
 int sigwait(const ksigset_t* sigmask, int* sig);
 int apos_thread_kill(const apos_uthread_id_t* id, int sig);
 int apos_thread_self(apos_uthread_id_t* id);
+int futex_ts(uint32_t* uaddr, int op, uint32_t val, const struct apos_timespec* timespec, uint32_t* uaddr2, uint32_t val3);
 
 #endif

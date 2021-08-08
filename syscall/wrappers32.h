@@ -109,6 +109,10 @@ int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim);
 int mmap_wrapper_32(void* addr_inout, addr_t length, int prot, int flags,
                     int fd, addr_t offset);
 
+int futex_op_32(uint32_t* uaddr, int futex_op, uint32_t val,
+                const struct apos_timespec_32* timeout, uint32_t* uaddr2,
+                uint32_t val3);
+
 // Some types we want to ensure are always the same size on all architectures.
 _Static_assert(sizeof(struct ktermios) == 28, "struct ktermios wrong size!");
 _Static_assert(sizeof(struct apos_pollfd) == 8, "struct pollfd wrong size!");
