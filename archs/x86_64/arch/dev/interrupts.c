@@ -72,6 +72,10 @@ extern void int47(void);
 // User-defined handlers established by register_interrupt_handler().
 static int_handler_t g_handlers[MAX_INTERRUPT + 1];
 
+static void dblfault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
+  die("Kernel double fault");
+}
+
 void register_interrupt_handler(uint8_t interrupt, int_handler_t handler) {
   KASSERT(interrupt <= MAX_INTERRUPT);
   g_handlers[interrupt] = handler;
@@ -81,9 +85,12 @@ void register_interrupt_handler(uint8_t interrupt, int_handler_t handler) {
 // handler will be put in the IDT, and invoked directly when the interrupt
 // fires.
 typedef void (*raw_int_handler_t)(void);
-static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
+static void register_raw_interrupt_handler(uint8_t num, int ist,
+                                           raw_int_handler_t h) {
   KASSERT(idt != 0);
   KASSERT(num < idt_entries);
+  KASSERT(ist >= 0);
+  KASSERT(ist <= 7);
 
   //_Static_assert(sizeof(h) == sizeof(uint32_t), "Invalid function ptr size");
   addr_t offset = (addr_t)h;
@@ -92,7 +99,8 @@ static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
   idt[num].offset_high2 = offset >> 32;
   idt[num].selector = IDT_SELECTOR_VALUE;
   idt[num].type_attr = IDT_PRESENT | IDT_DPL_RING0 | IDT_TYPE_64_INT;
-  idt[num].zero = idt[num].reserved = 0;
+  idt[num].ist = ist;
+  idt[num].reserved = 0;
 }
 
 // Given the rbp from int_common_handler (in isr.s), determine whether the
@@ -191,44 +199,50 @@ void interrupts_init() {
   // code doesn't have to know up front which will be needed.
 
   // Processor-generated interrupts.
-  register_raw_interrupt_handler(0, &int0);
-  register_raw_interrupt_handler(1, &int1);
-  register_raw_interrupt_handler(2, &int2);
-  register_raw_interrupt_handler(3, &int3);
-  register_raw_interrupt_handler(4, &int4);
-  register_raw_interrupt_handler(5, &int5);
-  register_raw_interrupt_handler(6, &int6);
-  register_raw_interrupt_handler(7, &int7);
-  register_raw_interrupt_handler(8, &int8);
-  register_raw_interrupt_handler(9, &int9);
-  register_raw_interrupt_handler(10, &int10);
-  register_raw_interrupt_handler(11, &int11);
-  register_raw_interrupt_handler(12, &int12);
-  register_raw_interrupt_handler(13, &int13);
-  register_raw_interrupt_handler(14, &int14);
-  register_raw_interrupt_handler(15, &int15);
-  register_raw_interrupt_handler(16, &int16);
-  register_raw_interrupt_handler(17, &int17);
-  register_raw_interrupt_handler(18, &int18);
-  register_raw_interrupt_handler(19, &int19);
+  // TODO(aoates): consider using a dedicated stack for all interrupts, not just
+  // the double-fault.
+  register_raw_interrupt_handler(0, 0, &int0);
+  register_raw_interrupt_handler(1, 0, &int1);
+  register_raw_interrupt_handler(2, 0, &int2);
+  register_raw_interrupt_handler(3, 0, &int3);
+  register_raw_interrupt_handler(4, 0, &int4);
+  register_raw_interrupt_handler(5, 0, &int5);
+  register_raw_interrupt_handler(6, 0, &int6);
+  register_raw_interrupt_handler(7, 0, &int7);
+  register_raw_interrupt_handler(8, 1, &int8);
+  register_raw_interrupt_handler(9, 0, &int9);
+  register_raw_interrupt_handler(10, 0, &int10);
+  register_raw_interrupt_handler(11, 0, &int11);
+  register_raw_interrupt_handler(12, 0, &int12);
+  register_raw_interrupt_handler(13, 0, &int13);
+  register_raw_interrupt_handler(14, 0, &int14);
+  register_raw_interrupt_handler(15, 0, &int15);
+  register_raw_interrupt_handler(16, 0, &int16);
+  register_raw_interrupt_handler(17, 0, &int17);
+  register_raw_interrupt_handler(18, 0, &int18);
+  register_raw_interrupt_handler(19, 0, &int19);
 
   // IRQ interrupts.
-  register_raw_interrupt_handler(0x20, &int32);
-  register_raw_interrupt_handler(0x21, &int33);
-  register_raw_interrupt_handler(0x22, &int34);
-  register_raw_interrupt_handler(0x23, &int35);
-  register_raw_interrupt_handler(0x24, &int36);
-  register_raw_interrupt_handler(0x25, &int37);
-  register_raw_interrupt_handler(0x26, &int38);
-  register_raw_interrupt_handler(0x27, &int39);
-  register_raw_interrupt_handler(0x28, &int40);
-  register_raw_interrupt_handler(0x29, &int41);
-  register_raw_interrupt_handler(0x2A, &int42);
-  register_raw_interrupt_handler(0x2B, &int43);
-  register_raw_interrupt_handler(0x2C, &int44);
-  register_raw_interrupt_handler(0x2D, &int45);
-  register_raw_interrupt_handler(0x2E, &int46);
-  register_raw_interrupt_handler(0x2F, &int47);
+  register_raw_interrupt_handler(0x20, 0, &int32);
+  register_raw_interrupt_handler(0x21, 0, &int33);
+  register_raw_interrupt_handler(0x22, 0, &int34);
+  register_raw_interrupt_handler(0x23, 0, &int35);
+  register_raw_interrupt_handler(0x24, 0, &int36);
+  register_raw_interrupt_handler(0x25, 0, &int37);
+  register_raw_interrupt_handler(0x26, 0, &int38);
+  register_raw_interrupt_handler(0x27, 0, &int39);
+  register_raw_interrupt_handler(0x28, 0, &int40);
+  register_raw_interrupt_handler(0x29, 0, &int41);
+  register_raw_interrupt_handler(0x2A, 0, &int42);
+  register_raw_interrupt_handler(0x2B, 0, &int43);
+  register_raw_interrupt_handler(0x2C, 0, &int44);
+  register_raw_interrupt_handler(0x2D, 0, &int45);
+  register_raw_interrupt_handler(0x2E, 0, &int46);
+  register_raw_interrupt_handler(0x2F, 0, &int47);
+
+  // We bounce this through int8 so the stack is set up in the same way as other
+  // interrupts.
+  register_interrupt_handler(8, &dblfault_handler);
 
   // Register common fault handlers.
   register_fault_handlers();
