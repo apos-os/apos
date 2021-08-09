@@ -20,7 +20,7 @@
 #include "common/multilink.h"
 
 // Common segment indices.
-#define GDT_NUM_ENTRIES 7
+#define GDT_NUM_ENTRIES 8
 
 #define GDT_NULL_SEGMENT 0
 #define GDT_KERNEL_CODE_SEGMENT 1
@@ -29,6 +29,7 @@
 #define GDT_USER_DATA_SEGMENT 4
 #define GDT_TSS 5
 #define GDT_SYSCALL_CALL_GATE 6
+#define GDT_TSS_DBLFAULT 7
 
 #define RPL_KERNEL 0
 #define RPL_USER 3

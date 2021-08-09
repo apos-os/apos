@@ -93,6 +93,15 @@ static void register_raw_interrupt_handler(uint8_t num, raw_int_handler_t h) {
   idt[num].type_attr = 0 | IDT_PRESENT | IDT_DPL_RING0 | IDT_TYPE_32_INT;
 }
 
+static void register_task_gate(uint8_t num, int gate) {
+  KASSERT(idt != 0);
+  KASSERT(num < idt_entries);
+
+  idt[num].offset_low = idt[num].offset_high = 0;
+  idt[num].selector = segment_selector(gate, RPL_KERNEL);
+  idt[num].type_attr = 0 | IDT_PRESENT | IDT_DPL_RING0 | IDT_TYPE_TASK_GATE;
+}
+
 // Given the ebp from int_common_handler (in isr.s), determine whether the
 // interrupt occurred in user or kernel mode.
 static int is_user_interrupt(addr_t ebp) {
@@ -183,7 +192,7 @@ void interrupts_init() {
   register_raw_interrupt_handler(5, &int5);
   register_raw_interrupt_handler(6, &int6);
   register_raw_interrupt_handler(7, &int7);
-  register_raw_interrupt_handler(8, &int8);
+  register_task_gate(8, GDT_TSS_DBLFAULT);
   register_raw_interrupt_handler(9, &int9);
   register_raw_interrupt_handler(10, &int10);
   register_raw_interrupt_handler(11, &int11);

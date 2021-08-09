@@ -26,17 +26,46 @@
 // page boundary.
 static tss_t g_tss __attribute__((aligned (256)));
 
+// Special TSS for handling double faults.
+static tss_t g_dblfault_tss __attribute__((aligned (256)));
+
+// Special stack for double faults.
+#define DBLFAULT_STACK_SIZE 4096
+static uint8_t g_dblfault_stack[DBLFAULT_STACK_SIZE]
+    __attribute__((aligned(DBLFAULT_STACK_SIZE)));
+
+static void dblfault_handler(void) {
+  die("Kernel double fault");
+}
+
 void tss_init() {
   KASSERT(g_tss.ss0 == 0);
   kmemset(&g_tss, 0, sizeof(tss_t));
   g_tss.ss0 = segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL);
   g_tss.iombp = sizeof(tss_t);  // No IOBMP.
 
+  kmemset(&g_dblfault_tss, 0, sizeof(tss_t));
+  g_dblfault_tss.esp = (uint32_t)&g_dblfault_stack + DBLFAULT_STACK_SIZE - 4;
+  g_dblfault_tss.eip = (uint32_t)&dblfault_handler;
+  g_dblfault_tss.cs = segment_selector(GDT_KERNEL_CODE_SEGMENT, RPL_KERNEL);
+  g_dblfault_tss.ss = segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL);
+  g_dblfault_tss.iombp = sizeof(tss_t);  // No IOBMP.
+
+  asm volatile(
+      "pushf\n\t"
+      "pop %0\n\t"
+      "movl %%cr3, %1\n\t"
+      : "=r"(g_dblfault_tss.eflags), "=r"(g_dblfault_tss.cr3));
+
   // Create a segment descriptor for the TSS.
-  const gdt_entry_t desc = gdt_entry_create_segment(
+  gdt_entry_t desc = gdt_entry_create_segment(
       (uint32_t)&g_tss, sizeof(tss_t) - 1, SEG_TSS,
       0, 0, 0);
   gdt_install_segment(GDT_TSS, desc);
+
+  desc = gdt_entry_create_segment((uint32_t)&g_dblfault_tss, sizeof(tss_t) - 1,
+                                  SEG_TSS, 0, 0, 0);
+  gdt_install_segment(GDT_TSS_DBLFAULT, desc);
 
   // Load the descriptor into the task register.
   const uint16_t selector = GDT_TSS * sizeof(gdt_entry_t);
@@ -50,4 +79,8 @@ void tss_set_kernel_stack(addr_t stack) {
                  "can't fit stack address into TSS");
   KASSERT(g_tss.ss0 != 0);
   g_tss.esp0 = (uint32_t)stack;
+}
+
+const tss_t* tss_get(void) {
+  return &g_tss;
 }
