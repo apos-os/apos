@@ -133,8 +133,7 @@ if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
   # TODO(aoates): get format-string checking to work with both GCC and clang.
   env.Append(CFLAGS = Split("-Wno-format"))
-  # TODO(aoates): get frame sizes under clang small enough to enable this.
-  env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
+env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '${TOOL_PREFIX}ld')
 
