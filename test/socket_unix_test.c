@@ -419,30 +419,34 @@ static int accept_and_close(int server_sock) {
   return 0;
 }
 
-static void connect_test(void) {
-  const char kClientPath[] = "_socket_client_path";
-  const char kServerPath[] = "_socket_server_path";
-
+typedef struct {
   struct sockaddr_un server_addr;
-  server_addr.sun_family = AF_UNIX;
-  kstrcpy(server_addr.sun_path, kServerPath);
+  int server_sock;
+} connect_test_state_t;
+
+const char kClientPath[] = "_socket_client_path";
+const char kServerPath[] = "_socket_server_path";
+
+static void connect_test(connect_test_state_t* s) {
+  s->server_addr.sun_family = AF_UNIX;
+  kstrcpy(s->server_addr.sun_path, kServerPath);
 
   KTEST_BEGIN("net_connect(AF_UNIX): basic connect");
-  int server_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
-  KEXPECT_GE(server_sock, 0);
-  KEXPECT_EQ(0, net_bind(server_sock, (struct sockaddr*)&server_addr,
-                         sizeof(server_addr)));
-  KEXPECT_EQ(0, net_listen(server_sock, 5));
+  s->server_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(s->server_sock, 0);
+  KEXPECT_EQ(0, net_bind(s->server_sock, (struct sockaddr*)&s->server_addr,
+                         sizeof(s->server_addr)));
+  KEXPECT_EQ(0, net_listen(s->server_sock, 5));
 
   int client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
-  KEXPECT_EQ(0, net_connect(client_sock, (struct sockaddr*)&server_addr,
-                            sizeof(server_addr)));
+  KEXPECT_EQ(0, net_connect(client_sock, (struct sockaddr*)&s->server_addr,
+                            sizeof(s->server_addr)));
 
   struct sockaddr_un accept_addr;
   socklen_t addr_len = 2 * sizeof(struct sockaddr_un);  // A lie!
   int accepted_sock =
-      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+      net_accept(s->server_sock, (struct sockaddr*)&accept_addr, &addr_len);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
   KEXPECT_STREQ("", accept_addr.sun_path);
@@ -450,14 +454,14 @@ static void connect_test(void) {
 
   KEXPECT_EQ(0, vfs_close(accepted_sock));
   KEXPECT_EQ(0, vfs_close(client_sock));
-  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_close(s->server_sock));
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect from bound socket");
   KEXPECT_EQ(0, create_socket_pair(kClientPath, kServerPath, 5, &client_sock,
-                                   &server_sock));
+                                   &s->server_sock));
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
-  accepted_sock = do_accept(server_sock, &accept_addr);
+  accepted_sock = do_accept(s->server_sock, &accept_addr);
   KEXPECT_GE(accepted_sock, 0);
 
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
@@ -474,7 +478,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, vfs_rename(kClientPath, "_client_socket2"));
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
-  accepted_sock = do_accept(server_sock, &accept_addr);
+  accepted_sock = do_accept(s->server_sock, &accept_addr);
   KEXPECT_GE(accepted_sock, 0);
 
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
@@ -492,7 +496,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
-  accepted_sock = do_accept(server_sock, &accept_addr);
+  accepted_sock = do_accept(s->server_sock, &accept_addr);
   KEXPECT_GE(accepted_sock, 0);
 
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
@@ -509,7 +513,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, vfs_link(kClientPath, "_client_socket2"));
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
-  accepted_sock = do_accept(server_sock, &accept_addr);
+  accepted_sock = do_accept(s->server_sock, &accept_addr);
   KEXPECT_GE(accepted_sock, 0);
 
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
@@ -526,7 +530,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, vfs_symlink(kServerPath, "_server_sock_link"));
   KEXPECT_EQ(0, do_connect(client_sock, "_server_sock_link"));
-  accepted_sock = do_accept(server_sock, &accept_addr);
+  accepted_sock = do_accept(s->server_sock, &accept_addr);
   KEXPECT_GE(accepted_sock, 0);
   vfs_close(accepted_sock);
   vfs_close(client_sock);
@@ -537,7 +541,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, vfs_link(kServerPath, "_server_sock_link"));
   KEXPECT_EQ(0, do_connect(client_sock, "_server_sock_link"));
-  accepted_sock = do_accept(server_sock, &accept_addr);
+  accepted_sock = do_accept(s->server_sock, &accept_addr);
   KEXPECT_GE(accepted_sock, 0);
   vfs_close(accepted_sock);
   vfs_close(client_sock);
@@ -586,7 +590,7 @@ static void connect_test(void) {
   KEXPECT_GE(client_sock2, 0);
   KEXPECT_EQ(0, do_connect(client_sock2, kServerPath));;
   KEXPECT_EQ(-ECONNREFUSED, do_connect(client_sock, "_bound_socket_path"));
-  KEXPECT_EQ(0, vfs_close(net_accept(server_sock, NULL, NULL)));
+  KEXPECT_EQ(0, vfs_close(net_accept(s->server_sock, NULL, NULL)));
   KEXPECT_EQ(0, vfs_close(client_sock2));
   KEXPECT_EQ(0, vfs_unlink("_bound_socket_path"));
 
@@ -609,20 +613,20 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_close(client_sock));
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect on already-connected socket");
-  KEXPECT_EQ(0, net_accept_queue_length(server_sock));
+  KEXPECT_EQ(0, net_accept_queue_length(s->server_sock));
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
   KEXPECT_EQ(-EISCONN, do_connect(client_sock, kServerPath));
-  KEXPECT_EQ(0, vfs_close(net_accept(server_sock, NULL, NULL)));
+  KEXPECT_EQ(0, vfs_close(net_accept(s->server_sock, NULL, NULL)));
   KEXPECT_EQ(0, vfs_close(client_sock));
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect on already-accepted socket");
-  KEXPECT_EQ(0, net_accept_queue_length(server_sock));
+  KEXPECT_EQ(0, net_accept_queue_length(s->server_sock));
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
-  client_sock2 = net_accept(server_sock, NULL, NULL);
+  client_sock2 = net_accept(s->server_sock, NULL, NULL);
   KEXPECT_EQ(-EISCONN, do_connect(client_sock, kServerPath));
   KEXPECT_EQ(0, vfs_close(client_sock));
   KEXPECT_EQ(0, vfs_close(client_sock2));
@@ -631,18 +635,18 @@ static void connect_test(void) {
   // atomic).
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect on listening socket");
-  KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, kServerPath));
-  KEXPECT_EQ(-EOPNOTSUPP, do_connect(server_sock, "_another_path"));
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s->server_sock, kServerPath));
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s->server_sock, "_another_path"));
 
   KTEST_BEGIN("net_accept(AF_UNIX): accept when peer has already closed");
-  KEXPECT_EQ(0, net_accept_queue_length(server_sock));
+  KEXPECT_EQ(0, net_accept_queue_length(s->server_sock));
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
   KEXPECT_EQ(0, vfs_close(client_sock));
 
   kmemset(&accept_addr, 0xFF, sizeof(accept_addr));
-  client_sock2 = do_accept(server_sock, &accept_addr);
+  client_sock2 = do_accept(s->server_sock, &accept_addr);
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
   KEXPECT_STREQ("", accept_addr.sun_path);
   KEXPECT_EQ(-EISCONN, do_connect(client_sock2, kServerPath));
@@ -659,35 +663,39 @@ static void connect_test(void) {
   KEXPECT_EQ(0, vfs_close(client_sock));
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
   KEXPECT_EQ(0, vfs_unlink("_server_sock2"));
+}
 
+static void connect_testB(connect_test_state_t* s) {
   KTEST_BEGIN("net_accept(AF_UNIX): NULL/NULL addr/len parameters");
   KEXPECT_EQ(0, connect_and_close(kServerPath));
-  accepted_sock = net_accept(server_sock, NULL, NULL);
+  int accepted_sock = net_accept(s->server_sock, NULL, NULL);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(0, vfs_close(accepted_sock));
 
   KTEST_BEGIN("net_accept(AF_UNIX): NULL/not-NULL addr/len parameters");
   KEXPECT_EQ(0, connect_and_close(kServerPath));
-  addr_len = 3;
-  accepted_sock = net_accept(server_sock, NULL, &addr_len);
+  socklen_t addr_len = 3;
+  accepted_sock = net_accept(s->server_sock, NULL, &addr_len);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(3, addr_len);
   KEXPECT_EQ(0, vfs_close(accepted_sock));
 
   KTEST_BEGIN("net_accept(AF_UNIX): not-NULL/NULL addr/len parameters");
   KEXPECT_EQ(0, connect_and_close(kServerPath));
+  struct sockaddr_un accept_addr;
   kmemset(&accept_addr, 0xFF, sizeof(accept_addr));
-  accepted_sock = net_accept(server_sock, (struct sockaddr*)&accept_addr, NULL);
+  accepted_sock =
+      net_accept(s->server_sock, (struct sockaddr*)&accept_addr, NULL);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(0, vfs_close(accepted_sock));
 
   KTEST_BEGIN("net_accept(AF_UNIX): too-small address struct");
-  client_sock = create_bound_socket(kClientPath);
+  int client_sock = create_bound_socket(kClientPath);
   KEXPECT_EQ(0, do_connect(client_sock, kServerPath));
   kmemset(&accept_addr, 0xFF, sizeof(accept_addr));
   addr_len = 10;
   accepted_sock =
-      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+      net_accept(s->server_sock, (struct sockaddr*)&accept_addr, &addr_len);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
   KEXPECT_EQ(AF_UNIX, accept_addr.sun_family);
@@ -707,7 +715,7 @@ static void connect_test(void) {
   kmemset(&accept_addr, 'a', sizeof(accept_addr));
   addr_len = offsetof(struct sockaddr_un, sun_path) + 1;
   accepted_sock =
-      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+      net_accept(s->server_sock, (struct sockaddr*)&accept_addr, &addr_len);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
   KEXPECT_EQ('a', ((const char*)&accept_addr)[0]);
@@ -721,7 +729,7 @@ static void connect_test(void) {
   kmemset(&accept_addr, 'a', sizeof(accept_addr));
   addr_len = offsetof(struct sockaddr_un, sun_path) - 1;
   accepted_sock =
-      net_accept(server_sock, (struct sockaddr*)&accept_addr, &addr_len);
+      net_accept(s->server_sock, (struct sockaddr*)&accept_addr, &addr_len);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(sizeof(struct sockaddr_un), addr_len);
   KEXPECT_EQ('a', ((const char*)&accept_addr)[0]);
@@ -734,23 +742,24 @@ static void connect_test(void) {
   KTEST_BEGIN("net_connect(AF_UNIX): connect with wrong addr family");
   client_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(client_sock, 0);
-  server_addr.sun_family = AF_UNSPEC;
+  s->server_addr.sun_family = AF_UNSPEC;
   KEXPECT_EQ(-EAFNOSUPPORT,
-             net_connect(client_sock, (struct sockaddr*)&server_addr,
-                         sizeof(server_addr)));
+             net_connect(client_sock, (struct sockaddr*)&s->server_addr,
+                         sizeof(s->server_addr)));
   vfs_close(client_sock);
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with bad FD");
-  KEXPECT_EQ(-EBADF, net_connect(-1, (struct sockaddr*)&server_addr,
-                                 sizeof(server_addr)));
-  KEXPECT_EQ(-EBADF, net_connect(100, (struct sockaddr*)&server_addr,
-                                 sizeof(server_addr)));
+  KEXPECT_EQ(-EBADF, net_connect(-1, (struct sockaddr*)&s->server_addr,
+                                 sizeof(s->server_addr)));
+  KEXPECT_EQ(-EBADF, net_connect(100, (struct sockaddr*)&s->server_addr,
+                                 sizeof(s->server_addr)));
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with non-socket FD");
   int pipe_fds[2];
   KEXPECT_EQ(0, vfs_pipe(pipe_fds));
-  KEXPECT_EQ(-ENOTSOCK, net_connect(pipe_fds[0], (struct sockaddr*)&server_addr,
-                                    sizeof(server_addr)));
+  KEXPECT_EQ(-ENOTSOCK,
+             net_connect(pipe_fds[0], (struct sockaddr*)&s->server_addr,
+                         sizeof(s->server_addr)));
 
   KTEST_BEGIN("net_accept(AF_UNIX): accept with bad FD");
   KEXPECT_EQ(-EBADF, do_accept(-1, &accept_addr));
@@ -781,14 +790,14 @@ static void connect_test(void) {
   KEXPECT_EQ(-EINVAL, do_accept(client_sock, &accept_addr));
 
   KTEST_BEGIN("net_accept(AF_UNIX): accept on connected socket (server)");
-  accepted_sock = do_accept(server_sock, NULL);
+  accepted_sock = do_accept(s->server_sock, NULL);
   KEXPECT_GE(accepted_sock, 0);
   KEXPECT_EQ(-EINVAL, do_accept(accepted_sock, &accept_addr));
   KEXPECT_EQ(0, vfs_close(client_sock));
   KEXPECT_EQ(0, vfs_close(accepted_sock));
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
 
-  KEXPECT_EQ(0, vfs_close(server_sock));
+  KEXPECT_EQ(0, vfs_close(s->server_sock));
   KEXPECT_EQ(0, vfs_unlink(kServerPath));
 
   // TODO(aoates): things to test:
@@ -2014,7 +2023,9 @@ void socket_unix_test(void) {
   create_test();
   bind_test();
   listen_test();
-  connect_test();
+  connect_test_state_t s;
+  connect_test(&s);
+  connect_testB(&s);
   connect_backlog_test();
   accept_blocking_test();
   send_recv_test();

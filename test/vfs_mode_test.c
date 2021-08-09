@@ -145,6 +145,18 @@ static void check_mode_test(void) {
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_WRITE, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_EXEC, &test_proc, &vnode));
   KEXPECT_EQ(-EACCES, vfs_check_mode(VFS_OP_SEARCH, &test_proc, &vnode));
+}
+
+static void check_mode_testB(void) {
+  process_t test_proc;
+  test_proc.ruid = kUserB;
+  test_proc.euid = kUserA;
+  test_proc.suid = kUserC;
+  test_proc.rgid = kGroupB;
+  test_proc.egid = kGroupA;
+  test_proc.sgid = kGroupC;
+
+  vnode_t vnode;
 
   // Group.
   KTEST_BEGIN("vfs_check_mode(): group matches egid");
@@ -979,6 +991,7 @@ void vfs_mode_test(void) {
   const kmode_t orig_umask = proc_umask(0);
 
   check_mode_test();
+  check_mode_testB();
   basic_rwx_test();
   root_mode_test();
   syscall_mode_test();

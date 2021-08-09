@@ -322,6 +322,20 @@ static void signal_allowed_test(void) {
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGKILL));
   KEXPECT_EQ(1, proc_signal_allowed(&A, &B, SIGCONT));
   KEXPECT_EQ(0, proc_signal_allowed(&A, &B, SIGAPOSTKILL));
+}
+
+static void signal_allowed_testB(void) {
+  process_t A, B, A_default, B_default;
+
+  A_default.ruid = 1001; A_default.rgid = 2001;
+  A_default.euid = 1002; A_default.egid = 2002;
+  A_default.suid = 1003; A_default.sgid = 2003;
+  B_default.ruid = 3001; B_default.rgid = 4001;
+  B_default.euid = 3002; B_default.egid = 4002;
+  B_default.suid = 3003; B_default.sgid = 4003;
+
+  A_default.pgroup = B_default.pgroup = proc_current()->pgroup;
+
 
   KTEST_BEGIN("proc_signal_allowed(): NOT allowed if nothing matches");
   A = A_default; B = B_default;
@@ -1343,6 +1357,7 @@ void signal_test(void) {
   sigaction_test();
 
   signal_allowed_test();
+  signal_allowed_testB();
   signal_permission_test();
 
   signal_send_to_pgroup_test();

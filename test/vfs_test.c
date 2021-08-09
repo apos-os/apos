@@ -4653,7 +4653,7 @@ static void o_nofollow_test(void) {
 }
 
 static void link_test(void) {
-  apos_stat_t statA, statB, statC;
+  apos_stat_t statA, statB;
 
   KTEST_BEGIN("vfs_link(): basic file test (link to same directory)");
   KEXPECT_EQ(0, vfs_mkdir("_link_test", VFS_S_IRWXU));
@@ -4698,7 +4698,10 @@ static void link_test(void) {
   KEXPECT_EQ(-EPERM, vfs_link("_link_test", "_link_test2/abc"));
   KEXPECT_EQ(-ENOENT, vfs_stat("_link_test3", &statA));
   KEXPECT_EQ(-ENOENT, vfs_stat("_link_test2/abc", &statA));
+}
 
+static void link_testB(void) {
+  apos_stat_t statA, statB, statC;
 
   KTEST_BEGIN("vfs_link(): can't link over existing file (same directory)");
   create_file_with_data("_link_test/file", "abc");
@@ -6743,6 +6746,7 @@ void vfs_test(void) {
   o_nofollow_test();
 
   link_test();
+  link_testB();
   rename_test();
 
   rename_simultaneous_race_test();
