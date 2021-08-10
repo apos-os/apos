@@ -213,7 +213,7 @@ static int cbfs_test_lookup(fs_t* fs, void* arg, int vnode,
 
 static void lookup_function_test(void) {
   KTEST_BEGIN("cbfs: vnode lookup function");
-  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, INT_MAX);
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, NULL, (void*)0x5, INT_MAX);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
 
@@ -309,7 +309,7 @@ static int dynamic_link_readlink(fs_t* fs, void* arg, int vnode, void* buf,
 
 static void dynamic_directory_test(void) {
   KTEST_BEGIN("cbfs: dynamic directory");
-  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, INT_MAX);
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, NULL, (void*)0x5, INT_MAX);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
   KEXPECT_EQ(0, cbfs_create_directory(fs, "dir1", &dynamic_dir_getdents,
@@ -597,7 +597,7 @@ static int changed_getdentsB(fs_t* fs, int vnode_num, void* arg, int offset,
 
 static void changing_getdents_test(void) {
   KTEST_BEGIN("cbfs: changing getdents");
-  fs_t* fs =  cbfs_create(0x0, 0x0, INT_MAX);
+  fs_t* fs =  cbfs_create(0x0, NULL, 0x0, INT_MAX);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
   KEXPECT_EQ(0, cbfs_create_directory(fs, "dir1", &changed_getdentsA, (void*)5,
@@ -660,7 +660,7 @@ static void changing_getdents_test(void) {
 
 static void static_vnode_limit_test(void) {
   KTEST_BEGIN("cbfs: static vnode limit test");
-  fs_t* fs =  cbfs_create(cbfs_test_lookup, (void*)0x5, 5);
+  fs_t* fs =  cbfs_create(cbfs_test_lookup, NULL, (void*)0x5, 5);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
   // Should consume 2 of our 4.
@@ -692,11 +692,16 @@ static void static_vnode_limit_test(void) {
   cbfs_free(fs);
 }
 
+static void destroy_test_cb(fs_t* fs, void* arg) {
+  *(fs_t**)arg = fs;
+}
+
 void cbfs_test(void) {
   KTEST_SUITE_BEGIN("cbfs");
 
   KTEST_BEGIN("cbfs test setup");
-  fs_t* fs =  cbfs_create(0x0, 0x0, INT_MAX);
+  fs_t* destroy_cb_fs = NULL;
+  fs_t* fs =  cbfs_create(0x0, &destroy_test_cb, &destroy_cb_fs, INT_MAX);
   vfs_mkdir("cbfs_test_root", VFS_S_IRWXU);
   KEXPECT_EQ(0, vfs_mount_fs("cbfs_test_root", fs));
 
@@ -718,4 +723,7 @@ void cbfs_test(void) {
   KEXPECT_EQ(fs, unmounted_fs);
   KEXPECT_EQ(0, vfs_rmdir("cbfs_test_root"));
   cbfs_free(fs);
+
+  // The destroy callback should have been called.
+  KEXPECT_EQ(fs, destroy_cb_fs);
 }
