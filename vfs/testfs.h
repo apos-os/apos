@@ -19,7 +19,6 @@
 #include "vfs/fs.h"
 
 fs_t* testfs_create(void);
-void testfs_free(fs_t* fs);
 
 int testfs_create_path(const char* source, unsigned long flags,
                        const void* data, size_t data_len, fs_t** fs_out);

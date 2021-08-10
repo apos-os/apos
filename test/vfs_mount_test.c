@@ -765,7 +765,7 @@ static void too_many_mounts_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 
   for (int i = 0; i < VFS_MAX_FILESYSTEMS; ++i) {
-    testfs_free(fses[i]);
+    fses[i]->destroy_fs(fses[i]);
   }
 }
 
