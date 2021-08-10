@@ -248,12 +248,13 @@ static int cbfs_truncate(vnode_t* node, koff_t length);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
-fs_t* cbfs_create(cbfs_lookup_t lookup_cb, cbfs_destroy_t destroy_cb,
-                  void* cb_arg, int max_static_vnode) {
+fs_t* cbfs_create(const char* type, cbfs_lookup_t lookup_cb,
+                  cbfs_destroy_t destroy_cb, void* cb_arg,
+                  int max_static_vnode) {
   cbfs_t* f = (cbfs_t*)kmalloc(sizeof(cbfs_t));
   vfs_fs_init(&f->fs);
 
-  kstrcpy(f->fs.fstype, "cbfs");
+  kstrcpy(f->fs.fstype, type);
   f->fs.destroy_fs = &cbfs_free;
   f->fs.alloc_vnode = &cbfs_alloc_vnode;
   f->fs.get_root = &cbfs_get_root;
@@ -574,7 +575,7 @@ static int cbfs_get_vnode(vnode_t* vnode) {
   vnode->uid = inode->uid;
   vnode->gid = inode->gid;
   vnode->mode = inode->mode;
-  kstrcpy(vnode->fstype, "cbfs");
+  kstrcpy(vnode->fstype, vnode->fs->fstype);
   return 0;
 }
 

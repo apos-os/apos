@@ -86,8 +86,9 @@ void cbfs_inode_create_symlink(cbfs_inode_t* inode, int num,
 //
 // destroy_cb will be run when the filesystem is destroyed, passed the same
 // argument.
-fs_t* cbfs_create(cbfs_lookup_t lookup_cb, cbfs_destroy_t destroy_cb,
-                  void* cb_arg, int max_static_vnode);
+fs_t* cbfs_create(const char* type, cbfs_lookup_t lookup_cb,
+                  cbfs_destroy_t destroy_cb, void* cb_arg,
+                  int max_static_vnode);
 
 // Free a created cbfs.
 void cbfs_free(fs_t* fs);
