@@ -587,6 +587,7 @@ typedef struct {
   // TODO(aoates): use atomics for these.
   int waiting_readers;
   int waiting_writers;
+  int op_result;
 } blocking_memobj_t;
 
 static void blocking_memobj_ref_unref(memobj_t* obj) {}
@@ -594,27 +595,27 @@ static void blocking_memobj_ref_unref(memobj_t* obj) {}
 static int blocking_memobj_write_page(memobj_t* obj, int page_offset,
                                        const void* buffer) {
   blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
-  if (!blocking_obj->block_writes) return 0;
+  if (!blocking_obj->block_writes) return blocking_obj->op_result;
 
   blocking_obj->waiting_writers++;
   int result = scheduler_wait_on_interruptable(&blocking_obj->obj_queue, 1000);
   KEXPECT_NE(result, SWAIT_TIMEOUT);
   blocking_obj->waiting_writers--;
   if (result == SWAIT_INTERRUPTED) return -EINTR;
-  return 0;
+  return blocking_obj->op_result;
 }
 
 static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
                                      void* buffer) {
   blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
-  if (!blocking_obj->block_reads) return 0;
+  if (!blocking_obj->block_reads) return blocking_obj->op_result;
 
   blocking_obj->waiting_readers++;
   int result = scheduler_wait_on_interruptable(&blocking_obj->obj_queue, 1000);
   KEXPECT_NE(result, SWAIT_TIMEOUT);
   blocking_obj->waiting_readers--;
   if (result == SWAIT_INTERRUPTED) return -EINTR;
-  return 0;
+  return blocking_obj->op_result;
 }
 
 static memobj_ops_t blocking_memobj_ops = {
@@ -638,16 +639,21 @@ static void create_blocking_memobj(blocking_memobj_t* obj) {
   obj->block_writes = true;
   obj->waiting_readers = 0;
   obj->waiting_writers = 0;
+  obj->op_result = 0;
 }
 
-static void do_block_cache_get_proc(void* arg) {
+static void* do_block_cache_get_thread(void* arg) {
   memobj_t* obj = (memobj_t*)arg;
   bc_entry_t* entry = NULL;
   int result = block_cache_get(obj, 0, &entry);
   if (result == 0) {
     block_cache_put(entry, BC_FLUSH_NONE);
   }
-  proc_exit(result);
+  return (void*)(intptr_t)result;
+}
+
+static void do_block_cache_get_proc(void* arg) {
+  proc_exit((intptr_t)do_block_cache_get_thread(arg));
 }
 
 static void do_block_cache_lookup_proc(void* arg) {
@@ -743,6 +749,188 @@ static void signal_interrupt_test(void) {
   block_cache_clear_unpinned();
 }
 
+static void read_error_test(void) {
+  KTEST_BEGIN("block_cache_get(): read returns error (basic)");
+  blocking_memobj_t blocking_memobj;
+  create_blocking_memobj(&blocking_memobj);
+
+  blocking_memobj.block_reads = false;
+  blocking_memobj.op_result = -EXDEV;
+  bc_entry_t* entry = NULL;
+  KEXPECT_EQ(-EXDEV, block_cache_get(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_EQ(NULL, entry);
+  KEXPECT_EQ(0, block_cache_lookup(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_EQ(NULL, entry);
+  block_cache_clear_unpinned();
+
+
+  KTEST_BEGIN("block_cache_get(): read returns error with 2nd thread waiting");
+  // First child: start the initialization.
+  create_blocking_memobj(&blocking_memobj);
+  blocking_memobj.op_result = -EXDEV;
+
+  kpid_t child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child1, 0);
+  // TODO(aoates): use Notification here (and above and below).
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  kpid_t child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child2, 0);
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  // Have a third thread call via lookup().
+  kpid_t child3 = proc_fork(&do_block_cache_lookup_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child3, 0);
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  int status;
+  KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
+  KEXPECT_EQ(-EXDEV, status);
+  KEXPECT_EQ(child2, proc_waitpid(child2, &status, 0));
+  KEXPECT_EQ(-EXDEV, status);
+  KEXPECT_EQ(child3, proc_waitpid(child3, &status, 0));
+  KEXPECT_EQ(-EXDEV, status);
+
+  KEXPECT_EQ(0, block_cache_lookup(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_EQ(NULL, entry);
+  block_cache_clear_unpinned();
+
+
+  KTEST_BEGIN("block_cache_get(): read interrupted with 2nd thread waiting");
+  // First child: start the initialization.
+  create_blocking_memobj(&blocking_memobj);
+  blocking_memobj.op_result = -EXDEV;
+
+  child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child1, 0);
+  // TODO(aoates): use Notification here (and above and below).
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child2, 0);
+  ksleep(10);
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  KEXPECT_EQ(0, proc_kill(child1, SIGUSR1));
+  KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
+  KEXPECT_EQ(-EINTR, status);
+  KEXPECT_EQ(child2, proc_waitpid(child2, &status, 0));
+  KEXPECT_EQ(-EINTR, status);
+
+  KEXPECT_EQ(0, block_cache_lookup(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_EQ(NULL, entry);
+  block_cache_clear_unpinned();
+
+
+  KTEST_BEGIN("block_cache_get(): new thread gets while error pending");
+  // First child: start the initialization.
+  create_blocking_memobj(&blocking_memobj);
+  blocking_memobj.op_result = -EXDEV;
+
+  child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child1, 0);
+  // TODO(aoates): use Notification here (and above and below).
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  kthread_t child2_thread;
+  KEXPECT_EQ(0, proc_thread_create(&child2_thread, &do_block_cache_get_thread,
+                                   &blocking_memobj.obj));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  kthread_disable(child2_thread);
+
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
+  KEXPECT_EQ(-EXDEV, status);
+
+  // The second thread should have been woken, but not run yet.  Even though the
+  // block cache entry is still live (in the second thread), it should not be
+  // gettable --- we should start a fresh read (which we will let succeed).
+  KEXPECT_EQ(0, block_cache_lookup(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_EQ(NULL, entry);
+  blocking_memobj.block_reads = false;
+  blocking_memobj.op_result = 0;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_NE(NULL, entry);
+  KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_NONE));
+
+  kthread_enable(child2_thread);
+  KEXPECT_EQ(-EXDEV, (intptr_t)kthread_join(child2_thread));
+  block_cache_clear_unpinned();
+
+
+  KTEST_BEGIN(
+      "block_cache_get(): read returns error, 2nd waiting thread interrupted");
+  // Make sure that the second thread cleans things up even if it's interrupted.
+  create_blocking_memobj(&blocking_memobj);
+  blocking_memobj.op_result = -EXDEV;
+
+  child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child1, 0);
+  // TODO(aoates): use Notification here (and above and below).
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  KEXPECT_EQ(0, proc_thread_create(&child2_thread, &do_block_cache_get_thread,
+                                   &blocking_memobj.obj));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  kthread_disable(child2_thread);
+
+  // Unlike above, interrupt the 2nd thread before letting the read fail.
+  proc_kill_thread(child2_thread, SIGUSR1);
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
+  KEXPECT_EQ(-EXDEV, status);
+
+  KEXPECT_EQ(0, block_cache_lookup(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_EQ(NULL, entry);
+
+  kthread_enable(child2_thread);
+  KEXPECT_EQ(-EINTR, (intptr_t)kthread_join(child2_thread));
+  block_cache_clear_unpinned();
+
+
+  KTEST_BEGIN(
+      "block_cache_get(): blocking read interrupted, cleans up entry");
+  create_blocking_memobj(&blocking_memobj);
+  blocking_memobj.op_result = 0;
+
+  child1 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
+  KEXPECT_GE(child1, 0);
+  // TODO(aoates): use Notification here (and above and below).
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  KEXPECT_EQ(0, proc_thread_create(&child2_thread, &do_block_cache_get_thread,
+                                   &blocking_memobj.obj));
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+
+  kthread_disable(child2_thread);
+  proc_kill_thread(child2_thread, SIGUSR1);
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
+  KEXPECT_EQ(0, status);
+
+  kthread_enable(child2_thread);
+  KEXPECT_EQ(-EINTR, (intptr_t)kthread_join(child2_thread));
+
+  block_cache_clear_unpinned();
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -778,6 +966,8 @@ void block_cache_test(void) {
   multithread_pressure_test(ramdisk, dev);
 
   signal_interrupt_test();
+
+  read_error_test();
 
   block_cache_set_bg_flush_period(old_flush_period_ms);
 

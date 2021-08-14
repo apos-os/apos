@@ -68,6 +68,7 @@ typedef struct bc_entry_internal {
   bool flushing;
 
   bool initialized;
+  int error;                   // Set if failed to be initialized.
   kthread_queue_t wait_queue;  // Threads waiting for init or flush.
 } bc_entry_internal_t;
 
@@ -227,19 +228,39 @@ static void cleanup_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(entry->flushed);
   KASSERT_DBG(!entry->flushing);
 
-  KLOG(DEBUG2, "<block cache free block %zu>\n", entry->pub.offset);
   g_size--;
-  const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
-  KASSERT(htbl_remove(&g_table, h) == 0);
+  // If uninitialized, it was not successfully populated and was already removed
+  // from the hashtable.
+  if (entry->initialized) {
+    KASSERT_DBG(entry->error == 0);
+    KLOG(DEBUG2, "<block cache free block %zu>\n", entry->pub.offset);
+    const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
+    KASSERT(htbl_remove(&g_table, h) == 0);
+    entry->initialized = false;
+  }
   put_free_block(entry->pub.block);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     entry->pub.block = NULL;
     entry->pub.block_phys = 0;
     entry->pub.offset = (size_t)-1;
-    entry->initialized = false;
   }
   list_push(&g_cleanup_list, &entry->lruq);
+}
+
+static void unpin_entry(bc_entry_internal_t** entry_ptr) {
+  bc_entry_internal_t* entry = *entry_ptr;
+  KASSERT_DBG(entry->pin_count >= 0);
+  kmutex_assert_is_held(&g_mu);
+  entry->pin_count--;
+  if (entry->pin_count == 0) {
+    if (entry->error == 0) {  // Typical case.
+      list_push(&g_lru_queue, &entry->lruq);
+    } else {
+      cleanup_cache_entry(entry);
+    }
+  }
+  *entry_ptr = NULL;
 }
 
 // Free any entries queued for cleanup and unref the underlying memobjs.
@@ -335,11 +356,19 @@ static int block_cache_get_internal(bc_entry_internal_t* entry) {
     int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
     KASSERT_DBG(result != SWAIT_TIMEOUT);
     if (result == SWAIT_INTERRUPTED) {
-      entry->pin_count--;
+      unpin_entry(&entry);
       return -EINTR;
     }
   }
-  KASSERT(entry->initialized);
+
+  if (!entry->initialized) {
+    KASSERT_DBG(entry->error != 0);
+    int result = entry->error;
+    unpin_entry(&entry);
+    return result;
+  }
+
+  KASSERT_DBG(entry->error == 0);
   if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
     KASSERT(entry->pin_count == 1);
     list_remove(&g_lru_queue, &entry->lruq);
@@ -369,6 +398,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
 
   // While freeing cache space above, someone else may have come along and
   // created the entry, so check again.
+  int result;
   if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
@@ -385,6 +415,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->pub.block_phys = virt2phys((addr_t)block);
     entry->pin_count = 1;
     entry->initialized = false;
+    entry->error = 0;
     entry->flushed = true;
     entry->flushing = false;
     entry->flushq = LIST_LINK_INIT;
@@ -408,18 +439,23 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     // Read data from the block device into the cache.
     // Note: this may block.
     KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
-    const int result =
-        obj->ops->read_page(obj, offset, entry->pub.block);
-    KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
+    result = obj->ops->read_page(obj, offset, entry->pub.block);
     kmutex_lock(&g_mu);
 
-    entry->initialized = true;
+    entry->error = result;
     scheduler_wake_all(&entry->wait_queue);
 
-    *entry_out = &entry->pub;
+    if (result) {
+      htbl_remove(&g_table, h);
+      unpin_entry(&entry);
+      *entry_out = NULL;
+    } else {
+      entry->initialized = true;
+      *entry_out = &entry->pub;
+    }
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    int result = block_cache_get_internal(entry);
+    result = block_cache_get_internal(entry);
     if (result) {
       kmutex_unlock(&g_mu);
       *entry_out = NULL;
@@ -428,7 +464,7 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     *entry_out = &entry->pub;
   }
   kmutex_unlock(&g_mu);
-  return 0;
+  return result;
 }
 
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
@@ -459,6 +495,8 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
+  KASSERT_DBG(entry->initialized);
+  KASSERT_DBG(entry->error == 0);
 
   // The block needs to be flushed, if it's not already scheduled for one.
   if (flush_mode != BC_FLUSH_NONE) {
@@ -489,10 +527,7 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   }
 
   KASSERT(!list_link_on_list(&g_lru_queue, &entry->lruq));
-  entry->pin_count--;
-  if (entry->pin_count == 0) {
-    list_push(&g_lru_queue, &entry->lruq);
-  }
+  unpin_entry(&entry);
 
   return 0;
 }
