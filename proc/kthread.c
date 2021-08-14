@@ -45,6 +45,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->queue = 0x0;
   t->stack = 0x0;
   t->detached = false;
+  t->runnable = true;
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
@@ -219,6 +220,14 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
     f(thread, arg);
   }
   POP_INTERRUPTS();
+}
+
+void kthread_disable(kthread_t thread) {
+  thread->runnable = false;
+}
+
+void kthread_enable(kthread_t thread) {
+  thread->runnable = true;
 }
 
 void kthread_switch(kthread_t new_thread) {

@@ -49,6 +49,7 @@ struct kthread_data {
   kthread_queue_t* queue;  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
   bool detached;
+  bool runnable;  // Crude way to disable threads for tests.
   kthread_queue_t join_list;  // List of thread's join()'d to this one.
   // Then number of threads blocking in kthread_join() on this thread.  This is
   // distinct from join_list, since threads may have been removed from join_list

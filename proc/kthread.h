@@ -74,6 +74,11 @@ void kthread_exit(void* x);
 // block.
 void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg);
 
+// Disable or re-enable a thread.  A disabled thread will be schedulable but
+// not run (return from a blocking scheduler function) until re-enabled.
+void kthread_disable(kthread_t thread);
+void kthread_enable(kthread_t thread);
+
 /******************************* Thread Queues ********************************/
 
 // Thread queues are simple linked lists of threads, which can be pushed on the

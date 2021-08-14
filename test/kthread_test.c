@@ -959,6 +959,43 @@ static void wait_on_locked_test(void) {
   kmutex_unlock(&mu);
 }
 
+typedef struct {
+  // TODO(aoates): use Notification.
+  kthread_queue_t queue;
+  bool x;
+} disable_test_args_t;
+
+static void* disable_test_thread(void* arg) {
+  disable_test_args_t* args = (disable_test_args_t*)arg;
+  scheduler_wake_all(&args->queue);
+  scheduler_wait_on(&args->queue);
+  args->x = true;
+  return NULL;
+}
+
+static void disable_test(void) {
+  KTEST_BEGIN("kthread_disable() test");
+  disable_test_args_t args;
+  kthread_queue_init(&args.queue);
+  args.x = false;
+
+  kthread_t thread;
+  KEXPECT_EQ(0,kthread_create(&thread, &disable_test_thread, &args));
+  scheduler_make_runnable(thread);
+  scheduler_wait_on(&args.queue);
+  // The other thread is now running.  Disable it, then wake it.
+  kthread_disable(thread);
+  scheduler_wake_all(&args.queue);
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  // The thread should not have run.
+  KEXPECT_FALSE(args.x);
+
+  // Re-enable the thread, then it should be able to run.
+  kthread_enable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_TRUE(args.x);
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -982,4 +1019,5 @@ void kthread_test(void) {
   ksleep_test();
   preemption_test();
   wait_on_locked_test();
+  disable_test();
 }
