@@ -931,6 +931,23 @@ static void read_error_test(void) {
   block_cache_clear_unpinned();
 }
 
+static void write_error_test(void) {
+  KTEST_BEGIN("block_cache_put(): write returns error (basic)");
+  blocking_memobj_t blocking_memobj;
+  create_blocking_memobj(&blocking_memobj);
+
+  blocking_memobj.block_reads = false;
+  blocking_memobj.block_writes = false;
+  bc_entry_t* entry = NULL;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry));
+  KEXPECT_NE(NULL, entry);
+
+  blocking_memobj.op_result = -EXDEV;
+  KEXPECT_EQ(0, block_cache_put(entry, BC_FLUSH_SYNC));
+
+  block_cache_clear_unpinned();
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -968,6 +985,7 @@ void block_cache_test(void) {
   signal_interrupt_test();
 
   read_error_test();
+  write_error_test();
 
   block_cache_set_bg_flush_period(old_flush_period_ms);
 

@@ -181,7 +181,14 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
             entry->pub.obj, entry->pub.offset, entry->pub.block);
     kmutex_lock(&g_mu);
     KASSERT_DBG(entry_is_sane(entry));
-    KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
+    // TODO(aoates): propagate the error back to any synchronous waiters.
+    if (result != 0) {
+      KLOG(
+          WARNING,
+          "block cache: write_page(object=%p (id %d), offset=%zu) failed: %s\n",
+          entry->pub.obj, entry->pub.obj->id, entry->pub.offset,
+          errorname(-result));
+    }
 
     // Another thread may have dirtied the block during the write, so if flushed
     // == 0 we need to try again.
