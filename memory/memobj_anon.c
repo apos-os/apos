@@ -88,12 +88,9 @@ memobj_t* memobj_create_anon(void) {
   memobj_t* anon_obj = (memobj_t*)kmalloc(sizeof(memobj_t));
   if (!anon_obj) return 0x0;
 
-  kmemset(anon_obj, 0, sizeof(memobj_t));
-
+  memobj_base_init(anon_obj);
   anon_obj->type = MEMOBJ_ANON;
   anon_obj->id = fnv_hash_array(&anon_obj, sizeof(memobj_t*));
   anon_obj->ops = &g_anon_ops;
-  anon_obj->lock = KSPINLOCK_NORMAL_INIT;
-  anon_obj->refcount = 1;
   return anon_obj;
 }

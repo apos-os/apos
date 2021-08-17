@@ -126,13 +126,10 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   memobj_t* shadow_obj = (memobj_t*)kmalloc(sizeof(memobj_t));
   if (!shadow_obj) return 0x0;
 
-  kmemset(shadow_obj, 0, sizeof(memobj_t));
-
+  memobj_base_init(shadow_obj);
   shadow_obj->type = MEMOBJ_SHADOW;
   shadow_obj->id = fnv_hash_array(&shadow_obj, sizeof(memobj_t*));
   shadow_obj->ops = &g_shadow_ops;
-  shadow_obj->refcount = 1;
-  shadow_obj->lock = KSPINLOCK_NORMAL_INIT;
   shadow_obj->data = subobj;
 
   subobj->ops->ref(subobj);

@@ -440,6 +440,7 @@ static memobj_ops_t reentrant_memobj_ops = {
 static void reentrant_memobj_test(void) {
   KTEST_BEGIN("block cache reentrant memobj test");
   memobj_t fake_obj;
+  memobj_base_init(&fake_obj);
   fake_obj.type = MEMOBJ_FAKE;
   fake_obj.id = 1;
   fake_obj.ops = &reentrant_memobj_ops;
@@ -628,11 +629,10 @@ static memobj_ops_t blocking_memobj_ops = {
 };
 
 static void create_blocking_memobj(blocking_memobj_t* obj) {
+  memobj_base_init(&obj->obj);
   obj->obj.type = MEMOBJ_FAKE;
   obj->obj.id = get_time_ms();
   obj->obj.ops = &blocking_memobj_ops;
-  obj->obj.refcount = 1;
-  obj->obj.lock = KSPINLOCK_NORMAL_INIT;
   obj->obj.data = obj;
   kthread_queue_init(&obj->obj_queue);
   obj->block_reads = true;

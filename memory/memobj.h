@@ -108,4 +108,7 @@ struct memobj_ops {
   int (*write_page)(memobj_t* obj, int page_offset, const void* buffer);
 };
 
+// Initialize the base members of a memobj_t.
+void memobj_base_init(memobj_t* obj);
+
 #endif

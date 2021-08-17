@@ -97,7 +97,7 @@ static int vnode_write_page(memobj_t* obj, int offset, const void* buffer) {
 
 void memobj_init_vnode(vnode_t* vnode) {
   memobj_t* obj = &vnode->memobj;
-  kmemset(obj, 0, sizeof(memobj_t));
+  memobj_base_init(obj);
 
   obj->type = MEMOBJ_VNODE;
   uint8_t id_array[sizeof(vnode->num) + sizeof(vnode->fs->id)];
@@ -105,8 +105,6 @@ void memobj_init_vnode(vnode_t* vnode) {
   kmemcpy(&id_array[sizeof(vnode->num)], &vnode->fs->id, sizeof(vnode->fs->id));
   obj->id =
       fnv_hash_array(id_array, sizeof(vnode->num) + sizeof(vnode->fs->id));
-  obj->refcount = 1;
-  obj->lock = KSPINLOCK_NORMAL_INIT;
   obj->data = vnode;
 
   obj->ops = &g_vnode_ops;
