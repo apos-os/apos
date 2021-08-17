@@ -19,4 +19,6 @@ void memobj_base_init(memobj_t* obj) {
   kmemset(obj, 0, sizeof(memobj_t));
   obj->lock = KSPINLOCK_NORMAL_INIT;
   obj->refcount = 1;
+  obj->bc_entries = LIST_INIT;
+  obj->num_bc_entries = 0;
 }

@@ -61,6 +61,7 @@ typedef struct bc_entry_internal {
   // Link on the flush queue and LRU queue.
   list_link_t flushq;
   list_link_t lruq;
+  list_link_t memobj_link;
 
   // Set to true when the entry is flushed to disk, and to false when the entry
   // is taken by a thread.
@@ -280,6 +281,9 @@ static void free_dead_entries(void) {
 
     KASSERT_DBG(entry->initialized == false);
     KASSERT_DBG(entry->pin_count == 0);
+    list_remove(&entry->pub.obj->bc_entries, &entry->memobj_link);
+    entry->pub.obj->num_bc_entries--;
+    KASSERT_DBG(entry->pub.obj->num_bc_entries >= 0);
     entry->pub.obj->ops->unref(entry->pub.obj);  // May block.
     entry->pub.obj = 0x0;
     kfree(entry);
@@ -427,10 +431,14 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     entry->flushing = false;
     entry->flushq = LIST_LINK_INIT;
     entry->lruq = LIST_LINK_INIT;
+    entry->memobj_link = LIST_LINK_INIT;
     kthread_queue_init(&entry->wait_queue);
 
     // Put the uninitialized entry into the table.
     htbl_put(&g_table, h, entry);
+    KASSERT_DBG(obj->num_bc_entries >= 0);
+    list_push(&obj->bc_entries, &entry->memobj_link);
+    obj->num_bc_entries++;
 
     // Unlock mutex around reentrant and blocking operations.
     kmutex_unlock(&g_mu);

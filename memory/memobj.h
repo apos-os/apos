@@ -48,6 +48,10 @@ typedef struct memobj {
   int refcount;
   kspinlock_t lock;
 
+  // List of extant block cache entries.  Maintained by the block cache code.
+  list_t bc_entries;
+  int num_bc_entries;
+
   // Data specific to the type memory object.
   void* data;
 } memobj_t;
