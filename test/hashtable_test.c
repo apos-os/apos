@@ -130,6 +130,38 @@ void iterate_test(htbl_t* tbl) {
   htbl_remove(tbl, 6);
 }
 
+static void clear_test(htbl_t* tbl) {
+  KTEST_BEGIN("htbl_clear(): basic test");
+
+  for (int i = 0; i < ITERATE_SIZE; ++i) {
+    g_iterate_vals[i] = 0;
+  }
+  int iterate_ctr = 0;
+
+  htbl_put(tbl, 1, (void*)301);
+  htbl_put(tbl, 3, (void*)303);
+  htbl_put(tbl, 4, (void*)304);
+  htbl_put(tbl, 6, (void*)306);
+
+  htbl_clear(tbl, &iterate_func, &iterate_ctr);
+  KEXPECT_EQ(4, iterate_ctr);
+  KEXPECT_EQ(0, g_iterate_vals[0]);
+  KEXPECT_EQ(301, g_iterate_vals[1]);
+  KEXPECT_EQ(0, g_iterate_vals[2]);
+  KEXPECT_EQ(303, g_iterate_vals[3]);
+  KEXPECT_EQ(304, g_iterate_vals[4]);
+  KEXPECT_EQ(0, g_iterate_vals[5]);
+  KEXPECT_EQ(306, g_iterate_vals[6]);
+  KEXPECT_EQ(0, g_iterate_vals[7]);
+
+  KEXPECT_EQ(0, htbl_size(tbl));
+  void* val;
+  KEXPECT_EQ(-1, htbl_get(tbl, 1, &val));
+  KEXPECT_EQ(-1, htbl_get(tbl, 3, &val));
+  KEXPECT_EQ(-1, htbl_get(tbl, 4, &val));
+  KEXPECT_EQ(-1, htbl_get(tbl, 6, &val));
+}
+
 static void hashtable_size_test(void) {
   KTEST_BEGIN("hashtable: size");
   htbl_t tbl;
@@ -188,6 +220,7 @@ void hashtable_test(void) {
   htbl_t t;
   htbl_init(&t, 100);
   iterate_test(&t);
+  clear_test(&t);
   do_table_test(&t);
   htbl_cleanup(&t);
 
@@ -195,6 +228,7 @@ void hashtable_test(void) {
   // Guarantee some collisions.
   htbl_init(&t, 2);
   iterate_test(&t);
+  clear_test(&t);
   do_table_test(&t);
   htbl_cleanup(&t);
 

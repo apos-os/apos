@@ -51,6 +51,10 @@ int htbl_remove(htbl_t* tbl, uint32_t key);
 // what order the items will be iterated in, and func must not mutate the table.
 void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
 
+// Clears (empties) the hash table, running the given function for each entry
+// before it is removed.  The function should not mutate the table.
+void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg);
+
 // Return the number of entries in the hashtable.
 int htbl_size(htbl_t* tbl);
 

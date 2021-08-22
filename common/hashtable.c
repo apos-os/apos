@@ -160,6 +160,19 @@ void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*),
   }
 }
 
+void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg) {
+  for (int i = 0; i < tbl->num_buckets; ++i) {
+    while (tbl->buckets[i]) {
+      htbl_entry_t* e = tbl->buckets[i];
+      tbl->buckets[i] = e->next;
+      tbl->num_entries--;
+      dtor(arg, e->key, e->value);
+      kfree(e);
+    }
+  }
+  // TODO(aoates): should we shrink the table back down?
+}
+
 int htbl_size(htbl_t* tbl) {
   return tbl->num_entries;
 }
