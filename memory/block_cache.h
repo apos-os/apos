@@ -76,6 +76,10 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out);
 // retains a pin in the entry (and must put it again, e.g. forgoing a flush).
 int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
 
+// Increment the pin count of the given entry (which is definitionally already
+// pinned at least once).  May block.
+void block_cache_add_pin(bc_entry_t* entry);
+
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.
 int block_cache_get_pin_count(struct memobj* obj, int offset);

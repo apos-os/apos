@@ -123,6 +123,11 @@ static void basic_lookup_test(apos_dev_t dev) {
 
   KEXPECT_EQ(3, block_cache_get_pin_count(obj, 0));
 
+  // Test add_pin while we're at it.
+  block_cache_add_pin(block);
+  KEXPECT_EQ(4, block_cache_get_pin_count(obj, 0));
+  KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_NONE));
+
   KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));
   KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));
   KEXPECT_EQ(0, block_cache_put(block, BC_FLUSH_SYNC));

@@ -547,6 +547,15 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   return 0;
 }
 
+void block_cache_add_pin(bc_entry_t* entry_pub) {
+  // TODO(aoates): use an atomic for pin_count and make this non-blocking.
+  bc_entry_internal_t* entry =
+      container_of(entry_pub, bc_entry_internal_t, pub);
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  KASSERT_DBG(entry->pin_count > 0);
+  entry->pin_count++;
+}
+
 int block_cache_get_pin_count(memobj_t* obj, int offset) {
   if (!g_initialized) {
     return 0;
