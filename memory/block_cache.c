@@ -624,10 +624,7 @@ void block_cache_clear_unpinned() {
       entry = next_entry;
     }
     free_dead_entries();  // May block.
-  } while (!list_empty(&g_flush_queue));
-
-  KASSERT(list_empty(&g_flush_queue));
-  KASSERT(list_empty(&g_lru_queue));
+  } while (!list_empty(&g_flush_queue) || !list_empty(&g_lru_queue));
 }
 
 typedef struct {
@@ -639,7 +636,7 @@ typedef struct {
   int pinned;
   int total_pins;
 } stats_t;
-void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
+
 static void stats_counter_func(void* arg, uint32_t key, void* value) {
   stats_t* stats = (stats_t*)arg;
   bc_entry_internal_t* entry = (bc_entry_internal_t*)value;
