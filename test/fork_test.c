@@ -284,6 +284,45 @@ static void mapping_test(void) {
   KEXPECT_EQ(0, do_munmap((void*)SEPARATE_MAP_BASE, MAP_LENGTH));
 }
 
+static void test_child2(void* arg) {
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  block_cache_clear_unpinned();
+  KEXPECT_EQ(2, *(uint32_t*)(PRIVATE_ADDR1));
+  scheduler_wake_all((kthread_queue_t*)arg);
+}
+
+static void test_child(void* arg) {
+  KEXPECT_EQ(1, *(uint32_t*)(PRIVATE_ADDR1));
+  *(uint32_t*)(PRIVATE_ADDR1) = 2;
+  proc_fork(&test_child2, arg);
+}
+
+static void unpinned_mapping_test(void) {
+  KTEST_BEGIN("fork() unpinned mapping test");
+  // Create a shared and a private mapping.
+  void* addr;
+  KEXPECT_EQ(0,
+             do_mmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
+                     KMAP_FIXED | KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addr));
+
+  // Write some values into the mappings, then fork.
+  *(uint32_t*)(PRIVATE_ADDR1) = 1;
+
+  kthread_queue_t wait;
+  kthread_queue_init(&wait);
+
+  kpid_t child_pid = proc_fork(&test_child, &wait);
+  KEXPECT_GE(child_pid, 0);
+  KEXPECT_EQ(child_pid, proc_wait(NULL));
+
+  // Let the grandchild run.
+  scheduler_wait_on(&wait);
+
+  KEXPECT_EQ(1, *(uint32_t*)(PRIVATE_ADDR1));
+
+  KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));
+}
+
 // TODO(aoates): test fd and cwd forking.
 
 void fork_test(void) {
@@ -295,4 +334,6 @@ void fork_test(void) {
   reparent_zombie_to_root_test();
   multi_child_test();
   mapping_test();
+  unpinned_mapping_test();
+  block_cache_log_stats();
 }

@@ -12,15 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "common/kassert.h"
 #include "common/errno.h"
 #include "common/hash.h"
+#include "common/hashtable.h"
+#include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/block_cache.h"
 #include "memory/kmalloc.h"
-#include "memory/memobj_shadow.h"
 #include "memory/memobj.h"
+#include "memory/memobj_shadow.h"
 #include "memory/memory.h"
+
+typedef struct {
+  memobj_t* subobj;
+  // All extant block cache entries.  Map {offset -> bc_entry_t*}.  Each has an
+  // additional pin on it to ensure it's kept resident even if not currently in
+  // use by a process.
+  htbl_t entries;
+  // Set when we start clearing the entries table.
+  bool cleaning_up;
+} shadow_data_t;
 
 static void shadow_ref(memobj_t* obj);
 static void shadow_unref(memobj_t* obj);
@@ -48,17 +59,47 @@ static void shadow_ref(memobj_t* obj) {
   kspin_unlock(&obj->lock);
 }
 
+static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
+  bc_entry_t* entry = (bc_entry_t*)val;
+  KASSERT_DBG(key == entry->offset);
+  block_cache_put(entry, BC_FLUSH_NONE);
+}
+
 static void shadow_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
+  shadow_data_t* data = (shadow_data_t*)obj->data;
   kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
+
+  // Check if this is the last remaining refcount, other than our entries.
+  if (!data->cleaning_up && obj->refcount == htbl_size(&data->entries) + 1) {
+    // TODO(aoates): write a test that would detect not checking cleaning_up.
+    // Set cleaning_up to ensure that only one thread gets to do this work, even
+    // if we block in the htbl_clear() below and memory pressure triggers
+    // putting one of our entries while we're in the middle of cleaning.
+    data->cleaning_up = true;
+    // The only remaining references are block cache entries; no one else can
+    // reach the memobj and we can clean up.
+    kspin_unlock(&obj->lock);
+    // Unpin all entries and clear the table.  We do this before decrementing
+    // the refcount to ensure the memobj is not freed (we still hold a
+    // reference).
+    htbl_clear(&data->entries, &unpin_htbl_entry, NULL);
+
+    kspin_lock(&obj->lock);
+    // At this point we should still have at least one reference (this
+    // thread's); the BC entries may not have been destroyed yet, in which case
+    // they will still hold references to this memobj as well.
+    KASSERT_DBG(obj->refcount >= 1);
+  }
   int new_refcount = --obj->refcount;
   kspin_unlock(&obj->lock);
-  // TODO(aoates): check if the only remaining refs are resident pages; if so,
-  // flush and delete them, unref the underlying object, and delete this one.
+
+  // The block cache has finished with us, finish cleanup.
   if (new_refcount == 0) {
-    memobj_t* subobj = (memobj_t*)obj->data;
-    subobj->ops->unref(subobj);
+    data->subobj->ops->unref(data->subobj);
+    htbl_cleanup(&data->entries);
+    kfree(obj->data);
     kfree(obj);
   }
 }
@@ -66,10 +107,32 @@ static void shadow_unref(memobj_t* obj) {
 static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
                            bc_entry_t** entry_out) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
+  shadow_data_t* data = (shadow_data_t*)obj->data;
   if (writable) {
     // Will either get an existing page, or copy a new page from the subobj (via
     // read_page) to write to.
-    return block_cache_get(obj, page_offset, entry_out);
+    int result = block_cache_get(obj, page_offset, entry_out);
+    if (result) return result;
+
+    // If this is the first time we're seeing this entry, track it and add an
+    // extra pin to ensure it's not deleted.
+    // TODO(aoates): handle this differently when swap is added.
+    kspin_lock(&obj->lock);
+    void* tbl_val;
+    bool needs_pin = false;
+    if (htbl_get(&data->entries, page_offset, &tbl_val) != 0) {
+      needs_pin = true;
+      htbl_put(&data->entries, page_offset, *entry_out);
+    } else {
+      KASSERT_DBG(tbl_val == *entry_out);
+    }
+    kspin_unlock(&obj->lock);
+
+    if (needs_pin) {
+      // This can block, so must be called outside spinlock section.
+      block_cache_add_pin(*entry_out);
+    }
+    return 0;
   } else {
     // First check if we have a copy of the page.
     const int result = block_cache_lookup(obj, page_offset, entry_out);
@@ -77,7 +140,7 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
     if (*entry_out != 0x0) return 0;
 
     // Didn't find it, get (a read-only copy of) it from the subobj.
-    memobj_t* subobj = (memobj_t*)obj->data;
+    memobj_t* subobj = data->subobj;
     return subobj->ops->get_page(subobj, page_offset, writable, entry_out);
   }
 }
@@ -89,7 +152,8 @@ static int shadow_put_page(memobj_t* obj, bc_entry_t* entry,
     // Verify that the entry's object is in our shadow chain.
     memobj_t* verify_obj = obj;
     while (verify_obj->type == MEMOBJ_SHADOW && verify_obj != entry->obj) {
-      verify_obj = (memobj_t*)verify_obj->data;
+      shadow_data_t* data = (shadow_data_t*)verify_obj->data;
+      verify_obj = data->subobj;
     }
     KASSERT(verify_obj == entry->obj);
   }
@@ -103,7 +167,8 @@ static int shadow_read_page(memobj_t* obj, int offset, void* buffer) {
   // Get a copy of the subobj's page and read into it.  We can't simply call
   // subobj->ops->read_page, because (for instance) if it were another shadow
   // object, we wouldn't get it's own copy of the page.
-  memobj_t* subobj = (memobj_t*)obj->data;
+  shadow_data_t* data = (shadow_data_t*)obj->data;
+  memobj_t* subobj = data->subobj;
   bc_entry_t* entry = 0x0;
   int result =
       subobj->ops->get_page(subobj, offset, 0 /* read-only */, &entry);
@@ -130,7 +195,11 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   shadow_obj->type = MEMOBJ_SHADOW;
   shadow_obj->id = fnv_hash_array(&shadow_obj, sizeof(memobj_t*));
   shadow_obj->ops = &g_shadow_ops;
-  shadow_obj->data = subobj;
+  shadow_data_t* data = (shadow_data_t*)kmalloc(sizeof(shadow_data_t));
+  data->subobj = subobj;
+  htbl_init(&data->entries, 5);
+  data->cleaning_up = false;
+  shadow_obj->data = data;
 
   subobj->ops->ref(subobj);
   return shadow_obj;
