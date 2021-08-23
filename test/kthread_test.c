@@ -18,8 +18,9 @@
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
-#include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/kthread.h"
+#include "proc/notification.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
@@ -996,6 +997,62 @@ static void disable_test(void) {
   KEXPECT_TRUE(args.x);
 }
 
+static void* do_notify(void* arg) {
+  ksleep(50);
+  ntfn_notify((notification_t*)arg);
+  return NULL;
+}
+
+static void notification_test(void) {
+  KTEST_BEGIN("notification: basic test");
+  notification_t n;
+  ntfn_init(&n);
+  KEXPECT_FALSE(ntfn_has_been_notified(&n));
+  KEXPECT_FALSE(ntfn_has_been_notified(&n));
+
+  ntfn_notify(&n);
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+  ntfn_await(&n);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&n, 1000));
+  ntfn_await(&n);
+
+  KTEST_BEGIN("notification: wait test");
+  kthread_t thread;
+  ntfn_init(&n);
+  KEXPECT_EQ(0, kthread_create(&thread, &do_notify, &n));
+  scheduler_make_runnable(thread);
+
+  apos_ms_t start = get_time_ms();
+  ntfn_await(&n);
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+  apos_ms_t end = get_time_ms();
+  KEXPECT_GE(end - start, 30);
+  KEXPECT_LE(end - start, 200);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  KTEST_BEGIN("notification: wait with timeout test");
+  ntfn_init(&n);
+
+  start = get_time_ms();
+  KEXPECT_FALSE(ntfn_await_with_timeout(&n, 100));
+  KEXPECT_FALSE(ntfn_has_been_notified(&n));
+  end = get_time_ms();
+  KEXPECT_GE(end - start, 100);
+  KEXPECT_LE(end - start, 500);
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_notify, &n));
+  scheduler_make_runnable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&n, 500));
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+
+  start = get_time_ms();
+  KEXPECT_TRUE(ntfn_await_with_timeout(&n, 500));
+  end = get_time_ms();
+  KEXPECT_LE(end - start, 50);
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -1020,4 +1077,5 @@ void kthread_test(void) {
   preemption_test();
   wait_on_locked_test();
   disable_test();
+  notification_test();
 }
