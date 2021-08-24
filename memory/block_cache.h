@@ -80,6 +80,11 @@ int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
 // pinned at least once).  May block.
 void block_cache_add_pin(bc_entry_t* entry);
 
+// Attempt to force-flush and free all pages associated with the given memobj.
+// If any block cache entries for the memobj are currently pinned, returns
+// -EBUSY.  Returns 0 on success.
+int block_cache_free_all(struct memobj* obj);
+
 // Returns the current pin count of the given block, or 0 if it is not in the
 // cache.
 int block_cache_get_pin_count(struct memobj* obj, int offset);

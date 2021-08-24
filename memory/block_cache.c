@@ -199,6 +199,30 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
   scheduler_wake_all(&entry->wait_queue);
 }
 
+// As above, but if the entry is currently already being flushed by another
+// thread, waits for that flush to finish.
+// Note: if the entry isn't pinned, it could be deleted by the time this
+// returns! (if another thread is flushing it, then deletes it before we wake up
+// after blocking on the flush).
+static int flush_or_wait(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
+  if (entry->flushing) {
+    int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+    // entry may be dead!  Set to NULL defensively.
+    entry = NULL;
+    KASSERT_DBG(result != SWAIT_TIMEOUT);
+    if (result == SWAIT_INTERRUPTED) {
+      return -EINTR;
+    }
+  } else {
+    if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
+      list_remove(&g_flush_queue, &entry->flushq);
+    }
+    flush_cache_entry(entry);
+  }
+  return 0;
+}
+
 // The flush thread that works through the flush queue, flushing cache entries
 // and sleeping.
 static kthread_t g_flush_queue_thread;
@@ -517,18 +541,8 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   if (flush_mode != BC_FLUSH_NONE) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
-      if (entry->flushing) {
-        int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
-        KASSERT_DBG(result != SWAIT_TIMEOUT);
-        if (result == SWAIT_INTERRUPTED) {
-          return -EINTR;
-        }
-      } else {
-        if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
-          list_remove(&g_flush_queue, &entry->flushq);
-        }
-        flush_cache_entry(entry);
-      }
+      int result = flush_or_wait(entry);
+      if (result) return result;
     } else if (flush_mode == BC_FLUSH_ASYNC) {
       // Only schedule a flush if we're not currently flushing, and don't
       // already have one scheduled.
@@ -554,6 +568,44 @@ void block_cache_add_pin(bc_entry_t* entry_pub) {
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   KASSERT_DBG(entry->pin_count > 0);
   entry->pin_count++;
+}
+
+int block_cache_free_all(struct memobj* obj) {
+  // TODO(aoates): there is a decent amount of shared logic between this,
+  // block_cache_clear_unpinned(), put(), and maybe_free_cache_space().  Maybe
+  // combine into a helper?
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  while (!list_empty(&obj->bc_entries)) {
+    bc_entry_internal_t* entry =
+        container_of(obj->bc_entries.head, bc_entry_internal_t, memobj_link);
+    if (entry->pin_count) {
+      return -EBUSY;
+    }
+    if (!entry->flushed || entry->flushing) {
+      int result = flush_or_wait(entry);  // May block and change entry.
+      if (result) return result;
+      // We don't know what happened --- `entry` may point to invalid memory
+      // now!  Or be pinned, flushing, or dirty.  Just retry from the start.
+      continue;
+    }
+
+    // Sanity checks.
+    KASSERT_DBG(entry->pub.obj == obj);
+    KASSERT_DBG(entry->pin_count == 0);
+    KASSERT_DBG(entry->flushed);
+    KASSERT_DBG(!entry->flushing);
+    KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+    // TODO(aoates): is there any scenario when the entry _won't_ be on the LRU
+    // queue here?  If so, write a test for it.
+    if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
+      list_remove(&g_lru_queue, &entry->lruq);
+    }
+    cleanup_cache_entry(entry);
+
+    // TODO(aoates): figure out how to call free_dead_entries() once at the end.
+    free_dead_entries();  // May block.
+  }
+  return 0;
 }
 
 int block_cache_get_pin_count(memobj_t* obj, int offset) {
@@ -606,6 +658,10 @@ void block_cache_clear_unpinned() {
     while (entry) {
       if (entry->flushing) {
         int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+        // N.B.(aoates): this is buggy --- we don't hold a pin on the entry, so
+        // it could have been freed while we were sleeping above.
+        // TODO(aoates): fix this so it works safely concurretly, like
+        // block_cache_free_all() or maybe_free_cache_space().
         KASSERT(result == 0);
       }
       if (!entry->flushed) {

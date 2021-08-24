@@ -18,15 +18,16 @@
 #include "common/hash.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
-#include "memory/block_cache.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/ramdisk/ramdisk.h"
 #include "dev/timer.h"
+#include "memory/block_cache.h"
 #include "memory/memory.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
+#include "proc/notification.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
@@ -953,6 +954,474 @@ static void write_error_test(void) {
   block_cache_clear_unpinned();
 }
 
+typedef struct {
+  blocking_memobj_t* obj;
+  notification_t done;
+  int result;
+} do_free_all_thread_args_t;
+
+static void* do_free_all_thread(void* arg) {
+  do_free_all_thread_args_t* args = (do_free_all_thread_args_t*)arg;
+  args->result = block_cache_free_all(&args->obj->obj);
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+static void* do_get_second_block(void* arg) {
+  do_free_all_thread_args_t* args = (do_free_all_thread_args_t*)arg;
+  bc_entry_t* entry;
+  args->result = block_cache_get(&args->obj->obj, 1, &entry);
+  if (args->result == 0) {
+    block_cache_put(entry, BC_FLUSH_NONE);
+  }
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+static void free_all_memobj_testA(void) {
+  KTEST_BEGIN("block_cache_free_all(): basic test");
+  blocking_memobj_t blocking_memobj;
+  create_blocking_memobj(&blocking_memobj);
+
+  blocking_memobj.block_reads = false;
+  blocking_memobj.block_writes = false;
+  bc_entry_t* entry1 = NULL, *entry2 = NULL;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 1, &entry2));
+  KEXPECT_NE(NULL, entry2);
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 1, &entry2));
+
+  KEXPECT_EQ(2, list_size(&blocking_memobj.obj.bc_entries));
+  KEXPECT_EQ(1, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(2, block_cache_get_pin_count(&blocking_memobj.obj, 1));
+  KEXPECT_EQ(-EBUSY, block_cache_free_all(&blocking_memobj.obj));
+
+  KEXPECT_EQ(2, list_size(&blocking_memobj.obj.bc_entries));
+  KEXPECT_EQ(1, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(2, block_cache_get_pin_count(&blocking_memobj.obj, 1));
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(2, block_cache_get_pin_count(&blocking_memobj.obj, 1));
+  KEXPECT_EQ(-EBUSY, block_cache_free_all(&blocking_memobj.obj));
+
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 1));
+  KEXPECT_EQ(0, block_cache_free_all(&blocking_memobj.obj));
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+
+
+  KTEST_BEGIN("block_cache_free_all(): flushes dirty");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  do_free_all_thread_args_t args;
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 100));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+
+
+  KTEST_BEGIN("block_cache_free_all(): flushes dirty (then fails)");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 1, &entry2));
+  KEXPECT_NE(NULL, entry2);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(1, block_cache_get_pin_count(&blocking_memobj.obj, 1));
+
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 100));
+  KEXPECT_EQ(2, list_size(&blocking_memobj.obj.bc_entries));
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(-EBUSY, args.result);
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_free_all(&blocking_memobj.obj));
+
+
+  KTEST_BEGIN("block_cache_free_all(): flush already happening");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(1, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+
+  ntfn_init(&args.done);
+
+  block_cache_wakeup_flush_thread();
+  // TODO(SMP): do this in a thread-safe/atomic way.
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
+
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+
+
+  // As above, but also re-dirty the page while the flush is blocked.
+  KTEST_BEGIN("block_cache_free_all(): flush already happening #2");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(1, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+
+  ntfn_init(&args.done);
+
+  block_cache_wakeup_flush_thread();
+  // TODO(SMP): do this in a thread-safe/atomic way.
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
+  kthread_disable(thread);
+
+  // Allow the flush to finish and wake up the block_cache_free_all() thread
+  // (which is waiting for it, but can't run because it's disabled).
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  // Re-dirty the page.
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+
+  // Wait for the flush queue thread to try _again_.
+  block_cache_wakeup_flush_thread();
+  // TODO(SMP): do this in a thread-safe/atomic way.
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+
+  // The waiting thread should see the entry flushing again, and wait again.
+  // N.B.: an earlier implementation caught this scenario and gave up, returing
+  // -EBUSY, rather than retrying.  That would also be valid behavior.
+  kthread_enable(thread);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  // Let the second flush finish.
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+  KEXPECT_EQ(0, block_cache_free_all(&blocking_memobj.obj));
+
+
+  KTEST_BEGIN(
+      "block_cache_free_all(): flushes, but page is re-dirtied _after_ "
+      "flushing");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  kthread_disable(thread);
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  // Wait for the freeing thread to wake up, but not run yet.
+  // TODO(aoates): invent a better way to do this.
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  // Get and put the entry again, dirtying it.
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  blocking_memobj.block_writes = false;
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+
+  // The freeing thread, which was doing the flushing, will see that the thread
+  // is unflushed and retry (in flush_cache_entry()), allowing the free
+  // operation to succeed.  This test is britle and relies on specific internals
+  // of the block cache code, but I'm leaving it in for now to exercise the code
+  // path.  The next test is a better test of this scenario.
+  kthread_enable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+  // Defense-in-depth check (since the flush thread should still see this entry)
+  block_cache_wakeup_flush_thread();
+
+
+  // As above, but have the flush queue thread doing the actual flushing.  This
+  // is a better test, TBH.
+  KTEST_BEGIN(
+      "block_cache_free_all(): flushes, but page is re-dirtied _after_ "
+      "flushing #2");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  // Wait for the flush queue thread to get blocked in the flush.
+  // TODO(SMP): do this in a thread-safe/atomic way.
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  // The do_free_all_thread should now be blocked waiting for the flush thread.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  kthread_disable(thread);
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  // Wait for the freeing thread to wake up, but not run yet.
+  // TODO(aoates): invent a better way to do this.
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  // Get and put the entry again, dirtying it.
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  blocking_memobj.block_writes = false;
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+
+  kthread_enable(thread);
+  // The freeing thread should wake up, see that the block was dirtied again,
+  // and retry the flush.  As N.B. above, it would also be valid for the thread
+  // to give up and return -EBUSY.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+  // Defense-in-depth check (since the flush thread should still see this entry)
+  block_cache_wakeup_flush_thread();
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  block_cache_clear_unpinned();
+}
+
+static void free_all_memobj_testB(void) {
+  KTEST_BEGIN(
+      "block_cache_free_all(): flushes, but page is re-pinned during "
+      "flushing");
+  blocking_memobj_t blocking_memobj;
+  create_blocking_memobj(&blocking_memobj);
+
+  blocking_memobj.block_reads = false;
+  blocking_memobj.block_writes = false;
+  bc_entry_t* entry1 = NULL, *entry2 = NULL;
+
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  do_free_all_thread_args_t args;
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  kthread_disable(thread);
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  // Wait for the freeing thread to wake up, but not run yet.
+  // TODO(aoates): invent a better way to do this.
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  // Get and pin the entry.
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+
+  kthread_enable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(-EBUSY, args.result);
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_NONE));
+
+
+  KTEST_BEGIN(
+      "block_cache_free_all(): flushes, but page is freed while waiting");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+  // Second entry, just for kicks.
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 1, &entry2));
+  KEXPECT_NE(NULL, entry2);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  // Wait for the flush queue thread to get blocked in the flush.
+  // TODO(SMP): do this in a thread-safe/atomic way.
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  // The do_free_all_thread should now be blocked waiting for the flush thread.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+  KEXPECT_EQ(2, list_size(&blocking_memobj.obj.bc_entries));
+  kthread_disable(thread);
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  // Wait for the freeing thread to wake up, but not run yet.
+  // TODO(aoates): invent a better way to do this.
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  // Force-free the entry (unless the block-cache code keeps it alive
+  // correctly).
+  block_cache_clear_unpinned();
+
+  kthread_enable(thread);
+  // The freeing thread should wake up but be able to deal with the fact that
+  // the entry was freed (or alternatively, have kept it alive somehow despite
+  // the block_cache_clear_unpinned() call above).
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+  // Defense-in-depth check (since the flush thread should still see this entry)
+  block_cache_wakeup_flush_thread();
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+
+  // This is a very white-boxy and brittle test for the interaction between
+  // cache flushing under memory pressure and block_cache_free_all().
+  // N.B.: there is a small chance this test can flake if the flush thread wakes
+  // up at just the wrong time (and flushes the dirty entry just before the get2
+  // thread tries to free cache space).
+  KTEST_BEGIN(
+      "block_cache_free_all(): called while page is being flushed during cache "
+      "resize");
+  block_cache_clear_unpinned();
+  blocking_memobj.block_writes = true;
+  const int starting_entries = block_cache_get_num_entries();
+  const int orig_max_size = block_cache_get_size();
+  const int new_size = starting_entries + 1;
+  block_cache_set_size(new_size);
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  // The block is now unpinned and on the LRU queue.  Start a get() in another
+  // thread that will cause cache pressure and force a (blocking) flush/free of
+  // the block.
+  do_free_all_thread_args_t get2_args;
+  get2_args.obj = &blocking_memobj;
+  ntfn_init(&get2_args.done);
+  kthread_t get2_thread;
+  KEXPECT_EQ(
+      0, proc_thread_create(&get2_thread, &do_get_second_block, &get2_args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&get2_args.done, 10));
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  kthread_disable(get2_thread);
+
+  // Now run a free operation in another thread, which should block waiting on
+  // the existing flush.
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+
+  // Let the flush finish.
+  kthread_disable(thread);
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  kthread_enable(get2_thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&get2_args.done, 2000));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+  KEXPECT_EQ(NULL, kthread_join(get2_thread));
+
+  // Let the free thread finish.
+  kthread_enable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);  // -EBUSY would also be acceptable.
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+  block_cache_set_size(orig_max_size);
+
+
+  // TODO(aoates): fix this behavior --- we currently silently eat the -EINTR
+  // error, it should be passed back up.
+  KTEST_BEGIN("block_cache_free_all(): interrupted while flushing");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+
+  KEXPECT_EQ(0, proc_kill_thread(thread, SIGUSR1));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(0, args.result);  // Wrong!  Should be -EINTR!
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+
+
+  // As above, but when we're waiting for another thread to flush.
+  KTEST_BEGIN("block_cache_free_all(): interrupted while waiting for flush");
+  blocking_memobj.block_writes = true;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_ASYNC));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+
+  block_cache_wakeup_flush_thread();
+  // TODO(SMP): do this in a thread-safe/atomic way.
+  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+
+  args.obj = &blocking_memobj;
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
+
+  KEXPECT_EQ(0, proc_kill_thread(thread, SIGUSR1));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(-EINTR, args.result);
+  KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
+
+  // Let the flush queue finish.
+  scheduler_wake_all(&blocking_memobj.obj_queue);
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+
+  block_cache_clear_unpinned();
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -991,6 +1460,8 @@ void block_cache_test(void) {
 
   read_error_test();
   write_error_test();
+  free_all_memobj_testA();
+  free_all_memobj_testB();
 
   block_cache_set_bg_flush_period(old_flush_period_ms);
 
