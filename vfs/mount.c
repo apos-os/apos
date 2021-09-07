@@ -25,6 +25,9 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
   if (fs->id != VFS_FSID_NONE) return -EBUSY;
   KASSERT_DBG(fs->open_vnodes == 0);
 
+  // TODO(SMP): write a concurrent mount/unmount test.
+  KMUTEX_AUTO_LOCK(fs_table_lock, &g_fs_table_lock);
+
   // First open the vnode that will be the mount point.
   vnode_t* mount_point = 0x0;
   int result = lookup_existing_path(path, lookup_opt(false), &mount_point);
@@ -47,6 +50,8 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
     return -ENOMEM;
   }
 
+  // Lookup should have resolved all mounts.
+  KASSERT(mount_point->mounted_fs == VFS_FSID_NONE);
   mount_point->mounted_fs = fs_idx;
   fs->id = fs_idx;
   g_fs_table[fs_idx].fs = fs;
@@ -62,6 +67,8 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
 
 int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   if (!path || !fs_out) return -EINVAL;
+
+  KMUTEX_AUTO_LOCK(fs_table_lock, &g_fs_table_lock);
 
   // First open the vnode that we're trying to unmount.
   vnode_t* mounted_root = 0x0;
@@ -152,6 +159,7 @@ int vfs_unmount(const char* mount_path, unsigned long flags) {
 }
 
 int vfs_mounted_fs_count(void) {
+  KMUTEX_AUTO_LOCK(fs_table_lock, &g_fs_table_lock);
   int count = 0;
   for (int fs_idx = 0; fs_idx < VFS_MAX_FILESYSTEMS; ++fs_idx) {
     if (g_fs_table[fs_idx].fs) count++;

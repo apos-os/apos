@@ -36,6 +36,7 @@ typedef struct {
 } mounted_fs_t;
 
 extern mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
+extern kmutex_t g_fs_table_lock;
 extern htbl_t g_vnode_cache;
 extern kspinlock_t g_vnode_cache_lock;
 extern file_t* g_file_table[VFS_MAX_FILES];

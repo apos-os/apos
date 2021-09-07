@@ -141,6 +141,7 @@ static void cleanup_socket_vnode(vnode_t* vnode) {
 
 void vfs_init() {
   KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
+  kmutex_init(&g_fs_table_lock);
 
 #if ENABLE_EXT2
   // First try to mount every ATA device as an ext2 fs.

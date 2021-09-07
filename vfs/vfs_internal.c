@@ -25,6 +25,8 @@
 #include "vfs/vfs.h"
 
 mounted_fs_t g_fs_table[VFS_MAX_FILESYSTEMS];
+// Protects g_fs_table, serializing mount operations.
+kmutex_t g_fs_table_lock;
 htbl_t g_vnode_cache;
 kspinlock_t g_vnode_cache_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 file_t* g_file_table[VFS_MAX_FILES];
