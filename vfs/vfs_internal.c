@@ -40,14 +40,18 @@ int resolve_mounts(vnode_t** vnode) {
   vnode_t* n = *vnode;
 
   // If the vnode is a mount point, continue to the child filesystem.
+  kmutex_lock(&n->mutex);
   while (n->mounted_fs != VFS_FSID_NONE) {
     // TODO(aoates): check that each of these is valid.
     fs_t* const child_fs = g_fs_table[n->mounted_fs].fs;
     vnode_t* child_fs_root = vfs_get(child_fs, child_fs->get_root(child_fs));
     KASSERT_DBG(child_fs_root->parent_mount_point == n);
+    kmutex_unlock(&n->mutex);
     VFS_PUT_AND_CLEAR(n);
     n = VFS_MOVE_REF(child_fs_root);
+    kmutex_lock(&n->mutex);
   }
+  kmutex_unlock(&n->mutex);
 
   *vnode = n;
   return 0;
@@ -56,12 +60,21 @@ int resolve_mounts(vnode_t** vnode) {
 void resolve_mounts_up(vnode_t** parent, const char* child_name) {
   // If we're traversing past the root node of a mounted filesystem, swap in the
   // mount point.
-  while (kstrcmp(child_name, "..") == 0 &&
-         (*parent)->parent_mount_point != 0x0) {
+  if (kstrcmp(child_name, "..") != 0) {
+    return;
+  }
+
+  // N.B.(aoates): not clear if this lock is necessary --- we hold a ref on the
+  // parent, so no one should be able to unmount this simultaneously.
+  kmutex_lock(&(*parent)->mutex);
+  while ((*parent)->parent_mount_point != 0x0) {
     vnode_t* new_parent = VFS_COPY_REF((*parent)->parent_mount_point);
+    kmutex_unlock(&(*parent)->mutex);
     VFS_PUT_AND_CLEAR(*parent);
     *parent = VFS_MOVE_REF(new_parent);
+    kmutex_lock(&(*parent)->mutex);
   }
+  kmutex_unlock(&(*parent)->mutex);
 }
 
 int resolve_symlink(bool at_last_element, lookup_options_t opt,

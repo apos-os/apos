@@ -50,6 +50,10 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
     return -ENOMEM;
   }
 
+  // TODO(SMP): write a concurrent mount/unmount/resolve test that catches this
+  // racing with resolve_mounts().
+  KMUTEX_AUTO_LOCK(mount_point_lock, &mount_point->mutex);
+
   // Lookup should have resolved all mounts.
   KASSERT(mount_point->mounted_fs == VFS_FSID_NONE);
   mount_point->mounted_fs = fs_idx;
@@ -58,6 +62,8 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
   g_fs_table[fs_idx].mount_point = VFS_MOVE_REF(mount_point);
   g_fs_table[fs_idx].mounted_root = vfs_get(fs, fs->get_root(fs));
 
+  // No need to lock the mounted_root, I think --- no one can get to it except
+  // via the mount_point, which _is_ locked.
   KASSERT_DBG(g_fs_table[fs_idx].mounted_root->parent_mount_point == 0x0);
   g_fs_table[fs_idx].mounted_root->parent_mount_point =
       VFS_COPY_REF(g_fs_table[fs_idx].mount_point);
@@ -80,6 +86,8 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
     return -ENOTDIR;
   }
 
+  // No need to lock the mounted_root here --- it can't be modified unless the
+  // fs_table_lock is locked, which we currently hold.
   if (mounted_root->parent_mount_point == 0x0) {
     VFS_PUT_AND_CLEAR(mounted_root);
     return -EINVAL;
@@ -87,6 +95,9 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
 
   vnode_t* mount_point = VFS_COPY_REF(mounted_root->parent_mount_point);
   VFS_PUT_AND_CLEAR(mounted_root);
+
+  // TODO(aoates): why are the following two checks necessary?  These should
+  // always pass, right?  Validate that and change to assertions.
   if (mount_point->type != VNODE_DIRECTORY) {
     VFS_PUT_AND_CLEAR(mount_point);
     return -ENOTDIR;
@@ -97,6 +108,7 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
     return -EINVAL;
   }
 
+  kmutex_lock(&mount_point->mutex);
   KASSERT(mount_point->mounted_fs > 0 &&
           mount_point->mounted_fs < VFS_MAX_FILESYSTEMS);
   KASSERT(g_fs_table[mount_point->mounted_fs].mount_point == mount_point);
@@ -109,8 +121,10 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   // fs table).
   KASSERT_DBG(g_fs_table[mount_point->mounted_fs].fs->open_vnodes >= 1);
 
+  // TODO(aoates): need to lock around the refcount read.
   if (g_fs_table[mount_point->mounted_fs].fs->open_vnodes > 1 ||
       g_fs_table[mount_point->mounted_fs].mounted_root->refcount > 1) {
+    kmutex_unlock(&mount_point->mutex);
     VFS_PUT_AND_CLEAR(mount_point);
     return -EBUSY;
   }
@@ -125,6 +139,7 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   g_fs_table[mount_point->mounted_fs].fs->id = VFS_FSID_NONE;
   g_fs_table[mount_point->mounted_fs].fs = 0x0;
   mount_point->mounted_fs = VFS_FSID_NONE;
+  kmutex_unlock(&mount_point->mutex);
   VFS_PUT_AND_CLEAR(mount_point);
 
   return 0;
