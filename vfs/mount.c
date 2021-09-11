@@ -71,6 +71,65 @@ int vfs_mount_fs(const char* path, fs_t* fs) {
   return 0;
 }
 
+// Attempt to flush and put all open vnodes in the filesystem.  This is kludgy
+// and ineffecient (and a great way to DoS the system, by just trying to unmount
+// a busy filesystem).
+//
+// If there is concurrent filesystem activity, correctness but not progress is
+// guaranteed.  This assumes that if there is no concurrent activity, the order
+// of the fs vnode list is not changed (vnodes only removed from the middle).
+//
+// TODO(SMP): write a highly-concurrent test for this that throws a lot of
+// threads doing a lot of different things simultaneously at this logic.
+static void try_free_all_open(mounted_fs_t* fs) {
+  kspin_lock(&g_vnode_cache_lock);
+  list_link_t* link = fs->fs->open_vnodes_list.head;
+  // There should always be at least one open vnode when this is called (the
+  // mounted root).
+  KASSERT_MSG(link != NULL, "FS should have at least one open vnode");
+  vnode_t* node = container_of(link, vnode_t, fs_link);
+  // Note: we don't have a ref on the node right now!  Save the number, then
+  // get it properly.  This is sorta gross --- but avoids us having to muck
+  // around with the vnode cache internals too much.  It's possible that the
+  // fs node list gets changed while we're doing this, but that's fine --- we
+  // don't guarantee progress/completion in that case.
+  int node_num = node->num;
+  kspin_unlock(&g_vnode_cache_lock);
+  while (node_num >= 0) {
+    node = vfs_get(fs->fs, node_num);
+    // TODO(SMP): write a test that catches this case.
+    if (!node) {
+      // Eh, someone modified concurrently.  Give up.
+      return;
+    }
+    // Note: no guarantee this is actually the same node as above!  That's fine.
+    // At least we know it's initialized and we have a ref on it.
+    int result = block_cache_free_all(&node->memobj);
+    if (result) {
+      vfs_put(node);
+      return;
+    }
+
+    kspin_lock(&g_vnode_cache_lock);
+    if (node != fs->mounted_root && node->refcount > 1) {
+      // Someone still holds a ref.  Give up on the whole thing.
+      kspin_unlock(&g_vnode_cache_lock);
+      vfs_put(node);
+      return;
+    }
+
+    link = node->fs_link.next;
+    if (link) {
+      vnode_t* next_node = container_of(link, vnode_t, fs_link);
+      node_num = next_node->num;  // Continue down the list.
+    } else {
+      node_num = -1;
+    }
+    kspin_unlock(&g_vnode_cache_lock);
+    vfs_put(node);
+  }
+}
+
 int vfs_unmount_fs(const char* path, fs_t** fs_out) {
   if (!path || !fs_out) return -EINVAL;
 
@@ -116,6 +175,8 @@ int vfs_unmount_fs(const char* path, fs_t** fs_out) {
           mount_point->mounted_fs);
   KASSERT(g_fs_table[mount_point->mounted_fs].mounted_root->parent_mount_point
           == mount_point);
+
+  try_free_all_open(&g_fs_table[mount_point->mounted_fs]);
 
   // We should have at least one open vnode (the mounted_root reference in the
   // fs table).
