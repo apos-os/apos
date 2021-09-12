@@ -1422,6 +1422,58 @@ static void free_all_memobj_testB(void) {
   block_cache_clear_unpinned();
 }
 
+static void free_all_memobj_testC(void) {
+  KTEST_BEGIN("block_cache_free_all(): free after error");
+  // This tests the find-block-on-cleanup-list flow --- that can happen in cases
+  // other than the error case, but this is the easiest way to trigger it for a
+  // test.
+  blocking_memobj_t blocking_memobj;
+  create_blocking_memobj(&blocking_memobj);
+
+  blocking_memobj.block_reads = false;
+  blocking_memobj.op_result = -EXDEV;
+  bc_entry_t* entry1 = NULL, *entry2 = NULL;
+  KEXPECT_EQ(-EXDEV, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_EQ(NULL, entry1);
+
+  KEXPECT_EQ(0, block_cache_free_all(&blocking_memobj.obj));
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+
+  KTEST_BEGIN(
+      "block_cache_free_all(): free after error (multiple extant entries)");
+  KEXPECT_EQ(-EXDEV, block_cache_get(&blocking_memobj.obj, 0, &entry1));
+  KEXPECT_EQ(NULL, entry1);
+  blocking_memobj.op_result = 0;
+  KEXPECT_EQ(0, block_cache_get(&blocking_memobj.obj, 1, &entry1));
+  KEXPECT_NE(NULL, entry1);
+
+  blocking_memobj.op_result = -EXDEV;
+  KEXPECT_EQ(-EXDEV, block_cache_get(&blocking_memobj.obj, 2, &entry2));
+  KEXPECT_EQ(NULL, entry2);
+
+  // Do a little dance with freeing and getting again, just to add some entropy
+  // to the test.
+  KEXPECT_EQ(3, list_size(&blocking_memobj.obj.bc_entries));
+  KEXPECT_EQ(-EBUSY, block_cache_free_all(&blocking_memobj.obj));
+
+  KEXPECT_EQ(-EXDEV, block_cache_get(&blocking_memobj.obj, 0, &entry2));
+  KEXPECT_EQ(NULL, entry2);
+  KEXPECT_EQ(-EXDEV, block_cache_get(&blocking_memobj.obj, 2, &entry2));
+  KEXPECT_EQ(NULL, entry2);
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_NONE));
+  KEXPECT_EQ(3, list_size(&blocking_memobj.obj.bc_entries));
+
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 1));
+  KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 2));
+
+  KEXPECT_EQ(0, block_cache_free_all(&blocking_memobj.obj));
+  KEXPECT_EQ(0, list_size(&blocking_memobj.obj.bc_entries));
+
+  block_cache_clear_unpinned();
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -1462,6 +1514,7 @@ void block_cache_test(void) {
   write_error_test();
   free_all_memobj_testA();
   free_all_memobj_testB();
+  free_all_memobj_testC();
 
   block_cache_set_bg_flush_period(old_flush_period_ms);
 

@@ -131,6 +131,7 @@ static void* get_free_block(void) {
 
 // Return a free block to the stack.
 static void put_free_block(void* block) {
+  KASSERT_DBG(block != NULL);
   kmutex_assert_is_held(&g_mu);
   if (g_free_block_stack_idx == FREE_BLOCK_STACK_SIZE) {
     KLOG(WARNING, "dropping free block because the free block cache "
@@ -260,6 +261,7 @@ static void cleanup_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(entry->flushed);
   KASSERT_DBG(!entry->flushing);
 
+  KASSERT_DBG(g_size > 0);
   g_size--;
   // If uninitialized, it was not successfully populated and was already removed
   // from the hashtable.
@@ -581,26 +583,31 @@ int block_cache_free_all(struct memobj* obj) {
     if (entry->pin_count) {
       return -EBUSY;
     }
-    if (!entry->flushed || entry->flushing) {
-      int result = flush_or_wait(entry);  // May block and change entry.
-      if (result) return result;
-      // We don't know what happened --- `entry` may point to invalid memory
-      // now!  Or be pinned, flushing, or dirty.  Just retry from the start.
-      continue;
-    }
+    // This block may already be on the cleanup list.
+    if (entry->pub.block) {
+      if (!entry->flushed || entry->flushing) {
+        int result = flush_or_wait(entry);  // May block and change entry.
+        if (result) return result;
+        // We don't know what happened --- `entry` may point to invalid memory
+        // now!  Or be pinned, flushing, or dirty.  Just retry from the start.
+        continue;
+      }
 
-    // Sanity checks.
-    KASSERT_DBG(entry->pub.obj == obj);
-    KASSERT_DBG(entry->pin_count == 0);
-    KASSERT_DBG(entry->flushed);
-    KASSERT_DBG(!entry->flushing);
-    KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
-    // TODO(aoates): is there any scenario when the entry _won't_ be on the LRU
-    // queue here?  If so, write a test for it.
-    if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
-      list_remove(&g_lru_queue, &entry->lruq);
+      // Sanity checks.
+      KASSERT_DBG(entry->pub.obj == obj);
+      KASSERT_DBG(entry->pin_count == 0);
+      KASSERT_DBG(entry->flushed);
+      KASSERT_DBG(!entry->flushing);
+      KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+      // TODO(aoates): is there any scenario when the entry _won't_ be on the LRU
+      // queue here?  If so, write a test for it.
+      if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
+        list_remove(&g_lru_queue, &entry->lruq);
+      }
+      cleanup_cache_entry(entry);
+    } else {
+      KASSERT_DBG(list_link_on_list(&g_cleanup_list, &entry->lruq));
     }
-    cleanup_cache_entry(entry);
 
     // TODO(aoates): figure out how to call free_dead_entries() once at the end.
     free_dead_entries();  // May block.
