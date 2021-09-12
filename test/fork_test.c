@@ -25,6 +25,7 @@
 #include "proc/wait.h"
 #include "test/ktest.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 static kpid_t child_pid = -1;
 
@@ -297,6 +298,11 @@ static void test_child(void* arg) {
   proc_fork(&test_child2, arg);
 }
 
+static void write_then_exit_child(void* arg) {
+  KEXPECT_EQ(1, *(uint32_t*)(PRIVATE_ADDR1));
+  *(uint32_t*)(PRIVATE_ADDR1) = 2;
+}
+
 static void unpinned_mapping_test(void) {
   KTEST_BEGIN("fork() unpinned mapping test");
   // Create a shared and a private mapping.
@@ -321,6 +327,33 @@ static void unpinned_mapping_test(void) {
   KEXPECT_EQ(1, *(uint32_t*)(PRIVATE_ADDR1));
 
   KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));
+
+
+  KTEST_BEGIN("Shadow object cleanup on exit test");
+  int fd = vfs_open("_shadow_obj_test", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, MAP_LENGTH));
+  KEXPECT_EQ(1, vfs_get_vnode_refcount_for_path("_shadow_obj_test"));
+  KEXPECT_EQ(0, do_mmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH, PROT_ALL,
+                        KMAP_FIXED | KMAP_PRIVATE, fd, 0, &addr));
+  KEXPECT_EQ(2, vfs_get_vnode_refcount_for_path("_shadow_obj_test"));
+
+  // Write some values into the mappings, then fork.
+  *(uint32_t*)(PRIVATE_ADDR1) = 1;
+  KEXPECT_EQ(3, vfs_get_vnode_refcount_for_path("_shadow_obj_test"));
+
+  child_pid = proc_fork(&write_then_exit_child, NULL);
+  KEXPECT_GE(child_pid, 0);
+  KEXPECT_EQ(child_pid, proc_wait(NULL));
+  KEXPECT_EQ(3, vfs_get_vnode_refcount_for_path("_shadow_obj_test"));
+  KEXPECT_EQ(1, *(uint32_t*)(PRIVATE_ADDR1));
+  KEXPECT_EQ(0, do_munmap((void*)PRIVATE_MAP_BASE, MAP_LENGTH));
+  // The refcount shoud be at most 2 --- one for the file descriptor, and maybe
+  // one if there's still an (unpinned) page for the file in the block cache.
+  KEXPECT_LE(vfs_get_vnode_refcount_for_path("_shadow_obj_test"), 2);
+  KEXPECT_GE(vfs_get_vnode_refcount_for_path("_shadow_obj_test"), 1);
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unlink("_shadow_obj_test"));
 }
 
 // TODO(aoates): test fd and cwd forking.

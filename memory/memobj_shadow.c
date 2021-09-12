@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "arch/common/types.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/hashtable.h"
@@ -86,10 +87,27 @@ static void shadow_unref(memobj_t* obj) {
     // reference).
     htbl_clear(&data->entries, &unpin_htbl_entry, NULL);
 
+    // Force the block cache to clear all our entries --- they should all be
+    // unreferenced.  This prevents us from holding onto references to
+    // underlying memobjs due to pages that will never be reused.
+    // TODO(aoates): now that we force this at the end (rather than lazily
+    // relying on cache pressure to clean up later), there might be a way to
+    // rewrite all this logic to be more direct.
+    int result = block_cache_free_all(obj);
+    if (result) {
+      // This shouldn't happen, but also no reason to die if it fails ---
+      // nothing is left in a corrupt or incorrect state.
+      klogfm(
+          KL_GENERAL, ERROR,
+          "unable to free all block cache entries for shadow object %p: %s\n",
+          obj, errorname(-result));
+    }
+
     kspin_lock(&obj->lock);
     // At this point we should still have at least one reference (this
-    // thread's); the BC entries may not have been destroyed yet, in which case
-    // they will still hold references to this memobj as well.
+    // thread's); if the above call failed, the BC entries may not have been
+    // destroyed yet, in which case they will still hold references to this
+    // memobj as well.
     KASSERT_DBG(obj->refcount >= 1);
   }
   int new_refcount = --obj->refcount;
