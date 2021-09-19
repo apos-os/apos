@@ -782,7 +782,8 @@ static int cbfs_truncate(vnode_t* node, koff_t length) {
 }
 
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
-  return -ENOTSUP;
+  int result = cbfs_read(vnode, page_offset * PAGE_SIZE, buf, PAGE_SIZE);
+  return (result < 0) ? result : 0;
 }
 
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf) {

@@ -21,6 +21,7 @@
 #include "common/kprintf.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"
+#include "memory/mmap.h"
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
 #include "user/include/apos/vfs/dirent.h"
@@ -36,8 +37,12 @@ static int basic_file_read_test(fs_t* fs, void* arg, int vnode, int offset,
                                 void* buf, int buflen) {
   KEXPECT_EQ(g_basic_fs, fs);
   KEXPECT_EQ((void*)0x1, arg);
-  KEXPECT_EQ(2, offset);
-  KEXPECT_EQ(100, buflen);
+  if (buflen == PAGE_SIZE) {
+    KEXPECT_EQ(PAGE_SIZE * 2, offset);
+  } else {
+    KEXPECT_EQ(2, offset);
+    KEXPECT_EQ(100, buflen);
+  }
 
   kstrcpy(buf, "abcde");
   return 6;
@@ -64,6 +69,12 @@ static void basic_file_test(fs_t* fs) {
   char buf[100];
   KEXPECT_EQ(6, vfs_read(fd, buf, 100));
   KEXPECT_STREQ("abcde", buf);
+
+  void* map_addr = NULL;
+  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_READ, KMAP_PRIVATE, fd,
+                        2 * PAGE_SIZE, &map_addr));
+  KEXPECT_EQ(0, kstrncmp((const char*)map_addr, "abcde", 5));
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
 
   KEXPECT_EQ(0, vfs_close(fd));
 
@@ -183,6 +194,9 @@ static void null_lookup_test(fs_t* fs) {
 
 static int no_read(fs_t* fs, void* arg, int vnode, int offset, void* outbuf,
                    int buflen) {
+  if (buflen == PAGE_SIZE) {
+    KEXPECT_EQ(2 * PAGE_SIZE, offset);
+  }
   return 0;
 }
 
@@ -330,6 +344,13 @@ static void dynamic_directory_test(void) {
   KEXPECT_GE(fd, 0);
   char tmp[100];
   KEXPECT_EQ(0, vfs_read(0, tmp, 100));
+
+  void* map_addr = NULL;
+  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_READ, KMAP_PRIVATE, fd,
+                        2 * PAGE_SIZE, &map_addr));
+  *(volatile const char*)map_addr;
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
+
   vfs_close(fd);
 
   fd = vfs_open("cbfs_test_root/dir1/f1", VFS_O_RDONLY);
