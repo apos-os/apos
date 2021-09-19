@@ -187,7 +187,7 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
     if (result != 0) {
       KLOG(
           WARNING,
-          "block cache: write_page(object=%p (id %d), offset=%zu) failed: %s\n",
+          "block cache: write_page(object=%p (id %u), offset=%zu) failed: %s\n",
           entry->pub.obj, entry->pub.obj->id, entry->pub.offset,
           errorname(-result));
     }
