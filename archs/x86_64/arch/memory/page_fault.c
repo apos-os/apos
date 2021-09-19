@@ -56,5 +56,7 @@ void page_fault_handler(uint32_t interrupt, uint32_t error, bool is_user) {
       (error & PAGE_FAULT_ERR_USER) ? VM_FAULT_USER : VM_FAULT_KERNEL;
   KASSERT_DBG(is_user ? (mode == VM_FAULT_USER) : (mode == VM_FAULT_KERNEL));
 
+  // Ignore return value --- if it failed, a signal was generated and will be
+  // dispatched as needed.
   vm_handle_page_fault(address, type, op, mode);
 }

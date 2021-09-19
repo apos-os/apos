@@ -94,8 +94,8 @@ static int fault_allowed(vm_area_t* area, vm_fault_type_t type,
   return 1;
 }
 
-void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
-                          vm_fault_op_t op, vm_fault_mode_t mode) {
+int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
+                         vm_fault_mode_t mode) {
   process_t* proc = proc_current();
   if (ENABLE_KERNEL_SAFETY_NETS) {
     check_vm_list(proc);
@@ -115,7 +115,7 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
              address, proc->id);
         KASSERT(proc_force_signal_on_thread(
                 proc_current(), kthread_current_thread(), SIGSEGV) == 0);
-        return;
+        return -EACCES;
     }
   }
 
@@ -165,7 +165,7 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
                         proc_current(), kthread_current_thread(), SIGBUS) == 0);
             // TODO(aoates): write a test that catches if this unmap is missing.
             page_frame_unmap_virtual(virt_page);
-            return;
+            return result;
         }
       }
     }
@@ -181,4 +181,5 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
   KASSERT(phys_addr != 0x0);
   page_frame_map_virtual(virt_page, phys_addr,
                          mapping_prot, area->access, area->flags);
+  return 0;
 }

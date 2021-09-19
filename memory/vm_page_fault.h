@@ -37,8 +37,11 @@ typedef enum {
   VM_FAULT_USER,
 } vm_fault_mode_t;
 
-// Handle a page fault at the given address.
-void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
-                          vm_fault_op_t op, vm_fault_mode_t mode);
+// Handle a page fault at the given address.  If the fault can't be handled
+// (it's an invalid access, the backing data can't be paged in, etc) then an
+// appropriate signal is generated on the current process and an error code is
+// returned.
+int vm_handle_page_fault(addr_t address, vm_fault_type_t type, vm_fault_op_t op,
+                         vm_fault_mode_t mode);
 
 #endif
