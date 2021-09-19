@@ -20,8 +20,24 @@
 #include "common/kstring.h"
 #include "vfs/cbfs.h"
 
+static int testfs_read_error(fs_t* fs, void* arg, int vnode, int offset,
+                             void* buf, int buflen) {
+  return -EIO;
+}
+
 fs_t* testfs_create(void) {
-  return cbfs_create("testfs", NULL, NULL, NULL, INT_MAX);
+  fs_t* fs = cbfs_create("testfs", NULL, NULL, NULL, INT_MAX);
+  if (!fs) return NULL;
+
+  int result =
+      cbfs_create_file(fs, "read_error", &testfs_read_error, NULL, VFS_S_IRWXU);
+  if (result) goto error;
+
+  return fs;
+
+error:
+  fs->destroy_fs(fs);
+  return NULL;
 }
 
 int testfs_create_path(const char* source, unsigned long flags,

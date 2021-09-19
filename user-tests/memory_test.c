@@ -15,8 +15,11 @@
 #include <assert.h>
 #include <sys/mman.h>
 #include <sys/signal.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+#include <apos/syscall_decls.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -68,7 +71,39 @@ static void mmap_test(void) {
   KEXPECT_EQ(0, munmap(addr1, 4096));
 }
 
+static void mmap_read_errors_test(void) {
+  KTEST_BEGIN("error during read of mmap()'d file sends SIGBUS");
+  KEXPECT_EQ(0, mkdir("_memory_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, mount("", "_memory_test", "testfs", 0, NULL, 0));
+
+  int fd = open("_memory_test/read_error", O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  char buf[10];
+  KEXPECT_ERRNO(EIO, read(fd, buf, 10));
+
+  const size_t kMapLen = 4096;
+  void* map = mmap(NULL, kMapLen, PROT_READ, MAP_SHARED, fd, 0);
+  KEXPECT_NE(NULL, map);
+
+  pid_t child = fork();
+  if (child == 0) {
+    int x = *(int*)map;  // Should generate SIGBUS.
+    printf("%d", x);     // Shouldn't get here.
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGBUS, WTERMSIG(status));
+
+  KEXPECT_EQ(0, munmap(map, kMapLen));
+  KEXPECT_EQ(0, close(fd));
+  KEXPECT_EQ(0, unmount("_memory_test", 0));
+  KEXPECT_EQ(0, rmdir("_memory_test"));
+}
+
 void memory_test(void) {
   KTEST_SUITE_BEGIN("basic memory tests");
   mmap_test();
+  mmap_read_errors_test();
 }

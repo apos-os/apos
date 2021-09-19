@@ -148,8 +148,26 @@ void vm_handle_page_fault(addr_t address, vm_fault_type_t type,
           (area->memobj_base / PAGE_SIZE) + area_page_offset,
           op == VM_FAULT_WRITE,
           &area->pages[area_page_offset]);
-      // TODO(aoates): handle failures for user-mode faults.
-      KASSERT(result == 0);
+      if (result) {
+        switch (mode) {
+          case VM_FAULT_KERNEL:
+            KLOG(ERROR, "kernel mode SIGBUS: addr: 0x%" PRIxADDR " error: %s\n",
+                 address, errorname(-result));
+            die("failed kernel page fault");
+            break;
+
+          case VM_FAULT_USER:
+            KLOG(INFO,
+                 "SIGBUS: unable to access address %#" PRIxADDR
+                 " (pid %d, error=%s)\n",
+                 address, proc->id, errorname(-result));
+            KASSERT(proc_force_signal_on_thread(
+                        proc_current(), kthread_current_thread(), SIGBUS) == 0);
+            // TODO(aoates): write a test that catches if this unmap is missing.
+            page_frame_unmap_virtual(virt_page);
+            return;
+        }
+      }
     }
     KASSERT(area->pages[area_page_offset]);
     phys_addr = area->pages[area_page_offset]->block_phys;
