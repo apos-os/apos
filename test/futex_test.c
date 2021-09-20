@@ -83,17 +83,9 @@ static void wait_wake_tests(void) {
   uint32_t* ptr1 = (uint32_t*)map1 + 10;
   uint32_t* ptr2 = (uint32_t*)map2 + 10;
 
-  // The pages aren't mapped yet.
-  KEXPECT_EQ(-EFAULT, futex_wait(ptr1, 0, NULL));
-  KEXPECT_EQ(-EFAULT, futex_wait(ptr2, 0, NULL));
-  KEXPECT_EQ(-EFAULT, futex_wake(ptr1, INT_MAX));
-  KEXPECT_EQ(-EFAULT, futex_wake(ptr2, INT_MAX));
-
   *ptr1 = 0;
   KEXPECT_EQ(-EAGAIN, futex_wait(ptr1, 1, NULL));  // 1 != 0.
-  KEXPECT_EQ(-EFAULT, futex_wait(ptr2, 0, NULL));  // Still unmapped.
   KEXPECT_EQ(0, futex_wake(ptr1, INT_MAX));
-  KEXPECT_EQ(-EFAULT, futex_wake(ptr2, INT_MAX));
 
   futex_test_args args;
   args.addr = ptr1;

@@ -15,12 +15,13 @@
 #include "arch/memory/page_map.h"
 #include "common/errno.h"
 #include "common/kassert.h"
-#include "common/list.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "common/math.h"
 #include "memory/memobj_shadow.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "memory/vm_page_fault.h"
 #include "proc/process.h"
 
 addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
@@ -152,7 +153,8 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
 }
 
 int vm_resolve_address(process_t* proc, addr_t start, size_t size,
-                       bool is_write, bool is_user, phys_addr_t* resolved_out) {
+                       bool is_write, bool is_user, bc_entry_t** entry_out,
+                       phys_addr_t* resolved_out) {
   if (!proc || !resolved_out) {
     return -EINVAL;
   }
@@ -185,7 +187,7 @@ int vm_resolve_address(process_t* proc, addr_t start, size_t size,
     return -EFAULT;
   }
 
-  const int result = verify_access(last_area, is_write, is_user);
+  int result = verify_access(last_area, is_write, is_user);
   if (result) return result;
 
   if (!last_area->memobj) {
@@ -195,13 +197,25 @@ int vm_resolve_address(process_t* proc, addr_t start, size_t size,
   const addr_t virt_page = addr2page(start);
   const size_t area_page_offset = (virt_page - last_area->vm_base) / PAGE_SIZE;
   const size_t offset_in_page = start % PAGE_SIZE;
-  const bc_entry_t* bce = last_area->pages[area_page_offset];
+  bc_entry_t* bce = last_area->pages[area_page_offset];
   if (!bce) {
     // The access _would_ be valid, but that address isn't currently swapped in.
-    return -EFAULT;
+    // Attempt to page it in (blocks!).
+    // TODO(aoates): there is a fair amount of duplicated logic between the
+    // checks above and the checks in vm_handle_page_fault().
+    result = vm_handle_page_fault(start, /* type= */ VM_FAULT_NOT_PRESENT,
+                                  is_write ? VM_FAULT_WRITE : VM_FAULT_READ,
+                                  is_user ? VM_FAULT_USER : VM_FAULT_KERNEL);
+    if (result) return result;
+    // TODO(swap): will need a way to ensure that the paged-in page stays pinned
+    // between the above call and when we add a pin below.
+    bce = last_area->pages[area_page_offset];
+    KASSERT(bce != NULL);
   }
 
   *resolved_out = bce->block_phys + offset_in_page;
+  *entry_out = bce;
+  block_cache_add_pin(bce);
   return 0;
 }
 

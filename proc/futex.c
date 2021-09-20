@@ -46,10 +46,10 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
                const struct apos_timespec* timeout_relative) {
   phys_addr_t resolved;
   // TODO(SMP): lock the process's memory map.
-  int result =
-      vm_resolve_address(proc_current(), (addr_t)uaddr, sizeof(uint32_t),
-                         /*is_write=*/false, /*is_user=*/true,
-                         &resolved);
+  bc_entry_t* entry = NULL;
+  int result = vm_resolve_address(
+      proc_current(), (addr_t)uaddr, sizeof(uint32_t),
+      /*is_write=*/false, /*is_user=*/true, &entry, &resolved);
   if (result) return result;
 
   kspin_lock(&g_futex_lock);
@@ -64,6 +64,7 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
   uint32_t cur_val = *uaddr;
   if (cur_val != val) {
     kspin_unlock(&g_futex_lock);
+    block_cache_put(entry, BC_FLUSH_NONE);
     return -EAGAIN;
   }
 
@@ -85,6 +86,7 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
   KASSERT_DBG(f->waiters >= 0);
   f->waiters++;
   kspin_unlock(&g_futex_lock);
+  block_cache_put(entry, BC_FLUSH_NONE);
 
   long timeout_ms = timeout_relative ? timespec2ms(timeout_relative) : 0;
   // TODO(aoates): fix timeout handling so we don't need this hack.
@@ -115,15 +117,18 @@ int futex_wait(uint32_t* uaddr, uint32_t val,
 int futex_wake(uint32_t* uaddr, uint32_t val) {
   phys_addr_t resolved;
   // TODO(SMP): lock the process's memory map.
-  int result =
-      vm_resolve_address(proc_current(), (addr_t)uaddr, sizeof(uint32_t),
-                         /*is_write=*/false, /*is_user=*/true,
-                         &resolved);
+  bc_entry_t* entry = NULL;
+  // TODO(swap): do we actually need to hold this pin across all the logic, or
+  // can we release it immediately?
+  int result = vm_resolve_address(
+      proc_current(), (addr_t)uaddr, sizeof(uint32_t),
+      /*is_write=*/false, /*is_user=*/true, &entry, &resolved);
   if (result) return result;
 
   kspin_lock(&g_futex_lock);
   if (!g_futex_initialized) {
     kspin_unlock(&g_futex_lock);
+    block_cache_put(entry, BC_FLUSH_NONE);
     return 0;
   }
 
@@ -132,6 +137,7 @@ int futex_wake(uint32_t* uaddr, uint32_t val) {
   if (htbl_get(&g_futex_table, tbl_key, &tbl_val) < 0) {
     // No futex associated with this address.  We're done.
     kspin_unlock(&g_futex_lock);
+    block_cache_put(entry, BC_FLUSH_NONE);
     return 0;
   }
 
@@ -143,6 +149,7 @@ int futex_wake(uint32_t* uaddr, uint32_t val) {
   }
 
   kspin_unlock(&g_futex_lock);
+  block_cache_put(entry, BC_FLUSH_NONE);
   return woken;
 }
 
