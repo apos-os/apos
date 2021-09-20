@@ -62,4 +62,12 @@ int syscall_verify_string(const char* str);
 // the terminating NULL on success, or -errno on error.
 int syscall_verify_ptr_table(const void* table, bool is64bit);
 
+// Copy the given userspace buffer into the given destination (which should be
+// kernel memory).  If any portion is uncopying (e.g. refers to an invalid
+// address, cannot be paged in, etc), an appropriate signal is generated and
+// error returned.
+// TODO(aoates): eliminate syscall_verify_buffer() and replace with this
+// entirely.
+int syscall_copy_from_user(const void* from, void* to, size_t len);
+
 #endif

@@ -17,6 +17,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "common/types.h"
 #include "memory/vm.h"
 #include "syscall/dmz.h"
@@ -79,4 +80,32 @@ int syscall_verify_ptr_table(const void* table, bool is64bit) {
     }
   }
   return -EFAULT;
+}
+
+int syscall_copy_from_user(const void* from, void* to, size_t len) {
+  bc_entry_t* entry = NULL;
+  phys_addr_t resolved;
+  addr_t from_addr = (addr_t)from;
+  size_t offset_in_page = from_addr % PAGE_SIZE;
+  while (len > 0) {
+    int result = vm_resolve_address(proc_current(), from_addr, /* length= */ 1,
+                                    /* is_write= */ false, /* is_user= */ true,
+                                    &entry, &resolved);
+    if (result) return result;
+    size_t bytes_to_copy = min(len, PAGE_SIZE - offset_in_page);
+    kmemcpy(to, (void*)from_addr, bytes_to_copy);
+    len -= bytes_to_copy;
+    offset_in_page = 0;
+    from_addr += bytes_to_copy;
+    to += bytes_to_copy;
+    result = block_cache_put(entry, BC_FLUSH_NONE);
+    if (result) {
+      // This shouldn't happen.
+      klogfm(KL_SYSCALL, WARNING,
+             "Unable to put() entry in copy_from_user: %s\n",
+             errorname(-result));
+      return result;
+    }
+  }
+  return 0;
 }

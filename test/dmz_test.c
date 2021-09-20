@@ -15,12 +15,16 @@
 #include <stdint.h>
 
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
+#include "proc/signal/signal.h"
 #include "syscall/dmz.h"
 #include "test/ktest.h"
+#include "vfs/mount.h"
+#include "vfs/vfs.h"
 
 static void dmz_buffer_null_buffer(void) {
   KTEST_BEGIN("syscall_verify_buffer() NULL buffer test");
@@ -243,6 +247,95 @@ static void dmz_table_different_ptr_size(void) {
 
 // TODO(aoates): test syscall_verify_string() in read-only region.
 
+static void dmz_copy_from_user_test(void) {
+  const addr_t kRegionSize = 3 * PAGE_SIZE;
+
+  KTEST_BEGIN("syscall_copy_from_user(): basic test");
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
+
+  char* dst_buf = (char*)kmalloc(kRegionSize);
+  uint32_t seed = 12345;
+  for (size_t i = 0; i < kRegionSize / sizeof(uint32_t); ++i) {
+    seed = fnv_hash(seed);
+    ((uint32_t*)addrA)[i] = seed;
+  }
+
+  // Basic test --- full copy, page-aligned.
+  KEXPECT_EQ(0, syscall_copy_from_user(addrA, dst_buf, kRegionSize));
+  KEXPECT_EQ(0, kmemcmp(addrA, dst_buf, kRegionSize));
+
+  // Test less than one page, and offset.
+  kmemset(dst_buf, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_from_user(addrA + 50, dst_buf, 100));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, dst_buf, 100));
+
+  // Test spanning 2 pages.
+  kmemset(dst_buf, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_from_user(addrA + 50, dst_buf, PAGE_SIZE + 200));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, dst_buf, PAGE_SIZE + 200));
+  KEXPECT_EQ(0, dst_buf[PAGE_SIZE + 200]);
+
+  // Test spanning 2 pages, ending on page boundary.
+  kmemset(dst_buf, 0, kRegionSize);
+  KEXPECT_EQ(0,
+             syscall_copy_from_user(addrA + 50, dst_buf, 2 * PAGE_SIZE - 50));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, dst_buf, 2 * PAGE_SIZE - 50));
+  KEXPECT_EQ(0, dst_buf[2 * PAGE_SIZE - 50]);
+
+  // Test partial last page.
+  kmemset(dst_buf, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_from_user(addrA + 2 * PAGE_SIZE + 50, dst_buf,
+                                       PAGE_SIZE - 50));
+  KEXPECT_EQ(0, kmemcmp(addrA + 2 * PAGE_SIZE + 50, dst_buf, PAGE_SIZE - 50));
+  KEXPECT_EQ(0, dst_buf[PAGE_SIZE - 50]);
+
+  // Test spanning 3 pages
+  kmemset(dst_buf, 0, kRegionSize);
+  KEXPECT_EQ(0,
+             syscall_copy_from_user(addrA + 50, dst_buf, 3 * PAGE_SIZE - 200));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, dst_buf, 3 * PAGE_SIZE - 200));
+  KEXPECT_EQ(0, dst_buf[3 * PAGE_SIZE - 200]);
+
+
+  KTEST_BEGIN("syscall_copy_from_user(): goes outside mapped area");
+  KEXPECT_EQ(-EFAULT,
+             syscall_copy_from_user(addrA, dst_buf, 3 * PAGE_SIZE + 1));
+  // TODO(aoates): this should generate SIGSEV, I think.
+  KEXPECT_EQ(-EFAULT, syscall_copy_from_user(addrA + 2 * PAGE_SIZE + 50,
+                                             dst_buf, PAGE_SIZE));
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+
+
+  KTEST_BEGIN("syscall_copy_from_user(): error paging in");
+  KEXPECT_EQ(0, vfs_mkdir("_dmz_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mount("", "_dmz_test", "testfs", 0, NULL, 0));
+  int fd = vfs_open("_dmz_test/read_error", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(
+      0, do_mmap(NULL, kRegionSize, MEM_PROT_ALL, KMAP_PRIVATE, fd, 0, &addrA));
+
+  KEXPECT_EQ(-EIO, syscall_copy_from_user(addrA, dst_buf, 100));
+  ksigset_t pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGBUS));
+  proc_suppress_signal(proc_current(), SIGBUS);
+
+  KEXPECT_EQ(-EIO, syscall_copy_from_user(addrA + 50, dst_buf, PAGE_SIZE));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGBUS));
+  proc_suppress_signal(proc_current(), SIGBUS);
+
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+  KEXPECT_EQ(0, vfs_unmount("_dmz_test", 0));
+  KEXPECT_EQ(0, vfs_rmdir("_dmz_test"));
+
+  kfree(dst_buf);
+}
+
 void dmz_test(void) {
   KTEST_SUITE_BEGIN("Syscall DMZ tests");
 
@@ -254,4 +347,6 @@ void dmz_test(void) {
 
   dmz_table_basic();
   dmz_table_different_ptr_size();
+
+  dmz_copy_from_user_test();
 }
