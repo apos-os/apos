@@ -444,10 +444,16 @@ static void vm_resolve_test(void) {
              vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 16,
                                 /*is_write=*/false,
                                 /*is_user=*/false, &entry, &resolved2));
+  ksigset_t pending;
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
   KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
                                          (addr_t)mmaped_addr + 2 * PAGE_SIZE, 4,
                                          /*is_write=*/false,
                                          /*is_user=*/false, &entry, &resolved));
+  // No signal should be generated --- not a user access.
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
 
   // Last address on first page.
   KEXPECT_EQ(0, vm_resolve_address(proc_current(),
@@ -518,23 +524,54 @@ static void vm_resolve_test(void) {
                                          /*is_write=*/false,
                                          /*is_user=*/false, &entry, &resolved));
 
+
+  KTEST_BEGIN("vm_resolve_address(): access to invalid (unmapped) address");
+  void* invalid_addr = NULL;
+  KEXPECT_EQ(0, do_mmap(NULL, 3 * PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_PRIVATE | KMAP_ANONYMOUS, -1, 0, &invalid_addr));
+  KEXPECT_EQ(0, do_munmap(invalid_addr, 3 * PAGE_SIZE));
+  KEXPECT_EQ(-EFAULT,
+             vm_resolve_address(proc_current(), (addr_t)invalid_addr, 4,
+                                /*is_write=*/false,
+                                /*is_user=*/false, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
+  KEXPECT_EQ(-EFAULT,
+             vm_resolve_address(proc_current(), (addr_t)invalid_addr, 4,
+                                /*is_write=*/false,
+                                /*is_user=*/true, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
+
+
   KTEST_BEGIN("vm_resolve_address(): access to kernel heap");
   // N.B.: in theory this could be allowed, but we don't track these mappings so
   // can't resolve to a physical address.
   KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), (addr_t)&x, 4,
                                          /*is_write=*/false,
                                          /*is_user=*/false, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
   KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), (addr_t)&x, 4,
                                          /*is_write=*/false,
                                          /*is_user=*/true, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
   void* heap = kmalloc(10);
   addr_t aligned_heap_addr = ((addr_t)heap & ~0x3) + 4;
   KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), aligned_heap_addr, 4,
                                          /*is_write=*/false,
                                          /*is_user=*/false, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
   KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(), aligned_heap_addr, 4,
                                          /*is_write=*/false,
                                          /*is_user=*/true, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
   kfree(heap);
 
   KTEST_BEGIN("vm_resolve_address(): user access to kernel mappings");
@@ -557,10 +594,16 @@ static void vm_resolve_test(void) {
                                          (addr_t)mmaped_addr_kernel_only, 4,
                                          /*is_write=*/false,
                                          /*is_user=*/true, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
   KEXPECT_EQ(-EFAULT, vm_resolve_address(proc_current(),
                                          (addr_t)mmaped_addr_kernel_only, 4,
                                          /*is_write=*/true,
                                          /*is_user=*/true, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
   KEXPECT_EQ(0, do_munmap(mmaped_addr_kernel_only, PAGE_SIZE));
 
   KTEST_BEGIN("vm_resolve_address(): write not allowed in read-only mapping");
@@ -576,6 +619,8 @@ static void vm_resolve_test(void) {
              vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
                                 /*is_write=*/true,
                                 /*is_user=*/false, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
   KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
                                    /*is_write=*/false,
                                    /*is_user=*/true, &entry, &resolved));
@@ -584,6 +629,9 @@ static void vm_resolve_test(void) {
              vm_resolve_address(proc_current(), (addr_t)mmaped_addr_ro, 4,
                                 /*is_write=*/true,
                                 /*is_user=*/true, &entry, &resolved));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
 
   // Cleanup
   KEXPECT_EQ(0, do_munmap(mmaped_addr, 2 * PAGE_SIZE));

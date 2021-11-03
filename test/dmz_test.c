@@ -349,4 +349,8 @@ void dmz_test(void) {
   dmz_table_different_ptr_size();
 
   dmz_copy_from_user_test();
+
+  // TODO(aoates): remove this when tests are properly updated to look for
+  // SIGSEGV.
+  proc_suppress_signal(proc_current(), SIGSEGV);
 }

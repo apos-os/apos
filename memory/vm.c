@@ -23,6 +23,7 @@
 #include "memory/vm_area.h"
 #include "memory/vm_page_fault.h"
 #include "proc/process.h"
+#include "proc/signal/signal.h"
 
 addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
                     addr_t length) {
@@ -184,13 +185,26 @@ int vm_resolve_address(process_t* proc, addr_t start, size_t size,
   }
 
   if (!last_area || last_area->vm_base + last_area->vm_length < start + size) {
+    if (is_user) {
+      KASSERT(proc_force_signal_on_thread(
+                  proc_current(), kthread_current_thread(), SIGSEGV) == 0);
+    }
     return -EFAULT;
   }
 
   int result = verify_access(last_area, is_write, is_user);
-  if (result) return result;
+  if (result) {
+    if (is_user) {
+      KASSERT(proc_force_signal_on_thread(
+                  proc_current(), kthread_current_thread(), SIGSEGV) == 0);
+    }
+    return result;
+  }
 
   if (!last_area->memobj) {
+    // We shouldn't be able to get here if it's a user access (if that changes
+    // in the future, need to generate an appropriate signal).
+    KASSERT_DBG(!is_user);
     return -EFAULT;
   }
 
