@@ -261,9 +261,11 @@ static void dmz_copy_from_user_test(void) {
     seed = fnv_hash(seed);
     ((uint32_t*)addrA)[i] = seed;
   }
+  uint32_t hash = fnv_hash_array(addrA, kRegionSize);
 
   // Basic test --- full copy, page-aligned.
   KEXPECT_EQ(0, syscall_copy_from_user(addrA, dst_buf, kRegionSize));
+  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)dst_buf);
   KEXPECT_EQ(0, kmemcmp(addrA, dst_buf, kRegionSize));
 
   // Test less than one page, and offset.
@@ -300,12 +302,21 @@ static void dmz_copy_from_user_test(void) {
 
 
   KTEST_BEGIN("syscall_copy_from_user(): goes outside mapped area");
+  ksigset_t pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
   KEXPECT_EQ(-EFAULT,
              syscall_copy_from_user(addrA, dst_buf, 3 * PAGE_SIZE + 1));
-  // TODO(aoates): this should generate SIGSEV, I think.
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
   KEXPECT_EQ(-EFAULT, syscall_copy_from_user(addrA + 2 * PAGE_SIZE + 50,
                                              dst_buf, PAGE_SIZE));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
 
+  // Make sure the user buffer was never modified.
+  KEXPECT_EQ(hash, fnv_hash_array(addrA, kRegionSize));
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 
 
@@ -318,7 +329,7 @@ static void dmz_copy_from_user_test(void) {
       0, do_mmap(NULL, kRegionSize, MEM_PROT_ALL, KMAP_PRIVATE, fd, 0, &addrA));
 
   KEXPECT_EQ(-EIO, syscall_copy_from_user(addrA, dst_buf, 100));
-  ksigset_t pending = proc_pending_signals(proc_current());
+  pending = proc_pending_signals(proc_current());
   KEXPECT_TRUE(ksigismember(&pending, SIGBUS));
   proc_suppress_signal(proc_current(), SIGBUS);
 
@@ -326,14 +337,147 @@ static void dmz_copy_from_user_test(void) {
   pending = proc_pending_signals(proc_current());
   KEXPECT_TRUE(ksigismember(&pending, SIGBUS));
   proc_suppress_signal(proc_current(), SIGBUS);
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+
+
+  KTEST_BEGIN("syscall_copy_from_user(): can copy from read-only buffer");
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, MEM_PROT_READ,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
+
+  dst_buf[0] = dst_buf[1] = dst_buf[2] = 5;
+  KEXPECT_EQ(0, syscall_copy_from_user(addrA, dst_buf, 3));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
+  KEXPECT_FALSE(ksigismember(&pending, SIGBUS));
+  KEXPECT_EQ(0, dst_buf[0]);
+  KEXPECT_EQ(0, dst_buf[1]);
+  KEXPECT_EQ(0, dst_buf[2]);
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
 
 
   KEXPECT_EQ(0, vfs_close(fd));
-  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
   KEXPECT_EQ(0, vfs_unmount("_dmz_test", 0));
   KEXPECT_EQ(0, vfs_rmdir("_dmz_test"));
 
   kfree(dst_buf);
+}
+
+static void dmz_copy_to_user_test(void) {
+  const addr_t kRegionSize = 3 * PAGE_SIZE;
+
+  KTEST_BEGIN("syscall_copy_to_user(): basic test");
+  void* addrA = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, PROT_ALL,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
+  char* user_buf = (char*)addrA;
+
+  char* src_buf = (char*)kmalloc(kRegionSize);
+  uint32_t seed = 12345;
+  for (size_t i = 0; i < kRegionSize / sizeof(uint32_t); ++i) {
+    seed = fnv_hash(seed);
+    ((uint32_t*)src_buf)[i] = seed;
+  }
+  uint32_t hash = fnv_hash_array(src_buf, kRegionSize);
+
+  // Basic test --- full copy, page-aligned.
+  KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA, kRegionSize));
+  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)addrA);
+  KEXPECT_EQ(0, kmemcmp(addrA, src_buf, kRegionSize));
+
+  // Test less than one page, and offset.
+  kmemset(addrA, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, 100));
+  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)(addrA + 50));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, 100));
+
+  // Test spanning 2 pages.
+  kmemset(addrA, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, PAGE_SIZE + 200));
+  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)(addrA + 50));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, PAGE_SIZE + 200));
+  KEXPECT_EQ(0, user_buf[PAGE_SIZE + 50 + 200]);
+
+  // Test spanning 2 pages, ending on page boundary.
+  kmemset(addrA, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, 2 * PAGE_SIZE - 50));
+  KEXPECT_EQ(fnv_hash(12345), *(uint32_t*)(addrA + 50));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, 2 * PAGE_SIZE - 50));
+  KEXPECT_EQ(0, user_buf[2 * PAGE_SIZE - 50 + 50]);
+
+  // Test partial last page.
+  kmemset(addrA, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 2 * PAGE_SIZE + 50,
+                                     PAGE_SIZE - 50));
+  KEXPECT_EQ(0, kmemcmp(addrA + 2 * PAGE_SIZE + 50, src_buf, PAGE_SIZE - 50));
+  KEXPECT_EQ(0, user_buf[2 * PAGE_SIZE + 50 - 50]);
+
+  // Test spanning 3 pages
+  kmemset(addrA, 0, kRegionSize);
+  KEXPECT_EQ(0, syscall_copy_to_user(src_buf, addrA + 50, 3 * PAGE_SIZE - 200));
+  KEXPECT_EQ(0, kmemcmp(addrA + 50, src_buf, 3 * PAGE_SIZE - 200));
+  KEXPECT_EQ(0, user_buf[3 * PAGE_SIZE - 200 + 50]);
+
+  KTEST_BEGIN("syscall_copy_to_user(): goes outside mapped area");
+  ksigset_t pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
+  KEXPECT_EQ(-EFAULT, syscall_copy_to_user(src_buf, addrA, 3 * PAGE_SIZE + 1));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
+  KEXPECT_EQ(-EFAULT, syscall_copy_to_user(src_buf, addrA + 2 * PAGE_SIZE + 50,
+                                           PAGE_SIZE));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
+
+  // Make sure the kernel buffer was never modified.
+  KEXPECT_EQ(hash, fnv_hash_array(src_buf, kRegionSize));
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+
+
+  KTEST_BEGIN("syscall_copy_to_user(): error paging in");
+  KEXPECT_EQ(0, vfs_mkdir("_dmz_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mount("", "_dmz_test", "testfs", 0, NULL, 0));
+  int fd = vfs_open("_dmz_test/read_error", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(
+      0, do_mmap(NULL, kRegionSize, MEM_PROT_ALL, KMAP_PRIVATE, fd, 0, &addrA));
+  user_buf = (char*)addrA;
+
+  KEXPECT_EQ(-EIO, syscall_copy_to_user(src_buf, addrA, 100));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGBUS));
+  proc_suppress_signal(proc_current(), SIGBUS);
+
+  KEXPECT_EQ(-EIO, syscall_copy_to_user(src_buf, addrA + 50, PAGE_SIZE));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGBUS));
+  proc_suppress_signal(proc_current(), SIGBUS);
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+
+
+  KTEST_BEGIN("syscall_copy_to_user(): cannot copy to read-only buffer");
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize, MEM_PROT_READ,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
+  user_buf = (char*)addrA;
+
+  src_buf[0] = src_buf[1] = src_buf[2] = 5;
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
+  KEXPECT_EQ(-EFAULT, syscall_copy_to_user(src_buf, addrA, 3));
+  KEXPECT_EQ(0, user_buf[0]);
+  KEXPECT_EQ(0, user_buf[1]);
+  KEXPECT_EQ(0, user_buf[2]);
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(0, vfs_unmount("_dmz_test", 0));
+  KEXPECT_EQ(0, vfs_rmdir("_dmz_test"));
+
+  kfree(src_buf);
 }
 
 void dmz_test(void) {
@@ -349,8 +493,5 @@ void dmz_test(void) {
   dmz_table_different_ptr_size();
 
   dmz_copy_from_user_test();
-
-  // TODO(aoates): remove this when tests are properly updated to look for
-  // SIGSEGV.
-  proc_suppress_signal(proc_current(), SIGSEGV);
+  dmz_copy_to_user_test();
 }

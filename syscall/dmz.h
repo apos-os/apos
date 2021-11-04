@@ -68,6 +68,9 @@ int syscall_verify_ptr_table(const void* table, bool is64bit);
 // error returned.
 // TODO(aoates): eliminate syscall_verify_buffer() and replace with this
 // entirely.
-int syscall_copy_from_user(const void* from, void* to, size_t len);
+int syscall_copy_from_user(const void* from_user, void* to, size_t len);
+
+// As above, but in the other direction (copies _to_ userspace).
+int syscall_copy_to_user(const void* from, void* to_user, size_t len);
 
 #endif

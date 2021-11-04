@@ -82,23 +82,31 @@ int syscall_verify_ptr_table(const void* table, bool is64bit) {
   return -EFAULT;
 }
 
-int syscall_copy_from_user(const void* from, void* to, size_t len) {
+static int syscall_copy_user_helper(addr_t user_addr, addr_t kernel_addr,
+                                    size_t len, bool is_from_user) {
   bc_entry_t* entry = NULL;
   phys_addr_t resolved;
-  addr_t from_addr = (addr_t)from;
-  size_t offset_in_page = from_addr % PAGE_SIZE;
+  size_t offset_in_page = user_addr % PAGE_SIZE;
+  const bool is_write = !is_from_user;
   while (len > 0) {
-    int result = vm_resolve_address(proc_current(), from_addr, /* length= */ 1,
-                                    /* is_write= */ false, /* is_user= */ true,
-                                    &entry, &resolved);
+    int result = vm_resolve_address(proc_current(), user_addr, /* length= */ 1,
+                                    /* is_write= */ is_write,
+                                    /* is_user= */ true, &entry, &resolved);
     if (result) return result;
     size_t bytes_to_copy = min(len, PAGE_SIZE - offset_in_page);
-    kmemcpy(to, (void*)from_addr, bytes_to_copy);
+    // TODO(aoates): consider copying from the physical memory directly to
+    // clearly avoid any races with memory map changes.
+    if (is_from_user) {
+      kmemcpy((void*)kernel_addr, (void*)user_addr, bytes_to_copy);
+    } else {
+      kmemcpy((void*)user_addr, (void*)kernel_addr, bytes_to_copy);
+    }
     len -= bytes_to_copy;
     offset_in_page = 0;
-    from_addr += bytes_to_copy;
-    to += bytes_to_copy;
-    result = block_cache_put(entry, BC_FLUSH_NONE);
+    user_addr += bytes_to_copy;
+    kernel_addr += bytes_to_copy;
+    // TODO(aoates): write a test that catches the wrong flush mode here.
+    result = block_cache_put(entry, is_write ? BC_FLUSH_ASYNC : BC_FLUSH_NONE);
     if (result) {
       // This shouldn't happen.
       klogfm(KL_SYSCALL, WARNING,
@@ -108,4 +116,12 @@ int syscall_copy_from_user(const void* from, void* to, size_t len) {
     }
   }
   return 0;
+}
+
+int syscall_copy_from_user(const void* from_user, void* to, size_t len) {
+  return syscall_copy_user_helper((addr_t)from_user, (addr_t)to, len, true);
+}
+
+int syscall_copy_to_user(const void* from, void* to_user, size_t len) {
+  return syscall_copy_user_helper((addr_t)to_user, (addr_t)from, len, false);
 }
