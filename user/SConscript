@@ -25,6 +25,5 @@ if env['USER_DUMMY_LIB']:
 
 env.Tpl('syscall_stubs.tpl')
 env.Tpl('newlib_syscall_stubs.tpl')
-env.Tpl('newlib_syscall_stubs_manual.tpl')
 
 SConscript('include/SConscript')
