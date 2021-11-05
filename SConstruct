@@ -203,7 +203,7 @@ tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
     recursive=filter_tpl)
 
 tpl_bld = Builder(
-    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE > $TARGET',
+    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE | clang-format > $TARGET',
     suffix = '.tpl.c',
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)
