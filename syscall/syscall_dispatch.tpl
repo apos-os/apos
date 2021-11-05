@@ -47,8 +47,10 @@ case {{ common.syscall_constant(syscall) }}:
 // Assert that all argument types are valid.
 {% set arg_types = {} -%}
 {%- for syscall in SYSCALLS -%}
+{%- for syscall in [syscall, syscall.native()] -%}
 {%- for arg in syscall.args -%}
 {%- do arg_types.update([(arg.ctype, True)]) -%}
+{%- endfor -%}
 {%- endfor -%}
 {%- endfor -%}
 
@@ -60,13 +62,24 @@ _Static_assert(sizeof({{ arg_type }}) <= sizeof(long),
 // Forward declare DMZ functions.
 {% for syscall in SYSCALLS %}
 {{ common.syscall_decl(syscall, 'SYSCALL_DMZ_') }};
+{% if syscall.needs_32bit_conv %}
+{{ common.syscall_decl(syscall.native(), 'SYSCALL_DMZ_') }};
+{% endif %}
 {% endfor %}
 
 static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     long arg3, long arg4, long arg5, long arg6) {
   switch (syscall_number) {
     {% for syscall in SYSCALLS -%}
+    {%- if syscall.needs_32bit_conv -%}
+#if ARCH_IS_64_BIT
+    {% endif %}
     {{ syscall_dispatch_case(syscall) | indent(4) }}
+    {% if syscall.needs_32bit_conv %}
+#else
+    {{ syscall_dispatch_case(syscall.native()) | indent(4) }}
+#endif
+    {% endif %}
 
     {% endfor -%}
 

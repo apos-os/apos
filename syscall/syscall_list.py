@@ -120,7 +120,7 @@ class SyscallDef(object):
       else:
         stubs_to_generate = ['L1', 'L2', 'L3']
 
-    self.needs_32bit_conv = (needs_32bit_conv and ARCH == 'x86_64')
+    self.needs_32bit_conv = needs_32bit_conv
     self._name = name
     self.number = number
     self._kernel_name = kernel_name
