@@ -76,13 +76,13 @@ static void mmap_read_errors_test(void) {
   KEXPECT_EQ(0, mkdir("_memory_test", VFS_S_IRWXU));
   KEXPECT_EQ(0, mount("", "_memory_test", "testfs", 0, NULL, 0));
 
-  int fd = open("_memory_test/read_error", O_RDONLY);
+  int fd = open("_memory_test/read_error", O_RDWR);
   KEXPECT_GE(fd, 0);
   char buf[10];
   KEXPECT_ERRNO(EIO, read(fd, buf, 10));
 
   const size_t kMapLen = 4096;
-  void* map = mmap(NULL, kMapLen, PROT_READ, MAP_SHARED, fd, 0);
+  void* map = mmap(NULL, kMapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
   KEXPECT_NE(NULL, map);
 
   pid_t child = fork();
@@ -96,10 +96,51 @@ static void mmap_read_errors_test(void) {
   KEXPECT_TRUE(WIFSIGNALED(status));
   KEXPECT_EQ(SIGBUS, WTERMSIG(status));
 
+
+  KTEST_BEGIN("error during write of mmap()'d file sends SIGBUS");
+  child = fork();
+  if (child == 0) {
+    *(int*)map = 5;  // Should generate SIGBUS.
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGBUS, WTERMSIG(status));
+
+
+  // As the above tests, but the error is generated in the syscall handling.
+  // TODO(aoates): tests that exercise all syscall arg types (buffer, string,
+  // string table, r/w buffer, etc).
+  KTEST_BEGIN("error during write() from mmap()'d file sends SIGBUS");
+  int fd2 = open("_memory_test_dummy_file", O_CREAT | O_RDWR, S_IRWXU);
+  KEXPECT_GE(fd2, 0);
+  child = fork();
+  if (child == 0) {
+    int result = write(fd2, map, 5);  // Should generate SIGBUS.
+    exit(result);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGBUS, WTERMSIG(status));
+
+
+  KTEST_BEGIN("error during read() into mmap()'d file sends SIGBUS");
+  child = fork();
+  if (child == 0) {
+    int result = read(fd2, map, 5);  // Should generate SIGBUS.
+    exit(result);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGBUS, WTERMSIG(status));
+
+
   KEXPECT_EQ(0, munmap(map, kMapLen));
   KEXPECT_EQ(0, close(fd));
+  KEXPECT_EQ(0, close(fd2));
   KEXPECT_EQ(0, unmount("_memory_test", 0));
   KEXPECT_EQ(0, rmdir("_memory_test"));
+  KEXPECT_EQ(0, unlink("_memory_test_dummy_file"));
 }
 
 void memory_test(void) {

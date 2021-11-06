@@ -106,16 +106,31 @@ if ({{ check_alloc_cond(args) }}) {
 
   {{ check_allocs(syscall.args) | indent(2) }}
 
+  int result;
   {% for arg in syscall.args if arg.NeedsPreCopy() -%}
-  if ({{ arg.name }}) kmemcpy((void*)KERNEL_{{ arg.name }}, {{ arg.name }}, {{ arg_size(arg) }});
+  if ({{ arg.name }}) {
+    result = syscall_copy_from_user({{ arg.name }}, (void*)KERNEL_{{ arg.name }}, {{ arg_size(arg) }});
+    if (result) goto cleanup;
+  }
   {% endfor %}
 
-  const int result = {{ syscall.kernel_name }}({{ call_args(syscall.args) }});
+  result = {{ syscall.kernel_name }}({{ call_args(syscall.args) }});
 
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
   {% for arg in syscall.args if arg.NeedsPostCopy() -%}
-  if ({{ arg.name }}) kmemcpy({{ arg.name }}, KERNEL_{{ arg.name }}, {{ arg_size(arg) }});
+  if ({{ arg.name }}) {
+    int copy_result = syscall_copy_to_user(KERNEL_{{ arg.name }}, {{ arg.name }}, {{ arg_size(arg) }});
+    if (copy_result) {
+      result = copy_result;
+      goto cleanup;
+    }
+  }
   {% endfor %}
 
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
   {{ free_all(syscall.args) | indent(2) }}
 
   return result;
