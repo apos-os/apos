@@ -155,7 +155,9 @@ native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
 
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
-  objects = [env.Object(src, **kwargs) for src in srcs]
+  # Turn each source file path into an Object, if not already one.
+  make_obj = lambda src: env.Object(src, **kwargs) if type(src) == str else src
+  objects = [make_obj(src) for src in srcs]
   for subdir in subdirs:
     objects.append(SConscript('%s/SConscript' % subdir))
   return objects
@@ -208,9 +210,23 @@ tpl_bld = Builder(
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)
 
+# Variant/wrapper of the Tpl builder that causes the source file to be generated
+# in the source tree (e.g. so it can be checked in).
+# N.B.(aoates): this causes SCons to not mirror the (generated) source file over
+# to the build directory if duplicating is enabled.  I don't think it matters.
+def tpl_source_build(env, target, source):
+  # Creates the source code File object to be generated (in the source tree).
+  tpl = env.Tpl(target, source)
+  # Creates the object file, setting the target explicitly to the source file
+  # with the appropriate suffix so that it's generated in the build directory,
+  # _not_ the source directory (unlike the source file).
+  obj = env.Object(target=source + '$OBJSUFFIX', source=tpl)
+  return [obj]
+
 env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
+env.AddMethod(tpl_source_build, 'TplSource')
 
 Export('env user_env native_env AposAddSources DisableFeature')
 
