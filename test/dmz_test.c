@@ -26,6 +26,14 @@
 #include "vfs/mount.h"
 #include "vfs/vfs.h"
 
+// TODO(aoates): use this more broadly (here and elsewhere).
+static bool check_pending_signal(int signal) {
+  ksigset_t pending = proc_pending_signals(proc_current());
+  bool result = ksigismember(&pending, signal);
+  if (result) proc_suppress_signal(proc_current(), signal);
+  return result;
+}
+
 static void dmz_buffer_null_buffer(void) {
   KTEST_BEGIN("syscall_verify_buffer() NULL buffer test");
 
@@ -111,6 +119,7 @@ static void dmz_string_basic(void) {
   KEXPECT_EQ(5, syscall_verify_string(addrA));
 
   KEXPECT_EQ(-EFAULT, syscall_verify_string(addrA - 1));
+  KEXPECT_TRUE(check_pending_signal(SIGSEGV));
 
   KTEST_BEGIN("syscall_verify_string() zero-length test");
   *(char*)addrA = '\0';
@@ -119,10 +128,21 @@ static void dmz_string_basic(void) {
   KTEST_BEGIN("syscall_verify_string() full region (unterminated) test");
   kmemset(addrA, 'x', kRegionSize);
   KEXPECT_EQ(-EFAULT, syscall_verify_string(addrA));
+  KEXPECT_TRUE(check_pending_signal(SIGSEGV));
+
+  KTEST_BEGIN("syscall_verify_string() full region (unterminated) test #2");
+  kmemset(addrA, 'x', kRegionSize);
+  KEXPECT_EQ(-EFAULT, syscall_verify_string(addrA + 5));
+  KEXPECT_TRUE(check_pending_signal(SIGSEGV));
 
   KTEST_BEGIN("syscall_verify_string() full region (terminated) test");
   *(char*)(addrA + kRegionSize - 1) = '\0';
   KEXPECT_EQ(kRegionSize, syscall_verify_string(addrA));
+
+  KTEST_BEGIN("syscall_verify_string() full region (terminated) test #2");
+  KEXPECT_EQ(kRegionSize - 10, syscall_verify_string(addrA + 10));
+  KEXPECT_EQ(kRegionSize - 4094, syscall_verify_string(addrA + 4094));
+  KEXPECT_EQ(kRegionSize - PAGE_SIZE, syscall_verify_string(addrA + PAGE_SIZE));
 
   KTEST_BEGIN("syscall_verify_string() cross-region region test");
   KEXPECT_EQ(0, do_mmap(addrA + kRegionSize, kRegionSize, PROT_ALL,
@@ -131,6 +151,7 @@ static void dmz_string_basic(void) {
   kmemset(addrA, 'x', kRegionSize);
   kmemset(addrB, 'x', kRegionSize);
   KEXPECT_EQ(-EFAULT, syscall_verify_string(addrA));
+  KEXPECT_TRUE(check_pending_signal(SIGSEGV));
 
   KTEST_BEGIN("syscall_verify_string() cross-region (terminated) test");
   *(char*)(addrB + kRegionSize - 1) = '\0';
@@ -142,6 +163,62 @@ static void dmz_string_basic(void) {
 
   KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
   KEXPECT_EQ(0, do_munmap(addrB, kRegionSize));
+}
+
+static void dmz_string_errors(void) {
+  const addr_t kRegionSize = 2 * PAGE_SIZE;
+
+  KTEST_BEGIN("syscall_verify_string(): out of bounds");
+  void* addrA = 0x0, *addrB = 0x0;
+  KEXPECT_EQ(0, do_mmap(0x0, kRegionSize + PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addrA));
+  KEXPECT_EQ(0, do_munmap(addrA + kRegionSize, PAGE_SIZE));
+  *(char*)(addrA + kRegionSize - 1) = 'a';
+  KEXPECT_EQ(-EFAULT, syscall_verify_string(addrA + kRegionSize - 1));
+  KEXPECT_TRUE(check_pending_signal(SIGSEGV));
+
+
+  KTEST_BEGIN("syscall_verify_string(): error reading string (at start)");
+  KEXPECT_EQ(0, vfs_mkdir("_dmz_test", VFS_S_IRWXU));
+  KEXPECT_EQ(0, vfs_mount("", "_dmz_test", "testfs", 0, NULL, 0));
+  int fd = vfs_open("_dmz_test/read_error", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, do_mmap(addrA + kRegionSize, PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_PRIVATE, fd, 0, &addrB));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(-EIO, syscall_verify_string(addrB));
+  KEXPECT_TRUE(check_pending_signal(SIGBUS));
+
+
+  KTEST_BEGIN("syscall_verify_string(): error reading string (in middle)");
+  *(char*)(addrA + kRegionSize - 3) = 'a';
+  *(char*)(addrA + kRegionSize - 2) = 'b';
+  *(char*)(addrA + kRegionSize - 1) = '\0';
+  KEXPECT_EQ(3, syscall_verify_string(addrA + kRegionSize - 3));
+  KEXPECT_FALSE(check_pending_signal(SIGBUS));
+  *(char*)(addrA + kRegionSize - 1) = 'c';  // Let string run into next page.
+  KEXPECT_EQ(-EIO, syscall_verify_string(addrA + kRegionSize - 3));
+  KEXPECT_TRUE(check_pending_signal(SIGBUS));
+
+
+  KEXPECT_EQ(0, do_munmap(addrA, kRegionSize));
+  KEXPECT_EQ(0, do_munmap(addrB, PAGE_SIZE));
+
+
+  KTEST_BEGIN("syscall_verify_string(): works on read-only memory");
+  fd = vfs_open("_dmz_test/abc", VFS_O_RDONLY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(
+      0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_READ, KMAP_PRIVATE, fd, 0, &addrA));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(4, syscall_verify_string(addrA));
+  KEXPECT_EQ(2, syscall_verify_string(addrA + 2));
+  KEXPECT_FALSE(check_pending_signal(SIGBUS));
+  KEXPECT_FALSE(check_pending_signal(SIGSEGV));
+  KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
+
+  KEXPECT_EQ(0, vfs_unmount("_dmz_test", 0));
+  KEXPECT_EQ(0, vfs_rmdir("_dmz_test"));
 }
 
 static void dmz_table_basic(void) {
@@ -488,6 +565,7 @@ void dmz_test(void) {
   dmz_buffer_read_only();
 
   dmz_string_basic();
+  dmz_string_errors();
 
   dmz_table_basic();
   dmz_table_different_ptr_size();

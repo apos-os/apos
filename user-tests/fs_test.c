@@ -124,7 +124,15 @@ static void mount_test(void) {
   KEXPECT_ERRNO(ENOTDIR, unmount("_mount_test/file", 0));
   KEXPECT_ERRNO(EINVAL, unmount("_mount_test", 0));
   KEXPECT_ERRNO(EINVAL, unmount(NULL, 0));
-  KEXPECT_ERRNO(EFAULT, unmount((const char*)0x12345, 0));
+  pid_t child = fork();
+  if (child == 0) {
+    unmount((const char*)0x12345, 0);
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
 
 
   KTEST_BEGIN("mount(): invalid filesystem type");

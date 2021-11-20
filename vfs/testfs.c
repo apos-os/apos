@@ -18,11 +18,23 @@
 
 #include "common/errno.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "vfs/cbfs.h"
 
 static int testfs_read_error(fs_t* fs, void* arg, int vnode, int offset,
                              void* buf, int buflen) {
   return -EIO;
+}
+
+static int testfs_abc(fs_t* fs, void* arg, int vnode, int offset, void* buf,
+                      int buflen) {
+  const char kData[] = "abc";
+  if (offset < 0 || offset > 100) return -EINVAL;
+  size_t len = min(max(0, kstrlen(kData) - offset), buflen);
+  if (len > 0) {
+    kstrcpy(buf, kData + offset);
+  }
+  return len;
 }
 
 fs_t* testfs_create(void) {
@@ -31,6 +43,9 @@ fs_t* testfs_create(void) {
 
   int result =
       cbfs_create_file(fs, "read_error", &testfs_read_error, NULL, VFS_S_IRWXU);
+  if (result) goto error;
+
+  result = cbfs_create_file(fs, "abc", &testfs_abc, NULL, VFS_S_IRWXU);
   if (result) goto error;
 
   return fs;
