@@ -32,6 +32,7 @@ static void socket_unix_test(void) {
   struct sockaddr_un addr;
   addr.sun_family = AF_UNIX;
   strcpy(addr.sun_path, "_socket_bind");
+  KEXPECT_ERRNO(EFAULT, bind(sock, NULL, sizeof(addr)));
   KEXPECT_EQ(0, bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
 
   KEXPECT_EQ(0, listen(sock, 5));

@@ -102,6 +102,10 @@ int net_shutdown(int socket, int how) {
 }
 
 int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len) {
+  if (addr_len < (socklen_t)sizeof(struct sockaddr)) {
+    return -EINVAL;
+  }
+
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;
@@ -135,6 +139,10 @@ int net_listen(int socket, int backlog) {
 }
 
 int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
+  if (addr && addr_len && *addr_len <= 0) {
+    return -EINVAL;
+  }
+
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;
@@ -157,6 +165,10 @@ int net_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
 }
 
 int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len) {
+  if (addr_len < (socklen_t)sizeof(struct sockaddr)) {
+    return -EINVAL;
+  }
+
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;
@@ -195,6 +207,9 @@ ssize_t net_recv(int socket, void* buf, size_t len, int flags) {
 
 ssize_t net_recvfrom(int socket, void* buf, size_t len, int flags,
                      struct sockaddr* address, socklen_t* address_len) {
+  if (address && address_len && *address_len <= 0) {
+    return -EINVAL;
+  }
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;
@@ -217,6 +232,10 @@ ssize_t net_send(int socket, const void* buf, size_t len, int flags) {
 
 ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
                    const struct sockaddr* dest_addr, socklen_t dest_len) {
+  if (dest_addr && dest_len < (socklen_t)sizeof(struct sockaddr)) {
+    return -EINVAL;
+  }
+
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;

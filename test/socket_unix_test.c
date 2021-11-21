@@ -278,6 +278,18 @@ static void bind_test(void) {
   KEXPECT_EQ(0, vfs_close(file_fd));
   KEXPECT_EQ(0, vfs_unlink("_non_socket"));
 
+  KTEST_BEGIN("net_bind(AF_UNIX): bad address length");
+  sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+  addr.sun_family = AF_UNIX;
+  kstrcpy(addr.sun_path, kPath);
+  KEXPECT_EQ(-EINVAL,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr) - 1));
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, 0));
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, -1));
+  KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, INT_MIN));
+  KEXPECT_EQ(0, vfs_close(sock));
+
   kpid_t child_pid = proc_fork(&do_bind_mode_test, 0x0);
   KEXPECT_GE(child_pid, 0);
   proc_wait(0x0);
@@ -680,6 +692,27 @@ static void connect_testB(connect_test_state_t* s) {
   KEXPECT_EQ(3, addr_len);
   KEXPECT_EQ(0, vfs_close(accepted_sock));
 
+  KEXPECT_EQ(0, connect_and_close(kServerPath));
+  addr_len = 1;
+  accepted_sock = net_accept(s->server_sock, NULL, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(1, addr_len);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+
+  KEXPECT_EQ(0, connect_and_close(kServerPath));
+  addr_len = 0;
+  accepted_sock = net_accept(s->server_sock, NULL, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(0, addr_len);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+
+  KEXPECT_EQ(0, connect_and_close(kServerPath));
+  addr_len = -2;
+  accepted_sock = net_accept(s->server_sock, NULL, &addr_len);
+  KEXPECT_GE(accepted_sock, 0);
+  KEXPECT_EQ(-2, addr_len);
+  KEXPECT_EQ(0, vfs_close(accepted_sock));
+
   KTEST_BEGIN("net_accept(AF_UNIX): not-NULL/NULL addr/len parameters");
   KEXPECT_EQ(0, connect_and_close(kServerPath));
   struct sockaddr_un accept_addr;
@@ -737,6 +770,14 @@ static void connect_testB(connect_test_state_t* s) {
   KEXPECT_EQ(0, vfs_close(client_sock));
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
 
+  KTEST_BEGIN("net_accept(AF_UNIX): too-small address struct (zero/negative)");
+  addr_len = 0;
+  KEXPECT_EQ(-EINVAL, net_accept(s->server_sock, (struct sockaddr*)&accept_addr,
+                                 &addr_len));
+  addr_len = -2;
+  KEXPECT_EQ(-EINVAL, net_accept(s->server_sock, (struct sockaddr*)&accept_addr,
+                                 &addr_len));
+
   // Tests for invalid parameters to connect() and accept().
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with wrong addr family");
@@ -746,6 +787,15 @@ static void connect_testB(connect_test_state_t* s) {
   KEXPECT_EQ(-EAFNOSUPPORT,
              net_connect(client_sock, (struct sockaddr*)&s->server_addr,
                          sizeof(s->server_addr)));
+
+  KTEST_BEGIN("net_connect(AF_UNIX): connect with bad address size");
+  s->server_addr.sun_family = AF_UNIX;
+  KEXPECT_EQ(-EINVAL,
+             net_connect(client_sock, (struct sockaddr*)&s->server_addr, 3));
+  KEXPECT_EQ(-EINVAL,
+             net_connect(client_sock, (struct sockaddr*)&s->server_addr, 0));
+  KEXPECT_EQ(-EINVAL,
+             net_connect(client_sock, (struct sockaddr*)&s->server_addr, -1));
   vfs_close(client_sock);
 
   KTEST_BEGIN("net_connect(AF_UNIX): connect with bad FD");
@@ -1227,9 +1277,12 @@ static void send_recv_addr_test(void) {
   addr.sun_family = 1234;
   KEXPECT_EQ(1,
              net_sendto(s1, "d", 1, 0, (struct sockaddr*)&addr, sizeof(addr)));
-  KEXPECT_EQ(1, net_sendto(s1, "e", 1, 0, (struct sockaddr*)&addr, 1));
+  KEXPECT_EQ(-EINVAL, net_sendto(s1, "e", 1, 0, (struct sockaddr*)&addr, 1));
+  KEXPECT_EQ(-EINVAL, net_sendto(s1, "e", 1, 0, (struct sockaddr*)&addr, 0));
+  KEXPECT_EQ(-EINVAL, net_sendto(s1, "e", 1, 0, (struct sockaddr*)&addr, -10));
   KEXPECT_EQ(1, net_sendto(s1, "f", 1, 0, 0x0, 15));
   KEXPECT_EQ(1, net_sendto(s1, "g", 1, 0, 0x0, 0));
+  KEXPECT_EQ(1, net_sendto(s1, "g", 1, 0, 0x0, -10));
 
   KTEST_BEGIN("net_recvfrom(): zeroes out the address");
   kmemset(&addr, 1, sizeof(addr));
@@ -1239,9 +1292,19 @@ static void send_recv_addr_test(void) {
              net_recvfrom(s2, buf, 1, 0, (struct sockaddr*)&addr, &addr_len));
   KEXPECT_EQ(0, addr_len);
   addr_len = 0;
+  KEXPECT_EQ(-EINVAL,
+             net_recvfrom(s2, buf, 1, 0, (struct sockaddr*)&addr, &addr_len));
+  addr_len = 1;
   KEXPECT_EQ(1,
              net_recvfrom(s2, buf, 1, 0, (struct sockaddr*)&addr, &addr_len));
   KEXPECT_EQ(0, addr_len);
+  addr_len = -1;
+  KEXPECT_EQ(-EINVAL,
+             net_recvfrom(s2, buf, 1, 0, (struct sockaddr*)&addr, &addr_len));
+  KEXPECT_EQ(-1, addr_len);
+  // Bad addr_len should be OK if no addr passed.
+  addr_len = 0;
+  KEXPECT_EQ(1, net_recvfrom(s2, buf, 1, 0, NULL, &addr_len));
   addr_len = 5;
   KEXPECT_EQ(1, net_recvfrom(s2, buf, 1, 0, NULL, &addr_len));
   KEXPECT_EQ(1, net_recvfrom(s2, buf, 1, 0, NULL, NULL));
