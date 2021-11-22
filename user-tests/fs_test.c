@@ -86,10 +86,10 @@ static void basic_fs_test(void) {
 
   KTEST_BEGIN("getdents(): bad arguments test");
   KEXPECT_EQ(-EBADF, do_getdents(-5, (struct dirent*)buffer, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)0x0, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)0x89000, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)0xc1000000, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
+  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x0, 500));
+  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x89000, 500));
+  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0xc1000000, 500));
+  KEXPECT_EQ(-ENOMEM, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
 
   // Cleanup.
   KEXPECT_EQ(0, close(fd));
@@ -109,11 +109,20 @@ static void mount_test(void) {
   KEXPECT_ERRNO(ENOENT, mount("", "_not_a_dir", "testfs", 0, NULL, 0));
   KEXPECT_ERRNO(ENOENT, mount("", "_mount_test/abc", "testfs", 0, NULL, 0));
   KEXPECT_ERRNO(ENOTDIR, mount("", "_mount_test/file", "testfs", 0, NULL, 0));
-
+  // Try with bogus data lengths.
+  KEXPECT_ERRNO(ENOENT, mount("", "_mount_test/abc", "testfs", 0, NULL, -1));
+  KEXPECT_ERRNO(ENOENT,
+                mount("", "_mount_test/abc", "testfs", 0, NULL, INT_MAX));
 
   KTEST_BEGIN("mount(): invalid args");
+  KEXPECT_SIGNAL(SIGSEGV,
+                 mount("", "_mount_test", "testfs", 0, (void*)0x12345, 1));
   KEXPECT_ERRNO(EINVAL,
-                mount("", "_mount_test", "testfs", 0, (void*)0x12345, 0));
+                mount("", "_mount_test", "testfs", 0, (void*)0x12345, -1));
+  int scratch;
+  KEXPECT_SIGNAL(SIGSEGV,
+                 mount("", "_mount_test", "testfs", 0, &scratch, 1000000));
+  KEXPECT_ERRNO(EINVAL, mount("", "_mount_test", "testfs", 0, &scratch, -1));
   KEXPECT_ERRNO(EINVAL, mount(NULL, "_mount_test", "testfs", 0, NULL, 0));
   KEXPECT_ERRNO(EINVAL, mount("", NULL, "testfs", 0, NULL, 0));
   KEXPECT_ERRNO(EINVAL, mount("", "_mount_test", NULL, 0, NULL, 0));

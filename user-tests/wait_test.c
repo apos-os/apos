@@ -44,6 +44,13 @@ static bool file_exists(const char* path) {
   return true;
 }
 
+// Need a helper so that the child is created in the process created by
+// KEXPECT_SIGNAL(), which is the one that calls wait().
+static void fork_and_wait(int* status) {
+  if (fork() == 0) exit(0);
+  wait(status);
+}
+
 static void exit_status_test(void) {
   KTEST_BEGIN("Exit status macros (normal status)");
   const int statuses[6] = {0, 1, 2, 10, 65, 127};
@@ -79,6 +86,10 @@ static void exit_status_test(void) {
     KEXPECT_EQ(0, WIFSTOPPED(status));
     KEXPECT_EQ(0, WIFCONTINUED(status));
   }
+
+  KTEST_BEGIN("wait() with bad status address");
+  KEXPECT_SIGNAL(SIGSEGV, fork_and_wait((int*)0x1234));
+  KEXPECT_SIGNAL(SIGSEGV, fork_and_wait((int*)0xc1000000));
 }
 
 static void stopped_test(void) {

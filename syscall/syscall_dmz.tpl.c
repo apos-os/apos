@@ -75,10 +75,8 @@ int SYSCALL_DMZ_open(const char* path, int flags, apos_mode_t mode) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_open(KERNEL_path, flags, mode);
 
@@ -153,10 +151,8 @@ int SYSCALL_DMZ_mkdir(const char* path, apos_mode_t mode) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_mkdir(KERNEL_path, mode);
 
@@ -186,10 +182,8 @@ int SYSCALL_DMZ_mknod(const char* path, apos_mode_t mode, apos_dev_t dev) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_mknod(KERNEL_path, mode, dev);
 
@@ -219,10 +213,8 @@ int SYSCALL_DMZ_rmdir(const char* path) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_rmdir(KERNEL_path);
 
@@ -257,14 +249,10 @@ int SYSCALL_DMZ_link(const char* path1, const char* path2) {
   }
 
   int result;
-  if (path1) {
-    result = syscall_copy_from_user(path1, (void*)KERNEL_path1, SIZE_path1);
-    if (result) goto cleanup;
-  }
-  if (path2) {
-    result = syscall_copy_from_user(path2, (void*)KERNEL_path2, SIZE_path2);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path1, (void*)KERNEL_path1, SIZE_path1);
+  if (result) goto cleanup;
+  result = syscall_copy_from_user(path2, (void*)KERNEL_path2, SIZE_path2);
+  if (result) goto cleanup;
 
   result = vfs_link(KERNEL_path1, KERNEL_path2);
 
@@ -300,14 +288,10 @@ int SYSCALL_DMZ_rename(const char* path1, const char* path2) {
   }
 
   int result;
-  if (path1) {
-    result = syscall_copy_from_user(path1, (void*)KERNEL_path1, SIZE_path1);
-    if (result) goto cleanup;
-  }
-  if (path2) {
-    result = syscall_copy_from_user(path2, (void*)KERNEL_path2, SIZE_path2);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path1, (void*)KERNEL_path1, SIZE_path1);
+  if (result) goto cleanup;
+  result = syscall_copy_from_user(path2, (void*)KERNEL_path2, SIZE_path2);
+  if (result) goto cleanup;
 
   result = vfs_rename(KERNEL_path1, KERNEL_path2);
 
@@ -338,10 +322,8 @@ int SYSCALL_DMZ_unlink(const char* path) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_unlink(KERNEL_path);
 
@@ -359,9 +341,7 @@ cleanup:
 int SYSCALL_DMZ_read(int fd, void* buf, size_t count) {
   void* KERNEL_buf = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, count, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_buf = (void*)kmalloc(count);
 
@@ -377,12 +357,10 @@ int SYSCALL_DMZ_read(int fd, void* buf, size_t count) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (buf) {
-    int copy_result = syscall_copy_to_user(KERNEL_buf, buf, count);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_buf, buf, count);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -396,9 +374,7 @@ cleanup:
 int SYSCALL_DMZ_write(int fd, const void* buf, size_t count) {
   const void* KERNEL_buf = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, count, 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_buf = (const void*)kmalloc(count);
 
@@ -409,10 +385,8 @@ int SYSCALL_DMZ_write(int fd, const void* buf, size_t count) {
   }
 
   int result;
-  if (buf) {
-    result = syscall_copy_from_user(buf, (void*)KERNEL_buf, count);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(buf, (void*)KERNEL_buf, count);
+  if (result) goto cleanup;
 
   result = vfs_write(fd, KERNEL_buf, count);
 
@@ -431,9 +405,7 @@ cleanup:
 int SYSCALL_DMZ_getdents_32(int fd, kdirent_32_t* buf, int count) {
   kdirent_32_t* KERNEL_buf = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, count, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_buf = (kdirent_32_t*)kmalloc(count);
 
@@ -449,12 +421,10 @@ int SYSCALL_DMZ_getdents_32(int fd, kdirent_32_t* buf, int count) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (buf) {
-    int copy_result = syscall_copy_to_user(KERNEL_buf, buf, count);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_buf, buf, count);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -469,9 +439,7 @@ cleanup:
 int SYSCALL_DMZ_getdents(int fd, kdirent_t* buf, int count) {
   kdirent_t* KERNEL_buf = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, count, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_buf = (kdirent_t*)kmalloc(count);
 
@@ -487,12 +455,10 @@ int SYSCALL_DMZ_getdents(int fd, kdirent_t* buf, int count) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (buf) {
-    int copy_result = syscall_copy_to_user(KERNEL_buf, buf, count);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_buf, buf, count);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -507,9 +473,7 @@ cleanup:
 int SYSCALL_DMZ_getcwd(char* path_out, size_t size) {
   char* KERNEL_path_out = 0x0;
 
-  const int CHECK_path_out = syscall_verify_buffer(
-      path_out, size, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_path_out < 0) return CHECK_path_out;
+  if ((size_t)(size) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_path_out = (char*)kmalloc(size);
 
@@ -525,12 +489,10 @@ int SYSCALL_DMZ_getcwd(char* path_out, size_t size) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (path_out) {
-    int copy_result = syscall_copy_to_user(KERNEL_path_out, path_out, size);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_path_out, path_out, size);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -548,9 +510,7 @@ int SYSCALL_DMZ_stat_32(const char* path, apos_stat_32_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  const int CHECK_stat = syscall_verify_buffer(
-      stat, sizeof(apos_stat_32_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_stat < 0) return CHECK_stat;
+  if ((size_t)(sizeof(apos_stat_32_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_32_t*)kmalloc(sizeof(apos_stat_32_t));
@@ -563,22 +523,18 @@ int SYSCALL_DMZ_stat_32(const char* path, apos_stat_32_t* stat) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_stat_32(KERNEL_path, KERNEL_stat);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (stat) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_32_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_32_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -597,9 +553,7 @@ int SYSCALL_DMZ_stat(const char* path, apos_stat_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  const int CHECK_stat = syscall_verify_buffer(
-      stat, sizeof(apos_stat_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_stat < 0) return CHECK_stat;
+  if ((size_t)(sizeof(apos_stat_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_t*)kmalloc(sizeof(apos_stat_t));
@@ -612,22 +566,18 @@ int SYSCALL_DMZ_stat(const char* path, apos_stat_t* stat) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_stat(KERNEL_path, KERNEL_stat);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (stat) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -647,9 +597,7 @@ int SYSCALL_DMZ_lstat_32(const char* path, apos_stat_32_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  const int CHECK_stat = syscall_verify_buffer(
-      stat, sizeof(apos_stat_32_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_stat < 0) return CHECK_stat;
+  if ((size_t)(sizeof(apos_stat_32_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_32_t*)kmalloc(sizeof(apos_stat_32_t));
@@ -662,22 +610,18 @@ int SYSCALL_DMZ_lstat_32(const char* path, apos_stat_32_t* stat) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_lstat_32(KERNEL_path, KERNEL_stat);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (stat) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_32_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_32_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -696,9 +640,7 @@ int SYSCALL_DMZ_lstat(const char* path, apos_stat_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  const int CHECK_stat = syscall_verify_buffer(
-      stat, sizeof(apos_stat_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_stat < 0) return CHECK_stat;
+  if ((size_t)(sizeof(apos_stat_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_t*)kmalloc(sizeof(apos_stat_t));
@@ -711,22 +653,18 @@ int SYSCALL_DMZ_lstat(const char* path, apos_stat_t* stat) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_lstat(KERNEL_path, KERNEL_stat);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (stat) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -743,9 +681,7 @@ cleanup:
 int SYSCALL_DMZ_fstat_32(int fd, apos_stat_32_t* stat) {
   apos_stat_32_t* KERNEL_stat = 0x0;
 
-  const int CHECK_stat = syscall_verify_buffer(
-      stat, sizeof(apos_stat_32_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_stat < 0) return CHECK_stat;
+  if ((size_t)(sizeof(apos_stat_32_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_stat = (apos_stat_32_t*)kmalloc(sizeof(apos_stat_32_t));
 
@@ -761,13 +697,11 @@ int SYSCALL_DMZ_fstat_32(int fd, apos_stat_32_t* stat) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (stat) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_32_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_32_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -782,9 +716,7 @@ cleanup:
 int SYSCALL_DMZ_fstat(int fd, apos_stat_t* stat) {
   apos_stat_t* KERNEL_stat = 0x0;
 
-  const int CHECK_stat = syscall_verify_buffer(
-      stat, sizeof(apos_stat_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_stat < 0) return CHECK_stat;
+  if ((size_t)(sizeof(apos_stat_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_stat = (apos_stat_t*)kmalloc(sizeof(apos_stat_t));
 
@@ -800,13 +732,11 @@ int SYSCALL_DMZ_fstat(int fd, apos_stat_t* stat) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (stat) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_stat, stat, sizeof(apos_stat_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -848,10 +778,8 @@ int SYSCALL_DMZ_chdir(const char* path) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_chdir(KERNEL_path);
 
@@ -881,10 +809,8 @@ int SYSCALL_DMZ_access(const char* path, int amode) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_access(KERNEL_path, amode);
 
@@ -914,10 +840,8 @@ int SYSCALL_DMZ_chown(const char* path, apos_uid_t owner, apos_gid_t group) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_chown(KERNEL_path, owner, group);
 
@@ -962,10 +886,8 @@ int SYSCALL_DMZ_lchown(const char* path, apos_uid_t owner, apos_gid_t group) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_lchown(KERNEL_path, owner, group);
 
@@ -995,10 +917,8 @@ int SYSCALL_DMZ_chmod(const char* path, apos_mode_t mode) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_chmod(KERNEL_path, mode);
 
@@ -1076,9 +996,9 @@ cleanup:
 apos_pid_t SYSCALL_DMZ_wait(int* exit_status) {
   int* KERNEL_exit_status = 0x0;
 
-  const int CHECK_exit_status = syscall_verify_buffer(
-      exit_status, sizeof(int), 1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_exit_status < 0) return CHECK_exit_status;
+  if (exit_status) {
+    if ((size_t)(sizeof(int)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_exit_status = !exit_status ? 0x0 : (int*)kmalloc(sizeof(int));
 
@@ -1102,7 +1022,6 @@ apos_pid_t SYSCALL_DMZ_wait(int* exit_status) {
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -1115,9 +1034,9 @@ apos_pid_t SYSCALL_DMZ_waitpid(apos_pid_t child, int* exit_status,
                                int options) {
   int* KERNEL_exit_status = 0x0;
 
-  const int CHECK_exit_status = syscall_verify_buffer(
-      exit_status, sizeof(int), 1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_exit_status < 0) return CHECK_exit_status;
+  if (exit_status) {
+    if ((size_t)(sizeof(int)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_exit_status = !exit_status ? 0x0 : (int*)kmalloc(sizeof(int));
 
@@ -1141,7 +1060,6 @@ apos_pid_t SYSCALL_DMZ_waitpid(apos_pid_t child, int* exit_status,
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -1250,13 +1168,12 @@ int SYSCALL_DMZ_sigaction_32(int signum, const struct ksigaction_32* act,
   const struct ksigaction_32* KERNEL_act = 0x0;
   struct ksigaction_32* KERNEL_oldact = 0x0;
 
-  const int CHECK_act = syscall_verify_buffer(
-      act, sizeof(struct ksigaction_32), 0 /* is_write */, 1 /* allow_null */);
-  if (CHECK_act < 0) return CHECK_act;
-  const int CHECK_oldact =
-      syscall_verify_buffer(oldact, sizeof(struct ksigaction_32),
-                            1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_oldact < 0) return CHECK_oldact;
+  if (act) {
+    if ((size_t)(sizeof(struct ksigaction_32)) > UINT32_MAX / 2) return -EINVAL;
+  }
+  if (oldact) {
+    if ((size_t)(sizeof(struct ksigaction_32)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_act =
       !act ? 0x0
@@ -1278,7 +1195,6 @@ int SYSCALL_DMZ_sigaction_32(int signum, const struct ksigaction_32* act,
                                     sizeof(struct ksigaction_32));
     if (result) goto cleanup;
   }
-
   result = proc_sigaction_32(signum, KERNEL_act, KERNEL_oldact);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
@@ -1291,7 +1207,6 @@ int SYSCALL_DMZ_sigaction_32(int signum, const struct ksigaction_32* act,
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -1307,12 +1222,12 @@ int SYSCALL_DMZ_sigaction(int signum, const struct ksigaction* act,
   const struct ksigaction* KERNEL_act = 0x0;
   struct ksigaction* KERNEL_oldact = 0x0;
 
-  const int CHECK_act = syscall_verify_buffer(
-      act, sizeof(struct ksigaction), 0 /* is_write */, 1 /* allow_null */);
-  if (CHECK_act < 0) return CHECK_act;
-  const int CHECK_oldact = syscall_verify_buffer(
-      oldact, sizeof(struct ksigaction), 1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_oldact < 0) return CHECK_oldact;
+  if (act) {
+    if ((size_t)(sizeof(struct ksigaction)) > UINT32_MAX / 2) return -EINVAL;
+  }
+  if (oldact) {
+    if ((size_t)(sizeof(struct ksigaction)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_act =
       !act ? 0x0 : (const struct ksigaction*)kmalloc(sizeof(struct ksigaction));
@@ -1332,7 +1247,6 @@ int SYSCALL_DMZ_sigaction(int signum, const struct ksigaction* act,
                                     sizeof(struct ksigaction));
     if (result) goto cleanup;
   }
-
   result = proc_sigaction(signum, KERNEL_act, KERNEL_oldact);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
@@ -1345,7 +1259,6 @@ int SYSCALL_DMZ_sigaction(int signum, const struct ksigaction* act,
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -1360,12 +1273,12 @@ int SYSCALL_DMZ_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset) {
   const ksigset_t* KERNEL_set = 0x0;
   ksigset_t* KERNEL_oset = 0x0;
 
-  const int CHECK_set = syscall_verify_buffer(
-      set, sizeof(ksigset_t), 0 /* is_write */, 1 /* allow_null */);
-  if (CHECK_set < 0) return CHECK_set;
-  const int CHECK_oset = syscall_verify_buffer(
-      oset, sizeof(ksigset_t), 1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_oset < 0) return CHECK_oset;
+  if (set) {
+    if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+  }
+  if (oset) {
+    if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_set = !set ? 0x0 : (const ksigset_t*)kmalloc(sizeof(ksigset_t));
   KERNEL_oset = !oset ? 0x0 : (ksigset_t*)kmalloc(sizeof(ksigset_t));
@@ -1382,7 +1295,6 @@ int SYSCALL_DMZ_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset) {
     result = syscall_copy_from_user(set, (void*)KERNEL_set, sizeof(ksigset_t));
     if (result) goto cleanup;
   }
-
   result = proc_sigprocmask(how, KERNEL_set, KERNEL_oset);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
@@ -1395,7 +1307,6 @@ int SYSCALL_DMZ_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset) {
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -1408,9 +1319,7 @@ cleanup:
 int SYSCALL_DMZ_sigpending(ksigset_t* oset) {
   ksigset_t* KERNEL_oset = 0x0;
 
-  const int CHECK_oset = syscall_verify_buffer(
-      oset, sizeof(ksigset_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_oset < 0) return CHECK_oset;
+  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_oset = (ksigset_t*)kmalloc(sizeof(ksigset_t));
 
@@ -1426,13 +1335,10 @@ int SYSCALL_DMZ_sigpending(ksigset_t* oset) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (oset) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_oset, oset, sizeof(ksigset_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_oset, oset, sizeof(ksigset_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -1446,9 +1352,7 @@ cleanup:
 int SYSCALL_DMZ_sigsuspend(const ksigset_t* sigmask) {
   const ksigset_t* KERNEL_sigmask = 0x0;
 
-  const int CHECK_sigmask = syscall_verify_buffer(
-      sigmask, sizeof(ksigset_t), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_sigmask < 0) return CHECK_sigmask;
+  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_sigmask = (const ksigset_t*)kmalloc(sizeof(ksigset_t));
 
@@ -1459,11 +1363,9 @@ int SYSCALL_DMZ_sigsuspend(const ksigset_t* sigmask) {
   }
 
   int result;
-  if (sigmask) {
-    result = syscall_copy_from_user(sigmask, (void*)KERNEL_sigmask,
-                                    sizeof(ksigset_t));
-    if (result) goto cleanup;
-  }
+  result =
+      syscall_copy_from_user(sigmask, (void*)KERNEL_sigmask, sizeof(ksigset_t));
+  if (result) goto cleanup;
 
   result = proc_sigsuspend(KERNEL_sigmask);
 
@@ -1485,16 +1387,11 @@ int SYSCALL_DMZ_sigreturn(const ksigset_t* old_mask,
   const user_context_t* KERNEL_context = 0x0;
   const syscall_context_t* KERNEL_syscall_context = 0x0;
 
-  const int CHECK_old_mask = syscall_verify_buffer(
-      old_mask, sizeof(ksigset_t), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_old_mask < 0) return CHECK_old_mask;
-  const int CHECK_context = syscall_verify_buffer(
-      context, sizeof(user_context_t), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_context < 0) return CHECK_context;
-  const int CHECK_syscall_context =
-      syscall_verify_buffer(syscall_context, sizeof(syscall_context_t),
-                            0 /* is_write */, 1 /* allow_null */);
-  if (CHECK_syscall_context < 0) return CHECK_syscall_context;
+  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(user_context_t)) > UINT32_MAX / 2) return -EINVAL;
+  if (syscall_context) {
+    if ((size_t)(sizeof(syscall_context_t)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_old_mask = (const ksigset_t*)kmalloc(sizeof(ksigset_t));
   KERNEL_context = (const user_context_t*)kmalloc(sizeof(user_context_t));
@@ -1513,23 +1410,18 @@ int SYSCALL_DMZ_sigreturn(const ksigset_t* old_mask,
   }
 
   int result;
-  if (old_mask) {
-    result = syscall_copy_from_user(old_mask, (void*)KERNEL_old_mask,
-                                    sizeof(ksigset_t));
-    if (result) goto cleanup;
-  }
-  if (context) {
-    result = syscall_copy_from_user(context, (void*)KERNEL_context,
-                                    sizeof(user_context_t));
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(old_mask, (void*)KERNEL_old_mask,
+                                  sizeof(ksigset_t));
+  if (result) goto cleanup;
+  result = syscall_copy_from_user(context, (void*)KERNEL_context,
+                                  sizeof(user_context_t));
+  if (result) goto cleanup;
   if (syscall_context) {
     result =
         syscall_copy_from_user(syscall_context, (void*)KERNEL_syscall_context,
                                sizeof(syscall_context_t));
     if (result) goto cleanup;
   }
-
   result =
       proc_sigreturn(KERNEL_old_mask, KERNEL_context, KERNEL_syscall_context);
 
@@ -1746,9 +1638,7 @@ int SYSCALL_DMZ_mmap_32(void* addr_inout, size_t length, int prot, int flags,
                         int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
 
-  const int CHECK_addr_inout = syscall_verify_buffer(
-      addr_inout, sizeof(void*), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_addr_inout < 0) return CHECK_addr_inout;
+  if ((size_t)(sizeof(void*)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_addr_inout = (void*)kmalloc(sizeof(void*));
 
@@ -1759,23 +1649,19 @@ int SYSCALL_DMZ_mmap_32(void* addr_inout, size_t length, int prot, int flags,
   }
 
   int result;
-  if (addr_inout) {
-    result = syscall_copy_from_user(addr_inout, (void*)KERNEL_addr_inout,
-                                    sizeof(void*));
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(addr_inout, (void*)KERNEL_addr_inout,
+                                  sizeof(void*));
+  if (result) goto cleanup;
 
   result = mmap_wrapper_32(KERNEL_addr_inout, length, prot, flags, fd, offset);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (addr_inout) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_addr_inout, addr_inout, sizeof(void*));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_addr_inout, addr_inout, sizeof(void*));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -1791,9 +1677,7 @@ int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
                      int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
 
-  const int CHECK_addr_inout = syscall_verify_buffer(
-      addr_inout, sizeof(void*), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_addr_inout < 0) return CHECK_addr_inout;
+  if ((size_t)(sizeof(void*)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_addr_inout = (void*)kmalloc(sizeof(void*));
 
@@ -1804,23 +1688,19 @@ int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
   }
 
   int result;
-  if (addr_inout) {
-    result = syscall_copy_from_user(addr_inout, (void*)KERNEL_addr_inout,
-                                    sizeof(void*));
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(addr_inout, (void*)KERNEL_addr_inout,
+                                  sizeof(void*));
+  if (result) goto cleanup;
 
   result = mmap_wrapper(KERNEL_addr_inout, length, prot, flags, fd, offset);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (addr_inout) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_addr_inout, addr_inout, sizeof(void*));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_addr_inout, addr_inout, sizeof(void*));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -1867,14 +1747,10 @@ int SYSCALL_DMZ_symlink(const char* path1, const char* path2) {
   }
 
   int result;
-  if (path1) {
-    result = syscall_copy_from_user(path1, (void*)KERNEL_path1, SIZE_path1);
-    if (result) goto cleanup;
-  }
-  if (path2) {
-    result = syscall_copy_from_user(path2, (void*)KERNEL_path2, SIZE_path2);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path1, (void*)KERNEL_path1, SIZE_path1);
+  if (result) goto cleanup;
+  result = syscall_copy_from_user(path2, (void*)KERNEL_path2, SIZE_path2);
+  if (result) goto cleanup;
 
   result = vfs_symlink(KERNEL_path1, KERNEL_path2);
 
@@ -1896,9 +1772,7 @@ int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, bufsize, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(bufsize) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_buf = (char*)kmalloc(bufsize);
@@ -1911,21 +1785,17 @@ int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_readlink(KERNEL_path, KERNEL_buf, bufsize);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (buf) {
-    int copy_result = syscall_copy_to_user(KERNEL_buf, buf, bufsize);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_buf, buf, bufsize);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -1955,9 +1825,7 @@ cleanup:
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t) {
   struct apos_tm* KERNEL_t = 0x0;
 
-  const int CHECK_t = syscall_verify_buffer(
-      t, sizeof(struct apos_tm), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_t < 0) return CHECK_t;
+  if ((size_t)(sizeof(struct apos_tm)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_t = (struct apos_tm*)kmalloc(sizeof(struct apos_tm));
 
@@ -1973,12 +1841,10 @@ int SYSCALL_DMZ_apos_get_time(struct apos_tm* t) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (t) {
-    int copy_result = syscall_copy_to_user(KERNEL_t, t, sizeof(struct apos_tm));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_t, t, sizeof(struct apos_tm));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -1992,9 +1858,7 @@ cleanup:
 int SYSCALL_DMZ_pipe(int* fildes) {
   int* KERNEL_fildes = 0x0;
 
-  const int CHECK_fildes = syscall_verify_buffer(
-      fildes, sizeof(int[2]), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_fildes < 0) return CHECK_fildes;
+  if ((size_t)(sizeof(int[2])) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_fildes = (int*)kmalloc(sizeof(int[2]));
 
@@ -2010,13 +1874,10 @@ int SYSCALL_DMZ_pipe(int* fildes) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (fildes) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_fildes, fildes, sizeof(int[2]));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_fildes, fildes, sizeof(int[2]));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2150,9 +2011,7 @@ cleanup:
 int SYSCALL_DMZ_tcgetattr(int fd, struct ktermios* t) {
   struct ktermios* KERNEL_t = 0x0;
 
-  const int CHECK_t = syscall_verify_buffer(
-      t, sizeof(struct ktermios), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_t < 0) return CHECK_t;
+  if ((size_t)(sizeof(struct ktermios)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_t = (struct ktermios*)kmalloc(sizeof(struct ktermios));
 
@@ -2168,13 +2027,10 @@ int SYSCALL_DMZ_tcgetattr(int fd, struct ktermios* t) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (t) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_t, t, sizeof(struct ktermios));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_t, t, sizeof(struct ktermios));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2189,9 +2045,7 @@ int SYSCALL_DMZ_tcsetattr(int fd, int optional_actions,
                           const struct ktermios* t) {
   const struct ktermios* KERNEL_t = 0x0;
 
-  const int CHECK_t = syscall_verify_buffer(
-      t, sizeof(struct ktermios), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_t < 0) return CHECK_t;
+  if ((size_t)(sizeof(struct ktermios)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_t = (const struct ktermios*)kmalloc(sizeof(struct ktermios));
 
@@ -2202,11 +2056,8 @@ int SYSCALL_DMZ_tcsetattr(int fd, int optional_actions,
   }
 
   int result;
-  if (t) {
-    result =
-        syscall_copy_from_user(t, (void*)KERNEL_t, sizeof(struct ktermios));
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(t, (void*)KERNEL_t, sizeof(struct ktermios));
+  if (result) goto cleanup;
 
   result = tty_tcsetattr(fd, optional_actions, KERNEL_t);
 
@@ -2251,10 +2102,8 @@ int SYSCALL_DMZ_truncate(const char* path, apos_off_t length) {
   }
 
   int result;
-  if (path) {
-    result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(path, (void*)KERNEL_path, SIZE_path);
+  if (result) goto cleanup;
 
   result = vfs_truncate(KERNEL_path, length);
 
@@ -2272,10 +2121,8 @@ cleanup:
 int SYSCALL_DMZ_poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout) {
   struct apos_pollfd* KERNEL_fds = 0x0;
 
-  const int CHECK_fds =
-      syscall_verify_buffer(fds, sizeof(struct apos_pollfd) * nfds,
-                            1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_fds < 0) return CHECK_fds;
+  if ((size_t)(sizeof(struct apos_pollfd) * nfds) > UINT32_MAX / 2)
+    return -EINVAL;
 
   KERNEL_fds = (struct apos_pollfd*)kmalloc(sizeof(struct apos_pollfd) * nfds);
 
@@ -2286,23 +2133,19 @@ int SYSCALL_DMZ_poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout) {
   }
 
   int result;
-  if (fds) {
-    result = syscall_copy_from_user(fds, (void*)KERNEL_fds,
-                                    sizeof(struct apos_pollfd) * nfds);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(fds, (void*)KERNEL_fds,
+                                  sizeof(struct apos_pollfd) * nfds);
+  if (result) goto cleanup;
 
   result = vfs_poll(KERNEL_fds, nfds, timeout);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (fds) {
-    int copy_result = syscall_copy_to_user(KERNEL_fds, fds,
-                                           sizeof(struct apos_pollfd) * nfds);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_fds, fds, sizeof(struct apos_pollfd) * nfds);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2317,9 +2160,7 @@ cleanup:
 int SYSCALL_DMZ_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
   struct apos_rlimit_32* KERNEL_lim = 0x0;
 
-  const int CHECK_lim = syscall_verify_buffer(
-      lim, sizeof(struct apos_rlimit), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_lim < 0) return CHECK_lim;
+  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_lim = (struct apos_rlimit_32*)kmalloc(sizeof(struct apos_rlimit));
 
@@ -2335,13 +2176,11 @@ int SYSCALL_DMZ_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (lim) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_lim, lim, sizeof(struct apos_rlimit));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_lim, lim, sizeof(struct apos_rlimit));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2356,9 +2195,7 @@ cleanup:
 int SYSCALL_DMZ_getrlimit(int resource, struct apos_rlimit* lim) {
   struct apos_rlimit* KERNEL_lim = 0x0;
 
-  const int CHECK_lim = syscall_verify_buffer(
-      lim, sizeof(struct apos_rlimit), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_lim < 0) return CHECK_lim;
+  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_lim = (struct apos_rlimit*)kmalloc(sizeof(struct apos_rlimit));
 
@@ -2374,13 +2211,11 @@ int SYSCALL_DMZ_getrlimit(int resource, struct apos_rlimit* lim) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (lim) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_lim, lim, sizeof(struct apos_rlimit));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_lim, lim, sizeof(struct apos_rlimit));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2396,9 +2231,7 @@ cleanup:
 int SYSCALL_DMZ_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
   const struct apos_rlimit_32* KERNEL_lim = 0x0;
 
-  const int CHECK_lim = syscall_verify_buffer(
-      lim, sizeof(struct apos_rlimit), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_lim < 0) return CHECK_lim;
+  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_lim =
       (const struct apos_rlimit_32*)kmalloc(sizeof(struct apos_rlimit));
@@ -2410,11 +2243,9 @@ int SYSCALL_DMZ_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
   }
 
   int result;
-  if (lim) {
-    result = syscall_copy_from_user(lim, (void*)KERNEL_lim,
-                                    sizeof(struct apos_rlimit));
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(lim, (void*)KERNEL_lim,
+                                  sizeof(struct apos_rlimit));
+  if (result) goto cleanup;
 
   result = proc_setrlimit_32(resource, KERNEL_lim);
 
@@ -2433,9 +2264,7 @@ cleanup:
 int SYSCALL_DMZ_setrlimit(int resource, const struct apos_rlimit* lim) {
   const struct apos_rlimit* KERNEL_lim = 0x0;
 
-  const int CHECK_lim = syscall_verify_buffer(
-      lim, sizeof(struct apos_rlimit), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_lim < 0) return CHECK_lim;
+  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_lim = (const struct apos_rlimit*)kmalloc(sizeof(struct apos_rlimit));
 
@@ -2446,11 +2275,9 @@ int SYSCALL_DMZ_setrlimit(int resource, const struct apos_rlimit* lim) {
   }
 
   int result;
-  if (lim) {
-    result = syscall_copy_from_user(lim, (void*)KERNEL_lim,
-                                    sizeof(struct apos_rlimit));
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(lim, (void*)KERNEL_lim,
+                                  sizeof(struct apos_rlimit));
+  if (result) goto cleanup;
 
   result = proc_setrlimit(resource, KERNEL_lim);
 
@@ -2500,9 +2327,7 @@ int SYSCALL_DMZ_bind(int socket, const struct sockaddr* addr,
                      socklen_t addr_len) {
   const struct sockaddr* KERNEL_addr = 0x0;
 
-  const int CHECK_addr = syscall_verify_buffer(addr, addr_len, 0 /* is_write */,
-                                               0 /* allow_null */);
-  if (CHECK_addr < 0) return CHECK_addr;
+  if ((size_t)(addr_len) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_addr = (const struct sockaddr*)kmalloc(addr_len);
 
@@ -2513,10 +2338,8 @@ int SYSCALL_DMZ_bind(int socket, const struct sockaddr* addr,
   }
 
   int result;
-  if (addr) {
-    result = syscall_copy_from_user(addr, (void*)KERNEL_addr, addr_len);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(addr, (void*)KERNEL_addr, addr_len);
+  if (result) goto cleanup;
 
   result = net_bind(socket, KERNEL_addr, addr_len);
 
@@ -2549,9 +2372,9 @@ cleanup:
 int SYSCALL_DMZ_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   socklen_t* KERNEL_addr_len = 0x0;
 
-  const int CHECK_addr_len = syscall_verify_buffer(
-      addr_len, sizeof(socklen_t), 1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_addr_len < 0) return CHECK_addr_len;
+  if (addr_len) {
+    if ((size_t)(sizeof(socklen_t)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_addr_len = !addr_len ? 0x0 : (socklen_t*)kmalloc(sizeof(socklen_t));
 
@@ -2567,7 +2390,6 @@ int SYSCALL_DMZ_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
                                     sizeof(socklen_t));
     if (result) goto cleanup;
   }
-
   result = accept_wrapper(socket, addr, KERNEL_addr_len);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
@@ -2580,7 +2402,6 @@ int SYSCALL_DMZ_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -2593,9 +2414,7 @@ int SYSCALL_DMZ_connect(int socket, const struct sockaddr* addr,
                         socklen_t addr_len) {
   const struct sockaddr* KERNEL_addr = 0x0;
 
-  const int CHECK_addr = syscall_verify_buffer(addr, addr_len, 0 /* is_write */,
-                                               0 /* allow_null */);
-  if (CHECK_addr < 0) return CHECK_addr;
+  if ((size_t)(addr_len) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_addr = (const struct sockaddr*)kmalloc(addr_len);
 
@@ -2606,10 +2425,8 @@ int SYSCALL_DMZ_connect(int socket, const struct sockaddr* addr,
   }
 
   int result;
-  if (addr) {
-    result = syscall_copy_from_user(addr, (void*)KERNEL_addr, addr_len);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(addr, (void*)KERNEL_addr, addr_len);
+  if (result) goto cleanup;
 
   result = net_connect(socket, KERNEL_addr, addr_len);
 
@@ -2627,9 +2444,7 @@ cleanup:
 ssize_t SYSCALL_DMZ_recv(int socket, void* buf, size_t len, int flags) {
   void* KERNEL_buf = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, len, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_buf = (void*)kmalloc(len);
 
@@ -2645,12 +2460,10 @@ ssize_t SYSCALL_DMZ_recv(int socket, void* buf, size_t len, int flags) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (buf) {
-    int copy_result = syscall_copy_to_user(KERNEL_buf, buf, len);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_buf, buf, len);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2666,12 +2479,10 @@ ssize_t SYSCALL_DMZ_recvfrom(int socket, void* buf, size_t len, int flags,
   void* KERNEL_buf = 0x0;
   socklen_t* KERNEL_address_len = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, len, 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
-  const int CHECK_address_len = syscall_verify_buffer(
-      address_len, sizeof(socklen_t), 1 /* is_write */, 1 /* allow_null */);
-  if (CHECK_address_len < 0) return CHECK_address_len;
+  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
+  if (address_len) {
+    if ((size_t)(sizeof(socklen_t)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_buf = (void*)kmalloc(len);
   KERNEL_address_len =
@@ -2690,18 +2501,15 @@ ssize_t SYSCALL_DMZ_recvfrom(int socket, void* buf, size_t len, int flags,
                                     sizeof(socklen_t));
     if (result) goto cleanup;
   }
-
   result = recvfrom_wrapper(socket, KERNEL_buf, len, flags, address,
                             KERNEL_address_len);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (buf) {
-    int copy_result = syscall_copy_to_user(KERNEL_buf, buf, len);
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_buf, buf, len);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
   if (address_len) {
     int copy_result = syscall_copy_to_user(KERNEL_address_len, address_len,
@@ -2711,7 +2519,6 @@ ssize_t SYSCALL_DMZ_recvfrom(int socket, void* buf, size_t len, int flags,
       goto cleanup;
     }
   }
-
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
 
 cleanup:
@@ -2724,9 +2531,7 @@ cleanup:
 ssize_t SYSCALL_DMZ_send(int socket, const void* buf, size_t len, int flags) {
   const void* KERNEL_buf = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, len, 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
+  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_buf = (const void*)kmalloc(len);
 
@@ -2737,10 +2542,8 @@ ssize_t SYSCALL_DMZ_send(int socket, const void* buf, size_t len, int flags) {
   }
 
   int result;
-  if (buf) {
-    result = syscall_copy_from_user(buf, (void*)KERNEL_buf, len);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(buf, (void*)KERNEL_buf, len);
+  if (result) goto cleanup;
 
   result = net_send(socket, KERNEL_buf, len, flags);
 
@@ -2761,12 +2564,10 @@ ssize_t SYSCALL_DMZ_sendto(int socket, const void* buf, size_t len, int flags,
   const void* KERNEL_buf = 0x0;
   const struct sockaddr* KERNEL_dest_addr = 0x0;
 
-  const int CHECK_buf =
-      syscall_verify_buffer(buf, len, 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_buf < 0) return CHECK_buf;
-  const int CHECK_dest_addr = syscall_verify_buffer(
-      dest_addr, dest_len, 0 /* is_write */, 1 /* allow_null */);
-  if (CHECK_dest_addr < 0) return CHECK_dest_addr;
+  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
+  if (dest_addr) {
+    if ((size_t)(dest_len) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_buf = (const void*)kmalloc(len);
   KERNEL_dest_addr =
@@ -2780,16 +2581,13 @@ ssize_t SYSCALL_DMZ_sendto(int socket, const void* buf, size_t len, int flags,
   }
 
   int result;
-  if (buf) {
-    result = syscall_copy_from_user(buf, (void*)KERNEL_buf, len);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(buf, (void*)KERNEL_buf, len);
+  if (result) goto cleanup;
   if (dest_addr) {
     result =
         syscall_copy_from_user(dest_addr, (void*)KERNEL_dest_addr, dest_len);
     if (result) goto cleanup;
   }
-
   result =
       net_sendto(socket, KERNEL_buf, len, flags, KERNEL_dest_addr, dest_len);
 
@@ -2820,10 +2618,8 @@ int SYSCALL_DMZ_apos_klog(const char* msg) {
   }
 
   int result;
-  if (msg) {
-    result = syscall_copy_from_user(msg, (void*)KERNEL_msg, SIZE_msg);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(msg, (void*)KERNEL_msg, SIZE_msg);
+  if (result) goto cleanup;
 
   result = klog_wrapper(KERNEL_msg);
 
@@ -2853,10 +2649,8 @@ int SYSCALL_DMZ_apos_run_ktest(const char* name) {
   }
 
   int result;
-  if (name) {
-    result = syscall_copy_from_user(name, (void*)KERNEL_name, SIZE_name);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(name, (void*)KERNEL_name, SIZE_name);
+  if (result) goto cleanup;
 
   result = kernel_run_ktest(KERNEL_name);
 
@@ -2875,9 +2669,7 @@ int SYSCALL_DMZ_apos_thread_create(apos_uthread_id_t* id, void* stack,
                                    void* entry) {
   apos_uthread_id_t* KERNEL_id = 0x0;
 
-  const int CHECK_id = syscall_verify_buffer(
-      id, sizeof(apos_uthread_id_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_id < 0) return CHECK_id;
+  if ((size_t)(sizeof(apos_uthread_id_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_id = (apos_uthread_id_t*)kmalloc(sizeof(apos_uthread_id_t));
 
@@ -2893,13 +2685,11 @@ int SYSCALL_DMZ_apos_thread_create(apos_uthread_id_t* id, void* stack,
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (id) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_id, id, sizeof(apos_uthread_id_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_id, id, sizeof(apos_uthread_id_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2929,12 +2719,8 @@ int SYSCALL_DMZ_sigwait(const ksigset_t* sigmask, int* sig) {
   const ksigset_t* KERNEL_sigmask = 0x0;
   int* KERNEL_sig = 0x0;
 
-  const int CHECK_sigmask = syscall_verify_buffer(
-      sigmask, sizeof(ksigset_t), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_sigmask < 0) return CHECK_sigmask;
-  const int CHECK_sig = syscall_verify_buffer(
-      sig, sizeof(int), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_sig < 0) return CHECK_sig;
+  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(int)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_sigmask = (const ksigset_t*)kmalloc(sizeof(ksigset_t));
   KERNEL_sig = (int*)kmalloc(sizeof(int));
@@ -2947,22 +2733,18 @@ int SYSCALL_DMZ_sigwait(const ksigset_t* sigmask, int* sig) {
   }
 
   int result;
-  if (sigmask) {
-    result = syscall_copy_from_user(sigmask, (void*)KERNEL_sigmask,
-                                    sizeof(ksigset_t));
-    if (result) goto cleanup;
-  }
+  result =
+      syscall_copy_from_user(sigmask, (void*)KERNEL_sigmask, sizeof(ksigset_t));
+  if (result) goto cleanup;
 
   result = proc_sigwait(KERNEL_sigmask, KERNEL_sig);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (sig) {
-    int copy_result = syscall_copy_to_user(KERNEL_sig, sig, sizeof(int));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result = syscall_copy_to_user(KERNEL_sig, sig, sizeof(int));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -2977,9 +2759,7 @@ cleanup:
 int SYSCALL_DMZ_apos_thread_kill(const apos_uthread_id_t* id, int sig) {
   const apos_uthread_id_t* KERNEL_id = 0x0;
 
-  const int CHECK_id = syscall_verify_buffer(
-      id, sizeof(apos_uthread_id_t), 0 /* is_write */, 0 /* allow_null */);
-  if (CHECK_id < 0) return CHECK_id;
+  if ((size_t)(sizeof(apos_uthread_id_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_id = (const apos_uthread_id_t*)kmalloc(sizeof(apos_uthread_id_t));
 
@@ -2990,11 +2770,9 @@ int SYSCALL_DMZ_apos_thread_kill(const apos_uthread_id_t* id, int sig) {
   }
 
   int result;
-  if (id) {
-    result =
-        syscall_copy_from_user(id, (void*)KERNEL_id, sizeof(apos_uthread_id_t));
-    if (result) goto cleanup;
-  }
+  result =
+      syscall_copy_from_user(id, (void*)KERNEL_id, sizeof(apos_uthread_id_t));
+  if (result) goto cleanup;
 
   result = proc_thread_kill_user(KERNEL_id, sig);
 
@@ -3012,9 +2790,7 @@ cleanup:
 int SYSCALL_DMZ_apos_thread_self(apos_uthread_id_t* id) {
   apos_uthread_id_t* KERNEL_id = 0x0;
 
-  const int CHECK_id = syscall_verify_buffer(
-      id, sizeof(apos_uthread_id_t), 1 /* is_write */, 0 /* allow_null */);
-  if (CHECK_id < 0) return CHECK_id;
+  if ((size_t)(sizeof(apos_uthread_id_t)) > UINT32_MAX / 2) return -EINVAL;
 
   KERNEL_id = (apos_uthread_id_t*)kmalloc(sizeof(apos_uthread_id_t));
 
@@ -3030,13 +2806,11 @@ int SYSCALL_DMZ_apos_thread_self(apos_uthread_id_t* id) {
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
-  if (id) {
-    int copy_result =
-        syscall_copy_to_user(KERNEL_id, id, sizeof(apos_uthread_id_t));
-    if (copy_result) {
-      result = copy_result;
-      goto cleanup;
-    }
+  int copy_result =
+      syscall_copy_to_user(KERNEL_id, id, sizeof(apos_uthread_id_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
   }
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
@@ -3052,10 +2826,9 @@ int SYSCALL_DMZ_futex_ts(uint32_t* uaddr, int op, uint32_t val,
                          uint32_t val3) {
   const struct apos_timespec* KERNEL_timespec = 0x0;
 
-  const int CHECK_timespec =
-      syscall_verify_buffer(timespec, sizeof(struct apos_timespec),
-                            0 /* is_write */, 1 /* allow_null */);
-  if (CHECK_timespec < 0) return CHECK_timespec;
+  if (timespec) {
+    if ((size_t)(sizeof(struct apos_timespec)) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_timespec =
       !timespec
@@ -3074,7 +2847,6 @@ int SYSCALL_DMZ_futex_ts(uint32_t* uaddr, int op, uint32_t val,
                                     sizeof(struct apos_timespec));
     if (result) goto cleanup;
   }
-
   result = futex_op(uaddr, op, val, KERNEL_timespec, uaddr2, val3);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
@@ -3102,9 +2874,9 @@ int SYSCALL_DMZ_mount(const char* source, const char* mount_path,
   if (SIZE_mount_path < 0) return SIZE_mount_path;
   const int SIZE_type = syscall_verify_string(type);
   if (SIZE_type < 0) return SIZE_type;
-  const int CHECK_data = syscall_verify_buffer(data, data_len, 0 /* is_write */,
-                                               1 /* allow_null */);
-  if (CHECK_data < 0) return CHECK_data;
+  if (data) {
+    if ((size_t)(data_len) > UINT32_MAX / 2) return -EINVAL;
+  }
 
   KERNEL_source = (const char*)kmalloc(SIZE_source);
   KERNEL_mount_path = (const char*)kmalloc(SIZE_mount_path);
@@ -3122,24 +2894,17 @@ int SYSCALL_DMZ_mount(const char* source, const char* mount_path,
   }
 
   int result;
-  if (source) {
-    result = syscall_copy_from_user(source, (void*)KERNEL_source, SIZE_source);
-    if (result) goto cleanup;
-  }
-  if (mount_path) {
-    result = syscall_copy_from_user(mount_path, (void*)KERNEL_mount_path,
-                                    SIZE_mount_path);
-    if (result) goto cleanup;
-  }
-  if (type) {
-    result = syscall_copy_from_user(type, (void*)KERNEL_type, SIZE_type);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(source, (void*)KERNEL_source, SIZE_source);
+  if (result) goto cleanup;
+  result = syscall_copy_from_user(mount_path, (void*)KERNEL_mount_path,
+                                  SIZE_mount_path);
+  if (result) goto cleanup;
+  result = syscall_copy_from_user(type, (void*)KERNEL_type, SIZE_type);
+  if (result) goto cleanup;
   if (data) {
     result = syscall_copy_from_user(data, (void*)KERNEL_data, data_len);
     if (result) goto cleanup;
   }
-
   result = vfs_mount(KERNEL_source, KERNEL_mount_path, KERNEL_type, flags,
                      KERNEL_data, data_len);
 
@@ -3172,11 +2937,9 @@ int SYSCALL_DMZ_unmount(const char* mount_path, unsigned long flags) {
   }
 
   int result;
-  if (mount_path) {
-    result = syscall_copy_from_user(mount_path, (void*)KERNEL_mount_path,
-                                    SIZE_mount_path);
-    if (result) goto cleanup;
-  }
+  result = syscall_copy_from_user(mount_path, (void*)KERNEL_mount_path,
+                                  SIZE_mount_path);
+  if (result) goto cleanup;
 
   result = vfs_unmount(KERNEL_mount_path, flags);
 

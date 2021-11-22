@@ -38,10 +38,11 @@
 const int SIZE_{{ arg.name }} = syscall_verify_string({{ arg.name }});
 if (SIZE_{{ arg.name }} < 0) return SIZE_{{ arg.name }};
 {% elif arg.IsBuffer() %}
-const int CHECK_{{ arg.name }} = syscall_verify_buffer({{ arg.name }}, {{
-    arg.size_name }}, {{ arg.IsWritable() | int }} /* is_write */,
-    {{ arg.AllowNull() | int }}  /* allow_null */);
-if (CHECK_{{ arg.name }} < 0) return CHECK_{{ arg.name }};
+{#- This is sort of a hack to get around funny business with signed/unsigned
+    conversions.  TODO(aoates): do this checking in a more principled way. #}
+{% if arg.AllowNull() %} if ({{ arg.name }}) { {% endif %}
+if ((size_t)({{ arg.size_name }}) > UINT32_MAX / 2) return -EINVAL;
+{% if arg.AllowNull() %} } {% endif %}
 {% endif %}
 {% endfor %}
 {%- endmacro %}
@@ -108,10 +109,13 @@ if ({{ check_alloc_cond(args) }}) {
 
   int result;
   {% for arg in syscall.args if arg.NeedsPreCopy() -%}
-  if ({{ arg.name }}) {
+  {# Only check if the argument is NULL if it's allowed to be null; if not
+     allowed to be NULL, and the user passed NULL, then syscall_copy_from_user()
+     will catch that and generate an appropriate signal/error. #}
+  {% if arg.AllowNull() %} if ({{ arg.name }}) { {% endif %}
     result = syscall_copy_from_user({{ arg.name }}, (void*)KERNEL_{{ arg.name }}, {{ arg_size(arg) }});
     if (result) goto cleanup;
-  }
+  {% if arg.AllowNull() %} } {% endif %}
   {% endfor %}
 
   result = {{ syscall.kernel_name }}({{ call_args(syscall.args) }});
@@ -119,13 +123,13 @@ if ({{ check_alloc_cond(args) }}) {
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
   {% for arg in syscall.args if arg.NeedsPostCopy() -%}
-  if ({{ arg.name }}) {
+  {% if arg.AllowNull() %} if ({{ arg.name }}) { {% endif %} {# As above. #}
     int copy_result = syscall_copy_to_user(KERNEL_{{ arg.name }}, {{ arg.name }}, {{ arg_size(arg) }});
     if (copy_result) {
       result = copy_result;
       goto cleanup;
     }
-  }
+  {% if arg.AllowNull() %} } {% endif %}
   {% endfor %}
 
   goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.

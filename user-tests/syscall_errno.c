@@ -90,8 +90,8 @@ void syscall_errno_test() {
 
 
   KTEST_BEGIN("getcwd() errno");
-  ERRNO_TEST(getcwd(NULL, 100), NULL, EFAULT);
-  ERRNO_TEST(getcwd((char*)0x1234, 100), NULL, EFAULT);
+  KEXPECT_SIGNAL(SIGSEGV, getcwd(NULL, 100));
+  KEXPECT_SIGNAL(SIGSEGV, getcwd((char*)0x1234, 100));
 
   KEXPECT_EQ(&buf[0], getcwd(buf, 100));
 

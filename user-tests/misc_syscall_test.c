@@ -42,10 +42,9 @@ static void apos_get_time_test(void) {
   KEXPECT_LE(tm.tm_sec, 61);
 
   KTEST_BEGIN("apos_get_time(): bad arguments test");
-  KEXPECT_EQ(-1, apos_get_time(NULL));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, apos_get_time((struct apos_tm*)0x1cfff));
-  KEXPECT_EQ(-1, apos_get_time((struct apos_tm*)0xc1000000));
+  KEXPECT_SIGNAL(SIGSEGV, apos_get_time(NULL));
+  KEXPECT_SIGNAL(SIGSEGV, apos_get_time((struct apos_tm*)0x1cfff));
+  KEXPECT_SIGNAL(SIGSEGV, apos_get_time((struct apos_tm*)0xc1000000));
 }
 
 static void termios_test(void) {
@@ -90,22 +89,16 @@ static void termios_test(void) {
   KTEST_BEGIN("tcgetattr()/tcsetattr(): bad arguments test");
   KEXPECT_EQ(-1, tcgetattr(-5, &t));
   KEXPECT_EQ(EBADF, errno);
-  KEXPECT_EQ(-1, tcgetattr(fd, NULL));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, tcgetattr(fd, (struct termios*)0x1fff));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, tcgetattr(fd, (struct termios*)0xc1000000));
-  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_SIGNAL(SIGSEGV, tcgetattr(fd, NULL));
+  KEXPECT_SIGNAL(SIGSEGV, tcgetattr(fd, (struct termios*)0x1fff));
+  KEXPECT_SIGNAL(SIGSEGV, tcgetattr(fd, (struct termios*)0xc1000000));
   KEXPECT_EQ(-1, tcsetattr(-5, TCSANOW, &t));
   KEXPECT_EQ(EBADF, errno);
   KEXPECT_EQ(-1, tcsetattr(fd, 55, &t));
   KEXPECT_EQ(EINVAL, errno);
-  KEXPECT_EQ(-1, tcsetattr(fd, TCSANOW, NULL));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, tcsetattr(fd, TCSANOW, (struct termios*)0x1fff));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, tcsetattr(fd, TCSANOW, (struct termios*)0xc1000000));
-  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_SIGNAL(SIGSEGV, tcsetattr(fd, TCSANOW, NULL));
+  KEXPECT_SIGNAL(SIGSEGV, tcsetattr(fd, TCSANOW, (struct termios*)0x1fff));
+  KEXPECT_SIGNAL(SIGSEGV, tcsetattr(fd, TCSANOW, (struct termios*)0xc1000000));
 
   KEXPECT_EQ(0, close(fd));
 }
@@ -138,19 +131,15 @@ static void rlimit_test(void) {
   KEXPECT_EQ(EINVAL, errno);
   KEXPECT_EQ(-1, getrlimit(100, &rl));
   KEXPECT_EQ(EINVAL, errno);
-  KEXPECT_EQ(-1, getrlimit(RLIMIT_NOFILE, NULL));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, getrlimit(100, (struct rlimit*)0x1fff));
-  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_SIGNAL(SIGSEGV, getrlimit(RLIMIT_NOFILE, NULL));
+  KEXPECT_SIGNAL(SIGSEGV, getrlimit(100, (struct rlimit*)0x1fff));
 
   KEXPECT_EQ(-1, setrlimit(-5, &rl));
   KEXPECT_EQ(EINVAL, errno);
   KEXPECT_EQ(-1, setrlimit(100, &rl));
   KEXPECT_EQ(EINVAL, errno);
-  KEXPECT_EQ(-1, setrlimit(RLIMIT_NOFILE, NULL));
-  KEXPECT_EQ(EFAULT, errno);
-  KEXPECT_EQ(-1, setrlimit(100, (struct rlimit*)0x1fff));
-  KEXPECT_EQ(EFAULT, errno);
+  KEXPECT_SIGNAL(SIGSEGV, setrlimit(RLIMIT_NOFILE, NULL));
+  KEXPECT_SIGNAL(SIGSEGV, setrlimit(100, (struct rlimit*)0x1fff));
 }
 
 void misc_syscall_test(void) {

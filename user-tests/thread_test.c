@@ -511,8 +511,9 @@ static void send_signal_to_thread_test(void) {
   KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
   bad_id._id = 10000;  // In theory this could actually be one of the above IDs
   KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
-  KEXPECT_ERRNO(EFAULT, apos_thread_kill(NULL, 0));
-  KEXPECT_ERRNO(EFAULT, apos_thread_kill((const apos_uthread_id_t*)0x12345, 0));
+  KEXPECT_SIGNAL(SIGSEGV, apos_thread_kill(NULL, 0));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 apos_thread_kill((const apos_uthread_id_t*)0x12345, 0));
 
   // Despite all the above tests, the threads should not have progressed.
   for (int i = 0; i < 3; ++i) sleep_ms(1);
@@ -582,8 +583,8 @@ static void self_test(void) {
   KEXPECT_EQ(0, sigprocmask(SIG_SETMASK, &old_set, NULL));
 
   KTEST_BEGIN("apos_thread_self(): invalid arguments");
-  KEXPECT_ERRNO(EFAULT, apos_thread_self(NULL));
-  KEXPECT_ERRNO(EFAULT, apos_thread_self((apos_uthread_id_t*)0x12345));
+  KEXPECT_SIGNAL(SIGSEGV, apos_thread_self(NULL));
+  KEXPECT_SIGNAL(SIGSEGV, apos_thread_self((apos_uthread_id_t*)0x12345));
 }
 
 void thread_test(void) {
