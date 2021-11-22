@@ -51,6 +51,10 @@ static void socket_unix_test(void) {
   KTEST_BEGIN("socket(AF_UNIX): connect test");
   int s1 = socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(s1, 0);
+  struct sockaddr_un addr_client;
+  addr_client.sun_family = AF_UNIX;
+  strcpy(addr_client.sun_path, "_socket_client");
+  KEXPECT_EQ(0, bind(s1, (struct sockaddr*)&addr_client, sizeof(addr_client)));
   KEXPECT_EQ(0, connect(s1, (struct sockaddr*)&addr, sizeof(addr)));
 
   KTEST_BEGIN("socket(AF_UNIX): accept test");
@@ -58,6 +62,8 @@ static void socket_unix_test(void) {
   socklen_t addr_len = sizeof(addr);
   int s2 = accept(sock, (struct sockaddr*)&addr, &addr_len);
   KEXPECT_GE(s2, 0);
+  KEXPECT_EQ(AF_UNIX, addr.sun_family);
+  KEXPECT_STREQ("_socket_client", addr.sun_path);
 
   KTEST_BEGIN("socket(AF_UNIX): read/write test");
   KEXPECT_EQ(3, write(s1, "abc", 3));
@@ -75,6 +81,7 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(0, read(s2, buf, 10));
   KEXPECT_EQ(0, close(s1));
   KEXPECT_EQ(0, close(s2));
+  KEXPECT_EQ(0, unlink("_socket_client"));
 
   KTEST_BEGIN("accept(): NULL buffer parameters");
   connect_and_close("_socket_bind");
@@ -98,12 +105,19 @@ static void socket_unix_test(void) {
   KEXPECT_SIGNAL(SIGSEGV,
                  accept(sock, (struct sockaddr*)&addr, (socklen_t*)0x123));
 
-  // TODO(aoates): update accept_wrapper() so this also generates SIGSEGV.
-  KEXPECT_ERRNO(EFAULT, accept(sock, (struct sockaddr*)0x123, &addr_len));
+  connect_and_close("_socket_bind");
+  KEXPECT_SIGNAL(SIGSEGV, accept(sock, (struct sockaddr*)0x123, &addr_len));
 
   connect_and_close("_socket_bind");
   KEXPECT_SIGNAL(SIGSEGV,
                  accept(sock, (struct sockaddr*)0x123, (socklen_t*)0x123));
+
+  addr_len = INT_MAX;
+  KEXPECT_ERRNO(ENOMEM, accept(sock, (struct sockaddr*)&addr, &addr_len));
+  addr_len = 0;
+  KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
+  addr_len = -1;
+  KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
 
   KTEST_BEGIN("connect(): bad buffer parameters");
   result = connect(sock, NULL, 0);

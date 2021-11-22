@@ -44,11 +44,11 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   // Everything is checked but the 'addr' argument.  Do that now.
   struct sockaddr* KERNEL_addr = 0x0;
 
-  if (addr_len != NULL) {
-    const int CHECK_addr = syscall_verify_buffer(
-        addr, *addr_len, 1 /* is_write */, 1 /* allow_null */);
-    if (CHECK_addr < 0) return CHECK_addr;
-  } else {
+  if (addr_len != NULL && (size_t)(*addr_len) > UINT32_MAX / 2) {
+    return -EINVAL;
+  }
+
+  if (addr_len == NULL) {
     // If the length is NULL, ignore the addr buffer.
     addr = NULL;
   }
@@ -58,9 +58,12 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
     return -ENOMEM;
   }
 
-  const int result = net_accept(socket, KERNEL_addr, addr_len);
+  int result = net_accept(socket, KERNEL_addr, addr_len);
 
-  if (addr) kmemcpy(addr, KERNEL_addr, *addr_len);
+  if (addr) {
+    int copy_result = syscall_copy_to_user(KERNEL_addr, addr, *addr_len);
+    if (copy_result) result = copy_result;
+  }
   if (KERNEL_addr) kfree((void*)KERNEL_addr);
 
   return result;
