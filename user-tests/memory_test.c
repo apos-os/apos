@@ -143,8 +143,52 @@ static void mmap_read_errors_test(void) {
   KEXPECT_EQ(0, unlink("_memory_test_dummy_file"));
 }
 
+// Stolen from i586's memory layout.
+#define B32_MEM_LAST_USER_MAPPABLE_PAGE 0xBFFFF000
+#define B32_MEM_LAST_USER_MAPPABLE_ADDR 0xBFFFFFFF
+#define B32_MEM_LAST_MAPPABLE_ADDR      0xFFFFFFFF
+
+static void basic_memory_limits_test(void) {
+  // Some basic tests for overflow of lengths.
+  KTEST_BEGIN("Basic syscall memory limits tests");
+  int fd = open("_memory_limits", O_CREAT | O_RDWR | O_EXCL, S_IRWXU);
+  KEXPECT_GE(fd, 0);
+
+  KEXPECT_EQ(5, write(fd, "abcde", 5));
+
+  void* addr1 = mmap((void*)B32_MEM_LAST_USER_MAPPABLE_PAGE, 4096,
+                     PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  KEXPECT_NE(NULL, addr1);
+
+  KEXPECT_SIGNAL(SIGSEGV, read(fd, (void*)(B32_MEM_LAST_MAPPABLE_ADDR), 1));
+  KEXPECT_EQ(0, lseek(fd, 0, SEEK_SET));
+  KEXPECT_SIGNAL(SIGSEGV, read(fd, (void*)(B32_MEM_LAST_MAPPABLE_ADDR), 5));
+  KEXPECT_EQ(0, lseek(fd, 0, SEEK_SET));
+  KEXPECT_EQ(1, read(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 1));
+  KEXPECT_EQ(0, lseek(fd, 0, SEEK_SET));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 read(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 2));
+  KEXPECT_EQ(0, lseek(fd, 0, SEEK_SET));
+  KEXPECT_ERRNO(ENOMEM, read(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR),
+                             B32_MEM_LAST_MAPPABLE_ADDR -
+                                 B32_MEM_LAST_USER_MAPPABLE_ADDR + 1));
+  KEXPECT_SIGNAL(SIGSEGV, write(fd, (void*)(B32_MEM_LAST_MAPPABLE_ADDR), 1));
+  KEXPECT_SIGNAL(SIGSEGV, write(fd, (void*)(B32_MEM_LAST_MAPPABLE_ADDR), 5));
+  KEXPECT_EQ(1, write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 1));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 2));
+  KEXPECT_ERRNO(ENOMEM, write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR),
+                              B32_MEM_LAST_MAPPABLE_ADDR -
+                                  B32_MEM_LAST_USER_MAPPABLE_ADDR + 1));
+
+  KEXPECT_EQ(0, close(fd));
+  KEXPECT_EQ(0, unlink("_memory_limits"));
+  KEXPECT_EQ(0, munmap(addr1, 4096));
+}
+
 void memory_test(void) {
   KTEST_SUITE_BEGIN("basic memory tests");
   mmap_test();
   mmap_read_errors_test();
+  basic_memory_limits_test();
 }
