@@ -169,7 +169,10 @@ static void socket_unix_test(void) {
                                    (socklen_t*)INT_MAX));
 
   socklen_t len = INT_MAX;
-  KEXPECT_ERRNO(EFAULT,
+  KEXPECT_ERRNO(ENOMEM,
+                recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len));
+  len = -1;
+  KEXPECT_ERRNO(EINVAL,
                 recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len));
 
   // NULL addr should be allowed.
@@ -179,9 +182,8 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(ENOTCONN, e);
 
-  // TODO(aoates): update recvfrom wrapper to generate SIGSEGV here.
-  KEXPECT_ERRNO(EFAULT,
-                recvfrom(sock, buf, 10, 0, (struct sockaddr*)0x123, &len));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 recvfrom(sock, buf, 10, 0, (struct sockaddr*)0x123, &len));
 
   KEXPECT_ERRNO(ENOMEM, recvfrom(sock, buf, INT_MAX, 0, NULL, 0));
 
