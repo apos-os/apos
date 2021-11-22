@@ -27,6 +27,10 @@
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
 
+#define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
+#define KTHREAD_STACK_SIZE \
+  (ARCH_KTHREAD_BASE_STACK_SIZE + KTHREAD_STACK_PROTECT_LEN)
+
 typedef enum {
   KTHREAD_RUNNING = 0,    // Currently running.
   KTHREAD_PENDING = 1,    // Waiting on a run queue of some sort.

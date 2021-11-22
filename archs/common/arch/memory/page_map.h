@@ -48,6 +48,11 @@
 void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
                             mem_access_t access, int flags);
 
+// As above, but change the protection, access, and flags of an existing mapping
+// (not changing the actual physical address mapping).
+void page_frame_remap_virtual(addr_t virt, int prot, mem_access_t access,
+                              int flags);
+
 // Removes the mapping for the given virtual address from the currently-loaded
 // page table (by marking it non-present), if it exists.
 //

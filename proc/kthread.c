@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_map.h"
 #include "arch/proc/kthread.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -119,10 +120,15 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   // Touch each page of the stack to make sure it's paged in.  If we don't do
   // this, when we try to use the stack, we'll cause a page fault, which will in
   // turn cause a double (then triple) fault when IT tries to use the stack.
+  _Static_assert(KTHREAD_STACK_SIZE % PAGE_SIZE == 0, "Bad KTHREAD_STACK_SIZE");
   for (addr_t i = 0; i < KTHREAD_STACK_SIZE / PAGE_SIZE; ++i) {
     *((uint8_t*)stack + i * PAGE_SIZE) = 0xAA;
   }
   *((uint8_t*)stack + KTHREAD_STACK_SIZE - 1) = 0xAA;
+
+  // Explicitly make the bottom page of the stack read-only for protection.
+  page_frame_remap_virtual((addr_t)stack, MEM_PROT_READ, MEM_ACCESS_KERNEL_ONLY,
+                           MEM_GLOBAL);
 
   thread->stack = stack;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
@@ -144,6 +150,9 @@ void kthread_destroy(kthread_t thread) {
   kmemset(&thread->context, 0xAB, sizeof(kthread_arch_context_t));
   thread->state = KTHREAD_DESTROYED;
   if (thread->stack) {
+    page_frame_remap_virtual((addr_t)thread->stack,
+                             MEM_PROT_READ | MEM_PROT_WRITE,
+                             MEM_ACCESS_KERNEL_ONLY, MEM_GLOBAL);
     kfree(thread->stack);
     thread->stack = 0x0;
   }
