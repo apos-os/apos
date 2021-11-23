@@ -356,6 +356,33 @@ static void unpinned_mapping_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_shadow_obj_test"));
 }
 
+static void anon_helper1(void* arg) {
+  // One that we read first, then write; another we just write.
+  KEXPECT_EQ(0, *(uint32_t*)(SHARED_ADDR1));
+  *(uint32_t*)(SHARED_ADDR1) = 1;
+  *(uint32_t*)(SHARED_ADDR2) = 2;
+}
+
+// As above, but test handling of shared anonymous mappings (which potentially
+// have the same issue in terms of anonymous pages being dropped).
+static void unpinned_anon_mapping_test(void) {
+  KTEST_BEGIN("fork() unpinned shared anonymous mapping test");
+  void* addr;
+  KEXPECT_EQ(0,
+             do_mmap((void*)SHARED_MAP_BASE, MAP_LENGTH, PROT_ALL,
+                     KMAP_FIXED | KMAP_ANONYMOUS | KMAP_SHARED, -1, 0, &addr));
+
+  kpid_t child_pid = proc_fork(&anon_helper1, NULL);
+  KEXPECT_GE(child_pid, 0);
+  KEXPECT_EQ(child_pid, proc_wait(NULL));
+
+  // We should still see their writes.
+  block_cache_clear_unpinned();
+  KEXPECT_EQ(1, *(uint32_t*)(SHARED_ADDR1));
+  KEXPECT_EQ(2, *(uint32_t*)(SHARED_ADDR2));
+  KEXPECT_EQ(0, do_munmap((void*)SHARED_MAP_BASE, MAP_LENGTH));
+}
+
 // TODO(aoates): test fd and cwd forking.
 
 void fork_test(void) {
@@ -368,5 +395,6 @@ void fork_test(void) {
   multi_child_test();
   mapping_test();
   unpinned_mapping_test();
+  unpinned_anon_mapping_test();
   block_cache_log_stats();
 }
