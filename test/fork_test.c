@@ -165,10 +165,10 @@ static void multi_child_test(void) {
 }
 
 // Addresses of various mappings created in the parent and child processes.
-#define MAP_LENGTH (3 * PAGE_SIZE)
+#define MAP_LENGTH (6 * PAGE_SIZE)
 #define SHARED_MAP_BASE 0x5000
-#define PRIVATE_MAP_BASE 0xA000
-#define SEPARATE_MAP_BASE 0x10000
+#define PRIVATE_MAP_BASE 0x15000
+#define SEPARATE_MAP_BASE 0x25000
 
 #define SHARED_ADDR1 (SHARED_MAP_BASE + 100)
 #define SHARED_ADDR2 (SHARED_MAP_BASE + 100 + PAGE_SIZE)
@@ -177,6 +177,9 @@ static void multi_child_test(void) {
 #define PRIVATE_ADDR1 (PRIVATE_MAP_BASE + 200)
 #define PRIVATE_ADDR2 (PRIVATE_MAP_BASE + 200 + PAGE_SIZE)
 #define PRIVATE_ADDR3 (PRIVATE_MAP_BASE + 200 + 2 * PAGE_SIZE)
+#define PRIVATE_ADDR4 (PRIVATE_MAP_BASE + 200 + 3 * PAGE_SIZE)
+#define PRIVATE_ADDR5 (PRIVATE_MAP_BASE + 200 + 4 * PAGE_SIZE)
+#define PRIVATE_ADDR6 (PRIVATE_MAP_BASE + 200 + 5 * PAGE_SIZE)
 
 #define SEPARATE_ADDR1 (SEPARATE_MAP_BASE + 300)
 #define SEPARATE_ADDR2 (SEPARATE_MAP_BASE + 300 + PAGE_SIZE)
@@ -196,6 +199,8 @@ static void child_func(void* arg) {
   KEXPECT_EQ(4, *(uint32_t*)PRIVATE_ADDR1);
   KEXPECT_EQ(5, *(uint32_t*)PRIVATE_ADDR2);
   KEXPECT_EQ(6, *(uint32_t*)PRIVATE_ADDR3);
+  KEXPECT_EQ(11, *(uint32_t*)PRIVATE_ADDR4);
+  KEXPECT_EQ(12, *(uint32_t*)PRIVATE_ADDR5);
 
   // Write some values into the mappings.
   *(uint32_t*)(SHARED_ADDR1) = 10;
@@ -204,6 +209,7 @@ static void child_func(void* arg) {
   *(uint32_t*)(PRIVATE_ADDR1) = 40;
   *(uint32_t*)(PRIVATE_ADDR2) = 50;
   *(uint32_t*)(PRIVATE_ADDR3) = 60;
+  *(uint32_t*)(PRIVATE_ADDR5) = 120;
 
   // Make a new mapping that shouldn't be shared in the child.
   make_separate_mapping();
@@ -222,6 +228,9 @@ static void child_func(void* arg) {
   KEXPECT_EQ(40, *(uint32_t*)PRIVATE_ADDR1);
   KEXPECT_EQ(50, *(uint32_t*)PRIVATE_ADDR2);
   KEXPECT_EQ(60, *(uint32_t*)PRIVATE_ADDR3);
+  KEXPECT_EQ(11, *(uint32_t*)PRIVATE_ADDR4);
+  KEXPECT_EQ(120, *(uint32_t*)PRIVATE_ADDR5);
+  KEXPECT_EQ(13, *(uint32_t*)PRIVATE_ADDR6);
   KEXPECT_EQ(70, *(uint32_t*)SEPARATE_ADDR1);
   KEXPECT_EQ(80, *(uint32_t*)SEPARATE_ADDR2);
   KEXPECT_EQ(90, *(uint32_t*)SEPARATE_ADDR3);
@@ -245,10 +254,23 @@ static void mapping_test(void) {
   *(uint32_t*)(PRIVATE_ADDR1) = 4;
   *(uint32_t*)(PRIVATE_ADDR2) = 5;
   *(uint32_t*)(PRIVATE_ADDR3) = 6;
+  *(uint32_t*)(PRIVATE_ADDR4) = 11;
+  *(uint32_t*)(PRIVATE_ADDR5) = 12;
+  *(uint32_t*)(PRIVATE_ADDR6) = 13;
 
   // Fork.
   kpid_t child_pid = proc_fork(&child_func, (void*)0xABCD);
   KEXPECT_GE(child_pid, 0);
+
+  // Update one of the mappings _post-fork_.
+  *(uint32_t*)(PRIVATE_ADDR4) = 111;
+
+  // Read a mapping post-fork, _then_ update it.
+  KEXPECT_EQ(12, *(uint32_t*)PRIVATE_ADDR5);
+  *(uint32_t*)(PRIVATE_ADDR5) = 1212;
+
+  // A third mapping that we update, but the child doesn't read until later.
+  *(uint32_t*)(PRIVATE_ADDR6) = 1313;
 
   // Make a new mapping that shouldn't be shared in the child.
   make_separate_mapping();
@@ -267,6 +289,8 @@ static void mapping_test(void) {
   KEXPECT_EQ(4, *(uint32_t*)PRIVATE_ADDR1);
   KEXPECT_EQ(5, *(uint32_t*)PRIVATE_ADDR2);
   KEXPECT_EQ(6, *(uint32_t*)PRIVATE_ADDR3);
+  KEXPECT_EQ(111, *(uint32_t*)PRIVATE_ADDR4);
+  KEXPECT_EQ(1212, *(uint32_t*)PRIVATE_ADDR5);
   KEXPECT_EQ(7, *(uint32_t*)SEPARATE_ADDR1);
   KEXPECT_EQ(8, *(uint32_t*)SEPARATE_ADDR2);
   KEXPECT_EQ(9, *(uint32_t*)SEPARATE_ADDR3);

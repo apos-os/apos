@@ -289,6 +289,27 @@ int vm_fork_address_space_into(process_t* target_proc) {
         // TODO(aoates): just make the current mappings read-only.
         page_frame_unmap_virtual_range(
             source_area->vm_base, source_area->vm_length);
+
+        // Put back all existing entries so that the pages table matches the
+        // current memory mappings.  This would not be necessariy if we simply
+        // made them read-only/COW.
+        for (size_t i = 0; i < source_area->vm_length / PAGE_SIZE; ++i) {
+          if (source_area->pages[i]) {
+            // TODO(aoates): track the dirty bit better than just assuming
+            // anything writable is dirty).
+            // TODO(aoates): ensure this (write flushing) is fully tested when
+            // it's observable (when swap is implemented, I think) --- without
+            // swap, writes to shadow objects will never be flushed anywhere.
+            bool needs_flush = source_area->prot & MEM_PROT_WRITE;
+            int result =
+                block_cache_put(source_area->pages[i],
+                                needs_flush ? BC_FLUSH_ASYNC : BC_FLUSH_NONE);
+            if (result) {
+              klogfm(KL_PAGE_FAULT, WARNING, "Unable to put bc_entry\n");
+            }
+            source_area->pages[i] = NULL;
+          }
+        }
       } else {
         target_area->memobj = source_area->memobj;
         target_area->memobj->ops->ref(target_area->memobj);
