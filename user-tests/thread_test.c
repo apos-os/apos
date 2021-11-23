@@ -34,9 +34,13 @@ static void basic_thread_test(void) {
   apos_uthread_id_t thread;
   pid_t child = fork();
   if (child == 0) {
+    thread_stack_ptr = NULL;
     assert(0 == apos_thread_create(&thread, &thread_stack[9999],
                                    &basic_thread_test_tramp_fn));
-    for (int i = 0; i < 3; ++i) sleep_ms(10);
+    for (int i = 0; i < 10; ++i) {
+      sleep_ms(10);
+      if (thread_stack_ptr != NULL) break;
+    }
     assert(thread_stack_ptr == (void*)((size_t)&thread_stack + 9999));
     exit(0);
   }
