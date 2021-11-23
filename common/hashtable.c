@@ -36,7 +36,7 @@ static inline uint32_t hash(htbl_t* tbl, uint32_t key) {
   return hash_num_buckets(tbl->num_buckets, key);
 }
 
-static void resize_table(htbl_t* tbl, int new_size) {
+void htbl_resize(htbl_t* tbl, int new_size) {
   htbl_entry_t** new_buckets =
       (htbl_entry_t**)kmalloc(sizeof(htbl_entry_t*) * new_size);
   if (!new_buckets) return;
@@ -66,7 +66,7 @@ static void resize_table(htbl_t* tbl, int new_size) {
 static void maybe_grow(htbl_t* tbl) {
   if (tbl->num_entries >= tbl->num_buckets * GROW_THRESHOLD) {
     const int new_size = tbl->num_buckets * GROW_RATIO;
-    resize_table(tbl, new_size);
+    htbl_resize(tbl, new_size);
   }
 }
 
@@ -151,16 +151,20 @@ int htbl_remove(htbl_t* tbl, uint32_t key) {
 
 void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*),
                   void* arg) {
+  int counter = 0;
   for (int i = 0; i < tbl->num_buckets; ++i) {
     htbl_entry_t* e = tbl->buckets[i];
     while (e) {
+      counter++;
       func(arg, e->key, e->value);
       e = e->next;
     }
   }
+  KASSERT_DBG(counter == tbl->num_entries);
 }
 
 void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg) {
+  int counter = tbl->num_entries;
   for (int i = 0; i < tbl->num_buckets; ++i) {
     while (tbl->buckets[i]) {
       htbl_entry_t* e = tbl->buckets[i];
@@ -168,9 +172,33 @@ void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg) {
       tbl->num_entries--;
       dtor(arg, e->key, e->value);
       kfree(e);
+      counter--;
     }
   }
   // TODO(aoates): should we shrink the table back down?
+  KASSERT_DBG(counter == 0);
+}
+
+int htbl_filter(htbl_t* tbl, bool (*pred)(void*, uint32_t, void*), void* arg) {
+  int removed = 0;
+  for (int i = 0; i < tbl->num_buckets; ++i) {
+    htbl_entry_t** prev_ptr = &tbl->buckets[i];
+    htbl_entry_t* e = tbl->buckets[i];
+    while (e) {
+      bool result = pred(arg, e->key, e->value);
+      if (!result) {
+        removed++;
+        *prev_ptr = e->next;
+        tbl->num_entries--;
+        kfree(e);
+      } else {
+        prev_ptr = &e->next;
+      }
+      e = *prev_ptr;
+    }
+  }
+  // TODO(aoates): should we shrink the table back down?
+  return removed;
 }
 
 int htbl_size(htbl_t* tbl) {
