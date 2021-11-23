@@ -26,6 +26,11 @@
 
 typedef struct {
   memobj_t* subobj;
+  // List of parents, if part of a shadow object tree.  In practice, it have
+  // at most two parents.
+  list_t parents;
+  // Link on child's parent list.
+  list_link_t child_parent_link;
   // All extant block cache entries.  Map {offset -> bc_entry_t*}.  Each has an
   // additional pin on it to ensure it's kept resident even if not currently in
   // use by a process.
@@ -115,6 +120,15 @@ static void shadow_unref(memobj_t* obj) {
 
   // The block cache has finished with us, finish cleanup.
   if (new_refcount == 0) {
+    if (data->subobj->type == MEMOBJ_SHADOW) {
+      kspin_lock(&data->subobj->lock);
+      shadow_data_t* child_data = (shadow_data_t*)data->subobj->data;
+      KASSERT_DBG(
+          list_link_on_list(&child_data->parents, &data->child_parent_link));
+      list_remove(&child_data->parents, &data->child_parent_link);
+      kspin_unlock(&data->subobj->lock);
+    }
+
     data->subobj->ops->unref(data->subobj);
     htbl_cleanup(&data->entries);
     kfree(obj->data);
@@ -215,10 +229,18 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   shadow_obj->ops = &g_shadow_ops;
   shadow_data_t* data = (shadow_data_t*)kmalloc(sizeof(shadow_data_t));
   data->subobj = subobj;
+  data->parents = LIST_INIT;
+  data->child_parent_link = LIST_LINK_INIT;
   htbl_init(&data->entries, 5);
   data->cleaning_up = false;
   shadow_obj->data = data;
 
   subobj->ops->ref(subobj);
+  if (subobj->type == MEMOBJ_SHADOW) {
+    kspin_lock(&subobj->lock);
+    shadow_data_t* child_data = (shadow_data_t*)subobj->data;
+    list_push(&child_data->parents, &data->child_parent_link);
+    kspin_unlock(&subobj->lock);
+  }
   return shadow_obj;
 }
