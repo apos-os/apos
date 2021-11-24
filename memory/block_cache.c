@@ -415,18 +415,23 @@ static int block_cache_get_existing(bc_entry_internal_t* entry) {
   return 0;
 }
 
-// Get or create a new entry.
+// Get or create a new entry.  If a block is supplied, and a new entry is
+// created, then that block is used unchanged.  Otherwise, a new block is
+// created and read from the object.
 static int block_cache_get_internal(memobj_t* obj, int offset,
-                                    bc_entry_t** entry_out) {
+                                    bc_entry_t** entry_out,
+                                    void* existing_block) {
   kmutex_assert_is_held(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
   int result;
   if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
-    // Get a new free block, fill it, and return it.
-    void* block = get_free_block();
+    void* block = existing_block;
     if (!block) {
-      return -ENOMEM;
+      block = get_free_block();
+      if (!block) {
+        return -ENOMEM;
+      }
     }
 
     g_size++;
@@ -462,10 +467,13 @@ static int block_cache_get_internal(memobj_t* obj, int offset,
     // `obj`, so it will stay live.
     obj->ops->ref(obj);
 
-    // Read data from the block device into the cache.
-    // Note: this may block.
-    KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
-    result = obj->ops->read_page(obj, offset, entry->pub.block);
+    result = 0;
+    if (!existing_block) {
+      // Read data from the block device into the cache.
+      // Note: this may block.
+      KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
+      result = obj->ops->read_page(obj, offset, entry->pub.block);
+    }
     kmutex_lock(&g_mu);
 
     entry->error = result;
@@ -511,7 +519,8 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
 
   // While freeing cache space above, someone else may have come along and
   // created the entry, so we need to check again.
-  int result = block_cache_get_internal(obj, offset, entry_out);
+  int result = block_cache_get_internal(obj, offset, entry_out,
+                                        /* existing_block= */ NULL);
   kmutex_unlock(&g_mu);
   return result;
 }
