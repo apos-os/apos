@@ -386,7 +386,7 @@ static void init_block_cache(void) {
 
 // Given an existing table entry, wait for it to be initialized (if applicable)
 // and add a pin.  Succeeds (returns 0) unless interrupted.
-static int block_cache_get_internal(bc_entry_internal_t* entry) {
+static int block_cache_get_existing(bc_entry_internal_t* entry) {
   kmutex_assert_is_held(&g_mu);
   entry->pin_count++;
   if (!entry->initialized) {
@@ -415,32 +415,17 @@ static int block_cache_get_internal(bc_entry_internal_t* entry) {
   return 0;
 }
 
-int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
-  if (!g_initialized) {
-    init_block_cache();
-  }
-
-  kmutex_lock(&g_mu);
+// Get or create a new entry.
+static int block_cache_get_internal(memobj_t* obj, int offset,
+                                    bc_entry_t** entry_out) {
+  kmutex_assert_is_held(&g_mu);
   const uint32_t h = obj_hash(obj, offset);
   void* tbl_value = 0x0;
-  if (htbl_get(&g_table, h, &tbl_value) != 0) {
-    if (g_size >= g_max_size) {
-      maybe_free_cache_space(g_size - g_max_size + 1);
-      if (g_size >= g_max_size) {
-        kmutex_unlock(&g_mu);
-        return -ENOMEM;
-      }
-    }
-  }
-
-  // While freeing cache space above, someone else may have come along and
-  // created the entry, so check again.
   int result;
   if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
     // Get a new free block, fill it, and return it.
     void* block = get_free_block();
     if (!block) {
-      kmutex_unlock(&g_mu);
       return -ENOMEM;
     }
 
@@ -496,14 +481,37 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
     }
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    result = block_cache_get_internal(entry);
+    result = block_cache_get_existing(entry);
     if (result) {
-      kmutex_unlock(&g_mu);
       *entry_out = NULL;
       return result;
     }
     *entry_out = &entry->pub;
   }
+  return result;
+}
+
+int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
+  if (!g_initialized) {
+    init_block_cache();
+  }
+
+  kmutex_lock(&g_mu);
+  const uint32_t h = obj_hash(obj, offset);
+  void* tbl_value = 0x0;
+  if (htbl_get(&g_table, h, &tbl_value) != 0) {
+    if (g_size >= g_max_size) {
+      maybe_free_cache_space(g_size - g_max_size + 1);
+      if (g_size >= g_max_size) {
+        kmutex_unlock(&g_mu);
+        return -ENOMEM;
+      }
+    }
+  }
+
+  // While freeing cache space above, someone else may have come along and
+  // created the entry, so we need to check again.
+  int result = block_cache_get_internal(obj, offset, entry_out);
   kmutex_unlock(&g_mu);
   return result;
 }
@@ -520,7 +528,7 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
     *entry_out = 0x0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    int result = block_cache_get_internal(entry);
+    int result = block_cache_get_existing(entry);
     if (result) {
       *entry_out = NULL;
       return result;
