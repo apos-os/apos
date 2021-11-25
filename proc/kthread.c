@@ -359,6 +359,8 @@ void kmutex_init(kmutex_t* m) {
 }
 
 void kmutex_lock(kmutex_t* m) {
+  // We should never be blocking if we're holding a spinlock.
+  KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
   PUSH_AND_DISABLE_INTERRUPTS();
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.
