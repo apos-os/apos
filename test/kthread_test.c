@@ -27,6 +27,9 @@
 #include "proc/spinlock.h"
 #include "test/ktest.h"
 
+// Enable this to run a test that catches a deadlock (and panics the kernel).
+#define RUN_DEADLOCK_DETECTION_FALIURE_TEST 0
+
 // TODO(aoates): other things to test:
 //  * multiple threads join()'d onto one thread
 
@@ -1053,6 +1056,146 @@ static void notification_test(void) {
   KEXPECT_EQ(NULL, kthread_join(thread));
 }
 
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+static void* dldet_thread(void* arg) {
+  kmutex_t A, B, C;
+  const int kNumMus = KMUTEX_DEADLOCK_LRU_SIZE - 1;
+  kmutex_t mus[kNumMus];
+  kmutex_init(&A);
+  kmutex_init(&B);
+  kmutex_init(&C);
+  for (int i = 0; i < kNumMus; ++i) {
+    kmutex_init(&mus[i]);
+  }
+  // Test mutexes -- always locked in reverse order (so A is locked last, with
+  // all the rest as priors -- looking at the 'priors' set of A in the tests).
+  kthread_t me = kthread_current_thread();
+
+  // First test basic mutex held list maintenance.
+  KEXPECT_EQ(0, list_size(&me->mutexes_held));
+  kmutex_lock(&A);
+  KEXPECT_EQ(1, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &A.link));
+  kmutex_unlock(&A);
+  KEXPECT_EQ(0, list_size(&me->mutexes_held));
+  KEXPECT_FALSE(list_link_on_list(&me->mutexes_held, &A.link));
+  kmutex_lock(&B);
+  KEXPECT_EQ(1, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &B.link));
+  kmutex_unlock(&B);
+
+  // Neither should have a prior still.
+  KEXPECT_EQ(0, A.priors[0].id);
+  KEXPECT_EQ(0, B.priors[0].id);
+
+  // Lock B, then A.
+  kmutex_lock(&B);
+  kmutex_lock(&A);
+  KEXPECT_EQ(2, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &A.link));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &B.link));
+
+  KEXPECT_EQ(0, B.priors[0].id);
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(0, A.priors[1].id);
+  kmutex_unlock(&A);
+  kmutex_unlock(&B);
+
+  // Now sleep, then lock C, then A.  A should have both 'B' and 'C' in the
+  // priors set, with C with a higher LRU value.
+  ksleep(10);
+  kmutex_lock(&C);
+  kmutex_lock(&A);
+  KEXPECT_EQ(2, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &A.link));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &C.link));
+
+  KEXPECT_EQ(0, C.priors[0].id);
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(C.id, A.priors[1].id);
+  KEXPECT_EQ(0, A.priors[2].id);
+  KEXPECT_GT(A.priors[1].lru, A.priors[0].lru);
+  const apos_ms_t oldBlru = A.priors[0].lru;
+  const apos_ms_t oldClru = A.priors[1].lru;
+  kmutex_unlock(&A);
+  kmutex_unlock(&C);
+
+  // Now overflow the LRU and make sure we replace the oldest one first.
+  ksleep(10);
+  for (int i = 0; i < kNumMus - 1; ++i) {
+    kmutex_lock(&mus[i]);
+  }
+  kmutex_lock(&B);
+  kmutex_lock(&A);
+
+  // A's priors list should have been updated -- the LRU for B should now be
+  // higher than the one for C.
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(C.id, A.priors[1].id);
+  KEXPECT_NE(0, A.priors[2].id);
+  KEXPECT_GT(A.priors[0].lru, oldBlru);
+  KEXPECT_EQ(A.priors[1].lru, oldClru);
+  kmutex_unlock(&B);
+
+  ksleep(10);
+  // Lock one more mutex.  This should now evict C.
+  kmutex_unlock(&A);
+  kmutex_lock(&mus[kNumMus - 1]);
+  kmutex_lock(&A);
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(mus[kNumMus - 1].id, A.priors[1].id);  // not C
+  KEXPECT_GT(A.priors[0].lru, oldBlru);
+  KEXPECT_GT(A.priors[1].lru, A.priors[0].lru);
+  kmutex_unlock(&A);
+  kmutex_unlock(&mus[kNumMus - 1]);
+  for (int i = kNumMus - 2; i >= 0; --i) {
+    kmutex_unlock(&mus[i]);
+  }
+
+  KTEST_BEGIN("kmutex_t same-address deadlock detection test");
+  kmutex_init(&A);
+  kmutex_init(&B);
+  kmutex_lock(&B);
+  kmutex_lock(&A);
+  kmutex_unlock(&A);
+  kmutex_unlock(&B);
+
+  // Re-initialize B --- we should not trigger a deadlock detection, even though
+  // they're at the same address.
+  ksleep(10);
+  kmutex_init(&B);
+  kmutex_lock(&A);
+  kmutex_lock(&B);  // Should be OK --- new 'B' won't be in A's priors.
+  kmutex_unlock(&B);
+  kmutex_unlock(&A);
+
+  // If enabled, test an actual deadlock --- this will panic.
+  if (RUN_DEADLOCK_DETECTION_FALIURE_TEST) {
+    KTEST_BEGIN("kmutex_t actual deadlock");
+    kmutex_init(&A);
+    kmutex_init(&B);
+    kmutex_lock(&A);
+    kmutex_lock(&B);
+    kmutex_unlock(&B);
+    kmutex_unlock(&A);
+
+    kmutex_lock(&B);
+    kmutex_lock(&A);  // Should die here.
+    die("should NOT have gotten here");
+  }
+
+  return NULL;
+}
+
+static void deadlock_detection_test(void) {
+  KTEST_BEGIN("kmutex_t deadlock detection test");
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &dldet_thread, NULL));
+  scheduler_make_runnable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+#endif
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -1078,4 +1221,7 @@ void kthread_test(void) {
   wait_on_locked_test();
   disable_test();
   notification_test();
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  deadlock_detection_test();
+#endif
 }

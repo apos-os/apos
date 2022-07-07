@@ -96,6 +96,11 @@ struct kthread_data {
 
   // Link on the per-process thread list.
   list_link_t proc_threads_link;
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  // List of currently-held mutexes.
+  list_t mutexes_held;
+#endif
 };
 typedef struct kthread_data kthread_data_t;
 

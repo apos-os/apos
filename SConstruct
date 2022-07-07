@@ -44,6 +44,7 @@ FEATURES = [
   'USER_OS',
   'USER_TESTS',
   'KMALLOC_HEAP_PROFILE',
+  'KMUTEX_DEADLOCK_DETECTION',
 ]
 
 vars.Add(ListVariable('enable', 'features to force-enable', [], FEATURES))

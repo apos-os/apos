@@ -16,11 +16,13 @@
 
 #include "arch/memory/page_map.h"
 #include "arch/proc/kthread.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/list.h"
 #include "dev/interrupts.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
@@ -61,6 +63,9 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
   t->proc_threads_link = LIST_LINK_INIT;
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  t->mutexes_held = LIST_INIT;
+#endif
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -356,6 +361,17 @@ void kmutex_init(kmutex_t* m) {
   m->locked = 0;
   m->holder = 0x0;
   kthread_queue_init(&m->wait_queue);
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  // TODO(aoates): this could cause a false positive if we recreate mutexes
+  // quickly enough (such that IDs are reused).
+  m->id = fnv_hash_concat(fnv_hash_addr((addr_t)m), get_time_ms());
+  m->link = LIST_LINK_INIT;
+  for (int i = 0 ;i < KMUTEX_DEADLOCK_LRU_SIZE; ++i) {
+    m->priors[i].id = 0;
+    m->priors[i].lru = 0;
+  }
+#endif
 }
 
 void kmutex_lock(kmutex_t* m) {
@@ -375,9 +391,50 @@ void kmutex_lock(kmutex_t* m) {
   }
   KASSERT(m->locked == 1);
   POP_INTERRUPTS();
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  apos_ms_t now = get_time_ms();
+  FOR_EACH_LIST(link_iter, &kthread_current_thread()->mutexes_held) {
+    const kmutex_t* locked_mu = LIST_ENTRY(link_iter, kmutex_t, link);
+
+    // Check if this mutex is in the locked mutex's priors.
+    // TODO(aoates): if the LRU size needs to be increased, consider adding a
+    // bloom filter here for the fast path.
+    for (int i = 0; i < KMUTEX_DEADLOCK_LRU_SIZE; ++i) {
+      if (locked_mu->priors[i].id == m->id) {
+        klogfm(KL_PROC, FATAL,
+               "Possible mutex deadlock detected.  Mutex A (%xu) locked while "
+               "mutex B (%xu) held; previously B was locked while A was held\n",
+               m->id, locked_mu->id);
+      }
+    }
+
+    // Add the locked mutex to _this_ mutex's priors for future checks.
+    // TODO(aoates): do wraparound and start next LRU search at the next index
+    // to avoid O(n^2) insert behavior.
+    int lru_idx = 0;
+    apos_ms_t lru = m->priors[0].lru;
+    for (int i = 0; i < KMUTEX_DEADLOCK_LRU_SIZE; ++i) {
+      if (m->priors[i].id == locked_mu->id) {
+        lru_idx = i;  // Already in the priors set, just update the LRU time.
+        break;
+      } else if (m->priors[i].lru < lru) {
+        lru_idx = i;
+        lru = m->priors[i].lru;
+      }
+    }
+    m->priors[lru_idx].id = locked_mu->id;
+    m->priors[lru_idx].lru = now;
+  }
+
+  list_push(&kthread_current_thread()->mutexes_held, &m->link);
+#endif
 }
 
 static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  list_remove(&kthread_current_thread()->mutexes_held, &m->link);
+#endif
   PUSH_AND_DISABLE_INTERRUPTS();
 
   KASSERT(m->locked == 1);
