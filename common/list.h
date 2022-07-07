@@ -47,7 +47,7 @@
 // Helper macros to iterate over a list.  Example:
 //
 // list_t some_list;
-// FOR_EACH_LIST(&some_list, link_iter) {
+// FOR_EACH_LIST(link_iter, &some_list) {
 //   node_t* val = LIST_ENTRY(link_iter, node_t, link);
 //   klogf(val->x);
 // }
