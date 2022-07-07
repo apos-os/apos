@@ -25,6 +25,37 @@ static void basic_fnv_test(void) {
   KEXPECT_EQ(4218009092, fnv_hash(1));
   KEXPECT_EQ(3958272823, fnv_hash(2));
   KEXPECT_EQ(794109580, fnv_hash(12345678));
+
+  KEXPECT_EQ(0x9be17165, fnv_hash64(0));
+  KEXPECT_EQ(0x3e801244, fnv_hash64(1));
+  KEXPECT_EQ(0x2804678d, fnv_hash64(0x0807060504030201));
+
+  // TODO(endian): determine if this is proper behavior w.r.t. endianness and
+  // fix if not.  Should this be endian-agnostic?
+  uint32_t val32 = 0;
+  KEXPECT_EQ(1268118805, fnv_hash_array(&val32, sizeof(uint32_t)));
+  val32 = 1;
+  KEXPECT_EQ(4218009092, fnv_hash_array(&val32, sizeof(uint32_t)));
+  val32 = 2;
+  KEXPECT_EQ(3958272823, fnv_hash_array(&val32, sizeof(uint32_t)));
+  val32 = 12345678;
+  KEXPECT_EQ(794109580, fnv_hash_array(&val32, sizeof(uint32_t)));
+
+  uint64_t val64 = 0;
+  KEXPECT_EQ(0x9be17165, fnv_hash_array(&val64, sizeof(uint64_t)));
+  val64 = 1;
+  KEXPECT_EQ(0x3e801244, fnv_hash_array(&val64, sizeof(uint64_t)));
+  val64 = 0x0807060504030201;
+  KEXPECT_EQ(0x2804678d, fnv_hash_array(&val64, sizeof(uint64_t)));
+
+  KTEST_BEGIN("fnv_hash_addr(): basic test");
+#if ARCH_IS_64_BIT
+    addr_t addr = 0x12345678abcdef12;
+    KEXPECT_EQ(fnv_hash64(addr), fnv_hash_addr(addr));
+#else
+    addr_t addr = 0x12345678;
+    KEXPECT_EQ(fnv_hash(addr), fnv_hash_addr(addr));
+#endif
 }
 
 static void fnv_array_test(void) {

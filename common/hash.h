@@ -17,6 +17,9 @@
 
 #include <stdint.h>
 
+#include "common/config.h"
+#include "common/types.h"
+
 static const uint32_t kFNVOffsetBasis = 2166136261;
 static const uint32_t kFNVPrime = 16777619;
 
@@ -29,6 +32,27 @@ static inline uint32_t fnv_hash(uint32_t key) {
   h ^= ((key >> 16) & 0xFF);
   h *= kFNVPrime;
   h ^= ((key >> 24) & 0xFF);
+  h *= kFNVPrime;
+  return h;
+}
+
+static inline uint32_t fnv_hash64(uint64_t key) {
+  uint32_t h = kFNVOffsetBasis;
+  h ^= (key & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 8) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 16) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 24) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 32) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 40) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 48) & 0xFF);
+  h *= kFNVPrime;
+  h ^= ((key >> 56) & 0xFF);
   h *= kFNVPrime;
   return h;
 }
@@ -48,6 +72,14 @@ static inline uint32_t fnv_hash_concat(uint32_t a, uint32_t b) {
   buf[1] = b;
   return fnv_hash_array(buf, sizeof(uint32_t) * 2);
 }
+
+#if ARCH_IS_64_BIT
+_Static_assert(sizeof(addr_t) == sizeof(uint64_t), "bad addr_t size");
+#  define fnv_hash_addr fnv_hash64
+#else
+_Static_assert(sizeof(addr_t) == sizeof(uint32_t), "bad addr_t size");
+#  define fnv_hash_addr fnv_hash
+#endif
 
 // Compute the MD5 digest of the given buffer.
 void md5_hash(const void* buf, int buflen, uint8_t md5_out[16]);
