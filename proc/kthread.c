@@ -394,6 +394,7 @@ void kmutex_lock(kmutex_t* m) {
 
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   apos_ms_t now = get_time_ms();
+  int lru_search_start = 0;
   FOR_EACH_LIST(link_iter, &kthread_current_thread()->mutexes_held) {
     const kmutex_t* locked_mu = LIST_ENTRY(link_iter, kmutex_t, link);
 
@@ -410,13 +411,13 @@ void kmutex_lock(kmutex_t* m) {
     }
 
     // Add the locked mutex to _this_ mutex's priors for future checks.
-    // TODO(aoates): do wraparound and start next LRU search at the next index
-    // to avoid O(n^2) insert behavior.
-    int lru_idx = 0;
-    apos_ms_t lru = m->priors[0].lru;
-    for (int i = 0; i < KMUTEX_DEADLOCK_LRU_SIZE; ++i) {
-      if (m->priors[i].id == locked_mu->id) {
-        lru_idx = i;  // Already in the priors set, just update the LRU time.
+    int lru_idx = lru_search_start;
+    apos_ms_t lru = m->priors[lru_idx].lru;
+    for (int i_rel = 0; i_rel < KMUTEX_DEADLOCK_LRU_SIZE; ++i_rel) {
+      const int i = (lru_search_start + i_rel) % KMUTEX_DEADLOCK_LRU_SIZE;
+      if (m->priors[i].id == locked_mu->id || m->priors[i].id == 0) {
+        // Already in the priors set, or an empty slot.  No need to continue.
+        lru_idx = i;
         break;
       } else if (m->priors[i].lru < lru) {
         lru_idx = i;
@@ -425,6 +426,9 @@ void kmutex_lock(kmutex_t* m) {
     }
     m->priors[lru_idx].id = locked_mu->id;
     m->priors[lru_idx].lru = now;
+    // Next time, start the LRU search right after the current index, to avoid
+    // O(n^2) inserts for the common case.
+    lru_search_start = (lru_idx + 1) % KMUTEX_DEADLOCK_LRU_SIZE;
   }
 
   list_push(&kthread_current_thread()->mutexes_held, &m->link);
