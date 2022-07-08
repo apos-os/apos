@@ -142,13 +142,16 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
     return 0;
   } else {
     // First check if we have a copy of the page.
-    const int result = block_cache_lookup(obj, page_offset, entry_out);
+    int result = block_cache_lookup(obj, page_offset, entry_out);
     if (result) return result;
     if (*entry_out != 0x0) return 0;
 
     // Didn't find it, get (a read-only copy of) it from the subobj.
+    kmutex_lock(&data->shadow_lock);
     memobj_t* subobj = data->subobj;
-    return subobj->ops->get_page(subobj, page_offset, writable, entry_out);
+    result = subobj->ops->get_page(subobj, page_offset, writable, entry_out);
+    kmutex_unlock(&data->shadow_lock);
+    return result;
   }
 }
 
@@ -173,16 +176,21 @@ static int shadow_read_page(memobj_t* obj, int offset, void* buffer) {
 
   // Get a copy of the subobj's page and read into it.  We can't simply call
   // subobj->ops->read_page, because (for instance) if it were another shadow
-  // object, we wouldn't get it's own copy of the page.
+  // object, we wouldn't get its own copy of the page.
   shadow_data_t* data = (shadow_data_t*)obj->data;
+  kmutex_lock(&data->shadow_lock);
   memobj_t* subobj = data->subobj;
   bc_entry_t* entry = 0x0;
   int result =
       subobj->ops->get_page(subobj, offset, 0 /* read-only */, &entry);
-  if (result) return result;
+  if (result) {
+    kmutex_unlock(&data->shadow_lock);
+    return result;
+  }
 
   kmemcpy(buffer, entry->block, PAGE_SIZE);
   result = subobj->ops->put_page(subobj, entry, BC_FLUSH_NONE);
+  kmutex_unlock(&data->shadow_lock);
   return result;
 }
 
