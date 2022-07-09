@@ -26,6 +26,8 @@
 
 typedef struct {
   memobj_t* subobj;
+  // Lock for shadow-specific data.
+  kmutex_t shadow_lock;
   // List of parents, if part of a shadow object tree.  In practice, it have
   // at most two parents.
   list_t parents;
@@ -59,10 +61,11 @@ static memobj_ops_t g_shadow_ops = {
 
 static void shadow_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
-  kspin_lock(&obj->lock);
+  shadow_data_t* data = (shadow_data_t*)obj->data;
+  kmutex_lock(&data->shadow_lock);
   KASSERT(obj->refcount > 0);
   obj->refcount++;
-  kspin_unlock(&obj->lock);
+  kmutex_unlock(&data->shadow_lock);
 }
 
 static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
@@ -74,7 +77,7 @@ static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
 static void shadow_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
   shadow_data_t* data = (shadow_data_t*)obj->data;
-  kspin_lock(&obj->lock);
+  kmutex_lock(&data->shadow_lock);
   KASSERT(obj->refcount > 0);
 
   // Check if this is the last remaining refcount, other than our entries.
@@ -86,7 +89,7 @@ static void shadow_unref(memobj_t* obj) {
     data->cleaning_up = true;
     // The only remaining references are block cache entries; no one else can
     // reach the memobj and we can clean up.
-    kspin_unlock(&obj->lock);
+    kmutex_unlock(&data->shadow_lock);
     // Unpin all entries and clear the table.  We do this before decrementing
     // the refcount to ensure the memobj is not freed (we still hold a
     // reference).
@@ -108,7 +111,7 @@ static void shadow_unref(memobj_t* obj) {
           obj, errorname(-result));
     }
 
-    kspin_lock(&obj->lock);
+    kmutex_lock(&data->shadow_lock);
     // At this point we should still have at least one reference (this
     // thread's); if the above call failed, the BC entries may not have been
     // destroyed yet, in which case they will still hold references to this
@@ -116,17 +119,17 @@ static void shadow_unref(memobj_t* obj) {
     KASSERT_DBG(obj->refcount >= 1);
   }
   int new_refcount = --obj->refcount;
-  kspin_unlock(&obj->lock);
+  kmutex_unlock(&data->shadow_lock);
 
   // The block cache has finished with us, finish cleanup.
   if (new_refcount == 0) {
     if (data->subobj->type == MEMOBJ_SHADOW) {
-      kspin_lock(&data->subobj->lock);
       shadow_data_t* child_data = (shadow_data_t*)data->subobj->data;
+      kmutex_lock(&child_data->shadow_lock);
       KASSERT_DBG(
           list_link_on_list(&child_data->parents, &data->child_parent_link));
       list_remove(&child_data->parents, &data->child_parent_link);
-      kspin_unlock(&data->subobj->lock);
+      kmutex_unlock(&child_data->shadow_lock);
     }
 
     data->subobj->ops->unref(data->subobj);
@@ -149,7 +152,7 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
     // If this is the first time we're seeing this entry, track it and add an
     // extra pin to ensure it's not deleted.
     // TODO(aoates): handle this differently when swap is added.
-    kspin_lock(&obj->lock);
+    kmutex_lock(&data->shadow_lock);
     void* tbl_val;
     bool needs_pin = false;
     if (htbl_get(&data->entries, page_offset, &tbl_val) != 0) {
@@ -158,7 +161,7 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
     } else {
       KASSERT_DBG(tbl_val == *entry_out);
     }
-    kspin_unlock(&obj->lock);
+    kmutex_unlock(&data->shadow_lock);
 
     if (needs_pin) {
       // This can block, so must be called outside spinlock section.
@@ -229,6 +232,7 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   shadow_obj->ops = &g_shadow_ops;
   shadow_data_t* data = (shadow_data_t*)kmalloc(sizeof(shadow_data_t));
   data->subobj = subobj;
+  kmutex_init(&data->shadow_lock);
   data->parents = LIST_INIT;
   data->child_parent_link = LIST_LINK_INIT;
   htbl_init(&data->entries, 5);
@@ -237,10 +241,10 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
 
   subobj->ops->ref(subobj);
   if (subobj->type == MEMOBJ_SHADOW) {
-    kspin_lock(&subobj->lock);
     shadow_data_t* child_data = (shadow_data_t*)subobj->data;
+    kmutex_lock(&child_data->shadow_lock);
     list_push(&child_data->parents, &data->child_parent_link);
-    kspin_unlock(&subobj->lock);
+    kmutex_unlock(&child_data->shadow_lock);
   }
   return shadow_obj;
 }
