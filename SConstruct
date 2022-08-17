@@ -34,7 +34,7 @@ vars.Add('KSHELL_INITIAL_COMMAND',
 
 # List of modules that can be enabled/disabled.  All are enabled by default,
 # unless unsupported by the current architecture.
-FEATURES = [
+FEATURES_DEFAULT_ENABLED = [
   'ETHERNET',
   'EXT2',
   'TESTS',
@@ -44,11 +44,17 @@ FEATURES = [
   'USER_OS',
   'USER_TESTS',
   'KMALLOC_HEAP_PROFILE',
+]
+
+# As above, but features that are _disabled_ by default.
+FEATURES_DEFAULT_DISABLED = [
   'KMUTEX_DEADLOCK_DETECTION',
 ]
 
-vars.Add(ListVariable('enable', 'features to force-enable', [], FEATURES))
-vars.Add(ListVariable('disable', 'features to force-disable', [], FEATURES))
+ALL_FEATURES = FEATURES_DEFAULT_ENABLED + FEATURES_DEFAULT_DISABLED
+
+vars.Add(ListVariable('enable', 'features to force-enable', [], ALL_FEATURES))
+vars.Add(ListVariable('disable', 'features to force-disable', [], ALL_FEATURES))
 
 # base_env captures common parameters and configuration across _all_ target
 # types --- kernel code, user code, and native (build system) code.
@@ -70,8 +76,11 @@ _ValidateFeatures(base_env)
 
 # Insert non-disabled features into the environment (this can be overridden by
 # other SConscript files, in particular architecture-specific ones).
-for feature in FEATURES:
+for feature in FEATURES_DEFAULT_ENABLED:
   base_env.SetDefault(**{feature: feature not in base_env['disable']})
+
+for feature in FEATURES_DEFAULT_DISABLED:
+  base_env.SetDefault(**{feature: feature in base_env['enable']})
 
 base_env.SetDefault(BUILD_VARIANT_NAME = '%s-%s' %
     (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc'))
@@ -169,7 +178,7 @@ def DisableFeature(env, feature):
   This can be overridden by explicitly enabling the feature with the
   `enable=FOO` build option.
   """
-  assert(feature in FEATURES)
+  assert(feature in ALL_FEATURES)
   env.Replace(**{feature: feature in env['enable']})
 
 def kernel_program(env, target, source):
