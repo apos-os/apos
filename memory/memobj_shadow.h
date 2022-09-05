@@ -30,6 +30,7 @@
 
 // Public for testing.
 typedef struct {
+  memobj_t* me;
   memobj_t* subobj;
   // Lock for shadow-specific data.
   kmutex_t shadow_lock;

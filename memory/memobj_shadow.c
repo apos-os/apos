@@ -22,6 +22,17 @@
 #include "memory/memobj.h"
 #include "memory/memobj_shadow.h"
 #include "memory/memory.h"
+#include "proc/kthread.h"
+
+#define SHADOW_CHAIN_MAX 100
+
+// Global lock that protects all shadow chain manipulations.  Possible point of
+// contention, but much much simpler than trying to get the fine-grained locking
+// right given different traversal strategies.  Could be easily sharded.
+static kmutex_t g_shadow_chain_lock;
+// TODO(aoates): replace bool+spinlock with something better.
+static bool g_shadow_inited = false;
+static kspinlock_t g_shadow_inited_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 
 static void shadow_ref(memobj_t* obj);
 static void shadow_unref(memobj_t* obj);
@@ -55,9 +66,55 @@ static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
   block_cache_put(entry, BC_FLUSH_NONE);
 }
 
+// Add the given entry to the parent's object's table if it's not currently in
+// there.  Returns true if added.
+static void maybe_add_to_entry_table(bc_entry_t* entry) {
+  shadow_data_t* data = (shadow_data_t*)entry->obj->data;
+  kmutex_assert_is_held(&data->shadow_lock);
+  void* tbl_val;
+  // If this is the first time we're seeing this entry, track it and add an
+  // extra pin to ensure it's not deleted.
+  // TODO(aoates): handle this differently when swap is added.
+  if (htbl_get(&data->entries, entry->offset, &tbl_val) != 0) {
+    block_cache_add_pin(entry);
+    htbl_put(&data->entries, entry->offset, entry);
+  } else {
+    KASSERT_DBG(tbl_val == entry);
+  }
+}
+
+// Try to remove any entries that exist in the parent shadow object.
+static bool shadow_maybe_migrate_entry(void* arg, uint32_t key, void* val) {
+  bc_entry_t* entry = (bc_entry_t*)val;
+  KASSERT_DBG(key == entry->offset);
+
+  shadow_data_t* parent = (shadow_data_t*)arg;
+  bc_entry_t* new_entry = NULL;
+  int migrate_result = block_cache_migrate(entry, parent->me, &new_entry);
+  if (migrate_result == 0) {
+    entry = NULL;  // Possibly dead pointer, safety measure.
+    klogfm(KL_MEMORY, DEBUG2,
+           "Migrated shadow entry (parent: %p  offset: %d)\n", parent->me, key);
+
+    // Add the new entry to the parent's table if necessary.
+    maybe_add_to_entry_table(new_entry);
+
+    // TODO(aoates): consider moving things around so we don't add a pin then
+    // immediately remove it.
+    block_cache_put(new_entry, BC_FLUSH_NONE);
+    // Entry was migrated or discarded.  Remove from our table.
+    return false;
+  }
+
+  // Entry was unable to be migrated for some reason; retain it.
+  return true;
+}
+
 static void shadow_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
   shadow_data_t* data = (shadow_data_t*)obj->data;
+  KASSERT_DBG(data->me == obj);
+
   kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
 
@@ -71,6 +128,7 @@ static void shadow_unref(memobj_t* obj) {
     // The only remaining references are block cache entries; no one else can
     // reach the memobj and we can clean up.
     kspin_unlock(&obj->lock);
+
     // Unpin all entries and clear the table.  We do this before decrementing
     // the refcount to ensure the memobj is not freed (we still hold a
     // reference).
@@ -104,7 +162,11 @@ static void shadow_unref(memobj_t* obj) {
 
   // The block cache has finished with us, finish cleanup.
   if (new_refcount == 0) {
-    data->subobj->ops->unref(data->subobj);
+    // Safe to read subobj without big lock held; no one can reach us anymore.
+    if (data->subobj) {
+      data->subobj->ops->unref(data->subobj);
+    }
+
     htbl_cleanup(&data->entries);
     kfree(obj->data);
     kfree(obj);
@@ -125,20 +187,8 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
     // extra pin to ensure it's not deleted.
     // TODO(aoates): handle this differently when swap is added.
     kmutex_lock(&data->shadow_lock);
-    void* tbl_val;
-    bool needs_pin = false;
-    if (htbl_get(&data->entries, page_offset, &tbl_val) != 0) {
-      needs_pin = true;
-      htbl_put(&data->entries, page_offset, *entry_out);
-    } else {
-      KASSERT_DBG(tbl_val == *entry_out);
-    }
+    maybe_add_to_entry_table(*entry_out);
     kmutex_unlock(&data->shadow_lock);
-
-    if (needs_pin) {
-      // This can block, so must be called outside spinlock section.
-      block_cache_add_pin(*entry_out);
-    }
     return 0;
   } else {
     // First check if we have a copy of the page.
@@ -202,7 +252,97 @@ static int shadow_write_page(memobj_t* obj, int offset, const void* buffer) {
   return 0;
 }
 
+// Collapses entries in the shadow chain below the given object, and returns the
+// final length of that chain.
+static int collapse_and_count(memobj_t* parent) {
+  KASSERT_DBG(parent->type == MEMOBJ_SHADOW);
+  shadow_data_t* parent_data = (shadow_data_t*)parent->data;
+  kmutex_lock(&parent_data->shadow_lock);
+
+  kspin_lock(&parent->lock);
+  KASSERT(parent->refcount > 0);
+  kspin_unlock(&parent->lock);
+
+  memobj_t* obj = parent_data->subobj;
+  int depth = 1;
+  // Loop invariant:
+  //  1) parent and parent_data point at a shadow object
+  //  2) parent is locked
+  //  3) obj points at the parent's subobj, which could be any kind.
+  while (obj->type == MEMOBJ_SHADOW) {
+    KASSERT_DBG(parent_data == parent->data);
+    KASSERT_DBG(obj == parent_data->subobj);
+    kmutex_assert_is_held(&parent_data->shadow_lock);
+
+    shadow_data_t* data = obj->data;
+    kmutex_lock(&data->shadow_lock);
+    // Check if we have no refs besides our entries --- if so, eligable for
+    // collapse.
+    // TODO(aoates): this won't catch if we have pending 'dead' entries
+    // consuming our refcount.  That can only happen now due to a previous
+    // collapse; in the future could be triggered by swap as well.
+    kspin_lock(&obj->lock);
+    KASSERT_DBG(obj->refcount >= htbl_size(&data->entries) + 1);
+    if (obj->refcount > htbl_size(&data->entries) + 1) {
+      kspin_unlock(&obj->lock);
+      shadow_data_t* old_parent_data = parent_data;  // For code clarity.
+      parent = obj;
+      parent_data = parent->data;
+      obj = parent_data->subobj;
+      kmutex_unlock(&old_parent_data->shadow_lock);
+      depth++;
+      continue;
+    }
+
+    // Sanity checks.
+    KASSERT_DBG(obj->refcount == htbl_size(&data->entries) + 1);
+    KASSERT(!data->cleaning_up);
+    kspin_unlock(&obj->lock);
+
+    // Migrate pages to parent.
+    int removed =
+        htbl_filter(&data->entries, &shadow_maybe_migrate_entry, parent_data);
+    if (removed > 0) {
+      klogfm(KL_MEMORY, DEBUG, "Migrated %d entries from shadow object %p\n",
+             removed, obj);
+    }
+    if (htbl_size(&data->entries) > 0) {
+      klogfm(KL_MEMORY, DEBUG, "Unable to migrate %d entries\n",
+             htbl_size(&data->entries));
+      // TODO(aoates): continue collapsing down the shadow chain rather than
+      // bailing out here.
+      kmutex_unlock(&data->shadow_lock);
+      break;
+    }
+
+    // Final step --- splice it out of the shadow chain and unref.
+    kmutex_unlock(&data->shadow_lock);
+    KASSERT_DBG(parent_data->subobj == obj);
+    parent_data->subobj = data->subobj;  // Transfer reference.
+    data->subobj = NULL;
+    shadow_unref(obj);
+
+    // Keep parent the same, but try again with the new child --- like yanking
+    // up an anchor chain link by link.  The depth doesn't increase.
+    obj = parent_data->subobj;
+  }
+  kmutex_unlock(&parent_data->shadow_lock);
+  return depth;
+}
+
 memobj_t* memobj_create_shadow(memobj_t* subobj) {
+  kspin_lock(&g_shadow_inited_lock);
+  if (!g_shadow_inited) {
+    kmutex_init(&g_shadow_chain_lock);
+    g_shadow_inited = true;
+  }
+  kspin_unlock(&g_shadow_inited_lock);
+
+  if (subobj->type == MEMOBJ_SHADOW) {
+    // TODO(aoates): check for and handle too-deep chains.
+    collapse_and_count(subobj);
+  }
+
   memobj_t* shadow_obj = (memobj_t*)kmalloc(sizeof(memobj_t));
   if (!shadow_obj) return 0x0;
 
@@ -211,6 +351,7 @@ memobj_t* memobj_create_shadow(memobj_t* subobj) {
   shadow_obj->id = fnv_hash_array(&shadow_obj, sizeof(memobj_t*));
   shadow_obj->ops = &g_shadow_ops;
   shadow_data_t* data = (shadow_data_t*)kmalloc(sizeof(shadow_data_t));
+  data->me = shadow_obj;
   data->subobj = subobj;
   kmutex_init(&data->shadow_lock);
   htbl_init(&data->entries, 5);

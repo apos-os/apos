@@ -23,6 +23,7 @@ typedef enum {
   KL_BLOCK_CACHE,
   KL_KMALLOC,
   KL_PAGE_FAULT,
+  KL_MEMORY,
 
   KL_PROC,
   KL_SYSCALL,
