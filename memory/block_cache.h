@@ -76,6 +76,23 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out);
 // retains a pin in the entry (and must put it again, e.g. forgoing a flush).
 int block_cache_put(bc_entry_t* entry, block_cache_flush_t flush_mode);
 
+// Attempt to migrate the given entry to a different memobj, at the same offset.
+// If the entry has multiple references, fails with -EBUSY.  If the target
+// memobj already has an entry for that offset, the given entry is simply
+// discarded (it does not replace the existing entry), WITHOUT flushing.
+//
+// Returns the target entry (possibly newly created, possibly existing) in
+// target_entry_out, with a new pin on it ("migrating" the pin from the source
+// entry, even if the data was discarded).
+//
+// The caller must externally ensure no other threads attempt to get the source
+// entry during this call.
+//
+// Returns 0 on success.  On success, the given bc_entry_t is no longer valid
+// and must not be referenced.
+int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
+                        bc_entry_t** target_out_out);
+
 // Increment the pin count of the given entry (which is definitionally already
 // pinned at least once).  May block.
 void block_cache_add_pin(bc_entry_t* entry);

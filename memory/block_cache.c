@@ -272,7 +272,9 @@ static void cleanup_cache_entry(bc_entry_internal_t* entry) {
     KASSERT(htbl_remove(&g_table, h) == 0);
     entry->initialized = false;
   }
-  put_free_block(entry->pub.block);
+  if (entry->pub.block) {
+    put_free_block(entry->pub.block);
+  }
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     entry->pub.block = NULL;
@@ -576,6 +578,57 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
 
   KASSERT(!list_link_on_list(&g_lru_queue, &entry->lruq));
   unpin_entry(&entry);
+
+  return 0;
+}
+
+int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
+                        bc_entry_t** target_entry_out) {
+  KASSERT(g_initialized);
+  KASSERT(entry_pub->obj != target);
+
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
+  KASSERT(entry->pin_count > 0);
+  KASSERT_DBG(entry->initialized);
+  KASSERT_DBG(entry->error == 0);
+
+  while (entry->flushing) {
+    int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+    if (result == SWAIT_INTERRUPTED) {
+      return -EINTR;
+    }
+    KASSERT(result == SWAIT_DONE);
+  }
+
+  if (entry->pin_count > 1) {
+    return -EBUSY;
+  }
+
+  // Get the appropriate page from the target memobj; supply the existing
+  // entry's block to use if the entry needs creation.
+  int result =
+      block_cache_get_internal(target, entry_pub->offset, target_entry_out,
+                               /* existing_block= */ entry_pub->block);
+  if (result) {
+    return result;
+  }
+  // If we indeed adopted this new block, deal with the old one.
+  bc_entry_t* target_entry = *target_entry_out;
+  if (target_entry->block == entry_pub->block) {
+    // TODO(aoates): ensure tests for various flushed states and migration of
+    // flushed state to the new entry.
+    entry_pub->block = NULL;
+    entry_pub->block_phys = 0;
+  }
+
+  // We're now done with the source entry, one way or another.
+  entry->flushed = true;
+  if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
+    list_remove(&g_flush_queue, &entry->flushq);
+  }
+  entry->pin_count--;
+  cleanup_cache_entry(entry);
 
   return 0;
 }
