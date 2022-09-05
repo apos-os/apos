@@ -15,7 +15,6 @@
 #include "arch/common/types.h"
 #include "common/errno.h"
 #include "common/hash.h"
-#include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/block_cache.h"
@@ -23,18 +22,6 @@
 #include "memory/memobj.h"
 #include "memory/memobj_shadow.h"
 #include "memory/memory.h"
-
-typedef struct {
-  memobj_t* subobj;
-  // Lock for shadow-specific data.
-  kmutex_t shadow_lock;
-  // All extant block cache entries.  Map {offset -> bc_entry_t*}.  Each has an
-  // additional pin on it to ensure it's kept resident even if not currently in
-  // use by a process.
-  htbl_t entries;
-  // Set when we start clearing the entries table.
-  bool cleaning_up;
-} shadow_data_t;
 
 static void shadow_ref(memobj_t* obj);
 static void shadow_unref(memobj_t* obj);
