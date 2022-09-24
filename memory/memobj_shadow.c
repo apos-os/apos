@@ -56,11 +56,10 @@ static memobj_ops_t g_shadow_ops = {
 
 static void shadow_ref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
-  shadow_data_t* data = (shadow_data_t*)obj->data;
-  kmutex_lock(&data->shadow_lock);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
   obj->refcount++;
-  kmutex_unlock(&data->shadow_lock);
+  kspin_unlock(&obj->lock);
 }
 
 static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
@@ -72,7 +71,7 @@ static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
 static void shadow_unref(memobj_t* obj) {
   KASSERT(obj->type == MEMOBJ_SHADOW);
   shadow_data_t* data = (shadow_data_t*)obj->data;
-  kmutex_lock(&data->shadow_lock);
+  kspin_lock(&obj->lock);
   KASSERT(obj->refcount > 0);
 
   // Check if this is the last remaining refcount, other than our entries.
@@ -84,7 +83,7 @@ static void shadow_unref(memobj_t* obj) {
     data->cleaning_up = true;
     // The only remaining references are block cache entries; no one else can
     // reach the memobj and we can clean up.
-    kmutex_unlock(&data->shadow_lock);
+    kspin_unlock(&obj->lock);
     // Unpin all entries and clear the table.  We do this before decrementing
     // the refcount to ensure the memobj is not freed (we still hold a
     // reference).
@@ -106,7 +105,7 @@ static void shadow_unref(memobj_t* obj) {
           obj, errorname(-result));
     }
 
-    kmutex_lock(&data->shadow_lock);
+    kspin_lock(&obj->lock);
     // At this point we should still have at least one reference (this
     // thread's); if the above call failed, the BC entries may not have been
     // destroyed yet, in which case they will still hold references to this
@@ -114,7 +113,7 @@ static void shadow_unref(memobj_t* obj) {
     KASSERT_DBG(obj->refcount >= 1);
   }
   int new_refcount = --obj->refcount;
-  kmutex_unlock(&data->shadow_lock);
+  kspin_unlock(&obj->lock);
 
   // The block cache has finished with us, finish cleanup.
   if (new_refcount == 0) {
