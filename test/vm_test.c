@@ -386,7 +386,19 @@ static void vm_resolve_test(void) {
   KEXPECT_EQ(
       0, do_munmap((void*)((addr_t)mmaped_addr + 2 * PAGE_SIZE), PAGE_SIZE));
 
-  // At first, the page isn't mapped; the call should page it in.
+  // At first, the page isn't mapped; the blocking call below should page it in.
+  KEXPECT_EQ(0,
+             vm_resolve_address_noblock(proc_current(), (addr_t)mmaped_addr, 4,
+                                        /*is_write=*/false,
+                                        /*is_user=*/false, &entry, &resolved));
+  KEXPECT_EQ(NULL, entry);
+  KEXPECT_EQ(0,
+             vm_resolve_address_noblock(proc_current(), (addr_t)mmaped_addr, 4,
+                                        /*is_write=*/false,
+                                        /*is_user=*/false, &entry, &resolved));
+  KEXPECT_EQ(NULL, entry);
+
+  // This should trigger paging in.
   KEXPECT_EQ(0, vm_resolve_address(proc_current(), (addr_t)mmaped_addr, 4,
                                    /*is_write=*/false,
                                    /*is_user=*/false, &entry, &resolved));

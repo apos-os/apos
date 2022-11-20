@@ -153,9 +153,11 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
   return 0;
 }
 
-int vm_resolve_address(process_t* proc, addr_t start, size_t size,
-                       bool is_write, bool is_user, bc_entry_t** entry_out,
-                       phys_addr_t* resolved_out) {
+static int vm_resolve_address_internal(process_t* proc, addr_t start,
+                                       size_t size, bool is_write, bool is_user,
+                                       bc_entry_t** entry_out,
+                                       phys_addr_t* resolved_out,
+                                       bool blocking) {
   if (!proc || !resolved_out) {
     return -EINVAL;
   }
@@ -213,6 +215,11 @@ int vm_resolve_address(process_t* proc, addr_t start, size_t size,
   const size_t offset_in_page = start % PAGE_SIZE;
   bc_entry_t* bce = last_area->pages[area_page_offset];
   if (!bce) {
+    if (!blocking) {
+      *entry_out = NULL;
+      return 0;
+    }
+
     // The access _would_ be valid, but that address isn't currently swapped in.
     // Attempt to page it in (blocks!).
     // TODO(aoates): there is a fair amount of duplicated logic between the
@@ -231,6 +238,23 @@ int vm_resolve_address(process_t* proc, addr_t start, size_t size,
   *entry_out = bce;
   block_cache_add_pin(bce);
   return 0;
+}
+
+int vm_resolve_address(process_t* proc, addr_t start, size_t size,
+                       bool is_write, bool is_user, bc_entry_t** entry_out,
+                       phys_addr_t* resolved_out) {
+  return vm_resolve_address_internal(proc, start, size, is_write, is_user,
+                                     entry_out, resolved_out,
+                                     /* blocking= */ true);
+}
+
+int vm_resolve_address_noblock(process_t* proc, addr_t start, size_t size,
+                               bool is_write, bool is_user,
+                               bc_entry_t** entry_out,
+                               phys_addr_t* resolved_out) {
+  return vm_resolve_address_internal(proc, start, size, is_write, is_user,
+                                     entry_out, resolved_out,
+                                     /* blocking= */ false);
 }
 
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
