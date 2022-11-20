@@ -17,6 +17,7 @@
 #include "proc/exit.h"
 #include "proc/fork.h"
 #include "proc/group.h"
+#include "proc/notification.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
@@ -261,10 +262,68 @@ static void wait_for_pgroup_test(void) {
   KEXPECT_EQ(childC, proc_waitpid(0, NULL, 0));
 }
 
+static void exit_after_nftn(void* arg) {
+  notification_t* ntfn = (notification_t*)arg;
+  KEXPECT_TRUE(ntfn_await_with_timeout(ntfn, 5000));
+  proc_exit(0);
+}
+
+static void wait_guid_test(void) {
+  KTEST_BEGIN("proc_wait_guid(): process exits");
+  notification_t ntfn;
+  ntfn_init(&ntfn);
+
+  kpid_t child = proc_fork(&exit_after_nftn, &ntfn);
+  uint32_t guid = proc_get_procguid(child);
+  ntfn_notify(&ntfn);
+  KEXPECT_EQ(child, proc_wait(NULL));
+  apos_ms_t start = get_time_ms();
+  KEXPECT_EQ(0, proc_wait_guid(child, guid, 5000));
+  KEXPECT_LT(get_time_ms() - start, 2000);
+  start = get_time_ms();
+  KEXPECT_EQ(0, proc_wait_guid(child, guid, 5000));
+  KEXPECT_LT(get_time_ms() - start, 500);
+  start = get_time_ms();
+  KEXPECT_EQ(0, proc_wait_guid(child, 1234, 5000));
+  KEXPECT_LT(get_time_ms() - start, 500);
+
+
+  KTEST_BEGIN("proc_wait_guid(): process exits AND is replaced");
+  ntfn_init(&ntfn);
+  child = proc_fork(&exit_after_nftn, &ntfn);
+  guid = proc_get_procguid(child);
+  ntfn_notify(&ntfn);
+  KEXPECT_EQ(child, proc_wait(NULL));
+
+  // This is racey :/
+  ntfn_init(&ntfn);
+  kpid_t child2 = proc_fork(&exit_after_nftn, &ntfn);
+  KEXPECT_EQ(child, child2);
+  KEXPECT_NE(guid, proc_get_procguid(child2));
+  start = get_time_ms();
+  KEXPECT_EQ(0, proc_wait_guid(child, guid, 5000));
+  KEXPECT_LT(get_time_ms() - start, 500);
+  ntfn_notify(&ntfn);
+  KEXPECT_EQ(child2, proc_wait(NULL));
+
+
+  KTEST_BEGIN("proc_wait_guid(): times out");
+  ntfn_init(&ntfn);
+  child = proc_fork(&exit_after_nftn, &ntfn);
+  guid = proc_get_procguid(child);
+  start = get_time_ms();
+  KEXPECT_EQ(-ETIMEDOUT, proc_wait_guid(child, guid, 100));
+  KEXPECT_GE(get_time_ms() - start, 100);
+  KEXPECT_LT(get_time_ms() - start, 2000);
+  ntfn_notify(&ntfn);
+  KEXPECT_EQ(child, proc_wait(NULL));
+}
+
 void wait_test(void) {
   KTEST_SUITE_BEGIN("wait() and waitpid() tests");
   basic_waitpid_test();
   interruptable_waitpid_test();
   wait_for_specific_pid_test();
   wait_for_pgroup_test();
+  wait_guid_test();
 }

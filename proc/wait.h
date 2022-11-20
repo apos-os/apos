@@ -25,4 +25,15 @@ kpid_t proc_wait(int* exit_status);
 // As above, but respects pid and flags as per waitpid(2).
 kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options);
 
+// Get a unique value identifying the process running on the given pid.  Assumes
+// external synchronization of the process exiting (i.e. if the process exits
+// during this call, the result is undefined).
+// For tests.
+uint32_t proc_get_procguid(kpid_t pid);
+
+// Atomically wait until the pid is not attached to the given process guid.
+// Unlike the actual wait() functions, doesn't do any cleanup --- just waits
+// (via polling) until the process has exited and been cleaned up.
+int proc_wait_guid(kpid_t pid, uint32_t guid, int timeout_ms);
+
 #endif

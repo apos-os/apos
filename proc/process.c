@@ -47,8 +47,10 @@ static vm_area_t g_physical_mapped_vm_area;
 process_t* g_proc_table[PROC_MAX_PROCS];
 static kpid_t g_current_proc = -1;
 static int g_proc_init_stage = 0;
+static uint32_t g_next_guid = 1;
 
 static void proc_init_process(process_t* p) {
+  p->guid = 0;
   p->id = -1;
   p->state = PROC_INVALID;
   p->threads = LIST_INIT;
@@ -99,6 +101,7 @@ process_t* proc_alloc() {
   if (!proc) return 0x0;
 
   proc_init_process(proc);
+  proc->guid = g_next_guid++;
   proc->id = id;
   g_proc_table[id] = proc;
   return proc;
@@ -133,6 +136,7 @@ void proc_init_stage1() {
   // Create first process.
   g_proc_table[0] = &g_first_process;
   proc_init_process(g_proc_table[0]);
+  g_proc_table[0]->guid = g_next_guid++;
   g_proc_table[0]->id = 0;
   g_proc_table[0]->state = PROC_RUNNING;
   g_proc_table[0]->ruid = g_proc_table[0]->euid = g_proc_table[0]->suid =
