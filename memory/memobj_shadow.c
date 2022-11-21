@@ -285,13 +285,7 @@ static int collapse_and_count(memobj_t* parent) {
     KASSERT_DBG(obj->refcount >= htbl_size(&data->entries) + 1);
     if (obj->refcount > htbl_size(&data->entries) + 1) {
       kspin_unlock(&obj->lock);
-      shadow_data_t* old_parent_data = parent_data;  // For code clarity.
-      parent = obj;
-      parent_data = parent->data;
-      obj = parent_data->subobj;
-      kmutex_unlock(&old_parent_data->shadow_lock);
-      depth++;
-      continue;
+      goto skip_this_one;
     }
 
     // Sanity checks.
@@ -309,10 +303,8 @@ static int collapse_and_count(memobj_t* parent) {
     if (htbl_size(&data->entries) > 0) {
       klogfm(KL_MEMORY, DEBUG, "Unable to migrate %d entries\n",
              htbl_size(&data->entries));
-      // TODO(aoates): continue collapsing down the shadow chain rather than
-      // bailing out here.
-      kmutex_unlock(&data->shadow_lock);
-      break;
+      // Continue collapsing down the shadow chain.
+      goto skip_this_one;
     }
 
     // Final step --- splice it out of the shadow chain and unref.
@@ -325,6 +317,15 @@ static int collapse_and_count(memobj_t* parent) {
     // Keep parent the same, but try again with the new child --- like yanking
     // up an anchor chain link by link.  The depth doesn't increase.
     obj = parent_data->subobj;
+    continue;
+
+  skip_this_one:;
+    shadow_data_t* old_parent_data = parent_data;  // For code clarity.
+    parent = obj;
+    parent_data = parent->data;
+    obj = parent_data->subobj;
+    kmutex_unlock(&old_parent_data->shadow_lock);
+    depth++;
   }
   kmutex_unlock(&parent_data->shadow_lock);
   return depth;

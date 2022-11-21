@@ -930,6 +930,15 @@ static void so_put_page(bc_entry_t* entry, block_cache_flush_t mode) {
   entry->obj->ops->put_page(entry->obj, entry, mode);
 }
 
+static phys_addr_t so_create_page(memobj_t* obj, int offset) {
+  bc_entry_t* entry = NULL;
+  KEXPECT_EQ(0, so_get_page(obj, offset, /* writable= */ 1, &entry));
+  KEXPECT_EQ(obj, entry->obj);
+  phys_addr_t result = entry->block_phys;
+  so_put_page(entry, BC_FLUSH_NONE);
+  return result;
+}
+
 // In this one, we just create shadow chains directly without all the forking
 // and exiting and such.
 static void shadow_object_collapse_testC(memobj_t* file_obj) {
@@ -957,6 +966,78 @@ static void shadow_object_collapse_testC(memobj_t* file_obj) {
   KEXPECT_EQ(shadow3, get_shadow_child(shadow4));
   shadow3->ops->unref(shadow3);
   shadow4->ops->unref(shadow4);
+
+
+  KTEST_BEGIN("shadow object collapse: continues past failure");
+  // Create the following setup (* means referenced).
+  // +---------+------+------+------+------+
+  // |   Obj   | off0 | off1 | off2 | off3 |
+  // +---------+------+------+------+------+
+  // | shadow5 |      |      | C5   |      |
+  // | shadow4 |      |      | C4   | D4   |
+  // | shadow3 | A3   | B3*  | C3   |      |
+  // | shadow2 |      | B2   |      | D2   |
+  // | shadow1 | A1   |      |      |      |
+  // +---------+------+------+------+------+
+  shadow1 = memobj_create_shadow(file_obj);
+  shadow2 = memobj_create_shadow(shadow1);
+  shadow3 = memobj_create_shadow(shadow2);
+  shadow4 = memobj_create_shadow(shadow3);
+  memobj_t* shadow5 = memobj_create_shadow(shadow4);
+
+  const phys_addr_t pageA1 = so_create_page(shadow1, 0);
+  so_create_page(shadow2, 1);
+  const phys_addr_t pageD2 = so_create_page(shadow2, 3);
+  const phys_addr_t pageA3 = so_create_page(shadow3, 0);
+  KEXPECT_EQ(0, so_get_page(shadow3, 1, /* writable= */1, &entry1));
+  const phys_addr_t pageB3 = entry1->block_phys;
+  so_create_page(shadow3, 2);
+  so_create_page(shadow4, 2);
+  const phys_addr_t pageD4 = so_create_page(shadow4, 3);
+  const phys_addr_t pageC5 = so_create_page(shadow5, 2);
+
+  shadow1->ops->unref(shadow1);
+  shadow2->ops->unref(shadow2);
+  shadow3->ops->unref(shadow3);
+  shadow4->ops->unref(shadow4);
+  memobj_t* shadow6 = memobj_create_shadow(shadow5);  // Trigger collapse.
+  // We should now have,
+  // +---------+------+------+------+------+
+  // |   Obj   | off0 | off1 | off2 | off3 |
+  // +---------+------+------+------+------+
+  // | shadow5 | A3   |      | C5   | D4   |
+  // | shadow3 | A1   | B3*  |      | D2   |
+  // +---------+------+------+------+------+
+
+  KEXPECT_EQ(file_obj, get_shadow_child(shadow3));
+  KEXPECT_EQ(shadow3, get_shadow_child(shadow5));
+
+  KEXPECT_EQ(pageA1, get_memobj_page(shadow3, 0));
+  KEXPECT_EQ(pageB3, get_memobj_page(shadow3, PAGE_SIZE));
+  KEXPECT_EQ(0, get_memobj_page(shadow3, 2 * PAGE_SIZE));
+  KEXPECT_EQ(pageD2, get_memobj_page(shadow3, 3 * PAGE_SIZE));
+  KEXPECT_EQ(pageA3, get_memobj_page(shadow5, 0));
+  KEXPECT_EQ(0, get_memobj_page(shadow5, PAGE_SIZE));
+  KEXPECT_EQ(pageC5, get_memobj_page(shadow5, 2 * PAGE_SIZE));
+  KEXPECT_EQ(pageD4, get_memobj_page(shadow5, 3 * PAGE_SIZE));
+
+  so_put_page(entry1, BC_FLUSH_NONE);
+
+  // Attempt to clear out the cleanup entry list.
+  block_cache_free_all(shadow3);  // Technically don't have this ref.
+
+  // Now do one more collapse and verify everything gets into shadow5.
+  shadow6->ops->unref(shadow6);
+  shadow6 = memobj_create_shadow(shadow5);  // Trigger collapse.
+  KEXPECT_EQ(file_obj, get_shadow_child(shadow5));
+
+  KEXPECT_EQ(pageA3, get_memobj_page(shadow5, 0));
+  KEXPECT_EQ(pageB3, get_memobj_page(shadow5, PAGE_SIZE));
+  KEXPECT_EQ(pageC5, get_memobj_page(shadow5, 2 * PAGE_SIZE));
+  KEXPECT_EQ(pageD4, get_memobj_page(shadow5, 3 * PAGE_SIZE));
+
+  shadow5->ops->unref(shadow5);
+  shadow6->ops->unref(shadow6);
 }
 
 static void shadow_object_collapse_test(void) {
@@ -972,9 +1053,6 @@ static void shadow_object_collapse_test(void) {
   shadow_object_collapse_testA(fd);
   shadow_object_collapse_testB(fd);
   shadow_object_collapse_testC(file_obj);
-
-  // TODO(aoates): test shadow -> shadow -> shadow collapse of middle shadow
-  // (and other complex chained versions).
 
   file_obj->ops->unref(file_obj);
   KEXPECT_EQ(0, vfs_close(fd));
