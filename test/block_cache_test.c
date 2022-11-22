@@ -625,6 +625,7 @@ static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
   return blocking_obj->op_result;
 }
 
+static int blocking_memobj_id = 0;
 static memobj_ops_t blocking_memobj_ops = {
     blocking_memobj_ref_unref,  //
     blocking_memobj_ref_unref,  //
@@ -637,7 +638,7 @@ static memobj_ops_t blocking_memobj_ops = {
 static void create_blocking_memobj(blocking_memobj_t* obj) {
   memobj_base_init(&obj->obj);
   obj->obj.type = MEMOBJ_FAKE;
-  obj->obj.id = get_time_ms();
+  obj->obj.id = blocking_memobj_id++;
   obj->obj.ops = &blocking_memobj_ops;
   obj->obj.data = obj;
   kthread_queue_init(&obj->obj_queue);
@@ -1474,6 +1475,79 @@ static void free_all_memobj_testC(void) {
   block_cache_clear_unpinned();
 }
 
+static void block_cache_migrate_test(void) {
+  KTEST_BEGIN("block_cache_migrate(): basic migration");
+  blocking_memobj_t obj1, obj2;
+  create_blocking_memobj(&obj1);
+  create_blocking_memobj(&obj2);
+  obj1.block_reads = false;
+
+  const int kBlockOffset = 5;
+  bc_entry_t* entry1 = NULL;
+  KEXPECT_EQ(0, block_cache_get(&obj1.obj, kBlockOffset, &entry1));
+  kstrcpy(entry1->block, "abcd");
+  void* e1_block = entry1->block;
+  phys_addr_t e1_block_phys = entry1->block_phys;
+
+  bc_entry_t* entry2 = NULL;
+  KEXPECT_EQ(0, block_cache_migrate(entry1, &obj2.obj, &entry2));
+  KEXPECT_NE(NULL, entry2);
+  KEXPECT_NE(entry1, entry2);
+  KEXPECT_EQ(&obj2.obj, entry2->obj);
+  KEXPECT_EQ(e1_block, entry2->block);
+  KEXPECT_EQ(e1_block_phys, entry2->block_phys);
+  KEXPECT_EQ(kBlockOffset, entry2->offset);
+  KEXPECT_EQ(NULL, entry1->block);
+  KEXPECT_EQ(0, entry1->block_phys);
+
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  block_cache_clear_unpinned();
+
+
+  KTEST_BEGIN("block_cache_migrate(): basic migration (drops page)");
+  create_blocking_memobj(&obj1);
+  create_blocking_memobj(&obj2);
+  obj1.block_reads = obj2.block_reads = false;
+
+  KEXPECT_EQ(0, block_cache_get(&obj1.obj, kBlockOffset, &entry1));
+  kstrcpy(entry1->block, "abcd");
+  KEXPECT_EQ(0, block_cache_get(&obj2.obj, kBlockOffset, &entry2));
+  kstrcpy(entry2->block, "ABCD");
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  // Note: possible race if entry2 gets reaped now by another thread.  But we
+  // don't want the entry pinned, so do the unsafe thing for this test.
+
+  void* e2_block = entry2->block;
+  phys_addr_t e2_block_phys = entry2->block_phys;
+
+  bc_entry_t* entry3 = NULL;
+  KEXPECT_EQ(0, block_cache_migrate(entry1, &obj2.obj, &entry3));
+  // Should not have replaced the existing entry in the target.
+  KEXPECT_EQ(entry3, entry2);
+  KEXPECT_EQ(&obj2.obj, entry3->obj);
+  KEXPECT_EQ(e2_block, entry3->block);
+  KEXPECT_EQ(e2_block_phys, entry3->block_phys);
+  KEXPECT_STREQ("ABCD", entry3->block);
+  KEXPECT_EQ(kBlockOffset, entry3->offset);
+  KEXPECT_EQ(NULL, entry1->block);
+  KEXPECT_EQ(0, entry1->block_phys);
+  // Ideally would confirm the page was freed, but not sure how to do that.
+
+  KEXPECT_EQ(0, block_cache_put(entry3, BC_FLUSH_NONE));
+  block_cache_clear_unpinned();
+
+  // TODO(aoates): tests for the following:
+  //  * failed migration (entry in use)
+  //  * entry is flushing (succesfully flushes)
+  //  * entry is flushing (interrupted sleep)
+  //  * entry is flushing (flushed, but then dirties again before migration
+  //    thread wakes up --- i.e. test it's a loop, not a branch)
+  //  * pin count changes during flushing
+  //  * get has an error (target entry exists but failed to be initialized)
+  //  * migration of flushed status
+  //  * source entry is unflushed (and status of flush queue)
+}
+
 // TODO(aoates): test BC_FLUSH_NONE and BC_FLUSH_ASYNC.
 
 void block_cache_test(void) {
@@ -1516,9 +1590,10 @@ void block_cache_test(void) {
   free_all_memobj_testB();
   free_all_memobj_testC();
 
-  block_cache_set_bg_flush_period(old_flush_period_ms);
+  block_cache_migrate_test();
 
   // Cleanup.
+  block_cache_set_bg_flush_period(old_flush_period_ms);
   block_cache_clear_unpinned();  // Make sure all entries for dev are flushed.
   KEXPECT_EQ(start_obj_refcount, obj->refcount);
 
