@@ -591,7 +591,8 @@ typedef struct {
   kthread_queue_t obj_queue;
   bool block_reads;
   bool block_writes;
-  // TODO(aoates): use atomics for these.
+  kmutex_t mu;
+  int block_iteration;
   int waiting_readers;
   int waiting_writers;
   int op_result;
@@ -602,26 +603,40 @@ static void blocking_memobj_ref_unref(memobj_t* obj) {}
 static int blocking_memobj_write_page(memobj_t* obj, int page_offset,
                                        const void* buffer) {
   blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
+
+  KMUTEX_AUTO_LOCK(lock, &blocking_obj->mu);
   if (!blocking_obj->block_writes) return blocking_obj->op_result;
 
-  blocking_obj->waiting_writers++;
-  int result = scheduler_wait_on_interruptable(&blocking_obj->obj_queue, 1000);
-  KEXPECT_NE(result, SWAIT_TIMEOUT);
-  blocking_obj->waiting_writers--;
-  if (result == SWAIT_INTERRUPTED) return -EINTR;
+  const int orig_bli = blocking_obj->block_iteration;
+  while (blocking_obj->block_iteration == orig_bli) {
+    blocking_obj->waiting_writers++;
+    scheduler_wake_all(&blocking_obj->obj_queue);
+    int result = scheduler_wait_on_locked(&blocking_obj->obj_queue, 1000,
+                                          &blocking_obj->mu);
+    KEXPECT_NE(result, SWAIT_TIMEOUT);
+    blocking_obj->waiting_writers--;
+    if (result == SWAIT_INTERRUPTED) return -EINTR;
+  }
   return blocking_obj->op_result;
 }
 
 static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
                                      void* buffer) {
   blocking_memobj_t* blocking_obj = (blocking_memobj_t*)obj->data;
+
+  KMUTEX_AUTO_LOCK(lock, &blocking_obj->mu);
   if (!blocking_obj->block_reads) return blocking_obj->op_result;
 
-  blocking_obj->waiting_readers++;
-  int result = scheduler_wait_on_interruptable(&blocking_obj->obj_queue, 1000);
-  KEXPECT_NE(result, SWAIT_TIMEOUT);
-  blocking_obj->waiting_readers--;
-  if (result == SWAIT_INTERRUPTED) return -EINTR;
+  const int orig_bli = blocking_obj->block_iteration;
+  while (blocking_obj->block_iteration == orig_bli) {
+    blocking_obj->waiting_readers++;
+    scheduler_wake_all(&blocking_obj->obj_queue);
+    int result = scheduler_wait_on_locked(&blocking_obj->obj_queue, 1000,
+                                          &blocking_obj->mu);
+    KEXPECT_NE(result, SWAIT_TIMEOUT);
+    blocking_obj->waiting_readers--;
+    if (result == SWAIT_INTERRUPTED) return -EINTR;
+  }
   return blocking_obj->op_result;
 }
 
@@ -642,11 +657,38 @@ static void create_blocking_memobj(blocking_memobj_t* obj) {
   obj->obj.ops = &blocking_memobj_ops;
   obj->obj.data = obj;
   kthread_queue_init(&obj->obj_queue);
+  kmutex_init(&obj->mu);
+  obj->block_iteration = 0;
   obj->block_reads = true;
   obj->block_writes = true;
   obj->waiting_readers = 0;
   obj->waiting_writers = 0;
   obj->op_result = 0;
+}
+
+static int bmo_get_readers(blocking_memobj_t* obj) {
+  KMUTEX_AUTO_LOCK(mu, &obj->mu);
+  return obj->waiting_readers;
+}
+
+static int bmo_get_writers(blocking_memobj_t* obj) {
+  KMUTEX_AUTO_LOCK(mu, &obj->mu);
+  return obj->waiting_writers;
+}
+
+static bool bmo_await_writers(blocking_memobj_t* obj, int writers) {
+  KMUTEX_AUTO_LOCK(mu, &obj->mu);
+  while (obj->waiting_writers < writers) {
+    int result = scheduler_wait_on_locked(&obj->obj_queue, 1000, &obj->mu);
+    if (result == SWAIT_TIMEOUT) return false;
+  }
+  return true;
+}
+
+static void bmo_wake_all(blocking_memobj_t* obj) {
+  KMUTEX_AUTO_LOCK(mu, &obj->mu);
+  obj->block_iteration++;
+  scheduler_wake_all(&obj->obj_queue);
 }
 
 static void* do_block_cache_get_thread(void* arg) {
@@ -701,7 +743,7 @@ static void signal_interrupt_test(void) {
   KEXPECT_GE(child1, 0);
   // Let 'er run and start.  Would be better to synchronize explicitly.
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   // Second child: block on the initialization started by the first.
   kpid_t child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
@@ -712,7 +754,7 @@ static void signal_interrupt_test(void) {
   KEXPECT_GE(child3, 0);
   ksleep(10);  // Get them blocking.
   // Shouldn't be blocking on the underlying device.
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   KEXPECT_EQ(0, proc_kill(child2, SIGINT));
   KEXPECT_EQ(0, proc_kill(child3, SIGINT));
@@ -723,7 +765,7 @@ static void signal_interrupt_test(void) {
   KEXPECT_EQ(child3, proc_waitpid(child3, &status, 0));
   KEXPECT_EQ(-EINTR, status);
 
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
   KEXPECT_EQ(0, status);
 
@@ -737,19 +779,19 @@ static void signal_interrupt_test(void) {
   KEXPECT_GE(child4, 0);
   // Let 'er run and start.  Would be better to synchronize explicitly.
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_writers);
+  KEXPECT_EQ(1, bmo_get_writers(&blocking_memobj));
 
   // Second child: block on the flush started by the first.
   kpid_t child5 = proc_fork(&do_block_cache_put_proc, &blocking_memobj.obj);
   KEXPECT_GE(child5, 0);
   ksleep(10);  // Get them blocking.
-  KEXPECT_EQ(1, blocking_memobj.waiting_writers);
+  KEXPECT_EQ(1, bmo_get_writers(&blocking_memobj));
 
   KEXPECT_EQ(0, proc_kill(child5, SIGINT));
   KEXPECT_EQ(child5, proc_waitpid(child5, &status, 0));
   KEXPECT_EQ(-EINTR, status);
   blocking_memobj.block_writes = false;
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_EQ(child4, proc_waitpid(child4, &status, 0));
   KEXPECT_EQ(0, status);
 
@@ -780,20 +822,20 @@ static void read_error_test(void) {
   KEXPECT_GE(child1, 0);
   // TODO(aoates): use Notification here (and above and below).
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   kpid_t child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
   KEXPECT_GE(child2, 0);
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   // Have a third thread call via lookup().
   kpid_t child3 = proc_fork(&do_block_cache_lookup_proc, &blocking_memobj.obj);
   KEXPECT_GE(child3, 0);
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   int status;
   KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
   KEXPECT_EQ(-EXDEV, status);
@@ -816,12 +858,12 @@ static void read_error_test(void) {
   KEXPECT_GE(child1, 0);
   // TODO(aoates): use Notification here (and above and below).
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   child2 = proc_fork(&do_block_cache_get_proc, &blocking_memobj.obj);
   KEXPECT_GE(child2, 0);
   ksleep(10);
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   KEXPECT_EQ(0, proc_kill(child1, SIGUSR1));
   KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
@@ -843,17 +885,17 @@ static void read_error_test(void) {
   KEXPECT_GE(child1, 0);
   // TODO(aoates): use Notification here (and above and below).
   for (int i = 0; i < 10; ++i) scheduler_yield();
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   kthread_t child2_thread;
   KEXPECT_EQ(0, proc_thread_create(&child2_thread, &do_block_cache_get_thread,
                                    &blocking_memobj.obj));
   for (int i = 0; i < 10; ++i) scheduler_yield();
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   kthread_disable(child2_thread);
 
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
   KEXPECT_EQ(-EXDEV, status);
 
@@ -883,12 +925,12 @@ static void read_error_test(void) {
   KEXPECT_GE(child1, 0);
   // TODO(aoates): use Notification here (and above and below).
   for (int i = 0; i < 10; ++i) scheduler_yield();
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   KEXPECT_EQ(0, proc_thread_create(&child2_thread, &do_block_cache_get_thread,
                                    &blocking_memobj.obj));
   for (int i = 0; i < 10; ++i) scheduler_yield();
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   kthread_disable(child2_thread);
 
@@ -896,7 +938,7 @@ static void read_error_test(void) {
   proc_kill_thread(child2_thread, SIGUSR1);
   for (int i = 0; i < 10; ++i) scheduler_yield();
 
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
   KEXPECT_EQ(-EXDEV, status);
 
@@ -917,18 +959,18 @@ static void read_error_test(void) {
   KEXPECT_GE(child1, 0);
   // TODO(aoates): use Notification here (and above and below).
   for (int i = 0; i < 10; ++i) scheduler_yield();
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   KEXPECT_EQ(0, proc_thread_create(&child2_thread, &do_block_cache_get_thread,
                                    &blocking_memobj.obj));
   for (int i = 0; i < 10; ++i) scheduler_yield();
-  KEXPECT_EQ(1, blocking_memobj.waiting_readers);
+  KEXPECT_EQ(1, bmo_get_readers(&blocking_memobj));
 
   kthread_disable(child2_thread);
   proc_kill_thread(child2_thread, SIGUSR1);
   for (int i = 0; i < 10; ++i) scheduler_yield();
 
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_EQ(child1, proc_waitpid(child1, &status, 0));
   KEXPECT_EQ(0, status);
 
@@ -1029,7 +1071,7 @@ static void free_all_memobj_testA(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 100));
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
   KEXPECT_EQ(NULL, kthread_join(thread));
   KEXPECT_EQ(0, args.result);
@@ -1051,7 +1093,7 @@ static void free_all_memobj_testA(void) {
   KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 100));
   KEXPECT_EQ(2, list_size(&blocking_memobj.obj.bc_entries));
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
   KEXPECT_EQ(NULL, kthread_join(thread));
   KEXPECT_EQ(-EBUSY, args.result);
@@ -1072,14 +1114,13 @@ static void free_all_memobj_testA(void) {
   ntfn_init(&args.done);
 
   block_cache_wakeup_flush_thread();
-  // TODO(SMP): do this in a thread-safe/atomic way.
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
 
   KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
 
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
   KEXPECT_EQ(NULL, kthread_join(thread));
   KEXPECT_EQ(0, args.result);
@@ -1098,8 +1139,7 @@ static void free_all_memobj_testA(void) {
   ntfn_init(&args.done);
 
   block_cache_wakeup_flush_thread();
-  // TODO(SMP): do this in a thread-safe/atomic way.
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
 
   KEXPECT_EQ(0, proc_thread_create(&thread, &do_free_all_thread, &args));
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
@@ -1107,7 +1147,7 @@ static void free_all_memobj_testA(void) {
 
   // Allow the flush to finish and wake up the block_cache_free_all() thread
   // (which is waiting for it, but can't run because it's disabled).
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   for (int i = 0; i < 10; ++i) scheduler_yield();
 
   // Re-dirty the page.
@@ -1117,8 +1157,7 @@ static void free_all_memobj_testA(void) {
 
   // Wait for the flush queue thread to try _again_.
   block_cache_wakeup_flush_thread();
-  // TODO(SMP): do this in a thread-safe/atomic way.
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
 
   // The waiting thread should see the entry flushing again, and wait again.
   // N.B.: an earlier implementation caught this scenario and gave up, returing
@@ -1127,7 +1166,7 @@ static void free_all_memobj_testA(void) {
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
   // Let the second flush finish.
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 2000));
   KEXPECT_EQ(NULL, kthread_join(thread));
   KEXPECT_EQ(0, args.result);
@@ -1151,7 +1190,7 @@ static void free_all_memobj_testA(void) {
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
   kthread_disable(thread);
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   // Wait for the freeing thread to wake up, but not run yet.
   // TODO(aoates): invent a better way to do this.
   for (int i = 0; i < 10; ++i) scheduler_yield();
@@ -1188,8 +1227,7 @@ static void free_all_memobj_testA(void) {
   KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
 
   // Wait for the flush queue thread to get blocked in the flush.
-  // TODO(SMP): do this in a thread-safe/atomic way.
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
 
   args.obj = &blocking_memobj;
   ntfn_init(&args.done);
@@ -1198,7 +1236,7 @@ static void free_all_memobj_testA(void) {
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
   kthread_disable(thread);
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   // Wait for the freeing thread to wake up, but not run yet.
   // TODO(aoates): invent a better way to do this.
   for (int i = 0; i < 10; ++i) scheduler_yield();
@@ -1249,7 +1287,7 @@ static void free_all_memobj_testB(void) {
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
   kthread_disable(thread);
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   // Wait for the freeing thread to wake up, but not run yet.
   // TODO(aoates): invent a better way to do this.
   for (int i = 0; i < 10; ++i) scheduler_yield();
@@ -1279,8 +1317,7 @@ static void free_all_memobj_testB(void) {
   KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
 
   // Wait for the flush queue thread to get blocked in the flush.
-  // TODO(SMP): do this in a thread-safe/atomic way.
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
 
   args.obj = &blocking_memobj;
   ntfn_init(&args.done);
@@ -1289,7 +1326,7 @@ static void free_all_memobj_testB(void) {
   KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 10));
   KEXPECT_EQ(2, list_size(&blocking_memobj.obj.bc_entries));
   kthread_disable(thread);
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   // Wait for the freeing thread to wake up, but not run yet.
   // TODO(aoates): invent a better way to do this.
   for (int i = 0; i < 10; ++i) scheduler_yield();
@@ -1341,7 +1378,7 @@ static void free_all_memobj_testB(void) {
   KEXPECT_EQ(
       0, proc_thread_create(&get2_thread, &do_get_second_block, &get2_args));
   KEXPECT_FALSE(ntfn_await_with_timeout(&get2_args.done, 10));
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
   kthread_disable(get2_thread);
 
   // Now run a free operation in another thread, which should block waiting on
@@ -1353,7 +1390,7 @@ static void free_all_memobj_testB(void) {
 
   // Let the flush finish.
   kthread_disable(thread);
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   kthread_enable(get2_thread);
   KEXPECT_TRUE(ntfn_await_with_timeout(&get2_args.done, 2000));
   KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
@@ -1402,8 +1439,7 @@ static void free_all_memobj_testB(void) {
   KEXPECT_EQ(0, block_cache_get_pin_count(&blocking_memobj.obj, 0));
 
   block_cache_wakeup_flush_thread();
-  // TODO(SMP): do this in a thread-safe/atomic way.
-  while (blocking_memobj.waiting_writers == 0) scheduler_yield();
+  KEXPECT_TRUE(bmo_await_writers(&blocking_memobj, 1));
 
   args.obj = &blocking_memobj;
   ntfn_init(&args.done);
@@ -1417,7 +1453,7 @@ static void free_all_memobj_testB(void) {
   KEXPECT_EQ(1, list_size(&blocking_memobj.obj.bc_entries));
 
   // Let the flush queue finish.
-  scheduler_wake_all(&blocking_memobj.obj_queue);
+  bmo_wake_all(&blocking_memobj);
   for (int i = 0; i < 10; ++i) scheduler_yield();
 
   block_cache_clear_unpinned();
