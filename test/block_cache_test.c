@@ -596,6 +596,7 @@ typedef struct {
   int waiting_readers;
   int waiting_writers;
   int op_result;
+  const char* data;
 } blocking_memobj_t;
 
 static void blocking_memobj_ref_unref(memobj_t* obj) {}
@@ -637,6 +638,9 @@ static int blocking_memobj_read_page(memobj_t* obj, int page_offset,
     blocking_obj->waiting_readers--;
     if (result == SWAIT_INTERRUPTED) return -EINTR;
   }
+  if (blocking_obj->data) {
+    kstrcpy(buffer, blocking_obj->data);
+  }
   return blocking_obj->op_result;
 }
 
@@ -664,6 +668,7 @@ static void create_blocking_memobj(blocking_memobj_t* obj) {
   obj->waiting_readers = 0;
   obj->waiting_writers = 0;
   obj->op_result = 0;
+  obj->data = NULL;
 }
 
 static int bmo_get_readers(blocking_memobj_t* obj) {
@@ -1614,6 +1619,7 @@ typedef struct {
   blocking_memobj_t* target;
   int result;
   notification_t started, done;
+  int offset;
 } migrate_test_args_t;
 
 static void* do_migrate_thread(void* arg) {
@@ -1621,6 +1627,15 @@ static void* do_migrate_thread(void* arg) {
   ntfn_notify(&args->started);
   args->result =
       block_cache_migrate(args->entry, &args->target->obj, &args->entry_out);
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+static void* do_get_thread(void* arg) {
+  migrate_test_args_t* args = (migrate_test_args_t*)arg;
+  ntfn_notify(&args->started);
+  args->result =
+      block_cache_get(&args->target->obj, args->offset, &args->entry_out);
   ntfn_notify(&args->done);
   return NULL;
 }
@@ -1738,11 +1753,133 @@ static void block_cache_migrate_testB(void) {
   ksleep(20);
   KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_NONE));
   block_cache_clear_unpinned();
+}
 
+static void block_cache_migrate_testC(void) {
+  KTEST_BEGIN("block_cache_migrate(): target entry is initializing");
+  blocking_memobj_t obj1, obj2;
+  create_blocking_memobj(&obj1);
+  create_blocking_memobj(&obj2);
+  obj1.block_reads = false;
+  obj2.data = "obj2_data";
+
+  const int kBlockOffset = 5;
+  migrate_test_args_t args;
+  args.entry = args.entry_out = NULL;
+  args.target = &obj2;
+  ntfn_init(&args.started);
+  ntfn_init(&args.done);
+  args.offset = kBlockOffset;
+  kthread_t get_thread;
+  KEXPECT_EQ(0, proc_thread_create(&get_thread, &do_get_thread, &args));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
+
+  // Create entry in obj1, then start migration in another bg thread.
+  bc_entry_t* entry1 = NULL;
+  KEXPECT_EQ(0, block_cache_get(&obj1.obj, kBlockOffset, &entry1));
+  kstrcpy(entry1->block, "abcd");
+  void* entry1_block_orig = entry1->block;
+  migrate_test_args_t args2;
+
+  args2.entry = entry1;
+  args2.entry_out = NULL;
+  args2.target = &obj2;
+  ntfn_init(&args2.started);
+  ntfn_init(&args2.done);
+  kthread_t migrate_thread;
+  KEXPECT_EQ(0,
+             proc_thread_create(&migrate_thread, &do_migrate_thread, &args2));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2.started, 5000));
+  // The migration shouldn't complete since the target entry exists and is
+  // initializing.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2.done, 20));
+
+  // Let initialization finish and verify the results.
+  bmo_wake_all(&obj2);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 5000));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_STREQ("obj2_data", args.entry_out->block);
+  KEXPECT_EQ(&obj2.obj, args.entry_out->obj);
+
+  // The migration should complete as well, consuming the obj1 entry.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2.done, 5000));
+  KEXPECT_EQ(0, args2.result);
+  KEXPECT_EQ(args.entry_out, args2.entry_out);
+  KEXPECT_STREQ("obj2_data", args2.entry_out->block);
+  KEXPECT_EQ(&obj2.obj, args2.entry_out->obj);
+  KEXPECT_NE(entry1_block_orig, args2.entry_out->block);
+
+  KEXPECT_EQ(NULL, kthread_join(get_thread));
+  KEXPECT_EQ(NULL, kthread_join(migrate_thread));
+
+  KEXPECT_EQ(0, block_cache_lookup(&obj1.obj, kBlockOffset, &entry1));
+  KEXPECT_EQ(NULL, entry1);  // Should not exist in obj1 anymore.
+
+  KEXPECT_EQ(0, block_cache_put(args.entry_out, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_put(args2.entry_out, BC_FLUSH_NONE));
+  block_cache_clear_unpinned();
+
+
+  // As above, but initialization is blocking and fails.
+  KTEST_BEGIN("block_cache_migrate(): target entry is initializing and fails");
+  create_blocking_memobj(&obj1);
+  create_blocking_memobj(&obj2);
+  obj1.block_reads = false;
+  obj2.op_result = -EXDEV;
+
+  args.entry = args.entry_out = NULL;
+  args.target = &obj2;
+  ntfn_init(&args.started);
+  ntfn_init(&args.done);
+  args.offset = kBlockOffset;
+  KEXPECT_EQ(0, proc_thread_create(&get_thread, &do_get_thread, &args));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
+
+  // Create entry in obj1, then start migration in another bg thread.
+  entry1 = NULL;
+  KEXPECT_EQ(0, block_cache_get(&obj1.obj, kBlockOffset, &entry1));
+  kstrcpy(entry1->block, "abcd");
+  entry1_block_orig = entry1->block;
+
+  args2.entry = entry1;
+  args2.entry_out = NULL;
+  args2.target = &obj2;
+  ntfn_init(&args2.started);
+  ntfn_init(&args2.done);
+  KEXPECT_EQ(0,
+             proc_thread_create(&migrate_thread, &do_migrate_thread, &args2));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2.started, 5000));
+  // The migration shouldn't complete since the target entry exists and is
+  // initializing.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2.done, 20));
+
+  // Let initialization finish and verify the results.
+  bmo_wake_all(&obj2);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 5000));
+  KEXPECT_EQ(-EXDEV, args.result);
+  KEXPECT_EQ(NULL, args.entry_out);
+
+  // The migration should fail as well.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2.done, 5000));
+  KEXPECT_EQ(-EXDEV, args2.result);
+  KEXPECT_EQ(NULL, args.entry_out);
+  KEXPECT_EQ(entry1_block_orig, entry1->block);
+
+  KEXPECT_EQ(NULL, kthread_join(get_thread));
+  KEXPECT_EQ(NULL, kthread_join(migrate_thread));
+
+  bc_entry_t* entry2 = NULL;
+  KEXPECT_EQ(0, block_cache_lookup(&obj1.obj, kBlockOffset, &entry2));
+  KEXPECT_EQ(entry1, entry2);  // Should STILL exist.
+
+  KEXPECT_EQ(0, block_cache_put(entry1, BC_FLUSH_NONE));
+  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_NONE));
+  block_cache_clear_unpinned();
 
   // TODO(aoates): tests for the following:
   //  * pin count changes during flushing
-  //  * get has an error (target entry exists but failed to be initialized)
   //  * migration of flushed status
   //  * source entry is unflushed (and status of flush queue)
 }
@@ -1791,6 +1928,7 @@ void block_cache_test(void) {
 
   block_cache_migrate_testA();
   block_cache_migrate_testB();
+  block_cache_migrate_testC();
 
   // Cleanup.
   block_cache_set_bg_flush_period(old_flush_period_ms);
