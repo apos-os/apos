@@ -192,15 +192,14 @@ static int shadow_get_page(memobj_t* obj, int page_offset, int writable,
     return 0;
   } else {
     // First check if we have a copy of the page.
+    KMUTEX_AUTO_LOCK(lock, &data->shadow_lock);
     int result = block_cache_lookup(obj, page_offset, entry_out);
     if (result) return result;
     if (*entry_out != 0x0) return 0;
 
     // Didn't find it, get (a read-only copy of) it from the subobj.
-    kmutex_lock(&data->shadow_lock);
     memobj_t* subobj = data->subobj;
     result = subobj->ops->get_page(subobj, page_offset, writable, entry_out);
-    kmutex_unlock(&data->shadow_lock);
     return result;
   }
 }

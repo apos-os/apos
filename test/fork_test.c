@@ -1040,6 +1040,108 @@ static void shadow_object_collapse_testC(memobj_t* file_obj) {
   shadow6->ops->unref(shadow6);
 }
 
+typedef struct {
+  memobj_t* obj;
+  int result;
+  bc_entry_t* entry_out;
+  notification_t started;
+  notification_t done;
+} shadow_testD_args;
+
+static void* shadow_testD_lookup_thread(void* arg) {
+  shadow_testD_args* args = (shadow_testD_args*)arg;
+  ntfn_notify(&args->started);
+  args->result = so_get_page(args->obj, 0, /* writable= */0, &args->entry_out);
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+static void* shadow_testD_migrate_thread(void* arg) {
+  return memobj_create_shadow((memobj_t*)arg);
+}
+
+static void shadow_object_collapse_testD(memobj_t* file_obj) {
+  // A white-boxy test for a simultaneous get/lookup and migration.  We can't
+  // simulaneously have a get() with a migration _from_ the same object (because
+  // we wouldn't be migrating if another object had a reference), but we could
+  // have one simultaneously with a migration _to_ the same object.
+  KTEST_BEGIN("shadow object collapse: simultaneous get and migrate");
+  memobj_t* shadow1 = memobj_create_shadow(file_obj);
+  memobj_t* shadow2 = memobj_create_shadow(shadow1);
+
+  bc_entry_t* entry1 = NULL;
+  KEXPECT_EQ(0, so_get_page(shadow1, 0, /* writable= */1, &entry1));
+  KEXPECT_EQ(shadow1, entry1->obj);
+  void* entry1_block = entry1->block;
+  kstrcpy(entry1->block, "abcd");
+  so_put_page(entry1, BC_FLUSH_NONE);
+  shadow1->ops->unref(shadow1);
+
+  // Lock shadow2 to prevent the lookup from completing.  This is the white-boxy
+  // part.
+  shadow_data_t* shadow2_data = (shadow_data_t*)shadow2->data;
+  kmutex_lock(&shadow2_data->shadow_lock);
+
+  // Start the lookup in a separate thread, then disable that thread.
+  kthread_t lookup_thread;
+  shadow_testD_args args;
+  args.obj = shadow2;
+  ntfn_init(&args.started);
+  ntfn_init(&args.done);
+  KEXPECT_EQ(0, proc_thread_create(&lookup_thread, &shadow_testD_lookup_thread,
+                                   &args));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args.done, 20));
+  ksleep(20);  // Make sure the lookup thread is blocked in the lookup.
+  kthread_disable(lookup_thread);
+
+  // Note: there are two valid outcomes here --- the migration completes first
+  // and the lookup finds the migrated block; OR the lookup/get happens first
+  // (creating a reference on the page in shadow1) and the migration does NOT
+  // happen.  What should not happen is the migration/collapse happens and the
+  // lookup/get gets a new page from the root object.  We only verify the
+  // correct scenario that happens in practice today in this test.
+
+  // Start a migration in a second thread (should also block on the mutex).
+  kthread_t migrate_thread;
+  KEXPECT_EQ(0, proc_thread_create(&migrate_thread,
+                                   &shadow_testD_migrate_thread, shadow2));
+  // Give the migrate thread time to run and block.
+  ksleep(50);
+
+  // Unlock the object, then wait for the migration to complete (it should).
+  kmutex_unlock(&shadow2_data->shadow_lock);
+  memobj_t* shadow3 = kthread_join(migrate_thread);
+  KEXPECT_NE(NULL, shadow3);
+
+  // Let the blocked lookup complete.
+  kthread_enable(lookup_thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args.done, 5000));
+  KEXPECT_EQ(NULL, kthread_join(lookup_thread));
+
+  // The lookup result should be consistent with the current post-migration
+  // state (this test should hold no matter how the race proceeds).
+  bc_entry_t* entry2 = NULL;
+  KEXPECT_EQ(0, so_get_page(shadow2, 0, /* writable= */0, &entry2));
+  KEXPECT_EQ(0, args.result);
+  KEXPECT_EQ(entry2, args.entry_out);
+  KEXPECT_EQ(entry1_block, entry2->block);
+  KEXPECT_EQ(entry1_block, args.entry_out->block);
+  KEXPECT_STREQ("abcd", entry2->block);
+  KEXPECT_STREQ("abcd", args.entry_out->block);
+
+  // Further verify that the migration actually happened (per above, only one of
+  // the valid outcomes --- may need to be updated in the future).
+  KEXPECT_EQ(shadow2, entry2->obj);
+  KEXPECT_EQ(shadow2, get_shadow_child(shadow3));
+  KEXPECT_EQ(file_obj, get_shadow_child(shadow2));
+
+  so_put_page(entry2, BC_FLUSH_NONE);
+  so_put_page(args.entry_out, BC_FLUSH_NONE);
+  shadow2->ops->unref(shadow2);
+  shadow3->ops->unref(shadow3);
+}
+
 static void shadow_object_collapse_test(void) {
   KTEST_BEGIN("fork() shadow object collapse test");
   // Ensure we have a non-shadow object at the base of the chain.
@@ -1053,6 +1155,7 @@ static void shadow_object_collapse_test(void) {
   shadow_object_collapse_testA(fd);
   shadow_object_collapse_testB(fd);
   shadow_object_collapse_testC(file_obj);
+  shadow_object_collapse_testD(file_obj);
 
   file_obj->ops->unref(file_obj);
   KEXPECT_EQ(0, vfs_close(fd));
