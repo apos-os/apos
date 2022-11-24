@@ -977,6 +977,27 @@ static void* disable_test_thread(void* arg) {
   return NULL;
 }
 
+typedef struct {
+  kmutex_t* mu;
+  notification_t started;
+  notification_t done;
+} disable_test2_args_t;
+
+static void* disable_test_thread2(void* arg) {
+  disable_test2_args_t* args = (disable_test2_args_t*)arg;
+  ntfn_notify(&args->started);
+  kmutex_lock(args->mu);
+  kmutex_unlock(args->mu);
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+void disable_test2_args_init(disable_test2_args_t* args, kmutex_t* mu) {
+  args->mu = mu;
+  ntfn_init(&args->started);
+  ntfn_init(&args->done);
+}
+
 static void disable_test(void) {
   KTEST_BEGIN("kthread_disable() test");
   disable_test_args_t args;
@@ -998,6 +1019,74 @@ static void disable_test(void) {
   kthread_enable(thread);
   KEXPECT_EQ(NULL, kthread_join(thread));
   KEXPECT_TRUE(args.x);
+
+
+  KTEST_BEGIN("kthread_disable() with mutex test (one disabled thread)");
+  kmutex_t mu;
+  kmutex_init(&mu);
+  kmutex_lock(&mu);
+  const int kNumArgs = 2;
+  disable_test2_args_t args2[kNumArgs];
+  for (int i = 0; i < kNumArgs; ++i) {
+    disable_test2_args_init(&args2[i], &mu);
+  }
+  KEXPECT_EQ(0, kthread_create(&thread, disable_test_thread2, &args2));
+  scheduler_make_runnable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[0].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));
+  kthread_disable(thread);
+  kmutex_unlock(&mu);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));  // It's disabled.
+  kthread_enable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+
+  KTEST_BEGIN("kthread_disable() with mutex test (two disabled threads)");
+  kmutex_lock(&mu);
+  for (int i = 0; i < kNumArgs; ++i) {
+    disable_test2_args_init(&args2[i], &mu);
+  }
+  kthread_t thread2;
+  KEXPECT_EQ(0, kthread_create(&thread, disable_test_thread2, &args2[0]));
+  KEXPECT_EQ(0, kthread_create(&thread2, disable_test_thread2, &args2[1]));
+  scheduler_make_runnable(thread);
+  scheduler_make_runnable(thread2);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[0].started, 5000));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[1].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[1].done, 20));
+  kthread_disable(thread);
+  kthread_disable(thread2);
+  kmutex_unlock(&mu);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));  // It's disabled.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[1].done, 20));  // It's disabled.
+  kthread_enable(thread);
+  kthread_enable(thread2);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+
+  // Create two threads that try to lock a mutex.  The one that is not disabled
+  // should be prioritized even though it locks second.
+  KTEST_BEGIN("kthread_disable() with mutex test (mixed disabled threads)");
+  kmutex_lock(&mu);
+  for (int i = 0; i < kNumArgs; ++i) {
+    disable_test2_args_init(&args2[i], &mu);
+  }
+  KEXPECT_EQ(0, kthread_create(&thread, disable_test_thread2, &args2[0]));
+  KEXPECT_EQ(0, kthread_create(&thread2, disable_test_thread2, &args2[1]));
+  scheduler_make_runnable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[0].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));
+  scheduler_make_runnable(thread2);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[1].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[1].done, 20));
+  kthread_disable(thread);
+  kmutex_unlock(&mu);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));  // It's disabled.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[1].done, 5000));
+  kthread_enable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
 }
 
 static void* do_notify(void* arg) {

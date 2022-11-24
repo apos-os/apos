@@ -444,7 +444,15 @@ static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
   if (!kthread_queue_empty(&m->wait_queue)) {
-    kthread_t next_holder = kthread_queue_pop(&m->wait_queue);
+    // Try to find the first non-disabled waiter.
+    kthread_t next_holder = m->wait_queue.head;
+    while (next_holder && !next_holder->runnable) {
+      next_holder = next_holder->next;
+    }
+    if (!next_holder) {
+      next_holder = m->wait_queue.head;
+    }
+    kthread_queue_remove(next_holder);
     m->holder = next_holder;
     scheduler_make_runnable(next_holder);
     if (yield) scheduler_yield();
