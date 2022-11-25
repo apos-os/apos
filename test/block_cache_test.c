@@ -1674,27 +1674,8 @@ static void block_cache_migrate_testB(void) {
   KEXPECT_TRUE(ntfn_await_with_timeout(&test_args.started, 5000));
   KEXPECT_FALSE(ntfn_await_with_timeout(&test_args.done, 50));
 
-  // Disable the migrating thread and let the flush complete.
-  kthread_disable(thread1);
+  // Let the flush and migration complete.
   KEXPECT_EQ(1, bmo_get_writers(&obj1));
-  bmo_wake_all(&obj1);
-  // TODO(aoates): consider a better primitive (drain?)
-  while (bmo_get_writers(&obj1) > 0) ksleep(10);
-
-  // Trigger another flush while the migration is blocked.  This also tests the
-  // "get another ref to the entry during migration" path.
-  bc_entry_t* entry2 = NULL;
-  KEXPECT_EQ(0, block_cache_get(&obj1.obj, kBlockOffset, &entry2));
-  KEXPECT_EQ(entry1, entry2);  // Technically wrong, entry1 is owned by
-                               // migration thread now.
-  KEXPECT_EQ(0, block_cache_put(entry2, BC_FLUSH_ASYNC));
-  KEXPECT_TRUE(bmo_await_writers(&obj1, 1));  // Wait for second flush.
-
-  // Reenable migration thread and let the second flush complete, then wait and
-  // make sure the migration completes.
-  kthread_enable(thread1);
-  // ...migration still shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&test_args.done, 20));
   bmo_wake_all(&obj1);
   KEXPECT_TRUE(ntfn_await_with_timeout(&test_args.done, 5000));
   KEXPECT_EQ(NULL, kthread_join(thread1));
