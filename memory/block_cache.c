@@ -593,40 +593,40 @@ int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
   KASSERT_DBG(entry->initialized);
   KASSERT_DBG(entry->error == 0);
 
-  while (entry->flushing) {
-    int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
-    if (result == SWAIT_INTERRUPTED) {
-      return -EINTR;
-    }
-    KASSERT(result == SWAIT_DONE);
-  }
-
   if (entry->pin_count > 1) {
     return -EBUSY;
   }
 
+  int result = 0;
+  if (entry->flushing || !entry->flushed) {
+    result = flush_or_wait(entry);
+    if (result) {
+      return result;
+    }
+  }
+
   // Get the appropriate page from the target memobj; supply the existing
   // entry's block to use if the entry needs creation.
-  int result =
-      block_cache_get_internal(target, entry_pub->offset, target_entry_out,
-                               /* existing_block= */ entry_pub->block);
+  result = block_cache_get_internal(target, entry_pub->offset, target_entry_out,
+                                    /* existing_block= */ entry_pub->block);
   if (result) {
     return result;
   }
+  // These should only trigger if another thread grabbed the entry, violating
+  // the contract with the caller.
+  KASSERT_DBG(!entry->flushing);
+  KASSERT_DBG(entry->flushed);
+  KASSERT_DBG(entry->pin_count == 1);
+  KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+
   // If we indeed adopted this new block, deal with the old one.
   bc_entry_t* target_entry = *target_entry_out;
   if (target_entry->block == entry_pub->block) {
-    // TODO(aoates): ensure tests for various flushed states and migration of
-    // flushed state to the new entry.
     entry_pub->block = NULL;
     entry_pub->block_phys = 0;
   }
 
   // We're now done with the source entry, one way or another.
-  entry->flushed = true;
-  if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
-    list_remove(&g_flush_queue, &entry->flushq);
-  }
   entry->pin_count--;
   cleanup_cache_entry(entry);
 
