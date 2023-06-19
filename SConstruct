@@ -183,7 +183,7 @@ def phys_object(env, source):
   virtual) address space, i.e. the code run at boot before paging is
   configured."""
   return [env.Object(source, OBJSUFFIX='.PHYS.o',
-    CPPDEFINES=env['CPPDEFINES'] + ['_MULTILINK_SUFFIX=_PHYS'])]
+    CPPDEFINES=['$CPPDEFINES', '_MULTILINK_SUFFIX=_PHYS'])]
 
 def tpl_scanner_func(node, env, paths, arg=None):
   """Depedency scanner for .tpl files."""
