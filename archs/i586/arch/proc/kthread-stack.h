@@ -15,7 +15,6 @@
 #ifndef APOO_ARCHS_I586_ARCH_PROC_KTHREAD_STACK_H
 #define APOO_ARCHS_I586_ARCH_PROC_KTHREAD_STACK_H
 
-// TODO(aoates): reduce back to 16k when shadow chain collapse is implemented.
-#define ARCH_KTHREAD_BASE_STACK_SIZE (5 * 4096)  // 20k
+#define ARCH_KTHREAD_BASE_STACK_SIZE (4 * 4096)  // 16k
 
 #endif
