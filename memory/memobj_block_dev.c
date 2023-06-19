@@ -113,11 +113,9 @@ static int bd_write_page(memobj_t* obj, int page_offset, const void* buffer) {
 }
 
 int memobj_create_block_dev(memobj_t* obj, apos_dev_t dev) {
-  kmemset(obj, 0, sizeof(memobj_t));
+  memobj_base_init(obj);
   obj->type = MEMOBJ_BLOCK_DEV;
   obj->id = fnv_hash_array(&dev, sizeof(apos_dev_t));
-  obj->refcount = 1;
-  obj->lock = KSPINLOCK_NORMAL_INIT;
   obj->data = dev_get_block(dev);
   if (!obj->data) {
     return -ENODEV;

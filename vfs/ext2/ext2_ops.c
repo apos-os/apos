@@ -25,6 +25,7 @@
 #include "vfs/fs.h"
 
 #include "vfs/ext2/ext2-internal.h"
+#include "vfs/ext2/ext2.h"
 #include "vfs/ext2/ext2fs.h"
 
 #define KLOG(...) klogfm(KL_EXT2, __VA_ARGS__)
@@ -1139,6 +1140,7 @@ static int make_inode(ext2fs_t* fs, uint32_t parent_inode, uint16_t mode,
 }
 
 void ext2_set_ops(fs_t* fs) {
+  fs->destroy_fs = &ext2_destroy_fs;
   fs->alloc_vnode = &ext2_alloc_vnode;
   fs->get_root = &ext2_get_root;
   fs->get_vnode = &ext2_get_vnode;

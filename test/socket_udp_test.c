@@ -455,9 +455,9 @@ static void sendto_test(void) {
   KEXPECT_EQ(-EAFNOSUPPORT,
              net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01,
                         sizeof(dst_addr) - 1));
-  KEXPECT_EQ(-EAFNOSUPPORT,
-             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 3));
-  KEXPECT_EQ(-EAFNOSUPPORT,
+  KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 3));
+  KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 0));
+  KEXPECT_EQ(-EINVAL,
              net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, -1));
 
   vfs_close(sock);

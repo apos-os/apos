@@ -52,6 +52,7 @@ typedef struct {
 #define IDT_DPL_RING0 0x00
 #define IDT_DPL_RING3 0x60
 #define IDT_TYPE_32_INT 0x0E
+#define IDT_TYPE_TASK_GATE 0x05
 
 // The kernel's code segment selector.  Make sure this matches the one set in
 // gdt_flush.s.

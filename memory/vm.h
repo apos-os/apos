@@ -50,9 +50,19 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write, bool is_user,
 
 // Resolves the given address to a physical address.  Verifies that the access
 // is valid (as for vm_verify_region), is aligned, and doesn't cross a page
-// boundary.   Returns 0 if the access is valid, -EFAULT if not.
+// boundary.  If successful, pins the corresponding bc_entry_t and returns it in
+// `entry_out`.  Returns 0 if the access is valid, -EFAULT if not.
+// On error, generates the appropriate signal (if necessary).
 int vm_resolve_address(process_t* proc, addr_t start, size_t size,
-                       bool is_write, bool is_user, phys_addr_t* resolved_out);
+                       bool is_write, bool is_user, bc_entry_t** entry_out,
+                       phys_addr_t* resolved_out);
+
+// As above, but if the page is not currently resident, does not page it in
+// (setting *entry_out to NULL and returning 0).
+int vm_resolve_address_noblock(process_t* proc, addr_t start, size_t size,
+                               bool is_write, bool is_user,
+                               bc_entry_t** entry_out,
+                               phys_addr_t* resolved_out);
 
 // Initialize and insert a global kernel memory region (such as the heap, or the
 // linearly-mapped kernel binary).

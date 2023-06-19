@@ -23,7 +23,10 @@
 
 #include <stdbool.h>
 
+#include "common/config.h"
+#include "common/list.h"
 #include "common/types.h"
+#include "dev/timer.h"
 
 typedef struct kthread_data* kthread_t;
 #define KTHREAD_NO_THREAD 0x0
@@ -74,6 +77,11 @@ void kthread_exit(void* x);
 // block.
 void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg);
 
+// Disable or re-enable a thread.  A disabled thread will be schedulable but
+// not run (return from a blocking scheduler function) until re-enabled.
+void kthread_disable(kthread_t thread);
+void kthread_enable(kthread_t thread);
+
 /******************************* Thread Queues ********************************/
 
 // Thread queues are simple linked lists of threads, which can be pushed on the
@@ -102,10 +110,26 @@ void kthread_queue_remove(kthread_t thread);
 
 /********************************* Mutexes ************************************/
 
+// How many locked mutexes to track for deadlock detection.
+#define KMUTEX_DEADLOCK_LRU_SIZE 10
+
+typedef uint32_t kmutex_id_t;
+typedef struct {
+  kmutex_id_t id;
+  apos_ms_t lru;
+} kmutex_prior_t;
+
 struct kmutex {
   int locked;
   kthread_t holder; // For debugging.
   kthread_queue_t wait_queue;
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  kmutex_id_t id;
+  list_link_t link;  // On holder list, for deadlock detection.
+  // Mutexes that have been held when this was locked.
+  kmutex_prior_t priors[KMUTEX_DEADLOCK_LRU_SIZE];
+#endif
 };
 typedef struct kmutex kmutex_t;
 

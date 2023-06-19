@@ -49,6 +49,7 @@
 
 void vfs_vnode_init(vnode_t* n, fs_t* fs, int num) {
   n->fs = fs;
+  n->fs_link = LIST_LINK_INIT;
   n->fstype[0] = 0x0;
   n->num = num;
   n->type = VNODE_UNINITIALIZED;
@@ -69,6 +70,7 @@ void vfs_fs_init(fs_t* fs) {
   kmemset(fs, 0, sizeof(fs_t));
   fs->id = VFS_FSID_NONE;
   fs->open_vnodes = 0;
+  fs->open_vnodes_list = LIST_INIT;
   fs->dev = kmakedev(DEVICE_ID_UNKNOWN, DEVICE_ID_UNKNOWN);
   kmutex_init(&fs->rename_lock);
 }
@@ -141,6 +143,7 @@ static void cleanup_socket_vnode(vnode_t* vnode) {
 
 void vfs_init() {
   KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
+  kmutex_init(&g_fs_table_lock);
 
 #if ENABLE_EXT2
   // First try to mount every ATA device as an ext2 fs.
@@ -231,6 +234,7 @@ static vnode_t* vfs_get_uninitialized(fs_t* fs, int vnode_num) {
     vnode->refcount = 1;
     vnode->state = VNODE_ST_BOUND;
     fs->open_vnodes++;
+    list_push(&fs->open_vnodes_list, &vnode->fs_link);
 
     // Put the unitialized vnode into the table.
     htbl_put(&g_vnode_cache, vnode_hash_n(vnode), (void*)vnode);
@@ -414,6 +418,8 @@ void vfs_put(vnode_t* vnode) {
 
   // TODO(aoates): lock for fs data.
   vnode->fs->open_vnodes--;
+  KASSERT_DBG(list_link_on_list(&vnode->fs->open_vnodes_list, &vnode->fs_link));
+  list_remove(&vnode->fs->open_vnodes_list, &vnode->fs_link);
   KASSERT_DBG(vnode->fs->open_vnodes >= 0);
   kspin_unlock(&g_vnode_cache_lock);
   kmutex_unlock(&vnode->state_mu);

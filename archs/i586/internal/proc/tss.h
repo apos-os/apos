@@ -24,8 +24,20 @@ typedef struct {
   uint32_t esp0;
   uint16_t ss0;
   uint16_t _unused2;
-  uint32_t _unused3[22];
-  uint16_t _unused4;
+  uint32_t _unused3[4];
+  uint32_t cr3;
+  uint32_t eip;
+  uint32_t eflags;
+  uint32_t _unused4[4];
+  uint32_t esp;
+  uint32_t ebp;
+  uint32_t _unused5[3];
+  uint16_t cs;
+  uint16_t _unused6;
+  uint16_t ss;
+  uint16_t _unused8;
+  uint32_t _unused9[4];
+  uint16_t _unused10;
   uint16_t iombp;
 } __attribute__((packed)) tss_t;
 _Static_assert(sizeof(tss_t) == 104, "tss_t incorrect size");
@@ -37,5 +49,8 @@ void tss_init(void);
 
 // Set the current kernel stack in the TSS.  Call when switching threads.
 void tss_set_kernel_stack(addr_t stack);
+
+// Returns a pointer to the primary TSS.
+const tss_t* tss_get(void);
 
 #endif

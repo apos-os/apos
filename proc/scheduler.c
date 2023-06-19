@@ -77,8 +77,14 @@ void scheduler_yield() {
 
 void scheduler_yield_no_reschedule() {
   PUSH_AND_DISABLE_INTERRUPTS();
-  kthread_data_t* new_thread = kthread_queue_pop(&g_run_queue);
-  if (!new_thread) {
+  kthread_data_t* new_thread = g_run_queue.head;
+  // This is inefficient, but disabled threads are not expected to be used much.
+  while (new_thread && !new_thread->runnable) {
+    new_thread = new_thread->next;
+  }
+  if (new_thread) {
+    kthread_queue_remove(new_thread);
+  } else {
     new_thread = g_idle_thread;
   }
   kthread_switch(new_thread);

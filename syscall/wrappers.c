@@ -44,11 +44,11 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   // Everything is checked but the 'addr' argument.  Do that now.
   struct sockaddr* KERNEL_addr = 0x0;
 
-  if (addr_len != NULL) {
-    const int CHECK_addr = syscall_verify_buffer(
-        addr, *addr_len, 1 /* is_write */, 1 /* allow_null */);
-    if (CHECK_addr < 0) return CHECK_addr;
-  } else {
+  if (addr_len != NULL && (size_t)(*addr_len) > UINT32_MAX / 2) {
+    return -EINVAL;
+  }
+
+  if (addr_len == NULL) {
     // If the length is NULL, ignore the addr buffer.
     addr = NULL;
   }
@@ -58,9 +58,12 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
     return -ENOMEM;
   }
 
-  const int result = net_accept(socket, KERNEL_addr, addr_len);
+  int result = net_accept(socket, KERNEL_addr, addr_len);
 
-  if (addr) kmemcpy(addr, KERNEL_addr, *addr_len);
+  if (addr) {
+    int copy_result = syscall_copy_to_user(KERNEL_addr, addr, *addr_len);
+    if (copy_result) result = copy_result;
+  }
   if (KERNEL_addr) kfree((void*)KERNEL_addr);
 
   return result;
@@ -70,11 +73,11 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
                          struct sockaddr* address, socklen_t* address_len) {
   struct sockaddr* KERNEL_address = 0x0;
 
-  if (address_len != NULL) {
-    const int CHECK_address = syscall_verify_buffer(
-        address, *address_len, 1 /* is_write */, 1 /* allow_null */);
-    if (CHECK_address < 0) return CHECK_address;
-  } else {
+  if (address_len != NULL && (size_t)(*address_len) > UINT32_MAX / 2) {
+    return -EINVAL;
+  }
+
+  if (address_len == NULL) {
     // If the length is NULL, ignore the addr buffer.
     address = NULL;
   }
@@ -84,10 +87,12 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
     return -ENOMEM;
   }
 
-  const int result =
+  int result =
       net_recvfrom(socket, buf, len, flags, KERNEL_address, address_len);
 
-  if (address) kmemcpy(address, KERNEL_address, *address_len);
+  if (address) {
+    result = syscall_copy_to_user(KERNEL_address, address, *address_len);
+  }
   if (KERNEL_address) kfree((void*)KERNEL_address);
 
   return result;

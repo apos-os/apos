@@ -17,10 +17,11 @@
 #define APOO_USER_KTEST_H
 
 #include <errno.h>
-#include <stdio.h>
-#include <string.h>
+#include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define STR2(x) #x
 #define STR(x) STR2(x)
@@ -101,6 +102,19 @@ void kexpect_int(const char* name, const char* file, const char* line,
   KEXPECT_EQ(-1, _result_val); \
   KEXPECT_EQ((e), _saved_errno); \
 } while (0)
+
+#define KEXPECT_SIGNAL(expected_signal, call)         \
+  do {                                                \
+    pid_t _child = fork();                            \
+    if (_child == 0) {                                \
+      call;                                           \
+      exit(1);                                        \
+    }                                                 \
+    int _status = 0;                                  \
+    KEXPECT_EQ(_child, waitpid(_child, &_status, 0)); \
+    KEXPECT_TRUE(WIFSIGNALED(_status));               \
+    KEXPECT_EQ(expected_signal, WTERMSIG(_status));   \
+  } while (0);
 
 // Initialize the testing framework.
 void ktest_begin_all(void);

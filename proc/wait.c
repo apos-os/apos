@@ -19,9 +19,10 @@
 #include "common/kassert.h"
 #include "memory/vm.h"
 #include "proc/kthread.h"
-#include "proc/process.h"
 #include "proc/process-internal.h"
+#include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "user/include/apos/wait.h"
 
 kpid_t proc_wait(int* exit_status) {
@@ -132,4 +133,24 @@ kpid_t proc_waitpid(kpid_t pid, int* exit_status, int options) {
   kpid_t zombie_pid = zombie->id;
   proc_destroy(zombie);
   return zombie_pid;
+}
+
+uint32_t proc_get_procguid(kpid_t pid) {
+  process_t* proc = proc_get(pid);
+  // If the caller is racey with the process exiting, this might catch it.
+  KASSERT(proc != NULL);
+  return proc->guid;
+}
+
+int proc_wait_guid(kpid_t pid, uint32_t guid, int timeout_ms) {
+  const apos_ms_t start = get_time_ms();
+  do {
+    process_t* proc = proc_get(pid);
+    // If it exited or another started, success.
+    if (!proc || proc->guid != guid) {
+      return 0;
+    }
+    ksleep(20);
+  } while (get_time_ms() < start + timeout_ms);
+  return -ETIMEDOUT;
 }

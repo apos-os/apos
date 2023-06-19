@@ -287,7 +287,8 @@ static int self_proc_symlink_readlink(fs_t* fs, void* arg, int vnode_num,
 }
 
 fs_t* procfs_create(void) {
-  fs_t* fs = cbfs_create(procfs_get_vnode, 0x0, PROC_VNODE_NUM_STATIC);
+  fs_t* fs =
+      cbfs_create("procfs", procfs_get_vnode, NULL, 0x0, PROC_VNODE_NUM_STATIC);
 
   int result = cbfs_directory_set_getdents(fs, "/", &proc_getdents, 0x0);
   if (result) {
@@ -301,3 +302,12 @@ fs_t* procfs_create(void) {
   return fs;
 }
 
+int procfs_create_path(const char* source, unsigned long flags,
+                       const void* data, size_t data_len, fs_t** fs_out) {
+  if (kstrcmp(source, "") != 0) {
+    return -EINVAL;
+  }
+
+  *fs_out = procfs_create();
+  return 0;
+}

@@ -186,6 +186,10 @@ static int sock_unix_shutdown(socket_t* socket_base, int how) {
 
 static int sock_unix_bind(socket_t* socket_base, const struct sockaddr* address,
                           socklen_t address_len) {
+  if (address_len < (socklen_t)sizeof(struct sockaddr_un)) {
+    return -EINVAL;
+  }
+
   if (address->sa_family != AF_UNIX) {
     return -EAFNOSUPPORT;
   }

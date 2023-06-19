@@ -22,7 +22,25 @@
 #ifndef APOO_MEMORY_MEMOBJ_SHADOW_H
 #define APOO_MEMORY_MEMOBJ_SHADOW_H
 
+#include <stdbool.h>
+
+#include "common/hashtable.h"
+#include "common/list.h"
 #include "memory/memobj.h"
+
+// Public for testing.
+typedef struct {
+  memobj_t* me;
+  memobj_t* subobj;
+  // Lock for shadow-specific data.
+  kmutex_t shadow_lock;
+  // All extant block cache entries.  Map {offset -> bc_entry_t*}.  Each has an
+  // additional pin on it to ensure it's kept resident even if not currently in
+  // use by a process.
+  htbl_t entries;
+  // Set when we start clearing the entries table.
+  bool cleaning_up;
+} shadow_data_t;
 
 // Create and return a shadow memobj shadowing sub_obj.
 //

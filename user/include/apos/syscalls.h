@@ -111,5 +111,7 @@
 #define SYS_APOS_THREAD_KILL 92
 #define SYS_APOS_THREAD_SELF 93
 #define SYS_FUTEX_TS 94
+#define SYS_MOUNT 95
+#define SYS_UNMOUNT 96
 
 #endif

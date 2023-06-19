@@ -30,10 +30,14 @@ struct fs {
   char fstype[10];
   apos_dev_t dev;  // The underlying device.
   fsid_t id;
-  int open_vnodes;  // The number of open vnodes.
+  int open_vnodes;  // The number of open vnodes.  Protected by vnode cache lock
+  list_t open_vnodes_list;  // Also protected by vnode cache lock.
   kmutex_t rename_lock;
 
   // TODO(aoates): how does allocating the root inode/vnode work?
+
+  // Destroy the (unmounted) filesystem.
+  void (*destroy_fs)(struct fs* fs);
 
   // Allocate a vnode_t, with enough extra space for whatever data the FS will
   // want to store there.  The FS doesn't have to initialize any fields.

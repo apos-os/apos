@@ -61,6 +61,7 @@ typedef struct bc_entry_internal {
   // Link on the flush queue and LRU queue.
   list_link_t flushq;
   list_link_t lruq;
+  list_link_t memobj_link;
 
   // Set to true when the entry is flushed to disk, and to false when the entry
   // is taken by a thread.
@@ -68,6 +69,7 @@ typedef struct bc_entry_internal {
   bool flushing;
 
   bool initialized;
+  int error;                   // Set if failed to be initialized.
   kthread_queue_t wait_queue;  // Threads waiting for init or flush.
 } bc_entry_internal_t;
 
@@ -129,6 +131,7 @@ static void* get_free_block(void) {
 
 // Return a free block to the stack.
 static void put_free_block(void* block) {
+  KASSERT_DBG(block != NULL);
   kmutex_assert_is_held(&g_mu);
   if (g_free_block_stack_idx == FREE_BLOCK_STACK_SIZE) {
     KLOG(WARNING, "dropping free block because the free block cache "
@@ -180,7 +183,14 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
             entry->pub.obj, entry->pub.offset, entry->pub.block);
     kmutex_lock(&g_mu);
     KASSERT_DBG(entry_is_sane(entry));
-    KASSERT_MSG(result == 0, "write_page failed: %s", errorname(-result));
+    // TODO(aoates): propagate the error back to any synchronous waiters.
+    if (result != 0) {
+      KLOG(
+          WARNING,
+          "block cache: write_page(object=%p (id %u), offset=%zu) failed: %s\n",
+          entry->pub.obj, entry->pub.obj->id, entry->pub.offset,
+          errorname(-result));
+    }
 
     // Another thread may have dirtied the block during the write, so if flushed
     // == 0 we need to try again.
@@ -188,6 +198,30 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
   }
   entry->flushing = false;
   scheduler_wake_all(&entry->wait_queue);
+}
+
+// As above, but if the entry is currently already being flushed by another
+// thread, waits for that flush to finish.
+// Note: if the entry isn't pinned, it could be deleted by the time this
+// returns! (if another thread is flushing it, then deletes it before we wake up
+// after blocking on the flush).
+static int flush_or_wait(bc_entry_internal_t* entry) {
+  kmutex_assert_is_held(&g_mu);
+  if (entry->flushing) {
+    int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+    // entry may be dead!  Set to NULL defensively.
+    entry = NULL;
+    KASSERT_DBG(result != SWAIT_TIMEOUT);
+    if (result == SWAIT_INTERRUPTED) {
+      return -EINTR;
+    }
+  } else {
+    if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
+      list_remove(&g_flush_queue, &entry->flushq);
+    }
+    flush_cache_entry(entry);
+  }
+  return 0;
 }
 
 // The flush thread that works through the flush queue, flushing cache entries
@@ -227,19 +261,42 @@ static void cleanup_cache_entry(bc_entry_internal_t* entry) {
   KASSERT_DBG(entry->flushed);
   KASSERT_DBG(!entry->flushing);
 
-  KLOG(DEBUG2, "<block cache free block %zu>\n", entry->pub.offset);
+  KASSERT_DBG(g_size > 0);
   g_size--;
-  const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
-  KASSERT(htbl_remove(&g_table, h) == 0);
-  put_free_block(entry->pub.block);
+  // If uninitialized, it was not successfully populated and was already removed
+  // from the hashtable.
+  if (entry->initialized) {
+    KASSERT_DBG(entry->error == 0);
+    KLOG(DEBUG2, "<block cache free block %zu>\n", entry->pub.offset);
+    const uint32_t h = obj_hash(entry->pub.obj, entry->pub.offset);
+    KASSERT(htbl_remove(&g_table, h) == 0);
+    entry->initialized = false;
+  }
+  if (entry->pub.block) {
+    put_free_block(entry->pub.block);
+  }
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
     entry->pub.block = NULL;
     entry->pub.block_phys = 0;
     entry->pub.offset = (size_t)-1;
-    entry->initialized = false;
   }
   list_push(&g_cleanup_list, &entry->lruq);
+}
+
+static void unpin_entry(bc_entry_internal_t** entry_ptr) {
+  bc_entry_internal_t* entry = *entry_ptr;
+  KASSERT_DBG(entry->pin_count >= 0);
+  kmutex_assert_is_held(&g_mu);
+  entry->pin_count--;
+  if (entry->pin_count == 0) {
+    if (entry->error == 0) {  // Typical case.
+      list_push(&g_lru_queue, &entry->lruq);
+    } else {
+      cleanup_cache_entry(entry);
+    }
+  }
+  *entry_ptr = NULL;
 }
 
 // Free any entries queued for cleanup and unref the underlying memobjs.
@@ -252,6 +309,9 @@ static void free_dead_entries(void) {
 
     KASSERT_DBG(entry->initialized == false);
     KASSERT_DBG(entry->pin_count == 0);
+    list_remove(&entry->pub.obj->bc_entries, &entry->memobj_link);
+    entry->pub.obj->num_bc_entries--;
+    KASSERT_DBG(entry->pub.obj->num_bc_entries >= 0);
     entry->pub.obj->ops->unref(entry->pub.obj);  // May block.
     entry->pub.obj = 0x0;
     kfree(entry);
@@ -328,18 +388,26 @@ static void init_block_cache(void) {
 
 // Given an existing table entry, wait for it to be initialized (if applicable)
 // and add a pin.  Succeeds (returns 0) unless interrupted.
-static int block_cache_get_internal(bc_entry_internal_t* entry) {
+static int block_cache_get_existing(bc_entry_internal_t* entry) {
   kmutex_assert_is_held(&g_mu);
   entry->pin_count++;
   if (!entry->initialized) {
     int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
     KASSERT_DBG(result != SWAIT_TIMEOUT);
     if (result == SWAIT_INTERRUPTED) {
-      entry->pin_count--;
+      unpin_entry(&entry);
       return -EINTR;
     }
   }
-  KASSERT(entry->initialized);
+
+  if (!entry->initialized) {
+    KASSERT_DBG(entry->error != 0);
+    int result = entry->error;
+    unpin_entry(&entry);
+    return result;
+  }
+
+  KASSERT_DBG(entry->error == 0);
   if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
     KASSERT(entry->pin_count == 1);
     list_remove(&g_lru_queue, &entry->lruq);
@@ -347,6 +415,90 @@ static int block_cache_get_internal(bc_entry_internal_t* entry) {
     KASSERT(entry->lruq.prev == 0x0);
   }
   return 0;
+}
+
+// Get or create a new entry.  If a block is supplied, and a new entry is
+// created, then that block is used unchanged.  Otherwise, a new block is
+// created and read from the object.
+static int block_cache_get_internal(memobj_t* obj, int offset,
+                                    bc_entry_t** entry_out,
+                                    void* existing_block) {
+  kmutex_assert_is_held(&g_mu);
+  const uint32_t h = obj_hash(obj, offset);
+  void* tbl_value = 0x0;
+  int result;
+  if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
+    void* block = existing_block;
+    if (!block) {
+      block = get_free_block();
+      if (!block) {
+        return -ENOMEM;
+      }
+    }
+
+    g_size++;
+    bc_entry_internal_t* entry = (bc_entry_internal_t*)kmalloc(sizeof(bc_entry_internal_t));
+    entry->pub.obj = obj;
+    entry->pub.offset = offset;
+    entry->pub.block = block;
+    entry->pub.block_phys = virt2phys((addr_t)block);
+    entry->pin_count = 1;
+    entry->initialized = false;
+    entry->error = 0;
+    entry->flushed = true;
+    entry->flushing = false;
+    entry->flushq = LIST_LINK_INIT;
+    entry->lruq = LIST_LINK_INIT;
+    entry->memobj_link = LIST_LINK_INIT;
+    kthread_queue_init(&entry->wait_queue);
+
+    // Put the uninitialized entry into the table.
+    htbl_put(&g_table, h, entry);
+    KASSERT_DBG(obj->num_bc_entries >= 0);
+    list_push(&obj->bc_entries, &entry->memobj_link);
+    obj->num_bc_entries++;
+
+    // Unlock mutex around reentrant and blocking operations.
+    kmutex_unlock(&g_mu);
+
+    // N.B.(aoates): this means that we'll potentially keep the obj (and
+    // underlying objects like vnodes) around indefinitely after we're done with
+    // them, as long as the bc entries haven't been forced out of the cache.
+    // Safe to call without lock because it doesn't touch our state (unless
+    // calls back into block cache) and we already hold a ref to the memobj in
+    // `obj`, so it will stay live.
+    obj->ops->ref(obj);
+
+    result = 0;
+    if (!existing_block) {
+      // Read data from the block device into the cache.
+      // Note: this may block.
+      KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
+      result = obj->ops->read_page(obj, offset, entry->pub.block);
+    }
+    kmutex_lock(&g_mu);
+
+    entry->error = result;
+    scheduler_wake_all(&entry->wait_queue);
+
+    if (result) {
+      htbl_remove(&g_table, h);
+      unpin_entry(&entry);
+      *entry_out = NULL;
+    } else {
+      entry->initialized = true;
+      *entry_out = &entry->pub;
+    }
+  } else {
+    bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
+    result = block_cache_get_existing(entry);
+    if (result) {
+      *entry_out = NULL;
+      return result;
+    }
+    *entry_out = &entry->pub;
+  }
+  return result;
 }
 
 int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
@@ -368,67 +520,11 @@ int block_cache_get(memobj_t* obj, int offset, bc_entry_t** entry_out) {
   }
 
   // While freeing cache space above, someone else may have come along and
-  // created the entry, so check again.
-  if (!tbl_value && htbl_get(&g_table, h, &tbl_value) != 0) {
-    // Get a new free block, fill it, and return it.
-    void* block = get_free_block();
-    if (!block) {
-      kmutex_unlock(&g_mu);
-      return -ENOMEM;
-    }
-
-    g_size++;
-    bc_entry_internal_t* entry = (bc_entry_internal_t*)kmalloc(sizeof(bc_entry_internal_t));
-    entry->pub.obj = obj;
-    entry->pub.offset = offset;
-    entry->pub.block = block;
-    entry->pub.block_phys = virt2phys((addr_t)block);
-    entry->pin_count = 1;
-    entry->initialized = false;
-    entry->flushed = true;
-    entry->flushing = false;
-    entry->flushq = LIST_LINK_INIT;
-    entry->lruq = LIST_LINK_INIT;
-    kthread_queue_init(&entry->wait_queue);
-
-    // Put the uninitialized entry into the table.
-    htbl_put(&g_table, h, entry);
-
-    // Unlock mutex around reentrant and blocking operations.
-    kmutex_unlock(&g_mu);
-
-    // N.B.(aoates): this means that we'll potentially keep the obj (and
-    // underlying objects like vnodes) around indefinitely after we're done with
-    // them, as long as the bc entries haven't been forced out of the cache.
-    // Safe to call without lock because it doesn't touch our state (unless
-    // calls back into block cache) and we already hold a ref to the memobj in
-    // `obj`, so it will stay live.
-    obj->ops->ref(obj);
-
-    // Read data from the block device into the cache.
-    // Note: this may block.
-    KASSERT(BLOCK_CACHE_BLOCK_SIZE == PAGE_SIZE);
-    const int result =
-        obj->ops->read_page(obj, offset, entry->pub.block);
-    KASSERT_MSG(result == 0, "read_page failed: %s", errorname(-result));
-    kmutex_lock(&g_mu);
-
-    entry->initialized = true;
-    scheduler_wake_all(&entry->wait_queue);
-
-    *entry_out = &entry->pub;
-  } else {
-    bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    int result = block_cache_get_internal(entry);
-    if (result) {
-      kmutex_unlock(&g_mu);
-      *entry_out = NULL;
-      return result;
-    }
-    *entry_out = &entry->pub;
-  }
+  // created the entry, so we need to check again.
+  int result = block_cache_get_internal(obj, offset, entry_out,
+                                        /* existing_block= */ NULL);
   kmutex_unlock(&g_mu);
-  return 0;
+  return result;
 }
 
 int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
@@ -443,7 +539,7 @@ int block_cache_lookup(struct memobj* obj, int offset, bc_entry_t** entry_out) {
     *entry_out = 0x0;
   } else {
     bc_entry_internal_t* entry = (bc_entry_internal_t*)tbl_value;
-    int result = block_cache_get_internal(entry);
+    int result = block_cache_get_existing(entry);
     if (result) {
       *entry_out = NULL;
       return result;
@@ -459,23 +555,15 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
   KASSERT(entry->pin_count > 0);
+  KASSERT_DBG(entry->initialized);
+  KASSERT_DBG(entry->error == 0);
 
   // The block needs to be flushed, if it's not already scheduled for one.
   if (flush_mode != BC_FLUSH_NONE) {
     entry->flushed = 0;
     if (flush_mode == BC_FLUSH_SYNC) {
-      if (entry->flushing) {
-        int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
-        KASSERT_DBG(result != SWAIT_TIMEOUT);
-        if (result == SWAIT_INTERRUPTED) {
-          return -EINTR;
-        }
-      } else {
-        if (list_link_on_list(&g_flush_queue, &entry->flushq)) {
-          list_remove(&g_flush_queue, &entry->flushq);
-        }
-        flush_cache_entry(entry);
-      }
+      int result = flush_or_wait(entry);
+      if (result) return result;
     } else if (flush_mode == BC_FLUSH_ASYNC) {
       // Only schedule a flush if we're not currently flushing, and don't
       // already have one scheduled.
@@ -489,11 +577,111 @@ int block_cache_put(bc_entry_t* entry_pub, block_cache_flush_t flush_mode) {
   }
 
   KASSERT(!list_link_on_list(&g_lru_queue, &entry->lruq));
-  entry->pin_count--;
-  if (entry->pin_count == 0) {
-    list_push(&g_lru_queue, &entry->lruq);
+  unpin_entry(&entry);
+
+  return 0;
+}
+
+int block_cache_migrate(bc_entry_t* entry_pub, struct memobj* target,
+                        bc_entry_t** target_entry_out) {
+  KASSERT(g_initialized);
+  KASSERT(entry_pub->obj != target);
+
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  bc_entry_internal_t* entry = container_of(entry_pub, bc_entry_internal_t, pub);
+  KASSERT(entry->pin_count > 0);
+  KASSERT_DBG(entry->initialized);
+  KASSERT_DBG(entry->error == 0);
+
+  if (entry->pin_count > 1) {
+    return -EBUSY;
   }
 
+  int result = 0;
+  if (entry->flushing || !entry->flushed) {
+    result = flush_or_wait(entry);
+    if (result) {
+      return result;
+    }
+  }
+
+  // Get the appropriate page from the target memobj; supply the existing
+  // entry's block to use if the entry needs creation.
+  result = block_cache_get_internal(target, entry_pub->offset, target_entry_out,
+                                    /* existing_block= */ entry_pub->block);
+  if (result) {
+    return result;
+  }
+  // These should only trigger if another thread grabbed the entry, violating
+  // the contract with the caller.
+  KASSERT_DBG(!entry->flushing);
+  KASSERT_DBG(entry->flushed);
+  KASSERT_DBG(entry->pin_count == 1);
+  KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+
+  // If we indeed adopted this new block, deal with the old one.
+  bc_entry_t* target_entry = *target_entry_out;
+  if (target_entry->block == entry_pub->block) {
+    entry_pub->block = NULL;
+    entry_pub->block_phys = 0;
+  }
+
+  // We're now done with the source entry, one way or another.
+  entry->pin_count--;
+  cleanup_cache_entry(entry);
+
+  return 0;
+}
+
+void block_cache_add_pin(bc_entry_t* entry_pub) {
+  // TODO(aoates): use an atomic for pin_count and make this non-blocking.
+  bc_entry_internal_t* entry =
+      container_of(entry_pub, bc_entry_internal_t, pub);
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  KASSERT_DBG(entry->pin_count > 0);
+  entry->pin_count++;
+}
+
+int block_cache_free_all(struct memobj* obj) {
+  // TODO(aoates): there is a decent amount of shared logic between this,
+  // block_cache_clear_unpinned(), put(), and maybe_free_cache_space().  Maybe
+  // combine into a helper?
+  KMUTEX_AUTO_LOCK(lock, &g_mu);
+  while (!list_empty(&obj->bc_entries)) {
+    bc_entry_internal_t* entry =
+        container_of(obj->bc_entries.head, bc_entry_internal_t, memobj_link);
+    if (entry->pin_count) {
+      return -EBUSY;
+    }
+    // This block may already be on the cleanup list.
+    if (entry->pub.block) {
+      if (!entry->flushed || entry->flushing) {
+        int result = flush_or_wait(entry);  // May block and change entry.
+        if (result) return result;
+        // We don't know what happened --- `entry` may point to invalid memory
+        // now!  Or be pinned, flushing, or dirty.  Just retry from the start.
+        continue;
+      }
+
+      // Sanity checks.
+      KASSERT_DBG(entry->pub.obj == obj);
+      KASSERT_DBG(entry->pin_count == 0);
+      KASSERT_DBG(entry->flushed);
+      KASSERT_DBG(!entry->flushing);
+      KASSERT_DBG(!list_link_on_list(&g_flush_queue, &entry->flushq));
+      // TODO(aoates): is there any scenario when the entry _won't_ be on the LRU
+      // queue here?  If so, write a test for it.
+      if (list_link_on_list(&g_lru_queue, &entry->lruq)) {
+        list_remove(&g_lru_queue, &entry->lruq);
+      }
+      cleanup_cache_entry(entry);
+    } else {
+      KASSERT_DBG(list_link_on_list(&g_cleanup_list, &entry->lruq));
+    }
+
+    // TODO(aoates): figure out how to call free_dead_entries() once at the end.
+    free_dead_entries();  // May block.
+  }
   return 0;
 }
 
@@ -547,6 +735,10 @@ void block_cache_clear_unpinned() {
     while (entry) {
       if (entry->flushing) {
         int result = scheduler_wait_on_locked(&entry->wait_queue, -1, &g_mu);
+        // N.B.(aoates): this is buggy --- we don't hold a pin on the entry, so
+        // it could have been freed while we were sleeping above.
+        // TODO(aoates): fix this so it works safely concurretly, like
+        // block_cache_free_all() or maybe_free_cache_space().
         KASSERT(result == 0);
       }
       if (!entry->flushed) {
@@ -565,10 +757,7 @@ void block_cache_clear_unpinned() {
       entry = next_entry;
     }
     free_dead_entries();  // May block.
-  } while (!list_empty(&g_flush_queue));
-
-  KASSERT(list_empty(&g_flush_queue));
-  KASSERT(list_empty(&g_lru_queue));
+  } while (!list_empty(&g_flush_queue) || !list_empty(&g_lru_queue));
 }
 
 typedef struct {
@@ -580,7 +769,7 @@ typedef struct {
   int pinned;
   int total_pins;
 } stats_t;
-void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
+
 static void stats_counter_func(void* arg, uint32_t key, void* value) {
   stats_t* stats = (stats_t*)arg;
   bc_entry_internal_t* entry = (bc_entry_internal_t*)value;

@@ -20,6 +20,7 @@
 #ifndef APOO_HASHTABLE_H
 #define APOO_HASHTABLE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 struct htbl_entry;
@@ -49,7 +50,20 @@ int htbl_remove(htbl_t* tbl, uint32_t key);
 // Invoke func on each (key, value) pair in the table.  func is invoked with
 // arg, the key, and the value, in that order.  There are no guarantees about
 // what order the items will be iterated in, and func must not mutate the table.
+// Equivalent to htbl_filter() and always returning false.
 void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
+
+// Clears (empties) the hash table, running the given function for each entry
+// before it is removed.  The function should not mutate the table.
+// Equivalent to htbl_filter() and always returning true.
+void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg);
+
+// Runs the given function over the hashtable.  If it returns false, the entry
+// is removed.  Returns the number of entries removed.
+int htbl_filter(htbl_t* tbl, bool (*pred)(void*, uint32_t, void*), void* arg);
+
+// Force a resize (for testing, most likely).
+void htbl_resize(htbl_t* tbl, int num_buckets);
 
 // Return the number of entries in the hashtable.
 int htbl_size(htbl_t* tbl);

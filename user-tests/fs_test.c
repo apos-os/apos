@@ -41,9 +41,7 @@ static int do_getdents(int fd, struct dirent* buf, int count) {
 
 #define NUM_EXPECTED 4
 
-void fs_test(void) {
-  KTEST_SUITE_BEGIN("Filesystem tests");
-
+static void basic_fs_test(void) {
   KTEST_BEGIN("getdents(): basic test");
   KEXPECT_EQ(0, mkdir("_fs_test_dir", S_IRWXU));
   int fd = open("_fs_test_dir/fileA", O_CREAT | O_RDONLY, S_IRWXU);
@@ -88,14 +86,106 @@ void fs_test(void) {
 
   KTEST_BEGIN("getdents(): bad arguments test");
   KEXPECT_EQ(-EBADF, do_getdents(-5, (struct dirent*)buffer, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)0x0, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)0x89000, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)0xc1000000, 500));
-  KEXPECT_EQ(-EFAULT, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
+  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x0, 500));
+  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x89000, 500));
+  KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0xc1000000, 500));
+  KEXPECT_EQ(-ENOMEM, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
 
   // Cleanup.
   KEXPECT_EQ(0, close(fd));
   KEXPECT_EQ(0, unlink("_fs_test_dir/fileA"));
   KEXPECT_EQ(0, unlink("_fs_test_dir/fileB"));
   KEXPECT_EQ(0, rmdir("_fs_test_dir"));
+}
+
+static void mount_test(void) {
+  KTEST_BEGIN("mount(): test setup");
+  KEXPECT_EQ(0, mkdir("_mount_test", S_IRWXU));
+  int fd = open("_mount_test/file", O_CREAT | O_RDONLY, S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, close(fd));
+
+  KTEST_BEGIN("mount(): invalid mount paths");
+  KEXPECT_ERRNO(ENOENT, mount("", "_not_a_dir", "testfs", 0, NULL, 0));
+  KEXPECT_ERRNO(ENOENT, mount("", "_mount_test/abc", "testfs", 0, NULL, 0));
+  KEXPECT_ERRNO(ENOTDIR, mount("", "_mount_test/file", "testfs", 0, NULL, 0));
+  // Try with bogus data lengths.
+  KEXPECT_ERRNO(ENOENT, mount("", "_mount_test/abc", "testfs", 0, NULL, -1));
+  KEXPECT_ERRNO(ENOENT,
+                mount("", "_mount_test/abc", "testfs", 0, NULL, INT_MAX));
+
+  KTEST_BEGIN("mount(): invalid args");
+  KEXPECT_SIGNAL(SIGSEGV,
+                 mount("", "_mount_test", "testfs", 0, (void*)0x12345, 1));
+  KEXPECT_ERRNO(EINVAL,
+                mount("", "_mount_test", "testfs", 0, (void*)0x12345, -1));
+  int scratch;
+  KEXPECT_SIGNAL(SIGSEGV,
+                 mount("", "_mount_test", "testfs", 0, &scratch, 1000000));
+  KEXPECT_ERRNO(EINVAL, mount("", "_mount_test", "testfs", 0, &scratch, -1));
+  KEXPECT_ERRNO(EINVAL, mount(NULL, "_mount_test", "testfs", 0, NULL, 0));
+  KEXPECT_ERRNO(EINVAL, mount("", NULL, "testfs", 0, NULL, 0));
+  KEXPECT_ERRNO(EINVAL, mount("", "_mount_test", NULL, 0, NULL, 0));
+
+
+  KTEST_BEGIN("unmount(): unmount invalid paths");
+  KEXPECT_ERRNO(ENOENT, unmount("_mount_test/abc", 0));
+  KEXPECT_ERRNO(ENOTDIR, unmount("_mount_test/file", 0));
+  KEXPECT_ERRNO(EINVAL, unmount("_mount_test", 0));
+  KEXPECT_ERRNO(EINVAL, unmount(NULL, 0));
+  pid_t child = fork();
+  if (child == 0) {
+    unmount((const char*)0x12345, 0);
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
+
+
+  KTEST_BEGIN("mount(): invalid filesystem type");
+  KEXPECT_ERRNO(EINVAL, mount("", "_mount_test", "not_a_fs_type", 0, NULL, 0));
+
+
+  KTEST_BEGIN("mount(): basic testfs mount");
+  struct stat stat1, stat2;
+  KEXPECT_EQ(0, stat("_mount_test", &stat1));
+  KEXPECT_EQ(0, mount("", "_mount_test", "testfs", 0, NULL, 0));
+  KEXPECT_ERRNO(ENOENT, stat("_mount_test/file", &stat2));
+  KEXPECT_EQ(0, stat("_mount_test", &stat2));
+  KEXPECT_NE(stat1.st_ino, stat2.st_ino);
+
+  KEXPECT_EQ(0, unmount("_mount_test", 0));
+  KEXPECT_EQ(0, stat("_mount_test/file", &stat1));
+
+
+  KTEST_BEGIN("mount(): double mount");
+  KEXPECT_EQ(0, mount("", "_mount_test", "testfs", 0, NULL, 0));
+  KEXPECT_EQ(0, mount("", "_mount_test", "procfs", 0, NULL, 0));
+  KEXPECT_ERRNO(ENOENT, stat("_mount_test/file", &stat2));
+  KEXPECT_EQ(0, lstat("_mount_test/self", &stat2));
+  KEXPECT_TRUE(S_ISLNK(stat2.st_mode));
+  KEXPECT_EQ(0, stat("_mount_test/vnode", &stat2));
+  KEXPECT_TRUE(S_ISREG(stat2.st_mode));
+
+  KEXPECT_ERRNO(EACCES, open("_mount_test/file", O_RDONLY | O_CREAT, S_IRWXU));
+
+  KEXPECT_EQ(0, unmount("_mount_test", 0));
+  KEXPECT_ERRNO(ENOENT, stat("_mount_test/file", &stat2));
+
+  KEXPECT_EQ(0, unmount("_mount_test", 0));
+  KEXPECT_EQ(0, stat("_mount_test/file", &stat1));
+
+
+  KTEST_BEGIN("mount(): cleanup");
+  KEXPECT_EQ(0, unlink("_mount_test/file"));
+  KEXPECT_EQ(0, rmdir("_mount_test"));
+}
+
+void fs_test(void) {
+  KTEST_SUITE_BEGIN("Filesystem tests");
+
+  basic_fs_test();
+  mount_test();
 }

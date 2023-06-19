@@ -14,169 +14,53 @@
 
 #include "vfs/testfs.h"
 
+#include <limits.h>
+
 #include "common/errno.h"
-#include "common/kassert.h"
 #include "common/kstring.h"
-#include "memory/kmalloc.h"
 #include "common/math.h"
-#include "user/include/apos/vfs/dirent.h"
+#include "vfs/cbfs.h"
 
-static vnode_t* testfs_alloc_vnode(struct fs* fs);
-static int testfs_get_root(struct fs* fs);
-static int testfs_get_vnode(vnode_t* vnode);
-static int testfs_put_vnode(vnode_t* vnode);
-static int testfs_lookup(vnode_t* parent, const char* name);
-static int testfs_mknod(vnode_t* parent, const char* name,
-                        vnode_type_t type, apos_dev_t dev);
-static int testfs_mkdir(vnode_t* parent, const char* name);
-static int testfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child);
-static int testfs_read(vnode_t* vnode, int offset, void* buf, int bufsize);
-static int testfs_write(vnode_t* vnode, int offset, const void* buf,
-                        int bufsize);
-static int testfs_link(vnode_t* parent, vnode_t* vnode, const char* name);
-static int testfs_unlink(vnode_t* parent, const char* name, const vnode_t* child);
-static int testfs_getdents(vnode_t* vnode, int offset, void* buf, int bufsize);
-static int testfs_stat(vnode_t* vnode, apos_stat_t* stat_out);
-static int testfs_read_page(vnode_t* vnode, int page_offset, void* buf);
-static int testfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
-
-fs_t* testfs_create(void) {
-  fs_t* f = (fs_t*)kmalloc(sizeof(fs_t));
-  vfs_fs_init(f);
-
-  kstrcpy(f->fstype, "testfs");
-  f->alloc_vnode = &testfs_alloc_vnode;
-  f->get_root = &testfs_get_root;
-  f->get_vnode = &testfs_get_vnode;
-  f->put_vnode = &testfs_put_vnode;
-  f->lookup = &testfs_lookup;
-  f->mknod = &testfs_mknod;
-  f->mkdir = &testfs_mkdir;
-  f->rmdir = &testfs_rmdir;
-  f->read = &testfs_read;
-  f->write = &testfs_write;
-  f->link = &testfs_link;
-  f->unlink = &testfs_unlink;
-  f->getdents = &testfs_getdents;
-  f->stat = &testfs_stat;
-  f->read_page = &testfs_read_page;
-  f->write_page = &testfs_write_page;
-
-  return f;
+static int testfs_read_error(fs_t* fs, void* arg, int vnode, int offset,
+                             void* buf, int buflen) {
+  return -EIO;
 }
 
-void testfs_free(fs_t* fs) {
-  kfree(fs);
-}
-
-static vnode_t* testfs_alloc_vnode(struct fs* fs) {
-  return (vnode_t*)kmalloc(sizeof(vnode_t));
-}
-
-static int testfs_get_root(struct fs* fs) {
-  return 0;
-}
-
-static int testfs_get_vnode(vnode_t* vnode) {
-  KASSERT(vnode->num == 0);
-  vnode->type = VNODE_DIRECTORY;
-  vnode->uid = 0;
-  vnode->gid = 0;
-  vnode->mode = VFS_S_IRUSR | VFS_S_IXUSR;
-  kstrcpy(vnode->fstype, "testfs");
-  return 0;
-}
-
-static int testfs_put_vnode(vnode_t* vnode) {
-  KASSERT(vnode->num == 0);
-  return 0;
-}
-
-static int testfs_lookup(vnode_t* parent, const char* name) {
-  KASSERT(parent->num == 0);
-  if (kstrcmp(name, ".") == 0 || kstrcmp(name, "..") == 0) {
-    return 0;
-  } else {
-    return -ENOENT;
+static int testfs_abc(fs_t* fs, void* arg, int vnode, int offset, void* buf,
+                      int buflen) {
+  const char kData[] = "abc";
+  if (offset < 0 || offset > 100) return -EINVAL;
+  size_t len = min(max(0, kstrlen(kData) - offset), buflen);
+  if (len > 0) {
+    kstrcpy(buf, kData + offset);
   }
-}
-
-static int testfs_mknod(vnode_t* parent, const char* name,
-                        vnode_type_t type, apos_dev_t dev) {
-  KASSERT(parent->num == 0);
-  return -EACCES;
-}
-
-static int testfs_mkdir(vnode_t* parent, const char* name) {
-  KASSERT(parent->num == 0);
-  return -EACCES;
-}
-
-static int testfs_rmdir(vnode_t* parent, const char* name, const vnode_t* child) {
-  KASSERT(parent->num == 0);
-  return -EACCES;
-}
-
-static int testfs_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
-  KASSERT(vnode->num == 0);
-  return -EISDIR;
-}
-
-static int testfs_write(vnode_t* vnode, int offset, const void* buf,
-                        int bufsize) {
-  KASSERT(vnode->num == 0);
-  return -EISDIR;
-}
-
-static int testfs_link(vnode_t* parent, vnode_t* vnode, const char* name) {
-  KASSERT(parent->num == 0);
-  return -EACCES;
-}
-
-static int testfs_unlink(vnode_t* parent, const char* name, const vnode_t* child) {
-  KASSERT(parent->num == 0);
-  return -EACCES;
-}
-
-static int testfs_getdents(vnode_t* vnode, int offset, void* outbuf,
-                           int outbufsize) {
-  KASSERT(vnode->num == 0);
-
-  const int kBufLen = 2 * sizeof(kdirent_t) + 2 + 3;
-  char buf[kBufLen];
-  kdirent_t* d = (kdirent_t*)(&buf[0]);
-  d->d_ino = 0;
-  d->d_offset = sizeof(kdirent_t) + 2;
-  d->d_reclen = d->d_offset;
-  kstrcpy(d->d_name, ".");
-
-  d = (kdirent_t*)(&buf[d->d_offset]);
-  d->d_ino = 0;
-  d->d_offset = kBufLen;
-  d->d_reclen = sizeof(kdirent_t) + 3;
-  kstrcpy(d->d_name, "..");
-
-  if (offset >= kBufLen) return 0;
-  int len = min(kBufLen, outbufsize);
-  kmemcpy(outbuf, buf + offset, len);
   return len;
 }
 
-static int testfs_stat(vnode_t* vnode, apos_stat_t* stat_out) {
-  KASSERT(vnode->num == 0);
-  stat_out->st_mode = VFS_S_IFDIR | VFS_S_IRUSR | VFS_S_IXUSR;
-  stat_out->st_nlink = 2;
-  stat_out->st_rdev = kmakedev(0, 0);
-  stat_out->st_size = 2 * sizeof(kdirent_t) + 5;
-  stat_out->st_blksize = 512;
-  stat_out->st_blocks = 1;
+fs_t* testfs_create(void) {
+  fs_t* fs = cbfs_create("testfs", NULL, NULL, NULL, INT_MAX);
+  if (!fs) return NULL;
+
+  int result =
+      cbfs_create_file(fs, "read_error", &testfs_read_error, NULL, VFS_S_IRWXU);
+  if (result) goto error;
+
+  result = cbfs_create_file(fs, "abc", &testfs_abc, NULL, VFS_S_IRWXU);
+  if (result) goto error;
+
+  return fs;
+
+error:
+  fs->destroy_fs(fs);
+  return NULL;
+}
+
+int testfs_create_path(const char* source, unsigned long flags,
+                       const void* data, size_t data_len, fs_t** fs_out) {
+  if (kstrcmp(source, "") != 0) {
+    return -EINVAL;
+  }
+
+  *fs_out = testfs_create();
   return 0;
-}
-
-static int testfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
-  return -ENOTSUP;
-}
-
-static int testfs_write_page(vnode_t* vnode, int page_offset, const void* buf) {
-  return -ENOTSUP;
 }

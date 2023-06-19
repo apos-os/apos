@@ -18,13 +18,17 @@
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
-#include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/kthread.h"
+#include "proc/notification.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
 #include "test/ktest.h"
+
+// Enable this to run a test that catches a deadlock (and panics the kernel).
+#define RUN_DEADLOCK_DETECTION_FALIURE_TEST 0
 
 // TODO(aoates): other things to test:
 //  * multiple threads join()'d onto one thread
@@ -959,6 +963,328 @@ static void wait_on_locked_test(void) {
   kmutex_unlock(&mu);
 }
 
+typedef struct {
+  // TODO(aoates): use Notification.
+  kthread_queue_t queue;
+  bool x;
+} disable_test_args_t;
+
+static void* disable_test_thread(void* arg) {
+  disable_test_args_t* args = (disable_test_args_t*)arg;
+  scheduler_wake_all(&args->queue);
+  scheduler_wait_on(&args->queue);
+  args->x = true;
+  return NULL;
+}
+
+typedef struct {
+  kmutex_t* mu;
+  notification_t started;
+  notification_t done;
+} disable_test2_args_t;
+
+static void* disable_test_thread2(void* arg) {
+  disable_test2_args_t* args = (disable_test2_args_t*)arg;
+  ntfn_notify(&args->started);
+  kmutex_lock(args->mu);
+  kmutex_unlock(args->mu);
+  ntfn_notify(&args->done);
+  return NULL;
+}
+
+void disable_test2_args_init(disable_test2_args_t* args, kmutex_t* mu) {
+  args->mu = mu;
+  ntfn_init(&args->started);
+  ntfn_init(&args->done);
+}
+
+static void disable_test(void) {
+  KTEST_BEGIN("kthread_disable() test");
+  disable_test_args_t args;
+  kthread_queue_init(&args.queue);
+  args.x = false;
+
+  kthread_t thread;
+  KEXPECT_EQ(0,kthread_create(&thread, &disable_test_thread, &args));
+  scheduler_make_runnable(thread);
+  scheduler_wait_on(&args.queue);
+  // The other thread is now running.  Disable it, then wake it.
+  kthread_disable(thread);
+  scheduler_wake_all(&args.queue);
+  for (int i = 0; i < 10; ++i) scheduler_yield();
+  // The thread should not have run.
+  KEXPECT_FALSE(args.x);
+
+  // Re-enable the thread, then it should be able to run.
+  kthread_enable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_TRUE(args.x);
+
+
+  KTEST_BEGIN("kthread_disable() with mutex test (one disabled thread)");
+  kmutex_t mu;
+  kmutex_init(&mu);
+  kmutex_lock(&mu);
+  const int kNumArgs = 2;
+  disable_test2_args_t args2[kNumArgs];
+  for (int i = 0; i < kNumArgs; ++i) {
+    disable_test2_args_init(&args2[i], &mu);
+  }
+  KEXPECT_EQ(0, kthread_create(&thread, disable_test_thread2, &args2));
+  scheduler_make_runnable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[0].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));
+  kthread_disable(thread);
+  kmutex_unlock(&mu);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));  // It's disabled.
+  kthread_enable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+
+  KTEST_BEGIN("kthread_disable() with mutex test (two disabled threads)");
+  kmutex_lock(&mu);
+  for (int i = 0; i < kNumArgs; ++i) {
+    disable_test2_args_init(&args2[i], &mu);
+  }
+  kthread_t thread2;
+  KEXPECT_EQ(0, kthread_create(&thread, disable_test_thread2, &args2[0]));
+  KEXPECT_EQ(0, kthread_create(&thread2, disable_test_thread2, &args2[1]));
+  scheduler_make_runnable(thread);
+  scheduler_make_runnable(thread2);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[0].started, 5000));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[1].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[1].done, 20));
+  kthread_disable(thread);
+  kthread_disable(thread2);
+  kmutex_unlock(&mu);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));  // It's disabled.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[1].done, 20));  // It's disabled.
+  kthread_enable(thread);
+  kthread_enable(thread2);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+
+  // Create two threads that try to lock a mutex.  The one that is not disabled
+  // should be prioritized even though it locks second.
+  KTEST_BEGIN("kthread_disable() with mutex test (mixed disabled threads)");
+  kmutex_lock(&mu);
+  for (int i = 0; i < kNumArgs; ++i) {
+    disable_test2_args_init(&args2[i], &mu);
+  }
+  KEXPECT_EQ(0, kthread_create(&thread, disable_test_thread2, &args2[0]));
+  KEXPECT_EQ(0, kthread_create(&thread2, disable_test_thread2, &args2[1]));
+  scheduler_make_runnable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[0].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));
+  scheduler_make_runnable(thread2);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[1].started, 5000));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[1].done, 20));
+  kthread_disable(thread);
+  kmutex_unlock(&mu);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&args2[0].done, 20));  // It's disabled.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args2[1].done, 5000));
+  kthread_enable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  KEXPECT_EQ(NULL, kthread_join(thread2));
+}
+
+static void* do_notify(void* arg) {
+  ksleep(50);
+  ntfn_notify((notification_t*)arg);
+  return NULL;
+}
+
+static void notification_test(void) {
+  KTEST_BEGIN("notification: basic test");
+  notification_t n;
+  ntfn_init(&n);
+  KEXPECT_FALSE(ntfn_has_been_notified(&n));
+  KEXPECT_FALSE(ntfn_has_been_notified(&n));
+
+  ntfn_notify(&n);
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+  ntfn_await(&n);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&n, 1000));
+  ntfn_await(&n);
+
+  KTEST_BEGIN("notification: wait test");
+  kthread_t thread;
+  ntfn_init(&n);
+  KEXPECT_EQ(0, kthread_create(&thread, &do_notify, &n));
+  scheduler_make_runnable(thread);
+
+  apos_ms_t start = get_time_ms();
+  ntfn_await(&n);
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+  apos_ms_t end = get_time_ms();
+  KEXPECT_GE(end - start, 30);
+  KEXPECT_LE(end - start, 200);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  KTEST_BEGIN("notification: wait with timeout test");
+  ntfn_init(&n);
+
+  start = get_time_ms();
+  KEXPECT_FALSE(ntfn_await_with_timeout(&n, 100));
+  KEXPECT_FALSE(ntfn_has_been_notified(&n));
+  end = get_time_ms();
+  KEXPECT_GE(end - start, 100);
+  KEXPECT_LE(end - start, 500);
+
+  KEXPECT_EQ(0, kthread_create(&thread, &do_notify, &n));
+  scheduler_make_runnable(thread);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&n, 500));
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+
+  start = get_time_ms();
+  KEXPECT_TRUE(ntfn_await_with_timeout(&n, 500));
+  end = get_time_ms();
+  KEXPECT_LE(end - start, 50);
+  KEXPECT_TRUE(ntfn_has_been_notified(&n));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+static void* dldet_thread(void* arg) {
+  kmutex_t A, B, C;
+  const int kNumMus = KMUTEX_DEADLOCK_LRU_SIZE - 1;
+  kmutex_t mus[kNumMus];
+  kmutex_init(&A);
+  kmutex_init(&B);
+  kmutex_init(&C);
+  for (int i = 0; i < kNumMus; ++i) {
+    kmutex_init(&mus[i]);
+  }
+  // Test mutexes -- always locked in reverse order (so A is locked last, with
+  // all the rest as priors -- looking at the 'priors' set of A in the tests).
+  kthread_t me = kthread_current_thread();
+
+  // First test basic mutex held list maintenance.
+  KEXPECT_EQ(0, list_size(&me->mutexes_held));
+  kmutex_lock(&A);
+  KEXPECT_EQ(1, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &A.link));
+  kmutex_unlock(&A);
+  KEXPECT_EQ(0, list_size(&me->mutexes_held));
+  KEXPECT_FALSE(list_link_on_list(&me->mutexes_held, &A.link));
+  kmutex_lock(&B);
+  KEXPECT_EQ(1, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &B.link));
+  kmutex_unlock(&B);
+
+  // Neither should have a prior still.
+  KEXPECT_EQ(0, A.priors[0].id);
+  KEXPECT_EQ(0, B.priors[0].id);
+
+  // Lock B, then A.
+  kmutex_lock(&B);
+  kmutex_lock(&A);
+  KEXPECT_EQ(2, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &A.link));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &B.link));
+
+  KEXPECT_EQ(0, B.priors[0].id);
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(0, A.priors[1].id);
+  kmutex_unlock(&A);
+  kmutex_unlock(&B);
+
+  // Now sleep, then lock C, then A.  A should have both 'B' and 'C' in the
+  // priors set, with C with a higher LRU value.
+  ksleep(10);
+  kmutex_lock(&C);
+  kmutex_lock(&A);
+  KEXPECT_EQ(2, list_size(&me->mutexes_held));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &A.link));
+  KEXPECT_TRUE(list_link_on_list(&me->mutexes_held, &C.link));
+
+  KEXPECT_EQ(0, C.priors[0].id);
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(C.id, A.priors[1].id);
+  KEXPECT_EQ(0, A.priors[2].id);
+  KEXPECT_GT(A.priors[1].lru, A.priors[0].lru);
+  const apos_ms_t oldBlru = A.priors[0].lru;
+  const apos_ms_t oldClru = A.priors[1].lru;
+  kmutex_unlock(&A);
+  kmutex_unlock(&C);
+
+  // Now overflow the LRU and make sure we replace the oldest one first.
+  ksleep(10);
+  for (int i = 0; i < kNumMus - 1; ++i) {
+    kmutex_lock(&mus[i]);
+  }
+  kmutex_lock(&B);
+  kmutex_lock(&A);
+
+  // A's priors list should have been updated -- the LRU for B should now be
+  // higher than the one for C.
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(C.id, A.priors[1].id);
+  KEXPECT_NE(0, A.priors[2].id);
+  KEXPECT_GT(A.priors[0].lru, oldBlru);
+  KEXPECT_EQ(A.priors[1].lru, oldClru);
+  kmutex_unlock(&B);
+
+  ksleep(10);
+  // Lock one more mutex.  This should now evict C.
+  kmutex_unlock(&A);
+  kmutex_lock(&mus[kNumMus - 1]);
+  kmutex_lock(&A);
+  KEXPECT_EQ(B.id, A.priors[0].id);
+  KEXPECT_EQ(mus[kNumMus - 1].id, A.priors[1].id);  // not C
+  KEXPECT_GT(A.priors[0].lru, oldBlru);
+  KEXPECT_GT(A.priors[1].lru, A.priors[0].lru);
+  kmutex_unlock(&A);
+  kmutex_unlock(&mus[kNumMus - 1]);
+  for (int i = kNumMus - 2; i >= 0; --i) {
+    kmutex_unlock(&mus[i]);
+  }
+
+  KTEST_BEGIN("kmutex_t same-address deadlock detection test");
+  kmutex_init(&A);
+  kmutex_init(&B);
+  kmutex_lock(&B);
+  kmutex_lock(&A);
+  kmutex_unlock(&A);
+  kmutex_unlock(&B);
+
+  // Re-initialize B --- we should not trigger a deadlock detection, even though
+  // they're at the same address.
+  ksleep(10);
+  kmutex_init(&B);
+  kmutex_lock(&A);
+  kmutex_lock(&B);  // Should be OK --- new 'B' won't be in A's priors.
+  kmutex_unlock(&B);
+  kmutex_unlock(&A);
+
+  // If enabled, test an actual deadlock --- this will panic.
+  if (RUN_DEADLOCK_DETECTION_FALIURE_TEST) {
+    KTEST_BEGIN("kmutex_t actual deadlock");
+    kmutex_init(&A);
+    kmutex_init(&B);
+    kmutex_lock(&A);
+    kmutex_lock(&B);
+    kmutex_unlock(&B);
+    kmutex_unlock(&A);
+
+    kmutex_lock(&B);
+    kmutex_lock(&A);  // Should die here.
+    die("should NOT have gotten here");
+  }
+
+  return NULL;
+}
+
+static void deadlock_detection_test(void) {
+  KTEST_BEGIN("kmutex_t deadlock detection test");
+  kthread_t thread;
+  KEXPECT_EQ(0, kthread_create(&thread, &dldet_thread, NULL));
+  scheduler_make_runnable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+}
+#endif
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -982,4 +1308,9 @@ void kthread_test(void) {
   ksleep_test();
   preemption_test();
   wait_on_locked_test();
+  disable_test();
+  notification_test();
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  deadlock_detection_test();
+#endif
 }

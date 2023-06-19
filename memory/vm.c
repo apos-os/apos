@@ -15,13 +15,15 @@
 #include "arch/memory/page_map.h"
 #include "common/errno.h"
 #include "common/kassert.h"
-#include "common/list.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "common/math.h"
 #include "memory/memobj_shadow.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
+#include "memory/vm_page_fault.h"
 #include "proc/process.h"
+#include "proc/signal/signal.h"
 
 addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
                     addr_t length) {
@@ -151,8 +153,11 @@ int vm_verify_address(process_t* proc, addr_t addr, bool is_write,
   return 0;
 }
 
-int vm_resolve_address(process_t* proc, addr_t start, size_t size,
-                       bool is_write, bool is_user, phys_addr_t* resolved_out) {
+static int vm_resolve_address_internal(process_t* proc, addr_t start,
+                                       size_t size, bool is_write, bool is_user,
+                                       bc_entry_t** entry_out,
+                                       phys_addr_t* resolved_out,
+                                       bool blocking) {
   if (!proc || !resolved_out) {
     return -EINVAL;
   }
@@ -182,27 +187,74 @@ int vm_resolve_address(process_t* proc, addr_t start, size_t size,
   }
 
   if (!last_area || last_area->vm_base + last_area->vm_length < start + size) {
+    if (is_user) {
+      KASSERT(proc_force_signal_on_thread(
+                  proc_current(), kthread_current_thread(), SIGSEGV) == 0);
+    }
     return -EFAULT;
   }
 
-  const int result = verify_access(last_area, is_write, is_user);
-  if (result) return result;
+  int result = verify_access(last_area, is_write, is_user);
+  if (result) {
+    if (is_user) {
+      KASSERT(proc_force_signal_on_thread(
+                  proc_current(), kthread_current_thread(), SIGSEGV) == 0);
+    }
+    return result;
+  }
 
   if (!last_area->memobj) {
+    // We shouldn't be able to get here if it's a user access (if that changes
+    // in the future, need to generate an appropriate signal).
+    KASSERT_DBG(!is_user);
     return -EFAULT;
   }
 
   const addr_t virt_page = addr2page(start);
   const size_t area_page_offset = (virt_page - last_area->vm_base) / PAGE_SIZE;
   const size_t offset_in_page = start % PAGE_SIZE;
-  const bc_entry_t* bce = last_area->pages[area_page_offset];
+  bc_entry_t* bce = last_area->pages[area_page_offset];
   if (!bce) {
+    if (!blocking) {
+      *entry_out = NULL;
+      return 0;
+    }
+
     // The access _would_ be valid, but that address isn't currently swapped in.
-    return -EFAULT;
+    // Attempt to page it in (blocks!).
+    // TODO(aoates): there is a fair amount of duplicated logic between the
+    // checks above and the checks in vm_handle_page_fault().
+    result = vm_handle_page_fault(start, /* type= */ VM_FAULT_NOT_PRESENT,
+                                  is_write ? VM_FAULT_WRITE : VM_FAULT_READ,
+                                  is_user ? VM_FAULT_USER : VM_FAULT_KERNEL);
+    if (result) return result;
+    // TODO(swap): will need a way to ensure that the paged-in page stays pinned
+    // between the above call and when we add a pin below.
+    bce = last_area->pages[area_page_offset];
+    KASSERT(bce != NULL);
   }
 
   *resolved_out = bce->block_phys + offset_in_page;
+  *entry_out = bce;
+  block_cache_add_pin(bce);
   return 0;
+}
+
+int vm_resolve_address(process_t* proc, addr_t start, size_t size,
+                       bool is_write, bool is_user, bc_entry_t** entry_out,
+                       phys_addr_t* resolved_out) {
+  return vm_resolve_address_internal(proc, start, size, is_write, is_user,
+                                     entry_out, resolved_out,
+                                     /* blocking= */ true);
+}
+
+int vm_resolve_address_noblock(process_t* proc, addr_t start, size_t size,
+                               bool is_write, bool is_user,
+                               bc_entry_t** entry_out,
+                               phys_addr_t* resolved_out) {
+  return vm_resolve_address_internal(proc, start, size, is_write, is_user,
+                                     entry_out, resolved_out,
+                                     /* blocking= */ false);
 }
 
 void vm_create_kernel_mapping(vm_area_t* area, addr_t base, addr_t length,
@@ -261,6 +313,27 @@ int vm_fork_address_space_into(process_t* target_proc) {
         // TODO(aoates): just make the current mappings read-only.
         page_frame_unmap_virtual_range(
             source_area->vm_base, source_area->vm_length);
+
+        // Put back all existing entries so that the pages table matches the
+        // current memory mappings.  This would not be necessariy if we simply
+        // made them read-only/COW.
+        for (size_t i = 0; i < source_area->vm_length / PAGE_SIZE; ++i) {
+          if (source_area->pages[i]) {
+            // TODO(aoates): track the dirty bit better than just assuming
+            // anything writable is dirty).
+            // TODO(aoates): ensure this (write flushing) is fully tested when
+            // it's observable (when swap is implemented, I think) --- without
+            // swap, writes to shadow objects will never be flushed anywhere.
+            bool needs_flush = source_area->prot & MEM_PROT_WRITE;
+            int result =
+                block_cache_put(source_area->pages[i],
+                                needs_flush ? BC_FLUSH_ASYNC : BC_FLUSH_NONE);
+            if (result) {
+              klogfm(KL_PAGE_FAULT, WARNING, "Unable to put bc_entry\n");
+            }
+            source_area->pages[i] = NULL;
+          }
+        }
       } else {
         target_area->memobj = source_area->memobj;
         target_area->memobj->ops->ref(target_area->memobj);

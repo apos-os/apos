@@ -22,8 +22,16 @@
 typedef struct {
   uint32_t _unused1;
   uint64_t rsp0;
-  uint32_t _unused3[22];
-  uint16_t _unused4;
+  uint32_t _unused3[6];
+  uint64_t ist1;
+  uint64_t ist2;
+  uint64_t ist3;
+  uint64_t ist4;
+  uint64_t ist5;
+  uint64_t ist6;
+  uint64_t ist7;
+  uint32_t _unused4[2];
+  uint16_t _unused5;
   uint16_t iombp;
 } __attribute__((packed)) tss_t;
 _Static_assert(sizeof(tss_t) == 104, "tss_t incorrect size");

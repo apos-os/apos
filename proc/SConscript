@@ -24,6 +24,7 @@ srcs = [
   'group.c',
   'kthread.c',
   'scheduler.c',
+  'notification.c',
   'process.c',
   'procfs.c',
   'session.c',

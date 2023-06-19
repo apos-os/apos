@@ -44,6 +44,7 @@ static inline const char* proc_state_to_string(proc_state_t state);
 // Note: any fields added here (and potentially in kthread_t) must be properly
 // handled in fork(), execve(), and exit().
 struct process {
+  uint32_t guid;
   kpid_t id;  // Index into global process table.
   proc_state_t state;
   list_t threads;  // All process threads.

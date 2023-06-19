@@ -26,8 +26,14 @@
 // page boundary.
 static tss_t g_tss __attribute__((aligned (256)));
 
+// Special stack for double faults.
+#define DBLFAULT_STACK_SIZE 4096
+static uint8_t g_dblfault_stack[DBLFAULT_STACK_SIZE]
+    __attribute__((aligned(DBLFAULT_STACK_SIZE)));
+
 void tss_init() {
   kmemset(&g_tss, 0, sizeof(tss_t));
+  g_tss.ist1 = (uint64_t)&g_dblfault_stack;
   g_tss.iombp = sizeof(tss_t);  // No IOBMP.
 
   // Create a segment descriptor for the TSS.

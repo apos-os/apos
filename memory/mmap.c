@@ -191,6 +191,14 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     // zeroes, and only create new ones on writes.
     memobj = memobj_create_anon();
     if (!memobj) return -ENOMEM;
+
+    // Put a shadow object in front of the anonymous object --- this handles
+    // page preservation when pages are unpinned correctly.
+    // TODO(aoates): share one global anonymous memobj underneath per-mapping
+    // shadow objects.  Alternatively, just map /dev/zero for anonymous objects.
+    memobj_t* shadow_obj = memobj_create_shadow(memobj);
+    memobj->ops->unref(memobj);  // Don't need the parent.
+    memobj = shadow_obj;
   } else {
     kmode_t fd_mode = 0;
     // If the mapping is private, we only need read access to the file.

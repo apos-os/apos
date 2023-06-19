@@ -21,4 +21,7 @@
 // Create a procfs that can be mounted at the appropriate location.
 fs_t* procfs_create(void);
 
+int procfs_create_path(const char* source, unsigned long flags,
+                       const void* data, size_t data_len, fs_t** fs_out);
+
 #endif

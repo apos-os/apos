@@ -34,7 +34,7 @@ vars.Add('KSHELL_INITIAL_COMMAND',
 
 # List of modules that can be enabled/disabled.  All are enabled by default,
 # unless unsupported by the current architecture.
-FEATURES = [
+FEATURES_DEFAULT_ENABLED = [
   'ETHERNET',
   'EXT2',
   'TESTS',
@@ -46,8 +46,15 @@ FEATURES = [
   'KMALLOC_HEAP_PROFILE',
 ]
 
-vars.Add(ListVariable('enable', 'features to force-enable', [], FEATURES))
-vars.Add(ListVariable('disable', 'features to force-disable', [], FEATURES))
+# As above, but features that are _disabled_ by default.
+FEATURES_DEFAULT_DISABLED = [
+  'KMUTEX_DEADLOCK_DETECTION',
+]
+
+ALL_FEATURES = FEATURES_DEFAULT_ENABLED + FEATURES_DEFAULT_DISABLED
+
+vars.Add(ListVariable('enable', 'features to force-enable', [], ALL_FEATURES))
+vars.Add(ListVariable('disable', 'features to force-disable', [], ALL_FEATURES))
 
 # base_env captures common parameters and configuration across _all_ target
 # types --- kernel code, user code, and native (build system) code.
@@ -69,8 +76,11 @@ _ValidateFeatures(base_env)
 
 # Insert non-disabled features into the environment (this can be overridden by
 # other SConscript files, in particular architecture-specific ones).
-for feature in FEATURES:
+for feature in FEATURES_DEFAULT_ENABLED:
   base_env.SetDefault(**{feature: feature not in base_env['disable']})
+
+for feature in FEATURES_DEFAULT_DISABLED:
+  base_env.SetDefault(**{feature: feature in base_env['enable']})
 
 base_env.SetDefault(BUILD_VARIANT_NAME = '%s-%s' %
     (base_env['ARCH'], 'clang' if base_env['CLANG'] else 'gcc'))
@@ -133,8 +143,7 @@ if not env['CLANG']:
   env.Append(CFLAGS = Split("-nostartfiles -nodefaultlibs"))
   # TODO(aoates): get format-string checking to work with both GCC and clang.
   env.Append(CFLAGS = Split("-Wno-format"))
-  # TODO(aoates): get frame sizes under clang small enough to enable this.
-  env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
+env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
 env.Append(ASFLAGS = ['--gen-debug'])
 env.Replace(LINK = '${TOOL_PREFIX}ld')
 
@@ -156,7 +165,9 @@ native_env.Append(CPPDEFINES='APOS_NATIVE_TARGET=1')
 
 def AposAddSources(env, srcs, subdirs, **kwargs):
   """Helper for subdirectories."""
-  objects = [env.Object(src, **kwargs) for src in srcs]
+  # Turn each source file path into an Object, if not already one.
+  make_obj = lambda src: env.Object(src, **kwargs) if type(src) == str else src
+  objects = [make_obj(src) for src in srcs]
   for subdir in subdirs:
     objects.append(SConscript('%s/SConscript' % subdir))
   return objects
@@ -167,7 +178,7 @@ def DisableFeature(env, feature):
   This can be overridden by explicitly enabling the feature with the
   `enable=FOO` build option.
   """
-  assert(feature in FEATURES)
+  assert(feature in ALL_FEATURES)
   env.Replace(**{feature: feature in env['enable']})
 
 def kernel_program(env, target, source):
@@ -204,14 +215,28 @@ tpl_scanner = Scanner(function=tpl_scanner_func, skeys=['.tpl'],
     recursive=filter_tpl)
 
 tpl_bld = Builder(
-    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE > $TARGET',
+    action = 'APOS_ARCH=$ARCH util/tpl_gen.py $SOURCE | clang-format > $TARGET',
     suffix = '.tpl.c',
     src_suffix = '.tpl',
     source_scanner=tpl_scanner)
 
+# Variant/wrapper of the Tpl builder that causes the source file to be generated
+# in the source tree (e.g. so it can be checked in).
+# N.B.(aoates): this causes SCons to not mirror the (generated) source file over
+# to the build directory if duplicating is enabled.  I don't think it matters.
+def tpl_source_build(env, target, source):
+  # Creates the source code File object to be generated (in the source tree).
+  tpl = env.Tpl(target, source)
+  # Creates the object file, setting the target explicitly to the source file
+  # with the appropriate suffix so that it's generated in the build directory,
+  # _not_ the source directory (unlike the source file).
+  obj = env.Object(target=source + '$OBJSUFFIX', source=tpl)
+  return [obj]
+
 env.Append(BUILDERS = {'Tpl': tpl_bld})
 env.AddMethod(phys_object, 'PhysObject')
 env.AddMethod(kernel_program, 'Kernel')
+env.AddMethod(tpl_source_build, 'TplSource')
 
 Export('env user_env native_env AposAddSources DisableFeature')
 

@@ -14,12 +14,15 @@
 
 Import('env AposAddSources')
 
+t1 = env.TplSource('#/syscall/syscall_dispatch.tpl.c', 'syscall_dispatch.tpl')
+t2 = env.TplSource('#/syscall/syscall_dmz.tpl.c', 'syscall_dmz.tpl')
+
 srcs = [
   'dmz.c',
   'execve_wrapper.c',
   'fork.c',
-  'syscall_dispatch.tpl.c',
-  'syscall_dmz.tpl.c',
+  t1,
+  t2,
   'test.c',
   'wrappers.c',
   'wrappers32.c',
@@ -28,6 +31,4 @@ srcs = [
 subdirs = []
 
 objects = AposAddSources(env, srcs, subdirs)
-env.Tpl('syscall_dispatch.tpl')
-env.Tpl('syscall_dmz.tpl')
 Return('objects')

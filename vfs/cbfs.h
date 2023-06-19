@@ -25,6 +25,9 @@
 struct cbfs_inode;
 typedef struct cbfs_inode cbfs_inode_t;
 
+// A function called when a cbfs is destroyed.
+typedef void (*cbfs_destroy_t)(fs_t* fs, void* arg);
+
 // A function that reads from a dynamic file in a cbfs.
 typedef int (*cbfs_read_t)(fs_t* fs, void* arg, int vnode, int offset,
                            void* buf, int buflen);
@@ -80,7 +83,11 @@ void cbfs_inode_create_symlink(cbfs_inode_t* inode, int num,
 // max_static_vnode is the maximum inode/vnode number that the cbfs will
 // allocate for static files and directories.  Use this to, e.g. set aside a
 // range for dynamic use.
-fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
+//
+// destroy_cb will be run when the filesystem is destroyed, passed the same
+// argument.
+fs_t* cbfs_create(const char* type, cbfs_lookup_t lookup_cb,
+                  cbfs_destroy_t destroy_cb, void* cb_arg,
                   int max_static_vnode);
 
 // Free a created cbfs.

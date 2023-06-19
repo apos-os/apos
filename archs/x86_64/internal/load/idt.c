@@ -31,7 +31,7 @@ void idt_init(void) {
   for (int i = 0; i < NUM_IDT_ENTRIES; ++i) {
     idt_entries[i].offset_low = 0;
     idt_entries[i].selector = IDT_SELECTOR_VALUE;
-    idt_entries[i].zero = 0;
+    idt_entries[i].ist = 0;
     idt_entries[i].type_attr = IDT_DPL_RING0 | IDT_TYPE_64_INT;
     idt_entries[i].offset_high = 0;
     idt_entries[i].offset_high2 = 0;

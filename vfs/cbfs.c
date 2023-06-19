@@ -59,7 +59,8 @@ typedef struct {
   cbfs_inode_t root;
   htbl_t vnode_table;
   cbfs_lookup_t lookup_cb;
-  void* lookup_arg;
+  cbfs_destroy_t destroy_cb;
+  void* cb_arg;
 } cbfs_t;
 
 static inline cbfs_t* fs_to_cbfs(fs_t* f) {
@@ -86,7 +87,7 @@ static int get_inode(cbfs_t* cfs, int num, cbfs_inode_t* tmp,
     *ptr_out = (cbfs_inode_t*)ptr;
     return 0;
   } else if (cfs->lookup_cb) {
-    int result = cfs->lookup_cb(&cfs->fs, cfs->lookup_arg, num, tmp);
+    int result = cfs->lookup_cb(&cfs->fs, cfs->cb_arg, num, tmp);
     *ptr_out = tmp;
     return result;
   }
@@ -247,12 +248,14 @@ static int cbfs_truncate(vnode_t* node, koff_t length);
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf);
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf);
 
-fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
+fs_t* cbfs_create(const char* type, cbfs_lookup_t lookup_cb,
+                  cbfs_destroy_t destroy_cb, void* cb_arg,
                   int max_static_vnode) {
   cbfs_t* f = (cbfs_t*)kmalloc(sizeof(cbfs_t));
   vfs_fs_init(&f->fs);
 
-  kstrcpy(f->fs.fstype, "cbfs");
+  kstrcpy(f->fs.fstype, type);
+  f->fs.destroy_fs = &cbfs_free;
   f->fs.alloc_vnode = &cbfs_alloc_vnode;
   f->fs.get_root = &cbfs_get_root;
   f->fs.get_vnode = &cbfs_get_vnode;
@@ -289,7 +292,8 @@ fs_t* cbfs_create(cbfs_lookup_t lookup_cb, void* lookup_arg,
   create_directory_entries(f->root.num, &f->root);
 
   f->lookup_cb = lookup_cb;
-  f->lookup_arg = lookup_arg;
+  f->destroy_cb = destroy_cb;
+  f->cb_arg = cb_arg;
 
   return &f->fs;
 }
@@ -304,6 +308,9 @@ static void inode_cleanup_func(void* arg, uint32_t key, void* value) {
 
 void cbfs_free(fs_t* fs) {
   cbfs_t* cfs = fs_to_cbfs(fs);
+  if (cfs->destroy_cb) {
+    cfs->destroy_cb(fs, cfs->cb_arg);
+  }
   htbl_iterate(&cfs->vnode_table, &inode_cleanup_func, cfs);
   htbl_cleanup(&cfs->vnode_table);
   kfree(cfs);
@@ -568,7 +575,7 @@ static int cbfs_get_vnode(vnode_t* vnode) {
   vnode->uid = inode->uid;
   vnode->gid = inode->gid;
   vnode->mode = inode->mode;
-  kstrcpy(vnode->fstype, "cbfs");
+  kstrcpy(vnode->fstype, vnode->fs->fstype);
   return 0;
 }
 
@@ -775,7 +782,8 @@ static int cbfs_truncate(vnode_t* node, koff_t length) {
 }
 
 static int cbfs_read_page(vnode_t* vnode, int page_offset, void* buf) {
-  return -ENOTSUP;
+  int result = cbfs_read(vnode, page_offset * PAGE_SIZE, buf, PAGE_SIZE);
+  return (result < 0) ? result : 0;
 }
 
 static int cbfs_write_page(vnode_t* vnode, int page_offset, const void* buf) {

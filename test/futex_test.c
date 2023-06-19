@@ -53,13 +53,21 @@ static void wait_wake_tests(void) {
 
 
   KTEST_BEGIN("futex_wait(): bad address");
+  ksigset_t pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
   KEXPECT_EQ(-EFAULT, futex_wait((uint32_t*)0x1234, 0, NULL));
   KEXPECT_EQ(-EFAULT, futex_wait((uint32_t*)&map1, 0, NULL));  // Ptr on stack.
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
 
 
   KTEST_BEGIN("futex_wake(): bad address");
   KEXPECT_EQ(-EFAULT, futex_wake((uint32_t*)0x1234, 1));
   KEXPECT_EQ(-EFAULT, futex_wake((uint32_t*)&map1, 1));  // Ptr on stack.
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
 
 
   KTEST_BEGIN("futex_wait()/futex_wake(): unreadable address");
@@ -70,6 +78,9 @@ static void wait_wake_tests(void) {
   KEXPECT_EQ(-EFAULT, futex_wait((uint32_t*)map1, 0, NULL));
   KEXPECT_EQ(-EFAULT, futex_wait((uint32_t*)map1, 1, NULL));
   KEXPECT_EQ(-EFAULT, futex_wake((uint32_t*)map1, 1));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_TRUE(ksigismember(&pending, SIGSEGV));
+  proc_suppress_signal(proc_current(), SIGSEGV);
   KEXPECT_EQ(0, do_munmap(map1, PAGE_SIZE));
 
 
@@ -83,17 +94,11 @@ static void wait_wake_tests(void) {
   uint32_t* ptr1 = (uint32_t*)map1 + 10;
   uint32_t* ptr2 = (uint32_t*)map2 + 10;
 
-  // The pages aren't mapped yet.
-  KEXPECT_EQ(-EFAULT, futex_wait(ptr1, 0, NULL));
-  KEXPECT_EQ(-EFAULT, futex_wait(ptr2, 0, NULL));
-  KEXPECT_EQ(-EFAULT, futex_wake(ptr1, INT_MAX));
-  KEXPECT_EQ(-EFAULT, futex_wake(ptr2, INT_MAX));
-
   *ptr1 = 0;
   KEXPECT_EQ(-EAGAIN, futex_wait(ptr1, 1, NULL));  // 1 != 0.
-  KEXPECT_EQ(-EFAULT, futex_wait(ptr2, 0, NULL));  // Still unmapped.
   KEXPECT_EQ(0, futex_wake(ptr1, INT_MAX));
-  KEXPECT_EQ(-EFAULT, futex_wake(ptr2, INT_MAX));
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
 
   futex_test_args args;
   args.addr = ptr1;
@@ -260,6 +265,9 @@ static void wait_wake_tests(void) {
   KEXPECT_EQ(0, do_munmap(map2, PAGE_SIZE));
   KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unlink("_futex_test"));
+
+  pending = proc_pending_signals(proc_current());
+  KEXPECT_FALSE(ksigismember(&pending, SIGSEGV));
 }
 
 void futex_test(void) {

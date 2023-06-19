@@ -13,14 +13,15 @@
 // limitations under the License.
 
 #include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
-#include <errno.h>
-#include <unistd.h>
-#include <sys/wait.h>
+#include <sys/signal.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -42,7 +43,15 @@ void syscall_errno_test() {
 
   KTEST_BEGIN("mkdir() errno");
   ERRNO_TEST(mkdir(NULL, S_IRWXU), -1, EINVAL);
-  ERRNO_TEST(mkdir((const char*)0x1234, S_IRWXU), -1, EFAULT);
+  pid_t child = fork();
+  if (child == 0) {
+    mkdir((const char*)0x1234, S_IRWXU);  // Should generate SIGSEGV.
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
   ERRNO_TEST(mkdir("/does/not/exist", S_IRWXU), -1, ENOENT);
 
   KTEST_BEGIN("mknod() errno");
@@ -50,21 +59,17 @@ void syscall_errno_test() {
 
   KTEST_BEGIN("rmdir() errno");
   ERRNO_TEST(rmdir(NULL), -1, EINVAL);
-  ERRNO_TEST(rmdir((const char*)0x1234), -1, EFAULT);
   ERRNO_TEST(rmdir("/does/not/exist"), -1, ENOENT);
 
   KTEST_BEGIN("unlink() errno");
   ERRNO_TEST(unlink(NULL), -1, EINVAL);
-  ERRNO_TEST(unlink((const char*)0x1234), -1, EFAULT);
   ERRNO_TEST(unlink("/does/not/exist"), -1, ENOENT);
 
   KTEST_BEGIN("read() errno");
   ERRNO_TEST(read(-5, buf, 100), -1, EBADF);
-  ERRNO_TEST(read(0, (void*)0x1234, 100), -1, EFAULT);
 
   KTEST_BEGIN("write() errno");
   ERRNO_TEST(write(-5, buf, 100), -1, EBADF);
-  ERRNO_TEST(write(0, (const void*)0x1234, 100), -1, EFAULT);
 
   KTEST_BEGIN("lseek() errno");
   ERRNO_TEST(lseek(-5, 0, SEEK_CUR), -1, EBADF);
@@ -74,8 +79,20 @@ void syscall_errno_test() {
   KTEST_BEGIN("open() errno");
   ERRNO_TEST(open("does_not_exist", O_RDONLY), -1, ENOENT);
 
+  child = fork();
+  if (child == 0) {
+    open((const char*)0x1234, O_RDONLY);  // Should generate SIGSEGV.
+    exit(1);
+  }
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
+
+
   KTEST_BEGIN("getcwd() errno");
-  ERRNO_TEST(getcwd(NULL, 100), NULL, EFAULT);
+  KEXPECT_SIGNAL(SIGSEGV, getcwd(NULL, 100));
+  KEXPECT_SIGNAL(SIGSEGV, getcwd((char*)0x1234, 100));
+
   KEXPECT_EQ(&buf[0], getcwd(buf, 100));
 
   KTEST_BEGIN("mmap() errno");

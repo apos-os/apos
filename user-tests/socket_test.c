@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <apos/syscall_decls.h>
+#include <assert.h>
 #include <fcntl.h>
 #include <sys/resource.h>
 #include <termios.h>
@@ -23,6 +24,16 @@
 
 #include "ktest.h"
 
+static void connect_and_close(const char* path) {
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strcpy(addr.sun_path, path);
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  assert(sock >= 0);
+  assert(0 == connect(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  assert(0 == close(sock));
+}
+
 static void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Unix Domain Sockets test");
   KTEST_BEGIN("socket(AF_UNIX): create/bind/listen test");
@@ -32,6 +43,7 @@ static void socket_unix_test(void) {
   struct sockaddr_un addr;
   addr.sun_family = AF_UNIX;
   strcpy(addr.sun_path, "_socket_bind");
+  KEXPECT_SIGNAL(SIGSEGV, bind(sock, NULL, sizeof(addr)));
   KEXPECT_EQ(0, bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
 
   KEXPECT_EQ(0, listen(sock, 5));
@@ -39,6 +51,10 @@ static void socket_unix_test(void) {
   KTEST_BEGIN("socket(AF_UNIX): connect test");
   int s1 = socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(s1, 0);
+  struct sockaddr_un addr_client;
+  addr_client.sun_family = AF_UNIX;
+  strcpy(addr_client.sun_path, "_socket_client");
+  KEXPECT_EQ(0, bind(s1, (struct sockaddr*)&addr_client, sizeof(addr_client)));
   KEXPECT_EQ(0, connect(s1, (struct sockaddr*)&addr, sizeof(addr)));
 
   KTEST_BEGIN("socket(AF_UNIX): accept test");
@@ -46,6 +62,8 @@ static void socket_unix_test(void) {
   socklen_t addr_len = sizeof(addr);
   int s2 = accept(sock, (struct sockaddr*)&addr, &addr_len);
   KEXPECT_GE(s2, 0);
+  KEXPECT_EQ(AF_UNIX, addr.sun_family);
+  KEXPECT_STREQ("_socket_client", addr.sun_path);
 
   KTEST_BEGIN("socket(AF_UNIX): read/write test");
   KEXPECT_EQ(3, write(s1, "abc", 3));
@@ -63,44 +81,47 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(0, read(s2, buf, 10));
   KEXPECT_EQ(0, close(s1));
   KEXPECT_EQ(0, close(s2));
-  KEXPECT_EQ(0, close(sock));
-  KEXPECT_EQ(0, unlink("_socket_bind"));
+  KEXPECT_EQ(0, unlink("_socket_client"));
+
+  KTEST_BEGIN("accept(): NULL buffer parameters");
+  connect_and_close("_socket_bind");
+  int result = accept(sock, NULL, NULL);
+  KEXPECT_GE(result, 0);
+  KEXPECT_EQ(0, close(result));
+
+  connect_and_close("_socket_bind");
+  result = accept(sock, (struct sockaddr*)&addr, NULL);
+  KEXPECT_GE(result, 0);
+  KEXPECT_EQ(0, close(result));
+
+  connect_and_close("_socket_bind");
+  result = accept(sock, NULL, &addr_len);
+  KEXPECT_GE(result, 0);
+  KEXPECT_EQ(0, close(result));
+
 
   KTEST_BEGIN("accept(): bad buffer parameters");
-  sock = socket(AF_UNIX, SOCK_STREAM, 0);
-  int result = accept(sock, NULL, NULL);
-  int e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EINVAL, e);
+  connect_and_close("_socket_bind");
+  KEXPECT_SIGNAL(SIGSEGV,
+                 accept(sock, (struct sockaddr*)&addr, (socklen_t*)0x123));
 
-  result = accept(sock, (struct sockaddr*)&addr, NULL);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EINVAL, e);
+  connect_and_close("_socket_bind");
+  KEXPECT_SIGNAL(SIGSEGV, accept(sock, (struct sockaddr*)0x123, &addr_len));
 
-  result = accept(sock, NULL, &addr_len);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EINVAL, e);
+  connect_and_close("_socket_bind");
+  KEXPECT_SIGNAL(SIGSEGV,
+                 accept(sock, (struct sockaddr*)0x123, (socklen_t*)0x123));
 
-  result = accept(sock, (struct sockaddr*)&addr, (socklen_t*)0x123);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
-
-  result = accept(sock, (struct sockaddr*)0x123, &addr_len);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
-
-  result = accept(sock, (struct sockaddr*)0x123, (socklen_t*)0x123);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  addr_len = INT_MAX;
+  KEXPECT_ERRNO(ENOMEM, accept(sock, (struct sockaddr*)&addr, &addr_len));
+  addr_len = 0;
+  KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
+  addr_len = -1;
+  KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
 
   KTEST_BEGIN("connect(): bad buffer parameters");
   result = connect(sock, NULL, 0);
-  e = errno;
+  int e = errno;
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(EINVAL, e);
 
@@ -109,20 +130,14 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(EINVAL, e);
 
-  result = connect(sock, (struct sockaddr*)&addr, INT_MAX);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_ERRNO(ENOMEM, connect(sock, (struct sockaddr*)&addr, INT_MAX));
+  KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, 0));
+  KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, 1));
+  KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, -10));
 
-  result = connect(sock, NULL, sizeof(addr));
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, connect(sock, NULL, sizeof(addr)));
 
-  result = connect(sock, (struct sockaddr*)0x123, sizeof(addr));
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, connect(sock, (struct sockaddr*)0x123, sizeof(addr)));
 
   KTEST_BEGIN("sendto(): bad buffer parameters");
   result = sendto(sock, buf, 10, 0, NULL, 0);
@@ -135,10 +150,8 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(EINVAL, e);
 
-  result = sendto(sock, buf, 10, 0, (struct sockaddr*)&addr, INT_MAX);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_ERRNO(ENOMEM,
+                sendto(sock, buf, 10, 0, (struct sockaddr*)&addr, INT_MAX));
 
   // NULL addr should be allowed.
   result = sendto(sock, buf, 10, 0, NULL, sizeof(addr));
@@ -146,25 +159,14 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(ENOTCONN, e);
 
-  result = sendto(sock, buf, 10, 0, (struct sockaddr*)0x123, sizeof(addr));
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(
+      SIGSEGV, sendto(sock, buf, 10, 0, (struct sockaddr*)0x123, sizeof(addr)));
 
-  result = sendto(sock, buf, INT_MAX, 0, NULL, 0);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_ERRNO(ENOMEM, sendto(sock, buf, INT_MAX, 0, NULL, 0));
 
-  result = sendto(sock, (void*)0x123, 10, 0, NULL, 0);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, sendto(sock, (void*)0x123, 10, 0, NULL, 0));
 
-  result = sendto(sock, NULL, 10, 0, NULL, 0);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, sendto(sock, NULL, 10, 0, NULL, 0));
 
   KTEST_BEGIN("recvfrom(): bad buffer parameters");
   result = recvfrom(sock, buf, 10, 0, NULL, 0);
@@ -177,17 +179,15 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(ENOTCONN, e);
 
-  result =
-      recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, (socklen_t*)INT_MAX);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr,
+                                   (socklen_t*)INT_MAX));
 
   socklen_t len = INT_MAX;
-  result = recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_ERRNO(ENOMEM,
+                recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len));
+  len = -1;
+  KEXPECT_ERRNO(EINVAL,
+                recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len));
 
   // NULL addr should be allowed.
   len = sizeof(addr);
@@ -196,33 +196,20 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(ENOTCONN, e);
 
-  result = recvfrom(sock, buf, 10, 0, (struct sockaddr*)0x123, &len);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV,
+                 recvfrom(sock, buf, 10, 0, (struct sockaddr*)0x123, &len));
 
-  result = recvfrom(sock, buf, INT_MAX, 0, NULL, 0);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_ERRNO(ENOMEM, recvfrom(sock, buf, INT_MAX, 0, NULL, 0));
 
-  result =
-      recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, (socklen_t*)0x123);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr,
+                                   (socklen_t*)0x123));
 
-  result = recvfrom(sock, (void*)0x123, 10, 0, NULL, 0);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, recvfrom(sock, (void*)0x123, 10, 0, NULL, 0));
 
-  result = recvfrom(sock, NULL, 10, 0, NULL, 0);
-  e = errno;
-  KEXPECT_EQ(-1, result);
-  KEXPECT_EQ(EFAULT, e);
+  KEXPECT_SIGNAL(SIGSEGV, recvfrom(sock, NULL, 10, 0, NULL, 0));
 
   KEXPECT_EQ(0, close(sock));
+  KEXPECT_EQ(0, unlink("_socket_bind"));
 }
 
 void socket_test(void) {

@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <unistd.h>
+#include <sys/signal.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 #include "ktest.h"
 #include "all_tests.h"
@@ -74,6 +75,18 @@ static void basic_execve_test(void) {
   KEXPECT_EQ(0, status);
 }
 
+static int do_execve_expect_term(const char* path, char* const* argv, char* const* envp) {
+  pid_t child = fork();
+  if (child == 0) {
+    do_execve(path, argv, envp);
+    exit(1);
+  }
+  int status;
+  KEXPECT_EQ(child, waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  return WTERMSIG(status);
+}
+
 static void execve_args_test(void) {
   KTEST_BEGIN("execve() basic argv test");
 
@@ -96,8 +109,10 @@ static void execve_args_test(void) {
   char* argv_ok[] = {"argv0", NULL};
   char* envp_ok[] = {"envp0", NULL};
   KEXPECT_EQ(-EINVAL, do_execve(NULL, argv_ok, envp_ok));
-  KEXPECT_EQ(-EFAULT, do_execve((const char*)0x5fff, argv_ok, envp_ok));
-  KEXPECT_EQ(-EFAULT, do_execve((const char*)0xe0000000, argv_ok, envp_ok));
+  KEXPECT_EQ(SIGSEGV,
+             do_execve_expect_term((const char*)0x5fff, argv_ok, envp_ok));
+  KEXPECT_EQ(SIGSEGV,
+             do_execve_expect_term((const char*)0xe0000000, argv_ok, envp_ok));
 
   KTEST_BEGIN("execve() bad argv test");
   char* bad_argvA[] = {"A", "B", (char*)0x5fff, NULL};
@@ -105,19 +120,19 @@ static void execve_args_test(void) {
   KEXPECT_EQ(-EINVAL, do_execve("path", NULL, envp_ok));
   KEXPECT_EQ(-EFAULT, do_execve("path", (char* const*)0x5fff, envp_ok));
   KEXPECT_EQ(-EFAULT, do_execve("path", (char* const*)0xc1000000, envp_ok));
-  KEXPECT_EQ(-EFAULT,
-             do_execve("path", (char* const*)&execve_args_test, envp_ok));
-  KEXPECT_EQ(-EFAULT, do_execve("path", bad_argvA, envp_ok));
-  KEXPECT_EQ(-EFAULT, do_execve("path", bad_argvB, envp_ok));
+  KEXPECT_EQ(SIGSEGV, do_execve_expect_term(
+                          "path", (char* const*)&execve_args_test, envp_ok));
+  KEXPECT_EQ(SIGSEGV, do_execve_expect_term("path", bad_argvA, envp_ok));
+  KEXPECT_EQ(SIGSEGV, do_execve_expect_term("path", bad_argvB, envp_ok));
 
   KTEST_BEGIN("execve() bad envp test");
   KEXPECT_EQ(-EINVAL, do_execve("path", argv_ok, NULL));
   KEXPECT_EQ(-EFAULT, do_execve("path", argv_ok, (char* const*)0x5fff));
   KEXPECT_EQ(-EFAULT, do_execve("path", argv_ok, (char* const*)0xc1000000));
-  KEXPECT_EQ(-EFAULT,
-             do_execve("path", argv_ok, (char* const*)&execve_args_test));
-  KEXPECT_EQ(-EFAULT, do_execve("path", argv_ok, bad_argvA));
-  KEXPECT_EQ(-EFAULT, do_execve("path", argv_ok, bad_argvB));
+  KEXPECT_EQ(SIGSEGV, do_execve_expect_term("path", argv_ok,
+                                            (char* const*)&execve_args_test));
+  KEXPECT_EQ(SIGSEGV, do_execve_expect_term("path", argv_ok, bad_argvA));
+  KEXPECT_EQ(SIGSEGV, do_execve_expect_term("path", argv_ok, bad_argvB));
 }
 
 void execve_test(void) {

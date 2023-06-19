@@ -14,12 +14,15 @@
 
 #include <stdint.h>
 
+#include "arch/memory/page_map.h"
 #include "arch/proc/kthread.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/list.h"
 #include "dev/interrupts.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
@@ -45,6 +48,7 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->queue = 0x0;
   t->stack = 0x0;
   t->detached = false;
+  t->runnable = true;
   kthread_queue_init(&t->join_list);
   t->join_list_pending = 0;
   t->process = 0x0;
@@ -59,6 +63,9 @@ static void kthread_init_kthread(kthread_data_t* t) {
   t->spinlocks_held = 0;
   t->all_threads_link = LIST_LINK_INIT;
   t->proc_threads_link = LIST_LINK_INIT;
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  t->mutexes_held = LIST_INIT;
+#endif
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
@@ -118,10 +125,15 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
   // Touch each page of the stack to make sure it's paged in.  If we don't do
   // this, when we try to use the stack, we'll cause a page fault, which will in
   // turn cause a double (then triple) fault when IT tries to use the stack.
+  _Static_assert(KTHREAD_STACK_SIZE % PAGE_SIZE == 0, "Bad KTHREAD_STACK_SIZE");
   for (addr_t i = 0; i < KTHREAD_STACK_SIZE / PAGE_SIZE; ++i) {
     *((uint8_t*)stack + i * PAGE_SIZE) = 0xAA;
   }
   *((uint8_t*)stack + KTHREAD_STACK_SIZE - 1) = 0xAA;
+
+  // Explicitly make the bottom page of the stack read-only for protection.
+  page_frame_remap_virtual((addr_t)stack, MEM_PROT_READ, MEM_ACCESS_KERNEL_ONLY,
+                           MEM_GLOBAL);
 
   thread->stack = stack;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
@@ -143,6 +155,9 @@ void kthread_destroy(kthread_t thread) {
   kmemset(&thread->context, 0xAB, sizeof(kthread_arch_context_t));
   thread->state = KTHREAD_DESTROYED;
   if (thread->stack) {
+    page_frame_remap_virtual((addr_t)thread->stack,
+                             MEM_PROT_READ | MEM_PROT_WRITE,
+                             MEM_ACCESS_KERNEL_ONLY, MEM_GLOBAL);
     kfree(thread->stack);
     thread->stack = 0x0;
   }
@@ -219,6 +234,14 @@ void kthread_run_on_all(void (*f)(kthread_t, void*), void* arg) {
     f(thread, arg);
   }
   POP_INTERRUPTS();
+}
+
+void kthread_disable(kthread_t thread) {
+  thread->runnable = false;
+}
+
+void kthread_enable(kthread_t thread) {
+  thread->runnable = true;
 }
 
 void kthread_switch(kthread_t new_thread) {
@@ -338,9 +361,22 @@ void kmutex_init(kmutex_t* m) {
   m->locked = 0;
   m->holder = 0x0;
   kthread_queue_init(&m->wait_queue);
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  // TODO(aoates): this could cause a false positive if we recreate mutexes
+  // quickly enough (such that IDs are reused).
+  m->id = fnv_hash_concat(fnv_hash_addr((addr_t)m), get_time_ms());
+  m->link = LIST_LINK_INIT;
+  for (int i = 0 ;i < KMUTEX_DEADLOCK_LRU_SIZE; ++i) {
+    m->priors[i].id = 0;
+    m->priors[i].lru = 0;
+  }
+#endif
 }
 
 void kmutex_lock(kmutex_t* m) {
+  // We should never be blocking if we're holding a spinlock.
+  KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
   PUSH_AND_DISABLE_INTERRUPTS();
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.
@@ -355,15 +391,68 @@ void kmutex_lock(kmutex_t* m) {
   }
   KASSERT(m->locked == 1);
   POP_INTERRUPTS();
+
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  apos_ms_t now = get_time_ms();
+  int lru_search_start = 0;
+  FOR_EACH_LIST(link_iter, &kthread_current_thread()->mutexes_held) {
+    const kmutex_t* locked_mu = LIST_ENTRY(link_iter, kmutex_t, link);
+
+    // Check if this mutex is in the locked mutex's priors.
+    // TODO(aoates): if the LRU size needs to be increased, consider adding a
+    // bloom filter here for the fast path.
+    for (int i = 0; i < KMUTEX_DEADLOCK_LRU_SIZE; ++i) {
+      if (locked_mu->priors[i].id == m->id) {
+        klogfm(KL_PROC, FATAL,
+               "Possible mutex deadlock detected.  Mutex A (%xu) locked while "
+               "mutex B (%xu) held; previously B was locked while A was held\n",
+               m->id, locked_mu->id);
+      }
+    }
+
+    // Add the locked mutex to _this_ mutex's priors for future checks.
+    int lru_idx = lru_search_start;
+    apos_ms_t lru = m->priors[lru_idx].lru;
+    for (int i_rel = 0; i_rel < KMUTEX_DEADLOCK_LRU_SIZE; ++i_rel) {
+      const int i = (lru_search_start + i_rel) % KMUTEX_DEADLOCK_LRU_SIZE;
+      if (m->priors[i].id == locked_mu->id || m->priors[i].id == 0) {
+        // Already in the priors set, or an empty slot.  No need to continue.
+        lru_idx = i;
+        break;
+      } else if (m->priors[i].lru < lru) {
+        lru_idx = i;
+        lru = m->priors[i].lru;
+      }
+    }
+    m->priors[lru_idx].id = locked_mu->id;
+    m->priors[lru_idx].lru = now;
+    // Next time, start the LRU search right after the current index, to avoid
+    // O(n^2) inserts for the common case.
+    lru_search_start = (lru_idx + 1) % KMUTEX_DEADLOCK_LRU_SIZE;
+  }
+
+  list_push(&kthread_current_thread()->mutexes_held, &m->link);
+#endif
 }
 
 static void kmutex_unlock_internal(kmutex_t* m, bool yield) {
+#if ENABLE_KMUTEX_DEADLOCK_DETECTION
+  list_remove(&kthread_current_thread()->mutexes_held, &m->link);
+#endif
   PUSH_AND_DISABLE_INTERRUPTS();
 
   KASSERT(m->locked == 1);
   KASSERT(m->holder == kthread_current_thread());
   if (!kthread_queue_empty(&m->wait_queue)) {
-    kthread_t next_holder = kthread_queue_pop(&m->wait_queue);
+    // Try to find the first non-disabled waiter.
+    kthread_t next_holder = m->wait_queue.head;
+    while (next_holder && !next_holder->runnable) {
+      next_holder = next_holder->next;
+    }
+    if (!next_holder) {
+      next_holder = m->wait_queue.head;
+    }
+    kthread_queue_remove(next_holder);
     m->holder = next_holder;
     scheduler_make_runnable(next_holder);
     if (yield) scheduler_yield();

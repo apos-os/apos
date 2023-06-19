@@ -20,6 +20,11 @@
 #include "memory/memory.h"
 #include "proc/kthread-internal.h"
 
+#if ARCH == ARCH_i586
+#include "archs/i586/internal/memory/gdt.h"
+#include "archs/i586/internal/proc/tss.h"
+#endif
+
 #define CALL_INSTRUCTION_SIZE 2
 
 static int get_stack_trace_internal(addr_t ebp, addr_t* frames, int trace_len) {
@@ -59,6 +64,23 @@ int get_stack_trace(addr_t* frames, int trace_len) {
       : "=g"(ebp));
 #else
 #error WTF? Unknown x86 architecture.
+#endif
+
+#if ARCH == ARCH_i586
+  // Check if we've double-faulted --- and if so, try and get the stored stack
+  // trace from the thread that double-faulted, rather than the current ebp
+  // (which will be uninteresting and point at the double-fault stack trace).
+  uint16_t selector;
+  asm volatile (
+      "str %0"
+      : "=r"(selector));
+  if (selector == segment_selector(GDT_TSS_DBLFAULT, RPL_KERNEL)) {
+    // We double faulted, womp.  Get frame from the normal TSS.
+    ebp = tss_get()->ebp;
+    frames[0] = tss_get()->eip;
+    frames++;
+    trace_len--;
+  }
 #endif
 
   return get_stack_trace_internal(ebp, frames, trace_len);

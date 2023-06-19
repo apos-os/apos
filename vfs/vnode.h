@@ -114,6 +114,7 @@ struct vnode {
 
   char fstype[10];
   fs_t* fs;  // const after creation
+  list_link_t fs_link;
 
   // If type == VNODE_BLOCKDEV || type == VNODE_CHARDEV, the underlying device.
   // TODO(aoates): put this and fifo in a union (and update usage sites to only

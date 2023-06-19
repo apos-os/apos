@@ -140,6 +140,9 @@ static void meminfo_cmd(kshell_t* shell, int argc, char* argv[]) {
 }
 
 static void heap_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
+  if (argc == 1) {
+    block_cache_clear_unpinned();
+  }
   kmalloc_log_heap_profile();
 }
 
@@ -1009,6 +1012,7 @@ static const cmd_t CMDS[] = {
 
   { "meminfo", &meminfo_cmd },
   { "heapprof", &heap_profile_cmd },
+  { "hp", &heap_profile_cmd },
   { "hash", &hash_cmd },
   { "b_read", &b_read_cmd },
   { "b_write", &b_write_cmd },

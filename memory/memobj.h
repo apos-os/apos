@@ -48,6 +48,10 @@ typedef struct memobj {
   int refcount;
   kspinlock_t lock;
 
+  // List of extant block cache entries.  Maintained by the block cache code.
+  list_t bc_entries;
+  int num_bc_entries;
+
   // Data specific to the type memory object.
   void* data;
 } memobj_t;
@@ -107,5 +111,8 @@ struct memobj_ops {
   // Return 0 on success, or -errno on error.
   int (*write_page)(memobj_t* obj, int page_offset, const void* buffer);
 };
+
+// Initialize the base members of a memobj_t.
+void memobj_base_init(memobj_t* obj);
 
 #endif

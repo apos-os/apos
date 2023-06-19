@@ -140,6 +140,23 @@ void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
   invalidate_tlb(virt);
 }
 
+void page_frame_remap_virtual(addr_t virt, int prot, mem_access_t access,
+                              int flags) {
+  KASSERT(virt % PAGE_SIZE == 0);
+  KASSERT(access == MEM_ACCESS_KERNEL_ONLY ||
+          access == MEM_ACCESS_KERNEL_AND_USER);
+  KASSERT(flags == 0 || flags == MEM_GLOBAL);
+
+  pte_t* pte = get_or_create_page_table_entry(virt, false, prot, access, flags);
+  KASSERT(pte != NULL);
+  KASSERT(*pte | PTE_PRESENT);
+  *pte &= ~PTE_WRITABLE & ~PTE_USER_ACCESS & ~PTE_GLOBAL;
+  if (prot & MEM_PROT_WRITE) *pte |= PTE_WRITABLE;
+  if (access == MEM_ACCESS_KERNEL_AND_USER) *pte |= PTE_USER_ACCESS;
+  if (flags & MEM_GLOBAL) *pte |= PTE_GLOBAL;
+  invalidate_tlb(virt);
+}
+
 void page_frame_unmap_virtual(addr_t virt) {
   page_frame_unmap_virtual_range(virt, PAGE_SIZE);
 }

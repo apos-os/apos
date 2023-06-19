@@ -27,6 +27,7 @@
 #include "memory/mmap.h"
 #include "proc/exec.h"
 #include "proc/fork.h"
+#include "proc/notification.h"
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
@@ -547,6 +548,44 @@ static void chown_chmod_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 }
 
+typedef struct {
+  notification_t child_ran;
+  notification_t done;
+  void* map_addr;
+  void* map_addr2;
+  bool first_parent_exit;
+} unmount_busy_test_args_t;
+
+static void unmount_busy_child2(void* arg) {
+  unmount_busy_test_args_t* args = (unmount_busy_test_args_t*)arg;
+
+  int x = *(volatile int*)args->map_addr;  // Force a page-in.
+  KEXPECT_EQ(0, x);
+  x = *(volatile int*)args->map_addr2;
+
+  *(volatile int*)((intptr_t)args->map_addr + 2 * PAGE_SIZE) = 10;
+  *(volatile int*)((intptr_t)args->map_addr2 + 2 * PAGE_SIZE) = 20;
+
+  ntfn_notify(&args->child_ran);
+  ntfn_await(&args->done);
+}
+
+static void unmount_busy_child1(void* arg) {
+  unmount_busy_test_args_t* args = (unmount_busy_test_args_t*)arg;
+
+  int x = *(volatile int*)args->map_addr;  // Force a page-in.
+  KEXPECT_EQ(0, x);
+  x = *(volatile int*)args->map_addr2;
+
+  *(volatile int*)((intptr_t)args->map_addr + PAGE_SIZE) = 5;
+  *(volatile int*)((intptr_t)args->map_addr2 + PAGE_SIZE) = 15;
+
+  kpid_t child = proc_fork(&unmount_busy_child2, arg);
+  if (!args->first_parent_exit) {
+    KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  }
+}
+
 static void unmount_busy_test(void) {
   KTEST_BEGIN("vfs mount: cannot unmount busy directory test setup");
   KEXPECT_EQ(0, vfs_mkdir("vfs_mount_test", VFS_S_IRWXU));
@@ -588,6 +627,7 @@ static void unmount_busy_test(void) {
   KTEST_BEGIN("vfs mount: cannot unmount directory mmap'd file in it");
   KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
   fd = vfs_open("vfs_mount_test/a/file", VFS_O_CREAT | VFS_O_RDWR, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
 
   void* map_addr = 0x0;
   KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, KPROT_EXEC | KPROT_READ, KMAP_PRIVATE,
@@ -597,6 +637,133 @@ static void unmount_busy_test(void) {
   KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
 
   KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  // As above, but page in something from the file.
+  KTEST_BEGIN("vfs mount: cannot unmount directory mmap'd file in it (#2)");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  fd = vfs_open("vfs_mount_test/a/file", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, PAGE_SIZE * 2));
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, KPROT_EXEC | KPROT_READ, KMAP_PRIVATE,
+                        fd, 0, &map_addr));
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+  KEXPECT_EQ(0, vfs_close(fd));
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  int x = *(volatile int*)map_addr;  // Force a page-in.
+  KEXPECT_EQ(0, x);
+
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  // As above, but more processes, shadow objects, etc.
+  KTEST_BEGIN("vfs mount: cannot unmount directory mmap'd file in it (#3)");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  // Create an open file first that _can_ be flushed later.
+  int fd2 =
+      vfs_open("vfs_mount_test/a/file2", VFS_O_RDWR | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_EQ(0, vfs_ftruncate(fd2, PAGE_SIZE * 3));
+  KEXPECT_EQ(0, do_mmap(0x0, 3 * PAGE_SIZE, KPROT_EXEC | KPROT_READ,
+                        KMAP_PRIVATE, fd2, 0, &map_addr));
+  KEXPECT_EQ(0, vfs_close(fd2));
+  x = *(volatile int*)map_addr;  // Force a page-in.
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE * 3));
+
+  // Now open a file that we'll mmap and dirty in various child processes.
+  fd = vfs_open("vfs_mount_test/a/file", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, PAGE_SIZE * 4));
+
+  unmount_busy_test_args_t busy_child_args;
+  ntfn_init(&busy_child_args.child_ran);
+  ntfn_init(&busy_child_args.done);
+  busy_child_args.first_parent_exit = false;
+  KEXPECT_EQ(0,
+             do_mmap(0x0, 3 * PAGE_SIZE, KPROT_EXEC | KPROT_READ | KPROT_WRITE,
+                     KMAP_PRIVATE, fd, 0, &busy_child_args.map_addr));
+  KEXPECT_EQ(0,
+             do_mmap(0x0, 3 * PAGE_SIZE, KPROT_EXEC | KPROT_READ | KPROT_WRITE,
+                     KMAP_SHARED, fd, 0, &busy_child_args.map_addr2));
+  // One more mapping that we create then immediately unmap.
+  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, KPROT_EXEC | KPROT_READ | KPROT_WRITE,
+                        KMAP_SHARED, fd, 3 * PAGE_SIZE, &map_addr));
+  x = *(volatile int*)map_addr;
+  *(volatile int*)map_addr = 5;
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  kpid_t child = proc_fork(&unmount_busy_child1, &busy_child_args);
+  ntfn_await(&busy_child_args.child_ran);
+
+  KEXPECT_EQ(0, do_munmap(busy_child_args.map_addr, 3 * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(busy_child_args.map_addr2, 3 * PAGE_SIZE));
+
+  // Now should have various shadow chains and pages.
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  ntfn_notify(&busy_child_args.done);
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  // This should clean up all the shadow objects and orphaned pages.
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  // As above, middle process exits.
+  KTEST_BEGIN("vfs mount: cannot unmount directory mmap'd file in it (#4)");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  fd = vfs_open("vfs_mount_test/a/file", VFS_O_RDWR);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(0, vfs_ftruncate(fd, PAGE_SIZE * 4));
+
+  ntfn_init(&busy_child_args.child_ran);
+  ntfn_init(&busy_child_args.done);
+  busy_child_args.first_parent_exit = true;
+  KEXPECT_EQ(0,
+             do_mmap(0x0, 3 * PAGE_SIZE, KPROT_EXEC | KPROT_READ | KPROT_WRITE,
+                     KMAP_PRIVATE, fd, 0, &busy_child_args.map_addr));
+  KEXPECT_EQ(0,
+             do_mmap(0x0, 3 * PAGE_SIZE, KPROT_EXEC | KPROT_READ | KPROT_WRITE,
+                     KMAP_SHARED, fd, 0, &busy_child_args.map_addr2));
+  // One more mapping that we create then immediately unmap.
+  KEXPECT_EQ(0, do_mmap(0x0, PAGE_SIZE, KPROT_EXEC | KPROT_READ | KPROT_WRITE,
+                        KMAP_SHARED, fd, 3 * PAGE_SIZE, &map_addr));
+  x = *(volatile int*)map_addr;
+  *(volatile int*)map_addr = 5;
+  KEXPECT_EQ(0, do_munmap(map_addr, PAGE_SIZE));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  child = proc_fork(&unmount_busy_child1, &busy_child_args);
+  ntfn_await(&busy_child_args.child_ran);
+
+  KEXPECT_EQ(0, do_munmap(busy_child_args.map_addr, 3 * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(busy_child_args.map_addr2, 3 * PAGE_SIZE));
+
+  // Now should have various shadow chains and pages.
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  // Let child finish before we let grandchild finish.
+  KEXPECT_EQ(child, proc_waitpid(child, NULL, 0));
+  ntfn_notify(&busy_child_args.done);
+  // We can't wait for the grandchild, so just give it time to finish.
+  for (int i = 0; i < 5; ++i) scheduler_yield();
+  // This should clean up all the shadow objects and orphaned pages.
+  KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+
+  KTEST_BEGIN("vfs mount: cannot unmount directory with root open");
+  KEXPECT_EQ(0, vfs_mount_fs("vfs_mount_test/a", ramfsA));
+  fd = vfs_open("vfs_mount_test/a", VFS_O_RDONLY | VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-EBUSY, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
+
+  KEXPECT_EQ(0, vfs_close(fd));
   KEXPECT_EQ(0, vfs_unmount_fs(abs_mount_a, &unmounted_fs));
 
 
@@ -765,7 +932,7 @@ static void too_many_mounts_test(void) {
   KEXPECT_EQ(0, vfs_rmdir("vfs_mount_test"));
 
   for (int i = 0; i < VFS_MAX_FILESYSTEMS; ++i) {
-    testfs_free(fses[i]);
+    fses[i]->destroy_fs(fses[i]);
   }
 }
 

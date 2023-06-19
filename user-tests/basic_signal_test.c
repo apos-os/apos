@@ -96,6 +96,19 @@ static void alarm_interrupt_test(void) {
   KEXPECT_EQ(SIGALRM, WTERMSIG(status));
 }
 
+static void bad_args_test(void) {
+  KTEST_BEGIN("sigaction() bad args");
+
+  struct sigaction old_action;
+  KEXPECT_EQ(0, sigaction(SIGALRM, NULL, &old_action));
+  KEXPECT_SIGNAL(SIGSEGV, sigaction(SIGALRM, (struct sigaction*)0x123, NULL));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 sigaction(SIGALRM, (struct sigaction*)0x123, &old_action));
+  KEXPECT_SIGNAL(SIGSEGV, sigaction(SIGALRM, NULL, (struct sigaction*)0x123));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 sigaction(SIGALRM, &old_action, (struct sigaction*)0x123));
+}
+
 static void signal_test(void) {
   KTEST_BEGIN("cross-process signal test");
   got_signal = false;
@@ -655,15 +668,30 @@ static void restartable_syscall_test(void) {
   // TODO(aoates): test nested signal delivery and syscalls (mixed restartable).
 }
 
+// Helper that sets an alarm _then_ calls sigwait.  Needed because the bad
+// signal argument won't be caught until _after_ sigwait tries to return and
+// copies the value back to userspace.
+static int alarm_and_sigwait(int* sig) {
+  sigset_t set;
+  sigemptyset(&set);
+  sigaddset(&set, SIGALRM);
+  assert(sigprocmask(SIG_BLOCK, &set, NULL) == 0);
+  // Won't actually be run, but needs to be set to prevent termination.
+  signal(SIGALRM, &signal_action);
+  alarm_ms(10);
+  return sigwait(&set, sig);
+}
+
 static void sigwait_test(void) {
   KTEST_BEGIN("sigwait(): invalid arguments tests");
   sigset_t set;
   sigemptyset(&set);
+  sigaddset(&set, SIGALRM);
   int sig;
-  KEXPECT_ERRNO(EFAULT, sigwait(&set, NULL));
-  KEXPECT_ERRNO(EFAULT, sigwait(&set, (int*)0x12345));
-  KEXPECT_ERRNO(EFAULT, sigwait(NULL, &sig));
-  KEXPECT_ERRNO(EFAULT, sigwait((sigset_t*)0x12345, &sig));
+  KEXPECT_SIGNAL(SIGSEGV, alarm_and_sigwait(NULL));
+  KEXPECT_SIGNAL(SIGSEGV, alarm_and_sigwait((int*)0x12345));
+  KEXPECT_SIGNAL(SIGSEGV, sigwait(NULL, &sig));
+  KEXPECT_SIGNAL(SIGSEGV, sigwait((sigset_t*)0x12345, &sig));
 
 
   KTEST_BEGIN("sigwait(): basic test");
@@ -730,6 +758,7 @@ void basic_signal_test(void) {
   }
   alarm_interrupt_test();
 
+  bad_args_test();
   signal_test();
   sigfpe_test();
   sigsegv_test();
