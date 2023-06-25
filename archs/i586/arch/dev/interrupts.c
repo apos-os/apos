@@ -170,8 +170,9 @@ void interrupts_init() {
   // First, figure out where the IDT is.
   idt_ptr_t idt_ptr;
   asm volatile(
-      "sidt (%0);"
-      :: "r"((uint32_t)&idt_ptr) :);
+      "sidt (%1);"
+      : "=m"(idt_ptr)
+      : "r"((uint32_t)&idt_ptr) :);
   KASSERT(idt_ptr.limit % sizeof(idt_entry_t) == 0);
   idt_entries = idt_ptr.limit / sizeof(idt_entry_t);
   idt = (idt_entry_t*)idt_ptr.base;
