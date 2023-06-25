@@ -38,9 +38,28 @@ SECTIONS
     }
     . = 0x00100000;
 
+    /* TODO(aoates): fix alignment so that we don't end up with RWX LOADs.  Does
+     * that matter?  Changing to ALIGN(0x1000000) allows ld to make independent
+     * LOAD segments, but needs to be evaluated for physical memory use.
+     */
     .init-text ALIGN(0x1000) :
     {
-        libkernel_phys.a(.text .rodata* .data .bss)
+        libkernel_phys.a(.text)
+    }
+
+    .init-rodata ALIGN(0x1000) :
+    {
+        libkernel_phys.a(.rodata*)
+    }
+
+    .init-data ALIGN(0x1000) :
+    {
+        libkernel_phys.a(.data)
+    }
+
+    .init-bss ALIGN(0x1000) :
+    {
+        libkernel_phys.a(.bss)
     }
 
     /* Load the main part of the kernel in virtual memory */
