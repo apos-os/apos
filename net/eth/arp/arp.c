@@ -137,6 +137,7 @@ void arp_rx(nic_t* nic, pbuf_t* pb) {
   switch (packet.oper) {
     case ARP_OPER_REQUEST:
       arp_handle_request(nic, &packet);
+      break;
 
     case ARP_OPER_REPLY:
       arp_handle_reply(nic, &packet);
