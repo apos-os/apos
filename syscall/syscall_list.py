@@ -437,7 +437,8 @@ AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
     ['struct apos_tm*:t:bw:sizeof(struct apos_tm)'])
 
 AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
-    'int', ['int*:fildes:bw:sizeof(int[2])'])
+    'int', ['int*:fildes:bw:sizeof(int[2])'],
+     stubs_to_generate=['L1', 'L2'])
 
 AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
     'apos_mode_t', ['apos_mode_t:cmask:u'])
