@@ -134,6 +134,7 @@ target_env.Replace(AS = '${TOOL_PREFIX}as')
 target_env.Replace(LD = '${TOOL_PREFIX}ld')
 target_env.Replace(RANLIB = '${TOOL_PREFIX}ranlib')
 target_env.Replace(STRIP = '${TOOL_PREFIX}strip')
+target_env.Append(LINKFLAGS = ['-z', 'noexecstack'])
 
 env = target_env.Clone()
 env.Append(CPPDEFINES = ['__APOS_BUILDING_KERNEL__=1'])
