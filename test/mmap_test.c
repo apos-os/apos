@@ -76,6 +76,10 @@ typedef struct {
   addr_t length;
   int fd;  // Mapping for the given fd, or -1 for don't care.
 } emmap_t;
+
+// Constant to use when no mmap is expected.
+#define MMAP_EMPTY ((emmap_t[]){{0, 0, 0}})
+
 static void EXPECT_MMAP(int num_entries, emmap_t expected[]) {
   process_t* proc = proc_current();
   int idx = 0;
@@ -168,7 +172,7 @@ static void mmap_invalid_args(void) {
   KEXPECT_EQ(-EINVAL, do_mmap(0x0, PAGE_SIZE, PROT_ALL,
                               KMAP_SHARED | KMAP_PRIVATE, fd, 0, &addr_out));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   vfs_close(fd);
   vfs_unlink(kFile);
@@ -211,7 +215,7 @@ static void mmap_basic(void) {
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   vfs_close(fdA);
   vfs_close(fdB);
@@ -532,7 +536,7 @@ static void map_unmap_kernel_memory(void) {
           (void*)addr2page(MEM_LAST_MAPPABLE_ADDR),
           10 * PAGE_SIZE));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   vfs_close(fdA);
 }
@@ -565,7 +569,7 @@ static void mmap_private_basic(void) {
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   vfs_close(fdA);
   vfs_close(fdB);
@@ -605,7 +609,7 @@ static void mmap_private_writeback(void) {
   KEXPECT_EQ(0, do_munmap(addrA1, kTestFilePages * PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap(addrA2, kTestFilePages * PAGE_SIZE));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   // Verify that the write wasn't copied back to the underlying file.
   KEXPECT_EQ(0, vfs_seek(fdA, 0, VFS_SEEK_SET));
@@ -700,7 +704,7 @@ static void mmap_anonymous(void) {
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 }
 
 // Test boundary conditions (first and last mappable page).
@@ -713,7 +717,7 @@ static void mmap_first_and_last_page(void) {
   KEXPECT_EQ((void*)MEM_FIRST_MAPPABLE_ADDR, addrA);
   EXPECT_MMAP(1, (emmap_t[]){{MEM_FIRST_MAPPABLE_ADDR, 0x1000, -1}});
   KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   KTEST_BEGIN("mmap(): last mappable page (hint)");
   addrA = 0x0;
@@ -725,7 +729,7 @@ static void mmap_first_and_last_page(void) {
   EXPECT_MMAP(1, (emmap_t[])
               {{addr2page(MEM_LAST_USER_MAPPABLE_ADDR), 0x1000, -1}});
   KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   KTEST_BEGIN("mmap(): last mappable page (MAP_FIXED)");
   addrA = 0x0;
@@ -738,7 +742,7 @@ static void mmap_first_and_last_page(void) {
               {{addr2page(MEM_LAST_USER_MAPPABLE_ADDR), 0x1000, -1}});
   KEXPECT_EQ(0, do_munmap(addrA, PAGE_SIZE));
 
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 }
 
 // TODO(aoates): things to test:
@@ -752,7 +756,7 @@ static void do_mmap_test(void* unused_arg) {
 
   KTEST_BEGIN("Cleanup existing user mappings");
   KEXPECT_EQ(0, do_munmap(0x0, MEM_LAST_USER_MAPPABLE_ADDR + 1));
-  EXPECT_MMAP(0, (emmap_t[]){});
+  EXPECT_MMAP(0, MMAP_EMPTY);
 
   mmap_invalid_args();
   munmap_invalid_args();

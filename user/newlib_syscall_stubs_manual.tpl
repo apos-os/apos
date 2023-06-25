@@ -59,3 +59,7 @@ unsigned alarm(unsigned seconds) {
 unsigned int sleep(unsigned int seconds) {
   return sleep_ms(seconds * 1000);
 }
+
+// Manual stub to convert from int[2] to int* and mollify GCC's
+// array-parameter diagnostic.
+int pipe(int fildes[2]) { return _pipe_r(_REENT, fildes); }

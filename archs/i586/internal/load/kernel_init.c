@@ -45,8 +45,9 @@ void kinit(memory_info_t* meminfo) {
   // Also switch our GDT and IDT pointers to their virtual addresses.
   gdt_ptr_t gdt_ptr;
   asm volatile (
-      "sgdt (%0);"
-      :: "r"((uint32_t)&gdt_ptr) :);
+      "sgdt (%1);"
+      : "=m"(gdt_ptr)
+      : "r"((uint32_t)&gdt_ptr) :);
   gdt_ptr.base += KERNEL_VIRT_START;
   gdt_flush(&gdt_ptr);
 
