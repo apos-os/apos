@@ -25,8 +25,8 @@
 static void do_exec_mode_test(void* arg) {
   const char kFile[] = "exec_mode_test/file";
 
-  char* const argv[] = {"f"};
-  char* const envp[] = {};
+  char* const argv[] = {"f", NULL};
+  char* const envp[] = {NULL};
 
   KTEST_BEGIN("exec(): root can't exec() if no exec bits are set");
   create_file(kFile, "rw-rw-rw-");
