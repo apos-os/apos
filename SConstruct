@@ -187,8 +187,8 @@ def kernel_program(env, target, source):
   return [
       env.Depends(target, 'archs/$ARCH/build/linker.ld'),
       env.Program(target, source,
-        LINKFLAGS=env['LINKFLAGS'] + [
-          '-T', 'archs/$ARCH/build/linker.ld', '-L', Dir('.')])]
+        LINKFLAGS=env['LINKFLAGS'] +
+                  ['-T', 'archs/$ARCH/build/linker.ld'])]
 
 def phys_object(env, source):
   """Builder for object files that need to be linked in the physical (not

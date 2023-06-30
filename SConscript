@@ -58,8 +58,7 @@ phys_objects = [obj for obj in all_objects if obj.name.count('PHYS') > 0]
 
 physlib = env.StaticLibrary('libkernel_phys', phys_objects)
 kernel_lib = env.StaticLibrary('kernel', Flatten(objects))
-kernel = env.Kernel('kernel.bin', [kernel_lib])
-env.Depends(kernel, physlib)
+kernel = env.Kernel('kernel.bin', [physlib, kernel_lib])
 env.Command('kernel.bin.stripped', 'kernel.bin', '%s -s $SOURCE -o $TARGET' % env['STRIP'])
 
 env.Install(os.path.join('#', env['BUILD_DIR']), 'kernel.bin')
