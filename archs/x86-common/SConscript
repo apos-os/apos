@@ -18,6 +18,7 @@ env.Append(CFLAGS = Split("-mno-mmx -mno-sse"))
 user_env.Append(CFLAGS = Split("-mno-mmx -mno-sse"))
 
 srcs = [
+    'arch/common/debug.c',
     'arch/common/die.c',
     'arch/common/io.c',
     'arch/memory/page_alloc.c',

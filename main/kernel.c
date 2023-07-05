@@ -109,6 +109,7 @@ static void init_trampoline(void* arg) {
 void kmain(memory_info_t* meminfo) {
   set_global_meminfo(meminfo);
 
+  klog_set_mode(KLOG_RAW_VIDEO);
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
