@@ -16,6 +16,7 @@ Import('env AposAddSources')
 
 srcs = [
   'arch/common/debug.c',
+  'arch/dev/interrupts.s',
 ]
 
 subdirs = ['internal/load']
