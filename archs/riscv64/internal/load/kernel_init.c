@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "arch/common/debug.h"
 #include "common/config.h"
 #include "common/endian.h"
 #include "common/kstring.h"
@@ -28,40 +29,9 @@ _Static_assert(ARCH_IS_64_BIT, "ARCH_IS_64_BIT should be set");
 
 extern void kmain(memory_info_t* meminfo);
 
-struct sbiret {
-  long error;
-  long value;
-};
-
-static long sbi_call(uint64_t eid, uint64_t fid, long* val_out,
-                     uint64_t arg0, uint64_t arg1) {
-  long error, val;
-  asm volatile (
-      "mv a0, %[arg0]\n\t"
-      "mv a1, %[arg1]\n\t"
-      "mv a7, %[eid]\n\t"
-      "mv a6, %[fid]\n\t"
-      "ecall\n\t"
-      "mv %[error], a0\n\t"
-      "mv %[val], a1\n\t"
-      : [error] "=r"(error),
-        [val] "=r"(val)
-      : [arg0] "r"(arg0),
-        [arg1] "r"(arg1),
-        [eid] "r"(eid),
-        [fid] "r"(fid));
-  *val_out = val;
-  return error;
-}
-
-static void debug_putc(char c) {
-  long val;
-  sbi_call(1, 0, &val, c, 0);
-}
-
 static void debug_puts(const char* s) {
   while (*s) {
-    debug_putc(*s);
+    arch_debug_putc(*s);
     s++;
   }
 }

@@ -14,7 +14,9 @@
 
 Import('env AposAddSources')
 
-srcs = []
+srcs = [
+  'arch/common/debug.c',
+]
 
 subdirs = ['internal/load']
 
