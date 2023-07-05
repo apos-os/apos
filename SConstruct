@@ -23,7 +23,8 @@ if 'configure' in COMMAND_LINE_TARGETS:
 else:
   vars = Variables(CONFIG_CACHE_FILE)
 
-vars.Add(EnumVariable('ARCH', 'architecture to target', None, ['i586', 'x86_64']))
+vars.Add(EnumVariable('ARCH', 'architecture to target', None,
+                      ['i586', 'x86_64', 'riscv64']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
