@@ -15,35 +15,8 @@
 #ifndef APOO_ARCHS_X86_64_ARCH_DEV_INTERRUPTS_H
 #define APOO_ARCHS_X86_64_ARCH_DEV_INTERRUPTS_H
 
-#include <stdint.h>
-
 #include "archs/common/arch/dev/interrupts.h"
 
 #define IF_FLAG 0x200
-
-static inline interrupt_state_t get_interrupts_state(void) {
-  uint64_t saved_flags;
-  asm volatile (
-      "pushf\n\t"
-      "pop %0\n\t"
-      : "=r"(saved_flags));
-  return (saved_flags & IF_FLAG) != 0;
-}
-
-static inline interrupt_state_t save_and_disable_interrupts(void) {
-  uint64_t saved_flags;
-  asm volatile (
-      "pushf\n\t"
-      "pop %0\n\t"
-      "cli\n\t"
-      : "=r"(saved_flags));
-  return (saved_flags & IF_FLAG) != 0;
-}
-
-static inline void restore_interrupts(interrupt_state_t saved) {
-  if (saved) {
-    asm volatile ("sti");
-  }
-}
 
 #endif

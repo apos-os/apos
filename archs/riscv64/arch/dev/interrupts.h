@@ -14,21 +14,6 @@
 #ifndef APOO_ARCHS_RISCV64_ARCH_DEV_INTERRUPTS_H
 #define APOO_ARCHS_RISCV64_ARCH_DEV_INTERRUPTS_H
 
-#include <stdint.h>
-
 #include "archs/common/arch/dev/interrupts.h"
-
-// TODO(riscv): implement these for riscv64.
-
-static inline interrupt_state_t get_interrupts_state(void) {
-  return 0;
-}
-
-static inline interrupt_state_t save_and_disable_interrupts(void) {
-  return 0;
-}
-
-static inline void restore_interrupts(interrupt_state_t saved) {
-}
 
 #endif

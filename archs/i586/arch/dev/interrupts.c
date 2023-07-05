@@ -264,3 +264,29 @@ void enable_interrupts() {
 void disable_interrupts() {
   asm volatile("cli");
 }
+
+// TODO(aoates): define these directly as asm.
+interrupt_state_t get_interrupts_state(void) {
+  uint32_t saved_flags;
+  asm volatile (
+      "pushf\n\t"
+      "pop %0\n\t"
+      : "=r"(saved_flags));
+  return saved_flags & IF_FLAG;
+}
+
+interrupt_state_t save_and_disable_interrupts(void) {
+  uint32_t saved_flags;
+  asm volatile (
+      "pushf\n\t"
+      "pop %0\n\t"
+      "cli\n\t"
+      : "=r"(saved_flags));
+  return saved_flags & IF_FLAG;
+}
+
+void restore_interrupts(interrupt_state_t saved) {
+  if (saved) {
+    asm volatile ("sti");
+  }
+}
