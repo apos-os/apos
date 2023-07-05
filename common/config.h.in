@@ -29,8 +29,6 @@
 #define ARCH_riscv64 3
 #define ARCH ARCH_%(ARCH)s
 
-#define KSHELL_INITIAL_COMMAND "%(KSHELL_INITIAL_COMMAND)s"
-
 #if ARCH == ARCH_x86_64 || ARCH == ARCH_riscv64
 # define ARCH_IS_64_BIT 1
 #else

@@ -21,6 +21,7 @@
 
 #include "arch/common/io.h"
 #include "common/config.h"
+#include "common/dynamic-config.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
