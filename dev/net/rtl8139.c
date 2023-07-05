@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "arch/common/endian.h"
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
 #include "arch/memory/page_alloc.h"
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"

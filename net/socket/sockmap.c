@@ -14,7 +14,7 @@
 
 #include "net/socket/sockmap.h"
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/kmalloc.h"

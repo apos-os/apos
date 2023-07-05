@@ -14,7 +14,7 @@
 
 #include "test/kernel_tests.h"
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "memory/block_cache.h"
 #include "net/ip/checksum.h"
 #include "net/socket/socket.h"

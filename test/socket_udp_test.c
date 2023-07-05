@@ -14,7 +14,7 @@
 
 #include "test/kernel_tests.h"
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "common/kprintf.h"
 #include "memory/block_cache.h"
 #include "net/addr.h"

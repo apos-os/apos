@@ -14,7 +14,7 @@
 
 #include "net/ip/ip4_hdr.h"
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "common/kassert.h"
 #include "net/ip/checksum.h"
 
