@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "common/config.h"
 #include "common/kstring.h"
 #include "common/kprintf.h"
+#include "common/types.h"
 #include "test/ktest.h"
 
 const char* do_printf(const char* fmt, ...) {
@@ -279,6 +281,9 @@ static void kprintf_testF(void) {
   // TODO(aoates): implement 'll' support.
 #if 0
   KTEST_BEGIN("ksprintf(): 'll' modifier");
+  KEXPECT_STREQ("123", do_printf("%lli", 123));
+  KEXPECT_STREQ("123", do_printf("%llu", 123));
+  KEXPECT_STREQ("-123", do_printf("%lli", -123));
   KEXPECT_STREQ("9223372036854775807", do_printf("%lli", 9223372036854775807));
   KEXPECT_STREQ("9223372036854775807", do_printf("%llu", 9223372036854775807));
   KEXPECT_STREQ("18446744073709551615",
@@ -288,12 +293,22 @@ static void kprintf_testF(void) {
   KEXPECT_STREQ("9223372036854775807",
                 do_printf("%lli", (long long)9223372036854775807));
   KEXPECT_STREQ("-00123", do_printf("%06lld", -123));
+  KEXPECT_STREQ("7fffffffffffffff",
+                do_printf("%llx", (long long)9223372036854775807));
+  KEXPECT_STREQ("7FFFFFFFFFFFFFFF",
+                do_printf("%llX", (long long)9223372036854775807));
 #endif
 
   KTEST_BEGIN("ksprintf(): 'z' modifier");
   KEXPECT_STREQ("55", do_printf("%zi", (addr_t)55));
   KEXPECT_STREQ("-55", do_printf("%zi", (addr_t)-55));
   KEXPECT_STREQ("55", do_printf("%zu", (addr_t)55));
+#if ARCH_IS_64_BIT
+  KEXPECT_STREQ("100000000", do_printf("%zx", 0x100000000));
+  KEXPECT_STREQ("4294967296", do_printf("%zu", 0x100000000));
+  KEXPECT_STREQ("4294967296", do_printf("%zi", 0x100000000));
+  KEXPECT_STREQ("-4294967296", do_printf("%zi", -0x100000000));
+#endif
 
   KTEST_BEGIN("ksprintf(): bad length modifiers");
   KEXPECT_STREQ("u", do_printf("%qu", 5));
@@ -304,6 +319,18 @@ static void kprintf_testF(void) {
   KEXPECT_STREQ("u", do_printf("%hlu", 5));
 }
 
+static void kprintf_PRI_test(void) {
+  KTEST_BEGIN("ksprintf(): PRIxADDR/PRIuADDR test");
+  addr_t addr = 0xabcdef01;
+  KEXPECT_STREQ("abcdef01", do_printf("%" PRIxADDR, addr));
+  KEXPECT_STREQ("2882400001", do_printf("%" PRIuADDR, addr));
+#if ARCH_IS_64_BIT
+  addr = 0xabcdef0123456789;
+  KEXPECT_STREQ("abcdef0123456789", do_printf("%" PRIxADDR, addr));
+  KEXPECT_STREQ("12379813738877118345", do_printf("%" PRIuADDR, addr));
+#endif
+}
+
 void kprintf_test(void) {
   KTEST_SUITE_BEGIN("kprintf");
   kprintf_testA();
@@ -312,4 +339,5 @@ void kprintf_test(void) {
   kprintf_testD();
   kprintf_testE();
   kprintf_testF();
+  kprintf_PRI_test();
 }
