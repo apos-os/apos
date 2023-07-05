@@ -14,6 +14,8 @@
 #ifndef APOO_DEV_DEVICETREE_DTB_H
 #define APOO_DEV_DEVICETREE_DTB_H
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define DTFDT_VERSION 17
@@ -38,5 +40,52 @@ typedef fdt_header_t fdt_header_t_bige;
 // returns zero and copies the header data (in host endian) into the given
 // header struct.
 int dtfdt_validate(const void* buf, fdt_header_t* header);
+
+typedef void(*dtfdt_sink_t)(const char*);
+// Prints the given FDT (in DTB form), using the given function as a sink.
+void dtfdt_print(const void* fdt, const fdt_header_t* hdr, bool print_header,
+                 dtfdt_sink_t sink);
+
+// Context for a parsed node, with the #address-cells and #size-cells properties
+// of the node's _parent_.
+typedef struct {
+  int address_cells;
+  int size_cells;
+} dtfdt_node_context_t;
+
+typedef void (*dtfdt_node_begin_cb)(const char* node_name,
+                                    const dtfdt_node_context_t* context,
+                                    void* cbarg);
+typedef void (*dtfdt_node_end_cb)(const char* node_name, void* cbarg);
+typedef void (*dtfdt_node_prop_cb)(const char* prop_name, const void* prop_val,
+                                   size_t val_len,
+                                   const dtfdt_node_context_t* context,
+                                   void* cbarg);
+
+// Callbacks for parsing.
+typedef struct {
+  // Called when a node is begun.
+  dtfdt_node_begin_cb node_begin;
+  // Called when a node finishes.
+  dtfdt_node_end_cb node_end;
+  // Called for each property of a node.
+  dtfdt_node_prop_cb node_prop;
+} dtfdt_parse_cbs_t;
+
+// Parsing results.
+typedef enum {
+  DTFDT_OK = 0,              // The parse was succesful.
+  DTFDT_BUF_TOO_SHORT = -1,  // The buffer is too short.
+  DTFDT_BAD_TOKEN = -2,      // Invalid token seen.
+  DTFDT_BAD_NAME = -3,       // Invalid node or property name.
+  DTFDT_BAD_ALIGNMENT = -4,
+  DTFDT_BAD_PROPERTY = -5,
+} dtfdt_parse_result_t;
+
+// Parse the given DTB.  Doesn't dynamically allocate any memory, so is
+// safe to use during boot.  Property values are passed as uninterpreted blobs
+// (in big-endian order).  Returns 0 (DTFDT_OK) or an error.
+dtfdt_parse_result_t dtfdt_parse(const void* fdt, const fdt_header_t* hdr,
+                                 const dtfdt_parse_cbs_t* cbs, void* cbarg);
 
 #endif

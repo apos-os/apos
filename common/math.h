@@ -15,6 +15,8 @@
 #ifndef APOO_COMMON_MATH_H
 #define APOO_COMMON_MATH_H
 
+#include <stdint.h>
+
 #define min(a, b) \
  ({ typeof (a) _a = (a); \
      typeof (b) _b = (b); \
@@ -38,5 +40,10 @@
  ({ typeof (a) _a = (a); \
      typeof (b) _b = (b); \
     (_a + (_b / 2)) / _b; })
+
+// Aligns the given number to the next multiple of |align|.
+static inline uint64_t align_up(uint64_t x, uint32_t align) {
+  return ((x - 1) + (align - ((x - 1) % align)));
+}
 
 #endif
