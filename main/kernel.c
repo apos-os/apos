@@ -123,7 +123,7 @@ void kmain(memory_info_t* meminfo) {
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(meminfo);
   klog("paging_init()\n");
-  paging_init(meminfo);
+  paging_init();
 
   klog("proc_init_stage1()\n");
   proc_init_stage1();

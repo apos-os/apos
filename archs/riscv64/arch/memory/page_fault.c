@@ -19,6 +19,6 @@
 #include "memory/memory.h"
 #include "memory/vm_page_fault.h"
 
-void paging_init(memory_info_t* meminfo) {
+void paging_init() {
   // TODO(riscv): implement
 }

@@ -20,6 +20,6 @@
 #include "memory/memory.h"
 
 // Initialize the page fault handler and register it with the interrupts module.
-void paging_init(memory_info_t* meminfo);
+void paging_init(void);
 
 #endif

@@ -32,10 +32,7 @@
 #define PAGE_FAULT_ERR_USER    0x04
 #define PAGE_FAULT_ERR_RSVD    0x08
 
-static memory_info_t* g_meminfo = 0;
-
-void paging_init(memory_info_t* meminfo) {
-  g_meminfo = meminfo;
+void paging_init() {
   register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
 }
 
