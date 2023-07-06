@@ -28,6 +28,7 @@ srcs = [
   'arch/proc/stack_trace.c',
   'arch/proc/user_context.c',
   'arch/syscall/context.c',
+  'internal/page_tables.c',
   'internal/sbi.c',
 ]
 
