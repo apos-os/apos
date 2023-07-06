@@ -18,6 +18,7 @@
 #include "arch/common/debug.h"
 #include "common/config.h"
 #include "common/endian.h"
+#include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/devicetree/dtb.h"
 #include "memory/memory.h"
@@ -28,13 +29,6 @@ _Static_assert(ARCH == ARCH_riscv64, "bad ARCH");
 _Static_assert(ARCH_IS_64_BIT, "ARCH_IS_64_BIT should be set");
 
 extern void kmain(memory_info_t* meminfo);
-
-static void debug_puts(const char* s) {
-  while (*s) {
-    arch_debug_putc(*s);
-    s++;
-  }
-}
 
 // Glue function in between 'all-physical' setup code and 'all-virtual' kernel
 // code.  Tears down temporary mappings set up by paging initialization and
@@ -47,7 +41,11 @@ void kinit(int hart_id, const void* fdt) {
   // TODO(riscv): copy the FDT to virtual memory and unmap the physical
   // identity mapping.
 
-  debug_puts("Booted APOS on riscv64\n");
+  klog("Booting APOS on riscv64\n");
+
+  fdt_header_t fdt_header;
+  dtfdt_validate(fdt, &fdt_header);
+  dtfdt_print(fdt, &fdt_header, true, &klog);
 
   // We can't ever return or we'll page fault!
   while(1);
