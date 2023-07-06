@@ -18,6 +18,16 @@ srcs = [
   'arch/common/debug.c',
   'arch/common/die.c',
   'arch/dev/interrupts.s',
+  'arch/dev/io.c',
+  'arch/dev/irq.c',
+  'arch/memory/page_alloc.c',
+  'arch/memory/page_fault.c',
+  'arch/memory/page_map.c',
+  'arch/proc/kthread.c',
+  'arch/proc/signal_enter.c',
+  'arch/proc/stack_trace.c',
+  'arch/proc/user_context.c',
+  'arch/syscall/context.c',
   'internal/sbi.c',
 ]
 

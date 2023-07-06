@@ -15,6 +15,8 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_DEV_IRQ_H
 #define APOO_ARCHS_COMMON_ARCH_DEV_IRQ_H
 
+#include <stdint.h>
+
 #define IRQ0  0
 #define IRQ1  1
 #define IRQ2  2

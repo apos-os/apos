@@ -48,3 +48,9 @@ restore_interrupts:
   csrsi sstatus, SSTATUS_SIE
 .done:
   ret
+
+# TODO(riscv): define these properly
+.global _int_handlers_start
+.global _int_handlers_end
+_int_handlers_start:
+_int_handlers_end:
