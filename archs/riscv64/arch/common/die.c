@@ -11,13 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "arch/common/debug.h"
-
+#include "arch/common/die.h"
 #include <stdint.h>
 
+#include "arch/dev/interrupts.h"
 #include "archs/riscv64/internal/sbi.h"
 
-void arch_debug_putc(char c) {
-  long val;
-  rsv64_sbi_call(RSV64_SBI_EID_LEGACY_PUTCHAR, 0, &val, c, 0);
+void arch_die(void) {
+  long unused;
+  disable_interrupts();
+  while (1) {
+    rsv64_sbi_call(RSV64_SBI_EID_HSM, RSV64_SBI_FID_HSM_HART_STOP, &unused, 0,
+                   0);
+    // This _shouldn't_ return.
+  }
 }

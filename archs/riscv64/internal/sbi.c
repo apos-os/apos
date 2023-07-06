@@ -11,13 +11,25 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "arch/common/debug.h"
-
-#include <stdint.h>
-
 #include "archs/riscv64/internal/sbi.h"
 
-void arch_debug_putc(char c) {
-  long val;
-  rsv64_sbi_call(RSV64_SBI_EID_LEGACY_PUTCHAR, 0, &val, c, 0);
+long rsv64_sbi_call(uint64_t eid, uint64_t fid, long* val_out, uint64_t arg0,
+                    uint64_t arg1) {
+  long error, val;
+  asm volatile (
+      "mv a0, %[arg0]\n\t"
+      "mv a1, %[arg1]\n\t"
+      "mv a7, %[eid]\n\t"
+      "mv a6, %[fid]\n\t"
+      "ecall\n\t"
+      "mv %[error], a0\n\t"
+      "mv %[val], a1\n\t"
+      : [error] "=r"(error),
+        [val] "=r"(val)
+      : [arg0] "r"(arg0),
+        [arg1] "r"(arg1),
+        [eid] "r"(eid),
+        [fid] "r"(fid));
+  *val_out = val;
+  return error;
 }

@@ -11,13 +11,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "arch/common/debug.h"
+#ifndef APOO_ARCHS_RISCV64_INTERNAL_SBI_H
+#define APOO_ARCHS_RISCV64_INTERNAL_SBI_H
 
 #include <stdint.h>
 
-#include "archs/riscv64/internal/sbi.h"
+#define RSV64_SBI_EID_LEGACY_PUTCHAR 0x1
+#define RSV64_SBI_EID_HSM 0x48534D
 
-void arch_debug_putc(char c) {
-  long val;
-  rsv64_sbi_call(RSV64_SBI_EID_LEGACY_PUTCHAR, 0, &val, c, 0);
-}
+#define RSV64_SBI_FID_HSM_HART_STOP 0x1
+
+// Makes an SBI call to the SEE.  Returns the error code and sets the value
+// returned (if any) to *val_out.  If the SBI call doesn't return a value,
+// *val_out is unspecified.
+long rsv64_sbi_call(uint64_t eid, uint64_t fid, long* val_out, uint64_t arg0,
+                    uint64_t arg1);
+
+#endif
