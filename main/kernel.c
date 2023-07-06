@@ -179,16 +179,17 @@ void kmain(memory_info_t* meminfo) {
 
   klog("meminfo: 0x");
   klog(kutoa_hex((addr_t)meminfo));
-  klog("\nmeminfo->kernel_start_phys: 0x"); klog(kutoa_hex(meminfo->kernel_start_phys));
-  klog("\nmeminfo->kernel_end_phys:   0x"); klog(kutoa_hex(meminfo->kernel_end_phys));
-  klog("\nmeminfo->kernel_start_virt: 0x"); klog(kutoa_hex(meminfo->kernel_start_virt));
-  klog("\nmeminfo->kernel_end_virt:   0x"); klog(kutoa_hex(meminfo->kernel_end_virt));
-  klog("\nmeminfo->mapped_start:      0x"); klog(kutoa_hex(meminfo->mapped_start));
-  klog("\nmeminfo->mapped_end:        0x"); klog(kutoa_hex(meminfo->mapped_end));
-  klog("\nmeminfo->lower_memory:      0x"); klog(kutoa_hex(meminfo->lower_memory));
-  klog("\nmeminfo->upper_memory:      0x"); klog(kutoa_hex(meminfo->upper_memory));
-  klog("\nmeminfo->phys_map_start:    0x"); klog(kutoa_hex(meminfo->phys_map_start));
-  klog("\nmeminfo->phys_map_length:   0x"); klog(kutoa_hex(meminfo->phys_map_length));
+  klog("\nmeminfo->kernel_start_phys:   0x"); klog(kutoa_hex(meminfo->kernel_start_phys));
+  klog("\nmeminfo->kernel_end_phys:     0x"); klog(kutoa_hex(meminfo->kernel_end_phys));
+  klog("\nmeminfo->kernel_start_virt:   0x"); klog(kutoa_hex(meminfo->kernel_start_virt));
+  klog("\nmeminfo->kernel_end_virt:     0x"); klog(kutoa_hex(meminfo->kernel_end_virt));
+  klog("\nmeminfo->mapped_start:        0x"); klog(kutoa_hex(meminfo->mapped_start));
+  klog("\nmeminfo->mapped_end:          0x"); klog(kutoa_hex(meminfo->mapped_end));
+  klog("\nmeminfo->phys_mainmem_begin:  0x"); klog(kutoa_hex(meminfo->phys_mainmem_begin));
+  klog("\nmeminfo->lower_memory:        0x"); klog(kutoa_hex(meminfo->lower_memory));
+  klog("\nmeminfo->upper_memory:        0x"); klog(kutoa_hex(meminfo->upper_memory));
+  klog("\nmeminfo->phys_map_start:      0x"); klog(kutoa_hex(meminfo->phys_map_start));
+  klog("\nmeminfo->phys_map_length:     0x"); klog(kutoa_hex(meminfo->phys_map_length));
   klog("\n");
 
   // TODO(aoates): reparent processes to the init process rather than the kernel

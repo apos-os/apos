@@ -41,6 +41,11 @@ typedef struct {
   addr_t mapped_start;
   addr_t mapped_end;
 
+  // The physical address of the start of main memory, i.e. main memory spans
+  // (phys_mainmem_begin, phys_mainmem_begin + lower_memory +  upper_memory]
+  // TODO(aoates): replace this with a more flexible memory map approach.
+  phys_addr_t phys_mainmem_begin;
+
   // The amount of lower (<1MB) and upper (>1MB) memory available on the
   // machine, in bytes.
   addrdiff_t lower_memory;

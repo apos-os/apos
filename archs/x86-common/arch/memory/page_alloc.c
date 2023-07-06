@@ -47,6 +47,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
       (meminfo->lower_memory + meminfo->upper_memory) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
   const phys_addr_t kernel_end_page = next_page(meminfo->kernel_end_phys);
+  KASSERT(meminfo->phys_mainmem_begin == 0);
   phys_addr_t next_free_frame = kernel_end_page;
 
   // Reserve same frames for DMA usage.  The DMA pages will live directly above

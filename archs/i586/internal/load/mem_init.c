@@ -190,6 +190,7 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
   g_meminfo.mapped_start = g_meminfo.mapped_end = 0;
 
   kassert_phys((mb_info->flags & MULTIBOOT_INFO_MEMORY) != 0);
+  g_meminfo.phys_mainmem_begin = 0;
   g_meminfo.lower_memory = mb_info->mem_lower * 1024;
   g_meminfo.upper_memory = mb_info->mem_upper * 1024;
 
