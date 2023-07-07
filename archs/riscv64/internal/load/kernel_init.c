@@ -93,11 +93,10 @@ void kinit(int hart_id, phys_addr_t fdt_phys) {
 
   klog("Booting APOS on riscv64\n");
 
-  // Can't use phys2virt yet, since we haven't set up the global meminfo.
   const void* fdt = (const void*)init_phys2virt(fdt_phys);
-  fdt_header_t fdt_header;
-  dtfdt_validate(fdt, &fdt_header);
-  dtfdt_print(fdt, &fdt_header, true, &klog);
+  if (dtfdt_print(fdt, true, &klog) != 0) {
+    die("Bad FDT passed in");
+  }
 
   // We can't ever return or we'll page fault!
   while(1);

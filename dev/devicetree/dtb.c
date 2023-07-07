@@ -199,20 +199,24 @@ static dtfdt_parse_result_t parse_node(fdt_parse_state_t* parse,
   return DTFDT_OK;
 }
 
-dtfdt_parse_result_t dtfdt_parse(const void* fdt, const fdt_header_t* hdr,
-                                 const dtfdt_parse_cbs_t* cbs, void* cbarg) {
+dtfdt_parse_result_t dtfdt_parse(const void* fdt, const dtfdt_parse_cbs_t* cbs,
+                                 void* cbarg) {
   if ((addr_t)fdt % sizeof(uint32_t) != 0) {
     return DTFDT_BAD_ALIGNMENT;
   }
-  if (hdr->off_dt_struct % sizeof(uint32_t) != 0) {
+  fdt_header_t hdr;
+  if (dtfdt_validate(fdt, &hdr) != 0) {
+    return DTFDT_BAD_HEADER;
+  }
+  if (hdr.off_dt_struct % sizeof(uint32_t) != 0) {
     return DTFDT_BAD_ALIGNMENT;
   }
   fdt_parse_state_t parse;
   parse.fdt = fdt;
-  parse.fdtstruct = fdt + hdr->off_dt_struct;
-  parse.hdr = hdr;
+  parse.fdtstruct = fdt + hdr.off_dt_struct;
+  parse.hdr = &hdr;
   parse.pos = 0;
-  parse.buflen = hdr->size_dt_struct;
+  parse.buflen = hdr.size_dt_struct;
   parse.cbs = cbs;
   parse.cbarg = cbarg;
 
@@ -386,28 +390,32 @@ bool print_node_prop_cb(const char* prop_name, const void* prop_val,
   return true;
 }
 
-void dtfdt_print(const void* fdt, const fdt_header_t* hdr, bool print_header,
-                 dtfdt_sink_t sink) {
+int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink) {
   fdt_print_state_t state;
   state.sink = sink;
   state.indent = 0;
   state.space_next_node = false;
 
+  fdt_header_t hdr;
+  if (dtfdt_validate(fdt, &hdr) != 0) {
+    return -1;
+  }
+
   if (print_header) {
     fdt_printf(&state, "FDT header:\n");
-    fdt_printf(&state, " magic: 0x%x\n", hdr->magic);
-    fdt_printf(&state, " totalsize: 0x%x\n", hdr->totalsize);
-    fdt_printf(&state, " off_dt_struct: 0x%x\n", hdr->off_dt_struct);
-    fdt_printf(&state, " off_dt_strings: 0x%x\n", hdr->off_dt_strings);
-    fdt_printf(&state, " off_mem_rsvmap: 0x%x\n", hdr->off_mem_rsvmap);
-    fdt_printf(&state, " version: 0x%x\n", hdr->version);
-    fdt_printf(&state, " last_comp_version: 0x%x\n", hdr->last_comp_version);
-    fdt_printf(&state, " boot_cpuid_phys: 0x%x\n", hdr->boot_cpuid_phys);
-    fdt_printf(&state, " size_dt_strings: 0x%x\n", hdr->size_dt_strings);
-    fdt_printf(&state, " size_dt_struct: 0x%x\n", hdr->size_dt_struct);
+    fdt_printf(&state, " magic: 0x%x\n", hdr.magic);
+    fdt_printf(&state, " totalsize: 0x%x\n", hdr.totalsize);
+    fdt_printf(&state, " off_dt_struct: 0x%x\n", hdr.off_dt_struct);
+    fdt_printf(&state, " off_dt_strings: 0x%x\n", hdr.off_dt_strings);
+    fdt_printf(&state, " off_mem_rsvmap: 0x%x\n", hdr.off_mem_rsvmap);
+    fdt_printf(&state, " version: 0x%x\n", hdr.version);
+    fdt_printf(&state, " last_comp_version: 0x%x\n", hdr.last_comp_version);
+    fdt_printf(&state, " boot_cpuid_phys: 0x%x\n", hdr.boot_cpuid_phys);
+    fdt_printf(&state, " size_dt_strings: 0x%x\n", hdr.size_dt_strings);
+    fdt_printf(&state, " size_dt_struct: 0x%x\n", hdr.size_dt_struct);
 
     fdt_printf(&state, "\nMemory reservation blocks:\n");
-    const uint64_t* memres = (const uint64_t*)(fdt + hdr->off_mem_rsvmap);
+    const uint64_t* memres = (const uint64_t*)(fdt + hdr.off_mem_rsvmap);
     while (true) {
       // On 32-bit archs the upper 32 bits should be ignored, so cast them away.
       addr_t addr = (addr_t)btoh64(*(memres++));
@@ -422,8 +430,10 @@ void dtfdt_print(const void* fdt, const fdt_header_t* hdr, bool print_header,
   dtfdt_parse_cbs_t cbs = {.node_begin = &print_node_begin_cb,
                            .node_end = &print_node_end_cb,
                            .node_prop = &print_node_prop_cb};
-  dtfdt_parse_result_t parse_result = dtfdt_parse(fdt, hdr, &cbs, &state);
+  dtfdt_parse_result_t parse_result = dtfdt_parse(fdt, &cbs, &state);
   if (parse_result != DTFDT_OK) {
     fdt_printf(&state, "<error: unable to parse DTB (%d)>\n", parse_result);
+    return -1;
   }
+  return 0;
 }

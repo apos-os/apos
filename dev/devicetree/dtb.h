@@ -43,8 +43,7 @@ int dtfdt_validate(const void* buf, fdt_header_t* header);
 
 typedef void(*dtfdt_sink_t)(const char*);
 // Prints the given FDT (in DTB form), using the given function as a sink.
-void dtfdt_print(const void* fdt, const fdt_header_t* hdr, bool print_header,
-                 dtfdt_sink_t sink);
+int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink);
 
 // Context for a parsed node, with the #address-cells and #size-cells properties
 // of the node's _parent_.
@@ -78,17 +77,18 @@ typedef struct {
 typedef enum {
   DTFDT_OK = 0,              // The parse was succesful.
   DTFDT_STOPPED = -1,        // A callback indicated the parse should stop.
-  DTFDT_BUF_TOO_SHORT = -2,  // The buffer is too short.
-  DTFDT_BAD_TOKEN = -3,      // Invalid token seen.
-  DTFDT_BAD_NAME = -4,       // Invalid node or property name.
-  DTFDT_BAD_ALIGNMENT = -5,
-  DTFDT_BAD_PROPERTY = -6,
+  DTFDT_BAD_HEADER = -2,     // The FDT header was bad.
+  DTFDT_BUF_TOO_SHORT = -3,  // The buffer is too short.
+  DTFDT_BAD_TOKEN = -4,      // Invalid token seen.
+  DTFDT_BAD_NAME = -5,       // Invalid node or property name.
+  DTFDT_BAD_ALIGNMENT = -6,
+  DTFDT_BAD_PROPERTY = -7,
 } dtfdt_parse_result_t;
 
 // Parse the given DTB.  Doesn't dynamically allocate any memory, so is
 // safe to use during boot.  Property values are passed as uninterpreted blobs
 // (in big-endian order).  Returns 0 (DTFDT_OK) or an error.
-dtfdt_parse_result_t dtfdt_parse(const void* fdt, const fdt_header_t* hdr,
-                                 const dtfdt_parse_cbs_t* cbs, void* cbarg);
+dtfdt_parse_result_t dtfdt_parse(const void* fdt, const dtfdt_parse_cbs_t* cbs,
+                                 void* cbarg);
 
 #endif
