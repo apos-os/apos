@@ -11,12 +11,17 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "arch/dev/irq.h"
+#include "arch/proc/exec.h"
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
-  // TODO(riscv): implement
+#include "common/errno.h"
+
+bool arch_binary_supported(const load_binary_t* bin) {
+  // TODO(aoates): implement riscv userspace.
+  return false;
 }
 
-void pic_init() {
-  // TODO(riscv): implement
+int arch_prep_exec(const load_binary_t* bin, char* const argv[],
+                   char* const envp[], user_context_t* ctx) {
+  // TODO(aoates): implement riscv userspace.
+  return -ENOTSUP;
 }

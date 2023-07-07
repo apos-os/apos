@@ -11,12 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "arch/dev/irq.h"
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
-  // TODO(riscv): implement
-}
+#include "arch/dev/interrupts.h"
 
-void pic_init() {
+void interrupts_init() {
   // TODO(riscv): implement
 }

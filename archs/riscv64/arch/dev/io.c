@@ -22,3 +22,21 @@ uint8_t inb(ioport_t port) {
   // TODO(riscv): find callers and remove/abstract
   return 0;
 }
+
+void outs(ioport_t port, uint16_t val) {
+  // TODO(riscv): find callers and remove/abstract
+}
+
+uint16_t ins(ioport_t port) {
+  // TODO(riscv): find callers and remove/abstract
+  return 0;
+}
+
+void outl(ioport_t port, uint32_t val) {
+  // TODO(riscv): find callers and remove/abstract
+}
+
+uint32_t inl(ioport_t port) {
+  // TODO(riscv): find callers and remove/abstract
+  return 0;
+}

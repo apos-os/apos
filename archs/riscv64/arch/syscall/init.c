@@ -11,12 +11,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include "arch/dev/irq.h"
+#include "arch/syscall/init.h"
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
+void syscalls_init(void) {
   // TODO(riscv): implement
 }
 
-void pic_init() {
-  // TODO(riscv): implement
-}
