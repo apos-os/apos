@@ -145,7 +145,9 @@ static dtfdt_parse_result_t parse_node(fdt_parse_state_t* parse,
   }
   parse->pos += result + 1;  // Consume name and NULL.
   parse->pos = align_up(parse->pos, sizeof(uint32_t));
-  parse->cbs->node_begin(node_name, ctx, parse->cbarg);
+  if (!parse->cbs->node_begin(node_name, ctx, parse->cbarg)) {
+    return DTFDT_STOPPED;
+  }
 
   // Our children don't inherit our parent's size settings; reset to default.
   dtfdt_node_context_t child_ctx;
@@ -170,8 +172,11 @@ static dtfdt_parse_result_t parse_node(fdt_parse_state_t* parse,
     if (status != DTFDT_OK) return status;
 
     // Pass along the node property.
-    parse->cbs->node_prop(prop_name, parse->fdtstruct + parse->pos, prop_len,
-                          /* _parent_ context */ ctx, parse->cbarg);
+    if (!parse->cbs->node_prop(prop_name, parse->fdtstruct + parse->pos,
+                               prop_len,
+                               /* _parent_ context */ ctx, parse->cbarg)) {
+      return DTFDT_STOPPED;
+    }
     parse->pos += prop_len;
     parse->pos = align_up(parse->pos, sizeof(uint32_t));
     tok = consume_next_token(parse);
@@ -188,7 +193,9 @@ static dtfdt_parse_result_t parse_node(fdt_parse_state_t* parse,
   if (tok != FDT_END_NODE) {
     return DTFDT_BAD_TOKEN;
   }
-  parse->cbs->node_end(node_name, parse->cbarg);
+  if (!parse->cbs->node_end(node_name, parse->cbarg)) {
+    return DTFDT_STOPPED;
+  }
   return DTFDT_OK;
 }
 
@@ -341,7 +348,7 @@ static void print_propval(fdt_print_state_t* state,
   fdt_printf(state, "<%d bytes>", len);
 }
 
-void print_node_begin_cb(const char* node_name,
+bool print_node_begin_cb(const char* node_name,
                          const dtfdt_node_context_t* context, void* cbarg) {
   fdt_print_state_t* state = (fdt_print_state_t*)cbarg;
   if (state->space_next_node) {
@@ -355,17 +362,19 @@ void print_node_begin_cb(const char* node_name,
 
   state->indent++;
   state->space_next_node = false;
+  return true;
 }
 
-void print_node_end_cb(const char* node_name, void* cbarg) {
+bool print_node_end_cb(const char* node_name, void* cbarg) {
   fdt_print_state_t* state = (fdt_print_state_t*)cbarg;
   state->indent--;
   print_indent(state);
   state->sink("}\n");
   state->space_next_node = true;
+  return true;
 }
 
-void print_node_prop_cb(const char* prop_name, const void* prop_val,
+bool print_node_prop_cb(const char* prop_name, const void* prop_val,
                         size_t val_len, const dtfdt_node_context_t* context,
                         void* cbarg) {
   fdt_print_state_t* state = (fdt_print_state_t*)cbarg;
@@ -374,6 +383,7 @@ void print_node_prop_cb(const char* prop_name, const void* prop_val,
   print_propval(state, context, prop_name, prop_val, val_len);
   state->sink("\n");
   state->space_next_node = true;
+  return true;
 }
 
 void dtfdt_print(const void* fdt, const fdt_header_t* hdr, bool print_header,

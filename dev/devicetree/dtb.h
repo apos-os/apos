@@ -53,11 +53,13 @@ typedef struct {
   int size_cells;
 } dtfdt_node_context_t;
 
-typedef void (*dtfdt_node_begin_cb)(const char* node_name,
+// If any of these callbacks returns false, parsing will stop and DTFDT_STOPPED
+// will be returned.
+typedef bool (*dtfdt_node_begin_cb)(const char* node_name,
                                     const dtfdt_node_context_t* context,
                                     void* cbarg);
-typedef void (*dtfdt_node_end_cb)(const char* node_name, void* cbarg);
-typedef void (*dtfdt_node_prop_cb)(const char* prop_name, const void* prop_val,
+typedef bool (*dtfdt_node_end_cb)(const char* node_name, void* cbarg);
+typedef bool (*dtfdt_node_prop_cb)(const char* prop_name, const void* prop_val,
                                    size_t val_len,
                                    const dtfdt_node_context_t* context,
                                    void* cbarg);
@@ -75,11 +77,12 @@ typedef struct {
 // Parsing results.
 typedef enum {
   DTFDT_OK = 0,              // The parse was succesful.
-  DTFDT_BUF_TOO_SHORT = -1,  // The buffer is too short.
-  DTFDT_BAD_TOKEN = -2,      // Invalid token seen.
-  DTFDT_BAD_NAME = -3,       // Invalid node or property name.
-  DTFDT_BAD_ALIGNMENT = -4,
-  DTFDT_BAD_PROPERTY = -5,
+  DTFDT_STOPPED = -1,        // A callback indicated the parse should stop.
+  DTFDT_BUF_TOO_SHORT = -2,  // The buffer is too short.
+  DTFDT_BAD_TOKEN = -3,      // Invalid token seen.
+  DTFDT_BAD_NAME = -4,       // Invalid node or property name.
+  DTFDT_BAD_ALIGNMENT = -5,
+  DTFDT_BAD_PROPERTY = -6,
 } dtfdt_parse_result_t;
 
 // Parse the given DTB.  Doesn't dynamically allocate any memory, so is
