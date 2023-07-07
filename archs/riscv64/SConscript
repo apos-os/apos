@@ -36,5 +36,20 @@ subdirs = ['internal/load']
 
 env.Append(CFLAGS = Split("-mcmodel=medany"))
 
+def build_shared_constants(env, source):
+  types = (('asm', '.s'), ('ld', '.ld'), ('c', '.h'))
+  out = []
+  for gentype, suffix in types:
+    out.extend(
+        env.Command('${SOURCE}' + suffix, source,
+                    'm4 -Dgentype=%s ${SOURCE} > ${TARGET}' % gentype))
+  return out
+
+env.AddMethod(build_shared_constants, 'SharedConstants')
+env.SharedConstants('internal/memlayout.m4')
+# TODO(aoates): figure out a better way to pass these dependencies.
+env.Depends('#/$BUILD_CFG_DIR/kernel.bin', 'internal/memlayout.m4.ld')
+env.Depends('internal/load/loader.PHYS.o', 'internal/memlayout.m4.s')
+
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

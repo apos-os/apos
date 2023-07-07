@@ -12,19 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.global _kstart                         # making entry point visible to linker
+.include "archs/riscv64/internal/memlayout.m4.s"
 
-# Physical address of the start of the general kernel section (_not_
-# specifically where the kernel itself sits, but the general area it is linked).
-# TODO(aoates): figure out how to not hard-code this.
-.set KERNEL_PHYS_ADDR, 0x0000000080000000
+.global _kstart                         # making entry point visible to linker
 
 # Virtual offset for the kernel mapping.  Keep in sync with the linker script
 # and memory setup code.
-# TODO(aoates): figure out a way to synchronize this with the linker script
-# automatically (maybe just #includes?)
-.set KERNEL_VIRT_OFFSET, 0xFFFFFFFF00000000
-.set KERNEL_VIRT_ADDR, KERNEL_PHYS_ADDR + KERNEL_VIRT_OFFSET
+.set RSV64_KERNEL_VIRT_ADDR, RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET
 
 # reserve initial kernel stack space
 .set STACKSIZE, 0x8000                  # that is, 32k.
@@ -51,7 +45,7 @@ _kstart:
   # physical address, and once at the virtual address.
   # TODO(aoates): separate data and text for the kernel (here and other archs).
   # TODO(aoates): assert somehow that the kernel is contained in this range.
-  li t0, KERNEL_PHYS_ADDR
+  li t0, RSV64_KERNEL_PHYS_ADDR
   srli t0, t0, 12   # Get the PPN
   slli t0, t0, 10   # Move it to bit 10 in the PTE
   ori t0, t0, 0x2f  # Global bit, RWX + V
@@ -59,14 +53,14 @@ _kstart:
   # Calculate which page table entry for phys and virt ranges.
   la t2, initial_page_table
   li t3, 0x7FFFFFFFFF  # SV39 address mask.
-  li t1, KERNEL_PHYS_ADDR
+  li t1, RSV64_KERNEL_PHYS_ADDR
   and t1, t1, t3   # Mask for SV39
   srli t1, t1, 30  # idx = t1 >> 30 (For SV39 gigapages, shift 30 bits)
   slli t1, t1, 3   # offset = t1 << 3 (table offset = idx * sizeof(entry))
   add t1, t1, t2   # addr = &initial_page_table + offset
   sd t0, (t1)
 
-  li t1, KERNEL_VIRT_ADDR
+  li t1, RSV64_KERNEL_VIRT_ADDR
   and t1, t1, t3   # Mask for SV39
   srli t1, t1, 30  # idx = t1 >> 30 (For SV39 gigapages, shift 30 bits)
   slli t1, t1, 3   # offset = t1 << 3 (table offset = idx * sizeof(entry))
@@ -85,7 +79,7 @@ _kstart:
 
   # Set up stack.  Go straight to the virtual address.
   la t0, initial_kstack
-  li t1, KERNEL_VIRT_OFFSET
+  li t1, RSV64_KERNEL_VIRT_OFFSET
   add t0, t0, t1
   li t1, STACKSIZE
   add sp, t0, t1

@@ -14,8 +14,6 @@
 #ifndef APOO_ARCHS_RISCV64_ARCH_MEMORY_LAYOUT_H
 #define APOO_ARCHS_RISCV64_ARCH_MEMORY_LAYOUT_H
 
-// TODO(riscv): confirm and tweak these for riscv64.
-
 // riscv64 memory layout:
 // +-----------------------------------------+------+----------------------+
 // |                  Range                  | Size |     Description      |
@@ -46,11 +44,6 @@
     (MEM_LAST_USER_MAPPABLE_ADDR + 1 - MEM_USER_STACK_SIZE_64)
 
 // Internal platform-specific constants.
-#define RSV64_FIRST_KERNEL_ADDR      0xFFFFFF8000000000
-#define RSV64_FIRST_USED_KERNEL_ADDR 0xFFFFFFF000000000
-#define RSV64_KPHYSMAP_ADDR          0xFFFFFFF000000000
-#define RSV64_KPHYSMAP_LEN           0x0000000100000000
-#define RSV64_HEAP_START             0xFFFFFFFF00000000
-#define RSV64_HEAP_LEN               0x0000000080000000
+#include "archs/riscv64/internal/memlayout.m4.h"
 
 #endif

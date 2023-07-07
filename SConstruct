@@ -146,8 +146,9 @@ if not env['CLANG']:
   # TODO(aoates): get format-string checking to work with both GCC and clang.
   env.Append(CFLAGS = Split("-Wno-format"))
 env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
-env.Append(ASFLAGS = ['--gen-debug'])
+env.Append(ASFLAGS = ['--gen-debug', '-I', '$BUILD_CFG_DIR'])
 env.Replace(LINK = '${TOOL_PREFIX}ld')
+env.Append(LINKFLAGS = ['-L', '$BUILD_CFG_DIR'])
 
 env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 

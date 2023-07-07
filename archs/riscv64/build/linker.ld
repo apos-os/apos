@@ -14,17 +14,18 @@
  * limitations under the License.
  */
 
+INCLUDE archs/riscv64/internal/memlayout.m4.ld
+
 ENTRY (_kstart)
 
 /* TODO(aoates): is this always the case?  This is true for qemu virt. */
 _ENTRY_ADDR = 0x80200000;
 
-/* NOTE: keep this in sync with the constant in loader.s and memory code */
 /* Assuming all the code is linked above _ENTRY_ADDR (which it should be), this
  * puts all kernel code in the last 2GB of virtual memory, which allows it to be
  * linked with the medany code model.
  */
-_OFFSET = 0xFFFFFFFF00000000;
+_OFFSET = RSV64_KERNEL_VIRT_OFFSET;
 
 SECTIONS
 {

@@ -28,11 +28,6 @@
 
 #include "archs/riscv64/internal/page_tables.h"
 
-// Same as _OFFSET in the linker script.
-#define KERNEL_VIRT_OFFSET 0xFFFFFFFF00000000
-// Same as KERNEL_PHYS_ADDR in loader.s
-#define KERNEL_PHYS_ADDR 0x0000000080000000
-
 _Static_assert(ARCH == ARCH_riscv64, "bad ARCH");
 _Static_assert(ARCH_IS_64_BIT, "ARCH_IS_64_BIT should be set");
 
@@ -158,13 +153,13 @@ static void setup_kernel_mappings(void) {
   // Now undo the identity mapping we set up in loader.s.
   top_pt_addr = init_phys2virt(top_pt_addr);
   top_pt = (rsv_sv39_pte_t*)top_pt_addr;
-  size_t idx = rsv_pte_index(KERNEL_PHYS_ADDR, RSV_MAP_GIGAPAGE);
+  size_t idx = rsv_pte_index(RSV64_KERNEL_PHYS_ADDR, RSV_MAP_GIGAPAGE);
   rsv_sv39_pte_t* pte = &top_pt[idx];
   // Sanity check we got the right one.
   KASSERT(top_pt[idx - 1] == 0);
   KASSERT(top_pt[idx + 1] == 0);
   KASSERT(*pte & RSV_PTE_VALID);
-  KASSERT((*pte >> 10) << 12 == KERNEL_PHYS_ADDR);
+  KASSERT((*pte >> 10) << 12 == RSV64_KERNEL_PHYS_ADDR);
   *pte = 0;
   rsv_sfence();
 }
@@ -190,10 +185,12 @@ static void create_initial_meminfo(const void* fdt, memory_info_t* meminfo,
   KASSERT(meminfo->kernel_end_virt - meminfo->kernel_start_virt <
           RSV_MAP_GIGAPAGE_SIZE / 2);
 
-  meminfo->kernel_start_phys = meminfo->kernel_start_virt - KERNEL_VIRT_OFFSET;
-  meminfo->kernel_end_phys = meminfo->kernel_end_virt - KERNEL_VIRT_OFFSET;
+  meminfo->kernel_start_phys =
+      meminfo->kernel_start_virt - RSV64_KERNEL_VIRT_OFFSET;
+  meminfo->kernel_end_phys =
+      meminfo->kernel_end_virt - RSV64_KERNEL_VIRT_OFFSET;
 
-  meminfo->mapped_start = KERNEL_PHYS_ADDR + KERNEL_VIRT_OFFSET;
+  meminfo->mapped_start = RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET;
   meminfo->mapped_end = meminfo->mapped_start + RSV_MAP_GIGAPAGE_SIZE;
 
   meminfo->phys_mainmem_begin = mainmem_addr;
