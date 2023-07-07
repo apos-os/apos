@@ -282,6 +282,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
     name(port, value); \
   }
 
+#if ARCH == ARCH_i586 || ARCH == ARCH_x86_64
 IO_IN_CMD(inb, uint8_t);
 IO_IN_CMD(ins, uint16_t);
 IO_IN_CMD(inl, uint32_t);
@@ -289,6 +290,7 @@ IO_IN_CMD(inl, uint32_t);
 IO_OUT_CMD(outb, uint8_t);
 IO_OUT_CMD(outs, uint16_t);
 IO_OUT_CMD(outl, uint32_t);
+#endif
 
 // Sleeps the thread for a certain number of ms.
 static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -1019,12 +1021,14 @@ static const cmd_t CMDS[] = {
   { "b_write", &b_write_cmd },
   { "klog", &klog_cmd },
 
+#if ARCH == ARCH_i586 || ARCH == ARCH_x86_64
   { "inb", &inb_cmd },
   { "ins", &ins_cmd },
   { "inl", &inl_cmd },
   { "outb", &outb_cmd },
   { "outs", &outs_cmd },
   { "outl", &outl_cmd },
+#endif
 
   { "_sleep", &sleep_cmd },
 
