@@ -78,6 +78,6 @@ SECTIONS
     {
         *(COMMON)
         *(.bss)
-        KERNEL_END_SYMBOL = .;
     }
+    KERNEL_END_SYMBOL = .;
 }

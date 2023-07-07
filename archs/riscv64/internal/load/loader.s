@@ -92,5 +92,7 @@ _kstart:
 
   # We need to manually load the address because the code model doesn't allow
   # jumping more than +/- 2GB with default relocations.
+  # kinit(hart_id /* from SBI */, FDTptr /* from SBI */, stack_base)
+  la a2, initial_kstack
   la t0, kinit
   jr t0
