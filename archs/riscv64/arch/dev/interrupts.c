@@ -14,6 +14,17 @@
 
 #include "arch/dev/interrupts.h"
 
+#include "common/kassert.h"
+#include "common/klog.h"
+
 void interrupts_init() {
   // TODO(riscv): implement
+}
+
+void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
+                 uint64_t is_kernel) {
+  // TODO(riscv): implement
+  klogf("interrupt: scause: 0x%lx  stval: 0x%lx  sepc: 0x%lx  is_kernel: %d\n",
+        scause, stval, sepc, (int)is_kernel);
+  die("Unhandled kernel interrupt");
 }

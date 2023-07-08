@@ -84,6 +84,10 @@ _kstart:
   li t1, STACKSIZE
   add sp, t0, t1
 
+  # Set up stvec as soon as possible.
+  la t0, int_handler_asm
+  csrw stvec, t0
+
   # We need to manually load the address because the code model doesn't allow
   # jumping more than +/- 2GB with default relocations.
   # kinit(hart_id /* from SBI */, FDTptr /* from SBI */, stack_base)
