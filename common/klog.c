@@ -18,6 +18,7 @@
 
 #include "arch/common/debug.h"
 #include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
@@ -145,6 +146,10 @@ int klog_enabled(klog_module_t module, klog_level_t level) {
 }
 
 void klog_set_mode(int mode) {
+  // Downgrade if raw VGA isn't supported.
+  if (mode == KLOG_RAW_VIDEO && !ARCH_SUPPORTS_RAW_VGA) {
+    mode = KLOG_ARCH_DEBUG;
+  }
   g_klog_mode = mode;
 }
 
