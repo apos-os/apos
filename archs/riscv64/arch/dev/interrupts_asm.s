@@ -54,36 +54,56 @@ restore_interrupts:
 .global _int_handlers_end
 _int_handlers_start:
 
+# In int_handler_asm we create a sorta fake stack frame to help with unwinding.
+# It's not perfect --- GDB still gets confused, and when a leaf function is
+# interrupted it is unable to unwind past the leaf function (since ra isn't
+# saved on the stack).
 .global int_handler_asm
 int_handler_asm:
   # TODO(riscv): handle SPIE properly.
   # TODO(riscv): switch stacks when coming from user mode
   # TODO(riscv): do we need to save sepc/scause/etc?  What if we get a nested
-  # trap?  Currently those registers are the only s-mode visible registers that
-  # are _not_ fully restored here, which is fine for most S code.
+  # trap (for example, a page fault on the stack while pushing context)?
+  # Currently those registers are the only s-mode visible registers that are
+  # _not_ fully restored here, which is fine for most S code.
   addi sp, sp, -256
-  sd ra,  0x0000(sp)
-  sd sp,  0x0008(sp)
+  # Save the original ra value as a local variable.  We need to restore it
+  # later, but if the code we interrupted is a leaf function, this ra likely
+  # points to _its_ caller, so if we use it for our stack frame it will look
+  # like we skipped the function that was actually called.
+  sd ra, 0(sp)
+  # Now pretend as if the interrupted code called us.
+  csrr ra, sepc
+  # Now create the start of our standard stack frame.
+  sd ra, 248(sp)
+  sd fp, 240(sp)
+  addi fp, sp, 256  # fake frame
+
+  # Now save all our other registers.
+  # ra: is already stored at 0(sp)
+  # sp: no need to store sp again
+  # stack frame needs to be a multiple of 16 bytes, so we waste 8 here.
   sd gp,  0x0010(sp)
   sd tp,  0x0018(sp)
   sd t0,  0x0020(sp)
   sd t1,  0x0028(sp)
   sd t2,  0x0030(sp)
-  sd s0,  0x0038(sp)
-  sd s1,  0x0040(sp)
-  sd a0,  0x0048(sp)
-  sd a1,  0x0050(sp)
-  sd a2,  0x0058(sp)
-  sd a3,  0x0060(sp)
-  sd a4,  0x0068(sp)
-  sd a5,  0x0070(sp)
-  sd a6,  0x0078(sp)
-  sd a7,  0x0080(sp)
-  sd s2,  0x0088(sp)
-  sd s3,  0x0090(sp)
-  sd s4,  0x0098(sp)
-  sd s5,  0x00a0(sp)
-  sd s6,  0x00a8(sp)
+  # Skip s0/fp --- saved above.
+  sd s1,  0x0038(sp)
+  sd a0,  0x0040(sp)
+  sd a1,  0x0048(sp)
+  sd a2,  0x0050(sp)
+  sd a3,  0x0058(sp)
+  sd a4,  0x0060(sp)
+  sd a5,  0x0068(sp)
+  sd a6,  0x0070(sp)
+  sd a7,  0x0078(sp)
+  sd s2,  0x0080(sp)
+  sd s3,  0x0088(sp)
+  sd s4,  0x0090(sp)
+  sd s5,  0x0098(sp)
+  sd s6,  0x00a0(sp)
+  sd s7,  0x00a8(sp)
   sd s8,  0x00b0(sp)
   sd s9,  0x00b8(sp)
   sd s10, 0x00c0(sp)
@@ -101,28 +121,29 @@ int_handler_asm:
 
   call int_handler
 
-  ld ra,  0x0000(sp)
-  ld sp,  0x0008(sp)
+  # ra: we'll do ra later.
+  # sp: no need to save/restore it
   ld gp,  0x0010(sp)
   ld tp,  0x0018(sp)
   ld t0,  0x0020(sp)
   ld t1,  0x0028(sp)
   ld t2,  0x0030(sp)
-  ld s0,  0x0038(sp)
-  ld s1,  0x0040(sp)
-  ld a0,  0x0048(sp)
-  ld a1,  0x0050(sp)
-  ld a2,  0x0058(sp)
-  ld a3,  0x0060(sp)
-  ld a4,  0x0068(sp)
-  ld a5,  0x0070(sp)
-  ld a6,  0x0078(sp)
-  ld a7,  0x0080(sp)
-  ld s2,  0x0088(sp)
-  ld s3,  0x0090(sp)
-  ld s4,  0x0098(sp)
-  ld s5,  0x00a0(sp)
-  ld s6,  0x00a8(sp)
+  # Skip s0/fp --- saved above.
+  ld s1,  0x0038(sp)
+  ld a0,  0x0040(sp)
+  ld a1,  0x0048(sp)
+  ld a2,  0x0050(sp)
+  ld a3,  0x0058(sp)
+  ld a4,  0x0060(sp)
+  ld a5,  0x0068(sp)
+  ld a6,  0x0070(sp)
+  ld a7,  0x0078(sp)
+  ld s2,  0x0080(sp)
+  ld s3,  0x0088(sp)
+  ld s4,  0x0090(sp)
+  ld s5,  0x0098(sp)
+  ld s6,  0x00a0(sp)
+  ld s7,  0x00a8(sp)
   ld s8,  0x00b0(sp)
   ld s9,  0x00b8(sp)
   ld s10, 0x00c0(sp)
@@ -131,6 +152,15 @@ int_handler_asm:
   ld t4,  0x00d8(sp)
   ld t5,  0x00e0(sp)
   ld t6,  0x00e8(sp)
+
+  # Restore the saved frame pointer from our stack frame.
+  ld fp, 240(sp)
+  # Load from our stack frame the interrupted address into sepc.  If we weren't
+  # interrupted again, this in unnecessary.
+  ld ra, 248(sp)
+  csrw sepc, ra
+  # Restore the original value of the ra address (from the interrupted code)
+  ld ra, 0(sp)
   addi sp, sp, 256
   sret
 
