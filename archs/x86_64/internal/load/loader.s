@@ -29,7 +29,7 @@ PD: .space 0x1000, 0
 GDT: .space 24, 0
 .balign 4
 .space 2, 0
-GDT_PTR: .space 10, 0 
+GDT_PTR: .space 10, 0
 
 loader:
 .code32
