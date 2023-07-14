@@ -14,7 +14,6 @@
 
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
-#include "arch/memory/page_alloc.h"
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -24,6 +23,7 @@
 #include "dev/pci/pci-driver.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "net/eth/eth.h"
 #include "proc/defint.h"
 

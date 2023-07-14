@@ -17,7 +17,6 @@
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
 #include "arch/proc/stack_trace.h"
 #include "common/debug.h"
 #include "common/klog.h"
@@ -27,6 +26,7 @@
 #include "common/stack_trace_table.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"

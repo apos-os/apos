@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_map.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -20,6 +19,7 @@
 #include "common/types.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "memory/vm_page_fault.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"

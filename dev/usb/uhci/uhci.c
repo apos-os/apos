@@ -16,7 +16,6 @@
 
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
-#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -33,6 +32,7 @@
 #include "dev/usb/uhci/uhci_registers.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
+#include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"

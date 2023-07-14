@@ -24,6 +24,7 @@ srcs = [
   'memobj_vnode.c',
   'memory.c',
   'mmap.c',
+  'page_alloc.c',
   'slab_alloc.c',
   'vm.c',
   'vm_area.c',

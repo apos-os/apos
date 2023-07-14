@@ -16,12 +16,12 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
-#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_map.h"
 #include "archs/x86_64/internal/memory/page_tables.h"
 #include "common/kassert.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 
 #define SUPPORTS_INVPLG_INSTRUCTION 0
 

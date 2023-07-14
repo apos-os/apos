@@ -15,8 +15,8 @@
 // Code for the low-level kernel page frame allocator, which is responsible for
 // allocating physical pages.
 
-#ifndef APOO_ARCHS_COMMON_ARCH_MEMORY_PAGE_ALLOC_H
-#define APOO_ARCHS_COMMON_ARCH_MEMORY_PAGE_ALLOC_H
+#ifndef APOO_MEMORY_PAGE_ALLOC_H
+#define APOO_MEMORY_PAGE_ALLOC_H
 
 #include <stddef.h>
 #include <stdint.h>

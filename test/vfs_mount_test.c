@@ -15,7 +15,6 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"

@@ -17,10 +17,10 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
-#include "arch/memory/page_alloc.h"
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "memory/page_alloc.h"
 
 // The number of frames we reserve for DMA by device drivers.  This is a crappy
 // way to do this---it's static, so it limits the number of devices that can be

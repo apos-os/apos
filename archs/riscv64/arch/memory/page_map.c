@@ -16,7 +16,6 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
-#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_map.h"
 
 void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,

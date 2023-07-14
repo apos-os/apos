@@ -14,7 +14,6 @@
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_fault.h"
 #include "memory/memory.h"
 #include "memory/vm_page_fault.h"

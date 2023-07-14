@@ -14,7 +14,6 @@
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_fault.h"
 #include "arch/syscall/init.h"
 #include "common/config.h"
@@ -43,6 +42,7 @@
 #include "dev/timer.h"
 #include "dev/tty.h"
 #include "main/kshell.h"
+#include "memory/page_alloc.h"
 #include "proc/scheduler.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"

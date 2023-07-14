@@ -17,10 +17,10 @@
 
 #include "arch/common/types.h"
 #include "arch/memory/layout.h"
-#include "arch/memory/page_alloc.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "vfs/vnode.h"
 
 #define ppn2phys(x) (x * PAGE_SIZE)
