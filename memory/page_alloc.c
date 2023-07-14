@@ -47,8 +47,11 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
       (meminfo->lower_memory + meminfo->upper_memory) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
   const phys_addr_t kernel_end_page = next_page(meminfo->kernel_end_phys);
-  KASSERT(meminfo->phys_mainmem_begin == 0);
   phys_addr_t next_free_frame = kernel_end_page;
+  KASSERT(meminfo->phys_mainmem_begin < meminfo->kernel_start_phys);
+  KASSERT(meminfo->kernel_end_phys <= meminfo->phys_mainmem_begin +
+                                          meminfo->lower_memory +
+                                          meminfo->upper_memory);
 
   // Reserve same frames for DMA usage.  The DMA pages will live directly above
   // the kernel (at the next page boundary).
@@ -58,7 +61,9 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   // Take all the frames above what the kernel is already using.  Don't include
   // frames before the kernel (<1MB).
   const size_t free_frames =
-      total_frames - (kernel_end_page / PAGE_SIZE) - DMA_RESERVED_FRAMES;
+      total_frames -
+      ((kernel_end_page - meminfo->phys_mainmem_begin) / PAGE_SIZE) -
+      DMA_RESERVED_FRAMES;
 
   // Allocate a stack of the appropriate size.  We need sizeof(phys_addr_t)
   // bytes per free frame, plus twice that for guard addresses.  Round up to use
@@ -86,7 +91,8 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   phys_addr_t address = next_free_frame;
   for (size_t i = 0; i < free_frames - (stack_size / PAGE_SIZE); ++i) {
     KASSERT(is_page_aligned(address));
-    KASSERT(address + PAGE_SIZE <= total_frames * PAGE_SIZE);
+    KASSERT(address - meminfo->phys_mainmem_begin + PAGE_SIZE <=
+            total_frames * PAGE_SIZE);
 
     free_frame_stack[stack_idx++] = address;
     address += PAGE_SIZE;
