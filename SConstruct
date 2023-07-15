@@ -126,7 +126,7 @@ target_env = base_env.Clone()
 if not target_env['CLANG']:
   target_env.Replace(CC = '${TOOL_PREFIX}gcc')
 else:
-  target_env.Replace(CC = 'clang')
+  target_env.Replace(CC = '${TOOL_PREFIX}clang')
   target_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
   target_env.Append(CFLAGS = ['-fdebug-macro'])
 
