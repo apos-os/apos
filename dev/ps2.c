@@ -322,7 +322,7 @@ static int device_init(void) {
   return 1;
 }
 
-int ps2_init() {
+int ps2_init(void) {
   klogf("Initializing PS/2 controller...\n");
   if (!controller_init()) {
     klogf("  aborting initalization\n");

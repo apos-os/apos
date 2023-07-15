@@ -207,7 +207,7 @@ static void pci_check_device(uint8_t bus, uint8_t device) {
 }
 
 // NOTE: little-endian dependent.
-void pci_init() {
+void pci_init(void) {
   // Find all connected PCI devices.
   klogf("Scanning PCI bus...\n");
   for (unsigned int bus = PCI_BUS_MIN; bus <= PCI_BUS_MAX; ++bus) {

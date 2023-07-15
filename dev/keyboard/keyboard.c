@@ -35,7 +35,7 @@ struct vkeyboard {
   void* handler_arg;
 };
 
-vkeyboard_t* vkeyboard_create() {
+vkeyboard_t* vkeyboard_create(void) {
   vkeyboard_t* kbd = (vkeyboard_t*)kmalloc(sizeof(vkeyboard_t));
   kbd->shift_down = kbd->caps_down = kbd->ctrl_down = kbd->alt_down = false;
   kbd->handler = (char_sink_t)0;

@@ -87,7 +87,7 @@ static void proc_init_process(process_t* p) {
   }
 }
 
-process_t* proc_alloc() {
+process_t* proc_alloc(void) {
   int id = -1;
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     if (g_proc_table[i] == NULL && list_empty(&proc_group_get(i)->procs)) {
@@ -119,7 +119,7 @@ void proc_destroy(process_t* process) {
   kfree(process);
 }
 
-void proc_init_stage1() {
+void proc_init_stage1(void) {
   KASSERT(g_proc_init_stage == 0);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
@@ -167,7 +167,7 @@ void proc_init_stage1() {
                            false /* allow_allocation */);
 }
 
-void proc_init_stage2() {
+void proc_init_stage2(void) {
   KASSERT(g_proc_init_stage == 1);
   KASSERT(g_current_proc == 0);
 
@@ -179,7 +179,7 @@ void proc_init_stage2() {
   g_proc_init_stage = 2;
 }
 
-process_t* proc_current() {
+process_t* proc_current(void) {
   KASSERT(g_current_proc >= 0 && g_current_proc < PROC_MAX_PROCS);
   KASSERT(g_proc_init_stage >= 1);
   // TODO(aoates): consider a check here to verify raw kernel threads don't

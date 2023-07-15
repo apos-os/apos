@@ -128,7 +128,7 @@ static void dma_start_transfer(ata_channel_t* channel) {
   // And we're off!
 }
 
-void dma_init() {
+void dma_init(void) {
   g_prdt_phys = page_frame_alloc();
   // Find a 64-kb aligned page.
   // TODO(aoates): this is a really terrible way of doing this...

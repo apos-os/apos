@@ -43,7 +43,7 @@ void defint_schedule(void (*f)(void*), void* arg) {
   POP_INTERRUPTS();
 }
 
-defint_state_t defint_state() {
+defint_state_t defint_state(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   defint_state_t result = g_defints_enabled;
   POP_INTERRUPTS();
@@ -63,7 +63,7 @@ defint_state_t defint_set_state(defint_state_t s) {
   return old;
 }
 
-void defint_process_queued() {
+void defint_process_queued(void) {
   KASSERT(!interrupts_enabled());
   if (!g_defints_enabled) return;
 
@@ -86,6 +86,6 @@ void defint_process_queued() {
   g_defints_enabled = true;
 }
 
-void _defint_disabled_die() {
+void _defint_disabled_die(void) {
   die("Leaving code block without reenabling defints");
 }

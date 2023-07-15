@@ -192,7 +192,7 @@ static void remove_fs_device(int major, int minor) {
   }
 }
 
-void dev_init_fs() {
+void dev_init_fs(void) {
   const int kBufSize = 512;
   vfs_mkdir("/dev", 0);
 

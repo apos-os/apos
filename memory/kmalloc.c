@@ -51,7 +51,7 @@ static void init_block(block_t* b) {
   b->next = 0;
 }
 
-void kmalloc_init() {
+void kmalloc_init(void) {
   const memory_info_t* meminfo = get_global_meminfo();
   KASSERT(meminfo->heap_end > meminfo->heap_start);
   KASSERT(proc_current() != 0x0);
@@ -236,7 +236,7 @@ void kfree(void* x) {
   POP_INTERRUPTS();
 }
 
-void kmalloc_log_state() {
+void kmalloc_log_state(void) {
   KLOG(INFO, "kmalloc block list:\n");
   size_t total = 0;
   size_t free = 0;
@@ -260,7 +260,7 @@ void kmalloc_log_state() {
   KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
 
-void kmalloc_log_heap_profile() {
+void kmalloc_log_heap_profile(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   size_t total_objects = 0, total_bytes = 0;
 
@@ -306,6 +306,6 @@ void kmalloc_enable_test_mode(void) {
   g_test_mode = 1;
 }
 
-block_t* kmalloc_internal_get_block_list() {
+block_t* kmalloc_internal_get_block_list(void) {
   return g_block_list;
 }

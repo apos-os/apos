@@ -32,7 +32,7 @@ static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
        vnode->len, vnode->refcount);
 }
 
-void vfs_log_cache() {
+void vfs_log_cache(void) {
   KLOG(INFO, "VFS vnode cache:\n");
   htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
 }
@@ -44,7 +44,7 @@ static void vfs_cache_size_iter(void* arg, uint32_t key, void* val) {
   (*counter)++;
 }
 
-int vfs_cache_size() {
+int vfs_cache_size(void) {
   int size = 0;
   htbl_iterate(&g_vnode_cache, &vfs_cache_size_iter, &size);
   return size;
@@ -103,7 +103,7 @@ void vfs_set_force_no_files(bool f) {
   g_force_no_files = f;
 }
 
-bool vfs_get_force_no_files() {
+bool vfs_get_force_no_files(void) {
   return g_force_no_files;
 }
 

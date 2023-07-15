@@ -99,7 +99,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   }
 }
 
-phys_addr_t page_frame_alloc() {
+phys_addr_t page_frame_alloc(void) {
   if (stack_idx <= 0) {
     return 0;
   }

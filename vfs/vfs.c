@@ -141,7 +141,7 @@ static void cleanup_socket_vnode(vnode_t* vnode) {
   KASSERT(vnode->bound_socket == NULL);
 }
 
-void vfs_init() {
+void vfs_init(void) {
   KASSERT(g_fs_table[VFS_ROOT_FS].fs == 0x0);
   kmutex_init(&g_fs_table_lock);
 
@@ -195,11 +195,11 @@ void vfs_init() {
   proc_current()->cwd = vfs_get_root_vnode();
 }
 
-fs_t* vfs_get_root_fs() {
+fs_t* vfs_get_root_fs(void) {
   return g_fs_table[VFS_ROOT_FS].fs;
 }
 
-vnode_t* vfs_get_root_vnode() {
+vnode_t* vfs_get_root_vnode(void) {
   fs_t* root_fs = vfs_get_root_fs();
   return vfs_get(root_fs, root_fs->get_root(root_fs));
 }

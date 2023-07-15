@@ -160,7 +160,7 @@ void kexpect_int(const char* name, const char* file, const char* line,
   kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
 }
 
-void ktest_begin_all() {
+void ktest_begin_all(void) {
   num_suites = 0;
   num_tests = 0;
   num_suites_passing = 0;
@@ -173,7 +173,7 @@ void ktest_begin_all() {
   KLOG("KERNEL UNIT TESTS");
 }
 
-void ktest_finish_all() {
+void ktest_finish_all(void) {
   apos_ms_t end_time = get_time_ms();
   finish_test();
   finish_suite();

@@ -464,7 +464,7 @@ void ata_enable_busmaster(uint16_t primary_offset, uint16_t secondary_offset) {
   g_busmaster_secd_offset = secondary_offset;
 }
 
-void ata_init() {
+void ata_init(void) {
   // Initialize the ATA driver with the I/O port ranges used by the PIIX(3) (see
   // page 96 of the datasheet).  There doesn't seem to be a way to determine
   // these dynamically, so we just guess-and-pray.
@@ -494,7 +494,7 @@ void ata_init() {
   }
 }
 
-int ata_num_devices() {
+int ata_num_devices(void) {
   return g_num_ata_block_devs;
 }
 

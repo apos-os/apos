@@ -705,19 +705,19 @@ void block_cache_set_size(int blocks) {
   g_max_size = blocks;
 }
 
-int block_cache_get_size() {
+int block_cache_get_size(void) {
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   return g_max_size;
 }
 
-int block_cache_get_num_entries() {
+int block_cache_get_num_entries(void) {
   kmutex_lock(&g_mu);
   int result = g_size;
   kmutex_unlock(&g_mu);
   return result;
 }
 
-void block_cache_clear_unpinned() {
+void block_cache_clear_unpinned(void) {
   // Since freeing entries from the LRU queue may cause dirtying of additional
   // entries (e.g. this happens with ext2), keep trying until the flush queue is
   // empty.
@@ -787,7 +787,7 @@ static void stats_counter_func(void* arg, uint32_t key, void* value) {
     stats->total_pins += entry->pin_count;
   }
 }
-void block_cache_log_stats() {
+void block_cache_log_stats(void) {
   KMUTEX_AUTO_LOCK(lock, &g_mu);
   stats_t stats;
   kmemset(&stats, 0, sizeof(stats_t));

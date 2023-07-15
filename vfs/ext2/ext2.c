@@ -26,7 +26,7 @@
 #include "vfs/fs.h"
 #include "vfs/vfs.h"
 
-fs_t* ext2_create_fs() {
+fs_t* ext2_create_fs(void) {
   ext2fs_t* fs = kmalloc(sizeof(ext2fs_t));
   kmemset(fs, 0, sizeof(ext2fs_t));
   vfs_fs_init(&fs->fs);

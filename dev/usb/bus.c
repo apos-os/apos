@@ -41,7 +41,7 @@ void usb_create_bus(usb_hcdi_t* hc) {
   bus->queued_address_callbacks = LIST_INIT;
 }
 
-int usb_num_buses() {
+int usb_num_buses(void) {
   return g_num_buses;
 }
 

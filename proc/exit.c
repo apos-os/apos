@@ -59,7 +59,7 @@ void proc_exit(int status) {
   proc_thread_exit(NULL);
 }
 
-void proc_finish_exit() {
+void proc_finish_exit(void) {
   // We must be the only thread remaining.
   process_t* const p = proc_current();
   KASSERT(list_empty(&p->threads));

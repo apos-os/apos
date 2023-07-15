@@ -41,7 +41,7 @@
 
 static video_t g_video;
 
-void video_vga_init() {
+void video_vga_init(void) {
   // Make sure our CRT controller register is in "color" mode.
   uint8_t c = inb(MISC_OUTPUT_REG_READ);
   c |= MISC_OUTPUT_REG_IOAS;
@@ -50,7 +50,7 @@ void video_vga_init() {
   video_show_cursor(NULL, true);
 }
 
-video_t* video_get_default() {
+video_t* video_get_default(void) {
   g_video.videoram = (uint16_t*)(get_global_meminfo()->phys_map_start + 0xB8000);
   g_video.width = 80;
   g_video.height = 24;

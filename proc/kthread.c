@@ -75,7 +75,7 @@ static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
   KASSERT(0);
 }
 
-void kthread_init() {
+void kthread_init(void) {
   kthread_arch_init();
 
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -98,7 +98,7 @@ void kthread_init() {
   POP_INTERRUPTS();
 }
 
-kthread_t kthread_current_thread() {
+kthread_t kthread_current_thread(void) {
   return g_current_thread;
 }
 

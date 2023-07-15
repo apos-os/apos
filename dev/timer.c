@@ -113,7 +113,7 @@ static void internal_timer_handler(void* arg) {
   sched_tick();
 }
 
-void timer_init() {
+void timer_init(void) {
   // Inintialize the timer hardware.
   outb(0x43, 0x36);
   uint16_t freq = 1000 / KTIMESLICE_MS;
@@ -232,6 +232,6 @@ void cancel_all_event_timers_for_tests(void) {
   }
 }
 
-apos_ms_t get_time_ms() {
+apos_ms_t get_time_ms(void) {
   return time_ms;
 }

@@ -34,7 +34,7 @@
   KEXPECT_EQ(expected_errno, error); \
 } while (0);
 
-void syscall_errno_test() {
+void syscall_errno_test(void) {
   char buf[100];
   KTEST_SUITE_BEGIN("syscall errno setting");
 

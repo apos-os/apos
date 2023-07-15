@@ -491,7 +491,7 @@ void usb_uhci_interrupt(int handle) {
   KASSERT(handle >= 0 && handle < g_num_controllers);
 }
 
-int usb_uhci_num_controllers() {
+int usb_uhci_num_controllers(void) {
   return g_num_controllers;
 }
 

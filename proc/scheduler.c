@@ -39,7 +39,7 @@ static void* idle_thread_body(void* arg) {
 
 // TODO(aoates): add test for interrupts/idle loop.
 
-void scheduler_init() {
+void scheduler_init(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_queue_init(&g_run_queue);
 
@@ -69,13 +69,13 @@ void scheduler_interrupt_thread(kthread_t thread) {
   POP_INTERRUPTS();
 }
 
-void scheduler_yield() {
+void scheduler_yield(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   scheduler_wait_on(&g_run_queue);
   POP_INTERRUPTS();
 }
 
-void scheduler_yield_no_reschedule() {
+void scheduler_yield_no_reschedule(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_data_t* new_thread = g_run_queue.head;
   // This is inefficient, but disabled threads are not expected to be used much.
@@ -183,28 +183,28 @@ void scheduler_wake_all(kthread_queue_t* queue) {
   }
 }
 
-void sched_disable_preemption() {
+void sched_disable_preemption(void) {
   // TODO(aoates): use an interrupt-safe atomic here.
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_current_thread()->preemption_disables++;
   POP_INTERRUPTS();
 }
 
-void sched_restore_preemption() {
+void sched_restore_preemption(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   kthread_current_thread()->preemption_disables--;
   KASSERT(kthread_current_thread()->preemption_disables >= 0);
   POP_INTERRUPTS();
 }
 
-void sched_enable_preemption_for_test() {
+void sched_enable_preemption_for_test(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   KASSERT(kthread_current_thread()->preemption_disables == 1);
   kthread_current_thread()->preemption_disables = 0;
   POP_INTERRUPTS();
 }
 
-void sched_tick() {
+void sched_tick(void) {
   // TODO(aoates): move g_run_queue short-circuit into scheduler_yield() after
   // verifying it won't break any tests.
   if (kthread_current_thread()->preemption_disables == 0 &&
