@@ -16,6 +16,7 @@ Import('env DisableFeature')
 
 # TODO(riscv): use a standard-built APOS toolchain.
 env.Replace(TOOL_PREFIX = '$ARCH-elf-')
+env.Append(CFLAGS = '-march=rv64gc')
 
 DisableFeature(env, 'USER_DUMMY_LIB')
 DisableFeature(env, 'USER_OS')
@@ -25,3 +26,8 @@ DisableFeature(env, 'USER_TESTS')
 # right portable API).  The implementations currently rely on ioport commands.
 DisableFeature(env, 'ETHERNET')
 DisableFeature(env, 'USB')
+
+# TODO(riscv): update the rest of the codebase to be compatible with clang16
+if env['CC'] == 'clang':
+  env['CC'] = 'clang-16'
+  env.Append(CFLAGS = '-Wno-strict-prototypes')
