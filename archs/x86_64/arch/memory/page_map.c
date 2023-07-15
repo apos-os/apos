@@ -177,7 +177,7 @@ void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
   }
 }
 
-page_dir_ptr_t page_frame_alloc_directory() {
+page_dir_ptr_t page_frame_alloc_directory(void) {
   phys_addr_t dir_phys = page_frame_alloc();
   KASSERT(dir_phys);
   KASSERT_DBG((dir_phys & PML4E_ADDRESS_MASK) == dir_phys);

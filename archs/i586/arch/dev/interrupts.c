@@ -166,7 +166,7 @@ static user_context_t extract_interrupt_context(void* ebp_ptr) {
   return context;
 }
 
-void interrupts_init() {
+void interrupts_init(void) {
   // First, figure out where the IDT is.
   idt_ptr_t idt_ptr;
   asm volatile(
@@ -257,11 +257,11 @@ void int_handler(uint32_t interrupt, uint32_t error, addr_t ebp) {
   // Note: we may never get here, if there were signals to dispatch.
 }
 
-void enable_interrupts() {
+void enable_interrupts(void) {
   asm volatile("sti");
 }
 
-void disable_interrupts() {
+void disable_interrupts(void) {
   asm volatile("cli");
 }
 

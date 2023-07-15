@@ -38,7 +38,7 @@ static void dblfault_handler(void) {
   die("Kernel double fault");
 }
 
-void tss_init() {
+void tss_init(void) {
   KASSERT(g_tss.ss0 == 0);
   kmemset(&g_tss, 0, sizeof(tss_t));
   g_tss.ss0 = segment_selector(GDT_KERNEL_DATA_SEGMENT, RPL_KERNEL);

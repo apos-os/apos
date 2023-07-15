@@ -45,7 +45,7 @@ static handler_block_t g_handlers[NUM_HANDLERS];
 
 static void irq_handler(uint32_t interrupt, uint32_t error, bool is_user);
 
-void pic_init() {
+void pic_init(void) {
   for (int i = 0; i < NUM_HANDLERS; ++i) {
     for (int j = 0; j < MAX_HANDLERS_PER_IRQ; ++j) {
       g_handlers[i].handlers[j] = 0x0;

@@ -32,7 +32,7 @@
 #define PAGE_FAULT_ERR_USER    0x04
 #define PAGE_FAULT_ERR_RSVD    0x08
 
-void paging_init() {
+void paging_init(void) {
   register_interrupt_handler(PAGE_FAULT_INTERRUPT, &page_fault_handler);
 }
 
