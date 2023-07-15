@@ -147,9 +147,7 @@ int apos_get_shpwent_f(FILE* passwd_file, const char* user, char* buf,
   // If changed, update the too-long-line test.
   const int kBufSize = 2 * MAX_PASSWDFIELD_LEN + 10;
   char linebuf[kBufSize];
-  int line_idx = -1;
   while (fgets_capped(linebuf, kBufSize, passwd_file)) {
-    line_idx++;
     if (strncmp(linebuf, user, user_len) != 0 || linebuf[user_len] != ':') {
       continue;
     }
