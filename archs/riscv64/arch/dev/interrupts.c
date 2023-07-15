@@ -17,7 +17,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 
-void interrupts_init() {
+void interrupts_init(void) {
   // TODO(riscv): implement
 }
 

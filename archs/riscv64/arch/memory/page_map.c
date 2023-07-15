@@ -36,7 +36,7 @@ void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
   // TODO(riscv): implement
 }
 
-page_dir_ptr_t page_frame_alloc_directory() {
+page_dir_ptr_t page_frame_alloc_directory(void) {
   // TODO(riscv): implement
   return 0;
 }

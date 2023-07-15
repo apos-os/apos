@@ -18,6 +18,6 @@
 #include "memory/memory.h"
 #include "memory/vm_page_fault.h"
 
-void paging_init() {
+void paging_init(void) {
   // TODO(riscv): implement
 }

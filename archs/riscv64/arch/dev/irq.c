@@ -17,6 +17,6 @@ void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
   // TODO(riscv): implement
 }
 
-void pic_init() {
+void pic_init(void) {
   // TODO(riscv): implement
 }
