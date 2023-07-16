@@ -25,6 +25,7 @@ srcs = [
   'arch/memory/page_map.c',
   'arch/proc/exec.c',
   'arch/proc/kthread.c',
+  'arch/proc/kthread_asm.s',
   'arch/proc/signal_enter.c',
   'arch/proc/stack_trace.c',
   'arch/proc/user_context.c',

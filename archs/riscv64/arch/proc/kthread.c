@@ -16,25 +16,40 @@
 
 #include <stddef.h>
 
-#include "common/kassert.h"
 #include "arch/dev/interrupts.h"
+#include "archs/riscv64/internal/kthread.h"
+#include "common/kassert.h"
 #include "proc/kthread-internal.h"
 
-void kthread_arch_init(void) {
-  die("unimplemented");
-}
+void riscv_kthread_trampoline(void);
+
+void kthread_arch_init(void) {}
 
 void kthread_arch_set_current_thread(kthread_t thread) {
-  die("unimplemented");
+  // TODO(riscv): set kernel-mode stack for stack switching.
 }
 
 void kthread_arch_init_thread(kthread_t thread,
                               kthread_trampoline_func_t trampoline,
                               kthread_start_func_t start_routine, void* arg) {
-  die("unimplemented");
-}
+  addr_t* stack = (addr_t*)kthread_arch_kernel_stack_top(thread);
 
-void kthread_arch_swap_context(kthread_t threadA, kthread_t threadB,
-                               page_dir_ptr_t pdA, page_dir_ptr_t pdB) {
-  die("unimplemented");
+  // Set up the stack.  Pass the args to the riscv trampoline in s1-s3.
+  *(stack--) = 0xDEADDEAD;
+  *(stack--) = (addr_t)&riscv_kthread_trampoline;
+  *(stack--) = 0;  // fp
+  *(stack--) = 0xDEADDEAD;  // unused
+  *(stack--) = 0;  // s11
+  *(stack--) = 0;  // s10
+  *(stack--) = 0;  // s9
+  *(stack--) = 0;  // s8
+  *(stack--) = 0;  // s7
+  *(stack--) = 0;  // s6
+  *(stack--) = 0;  // s5
+  *(stack--) = 0;  // s4
+  *(stack--) = (addr_t)arg;  // s3
+  *(stack--) = (addr_t)start_routine;  // s2
+  *(stack--) = (addr_t)trampoline;  // s1
+
+  thread->context = (addr_t)stack;
 }
