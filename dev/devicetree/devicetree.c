@@ -190,3 +190,34 @@ dtfdt_parse_result_t dt_create(const void* fdt, dt_tree_t** tree_out,
   *tree_out = tree;
   return DTFDT_OK;
 }
+
+const dt_node_t* dt_lookup(const dt_tree_t* tree, const char* path) {
+  if (*path != '/') {
+    return NULL;
+  }
+
+  // Special-case the root node, since its the only path allowed to end in '/'
+  if (*(path + 1) == '\0') return tree->root;
+
+  dt_node_t* node = tree->root;
+  while (*path) {
+    KASSERT_DBG(*path == '/');
+    path++;
+    const char* element_end = kstrchrnul(path, '/');
+    size_t element_len = element_end - path;
+
+    dt_node_t* child = node->children;
+    node = NULL;  // Assume no match.
+    while (child) {
+      if ((size_t)kstrlen(child->name) == element_len &&
+          kstrncmp(child->name, path, element_len) == 0) {
+        node = child;
+        break;
+      }
+      child = child->next;
+    }
+    if (!node) return NULL;
+    path = element_end;
+  }
+  return node;
+}

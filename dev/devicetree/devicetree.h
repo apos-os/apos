@@ -37,6 +37,8 @@ typedef struct dt_node {
   struct dt_node* next;
 
   // For convenience, parsed node context.
+  // TODO(aoates): rather than embed this in each node, point to one copy in the
+  // parent.
   dtfdt_node_context_t context;
 } dt_node_t;
 
@@ -51,5 +53,9 @@ typedef struct dt_tree {
 // copied into the buffer as well.
 dtfdt_parse_result_t dt_create(const void* fdt, dt_tree_t** tree, void* buf,
                                size_t buflen);
+
+// Find a node with the given path.  The final name must match fully (i.e.
+// include the @..., if present, even if unambiguous).
+const dt_node_t* dt_lookup(const dt_tree_t* tree, const char* path);
 
 #endif
