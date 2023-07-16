@@ -97,7 +97,7 @@ static int mapsize_level(rsv_mapsize_t sz) {
   return (int)sz;
 }
 
-static void init_page_table(phys_addr_t pt_phys) {
+void rsv_init_page_table(phys_addr_t pt_phys) {
   KASSERT_DBG(pt_phys % PAGE_SIZE == 0);
   kmemset((void*)phys2virt(pt_phys), 0, PAGE_SIZE);
 }
@@ -140,7 +140,7 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
 
       phys_addr_t new_pt = page_frame_alloc();
       if (!new_pt) return NULL;
-      init_page_table(new_pt);
+      rsv_init_page_table(new_pt);
       // Make the PTE point at the new page table.
       *pte = 0;
       rsv_set_pte_addr(pte, new_pt, RSV_MAP_PAGE);

@@ -61,9 +61,14 @@ typedef enum {
   RSV_MAP_GIGAPAGE = 2,
 } rsv_mapsize_t;
 
+#define RSV_MAP_SMALLEST RSV_MAP_PAGE
+#define RSV_MAP_BIGGEST RSV_MAP_GIGAPAGE
+
 #define RSV_MAP_PAGESIZE PAGE_SIZE
 #define RSV_MAP_MEGAPAGE_SIZE (PAGE_SIZE << 9)  // 2 MiB
 #define RSV_MAP_GIGAPAGE_SIZE (PAGE_SIZE << 18) // 1 GiB
+_Static_assert(MIN_GLOBAL_MAPPING_SIZE == RSV_MAP_GIGAPAGE_SIZE,
+               "MIN_GLOBAL_MAPPING_SIZE doesn't match gigapage size");
 
 // Returns the address space of the current HART.
 page_dir_ptr_t rsv_get_hart_as(void);
@@ -115,5 +120,8 @@ void rsv_set_pte_addr(rsv_sv39_pte_t* pte, phys_addr_t phys,
 
 // Returns the index of the virtual address in the page table at the given level
 size_t rsv_pte_index(addr_t virt, rsv_mapsize_t level);
+
+// Initialize (and empty) the given page table.
+void rsv_init_page_table(phys_addr_t pt);
 
 #endif
