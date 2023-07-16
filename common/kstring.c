@@ -60,6 +60,17 @@ int kstrncmp(const char* s1, const char* s2, size_t n) {
   return *s1 - *s2;
 }
 
+bool kstr_startswith(const char* s, const char* prefix) {
+  while (*s && *prefix) {
+    if (*s != *prefix) {
+      return false;
+    }
+    s++;
+    prefix++;
+  }
+  return (*prefix == '\0');
+}
+
 void* kmemset(void *s, int c, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     ((char*)s)[i] = c;

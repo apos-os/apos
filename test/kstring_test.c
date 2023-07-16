@@ -390,6 +390,19 @@ static void kstring_testF(void) {
   KEXPECT_STREQ("b12", kutoa_hex_lower_r(0xab12, buf, 4));
 }
 
+static void kstring_prefix_test(void) {
+  KTEST_BEGIN("kstr_startswith() test");
+  KEXPECT_TRUE(kstr_startswith("", ""));
+  KEXPECT_TRUE(kstr_startswith("abc", ""));
+  KEXPECT_TRUE(kstr_startswith("abc", "abc"));
+  KEXPECT_TRUE(kstr_startswith("abcd", "abc"));
+  KEXPECT_FALSE(kstr_startswith("", "abc"));
+  KEXPECT_FALSE(kstr_startswith("abc", "ABC"));
+  KEXPECT_FALSE(kstr_startswith("abc", "A"));
+  KEXPECT_FALSE(kstr_startswith("abc", "abcd"));
+  KEXPECT_FALSE(kstr_startswith("abc", "abC"));
+}
+
 void kstring_test(void) {
   KTEST_SUITE_BEGIN("kstring");
 
@@ -400,5 +413,6 @@ void kstring_test(void) {
   kstring_testD(buf);
   kstring_testE();
   kstring_testF();
+  kstring_prefix_test();
   kfree(buf);
 }

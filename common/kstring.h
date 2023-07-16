@@ -15,6 +15,7 @@
 #ifndef APOO_KSTRING_H
 #define APOO_KSTRING_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 // Clang will generate calls to memset(), so we must define it.
@@ -29,6 +30,7 @@ int kstrlen(const char* s);
 int kstrnlen(const char* s, int max);
 int kstrcmp(const char* s1, const char* s2);
 int kstrncmp(const char* s1, const char* s2, size_t n);
+bool kstr_startswith(const char* s, const char* prefix);
 
 void* kmemset(void* s, int c, size_t n);
 void* kmemcpy(void* dest, const void* src, size_t n);
