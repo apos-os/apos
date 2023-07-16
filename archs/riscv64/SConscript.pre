@@ -22,6 +22,9 @@ DisableFeature(env, 'USER_DUMMY_LIB')
 DisableFeature(env, 'USER_OS')
 DisableFeature(env, 'USER_TESTS')
 
+# TODO(riscv): enable these before merging
+DisableFeature(env, 'KMALLOC_HEAP_PROFILE')
+
 # TODO(aoates): figure out how to make these work on this platform (and the
 # right portable API).  The implementations currently rely on ioport commands.
 DisableFeature(env, 'ETHERNET')
