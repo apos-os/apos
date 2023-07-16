@@ -41,17 +41,22 @@ static phys_addr_t dma_reserved_first_frame;
 // de-allocating the DMA ranges, so we just keep a high-water mark as we go.
 static size_t dma_reserved_first_free_idx = 0;
 
+static size_t meminfo_mainmem_len(const memory_info_t* meminfo) {
+  return meminfo->lower_memory + meminfo->upper_memory;
+}
+
+static size_t meminfo_mainmem_end(const memory_info_t* meminfo) {
+  return meminfo->phys_mainmem_begin + meminfo_mainmem_len(meminfo);
+}
+
 // Initialize the allocator with the given meminfo.
 void page_frame_alloc_init(memory_info_t* meminfo) {
-  const size_t total_frames =
-      (meminfo->lower_memory + meminfo->upper_memory) / PAGE_SIZE;
+  const size_t total_frames = meminfo_mainmem_len(meminfo) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
   const phys_addr_t kernel_end_page = next_page(meminfo->kernel_end_phys);
   phys_addr_t next_free_frame = kernel_end_page;
   KASSERT(meminfo->phys_mainmem_begin < meminfo->kernel_start_phys);
-  KASSERT(meminfo->kernel_end_phys <= meminfo->phys_mainmem_begin +
-                                          meminfo->lower_memory +
-                                          meminfo->upper_memory);
+  KASSERT(meminfo->kernel_end_phys <= meminfo_mainmem_end(meminfo));
 
   // Reserve same frames for DMA usage.  The DMA pages will live directly above
   // the kernel (at the next page boundary).
@@ -107,8 +112,7 @@ phys_addr_t page_frame_alloc(void) {
   phys_addr_t frame = free_frame_stack[--stack_idx];
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
-    KASSERT_DBG(frame < get_global_meminfo()->lower_memory +
-                            get_global_meminfo()->upper_memory);
+    KASSERT_DBG(frame < meminfo_mainmem_end(get_global_meminfo()));
     // Fill the page with crap.
     addr_t virt_frame = phys2virt(frame);
     for (size_t i = 0; i < PAGE_SIZE / sizeof(uint32_t); ++i) {
@@ -124,8 +128,7 @@ void page_frame_free(phys_addr_t frame_addr) {
   KASSERT(stack_idx <= stack_size);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
-    KASSERT_DBG(frame_addr < get_global_meminfo()->lower_memory +
-                                 get_global_meminfo()->upper_memory);
+    KASSERT_DBG(frame_addr < meminfo_mainmem_end(get_global_meminfo()));
     // Check that the page frame isn't already free.
     for (size_t i = 0; i < stack_idx; ++i) {
       KASSERT(free_frame_stack[i] != frame_addr);
