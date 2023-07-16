@@ -71,21 +71,31 @@ page_dir_ptr_t rsv_get_hart_as(void);
 // Returns the physical address of the current HART's first page table.
 phys_addr_t rsv_get_top_page_table(void);
 
-// Return a pointer to the final PTE for the given mapping in the given address
-// space.  The virtual address must be aligned to the requested mapsize.  If
-// |create| is true, intermediate page tables will be allocated as needed.
+// Return a pointer to the PTE for the given mapping in the given address space
+// with the given size.  The virtual address must be aligned to the requested
+// mapsize.  If |create| is true, intermediate page tables will be allocated as
+// needed.
 //
 // Newly created entries are zeroed; the caller must fill in the bits as
 // necessary.
 //
-// If the mapping exists but is of a different mapsize than requested, panics
-// the kernel (to avoid subtle errors) --- this functionality will be added
-// later.
+// If page tables exist below the requested size (i.e., a mapping for this
+// address, or a different address in the requested mapping size), the
+// non-terminal PTE at the requested size is returned --- the caller must check.
+//
+// For example, rsv_get_pte(RSV_MAP_SMALLEST) will always return the existing
+// mapping, whatever its size (or the final PTE).  rsv_get_pte(RSV_MAP_BIGGEST)
+// will always return the top-level PTE.
+//
+// The mapping itself is _not_ created, only the intermediate data structures
+// necessary to get to a final PTE for the given mapsize --- the caller could
+// create a mapping of that size, or a different size if the returned PTE is
+// empty.
 //
 // If succesful, returns a pointer to the PTE.  If the necessary page tables.
 // don't exist and |create| is false, returns an error.  Likewise, if
 // intermediate page tables cannot be allocated, fails.
-rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t size,
+rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
                             bool create);
 
 // Similar to rsv_get_page(), but just returns the lowest available PTE for the
