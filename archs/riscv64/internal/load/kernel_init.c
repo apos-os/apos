@@ -202,7 +202,9 @@ static void create_initial_meminfo(const void* fdt, memory_info_t* meminfo,
   meminfo->heap_start = RSV64_HEAP_START;
   meminfo->heap_end = RSV64_HEAP_START + RSV64_HEAP_LEN;
 
-  meminfo->kernel_stack_base = init_phys2virt(stack_base);
+  // Point kernel_stack_base at the version of the stack in the kernel-mapped
+  // space, not the physical map, to match the value of $sp.
+  meminfo->kernel_stack_base = stack_base + RSV64_KERNEL_VIRT_OFFSET;
   meminfo->kernel_page_directory = rsv_get_hart_as();
 }
 
