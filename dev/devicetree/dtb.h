@@ -83,6 +83,7 @@ typedef enum {
   DTFDT_BAD_NAME = -5,       // Invalid node or property name.
   DTFDT_BAD_ALIGNMENT = -6,
   DTFDT_BAD_PROPERTY = -7,
+  DTFDT_OUT_OF_MEMORY = -8,
 } dtfdt_parse_result_t;
 
 // Parse the given DTB.  Doesn't dynamically allocate any memory, so is
