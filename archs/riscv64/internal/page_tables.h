@@ -88,6 +88,11 @@ phys_addr_t rsv_get_top_page_table(void);
 rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t size,
                             bool create);
 
+// Similar to rsv_get_page(), but just returns the lowest available PTE for the
+// given address.  Will not create any entries.
+rsv_sv39_pte_t rsv_lookup_pte(page_dir_ptr_t as, addr_t virt,
+                              rsv_mapsize_t* size_out);
+
 // Issue a local sfence.vma instruction.
 void rsv_sfence(void);
 

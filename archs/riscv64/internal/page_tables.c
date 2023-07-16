@@ -140,6 +140,26 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t size,
   return pte;
 }
 
+rsv_sv39_pte_t rsv_lookup_pte(page_dir_ptr_t as, addr_t virt,
+                              rsv_mapsize_t* size_out) {
+  // Based on the lookup loop described in section 4.3.2 of the privileged spec.
+  uint64_t pt_ppn = as;
+  int level = RSV_SV39_LEVELS - 1;
+  rsv_sv39_pte_t* pte = get_pte_from_ppn(pt_ppn, virt, level);
+  while ((*pte & RSV_PTE_VALID) && level > 0) {
+    const uint64_t rwx_bits =
+        *pte & (RSV_PTE_READ | RSV_PTE_WRITE | RSV_PTE_EXECUTE);
+    if (rwx_bits != 0) {
+      // Found a terminal large-size PTE.
+      break;
+    }
+    level--;
+    pte = get_next_pte(*pte, virt, level);
+  }
+  *size_out = level;
+  return *pte;
+}
+
 void rsv_set_pte_addr(rsv_sv39_pte_t* pte, phys_addr_t phys,
                       rsv_mapsize_t size) {
   const uint64_t mapsize_bytes = get_mapsize(size);
