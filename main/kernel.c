@@ -107,7 +107,13 @@ static void init_trampoline(void* arg) {
   kshell_main(g_tty_dev);
 }
 
+const boot_info_t* g_boot_info = NULL;
+const boot_info_t* get_boot_info(void) {
+  return g_boot_info;
+}
+
 void kmain(const boot_info_t* boot) {
+  g_boot_info = boot;
   set_global_meminfo(boot->meminfo);
 
   klog_set_mode(KLOG_RAW_VIDEO);

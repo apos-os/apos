@@ -18,6 +18,7 @@
 
 #define RSV64_SBI_EID_LEGACY_PUTCHAR 0x1
 #define RSV64_SBI_EID_HSM 0x48534D
+#define RSV64_SBI_EID_TIME 0x54494D45
 
 #define RSV64_SBI_FID_HSM_HART_STOP 0x1
 
@@ -26,5 +27,9 @@
 // *val_out is unspecified.
 long rsv64_sbi_call(uint64_t eid, uint64_t fid, long* val_out, uint64_t arg0,
                     uint64_t arg1);
+
+// SBI calls.
+#define rsv64_sbi_set_timer(stime_value) \
+  rsv64_sbi_call(RSV64_SBI_EID_TIME, 0, NULL, stime_value, 0)
 
 #endif

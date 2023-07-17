@@ -30,6 +30,6 @@ long rsv64_sbi_call(uint64_t eid, uint64_t fid, long* val_out, uint64_t arg0,
         [arg1] "r"(arg1),
         [eid] "r"(eid),
         [fid] "r"(fid));
-  *val_out = val;
+  if (val_out) *val_out = val;
   return error;
 }

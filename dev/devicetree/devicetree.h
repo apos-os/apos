@@ -61,4 +61,8 @@ const dt_node_t* dt_lookup(const dt_tree_t* tree, const char* path);
 // Get the property from the node, or NULL.
 const dt_property_t* dt_get_prop(const dt_node_t* node, const char* prop_name);
 
+// Lookup a node and property, returning NULL if either doesn't exist.
+const dt_property_t* dt_get_nprop(const dt_tree_t* tree, const char* node_path,
+                                  const char* prop_name);
+
 #endif

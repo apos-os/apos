@@ -12,21 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_MAIN_KERNEL_H
-#define APOO_MAIN_KERNEL_H
+#ifndef APOO_ARCHS_RISCV64_INTERNAL_TIMER_H
+#define APOO_ARCHS_RISCV64_INTERNAL_TIMER_H
 
-#include "dev/devicetree/devicetree.h"
-#include "memory/memory.h"
-
-typedef struct {
-  memory_info_t* meminfo;  // Required.
-
-  // The device tree if present, or NULL.
-  const dt_tree_t* dtree;
-} boot_info_t;
-
-void kmain(const boot_info_t* boot);
-
-const boot_info_t* get_boot_info(void);
+void rsv_timer_interrupt(void);
 
 #endif

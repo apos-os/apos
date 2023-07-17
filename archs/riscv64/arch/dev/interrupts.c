@@ -16,6 +16,7 @@
 
 #include "archs/riscv64/internal/page_tables.h"
 #include "archs/riscv64/internal/riscv.h"
+#include "archs/riscv64/internal/timer.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "memory/vm_page_fault.h"
@@ -87,7 +88,11 @@ static void rsv_page_fault(int trap, addr_t addr, bool is_kernel) {
 }
 
 void interrupts_init(void) {
-  // Nothing to do --- interrupts already set up during boot.
+  // Enable timer interupts by setting STIE.
+  // TODO(aoates): consider safer boot sequence and not enabling these until
+  // timers are fully set up.
+  uint64_t sie_bits = 0x20;
+  asm volatile("csrs sie, %0" ::"r"(sie_bits));
 }
 
 void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
@@ -99,9 +104,12 @@ void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
   if (scause & RSV_INTERRUPT) {
     const int interrupt = scause & ~RSV_INTERRUPT;
     switch (interrupt) {
+      case RSV_INT_STIMER:
+        rsv_timer_interrupt();
+        break;
+
       // TODO(riscv): implement the rest of these:
       case RSV_INT_SSOFTWARE:
-      case RSV_INT_STIMER:
       case RSV_INT_SEXTERNAL:
       default:
         klogfm(

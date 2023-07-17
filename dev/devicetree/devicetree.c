@@ -230,3 +230,10 @@ const dt_property_t* dt_get_prop(const dt_node_t* node, const char* prop_name) {
   }
   return NULL;
 }
+
+const dt_property_t* dt_get_nprop(const dt_tree_t* tree, const char* node_path,
+                                  const char* prop_name) {
+  const dt_node_t* node = dt_lookup(tree, node_path);
+  if (!node) return NULL;
+  return dt_get_prop(node, prop_name);
+}
