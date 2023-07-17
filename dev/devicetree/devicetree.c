@@ -221,3 +221,12 @@ const dt_node_t* dt_lookup(const dt_tree_t* tree, const char* path) {
   }
   return node;
 }
+
+const dt_property_t* dt_get_prop(const dt_node_t* node, const char* prop_name) {
+  dt_property_t* prop = node->properties;
+  while (prop) {
+    if (kstrcmp(prop->name, prop_name) == 0) return prop;
+    prop = prop->next;
+  }
+  return NULL;
+}

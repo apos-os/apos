@@ -23,6 +23,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/dtb.h"
 #include "memory/memory.h"
 
@@ -41,86 +42,44 @@ static addr_t init_phys2virt(phys_addr_t phys) {
   return phys + RSV64_KPHYSMAP_ADDR;
 }
 
-typedef struct {
-  int clevel;
-  bool in_memory_node;
-  uint64_t addr_out;
-  uint64_t len_out;
-} findmem_state_t;
-
-bool is_memnode(const char* node_name) {
-  const char* at = kstrchr(node_name, '@');
-  if (!at) return false;
-  if (kstrncmp(node_name, "memory", at - node_name) == 0) {
-    return true;
-  }
-  return false;
-}
-
-bool findmem_beginn(const char* node_name, const dtfdt_node_context_t* context,
-                    void* cbarg) {
-  findmem_state_t* state = (findmem_state_t*)cbarg;
-  if (state->in_memory_node) {
-    return false;  // No need to continue, we've seen the first memory node.
-  }
-  if (state->clevel == 2 && is_memnode(node_name)) {
-    state->in_memory_node = true;
-  }
-  state->clevel++;
-  return true;
-}
-
-bool findmem_endn(const char* node_name, void* cbarg) {
-  findmem_state_t* state = (findmem_state_t*)cbarg;
-  state->clevel--;
-  return true;
-}
-
-bool findmem_prop(const char* prop_name, const void* prop_val, size_t val_len,
-                  const dtfdt_node_context_t* context, void* cbarg) {
-  findmem_state_t* state = (findmem_state_t*)cbarg;
-  if (!state->in_memory_node) return true;
-
-  if (kstrcmp(prop_name, "reg") == 0) {
-    if (context->address_cells != 2 || context->size_cells != 2) {
-      klog("Unexpected FDT #address-cells or #size-cells\n");
-      return false;
-    }
-    if (val_len != 2 * sizeof(uint64_t)) {
-      klog("Unable to handle more than one memory range\n");
-      return false;
-    }
-    const uint64_t* cells = (uint64_t*)prop_val;
-    state->addr_out = btoh64(cells[0]);
-    state->len_out = btoh64(cells[1]);
-    return false;
-  }
-
-  return true;  // Keep looking.
-}
-
 // Finds the first "memory" node and uses it.
 // TODO(aoates): generate and use a proper multi-block memory map.  Also, do
 // this more flexibly --- this is very brittle.
-static int find_memory_node(const void* fdt, uint64_t* addr_out,
+static int find_memory_node(const dt_tree_t* fdt, uint64_t* addr_out,
                             uint64_t* len_out) {
-  dtfdt_parse_cbs_t cbs;
-  cbs.node_begin = &findmem_beginn;
-  cbs.node_end = &findmem_endn;
-  cbs.node_prop = &findmem_prop;
-  findmem_state_t state;
-  state.addr_out = state.len_out = 0;
-  state.clevel = 1;
-  state.in_memory_node = false;
-  if (dtfdt_parse(fdt, &cbs, &state) != DTFDT_STOPPED || state.addr_out == 0 ||
-      state.len_out == 0) {
+  dt_node_t* child = fdt->root->children;
+  while (child) {
+    if (kstr_startswith(child->name, "memory@")) break;
+    child = child->next;
+  }
+  if (!child) {
     klog("Unable to find /memory@XXX FDT node\n");
     return -1;
   }
-  *addr_out = state.addr_out;
-  *len_out = state.len_out;
+
+  // Find the reg property.
+  const dt_property_t* reg = dt_get_prop(child, "reg");
+  if (!reg) {
+    klogf("/%s node has no 'reg' property\n", child->name);
+    return -1;
+  }
+
+  if (child->context.address_cells != 2 || child->context.size_cells != 2) {
+    klog("Unexpected FDT #address-cells or #size-cells\n");
+    return false;
+  }
+  if (reg->val_len != 2 * sizeof(uint64_t)) {
+    klog("Unable to handle more than one memory range\n");
+    return false;
+  }
+  const uint64_t* cells = (uint64_t*)reg->val;
+  *addr_out = btoh64(cells[0]);
+  *len_out = btoh64(cells[1]);
   return 0;
 }
+
+#define INIT_FDT_BUFLEN 20000
+static char g_fdt_buf[INIT_FDT_BUFLEN];
 
 static void setup_kernel_mappings(void) {
   phys_addr_t top_pt_addr = rsv_get_top_page_table();
@@ -164,7 +123,7 @@ static void setup_kernel_mappings(void) {
   rsv_sfence();
 }
 
-static void create_initial_meminfo(const void* fdt, memory_info_t* meminfo,
+static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
                                    phys_addr_t stack_base) {
   uint64_t mainmem_addr, mainmem_len;
   if (find_memory_node(fdt, &mainmem_addr, &mainmem_len) != 0) {
@@ -225,7 +184,14 @@ void kinit(int hart_id, phys_addr_t fdt_phys, phys_addr_t stack_base) {
     die("Bad FDT passed in");
   }
 
-  create_initial_meminfo(fdt, &g_meminfo, stack_base);
+  dt_tree_t* fdt_tree = NULL;
+  dtfdt_parse_result_t result =
+      dt_create(fdt, &fdt_tree, &g_fdt_buf, INIT_FDT_BUFLEN);
+  if (result != DTFDT_OK) {
+    die("Unable to parse the FDT");
+  }
+
+  create_initial_meminfo(fdt_tree, &g_meminfo, stack_base);
 
   // We can't ever return or we'll page fault!
   while(1);

@@ -58,4 +58,7 @@ dtfdt_parse_result_t dt_create(const void* fdt, dt_tree_t** tree, void* buf,
 // include the @..., if present, even if unambiguous).
 const dt_node_t* dt_lookup(const dt_tree_t* tree, const char* path);
 
+// Get the property from the node, or NULL.
+const dt_property_t* dt_get_prop(const dt_node_t* node, const char* prop_name);
+
 #endif
