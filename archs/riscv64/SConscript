@@ -33,6 +33,7 @@ srcs = [
   'arch/syscall/init.c',
   'internal/page_tables.c',
   'internal/sbi.c',
+  'internal/timer.c',
 ]
 
 subdirs = ['internal/load']

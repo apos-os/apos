@@ -21,6 +21,7 @@ srcs = [
     'arch/common/debug.c',
     'arch/common/die.c',
     'arch/common/io.c',
+    'arch/dev/timer.c',
     'arch/proc/stack_trace.c',
     'internal/proc/exec.c',
 ]

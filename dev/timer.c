@@ -14,8 +14,7 @@
 
 #include <stdint.h>
 
-#include "arch/common/io.h"
-#include "arch/dev/irq.h"
+#include "arch/dev/timer.h"
 #include "common/debug.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -114,16 +113,7 @@ static void internal_timer_handler(void* arg) {
 }
 
 void timer_init(void) {
-  // Inintialize the timer hardware.
-  outb(0x43, 0x36);
-  uint16_t freq = 1000 / KTIMESLICE_MS;
-  uint16_t divisor = 1193180 / freq;
-  uint8_t low = (uint8_t)(divisor & 0xFF);
-  uint8_t high = (uint8_t)((divisor >> 8) & 0xFF);
-  outb(0x40, low);
-  outb(0x40, high);
-
-  register_irq_handler(IRQ0, &internal_timer_handler, 0x0);
+  arch_init_timer(KTIMESLICE_MS, &internal_timer_handler, NULL);
 
   for (int i = 0; i < KMAX_TIMERS; ++i) {
     timers[i].free = 1;
