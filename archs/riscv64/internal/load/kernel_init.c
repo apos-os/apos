@@ -25,6 +25,7 @@
 #include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/dtb.h"
+#include "main/kernel.h"
 #include "memory/memory.h"
 
 #include "archs/riscv64/internal/page_tables.h"
@@ -33,7 +34,6 @@ _Static_assert(ARCH == ARCH_riscv64, "bad ARCH");
 _Static_assert(ARCH_IS_64_BIT, "ARCH_IS_64_BIT should be set");
 
 extern int KERNEL_START_SYMBOL, KERNEL_END_SYMBOL;
-extern void kmain(memory_info_t* meminfo);
 
 static memory_info_t g_meminfo;
 
