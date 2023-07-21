@@ -35,21 +35,21 @@ void kthread_arch_init_thread(kthread_t thread,
   addr_t* stack = (addr_t*)kthread_arch_kernel_stack_top(thread);
 
   // Set up the stack.  Pass the args to the riscv trampoline in s1-s3.
-  *(stack--) = 0xDEADDEAD;
-  *(stack--) = (addr_t)&riscv_kthread_trampoline;
-  *(stack--) = 0;  // fp
-  *(stack--) = 0xDEADDEAD;  // unused
-  *(stack--) = 0;  // s11
-  *(stack--) = 0;  // s10
-  *(stack--) = 0;  // s9
-  *(stack--) = 0;  // s8
-  *(stack--) = 0;  // s7
-  *(stack--) = 0;  // s6
-  *(stack--) = 0;  // s5
-  *(stack--) = 0;  // s4
-  *(stack--) = (addr_t)arg;  // s3
-  *(stack--) = (addr_t)start_routine;  // s2
-  *(stack--) = (addr_t)trampoline;  // s1
+  *(--stack) = 0xDEADDEAD;
+  *(--stack) = (addr_t)&riscv_kthread_trampoline;
+  *(--stack) = 0;  // fp
+  *(--stack) = 0xDEADDEAD;  // unused
+  *(--stack) = 0;  // s11
+  *(--stack) = 0;  // s10
+  *(--stack) = 0;  // s9
+  *(--stack) = 0;  // s8
+  *(--stack) = 0;  // s7
+  *(--stack) = 0;  // s6
+  *(--stack) = 0;  // s5
+  *(--stack) = 0;  // s4
+  *(--stack) = (addr_t)arg;  // s3
+  *(--stack) = (addr_t)start_routine;  // s2
+  *(--stack) = (addr_t)trampoline;  // s1
 
   thread->context = (addr_t)stack;
 }
