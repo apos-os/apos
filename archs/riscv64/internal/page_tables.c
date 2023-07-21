@@ -23,6 +23,7 @@
 #include "memory/page_alloc.h"
 #include "vfs/vnode.h"
 
+#define phys2ppn(x) (x / PAGE_SIZE)
 #define ppn2phys(x) (x * PAGE_SIZE)
 #define vpn2virt(x) (x * PAGE_SIZE)
 
@@ -36,6 +37,9 @@
 #define RSV_SV39_PTE_PPN_MASK \
   (RSV_SV39_PTE_PPN0_MASK | RSV_SV39_PTE_PPN1_MASK | RSV_SV39_PTE_PPN2_MASK)
 #define RSV_SV39_PTE_PPN_OFFSET RSV_SV39_PTE_PPN0_OFFSET
+
+#define RSV_SATP_MODE_SV39 (8ull << 60)
+#define RSV_SATP_PPN(satp) ((satp) & 0xFFFFFFFFFFF)
 
 // We use the same indexing scheme as the virtual address breakdown --- pte2 is
 // the top-level PTE (corresponding to VPN2), etc.
@@ -103,15 +107,21 @@ void rsv_init_page_table(phys_addr_t pt_phys) {
 }
 
 page_dir_ptr_t rsv_get_hart_as(void) {
-  uint64_t pt2_ppn;
-  asm volatile("csrr %0, satp" : "=r"(pt2_ppn)::);
-  pt2_ppn = pt2_ppn & SATP64_PPN_MASK;  // No shift needed.
-  return pt2_ppn;
+  uint64_t satp;
+  asm volatile("csrr %0, satp" : "=r"(satp)::);
+  return satp;
 }
 
-phys_addr_t rsv_get_top_page_table(void) {
-  page_dir_ptr_t pt_ppn = rsv_get_hart_as();
-  return ppn2phys(pt_ppn);
+phys_addr_t rsv_get_top_page_table(page_dir_ptr_t as) {
+  phys_addr_t ppn = RSV_SATP_PPN(as);
+  KASSERT_DBG(as == (ppn | RSV_SATP_MODE_SV39));  // No ASIDs today.
+  return ppn2phys(ppn);
+}
+
+page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys) {
+  KASSERT(pt_phys % PAGE_SIZE == 0);
+  // No ASID support today.
+  return RSV_SATP_MODE_SV39 | phys2ppn(pt_phys);
 }
 
 #define RSV_SV39_LEVELS 3
@@ -128,7 +138,7 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
   KASSERT(virt % mapsize_bytes == 0);
 
   // Based on the lookup loop described in section 4.3.2 of the privileged spec.
-  uint64_t pt_ppn = as;
+  uint64_t pt_ppn = RSV_SATP_PPN(as);
   int level = RSV_SV39_LEVELS - 1;
   int final_level = mapsize_level(*size);
   KASSERT_DBG(final_level <= level);
@@ -165,7 +175,7 @@ rsv_sv39_pte_t* rsv_get_pte(page_dir_ptr_t as, addr_t virt, rsv_mapsize_t* size,
 rsv_sv39_pte_t rsv_lookup_pte(page_dir_ptr_t as, addr_t virt,
                               rsv_mapsize_t* size_out) {
   // Based on the lookup loop described in section 4.3.2 of the privileged spec.
-  uint64_t pt_ppn = as;
+  uint64_t pt_ppn = RSV_SATP_PPN(as);
   int level = RSV_SV39_LEVELS - 1;
   rsv_sv39_pte_t* pte = get_pte_from_ppn(pt_ppn, virt, level);
   while (is_valid(*pte) && level > 0) {

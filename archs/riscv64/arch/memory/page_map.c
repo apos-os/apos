@@ -97,14 +97,15 @@ page_dir_ptr_t page_frame_alloc_directory(void) {
   phys_addr_t dir_phys = page_frame_alloc();
   KASSERT(dir_phys);
   rsv_init_page_table(dir_phys);
-  return dir_phys / PAGE_SIZE;
+  return rsv_create_as(dir_phys);
 }
 
-void page_frame_free_directory(page_dir_ptr_t page_directory) {
-  KASSERT(page_directory);
-  KASSERT(page_directory % PAGE_SIZE == 0);
+void page_frame_free_directory(page_dir_ptr_t as) {
+  phys_addr_t pt_phys = rsv_get_top_page_table(as);
+  KASSERT(pt_phys);
+  KASSERT(pt_phys % PAGE_SIZE == 0);
   // TODO(aoates): reclaim mid-level tables.
-  page_frame_free(page_directory);
+  page_frame_free(pt_phys);
 }
 
 void page_frame_init_global_mapping(addr_t addr, addr_t length) {

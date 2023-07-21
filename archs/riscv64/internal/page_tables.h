@@ -73,8 +73,11 @@ _Static_assert(MIN_GLOBAL_MAPPING_SIZE == RSV_MAP_GIGAPAGE_SIZE,
 // Returns the address space of the current HART.
 page_dir_ptr_t rsv_get_hart_as(void);
 
-// Returns the physical address of the current HART's first page table.
-phys_addr_t rsv_get_top_page_table(void);
+// Returns the physical address of the given HART's first page table.
+phys_addr_t rsv_get_top_page_table(page_dir_ptr_t as);
+
+// Creates a page_dir_ptr_t from a (top level) page table.
+page_dir_ptr_t rsv_create_as(phys_addr_t pt_phys);
 
 // Return a pointer to the PTE for the given mapping in the given address space
 // with the given size.  The virtual address must be aligned to the requested

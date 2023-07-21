@@ -82,7 +82,7 @@ static int find_memory_node(const dt_tree_t* fdt, uint64_t* addr_out,
 static char g_fdt_buf[INIT_FDT_BUFLEN];
 
 static void setup_kernel_mappings(void) {
-  phys_addr_t top_pt_addr = rsv_get_top_page_table();
+  phys_addr_t top_pt_addr = rsv_get_top_page_table(rsv_get_hart_as());
   // Access it through its physical address for now.
   rsv_sv39_pte_t* top_pt = (rsv_sv39_pte_t*)top_pt_addr;
 
