@@ -97,7 +97,7 @@ page_dir_ptr_t page_frame_alloc_directory(void) {
   phys_addr_t dir_phys = page_frame_alloc();
   KASSERT(dir_phys);
   rsv_init_page_table(dir_phys);
-  return dir_phys;
+  return dir_phys / PAGE_SIZE;
 }
 
 void page_frame_free_directory(page_dir_ptr_t page_directory) {
