@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -208,6 +209,12 @@ static void pci_check_device(uint8_t bus, uint8_t device) {
 
 // NOTE: little-endian dependent.
 void pci_init(void) {
+  // TODO(aoates): support ECAM-based MMIO PCIe.
+  if (!ARCH_SUPPORTS_IOPORT) {
+    klog("Skipping PCI, ioports not supported\n");
+    return;
+  }
+
   // Find all connected PCI devices.
   klogf("Scanning PCI bus...\n");
   for (unsigned int bus = PCI_BUS_MIN; bus <= PCI_BUS_MAX; ++bus) {

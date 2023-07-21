@@ -25,6 +25,11 @@
 // low-level, early boot, and disaster-handling cases).
 #define ARCH_SUPPORTS_RAW_VGA 1
 
+// Support for legacy PC ioport devices (PS/2 keyboard, etc).
+#define ARCH_SUPPORTS_LEGACY_PC_DEVS 1
+
+// Support for ioport iops (all architectures are assumed to support MMIO).
+#define ARCH_SUPPORTS_IOPORT 1
 
 // Include arch-specific overrides.
 #include "arch/common/_arch-config-overrides.h"

@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/kassert.h"
 #include "memory/memory.h"
 
@@ -42,6 +43,9 @@
 static video_t g_video;
 
 void video_vga_init(void) {
+  // TODO(aoates): support PCI-based VGA.
+  KASSERT(ARCH_SUPPORTS_RAW_VGA);
+  KASSERT(ARCH_SUPPORTS_LEGACY_PC_DEVS);
   // Make sure our CRT controller register is in "color" mode.
   uint8_t c = inb(MISC_OUTPUT_REG_READ);
   c |= MISC_OUTPUT_REG_IOAS;

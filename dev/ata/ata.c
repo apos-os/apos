@@ -16,6 +16,7 @@
 
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
+#include "common/arch-config.h"
 #include "common/errno.h"
 #include "common/klog.h"
 #include "common/kassert.h"
@@ -465,6 +466,11 @@ void ata_enable_busmaster(uint16_t primary_offset, uint16_t secondary_offset) {
 }
 
 void ata_init(void) {
+  if (!ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    klog("Skipping ATA, legacy PC devices not supported\n");
+    return;
+  }
+
   // Initialize the ATA driver with the I/O port ranges used by the PIIX(3) (see
   // page 96 of the datasheet).  There doesn't seem to be a way to determine
   // these dynamically, so we just guess-and-pray.

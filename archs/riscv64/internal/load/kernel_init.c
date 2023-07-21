@@ -193,6 +193,11 @@ void kinit(int hart_id, phys_addr_t fdt_phys, phys_addr_t stack_base) {
 
   create_initial_meminfo(fdt_tree, &g_meminfo, stack_base);
 
-  // We can't ever return or we'll page fault!
-  while(1);
+  boot_info_t boot = {
+    .meminfo = &g_meminfo,
+    .dtree = fdt_tree,
+  };
+  kmain(&boot);
+  die("kmain() returned");
+  while (1) {}
 }

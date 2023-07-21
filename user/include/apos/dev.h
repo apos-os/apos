@@ -19,6 +19,8 @@
 // A device identifier.
 typedef uint32_t apos_dev_t;
 
+#define APOS_DEV_INVALID ((apos_dev_t)-1)
+
 static inline apos_dev_t kmakedev(unsigned int major, unsigned int minor) {
   return (major << 16) | (minor & 0xFFFF);
 }

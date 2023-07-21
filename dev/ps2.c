@@ -16,6 +16,7 @@
 #include <stdint.h>
 
 #include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -323,6 +324,11 @@ static int device_init(void) {
 }
 
 int ps2_init(void) {
+  if (!ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    klog("Skipping PS/2, legacy PC devices not supported\n");
+    return 0;
+  }
+
   klogf("Initializing PS/2 controller...\n");
   if (!controller_init()) {
     klogf("  aborting initalization\n");

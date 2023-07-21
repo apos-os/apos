@@ -17,6 +17,7 @@
 
 #include "arch/memory/page_fault.h"
 #include "arch/syscall/init.h"
+#include "common/arch-config.h"
 #include "common/config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -62,7 +63,7 @@ void pic_init(void);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
-static apos_dev_t g_tty_dev;
+static apos_dev_t g_tty_dev = APOS_DEV_INVALID;
 
 static void tick(void* arg) {
   static uint8_t i = 0;
@@ -73,10 +74,16 @@ static void tick(void* arg) {
 }
 
 static void add_timers(void) {
-  KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
+  if (g_video) {
+    KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
+  }
 }
 
 static void io_init(void) {
+  if (!ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    return;
+  }
+
   static vkeyboard_t* kbd = 0x0;
   kbd = vkeyboard_create();
   KASSERT(ps2_keyboard_init(kbd));
@@ -103,6 +110,10 @@ static void init_trampoline(void* arg) {
   int result = do_execve(INIT_PATH, argv, envp, NULL, NULL);
   KASSERT(result != 0);
   klogf("Unable to exec " INIT_PATH ": %s\n", errorname(-result));
+  if (g_tty_dev == APOS_DEV_INVALID) {
+    klogf("No default TTY found, cannot launch kshell.\n");
+    return;
+  }
   klogf("Launching kshell instead.\n");
   kshell_main(g_tty_dev);
 }
@@ -181,7 +192,9 @@ void kmain(const boot_info_t* boot) {
 
   klog("initialization finished...\n");
 
-  vterm_clear(g_vterm);
+  if (g_vterm) {
+    vterm_clear(g_vterm);
+  }
   klog("APOO\n");
 
   klog("meminfo: 0x");
