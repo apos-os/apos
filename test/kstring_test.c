@@ -62,6 +62,10 @@ static void kstring_testA(void) {
   KEXPECT_GT(kstrncmp("abcc", "abcb", 10), 0);
   KEXPECT_LT(kstrncmp("abca", "abcdefghiklmnop", 10), 0);
   KEXPECT_GT(kstrncmp("abcz", "abcdefghiklmnop", 10), 0);
+  KEXPECT_EQ(kstrncmp("abc", "abc", 0), 0);
+  KEXPECT_EQ(kstrncmp("", "", 0), 0);
+  KEXPECT_EQ(kstrncmp("abc", "", 0), 0);
+  KEXPECT_EQ(kstrncmp("", "abc", 0), 0);
 
   // TODO(aoates): tests for kmemset, kstrcpy, kstrncpy, kstrcat
 }
