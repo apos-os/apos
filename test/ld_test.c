@@ -1216,6 +1216,30 @@ static void oflag_newline_test(void) {
   KEXPECT_STREQ("ab\nc", g_sink);
 }
 
+static void input_cr_test(void) {
+  KTEST_BEGIN("ld: input CR translation");
+  reset();
+
+  char buf[100];
+  ld_provide(g_ld, 'a');
+  ld_provide(g_ld, 'b');
+  ld_provide(g_ld, 'c');
+  ld_provide(g_ld, '\r');
+  int read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(4, read_len);
+  buf[read_len] = '\0';
+  KEXPECT_STREQ("abc\n", buf);
+
+  ld_provide(g_ld, '1');
+  ld_provide(g_ld, '2');
+  ld_provide(g_ld, '3');
+  ld_provide(g_ld, '\f');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(4, read_len);
+  buf[read_len] = '\0';
+  KEXPECT_STREQ("123\n", buf);
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -1249,6 +1273,7 @@ void ld_test(void) {
   set_attr_when_test();
   drain_and_flush_test();
   oflag_newline_test();
+  input_cr_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;

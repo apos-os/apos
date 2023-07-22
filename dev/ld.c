@@ -236,8 +236,9 @@ void ld_provide(ld_t* l, char c) {
     switch (c) {
       case '\r':
       case '\f':
-        die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
-        break;
+        // TODO(aoates): obey ICRNL.
+        c = '\n';
+        // Fall through.
 
       case '\n':
         if (l->termios.c_lflag & ECHONL)
