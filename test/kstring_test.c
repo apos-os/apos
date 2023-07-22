@@ -309,8 +309,12 @@ static void kstring_testE(void) {
   KEXPECT_EQ(1, kisspace(' '));
   KEXPECT_EQ(1, kisspace('\t'));
   KEXPECT_EQ(1, kisspace('\n'));
+  KEXPECT_EQ(1, kisspace('\v'));
+  KEXPECT_EQ(1, kisspace('\f'));
+  KEXPECT_EQ(1, kisspace('\r'));
   KEXPECT_EQ(0, kisspace('@'));
   KEXPECT_EQ(0, kisspace('2'));
+  KEXPECT_EQ(0, kisspace('r'));
   KEXPECT_EQ(0, kisspace('x'));
   KEXPECT_EQ(0, kisspace('\x7f'));
   KEXPECT_EQ(0, kisspace('\x03'));

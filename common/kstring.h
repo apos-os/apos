@@ -75,7 +75,7 @@ static inline int kisalnum(int c) {
 
 static inline int kisspace(int c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' ||
-         c == 'r';
+         c == '\r';
 }
 
 static inline int kisprint(int c) {
