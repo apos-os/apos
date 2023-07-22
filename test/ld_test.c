@@ -1234,10 +1234,11 @@ static void input_cr_test(void) {
   ld_provide(g_ld, '2');
   ld_provide(g_ld, '3');
   ld_provide(g_ld, '\f');
+  ld_provide(g_ld, '\n');
   read_len = ld_read_async(g_ld, buf, 100);
-  KEXPECT_EQ(4, read_len);
+  KEXPECT_EQ(5, read_len);
   buf[read_len] = '\0';
-  KEXPECT_STREQ("123\n", buf);
+  KEXPECT_STREQ("123\f\n", buf);
 }
 
 // TODO(aoates): more tests to write:

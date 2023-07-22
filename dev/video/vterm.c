@@ -375,11 +375,11 @@ static void vterm_putc_locked(vterm_t* t, uint8_t c) {
   }
 #endif
 
-  const bool is_newline = (c == '\r' || c == '\f' || c == '\n');
+  const bool is_newline = (c == '\r' || c == '\n');
   if (is_newline) {
     if (c == '\r')
       t->cursor_x = 0;
-    else if (c == '\f' || c == '\n')
+    else if (c == '\n')
       t->cursor_y++;
   } else {
     do_wrap(t);

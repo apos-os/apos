@@ -235,7 +235,6 @@ void ld_provide(ld_t* l, char c) {
   if (!handled) {
     switch (c) {
       case '\r':
-      case '\f':
         // TODO(aoates): obey ICRNL.
         c = '\n';
         // Fall through.
