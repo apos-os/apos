@@ -24,6 +24,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/interrupts.h"
+#include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
 #include "net/init.h"
 #include "proc/exec.h"
@@ -102,6 +103,12 @@ static void io_init(void) {
 
   // Create a TTY device.
   g_tty_dev = tty_create(ld);
+
+  if (ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    // Create the legacy serial port.
+    apos_dev_t serial_tty;
+    u16550_create_legacy(&serial_tty);
+  }
 }
 
 static void init_trampoline(void* arg) {
