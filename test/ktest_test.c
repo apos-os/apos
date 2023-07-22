@@ -22,6 +22,29 @@ char* inc_char(char* x) {
   return x;
 }
 
+static void multiline_test(void) {
+  KTEST_BEGIN("KEXPECT_MULTILINE_STREQ(): SHOULD PASS");
+  KEXPECT_MULTILINE_STREQ("a", "a");
+  KEXPECT_MULTILINE_STREQ("\na", "\na");
+  KEXPECT_MULTILINE_STREQ("a\n", "a\n");
+  KEXPECT_MULTILINE_STREQ("a\nbcd\neee", "a\nbcd\neee");
+
+  KTEST_BEGIN("KEXPECT_MULTILINE_STREQ(): SHOULD FAIL");
+  KEXPECT_MULTILINE_STREQ("a", "b");
+  KEXPECT_MULTILINE_STREQ("", "a");
+  KEXPECT_MULTILINE_STREQ("\n", "\n\n");
+  KEXPECT_MULTILINE_STREQ("\n", "a");
+  KEXPECT_MULTILINE_STREQ("\n", "");
+  KEXPECT_MULTILINE_STREQ("a\nA", "a\nB");
+  KEXPECT_MULTILINE_STREQ("a\nA\n", "a\nB\n");
+  KEXPECT_MULTILINE_STREQ("a\nb\nc\nd\ne", "a\nB\nC\nD\nE");
+  KEXPECT_MULTILINE_STREQ("a\nb\nc\nd\ne", "a\nB\nc\nd\nE");
+  KEXPECT_MULTILINE_STREQ("ab\ncd\ne", "ab\ncd\nef");
+  KEXPECT_MULTILINE_STREQ("ab\ncd\ne", "ab\ncd\ne\n");
+  KEXPECT_MULTILINE_STREQ("ab\ncd\ne\n", "ab\ncd\ne");
+  KEXPECT_MULTILINE_STREQ("ab\ncd\ne\n", "ab\ncd\nE\n");
+}
+
 void ktest_test(void) {
   KTEST_SUITE_BEGIN("ktest");
 
@@ -100,6 +123,8 @@ void ktest_test(void) {
   buf[1] = '\0';
   KEXPECT_STREQ("b", inc_char(buf));
   KEXPECT_STREQ("b", buf);
+
+  multiline_test();
 }
 
 void kassert_test(void) {

@@ -44,6 +44,10 @@ void kexpect_int(const char* name, const char* file, const char* line,
                  long result, const char* opstr, kexpect_print_t a_type,
                  kexpect_print_t b_type);
 
+void kexpect_multiline_streq(const char* file, const char* line,
+                             const char* astr, const char* bstr,
+                             const char* aval, const char* bval);
+
 #define PRINT_TYPE(expr) \
     _Generic((expr), \
              char: PRINT_SIGNED, \
@@ -67,6 +71,8 @@ void kexpect_int(const char* name, const char* file, const char* line,
              __FILE__, STR(__LINE__));                                        \
   } while (0)
 
+// TODO(aoates): examine if using typeof(a) for b below can causue problems like
+// when they are string types (e.g. typeof("\n") --> char[2], not const char*).
 #define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr)                \
   do {                                                                 \
     typeof(a) aval = a;                                                \
@@ -93,6 +99,13 @@ void kexpect_int(const char* name, const char* file, const char* line,
 
 #define KEXPECT_FALSE(b) \
   KEXPECT_INT_("KEXPECT_FALSE", "false", #b, false, ((bool)(b)), ==, " != ")
+
+#define KEXPECT_MULTILINE_STREQ(a, b)                                     \
+  do {                                                                    \
+    const char* aval = a;                                                 \
+    const char* bval = b;                                                 \
+    kexpect_multiline_streq(__FILE__, STR(__LINE__), #a, #b, aval, bval); \
+  } while (0)
 
 // Initialize the testing framework.
 void ktest_begin_all(void);
