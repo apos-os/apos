@@ -167,6 +167,10 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   meminfo->kernel_page_directory = rsv_get_hart_as();
 }
 
+static void dtb_klog(void* arg, const char* s) {
+  klog(s);
+}
+
 // Glue function in between 'all-physical' setup code and 'all-virtual' kernel
 // code.  Tears down temporary mappings set up by paging initialization and
 // finishes transfer to fully-virtual memory space.
@@ -180,7 +184,7 @@ void kinit(int hart_id, phys_addr_t fdt_phys, phys_addr_t stack_base) {
   klog("Booting APOS on riscv64\n");
 
   const void* fdt = (const void*)init_phys2virt(fdt_phys);
-  if (dtfdt_print(fdt, true, &klog) != 0) {
+  if (dtfdt_print(fdt, true, &dtb_klog, NULL) != 0) {
     die("Bad FDT passed in");
   }
 

@@ -241,6 +241,7 @@ dtfdt_parse_result_t dtfdt_parse(const void* fdt, const dtfdt_parse_cbs_t* cbs,
 
 typedef struct {
   dtfdt_sink_t sink;
+  void* cbarg;
   int indent;
 
   // Whether to put a spacer before the next node.
@@ -256,12 +257,12 @@ void fdt_printf(fdt_print_state_t* state, const char* fmt, ...) {
   kvsprintf(state->buf, fmt, args);
   va_end(args);
 
-  state->sink(state->buf);
+  state->sink(state->cbarg, state->buf);
 }
 
 static void print_indent(const fdt_print_state_t* state) {
   for (int i = 0; i < state->indent * 2; ++i) {
-    state->sink(" ");
+    state->sink(state->cbarg, " ");
   }
 }
 
@@ -356,7 +357,7 @@ bool print_node_begin_cb(const char* node_name,
                          const dtfdt_node_context_t* context, void* cbarg) {
   fdt_print_state_t* state = (fdt_print_state_t*)cbarg;
   if (state->space_next_node) {
-    state->sink("\n");
+    state->sink(state->cbarg, "\n");
   }
   print_indent(state);
   if (*node_name != '\0') {  // Don't print a space for root node.
@@ -373,7 +374,7 @@ bool print_node_end_cb(const char* node_name, void* cbarg) {
   fdt_print_state_t* state = (fdt_print_state_t*)cbarg;
   state->indent--;
   print_indent(state);
-  state->sink("}\n");
+  state->sink(state->cbarg, "}\n");
   state->space_next_node = true;
   return true;
 }
@@ -385,14 +386,16 @@ bool print_node_prop_cb(const char* prop_name, const void* prop_val,
   print_indent(state);
   fdt_printf(state, "%s = ", prop_name);
   print_propval(state, context, prop_name, prop_val, val_len);
-  state->sink("\n");
+  state->sink(state->cbarg, "\n");
   state->space_next_node = true;
   return true;
 }
 
-int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink) {
+int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink,
+                void* cbarg) {
   fdt_print_state_t state;
   state.sink = sink;
+  state.cbarg = cbarg;
   state.indent = 0;
   state.space_next_node = false;
 

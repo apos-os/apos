@@ -41,9 +41,10 @@ typedef fdt_header_t fdt_header_t_bige;
 // header struct.
 int dtfdt_validate(const void* buf, fdt_header_t* header);
 
-typedef void(*dtfdt_sink_t)(const char*);
+typedef void(*dtfdt_sink_t)(void* arg, const char*);
 // Prints the given FDT (in DTB form), using the given function as a sink.
-int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink);
+int dtfdt_print(const void* fdt, bool print_header, dtfdt_sink_t sink,
+                void* cbarg);
 
 // Context for a parsed node, with the #address-cells and #size-cells properties
 // of the node's _parent_.
