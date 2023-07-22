@@ -39,7 +39,8 @@ int kmemcmp(const void* s1, const void* s2, size_t n);
 char* kstrcpy(char* dst, const char* src);
 char* kstrncpy(char* dst, const char* src, size_t n);
 
-char *kstrcat(char *dest, const char *src);
+char* kstrcat(char* dest, const char* src);
+size_t kstrlcat(char* dest, const char* src, size_t dest_size);
 
 const char* kitoa(long x);
 const char* kitoa_r(long x, char* buf, size_t len);

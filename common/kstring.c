@@ -120,14 +120,31 @@ char* kstrncpy(char* dst, const char* src, size_t n) {
 }
 
 char* kstrcat(char* dst, const char* src) {
-  char* dst_orig = dst;
-  const int len = kstrlen(dst);
-  dst += len;
-  while (*src) {
-    *(dst++) = *(src++);
+  kstrlcat(dst, src, SIZE_MAX);  // Insecure!
+  return dst;
+}
+
+size_t kstrlcat(char* dst, const char* src, size_t dst_size) {
+  size_t copied = 0;
+  // Find the end of the existing dst string (up to dst_size).
+  while (dst[copied] != '\0' && copied + 1 < dst_size) {
+    copied++;
   }
-  *dst = '\0';
-  return dst_orig;
+  // To handle the case of 'dst' being an invalid string (not terminated).
+  if (copied + 1 < dst_size) {
+    // Copy until we run out of source or buffer (leaving room for NULL).
+    while (*src && copied + 1 < dst_size) {
+      dst[copied++] = *(src++);
+    }
+    dst[copied] = '\0';
+  }
+  // Find the end of src for the return value.
+  while (*src) {
+    src++;
+    copied++;
+  }
+  // Return length of string we would have copied given room.
+  return copied;
 }
 
 static unsigned long abs(long x) {

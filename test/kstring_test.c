@@ -407,6 +407,36 @@ static void kstring_prefix_test(void) {
   KEXPECT_FALSE(kstr_startswith("abc", "abC"));
 }
 
+static void kstrlcat_test(void) {
+  KTEST_BEGIN("kstrlcat() test");
+  size_t kBufLen = 10;
+  char buf[kBufLen * 2];
+  kmemset(buf, '%', kBufLen * 2);
+  buf[0] = buf[kBufLen * 2 - 1] = '\0';
+  KEXPECT_EQ(3, kstrlcat(buf, "abc", kBufLen));
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ('%', buf[10]);
+  KEXPECT_EQ(7, kstrlcat(buf, "1234", kBufLen));
+  KEXPECT_STREQ("abc1234", buf);
+  KEXPECT_EQ(13, kstrlcat(buf, "ABCDEF", kBufLen));
+  KEXPECT_STREQ("abc1234AB", buf);
+  KEXPECT_EQ(15, kstrlcat(buf, "xyz987", kBufLen));
+  KEXPECT_STREQ("abc1234AB", buf);
+  KEXPECT_EQ('%', buf[10]);
+
+  KTEST_BEGIN("kstrlcat() zero dest_size");
+  KEXPECT_EQ(6, kstrlcat(buf, "xyz987", 0));
+  // It should not have null-terminated at index 0.
+  KEXPECT_STREQ("abc1234AB", buf);
+  KEXPECT_EQ(6, kstrlcat(buf, "xyz987", 1));
+  KEXPECT_STREQ("abc1234AB", buf);
+
+  KTEST_BEGIN("kstrlcat() dst longer than dest_size");
+  KEXPECT_EQ(8, kstrlcat(buf, "xyz987", 3));
+  // It should not have null-terminated.
+  KEXPECT_STREQ("abc1234AB", buf);
+}
+
 void kstring_test(void) {
   KTEST_SUITE_BEGIN("kstring");
 
@@ -418,5 +448,6 @@ void kstring_test(void) {
   kstring_testE();
   kstring_testF();
   kstring_prefix_test();
+  kstrlcat_test();
   kfree(buf);
 }
