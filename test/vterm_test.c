@@ -679,22 +679,72 @@ static void ansi_save_cursor_test(video_t* video, vterm_t* vt) {
 }
 
 static void newline_test(video_t* video, vterm_t* vt) {
-  KTEST_BEGIN("vterm: newline handling test");
+  KTEST_BEGIN("vterm: newline (CRLF) handling test");
   vterm_clear(vt);
-  do_vterm_puts(vt, "abc\nde\n\nf");
+  do_vterm_puts(vt, "abc\r\nde\r\n\r\nf");
   KEXPECT_STREQ("abc       ", get_line(video, 0));
   KEXPECT_STREQ("de        ", get_line(video, 1));
   KEXPECT_STREQ("          ", get_line(video, 2));
   KEXPECT_STREQ("f         ", get_line(video, 3));
 
+  KTEST_BEGIN("vterm: reverse-newline (LFCR) handling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\n\rde\n\r\n\rf");
+  KEXPECT_STREQ("abc       ", get_line(video, 0));
+  KEXPECT_STREQ("de        ", get_line(video, 1));
+  KEXPECT_STREQ("          ", get_line(video, 2));
+  KEXPECT_STREQ("f         ", get_line(video, 3));
+
+  KTEST_BEGIN("vterm: CR (no LF) handling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\r\ndef\rhi");
+  KEXPECT_STREQ("abc       ", get_line(video, 0));
+  KEXPECT_STREQ("hif       ", get_line(video, 1));
+  KEXPECT_STREQ("          ", get_line(video, 2));
+
+  KTEST_BEGIN("vterm: LF (no CR) handling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\r\ndef\nhi");
+  KEXPECT_STREQ("abc       ", get_line(video, 0));
+  KEXPECT_STREQ("def       ", get_line(video, 1));
+  KEXPECT_STREQ("   hi     ", get_line(video, 2));
+
   KTEST_BEGIN("vterm: newline scrolling test");
   vterm_clear(vt);
-  do_vterm_puts(vt, "abc\nde\n\nfg\nh\ni");
+  do_vterm_puts(vt, "abc\r\nde\r\n\r\nfg\r\nh\r\ni");
   KEXPECT_STREQ("de        ", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
   KEXPECT_STREQ("fg        ", get_line(video, 2));
   KEXPECT_STREQ("h         ", get_line(video, 3));
   KEXPECT_STREQ("i         ", get_line(video, 4));
+
+  KTEST_BEGIN("vterm: reverse newline scrolling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\r\nde\r\n\r\nfg\r\nh\n\ri");
+  KEXPECT_STREQ("de        ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  KEXPECT_STREQ("fg        ", get_line(video, 2));
+  KEXPECT_STREQ("h         ", get_line(video, 3));
+  KEXPECT_STREQ("i         ", get_line(video, 4));
+
+  KTEST_BEGIN("vterm: CR (no LF) [not] scrolling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\r\nde\r\n\r\nfg\r\nhij\rA");
+  KEXPECT_STREQ("abc       ", get_line(video, 0));
+  KEXPECT_STREQ("de        ", get_line(video, 1));
+  KEXPECT_STREQ("          ", get_line(video, 2));
+  KEXPECT_STREQ("fg        ", get_line(video, 3));
+  KEXPECT_STREQ("Aij       ", get_line(video, 4));  // Shouldn't scroll.
+
+
+  KTEST_BEGIN("vterm: LF (no CR) scrolling test");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "abc\r\nde\r\n\r\nfg\r\nhi\nj");
+  KEXPECT_STREQ("de        ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  KEXPECT_STREQ("fg        ", get_line(video, 2));
+  KEXPECT_STREQ("hi        ", get_line(video, 3));
+  KEXPECT_STREQ("  j       ", get_line(video, 4));
 }
 
 static void backspace_test(video_t* video, vterm_t* vt) {
@@ -733,7 +783,7 @@ static void backspace_test(video_t* video, vterm_t* vt) {
 static void implicit_scroll_test(video_t* video, vterm_t* vt) {
   KTEST_BEGIN("vterm: wrapping scroll test");
   vterm_clear(vt);
-  do_vterm_puts(vt, "abcd\n\n\n\n");
+  do_vterm_puts(vt, "abcd\r\n\r\n\r\n\r\n");
   do_vterm_puts(vt, "0123456789ABCDE");
   KEXPECT_STREQ("          ", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
@@ -802,7 +852,76 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(10, x);
   KEXPECT_EQ(0, y);
   // TODO(aoates): verify video cursor position.
+  do_vterm_puts(vt, "\r\n");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(1, y);
+  do_vterm_puts(vt, "A");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("A         ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(1, y);
+
+
+  // As above, but test CR and NL independently.
+  KTEST_BEGIN("vterm: CR while on right margin");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(0, y);
+  do_vterm_puts(vt, "\r");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(0, y);
+  do_vterm_puts(vt, "A");
+  KEXPECT_STREQ("A123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(0, y);
+
+
+  KTEST_BEGIN("vterm: NL (no CR) while on right margin");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(0, y);
   do_vterm_puts(vt, "\n");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(1, y);
+  do_vterm_puts(vt, "A");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  KEXPECT_STREQ("A         ", get_line(video, 2));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(1, x);
+  KEXPECT_EQ(2, y);
+
+
+  // This is unlkely, but make sure the semantics and result are right anyway.
+  KTEST_BEGIN("vterm: reverse-newline (LFCR) while on right margin");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "0123456789");
+  KEXPECT_STREQ("0123456789", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 1));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(0, y);
+  do_vterm_puts(vt, "\n\r");
   KEXPECT_STREQ("0123456789", get_line(video, 0));
   KEXPECT_STREQ("          ", get_line(video, 1));
   vterm_get_cursor(vt, &x, &y);
@@ -818,7 +937,7 @@ static void wrap_test(video_t* video, vterm_t* vt) {
 
   KTEST_BEGIN("vterm: backspace across silent right margin newline");
   vterm_clear(vt);
-  do_vterm_puts(vt, "0123456789\n");
+  do_vterm_puts(vt, "0123456789\r\n");
   vterm_get_cursor(vt, &x, &y);
   KEXPECT_EQ(0, x);
   KEXPECT_EQ(1, y);
@@ -835,7 +954,7 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   // Test that we don't scroll when we hit the last character of the last line.
   KTEST_BEGIN("vterm: doesn't scroll on last letter");
   vterm_clear(vt);
-  do_vterm_puts(vt, "x\ny\nz\n\n0123456789");
+  do_vterm_puts(vt, "x\r\ny\r\nz\r\n\r\n0123456789");
   KEXPECT_STREQ("x         ", get_line(video, 0));
   KEXPECT_STREQ("0123456789", get_line(video, 4));
 
@@ -856,7 +975,7 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   // As above, but typing a newline.
   KTEST_BEGIN("vterm: newline scroll on last letter");
   vterm_clear(vt);
-  do_vterm_puts(vt, "x\ny\nz\n\n0123456789");
+  do_vterm_puts(vt, "x\r\ny\r\nz\r\n\r\n0123456789");
   KEXPECT_STREQ("x         ", get_line(video, 0));
   KEXPECT_STREQ("0123456789", get_line(video, 4));
 
@@ -865,12 +984,69 @@ static void wrap_test(video_t* video, vterm_t* vt) {
   KEXPECT_EQ(10, x);
   KEXPECT_EQ(4, y);
   // TODO(aoates): verify video cursor position.
-  do_vterm_puts(vt, "\n");
+  do_vterm_puts(vt, "\r\n");
   KEXPECT_STREQ("y         ", get_line(video, 0));
   KEXPECT_STREQ("0123456789", get_line(video, 3));
   KEXPECT_STREQ("          ", get_line(video, 4));
   vterm_get_cursor(vt, &x, &y);
   KEXPECT_EQ(0, x);
+  KEXPECT_EQ(4, y);
+
+
+  KTEST_BEGIN("vterm: reverse-newline scroll on last letter");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "x\r\ny\r\nz\r\n\r\n0123456789");
+  KEXPECT_STREQ("x         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 4));
+
+  // The cursor should be on the right margin.
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(4, y);
+  do_vterm_puts(vt, "\n\r");
+  KEXPECT_STREQ("y         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 3));
+  KEXPECT_STREQ("          ", get_line(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(4, y);
+
+
+  KTEST_BEGIN("vterm: CR (no LF) scroll on last letter");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "x\r\ny\r\nz\r\n\r\n0123456789");
+  KEXPECT_STREQ("x         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 4));
+
+  // The cursor should be on the right margin.
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(4, y);
+  do_vterm_puts(vt, "\r");
+  KEXPECT_STREQ("x         ", get_line(video, 0));
+  KEXPECT_STREQ("          ", get_line(video, 3));
+  KEXPECT_STREQ("0123456789", get_line(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(0, x);
+  KEXPECT_EQ(4, y);
+
+
+  KTEST_BEGIN("vterm: LF (no CR) scroll on last letter");
+  vterm_clear(vt);
+  do_vterm_puts(vt, "x\r\ny\r\nz\r\n\r\n0123456789");
+  KEXPECT_STREQ("x         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 4));
+
+  // The cursor should be on the right margin.
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
+  KEXPECT_EQ(4, y);
+  do_vterm_puts(vt, "\n");
+  KEXPECT_STREQ("y         ", get_line(video, 0));
+  KEXPECT_STREQ("0123456789", get_line(video, 3));
+  KEXPECT_STREQ("          ", get_line(video, 4));
+  vterm_get_cursor(vt, &x, &y);
+  KEXPECT_EQ(10, x);
   KEXPECT_EQ(4, y);
 }
 

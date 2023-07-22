@@ -501,7 +501,7 @@ static void termios_test(void) {
   const struct ktermios orig_term = t;
 
   KEXPECT_EQ(0, t.c_iflag);
-  KEXPECT_EQ(0, t.c_oflag);
+  KEXPECT_EQ(ONLCR, t.c_oflag);
   KEXPECT_EQ(CS8, t.c_cflag);
   KEXPECT_EQ(ECHO | ECHOE | ECHOK | ICANON | ISIG, t.c_lflag);
 
@@ -1197,6 +1197,25 @@ static void drain_and_flush_test(void) {
   KEXPECT_EQ(-EINVAL, ld_flush(g_ld, 8));
 }
 
+static void oflag_newline_test(void) {
+  KTEST_BEGIN("ld: disabling ONLCR");
+  reset();
+  ld_write(g_ld, "ab\nc", 5);
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("ab\r\nc", g_sink);
+
+  reset_sink();
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
+  ld_get_termios(g_ld, &t);
+
+  t.c_oflag &= ~ONLCR;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
+  ld_write(g_ld, "ab\nc", 5);
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("ab\nc", g_sink);
+}
+
 // TODO(aoates): more tests to write:
 //  1) interrupt-masking test (provide() from a timer interrupt and
 //  simultaneously read).
@@ -1229,6 +1248,7 @@ void ld_test(void) {
   change_control_char_test();
   set_attr_when_test();
   drain_and_flush_test();
+  oflag_newline_test();
 
   ld_destroy(g_ld);
   g_ld = NULL;

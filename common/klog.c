@@ -89,6 +89,8 @@ static void klog_puts(const char* s) {
         break;
 
       case KLOG_VTERM:
+        if (s[i] == '\n')
+          vterm_putc(g_klog_vterm, '\r');
         vterm_putc(g_klog_vterm, s[i]);
         break;
     }

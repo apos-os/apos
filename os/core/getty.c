@@ -35,7 +35,7 @@ static int setup_tty(int fd) {
 
   // TODO(aoates): consolidate this with the version in ld.c.
   t.c_iflag = 0;
-  t.c_oflag = 0;
+  t.c_oflag = ONLCR;
   t.c_cflag = CS8;
   t.c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG;
 

@@ -33,6 +33,10 @@
 #include "user/include/apos/vfs/vfs.h"
 #include "vfs/poll.h"
 
+// TODO(aoates): I think per the spec this should just _ignore_ unsupported
+// flags rather than reject them.
+#define SUPPORTED_OFLAGS (ONLCR)
+
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
   // raw}_idx, which refer to the first character, the end of the cooked region,
@@ -58,9 +62,10 @@ struct ld {
   poll_event_t poll_event;
 };
 
+// Note: keep this in sync with the version in getty.c.
 static void set_default_termios(struct ktermios* t) {
   t->c_iflag = 0;
-  t->c_oflag = 0;
+  t->c_oflag = ONLCR;
   t->c_cflag = CS8;
   t->c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG;
 
@@ -396,7 +401,14 @@ int ld_write(ld_t* l, const char* buf, int n) {
   }
 
   for (int i = 0; i < n; ++i) {
-    l->sink(l->sink_arg, buf[i]);
+    // TODO(aoates): do we need to apply oflag in ld_term_putc as well?  Should
+    // we be using that here, or is that only for echoed characters?
+    if (buf[i] == '\n' && l->termios.c_oflag & ONLCR) {
+      l->sink(l->sink_arg, '\r');
+      l->sink(l->sink_arg, '\n');
+    } else {
+      l->sink(l->sink_arg, buf[i]);
+    }
   }
 
   return n;
@@ -438,7 +450,8 @@ void ld_get_termios(const ld_t* l, struct ktermios* t) {
 }
 
 int ld_set_termios(ld_t* l, int optional_actions, const struct ktermios* t) {
-  if (t->c_iflag != 0 || t->c_oflag != 0 || t->c_cflag != CS8)
+  if (t->c_iflag != 0 || ((t->c_oflag & ~SUPPORTED_OFLAGS) != 0) ||
+      t->c_cflag != CS8)
     return -EINVAL;
 
   if (t->c_cc[VEOL] != _POSIX_VDISABLE || t->c_cc[VKILL] != _POSIX_VDISABLE ||
