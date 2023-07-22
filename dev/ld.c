@@ -174,8 +174,10 @@ static inline int char_term_len(char c) {
 
 // Send a character to terminal, translating it if necessary.  erased_char is
 // the character erased from the buffer, if any.
-static void ld_term_putc(const ld_t* l, char c, char erased_char) {
-  if (c == '\x7f' && l->termios.c_lflag & ICANON &&
+static void ld_term_putc(const ld_t* l, char c, char erased_char,
+                         bool is_echo) {
+  // TODO(aoates): use ECHOCTL.
+  if (is_echo && c == '\x7f' && l->termios.c_lflag & ICANON &&
       l->termios.c_lflag & ECHOE) {
     KASSERT_DBG(erased_char > 0);
     for (int i = 0; i < char_term_len(erased_char); ++i) {
@@ -183,7 +185,10 @@ static void ld_term_putc(const ld_t* l, char c, char erased_char) {
       l->sink(l->sink_arg, ' ');
       l->sink(l->sink_arg, '\b');
     }
-  } else if (is_ctrl(c)) {
+  } else if (c == '\n' && l->termios.c_oflag & ONLCR) {
+    l->sink(l->sink_arg, '\r');
+    l->sink(l->sink_arg, '\n');
+  } else if (is_echo && is_ctrl(c)) {
     l->sink(l->sink_arg, '^');
     l->sink(l->sink_arg, (c + '@') & 0x7f);
   } else {
@@ -206,6 +211,7 @@ void ld_provide(ld_t* l, char c) {
 
   int echo = (l->termios.c_lflag & ECHO);
   char erased_char = 0;
+  char echo_char = c;  // The character to be echoed.
   bool handled = false;
   if (l->termios.c_lflag & ICANON) {
     if (c == '\x7f') {
@@ -236,7 +242,12 @@ void ld_provide(ld_t* l, char c) {
     switch (c) {
       case '\r':
         // TODO(aoates): obey ICRNL.
-        c = '\n';
+        c = '\n';  // Treat as a newline.
+        // If ONLCR, send '\n' to ld_term_putc(), which will expand to \r\n.
+        // Otherwise echo the literal '\r' back out.
+        if (l->termios.c_oflag & ONLCR) {
+          echo_char = '\n';
+        }
         // Fall through.
 
       case '\n':
@@ -253,7 +264,7 @@ void ld_provide(ld_t* l, char c) {
 
   // Echo it to the screen.
   if (echo) {
-    ld_term_putc(l, c, erased_char);
+    ld_term_putc(l, echo_char, erased_char, /* is_echo */ true);
   }
 
   // Cook the buffer, optionally.
@@ -401,14 +412,7 @@ int ld_write(ld_t* l, const char* buf, int n) {
   }
 
   for (int i = 0; i < n; ++i) {
-    // TODO(aoates): do we need to apply oflag in ld_term_putc as well?  Should
-    // we be using that here, or is that only for echoed characters?
-    if (buf[i] == '\n' && l->termios.c_oflag & ONLCR) {
-      l->sink(l->sink_arg, '\r');
-      l->sink(l->sink_arg, '\n');
-    } else {
-      l->sink(l->sink_arg, buf[i]);
-    }
+    ld_term_putc(l, buf[i], ' ', /* is_echo */ false);
   }
 
   return n;

@@ -809,8 +809,8 @@ static void control_chars_test(void) {
   ld_provide(g_ld, '\t');
   ld_provide(g_ld, '\v');
 
-  KEXPECT_EQ(4, g_sink_idx);
-  KEXPECT_STREQ(" \n\t\v", g_sink);
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ(" \r\n\t\v", g_sink);
 
   ld_provide(g_ld, '\x04');
   kmemset(buf, 0, 50);
@@ -875,6 +875,26 @@ static void control_chars_test(void) {
   KEXPECT_EQ(7, g_sink_idx);
   KEXPECT_STREQ("a^Cc\b \b", g_sink);
   KEXPECT_EQ(-EAGAIN, ld_read_async(g_ld, buf, 10));
+}
+
+static void write_control_chars_test(void) {
+  KTEST_BEGIN("ld: writing non-special control characters");
+  reset();
+  KEXPECT_EQ(4, ld_write(g_ld, "x\x01\x02\x08", 4));
+  KEXPECT_EQ(4, g_sink_idx);
+  KEXPECT_STREQ("x\x01\x02\x08", g_sink);
+
+  KTEST_BEGIN("ld: writing space control characters");
+  reset();
+  KEXPECT_EQ(4, ld_write(g_ld, " \n\t\v", 4));
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ(" \r\n\t\v", g_sink);
+
+  KTEST_BEGIN("ld: writing signal-causing characters");
+  reset();
+  KEXPECT_EQ(3, ld_write(g_ld, "\x03\x1a\x1c", 3));
+  KEXPECT_EQ(3, g_sink_idx);
+  KEXPECT_STREQ("\x03\x1a\x1c", g_sink);
 }
 
 static void noflsh_test(void) {
@@ -1036,8 +1056,8 @@ static void echonl_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "ab\nc\x04");
-  KEXPECT_EQ(4, g_sink_idx);
-  KEXPECT_STREQ("ab\nc", g_sink);
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("ab\r\nc", g_sink);
 
   char buf[10];
   kmemset(buf, 0, 10);
@@ -1053,8 +1073,9 @@ static void echonl_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "ab\nc\x04");
-  KEXPECT_EQ(1, g_sink_idx);
-  KEXPECT_EQ('\n', g_sink[0]);
+  KEXPECT_EQ(2, g_sink_idx);
+  KEXPECT_EQ('\r', g_sink[0]);
+  KEXPECT_EQ('\n', g_sink[1]);
 
   kmemset(buf, 0, 10);
   KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
@@ -1069,8 +1090,8 @@ static void echonl_test(void) {
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
 
   ld_provides(g_ld, "ab\nc");
-  KEXPECT_EQ(4, g_sink_idx);
-  KEXPECT_STREQ("ab\nc", g_sink);
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("ab\r\nc", g_sink);
   kmemset(buf, 0, 10);
   KEXPECT_EQ(4, ld_read(g_ld, buf, 10, 0));
   KEXPECT_STREQ("ab\nc", buf);
@@ -1200,8 +1221,8 @@ static void drain_and_flush_test(void) {
 static void oflag_newline_test(void) {
   KTEST_BEGIN("ld: disabling ONLCR");
   reset();
-  ld_write(g_ld, "ab\nc", 5);
-  KEXPECT_EQ(6, g_sink_idx);
+  ld_write(g_ld, "ab\nc", 4);
+  KEXPECT_EQ(5, g_sink_idx);
   KEXPECT_STREQ("ab\r\nc", g_sink);
 
   reset_sink();
@@ -1211,8 +1232,8 @@ static void oflag_newline_test(void) {
 
   t.c_oflag &= ~ONLCR;
   KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
-  ld_write(g_ld, "ab\nc", 5);
-  KEXPECT_EQ(5, g_sink_idx);
+  ld_write(g_ld, "ab\nc", 4);
+  KEXPECT_EQ(4, g_sink_idx);
   KEXPECT_STREQ("ab\nc", g_sink);
 }
 
@@ -1228,8 +1249,34 @@ static void input_cr_test(void) {
   int read_len = ld_read_async(g_ld, buf, 100);
   KEXPECT_EQ(4, read_len);
   buf[read_len] = '\0';
+  // The \r should be translated to \n in the cooked buffer.
   KEXPECT_STREQ("abc\n", buf);
+  // ...and should be echoed as '\r\n' back to the terminal.
+  KEXPECT_EQ(5, g_sink_idx);
+  KEXPECT_STREQ("abc\r\n", g_sink);
 
+  // Try again with ONLCR disable.
+  reset();
+  struct ktermios t;
+  kmemset(&t, 0xFF, sizeof(struct ktermios));
+  ld_get_termios(g_ld, &t);
+  t.c_oflag &= ~ONLCR;
+  KEXPECT_EQ(0, ld_set_termios(g_ld, TCSANOW, &t));
+
+  ld_provide(g_ld, 'A');
+  ld_provide(g_ld, 'B');
+  ld_provide(g_ld, 'C');
+  ld_provide(g_ld, '\r');
+  read_len = ld_read_async(g_ld, buf, 100);
+  KEXPECT_EQ(4, read_len);
+  buf[read_len] = '\0';
+  // The \r should still be translated to \n as input.
+  KEXPECT_STREQ("ABC\n", buf);
+  // ...but NOT when echoed.
+  KEXPECT_EQ(4, g_sink_idx);
+  KEXPECT_STREQ("ABC\r", g_sink);
+
+  reset();
   ld_provide(g_ld, '1');
   ld_provide(g_ld, '2');
   ld_provide(g_ld, '3');
@@ -1239,6 +1286,8 @@ static void input_cr_test(void) {
   KEXPECT_EQ(5, read_len);
   buf[read_len] = '\0';
   KEXPECT_STREQ("123\f\n", buf);
+  KEXPECT_EQ(6, g_sink_idx);
+  KEXPECT_STREQ("123\f\r\n", g_sink);
 }
 
 // TODO(aoates): more tests to write:
@@ -1267,6 +1316,7 @@ void ld_test(void) {
   termios_noncanon_read_test();
   termios_noncanon_test();
   control_chars_test();
+  write_control_chars_test();
   echoe_test();
   echonl_test();
   noflsh_test();
