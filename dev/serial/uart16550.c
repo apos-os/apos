@@ -16,7 +16,10 @@
 #include "arch/dev/irq.h"
 #include "common/circbuf.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "dev/char_dev.h"
+#include "dev/devicetree/devicetree.h"
+#include "dev/devicetree/interrupts.h"
 #include "dev/interrupts.h"
 #include "dev/io.h"
 #include "dev/ld.h"
@@ -133,4 +136,48 @@ int u16550_create_legacy(apos_dev_t* dev) {
   uart->io.base = LEGACY_COM1_IOPORT_BASE;
   uart->interrupt = LEGACY_COM1_INTERRUPT;
   return u16550_create_internal(uart, dev);
+}
+
+int u16550_create(const dt_tree_t* tree, const dt_node_t* dtnode,
+                  apos_dev_t* dev_out) {
+  // TODO(aoates): handle 'compatible' properly (as a list).
+  const dt_property_t* prop = dt_get_prop(dtnode, "compatible");
+  if (!prop || kstrcmp(prop->val, "ns16550a") != 0) {
+    return -EINVAL;
+  }
+
+  u16550_t* uart = (u16550_t*)kmalloc(sizeof(u16550_t));
+  if (!uart) {
+    return -ENOMEM;
+  }
+
+  const size_t kMaxInts = 5;
+  dt_interrupt_t interrupts[kMaxInts];
+  int result = dtint_extract(tree, dtnode, interrupts, kMaxInts);
+  if (result < 0) {
+    char buf[100];
+    dt_print_path(dtnode, buf, 100);
+    klogfm(KL_GENERAL, WARNING,
+           "Warning: unable to get interrupt information from %s\n", buf);
+    return -EINVAL;
+  }
+
+  if (result > 1) {
+    klogfm(
+        KL_GENERAL, WARNING,
+        "Warning: UART has multiple interrupts, ignoring all but the first\n");
+  }
+  dt_interrupt_t mapped;
+  if (dtint_map(tree, dtnode, &interrupts[0], arch_irq_root(), &mapped)) {
+    klogfm(KL_GENERAL, WARNING,
+           "Warning: unable to map UART interrupt into root controller\n");
+    return -EINVAL;
+  }
+  irq_t irq = dtint_flatten(&mapped);
+
+  // TODO(aoates): make this /dev/ttyS rather than /dev/tty.
+  uart->io.type = IO_MEMORY;
+  uart->io.base = phys2virt(katou_hex(dt_get_unit(dtnode)));
+  uart->interrupt = irq;
+  return u16550_create_internal(uart, dev_out);
 }

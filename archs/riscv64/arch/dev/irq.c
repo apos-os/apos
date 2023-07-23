@@ -129,3 +129,7 @@ void rsv_external_interrupt(void) {
     irq = io_read32(g_plic_io, claim_reg);
   }
 }
+
+const dt_node_t* arch_irq_root(void) {
+  return find_plic();
+}

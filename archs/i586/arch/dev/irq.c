@@ -131,3 +131,7 @@ static void irq_handler(uint32_t interrupt, uint32_t error, bool is_user) {
     }
   }
 }
+
+const dt_node_t* arch_irq_root(void) {
+  die("No devicetree supported on x86\n");
+}

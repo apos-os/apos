@@ -18,8 +18,13 @@
 #define APOO_DEV_SERIAL_UART16550_H
 
 #include "dev/dev.h"
+#include "dev/devicetree/devicetree.h"
 
 // Create a TTY chardev using the legacy PC COM1 IO ports.
 int u16550_create_legacy(apos_dev_t* dev);
+
+// Create a TTY from a devicetree node.
+int u16550_create(const dt_tree_t* tree, const dt_node_t* dtnode,
+                  apos_dev_t* dev_out);
 
 #endif
