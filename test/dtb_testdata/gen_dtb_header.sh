@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Copyright 2023 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,22 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env AposAddSources')
+set -o pipefail
 
-DTS_FILES = [
-  'large_golden.dts',
-  'small_golden.dts',
-]
-
-GEN_SCRIPT = 'gen_dtb_header.sh'
-
-def dts_to_header(target, source, env):
-  return env.Execute('./test/dtb_testdata/gen_dtb_header.sh %s > %s' %
-                     (source[0], target[0].path))
-
-for src in DTS_FILES:
-  target = '#test/dtb_testdata/%s.h' % src
-  env.Depends(target, GEN_SCRIPT)
-  env.Command(target, src, dts_to_header)
-
-Return([])
+dtc -I dts -O dtb $1 \
+  | xxd -i \
+  | cat build/license_template.h -
