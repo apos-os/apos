@@ -42,7 +42,7 @@
 typedef struct {
   // Parameters for talking to the device.
   devio_t io;
-  int interrupt;
+  irq_t interrupt;
 
   // Internal state of the serial device.
   circbuf_t buf;

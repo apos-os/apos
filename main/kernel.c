@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 
+#include "arch/dev/irq.h"
 #include "arch/memory/page_fault.h"
 #include "arch/syscall/init.h"
 #include "common/arch-config.h"
@@ -59,8 +60,6 @@
 #define LD_BUF_SIZE 1024
 
 #define INIT_PATH "/sbin/init"
-
-void pic_init(void);
 
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
@@ -140,8 +139,8 @@ void kmain(const boot_info_t* boot) {
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog("interrupts_init()\n");
   interrupts_init();
-  klog("pic_init()\n");
-  pic_init();
+  klog("arch_irq_init()\n");
+  arch_irq_init();
 
   enable_interrupts();
 

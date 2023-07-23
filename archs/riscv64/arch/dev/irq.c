@@ -13,10 +13,10 @@
 // limitations under the License.
 #include "arch/dev/irq.h"
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
+void register_irq_handler(irq_t irq, irq_handler_t handler, void* arg) {
   // TODO(riscv): implement
 }
 
-void pic_init(void) {
+void arch_irq_init(void) {
   // TODO(riscv): implement
 }
