@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-.set SSTATUS_SIE, 0x2
-.set SSTATUS_SPP, 0x100
+.set SSTATUS_SIE,  0x002
+.set SSTATUS_SPIE, 0x020
+.set SSTATUS_SPP,  0x100
+.set SSTATUS_SAVE_MASK, SSTATUS_SPIE | SSTATUS_SPP
 
 # void enable_interrupts(void)
 .global enable_interrupts
@@ -60,7 +62,6 @@ _int_handlers_start:
 # saved on the stack).
 .global int_handler_asm
 int_handler_asm:
-  # TODO(riscv): handle SPIE properly.
   # TODO(riscv): switch stacks when coming from user mode
   # TODO(riscv): do we need to save sepc/scause/etc?  What if we get a nested
   # trap (for example, a page fault on the stack while pushing context)?
@@ -82,7 +83,6 @@ int_handler_asm:
   # Now save all our other registers.
   # ra: is already stored at 0(sp)
   # sp: no need to store sp again
-  # stack frame needs to be a multiple of 16 bytes, so we waste 8 here.
   sd gp,  0x0010(sp)
   sd tp,  0x0018(sp)
   sd t0,  0x0020(sp)
@@ -113,6 +113,13 @@ int_handler_asm:
   sd t5,  0x00e0(sp)
   sd t6,  0x00e8(sp)
 
+  # Save SPP and SPIE in case we hit another interrupt (e.g. a nested interrupt
+  # [unusual], an interrupt while processing a defint, or do a context switch).
+  # We must not trap above!
+  csrr t0, sstatus
+  andi t0, t0, SSTATUS_SAVE_MASK
+  sd t0, 0x0008(sp)
+
   csrr a0, scause
   csrr a1, stval
   csrr a2, sepc
@@ -120,6 +127,13 @@ int_handler_asm:
   andi a3, a3, SSTATUS_SPP
 
   call int_handler
+
+  # Restore SSTATUS_SPIE and SPP.  Clear them, then set from saved state.
+  # TODO(aoates): write tests that catch all save/restore possibilities.
+  li t0, SSTATUS_SAVE_MASK
+  csrc sstatus, t0
+  ld t0, 0x0008(sp)
+  csrs sstatus, t0
 
   # ra: we'll do ra later.
   # sp: no need to save/restore it
