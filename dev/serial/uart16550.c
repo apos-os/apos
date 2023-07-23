@@ -50,6 +50,7 @@ typedef struct {
   ld_t* ld;
   apos_dev_t cdev;
   kspinlock_intsafe_t lock;
+  bool defint_queued;
 } u16550_t;
 
 static void uart_defint(void* arg);
@@ -57,7 +58,9 @@ static void uart_defint(void* arg);
 static void uart_interrupt(void* arg) {
   u16550_t* uart = (u16550_t*)arg;
   uint8_t status = io_read8(uart->io, U16550_REG_LINE_STATUS);
+  bool data = false;
   while (status & U16550_LSR_DR) {
+    data = true;
     uint8_t data = io_read8(uart->io, U16550_REG_DATA);
     if (circbuf_write(&uart->buf, &data, 1) != 1) {
       klogf("warning: U16550 dropping char (0x%x)\n", data);
@@ -66,7 +69,10 @@ static void uart_interrupt(void* arg) {
     status = io_read8(uart->io, U16550_REG_LINE_STATUS);
   }
 
-  defint_schedule(uart_defint, uart);
+  if (data && !uart->defint_queued) {
+    uart->defint_queued = true;
+    defint_schedule(uart_defint, uart);
+  }
 }
 
 #define DEFINT_BUFSIZE 10
@@ -78,6 +84,7 @@ static void uart_defint(void* arg) {
   do {
     kspin_lock_int(&uart->lock);
     bytes = circbuf_read(&uart->buf, &buf, DEFINT_BUFSIZE);
+    uart->defint_queued = false;  // New data could come in now.
     kspin_unlock_int(&uart->lock);
     for (ssize_t i = 0; i < bytes; ++i) {
       // TODO(aoates): doing this char by char seems bad, should we pass more?
@@ -101,6 +108,7 @@ static void uart_putc(void* arg, char c) {
 static int u16550_create_internal(u16550_t* uart, apos_dev_t* dev) {
   circbuf_init(&uart->buf, &uart->buf_data, BUFLEN);
   uart->lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+  uart->defint_queued = false;
 
   uart->ld = ld_create(LD_BUF_SIZE);
   ld_set_sink(uart->ld, &uart_putc, uart);
