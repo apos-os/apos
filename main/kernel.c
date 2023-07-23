@@ -24,6 +24,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "dev/devicetree/devicetree.h"
 #include "dev/interrupts.h"
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
@@ -79,7 +80,7 @@ static void add_timers(void) {
   }
 }
 
-static void io_init(void) {
+static void legacy_io_init(void) {
   if (!ARCH_SUPPORTS_LEGACY_PC_DEVS) {
     return;
   }
@@ -107,6 +108,47 @@ static void io_init(void) {
     // Create the legacy serial port.
     apos_dev_t serial_tty;
     u16550_create_legacy(&serial_tty);
+  }
+}
+
+// Does a relatively static devicetree-based init, looking for /chosen and
+// assuming stdout-path points at a serial device.
+// TODO(aoates): get bootargs from /chosen and do something with it.
+static void dtree_io_init(void) {
+  const dt_tree_t* dtree = get_boot_info()->dtree;
+  if (!dtree) {
+    die("No devicetree found");
+  }
+
+  const dt_property_t* prop = dt_get_nprop(dtree, "/chosen", "stdout-path");
+  if (!prop) {
+    die("Unable to find /chosen:stdout-path in devicetree");
+  }
+  const char* stdout_path = (const char*)prop->val;
+  // TODO(aoates): make this a common helper (for getting and validating
+  // different types of values from properties).
+  if (stdout_path[prop->val_len - 1] != '\0') {
+    die("Invalid stdout-path string");
+  }
+
+  const dt_node_t* serial = dt_lookup(dtree, stdout_path);
+  if (!serial) {
+    klogfm(KL_GENERAL, FATAL, "Unable to find stdout-path node '%s'\n",
+           stdout_path);
+  }
+  klogf("Found /chosen:stdout-path: '%s', opening as UART\n", stdout_path);
+  int result = u16550_create(dtree, serial, &g_tty_dev);
+  if (result != 0) {
+    klogfm(KL_GENERAL, FATAL, "Unable to open node '%s' as UART\n",
+           stdout_path);
+  }
+}
+
+static void io_init(void) {
+  if (ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    legacy_io_init();
+  } else {
+    dtree_io_init();
   }
 }
 
