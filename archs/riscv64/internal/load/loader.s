@@ -40,6 +40,14 @@ _kstart:
   # Ensure paging is disabled to start.
   csrw satp, zero
 
+  # Set SUM to 1, allowing kernel access to user memory.  This should be fixed,
+  # but requires updating a bunch of code (including test case) to mark/unmark
+  # user-memory access segments.
+  # TODO(aoates): restrict kernel access to user memory by default.
+  li t0, 1
+  slli t0, t0, 18
+  csrs sstatus, t0
+
   # Create an entry for the kernel image (all sections).  Assume it is no more
   # than 1GB is size.  Then link that entry twice, once at the kernel code's
   # physical address, and once at the virtual address.
