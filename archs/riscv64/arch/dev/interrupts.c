@@ -21,6 +21,7 @@
 #include "common/klog.h"
 #include "internal/plic.h"
 #include "memory/vm_page_fault.h"
+#include "proc/defint.h"
 #include "proc/signal/signal.h"
 
 // Interrupt and trap definitions (per values in scause).
@@ -154,6 +155,8 @@ void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
                (int)scause, stval, sepc, (int)is_kernel);
     }
   }
+
+  defint_process_queued();
 
   // TODO(riscv): handle signals, etc
 }
