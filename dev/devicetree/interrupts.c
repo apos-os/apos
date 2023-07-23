@@ -89,3 +89,14 @@ int dtint_extract(const dt_tree_t* tree, const dt_node_t* node,
 
   return num_ints;
 }
+
+int dtint_map(const dt_tree_t* tree, const dt_node_t* node,
+              const dt_interrupt_t* intr, const dt_node_t* root,
+              dt_interrupt_t* intr_out) {
+  // Without support for nexus and maps, this is very simple.
+  if (intr->int_parent != root) {
+    return -EINVAL;
+  }
+  *intr_out = *intr;
+  return 0;
+}

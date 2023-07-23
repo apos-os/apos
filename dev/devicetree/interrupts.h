@@ -38,4 +38,12 @@ irq_t dtint_flatten(const dt_interrupt_t* intr);
 int dtint_extract(const dt_tree_t* tree, const dt_node_t* node,
                   dt_interrupt_t* out_array, size_t max_ints);
 
+// Given a node and an interrupt specifier (which must be an interrupt generated
+// by that node), trace up the interrupt tree to the given root and return the
+// interrupt mapped into the root's domain.  If we cannot reach the root, fails.
+// Returns 0 or -error.
+int dtint_map(const dt_tree_t* tree, const dt_node_t* node,
+              const dt_interrupt_t* intr, const dt_node_t* root,
+              dt_interrupt_t* intr_out);
+
 #endif

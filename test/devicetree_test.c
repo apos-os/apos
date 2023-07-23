@@ -275,13 +275,8 @@ static void name_test(void) {
   KEXPECT_STREQ("c123a", dt_get_unit(&node));
 }
 
-static void intr_test(void) {
+static void intr_test1(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_extract(): basic test");
-  const size_t kBufLen = 10000;
-  void* buf = kmalloc(kBufLen);
-  dt_tree_t* tree = NULL;
-  KEXPECT_EQ(DTFDT_OK, dt_create(kIntTestDtb, &tree, buf, kBufLen));
-
   const dt_node_t* intc_node = dt_lookup(tree, "/soc/int-controller1");
   KEXPECT_NE(NULL, intc_node);
 
@@ -384,6 +379,51 @@ static void intr_test(void) {
   //  - multiple parents with different #interrupt-cells
   //  - interrupts-extended and interrupts both set
   // TODO(aoates): test with an interrupt nexus and interrupt-map (and mask).
+}
+
+static void intr_test2(const dt_tree_t* tree) {
+  KTEST_BEGIN("dtint_map(): basic test");
+  const dt_node_t* intc_node = dt_lookup(tree, "/soc/int-controller1");
+  KEXPECT_NE(NULL, intc_node);
+
+  const dt_node_t* node = dt_lookup(tree, "/int-generator1");
+  KEXPECT_NE(NULL, node);
+
+  const size_t kMaxInts = 10;
+  dt_interrupt_t int_buf[kMaxInts];
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(2, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  dt_interrupt_t mapped;
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(0, dtint_map(tree, node, &int_buf[0], intc_node, &mapped));
+  KEXPECT_EQ(intc_node, mapped.int_parent);
+  KEXPECT_EQ(1, mapped.cells);
+  KEXPECT_EQ(4, mapped._int[0]);
+
+
+  KTEST_BEGIN("dtint_map(): no path to root");
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(
+      -EINVAL,
+      dtint_map(tree, node, &int_buf[0],
+                dt_lookup(tree, "/cpus/cpu@0/interrupt-controller"), &mapped));
+
+  // TODO(aoates): advanced scenarios to test (when nexuses are implemented):
+  //  - chain through multiple nexuses
+  //  - chain that hits a bad interrupt controller in the middle
+  //  - chain that hits a phandle that can't be looked up in the middle
+}
+
+static void intr_test(void) {
+  KTEST_BEGIN("dtint_*(): test setup");
+  const size_t kBufLen = 10000;
+  void* buf = kmalloc(kBufLen);
+  dt_tree_t* tree = NULL;
+  KEXPECT_EQ(DTFDT_OK, dt_create(kIntTestDtb, &tree, buf, kBufLen));
+
+  intr_test1(tree);
+  intr_test2(tree);
 
   kfree(buf);
 }
