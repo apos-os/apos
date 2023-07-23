@@ -85,6 +85,7 @@ static const test_entry_t TESTS[] = {
   { "user_tests", &do_run_user_tests, 1 },
   { "proc_thread", &proc_thread_test, 1 },
   { "futex", &futex_test, 1 },
+  { "dtree", &devicetree_test, 1 },
 
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },

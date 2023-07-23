@@ -71,12 +71,10 @@ void kexpect_multiline_streq(const char* file, const char* line,
              __FILE__, STR(__LINE__));                                        \
   } while (0)
 
-// TODO(aoates): examine if using typeof(a) for b below can causue problems like
-// when they are string types (e.g. typeof("\n") --> char[2], not const char*).
 #define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr)                \
   do {                                                                 \
-    typeof(a) aval = a;                                                \
-    typeof(a) bval = b;                                                \
+    typeof(a) aval = (a);                                              \
+    typeof(a) bval = (typeof(a))(b);                                   \
     kexpect_int(name, __FILE__, STR(__LINE__), astr, bstr, (long)aval, \
                 (long)bval, (aval op bval), opstr, PRINT_TYPE(a),      \
                 PRINT_TYPE(b));                                        \

@@ -67,6 +67,7 @@ void socket_udp_test(void);
 void run_user_tests(void);
 void proc_thread_test(void);
 void futex_test(void);
+void devicetree_test(void);
 
 int kernel_run_ktest(const char* name);
 
