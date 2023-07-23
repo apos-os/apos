@@ -425,12 +425,14 @@ static void dtree_basic_test(void) {
   KEXPECT_STREQ("#size-cells", tree->root->properties->next->name);
   KEXPECT_EQ(0x2, btoh32(*(const uint32_t*)(tree->root->properties->next->val)));
 
+  KEXPECT_EQ(NULL, tree->root->parent);
   KEXPECT_EQ(tree->root, dt_lookup(tree, "/"));
   const dt_node_t* mem = tree->root->children->next->next->next;
   KEXPECT_EQ(mem, dt_lookup(tree, "/memory@80000000"));
   KEXPECT_STREQ("device_type",
                 (const char*)dt_get_prop(mem, "device_type")->name);
   KEXPECT_STREQ("memory", (const char*)dt_get_prop(mem, "device_type")->val);
+  KEXPECT_EQ(tree->root, mem->parent);
 
   KEXPECT_EQ(NULL, dt_lookup(tree, "/abc"));
   KEXPECT_EQ(NULL, dt_lookup(tree, ""));
@@ -449,6 +451,7 @@ static void dtree_basic_test(void) {
   KEXPECT_STREQ("test@100000", dt_lookup_phandle(tree, 4)->name);
 
   const dt_node_t* serial = dt_lookup(tree, "/soc/serial@10000000");
+  KEXPECT_EQ(dt_lookup(tree, "/soc"), serial->parent);
   KEXPECT_EQ(dt_lookup(tree, "/soc/plic@c000000"),
              dt_lookup_prop_phandle(tree, serial, "interrupt-parent"));
   KEXPECT_EQ(NULL, dt_lookup_prop_phandle(tree, serial, "interrupt-parent2"));

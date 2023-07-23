@@ -96,10 +96,11 @@ bool node_begin_cb(const char* node_name, const dtfdt_node_context_t* context,
   node->next = NULL;
   node->context = *context;
 
+  node->parent = NULL;
   if (parse->node_stack_len > 0) {
-    dt_node_t* parent = parse->node_stack[parse->node_stack_len - 1];
-    node->next = parent->children;
-    parent->children = node;
+    node->parent = parse->node_stack[parse->node_stack_len - 1];
+    node->next = node->parent->children;
+    node->parent->children = node;
   }
   parse->node_stack[parse->node_stack_len] = node;
   ++parse->node_stack_len;

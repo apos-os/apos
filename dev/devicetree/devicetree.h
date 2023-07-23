@@ -35,6 +35,7 @@ typedef struct dt_property dt_property_t;
 typedef struct dt_node {
   const char* name;
   dt_property_t* properties;
+  struct dt_node* parent;
   struct dt_node* children;
   struct dt_node* next;
 
