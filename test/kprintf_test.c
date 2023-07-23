@@ -238,9 +238,10 @@ static void kprintf_testE(void) {
 
 static void kprintf_testF(void) {
   KTEST_BEGIN("ksprintf(): 'hh' modifier");
-  KEXPECT_STREQ("23", do_printf("%hhi", (char)23));
-  KEXPECT_STREQ("-10", do_printf("%hhi", (char)-10));
-  KEXPECT_STREQ("-26", do_printf("%hhi", (char)230));
+  KEXPECT_STREQ("23", do_printf("%hhi", (signed char)23));
+  KEXPECT_STREQ("-10", do_printf("%hhi", (signed char)-10));
+  KEXPECT_STREQ("-26", do_printf("%hhi", (signed char)230));
+  KEXPECT_STREQ("246", do_printf("%hhu", (unsigned char)-10));
   KEXPECT_STREQ("230", do_printf("%hhu", (unsigned char)230));
   KEXPECT_STREQ("44", do_printf("%hhu", (unsigned char)300));
 
