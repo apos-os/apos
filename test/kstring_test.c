@@ -210,6 +210,18 @@ static void kstring_testC(void) {
   KEXPECT_EQ(0xABCDEF, katou("0XaBcDeF"));
   KEXPECT_EQ(0xABCDEF1, katou("0xABCDEF1Q"));
   KEXPECT_EQ(0xFFFFFFFF, katou("0xFFFFFFFF"));
+
+  KTEST_BEGIN("atou_hex()");
+  KEXPECT_EQ(0x10, katou_hex("0x10"));
+  KEXPECT_EQ(0x10, katou_hex("10"));
+  KEXPECT_EQ(0x1, katou_hex("0x01"));
+  KEXPECT_EQ(0x1, katou_hex("01"));
+  KEXPECT_EQ(0x12345, katou_hex("0x12345"));
+  KEXPECT_EQ(0x12345, katou_hex("12345"));
+  KEXPECT_EQ(0xABCDEF, katou_hex("0xABCDEF"));
+  KEXPECT_EQ(0xABCDEF, katou_hex("ABCDEF"));
+  KEXPECT_EQ(0xFFFFFFFF, katou_hex("0xFFFFFFFF"));
+  KEXPECT_EQ(0xFFFFFFFF, katou_hex("FFFFFFFF"));
 }
 
 static void kstring_testD(char* buf) {

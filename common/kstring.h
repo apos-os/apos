@@ -54,9 +54,11 @@ const char* kutoa_hex_r(unsigned long x, char* buf, size_t len);
 const char* kutoa_hex_lower(unsigned long x);  // As above, but lower case.
 const char* kutoa_hex_lower_r(unsigned long x, char* buf, size_t len);
 
-// Note: these only support decimal.
 long katoi(const char* s);
+// Supports decimal and hex (if it starts with 0x or 0X).
 unsigned long katou(const char* s);
+// Unconditionally parses as hex, even without a prefix.
+unsigned long katou_hex(const char* s);
 
 const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);

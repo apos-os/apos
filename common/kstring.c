@@ -288,6 +288,14 @@ unsigned long katou(const char* s) {
   return atou_internal(s);
 }
 
+unsigned long katou_hex(const char* s) {
+  if (kstrncmp(s, "0x", 2) == 0 ||
+      kstrncmp(s, "0X", 2) == 0) {
+    s += 2;
+  }
+  return atou_internal_base(s, 16);
+}
+
 const char* kstrchr(const char* s, int c) {
   while (*s) {
     if (*s == c) {
