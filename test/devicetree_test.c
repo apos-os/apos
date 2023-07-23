@@ -260,6 +260,35 @@ static void dtree_basic_test(void) {
   KTEST_BEGIN("dt_create(): buffer too small");
   KEXPECT_EQ(DTFDT_OUT_OF_MEMORY, dt_create(kGoldenDtb, &tree, buf, 100));
 
+
+  KTEST_BEGIN("dt_print_path(): basic test");
+  const size_t kNameBufLen = 100;
+  char namebuf[kNameBufLen];
+  const char* path = "/cpus/cpu@0/interrupt-controller";
+  const dt_node_t* node = dt_lookup(tree, path);
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(32, kstrlen(path));
+  KEXPECT_EQ(32, dt_print_path(node, namebuf, kNameBufLen));
+  KEXPECT_STREQ(path, namebuf);
+
+  kmemset(namebuf, 'X', kNameBufLen);
+  KEXPECT_EQ(1, dt_print_path(tree->root, namebuf, kNameBufLen));
+  KEXPECT_STREQ("/", namebuf);
+
+  KTEST_BEGIN("dt_print_path(): buffer too short");
+  kmemset(namebuf, 'X', kNameBufLen);
+  // For each of these, it should return at least the given bufsize, signalling
+  // truncation (exact return value is unspecified).
+  KEXPECT_LT(2, dt_print_path(node, namebuf, 2));
+  KEXPECT_STREQ("/", namebuf);
+  kmemset(namebuf, 'X', kNameBufLen);
+  KEXPECT_LT(11, dt_print_path(node, namebuf, 11));
+  KEXPECT_STREQ("/cpus/cpu@", namebuf);
+  KEXPECT_LT(6, dt_print_path(node, namebuf, 6));
+  KEXPECT_STREQ("/cpus", namebuf);
+  KEXPECT_LT(7, dt_print_path(node, namebuf, 7));
+  KEXPECT_STREQ("/cpus/", namebuf);
+
   kfree(buf);
 }
 

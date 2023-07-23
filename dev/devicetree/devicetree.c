@@ -304,3 +304,22 @@ const char* dt_get_unit(const dt_node_t* node) {
   if (*at) at++;
   return at;
 }
+
+static size_t path_printer(const dt_node_t* node, char* buf, size_t buflen) {
+  // This is O(n^2) due to the kstrlcat()s, but that's fine.
+  if (node->parent != NULL) {
+    path_printer(node->parent, buf, buflen);
+    kstrlcat(buf, "/", buflen);
+  }
+  return kstrlcat(buf, node->name, buflen);
+}
+
+size_t dt_print_path(const dt_node_t* node, char* buf, size_t buflen) {
+  KASSERT(buflen > 1);
+  if (node->parent == NULL) {
+    kstrcpy(buf, "/");
+    return 1;
+  }
+  buf[0] = '\0';
+  return path_printer(node, buf, buflen);
+}

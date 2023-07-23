@@ -88,4 +88,11 @@ const dt_node_t* dt_lookup_prop_phandle(const dt_tree_t* tree,
 // Helper to extract the unit addres portion of a node name.
 const char* dt_get_unit(const dt_node_t* node);
 
+// Helper to print the full path of a node into the given buffer.  Returns as
+// many bytes as were _attempted_ to be written --- if the result is truncated,
+// this is guaranteed to be greater than buflen but may not be the full size of
+// the path.
+// Buffer must be at least two bytes big (to hold "/").
+size_t dt_print_path(const dt_node_t* node, char* buf, size_t buflen);
+
 #endif
