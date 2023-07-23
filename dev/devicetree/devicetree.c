@@ -16,6 +16,7 @@
 
 #include <stdalign.h>
 
+#include "common/endian.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/math.h"
@@ -29,6 +30,8 @@ typedef struct {
   size_t outbuf_len;
   size_t node_stack_len;
   dt_node_t* node_stack[DT_MAX_DEPTH];
+  int num_phnodes;
+  dt_tree_t* tree;
 } parse_state_t;
 
 static int align_parse(parse_state_t* parse, size_t align) {
@@ -135,6 +138,24 @@ bool node_end_cb(const char* node_name, void* cbarg) {
   return true;
 }
 
+static void handle_phandle_prop(dt_node_t* node, const void* prop_val,
+                                size_t val_len,
+                                const dtfdt_node_context_t* context,
+                                parse_state_t* parse) {
+  if (val_len != sizeof(uint32_t)) {
+    klog("Warning: found invalid phandle prop in devicetree\n");
+    return;
+  }
+  if (parse->num_phnodes >= DT_TREE_MAX_PHNODES) {
+    klog("Warning: ran out of space o store phandle values in devicetree\n");
+    return;
+  }
+  dt_phandle_t val = btoh32(*(const dt_phandle_t*)prop_val);
+  parse->tree->phnodes[parse->num_phnodes].phandle = val;
+  parse->tree->phnodes[parse->num_phnodes].node = node;
+  parse->num_phnodes++;
+}
+
 bool node_prop_cb(const char* prop_name, const void* prop_val, size_t val_len,
                   const dtfdt_node_context_t* context, void* cbarg) {
   parse_state_t* parse = (parse_state_t*)cbarg;
@@ -153,6 +174,10 @@ bool node_prop_cb(const char* prop_name, const void* prop_val, size_t val_len,
   dt_node_t* node = parse->node_stack[parse->node_stack_len - 1];
   prop->next = node->properties;
   node->properties = prop;
+
+  if (kstrcmp(prop_name, "phandle") == 0) {
+    handle_phandle_prop(node, prop_val, val_len, context, parse);
+  }
   return true;
 }
 
@@ -170,10 +195,16 @@ dtfdt_parse_result_t dt_create(const void* fdt, dt_tree_t** tree_out,
   for (size_t i = 0; i < DT_MAX_DEPTH; ++i) {
     parse.node_stack[i] = NULL;
   }
+  parse.num_phnodes = 0;
 
   dt_tree_t* tree = ALLOC_STRUCT(&parse, dt_tree_t);
   if (!tree) {
     return DTFDT_OUT_OF_MEMORY;
+  }
+  parse.tree = tree;
+  for (int i = 0; i < DT_TREE_MAX_PHNODES; ++i) {
+    tree->phnodes[i].phandle = 0;
+    tree->phnodes[i].node = NULL;
   }
 
   dtfdt_parse_result_t result = dtfdt_parse(fdt, &cbs, &parse);
@@ -236,4 +267,33 @@ const dt_property_t* dt_get_nprop(const dt_tree_t* tree, const char* node_path,
   const dt_node_t* node = dt_lookup(tree, node_path);
   if (!node) return NULL;
   return dt_get_prop(node, prop_name);
+}
+
+const dt_node_t* dt_lookup_phandle(const dt_tree_t* tree, dt_phandle_t ph) {
+  for (int i = 0; i < DT_TREE_MAX_PHNODES; ++i) {
+    if (tree->phnodes[i].phandle == ph) {
+      return tree->phnodes[i].node;
+    }
+  }
+  return NULL;
+}
+
+const dt_node_t* dt_lookup_prop_phandle(const dt_tree_t* tree,
+                                        const dt_node_t* node,
+                                        const char* prop_name) {
+  const dt_property_t* prop = dt_get_prop(node, prop_name);
+  if (!prop) {
+    return NULL;
+  }
+  if (prop->val_len != sizeof(uint32_t)) {
+    return NULL;
+  }
+  dt_phandle_t ph = btoh32(*(const dt_phandle_t*)prop->val);
+  for (int i = 0; i < DT_TREE_MAX_PHNODES && tree->phnodes[i].node != NULL;
+       ++i) {
+    if (tree->phnodes[i].phandle == ph) {
+      return tree->phnodes[i].node;
+    }
+  }
+  return NULL;
 }

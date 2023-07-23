@@ -18,6 +18,8 @@
 #include "common/types.h"
 #include "dev/devicetree/dtb.h"
 
+typedef uint32_t dt_phandle_t;
+
 // TODO(aoates): eliminate the linked list pointer for properties (unlike nodes,
 // which can recurse, properties are flat and should be much easier to build an
 // array for).
@@ -42,10 +44,19 @@ typedef struct dt_node {
   dtfdt_node_context_t context;
 } dt_node_t;
 
+// A node and its phandle.
+typedef struct {
+  dt_phandle_t phandle;
+  dt_node_t* node;
+} dt_phnode_t;
+
+#define DT_TREE_MAX_PHNODES 20
+
 // A parsed devicetree.
 typedef struct dt_tree {
   dt_node_t* root;     // The root node.
   const void* buffer;  // The original buffer.
+  dt_phnode_t phnodes[DT_TREE_MAX_PHNODES];
 } dt_tree_t;
 
 // Parse a raw DTB into a dt_parsed_t.  No dynamic allocation is done --- all
@@ -64,5 +75,13 @@ const dt_property_t* dt_get_prop(const dt_node_t* node, const char* prop_name);
 // Lookup a node and property, returning NULL if either doesn't exist.
 const dt_property_t* dt_get_nprop(const dt_tree_t* tree, const char* node_path,
                                   const char* prop_name);
+
+// Get a node by phandle.
+const dt_node_t* dt_lookup_phandle(const dt_tree_t* tree, dt_phandle_t ph);
+
+// As above, but convenience helper that gets the phandle from a property.
+const dt_node_t* dt_lookup_prop_phandle(const dt_tree_t* tree,
+                                        const dt_node_t* node,
+                                        const char* prop_name);
 
 #endif

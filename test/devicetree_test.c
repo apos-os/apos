@@ -441,6 +441,19 @@ static void dtree_basic_test(void) {
   KEXPECT_EQ(NULL, dt_get_nprop(tree, "/memory2@80000000", "device_type"));
   KEXPECT_EQ(NULL, dt_get_nprop(tree, "/memory@80000000", "device_type2"));
 
+  KTEST_BEGIN("dt_create(): phandle lookups");
+  KEXPECT_EQ(NULL, dt_lookup_phandle(tree, 0));
+  KEXPECT_EQ(NULL, dt_lookup_phandle(tree, 10));
+  KEXPECT_STREQ("cpu@0", dt_lookup_phandle(tree, 1)->name);
+  KEXPECT_STREQ("interrupt-controller", dt_lookup_phandle(tree, 2)->name);
+  KEXPECT_STREQ("test@100000", dt_lookup_phandle(tree, 4)->name);
+
+  const dt_node_t* serial = dt_lookup(tree, "/soc/serial@10000000");
+  KEXPECT_EQ(dt_lookup(tree, "/soc/plic@c000000"),
+             dt_lookup_prop_phandle(tree, serial, "interrupt-parent"));
+  KEXPECT_EQ(NULL, dt_lookup_prop_phandle(tree, serial, "interrupt-parent2"));
+  KEXPECT_EQ(NULL, dt_lookup_prop_phandle(tree, serial, "compatible"));
+
   KTEST_BEGIN("dt_create(): buffer too small");
   KEXPECT_EQ(DTFDT_OUT_OF_MEMORY, dt_create(kGoldenDtb, &tree, buf, 100));
 
