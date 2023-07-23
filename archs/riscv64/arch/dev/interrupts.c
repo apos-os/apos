@@ -19,6 +19,7 @@
 #include "archs/riscv64/internal/timer.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "internal/plic.h"
 #include "memory/vm_page_fault.h"
 #include "proc/signal/signal.h"
 
@@ -108,9 +109,12 @@ void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
         rsv_timer_interrupt();
         break;
 
+      case RSV_INT_SEXTERNAL:
+        rsv_external_interrupt();
+        break;
+
       // TODO(riscv): implement the rest of these:
       case RSV_INT_SSOFTWARE:
-      case RSV_INT_SEXTERNAL:
       default:
         klogfm(
             KL_GENERAL, FATAL,

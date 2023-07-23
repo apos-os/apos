@@ -84,4 +84,7 @@ const dt_node_t* dt_lookup_prop_phandle(const dt_tree_t* tree,
                                         const dt_node_t* node,
                                         const char* prop_name);
 
+// Helper to extract the unit addres portion of a node name.
+const char* dt_get_unit(const dt_node_t* node);
+
 #endif

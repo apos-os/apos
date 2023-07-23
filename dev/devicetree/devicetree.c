@@ -297,3 +297,9 @@ const dt_node_t* dt_lookup_prop_phandle(const dt_tree_t* tree,
   }
   return NULL;
 }
+
+const char* dt_get_unit(const dt_node_t* node) {
+  const char* at = kstrchrnul(node->name, '@');
+  if (*at) at++;
+  return at;
+}

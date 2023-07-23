@@ -12,24 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_ARCHS_RISCV64_ARCH_COMMON_TYPES_H
-#define APOO_ARCHS_RISCV64_ARCH_COMMON_TYPES_H
+#ifndef APOO_ARCHS_RISCV64_INTERNAL_PLIC_H
+#define APOO_ARCHS_RISCV64_INTERNAL_PLIC_H
 
-#include <stdint.h>
-
-// A (virtual) memory address.
-typedef uint64_t addr_t;
-
-// A physical memory address.
-typedef addr_t phys_addr_t;
-
-// A length or delta of memory bytes.
-typedef addr_t addrdiff_t;
-
-// An IO port address.
-typedef addr_t ioport_t;
-
-#define PRIxADDR "zx"
-#define PRIuADDR "zu"
+void rsv_external_interrupt(void);
 
 #endif

@@ -460,8 +460,21 @@ static void dtree_basic_test(void) {
   kfree(buf);
 }
 
+static void name_test(void) {
+  dt_node_t node;
+  node.name = "abc";
+  KEXPECT_STREQ("", dt_get_unit(&node));
+  node.name = "abc@";
+  KEXPECT_STREQ("", dt_get_unit(&node));
+  node.name = "abc@1234";
+  KEXPECT_STREQ("1234", dt_get_unit(&node));
+  node.name = "abc@c123a";
+  KEXPECT_STREQ("c123a", dt_get_unit(&node));
+}
+
 void devicetree_test(int x) {
   KTEST_SUITE_BEGIN("devicetree");
   dtb_print_golden_test();
   dtree_basic_test();
+  name_test();
 }
