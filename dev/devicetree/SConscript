@@ -17,6 +17,7 @@ Import('env AposAddSources')
 srcs = [
   'devicetree.c',
   'dtb.c',
+  'interrupts.c',
 ]
 subdirs = []
 
