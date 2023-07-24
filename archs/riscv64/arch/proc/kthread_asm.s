@@ -28,7 +28,7 @@ kthread_arch_swap_context:
   addi sp, sp, -112
   sd ra, 104(sp)
   sd fp, 96(sp)
-  addi fp, sp, 112
+  addi fp, sp, 112  # Keep in sync with stack_trace.c
 
   # Save all the callee-registers
   # did ra
