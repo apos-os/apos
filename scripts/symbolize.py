@@ -60,7 +60,7 @@ try:
   while True:
     line = sys.stdin.readline()
     if not line: sys.exit(0)
-    m = re.match(" #(\d*) (0x[a-zA-Z0-9]*)\n", line)
+    m = re.match(" #(\d*) (0x[a-zA-Z0-9]*)\s*$", line)
     if m:
       line = symbolize(TOOL_PREFIX, m.group(1), m.group(2))
     print line,
