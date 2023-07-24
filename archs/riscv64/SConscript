@@ -21,7 +21,6 @@ srcs = [
   'arch/dev/interrupts_asm.s',
   'arch/dev/io.c',
   'arch/dev/irq.c',
-  'arch/memory/page_fault.c',
   'arch/memory/page_map.c',
   'arch/proc/exec.c',
   'arch/proc/kthread.c',

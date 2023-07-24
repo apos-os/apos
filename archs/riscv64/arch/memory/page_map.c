@@ -16,10 +16,15 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
+#include "arch/memory/page_fault.h"
 #include "arch/memory/page_map.h"
 #include "archs/riscv64/internal/page_tables.h"
 #include "common/kassert.h"
 #include "memory/page_alloc.h"
+
+void paging_init(void) {
+  // Nothing to do.
+}
 
 void page_frame_map_virtual(addr_t virt, phys_addr_t phys, int prot,
                             mem_access_t access, int flags) {
