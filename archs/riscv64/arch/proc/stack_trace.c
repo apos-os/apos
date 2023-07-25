@@ -18,8 +18,8 @@
 
 #define SIZE_OF_JUMP_INSTR 4
 
-static int get_stack_trace_internal(addr_t fp, addr_t stack_top, addr_t* frames,
-                                    int trace_len) {
+static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
+                                    addr_t* frames, int trace_len) {
   int cframe = 0;
   while (fp != 0x0 && cframe < trace_len) {
     if (fp % sizeof(addr_t) != 0) {
@@ -27,10 +27,10 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_top, addr_t* frames,
       break;
     }
 
-    if (fp < stack_top || fp > stack_top + KTHREAD_STACK_SIZE) {
+    if (fp < stack_base || fp > stack_base + KTHREAD_STACK_SIZE) {
       klogf("Warning: frame pointer left stack (fp = %" PRIxADDR
-            " stack_top = %" PRIxADDR ")",
-            fp, stack_top);
+            " stack_base = %" PRIxADDR ")",
+            fp, stack_base);
       break;
     }
 
@@ -56,8 +56,12 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_top, addr_t* frames,
 int get_stack_trace(addr_t* trace, int trace_len) {
   addr_t fp;
   asm volatile("mv %0, fp" : "=r"(fp));
-  return get_stack_trace_internal(fp, (addr_t)kthread_current_thread()->stack,
-                                  trace, trace_len);
+  // If a stack trace is requested before we've initialized kthread, default to
+  // the default thread stack.
+  addr_t stack_base = kthread_current_thread()
+                          ? (addr_t)kthread_current_thread()->stack
+                          : get_global_meminfo()->kernel_stack_base;
+  return get_stack_trace_internal(fp, stack_base, trace, trace_len);
 }
 
 int get_stack_trace_for_thread(kthread_t thread, addr_t* trace, int trace_len) {
