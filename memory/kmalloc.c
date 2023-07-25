@@ -273,7 +273,7 @@ void kmalloc_log_heap_profile(void) {
     cblock = cblock->next;
   }
 
-  KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ apos_heap/1\n",
+  KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ heap/1\n",
        total_objects, total_bytes, total_objects, total_bytes);
 
   cblock = g_block_list;
