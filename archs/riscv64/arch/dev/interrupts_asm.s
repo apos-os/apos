@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+.include "archs/riscv64/internal/memlayout.m4.s"
+
 .set SSTATUS_SIE,  0x002
 .set SSTATUS_SPIE, 0x020
 .set SSTATUS_SPP,  0x100
@@ -62,12 +64,38 @@ _int_handlers_start:
 # saved on the stack).
 .global int_handler_asm
 int_handler_asm:
-  # TODO(riscv): switch stacks when coming from user mode
+  # sscratch holds the address of a guaranteed scratch spot at the bottom of the
+  # current thread's kernel-mode stack.  Swap out s1 to get that address, then
+  # save s2 to it to get a free register.
+  csrrw s1, sscratch, s1
+
+  # Save s2 and sp to our scratch spots, then decide if we need to switch stacks
+  sd s2, 0(s1)
+  sd sp, -8(s1)
+
+  csrr s2, sstatus
+  andi s2, s2, SSTATUS_SPP
+  # If interrupted kernel mode, use our stack as-is.
+  # TODO(aoates): catch double-faults for stack overflows.
+  bnez s2, .Lstack_done
+
+  # We interrupted user mode and need to switch stacks.  sscratch is the bottom
+  # (highest address) of the kernel stack, so start right after that.
+  mv sp, s1  # Original sp saved above.
+  addi sp, sp, RSV64_KSTACK_SCRATCH_NBYTES
+
+.Lstack_done:
+  ld s2, -8(s1)
+  sd s2, -24(sp)         # Save original sp onto new stack.
+  ld s2, 0(s1)            # Get saved s2 from the scratch spot.
+  csrrw s1, sscratch, s1  # Restore s1 and sscratch.
+  # Now everything is as it was, except we may have switched stacks.
+
   # TODO(riscv): do we need to save sepc/scause/etc?  What if we get a nested
   # trap (for example, a page fault on the stack while pushing context)?
   # Currently those registers are the only s-mode visible registers that are
   # _not_ fully restored here, which is fine for most S code.
-  addi sp, sp, -256
+  addi sp, sp, -272
   # Save the original ra value as a local variable.  We need to restore it
   # later, but if the code we interrupted is a leaf function, this ra likely
   # points to _its_ caller, so if we use it for our stack frame it will look
@@ -76,9 +104,9 @@ int_handler_asm:
   # Now pretend as if the interrupted code called us.
   csrr ra, sepc
   # Now create the start of our standard stack frame.
-  sd ra, 248(sp)
-  sd fp, 240(sp)
-  addi fp, sp, 256  # fake frame
+  sd ra, 264(sp)
+  sd fp, 256(sp)
+  addi fp, sp, 272  # fake frame
 
   # Now save all our other registers.
   # ra: is already stored at 0(sp)
@@ -168,14 +196,14 @@ int_handler_asm:
   ld t6,  0x00e8(sp)
 
   # Restore the saved frame pointer from our stack frame.
-  ld fp, 240(sp)
+  ld fp, 256(sp)
   # Load from our stack frame the interrupted address into sepc.  If we weren't
   # interrupted again, this in unnecessary.
-  ld ra, 248(sp)
+  ld ra, 264(sp)
   csrw sepc, ra
   # Restore the original value of the ra address (from the interrupted code)
   ld ra, 0(sp)
-  addi sp, sp, 256
+  ld sp, 248(sp)
   sret
 
 _int_handlers_end:

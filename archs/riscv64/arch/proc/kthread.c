@@ -18,6 +18,7 @@
 
 #include "arch/dev/interrupts.h"
 #include "archs/riscv64/internal/kthread.h"
+#include "archs/riscv64/internal/memlayout.m4.h"
 #include "common/kassert.h"
 #include "proc/kthread-internal.h"
 
@@ -26,13 +27,15 @@ void riscv_kthread_trampoline(void);
 void kthread_arch_init(void) {}
 
 void kthread_arch_set_current_thread(kthread_t thread) {
-  // TODO(riscv): set kernel-mode stack for stack switching.
+  addr_t sscratch =
+      kthread_arch_kernel_stack_bottom(thread) - RSV64_KSTACK_SCRATCH_NBYTES;
+  asm volatile("csrw sscratch, %0" ::"r"(sscratch));
 }
 
 void kthread_arch_init_thread(kthread_t thread,
                               kthread_trampoline_func_t trampoline,
                               kthread_start_func_t start_routine, void* arg) {
-  addr_t* stack = (addr_t*)kthread_arch_kernel_stack_top(thread);
+  addr_t* stack = (addr_t*)kthread_arch_kernel_stack_bottom(thread);
 
   // Set up the stack.  Pass the args to the riscv trampoline in s1-s3.
   *(--stack) = 0xDEADDEAD;

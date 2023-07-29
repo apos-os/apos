@@ -15,14 +15,16 @@
 #ifndef APOO_ARCHS_RISCV64_INTERNAL_KTHREAD_H
 #define APOO_ARCHS_RISCV64_INTERNAL_KTHREAD_H
 
+#include "archs/riscv64/internal/memlayout.m4.h"
 #include "common/types.h"
 #include "proc/kthread-internal.h"
 
-// Return the top of the current thread's kernel stack.  This is the address ONE
-// STACK SLOT ABOVE the first element on the stack, if anything has been pushed.
-// TODO(aoates): this is the same definition as x86; can this be shared?
-static inline addr_t kthread_arch_kernel_stack_top(kthread_t thread) {
-  return (addr_t)thread->stack + thread->stacklen - sizeof(addr_t);
+// Return the bottom of the current thread's kernel stack.  This is the address
+// ONE STACK SLOT ABOVE the first element on the stack, if anything has been
+// pushed.
+static inline addr_t kthread_arch_kernel_stack_bottom(kthread_t thread) {
+  return (addr_t)thread->stack + thread->stacklen - sizeof(addr_t) +
+         RSV64_KSTACK_SCRATCH_NBYTES;
 }
 
 #endif

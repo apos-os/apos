@@ -35,3 +35,7 @@ dnl
 dnl Physical address of the start of the general kernel section (_not_
 dnl specifically where the kernel itself sits, but the area it is linked).
 PROVIDE(RSV64_KERNEL_PHYS_ADDR,        0x0000000080000000)
+dnl
+dnl How much scratch space to reserve at the bottom (highest addresses) of every
+dnl kernel mode stack.
+PROVIDE(RSV64_KSTACK_SCRATCH_NBYTES, -16)

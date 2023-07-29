@@ -53,6 +53,7 @@ env.SharedConstants('internal/memlayout.m4')
 # TODO(aoates): figure out a better way to pass these dependencies.
 env.Depends('#/$BUILD_CFG_DIR/kernel.bin', 'internal/memlayout.m4.ld')
 env.Depends('internal/load/loader.PHYS.o', 'internal/memlayout.m4.s')
+env.Depends('arch/dev/interrupts_asm.o', 'internal/memlayout.m4.s')
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

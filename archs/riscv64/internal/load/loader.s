@@ -86,12 +86,18 @@ _kstart:
   csrw satp, t0
   sfence.vma
 
-  # Set up stack.  Go straight to the virtual address.
+  # Set up stack.  Go straight to the virtual address.  The very first N
+  # elements of the stack are reserved for sscratch (for interrupts).
+  # TODO(aoates): consider redoing sscratch so it's a regular buffer, not a
+  # grow-downwards stack.
   la t0, initial_kstack
   li t1, RSV64_KERNEL_VIRT_OFFSET
   add t0, t0, t1
   li t1, STACKSIZE
   add sp, t0, t1
+  addi t0, sp, -8   # Start sscratch at the last dword of the stack.
+  csrw sscratch, t0
+  addi sp, sp, RSV64_KSTACK_SCRATCH_NBYTES
 
   # Set up stvec as soon as possible.
   la t0, int_handler_asm
