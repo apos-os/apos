@@ -205,6 +205,7 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
   g_meminfo.heap_start = START_HEAP;
   g_meminfo.heap_end = END_HEAP;
   g_meminfo.kernel_stack_base = stack + KERNEL_VIRT_START;
+  g_meminfo.kernel_stack_len = 0x4000;
   return &g_meminfo;
 }
 

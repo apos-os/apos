@@ -33,6 +33,10 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 
+#define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
+#define KTHREAD_STACK_SIZE \
+  (ARCH_KTHREAD_BASE_STACK_SIZE + KTHREAD_STACK_PROTECT_LEN)
+
 static kthread_data_t* g_current_thread = 0;
 static int g_next_id = 0;
 static list_t g_all_threads = LIST_INIT_STATIC;
@@ -87,9 +91,10 @@ void kthread_init(void) {
   first->state = KTHREAD_RUNNING;
   first->id = g_next_id++;
   first->stack = (addr_t*)get_global_meminfo()->kernel_stack_base;
+  first->stacklen = get_global_meminfo()->kernel_stack_len;
   list_push(&g_all_threads, &first->all_threads_link);
 
-  KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + KTHREAD_STACK_SIZE);
+  KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + first->stacklen);
 
   kthread_queue_init(&g_reap_queue);
 
@@ -136,6 +141,7 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
                            MEM_GLOBAL);
 
   thread->stack = stack;
+  thread->stacklen = KTHREAD_STACK_SIZE;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
 
   if (kthread_current_thread()->preemption_disables == 0) {

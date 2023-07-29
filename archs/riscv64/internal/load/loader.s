@@ -20,7 +20,8 @@
 # and memory setup code.
 .set RSV64_KERNEL_VIRT_ADDR, RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET
 
-# reserve initial kernel stack space
+# Reserve initial kernel stack space.
+# Keep this in sync with mem_init.c.
 .set STACKSIZE, 0x8000                  # that is, 32k.
 .lcomm initial_kstack, STACKSIZE        # reserve stack on a doubleword boundary
 

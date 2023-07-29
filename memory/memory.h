@@ -71,6 +71,7 @@ typedef struct {
 
   // The base address of the initial kernel stack (used for thread/process 0).
   addr_t kernel_stack_base;
+  addrdiff_t kernel_stack_len;
 
   // Page directory for the initial address space (used for thread/process 0).
   page_dir_ptr_t kernel_page_directory;

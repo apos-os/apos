@@ -22,7 +22,7 @@
 // STACK SLOT ABOVE the first element on the stack, if anything has been pushed.
 // TODO(aoates): this is the same definition as x86; can this be shared?
 static inline addr_t kthread_arch_kernel_stack_top(kthread_t thread) {
-  return (addr_t)thread->stack + KTHREAD_STACK_SIZE - sizeof(addr_t);
+  return (addr_t)thread->stack + thread->stacklen - sizeof(addr_t);
 }
 
 #endif

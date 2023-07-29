@@ -164,6 +164,7 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   // Point kernel_stack_base at the version of the stack in the kernel-mapped
   // space, not the physical map, to match the value of $sp.
   meminfo->kernel_stack_base = stack_base + RSV64_KERNEL_VIRT_OFFSET;
+  meminfo->kernel_stack_len = 0x8000;
   meminfo->kernel_page_directory = rsv_get_hart_as();
 }
 

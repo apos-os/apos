@@ -14,12 +14,14 @@
 
 #include "arch/proc/stack_trace.h"
 #include "common/klog.h"
+#include "memory/memory.h"
 #include "proc/kthread-internal.h"
 
 #define SIZE_OF_JUMP_INSTR 4
 
 static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
-                                    addr_t* frames, int trace_len) {
+                                    addrdiff_t stack_len, addr_t* frames,
+                                    int trace_len) {
   int cframe = 0;
   while (fp != 0x0 && cframe < trace_len) {
     if (fp % sizeof(addr_t) != 0) {
@@ -27,7 +29,7 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
       break;
     }
 
-    if (fp < stack_base || fp > stack_base + KTHREAD_STACK_SIZE) {
+    if (fp < stack_base || fp > stack_base + stack_len) {
       klogf("Warning: frame pointer left stack (fp = %" PRIxADDR
             " stack_base = %" PRIxADDR ")",
             fp, stack_base);
@@ -58,13 +60,20 @@ int get_stack_trace(addr_t* trace, int trace_len) {
   asm volatile("mv %0, fp" : "=r"(fp));
   // If a stack trace is requested before we've initialized kthread, default to
   // the default thread stack.
-  addr_t stack_base = kthread_current_thread()
-                          ? (addr_t)kthread_current_thread()->stack
-                          : get_global_meminfo()->kernel_stack_base;
-  return get_stack_trace_internal(fp, stack_base, trace, trace_len);
+  addr_t stack_base;
+  addrdiff_t stack_len;
+  if (kthread_current_thread()) {
+    stack_base = (addr_t)kthread_current_thread()->stack;
+    stack_len = kthread_current_thread()->stacklen;
+  } else {
+    stack_base = get_global_meminfo()->kernel_stack_base;
+    stack_len = get_global_meminfo()->kernel_stack_len;
+  }
+  return get_stack_trace_internal(fp, stack_base, stack_len, trace, trace_len);
 }
 
 int get_stack_trace_for_thread(kthread_t thread, addr_t* trace, int trace_len) {
   addr_t fp = thread->context + 112;
-  return get_stack_trace_internal(fp, (addr_t)thread->stack, trace, trace_len);
+  return get_stack_trace_internal(fp, (addr_t)thread->stack, thread->stacklen,
+                                  trace, trace_len);
 }
