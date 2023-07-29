@@ -31,6 +31,9 @@
 // Support for ioport iops (all architectures are assumed to support MMIO).
 #define ARCH_SUPPORTS_IOPORT 1
 
+// Whether to run user-mode tests by default.
+#define ARCH_RUN_USER_TESTS 1
+
 // Include arch-specific overrides.
 #include "arch/common/_arch-config-overrides.h"
 
