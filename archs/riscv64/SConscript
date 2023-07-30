@@ -27,7 +27,7 @@ srcs = [
   'arch/proc/kthread_asm.s',
   'arch/proc/signal_enter.c',
   'arch/proc/stack_trace.c',
-  'arch/proc/user_context.c',
+  'arch/proc/user_context.s',
   'arch/syscall/context.c',
   'arch/syscall/init.c',
   'internal/page_tables.c',
