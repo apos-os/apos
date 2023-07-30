@@ -122,8 +122,10 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         rsv_external_interrupt();
         break;
 
-      // TODO(riscv): implement the rest of these:
       case RSV_INT_SSOFTWARE:
+        // These should never be generated (currently).
+        die("Unexpected software interrupt");
+
       default:
         klogfm(
             KL_GENERAL, FATAL,
