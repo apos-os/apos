@@ -160,7 +160,8 @@ def AddSyscall(*args, **kwargs):
   SYSCALLS.append(syscall)
 
 
-AddSyscall('syscall_test', 0, 'do_syscall_test',
+# Leave syscall 0 intentionally unallocated to catch bugs.
+AddSyscall('syscall_test', 100, 'do_syscall_test',
     'syscall/test.h', '<apos/test.h>',
     'long', [
     'long:arg1:u',

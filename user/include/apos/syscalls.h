@@ -17,7 +17,7 @@
 #define APOO_USER_SYSCALLS_H
 
 // All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0
+#define SYS_SYSCALL_TEST 100
 #define SYS_OPEN 1
 #define SYS_CLOSE 2
 #define SYS_DUP 45
