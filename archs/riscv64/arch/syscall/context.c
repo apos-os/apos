@@ -26,9 +26,8 @@ user_context_t syscall_extract_context(long retval) {
   user_context_t ctx = *(const user_context_t*)ctx_addr;
   ctx.ctx.a0 = retval;
   // Need to modify the return address here as well as interrupts.c, since we'll
-  // hit this path when delivering a signal.
-  // TODO(aoates): refactor all the syscall and interrupt paths so as not to
-  // assume they enter the kernel divergently.
+  // hit this path when doing fork().
+  // TODO(aoates): eliminate the fork() path as well and get rid of this.
   ctx.ctx.address += RSV_ECALL_INSTR_LEN;
   return ctx;
 }

@@ -59,6 +59,17 @@ static void* _map_code(const char* buf, size_t len) {
   return addr;
 }
 
+// Creates a stack mapping, sets up a stub frame, and returns the stack top.
+static uint64_t* make_stack(void) {
+  void* stack_block;
+  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &stack_block));
+  uint64_t* stack = (uint64_t*)((addr_t)stack_block + PAGE_SIZE);
+  *(--stack) = 0;
+  *(--stack) = 0;
+  return stack;
+}
+
 #define MAP_CODE(buf) _map_code(buf, sizeof(buf))
 
 static void do_basic_user_test(void* arg) {
@@ -165,17 +176,48 @@ static const char kSigactionHandler[] = {
 static void do_sigaction_test(void* arg) {
   void* addr = MAP_CODE(kSigactionTest);
   void* handler = MAP_CODE(kSigactionHandler);
-  void* stack_block;
-  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_ALL,
-                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &stack_block));
-  uint64_t* stack = (uint64_t*)((addr_t)stack_block + PAGE_SIZE);
-  *(--stack) = 0;
-  *(--stack) = 0;
+  void* stack = make_stack();
 
   user_context_t ctx;
   kmemset(&ctx, 0, sizeof(ctx));
   ctx.ctx.a0 = (addr_t)handler;
   ctx.ctx.s0 = (addr_t)stack + 16;
+  ctx.ctx.sp = (addr_t)stack;
+  ctx.ctx.address = (addr_t)addr;
+  user_context_apply(&ctx);
+  die("shouldn't get here");
+}
+
+static const char kForkTestCode[] = {
+    0x13, 0x01, 0x01, 0xfe,  // addi    sp,sp,-32
+    0x23, 0x3c, 0x11, 0x00,  // sd      ra,24(sp)
+    0x23, 0x38, 0x81, 0x00,  // sd      s0,16(sp)
+    0x13, 0x04, 0x01, 0x02,  // addi    s0,sp,32
+    0x13, 0x05, 0xd0, 0x00,  // li      a0,13
+    0x73, 0x00, 0x00, 0x00,  // ecall
+    0x63, 0x18, 0x05, 0x00,  // bnez    a0,<.Lparent>
+    0x13, 0x05, 0xe0, 0x00,  // li      a0,14
+    0x93, 0x05, 0x80, 0x00,  // li      a1,8
+    0x73, 0x00, 0x00, 0x00,  // ecall
+
+    // <.Lparent>:
+    0x93, 0x04, 0x05, 0x00,  // mv      s1,a0
+    0x13, 0x05, 0x90, 0x02,  // li      a0,41
+    0x93, 0x05, 0x01, 0x00,  // mv      a1,sp
+    0x73, 0x00, 0x00, 0x00,  // ecall
+    0x83, 0x35, 0x01, 0x00,  // ld      a1,0(sp)
+    0x93, 0x85, 0x15, 0x00,  // addi    a1,a1,1
+    0x13, 0x05, 0xe0, 0x00,  // li      a0,14
+    0x73, 0x00, 0x00, 0x00,  // ecall
+};
+
+static void do_fork_test(void* arg) {
+  void* addr = MAP_CODE(kForkTestCode);
+  void* stack = make_stack();
+
+  user_context_t ctx;
+  kmemset(&ctx, 0, sizeof(ctx));
+  ctx.ctx.s0 = (addr_t)stack + 16;  // fp
   ctx.ctx.sp = (addr_t)stack;
   ctx.ctx.address = (addr_t)addr;
   user_context_apply(&ctx);
@@ -208,4 +250,11 @@ void rsv64_user_test(void) {
   status = -1;
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
   KEXPECT_EQ(0x4bf779a4, status);
+
+
+  KTEST_BEGIN("riscv64: basic fork user test");
+  child = proc_fork(do_fork_test, NULL);
+  status = -1;
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  KEXPECT_EQ(9, status);
 }

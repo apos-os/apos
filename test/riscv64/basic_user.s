@@ -88,3 +88,30 @@ sigaction_test_handler:
   sd a0, (s1)
   addi sp, sp, 16
   ret
+
+fork_test:
+  addi sp, sp, -32
+  sd ra, 24(sp)
+  sd fp, 16(sp)
+  add fp, sp, 32
+
+  li a0, 13  # SYS_FORK
+  ecall
+  bnez a0, .Lparent
+
+  # In child.
+  li a0, 14  # SYS_EXIT
+  li a1, 8
+  ecall
+
+.Lparent:
+  mv s1, a0  # s1 = child pid
+  li a0, 41  # SYS_WAIT
+  mv a1, sp
+  ecall
+
+  # exit(child_status)
+  ld a1, (sp)
+  addi a1, a1, 1
+  li a0, 14
+  ecall
