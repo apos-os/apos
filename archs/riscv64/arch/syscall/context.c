@@ -15,6 +15,7 @@
 
 #include "arch/proc/user_context.h"
 #include "archs/riscv64/internal/kthread.h"
+#include "internal/constants.h"
 
 user_context_t syscall_extract_context(long retval) {
   // TODO(aoates): this shouldn't have access to kthread_current_thread().
@@ -24,6 +25,11 @@ user_context_t syscall_extract_context(long retval) {
       kthread_arch_kernel_stack_bottom(kthread_current_thread()) - 288;
   user_context_t ctx = *(const user_context_t*)ctx_addr;
   ctx.ctx.a0 = retval;
+  // Need to modify the return address here as well as interrupts.c, since we'll
+  // hit this path when delivering a signal.
+  // TODO(aoates): refactor all the syscall and interrupt paths so as not to
+  // assume they enter the kernel divergently.
+  ctx.ctx.address += RSV_ECALL_INSTR_LEN;
   return ctx;
 }
 

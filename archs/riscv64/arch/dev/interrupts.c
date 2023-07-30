@@ -20,6 +20,7 @@
 #include "archs/riscv64/internal/timer.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "internal/constants.h"
 #include "internal/plic.h"
 #include "memory/vm_page_fault.h"
 #include "proc/defint.h"
@@ -46,8 +47,6 @@
 #define RSV_TRAP_PAGEFAULT_INSTR 12  // Instruction page fault
 #define RSV_TRAP_PAGEFAULT_LOAD 13   // Load page fault
 #define RSV_TRAP_PAGEFAULT_STORE 15  // Store/AMO page fault
-
-#define RSV_ECALL_INSTR_LEN 4
 
 static void sigill_handler(bool is_user) {
   if (!is_user) {
