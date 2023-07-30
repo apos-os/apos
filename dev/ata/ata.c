@@ -14,7 +14,6 @@
 
 #include <stdint.h>
 
-#include "arch/common/io.h"
 #include "arch/dev/irq.h"
 #include "common/arch-config.h"
 #include "common/errno.h"
@@ -67,12 +66,12 @@ static int g_init = 0;
 // Reads the status register on the given channel.  This resets the interrupt
 // state.
 static inline uint8_t read_status(ata_channel_t* channel) {
-  return inb(channel->cmd_offset + ATA_CMD_STATUS);
+  return io_read8(channel->cmd_io, ATA_CMD_STATUS);
 }
 
 // Same as above, but reads without resetting the interrupt state
 static inline uint8_t read_alt_status(ata_channel_t* channel) {
-  return inb(channel->ctrl_offset + ATA_CTRL_ALT_STATUS);
+  return io_read8(channel->ctrl_io, ATA_CTRL_ALT_STATUS);
 }
 
 // Waits until ALL the given bits in the (alternate) status register are clear.
@@ -99,7 +98,7 @@ void send_cmd(ata_channel_t* channel, uint8_t cmd) {
   wait_until_clear(channel, ATA_STATUS_BSY);
 
   // Send the command, the wait until BSY is unset again.
-  outb(channel->cmd_offset + ATA_CMD_CMD, cmd);
+  io_write8(channel->cmd_io, ATA_CMD_CMD, cmd);
 }
 
 // Blocks until BSY is unset, then reads a block of data in blocking PIO mode.
@@ -119,7 +118,7 @@ static int pio_read_block(ata_channel_t* channel, uint16_t* buf) {
   KASSERT(status & ATA_STATUS_DRQ);  // Data must be ready!
 
   for (int i = 0; i < ATA_BLOCK_SIZE / 2; ++i) {
-    buf[i] = ins(channel->cmd_offset + ATA_CMD_DATA);
+    buf[i] = io_read16(channel->cmd_io, ATA_CMD_DATA);
   }
   return 0;
 }
@@ -127,7 +126,7 @@ static int pio_read_block(ata_channel_t* channel, uint16_t* buf) {
 inline void drive_select(ata_channel_t* channel, uint8_t drive) {
   KASSERT(drive == 0 || drive == 1);
   const uint8_t dh = 0xA0 | ATA_DH_LBA | (drive * ATA_DH_DRV);
-  outb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD, dh);
+  io_write8(channel->cmd_io, ATA_CMD_DRIVE_HEAD, dh);
   // Read the status register 5 times to let it stabilize.
   // TODO(aoates): only do this when switching drives.
   read_status(channel);
@@ -140,27 +139,27 @@ inline void set_lba(ata_channel_t* channel, uint32_t lba, uint32_t sector_count)
   KASSERT((lba & 0xF0000000) == 0);  // Must be 28-bit.
 
   // Load bits 27-24 into the DH register.
-  uint8_t dh = inb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD);
+  uint8_t dh = io_read8(channel->cmd_io, ATA_CMD_DRIVE_HEAD);
   dh = (dh & 0xF0) | ATA_DH_LBA | ((lba >> 24) & 0x0000000F);
-  outb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD, dh);
+  io_write8(channel->cmd_io, ATA_CMD_DRIVE_HEAD, dh);
 
   // Bits 23-16 go in the cylinder high register.
-  outb(channel->cmd_offset + ATA_CMD_CYL_HIGH,
+  io_write8(channel->cmd_io, ATA_CMD_CYL_HIGH,
        (lba >> 16) & 0x000000FF);
 
   // Bits 15-8 go in the cylinder low register.
-  outb(channel->cmd_offset + ATA_CMD_CYL_LOW,
+  io_write8(channel->cmd_io, ATA_CMD_CYL_LOW,
        (lba >> 8) & 0x000000FF);
 
   // Bits 7-0 go in the sector number register.
-  outb(channel->cmd_offset + ATA_CMD_SECTOR_NUM, lba & 0x000000FF);
+  io_write8(channel->cmd_io, ATA_CMD_SECTOR_NUM, lba & 0x000000FF);
 
   // ...and the sector count.
   KASSERT(sector_count > 0 && sector_count <= 256);
   if (sector_count == 256) {
     sector_count = 0;  // Zero in the SECTOR_CNT register means 256.
   }
-  outb(channel->cmd_offset + ATA_CMD_SECTOR_CNT, sector_count);
+  io_write8(channel->cmd_io, ATA_CMD_SECTOR_CNT, sector_count);
 }
 
 // When strings are read by the IDENTIFY command in 2-byte chunks, the byte
@@ -250,14 +249,14 @@ static int identify_drive(ata_channel_t* channel, uint8_t drive, drive_t* d) {
 }
 
 static void ata_dump_state(ata_channel_t* channel) {
-  klogf(" ATA_CMD_DATA: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_DATA));
-  klogf(" ATA_CMD_ERROR: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_ERROR));
-  klogf(" ATA_CMD_SECTOR_CNT: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_SECTOR_CNT));
-  klogf(" ATA_CMD_SECTOR_NUM: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_SECTOR_NUM));
-  klogf(" ATA_CMD_CYL_LOW: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_CYL_LOW));
-  klogf(" ATA_CMD_CYL_HIGH: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_CYL_HIGH));
-  klogf(" ATA_CMD_DRIVE_HEAD: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_DRIVE_HEAD));
-  klogf(" ATA_CMD_STATUS: 0x%x\n", inb(channel->cmd_offset + ATA_CMD_STATUS));
+  klogf(" ATA_CMD_DATA: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_DATA));
+  klogf(" ATA_CMD_ERROR: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_ERROR));
+  klogf(" ATA_CMD_SECTOR_CNT: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_SECTOR_CNT));
+  klogf(" ATA_CMD_SECTOR_NUM: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_SECTOR_NUM));
+  klogf(" ATA_CMD_CYL_LOW: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_CYL_LOW));
+  klogf(" ATA_CMD_CYL_HIGH: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_CYL_HIGH));
+  klogf(" ATA_CMD_DRIVE_HEAD: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_DRIVE_HEAD));
+  klogf(" ATA_CMD_STATUS: 0x%x\n", io_read8(channel->cmd_io, ATA_CMD_STATUS));
 }
 
 static void handle_interrupt(ata_channel_t* channel) {
@@ -269,10 +268,10 @@ static void handle_interrupt(ata_channel_t* channel) {
   ata_disk_op_t* op = channel->pending_op;
 
   // TODO(aoates): check for controller error as well!
-  uint8_t status = inb(channel->cmd_offset + ATA_CMD_STATUS);
+  uint8_t status = io_read8(channel->cmd_io, ATA_CMD_STATUS);
   if (status & ATA_STATUS_ERR) {
     op->status = -EIO;
-    status = inb(channel->cmd_offset + ATA_CMD_ERROR);
+    status = io_read8(channel->cmd_io, ATA_CMD_ERROR);
     klogf("  ATA device error: 0x%x\n", status);
     ata_dump_state(channel);
   }
@@ -475,15 +474,21 @@ void ata_init(void) {
   // page 96 of the datasheet).  There doesn't seem to be a way to determine
   // these dynamically, so we just guess-and-pray.
   ata_t ata;
-  ata.primary.cmd_offset =  0x01F0;
-  ata.primary.ctrl_offset = 0x03F0;
-  ata.primary.busmaster_offset = g_busmaster_prim_offset;
+  ata.primary.cmd_io.type = IO_PORT;
+  ata.primary.ctrl_io.type = IO_PORT;
+  ata.primary.busmaster_io.type = IO_PORT;
+  ata.primary.cmd_io.base =  0x01F0;
+  ata.primary.ctrl_io.base = 0x03F0;
+  ata.primary.busmaster_io.base = g_busmaster_prim_offset;
   ata.primary.irq = 14;
   ata.primary.pending_op = 0x0;
   kthread_queue_init(&ata.primary.channel_waiters);
-  ata.secondary.cmd_offset =  0x0170;
-  ata.secondary.ctrl_offset = 0x0370;
-  ata.secondary.busmaster_offset = g_busmaster_secd_offset;
+  ata.secondary.cmd_io.type = IO_PORT;
+  ata.secondary.ctrl_io.type = IO_PORT;
+  ata.secondary.busmaster_io.type = IO_PORT;
+  ata.secondary.cmd_io.base =  0x0170;
+  ata.secondary.ctrl_io.base = 0x0370;
+  ata.secondary.busmaster_io.base = g_busmaster_secd_offset;
   ata.secondary.irq = 15;
   ata.secondary.pending_op = 0x0;
   kthread_queue_init(&ata.secondary.channel_waiters);

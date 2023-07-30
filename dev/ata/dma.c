@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "arch/common/io.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/pci/piix.h"
@@ -74,7 +73,7 @@ static inline void dma_unlock_buffer(void) {
 
 static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
                                uint8_t is_write) {
-  KASSERT(channel->busmaster_offset != 0);
+  KASSERT(channel->busmaster_io.base != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
   KASSERT(len <= dma_buffer_size());
@@ -87,14 +86,14 @@ static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
   *(prdt+1) = 0x80000000 + len;
 
   // Reset controller.
-  outb(channel->busmaster_offset + BM_CMD, 0x0);
-  outb(channel->busmaster_offset + BM_STATUS, BM_STATUS_INTERRUPT);
-  inb(channel->busmaster_offset + BM_STATUS);
-  inb(channel->cmd_offset + 0x07);
+  io_write8(channel->busmaster_io, BM_CMD, 0x0);
+  io_write8(channel->busmaster_io, BM_STATUS, BM_STATUS_INTERRUPT);
+  io_read8(channel->busmaster_io, BM_STATUS);
+  io_read8(channel->cmd_io, 0x07);
 
   // Set everything up.
-  outl(channel->busmaster_offset + BM_PRDT, g_prdt_phys);
-  uint8_t cmd = inb(channel->busmaster_offset + BM_CMD);
+  io_write32(channel->busmaster_io, BM_PRDT, g_prdt_phys);
+  uint8_t cmd = io_read8(channel->busmaster_io, BM_CMD);
   // cmd |= 0x60;
   // Note: we set the R/W bit to what the *DMA controller* is doing (i.e.,
   // reading or writing to memory).  So if we're writing to the device, the DMA
@@ -105,25 +104,25 @@ static void dma_setup_transfer(ata_channel_t* channel, uint32_t len,
     cmd |= BM_CMD_RW;
   }
   KASSERT((cmd & BM_CMD_STARTSTOP) == 0);
-  outb(channel->busmaster_offset + BM_CMD, cmd);
+  io_write8(channel->busmaster_io, BM_CMD, cmd);
 
   // Clear interrupts and errors.
-  uint8_t status = inb(channel->busmaster_offset + BM_STATUS);
+  uint8_t status = io_read8(channel->busmaster_io, BM_STATUS);
   KASSERT((status & BM_STATUS_ACTIVE) == 0);
   status = status | 0x60;
   status = status | BM_STATUS_INTERRUPT | BM_STATUS_ERR;
-  outb(channel->busmaster_offset + BM_STATUS, status);
+  io_write8(channel->busmaster_io, BM_STATUS, status);
 }
 
 static void dma_start_transfer(ata_channel_t* channel) {
   KASSERT(g_dma_buf_mutex.locked);
-  KASSERT(channel->busmaster_offset != 0);
+  KASSERT(channel->busmaster_io.base != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
 
-  uint8_t cmd = inb(channel->busmaster_offset + BM_CMD);
+  uint8_t cmd = io_read8(channel->busmaster_io, BM_CMD);
   cmd |= BM_CMD_STARTSTOP;
-  outb(channel->busmaster_offset + BM_CMD, cmd);
+  io_write8(channel->busmaster_io, BM_CMD, cmd);
 
   // And we're off!
 }
@@ -193,13 +192,13 @@ void dma_perform_op(ata_disk_op_t* op) {
 
 void dma_finish_transfer(ata_channel_t* channel) {
   KASSERT(g_dma_buf_mutex.locked);
-  KASSERT(channel->busmaster_offset != 0);
+  KASSERT(channel->busmaster_io.base != 0);
   KASSERT(g_prdt_phys != 0);
   KASSERT(g_prd_phys != 0);
 
-  uint8_t cmd = inb(channel->busmaster_offset + BM_CMD);
+  uint8_t cmd = io_read8(channel->busmaster_io, BM_CMD);
   cmd &= ~BM_CMD_STARTSTOP;
-  outb(channel->busmaster_offset + BM_CMD, cmd);
+  io_write8(channel->busmaster_io, BM_CMD, cmd);
 
   // TODO(aoates): check error status, reset interrupt line, etc.
 }
