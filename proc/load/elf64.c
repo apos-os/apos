@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "memory/kmalloc.h"
 #include "memory/flags.h"
@@ -24,7 +25,7 @@
 
 // Attempt to read exactly count bytes.  Read until we get there, or hit EOF.
 // Returns 0 if we read exactly count bytes, error if otherwise.
-static int elf_read_bytes(int fd, void* buf, unsigned int count) {
+static int elf64_read_bytes(int fd, void* buf, unsigned int count) {
   unsigned int bytes_read = 0;
   while (bytes_read < count) {
     const int result = vfs_read(fd, buf + bytes_read,
@@ -39,9 +40,9 @@ static int elf_read_bytes(int fd, void* buf, unsigned int count) {
   return 0;
 }
 
-// Checks the validity of an Elf32_Ehdr.  Returns 0 if it's valid (i.e., we can
+// Checks the validity of an Elf64_Ehdr.  Returns 0 if it's valid (i.e., we can
 // load the file with that header).
-static int elf_check_header(const Elf32_Ehdr* header) {
+static int elf64_check_header(const Elf64_Ehdr* header) {
   if (header->e_ident[EI_MAG0] != ELFMAG0 ||
       header->e_ident[EI_MAG1] != ELFMAG1 ||
       header->e_ident[EI_MAG2] != ELFMAG2 ||
@@ -49,9 +50,9 @@ static int elf_check_header(const Elf32_Ehdr* header) {
     return -EINVAL;
   }
 
-  if (header->e_ident[EI_CLASS] != ELFCLASS32 ||
+  if (header->e_ident[EI_CLASS] != ELFCLASS64 ||
       header->e_ident[EI_DATA] != ELFDATA2LSB) {
-    KLOG(DEBUG, "unsupported ELF format (must be 32-bit, little endian)\n");
+    KLOG(DEBUG, "unsupported ELF64 format (must be 64-bit, little endian)\n");
     return -EINVAL;
   }
 
@@ -67,8 +68,8 @@ static int elf_check_header(const Elf32_Ehdr* header) {
     return -EINVAL;
   }
 
-  if (header->e_machine != EM_386) {
-    KLOG(INFO, "ELF type != EM_386 (%d)\n", header->e_machine);
+  if (header->e_machine != EM_RISCV) {
+    KLOG(INFO, "Unsupported ELF e_machine (%d)\n", header->e_machine);
     return -EINVAL;
   }
 
@@ -82,7 +83,7 @@ static int elf_check_header(const Elf32_Ehdr* header) {
     return -EINVAL;
   }
 
-  if (header->e_phentsize != sizeof(Elf32_Phdr)) {
+  if (header->e_phentsize != sizeof(Elf64_Phdr)) {
     // TODO(aoates): support this.
     KLOG(INFO, "unsupported program header entry size (%d)\n",
          header->e_phentsize);
@@ -92,34 +93,33 @@ static int elf_check_header(const Elf32_Ehdr* header) {
   return 0;
 }
 
-static int elf_read_phdrs(int fd, const Elf32_Ehdr* header, Elf32_Phdr* phdrs) {
+static int elf64_read_phdrs(int fd, const Elf64_Ehdr* header, Elf64_Phdr* phdrs) {
   int result = vfs_seek(fd, header->e_phoff, VFS_SEEK_SET);
   if (result < 0) return result;
 
   for (int i = 0; i < header->e_phnum; ++i) {
-    int result = elf_read_bytes(fd, phdrs + i, sizeof(Elf32_Phdr));
+    int result = elf64_read_bytes(fd, phdrs + i, sizeof(Elf64_Phdr));
     if (result) return result;
 
     if (phdrs[i].p_type != PT_NULL &&
         phdrs[i].p_type != PT_LOAD &&
         phdrs[i].p_type != PT_NOTE &&
-        phdrs[i].p_type != PT_GNU_STACK) {
+        phdrs[i].p_type != PT_GNU_STACK &&
+        phdrs[i].p_type != PT_RISCV_ATTRIBUTES) {
       KLOG(INFO, "unsupported ELF program segment type 0x%x (segment %d)\n",
            phdrs[i].p_type, i);
       return -EINVAL;
     }
 
     // TODO(aoates): check p_align?
-
-    // TODO
   }
 
   return 0;
 }
 
-static int elf_create_load_binary(const Elf32_Ehdr* header,
-                                  const Elf32_Phdr* phdrs,
-                                  load_binary_t** binary_out) {
+static int elf64_create_load_binary(const Elf64_Ehdr* header,
+                                    const Elf64_Phdr* phdrs,
+                                    load_binary_t** binary_out) {
   int num_regions = 0;
   for (int i = 0; i < header->e_phnum; ++i) {
     if (phdrs[i].p_type == PT_LOAD) ++num_regions;
@@ -129,7 +129,9 @@ static int elf_create_load_binary(const Elf32_Ehdr* header,
       sizeof(load_binary_t) + sizeof(load_region_t) * num_regions);
   *binary_out = bin;
 
-  bin->arch = BIN_X86_32;
+  KASSERT_DBG(header->e_ident[EI_CLASS] == ELFCLASS64);
+  KASSERT_DBG(header->e_machine == EM_RISCV);
+  bin->arch = BIN_RISCV_64;
   bin->entry = header->e_entry;
   bin->num_regions = num_regions;
   int region_number = 0;
@@ -150,42 +152,42 @@ static int elf_create_load_binary(const Elf32_Ehdr* header,
   return 0;
 }
 
-int elf_is_loadable(int fd) {
+int elf64_is_loadable(int fd) {
   int result = vfs_seek(fd, 0, VFS_SEEK_SET);
   if (result < 0) return result;
 
   // Read the ELF header.
-  Elf32_Ehdr header;
-  result = elf_read_bytes(fd, &header, sizeof(Elf32_Ehdr));
+  Elf64_Ehdr header;
+  result = elf64_read_bytes(fd, &header, sizeof(Elf64_Ehdr));
   if (result != 0) return result;
 
   // Check the header contents.
-  return elf_check_header(&header);
+  return elf64_check_header(&header);
 }
 
-int elf_load(int fd, load_binary_t** binary_out) {
+int elf64_load(int fd, load_binary_t** binary_out) {
   int result = vfs_seek(fd, 0, VFS_SEEK_SET);
   if (result < 0) return result;
 
   // Read the ELF header.
-  Elf32_Ehdr header;
-  result = elf_read_bytes(fd, &header, sizeof(Elf32_Ehdr));
+  Elf64_Ehdr header;
+  result = elf64_read_bytes(fd, &header, sizeof(Elf64_Ehdr));
   if (result != 0) return result;
 
   // Check the header contents.
-  result = elf_check_header(&header);
+  result = elf64_check_header(&header);
   if (result != 0) return result;
 
   // Read the program header.
-  Elf32_Phdr* phdrs = (Elf32_Phdr*)kmalloc(sizeof(Elf32_Phdr) * header.e_phnum);
-  result = elf_read_phdrs(fd, &header, phdrs);
+  Elf64_Phdr* phdrs = (Elf64_Phdr*)kmalloc(sizeof(Elf64_Phdr) * header.e_phnum);
+  result = elf64_read_phdrs(fd, &header, phdrs);
   if (result) {
     kfree(phdrs);
     return result;
   }
 
   // Create a load_binary_t* from it.
-  result = elf_create_load_binary(&header, phdrs, binary_out);
+  result = elf64_create_load_binary(&header, phdrs, binary_out);
   kfree(phdrs);
   return result;
 }

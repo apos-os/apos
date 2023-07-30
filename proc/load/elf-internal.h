@@ -155,6 +155,7 @@ _Static_assert(sizeof(Elf64_Phdr) == 56, "malformed Elf64_Phdr");
 #define PT_LOPROC 0x70000000
 #define PT_HIPROC 0x7fffffff
 #define PT_GNU_STACK 0x6474e551
+#define PT_RISCV_ATTRIBUTES 0x70000003
 
 // Flags in p_flags.
 #define PF_X 0x1

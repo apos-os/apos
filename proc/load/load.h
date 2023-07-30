@@ -24,6 +24,7 @@
 // binaries).
 typedef enum {
   BIN_X86_32 = 0,
+  BIN_RISCV_64,
 } bin_arch_t;
 
 // A region to load into memory.  It consists of a portion to load from a file,

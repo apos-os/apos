@@ -26,6 +26,7 @@
 
 static load_module_t g_modules[] = {
   { &elf_is_loadable, &elf_load },
+  { &elf64_is_loadable, &elf64_load },
   { NULL, NULL },
 };
 
