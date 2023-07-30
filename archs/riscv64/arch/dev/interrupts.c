@@ -47,6 +47,8 @@
 #define RSV_TRAP_PAGEFAULT_LOAD 13   // Load page fault
 #define RSV_TRAP_PAGEFAULT_STORE 15  // Store/AMO page fault
 
+#define RSV_ECALL_INSTR_LEN 4
+
 static void sigill_handler(bool is_user) {
   if (!is_user) {
     die("sigill in kernel code");
@@ -155,6 +157,7 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
       case RSV_TRAP_ENVCALL_USR:
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
+        ctx->address += RSV_ECALL_INSTR_LEN;
         break;
 
       case RSV_TRAP_BREAKPOINT:

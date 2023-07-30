@@ -13,8 +13,18 @@
 # limitations under the License.
 
 basic_user_test:
+  li a0, 100  # SYS_SYSCALL_TEST
+  li a1, 1
+  li a2, 2
+  li a3, 3
+  li a4, 4
+  li a5, 5
+  li a6, 6
+  li a7, 7  # Shouldn't be used
+  ecall
+
+  mv a1, a0  # Call exit() with result.
   li a0, 14  # exit()
-  li a1, 123
   ecall
 
 segfault_test:
