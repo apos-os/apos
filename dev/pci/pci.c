@@ -14,11 +14,11 @@
 
 #include <stdint.h>
 
-#include "arch/common/io.h"
 #include "common/arch-config.h"
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "dev/io.h"
 #if ENABLE_ETHERNET
 #include "dev/net/rtl8139.h"
 #endif
@@ -50,6 +50,8 @@
 #define PCI_MAX_DEVICES 40
 static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
+
+static const devio_t kPciIo = {IO_PORT, 0};
 
 // Static table of drivers.
 #define PCI_DRIVER_VENDOR 1
@@ -105,15 +107,17 @@ static inline uint32_t make_cmd(uint8_t bus, uint8_t device,
 // Read a word from a PCI config register.
 static uint32_t pci_read_config(uint8_t bus, uint8_t device,
                                 uint8_t function, uint8_t reg_offset) {
-  outl(PCI_CONFIG_ADDR, make_cmd(bus, device, function, reg_offset));
-  return inl(PCI_CONFIG_DATA);
+  io_write32(kPciIo, PCI_CONFIG_ADDR,
+             make_cmd(bus, device, function, reg_offset));
+  return io_read32(kPciIo, PCI_CONFIG_DATA);
 }
 
 static void pci_write_config(uint8_t bus, uint8_t device,
                              uint8_t function, uint8_t reg_offset,
                              uint32_t value) {
-  outl(PCI_CONFIG_ADDR, make_cmd(bus, device, function, reg_offset));
-  outl(PCI_CONFIG_DATA, value);
+  io_write32(kPciIo, PCI_CONFIG_ADDR,
+             make_cmd(bus, device, function, reg_offset));
+  io_write32(kPciIo, PCI_CONFIG_DATA, value);
 }
 
 // Read config data for a single (bus, device, function) tuple.  Returns 0 if
