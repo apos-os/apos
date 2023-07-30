@@ -25,7 +25,7 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
   int cframe = 0;
   while (fp != 0x0 && cframe < trace_len) {
     if (fp % sizeof(addr_t) != 0) {
-      klogf("Warning: aligned frame pointer 0x%" PRIxADDR "\n", fp);
+      klogf("Warning: misaligned frame pointer 0x%" PRIxADDR "\n", fp);
       break;
     }
 

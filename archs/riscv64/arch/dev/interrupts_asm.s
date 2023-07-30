@@ -86,7 +86,7 @@ int_handler_asm:
 
 .Lstack_done:
   ld s2, -8(s1)
-  sd s2, -24(sp)         # Save original sp onto new stack.
+  sd s2, -280(sp)         # Save original sp onto new stack.
   ld s2, 0(s1)            # Get saved s2 from the scratch spot.
   csrrw s1, sscratch, s1  # Restore s1 and sscratch.
   # Now everything is as it was, except we may have switched stacks.
@@ -95,7 +95,7 @@ int_handler_asm:
   # trap (for example, a page fault on the stack while pushing context)?
   # Currently those registers are the only s-mode visible registers that are
   # _not_ fully restored here, which is fine for most S code.
-  addi sp, sp, -272
+  addi sp, sp, -288
   # Save the original ra value as a local variable.  We need to restore it
   # later, but if the code we interrupted is a leaf function, this ra likely
   # points to _its_ caller, so if we use it for our stack frame it will look
@@ -104,53 +104,58 @@ int_handler_asm:
   # Now pretend as if the interrupted code called us.
   csrr ra, sepc
   # Now create the start of our standard stack frame.
-  sd ra, 264(sp)
-  sd fp, 256(sp)
-  addi fp, sp, 272  # fake frame
+  sd ra, 280(sp)
+  sd fp, 272(sp)
+  sd fp, 0x038(sp)  # Store in ctx->fp as well.
+  addi fp, sp, 288  # fake frame
 
-  # Now save all our other registers.
+  # Now save all our other registers, creating an rsv_context_t on the stack.
   # ra: is already stored at 0(sp)
-  # sp: no need to store sp again
-  sd gp,  0x0010(sp)
-  sd tp,  0x0018(sp)
-  sd t0,  0x0020(sp)
-  sd t1,  0x0028(sp)
-  sd t2,  0x0030(sp)
-  # Skip s0/fp --- saved above.
-  sd s1,  0x0038(sp)
-  sd a0,  0x0040(sp)
-  sd a1,  0x0048(sp)
-  sd a2,  0x0050(sp)
-  sd a3,  0x0058(sp)
-  sd a4,  0x0060(sp)
-  sd a5,  0x0068(sp)
-  sd a6,  0x0070(sp)
-  sd a7,  0x0078(sp)
-  sd s2,  0x0080(sp)
-  sd s3,  0x0088(sp)
-  sd s4,  0x0090(sp)
-  sd s5,  0x0098(sp)
-  sd s6,  0x00a0(sp)
-  sd s7,  0x00a8(sp)
-  sd s8,  0x00b0(sp)
-  sd s9,  0x00b8(sp)
-  sd s10, 0x00c0(sp)
-  sd s11, 0x00c8(sp)
-  sd t3,  0x00d0(sp)
-  sd t4,  0x00d8(sp)
-  sd t5,  0x00e0(sp)
-  sd t6,  0x00e8(sp)
+  # sp: stored above
+  sd gp,  0x010(sp)
+  sd tp,  0x018(sp)
+  sd t0,  0x020(sp)
+  sd t1,  0x028(sp)
+  sd t2,  0x030(sp)
+  # fp/s0 stored above.
+  sd s1,  0x040(sp)
+  sd a0,  0x048(sp)
+  sd a1,  0x050(sp)
+  sd a2,  0x058(sp)
+  sd a3,  0x060(sp)
+  sd a4,  0x068(sp)
+  sd a5,  0x070(sp)
+  sd a6,  0x078(sp)
+  sd a7,  0x080(sp)
+  sd s2,  0x088(sp)
+  sd s3,  0x090(sp)
+  sd s4,  0x098(sp)
+  sd s5,  0x0a0(sp)
+  sd s6,  0x0a8(sp)
+  sd s7,  0x0b0(sp)
+  sd s8,  0x0b8(sp)
+  sd s9,  0x0c0(sp)
+  sd s10, 0x0c8(sp)
+  sd s11, 0x0d0(sp)
+  sd t3,  0x0d8(sp)
+  sd t4,  0x0e0(sp)
+  sd t5,  0x0e8(sp)
+  sd t6,  0x0f0(sp)
+
+  # Save sepc to ctx->address.
+  csrr t0, sepc
+  sd t0, 0x0f8(sp)
 
   # Save SPP and SPIE in case we hit another interrupt (e.g. a nested interrupt
   # [unusual], an interrupt while processing a defint, or do a context switch).
   # We must not trap above!
   csrr t0, sstatus
   andi t0, t0, SSTATUS_SAVE_MASK
-  sd t0, 0x0008(sp)
+  sd t0, 0x100(sp)
 
-  csrr a0, scause
-  csrr a1, stval
-  csrr a2, sepc
+  mv a0, sp  # Pass &ctx
+  csrr a1, scause
+  csrr a2, stval
   csrr a3, sstatus
   andi a3, a3, SSTATUS_SPP
 
@@ -160,50 +165,47 @@ int_handler_asm:
   # TODO(aoates): write tests that catch all save/restore possibilities.
   li t0, SSTATUS_SAVE_MASK
   csrc sstatus, t0
-  ld t0, 0x0008(sp)
+  ld t0, 0x0100(sp)
   csrs sstatus, t0
 
-  # ra: we'll do ra later.
-  # sp: no need to save/restore it
-  ld gp,  0x0010(sp)
-  ld tp,  0x0018(sp)
-  ld t0,  0x0020(sp)
-  ld t1,  0x0028(sp)
-  ld t2,  0x0030(sp)
-  # Skip s0/fp --- saved above.
-  ld s1,  0x0038(sp)
-  ld a0,  0x0040(sp)
-  ld a1,  0x0048(sp)
-  ld a2,  0x0050(sp)
-  ld a3,  0x0058(sp)
-  ld a4,  0x0060(sp)
-  ld a5,  0x0068(sp)
-  ld a6,  0x0070(sp)
-  ld a7,  0x0078(sp)
-  ld s2,  0x0080(sp)
-  ld s3,  0x0088(sp)
-  ld s4,  0x0090(sp)
-  ld s5,  0x0098(sp)
-  ld s6,  0x00a0(sp)
-  ld s7,  0x00a8(sp)
-  ld s8,  0x00b0(sp)
-  ld s9,  0x00b8(sp)
-  ld s10, 0x00c0(sp)
-  ld s11, 0x00c8(sp)
-  ld t3,  0x00d0(sp)
-  ld t4,  0x00d8(sp)
-  ld t5,  0x00e0(sp)
-  ld t6,  0x00e8(sp)
+  # ra and sp: we'll do later.
+  ld gp,  0x010(sp)
+  ld tp,  0x018(sp)
+  ld t0,  0x020(sp)
+  ld t1,  0x028(sp)
+  ld t2,  0x030(sp)
+  ld s0,  0x038(sp)
+  ld s1,  0x040(sp)
+  ld a0,  0x048(sp)
+  ld a1,  0x050(sp)
+  ld a2,  0x058(sp)
+  ld a3,  0x060(sp)
+  ld a4,  0x068(sp)
+  ld a5,  0x070(sp)
+  ld a6,  0x078(sp)
+  ld a7,  0x080(sp)
+  ld s2,  0x088(sp)
+  ld s3,  0x090(sp)
+  ld s4,  0x098(sp)
+  ld s5,  0x0a0(sp)
+  ld s6,  0x0a8(sp)
+  ld s7,  0x0b0(sp)
+  ld s8,  0x0b8(sp)
+  ld s9,  0x0c0(sp)
+  ld s10, 0x0c8(sp)
+  ld s11, 0x0d0(sp)
+  ld t3,  0x0d8(sp)
+  ld t4,  0x0e0(sp)
+  ld t5,  0x0e8(sp)
+  ld t6,  0x0f0(sp)
 
-  # Restore the saved frame pointer from our stack frame.
-  ld fp, 256(sp)
   # Load from our stack frame the interrupted address into sepc.  If we weren't
   # interrupted again, this in unnecessary.
-  ld ra, 264(sp)
+  ld ra, 0xf8(sp)
   csrw sepc, ra
-  # Restore the original value of the ra address (from the interrupted code)
+  # Restore the original value of ra (from the interrupted code) and sp.
   ld ra, 0(sp)
-  ld sp, 248(sp)
+  ld sp, 0x08(sp)
   sret
 
 _int_handlers_end:

@@ -14,6 +14,7 @@
 
 #include "arch/dev/interrupts.h"
 
+#include "archs/riscv64/internal/context.h"
 #include "archs/riscv64/internal/page_tables.h"
 #include "archs/riscv64/internal/riscv.h"
 #include "archs/riscv64/internal/timer.h"
@@ -97,11 +98,11 @@ void interrupts_init(void) {
   asm volatile("csrs sie, %0" ::"r"(sie_bits));
 }
 
-void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
+void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
                  uint64_t is_kernel) {
   klogfm(KL_GENERAL, DEBUG3,
          "interrupt: scause: 0x%lx  stval: 0x%lx  sepc: 0x%lx  is_kernel: %d\n",
-         scause, stval, sepc, (int)is_kernel);
+         scause, stval, ctx->address, (int)is_kernel);
 
   if (scause & RSV_INTERRUPT) {
     const int interrupt = scause & ~RSV_INTERRUPT;
@@ -121,7 +122,7 @@ void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
             KL_GENERAL, FATAL,
             "Unhandled interrupt %d (scause: 0x%lx  stval: 0x%lx  sepc: 0x%lx  "
             "is_kernel: %d)\n",
-            interrupt, scause, stval, sepc, (int)is_kernel);
+            interrupt, scause, stval, ctx->address, (int)is_kernel);
     }
   } else {
     switch (scause) {
@@ -152,7 +153,7 @@ void int_handler(uint64_t scause, uint64_t stval, uint64_t sepc,
       default:
         klogfm(KL_GENERAL, FATAL,
                "Unhandled trap %d (stval: 0x%lx  sepc: 0x%lx  is_kernel: %d)\n",
-               (int)scause, stval, sepc, (int)is_kernel);
+               (int)scause, stval, ctx->address, (int)is_kernel);
     }
   }
 
