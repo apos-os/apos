@@ -24,6 +24,7 @@
 #include "memory/vm_page_fault.h"
 #include "proc/defint.h"
 #include "proc/signal/signal.h"
+#include "syscall/syscall_dispatch.h"
 
 // Interrupt and trap definitions (per values in scause).
 #define RSV_INTERRUPT (1LL << (SXLEN - 1))
@@ -146,9 +147,12 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         sigbus_handler(is_kernel);
         break;
 
-      // TODO(aoates): implement the rest of these:
-      case RSV_TRAP_BREAKPOINT:
       case RSV_TRAP_ENVCALL_USR:
+        ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
+                                   ctx->a5, ctx->a6);
+        break;
+
+      case RSV_TRAP_BREAKPOINT:
       case RSV_TRAP_ENVCALL_SUP:
       default:
         klogfm(KL_GENERAL, FATAL,

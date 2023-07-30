@@ -16,6 +16,8 @@
 #ifndef APOO_ALL_TESTS_H
 #define APOO_ALL_TESTS_H
 
+#include "common/config.h"
+
 void interrupt_clobber_test(void);
 void interrupt_save_test(void);
 void kmalloc_test(void);
@@ -68,6 +70,10 @@ void run_user_tests(void);
 void proc_thread_test(void);
 void futex_test(void);
 void devicetree_test(void);
+
+#if ARCH == ARCH_riscv64
+void rsv64_user_test(void);
+#endif
 
 int kernel_run_ktest(const char* name);
 

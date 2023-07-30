@@ -35,6 +35,7 @@
 #include "proc/wait.h"
 #include "syscall/execve_wrapper.h"
 #include "syscall/fork.h"
+#include "syscall/syscall_dispatch.h"
 #include "syscall/test.h"
 #include "syscall/wrappers.h"
 #include "syscall/wrappers32.h"

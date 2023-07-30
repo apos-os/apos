@@ -94,6 +94,10 @@ static const test_entry_t TESTS[] = {
   { "interrupt_save", &interrupt_save_test, 1 },
 #endif
 
+#if ARCH == ARCH_riscv64
+  { "rsv_user", &rsv64_user_test, 1 },
+#endif
+
   // Fake test for running everything.
   { "all", &run_all_tests, 0 },
   { 0, 0, 0},
