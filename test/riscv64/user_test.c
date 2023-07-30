@@ -25,11 +25,21 @@
 #include "test/kernel_tests.h"
 #include "user/include/apos/mmap.h"
 
+// Generating these:
+//  riscv64-elf-as -o /tmp/test.o test/riscv64/basic_user.s
+//  riscv64-elf-objdump -d --no-addresses --section=.text /tmp/test.o
+//  '<,'>s/^\s*\(..\)\(..\)\(..\)\(..\)\s*/0x\4, 0x\3, 0x\2, 0x\1, \/\/ /g
+
 // Basic user test.
 static const char kBasicUserCode[] = {
     0x13, 0x05, 0xe0, 0x00,  // li      a0,14
     0x93, 0x05, 0xb0, 0x07,  // li      a2,123
     0x73, 0x00, 0x00, 0x00,  // ecall
+};
+
+static const char kSegfaultCode[] = {
+    0x13, 0x05, 0x30, 0x12,  // li      a0,291
+    0x67, 0x00, 0x05, 0x00,  // jr      a0
 };
 
 static void do_basic_user_test(void* arg) {
@@ -75,6 +85,19 @@ static void do_basic_user_test(void* arg) {
   die("shouldn't get here");
 }
 
+static void do_segfault_test(void* arg) {
+  void* addr;
+  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_ALL,
+                        KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addr));
+  kmemcpy(addr, kSegfaultCode, sizeof(kSegfaultCode));
+
+  user_context_t ctx;
+  kmemset(&ctx, 0, sizeof(ctx));
+  ctx.ctx.address = (addr_t)addr;
+  user_context_apply(&ctx);
+  die("shouldn't get here");
+}
+
 void rsv64_user_test(void) {
   KTEST_SUITE_BEGIN("riscv64: user tests");
 
@@ -83,4 +106,12 @@ void rsv64_user_test(void) {
   int status = -1;
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
   KEXPECT_EQ(123, status);
+
+
+  KTEST_BEGIN("riscv64: segfault user test");
+  child = proc_fork(do_segfault_test, NULL);
+  status = -1;
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
 }

@@ -12,6 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-li a0, 14  # exit()
-li a1, 123
-ecall
+basic_user_test:
+  li a0, 14  # exit()
+  li a1, 123
+  ecall
+
+segfault_test:
+  li a0, 0x123
+  jr a0

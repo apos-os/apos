@@ -24,6 +24,7 @@
 #include "memory/vm_page_fault.h"
 #include "proc/defint.h"
 #include "proc/signal/signal.h"
+#include "proc/user_prepare.h"
 #include "syscall/syscall_dispatch.h"
 
 // Interrupt and trap definitions (per values in scause).
@@ -99,6 +100,10 @@ void interrupts_init(void) {
   asm volatile("csrs sie, %0" ::"r"(sie_bits));
 }
 
+static user_context_t copy_ctx(void* ctx_ptr) {
+  return *(const user_context_t*)ctx_ptr;
+}
+
 void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
                  uint64_t is_kernel) {
   klogfm(KL_GENERAL, DEBUG3,
@@ -163,5 +168,9 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
 
   defint_process_queued();
 
-  // TODO(riscv): handle signals, etc
+  if (!is_kernel) {
+    proc_prep_user_return(&copy_ctx, ctx, NULL);
+  }
+
+  // Note: we may never get here, if there were signals to dispatch.
 }
