@@ -14,19 +14,23 @@
 #include "arch/syscall/context.h"
 
 #include "arch/proc/user_context.h"
+#include "archs/riscv64/internal/kthread.h"
 
 user_context_t syscall_extract_context(long retval) {
-  // TODO(riscv): implement
-  user_context_t context;
-  context.dummy = 0;
-  return context;
+  // TODO(aoates): this shouldn't have access to kthread_current_thread().
+  // TODO(aoates): pass this up from the syscall/interrupt handler in a cleaner
+  // way (perhaps in a kthread_t field?).
+  addr_t ctx_addr =
+      kthread_arch_kernel_stack_bottom(kthread_current_thread()) - 288;
+  user_context_t ctx = *(const user_context_t*)ctx_addr;
+  ctx.ctx.a0 = retval;
+  return ctx;
 }
 
 long syscall_get_result(const user_context_t* ctx) {
-  // TODO(riscv): implement
-  return 0;
+  return ctx->ctx.a0;
 }
 
 void syscall_set_result(user_context_t* ctx, long retval) {
-  // TODO(riscv): implement
+  ctx->ctx.a0 = retval;
 }

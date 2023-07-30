@@ -16,12 +16,10 @@
 
 #include "archs/common/arch/proc/user_context.h"
 
-// Context from a switch from user mode into kernel mode, e.g. from an interrupt
-// or syscall.  Can be saved and used to restore the context later without the
-// original kernel stack (e.g. after forking or invoking a signal handler).
-// TODO(riscv): implement this for riscv64.
+#include "archs/riscv64/internal/context.h"
+
 struct user_context {
-  int dummy;
+  rsv_context_t ctx;
 } __attribute__((packed));
 
 #endif

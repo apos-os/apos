@@ -14,6 +14,6 @@
 #include "arch/syscall/init.h"
 
 void syscalls_init(void) {
-  // TODO(riscv): implement
+  // Nothing to do.
 }
 
