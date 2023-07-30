@@ -88,10 +88,6 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
   }
 }
 
-static user_context_t syscall_extract_context_tramp(void* arg) {
-  return syscall_extract_context(*(long*)arg);
-}
-
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     long arg4, long arg5, long arg6) {
   kthread_current_thread()->syscall_ctx.flags = SCCTX_RESTARTABLE;
@@ -105,11 +101,5 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
       arg4, arg5, arg6);
 
   klogfm(KL_SYSCALL, DEBUG, " --> %ld (%#lx)\n", result, (unsigned long)result);
-
-  proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result,
-                        &kthread_current_thread()->syscall_ctx);
-
-  // Don't do anything here!  After we call proc_prep_user_return(), we may
-  // never return.
   return result;
 }

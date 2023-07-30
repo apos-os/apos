@@ -24,6 +24,7 @@ srcs = [
     'arch/dev/timer.c',
     'arch/proc/stack_trace.c',
     'internal/proc/exec.c',
+    'internal/syscall_dispatch.c',
 ]
 
 subdirs = []
