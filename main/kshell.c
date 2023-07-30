@@ -19,7 +19,7 @@
 #include <stdint.h>
 #include <limits.h>
 
-#include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/config.h"
 #include "common/dynamic-config.h"
 #include "common/errno.h"
@@ -58,6 +58,10 @@
 #endif
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/vfs.h"
+
+#if ARCH_SUPPORTS_IOPORT
+#include "arch/common/io.h"
+#endif
 
 const char* PATH[] = {
   "/",
@@ -282,7 +286,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
     name(port, value); \
   }
 
-#if ARCH == ARCH_i586 || ARCH == ARCH_x86_64
+#if ARCH_SUPPORTS_IOPORT
 IO_IN_CMD(inb, uint8_t);
 IO_IN_CMD(ins, uint16_t);
 IO_IN_CMD(inl, uint32_t);
@@ -1021,7 +1025,7 @@ static const cmd_t CMDS[] = {
   { "b_write", &b_write_cmd },
   { "klog", &klog_cmd },
 
-#if ARCH == ARCH_i586 || ARCH == ARCH_x86_64
+#if ARCH_SUPPORTS_IOPORT
   { "inb", &inb_cmd },
   { "ins", &ins_cmd },
   { "inl", &inl_cmd },
