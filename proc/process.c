@@ -24,6 +24,7 @@
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/load/load.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
@@ -75,6 +76,7 @@ static void proc_init_process(process_t* p) {
   p->pgroup_link = LIST_LINK_INIT;
   p->umask = PROC_DEFAULT_UMASK;
   p->execed = false;
+  p->user_arch = BIN_NONE;
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;

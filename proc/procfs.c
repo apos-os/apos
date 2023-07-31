@@ -145,12 +145,13 @@ static int status_read(fs_t* fs, void* arg, int vnode, int offset, void* buf,
            "suid/sgid: %5d %5d\n"
            "pgroup: %d\n"
            "exec'ed: %d\n"
+           "user_arch: %d\n"
            "children:\n"
            "",
            pid, proc_state_to_string(proc->state),
            proc->parent ? proc->parent->id : -1, cwd, proc->ruid, proc->rgid,
            proc->euid, proc->egid, proc->suid, proc->sgid, proc->pgroup,
-           proc->execed);
+           proc->execed, proc->user_arch);
   char* buf_ptr = tbuf + kstrlen(tbuf);
   for (list_link_t* link = proc->children_list.head;
        link != 0x0;

@@ -23,7 +23,8 @@
 // multiple binary architectures (e.g. x86-64 supports both 32- and 64-bit x86
 // binaries).
 typedef enum {
-  BIN_X86_32 = 0,
+  BIN_NONE = 0,
+  BIN_X86_32,
   BIN_RISCV_64,
 } bin_arch_t;
 

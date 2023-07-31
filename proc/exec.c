@@ -96,6 +96,7 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     return result;
   }
 
+  proc_current()->user_arch = binary->arch;
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);
   }

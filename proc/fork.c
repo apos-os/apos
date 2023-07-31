@@ -49,6 +49,8 @@ int proc_fork(proc_func_t start, void* arg) {
   process_t* new_process = proc_alloc();
   if (!new_process) return -ENOMEM;
 
+  new_process->user_arch = proc_current()->user_arch;
+
   // Fork VFS handles.
   vfs_fork_fds(proc_current(), new_process);
   new_process->cwd = proc_current()->cwd;
