@@ -236,6 +236,19 @@ static void do_fork_test(void* arg) {
   die("shouldn't get here");
 }
 
+static const char kIllegalCode[] = {0x0, 0x0, 0x0, 0x0};
+
+static void do_sigill_test(void* arg) {
+  void* addr = MAP_CODE(kIllegalCode);
+
+  user_context_t ctx;
+  kmemset(&ctx, 0, sizeof(ctx));
+  ctx.ctx.address = (addr_t)addr;
+  proc_current()->user_arch = BIN_RISCV_64;
+  user_context_apply(&ctx);
+  die("shouldn't get here");
+}
+
 static const unsigned char kTestBinElf[] = {
     0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0xf3, 0x00, 0x01, 0x00, 0x00, 0x00,
@@ -402,6 +415,13 @@ void rsv64_user_test(void) {
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
   KEXPECT_EQ(9, status);
 
+
+  KTEST_BEGIN("riscv64: SIGILL test");
+  child = proc_fork(do_sigill_test, NULL);
+  status = -1;
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGILL, WTERMSIG(status));
 
   elf_test();
 }

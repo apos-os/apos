@@ -48,17 +48,17 @@
 #define RSV_TRAP_PAGEFAULT_LOAD 13   // Load page fault
 #define RSV_TRAP_PAGEFAULT_STORE 15  // Store/AMO page fault
 
-static void sigill_handler(bool is_user) {
-  if (!is_user) {
+static void sigill_handler(bool is_kernel) {
+  if (is_kernel) {
     die("sigill in kernel code");
   }
 
   KASSERT(proc_force_signal_on_thread(
-          proc_current(), kthread_current_thread(), SIGBUS) == 0);
+          proc_current(), kthread_current_thread(), SIGILL) == 0);
 }
 
-static void sigbus_handler(bool is_user) {
-  if (!is_user) {
+static void sigbus_handler(bool is_kernel) {
+  if (is_kernel) {
     die("sigbus in kernel code");
   }
 
