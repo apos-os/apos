@@ -56,9 +56,12 @@ static const char kSegfaultCode[] = {
     0x67, 0x00, 0x05, 0x00,  // jr      a0
 };
 
+// Start mapped regions above 4GB to catch 32/64 bit issues.
+#define MAP_START_ADDR ((void*)0x100ff0000)
+
 static void* _map_code(const char* buf, size_t len) {
   void* addr;
-  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_ALL,
+  KEXPECT_EQ(0, do_mmap(MAP_START_ADDR, PAGE_SIZE, MEM_PROT_ALL,
                         KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &addr));
   kmemcpy(addr, buf, len);
   return addr;
@@ -67,7 +70,7 @@ static void* _map_code(const char* buf, size_t len) {
 // Creates a stack mapping, sets up a stub frame, and returns the stack top.
 static uint64_t* make_stack(void) {
   void* stack_block;
-  KEXPECT_EQ(0, do_mmap(NULL, PAGE_SIZE, MEM_PROT_ALL,
+  KEXPECT_EQ(0, do_mmap(MAP_START_ADDR, PAGE_SIZE, MEM_PROT_ALL,
                         KMAP_ANONYMOUS | KMAP_PRIVATE, -1, 0, &stack_block));
   uint64_t* stack = (uint64_t*)((addr_t)stack_block + PAGE_SIZE);
   *(--stack) = 0;
@@ -113,6 +116,7 @@ static void do_basic_user_test(void* arg) {
   ctx.ctx.t5 = 30;
   ctx.ctx.t6 = 31;
   ctx.ctx.address = (addr_t)addr;
+  proc_current()->user_arch = BIN_RISCV_64;
   user_context_apply(&ctx);
   die("shouldn't get here");
 }
@@ -123,6 +127,7 @@ static void do_segfault_test(void* arg) {
   user_context_t ctx;
   kmemset(&ctx, 0, sizeof(ctx));
   ctx.ctx.address = (addr_t)addr;
+  proc_current()->user_arch = BIN_RISCV_64;
   user_context_apply(&ctx);
   die("shouldn't get here");
 }
@@ -189,6 +194,7 @@ static void do_sigaction_test(void* arg) {
   ctx.ctx.s0 = (addr_t)stack + 16;
   ctx.ctx.sp = (addr_t)stack;
   ctx.ctx.address = (addr_t)addr;
+  proc_current()->user_arch = BIN_RISCV_64;
   user_context_apply(&ctx);
   die("shouldn't get here");
 }
@@ -225,6 +231,7 @@ static void do_fork_test(void* arg) {
   ctx.ctx.s0 = (addr_t)stack + 16;  // fp
   ctx.ctx.sp = (addr_t)stack;
   ctx.ctx.address = (addr_t)addr;
+  proc_current()->user_arch = BIN_RISCV_64;
   user_context_apply(&ctx);
   die("shouldn't get here");
 }
@@ -382,9 +389,6 @@ void rsv64_user_test(void) {
   KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
 
 
-  // TODO(riscv): properly support 64-bit userspace syscalls (the test passes
-  // even with the incorrect 32-bit conversions because they're linked at low
-  // addresses).
   KTEST_BEGIN("riscv64: sigaction user test");
   child = proc_fork(do_sigaction_test, NULL);
   status = -1;

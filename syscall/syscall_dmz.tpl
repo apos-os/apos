@@ -24,15 +24,10 @@
 {{ common.include_headers(SYSCALLS, 'header') }}
 
 {% for syscall in SYSCALLS -%}
-{%- if syscall.needs_32bit_conv %}
-#if ARCH_IS_64_BIT
-{% endif %}
 {{ dmz_macros.syscall_dmz(syscall) }}
 
 {% if syscall.needs_32bit_conv %}
-#else
 {{ dmz_macros.syscall_dmz(syscall.native()) }}
-#endif
-
 {% endif %}
+
 {% endfor %}

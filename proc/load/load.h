@@ -16,6 +16,9 @@
 #ifndef APOO_PROC_LOAD_LOAD_H
 #define APOO_PROC_LOAD_LOAD_H
 
+#include <stdbool.h>
+
+#include "common/attributes.h"
 #include "common/types.h"
 #include "memory/flags.h"
 
@@ -27,6 +30,10 @@ typedef enum {
   BIN_X86_32,
   BIN_RISCV_64,
 } bin_arch_t;
+
+static inline bool ALWAYS_INLINE bin_32bit(bin_arch_t b) {
+  return b == BIN_X86_32;
+}
 
 // A region to load into memory.  It consists of a portion to load from a file,
 // followed by a portion to be anonymously mapped, either of which may be

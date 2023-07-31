@@ -401,7 +401,6 @@ cleanup:
   return result;
 }
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_getdents_32(int fd, kdirent_32_t* buf, int count) {
   kdirent_32_t* KERNEL_buf = 0x0;
 
@@ -435,7 +434,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_getdents(int fd, kdirent_t* buf, int count) {
   kdirent_t* KERNEL_buf = 0x0;
 
@@ -468,7 +466,6 @@ cleanup:
 
   return result;
 }
-#endif
 
 int SYSCALL_DMZ_getcwd(char* path_out, size_t size) {
   char* KERNEL_path_out = 0x0;
@@ -503,7 +500,6 @@ cleanup:
   return result;
 }
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_stat_32(const char* path, apos_stat_32_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_32_t* KERNEL_stat = 0x0;
@@ -546,7 +542,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_stat(const char* path, apos_stat_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_t* KERNEL_stat = 0x0;
@@ -588,9 +583,7 @@ cleanup:
 
   return result;
 }
-#endif
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_lstat_32(const char* path, apos_stat_32_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_32_t* KERNEL_stat = 0x0;
@@ -633,7 +626,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_lstat(const char* path, apos_stat_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_t* KERNEL_stat = 0x0;
@@ -675,9 +667,7 @@ cleanup:
 
   return result;
 }
-#endif
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_fstat_32(int fd, apos_stat_32_t* stat) {
   apos_stat_32_t* KERNEL_stat = 0x0;
 
@@ -712,7 +702,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_fstat(int fd, apos_stat_t* stat) {
   apos_stat_t* KERNEL_stat = 0x0;
 
@@ -746,7 +735,6 @@ cleanup:
 
   return result;
 }
-#endif
 
 apos_off_t SYSCALL_DMZ_lseek(int fd, apos_off_t offset, int whence) {
   int result;
@@ -1068,7 +1056,6 @@ cleanup:
   return result;
 }
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_execve_32(const char* path, char* const* argv,
                           char* const* envp) {
   int result;
@@ -1085,7 +1072,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_execve(const char* path, char* const* argv, char* const* envp) {
   int result;
 
@@ -1100,7 +1086,6 @@ cleanup:
 
   return result;
 }
-#endif
 
 apos_pid_t SYSCALL_DMZ_getpid(void) {
   int result;
@@ -1162,7 +1147,6 @@ cleanup:
   return result;
 }
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_sigaction_32(int signum, const struct ksigaction_32* act,
                              struct ksigaction_32* oldact) {
   const struct ksigaction_32* KERNEL_act = 0x0;
@@ -1216,7 +1200,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_sigaction(int signum, const struct ksigaction* act,
                           struct ksigaction* oldact) {
   const struct ksigaction* KERNEL_act = 0x0;
@@ -1267,7 +1250,6 @@ cleanup:
 
   return result;
 }
-#endif
 
 int SYSCALL_DMZ_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset) {
   const ksigset_t* KERNEL_set = 0x0;
@@ -1633,7 +1615,6 @@ cleanup:
   return result;
 }
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_mmap_32(void* addr_inout, size_t length, int prot, int flags,
                         int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
@@ -1672,7 +1653,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
                      int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
@@ -1710,7 +1690,6 @@ cleanup:
 
   return result;
 }
-#endif
 
 int SYSCALL_DMZ_munmap(void* addr, size_t length) {
   int result;
@@ -2156,7 +2135,6 @@ cleanup:
   return result;
 }
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
   struct apos_rlimit_32* KERNEL_lim = 0x0;
 
@@ -2191,7 +2169,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_getrlimit(int resource, struct apos_rlimit* lim) {
   struct apos_rlimit* KERNEL_lim = 0x0;
 
@@ -2225,9 +2202,7 @@ cleanup:
 
   return result;
 }
-#endif
 
-#if ARCH_IS_64_BIT
 int SYSCALL_DMZ_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
   const struct apos_rlimit_32* KERNEL_lim = 0x0;
 
@@ -2260,7 +2235,6 @@ cleanup:
   return result;
 }
 
-#else
 int SYSCALL_DMZ_setrlimit(int resource, const struct apos_rlimit* lim) {
   const struct apos_rlimit* KERNEL_lim = 0x0;
 
@@ -2291,7 +2265,6 @@ cleanup:
 
   return result;
 }
-#endif
 
 int SYSCALL_DMZ_socket(int domain, int type, int protocol) {
   int result;
