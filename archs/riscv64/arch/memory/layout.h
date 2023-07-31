@@ -18,9 +18,9 @@
 // +-----------------------------------------+------+----------------------+
 // |                  Range                  | Size |     Description      |
 // +-----------------------------------------+------+----------------------+
-// | 0x0000000000000000 - 0x0000007FFFFFFFFF | 512G | User mode addresses  |
-// | 0x0000008000000000 - 0xFFFFFF7FFFFFFFFF |      | Unusable addresses   |
-// | 0xFFFFFF8000000000 - 0xFFFFFFEFFFFFFFFF | 448G | Kernel (unused)      |
+// | 0x0000000000000000 - 0x0000003FFFFFFFFF | 256G | User mode addresses  |
+// | 0x0000004000000000 - 0xFFFFFF7FFFFFFFFF |      | Unusable addresses   |
+// | 0xFFFFFF8000000000 - 0xFFFFFFEFFFFFFFFF | 248G | Kernel (unused)      |
 // | 0xFFFFFFF000000000 - 0xFFFFFFF0FFFFFFFF | 4G   | Physical memory map  |
 // | 0xFFFFFFFF00000000 - 0xFFFFFFFF7FFFFFFF | 2G   | Kernel heap          |
 // | 0xFFFFFFFF80000000 - 0xFFFFFFFFFFFFFFFF | 2G   | Kernel (code + data) |
@@ -35,7 +35,7 @@
 
 // The first and last mappable addresses.
 #define MEM_FIRST_MAPPABLE_ADDR PAGE_SIZE
-#define MEM_LAST_USER_MAPPABLE_ADDR 0x0000007FFFFFFFFF
+#define MEM_LAST_USER_MAPPABLE_ADDR 0x0000003FFFFFFFFF
 #define MEM_LAST_MAPPABLE_ADDR      0xFFFFFFFFFFFFFFFF
 
 // Location and size of the user-mode process stack.
