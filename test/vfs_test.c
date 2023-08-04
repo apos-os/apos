@@ -3431,6 +3431,7 @@ static void readlink_test(void) {
 
   KTEST_BEGIN("vfs_readlink(): invalid arguments");
   KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", buf, -1));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", buf, INT_MAX));
   KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", 0x0, kBufSize));
   KEXPECT_EQ(-EINVAL, vfs_readlink(0x0, buf, kBufSize));
   KEXPECT_EQ(-ENOENT, vfs_readlink("doesnt_exist", buf, kBufSize));

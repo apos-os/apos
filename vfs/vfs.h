@@ -154,7 +154,7 @@ int vfs_fchmod(int fd, kmode_t mode);
 int vfs_symlink(const char* target, const char* link);
 
 // Read the contents of a symlink into the given buffer.
-int vfs_readlink(const char* path, char* buf, int bufsize);
+int vfs_readlink(const char* path, char* buf, size_t bufsize);
 
 // Checks if the current [real] user ID has access to the given file.  Returns 0
 // on success, or -error.

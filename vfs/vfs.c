@@ -1792,8 +1792,8 @@ int vfs_symlink(const char* path1, const char* path2) {
   return 0;
 }
 
-int vfs_readlink(const char* path, char* buf, int bufsize) {
-  if (!path || !buf || bufsize <= 0) {
+int vfs_readlink(const char* path, char* buf, size_t bufsize) {
+  if (!path || !buf || bufsize == 0 || bufsize >= INT_MAX) {
     return -EINVAL;
   }
 
