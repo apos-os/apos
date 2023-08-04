@@ -349,8 +349,8 @@ cleanup:
   return result;
 }
 
-int vfs_read(int fd, void* buf, size_t count);
-int SYSCALL_DMZ_read(int fd, void* buf, size_t count) {
+ssize_t vfs_read(int fd, void* buf, size_t count);
+ssize_t SYSCALL_DMZ_read(int fd, void* buf, size_t count) {
   void* KERNEL_buf = 0x0;
 
   if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
@@ -383,8 +383,8 @@ cleanup:
   return result;
 }
 
-int vfs_write(int fd, const void* buf, size_t count);
-int SYSCALL_DMZ_write(int fd, const void* buf, size_t count) {
+ssize_t vfs_write(int fd, const void* buf, size_t count);
+ssize_t SYSCALL_DMZ_write(int fd, const void* buf, size_t count) {
   const void* KERNEL_buf = 0x0;
 
   if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;

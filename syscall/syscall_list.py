@@ -224,14 +224,14 @@ AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', '<unistd.h>',
     newlib_defined=True)
 
 AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', '<unistd.h>',
-    'int', [
+    'ssize_t', [
     'int:fd:u',
     'void*:buf:bw:count',
     'size_t:count:u'],
     newlib_defined=True)
 
 AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
-    'int', [
+    'ssize_t', [
     'int:fd:u',
     'const void*:buf:br:count',
     'size_t:count:u'],
