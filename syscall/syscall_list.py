@@ -111,7 +111,8 @@ class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
       header, user_header, return_type, args,
       stubs_to_generate=None, can_fail=True,
-      needs_32bit_conv=False, newlib_defined=False):
+      needs_32bit_conv=False, newlib_defined=False,
+      mismatched_kernel_types=False):
     assert len(args) <= MAX_ARGS
     if stubs_to_generate is None:
       # syscalls defined in newlib will have their own 'L3' stubs already.
@@ -131,6 +132,9 @@ class SyscallDef(object):
     self.stubs_to_generate = stubs_to_generate
     # Determines if we do errno conversion.
     self.can_fail = can_fail
+    # Dictates whether the kernel syscall function must have the same type
+    # exactly as the declared syscall here.
+    self.mismatched_kernel_types = mismatched_kernel_types
 
   @property
   def name(self):
@@ -176,7 +180,8 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'const char*:path:s',
     'int:flags:u',
     'apos_mode_t:mode:u'],
-    newlib_defined=True)
+    newlib_defined=True,
+    mismatched_kernel_types=True)  # vfs_open() uses varargs
 
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -431,7 +436,7 @@ AddSyscall('readlink', 43, 'vfs_readlink', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'char*:buf:bw:bufsize', 'size_t:bufsize:u'])
 
 AddSyscall('sleep_ms', 44, 'ksleep', 'proc/sleep.h', '<apos/sleep.h>',
-    'int', ['unsigned int:seconds:u'])
+    'int', ['int:seconds:u'])
 
 AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
     '<apos/syscall_decls.h>', 'int',
@@ -439,7 +444,8 @@ AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
 
 AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
     'int', ['int*:fildes:bw:sizeof(int[2])'],
-     stubs_to_generate=['L1', 'L2'])
+     stubs_to_generate=['L1', 'L2'],
+     mismatched_kernel_types=True)
 
 AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
     'apos_mode_t', ['apos_mode_t:cmask:u'])

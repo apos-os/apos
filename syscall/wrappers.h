@@ -34,8 +34,8 @@ kpid_t getppid_wrapper(void);
 
 // Wrapper for do_mmap that combines the address in and out arguments to squeeze
 // into the syscall limit.
-int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
-                 int fd, addr_t offset);
+int mmap_wrapper(void* addr_inout, size_t length, int prot, int flags, int fd,
+                 apos_off_t offset);
 
 // Wrappers for syscalls that pass a R/W buffer with the size of another buffer
 // inside them.  If there are more of these we should consider autogenerating

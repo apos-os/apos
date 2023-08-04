@@ -44,6 +44,8 @@
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
 
+long do_syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
+                     long arg6);
 long SYSCALL_DMZ_syscall_test(long arg1, long arg2, long arg3, long arg4,
                               long arg5, long arg6) {
   int result;
@@ -91,6 +93,7 @@ cleanup:
   return result;
 }
 
+int vfs_close(int fd);
 int SYSCALL_DMZ_close(int fd) {
   int result;
 
@@ -106,6 +109,7 @@ cleanup:
   return result;
 }
 
+int vfs_dup(int fd);
 int SYSCALL_DMZ_dup(int fd) {
   int result;
 
@@ -121,6 +125,7 @@ cleanup:
   return result;
 }
 
+int vfs_dup2(int fd1, int fd2);
 int SYSCALL_DMZ_dup2(int fd1, int fd2) {
   int result;
 
@@ -136,6 +141,7 @@ cleanup:
   return result;
 }
 
+int vfs_mkdir(const char* path, apos_mode_t mode);
 int SYSCALL_DMZ_mkdir(const char* path, apos_mode_t mode) {
   const char* KERNEL_path = 0x0;
 
@@ -167,6 +173,7 @@ cleanup:
   return result;
 }
 
+int vfs_mknod(const char* path, apos_mode_t mode, apos_dev_t dev);
 int SYSCALL_DMZ_mknod(const char* path, apos_mode_t mode, apos_dev_t dev) {
   const char* KERNEL_path = 0x0;
 
@@ -198,6 +205,7 @@ cleanup:
   return result;
 }
 
+int vfs_rmdir(const char* path);
 int SYSCALL_DMZ_rmdir(const char* path) {
   const char* KERNEL_path = 0x0;
 
@@ -229,6 +237,7 @@ cleanup:
   return result;
 }
 
+int vfs_link(const char* path1, const char* path2);
 int SYSCALL_DMZ_link(const char* path1, const char* path2) {
   const char* KERNEL_path1 = 0x0;
   const char* KERNEL_path2 = 0x0;
@@ -268,6 +277,7 @@ cleanup:
   return result;
 }
 
+int vfs_rename(const char* path1, const char* path2);
 int SYSCALL_DMZ_rename(const char* path1, const char* path2) {
   const char* KERNEL_path1 = 0x0;
   const char* KERNEL_path2 = 0x0;
@@ -307,6 +317,7 @@ cleanup:
   return result;
 }
 
+int vfs_unlink(const char* path);
 int SYSCALL_DMZ_unlink(const char* path) {
   const char* KERNEL_path = 0x0;
 
@@ -338,6 +349,7 @@ cleanup:
   return result;
 }
 
+int vfs_read(int fd, void* buf, size_t count);
 int SYSCALL_DMZ_read(int fd, void* buf, size_t count) {
   void* KERNEL_buf = 0x0;
 
@@ -371,6 +383,7 @@ cleanup:
   return result;
 }
 
+int vfs_write(int fd, const void* buf, size_t count);
 int SYSCALL_DMZ_write(int fd, const void* buf, size_t count) {
   const void* KERNEL_buf = 0x0;
 
@@ -401,6 +414,7 @@ cleanup:
   return result;
 }
 
+int vfs_getdents_32(int fd, kdirent_32_t* buf, int count);
 int SYSCALL_DMZ_getdents_32(int fd, kdirent_32_t* buf, int count) {
   kdirent_32_t* KERNEL_buf = 0x0;
 
@@ -434,6 +448,7 @@ cleanup:
   return result;
 }
 
+int vfs_getdents(int fd, kdirent_t* buf, int count);
 int SYSCALL_DMZ_getdents(int fd, kdirent_t* buf, int count) {
   kdirent_t* KERNEL_buf = 0x0;
 
@@ -467,6 +482,7 @@ cleanup:
   return result;
 }
 
+int vfs_getcwd(char* path_out, size_t size);
 int SYSCALL_DMZ_getcwd(char* path_out, size_t size) {
   char* KERNEL_path_out = 0x0;
 
@@ -500,6 +516,7 @@ cleanup:
   return result;
 }
 
+int vfs_stat_32(const char* path, apos_stat_32_t* stat);
 int SYSCALL_DMZ_stat_32(const char* path, apos_stat_32_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_32_t* KERNEL_stat = 0x0;
@@ -542,6 +559,7 @@ cleanup:
   return result;
 }
 
+int vfs_stat(const char* path, apos_stat_t* stat);
 int SYSCALL_DMZ_stat(const char* path, apos_stat_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_t* KERNEL_stat = 0x0;
@@ -584,6 +602,7 @@ cleanup:
   return result;
 }
 
+int vfs_lstat_32(const char* path, apos_stat_32_t* stat);
 int SYSCALL_DMZ_lstat_32(const char* path, apos_stat_32_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_32_t* KERNEL_stat = 0x0;
@@ -626,6 +645,7 @@ cleanup:
   return result;
 }
 
+int vfs_lstat(const char* path, apos_stat_t* stat);
 int SYSCALL_DMZ_lstat(const char* path, apos_stat_t* stat) {
   const char* KERNEL_path = 0x0;
   apos_stat_t* KERNEL_stat = 0x0;
@@ -668,6 +688,7 @@ cleanup:
   return result;
 }
 
+int vfs_fstat_32(int fd, apos_stat_32_t* stat);
 int SYSCALL_DMZ_fstat_32(int fd, apos_stat_32_t* stat) {
   apos_stat_32_t* KERNEL_stat = 0x0;
 
@@ -702,6 +723,7 @@ cleanup:
   return result;
 }
 
+int vfs_fstat(int fd, apos_stat_t* stat);
 int SYSCALL_DMZ_fstat(int fd, apos_stat_t* stat) {
   apos_stat_t* KERNEL_stat = 0x0;
 
@@ -736,6 +758,7 @@ cleanup:
   return result;
 }
 
+apos_off_t vfs_seek(int fd, apos_off_t offset, int whence);
 apos_off_t SYSCALL_DMZ_lseek(int fd, apos_off_t offset, int whence) {
   int result;
 
@@ -751,6 +774,7 @@ cleanup:
   return result;
 }
 
+int vfs_chdir(const char* path);
 int SYSCALL_DMZ_chdir(const char* path) {
   const char* KERNEL_path = 0x0;
 
@@ -782,6 +806,7 @@ cleanup:
   return result;
 }
 
+int vfs_access(const char* path, int amode);
 int SYSCALL_DMZ_access(const char* path, int amode) {
   const char* KERNEL_path = 0x0;
 
@@ -813,6 +838,7 @@ cleanup:
   return result;
 }
 
+int vfs_chown(const char* path, apos_uid_t owner, apos_gid_t group);
 int SYSCALL_DMZ_chown(const char* path, apos_uid_t owner, apos_gid_t group) {
   const char* KERNEL_path = 0x0;
 
@@ -844,6 +870,7 @@ cleanup:
   return result;
 }
 
+int vfs_fchown(int fd, apos_uid_t owner, apos_gid_t group);
 int SYSCALL_DMZ_fchown(int fd, apos_uid_t owner, apos_gid_t group) {
   int result;
 
@@ -859,6 +886,7 @@ cleanup:
   return result;
 }
 
+int vfs_lchown(const char* path, apos_uid_t owner, apos_gid_t group);
 int SYSCALL_DMZ_lchown(const char* path, apos_uid_t owner, apos_gid_t group) {
   const char* KERNEL_path = 0x0;
 
@@ -890,6 +918,7 @@ cleanup:
   return result;
 }
 
+int vfs_chmod(const char* path, apos_mode_t mode);
 int SYSCALL_DMZ_chmod(const char* path, apos_mode_t mode) {
   const char* KERNEL_path = 0x0;
 
@@ -921,6 +950,7 @@ cleanup:
   return result;
 }
 
+int vfs_fchmod(int fd, apos_mode_t mode);
 int SYSCALL_DMZ_fchmod(int fd, apos_mode_t mode) {
   int result;
 
@@ -936,6 +966,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_fork_syscall(void);
 apos_pid_t SYSCALL_DMZ_fork(void) {
   int result;
 
@@ -951,6 +982,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_fork_syscall(void);
 apos_pid_t SYSCALL_DMZ_vfork(void) {
   int result;
 
@@ -966,6 +998,7 @@ cleanup:
   return result;
 }
 
+int proc_exit_wrapper(int status);
 int SYSCALL_DMZ_exit(int status) {
   int result;
 
@@ -981,6 +1014,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_wait(int* exit_status);
 apos_pid_t SYSCALL_DMZ_wait(int* exit_status) {
   int* KERNEL_exit_status = 0x0;
 
@@ -1018,6 +1052,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_waitpid(apos_pid_t child, int* exit_status, int options);
 apos_pid_t SYSCALL_DMZ_waitpid(apos_pid_t child, int* exit_status,
                                int options) {
   int* KERNEL_exit_status = 0x0;
@@ -1056,6 +1091,7 @@ cleanup:
   return result;
 }
 
+int execve_wrapper_32(const char* path, char* const* argv, char* const* envp);
 int SYSCALL_DMZ_execve_32(const char* path, char* const* argv,
                           char* const* envp) {
   int result;
@@ -1072,6 +1108,7 @@ cleanup:
   return result;
 }
 
+int execve_wrapper(const char* path, char* const* argv, char* const* envp);
 int SYSCALL_DMZ_execve(const char* path, char* const* argv, char* const* envp) {
   int result;
 
@@ -1087,6 +1124,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t getpid_wrapper(void);
 apos_pid_t SYSCALL_DMZ_getpid(void) {
   int result;
 
@@ -1102,6 +1140,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t getppid_wrapper(void);
 apos_pid_t SYSCALL_DMZ_getppid(void) {
   int result;
 
@@ -1117,6 +1156,7 @@ cleanup:
   return result;
 }
 
+int vfs_isatty(int fd);
 int SYSCALL_DMZ_isatty(int fd) {
   int result;
 
@@ -1132,6 +1172,7 @@ cleanup:
   return result;
 }
 
+int proc_kill(apos_pid_t pid, int sig);
 int SYSCALL_DMZ_kill(apos_pid_t pid, int sig) {
   int result;
 
@@ -1147,6 +1188,8 @@ cleanup:
   return result;
 }
 
+int proc_sigaction_32(int signum, const struct ksigaction_32* act,
+                      struct ksigaction_32* oldact);
 int SYSCALL_DMZ_sigaction_32(int signum, const struct ksigaction_32* act,
                              struct ksigaction_32* oldact) {
   const struct ksigaction_32* KERNEL_act = 0x0;
@@ -1200,6 +1243,8 @@ cleanup:
   return result;
 }
 
+int proc_sigaction(int signum, const struct ksigaction* act,
+                   struct ksigaction* oldact);
 int SYSCALL_DMZ_sigaction(int signum, const struct ksigaction* act,
                           struct ksigaction* oldact) {
   const struct ksigaction* KERNEL_act = 0x0;
@@ -1251,6 +1296,7 @@ cleanup:
   return result;
 }
 
+int proc_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset);
 int SYSCALL_DMZ_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset) {
   const ksigset_t* KERNEL_set = 0x0;
   ksigset_t* KERNEL_oset = 0x0;
@@ -1298,6 +1344,7 @@ cleanup:
   return result;
 }
 
+int proc_sigpending(ksigset_t* oset);
 int SYSCALL_DMZ_sigpending(ksigset_t* oset) {
   ksigset_t* KERNEL_oset = 0x0;
 
@@ -1331,6 +1378,7 @@ cleanup:
   return result;
 }
 
+int proc_sigsuspend(const ksigset_t* sigmask);
 int SYSCALL_DMZ_sigsuspend(const ksigset_t* sigmask) {
   const ksigset_t* KERNEL_sigmask = 0x0;
 
@@ -1362,6 +1410,8 @@ cleanup:
   return result;
 }
 
+int proc_sigreturn(const ksigset_t* old_mask, const user_context_t* context,
+                   const syscall_context_t* syscall_context);
 int SYSCALL_DMZ_sigreturn(const ksigset_t* old_mask,
                           const user_context_t* context,
                           const syscall_context_t* syscall_context) {
@@ -1420,6 +1470,7 @@ cleanup:
   return result;
 }
 
+unsigned int proc_alarm_ms(unsigned int seconds);
 unsigned int SYSCALL_DMZ_alarm_ms(unsigned int seconds) {
   int result;
 
@@ -1435,6 +1486,7 @@ cleanup:
   return result;
 }
 
+int setuid(apos_uid_t uid);
 int SYSCALL_DMZ_setuid(apos_uid_t uid) {
   int result;
 
@@ -1450,6 +1502,7 @@ cleanup:
   return result;
 }
 
+int setgid(apos_gid_t gid);
 int SYSCALL_DMZ_setgid(apos_gid_t gid) {
   int result;
 
@@ -1465,6 +1518,7 @@ cleanup:
   return result;
 }
 
+apos_uid_t getuid(void);
 apos_uid_t SYSCALL_DMZ_getuid(void) {
   int result;
 
@@ -1480,6 +1534,7 @@ cleanup:
   return result;
 }
 
+apos_gid_t getgid(void);
 apos_gid_t SYSCALL_DMZ_getgid(void) {
   int result;
 
@@ -1495,6 +1550,7 @@ cleanup:
   return result;
 }
 
+int seteuid(apos_uid_t uid);
 int SYSCALL_DMZ_seteuid(apos_uid_t uid) {
   int result;
 
@@ -1510,6 +1566,7 @@ cleanup:
   return result;
 }
 
+int setegid(apos_gid_t gid);
 int SYSCALL_DMZ_setegid(apos_gid_t gid) {
   int result;
 
@@ -1525,6 +1582,7 @@ cleanup:
   return result;
 }
 
+apos_uid_t geteuid(void);
 apos_uid_t SYSCALL_DMZ_geteuid(void) {
   int result;
 
@@ -1540,6 +1598,7 @@ cleanup:
   return result;
 }
 
+apos_gid_t getegid(void);
 apos_gid_t SYSCALL_DMZ_getegid(void) {
   int result;
 
@@ -1555,6 +1614,7 @@ cleanup:
   return result;
 }
 
+int setreuid(apos_uid_t ruid, apos_uid_t euid);
 int SYSCALL_DMZ_setreuid(apos_uid_t ruid, apos_uid_t euid) {
   int result;
 
@@ -1570,6 +1630,7 @@ cleanup:
   return result;
 }
 
+int setregid(apos_gid_t rgid, apos_gid_t egid);
 int SYSCALL_DMZ_setregid(apos_gid_t rgid, apos_gid_t egid) {
   int result;
 
@@ -1585,6 +1646,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t getpgid(apos_pid_t pid);
 apos_pid_t SYSCALL_DMZ_getpgid(apos_pid_t pid) {
   int result;
 
@@ -1600,6 +1662,7 @@ cleanup:
   return result;
 }
 
+int setpgid(apos_pid_t pid, apos_pid_t pgid);
 int SYSCALL_DMZ_setpgid(apos_pid_t pid, apos_pid_t pgid) {
   int result;
 
@@ -1615,6 +1678,8 @@ cleanup:
   return result;
 }
 
+int mmap_wrapper_32(void* addr_inout, size_t length, int prot, int flags,
+                    int fd, apos_off_t offset);
 int SYSCALL_DMZ_mmap_32(void* addr_inout, size_t length, int prot, int flags,
                         int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
@@ -1653,6 +1718,8 @@ cleanup:
   return result;
 }
 
+int mmap_wrapper(void* addr_inout, size_t length, int prot, int flags, int fd,
+                 apos_off_t offset);
 int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
                      int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
@@ -1691,6 +1758,7 @@ cleanup:
   return result;
 }
 
+int do_munmap(void* addr, size_t length);
 int SYSCALL_DMZ_munmap(void* addr, size_t length) {
   int result;
 
@@ -1706,6 +1774,7 @@ cleanup:
   return result;
 }
 
+int vfs_symlink(const char* path1, const char* path2);
 int SYSCALL_DMZ_symlink(const char* path1, const char* path2) {
   const char* KERNEL_path1 = 0x0;
   const char* KERNEL_path2 = 0x0;
@@ -1745,6 +1814,7 @@ cleanup:
   return result;
 }
 
+int vfs_readlink(const char* path, char* buf, size_t bufsize);
 int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize) {
   const char* KERNEL_path = 0x0;
   char* KERNEL_buf = 0x0;
@@ -1786,7 +1856,8 @@ cleanup:
   return result;
 }
 
-int SYSCALL_DMZ_sleep_ms(unsigned int seconds) {
+int ksleep(int seconds);
+int SYSCALL_DMZ_sleep_ms(int seconds) {
   int result;
 
   result = ksleep(seconds);
@@ -1801,6 +1872,7 @@ cleanup:
   return result;
 }
 
+int apos_get_time(struct apos_tm* t);
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t) {
   struct apos_tm* KERNEL_t = 0x0;
 
@@ -1867,6 +1939,7 @@ cleanup:
   return result;
 }
 
+apos_mode_t proc_umask(apos_mode_t cmask);
 apos_mode_t SYSCALL_DMZ_umask(apos_mode_t cmask) {
   int result;
 
@@ -1882,6 +1955,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_setsid(void);
 apos_pid_t SYSCALL_DMZ_setsid(void) {
   int result;
 
@@ -1897,6 +1971,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_getsid(apos_pid_t pid);
 apos_pid_t SYSCALL_DMZ_getsid(apos_pid_t pid) {
   int result;
 
@@ -1912,6 +1987,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_tcgetpgrp(int fd);
 apos_pid_t SYSCALL_DMZ_tcgetpgrp(int fd) {
   int result;
 
@@ -1927,6 +2003,7 @@ cleanup:
   return result;
 }
 
+int proc_tcsetpgrp(int fd, apos_pid_t pgid);
 int SYSCALL_DMZ_tcsetpgrp(int fd, apos_pid_t pgid) {
   int result;
 
@@ -1942,6 +2019,7 @@ cleanup:
   return result;
 }
 
+apos_pid_t proc_tcgetsid(int fd);
 apos_pid_t SYSCALL_DMZ_tcgetsid(int fd) {
   int result;
 
@@ -1957,6 +2035,7 @@ cleanup:
   return result;
 }
 
+int tty_tcdrain(int fd);
 int SYSCALL_DMZ_tcdrain(int fd) {
   int result;
 
@@ -1972,6 +2051,7 @@ cleanup:
   return result;
 }
 
+int tty_tcflush(int fd, int action);
 int SYSCALL_DMZ_tcflush(int fd, int action) {
   int result;
 
@@ -1987,6 +2067,7 @@ cleanup:
   return result;
 }
 
+int tty_tcgetattr(int fd, struct ktermios* t);
 int SYSCALL_DMZ_tcgetattr(int fd, struct ktermios* t) {
   struct ktermios* KERNEL_t = 0x0;
 
@@ -2020,6 +2101,7 @@ cleanup:
   return result;
 }
 
+int tty_tcsetattr(int fd, int optional_actions, const struct ktermios* t);
 int SYSCALL_DMZ_tcsetattr(int fd, int optional_actions,
                           const struct ktermios* t) {
   const struct ktermios* KERNEL_t = 0x0;
@@ -2051,6 +2133,7 @@ cleanup:
   return result;
 }
 
+int vfs_ftruncate(int fd, apos_off_t length);
 int SYSCALL_DMZ_ftruncate(int fd, apos_off_t length) {
   int result;
 
@@ -2066,6 +2149,7 @@ cleanup:
   return result;
 }
 
+int vfs_truncate(const char* path, apos_off_t length);
 int SYSCALL_DMZ_truncate(const char* path, apos_off_t length) {
   const char* KERNEL_path = 0x0;
 
@@ -2097,6 +2181,7 @@ cleanup:
   return result;
 }
 
+int vfs_poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout);
 int SYSCALL_DMZ_poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout) {
   struct apos_pollfd* KERNEL_fds = 0x0;
 
@@ -2135,6 +2220,7 @@ cleanup:
   return result;
 }
 
+int proc_getrlimit_32(int resource, struct apos_rlimit_32* lim);
 int SYSCALL_DMZ_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
   struct apos_rlimit_32* KERNEL_lim = 0x0;
 
@@ -2169,6 +2255,7 @@ cleanup:
   return result;
 }
 
+int proc_getrlimit(int resource, struct apos_rlimit* lim);
 int SYSCALL_DMZ_getrlimit(int resource, struct apos_rlimit* lim) {
   struct apos_rlimit* KERNEL_lim = 0x0;
 
@@ -2203,6 +2290,7 @@ cleanup:
   return result;
 }
 
+int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim);
 int SYSCALL_DMZ_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
   const struct apos_rlimit_32* KERNEL_lim = 0x0;
 
@@ -2235,6 +2323,7 @@ cleanup:
   return result;
 }
 
+int proc_setrlimit(int resource, const struct apos_rlimit* lim);
 int SYSCALL_DMZ_setrlimit(int resource, const struct apos_rlimit* lim) {
   const struct apos_rlimit* KERNEL_lim = 0x0;
 
@@ -2266,6 +2355,7 @@ cleanup:
   return result;
 }
 
+int net_socket(int domain, int type, int protocol);
 int SYSCALL_DMZ_socket(int domain, int type, int protocol) {
   int result;
 
@@ -2281,6 +2371,7 @@ cleanup:
   return result;
 }
 
+int net_shutdown(int socket, int how);
 int SYSCALL_DMZ_shutdown(int socket, int how) {
   int result;
 
@@ -2296,6 +2387,7 @@ cleanup:
   return result;
 }
 
+int net_bind(int socket, const struct sockaddr* addr, socklen_t addr_len);
 int SYSCALL_DMZ_bind(int socket, const struct sockaddr* addr,
                      socklen_t addr_len) {
   const struct sockaddr* KERNEL_addr = 0x0;
@@ -2327,6 +2419,7 @@ cleanup:
   return result;
 }
 
+int net_listen(int socket, int backlog);
 int SYSCALL_DMZ_listen(int socket, int backlog) {
   int result;
 
@@ -2342,6 +2435,7 @@ cleanup:
   return result;
 }
 
+int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len);
 int SYSCALL_DMZ_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   socklen_t* KERNEL_addr_len = 0x0;
 
@@ -2383,6 +2477,7 @@ cleanup:
   return result;
 }
 
+int net_connect(int socket, const struct sockaddr* addr, socklen_t addr_len);
 int SYSCALL_DMZ_connect(int socket, const struct sockaddr* addr,
                         socklen_t addr_len) {
   const struct sockaddr* KERNEL_addr = 0x0;
@@ -2414,6 +2509,7 @@ cleanup:
   return result;
 }
 
+ssize_t net_recv(int socket, void* buf, size_t len, int flags);
 ssize_t SYSCALL_DMZ_recv(int socket, void* buf, size_t len, int flags) {
   void* KERNEL_buf = 0x0;
 
@@ -2447,6 +2543,8 @@ cleanup:
   return result;
 }
 
+ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
+                         struct sockaddr* address, socklen_t* address_len);
 ssize_t SYSCALL_DMZ_recvfrom(int socket, void* buf, size_t len, int flags,
                              struct sockaddr* address, socklen_t* address_len) {
   void* KERNEL_buf = 0x0;
@@ -2501,6 +2599,7 @@ cleanup:
   return result;
 }
 
+ssize_t net_send(int socket, const void* buf, size_t len, int flags);
 ssize_t SYSCALL_DMZ_send(int socket, const void* buf, size_t len, int flags) {
   const void* KERNEL_buf = 0x0;
 
@@ -2531,6 +2630,8 @@ cleanup:
   return result;
 }
 
+ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
+                   const struct sockaddr* dest_addr, socklen_t dest_len);
 ssize_t SYSCALL_DMZ_sendto(int socket, const void* buf, size_t len, int flags,
                            const struct sockaddr* dest_addr,
                            socklen_t dest_len) {
@@ -2576,6 +2677,7 @@ cleanup:
   return result;
 }
 
+int klog_wrapper(const char* msg);
 int SYSCALL_DMZ_apos_klog(const char* msg) {
   const char* KERNEL_msg = 0x0;
 
@@ -2607,6 +2709,7 @@ cleanup:
   return result;
 }
 
+int kernel_run_ktest(const char* name);
 int SYSCALL_DMZ_apos_run_ktest(const char* name) {
   const char* KERNEL_name = 0x0;
 
@@ -2638,6 +2741,7 @@ cleanup:
   return result;
 }
 
+int proc_thread_create_user(apos_uthread_id_t* id, void* stack, void* entry);
 int SYSCALL_DMZ_apos_thread_create(apos_uthread_id_t* id, void* stack,
                                    void* entry) {
   apos_uthread_id_t* KERNEL_id = 0x0;
@@ -2673,6 +2777,7 @@ cleanup:
   return result;
 }
 
+int proc_thread_exit_user(void);
 int SYSCALL_DMZ_apos_thread_exit(void) {
   int result;
 
@@ -2688,6 +2793,7 @@ cleanup:
   return result;
 }
 
+int proc_sigwait(const ksigset_t* sigmask, int* sig);
 int SYSCALL_DMZ_sigwait(const ksigset_t* sigmask, int* sig) {
   const ksigset_t* KERNEL_sigmask = 0x0;
   int* KERNEL_sig = 0x0;
@@ -2729,6 +2835,7 @@ cleanup:
   return result;
 }
 
+int proc_thread_kill_user(const apos_uthread_id_t* id, int sig);
 int SYSCALL_DMZ_apos_thread_kill(const apos_uthread_id_t* id, int sig) {
   const apos_uthread_id_t* KERNEL_id = 0x0;
 
@@ -2760,6 +2867,7 @@ cleanup:
   return result;
 }
 
+int proc_thread_self(apos_uthread_id_t* id);
 int SYSCALL_DMZ_apos_thread_self(apos_uthread_id_t* id) {
   apos_uthread_id_t* KERNEL_id = 0x0;
 
@@ -2794,6 +2902,9 @@ cleanup:
   return result;
 }
 
+int futex_op(uint32_t* uaddr, int op, uint32_t val,
+             const struct apos_timespec* timespec, uint32_t* uaddr2,
+             uint32_t val3);
 int SYSCALL_DMZ_futex_ts(uint32_t* uaddr, int op, uint32_t val,
                          const struct apos_timespec* timespec, uint32_t* uaddr2,
                          uint32_t val3) {
@@ -2833,6 +2944,8 @@ cleanup:
   return result;
 }
 
+int vfs_mount(const char* source, const char* mount_path, const char* type,
+              unsigned long flags, const void* data, size_t data_len);
 int SYSCALL_DMZ_mount(const char* source, const char* mount_path,
                       const char* type, unsigned long flags, const void* data,
                       size_t data_len) {
@@ -2895,6 +3008,7 @@ cleanup:
   return result;
 }
 
+int vfs_unmount(const char* mount_path, unsigned long flags);
 int SYSCALL_DMZ_unmount(const char* mount_path, unsigned long flags) {
   const char* KERNEL_mount_path = 0x0;
 

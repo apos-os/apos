@@ -15,6 +15,6 @@
 #ifndef APOO_USER_INCLUDE_APOS_SLEEP_H
 #define APOO_USER_INCLUDE_APOS_SLEEP_H
 
-int sleep_ms(unsigned int seconds);
+int sleep_ms(int seconds);
 
 #endif

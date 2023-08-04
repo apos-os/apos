@@ -98,6 +98,12 @@ if ({{ check_alloc_cond(args) }}) {
 
 {#- Defines the DMZ function for the given syscall. #}
 {% macro syscall_dmz(syscall) -%}
+{#- Forward-declare the kernel function name with the same types --- this will
+catch if the types don't match (but are convertible between each other). #}
+{%- if not syscall.mismatched_kernel_types %}
+{{ syscall.return_type }} {{ syscall.kernel_name }}({{ common.decl_args(syscall.args) }});
+{%- endif -%}
+
 {{ common.syscall_decl(syscall, 'SYSCALL_DMZ_') }} {
   {{ kernel_decls(syscall.args) | indent(2) }}
 

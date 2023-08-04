@@ -258,7 +258,7 @@ int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
 int SYSCALL_DMZ_munmap(void* addr, size_t length);
 int SYSCALL_DMZ_symlink(const char* path1, const char* path2);
 int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize);
-int SYSCALL_DMZ_sleep_ms(unsigned int seconds);
+int SYSCALL_DMZ_sleep_ms(int seconds);
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t);
 int SYSCALL_DMZ_pipe(int* fildes);
 apos_mode_t SYSCALL_DMZ_umask(apos_mode_t cmask);
@@ -539,7 +539,7 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
       return SYSCALL_DMZ_readlink((const char*)arg1, (char*)arg2, (size_t)arg3);
 
     case SYS_SLEEP_MS:
-      return SYSCALL_DMZ_sleep_ms((unsigned int)arg1);
+      return SYSCALL_DMZ_sleep_ms((int)arg1);
 
     case SYS_APOS_GET_TIME:
       return SYSCALL_DMZ_apos_get_time((struct apos_tm*)arg1);

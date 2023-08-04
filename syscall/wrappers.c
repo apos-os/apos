@@ -34,8 +34,10 @@ kpid_t getppid_wrapper(void) {
   }
 }
 
-int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
-                 int fd, addr_t offset) {
+_Static_assert(sizeof(apos_off_t) <= sizeof(addr_t),
+               "Narrowing conversion from apos_off_t to addr_t.");
+int mmap_wrapper(void* addr_inout, size_t length, int prot, int flags,
+                 int fd, apos_off_t offset) {
   void* addr = *(void**)addr_inout;
   return do_mmap(addr, length, prot, flags, fd, offset, (void**)addr_inout);
 }

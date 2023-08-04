@@ -156,8 +156,10 @@ int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
   return proc_setrlimit(resource, &lim64);
 }
 
-int mmap_wrapper_32(void* addr_inout32, addr_t length, int prot, int flags,
-                    int fd, addr_t offset) {
+_Static_assert(sizeof(apos_off_t) <= sizeof(addr_t),
+               "Narrowing conversion from apos_off_t to addr_t.");
+int mmap_wrapper_32(void* addr_inout32, size_t length, int prot, int flags,
+                    int fd, apos_off_t offset) {
   void* addr = (void*)(addr_t)*(uint32_t*)addr_inout32;
   void* addr_out = NULL;
   int result = do_mmap(addr, length, prot, flags, fd, offset, &addr_out);
