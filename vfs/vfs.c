@@ -650,6 +650,7 @@ int vfs_open(const char* path, int flags, ...) {
 
   if (!is_valid_create_mode(create_mode)) return -EINVAL;
   if (mode == VFS_O_RDONLY && (flags & VFS_O_TRUNC)) return -EACCES;
+  if (flags & VFS_O_CLOEXEC) return -ENOTSUP;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0, *child = 0x0;

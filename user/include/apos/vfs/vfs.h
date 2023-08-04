@@ -31,6 +31,7 @@
 #define VFS_O_NOCTTY    0x80
 #define VFS_O_DIRECTORY 0x100
 #define VFS_O_NOFOLLOW  0x200
+#define VFS_O_CLOEXEC   0x400  // TODO(aoates): implement
 
 // Used internally (i.e. not exposed to userspace) to indicate a file that will
 // be executed.  If set, vfs_open will check that the file is executable.
@@ -60,6 +61,7 @@
 # define O_NOCTTY VFS_O_NOCTTY
 # define O_DIRECTORY VFS_O_DIRECTORY
 # define O_NOFOLLOW VFS_O_NOFOLLOW
+# define O_CLOEXEC VFS_O_CLOEXEC
 
 # define SEEK_SET VFS_SEEK_SET
 # define SEEK_CUR VFS_SEEK_CUR

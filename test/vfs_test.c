@@ -4652,6 +4652,23 @@ static void o_nofollow_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_o_noflw_file"));
 }
 
+static void o_cloexec_test(void) {
+  KTEST_BEGIN("vfs_open(): O_CLOEXEC on regular file");
+  create_file_with_data("_o_cloexec_file", "");
+  KEXPECT_EQ(0, vfs_mkdir("_o_cloexec_dir", VFS_S_IRWXU));
+
+  KEXPECT_EQ(-ENOTSUP,
+             vfs_open("_o_cloexec_file", VFS_O_RDONLY | VFS_O_CLOEXEC));
+
+
+  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on directory");
+  KEXPECT_EQ(-ENOTSUP,
+             vfs_open("_o_cloexec_dir", VFS_O_RDONLY | VFS_O_CLOEXEC));
+
+  KEXPECT_EQ(0, vfs_rmdir("_o_cloexec_dir"));
+  KEXPECT_EQ(0, vfs_unlink("_o_cloexec_file"));
+}
+
 static void link_test(void) {
   apos_stat_t statA, statB;
 
@@ -6744,6 +6761,7 @@ void vfs_test(void) {
   excl_test();
   o_directory_test();
   o_nofollow_test();
+  o_cloexec_test();
 
   link_test();
   link_testB();
