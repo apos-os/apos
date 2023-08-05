@@ -415,11 +415,11 @@ int lookup_existing_path_and_lock(vnode_t* root, const char* path,
 
 int lookup_fd(int fd, file_t** file_out) {
   process_t* proc = proc_current();
-  if (!is_valid_fd(fd) || proc->fds[fd] == PROC_UNUSED_FD) {
+  if (!is_valid_fd(fd) || proc->fds[fd].file == PROC_UNUSED_FD) {
     return -EBADF;
   }
 
-  file_t* file = g_file_table[proc->fds[fd]];
+  file_t* file = g_file_table[proc->fds[fd].file];
   KASSERT(file != 0x0);
   file_ref(file);
   *file_out = file;

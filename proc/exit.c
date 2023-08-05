@@ -69,7 +69,7 @@ void proc_finish_exit(void) {
 
   // Close all open fds.
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
-    if (p->fds[i] >= 0) {
+    if (p->fds[i].file >= 0) {
       int result = vfs_close(i);
       if (result) {
         klogfm(KL_PROC, WARNING, "unable to close fd %d in proc_exit(): %s\n",

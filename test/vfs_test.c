@@ -3582,7 +3582,8 @@ static void dup2_test(void) {
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file2");
 
   KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
-  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
+  KEXPECT_EQ(proc_current()->fds[fd1].flags, proc_current()->fds[fd2].flags);
   KEXPECT_EQ(2, get_file_refcount(fd1));
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
   EXPECT_VNODE_REFCOUNT(0, "dup2_test/file2");
@@ -3597,10 +3598,10 @@ static void dup2_test(void) {
   fd2 = vfs_open("dup2_test/file", VFS_O_RDONLY);
   KEXPECT_EQ(1, get_file_refcount(fd1));
   EXPECT_VNODE_REFCOUNT(2, "dup2_test/file");
-  KEXPECT_NE(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_NE(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
 
   KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
-  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
   KEXPECT_EQ(2, get_file_refcount(fd1));
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
   KEXPECT_EQ(0, vfs_close(fd1));
@@ -3615,7 +3616,7 @@ static void dup2_test(void) {
   KEXPECT_EQ(2, get_file_refcount(fd1));
 
   KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
-  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
   KEXPECT_EQ(2, get_file_refcount(fd2));
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
   KEXPECT_EQ(0, vfs_close(fd1));
@@ -3627,24 +3628,24 @@ static void dup2_test(void) {
 
   KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd1)");
   fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
-  int orig_fd1_idx = proc_current()->fds[fd1];
+  int orig_fd1_idx = proc_current()->fds[fd1].file;
   KEXPECT_EQ(-EBADF, vfs_dup2(-5, fd1));
   KEXPECT_EQ(-EBADF, vfs_dup2(PROC_MAX_FDS + 1, fd1));
   int unused_fd = 0;
   for (unused_fd = 0; unused_fd < PROC_MAX_FDS; ++unused_fd) {
-    if (proc_current()->fds[unused_fd] == PROC_UNUSED_FD) break;
+    if (proc_current()->fds[unused_fd].file == PROC_UNUSED_FD) break;
   }
   KEXPECT_LT(unused_fd, PROC_MAX_FDS);
   KEXPECT_EQ(-EBADF, vfs_dup2(unused_fd, fd1));
   KEXPECT_EQ(-EBADF, vfs_dup2(unused_fd, unused_fd));
-  KEXPECT_EQ(PROC_UNUSED_FD, proc_current()->fds[unused_fd]);
-  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
+  KEXPECT_EQ(PROC_UNUSED_FD, proc_current()->fds[unused_fd].file);
+  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1].file);
 
   KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd2)");
   KEXPECT_EQ(-EBADF, vfs_dup2(-5, -5));
   KEXPECT_EQ(-EBADF, vfs_dup2(fd1, -5));
   KEXPECT_EQ(-EBADF, vfs_dup2(fd1, PROC_MAX_FDS + 1));
-  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
+  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1].file);
   vfs_close(fd1);
 
 

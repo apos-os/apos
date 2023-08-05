@@ -47,4 +47,10 @@ static inline void file_free(file_t* f) {
   kfree(f);
 }
 
+// A file descriptor.
+typedef struct {
+  int file;  // Index into the global file table.
+  int flags;
+} fd_t;
+
 #endif

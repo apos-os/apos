@@ -25,6 +25,7 @@
 #include "proc/load/load.h"
 #include "user/include/apos/posix_signal.h"
 #include "user/include/apos/resource.h"
+#include "vfs/file.h"
 
 #define PROC_MAX_PROCS 256
 #define PROC_MAX_FDS 32
@@ -53,7 +54,7 @@ struct process {
   bool exiting;  // Whether the process is exiting.
 
   // File descriptors.  Indexes into the global file table.
-  int fds[PROC_MAX_FDS];
+  fd_t fds[PROC_MAX_FDS];
 
   // The current working directory of the process.
   struct vnode* cwd;

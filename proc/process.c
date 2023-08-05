@@ -58,7 +58,8 @@ static void proc_init_process(process_t* p) {
   p->exit_status = 0;
   p->exiting = false;
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
-    p->fds[i] = -1;
+    p->fds[i].file = -1;
+    p->fds[i].flags = 0;
   }
   p->cwd = 0x0;
   p->vm_area_list = LIST_INIT;

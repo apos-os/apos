@@ -97,7 +97,7 @@ static int next_free_fd(process_t* p) {
   if (p->limits[APOS_RLIMIT_NOFILE].rlim_cur != APOS_RLIM_INFINITY)
     max_fd = min((apos_rlim_t)max_fd, p->limits[APOS_RLIMIT_NOFILE].rlim_cur);
   for (int i = 0; i < max_fd; ++i) {
-    if (p->fds[i] == PROC_UNUSED_FD) {
+    if (p->fds[i].file == PROC_UNUSED_FD) {
       return i;
     }
   }
@@ -629,8 +629,9 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   g_file_table[idx]->mode = mode;
   g_file_table[idx]->flags = flags;
 
-  KASSERT(proc->fds[fd] == PROC_UNUSED_FD);
-  proc->fds[fd] = idx;
+  KASSERT(proc->fds[fd].file == PROC_UNUSED_FD);
+  proc->fds[fd].file = idx;
+  proc->fds[fd].flags = 0;
   return fd;
 }
 
@@ -758,13 +759,14 @@ int vfs_open(const char* path, int flags, ...) {
 
 int vfs_close(int fd) {
   process_t* proc = proc_current();
-  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd] == PROC_UNUSED_FD) {
+  if (fd < 0 || fd >= PROC_MAX_FDS || proc->fds[fd].file == PROC_UNUSED_FD) {
     return -EBADF;
   }
+  KASSERT_DBG(proc->fds[fd].flags == 0 || proc->fds[fd].flags == VFS_O_CLOEXEC);
 
-  file_t* file = g_file_table[proc->fds[fd]];
+  file_t* file = g_file_table[proc->fds[fd].file];
   KASSERT(file != 0x0);
-  proc->fds[fd] = PROC_UNUSED_FD;
+  proc->fds[fd].file = PROC_UNUSED_FD;
   file_unref(file);
   return 0;
 }
@@ -781,7 +783,7 @@ int vfs_dup(int orig_fd) {
     return new_fd;
   }
 
-  KASSERT_DBG(proc->fds[new_fd] == PROC_UNUSED_FD);
+  KASSERT_DBG(proc->fds[new_fd].file == PROC_UNUSED_FD);
   proc->fds[new_fd] = proc->fds[orig_fd];  // Transfer our ref on |file|.
   return new_fd;
 }
@@ -816,7 +818,7 @@ int vfs_dup2(int fd1, int fd2) {
 
   process_t* proc = proc_current();
 
-  KASSERT_DBG(proc->fds[fd2] == PROC_UNUSED_FD);
+  KASSERT_DBG(proc->fds[fd2].file == PROC_UNUSED_FD);
   proc->fds[fd2] = proc->fds[fd1];  // Transfer our ref on |file1|.
   return fd2;
 }
@@ -1551,14 +1553,14 @@ int vfs_get_memobj(int fd, kmode_t mode, memobj_t** memobj_out) {
 void vfs_fork_fds(process_t* procA, process_t* procB) {
   if (ENABLE_KERNEL_SAFETY_NETS) {
     for (int i = 0; i < PROC_MAX_FDS; ++i) {
-      KASSERT(procB->fds[i] == PROC_UNUSED_FD);
+      KASSERT(procB->fds[i].file == PROC_UNUSED_FD);
     }
   }
 
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
-    if (procA->fds[i] != PROC_UNUSED_FD) {
+    if (procA->fds[i].file != PROC_UNUSED_FD) {
       procB->fds[i] = procA->fds[i];
-      file_ref(g_file_table[procA->fds[i]]);
+      file_ref(g_file_table[procA->fds[i].file]);
     }
   }
 }
