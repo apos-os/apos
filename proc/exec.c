@@ -96,6 +96,14 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     return result;
   }
 
+  for (int fd = 0; fd < PROC_MAX_FDS; ++fd) {
+    if (proc_current()->fds[fd].flags & VFS_O_CLOEXEC) {
+      if (vfs_close(fd) != 0) {
+        KLOG(WARNING, "exec error: unable to close O_CLOEXEC fd %d\n", fd);
+      }
+    }
+  }
+
   proc_current()->user_arch = binary->arch;
   if (cleanup) {
     (*cleanup)(path, argv, envp, cleanup_arg);

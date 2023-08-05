@@ -632,6 +632,11 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
   KASSERT(proc->fds[fd].file == PROC_UNUSED_FD);
   proc->fds[fd].file = idx;
   proc->fds[fd].flags = 0;
+
+  if (flags & VFS_O_CLOEXEC) {
+    proc->fds[fd].flags |= VFS_O_CLOEXEC;
+  }
+
   return fd;
 }
 
@@ -651,7 +656,6 @@ int vfs_open(const char* path, int flags, ...) {
 
   if (!is_valid_create_mode(create_mode)) return -EINVAL;
   if (mode == VFS_O_RDONLY && (flags & VFS_O_TRUNC)) return -EACCES;
-  if (flags & VFS_O_CLOEXEC) return -ENOTSUP;
 
   vnode_t* root = get_root_for_path(path);
   vnode_t* parent = 0x0, *child = 0x0;

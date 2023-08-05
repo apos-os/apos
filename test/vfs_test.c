@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+#include "common/arch-config.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -25,12 +26,16 @@
 #include "memory/memory.h"
 #include "memory/memobj.h"
 #include "memory/page_alloc.h"
+#include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/kthread-internal.h"
 #include "proc/limit.h"
+#include "proc/signal/signal.h"
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "proc/umask.h"
 #include "proc/user.h"
 #include "test/ktest.h"
@@ -4654,20 +4659,38 @@ static void o_nofollow_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_o_noflw_file"));
 }
 
+static void o_cloexec_test_proc(void* arg) {
+  char* argv[] = {"sleep", "10", NULL};
+  char* envp[] = {NULL};
+  do_execve("/bin/sleep", argv, envp, NULL, NULL);
+  KEXPECT_EQ(1, 2);  // Should never get here.
+}
+
 static void o_cloexec_test(void) {
   KTEST_BEGIN("vfs_open(): O_CLOEXEC on regular file");
   create_file_with_data("_o_cloexec_file", "");
-  KEXPECT_EQ(0, vfs_mkdir("_o_cloexec_dir", VFS_S_IRWXU));
 
-  KEXPECT_EQ(-ENOTSUP,
-             vfs_open("_o_cloexec_file", VFS_O_RDONLY | VFS_O_CLOEXEC));
+  int fd1 = vfs_open("_o_cloexec_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd1, 0);
+  KEXPECT_EQ(0, proc_current()->fds[fd1].flags);
+  int fd2 = vfs_open("_o_cloexec_file", VFS_O_RDONLY | VFS_O_CLOEXEC);
+  KEXPECT_GE(fd2, 0);
+  KEXPECT_EQ(VFS_O_CLOEXEC, proc_current()->fds[fd2].flags);
 
+#if ARCH_RUN_USER_TESTS
+  kpid_t child = proc_fork(&o_cloexec_test_proc, NULL);
+  ksleep(50);
+  process_t* childp = proc_get(child);
+  KEXPECT_NE(NULL, childp);
+  KEXPECT_NE(PROC_UNUSED_FD, childp->fds[fd1].file);
+  KEXPECT_EQ(PROC_UNUSED_FD, childp->fds[fd2].file);
+  proc_kill(child, SIGKILL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+#endif
 
-  KTEST_BEGIN("vfs_open(): O_NOFOLLOW on directory");
-  KEXPECT_EQ(-ENOTSUP,
-             vfs_open("_o_cloexec_dir", VFS_O_RDONLY | VFS_O_CLOEXEC));
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(0, vfs_close(fd2));
 
-  KEXPECT_EQ(0, vfs_rmdir("_o_cloexec_dir"));
   KEXPECT_EQ(0, vfs_unlink("_o_cloexec_file"));
 }
 
@@ -6786,6 +6809,7 @@ void vfs_test(void) {
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");
+  block_cache_clear_unpinned();
   EXPECT_VNODE_REFCOUNT(g_orig_root_vnode_refcount, "/");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 
