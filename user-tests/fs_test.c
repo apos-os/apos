@@ -91,10 +91,15 @@ static void basic_fs_test(void) {
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0xc1000000, 500));
   KEXPECT_EQ(-ENOMEM, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
 
+  KTEST_BEGIN("rename(): basic test");
+  KEXPECT_EQ(0, rename("_fs_test_dir/fileB", "_fs_test_dir/fileC"));
+  KEXPECT_ERRNO(ENOENT, stat("_fs_test_dir/fileB", (struct stat*)buffer));
+  KEXPECT_EQ(0, stat("_fs_test_dir/fileC", (struct stat*)buffer));
+
   // Cleanup.
   KEXPECT_EQ(0, close(fd));
   KEXPECT_EQ(0, unlink("_fs_test_dir/fileA"));
-  KEXPECT_EQ(0, unlink("_fs_test_dir/fileB"));
+  KEXPECT_EQ(0, unlink("_fs_test_dir/fileC"));
   KEXPECT_EQ(0, rmdir("_fs_test_dir"));
 }
 
