@@ -14,6 +14,8 @@
 
 #include "os/common/apos_klog.h"
 
+#define _GNU_SOURCE 1  // Get vasprintf
+
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
