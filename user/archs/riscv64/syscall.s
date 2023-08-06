@@ -12,14 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env DisableFeature')
+.global do_syscall
 
-env.Append(CFLAGS = '-march=rv64gc')
-
-DisableFeature(env, 'USER_OS')
-DisableFeature(env, 'USER_TESTS')
-
-# TODO(aoates): figure out how to make these work on this platform (and the
-# right portable API).  The implementations currently rely on ioport commands.
-DisableFeature(env, 'ETHERNET')
-DisableFeature(env, 'USB')
+do_syscall:
+  ecall
+  ret

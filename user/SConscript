@@ -18,7 +18,7 @@ Import('env user_env')
 # make sure they can be compiled.
 if env['USER_DUMMY_LIB']:
   user_env.StaticLibrary('apos_user_dummy', [
-      'syscall.s',
+      'archs/${ARCH}/syscall.s',
       'newlib_syscall_stubs.tpl.c',
       ])
   SConscript('header_tests/SConscript')
