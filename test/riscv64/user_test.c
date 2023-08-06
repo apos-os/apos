@@ -132,6 +132,17 @@ static void do_segfault_test(void* arg) {
   die("shouldn't get here");
 }
 
+static void do_segfault_null_test(void* arg) {
+  void* addr = 0x0;
+
+  user_context_t ctx;
+  kmemset(&ctx, 0, sizeof(ctx));
+  ctx.ctx.address = (addr_t)addr;
+  proc_current()->user_arch = BIN_RISCV_64;
+  user_context_apply(&ctx);
+  die("shouldn't get here");
+}
+
 static const char kSigactionTest[] = {
     0x13, 0x01, 0x01, 0xff,  // addi    sp,sp,-16
     0x23, 0x30, 0xa1, 0x00,  // sd      a0,0(sp)
@@ -422,6 +433,14 @@ void rsv64_user_test(void) {
   KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
   KEXPECT_TRUE(WIFSIGNALED(status));
   KEXPECT_EQ(SIGILL, WTERMSIG(status));
+
+
+  KTEST_BEGIN("riscv64: SEGFAULT on NULL test");
+  child = proc_fork(do_segfault_null_test, NULL);
+  status = -1;
+  KEXPECT_EQ(child, proc_waitpid(child, &status, 0));
+  KEXPECT_TRUE(WIFSIGNALED(status));
+  KEXPECT_EQ(SIGSEGV, WTERMSIG(status));
 
   elf_test();
 }

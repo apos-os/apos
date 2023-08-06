@@ -67,7 +67,6 @@ static void sigbus_handler(bool is_kernel) {
 }
 
 static void rsv_page_fault(int trap, addr_t addr, bool is_kernel) {
-  KASSERT(addr != 0);
   rsv_mapsize_t size;
   rsv_sv39_pte_t pte = rsv_lookup_pte(rsv_get_hart_as(), addr, &size);
   vm_fault_type_t type =
