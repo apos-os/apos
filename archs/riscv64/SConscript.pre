@@ -16,7 +16,10 @@ Import('env DisableFeature')
 
 env.Append(CFLAGS = '-march=rv64gc')
 
-DisableFeature(env, 'USER_OS')
+# TODO(aoates): build a RISC-V clang cross compiler that supports linking
+# user-mode binaries.
+if env['CLANG']:
+  DisableFeature(env, 'USER_OS')
 DisableFeature(env, 'USER_TESTS')
 
 # TODO(aoates): figure out how to make these work on this platform (and the
