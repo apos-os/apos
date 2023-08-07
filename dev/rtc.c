@@ -15,6 +15,8 @@
 #include <stdint.h>
 
 #include "arch/common/io.h"
+#include "common/arch-config.h"
+#include "common/errno.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "dev/rtc.h"
@@ -40,6 +42,7 @@
 #define CMOS_STATUSB_24HOUR     0x02
 #define CMOS_STATUSB_BINARY_FMT 0x04
 
+#if ARCH_SUPPORTS_LEGACY_PC_DEVS
 static inline uint8_t rtc_read_reg(uint8_t reg) {
   outb(CMOS_CMD_PORT, reg);
   return inb(CMOS_DATA_PORT);
@@ -133,6 +136,14 @@ int rtc_read_time(rtc_time_t* time) {
   }
   return rtc_decode(&times[0], time);
 }
+
+#else // ARCH_SUPPORTS_LEGACY_PC_DEVS
+
+int rtc_read_time(rtc_time_t* time) {
+  return -ENOTSUP;
+}
+
+#endif
 
 void rtc_to_string(char* buf, rtc_time_t* t) {
   buf[0] = '\0';
