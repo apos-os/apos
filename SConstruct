@@ -50,6 +50,9 @@ FEATURES_DEFAULT_ENABLED = [
 # As above, but features that are _disabled_ by default.
 FEATURES_DEFAULT_DISABLED = [
   'KMUTEX_DEADLOCK_DETECTION',
+  # Whether to pre-page in user binaries.  Useful when debugging them to avoid
+  # stepping through lots of page faults.
+  'PRELOAD_USER_BINS',
 ]
 
 ALL_FEATURES = FEATURES_DEFAULT_ENABLED + FEATURES_DEFAULT_DISABLED

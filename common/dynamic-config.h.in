@@ -19,4 +19,6 @@
 // build parameters like architecture and modules).  This reduces recompilation.
 #define KSHELL_INITIAL_COMMAND "%(KSHELL_INITIAL_COMMAND)s"
 
+#define ENABLE_PRELOAD_USER_BINS %(PRELOAD_USER_BINS)d
+
 #endif

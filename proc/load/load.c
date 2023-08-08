@@ -14,12 +14,14 @@
 
 #include <stddef.h>
 
+#include "common/dynamic-config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/math.h"
 #include "common/kstring.h"
 #include "memory/memory.h"
 #include "memory/mmap.h"
+#include "memory/vm_page_fault.h"
 #include "proc/load/elf.h"
 #include "proc/load/load.h"
 #include "proc/load/load-internal.h"
@@ -127,6 +129,14 @@ int load_map_binary(int fd, const load_binary_t* binary) {
         const unsigned int to_zero_len =
             map_regions[i].mem_len - map_regions[i].file_len;
         kmemset(to_zero, 0, to_zero_len);
+      }
+
+      if (ENABLE_PRELOAD_USER_BINS) {
+        for (size_t page  = 0; page < mem_len / PAGE_SIZE; ++page) {
+          addr_t addr = map_regions[i].vaddr + page * PAGE_SIZE;
+          vm_handle_page_fault(addr, VM_FAULT_NOT_PRESENT, VM_FAULT_READ,
+                               VM_FAULT_USER);
+        }
       }
     }
   }

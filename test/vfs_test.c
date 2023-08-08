@@ -4679,7 +4679,9 @@ static void o_cloexec_test(void) {
 
 #if ARCH_RUN_USER_TESTS
   kpid_t child = proc_fork(&o_cloexec_test_proc, NULL);
-  ksleep(50);
+  while (!proc_get(child)->execed) {
+    ksleep(50);
+  }
   process_t* childp = proc_get(child);
   KEXPECT_NE(NULL, childp);
   KEXPECT_NE(PROC_UNUSED_FD, childp->fds[fd1].file);
