@@ -79,8 +79,9 @@ void proc_run_user_sighandler(int signum, const ksigaction_t* action,
   KASSERT_DBG((addr_t)stack % RSV_STACK_ALIGN == 0);
 
   // Set up the call frame for the signal handler.
-  user_context_t new_ctx;
-  kmemset(&new_ctx, 0, sizeof(new_ctx));
+  // Copy the existing context to get registers such as gp and tp without having
+  // to know the details of the ABI; only overwrite what we need to.
+  user_context_t new_ctx = *context;
   new_ctx.ctx.a0 = signum;
   new_ctx.ctx.ra = trampoline_addr;
   new_ctx.ctx.sp = (addr_t)stack;
