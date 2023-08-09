@@ -110,6 +110,7 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
          "interrupt: scause: 0x%lx  stval: 0x%lx  sepc: 0x%lx  is_kernel: %d\n",
          scause, stval, ctx->address, (int)is_kernel);
 
+  syscall_context_t* syscall_ctx = NULL;
   if (scause & RSV_INTERRUPT) {
     const int interrupt = scause & ~RSV_INTERRUPT;
     switch (interrupt) {
@@ -158,6 +159,7 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
         ctx->address += RSV_ECALL_INSTR_LEN;
+        syscall_ctx = &kthread_current_thread()->syscall_ctx;
         break;
 
       case RSV_TRAP_BREAKPOINT:
@@ -172,7 +174,7 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
   defint_process_queued();
 
   if (!is_kernel) {
-    proc_prep_user_return(&copy_ctx, ctx, NULL);
+    proc_prep_user_return(&copy_ctx, ctx, syscall_ctx);
   }
 
   // Note: we may never get here, if there were signals to dispatch.
