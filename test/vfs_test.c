@@ -41,6 +41,7 @@
 #include "test/ktest.h"
 #include "test/test_params.h"
 #include "test/vfs_test_util.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/pipe.h"
 #include "vfs/ramfs.h"
@@ -1413,6 +1414,34 @@ static void getdents_test(void) {
   vfs_chdir("/getdents");
   fd = vfs_open(".", VFS_O_RDONLY);
   KEXPECT_EQ(0, compare_dirents(fd, 7, getdents_expected));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_getdents(): multiple calls");
+  fd = vfs_open("/getdents", VFS_O_RDONLY);
+  kdirent_t* buf = (kdirent_t*)kmalloc(1000);
+  kmemset(buf, 0xaa, 1000);
+  size_t expected_size = sizeof(kdirent_t) * 7 + 17;
+  KEXPECT_EQ(expected_size, vfs_getdents(fd, buf, 1000));
+  kmemset(buf, 0xaa, 1000);
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 1000));
+  kmemset(buf, 0xaa, 1000);
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 1000));
+
+  vfs_close(fd);
+  fd = vfs_open("/getdents", VFS_O_RDONLY);
+
+  kmemset(buf, 0xaa, 1000);
+#if ARCH_IS_64_BIT
+  KEXPECT_EQ(26, vfs_getdents(fd, buf, 50));
+  KEXPECT_EQ(79, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(80, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 100));
+#else
+  KEXPECT_EQ(43, vfs_getdents(fd, buf, 50));
+  KEXPECT_EQ(58, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 100));
+#endif
+  kfree(buf);
   vfs_close(fd);
 
   // TODO(aoates): test:

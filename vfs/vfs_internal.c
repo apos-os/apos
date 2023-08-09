@@ -421,6 +421,11 @@ int lookup_fd(int fd, file_t** file_out) {
 
   file_t* file = g_file_table[proc->fds[fd].file];
   KASSERT(file != 0x0);
+  // Sanity checks.
+  KASSERT_DBG(file->index == proc->fds[fd].file);
+  KASSERT_DBG(file->vnode != NULL);
+  KASSERT_DBG(file->refcount > 0);
+  KASSERT_DBG(file->pos >= 0);
   file_ref(file);
   *file_out = file;
   return 0;

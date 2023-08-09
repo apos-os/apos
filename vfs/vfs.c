@@ -1486,7 +1486,7 @@ int vfs_getdents(int fd, kdirent_t* buf, int count) {
   {
     KMUTEX_AUTO_LOCK(node_lock, &file->vnode->mutex);
     result = file->vnode->fs->getdents(file->vnode, file->pos, buf, count);
-    if (result >= 0) {
+    if (result > 0) {
       // Find the last returned dirent_t, and use it's offset.
       kdirent_t* ent = buf;
       int bufpos = 0;
