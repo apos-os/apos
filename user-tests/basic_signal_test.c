@@ -689,9 +689,9 @@ static void sigwait_test(void) {
   sigaddset(&set, SIGALRM);
   int sig;
   KEXPECT_SIGNAL(SIGSEGV, alarm_and_sigwait(NULL));
-  KEXPECT_SIGNAL(SIGSEGV, alarm_and_sigwait((int*)0x12345));
+  KEXPECT_SIGNAL(SIGSEGV, alarm_and_sigwait((int*)INVALID_ADDR));
   KEXPECT_SIGNAL(SIGSEGV, sigwait(NULL, &sig));
-  KEXPECT_SIGNAL(SIGSEGV, sigwait((sigset_t*)0x12345, &sig));
+  KEXPECT_SIGNAL(SIGSEGV, sigwait((sigset_t*)INVALID_ADDR, &sig));
 
 
   KTEST_BEGIN("sigwait(): basic test");

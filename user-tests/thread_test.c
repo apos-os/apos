@@ -190,7 +190,7 @@ static void invalid_args_tests(void) {
   KTEST_BEGIN("threads: pass unmapped address for stack");
   pid = fork();
   if (pid == 0) {
-    KEXPECT_EQ(0, apos_thread_create(&id, (void*)0x1234567,
+    KEXPECT_EQ(0, apos_thread_create(&id, (void*)INVALID_ADDR,
                                      &thread_test_create_tramp));
     apos_thread_exit();
   }
@@ -261,7 +261,7 @@ static void invalid_args_tests(void) {
   pid = fork();
   if (pid == 0) {
     KEXPECT_EQ(0,
-               apos_thread_create(&id, &thread_stack[1000], (void*)0x1234567));
+               apos_thread_create(&id, &thread_stack[1000], (void*)INVALID_ADDR));
     apos_thread_exit();
   }
   status = -1;
@@ -517,7 +517,7 @@ static void send_signal_to_thread_test(void) {
   KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
   KEXPECT_SIGNAL(SIGSEGV, apos_thread_kill(NULL, 0));
   KEXPECT_SIGNAL(SIGSEGV,
-                 apos_thread_kill((const apos_uthread_id_t*)0x12345, 0));
+                 apos_thread_kill((const apos_uthread_id_t*)INVALID_ADDR, 0));
 
   // Despite all the above tests, the threads should not have progressed.
   for (int i = 0; i < 3; ++i) sleep_ms(1);
@@ -588,7 +588,7 @@ static void self_test(void) {
 
   KTEST_BEGIN("apos_thread_self(): invalid arguments");
   KEXPECT_SIGNAL(SIGSEGV, apos_thread_self(NULL));
-  KEXPECT_SIGNAL(SIGSEGV, apos_thread_self((apos_uthread_id_t*)0x12345));
+  KEXPECT_SIGNAL(SIGSEGV, apos_thread_self((apos_uthread_id_t*)INVALID_ADDR));
 }
 
 void thread_test(void) {

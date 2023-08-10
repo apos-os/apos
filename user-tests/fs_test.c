@@ -121,9 +121,9 @@ static void mount_test(void) {
 
   KTEST_BEGIN("mount(): invalid args");
   KEXPECT_SIGNAL(SIGSEGV,
-                 mount("", "_mount_test", "testfs", 0, (void*)0x12345, 1));
+                 mount("", "_mount_test", "testfs", 0, (void*)INVALID_ADDR, 1));
   KEXPECT_ERRNO(EINVAL,
-                mount("", "_mount_test", "testfs", 0, (void*)0x12345, -1));
+                mount("", "_mount_test", "testfs", 0, (void*)INVALID_ADDR, -1));
   int scratch;
   KEXPECT_SIGNAL(SIGSEGV,
                  mount("", "_mount_test", "testfs", 0, &scratch, 1000000));
@@ -140,7 +140,7 @@ static void mount_test(void) {
   KEXPECT_ERRNO(EINVAL, unmount(NULL, 0));
   pid_t child = fork();
   if (child == 0) {
-    unmount((const char*)0x12345, 0);
+    unmount((const char*)INVALID_ADDR, 0);
     exit(1);
   }
   int status;
