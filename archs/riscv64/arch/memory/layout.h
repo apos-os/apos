@@ -38,6 +38,9 @@
 #define MEM_LAST_USER_MAPPABLE_ADDR 0x0000003FFFFFFFFF
 #define MEM_LAST_MAPPABLE_ADDR      0xFFFFFFFFFFFFFFFF
 
+// riscv32 isn't actually supported in userspace, so this is academic.
+#define MEM_LAST_USER_MAPPABLE_ADDR_32 0x00000000FFFFFFFF
+
 // Location and size of the user-mode process stack.
 #define MEM_USER_STACK_SIZE_64 (8 * 1024 * 1024)  // 8MB
 #define MEM_USER_STACK_BOTTOM_64 \

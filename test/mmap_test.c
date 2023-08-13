@@ -435,6 +435,87 @@ static void addr_hint_test(void) {
   KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
   KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
 
+
+  KTEST_BEGIN("mmap(): addr hint (between mappings) test");
+
+  // Create two mappings with space in the middle.
+  addrA = addrB = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdA, 0, &addrA));
+  KEXPECT_EQ((void*)0x5000, addrA);
+
+  KEXPECT_EQ(0, do_mmap((void*)0x15000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdB, 0, &addrB));
+  KEXPECT_EQ((void*)0x15000, addrB);
+
+  // Hint an address right in the middle.
+  void* addrC = NULL;
+  KEXPECT_EQ(0, do_mmap((void*)0xa000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdB, 0, &addrC));
+  KEXPECT_EQ((void*)0xa000, addrC);
+
+  EXPECT_MMAP(3, (emmap_t[]){{0x5000, 0x3000, fdA},
+                             {0xa000, 0x3000, fdB},
+                             {0x15000, 0x3000, fdB}});
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrC, kTestFilePages * PAGE_SIZE));
+
+
+  // As above, but the hole is exactly the right size.
+  KTEST_BEGIN("mmap(): addr hint (between mappings #2) test");
+  addrA = addrB = addrC = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdA, 0, &addrA));
+  KEXPECT_EQ((void*)0x5000, addrA);
+
+  KEXPECT_EQ(0, do_mmap((void*)0xb000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdB, 0, &addrB));
+  KEXPECT_EQ((void*)0xb000, addrB);
+
+  // Hint an address right in the middle.
+  KEXPECT_EQ(0, do_mmap((void*)0x8000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdB, 0, &addrC));
+  KEXPECT_EQ((void*)0x8000, addrC);
+
+  EXPECT_MMAP(3, (emmap_t[]){{0x5000, 0x3000, fdA},
+                             {0x8000, 0x3000, fdB},
+                             {0xb000, 0x3000, fdB}});
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrC, kTestFilePages * PAGE_SIZE));
+
+
+  // Test when the hinted address is higher than any available holes --- we
+  // should loop around and look for a hole from the start.
+  KTEST_BEGIN("mmap(): addr hint higher than large-enough hole test");
+  addrA = addrB = addrC = 0x0;
+  KEXPECT_EQ(0, do_mmap((void*)0x5000, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdA, 0, &addrA));
+  KEXPECT_EQ((void*)0x5000, addrA);
+
+  // Leave a hole at the top that is too small.
+  KASSERT(kTestFilePages == 3);
+  addr_t addrB_req = addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - 4 * PAGE_SIZE;
+  KEXPECT_EQ(0, do_mmap((void*)addrB_req, kTestFilePages * PAGE_SIZE, PROT_ALL,
+                        KMAP_SHARED, fdB, 0, &addrB));
+  KEXPECT_EQ((void*)addrB_req, addrB);
+
+  KEXPECT_EQ(
+      0, do_mmap((void*)(addrB_req - 2 * PAGE_SIZE), kTestFilePages * PAGE_SIZE,
+                 PROT_ALL, KMAP_SHARED, fdB, 0, &addrC));
+  KEXPECT_EQ((void*)0x1000, addrC);
+
+  EXPECT_MMAP(3, (emmap_t[]){{0x1000, 0x3000, fdB},
+                             {0x5000, 0x3000, fdA},
+                             {addrB_req, 0x3000, fdB}});
+
+  KEXPECT_EQ(0, do_munmap(addrA, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrB, kTestFilePages * PAGE_SIZE));
+  KEXPECT_EQ(0, do_munmap(addrC, kTestFilePages * PAGE_SIZE));
+
   vfs_close(fdA);
   vfs_close(fdB);
 }
@@ -491,6 +572,8 @@ static void map_unmap_kernel_memory(void) {
   const int fdA = vfs_open(kFileA, VFS_O_RDWR);
   void* addrA = 0x0;
 
+  // Note: this arguably should loop the hint around (same as if there was no
+  // available hole that was high enough).
   KTEST_BEGIN("mmap(): map in kernel memory (partial/hint)");
   KEXPECT_EQ(-EINVAL, do_mmap(
           (void*)(addr2page(MEM_LAST_USER_MAPPABLE_ADDR) - PAGE_SIZE),

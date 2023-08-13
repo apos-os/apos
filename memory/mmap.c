@@ -146,7 +146,13 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
     return -EINVAL;
   }
 
-  if ((addr_t)addr > MEM_LAST_USER_MAPPABLE_ADDR - length + 1) {
+  // This is a bit icky --- would be nice to have a more flexible and less
+  // brittle way to manage memory limits portably.
+  addr_t last_mappable = bin_32bit(proc_current()->user_arch)
+                             ? MEM_LAST_USER_MAPPABLE_ADDR_32
+                             : MEM_LAST_USER_MAPPABLE_ADDR;
+
+  if ((addr_t)addr > last_mappable - length + 1) {
     return -EINVAL;
   }
 
@@ -175,8 +181,15 @@ int do_mmap(void* addr, addr_t length, int prot, int flags,
         vm_find_hole(proc_current(),
                      max(addr2page((addr_t)addr),
                          (addr_t)MEM_FIRST_MAPPABLE_ADDR),
-                     MEM_LAST_USER_MAPPABLE_ADDR + 1,
+                     last_mappable + 1,
                      length);
+
+    // If we couldn't find an appropriate hole starting at the given address,
+    // just look for one starting at the beginning.
+    if (hole_addr == 0) {
+      hole_addr = vm_find_hole(proc_current(), (addr_t)MEM_FIRST_MAPPABLE_ADDR,
+                               last_mappable + 1, length);
+    }
   }
   if (hole_addr == 0) {
     return -ENOMEM;
