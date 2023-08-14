@@ -112,7 +112,7 @@ static int rtc_decode(const rtc_time_t* raw_time, rtc_time_t* time) {
     }
   }
 
-  return 1;
+  return 0;
 }
 
 int rtc_read_time(rtc_time_t* time) {
@@ -124,7 +124,7 @@ int rtc_read_time(rtc_time_t* time) {
   while (!rtc_equals(&times[0], &times[1])) {
     if (iters > 10) {
       klogf("ERROR: rtc value didn't stabilize after %d iterations\n", iters);
-      return 0;
+      return -EIO;
     }
 
     rtc_read_state(&times[next_idx]);

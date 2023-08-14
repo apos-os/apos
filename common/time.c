@@ -22,7 +22,10 @@ int apos_get_time(struct apos_tm* t) {
   if (t == NULL) return -EINVAL;
 
   rtc_time_t rtc;
-  if (rtc_read_time(&rtc) == 0) return -EIO;
+  int result = rtc_read_time(&rtc);
+  if (result != 0) {
+    return result;
+  }
 
   t->tm_sec = rtc.seconds;
   t->tm_min = rtc.minutes;
