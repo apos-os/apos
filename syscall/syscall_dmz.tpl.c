@@ -44,6 +44,12 @@
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
 
+// Semi-arbitrary limit on the size of buffers that can be passed to/from
+// syscalls, to prevent us trying to allocate huge amounts of memory on behalf
+// of bogus syscalls.  Must be at most UINT32_MAX / 2 to catch negative sizes.
+#define DMZ_MAX_BUFSIZE (PAGE_SIZE * 256)
+_Static_assert(DMZ_MAX_BUFSIZE < UINT32_MAX / 2, "DMZ_MAX_BUFSIZE too large");
+
 long do_syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                      long arg6);
 long SYSCALL_DMZ_syscall_test(long arg1, long arg2, long arg3, long arg4,
@@ -353,7 +359,7 @@ ssize_t vfs_read(int fd, void* buf, size_t count);
 ssize_t SYSCALL_DMZ_read(int fd, void* buf, size_t count) {
   void* KERNEL_buf = 0x0;
 
-  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(count) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_buf = (void*)kmalloc(count);
 
@@ -387,7 +393,7 @@ ssize_t vfs_write(int fd, const void* buf, size_t count);
 ssize_t SYSCALL_DMZ_write(int fd, const void* buf, size_t count) {
   const void* KERNEL_buf = 0x0;
 
-  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(count) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_buf = (const void*)kmalloc(count);
 
@@ -418,7 +424,7 @@ int vfs_getdents_32(int fd, kdirent_32_t* buf, int count);
 int SYSCALL_DMZ_getdents_32(int fd, kdirent_32_t* buf, int count) {
   kdirent_32_t* KERNEL_buf = 0x0;
 
-  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(count) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_buf = (kdirent_32_t*)kmalloc(count);
 
@@ -452,7 +458,7 @@ int vfs_getdents(int fd, kdirent_t* buf, int count);
 int SYSCALL_DMZ_getdents(int fd, kdirent_t* buf, int count) {
   kdirent_t* KERNEL_buf = 0x0;
 
-  if ((size_t)(count) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(count) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_buf = (kdirent_t*)kmalloc(count);
 
@@ -486,7 +492,7 @@ int vfs_getcwd(char* path_out, size_t size);
 int SYSCALL_DMZ_getcwd(char* path_out, size_t size) {
   char* KERNEL_path_out = 0x0;
 
-  if ((size_t)(size) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(size) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_path_out = (char*)kmalloc(size);
 
@@ -523,7 +529,7 @@ int SYSCALL_DMZ_stat_32(const char* path, apos_stat_32_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  if ((size_t)(sizeof(apos_stat_32_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_stat_32_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_32_t*)kmalloc(sizeof(apos_stat_32_t));
@@ -566,7 +572,7 @@ int SYSCALL_DMZ_stat(const char* path, apos_stat_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  if ((size_t)(sizeof(apos_stat_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_stat_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_t*)kmalloc(sizeof(apos_stat_t));
@@ -609,7 +615,7 @@ int SYSCALL_DMZ_lstat_32(const char* path, apos_stat_32_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  if ((size_t)(sizeof(apos_stat_32_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_stat_32_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_32_t*)kmalloc(sizeof(apos_stat_32_t));
@@ -652,7 +658,7 @@ int SYSCALL_DMZ_lstat(const char* path, apos_stat_t* stat) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  if ((size_t)(sizeof(apos_stat_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_stat_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_stat = (apos_stat_t*)kmalloc(sizeof(apos_stat_t));
@@ -692,7 +698,7 @@ int vfs_fstat_32(int fd, apos_stat_32_t* stat);
 int SYSCALL_DMZ_fstat_32(int fd, apos_stat_32_t* stat) {
   apos_stat_32_t* KERNEL_stat = 0x0;
 
-  if ((size_t)(sizeof(apos_stat_32_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_stat_32_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_stat = (apos_stat_32_t*)kmalloc(sizeof(apos_stat_32_t));
 
@@ -727,7 +733,7 @@ int vfs_fstat(int fd, apos_stat_t* stat);
 int SYSCALL_DMZ_fstat(int fd, apos_stat_t* stat) {
   apos_stat_t* KERNEL_stat = 0x0;
 
-  if ((size_t)(sizeof(apos_stat_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_stat_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_stat = (apos_stat_t*)kmalloc(sizeof(apos_stat_t));
 
@@ -1019,7 +1025,7 @@ apos_pid_t SYSCALL_DMZ_wait(int* exit_status) {
   int* KERNEL_exit_status = 0x0;
 
   if (exit_status) {
-    if ((size_t)(sizeof(int)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(int)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_exit_status = !exit_status ? 0x0 : (int*)kmalloc(sizeof(int));
@@ -1058,7 +1064,7 @@ apos_pid_t SYSCALL_DMZ_waitpid(apos_pid_t child, int* exit_status,
   int* KERNEL_exit_status = 0x0;
 
   if (exit_status) {
-    if ((size_t)(sizeof(int)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(int)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_exit_status = !exit_status ? 0x0 : (int*)kmalloc(sizeof(int));
@@ -1196,10 +1202,12 @@ int SYSCALL_DMZ_sigaction_32(int signum, const struct ksigaction_32* act,
   struct ksigaction_32* KERNEL_oldact = 0x0;
 
   if (act) {
-    if ((size_t)(sizeof(struct ksigaction_32)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(struct ksigaction_32)) > DMZ_MAX_BUFSIZE)
+      return -EINVAL;
   }
   if (oldact) {
-    if ((size_t)(sizeof(struct ksigaction_32)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(struct ksigaction_32)) > DMZ_MAX_BUFSIZE)
+      return -EINVAL;
   }
 
   KERNEL_act =
@@ -1251,10 +1259,10 @@ int SYSCALL_DMZ_sigaction(int signum, const struct ksigaction* act,
   struct ksigaction* KERNEL_oldact = 0x0;
 
   if (act) {
-    if ((size_t)(sizeof(struct ksigaction)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(struct ksigaction)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
   if (oldact) {
-    if ((size_t)(sizeof(struct ksigaction)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(struct ksigaction)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_act =
@@ -1302,10 +1310,10 @@ int SYSCALL_DMZ_sigprocmask(int how, const ksigset_t* set, ksigset_t* oset) {
   ksigset_t* KERNEL_oset = 0x0;
 
   if (set) {
-    if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(ksigset_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
   if (oset) {
-    if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(ksigset_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_set = !set ? 0x0 : (const ksigset_t*)kmalloc(sizeof(ksigset_t));
@@ -1348,7 +1356,7 @@ int proc_sigpending(ksigset_t* oset);
 int SYSCALL_DMZ_sigpending(ksigset_t* oset) {
   ksigset_t* KERNEL_oset = 0x0;
 
-  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(ksigset_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_oset = (ksigset_t*)kmalloc(sizeof(ksigset_t));
 
@@ -1382,7 +1390,7 @@ int proc_sigsuspend(const ksigset_t* sigmask);
 int SYSCALL_DMZ_sigsuspend(const ksigset_t* sigmask) {
   const ksigset_t* KERNEL_sigmask = 0x0;
 
-  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(ksigset_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_sigmask = (const ksigset_t*)kmalloc(sizeof(ksigset_t));
 
@@ -1419,10 +1427,10 @@ int SYSCALL_DMZ_sigreturn(const ksigset_t* old_mask,
   const user_context_t* KERNEL_context = 0x0;
   const syscall_context_t* KERNEL_syscall_context = 0x0;
 
-  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
-  if ((size_t)(sizeof(user_context_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(ksigset_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+  if ((size_t)(sizeof(user_context_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   if (syscall_context) {
-    if ((size_t)(sizeof(syscall_context_t)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(syscall_context_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_old_mask = (const ksigset_t*)kmalloc(sizeof(ksigset_t));
@@ -1684,7 +1692,7 @@ int SYSCALL_DMZ_mmap_32(void* addr_inout, size_t length, int prot, int flags,
                         int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
 
-  if ((size_t)(sizeof(void*)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(void*)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_addr_inout = (void*)kmalloc(sizeof(void*));
 
@@ -1724,7 +1732,7 @@ int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
                      int fd, apos_off_t offset) {
   void* KERNEL_addr_inout = 0x0;
 
-  if ((size_t)(sizeof(void*)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(void*)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_addr_inout = (void*)kmalloc(sizeof(void*));
 
@@ -1821,7 +1829,7 @@ int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize) {
 
   const int SIZE_path = syscall_verify_string(path);
   if (SIZE_path < 0) return SIZE_path;
-  if ((size_t)(bufsize) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(bufsize) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_path = (const char*)kmalloc(SIZE_path);
   KERNEL_buf = (char*)kmalloc(bufsize);
@@ -1876,7 +1884,7 @@ int apos_get_time(struct apos_tm* t);
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t) {
   struct apos_tm* KERNEL_t = 0x0;
 
-  if ((size_t)(sizeof(struct apos_tm)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct apos_tm)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_t = (struct apos_tm*)kmalloc(sizeof(struct apos_tm));
 
@@ -1909,7 +1917,7 @@ cleanup:
 int SYSCALL_DMZ_pipe(int* fildes) {
   int* KERNEL_fildes = 0x0;
 
-  if ((size_t)(sizeof(int[2])) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(int[2])) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_fildes = (int*)kmalloc(sizeof(int[2]));
 
@@ -2071,7 +2079,7 @@ int tty_tcgetattr(int fd, struct ktermios* t);
 int SYSCALL_DMZ_tcgetattr(int fd, struct ktermios* t) {
   struct ktermios* KERNEL_t = 0x0;
 
-  if ((size_t)(sizeof(struct ktermios)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct ktermios)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_t = (struct ktermios*)kmalloc(sizeof(struct ktermios));
 
@@ -2106,7 +2114,7 @@ int SYSCALL_DMZ_tcsetattr(int fd, int optional_actions,
                           const struct ktermios* t) {
   const struct ktermios* KERNEL_t = 0x0;
 
-  if ((size_t)(sizeof(struct ktermios)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct ktermios)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_t = (const struct ktermios*)kmalloc(sizeof(struct ktermios));
 
@@ -2185,7 +2193,7 @@ int vfs_poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout);
 int SYSCALL_DMZ_poll(struct apos_pollfd* fds, apos_nfds_t nfds, int timeout) {
   struct apos_pollfd* KERNEL_fds = 0x0;
 
-  if ((size_t)(sizeof(struct apos_pollfd) * nfds) > UINT32_MAX / 2)
+  if ((size_t)(sizeof(struct apos_pollfd) * nfds) > DMZ_MAX_BUFSIZE)
     return -EINVAL;
 
   KERNEL_fds = (struct apos_pollfd*)kmalloc(sizeof(struct apos_pollfd) * nfds);
@@ -2224,7 +2232,7 @@ int proc_getrlimit_32(int resource, struct apos_rlimit_32* lim);
 int SYSCALL_DMZ_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
   struct apos_rlimit_32* KERNEL_lim = 0x0;
 
-  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct apos_rlimit)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_lim = (struct apos_rlimit_32*)kmalloc(sizeof(struct apos_rlimit));
 
@@ -2259,7 +2267,7 @@ int proc_getrlimit(int resource, struct apos_rlimit* lim);
 int SYSCALL_DMZ_getrlimit(int resource, struct apos_rlimit* lim) {
   struct apos_rlimit* KERNEL_lim = 0x0;
 
-  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct apos_rlimit)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_lim = (struct apos_rlimit*)kmalloc(sizeof(struct apos_rlimit));
 
@@ -2294,7 +2302,7 @@ int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim);
 int SYSCALL_DMZ_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
   const struct apos_rlimit_32* KERNEL_lim = 0x0;
 
-  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct apos_rlimit)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_lim =
       (const struct apos_rlimit_32*)kmalloc(sizeof(struct apos_rlimit));
@@ -2327,7 +2335,7 @@ int proc_setrlimit(int resource, const struct apos_rlimit* lim);
 int SYSCALL_DMZ_setrlimit(int resource, const struct apos_rlimit* lim) {
   const struct apos_rlimit* KERNEL_lim = 0x0;
 
-  if ((size_t)(sizeof(struct apos_rlimit)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(struct apos_rlimit)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_lim = (const struct apos_rlimit*)kmalloc(sizeof(struct apos_rlimit));
 
@@ -2392,7 +2400,7 @@ int SYSCALL_DMZ_bind(int socket, const struct sockaddr* addr,
                      socklen_t addr_len) {
   const struct sockaddr* KERNEL_addr = 0x0;
 
-  if ((size_t)(addr_len) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(addr_len) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_addr = (const struct sockaddr*)kmalloc(addr_len);
 
@@ -2440,7 +2448,7 @@ int SYSCALL_DMZ_accept(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   socklen_t* KERNEL_addr_len = 0x0;
 
   if (addr_len) {
-    if ((size_t)(sizeof(socklen_t)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(socklen_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_addr_len = !addr_len ? 0x0 : (socklen_t*)kmalloc(sizeof(socklen_t));
@@ -2482,7 +2490,7 @@ int SYSCALL_DMZ_connect(int socket, const struct sockaddr* addr,
                         socklen_t addr_len) {
   const struct sockaddr* KERNEL_addr = 0x0;
 
-  if ((size_t)(addr_len) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(addr_len) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_addr = (const struct sockaddr*)kmalloc(addr_len);
 
@@ -2513,7 +2521,7 @@ ssize_t net_recv(int socket, void* buf, size_t len, int flags);
 ssize_t SYSCALL_DMZ_recv(int socket, void* buf, size_t len, int flags) {
   void* KERNEL_buf = 0x0;
 
-  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(len) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_buf = (void*)kmalloc(len);
 
@@ -2550,9 +2558,9 @@ ssize_t SYSCALL_DMZ_recvfrom(int socket, void* buf, size_t len, int flags,
   void* KERNEL_buf = 0x0;
   socklen_t* KERNEL_address_len = 0x0;
 
-  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(len) > DMZ_MAX_BUFSIZE) return -EINVAL;
   if (address_len) {
-    if ((size_t)(sizeof(socklen_t)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(socklen_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_buf = (void*)kmalloc(len);
@@ -2603,7 +2611,7 @@ ssize_t net_send(int socket, const void* buf, size_t len, int flags);
 ssize_t SYSCALL_DMZ_send(int socket, const void* buf, size_t len, int flags) {
   const void* KERNEL_buf = 0x0;
 
-  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(len) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_buf = (const void*)kmalloc(len);
 
@@ -2638,9 +2646,9 @@ ssize_t SYSCALL_DMZ_sendto(int socket, const void* buf, size_t len, int flags,
   const void* KERNEL_buf = 0x0;
   const struct sockaddr* KERNEL_dest_addr = 0x0;
 
-  if ((size_t)(len) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(len) > DMZ_MAX_BUFSIZE) return -EINVAL;
   if (dest_addr) {
-    if ((size_t)(dest_len) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(dest_len) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_buf = (const void*)kmalloc(len);
@@ -2746,7 +2754,7 @@ int SYSCALL_DMZ_apos_thread_create(apos_uthread_id_t* id, void* stack,
                                    void* entry) {
   apos_uthread_id_t* KERNEL_id = 0x0;
 
-  if ((size_t)(sizeof(apos_uthread_id_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_uthread_id_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_id = (apos_uthread_id_t*)kmalloc(sizeof(apos_uthread_id_t));
 
@@ -2798,8 +2806,8 @@ int SYSCALL_DMZ_sigwait(const ksigset_t* sigmask, int* sig) {
   const ksigset_t* KERNEL_sigmask = 0x0;
   int* KERNEL_sig = 0x0;
 
-  if ((size_t)(sizeof(ksigset_t)) > UINT32_MAX / 2) return -EINVAL;
-  if ((size_t)(sizeof(int)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(ksigset_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+  if ((size_t)(sizeof(int)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_sigmask = (const ksigset_t*)kmalloc(sizeof(ksigset_t));
   KERNEL_sig = (int*)kmalloc(sizeof(int));
@@ -2839,7 +2847,7 @@ int proc_thread_kill_user(const apos_uthread_id_t* id, int sig);
 int SYSCALL_DMZ_apos_thread_kill(const apos_uthread_id_t* id, int sig) {
   const apos_uthread_id_t* KERNEL_id = 0x0;
 
-  if ((size_t)(sizeof(apos_uthread_id_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_uthread_id_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_id = (const apos_uthread_id_t*)kmalloc(sizeof(apos_uthread_id_t));
 
@@ -2871,7 +2879,7 @@ int proc_thread_self(apos_uthread_id_t* id);
 int SYSCALL_DMZ_apos_thread_self(apos_uthread_id_t* id) {
   apos_uthread_id_t* KERNEL_id = 0x0;
 
-  if ((size_t)(sizeof(apos_uthread_id_t)) > UINT32_MAX / 2) return -EINVAL;
+  if ((size_t)(sizeof(apos_uthread_id_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
 
   KERNEL_id = (apos_uthread_id_t*)kmalloc(sizeof(apos_uthread_id_t));
 
@@ -2911,7 +2919,8 @@ int SYSCALL_DMZ_futex_ts(uint32_t* uaddr, int op, uint32_t val,
   const struct apos_timespec* KERNEL_timespec = 0x0;
 
   if (timespec) {
-    if ((size_t)(sizeof(struct apos_timespec)) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(sizeof(struct apos_timespec)) > DMZ_MAX_BUFSIZE)
+      return -EINVAL;
   }
 
   KERNEL_timespec =
@@ -2961,7 +2970,7 @@ int SYSCALL_DMZ_mount(const char* source, const char* mount_path,
   const int SIZE_type = syscall_verify_string(type);
   if (SIZE_type < 0) return SIZE_type;
   if (data) {
-    if ((size_t)(data_len) > UINT32_MAX / 2) return -EINVAL;
+    if ((size_t)(data_len) > DMZ_MAX_BUFSIZE) return -EINVAL;
   }
 
   KERNEL_source = (const char*)kmalloc(SIZE_source);

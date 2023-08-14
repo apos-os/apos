@@ -23,6 +23,12 @@
 
 {{ common.include_headers(SYSCALLS, 'header') }}
 
+// Semi-arbitrary limit on the size of buffers that can be passed to/from
+// syscalls, to prevent us trying to allocate huge amounts of memory on behalf
+// of bogus syscalls.  Must be at most UINT32_MAX / 2 to catch negative sizes.
+#define DMZ_MAX_BUFSIZE (PAGE_SIZE * 256)
+_Static_assert(DMZ_MAX_BUFSIZE < UINT32_MAX / 2, "DMZ_MAX_BUFSIZE too large");
+
 {% for syscall in SYSCALLS -%}
 {{ dmz_macros.syscall_dmz(syscall) }}
 

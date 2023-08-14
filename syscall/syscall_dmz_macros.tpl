@@ -41,7 +41,7 @@ if (SIZE_{{ arg.name }} < 0) return SIZE_{{ arg.name }};
 {#- This is sort of a hack to get around funny business with signed/unsigned
     conversions.  TODO(aoates): do this checking in a more principled way. #}
 {% if arg.AllowNull() %} if ({{ arg.name }}) { {% endif %}
-if ((size_t)({{ arg.size_name }}) > UINT32_MAX / 2) return -EINVAL;
+if ((size_t)({{ arg.size_name }}) > DMZ_MAX_BUFSIZE) return -EINVAL;
 {% if arg.AllowNull() %} } {% endif %}
 {% endif %}
 {% endfor %}

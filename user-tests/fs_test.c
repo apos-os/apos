@@ -89,7 +89,7 @@ static void basic_fs_test(void) {
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x0, 500));
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x89000, 500));
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0xc1000000, 500));
-  KEXPECT_EQ(-ENOMEM, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
+  KEXPECT_EQ(-EINVAL, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
 
   KTEST_BEGIN("rename(): basic test");
   KEXPECT_EQ(0, rename("_fs_test_dir/fileB", "_fs_test_dir/fileC"));
