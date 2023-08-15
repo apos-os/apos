@@ -16,6 +16,7 @@
 
 #include "common/arch-config.h"
 #include "common/time.h"
+#include "dev/rtc/goldfish-rtc.h"
 #include "dev/rtc/pc_rtc.h"
 #include "user/include/apos/errors.h"
 
@@ -40,6 +41,10 @@ int apos_get_time(struct apos_tm* t) {
 #else
   return -ENOTSUP;
 #endif
+}
+
+int apos_get_timespec(struct apos_timespec* ts) {
+  return goldfish_rtc_read(ts);
 }
 
 long timespec2ms(const struct apos_timespec* ts) {

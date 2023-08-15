@@ -15,6 +15,7 @@
 Import('env AposAddSources')
 
 srcs = [
+  'goldfish-rtc.c',
   'pc_rtc.c',
   ]
 
