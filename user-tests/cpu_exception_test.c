@@ -22,6 +22,7 @@
 #include "ktest.h"
 #include "all_tests.h"
 
+#if defined(ARCH_X86)
 static struct sigaction make_sigaction(void (*handler)(int)) {
   struct sigaction new_action;
   new_action.sa_handler = handler;
@@ -87,3 +88,9 @@ void cpu_exception_test(void) {
   gp_fault_test();
   lcall_ldt_test();
 }
+
+#else
+
+void cpu_exception_test(void) {}
+
+#endif

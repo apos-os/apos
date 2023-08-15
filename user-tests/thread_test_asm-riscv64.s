@@ -12,17 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-Import('env DisableFeature')
+.global basic_thread_test_tramp_fn
+.global basic_thread_test_fn
+.global thread_test_create_tramp
 
-env.Append(CFLAGS = '-march=rv64gc')
+basic_thread_test_tramp_fn:
+  .option push
+  .option norelax
+1:auipc gp, %pcrel_hi(__global_pointer$)
+  addi  gp, gp, %pcrel_lo(1b)
+  .option pop
 
-# TODO(aoates): build a RISC-V clang cross compiler that supports linking
-# user-mode binaries.
-if env['CLANG']:
-  DisableFeature(env, 'USER_OS')
-  DisableFeature(env, 'USER_TESTS')
+  mv a0, sp
+  call basic_thread_test_fn
+  # Shouldn't get here.
+  ret
 
-# TODO(aoates): figure out how to make these work on this platform (and the
-# right portable API).  The implementations currently rely on ioport commands.
-DisableFeature(env, 'ETHERNET')
-DisableFeature(env, 'USB')
+thread_test_create_tramp:
+  .option push
+  .option norelax
+1:auipc gp, %pcrel_hi(__global_pointer$)
+  addi  gp, gp, %pcrel_lo(1b)
+  .option pop
+
+  # Thread function arg and address were pushed.
+  ld t0, 0(sp)
+  ld a0, 8(sp)
+  jalr t0
+  call apos_thread_exit

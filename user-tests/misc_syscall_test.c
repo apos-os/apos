@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include "ktest.h"
+#include "user-tests/arch.h"
 
 static void apos_get_time_test(void) {
   KTEST_SUITE_BEGIN("apos_get_time() test");
@@ -27,6 +28,7 @@ static void apos_get_time_test(void) {
   struct apos_tm tm;
   memset(&tm, 0, sizeof(tm));
 
+#if defined(ARCH_X86)
   KEXPECT_EQ(0, apos_get_time(&tm));
   KEXPECT_GE(tm.tm_year, 2015 - 1900);
   KEXPECT_LE(tm.tm_year, 3000 - 1900);
@@ -40,6 +42,9 @@ static void apos_get_time_test(void) {
   KEXPECT_LE(tm.tm_min, 59);
   KEXPECT_GE(tm.tm_sec, 0);
   KEXPECT_LE(tm.tm_sec, 61);
+#else
+  KEXPECT_ERRNO(ENOTSUP, apos_get_time(&tm));
+#endif
 
   KTEST_BEGIN("apos_get_time(): bad arguments test");
   KEXPECT_SIGNAL(SIGSEGV, apos_get_time(NULL));

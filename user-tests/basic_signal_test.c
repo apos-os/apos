@@ -23,6 +23,7 @@
 #include <apos/syscall.h>
 #include <apos/syscall_decls.h>
 
+#include "arch.h"
 #include "ktest.h"
 #include "all_tests.h"
 
@@ -78,9 +79,11 @@ static void alarm_interrupt_test(void) {
   alarm_ms(100);
   int i = 5;
   while (!got_signal || i-- > 0) {
+#if defined(ARCH_X86)
     // Verify we didn't clobber $ebp.
     int ebp_val;
     asm volatile ("movl (%%ebp), %0" : "=r"(ebp_val));
+#endif
   }
 
   KEXPECT_EQ(0, sigaction(SIGALRM, &old_action, NULL));
@@ -135,6 +138,7 @@ static void signal_test(void) {
   KEXPECT_EQ(0, exit_status);
 }
 
+#if ARCH_HAS_SIGFPE
 static void catch_sigfpe(int sig) {
   exit(!(sig == SIGFPE));
 }
@@ -162,6 +166,7 @@ static void sigfpe_test(void) {
   KEXPECT_EQ(child, wait(&status));
   KEXPECT_EQ(0, status);
 }
+#endif
 
 static void catch_sigsegv(int sig) {
   // TODO(aoates): test the signal metadata, once that's generated.
@@ -760,7 +765,9 @@ void basic_signal_test(void) {
 
   bad_args_test();
   signal_test();
+#if ARCH_HAS_SIGFPE
   sigfpe_test();
+#endif
   sigsegv_test();
   sigsys_test();
   sigchld_test();
