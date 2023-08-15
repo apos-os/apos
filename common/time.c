@@ -14,15 +14,17 @@
 
 #include <stddef.h>
 
+#include "common/arch-config.h"
 #include "common/time.h"
-#include "dev/rtc.h"
+#include "dev/rtc/pc_rtc.h"
 #include "user/include/apos/errors.h"
 
 int apos_get_time(struct apos_tm* t) {
   if (t == NULL) return -EINVAL;
 
-  rtc_time_t rtc;
-  int result = rtc_read_time(&rtc);
+#if ARCH_SUPPORTS_LEGACY_PC_DEVS
+  pcrtc_time_t rtc;
+  int result = pcrtc_read_time(&rtc);
   if (result != 0) {
     return result;
   }
@@ -35,6 +37,9 @@ int apos_get_time(struct apos_tm* t) {
   t->tm_year = rtc.year + rtc.century * 100 - 1900;
 
   return 0;
+#else
+  return -ENOTSUP;
+#endif
 }
 
 long timespec2ms(const struct apos_timespec* ts) {

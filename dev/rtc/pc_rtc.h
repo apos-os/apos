@@ -13,8 +13,8 @@
 // limitations under the License.
 
 // Driver for the real-time clock next to the CMOS chip.
-#ifndef APOO_DEV_RTC_H
-#define APOO_DEV_RTC_H
+#ifndef APOO_DEV_RTC_PC_RTC_H
+#define APOO_DEV_RTC_PC_RTC_H
 
 #include <stdint.h>
 
@@ -31,12 +31,12 @@ typedef struct {
   // Used internally.
   uint8_t status_a;
   uint8_t status_b;
-} rtc_time_t;
+} pcrtc_time_t;
 
 // Reads and decodes the current time from the RTC.  Returns zero on error.
-int rtc_read_time(rtc_time_t* time);
+int pcrtc_read_time(pcrtc_time_t* time);
 
 // Stringify the given time into a buffer.
-void rtc_to_string(char* buf, rtc_time_t* t);
+void pcrtc_to_string(char* buf, pcrtc_time_t* t);
 
 #endif

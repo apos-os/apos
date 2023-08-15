@@ -19,7 +19,7 @@
 #include "common/errno.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
-#include "dev/rtc.h"
+#include "dev/rtc/pc_rtc.h"
 
 #define CMOS_CMD_PORT  0x70
 #define CMOS_DATA_PORT 0x71
@@ -42,14 +42,13 @@
 #define CMOS_STATUSB_24HOUR     0x02
 #define CMOS_STATUSB_BINARY_FMT 0x04
 
-#if ARCH_SUPPORTS_LEGACY_PC_DEVS
 static inline uint8_t rtc_read_reg(uint8_t reg) {
   outb(CMOS_CMD_PORT, reg);
   return inb(CMOS_DATA_PORT);
 }
 
 // Reads the raw (undecoded) RTC state a single time.
-static void rtc_read_state(rtc_time_t* t) {
+static void rtc_read_state(pcrtc_time_t* t) {
   // Wait until the current update (if any) is done.
   t->status_a = rtc_read_reg(CMOS_REG_STATUSA);
   while (!(t->status_a & CMOS_STATUSA_UPDATING)) {
@@ -67,7 +66,7 @@ static void rtc_read_state(rtc_time_t* t) {
   t->century = rtc_read_reg(CMOS_REG_CENTURY);
 }
 
-static inline int rtc_equals(rtc_time_t* a, rtc_time_t* b) {
+static inline int rtc_equals(pcrtc_time_t* a, pcrtc_time_t* b) {
   return (
       a->seconds == b->seconds &&
       a->minutes == b->minutes &&
@@ -83,7 +82,7 @@ static inline uint8_t BCD_DECODE(uint8_t x) {
 }
 
 // TODO(aoates): unit tests for this!
-static int rtc_decode(const rtc_time_t* raw_time, rtc_time_t* time) {
+static int rtc_decode(const pcrtc_time_t* raw_time, pcrtc_time_t* time) {
   if (raw_time->status_b & CMOS_STATUSB_BINARY_FMT) {
     *time = *raw_time;
   } else {
@@ -115,9 +114,9 @@ static int rtc_decode(const rtc_time_t* raw_time, rtc_time_t* time) {
   return 0;
 }
 
-int rtc_read_time(rtc_time_t* time) {
+int pcrtc_read_time(pcrtc_time_t* time) {
   // Read the state until it stabilizes.
-  rtc_time_t times[2];
+  pcrtc_time_t times[2];
   rtc_read_state(&times[0]);
   rtc_read_state(&times[1]);
   int next_idx = 0, iters = 0;
@@ -137,15 +136,7 @@ int rtc_read_time(rtc_time_t* time) {
   return rtc_decode(&times[0], time);
 }
 
-#else // ARCH_SUPPORTS_LEGACY_PC_DEVS
-
-int rtc_read_time(rtc_time_t* time) {
-  return -ENOTSUP;
-}
-
-#endif
-
-void rtc_to_string(char* buf, rtc_time_t* t) {
+void rtc_to_string(char* buf, pcrtc_time_t* t) {
   buf[0] = '\0';
   uint8_t disp_hours = t->hours % 12;
   if (disp_hours == 0) disp_hours = 12;
