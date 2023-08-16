@@ -46,10 +46,13 @@ void video_vga_init(void) {
   // TODO(aoates): support PCI-based VGA.
   KASSERT(ARCH_SUPPORTS_RAW_VGA);
   KASSERT(ARCH_SUPPORTS_LEGACY_PC_DEVS);
+
+#if ARCH_SUPPORTS_RAW_VGA
   // Make sure our CRT controller register is in "color" mode.
   uint8_t c = inb(MISC_OUTPUT_REG_READ);
   c |= MISC_OUTPUT_REG_IOAS;
   outb(MISC_OUTPUT_REG_WRITE, c);
+#endif
 
   video_show_cursor(NULL, true);
 }
@@ -69,6 +72,7 @@ void video_clear(video_t* v) {
 }
 
 void video_move_cursor(video_t* v, int row, int col) {
+#if ARCH_SUPPORTS_RAW_VGA
   const uint16_t cursor_pos = row * v->width + col;
 
   uint8_t orig_addr = inb(CRT_PORT_ADDR);
@@ -77,9 +81,11 @@ void video_move_cursor(video_t* v, int row, int col) {
   outb(CRT_PORT_ADDR, CRT_CURSOR_HIGH_ADDR);
   outb(CRT_PORT_DATA, (cursor_pos >> 8) & 0xFF);
   outb(CRT_PORT_ADDR, orig_addr);
+#endif
 }
 
 void video_show_cursor(video_t* v, bool visible) {
+#if ARCH_SUPPORTS_RAW_VGA
   uint8_t orig_addr = inb(CRT_PORT_ADDR);
   outb(CRT_PORT_ADDR, CRT_START_ADDR);
   uint8_t c = inb(CRT_PORT_DATA);
@@ -89,4 +95,5 @@ void video_show_cursor(video_t* v, bool visible) {
     c |= CRT_START_CURSOR_DISABLE;
   outb(CRT_PORT_DATA, c);
   outb(CRT_PORT_ADDR, orig_addr);
+#endif
 }
