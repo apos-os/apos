@@ -13,9 +13,11 @@
 // limitations under the License.
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/time.h"
 #include "memory/kmalloc.h"
 #include "memory/mmap.h"
 #include "proc/futex.h"
@@ -173,4 +175,20 @@ int futex_op_32(uint32_t* uaddr, int op, uint32_t val,
                 uint32_t val3) {
   struct apos_timespec timeout64 = timespec32to64(*timeout);
   return futex_op(uaddr, op, val, &timeout64, uaddr2, val3);
+}
+
+int apos_get_timespec_32(struct apos_timespec_32* ts32) {
+  struct apos_timespec ts;
+  int result = apos_get_timespec(&ts);
+  if (result) {
+    return result;
+  }
+
+  if (ts.tv_sec > INT32_MAX || ts.tv_nsec > INT32_MAX) {
+    klogf("apos_get_timespec() overflowed 32-bit values\n");
+    return -EINVAL;
+  }
+
+  *ts32 = timespec64to32(ts);
+  return 0;
 }

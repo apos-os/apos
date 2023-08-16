@@ -443,6 +443,11 @@ AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
     '<apos/syscall_decls.h>', 'int',
     ['struct apos_tm*:t:bw:sizeof(struct apos_tm)'])
 
+AddSyscall('apos_get_timespec', 97, 'apos_get_timespec', 'common/time.h',
+    '<apos/syscall_decls.h>', 'int',
+    ['struct apos_timespec%(s32)s*:t:bw:sizeof(struct apos_timespec%(s32)s)'],
+    needs_32bit_conv=True)
+
 AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
     'int', ['int*:fildes:bw:sizeof(int[2])'],
      stubs_to_generate=['L1', 'L2'],

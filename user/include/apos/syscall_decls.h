@@ -78,6 +78,7 @@ int symlink(const char* path1, const char* path2);
 int readlink(const char* path, char* buf, size_t bufsize);
 int sleep_ms(int seconds);
 int apos_get_time(struct apos_tm* t);
+int apos_get_timespec(struct apos_timespec* t);
 apos_mode_t umask(apos_mode_t cmask);
 apos_pid_t setsid(void);
 apos_pid_t getsid(apos_pid_t pid);

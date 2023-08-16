@@ -129,6 +129,12 @@ _Static_assert(sizeof(unsigned int) <= sizeof(long),
 _Static_assert(sizeof(struct apos_tm*) <= sizeof(long),
                "invalid argument type: struct apos_tm* (sizeof(struct "
                "apos_tm*) > sizeof(long))");
+_Static_assert(sizeof(struct apos_timespec_32*) <= sizeof(long),
+               "invalid argument type: struct apos_timespec_32* (sizeof(struct "
+               "apos_timespec_32*) > sizeof(long))");
+_Static_assert(sizeof(struct apos_timespec*) <= sizeof(long),
+               "invalid argument type: struct apos_timespec* (sizeof(struct "
+               "apos_timespec*) > sizeof(long))");
 _Static_assert(sizeof(struct ktermios*) <= sizeof(long),
                "invalid argument type: struct ktermios* (sizeof(struct "
                "ktermios*) > sizeof(long))");
@@ -260,6 +266,8 @@ int SYSCALL_DMZ_symlink(const char* path1, const char* path2);
 int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize);
 int SYSCALL_DMZ_sleep_ms(int seconds);
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t);
+int SYSCALL_DMZ_apos_get_timespec_32(struct apos_timespec_32* t);
+int SYSCALL_DMZ_apos_get_timespec(struct apos_timespec* t);
 int SYSCALL_DMZ_pipe(int* fildes);
 apos_mode_t SYSCALL_DMZ_umask(apos_mode_t cmask);
 apos_pid_t SYSCALL_DMZ_setsid(void);
@@ -543,6 +551,13 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
 
     case SYS_APOS_GET_TIME:
       return SYSCALL_DMZ_apos_get_time((struct apos_tm*)arg1);
+
+    case SYS_APOS_GET_TIMESPEC:
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_apos_get_timespec_32((struct apos_timespec_32*)arg1);
+      } else {
+        return SYSCALL_DMZ_apos_get_timespec((struct apos_timespec*)arg1);
+      }
 
     case SYS_PIPE:
       return SYSCALL_DMZ_pipe((int*)arg1);

@@ -1914,6 +1914,77 @@ cleanup:
   return result;
 }
 
+int apos_get_timespec_32(struct apos_timespec_32* t);
+int SYSCALL_DMZ_apos_get_timespec_32(struct apos_timespec_32* t) {
+  struct apos_timespec_32* KERNEL_t = 0x0;
+
+  if ((size_t)(sizeof(struct apos_timespec_32)) > DMZ_MAX_BUFSIZE)
+    return -EINVAL;
+
+  KERNEL_t = (struct apos_timespec_32*)kmalloc(sizeof(struct apos_timespec_32));
+
+  if (!KERNEL_t) {
+    if (KERNEL_t) kfree((void*)KERNEL_t);
+
+    return -ENOMEM;
+  }
+
+  int result;
+
+  result = apos_get_timespec_32(KERNEL_t);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+  int copy_result =
+      syscall_copy_to_user(KERNEL_t, t, sizeof(struct apos_timespec_32));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
+  }
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_t) kfree((void*)KERNEL_t);
+
+  return result;
+}
+
+int apos_get_timespec(struct apos_timespec* t);
+int SYSCALL_DMZ_apos_get_timespec(struct apos_timespec* t) {
+  struct apos_timespec* KERNEL_t = 0x0;
+
+  if ((size_t)(sizeof(struct apos_timespec)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+
+  KERNEL_t = (struct apos_timespec*)kmalloc(sizeof(struct apos_timespec));
+
+  if (!KERNEL_t) {
+    if (KERNEL_t) kfree((void*)KERNEL_t);
+
+    return -ENOMEM;
+  }
+
+  int result;
+
+  result = apos_get_timespec(KERNEL_t);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+  int copy_result =
+      syscall_copy_to_user(KERNEL_t, t, sizeof(struct apos_timespec));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
+  }
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_t) kfree((void*)KERNEL_t);
+
+  return result;
+}
+
 int SYSCALL_DMZ_pipe(int* fildes) {
   int* KERNEL_fildes = 0x0;
 

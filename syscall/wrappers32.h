@@ -117,4 +117,6 @@ int futex_op_32(uint32_t* uaddr, int futex_op, uint32_t val,
 _Static_assert(sizeof(struct ktermios) == 28, "struct ktermios wrong size!");
 _Static_assert(sizeof(struct apos_pollfd) == 8, "struct pollfd wrong size!");
 
+int apos_get_timespec_32(struct apos_timespec_32* ts);
+
 #endif
