@@ -14,29 +14,34 @@
 
 #include "arch/common/io.h"
 
+#include "common/kassert.h"
+
+// TODO(riscv): elimnate remaining direct callers of these and delete them,
+// statically guaranteeing they're not used.
+
 void outb(ioport_t port, uint8_t val) {
-  // TODO(riscv): find callers and remove/abstract
+  die("ioport IO not supported on riscv64");
 }
 
 uint8_t inb(ioport_t port) {
-  // TODO(riscv): find callers and remove/abstract
+  die("ioport IO not supported on riscv64");
   return 0;
 }
 
 void outs(ioport_t port, uint16_t val) {
-  // TODO(riscv): find callers and remove/abstract
+  die("ioport IO not supported on riscv64");
 }
 
 uint16_t ins(ioport_t port) {
-  // TODO(riscv): find callers and remove/abstract
+  die("ioport IO not supported on riscv64");
   return 0;
 }
 
 void outl(ioport_t port, uint32_t val) {
-  // TODO(riscv): find callers and remove/abstract
+  die("ioport IO not supported on riscv64");
 }
 
 uint32_t inl(ioport_t port) {
-  // TODO(riscv): find callers and remove/abstract
+  die("ioport IO not supported on riscv64");
   return 0;
 }
