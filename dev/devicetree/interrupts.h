@@ -22,7 +22,7 @@
 #include "arch/dev/irq.h"
 #include "dev/devicetree/devicetree.h"
 
-#define DT_INT_MAX_CELLS 3
+#define DT_INT_MAX_CELLS 4
 // Opaque interrupt specifier --- code should not access this direcly.
 typedef struct {
   uint32_t _int[DT_INT_MAX_CELLS];

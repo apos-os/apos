@@ -437,11 +437,99 @@ static void intr_test2(const dt_tree_t* tree) {
       -EINVAL,
       dtint_map(tree, node, &int_buf[0],
                 dt_lookup(tree, "/cpus/cpu@0/interrupt-controller"), &mapped));
+}
+
+static void intr_test3(const dt_tree_t* tree) {
+  KTEST_BEGIN("dtint_map(): basic interrupt-map test");
+  const dt_node_t* intc1_node =
+      dt_lookup(tree, "/cpus/cpu@0/interrupt-controller");
+  KEXPECT_NE(NULL, intc1_node);
+  const dt_node_t* intc2_node = dt_lookup(tree, "/soc/int-controller1");
+  KEXPECT_NE(NULL, intc2_node);
+
+  const dt_node_t* node = dt_lookup(tree, "/int-map/gen1@100000002");
+  KEXPECT_NE(NULL, node);
+
+  const size_t kMaxInts = 10;
+  dt_interrupt_t int_buf[kMaxInts];
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(3, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  dt_interrupt_t mapped;
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(0, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+  KEXPECT_EQ(intc1_node, mapped.int_parent);
+  KEXPECT_EQ(1, mapped.cells);
+  KEXPECT_EQ(0x95, mapped._int[0]);
+
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[1], intc1_node, &mapped));
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[1], intc2_node, &mapped));
+
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(0, dtint_map(tree, node, &int_buf[2], intc2_node, &mapped));
+  KEXPECT_EQ(intc2_node, mapped.int_parent);
+  KEXPECT_EQ(1, mapped.cells);
+  KEXPECT_EQ(0xab, mapped._int[0]);
+
+
+  KTEST_BEGIN("dtint_map(): child unit mask applied test");
+  node = dt_lookup(tree, "/int-map/gen2@1100000002");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(3, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(0, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+  KEXPECT_EQ(intc1_node, mapped.int_parent);
+  KEXPECT_EQ(1, mapped.cells);
+  KEXPECT_EQ(0x95, mapped._int[0]);
+
+
+  KTEST_BEGIN("dtint_map(): child unit mask applied test #2");
+  node = dt_lookup(tree, "/int-map/gen3@1110000002");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(3, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[1], intc1_node, &mapped));
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[2], intc1_node, &mapped));
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[0], intc2_node, &mapped));
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[1], intc2_node, &mapped));
+  KEXPECT_EQ(-ENOENT, dtint_map(tree, node, &int_buf[2], intc2_node, &mapped));
+}
+
+static void intr_test4(const dt_tree_t* tree) {
+  KTEST_BEGIN("dtint_map(): interrupt-map multi-nexus cascade test");
+  const dt_node_t* intc1_node = dt_lookup(tree, "/int-map-multi/maps/intc");
+  KEXPECT_NE(NULL, intc1_node);
+
+  const dt_node_t* node = dt_lookup(tree, "/int-map-multi/gen1@100000002");
+  KEXPECT_NE(NULL, node);
+
+  const size_t kMaxInts = 10;
+  dt_interrupt_t int_buf[kMaxInts];
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(1, int_buf[0].cells);
+  KEXPECT_EQ(4, int_buf[0]._int[0]);
+  KEXPECT_EQ(dt_lookup(tree, "/int-map-multi/maps/map1"),
+             int_buf[0].int_parent);
+
+  dt_interrupt_t mapped;
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(0, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+  KEXPECT_EQ(intc1_node, mapped.int_parent);
+  KEXPECT_EQ(2, mapped.cells);
+  KEXPECT_EQ(0x78, mapped._int[0]);
+  KEXPECT_EQ(0x9a, mapped._int[1]);
 
   // TODO(aoates): advanced scenarios to test (when nexuses are implemented):
-  //  - chain through multiple nexuses
   //  - chain that hits a bad interrupt controller in the middle
   //  - chain that hits a phandle that can't be looked up in the middle
+  //  - map with pointers to multiple different parents
 }
 
 static void intr_test(void) {
@@ -453,6 +541,8 @@ static void intr_test(void) {
 
   intr_test1(tree);
   intr_test2(tree);
+  intr_test3(tree);
+  intr_test4(tree);
 
   kfree(buf);
 }
