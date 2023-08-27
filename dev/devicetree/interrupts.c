@@ -119,15 +119,12 @@ int dtint_map(const dt_tree_t* tree, const dt_node_t* node,
   int node_unit_len;
 
   const dt_property_t* node_reg = dt_get_prop(node, "reg");
-  // TODO(aoates): is it allowed to have no reg if the child unit is
-  // unambiguous?  Can reg be empty?
   node_unit_len = node->context.address_cells;
-  if (!node_reg ||
-      node_reg->val_len %
-              ((node->context.address_cells + node->context.size_cells) *
-               sizeof(uint32_t)) !=
-          0 ||
-      (int)node_reg->val_len < node_unit_len) {
+  const size_t reg_ent_len =
+      (node->context.address_cells + node->context.size_cells) *
+      sizeof(uint32_t);
+  if (!node_reg || node_reg->val_len == 0 ||
+      node_reg->val_len % reg_ent_len != 0) {
     klogfm(KL_GENERAL, WARNING, "Malformed reg in devicetree\n");
     return -EINVAL;
   }

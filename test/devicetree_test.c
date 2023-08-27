@@ -526,6 +526,76 @@ static void intr_test4(const dt_tree_t* tree) {
   KEXPECT_EQ(0x78, mapped._int[0]);
   KEXPECT_EQ(0x9a, mapped._int[1]);
 
+
+  KTEST_BEGIN("dtint_map(): interrupt src node missing reg property");
+  node = dt_lookup(tree, "/int-map-errors/gen1-noreg1@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen1-noreg2");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  KTEST_BEGIN("dtint_map(): interrupt src node invalid (short) reg property");
+  node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-short@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-short2@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  KTEST_BEGIN("dtint_map(): interrupt src node invalid (long) reg property");
+  node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-long@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  KTEST_BEGIN("dtint_map(): interrupt src node empty reg property");
+  node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-zero@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
+  KTEST_BEGIN("dtint_extract(): #interrupt-cells is zero");
+  node = dt_lookup(tree, "/int-map-errors/gen-zero-intcells@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-zero-intcells2@100000002");
+  KEXPECT_NE(NULL, node);
+  KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
+
+
+  KTEST_BEGIN("dtint_map(): #interrupt-cells is zero");
+  node = dt_lookup(tree, "/int-map-errors/gen-zero-intcells-mid@1");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-big-intcells-mid@2");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
   // TODO(aoates): advanced scenarios to test (when nexuses are implemented):
   //  - chain that hits a bad interrupt controller in the middle
   //  - chain that hits a phandle that can't be looked up in the middle
@@ -534,7 +604,7 @@ static void intr_test4(const dt_tree_t* tree) {
 
 static void intr_test(void) {
   KTEST_BEGIN("dtint_*(): test setup");
-  const size_t kBufLen = 10000;
+  const size_t kBufLen = 20000;
   void* buf = kmalloc(kBufLen);
   dt_tree_t* tree = NULL;
   KEXPECT_EQ(DTFDT_OK, dt_create(kIntTestDtb, &tree, buf, kBufLen));
