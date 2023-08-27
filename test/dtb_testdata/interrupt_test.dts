@@ -265,6 +265,19 @@
         >;
         interrupt-map-mask = <0xffffffff 0xffffffff>;
       };
+      map-no-intcells {
+        phandle = <0x0a>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        interrupt-map = <
+          0x01 0x02  // child unit address
+          0x00 0x00  // child interrupt specifier
+          0x05  // interrupt parent
+          0xab 0xcd 0xef 0x12   // parent unit address
+          0x12 0x34 0x56 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0xffffffff 0xffffffff>;
+      };
 
       // Interrupt nexus that points at the various invalid nodes.
       map-zero-intcells-parent {
@@ -294,6 +307,69 @@
           0x09  // interrupt parent
           0x01 0x02  // parent unit address
           0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+
+      map-no-intcells-parent {
+        phandle = <0x24>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-no-intcells
+          0x00 0x00  // child unit address
+          0x02  // child interrupt specifier
+          0x0a  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00 0x00  // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+
+      map-no-intmap {
+        phandle = <0x22>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+
+      map-no-intmask {
+        phandle = <0x23>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-big-intcells
+          0x00 0x00  // child unit address
+          0x02  // child interrupt specifier
+          0x09  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 // parent interrupt specifier
+        >;
+      };
+
+      // Interrupt nexus that has valid entries that point to invalid maps.
+      map-bad-mux {
+        phandle = <0x30>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-no-intmap
+          0x00 0x00  // child unit address
+          0x03  // child interrupt specifier
+          0x22  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00  // parent interrupt specifier
+
+          // map-no-intmask
+          0x00 0x00  // child unit address
+          0x04  // child interrupt specifier
+          0x23  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00  // parent interrupt specifier
         >;
         interrupt-map-mask = <0x0 0x0 0xffffffff>;
       };
@@ -355,6 +431,24 @@
     gen-big-intcells-mid@2 {
       reg = <0x00 0x02 0x00 0xff>;
       interrupt-parent = <0x21>;
+      interrupts = <0x02>;
+    };
+
+    gen-no-intmap@3 {
+      reg = <0x00 0x03 0x00 0xff>;
+      interrupt-parent = <0x30>;
+      interrupts = <0x03>;
+    };
+
+    gen-no-intmask@4 {
+      reg = <0x00 0x04 0x00 0xff>;
+      interrupt-parent = <0x30>;
+      interrupts = <0x04>;
+    };
+
+    gen-no-intcells@5 {
+      reg = <0x00 0x05 0x00 0xff>;
+      interrupt-parent = <0x24>;
       interrupts = <0x02>;
     };
   };

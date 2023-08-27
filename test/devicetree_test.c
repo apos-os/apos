@@ -596,6 +596,36 @@ static void intr_test4(const dt_tree_t* tree) {
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
 
+  KTEST_BEGIN("dtint_map(): #interrupt-cells is missing");
+  node = dt_lookup(tree, "/int-map-errors/gen-no-intcells@5");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
+  KTEST_BEGIN("dtint_map(): map to node without interrupt-map");
+  node = dt_lookup(tree, "/int-map-errors/gen-no-intmap@3");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
+  KTEST_BEGIN("dtint_map(): map to node without interrupt-map-mask");
+  node = dt_lookup(tree, "/int-map-errors/gen-no-intmask@4");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
   // TODO(aoates): advanced scenarios to test (when nexuses are implemented):
   //  - chain that hits a bad interrupt controller in the middle
   //  - chain that hits a phandle that can't be looked up in the middle
