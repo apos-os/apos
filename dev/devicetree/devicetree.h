@@ -51,7 +51,7 @@ typedef struct {
   dt_node_t* node;
 } dt_phnode_t;
 
-#define DT_TREE_MAX_PHNODES 20
+#define DT_TREE_MAX_PHNODES 40
 
 // A parsed devicetree.
 typedef struct dt_tree {

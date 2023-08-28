@@ -380,6 +380,50 @@
         interrupt-map-mask = <0x0 0x0 0x0 0x0>;
       };
 
+      map-missing-parent {
+        phandle = <0x27>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0xf7  // interrupt parent
+          0x00  // parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-missing-parent-address-cells {
+        phandle = <0x28>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x07  // interrupt parent
+          0x00  // parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-missing-parent-address-cells-parent {
+        phandle = <0x29>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x28  // interrupt parent
+          0x00 0x00  // parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
       // Interrupt nexus that has valid entries that point to invalid maps.
       map-bad-mux {
         phandle = <0x30>;
@@ -491,6 +535,18 @@
     gen-long-intmask@7 {
       reg = <0x00 0x07 0x00 0xff>;
       interrupt-parent = <0x26>;
+      interrupts = <0x01>;
+    };
+
+    gen-missing-parent@8 {
+      reg = <0x00 0x08 0x00 0xff>;
+      interrupt-parent = <0x27>;
+      interrupts = <0x01>;
+    };
+
+    gen-missing-parent-address-cells@9 {
+      reg = <0x00 0x09 0x00 0xff>;
+      interrupt-parent = <0x29>;
       interrupts = <0x01>;
     };
   };

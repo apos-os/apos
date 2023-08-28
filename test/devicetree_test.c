@@ -643,11 +643,34 @@ static void intr_test4(const dt_tree_t* tree) {
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   kmemset(&mapped, 0xab, sizeof(mapped));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+}
 
-  // TODO(aoates): advanced scenarios to test (when nexuses are implemented):
-  //  - chain that hits a bad interrupt controller in the middle
-  //  - chain that hits a phandle that can't be looked up in the middle
-  //  - map with pointers to multiple different parents
+static void intr_test5(const dt_tree_t* tree) {
+  KTEST_BEGIN("dtint_map(): interrupt-map with bad parent");
+  const dt_node_t* intc1_node = dt_lookup(tree, "/int-map-multi/maps/intc");
+  KEXPECT_NE(NULL, intc1_node);
+
+  const dt_node_t* node =
+      dt_lookup(tree, "/int-map-errors/gen-missing-parent@8");
+  KEXPECT_NE(NULL, node);
+
+  const size_t kMaxInts = 10;
+  dt_interrupt_t int_buf[kMaxInts];
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+
+  dt_interrupt_t mapped;
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  KTEST_BEGIN(
+      "dtint_map(): interrupt-map with bad parent (missing #address-cells)");
+  node = dt_lookup(tree, "/int-map-errors/gen-missing-parent-address-cells@9");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 }
 
 static void intr_test(void) {
@@ -661,6 +684,7 @@ static void intr_test(void) {
   intr_test2(tree);
   intr_test3(tree);
   intr_test4(tree);
+  intr_test5(tree);
 
   kfree(buf);
 }

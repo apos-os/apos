@@ -148,7 +148,7 @@ static void handle_phandle_prop(dt_node_t* node, const void* prop_val,
     return;
   }
   if (parse->num_phnodes >= DT_TREE_MAX_PHNODES) {
-    klog("Warning: ran out of space o store phandle values in devicetree\n");
+    klog("Warning: ran out of space to store phandle values in devicetree\n");
     return;
   }
   dt_phandle_t val = btoh32(*(const dt_phandle_t*)prop_val);
