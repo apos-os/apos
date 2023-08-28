@@ -109,7 +109,7 @@ static int handle_GET_STATUS(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         KASSERT(req->wIndex == USB_DEFAULT_CONTROL_PIPE ||
                 req->wIndex == UHCI_HUB_STATUS_CHANGE);
         // For both endpoints, just use the halted bit from the controller.
-        uint16_t status = ins(hub->hc->base_port + USBSTS);
+        uint16_t status = io_read16(hub->hc->io, USBSTS);
         if (status & USBSTS_HALTED) {
           *data_out = USB_GET_STATUS_ENDPT_HALT;
         } else {
@@ -139,7 +139,7 @@ static int handle_GET_STATUS(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         *data_out = 0x0;
         *change_out = 0x0;
         const uint16_t port_sc =
-            ins(hub->hc->base_port + (port == 1 ? PORTSC1 : PORTSC2));
+            io_read16(hub->hc->io, (port == 1 ? PORTSC1 : PORTSC2));
 
         COPY_FLAG(port_sc, data_out, PORTSC_CONNECT, USB_HUBD_PORT_CONNECTION);
         COPY_FLAG(port_sc, change_out, PORTSC_CONNECT_CHG, USB_HUBD_C_PORT_CONNECTION);
@@ -196,14 +196,13 @@ static int handle_CLEAR_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         const int feat = req->wValue;
         KASSERT(port == 1 || port == 2);
 
-        const ioport_t port_sc_register =
-            hub->hc->base_port + (port == 1 ? PORTSC1 : PORTSC2);
-        uint16_t port_sc = ins(port_sc_register);
+        const ioport_t port_sc_register = (port == 1 ? PORTSC1 : PORTSC2);
+        uint16_t port_sc = io_read16(hub->hc->io, port_sc_register);
 
         switch (feat) {
           case USB_HUBD_FEAT_PORT_ENABLE:
             port_sc &= ~PORTSC_ENABLE;
-            outs(port_sc_register, port_sc);
+            io_write16(hub->hc->io, port_sc_register, port_sc);
             break;
 
           case USB_HUBD_FEAT_PORT_SUSPEND:
@@ -216,12 +215,12 @@ static int handle_CLEAR_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
 
           case USB_HUBD_FEAT_C_PORT_CONNECTION:
             port_sc |= PORTSC_CONNECT_CHG;
-            outs(port_sc_register, port_sc);
+            io_write16(hub->hc->io, port_sc_register, port_sc);
             break;
 
           case USB_HUBD_FEAT_C_PORT_ENABLE:
             port_sc |= PORTSC_ENABLE_CHG;
-            outs(port_sc_register, port_sc);
+            io_write16(hub->hc->io, port_sc_register, port_sc);
             break;
 
           case USB_HUBD_FEAT_C_PORT_SUSPEND:
@@ -276,18 +275,17 @@ static void uhci_port_reset_done(void* arg) {
 
   KASSERT(args->port == 1 || args->port == 2);
 
-  const ioport_t port_sc_register =
-      args->hub->hc->base_port + (args->port == 1 ? PORTSC1 : PORTSC2);
-  uint16_t port_sc = ins(port_sc_register);
+  const ioport_t port_sc_register = (args->port == 1 ? PORTSC1 : PORTSC2);
+  uint16_t port_sc = io_read16(args->hub->hc->io, port_sc_register);
   KASSERT(port_sc & PORTSC_RST);
 
   // Stop resetting.
   port_sc &= ~PORTSC_RST;
-  outs(port_sc_register, port_sc);
+  io_write16(args->hub->hc->io, port_sc_register, port_sc);
 
   // Enable the port.
   port_sc |= PORTSC_ENABLE;
-  outs(port_sc_register, port_sc);
+  io_write16(args->hub->hc->io, port_sc_register, port_sc);
 
   // Signal the reset is done.
   args->hub->c_port_reset[args->port-1] = 1;
@@ -324,9 +322,8 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
         const int feat = req->wValue;
         KASSERT(port == 1 || port == 2);
 
-        const ioport_t port_sc_register =
-            hub->hc->base_port + (port == 1 ? PORTSC1 : PORTSC2);
-        uint16_t port_sc = ins(port_sc_register);
+        const ioport_t port_sc_register = (port == 1 ? PORTSC1 : PORTSC2);
+        uint16_t port_sc = io_read16(hub->hc->io, port_sc_register);
 
         switch (feat) {
           case USB_HUBD_FEAT_PORT_RESET:
@@ -335,7 +332,7 @@ static int handle_SET_FEATURE(uhci_hub_t* hub, usb_hcdi_irp_t* irp) {
             if ((port_sc & PORTSC_RST) == 0) {
               port_sc |= PORTSC_RST;
               port_sc &= ~PORTSC_ENABLE;
-              outs(port_sc_register, port_sc);
+              io_write16(hub->hc->io, port_sc_register, port_sc);
               uhci_port_reset_done_arg_t* arg = (uhci_port_reset_done_arg_t*)
                   kmalloc(sizeof(uhci_port_reset_done_arg_t));
               arg->hub = hub;
@@ -773,8 +770,8 @@ void uhci_check_sc_timer(void* arg) {
 
   // TODO(aoates): check halted bit.
   uint8_t status_change = 0x0;
-  const uint16_t port1_sc = ins(args->hub->hc->base_port + PORTSC1);
-  const uint16_t port2_sc = ins(args->hub->hc->base_port + PORTSC2);
+  const uint16_t port1_sc = io_read16(args->hub->hc->io, PORTSC1);
+  const uint16_t port2_sc = io_read16(args->hub->hc->io, PORTSC2);
 
   // We don't currently register any hub-level status changes.
   if ((port1_sc & PORTSC_CONNECT_CHG) || (port1_sc & PORTSC_ENABLE_CHG) ||

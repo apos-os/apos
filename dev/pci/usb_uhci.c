@@ -30,5 +30,8 @@ void usb_uhci_pci_init(pci_device_t* pcidev) {
   legsup = (legsup & 0xFFFF0000) | 0x2F00;
   pci_write_register(pcidev, 0xC0, legsup);
 
-  usb_uhci_register_controller(base, pcidev->interrupt_line);
+  devio_t io;
+  io.type = IO_PORT;
+  io.base = base;
+  usb_uhci_register_controller(io, pcidev->interrupt_line);
 }

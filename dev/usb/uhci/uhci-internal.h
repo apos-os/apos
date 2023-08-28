@@ -103,7 +103,7 @@ struct uhci_pending_irp {
 typedef struct uhci_pending_irp uhci_pending_irp_t;
 
 struct usb_uhci {
-  ioport_t base_port;  // USBBASE register.
+  devio_t io;  // USBBASE register.
   irq_t irq;
   addr32_t* frame_list;  // Pointer to the frame list.
 

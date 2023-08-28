@@ -172,7 +172,7 @@ static void uhci_cmd_ls(int argc, char* argv[]) {
     // FIXME(aoates): this will break when we add other controller types!
     for (int i = 0; i < usb_num_buses(); ++i) {
       usb_uhci_t* hc = (usb_uhci_t*)usb_get_bus(i)->hcd->dev_data;
-      ksh_printf("USB %d: port: 0x%x\n", i, hc->base_port);
+      ksh_printf("USB %d: port: 0x%x\n", i, hc->io.base);
     }
   } else {
     int idx = katoi(argv[2]);
@@ -183,18 +183,18 @@ static void uhci_cmd_ls(int argc, char* argv[]) {
     usb_uhci_t* hc = (usb_uhci_t*)usb_get_bus(idx)->hcd->dev_data;
 
     // Get the current state.
-    uint16_t usbcmd = ins(hc->base_port + USBCMD);
-    uint16_t usbsts = ins(hc->base_port + USBSTS);
-    uint16_t usbintr = ins(hc->base_port + USBINTR);
-    uint16_t frnum = ins(hc->base_port + FRNUM);
-    uint32_t flbaseaddr = inl(hc->base_port + FLBASEADDR);
-    uint8_t sof_modify = inb(hc->base_port + SOF_MODIFY);
-    uint16_t portsc1 = ins(hc->base_port + PORTSC1);
-    uint16_t portsc2 = ins(hc->base_port + PORTSC2);
+    uint16_t usbcmd = io_read16(hc->io, USBCMD);
+    uint16_t usbsts = io_read16(hc->io, USBSTS);
+    uint16_t usbintr = io_read16(hc->io, USBINTR);
+    uint16_t frnum = io_read16(hc->io, FRNUM);
+    uint32_t flbaseaddr = io_read32(hc->io, FLBASEADDR);
+    uint8_t sof_modify = io_read8(hc->io, SOF_MODIFY);
+    uint16_t portsc1 = io_read16(hc->io, PORTSC1);
+    uint16_t portsc2 = io_read16(hc->io, PORTSC2);
 
     // Print the registers.
     char buf[1024];
-    ksh_printf("USB %d: port: 0x%x\n", idx, hc->base_port);
+    ksh_printf("USB %d: port: 0x%x\n", idx, hc->io.base);
     flag_sprintf(buf, usbcmd, USBCMD_FLAGS); ksh_printf("  USBCMD: %s\n", buf);
     flag_sprintf(buf, usbsts, USBSTS_FLAGS); ksh_printf("  USBSTS: %s\n", buf);
     flag_sprintf(buf, usbintr, USBINTR_FLAGS); ksh_printf("  USBINTR: %s\n", buf);
