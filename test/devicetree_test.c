@@ -671,11 +671,55 @@ static void intr_test5(const dt_tree_t* tree) {
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
+  KTEST_BEGIN("dtint_map(): bad interrupt-map entry (too short)");
+  node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short1@a");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short2@b");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short3@c");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short4@d");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short5@e");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+  node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short6@f");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 }
 
 static void intr_test(void) {
   KTEST_BEGIN("dtint_*(): test setup");
-  const size_t kBufLen = 20000;
+  const size_t kBufLen = 25000;
   void* buf = kmalloc(kBufLen);
   dt_tree_t* tree = NULL;
   KEXPECT_EQ(DTFDT_OK, dt_create(kIntTestDtb, &tree, buf, kBufLen));
