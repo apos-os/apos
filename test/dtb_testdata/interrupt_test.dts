@@ -350,6 +350,36 @@
         >;
       };
 
+      map-short-intmask {
+        phandle = <0x25>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x07  // interrupt parent
+          // no parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0>;
+      };
+
+      map-long-intmask {
+        phandle = <0x26>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x07  // interrupt parent
+          // no parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0x0 0x0>;
+      };
+
       // Interrupt nexus that has valid entries that point to invalid maps.
       map-bad-mux {
         phandle = <0x30>;
@@ -450,6 +480,18 @@
       reg = <0x00 0x05 0x00 0xff>;
       interrupt-parent = <0x24>;
       interrupts = <0x02>;
+    };
+
+    gen-short-intmask@6 {
+      reg = <0x00 0x06 0x00 0xff>;
+      interrupt-parent = <0x25>;
+      interrupts = <0x01>;
+    };
+
+    gen-long-intmask@7 {
+      reg = <0x00 0x07 0x00 0xff>;
+      interrupt-parent = <0x26>;
+      interrupts = <0x01>;
     };
   };
 };

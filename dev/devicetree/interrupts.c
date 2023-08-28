@@ -148,6 +148,13 @@ int dtint_map(const dt_tree_t* tree, const dt_node_t* node,
     }
     KASSERT(interrupt_cells == intr->cells);
 
+    if (map_mask_prop->val_len !=
+        (node_unit_len + interrupt_cells) * sizeof(uint32_t)) {
+      klogfm(KL_GENERAL, WARNING,
+             "Malformed interrupt-map-mask (wrong size) in devicetree\n");
+      return -EINVAL;
+    }
+
     const uint32_t* map_elts = (const uint32_t*)map_prop->val;
     int map_elt = 0;
     int elts = map_prop->val_len / sizeof(uint32_t);

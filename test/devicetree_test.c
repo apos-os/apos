@@ -407,7 +407,6 @@ static void intr_test1(const dt_tree_t* tree) {
   //  - interrupts-extended
   //  - multiple parents with different #interrupt-cells
   //  - interrupts-extended and interrupts both set
-  // TODO(aoates): test with an interrupt nexus and interrupt-map (and mask).
 }
 
 static void intr_test2(const dt_tree_t* tree) {
@@ -625,6 +624,25 @@ static void intr_test4(const dt_tree_t* tree) {
   kmemset(&mapped, 0xab, sizeof(mapped));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
+
+  KTEST_BEGIN("dtint_map(): interrupt-map-mask too short");
+  node = dt_lookup(tree, "/int-map-errors/gen-short-intmask@6");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
+
+
+  KTEST_BEGIN("dtint_map(): interrupt-map-mask too long");
+  node = dt_lookup(tree, "/int-map-errors/gen-long-intmask@7");
+  KEXPECT_NE(NULL, node);
+
+  kmemset(int_buf, 0xab, sizeof(int_buf));
+  KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
+  kmemset(&mapped, 0xab, sizeof(mapped));
+  KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   // TODO(aoates): advanced scenarios to test (when nexuses are implemented):
   //  - chain that hits a bad interrupt controller in the middle
