@@ -338,17 +338,16 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   KASSERT(pcidev->subclass_code == 0x00);  // Ethernet
 
   // We should have two BARs, one for IO-mapped and one for memory-mapped.
-  KASSERT(pcidev->base_address[0] != 0);
-  KASSERT((pcidev->base_address[0] & 0x1) == 1);
-  KASSERT(pcidev->base_address[1] != 0);
-  KASSERT((pcidev->base_address[1] & 0x1) == 0);
+  KASSERT(pcidev->bar[0].valid);
+  KASSERT(pcidev->bar[0].type == PCIBAR_IO);
+  KASSERT(pcidev->bar[1].valid);
+  KASSERT(pcidev->bar[1].type == PCIBAR_MEM32);
 
   rtl8139_t* nic = kmalloc(sizeof(rtl8139_t));
   nic_init(&nic->public);
   nic->public.type = NIC_ETHERNET;
   nic->public.ops = &rtl_ops;
-  nic->io.base = pcidev->base_address[0] & ~0x3;
-  nic->io.type = IO_PORT;
+  nic->io = pcidev->bar[0].io;
 
   // Find the MAC address of the device.
   // N.B.(aoates): the RTL8139 datasheet is contradictory---it says that these

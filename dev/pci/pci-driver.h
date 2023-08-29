@@ -16,11 +16,34 @@
 #ifndef APOO_PCI_DRIVER_H
 #define APOO_PCI_DRIVER_H
 
+#include <stdbool.h>
 #include <stdint.h>
+
+#include "dev/io.h"
 
 typedef enum {
   PCI_CMD_BUSMASTER_ENABLE = 0x04,
 } pci_command_bits_t;
+
+typedef enum {
+  PCIBAR_IO = 1,
+  PCIBAR_MEM32,
+} pci_bar_type_t;
+
+typedef struct {
+  bool valid;  // Whether this BAR can be used.
+  uint32_t bar;  // Raw BAR value.  Should not generally be used.
+
+  // The PCI type of the BAR.  May not match the devio type!  For example, a PCI
+  // IO-port region may be memory-mapped to the host.
+  pci_bar_type_t type;
+
+  // devio used to access the BAR, iff valid is true.  Drivers should use this
+  // to access the BAR.
+  devio_t io;
+} pci_bar_t;
+
+#define PCI_NUM_BARS 6
 
 // Represents a single (bus, device, function) tuple.  Drivers are given one of
 // structures, and can manipulate and re-read portions of it using the functions
@@ -43,7 +66,7 @@ struct pci_device {
 
   uint8_t header_type;
 
-  uint32_t base_address[6];
+  pci_bar_t bar[PCI_NUM_BARS];
 
   // The interrupt line and pin the device is currently configured to use.
   uint8_t interrupt_line;

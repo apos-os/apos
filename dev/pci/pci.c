@@ -146,9 +146,32 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
   data = pci_read_config(bus, device, function, 0x0C);
   pcidev->header_type = (data >> 16) & 0x000000FF;
 
-  for (int i = 0; i < 6; ++i) {
-    pcidev->base_address[i] = pci_read_config(bus, device, function,
-                                              0x10 + 0x04 * i);
+  for (int i = 0; i < PCI_NUM_BARS; ++i) {
+    pcidev->bar[i].bar =
+        pci_read_config(bus, device, function, 0x10 + 0x04 * i);
+    const int bar_type = (pcidev->bar[i].bar & 0x3);
+    switch (bar_type) {
+      case 0:
+        pcidev->bar[i].type = PCIBAR_MEM32;
+        pcidev->bar[i].io.type = IO_MEMORY;
+        break;
+      case 1:
+        pcidev->bar[i].type = PCIBAR_IO;
+        pcidev->bar[i].io.type = IO_PORT;
+        break;
+
+      default:
+        klogfm(KL_PCI, DFATAL, "Unsupported bar type %d\n", bar_type);
+        return;
+    }
+
+    uint32_t bar_addr = pcidev->bar[i].bar & ~0x3;
+    if (!bar_addr) {
+      pcidev->bar[i].valid = false;
+    } else {
+      pcidev->bar[i].valid = true;
+      pcidev->bar[i].io.base = bar_addr;
+    }
   }
 
   data = pci_read_config(bus, device, function, 0x3C);

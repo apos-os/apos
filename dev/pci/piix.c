@@ -20,6 +20,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/ata/ata.h"
+#include "dev/pci/pci-driver.h"
 #include "dev/pci/piix.h"
 
 // Index into the PCI base address array for the IDE bus-master base address.
@@ -42,9 +43,10 @@ void pci_piix_driver_init(pci_device_t* pcidev) {
   pci_write_status(pcidev);
 
   // The base address should have been configured by the BIOS.
-  uint32_t base = pcidev->base_address[PIIX_BUS_MASTER_BASE_ADDR];
-  KASSERT(base != 0);
-  KASSERT((base & 0x1) == 1);  // Should always be I/O mapped.
-  base &= 0x0000FFF0;
+  const pci_bar_t* bar = &pcidev->bar[PIIX_BUS_MASTER_BASE_ADDR];
+  KASSERT(bar->valid);
+  KASSERT(bar->type == PCIBAR_IO);
+  KASSERT(bar->io.type == IO_PORT);  // Should always be I/O mapped.
+  uint32_t base = bar->io.base;
   ata_enable_busmaster((uint16_t)base, (uint16_t)base + 0x08);
 }
