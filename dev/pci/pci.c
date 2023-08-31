@@ -14,44 +14,22 @@
 
 #include <stdint.h>
 
-#include "common/arch-config.h"
-#include "common/config.h"
-#include "common/kassert.h"
 #include "common/klog.h"
-#include "dev/io.h"
 #if ENABLE_ETHERNET
 #include "dev/net/rtl8139.h"
 #endif
 #include "dev/pci/pci.h"
 #include "dev/pci/pci-driver.h"
+#include "dev/pci/pci-internal.h"
+#include "dev/pci/pci-legacy.h"
 #include "dev/pci/piix.h"
 #if ENABLE_USB
 #include "dev/pci/usb_uhci.h"
 #endif
-#include "memory/kmalloc.h"
-
-// IO ports for manipulating the PCI bus.
-#define PCI_CONFIG_ADDR 0xCF8
-#define PCI_CONFIG_DATA 0xCFC
-
-#define PCI_BUS_MIN 0x00
-#define PCI_BUS_MAX 0xFF
-#define PCI_DEVICE_MIN 0x00
-#define PCI_DEVICE_MAX 0x1F
-#define PCI_FUNCTION_MIN 0x00
-#define PCI_FUNCTION_MAX 0x07
-#define PCI_REGISTER_MIN 0x00
-#define PCI_REGISTER_MAX 0xFC
-
-#define PCI_STATUS_REG_OFFSET 0x04
-
-#define PCI_HEADER_IS_MULTIFUNCTION 0x80
 
 #define PCI_MAX_DEVICES 40
 static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
-
-static const devio_t kPciIo = {IO_PORT, 0};
 
 // Static table of drivers.
 #define PCI_DRIVER_VENDOR 1
@@ -92,108 +70,7 @@ static pci_driver_t PCI_DRIVERS[] = {
   { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},
 };
 
-static inline uint32_t make_cmd(uint8_t bus, uint8_t device,
-                                uint8_t function, uint8_t reg_offset) {
-  KASSERT((device & 0xE0) == 0);
-  KASSERT((function & 0xF8) == 0);
-  KASSERT((reg_offset & 0x03) == 0);
-  return (0x80000000 | // Enable
-          (bus << 16) |
-          (device << 11) |
-          (function << 8) |
-          (reg_offset & 0xFC));
-}
-
-// Read a word from a PCI config register.
-static uint32_t pci_read_config(uint8_t bus, uint8_t device,
-                                uint8_t function, uint8_t reg_offset) {
-  io_write32(kPciIo, PCI_CONFIG_ADDR,
-             make_cmd(bus, device, function, reg_offset));
-  return io_read32(kPciIo, PCI_CONFIG_DATA);
-}
-
-static void pci_write_config(uint8_t bus, uint8_t device,
-                             uint8_t function, uint8_t reg_offset,
-                             uint32_t value) {
-  io_write32(kPciIo, PCI_CONFIG_ADDR,
-             make_cmd(bus, device, function, reg_offset));
-  io_write32(kPciIo, PCI_CONFIG_DATA, value);
-}
-
-// Read config data for a single (bus, device, function) tuple.  Returns 0 if
-// successful.
-static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
-                            pci_device_t* pcidev) {
-  pcidev->bus = bus;
-  pcidev->device = device;
-  pcidev->function = function;
-
-  uint32_t data = pci_read_config(bus, device, function, 0x0);
-  pcidev->device_id = (data >> 16) & 0x0000FFFF;
-  pcidev->vendor_id = data & 0x0000FFFF;
-
-  if (data == 0xFFFFFFFF) {
-    return;
-  }
-
-  pci_read_status(pcidev);
-
-  data = pci_read_config(bus, device, function, 0x08);
-  pcidev->class_code = (data >> 24) & 0x000000FF;
-  pcidev->subclass_code = (data >> 16) & 0x000000FF;
-  pcidev->prog_if = (data >> 8) & 0x000000FF;
-
-  data = pci_read_config(bus, device, function, 0x0C);
-  pcidev->header_type = (data >> 16) & 0x000000FF;
-
-  for (int i = 0; i < PCI_NUM_BARS; ++i) {
-    pcidev->bar[i].bar =
-        pci_read_config(bus, device, function, 0x10 + 0x04 * i);
-    const int bar_type = (pcidev->bar[i].bar & 0x3);
-    switch (bar_type) {
-      case 0:
-        pcidev->bar[i].type = PCIBAR_MEM32;
-        pcidev->bar[i].io.type = IO_MEMORY;
-        break;
-      case 1:
-        pcidev->bar[i].type = PCIBAR_IO;
-        pcidev->bar[i].io.type = IO_PORT;
-        break;
-
-      default:
-        klogfm(KL_PCI, DFATAL, "Unsupported bar type %d\n", bar_type);
-        return;
-    }
-
-    uint32_t bar_addr = pcidev->bar[i].bar & ~0x3;
-    if (!bar_addr) {
-      pcidev->bar[i].valid = false;
-    } else {
-      pcidev->bar[i].valid = true;
-      pcidev->bar[i].io.base = bar_addr;
-    }
-  }
-
-  data = pci_read_config(bus, device, function, 0x3C);
-  pcidev->interrupt_line = data & 0x000000FF;
-  pcidev->interrupt_pin = (data >> 8) & 0x000000FF;
-}
-
-void pci_read_status(pci_device_t* pcidev) {
-  uint32_t data = pci_read_config(pcidev->bus, pcidev->device,
-                                  pcidev->function, PCI_STATUS_REG_OFFSET);
-  pcidev->status = (data >> 16) & 0x0000FFFF;
-  pcidev->command = data & 0x0000FFFF;
-}
-
-void pci_write_status(pci_device_t* pcidev) {
-  uint32_t data = ((pcidev->status & 0x0000FFFF) << 16) |
-      (pcidev->command & 0x0000FFFF);
-  pci_write_config(pcidev->bus, pcidev->device, pcidev->function,
-                   PCI_STATUS_REG_OFFSET, data);
-}
-
-static void pci_print_device(pci_device_t* pcidev) {
+void pci_print_device(pci_device_t* pcidev) {
   klogf("    %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
         "  type: (0x%x, 0x%x, 0x%x)  intr: %d (pin %d)\n",
         (uint32_t)pcidev->bus, (uint32_t)pcidev->device,
@@ -203,7 +80,7 @@ static void pci_print_device(pci_device_t* pcidev) {
         (uint32_t)pcidev->interrupt_line, (uint32_t)pcidev->interrupt_pin);
 }
 
-static void pci_add_device(pci_device_t* pcidev) {
+void pci_add_device(pci_device_t* pcidev) {
   if (g_pci_count >= PCI_MAX_DEVICES) {
     klogf("WARNING: too many PCI devices found (maximum is %d)\n",
           PCI_MAX_DEVICES);
@@ -212,43 +89,9 @@ static void pci_add_device(pci_device_t* pcidev) {
   g_pci_devices[g_pci_count++] = *pcidev;
 }
 
-// Read all functions from a (bus, device).
-static void pci_check_device(uint8_t bus, uint8_t device) {
-  pci_device_t pcidev;
-  pci_read_device(bus, device, PCI_FUNCTION_MIN, &pcidev);
-  if (pcidev.vendor_id == 0xFFFF) {
-    return;
-  }
-
-  if (pcidev.header_type & PCI_HEADER_IS_MULTIFUNCTION) {
-    pci_add_device(&pcidev);
-    for (int function = PCI_FUNCTION_MIN + 1; function <= PCI_FUNCTION_MAX;
-         ++function) {
-      pci_read_device(bus, device, function, &pcidev);
-      if (pcidev.vendor_id != 0xFFFF) {
-        pci_add_device(&pcidev);
-      }
-    }
-  } else {
-    pci_add_device(&pcidev);
-  }
-}
-
-// NOTE: little-endian dependent.
 void pci_init(void) {
   // TODO(aoates): support ECAM-based MMIO PCIe.
-  if (!ARCH_SUPPORTS_IOPORT) {
-    klog("Skipping PCI, ioports not supported\n");
-    return;
-  }
-
-  // Find all connected PCI devices.
-  klogf("Scanning PCI bus...\n");
-  for (unsigned int bus = PCI_BUS_MIN; bus <= PCI_BUS_MAX; ++bus) {
-    for (uint8_t device = PCI_DEVICE_MIN; device <= PCI_DEVICE_MAX; ++device) {
-      pci_check_device(bus, device);
-    }
-  }
+  pci_legacy_init();
 
   klogf("  found %d devices:\n", g_pci_count);
   for (int i = 0; i < g_pci_count; ++i) {
@@ -274,13 +117,25 @@ void pci_init(void) {
   }
 }
 
+void pci_read_status(pci_device_t* pcidev) {
+  uint32_t data = pci_read_register(pcidev, PCI_STATUS_REG_OFFSET);
+  pcidev->status = (data >> 16) & 0x0000FFFF;
+  pcidev->command = data & 0x0000FFFF;
+}
+
+void pci_write_status(pci_device_t* pcidev) {
+  uint32_t data = ((pcidev->status & 0x0000FFFF) << 16) |
+      (pcidev->command & 0x0000FFFF);
+  pci_write_register(pcidev, PCI_STATUS_REG_OFFSET, data);
+}
+
 uint32_t pci_read_register(pci_device_t* pcidev, uint8_t reg_offset) {
-  return pci_read_config(pcidev->bus, pcidev->device, pcidev->function,
-                         reg_offset);
+  return pci_legacy_read_config(pcidev->bus, pcidev->device, pcidev->function,
+                                reg_offset);
 }
 
 void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
                         uint32_t value) {
-  return pci_write_config(pcidev->bus, pcidev->device, pcidev->function,
-                          reg_offset, value);
+  return pci_legacy_write_config(pcidev->bus, pcidev->device, pcidev->function,
+                                 reg_offset, value);
 }
