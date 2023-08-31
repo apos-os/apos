@@ -28,7 +28,7 @@
 #endif
 
 #define PCI_MAX_DEVICES 40
-static pci_device_t g_pci_devices[PCI_MAX_DEVICES];
+static pci_device_t* g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
 
 // Static table of drivers.
@@ -86,7 +86,7 @@ void pci_add_device(pci_device_t* pcidev) {
           PCI_MAX_DEVICES);
     return;
   }
-  g_pci_devices[g_pci_count++] = *pcidev;
+  g_pci_devices[g_pci_count++] = pcidev;
 }
 
 void pci_init(void) {
@@ -95,7 +95,7 @@ void pci_init(void) {
 
   klogf("  found %d devices:\n", g_pci_count);
   for (int i = 0; i < g_pci_count; ++i) {
-    pci_print_device(&g_pci_devices[i]);
+    pci_print_device(g_pci_devices[i]);
   }
 
   // Invoke drivers.
@@ -103,14 +103,14 @@ void pci_init(void) {
     pci_driver_t* driver = &PCI_DRIVERS[0];
     while (driver->vendor_id != 0xFFFF) {
       if (driver->type == PCI_DRIVER_VENDOR &&
-          driver->vendor_id == g_pci_devices[i].vendor_id &&
-          driver->device_id == g_pci_devices[i].device_id) {
-        driver->driver(&g_pci_devices[i]);
+          driver->vendor_id == g_pci_devices[i]->vendor_id &&
+          driver->device_id == g_pci_devices[i]->device_id) {
+        driver->driver(g_pci_devices[i]);
       } else if (driver->type == PCI_DRIVER_CLASS &&
-                 driver->class_code == g_pci_devices[i].class_code &&
-                 driver->subclass_code == g_pci_devices[i].subclass_code &&
-                 driver->prog_if == g_pci_devices[i].prog_if) {
-        driver->driver(&g_pci_devices[i]);
+                 driver->class_code == g_pci_devices[i]->class_code &&
+                 driver->subclass_code == g_pci_devices[i]->subclass_code &&
+                 driver->prog_if == g_pci_devices[i]->prog_if) {
+        driver->driver(g_pci_devices[i]);
       }
       driver++;
     }

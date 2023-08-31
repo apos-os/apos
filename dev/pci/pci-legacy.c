@@ -116,6 +116,13 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
   pcidev->interrupt_pin = (data >> 8) & 0x000000FF;
 }
 
+// Bounce function to heap-allocate the pci_device_t.
+static void do_pci_add_device(const pci_device_t* d) {
+  pci_device_t* d2 = (pci_device_t*)kmalloc(sizeof(pci_device_t));
+  *d2 = *d;
+  pci_add_device(d2);
+}
+
 // Read all functions from a (bus, device).
 static void pci_check_device(uint8_t bus, uint8_t device) {
   pci_device_t pcidev;
@@ -124,17 +131,15 @@ static void pci_check_device(uint8_t bus, uint8_t device) {
     return;
   }
 
+  do_pci_add_device(&pcidev);
   if (pcidev.header_type & PCI_HEADER_IS_MULTIFUNCTION) {
-    pci_add_device(&pcidev);
     for (int function = PCI_FUNCTION_MIN + 1; function <= PCI_FUNCTION_MAX;
          ++function) {
       pci_read_device(bus, device, function, &pcidev);
       if (pcidev.vendor_id != 0xFFFF) {
-        pci_add_device(&pcidev);
+        do_pci_add_device(&pcidev);
       }
     }
-  } else {
-    pci_add_device(&pcidev);
   }
 }
 
