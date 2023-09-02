@@ -16,6 +16,7 @@
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
 
 irq_t dtint_flatten(const dt_interrupt_t* intr) {
@@ -132,6 +133,16 @@ int dtint_map(const dt_tree_t* tree, const dt_node_t* node,
   for (int i = 0; i < node_unit_len; ++i) {
     node_unit[i] = btoh32(node_reg_vals[i]);
   }
+
+  return dtint_map_raw(tree, node_unit, node_unit_len, intr, root, intr_out);
+}
+
+int dtint_map_raw(const dt_tree_t* tree, const uint32_t* node_unit_in,
+                  int node_unit_len, const dt_interrupt_t* intr,
+                  const dt_node_t* root, dt_interrupt_t* intr_out) {
+  KASSERT(node_unit_len < MAX_NODE_UNIT_LEN);
+  uint32_t node_unit[MAX_NODE_UNIT_LEN];
+  kmemcpy(node_unit, node_unit_in, node_unit_len * sizeof(uint32_t));
 
   dt_interrupt_t scratch;
   while (intr->int_parent != root) {

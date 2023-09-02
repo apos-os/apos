@@ -46,4 +46,11 @@ int dtint_map(const dt_tree_t* tree, const dt_node_t* node,
               const dt_interrupt_t* intr, const dt_node_t* root,
               dt_interrupt_t* intr_out);
 
+// As above, but takes a raw node address --- use this for mapping interrupts
+// for devices that are not explicitly represented in the devicetree (such as
+// PCI devices).
+int dtint_map_raw(const dt_tree_t* tree, const uint32_t* node_addr,
+                  int node_addr_len, const dt_interrupt_t* intr,
+                  const dt_node_t* root, dt_interrupt_t* intr_out);
+
 #endif
