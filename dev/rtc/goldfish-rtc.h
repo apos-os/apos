@@ -16,7 +16,12 @@
 #ifndef APOO_DEV_RTC_GOLDFISH_RTC_H
 #define APOO_DEV_RTC_GOLDFISH_RTC_H
 
+#include "dev/devicetree/devicetree.h"
+#include "dev/devicetree/drivers.h"
 #include "user/include/apos/time_types.h"
+
+// Driver loader.
+int goldfish_rtc_driver(const dt_node_t* node, dt_driver_info_t* driver);
 
 // Read the current time from a Goldfish RTC if present.
 int goldfish_rtc_read(struct apos_timespec* ts);

@@ -22,6 +22,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
+#include "dev/rtc/goldfish-rtc.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 
@@ -45,6 +46,8 @@ typedef struct {
 // etc) to reduce duplication.
 
 static dt_driver_t DTREE_DRIVERS[] = {
+    {"goldfish-rtc", (const char*[]){"google,goldfish-rtc", NULL},
+     &goldfish_rtc_driver},
 
     {NULL, NULL, NULL},
 };

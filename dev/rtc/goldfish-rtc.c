@@ -15,6 +15,7 @@
 
 #include <stdbool.h>
 
+#include "common/errno.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/time.h"
@@ -22,54 +23,24 @@
 #include "dev/io.h"
 #include "main/kernel.h"
 #include "proc/kthread.h"
-#include "proc/spinlock.h"
 
 #define GFRTC_TIME_LOW 0
 #define GFRTC_TIME_HIGH 4
 
 typedef struct {
-  bool present;
   devio_t io;
 } gfrtc_t;
 
-static kspinlock_t g_spin = KSPINLOCK_NORMAL_INIT_STATIC;
 static bool g_gfrtc_init = false;
 static gfrtc_t g_gfrtc;
 
-// This should probably be a shared devicetree helper.
-bool dtprop_valeq(const dt_property_t* prop, const char* s) {
-  return prop->val_len == (size_t)kstrlen(s) + 1 && kstrcmp(prop->val, s) == 0;
-}
-
-// Recursively look for a goldfish RTC.  If found, returns it.
-static const dt_node_t* find_gfrtc(const dt_node_t* node) {
-  // Is _this_ an RTC?
-  const dt_property_t* compat = dt_get_prop(node, "compatible");
-  if (compat && dtprop_valeq(compat, "google,goldfish-rtc")) {
-    return node;
+int goldfish_rtc_driver(const dt_node_t* rtc, dt_driver_info_t* driver) {
+  if (g_gfrtc_init) {
+    klogfm(KL_GENERAL, WARNING, "Multiple goldfish RTC devices found\n");
+    return -EEXIST;
   }
 
-  dt_node_t* child = node->children;
-  while (child) {
-    const dt_node_t* rtc = find_gfrtc(child);
-    if (rtc) return rtc;
-    child = child->next;
-  }
-
-  return NULL;
-}
-
-static void gfrtc_init(void) {
   g_gfrtc_init = true;
-  g_gfrtc.present = false;
-  const dt_tree_t* dtree = get_boot_info()->dtree;
-  if (!dtree) return;
-
-  const dt_node_t* rtc = find_gfrtc(dtree->root);
-  if (!rtc) {
-    klogf("Unable to find a Goldfish RTC\n");
-    return;
-  }
 
   char namebuf[200];
   dt_print_path(rtc, namebuf, 200);
@@ -80,23 +51,17 @@ static void gfrtc_init(void) {
   const char* addr_str = dt_get_unit(rtc);
   if (!*addr_str) {
     klogf("Goldfish RTC %s missing unit address\n", namebuf);
-    return;
+    return -EINVAL;
   }
 
   phys_addr_t addr = katou_hex(addr_str);
   g_gfrtc.io.type = IO_MEMORY;
   g_gfrtc.io.base = phys2virt(addr);
-  g_gfrtc.present = true;
+  return 0;
 }
 
 int goldfish_rtc_read(struct apos_timespec* ts) {
-  kspin_lock(&g_spin);
   if (!g_gfrtc_init) {
-    gfrtc_init();
-  }
-  kspin_unlock(&g_spin);
-  // g_gfrtc is now populated and const.
-  if (!g_gfrtc.present) {
     return -ENOTSUP;
   }
 
