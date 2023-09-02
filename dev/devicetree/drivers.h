@@ -18,8 +18,9 @@
 #include "dev/devicetree/devicetree.h"
 
 typedef struct {
-  const char* name;
-  const dt_node_t* node;
+  const char* name;  // Driver name.
+  const char* type;  // Generic type name that indicates the type of `data`.
+  const dt_node_t* node;  // Associated node.
   void* data;
 } dt_driver_info_t;
 

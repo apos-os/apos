@@ -23,6 +23,7 @@
 #include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/rtc/goldfish-rtc.h"
+#include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
 
@@ -49,6 +50,8 @@ static dt_driver_t DTREE_DRIVERS[] = {
     {"goldfish-rtc", (const char*[]){"google,goldfish-rtc", NULL},
      &goldfish_rtc_driver},
 
+    {"uart16550", (const char*[]){"ns16550a", NULL}, &u16550_driver},
+
     {NULL, NULL, NULL},
 };
 
@@ -74,6 +77,7 @@ static dt_driver_info_t* find_driver_one(const dt_tree_t* tree,
         KASSERT(driver != NULL);
         kmemset(driver, 0, sizeof(dt_driver_info_t));
         driver->name = DTREE_DRIVERS[i].name;
+        driver->type = "unknown";
         driver->node = node;
 
         int result = DTREE_DRIVERS[i].adopt(tree, node, driver);

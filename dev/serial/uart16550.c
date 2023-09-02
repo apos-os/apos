@@ -23,6 +23,7 @@
 #include "dev/interrupts.h"
 #include "dev/io.h"
 #include "dev/ld.h"
+#include "dev/serial/serial.h"
 #include "dev/tty.h"
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
@@ -138,8 +139,8 @@ int u16550_create_legacy(apos_dev_t* dev) {
   return u16550_create_internal(uart, dev);
 }
 
-int u16550_create(const dt_tree_t* tree, const dt_node_t* dtnode,
-                  apos_dev_t* dev_out) {
+int u16550_driver(const dt_tree_t* tree, const dt_node_t* dtnode,
+                  dt_driver_info_t* driver) {
   // TODO(aoates): handle 'compatible' properly (as a list).
   const dt_property_t* prop = dt_get_prop(dtnode, "compatible");
   if (!prop || kstrcmp(prop->val, "ns16550a") != 0) {
@@ -179,5 +180,15 @@ int u16550_create(const dt_tree_t* tree, const dt_node_t* dtnode,
   uart->io.type = IO_MEMORY;
   uart->io.base = phys2virt(katou_hex(dt_get_unit(dtnode)));
   uart->interrupt = irq;
-  return u16550_create_internal(uart, dev_out);
+  apos_dev_t cdev;
+  result = u16550_create_internal(uart, &cdev);
+  if (result) {
+    return result;
+  }
+
+  serial_driver_data_t* serial = KMALLOC(serial_driver_data_t);
+  serial->chardev = cdev;
+  driver->type = "serial";
+  driver->data = serial;
+  return 0;
 }

@@ -27,6 +27,7 @@
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/drivers.h"
 #include "dev/interrupts.h"
+#include "dev/serial/serial.h"
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
 #include "net/init.h"
@@ -137,12 +138,14 @@ static void dtree_io_init(void) {
     klogfm(KL_GENERAL, FATAL, "Unable to find stdout-path node '%s'\n",
            stdout_path);
   }
-  klogf("Found /chosen:stdout-path: '%s', opening as UART\n", stdout_path);
-  int result = u16550_create(dtree, serial, &g_tty_dev);
-  if (result != 0) {
-    klogfm(KL_GENERAL, FATAL, "Unable to open node '%s' as UART\n",
+  klogf("Found /chosen:stdout-path: '%s', looking for driver\n", stdout_path);
+  dt_driver_info_t* driver = dtree_get_driver(serial);
+  if (!driver || kstrcmp(driver->type, "serial") != 0) {
+    klogfm(KL_GENERAL, FATAL, "Unable to open node '%s' as serial device\n",
            stdout_path);
   }
+  serial_driver_data_t* serial_data = (serial_driver_data_t*)driver->data;
+  g_tty_dev = serial_data->chardev;
 }
 
 static void io_init(void) {

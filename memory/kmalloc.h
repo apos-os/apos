@@ -33,4 +33,6 @@ void kmalloc_log_heap_profile(void);
 // used (other than running the tests).
 void kmalloc_enable_test_mode(void);
 
+#define KMALLOC(_TYPE) ((_TYPE*)kmalloc(sizeof(_TYPE)));
+
 #endif

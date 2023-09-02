@@ -12,20 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// An extremely limited driver for a 16550-compatible serial device.
-// TODO(aoates): support actual UART settings for use outside qemu.
-#ifndef APOO_DEV_SERIAL_UART16550_H
-#define APOO_DEV_SERIAL_UART16550_H
+#ifndef APOO_DEV_SERIAL_SERIAL_H
+#define APOO_DEV_SERIAL_SERIAL_H
 
 #include "dev/dev.h"
-#include "dev/devicetree/devicetree.h"
-#include "dev/devicetree/drivers.h"
 
-// Create a TTY chardev using the legacy PC COM1 IO ports.
-int u16550_create_legacy(apos_dev_t* dev);
-
-// Devicetree driver loader.  Stores a serial_driver_data_t in the driver data.
-int u16550_driver(const dt_tree_t* tree, const dt_node_t* node,
-                  dt_driver_info_t* driver);
+// Generic serial device driver data, type 'serial'.
+typedef struct {
+  apos_dev_t chardev;
+} serial_driver_data_t;
 
 #endif
