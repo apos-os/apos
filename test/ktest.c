@@ -40,6 +40,7 @@ static int num_tests_passing = 0;
 // Is the current suite/test passing?
 static int current_suite_passing = 0;
 static int current_test_passing = 0;
+static int current_test_failures = 0;
 
 static apos_ms_t test_start_time;
 
@@ -54,8 +55,9 @@ static int failing_test_names_idx = 0;
 // Convert two integer values into strings, appending the errorname if it looks
 // like an error code is being returned (one of the operands is zero, and the
 // other is between -ERRNO_MIN and -ERRNO_MAX).
-static inline void kexpect_int_to_string(long aval, long bval, char* aval_str,
-                                         char* bval_str) {
+// TODO(aoates): make this handle large 64-bit values on 32-bit systems properly
+static inline void kexpect_int_to_string(intmax_t aval, intmax_t bval,
+                                         char* aval_str, char* bval_str) {
   const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
   const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
 
@@ -103,6 +105,7 @@ void KTEST_BEGIN(const char* name) {
   finish_test();  // Finish the previous test, if running.
   current_test_name = name;
   current_test_passing = 1;
+  current_test_failures = 0;
   num_tests++;
 }
 
@@ -119,6 +122,7 @@ void kexpect(int cond, const char* name, const char* astr,
     }
     current_test_passing = 0;
     current_suite_passing = 0;
+    current_test_failures++;
     klogm(KL_TEST, INFO, FAILED " ");
     klogm(KL_TEST, INFO, name);
     klogm(KL_TEST, INFO, "(");
@@ -142,9 +146,9 @@ void kexpect(int cond, const char* name, const char* astr,
 }
 
 void kexpect_int(const char* name, const char* file, const char* line,
-                 const char* astr, const char* bstr, long aval, long bval,
-                 long result, const char* opstr, kexpect_print_t a_type,
-                 kexpect_print_t b_type) {
+                 const char* astr, const char* bstr, intmax_t aval,
+                 intmax_t bval, long result, const char* opstr,
+                 kexpect_print_t a_type, kexpect_print_t b_type) {
   char aval_str[40];
   char bval_str[40];
   // If the expected value is written as hex, print the actual value as hex too.
@@ -222,6 +226,7 @@ void ktest_begin_all(void) {
   num_tests_passing = 0;
   current_suite_passing = 0;
   current_test_passing = 0;
+  current_test_failures = 0;
   failing_test_names_idx = 0;
   test_start_time = get_time_ms();
 
@@ -253,4 +258,8 @@ void ktest_finish_all(void) {
   }
   KLOG("KERNEL UNIT TESTS FINISHED\n");
   KLOG("---------------------------------------\n");
+}
+
+int ktest_current_test_failures(void) {
+  return current_test_failures;
 }

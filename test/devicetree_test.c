@@ -225,8 +225,8 @@ static void dtree_basic_test(void) {
   KEXPECT_STREQ("#size-cells", tree->root->properties->next->name);
   KEXPECT_EQ(0x2, btoh32(*(const uint32_t*)(tree->root->properties->next->val)));
 
-  KEXPECT_EQ(NULL, tree->root->parent);
-  KEXPECT_EQ(tree->root, dt_lookup(tree, "/"));
+  KEXPECT_NULL(tree->root->parent);
+  KEXPECT_EQ((const dt_node_t*)tree->root, dt_lookup(tree, "/"));
   const dt_node_t* mem = tree->root->children->next->next->next;
   KEXPECT_EQ(mem, dt_lookup(tree, "/memory@80000000"));
   KEXPECT_STREQ("device_type",
@@ -234,18 +234,18 @@ static void dtree_basic_test(void) {
   KEXPECT_STREQ("memory", (const char*)dt_get_prop(mem, "device_type")->val);
   KEXPECT_EQ(tree->root, mem->parent);
 
-  KEXPECT_EQ(NULL, dt_lookup(tree, "/abc"));
-  KEXPECT_EQ(NULL, dt_lookup(tree, ""));
+  KEXPECT_NULL(dt_lookup(tree, "/abc"));
+  KEXPECT_NULL(dt_lookup(tree, ""));
 
-  KEXPECT_EQ(NULL, dt_get_prop(mem, "noprop"));
+  KEXPECT_NULL(dt_get_prop(mem, "noprop"));
   KEXPECT_STREQ("device_type",
                 dt_get_nprop(tree, "/memory@80000000", "device_type")->name);
-  KEXPECT_EQ(NULL, dt_get_nprop(tree, "/memory2@80000000", "device_type"));
-  KEXPECT_EQ(NULL, dt_get_nprop(tree, "/memory@80000000", "device_type2"));
+  KEXPECT_NULL(dt_get_nprop(tree, "/memory2@80000000", "device_type"));
+  KEXPECT_NULL(dt_get_nprop(tree, "/memory@80000000", "device_type2"));
 
   KTEST_BEGIN("dt_create(): phandle lookups");
-  KEXPECT_EQ(NULL, dt_lookup_phandle(tree, 0));
-  KEXPECT_EQ(NULL, dt_lookup_phandle(tree, 10));
+  KEXPECT_NULL(dt_lookup_phandle(tree, 0));
+  KEXPECT_NULL(dt_lookup_phandle(tree, 10));
   KEXPECT_STREQ("cpu@0", dt_lookup_phandle(tree, 1)->name);
   KEXPECT_STREQ("interrupt-controller", dt_lookup_phandle(tree, 2)->name);
   KEXPECT_STREQ("test@100000", dt_lookup_phandle(tree, 4)->name);
@@ -254,8 +254,8 @@ static void dtree_basic_test(void) {
   KEXPECT_EQ(dt_lookup(tree, "/soc"), serial->parent);
   KEXPECT_EQ(dt_lookup(tree, "/soc/plic@c000000"),
              dt_lookup_prop_phandle(tree, serial, "interrupt-parent"));
-  KEXPECT_EQ(NULL, dt_lookup_prop_phandle(tree, serial, "interrupt-parent2"));
-  KEXPECT_EQ(NULL, dt_lookup_prop_phandle(tree, serial, "compatible"));
+  KEXPECT_NULL(dt_lookup_prop_phandle(tree, serial, "interrupt-parent2"));
+  KEXPECT_NULL(dt_lookup_prop_phandle(tree, serial, "compatible"));
 
   KTEST_BEGIN("dt_create(): buffer too small");
   KEXPECT_EQ(DTFDT_OUT_OF_MEMORY, dt_create(kGoldenDtb, &tree, buf, 100));
@@ -266,7 +266,7 @@ static void dtree_basic_test(void) {
   char namebuf[kNameBufLen];
   const char* path = "/cpus/cpu@0/interrupt-controller";
   const dt_node_t* node = dt_lookup(tree, path);
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(32, kstrlen(path));
   KEXPECT_EQ(32, dt_print_path(node, namebuf, kNameBufLen));
   KEXPECT_STREQ(path, namebuf);
@@ -307,10 +307,10 @@ static void name_test(void) {
 static void intr_test1(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_extract(): basic test");
   const dt_node_t* intc_node = dt_lookup(tree, "/soc/int-controller1");
-  KEXPECT_NE(NULL, intc_node);
+  KEXPECT_NOT_NULL(intc_node);
 
   const dt_node_t* node = dt_lookup(tree, "/int-generator1");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   const size_t kMaxInts = 10;
   dt_interrupt_t int_buf[kMaxInts];
@@ -334,7 +334,7 @@ static void intr_test1(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_extract(): implicit interrupt parent");
   kmemset(int_buf, 0xab, sizeof(int_buf));
   node = dt_lookup(tree, "/int-two-cells/gen-ok");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(2, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(2, int_buf[0].cells);
   KEXPECT_EQ(5, int_buf[0]._int[0]);
@@ -354,52 +354,52 @@ static void intr_test1(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_extract(): too many interrupt cells");
   node = dt_lookup(tree, "/int-too-many-cells/gen");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): invalid (zero) #interrupt-cells");
   node = dt_lookup(tree, "/int-zero-cells/gen");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): invalid (too small) #interrupt-cells");
   node = dt_lookup(tree, "/int-too-short-cells/gen");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): invalid (too big) #interrupt-cells");
   node = dt_lookup(tree, "/int-too-long-cells/gen");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): not even multiple of #interrupt-cells");
   node = dt_lookup(tree, "/int-two-cells/gen1");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
   node = dt_lookup(tree, "/int-two-cells/gen2");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): missing #interrupt-cells");
   node = dt_lookup(tree, "/int-no-cells/gen");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): no interrupt parent (root)");
   node = dt_lookup(tree, "/");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): no interrupts specified");
   node = dt_lookup(tree, "/int-two-cells/gen-no-ints");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
@@ -412,10 +412,10 @@ static void intr_test1(const dt_tree_t* tree) {
 static void intr_test2(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_map(): basic test");
   const dt_node_t* intc_node = dt_lookup(tree, "/soc/int-controller1");
-  KEXPECT_NE(NULL, intc_node);
+  KEXPECT_NOT_NULL(intc_node);
 
   const dt_node_t* node = dt_lookup(tree, "/int-generator1");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   const size_t kMaxInts = 10;
   dt_interrupt_t int_buf[kMaxInts];
@@ -442,12 +442,12 @@ static void intr_test3(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_map(): basic interrupt-map test");
   const dt_node_t* intc1_node =
       dt_lookup(tree, "/cpus/cpu@0/interrupt-controller");
-  KEXPECT_NE(NULL, intc1_node);
+  KEXPECT_NOT_NULL(intc1_node);
   const dt_node_t* intc2_node = dt_lookup(tree, "/soc/int-controller1");
-  KEXPECT_NE(NULL, intc2_node);
+  KEXPECT_NOT_NULL(intc2_node);
 
   const dt_node_t* node = dt_lookup(tree, "/int-map/gen1@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   const size_t kMaxInts = 10;
   dt_interrupt_t int_buf[kMaxInts];
@@ -473,7 +473,7 @@ static void intr_test3(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): child unit mask applied test");
   node = dt_lookup(tree, "/int-map/gen2@1100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(3, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -487,7 +487,7 @@ static void intr_test3(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): child unit mask applied test #2");
   node = dt_lookup(tree, "/int-map/gen3@1110000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(3, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -503,10 +503,10 @@ static void intr_test3(const dt_tree_t* tree) {
 static void intr_test4(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_map(): interrupt-map multi-nexus cascade test");
   const dt_node_t* intc1_node = dt_lookup(tree, "/int-map-multi/maps/intc");
-  KEXPECT_NE(NULL, intc1_node);
+  KEXPECT_NOT_NULL(intc1_node);
 
   const dt_node_t* node = dt_lookup(tree, "/int-map-multi/gen1@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   const size_t kMaxInts = 10;
   dt_interrupt_t int_buf[kMaxInts];
@@ -528,40 +528,40 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): interrupt src node missing reg property");
   node = dt_lookup(tree, "/int-map-errors/gen1-noreg1@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
 
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen1-noreg2");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
 
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   KTEST_BEGIN("dtint_map(): interrupt src node invalid (short) reg property");
   node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-short@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
 
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-short2@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
 
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   KTEST_BEGIN("dtint_map(): interrupt src node invalid (long) reg property");
   node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-long@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
 
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   KTEST_BEGIN("dtint_map(): interrupt src node empty reg property");
   node = dt_lookup(tree, "/int-map-errors/gen1-bad-reg-zero@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
 
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
@@ -569,17 +569,17 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_extract(): #interrupt-cells is zero");
   node = dt_lookup(tree, "/int-map-errors/gen-zero-intcells@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
   node = dt_lookup(tree, "/int-map-errors/gen-zero-intcells2@100000002");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
   KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_map(): #interrupt-cells is zero");
   node = dt_lookup(tree, "/int-map-errors/gen-zero-intcells-mid@1");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -587,7 +587,7 @@ static void intr_test4(const dt_tree_t* tree) {
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen-big-intcells-mid@2");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -597,7 +597,7 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): #interrupt-cells is missing");
   node = dt_lookup(tree, "/int-map-errors/gen-no-intcells@5");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -607,7 +607,7 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): map to node without interrupt-map");
   node = dt_lookup(tree, "/int-map-errors/gen-no-intmap@3");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -617,7 +617,7 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): map to node without interrupt-map-mask");
   node = dt_lookup(tree, "/int-map-errors/gen-no-intmask@4");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -627,7 +627,7 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): interrupt-map-mask too short");
   node = dt_lookup(tree, "/int-map-errors/gen-short-intmask@6");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -637,7 +637,7 @@ static void intr_test4(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): interrupt-map-mask too long");
   node = dt_lookup(tree, "/int-map-errors/gen-long-intmask@7");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -648,11 +648,11 @@ static void intr_test4(const dt_tree_t* tree) {
 static void intr_test5(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_map(): interrupt-map with bad parent");
   const dt_node_t* intc1_node = dt_lookup(tree, "/int-map-multi/maps/intc");
-  KEXPECT_NE(NULL, intc1_node);
+  KEXPECT_NOT_NULL(intc1_node);
 
   const dt_node_t* node =
       dt_lookup(tree, "/int-map-errors/gen-missing-parent@8");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   const size_t kMaxInts = 10;
   dt_interrupt_t int_buf[kMaxInts];
@@ -666,7 +666,7 @@ static void intr_test5(const dt_tree_t* tree) {
   KTEST_BEGIN(
       "dtint_map(): interrupt-map with bad parent (missing #address-cells)");
   node = dt_lookup(tree, "/int-map-errors/gen-missing-parent-address-cells@9");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
@@ -675,42 +675,42 @@ static void intr_test5(const dt_tree_t* tree) {
 
   KTEST_BEGIN("dtint_map(): bad interrupt-map entry (too short)");
   node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short1@a");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short2@b");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short3@c");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short4@d");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short5@e");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));
   KEXPECT_EQ(-EINVAL, dtint_map(tree, node, &int_buf[0], intc1_node, &mapped));
 
   node = dt_lookup(tree, "/int-map-errors/gen-bad-map-short6@f");
-  KEXPECT_NE(NULL, node);
+  KEXPECT_NOT_NULL(node);
 
   kmemset(int_buf, 0xab, sizeof(int_buf));
   KEXPECT_EQ(1, dtint_extract(tree, node, int_buf, kMaxInts));

@@ -40,9 +40,9 @@ typedef enum {
 } kexpect_print_t;
 
 void kexpect_int(const char* name, const char* file, const char* line,
-                 const char* astr, const char* bstr, long aval, long bval,
-                 long result, const char* opstr, kexpect_print_t a_type,
-                 kexpect_print_t b_type);
+                 const char* astr, const char* bstr, intmax_t aval,
+                 intmax_t bval, long result, const char* opstr,
+                 kexpect_print_t a_type, kexpect_print_t b_type);
 
 void kexpect_multiline_streq(const char* file, const char* line,
                              const char* astr, const char* bstr,
@@ -71,10 +71,13 @@ void kexpect_multiline_streq(const char* file, const char* line,
              __FILE__, STR(__LINE__));                                        \
   } while (0)
 
+// TODO(aoates): figure out how to fix silent narrowing when passing two
+// variables of different sizes (as opposed to constants, which will fail to
+// compile).
 #define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr)                \
   do {                                                                 \
     typeof(a) aval = (a);                                              \
-    typeof(a) bval = (typeof(a))(b);                                   \
+    typeof(a) bval = (b);                                              \
     kexpect_int(name, __FILE__, STR(__LINE__), astr, bstr, (long)aval, \
                 (long)bval, (aval op bval), opstr, PRINT_TYPE(a),      \
                 PRINT_TYPE(b));                                        \
@@ -98,6 +101,12 @@ void kexpect_multiline_streq(const char* file, const char* line,
 #define KEXPECT_FALSE(b) \
   KEXPECT_INT_("KEXPECT_FALSE", "false", #b, false, ((bool)(b)), ==, " != ")
 
+#define KEXPECT_NULL(a) \
+  KEXPECT_INT_("KEXPECT_NULL", "NULL", #a, ((const void*)0), (a), ==, " != ")
+
+#define KEXPECT_NOT_NULL(a) \
+  KEXPECT_INT_("KEXPECT_NOT_NULL", "NULL", #a, ((const void*)0), (a), !=, " == ")
+
 #define KEXPECT_MULTILINE_STREQ(a, b)                                     \
   do {                                                                    \
     const char* aval = a;                                                 \
@@ -110,5 +119,7 @@ void ktest_begin_all(void);
 
 // Tear down the framework and print statistics about passing/failing tests.
 void ktest_finish_all(void);
+
+int ktest_current_test_failures(void);
 
 #endif
