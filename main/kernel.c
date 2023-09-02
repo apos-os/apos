@@ -180,6 +180,8 @@ void kmain(const boot_info_t* boot) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+
+  // Initialize core low-level hardware.
   klog("interrupts_init()\n");
   interrupts_init();
   klog("arch_irq_init()\n");
@@ -187,6 +189,7 @@ void kmain(const boot_info_t* boot) {
 
   enable_interrupts();
 
+  // Initialize memory systems.
   klog("page_frame_alloc_init()\n");
   page_frame_alloc_init(boot->meminfo);
   klog("paging_init()\n");
@@ -198,8 +201,24 @@ void kmain(const boot_info_t* boot) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
+  // Initialize proc, thread, and scheduler systems.
   klog("kthread_init()\n");
   kthread_init();
+
+  klog("timer_init()\n");
+  timer_init();
+  add_timers();
+
+  klog("scheduler_init()\n");
+  scheduler_init();
+
+  klog("proc_init_stage2()\n");
+  proc_init_stage2();
+
+  // Initialize devices.
+  if (boot->dtree) {
+    dtree_load_drivers(boot->dtree);
+  }
 
   klog("pci_init()\n");
   pci_init();
@@ -212,24 +231,12 @@ void kmain(const boot_info_t* boot) {
   klog("ata_init()\n");
   ata_init();
 
-  klog("timer_init()\n");
-  timer_init();
-  add_timers();
-
-  klog("scheduler_init()\n");
-  scheduler_init();
-  klog("proc_init_stage2()\n");
-  proc_init_stage2();
-
-  if (boot->dtree) {
-    dtree_load_drivers(boot->dtree);
-  }
-
 #if ENABLE_USB
   klog("usb_init()\n");
   usb_init();
 #endif
 
+  // Initialize higher-level systems.
   klog("vfs_init()\n");
   vfs_init();
 
