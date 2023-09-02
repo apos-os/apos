@@ -25,6 +25,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
+#include "dev/devicetree/drivers.h"
 #include "dev/interrupts.h"
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
@@ -219,6 +220,10 @@ void kmain(const boot_info_t* boot) {
   scheduler_init();
   klog("proc_init_stage2()\n");
   proc_init_stage2();
+
+  if (boot->dtree) {
+    dtree_load_drivers(boot->dtree);
+  }
 
 #if ENABLE_USB
   klog("usb_init()\n");

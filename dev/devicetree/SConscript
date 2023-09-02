@@ -16,6 +16,7 @@ Import('env AposAddSources')
 
 srcs = [
   'devicetree.c',
+  'drivers.c',
   'dtb.c',
   'interrupts.c',
 ]
