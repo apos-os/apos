@@ -34,7 +34,8 @@ typedef struct {
 static bool g_gfrtc_init = false;
 static gfrtc_t g_gfrtc;
 
-int goldfish_rtc_driver(const dt_node_t* rtc, dt_driver_info_t* driver) {
+int goldfish_rtc_driver(const dt_tree_t* tree, const dt_node_t* rtc,
+                        dt_driver_info_t* driver) {
   if (g_gfrtc_init) {
     klogfm(KL_GENERAL, WARNING, "Multiple goldfish RTC devices found\n");
     return -EEXIST;

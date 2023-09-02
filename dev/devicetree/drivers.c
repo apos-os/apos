@@ -39,7 +39,7 @@ typedef struct {
 
   // Driver initialization function.  Takes a compatible dt_node_t* and fills in
   // the driver data.  Returns 0 or -error.
-  int (*adopt)(const dt_node_t*, dt_driver_info_t*);
+  int (*adopt)(const dt_tree_t*, const dt_node_t*, dt_driver_info_t*);
 } dt_driver_t;
 
 // TODO(aoates): consider consolidating driver lists (between here, PCI, USB,
@@ -62,7 +62,8 @@ static node_key_t node_key(const dt_node_t* node) {
   return fnv_hash_addr((addr_t)node);
 }
 
-static dt_driver_info_t* find_driver_one(const dt_node_t* node,
+static dt_driver_info_t* find_driver_one(const dt_tree_t* tree,
+                                         const dt_node_t* node,
                                          const char* node_path,
                                          const char* compat) {
   for (int i = 0; DTREE_DRIVERS[i].name != NULL; ++i) {
@@ -75,7 +76,7 @@ static dt_driver_info_t* find_driver_one(const dt_node_t* node,
         driver->name = DTREE_DRIVERS[i].name;
         driver->node = node;
 
-        int result = DTREE_DRIVERS[i].adopt(node, driver);
+        int result = DTREE_DRIVERS[i].adopt(tree, node, driver);
         if (result) {
           KLOG(WARNING, "Failed to initialize driver %s for node %s: %s\n",
                DTREE_DRIVERS[i].name, node_path, errorname(-result));
@@ -93,7 +94,8 @@ static dt_driver_info_t* find_driver_one(const dt_node_t* node,
 
 // Looks for a driver for the node and returns a dt_driver_info_t* if found, or
 // NULL.
-static dt_driver_info_t* find_driver(const dt_node_t* node,
+static dt_driver_info_t* find_driver(const dt_tree_t* tree,
+                                     const dt_node_t* node,
                                      const char* node_path) {
   const dt_property_t* compat = dt_get_prop(node, "compatible");
   if (!compat) {
@@ -111,7 +113,8 @@ static dt_driver_info_t* find_driver(const dt_node_t* node,
       return NULL;
     }
 
-    dt_driver_info_t* driver = find_driver_one(node, node_path, compat_str);
+    dt_driver_info_t* driver =
+        find_driver_one(tree, node, node_path, compat_str);
     if (driver) {
       return driver;
     }
@@ -126,13 +129,14 @@ static dt_driver_info_t* find_driver(const dt_node_t* node,
 }
 
 // Recursively find and initialize drivers for this node and its children.
-static void init_drivers(const dt_node_t* node, char* node_path_buf) {
+static void init_drivers(const dt_tree_t* tree, const dt_node_t* node,
+                         char* node_path_buf) {
   if (dt_print_path(node, node_path_buf, DT_NODE_PATH_LEN) > DT_NODE_PATH_LEN) {
     KLOG(WARNING, "devicetree node path truncated (node=%p, path=%s)\n", node,
          node_path_buf);
   }
 
-  dt_driver_info_t* driver = find_driver(node, node_path_buf);
+  dt_driver_info_t* driver = find_driver(tree, node, node_path_buf);
   if (!driver) {
     KLOG(DEBUG, "No driver found for node %s\n", node_path_buf);
   } else {
@@ -147,7 +151,7 @@ static void init_drivers(const dt_node_t* node, char* node_path_buf) {
 
   const dt_node_t* child = node->children;
   while (child) {
-    init_drivers(child, node_path_buf);
+    init_drivers(tree, child, node_path_buf);
     // node_path_buf has been dirtied!
     child = child->next;
   }
@@ -162,7 +166,7 @@ void dtree_load_drivers(const dt_tree_t* tree) {
   // For each node in the tree, try and find an appropriate driver.
   kmutex_lock(&g_dt_lock);
   char path[DT_NODE_PATH_LEN];
-  init_drivers(tree->root, path);
+  init_drivers(tree, tree->root, path);
   kmutex_unlock(&g_dt_lock);
 }
 
