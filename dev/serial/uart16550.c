@@ -140,7 +140,7 @@ int u16550_create_legacy(apos_dev_t* dev) {
 }
 
 int u16550_driver(const dt_tree_t* tree, const dt_node_t* dtnode,
-                  dt_driver_info_t* driver) {
+                  const char* node_path, dt_driver_info_t* driver) {
   // TODO(aoates): handle 'compatible' properly (as a list).
   const dt_property_t* prop = dt_get_prop(dtnode, "compatible");
   if (!prop || kstrcmp(prop->val, "ns16550a") != 0) {
@@ -156,22 +156,22 @@ int u16550_driver(const dt_tree_t* tree, const dt_node_t* dtnode,
   dt_interrupt_t interrupts[kMaxInts];
   int result = dtint_extract(tree, dtnode, interrupts, kMaxInts);
   if (result < 0) {
-    char buf[100];
-    dt_print_path(dtnode, buf, 100);
     klogfm(KL_GENERAL, WARNING,
-           "Warning: unable to get interrupt information from %s\n", buf);
+           "Warning: unable to get interrupt information from %s\n", node_path);
     return -EINVAL;
   }
 
   if (result > 1) {
-    klogfm(
-        KL_GENERAL, WARNING,
-        "Warning: UART has multiple interrupts, ignoring all but the first\n");
+    klogfm(KL_GENERAL, WARNING,
+           "Warning: UART %s has multiple interrupts, ignoring all but the "
+           "first\n",
+           node_path);
   }
   dt_interrupt_t mapped;
   if (dtint_map(tree, dtnode, &interrupts[0], arch_irq_root(), &mapped)) {
     klogfm(KL_GENERAL, WARNING,
-           "Warning: unable to map UART interrupt into root controller\n");
+           "Warning: unable to map UART %s interrupt into root controller\n",
+           node_path);
     return -EINVAL;
   }
   irq_t irq = dtint_flatten(&mapped);

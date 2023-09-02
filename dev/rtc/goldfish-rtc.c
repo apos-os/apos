@@ -35,7 +35,7 @@ static bool g_gfrtc_init = false;
 static gfrtc_t g_gfrtc;
 
 int goldfish_rtc_driver(const dt_tree_t* tree, const dt_node_t* rtc,
-                        dt_driver_info_t* driver) {
+                        const char* node_path, dt_driver_info_t* driver) {
   if (g_gfrtc_init) {
     klogfm(KL_GENERAL, WARNING, "Multiple goldfish RTC devices found\n");
     return -EEXIST;
@@ -43,15 +43,13 @@ int goldfish_rtc_driver(const dt_tree_t* tree, const dt_node_t* rtc,
 
   g_gfrtc_init = true;
 
-  char namebuf[200];
-  dt_print_path(rtc, namebuf, 200);
-  klogf("Found Goldfish RTC at %s\n", namebuf);
+  klogf("Found Goldfish RTC at %s\n", node_path);
 
   // TODO(aoates): properly read reg using #address_cells and #size_cells rather
   // than just grabbing this out of the name.
   const char* addr_str = dt_get_unit(rtc);
   if (!*addr_str) {
-    klogf("Goldfish RTC %s missing unit address\n", namebuf);
+    klogf("Goldfish RTC %s missing unit address\n", node_path);
     return -EINVAL;
   }
 

@@ -26,6 +26,6 @@ int u16550_create_legacy(apos_dev_t* dev);
 
 // Devicetree driver loader.  Stores a serial_driver_data_t in the driver data.
 int u16550_driver(const dt_tree_t* tree, const dt_node_t* node,
-                  dt_driver_info_t* driver);
+                  const char* node_path, dt_driver_info_t* driver);
 
 #endif

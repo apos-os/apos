@@ -39,8 +39,10 @@ typedef struct {
   const char* const* compatible;
 
   // Driver initialization function.  Takes a compatible dt_node_t* and fills in
-  // the driver data.  Returns 0 or -error.
-  int (*adopt)(const dt_tree_t*, const dt_node_t*, dt_driver_info_t*);
+  // the driver data.  Passes the node name for convenience (e.g. for logging),
+  // but the given string must _not_ be stored.  Returns 0 or -error.
+  int (*adopt)(const dt_tree_t*, const dt_node_t*, const char*,
+               dt_driver_info_t*);
 } dt_driver_t;
 
 // TODO(aoates): consider consolidating driver lists (between here, PCI, USB,
@@ -80,7 +82,7 @@ static dt_driver_info_t* find_driver_one(const dt_tree_t* tree,
         driver->type = "unknown";
         driver->node = node;
 
-        int result = DTREE_DRIVERS[i].adopt(tree, node, driver);
+        int result = DTREE_DRIVERS[i].adopt(tree, node, node_path, driver);
         if (result) {
           KLOG(WARNING, "Failed to initialize driver %s for node %s: %s\n",
                DTREE_DRIVERS[i].name, node_path, errorname(-result));
