@@ -85,7 +85,7 @@ const dt_node_t* dt_lookup_prop_phandle(const dt_tree_t* tree,
                                         const dt_node_t* node,
                                         const char* prop_name);
 
-// Helper to extract the unit addres portion of a node name.
+// Helper to extract the unit address portion of a node name.
 const char* dt_get_unit(const dt_node_t* node);
 
 // A buffer size likely (but not guaranteed) to be able to hold a devicetree
@@ -98,5 +98,18 @@ const char* dt_get_unit(const dt_node_t* node);
 // the path.
 // Buffer must be at least two bytes big (to hold "/").
 size_t dt_print_path(const dt_node_t* node, char* buf, size_t buflen);
+
+
+// Helpers for parsing specific standard properties and property types.
+
+typedef struct {
+  addr_t base;
+  size_t len;
+} dt_regval_t;
+
+// Parse the 'reg' property of the given node.  Fails if the property doesn't
+// exist, there are too many entries to return, or the entries would be
+// truncated if put into standard types.
+int dt_parse_reg(const dt_node_t* node, dt_regval_t* out, int out_len);
 
 #endif

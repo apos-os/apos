@@ -17,6 +17,7 @@ Import('env AposAddSources')
 DTS_FILES = [
   'interrupt_test.dts',
   'large_golden.dts',
+  'parse_test.dts',
   'small_golden.dts',
 ]
 

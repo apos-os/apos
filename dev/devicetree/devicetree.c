@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "common/math.h"
 #include "dev/devicetree/dtb.h"
+#include "user/include/apos/errors.h"
 
 #define DT_MAX_DEPTH 10
 #define DT_PROPVAL_ALIGN alignof(uint64_t)  // Sensible default
@@ -322,4 +323,70 @@ size_t dt_print_path(const dt_node_t* node, char* buf, size_t buflen) {
   }
   buf[0] = '\0';
   return path_printer(node, buf, buflen);
+}
+
+int dt_parse_reg(const dt_node_t* node, dt_regval_t* out, int out_len) {
+  const dt_property_t* reg = dt_get_prop(node, "reg");
+  if (!reg) {
+    return -ENOENT;
+  }
+
+  const int acells = node->context.address_cells;
+  const int scells = node->context.size_cells;
+  const size_t entry_size = (acells + scells) * sizeof(uint32_t);
+  if (reg->val_len % entry_size != 0) {
+    klog("Warning: malformed devicetree reg property\n");
+    return -EINVAL;
+  }
+
+  if (acells < 1) {
+    return -EINVAL;
+  }
+
+  _Static_assert(sizeof(addr_t) == sizeof(size_t), "weird type sizes");
+  const int native_cells = sizeof(addr_t) / sizeof(uint32_t);
+  // How many cells must be zero at the start of each address and size entry.
+  const int addr_cells_zero =
+      max(0, node->context.address_cells - native_cells);
+  const int size_cells_zero = max(0, node->context.size_cells - native_cells);
+
+  const int num_entries = reg->val_len / entry_size;
+  if (num_entries == 0) {
+    // It's possible this is valid, but it's not useful. Save callers a check.
+    return -EINVAL;
+  } else if (num_entries > out_len) {
+    klog("Warning: not enough space to parse devicetree reg property\n");
+    return -ENOMEM;
+  }
+
+  const uint32_t* cells = (const uint32_t*)reg->val;
+  for (int entry = 0; entry < num_entries; ++entry) {
+    out[entry].base = out[entry].len = 0;
+    for (int i = 0; i < addr_cells_zero; ++i) {
+      if (cells[i] != 0) {
+        return -ERANGE;
+      }
+    }
+    for (int i = 0; i < size_cells_zero; ++i) {
+      if (cells[i + acells] != 0) {
+        return -ERANGE;
+      }
+    }
+#if ARCH_IS_64_BIT
+    if (acells > 1) {
+      out[entry].base += (uint64_t)btoh32(cells[acells - 2]) << 32;
+    }
+    if (scells > 1) {
+      out[entry].len += (uint64_t)btoh32(cells[acells + scells - 2]) << 32;
+    }
+#endif
+    out[entry].base += btoh32(cells[acells - 1]);
+    if (scells > 0) {
+      out[entry].len += btoh32(cells[acells + scells - 1]);
+    }
+
+    cells += acells + scells;
+  }
+
+  return num_entries;
 }

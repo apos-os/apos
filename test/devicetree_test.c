@@ -186,6 +186,10 @@ static const char kIntTestDtb[] __attribute__((aligned(4))) = {
 #include "test/dtb_testdata/interrupt_test.dts.h"
 };
 
+static const char kParseTestDtb[] __attribute__((aligned(4))) = {
+#include "test/dtb_testdata/parse_test.dts.h"
+};
+
 const size_t kPrintBufLen = 10000;
 static void printer(void* arg, const char* s) {
   kstrlcat(arg, s, kPrintBufLen);
@@ -733,10 +737,174 @@ static void intr_test(void) {
   kfree(buf);
 }
 
+static void reg_test1(const dt_tree_t* tree) {
+  KTEST_BEGIN("dt_parse_reg(): basic");
+  const size_t kRegEntries = 10;
+  const size_t kRegSize = kRegEntries * sizeof(dt_regval_t);
+  dt_regval_t reg[kRegEntries];
+  KEXPECT_EQ(1, dt_parse_reg(dt_lookup(tree, "/reg-ok"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x12345678, reg[0].base);
+  KEXPECT_EQ((size_t)0xabcd1526, reg[0].len);
+
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(2,
+             dt_parse_reg(dt_lookup(tree, "/reg-ok-multi"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x12345678, reg[0].base);
+  KEXPECT_EQ((size_t)0xabcd1526, reg[0].len);
+  KEXPECT_EQ((size_t)0xdeadbeef, reg[1].base);
+  KEXPECT_EQ((size_t)0x12345678, reg[1].len);
+
+#if ARCH_IS_64_BIT
+  KEXPECT_EQ(1, dt_parse_reg(dt_lookup(tree, "/reg-ok-64"), reg, kRegEntries));
+  KEXPECT_EQ(0x123456789abcdef0, reg[0].base);
+  KEXPECT_EQ(0x1a2b3c4d5e6f7081, reg[0].len);
+
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(
+      2, dt_parse_reg(dt_lookup(tree, "/reg-ok-64-multi"), reg, kRegEntries));
+  KEXPECT_EQ(0x123456789abcdef0, reg[0].base);
+  KEXPECT_EQ(0x1a2b3c4d5e6f7081, reg[0].len);
+  KEXPECT_EQ(0xdeadbeef12345678, reg[1].base);
+  KEXPECT_EQ(0xabcdef011234abcd, reg[1].len);
+#else
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/reg-ok-64"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE, dt_parse_reg(dt_lookup(tree, "/reg-ok-64-multi"), reg,
+                                   kRegEntries));
+#endif
+
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(2, dt_parse_reg(dt_lookup(tree, "/a1/reg-ok"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x12345678, reg[0].base);
+  KEXPECT_EQ((size_t)0xabcdef01, reg[0].len);
+  KEXPECT_EQ((size_t)0xdeadbeef, reg[1].base);
+  KEXPECT_EQ((size_t)0xab12cd34, reg[1].len);
+
+  KTEST_BEGIN("dt_parse_reg(): not enough buffer space");
+  KEXPECT_EQ(-ENOMEM, dt_parse_reg(dt_lookup(tree, "/reg-ok-multi"), reg, 0));
+  KEXPECT_EQ(-ENOMEM, dt_parse_reg(dt_lookup(tree, "/reg-ok-multi"), reg, 1));
+  KEXPECT_EQ(2, dt_parse_reg(dt_lookup(tree, "/reg-ok-multi"), reg, 2));
+
+  KTEST_BEGIN("dt_parse_reg(): no reg property");
+  KEXPECT_EQ(-ENOENT,
+             dt_parse_reg(dt_lookup(tree, "/reg-no-reg"), reg, kRegEntries));
+
+  KTEST_BEGIN("dt_parse_reg(): malformed reg property");
+  KEXPECT_EQ(-EINVAL,
+             dt_parse_reg(dt_lookup(tree, "/reg-empty"), reg, kRegEntries));
+  KEXPECT_EQ(-EINVAL,
+             dt_parse_reg(dt_lookup(tree, "/reg-bad1"), reg, kRegEntries));
+  KEXPECT_EQ(-EINVAL,
+             dt_parse_reg(dt_lookup(tree, "/reg-bad2"), reg, kRegEntries));
+  KEXPECT_EQ(-EINVAL,
+             dt_parse_reg(dt_lookup(tree, "/reg-bad3"), reg, kRegEntries));
+  KEXPECT_EQ(-EINVAL,
+             dt_parse_reg(dt_lookup(tree, "/reg-bad4"), reg, kRegEntries));
+}
+
+static void reg_test2(const dt_tree_t* tree) {
+  KTEST_BEGIN("dt_parse_reg(): truncation");
+  const size_t kRegEntries = 10;
+  const size_t kRegSize = kRegEntries * sizeof(dt_regval_t);
+  dt_regval_t reg[kRegEntries];
+  KEXPECT_EQ(1, dt_parse_reg(dt_lookup(tree, "/a3/reg-ok"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x12345678, reg[0].base);
+  KEXPECT_EQ((size_t)0xabcdef01, reg[0].len);
+
+#if ARCH_IS_64_BIT
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(1,
+             dt_parse_reg(dt_lookup(tree, "/a3/reg-ok-64"), reg, kRegEntries));
+  KEXPECT_EQ(0xcafebabe12345678, reg[0].base);
+  KEXPECT_EQ(0xdeadbeefabcdef01, reg[0].len);
+#else
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/a3/reg-ok-64"), reg, kRegEntries));
+#endif
+
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/a3/reg-trunc1"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/a3/reg-trunc2"), reg, kRegEntries));
+
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(1, dt_parse_reg(dt_lookup(tree, "/s4/reg-ok"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x12345678, reg[0].base);
+  KEXPECT_EQ((size_t)0xabcdef01, reg[0].len);
+
+#if ARCH_IS_64_BIT
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(1,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-ok-64"), reg, kRegEntries));
+  KEXPECT_EQ(0xcafebabe12345678, reg[0].base);
+  KEXPECT_EQ(0xdeadbeefabcdef01, reg[0].len);
+#else
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-ok-64"), reg, kRegEntries));
+#endif
+
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc1"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc2"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc3"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc4"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc5"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc6"), reg, kRegEntries));
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s4/reg-trunc7"), reg, kRegEntries));
+
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(3, dt_parse_reg(dt_lookup(tree, "/s0/reg-ok"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x12345678, reg[0].base);
+  KEXPECT_EQ((size_t)0, reg[0].len);
+  KEXPECT_EQ((size_t)0xabcdef01, reg[1].base);
+  KEXPECT_EQ((size_t)0, reg[1].len);
+  KEXPECT_EQ((size_t)0xcafebabe, reg[2].base);
+  KEXPECT_EQ((size_t)0, reg[2].len);
+
+#if ARCH_IS_64_BIT
+  kmemset(reg, 0xab, kRegSize);
+  KEXPECT_EQ(3,
+             dt_parse_reg(dt_lookup(tree, "/s0/reg-ok-64"), reg, kRegEntries));
+  KEXPECT_EQ((size_t)0x112345678, reg[0].base);
+  KEXPECT_EQ((size_t)0, reg[0].len);
+  KEXPECT_EQ((size_t)0x2abcdef01, reg[1].base);
+  KEXPECT_EQ((size_t)0, reg[1].len);
+  KEXPECT_EQ((size_t)0x3cafebabe, reg[2].base);
+  KEXPECT_EQ((size_t)0, reg[2].len);
+#else
+  KEXPECT_EQ(-ERANGE,
+             dt_parse_reg(dt_lookup(tree, "/s0/reg-ok-64"), reg, kRegEntries));
+#endif
+
+  KTEST_BEGIN("dt_parse_reg(): bad #address-cells");
+  KEXPECT_EQ(-EINVAL,
+             dt_parse_reg(dt_lookup(tree, "/a0/reg-bad"), reg, kRegEntries));
+}
+
+static void reg_test(void) {
+  KTEST_BEGIN("dt_parse_reg(): setup");
+  const size_t kBufLen = 10000;
+  void* buf = kmalloc(kBufLen);
+  dt_tree_t* tree = NULL;
+  KEXPECT_EQ(DTFDT_OK, dt_create(kParseTestDtb, &tree, buf, kBufLen));
+
+  reg_test1(tree);
+  reg_test2(tree);
+
+  kfree(buf);
+}
+
 void devicetree_test(int x) {
   KTEST_SUITE_BEGIN("devicetree");
   dtb_print_golden_test();
   dtree_basic_test();
   name_test();
   intr_test();
+  reg_test();
 }
