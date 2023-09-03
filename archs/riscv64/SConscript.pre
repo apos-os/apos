@@ -24,5 +24,4 @@ if env['CLANG']:
 
 # TODO(aoates): figure out how to make these work on this platform (and the
 # right portable API).  The implementations currently rely on ioport commands.
-DisableFeature(env, 'ETHERNET')
 DisableFeature(env, 'USB')
