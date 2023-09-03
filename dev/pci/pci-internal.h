@@ -34,4 +34,7 @@
 
 void pci_add_device(pci_device_t* pcidev);
 
+uint32_t pcie_read_config(pci_device_t* pcidev, uint8_t reg_offset);
+void pcie_write_config(pci_device_t* pcidev, uint8_t reg_offset,
+                       uint32_t value);
 #endif

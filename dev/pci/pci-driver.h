@@ -22,6 +22,8 @@
 #include "dev/io.h"
 
 typedef enum {
+  PCI_CMD_IO_SPACE_ENABLE = 0x01,
+  PCI_CMD_MEMORY_SPACE_ENABLE = 0x02,
   PCI_CMD_BUSMASTER_ENABLE = 0x04,
 } pci_command_bits_t;
 
@@ -46,10 +48,17 @@ typedef struct {
 
 #define PCI_NUM_BARS 6
 
+typedef enum {
+  PCI_DEV_LEGACY = 1,
+  PCI_DEV_PCIE,
+} pci_dev_type_t;
+
 // Represents a single (bus, device, function) tuple.  Drivers are given one of
 // structures, and can manipulate and re-read portions of it using the functions
 // below.
 struct pci_device {
+  pci_dev_type_t type;
+
   uint8_t bus;
   uint8_t device;
   uint8_t function;

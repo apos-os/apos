@@ -19,6 +19,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "common/types.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/interrupts.h"
@@ -38,10 +39,14 @@ typedef struct {
   pci_addr_t pci_base;
   addr_t host_base;
   addr64_t len;
+
+  // The next free offset in the range.
+  addr64_t next_free;
 } pcie_mmap_entry_t;
 
 #define PCIE_MMAP_ENTRIES 10
 typedef struct {
+  int num_ranges;
   pcie_mmap_entry_t ranges[PCIE_MMAP_ENTRIES];
 } pcie_mmap_t;
 
@@ -90,6 +95,7 @@ static size_t conf_offset(int bus, int device, int func) {
   return func_idx * kConfSize;
 }
 
+// Read the data from the ECAM for the given BDF.
 static pcie_device_t* read_device(pcie_t* pcie, int bus, int device,
                                   int function) {
   size_t offset = conf_offset(bus, device, 0);
@@ -110,6 +116,7 @@ static pcie_device_t* read_device(pcie_t* pcie, int bus, int device,
     header_u32[i] = io_read32(pcie->ecam, offset + i * sizeof(uint32_t));
   }
 
+  pdev->pub.type = PCI_DEV_PCIE;
   pdev->pub.bus = bus;
   pdev->pub.device = device;
   pdev->pub.function = 0;
@@ -127,12 +134,96 @@ static pcie_device_t* read_device(pcie_t* pcie, int bus, int device,
   }
   pdev->pub.interrupt_line = header->interrupt_line;
   pdev->pub.interrupt_pin = header->interrupt_pin;
+  pdev->cfg_io.base = pcie->ecam.base + offset;
+  pdev->cfg_io.type = pcie->ecam.type;
   kfree(header);
   return pdev;
 }
 
+static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
+  for (int i = 0; i < PCI_NUM_BARS; ++i) {
+    pci_bar_t* bar = &dev->pub.bar[i];
+    uint32_t bar_addr;
+    bool prefetchable = false;
+    uint32_t bar_addr_mask = 0;
+    if (bar->bar & 0x1) {
+      bar->type = PCIBAR_IO;
+      bar_addr_mask = ~0x1;
+    } else {
+      if (bar->bar & 0x7) {
+        die("Unsupported BAR type");
+      }
+      bar->type = PCIBAR_MEM32;
+      prefetchable = (bar->bar >> 3) & 0x1;
+      bar_addr_mask = ~0xf;
+    }
+    bar_addr = bar->bar & bar_addr_mask;
+    KASSERT_MSG(bar_addr == 0, "Pre-allocated BARs are not supported");
+
+    size_t bar_offset = offsetof(pci_conf_t, bars) + i * sizeof(uint32_t);
+    io_write32(dev->cfg_io, bar_offset, 0xffffffff);
+    uint32_t newval = io_read32(dev->cfg_io, bar_offset);
+    newval &= bar_addr_mask;
+    size_t bar_len = (0xffffffff - newval) + 1;
+    if (bar_len == 0) {
+      continue;
+    }
+
+    // Find a matching memory area.
+    int range_idx = -1;
+    for (int j = 0; j < pcie->mmap.num_ranges; ++j) {
+      if (pcie->mmap.ranges[j].type == bar->type &&
+          pcie->mmap.ranges[j].prefetchable == prefetchable) {
+        range_idx = j;
+        break;
+      }
+    }
+    if (range_idx < 0) {
+      die("Found unallocatable BAR");
+    }
+
+    // Allocate a chunk of the appropriate size and alignment.
+    pcie_mmap_entry_t* range = &pcie->mmap.ranges[range_idx];
+    range->next_free = align_up(range->next_free, bar_len);
+    if (range->next_free >= range->len) {
+      die("Not enough memory to allocate BAR");
+    }
+
+    // Update BAR in memory and PCI configuration space.
+    pci_addr_t pci_addr = range->pci_base + range->next_free;
+    KASSERT(pci_addr <= UINT32_MAX);
+    io_write32(dev->cfg_io, bar_offset, pci_addr);
+    bar->io.base = phys2virt(range->host_base + range->next_free);
+    bar->io.type =
+        (bar->type == PCIBAR_IO && ARCH_SUPPORTS_IOPORT) ? IO_PORT : IO_MEMORY;
+    range->next_free += bar_len;
+    bar->valid = true;
+    KLOG(INFO,
+         "  Allocated BAR %d: 0x%zx bytes at 0x%" PRIxADDR " (pci)/0x%" PRIxADDR
+         " (host)\n",
+         i, bar_len, (size_t)pci_addr, bar->io.base);
+
+    // Enable BAR access in the PCI device.
+    pci_read_status(&dev->pub);
+    dev->pub.command |= PCI_CMD_IO_SPACE_ENABLE | PCI_CMD_MEMORY_SPACE_ENABLE;
+    pci_write_status(&dev->pub);
+  }
+}
+
+// Read device data from the ECAM and initialize data structures (e.g. BARS).
+static pcie_device_t* create_device(pcie_t* pcie, int bus, int device,
+                                  int function) {
+  pcie_device_t* dev = read_device(pcie, bus, device, function);
+  if (!dev) {
+    return NULL;
+  }
+
+  allocate_bars(pcie, dev);
+  return dev;
+}
+
 static void pci_check_device(pcie_t* pcie, int bus, int device) {
-  pcie_device_t* pdev = read_device(pcie, bus, device, 0);
+  pcie_device_t* pdev = create_device(pcie, bus, device, 0);
   if (!pdev) return;
 
   pci_add_device(&pdev->pub);
@@ -140,7 +231,7 @@ static void pci_check_device(pcie_t* pcie, int bus, int device) {
   if (pdev->pub.header_type & PCI_HEADER_IS_MULTIFUNCTION) {
     for (int function = PCI_FUNCTION_MIN + 1; function <= PCI_FUNCTION_MAX;
          ++function) {
-      pcie_device_t* funcdev = read_device(pcie, bus, device, function);
+      pcie_device_t* funcdev = create_device(pcie, bus, device, function);
       if (funcdev) {
         pci_add_device(&funcdev->pub);
       }
@@ -162,8 +253,18 @@ int pcie_init(void) {
   }
 
   // TODO(aoates): map interrupts
-  // TODO(aoates): for all devices, allocate any BARs as necessary
   return 0;
+}
+
+uint32_t pcie_read_config(pci_device_t* pcidev, uint8_t reg_offset) {
+  pcie_device_t* pcie = (pcie_device_t*)pcidev;
+  return io_read32(pcie->cfg_io, reg_offset);
+}
+
+void pcie_write_config(pci_device_t* pcidev, uint8_t reg_offset,
+                       uint32_t value) {
+  pcie_device_t* pcie = (pcie_device_t*)pcidev;
+  io_write32(pcie->cfg_io, reg_offset, value);
 }
 
 static uint64_t read64(const uint32_t* cells) {
@@ -229,6 +330,7 @@ static int parse_ranges(const dt_node_t* node, pcie_mmap_t* mmap) {
       return -EINVAL;
     }
   }
+  mmap->num_ranges = num_entries;
 
   return 0;
 }

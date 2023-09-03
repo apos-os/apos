@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/pci/pcie.h"
 #if ENABLE_ETHERNET
@@ -132,12 +133,24 @@ void pci_write_status(pci_device_t* pcidev) {
 }
 
 uint32_t pci_read_register(pci_device_t* pcidev, uint8_t reg_offset) {
-  return pci_legacy_read_config(pcidev->bus, pcidev->device, pcidev->function,
-                                reg_offset);
+  switch (pcidev->type) {
+    case PCI_DEV_LEGACY:
+      return pci_legacy_read_config(pcidev->bus, pcidev->device,
+                                    pcidev->function, reg_offset);
+    case PCI_DEV_PCIE:
+      return pcie_read_config(pcidev, reg_offset);
+  }
+  die("unreachable");
 }
 
 void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
                         uint32_t value) {
-  return pci_legacy_write_config(pcidev->bus, pcidev->device, pcidev->function,
-                                 reg_offset, value);
+  switch (pcidev->type) {
+    case PCI_DEV_LEGACY:
+      return pci_legacy_write_config(pcidev->bus, pcidev->device,
+                                     pcidev->function, reg_offset, value);
+    case PCI_DEV_PCIE:
+      return pcie_write_config(pcidev, reg_offset, value);
+  }
+  die("unreachable");
 }

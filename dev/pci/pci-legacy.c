@@ -61,6 +61,7 @@ void pci_legacy_write_config(uint8_t bus, uint8_t device, uint8_t function,
 // successful.
 static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
                             pci_device_t* pcidev) {
+  pcidev->type = PCI_DEV_LEGACY;
   pcidev->bus = bus;
   pcidev->device = device;
   pcidev->function = function;
