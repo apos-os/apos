@@ -400,7 +400,7 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   // Register IRQ handler for the controller.
   // TODO(aoates): this will clobber any other controllers listening on this
   // IRQ!  This is probably not what we want.
-  KLOG(INFO, "registering UHCI at base port 0x%x on IRQ %d\n",
+  KLOG(INFO, "registering UHCI at base port 0x%zx on IRQ %d\n",
        c->io.base, c->irq);
   register_irq_handler(c->irq, &uhci_interrupt, c);
 
@@ -472,7 +472,7 @@ void usb_uhci_register_controller(devio_t io, uint8_t irq) {
   kmemset(c, 0, sizeof(usb_uhci_t));
   c->io = io;
   c->irq = irq;
-  KLOG(INFO, "USB: found UHCI controller #%d (at 0x%x)\n", g_num_controllers,
+  KLOG(INFO, "USB: found UHCI controller #%d (at 0x%zx)\n", g_num_controllers,
        c->io.base);
 
   // Register it with the USBD.

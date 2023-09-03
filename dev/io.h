@@ -28,7 +28,7 @@ typedef enum {
 
 typedef struct {
   devio_type_t type;
-  ioport_t base;
+  addr_t base;
 } devio_t;
 
 // TODO(aoates): the memory readers should be in generic and/or arch-specific.
