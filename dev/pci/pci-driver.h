@@ -28,6 +28,7 @@ typedef enum {
 typedef enum {
   PCIBAR_IO = 1,
   PCIBAR_MEM32,
+  PCIBAR_MEM64,
 } pci_bar_type_t;
 
 typedef struct {

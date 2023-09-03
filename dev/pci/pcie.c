@@ -14,8 +14,11 @@
 #include "dev/pci/pcie.h"
 
 #include "arch/dev/irq.h"
+#include "common/endian.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "common/types.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/interrupts.h"
@@ -27,9 +30,26 @@
 
 #define KLOG(...) klogfm(KL_PCI, __VA_ARGS__)
 
+typedef addr64_t pci_addr_t;
+
+typedef struct {
+  pci_bar_type_t type;
+  bool prefetchable;
+  pci_addr_t pci_base;
+  addr_t host_base;
+  addr64_t len;
+} pcie_mmap_entry_t;
+
+#define PCIE_MMAP_ENTRIES 10
+typedef struct {
+  pcie_mmap_entry_t ranges[PCIE_MMAP_ENTRIES];
+} pcie_mmap_t;
+
 typedef struct {
   devio_t ecam;
   size_t ecam_len;
+
+  pcie_mmap_t mmap;
 } pcie_t;
 
 static pcie_t g_pcie;
@@ -146,6 +166,73 @@ int pcie_init(void) {
   return 0;
 }
 
+static uint64_t read64(const uint32_t* cells) {
+  return ((uint64_t)btoh32(cells[0]) << 32) + btoh32(cells[1]);
+}
+
+static int parse_ranges(const dt_node_t* node, pcie_mmap_t* mmap) {
+  for (int i = 0; i < PCIE_MMAP_ENTRIES; ++i) {
+    kmemset(&mmap->ranges[i], 0, sizeof(pcie_mmap_entry_t));
+  }
+
+  const dt_property_t* ranges = dt_get_prop(node, "ranges");
+  if (!ranges) {
+    KLOG(WARNING, "PCIe controller missing ranges property\n");
+    return -ENOENT;
+  }
+
+  // TODO(aoates): validate #address-cells and #size-cells match.
+  const size_t kPciAddressCells = 3;
+  const size_t kPciSizeCells = 2;
+  KASSERT_MSG(node->context.address_cells == 2,
+              "Only 64-bit currently supported");
+  const size_t entry_cells =
+      kPciAddressCells + kPciSizeCells + node->context.address_cells;
+  if (ranges->val_len % (entry_cells * sizeof(uint32_t)) != 0) {
+    KLOG(WARNING, "PCIe controller malformed ranges property\n");
+    return -EINVAL;
+  }
+  const int num_entries = ranges->val_len / (entry_cells * sizeof(uint32_t));
+  KASSERT(num_entries <= PCIE_MMAP_ENTRIES);
+
+  const uint32_t* cells = (const uint32_t*)ranges->val;
+  for (int i = 0; i < num_entries; ++i) {
+    size_t offset = i * entry_cells;
+    uint32_t phys_hi = btoh32(cells[offset]);
+    pci_addr_t pci_addr = read64(cells + offset + 1);
+    addr64_t host_addr = read64(cells + offset + kPciAddressCells);
+    addr64_t size =
+        read64(cells + offset + kPciAddressCells + node->context.address_cells);
+
+    bool prefetchable = (phys_hi >> (24 + 6)) & 0x1;
+    int spacecode = (phys_hi >> 24) & 0x3;
+    KASSERT_MSG((phys_hi & 0x00FFFFFF) == 0, "Unsupported ranges address");
+    // TODO(aoates): print this portably as 64-bit numbers.
+    KLOG(INFO,
+         "  PCIe memory region: pre=%d, type=%d, pci=0x%zx, "
+         "host=0x%zx, len=0x%zx\n",
+         prefetchable, spacecode, (size_t)pci_addr, (size_t)host_addr,
+         (size_t)size);
+
+    mmap->ranges[i].prefetchable = prefetchable;
+    mmap->ranges[i].pci_base = pci_addr;
+    mmap->ranges[i].host_base = host_addr;
+    mmap->ranges[i].len = size;
+    if (spacecode == 1) {
+      mmap->ranges[i].type = PCIBAR_IO;
+    } else if (spacecode == 2) {
+      mmap->ranges[i].type = PCIBAR_MEM32;
+    } else if (spacecode == 3) {
+      mmap->ranges[i].type = PCIBAR_MEM64;
+    } else {
+      KLOG(WARNING, "Unsupported PCIe space code %d\n", spacecode);
+      return -EINVAL;
+    }
+  }
+
+  return 0;
+}
+
 int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
                            const char* node_path, dt_driver_info_t* driver) {
   KLOG(INFO, "Initializing PCIe controller on node %s\n", node_path);
@@ -163,7 +250,10 @@ int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
   g_pcie.ecam.base = phys2virt(reg[0].base);
   g_pcie.ecam_len = reg[0].len;
 
-  // TODO(aoates): create memory map from ranges
+  result = parse_ranges(node, &g_pcie.mmap);
+  if (result) {
+    return result;
+  }
 
   return 0;
 }
