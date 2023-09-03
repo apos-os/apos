@@ -115,6 +115,7 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
   data = pci_legacy_read_config(bus, device, function, 0x3C);
   pcidev->interrupt_line = data & 0x000000FF;
   pcidev->interrupt_pin = (data >> 8) & 0x000000FF;
+  pcidev->host_irq = pcidev->interrupt_line;
 }
 
 // Bounce function to heap-allocate the pci_device_t.

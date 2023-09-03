@@ -26,5 +26,5 @@ void usb_uhci_pci_init(pci_device_t* pcidev) {
   pci_write_register(pcidev, 0xC0, legsup);
 
   const pci_bar_t* bar = &pcidev->bar[4];
-  usb_uhci_register_controller(bar->io, pcidev->interrupt_line);
+  usb_uhci_register_controller(bar->io, pcidev->host_irq);
 }

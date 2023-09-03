@@ -301,9 +301,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   io_write32(nic->io, RTLRG_RXCFG,
        RTL_RCR_AB | RTL_RCR_AM | RTL_RCR_APM | RTL_RCR_WRAP);
 
-  // TODO(aoates): better way of asserting this is valid.
-  KASSERT(pcidev->interrupt_line <= IRQ15);
-  register_irq_handler(pcidev->interrupt_line, &rtl_irq_handler, nic);
+  register_irq_handler(pcidev->host_irq, &rtl_irq_handler, nic);
 
   // Configure transmission.
   KASSERT(PAGE_SIZE / 2 >= RTL_TX_MAX_PACKET_SIZE);

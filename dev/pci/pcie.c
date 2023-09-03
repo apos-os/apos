@@ -34,6 +34,12 @@
 typedef addr64_t pci_addr_t;
 
 typedef struct {
+  pci_device_t pub;
+
+  devio_t cfg_io;
+} pcie_device_t;
+
+typedef struct {
   pci_bar_type_t type;
   bool prefetchable;
   pci_addr_t pci_base;
@@ -50,21 +56,21 @@ typedef struct {
   pcie_mmap_entry_t ranges[PCIE_MMAP_ENTRIES];
 } pcie_mmap_t;
 
-typedef struct {
+typedef struct pcie {
   devio_t ecam;
   size_t ecam_len;
 
   pcie_mmap_t mmap;
+
+  // Opaque controller data.
+  void* ctrl_data;
+
+  // Controller function to translate a device's interrupt data into a host IRQ.
+  int (*translate_irq)(struct pcie* pcie, pcie_device_t* dev);
 } pcie_t;
 
 static pcie_t g_pcie;
 static bool g_pcie_found = false;
-
-typedef struct {
-  pci_device_t pub;
-
-  devio_t cfg_io;
-} pcie_device_t;
 
 typedef struct {
   uint16_t vendor_id;
@@ -134,6 +140,7 @@ static pcie_device_t* read_device(pcie_t* pcie, int bus, int device,
   }
   pdev->pub.interrupt_line = header->interrupt_line;
   pdev->pub.interrupt_pin = header->interrupt_pin;
+  pdev->pub.host_irq = 0;
   pdev->cfg_io.base = pcie->ecam.base + offset;
   pdev->cfg_io.type = pcie->ecam.type;
   kfree(header);
@@ -219,6 +226,8 @@ static pcie_device_t* create_device(pcie_t* pcie, int bus, int device,
   }
 
   allocate_bars(pcie, dev);
+  pcie->translate_irq(pcie, dev);
+
   return dev;
 }
 
@@ -252,7 +261,6 @@ int pcie_init(void) {
     }
   }
 
-  // TODO(aoates): map interrupts
   return 0;
 }
 
@@ -266,6 +274,11 @@ void pcie_write_config(pci_device_t* pcidev, uint8_t reg_offset,
   pcie_device_t* pcie = (pcie_device_t*)pcidev;
   io_write32(pcie->cfg_io, reg_offset, value);
 }
+
+typedef struct {
+  const dt_tree_t* tree;
+  const dt_node_t* ctrl;
+} dtree_pcie_ctrl_t;
 
 static uint64_t read64(const uint32_t* cells) {
   return ((uint64_t)btoh32(cells[0]) << 32) + btoh32(cells[1]);
@@ -335,6 +348,50 @@ static int parse_ranges(const dt_node_t* node, pcie_mmap_t* mmap) {
   return 0;
 }
 
+static int dtree_translate_irq(pcie_t* pcie, pcie_device_t* dev) {
+  dtree_pcie_ctrl_t* ctrl = (dtree_pcie_ctrl_t*)pcie->ctrl_data;
+
+  KASSERT(dev->pub.interrupt_line == 0);
+  if (dev->pub.interrupt_pin == 0) {
+    KLOG(DEBUG, "PCIe device %d.%d(%d) has no interrupt to map\n",
+         dev->pub.bus, dev->pub.device, dev->pub.function);
+    return 0;
+  }
+
+  // Construct the PCIe address.
+  uint32_t pcie_addr[3];
+  KASSERT(dev->pub.function <= PCI_FUNCTION_MAX);
+  KASSERT(dev->pub.device <= PCI_DEVICE_MAX);
+  KASSERT(dev->pub.bus <= PCI_BUS_MAX);
+  pcie_addr[0] =
+      dev->pub.function | (dev->pub.device << 3) | (dev->pub.bus << 8);
+  pcie_addr[0] <<= 8;
+  pcie_addr[1] = pcie_addr[2] = 0;
+
+  // Construct the devicetree interrupt spec.
+  dt_interrupt_t dtint;
+  dtint.cells = 1;
+  dtint.int_parent = ctrl->ctrl;
+  dtint._int[0] = dev->pub.interrupt_pin;
+
+  dt_interrupt_t mapped_dtint;
+  const dt_node_t* irq_root = arch_irq_root();
+  int result =
+      dtint_map_raw(ctrl->tree, pcie_addr, 3, &dtint, irq_root, &mapped_dtint);
+  if (result) {
+    KLOG(WARNING, "Unable to map PCIe interrupt %d on device %d.%d(%d): %s\n",
+         dev->pub.interrupt_pin, dev->pub.bus, dev->pub.device,
+         dev->pub.function, errorname(-result));
+    return result;
+  }
+
+  KASSERT(dev->pub.host_irq == 0);
+  dev->pub.host_irq = dtint_flatten(&mapped_dtint);
+  KLOG(INFO, "  Mapped PCIe device %d.%d(%d) to host IRQ %d\n", dev->pub.bus,
+       dev->pub.device, dev->pub.function, dev->pub.host_irq);
+  return 0;
+}
+
 int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
                            const char* node_path, dt_driver_info_t* driver) {
   KLOG(INFO, "Initializing PCIe controller on node %s\n", node_path);
@@ -348,9 +405,16 @@ int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
     return result;
   }
 
+  // TODO(aoates): validate #interrupt-cells, bus-range, dma-coherent, etc.
+
   g_pcie.ecam.type = IO_MEMORY;
   g_pcie.ecam.base = phys2virt(reg[0].base);
   g_pcie.ecam_len = reg[0].len;
+  dtree_pcie_ctrl_t* ctrl = KMALLOC(dtree_pcie_ctrl_t);
+  ctrl->tree = tree;
+  ctrl->ctrl = node;
+  g_pcie.ctrl_data = ctrl;
+  g_pcie.translate_irq = &dtree_translate_irq;
 
   result = parse_ranges(node, &g_pcie.mmap);
   if (result) {

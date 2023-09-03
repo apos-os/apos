@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "arch/dev/irq.h"
 #include "dev/io.h"
 
 typedef enum {
@@ -79,10 +80,12 @@ struct pci_device {
   pci_bar_t bar[PCI_NUM_BARS];
 
   // The interrupt line and pin the device is currently configured to use.
+  // These are PCI-relative, and should not be used by driver code.
   uint8_t interrupt_line;
   uint8_t interrupt_pin;
 
-  // TODO(aoates): base addresses, BIST, etc
+  // Host-side interrupt for this device, or zero.
+  irq_t host_irq;
 };
 typedef struct pci_device pci_device_t;
 

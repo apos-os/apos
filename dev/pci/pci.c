@@ -73,13 +73,15 @@ static pci_driver_t PCI_DRIVERS[] = {
 };
 
 void pci_print_device(pci_device_t* pcidev) {
-  klogf("    %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
-        "  type: (0x%x, 0x%x, 0x%x)  intr: %d (pin %d)\n",
-        (uint32_t)pcidev->bus, (uint32_t)pcidev->device,
-        (uint32_t)pcidev->function, (uint32_t)pcidev->device_id,
-        (uint32_t)pcidev->vendor_id, (uint32_t)pcidev->class_code,
-        (uint32_t)pcidev->subclass_code, (uint32_t)pcidev->prog_if,
-        (uint32_t)pcidev->interrupt_line, (uint32_t)pcidev->interrupt_pin);
+  klogf(
+      "    %d.%d(%d):  dev_id: 0x%x  vendor_id: 0x%x"
+      "  type: (0x%x, 0x%x, 0x%x)  irq: %d (line %d, pin %d)\n",
+      (uint32_t)pcidev->bus, (uint32_t)pcidev->device,
+      (uint32_t)pcidev->function, (uint32_t)pcidev->device_id,
+      (uint32_t)pcidev->vendor_id, (uint32_t)pcidev->class_code,
+      (uint32_t)pcidev->subclass_code, (uint32_t)pcidev->prog_if,
+      pcidev->host_irq, (uint32_t)pcidev->interrupt_line,
+      (uint32_t)pcidev->interrupt_pin);
 }
 
 void pci_add_device(pci_device_t* pcidev) {
