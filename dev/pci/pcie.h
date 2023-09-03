@@ -11,27 +11,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#ifndef APOO_DEV_PCI_PCIE_H
+#define APOO_DEV_PCI_PCIE_H
 
-#ifndef APOO_DEV_PCI_PCI_INTERNAL_H
-#define APOO_DEV_PCI_PCI_INTERNAL_H
+#include "dev/devicetree/drivers.h"
 
-#include "dev/pci/pci-driver.h"
+// Initialize the PCIe system using any previously-discovered controllers.
+int pcie_init(void);
 
-#define PCI_STATUS_REG_OFFSET 0x04
-
-#define PCI_BUS_MIN 0x00
-#define PCI_BUS_MAX 0xFF
-#define PCI_DEVICE_MIN 0x00
-#define PCI_DEVICE_MAX 0x1F
-#define PCI_DEVICES_PER_BUS (PCI_DEVICE_MAX + 1)
-#define PCI_FUNCTION_MIN 0x00
-#define PCI_FUNCTION_MAX 0x07
-#define PCI_FUNCTIONS_PER_DEVICE (PCI_FUNCTION_MAX + 1)
-#define PCI_REGISTER_MIN 0x00
-#define PCI_REGISTER_MAX 0xFC
-
-#define PCI_HEADER_IS_MULTIFUNCTION 0x80
-
-void pci_add_device(pci_device_t* pcidev);
+// Initialize and register a PCIe controller from a devicetree node.
+int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
+                           const char* node_path, dt_driver_info_t* driver);
 
 #endif

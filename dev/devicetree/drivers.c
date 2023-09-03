@@ -22,6 +22,7 @@
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/devicetree/devicetree.h"
+#include "dev/pci/pcie.h"
 #include "dev/rtc/goldfish-rtc.h"
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
@@ -53,6 +54,9 @@ static dt_driver_t DTREE_DRIVERS[] = {
      &goldfish_rtc_driver},
 
     {"uart16550", (const char*[]){"ns16550a", NULL}, &u16550_driver},
+
+    {"pcie", (const char*[]){"pci-host-ecam-generic", NULL},
+     &pcie_controller_driver},
 
     {NULL, NULL, NULL},
 };

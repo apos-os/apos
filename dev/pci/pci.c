@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/klog.h"
+#include "dev/pci/pcie.h"
 #if ENABLE_ETHERNET
 #include "dev/net/rtl8139.h"
 #endif
@@ -92,6 +93,7 @@ void pci_add_device(pci_device_t* pcidev) {
 void pci_init(void) {
   // TODO(aoates): support ECAM-based MMIO PCIe.
   pci_legacy_init();
+  pcie_init();
 
   klogf("  found %d devices:\n", g_pci_count);
   for (int i = 0; i < g_pci_count; ++i) {
