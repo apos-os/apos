@@ -20,6 +20,7 @@
 #include "arch/common/types.h"
 #include "common/arch-config.h"
 #include "common/attributes.h"
+#include "common/kassert.h"
 
 typedef enum {
   IO_PORT = 1,
@@ -49,6 +50,11 @@ static inline ALWAYS_INLINE uint32_t io_read32(devio_t dev, addr_t addr) {
                              : *(volatile uint32_t*)(dev.base + addr);
 }
 
+static inline ALWAYS_INLINE uint64_t io_read64(devio_t dev, addr_t addr) {
+  KASSERT_DBG(dev.type == IO_MEMORY);
+  return *(volatile uint64_t*)(dev.base + addr);
+}
+
 static inline ALWAYS_INLINE void io_write8(devio_t dev, addr_t addr,
                                            uint8_t val) {
   if (dev.type == IO_PORT)
@@ -71,6 +77,12 @@ static inline ALWAYS_INLINE void io_write32(devio_t dev, addr_t addr,
     outl(dev.base + addr, val);
   else
     *(volatile uint32_t*)(dev.base + addr) = val;
+}
+
+static inline ALWAYS_INLINE void io_write64(devio_t dev, addr_t addr,
+                                            uint64_t val) {
+  KASSERT_DBG(dev.type == IO_MEMORY);
+  *(volatile uint64_t*)(dev.base + addr) = val;
 }
 
 #endif
