@@ -62,6 +62,9 @@ typedef struct pcie {
 
   pcie_mmap_t mmap;
 
+  // Min and maximum bus IDs on this controller.
+  int bus_min, bus_max;
+
   // Opaque controller data.
   void* ctrl_data;
 
@@ -255,7 +258,7 @@ int pcie_init(void) {
   }
 
   // Find all devices.
-  for (unsigned int bus = PCI_BUS_MIN; bus <= PCI_BUS_MAX; ++bus) {
+  for (int bus = g_pcie.bus_min; bus <= g_pcie.bus_max; ++bus) {
     for (uint8_t device = PCI_DEVICE_MIN; device <= PCI_DEVICE_MAX; ++device) {
       pci_check_device(&g_pcie, bus, device);
     }
@@ -416,6 +419,25 @@ static int validate_pci_props(const dt_node_t* node) {
   return 0;
 }
 
+int parse_bus_range(const dt_node_t* node, pcie_t* pcie) {
+  const dt_property_t* prop = dt_get_prop(node, "bus-range");
+  if (prop->val_len != 2 * sizeof(uint32_t)) {
+    KLOG(WARNING, "PCIe controller has invalid bus-range property\n");
+    return -EINVAL;
+  }
+
+  const uint32_t* cells = (const uint32_t*)prop->val;
+  pcie->bus_min = btoh32(cells[0]);
+  pcie->bus_max = btoh32(cells[1]);
+  if (pcie->bus_min < PCI_BUS_MIN || pcie->bus_min > PCI_BUS_MAX ||
+      pcie->bus_max < PCI_BUS_MIN || pcie->bus_max > PCI_BUS_MAX) {
+    KLOG(WARNING, "PCIe controller has invalid bus-range property\n");
+    return -ERANGE;
+  }
+
+  return 0;
+}
+
 int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
                            const char* node_path, dt_driver_info_t* driver) {
   KLOG(INFO, "Initializing PCIe controller on node %s\n", node_path);
@@ -437,8 +459,6 @@ int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
     return result;
   }
 
-  // TODO(aoates): extract bus-range
-
   g_pcie.ecam.type = IO_MEMORY;
   g_pcie.ecam.base = phys2virt(reg[0].base);
   g_pcie.ecam_len = reg[0].len;
@@ -449,6 +469,11 @@ int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
   g_pcie.translate_irq = &dtree_translate_irq;
 
   result = parse_ranges(node, &g_pcie.mmap);
+  if (result) {
+    return result;
+  }
+
+  result = parse_bus_range(node, &g_pcie);
   if (result) {
     return result;
   }
