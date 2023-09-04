@@ -26,6 +26,17 @@ static flag_spec_t FLAGS[] = {
   FLAG_SPEC_END,
 };
 
+typedef struct {
+#if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+  uint8_t lsb:4, msb:4;
+#elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+  uint8_t msb:4, lsb:4;
+#else
+#error	"Undefined bitfield endianness"
+#endif
+} endian_test_t;
+_Static_assert(sizeof(endian_test_t) == 1, "bad endian_test_t");
+
 void flag_printf_test(void) {
   KTEST_SUITE_BEGIN("flag_printf()");
 
@@ -50,4 +61,11 @@ void flag_printf_test(void) {
   result = flag_sprintf(buf, 0x3C0, FLAGS);
   KEXPECT_EQ(22, result);
   KEXPECT_STREQ("[ NOT_F2 T1(2) T2(7) ]", buf);
+
+  KTEST_BEGIN("endian bitfield test");
+  uint8_t val = 0xab;
+  endian_test_t val2;
+  kmemcpy(&val2, &val, 1);
+  KEXPECT_EQ(0xa, val2.msb);
+  KEXPECT_EQ(0xb, val2.lsb);
 }
