@@ -150,8 +150,23 @@ static pcie_device_t* read_device(pcie_t* pcie, int bus, int device,
   return pdev;
 }
 
+static const char* bartype2str(pci_bar_type_t t) {
+  switch (t) {
+    case PCIBAR_IO: return "IO";
+    case PCIBAR_MEM32: return "MEM32";
+    case PCIBAR_MEM64: return "MEM64";
+  }
+  die("bad pci_bar_type_t");
+}
+
 static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
+  bool skip_next = false;
   for (int i = 0; i < PCI_NUM_BARS; ++i) {
+    if (skip_next) {
+      skip_next = false;
+      continue;
+    }
+
     pci_bar_t* bar = &dev->pub.bar[i];
     uint32_t bar_addr;
     bool prefetchable = false;
@@ -159,13 +174,21 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
     if (bar->bar & 0x1) {
       bar->type = PCIBAR_IO;
       bar_addr_mask = ~0x1;
-    } else {
-      if (bar->bar & 0x7) {
-        die("Unsupported BAR type");
-      }
+    } else if ((bar->bar & 0x7) == 0) {
       bar->type = PCIBAR_MEM32;
       prefetchable = (bar->bar >> 3) & 0x1;
       bar_addr_mask = ~0xf;
+    } else if ((bar->bar & 0x7) == 4) {
+      if (!ARCH_IS_64_BIT) {
+        // TODO(aoates): support this, or at least handle gracefully.
+        die("64-bit BAR on 32-bit host");
+      }
+      KASSERT(i < PCI_NUM_BARS - 1);
+      bar->type = PCIBAR_MEM64;
+      prefetchable = (bar->bar >> 3) & 0x1;
+      bar_addr_mask = ~0xf;
+    } else {
+        die("Unsupported BAR type");
     }
     bar_addr = bar->bar & bar_addr_mask;
     KASSERT_MSG(bar_addr == 0, "Pre-allocated BARs are not supported");
@@ -178,6 +201,8 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
     if (bar_len == 0) {
       continue;
     }
+    // Sanity check (we don't check upper bits of 64-bit BARs).
+    KASSERT(bar_len < 0x100000);
 
     // Find a matching memory area.
     int range_idx = -1;
@@ -201,17 +226,23 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
 
     // Update BAR in memory and PCI configuration space.
     pci_addr_t pci_addr = range->pci_base + range->next_free;
-    KASSERT(pci_addr <= UINT32_MAX);
+    if (range->type != PCIBAR_MEM64) {
+      KASSERT(pci_addr <= UINT32_MAX);
+    }
     io_write32(dev->cfg_io, bar_offset, pci_addr);
+    if (range->type == PCIBAR_MEM64) {
+      skip_next = true;
+      io_write32(dev->cfg_io, bar_offset + sizeof(uint32_t), pci_addr >> 32);
+    }
     bar->io.base = phys2virt(range->host_base + range->next_free);
     bar->io.type =
         (bar->type == PCIBAR_IO && ARCH_SUPPORTS_IOPORT) ? IO_PORT : IO_MEMORY;
     range->next_free += bar_len;
     bar->valid = true;
     KLOG(INFO,
-         "  Allocated BAR %d: 0x%zx bytes at 0x%" PRIxADDR " (pci)/0x%" PRIxADDR
-         " (host)\n",
-         i, bar_len, (size_t)pci_addr, bar->io.base);
+         "  Allocated BAR %d: %s 0x%zx bytes at 0x%" PRIxADDR
+         " (pci)/0x%" PRIxADDR " (host)\n",
+         i, bartype2str(bar->type), bar_len, (size_t)pci_addr, bar->io.base);
 
     // Enable BAR access in the PCI device.
     pci_read_status(&dev->pub);
