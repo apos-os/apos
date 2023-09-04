@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2023 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,40 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#ifndef APOO_DEV_NVME_CONTROLLER_H
+#define APOO_DEV_NVME_CONTROLLER_H
 
-#ifndef APOO_COMMON_KLOG_MODULES_H
-#define APOO_COMMON_KLOG_MODULES_H
+#include "dev/pci/pci-driver.h"
 
-// Modules that can be logged at different levels independently.
-typedef enum {
-  KL_GENERAL = 0,
-
-  // Memory modules.
-  KL_BLOCK_CACHE,
-  KL_KMALLOC,
-  KL_PAGE_FAULT,
-  KL_MEMORY,
-
-  KL_PROC,
-  KL_SYSCALL,
-
-  // VFS modules.
-  KL_EXT2,
-  KL_VFS,
-
-  // Device modules.
-  KL_PCI,
-  KL_NET,
-  KL_NVME,
-  KL_USB,
-  KL_USB_HUB,
-  KL_USB_UHCI,
-  KL_TTY,
-
-  KL_TEST,
-  KL_USER,  // From userspace.
-
-  KL_MODULE_MAX,
-} klog_module_t;
+void nvme_ctrl_pci_init(pci_device_t* pcidev);
 
 #endif

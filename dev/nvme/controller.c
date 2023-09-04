@@ -1,0 +1,266 @@
+// Copyright 2023 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+#include "dev/nvme/controller.h"
+
+#include "arch/dev/irq.h"
+#include "arch/memory/layout.h"
+#include "dev/io.h"
+#include "dev/nvme/command.h"
+#include "memory/kmalloc.h"
+#include "memory/page_alloc.h"
+#include "proc/sleep.h"
+#include "util/flag_printf.h"
+
+#define KLOG(...) klogfm(KL_NVME, __VA_ARGS__)
+
+#define CTRL_CAP 0
+#define CTRL_VS 0x8
+#define CTRL_INTMS 0xc
+#define CTRL_INTMC 0x10
+#define CTRL_CC 0x14
+#define CTRL_CSTS 0x1c
+#define CTRL_AQA 0x24
+#define CTRL_ASQ 0x28
+#define CTRL_ACQ 0x30
+
+// Bits in the CAP register.
+#define CAP_MPSMAX_OFFSET 52
+#define CAP_MPSMIN_OFFSET 48
+#define CAP_CSS_OFFSET 37
+#define CAP_DSTRD_OFFSET 32
+
+// Bits in the CC register.
+#define CC_CRIME (1 << 24)
+#define CC_IOCQES_OFFSET 20
+#define CC_IOCQES_MASK (0xf << CC_IOCQES_OFFSET)
+#define CC_IOSQES_OFFSET 16
+#define CC_IOSQES_MASK (0xf << CC_IOSQES_OFFSET)
+#define CC_AMS_OFFSET 11
+#define CC_AMS_MASK (0x7 << CC_AMS_OFFSET)
+#define CC_MPS_OFFSET 7
+#define CC_MPS_MASK (0xf << CC_MPS_OFFSET)
+#define CC_CSS_OFFSET 4
+#define CC_CSS_MASK (0x7 << CC_CSS_OFFSET)
+#define CC_EN 1
+
+#define NVME_CSS_IO (1 << 6)
+
+// Bits in the CSTS register.
+#define CSTS_CFS 2
+#define CSTS_RDY 1
+
+// The memory page size value to use.
+#define NVME_MPS 0  // 2^(12 + 0) = 4096
+_Static_assert(PAGE_SIZE == 1 << (12 + NVME_MPS), "Bad NVME_MPS");
+
+// Values to use for IOCQES and IOSQES.
+#define NVME_IOCQES 4
+#define NVME_IOSQES 6
+_Static_assert(sizeof(nvme_completion_t) == (1 << NVME_IOCQES),
+               "Bad NVME_IOCQES");
+_Static_assert(sizeof(nvme_cmd_t) == (1 << NVME_IOSQES), "Bad NVME_IOSQES");
+
+// The size of the queues allocation for admin operations.  We just allocate one
+// page for all queues currently, so we don't have to bother with contigous
+// pages, scatter-gather lists, etc.
+#define NVME_ADMIN_QUEUE_SZ PAGE_SIZE
+
+typedef struct {
+  devio_t cfg_io;
+  irq_t irq;
+
+  int doorbell_stride;
+
+  // Virtual address of the admin command and completion queues.
+  addr_t admin_cmd_q;
+  addr_t admin_comp_q;
+} nvme_ctrl_t;
+
+static const flag_spec_t kNvmeCapFields[] = {
+  FLAG_SPEC_FLAG("CRIMS", 1ll << 60),
+  FLAG_SPEC_FLAG("CRWMS", 1ll << 59),
+  FLAG_SPEC_FLAG("NSSS", 1ll << 58),
+  FLAG_SPEC_FLAG("CMBS", 1ll << 57),
+  FLAG_SPEC_FLAG("PMRS", 1ll << 56),
+  FLAG_SPEC_FIELD2("MPSMAX", 4, CAP_MPSMAX_OFFSET),
+  FLAG_SPEC_FIELD2("MPSMIN", 4, CAP_MPSMIN_OFFSET),
+  FLAG_SPEC_FIELD2("CPS", 2, 46),
+  FLAG_SPEC_FLAG("BPS", 1ll << 45),
+  FLAG_SPEC_FIELD2("CSS", 8, CAP_CSS_OFFSET),
+  FLAG_SPEC_FLAG("NSSRS", 1ll << 36),
+  FLAG_SPEC_FIELD2("DSTRD", 4, CAP_DSTRD_OFFSET),
+  FLAG_SPEC_FIELD2("TO", 8, 24),
+  FLAG_SPEC_FIELD2("AMS", 2, 17),
+  FLAG_SPEC_FLAG("CQR", 1ll << 16),
+  FLAG_SPEC_FIELD2("MQES", 16, 0),
+  FLAG_SPEC_END,
+};
+
+static void nvme_irq(void* arg) {
+  KLOG(DEBUG2, "NVMe: IRQ received\n");
+}
+
+// Example CAP contents from riscv64 qemu:
+// [ MPSMAX(4) MPSMIN(0) CPS(0) CSS(193) DSTRD(0) TO(15) AMS(0) CQR MQES(2047) ]
+static bool check_cap(uint64_t cap, nvme_ctrl_t* ctrl) {
+  int mps_max = (cap >> 52) & 0xf;
+  int mps_min = (cap >> 48) & 0xf;
+  if (NVME_MPS < mps_min || NVME_MPS > mps_max) {
+    KLOG(WARNING, "NVMe: page size (MPS) of %d is unsupported\n", NVME_MPS);
+    return false;
+  }
+
+  uint32_t css = (cap >> CAP_CSS_OFFSET) & 0xff;
+  if (!(css & NVME_CSS_IO)) {
+    KLOG(WARNING, "NVMe: controller doesn't support any IO command sets\n");
+    return false;
+  }
+
+  uint32_t dstrd = (cap >> CAP_DSTRD_OFFSET) & 0x0f;
+  ctrl->doorbell_stride = 1 << (2 + dstrd);
+
+  return true;
+}
+
+// Set baseline configuration.
+static void configure_ctrl(nvme_ctrl_t* ctrl) {
+  uint32_t cc = io_read32(ctrl->cfg_io, CTRL_CC);
+  KLOG(DEBUG2, "NVMe: original CC register: 0x%x\n", cc);
+
+  // Set AMS to zero (round robin).
+  cc &= ~CC_AMS_MASK;
+
+  // Set MPS.
+  cc &= ~CC_MPS_MASK;
+  cc |= (NVME_MPS << CC_MPS_OFFSET);
+
+  // Enable all IO command sets.
+  cc &= ~CC_CSS_MASK;
+  cc |= (6 << CC_CSS_OFFSET);
+
+  // Set IO queue entry sizes.  Note that at this point, we don't actually know
+  // what IO command sets are supported --- however qemu until very recently
+  // (fixed in commit 6a33f2e92) requires these be set to enable the controller.
+  // So guess based on our standard command sizes.
+  cc &= ~CC_IOCQES_MASK;
+  cc |= (NVME_IOCQES << CC_IOCQES_OFFSET);
+  cc &= ~CC_IOSQES_MASK;
+  cc |= (NVME_IOSQES << CC_IOSQES_OFFSET);
+
+  KLOG(DEBUG2, "NVMe: new CC register: 0x%x\n", cc);
+  io_write32(ctrl->cfg_io, CTRL_CC, cc);
+}
+
+// Allocate and set up the admin command and completion queues.
+static void configure_admin_queues(nvme_ctrl_t* ctrl) {
+  phys_addr_t cmd_q = page_frame_alloc();
+  KASSERT(cmd_q);
+  phys_addr_t complete_q = page_frame_alloc();
+  KASSERT(complete_q);
+
+  _Static_assert(NVME_ADMIN_QUEUE_SZ % sizeof(nvme_cmd_t) == 0,
+                 "Bad queue size");
+  _Static_assert(NVME_ADMIN_QUEUE_SZ % sizeof(nvme_completion_t) == 0,
+                 "Bad queue size");
+  int cmd_entries = NVME_ADMIN_QUEUE_SZ / sizeof(nvme_cmd_t);
+  int comp_entries = NVME_ADMIN_QUEUE_SZ / sizeof(nvme_completion_t);
+  KLOG(DEBUG, "NVMe: configuring admin queues (%d command entries, "
+       "%d completion entries)\n", cmd_entries, comp_entries);
+  KASSERT(cmd_entries <= 4096);
+  KASSERT(comp_entries <= 4096);
+  uint32_t aqa = ((comp_entries - 1) << 16) + (cmd_entries - 1);
+  io_write32(ctrl->cfg_io, CTRL_AQA, aqa);
+
+  io_write64(ctrl->cfg_io, CTRL_ASQ, cmd_q);
+  io_write64(ctrl->cfg_io, CTRL_ACQ, complete_q);
+  ctrl->admin_cmd_q = phys2virt(cmd_q);
+  ctrl->admin_comp_q = phys2virt(complete_q);
+}
+
+static void configure_interrupts(nvme_ctrl_t* ctrl) {
+  uint32_t intmask = io_read32(ctrl->cfg_io, CTRL_INTMS);
+  KLOG(DEBUG2, "NVMe: initial interrupt mask 0x%x\n", intmask);
+
+  register_irq_handler(ctrl->irq, &nvme_irq, ctrl);
+
+  // Enable all interrupts.
+  io_write32(ctrl->cfg_io, CTRL_INTMC, UINT32_MAX);
+}
+
+static void enable_ctrl(nvme_ctrl_t* ctrl) {
+  uint32_t cc = io_read32(ctrl->cfg_io, CTRL_CC);
+  KASSERT(!(cc & CC_EN));  // Should be disabled.
+  cc |= CC_EN;
+  io_write32(ctrl->cfg_io, CTRL_CC, cc);
+}
+
+static bool ctrl_is_ready(const nvme_ctrl_t* ctrl) {
+  uint32_t csts = io_read32(ctrl->cfg_io, CTRL_CSTS);
+  // TODO(aoates): handle fatal errors more gracefully.
+  KASSERT_MSG(!(csts & CSTS_CFS), "NVMe controller hit fatal error");
+  return csts & CSTS_RDY;
+}
+
+static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
+  uint64_t cap = io_read64(ctrl->cfg_io, CTRL_CAP);
+  char buf[200];
+  flag_sprintf(buf, cap, kNvmeCapFields);
+  KLOG(DEBUG, "NVMe CAP: %s\n", buf);
+
+  uint32_t vs = io_read32(ctrl->cfg_io, CTRL_VS);
+  KLOG(DEBUG, "NVMe VS: 0x%x\n", vs);
+  if (vs != 0x10400) {
+    KLOG(INFO, "Unsupported NVMe version: 0x%x\n", vs);
+    return false;
+  }
+
+  // Check that the capabilities are supportable.
+  if (!check_cap(cap, ctrl)) {
+    return false;
+  }
+
+  configure_ctrl(ctrl);
+  configure_admin_queues(ctrl);
+  configure_interrupts(ctrl);
+  enable_ctrl(ctrl);
+
+  // Wait for controller to become ready.
+  for (int i = 0; !ctrl_is_ready(ctrl) && i < 10; ++i) {
+    ksleep(100);
+  }
+  if (!ctrl_is_ready(ctrl)) {
+    KLOG(WARNING, "NVME: controller didn't become ready\n");
+    return false;
+  }
+
+  return true;
+}
+
+void nvme_ctrl_pci_init(pci_device_t* pcidev) {
+  if (!pcidev->bar[0].valid) {
+    KLOG(WARNING, "NVMe controller %d.%d(%d) missing BAR0\n",
+         pcidev->bus, pcidev->device, pcidev->function);
+    return;
+  }
+
+  nvme_ctrl_t* ctrl = KMALLOC(nvme_ctrl_t);
+  ctrl->cfg_io = pcidev->bar[0].io;
+  ctrl->irq = pcidev->host_irq;
+  if (!nvme_ctrl_init(ctrl)) {
+    KLOG(WARNING, "NVMe controller %d.%d(%d): failed to initialized\n",
+         pcidev->bus, pcidev->device, pcidev->function);
+  }
+  KLOG(DEBUG, "NVMe controller %d.%d(%d): initialized and enabled\n",
+       pcidev->bus, pcidev->device, pcidev->function);
+}

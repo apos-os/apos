@@ -29,6 +29,10 @@
 #include "dev/pci/usb_uhci.h"
 #endif
 
+#if ENABLE_NVME
+#include "dev/nvme/controller.h"
+#endif
+
 #define PCI_MAX_DEVICES 40
 static pci_device_t* g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
@@ -67,6 +71,11 @@ static pci_driver_t PCI_DRIVERS[] = {
 #if ENABLE_ETHERNET
   // RTL 8139 network card.
   { PCI_DRIVER_VENDOR, 0x8139, 0x10ec, 0, 0, 0, &pci_rtl8139_init },
+#endif
+
+  // TODO(aoates): fix PCI memory mapped BAR bug and enable NVMe driver for x86.
+#if ENABLE_NVME && ARCH == ARCH_riscv64
+  { PCI_DRIVER_CLASS, 0x0, 0x0, 0x1, 0x8, 0x2, &nvme_ctrl_pci_init },
 #endif
 
   { 0, 0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFF, 0x0},
