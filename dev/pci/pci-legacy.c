@@ -106,8 +106,12 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
     uint32_t bar_addr = pcidev->bar[i].bar & ~0x3;
     if (!bar_addr) {
       pcidev->bar[i].valid = false;
+      pcidev->bar[i].io.base = 0;
     } else {
       pcidev->bar[i].valid = true;
+      // TODO(aoates): fix this support on x86 systems --- this should be a
+      // _virtual_, not physical, address, but they don't currently fit in the
+      // physical memory map.
       pcidev->bar[i].io.base = bar_addr;
     }
   }
