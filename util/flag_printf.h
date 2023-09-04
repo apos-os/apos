@@ -64,6 +64,6 @@ typedef struct flag_spec flag_spec_t;
 #define FLAG_SPEC_END { 0, 0, 0, 0, 0, 0 }
 
 // Find all the flags present in a value and produce a string describing them.
-int flag_sprintf(char* buf, uint64_t value, flag_spec_t* flags);
+int flag_sprintf(char* buf, uint64_t value, const flag_spec_t* flags);
 
 #endif

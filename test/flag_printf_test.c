@@ -16,7 +16,7 @@
 #include "test/ktest.h"
 #include "util/flag_printf.h"
 
-static flag_spec_t FLAGS[] = {
+static const flag_spec_t FLAGS[] = {
   FLAG_SPEC_FLAG("F1", 0x1),
   FLAG_SPEC_FLAG2("F2", "NOT_F2", 0x2),
   FLAG_SPEC_FLAG("FFF3", 0x8),
