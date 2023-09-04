@@ -47,9 +47,9 @@ typedef enum flag_spec_type flag_spec_type_t;
 // flag *isn't* set (instead of simply omitting the flag).
 struct flag_spec {
   flag_spec_type_t type;
-  uint32_t flag;  // If type == FLAG.
-  uint32_t field_mask;  // If type == FIELD.
-  uint32_t field_offset;  // If type == FIELD.
+  uint64_t flag;  // If type == FLAG.
+  uint64_t field_mask;  // If type == FIELD.
+  uint64_t field_offset;  // If type == FIELD.
   const char* name;
   const char* alternate_name;
 };
@@ -62,6 +62,6 @@ typedef struct flag_spec flag_spec_t;
 #define FLAG_SPEC_END { 0, 0, 0, 0, 0, 0 }
 
 // Find all the flags present in a value and produce a string describing them.
-int flag_sprintf(char* buf, uint32_t value, flag_spec_t* flags);
+int flag_sprintf(char* buf, uint64_t value, flag_spec_t* flags);
 
 #endif
