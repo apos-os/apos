@@ -21,7 +21,7 @@
 // | 0x0000000000000000 - 0x0000003FFFFFFFFF | 256G | User mode addresses  |
 // | 0x0000004000000000 - 0xFFFFFF7FFFFFFFFF |      | Unusable addresses   |
 // | 0xFFFFFF8000000000 - 0xFFFFFFEFFFFFFFFF | 248G | Kernel (unused)      |
-// | 0xFFFFFFF000000000 - 0xFFFFFFF0FFFFFFFF | 4G   | Physical memory map  |
+// | 0xFFFFFFF000000000 - 0xFFFFFFF7FFFFFFFF | 32G  | Physical memory map  |
 // | 0xFFFFFFFF00000000 - 0xFFFFFFFF7FFFFFFF | 2G   | Kernel heap          |
 // | 0xFFFFFFFF80000000 - 0xFFFFFFFFFFFFFFFF | 2G   | Kernel (code + data) |
 // |   0xFFFFFFFF88000000+ -> kernel image   |      |                      |
