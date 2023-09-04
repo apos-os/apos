@@ -19,6 +19,7 @@
 //   { FLAG, 0x0002, 0, 0, "DEF" }, // or FLAG_SPEC_FLAG("DEF", 0x0002)
 //   { FLAG, 0x0004, 0, 0, "XX" },  // or FLAG_SPEC_FLAG("XX", 0x0004)
 //   { FIELD, 0, 0xF0, 4, "TYPE" }, // or FLAG_SPEC_FIELD("TYPE", 0xF0, 4)
+//                                  // or FLAG_SPEC_FIELD2("TYPE", 4, 4)
 //   { 0x0, 0x0, 0x0, 0x0, 0x0 },   // or FLAG_SPEC_END
 // };
 //
@@ -59,6 +60,7 @@ typedef struct flag_spec flag_spec_t;
 #define FLAG_SPEC_FLAG(name, flag) { FLAG, (flag), 0, 0, (name), 0x0 }
 #define FLAG_SPEC_FLAG2(name, alt_name, flag) { FLAG, (flag), 0, 0, (name), (alt_name) }
 #define FLAG_SPEC_FIELD(name, mask, offset) { FIELD, 0, (mask), (offset), (name), 0x0 }
+#define FLAG_SPEC_FIELD2(name, size_bits, offset) { FIELD, 0, (((1ll << (size_bits)) - 1) << (offset)), (offset), (name), 0x0 }
 #define FLAG_SPEC_END { 0, 0, 0, 0, 0, 0 }
 
 // Find all the flags present in a value and produce a string describing them.

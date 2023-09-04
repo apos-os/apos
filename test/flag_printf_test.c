@@ -23,6 +23,7 @@ static flag_spec_t FLAGS[] = {
   FLAG_SPEC_FLAG("FFFF4", 0x10),
   FLAG_SPEC_FIELD("T1", 0x60, 5),
   FLAG_SPEC_FIELD("T2", 0xF80, 7),
+  FLAG_SPEC_FIELD2("T3", 3, 12),
   FLAG_SPEC_END,
 };
 
@@ -45,22 +46,26 @@ void flag_printf_test(void) {
 
   KTEST_BEGIN("empty test");
   result = flag_sprintf(buf, 0x0, FLAGS);
-  KEXPECT_EQ(22, result);
-  KEXPECT_STREQ("[ NOT_F2 T1(0) T2(0) ]", buf);
+  KEXPECT_EQ(28, result);
+  KEXPECT_STREQ("[ NOT_F2 T1(0) T2(0) T3(0) ]", buf);
 
   KTEST_BEGIN("basic test");
   result = flag_sprintf(buf, 0xFFF, FLAGS);
-  KEXPECT_EQ(33, result);
-  KEXPECT_STREQ("[ F1 F2 FFF3 FFFF4 T1(3) T2(31) ]", buf);
+  KEXPECT_EQ(39, result);
+  KEXPECT_STREQ("[ F1 F2 FFF3 FFFF4 T1(3) T2(31) T3(0) ]", buf);
 
   result = flag_sprintf(buf, 0x12, FLAGS);
-  KEXPECT_EQ(24, result);
-  KEXPECT_STREQ("[ F2 FFFF4 T1(0) T2(0) ]", buf);
+  KEXPECT_EQ(30, result);
+  KEXPECT_STREQ("[ F2 FFFF4 T1(0) T2(0) T3(0) ]", buf);
 
   KTEST_BEGIN("field test");
   result = flag_sprintf(buf, 0x3C0, FLAGS);
-  KEXPECT_EQ(22, result);
-  KEXPECT_STREQ("[ NOT_F2 T1(2) T2(7) ]", buf);
+  KEXPECT_EQ(28, result);
+  KEXPECT_STREQ("[ NOT_F2 T1(2) T2(7) T3(0) ]", buf);
+
+  result = flag_sprintf(buf, 0x3C0 | (0xd << 12), FLAGS);
+  KEXPECT_EQ(28, result);
+  KEXPECT_STREQ("[ NOT_F2 T1(2) T2(7) T3(5) ]", buf);
 
   KTEST_BEGIN("endian bitfield test");
   uint8_t val = 0xab;
