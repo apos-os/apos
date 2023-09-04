@@ -390,3 +390,44 @@ int dt_parse_reg(const dt_node_t* node, dt_regval_t* out, int out_len) {
 
   return num_entries;
 }
+
+int dt_get_prop_u32(const dt_node_t* node, const char* prop_name,
+                    uint32_t* out) {
+  const dt_property_t* prop = dt_get_prop(node, prop_name);
+  if (!prop) {
+    return -ENOENT;
+  }
+
+  if (prop->val_len != sizeof(uint32_t)) {
+    return -EINVAL;
+  }
+
+  *out = btoh32(*(const uint32_t*)prop->val);
+  return 0;
+}
+
+int dt_get_prop_int(const dt_node_t* node, const char* prop_name) {
+  uint32_t val;
+  int result = dt_get_prop_u32(node, prop_name, &val);
+  if (result) {
+    return result;
+  }
+
+  if (val > INT32_MAX) {
+    return -ERANGE;
+  }
+
+  KASSERT_DBG((int)val >= 0);
+  return (int)val;
+}
+
+bool dt_prop_streq(const dt_node_t* node, const char* prop_name,
+                   const char* val) {
+  const dt_property_t* prop = dt_get_prop(node, prop_name);
+  if (!prop) {
+    return false;
+  }
+
+  return (prop->val_len == (size_t)kstrlen(val) + 1) &&
+         (kstrcmp(prop->val, val) == 0);
+}

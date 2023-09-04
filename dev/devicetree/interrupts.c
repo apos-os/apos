@@ -25,24 +25,8 @@ irq_t dtint_flatten(const dt_interrupt_t* intr) {
   return intr->_int[0];
 }
 
-static int get_int32_prop(const dt_node_t* node, const char* propname) {
-  const dt_property_t* prop = dt_get_prop(node, propname);
-  if (!prop) {
-    return -EINVAL;
-  }
-  if (prop->val_len != sizeof(uint32_t)) {
-    return -EINVAL;
-  }
-  uint32_t val = btoh32(*(const uint32_t*)prop->val);
-  if (val > 10)  {
-    return -EINVAL;  // Sanity check
-  }
-
-  return val;
-}
-
 static int get_int_cells(const dt_node_t* node) {
-  int val = get_int32_prop(node, "#interrupt-cells");
+  int val = dt_get_prop_int(node, "#interrupt-cells");
   if (val == 0 || val > DT_INT_MAX_CELLS)  {
     return -EINVAL;  // Sanity check
   }
@@ -210,7 +194,7 @@ int dtint_map_raw(const dt_tree_t* tree, const uint32_t* node_unit_in,
         return -EINVAL;
       }
 
-      int parent_address_cells = get_int32_prop(elt_parent, "#address-cells");
+      int parent_address_cells = dt_get_prop_int(elt_parent, "#address-cells");
       if (parent_address_cells < 0) {
         klogfm(KL_GENERAL, WARNING,
                "Malformed interrupt-map (missing #address-cells in parent) in "

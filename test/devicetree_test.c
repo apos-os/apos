@@ -392,7 +392,7 @@ static void intr_test1(const dt_tree_t* tree) {
   KTEST_BEGIN("dtint_extract(): missing #interrupt-cells");
   node = dt_lookup(tree, "/int-no-cells/gen");
   KEXPECT_NOT_NULL(node);
-  KEXPECT_EQ(-EINVAL, dtint_extract(tree, node, int_buf, kMaxInts));
+  KEXPECT_EQ(-ENOENT, dtint_extract(tree, node, int_buf, kMaxInts));
 
 
   KTEST_BEGIN("dtint_extract(): no interrupt parent (root)");

@@ -112,4 +112,18 @@ typedef struct {
 // truncated if put into standard types.
 int dt_parse_reg(const dt_node_t* node, dt_regval_t* out, int out_len);
 
+// Read a single uint32_t property, or return -error.
+int dt_get_prop_u32(const dt_node_t* node, const char* prop_name,
+                    uint32_t* out);
+
+// As dt_parse_u32 but returns the value of the property directly, which must be
+// no larger than INT32_MAX.  Useful for standard small-valued proprties (such
+// as #foo-cells).
+int dt_get_prop_int(const dt_node_t* node, const char* prop_name);
+
+// Returns true if the given property exists and is equal to the given string
+// (including being NULL-terminated), false otherwise.
+bool dt_prop_streq(const dt_node_t* node, const char* prop_name,
+                   const char* val);
+
 #endif
