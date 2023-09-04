@@ -295,7 +295,6 @@ static int parse_ranges(const dt_node_t* node, pcie_mmap_t* mmap) {
     return -ENOENT;
   }
 
-  // TODO(aoates): validate #address-cells and #size-cells match.
   const size_t kPciAddressCells = 3;
   const size_t kPciSizeCells = 2;
   KASSERT_MSG(node->context.address_cells == 2,
@@ -392,6 +391,31 @@ static int dtree_translate_irq(pcie_t* pcie, pcie_device_t* dev) {
   return 0;
 }
 
+static int validate_pci_props(const dt_node_t* node) {
+  if (dt_get_prop_int(node, "#address-cells") != 3) {
+    KLOG(WARNING, "PCIe controller #address-cells should be 3\n");
+    return -EINVAL;
+  }
+  if (dt_get_prop_int(node, "#size-cells") != 2) {
+    KLOG(WARNING, "PCIe controller #size-cells should be 2\n");
+    return -EINVAL;
+  }
+  if (dt_get_prop_int(node, "#interrupt-cells") != 1) {
+    KLOG(WARNING, "PCIe controller #interrupt-cells should be 1\n");
+    return -EINVAL;
+  }
+  if (dt_get_prop(node, "dma-coherent") == NULL) {
+    KLOG(WARNING, "PCIe controller must have dma-coherent\n");
+    return -EINVAL;
+  }
+  if (!dt_prop_streq(node, "device_type", "pci")) {
+    KLOG(WARNING, "PCIe controller has invalid device_type\n");
+    return -EINVAL;
+  }
+
+  return 0;
+}
+
 int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
                            const char* node_path, dt_driver_info_t* driver) {
   KLOG(INFO, "Initializing PCIe controller on node %s\n", node_path);
@@ -405,7 +429,15 @@ int pcie_controller_driver(const dt_tree_t* tree, const dt_node_t* node,
     return result;
   }
 
-  // TODO(aoates): validate #interrupt-cells, bus-range, dma-coherent, etc.
+  // Do some basic validation of the node properties.  Some of these may not be
+  // invalid (such as not having a dma-coherent property), but we don't handle
+  // them properly currently.
+  result = validate_pci_props(node);
+  if (result) {
+    return result;
+  }
+
+  // TODO(aoates): extract bus-range
 
   g_pcie.ecam.type = IO_MEMORY;
   g_pcie.ecam.base = phys2virt(reg[0].base);
