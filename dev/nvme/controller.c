@@ -17,12 +17,15 @@
 #include "arch/memory/layout.h"
 #include "dev/io.h"
 #include "dev/nvme/command.h"
+#include "dev/nvme/queue.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
 #include "proc/sleep.h"
 #include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NVME, __VA_ARGS__)
+
+#define NVME_ADMIN_QUEUE 0
 
 #define CTRL_CAP 0
 #define CTRL_VS 0x8
@@ -70,22 +73,6 @@ _Static_assert(PAGE_SIZE == 1 << (12 + NVME_MPS), "Bad NVME_MPS");
 _Static_assert(sizeof(nvme_completion_t) == (1 << NVME_IOCQES),
                "Bad NVME_IOCQES");
 _Static_assert(sizeof(nvme_cmd_t) == (1 << NVME_IOSQES), "Bad NVME_IOSQES");
-
-// The size of the queues allocation for admin operations.  We just allocate one
-// page for all queues currently, so we don't have to bother with contigous
-// pages, scatter-gather lists, etc.
-#define NVME_ADMIN_QUEUE_SZ PAGE_SIZE
-
-typedef struct {
-  devio_t cfg_io;
-  irq_t irq;
-
-  int doorbell_stride;
-
-  // Virtual address of the admin command and completion queues.
-  addr_t admin_cmd_q;
-  addr_t admin_comp_q;
-} nvme_ctrl_t;
 
 static const flag_spec_t kNvmeCapFields[] = {
   FLAG_SPEC_FLAG("CRIMS", 1ll << 60),
@@ -164,28 +151,21 @@ static void configure_ctrl(nvme_ctrl_t* ctrl) {
 
 // Allocate and set up the admin command and completion queues.
 static void configure_admin_queues(nvme_ctrl_t* ctrl) {
-  phys_addr_t cmd_q = page_frame_alloc();
-  KASSERT(cmd_q);
-  phys_addr_t complete_q = page_frame_alloc();
-  KASSERT(complete_q);
+  int result = nvmeq_init(ctrl, NVME_ADMIN_QUEUE, &ctrl->admin_q);
+  KASSERT(result == 0);
 
-  _Static_assert(NVME_ADMIN_QUEUE_SZ % sizeof(nvme_cmd_t) == 0,
-                 "Bad queue size");
-  _Static_assert(NVME_ADMIN_QUEUE_SZ % sizeof(nvme_completion_t) == 0,
-                 "Bad queue size");
-  int cmd_entries = NVME_ADMIN_QUEUE_SZ / sizeof(nvme_cmd_t);
-  int comp_entries = NVME_ADMIN_QUEUE_SZ / sizeof(nvme_completion_t);
-  KLOG(DEBUG, "NVMe: configuring admin queues (%d command entries, "
-       "%d completion entries)\n", cmd_entries, comp_entries);
-  KASSERT(cmd_entries <= 4096);
-  KASSERT(comp_entries <= 4096);
-  uint32_t aqa = ((comp_entries - 1) << 16) + (cmd_entries - 1);
+  KLOG(DEBUG,
+       "NVMe: configuring admin queues (%d command entries, "
+       "%d completion entries)\n",
+       ctrl->admin_q.sq_entries, ctrl->admin_q.cq_entries);
+  KASSERT(ctrl->admin_q.sq_entries <= 4096);
+  KASSERT(ctrl->admin_q.cq_entries <= 4096);
+  uint32_t aqa =
+      ((ctrl->admin_q.cq_entries - 1) << 16) + (ctrl->admin_q.sq_entries - 1);
   io_write32(ctrl->cfg_io, CTRL_AQA, aqa);
 
-  io_write64(ctrl->cfg_io, CTRL_ASQ, cmd_q);
-  io_write64(ctrl->cfg_io, CTRL_ACQ, complete_q);
-  ctrl->admin_cmd_q = phys2virt(cmd_q);
-  ctrl->admin_comp_q = phys2virt(complete_q);
+  io_write64(ctrl->cfg_io, CTRL_ASQ, virt2phys(ctrl->admin_q.sq));
+  io_write64(ctrl->cfg_io, CTRL_ACQ, virt2phys(ctrl->admin_q.cq));
 }
 
 static void configure_interrupts(nvme_ctrl_t* ctrl) {

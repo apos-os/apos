@@ -16,6 +16,7 @@ Import('env AposAddSources')
 
 srcs = [
     'controller.c',
+    'queue.c',
 ]
 
 subdirs = []

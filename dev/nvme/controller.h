@@ -14,7 +14,17 @@
 #ifndef APOO_DEV_NVME_CONTROLLER_H
 #define APOO_DEV_NVME_CONTROLLER_H
 
+#include "dev/nvme/queue.h"
 #include "dev/pci/pci-driver.h"
+
+typedef struct nvme_ctrl {
+  devio_t cfg_io;
+  irq_t irq;
+
+  int doorbell_stride;
+
+  nvme_queue_t admin_q;
+} nvme_ctrl_t;
 
 void nvme_ctrl_pci_init(pci_device_t* pcidev);
 
