@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "dev/nvme/queue.h"
 
+#include <stddef.h>
+
 #include "arch/memory/layout.h"
 #include "common/errno.h"
 #include "common/kstring.h"
@@ -39,15 +41,66 @@ int nvmeq_init(struct nvme_ctrl* ctrl, nvme_queue_id_t id, nvme_queue_t* q) {
     return -ENOMEM;
   }
 
+  q->id = id;
+  q->cq_io.type = IO_MEMORY;
+  q->cq_io.base = q->cq;
   q->doorbell_io.type = ctrl->cfg_io.type;
-  q->doorbell_io.base = ctrl->cfg_io.base + id * 2 * ctrl->doorbell_stride;
+  q->doorbell_io.base =
+      ctrl->cfg_io.base + 0x1000 + id * 2 * ctrl->doorbell_stride;
+  q->cq_doorbell_offset = ctrl->doorbell_stride;
 
   q->sq_entries = NVME_QUEUE_SZ / sizeof(nvme_cmd_t);
   q->cq_entries = NVME_QUEUE_SZ / sizeof(nvme_completion_t);
 
-  q->sq_tail = q->cq_head = 0;
+  q->sq_head = q->sq_tail = q->cq_head = 0;
+  q->phase = 1;
   // Zero the queues --- required for phase bits.
   kmemset((void*)q->sq, 0, NVME_QUEUE_SZ);
   kmemset((void*)q->cq, 0, NVME_QUEUE_SZ);
   return 0;
+}
+
+int nvmeq_submit(nvme_queue_t* q, const nvme_cmd_t* cmd) {
+  if ((q->sq_tail + 1) % q->sq_entries == q->sq_head) {
+    KLOG(DEBUG, "NVMe queue %d: sq full, unable to submit command %d\n",
+         q->id, cmd->cmd_id);
+    return -ENOMEM;
+  }
+
+  void* cmd_dst = (void*)(q->sq + q->sq_tail * sizeof(nvme_cmd_t));
+  kmemcpy(cmd_dst, cmd, sizeof(nvme_cmd_t));
+  // TODO(aoates): do we need a memory barrier of some sort?
+
+  // Increment the tail pointer and ring the doorbell.
+  q->sq_tail = (q->sq_tail + 1) % q->sq_entries;
+  io_write32(q->doorbell_io, 0, q->sq_tail);
+  return 0;
+}
+
+int nvmeq_get_completions(nvme_queue_t* q, nvme_completion_t* comps,
+                          size_t max_comps) {
+  const nvme_completion_t* qcomp = (const nvme_completion_t*)q->cq;
+  size_t count = 0;
+  KASSERT_DBG((q->phase & 0x1) == q->phase);
+  while (count < max_comps) {
+    // The controller may be concurrently modifying this memory, so use IO
+    // functions to read rather than examining memory directly.
+    uint16_t status_phase =
+        io_read16(q->cq_io, q->cq_head * sizeof(nvme_completion_t) +
+                                offsetof(nvme_completion_t, status_phase));
+    if ((status_phase & 0x1) != q->phase) {
+      break;
+    }
+
+    kmemcpy(&comps[count], &qcomp[q->cq_head], sizeof(nvme_completion_t));
+    KASSERT(comps[count].sq_id == q->id);  // Should handle this gracefully...
+    q->cq_head = (q->cq_head + 1) % q->cq_entries;
+    q->sq_head = comps[count].sq_headptr;
+    count++;
+  }
+
+  if (count > 0) {
+    io_write32(q->doorbell_io, q->cq_doorbell_offset, q->cq_head);
+  }
+  return count;
 }
