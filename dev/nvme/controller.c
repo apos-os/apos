@@ -228,6 +228,11 @@ static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
 }
 
 void nvme_ctrl_pci_init(pci_device_t* pcidev) {
+  KLOG(DEBUG, "Enabling PCI bus mastering\n");
+  pci_read_status(pcidev);  // Redundant, but let's be careful.
+  pcidev->command |= PCI_CMD_BUSMASTER_ENABLE;
+  pci_write_status(pcidev);
+
   if (!pcidev->bar[0].valid) {
     KLOG(WARNING, "NVMe controller %d.%d(%d) missing BAR0\n",
          pcidev->bus, pcidev->device, pcidev->function);
