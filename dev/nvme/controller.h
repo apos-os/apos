@@ -14,8 +14,11 @@
 #ifndef APOO_DEV_NVME_CONTROLLER_H
 #define APOO_DEV_NVME_CONTROLLER_H
 
+#include "common/hashtable.h"
+#include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "dev/pci/pci-driver.h"
+#include "proc/spinlock.h"
 
 typedef struct nvme_ctrl {
   devio_t cfg_io;
@@ -24,8 +27,33 @@ typedef struct nvme_ctrl {
   int doorbell_stride;
 
   nvme_queue_t admin_q;
+
+  // Pending transactions.
+  htbl_t pending;
+
+  // Protects the pending transactions and pending table.
+  kspinlock_t lock;
 } nvme_ctrl_t;
 
+// A transaction to execute on an NVMe queue.
+struct nvme_transaction {
+  nvme_queue_id_t queue;
+  nvme_cmd_t cmd;
+  nvme_completion_t result;  // Will be filled in when the command is finished.
+
+  // Callback to invoke when the command is finished.  May be invoked from a
+  // deferred interrupt.  Takes ownership of the nvme_transaction object.
+  void (*done_cb)(struct nvme_transaction* txn, void* arg);
+  void* cb_arg;
+};
+typedef struct nvme_transaction nvme_transaction_t;
+
+// Submit the given transaction on the controller.  If the transaction is
+// sucessfully submitted, returns 0 and the done callback will later be invoked.
+// On error returns -error (and the callback won't be run).
+int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn);
+
+// Initialize an NVMe controller from a PCI device.
 void nvme_ctrl_pci_init(pci_device_t* pcidev);
 
 #endif

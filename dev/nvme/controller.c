@@ -15,12 +15,17 @@
 
 #include "arch/dev/irq.h"
 #include "arch/memory/layout.h"
+#include "common/errno.h"
+#include "common/hashtable.h"
+#include "common/kstring.h"
 #include "dev/io.h"
 #include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
+#include "proc/defint.h"
 #include "proc/sleep.h"
+#include "proc/spinlock.h"
 #include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NVME, __VA_ARGS__)
@@ -94,8 +99,82 @@ static const flag_spec_t kNvmeCapFields[] = {
   FLAG_SPEC_END,
 };
 
+static inline ALWAYS_INLINE uint32_t txnkey(nvme_queue_id_t q,
+                                            uint16_t cmd_id) {
+  return (q << 16) | cmd_id;
+}
+
+int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
+  // TODO(aoates): support IO queues.
+  KASSERT(txn->queue == 0);
+  KASSERT(txn->queue >= 0);
+  KASSERT(txn->queue <= INT16_MAX);
+
+  nvme_queue_t* q = &ctrl->admin_q;
+  kspin_lock(&ctrl->lock);
+  int result = nvmeq_submit(q, &txn->cmd);
+  if (result) {
+    kspin_unlock(&ctrl->lock);
+    return result;
+  }
+
+  uint32_t key = txnkey(txn->queue, txn->cmd.cmd_id);
+  htbl_put(&ctrl->pending, key, txn);
+  kspin_unlock(&ctrl->lock);
+  return 0;
+}
+
+#define NVMEC_COMPS_BATCH_SIZE 10
+
+static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
+  // TODO(aoates): avoid the double copy here.
+  nvme_completion_t comps[NVMEC_COMPS_BATCH_SIZE];
+  nvme_transaction_t* txns[NVMEC_COMPS_BATCH_SIZE];
+
+  while (true) {
+    kspin_lock(&ctrl->lock);
+    int result = nvmeq_get_completions(q, comps, NVMEC_COMPS_BATCH_SIZE);
+    if (result < 0) {
+      KLOG(WARNING, "NVMe: unable to get completions from queue %d: %s\n",
+           q->id, errorname(-result));
+      kspin_unlock(&ctrl->lock);
+      return;
+    } else if (result == 0) {
+      KLOG(DEBUG3, "NVMe: no completions on queue %d\n", q->id);
+      kspin_unlock(&ctrl->lock);
+      return;
+    }
+
+    KLOG(DEBUG2, "NVMe: found %d completions on queue %d\n", result, q->id);
+
+    const int num_comps = result;
+    for (int i = 0; i < num_comps; ++i) {
+      void* val = NULL;
+      uint32_t key = txnkey(q->id, comps[i].cmd_id);
+      result = htbl_get(&ctrl->pending, key, &val);
+      KASSERT(result == 0);
+      txns[i] = (nvme_transaction_t*)val;
+    }
+    kspin_unlock(&ctrl->lock);
+
+    for (int i = 0; i < num_comps; ++i) {
+      txns[i]->done_cb(txns[i], txns[i]->cb_arg);
+    }
+  }
+}
+
+static void nvmec_defint(void* arg) {
+  nvme_ctrl_t* ctrl = (nvme_ctrl_t*)arg;
+  KLOG(DEBUG2, "NVMe: handling deferred interrupt\n");
+
+  nvmec_check_queue(ctrl, &ctrl->admin_q);
+}
+
 static void nvme_irq(void* arg) {
-  KLOG(DEBUG2, "NVMe: IRQ received\n");
+  KLOG(DEBUG3, "NVMe: IRQ received\n");
+  // TODO(aoates): according to the spec, we should have to consume all the
+  // completions to clear the interrupt, but qemu doesn't do that.
+  defint_schedule(&nvmec_defint, arg);
 }
 
 // Example CAP contents from riscv64 qemu:
@@ -192,6 +271,14 @@ static bool ctrl_is_ready(const nvme_ctrl_t* ctrl) {
   return csts & CSTS_RDY;
 }
 
+static nvme_ctrl_t* nvme_ctrl_alloc(void) {
+  nvme_ctrl_t* ctrl = KMALLOC(nvme_ctrl_t);
+  kmemset(ctrl, 0, sizeof(nvme_ctrl_t));
+  htbl_init(&ctrl->pending, 10);
+  ctrl->lock = KSPINLOCK_NORMAL_INIT;
+  return ctrl;
+}
+
 static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
   uint64_t cap = io_read64(ctrl->cfg_io, CTRL_CAP);
   char buf[200];
@@ -239,7 +326,7 @@ void nvme_ctrl_pci_init(pci_device_t* pcidev) {
     return;
   }
 
-  nvme_ctrl_t* ctrl = KMALLOC(nvme_ctrl_t);
+  nvme_ctrl_t* ctrl = nvme_ctrl_alloc();
   ctrl->cfg_io = pcidev->bar[0].io;
   ctrl->irq = pcidev->host_irq;
   if (!nvme_ctrl_init(ctrl)) {
