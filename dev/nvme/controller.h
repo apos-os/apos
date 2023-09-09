@@ -39,6 +39,8 @@ typedef struct nvme_ctrl {
   int doorbell_stride;
 
   nvme_queue_t admin_q;
+  int num_io_queues;
+  nvme_queue_t* io_q;  // Starting at queue ID 1.
 
   // Pending transactions.
   htbl_t pending;

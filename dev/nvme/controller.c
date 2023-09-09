@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "dev/nvme/controller.h"
 
+#include <stdint.h>
+
 #include "arch/dev/irq.h"
 #include "arch/memory/layout.h"
 #include "common/endian.h"
@@ -415,7 +417,7 @@ static int identify_ns(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
 
 static int get_namespaces(nvme_ctrl_t* ctrl) {
   nvme_transaction_t txn;
-  kmemset(&txn, 0, sizeof(txn));
+  ZERO_STRUCT(txn);
 
   phys_addr_t buffer = page_frame_alloc();
   txn.cmd.dptr[0] = buffer;
@@ -460,6 +462,71 @@ static int get_namespaces(nvme_ctrl_t* ctrl) {
   return 0;
 }
 
+static nvme_queue_t* get_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t id) {
+  KASSERT(id < ctrl->num_io_queues + 1);
+  if (id == 0) {
+    return &ctrl->admin_q;
+  } else {
+    return &ctrl->io_q[id - 1];
+  }
+}
+
+static int create_io_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t q_id) {
+  nvme_queue_t* q = get_queue(ctrl, q_id);
+  KASSERT(q != NULL);
+  int result = nvmeq_init(ctrl, q_id, q);
+  if (result != 0) {
+    return result;
+  }
+
+  // Create the completion queue.
+  nvme_transaction_t txn;
+  ZERO_STRUCT(txn);
+  txn.cmd.dptr[0] = virt2phys(q->cq);
+  txn.cmd.opcode = 0x05;  // Create completion queue.
+  KASSERT(q->cq_entries > 0);
+  KASSERT(q->cq_entries <= (int)UINT16_MAX);
+  KASSERT(q_id > 0);
+  txn.cmd.cdw10 = ((q->cq_entries - 1) << 16) | q_id;
+  txn.cmd.cdw11 = 0       // We're using pin-based interrupts
+                  | 0x2   // Interrupts enabled.
+                  | 0x1;  // Physically-contiguous buffer.
+  txn.queue = 0;  // Command for admin queue.
+
+  result = submit_blocking(ctrl, &txn);
+  if (result) {
+    KLOG(WARNING, "NVMe: unable to create completion queue %d: %s\n",
+         q_id, errorname(-result));
+    return result;
+  }
+
+  // Create the submission queue.
+  ZERO_STRUCT(txn);
+  txn.cmd.dptr[0] = virt2phys(q->sq);
+  txn.cmd.opcode = 0x01;  // Create submission queue.
+  KASSERT(q->sq_entries > 0);
+  KASSERT(q->sq_entries <= (int)UINT16_MAX);
+  txn.cmd.cdw10 = ((q->sq_entries - 1) << 16) | q_id;
+  txn.cmd.cdw11 = (q_id << 16)  // Use the paired completion queue.
+                  | 0x1;        // Physically-contiguous buffer.
+  txn.queue = 0;  // Command for admin queue.
+
+  result = submit_blocking(ctrl, &txn);
+  if (result) {
+    KLOG(WARNING, "NVMe: unable to create submission queue %d: %s\n",
+         q_id, errorname(-result));
+    return result;
+  }
+
+  return 0;
+}
+
+static int setup_io_queues(nvme_ctrl_t* ctrl) {
+  ctrl->num_io_queues = 1;
+  ctrl->io_q = KMALLOC(nvme_queue_t);
+  return create_io_queue(ctrl, 1);
+}
+
 static bool ctrl_is_ready(const nvme_ctrl_t* ctrl) {
   uint32_t csts = io_read32(ctrl->cfg_io, CTRL_CSTS);
   // TODO(aoates): handle fatal errors more gracefully.
@@ -474,6 +541,8 @@ static nvme_ctrl_t* nvme_ctrl_alloc(void) {
   ctrl->lock = KSPINLOCK_NORMAL_INIT;
   ctrl->namespaces = NULL;
   ctrl->num_ns = 0;
+  ctrl->num_io_queues = 0;
+  ctrl->io_q = NULL;
   return ctrl;
 }
 
@@ -514,6 +583,10 @@ static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
   }
 
   if (get_namespaces(ctrl) != 0) {
+    return false;
+  }
+
+  if (setup_io_queues(ctrl) != 0) {
     return false;
   }
 

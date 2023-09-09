@@ -36,6 +36,8 @@ void* kmemset(void* s, int c, size_t n);
 void* kmemcpy(void* dest, const void* src, size_t n);
 int kmemcmp(const void* s1, const void* s2, size_t n);
 
+#define ZERO_STRUCT(_x) kmemset(&(_x), 0, sizeof(_x))
+
 char* kstrcpy(char* dst, const char* src);
 char* kstrncpy(char* dst, const char* src, size_t n);
 
