@@ -40,6 +40,8 @@ typedef struct {
   devio_t cq_io;
   devio_t doorbell_io;
   int cq_doorbell_offset;
+
+  uint16_t next_cmd_id;
 } nvme_queue_t;
 
 // Initialize a queue with the given ID for the controller.  Does _not_ actually

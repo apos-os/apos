@@ -15,6 +15,7 @@
 #define APOO_DEV_NVME_CONTROLLER_H
 
 #include "common/hashtable.h"
+#include "dev/nvme/admin.h"
 #include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "dev/pci/pci-driver.h"
@@ -33,6 +34,9 @@ typedef struct nvme_ctrl {
 
   // Protects the pending transactions and pending table.
   kspinlock_t lock;
+
+  // Information from the Identify Controller command.
+  nvme_admin_identify_ctrl_t info;
 } nvme_ctrl_t;
 
 // A transaction to execute on an NVMe queue.

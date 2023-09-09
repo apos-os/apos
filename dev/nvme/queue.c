@@ -57,6 +57,7 @@ int nvmeq_init(struct nvme_ctrl* ctrl, nvme_queue_id_t id, nvme_queue_t* q) {
   // Zero the queues --- required for phase bits.
   kmemset((void*)q->sq, 0, NVME_QUEUE_SZ);
   kmemset((void*)q->cq, 0, NVME_QUEUE_SZ);
+  q->next_cmd_id = 0;
   return 0;
 }
 

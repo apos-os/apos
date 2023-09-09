@@ -19,11 +19,13 @@
 #include "common/hashtable.h"
 #include "common/kstring.h"
 #include "dev/io.h"
+#include "dev/nvme/admin.h"
 #include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
 #include "proc/defint.h"
+#include "proc/notification.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
 #include "util/flag_printf.h"
@@ -112,6 +114,7 @@ int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
 
   nvme_queue_t* q = &ctrl->admin_q;
   kspin_lock(&ctrl->lock);
+  txn->cmd.cmd_id = q->next_cmd_id++;
   int result = nvmeq_submit(q, &txn->cmd);
   if (result) {
     kspin_unlock(&ctrl->lock);
@@ -264,6 +267,63 @@ static void enable_ctrl(nvme_ctrl_t* ctrl) {
   io_write32(ctrl->cfg_io, CTRL_CC, cc);
 }
 
+static void txn_done(nvme_transaction_t* txn, void* arg) {
+  ntfn_notify((notification_t*)arg);
+}
+
+static int send_identify(nvme_ctrl_t* ctrl) {
+  nvme_transaction_t txn;
+  kmemset(&txn, 0, sizeof(txn));
+
+  phys_addr_t buffer = page_frame_alloc();
+  txn.cmd.dptr[0] = buffer;
+  txn.cmd.dptr[1] = 0;
+  txn.cmd.opcode = 0x06;
+  uint8_t cns = 0x01;
+  txn.cmd.cdw10 = cns;
+  txn.cmd.nsid = 0;
+
+  notification_t ntfn;
+  ntfn_init(&ntfn);
+  txn.queue = 0;
+  txn.done_cb = &txn_done;
+  txn.cb_arg = &ntfn;
+
+  int result = nvme_submit(ctrl, &txn);
+  if (result != 0) {
+    KLOG(WARNING, "NVMe: unable to send Identify Controller command: %s\n",
+         errorname(-result));
+    page_frame_free(buffer);
+    return result;
+  }
+
+  if (!ntfn_await_with_timeout(&ntfn, 500)) {
+    KLOG(WARNING, "NVMe: Identify Controller command timed out\n");
+    page_frame_free(buffer);
+    return -ETIMEDOUT;
+  }
+
+  nvme_admin_parse_identify_ctrl((void*)phys2virt(buffer), &ctrl->info);
+  page_frame_free(buffer);
+
+  KLOG(DEBUG, "NVMe controller identify info:\n");
+  KLOG(DEBUG, "  PCI vendor ID: 0x%x\n", ctrl->info.pci_vendor_id);
+  KLOG(DEBUG, "  PCI subsystem vendor ID: 0x%x\n",
+       ctrl->info.pci_subsys_vendor_id);
+  KLOG(DEBUG, "  Serial number: %s\n", ctrl->info.serial);
+  KLOG(DEBUG, "  Model: %s\n", ctrl->info.model);
+  KLOG(DEBUG, "  Firmware revision: %s\n", ctrl->info.firmware_rev);
+  KLOG(DEBUG, "  MDTS: %d\n", ctrl->info.mdts);
+  KLOG(DEBUG, "  Controller ID: %d\n", ctrl->info.ctrl_id);
+  KLOG(DEBUG, "  Controller type: %d\n", ctrl->info.ctrl_type);
+  KLOG(DEBUG, "  SQES: %d to %d bytes\n", ctrl->info.sqes_min_bytes,
+       ctrl->info.sqes_max_bytes);
+  KLOG(DEBUG, "  CQES: %d to %d bytes\n", ctrl->info.cqes_min_bytes,
+       ctrl->info.cqes_max_bytes);
+  KLOG(DEBUG, "  Max CMD: %d\n", ctrl->info.max_cmd);
+  return 0;
+}
+
 static bool ctrl_is_ready(const nvme_ctrl_t* ctrl) {
   uint32_t csts = io_read32(ctrl->cfg_io, CTRL_CSTS);
   // TODO(aoates): handle fatal errors more gracefully.
@@ -308,6 +368,10 @@ static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
   }
   if (!ctrl_is_ready(ctrl)) {
     KLOG(WARNING, "NVME: controller didn't become ready\n");
+    return false;
+  }
+
+  if (send_identify(ctrl) != 0) {
     return false;
   }
 
