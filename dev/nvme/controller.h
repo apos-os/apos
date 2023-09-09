@@ -15,11 +15,13 @@
 #define APOO_DEV_NVME_CONTROLLER_H
 
 #include "common/hashtable.h"
+#include "dev/block_dev.h"
 #include "dev/nvme/admin.h"
 #include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "dev/pci/pci-driver.h"
 #include "proc/spinlock.h"
+#include "user/include/apos/dev.h"
 
 typedef uint32_t nvme_nsid_t;
 
@@ -30,6 +32,9 @@ typedef struct {
   uint64_t ns_capacity;
   int lba_data_bytes;
   int lba_metadata_bytes;
+
+  apos_dev_t bd_id;
+  block_dev_t bd;
 } nvme_namespace_t;
 
 typedef struct nvme_ctrl {

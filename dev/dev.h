@@ -29,6 +29,7 @@
 #define DEVICE_MAJOR_ATA 2
 #define DEVICE_MAJOR_RAMDISK 3
 #define DEVICE_MAJOR_TTY 4
+#define DEVICE_MAJOR_NVME 5
 #define DEVICE_ID_UNKNOWN UINT16_MAX
 
 _Static_assert(sizeof(apos_dev_t) >= sizeof(uint16_t) * 2,

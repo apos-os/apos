@@ -146,18 +146,21 @@ void vfs_init(void) {
   kmutex_init(&g_fs_table_lock);
 
 #if ENABLE_EXT2
-  // First try to mount every ATA device as an ext2 fs.
+  // First try to mount every block device as an ext2 fs.
   fs_t* ext2fs = ext2_create_fs();
   int success = 0;
-  for (int i = 0; i < DEVICE_MAX_MINOR; ++i) {
-    const apos_dev_t dev = kmakedev(DEVICE_MAJOR_ATA, i);
-    if (dev_get_block(dev)) {
-      const int result = ext2_mount(ext2fs, dev);
-      if (result == 0) {
-        KLOG(INFO, "Found ext2 FS on device %d.%d\n", kmajor(dev), kminor(dev));
-        g_fs_table[VFS_ROOT_FS].fs = ext2fs;
-        success = 1;
-        break;
+  for (int bd_major = 0; bd_major <= DEVICE_MAX_MAJOR; ++bd_major) {
+    for (int bd_minor = 0; bd_minor <= DEVICE_MAX_MINOR; ++bd_minor) {
+      const apos_dev_t dev = kmakedev(bd_major, bd_minor);
+      if (dev_get_block(dev)) {
+        const int result = ext2_mount(ext2fs, dev);
+        if (result == 0) {
+          KLOG(INFO, "Found ext2 FS on device %d.%d\n", kmajor(dev),
+               kminor(dev));
+          g_fs_table[VFS_ROOT_FS].fs = ext2fs;
+          success = 1;
+          break;
+        }
       }
     }
   }

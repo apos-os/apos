@@ -75,6 +75,7 @@ static int bd_read_page(memobj_t* obj, int page_offset, void* buffer) {
   KASSERT(obj->data != 0x0);
 
   block_dev_t* bd = (block_dev_t*)obj->data;
+  KASSERT(PAGE_SIZE % bd->sector_size == 0);
   const int kSectorsPerPage = PAGE_SIZE / bd->sector_size;
   // TODO(aoates): handle the last few sectors of a device if it's not an even
   // multiple of the page size.

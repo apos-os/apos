@@ -24,6 +24,7 @@
 #include "common/kstring.h"
 #include "dev/io.h"
 #include "dev/nvme/admin.h"
+#include "dev/nvme/block_dev.h"
 #include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "memory/kmalloc.h"
@@ -113,13 +114,19 @@ static inline ALWAYS_INLINE uint32_t txnkey(nvme_queue_id_t q,
   return (q << 16) | cmd_id;
 }
 
-int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
-  // TODO(aoates): support IO queues.
-  KASSERT(txn->queue == 0);
-  KASSERT(txn->queue >= 0);
-  KASSERT(txn->queue <= INT16_MAX);
+static nvme_queue_t* get_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t id) {
+  KASSERT(id < ctrl->num_io_queues + 1);
+  if (id == 0) {
+    return &ctrl->admin_q;
+  } else {
+    return &ctrl->io_q[id - 1];
+  }
+}
 
-  nvme_queue_t* q = &ctrl->admin_q;
+int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
+  KASSERT(txn->queue >= 0);
+
+  nvme_queue_t* q = get_queue(ctrl, txn->queue);
   kspin_lock(&ctrl->lock);
   txn->cmd.cmd_id = q->next_cmd_id++;
   int result = nvmeq_submit(q, &txn->cmd);
@@ -163,6 +170,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
       uint32_t key = txnkey(q->id, comps[i].cmd_id);
       result = htbl_get(&ctrl->pending, key, &val);
       KASSERT(result == 0);
+      KASSERT(htbl_remove(&ctrl->pending, key) == 0);
       txns[i] = (nvme_transaction_t*)val;
     }
     kspin_unlock(&ctrl->lock);
@@ -179,6 +187,9 @@ static void nvmec_defint(void* arg) {
   KLOG(DEBUG2, "NVMe: handling deferred interrupt\n");
 
   nvmec_check_queue(ctrl, &ctrl->admin_q);
+  for (int i = 0; i < ctrl->num_io_queues; ++i) {
+    nvmec_check_queue(ctrl, &ctrl->io_q[i]);
+  }
 }
 
 static void nvme_irq(void* arg) {
@@ -457,6 +468,7 @@ static int get_namespaces(nvme_ctrl_t* ctrl) {
     ctrl->namespaces =
         (nvme_namespace_t*)kmalloc(sizeof(nvme_namespace_t) * ctrl->num_ns);
     for (size_t i = 0; i < ctrl->num_ns; ++i) {
+      kmemset(&ctrl->namespaces[i], 0, sizeof(nvme_namespace_t));
       ctrl->namespaces[i].nsid = ltoh32(nsbuf[i]);
       result = identify_ns(ctrl, &txn, &ctrl->namespaces[i]);
       if (result) {
@@ -470,15 +482,6 @@ static int get_namespaces(nvme_ctrl_t* ctrl) {
 
   page_frame_free(buffer);
   return 0;
-}
-
-static nvme_queue_t* get_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t id) {
-  KASSERT(id < ctrl->num_io_queues + 1);
-  if (id == 0) {
-    return &ctrl->admin_q;
-  } else {
-    return &ctrl->io_q[id - 1];
-  }
 }
 
 static int create_io_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t q_id) {
@@ -535,6 +538,19 @@ static int setup_io_queues(nvme_ctrl_t* ctrl) {
   ctrl->num_io_queues = 1;
   ctrl->io_q = KMALLOC(nvme_queue_t);
   return create_io_queue(ctrl, 1);
+}
+
+// Creates a block device for every namespace in the controller.
+static int create_block_devs(nvme_ctrl_t* ctrl) {
+  for (size_t i = 0; i < ctrl->num_ns; ++i) {
+    int result = nvme_create_block_dev(ctrl, &ctrl->namespaces[i]);
+    if (result) {
+      KLOG(WARNING, "NVMe: unable to create block dev for namespace %zu: %s\n",
+           i, errorname(-result));
+      return result;
+    }
+  }
+  return 0;
 }
 
 static bool ctrl_is_ready(const nvme_ctrl_t* ctrl) {
@@ -597,6 +613,10 @@ static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
   }
 
   if (setup_io_queues(ctrl) != 0) {
+    return false;
+  }
+
+  if (create_block_devs(ctrl) != 0) {
     return false;
   }
 

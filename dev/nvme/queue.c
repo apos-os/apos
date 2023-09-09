@@ -41,6 +41,9 @@ int nvmeq_init(struct nvme_ctrl* ctrl, nvme_queue_id_t id, nvme_queue_t* q) {
     return -ENOMEM;
   }
 
+  KLOG(DEBUG, "NVMe: allocated queue %d sq: %" PRIxADDR " cq: %" PRIxADDR "\n",
+       id, q->sq, q->cq);
+
   q->id = id;
   q->cq_io.type = IO_MEMORY;
   q->cq_io.base = q->cq;
@@ -96,6 +99,11 @@ int nvmeq_get_completions(nvme_queue_t* q, nvme_completion_t* comps,
     kmemcpy(&comps[count], &qcomp[q->cq_head], sizeof(nvme_completion_t));
     KASSERT(comps[count].sq_id == q->id);  // Should handle this gracefully...
     q->cq_head = (q->cq_head + 1) % q->cq_entries;
+    if (q->cq_head == 0) {
+      q->phase = !q->phase;
+      KLOG(DEBUG2, "NVMe: queue %d cq phase switching to %d\n", q->id,
+           q->phase);
+    }
     q->sq_head = comps[count].sq_headptr;
     count++;
   }
