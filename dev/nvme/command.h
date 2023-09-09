@@ -17,6 +17,9 @@
 
 #include <stdint.h>
 
+#define NVME_PHASE(_status_phase)  ((_status_phase) & 0x1)
+#define NVME_STATUS(_status_phase)  ((_status_phase) & ~0x1)
+
 typedef struct {
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
   uint32_t opcode : 8, fuse : 2, _reserved1 : 4, psdt : 2, cmd_id : 16;

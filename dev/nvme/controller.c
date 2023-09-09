@@ -15,8 +15,10 @@
 
 #include "arch/dev/irq.h"
 #include "arch/memory/layout.h"
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/hashtable.h"
+#include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/io.h"
 #include "dev/nvme/admin.h"
@@ -64,7 +66,7 @@
 #define CC_CSS_MASK (0x7 << CC_CSS_OFFSET)
 #define CC_EN 1
 
-#define NVME_CSS_IO (1 << 6)
+#define NVME_CSS_NVM_CMDSET 1
 
 // Bits in the CSTS register.
 #define CSTS_CFS 2
@@ -80,6 +82,8 @@ _Static_assert(PAGE_SIZE == 1 << (12 + NVME_MPS), "Bad NVME_MPS");
 _Static_assert(sizeof(nvme_completion_t) == (1 << NVME_IOCQES),
                "Bad NVME_IOCQES");
 _Static_assert(sizeof(nvme_cmd_t) == (1 << NVME_IOSQES), "Bad NVME_IOSQES");
+
+#define NVME_BLOCKING_TIMEOUT_MS 500
 
 static const flag_spec_t kNvmeCapFields[] = {
   FLAG_SPEC_FLAG("CRIMS", 1ll << 60),
@@ -161,6 +165,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
     kspin_unlock(&ctrl->lock);
 
     for (int i = 0; i < num_comps; ++i) {
+      txns[i]->result = comps[i];
       txns[i]->done_cb(txns[i], txns[i]->cb_arg);
     }
   }
@@ -191,8 +196,8 @@ static bool check_cap(uint64_t cap, nvme_ctrl_t* ctrl) {
   }
 
   uint32_t css = (cap >> CAP_CSS_OFFSET) & 0xff;
-  if (!(css & NVME_CSS_IO)) {
-    KLOG(WARNING, "NVMe: controller doesn't support any IO command sets\n");
+  if (!(css & NVME_CSS_NVM_CMDSET)) {
+    KLOG(WARNING, "NVMe: controller doesn't support NVM IO command sets\n");
     return false;
   }
 
@@ -214,9 +219,8 @@ static void configure_ctrl(nvme_ctrl_t* ctrl) {
   cc &= ~CC_MPS_MASK;
   cc |= (NVME_MPS << CC_MPS_OFFSET);
 
-  // Enable all IO command sets.
+  // Enable the NVM command set (set CC.CSS to 000b).
   cc &= ~CC_CSS_MASK;
-  cc |= (6 << CC_CSS_OFFSET);
 
   // Set IO queue entry sizes.  Note that at this point, we don't actually know
   // what IO command sets are supported --- however qemu until very recently
@@ -271,6 +275,39 @@ static void txn_done(nvme_transaction_t* txn, void* arg) {
   ntfn_notify((notification_t*)arg);
 }
 
+static int submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
+  KASSERT(txn->done_cb == NULL);
+  KASSERT(txn->cb_arg == NULL);
+
+  notification_t ntfn;
+  ntfn_init(&ntfn);
+  txn->done_cb = &txn_done;
+  txn->cb_arg = &ntfn;
+
+  int result = nvme_submit(ctrl, txn);
+  if (result != 0) {
+    goto done;
+  }
+
+  if (!ntfn_await_with_timeout(&ntfn, NVME_BLOCKING_TIMEOUT_MS)) {
+    result = -ETIMEDOUT;
+    goto done;
+  }
+
+  if (NVME_STATUS(txn->result.status_phase) != 0) {
+    KLOG(WARNING, "NVMe: command failed: NVMe error 0x%x\n",
+         NVME_STATUS(txn->result.status_phase));
+    result = -EPROTO;
+    goto done;
+  }
+  KASSERT_DBG(result == 0);
+
+done:
+  txn->done_cb = NULL;
+  txn->cb_arg = NULL;
+  return result;
+}
+
 static int send_identify(nvme_ctrl_t* ctrl) {
   nvme_transaction_t txn;
   kmemset(&txn, 0, sizeof(txn));
@@ -278,29 +315,18 @@ static int send_identify(nvme_ctrl_t* ctrl) {
   phys_addr_t buffer = page_frame_alloc();
   txn.cmd.dptr[0] = buffer;
   txn.cmd.dptr[1] = 0;
-  txn.cmd.opcode = 0x06;
-  uint8_t cns = 0x01;
+  txn.cmd.opcode = 0x06;  // Identify admin command.
+  uint8_t cns = 0x01;  // Identify controller data.
   txn.cmd.cdw10 = cns;
   txn.cmd.nsid = 0;
-
-  notification_t ntfn;
-  ntfn_init(&ntfn);
   txn.queue = 0;
-  txn.done_cb = &txn_done;
-  txn.cb_arg = &ntfn;
 
-  int result = nvme_submit(ctrl, &txn);
+  int result = submit_blocking(ctrl, &txn);
   if (result != 0) {
-    KLOG(WARNING, "NVMe: unable to send Identify Controller command: %s\n",
+    KLOG(WARNING, "NVMe: Identify Controller command failed: %s\n",
          errorname(-result));
     page_frame_free(buffer);
     return result;
-  }
-
-  if (!ntfn_await_with_timeout(&ntfn, 500)) {
-    KLOG(WARNING, "NVMe: Identify Controller command timed out\n");
-    page_frame_free(buffer);
-    return -ETIMEDOUT;
   }
 
   nvme_admin_parse_identify_ctrl((void*)phys2virt(buffer), &ctrl->info);
@@ -324,6 +350,116 @@ static int send_identify(nvme_ctrl_t* ctrl) {
   return 0;
 }
 
+// Sends an identify namespace command.  Assumes the transaction is already set
+// up other than the nsid;
+static int identify_ns(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
+                       nvme_namespace_t* ns) {
+  txn->cmd.cdw10 = 0;  // CNS = identify namespace
+  txn->cmd.nsid = ns->nsid;
+
+  int result = submit_blocking(ctrl, txn);
+  if (result != 0) {
+    return result;
+  }
+
+  const void* buf = (const void*)phys2virt(txn->cmd.dptr[0]);
+  ns->ns_size = ltoh64(*(const uint64_t*)buf);
+  ns->ns_capacity = ltoh64(*(const uint64_t*)(buf + 8));
+#if ARCH_IS_64_BIT
+  uint64_t ns_utilization = ltoh64(*(const uint64_t*)(buf + 8));
+#endif
+  int num_lba_fmts = *(const uint8_t*)(buf + 25);
+  uint8_t flbas = *(const uint8_t*)(buf + 26);
+  int lba_fmt_idx = (flbas & 0x0f);
+  if (num_lba_fmts > 16) {
+    lba_fmt_idx |= ((flbas >> 1) & 0x3);
+  }
+  bool lba_metadata_in_block = flbas & 0x10;
+
+  KLOG(DEBUG2, "  Namespace: %u\n", ns->nsid);
+  // TODO(aoates): enable this for 32-bit when %ll is implemented in kprintf.
+#if ARCH_IS_64_BIT
+  _Static_assert(sizeof(long) == 8, "bad long size");
+  KLOG(DEBUG2, "    Size:        %lu blocks\n", ns->ns_size);
+  KLOG(DEBUG2, "    Capacity:    %lu blocks\n", ns->ns_capacity);
+  KLOG(DEBUG2, "    Utilization: %lu blocks\n", ns_utilization);
+#endif
+  KLOG(DEBUG2, "    Num LBA formats: %d\n", num_lba_fmts);
+  KLOG(DEBUG2, "    FLBAS: %x (LBA format %d; metadata in block: %d)\n", flbas,
+       lba_fmt_idx, lba_metadata_in_block);
+  KASSERT(lba_fmt_idx >= 0 && lba_fmt_idx < num_lba_fmts);
+
+  KASSERT(num_lba_fmts <= 64);
+  for (int i = 0; i < num_lba_fmts; ++i) {
+    uint32_t lba_fmt =
+        ltoh32(*(const uint32_t*)(buf + 128 + sizeof(uint32_t) * i));
+    int lba_rp = (lba_fmt >> 24) & 0x3;
+    int lba_data_size = 1 << ((lba_fmt >> 16) & 0xff);
+    int lba_metadata_size = lba_fmt & 0xffff;
+    KLOG(DEBUG2,
+         "    "
+         "LBA FMT %d: RP=%d; data_size=%d bytes; metadata_size=%d bytes%s\n",
+         i, lba_rp, lba_data_size, lba_metadata_size,
+         (i == lba_fmt_idx) ? " [formatted]" : "");
+    if (i == lba_fmt_idx) {
+      ns->lba_data_bytes = lba_data_size;
+      ns->lba_metadata_bytes = lba_metadata_size;
+    }
+  }
+
+  // TODO(aoates): per the spec, we're supposed to query io-command-set-specific
+  // controller, namespace, etc commands now.
+
+  return 0;
+}
+
+static int get_namespaces(nvme_ctrl_t* ctrl) {
+  nvme_transaction_t txn;
+  kmemset(&txn, 0, sizeof(txn));
+
+  phys_addr_t buffer = page_frame_alloc();
+  txn.cmd.dptr[0] = buffer;
+  txn.cmd.dptr[1] = 0;
+  txn.cmd.opcode = 0x06;  // Identify admin command.
+  uint8_t cns = 0x07;  // Active namespace ID list for IO command set
+  txn.cmd.cdw10 = cns;
+  txn.cmd.cdw11 = 0;  // Command set identifier in top 8 bits; 0 for NVM cs.
+  txn.cmd.nsid = 0;  // Give all namespaces (up to 1024).
+  txn.queue = 0;
+
+  int result = submit_blocking(ctrl, &txn);
+  if (result != 0) {
+    KLOG(WARNING, "NVMe: get active namespaces command failed: %s\n",
+         errorname(-result));
+    page_frame_free(buffer);
+    return result;
+  }
+
+  const uint32_t* nsbuf = (const uint32_t*)phys2virt(buffer);
+  while (nsbuf[ctrl->num_ns] != 0) {
+    ctrl->num_ns++;
+  }
+
+  KLOG(DEBUG, "NVMe: found %zu active namespaces\n", ctrl->num_ns);
+  if (ctrl->num_ns > 0) {
+    ctrl->namespaces =
+        (nvme_namespace_t*)kmalloc(sizeof(nvme_namespace_t) * ctrl->num_ns);
+    for (size_t i = 0; i < ctrl->num_ns; ++i) {
+      ctrl->namespaces[i].nsid = ltoh32(nsbuf[i]);
+      result = identify_ns(ctrl, &txn, &ctrl->namespaces[i]);
+      if (result) {
+        KLOG(WARNING, "NVMe: identify namespace command failed: %s\n",
+             errorname(-result));
+        page_frame_free(buffer);
+        return result;
+      }
+    }
+  }
+
+  page_frame_free(buffer);
+  return 0;
+}
+
 static bool ctrl_is_ready(const nvme_ctrl_t* ctrl) {
   uint32_t csts = io_read32(ctrl->cfg_io, CTRL_CSTS);
   // TODO(aoates): handle fatal errors more gracefully.
@@ -336,6 +472,8 @@ static nvme_ctrl_t* nvme_ctrl_alloc(void) {
   kmemset(ctrl, 0, sizeof(nvme_ctrl_t));
   htbl_init(&ctrl->pending, 10);
   ctrl->lock = KSPINLOCK_NORMAL_INIT;
+  ctrl->namespaces = NULL;
+  ctrl->num_ns = 0;
   return ctrl;
 }
 
@@ -375,6 +513,10 @@ static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
     return false;
   }
 
+  if (get_namespaces(ctrl) != 0) {
+    return false;
+  }
+
   return true;
 }
 
@@ -397,6 +539,6 @@ void nvme_ctrl_pci_init(pci_device_t* pcidev) {
     KLOG(WARNING, "NVMe controller %d.%d(%d): failed to initialized\n",
          pcidev->bus, pcidev->device, pcidev->function);
   }
-  KLOG(DEBUG, "NVMe controller %d.%d(%d): initialized and enabled\n",
+  KLOG(INFO, "NVMe controller %d.%d(%d): initialized and enabled\n",
        pcidev->bus, pcidev->device, pcidev->function);
 }

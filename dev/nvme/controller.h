@@ -21,6 +21,17 @@
 #include "dev/pci/pci-driver.h"
 #include "proc/spinlock.h"
 
+typedef uint32_t nvme_nsid_t;
+
+typedef struct {
+  nvme_nsid_t nsid;
+
+  uint64_t ns_size;
+  uint64_t ns_capacity;
+  int lba_data_bytes;
+  int lba_metadata_bytes;
+} nvme_namespace_t;
+
 typedef struct nvme_ctrl {
   devio_t cfg_io;
   irq_t irq;
@@ -37,6 +48,10 @@ typedef struct nvme_ctrl {
 
   // Information from the Identify Controller command.
   nvme_admin_identify_ctrl_t info;
+
+  // Active namespaces.
+  size_t num_ns;
+  nvme_namespace_t* namespaces;
 } nvme_ctrl_t;
 
 // A transaction to execute on an NVMe queue.

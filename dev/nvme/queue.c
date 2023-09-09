@@ -89,7 +89,7 @@ int nvmeq_get_completions(nvme_queue_t* q, nvme_completion_t* comps,
     uint16_t status_phase =
         io_read16(q->cq_io, q->cq_head * sizeof(nvme_completion_t) +
                                 offsetof(nvme_completion_t, status_phase));
-    if ((status_phase & 0x1) != q->phase) {
+    if (NVME_PHASE(status_phase) != q->phase) {
       break;
     }
 
