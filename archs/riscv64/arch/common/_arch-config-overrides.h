@@ -23,8 +23,4 @@
 #undef ARCH_SUPPORTS_IOPORT
 #define ARCH_SUPPORTS_IOPORT 0
 
-// TODO(riscv): re-enable these by default
-#undef ARCH_RUN_USER_TESTS
-#define ARCH_RUN_USER_TESTS 0
-
 #endif
