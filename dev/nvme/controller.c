@@ -277,7 +277,8 @@ static void txn_done(nvme_transaction_t* txn, void* arg) {
   ntfn_notify((notification_t*)arg);
 }
 
-static int submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
+int nvme_submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
+                         int timeout_ms) {
   KASSERT(txn->done_cb == NULL);
   KASSERT(txn->cb_arg == NULL);
 
@@ -291,7 +292,7 @@ static int submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
     goto done;
   }
 
-  if (!ntfn_await_with_timeout(&ntfn, NVME_BLOCKING_TIMEOUT_MS)) {
+  if (!ntfn_await_with_timeout(&ntfn, timeout_ms)) {
     result = -ETIMEDOUT;
     goto done;
   }
@@ -323,7 +324,7 @@ static int send_identify(nvme_ctrl_t* ctrl) {
   txn.cmd.nsid = 0;
   txn.queue = 0;
 
-  int result = submit_blocking(ctrl, &txn);
+  int result = nvme_submit_blocking(ctrl, &txn, NVME_BLOCKING_TIMEOUT_MS);
   if (result != 0) {
     KLOG(WARNING, "NVMe: Identify Controller command failed: %s\n",
          errorname(-result));
@@ -359,7 +360,7 @@ static int identify_ns(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
   txn->cmd.cdw10 = 0;  // CNS = identify namespace
   txn->cmd.nsid = ns->nsid;
 
-  int result = submit_blocking(ctrl, txn);
+  int result = nvme_submit_blocking(ctrl, txn, NVME_BLOCKING_TIMEOUT_MS);
   if (result != 0) {
     return result;
   }
@@ -429,7 +430,7 @@ static int get_namespaces(nvme_ctrl_t* ctrl) {
   txn.cmd.nsid = 0;  // Give all namespaces (up to 1024).
   txn.queue = 0;
 
-  int result = submit_blocking(ctrl, &txn);
+  int result = nvme_submit_blocking(ctrl, &txn, NVME_BLOCKING_TIMEOUT_MS);
   if (result != 0) {
     KLOG(WARNING, "NVMe: get active namespaces command failed: %s\n",
          errorname(-result));
@@ -493,7 +494,7 @@ static int create_io_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t q_id) {
                   | 0x1;  // Physically-contiguous buffer.
   txn.queue = 0;  // Command for admin queue.
 
-  result = submit_blocking(ctrl, &txn);
+  result = nvme_submit_blocking(ctrl, &txn, NVME_BLOCKING_TIMEOUT_MS);
   if (result) {
     KLOG(WARNING, "NVMe: unable to create completion queue %d: %s\n",
          q_id, errorname(-result));
@@ -511,7 +512,7 @@ static int create_io_queue(nvme_ctrl_t* ctrl, nvme_queue_id_t q_id) {
                   | 0x1;        // Physically-contiguous buffer.
   txn.queue = 0;  // Command for admin queue.
 
-  result = submit_blocking(ctrl, &txn);
+  result = nvme_submit_blocking(ctrl, &txn, NVME_BLOCKING_TIMEOUT_MS);
   if (result) {
     KLOG(WARNING, "NVMe: unable to create submission queue %d: %s\n",
          q_id, errorname(-result));

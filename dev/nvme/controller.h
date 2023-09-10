@@ -74,6 +74,12 @@ typedef struct nvme_transaction nvme_transaction_t;
 // On error returns -error (and the callback won't be run).
 int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn);
 
+// As with nvme_submit, but blocks until the transaction is complete, or the
+// timeout is hit.  Checks the result of the operation and returns an error if
+// it fails.  The callback member of txn must be NULL.
+int nvme_submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
+                         int timeout_ms);
+
 // Initialize an NVMe controller from a PCI device.
 void nvme_ctrl_pci_init(pci_device_t* pcidev);
 
