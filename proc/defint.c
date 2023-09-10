@@ -32,6 +32,7 @@ static defint_data_t g_defint_queue[MAX_QUEUED_DEFINTS];
 static int g_queue_start = 0;
 static int g_queue_len = 0;
 static bool g_defints_enabled = true;
+static bool g_running_defint = false;
 
 void defint_schedule(void (*f)(void*), void* arg) {
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -68,6 +69,7 @@ defint_state_t defint_set_state(defint_state_t s) {
 void defint_process_queued(void) {
   KASSERT(!interrupts_enabled());
   if (!g_defints_enabled) return;
+  KASSERT_DBG(!g_running_defint);
 
   // Don't process defints early in the boot process.
   if (!kthread_current_thread()) return;
@@ -76,6 +78,7 @@ void defint_process_queued(void) {
 
   // Prevent any new defints from being processed while we're working.
   g_defints_enabled = false;
+  g_running_defint = true;
 
   // TODO(aoates): consider capping the number of defints we run at a given time
   // to minimize impact on the thread we're victimizing.
@@ -90,6 +93,7 @@ void defint_process_queued(void) {
     g_queue_start = (g_queue_start + 1) % MAX_QUEUED_DEFINTS;
     g_queue_len--;
   }
+  g_running_defint = false;
   g_defints_enabled = true;
 
   // TODO(aoates): if we would have preempted the process during the defint, do
@@ -99,4 +103,8 @@ void defint_process_queued(void) {
 
 void _defint_disabled_die(void) {
   die("Leaving code block without reenabling defints");
+}
+
+bool is_running_defint(void) {
+  return g_running_defint;
 }
