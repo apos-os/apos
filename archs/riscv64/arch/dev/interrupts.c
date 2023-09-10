@@ -48,7 +48,9 @@
 #define RSV_TRAP_PAGEFAULT_LOAD 13   // Load page fault
 #define RSV_TRAP_PAGEFAULT_STORE 15  // Store/AMO page fault
 
-static void sigill_handler(bool is_kernel) {
+static void sigill_handler(bool is_kernel, addr_t addr, uint64_t instr) {
+  klogf("Illegal instruction at address 0x%" PRIxADDR " (instruction: 0x%lx)\n",
+        addr, (unsigned long)instr);
   if (is_kernel) {
     die("sigill in kernel code");
   }
@@ -142,7 +144,7 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_INSTR_ILLEGAL:
-        sigill_handler(is_kernel);
+        sigill_handler(is_kernel, ctx->address, stval);
         break;
 
       case RSV_TRAP_INSTR_MISALIGN:
