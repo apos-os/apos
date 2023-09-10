@@ -29,7 +29,8 @@
 #include "memory/kmalloc.h"
 #include "memory/page_alloc.h"
 #include "proc/defint.h"
-#include "proc/notification.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
 #include "util/flag_printf.h"
@@ -274,7 +275,7 @@ static void enable_ctrl(nvme_ctrl_t* ctrl) {
 }
 
 static void txn_done(nvme_transaction_t* txn, void* arg) {
-  ntfn_notify((notification_t*)arg);
+  scheduler_wake_all((kthread_queue_t*)arg);
 }
 
 int nvme_submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
@@ -282,20 +283,28 @@ int nvme_submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
   KASSERT(txn->done_cb == NULL);
   KASSERT(txn->cb_arg == NULL);
 
-  notification_t ntfn;
-  ntfn_init(&ntfn);
+  kthread_queue_t waitq;
+  kthread_queue_init(&waitq);
   txn->done_cb = &txn_done;
-  txn->cb_arg = &ntfn;
+  txn->cb_arg = &waitq;
 
+  DEFINT_PUSH_AND_DISABLE();
   int result = nvme_submit(ctrl, txn);
   if (result != 0) {
+    DEFINT_POP();
     goto done;
   }
 
-  if (!ntfn_await_with_timeout(&ntfn, timeout_ms)) {
+  result = scheduler_wait_on_interruptable(&waitq, timeout_ms);
+  DEFINT_POP();
+  if (result == SWAIT_TIMEOUT) {
     result = -ETIMEDOUT;
     goto done;
+  } else if (result == SWAIT_INTERRUPTED) {
+    result = -EINTR;
+    goto done;
   }
+  KASSERT_DBG(result == SWAIT_DONE);
 
   if (NVME_STATUS(txn->result.status_phase) != 0) {
     KLOG(WARNING, "NVMe: command failed: NVMe error 0x%x\n",
