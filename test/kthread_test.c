@@ -782,6 +782,15 @@ static void preemption_test_defintB(void* arg) {
   kspin_unlock(&args->lock);
 }
 
+static void preemption_test_defintC(void* arg) {
+  preemption_test_args_t* args = (preemption_test_args_t*)arg;
+  // Must be read without the lock.
+  int val = kthread_current_thread()->preemption_disables > 0 ? 1 : 2;
+  kspin_lock(&args->lock);
+  args->x = val;
+  kspin_unlock(&args->lock);
+}
+
 static void* preemption_test_check_enabled(void* arg) {
   return (void*)(intptr_t)kthread_current_thread()->preemption_disables;
 }
@@ -846,6 +855,16 @@ static void* preemption_test_tester(void* arg) {
     kspin_lock(&args.lock);
   }
   kspin_unlock(&args.lock);
+
+  KTEST_BEGIN("kthread: defint disable preemption");
+  {
+    DEFINT_PUSH_AND_DISABLE();
+    defint_schedule(&preemption_test_defintC, &args);
+    DEFINT_POP();
+  }
+  start = get_time_ms();
+  for (volatile int i = 0; (get_time_ms() - start) < 30; ++i);
+  KEXPECT_EQ(1, args.x);
 
   KTEST_BEGIN("kthread: preemption state inherited in child threads");
   kthread_t child = NULL;

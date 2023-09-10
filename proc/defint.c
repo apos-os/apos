@@ -18,6 +18,8 @@
 #include "common/list.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
+#include "proc/kthread-internal.h"
+#include "proc/scheduler.h"
 
 #define MAX_QUEUED_DEFINTS 100
 
@@ -67,6 +69,11 @@ void defint_process_queued(void) {
   KASSERT(!interrupts_enabled());
   if (!g_defints_enabled) return;
 
+  // Don't process defints early in the boot process.
+  if (!kthread_current_thread()) return;
+
+  sched_disable_preemption();
+
   // Prevent any new defints from being processed while we're working.
   g_defints_enabled = false;
 
@@ -84,6 +91,10 @@ void defint_process_queued(void) {
     g_queue_len--;
   }
   g_defints_enabled = true;
+
+  // TODO(aoates): if we would have preempted the process during the defint, do
+  // so now (in the scheduler).
+  sched_restore_preemption();
 }
 
 void _defint_disabled_die(void) {
