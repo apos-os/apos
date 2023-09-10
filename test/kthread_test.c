@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "proc/defint.h"
@@ -1285,6 +1286,25 @@ static void deadlock_detection_test(void) {
 }
 #endif
 
+static void* interrupts_checker(void* arg) {
+  KEXPECT_TRUE(interrupts_enabled());
+  KEXPECT_TRUE(defint_state());
+  return NULL;
+}
+
+static void creation_interrupts_test(void) {
+  KTEST_BEGIN("kthread interrupt state on creation test");
+  kthread_t thread;
+
+  DEFINT_PUSH_AND_DISABLE();
+  PUSH_AND_DISABLE_INTERRUPTS();
+  KEXPECT_EQ(0, kthread_create(&thread, &interrupts_checker, NULL));
+  scheduler_make_runnable(thread);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+  POP_INTERRUPTS();
+  DEFINT_POP();
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -1313,4 +1333,5 @@ void kthread_test(void) {
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   deadlock_detection_test();
 #endif
+  creation_interrupts_test();
 }

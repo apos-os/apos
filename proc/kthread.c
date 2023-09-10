@@ -73,6 +73,12 @@ static void kthread_init_kthread(kthread_data_t* t) {
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
+  // The arch-specific trampoline should have enabled interrupts.
+  KASSERT(interrupts_enabled());
+
+  // Enable deferred interrupts for all new threads.
+  defint_set_state(true);
+
   void* retval = start_routine(arg);
   kthread_exit(retval);
   // Should never get here.
