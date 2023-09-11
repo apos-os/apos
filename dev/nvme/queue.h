@@ -49,8 +49,6 @@ typedef struct {
 int nvmeq_init(struct nvme_ctrl* ctrl, nvme_queue_id_t id, nvme_queue_t* q);
 
 // Submit a command to the queue.  If there is no space in the queue, fails.
-// TODO(aoates): define concurrency model for this code --- does this need to be
-// defint-safe?
 // TODO(aoates): define a more efficient version of this that doesn't require
 // copying the command (the caller can claim a spot in the queue and construct
 // in-place).

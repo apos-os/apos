@@ -103,7 +103,6 @@ void pci_add_device(pci_device_t* pcidev) {
 }
 
 void pci_init(void) {
-  // TODO(aoates): support ECAM-based MMIO PCIe.
   pci_legacy_init();
   pcie_init();
 
