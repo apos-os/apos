@@ -31,9 +31,6 @@
 
 .type _kstart, @function
 _kstart:
-  # TODO(riscv): we need to set gp to __global_pointer$.  Figure out how to
-  # get GP relaxations working, then set that up.
-
   # Set up basic paging (SV39).  Map the gigapage containing the kernel into its
   # physical (identity) and virtual addresses.  We will create mappings for
   # 0x8000000 - 0xbfffffff (1GB) physical, and that plus KERNEL_VIRT_OFFSET.

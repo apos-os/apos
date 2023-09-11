@@ -91,10 +91,6 @@ int_handler_asm:
   csrrw s1, sscratch, s1  # Restore s1 and sscratch.
   # Now everything is as it was, except we may have switched stacks.
 
-  # TODO(riscv): do we need to save sepc/scause/etc?  What if we get a nested
-  # trap (for example, a page fault on the stack while pushing context)?
-  # Currently those registers are the only s-mode visible registers that are
-  # _not_ fully restored here, which is fine for most S code.
   addi sp, sp, -288
   # Save the original ra value as a local variable.  We need to restore it
   # later, but if the code we interrupted is a leaf function, this ra likely
