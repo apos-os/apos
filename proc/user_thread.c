@@ -53,7 +53,7 @@ int proc_thread_create_user(apos_uthread_id_t* id_out, void* stack,
   return 0;
 }
 
-int proc_thread_exit_user() {
+int proc_thread_exit_user(void) {
   proc_thread_exit(NULL);
 }
 

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # Copyright 2014 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,8 +24,8 @@ def read_config():
   try:
     conf_str = open('build-config.conf').read()
   except IOError:
-    print >> sys.stderr, ('Unable to open build-config.conf; '
-        'please run scons configure')
+    print('Unable to open build-config.conf; please run scons configure',
+          file=sys.stderr)
     sys.exit(1)
 
   conf = {}
@@ -41,14 +41,14 @@ def read_config():
 def get_tool_prefix():
   conf = read_config()
   if 'TOOL_PREFIX' not in conf:
-    print >> sys.stderr, 'TOOL_PREFIX not in build-config.conf'
+    print('TOOL_PREFIX not in build-config.conf', file=sys.stderr)
     sys.exit(1)
   return conf['TOOL_PREFIX']
 
 def symbolize(tool_prefix, frame_num, addr):
   p = subprocess.Popen(["%saddr2line" % tool_prefix, "-f", "-s", "-e",
                         "build-scons/kernel.bin", addr],
-                       stdout=subprocess.PIPE)
+                       stdout=subprocess.PIPE, text=True)
   output = p.communicate()[0].split('\n')
   function = output[0]
   file_line = output[1]
@@ -60,10 +60,10 @@ try:
   while True:
     line = sys.stdin.readline()
     if not line: sys.exit(0)
-    m = re.match(" #(\d*) (0x[a-zA-Z0-9]*)\n", line)
+    m = re.match(" #(\d*) (0x[a-zA-Z0-9]*)\s*$", line)
     if m:
       line = symbolize(TOOL_PREFIX, m.group(1), m.group(2))
-    print line,
+    print(line, end='')
     sys.stdout.flush()
 except KeyboardInterrupt:
   sys.stdout.flush()

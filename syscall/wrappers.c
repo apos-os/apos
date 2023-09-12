@@ -22,11 +22,11 @@
 #include "syscall/dmz.h"
 #include "syscall/wrappers.h"
 
-kpid_t getpid_wrapper() {
+kpid_t getpid_wrapper(void) {
   return proc_current()->id;
 }
 
-kpid_t getppid_wrapper() {
+kpid_t getppid_wrapper(void) {
   if (proc_current()->parent) {
     return proc_current()->parent->id;
   } else {
@@ -34,8 +34,10 @@ kpid_t getppid_wrapper() {
   }
 }
 
-int mmap_wrapper(void* addr_inout, addr_t length, int prot, int flags,
-                 int fd, addr_t offset) {
+_Static_assert(sizeof(apos_off_t) <= sizeof(addr_t),
+               "Narrowing conversion from apos_off_t to addr_t.");
+int mmap_wrapper(void* addr_inout, size_t length, int prot, int flags,
+                 int fd, apos_off_t offset) {
   void* addr = *(void**)addr_inout;
   return do_mmap(addr, length, prot, flags, fd, offset, (void**)addr_inout);
 }

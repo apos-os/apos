@@ -1,0 +1,663 @@
+// Copyright 2023 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+
+  int-generator1 {
+    interrupt-parent = <0x03>;
+    interrupts = <0x04 0x07>;
+    reg = <0x01 0x02 0x00 0xff>;
+  };
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0x989680>;
+
+		cpu@0 {
+			phandle = <0x01>;
+			reg = <0x00>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				interrupt-controller;
+				phandle = <0x02>;
+				#address-cells = <0x01>;
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+    int-generator2 {
+			interrupts = <0x0a>;
+			interrupt-parent = <0x03>;
+		};
+
+		int-controller1 {
+			phandle = <0x03>;
+			interrupts-extended = <0x02 0xffffffff 0x02 0x09>;
+			interrupt-controller;
+			#address-cells = <0x00>;
+			#interrupt-cells = <0x01>;
+		};
+	};
+
+  int-too-many-cells {
+    #interrupt-cells = <0x9>;
+
+    gen {
+      interrupts = <0x01 0x02 0x03 0x04 0x05 0x06 0x07 0x08 0x09>;
+    };
+  };
+
+  int-zero-cells {
+    #interrupt-cells = <0x0>;
+
+    gen {
+      interrupts = <0x01>;
+    };
+  };
+
+  int-too-short-cells {
+    #interrupt-cells;
+
+    gen {
+      interrupts = <0x01>;
+    };
+  };
+
+  int-too-long-cells {
+    #interrupt-cells = <0x01 0x02>;
+
+    gen {
+      interrupts = <0x01>;
+    };
+  };
+
+  int-two-cells {
+    #interrupt-cells = <0x2>;
+
+    gen1 {
+      interrupts = <0x01>;
+    };
+
+    gen2 {
+      interrupts = <0x01 0x02 0x03>;
+    };
+
+    gen-no-ints {
+    };
+
+    gen-ok {
+      interrupts = <0x05 0x06 0x07 0x08>;
+    };
+  };
+
+  int-no-cells {
+    gen {
+      interrupts = <0x01>;
+    };
+  };
+
+  int-map {
+    #address-cells = <0x02>;
+    #size-cells = <0x02>;
+    #interrupt-cells = <0x02>;
+    interrupt-map = <
+      0x01 0x02  // child unit address
+      0x30 0x04  // child interrupt specifier
+      0x02  // interrupt parent
+      0x0   // parent unit address
+      0x95  // parent interrupt specifier
+
+      0x01 0x02  // child unit address
+      0x40 0x25  // child interrupt specifier
+      0x03  // interrupt parent
+      // no parent unit address
+      0xab  // parent interrupt specifier
+    >;
+    interrupt-map-mask = <0x0f 0xffffffff 0xf0 0xffffffff>;
+
+    gen1@100000002 {
+      reg = <0x01 0x02 0x00 0xff>;
+      interrupts = <
+        0x33 0x04  // Should match first map element
+        0x30 0x14  // Should not match any element
+        0x41 0x25  // Should match second map element
+      >;
+    };
+
+    // Should match same as above because of the mask.
+    gen2@1100000002 {
+      reg = <0x11 0x02 0x00 0xff>;
+      interrupts = <
+        0x33 0x04  // Should match first map element
+        0x30 0x14  // Should not match any element
+        0x41 0x25  // Should match second map element
+      >;
+    };
+
+    gen3@1110000002 {  // Shouldn't match anything.
+      reg = <0x11 0x10000002 0x00 0xff>;
+      interrupts = <
+        0x33 0x04
+        0x30 0x14
+        0x41 0x25
+      >;
+    };
+  };
+
+  // For a multi-stage translation test.  Interrupts go map1 -> map2 -> map3 ->
+  // controller.
+  int-map-multi {
+    #address-cells = <0x02>;
+    #size-cells = <0x02>;
+
+    maps {
+      map1 {
+        phandle = <0x04>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x01 0x02  // child unit address
+          0x04  // child interrupt specifier
+          0x05  // interrupt parent
+          0xab 0xcd 0xef 0x12   // parent unit address
+          0x12 0x34 0x56 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0xffffffff 0xffffffff 0xffffffff>;
+      };
+      map2 {
+        phandle = <0x05>;
+        #address-cells = <0x04>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x03>;
+        interrupt-map = <
+          0x0b 0xcd 0xe0 0x12  // child unit address
+          0x02 0x34 0x46  // child interrupt specifier
+          0x06  // interrupt parent
+          // no parent unit address
+          0x95  // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0f 0xffffffff 0xfffffff0 0xffffffff 0x0f
+        0xffffffff 0xef>;
+      };
+      map3 {
+        phandle = <0x06>;
+        #address-cells = <0x0>;
+        #size-cells = <0x0>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // child unit address
+          0x85  // child interrupt specifier
+          0x07  // interrupt parent
+          // no parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0xffffffef>;
+      };
+      intc {
+        phandle = <0x07>;
+        interrupt-controller;
+        #address-cells = <0x00>;
+        #interrupt-cells = <0x02>;
+      };
+    };
+
+    gen1@100000002 {
+      reg = <0x01 0x02 0x00 0xff
+             0x03 0x04 0x00 0xff>;  // First should be used.
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+  };
+
+  int-map-errors {
+    #address-cells = <0x02>;
+    #size-cells = <0x02>;
+
+    maps {
+      map-zero-intcells {
+        phandle = <0x08>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x00>;
+        interrupt-map = <
+          0x01 0x02  // child unit address
+          // child interrupt specifier
+          0x05  // interrupt parent
+          0xab 0xcd 0xef 0x12   // parent unit address
+          0x12 0x34 0x56 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0xffffffff 0xffffffff>;
+      };
+      map-big-intcells {
+        phandle = <0x09>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x08>;
+        interrupt-map = <
+          0x01 0x02  // child unit address
+          0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 // child interrupt specifier
+          0x05  // interrupt parent
+          0xab 0xcd 0xef 0x12   // parent unit address
+          0x12 0x34 0x56 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0xffffffff 0xffffffff>;
+      };
+      map-no-intcells {
+        phandle = <0x0a>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        interrupt-map = <
+          0x01 0x02  // child unit address
+          0x00 0x00  // child interrupt specifier
+          0x05  // interrupt parent
+          0xab 0xcd 0xef 0x12   // parent unit address
+          0x12 0x34 0x56 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0xffffffff 0xffffffff>;
+      };
+
+      // Interrupt nexus that points at the various invalid nodes.
+      map-zero-intcells-parent {
+        phandle = <0x20>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-zero-intcells
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x08  // interrupt parent
+          0x01 0x02  // parent unit address
+          // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+      map-big-intcells-parent {
+        phandle = <0x21>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-big-intcells
+          0x00 0x00  // child unit address
+          0x02  // child interrupt specifier
+          0x09  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+
+      map-no-intcells-parent {
+        phandle = <0x24>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-no-intcells
+          0x00 0x00  // child unit address
+          0x02  // child interrupt specifier
+          0x0a  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00 0x00  // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+
+      map-no-intmap {
+        phandle = <0x22>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+
+      map-no-intmask {
+        phandle = <0x23>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-big-intcells
+          0x00 0x00  // child unit address
+          0x02  // child interrupt specifier
+          0x09  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00 // parent interrupt specifier
+        >;
+      };
+
+      map-short-intmask {
+        phandle = <0x25>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x07  // interrupt parent
+          // no parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0>;
+      };
+
+      map-long-intmask {
+        phandle = <0x26>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x07  // interrupt parent
+          // no parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0x0 0x0>;
+      };
+
+      map-missing-parent {
+        phandle = <0x27>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0xf7  // interrupt parent
+          0x00  // parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-missing-parent-address-cells {
+        phandle = <0x28>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x07  // interrupt parent
+          0x00  // parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-missing-parent-address-cells-parent {
+        phandle = <0x29>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x01  // child interrupt specifier
+          0x28  // interrupt parent
+          0x00 0x00  // parent unit address
+          0x78 0x9a // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-bad-short1 {
+        phandle = <0x2a>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <0x00>;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-bad-short2 {
+        phandle = <0x2b>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-bad-short3 {
+        phandle = <0x2c>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x00  // child interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-bad-short4 {
+        phandle = <0x2d>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x00  // child interrupt specifier
+          0x07  // interrupt parent
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-bad-short5 {
+        phandle = <0x2e>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x00  // child interrupt specifier
+          0x04  // interrupt parent
+          0x00
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      map-bad-short6 {
+        phandle = <0x2f>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          0x00 0x00  // child unit address
+          0x00  // child interrupt specifier
+          0x05  // interrupt parent
+          0x00 0x00 0x00 0x00 // parent unit address
+          0x01 // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x00 0x00 0x00>;
+      };
+
+      // Interrupt nexus that has valid entries that point to invalid maps.
+      map-bad-mux {
+        phandle = <0x30>;
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        #interrupt-cells = <0x01>;
+        interrupt-map = <
+          // map-no-intmap
+          0x00 0x00  // child unit address
+          0x03  // child interrupt specifier
+          0x22  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00  // parent interrupt specifier
+
+          // map-no-intmask
+          0x00 0x00  // child unit address
+          0x04  // child interrupt specifier
+          0x23  // interrupt parent
+          0x01 0x02  // parent unit address
+          0x00  // parent interrupt specifier
+        >;
+        interrupt-map-mask = <0x0 0x0 0xffffffff>;
+      };
+    };
+
+    gen1-noreg1@100000002 {
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+
+    gen1-noreg2 {
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+
+    // reg is long enough to have the unit address, but still too short.
+    gen1-bad-reg-short@100000002 {
+      reg = <0x01 0x02 0xff>;
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+
+    gen1-bad-reg-short2@100000002 {
+      reg = <0x01>;
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+
+    gen1-bad-reg-long@100000002 {
+      reg = <0x01 0x02 0x00 0xff 0x03 0x04>;
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+
+    gen1-bad-reg-zero@100000002 {
+      reg = <>;
+      interrupt-parent = <0x04>;
+      interrupts = <0x04>;
+    };
+
+    gen-zero-intcells@100000002 {
+      reg = <0x01 0x02 0x00 0xff>;
+      interrupt-parent = <0x08>;
+      interrupts = <>;
+    };
+
+    gen-zero-intcells2@100000002 {
+      reg = <0x01 0x02 0x00 0xff>;
+      interrupt-parent = <0x08>;
+      interrupts = <0x04>;
+    };
+
+    gen-zero-intcells-mid@1 {
+      reg = <0x00 0x01 0x00 0xff>;
+      interrupt-parent = <0x20>;
+      interrupts = <0x01>;
+    };
+
+    gen-big-intcells-mid@2 {
+      reg = <0x00 0x02 0x00 0xff>;
+      interrupt-parent = <0x21>;
+      interrupts = <0x02>;
+    };
+
+    gen-no-intmap@3 {
+      reg = <0x00 0x03 0x00 0xff>;
+      interrupt-parent = <0x30>;
+      interrupts = <0x03>;
+    };
+
+    gen-no-intmask@4 {
+      reg = <0x00 0x04 0x00 0xff>;
+      interrupt-parent = <0x30>;
+      interrupts = <0x04>;
+    };
+
+    gen-no-intcells@5 {
+      reg = <0x00 0x05 0x00 0xff>;
+      interrupt-parent = <0x24>;
+      interrupts = <0x02>;
+    };
+
+    gen-short-intmask@6 {
+      reg = <0x00 0x06 0x00 0xff>;
+      interrupt-parent = <0x25>;
+      interrupts = <0x01>;
+    };
+
+    gen-long-intmask@7 {
+      reg = <0x00 0x07 0x00 0xff>;
+      interrupt-parent = <0x26>;
+      interrupts = <0x01>;
+    };
+
+    gen-missing-parent@8 {
+      reg = <0x00 0x08 0x00 0xff>;
+      interrupt-parent = <0x27>;
+      interrupts = <0x01>;
+    };
+
+    gen-missing-parent-address-cells@9 {
+      reg = <0x00 0x09 0x00 0xff>;
+      interrupt-parent = <0x29>;
+      interrupts = <0x01>;
+    };
+
+    gen-bad-map-short1@a {
+      reg = <0x00 0x0a 0x00 0xff>;
+      interrupt-parent = <0x2a>;
+      interrupts = <0x01>;
+    };
+
+    gen-bad-map-short2@b {
+      reg = <0x00 0x0a 0x00 0xff>;
+      interrupt-parent = <0x2b>;
+      interrupts = <0x01>;
+    };
+
+    gen-bad-map-short3@c {
+      reg = <0x00 0x0a 0x00 0xff>;
+      interrupt-parent = <0x2c>;
+      interrupts = <0x01>;
+    };
+
+    gen-bad-map-short4@d {
+      reg = <0x00 0x0a 0x00 0xff>;
+      interrupt-parent = <0x2d>;
+      interrupts = <0x01>;
+    };
+
+    gen-bad-map-short5@e {
+      reg = <0x00 0x0a 0x00 0xff>;
+      interrupt-parent = <0x2e>;
+      interrupts = <0x01>;
+    };
+
+    gen-bad-map-short6@f {
+      reg = <0x00 0x0a 0x00 0xff>;
+      interrupt-parent = <0x2f>;
+      interrupts = <0x01>;
+    };
+  };
+};

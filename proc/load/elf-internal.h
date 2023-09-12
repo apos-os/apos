@@ -24,6 +24,12 @@ typedef uint32_t Elf32_Off;
 typedef int32_t Elf32_Sword;
 typedef uint32_t Elf32_Word;
 
+typedef uint64_t Elf64_Addr;
+typedef uint64_t Elf64_Off;
+typedef uint16_t Elf64_Half;
+typedef uint32_t Elf64_Word;
+typedef uint64_t Elf64_Xword;
+
 // Number of bytes in the ELF header e_ident array.
 #define EI_NIDENT 16
 
@@ -44,6 +50,24 @@ typedef struct {
   Elf32_Half e_shstrndx;
 } Elf32_Ehdr;
 _Static_assert(sizeof(Elf32_Ehdr) == 52, "malformed Elf32_Ehdr");
+
+typedef struct {
+  unsigned char e_ident[EI_NIDENT];
+  Elf64_Half e_type;
+  Elf64_Half e_machine;
+  Elf64_Word e_version;
+  Elf64_Addr e_entry;
+  Elf64_Off e_phoff;
+  Elf64_Off e_shoff;
+  Elf64_Word e_flags;
+  Elf64_Half e_ehsize;
+  Elf64_Half e_phentsize;
+  Elf64_Half e_phnum;
+  Elf64_Half e_shentsize;
+  Elf64_Half e_shnum;
+  Elf64_Half e_shstrndx;
+} Elf64_Ehdr;
+_Static_assert(sizeof(Elf64_Ehdr) == 64, "malformed Elf64_Ehdr");
 
 // Bytes in the e_ident array.
 #define EI_MAG0 0
@@ -93,6 +117,7 @@ _Static_assert(sizeof(Elf32_Ehdr) == 52, "malformed Elf32_Ehdr");
 #define EM_88K 5
 #define EM_860 7
 #define EM_MIPS 8
+#define EM_RISCV 0xF3
 
 // Program header entry.
 typedef struct {
@@ -107,6 +132,18 @@ typedef struct {
 } Elf32_Phdr;
 _Static_assert(sizeof(Elf32_Phdr) == 32, "malformed Elf32_Phdr");
 
+typedef struct {
+  Elf64_Word p_type;
+  Elf64_Word p_flags;
+  Elf64_Off p_offset;
+  Elf64_Addr p_vaddr;
+  Elf64_Addr p_paddr;
+  Elf64_Xword p_filesz;
+  Elf64_Xword p_memsz;
+  Elf64_Xword p_align;
+} Elf64_Phdr;
+_Static_assert(sizeof(Elf64_Phdr) == 56, "malformed Elf64_Phdr");
+
 // Values of p_type.
 #define PT_NULL 0
 #define PT_LOAD 1
@@ -118,6 +155,7 @@ _Static_assert(sizeof(Elf32_Phdr) == 32, "malformed Elf32_Phdr");
 #define PT_LOPROC 0x70000000
 #define PT_HIPROC 0x7fffffff
 #define PT_GNU_STACK 0x6474e551
+#define PT_RISCV_ATTRIBUTES 0x70000003
 
 // Flags in p_flags.
 #define PF_X 0x1

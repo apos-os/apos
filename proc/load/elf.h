@@ -19,11 +19,14 @@
 #include "proc/load/load.h"
 
 // Attempts to detect if the given binary is ELF.
+// TODO(aoates): combine elf and elf64 code since it's essentially duplicated.
 int elf_is_loadable(int fd);
+int elf64_is_loadable(int fd);
 
 // Load a binary from the given fd.  Returns 0 on success, or -errno.
 //
 // REQUIRES: elf_is_loadable(fd) == 0.
 int elf_load(int fd, load_binary_t** binary_out);
+int elf64_load(int fd, load_binary_t** binary_out);
 
 #endif

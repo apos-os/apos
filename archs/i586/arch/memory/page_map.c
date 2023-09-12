@@ -16,12 +16,12 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
-#include "arch/memory/page_alloc.h"
 #include "arch/memory/page_map.h"
 #include "archs/i586/internal/memory/page_tables.h"
 #include "common/kassert.h"
 #include "memory/flags.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 
 #define SUPPORTS_INVPLG_INSTRUCTION 0
 
@@ -142,7 +142,7 @@ void page_frame_unmap_virtual_range(addr_t virt, addrdiff_t length) {
   }
 }
 
-page_dir_ptr_t page_frame_alloc_directory() {
+page_dir_ptr_t page_frame_alloc_directory(void) {
   phys_addr_t dir_phys = page_frame_alloc();
   KASSERT(dir_phys);
   KASSERT_DBG((dir_phys & PDE_ADDRESS_MASK) == dir_phys);

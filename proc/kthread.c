@@ -33,6 +33,10 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 
+#define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
+#define KTHREAD_STACK_SIZE \
+  (ARCH_KTHREAD_BASE_STACK_SIZE + KTHREAD_STACK_PROTECT_LEN)
+
 static kthread_data_t* g_current_thread = 0;
 static int g_next_id = 0;
 static list_t g_all_threads = LIST_INIT_STATIC;
@@ -69,13 +73,19 @@ static void kthread_init_kthread(kthread_data_t* t) {
 }
 
 static void kthread_trampoline(void *(*start_routine)(void*), void* arg) {
+  // The arch-specific trampoline should have enabled interrupts.
+  KASSERT(interrupts_enabled());
+
+  // Enable deferred interrupts for all new threads.
+  defint_set_state(true);
+
   void* retval = start_routine(arg);
   kthread_exit(retval);
   // Should never get here.
   KASSERT(0);
 }
 
-void kthread_init() {
+void kthread_init(void) {
   kthread_arch_init();
 
   PUSH_AND_DISABLE_INTERRUPTS();
@@ -87,9 +97,10 @@ void kthread_init() {
   first->state = KTHREAD_RUNNING;
   first->id = g_next_id++;
   first->stack = (addr_t*)get_global_meminfo()->kernel_stack_base;
+  first->stacklen = get_global_meminfo()->kernel_stack_len;
   list_push(&g_all_threads, &first->all_threads_link);
 
-  KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + KTHREAD_STACK_SIZE);
+  KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + first->stacklen);
 
   kthread_queue_init(&g_reap_queue);
 
@@ -98,7 +109,7 @@ void kthread_init() {
   POP_INTERRUPTS();
 }
 
-kthread_t kthread_current_thread() {
+kthread_t kthread_current_thread(void) {
   return g_current_thread;
 }
 
@@ -136,6 +147,7 @@ int kthread_create(kthread_t* thread_ptr, void* (*start_routine)(void*),
                            MEM_GLOBAL);
 
   thread->stack = stack;
+  thread->stacklen = KTHREAD_STACK_SIZE;
   kthread_arch_init_thread(thread, kthread_trampoline, start_routine, arg);
 
   if (kthread_current_thread()->preemption_disables == 0) {
@@ -377,6 +389,7 @@ void kmutex_init(kmutex_t* m) {
 void kmutex_lock(kmutex_t* m) {
   // We should never be blocking if we're holding a spinlock.
   KASSERT_DBG(kthread_current_thread()->spinlocks_held == 0);
+  KASSERT_DBG(!is_running_defint());
   PUSH_AND_DISABLE_INTERRUPTS();
   if (m->locked) {
     // Mutexes are non-reentrant, so this would deadlock.

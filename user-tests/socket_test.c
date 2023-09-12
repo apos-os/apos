@@ -130,7 +130,7 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(EINVAL, e);
 
-  KEXPECT_ERRNO(ENOMEM, connect(sock, (struct sockaddr*)&addr, INT_MAX));
+  KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, INT_MAX));
   KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, 0));
   KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, 1));
   KEXPECT_ERRNO(EINVAL, connect(sock, (struct sockaddr*)&addr, -10));
@@ -150,7 +150,7 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(-1, result);
   KEXPECT_EQ(EINVAL, e);
 
-  KEXPECT_ERRNO(ENOMEM,
+  KEXPECT_ERRNO(EINVAL,
                 sendto(sock, buf, 10, 0, (struct sockaddr*)&addr, INT_MAX));
 
   // NULL addr should be allowed.
@@ -162,7 +162,7 @@ static void socket_unix_test(void) {
   KEXPECT_SIGNAL(
       SIGSEGV, sendto(sock, buf, 10, 0, (struct sockaddr*)0x123, sizeof(addr)));
 
-  KEXPECT_ERRNO(ENOMEM, sendto(sock, buf, INT_MAX, 0, NULL, 0));
+  KEXPECT_ERRNO(EINVAL, sendto(sock, buf, INT_MAX, 0, NULL, 0));
 
   KEXPECT_SIGNAL(SIGSEGV, sendto(sock, (void*)0x123, 10, 0, NULL, 0));
 
@@ -199,7 +199,7 @@ static void socket_unix_test(void) {
   KEXPECT_SIGNAL(SIGSEGV,
                  recvfrom(sock, buf, 10, 0, (struct sockaddr*)0x123, &len));
 
-  KEXPECT_ERRNO(ENOMEM, recvfrom(sock, buf, INT_MAX, 0, NULL, 0));
+  KEXPECT_ERRNO(EINVAL, recvfrom(sock, buf, INT_MAX, 0, NULL, 0));
 
   KEXPECT_SIGNAL(SIGSEGV, recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr,
                                    (socklen_t*)0x123));

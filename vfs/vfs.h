@@ -82,12 +82,12 @@ int vfs_unlink(const char* path);
 // Read up to count bytes from the given fd into buf, and advance the file
 // position by that amount.  Returns the actual number of bytes read on success,
 // or -error.
-int vfs_read(int fd, void* buf, size_t count);
+ssize_t vfs_read(int fd, void* buf, size_t count);
 
 // Write up to count bytes from buf into the given fd, and advance the file
 // position by that amount.  Returns the actual number of bytes written on
 // success, or -error.
-int vfs_write(int fd, const void* buf, size_t count);
+ssize_t vfs_write(int fd, const void* buf, size_t count);
 
 // Seek the fd to the given offset, relative to whence.  Returns 0 on success,
 // or -error.
@@ -154,7 +154,7 @@ int vfs_fchmod(int fd, kmode_t mode);
 int vfs_symlink(const char* target, const char* link);
 
 // Read the contents of a symlink into the given buffer.
-int vfs_readlink(const char* path, char* buf, int bufsize);
+int vfs_readlink(const char* path, char* buf, size_t bufsize);
 
 // Checks if the current [real] user ID has access to the given file.  Returns 0
 // on success, or -error.

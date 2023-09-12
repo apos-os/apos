@@ -374,9 +374,9 @@ static void handle_port_changes(usb_device_t* dev, int port) {
     }
     feature_to_clear = USB_HUBD_FEAT_C_PORT_CONNECTION;
   } else if (port_change & USB_HUBD_C_PORT_ENABLE) {
-    // C_PORT_ENABLE should only be set when enable is 1 -> 0.
-    KASSERT((port_status & USB_HUBD_PORT_ENABLE) == 0);
-    event.type = PORT_ERROR;
+    if ((port_status & USB_HUBD_PORT_ENABLE) == 0) {
+      event.type = PORT_ERROR;
+    }
     feature_to_clear = USB_HUBD_FEAT_C_PORT_ENABLE;
   } else if (port_change & USB_HUBD_C_PORT_SUSPEND) {
     // We shouldn't receive SUSPEND changes since we don't do suspends.

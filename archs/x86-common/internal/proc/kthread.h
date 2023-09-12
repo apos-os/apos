@@ -20,7 +20,7 @@
 // Return the top of the current thread's kernel stack.  This is the address ONE
 // STACK SLOT ABOVE the first element on the stack, if anything has been pushed.
 static inline addr_t kthread_arch_kernel_stack_top(kthread_t thread) {
-  return (addr_t)thread->stack + KTHREAD_STACK_SIZE - sizeof(addr_t);
+  return (addr_t)thread->stack + thread->stacklen - sizeof(addr_t);
 }
 
 #endif

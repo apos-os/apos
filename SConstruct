@@ -23,7 +23,8 @@ if 'configure' in COMMAND_LINE_TARGETS:
 else:
   vars = Variables(CONFIG_CACHE_FILE)
 
-vars.Add(EnumVariable('ARCH', 'architecture to target', None, ['i586', 'x86_64']))
+vars.Add(EnumVariable('ARCH', 'architecture to target', None,
+                      ['i586', 'x86_64', 'riscv64']))
 vars.Add(BoolVariable('DEBUG', 'enable debug build', True))
 vars.Add('BUILD_DIR', 'directory to build in', 'build-scons')
 vars.Add('TOOL_PREFIX', 'prefix of build tools', None)
@@ -37,6 +38,7 @@ vars.Add('KSHELL_INITIAL_COMMAND',
 FEATURES_DEFAULT_ENABLED = [
   'ETHERNET',
   'EXT2',
+  'NVME',
   'TESTS',
   'TERM_COLOR',
   'USB',
@@ -49,6 +51,9 @@ FEATURES_DEFAULT_ENABLED = [
 # As above, but features that are _disabled_ by default.
 FEATURES_DEFAULT_DISABLED = [
   'KMUTEX_DEADLOCK_DETECTION',
+  # Whether to pre-page in user binaries.  Useful when debugging them to avoid
+  # stepping through lots of page faults.
+  'PRELOAD_USER_BINS',
 ]
 
 ALL_FEATURES = FEATURES_DEFAULT_ENABLED + FEATURES_DEFAULT_DISABLED
@@ -125,7 +130,7 @@ target_env = base_env.Clone()
 if not target_env['CLANG']:
   target_env.Replace(CC = '${TOOL_PREFIX}gcc')
 else:
-  target_env.Replace(CC = 'clang')
+  target_env.Replace(CC = '${TOOL_PREFIX}clang')
   target_env.Append(CFLAGS = ['-target', '$CLANG_TARGET'])
   target_env.Append(CFLAGS = ['-fdebug-macro'])
 
@@ -145,8 +150,9 @@ if not env['CLANG']:
   # TODO(aoates): get format-string checking to work with both GCC and clang.
   env.Append(CFLAGS = Split("-Wno-format"))
 env.Append(CFLAGS = Split("-Wframe-larger-than=1500"))
-env.Append(ASFLAGS = ['--gen-debug'])
+env.Append(ASFLAGS = ['--gen-debug', '-I', '$BUILD_CFG_DIR'])
 env.Replace(LINK = '${TOOL_PREFIX}ld')
+env.Append(LINKFLAGS = ['-L', '$BUILD_CFG_DIR'])
 
 env.Append(CPPPATH = ['#/archs/$ARCH', '#/archs/common', '#/$BUILD_CFG_DIR'])
 

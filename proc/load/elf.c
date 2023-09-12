@@ -51,7 +51,7 @@ static int elf_check_header(const Elf32_Ehdr* header) {
 
   if (header->e_ident[EI_CLASS] != ELFCLASS32 ||
       header->e_ident[EI_DATA] != ELFDATA2LSB) {
-    KLOG(INFO, "unsupported ELF format (must be 32-bit, little endian)\n");
+    KLOG(DEBUG, "unsupported ELF format (must be 32-bit, little endian)\n");
     return -EINVAL;
   }
 

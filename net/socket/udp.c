@@ -14,7 +14,7 @@
 
 #include "net/socket/udp.h"
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"

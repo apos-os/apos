@@ -17,7 +17,7 @@
 #define APOO_USER_SYSCALLS_H
 
 // All syscalls and their numbers.
-#define SYS_SYSCALL_TEST 0
+#define SYS_SYSCALL_TEST 100
 #define SYS_OPEN 1
 #define SYS_CLOSE 2
 #define SYS_DUP 45
@@ -77,6 +77,7 @@
 #define SYS_READLINK 43
 #define SYS_SLEEP_MS 44
 #define SYS_APOS_GET_TIME 51
+#define SYS_APOS_GET_TIMESPEC 97
 #define SYS_PIPE 54
 #define SYS_UMASK 55
 #define SYS_SETSID 56

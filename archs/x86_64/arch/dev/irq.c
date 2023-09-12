@@ -45,7 +45,7 @@ static handler_block_t g_handlers[NUM_HANDLERS];
 
 static void irq_handler(uint32_t interrupt, uint32_t error, bool is_user);
 
-void pic_init() {
+void arch_irq_init(void) {
   for (int i = 0; i < NUM_HANDLERS; ++i) {
     for (int j = 0; j < MAX_HANDLERS_PER_IRQ; ++j) {
       g_handlers[i].handlers[j] = 0x0;
@@ -83,7 +83,7 @@ void pic_init() {
   outb(PIC_SLAVE_DATA, 0x0);
 }
 
-void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg) {
+void register_irq_handler(irq_t irq, irq_handler_t handler, void* arg) {
   KASSERT(irq < NUM_HANDLERS);
   KASSERT(g_handlers[irq].num < MAX_HANDLERS_PER_IRQ);
   // TODO(aoates): probs need to disable interrupts here.
@@ -130,4 +130,8 @@ static void irq_handler(uint32_t interrupt, uint32_t error, bool is_user) {
       g_handlers[irq].handlers[i](g_handlers[irq].args[i]);
     }
   }
+}
+
+const dt_node_t* arch_irq_root(void) {
+  die("No devicetree supported on x86\n");
 }

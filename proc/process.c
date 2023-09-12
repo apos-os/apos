@@ -24,6 +24,7 @@
 #include "proc/group.h"
 #include "proc/kthread.h"
 #include "proc/kthread-internal.h"
+#include "proc/load/load.h"
 #include "proc/process.h"
 #include "proc/process-internal.h"
 #include "proc/scheduler.h"
@@ -57,7 +58,8 @@ static void proc_init_process(process_t* p) {
   p->exit_status = 0;
   p->exiting = false;
   for (int i = 0; i < PROC_MAX_FDS; ++i) {
-    p->fds[i] = -1;
+    p->fds[i].file = -1;
+    p->fds[i].flags = 0;
   }
   p->cwd = 0x0;
   p->vm_area_list = LIST_INIT;
@@ -75,6 +77,7 @@ static void proc_init_process(process_t* p) {
   p->pgroup_link = LIST_LINK_INIT;
   p->umask = PROC_DEFAULT_UMASK;
   p->execed = false;
+  p->user_arch = BIN_NONE;
   p->parent = 0x0;
   p->children_list = LIST_INIT;
   p->children_link = LIST_LINK_INIT;
@@ -87,7 +90,7 @@ static void proc_init_process(process_t* p) {
   }
 }
 
-process_t* proc_alloc() {
+process_t* proc_alloc(void) {
   int id = -1;
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     if (g_proc_table[i] == NULL && list_empty(&proc_group_get(i)->procs)) {
@@ -119,7 +122,7 @@ void proc_destroy(process_t* process) {
   kfree(process);
 }
 
-void proc_init_stage1() {
+void proc_init_stage1(void) {
   KASSERT(g_proc_init_stage == 0);
   for (int i = 0; i < PROC_MAX_PROCS; ++i) {
     g_proc_table[i] = 0x0;
@@ -167,7 +170,7 @@ void proc_init_stage1() {
                            false /* allow_allocation */);
 }
 
-void proc_init_stage2() {
+void proc_init_stage2(void) {
   KASSERT(g_proc_init_stage == 1);
   KASSERT(g_current_proc == 0);
 
@@ -179,7 +182,7 @@ void proc_init_stage2() {
   g_proc_init_stage = 2;
 }
 
-process_t* proc_current() {
+process_t* proc_current(void) {
   KASSERT(g_current_proc >= 0 && g_current_proc < PROC_MAX_PROCS);
   KASSERT(g_proc_init_stage >= 1);
   // TODO(aoates): consider a check here to verify raw kernel threads don't

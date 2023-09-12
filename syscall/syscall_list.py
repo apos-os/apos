@@ -111,7 +111,8 @@ class SyscallDef(object):
   def __init__(self, name, number, kernel_name,
       header, user_header, return_type, args,
       stubs_to_generate=None, can_fail=True,
-      needs_32bit_conv=False, newlib_defined=False):
+      needs_32bit_conv=False, newlib_defined=False,
+      mismatched_kernel_types=False):
     assert len(args) <= MAX_ARGS
     if stubs_to_generate is None:
       # syscalls defined in newlib will have their own 'L3' stubs already.
@@ -131,6 +132,9 @@ class SyscallDef(object):
     self.stubs_to_generate = stubs_to_generate
     # Determines if we do errno conversion.
     self.can_fail = can_fail
+    # Dictates whether the kernel syscall function must have the same type
+    # exactly as the declared syscall here.
+    self.mismatched_kernel_types = mismatched_kernel_types
 
   @property
   def name(self):
@@ -160,7 +164,8 @@ def AddSyscall(*args, **kwargs):
   SYSCALLS.append(syscall)
 
 
-AddSyscall('syscall_test', 0, 'do_syscall_test',
+# Leave syscall 0 intentionally unallocated to catch bugs.
+AddSyscall('syscall_test', 100, 'do_syscall_test',
     'syscall/test.h', '<apos/test.h>',
     'long', [
     'long:arg1:u',
@@ -175,7 +180,8 @@ AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'const char*:path:s',
     'int:flags:u',
     'apos_mode_t:mode:u'],
-    newlib_defined=True)
+    newlib_defined=True,
+    mismatched_kernel_types=True)  # vfs_open() uses varargs
 
 AddSyscall('close', 2, 'vfs_close', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -210,7 +216,8 @@ AddSyscall('link', 72, 'vfs_link', 'vfs/vfs.h', '<unistd.h>',
     newlib_defined=True)
 
 AddSyscall('rename', 73, 'vfs_rename', 'vfs/vfs.h', '<stdio.h>',
-    'int', ['const char*:path1:s', 'const char*:path2:s'])
+    'int', ['const char*:path1:s', 'const char*:path2:s'],
+    newlib_defined=True)
 
 AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', '<unistd.h>',
     'int', [
@@ -218,14 +225,14 @@ AddSyscall('unlink', 6, 'vfs_unlink', 'vfs/vfs.h', '<unistd.h>',
     newlib_defined=True)
 
 AddSyscall('read', 7, 'vfs_read', 'vfs/vfs.h', '<unistd.h>',
-    'int', [
+    'ssize_t', [
     'int:fd:u',
     'void*:buf:bw:count',
     'size_t:count:u'],
     newlib_defined=True)
 
 AddSyscall('write', 8, 'vfs_write', 'vfs/vfs.h', '<unistd.h>',
-    'int', [
+    'ssize_t', [
     'int:fd:u',
     'const void*:buf:br:count',
     'size_t:count:u'],
@@ -430,15 +437,21 @@ AddSyscall('readlink', 43, 'vfs_readlink', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'char*:buf:bw:bufsize', 'size_t:bufsize:u'])
 
 AddSyscall('sleep_ms', 44, 'ksleep', 'proc/sleep.h', '<apos/sleep.h>',
-    'int', ['unsigned int:seconds:u'])
+    'int', ['int:seconds:u'])
 
 AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
     '<apos/syscall_decls.h>', 'int',
     ['struct apos_tm*:t:bw:sizeof(struct apos_tm)'])
 
+AddSyscall('apos_get_timespec', 97, 'apos_get_timespec', 'common/time.h',
+    '<apos/syscall_decls.h>', 'int',
+    ['struct apos_timespec%(s32)s*:t:bw:sizeof(struct apos_timespec%(s32)s)'],
+    needs_32bit_conv=True)
+
 AddSyscall('pipe', 54, 'vfs_pipe', 'vfs/pipe.h', '<unistd.h>',
     'int', ['int*:fildes:bw:sizeof(int[2])'],
-     stubs_to_generate=['L1', 'L2'])
+     stubs_to_generate=['L1', 'L2'],
+     mismatched_kernel_types=True)
 
 AddSyscall('umask', 55, 'proc_umask', 'proc/umask.h', '<sys/stat.h>',
     'apos_mode_t', ['apos_mode_t:cmask:u'])

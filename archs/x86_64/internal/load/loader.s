@@ -14,7 +14,8 @@
 
 .global loader                          # making entry point visible to linker
 
-# reserve initial kernel stack space
+# Reserve initial kernel stack space.
+# Keep this in sync with mem_init.c.
 .set STACKSIZE, 0x8000                  # that is, 32k.
 .lcomm stack, STACKSIZE                 # reserve stack on a doubleword boundary
 .lcomm  mbd, 4                          # we will use this in kmain
@@ -29,7 +30,7 @@ PD: .space 0x1000, 0
 GDT: .space 24, 0
 .balign 4
 .space 2, 0
-GDT_PTR: .space 10, 0 
+GDT_PTR: .space 10, 0
 
 loader:
 .code32

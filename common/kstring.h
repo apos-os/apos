@@ -15,6 +15,7 @@
 #ifndef APOO_KSTRING_H
 #define APOO_KSTRING_H
 
+#include <stdbool.h>
 #include <stddef.h>
 
 // Clang will generate calls to memset(), so we must define it.
@@ -29,15 +30,19 @@ int kstrlen(const char* s);
 int kstrnlen(const char* s, int max);
 int kstrcmp(const char* s1, const char* s2);
 int kstrncmp(const char* s1, const char* s2, size_t n);
+bool kstr_startswith(const char* s, const char* prefix);
 
 void* kmemset(void* s, int c, size_t n);
 void* kmemcpy(void* dest, const void* src, size_t n);
 int kmemcmp(const void* s1, const void* s2, size_t n);
 
+#define ZERO_STRUCT(_x) kmemset(&(_x), 0, sizeof(_x))
+
 char* kstrcpy(char* dst, const char* src);
 char* kstrncpy(char* dst, const char* src, size_t n);
 
-char *kstrcat(char *dest, const char *src);
+char* kstrcat(char* dest, const char* src);
+size_t kstrlcat(char* dest, const char* src, size_t dest_size);
 
 const char* kitoa(long x);
 const char* kitoa_r(long x, char* buf, size_t len);
@@ -51,9 +56,11 @@ const char* kutoa_hex_r(unsigned long x, char* buf, size_t len);
 const char* kutoa_hex_lower(unsigned long x);  // As above, but lower case.
 const char* kutoa_hex_lower_r(unsigned long x, char* buf, size_t len);
 
-// Note: these only support decimal.
 long katoi(const char* s);
+// Supports decimal and hex (if it starts with 0x or 0X).
 unsigned long katou(const char* s);
+// Unconditionally parses as hex, even without a prefix.
+unsigned long katou_hex(const char* s);
 
 const char* kstrchr(const char* s, int c);
 const char* kstrrchr(const char* s, int c);
@@ -73,7 +80,7 @@ static inline int kisalnum(int c) {
 
 static inline int kisspace(int c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' ||
-         c == 'r';
+         c == '\r';
 }
 
 static inline int kisprint(int c) {

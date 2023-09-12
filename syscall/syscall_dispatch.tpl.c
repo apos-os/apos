@@ -14,6 +14,7 @@
 
 #include "arch/syscall/context.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/time.h"
 #include "dev/termios.h"
@@ -35,6 +36,7 @@
 #include "proc/wait.h"
 #include "syscall/execve_wrapper.h"
 #include "syscall/fork.h"
+#include "syscall/syscall_dispatch.h"
 #include "syscall/test.h"
 #include "syscall/wrappers.h"
 #include "syscall/wrappers32.h"
@@ -127,6 +129,12 @@ _Static_assert(sizeof(unsigned int) <= sizeof(long),
 _Static_assert(sizeof(struct apos_tm*) <= sizeof(long),
                "invalid argument type: struct apos_tm* (sizeof(struct "
                "apos_tm*) > sizeof(long))");
+_Static_assert(sizeof(struct apos_timespec_32*) <= sizeof(long),
+               "invalid argument type: struct apos_timespec_32* (sizeof(struct "
+               "apos_timespec_32*) > sizeof(long))");
+_Static_assert(sizeof(struct apos_timespec*) <= sizeof(long),
+               "invalid argument type: struct apos_timespec* (sizeof(struct "
+               "apos_timespec*) > sizeof(long))");
 _Static_assert(sizeof(struct ktermios*) <= sizeof(long),
                "invalid argument type: struct ktermios* (sizeof(struct "
                "ktermios*) > sizeof(long))");
@@ -195,8 +203,8 @@ int SYSCALL_DMZ_rmdir(const char* path);
 int SYSCALL_DMZ_link(const char* path1, const char* path2);
 int SYSCALL_DMZ_rename(const char* path1, const char* path2);
 int SYSCALL_DMZ_unlink(const char* path);
-int SYSCALL_DMZ_read(int fd, void* buf, size_t count);
-int SYSCALL_DMZ_write(int fd, const void* buf, size_t count);
+ssize_t SYSCALL_DMZ_read(int fd, void* buf, size_t count);
+ssize_t SYSCALL_DMZ_write(int fd, const void* buf, size_t count);
 int SYSCALL_DMZ_getdents_32(int fd, kdirent_32_t* buf, int count);
 int SYSCALL_DMZ_getdents(int fd, kdirent_t* buf, int count);
 int SYSCALL_DMZ_getcwd(char* path_out, size_t size);
@@ -256,8 +264,10 @@ int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
 int SYSCALL_DMZ_munmap(void* addr, size_t length);
 int SYSCALL_DMZ_symlink(const char* path1, const char* path2);
 int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize);
-int SYSCALL_DMZ_sleep_ms(unsigned int seconds);
+int SYSCALL_DMZ_sleep_ms(int seconds);
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t);
+int SYSCALL_DMZ_apos_get_timespec_32(struct apos_timespec_32* t);
+int SYSCALL_DMZ_apos_get_timespec(struct apos_timespec* t);
 int SYSCALL_DMZ_pipe(int* fildes);
 apos_mode_t SYSCALL_DMZ_umask(apos_mode_t cmask);
 apos_pid_t SYSCALL_DMZ_setsid(void);
@@ -352,40 +362,37 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     case SYS_WRITE:
       return SYSCALL_DMZ_write((int)arg1, (const void*)arg2, (size_t)arg3);
 
-#if ARCH_IS_64_BIT
     case SYS_GETDENTS:
-      return SYSCALL_DMZ_getdents_32((int)arg1, (kdirent_32_t*)arg2, (int)arg3);
-#else
-    case SYS_GETDENTS:
-      return SYSCALL_DMZ_getdents((int)arg1, (kdirent_t*)arg2, (int)arg3);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_getdents_32((int)arg1, (kdirent_32_t*)arg2,
+                                       (int)arg3);
+      } else {
+        return SYSCALL_DMZ_getdents((int)arg1, (kdirent_t*)arg2, (int)arg3);
+      }
 
     case SYS_GETCWD:
       return SYSCALL_DMZ_getcwd((char*)arg1, (size_t)arg2);
 
-#if ARCH_IS_64_BIT
     case SYS_STAT:
-      return SYSCALL_DMZ_stat_32((const char*)arg1, (apos_stat_32_t*)arg2);
-#else
-    case SYS_STAT:
-      return SYSCALL_DMZ_stat((const char*)arg1, (apos_stat_t*)arg2);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_stat_32((const char*)arg1, (apos_stat_32_t*)arg2);
+      } else {
+        return SYSCALL_DMZ_stat((const char*)arg1, (apos_stat_t*)arg2);
+      }
 
-#if ARCH_IS_64_BIT
     case SYS_LSTAT:
-      return SYSCALL_DMZ_lstat_32((const char*)arg1, (apos_stat_32_t*)arg2);
-#else
-    case SYS_LSTAT:
-      return SYSCALL_DMZ_lstat((const char*)arg1, (apos_stat_t*)arg2);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_lstat_32((const char*)arg1, (apos_stat_32_t*)arg2);
+      } else {
+        return SYSCALL_DMZ_lstat((const char*)arg1, (apos_stat_t*)arg2);
+      }
 
-#if ARCH_IS_64_BIT
     case SYS_FSTAT:
-      return SYSCALL_DMZ_fstat_32((int)arg1, (apos_stat_32_t*)arg2);
-#else
-    case SYS_FSTAT:
-      return SYSCALL_DMZ_fstat((int)arg1, (apos_stat_t*)arg2);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_fstat_32((int)arg1, (apos_stat_32_t*)arg2);
+      } else {
+        return SYSCALL_DMZ_fstat((int)arg1, (apos_stat_t*)arg2);
+      }
 
     case SYS_LSEEK:
       return SYSCALL_DMZ_lseek((int)arg1, (apos_off_t)arg2, (int)arg3);
@@ -429,15 +436,14 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     case SYS_WAITPID:
       return SYSCALL_DMZ_waitpid((apos_pid_t)arg1, (int*)arg2, (int)arg3);
 
-#if ARCH_IS_64_BIT
     case SYS_EXECVE:
-      return SYSCALL_DMZ_execve_32((const char*)arg1, (char* const*)arg2,
-                                   (char* const*)arg3);
-#else
-    case SYS_EXECVE:
-      return SYSCALL_DMZ_execve((const char*)arg1, (char* const*)arg2,
-                                (char* const*)arg3);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_execve_32((const char*)arg1, (char* const*)arg2,
+                                     (char* const*)arg3);
+      } else {
+        return SYSCALL_DMZ_execve((const char*)arg1, (char* const*)arg2,
+                                  (char* const*)arg3);
+      }
 
     case SYS_GETPID:
       kthread_current_thread()->syscall_ctx.flags &= ~SCCTX_RESTARTABLE;
@@ -453,16 +459,15 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     case SYS_KILL:
       return SYSCALL_DMZ_kill((apos_pid_t)arg1, (int)arg2);
 
-#if ARCH_IS_64_BIT
     case SYS_SIGACTION:
-      return SYSCALL_DMZ_sigaction_32((int)arg1,
-                                      (const struct ksigaction_32*)arg2,
-                                      (struct ksigaction_32*)arg3);
-#else
-    case SYS_SIGACTION:
-      return SYSCALL_DMZ_sigaction((int)arg1, (const struct ksigaction*)arg2,
-                                   (struct ksigaction*)arg3);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_sigaction_32((int)arg1,
+                                        (const struct ksigaction_32*)arg2,
+                                        (struct ksigaction_32*)arg3);
+      } else {
+        return SYSCALL_DMZ_sigaction((int)arg1, (const struct ksigaction*)arg2,
+                                     (struct ksigaction*)arg3);
+      }
 
     case SYS_SIGPROCMASK:
       return SYSCALL_DMZ_sigprocmask((int)arg1, (const ksigset_t*)arg2,
@@ -523,15 +528,14 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     case SYS_SETPGID:
       return SYSCALL_DMZ_setpgid((apos_pid_t)arg1, (apos_pid_t)arg2);
 
-#if ARCH_IS_64_BIT
     case SYS_MMAP:
-      return SYSCALL_DMZ_mmap_32((void*)arg1, (size_t)arg2, (int)arg3,
-                                 (int)arg4, (int)arg5, (apos_off_t)arg6);
-#else
-    case SYS_MMAP:
-      return SYSCALL_DMZ_mmap((void*)arg1, (size_t)arg2, (int)arg3, (int)arg4,
-                              (int)arg5, (apos_off_t)arg6);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_mmap_32((void*)arg1, (size_t)arg2, (int)arg3,
+                                   (int)arg4, (int)arg5, (apos_off_t)arg6);
+      } else {
+        return SYSCALL_DMZ_mmap((void*)arg1, (size_t)arg2, (int)arg3, (int)arg4,
+                                (int)arg5, (apos_off_t)arg6);
+      }
 
     case SYS_MUNMAP:
       return SYSCALL_DMZ_munmap((void*)arg1, (size_t)arg2);
@@ -543,10 +547,17 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
       return SYSCALL_DMZ_readlink((const char*)arg1, (char*)arg2, (size_t)arg3);
 
     case SYS_SLEEP_MS:
-      return SYSCALL_DMZ_sleep_ms((unsigned int)arg1);
+      return SYSCALL_DMZ_sleep_ms((int)arg1);
 
     case SYS_APOS_GET_TIME:
       return SYSCALL_DMZ_apos_get_time((struct apos_tm*)arg1);
+
+    case SYS_APOS_GET_TIMESPEC:
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_apos_get_timespec_32((struct apos_timespec_32*)arg1);
+      } else {
+        return SYSCALL_DMZ_apos_get_timespec((struct apos_timespec*)arg1);
+      }
 
     case SYS_PIPE:
       return SYSCALL_DMZ_pipe((int*)arg1);
@@ -592,22 +603,22 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
       return SYSCALL_DMZ_poll((struct apos_pollfd*)arg1, (apos_nfds_t)arg2,
                               (int)arg3);
 
-#if ARCH_IS_64_BIT
     case SYS_GETRLIMIT:
-      return SYSCALL_DMZ_getrlimit_32((int)arg1, (struct apos_rlimit_32*)arg2);
-#else
-    case SYS_GETRLIMIT:
-      return SYSCALL_DMZ_getrlimit((int)arg1, (struct apos_rlimit*)arg2);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_getrlimit_32((int)arg1,
+                                        (struct apos_rlimit_32*)arg2);
+      } else {
+        return SYSCALL_DMZ_getrlimit((int)arg1, (struct apos_rlimit*)arg2);
+      }
 
-#if ARCH_IS_64_BIT
     case SYS_SETRLIMIT:
-      return SYSCALL_DMZ_setrlimit_32((int)arg1,
-                                      (const struct apos_rlimit_32*)arg2);
-#else
-    case SYS_SETRLIMIT:
-      return SYSCALL_DMZ_setrlimit((int)arg1, (const struct apos_rlimit*)arg2);
-#endif
+      if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+        return SYSCALL_DMZ_setrlimit_32((int)arg1,
+                                        (const struct apos_rlimit_32*)arg2);
+      } else {
+        return SYSCALL_DMZ_setrlimit((int)arg1,
+                                     (const struct apos_rlimit*)arg2);
+      }
 
     case SYS_SOCKET:
       return SYSCALL_DMZ_socket((int)arg1, (int)arg2, (int)arg3);
@@ -691,12 +702,9 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
   }
 }
 
-static user_context_t syscall_extract_context_tramp(void* arg) {
-  return syscall_extract_context(*(long*)arg);
-}
-
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
                       long arg4, long arg5, long arg6) {
+  KASSERT_DBG(proc_current()->user_arch != BIN_NONE);
   kthread_current_thread()->syscall_ctx.flags = SCCTX_RESTARTABLE;
 
   klogfm(KL_SYSCALL, DEBUG, "SYSCALL %ld (%#lx, %#lx, %#lx, %#lx, %#lx, %#lx)",
@@ -708,11 +716,5 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
       do_syscall_dispatch(syscall_number, arg1, arg2, arg3, arg4, arg5, arg6);
 
   klogfm(KL_SYSCALL, DEBUG, " --> %ld (%#lx)\n", result, (unsigned long)result);
-
-  proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result,
-                        &kthread_current_thread()->syscall_ctx);
-
-  // Don't do anything here!  After we call proc_prep_user_return(), we may
-  // never return.
   return result;
 }

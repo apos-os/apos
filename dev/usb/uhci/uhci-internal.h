@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "arch/common/types.h"
+#include "arch/dev/irq.h"
 #include "common/config.h"
 #include "dev/usb/hcd.h"
 #include "dev/usb/uhci/uhci_hub.h"
@@ -102,8 +103,8 @@ struct uhci_pending_irp {
 typedef struct uhci_pending_irp uhci_pending_irp_t;
 
 struct usb_uhci {
-  ioport_t base_port;  // USBBASE register.
-  int irq;
+  devio_t io;  // USBBASE register.
+  irq_t irq;
   addr32_t* frame_list;  // Pointer to the frame list.
 
   // Queue heads for the three queues of transfers.

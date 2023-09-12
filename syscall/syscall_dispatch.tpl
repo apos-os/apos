@@ -22,21 +22,37 @@
 {%- endfor %}
 {%- endmacro %}
 
+{# Generates the actual return statement for a syscall. #}
+{% macro syscall_do_call(syscall) -%}
+  return SYSCALL_DMZ_{{ syscall.name }}({{ cast_args(syscall.args) }});
+{%- endmacro %}
+
 {# Generates the case statement for dispatching a particular syscall. #}
 {% macro syscall_dispatch_case(syscall) -%}
 case {{ common.syscall_constant(syscall) }}:
   {% if not syscall.can_fail %}
   kthread_current_thread()->syscall_ctx.flags &= ~SCCTX_RESTARTABLE;
   {% endif %}
-  return SYSCALL_DMZ_{{ syscall.name }}({{ cast_args(syscall.args) }});
+
+  {%- if syscall.needs_32bit_conv -%}
+  if (ARCH_IS_64_BIT && bin_32bit(proc_current()->user_arch)) {
+  {% endif %}
+    {{ syscall_do_call(syscall) }}
+  {% if syscall.needs_32bit_conv %}
+  } else {
+    {{ syscall_do_call(syscall.native()) }}
+  }
+  {% endif %}
 {%- endmacro %}
 
 #include "arch/syscall/context.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "proc/user_prepare.h"
+#include "syscall/syscall_dispatch.h"
 #include "syscall/wrappers32.h"
 #include "user/include/apos/syscalls.h"
 
@@ -69,30 +85,18 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     long arg3, long arg4, long arg5, long arg6) {
   switch (syscall_number) {
     {% for syscall in SYSCALLS -%}
-    {%- if syscall.needs_32bit_conv -%}
-#if ARCH_IS_64_BIT
-    {% endif %}
     {{ syscall_dispatch_case(syscall) | indent(4) }}
-    {% if syscall.needs_32bit_conv %}
-#else
-    {{ syscall_dispatch_case(syscall.native()) | indent(4) }}
-#endif
-    {% endif %}
 
     {% endfor -%}
-
     default:
       proc_kill(proc_current()->id, SIGSYS);
       return -ENOTSUP;
   }
 }
 
-static user_context_t syscall_extract_context_tramp(void* arg) {
-  return syscall_extract_context(*(long*)arg);
-}
-
 long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
     long arg4, long arg5, long arg6) {
+  KASSERT_DBG(proc_current()->user_arch != BIN_NONE);
   kthread_current_thread()->syscall_ctx.flags = SCCTX_RESTARTABLE;
 
   klogfm(KL_SYSCALL, DEBUG, "SYSCALL %ld (%#lx, %#lx, %#lx, %#lx, %#lx, %#lx)",
@@ -104,11 +108,5 @@ long syscall_dispatch(long syscall_number, long arg1, long arg2, long arg3,
       arg4, arg5, arg6);
 
   klogfm(KL_SYSCALL, DEBUG, " --> %ld (%#lx)\n", result, (unsigned long)result);
-
-  proc_prep_user_return(&syscall_extract_context_tramp, (void*)&result,
-                        &kthread_current_thread()->syscall_ctx);
-
-  // Don't do anything here!  After we call proc_prep_user_return(), we may
-  // never return.
   return result;
 }

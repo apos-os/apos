@@ -17,7 +17,6 @@
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
 #include "arch/proc/stack_trace.h"
 #include "common/debug.h"
 #include "common/klog.h"
@@ -27,6 +26,7 @@
 #include "common/stack_trace_table.h"
 #include "dev/interrupts.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/process.h"
@@ -51,7 +51,7 @@ static void init_block(block_t* b) {
   b->next = 0;
 }
 
-void kmalloc_init() {
+void kmalloc_init(void) {
   const memory_info_t* meminfo = get_global_meminfo();
   KASSERT(meminfo->heap_end > meminfo->heap_start);
   KASSERT(proc_current() != 0x0);
@@ -236,7 +236,7 @@ void kfree(void* x) {
   POP_INTERRUPTS();
 }
 
-void kmalloc_log_state() {
+void kmalloc_log_state(void) {
   KLOG(INFO, "kmalloc block list:\n");
   size_t total = 0;
   size_t free = 0;
@@ -260,7 +260,7 @@ void kmalloc_log_state() {
   KLOG(INFO, "free memory: 0x%zx bytes (%zu MB)\n", free, free / 1024 / 1024);
 }
 
-void kmalloc_log_heap_profile() {
+void kmalloc_log_heap_profile(void) {
   PUSH_AND_DISABLE_INTERRUPTS();
   size_t total_objects = 0, total_bytes = 0;
 
@@ -273,7 +273,7 @@ void kmalloc_log_heap_profile() {
     cblock = cblock->next;
   }
 
-  KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ apos_heap/1\n",
+  KLOG(INFO, "heap profile:  %zu:  %zu [  %zu:  %zu] @ heap/1\n",
        total_objects, total_bytes, total_objects, total_bytes);
 
   cblock = g_block_list;
@@ -306,6 +306,6 @@ void kmalloc_enable_test_mode(void) {
   g_test_mode = 1;
 }
 
-block_t* kmalloc_internal_get_block_list() {
+block_t* kmalloc_internal_get_block_list(void) {
   return g_block_list;
 }

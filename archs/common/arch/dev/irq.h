@@ -15,6 +15,11 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_DEV_IRQ_H
 #define APOO_ARCHS_COMMON_ARCH_DEV_IRQ_H
 
+#include "dev/devicetree/devicetree.h"
+
+typedef int irq_t;
+
+// TODO(aoates): move these to arch-specific location.
 #define IRQ0  0
 #define IRQ1  1
 #define IRQ2  2
@@ -32,11 +37,16 @@
 #define IRQ14 14
 #define IRQ15 15
 
-// Initialize the PIC and set up IRQs.
-void pic_init(void);
+// Initialize the platform's interrupt controller(s).
+void arch_irq_init(void);
 
 // Register a handler to be called when a particular IRQ fires.
 typedef void (*irq_handler_t)(void*);
-void register_irq_handler(uint8_t irq, irq_handler_t handler, void* arg);
+void register_irq_handler(irq_t irq, irq_handler_t handler, void* arg);
+
+// On architectures supporting devicetree, returns the devicetree node
+// corresponding to the interrupt root (i.e, the controller that
+// register_irq_handler() registers a handler on).
+const dt_node_t* arch_irq_root(void);
 
 #endif

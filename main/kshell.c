@@ -19,8 +19,10 @@
 #include <stdint.h>
 #include <limits.h>
 
-#include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/config.h"
+#include "common/dynamic-config.h"
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -42,6 +44,8 @@
 #include "dev/usb/uhci/uhci_cmd.h"
 #endif
 #include "memory/kmalloc.h"
+#include "net/socket/socket.h"
+#include "net/util.h"
 #include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
@@ -55,8 +59,14 @@
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
 #endif
+#include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/dirent.h"
+#include "vfs/poll.h"
 #include "vfs/vfs.h"
+
+#if ARCH_SUPPORTS_IOPORT
+#include "arch/common/io.h"
+#endif
 
 const char* PATH[] = {
   "/",
@@ -281,6 +291,7 @@ static void klog_cmd(kshell_t* shell, int argc, char* argv[]) {
     name(port, value); \
   }
 
+#if ARCH_SUPPORTS_IOPORT
 IO_IN_CMD(inb, uint8_t);
 IO_IN_CMD(ins, uint16_t);
 IO_IN_CMD(inl, uint32_t);
@@ -288,6 +299,7 @@ IO_IN_CMD(inl, uint32_t);
 IO_OUT_CMD(outb, uint8_t);
 IO_OUT_CMD(outs, uint16_t);
 IO_OUT_CMD(outl, uint32_t);
+#endif
 
 // Sleeps the thread for a certain number of ms.
 static void sleep_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -402,6 +414,95 @@ done:
   kfree(link_target);
 
   vfs_close(fd);
+}
+
+static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
+  KASSERT_DBG(argc >= 1);
+
+  const size_t kBufSize = 100;
+  char buf[kBufSize];
+  bool listen = false;
+  const char* addr_str = NULL;
+  const char* port_str = NULL;
+  argc--;
+  argv++;
+  if (argc > 0 && kstrcmp(argv[0], "-l") == 0) {
+    listen = 1;
+    addr_str = "0.0.0.0";  // Default.
+    argc--;
+    argv++;
+  }
+
+  if (argc >= 2) {
+    addr_str = argv[0];
+    port_str = argv[1];
+    argc -= 2;
+    argv += 2;
+  } else if (argc >= 1) {
+    port_str = argv[0];
+    argc--;
+    argv++;
+  }
+
+  if (argc > 0 || !addr_str || !port_str) {
+    ksh_printf("usage: _nc [-l] [host] <port>\n");
+    return;
+  }
+
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  if (sock < 0) {
+    ksh_printf("error: couldn't create socket: %s\n", errorname(-sock));
+    return;
+  }
+
+  int result;
+  struct sockaddr_in saddr;
+  saddr.sin_family = AF_INET;
+  saddr.sin_addr.s_addr = str2inet(addr_str);
+  saddr.sin_port = htob16(katoi(port_str));
+  if (listen) {
+    result = net_bind(sock, (struct sockaddr*)&saddr, sizeof(saddr));
+    if (result < 0) {
+      ksh_printf("error: unable to bind() socket: %s\n", errorname(-result));
+      goto done;
+    }
+  } else {
+    result = net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
+    if (result < 0) {
+      ksh_printf("error: unable to connect() socket: %s\n", errorname(-result));
+      goto done;
+    }
+  }
+
+  struct apos_pollfd pfds[2];
+  pfds[0].fd = 0;
+  pfds[0].events = KPOLLIN;
+  pfds[0].revents = 0;
+  pfds[1].fd = sock;
+  pfds[1].events = KPOLLIN;
+  pfds[1].revents = 0;
+  while ((result = vfs_poll(pfds, 2, -1)) > 0) {
+    if ((pfds[0].revents & KPOLLERR) || (pfds[1].revents & KPOLLERR)) {
+      goto done;
+    }
+    if (pfds[0].revents & KPOLLIN) {
+      result = vfs_read(0, buf, kBufSize);
+      if (result == 0) break;
+      KASSERT(result > 0);
+      if (!listen) {
+        KASSERT(result == vfs_write(sock, buf, result));
+      }
+    }
+    if (pfds[1].revents & KPOLLIN) {
+      result = vfs_read(sock, buf, kBufSize);
+      if (result == 0) break;
+      KASSERT(result > 0);
+      KASSERT(result == vfs_write(1, buf, result));
+    }
+  }
+
+done:
+  vfs_close(sock);
 }
 
 static void mkdir_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -1018,12 +1119,14 @@ static const cmd_t CMDS[] = {
   { "b_write", &b_write_cmd },
   { "klog", &klog_cmd },
 
+#if ARCH_SUPPORTS_IOPORT
   { "inb", &inb_cmd },
   { "ins", &ins_cmd },
   { "inl", &inl_cmd },
   { "outb", &outb_cmd },
   { "outs", &outs_cmd },
   { "outl", &outl_cmd },
+#endif
 
   { "_sleep", &sleep_cmd },
 
@@ -1036,6 +1139,7 @@ static const cmd_t CMDS[] = {
   { "write", &write_cmd },
   { "_rm", &rm_cmd },
   { "_cp", &cp_cmd },
+  { "_nc", &nc_cmd },
 
   { "fg", &fg_cmd },
   { "bg", &bg_cmd },

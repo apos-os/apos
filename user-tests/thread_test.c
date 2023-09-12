@@ -12,12 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include <assert.h>
+#include <stdint.h>
 
 #include <apos/sleep.h>
 #include <apos/syscall_decls.h>
 
-#include "ktest.h"
 #include "all_tests.h"
+#include "ktest.h"
+#include "user-tests/arch.h"
+
+#if ARCH_IS_64_BIT
+typedef uint64_t stackelt_t;
+#else
+typedef uint32_t stackelt_t;
+#endif
+_Static_assert(sizeof(void*) == sizeof(stackelt_t), "bad stackelt_t");
 
 static void* thread_stack_ptr = 0x0;
 
@@ -54,10 +63,10 @@ void thread_test_create_tramp(void);
 static int create_thread(apos_uthread_id_t* id, void (*fn)(void*), void* arg) {
   // We leak each thread's stack.  That's fine.
   const int kStackSize = 4 * 8192;
-  uint32_t* stack = malloc(kStackSize);
-  uint32_t* stack_top = &stack[kStackSize / sizeof(uint32_t) - 1];
-  *--stack_top = (uint32_t)arg;
-  *--stack_top = (uint32_t)fn;
+  stackelt_t* stack = malloc(kStackSize);
+  stackelt_t* stack_top = &stack[kStackSize / sizeof(stackelt_t) - 1];
+  *--stack_top = (stackelt_t)arg;
+  *--stack_top = (stackelt_t)fn;
   return apos_thread_create(id, stack_top, &thread_test_create_tramp);
 }
 
@@ -190,7 +199,7 @@ static void invalid_args_tests(void) {
   KTEST_BEGIN("threads: pass unmapped address for stack");
   pid = fork();
   if (pid == 0) {
-    KEXPECT_EQ(0, apos_thread_create(&id, (void*)0x1234567,
+    KEXPECT_EQ(0, apos_thread_create(&id, (void*)INVALID_ADDR,
                                      &thread_test_create_tramp));
     apos_thread_exit();
   }
@@ -219,9 +228,10 @@ static void invalid_args_tests(void) {
                       MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
     assert(addr != NULL);
     assert(0 == munmap(addr, 4096));
-    uint32_t* stack_top = (uint32_t*)((intptr_t)addr + 4096 + sizeof(uint32_t));
-    *--stack_top = (uint32_t)all_threads_thread_exit;
-    KEXPECT_EQ(0, apos_thread_create(&id, (void*)((uint32_t)addr + 4096),
+    stackelt_t* stack_top =
+        (stackelt_t*)((intptr_t)addr + 4096 + sizeof(stackelt_t));
+    *--stack_top = (stackelt_t)all_threads_thread_exit;
+    KEXPECT_EQ(0, apos_thread_create(&id, (void*)((stackelt_t)addr + 4096),
                                      &thread_test_create_tramp));
     apos_thread_exit();
   }
@@ -236,7 +246,7 @@ static void invalid_args_tests(void) {
   if (pid == 0) {
     void* addr = mmap(NULL, 8192, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, 0, 0);
     assert(addr != NULL);
-    KEXPECT_EQ(0, apos_thread_create(&id, (void*)((uint32_t)addr + 4096),
+    KEXPECT_EQ(0, apos_thread_create(&id, (void*)((stackelt_t)addr + 4096),
                                      &thread_test_create_tramp));
     apos_thread_exit();
   }
@@ -261,7 +271,7 @@ static void invalid_args_tests(void) {
   pid = fork();
   if (pid == 0) {
     KEXPECT_EQ(0,
-               apos_thread_create(&id, &thread_stack[1000], (void*)0x1234567));
+               apos_thread_create(&id, &thread_stack[1000], (void*)INVALID_ADDR));
     apos_thread_exit();
   }
   status = -1;
@@ -291,7 +301,7 @@ static void sleep_then_write(void* arg) {
   sleep_ms(10);
   sleep_ms(10);
   char file[100];
-  sprintf(file, "thread%d", (int)arg);
+  sprintf(file, "thread%d", (int)(intptr_t)arg);
   int fd = open(file, O_CREAT | O_RDWR, S_IRWXU);
   assert(fd >= 0);
   close(fd);
@@ -517,7 +527,7 @@ static void send_signal_to_thread_test(void) {
   KEXPECT_ERRNO(ESRCH, apos_thread_kill(&bad_id, 0));
   KEXPECT_SIGNAL(SIGSEGV, apos_thread_kill(NULL, 0));
   KEXPECT_SIGNAL(SIGSEGV,
-                 apos_thread_kill((const apos_uthread_id_t*)0x12345, 0));
+                 apos_thread_kill((const apos_uthread_id_t*)INVALID_ADDR, 0));
 
   // Despite all the above tests, the threads should not have progressed.
   for (int i = 0; i < 3; ++i) sleep_ms(1);
@@ -588,7 +598,7 @@ static void self_test(void) {
 
   KTEST_BEGIN("apos_thread_self(): invalid arguments");
   KEXPECT_SIGNAL(SIGSEGV, apos_thread_self(NULL));
-  KEXPECT_SIGNAL(SIGSEGV, apos_thread_self((apos_uthread_id_t*)0x12345));
+  KEXPECT_SIGNAL(SIGSEGV, apos_thread_self((apos_uthread_id_t*)INVALID_ADDR));
 }
 
 void thread_test(void) {

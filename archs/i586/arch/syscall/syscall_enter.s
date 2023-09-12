@@ -24,6 +24,6 @@ _syscall_enter:
   pushl %ecx  # arg2
   pushl %ebx  # arg1
   pushl %eax  # syscall number
-  call syscall_dispatch
+  call x86_syscall_dispatch
   add $28, %esp
   lret

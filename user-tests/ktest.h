@@ -23,6 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+// An invalid address for tests to use.  Accessing it should segfault.
+#define INVALID_ADDR 0x1234567
+
 #define STR2(x) #x
 #define STR(x) STR2(x)
 

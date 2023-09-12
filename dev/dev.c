@@ -27,10 +27,10 @@
 static const char* kTypeNames[DEVICE_MAX_MAJOR] = {
   0x0,
   0x0,
-  "ata", // DEVICE_MAJOR_ATA
-  "ram", // DEVICE_MAJOR_RAMDISK
-  "tty", // DEVICE_MAJOR_TTY
-  0x0,
+  "ata",   // DEVICE_MAJOR_ATA
+  "ram",   // DEVICE_MAJOR_RAMDISK
+  "tty",   // DEVICE_MAJOR_TTY
+  "nvme",  // DEVICE_MAJOR_NVME
   0x0,
   0x0,
   0x0,
@@ -192,7 +192,7 @@ static void remove_fs_device(int major, int minor) {
   }
 }
 
-void dev_init_fs() {
+void dev_init_fs(void) {
   const int kBufSize = 512;
   vfs_mkdir("/dev", 0);
 

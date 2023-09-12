@@ -38,6 +38,8 @@ def config_h_builder(target, source, env):
 
 env.AlwaysBuild(env.Command('config.h', 'config.h.in', config_h_builder))
 env.AlwaysBuild(env.Command('debug.h', 'debug.h.in', config_h_builder))
+env.AlwaysBuild(env.Command('dynamic-config.h', 'dynamic-config.h.in',
+                            config_h_builder))
 
 objects = [env.Object(src) for src in srcs]
 Return('objects')

@@ -12,18 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "arch/common/endian.h"
-#include "arch/common/io.h"
 #include "arch/dev/irq.h"
-#include "arch/memory/page_alloc.h"
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "dev/io.h"
 #include "dev/net/nic.h"
 #include "dev/pci/pci-driver.h"
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
+#include "memory/page_alloc.h"
 #include "net/eth/eth.h"
 #include "proc/defint.h"
 
@@ -39,7 +39,7 @@ static nic_ops_t rtl_ops;
 // through and ensure the appropriate memory barriers are in place.
 typedef struct {
   nic_t public;     // Public NIC fields
-  uint32_t iobase;  // Base IO register address
+  devio_t io;
   uint16_t rxstart;
   void* rxbuf;
   int txdesc;
@@ -144,12 +144,12 @@ static int rtl_tx(nic_t* base, pbuf_t* pb) {
     case 3: tx_port = RTLRG_TXSTATUS3; break;
     default: die("bad nic state");
   }
-  KASSERT((inl(nic->iobase + tx_port) & RTL_TSD_OWN) != 0);
+  KASSERT((io_read32(nic->io, tx_port) & RTL_TSD_OWN) != 0);
   nic->txbuf_active[nic->txdesc] = true;
   // TODO(aoates): need an appropriate memory barrier here.
   // This sets the size in the lower 12 bits (value checked above), and sets the
   // OWN bit to zero, transferring the buffer to the NIC.
-  outl(nic->iobase + tx_port, pbuf_size(pb));
+  io_write32(nic->io, tx_port, pbuf_size(pb));
   nic->txdesc++;
   nic->txdesc %= RTL_NUM_TX_DESCS;
   pbuf_free(pb);
@@ -192,14 +192,14 @@ static void rtl_handle_recv_one(rtl8139_t* nic) {
   // the reverse transformation in its emulated NIC, and other drivers seem to
   // do this as well.  God forbid the RTL8139 datasheet actually be useful and
   // document this...
-  outs(nic->iobase + RTLRG_RXBUF_START, nic->rxstart - 0x10);
+  io_write16(nic->io, RTLRG_RXBUF_START, nic->rxstart - 0x10);
 }
 
 // Deferred interrupt.
 static void rtl_handle_recv(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   int packets = 0;
-  uint16_t rxbuf_end = ltoh16(ins(nic->iobase + RTLRG_RXBUF_END));
+  uint16_t rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
   while (rxbuf_end != nic->rxstart) {
     // TODO(aoates): increment stats?
     packets++;
@@ -210,7 +210,7 @@ static void rtl_handle_recv(void* arg) {
       break;
     }
     rtl_handle_recv_one(nic);
-    rxbuf_end = ltoh16(ins(nic->iobase + RTLRG_RXBUF_END));
+    rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
   }
   KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
 }
@@ -220,7 +220,7 @@ static void rtl_handle_tx_irq(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) {
     const uint16_t tx_status =
-        inl(nic->iobase + RTLRG_TXSTATUS0 + (sizeof(uint32_t) * i));
+        io_read32(nic->io, RTLRG_TXSTATUS0 + (sizeof(uint32_t) * i));
     if (nic->txbuf_active[i]) {
       if (tx_status & RTL_TSD_TOK) {
         KASSERT_DBG(tx_status & RTL_TSD_OWN); // HW error
@@ -240,7 +240,7 @@ static void rtl_handle_tx_irq(void* arg) {
 
 static void rtl_irq_handler(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
-  const uint16_t interrupts = ins(nic->iobase + RTLRG_INTSTATUS);
+  const uint16_t interrupts = io_read16(nic->io, RTLRG_INTSTATUS);
   if (!interrupts) {
     // Spurious interrupt, ignore.
     return;
@@ -249,7 +249,7 @@ static void rtl_irq_handler(void* arg) {
 
   // Clear interrupt bits.  The data sheet says this shouldn't be
   // necessary....but qemu disagrees.
-  outs(nic->iobase + RTLRG_INTSTATUS, interrupts);
+  io_write16(nic->io, RTLRG_INTSTATUS, interrupts);
 
   if (interrupts & RTL_IMR_ROK) {
     defint_schedule(&rtl_handle_recv, nic);
@@ -271,11 +271,11 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
 
   // Start a reset, and disable RX and TX just in case.
   KLOG(DEBUG, "Resetting the NIC\n");
-  outb(nic->iobase + RTLRG_CMD, RTL_CMD_RST);
+  io_write8(nic->io, RTLRG_CMD, RTL_CMD_RST);
   // Poll until the reset is done.
   // TODO(aoates): if this is slow, make it async so we don't block the full
   // system initialization on it.
-  while (inb(nic->iobase + RTLRG_CMD) & RTL_CMD_RST) {
+  while (io_read8(nic->io, RTLRG_CMD) & RTL_CMD_RST) {
     // Do nothing.
   }
 
@@ -290,20 +290,18 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   nic->rxstart = 0;
   // TODO(aoates): find a better way for this kind of check and constraint.
   KASSERT(phys_rxbuf < UINT32_MAX);
-  outl(nic->iobase + RTLRG_RBSTART, htol32((uint32_t)phys_rxbuf));
+  io_write32(nic->io, RTLRG_RBSTART, htol32((uint32_t)phys_rxbuf));
 
   // Set interrupt mask (rx and tx aren't enabled yet).
   // TODO(aoates): enable other interrupts (errors, in particular).
-  outs(nic->iobase + RTLRG_INTMASK, RTL_IMR_TOK | RTL_IMR_ROK);
+  io_write16(nic->io, RTLRG_INTMASK, RTL_IMR_TOK | RTL_IMR_ROK);
 
   // Set reasonable default receive config.  Receive some packets, non-wrap
   // mode, 8k+16 recv buffer size.
-  outl(nic->iobase + RTLRG_RXCFG,
+  io_write32(nic->io, RTLRG_RXCFG,
        RTL_RCR_AB | RTL_RCR_AM | RTL_RCR_APM | RTL_RCR_WRAP);
 
-  // TODO(aoates): better way of asserting this is valid.
-  KASSERT(pcidev->interrupt_line <= IRQ15);
-  register_irq_handler(pcidev->interrupt_line, &rtl_irq_handler, nic);
+  register_irq_handler(pcidev->host_irq, &rtl_irq_handler, nic);
 
   // Configure transmission.
   KASSERT(PAGE_SIZE / 2 >= RTL_TX_MAX_PACKET_SIZE);
@@ -319,16 +317,16 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   nic->txbuf[1] = (void*)phys2virt(txbuf1);
   nic->txbuf[2] = (void*)phys2virt(txbuf2);
   nic->txbuf[3] = (void*)phys2virt(txbuf3);
-  outl(nic->iobase + RTLRG_TXBUF0, htol32((uint32_t)txbuf0));
-  outl(nic->iobase + RTLRG_TXBUF1, htol32((uint32_t)txbuf1));
-  outl(nic->iobase + RTLRG_TXBUF2, htol32((uint32_t)txbuf2));
-  outl(nic->iobase + RTLRG_TXBUF3, htol32((uint32_t)txbuf3));
+  io_write32(nic->io, RTLRG_TXBUF0, htol32((uint32_t)txbuf0));
+  io_write32(nic->io, RTLRG_TXBUF1, htol32((uint32_t)txbuf1));
+  io_write32(nic->io, RTLRG_TXBUF2, htol32((uint32_t)txbuf2));
+  io_write32(nic->io, RTLRG_TXBUF3, htol32((uint32_t)txbuf3));
   nic->txdesc = 0;
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) nic->txbuf_active[i] = false;
 
   // Enable receiving and transmitting.
   KLOG(DEBUG, "Enabling packet rx/tx\n");
-  outb(nic->iobase + RTLRG_CMD, RTL_CMD_RX_ENABLE | RTL_CMD_TX_ENABLE);
+  io_write8(nic->io, RTLRG_CMD, RTL_CMD_RX_ENABLE | RTL_CMD_TX_ENABLE);
 }
 
 void pci_rtl8139_init(pci_device_t* pcidev) {
@@ -338,27 +336,27 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   KASSERT(pcidev->subclass_code == 0x00);  // Ethernet
 
   // We should have two BARs, one for IO-mapped and one for memory-mapped.
-  KASSERT(pcidev->base_address[0] != 0);
-  KASSERT((pcidev->base_address[0] & 0x1) == 1);
-  KASSERT(pcidev->base_address[1] != 0);
-  KASSERT((pcidev->base_address[1] & 0x1) == 0);
+  KASSERT(pcidev->bar[0].valid);
+  KASSERT(pcidev->bar[0].type == PCIBAR_IO);
+  KASSERT(pcidev->bar[1].valid);
+  KASSERT(pcidev->bar[1].type == PCIBAR_MEM32);
 
   rtl8139_t* nic = kmalloc(sizeof(rtl8139_t));
   nic_init(&nic->public);
   nic->public.type = NIC_ETHERNET;
   nic->public.ops = &rtl_ops;
-  nic->iobase = pcidev->base_address[0] & ~0x3;
+  nic->io = pcidev->bar[0].io;
 
   // Find the MAC address of the device.
   // N.B.(aoates): the RTL8139 datasheet is contradictory---it says that these
   // can only be accessed in 4-byte chunks...but then says the exact opposite
   // right after.
-  nic->public.mac[0] = inb(nic->iobase + RTLRG_IDR0);
-  nic->public.mac[1] = inb(nic->iobase + RTLRG_IDR1);
-  nic->public.mac[2] = inb(nic->iobase + RTLRG_IDR2);
-  nic->public.mac[3] = inb(nic->iobase + RTLRG_IDR3);
-  nic->public.mac[4] = inb(nic->iobase + RTLRG_IDR4);
-  nic->public.mac[5] = inb(nic->iobase + RTLRG_IDR5);
+  nic->public.mac[0] = io_read8(nic->io, RTLRG_IDR0);
+  nic->public.mac[1] = io_read8(nic->io, RTLRG_IDR1);
+  nic->public.mac[2] = io_read8(nic->io, RTLRG_IDR2);
+  nic->public.mac[3] = io_read8(nic->io, RTLRG_IDR3);
+  nic->public.mac[4] = io_read8(nic->io, RTLRG_IDR4);
+  nic->public.mac[5] = io_read8(nic->io, RTLRG_IDR5);
 
   nic_create(&nic->public, "eth");
   rtl_init(pcidev, nic);

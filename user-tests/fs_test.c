@@ -89,12 +89,17 @@ static void basic_fs_test(void) {
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x0, 500));
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0x89000, 500));
   KEXPECT_SIGNAL(SIGSEGV, do_getdents(fd, (struct dirent*)0xc1000000, 500));
-  KEXPECT_EQ(-ENOMEM, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
+  KEXPECT_EQ(-EINVAL, do_getdents(fd, (struct dirent*)buffer, 0xfffffff));
+
+  KTEST_BEGIN("rename(): basic test");
+  KEXPECT_EQ(0, rename("_fs_test_dir/fileB", "_fs_test_dir/fileC"));
+  KEXPECT_ERRNO(ENOENT, stat("_fs_test_dir/fileB", (struct stat*)buffer));
+  KEXPECT_EQ(0, stat("_fs_test_dir/fileC", (struct stat*)buffer));
 
   // Cleanup.
   KEXPECT_EQ(0, close(fd));
   KEXPECT_EQ(0, unlink("_fs_test_dir/fileA"));
-  KEXPECT_EQ(0, unlink("_fs_test_dir/fileB"));
+  KEXPECT_EQ(0, unlink("_fs_test_dir/fileC"));
   KEXPECT_EQ(0, rmdir("_fs_test_dir"));
 }
 
@@ -116,9 +121,9 @@ static void mount_test(void) {
 
   KTEST_BEGIN("mount(): invalid args");
   KEXPECT_SIGNAL(SIGSEGV,
-                 mount("", "_mount_test", "testfs", 0, (void*)0x12345, 1));
+                 mount("", "_mount_test", "testfs", 0, (void*)INVALID_ADDR, 1));
   KEXPECT_ERRNO(EINVAL,
-                mount("", "_mount_test", "testfs", 0, (void*)0x12345, -1));
+                mount("", "_mount_test", "testfs", 0, (void*)INVALID_ADDR, -1));
   int scratch;
   KEXPECT_SIGNAL(SIGSEGV,
                  mount("", "_mount_test", "testfs", 0, &scratch, 1000000));
@@ -135,7 +140,7 @@ static void mount_test(void) {
   KEXPECT_ERRNO(EINVAL, unmount(NULL, 0));
   pid_t child = fork();
   if (child == 0) {
-    unmount((const char*)0x12345, 0);
+    unmount((const char*)INVALID_ADDR, 0);
     exit(1);
   }
   int status;

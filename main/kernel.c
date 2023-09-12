@@ -11,18 +11,24 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+#include "main/kernel.h"
 
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
+#include "arch/dev/irq.h"
 #include "arch/memory/page_fault.h"
 #include "arch/syscall/init.h"
+#include "common/arch-config.h"
 #include "common/config.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "dev/devicetree/devicetree.h"
+#include "dev/devicetree/drivers.h"
 #include "dev/interrupts.h"
+#include "dev/serial/serial.h"
+#include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
 #include "net/init.h"
 #include "proc/exec.h"
@@ -43,6 +49,7 @@
 #include "dev/timer.h"
 #include "dev/tty.h"
 #include "main/kshell.h"
+#include "memory/page_alloc.h"
 #include "proc/scheduler.h"
 #include "vfs/mount_table.h"
 #include "vfs/vfs.h"
@@ -57,11 +64,9 @@
 
 #define INIT_PATH "/sbin/init"
 
-void pic_init(void);
-
 static vterm_t* g_vterm = 0;
 static video_t* g_video = 0;
-static apos_dev_t g_tty_dev;
+static apos_dev_t g_tty_dev = APOS_DEV_INVALID;
 
 static void tick(void* arg) {
   static uint8_t i = 0;
@@ -72,10 +77,16 @@ static void tick(void* arg) {
 }
 
 static void add_timers(void) {
-  KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
+  if (g_video) {
+    KASSERT(0 == register_timer_callback(1000, 0, &tick, 0x0));
+  }
 }
 
-static void io_init(void) {
+static void legacy_io_init(void) {
+  if (!ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    return;
+  }
+
   static vkeyboard_t* kbd = 0x0;
   kbd = vkeyboard_create();
   KASSERT(ps2_keyboard_init(kbd));
@@ -94,6 +105,55 @@ static void io_init(void) {
 
   // Create a TTY device.
   g_tty_dev = tty_create(ld);
+
+  if (ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    // Create the legacy serial port.
+    apos_dev_t serial_tty;
+    u16550_create_legacy(&serial_tty);
+  }
+}
+
+// Does a relatively static devicetree-based init, looking for /chosen and
+// assuming stdout-path points at a serial device.
+// TODO(aoates): get bootargs from /chosen and do something with it.
+static void dtree_io_init(void) {
+  const dt_tree_t* dtree = get_boot_info()->dtree;
+  if (!dtree) {
+    die("No devicetree found");
+  }
+
+  const dt_property_t* prop = dt_get_nprop(dtree, "/chosen", "stdout-path");
+  if (!prop) {
+    die("Unable to find /chosen:stdout-path in devicetree");
+  }
+  const char* stdout_path = (const char*)prop->val;
+  // TODO(aoates): make this a common helper (for getting and validating
+  // different types of values from properties).
+  if (stdout_path[prop->val_len - 1] != '\0') {
+    die("Invalid stdout-path string");
+  }
+
+  const dt_node_t* serial = dt_lookup(dtree, stdout_path);
+  if (!serial) {
+    klogfm(KL_GENERAL, FATAL, "Unable to find stdout-path node '%s'\n",
+           stdout_path);
+  }
+  klogf("Found /chosen:stdout-path: '%s', looking for driver\n", stdout_path);
+  dt_driver_info_t* driver = dtree_get_driver(serial);
+  if (!driver || kstrcmp(driver->type, "serial") != 0) {
+    klogfm(KL_GENERAL, FATAL, "Unable to open node '%s' as serial device\n",
+           stdout_path);
+  }
+  serial_driver_data_t* serial_data = (serial_driver_data_t*)driver->data;
+  g_tty_dev = serial_data->chardev;
+}
+
+static void io_init(void) {
+  if (ARCH_SUPPORTS_LEGACY_PC_DEVS) {
+    legacy_io_init();
+  } else {
+    dtree_io_init();
+  }
 }
 
 static void init_trampoline(void* arg) {
@@ -102,27 +162,41 @@ static void init_trampoline(void* arg) {
   int result = do_execve(INIT_PATH, argv, envp, NULL, NULL);
   KASSERT(result != 0);
   klogf("Unable to exec " INIT_PATH ": %s\n", errorname(-result));
+  if (g_tty_dev == APOS_DEV_INVALID) {
+    klogf("No default TTY found, cannot launch kshell.\n");
+    return;
+  }
   klogf("Launching kshell instead.\n");
   kshell_main(g_tty_dev);
 }
 
-void kmain(memory_info_t* meminfo) {
-  set_global_meminfo(meminfo);
+const boot_info_t* g_boot_info = NULL;
+const boot_info_t* get_boot_info(void) {
+  return g_boot_info;
+}
 
+void kmain(const boot_info_t* boot) {
+  g_boot_info = boot;
+  set_global_meminfo(boot->meminfo);
+
+  klog_set_mode(KLOG_RAW_VIDEO);
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+
+  // Initialize core low-level hardware.
   klog("interrupts_init()\n");
   interrupts_init();
-  klog("pic_init()\n");
-  pic_init();
+  klog("arch_irq_init()\n");
+  arch_irq_init();
 
   enable_interrupts();
 
+  // Initialize memory systems.
   klog("page_frame_alloc_init()\n");
-  page_frame_alloc_init(meminfo);
+  page_frame_alloc_init(boot->meminfo);
   klog("paging_init()\n");
-  paging_init(meminfo);
+  paging_init();
 
   klog("proc_init_stage1()\n");
   proc_init_stage1();
@@ -130,8 +204,24 @@ void kmain(memory_info_t* meminfo) {
   klog("kmalloc_init()\n");
   kmalloc_init();
 
+  // Initialize proc, thread, and scheduler systems.
   klog("kthread_init()\n");
   kthread_init();
+
+  klog("timer_init()\n");
+  timer_init();
+  add_timers();
+
+  klog("scheduler_init()\n");
+  scheduler_init();
+
+  klog("proc_init_stage2()\n");
+  proc_init_stage2();
+
+  // Initialize devices.
+  if (boot->dtree) {
+    dtree_load_drivers(boot->dtree);
+  }
 
   klog("pci_init()\n");
   pci_init();
@@ -144,20 +234,12 @@ void kmain(memory_info_t* meminfo) {
   klog("ata_init()\n");
   ata_init();
 
-  klog("timer_init()\n");
-  timer_init();
-  add_timers();
-
-  klog("scheduler_init()\n");
-  scheduler_init();
-  klog("proc_init_stage2()\n");
-  proc_init_stage2();
-
 #if ENABLE_USB
   klog("usb_init()\n");
   usb_init();
 #endif
 
+  // Initialize higher-level systems.
   klog("vfs_init()\n");
   vfs_init();
 
@@ -173,21 +255,24 @@ void kmain(memory_info_t* meminfo) {
 
   klog("initialization finished...\n");
 
-  vterm_clear(g_vterm);
+  if (g_vterm) {
+    vterm_clear(g_vterm);
+  }
   klog("APOO\n");
 
   klog("meminfo: 0x");
-  klog(kutoa_hex((addr_t)meminfo));
-  klog("\nmeminfo->kernel_start_phys: 0x"); klog(kutoa_hex(meminfo->kernel_start_phys));
-  klog("\nmeminfo->kernel_end_phys:   0x"); klog(kutoa_hex(meminfo->kernel_end_phys));
-  klog("\nmeminfo->kernel_start_virt: 0x"); klog(kutoa_hex(meminfo->kernel_start_virt));
-  klog("\nmeminfo->kernel_end_virt:   0x"); klog(kutoa_hex(meminfo->kernel_end_virt));
-  klog("\nmeminfo->mapped_start:      0x"); klog(kutoa_hex(meminfo->mapped_start));
-  klog("\nmeminfo->mapped_end:        0x"); klog(kutoa_hex(meminfo->mapped_end));
-  klog("\nmeminfo->lower_memory:      0x"); klog(kutoa_hex(meminfo->lower_memory));
-  klog("\nmeminfo->upper_memory:      0x"); klog(kutoa_hex(meminfo->upper_memory));
-  klog("\nmeminfo->phys_map_start:    0x"); klog(kutoa_hex(meminfo->phys_map_start));
-  klog("\nmeminfo->phys_map_length:   0x"); klog(kutoa_hex(meminfo->phys_map_length));
+  klog(kutoa_hex((addr_t)boot->meminfo));
+  klog("\nmeminfo->kernel_start_phys:   0x"); klog(kutoa_hex(boot->meminfo->kernel_start_phys));
+  klog("\nmeminfo->kernel_end_phys:     0x"); klog(kutoa_hex(boot->meminfo->kernel_end_phys));
+  klog("\nmeminfo->kernel_start_virt:   0x"); klog(kutoa_hex(boot->meminfo->kernel_start_virt));
+  klog("\nmeminfo->kernel_end_virt:     0x"); klog(kutoa_hex(boot->meminfo->kernel_end_virt));
+  klog("\nmeminfo->mapped_start:        0x"); klog(kutoa_hex(boot->meminfo->mapped_start));
+  klog("\nmeminfo->mapped_end:          0x"); klog(kutoa_hex(boot->meminfo->mapped_end));
+  klog("\nmeminfo->phys_mainmem_begin:  0x"); klog(kutoa_hex(boot->meminfo->phys_mainmem_begin));
+  klog("\nmeminfo->lower_memory:        0x"); klog(kutoa_hex(boot->meminfo->lower_memory));
+  klog("\nmeminfo->upper_memory:        0x"); klog(kutoa_hex(boot->meminfo->upper_memory));
+  klog("\nmeminfo->phys_map_start:      0x"); klog(kutoa_hex(boot->meminfo->phys_map_start));
+  klog("\nmeminfo->phys_map_length:     0x"); klog(kutoa_hex(boot->meminfo->phys_map_length));
   klog("\n");
 
   // TODO(aoates): reparent processes to the init process rather than the kernel

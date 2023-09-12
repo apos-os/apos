@@ -88,4 +88,6 @@ static inline void _defint_cleanup_verify(defint_state_t* saved) {
 
 #define DEFINT_POP() defint_set_state(_defint_state)
 
+bool is_running_defint(void);
+
 #endif

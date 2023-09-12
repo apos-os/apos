@@ -19,7 +19,9 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/klog.h"
+#include "common/math.h"
 #include "dev/timer.h"
+#include "memory/kmalloc.h"
 
 #if ENABLE_TERM_COLOR
 # define FAILED "\x1b[1;31m[FAILED]\x1b[0m"
@@ -38,6 +40,7 @@ static int num_tests_passing = 0;
 // Is the current suite/test passing?
 static int current_suite_passing = 0;
 static int current_test_passing = 0;
+static int current_test_failures = 0;
 
 static apos_ms_t test_start_time;
 
@@ -52,8 +55,9 @@ static int failing_test_names_idx = 0;
 // Convert two integer values into strings, appending the errorname if it looks
 // like an error code is being returned (one of the operands is zero, and the
 // other is between -ERRNO_MIN and -ERRNO_MAX).
-static inline void kexpect_int_to_string(long aval, long bval, char* aval_str,
-                                         char* bval_str) {
+// TODO(aoates): make this handle large 64-bit values on 32-bit systems properly
+static inline void kexpect_int_to_string(intmax_t aval, intmax_t bval,
+                                         char* aval_str, char* bval_str) {
   const int aval_in_range = aval >= -ERRNO_MAX && aval <= -ERRNO_MIN;
   const int bval_in_range = bval >= -ERRNO_MAX && bval <= -ERRNO_MIN;
 
@@ -101,6 +105,7 @@ void KTEST_BEGIN(const char* name) {
   finish_test();  // Finish the previous test, if running.
   current_test_name = name;
   current_test_passing = 1;
+  current_test_failures = 0;
   num_tests++;
 }
 
@@ -117,6 +122,7 @@ void kexpect(int cond, const char* name, const char* astr,
     }
     current_test_passing = 0;
     current_suite_passing = 0;
+    current_test_failures++;
     klogm(KL_TEST, INFO, FAILED " ");
     klogm(KL_TEST, INFO, name);
     klogm(KL_TEST, INFO, "(");
@@ -140,9 +146,9 @@ void kexpect(int cond, const char* name, const char* astr,
 }
 
 void kexpect_int(const char* name, const char* file, const char* line,
-                 const char* astr, const char* bstr, long aval, long bval,
-                 long result, const char* opstr, kexpect_print_t a_type,
-                 kexpect_print_t b_type) {
+                 const char* astr, const char* bstr, intmax_t aval,
+                 intmax_t bval, long result, const char* opstr,
+                 kexpect_print_t a_type, kexpect_print_t b_type) {
   char aval_str[40];
   char bval_str[40];
   // If the expected value is written as hex, print the actual value as hex too.
@@ -160,20 +166,74 @@ void kexpect_int(const char* name, const char* file, const char* line,
   kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
 }
 
-void ktest_begin_all() {
+static void cpy_or_trunc(char* dst, const char* start, size_t strlen,
+                         size_t buflen) {
+  if (strlen + 1 < buflen) {
+    kstrncpy(dst, start, strlen);
+    dst[strlen] = '\0';  // Shouldn't cpy do this?
+  } else {
+    ksprintf(dst, "<too long (%zu bytes)>", strlen);
+  }
+}
+
+void kexpect_multiline_streq(const char* file, const char* line,
+                             const char* astr, const char* bstr,
+                             const char* aval, const char* bval) {
+  int result = !kstrcmp(aval, bval);
+  char buf1[30], buf2[30];
+  ksprintf(buf1, "<%d-byte string>", kstrlen(aval));
+  ksprintf(buf2, "<%d-byte string>", kstrlen(bval));
+  kexpect(result, "KEXPECT_MULTILINE_STREQ", astr, bstr, buf1, buf2, "",
+          " == ", file, line);
+  if (result == 0) {
+    // If this gets used a lot, should switch to a proper LCS/diff algorithm.
+    const ssize_t kBufSize = 1000;
+    char* buf = (char*)kmalloc(kBufSize);
+    int cline = 0, badlines = 0;
+    while (*aval && *bval) {
+      const char* aend = kstrchrnul(aval, '\n');
+      const char* bend = kstrchrnul(bval, '\n');
+      if ((aend - aval) != (bend - bval) ||
+          kstrncmp(aval, bval, aend - aval) != 0) {
+        klogfm(KL_TEST, INFO, "Mismatch on line %d: ", cline);
+        cpy_or_trunc(buf, aval, aend - aval, kBufSize);
+        klogfm(KL_TEST, INFO, "'%s' != ", buf);
+        cpy_or_trunc(buf, bval, bend - bval, kBufSize);
+        klogfm(KL_TEST, INFO, "'%s'\n", buf);
+        badlines++;
+      } else {
+        badlines = 0;
+      }
+      // If we've seen more than a few bad lines in a row, bail.
+      if (badlines > 3) {
+        klogfm(KL_TEST, INFO, "(stopping comparison, too many mismatches)\n");
+        break;
+      }
+      aval = aend;
+      bval = bend;
+      if (*aval == '\n') aval++;
+      if (*bval == '\n') bval++;
+      cline++;
+    }
+    kfree(buf);
+  }
+}
+
+void ktest_begin_all(void) {
   num_suites = 0;
   num_tests = 0;
   num_suites_passing = 0;
   num_tests_passing = 0;
   current_suite_passing = 0;
   current_test_passing = 0;
+  current_test_failures = 0;
   failing_test_names_idx = 0;
   test_start_time = get_time_ms();
 
   KLOG("KERNEL UNIT TESTS");
 }
 
-void ktest_finish_all() {
+void ktest_finish_all(void) {
   apos_ms_t end_time = get_time_ms();
   finish_test();
   finish_suite();
@@ -198,4 +258,8 @@ void ktest_finish_all() {
   }
   KLOG("KERNEL UNIT TESTS FINISHED\n");
   KLOG("---------------------------------------\n");
+}
+
+int ktest_current_test_failures(void) {
+  return current_test_failures;
 }

@@ -62,6 +62,10 @@ static void kstring_testA(void) {
   KEXPECT_GT(kstrncmp("abcc", "abcb", 10), 0);
   KEXPECT_LT(kstrncmp("abca", "abcdefghiklmnop", 10), 0);
   KEXPECT_GT(kstrncmp("abcz", "abcdefghiklmnop", 10), 0);
+  KEXPECT_EQ(kstrncmp("abc", "abc", 0), 0);
+  KEXPECT_EQ(kstrncmp("", "", 0), 0);
+  KEXPECT_EQ(kstrncmp("abc", "", 0), 0);
+  KEXPECT_EQ(kstrncmp("", "abc", 0), 0);
 
   // TODO(aoates): tests for kmemset, kstrcpy, kstrncpy, kstrcat
 }
@@ -206,6 +210,18 @@ static void kstring_testC(void) {
   KEXPECT_EQ(0xABCDEF, katou("0XaBcDeF"));
   KEXPECT_EQ(0xABCDEF1, katou("0xABCDEF1Q"));
   KEXPECT_EQ(0xFFFFFFFF, katou("0xFFFFFFFF"));
+
+  KTEST_BEGIN("atou_hex()");
+  KEXPECT_EQ(0x10, katou_hex("0x10"));
+  KEXPECT_EQ(0x10, katou_hex("10"));
+  KEXPECT_EQ(0x1, katou_hex("0x01"));
+  KEXPECT_EQ(0x1, katou_hex("01"));
+  KEXPECT_EQ(0x12345, katou_hex("0x12345"));
+  KEXPECT_EQ(0x12345, katou_hex("12345"));
+  KEXPECT_EQ(0xABCDEF, katou_hex("0xABCDEF"));
+  KEXPECT_EQ(0xABCDEF, katou_hex("ABCDEF"));
+  KEXPECT_EQ(0xFFFFFFFF, katou_hex("0xFFFFFFFF"));
+  KEXPECT_EQ(0xFFFFFFFF, katou_hex("FFFFFFFF"));
 }
 
 static void kstring_testD(char* buf) {
@@ -309,8 +325,12 @@ static void kstring_testE(void) {
   KEXPECT_EQ(1, kisspace(' '));
   KEXPECT_EQ(1, kisspace('\t'));
   KEXPECT_EQ(1, kisspace('\n'));
+  KEXPECT_EQ(1, kisspace('\v'));
+  KEXPECT_EQ(1, kisspace('\f'));
+  KEXPECT_EQ(1, kisspace('\r'));
   KEXPECT_EQ(0, kisspace('@'));
   KEXPECT_EQ(0, kisspace('2'));
+  KEXPECT_EQ(0, kisspace('r'));
   KEXPECT_EQ(0, kisspace('x'));
   KEXPECT_EQ(0, kisspace('\x7f'));
   KEXPECT_EQ(0, kisspace('\x03'));
@@ -390,6 +410,49 @@ static void kstring_testF(void) {
   KEXPECT_STREQ("b12", kutoa_hex_lower_r(0xab12, buf, 4));
 }
 
+static void kstring_prefix_test(void) {
+  KTEST_BEGIN("kstr_startswith() test");
+  KEXPECT_TRUE(kstr_startswith("", ""));
+  KEXPECT_TRUE(kstr_startswith("abc", ""));
+  KEXPECT_TRUE(kstr_startswith("abc", "abc"));
+  KEXPECT_TRUE(kstr_startswith("abcd", "abc"));
+  KEXPECT_FALSE(kstr_startswith("", "abc"));
+  KEXPECT_FALSE(kstr_startswith("abc", "ABC"));
+  KEXPECT_FALSE(kstr_startswith("abc", "A"));
+  KEXPECT_FALSE(kstr_startswith("abc", "abcd"));
+  KEXPECT_FALSE(kstr_startswith("abc", "abC"));
+}
+
+static void kstrlcat_test(void) {
+  KTEST_BEGIN("kstrlcat() test");
+  size_t kBufLen = 10;
+  char buf[kBufLen * 2];
+  kmemset(buf, '%', kBufLen * 2);
+  buf[0] = buf[kBufLen * 2 - 1] = '\0';
+  KEXPECT_EQ(3, kstrlcat(buf, "abc", kBufLen));
+  KEXPECT_STREQ("abc", buf);
+  KEXPECT_EQ('%', buf[10]);
+  KEXPECT_EQ(7, kstrlcat(buf, "1234", kBufLen));
+  KEXPECT_STREQ("abc1234", buf);
+  KEXPECT_EQ(13, kstrlcat(buf, "ABCDEF", kBufLen));
+  KEXPECT_STREQ("abc1234AB", buf);
+  KEXPECT_EQ(15, kstrlcat(buf, "xyz987", kBufLen));
+  KEXPECT_STREQ("abc1234AB", buf);
+  KEXPECT_EQ('%', buf[10]);
+
+  KTEST_BEGIN("kstrlcat() zero dest_size");
+  KEXPECT_EQ(6, kstrlcat(buf, "xyz987", 0));
+  // It should not have null-terminated at index 0.
+  KEXPECT_STREQ("abc1234AB", buf);
+  KEXPECT_EQ(6, kstrlcat(buf, "xyz987", 1));
+  KEXPECT_STREQ("abc1234AB", buf);
+
+  KTEST_BEGIN("kstrlcat() dst longer than dest_size");
+  KEXPECT_EQ(8, kstrlcat(buf, "xyz987", 3));
+  // It should not have null-terminated.
+  KEXPECT_STREQ("abc1234AB", buf);
+}
+
 void kstring_test(void) {
   KTEST_SUITE_BEGIN("kstring");
 
@@ -400,5 +463,7 @@ void kstring_test(void) {
   kstring_testD(buf);
   kstring_testE();
   kstring_testF();
+  kstring_prefix_test();
+  kstrlcat_test();
   kfree(buf);
 }

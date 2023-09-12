@@ -350,10 +350,14 @@ static void do_wrap(vterm_t* t) {
     t->cursor_x = 0;
     t->cursor_y++;
   }
+}
+
+static void do_scroll(vterm_t* t) {
+  KASSERT_DBG(kspin_is_held_int(&t->lock));
+  KASSERT_DBG(t->cursor_x <= t->vwidth);  // _May_ have wrapped.
   if (t->cursor_y >= t->vheight) {
     scroll(t, t->cursor_y - t->vheight + 1);
   }
-  KASSERT_DBG(t->cursor_x < t->vwidth);
 }
 
 static void vterm_putc_locked(vterm_t* t, uint8_t c) {
@@ -371,17 +375,16 @@ static void vterm_putc_locked(vterm_t* t, uint8_t c) {
   }
 #endif
 
-  const bool is_newline = (c == '\r' || c == '\f' || c == '\n');
+  const bool is_newline = (c == '\r' || c == '\n');
   if (is_newline) {
-    // If we're on the right margin, don't do anything; the do_wrap() below will
-    // wrap the line for us.
-    if (t->cursor_x < t->vwidth) {
+    if (c == '\r')
       t->cursor_x = 0;
+    else if (c == '\n')
       t->cursor_y++;
-    }
+  } else {
+    do_wrap(t);
   }
-
-  do_wrap(t);
+  do_scroll(t);
 
   // Note: both xterm and iterm seem to do this weird thing where they skip over
   // the second-to-last character in the line on backspace.  I don't see any
@@ -395,6 +398,7 @@ static void vterm_putc_locked(vterm_t* t, uint8_t c) {
     }
   } else if (!is_newline) {
     // Printable character.
+    KASSERT_DBG(t->cursor_x < t->vwidth);  // Must have wrapped.
     vterm_setc(t, t->cursor_y, t->cursor_x, c, t->cattr);
     t->cursor_x++;
   }

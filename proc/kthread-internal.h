@@ -27,10 +27,6 @@
 #include "user/include/apos/posix_signal.h"
 #include "syscall/context.h"
 
-#define KTHREAD_STACK_PROTECT_LEN PAGE_SIZE
-#define KTHREAD_STACK_SIZE \
-  (ARCH_KTHREAD_BASE_STACK_SIZE + KTHREAD_STACK_PROTECT_LEN)
-
 typedef enum {
   KTHREAD_RUNNING = 0,    // Currently running.
   KTHREAD_PENDING = 1,    // Waiting on a run queue of some sort.
@@ -52,6 +48,7 @@ struct kthread_data {
   struct kthread_data* next;
   kthread_queue_t* queue;  // The queue we're waiting on, if any.
   addr_t* stack;  // The block of memory allocated for the thread's stack.
+  addrdiff_t stacklen;
   bool detached;
   bool runnable;  // Crude way to disable threads for tests.
   kthread_queue_t join_list;  // List of thread's join()'d to this one.

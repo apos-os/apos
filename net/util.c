@@ -16,7 +16,7 @@
 
 #include <stdbool.h>
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "common/errno.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"

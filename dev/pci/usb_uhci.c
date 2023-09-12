@@ -19,16 +19,12 @@
 #include "dev/usb/uhci/uhci.h"
 
 void usb_uhci_pci_init(pci_device_t* pcidev) {
-  uint32_t base = pcidev->base_address[4];
-  KASSERT(base != 0);
-  KASSERT((base & 0x1) == 1);  // Should always be I/O mapped.
-  base &= 0x0000FFE0;
-
   uint32_t legsup = pci_read_register(pcidev, 0xC0);
   klogf("Disabling USB legacy support...");
   // Put the controller in the default mode.
   legsup = (legsup & 0xFFFF0000) | 0x2F00;
   pci_write_register(pcidev, 0xC0, legsup);
 
-  usb_uhci_register_controller(base, pcidev->interrupt_line);
+  const pci_bar_t* bar = &pcidev->bar[4];
+  usb_uhci_register_controller(bar->io, pcidev->host_irq);
 }

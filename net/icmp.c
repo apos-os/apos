@@ -14,7 +14,7 @@
 
 #include "net/icmp.h"
 
-#include "arch/common/endian.h"
+#include "common/endian.h"
 #include "net/ip/checksum.h"
 #include "net/util.h"
 

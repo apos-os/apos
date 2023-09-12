@@ -14,7 +14,7 @@
 
 #include "arch/common/die.h"
 
-void arch_die() {
+void arch_die(void) {
   asm volatile (
       "cli\n\t"
       "hlt\n\t");

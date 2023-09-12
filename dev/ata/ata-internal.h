@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 
+#include "dev/io.h"
 #include "proc/kthread.h"
 
 #define ATA_DRIVE_MASTER 0
@@ -29,10 +30,10 @@ struct ata_disk_op;
 // Contains data about the port offsets for the primary and secondary ATA
 // channels.
 struct ata_channel {
-  ioport_t cmd_offset;  // Port offset for the command block.
-  ioport_t ctrl_offset;  // Port offset for the control block.
+  devio_t cmd_io;// Port offset for the command block.
+  devio_t ctrl_io;// Port offset for the control block.
   // Port offset for the DMA busmaster (if available).
-  ioport_t busmaster_offset;
+  devio_t busmaster_io;
   uint8_t irq;  // The IRQ used by this channel.
 
   // The currently-pending operation on this channel (for the master or slave),

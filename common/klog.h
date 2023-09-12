@@ -58,11 +58,11 @@ void klog_set_module_level(klog_module_t module, klog_level_t level);
 int klog_enabled(klog_module_t module, klog_level_t level);
 
 // Different logging modes for the kernel, to be used at different stages in the
-// boot process.  Defaults to KLOG_PARALLEL_PORT.  As soon as a vterm_t is
+// boot process.  Defaults to KLOG_ARCH_DEBUG.  As soon as a vterm_t is
 // available, KLOG_VTERM should be used (to play nice with other I/O).
-#define KLOG_PARELLEL_PORT 1  // Only log to the parallel port.
-#define KLOG_RAW_VIDEO 2      // Log by writing to raw video memory.
-#define KLOG_VTERM 3          //
+#define KLOG_ARCH_DEBUG 1  // Only log to the arch-defined low-level debug sink.
+#define KLOG_RAW_VIDEO 2   // Log by writing to raw video memory.
+#define KLOG_VTERM 3
 
 // Set the current logging mode.
 void klog_set_mode(int mode);

@@ -17,7 +17,7 @@
 #include "ktest.h"
 #include "all_tests.h"
 
-int exit_status_test() {
+int exit_status_test(void) {
   KTEST_SUITE_BEGIN("Exit status");
 
   KTEST_BEGIN("exit() sets status");

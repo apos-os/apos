@@ -18,9 +18,8 @@
 #include "archs/i586/internal/load/mem_init.h"
 #include "archs/i586/internal/memory/gdt.h"
 #include "archs/i586/internal/memory/page_tables.h"
+#include "main/kernel.h"
 #include "memory/memory.h"
-
-extern void kmain(memory_info_t* meminfo);
 
 // Glue function in between 'all-physical' setup code and 'all-virtual' kernel
 // code.  Tears down temporary mappings set up by paging initialization and
@@ -67,7 +66,11 @@ void kinit(memory_info_t* meminfo) {
   for (int i = 0; i < KERNEL_MAP_4MB_REGIONS; ++i) {
     page_directory[i] = 0 | PDE_WRITABLE;
   }
-  kmain(meminfo);
+  boot_info_t boot = {
+    .meminfo = meminfo,
+    .dtree = NULL,
+  };
+  kmain(&boot);
 
   // We can't ever return or we'll page fault!
   while(1);

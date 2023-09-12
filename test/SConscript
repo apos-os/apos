@@ -23,6 +23,7 @@ srcs = [
   'block_dev_test.c',
   'cbfs_test.c',
   'circbuf_test.c',
+  'devicetree_test.c',
   'dmz_test.c',
   'exec_test.c',
   'fifo_test.c',
@@ -70,7 +71,7 @@ srcs = [
   'wait_test.c',
 ]
 
-subdirs = []
+subdirs = ['dtb_testdata']
 
 if FindFile(os.path.join(env['ARCH'], 'SConscript'), '.') is not None:
   subdirs.append(env['ARCH'])

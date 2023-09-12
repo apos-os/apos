@@ -15,7 +15,9 @@
 Import('env AposAddSources')
 
 srcs = [
+  'pci-legacy.c',
   'pci.c',
+  'pcie.c',
   'piix.c',
 ]
 

@@ -16,7 +16,6 @@
 
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
-#include "arch/memory/page_alloc.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -33,6 +32,7 @@
 #include "dev/usb/uhci/uhci_registers.h"
 #include "dev/usb/usb_driver.h"
 #include "memory/kmalloc.h"
+#include "memory/page_alloc.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/sleep.h"
@@ -238,14 +238,14 @@ static int uhci_schedule_irp(struct usb_hcdi* hc, usb_hcdi_irp_t* irp) {
 
 static void uhci_interrupt(void* arg) {
   usb_uhci_t* c = (usb_uhci_t*)arg;
-  uint16_t status = ins(c->base_port + USBSTS);
+  uint16_t status = io_read16(c->io, USBSTS);
   // TODO(aoates): handle halted condition, host errors, etc.
   KASSERT((status & 0xFFFC) == 0);
 
   // Clear the txn error and interrupt bits.  Do so before we traverse the
   // pending IRP list so that if any IOC IRPs finish while we're traversing the
   // list, the interrupt will be triggered again.
-  outs(c->base_port + USBSTS, 0x3);
+  io_write16(c->io, USBSTS, 0x3);
 
   // TODO(aoates): handle short packet detect!
   // Find the transaction that finished.
@@ -340,18 +340,18 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   c->frame_list = (addr32_t*)phys2virt(frame_list_phys);
 
   // Do a global reset on the bus.
-  uint16_t cmd = ins(c->base_port + USBCMD);
-  outs(c->base_port + USBCMD, cmd | USBCMD_GRESET);
+  uint16_t cmd = io_read16(c->io, USBCMD);
+  io_write16(c->io, USBCMD, cmd | USBCMD_GRESET);
   ksleep(20);
-  outs(c->base_port + USBCMD, cmd);
+  io_write16(c->io, USBCMD, cmd);
 
   // Set max packet to 64 bytes and disable everything.
-  outs(c->base_port + USBCMD, USBCMD_MAXP);
+  io_write16(c->io, USBCMD, USBCMD_MAXP);
 
   // Set the frame list address and frame number registers.
   KASSERT((frame_list_phys & FLBASEADDR_MASK) == frame_list_phys);
-  outl(c->base_port + FLBASEADDR, frame_list_phys);
-  outs(c->base_port + FRNUM, 0x00);
+  io_write32(c->io, FLBASEADDR, frame_list_phys);
+  io_write16(c->io, FRNUM, 0x00);
 
   c->pending_irps = 0x0;
 
@@ -393,19 +393,19 @@ static int uhci_init_controller(usb_hcdi_t* hcd) {
   KASSERT(0 == uhci_hub_init(c));
 
   // Start the controller.
-  cmd = ins(c->base_port + USBCMD);
+  cmd = io_read16(c->io, USBCMD);
   cmd |= USBCMD_CF | USBCMD_RS;
-  outs(c->base_port + USBCMD, cmd);
+  io_write16(c->io, USBCMD, cmd);
 
   // Register IRQ handler for the controller.
   // TODO(aoates): this will clobber any other controllers listening on this
   // IRQ!  This is probably not what we want.
-  KLOG(INFO, "registering UHCI at base port 0x%x on IRQ %d\n",
-       c->base_port, c->irq);
+  KLOG(INFO, "registering UHCI at base port 0x%zx on IRQ %d\n",
+       c->io.base, c->irq);
   register_irq_handler(c->irq, &uhci_interrupt, c);
 
   // Enable interrupts.
-  outs(c->base_port + USBINTR, USBINTR_IOC | USBINTR_TMO_CRC);
+  io_write16(c->io, USBINTR, USBINTR_IOC | USBINTR_TMO_CRC);
 
   return 0;
 }
@@ -419,31 +419,30 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   }
 
   usb_uhci_t* c = (usb_uhci_t*)ci->dev_data;
-  const ioport_t port_reg = c->base_port +
-      (port == 0 ? PORTSC1 : PORTSC2);
+  const ioport_t port_reg = (port == 0 ? PORTSC1 : PORTSC2);
 
-  uint16_t status = ins(port_reg);
+  uint16_t status = io_read16(c->io, port_reg);
   if (!(status & PORTSC_CONNECT)) {
     KLOG(ERROR, "<no device found on port %d>\n", port + 1);
     return;
   }
 
   // Reset change bit.
-  outs(port_reg, PORTSC_CONNECT_CHG);
+  io_write16(c->io, port_reg, PORTSC_CONNECT_CHG);
 
   // Reset the port.
   KLOG(INFO, "resetting port %d\n", port + 1);
-  status = ins(port_reg);
-  outs(port_reg, status | PORTSC_RST);
+  status = io_read16(c->io, port_reg);
+  io_write16(c->io, port_reg, status | PORTSC_RST);
   ksleep(100);
 
-  status = ins(port_reg);
-  outs(port_reg, status & ~PORTSC_RST);
+  status = io_read16(c->io, port_reg);
+  io_write16(c->io, port_reg, status & ~PORTSC_RST);
 
   // Enable the port.
   KLOG(INFO, "enabling port %d\n", port + 1);
-  status = ins(port_reg);
-  outs(port_reg, status | PORTSC_ENABLE | PORTSC_ENABLE_CHG);
+  status = io_read16(c->io, port_reg);
+  io_write16(c->io, port_reg, status | PORTSC_ENABLE | PORTSC_ENABLE_CHG);
   ksleep(100);
 
   // Make a fake bus and device.
@@ -460,7 +459,7 @@ void uhci_test_controller(usb_hcdi_t* ci, int port) {
   usb_init_device(device);
 }
 
-void usb_uhci_register_controller(ioport_t base_addr, uint8_t irq) {
+void usb_uhci_register_controller(devio_t io, uint8_t irq) {
   if (g_num_controllers >= UHCI_MAX_CONTROLLERS) {
     KLOG(WARNING, "too many UHCI controllers; ignoring\n");
     return;
@@ -471,10 +470,10 @@ void usb_uhci_register_controller(ioport_t base_addr, uint8_t irq) {
   }
   usb_uhci_t* c = &g_controllers[g_num_controllers++];
   kmemset(c, 0, sizeof(usb_uhci_t));
-  c->base_port = base_addr;
+  c->io = io;
   c->irq = irq;
-  KLOG(INFO, "USB: found UHCI controller #%d (at 0x%x)\n", g_num_controllers,
-       c->base_port);
+  KLOG(INFO, "USB: found UHCI controller #%d (at 0x%zx)\n", g_num_controllers,
+       c->io.base);
 
   // Register it with the USBD.
   usb_hcdi_t* hcdi = (usb_hcdi_t*)kmalloc(sizeof(usb_hcdi_t));
@@ -491,7 +490,7 @@ void usb_uhci_interrupt(int handle) {
   KASSERT(handle >= 0 && handle < g_num_controllers);
 }
 
-int usb_uhci_num_controllers() {
+int usb_uhci_num_controllers(void) {
   return g_num_controllers;
 }
 

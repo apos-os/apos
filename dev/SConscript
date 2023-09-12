@@ -18,7 +18,6 @@ srcs = [
   'interrupts.c',
   'ps2.c',
   'timer.c',
-  'rtc.c',
   'dev.c',
   'ld.c',
   'termios.c',
@@ -26,10 +25,14 @@ srcs = [
   'tty_util.c',
   ]
 
-subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk', 'net']
+subdirs = ['keyboard', 'video', 'pci', 'ata', 'ramdisk', 'net', 'devicetree',
+  'rtc', 'serial']
 
 if env['USB']:
   subdirs.append('usb')
+
+if env['NVME']:
+  subdirs.append('nvme')
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

@@ -37,7 +37,7 @@ addr_t vm_find_hole(process_t* proc, addr_t start_addr, addr_t end_addr,
         return addr;
       }
     }
-    addr = area->vm_base + area->vm_length;
+    addr = max(start_addr, area->vm_base + area->vm_length);
     link = link->next;
   }
 

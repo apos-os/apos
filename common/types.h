@@ -17,11 +17,15 @@
 #define APOO_COMMON_TYPES_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "arch/common/types.h"
 #include "user/include/apos/posix_types.h"
 
 typedef uint32_t addr32_t;
 typedef uint64_t addr64_t;
+
+_Static_assert(sizeof(size_t) == sizeof(addr_t), "bad size_t size");
+_Static_assert(sizeof(ssize_t) == sizeof(size_t), "bad ssize_t size");
 
 #endif

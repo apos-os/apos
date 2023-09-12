@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#define _GNU_SOURCE 1  // Get asprintf
+
 #include <errno.h>
 #include <pwd.h>
 #include <stdio.h>

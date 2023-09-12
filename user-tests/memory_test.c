@@ -170,7 +170,7 @@ static void basic_memory_limits_test(void) {
   KEXPECT_SIGNAL(SIGSEGV,
                  read(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 2));
   KEXPECT_EQ(0, lseek(fd, 0, SEEK_SET));
-  KEXPECT_ERRNO(ENOMEM, read(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR),
+  KEXPECT_ERRNO(EINVAL, read(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR),
                              B32_MEM_LAST_MAPPABLE_ADDR -
                                  B32_MEM_LAST_USER_MAPPABLE_ADDR + 1));
   KEXPECT_SIGNAL(SIGSEGV, write(fd, (void*)(B32_MEM_LAST_MAPPABLE_ADDR), 1));
@@ -178,7 +178,7 @@ static void basic_memory_limits_test(void) {
   KEXPECT_EQ(1, write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 1));
   KEXPECT_SIGNAL(SIGSEGV,
                  write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR), 2));
-  KEXPECT_ERRNO(ENOMEM, write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR),
+  KEXPECT_ERRNO(EINVAL, write(fd, (void*)(B32_MEM_LAST_USER_MAPPABLE_ADDR),
                               B32_MEM_LAST_MAPPABLE_ADDR -
                                   B32_MEM_LAST_USER_MAPPABLE_ADDR + 1));
 

@@ -75,10 +75,10 @@ static inline uint32_t fnv_hash_concat(uint32_t a, uint32_t b) {
 
 #if ARCH_IS_64_BIT
 _Static_assert(sizeof(addr_t) == sizeof(uint64_t), "bad addr_t size");
-#  define fnv_hash_addr fnv_hash64
+#  define fnv_hash_addr(x) fnv_hash64(x)
 #else
 _Static_assert(sizeof(addr_t) == sizeof(uint32_t), "bad addr_t size");
-#  define fnv_hash_addr fnv_hash
+#  define fnv_hash_addr(x) fnv_hash(x)
 #endif
 
 // Compute the MD5 digest of the given buffer.

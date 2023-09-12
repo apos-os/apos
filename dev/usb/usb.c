@@ -79,7 +79,7 @@ static void usb_create_root_hub(usb_bus_t* bus, void* arg) {
   usb_init_device(root_hub);
 }
 
-void usb_init() {
+void usb_init(void) {
   KASSERT(g_usb_initialized == 0);
 
   // Initialize the thread pool.
@@ -121,7 +121,7 @@ void usb_init() {
   g_usb_initialized = 1;
 }
 
-int usb_is_initialized() {
+int usb_is_initialized(void) {
   return g_usb_initialized;
 }
 
@@ -134,7 +134,7 @@ void usb_init_irp(usb_irp_t* irp) {
 // they can be mapped into physical memory by the HCD.
 static slab_alloc_t* g_request_alloc = 0x0;
 static const int REQUEST_ALLOC_MAX_PAGES = 10;
-usb_dev_request_t* usb_alloc_request() {
+usb_dev_request_t* usb_alloc_request(void) {
   if (g_request_alloc == 0x0) {
     g_request_alloc =
         slab_alloc_create(sizeof(usb_dev_request_t), REQUEST_ALLOC_MAX_PAGES);

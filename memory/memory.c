@@ -21,7 +21,7 @@ void set_global_meminfo(memory_info_t* meminfo) {
   global_meminfo = meminfo;
 }
 
-const memory_info_t* get_global_meminfo() {
+const memory_info_t* get_global_meminfo(void) {
   return global_meminfo;
 }
 

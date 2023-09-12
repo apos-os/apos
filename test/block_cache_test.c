@@ -282,7 +282,7 @@ static void get_thread_test(apos_dev_t dev) {
     scheduler_make_runnable(threads[kThreads + i]);
   }
 
-  bc_entry_t* blocks[kThreads];
+  bc_entry_t* blocks[kThreads * 2];
   for (int i = 0; i < kThreads * 2; ++i) {
     blocks[i] = kthread_join(threads[i]);
   }

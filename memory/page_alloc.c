@@ -17,10 +17,10 @@
 #include <stdint.h>
 
 #include "arch/memory/layout.h"
-#include "arch/memory/page_alloc.h"
 #include "common/debug.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "memory/page_alloc.h"
 
 // The number of frames we reserve for DMA by device drivers.  This is a crappy
 // way to do this---it's static, so it limits the number of devices that can be
@@ -41,13 +41,22 @@ static phys_addr_t dma_reserved_first_frame;
 // de-allocating the DMA ranges, so we just keep a high-water mark as we go.
 static size_t dma_reserved_first_free_idx = 0;
 
+static size_t meminfo_mainmem_len(const memory_info_t* meminfo) {
+  return meminfo->lower_memory + meminfo->upper_memory;
+}
+
+static size_t meminfo_mainmem_end(const memory_info_t* meminfo) {
+  return meminfo->phys_mainmem_begin + meminfo_mainmem_len(meminfo);
+}
+
 // Initialize the allocator with the given meminfo.
 void page_frame_alloc_init(memory_info_t* meminfo) {
-  const size_t total_frames =
-      (meminfo->lower_memory + meminfo->upper_memory) / PAGE_SIZE;
+  const size_t total_frames = meminfo_mainmem_len(meminfo) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
   const phys_addr_t kernel_end_page = next_page(meminfo->kernel_end_phys);
   phys_addr_t next_free_frame = kernel_end_page;
+  KASSERT(meminfo->phys_mainmem_begin < meminfo->kernel_start_phys);
+  KASSERT(meminfo->kernel_end_phys <= meminfo_mainmem_end(meminfo));
 
   // Reserve same frames for DMA usage.  The DMA pages will live directly above
   // the kernel (at the next page boundary).
@@ -57,7 +66,9 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   // Take all the frames above what the kernel is already using.  Don't include
   // frames before the kernel (<1MB).
   const size_t free_frames =
-      total_frames - (kernel_end_page / PAGE_SIZE) - DMA_RESERVED_FRAMES;
+      total_frames -
+      ((kernel_end_page - meminfo->phys_mainmem_begin) / PAGE_SIZE) -
+      DMA_RESERVED_FRAMES;
 
   // Allocate a stack of the appropriate size.  We need sizeof(phys_addr_t)
   // bytes per free frame, plus twice that for guard addresses.  Round up to use
@@ -85,14 +96,15 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   phys_addr_t address = next_free_frame;
   for (size_t i = 0; i < free_frames - (stack_size / PAGE_SIZE); ++i) {
     KASSERT(is_page_aligned(address));
-    KASSERT(address + PAGE_SIZE <= total_frames * PAGE_SIZE);
+    KASSERT(address - meminfo->phys_mainmem_begin + PAGE_SIZE <=
+            total_frames * PAGE_SIZE);
 
     free_frame_stack[stack_idx++] = address;
     address += PAGE_SIZE;
   }
 }
 
-phys_addr_t page_frame_alloc() {
+phys_addr_t page_frame_alloc(void) {
   if (stack_idx <= 0) {
     return 0;
   }
@@ -100,8 +112,7 @@ phys_addr_t page_frame_alloc() {
   phys_addr_t frame = free_frame_stack[--stack_idx];
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
-    KASSERT_DBG(frame < get_global_meminfo()->lower_memory +
-                            get_global_meminfo()->upper_memory);
+    KASSERT_DBG(frame < meminfo_mainmem_end(get_global_meminfo()));
     // Fill the page with crap.
     addr_t virt_frame = phys2virt(frame);
     for (size_t i = 0; i < PAGE_SIZE / sizeof(uint32_t); ++i) {
@@ -117,8 +128,7 @@ void page_frame_free(phys_addr_t frame_addr) {
   KASSERT(stack_idx <= stack_size);
 
   if (ENABLE_KERNEL_SAFETY_NETS) {
-    KASSERT_DBG(frame_addr < get_global_meminfo()->lower_memory +
-                                 get_global_meminfo()->upper_memory);
+    KASSERT_DBG(frame_addr < meminfo_mainmem_end(get_global_meminfo()));
     // Check that the page frame isn't already free.
     for (size_t i = 0; i < stack_idx; ++i) {
       KASSERT(free_frame_stack[i] != frame_addr);

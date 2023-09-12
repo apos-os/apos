@@ -15,7 +15,7 @@
 #include <stdarg.h>
 #include <stdint.h>
 
-#include "arch/memory/page_alloc.h"
+#include "common/arch-config.h"
 #include "common/errno.h"
 #include "common/hash.h"
 #include "common/kassert.h"
@@ -25,17 +25,23 @@
 #include "memory/kmalloc.h"
 #include "memory/memory.h"
 #include "memory/memobj.h"
+#include "memory/page_alloc.h"
+#include "proc/exec.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
+#include "proc/kthread-internal.h"
 #include "proc/limit.h"
+#include "proc/signal/signal.h"
 #include "proc/wait.h"
 #include "proc/process.h"
 #include "proc/scheduler.h"
+#include "proc/sleep.h"
 #include "proc/umask.h"
 #include "proc/user.h"
 #include "test/ktest.h"
 #include "test/test_params.h"
 #include "test/vfs_test_util.h"
+#include "user/include/apos/vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/pipe.h"
 #include "vfs/ramfs.h"
@@ -1408,6 +1414,34 @@ static void getdents_test(void) {
   vfs_chdir("/getdents");
   fd = vfs_open(".", VFS_O_RDONLY);
   KEXPECT_EQ(0, compare_dirents(fd, 7, getdents_expected));
+  vfs_close(fd);
+
+  KTEST_BEGIN("vfs_getdents(): multiple calls");
+  fd = vfs_open("/getdents", VFS_O_RDONLY);
+  kdirent_t* buf = (kdirent_t*)kmalloc(1000);
+  kmemset(buf, 0xaa, 1000);
+  size_t expected_size = sizeof(kdirent_t) * 7 + 17;
+  KEXPECT_EQ(expected_size, vfs_getdents(fd, buf, 1000));
+  kmemset(buf, 0xaa, 1000);
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 1000));
+  kmemset(buf, 0xaa, 1000);
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 1000));
+
+  vfs_close(fd);
+  fd = vfs_open("/getdents", VFS_O_RDONLY);
+
+  kmemset(buf, 0xaa, 1000);
+#if ARCH_IS_64_BIT
+  KEXPECT_EQ(26, vfs_getdents(fd, buf, 50));
+  KEXPECT_EQ(79, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(80, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 100));
+#else
+  KEXPECT_EQ(43, vfs_getdents(fd, buf, 50));
+  KEXPECT_EQ(58, vfs_getdents(fd, buf, 100));
+  KEXPECT_EQ(0, vfs_getdents(fd, buf, 100));
+#endif
+  kfree(buf);
   vfs_close(fd);
 
   // TODO(aoates): test:
@@ -3431,6 +3465,7 @@ static void readlink_test(void) {
 
   KTEST_BEGIN("vfs_readlink(): invalid arguments");
   KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", buf, -1));
+  KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", buf, INT_MAX));
   KEXPECT_EQ(-EINVAL, vfs_readlink("readlink_test/link", 0x0, kBufSize));
   KEXPECT_EQ(-EINVAL, vfs_readlink(0x0, buf, kBufSize));
   KEXPECT_EQ(-ENOENT, vfs_readlink("doesnt_exist", buf, kBufSize));
@@ -3581,7 +3616,8 @@ static void dup2_test(void) {
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file2");
 
   KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
-  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
+  KEXPECT_EQ(proc_current()->fds[fd1].flags, proc_current()->fds[fd2].flags);
   KEXPECT_EQ(2, get_file_refcount(fd1));
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
   EXPECT_VNODE_REFCOUNT(0, "dup2_test/file2");
@@ -3596,10 +3632,10 @@ static void dup2_test(void) {
   fd2 = vfs_open("dup2_test/file", VFS_O_RDONLY);
   KEXPECT_EQ(1, get_file_refcount(fd1));
   EXPECT_VNODE_REFCOUNT(2, "dup2_test/file");
-  KEXPECT_NE(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_NE(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
 
   KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
-  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
   KEXPECT_EQ(2, get_file_refcount(fd1));
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
   KEXPECT_EQ(0, vfs_close(fd1));
@@ -3614,7 +3650,7 @@ static void dup2_test(void) {
   KEXPECT_EQ(2, get_file_refcount(fd1));
 
   KEXPECT_EQ(fd2, vfs_dup2(fd1, fd2));
-  KEXPECT_EQ(proc_current()->fds[fd1], proc_current()->fds[fd2]);
+  KEXPECT_EQ(proc_current()->fds[fd1].file, proc_current()->fds[fd2].file);
   KEXPECT_EQ(2, get_file_refcount(fd2));
   EXPECT_VNODE_REFCOUNT(1, "dup2_test/file");
   KEXPECT_EQ(0, vfs_close(fd1));
@@ -3626,24 +3662,24 @@ static void dup2_test(void) {
 
   KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd1)");
   fd1 = vfs_open("dup2_test/file", VFS_O_RDONLY);
-  int orig_fd1_idx = proc_current()->fds[fd1];
+  int orig_fd1_idx = proc_current()->fds[fd1].file;
   KEXPECT_EQ(-EBADF, vfs_dup2(-5, fd1));
   KEXPECT_EQ(-EBADF, vfs_dup2(PROC_MAX_FDS + 1, fd1));
   int unused_fd = 0;
   for (unused_fd = 0; unused_fd < PROC_MAX_FDS; ++unused_fd) {
-    if (proc_current()->fds[unused_fd] == PROC_UNUSED_FD) break;
+    if (proc_current()->fds[unused_fd].file == PROC_UNUSED_FD) break;
   }
   KEXPECT_LT(unused_fd, PROC_MAX_FDS);
   KEXPECT_EQ(-EBADF, vfs_dup2(unused_fd, fd1));
   KEXPECT_EQ(-EBADF, vfs_dup2(unused_fd, unused_fd));
-  KEXPECT_EQ(PROC_UNUSED_FD, proc_current()->fds[unused_fd]);
-  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
+  KEXPECT_EQ(PROC_UNUSED_FD, proc_current()->fds[unused_fd].file);
+  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1].file);
 
   KTEST_BEGIN("vfs_dup2(): bad file descriptor (fd2)");
   KEXPECT_EQ(-EBADF, vfs_dup2(-5, -5));
   KEXPECT_EQ(-EBADF, vfs_dup2(fd1, -5));
   KEXPECT_EQ(-EBADF, vfs_dup2(fd1, PROC_MAX_FDS + 1));
-  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1]);
+  KEXPECT_EQ(orig_fd1_idx, proc_current()->fds[fd1].file);
   vfs_close(fd1);
 
 
@@ -4650,6 +4686,43 @@ static void o_nofollow_test(void) {
 
   KEXPECT_EQ(0, vfs_rmdir("_o_noflw_dir"));
   KEXPECT_EQ(0, vfs_unlink("_o_noflw_file"));
+}
+
+static void o_cloexec_test_proc(void* arg) {
+  char* argv[] = {"sleep", "10", NULL};
+  char* envp[] = {NULL};
+  do_execve("/bin/sleep", argv, envp, NULL, NULL);
+  KEXPECT_EQ(1, 2);  // Should never get here.
+}
+
+static void o_cloexec_test(void) {
+  KTEST_BEGIN("vfs_open(): O_CLOEXEC on regular file");
+  create_file_with_data("_o_cloexec_file", "");
+
+  int fd1 = vfs_open("_o_cloexec_file", VFS_O_RDONLY);
+  KEXPECT_GE(fd1, 0);
+  KEXPECT_EQ(0, proc_current()->fds[fd1].flags);
+  int fd2 = vfs_open("_o_cloexec_file", VFS_O_RDONLY | VFS_O_CLOEXEC);
+  KEXPECT_GE(fd2, 0);
+  KEXPECT_EQ(VFS_O_CLOEXEC, proc_current()->fds[fd2].flags);
+
+#if ARCH_RUN_USER_TESTS
+  kpid_t child = proc_fork(&o_cloexec_test_proc, NULL);
+  while (!proc_get(child)->execed) {
+    ksleep(50);
+  }
+  process_t* childp = proc_get(child);
+  KEXPECT_NE(NULL, childp);
+  KEXPECT_NE(PROC_UNUSED_FD, childp->fds[fd1].file);
+  KEXPECT_EQ(PROC_UNUSED_FD, childp->fds[fd2].file);
+  proc_kill(child, SIGKILL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+#endif
+
+  KEXPECT_EQ(0, vfs_close(fd1));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  KEXPECT_EQ(0, vfs_unlink("_o_cloexec_file"));
 }
 
 static void link_test(void) {
@@ -6744,6 +6817,7 @@ void vfs_test(void) {
   excl_test();
   o_directory_test();
   o_nofollow_test();
+  o_cloexec_test();
 
   link_test();
   link_testB();
@@ -6766,6 +6840,7 @@ void vfs_test(void) {
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");
+  block_cache_clear_unpinned();
   EXPECT_VNODE_REFCOUNT(g_orig_root_vnode_refcount, "/");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 

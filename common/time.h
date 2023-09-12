@@ -18,8 +18,12 @@
 #include "user/include/apos/posix_types.h"
 #include "user/include/apos/time_types.h"
 
-// Return the current time can best be determined.
+#define NANOS_PER_SECOND 1000000000
+
+// Return the current time can best be determined.  Note that platforms may
+// support zero, one, or all of the following.
 int apos_get_time(struct apos_tm* t);
+int apos_get_timespec(struct apos_timespec* ts);
 
 // Convert an apos_timespec into a milliseconds count.
 long timespec2ms(const struct apos_timespec* ts);

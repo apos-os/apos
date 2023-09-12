@@ -44,6 +44,6 @@ _syscall_enter32:
   popq %rcx
   popq %r8
   popq %r9
-  call syscall_dispatch
+  call x86_syscall_dispatch
   add $8, %rsp
   lretq

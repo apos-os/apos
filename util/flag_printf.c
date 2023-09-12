@@ -16,7 +16,7 @@
 #include "common/kprintf.h"
 #include "util/flag_printf.h"
 
-int flag_sprintf(char* buf, uint32_t value, flag_spec_t* flags) {
+int flag_sprintf(char* buf, uint64_t value, const flag_spec_t* flags) {
   int idx = 0;
   kstrcpy(buf, "[ ");
   idx += 2;

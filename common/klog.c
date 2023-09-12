@@ -16,14 +16,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "arch/common/debug.h"
 #include "arch/common/io.h"
+#include "common/arch-config.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "memory/memory.h"
 
 // The current logging mode.
-static int g_klog_mode = KLOG_RAW_VIDEO;
+static int g_klog_mode = KLOG_ARCH_DEBUG;
 static vterm_t* g_klog_vterm = 0x0;
 
 // The first KLOG_BUF_SIZE log characters will be saved for viewing (e.g. to
@@ -40,19 +42,6 @@ static klog_level_t g_global_log_level = INFO;
 // Current minimum logging levels for each module.  Defaults to ERROR for each
 // module.
 static klog_level_t g_log_levels[KL_MODULE_MAX];
-
-static void pp_putc(uint8_t c) {
-  // N.B.(aoates): In principle, I think we should be checking for the busy bit
-  // here and at the end, but that doesn't seem to work with the bochs parallel
-  // port.
-  outb(0x378, c);
-
-  uint8_t orig = inb(0x37a);
-  outb(0x37a, orig | 0x04 | 0x08);
-  outb(0x37a, orig | 0x01);
-  outb(0x37a, orig);
-}
-
 static void raw_putc(uint8_t c) {
   static uint8_t* vram = NULL;
   if (!vram) vram = (uint8_t*)vram_start();
@@ -90,9 +79,9 @@ void klogf(const char* fmt, ...) {
 static void klog_puts(const char* s) {
   int i = 0;
   while (s[i]) {
-    pp_putc(s[i]);
+    arch_debug_putc(s[i]);
     switch (g_klog_mode) {
-      case KLOG_PARELLEL_PORT:
+      case KLOG_ARCH_DEBUG:
         break;
 
       case KLOG_RAW_VIDEO:
@@ -100,6 +89,8 @@ static void klog_puts(const char* s) {
         break;
 
       case KLOG_VTERM:
+        if (s[i] == '\n')
+          vterm_putc(g_klog_vterm, '\r');
         vterm_putc(g_klog_vterm, s[i]);
         break;
     }
@@ -157,6 +148,10 @@ int klog_enabled(klog_module_t module, klog_level_t level) {
 }
 
 void klog_set_mode(int mode) {
+  // Downgrade if raw VGA isn't supported.
+  if (mode == KLOG_RAW_VIDEO && !ARCH_SUPPORTS_RAW_VGA) {
+    mode = KLOG_ARCH_DEBUG;
+  }
   g_klog_mode = mode;
 }
 

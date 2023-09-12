@@ -49,6 +49,7 @@ int kstrcmp(const char* s1, const char* s2) {
 
 int kstrncmp(const char* s1, const char* s2, size_t n) {
   size_t x = 0;
+  if (n == 0) return 0;
   while (*s1 && *s2 && x < n - 1) {
     if (*s1 != *s2) {
       return *s1 - *s2;
@@ -58,6 +59,17 @@ int kstrncmp(const char* s1, const char* s2, size_t n) {
     ++x;
   }
   return *s1 - *s2;
+}
+
+bool kstr_startswith(const char* s, const char* prefix) {
+  while (*s && *prefix) {
+    if (*s != *prefix) {
+      return false;
+    }
+    s++;
+    prefix++;
+  }
+  return (*prefix == '\0');
 }
 
 void* kmemset(void *s, int c, size_t n) {
@@ -109,14 +121,31 @@ char* kstrncpy(char* dst, const char* src, size_t n) {
 }
 
 char* kstrcat(char* dst, const char* src) {
-  char* dst_orig = dst;
-  const int len = kstrlen(dst);
-  dst += len;
-  while (*src) {
-    *(dst++) = *(src++);
+  kstrlcat(dst, src, SIZE_MAX);  // Insecure!
+  return dst;
+}
+
+size_t kstrlcat(char* dst, const char* src, size_t dst_size) {
+  size_t copied = 0;
+  // Find the end of the existing dst string (up to dst_size).
+  while (dst[copied] != '\0' && copied + 1 < dst_size) {
+    copied++;
   }
-  *dst = '\0';
-  return dst_orig;
+  // To handle the case of 'dst' being an invalid string (not terminated).
+  if (copied + 1 < dst_size) {
+    // Copy until we run out of source or buffer (leaving room for NULL).
+    while (*src && copied + 1 < dst_size) {
+      dst[copied++] = *(src++);
+    }
+    dst[copied] = '\0';
+  }
+  // Find the end of src for the return value.
+  while (*src) {
+    src++;
+    copied++;
+  }
+  // Return length of string we would have copied given room.
+  return copied;
 }
 
 static unsigned long abs(long x) {
@@ -257,6 +286,14 @@ long katoi(const char* s) {
 
 unsigned long katou(const char* s) {
   return atou_internal(s);
+}
+
+unsigned long katou_hex(const char* s) {
+  if (kstrncmp(s, "0x", 2) == 0 ||
+      kstrncmp(s, "0X", 2) == 0) {
+    s += 2;
+  }
+  return atou_internal_base(s, 16);
 }
 
 const char* kstrchr(const char* s, int c) {

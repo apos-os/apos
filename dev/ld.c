@@ -33,6 +33,10 @@
 #include "user/include/apos/vfs/vfs.h"
 #include "vfs/poll.h"
 
+// TODO(aoates): I think per the spec this should just _ignore_ unsupported
+// flags rather than reject them.
+#define SUPPORTED_OFLAGS (ONLCR)
+
 struct ld {
   // Circular buffer of characters ready to be read.  Indexed by {start, cooked,
   // raw}_idx, which refer to the first character, the end of the cooked region,
@@ -58,9 +62,10 @@ struct ld {
   poll_event_t poll_event;
 };
 
+// Note: keep this in sync with the version in getty.c.
 static void set_default_termios(struct ktermios* t) {
   t->c_iflag = 0;
-  t->c_oflag = 0;
+  t->c_oflag = ONLCR;
   t->c_cflag = CS8;
   t->c_lflag = ECHO | ECHOE | ECHOK | ICANON | ISIG;
 
@@ -169,8 +174,10 @@ static inline int char_term_len(char c) {
 
 // Send a character to terminal, translating it if necessary.  erased_char is
 // the character erased from the buffer, if any.
-static void ld_term_putc(const ld_t* l, char c, char erased_char) {
-  if (c == '\x7f' && l->termios.c_lflag & ICANON &&
+static void ld_term_putc(const ld_t* l, char c, char erased_char,
+                         bool is_echo) {
+  // TODO(aoates): use ECHOCTL.
+  if (is_echo && c == '\x7f' && l->termios.c_lflag & ICANON &&
       l->termios.c_lflag & ECHOE) {
     KASSERT_DBG(erased_char > 0);
     for (int i = 0; i < char_term_len(erased_char); ++i) {
@@ -178,7 +185,10 @@ static void ld_term_putc(const ld_t* l, char c, char erased_char) {
       l->sink(l->sink_arg, ' ');
       l->sink(l->sink_arg, '\b');
     }
-  } else if (is_ctrl(c)) {
+  } else if (c == '\n' && l->termios.c_oflag & ONLCR) {
+    l->sink(l->sink_arg, '\r');
+    l->sink(l->sink_arg, '\n');
+  } else if (is_echo && is_ctrl(c)) {
     l->sink(l->sink_arg, '^');
     l->sink(l->sink_arg, (c + '@') & 0x7f);
   } else {
@@ -201,6 +211,7 @@ void ld_provide(ld_t* l, char c) {
 
   int echo = (l->termios.c_lflag & ECHO);
   char erased_char = 0;
+  char echo_char = c;  // The character to be echoed.
   bool handled = false;
   if (l->termios.c_lflag & ICANON) {
     if (c == '\x7f') {
@@ -230,9 +241,14 @@ void ld_provide(ld_t* l, char c) {
   if (!handled) {
     switch (c) {
       case '\r':
-      case '\f':
-        die("ld cannot handle '\\r' or '\\f' characters (only '\\n')");
-        break;
+        // TODO(aoates): obey ICRNL.
+        c = '\n';  // Treat as a newline.
+        // If ONLCR, send '\n' to ld_term_putc(), which will expand to \r\n.
+        // Otherwise echo the literal '\r' back out.
+        if (l->termios.c_oflag & ONLCR) {
+          echo_char = '\n';
+        }
+        // Fall through.
 
       case '\n':
         if (l->termios.c_lflag & ECHONL)
@@ -248,7 +264,7 @@ void ld_provide(ld_t* l, char c) {
 
   // Echo it to the screen.
   if (echo) {
-    ld_term_putc(l, c, erased_char);
+    ld_term_putc(l, echo_char, erased_char, /* is_echo */ true);
   }
 
   // Cook the buffer, optionally.
@@ -396,7 +412,7 @@ int ld_write(ld_t* l, const char* buf, int n) {
   }
 
   for (int i = 0; i < n; ++i) {
-    l->sink(l->sink_arg, buf[i]);
+    ld_term_putc(l, buf[i], ' ', /* is_echo */ false);
   }
 
   return n;
@@ -438,7 +454,8 @@ void ld_get_termios(const ld_t* l, struct ktermios* t) {
 }
 
 int ld_set_termios(ld_t* l, int optional_actions, const struct ktermios* t) {
-  if (t->c_iflag != 0 || t->c_oflag != 0 || t->c_cflag != CS8)
+  if (t->c_iflag != 0 || ((t->c_oflag & ~SUPPORTED_OFLAGS) != 0) ||
+      t->c_cflag != CS8)
     return -EINVAL;
 
   if (t->c_cc[VEOL] != _POSIX_VDISABLE || t->c_cc[VKILL] != _POSIX_VDISABLE ||

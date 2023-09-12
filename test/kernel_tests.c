@@ -14,6 +14,7 @@
 
 #include "test/kernel_tests.h"
 
+#include "common/arch-config.h"
 #include "common/config.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
@@ -82,14 +83,19 @@ static const test_entry_t TESTS[] = {
   { "socket_unix", &socket_unix_test, 1 },
   { "socket_raw", &socket_raw_test, 1 },
   { "socket_udp", &socket_udp_test, 1 },
-  { "user_tests", &do_run_user_tests, 1 },
+  { "user_tests", &do_run_user_tests, ARCH_RUN_USER_TESTS },
   { "proc_thread", &proc_thread_test, 1 },
   { "futex", &futex_test, 1 },
+  { "dtree", &devicetree_test, 1 },
 
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },
   { "interrupt_clobber", &interrupt_clobber_test, 1 },
   { "interrupt_save", &interrupt_save_test, 1 },
+#endif
+
+#if ARCH == ARCH_riscv64
+  { "rsv_user", &rsv64_user_test, 1 },
 #endif
 
   // Fake test for running everything.
