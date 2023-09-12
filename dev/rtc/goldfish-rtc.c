@@ -45,17 +45,16 @@ int goldfish_rtc_driver(const dt_tree_t* tree, const dt_node_t* rtc,
 
   klogf("Found Goldfish RTC at %s\n", node_path);
 
-  // TODO(aoates): properly read reg using #address_cells and #size_cells rather
-  // than just grabbing this out of the name.
-  const char* addr_str = dt_get_unit(rtc);
-  if (!*addr_str) {
-    klogf("Goldfish RTC %s missing unit address\n", node_path);
-    return -EINVAL;
+  dt_regval_t reg[5];
+  int result = dt_parse_reg(rtc, reg, 5);
+  if (result == 0) result = -EINVAL;
+  if (result < 0) {
+    klogf("Goldfish RTC %s bad reg property\n", node_path);
+    return result;
   }
 
-  phys_addr_t addr = katou_hex(addr_str);
   g_gfrtc.io.type = IO_MEMORY;
-  g_gfrtc.io.base = phys2virt(addr);
+  g_gfrtc.io.base = phys2virt(reg[0].base);
   return 0;
 }
 
