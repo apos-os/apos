@@ -41,7 +41,7 @@ const addrdiff_t MAX_MEMORY_BYTES = 0x10000000;
 
 // The virtual start and end addresses of the kernel heap.
 const addr_t START_HEAP = 0xD0000000;
-const addr_t END_HEAP =   0xE0000000;
+const addr_t HEAP_LEN =   0x10000000;
 
 static void die_phys(void) {
   asm("int $3");
@@ -64,13 +64,14 @@ static void kassert_page_aligned(addr_t x) {
 // updating meminfo->kernel_end_phys as necessary.
 static uint32_t* kalloc_page(memory_info_t* meminfo) {
   uint32_t* addr = (uint32_t*)0xDEADBEEF;
-  if ((meminfo->kernel_end_phys & PAGE_OFFSET_MASK) == 0) {
-    addr = (uint32_t*)meminfo->kernel_end_phys;
+  addr_t kernel_phys_end = meminfo->kernel_phys.base + meminfo->kernel_phys.len;
+  if ((kernel_phys_end & PAGE_OFFSET_MASK) == 0) {
+    addr = (uint32_t*)kernel_phys_end;
   } else {
-    addr = (uint32_t*)(
-        (meminfo->kernel_end_phys & PAGE_INDEX_MASK) + PAGE_SIZE);
+    addr = (uint32_t*)((kernel_phys_end & PAGE_INDEX_MASK) + PAGE_SIZE);
   }
-  meminfo->kernel_end_phys = (uint32_t)addr + PAGE_SIZE;
+  meminfo->kernel_phys.len =
+      (addr_t)addr - meminfo->kernel_phys.base + PAGE_SIZE;
   return addr;
 }
 
@@ -131,7 +132,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 
   // Identity map the first KERNEL_PHYS_MAP_MAX_LENGTH bytes of physical memory
   // as well.
-  uint32_t phys_map_len = meminfo->lower_memory + meminfo->upper_memory;
+  uint32_t phys_map_len = meminfo->mainmem_phys.len;
   if (phys_map_len > KERNEL_PHYS_MAP_MAX_LENGTH) {
     phys_map_len = KERNEL_PHYS_MAP_MAX_LENGTH;
   }
@@ -142,7 +143,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
                           ident_addr + KERNEL_PHYS_MAP_START, ident_addr);
     ident_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
   }
-  meminfo->phys_map_length = phys_map_len;
+  meminfo->phys_map.len = phys_map_len;
 
   // Finally, map the last PDE entry onto itself so we can always access the
   // current PDE/PTEs without having to map them in explicitly.
@@ -151,12 +152,12 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
       (uint32_t)page_directory | PDE_WRITABLE | PDE_PRESENT;
 
   // Update meminfo.
-  meminfo->kernel_start_virt = meminfo->kernel_start_phys + KERNEL_VIRT_START;
-  meminfo->kernel_end_virt = meminfo->kernel_end_phys + KERNEL_VIRT_START;
-  meminfo->mapped_start = KERNEL_VIRT_START;
+  meminfo->kernel_virt.base = meminfo->kernel_phys.base + KERNEL_VIRT_START;
+  meminfo->kernel_virt.len = meminfo->kernel_phys.len;
+  meminfo->kernel_mapped.base = KERNEL_VIRT_START;
   // We mapped a N PTEs (4MB each) for use by the kernel.
-  meminfo->mapped_end =
-      KERNEL_VIRT_START + KERNEL_MAP_4MB_REGIONS * PTE_NUM_ENTRIES * PAGE_SIZE;
+  meminfo->kernel_mapped.len =
+      KERNEL_MAP_4MB_REGIONS * PTE_NUM_ENTRIES * PAGE_SIZE;
   meminfo->kernel_page_directory = (page_dir_ptr_t)page_directory;
 
   // Install the PDE and enable paging.
@@ -180,32 +181,30 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
   // meminfo->kernel_end_{phys, virt} as needed.
   static memory_info_t g_meminfo;
 
-  g_meminfo.kernel_start_phys =
-      (uint32_t)(&KERNEL_START_SYMBOL) - KERNEL_VIRT_START;
+  g_meminfo.kernel_phys.base =
+      (addr_t)(&KERNEL_START_SYMBOL) - KERNEL_VIRT_START;
   // Account for the memory_info_t we just allocated.
-  g_meminfo.kernel_end_phys =
-      (uint32_t)(&KERNEL_END_SYMBOL) - KERNEL_VIRT_START;
+  g_meminfo.kernel_phys.len =
+      (addr_t)(&KERNEL_END_SYMBOL) - (addr_t)(&KERNEL_START_SYMBOL);
 
-  g_meminfo.kernel_start_virt = g_meminfo.kernel_end_virt = 0;
-  g_meminfo.mapped_start = g_meminfo.mapped_end = 0;
+  g_meminfo.kernel_virt.base = g_meminfo.kernel_virt.len = 0;
+  g_meminfo.kernel_mapped.base = g_meminfo.kernel_mapped.len = 0;
 
   kassert_phys((mb_info->flags & MULTIBOOT_INFO_MEMORY) != 0);
-  g_meminfo.phys_mainmem_begin = 0;
-  g_meminfo.lower_memory = mb_info->mem_lower * 1024;
-  g_meminfo.upper_memory = mb_info->mem_upper * 1024;
+  g_meminfo.mainmem_phys.base = 0;
+  g_meminfo.mainmem_phys.len = mb_info->mem_lower * 1024;
+  g_meminfo.mainmem_phys.len += mb_info->mem_upper * 1024;
 
-  // TODO(aoates): this isn't totally correct.
-  if (g_meminfo.upper_memory > MAX_MEMORY_BYTES) {
-    g_meminfo.upper_memory =
-        MAX_MEMORY_BYTES - g_meminfo.lower_memory - PAGE_SIZE;
+  if (g_meminfo.mainmem_phys.len > MAX_MEMORY_BYTES) {
+    g_meminfo.mainmem_phys.len = MAX_MEMORY_BYTES;
   }
 
-  g_meminfo.phys_map_start = KERNEL_PHYS_MAP_START;
-  g_meminfo.phys_map_length = 0;  // We'll set this when we do the mapping.
-  g_meminfo.heap_start = START_HEAP;
-  g_meminfo.heap_end = END_HEAP;
-  g_meminfo.kernel_stack_base = stack + KERNEL_VIRT_START;
-  g_meminfo.kernel_stack_len = 0x4000;
+  g_meminfo.phys_map.base = KERNEL_PHYS_MAP_START;
+  g_meminfo.phys_map.len = 0;  // We'll set this when we do the mapping.
+  g_meminfo.heap.base = START_HEAP;
+  g_meminfo.heap.len = HEAP_LEN;
+  g_meminfo.thread0_stack.base = stack + KERNEL_VIRT_START;
+  g_meminfo.thread0_stack.len = 0x4000;
   return &g_meminfo;
 }
 

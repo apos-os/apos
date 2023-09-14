@@ -260,20 +260,23 @@ void kmain(const boot_info_t* boot) {
   }
   klog("APOO\n");
 
-  klog("meminfo: 0x");
-  klog(kutoa_hex((addr_t)boot->meminfo));
-  klog("\nmeminfo->kernel_start_phys:   0x"); klog(kutoa_hex(boot->meminfo->kernel_start_phys));
-  klog("\nmeminfo->kernel_end_phys:     0x"); klog(kutoa_hex(boot->meminfo->kernel_end_phys));
-  klog("\nmeminfo->kernel_start_virt:   0x"); klog(kutoa_hex(boot->meminfo->kernel_start_virt));
-  klog("\nmeminfo->kernel_end_virt:     0x"); klog(kutoa_hex(boot->meminfo->kernel_end_virt));
-  klog("\nmeminfo->mapped_start:        0x"); klog(kutoa_hex(boot->meminfo->mapped_start));
-  klog("\nmeminfo->mapped_end:          0x"); klog(kutoa_hex(boot->meminfo->mapped_end));
-  klog("\nmeminfo->phys_mainmem_begin:  0x"); klog(kutoa_hex(boot->meminfo->phys_mainmem_begin));
-  klog("\nmeminfo->lower_memory:        0x"); klog(kutoa_hex(boot->meminfo->lower_memory));
-  klog("\nmeminfo->upper_memory:        0x"); klog(kutoa_hex(boot->meminfo->upper_memory));
-  klog("\nmeminfo->phys_map_start:      0x"); klog(kutoa_hex(boot->meminfo->phys_map_start));
-  klog("\nmeminfo->phys_map_length:     0x"); klog(kutoa_hex(boot->meminfo->phys_map_length));
-  klog("\n");
+  const memory_info_t* m = boot->meminfo;
+  klogf("meminfo: %p\n", boot->meminfo);
+  klogf("meminfo->kernel_start_phys:   0x%" PRIxADDR "\n", m->kernel_phys.base);
+  klogf("meminfo->kernel_end_phys:     0x%" PRIxADDR "\n",
+        m->kernel_phys.base + m->kernel_phys.len);
+  klogf("meminfo->kernel_start_virt:   0x%" PRIxADDR "\n", m->kernel_virt.base);
+  klogf("meminfo->kernel_end_virt:     0x%" PRIxADDR "\n",
+        m->kernel_virt.base + m->kernel_virt.len);
+  klogf("meminfo->mapped_start:        0x%" PRIxADDR "\n",
+        m->kernel_mapped.base);
+  klogf("meminfo->mapped_end:          0x%" PRIxADDR "\n",
+        m->kernel_mapped.base + m->kernel_mapped.len);
+  klogf("meminfo->mainmem_phys:        0x%" PRIxADDR "\n",
+        m->mainmem_phys.base);
+  klogf("meminfo->mainmem_len:         0x%" PRIxADDR "\n", m->mainmem_phys.len);
+  klogf("meminfo->phys_map_start:      0x%" PRIxADDR "\n", m->phys_map.base);
+  klogf("meminfo->phys_map_length:     0x%" PRIxADDR "\n", m->phys_map.len);
 
   // TODO(aoates): reparent processes to the init process rather than the kernel
   // process?  Or run init in the kernel process (exec without fork below)?

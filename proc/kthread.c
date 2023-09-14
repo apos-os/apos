@@ -96,8 +96,8 @@ void kthread_init(void) {
   kthread_init_kthread(first);
   first->state = KTHREAD_RUNNING;
   first->id = g_next_id++;
-  first->stack = (addr_t*)get_global_meminfo()->kernel_stack_base;
-  first->stacklen = get_global_meminfo()->kernel_stack_len;
+  first->stack = (addr_t*)get_global_meminfo()->thread0_stack.base;
+  first->stacklen = get_global_meminfo()->thread0_stack.len;
   list_push(&g_all_threads, &first->all_threads_link);
 
   KASSERT_DBG((addr_t)(&first) < (addr_t)first->stack + first->stacklen);

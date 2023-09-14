@@ -47,8 +47,9 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
     // If the return address is outside the kernel, stop.
     // TODO(aoates): consider validating --- should always be a particular
     // sentinel (except thread 0).
-    if (ra < get_global_meminfo()->mapped_start ||
-        ra > get_global_meminfo()->mapped_end) {
+    if (ra < get_global_meminfo()->kernel_mapped.base ||
+        ra > get_global_meminfo()->kernel_mapped.base +
+                 get_global_meminfo()->kernel_mapped.len) {
       break;
     }
   }
@@ -66,8 +67,8 @@ int get_stack_trace(addr_t* trace, int trace_len) {
     stack_base = (addr_t)kthread_current_thread()->stack;
     stack_len = kthread_current_thread()->stacklen;
   } else {
-    stack_base = get_global_meminfo()->kernel_stack_base;
-    stack_len = get_global_meminfo()->kernel_stack_len;
+    stack_base = get_global_meminfo()->thread0_stack.base;
+    stack_len = get_global_meminfo()->thread0_stack.len;
   }
   return get_stack_trace_internal(fp, stack_base, stack_len, trace, trace_len);
 }

@@ -43,25 +43,21 @@ bool is_page_aligned(addr_t x) {
 }
 
 addr_t phys2virt(phys_addr_t x) {
-  KASSERT(x < global_meminfo->phys_map_length);
-  return x + global_meminfo->phys_map_start;
+  KASSERT(x < global_meminfo->phys_map.len);
+  return x + global_meminfo->phys_map.base;
 }
 
 phys_addr_t virt2phys(addr_t x) {
-  KASSERT(x >= global_meminfo->phys_map_start);
-  KASSERT(x - global_meminfo->phys_map_length < global_meminfo->phys_map_start);
-  return x - global_meminfo->phys_map_start;
+  KASSERT(x >= global_meminfo->phys_map.base);
+  KASSERT(x - global_meminfo->phys_map.len < global_meminfo->phys_map.base);
+  return x - global_meminfo->phys_map.base;
 }
 
 bool is_direct_mappable(phys_addr_t x) {
-  return (x < global_meminfo->phys_map_length);
+  return (x < global_meminfo->phys_map.len);
 }
 
 bool is_direct_mapped(addr_t x) {
-  return (x >= global_meminfo->phys_map_start &&
-          x < global_meminfo->phys_map_start + global_meminfo->phys_map_length);
-}
-
-addr_t phys2kernel(phys_addr_t x) {
-  return x + global_meminfo->mapped_start;
+  return (x >= global_meminfo->phys_map.base &&
+          x < global_meminfo->phys_map.base + global_meminfo->phys_map.len);
 }

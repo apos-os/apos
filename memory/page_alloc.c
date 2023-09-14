@@ -42,21 +42,23 @@ static phys_addr_t dma_reserved_first_frame;
 static size_t dma_reserved_first_free_idx = 0;
 
 static size_t meminfo_mainmem_len(const memory_info_t* meminfo) {
-  return meminfo->lower_memory + meminfo->upper_memory;
+  return meminfo->mainmem_phys.len;
 }
 
 static size_t meminfo_mainmem_end(const memory_info_t* meminfo) {
-  return meminfo->phys_mainmem_begin + meminfo_mainmem_len(meminfo);
+  return meminfo->mainmem_phys.base + meminfo_mainmem_len(meminfo);
 }
 
 // Initialize the allocator with the given meminfo.
 void page_frame_alloc_init(memory_info_t* meminfo) {
   const size_t total_frames = meminfo_mainmem_len(meminfo) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
-  const phys_addr_t kernel_end_page = next_page(meminfo->kernel_end_phys);
+  const phys_addr_t kernel_end_page =
+      next_page(meminfo->kernel_phys.base + meminfo->kernel_phys.len);
   phys_addr_t next_free_frame = kernel_end_page;
-  KASSERT(meminfo->phys_mainmem_begin < meminfo->kernel_start_phys);
-  KASSERT(meminfo->kernel_end_phys <= meminfo_mainmem_end(meminfo));
+  KASSERT(meminfo->mainmem_phys.base <= meminfo->kernel_phys.base);
+  KASSERT(meminfo->kernel_phys.base + meminfo->kernel_phys.len <=
+          meminfo_mainmem_end(meminfo));
 
   // Reserve same frames for DMA usage.  The DMA pages will live directly above
   // the kernel (at the next page boundary).
@@ -67,7 +69,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   // frames before the kernel (<1MB).
   const size_t free_frames =
       total_frames -
-      ((kernel_end_page - meminfo->phys_mainmem_begin) / PAGE_SIZE) -
+      ((kernel_end_page - meminfo->mainmem_phys.base) / PAGE_SIZE) -
       DMA_RESERVED_FRAMES;
 
   // Allocate a stack of the appropriate size.  We need sizeof(phys_addr_t)
@@ -77,11 +79,11 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   stack_size = next_page(stack_size); // round up.
 
   const addr_t stack_end = next_page(phys2virt(next_free_frame)) + stack_size;
-  KASSERT_MSG(meminfo->phys_map_start + meminfo->phys_map_length >= stack_end,
+  KASSERT_MSG(meminfo->phys_map.base + meminfo->phys_map.len >= stack_end,
               "Not enough memory in physical-mapped region for free page stack "
               "(mapped region goes to %#" PRIxADDR
               ", stack would go to %#" PRIxADDR,
-              meminfo->phys_map_start + meminfo->phys_map_length, stack_end);
+              meminfo->phys_map.base + meminfo->phys_map.len, stack_end);
 
   // The stack will live directly above the DMA-reserved block.
   free_frame_stack = (phys_addr_t*)phys2virt(next_free_frame);
@@ -96,7 +98,7 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   phys_addr_t address = next_free_frame;
   for (size_t i = 0; i < free_frames - (stack_size / PAGE_SIZE); ++i) {
     KASSERT(is_page_aligned(address));
-    KASSERT(address - meminfo->phys_mainmem_begin + PAGE_SIZE <=
+    KASSERT(address - meminfo->mainmem_phys.base + PAGE_SIZE <=
             total_frames * PAGE_SIZE);
 
     free_frame_stack[stack_idx++] = address;

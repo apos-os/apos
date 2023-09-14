@@ -132,39 +132,38 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   klogf("Found /memory node: <0x%lx - 0x%lx>\n", mainmem_addr,
         mainmem_addr + mainmem_len);
 
-  meminfo->kernel_start_virt = (addr_t)&KERNEL_START_SYMBOL;
-  meminfo->kernel_end_virt = (addr_t)&KERNEL_END_SYMBOL;
+  meminfo->kernel_virt.base = (addr_t)&KERNEL_START_SYMBOL;
+  meminfo->kernel_virt.len =
+      (addr_t)&KERNEL_END_SYMBOL - (addr_t)&KERNEL_START_SYMBOL;
+  KASSERT((addr_t)&KERNEL_END_SYMBOL > (addr_t)&KERNEL_START_SYMBOL);
 
   // Some basic sanity checks.
-  KASSERT(meminfo->kernel_start_virt >= RSV64_FIRST_KERNEL_ADDR);
-  KASSERT(meminfo->kernel_start_virt >= RSV64_FIRST_USED_KERNEL_ADDR);
-  KASSERT(meminfo->kernel_start_virt <= (addr_t)&create_initial_meminfo);
-  KASSERT(meminfo->kernel_end_virt > meminfo->kernel_start_virt);
-  KASSERT(meminfo->kernel_end_virt - meminfo->kernel_start_virt > 0x1000);
-  KASSERT(meminfo->kernel_end_virt - meminfo->kernel_start_virt <
-          RSV_MAP_GIGAPAGE_SIZE / 2);
+  KASSERT(meminfo->kernel_virt.base >= RSV64_FIRST_KERNEL_ADDR);
+  KASSERT(meminfo->kernel_virt.base >= RSV64_FIRST_USED_KERNEL_ADDR);
+  KASSERT(meminfo->kernel_virt.base <= (addr_t)&create_initial_meminfo);
+  KASSERT(meminfo->kernel_virt.len > 0x1000);
+  KASSERT(meminfo->kernel_virt.len < RSV_MAP_GIGAPAGE_SIZE / 2);
 
-  meminfo->kernel_start_phys =
-      meminfo->kernel_start_virt - RSV64_KERNEL_VIRT_OFFSET;
-  meminfo->kernel_end_phys =
-      meminfo->kernel_end_virt - RSV64_KERNEL_VIRT_OFFSET;
+  meminfo->kernel_phys.base =
+      meminfo->kernel_virt.base - RSV64_KERNEL_VIRT_OFFSET;
+  meminfo->kernel_phys.len = meminfo->kernel_virt.len;
 
-  meminfo->mapped_start = RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET;
-  meminfo->mapped_end = meminfo->mapped_start + RSV_MAP_GIGAPAGE_SIZE;
+  meminfo->kernel_mapped.base =
+      RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET;
+  meminfo->kernel_mapped.len = RSV_MAP_GIGAPAGE_SIZE;
 
-  meminfo->phys_mainmem_begin = mainmem_addr;
-  meminfo->lower_memory = 0;
-  meminfo->upper_memory = mainmem_len;
+  meminfo->mainmem_phys.base = mainmem_addr;
+  meminfo->mainmem_phys.len = mainmem_len;
 
-  meminfo->phys_map_start = RSV64_KPHYSMAP_ADDR;
-  meminfo->phys_map_length = RSV64_KPHYSMAP_LEN;
-  meminfo->heap_start = RSV64_HEAP_START;
-  meminfo->heap_end = RSV64_HEAP_START + RSV64_HEAP_LEN;
+  meminfo->phys_map.base = RSV64_KPHYSMAP_ADDR;
+  meminfo->phys_map.len = RSV64_KPHYSMAP_LEN;
+  meminfo->heap.base = RSV64_HEAP_START;
+  meminfo->heap.len = RSV64_HEAP_LEN;
 
   // Point kernel_stack_base at the version of the stack in the kernel-mapped
   // space, not the physical map, to match the value of $sp.
-  meminfo->kernel_stack_base = stack_base + RSV64_KERNEL_VIRT_OFFSET;
-  meminfo->kernel_stack_len = 0x8000;
+  meminfo->thread0_stack.base = stack_base + RSV64_KERNEL_VIRT_OFFSET;
+  meminfo->thread0_stack.len = 0x8000;
   meminfo->kernel_page_directory = rsv_get_hart_as();
 }
 

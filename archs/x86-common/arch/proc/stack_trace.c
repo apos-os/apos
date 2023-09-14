@@ -44,7 +44,7 @@ static int get_stack_trace_internal(addr_t ebp, addr_t* frames, int trace_len) {
     // If we're about to go before the start of a thread (0xDEADxxxx), or into
     // pre-VM addresses, stop.
     if ((return_addr & 0xFFFF0000) == 0xDEAD0000 ||
-        return_addr < get_global_meminfo()->mapped_start) {
+        return_addr < get_global_meminfo()->kernel_mapped.base) {
       break;
     }
   }
