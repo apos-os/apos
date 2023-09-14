@@ -54,10 +54,10 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   const size_t total_frames = meminfo_mainmem_len(meminfo) / PAGE_SIZE;
   // Get the first free frame address after the kernel.
   const phys_addr_t kernel_end_page =
-      next_page(meminfo->kernel_phys.base + meminfo->kernel_phys.len);
+      next_page(meminfo->kernel.phys.base + meminfo->kernel.phys.len);
   phys_addr_t next_free_frame = kernel_end_page;
-  KASSERT(meminfo->mainmem_phys.base <= meminfo->kernel_phys.base);
-  KASSERT(meminfo->kernel_phys.base + meminfo->kernel_phys.len <=
+  KASSERT(meminfo->mainmem_phys.base <= meminfo->kernel.phys.base);
+  KASSERT(meminfo->kernel.phys.base + meminfo->kernel.phys.len <=
           meminfo_mainmem_end(meminfo));
 
   // Reserve same frames for DMA usage.  The DMA pages will live directly above
@@ -79,11 +79,11 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
   stack_size = next_page(stack_size); // round up.
 
   const addr_t stack_end = next_page(phys2virt(next_free_frame)) + stack_size;
-  KASSERT_MSG(meminfo->phys_map.base + meminfo->phys_map.len >= stack_end,
-              "Not enough memory in physical-mapped region for free page stack "
-              "(mapped region goes to %#" PRIxADDR
-              ", stack would go to %#" PRIxADDR,
-              meminfo->phys_map.base + meminfo->phys_map.len, stack_end);
+  KASSERT_MSG(
+      meminfo->phys_map.virt_base + meminfo->phys_map.phys.len >= stack_end,
+      "Not enough memory in physical-mapped region for free page stack "
+      "(mapped region goes to %#" PRIxADDR ", stack would go to %#" PRIxADDR,
+      meminfo->phys_map.virt_base + meminfo->phys_map.phys.len, stack_end);
 
   // The stack will live directly above the DMA-reserved block.
   free_frame_stack = (phys_addr_t*)phys2virt(next_free_frame);

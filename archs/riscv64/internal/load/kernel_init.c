@@ -132,21 +132,20 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   klogf("Found /memory node: <0x%lx - 0x%lx>\n", mainmem_addr,
         mainmem_addr + mainmem_len);
 
-  meminfo->kernel_virt.base = (addr_t)&KERNEL_START_SYMBOL;
-  meminfo->kernel_virt.len =
+  meminfo->kernel.virt_base = (addr_t)&KERNEL_START_SYMBOL;
+  meminfo->kernel.phys.len =
       (addr_t)&KERNEL_END_SYMBOL - (addr_t)&KERNEL_START_SYMBOL;
   KASSERT((addr_t)&KERNEL_END_SYMBOL > (addr_t)&KERNEL_START_SYMBOL);
 
   // Some basic sanity checks.
-  KASSERT(meminfo->kernel_virt.base >= RSV64_FIRST_KERNEL_ADDR);
-  KASSERT(meminfo->kernel_virt.base >= RSV64_FIRST_USED_KERNEL_ADDR);
-  KASSERT(meminfo->kernel_virt.base <= (addr_t)&create_initial_meminfo);
-  KASSERT(meminfo->kernel_virt.len > 0x1000);
-  KASSERT(meminfo->kernel_virt.len < RSV_MAP_GIGAPAGE_SIZE / 2);
+  KASSERT(meminfo->kernel.virt_base >= RSV64_FIRST_KERNEL_ADDR);
+  KASSERT(meminfo->kernel.virt_base >= RSV64_FIRST_USED_KERNEL_ADDR);
+  KASSERT(meminfo->kernel.virt_base <= (addr_t)&create_initial_meminfo);
+  KASSERT(meminfo->kernel.phys.len > 0x1000);
+  KASSERT(meminfo->kernel.phys.len < RSV_MAP_GIGAPAGE_SIZE / 2);
 
-  meminfo->kernel_phys.base =
-      meminfo->kernel_virt.base - RSV64_KERNEL_VIRT_OFFSET;
-  meminfo->kernel_phys.len = meminfo->kernel_virt.len;
+  meminfo->kernel.phys.base =
+      meminfo->kernel.virt_base - RSV64_KERNEL_VIRT_OFFSET;
 
   meminfo->kernel_mapped.base =
       RSV64_KERNEL_PHYS_ADDR + RSV64_KERNEL_VIRT_OFFSET;
@@ -155,8 +154,9 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   meminfo->mainmem_phys.base = mainmem_addr;
   meminfo->mainmem_phys.len = mainmem_len;
 
-  meminfo->phys_map.base = RSV64_KPHYSMAP_ADDR;
-  meminfo->phys_map.len = RSV64_KPHYSMAP_LEN;
+  meminfo->phys_map.virt_base = RSV64_KPHYSMAP_ADDR;
+  meminfo->phys_map.phys.len = RSV64_KPHYSMAP_LEN;
+  meminfo->phys_map.phys.base = 0;
   meminfo->heap.base = RSV64_HEAP_START;
   meminfo->heap.len = RSV64_HEAP_LEN;
 

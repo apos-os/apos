@@ -35,7 +35,7 @@ static char g_klog_history[KLOG_BUF_SIZE];
 static int g_klog_len = 0;
 
 static inline addr_t vram_start(void) {
-  return get_global_meminfo()->phys_map.base + 0xB8000;
+  return get_global_meminfo()->phys_map.virt_base + 0xB8000;
 }
 
 static klog_level_t g_global_log_level = INFO;

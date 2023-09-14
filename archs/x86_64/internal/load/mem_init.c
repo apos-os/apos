@@ -64,14 +64,14 @@ static void kassert_page_aligned(addr_t x) {
 // updating meminfo->kernel_end_phys as necessary.
 static uint64_t* kalloc_page(memory_info_t* meminfo) {
   uint64_t* addr = (uint64_t*)0xDEADBEEF;
-  addr_t kernel_phys_end = meminfo->kernel_phys.base + meminfo->kernel_phys.len;
+  addr_t kernel_phys_end = meminfo->kernel.phys.base + meminfo->kernel.phys.len;
   if ((kernel_phys_end & PAGE_OFFSET_MASK) == 0) {
     addr = (uint64_t*)kernel_phys_end;
   } else {
     addr = (uint64_t*)((kernel_phys_end & PAGE_INDEX_MASK) + PAGE_SIZE);
   }
-  meminfo->kernel_phys.len =
-      (addr_t)addr - meminfo->kernel_phys.base + PAGE_SIZE;
+  meminfo->kernel.phys.len =
+      (addr_t)addr - meminfo->kernel.phys.base + PAGE_SIZE;
   return addr;
 }
 
@@ -157,11 +157,10 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
                           ident_addr + KERNEL_PHYS_MAP_START, ident_addr);
     ident_addr += PT_NUM_ENTRIES * PAGE_SIZE;
   }
-  meminfo->phys_map.len = phys_map_len;
+  meminfo->phys_map.phys.len = phys_map_len;
 
   // Update meminfo.
-  meminfo->kernel_virt.base = meminfo->kernel_phys.base + KERNEL_VIRT_START;
-  meminfo->kernel_virt.len = meminfo->kernel_phys.len;
+  meminfo->kernel.virt_base = meminfo->kernel.phys.base + KERNEL_VIRT_START;
   meminfo->kernel_mapped.base = KERNEL_VIRT_START;
   // We mapped a N PTEs (4MB each) for use by the kernel.
   meminfo->kernel_mapped.len =
@@ -187,13 +186,13 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
   // meminfo->kernel_end_{phys, virt} as needed.
   static memory_info_t g_meminfo;
 
-  g_meminfo.kernel_phys.base =
+  g_meminfo.kernel.phys.base =
       (uint64_t)(&KERNEL_START_SYMBOL) - KERNEL_VIRT_START;
   // Account for the memory_info_t we just allocated.
-  g_meminfo.kernel_phys.len =
+  g_meminfo.kernel.phys.len =
       (uint64_t)(&KERNEL_END_SYMBOL) - (uint64_t)(&KERNEL_START_SYMBOL);
 
-  g_meminfo.kernel_virt.base = g_meminfo.kernel_virt.len = 0;
+  g_meminfo.kernel.virt_base = 0;
   g_meminfo.kernel_mapped.base = g_meminfo.kernel_mapped.len = 0;
 
   kassert_phys((mb_info->flags & MULTIBOOT_INFO_MEMORY) != 0);
@@ -205,8 +204,9 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
     g_meminfo.mainmem_phys.len = MAX_MEMORY_BYTES;
   }
 
-  g_meminfo.phys_map.base = KERNEL_PHYS_MAP_START;
-  g_meminfo.phys_map.len = 0;  // We'll set this when we do the mapping.
+  g_meminfo.phys_map.phys.base = 0;
+  g_meminfo.phys_map.virt_base = KERNEL_PHYS_MAP_START;
+  g_meminfo.phys_map.phys.len = 0;  // We'll set this when we do the mapping.
   g_meminfo.heap.base = START_HEAP;
   g_meminfo.heap.len = HEAP_LEN;
   g_meminfo.thread0_stack.base = stack + KERNEL_VIRT_START;

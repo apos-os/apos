@@ -262,12 +262,12 @@ void kmain(const boot_info_t* boot) {
 
   const memory_info_t* m = boot->meminfo;
   klogf("meminfo: %p\n", boot->meminfo);
-  klogf("meminfo->kernel_start_phys:   0x%" PRIxADDR "\n", m->kernel_phys.base);
+  klogf("meminfo->kernel_start_phys:   0x%" PRIxADDR "\n", m->kernel.phys.base);
   klogf("meminfo->kernel_end_phys:     0x%" PRIxADDR "\n",
-        m->kernel_phys.base + m->kernel_phys.len);
-  klogf("meminfo->kernel_start_virt:   0x%" PRIxADDR "\n", m->kernel_virt.base);
+        m->kernel.phys.base + m->kernel.phys.len);
+  klogf("meminfo->kernel_start_virt:   0x%" PRIxADDR "\n", m->kernel.virt_base);
   klogf("meminfo->kernel_end_virt:     0x%" PRIxADDR "\n",
-        m->kernel_virt.base + m->kernel_virt.len);
+        m->kernel.virt_base + m->kernel.phys.len);
   klogf("meminfo->mapped_start:        0x%" PRIxADDR "\n",
         m->kernel_mapped.base);
   klogf("meminfo->mapped_end:          0x%" PRIxADDR "\n",
@@ -275,8 +275,10 @@ void kmain(const boot_info_t* boot) {
   klogf("meminfo->mainmem_phys:        0x%" PRIxADDR "\n",
         m->mainmem_phys.base);
   klogf("meminfo->mainmem_len:         0x%" PRIxADDR "\n", m->mainmem_phys.len);
-  klogf("meminfo->phys_map_start:      0x%" PRIxADDR "\n", m->phys_map.base);
-  klogf("meminfo->phys_map_length:     0x%" PRIxADDR "\n", m->phys_map.len);
+  klogf("meminfo->phys_map_start:      0x%" PRIxADDR "\n",
+        m->phys_map.virt_base);
+  klogf("meminfo->phys_map_length:     0x%" PRIxADDR "\n",
+        m->phys_map.phys.len);
 
   // TODO(aoates): reparent processes to the init process rather than the kernel
   // process?  Or run init in the kernel process (exec without fork below)?
