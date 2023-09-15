@@ -157,7 +157,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
                           ident_addr + KERNEL_PHYS_MAP_START, ident_addr);
     ident_addr += PT_NUM_ENTRIES * PAGE_SIZE;
   }
-  meminfo->phys_map.phys.len = phys_map_len;
+  meminfo->phys_maps[0].phys.len = phys_map_len;
 
   // Update meminfo.
   meminfo->kernel.virt_base = meminfo->kernel.phys.base + KERNEL_VIRT_START;
@@ -204,9 +204,13 @@ static memory_info_t* create_initial_meminfo(multiboot_info_t* mb_info,
     g_meminfo.mainmem_phys.len = MAX_MEMORY_BYTES;
   }
 
-  g_meminfo.phys_map.phys.base = 0;
-  g_meminfo.phys_map.virt_base = KERNEL_PHYS_MAP_START;
-  g_meminfo.phys_map.phys.len = 0;  // We'll set this when we do the mapping.
+  g_meminfo.phys_maps[0].phys.base = 0;
+  g_meminfo.phys_maps[0].virt_base = KERNEL_PHYS_MAP_START;
+  g_meminfo.phys_maps[0].phys.len = 0;  // We'll set this when we do the mapping
+  for (int i = 1; i < MEM_MAX_PHYS_MAPS; ++i) {
+    g_meminfo.phys_maps[i].phys.base = g_meminfo.phys_maps[i].phys.len =
+        g_meminfo.phys_maps[i].virt_base = 0;
+  }
   g_meminfo.heap.base = START_HEAP;
   g_meminfo.heap.len = HEAP_LEN;
   g_meminfo.thread0_stack.base = stack + KERNEL_VIRT_START;

@@ -163,10 +163,10 @@ void proc_init_stage1(void) {
       meminfo->kernel_mapped.len, false /* allow_allocation */);
   // Round up to the next MIN_GLOBAL_MAPPING_SIZE amount.
   const addr_t phys_map_len =
-      ceiling_div(meminfo->phys_map.phys.len, MIN_GLOBAL_MAPPING_SIZE) *
+      ceiling_div(meminfo->phys_maps[0].phys.len, MIN_GLOBAL_MAPPING_SIZE) *
       MIN_GLOBAL_MAPPING_SIZE;
   vm_create_kernel_mapping(&g_physical_mapped_vm_area,
-                           meminfo->phys_map.virt_base, phys_map_len,
+                           meminfo->phys_maps[0].virt_base, phys_map_len,
                            false /* allow_allocation */);
 }
 

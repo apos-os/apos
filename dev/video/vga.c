@@ -59,7 +59,7 @@ void video_vga_init(void) {
 
 video_t* video_get_default(void) {
   g_video.videoram =
-      (uint16_t*)(get_global_meminfo()->phys_map.virt_base + 0xB8000);
+      (uint16_t*)(get_global_meminfo()->phys_maps[0].virt_base + 0xB8000);
   g_video.width = 80;
   g_video.height = 24;
   return &g_video;

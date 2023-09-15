@@ -80,10 +80,12 @@ void page_frame_alloc_init(memory_info_t* meminfo) {
 
   const addr_t stack_end = next_page(phys2virt(next_free_frame)) + stack_size;
   KASSERT_MSG(
-      meminfo->phys_map.virt_base + meminfo->phys_map.phys.len >= stack_end,
+      meminfo->phys_maps[0].virt_base + meminfo->phys_maps[0].phys.len >=
+          stack_end,
       "Not enough memory in physical-mapped region for free page stack "
       "(mapped region goes to %#" PRIxADDR ", stack would go to %#" PRIxADDR,
-      meminfo->phys_map.virt_base + meminfo->phys_map.phys.len, stack_end);
+      meminfo->phys_maps[0].virt_base + meminfo->phys_maps[0].phys.len,
+      stack_end);
 
   // The stack will live directly above the DMA-reserved block.
   free_frame_stack = (phys_addr_t*)phys2virt(next_free_frame);

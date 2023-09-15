@@ -276,9 +276,9 @@ void kmain(const boot_info_t* boot) {
         m->mainmem_phys.base);
   klogf("meminfo->mainmem_len:         0x%" PRIxADDR "\n", m->mainmem_phys.len);
   klogf("meminfo->phys_map_start:      0x%" PRIxADDR "\n",
-        m->phys_map.virt_base);
+        m->phys_maps[0].virt_base);
   klogf("meminfo->phys_map_length:     0x%" PRIxADDR "\n",
-        m->phys_map.phys.len);
+        m->phys_maps[0].phys.len);
 
   // TODO(aoates): reparent processes to the init process rather than the kernel
   // process?  Or run init in the kernel process (exec without fork below)?

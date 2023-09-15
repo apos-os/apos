@@ -154,9 +154,13 @@ static void create_initial_meminfo(const dt_tree_t* fdt, memory_info_t* meminfo,
   meminfo->mainmem_phys.base = mainmem_addr;
   meminfo->mainmem_phys.len = mainmem_len;
 
-  meminfo->phys_map.virt_base = RSV64_KPHYSMAP_ADDR;
-  meminfo->phys_map.phys.len = RSV64_KPHYSMAP_LEN;
-  meminfo->phys_map.phys.base = 0;
+  meminfo->phys_maps[0].virt_base = RSV64_KPHYSMAP_ADDR;
+  meminfo->phys_maps[0].phys.len = RSV64_KPHYSMAP_LEN;
+  meminfo->phys_maps[0].phys.base = 0;
+  for (int i = 1; i < MEM_MAX_PHYS_MAPS; ++i) {
+    meminfo->phys_maps[i].phys.base = meminfo->phys_maps[i].phys.len =
+        meminfo->phys_maps[i].virt_base = 0;
+  }
   meminfo->heap.base = RSV64_HEAP_START;
   meminfo->heap.len = RSV64_HEAP_LEN;
 

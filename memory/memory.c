@@ -43,27 +43,27 @@ bool is_page_aligned(addr_t x) {
 }
 
 addr_t phys2virt(phys_addr_t x) {
-  KASSERT(x >= global_meminfo->phys_map.phys.base);
-  KASSERT(x < global_meminfo->phys_map.phys.base +
-                  global_meminfo->phys_map.phys.len);
-  return (x - global_meminfo->phys_map.phys.base) +
-         global_meminfo->phys_map.virt_base;
+  KASSERT(x >= global_meminfo->phys_maps[0].phys.base);
+  KASSERT(x < global_meminfo->phys_maps[0].phys.base +
+                  global_meminfo->phys_maps[0].phys.len);
+  return (x - global_meminfo->phys_maps[0].phys.base) +
+         global_meminfo->phys_maps[0].virt_base;
 }
 
 phys_addr_t virt2phys(addr_t x) {
-  KASSERT(x >= global_meminfo->phys_map.virt_base);
-  KASSERT(x - global_meminfo->phys_map.phys.len <
-          global_meminfo->phys_map.virt_base);
-  return x - global_meminfo->phys_map.virt_base;
+  KASSERT(x >= global_meminfo->phys_maps[0].virt_base);
+  KASSERT(x - global_meminfo->phys_maps[0].phys.len <
+          global_meminfo->phys_maps[0].virt_base);
+  return x - global_meminfo->phys_maps[0].virt_base;
 }
 
 bool is_direct_mappable(phys_addr_t x) {
-  return (x > global_meminfo->phys_map.phys.base &&
-          x < global_meminfo->phys_map.phys.len);
+  return (x > global_meminfo->phys_maps[0].phys.base &&
+          x < global_meminfo->phys_maps[0].phys.len);
 }
 
 bool is_direct_mapped(addr_t x) {
-  return (x >= global_meminfo->phys_map.virt_base &&
-          x < global_meminfo->phys_map.virt_base +
-                  global_meminfo->phys_map.phys.len);
+  return (x >= global_meminfo->phys_maps[0].virt_base &&
+          x < global_meminfo->phys_maps[0].virt_base +
+                  global_meminfo->phys_maps[0].phys.len);
 }
