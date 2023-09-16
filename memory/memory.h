@@ -95,6 +95,11 @@ bool is_page_aligned(addr_t x);
 // meminfo->phys_map_start).
 addr_t phys2virt(phys_addr_t x);
 
+// As phys2virt, but searches _all_ physically-mapped regions (not just the
+// primary one), and can fail gracefully if no region contains the address.
+// Returns 0 on failure.
+addr_t phys2virt_all(phys_addr_t x);
+
 // Converts a virtual address (in the direct-mapped region) to the corresponding
 // physical address.
 phys_addr_t virt2phys(addr_t x);

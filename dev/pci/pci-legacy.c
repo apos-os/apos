@@ -23,6 +23,7 @@
 #include "dev/pci/pci-driver.h"
 #include "dev/pci/pci-internal.h"
 #include "memory/kmalloc.h"
+#include "memory/memory.h"
 
 // IO ports for manipulating the PCI bus.
 #define PCI_CONFIG_ADDR 0xCF8
@@ -55,6 +56,29 @@ void pci_legacy_write_config(uint8_t bus, uint8_t device, uint8_t function,
   io_write32(kPciIo, PCI_CONFIG_ADDR,
              make_cmd(bus, device, function, reg_offset));
   io_write32(kPciIo, PCI_CONFIG_DATA, value);
+}
+
+static void remap_bar(pci_device_t* pcidev, int bar_idx) {
+  pci_bar_t* bar = &pcidev->bar[bar_idx];
+  if (bar->io.type != IO_MEMORY) {
+    return;
+  }
+
+  // Look for a physical-mapped memory region that contains the bar's address.
+  addr_t remapped = phys2virt_all(bar->io.base);
+  if (remapped == 0) {
+    klogfm(KL_PCI, WARNING,
+           "Unable to remap %d.%d(%d) BAR %d at address %" PRIxADDR "\n",
+           pcidev->bus, pcidev->device, pcidev->function, bar_idx,
+           bar->io.base);
+    return;
+  }
+
+  klogfm(KL_PCI, INFO,
+         "Remapped %d.%d(%d) BAR %d from %" PRIxADDR " to %" PRIxADDR "\n",
+         pcidev->bus, pcidev->device, pcidev->function, bar_idx, bar->io.base,
+         remapped);
+  bar->io.base = remapped;
 }
 
 // Read config data for a single (bus, device, function) tuple.  Returns 0 if
@@ -95,6 +119,7 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
       // TODO(aoates): fix this support on x86 systems --- this should be a
       // _virtual_, not physical, address, but they don't currently fit in the
       // physical memory map.
+      remap_bar(pcidev, i);
     }
   }
 

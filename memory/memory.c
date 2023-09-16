@@ -50,6 +50,19 @@ addr_t phys2virt(phys_addr_t x) {
          global_meminfo->phys_maps[0].virt_base;
 }
 
+addr_t phys2virt_all(phys_addr_t x) {
+  for (int i = 0; i < MEM_MAX_PHYS_MAPS; ++i) {
+    if (x >= global_meminfo->phys_maps[i].phys.base &&
+        x < global_meminfo->phys_maps[i].phys.base +
+                global_meminfo->phys_maps[i].phys.len) {
+      return (x - global_meminfo->phys_maps[i].phys.base) +
+             global_meminfo->phys_maps[i].virt_base;
+    }
+  }
+
+  return 0;
+}
+
 phys_addr_t virt2phys(addr_t x) {
   KASSERT(x >= global_meminfo->phys_maps[0].virt_base);
   KASSERT(x - global_meminfo->phys_maps[0].phys.len <
