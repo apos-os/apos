@@ -111,14 +111,15 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
   for (int i = 0; i < PCI_NUM_BARS; ++i) {
     pcidev->bar[i].bar =
         pci_legacy_read_config(bus, device, function, 0x10 + 0x04 * i);
-    uint32_t bar_addr_mask;
-    KASSERT(pci_parse_bar(pcidev->bar[i].bar, &pcidev->bar[i],
-                          &bar_addr_mask) == 0);
-    if (pcidev->bar[i].io.base) {
-      pcidev->bar[i].valid = true;
-      // TODO(aoates): fix this support on x86 systems --- this should be a
-      // _virtual_, not physical, address, but they don't currently fit in the
-      // physical memory map.
+  }
+  KASSERT(pci_parse_bars(pcidev) == 0);
+  for (int i = 0; i < PCI_NUM_BARS; ++i) {
+    // PCI BARs are assumed to be pre-allocated, so mark any zero as invalid.
+    if (pcidev->bar[i].io.base == 0) {
+      pcidev->bar[i].valid = false;
+    }
+
+    if (pcidev->bar[i].valid) {
       remap_bar(pcidev, i);
     }
   }

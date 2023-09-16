@@ -160,27 +160,23 @@ static const char* bartype2str(pci_bar_type_t t) {
 }
 
 static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
-  bool skip_next = false;
+  KASSERT(pci_parse_bars(&dev->pub) == 0);
+
   for (int i = 0; i < PCI_NUM_BARS; ++i) {
-    if (skip_next) {
-      skip_next = false;
+    if (!dev->pub.bar[i].valid) {
       continue;
     }
 
     pci_bar_t* bar = &dev->pub.bar[i];
-    uint32_t bar_addr_mask;
-    KASSERT(pci_parse_bar(bar->bar, bar, &bar_addr_mask) == 0);
-    if (bar->type == PCIBAR_MEM64) {
-      KASSERT(i < PCI_NUM_BARS - 1);
-    }
     KASSERT_MSG(bar->io.base == 0, "Pre-allocated BARs are not supported");
 
     size_t bar_offset = offsetof(pci_conf_t, bars) + i * sizeof(uint32_t);
     io_write32(dev->cfg_io, bar_offset, 0xffffffff);
     uint32_t newval = io_read32(dev->cfg_io, bar_offset);
-    newval &= bar_addr_mask;
+    newval &= bar->bar_addr_mask;
     size_t bar_len = (0xffffffff - newval) + 1;
     if (bar_len == 0) {
+      dev->pub.bar[i].valid = false;
       continue;
     }
     // Sanity check (we don't check upper bits of 64-bit BARs).
@@ -213,11 +209,15 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
     }
     io_write32(dev->cfg_io, bar_offset, pci_addr);
     if (range->type == PCIBAR_MEM64) {
-      skip_next = true;
       io_write32(dev->cfg_io, bar_offset + sizeof(uint32_t), pci_addr >> 32);
     }
     bar->io.base = phys2virt(range->host_base + range->next_free);
     range->next_free += bar_len;
+
+    // We assume only MMIO currently.
+    KASSERT(!ARCH_SUPPORTS_IOPORT);
+    bar->io.type = IO_MEMORY;
+
     bar->valid = true;
     KLOG(INFO,
          "  Allocated BAR %d: %s 0x%zx bytes at 0x%" PRIxADDR

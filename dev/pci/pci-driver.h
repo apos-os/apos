@@ -37,6 +37,7 @@ typedef enum {
 typedef struct {
   bool valid;  // Whether this BAR can be used.
   uint32_t bar;  // Raw BAR value.  Should not generally be used.
+  uint32_t bar_addr_mask;  // Mask for address portion; for PCI code.
 
   // The PCI type of the BAR.  May not match the devio type!  For example, a PCI
   // IO-port region may be memory-mapped to the host.

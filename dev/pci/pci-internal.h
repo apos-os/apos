@@ -38,13 +38,19 @@ uint32_t pcie_read_config(pci_device_t* pcidev, uint8_t reg_offset);
 void pcie_write_config(pci_device_t* pcidev, uint8_t reg_offset,
                        uint32_t value);
 
-// Parses the given "raw" BAR value.  Returns the parsed bar with the address
-// portion (IO port or memory address) in the io.base field.  Note that,
+// Parses the given "raw" BAR values, which must be set in the bar structs.
+// Updates the parsed bars with the address portion (IO port or memory address)
+// in the io.base field.  Note that,
 // a) the address is a PCI-visible address (depending on the architecture, may
 //    not be mapped to the CPU's memory view or virtual address).
-// b) if a 64-bit BAR, it will only contain the lower 32-bits.
+// b) if a 64-bit BAR on a 32-bit system and the value is out-of-range, parsing
+//    will fail with ERANGE.
+// c) similar to (a), an ioport BAR will be with devio type IO_PORT, even if the
+//    host does not support ioport --- the caller must translate both type and
+//    address.
 //
-// Does not set bar->valid.
-int pci_parse_bar(uint32_t barval, pci_bar_t* bar, uint32_t* bar_addr_mask);
+// A zero BAR will be marked as valid, since it may be depending on the
+// architecture.  The caller must check for these.
+int pci_parse_bars(pci_device_t* dev);
 
 #endif

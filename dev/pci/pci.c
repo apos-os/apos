@@ -167,31 +167,53 @@ void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
   die("unreachable");
 }
 
-int pci_parse_bar(uint32_t barval, pci_bar_t* bar, uint32_t* bar_addr_mask) {
-  bar->valid = false;
-  if (bar->bar & 0x1) {
-    bar->type = PCIBAR_IO;
-    *bar_addr_mask = ~0x1;
-    bar->prefetchable = false;
-  } else if ((bar->bar & 0x7) == 0) {
-    bar->type = PCIBAR_MEM32;
-    bar->prefetchable = (bar->bar >> 3) & 0x1;
-    *bar_addr_mask = ~0xf;
-  } else if ((bar->bar & 0x7) == 4) {
-    if (!ARCH_IS_64_BIT) {
-      KLOG(DFATAL, "64-bit BAR on 32-bit host\n");
-      return -ERANGE;
-    }
-    bar->type = PCIBAR_MEM64;
-    bar->prefetchable = (bar->bar >> 3) & 0x1;
-    *bar_addr_mask = ~0xf;
-  } else {
-    KLOG(DFATAL, "Unsupported BAR type: 0x%x\n", barval);
-    return -EINVAL;
-  }
+int pci_parse_bars(pci_device_t* dev) {
+  bool next_upper64 = false;
+  for (int i = 0; i < PCI_NUM_BARS; ++i) {
+    pci_bar_t* bar = &dev->bar[i];
+    bar->valid = false;
+    if (next_upper64) {
+      if (!ARCH_IS_64_BIT && bar->bar != 0) {
+        KLOG(DFATAL,
+             "64-bit BAR with a non-zero upper 32 bits is out of range for "
+             "this system\n");
+        return -ERANGE;
+      }
 
-  bar->io.base = bar->bar & *bar_addr_mask;
-  bar->io.type =
-      (bar->type == PCIBAR_IO && ARCH_SUPPORTS_IOPORT) ? IO_PORT : IO_MEMORY;
+      KASSERT_DBG(i > 0);
+      KASSERT_DBG(dev->bar[i - 1].type == PCIBAR_MEM64);
+#if ARCH_IS_64_BIT
+      dev->bar[i - 1].io.base |= (addr_t)bar->bar << 32;
+#endif
+      next_upper64 = false;
+      continue;
+    }
+
+    if (bar->bar & 0x1) {
+      bar->type = PCIBAR_IO;
+      bar->bar_addr_mask = ~0x1;
+      bar->prefetchable = false;
+    } else if ((bar->bar & 0x7) == 0) {
+      bar->type = PCIBAR_MEM32;
+      bar->bar_addr_mask = ~0xf;
+      bar->prefetchable = (bar->bar >> 3) & 0x1;
+    } else if ((bar->bar & 0x7) == 4) {
+      bar->type = PCIBAR_MEM64;
+      bar->bar_addr_mask = ~0xf;
+      bar->prefetchable = (bar->bar >> 3) & 0x1;
+      next_upper64 = true;
+    } else {
+      KLOG(DFATAL, "Unsupported BAR type: 0x%x\n", bar->bar);
+      return -EINVAL;
+    }
+    if (bar->type == PCIBAR_MEM64 && i >= PCI_NUM_BARS) {
+      KLOG(DFATAL, "64-bit BAR found at end of BAR range\n");
+      return -EINVAL;
+    }
+
+    bar->valid = true;
+    bar->io.base = bar->bar & bar->bar_addr_mask;
+    bar->io.type = (bar->type == PCIBAR_IO) ? IO_PORT : IO_MEMORY;
+  }
   return 0;
 }
