@@ -68,14 +68,14 @@ static void remap_bar(pci_device_t* pcidev, int bar_idx) {
   addr_t remapped = phys2virt_all(bar->io.base);
   if (remapped == 0) {
     klogfm(KL_PCI, WARNING,
-           "Unable to remap %d.%d(%d) BAR %d at address %" PRIxADDR "\n",
+           "Unable to remap %d.%d(%d) BAR %d at address 0x%" PRIxADDR "\n",
            pcidev->bus, pcidev->device, pcidev->function, bar_idx,
            bar->io.base);
     return;
   }
 
   klogfm(KL_PCI, INFO,
-         "Remapped %d.%d(%d) BAR %d from %" PRIxADDR " to %" PRIxADDR "\n",
+         "Remapped %d.%d(%d) BAR %d from 0x%" PRIxADDR " to 0x%" PRIxADDR "\n",
          pcidev->bus, pcidev->device, pcidev->function, bar_idx, bar->io.base,
          remapped);
   bar->io.base = remapped;

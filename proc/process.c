@@ -18,6 +18,7 @@
 #include "common/kassert.h"
 #include "common/math.h"
 #include "memory/kmalloc.h"
+#include "memory/memory.h"
 #include "memory/vm.h"
 #include "memory/vm_area.h"
 #include "proc/exit.h"
@@ -43,7 +44,7 @@ static process_t g_first_process;
 // physically-mapped region, respectively.  They will be put in
 // g_first_process's memory map.
 static vm_area_t g_kernel_mapped_vm_area;
-static vm_area_t g_physical_mapped_vm_area;
+static vm_area_t g_physical_mapped_vm_area[MEM_MAX_PHYS_MAPS];
 
 process_t* g_proc_table[PROC_MAX_PROCS];
 static kpid_t g_current_proc = -1;
@@ -161,13 +162,17 @@ void proc_init_stage1(void) {
   vm_create_kernel_mapping(
       &g_kernel_mapped_vm_area, meminfo->kernel_mapped.base,
       meminfo->kernel_mapped.len, false /* allow_allocation */);
-  // Round up to the next MIN_GLOBAL_MAPPING_SIZE amount.
-  const addr_t phys_map_len =
-      ceiling_div(meminfo->phys_maps[0].phys.len, MIN_GLOBAL_MAPPING_SIZE) *
-      MIN_GLOBAL_MAPPING_SIZE;
-  vm_create_kernel_mapping(&g_physical_mapped_vm_area,
-                           meminfo->phys_maps[0].virt_base, phys_map_len,
-                           false /* allow_allocation */);
+  for (int i = 0; i < MEM_MAX_PHYS_MAPS; ++i) {
+    if (meminfo->phys_maps[i].phys.len == 0) continue;
+
+    // Round up to the next MIN_GLOBAL_MAPPING_SIZE amount.
+    const addr_t phys_map_len =
+        ceiling_div(meminfo->phys_maps[i].phys.len, MIN_GLOBAL_MAPPING_SIZE) *
+        MIN_GLOBAL_MAPPING_SIZE;
+    vm_create_kernel_mapping(&g_physical_mapped_vm_area[i],
+                             meminfo->phys_maps[i].virt_base, phys_map_len,
+                             false /* allow_allocation */);
+  }
 }
 
 void proc_init_stage2(void) {

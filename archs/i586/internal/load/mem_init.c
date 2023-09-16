@@ -33,6 +33,12 @@ const addr_t KERNEL_PHYS_MAP_START = 0xE0000000;
 // KERNEL_PHYS_MAP_START.
 const addr_t KERNEL_PHYS_MAP_MAX_LENGTH = 0x10000000;
 
+// Upper segment for top 64MB section of physical memory for PCI MMIO.
+// TODO(aoates): this shouldn't be hard coded, but I'm not sure where to extract
+// it from.  ACPI tables?
+const addr_t KERNEL_PHYS_MAP_UPPER = 0xF0000000;
+const addr_t KERNEL_PHYS_MAP_UPPER_LEN = 0x4000000;
+
 // The maximum amount of physical memory we support (due to the
 // KERNEL_PHYS_MAP_START).
 // TODO(aoates): add option to page allocator to allocate only from
@@ -144,6 +150,21 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
     ident_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
   }
   meminfo->phys_maps[0].phys.len = phys_map_len;
+
+  // Map the highest portion of memory.
+  kassert_phys(KERNEL_PHYS_MAP_UPPER_LEN % MIN_GLOBAL_MAPPING_SIZE == 0);
+  addr_t virt_addr = KERNEL_PHYS_MAP_UPPER;
+  addr_t phys_addr = 0xFFFFFFFF - KERNEL_PHYS_MAP_UPPER_LEN + 1;
+  meminfo->phys_maps[1].virt_base = virt_addr;
+  meminfo->phys_maps[1].phys.base = phys_addr;
+  meminfo->phys_maps[1].phys.len = KERNEL_PHYS_MAP_UPPER_LEN;
+  while (virt_addr - KERNEL_PHYS_MAP_UPPER < KERNEL_PHYS_MAP_UPPER_LEN) {
+    uint32_t* ident_page_table = kalloc_page(meminfo);
+    map_linear_page_table(page_directory, ident_page_table, virt_addr,
+                          phys_addr);
+    phys_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
+    virt_addr += PTE_NUM_ENTRIES * PAGE_SIZE;
+  }
 
   // Finally, map the last PDE entry onto itself so we can always access the
   // current PDE/PTEs without having to map them in explicitly.
