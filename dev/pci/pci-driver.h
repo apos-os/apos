@@ -41,6 +41,7 @@ typedef struct {
   // The PCI type of the BAR.  May not match the devio type!  For example, a PCI
   // IO-port region may be memory-mapped to the host.
   pci_bar_type_t type;
+  bool prefetchable;
 
   // devio used to access the BAR, iff valid is true.  Drivers should use this
   // to access the BAR.

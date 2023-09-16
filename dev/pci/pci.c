@@ -33,6 +33,8 @@
 #include "dev/nvme/controller.h"
 #endif
 
+#define KLOG(...) klogfm(KL_PCI, __VA_ARGS__)
+
 #define PCI_MAX_DEVICES 40
 static pci_device_t* g_pci_devices[PCI_MAX_DEVICES];
 static int g_pci_count = 0;
@@ -163,4 +165,33 @@ void pci_write_register(pci_device_t* pcidev, uint8_t reg_offset,
       return pcie_write_config(pcidev, reg_offset, value);
   }
   die("unreachable");
+}
+
+int pci_parse_bar(uint32_t barval, pci_bar_t* bar, uint32_t* bar_addr_mask) {
+  bar->valid = false;
+  if (bar->bar & 0x1) {
+    bar->type = PCIBAR_IO;
+    *bar_addr_mask = ~0x1;
+    bar->prefetchable = false;
+  } else if ((bar->bar & 0x7) == 0) {
+    bar->type = PCIBAR_MEM32;
+    bar->prefetchable = (bar->bar >> 3) & 0x1;
+    *bar_addr_mask = ~0xf;
+  } else if ((bar->bar & 0x7) == 4) {
+    if (!ARCH_IS_64_BIT) {
+      KLOG(DFATAL, "64-bit BAR on 32-bit host\n");
+      return -ERANGE;
+    }
+    bar->type = PCIBAR_MEM64;
+    bar->prefetchable = (bar->bar >> 3) & 0x1;
+    *bar_addr_mask = ~0xf;
+  } else {
+    KLOG(DFATAL, "Unsupported BAR type: 0x%x\n", barval);
+    return -EINVAL;
+  }
+
+  bar->io.base = bar->bar & *bar_addr_mask;
+  bar->io.type =
+      (bar->type == PCIBAR_IO && ARCH_SUPPORTS_IOPORT) ? IO_PORT : IO_MEMORY;
+  return 0;
 }

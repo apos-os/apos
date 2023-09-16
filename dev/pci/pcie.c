@@ -168,30 +168,12 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
     }
 
     pci_bar_t* bar = &dev->pub.bar[i];
-    uint32_t bar_addr;
-    bool prefetchable = false;
-    uint32_t bar_addr_mask = 0;
-    if (bar->bar & 0x1) {
-      bar->type = PCIBAR_IO;
-      bar_addr_mask = ~0x1;
-    } else if ((bar->bar & 0x7) == 0) {
-      bar->type = PCIBAR_MEM32;
-      prefetchable = (bar->bar >> 3) & 0x1;
-      bar_addr_mask = ~0xf;
-    } else if ((bar->bar & 0x7) == 4) {
-      if (!ARCH_IS_64_BIT) {
-        // TODO(aoates): support this, or at least handle gracefully.
-        die("64-bit BAR on 32-bit host");
-      }
+    uint32_t bar_addr_mask;
+    KASSERT(pci_parse_bar(bar->bar, bar, &bar_addr_mask) == 0);
+    if (bar->type == PCIBAR_MEM64) {
       KASSERT(i < PCI_NUM_BARS - 1);
-      bar->type = PCIBAR_MEM64;
-      prefetchable = (bar->bar >> 3) & 0x1;
-      bar_addr_mask = ~0xf;
-    } else {
-        die("Unsupported BAR type");
     }
-    bar_addr = bar->bar & bar_addr_mask;
-    KASSERT_MSG(bar_addr == 0, "Pre-allocated BARs are not supported");
+    KASSERT_MSG(bar->io.base == 0, "Pre-allocated BARs are not supported");
 
     size_t bar_offset = offsetof(pci_conf_t, bars) + i * sizeof(uint32_t);
     io_write32(dev->cfg_io, bar_offset, 0xffffffff);
@@ -208,7 +190,7 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
     int range_idx = -1;
     for (int j = 0; j < pcie->mmap.num_ranges; ++j) {
       if (pcie->mmap.ranges[j].type == bar->type &&
-          pcie->mmap.ranges[j].prefetchable == prefetchable) {
+          pcie->mmap.ranges[j].prefetchable == bar->prefetchable) {
         range_idx = j;
         break;
       }
@@ -235,8 +217,6 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
       io_write32(dev->cfg_io, bar_offset + sizeof(uint32_t), pci_addr >> 32);
     }
     bar->io.base = phys2virt(range->host_base + range->next_free);
-    bar->io.type =
-        (bar->type == PCIBAR_IO && ARCH_SUPPORTS_IOPORT) ? IO_PORT : IO_MEMORY;
     range->next_free += bar_len;
     bar->valid = true;
     KLOG(INFO,

@@ -37,4 +37,14 @@ void pci_add_device(pci_device_t* pcidev);
 uint32_t pcie_read_config(pci_device_t* pcidev, uint8_t reg_offset);
 void pcie_write_config(pci_device_t* pcidev, uint8_t reg_offset,
                        uint32_t value);
+
+// Parses the given "raw" BAR value.  Returns the parsed bar with the address
+// portion (IO port or memory address) in the io.base field.  Note that,
+// a) the address is a PCI-visible address (depending on the architecture, may
+//    not be mapped to the CPU's memory view or virtual address).
+// b) if a 64-bit BAR, it will only contain the lower 32-bits.
+//
+// Does not set bar->valid.
+int pci_parse_bar(uint32_t barval, pci_bar_t* bar, uint32_t* bar_addr_mask);
+
 #endif

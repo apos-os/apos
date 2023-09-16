@@ -87,32 +87,14 @@ static void pci_read_device(uint8_t bus, uint8_t device, uint8_t function,
   for (int i = 0; i < PCI_NUM_BARS; ++i) {
     pcidev->bar[i].bar =
         pci_legacy_read_config(bus, device, function, 0x10 + 0x04 * i);
-    const int bar_type = (pcidev->bar[i].bar & 0x3);
-    switch (bar_type) {
-      case 0:
-        pcidev->bar[i].type = PCIBAR_MEM32;
-        pcidev->bar[i].io.type = IO_MEMORY;
-        break;
-      case 1:
-        pcidev->bar[i].type = PCIBAR_IO;
-        pcidev->bar[i].io.type = IO_PORT;
-        break;
-
-      default:
-        klogfm(KL_PCI, DFATAL, "Unsupported bar type %d\n", bar_type);
-        return;
-    }
-
-    uint32_t bar_addr = pcidev->bar[i].bar & ~0x3;
-    if (!bar_addr) {
-      pcidev->bar[i].valid = false;
-      pcidev->bar[i].io.base = 0;
-    } else {
+    uint32_t bar_addr_mask;
+    KASSERT(pci_parse_bar(pcidev->bar[i].bar, &pcidev->bar[i],
+                          &bar_addr_mask) == 0);
+    if (pcidev->bar[i].io.base) {
       pcidev->bar[i].valid = true;
       // TODO(aoates): fix this support on x86 systems --- this should be a
       // _virtual_, not physical, address, but they don't currently fit in the
       // physical memory map.
-      pcidev->bar[i].io.base = bar_addr;
     }
   }
 
