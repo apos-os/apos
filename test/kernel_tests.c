@@ -52,6 +52,9 @@ static const test_entry_t TESTS[] = {
   { "slab_alloc", &slab_alloc_test, 1 },
   { "flag_printf", &flag_printf_test, 1 },
   { "ata", &ata_test, 0 },  // Don't run by default so we don't muck up our FS.
+#if ENABLE_NVME
+  { "nvme", &nvme_test, 0 },  // Ditto
+#endif
   { "ramfs", &ramfs_test, 1 },
   { "vfs_mode", &vfs_mode_test, 1 },
   { "vfs_mount", &vfs_mount_test, 1 },

@@ -14,6 +14,7 @@
 #include "dev/nvme/block_dev.h"
 
 #include "common/kstring.h"
+#include "common/math.h"
 #include "dev/block_dev.h"
 #include "dev/dev.h"
 #include "dev/nvme/controller.h"
@@ -36,8 +37,21 @@ static int nvme_bd_op(struct block_dev* dev, size_t offset_sectors, void* buf,
   if (len > PAGE_SIZE) {
     KLOG(WARNING, "NVMe: cannot handle IO larger than a page (size = %zu)\n",
          len);
+    len = PAGE_SIZE;
+  }
+
+  KASSERT_DBG(nvme_bd->ns->lba_data_bytes == dev->sector_size);
+  if (len % nvme_bd->ns->lba_data_bytes != 0) {
+    KLOG(WARNING, "NVMe: cannot handle non-block-size ops (len = %zu)\n",
+         len);
     return -EINVAL;
   }
+
+  if (len == 0 || offset_sectors >= (size_t)dev->sectors) {
+    return 0;
+  }
+  size_t max_len_sectors = (size_t)dev->sectors - offset_sectors;
+  len = min(len, max_len_sectors * dev->sector_size);
 
   // TODO(aoates): read/write directly into the page rather than bouncing
   // through another buffer.

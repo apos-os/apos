@@ -66,7 +66,7 @@ int nvmeq_init(struct nvme_ctrl* ctrl, nvme_queue_id_t id, nvme_queue_t* q) {
 
 int nvmeq_submit(nvme_queue_t* q, const nvme_cmd_t* cmd) {
   if ((q->sq_tail + 1) % q->sq_entries == q->sq_head) {
-    KLOG(DEBUG, "NVMe queue %d: sq full, unable to submit command %d\n",
+    KLOG(INFO, "NVMe queue %d: sq full, unable to submit command %d\n",
          q->id, cmd->cmd_id);
     return -ENOMEM;
   }

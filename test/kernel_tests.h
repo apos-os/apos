@@ -71,6 +71,10 @@ void proc_thread_test(void);
 void futex_test(void);
 void devicetree_test(void);
 
+#if ENABLE_NVME
+void nvme_test(void);
+#endif
+
 #if ARCH == ARCH_riscv64
 void rsv64_user_test(void);
 #endif
