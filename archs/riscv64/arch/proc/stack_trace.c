@@ -30,8 +30,8 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
     }
 
     if (fp < stack_base || fp > stack_base + stack_len) {
-      klogf("Warning: frame pointer left stack (fp = %" PRIxADDR
-            " stack_base = %" PRIxADDR ")",
+      klogf("Warning: frame pointer left stack (fp = 0x%" PRIxADDR
+            " stack_base = 0x%" PRIxADDR ")\n",
             fp, stack_base);
       break;
     }
@@ -50,7 +50,12 @@ static int get_stack_trace_internal(addr_t fp, addr_t stack_base,
     if (ra < get_global_meminfo()->kernel_mapped.base ||
         ra > get_global_meminfo()->kernel_mapped.base +
                  get_global_meminfo()->kernel_mapped.len) {
-      break;
+      // If the frame pointer is valid, this may be a bogus address in an
+      // otherwise valid stack trace (e.g. if the kernel invoked a bad callback
+      // address).  Try to keep going in that case.
+      if (fp < stack_base || fp >= stack_base + stack_len) {
+        break;
+      }
     }
   }
   return cframe;
