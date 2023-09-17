@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "dev/pci/pcie.h"
