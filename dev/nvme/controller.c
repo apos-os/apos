@@ -141,6 +141,14 @@ int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
   return 0;
 }
 
+static void endisable_interrupts(nvme_ctrl_t* ctrl, bool enable) {
+  if (enable) {
+    io_write32(ctrl->cfg_io, CTRL_INTMC, UINT32_MAX);
+  } else {
+    io_write32(ctrl->cfg_io, CTRL_INTMS, UINT32_MAX);
+  }
+}
+
 #define NVMEC_COMPS_BATCH_SIZE 10
 
 static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
@@ -190,12 +198,16 @@ static void nvmec_defint(void* arg) {
   for (int i = 0; i < ctrl->num_io_queues; ++i) {
     nvmec_check_queue(ctrl, &ctrl->io_q[i]);
   }
+
+  endisable_interrupts((nvme_ctrl_t*)arg, true);
 }
 
 static void nvme_irq(void* arg) {
   KLOG(DEBUG3, "NVMe: IRQ received\n");
-  // TODO(aoates): according to the spec, we should have to consume all the
-  // completions to clear the interrupt, but qemu doesn't do that.
+  // The IRQ will keep firing until the queue is emptied; rather than do that
+  // work in the IRQ handler, disable interrupts until the defint runs and
+  // empties out the queue.  Is this the right model?
+  endisable_interrupts((nvme_ctrl_t*)arg, false);
   defint_schedule(&nvmec_defint, arg);
 }
 
@@ -275,7 +287,7 @@ static void configure_interrupts(nvme_ctrl_t* ctrl) {
   register_irq_handler(ctrl->irq, &nvme_irq, ctrl);
 
   // Enable all interrupts.
-  io_write32(ctrl->cfg_io, CTRL_INTMC, UINT32_MAX);
+  endisable_interrupts(ctrl, true);
 }
 
 static void enable_ctrl(nvme_ctrl_t* ctrl) {
