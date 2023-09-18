@@ -426,6 +426,12 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
   const char* port_str = NULL;
   argc--;
   argv++;
+
+  if (argc == 0) {
+    addr_str = "10.0.2.2";
+    port_str = "5556";
+  }
+
   if (argc > 0 && kstrcmp(argv[0], "-l") == 0) {
     listen = 1;
     addr_str = "0.0.0.0";  // Default.
