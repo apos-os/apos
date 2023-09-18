@@ -71,6 +71,7 @@ static void remap_bar(pci_device_t* pcidev, int bar_idx) {
            "Unable to remap %d.%d(%d) BAR %d at address 0x%" PRIxADDR "\n",
            pcidev->bus, pcidev->device, pcidev->function, bar_idx,
            bar->io.base);
+    bar->valid = false;
     return;
   }
 
