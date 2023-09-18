@@ -190,6 +190,9 @@ static void flush_cache_entry(bc_entry_internal_t* entry) {
           "block cache: write_page(object=%p (id %u), offset=%zu) failed: %s\n",
           entry->pub.obj, entry->pub.obj->id, entry->pub.offset,
           errorname(-result));
+      if (result == -ETIMEDOUT) {
+        entry->flushed = false;
+      }
     }
 
     // Another thread may have dirtied the block during the write, so if flushed
