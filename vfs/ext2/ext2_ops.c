@@ -166,13 +166,15 @@ static int get_inode(const ext2fs_t* fs, uint32_t inode_num,
                  &inode_bitmap_block, &inode_table_block, &inode_table_offset);
 
   // Find the block group and load it's inode bitmap.
-  const void* inode_bitmap = ext2_block_get(fs, inode_bitmap_block);
-  if (!inode_bitmap) {
+  void* block_data;
+  int result = ext2_block_get(fs, inode_bitmap_block, &block_data);
+  if (result) {
     KLOG(WARNING, "ext2: couldn't get inode bitmap for block "
          "group %d (block %d)\n", block_group, inode_bitmap_block);
-    return -ENOENT;
+    return result;
   }
 
+  const void* inode_bitmap = block_data;
   ext2fs_lock(fs);
   int bitmap_data = bg_bitmap_get(inode_bitmap, inode_bg_idx);
   ext2fs_unlock(fs);
@@ -182,11 +184,12 @@ static int get_inode(const ext2fs_t* fs, uint32_t inode_num,
   }
 
   // We know that the inode is allocated, now get it from the inode table.
-  const void* inode_table = ext2_block_get(fs, inode_table_block);
-  if (!inode_table) {
+  void* inode_table;
+  result = ext2_block_get(fs, inode_table_block, &inode_table);
+  if (result) {
     KLOG(WARNING, "ext2: couldn't get inode table for block "
          "group %d (block %d)\n", block_group, inode_table_block);
-    return -ENOENT;
+    return result;
   }
 
   // TODO(aoates): we needto check the inode bitmap again!
@@ -225,11 +228,12 @@ static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
                  &inode_bitmap_block, &inode_table_block, &inode_table_offset);
 
   // Get the needed inode table block.
-  void* inode_table = ext2_block_get(fs, inode_table_block);
-  if (!inode_table) {
+  void* inode_table;
+  int result = ext2_block_get(fs, inode_table_block, &inode_table);
+  if (result) {
     KLOG(WARNING, "ext2: couldn't get inode table for block "
          "group %d (block %d)\n", block_group, inode_table_block);
-    return -ENOENT;
+    return result;
   }
 
   const ext2_inode_t* inode_endian_correct_ptr = inode;
@@ -251,7 +255,9 @@ static int write_inode(const ext2fs_t* fs, uint32_t inode_num,
 static uint32_t read_block_u32(const ext2fs_t* fs, uint32_t block_num,
                                uint32_t idx) {
   KASSERT(block_num != 0);
-  const void* block = ext2_block_get(fs, block_num);
+  void* block;
+  int result = ext2_block_get(fs, block_num, &block);
+  KASSERT(result == 0);
   KASSERT(block);
   uint32_t value = ((const uint32_t*)block)[idx];
   ext2_block_put(fs, block_num, BC_FLUSH_NONE);
@@ -262,7 +268,9 @@ static uint32_t read_block_u32(const ext2fs_t* fs, uint32_t block_num,
 static void write_block_u32(const ext2fs_t* fs, uint32_t block_num,
                             uint32_t idx, uint32_t value) {
   KASSERT(block_num != 0);
-  void* block = ext2_block_get(fs, block_num);
+  void* block;
+  int result = ext2_block_get(fs, block_num, &block);
+  KASSERT(result == 0);
   KASSERT(block);
   ((uint32_t*)block)[idx] = htol32(value);
   ext2_block_put(fs, block_num, BC_FLUSH_ASYNC);
@@ -392,9 +400,10 @@ static int dirent_iterate(const ext2fs_t* fs, ext2_inode_t* inode,
     const uint32_t block = get_inode_block(fs, inode, inode_block);
     const uint32_t block_len = min(
         ext2_block_size(fs), inode->i_size - inode_block * ext2_block_size(fs));
-    void* block_data = ext2_block_get(fs, block);
-    if (!block_data) {
-      return -ENOENT;
+    void* block_data;
+    int result = ext2_block_get(fs, block, &block_data);
+    if (result) {
+      return result;
     }
 
     uint32_t block_idx = offset % ext2_block_size(fs);
@@ -463,12 +472,15 @@ static int allocate_blocks(ext2fs_t* fs, uint32_t inode_num, uint32_t nblocks,
   ext2_flush_block_group(fs, bg);
 
   // Find the actual free blocks in the bitmap.
-  uint8_t* block_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_block_bitmap);
-  if (!block_bitmap) {
+  void* block_data;
+  int result =
+      ext2_block_get(fs, fs->block_groups[bg].bg_block_bitmap, &block_data);
+  if (result) {
     // TODO(aoates): roll back the decrement of the counters.
-    return -ENOMEM;
+    return result;
   }
 
+  uint8_t* block_bitmap = block_data;
   ext2fs_lock(fs);
   for (unsigned int i = 0; i < nblocks; ++i) {
     int idx_in_bg_bmp = bg_bitmap_find_free(fs, block_bitmap);
@@ -495,10 +507,13 @@ static int free_block(ext2fs_t* fs, uint32_t block) {
   const uint32_t bg_block_idx = get_block_bg_idx(fs, block);
 
   // Mark the block as free in the bitmap
-  uint8_t* block_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_block_bitmap);
-  if (!block_bitmap) {
-    return -ENOMEM;
+  void* block_data;
+  int result =
+      ext2_block_get(fs, fs->block_groups[bg].bg_block_bitmap, &block_data);
+  if (result) {
+    return result;
   }
+  uint8_t* block_bitmap = block_data;
   ext2fs_lock(fs);
   KASSERT(bg_bitmap_get(block_bitmap, bg_block_idx));
   bg_bitmap_clear(block_bitmap, bg_block_idx);
@@ -522,9 +537,12 @@ static uint32_t free_indirect_block(ext2fs_t* fs, uint32_t block_num, int level,
   if (block_num == 0)
     return 0;
 
-  uint32_t* block = ext2_block_get(fs, block_num);
-  KASSERT(block);
+  void* block_data;
+  int result = ext2_block_get(fs, block_num, &block_data);
+  KASSERT(result == 0);
+  KASSERT(block_data);
 
+  uint32_t* block = block_data;
   const uint32_t block_size = ext2_block_size(fs);
   const uint32_t kBlocksPerIndirect = block_size / sizeof(uint32_t);
 
@@ -639,11 +657,14 @@ static int allocate_inode(ext2fs_t* fs, uint32_t parent_inode, uint32_t mode) {
   ext2_flush_block_group(fs, bg);
 
   // Find the actual free inode in the bitmap.
-  uint8_t* inode_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_inode_bitmap);
-  if (!inode_bitmap) {
+  void* block_data;
+  int result =
+      ext2_block_get(fs, fs->block_groups[bg].bg_inode_bitmap, &block_data);
+  if (result) {
     // TODO(aoates): roll back the decrement of the counters.
-    return -ENOMEM;
+    return result;
   }
+  uint8_t* inode_bitmap = block_data;
   ext2fs_lock(fs);
   int idx_in_bg = bg_bitmap_find_free(fs, inode_bitmap);
   if (idx_in_bg < 0) {
@@ -694,10 +715,13 @@ static int free_inode(ext2fs_t* fs, uint32_t inode_num, ext2_inode_t* inode) {
   inode = NULL;
 
   // Mark the inode as free in the bitmap
-  uint8_t* inode_bitmap = ext2_block_get(fs, fs->block_groups[bg].bg_inode_bitmap);
-  if (!inode_bitmap) {
-    return -ENOMEM;
+  void* block_data;
+  int result =
+      ext2_block_get(fs, fs->block_groups[bg].bg_inode_bitmap, &block_data);
+  if (result) {
+    return result;
   }
+  uint8_t* inode_bitmap = block_data;
   ext2fs_lock(fs);
   KASSERT(bg_bitmap_get(inode_bitmap, bg_inode_idx));
   bg_bitmap_clear(inode_bitmap, bg_inode_idx);
@@ -784,10 +808,11 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
         }
 
         // Zero out the new block.
-        void* block = ext2_block_get(fs, new_indirect_block);
-        if (!block) {
+        void* block;
+        int result = ext2_block_get(fs, new_indirect_block, &block);
+        if (result) {
           kfree(new_blocks);
-          return -ENOMEM;
+          return result;
         }
         kmemset(block, 0, block_size);
         ext2_block_put(fs, new_indirect_block, BC_FLUSH_ASYNC);
@@ -812,7 +837,9 @@ static int extend_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
       // TODO(aoates): there's no actual need to read this from disk if it's not
       // in the cache.  Add an option to block_cache_get() that skips the
       // read.
-      void* block = ext2_block_get(fs, new_blocks[i]);
+      void* block;
+      int result = ext2_block_get(fs, new_blocks[i], &block);
+      KASSERT(result == 0);
       kmemset(block, 0, block_size);
       ext2_block_put(fs, new_blocks[i], BC_FLUSH_ASYNC);
     }
@@ -843,7 +870,9 @@ static int resize_inode(ext2fs_t* fs, ext2_inode_t* inode, uint32_t inode_num,
         clear_new_blocks) {
       // Clear the new data region in the last block.
       const uint32_t last_block = get_inode_block(fs, inode, old_blocks - 1);
-      void* block = ext2_block_get(fs, last_block);
+      void* block;
+      int result = ext2_block_get(fs, last_block, &block);
+      KASSERT(result == 0);
       kmemset((char*)block + inode->i_size % block_size, 0x0,
               block_size - (inode->i_size % block_size));
       ext2_block_put(fs, last_block, BC_FLUSH_ASYNC);
@@ -973,9 +1002,10 @@ static int link_internal(ext2fs_t* fs, ext2_inode_t* parent,
   const uint32_t inode_block = iter_arg.offset / block_size;
   const uint32_t block_offset = iter_arg.offset % block_size;
   const uint32_t block_num = get_inode_block(fs, parent, inode_block);
-  void* block = ext2_block_get(fs, block_num);
-  if (!block) {
-    return -ENOMEM;
+  void* block;
+  result = ext2_block_get(fs, block_num, &block);
+  if (result) {
+    return result;
   }
 
   ext2_dirent_t* new_dirent = 0x0;
@@ -1026,9 +1056,10 @@ static int unlink_internal(ext2fs_t* fs, ext2_inode_t* parent,
   const uint32_t inode_block = child_offset / block_size;
   const uint32_t block_offset = child_offset % block_size;
   const uint32_t block_num = get_inode_block(fs, parent, inode_block);
-  void* block = ext2_block_get(fs, block_num);
-  if (!block) {
-    return -ENOMEM;
+  void* block;
+  result = ext2_block_get(fs, block_num, &block);
+  if (result) {
+    return result;
   }
 
   // Mark the dirent as unused.
@@ -1063,9 +1094,10 @@ static int relink_internal(const ext2fs_t* fs, ext2_inode_t* parent,
   const uint32_t inode_block = child_offset / block_size;
   const uint32_t block_offset = child_offset % block_size;
   const uint32_t block_num = get_inode_block(fs, parent, inode_block);
-  void* block = ext2_block_get(fs, block_num);
-  if (!block) {
-    return -ENOMEM;
+  void* block;
+  result = ext2_block_get(fs, block_num, &block);
+  if (result) {
+    return result;
   }
 
   // Update the dirent.
@@ -1535,9 +1567,10 @@ static int ext2_read(vnode_t* vnode, int offset, void* buf, int bufsize) {
   const uint32_t block = get_inode_block(fs, &inode, inode_block);
   KASSERT(block > 0);
 
-  const void* block_data = ext2_block_get(fs, block);
-  if (!block_data) {
-    return -ENOMEM;
+  void* block_data;
+  result = ext2_block_get(fs, block, &block_data);
+  if (result) {
+    return result;
   }
   KASSERT_DBG(block_offset + len <= ext2_block_size(fs));
   KASSERT_DBG(len <= bufsize);
@@ -1571,9 +1604,10 @@ static int ext2_write_inode(ext2fs_t* fs, int vnode_num, ext2_inode_t* inode,
     const uint32_t block = get_inode_block(fs, inode, inode_block);
     KASSERT(block > 0);
 
-    void* block_data = ext2_block_get(fs, block);
-    if (!block_data) {
-      return -ENOMEM;
+    void* block_data;
+    int result = ext2_block_get(fs, block, &block_data);
+    if (result) {
+      return result;
     }
     KASSERT_DBG(block_offset + chunk_size <= block_size);
     kmemcpy(block_data + block_offset, buf, chunk_size);
@@ -1966,9 +2000,10 @@ static int ext2_page_op(vnode_t* vnode, int page_offset, void* buf, int is_write
     const uint32_t block = get_inode_block(fs, &inode, inode_block + block_idx);
     KASSERT(block > 0);
 
-    void* block_data = ext2_block_get(fs, block);
-    if (!block_data) {
-      return -ENOMEM;
+    void* block_data;
+    int result = ext2_block_get(fs, block, &block_data);
+    if (result) {
+      return result;
     }
     const unsigned int bytes_to_copy = min(bytes_left, ext2_block_size(fs));
     void* buf_offset = (char*)buf + (block_idx * ext2_block_size(fs));

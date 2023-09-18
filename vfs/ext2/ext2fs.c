@@ -27,7 +27,7 @@
 
 #define SUPPORTED_RO_FEATURES EXT2_FEATURE_RO_COMPAT_SPARSE_SUPER
 
-void* ext2_block_get(const ext2fs_t* fs, int offset) {
+int ext2_block_get(const ext2fs_t* fs, int offset, void** out) {
   const uint32_t block_size = ext2_block_size(fs);
   KASSERT_DBG(fs->sb.s_magic == EXT2_SUPER_MAGIC);
   KASSERT_DBG(BLOCK_CACHE_BLOCK_SIZE >= block_size);
@@ -39,9 +39,12 @@ void* ext2_block_get(const ext2fs_t* fs, int offset) {
   bc_entry_t* dev_block_entry = 0x0;
   const int result = block_cache_get(fs->obj, dev_block, &dev_block_entry);
   if (result == 0) {
-    return dev_block_entry->block + dev_block_offset * block_size;
+    *out = dev_block_entry->block + dev_block_offset * block_size;
+    return 0;
   } else {
-    return 0x0;
+    KLOG(WARNING, "block_cache_get() offset=0x%x, dev_block=0x%x failed: %s\n",
+         offset, dev_block, errorname(-result));
+    return result;
   }
 }
 
@@ -134,11 +137,12 @@ int ext2_read_block_groups(ext2fs_t* fs) {
   uint32_t bgs_remaining = fs->num_block_groups;
   for (int i = 0; i < bgdt_blocks; ++i) {
     const int block = bg_first_block + i;
-    void* bg_block = ext2_block_get(fs, block);
-    if (!bg_block) {
+    void* bg_block;
+    int result = ext2_block_get(fs, block, &bg_block);
+    if (result) {
       kfree(fs->block_groups);
       fs->block_groups = 0x0;
-      return -ENOMEM;
+      return result;
     }
 
     const uint32_t bgs_in_this_block =
@@ -169,10 +173,11 @@ static int flush_superblock_in_bg(const ext2fs_t* fs, unsigned int bg) {
       ((bg == 0 && ext2_block_size(fs) > 1024) ? 1024 : 0);
   KASSERT_DBG(sb_block_offset + sizeof(ext2_superblock_t) <= ext2_block_size(fs));
 
-  void* sb_block = ext2_block_get(fs, sb_block_num);
-  if (!sb_block) {
+  void* sb_block;
+  int result = ext2_block_get(fs, sb_block_num, &sb_block);
+  if (result) {
     // Yikes! Only partially flushed!
-    return -ENOMEM;
+    return result;
   }
 
   // TODO(aoates): it would be more efficient to get all the relevant superblock
@@ -232,12 +237,14 @@ static int flush_bgdt_in_bg(const ext2fs_t* fs,
   const uint32_t bgdt_first_block =
       fs->sb.s_first_data_block + (bg * fs->sb.s_blocks_per_group) + 1;
   const uint32_t bgdt_block_num = bgdt_first_block + flush_bg_bgdt_block_idx;
-  ext2_block_group_desc_t* bgdt_block = ext2_block_get(fs, bgdt_block_num);
-  if (!bgdt_block) {
+  void* block_data;
+  int result = ext2_block_get(fs, bgdt_block_num, &block_data);
+  if (result) {
     // Yikes! Only partially flushed!
-    return -ENOMEM;
+    return result;
   }
 
+  ext2_block_group_desc_t* bgdt_block = block_data;
   // TODO(aoates): same efficiency note as above, with the superblock.
   ext2fs_lock(fs);
   const ext2_block_group_desc_t* bg_endian_correct_ptr = bgd_to_flush;

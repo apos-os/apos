@@ -56,7 +56,7 @@ static inline uint32_t ext2_block_size(const ext2fs_t* fs) {
 // is smaller than the block cache's, then the returned pointer may point to the
 // middle of a block cache entry.
 // TODO(aoates): change these to return the actual bc_entry_t.
-void* ext2_block_get(const ext2fs_t* fs, int offset);
+int ext2_block_get(const ext2fs_t* fs, int offset, void** out);
 void ext2_block_put(const ext2fs_t* fs, int offset, block_cache_flush_t flush_mode);
 
 // Read the superblock and block groups from disk into the given ext2fs_t.
