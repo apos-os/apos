@@ -76,8 +76,7 @@ static pci_driver_t PCI_DRIVERS[] = {
   { PCI_DRIVER_VENDOR, 0x8139, 0x10ec, 0, 0, 0, &pci_rtl8139_init },
 #endif
 
-  // TODO(aoates): fix PCI memory mapped BAR bug and enable NVMe driver for x86.
-#if ENABLE_NVME && ARCH == ARCH_riscv64
+#if ENABLE_NVME
   { PCI_DRIVER_CLASS, 0x0, 0x0, 0x1, 0x8, 0x2, &nvme_ctrl_pci_init },
 #endif
 
