@@ -308,10 +308,15 @@ static void configure_interrupts(nvme_ctrl_t* ctrl) {
   endisable_interrupts(ctrl, true);
 }
 
-static void enable_ctrl(nvme_ctrl_t* ctrl) {
+static void enable_ctrl(nvme_ctrl_t* ctrl, bool enabled) {
   uint32_t cc = io_read32(ctrl->cfg_io, CTRL_CC);
-  KASSERT(!(cc & CC_EN));  // Should be disabled.
-  cc |= CC_EN;
+  bool old_state = cc & CC_EN;
+  KLOG(DEBUG, "NVMe: enabled %d -> %d\n", old_state, enabled);
+  if (enabled) {
+    cc |= CC_EN;
+  } else {
+    cc &= ~CC_EN;
+  }
   io_write32(ctrl->cfg_io, CTRL_CC, cc);
 }
 
@@ -623,10 +628,11 @@ static bool nvme_ctrl_init(nvme_ctrl_t* ctrl) {
     return false;
   }
 
+  enable_ctrl(ctrl, false);
   configure_ctrl(ctrl);
   configure_admin_queues(ctrl);
   configure_interrupts(ctrl);
-  enable_ctrl(ctrl);
+  enable_ctrl(ctrl, true);
 
   // Wait for controller to become ready.
   for (int i = 0; !ctrl_is_ready(ctrl) && i < 10; ++i) {
