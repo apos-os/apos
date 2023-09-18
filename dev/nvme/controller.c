@@ -28,6 +28,7 @@
 #include "dev/nvme/command.h"
 #include "dev/nvme/queue.h"
 #include "memory/kmalloc.h"
+#include "memory/memory.h"
 #include "memory/page_alloc.h"
 #include "proc/defint.h"
 #include "proc/kthread.h"
@@ -184,6 +185,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
     kspin_unlock(&ctrl->lock);
 
     for (int i = 0; i < num_comps; ++i) {
+      KASSERT(is_valid_callback(txns[i]->done_cb));
       txns[i]->result = comps[i];
       txns[i]->done_cb(txns[i], txns[i]->cb_arg);
     }

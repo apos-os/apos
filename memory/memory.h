@@ -112,4 +112,7 @@ bool is_direct_mappable(phys_addr_t x);
 // direct-mapped region (that is, if virt2phys would succeed).
 bool is_direct_mapped(addr_t x);
 
+// Returns true if the address is valid for invoking as a callback.
+bool is_valid_callback(void* cb);
+
 #endif

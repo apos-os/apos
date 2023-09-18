@@ -81,3 +81,9 @@ bool is_direct_mapped(addr_t x) {
           x < global_meminfo->phys_maps[0].virt_base +
                   global_meminfo->phys_maps[0].phys.len);
 }
+
+bool is_valid_callback(void* cb) {
+  return (addr_t)cb >= global_meminfo->kernel.virt_base &&
+         (addr_t)cb <
+             global_meminfo->kernel.virt_base + global_meminfo->kernel.phys.len;
+}
