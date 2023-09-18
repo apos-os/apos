@@ -142,6 +142,21 @@ int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
   return 0;
 }
 
+void nvme_abandon(nvme_ctrl_t* ctrl, nvme_transaction_t* txn) {
+  KASSERT(txn->queue >= 0);
+
+  kspin_lock(&ctrl->lock);
+  uint32_t key = txnkey(txn->queue, txn->cmd.cmd_id);
+  if (htbl_remove(&ctrl->pending, key)) {
+    KLOG(DEBUG, "NVMe: abandoned txn %d.%d already completed\n",
+         txn->queue, txn->cmd.cmd_id);
+  } else {
+    KLOG(DEBUG, "NVMe: succesfully abandoned txn %d.%d\n",
+         txn->queue, txn->cmd.cmd_id);
+  }
+  kspin_unlock(&ctrl->lock);
+}
+
 static void endisable_interrupts(nvme_ctrl_t* ctrl, bool enable) {
   if (enable) {
     io_write32(ctrl->cfg_io, CTRL_INTMC, UINT32_MAX);
@@ -155,7 +170,6 @@ static void endisable_interrupts(nvme_ctrl_t* ctrl, bool enable) {
 static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
   // TODO(aoates): avoid the double copy here.
   nvme_completion_t comps[NVMEC_COMPS_BATCH_SIZE];
-  nvme_transaction_t* txns[NVMEC_COMPS_BATCH_SIZE];
 
   while (true) {
     kspin_lock(&ctrl->lock);
@@ -178,17 +192,19 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
       void* val = NULL;
       uint32_t key = txnkey(q->id, comps[i].cmd_id);
       result = htbl_get(&ctrl->pending, key, &val);
-      KASSERT(result == 0);
-      KASSERT(htbl_remove(&ctrl->pending, key) == 0);
-      txns[i] = (nvme_transaction_t*)val;
+
+      if (result) {
+        KLOG(DEBUG, "NVMe: finished abandoned txn %d.%d\n",
+             q->id, comps[i].cmd_id);
+      } else {
+        KASSERT(htbl_remove(&ctrl->pending, key) == 0);
+        nvme_transaction_t* txn = val;
+        KASSERT(is_valid_callback(txn->done_cb));
+        txn->result = comps[i];
+        txn->done_cb(txn, txn->cb_arg);
+      }
     }
     kspin_unlock(&ctrl->lock);
-
-    for (int i = 0; i < num_comps; ++i) {
-      KASSERT(is_valid_callback(txns[i]->done_cb));
-      txns[i]->result = comps[i];
-      txns[i]->done_cb(txns[i], txns[i]->cb_arg);
-    }
   }
 }
 
@@ -322,11 +338,14 @@ int nvme_submit_blocking(nvme_ctrl_t* ctrl, nvme_transaction_t* txn,
 
   result = scheduler_wait_on_interruptable(&waitq, timeout_ms);
   DEFINT_POP();
-  if (result == SWAIT_TIMEOUT) {
-    result = -ETIMEDOUT;
-    goto done;
-  } else if (result == SWAIT_INTERRUPTED) {
-    result = -EINTR;
+  if (result != SWAIT_DONE) {
+    nvme_abandon(ctrl, txn);
+    if (result == SWAIT_TIMEOUT) {
+      result = -ETIMEDOUT;
+    } else {
+      KASSERT_DBG(result == SWAIT_INTERRUPTED);
+      result = -EINTR;
+    }
     goto done;
   }
   KASSERT_DBG(result == SWAIT_DONE);

@@ -79,6 +79,10 @@ typedef struct nvme_transaction nvme_transaction_t;
 // On error returns -error (and the callback won't be run).
 int nvme_submit(nvme_ctrl_t* ctrl, nvme_transaction_t* txn);
 
+// Abandon a submitted transaction.  Guarantees that when it returns either the
+// callback has finished running or will never run.
+void nvme_abandon(nvme_ctrl_t* ctrl, nvme_transaction_t* txn);
+
 // As with nvme_submit, but blocks until the transaction is complete, or the
 // timeout is hit.  Checks the result of the operation and returns an error if
 // it fails.  The callback member of txn must be NULL.

@@ -19,11 +19,15 @@
 #include "common/kstring.h"
 #include "dev/block_dev.h"
 #include "memory/kmalloc.h"
+#include "proc/fork.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
+#include "proc/sleep.h"
+#include "proc/wait.h"
 #include "test/ktest.h"
 
-void bd_standard_test(block_dev_t* bd) {
+static void basic_test(block_dev_t* bd) {
   KTEST_BEGIN("block device test");
   KEXPECT_EQ(bd->sector_size, 512);
 
@@ -124,6 +128,43 @@ void bd_standard_test(block_dev_t* bd) {
   }
 
   kfree(big_buf);
+}
+
+#define INTERRUPT_ITERATIONS 1000
+
+static void do_op(void* arg) {
+  block_dev_t* bd = (block_dev_t*)arg;
+  void* buf = kmalloc(PAGE_SIZE);
+  bool success = false;
+  for (int i = 0; i < INTERRUPT_ITERATIONS; ++i) {
+    int result = bd->read(bd, 0, buf, PAGE_SIZE, 0);
+    if (result == -EINTR || result == -ETIMEDOUT) {
+      success = true;
+      break;
+    }
+  }
+  if (!success) {
+    klogfm(KL_TEST, WARNING,
+           "block device interrupt test was unable to get EINTR or ETIMEDOUT "
+           "after %d iterations\n",
+           INTERRUPT_ITERATIONS);
+  }
+  kfree(buf);
+}
+
+// Tests for operations that are interrupted or time out.
+static void interrupt_op_test(block_dev_t* bd) {
+  KTEST_BEGIN("block device interrupted read test");
+  kpid_t child = proc_fork(&do_op, bd);
+  KEXPECT_GE(child, 0);
+  ksleep(10);
+  proc_kill(child, SIGKILL);
+  KEXPECT_EQ(child, proc_wait(NULL));
+}
+
+void bd_standard_test(block_dev_t* bd) {
+  basic_test(bd);
+  interrupt_op_test(bd);
 }
 
 #define THREAD_TEST_VERBOSE 0
