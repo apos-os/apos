@@ -27,17 +27,17 @@ extern uint64_t KERNEL_END_SYMBOL;
 
 // We will additionally set up a linear map for physical memory into the
 // kernel's virtual memory space, starting at the following address.
-const addr_t KERNEL_PHYS_MAP_START = 0xFFFFFFFFE0000000;
+const addr_t KERNEL_PHYS_MAP_START = 0xFFFFFFFE00000000;
 
 // The maximum number of bytes we'll physically map into the region starting at
 // KERNEL_PHYS_MAP_START.
-const addr_t KERNEL_PHYS_MAP_MAX_LENGTH = 0x10000000;
+const addr_t KERNEL_PHYS_MAP_MAX_LENGTH = 0xFFFFFFFF;
 
 // The maximum amount of physical memory we support (due to the
 // KERNEL_PHYS_MAP_START).
 // TODO(aoates): add option to page allocator to allocate only from
 // physically-mapped region, then remove this artificial cap.
-const addrdiff_t MAX_MEMORY_BYTES = 0x10000000;
+const addrdiff_t MAX_MEMORY_BYTES = KERNEL_PHYS_MAP_MAX_LENGTH;
 
 // The virtual start and end addresses of the kernel heap.
 const addr_t START_HEAP = 0xFFFFFFFFD0000000;
@@ -147,10 +147,7 @@ static memory_info_t* setup_paging(memory_info_t* meminfo) {
 
   // Identity map the first KERNEL_PHYS_MAP_MAX_LENGTH bytes of physical memory
   // as well.
-  uint64_t phys_map_len = meminfo->mainmem_phys.len;
-  if (phys_map_len > KERNEL_PHYS_MAP_MAX_LENGTH) {
-    phys_map_len = KERNEL_PHYS_MAP_MAX_LENGTH;
-  }
+  uint64_t phys_map_len = KERNEL_PHYS_MAP_MAX_LENGTH;
   uint64_t ident_addr = 0;
   while (ident_addr < phys_map_len) {
     map_linear_page_table(meminfo, pml4,
