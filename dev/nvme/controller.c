@@ -185,7 +185,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
       return;
     }
 
-    KLOG(DEBUG2, "NVMe: found %d completions on queue %d\n", result, q->id);
+    KLOG(DEBUG3, "NVMe: found %d completions on queue %d\n", result, q->id);
 
     const int num_comps = result;
     for (int i = 0; i < num_comps; ++i) {
@@ -197,6 +197,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
         KLOG(DEBUG, "NVMe: finished abandoned txn %d.%d\n",
              q->id, comps[i].cmd_id);
       } else {
+        KLOG(DEBUG2, "NVMe: finished txn %d.%d\n", q->id, comps[i].cmd_id);
         KASSERT(htbl_remove(&ctrl->pending, key) == 0);
         nvme_transaction_t* txn = val;
         KASSERT(is_valid_callback(txn->done_cb));
@@ -210,7 +211,7 @@ static void nvmec_check_queue(nvme_ctrl_t* ctrl, nvme_queue_t* q) {
 
 static void nvmec_defint(void* arg) {
   nvme_ctrl_t* ctrl = (nvme_ctrl_t*)arg;
-  KLOG(DEBUG2, "NVMe: handling deferred interrupt\n");
+  KLOG(DEBUG3, "NVMe: handling deferred interrupt\n");
 
   nvmec_check_queue(ctrl, &ctrl->admin_q);
   for (int i = 0; i < ctrl->num_io_queues; ++i) {
