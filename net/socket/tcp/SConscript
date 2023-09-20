@@ -1,4 +1,4 @@
-# Copyright 2017 Andrew Oates.  All Rights Reserved.
+# Copyright 2023 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,14 +15,10 @@
 Import('env AposAddSources')
 
 srcs = [
-    'raw.c',
     'socket.c',
-    'sockmap.c',
-    'udp.c',
-    'unix.c',
 ]
 
-subdirs = ['tcp']
+subdirs = []
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')
