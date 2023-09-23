@@ -74,7 +74,6 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
 
 void net_socket_destroy(socket_t* sock) {
   sock->s_ops->cleanup(sock);
-  kfree(sock);
 }
 
 int net_socket(int domain, int type, int protocol) {

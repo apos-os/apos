@@ -210,6 +210,7 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   // to ensure the file isn't destroyed while someone is polling it?
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
 }
 
 static int sock_udp_shutdown(socket_t* socket_base, int how) {

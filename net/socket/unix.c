@@ -128,7 +128,6 @@ static void sock_unix_cleanup(socket_t* socket_base) {
       socket_unix_t* incoming_socket =
           container_of(peer_link, socket_unix_t, connecting_link);
       sock_unix_cleanup((socket_t*)incoming_socket);
-      kfree(incoming_socket);
     }
   }
   if (socket->readbuf_raw) {
@@ -143,6 +142,7 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   // Our socket is about to disappear.  Tell any pending poll()s as much.
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
 }
 
 static int sock_unix_shutdown(socket_t* socket_base, int how) {

@@ -168,6 +168,7 @@ static void sock_raw_cleanup(socket_t* socket_base) {
   // Our socket is about to disappear.  Tell any pending poll()s as much.
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
 }
 
 static int sock_raw_shutdown(socket_t* socket_base, int how) {
