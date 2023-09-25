@@ -15,10 +15,12 @@
 
 #include "common/kassert.h"
 #include "user/include/apos/errors.h"
+#include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "net/socket/raw.h"
 #include "net/socket/udp.h"
 #include "net/socket/unix.h"
+#include "net/socket/tcp/tcp.h"
 #include "vfs/anonfs.h"
 #include "vfs/fsid.h"
 #include "vfs/vfs_internal.h"
@@ -55,6 +57,14 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
     if (type == SOCK_DGRAM) {
       if (protocol == 0 || protocol == IPPROTO_UDP) {
         result = sock_udp_create(out);
+      } else {
+        result = -EPROTONOSUPPORT;
+      }
+    } else if (type == SOCK_STREAM) {
+      if (protocol == 0) protocol = IPPROTO_TCP;
+
+      if (protocol == IPPROTO_TCP) {
+        result = sock_tcp_create(domain, type, protocol, out);
       } else {
         result = -EPROTONOSUPPORT;
       }

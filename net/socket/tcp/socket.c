@@ -17,6 +17,7 @@
 #include "common/circbuf.h"
 #include "common/kassert.h"
 #include "memory/kmalloc.h"
+#include "net/socket/sockmap.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
@@ -27,7 +28,7 @@
 
 static const socket_ops_t g_tcp_socket_ops;
 
-int sock_tcp_create(int type, int protocol, socket_t** out) {
+int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   if (type != SOCK_STREAM) {
     return -EPROTOTYPE;
   } else if (protocol != IPPROTO_TCP) {
@@ -45,7 +46,7 @@ int sock_tcp_create(int type, int protocol, socket_t** out) {
     return -ENOMEM;
   }
 
-  sock->base.s_domain = AF_UNSPEC;
+  sock->base.s_domain = domain;
   sock->base.s_type = SOCK_STREAM;
   sock->base.s_protocol = IPPROTO_TCP;
   sock->base.s_ops = &g_tcp_socket_ops;
@@ -61,11 +62,41 @@ int sock_tcp_create(int type, int protocol, socket_t** out) {
   return 0;
 }
 
+static void tcp_finish_cleanup(socket_tcp_t* socket) {
+  KASSERT(socket->state == TCP_CLOSED);
+
+  if (socket->bind_addr.sa_family != AF_UNSPEC) {
+    KASSERT_DBG(socket->bind_addr.sa_family ==
+                (sa_family_t)socket->base.s_domain);
+    DEFINT_PUSH_AND_DISABLE();
+    sockmap_t* sm = net_get_sockmap(socket->bind_addr.sa_family, IPPROTO_UDP);
+    socket_t* removed =
+        sockmap_remove(sm, (struct sockaddr*)&socket->bind_addr);
+    KASSERT(removed == &socket->base);
+    DEFINT_POP();
+  }
+  kfree(socket->rx_buf.buf);
+  KASSERT(kthread_queue_empty(&socket->wait_queue));
+  // TODO(aoates): is this the proper way to handle this, or should vfs_poll()
+  // retain a reference to the file containing this socket (and other pollables)
+  // to ensure the file isn't destroyed while someone is polling it?
+  poll_trigger_event(&socket->poll_event, KPOLLNVAL);
+  KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
+}
+
 static void sock_tcp_cleanup(socket_t* socket_base) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
-  // TODO(tcp): implement
-  die("unimplemented");
+
+  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+
+  if (socket->state == TCP_CLOSED) {
+    tcp_finish_cleanup(socket);
+  } else {
+    // TODO(tcp): close socket and defer cleanup after timeout.
+    die("Cannot cleanup non-closed socket");
+  }
 }
 
 static int sock_tcp_shutdown(socket_t* socket_base, int how) {

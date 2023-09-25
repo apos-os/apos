@@ -17,6 +17,6 @@
 
 #include "net/socket/socket.h"
 
-int sock_tcp_create(int type, int protocol, socket_t** out);
+int sock_tcp_create(int domain, int type, int protocol, socket_t** out);
 
 #endif

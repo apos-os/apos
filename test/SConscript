@@ -59,6 +59,7 @@ srcs = [
   'socket_test.c',
   'socket_udp_test.c',
   'socket_unix_test.c',
+  'tcp_test.c',
   'tty_test.c',
   'user_test.c',
   'vm_test.c',
