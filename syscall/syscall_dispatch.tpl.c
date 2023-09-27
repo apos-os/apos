@@ -317,6 +317,10 @@ int SYSCALL_DMZ_mount(const char* source, const char* mount_path,
                       const char* type, unsigned long flags, const void* data,
                       size_t data_len);
 int SYSCALL_DMZ_unmount(const char* mount_path, unsigned long flags);
+int SYSCALL_DMZ_getsockopt(int socket, int level, int option, void* val,
+                           socklen_t* val_len);
+int SYSCALL_DMZ_setsockopt(int socket, int level, int option, const void* val,
+                           socklen_t val_len);
 
 static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
                                 long arg3, long arg4, long arg5, long arg6) {
@@ -695,6 +699,14 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
 
     case SYS_UNMOUNT:
       return SYSCALL_DMZ_unmount((const char*)arg1, (unsigned long)arg2);
+
+    case SYS_GETSOCKOPT:
+      return SYSCALL_DMZ_getsockopt((int)arg1, (int)arg2, (int)arg3,
+                                    (void*)arg4, (socklen_t*)arg5);
+
+    case SYS_SETSOCKOPT:
+      return SYSCALL_DMZ_setsockopt((int)arg1, (int)arg2, (int)arg3,
+                                    (const void*)arg4, (socklen_t)arg5);
 
     default:
       proc_kill(proc_current()->id, SIGSYS);

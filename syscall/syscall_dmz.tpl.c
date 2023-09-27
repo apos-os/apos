@@ -32,6 +32,7 @@
 #include "proc/user.h"
 #include "proc/user_thread.h"
 #include "proc/wait.h"
+#include "syscall/dmz-internal.h"
 #include "syscall/dmz.h"
 #include "syscall/execve_wrapper.h"
 #include "syscall/fork.h"
@@ -43,12 +44,6 @@
 #include "vfs/pipe.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
-
-// Semi-arbitrary limit on the size of buffers that can be passed to/from
-// syscalls, to prevent us trying to allocate huge amounts of memory on behalf
-// of bogus syscalls.  Must be at most UINT32_MAX / 2 to catch negative sizes.
-#define DMZ_MAX_BUFSIZE (PAGE_SIZE * 256)
-_Static_assert(DMZ_MAX_BUFSIZE < UINT32_MAX / 2, "DMZ_MAX_BUFSIZE too large");
 
 long do_syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                      long arg6);
@@ -3117,6 +3112,83 @@ int SYSCALL_DMZ_unmount(const char* mount_path, unsigned long flags) {
 
 cleanup:
   if (KERNEL_mount_path) kfree((void*)KERNEL_mount_path);
+
+  return result;
+}
+
+int getsockopt_wrapper(int socket, int level, int option, void* val,
+                       socklen_t* val_len);
+int SYSCALL_DMZ_getsockopt(int socket, int level, int option, void* val,
+                           socklen_t* val_len) {
+  socklen_t* KERNEL_val_len = 0x0;
+
+  if (val_len) {
+    if ((size_t)(sizeof(socklen_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+  }
+
+  KERNEL_val_len = !val_len ? 0x0 : (socklen_t*)kmalloc(sizeof(socklen_t));
+
+  if ((val_len && !KERNEL_val_len)) {
+    if (KERNEL_val_len) kfree((void*)KERNEL_val_len);
+
+    return -ENOMEM;
+  }
+
+  int result;
+  if (val_len) {
+    result = syscall_copy_from_user(val_len, (void*)KERNEL_val_len,
+                                    sizeof(socklen_t));
+    if (result) goto cleanup;
+  }
+  result = getsockopt_wrapper(socket, level, option, val, KERNEL_val_len);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+  if (val_len) {
+    int copy_result =
+        syscall_copy_to_user(KERNEL_val_len, val_len, sizeof(socklen_t));
+    if (copy_result) {
+      result = copy_result;
+      goto cleanup;
+    }
+  }
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_val_len) kfree((void*)KERNEL_val_len);
+
+  return result;
+}
+
+int net_setsockopt(int socket, int level, int option, const void* val,
+                   socklen_t val_len);
+int SYSCALL_DMZ_setsockopt(int socket, int level, int option, const void* val,
+                           socklen_t val_len) {
+  const void* KERNEL_val = 0x0;
+
+  if ((size_t)(val_len) > DMZ_MAX_BUFSIZE) return -EINVAL;
+
+  KERNEL_val = (const void*)kmalloc(val_len);
+
+  if (!KERNEL_val) {
+    if (KERNEL_val) kfree((void*)KERNEL_val);
+
+    return -ENOMEM;
+  }
+
+  int result;
+  result = syscall_copy_from_user(val, (void*)KERNEL_val, val_len);
+  if (result) goto cleanup;
+
+  result = net_setsockopt(socket, level, option, KERNEL_val, val_len);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_val) kfree((void*)KERNEL_val);
 
   return result;
 }

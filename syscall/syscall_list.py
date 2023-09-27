@@ -592,3 +592,13 @@ AddSyscall('mount', 95, 'vfs_mount', 'vfs/mount.h', '', 'int',
 
 AddSyscall('unmount', 96, 'vfs_unmount', 'vfs/mount.h', '', 'int',
     ['const char*:mount_path:s', 'unsigned long:flags:u'])
+
+AddSyscall('getsockopt', 98, 'getsockopt_wrapper', 'syscall/wrappers.h',
+           '<sys/socket.h>', 'int',
+           ['int:socket:u', 'int:level:u', 'int:option:u',
+            'void*:val:u', 'socklen_t*:val_len:brw?:sizeof(socklen_t)'])
+
+AddSyscall('setsockopt', 99, 'net_setsockopt', 'net/socket/socket.h',
+           '<sys/socket.h>', 'int',
+           ['int:socket:u', 'int:level:u', 'int:option:u',
+            'const void*:val:br:val_len', 'socklen_t:val_len:u'])
