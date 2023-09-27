@@ -113,7 +113,7 @@ static void socket_unix_test(void) {
                  accept(sock, (struct sockaddr*)0x123, (socklen_t*)0x123));
 
   addr_len = INT_MAX;
-  KEXPECT_ERRNO(ENOMEM, accept(sock, (struct sockaddr*)&addr, &addr_len));
+  KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
   addr_len = 0;
   KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
   addr_len = -1;
@@ -183,7 +183,7 @@ static void socket_unix_test(void) {
                                    (socklen_t*)INT_MAX));
 
   socklen_t len = INT_MAX;
-  KEXPECT_ERRNO(ENOMEM,
+  KEXPECT_ERRNO(EINVAL,
                 recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len));
   len = -1;
   KEXPECT_ERRNO(EINVAL,

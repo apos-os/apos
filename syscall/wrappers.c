@@ -47,7 +47,7 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   // Everything is checked but the 'addr' argument.  Do that now.
   struct sockaddr* KERNEL_addr = 0x0;
 
-  if (addr_len != NULL && (size_t)(*addr_len) > UINT32_MAX / 2) {
+  if (addr_len != NULL && (size_t)(*addr_len) > DMZ_MAX_BUFSIZE) {
     return -EINVAL;
   }
 
@@ -76,7 +76,7 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
                          struct sockaddr* address, socklen_t* address_len) {
   struct sockaddr* KERNEL_address = 0x0;
 
-  if (address_len != NULL && (size_t)(*address_len) > UINT32_MAX / 2) {
+  if (address_len != NULL && (size_t)(*address_len) > DMZ_MAX_BUFSIZE) {
     return -EINVAL;
   }
 
