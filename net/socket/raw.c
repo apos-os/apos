@@ -358,6 +358,18 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   return result;
 }
 
+static int sock_raw_getsockopt(socket_t* socket_base, int level, int option,
+                               void* val, socklen_t* val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_RAW);
+  return -ENOPROTOOPT;
+}
+
+static int sock_raw_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_RAW);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_raw_socket_ops = {
   &sock_raw_cleanup,
   &sock_raw_shutdown,
@@ -371,4 +383,6 @@ static const socket_ops_t g_raw_socket_ops = {
   &sock_raw_getsockname,
   &sock_raw_getpeername,
   &sock_raw_poll,
+  &sock_raw_getsockopt,
+  &sock_raw_setsockopt,
 };

@@ -36,11 +36,33 @@ static void tcp_socket_test(void) {
   KEXPECT_EQ(-EPROTONOSUPPORT, net_socket(AF_INET, SOCK_STREAM, IPPROTO_ICMP));
 }
 
+static void sockopt_test(void) {
+  KTEST_BEGIN("TCP socket: getsockopt");
+  int sock = net_socket(AF_INET, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int val[2];
+  socklen_t vallen = sizeof(int) * 2;
+  KEXPECT_EQ(0, net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(SOCK_STREAM, val[0]);
+
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("TCP socket: setsockopt");
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
 
   tcp_socket_test();
+  sockopt_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

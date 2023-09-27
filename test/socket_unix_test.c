@@ -2078,6 +2078,27 @@ static void sockname_test(void) {
   KEXPECT_EQ(0, vfs_unlink(kClientPath));
 }
 
+static void sockopt_test(void) {
+  KTEST_BEGIN("UNIX domain sockets: getsockopt");
+  int sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int val[2];
+  socklen_t vallen = sizeof(int) * 2;
+  KEXPECT_EQ(0, net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(SOCK_STREAM, val[0]);
+
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("UNIX domain sockets: setsockopt");
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void socket_unix_test(void) {
   KTEST_SUITE_BEGIN("Socket (Unix Domain)");
   block_cache_clear_unpinned();
@@ -2102,6 +2123,7 @@ void socket_unix_test(void) {
   sock_unix_poll_blocking_test();
   sock_unix_close_during_poll_test();
   sockname_test();
+  sockopt_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

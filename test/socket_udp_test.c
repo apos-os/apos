@@ -884,6 +884,65 @@ static void shutdown_test(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+static void sockopt_test(void) {
+  KTEST_BEGIN("UDP socket: getsockopt");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int val[2];
+  socklen_t vallen = sizeof(int) * 2;
+  KEXPECT_EQ(0, net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(SOCK_DGRAM, val[0]);
+
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("UDP socket: getsockopt(SO_TYPE) option too small");
+  vallen = 3;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = 0;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = -1;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = INT_MIN;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = sizeof(int) * 2;
+
+  KTEST_BEGIN("UDP socket: setsockopt");
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
+
+  KTEST_BEGIN("getsockopt(): not a socket");
+  int fd = vfs_open("/", VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-ENOTSOCK,
+             net_getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("setsockopt(): not a socket");
+  KEXPECT_EQ(-ENOTSOCK,
+             net_setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val[0], vallen));
+
+  KTEST_BEGIN("getsockopt(): bad FD");
+  KEXPECT_EQ(-EBADF,
+             net_getsockopt(-1, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+  KEXPECT_EQ(-EBADF,
+             net_getsockopt(1000, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("setsockopt(): bad FD");
+  KEXPECT_EQ(-EBADF,
+             net_setsockopt(-1, SOL_SOCKET, SO_RCVBUF, &val[0], vallen));
+  KEXPECT_EQ(-EBADF,
+             net_setsockopt(1000, SOL_SOCKET, SO_RCVBUF, &val[0], vallen));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_close(fd));
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -898,6 +957,7 @@ void socket_udp_test(void) {
   recvfrom_test();
   recv_poll_test();
   shutdown_test();
+  sockopt_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

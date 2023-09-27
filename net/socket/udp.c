@@ -472,6 +472,21 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
   return result;
 }
 
+static int sock_udp_getsockopt(socket_t* socket_base, int level, int option,
+                                void* restrict val,
+                                socklen_t* restrict val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_UDP);
+  return -ENOPROTOOPT;
+}
+
+static int sock_udp_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_UDP);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
   &sock_udp_shutdown,
@@ -485,4 +500,6 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_getsockname,
   &sock_udp_getpeername,
   &sock_udp_poll,
+  &sock_udp_getsockopt,
+  &sock_udp_setsockopt,
 };

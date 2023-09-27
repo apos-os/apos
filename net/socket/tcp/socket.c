@@ -199,6 +199,21 @@ static int sock_tcp_poll(socket_t* socket_base, short event_mask,
   return -ENOTSUP;
 }
 
+static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
+                                void* restrict val,
+                                socklen_t* restrict val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
+  return -ENOPROTOOPT;
+}
+
+static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_tcp_socket_ops = {
   &sock_tcp_cleanup,
   &sock_tcp_shutdown,
@@ -212,4 +227,6 @@ static const socket_ops_t g_tcp_socket_ops = {
   &sock_tcp_getsockname,
   &sock_tcp_getpeername,
   &sock_tcp_poll,
+  &sock_tcp_getsockopt,
+  &sock_tcp_setsockopt,
 };

@@ -491,6 +491,18 @@ static int sock_unix_poll(socket_t* socket_base, short event_mask,
   return poll_add_event(poll, &socket->poll_event, event_mask);
 }
 
+static int sock_unix_getsockopt(socket_t* socket_base, int level, int option,
+                                void* val, socklen_t* val_len) {
+  KASSERT_DBG(socket_base->s_domain == AF_UNIX);
+  return -ENOPROTOOPT;
+}
+
+static int sock_unix_setsockopt(socket_t* socket_base, int level, int option,
+                                const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_domain == AF_UNIX);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
   &sock_unix_shutdown,
@@ -504,4 +516,6 @@ static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_getsockname,
   &sock_unix_getpeername,
   &sock_unix_poll,
+  &sock_unix_getsockopt,
+  &sock_unix_setsockopt,
 };

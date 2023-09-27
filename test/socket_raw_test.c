@@ -34,6 +34,7 @@
 #include "test/ktest.h"
 #include "test/vfs_test_util.h"
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/net/socket/socket.h"
 #include "vfs/vfs_test_util.h"
 
 static void create_test(void) {
@@ -519,6 +520,27 @@ static void raw_poll_test(void) {
   KEXPECT_EQ(0, vfs_close(send_sock));
 }
 
+static void sockopt_test(void) {
+  KTEST_BEGIN("Raw sockets: getsockopt");
+  int sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  KEXPECT_GE(sock, 0);
+
+  int val[2];
+  socklen_t vallen = sizeof(int) * 2;
+  KEXPECT_EQ(0, net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(SOCK_RAW, val[0]);
+
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("Raw sockets: setsockopt");
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void socket_raw_test(void) {
   KTEST_SUITE_BEGIN("Socket (raw)");
   block_cache_clear_unpinned();
@@ -531,6 +553,7 @@ void socket_raw_test(void) {
   sendto_test();
   connect_test();
   raw_poll_test();
+  sockopt_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

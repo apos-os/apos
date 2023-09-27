@@ -294,3 +294,50 @@ int net_getpeername(int socket, struct sockaddr* address) {
   file_unref(file);
   return result;
 }
+
+int net_getsockopt(int socket, int level, int option, void* val,
+                   socklen_t* val_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
+    return -ENOTSOCK;
+  }
+
+  if (level == SOL_SOCKET && option == SO_TYPE) {
+    if (*val_len < (int)sizeof(int)) {
+      file_unref(file);
+      return -ENOMEM;
+    }
+    *val_len = sizeof(int);
+    *(int*)val = file->vnode->socket->s_type;
+    file_unref(file);
+    return 0;
+  }
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->getsockopt(file->vnode->socket, level,
+                                                  option, val, val_len);
+  file_unref(file);
+  return result;
+}
+
+int net_setsockopt(int socket, int level, int option, const void* val,
+                   socklen_t val_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
+    return -ENOTSOCK;
+  }
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->setsockopt(file->vnode->socket, level,
+                                                  option, val, val_len);
+  file_unref(file);
+  return result;
+}
