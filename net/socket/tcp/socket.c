@@ -23,6 +23,8 @@
 #include "net/inet.h"
 #include "net/util.h"
 #include "net/socket/sockmap.h"
+#include "proc/kthread.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
@@ -61,6 +63,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->rx_buf, rxbuf, SOCKET_READBUF);
   kthread_queue_init(&sock->wait_queue);
+  kmutex_init(&sock->mu);
+  sock->spin_mu = KSPINLOCK_NORMAL_INIT;
   poll_init_event(&sock->poll_event);
 
   *out = &(sock->base);
@@ -69,6 +73,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
 
 static void tcp_finish_cleanup(socket_tcp_t* socket) {
   KASSERT(socket->state == TCP_CLOSED);
+  KASSERT(kspin_is_held(&socket->spin_mu));
 
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->bind_addr.sa_family ==
@@ -80,6 +85,9 @@ static void tcp_finish_cleanup(socket_tcp_t* socket) {
     KASSERT(removed == &socket->base);
     DEFINT_POP();
   }
+
+  // No one else can reach or touch the socket anymore.  Finish cleaning up.
+  kspin_unlock(&socket->spin_mu);
   kfree(socket->rx_buf.buf);
   KASSERT(kthread_queue_empty(&socket->wait_queue));
   // TODO(aoates): is this the proper way to handle this, or should vfs_poll()
@@ -96,6 +104,7 @@ static void sock_tcp_cleanup(socket_t* socket_base) {
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
 
+  kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_CLOSED) {
     tcp_finish_cleanup(socket);
   } else {
@@ -125,6 +134,7 @@ static int sock_tcp_bind(socket_t* socket_base, const struct sockaddr* address,
   // TODO(tcp): check for _connected_ sockets and fail if there are any bound to
   // the same address unless SO_REUSEADDR is set.
 
+  KMUTEX_AUTO_LOCK(lock, &socket->mu);
   netaddr_t naddr;
   int naddr_port;
   int result = sock2netaddr(address, address_len, &naddr, &naddr_port);
@@ -227,6 +237,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  KMUTEX_AUTO_LOCK(lock, &socket->mu);
   kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
   return 0;
 }
@@ -237,6 +248,7 @@ static int sock_tcp_getpeername(socket_t* socket_base,
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  KMUTEX_AUTO_LOCK(lock, &socket->mu);
   // TODO(tcp): check socket state as well
   if (socket->connected_addr.sa_family == AF_UNSPEC) {
     return -ENOTCONN;

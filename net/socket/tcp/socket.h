@@ -39,9 +39,11 @@ typedef struct socket_tcp {
   // Read buffer.
   circbuf_t rx_buf;
 
-  // Wait queue for packets to be received.
-  kthread_queue_t wait_queue;
   poll_event_t poll_event;
+
+  kthread_queue_t wait_queue;
+  kmutex_t mu;  // For blocking operations.
+  kspinlock_t spin_mu;  // For data touched by deferred interrupts.
 } socket_tcp_t;
 
 #endif
