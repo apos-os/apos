@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "net/eth/arp/arp_cache_ops.h"
 #include "net/link_layer.h"
+#include "net/pbuf.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -28,9 +29,24 @@
 // we plumb that?
 #define ARP_TIMEOUT_MS 500
 
+#define PRINT_PACKETS 0
+
 void eth_mkbroadcast(uint8_t* mac) {
   kmemset(mac, 0xFF, 6);
 }
+
+#if PRINT_PACKETS
+static void print_packet(const pbuf_t* pb, const char* type) {
+  KLOG(INFO, "##### %s PACKET ####\n", type);
+  for (size_t i = 0; i < pbuf_size(pb); ++i) {
+    KLOG(INFO, "%02x ", ((const char*)pbuf_getc(pb))[i]);
+    if (i % 20 == 19) KLOG(INFO, "\n");
+  }
+  KLOG(INFO, "\n#### END PACKET ###\n");
+}
+#else
+#define print_packet(pb, type)
+#endif
 
 int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol) {
   if (protocol != ET_IPV4) {
@@ -47,6 +63,7 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol) {
   }
 
   eth_add_hdr(pb, arp_result.mac, nic->mac, protocol);
+  print_packet(pb, "TX");
   return nic->ops->nic_tx(nic, pb);
 }
 
@@ -65,6 +82,7 @@ void eth_recv(nic_t* nic, pbuf_t* pb) {
   char buf1[NIC_MAC_PRETTY_LEN], buf2[NIC_MAC_PRETTY_LEN];
   KLOG(DEBUG2, "rx(%s): %s -> %s, ethertype=%#06x\n", nic->name,
        mac2str(hdr.mac_src, buf1), mac2str(hdr.mac_dst, buf2), hdr.ethertype);
+  print_packet(pb, "RX");
 
   pbuf_pop_header(pb, sizeof(eth_hdr_t));
   net_link_recv(nic, pb, hdr.ethertype);
