@@ -24,6 +24,7 @@
 #define APOO_SCHEDULER_H
 
 #include "proc/kthread.h"
+#include "proc/spinlock.h"
 
 // Initialize the scheduler.
 void scheduler_init(void);
@@ -67,6 +68,10 @@ int scheduler_wait_on_interruptable(kthread_queue_t* queue, long timeout_ms);
 // Always interruptable.  Returns as scheduler_wait_on_interruptable().
 int scheduler_wait_on_locked(kthread_queue_t* queue, long timeout_ms,
                              kmutex_t* mu);
+
+// As above, but with a spinlock rather than a mutex.
+int scheduler_wait_on_splocked(kthread_queue_t* queue, long timeout_ms,
+                               kspinlock_t* sp);
 
 // As above, but not interruptable.  Will be replaced post-cleanup.
 // TODO(aoates): make all callers of this able to handle and propagate signals.
