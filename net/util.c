@@ -18,6 +18,7 @@
 
 #include "common/endian.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
 
@@ -117,4 +118,12 @@ int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
   }
 
   return -EAFNOSUPPORT;
+}
+
+void inet_make_anyaddr(int af, struct sockaddr* addr) {
+  KASSERT(af == AF_INET);
+  struct sockaddr_in* in_addr = (struct sockaddr_in*)addr;
+  in_addr->sin_family = AF_INET;
+  in_addr->sin_addr.s_addr = INADDR_ANY;
+  in_addr->sin_port = 0;
 }

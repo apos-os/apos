@@ -45,4 +45,7 @@ int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
 int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
                  netaddr_t* naddr, int* port);
 
+// Create an any-addr for the given address family.
+void inet_make_anyaddr(int af, struct sockaddr* addr);
+
 #endif

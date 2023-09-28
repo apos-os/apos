@@ -57,12 +57,9 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
                          socklen_t address_len);
 
 static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
-  KASSERT(dst_addr->sa_family == AF_INET);
-  // TODO(aoates): make a generic make_any_addr() helper.
+  KASSERT((int)dst_addr->sa_family == socket->base.s_domain);
   struct sockaddr_in bind_addr;
-  bind_addr.sin_family = AF_INET;
-  bind_addr.sin_addr.s_addr = INADDR_ANY;
-  bind_addr.sin_port = 0;
+  inet_make_anyaddr(dst_addr->sa_family, (struct sockaddr*)&bind_addr);
   return sock_udp_bind(&socket->base, (struct sockaddr*)&bind_addr,
                        sizeof(bind_addr));
 }
