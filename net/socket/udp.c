@@ -37,15 +37,6 @@
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
 
-// Pseudo-header for calculating checksums.
-typedef struct {
-  uint32_t src_addr;
-  uint32_t dst_addr;
-  uint8_t zeroes;
-  uint8_t protocol;
-  uint16_t udp_length;
-} __attribute__((packed)) ip4_pseudo_hdr_t;
-
 static const socket_ops_t g_udp_socket_ops;
 
 static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
@@ -132,7 +123,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     pseudo_ip.dst_addr = ip_hdr->dst_addr;
     pseudo_ip.zeroes = 0;
     pseudo_ip.protocol = IPPROTO_UDP;
-    pseudo_ip.udp_length = udp_hdr->len;
+    pseudo_ip.length = udp_hdr->len;
 
     KASSERT_DBG((size_t)pb_ip4_hdr_len(pb) >= sizeof(ip4_hdr_t));
     KASSERT_DBG(pbuf_size(pb) >=
@@ -422,7 +413,7 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
   pseudo_ip.dst_addr = ((struct sockaddr_in*)actual_dst)->sin_addr.s_addr;
   pseudo_ip.zeroes = 0;
   pseudo_ip.protocol = IPPROTO_UDP;
-  pseudo_ip.udp_length = udp_hdr->len;
+  pseudo_ip.length = udp_hdr->len;
 
   udp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));

@@ -50,4 +50,13 @@ _Static_assert(sizeof(ip4_hdr_t) == 20, "ip4_hdr_t wrong size");
 // Adds (prepends) an IP header to the given packet.  Calculates the checksum.
 void ip4_add_hdr(pbuf_t* pb, in_addr_t src, in_addr_t dst, uint8_t protocol);
 
+// Pseudo-header for calculating UDP and TCP checksums.
+typedef struct {
+  uint32_t src_addr;
+  uint32_t dst_addr;
+  uint8_t zeroes;
+  uint8_t protocol;
+  uint16_t length;
+} __attribute__((packed)) ip4_pseudo_hdr_t;
+
 #endif
