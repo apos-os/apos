@@ -37,12 +37,15 @@ void eth_mkbroadcast(uint8_t* mac) {
 
 #if PRINT_PACKETS
 static void print_packet(const pbuf_t* pb, const char* type) {
-  KLOG(INFO, "##### %s PACKET ####\n", type);
+  KLOG(INFO, "##### %s PACKET #####", type);
+  const size_t kLineLen = 20;
   for (size_t i = 0; i < pbuf_size(pb); ++i) {
+    if (i % kLineLen == 0) {
+      KLOG(INFO, "\n%05zx: ", i);
+    }
     KLOG(INFO, "%02x ", ((const char*)pbuf_getc(pb))[i]);
-    if (i % 20 == 19) KLOG(INFO, "\n");
   }
-  KLOG(INFO, "\n#### END PACKET ###\n");
+  KLOG(INFO, "\n##### END PACKET #####\n");
 }
 #else
 #define print_packet(pb, type)
