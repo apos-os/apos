@@ -31,4 +31,7 @@ void circbuf_init(circbuf_t* cbuf, void* buf, size_t buflen);
 ssize_t circbuf_read(circbuf_t* cbuf, void* buf, size_t nbytes);
 ssize_t circbuf_write(circbuf_t* cbuf, const void* buf, size_t nbytes);
 
+// Returns the free capacity of the circbuf.
+size_t circbuf_available(const circbuf_t* cbuf);
+
 #endif

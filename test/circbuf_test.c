@@ -27,6 +27,7 @@ static void basic_test(void) {
   KEXPECT_EQ(CBUF_SIZE, cbuf.buflen);
   KEXPECT_EQ(0, cbuf.pos);
   KEXPECT_EQ(0, cbuf.len);
+  KEXPECT_EQ(CBUF_SIZE, circbuf_available(&cbuf));
 
   kmemset(cbuf_data, 'x', CBUF_SIZE);
   KEXPECT_EQ(3, circbuf_write(&cbuf, "abc", 3));
@@ -34,6 +35,7 @@ static void basic_test(void) {
   KEXPECT_EQ(CBUF_SIZE, cbuf.buflen);
   KEXPECT_EQ(0, cbuf.pos);
   KEXPECT_EQ(3, cbuf.len);
+  KEXPECT_EQ(CBUF_SIZE - 3, circbuf_available(&cbuf));
   KEXPECT_STREQ("abcxxxxxxx", cbuf_data);
 
   char out_buf[50];
@@ -59,6 +61,7 @@ static void basic_test(void) {
   KEXPECT_EQ(2, cbuf.pos);
   KEXPECT_EQ(3, cbuf.len);
   KEXPECT_STREQ("78901", out_buf);
+  KEXPECT_EQ(CBUF_SIZE - 3, circbuf_available(&cbuf));
 
   KTEST_BEGIN("circbuf: basic write wrapping");
   kstrcpy(cbuf_data, "0123456789");
