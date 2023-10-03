@@ -23,6 +23,7 @@
 #include "net/ip/route.h"
 #include "net/link_layer.h"
 #include "net/socket/raw.h"
+#include "net/socket/tcp/tcp.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
 
@@ -111,6 +112,8 @@ void ip_recv(nic_t* nic, pbuf_t* pb) {
   bool handled = false;
   if (hdr->protocol == IPPROTO_UDP) {
     handled = sock_udp_dispatch(pb, ET_IPV4, hdr->protocol);
+  } else if (hdr->protocol == IPPROTO_TCP) {
+    handled = sock_tcp_dispatch(pb, ET_IPV4, hdr->protocol);
   }
   // pb is now a dangling pointer unless handled is false!
 

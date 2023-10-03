@@ -34,12 +34,15 @@ typedef enum {
 
   // Device modules.
   KL_PCI,
-  KL_NET,
   KL_NVME,
   KL_USB,
   KL_USB_HUB,
   KL_USB_UHCI,
   KL_TTY,
+
+  // Networking modules.
+  KL_NET,
+  KL_TCP,
 
   KL_TEST,
   KL_USER,  // From userspace.

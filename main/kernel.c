@@ -31,6 +31,7 @@
 #include "dev/serial/uart16550.h"
 #include "memory/kmalloc.h"
 #include "net/init.h"
+#include "net/socket/tcp/tcp.h"
 #include "proc/exec.h"
 #include "proc/fork.h"
 #include "proc/kthread.h"
@@ -252,6 +253,8 @@ void kmain(const boot_info_t* boot) {
 
   klog("net_init()\n");
   net_init();
+  klog("tcp_init()\n");
+  tcp_init();
 
   klog("initialization finished...\n");
 

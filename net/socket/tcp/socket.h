@@ -16,12 +16,19 @@
 #define APOO_NET_SOCKET_TCP_SOCKET_H
 
 #include "common/circbuf.h"
+#include "common/list.h"
+#include "common/refcount.h"
 #include "net/socket/socket.h"
 #include "proc/kthread.h"
 #include "vfs/vnode.h"
 
 typedef enum {
   TCP_CLOSED,
+  TCP_CLOSED_DONE,  // The connection is finished and the socket can't be reused
+  TCP_SYN_SENT,
+  TCP_ESTABLISHED,
+  TCP_CLOSE_WAIT,
+  TCP_LAST_ACK,
 } socktcp_state_t;
 
 typedef struct socket_tcp {
@@ -29,6 +36,10 @@ typedef struct socket_tcp {
 
   // Current state of the socket.
   socktcp_state_t state;
+
+  // Refcount (for internal TCP usage --- all external references are via a file
+  // descriptor, which consumes one ref here).
+  refcount_t ref;
 
   // The local bound address.  If unbound, family will be AF_UNSPEC.
   struct sockaddr_storage bind_addr;
@@ -39,11 +50,24 @@ typedef struct socket_tcp {
   // Read buffer.
   circbuf_t rx_buf;
 
+  uint32_t seq;
+  int wndsize;
+
+  // The last sequence number and ack seen from the other side.
+  uint32_t remote_seq;  // The next sequence number expected.
+  uint32_t remote_ack;
+  int remote_wndsize;
+
   poll_event_t poll_event;
 
-  kthread_queue_t wait_queue;
-  kmutex_t mu;  // For blocking operations.
-  kspinlock_t spin_mu;  // For data touched by deferred interrupts.
+  kthread_queue_t q;
+
+  // Guards complex compound user-driven socket operations.
+  kmutex_t mu;
+
+  // Protects data structures touched by defints and protocol-driven state
+  // transitions.
+  kspinlock_t spin_mu;
 } socket_tcp_t;
 
 #endif

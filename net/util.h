@@ -15,6 +15,8 @@
 #ifndef APOO_NET_UTIL_H
 #define APOO_NET_UTIL_H
 
+#include <stdbool.h>
+
 #include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -35,6 +37,12 @@ char* inet2str(in_addr_t addr, char* buf);
 // Parse an inet address.  Returns 0 if unparseable.
 in_addr_t str2inet(const char* s);
 
+#define SOCKADDR_PRETTY_LEN 109
+
+// Pretty-print a generic sockaddr.
+char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
+                   char* buf);
+
 // Convert a netaddr_t and port to a struct sockaddr, and vice versa.  |saddr|
 // should point to a `struct sockaddr` (void* used to prevent casts).  Returns 0
 // on success.
@@ -45,7 +53,20 @@ int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
 int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
                  netaddr_t* naddr, int* port);
 
+// Extract or set the port in a sockaddr.  The sockaddr _must_ be an INET
+// sockaddr of some sort and be valid length.  Port is native byte order.
+in_port_t get_sockaddr_port(const struct sockaddr* addr, socklen_t addr_len);
+void set_sockaddr_port(struct sockaddr* addr, socklen_t addr_len,
+                       in_port_t port);
+
+// Convenience versions for struct sockaddr_storage.
+in_port_t get_sockaddrs_port(const struct sockaddr_storage* addr);
+void set_sockaddrs_port(struct sockaddr_storage* addr, in_port_t port);
+
 // Create an any-addr for the given address family.
 void inet_make_anyaddr(int af, struct sockaddr* addr);
+
+// Returns true if the given address is an any-addr for its family.
+bool inet_is_anyaddr(const struct sockaddr* addr);
 
 #endif

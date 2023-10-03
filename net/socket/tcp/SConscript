@@ -15,7 +15,9 @@
 Import('env AposAddSources')
 
 srcs = [
+    'protocol.c',
     'socket.c',
+    'tcp.c',
 ]
 
 subdirs = []
