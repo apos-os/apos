@@ -418,7 +418,7 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
   if (udp_hdr->checksum == 0) udp_hdr->checksum = 0xffff;
 
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
-  int result = ip_send(pb);
+  int result = ip_send(pb, /* allow_block */ true);
   if (result < 0) {
     return result;
   }

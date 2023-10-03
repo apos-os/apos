@@ -324,7 +324,7 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
   KASSERT_DBG(dest.family == ADDR_INET);
   ip4_add_hdr(pb, src->a.ip4.s_addr, dest.a.ip4.s_addr,
               socket_base->s_protocol);
-  int result = ip_send(pb);
+  int result = ip_send(pb, /* allow_block */ true);
   if (result < 0) {
     return result;
   }

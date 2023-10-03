@@ -59,7 +59,7 @@ static bool validate_hdr_v4(const pbuf_t* pb) {
   return true;
 }
 
-int ip_send(pbuf_t* pb) {
+int ip_send(pbuf_t* pb, bool allow_block) {
   char addrbuf[INET_PRETTY_LEN];
   if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
     KLOG(INFO, "net: rejecting too-short IP packet\n");
@@ -89,7 +89,7 @@ int ip_send(pbuf_t* pb) {
     return -EADDRNOTAVAIL;
   }
 
-  return net_link_send(route.nic, route.nexthop, pb, ET_IPV4);
+  return net_link_send(route.nic, route.nexthop, pb, ET_IPV4, allow_block);
 }
 
 void ip_recv(nic_t* nic, pbuf_t* pb) {

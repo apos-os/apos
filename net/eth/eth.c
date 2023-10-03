@@ -51,7 +51,8 @@ static void print_packet(const pbuf_t* pb, const char* type) {
 #define print_packet(pb, type)
 #endif
 
-int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol) {
+int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
+             bool allow_block) {
   if (protocol != ET_IPV4) {
     KLOG(INFO, "send(%s): dropping packet with unsupported protocol %#06x\n",
          nic->name, protocol);
@@ -59,8 +60,8 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol) {
   }
   KASSERT(next_hop.family == ADDR_INET);
   arp_cache_entry_t arp_result;
-  int result =
-      arp_cache_lookup(nic, next_hop.a.ip4.s_addr, &arp_result, ARP_TIMEOUT_MS);
+  int result = arp_cache_lookup(nic, next_hop.a.ip4.s_addr, &arp_result,
+                                allow_block ? ARP_TIMEOUT_MS : 0);
   if (result != 0) {
     return result;
   }

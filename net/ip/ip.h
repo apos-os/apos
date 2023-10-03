@@ -21,7 +21,7 @@
 
 // Send an IP packet out onto the network.  May block.  The packet must already
 // have an IP header.
-int ip_send(pbuf_t* pb);
+int ip_send(pbuf_t* pb, bool allow_block);
 
 // Handle and dispatch an inbound packet.  Takes ownership of the buffer.
 void ip_recv(nic_t* nic, pbuf_t* pb);
