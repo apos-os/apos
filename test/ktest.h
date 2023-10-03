@@ -32,6 +32,8 @@ void kexpect(int cond, const char* name, const char* astr,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line);
 
+void ktest_add_failure(const char* msg, const char* file, const char* line);
+
 typedef enum {
   PRINT_SIGNED,
   PRINT_UNSIGNED,
@@ -113,6 +115,9 @@ void kexpect_multiline_streq(const char* file, const char* line,
     const char* bval = b;                                                 \
     kexpect_multiline_streq(__FILE__, STR(__LINE__), #a, #b, aval, bval); \
   } while (0)
+
+// Force a failure.
+#define KTEST_ADD_FAILURE(_msg) ktest_add_failure(_msg, __FILE__, STR(__LINE__))
 
 // Initialize the testing framework.
 void ktest_begin_all(void);

@@ -207,6 +207,11 @@ void ktest_test(void) {
   // KEXPECT_NULL(1);
   KASSERT(ktest_current_test_failures() == 7);
 
+  KTEST_BEGIN("KTEST_ADD_FAILURE(): should fail x2");
+  KTEST_ADD_FAILURE("manual test failure");
+  KTEST_ADD_FAILURE("manual test failure #2");
+  KASSERT(ktest_current_test_failures() == 2);
+
   multiline_test();
   int_conv_test();
 }

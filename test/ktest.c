@@ -109,20 +109,24 @@ void KTEST_BEGIN(const char* name) {
   num_tests++;
 }
 
+static void do_failure(void) {
+  if (current_test_passing) {
+    klogm(KL_TEST, INFO, "\nTEST: ");
+    klogm(KL_TEST, INFO, current_test_name);
+    klogm(KL_TEST, INFO, "\n");
+    klogm(KL_TEST, INFO, "---------------------------------------\n");
+  }
+  current_test_passing = 0;
+  current_suite_passing = 0;
+  current_test_failures++;
+}
+
 void kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
   if (!cond) {
-    if (current_test_passing) {
-      klogm(KL_TEST, INFO, "\nTEST: ");
-      klogm(KL_TEST, INFO, current_test_name);
-      klogm(KL_TEST, INFO, "\n");
-      klogm(KL_TEST, INFO, "---------------------------------------\n");
-    }
-    current_test_passing = 0;
-    current_suite_passing = 0;
-    current_test_failures++;
+    do_failure();
     klogm(KL_TEST, INFO, FAILED " ");
     klogm(KL_TEST, INFO, name);
     klogm(KL_TEST, INFO, "(");
@@ -164,6 +168,17 @@ void kexpect_int(const char* name, const char* file, const char* line,
     kstrcpy(bval_str, kutoa(bval));
   }
   kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
+}
+
+void ktest_add_failure(const char* msg, const char* file, const char* line) {
+  do_failure();
+  klogm(KL_TEST, INFO, FAILED " Failure at ");
+  klogm(KL_TEST, INFO, file);
+  klogm(KL_TEST, INFO, ":");
+  klogm(KL_TEST, INFO, line);
+  klogm(KL_TEST, INFO, ": ");
+  klogm(KL_TEST, INFO, msg);
+  klogm(KL_TEST, INFO, "\n");
 }
 
 static void cpy_or_trunc(char* dst, const char* start, size_t strlen,
