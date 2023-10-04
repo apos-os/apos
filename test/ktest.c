@@ -121,7 +121,7 @@ static void do_failure(void) {
   current_test_failures++;
 }
 
-void kexpect(int cond, const char* name, const char* astr,
+bool kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
@@ -147,9 +147,10 @@ void kexpect(int cond, const char* name, const char* astr,
     klogm(KL_TEST, INFO, val_surrounders);
     klogm(KL_TEST, INFO, "\n");
   }
+  return cond;
 }
 
-void kexpect_int(const char* name, const char* file, const char* line,
+bool kexpect_int(const char* name, const char* file, const char* line,
                  const char* astr, const char* bstr, intmax_t aval,
                  intmax_t bval, long result, const char* opstr,
                  kexpect_print_t a_type, kexpect_print_t b_type) {
@@ -167,7 +168,8 @@ void kexpect_int(const char* name, const char* file, const char* line,
     kstrcpy(aval_str, kutoa(aval));
     kstrcpy(bval_str, kutoa(bval));
   }
-  kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
+  return kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file,
+                 line);
 }
 
 void ktest_add_failure(const char* msg, const char* file, const char* line) {
@@ -191,7 +193,7 @@ static void cpy_or_trunc(char* dst, const char* start, size_t strlen,
   }
 }
 
-void kexpect_multiline_streq(const char* file, const char* line,
+bool kexpect_multiline_streq(const char* file, const char* line,
                              const char* astr, const char* bstr,
                              const char* aval, const char* bval) {
   int result = !kstrcmp(aval, bval);
@@ -232,6 +234,7 @@ void kexpect_multiline_streq(const char* file, const char* line,
     }
     kfree(buf);
   }
+  return result;
 }
 
 void ktest_begin_all(void) {

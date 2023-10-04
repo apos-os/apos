@@ -16,6 +16,8 @@
 #ifndef APOO_KTEST_H
 #define APOO_KTEST_H
 
+#include <stdbool.h>
+
 #include "common/klog.h"
 #include "common/kstring.h"
 
@@ -27,7 +29,7 @@
 void KTEST_SUITE_BEGIN(const char* name);
 void KTEST_BEGIN(const char* name);
 
-void kexpect(int cond, const char* name, const char* astr,
+bool kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line);
@@ -41,12 +43,12 @@ typedef enum {
   PRINT_UNKNOWN,
 } kexpect_print_t;
 
-void kexpect_int(const char* name, const char* file, const char* line,
+bool kexpect_int(const char* name, const char* file, const char* line,
                  const char* astr, const char* bstr, intmax_t aval,
                  intmax_t bval, long result, const char* opstr,
                  kexpect_print_t a_type, kexpect_print_t b_type);
 
-void kexpect_multiline_streq(const char* file, const char* line,
+bool kexpect_multiline_streq(const char* file, const char* line,
                              const char* astr, const char* bstr,
                              const char* aval, const char* bval);
 
@@ -65,25 +67,25 @@ void kexpect_multiline_streq(const char* file, const char* line,
              void*: PRINT_HEX, \
              default: PRINT_HEX)
 
-#define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr)                    \
-  do {                                                                        \
-    const char* aval = a;                                                     \
-    const char* bval = b;                                                     \
+#define KEXPECT_(name, astr, bstr, a, b, cond_func, opstr)                   \
+  ({                                                                         \
+    const char* aval = a;                                                    \
+    const char* bval = b;                                                    \
     kexpect(cond_func(aval, bval), name, astr, bstr, aval, bval, "'", opstr, \
-             __FILE__, STR(__LINE__));                                        \
-  } while (0)
+            __FILE__, STR(__LINE__));                                        \
+  })
 
 // TODO(aoates): figure out how to fix silent narrowing when passing two
 // variables of different sizes (as opposed to constants, which will fail to
 // compile).
 #define KEXPECT_INT_(name, astr, bstr, a, b, op, opstr)                \
-  do {                                                                 \
+  ({                                                                   \
     typeof(a) aval = (a);                                              \
     typeof(a) bval = (b);                                              \
     kexpect_int(name, __FILE__, STR(__LINE__), astr, bstr, (long)aval, \
                 (long)bval, (aval op bval), opstr, PRINT_TYPE(a),      \
                 PRINT_TYPE(b));                                        \
-  } while (0)
+  })
 
 #define KEXPECT_EQ(a, b) KEXPECT_INT_("KEXPECT_EQ", #a, #b, a, b, ==, " != ")
 #define KEXPECT_NE(a, b) KEXPECT_INT_("KEXPECT_NE", #a, #b, a, b, !=, " == ")
@@ -110,11 +112,11 @@ void kexpect_multiline_streq(const char* file, const char* line,
   KEXPECT_INT_("KEXPECT_NOT_NULL", "NULL", #a, ((const void*)0), (a), !=, " == ")
 
 #define KEXPECT_MULTILINE_STREQ(a, b)                                     \
-  do {                                                                    \
+  ({                                                                      \
     const char* aval = a;                                                 \
     const char* bval = b;                                                 \
     kexpect_multiline_streq(__FILE__, STR(__LINE__), #a, #b, aval, bval); \
-  } while (0)
+  })
 
 // Force a failure.
 #define KTEST_ADD_FAILURE(_msg) ktest_add_failure(_msg, __FILE__, STR(__LINE__))
