@@ -18,6 +18,7 @@
 #include "net/bind.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/socket/socket.h"
+#include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/util.h"
 #include "proc/kthread.h"
@@ -58,6 +59,43 @@ static int do_connect(int sock, const char* addr, int port) {
   struct sockaddr_in saddr;
   make_saddr(&saddr, addr, port);
   return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
+}
+
+static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
+                             const struct sockaddr_in* b) {
+  return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
+}
+
+static void tcp_key_test(void) {
+  KTEST_BEGIN("TCP key test (AF_INET)");
+  struct sockaddr_in src1, src2, dst1, dst2;
+  kmemset(&src1, 0xaa, sizeof(src1));
+  kmemset(&src2, 0xbb, sizeof(src2));
+  kmemset(&dst1, 0xcc, sizeof(dst1));
+  kmemset(&dst2, 0xdd, sizeof(dst2));
+  src1.sin_family = src2.sin_family = dst1.sin_family = dst2.sin_family =
+      AF_INET;
+  KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
+  src1.sin_addr.s_addr = str2inet("10.0.1.1");
+  src1.sin_port = 1;
+  dst1.sin_addr.s_addr = str2inet("10.0.1.2");
+  dst1.sin_port = 2;
+  src2.sin_addr.s_addr = str2inet("10.0.1.1");
+  src2.sin_port = 1;
+  dst2.sin_addr.s_addr = str2inet("10.0.1.2");
+  dst2.sin_port = 2;
+  KEXPECT_EQ(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
+  KEXPECT_EQ(tcp_key_sin(&src2, &dst1), tcp_key_sin(&src1, &dst2));
+  KEXPECT_EQ(tcp_key_sin(&src1, &dst2), tcp_key_sin(&src2, &dst1));
+
+  KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&dst1, &src1));
+
+  src1 = src2;
+  src1.sin_port = 2;
+  KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
+  src1 = src2;
+  src1.sin_addr.s_addr = str2inet("10.0.1.2");
+  KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
 }
 
 static void tcp_socket_test(void) {
@@ -503,6 +541,7 @@ void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
 
+  tcp_key_test();
   tcp_socket_test();
   sockopt_test();
   bind_test();
