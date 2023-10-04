@@ -27,6 +27,7 @@
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
+#include "user/include/apos/net/socket/tcp.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
@@ -309,6 +310,18 @@ typedef struct {
   int arg_port;
 } tcp_test_state_t;
 
+static void init_tcp_test(tcp_test_state_t* s) {
+  s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s->socket, 0);
+
+  int initial_seq = 0;
+  KEXPECT_EQ(0, net_setsockopt(s->socket, IPPROTO_TCP, SO_TCP_SEQ_NUM,
+                               &initial_seq, sizeof(initial_seq)));
+
+  s->raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+  KEXPECT_GE(s->raw_socket, 0);
+}
+
 static void* tcp_thread_connect(void* arg) {
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   ntfn_notify(&s->op_started);
@@ -374,21 +387,17 @@ static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
 
 static void basic_connect_test(void) {
   KTEST_BEGIN("TCP: basic connect()");
-  int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  KEXPECT_GE(sock, 0);
-
   tcp_test_state_t s;
-  s.raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-  KEXPECT_GE(s.raw_socket, 0);
+  init_tcp_test(&s);
+
   struct sockaddr_in recv_bind_addr;
   make_saddr(&recv_bind_addr, "127.0.0.1", 0x5678);
   KEXPECT_EQ(0, net_bind(s.raw_socket, (struct sockaddr*)&recv_bind_addr,
                          sizeof(recv_bind_addr)));
 
-  s.socket = sock;
   make_saddr(&s.tcp_addr, "127.0.0.1", 0x1234);
-  KEXPECT_EQ(0,
-             net_bind(sock, (struct sockaddr*)&s.tcp_addr, sizeof(s.tcp_addr)));
+  KEXPECT_EQ(
+      0, net_bind(s.socket, (struct sockaddr*)&s.tcp_addr, sizeof(s.tcp_addr)));
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
 
   // Should have received a SYN.
@@ -491,7 +500,7 @@ static void basic_connect_test(void) {
   KEXPECT_FALSE(raw_has_packets(&s));
 
   // Shutdown the connection from this side.
-  KEXPECT_EQ(0, net_shutdown(sock, SHUT_WR));
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
 
   // Should get a FIN.
   result = do_raw_recv(&s);
@@ -521,7 +530,7 @@ static void basic_connect_test(void) {
 
   // TODO(tcp): test other operations on the socket now that its closed.
 
-  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_close(s.socket));
   KEXPECT_EQ(0, vfs_close(s.raw_socket));
 
   // TODO(tcp): other tests:

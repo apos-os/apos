@@ -27,6 +27,7 @@ HEADERS = [
   'apos/mmap.h',
   'apos/net/socket/inet.h',
   'apos/net/socket/socket.h',
+  'apos/net/socket/tcp.h',
   'apos/net/socket/unix.h',
   'apos/posix_signal.h',
   'apos/posix_types.h',

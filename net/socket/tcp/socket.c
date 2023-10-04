@@ -16,6 +16,7 @@
 
 #include "common/circbuf.h"
 #include "common/endian.h"
+#include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -31,6 +32,7 @@
 #include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
+#include "net/socket/sockopt.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/tcp.h"
@@ -40,6 +42,7 @@
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
+#include "user/include/apos/net/socket/tcp.h"
 
 #define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
 
@@ -53,6 +56,10 @@
 #define SOCKET_CONNECT_TIMEOUT_MS 1000
 
 static const socket_ops_t g_tcp_socket_ops;
+
+static uint32_t gen_seq_num(const socket_tcp_t* sock) {
+  return fnv_hash_concat(get_time_ms(), fnv_hash_addr((addr_t)sock));
+}
 
 int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   if (type != SOCK_STREAM) {
@@ -82,8 +89,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->rx_buf, rxbuf, SOCKET_READBUF);
-  // TODO(tcp): set random initial sequence number (and allow test override).
-  sock->seq = 0;
+  sock->seq = gen_seq_num(sock);
   sock->wndsize = circbuf_available(&sock->rx_buf);
   kthread_queue_init(&sock->q);
   kmutex_init(&sock->mu);
@@ -824,6 +830,22 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
                                 socklen_t* restrict val_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
   KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
+
+  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+
+  if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
+    kspin_lock(&socket->spin_mu);
+    if (socket->state != TCP_CLOSED) {
+      kspin_unlock(&socket->spin_mu);
+      return -EISCONN;
+    }
+
+    int seq = (int)socket->seq;
+    kspin_unlock(&socket->spin_mu);
+    return getsockopt_int(val, val_len, seq);
+  }
+
   return -ENOPROTOOPT;
 }
 
@@ -831,6 +853,27 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
                                const void* val, socklen_t val_len) {
   KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
   KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
+
+  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  KMUTEX_AUTO_LOCK(lock, &socket->mu);
+
+  if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
+    int seq;
+    int result = setsockopt_int(val, val_len, &seq);
+    if (result) {
+      return result;
+    }
+
+    kspin_lock(&socket->spin_mu);
+    if (socket->state != TCP_CLOSED) {
+      kspin_unlock(&socket->spin_mu);
+      return -EISCONN;
+    }
+    socket->seq = (uint32_t)seq;
+    kspin_unlock(&socket->spin_mu);
+    return 0;
+  }
+
   return -ENOPROTOOPT;
 }
 
