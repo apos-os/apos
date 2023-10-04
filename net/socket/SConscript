@@ -18,6 +18,7 @@ srcs = [
     'raw.c',
     'socket.c',
     'sockmap.c',
+    'sockopt.c',
     'udp.c',
     'unix.c',
 ]

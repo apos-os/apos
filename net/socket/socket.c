@@ -18,6 +18,7 @@
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "net/socket/raw.h"
+#include "net/socket/sockopt.h"
 #include "net/socket/udp.h"
 #include "net/socket/unix.h"
 #include "net/socket/tcp/tcp.h"
@@ -307,14 +308,9 @@ int net_getsockopt(int socket, int level, int option, void* val,
   }
 
   if (level == SOL_SOCKET && option == SO_TYPE) {
-    if (*val_len < (int)sizeof(int)) {
-      file_unref(file);
-      return -ENOMEM;
-    }
-    *val_len = sizeof(int);
-    *(int*)val = file->vnode->socket->s_type;
+    result = getsockopt_int(val, val_len, file->vnode->socket->s_type);
     file_unref(file);
-    return 0;
+    return result;
   }
 
   KASSERT(file->vnode->socket != NULL);
