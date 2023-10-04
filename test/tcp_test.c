@@ -314,7 +314,7 @@ static void init_tcp_test(tcp_test_state_t* s) {
   s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(s->socket, 0);
 
-  int initial_seq = 0;
+  int initial_seq = 100;
   KEXPECT_EQ(0, net_setsockopt(s->socket, IPPROTO_TCP, SO_TCP_SEQ_NUM,
                                &initial_seq, sizeof(initial_seq)));
 
@@ -421,21 +421,21 @@ static void basic_connect_test(void) {
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s.recv[sizeof(ip4_hdr_t)];
   KEXPECT_EQ(0x1234, btoh16(tcp_hdr->src_port));
   KEXPECT_EQ(0x5678, btoh16(tcp_hdr->dst_port));
-  KEXPECT_EQ(0, btoh32(tcp_hdr->seq));
+  KEXPECT_EQ(100, btoh32(tcp_hdr->seq));
   KEXPECT_EQ(0, btoh32(tcp_hdr->ack));
   KEXPECT_EQ(0, tcp_hdr->_zeroes);
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_SYN, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0x0934, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0x08d0, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   // Send SYN-ACK back.  Raw socket will make the IP header for us.
   tcp_hdr->src_port = btoh16(0x5678);
   tcp_hdr->dst_port = btoh16(0x1234);
   tcp_hdr->seq = btoh32(0x1000);
-  tcp_hdr->ack = btoh32(1);
-  tcp_hdr->checksum = 0xe319;
+  tcp_hdr->ack = btoh32(101);
+  tcp_hdr->checksum = 0x7f19;
   tcp_hdr->flags = TCP_FLAG_SYN | TCP_FLAG_ACK;
   tcp_hdr->wndsize = btoh16(8000);
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
@@ -450,13 +450,13 @@ static void basic_connect_test(void) {
   // Validate the TCP header.
   KEXPECT_EQ(0x1234, btoh16(tcp_hdr->src_port));
   KEXPECT_EQ(0x5678, btoh16(tcp_hdr->dst_port));
-  KEXPECT_EQ(1, btoh32(tcp_hdr->seq));
+  KEXPECT_EQ(101, btoh32(tcp_hdr->seq));
   KEXPECT_EQ(0x1001, btoh32(tcp_hdr->ack));
   KEXPECT_EQ(0, tcp_hdr->_zeroes);
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_ACK, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0xf923, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0xf8bf, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
@@ -468,11 +468,11 @@ static void basic_connect_test(void) {
   tcp_hdr->src_port = btoh16(0x5678);
   tcp_hdr->dst_port = btoh16(0x1234);
   tcp_hdr->seq = btoh32(0x1001);
-  tcp_hdr->ack = btoh32(1);
+  tcp_hdr->ack = btoh32(101);
   tcp_hdr->data_offset = 5;
   tcp_hdr->flags = TCP_FLAG_FIN | TCP_FLAG_ACK;
   tcp_hdr->wndsize = 8000;
-  tcp_hdr->checksum = 0x03f9;
+  tcp_hdr->checksum = 0x9ff8;
 
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
 
@@ -486,13 +486,13 @@ static void basic_connect_test(void) {
 
   KEXPECT_EQ(0x1234, btoh16(tcp_hdr->src_port));
   KEXPECT_EQ(0x5678, btoh16(tcp_hdr->dst_port));
-  KEXPECT_EQ(1, btoh32(tcp_hdr->seq));
+  KEXPECT_EQ(101, btoh32(tcp_hdr->seq));
   KEXPECT_EQ(0x1002, btoh32(tcp_hdr->ack));
   KEXPECT_EQ(0, tcp_hdr->_zeroes);
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_ACK, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0xf922, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0xf8be, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   // TODO(tcp): verify that read() returns 0/EOF.
@@ -507,13 +507,13 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t), result);
   KEXPECT_EQ(0x1234, btoh16(tcp_hdr->src_port));
   KEXPECT_EQ(0x5678, btoh16(tcp_hdr->dst_port));
-  KEXPECT_EQ(1, btoh32(tcp_hdr->seq));
+  KEXPECT_EQ(101, btoh32(tcp_hdr->seq));
   KEXPECT_EQ(0x1002, btoh32(tcp_hdr->ack));
   KEXPECT_EQ(0, tcp_hdr->_zeroes);
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_FIN | TCP_FLAG_ACK, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0xf921, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0xf8bd, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   // Send final ack.
@@ -521,11 +521,11 @@ static void basic_connect_test(void) {
   tcp_hdr->src_port = btoh16(0x5678);
   tcp_hdr->dst_port = btoh16(0x1234);
   tcp_hdr->seq = btoh32(0x1002);
-  tcp_hdr->ack = btoh32(2);
+  tcp_hdr->ack = btoh32(102);
   tcp_hdr->data_offset = 5;
   tcp_hdr->flags = TCP_FLAG_ACK;
   tcp_hdr->wndsize = 8000;
-  tcp_hdr->checksum = 0x02f9;
+  tcp_hdr->checksum = 0x9ef8;
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
 
   // TODO(tcp): test other operations on the socket now that its closed.
