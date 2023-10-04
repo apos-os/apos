@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "net/addr.h"
 #include "net/bind.h"
+#include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/socket/socket.h"
 #include "net/socket/tcp/internal.h"
@@ -300,9 +301,12 @@ typedef struct {
   notification_t op_done;
 
   // Address of the TCP socket under test.
+  const char* tcp_addr_str;
   struct sockaddr_in tcp_addr;
 
   // Raw socket and buffer for the "other side".
+  const char* raw_addr_str;
+  struct sockaddr_in raw_addr;
   int raw_socket;
   char recv[RAW_RECV_BUF_SIZE];
 
@@ -310,7 +314,9 @@ typedef struct {
   int arg_port;
 } tcp_test_state_t;
 
-static void init_tcp_test(tcp_test_state_t* s) {
+// Creates and initializes the test state.  Does _not_ bind the test socket.
+static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
+                          int tcp_port, const char* dst_addr, int dst_port) {
   s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(s->socket, 0);
 
@@ -318,8 +324,17 @@ static void init_tcp_test(tcp_test_state_t* s) {
   KEXPECT_EQ(0, net_setsockopt(s->socket, IPPROTO_TCP, SO_TCP_SEQ_NUM,
                                &initial_seq, sizeof(initial_seq)));
 
+  s->tcp_addr_str = tcp_addr;
+  make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
+
+  // Create the raw socket that will converse with the TCP socket under test.
   s->raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
   KEXPECT_GE(s->raw_socket, 0);
+
+  s->raw_addr_str = dst_addr;
+  make_saddr(&s->raw_addr, dst_addr, dst_port);
+  KEXPECT_EQ(0, net_bind(s->raw_socket, (struct sockaddr*)&s->raw_addr,
+                         sizeof(s->raw_addr)));
 }
 
 static void* tcp_thread_connect(void* arg) {
@@ -385,19 +400,128 @@ static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
                     sizeof(s->tcp_addr));
 }
 
+// Special value to indicate a zero window size (since passing zero means
+// "ignore").
+#define WNDSIZE_ZERO 0xabcd
+
+// Specification for a packet to expect or send.  Fields not supplied are not
+// checked (on receive), or given default values (on send).
+typedef struct {
+  int flags;
+  uint32_t seq;
+  uint32_t ack;
+  int wndsize;
+} test_packet_spec_t;
+
+static test_packet_spec_t SYN_PKT(int seq, int wndsize) {
+  return ((test_packet_spec_t){
+      .flags = TCP_FLAG_SYN, .seq = seq, .wndsize = wndsize});
+}
+
+static test_packet_spec_t SYNACK_PKT(int seq, int ack, int wndsize) {
+  return ((test_packet_spec_t){.flags = TCP_FLAG_SYN | TCP_FLAG_ACK,
+                               .seq = seq,
+                               .ack = ack,
+                               .wndsize = wndsize});
+}
+
+static test_packet_spec_t ACK_PKT(int seq, int ack) {
+  return ((test_packet_spec_t){.flags = TCP_FLAG_ACK, .seq = seq, .ack = ack});
+}
+
+static test_packet_spec_t FIN_PKT(int seq, int ack) {
+  return ((test_packet_spec_t){
+      .flags = TCP_FLAG_FIN | TCP_FLAG_ACK, .seq = seq, .ack = ack});
+}
+
+#define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt((_state), (_spec)));
+#define SEND_PKT(_state, _spec) KEXPECT_TRUE(send_pkt((_state), (_spec)));
+
+// Expects to receive a packet matching the given description, returning true if
+// it does.
+static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+  KEXPECT_TRUE_OR_RETURN(raw_has_packets(s));
+
+  bool v = true;
+  int result = do_raw_recv(s);
+  v &= KEXPECT_GE(result, 0);
+  if (!v) return v;
+
+  // Validate the IP header.
+  v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t), result);
+  if (!v) return v;
+
+  ip4_hdr_t* ip_hdr = (ip4_hdr_t*)s->recv;
+  v &= KEXPECT_EQ(0x45, ip_hdr->version_ihl);
+  v &= KEXPECT_EQ(0x0, ip_hdr->dscp_ecn);
+  v &= KEXPECT_EQ(result, btoh16(ip_hdr->total_len));
+  v &= KEXPECT_EQ(0, ip_hdr->id);
+  v &= KEXPECT_EQ(0, ip_hdr->flags_fragoff);
+  v &= KEXPECT_GE(ip_hdr->ttl, 10);
+  v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
+  // Don't bother checking the checksum here.
+  v &= KEXPECT_STREQ(s->tcp_addr_str, ip2str(ip_hdr->src_addr));
+  v &= KEXPECT_STREQ(s->raw_addr_str, ip2str(ip_hdr->dst_addr));
+
+  // Validate the TCP header.
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[sizeof(ip4_hdr_t)];
+  v &= KEXPECT_EQ(btoh16(s->tcp_addr.sin_port), btoh16(tcp_hdr->src_port));
+  v &= KEXPECT_EQ(btoh16(s->raw_addr.sin_port), btoh16(tcp_hdr->dst_port));
+  if (spec.seq != 0) {
+    v &= KEXPECT_EQ(spec.seq, btoh32(tcp_hdr->seq));
+  }
+  if (spec.ack != 0) {
+    v &= KEXPECT_EQ(spec.ack, btoh32(tcp_hdr->ack));
+  }
+  v &= KEXPECT_EQ(0, tcp_hdr->_zeroes);
+  v &= KEXPECT_EQ(5, tcp_hdr->data_offset);
+  v &= KEXPECT_EQ(spec.flags, tcp_hdr->flags);
+  if (btoh16(tcp_hdr->wndsize) == 0 && spec.wndsize == 0) {
+    KTEST_ADD_FAILURE("Must use WNDSIZE_ZERO when receiving a zero wndsize");
+    v = false;
+  }
+  if (spec.wndsize != 0) {
+    v &= KEXPECT_EQ(spec.wndsize == WNDSIZE_ZERO ? 0 : spec.wndsize,
+                        btoh16(tcp_hdr->wndsize));
+  }
+  // Don't bother checking this checksum either.
+  v &= KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
+  return v;
+}
+
+// Builds a packet based on the given spec and sends it.
+static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+  ip4_pseudo_hdr_t pseudo_ip;
+
+  size_t tcp_len = sizeof(tcp_hdr_t);
+  pseudo_ip.src_addr = s->raw_addr.sin_addr.s_addr;
+  pseudo_ip.dst_addr = s->tcp_addr.sin_addr.s_addr;
+  pseudo_ip.zeroes = 0;
+  pseudo_ip.protocol = IPPROTO_TCP;
+  pseudo_ip.length = btoh16(tcp_len);
+
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)s->recv;
+  kmemset(tcp_hdr, 0, sizeof(tcp_hdr_t));
+  tcp_hdr->src_port = s->raw_addr.sin_port;
+  tcp_hdr->dst_port = s->tcp_addr.sin_port;
+  tcp_hdr->seq = btoh32(spec.seq);
+  tcp_hdr->ack = (spec.flags & TCP_FLAG_ACK) ? btoh32(spec.ack) : 0;
+  tcp_hdr->data_offset = 5;
+  tcp_hdr->flags = spec.flags;
+  tcp_hdr->wndsize = spec.wndsize;
+  tcp_hdr->checksum = 0;
+
+  tcp_hdr->checksum =
+      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), tcp_hdr, tcp_len);
+  return KEXPECT_EQ(tcp_len, do_raw_send(s, tcp_hdr, tcp_len));
+}
+
 static void basic_connect_test(void) {
   KTEST_BEGIN("TCP: basic connect()");
   tcp_test_state_t s;
-  init_tcp_test(&s);
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
 
-  struct sockaddr_in recv_bind_addr;
-  make_saddr(&recv_bind_addr, "127.0.0.1", 0x5678);
-  KEXPECT_EQ(0, net_bind(s.raw_socket, (struct sockaddr*)&recv_bind_addr,
-                         sizeof(recv_bind_addr)));
-
-  make_saddr(&s.tcp_addr, "127.0.0.1", 0x1234);
-  KEXPECT_EQ(
-      0, net_bind(s.socket, (struct sockaddr*)&s.tcp_addr, sizeof(s.tcp_addr)));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
 
   // Should have received a SYN.
@@ -546,6 +670,40 @@ static void basic_connect_test(void) {
   //  - rebind another socket after first socket is connected
 }
 
+static void basic_connect_test2(void) {
+  KTEST_BEGIN("TCP: basic connect() (v2)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -556,6 +714,7 @@ void tcp_test(void) {
   bind_test();
   multi_bind_test();
   basic_connect_test();
+  basic_connect_test2();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
