@@ -582,7 +582,8 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
   }
 
   if (socket->bind_addr.sa_family != AF_UNSPEC &&
-      !inet_is_anyaddr((const struct sockaddr*)&socket->bind_addr)) {
+      (!inet_is_anyaddr((const struct sockaddr*)&socket->bind_addr) ||
+       !allow_rebind)) {
     return -EINVAL;
   }
 

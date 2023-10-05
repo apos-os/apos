@@ -875,12 +875,102 @@ static void two_simultaneous_connects_test(void) {
   cleanup_tcp_test(&s2);
 }
 
+static void rebind_tests(void) {
+  KTEST_BEGIN("TCP: cannot rebind a bound socket");
+  struct sockaddr_storage result_addr_storage;
+  struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
+  int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "0.0.0.0", 0));
+
+  // See what port it chose.
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
+  KEXPECT_NE(0, result_addr->sin_port);
+  in_port_t bound_port = result_addr->sin_port;
+
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", bound_port));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", bound_port));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 100));
+
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
+  KEXPECT_EQ(bound_port, result_addr->sin_port);
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 0));
+
+  // See what port it chose.
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(result_addr->sin_addr.s_addr));
+  KEXPECT_NE(0, result_addr->sin_port);
+  bound_port = result_addr->sin_port;
+
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", bound_port));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.2", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", bound_port));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.2", 100));
+
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(result_addr->sin_addr.s_addr));
+  KEXPECT_EQ(bound_port, result_addr->sin_port);
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "0.0.0.0", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 200));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 200));
+
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
+  KEXPECT_EQ(btoh16(100), result_addr->sin_port);
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_bind(sock, "127.0.0.1", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.1", 200));
+
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(result_addr->sin_addr.s_addr));
+  KEXPECT_EQ(btoh16(100), result_addr->sin_port);
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
   connect_rst_test();
   multiple_connect_test();
   two_simultaneous_connects_test();
+  rebind_tests();
 }
 
 void tcp_test(void) {
