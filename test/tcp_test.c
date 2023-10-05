@@ -68,6 +68,17 @@ static int set_initial_seqno(int socket, int initial_seq) {
                         sizeof(initial_seq));
 }
 
+static int getsockname_inet(int socket, struct sockaddr_in* sin) {
+  kmemset(sin, 0xab, sizeof(struct sockaddr_in));
+  struct sockaddr_storage sas;
+  int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  if (result) return result;
+  if (sas.sa_family == AF_INET) {
+    kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
+  }
+  return 0;
+}
+
 static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
                              const struct sockaddr_in* b) {
   return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
@@ -250,19 +261,6 @@ static void multi_bind_test(void) {
   KEXPECT_GE(sock2, 0);
   KEXPECT_EQ(-EADDRINUSE,
              net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
-
-  // TODO(tcp): enable this test (and others) when connect is implemented.
-#if 0
-  KTEST_BEGIN("bind(SOCK_STREAM): bind to already-bound and connected address");
-  struct sockaddr_in connected_addr;
-  connected_addr.sin_family = AF_INET;
-  connected_addr.sin_addr.s_addr = str2inet("127.0.0.5");
-  connected_addr.sin_port = 8888;
-  KEXPECT_EQ(
-      0, net_connect(sock, (struct sockaddr*)&connected_addr, sizeof(addr)));
-  KEXPECT_EQ(-EADDRINUSE,
-             net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
-#endif
 
   KTEST_BEGIN("bind(SOCK_STREAM): bind to INADDR_ANY on already-used port");
   addr.sin_addr.s_addr = INADDR_ANY;
@@ -732,16 +730,6 @@ static void basic_connect_test(void) {
   // TODO(tcp): test other operations on the socket now that its closed.
 
   cleanup_tcp_test(&s);
-
-  // TODO(tcp): other tests:
-  //  - rebind in connect() (e.g. bound-to-any-addr then connect())
-
-  // bind+connect tests:
-  //  - implicit bind (unbound)
-  //  - implicit bind (3x: bound to any-addr+port; bound to addr+any-port;
-  //    bound to any-addr+any-port)
-  //  - explicit bind
-  //  - rebind another socket after first socket is connected
 }
 
 static void basic_connect_test2(void) {
@@ -840,6 +828,17 @@ static void two_simultaneous_connects_test(void) {
   KEXPECT_EQ(0, set_initial_seqno(s2.socket, 700));
 
   KEXPECT_EQ(0, do_bind(s1.socket, "127.0.0.1", 0x1234));
+
+  // While we're here, validate binding another socket after the first one
+  // rebinds as well.  Currently we should not be able to bind to
+  // 127.0.0.1:0x1234 because s1 is using it --- but once s1 connects, we should
+  // be able to.  Arguably, s2 shouldn't be allowed to until s1's connect
+  // _completes_, rather than starts, but this is valid behavior IMO and simpler
+  // to implement.  Whether s1's connect() succeeds (in connected sockets map)
+  // or fails (state invalid, unbound), s2 bind to the same local address is OK.
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2.socket, "0.0.0.0", 0x1234));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2.socket, "127.0.0.1", 0x1234));
+
   KEXPECT_TRUE(start_connect(&s1, "127.0.0.2", 0x5678));
   KEXPECT_EQ(0, do_bind(s2.socket, "127.0.0.1", 0x1234));
   KEXPECT_TRUE(start_connect(&s2, "127.0.0.3", 0x5678));
@@ -964,6 +963,121 @@ static void rebind_tests(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+static void implicit_bind_test(void) {
+  KTEST_BEGIN("TCP: socket implicitly binds on connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0 /* will be chosen later */, "127.0.0.2",
+                0x5678);
+
+  // No bind!
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+
+  // Find out what we bound to.  getsockname() _during_ connect() is allowed by
+  // the spec to do this.
+  struct sockaddr_in bound_addr;
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_NE(0, bound_addr.sin_port);
+
+  s.tcp_addr = bound_addr;
+
+  // Now can continue with connection setup.
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Just in case, double check getsockname gives the same thing.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  cleanup_tcp_test(&s);
+
+
+  KTEST_BEGIN("TCP: socket implicitly rebinds any-addr+any-port on connect()");
+  init_tcp_test(&s, "127.0.0.1", 0 /* will be chosen later */, "127.0.0.2",
+                0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "0.0.0.0", 0));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+
+  // As above, find out what port was chosen.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_NE(0, bound_addr.sin_port);
+  s.tcp_addr = bound_addr;
+
+  // Now can continue with connection setup.
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Just in case, double check getsockname gives the same thing.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+
+
+  // Internally this is the same as the above, since ports are picked in bind()
+  // not connect(), but test for completeness.
+  KTEST_BEGIN("TCP: socket implicitly rebinds $IP+any-port on connect()");
+  init_tcp_test(&s, "127.0.0.3", 0 /* will be chosen later */, "127.0.0.2",
+                0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.3", 0));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+
+  // As above, find out what port was chosen.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.3", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_NE(0, bound_addr.sin_port);
+  s.tcp_addr = bound_addr;
+
+  // Now can continue with connection setup.
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Just in case, double check getsockname gives the same thing.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.3", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+
+
+  // Also redundant with the any-ip/any-port, but included for completeness.
+  KTEST_BEGIN("TCP: socket implicitly rebinds any-ip+$PORT on connect()");
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "0.0.0.0", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+
+  // Check that the rebind happened correctly.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_EQ(0x1234, btoh16(bound_addr.sin_port));
+
+  // Now can continue with connection setup.
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Just in case, double check getsockname gives the same thing.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
+  KEXPECT_EQ(AF_INET, bound_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_EQ(0x1234, btoh16(bound_addr.sin_port));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
@@ -971,6 +1085,7 @@ static void connect_tests(void) {
   multiple_connect_test();
   two_simultaneous_connects_test();
   rebind_tests();
+  implicit_bind_test();
 }
 
 void tcp_test(void) {

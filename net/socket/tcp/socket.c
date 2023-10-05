@@ -201,15 +201,13 @@ static int bind_if_necessary(socket_tcp_t* socket,
   // If there is currently a bound port, copy it to the new address.
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
     in_port_t bound_port = get_sockaddrs_port(&socket->bind_addr);
-    if (bound_port != 0) {
-      set_sockaddrs_port(&addr_to_bind, bound_port);
+    KASSERT(bound_port != 0);  // Should never have a bound IP but not a port.
+    set_sockaddrs_port(&addr_to_bind, bound_port);
 
-      char buf[INET_PRETTY_LEN];
-      KLOG(DEBUG2, "TCP: socket %p used bound port for new address %s\n",
-           socket,
-           sockaddr2str((const struct sockaddr*)&addr_to_bind,
-                        sizeof(addr_to_bind), buf));
-    }
+    char buf[INET_PRETTY_LEN];
+    KLOG(DEBUG2, "TCP: socket %p used bound port for new address %s\n", socket,
+         sockaddr2str((const struct sockaddr*)&addr_to_bind,
+                      sizeof(addr_to_bind), buf));
   }
 
   return sock_tcp_bind_locked(socket, (struct sockaddr*)&addr_to_bind,
