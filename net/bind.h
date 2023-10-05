@@ -15,11 +15,16 @@
 #ifndef APOO_NET_BIND_H
 #define APOO_NET_BIND_H
 
+#include "dev/net/nic.h"
 #include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 
 // Returns 0 if the given address is bindable, or -error.
 int inet_bindable(const netaddr_t* addr);
+
+// Returns 0 if the given address can be used as a source for a packet on the
+// given NIC, or -error.
+int inet_source_valid(const netaddr_t* addr, const nic_t* iface);
 
 // Chooses a default bind address for the given address family.  Returns the
 // address of the chosen NIC if successful, or -error if an address isn't found.

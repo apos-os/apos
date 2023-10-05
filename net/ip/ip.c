@@ -18,6 +18,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "net/bind.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
@@ -84,7 +85,12 @@ int ip_send(pbuf_t* pb, bool allow_block) {
     return -EINVAL;  // TODO
   }
 
-  if (route.src.a.ip4.s_addr != hdr->src_addr) {
+  // Check the source address --- for non-RAW sockets, we should not have been
+  // allowed to bind() a socket to this source IP if it wasn't valid.
+  netaddr_t src;
+  src.family = AF_INET;
+  src.a.ip4.s_addr = hdr->src_addr;
+  if (inet_source_valid(&src, route.nic) != 0) {
     KLOG(INFO, "net: unable to route packet with src %s on iface %s\n",
          inet2str(hdr->src_addr, addrbuf), route.nic->name);
     return -EADDRNOTAVAIL;

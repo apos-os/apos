@@ -16,6 +16,7 @@
 
 #include "common/errno.h"
 #include "dev/net/nic.h"
+#include "net/addr.h"
 
 int inet_bindable(const netaddr_t* addr) {
   switch (addr->family) {
@@ -28,10 +29,25 @@ int inet_bindable(const netaddr_t* addr) {
   }
   for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
     nic_t* nic = nic_get(nicidx);
-    for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-      if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
-        return 0;
-      }
+    if (inet_source_valid(addr, nic) == 0) {
+      return 0;
+    }
+  }
+
+  return -EADDRNOTAVAIL;
+}
+
+int inet_source_valid(const netaddr_t* addr, const nic_t* nic) {
+  for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
+    if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
+      return 0;
+    }
+
+    // As a special case, for loopback interfaces, allow binding to any
+    // address in the configured network.
+    if (nic->type == NIC_LOOPBACK &&
+        netaddr_match(addr, &nic->addrs[addridx])) {
+      return 0;
     }
   }
 
