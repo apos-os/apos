@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "net/addr.h"
 #include "net/bind.h"
+#include "net/inet.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/socket/socket.h"
@@ -45,6 +46,13 @@ static const char* sas_ip2str(const struct sockaddr_storage* sas) {
   return ip2str(((struct sockaddr_in*)sas)->sin_addr.s_addr);
 }
 
+static const char* sin2str(const struct sockaddr_in* sin) {
+  static char buf[SOCKADDR_PRETTY_LEN];
+  KASSERT(sin->sin_family == AF_INET);
+  return sockaddr2str((const struct sockaddr*)sin, sizeof(struct sockaddr_in),
+                      buf);
+}
+
 static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = str2inet(addr);
@@ -72,6 +80,17 @@ static int getsockname_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
   int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  if (result) return result;
+  if (sas.sa_family == AF_INET) {
+    kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
+  }
+  return 0;
+}
+
+static int getpeername_inet(int socket, struct sockaddr_in* sin) {
+  kmemset(sin, 0xab, sizeof(struct sockaddr_in));
+  struct sockaddr_storage sas;
+  int result = net_getpeername(socket, (struct sockaddr*)&sas);
   if (result) return result;
   if (sas.sa_family == AF_INET) {
     kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
@@ -183,7 +202,9 @@ static void bind_test(void) {
   struct sockaddr_storage result_addr_storage;
   struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
   KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
-  KEXPECT_EQ(AF_UNSPEC, result_addr->sin_family);
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_EQ(INADDR_ANY, result_addr->sin_addr.s_addr);
+  KEXPECT_EQ(INET_PORT_ANY, result_addr->sin_port);
 
   KTEST_BEGIN("getpeername(SOCK_STREAM): unbound socket");
   KEXPECT_EQ(-ENOTCONN,
@@ -783,7 +804,7 @@ static void connect_rst_test(void) {
   // TODO(tcp): test other methods (read, write, etc) in the error state.
   struct sockaddr_storage unused;
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-ENOTCONN, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.1", 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
@@ -1078,6 +1099,71 @@ static void implicit_bind_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void get_addrs_during_connect_test(void) {
+  KTEST_BEGIN("TCP: getsockname()/getpeername() during connect()/close()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 3456, "127.0.0.2", 7890);
+
+  struct sockaddr_in addr;
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &addr));
+  KEXPECT_STREQ("0.0.0.0:0", sin2str(&addr));
+  KEXPECT_EQ(-ENOTCONN, getpeername_inet(s.socket, &addr));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 3456));
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.1:3456", sin2str(&addr));
+  KEXPECT_EQ(-ENOTCONN, getpeername_inet(s.socket, &addr));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 7890));
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.1:3456", sin2str(&addr));
+  // We should not be able to get the peer name until the connect finishes.
+  KEXPECT_EQ(-ENOTCONN, getpeername_inet(s.socket, &addr));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.1:3456", sin2str(&addr));
+  KEXPECT_EQ(0, getpeername_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.2:7890", sin2str(&addr));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // The socket is still considered connected (partially).
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.1:3456", sin2str(&addr));
+  KEXPECT_EQ(0, getpeername_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.2:7890", sin2str(&addr));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Arguably this shouldn't return an address anymore, but on macos it does and
+  // the implementation is simpler so /shruggie.  -EINVAL would be OK.
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &addr));
+  KEXPECT_STREQ("127.0.0.1:3456", sin2str(&addr));
+  KEXPECT_EQ(-EINVAL, getpeername_inet(s.socket, &addr));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+
+  // TODO(tcp): test the other shutdown path (local close first) once
+  // implemented.
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
@@ -1086,6 +1172,7 @@ static void connect_tests(void) {
   two_simultaneous_connects_test();
   rebind_tests();
   implicit_bind_test();
+  get_addrs_during_connect_test();
 }
 
 void tcp_test(void) {

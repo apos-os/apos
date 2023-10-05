@@ -854,11 +854,15 @@ static int sock_tcp_getsockname(socket_t* socket_base,
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = 0;
-  // TODO(tcp): this is wrong --- pre-established should return ANY_ADDR.
-  if (socket->bind_addr.sa_family != AF_UNSPEC ||
-      get_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
+  if (socket->bind_addr.sa_family != AF_UNSPEC) {
     kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
+  } else if (socket->state == TCP_CLOSED) {
+    // We haven't bound yet.
+    inet_make_anyaddr(socket_base->s_domain, address);
   } else {
+    // In every pre-established state, we should either be CLOSED, or have
+    // bound (and therefore be caught above either way).
+    KASSERT_DBG(get_state_type(socket->state) != TCPSTATE_PRE_ESTABLISHED);
     result = -EINVAL;
   }
   kspin_unlock(&socket->spin_mu);
@@ -874,12 +878,17 @@ static int sock_tcp_getpeername(socket_t* socket_base,
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = 0;
-  // TODO(tcp): check socket state as well
-  if (socket->connected_addr.sa_family != AF_UNSPEC) {
+  if (get_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
+    result = -ENOTCONN;
+  } else if (get_state_type(socket->state) == TCPSTATE_POST_ESTABLISHED) {
+    result = -EINVAL;
+  } else if (socket->connected_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->bind_addr.sa_family ==      // If connected, must be
                 socket->connected_addr.sa_family);  // bound as well.
     kmemcpy(address, &socket->connected_addr, sizeof(socket->connected_addr));
   } else {
+    KLOG(DFATAL, "TCP: socket %p connected_addr should be set but isn't\n",
+         socket_base);
     result = -ENOTCONN;
   }
   kspin_unlock(&socket->spin_mu);
