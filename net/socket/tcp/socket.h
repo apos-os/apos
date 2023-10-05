@@ -37,6 +37,9 @@ typedef struct socket_tcp {
   // Current state of the socket.
   socktcp_state_t state;
 
+  // Current error on the socket, or zero.
+  int error;
+
   // Refcount (for internal TCP usage --- all external references are via a file
   // descriptor, which consumes one ref here).
   refcount_t ref;
@@ -69,5 +72,22 @@ typedef struct socket_tcp {
   // transitions.
   kspinlock_t spin_mu;
 } socket_tcp_t;
+
+// Categories of socket states (for internal use).
+typedef enum {
+  // A connection has not yet been established, or is being established; data
+  // cannot flow yet.
+  TCPSTATE_PRE_ESTABLISHED,
+
+  // Connection is established or may be in the process of closing; data may
+  // still be able to flow in one or both directions.
+  TCPSTATE_ESTABLISHED,
+
+  // Connection is in the process of closing or is closed; no new data may flow
+  // in either direction anymore (ACKs and retransmits may still).
+  TCPSTATE_POST_ESTABLISHED,
+} socktcp_state_type_t;
+
+socktcp_state_type_t get_state_type(socktcp_state_t s);
 
 #endif

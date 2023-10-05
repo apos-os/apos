@@ -85,6 +85,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->base.s_ops = &g_tcp_socket_ops;
 
   sock->state = TCP_CLOSED;
+  sock->error = 0;
   sock->ref = REFCOUNT_INIT;
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
@@ -98,6 +99,24 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
 
   *out = &(sock->base);
   return 0;
+}
+
+socktcp_state_type_t get_state_type(socktcp_state_t s) {
+  switch (s) {
+    case TCP_CLOSED:
+    case TCP_SYN_SENT:
+      return TCPSTATE_PRE_ESTABLISHED;
+
+    case TCP_ESTABLISHED:
+    case TCP_CLOSE_WAIT:
+      return TCPSTATE_ESTABLISHED;
+
+    case TCP_LAST_ACK:
+    case TCP_CLOSED_DONE:
+      return TCPSTATE_POST_ESTABLISHED;
+  }
+  KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)s);
+  return TCPSTATE_POST_ESTABLISHED;
 }
 
 static inline const char* state2str(socktcp_state_t state) {
@@ -295,6 +314,15 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, pbuf_t* pb) {
 
 static bool tcp_handle_synsent(socket_tcp_t* socket, pbuf_t* pb) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  if (tcp_hdr->flags & TCP_FLAG_RST) {
+    KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
+    kspin_lock(&socket->spin_mu);
+    socket->error = ECONNREFUSED;
+    finish_protocol_close(socket);
+    kspin_unlock(&socket->spin_mu);
+    return true;
+  }
+
   bool is_synack =
       (tcp_hdr->flags & TCP_FLAG_SYN) && (tcp_hdr->flags & TCP_FLAG_ACK);
   if (!is_synack) {
@@ -549,7 +577,10 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
                                 const struct sockaddr* address,
                                 socklen_t address_len, bool allow_rebind) {
   kmutex_assert_is_held(&socket->mu);
-  KASSERT_DBG(is_in_state(socket, TCP_CLOSED));
+  if (!is_in_state(socket, TCP_CLOSED)) {
+    return -EINVAL;
+  }
+
   if (socket->bind_addr.sa_family != AF_UNSPEC &&
       !inet_is_anyaddr((const struct sockaddr*)&socket->bind_addr)) {
     return -EINVAL;
@@ -658,10 +689,26 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
   kmutex_lock(&sock->mu);
 
-  if (!is_in_state(sock, TCP_CLOSED)) {
+  kspin_lock(&sock->spin_mu);
+  if (sock->state != TCP_CLOSED) {
+    int result = 0;
+    // TODO(tcp): return -EOPNOTSUPP for listening sockets.
+    switch (get_state_type(sock->state)) {
+      case TCPSTATE_PRE_ESTABLISHED:
+        result = -EALREADY;
+        break;
+      case TCPSTATE_ESTABLISHED:
+        result = -EISCONN;
+        break;
+      case TCPSTATE_POST_ESTABLISHED:
+        result = -EINVAL;
+        break;
+    }
+    kspin_unlock(&sock->spin_mu);
     kmutex_unlock(&sock->mu);
-    return -EISCONN;
+    return result;
   }
+  kspin_unlock(&sock->spin_mu);
 
   netaddr_t dest;
   int result = sock2netaddr(address, address_len, &dest, NULL);
@@ -688,6 +735,9 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   // Update our state and put us in the connected sockets table.  State must be
   // updated before the table, or atomically together.
   kspin_lock(&sock->spin_mu);
+  // Mutex locked, and TCP_CLOSED is a defint-stable STATE.
+  KASSERT_DBG(sock->state == TCP_CLOSED);
+
   kspin_lock(&g_tcp.lock);
   void* val;
   if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
@@ -754,6 +804,12 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
     }
   }
 
+  if (sock->error) {
+    KASSERT(sock->state == TCP_CLOSED_DONE);
+    result = -sock->error;
+    sock->error = 0;
+  }
+
   if (result == 0) {
     KASSERT_DBG(sock->state == TCP_ESTABLISHED);
   }
@@ -797,8 +853,17 @@ static int sock_tcp_getsockname(socket_t* socket_base,
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
-  kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
-  return 0;
+  kspin_lock(&socket->spin_mu);
+  int result = 0;
+  // TODO(tcp): this is wrong --- pre-established should return ANY_ADDR.
+  if (socket->bind_addr.sa_family != AF_UNSPEC ||
+      get_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
+    kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
+  } else {
+    result = -EINVAL;
+  }
+  kspin_unlock(&socket->spin_mu);
+  return result;
 }
 
 static int sock_tcp_getpeername(socket_t* socket_base,
@@ -808,12 +873,18 @@ static int sock_tcp_getpeername(socket_t* socket_base,
 
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
+  kspin_lock(&socket->spin_mu);
+  int result = 0;
   // TODO(tcp): check socket state as well
-  if (socket->connected_addr.sa_family == AF_UNSPEC) {
-    return -ENOTCONN;
+  if (socket->connected_addr.sa_family != AF_UNSPEC) {
+    KASSERT_DBG(socket->bind_addr.sa_family ==      // If connected, must be
+                socket->connected_addr.sa_family);  // bound as well.
+    kmemcpy(address, &socket->connected_addr, sizeof(socket->connected_addr));
+  } else {
+    result = -ENOTCONN;
   }
-  kmemcpy(address, &socket->connected_addr, sizeof(socket->connected_addr));
-  return 0;
+  kspin_unlock(&socket->spin_mu);
+  return result;
 }
 
 static int sock_tcp_poll(socket_t* socket_base, short event_mask,

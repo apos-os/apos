@@ -352,6 +352,9 @@ static void* tcp_thread_connect(void* arg) {
     if (!_result) return false;    \
   } while (0)
 
+// Start an async connect() call in another thread and ensure it blocks.  The
+// test should either manually finish the connect call (with the SYN/SYN-ACK/ACK
+// sequence, or a variant), or call finish_standard_connect() below.
 static bool start_connect(tcp_test_state_t* s, const char* ip, int port) {
   ntfn_init(&s->op_started);
   ntfn_init(&s->op_done);
@@ -377,13 +380,17 @@ static int finish_op(tcp_test_state_t* s) {
   return s->op_result;
 }
 
-static bool raw_has_packets(tcp_test_state_t* s) {
+static bool raw_has_packets_wait(tcp_test_state_t* s, int timeout_ms) {
   struct apos_pollfd pfd;
   pfd.events = KPOLLIN;
   pfd.fd = s->raw_socket;
-  int result = vfs_poll(&pfd, 1, 0);
+  int result = vfs_poll(&pfd, 1, timeout_ms);
   KASSERT(result >= 0);
   return (result > 0);
+}
+
+static bool raw_has_packets(tcp_test_state_t* s) {
+  return raw_has_packets_wait(s, 0);
 }
 
 static ssize_t do_raw_recv(tcp_test_state_t* s) {
@@ -432,6 +439,11 @@ static test_packet_spec_t ACK_PKT(int seq, int ack) {
 static test_packet_spec_t FIN_PKT(int seq, int ack) {
   return ((test_packet_spec_t){
       .flags = TCP_FLAG_FIN | TCP_FLAG_ACK, .seq = seq, .ack = ack});
+}
+
+static test_packet_spec_t RST_PKT(int ack) {
+  return (
+      (test_packet_spec_t){.flags = TCP_FLAG_RST | TCP_FLAG_ACK, .ack = ack});
 }
 
 #define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt((_state), (_spec)));
@@ -514,6 +526,43 @@ static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   tcp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), tcp_hdr, tcp_len);
   return KEXPECT_EQ(tcp_len, do_raw_send(s, tcp_hdr, tcp_len));
+}
+
+// Standard operations for tests that don't care about specifics.
+
+// Finish an async connect() call started with start_connect().
+static bool finish_standard_connect(tcp_test_state_t* s) {
+  bool v = true;
+  v &= EXPECT_PKT(s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  v &=
+      SEND_PKT(s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  v &= EXPECT_PKT(s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  v &= KEXPECT_EQ(0, finish_op(s));  // connect() should complete successfully.
+  return v;
+}
+
+// Do a standard remote-triggered "connection closed" sequence.  Must pass the
+// amount of data send and received on the socket during the course of the test.
+static bool do_standard_finish(tcp_test_state_t* s, ssize_t data_sent,
+                               ssize_t data_received) {
+  bool v = true;
+  uint32_t sock_seq = 101 + data_sent;
+  uint32_t remote_seq = 501 + data_received;
+
+  // Send FIN to start connection close.
+  v &= SEND_PKT(s, FIN_PKT(/* seq */ remote_seq, /* ack */ sock_seq));
+
+  // Should get an ACK.
+  v &= EXPECT_PKT(s, ACK_PKT(/* seq */ sock_seq, /* ack */ remote_seq + 1));
+  v &= KEXPECT_FALSE(raw_has_packets(s));
+
+  // Shutdown the connection from this side.
+  v &= KEXPECT_EQ(0, net_shutdown(s->socket, SHUT_WR));
+
+  // Should get a FIN.
+  v &= EXPECT_PKT(s, FIN_PKT(/* seq */ sock_seq, /* ack */ remote_seq + 1));
+  v &= SEND_PKT(s, ACK_PKT(remote_seq + 1, /* ack */ sock_seq + 1));
+  return v;
 }
 
 static void basic_connect_test(void) {
@@ -704,6 +753,67 @@ static void basic_connect_test2(void) {
   KEXPECT_EQ(0, vfs_close(s.raw_socket));
 }
 
+static void connect_rst_test(void) {
+  KTEST_BEGIN("TCP: RST during connect() (connection refused)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNREFUSED, finish_op(&s));
+
+  // TODO(tcp): test other methods (read, write, etc) in the error state.
+  struct sockaddr_storage unused;
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.1", 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
+
+  // TODO(tcp): if SO_ERROR is implemented, test here as well.
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+}
+
+static void multiple_connect_test(void) {
+  KTEST_BEGIN("TCP: multiple connect() calls");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Try connect() while another thread is blocked in connect().
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 55));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.5", 55));
+
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Try connect() on a connected socket.
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.1", 55));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.5", 55));
+
+  // Finish up.
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+}
+
+static void connect_tests(void) {
+  basic_connect_test();
+  basic_connect_test2();
+  connect_rst_test();
+  multiple_connect_test();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -713,8 +823,7 @@ void tcp_test(void) {
   sockopt_test();
   bind_test();
   multi_bind_test();
-  basic_connect_test();
-  basic_connect_test2();
+  connect_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
