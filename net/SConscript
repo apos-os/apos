@@ -15,6 +15,7 @@
 Import('env AposAddSources')
 
 srcs = [
+  'addr.c',
   'bind.c',
   'icmp.c',
   'init.c',

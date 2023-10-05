@@ -34,61 +34,6 @@ typedef struct {
 // TODO(aoates): support multiple default routes (e.g. ipv4 and ipv6).
 static ip_route_rule_t g_default_route;
 
-static in_addr_t kNetMasks[33] = {
-  0x00000000,
-  0x80000000,
-  0xc0000000,
-  0xe0000000,
-  0xf0000000,
-  0xf8000000,
-  0xfc000000,
-  0xfe000000,
-  0xff000000,
-  0xff800000,
-  0xffc00000,
-  0xffe00000,
-  0xfff00000,
-  0xfff80000,
-  0xfffc0000,
-  0xfffe0000,
-  0xffff0000,
-  0xffff8000,
-  0xffffc000,
-  0xffffe000,
-  0xfffff000,
-  0xfffff800,
-  0xfffffc00,
-  0xfffffe00,
-  0xffffff00,
-  0xffffff80,
-  0xffffffc0,
-  0xffffffe0,
-  0xfffffff0,
-  0xfffffff8,
-  0xfffffffc,
-  0xfffffffe,
-  0xffffffff,
-};
-
-static bool netmatch(const netaddr_t* addr, const network_t* network) {
-  if (addr->family != network->addr.family) {
-    return false;
-  }
-  switch (addr->family) {
-    case ADDR_INET: {
-      KASSERT_DBG(network->prefix_len <= 32 && network->prefix_len >= 0);
-      const in_addr_t mask = htob32(kNetMasks[network->prefix_len]);
-      return (addr->a.ip4.s_addr & mask) == (network->addr.a.ip4.s_addr & mask);
-    }
-
-    case ADDR_UNSPEC:
-      break;
-  }
-
-  // Unknown address type.
-  return false;
-}
-
 // TODO(aoates): write some tests for this.
 bool ip_route(netaddr_t dst, ip_routed_t* result) {
   // First try to find a NIC with a matching network.
@@ -109,7 +54,7 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
         return (result->nic != NULL);
       }
       if (nic->addrs[addridx].prefix_len > longest_prefix &&
-          netmatch(&dst, &nic->addrs[addridx])) {
+          netaddr_match(&dst, &nic->addrs[addridx])) {
         result->nic = nic;
         result->src = nic->addrs[addridx].addr;
         longest_prefix = nic->addrs[addridx].prefix_len;

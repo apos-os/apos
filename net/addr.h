@@ -15,6 +15,8 @@
 #ifndef APOO_NET_ADDR_H
 #define APOO_NET_ADDR_H
 
+#include <stdbool.h>
+
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
@@ -38,5 +40,8 @@ typedef struct {
   netaddr_t addr;  // The address or prefix.
   int prefix_len;  // Length of the network's prefix (i.e. netmask)
 } network_t;
+
+bool netaddr_eq(const netaddr_t* a, const netaddr_t* b);
+bool netaddr_match(const netaddr_t* addr, const network_t* network);
 
 #endif

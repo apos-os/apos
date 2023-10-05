@@ -17,19 +17,6 @@
 #include "common/errno.h"
 #include "dev/net/nic.h"
 
-static bool addr_eq(const netaddr_t* a, const netaddr_t* b) {
-  if (a->family != b->family) return false;
-  switch (a->family) {
-    case ADDR_INET:
-      return a->a.ip4.s_addr == b->a.ip4.s_addr;
-
-    case ADDR_UNSPEC:
-      break;
-  }
-
-  return false;
-}
-
 int inet_bindable(const netaddr_t* addr) {
   switch (addr->family) {
     case AF_INET:
@@ -42,11 +29,12 @@ int inet_bindable(const netaddr_t* addr) {
   for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
     nic_t* nic = nic_get(nicidx);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-      if (addr_eq(&nic->addrs[addridx].addr, addr)) {
+      if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
         return 0;
       }
     }
   }
+
   return -EADDRNOTAVAIL;
 }
 
