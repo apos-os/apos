@@ -337,6 +337,11 @@ static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
                          sizeof(s->raw_addr)));
 }
 
+static void cleanup_tcp_test(tcp_test_state_t* s) {
+  KEXPECT_EQ(0, vfs_close(s->socket));
+  KEXPECT_EQ(0, vfs_close(s->raw_socket));
+}
+
 static void* tcp_thread_connect(void* arg) {
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   ntfn_notify(&s->op_started);
@@ -703,8 +708,7 @@ static void basic_connect_test(void) {
 
   // TODO(tcp): test other operations on the socket now that its closed.
 
-  KEXPECT_EQ(0, vfs_close(s.socket));
-  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+  cleanup_tcp_test(&s);
 
   // TODO(tcp): other tests:
   //  - sends sends SYN with different IP address (current routing logic doesn't
@@ -749,8 +753,7 @@ static void basic_connect_test2(void) {
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
   SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
 
-  KEXPECT_EQ(0, vfs_close(s.socket));
-  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+  cleanup_tcp_test(&s);
 }
 
 static void connect_rst_test(void) {
@@ -777,8 +780,7 @@ static void connect_rst_test(void) {
 
   // TODO(tcp): if SO_ERROR is implemented, test here as well.
 
-  KEXPECT_EQ(0, vfs_close(s.socket));
-  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+  cleanup_tcp_test(&s);
 }
 
 static void multiple_connect_test(void) {
@@ -803,8 +805,7 @@ static void multiple_connect_test(void) {
   // Finish up.
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
 
-  KEXPECT_EQ(0, vfs_close(s.socket));
-  KEXPECT_EQ(0, vfs_close(s.raw_socket));
+  cleanup_tcp_test(&s);
 }
 
 static void connect_tests(void) {
