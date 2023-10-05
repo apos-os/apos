@@ -541,6 +541,70 @@ static void sockopt_test(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+static void bind_filtering_test(void) {
+  KTEST_BEGIN("SOCK_RAW: bound sockets only receive packets to their IP");
+  int send_sock = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  int recv_sock_bound = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  int recv_sock_unbound = net_socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
+  KEXPECT_GE(send_sock, 0);
+  KEXPECT_GE(recv_sock_bound, 0);
+  KEXPECT_GE(recv_sock_unbound, 0);
+  vfs_make_nonblock(recv_sock_bound);
+  vfs_make_nonblock(recv_sock_unbound);
+
+  struct sockaddr_in bind_addr;
+  bind_addr.sin_family = AF_INET;
+  bind_addr.sin_addr.s_addr = str2inet("127.0.0.5");
+  KEXPECT_EQ(0, net_bind(recv_sock_bound, (struct sockaddr*)&bind_addr,
+                         sizeof(bind_addr)));
+
+  // Send two packets, one to the bound address and one to a different one.
+  KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&bind_addr,
+                           sizeof(bind_addr)));
+  bind_addr.sin_addr.s_addr = str2inet("127.0.0.6");
+  KEXPECT_EQ(2, net_sendto(send_sock, "de", 2, 0, (struct sockaddr*)&bind_addr,
+                           sizeof(bind_addr)));
+
+  // The bound socket should only receive one packet, while the unbound should
+  // receive two.
+  char buf[100];
+  kmemset(buf, 0, 100);
+  int result = net_recv(recv_sock_bound, buf, 100, 0);
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, result);
+
+  ip4_hdr_t* hdr = (ip4_hdr_t*)buf;
+  char prettybuf[INET_PRETTY_LEN];
+  KEXPECT_STREQ("127.0.0.1", inet2str(hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.5", inet2str(hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(IPPROTO_ICMP, hdr->protocol);
+  KEXPECT_EQ(0, ip_checksum(hdr, sizeof(ip4_hdr_t)));
+  KEXPECT_STREQ(buf + sizeof(ip4_hdr_t), "abc");
+
+  // No second packet.
+  KEXPECT_EQ(-EAGAIN, net_recv(recv_sock_bound, buf, 100, 0));
+
+  // The unbound socket should get both.
+  kmemset(buf, 0, 100);
+  result = net_recv(recv_sock_unbound, buf, 100, 0);
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 3, result);
+
+  KEXPECT_STREQ("127.0.0.1", inet2str(hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.5", inet2str(hdr->dst_addr, prettybuf));
+  KEXPECT_STREQ(buf + sizeof(ip4_hdr_t), "abc");
+
+  kmemset(buf, 0, 100);
+  result = net_recv(recv_sock_unbound, buf, 100, 0);
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 2, result);
+
+  KEXPECT_STREQ("127.0.0.1", inet2str(hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("127.0.0.6", inet2str(hdr->dst_addr, prettybuf));
+  KEXPECT_STREQ(buf + sizeof(ip4_hdr_t), "de");
+
+  KEXPECT_EQ(0, vfs_close(send_sock));
+  KEXPECT_EQ(0, vfs_close(recv_sock_bound));
+  KEXPECT_EQ(0, vfs_close(recv_sock_unbound));
+}
+
 void socket_raw_test(void) {
   KTEST_SUITE_BEGIN("Socket (raw)");
   block_cache_clear_unpinned();
@@ -554,6 +618,7 @@ void socket_raw_test(void) {
   connect_test();
   raw_poll_test();
   sockopt_test();
+  bind_filtering_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
