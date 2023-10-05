@@ -573,10 +573,10 @@ static bool do_standard_finish(tcp_test_state_t* s, ssize_t data_sent,
 static void basic_connect_test(void) {
   KTEST_BEGIN("TCP: basic connect()");
   tcp_test_state_t s;
-  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
 
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
 
   // Should have received a SYN.
   int result = do_raw_recv(&s);
@@ -591,9 +591,9 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(0, ip_hdr->flags_fragoff);
   KEXPECT_GE(ip_hdr->ttl, 10);
   KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
-  KEXPECT_EQ(0x7cce, btoh16(ip_hdr->hdr_checksum));
+  KEXPECT_EQ(0x7ccd, btoh16(ip_hdr->hdr_checksum));
   KEXPECT_STREQ("127.0.0.1", ip2str(ip_hdr->src_addr));
-  KEXPECT_STREQ("127.0.0.1", ip2str(ip_hdr->dst_addr));
+  KEXPECT_STREQ("127.0.0.2", ip2str(ip_hdr->dst_addr));
 
   // Validate the TCP header.
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s.recv[sizeof(ip4_hdr_t)];
@@ -605,7 +605,7 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_SYN, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0x08d0, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0x08cf, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   // Send SYN-ACK back.  Raw socket will make the IP header for us.
@@ -613,7 +613,7 @@ static void basic_connect_test(void) {
   tcp_hdr->dst_port = btoh16(0x1234);
   tcp_hdr->seq = btoh32(0x1000);
   tcp_hdr->ack = btoh32(101);
-  tcp_hdr->checksum = 0x7f19;
+  tcp_hdr->checksum = 0x7e19;
   tcp_hdr->flags = TCP_FLAG_SYN | TCP_FLAG_ACK;
   tcp_hdr->wndsize = btoh16(8000);
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
@@ -623,7 +623,7 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t), result);
   KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
   KEXPECT_STREQ("127.0.0.1", ip2str(ip_hdr->src_addr));
-  KEXPECT_STREQ("127.0.0.1", ip2str(ip_hdr->dst_addr));
+  KEXPECT_STREQ("127.0.0.2", ip2str(ip_hdr->dst_addr));
 
   // Validate the TCP header.
   KEXPECT_EQ(0x1234, btoh16(tcp_hdr->src_port));
@@ -634,7 +634,7 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_ACK, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0xf8bf, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0xf8be, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
@@ -650,7 +650,7 @@ static void basic_connect_test(void) {
   tcp_hdr->data_offset = 5;
   tcp_hdr->flags = TCP_FLAG_FIN | TCP_FLAG_ACK;
   tcp_hdr->wndsize = 8000;
-  tcp_hdr->checksum = 0x9ff8;
+  tcp_hdr->checksum = 0x9ef8;
 
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
 
@@ -660,7 +660,7 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t), result);
   KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
   KEXPECT_STREQ("127.0.0.1", ip2str(ip_hdr->src_addr));
-  KEXPECT_STREQ("127.0.0.1", ip2str(ip_hdr->dst_addr));
+  KEXPECT_STREQ("127.0.0.2", ip2str(ip_hdr->dst_addr));
 
   KEXPECT_EQ(0x1234, btoh16(tcp_hdr->src_port));
   KEXPECT_EQ(0x5678, btoh16(tcp_hdr->dst_port));
@@ -670,7 +670,7 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_ACK, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0xf8be, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0xf8bd, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   // TODO(tcp): verify that read() returns 0/EOF.
@@ -691,7 +691,7 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(5, tcp_hdr->data_offset);
   KEXPECT_EQ(TCP_FLAG_FIN | TCP_FLAG_ACK, tcp_hdr->flags);
   KEXPECT_EQ(16384, btoh16(tcp_hdr->wndsize));
-  KEXPECT_EQ(0xf8bd, btoh16(tcp_hdr->checksum));
+  KEXPECT_EQ(0xf8bc, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
   // Send final ack.
@@ -703,7 +703,7 @@ static void basic_connect_test(void) {
   tcp_hdr->data_offset = 5;
   tcp_hdr->flags = TCP_FLAG_ACK;
   tcp_hdr->wndsize = 8000;
-  tcp_hdr->checksum = 0x9ef8;
+  tcp_hdr->checksum = 0x9df8;
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
 
   // TODO(tcp): test other operations on the socket now that its closed.
@@ -711,8 +711,6 @@ static void basic_connect_test(void) {
   cleanup_tcp_test(&s);
 
   // TODO(tcp): other tests:
-  //  - sends sends SYN with different IP address (current routing logic doesn't
-  //  allow us to bind to e.g. a 127.0.0.2 address for the raw socket).
   //  - rebind in connect() (e.g. bound-to-any-addr then connect())
 
   // bind+connect tests:
@@ -759,10 +757,10 @@ static void basic_connect_test2(void) {
 static void connect_rst_test(void) {
   KTEST_BEGIN("TCP: RST during connect() (connection refused)");
   tcp_test_state_t s;
-  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.5", 0x5678);
 
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.5", 0x5678));
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
 
   // Send RST.
@@ -776,7 +774,9 @@ static void connect_rst_test(void) {
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-ENOTCONN, net_getpeername(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.1", 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
 
   // TODO(tcp): if SO_ERROR is implemented, test here as well.
 
@@ -786,20 +786,21 @@ static void connect_rst_test(void) {
 static void multiple_connect_test(void) {
   KTEST_BEGIN("TCP: multiple connect() calls");
   tcp_test_state_t s;
-  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
 
   // Try connect() while another thread is blocked in connect().
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 55));
   KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 55));
   KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.5", 55));
 
   KEXPECT_TRUE(finish_standard_connect(&s));
 
   // Try connect() on a connected socket.
-  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.1", 0x5678));
-  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.1", 55));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.2", 0x5678));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.2", 55));
   KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.5", 55));
 
   // Finish up.
