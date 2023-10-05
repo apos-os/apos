@@ -63,6 +63,11 @@ static int do_connect(int sock, const char* addr, int port) {
   return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
 }
 
+static int set_initial_seqno(int socket, int initial_seq) {
+  return net_setsockopt(socket, IPPROTO_TCP, SO_TCP_SEQ_NUM, &initial_seq,
+                        sizeof(initial_seq));
+}
+
 static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
                              const struct sockaddr_in* b) {
   return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
@@ -98,6 +103,26 @@ static void tcp_key_test(void) {
   src1 = src2;
   src1.sin_addr.s_addr = str2inet("10.0.1.2");
   KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
+
+  // Test sensitivity to each element of the 5-tuple.
+  src2 = src1;
+  dst2 = dst1;
+  tcp_key_t orig = tcp_key_sin(&src2, &dst2);
+  src2.sin_addr.s_addr++;
+  KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  src2 = src1;
+
+  src2.sin_port++;
+  KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  src2 = src1;
+
+  dst2.sin_addr.s_addr++;
+  KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  dst2 = dst1;
+
+  dst2.sin_port++;
+  KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  dst2 = dst1;
 }
 
 static void tcp_socket_test(void) {
@@ -315,14 +340,15 @@ typedef struct {
 } tcp_test_state_t;
 
 // Creates and initializes the test state.  Does _not_ bind the test socket.
+// Multiple test states may be used in the same test simultaneously to test
+// different sockets simultaneously --- the raw recv sockets should each bind to
+// a different IP, however, or each will get packets sent by all test sockets.
 static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
                           int tcp_port, const char* dst_addr, int dst_port) {
   s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(s->socket, 0);
 
-  int initial_seq = 100;
-  KEXPECT_EQ(0, net_setsockopt(s->socket, IPPROTO_TCP, SO_TCP_SEQ_NUM,
-                               &initial_seq, sizeof(initial_seq)));
+  KEXPECT_EQ(0, set_initial_seqno(s->socket, 100));
 
   s->tcp_addr_str = tcp_addr;
   make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
@@ -350,13 +376,6 @@ static void* tcp_thread_connect(void* arg) {
   return NULL;
 }
 
-#define KEXPECT_TRUE_OR_RETURN(_x) \
-  do {                             \
-    bool _result = (_x);           \
-    KEXPECT_TRUE(_result);         \
-    if (!_result) return false;    \
-  } while (0)
-
 // Start an async connect() call in another thread and ensure it blocks.  The
 // test should either manually finish the connect call (with the SYN/SYN-ACK/ACK
 // sequence, or a variant), or call finish_standard_connect() below.
@@ -366,7 +385,10 @@ static bool start_connect(tcp_test_state_t* s, const char* ip, int port) {
   s->arg_addr = ip;
   s->arg_port = port;
   KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_connect, s));
-  KEXPECT_TRUE_OR_RETURN(ntfn_await_with_timeout(&s->op_started, 5000));
+  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+    KTEST_ADD_FAILURE("connect() thread didn't start");
+    return false;
+  }
   if (ntfn_await_with_timeout(&s->op_done, 20)) {
     KTEST_ADD_FAILURE("connect() finished without blocking");
     KEXPECT_EQ(0, s->op_result);  // Get the error code.
@@ -451,15 +473,16 @@ static test_packet_spec_t RST_PKT(int ack) {
       (test_packet_spec_t){.flags = TCP_FLAG_RST | TCP_FLAG_ACK, .ack = ack});
 }
 
-#define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt((_state), (_spec)));
-#define SEND_PKT(_state, _spec) KEXPECT_TRUE(send_pkt((_state), (_spec)));
+#define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt(_state, _spec))
+#define SEND_PKT(_state, _spec) KEXPECT_TRUE(send_pkt(_state, _spec))
 
 // Expects to receive a packet matching the given description, returning true if
 // it does.
 static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
-  KEXPECT_TRUE_OR_RETURN(raw_has_packets(s));
-
   bool v = true;
+  v &= KEXPECT_TRUE(raw_has_packets(s));
+  if (!v) return v;
+
   int result = do_raw_recv(s);
   v &= KEXPECT_GE(result, 0);
   if (!v) return v;
@@ -809,11 +832,55 @@ static void multiple_connect_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void two_simultaneous_connects_test(void) {
+  KTEST_BEGIN("TCP: two sockets connecting simultaneously");
+  tcp_test_state_t s1, s2;
+  init_tcp_test(&s1, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
+  init_tcp_test(&s2, "127.0.0.1", 0x1234, "127.0.0.3", 0x5678);
+  KEXPECT_EQ(0, set_initial_seqno(s2.socket, 700));
+
+  KEXPECT_EQ(0, do_bind(s1.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s1, "127.0.0.2", 0x5678));
+  KEXPECT_EQ(0, do_bind(s2.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s2, "127.0.0.3", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK for both sockets, interleaved.
+  EXPECT_PKT(&s2, SYN_PKT(/* seq */ 700, /* wndsize */ 0));
+  SEND_PKT(&s2, SYNACK_PKT(/* seq */ 800, /* ack */ 701, /* wndsize */ 8000));
+  EXPECT_PKT(&s1, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  SEND_PKT(&s1, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s1, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  EXPECT_PKT(&s2, ACK_PKT(/* seq */ 701, /* ack */ 801));
+
+  // connect() should complete successfully.
+  KEXPECT_EQ(0, finish_op(&s1));
+  KEXPECT_EQ(0, finish_op(&s2));
+
+  // TODO(tcp): exchange data.
+
+  // Close each connection.
+  SEND_PKT(&s1, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  SEND_PKT(&s2, FIN_PKT(/* seq */ 801, /* ack */ 701));
+  EXPECT_PKT(&s1, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  EXPECT_PKT(&s2, ACK_PKT(/* seq */ 701, /* ack */ 802));
+  KEXPECT_EQ(0, net_shutdown(s1.socket, SHUT_WR));
+  KEXPECT_EQ(0, net_shutdown(s2.socket, SHUT_WR));
+
+  EXPECT_PKT(&s1, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  EXPECT_PKT(&s2, FIN_PKT(/* seq */ 701, /* ack */ 802));
+  SEND_PKT(&s1, ACK_PKT(502, /* ack */ 102));
+  SEND_PKT(&s2, ACK_PKT(802, /* ack */ 702));
+
+  cleanup_tcp_test(&s1);
+  cleanup_tcp_test(&s2);
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
   connect_rst_test();
   multiple_connect_test();
+  two_simultaneous_connects_test();
 }
 
 void tcp_test(void) {
