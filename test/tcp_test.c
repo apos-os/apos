@@ -155,6 +155,95 @@ static void tcp_key_test(void) {
   dst2 = dst1;
 }
 
+static void seqno_test(void) {
+  KTEST_BEGIN("TCP: sequence number comparisons test");
+  KEXPECT_TRUE(seq_lt(0, 1));
+  KEXPECT_TRUE(seq_lt(0, UINT32_MAX / 2 - 1));
+
+  // Cut ties in favor of "less than".
+  KEXPECT_TRUE(seq_lt(0, UINT32_MAX / 2));
+  KEXPECT_FALSE(seq_lt(0, UINT32_MAX / 2 + 1));
+  KEXPECT_FALSE(seq_lt(UINT32_MAX / 2, UINT32_MAX));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX / 2 + 1, UINT32_MAX));
+  KEXPECT_FALSE(seq_lt(UINT32_MAX / 2 - 1, UINT32_MAX));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX - 1, UINT32_MAX));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX / 2 - 1, UINT32_MAX / 2));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX / 2, UINT32_MAX / 2 + 1));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX, 0));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX, 1));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX - 1, 1));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX / 2 + 2, 0));
+  KEXPECT_FALSE(seq_lt(0, 0));
+  KEXPECT_FALSE(seq_lt(UINT32_MAX, UINT32_MAX));
+  KEXPECT_FALSE(seq_lt(UINT32_MAX / 2, UINT32_MAX / 2));
+  KEXPECT_FALSE(seq_lt(1, 0));
+  KEXPECT_FALSE(seq_lt(UINT32_MAX / 2 - 1, 0));
+  KEXPECT_FALSE(seq_lt(UINT32_MAX / 2, 0));
+  KEXPECT_TRUE(seq_lt(UINT32_MAX / 2 + 1, 0));
+
+  KEXPECT_TRUE(seq_lt(UINT32_MAX / 2 + 2, 0));
+
+  // Ensure consistent relationships between all comparisons.
+  const uint32_t kNumsToCompare[] = {0,
+                                     1,
+                                     2,
+                                     UINT32_MAX / 4 - 1,
+                                     UINT32_MAX / 4,
+                                     UINT32_MAX / 4 + 1,
+                                     UINT32_MAX / 2 - 2,
+                                     UINT32_MAX / 2 - 1,
+                                     UINT32_MAX / 2,
+                                     UINT32_MAX / 2 + 1,
+                                     UINT32_MAX / 2 + 2,
+                                     UINT32_MAX - 2,
+                                     UINT32_MAX - 1,
+                                     UINT32_MAX};
+  const size_t kNumNums = sizeof(kNumsToCompare) / sizeof(uint32_t);
+  for (size_t i = 0; i < kNumNums; ++i) {
+    uint32_t a = kNumsToCompare[i];
+    KEXPECT_TRUE(seq_lt(a, a + 1));
+    KEXPECT_TRUE(seq_lt(a - 1, a));
+    KEXPECT_TRUE(seq_gt(a + 1, a));
+    KEXPECT_TRUE(seq_gt(a, a - 1));
+
+    for (size_t j = 0; j < kNumNums; ++j) {
+      uint32_t b = kNumsToCompare[j];
+      bool v = true;
+      if (a == b) {
+        v &= KEXPECT_TRUE(seq_le(a, b));
+        v &= KEXPECT_TRUE(seq_le(b, a));
+        v &= KEXPECT_TRUE(seq_ge(a, b));
+        v &= KEXPECT_TRUE(seq_ge(b, a));
+        v &= KEXPECT_FALSE(seq_lt(a, b));
+        v &= KEXPECT_FALSE(seq_lt(b, a));
+        v &= KEXPECT_FALSE(seq_gt(a, b));
+        v &= KEXPECT_FALSE(seq_gt(b, a));
+      } else if (seq_lt(a, b)) {
+        v &= KEXPECT_TRUE(seq_lt(a, b));
+        v &= KEXPECT_TRUE(seq_le(a, b));
+        v &= KEXPECT_FALSE(seq_gt(a, b));
+        v &= KEXPECT_FALSE(seq_ge(a, b));
+        v &= KEXPECT_FALSE(seq_lt(b, a));
+        v &= KEXPECT_FALSE(seq_le(b, a));
+        v &= KEXPECT_TRUE(seq_gt(b, a));
+        v &= KEXPECT_TRUE(seq_ge(b, a));
+      } else {
+        v &= KEXPECT_FALSE(seq_lt(a, b));
+        v &= KEXPECT_FALSE(seq_le(a, b));
+        v &= KEXPECT_TRUE(seq_gt(a, b));
+        v &= KEXPECT_TRUE(seq_ge(a, b));
+        v &= KEXPECT_TRUE(seq_lt(b, a));
+        v &= KEXPECT_TRUE(seq_le(b, a));
+        v &= KEXPECT_FALSE(seq_gt(b, a));
+        v &= KEXPECT_FALSE(seq_ge(b, a));
+      }
+      if (!v) {
+        klogf("seqno test failed: a = %u, b = %u\n", a, b);
+      }
+    }
+  }
+}
+
 static void tcp_socket_test(void) {
   KTEST_BEGIN("Basic TCP socket creation");
   int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -1180,6 +1269,7 @@ void tcp_test(void) {
   const int initial_cache_size = vfs_cache_size();
 
   tcp_key_test();
+  seqno_test();
   tcp_socket_test();
   sockopt_test();
   bind_test();

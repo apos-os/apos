@@ -15,6 +15,7 @@
 #ifndef APOO_NET_SOCKET_TCP_INTERNAL_H
 #define APOO_NET_SOCKET_TCP_INTERNAL_H
 
+#include "common/attributes.h"
 #include "common/hashtable.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -40,5 +41,25 @@ extern tcp_state_t g_tcp;
 
 typedef uint32_t tcp_key_t;
 tcp_key_t tcp_key(const struct sockaddr* local, const struct sockaddr* remote);
+
+// Helpers for comparing sequence numbers.  We assume (arbitrarily) that
+// the sequence number space is split in half (modulo 2^32).
+static inline ALWAYS_INLINE bool seq_gt(uint32_t a, uint32_t b) {
+  // TODO(aoates): there must be a more elegant way of doing this.
+  return ((a > b) && (a - b <= UINT32_MAX / 2)) ||
+         ((b > a) && (b - a > UINT32_MAX / 2));
+}
+
+static inline ALWAYS_INLINE bool seq_ge(uint32_t a, uint32_t b) {
+  return (a == b) || seq_gt(a, b);
+}
+
+static inline ALWAYS_INLINE bool seq_lt(uint32_t a, uint32_t b) {
+  return seq_gt(b, a);
+}
+
+static inline ALWAYS_INLINE bool seq_le(uint32_t a, uint32_t b) {
+  return seq_ge(b, a);
+}
 
 #endif
