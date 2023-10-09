@@ -576,9 +576,9 @@ static test_packet_spec_t FIN_PKT(int seq, int ack) {
       .flags = TCP_FLAG_FIN | TCP_FLAG_ACK, .seq = seq, .ack = ack});
 }
 
-static test_packet_spec_t RST_PKT(int ack) {
-  return (
-      (test_packet_spec_t){.flags = TCP_FLAG_RST | TCP_FLAG_ACK, .ack = ack});
+static test_packet_spec_t RST_PKT(int seq, int ack) {
+  return ((test_packet_spec_t){
+      .flags = TCP_FLAG_RST | TCP_FLAG_ACK, .seq = seq, .ack = ack});
 }
 
 #define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt(_state, _spec))
@@ -885,7 +885,7 @@ static void connect_rst_test(void) {
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
 
   // Send RST.
-  SEND_PKT(&s, RST_PKT(/* ack */ 101));
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
   KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
 
   KEXPECT_EQ(-ECONNREFUSED, finish_op(&s));
@@ -1264,6 +1264,45 @@ static void connect_tests(void) {
   get_addrs_during_connect_test();
 }
 
+static void rst_during_established_test(void) {
+  KTEST_BEGIN("TCP: basic connect() (v2)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send RST.
+  // TODO(tcp): test this also with data having passed.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  // TODO(tcp): test getting ECONNRESET from read/write.
+  struct sockaddr_storage unused;
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.1", 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
+
+  // TODO(tcp): if SO_ERROR is implemented, test here as well.
+
+  cleanup_tcp_test(&s);
+}
+
+static void established_tests(void) {
+  rst_during_established_test();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -1275,6 +1314,7 @@ void tcp_test(void) {
   bind_test();
   multi_bind_test();
   connect_tests();
+  established_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
