@@ -63,8 +63,7 @@ static int tcp_build_packet(socket_tcp_t* socket, int tcp_flags,
   tcp_hdr->src_port = src->sin_port;
   tcp_hdr->dst_port = dst->sin_port;
   tcp_hdr->seq = htob32(socket->seq);
-  tcp_hdr->ack =
-      (tcp_flags & TCP_FLAG_ACK) ? htob32(socket->remote_seq + 1) : 0;
+  tcp_hdr->ack = (tcp_flags & TCP_FLAG_ACK) ? htob32(socket->remote_seq) : 0;
   _Static_assert(sizeof(tcp_hdr_t) % sizeof(uint32_t) == 0, "bad tcp hdr");
   tcp_hdr->data_offset = sizeof(tcp_hdr_t) / sizeof(uint32_t);
   tcp_hdr->_zeroes = 0;

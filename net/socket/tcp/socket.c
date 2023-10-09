@@ -16,6 +16,7 @@
 
 #include "common/circbuf.h"
 #include "common/endian.h"
+#include "common/errno.h"
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
@@ -215,7 +216,8 @@ static int bind_if_necessary(socket_tcp_t* socket,
                               /* allow_rebind = */ true);
 }
 
-static bool tcp_dispatch_to_sock(socket_tcp_t* socket, pbuf_t* pb);
+static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
+                                 const tcp_packet_metadata_t* md);
 
 bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   KASSERT_DBG(ethertype == ET_IPV4);
@@ -238,7 +240,10 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     socket_tcp_t* socket = (socket_tcp_t*)val;
     refcount_inc(&socket->ref);
     kspin_unlock(&g_tcp.lock);
-    bool result = tcp_dispatch_to_sock(socket, pb);
+    bool result = tcp_dispatch_to_sock(socket, pb, &mdata);
+    if (result) {
+      pbuf_free(pb);
+    }
     TCP_DEC_REFCOUNT(socket);
     return result;
   }
@@ -254,7 +259,10 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     socket_tcp_t* socket = (socket_tcp_t*)socket_base;
     refcount_inc(&socket->ref);
     DEFINT_POP();
-    bool result = tcp_dispatch_to_sock(socket, pb);
+    bool result = tcp_dispatch_to_sock(socket, pb, &mdata);
+    if (result) {
+      pbuf_free(pb);
+    }
     TCP_DEC_REFCOUNT(socket);
     return result;
   }
@@ -269,56 +277,261 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   return false;
 }
 
-// Per-socket-state handlers for incoming packets.
-static bool tcp_handle_synsent(socket_tcp_t* socket, pbuf_t* pb);
-static bool tcp_handle_established(socket_tcp_t* socket, pbuf_t* pb);
-static bool tcp_handle_lastack(socket_tcp_t* socket, pbuf_t* pb);
+// Actions to take based on a packet.
+typedef enum {
+  TCP_PACKET_DONE,      // We're done with the packet.
+  TCP_DROP_BAD_PKT,     // Drop the packet, it is bad.
+  TCP_SEND_ACK,         // Send an ACK.
+} tcp_pkt_action_t;
+
+// Handlers for different types of packet scenarios.  Multiple of these may be
+// called for a particular incoming packet depending on its contents.
+
+// Specific handler for SYN_SENT state.
+static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
+                                              const pbuf_t* pb);
+
+static tcp_pkt_action_t tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb);
+static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb);
+static tcp_pkt_action_t tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb);
+static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb);
 
 static void finish_protocol_close(socket_tcp_t* socket);
 
-static bool tcp_dispatch_to_sock(socket_tcp_t* socket, pbuf_t* pb) {
-  // Racily read the current state.  If the state changes between now and
-  // actually handling the packet below, that's fine --- it's equivalent to the
-  // packet being dropped or reordered.
+// Returns true if the given segment is valid (overlaps our window).
+static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
+                         uint32_t seg_len) {
+  if (seg_len == 0) {
+    if (socket->wndsize == 0) {
+      return seq == socket->remote_seq;
+    } else {
+      return seq_le(socket->remote_seq, seq) &&
+          seq_lt(seq, socket->remote_seq + socket->wndsize);
+    }
+  } else {
+    if (socket->wndsize == 0) {
+      return false;
+    } else {
+      uint32_t seg_end = seq + seg_len - 1;
+      return (seq_le(socket->remote_seq, seq) &&
+              seq_lt(seq, socket->remote_seq + socket->wndsize)) ||
+          (seq_le(socket->remote_seq, seg_end) &&
+           seq_lt(seg_end, socket->remote_seq + socket->wndsize));
+    }
+  }
+}
+
+static uint32_t seq_len(const tcp_hdr_t* hdr, const tcp_packet_metadata_t* md) {
+  uint32_t len = md->data_len;
+  if (hdr->flags & TCP_FLAG_SYN) len++;
+  if (hdr->flags & TCP_FLAG_FIN) len++;
+  return len;
+}
+
+static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
+                                 const tcp_packet_metadata_t* md) {
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  tcp_pkt_action_t action = TCP_PACKET_DONE;
+
+  // Handle SYN-SENT as a special case first.
   kspin_lock(&socket->spin_mu);
-  socktcp_state_t racy_state = socket->state;
+  if (socket->state == TCP_SYN_SENT) {
+    action = tcp_handle_in_synsent(socket, pb);
+    goto done;
+  }
+
+  // Check the sequence number of the packet.  The packet must overlap with the
+  // receive window.
+  uint32_t seq = btoh32(tcp_hdr->seq);
+  if (!validate_seq(socket, seq, md->data_len)) {
+    // TODO(tcp): check RST and if not set, send an ACK.
+    KLOG(DEBUG2, "TCP: socket %p got out-of-window packet, dropping\n", socket);
+    action = TCP_DROP_BAD_PKT;
+    goto done;
+  }
+
+  // TODO(tcp): trim the packer rather than requiring strict window alignment.
+  if (seq != socket->remote_seq) {
+    KLOG(DEBUG2, "TCP: socket %p dropping packet not aligned with start of window\n", socket);
+    action = TCP_DROP_BAD_PKT;
+    goto done;
+  }
+
+  socket->remote_seq = seq + seq_len(tcp_hdr, md);
+
+  if (tcp_hdr->flags & TCP_FLAG_RST) {
+    action = tcp_handle_rst(socket, pb);
+    // We should always be done after a RST.
+    goto done;
+  }
+
+  // Next handle SYN and SYN-ACK.
+  if (tcp_hdr->flags & TCP_FLAG_SYN) {
+    action = tcp_handle_syn(socket, pb);
+    goto done;
+  }
+
+  if (!(tcp_hdr->flags & TCP_FLAG_ACK)) {
+    KLOG(INFO, "TCP: socket %p dropping packet without ACK\n", socket);
+    action = TCP_DROP_BAD_PKT;
+    goto done;
+  }
+
+  tcp_handle_ack(socket, pb);
+
+  if (tcp_hdr->flags & TCP_FLAG_URG) {
+    // TODO(tcp): handle gracefully
+    KLOG(DFATAL, "TCP: socket %p cannot handle URG data\n", socket);
+    action = TCP_DROP_BAD_PKT;
+    goto done;
+  }
+
+  // TODO(tcp): handle packet data
+
+  if (tcp_hdr->flags & TCP_FLAG_FIN) {
+    action = tcp_handle_fin(socket, pb);
+  }
+
+done:
   kspin_unlock(&socket->spin_mu);
 
-  bool result = false;
-  switch (racy_state) {
+  int result = 0;
+  switch (action) {
+    case TCP_DROP_BAD_PKT:
+      KLOG(DEBUG2, "TCP: socket %p dropping bad packet\n", socket);
+      // Fall through.
+
+    case TCP_PACKET_DONE:
+      break;
+
+    case TCP_SEND_ACK:
+      result = tcp_send_ack(socket);
+      if (result != 0) {
+        KLOG(WARNING, "TCP: socket %p unable to send ACK: %s\n", socket,
+             errorname(-result));
+      }
+      break;
+  }
+
+  return true;
+}
+
+static tcp_pkt_action_t tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb) {
+  // TODO(tcp): handle SYN in other states (connection reset).
+  die("Can't handle SYN");
+}
+
+static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(tcp_hdr->flags & TCP_FLAG_ACK);
+
+  // TODO(tcp): handle out-of-order/duplicate ACKs properly.
+  if (btoh32(tcp_hdr->ack) != socket->seq) {
+    KLOG(DFATAL, "TCP: proper ACKs unimplemented\n");
+    return;
+  }
+
+  socket->remote_ack = btoh32(tcp_hdr->ack);
+
+  switch (socket->state) {
+    case TCP_LAST_ACK:
+      finish_protocol_close(socket);
+      break;
+
     case TCP_SYN_SENT:
-      result = tcp_handle_synsent(socket, pb);
+      // If a SYN flag was set, we should have transitioned out of SYN_SENT or
+      // decided to drop the packet earlier.
+      KASSERT(!(tcp_hdr->flags & TCP_FLAG_SYN));
+      // TODO(tcp): send RST, this is not allowed.
       break;
 
     case TCP_ESTABLISHED:
-      result = tcp_handle_established(socket, pb);
-      break;
-
-    case TCP_LAST_ACK:
-      result = tcp_handle_lastack(socket, pb);
-      break;
-
     case TCP_CLOSE_WAIT:
+      // Nothing to do, rely on common ACK handling above.
+      break;
+
     case TCP_CLOSED:
     case TCP_CLOSED_DONE:
-      // TODO(tcp): handle all of these
-      die("unimplemented");
+      KLOG(DFATAL, "TCP: socket %p packet received in CLOSED state\n", socket);
+      break;
   }
-  if (result) {
-    pbuf_free(pb);
-  }
-  return result;
 }
 
-static bool tcp_handle_synsent(socket_tcp_t* socket, pbuf_t* pb) {
+static tcp_pkt_action_t tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb) {
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  KLOG(DEBUG2, "TCP: socket %p received FIN\n", socket);
+
+  switch (socket->state) {
+    case TCP_ESTABLISHED:
+      set_state(socket, TCP_CLOSE_WAIT, "FIN received");
+      return TCP_SEND_ACK;
+
+    case TCP_LAST_ACK:
+    case TCP_CLOSE_WAIT:
+      // Nothing to do, stay in same state.
+      return TCP_PACKET_DONE;
+
+    case TCP_SYN_SENT:
+    case TCP_CLOSED:
+    case TCP_CLOSED_DONE:
+      KLOG(DFATAL, "TCP: socket %p FIN received in invalid state\n", socket);
+      return TCP_DROP_BAD_PKT;
+  }
+  KLOG(FATAL, "TCP: socket %p in invalid state %d\n", socket, socket->state);
+  return TCP_DROP_BAD_PKT;
+}
+
+static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
+
+  if (btoh32(tcp_hdr->seq) != socket->remote_seq) {
+    KLOG(DEBUG, "TCP: socket %p out-of-order RST, dropping\n", socket);
+    // TODO(tcp): send a challenge ack.
+    return TCP_DROP_BAD_PKT;
+  }
+
+  // Reset the connection.
+  switch (socket->state) {
+    case TCP_ESTABLISHED:
+    case TCP_CLOSE_WAIT:
+      socket->error = ECONNRESET;
+      finish_protocol_close(socket);
+      return TCP_PACKET_DONE;
+
+    case TCP_LAST_ACK:
+      finish_protocol_close(socket);
+      return TCP_PACKET_DONE;
+
+    case TCP_SYN_SENT:
+    case TCP_CLOSED:
+    case TCP_CLOSED_DONE:
+      die("RST handling in invalid state");
+  }
+  KLOG(FATAL, "TCP: socket %p in invalid state %d\n", socket, socket->state);
+  return TCP_DROP_BAD_PKT;
+}
+
+static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
+                                              const pbuf_t* pb) {
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+
+  if (tcp_hdr->flags & TCP_FLAG_ACK) {
+    uint32_t seg_ack = btoh32(tcp_hdr->ack);
+    // We don't transit data with our SYN, so this is the only acceptable ACK.
+    if (seg_ack != socket->seq) {
+      // TODO(tcp): send a RST if RST flag isn't set.
+      die("Out-of-order ACK received in SYN_SENT");
+    }
+  }
+
   if (tcp_hdr->flags & TCP_FLAG_RST) {
     KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
-    kspin_lock(&socket->spin_mu);
     socket->error = ECONNREFUSED;
     finish_protocol_close(socket);
-    kspin_unlock(&socket->spin_mu);
-    return true;
+    return TCP_PACKET_DONE;
   }
 
   bool is_synack =
@@ -329,105 +542,11 @@ static bool tcp_handle_synsent(socket_tcp_t* socket, pbuf_t* pb) {
     die("unexpected packet in SYN_SENT");
   }
 
-  if (tcp_hdr->flags & ~(TCP_FLAG_SYN | TCP_FLAG_ACK) ||
-      btoh32(tcp_hdr->ack) != socket->seq) {
-    // TODO(tcp): handle unexpected packets (sent RST)
-    die("unexpected packet in SYN_SENT");
-  }
-
-  kspin_lock(&socket->spin_mu);
-  // This should be _very_ unusual.
-  if (socket->state != TCP_SYN_SENT) {
-    KLOG(INFO,
-         "TCP: socket transitioned out of SYN_SENT before SYN-ACK could be "
-         "processed\n");
-    kspin_unlock(&socket->spin_mu);
-    return false;
-  }
-
   set_state(socket, TCP_ESTABLISHED, "SYN-ACK received");
-  socket->remote_seq = btoh32(tcp_hdr->seq);
+  socket->remote_seq = btoh32(tcp_hdr->seq) + 1;
   socket->remote_ack = btoh32(tcp_hdr->ack);
   socket->remote_wndsize = btoh16(tcp_hdr->wndsize);
-  kspin_unlock(&socket->spin_mu);
-
-  int result = tcp_send_ack(socket);
-  // TODO(tcp): handle errors gracefully.
-  KASSERT(result == 0);
-
-  return true;
-}
-
-static bool tcp_handle_established(socket_tcp_t* socket, pbuf_t* pb) {
-  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  bool is_fin = (tcp_hdr->flags & TCP_FLAG_FIN);
-  if (!is_fin) {
-    // TODO(tcp): handle everything else
-    die("unexpected packet in ESTABLISHED");
-  }
-
-  if (tcp_hdr->flags & ~(TCP_FLAG_FIN | TCP_FLAG_ACK)) {
-    // TODO(tcp): handle unexpected packets (sent RST)
-    die("unexpected packet in ESTABLISHED");
-  }
-
-  // Check sequence number.
-  kspin_lock(&socket->spin_mu);
-  if (btoh32(tcp_hdr->seq) != socket->remote_seq + 1) {
-    // TODO(tcp): handle out-of-order packets properly.
-    die("unexpected out-of-order packet in ESTABLISHED");
-  }
-
-  // This should be _very_ unusual.
-  if (socket->state != TCP_ESTABLISHED) {
-    KLOG(INFO,
-         "TCP: socket transitioned out of ESTABLISHED before packet could be "
-         "processed\n");
-    kspin_unlock(&socket->spin_mu);
-    return false;
-  }
-
-  KASSERT(is_fin);
-  set_state(socket, TCP_CLOSE_WAIT, "FIN received");
-  socket->remote_seq = btoh32(tcp_hdr->seq);
-  if (tcp_hdr->flags & TCP_FLAG_ACK) socket->remote_ack = btoh32(tcp_hdr->ack);
-  socket->remote_wndsize = btoh16(tcp_hdr->wndsize);
-  kspin_unlock(&socket->spin_mu);
-
-  int result = tcp_send_ack(socket);
-  // TODO(tcp): handle errors gracefully.
-  KASSERT(result == 0);
-
-  return true;
-}
-
-static bool tcp_handle_lastack(socket_tcp_t* socket, pbuf_t* pb) {
-  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  if (tcp_hdr->flags != TCP_FLAG_ACK) {
-    // TODO(tcp): handle everything else
-    die("unexpected packet in LAST_ACK");
-  }
-
-  kspin_lock(&socket->spin_mu);
-  // Check sequence number.
-  if (btoh32(tcp_hdr->ack) != socket->seq) {
-    // TODO(tcp): handle out-of-order packets properly.
-    die("unexpected out-of-order packet in LAST_ACK");
-  }
-
-  // This should be _very_ unusual.
-  if (socket->state != TCP_LAST_ACK) {
-    KLOG(INFO,
-         "TCP: socket transitioned out of LAST_ACK before packet could be "
-         "processed\n");
-    kspin_unlock(&socket->spin_mu);
-    return false;
-  }
-
-  finish_protocol_close(socket);
-  kspin_unlock(&socket->spin_mu);
-
-  return true;
+  return TCP_SEND_ACK;
 }
 
 // Closes the socket on the protocol side when all protocol ops are complete.
