@@ -112,7 +112,8 @@ tgt64:
     # in the virtual address space, and will undo the identity-mapping of the
     # first XMB set up by mem_init.  It will then call kmain.
     mov %rax, %rdi
-    call  kinit
+    mov mbd, %esi
+    call kinit
 
     cli
 hang:

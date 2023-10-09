@@ -74,4 +74,7 @@ void klog_set_vterm(vterm_t* t);
 // buffer.  Returns the number of bytes read
 int klog_read(int offset, void* buf, int len);
 
+// Set up initial log levels based on kernel command line args.
+void klog_init_log_levels(void);
+
 #endif

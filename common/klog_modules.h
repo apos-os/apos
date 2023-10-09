@@ -50,4 +50,7 @@ typedef enum {
   KL_MODULE_MAX,
 } klog_module_t;
 
+// Return the string form of the klog module (e.g. KL_PCI -> "PCI").
+const char* klog_module_name(klog_module_t m);
+
 #endif

@@ -176,7 +176,40 @@ const boot_info_t* get_boot_info(void) {
   return g_boot_info;
 }
 
-void kmain(const boot_info_t* boot) {
+#define MAX_CMDLINE_LEN 200
+#define MAX_CMDLINE_ARGS 20
+
+static void parse_command_line(boot_info_t* boot, const char* cmdline) {
+  klog("Kernel args: ");
+  if (!cmdline) {
+    klog("<NONE>\n");
+    return;
+  } else {
+    klog(cmdline);
+    klog("\n");
+  }
+
+  static char cmdline_buf[MAX_CMDLINE_LEN];
+  static const char* cmdline_args[MAX_CMDLINE_ARGS];
+  KASSERT(kstrlen(cmdline) < MAX_CMDLINE_LEN);
+  kstrcpy(cmdline_buf, cmdline);
+
+  char* s = cmdline_buf;
+  int arg = 0;
+  for (int i = 0; s[i] != '\0'; ++i) {
+    KASSERT(arg < MAX_CMDLINE_ARGS);
+    while (kisspace(s[i]) && s[i] != '\0') ++i;
+    if (s[i] == '\0') break;
+    cmdline_args[arg++] = &s[i];
+    while (!kisspace(s[i]) && s[i] != '\0') ++i;
+    if (s[i] == '\0') break;
+    s[i] = '\0';
+  }
+  cmdline_args[arg] = NULL;
+  boot->cmd_line = cmdline_args;
+}
+
+void kmain(boot_info_t* boot, const char* cmdline) {
   g_boot_info = boot;
   set_global_meminfo(boot->meminfo);
 
@@ -184,6 +217,8 @@ void kmain(const boot_info_t* boot) {
   klog("\n\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
   klog(    "@                          APOO                           @\n");
   klog(    "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+  parse_command_line(boot, cmdline);
+  klog_init_log_levels();
 
   // Initialize core low-level hardware.
   klog("interrupts_init()\n");

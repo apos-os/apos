@@ -22,6 +22,8 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kprintf.h"
+#include "common/kstring.h"
+#include "main/kernel.h"
 #include "memory/memory.h"
 
 // The current logging mode.
@@ -33,6 +35,35 @@ static vterm_t* g_klog_vterm = 0x0;
 #define KLOG_BUF_SIZE 4096
 static char g_klog_history[KLOG_BUF_SIZE];
 static int g_klog_len = 0;
+
+const char* klog_module_name(klog_module_t m) {
+#define CONSIDER(_X) case KL_##_X: return #_X;
+  switch (m) {
+    CONSIDER(GENERAL)
+    CONSIDER(BLOCK_CACHE)
+    CONSIDER(KMALLOC)
+    CONSIDER(PAGE_FAULT)
+    CONSIDER(MEMORY)
+    CONSIDER(PROC)
+    CONSIDER(SYSCALL)
+    CONSIDER(EXT2)
+    CONSIDER(VFS)
+    CONSIDER(PCI)
+    CONSIDER(NVME)
+    CONSIDER(USB)
+    CONSIDER(USB_HUB)
+    CONSIDER(USB_UHCI)
+    CONSIDER(TTY)
+    CONSIDER(NET)
+    CONSIDER(TCP)
+    CONSIDER(TEST)
+    CONSIDER(USER)
+
+    case KL_MODULE_MAX: return "<invalid>";
+  }
+#undef CONSIDER
+  die("invalid klog_module_t value encountered");
+}
 
 static inline addr_t vram_start(void) {
   return get_global_meminfo()->phys_maps[0].virt_base + 0xB8000;
@@ -166,4 +197,52 @@ int klog_read(int offset, void* buf, int len) {
     ((char*)buf)[bytes_read++] = g_klog_history[offset++];
   }
   return bytes_read;
+}
+
+void klog_init_log_levels(void) {
+  const char** args = get_boot_info()->cmd_line;
+  if (!args) return;
+
+  for (int i = 0; args[i] != NULL; ++i) {
+    if (!kstr_startswith(args[i], "klog_level=")) {
+      continue;
+    }
+
+    const char* valstr = args[i] + kstrlen("klog_level=");
+    while (*valstr != '\0') {
+      const char* next = kstrchrnul(valstr, '=');
+      if (!*next) {
+        klog("Bad klog_level specifier: missing value for key\n");
+        return;
+      }
+      if (!kisdigit(*(next + 1))) {
+        klog("Bad klog_level value: must be digit\n");
+        return;
+      }
+      int val = *(next + 1) - '0';
+      if (val > 3) {
+        klog("Bad klog_level value: out of range\n");
+        return;
+      }
+      klog_level_t level = INFO + val;
+      KASSERT_DBG(level == DEBUG || level == DEBUG2 || level == DEBUG3);
+      size_t keylen = next - valstr;
+      int module;
+      for (module = 0; module < KL_MODULE_MAX; ++module) {
+        const char* module_name = klog_module_name(module);
+        if (kstrlen(module_name) == (next - valstr) &&
+            kstrncmp(valstr, module_name, keylen) == 0) {
+          klogf("Setting log level for %s to %d\n", module_name, val);
+          klog_set_module_level(module, level);
+          break;
+        }
+      }
+      if (module == KL_MODULE_MAX) {
+        klogf("Unknown klog module: %s\n", valstr);
+        return;
+      }
+      valstr = kstrchrnul(next, ',');
+      if (*valstr == ',') valstr++;
+    }
+  }
 }
