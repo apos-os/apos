@@ -55,6 +55,7 @@ typedef struct {
   struct sockaddr_storage dst;
   size_t data_len;  // How many bytes of data.
   size_t ip_hdr_len;  // How many bytes were taken for the IP header.
+  size_t data_offset;  // How far from the start the data starts.
 } tcp_packet_metadata_t;
 
 // Validate an incoming packet, pop the IP header, and extract information about

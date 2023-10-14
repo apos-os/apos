@@ -152,6 +152,7 @@ bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md) {
 
   // Validate the checksum.
   md->data_len = tcp_len - tcp_hdr_len;
+  md->data_offset = tcp_hdr_len;
   ip4_pseudo_hdr_t pseudo_ip;
   pseudo_ip.src_addr = ip_hdr->src_addr;
   pseudo_ip.dst_addr = ip_hdr->dst_addr;

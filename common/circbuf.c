@@ -58,6 +58,10 @@ ssize_t circbuf_write(circbuf_t* cbuf, const void* buf, size_t nbytes) {
   return bytes_written;
 }
 
+void circbuf_clear(circbuf_t* cbuf) {
+  cbuf->len = 0;
+}
+
 size_t circbuf_available(const circbuf_t* cbuf) {
   return cbuf->buflen - cbuf->len;
 }

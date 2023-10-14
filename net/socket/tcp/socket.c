@@ -23,6 +23,7 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "common/list.h"
+#include "common/math.h"
 #include "common/refcount.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
@@ -56,6 +57,9 @@
 // TODO(tcp): make this a socket option
 // TODO(tcp): increase this default
 #define SOCKET_CONNECT_TIMEOUT_MS 1000
+
+// TODO(tcp): make this a socket option
+#define SOCKET_READ_TIMEOUT_MS 60000
 
 static const socket_ops_t g_tcp_socket_ops;
 
@@ -305,6 +309,8 @@ static tcp_pkt_action_t tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb);
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb);
 static tcp_pkt_action_t tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb);
 static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb);
+static tcp_pkt_action_t tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
+                                        const tcp_packet_metadata_t* md);
 
 static void finish_protocol_close(socket_tcp_t* socket);
 
@@ -331,17 +337,11 @@ static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
   }
 }
 
-static uint32_t seq_len(const tcp_hdr_t* hdr, const tcp_packet_metadata_t* md) {
-  uint32_t len = md->data_len;
-  if (hdr->flags & TCP_FLAG_SYN) len++;
-  if (hdr->flags & TCP_FLAG_FIN) len++;
-  return len;
-}
-
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   tcp_pkt_action_t action = TCP_PACKET_DONE;
+  bool send_ack = false;
 
   // Handle SYN-SENT as a special case first.
   kspin_lock(&socket->spin_mu);
@@ -365,11 +365,9 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     KLOG(DEBUG2,
          "TCP: socket %p dropping packet not aligned with start of window\n",
          socket);
-    action = TCP_DROP_BAD_PKT;
+    action = TCP_SEND_ACK;
     goto done;
   }
-
-  socket->recv_next = seq + seq_len(tcp_hdr, md);
 
   if (tcp_hdr->flags & TCP_FLAG_RST) {
     action = tcp_handle_rst(socket, pb);
@@ -398,7 +396,10 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     goto done;
   }
 
-  // TODO(tcp): handle packet data
+  if (md->data_len > 0) {
+    if (tcp_handle_data(socket, pb, md) == TCP_SEND_ACK)
+      send_ack = true;
+  }
 
   if (tcp_hdr->flags & TCP_FLAG_FIN) {
     action = tcp_handle_fin(socket, pb);
@@ -417,12 +418,15 @@ done:
       break;
 
     case TCP_SEND_ACK:
-      result = tcp_send_ack(socket);
-      if (result != 0) {
-        KLOG(WARNING, "TCP: socket %p unable to send ACK: %s\n", socket,
-             errorname(-result));
-      }
-      break;
+      send_ack = true;
+  }
+
+  if (send_ack) {
+    result = tcp_send_ack(socket);
+    if (result != 0) {
+      KLOG(WARNING, "TCP: socket %p unable to send ACK: %s\n", socket,
+           errorname(-result));
+    }
   }
 
   return true;
@@ -476,6 +480,7 @@ static tcp_pkt_action_t tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb) {
   switch (socket->state) {
     case TCP_ESTABLISHED:
       set_state(socket, TCP_CLOSE_WAIT, "FIN received");
+      socket->recv_next++;
       return TCP_SEND_ACK;
 
     case TCP_LAST_ACK:
@@ -509,10 +514,14 @@ static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb) {
     case TCP_ESTABLISHED:
     case TCP_CLOSE_WAIT:
       socket->error = ECONNRESET;
+      // Drop any pending data.
+      circbuf_clear(&socket->recv_buf);
       finish_protocol_close(socket);
       return TCP_PACKET_DONE;
 
     case TCP_LAST_ACK:
+      // Don't clear the read buffer here --- let any pending data be consumed
+      // (since we're not signalling an error).
       finish_protocol_close(socket);
       return TCP_PACKET_DONE;
 
@@ -523,6 +532,40 @@ static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb) {
   }
   KLOG(FATAL, "TCP: socket %p in invalid state %d\n", socket, socket->state);
   return TCP_DROP_BAD_PKT;
+}
+
+static tcp_pkt_action_t tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
+                                        const tcp_packet_metadata_t* md) {
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+
+  // TODO(tcp): handle packets that overlap the window (trim them).
+  uint32_t seq = btoh32(tcp_hdr->seq);
+  if (seq != socket->recv_next) {
+    KLOG(DEBUG2,
+         "TCP: socket %p ignoring out-of-order packet (seq=%d, recv_next=%d)\n",
+         socket, seq, socket->recv_next);
+    return TCP_SEND_ACK;
+  }
+
+  // TODO(tcp): handle FIN_WAIT states.
+  if (socket->state != TCP_ESTABLISHED) {
+    KLOG(DEBUG2,
+         "TCP: socket %p ignoring %d bytes of data in non-connected state %s\n",
+         socket, (int)md->data_len, state2str(socket->state));
+    return TCP_DROP_BAD_PKT;
+  }
+
+  KASSERT_DBG(md->data_len <= pbuf_size(pb) - md->data_offset);
+  ssize_t bytes_read = circbuf_write(
+      &socket->recv_buf, pbuf_getc(pb) + md->data_offset, md->data_len);
+  KASSERT(bytes_read >= 0);
+  KLOG(DEBUG2, "TCP: socket %p received %d bytes of data\n", socket,
+       (int)bytes_read);
+
+  socket->recv_next += bytes_read;
+  socket->recv_wndsize = circbuf_available(&socket->recv_buf);
+  scheduler_wake_all(&socket->q);
+  return TCP_SEND_ACK;
 }
 
 static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
@@ -956,14 +999,109 @@ static int sock_tcp_accept_queue_length(const socket_t* socket_base) {
   return -ENOTSUP;
 }
 
+typedef enum {
+  RECV_NOT_CONNECTED,   // We're not in a state where we can receive.
+  RECV_BLOCK_FOR_DATA,  // recv() should block.
+  RECV_ERROR,           // An error occurred.
+  RECV_HAS_DATA,        // Data can be read.
+  RECV_EOF,             // We are at EOF.
+} recv_state_t;
+
+static recv_state_t recv_state(const socket_tcp_t* socket) {
+  if (socket->error != 0) {
+    return RECV_ERROR;
+  } else if (socket->recv_buf.len > 0) {
+    return RECV_HAS_DATA;
+  }
+
+  switch (socket->state) {
+    case TCP_CLOSE_WAIT:
+    case TCP_CLOSED_DONE:
+    case TCP_LAST_ACK:
+      // No error, no data, and we've received a FIN --- return EOF.  Note that
+      // we will return EOF after an error once the first call to recv() returns
+      // the error --- this matches macos behavior, so seems fine.
+      // TODO(tcp): include CLOSING and TIME_WAIT here.
+      return RECV_EOF;
+
+    case TCP_ESTABLISHED:
+      // No data available but we could get some; block.
+      // TODO(tcp): handle FIN_WAIT states as well.
+      return RECV_BLOCK_FOR_DATA;
+
+    case TCP_CLOSED:
+    case TCP_SYN_SENT:
+      return RECV_NOT_CONNECTED;
+  }
+  KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);
+  return RECV_ERROR;
+}
+
 ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
                           size_t length, int sflags, struct sockaddr* address,
                           socklen_t* address_len) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  // TODO(tcp): implement
-  return -ENOTSUP;
+  socket_tcp_t* sock = (socket_tcp_t*)socket_base;
+
+  // No need to lock the mutex --- no multi-stage operations here, just a simple
+  // one that must coordinate with the defint code.
+  kspin_lock(&sock->spin_mu);
+
+  // Wait until data is available or the socket is closed.
+  // TODO(tcp): tests for read timeouts (and support for changing it).
+  apos_ms_t now = get_time_ms();
+  apos_ms_t timeout_end = now + SOCKET_READ_TIMEOUT_MS;
+  int result = 0;
+  // TODO(tcp): tests for transitioning to FIN_WAIT* during this.
+  while (now < timeout_end && recv_state(sock) == RECV_BLOCK_FOR_DATA) {
+    int wait_result =
+        scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
+    if (wait_result == SWAIT_TIMEOUT) {
+      result = -ETIMEDOUT;
+      break;
+    } else if (wait_result == SWAIT_INTERRUPTED) {
+      result = -EINTR;
+      break;
+    } else {
+      KASSERT(wait_result == SWAIT_DONE);
+    }
+    now = get_time_ms();
+  }
+
+  if (result == 0) {
+    switch (recv_state(sock)) {
+      case RECV_NOT_CONNECTED:
+        result = -ENOTCONN;
+        break;
+
+      case RECV_BLOCK_FOR_DATA:
+        // TODO(tcp): write a test for this case.
+        result = -ETIMEDOUT;
+        break;
+
+      case RECV_ERROR:
+        KASSERT(sock->state == TCP_CLOSED_DONE);
+        result = -sock->error;
+        sock->error = 0;
+        break;
+
+      case RECV_EOF:
+        // Skip read and return 0.
+        break;
+
+      case RECV_HAS_DATA:
+        result = circbuf_read(&sock->recv_buf, buffer, length);
+        KLOG(DEBUG2, "TCP: socket %p gave %d bytes to recvfrom()\n", sock,
+             (int)result);
+        sock->recv_wndsize = circbuf_available(&sock->recv_buf);
+        break;
+    }
+  }
+  kspin_unlock(&sock->spin_mu);
+
+  return result;
 }
 
 ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
