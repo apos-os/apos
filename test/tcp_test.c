@@ -571,6 +571,11 @@ static test_packet_spec_t ACK_PKT(int seq, int ack) {
   return ((test_packet_spec_t){.flags = TCP_FLAG_ACK, .seq = seq, .ack = ack});
 }
 
+static test_packet_spec_t ACK_PKT2(int seq, int ack, int wndsize) {
+  return ((test_packet_spec_t){
+      .flags = TCP_FLAG_ACK, .seq = seq, .ack = ack, .wndsize = wndsize});
+}
+
 static test_packet_spec_t FIN_PKT(int seq, int ack) {
   return ((test_packet_spec_t){
       .flags = TCP_FLAG_FIN | TCP_FLAG_ACK, .seq = seq, .ack = ack});
@@ -1345,9 +1350,9 @@ static void recvbuf_size_test(void) {
   KEXPECT_EQ(1234, val);
 
   // Do SYN, SYN-ACK, ACK.
-  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 1234));
   SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
-  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 501, /* wndsize */ 1234));
 
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
 

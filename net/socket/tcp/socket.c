@@ -1077,6 +1077,7 @@ static int setsockopt_bufsize(socket_tcp_t* socket, int option, const void* val,
 
   kfree(buf->buf);
   circbuf_init(buf, newbuf, buflen);
+  socket->recv_wndsize = circbuf_available(&socket->recv_buf);
   kspin_unlock(&socket->spin_mu);
   return 0;
 }
