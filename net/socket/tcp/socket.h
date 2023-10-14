@@ -50,7 +50,8 @@ typedef struct socket_tcp {
   // The connected peer address.  If unconnected, family will be AF_UNSPEC.
   struct sockaddr_storage connected_addr;
 
-  // Read buffer.
+  // Send/receive buffers.
+  circbuf_t send_buf;
   circbuf_t recv_buf;
 
   // TCP state variables.

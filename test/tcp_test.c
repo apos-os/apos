@@ -1331,6 +1331,11 @@ static void recvbuf_size_test(void) {
   KEXPECT_EQ(sizeof(int), vallen);
   KEXPECT_EQ(1234, val);
 
+  // Send buffer should be untouched.
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(16 * 1024, val);
+
   // Now make sure we can't change it later.
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
   KEXPECT_EQ(-EISCONN, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVBUF, &val,
@@ -1358,6 +1363,66 @@ static void recvbuf_size_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void sendbuf_size_test(void) {
+  KTEST_BEGIN("TCP: SO_SNDBUF");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val;
+  socklen_t vallen = sizeof(int);
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(16 * 1024, val);
+
+  val = 1234;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(int)));
+
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(1234, val);
+
+  val = 100 * 1024 * 1024;
+  KEXPECT_EQ(-EINVAL, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val,
+                                     sizeof(int)));
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(1234, val);
+
+  // Recieve buffer should be untouched.
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_RCVBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(16 * 1024, val);
+
+  // Now make sure we can't change it later.
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-EISCONN, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val,
+                                     sizeof(int)));
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(1234, val);
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  // Arguably should be EINVAL?  Doesn't really matter.
+  KEXPECT_EQ(-EISCONN, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val,
+                                      sizeof(int)));
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(1234, val);
+
+  cleanup_tcp_test(&s);
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -1371,6 +1436,7 @@ void tcp_test(void) {
   connect_tests();
   established_tests();
   recvbuf_size_test();
+  sendbuf_size_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

@@ -47,6 +47,7 @@ struct sockaddr_storage {
 #define SOL_SOCKET 0xffff
 #define SO_TYPE 1
 #define SO_RCVBUF 2
+#define SO_SNDBUF 3
 
 // TODO(aoates): this is supposed to define size_t and ssize_t.
 
