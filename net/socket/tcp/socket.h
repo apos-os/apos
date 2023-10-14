@@ -51,15 +51,14 @@ typedef struct socket_tcp {
   struct sockaddr_storage connected_addr;
 
   // Read buffer.
-  circbuf_t rx_buf;
+  circbuf_t recv_buf;
 
-  uint32_t seq;
-  int wndsize;
-
-  // The last sequence number and ack seen from the other side.
-  uint32_t remote_seq;  // The next sequence number expected.
-  uint32_t remote_ack;
-  int remote_wndsize;
+  // TCP state variables.
+  uint32_t send_unack;    // My first unacknowledged sequence number.
+  uint32_t send_next;     // My next sequence number to send.
+  uint32_t send_wndsize;  // The send window size (from their side).
+  uint32_t recv_next;     // Their next sequence number expected.
+  uint32_t recv_wndsize;  // Receive window size (my window)
 
   poll_event_t poll_event;
 

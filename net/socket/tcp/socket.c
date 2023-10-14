@@ -90,9 +90,9 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->ref = REFCOUNT_INIT;
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
-  circbuf_init(&sock->rx_buf, rxbuf, SOCKET_READBUF);
-  sock->seq = gen_seq_num(sock);
-  sock->wndsize = circbuf_available(&sock->rx_buf);
+  circbuf_init(&sock->recv_buf, rxbuf, SOCKET_READBUF);
+  sock->send_next = gen_seq_num(sock);
+  sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   kthread_queue_init(&sock->q);
   kmutex_init(&sock->mu);
   sock->spin_mu = KSPINLOCK_NORMAL_INIT;
@@ -146,7 +146,7 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
 }
 
 static void delete_socket(socket_tcp_t* socket) {
-  kfree(socket->rx_buf.buf);
+  kfree(socket->recv_buf.buf);
   kfree(socket);
 }
 
@@ -302,21 +302,21 @@ static void finish_protocol_close(socket_tcp_t* socket);
 static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
                          uint32_t seg_len) {
   if (seg_len == 0) {
-    if (socket->wndsize == 0) {
-      return seq == socket->remote_seq;
+    if (socket->recv_wndsize == 0) {
+      return seq == socket->recv_next;
     } else {
-      return seq_le(socket->remote_seq, seq) &&
-          seq_lt(seq, socket->remote_seq + socket->wndsize);
+      return seq_le(socket->recv_next, seq) &&
+          seq_lt(seq, socket->recv_next + socket->recv_wndsize);
     }
   } else {
-    if (socket->wndsize == 0) {
+    if (socket->recv_wndsize == 0) {
       return false;
     } else {
       uint32_t seg_end = seq + seg_len - 1;
-      return (seq_le(socket->remote_seq, seq) &&
-              seq_lt(seq, socket->remote_seq + socket->wndsize)) ||
-          (seq_le(socket->remote_seq, seg_end) &&
-           seq_lt(seg_end, socket->remote_seq + socket->wndsize));
+      return (seq_le(socket->recv_next, seq) &&
+              seq_lt(seq, socket->recv_next + socket->recv_wndsize)) ||
+          (seq_le(socket->recv_next, seg_end) &&
+           seq_lt(seg_end, socket->recv_next + socket->recv_wndsize));
     }
   }
 }
@@ -351,13 +351,15 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   // TODO(tcp): trim the packer rather than requiring strict window alignment.
-  if (seq != socket->remote_seq) {
-    KLOG(DEBUG2, "TCP: socket %p dropping packet not aligned with start of window\n", socket);
+  if (seq != socket->recv_next) {
+    KLOG(DEBUG2,
+         "TCP: socket %p dropping packet not aligned with start of window\n",
+         socket);
     action = TCP_DROP_BAD_PKT;
     goto done;
   }
 
-  socket->remote_seq = seq + seq_len(tcp_hdr, md);
+  socket->recv_next = seq + seq_len(tcp_hdr, md);
 
   if (tcp_hdr->flags & TCP_FLAG_RST) {
     action = tcp_handle_rst(socket, pb);
@@ -426,12 +428,12 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
   KASSERT_DBG(tcp_hdr->flags & TCP_FLAG_ACK);
 
   // TODO(tcp): handle out-of-order/duplicate ACKs properly.
-  if (btoh32(tcp_hdr->ack) != socket->seq) {
+  if (btoh32(tcp_hdr->ack) != socket->send_next) {
     KLOG(DFATAL, "TCP: proper ACKs unimplemented\n");
     return;
   }
 
-  socket->remote_ack = btoh32(tcp_hdr->ack);
+  socket->send_unack = btoh32(tcp_hdr->ack);
 
   switch (socket->state) {
     case TCP_LAST_ACK:
@@ -486,7 +488,7 @@ static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
   KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
 
-  if (btoh32(tcp_hdr->seq) != socket->remote_seq) {
+  if (btoh32(tcp_hdr->seq) != socket->recv_next) {
     KLOG(DEBUG, "TCP: socket %p out-of-order RST, dropping\n", socket);
     // TODO(tcp): send a challenge ack.
     return TCP_DROP_BAD_PKT;
@@ -521,7 +523,7 @@ static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
   if (tcp_hdr->flags & TCP_FLAG_ACK) {
     uint32_t seg_ack = btoh32(tcp_hdr->ack);
     // We don't transit data with our SYN, so this is the only acceptable ACK.
-    if (seg_ack != socket->seq) {
+    if (seg_ack != socket->send_next) {
       // TODO(tcp): send a RST if RST flag isn't set.
       die("Out-of-order ACK received in SYN_SENT");
     }
@@ -543,9 +545,9 @@ static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
   }
 
   set_state(socket, TCP_ESTABLISHED, "SYN-ACK received");
-  socket->remote_seq = btoh32(tcp_hdr->seq) + 1;
-  socket->remote_ack = btoh32(tcp_hdr->ack);
-  socket->remote_wndsize = btoh16(tcp_hdr->wndsize);
+  socket->recv_next = btoh32(tcp_hdr->seq) + 1;
+  socket->send_unack = btoh32(tcp_hdr->ack);
+  socket->send_wndsize = btoh16(tcp_hdr->wndsize);
   return TCP_SEND_ACK;
 }
 
@@ -1039,7 +1041,7 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
       return -EISCONN;
     }
 
-    int seq = (int)socket->seq;
+    int seq = (int)socket->send_next;
     kspin_unlock(&socket->spin_mu);
     return getsockopt_int(val, val_len, seq);
   }
@@ -1067,7 +1069,7 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
       kspin_unlock(&socket->spin_mu);
       return -EISCONN;
     }
-    socket->seq = (uint32_t)seq;
+    socket->send_next = (uint32_t)seq;
     kspin_unlock(&socket->spin_mu);
     return 0;
   }

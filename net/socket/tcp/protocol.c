@@ -62,13 +62,13 @@ static int tcp_build_packet(socket_tcp_t* socket, int tcp_flags,
       (const struct sockaddr_in*)&socket->connected_addr;
   tcp_hdr->src_port = src->sin_port;
   tcp_hdr->dst_port = dst->sin_port;
-  tcp_hdr->seq = htob32(socket->seq);
-  tcp_hdr->ack = (tcp_flags & TCP_FLAG_ACK) ? htob32(socket->remote_seq) : 0;
+  tcp_hdr->seq = htob32(socket->send_next);
+  tcp_hdr->ack = (tcp_flags & TCP_FLAG_ACK) ? htob32(socket->recv_next) : 0;
   _Static_assert(sizeof(tcp_hdr_t) % sizeof(uint32_t) == 0, "bad tcp hdr");
   tcp_hdr->data_offset = sizeof(tcp_hdr_t) / sizeof(uint32_t);
   tcp_hdr->_zeroes = 0;
   tcp_hdr->flags = tcp_flags;
-  tcp_hdr->wndsize = htob16(socket->wndsize);
+  tcp_hdr->wndsize = htob16(socket->recv_wndsize);
   tcp_hdr->checksum = 0;
   tcp_hdr->urg_ptr = 0;
 
@@ -97,8 +97,8 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
     return result;
   }
 
-  if (tcp_flags & TCP_FLAG_SYN) socket->seq++;
-  if (tcp_flags & TCP_FLAG_FIN) socket->seq++;
+  if (tcp_flags & TCP_FLAG_SYN) socket->send_next++;
+  if (tcp_flags & TCP_FLAG_FIN) socket->send_next++;
   kspin_unlock(&socket->spin_mu);
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
