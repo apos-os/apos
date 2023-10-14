@@ -49,8 +49,9 @@
 
 #define DEFAULT_LISTEN_BACKLOG 10
 
-// TODO(aoates): make this a socket option.
-#define SOCKET_READBUF (16 * 1024)
+#define SOCKET_DEFAULT_BUFSIZE (16 * 1024)
+
+#define MAX_BUF_SIZE (1 * 1024 * 1024)
 
 // TODO(tcp): make this a socket option
 // TODO(tcp): increase this default
@@ -74,7 +75,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
     return -ENOMEM;
   }
 
-  void* rxbuf = kmalloc(SOCKET_READBUF);
+  void* rxbuf = kmalloc(SOCKET_DEFAULT_BUFSIZE);
   if (!rxbuf) {
     kfree(sock);
     return -ENOMEM;
@@ -90,7 +91,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->ref = REFCOUNT_INIT;
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
-  circbuf_init(&sock->recv_buf, rxbuf, SOCKET_READBUF);
+  circbuf_init(&sock->recv_buf, rxbuf, SOCKET_DEFAULT_BUFSIZE);
   sock->send_next = gen_seq_num(sock);
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   kthread_queue_init(&sock->q);
@@ -1025,6 +1026,52 @@ static int sock_tcp_poll(socket_t* socket_base, short event_mask,
   return -ENOTSUP;
 }
 
+static int getsockopt_bufsize(socket_tcp_t* socket, int option, void* val,
+                              socklen_t* val_len) {
+  KASSERT(option == SO_RCVBUF);
+  circbuf_t* buf = &socket->recv_buf;
+
+  kspin_lock(&socket->spin_mu);
+  int buflen = (int)buf->buflen;
+  kspin_unlock(&socket->spin_mu);
+  return getsockopt_int(val, val_len, buflen);
+}
+
+static int setsockopt_bufsize(socket_tcp_t* socket, int option, const void* val,
+                              socklen_t val_len) {
+  KASSERT(option == SO_RCVBUF);
+  circbuf_t* buf = &socket->recv_buf;
+
+  int buflen;
+  int result = setsockopt_int(val, val_len, &buflen);
+  if (result) {
+    return result;
+  }
+
+  if (buflen > MAX_BUF_SIZE) {
+    return -EINVAL;
+  }
+
+  void* newbuf = kmalloc(buflen);
+  if (!newbuf) {
+    return -ENOMEM;
+  }
+
+  kspin_lock(&socket->spin_mu);
+  if (socket->state != TCP_CLOSED) {
+    kspin_unlock(&socket->spin_mu);
+    kfree(newbuf);
+    return -EISCONN;
+  }
+  KASSERT_DBG(buf->len == 0);
+  KASSERT_DBG(buf->pos == 0);
+
+  kfree(buf->buf);
+  circbuf_init(buf, newbuf, buflen);
+  kspin_unlock(&socket->spin_mu);
+  return 0;
+}
+
 static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
                                 void* restrict val,
                                 socklen_t* restrict val_len) {
@@ -1034,7 +1081,9 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
 
-  if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
+  if (level == SOL_SOCKET && option == SO_RCVBUF) {
+    return getsockopt_bufsize(socket, option, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     kspin_lock(&socket->spin_mu);
     if (socket->state != TCP_CLOSED) {
       kspin_unlock(&socket->spin_mu);
@@ -1057,7 +1106,9 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
 
-  if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
+  if (level == SOL_SOCKET && option == SO_RCVBUF) {
+    return setsockopt_bufsize(socket, option, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     int seq;
     int result = setsockopt_int(val, val_len, &seq);
     if (result) {
