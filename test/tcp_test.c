@@ -1265,7 +1265,7 @@ static void connect_tests(void) {
 }
 
 static void rst_during_established_test(void) {
-  KTEST_BEGIN("TCP: basic connect() (v2)");
+  KTEST_BEGIN("TCP: RST during established (no data)");
   tcp_test_state_t s;
   init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
 
