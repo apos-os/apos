@@ -16,6 +16,7 @@
 #ifndef APOO_NET_SOCKET_SOCKOPT_H
 #define APOO_NET_SOCKET_SOCKOPT_H
 
+#include "dev/timer.h"
 #include "user/include/apos/net/socket/socket.h"
 
 // Implements net_getsockopt() for an int-valued sockopt.  Supplies the given
@@ -25,5 +26,12 @@ int getsockopt_int(void* val, socklen_t* val_len, int option_value);
 // Implements net_setsockopt() for an int-valued sockopt.  Sets *option_value to
 // the parsed value, or returns -error.
 int setsockopt_int(const void* val, socklen_t val_len, int* option_value);
+
+// As above, but for struct timeval sockopts.  Converts to/from a ms value, and
+// converts zero (disabled timeout) to -1 (what scheduler_wait* take for a
+// disabled timeout).
+int getsockopt_tvms(void* val, socklen_t* val_len, long option_value);
+int setsockopt_tvms(const void* val, socklen_t val_len,
+                    long* option_value);
 
 #endif

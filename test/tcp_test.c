@@ -14,6 +14,7 @@
 
 #include "common/endian.h"
 #include "common/kassert.h"
+#include "dev/timer.h"
 #include "net/addr.h"
 #include "net/bind.h"
 #include "net/inet.h"
@@ -31,6 +32,7 @@
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/tcp.h"
+#include "user/include/apos/time_types.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
@@ -2268,6 +2270,150 @@ static void out_of_order_recv_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void recv_timeout_test(void) {
+  KTEST_BEGIN("TCP: recv() timeout");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_timeval tv = {9999, 9999};
+  socklen_t slen = sizeof(struct apos_timeval);
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv, &slen));
+  KEXPECT_EQ(0, tv.tv_sec);
+  KEXPECT_EQ(0, tv.tv_usec);
+
+  // Try invalid values.
+#if ARCH_IS_64_BIT
+  tv.tv_sec = INT64_MAX;
+  tv.tv_usec = 0;
+  KEXPECT_EQ(-ERANGE, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     sizeof(tv)));
+#endif
+  tv.tv_sec = 0;
+  tv.tv_usec = 1000001;
+  KEXPECT_EQ(-ERANGE, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     sizeof(tv)));
+  tv.tv_sec = 0;
+  tv.tv_usec = -1;
+  KEXPECT_EQ(-ERANGE, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     sizeof(tv)));
+  tv.tv_sec = -1;
+  tv.tv_usec = 0;
+  KEXPECT_EQ(-ERANGE, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     sizeof(tv)));
+
+  // Test actual timeout.
+  tv.tv_sec = 0;
+  tv.tv_usec = 50 * 1000;
+  KEXPECT_EQ(0, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     sizeof(tv)));
+
+  char buf[10];
+  apos_ms_t start = get_time_ms();
+  KEXPECT_EQ(-ETIMEDOUT, vfs_read(s.socket, buf, 10));
+  apos_ms_t end = get_time_ms();
+  KEXPECT_GE(end - start, 50);
+  KEXPECT_LE(end - start, 500);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void recv_timeout_test2(void) {
+  KTEST_BEGIN("TCP: recv() timeout (set to zero)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_timeval tv = {0, 0};
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)));
+
+  char buf[10];
+  KEXPECT_TRUE(start_read(&s, buf, 10));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 50));
+  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void recv_timeout_test3(void) {
+  KTEST_BEGIN("TCP: recv() timeout (data received)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_timeval tv = {0, 50 * 1000};
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)));
+
+  char buf[10];
+  KEXPECT_TRUE(start_read(&s, buf, 1));
+  kthread_disable(s.thread);
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 60));
+
+  // Read the data in _this_ thread.
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+
+  // Let the other thread wake up.  It should realize that it timed out.
+  kthread_enable(s.thread);
+  KEXPECT_EQ(-ETIMEDOUT, finish_op(&s));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
+
+  cleanup_tcp_test(&s);
+}
+
+static void recv_timeout_test4(void) {
+  KTEST_BEGIN("TCP: recv() timeout (timeout below ms granularity)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_timeval tv = {0, 10};
+  KEXPECT_EQ(0, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv,
+                                     sizeof(tv)));
+
+  socklen_t slen = sizeof(struct apos_timeval);
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_RCVTIMEO, &tv, &slen));
+  KEXPECT_EQ(sizeof(struct apos_timeval), slen);
+  KEXPECT_EQ(0, tv.tv_sec);
+  KEXPECT_EQ(1000, tv.tv_usec);
+
+  char buf[10];
+  apos_ms_t start = get_time_ms();
+  KEXPECT_EQ(-ETIMEDOUT, vfs_read(s.socket, buf, 10));
+  apos_ms_t end = get_time_ms();
+  KEXPECT_LE(end - start, 50);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  cleanup_tcp_test(&s);
+}
+
 static void established_tests(void) {
   basic_established_recv_test();
   rst_during_established_test();
@@ -2299,6 +2445,11 @@ static void established_tests(void) {
   interrupted_recv_test2();
 
   out_of_order_recv_test();
+
+  recv_timeout_test();
+  recv_timeout_test2();
+  recv_timeout_test3();
+  recv_timeout_test4();
 }
 
 static void recvbuf_size_test(void) {

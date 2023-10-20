@@ -54,6 +54,9 @@ typedef struct socket_tcp {
   circbuf_t send_buf;
   circbuf_t recv_buf;
 
+  long recv_timeout_ms;
+  long send_timeout_ms;
+
   // TCP state variables.
   uint32_t send_unack;    // My first unacknowledged sequence number.
   uint32_t send_next;     // My next sequence number to send.

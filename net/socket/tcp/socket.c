@@ -58,9 +58,6 @@
 // TODO(tcp): increase this default
 #define SOCKET_CONNECT_TIMEOUT_MS 1000
 
-// TODO(tcp): make this a socket option
-#define SOCKET_READ_TIMEOUT_MS 60000
-
 static const socket_ops_t g_tcp_socket_ops;
 
 static uint32_t gen_seq_num(const socket_tcp_t* sock) {
@@ -104,6 +101,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->send_buf, sendbuf, SOCKET_DEFAULT_BUFSIZE);
   circbuf_init(&sock->recv_buf, recvbuf, SOCKET_DEFAULT_BUFSIZE);
+  sock->recv_timeout_ms = -1;
+  sock->send_timeout_ms = -1;
   sock->send_next = gen_seq_num(sock);
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   kthread_queue_init(&sock->q);
@@ -1050,9 +1049,9 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   kspin_lock(&sock->spin_mu);
 
   // Wait until data is available or the socket is closed.
-  // TODO(tcp): tests for read timeouts (and support for changing it).
   apos_ms_t now = get_time_ms();
-  apos_ms_t timeout_end = now + SOCKET_READ_TIMEOUT_MS;
+  apos_ms_t timeout_end =
+      (sock->recv_timeout_ms < 0) ? UINT32_MAX : now + sock->recv_timeout_ms;
   int result = 0;
   // TODO(tcp): tests for transitioning to FIN_WAIT* during this.
   while (now < timeout_end && recv_state(sock) == RECV_BLOCK_FOR_DATA) {
@@ -1077,7 +1076,6 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
         break;
 
       case RECV_BLOCK_FOR_DATA:
-        // TODO(tcp): write a test for this case.
         result = -ETIMEDOUT;
         break;
 
@@ -1231,6 +1229,10 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
 
   if (level == SOL_SOCKET && (option == SO_RCVBUF || option == SO_SNDBUF)) {
     return getsockopt_bufsize(socket, option, val, val_len);
+  } else if (level == SOL_SOCKET && option == SO_RCVTIMEO) {
+    return getsockopt_tvms(val, val_len, socket->recv_timeout_ms);
+  } else if (level == SOL_SOCKET && option == SO_SNDTIMEO) {
+    return getsockopt_tvms(val, val_len, socket->send_timeout_ms);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     kspin_lock(&socket->spin_mu);
     if (socket->state != TCP_CLOSED) {
@@ -1256,6 +1258,10 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
 
   if (level == SOL_SOCKET && (option == SO_RCVBUF || option == SO_SNDBUF)) {
     return setsockopt_bufsize(socket, option, val, val_len);
+  } else if (level == SOL_SOCKET && option == SO_RCVTIMEO) {
+    return setsockopt_tvms(val, val_len, &socket->recv_timeout_ms);
+  } else if (level == SOL_SOCKET && option == SO_SNDTIMEO) {
+    return setsockopt_tvms(val, val_len, &socket->send_timeout_ms);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     int seq;
     int result = setsockopt_int(val, val_len, &seq);
