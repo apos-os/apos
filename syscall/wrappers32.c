@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "common/config.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
 #include "common/time.h"
@@ -22,6 +23,8 @@
 #include "memory/mmap.h"
 #include "proc/futex.h"
 #include "proc/limit.h"
+#include "proc/load/load.h"
+#include "proc/process.h"
 #include "proc/signal/signal.h"
 #include "syscall/wrappers32.h"
 #include "vfs/vfs.h"
@@ -190,5 +193,57 @@ int apos_get_timespec_32(struct apos_timespec_32* ts32) {
   }
 
   *ts32 = timespec64to32(ts);
+  return 0;
+}
+
+void timeval_32to64(const struct apos_timeval32* tv32,
+                    struct apos_timeval* tv64) {
+  tv64->tv_sec = tv32->tv_sec;
+  tv64->tv_usec = tv32->tv_usec;
+}
+
+int timeval_64to32(const struct apos_timeval* tv64,
+                   struct apos_timeval32* tv32) {
+  if (tv64->tv_sec > INT32_MAX || tv64->tv_sec < INT32_MIN ||
+      tv64->tv_usec > INT32_MAX || tv64->tv_usec < INT32_MIN) {
+    return -ERANGE;
+  }
+  tv32->tv_sec = tv64->tv_sec;
+  tv32->tv_usec = tv64->tv_usec;
+  return 0;
+}
+
+int timeval_from_user(const void* buf, size_t buflen,
+                      struct apos_timeval* tv_out) {
+  bool is_tv32 = (!ARCH_IS_64_BIT || bin_32bit(proc_current()->user_arch));
+  size_t expected_size =
+      is_tv32 ? sizeof(struct apos_timeval32) : sizeof(struct apos_timeval);
+  if (buflen != expected_size) {
+    return -EINVAL;
+  }
+
+  if (is_tv32) {
+    timeval_32to64((const struct apos_timeval32*)buf, tv_out);
+  } else {
+    kmemcpy(tv_out, buf, sizeof(struct apos_timeval));
+  }
+  return 0;
+}
+
+int timeval_to_user(const struct apos_timeval* tv, void* buf_out,
+                    size_t* buflen) {
+  bool is_tv32 = (!ARCH_IS_64_BIT || bin_32bit(proc_current()->user_arch));
+  size_t expected_size =
+      is_tv32 ? sizeof(struct apos_timeval32) : sizeof(struct apos_timeval);
+  if (*buflen < expected_size) {
+    return -ENOMEM;
+  }
+
+  *buflen = expected_size;
+  if (is_tv32) {
+    return timeval_64to32(tv, (struct apos_timeval32*)buf_out);
+  }
+
+  kmemcpy(buf_out, tv, sizeof(struct apos_timeval));
   return 0;
 }
