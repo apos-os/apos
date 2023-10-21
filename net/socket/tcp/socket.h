@@ -54,6 +54,7 @@ typedef struct socket_tcp {
   circbuf_t send_buf;
   circbuf_t recv_buf;
 
+  long connect_timeout_ms;
   long recv_timeout_ms;
   long send_timeout_ms;
 

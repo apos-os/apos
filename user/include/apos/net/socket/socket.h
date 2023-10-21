@@ -50,6 +50,7 @@ struct sockaddr_storage {
 #define SO_SNDBUF 3
 #define SO_RCVTIMEO 4
 #define SO_SNDTIMEO 5
+#define SO_CONNECTTIMEO 6  // Non-standard.
 
 // TODO(aoates): this is supposed to define size_t and ssize_t.
 

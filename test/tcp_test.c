@@ -27,6 +27,7 @@
 #include "proc/kthread.h"
 #include "proc/notification.h"
 #include "proc/process.h"
+#include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -1309,6 +1310,151 @@ static void get_addrs_during_connect_test(void) {
   // implemented.
 }
 
+static void connect_interrupted_test(void) {
+  KTEST_BEGIN("TCP: connect() interrupted");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  // ...but the connect should still complete.
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // Should be able to pass data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
+
+  cleanup_tcp_test(&s);
+}
+
+static void connect_timeout_test(void) {
+  KTEST_BEGIN("TCP: connect() timeout");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  struct apos_timeval tv = {9999, 9999};
+  socklen_t slen = sizeof(struct apos_timeval);
+  KEXPECT_EQ(0,
+             net_getsockopt(s.socket, SOL_SOCKET, SO_CONNECTTIMEO, &tv, &slen));
+  KEXPECT_EQ(60, tv.tv_sec);
+  KEXPECT_EQ(0, tv.tv_usec);
+
+  // Test actual timeout.
+  tv.tv_sec = 0;
+  tv.tv_usec = 50 * 1000;
+  KEXPECT_EQ(0, net_setsockopt(s.socket, SOL_SOCKET, SO_CONNECTTIMEO, &tv,
+                               sizeof(tv)));
+
+  apos_ms_t start = get_time_ms();
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-ETIMEDOUT, finish_op(&s));
+  apos_ms_t end = get_time_ms();
+  KEXPECT_GE(end - start, 50);
+  KEXPECT_LE(end - start, 500);
+
+  // ...but the connect should still complete.
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // Should be able to pass data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
+
+  cleanup_tcp_test(&s);
+}
+
+static void connect_gets_to_close_wait_test(void) {
+  KTEST_BEGIN("TCP: connect() (socket gets to CLOSE_WAIT)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  kthread_disable(s.thread);
+
+  // ...but the connect should still complete.
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // Should be able to pass data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 505));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 50));
+  kthread_enable(s.thread);
+  KEXPECT_EQ(0, finish_op(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 505));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void connect_gets_to_closed_test(void) {
+  KTEST_BEGIN("TCP: connect() (socket gets to CLOSED)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  kthread_disable(s.thread);
+
+  // ...but the connect should still complete.
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // Should be able to pass data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 50));
+  kthread_enable(s.thread);
+  KEXPECT_EQ(0, finish_op(&s));
+
+  cleanup_tcp_test(&s);
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
@@ -1318,6 +1464,10 @@ static void connect_tests(void) {
   rebind_tests();
   implicit_bind_test();
   get_addrs_during_connect_test();
+  connect_interrupted_test();
+  connect_timeout_test();
+  connect_gets_to_close_wait_test();
+  connect_gets_to_closed_test();
 }
 
 static void rst_during_established_test(void) {

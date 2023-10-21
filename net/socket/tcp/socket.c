@@ -54,9 +54,7 @@
 
 #define MAX_BUF_SIZE (1 * 1024 * 1024)
 
-// TODO(tcp): make this a socket option
-// TODO(tcp): increase this default
-#define SOCKET_CONNECT_TIMEOUT_MS 1000
+#define SOCKET_CONNECT_TIMEOUT_MS 60000
 
 static const socket_ops_t g_tcp_socket_ops;
 
@@ -101,6 +99,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->send_buf, sendbuf, SOCKET_DEFAULT_BUFSIZE);
   circbuf_init(&sock->recv_buf, recvbuf, SOCKET_DEFAULT_BUFSIZE);
+  sock->connect_timeout_ms = SOCKET_CONNECT_TIMEOUT_MS;
   sock->recv_timeout_ms = -1;
   sock->send_timeout_ms = -1;
   sock->send_next = gen_seq_num(sock);
@@ -958,11 +957,11 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   // Wait until the socket is established or closes (with an error, presumably).
   kspin_lock(&sock->spin_mu);
   apos_ms_t now = get_time_ms();
-  apos_ms_t timeout_end = now + SOCKET_CONNECT_TIMEOUT_MS;
-  // TODO(tcp): handle other transitions as well (in particular, transition to
-  // CLOSE_WAIT before this thread wakes up).
-  while (now < timeout_end && sock->state != TCP_ESTABLISHED &&
-         sock->state != TCP_CLOSED_DONE) {
+  apos_ms_t timeout_end = (sock->connect_timeout_ms < 0)
+                              ? UINT32_MAX
+                              : now + sock->connect_timeout_ms;
+  while (now < timeout_end &&
+         get_state_type(sock->state) == TCPSTATE_PRE_ESTABLISHED) {
     int wait_result =
         scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
@@ -974,6 +973,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
     } else {
       KASSERT(wait_result == SWAIT_DONE);
     }
+    now = get_time_ms();
   }
 
   if (sock->error) {
@@ -981,12 +981,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
     result = -sock->error;
     sock->error = 0;
   }
-
-  if (result == 0) {
-    KASSERT_DBG(sock->state == TCP_ESTABLISHED);
-  }
   kspin_unlock(&sock->spin_mu);
-
   return result;
 }
 
@@ -1233,6 +1228,8 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     return getsockopt_tvms(val, val_len, socket->recv_timeout_ms);
   } else if (level == SOL_SOCKET && option == SO_SNDTIMEO) {
     return getsockopt_tvms(val, val_len, socket->send_timeout_ms);
+  } else if (level == SOL_SOCKET && option == SO_CONNECTTIMEO) {
+    return getsockopt_tvms(val, val_len, socket->connect_timeout_ms);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     kspin_lock(&socket->spin_mu);
     if (socket->state != TCP_CLOSED) {
@@ -1262,6 +1259,8 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
     return setsockopt_tvms(val, val_len, &socket->recv_timeout_ms);
   } else if (level == SOL_SOCKET && option == SO_SNDTIMEO) {
     return setsockopt_tvms(val, val_len, &socket->send_timeout_ms);
+  } else if (level == SOL_SOCKET && option == SO_CONNECTTIMEO) {
+    return setsockopt_tvms(val, val_len, &socket->connect_timeout_ms);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     int seq;
     int result = setsockopt_int(val, val_len, &seq);
