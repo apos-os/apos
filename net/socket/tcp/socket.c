@@ -958,7 +958,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   kspin_lock(&sock->spin_mu);
   apos_ms_t now = get_time_ms();
   apos_ms_t timeout_end = (sock->connect_timeout_ms < 0)
-                              ? UINT32_MAX
+                              ? APOS_MS_MAX
                               : now + sock->connect_timeout_ms;
   while (now < timeout_end &&
          get_state_type(sock->state) == TCPSTATE_PRE_ESTABLISHED) {
@@ -1046,7 +1046,7 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   // Wait until data is available or the socket is closed.
   apos_ms_t now = get_time_ms();
   apos_ms_t timeout_end =
-      (sock->recv_timeout_ms < 0) ? UINT32_MAX : now + sock->recv_timeout_ms;
+      (sock->recv_timeout_ms < 0) ? APOS_MS_MAX : now + sock->recv_timeout_ms;
   int result = 0;
   // TODO(tcp): tests for transitioning to FIN_WAIT* during this.
   while (now < timeout_end && recv_state(sock) == RECV_BLOCK_FOR_DATA) {

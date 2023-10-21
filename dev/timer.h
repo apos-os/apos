@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 typedef uint32_t apos_ms_t;
+#define APOS_MS_MAX UINT32_MAX
 
 #define KMAX_TIMERS 10
 #define KTIMESLICE_MS 10
