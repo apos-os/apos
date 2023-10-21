@@ -31,6 +31,11 @@ void circbuf_init(circbuf_t* cbuf, void* buf, size_t buflen);
 ssize_t circbuf_read(circbuf_t* cbuf, void* buf, size_t nbytes);
 ssize_t circbuf_write(circbuf_t* cbuf, const void* buf, size_t nbytes);
 
+// Peek (read without consuming) and consume (consume without reading) data.
+// circbuf_read() is equivalent to circbuf_peek() followed by circbuf_consume().
+ssize_t circbuf_peek(const circbuf_t* cbuf, void* buf, size_t nbytes);
+ssize_t circbuf_consume(circbuf_t* cbuf, size_t nbytes);
+
 // Empty the buffer.
 void circbuf_clear(circbuf_t* cbuf);
 

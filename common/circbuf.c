@@ -58,6 +58,31 @@ ssize_t circbuf_write(circbuf_t* cbuf, const void* buf, size_t nbytes) {
   return bytes_written;
 }
 
+ssize_t circbuf_peek(const circbuf_t* cbuf, void* buf, size_t nbytes) {
+  size_t read_pos = cbuf->pos;
+  size_t read_len = cbuf->len;
+  ssize_t bytes_read = 0;
+  while (nbytes > 0 && read_len > 0) {
+    const size_t chunk_bytes =
+        min(min(nbytes, read_len), cbuf->buflen - read_pos);
+    kmemcpy(buf, cbuf->buf + read_pos, chunk_bytes);
+    read_pos = (read_pos + chunk_bytes) % cbuf->buflen;
+    read_len -= chunk_bytes;
+    bytes_read += chunk_bytes;
+    buf += chunk_bytes;
+    nbytes -= chunk_bytes;
+  }
+
+  return bytes_read;
+}
+
+ssize_t circbuf_consume(circbuf_t* cbuf, size_t nbytes) {
+  nbytes = min(nbytes, cbuf->len);
+  cbuf->pos = (cbuf->pos + nbytes) % cbuf->buflen;
+  cbuf->len -= nbytes;
+  return nbytes;
+}
+
 void circbuf_clear(circbuf_t* cbuf) {
   cbuf->len = 0;
 }

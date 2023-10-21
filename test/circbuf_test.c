@@ -184,8 +184,52 @@ static void basic_test(void) {
   //  - start is last element
 }
 
+static void peek_consume_test(void) {
+  KTEST_BEGIN("circbuf: peek");
+  char cbuf_data[CBUF_SIZE + 1];
+  kmemset(cbuf_data, ' ', CBUF_SIZE);
+  cbuf_data[CBUF_SIZE] = '\0';
+
+  circbuf_t cbuf;
+  circbuf_init(&cbuf, cbuf_data, CBUF_SIZE);
+  cbuf.pos = 5;
+  KEXPECT_EQ(8, circbuf_write(&cbuf, "01234567", 8));
+  KEXPECT_STREQ("567  01234", cbuf_data);
+
+  char buf[10];
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(3, circbuf_peek(&cbuf, buf, 3));
+  KEXPECT_STREQ("012", buf);
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(5, circbuf_peek(&cbuf, buf, 5));
+  KEXPECT_STREQ("01234", buf);
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(8, circbuf_peek(&cbuf, buf, 10));
+  KEXPECT_STREQ("01234567", buf);
+  KEXPECT_EQ(1, circbuf_write(&cbuf, "a", 1));
+  KEXPECT_STREQ("567a 01234", cbuf_data);
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(9, circbuf_peek(&cbuf, buf, 10));
+  KEXPECT_STREQ("01234567a", buf);
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(9, circbuf_peek(&cbuf, buf, 20));
+  KEXPECT_STREQ("01234567a", buf);
+
+  KTEST_BEGIN("circbuf: consume");
+  KEXPECT_EQ(3, circbuf_consume(&cbuf, 3));
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(6, circbuf_peek(&cbuf, buf, 10));
+  KEXPECT_STREQ("34567a", buf);
+  KEXPECT_EQ(4, circbuf_consume(&cbuf, 4));
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(2, circbuf_read(&cbuf, buf, 20));
+  KEXPECT_STREQ("7a", buf);
+  KEXPECT_EQ(0, circbuf_peek(&cbuf, buf, 10));
+  KEXPECT_EQ(0, cbuf.len);
+}
 
 void circbuf_test(void) {
   KTEST_SUITE_BEGIN("circbuf_t tests");
   basic_test();
+  peek_consume_test();
 }
