@@ -58,9 +58,10 @@ ssize_t circbuf_write(circbuf_t* cbuf, const void* buf, size_t nbytes) {
   return bytes_written;
 }
 
-ssize_t circbuf_peek(const circbuf_t* cbuf, void* buf, size_t nbytes) {
-  size_t read_pos = cbuf->pos;
-  size_t read_len = cbuf->len;
+ssize_t circbuf_peek(const circbuf_t* cbuf, void* buf, size_t offset,
+                     size_t nbytes) {
+  size_t read_pos = (cbuf->pos + offset) % cbuf->buflen;
+  size_t read_len = cbuf->len - min(offset, cbuf->len);
   ssize_t bytes_read = 0;
   while (nbytes > 0 && read_len > 0) {
     const size_t chunk_bytes =
