@@ -64,6 +64,8 @@ typedef struct socket_tcp {
   uint32_t send_wndsize;  // The send window size (from their side).
   uint32_t recv_next;     // Their next sequence number expected.
   uint32_t recv_wndsize;  // Receive window size (my window)
+  uint32_t cwnd;          // Congestion window size.
+  uint32_t mss;           // Maximum segment size.
 
   poll_event_t poll_event;
 

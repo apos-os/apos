@@ -15,15 +15,20 @@
 
 #include <stdint.h>
 
+#include "common/circbuf.h"
 #include "common/endian.h"
 #include "common/kassert.h"
+#include "common/math.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/pbuf.h"
+#include "net/socket/tcp/socket.h"
 #include "net/util.h"
 #include "proc/kthread.h"
 #include "proc/spinlock.h"
+
+#define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
 
 static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
   return (const ip4_hdr_t*)pbuf_getc(pb);
@@ -122,6 +127,60 @@ int tcp_send_fin(socket_tcp_t* socket) {
   kmutex_assert_is_held(&socket->mu);
   return send_flags_only_packet(socket, TCP_FLAG_FIN | TCP_FLAG_ACK,
                                 /* allow_block */ true);
+}
+
+int tcp_send_data(socket_tcp_t* socket, bool allow_block) {
+  pbuf_t* pb = NULL;
+  ip4_pseudo_hdr_t pseudo_ip;
+
+  // Figure out how much data to send.
+  kspin_lock(&socket->spin_mu);
+  if (get_state_type(socket->state) != TCPSTATE_ESTABLISHED) {
+    kspin_unlock(&socket->spin_mu);
+    return -EAGAIN;
+  }
+
+  size_t unacked_bytes = socket->send_next - socket->send_unack;
+  KASSERT_DBG(socket->send_buf.len >= unacked_bytes);
+  size_t data_to_send =
+      min(socket->cwnd,
+          socket->send_wndsize - min(socket->send_wndsize, unacked_bytes));
+  data_to_send = min(data_to_send, socket->send_buf.len - unacked_bytes);
+  data_to_send = min(data_to_send, socket->mss);
+  if (data_to_send == 0) {
+    kspin_unlock(&socket->spin_mu);
+    return -EAGAIN;
+  }
+
+  // Build the TCP header (minus checksum).
+  int result =
+      tcp_build_packet(socket, TCP_FLAG_ACK, data_to_send, &pb, &pseudo_ip);
+  if (result < 0) {
+    kspin_unlock(&socket->spin_mu);
+    return result;
+  }
+
+  size_t bytes_copied =
+      circbuf_peek(&socket->send_buf, pbuf_get(pb) + sizeof(tcp_hdr_t),
+                   unacked_bytes, data_to_send);
+  if (bytes_copied != data_to_send) {
+    KLOG(DFATAL, "TCP: unable to copy %zd bytes to packet (copied %zd)\n",
+         data_to_send, bytes_copied);
+    kspin_unlock(&socket->spin_mu);
+    return -ENOMEM;
+  }
+  socket->send_next += bytes_copied;
+
+  kspin_unlock(&socket->spin_mu);
+
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  tcp_hdr->checksum =
+      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+
+  KLOG(DEBUG2, "TCP: socket %p transmitting %zu bytes of data\n", socket,
+       data_to_send);
+  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
+  return ip_send(pb, allow_block);
 }
 
 bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md) {

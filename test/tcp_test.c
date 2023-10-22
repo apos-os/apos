@@ -38,6 +38,10 @@
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
 
+// How long (in ms) to wait for async operations to confirm they're blocking.
+// Increase this to make tests more stringent at the cost of running longer.
+#define BLOCK_VERIFY_MS 10
+
 // Some helpers just to make tests clearer to read and eliminate lots of silly
 // casting of sockaddr structs.
 static const char* ip2str(in_addr_t addr) {
@@ -61,6 +65,11 @@ static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = str2inet(addr);
   saddr->sin_port = htob16(port);
+}
+
+static bool has_sigpipe(void) {
+  const ksigset_t sigset = proc_pending_signals(proc_current());
+  return ksigismember(&sigset, SIGPIPE);
 }
 
 static int do_bind(int sock, const char* addr, int port) {
@@ -507,7 +516,7 @@ static bool start_connect(tcp_test_state_t* s, const char* ip, int port) {
     KTEST_ADD_FAILURE("connect() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op_done, 20)) {
+  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("connect() finished without blocking");
     KEXPECT_EQ(0, s->op_result);  // Get the error code.
     return false;
@@ -535,8 +544,35 @@ static bool start_read(tcp_test_state_t* s, void* buf, size_t buflen) {
     KTEST_ADD_FAILURE("read() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op_done, 20)) {
+  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("read() finished without blocking");
+    KEXPECT_EQ(0, s->op_result);  // Get the error code.
+    return false;
+  }
+  return true;
+}
+
+static void* tcp_thread_write(void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  ntfn_notify(&s->op_started);
+  s->op_result = vfs_write(s->socket, s->arg_buffer, s->arg_buflen);
+  ntfn_notify(&s->op_done);
+  return NULL;
+}
+
+// Start an async write() call in another thread and ensure it blocks.
+static bool start_write(tcp_test_state_t* s, const char* data) {
+  ntfn_init(&s->op_started);
+  ntfn_init(&s->op_done);
+  s->arg_buffer = (void*)data;
+  s->arg_buflen = kstrlen(data);
+  KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_write, s));
+  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+    KTEST_ADD_FAILURE("write() thread didn't start");
+    return false;
+  }
+  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
+    KTEST_ADD_FAILURE("write() finished without blocking");
     KEXPECT_EQ(0, s->op_result);  // Get the error code.
     return false;
   }
@@ -572,7 +608,8 @@ static ssize_t do_raw_recv(tcp_test_state_t* s) {
     return -EAGAIN;
   }
   kmemset(s->recv, 0, RAW_RECV_BUF_SIZE);
-  return net_recvfrom(s->raw_socket, s->recv, RAW_RECV_BUF_SIZE, 0, NULL, NULL);
+  return net_recvfrom(s->raw_socket, s->recv, RAW_RECV_BUF_SIZE - 1, 0, NULL,
+                      NULL);
 }
 
 static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
@@ -649,8 +686,10 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   if (!v) return v;
 
   // Validate the IP header.
-  v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t), result);
-  if (!v) return v;
+  v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen, result);
+  if (result < (int)sizeof(ip4_hdr_t) + (int)sizeof(tcp_hdr_t)) {
+    return false;
+  }
 
   ip4_hdr_t* ip_hdr = (ip4_hdr_t*)s->recv;
   v &= KEXPECT_EQ(0x45, ip_hdr->version_ihl);
@@ -687,6 +726,11 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   }
   // Don't bother checking this checksum either.
   v &= KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
+
+  // Check data.
+  if (spec.data) {
+    KEXPECT_STREQ(spec.data, s->recv + sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t));
+  }
   return v;
 }
 
@@ -710,7 +754,9 @@ static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   tcp_hdr->ack = (spec.flags & TCP_FLAG_ACK) ? btoh32(spec.ack) : 0;
   tcp_hdr->data_offset = 5;
   tcp_hdr->flags = spec.flags;
-  tcp_hdr->wndsize = spec.wndsize;
+  if (spec.wndsize == 0) spec.wndsize = 8000;
+  else if (spec.wndsize == WNDSIZE_ZERO) spec.wndsize = 0;
+  tcp_hdr->wndsize = btoh16(spec.wndsize);
   tcp_hdr->checksum = 0;
   if (spec.datalen > 0) {
     kmemcpy(buf + sizeof(tcp_hdr_t), spec.data, spec.datalen);
@@ -2273,15 +2319,15 @@ static void basic_established_recv_test(void) {
 
   char buf[100];
   KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, buf, 100));
-  KEXPECT_EQ(-ENOTSUP, vfs_write(s.socket, buf, 100));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, buf, 100));
 
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
   KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, buf, 100));
-  KEXPECT_EQ(-ENOTSUP, vfs_write(s.socket, buf, 100));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, buf, 100));
 
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
   KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, buf, 100));
-  KEXPECT_EQ(-ENOTSUP, vfs_write(s.socket, buf, 100));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, buf, 100));
   KEXPECT_TRUE(finish_standard_connect(&s));
 
   // read() should now block, waiting for data.
@@ -2722,6 +2768,530 @@ static void sendbuf_size_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void basic_send_test(void) {
+  KTEST_BEGIN("TCP: basic data passing (send)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, "XXX", 3));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, "XXX", 3));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, "XXX", 3));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ 497));
+
+  KEXPECT_EQ(2, vfs_write(s.socket, "de", 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "de"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ 495));
+
+  // Receive a bit of data too.
+  // TODO(tcp): test sending data with old ACK value and unsent (invalid) ACK.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 106, "xyz"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 504));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("xyz", buf);
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 106));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 505));
+
+  // Should still be able to send data.
+  KEXPECT_EQ(3, vfs_write(s.socket, "fgh", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 505, "fgh"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 109));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 109, /* ack */ 505));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 110));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "fgh", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void basic_send_test_blocks(void) {
+  KTEST_BEGIN("TCP: basic data passing (blocking send)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking. [abc] [] []
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ 1));
+
+  // Second send should send only 1 byte and buffer the rest. [abc] [d] [ef]
+  KEXPECT_EQ(3, vfs_write(s.socket, "def", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "d"));
+  // Don't ack it yet.
+
+  // Next write should buffer some and not send any packets. [abc] [d] [efgh]
+  KEXPECT_EQ(2, vfs_write(s.socket, "ghijk", 5));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 10));
+
+  // The next write should block. [abc] [d] [efgh]
+  KEXPECT_TRUE(start_write(&s, "ilmn"));
+
+  // Finally send an ACK. [abcd] [] [efgh]
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 3));
+
+  // We should get three more bytes from the buffer.  [abcd] [efg] [h]
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 105, /* ack */ 501, "efg"));
+  // ...don't ack yet.
+
+  // The async write should finish having buffered one byte.
+  KEXPECT_EQ(1, finish_op(&s));
+
+  // Ack things and get the rest.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 108, /* wndsize */ 100));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 108, /* ack */ 501, "hi"));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  // Send a FIN containing our final data ACK.
+  KEXPECT_TRUE(do_standard_finish(&s, 9, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+// As above, but acks _all_ unacked data with a blocking thread.
+static void basic_send_test_blocks2(void) {
+  KTEST_BEGIN("TCP: basic data passing (blocking send 2)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+  KEXPECT_TRUE(start_write(&s, "ghijkl"));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+
+  // We should get the next write's data.  (note, 'f' never sent).
+  KEXPECT_EQ(5, finish_op(&s));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "ghijk"));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 10, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_blocking_interrupted(void) {
+  KTEST_BEGIN("TCP: blocking send interrupted");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Fill the buffer, then get a thread blocking.
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  KEXPECT_TRUE(start_write(&s, "fgh"));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+
+  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  // Finally send an ACK.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 5, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_timeout_test(void) {
+  KTEST_BEGIN("TCP: send() timeout");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_timeval tv = {9999, 9999};
+  socklen_t slen = sizeof(struct apos_timeval);
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_SNDTIMEO, &tv, &slen));
+  KEXPECT_EQ(0, tv.tv_sec);
+  KEXPECT_EQ(0, tv.tv_usec);
+
+  // Try invalid values.
+#if ARCH_IS_64_BIT
+  tv.tv_sec = INT64_MAX;
+  tv.tv_usec = 0;
+  KEXPECT_EQ(-ERANGE, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDTIMEO, &tv,
+                                     sizeof(tv)));
+#endif
+  tv.tv_sec = 0;
+  tv.tv_usec = 1000001;
+  KEXPECT_EQ(-ERANGE, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDTIMEO, &tv,
+                                     sizeof(tv)));
+
+  // Test actual timeout.
+  tv.tv_sec = 0;
+  tv.tv_usec = 50 * 1000;
+  KEXPECT_EQ(0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDTIMEO, &tv,
+                                     sizeof(tv)));
+
+  // Fill the buffer, then get a thread blocking.
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+
+  apos_ms_t start = get_time_ms();
+  KEXPECT_EQ(-ETIMEDOUT, vfs_write(s.socket, "hij", 3));
+  apos_ms_t end = get_time_ms();
+  KEXPECT_GE(end - start, 50);
+  KEXPECT_LE(end - start, 500);
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 5, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_timeout_test2(void) {
+  KTEST_BEGIN("TCP: send() timeout (timeout after wake)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_timeval tv = {0, 50 * 1000};
+  KEXPECT_EQ(0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDTIMEO, &tv,
+                                     sizeof(tv)));
+
+  // Fill the buffer, then get a thread blocking.
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+  KEXPECT_TRUE(start_write(&s, "fgh"));
+  kthread_disable(s.thread);
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 60));
+
+  // Fill the buffer up again from another thread.
+  KEXPECT_EQ(5, vfs_write(s.socket, "123456", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "12345"));
+
+  kthread_enable(s.thread);
+  KEXPECT_EQ(-ETIMEDOUT, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 10, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_error_test(void) {
+  KTEST_BEGIN("TCP: send() has socket error");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNRESET, vfs_write(s.socket, "abc", 3));
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_error_test2(void) {
+  KTEST_BEGIN("TCP: send() has socket error (RST acks sent data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 103));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNRESET, vfs_write(s.socket, "abc", 3));
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_error_test3(void) {
+  KTEST_BEGIN("TCP: send() has socket error (RST acks all sent data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 105));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNRESET, vfs_write(s.socket, "abc", 3));
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_error_test4(void) {
+  KTEST_BEGIN(
+      "TCP: send() has socket error (RST acks data, buffered data ready)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(1, vfs_write(s.socket, "a", 1));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "a"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 102, /* wndsize */ 2));
+
+  // Buffer more data; we should get some of it.
+  KEXPECT_EQ(5, vfs_write(s.socket, "123456", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 102, /* ack */ 501, "12"));
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 104));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNRESET, vfs_write(s.socket, "abc", 3));
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_blocking_error_test(void) {
+  KTEST_BEGIN("TCP: send() timeout (timeout after wake)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Fill the buffer, then get a thread blocking.
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+  KEXPECT_TRUE(start_write(&s, "fgh"));
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNRESET, finish_op(&s));
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_window_constricts_test(void) {
+  KTEST_BEGIN("TCP: remote window constricts smaller than in-flight data");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ 5));
+  KEXPECT_EQ(1, vfs_write(s.socket, "d", 1));
+  KEXPECT_EQ(6, vfs_write(s.socket, "efghij", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "d"));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 105, /* ack */ 501, "efgh"));
+  // Ack 'd' with a window size of 2, smaller than the outstanding data "efgh".
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 2));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "klm", 3));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  // Ack 'efgh' with a closed window.
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 109, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  // Open the window.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 109, /* wndsize */ 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 109, /* ack */ 501, "ijk"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 112, /* wndsize */ 100));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 112, /* ack */ 501, "lm"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 114, /* wndsize */ 100));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 13, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void send_ack_partial_packet(void) {
+  KTEST_BEGIN("TCP: ACK for part of a packet");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+
+  // Only ack 'ab'
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 103, /* wndsize */ 3));
+  KEXPECT_EQ(5, vfs_write(s.socket, "defgh", 5));
+  // Should only get 'de' ('c' is still unacked).
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "de"));
+
+  // Now ack 'cde'.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "fgh"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 109, /* wndsize */ 3));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 8, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void send_during_close_wait(void) {
+  KTEST_BEGIN("TCP: send() during CLOSE_WAIT");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(s.socket, "def", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 502, "abc"));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 502, "def"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 107));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 107, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 108));
+
+  cleanup_tcp_test(&s);
+}
+
+// TODO(tcp): more send tests needed:
+//  - shutdown(WR) with data buffered (ack some, then all of it)
+//  - shutdown(WR) with thread blocked in send()
+
+static void send_tests(void) {
+  basic_send_test();
+  basic_send_test_blocks();
+  basic_send_test_blocks2();
+  send_blocking_interrupted();
+  send_timeout_test();
+  send_timeout_test2();
+  send_error_test();
+  send_error_test2();
+  send_error_test3();
+  send_error_test4();
+  send_blocking_error_test();
+  send_window_constricts_test();
+  send_ack_partial_packet();
+  send_during_close_wait();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -2736,6 +3306,7 @@ void tcp_test(void) {
   established_tests();
   recvbuf_size_test();
   sendbuf_size_test();
+  send_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

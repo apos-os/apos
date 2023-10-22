@@ -41,6 +41,7 @@
 #include "net/util.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
+#include "proc/signal/signal.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -103,7 +104,10 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->recv_timeout_ms = -1;
   sock->send_timeout_ms = -1;
   sock->send_next = gen_seq_num(sock);
+  sock->send_unack = sock->send_next;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
+  sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
+  sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
   kthread_queue_init(&sock->q);
   kmutex_init(&sock->mu);
   sock->spin_mu = KSPINLOCK_NORMAL_INIT;
@@ -419,6 +423,14 @@ done:
       send_ack = true;
   }
 
+  result = tcp_send_data(socket, false);
+  if (result == 0) {
+    send_ack = false;  // We sent data, that includes an ack
+  } else if (result != -EAGAIN) {
+    KLOG(WARNING, "TCP: socket %p unable to send data: %s\n", socket,
+         errorname(-result));
+  }
+
   if (send_ack) {
     result = tcp_send_ack(socket);
     if (result != 0) {
@@ -440,12 +452,29 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
   KASSERT_DBG(tcp_hdr->flags & TCP_FLAG_ACK);
 
   // TODO(tcp): handle out-of-order/duplicate ACKs properly.
-  if (btoh32(tcp_hdr->ack) != socket->send_next) {
-    KLOG(DFATAL, "TCP: proper ACKs unimplemented\n");
+  // TODO(tcp): handle invalid (future) ACKs correctly.
+  if (btoh32(tcp_hdr->ack) > socket->send_next) {
+    KLOG(DFATAL, "TCP: future ACKs unimplemented\n");
     return;
   }
 
+  uint32_t ack = btoh32(tcp_hdr->ack);
+  size_t bytes_acked = ack - socket->send_unack;
+  if (bytes_acked > 0 && socket->state == TCP_LAST_ACK)  // Or FIN_WAIT, etc...
+    bytes_acked--;  // Account for the FIN.
+
+  if (circbuf_consume(&socket->send_buf, bytes_acked) != (int)bytes_acked) {
+    KLOG(DFATAL, "TCP: unable to consume all ACK'd bytes\n");
+    return;
+  }
   socket->send_unack = btoh32(tcp_hdr->ack);
+  socket->send_wndsize = btoh16(tcp_hdr->wndsize);
+  KLOG(DEBUG2,
+       "TCP: socket %p had %zu bytes acked (remaining unacked: %u; "
+       "send_wndsize: %d)\n",
+       socket, bytes_acked, socket->send_next - socket->send_unack,
+       socket->send_wndsize);
+  scheduler_wake_all(&socket->q);
 
   switch (socket->state) {
     case TCP_LAST_ACK:
@@ -514,6 +543,8 @@ static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb) {
       socket->error = ECONNRESET;
       // Drop any pending data.
       circbuf_clear(&socket->recv_buf);
+      circbuf_clear(&socket->send_buf);
+      socket->send_unack = socket->send_next;
       finish_protocol_close(socket);
       return TCP_PACKET_DONE;
 
@@ -1097,14 +1128,114 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   return result;
 }
 
+typedef enum {
+  SEND_NOT_CONNECTED,  // We're not in a state where we can send.
+  SEND_BLOCK,          // send() should block.
+  SEND_ERROR,          // An error occurred.
+  SEND_HAS_BUFFER,     // Data can be buffered.
+  SEND_IS_SHUTDOWN,    // We are at EOF.
+} send_state_t;
+
+static send_state_t send_state(const socket_tcp_t* socket) {
+  if (socket->error != 0) {
+    return SEND_ERROR;
+  }
+
+  switch (socket->state) {
+    case TCP_CLOSED_DONE:
+    case TCP_LAST_ACK:
+      // TODO(tcp): include FIN_WAIT_*, CLOSING, and TIME_WAIT here.
+      return SEND_IS_SHUTDOWN;
+
+    case TCP_CLOSE_WAIT:
+    case TCP_ESTABLISHED:
+      // We can send data; block if no buffer space available.
+      if (circbuf_available(&socket->send_buf) > 0) {
+        return SEND_HAS_BUFFER;
+      } else {
+        return SEND_BLOCK;
+      }
+
+    case TCP_CLOSED:
+    case TCP_SYN_SENT:
+      return SEND_NOT_CONNECTED;
+  }
+  KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);
+  return SEND_ERROR;
+}
+
 ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
                         size_t length, int sflags,
                         const struct sockaddr* dest_addr, socklen_t dest_len) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  // TODO(tcp): implement
-  return -ENOTSUP;
+  socket_tcp_t* sock = (socket_tcp_t*)socket_base;
+
+  // No need to lock the mutex --- no multi-stage operations here, just a simple
+  // one that must coordinate with the defint code.
+  kspin_lock(&sock->spin_mu);
+
+  // Wait until buffer space is available or the socket is closed.
+  apos_ms_t now = get_time_ms();
+  apos_ms_t timeout_end =
+      (sock->send_timeout_ms < 0) ? APOS_MS_MAX : now + sock->send_timeout_ms;
+  int result = 0;
+  // TODO(tcp): tests for transitioning to FIN_WAIT* during this.
+  while (now < timeout_end && send_state(sock) == SEND_BLOCK) {
+    int wait_result =
+        scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
+    if (wait_result == SWAIT_TIMEOUT) {
+      result = -ETIMEDOUT;
+      break;
+    } else if (wait_result == SWAIT_INTERRUPTED) {
+      result = -EINTR;
+      break;
+    } else {
+      KASSERT(wait_result == SWAIT_DONE);
+    }
+    now = get_time_ms();
+  }
+
+  if (result == 0) {
+    switch (send_state(sock)) {
+      case SEND_NOT_CONNECTED:
+        result = -ENOTCONN;
+        break;
+
+      case SEND_BLOCK:
+        result = -ETIMEDOUT;
+        break;
+
+      case SEND_ERROR:
+        KASSERT(sock->state == TCP_CLOSED_DONE);
+        result = -sock->error;
+        sock->error = 0;
+        break;
+
+      case SEND_IS_SHUTDOWN:
+        proc_force_signal(proc_current(), SIGPIPE);
+        result = -EPIPE;
+        break;
+
+      case SEND_HAS_BUFFER:
+        result = circbuf_write(&sock->send_buf, buffer, length);
+        KLOG(DEBUG2, "TCP: socket %p buffered %d (of %d) bytes from sendto()\n",
+             sock, (int)result, (int)length);
+        break;
+    }
+  }
+  kspin_unlock(&sock->spin_mu);
+
+  if (result >= 0) {
+    int bytes = result;
+    result = tcp_send_data(sock, true);
+    if (result == 0 || result == -EAGAIN) {
+      result = bytes;
+    }
+  }
+
+  return result;
 }
 
 static int sock_tcp_getsockname(socket_t* socket_base,
@@ -1274,6 +1405,7 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
       return -EISCONN;
     }
     socket->send_next = (uint32_t)seq;
+    socket->send_unack = socket->send_next;
     kspin_unlock(&socket->spin_mu);
     return 0;
   }

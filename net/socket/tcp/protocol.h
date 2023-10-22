@@ -50,6 +50,10 @@ int tcp_send_syn(socket_tcp_t* socket, int fflags);
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_fin(socket_tcp_t* socket);
 
+// Sends data if available.  If no data is ready to be sent, returns -EAGAIN
+// (and doesn't send any packets).
+int tcp_send_data(socket_tcp_t* socket, bool allow_block);
+
 typedef struct {
   struct sockaddr_storage src;
   struct sockaddr_storage dst;
