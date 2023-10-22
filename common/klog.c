@@ -152,7 +152,7 @@ void klogm(klog_module_t module, klog_level_t level, const char* s) {
   klog_puts(s);
 
   if (level == FATAL)
-    die("fatal error");
+    die(s);
 }
 
 void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {
