@@ -31,6 +31,8 @@
 #include "net/bind.h"
 #include "net/eth/ethertype.h"
 #include "net/inet.h"
+#include "net/ip/checksum.h"
+#include "net/ip/ip.h"
 #include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
@@ -100,6 +102,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->send_buf, sendbuf, SOCKET_DEFAULT_BUFSIZE);
   circbuf_init(&sock->recv_buf, recvbuf, SOCKET_DEFAULT_BUFSIZE);
+  sock->send_shutdown = false;
   sock->connect_timeout_ms = SOCKET_CONNECT_TIMEOUT_MS;
   sock->recv_timeout_ms = -1;
   sock->send_timeout_ms = -1;
@@ -230,6 +233,67 @@ static int bind_if_necessary(socket_tcp_t* socket,
   return sock_tcp_bind_locked(socket, (struct sockaddr*)&addr_to_bind,
                               sizeof(addr_to_bind),
                               /* allow_rebind = */ true);
+}
+
+// Sends data and/or a FIN if available.  If no data is ready to be sent,
+// returns -EAGAIN (and doesn't send any packets).
+static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
+  // Figure out how much data to send.
+  kspin_lock(&socket->spin_mu);
+  if (get_state_type(socket->state) != TCPSTATE_ESTABLISHED) {
+    kspin_unlock(&socket->spin_mu);
+    return -EAGAIN;
+  }
+
+  uint32_t unacked_bytes = socket->send_next - socket->send_unack;
+  KASSERT_DBG(socket->send_buf.len >= unacked_bytes);
+  size_t data_to_send =
+      min(socket->cwnd,
+          socket->send_wndsize - min(socket->send_wndsize, unacked_bytes));
+  data_to_send = min(data_to_send, socket->send_buf.len - unacked_bytes);
+  data_to_send = min(data_to_send, socket->mss);
+
+  ip4_pseudo_hdr_t pseudo_ip;
+  pbuf_t* pb = NULL;
+  int result = tcp_create_datafin(socket, socket->send_next, data_to_send,
+                                  &pseudo_ip, &pb);
+  if (result) {
+    if (result != -EAGAIN) {
+      KLOG(DFATAL, "TCP: unable to create data/FIN packet: %s\n",
+           errorname(-result));
+    }
+    kspin_unlock(&socket->spin_mu);
+    return result;
+  }
+  socket->send_next += data_to_send;
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  bool sent_fin = (tcp_hdr->flags & TCP_FLAG_FIN);
+  if (sent_fin) {
+    socket->send_next++;
+    switch (socket->state) {
+      case TCP_CLOSE_WAIT:
+        set_state(socket, TCP_LAST_ACK, "sending FIN");
+        break;
+
+      case TCP_CLOSED_DONE:
+      case TCP_LAST_ACK:
+      case TCP_ESTABLISHED:
+      case TCP_CLOSED:
+      case TCP_SYN_SENT:
+        KLOG(DFATAL, "TCP: socket %p sent FIN in invalid state %s\n", socket,
+             state2str(socket->state));
+        break;
+    }
+  }
+  kspin_unlock(&socket->spin_mu);
+
+  tcp_hdr->checksum =
+      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+
+  KLOG(DEBUG2, "TCP: socket %p transmitting %s%zu bytes of data\n", socket,
+       sent_fin ? "FIN and " : "", data_to_send);
+  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
+  return ip_send(pb, allow_block);
 }
 
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
@@ -423,7 +487,7 @@ done:
       send_ack = true;
   }
 
-  result = tcp_send_data(socket, false);
+  result = tcp_send_datafin(socket, false);
   if (result == 0) {
     send_ack = false;  // We sent data, that includes an ack
   } else if (result != -EAGAIN) {
@@ -453,24 +517,28 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
 
   // TODO(tcp): handle out-of-order/duplicate ACKs properly.
   // TODO(tcp): handle invalid (future) ACKs correctly.
-  if (btoh32(tcp_hdr->ack) > socket->send_next) {
+  uint32_t ack = btoh32(tcp_hdr->ack);
+  if (seq_gt(ack, socket->send_next)) {
     KLOG(DFATAL, "TCP: future ACKs unimplemented\n");
+    return;
+  } else if (seq_lt(ack, socket->send_unack)) {
     return;
   }
 
-  uint32_t ack = btoh32(tcp_hdr->ack);
-  size_t bytes_acked = ack - socket->send_unack;
+  uint32_t bytes_acked = ack - socket->send_unack;
   if (bytes_acked > 0 && socket->state == TCP_LAST_ACK)  // Or FIN_WAIT, etc...
     bytes_acked--;  // Account for the FIN.
 
-  if (circbuf_consume(&socket->send_buf, bytes_acked) != (int)bytes_acked) {
+  ssize_t consumed = circbuf_consume(&socket->send_buf, bytes_acked);
+  socket->send_buf_seq += consumed;
+  if (consumed != (int)bytes_acked) {
     KLOG(DFATAL, "TCP: unable to consume all ACK'd bytes\n");
     return;
   }
   socket->send_unack = btoh32(tcp_hdr->ack);
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
   KLOG(DEBUG2,
-       "TCP: socket %p had %zu bytes acked (remaining unacked: %u; "
+       "TCP: socket %p had %u bytes acked (remaining unacked: %u; "
        "send_wndsize: %d)\n",
        socket, bytes_acked, socket->send_next - socket->send_unack,
        socket->send_wndsize);
@@ -630,6 +698,7 @@ static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
   socket->recv_next = btoh32(tcp_hdr->seq) + 1;
   socket->send_unack = btoh32(tcp_hdr->ack);
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
+  socket->send_buf_seq = socket->send_next;
   return TCP_SEND_ACK;
 }
 
@@ -748,29 +817,25 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   }
 
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
-  kmutex_lock(&sock->mu);
-
   kspin_lock(&sock->spin_mu);
-  if (sock->state != TCP_CLOSE_WAIT) {
+  if (sock->send_shutdown || sock->state != TCP_CLOSE_WAIT) {
     // TODO(tcp): handle this in other states that can close, and error
     // correctly in states that can't close.
     kspin_unlock(&sock->spin_mu);
-    kmutex_unlock(&sock->mu);
-    die("unimplemented");
     return -ENOTCONN;
   }
 
-  set_state(sock, TCP_LAST_ACK, "shutdown() sending FIN");
+  sock->send_shutdown = true;
+  scheduler_wake_all(&sock->q);
   kspin_unlock(&sock->spin_mu);
 
-  // Send the final FIN.
-  int result = tcp_send_fin(sock);
-  kmutex_unlock(&sock->mu);
-
-  // TODO(tcp): set up retry timer to retry sending the FIN
-  // TODO(tcp): if we fail to send the FIN, should we go back to CLOSE_WAIT?
-  // Try to retransmit later?  Just error the socket?
-  return result;
+  // Send the FIN if possible.
+  int result = tcp_send_datafin(sock, true);
+  if (result != 0 && result != -EAGAIN) {
+    KLOG(WARNING, "TCP: socket %p unable to send data/FIN: %s\n",
+         sock, errorname(-result));
+  }
+  return 0;  // Consider this a success even if sending FIN failed.
 }
 
 // TODO(aoates): this is almost exactly the same as UDP's bind; refactor/share?
@@ -1139,6 +1204,8 @@ typedef enum {
 static send_state_t send_state(const socket_tcp_t* socket) {
   if (socket->error != 0) {
     return SEND_ERROR;
+  } else if (socket->send_shutdown) {
+    return SEND_IS_SHUTDOWN;
   }
 
   switch (socket->state) {
@@ -1229,7 +1296,7 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
 
   if (result >= 0) {
     int bytes = result;
-    result = tcp_send_data(sock, true);
+    result = tcp_send_datafin(sock, true);
     if (result == 0 || result == -EAGAIN) {
       result = bytes;
     }

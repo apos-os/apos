@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "net/ip/ip4_hdr.h"
 #include "net/pbuf.h"
 #include "net/socket/tcp/socket.h"
 
@@ -50,9 +51,10 @@ int tcp_send_syn(socket_tcp_t* socket, int fflags);
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_fin(socket_tcp_t* socket);
 
-// Sends data if available.  If no data is ready to be sent, returns -EAGAIN
-// (and doesn't send any packets).
-int tcp_send_data(socket_tcp_t* socket, bool allow_block);
+// Creates (but does not send) a data+FIN packet.  Requires the socket be
+// spinlocked.
+int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start, size_t datalen,
+                       ip4_pseudo_hdr_t* pseudo_ip, pbuf_t** pb_out);
 
 typedef struct {
   struct sockaddr_storage src;

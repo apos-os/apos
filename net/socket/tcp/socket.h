@@ -54,6 +54,15 @@ typedef struct socket_tcp {
   circbuf_t send_buf;
   circbuf_t recv_buf;
 
+  // Sequence number of the first byte in send_buf.
+  // TODO(aoates): this should always be send_unack (or send_unack - 1 if we've
+  // sent a FIN).  Can we remove?
+  uint32_t send_buf_seq;
+
+  // Whether the socket has been shutdown for writing.  If true, then there in a
+  // FIN queued after the contents of send_buf (or already sent).
+  bool send_shutdown;
+
   long connect_timeout_ms;
   long recv_timeout_ms;
   long send_timeout_ms;
