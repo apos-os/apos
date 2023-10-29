@@ -735,10 +735,10 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   v &= KEXPECT_EQ(btoh16(s->tcp_addr.sin_port), btoh16(tcp_hdr->src_port));
   v &= KEXPECT_EQ(btoh16(s->raw_addr.sin_port), btoh16(tcp_hdr->dst_port));
   if (spec.seq != 0) {
-    v &= KEXPECT_EQ(s->seq_base + spec.seq, btoh32(tcp_hdr->seq));
+    v &= KEXPECT_EQ(spec.seq, btoh32(tcp_hdr->seq) - s->seq_base);
   }
   if (spec.ack != 0) {
-    v &= KEXPECT_EQ(s->send_seq_base + spec.ack, btoh32(tcp_hdr->ack));
+    v &= KEXPECT_EQ(spec.ack, btoh32(tcp_hdr->ack) - s->send_seq_base);
   }
   v &= KEXPECT_EQ(0, tcp_hdr->_zeroes);
   v &= KEXPECT_EQ(5, tcp_hdr->data_offset);
@@ -3504,8 +3504,266 @@ static void shutdown_with_zero_window(void) {
   cleanup_tcp_test(&s);
 }
 
+static void shutdown_read_test(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) basic test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  // We should still be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 502));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 105));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_read_blocking_test(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) with blocking read test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  char buf[10];
+  KEXPECT_TRUE(start_read(&s, buf, 10));
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(0, finish_op(&s));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_read_test_data_in_buffer(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) with data in buffer");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  // We should have discarded the data in the buffer.
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  // We should still be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 504, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 504, /* ack */ 104));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 104));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 505));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 105));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_read_then_data_test(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) then gets data");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+  // TODO(tcp): determine if this should send a RST and enable or delete.
+#if 0
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+#endif
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_read_then_datafin_test(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) then gets data + FIN");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+  // TODO(tcp): determine if this should send a RST and enable or delete.
+#if 0
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+#endif
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_read_then_data_with_buffered_test(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) then gets data (data buffered)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 504, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 504));
+  // TODO(tcp): determine if this should send a RST and enable or delete.
+#if 0
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+#endif
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_read_after_fin_test(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) after FIN");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  // We should still be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 502, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 104));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 105));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_invalid_test(void) {
+  KTEST_BEGIN("TCP: shutdown() invalid args");
+  int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+
+  KEXPECT_EQ(-EINVAL, net_shutdown(sock, 0));
+  KEXPECT_EQ(-EINVAL, net_shutdown(sock, 4));
+  KEXPECT_EQ(-EINVAL, net_shutdown(sock, 100));
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 // TODO(tcp): more send tests needed:
 //  - receive after shutdown
+//  - SHUT_RDWR basic
+//  - SHUT_RDWR after other shutdowns (both read and write)
 
 static void send_tests(void) {
   basic_send_test();
@@ -3527,6 +3785,16 @@ static void send_tests(void) {
   double_write_shutdown();
   double_write_shutdown_with_data_buffered();
   shutdown_with_zero_window();
+
+  shutdown_read_test();
+  shutdown_read_blocking_test();
+  shutdown_read_test_data_in_buffer();
+  shutdown_read_then_data_test();
+  shutdown_read_then_datafin_test();
+  shutdown_read_then_data_with_buffered_test();
+  shutdown_read_after_fin_test();
+
+  shutdown_invalid_test();
 }
 
 void tcp_test(void) {

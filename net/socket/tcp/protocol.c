@@ -130,6 +130,11 @@ int tcp_send_fin(socket_tcp_t* socket) {
                                 /* allow_block */ true);
 }
 
+int tcp_send_rst(socket_tcp_t* socket) {
+  return send_flags_only_packet(socket, TCP_FLAG_RST | TCP_FLAG_ACK,
+                                /* allow_block */ false);
+}
+
 int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start,
                        size_t data_to_send, ip4_pseudo_hdr_t* pseudo_ip,
                        pbuf_t** pb_out) {

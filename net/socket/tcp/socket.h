@@ -59,6 +59,9 @@ typedef struct socket_tcp {
   // sent a FIN).  Can we remove?
   uint32_t send_buf_seq;
 
+  // Whether the socket has been shutdown for reading.
+  bool recv_shutdown;
+
   // Whether the socket has been shutdown for writing.  If true, then there in a
   // FIN queued after the contents of send_buf (or already sent).
   bool send_shutdown;

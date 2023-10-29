@@ -102,6 +102,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->send_buf, sendbuf, SOCKET_DEFAULT_BUFSIZE);
   circbuf_init(&sock->recv_buf, recvbuf, SOCKET_DEFAULT_BUFSIZE);
+  sock->recv_shutdown = false;
   sock->send_shutdown = false;
   sock->connect_timeout_ms = SOCKET_CONNECT_TIMEOUT_MS;
   sock->recv_timeout_ms = -1;
@@ -359,9 +360,11 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
 
 // Actions to take based on a packet.
 typedef enum {
-  TCP_PACKET_DONE,      // We're done with the packet.
-  TCP_DROP_BAD_PKT,     // Drop the packet, it is bad.
-  TCP_SEND_ACK,         // Send an ACK.
+  TCP_ACTION_NONE = 0x0,
+  TCP_PACKET_DONE = 0x1,       // We're done with the packet.
+  TCP_DROP_BAD_PKT = 0x2,      // Drop the packet, it is bad.
+  TCP_SEND_ACK = 0x4,          // Send an ACK.
+  TCP_RESET_CONNECTION = 0x8,  // Send a RST and reset the connection.
 } tcp_pkt_action_t;
 
 // Handlers for different types of packet scenarios.  Multiple of these may be
@@ -378,7 +381,10 @@ static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb);
 static tcp_pkt_action_t tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
                                         const tcp_packet_metadata_t* md);
 
-static void finish_protocol_close(socket_tcp_t* socket);
+static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
+
+// Resets the connection state, but does _not_ set a socket error or send a RST.
+static void reset_connection(socket_tcp_t* socket, const char* reason);
 
 // Returns true if the given segment is valid (overlaps our window).
 static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
@@ -406,13 +412,12 @@ static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  tcp_pkt_action_t action = TCP_PACKET_DONE;
-  bool send_ack = false;
+  tcp_pkt_action_t action = TCP_ACTION_NONE;
 
   // Handle SYN-SENT as a special case first.
   kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_SYN_SENT) {
-    action = tcp_handle_in_synsent(socket, pb);
+    action |= tcp_handle_in_synsent(socket, pb);
     goto done;
   }
 
@@ -431,19 +436,19 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     KLOG(DEBUG2,
          "TCP: socket %p dropping packet not aligned with start of window\n",
          socket);
-    action = TCP_SEND_ACK;
+    action |= TCP_SEND_ACK;
     goto done;
   }
 
   if (tcp_hdr->flags & TCP_FLAG_RST) {
-    action = tcp_handle_rst(socket, pb);
+    action |= tcp_handle_rst(socket, pb);
     // We should always be done after a RST.
     goto done;
   }
 
   // Next handle SYN and SYN-ACK.
   if (tcp_hdr->flags & TCP_FLAG_SYN) {
-    action = tcp_handle_syn(socket, pb);
+    action |= tcp_handle_syn(socket, pb);
     goto done;
   }
 
@@ -463,39 +468,45 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (md->data_len > 0) {
-    if (tcp_handle_data(socket, pb, md) == TCP_SEND_ACK)
-      send_ack = true;
+    action |= tcp_handle_data(socket, pb, md);
+    if (action & TCP_RESET_CONNECTION) {
+      goto done;
+    }
   }
 
   if (tcp_hdr->flags & TCP_FLAG_FIN) {
-    action = tcp_handle_fin(socket, pb);
+    action |= tcp_handle_fin(socket, pb);
   }
 
 done:
   kspin_unlock(&socket->spin_mu);
 
   int result = 0;
-  switch (action) {
-    case TCP_DROP_BAD_PKT:
-      KLOG(DEBUG2, "TCP: socket %p dropping bad packet\n", socket);
-      // Fall through.
+  if (action & TCP_DROP_BAD_PKT) {
+    KLOG(DEBUG2, "TCP: socket %p dropping bad packet\n", socket);
+  }
 
-    case TCP_PACKET_DONE:
-      break;
-
-    case TCP_SEND_ACK:
-      send_ack = true;
+  if (action & TCP_RESET_CONNECTION) {
+    result = tcp_send_rst(socket);
+    if (result != 0) {
+      KLOG(WARNING, "TCP: socket %p unable to send RST: %s\n", socket,
+           errorname(-result));
+    }
+    kspin_lock(&socket->spin_mu);
+    reset_connection(socket, "Resetting connection");
+    kspin_unlock(&socket->spin_mu);
+    return true;
   }
 
   result = tcp_send_datafin(socket, false);
   if (result == 0) {
-    send_ack = false;  // We sent data, that includes an ack
+    action &= ~TCP_SEND_ACK;  // We sent data, that includes an ack
   } else if (result != -EAGAIN) {
     KLOG(WARNING, "TCP: socket %p unable to send data: %s\n", socket,
          errorname(-result));
   }
 
-  if (send_ack) {
+  if (action & TCP_SEND_ACK) {
     result = tcp_send_ack(socket);
     if (result != 0) {
       KLOG(WARNING, "TCP: socket %p unable to send ACK: %s\n", socket,
@@ -546,7 +557,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
 
   switch (socket->state) {
     case TCP_LAST_ACK:
-      finish_protocol_close(socket);
+      finish_protocol_close(socket, "socket closed");
       break;
 
     case TCP_SYN_SENT:
@@ -613,13 +624,15 @@ static tcp_pkt_action_t tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb) {
       circbuf_clear(&socket->recv_buf);
       circbuf_clear(&socket->send_buf);
       socket->send_unack = socket->send_next;
-      finish_protocol_close(socket);
+      finish_protocol_close(socket, "connection reset");
       return TCP_PACKET_DONE;
 
     case TCP_LAST_ACK:
       // Don't clear the read buffer here --- let any pending data be consumed
       // (since we're not signalling an error).
-      finish_protocol_close(socket);
+      KASSERT_DBG(socket->send_shutdown);
+      KASSERT_DBG(socket->send_buf.len == 0);
+      finish_protocol_close(socket, "connection reset (already closed)");
       return TCP_PACKET_DONE;
 
     case TCP_SYN_SENT:
@@ -652,6 +665,12 @@ static tcp_pkt_action_t tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
     return TCP_DROP_BAD_PKT;
   }
 
+  if (socket->recv_shutdown) {
+    KLOG(DEBUG2, "TCP: socket %p got data after shutdown(RD), sending RST\n",
+         socket);
+    return TCP_RESET_CONNECTION;
+  }
+
   KASSERT_DBG(md->data_len <= pbuf_size(pb) - md->data_offset);
   ssize_t bytes_read = circbuf_write(
       &socket->recv_buf, pbuf_getc(pb) + md->data_offset, md->data_len);
@@ -682,7 +701,7 @@ static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
   if (tcp_hdr->flags & TCP_FLAG_RST) {
     KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
     socket->error = ECONNREFUSED;
-    finish_protocol_close(socket);
+    finish_protocol_close(socket, "connection refused");
     return TCP_PACKET_DONE;
   }
 
@@ -704,7 +723,7 @@ static tcp_pkt_action_t tcp_handle_in_synsent(socket_tcp_t* socket,
 
 // Closes the socket on the protocol side when all protocol ops are complete.
 // Could be called from a user context or a defint.
-static void finish_protocol_close(socket_tcp_t* socket) {
+static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
   KASSERT(kspin_is_held(&socket->spin_mu));
   // TODO(tcp): assert that we're coming from a last-to-terminal state, OR that
   // an error has occurred.
@@ -755,7 +774,15 @@ static void finish_protocol_close(socket_tcp_t* socket) {
 
   KASSERT_DBG(socket->bind_addr.sa_family == AF_UNSPEC);
   KASSERT_DBG(socket->connected_addr.sa_family == AF_UNSPEC);
-  set_state(socket, TCP_CLOSED_DONE, "protocol finished");
+  set_state(socket, TCP_CLOSED_DONE, reason);
+}
+
+static void reset_connection(socket_tcp_t* socket, const char* reason) {
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  circbuf_clear(&socket->recv_buf);
+  circbuf_clear(&socket->send_buf);
+  socket->send_unack = socket->send_next;
+  finish_protocol_close(socket, reason);
 }
 
 // Socket cleanup has three stages:
@@ -795,7 +822,7 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
 
   kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_CLOSED) {
-    finish_protocol_close(socket);
+    finish_protocol_close(socket, "FD closed");
   }
 
   if (socket->state != TCP_CLOSED_DONE) {
@@ -810,30 +837,46 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  if (how != SHUT_WR) {
-    // TODO(tcp): implement
-    KLOG(FATAL, "shutdown unimplemented");
-    return -ENOTSUP;
+  if (how != SHUT_WR && how != SHUT_RD) {
+    return -EINVAL;
   }
 
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
   kspin_lock(&sock->spin_mu);
-  if (sock->send_shutdown || sock->state != TCP_CLOSE_WAIT) {
-    // TODO(tcp): handle this in other states that can close, and error
-    // correctly in states that can't close.
-    kspin_unlock(&sock->spin_mu);
-    return -ENOTCONN;
+  bool send_datafin = false;
+  if (how == SHUT_RD) {
+    if (sock->recv_shutdown ||
+        get_state_type(sock->state) != TCPSTATE_ESTABLISHED) {
+      kspin_unlock(&sock->spin_mu);
+      return -ENOTCONN;
+    }
+
+    sock->recv_shutdown = true;
+    circbuf_clear(&sock->recv_buf);
+    scheduler_wake_all(&sock->q);
   }
 
-  sock->send_shutdown = true;
-  scheduler_wake_all(&sock->q);
+  if (how == SHUT_WR) {
+    if (sock->send_shutdown || sock->state != TCP_CLOSE_WAIT) {
+      // TODO(tcp): handle this in other states that can close, and error
+      // correctly in states that can't close.
+      kspin_unlock(&sock->spin_mu);
+      return -ENOTCONN;
+    }
+
+    sock->send_shutdown = true;
+    scheduler_wake_all(&sock->q);
+    send_datafin = true;
+  }
   kspin_unlock(&sock->spin_mu);
 
-  // Send the FIN if possible.
-  int result = tcp_send_datafin(sock, true);
-  if (result != 0 && result != -EAGAIN) {
-    KLOG(WARNING, "TCP: socket %p unable to send data/FIN: %s\n",
-         sock, errorname(-result));
+  if (send_datafin) {
+    // Send the FIN if possible.
+    int result = tcp_send_datafin(sock, true);
+    if (result != 0 && result != -EAGAIN) {
+      KLOG(WARNING, "TCP: socket %p unable to send data/FIN: %s\n",
+           sock, errorname(-result));
+    }
   }
   return 0;  // Consider this a success even if sending FIN failed.
 }
@@ -1102,6 +1145,8 @@ static recv_state_t recv_state(const socket_tcp_t* socket) {
     return RECV_ERROR;
   } else if (socket->recv_buf.len > 0) {
     return RECV_HAS_DATA;
+  } else if (socket->recv_shutdown) {
+    return RECV_EOF;
   }
 
   switch (socket->state) {

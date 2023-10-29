@@ -50,6 +50,7 @@ _Static_assert(sizeof(tcp_hdr_t) == 20, "Bad tcp_hdr_t size");
 int tcp_send_syn(socket_tcp_t* socket, int fflags);
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_fin(socket_tcp_t* socket);
+int tcp_send_rst(socket_tcp_t* socket);
 
 // Creates (but does not send) a data+FIN packet.  Requires the socket be
 // spinlocked.
