@@ -837,14 +837,14 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  if (how != SHUT_WR && how != SHUT_RD) {
+  if (how != SHUT_WR && how != SHUT_RD && how != SHUT_RDWR) {
     return -EINVAL;
   }
 
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
   kspin_lock(&sock->spin_mu);
   bool send_datafin = false;
-  if (how == SHUT_RD) {
+  if (how == SHUT_RD || how == SHUT_RDWR) {
     if (sock->recv_shutdown ||
         get_state_type(sock->state) != TCPSTATE_ESTABLISHED) {
       kspin_unlock(&sock->spin_mu);
@@ -856,7 +856,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
     scheduler_wake_all(&sock->q);
   }
 
-  if (how == SHUT_WR) {
+  if (how == SHUT_WR || how == SHUT_RDWR) {
     if (sock->send_shutdown || sock->state != TCP_CLOSE_WAIT) {
       // TODO(tcp): handle this in other states that can close, and error
       // correctly in states that can't close.
