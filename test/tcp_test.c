@@ -1531,6 +1531,124 @@ static void connect_gets_to_closed_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void shutdown_rd_during_connect(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  // Send shutdown while in connect().
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  // Should be able to send data still.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 105));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_rd_during_connect2(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RD) during connect(), then get data");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  // Send shutdown while in connect().
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Data should cause a RST.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_wr_during_connect(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_WR) during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  // Send shutdown while in connect().
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // TODO(tcp): test sending packets and getting a RST
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_rdwr_during_connect(void) {
+  KTEST_BEGIN("TCP: shutdown(SHUT_RDWR) during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  // Send shutdown while in connect().
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RDWR));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // TODO(tcp): test sending packets and getting a RST
+
+  cleanup_tcp_test(&s);
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
@@ -1544,6 +1662,11 @@ static void connect_tests(void) {
   connect_timeout_test();
   connect_gets_to_close_wait_test();
   connect_gets_to_closed_test();
+
+  shutdown_rd_during_connect();
+  shutdown_rd_during_connect2();
+  shutdown_wr_during_connect();
+  shutdown_rdwr_during_connect();
 }
 
 static void rst_during_established_test(void) {

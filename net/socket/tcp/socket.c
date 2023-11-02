@@ -846,7 +846,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   bool send_datafin = false;
   if (how == SHUT_RD || how == SHUT_RDWR) {
     if (sock->recv_shutdown ||
-        get_state_type(sock->state) != TCPSTATE_ESTABLISHED) {
+        get_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
       kspin_unlock(&sock->spin_mu);
       return -ENOTCONN;
     }
@@ -857,11 +857,19 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   }
 
   if (how == SHUT_WR || how == SHUT_RDWR) {
-    if (sock->send_shutdown || sock->state != TCP_CLOSE_WAIT) {
+    if (sock->send_shutdown ||
+        (sock->state != TCP_CLOSE_WAIT && sock->state != TCP_SYN_SENT)) {
       // TODO(tcp): handle this in other states that can close, and error
       // correctly in states that can't close.
       kspin_unlock(&sock->spin_mu);
       return -ENOTCONN;
+    }
+
+    if (sock->state == TCP_SYN_SENT) {
+      finish_protocol_close(sock, "shutdown(SHUT_WR) in SYN_SENT");
+      scheduler_wake_all(&sock->q);
+      kspin_unlock(&sock->spin_mu);
+      return 0;
     }
 
     sock->send_shutdown = true;
