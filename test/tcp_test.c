@@ -14,6 +14,8 @@
 
 #include "common/endian.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
+#include "common/kstring.h"
 #include "dev/timer.h"
 #include "net/addr.h"
 #include "net/bind.h"
@@ -92,6 +94,27 @@ static int do_connect(int sock, const char* addr, int port) {
   struct sockaddr_in saddr;
   make_saddr(&saddr, addr, port);
   return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
+}
+
+static bool socket_has_data(int fd, int timeout_ms) {
+  struct apos_pollfd pfd;
+  pfd.events = KPOLLIN;
+  pfd.fd = fd;
+  int result = vfs_poll(&pfd, 1, timeout_ms);
+  KASSERT(result >= 0);
+  return (result > 0);
+}
+
+static const char* do_read(int sock) {
+  static char buf[100];
+  // TODO(tcp): call socket_has_data() once poll is supported on TCP sockets.
+  int result = vfs_read(sock, buf, 100);
+  if (KEXPECT_GE(result, 0)) {
+    buf[result] = '\0';
+  } else {
+    ksprintf(buf, "<error: %s>", errorname(-result));
+  }
+  return buf;
 }
 
 static int set_initial_seqno(int socket, int initial_seq) {
@@ -611,12 +634,7 @@ static int finish_op(tcp_test_state_t* s) {
 }
 
 static bool raw_has_packets_wait(tcp_test_state_t* s, int timeout_ms) {
-  struct apos_pollfd pfd;
-  pfd.events = KPOLLIN;
-  pfd.fd = s->raw_socket;
-  int result = vfs_poll(&pfd, 1, timeout_ms);
-  KASSERT(result >= 0);
-  return (result > 0);
+  return socket_has_data(s->raw_socket, timeout_ms);
 }
 
 static bool raw_has_packets(tcp_test_state_t* s) {
@@ -3627,6 +3645,39 @@ static void shutdown_with_zero_window(void) {
   cleanup_tcp_test(&s);
 }
 
+static void shutdown_with_zero_recv_window(void) {
+  KTEST_BEGIN("TCP: shutdown() accepts FIN with zero recv window");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 5));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Fill the window.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ WNDSIZE_ZERO));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 506, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 507, /* wndsize */ WNDSIZE_ZERO));
+
+  // Shutdown the connection from this side.
+  KEXPECT_STREQ("abcde", do_read(s.socket));  // Just to make the test work
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 507));
+  SEND_PKT(&s, ACK_PKT(507, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
 static void shutdown_read_test(void) {
   KTEST_BEGIN("TCP: shutdown(SHUT_RD) basic test");
   tcp_test_state_t s;
@@ -4041,6 +4092,7 @@ static void send_tests(void) {
   double_write_shutdown();
   double_write_shutdown_with_data_buffered();
   shutdown_with_zero_window();
+  shutdown_with_zero_recv_window();
 
   shutdown_read_test();
   shutdown_read_blocking_test();
@@ -4056,6 +4108,260 @@ static void send_tests(void) {
   shutdown_rdwr_after_rdwr_test();
 
   shutdown_invalid_test();
+}
+
+static void data_retransmit_test1(void) {
+  KTEST_BEGIN("TCP: data packet retransmitted");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Test #1: retransmit exact same packet
+  // First:  |abc|
+  // Second: |abc|
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  // Retransmit, and get duplicate ack.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+
+  // Test #2: retransmit overlapping start of window.
+  // First:  |abc|
+  // Second:   |Cdef|
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "Cdef"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 507));
+
+  KEXPECT_STREQ("def", do_read(s.socket));
+
+
+  // Send more data, then retransmit overlapping the start of the window (same
+  // as above, just with buffered data).
+  // First:  |hij|
+  // Second:   |Jklm|
+  SEND_PKT(&s, DATA_PKT(/* seq */ 507, /* ack */ 101, "hij"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 510));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 509, /* ack */ 101, "Jklm"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 513));
+
+  KEXPECT_STREQ("hijklm", do_read(s.socket));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 12));
+
+  cleanup_tcp_test(&s);
+}
+
+static void data_past_window_test(void) {
+  KTEST_BEGIN("TCP: data packet extends past window");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 5));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 2));
+
+  // Send packet that extends past the end of the window and overlaps the
+  // current start.  This must be dropped.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "Cdef"));
+  // Should get duplicate ACK.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 2));
+
+  // Now try just enough to fill the window.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "Cde"));
+  // This should be accepted.
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_STREQ("abcde", do_read(s.socket));
+
+
+  // Test #2: as above, but is exactly aligned with start of window (still too
+  // long).  This should be trimmed.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "123"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 509, /* wndsize */ 2));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 509, /* ack */ 101, "4567"));
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_STREQ("12345", do_read(s.socket));
+
+  // Test #3: extends past window and doesn't align with start of window.
+  // Should be dropped.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 512, /* ack */ 101, "567890abcdefg"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
+  // TODO(tcp): enable this once poll() is implemented
+  // KEXPECT_FALSE(socket_has_data(s.socket, 0));
+
+  // Test #4: doesn't align wih start of window, but is within window.  Should
+  // be dropped.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 512, /* ack */ 101, "X"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
+  // TODO(tcp): enable this once poll() is implemented
+  // KEXPECT_FALSE(socket_has_data(s.socket, 0));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 10));
+
+  cleanup_tcp_test(&s);
+}
+
+// Basically exactly the same as above, but with FINs past end-of-window.
+static void data_fin_past_window_test(void) {
+  KTEST_BEGIN("TCP: data packet extends past window (with FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 5));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 2));
+
+  // Send packet that extends past the end of the window and overlaps the
+  // current start.  This must be dropped.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 503, /* ack */ 101, "Cdef"));
+  // Should get duplicate ACK.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 2));
+
+  // Now try just enough to fill the window.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "Cde"));
+  // This should be accepted.
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_STREQ("abcde", do_read(s.socket));
+
+
+  // Test #2: as above, but is exactly aligned with start of window (still too
+  // long).  This should be trimmed (and FIN ignored).
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "123"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 509, /* wndsize */ 2));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 509, /* ack */ 101, "4567"));
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_STREQ("12345", do_read(s.socket));
+
+  // Test #3: extends past window and doesn't align with start of window.
+  // Should be dropped.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 512, /* ack */ 101, "567890abcdefg"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
+  // TODO(tcp): enable this once poll() is implemented
+  // KEXPECT_FALSE(socket_has_data(s.socket, 0));
+
+  // Test a correct in-window FIN with data that starts before the window.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 509, /* ack */ 101, "4567890"));
+
+  // Should get an ACK.
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 517, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_STREQ("67890", do_read(s.socket));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 517));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 517, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void data_retransmit_blocked(void) {
+  KTEST_BEGIN("TCP: data packet retransmitted doesn't wake blocked read");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  // Start blocked read.
+  char buf[10];
+  KEXPECT_TRUE(start_read(&s, buf, 10));
+
+  // Retransmit, and get duplicate ack.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  // The blocked read shouldn't have finished.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "Cd"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 505));
+  KEXPECT_EQ(1, finish_op(&s));
+  buf[1] = '\0';
+  KEXPECT_STREQ("d", buf);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 4));
+
+  cleanup_tcp_test(&s);
+}
+
+static void rst_out_of_order(void) {
+  KTEST_BEGIN("TCP: RST received out of order");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 6));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
+
+  // Send a variety of out-of-window RSTs, all should be ignored.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+  SEND_PKT(&s, RST_PKT(/* seq */ 503, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+  SEND_PKT(&s, RST_PKT(/* seq */ 507, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+  SEND_PKT(&s, RST_PKT(/* seq */ 516, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  // Test with data as well.
+  test_packet_spec_t pkt = DATA_PKT(/* seq */ 503, /* ack */ 101, "Cde");
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  // RSTs sent in window (but not aligned with the start) should result in a
+  // challenge ACK, but otherwise no processing.
+  SEND_PKT(&s, RST_PKT(/* seq */ 505, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
+  SEND_PKT(&s, RST_PKT(/* seq */ 506, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
+
+  // ...and again test with data.
+  pkt = DATA_PKT(/* seq */ 505, /* ack */ 101, "e");
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
+
+  cleanup_tcp_test(&s);
+}
+
+static void ooo_tests(void) {
+  data_retransmit_test1();
+  data_past_window_test();
+  data_fin_past_window_test();
+  data_retransmit_blocked();
+  rst_out_of_order();
 }
 
 void tcp_test(void) {
@@ -4079,6 +4385,7 @@ void tcp_test(void) {
     recvbuf_size_test();
     sendbuf_size_test();
     send_tests();
+    ooo_tests();
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");
