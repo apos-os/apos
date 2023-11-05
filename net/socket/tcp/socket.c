@@ -387,6 +387,14 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
 // Resets the connection state, but does _not_ set a socket error or send a RST.
 static void reset_connection(socket_tcp_t* socket, const char* reason);
 
+static uint32_t seg_len(const tcp_hdr_t* tcp_hdr,
+                        const tcp_packet_metadata_t* md) {
+  size_t len = md->data_len;
+  if (tcp_hdr->flags & TCP_FLAG_SYN) len++;
+  if (tcp_hdr->flags & TCP_FLAG_FIN) len++;
+  return len;
+}
+
 // Returns true if the given segment is valid (overlaps our window).
 static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
                          uint32_t seg_len) {
@@ -424,11 +432,8 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 
   // Check the sequence number of the packet.  The packet must overlap with the
   // receive window.
-  // TODO(tcp): fix handling of FIN here (FIN should be considered part of the
-  // segment length, both to determine if the packet is in the window, and to
-  // determine if it is too long for the window).
   uint32_t seq = btoh32(tcp_hdr->seq);
-  if (!validate_seq(socket, seq, md->data_len)) {
+  if (!validate_seq(socket, seq, seg_len(tcp_hdr, md))) {
     KLOG(DEBUG2, "TCP: socket %p got out-of-window packet, dropping\n", socket);
     action = (tcp_hdr->flags & TCP_FLAG_RST) ? TCP_DROP_BAD_PKT : TCP_SEND_ACK;
     goto done;
@@ -588,7 +593,7 @@ static tcp_pkt_action_t tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
   // Check if the FIN is in the socket's receive window.
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   uint32_t fin_seq = btoh32(tcp_hdr->seq) + (uint32_t)md->data_len;
-  if (seq_gt(fin_seq, socket->recv_next + socket->recv_wndsize)) {
+  if (seq_ge(fin_seq, socket->recv_next + socket->recv_wndsize)) {
     KLOG(DEBUG2, "TCP: socket %p ignoring out-of-window FIN\n", socket);
     return TCP_ACTION_NONE;
   }
@@ -667,7 +672,7 @@ static tcp_pkt_action_t tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
   if (seq_lt(seq, socket->recv_next)) {
     trim_start = socket->recv_next - seq;
   }
-  KASSERT_DBG(md->data_len > trim_start);
+  KASSERT_DBG(md->data_len >= trim_start);
   if (md->data_len - trim_start > socket->recv_wndsize) {
     trim_end = md->data_len - trim_start - socket->recv_wndsize;
   }
@@ -681,6 +686,10 @@ static tcp_pkt_action_t tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
 
   size_t data_offset = md->data_offset + trim_start;
   size_t data_len = md->data_len - trim_start - trim_end;
+  if (data_len == 0) {
+    KLOG(DEBUG2, "TCP: socket %p trimmed all data away\n", socket);
+    return TCP_ACTION_NONE;
+  }
 
   // TODO(tcp): handle FIN_WAIT states.
   if (socket->state != TCP_ESTABLISHED) {

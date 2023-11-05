@@ -3646,7 +3646,7 @@ static void shutdown_with_zero_window(void) {
 }
 
 static void shutdown_with_zero_recv_window(void) {
-  KTEST_BEGIN("TCP: shutdown() accepts FIN with zero recv window");
+  KTEST_BEGIN("TCP: shutdown() rejects FIN with zero recv window");
   tcp_test_state_t s;
   init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
 
@@ -3664,16 +3664,28 @@ static void shutdown_with_zero_recv_window(void) {
   // Send FIN to start connection close.
   SEND_PKT(&s, FIN_PKT(/* seq */ 506, /* ack */ 101));
 
-  // Should get an ACK.
+  // Should get a duplicate ACK not covering the FIN.
   EXPECT_PKT(
-      &s, ACK_PKT2(/* seq */ 101, /* ack */ 507, /* wndsize */ WNDSIZE_ZERO));
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ WNDSIZE_ZERO));
+
+  // Read the data (open the window) and try again.
+  KEXPECT_STREQ("abcde", do_read(s.socket));
+
+  // When the full packet is too long, we should drop the FIN.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 506, /* ack */ 101, "12345"));
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_STREQ("12345", do_read(s.socket));
+
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 511, /* ack */ 101, "ABCD"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 516));
 
   // Shutdown the connection from this side.
-  KEXPECT_STREQ("abcde", do_read(s.socket));  // Just to make the test work
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("ABCD", do_read(s.socket));
 
-  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 507));
-  SEND_PKT(&s, ACK_PKT(507, /* ack */ 102));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 516));
+  SEND_PKT(&s, ACK_PKT(516, /* ack */ 102));
 
   cleanup_tcp_test(&s);
 }
@@ -4257,19 +4269,54 @@ static void data_fin_past_window_test(void) {
   // KEXPECT_FALSE(socket_has_data(s.socket, 0));
 
   // Test a correct in-window FIN with data that starts before the window.
-  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 509, /* ack */ 101, "4567890"));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 509, /* ack */ 101, "456789"));
 
   // Should get an ACK.
   EXPECT_PKT(
-      &s, ACK_PKT2(/* seq */ 101, /* ack */ 517, /* wndsize */ WNDSIZE_ZERO));
-  KEXPECT_STREQ("67890", do_read(s.socket));
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 516, /* wndsize */ 1));
+  KEXPECT_STREQ("6789", do_read(s.socket));
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
 
   // Should get a FIN.
-  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 517));
-  SEND_PKT(&s, ACK_PKT(/* seq */ 517, /* ack */ 102));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 516));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 516, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+// As above, but with a FIN that starts right at the start of the window.
+static void data_fin_past_window_test2(void) {
+  KTEST_BEGIN("TCP: data+FIN when FIN aligns with start of window");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 5));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 2));
+
+  // Send a data+FIN where everything is before the window.  Should be dropped
+  // with an ACK reply.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "AB"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 2));
+
+  // Send a data+FIN where the data is all out-of-window, but the FIN is the
+  // next sequence number expected.  This should be accepted.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 502, /* ack */ 101, "BC"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 505, /* wndsize */ 2));
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 505));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 102));
 
   cleanup_tcp_test(&s);
 }
@@ -4360,6 +4407,7 @@ static void ooo_tests(void) {
   data_retransmit_test1();
   data_past_window_test();
   data_fin_past_window_test();
+  data_fin_past_window_test2();
   data_retransmit_blocked();
   rst_out_of_order();
 }
