@@ -4467,6 +4467,112 @@ static void repeat_ack_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void repeat_syn_test(void) {
+  KTEST_BEGIN("TCP: retransmitted SYN test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 5));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Send some repeats of the SYN/ACK, and SYNs before the window.  They should
+  // trigger an ACK.  Try with data as well.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 499, /* ack */ 101, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  test_packet_spec_t pkt = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  pkt = DATA_PKT(/* seq */ 499, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // Likewise, SYNs after the window should be ignored and trigger an ACK.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 510, /* ack */ 101, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 520, /* ack */ 101, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  pkt = DATA_PKT(/* seq */ 510, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 520, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // SYNs inside the window, or with data that overlaps the window, should be
+  // treated the same. In theory we could handle SYNs before the window with
+  // data (or FINs) inside the window, but currently just drop them.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 501, /* ack */ 101, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 502, /* ack */ 101, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  pkt = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  pkt = DATA_PKT(/* seq */ 501, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  pkt = DATA_PKT(/* seq */ 501, /* ack */ 101, "abcdefg");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  pkt = DATA_PKT(/* seq */ 505, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  pkt = DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  pkt.flags |= TCP_FLAG_SYN;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  // Verify after all that we can still send and receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 504, "123"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 504, /* ack */ 104));
+
+  // Test sending SYNs in other states.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 104));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 505, /* ack */ 104, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 505));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 505, /* ack */ 104, /* wndsize */ 500));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 105, /* ack */ 505));
+
+  SEND_PKT(&s, ACK_PKT(505, /* ack */ 105));
+
+  cleanup_tcp_test(&s);
+}
+
+// TODO(tcp): test sending SYNs in FIN_WAIT_1 and other active close states.
+
 static void ooo_tests(void) {
   data_retransmit_test1();
   data_past_window_test();
@@ -4475,6 +4581,7 @@ static void ooo_tests(void) {
   data_retransmit_blocked();
   rst_out_of_order();
   repeat_ack_test();
+  repeat_syn_test();
 }
 
 void tcp_test(void) {

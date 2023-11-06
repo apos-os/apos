@@ -462,7 +462,9 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // Next handle SYN and SYN-ACK.
   if (tcp_hdr->flags & TCP_FLAG_SYN) {
     tcp_handle_syn(socket, pb, &action);
-    goto done;
+    if (action & TCP_PACKET_DONE) {
+      goto done;
+    }
   }
 
   if (!(tcp_hdr->flags & TCP_FLAG_ACK)) {
@@ -536,8 +538,12 @@ done:
 
 static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action) {
-  // TODO(tcp): handle SYN in other states (connection reset).
-  die("Can't handle SYN");
+  // If we get a SYN in any state other than SYN_SENT, just send an ack and
+  // otherwise ignore it.
+  // TODO(tcp): handle SYN in SYN_RECEIVED.
+  KLOG(DEBUG2, "TCP: socket %p got SYN in state %s\n", socket,
+       state2str(socket->state));
+  *action |= TCP_SEND_ACK | TCP_PACKET_DONE;
 }
 
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
