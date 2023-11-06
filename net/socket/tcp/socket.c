@@ -377,7 +377,8 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
 
 static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action);
-static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb);
+static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
+                           tcp_pkt_action_t* action);
 static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
                            const tcp_packet_metadata_t* md,
                            tcp_pkt_action_t* action);
@@ -470,7 +471,10 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     goto done;
   }
 
-  tcp_handle_ack(socket, pb);
+  tcp_handle_ack(socket, pb, &action);
+  if (action & TCP_PACKET_DONE) {
+    goto done;
+  }
 
   if (tcp_hdr->flags & TCP_FLAG_URG) {
     // TODO(tcp): handle gracefully
@@ -536,17 +540,19 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
   die("Can't handle SYN");
 }
 
-static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
+static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
+                           tcp_pkt_action_t* action) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   KASSERT_DBG(tcp_hdr->flags & TCP_FLAG_ACK);
 
-  // TODO(tcp): handle out-of-order/duplicate ACKs properly.
-  // TODO(tcp): handle invalid (future) ACKs correctly.
+  // TODO(tcp): send retransmits on duplicate ACKs.
   uint32_t ack = btoh32(tcp_hdr->ack);
   if (seq_gt(ack, socket->send_next)) {
-    KLOG(DFATAL, "TCP: future ACKs unimplemented\n");
+    KLOG(DEBUG2, "TCP: socket %p got future ACK (ack=%u)\n", socket, ack);
+    *action |= TCP_SEND_ACK | TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
     return;
   } else if (seq_lt(ack, socket->send_unack)) {
+    KLOG(DEBUG2, "TCP: socket %p got duplicate ACK (ack=%u)\n", socket, ack);
     return;
   }
 
@@ -560,6 +566,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb) {
     KLOG(DFATAL, "TCP: unable to consume all ACK'd bytes\n");
     return;
   }
+  // TODO(tcp): handle window updates properly (track WL1/WL2).
   socket->send_unack = btoh32(tcp_hdr->ack);
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
   KLOG(DEBUG2,

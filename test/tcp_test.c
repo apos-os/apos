@@ -4403,6 +4403,70 @@ static void rst_out_of_order(void) {
   cleanup_tcp_test(&s);
 }
 
+static void repeat_ack_test(void) {
+  KTEST_BEGIN("TCP: duplicate ACK test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Send some repeat acks of the SYN.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send and ACK some data.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Send various other "old" ACKs.  None should update the window, all should
+  // be ignored.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 1));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 99, /* wndsize */ 1));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 103, /* wndsize */ 1));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 100, /* wndsize */ 1));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "def", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "def"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 107));
+
+  // Send "future" ACKs.  Each of these should trigger a reply ACK, but should
+  // not update the window (or otherwise be processed).
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 108, /* wndsize */ 1));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 112, /* wndsize */ 1));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 501));
+  test_packet_spec_t pkt = DATA_PKT(/* seq */ 501, /* ack */ 112, "XYZ");
+  pkt.wndsize = 1;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 501));
+  pkt = DATA_FIN_PKT(/* seq */ 501, /* ack */ 112, "xyz");
+  pkt.wndsize = 1;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 501));
+
+  // Check the window again.
+  KEXPECT_EQ(3, vfs_write(s.socket, "ghi", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 107, /* ack */ 501, "ghi"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 110));
+
+  // Repeat ACKs with the same seq/ack _should_ update the window.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 110, /* wndsize */ 2));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 110, /* wndsize */ 1));
+  KEXPECT_EQ(3, vfs_write(s.socket, "jkl", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 110, /* ack */ 501, "j"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 111, /* ack */ 501, "kl"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 113));
+  KEXPECT_TRUE(do_standard_finish(&s, 12, 0));
+
+  cleanup_tcp_test(&s);
+}
+
 static void ooo_tests(void) {
   data_retransmit_test1();
   data_past_window_test();
@@ -4410,6 +4474,7 @@ static void ooo_tests(void) {
   data_fin_past_window_test2();
   data_retransmit_blocked();
   rst_out_of_order();
+  repeat_ack_test();
 }
 
 void tcp_test(void) {
