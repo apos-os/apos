@@ -23,4 +23,7 @@
 // Gets the current socket state.
 #define SO_TCP_SOCKSTATE 2
 
+// Sets the time spent in TIME_WAIT.
+#define SO_TCP_TIME_WAIT_LEN 3
+
 #endif

@@ -18,6 +18,7 @@
 #include "common/circbuf.h"
 #include "common/list.h"
 #include "common/refcount.h"
+#include "dev/timer.h"
 #include "net/socket/socket.h"
 #include "proc/kthread.h"
 #include "vfs/vnode.h"
@@ -29,6 +30,10 @@ typedef enum {
   TCP_ESTABLISHED,
   TCP_CLOSE_WAIT,
   TCP_LAST_ACK,
+  TCP_FIN_WAIT_1,
+  TCP_FIN_WAIT_2,
+  TCP_CLOSING,
+  TCP_TIME_WAIT,
 } socktcp_state_t;
 
 typedef struct socket_tcp {
@@ -78,6 +83,7 @@ typedef struct socket_tcp {
   uint32_t recv_wndsize;  // Receive window size (my window)
   uint32_t cwnd;          // Congestion window size.
   uint32_t mss;           // Maximum segment size.
+  int time_wait_ms;       // How long to wait in TIME_WAIT.
 
   poll_event_t poll_event;
 
@@ -89,6 +95,9 @@ typedef struct socket_tcp {
   // Protects data structures touched by defints and protocol-driven state
   // transitions.
   kspinlock_t spin_mu;
+
+  timer_handle_t timer;
+  apos_ms_t timer_deadline;
 } socket_tcp_t;
 
 // Categories of socket states (for internal use).

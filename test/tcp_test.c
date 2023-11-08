@@ -31,6 +31,7 @@
 #include "proc/process.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -105,10 +106,11 @@ static bool socket_has_data(int fd, int timeout_ms) {
   return (result > 0);
 }
 
-static const char* do_read(int sock) {
+static const char* do_read_len(int sock, int len) {
+  KASSERT(len < 100);
   static char buf[100];
   // TODO(tcp): call socket_has_data() once poll is supported on TCP sockets.
-  int result = vfs_read(sock, buf, 100);
+  int result = vfs_read(sock, buf, len);
   if (KEXPECT_GE(result, 0)) {
     buf[result] = '\0';
   } else {
@@ -116,6 +118,8 @@ static const char* do_read(int sock) {
   }
   return buf;
 }
+
+static const char* do_read(int sock) { return do_read_len(sock, 99); }
 
 static int set_initial_seqno(int socket, int initial_seq) {
   return net_setsockopt(socket, IPPROTO_TCP, SO_TCP_SEQ_NUM, &initial_seq,
@@ -4757,8 +4761,6 @@ static void repeat_syn_test(void) {
   cleanup_tcp_test(&s);
 }
 
-// TODO(tcp): test sending SYNs in FIN_WAIT_1 and other active close states.
-
 static void ooo_tests(void) {
   data_retransmit_test1();
   data_past_window_test();
@@ -4768,6 +4770,1769 @@ static void ooo_tests(void) {
   rst_out_of_order();
   repeat_ack_test();
   repeat_syn_test();
+}
+
+static void active_close1(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  // Now we're in FIN_WAIT_1.
+
+  // Send duplicate ACK.  Should still be in FIN_WAIT_1.
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 101));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // We should still be able to receive data (do NOT ACK the FIN).
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("abc", do_read(s.socket));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A SYN in FIN_WAIT_1 should get a challenge ACK and be ignored.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 501, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 504, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 504, /* ack */ 102, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Should not be able to write in FIN_WAIT_1.
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "fgh", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(504, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // We should still be able to receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 504, /* ack */ 102, "def"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  KEXPECT_STREQ("def", do_read(s.socket));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // A SYN in FIN_WAIT_2 should get a challenge ACK and be ignored.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 504, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 507, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 507, /* ack */ 102, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // Should not be able to write in FIN_WAIT_2.
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "fgh", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 507, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // In TIME_WAIT, a SYN should get a challenge ACK.
+  SEND_PKT(&s, SYN_PKT(/* seq */ 508, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 507, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 707, /* ack */ 502));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 107, /* ack */ 2));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+
+  // Data should be ignored.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 507, /* ack */ 102, "abc"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Should not be able to write in TIME_WAIT.
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "fgh", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Don't test retransmitted FIN (tested below).
+
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  int sock2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock2, 0);
+  KEXPECT_EQ(0, do_bind(sock2, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(-EADDRINUSE, do_connect(sock2, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(0, vfs_close(sock2));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 508, /* ack */ 102));
+  cleanup_tcp_test(&s);
+}
+
+// As above, but test the timing of the timeout (and skip the
+// expensive/higher-variance functional tests during TIME_WAIT).
+static void active_close1a(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT) timeout");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  // Now we're in FIN_WAIT_1.
+
+  // Send duplicate ACK.  Should still be in FIN_WAIT_1.
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 101));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // We should still be able to receive data (do NOT ACK the FIN).
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("abc", do_read(s.socket));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(504, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // We should still be able to receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 504, /* ack */ 102, "def"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  KEXPECT_STREQ("def", do_read(s.socket));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 507, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait for the timer to run out.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close1b(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT); "
+      "retransmitted FIN");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // We should still be able to receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait _some_ time, but not the full MSL.
+  ksleep(10);
+
+  // Retransmitted FIN should get an ACK.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+
+  // Wait for long enough that the original timer would expire, but the reset
+  // timer (from the retransmitted FIN) should not.
+  ksleep(20);
+
+  // Retransmitted FIN should still get an ACK.
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+
+  // Wait for the timer to run out.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+// Exact same as above, but with the retransmitted FIN coming with data (also
+// retransmitted).
+static void active_close1c(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT); "
+      "retransmitted FIN (with data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 60));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // We should still be able to receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait _some_ time, but not the full MSL.
+  ksleep(30);
+
+  // Retransmitted FIN with data should get an ACK.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 502, /* ack */ 102, "bc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+
+  // Wait for long enough that the original timer would expire, but the reset
+  // timer (from the retransmitted FIN) should not.
+  ksleep(30);
+
+  // Retransmitted FIN should still get an ACK.
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+
+  // Wait for the timer to run out.
+  ksleep(60);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close1d(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT); "
+      "TIME_WAIT gets FIN with misaligned sequence number");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 50));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // We should still be able to receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait _some_ time, but not the full MSL.
+  ksleep(10);
+
+  // Retransmitted FIN with mismatched seqno should get an ACK but NOT reset the
+  // timer.
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 503, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+
+  // These cases are ignored (they overlap the receive window, and hit a
+  // different path that doesn't send a challenge ACK) --- it would be OK if
+  // they did, though.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 505, /* ack */ 102));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 504, /* ack */ 102, "x"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait for long enough that the original timer expires.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close2(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT, with "
+      "data+ACK)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, DATA_PKT(501, /* ack */ 102, "abc"));
+  // Now we're in FIN_WAIT_2
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  SEND_PKT(&s, DATA_PKT(504, /* ack */ 102, "de"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 506));
+  KEXPECT_STREQ("de", do_read(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 506, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // This time, try sending a RST to get us to CLOSED immediately.
+  SEND_PKT(&s, RST_PKT(/* seq */ 507, /* ack */ 102));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // TODO(tcp): use SO_ERROR to verify no error after RST here.
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close3(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> FIN_WAIT_2 -> TIME_WAIT, with "
+      "data+FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // Send data+FIN to start connection close.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  SEND_PKT(&s, RST_PKT(/* seq */ 505, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close4(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 checks ACK)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send duplicate ACK.  Should still be in FIN_WAIT_1.
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 101));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  ksleep(20);  // Should still be in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // We should still be able to receive data (do NOT ACK the FIN).
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("abc", do_read(s.socket));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(504, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // We should still be able to receive data.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 504, /* ack */ 102, "def"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 507));
+  KEXPECT_STREQ("def", do_read(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 507, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 508, /* ack */ 102));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close5(void) {
+  KTEST_BEGIN("TCP: active close (buffered send bytes)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(
+      &s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ WNDSIZE_ZERO));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send data, should not be sent due to zero window.
+  KEXPECT_EQ(6, vfs_write(s.socket, "abcdef", 6));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Open the window a little bit.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2));
+
+  // Should get data.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "ab"));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 103, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 103, /* ack */ 501, "cd"));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 105, /* ack */ 501, "ef"));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  // Now we're in FIN_WAIT_1.
+
+  // Send duplicate ACK.  Should still be in FIN_WAIT_1.
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 105));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send partial ACK.  Should still be in FIN_WAIT_1.
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 106));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Ack the rest of the data _and_ the FIN together.
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 108));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 108));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 108, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 108));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_rst(void) {
+  KTEST_BEGIN("TCP: active close (RST in FIN_WAIT_1)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send some data then a RST.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("a", do_read_len(s.socket, 1));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 504, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  char buf[10];
+  KEXPECT_EQ(-ECONNRESET, vfs_read(s.socket, buf, 10));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_shutrd(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_1, no data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  // Now we're in FIN_WAIT_2
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_shutrd_data(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_1, with data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+
+  // Connection should now be reset.
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_shutrd_data2(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_1, with data "
+              "but doesn't ACK the FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Connection should now be reset.
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_shutrd_datafin(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_1, with DATA_FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  // Now we're in FIN_WAIT_1.
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+
+  // Connection should now be reset.
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw2_rst(void) {
+  KTEST_BEGIN("TCP: active close (RST in FIN_WAIT_2)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send some data then a RST.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 504));
+  KEXPECT_STREQ("a", do_read_len(s.socket, 1));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 504, /* ack */ 102));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 504, /* ack */ 102));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  char buf[10];
+  KEXPECT_EQ(-ECONNRESET, vfs_read(s.socket, buf, 10));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw2_shutrd(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_2, no data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw2_shutrd_data(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_2, with data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+
+  // Connection should now be reset.
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw2_shutrd_data2(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_2, with data "
+              "but doesn't ACK the FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Connection should now be reset.
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw2_shutrd_datafin(void) {
+  KTEST_BEGIN("TCP: active close (shutdown(RD) in FIN_WAIT_2, with DATA_FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT(501, /* ack */ 102));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+
+  // Connection should now be reset.
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_to_tw(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> TIME_WAIT)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  // Now we're in FIN_WAIT_1.
+
+  // Send FIN+ACK to start connection close and go straight to TIME_WAIT.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait for the timer to run out.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw1_to_tw_datafin(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> TIME_WAIT with data+FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  // Now we're in FIN_WAIT_1.
+
+  // Send FIN+ACK to start connection close and go straight to TIME_WAIT.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  // Wait for the timer to run out.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing1(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // In CLOSING, a SYN should get a challenge ACK.  The ACK should _not_ be
+  // processed.
+  SEND_PKT(&s, SYN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 502, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 502, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 707, /* ack */ 502));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 107, /* ack */ 2));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Data should be ignored.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // As should a retransmitted FIN (get an ACK, at least).
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should not be able to write in CLOSING.
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "fgh", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // ACK the FIN to enter TIME_WAIT.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Wait for the timer to run out.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing1b(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT), "
+              "ACK in the " "past");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 105, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN (with ACK 'in the past').
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 105, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // ACK the FIN to enter TIME_WAIT.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 105));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 105));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing1c(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT, "
+              "DATA packet ACKs FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Data should be ignored, BUT the ack should be processed (weirdly) --- at
+  // least that's my reading of the RFC.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 502, /* ack */ 102, "abc"));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing2(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT, with data+FIN)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // More data should be ignored.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 505, /* ack */ 101, "def"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Should be able to read in CLOSING.
+  KEXPECT_STREQ("a", do_read_len(s.socket, 1));
+
+  // ACK the FIN to enter TIME_WAIT.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  KEXPECT_STREQ("b", do_read_len(s.socket, 1));
+
+  // Wait for the timer to run out.
+  ksleep(40);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  KEXPECT_STREQ("c", do_read(s.socket));
+
+  // Now a FIN should get a RST.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
+  // TODO(tcp): fix this test
+  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing_rst(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> CLOSING -> RST)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // More data should be ignored.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 505, /* ack */ 101, "def"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send a RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 505, /* ack */ 101));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Should still be able to read the data.
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing_shutdown(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> CLOSING -> RST)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Send a RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 505, /* ack */ 101));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Should still be able to read the data.
+  // Note: this is possibly weird --- are there other scenarios where you're
+  // able to read data after calling shutdown(SHUT_RD)?
+  KEXPECT_STREQ("abc", do_read(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing3(void) {
+  KTEST_BEGIN(
+      "TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT, with "
+      "data+FIN+ACK)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // ACK the FIN to enter TIME_WAIT.  Data should be ignored.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 505, /* ack */ 102, "123"));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send a RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 505, /* ack */ 101));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  // Should still be able to read the data.
+  KEXPECT_STREQ("abc", do_read(s.socket));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_fw_to_closing4(void) {
+  KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT, "
+              "with data+FIN, read in CLOSING)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // A simultaneous FIN with an ACK "in the future" should be ignored.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 111));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 501));  // Challenge ack.
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  // Send simultaneous FIN.
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_STREQ("CLOSING", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // More data should be ignored.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 505, /* ack */ 101, "def"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Should be able to read and get EOF in CLOSING.
+  char buf[10];
+  KEXPECT_STREQ("abc", do_read(s.socket));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  // ACK the FIN to enter TIME_WAIT.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 505, /* ack */ 102));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+// Test what happens if we start an active close (by calling shutdown()), but
+// the FIN is buffered, and then the _other_ side sends a FIN before ours
+// actually is transmitted, turning it into a passive close.
+static void active_close_buffered_to_passive(void) {
+  KTEST_BEGIN("TCP: active close (FIN buffered, other side closes first)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(
+      &s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ WNDSIZE_ZERO));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send data, should not be sent due to zero window.
+  KEXPECT_EQ(6, vfs_write(s.socket, "abcdef", 6));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Open the window a little bit.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2));
+
+  // Should get data.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "ab"));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+
+  // Send a FIN, triggering a passive close.
+  SEND_PKT(&s, FIN_PKT2(/* seq */ 501, /* ack */ 103, /* wndsize */ 1));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 103, /* ack */ 502, "c"));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 104, /* wndsize */ 1));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 502, "d"));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 105, /* ack */ 502, "ef"));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 108));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  cleanup_tcp_test(&s);
+}
+
+// As above, but with a FIN packet doesn't ACK the most recent data.
+static void active_close_buffered_to_passive2(void) {
+  KTEST_BEGIN("TCP: active close (FIN buffered, other side closes first)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(
+      &s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ WNDSIZE_ZERO));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send data, should not be sent due to zero window.
+  KEXPECT_EQ(6, vfs_write(s.socket, "abcdef", 6));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Open the window a little bit.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2));
+
+  // Should get data.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "ab"));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+
+  // Send a FIN, triggering a passive close.  ACK doesn't hit most recent data,
+  // so the wndsize update should be ignored.
+  SEND_PKT(&s, FIN_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 103, /* ack */ 502));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 103, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 103, /* ack */ 502, "cd"));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 105, /* ack */ 502, "ef"));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 108));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  cleanup_tcp_test(&s);
+}
+
+static void active_close_tests(void) {
+  active_close1();
+  active_close1a();
+  active_close1b();
+  active_close1c();
+  active_close1d();
+  active_close2();
+  active_close3();
+  active_close4();
+  active_close5();
+  active_close_fw1_rst();
+  active_close_fw1_shutrd();
+  active_close_fw1_shutrd_data();
+  active_close_fw1_shutrd_data2();
+  active_close_fw1_shutrd_datafin();
+  active_close_fw2_rst();
+  active_close_fw2_shutrd();
+  active_close_fw2_shutrd_data();
+  active_close_fw2_shutrd_data2();
+  active_close_fw2_shutrd_datafin();
+  active_close_fw1_to_tw();
+  active_close_fw1_to_tw_datafin();
+
+  active_close_fw_to_closing1();
+  active_close_fw_to_closing1b();
+  active_close_fw_to_closing1c();
+  active_close_fw_to_closing2();
+  active_close_fw_to_closing_rst();
+  active_close_fw_to_closing_shutdown();
+  active_close_fw_to_closing3();
+  active_close_fw_to_closing4();
+  active_close_buffered_to_passive();
+  active_close_buffered_to_passive2();
 }
 
 void tcp_test(void) {
@@ -4780,6 +6545,7 @@ void tcp_test(void) {
       // We only add the offset if doing more than one iteration.
       g_seq_start += (uint32_t)(i - TEST_SEQ_ITERS / 2);
     }
+    klogf("g_seq_start = 0x%x\n", g_seq_start);
     tcp_key_test();
     seqno_test();
     tcp_socket_test();
@@ -4792,6 +6558,7 @@ void tcp_test(void) {
     sendbuf_size_test();
     send_tests();
     ooo_tests();
+    active_close_tests();
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");

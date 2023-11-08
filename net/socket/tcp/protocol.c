@@ -142,15 +142,18 @@ int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start,
   bool send_fin = false;
   if (socket->send_shutdown) {
     uint32_t fin_seq = socket->send_buf_seq + socket->send_buf.len;
-    if (seq_ge(seq_start + data_to_send, fin_seq)) {
+    // We use equality here so that we don't attempt to send a FIN when
+    // seq_start is past the FIN sequence number (which happens when this is
+    // called after a FIN has been sent).
+    if (seq_start + (uint32_t)data_to_send == fin_seq) {
       send_fin = true;
     }
   }
   uint32_t send_buf_offset = seq_start - socket->send_buf_seq;
-  KASSERT_DBG(socket->send_buf.len >= send_buf_offset);
   if (data_to_send == 0 && !send_fin) {
     return -EAGAIN;
   }
+  KASSERT_DBG(socket->send_buf.len >= send_buf_offset);
 
   // Build the TCP header (minus checksum).
   pbuf_t* pb = NULL;

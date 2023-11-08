@@ -25,6 +25,7 @@
 #include "common/list.h"
 #include "common/math.h"
 #include "common/refcount.h"
+#include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "net/addr.h"
@@ -41,6 +42,7 @@
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/tcp.h"
 #include "net/util.h"
+#include "proc/defint.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
@@ -58,6 +60,8 @@
 #define MAX_BUF_SIZE (1 * 1024 * 1024)
 
 #define SOCKET_CONNECT_TIMEOUT_MS 60000
+
+#define TCP_TIME_WAIT_MS 60000
 
 static const socket_ops_t g_tcp_socket_ops;
 
@@ -112,10 +116,12 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
+  sock->time_wait_ms = TCP_TIME_WAIT_MS;
   kthread_queue_init(&sock->q);
   kmutex_init(&sock->mu);
   sock->spin_mu = KSPINLOCK_NORMAL_INIT;
   poll_init_event(&sock->poll_event);
+  sock->timer = TIMER_HANDLE_NONE;
 
   *out = &(sock->base);
   return 0;
@@ -129,10 +135,14 @@ socktcp_state_type_t get_state_type(socktcp_state_t s) {
 
     case TCP_ESTABLISHED:
     case TCP_CLOSE_WAIT:
+    case TCP_FIN_WAIT_1:
+    case TCP_FIN_WAIT_2:
       return TCPSTATE_ESTABLISHED;
 
     case TCP_LAST_ACK:
     case TCP_CLOSED_DONE:
+    case TCP_CLOSING:
+    case TCP_TIME_WAIT:
       return TCPSTATE_POST_ESTABLISHED;
   }
   KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)s);
@@ -148,6 +158,10 @@ static inline const char* state2str(socktcp_state_t state) {
     CONSIDER(ESTABLISHED)
     CONSIDER(CLOSE_WAIT)
     CONSIDER(LAST_ACK)
+    CONSIDER(FIN_WAIT_1)
+    CONSIDER(FIN_WAIT_2)
+    CONSIDER(CLOSING)
+    CONSIDER(TIME_WAIT)
   }
 #undef CONSIDER
   KLOG(FATAL, "Unknown TCP state %d\n", state);
@@ -195,6 +209,8 @@ static bool is_in_state(socket_tcp_t* sock, socktcp_state_t target_state) {
   return result;
 }
 
+static bool is_fin_sent(const socket_tcp_t* socket);
+
 static void clear_addr(struct sockaddr_storage* addr) {
   kmemset(addr, 0xab, sizeof(struct sockaddr_storage));
   addr->sa_family = AF_UNSPEC;
@@ -241,17 +257,22 @@ static int bind_if_necessary(socket_tcp_t* socket,
 static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
   // Figure out how much data to send.
   kspin_lock(&socket->spin_mu);
+  // TODO(tcp): ensure this is removed/fixed --- it will preent post-established
+  // retransmits.
   if (get_state_type(socket->state) != TCPSTATE_ESTABLISHED) {
     kspin_unlock(&socket->spin_mu);
     return -EAGAIN;
   }
 
-  uint32_t unacked_bytes = socket->send_next - socket->send_unack;
-  KASSERT_DBG(socket->send_buf.len >= unacked_bytes);
+  uint32_t unacked_data = socket->send_next - socket->send_unack;
+  if (is_fin_sent(socket) && unacked_data > 0) {
+    unacked_data--;
+  }
+  KASSERT_DBG(socket->send_buf.len >= unacked_data);
   size_t data_to_send =
       min(socket->cwnd,
-          socket->send_wndsize - min(socket->send_wndsize, unacked_bytes));
-  data_to_send = min(data_to_send, socket->send_buf.len - unacked_bytes);
+          socket->send_wndsize - min(socket->send_wndsize, unacked_data));
+  data_to_send = min(data_to_send, socket->send_buf.len - unacked_data);
   data_to_send = min(data_to_send, socket->mss);
 
   ip4_pseudo_hdr_t pseudo_ip;
@@ -276,11 +297,18 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
         set_state(socket, TCP_LAST_ACK, "sending FIN");
         break;
 
+      case TCP_ESTABLISHED:
+        set_state(socket, TCP_FIN_WAIT_1, "sending FIN");
+        break;
+
       case TCP_CLOSED_DONE:
       case TCP_LAST_ACK:
-      case TCP_ESTABLISHED:
       case TCP_CLOSED:
       case TCP_SYN_SENT:
+      case TCP_FIN_WAIT_1:
+      case TCP_FIN_WAIT_2:
+      case TCP_CLOSING:
+      case TCP_TIME_WAIT:
         KLOG(DFATAL, "TCP: socket %p sent FIN in invalid state %s\n", socket,
              state2str(socket->state));
         break;
@@ -375,6 +403,11 @@ typedef enum {
 static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
                                   tcp_pkt_action_t* action);
 
+// Special case for maybe handling a retransmitted FIN in TIME_WAIT.
+static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
+                                       const tcp_packet_metadata_t* md,
+                                       uint32_t seq);
+
 static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action);
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
@@ -389,6 +422,45 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
                             tcp_pkt_action_t* action);
 
 static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
+
+static void tcp_timer_cb(void* arg);
+static void tcp_timer_defint(void* arg);
+
+static void tcp_set_timer(socket_tcp_t* socket, int duration_ms, bool force) {
+  apos_ms_t deadline = get_time_ms() + duration_ms;
+  KASSERT(kspin_is_held(&socket->spin_mu));
+  PUSH_AND_DISABLE_INTERRUPTS();
+  if (socket->timer != TIMER_HANDLE_NONE &&
+      (force || socket->timer_deadline > deadline)) {
+    cancel_event_timer(socket->timer);
+    socket->timer = TIMER_HANDLE_NONE;
+  }
+  register_event_timer(deadline, &tcp_timer_cb, socket, &socket->timer);
+  POP_INTERRUPTS();
+}
+
+static void tcp_timer_cb(void* arg) {
+  socket_tcp_t* socket = arg;
+  socket->timer = TIMER_HANDLE_NONE;
+  refcount_inc(&socket->ref);
+  defint_schedule(&tcp_timer_defint, socket);
+}
+
+static void tcp_timer_defint(void* arg) {
+  socket_tcp_t* socket = arg;
+  kspin_lock(&socket->spin_mu);
+  if (socket->state == TCP_CLOSED_DONE) {
+    kspin_unlock(&socket->spin_mu);
+    return;
+  }
+
+  // Timers are only used in TIME_WAIT currently.
+  KASSERT(socket->state == TCP_TIME_WAIT);
+  finish_protocol_close(socket, "TIME_WAIT finished");
+  kspin_unlock(&socket->spin_mu);
+
+  TCP_DEC_REFCOUNT(socket);
+}
 
 // Resets the connection state, but does _not_ set a socket error or send a RST.
 static void reset_connection(socket_tcp_t* socket, const char* reason);
@@ -429,6 +501,8 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   tcp_pkt_action_t action = TCP_ACTION_NONE;
 
+  // TODO(tcp): check for unbound/unconnected state.
+
   // Handle SYN-SENT as a special case first.
   kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_SYN_SENT) {
@@ -440,6 +514,10 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // receive window.
   uint32_t seq = btoh32(tcp_hdr->seq);
   if (!validate_seq(socket, seq, seg_len(tcp_hdr, md))) {
+    // Special case for FIN in TIME_WAIT.
+    if (socket->state == TCP_TIME_WAIT) {
+      maybe_handle_time_wait_fin(socket, pb, md, seq);
+    }
     KLOG(DEBUG2, "TCP: socket %p got out-of-window packet, dropping\n", socket);
     action = (tcp_hdr->flags & TCP_FLAG_RST) ? TCP_DROP_BAD_PKT : TCP_SEND_ACK;
     goto done;
@@ -498,6 +576,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 
 done:
   kspin_unlock(&socket->spin_mu);
+  // TODO(tcp): there is a race here with the socket closing.
 
   int result = 0;
   if (action & TCP_DROP_BAD_PKT) {
@@ -546,6 +625,26 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
   *action |= TCP_SEND_ACK | TCP_PACKET_DONE;
 }
 
+static bool is_fin_sent(const socket_tcp_t* socket) {
+  switch (socket->state) {
+    case TCP_CLOSED:
+    case TCP_SYN_SENT:
+    case TCP_ESTABLISHED:
+    case TCP_CLOSE_WAIT:
+    case TCP_CLOSED_DONE:
+      return false;
+
+    case TCP_LAST_ACK:
+    case TCP_FIN_WAIT_1:
+    case TCP_FIN_WAIT_2:
+    case TCP_CLOSING:
+    case TCP_TIME_WAIT:
+      return true;
+  }
+  KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);
+  return false;
+}
+
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
@@ -562,9 +661,11 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
     return;
   }
 
-  uint32_t bytes_acked = ack - socket->send_unack;
-  if (bytes_acked > 0 && socket->state == TCP_LAST_ACK)  // Or FIN_WAIT, etc...
+  uint32_t seqs_acked = ack - socket->send_unack;
+  uint32_t bytes_acked = seqs_acked;
+  if (seqs_acked > 0 && is_fin_sent(socket) && ack == socket->send_next) {
     bytes_acked--;  // Account for the FIN.
+  }
 
   ssize_t consumed = circbuf_consume(&socket->send_buf, bytes_acked);
   socket->send_buf_seq += consumed;
@@ -576,9 +677,9 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
   socket->send_unack = btoh32(tcp_hdr->ack);
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
   KLOG(DEBUG2,
-       "TCP: socket %p had %u bytes acked (remaining unacked: %u; "
-       "send_wndsize: %d)\n",
-       socket, bytes_acked, socket->send_next - socket->send_unack,
+       "TCP: socket %p had %u octets acked (data bytes acked: %u; remaining "
+       "unacked: %u; send_wndsize: %d)\n",
+       socket, seqs_acked, bytes_acked, socket->send_next - socket->send_unack,
        socket->send_wndsize);
   scheduler_wake_all(&socket->q);
 
@@ -597,8 +698,25 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       // TODO(tcp): send RST, this is not allowed.
       break;
 
+    case TCP_FIN_WAIT_1:
+      // If our FIN is acked, move to FIN_WAIT_2.
+      if (socket->send_unack == socket->send_next) {
+        set_state(socket, TCP_FIN_WAIT_2, "FIN ack'd");
+      }
+      break;
+
+    case TCP_CLOSING:
+      // If our FIN is acked, move to TIME_WAIT.
+      if (socket->send_unack == socket->send_next) {
+        set_state(socket, TCP_TIME_WAIT, "FIN ack'd");
+        tcp_set_timer(socket, socket->time_wait_ms, /* force */ false);
+      }
+      break;
+
+    case TCP_FIN_WAIT_2:
     case TCP_ESTABLISHED:
     case TCP_CLOSE_WAIT:
+    case TCP_TIME_WAIT:
       // Nothing to do, rely on common ACK handling above.
       break;
 
@@ -633,7 +751,31 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
 
     case TCP_LAST_ACK:
     case TCP_CLOSE_WAIT:
+    case TCP_CLOSING:
+    case TCP_TIME_WAIT:
+      // N.B.(aoates): ostensibly if we get a new FIN in TIME_WAIT, we're
+      // supposed to restart the timer.  But that should only happen (here) if
+      // we receive a FIN with a seqno immediately after the "true" FIN we
+      // already received (if before, would be treated as a retransmition and
+      // handled earlier; if after, would be outside of window and dropped).
+
       // Nothing to do, stay in same state.
+      return;
+
+    case TCP_FIN_WAIT_1:
+      // If send_unack had caught up to send_next, that means our FIN was ACK'd,
+      // and we should have entered FIN_WAIT_2 in tcp_handle_ack() above.
+      KASSERT_DBG(seq_lt(socket->send_unack, socket->send_next));
+      set_state(socket, TCP_CLOSING, "simultaneous close (got FIN, no ACK)");
+      socket->recv_next++;
+      *action |= TCP_SEND_ACK;
+      return;
+
+    case TCP_FIN_WAIT_2:
+      set_state(socket, TCP_TIME_WAIT, "FIN received");
+      socket->recv_next++;
+      *action |= TCP_SEND_ACK;
+      tcp_set_timer(socket, socket->time_wait_ms, /* force */ false);
       return;
 
     case TCP_SYN_SENT:
@@ -663,6 +805,8 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
   switch (socket->state) {
     case TCP_ESTABLISHED:
     case TCP_CLOSE_WAIT:
+    case TCP_FIN_WAIT_1:
+    case TCP_FIN_WAIT_2:
       socket->error = ECONNRESET;
       // Drop any pending data.
       circbuf_clear(&socket->recv_buf);
@@ -673,6 +817,8 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
       return;
 
     case TCP_LAST_ACK:
+    case TCP_CLOSING:
+    case TCP_TIME_WAIT:
       // Don't clear the read buffer here --- let any pending data be consumed
       // (since we're not signalling an error).
       KASSERT_DBG(socket->send_shutdown);
@@ -720,8 +866,8 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
     return;
   }
 
-  // TODO(tcp): handle FIN_WAIT states.
-  if (socket->state != TCP_ESTABLISHED) {
+  if (socket->state != TCP_ESTABLISHED && socket->state != TCP_FIN_WAIT_1 &&
+      socket->state != TCP_FIN_WAIT_2) {
     KLOG(DEBUG2,
          "TCP: socket %p ignoring %d bytes of data in non-connected state %s\n",
          socket, (int)md->data_len, state2str(socket->state));
@@ -787,12 +933,42 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
   *action |= TCP_SEND_ACK;
 }
 
+static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
+                                       const tcp_packet_metadata_t* md,
+                                       uint32_t seq) {
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  KASSERT_DBG(socket->state == TCP_TIME_WAIT);
+
+  if (!(tcp_hdr->flags & TCP_FLAG_FIN) ||
+      (seq + (uint32_t)md->data_len) != socket->recv_next - 1) {
+    KLOG(DEBUG3, "TCP: socket %p ignoring non-retransmitted-FIN in TIME_WAIT\n",
+         socket);
+    return;
+  }
+
+  // This is a retransmit of the FIN.  Reset our TIME_WAIT timer.
+  KLOG(DEBUG2,
+       "TCP: socket %p got retransmitted FIN; resetting TIME_WAIT timer\n",
+       socket);
+  tcp_set_timer(socket, socket->time_wait_ms, /* force */ true);
+}
+
 // Closes the socket on the protocol side when all protocol ops are complete.
 // Could be called from a user context or a defint.
 static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
   KASSERT(kspin_is_held(&socket->spin_mu));
   // TODO(tcp): assert that we're coming from a last-to-terminal state, OR that
   // an error has occurred.
+
+  // Cancel any pending timers.  A timer may be about to run (if it holds a
+  // reference) once we unlock --- it will find the socket closed.
+  PUSH_AND_DISABLE_INTERRUPTS();
+  if (socket->timer != TIMER_HANDLE_NONE) {
+    cancel_event_timer(socket->timer);
+    socket->timer = TIMER_HANDLE_NONE;
+  }
+  POP_INTERRUPTS();
 
   KASSERT(socket->state != TCP_CLOSED_DONE);
 
@@ -924,9 +1100,9 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
 
   if (how == SHUT_WR || how == SHUT_RDWR) {
     if (sock->send_shutdown ||
-        (sock->state != TCP_CLOSE_WAIT && sock->state != TCP_SYN_SENT)) {
-      // TODO(tcp): handle this in other states that can close, and error
-      // correctly in states that can't close.
+        get_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
+      // TODO(tcp): check we have tests for hitting this in all states
+      // (including pre-established).
       kspin_unlock(&sock->spin_mu);
       return -ENOTCONN;
     }
@@ -1227,15 +1403,17 @@ static recv_state_t recv_state(const socket_tcp_t* socket) {
     case TCP_CLOSE_WAIT:
     case TCP_CLOSED_DONE:
     case TCP_LAST_ACK:
+    case TCP_TIME_WAIT:
+    case TCP_CLOSING:
       // No error, no data, and we've received a FIN --- return EOF.  Note that
       // we will return EOF after an error once the first call to recv() returns
       // the error --- this matches macos behavior, so seems fine.
-      // TODO(tcp): include CLOSING and TIME_WAIT here.
       return RECV_EOF;
 
     case TCP_ESTABLISHED:
+    case TCP_FIN_WAIT_1:
+    case TCP_FIN_WAIT_2:
       // No data available but we could get some; block.
-      // TODO(tcp): handle FIN_WAIT states as well.
       return RECV_BLOCK_FOR_DATA;
 
     case TCP_CLOSED:
@@ -1330,7 +1508,14 @@ static send_state_t send_state(const socket_tcp_t* socket) {
   switch (socket->state) {
     case TCP_CLOSED_DONE:
     case TCP_LAST_ACK:
-      // TODO(tcp): include FIN_WAIT_*, CLOSING, and TIME_WAIT here.
+      return SEND_IS_SHUTDOWN;
+
+    case TCP_FIN_WAIT_1:
+    case TCP_FIN_WAIT_2:
+    case TCP_CLOSING:
+    case TCP_TIME_WAIT:
+      KLOG(DFATAL, "TCP: socket %p in state %s but send_shutdown is false\n",
+           socket, state2str(socket->state));
       return SEND_IS_SHUTDOWN;
 
     case TCP_CLOSE_WAIT:
@@ -1562,6 +1747,11 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     socktcp_state_t state = socket->state;
     kspin_unlock(&socket->spin_mu);
     return getsockopt_cstr(val, val_len, state2str(state));
+  } else if (level == IPPROTO_TCP && option == SO_TCP_TIME_WAIT_LEN) {
+    kspin_lock(&socket->spin_mu);
+    int tw = socket->time_wait_ms;
+    kspin_unlock(&socket->spin_mu);
+    return getsockopt_int(val, val_len, tw);
   }
 
   return -ENOPROTOOPT;
@@ -1601,6 +1791,20 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
     return 0;
   } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {
     return -EINVAL;
+  } else if (level == IPPROTO_TCP && option == SO_TCP_TIME_WAIT_LEN) {
+    int tw;
+    int result = setsockopt_int(val, val_len, &tw);
+    if (result) {
+      return result;
+    }
+    if (tw <= 0) {
+      return -EINVAL;
+    }
+
+    kspin_lock(&socket->spin_mu);
+    socket->time_wait_ms = tw;
+    kspin_unlock(&socket->spin_mu);
+    return 0;
   }
 
   return -ENOPROTOOPT;
