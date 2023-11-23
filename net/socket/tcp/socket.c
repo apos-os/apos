@@ -584,7 +584,10 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
 
   switch (socket->state) {
     case TCP_LAST_ACK:
-      finish_protocol_close(socket, "socket closed");
+      // If our FIN is acked, finish closing.
+      if (socket->send_unack == socket->send_next) {
+        finish_protocol_close(socket, "socket closed");
+      }
       break;
 
     case TCP_SYN_SENT:

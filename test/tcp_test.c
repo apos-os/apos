@@ -742,6 +742,13 @@ static test_packet_spec_t FIN_PKT(int seq, int ack) {
       .flags = TCP_FLAG_FIN | TCP_FLAG_ACK, .seq = seq, .ack = ack});
 }
 
+static test_packet_spec_t FIN_PKT2(int seq, int ack, int wndsize) {
+  return ((test_packet_spec_t){.flags = TCP_FLAG_FIN | TCP_FLAG_ACK,
+                               .seq = seq,
+                               .ack = ack,
+                               .wndsize = wndsize});
+}
+
 static test_packet_spec_t RST_PKT(int seq, int ack) {
   return ((test_packet_spec_t){
       .flags = TCP_FLAG_RST | TCP_FLAG_ACK, .seq = seq, .ack = ack});
@@ -3048,6 +3055,132 @@ static void basic_send_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void basic_send_window_test(void) {
+  KTEST_BEGIN("TCP: basic send window test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ 1));
+
+  KEXPECT_EQ(6, vfs_write(s.socket, "123456", 6));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "1"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 10));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 1));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 105, /* ack */ 501, "2"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s,
+           FIN_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 502));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should not yet get a FIN.
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 10));
+
+  // Trickle the data back slowly.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 106, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 502, "34"));
+
+  // A future ACK and past ACK shouldn't cause FIN to be sent.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 109, /* wndsize */ 2));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 108, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 2));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 103, /* wndsize */ 2));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 10));
+
+  // Open the window just enough to get the data and the FIN in.
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 3));
+  EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "56"));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 109));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 110));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 111));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+// As above, but ack buffered data just up to (but not including) the FIN.
+static void basic_send_window_test2(void) {
+  KTEST_BEGIN("TCP: basic send window test #2");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ 2));
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "12"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s,
+           FIN_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ WNDSIZE_ZERO));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 502));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  // Should not yet get a FIN.
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 10));
+
+  // Trickle the data back slowly.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 106, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 502, "34"));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  // Open the window just enough to get the data but not the FIN in.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 1));
+  // TODO(tcp): fix this bug (should only send "5", not "5" + FIN)
+  EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "5"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 110));
+#if 0
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 108, /* ack */ 502, "5"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 109));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 109, /* wndsize */ 1));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 109, /* ack */ 502));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 109));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 110));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+#endif
+
+  cleanup_tcp_test(&s);
+}
+
 static void basic_send_test_blocks(void) {
   KTEST_BEGIN("TCP: basic data passing (blocking send)");
   tcp_test_state_t s;
@@ -3529,7 +3662,7 @@ static void shutdown_with_data_buffered(void) {
   // ACK, then should get the last data plus a FIN.
   SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 1));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "h"));
-  SEND_PKT(&s, ACK_PKT(502, /* ack */ 109));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 110));
 
   cleanup_tcp_test(&s);
 }
@@ -3582,7 +3715,7 @@ static void shutdown_with_data_buffered_pending_send(void) {
   SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 104, /* wndsize */ 10));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 104, /* ack */ 502, "12"));
   KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
-  SEND_PKT(&s, ACK_PKT(502, /* ack */ 105));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 107));
 
   cleanup_tcp_test(&s);
 }
@@ -3656,7 +3789,7 @@ static void double_write_shutdown_with_data_buffered(void) {
   // ACK, then should get the last data plus a FIN.
   SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 1));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "h"));
-  SEND_PKT(&s, ACK_PKT(502, /* ack */ 109));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 110));
 
   cleanup_tcp_test(&s);
 }
@@ -4137,6 +4270,8 @@ static void shutdown_invalid_test(void) {
 
 static void send_tests(void) {
   basic_send_test();
+  basic_send_window_test();
+  basic_send_window_test2();
   basic_send_test_blocks();
   basic_send_test_blocks2();
   send_blocking_interrupted();
