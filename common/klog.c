@@ -23,8 +23,11 @@
 #include "common/klog.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "dev/timer.h"
 #include "main/kernel.h"
 #include "memory/memory.h"
+
+#define KLOG_TIMESTAMPS 0
 
 // The current logging mode.
 static int g_klog_mode = KLOG_ARCH_DEBUG;
@@ -148,6 +151,12 @@ void klogm(klog_module_t module, klog_level_t level, const char* s) {
     case WARNING: klog_puts("WARNING: "); break;
     default: break;
   }
+
+#if KLOG_TIMESTAMPS
+  char timebuf[20];
+  ksprintf(timebuf, "[%10d] ", get_time_ms());
+  klog_puts(timebuf);
+#endif
 
   klog_puts(s);
 
