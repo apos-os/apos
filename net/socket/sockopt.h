@@ -34,4 +34,6 @@ int getsockopt_tvms(void* val, socklen_t* val_len, long option_value);
 int setsockopt_tvms(const void* val, socklen_t val_len,
                     long* option_value);
 
+int getsockopt_cstr(void* val, socklen_t* val_len, const char* option_value);
+
 #endif

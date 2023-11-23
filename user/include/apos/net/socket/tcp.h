@@ -20,4 +20,7 @@
 // Gets/sets the initial sequence number on the socket.
 #define SO_TCP_SEQ_NUM 1
 
+// Gets the current socket state.
+#define SO_TCP_SOCKSTATE 2
+
 #endif

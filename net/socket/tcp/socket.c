@@ -1554,6 +1554,11 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     int seq = (int)socket->send_next;
     kspin_unlock(&socket->spin_mu);
     return getsockopt_int(val, val_len, seq);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {
+    kspin_lock(&socket->spin_mu);
+    socktcp_state_t state = socket->state;
+    kspin_unlock(&socket->spin_mu);
+    return getsockopt_cstr(val, val_len, state2str(state));
   }
 
   return -ENOPROTOOPT;
@@ -1591,6 +1596,8 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
     socket->send_unack = socket->send_next;
     kspin_unlock(&socket->spin_mu);
     return 0;
+  } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {
+    return -EINVAL;
   }
 
   return -ENOPROTOOPT;

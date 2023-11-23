@@ -16,6 +16,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "syscall/wrappers32.h"
 #include "user/include/apos/time_types.h"
 
@@ -78,5 +79,20 @@ int setsockopt_tvms(const void* val, socklen_t val_len, long* option_value) {
     KASSERT_DBG(*option_value >= 0);
     if (*option_value == 0) *option_value = 1;
   }
+  return 0;
+}
+
+int getsockopt_cstr(void* val, socklen_t* val_len, const char* option_value) {
+  if (option_value == NULL) {
+    klogfm(KL_NET, DFATAL, "Invalid sockopt string value (NULL)\n");
+    return -EINVAL;
+  }
+  ssize_t len = kstrlen(option_value);
+  if (len + 1 > *val_len) {
+    return -ENOBUFS;
+  }
+
+  kstrcpy(val, option_value);
+  *val_len = len + 1;
   return 0;
 }

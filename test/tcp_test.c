@@ -148,6 +148,14 @@ static int do_setsockopt_int(int socket, int domain, int option, int val) {
   return net_setsockopt(socket, domain, option, &val, sizeof(int));
 }
 
+static const char* get_sock_state(int socket) {
+  static char buf[40];
+  socklen_t len = 40;
+  int result = net_getsockopt(socket, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len);
+  KEXPECT_EQ(0, result);
+  return buf;
+}
+
 static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
                              const struct sockaddr_in* b) {
   return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
@@ -325,6 +333,43 @@ static void sockopt_test(void) {
 
   KEXPECT_EQ(-ENOPROTOOPT,
              net_getsockopt(sock, SOL_SOCKET, 10, &val[0], &vallen));
+
+  char buf[40];
+  socklen_t len = 40;
+  KEXPECT_EQ(0, net_getsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len));
+  KEXPECT_EQ(7, len);
+  KEXPECT_STREQ("CLOSED", buf);
+  kmemset(buf, 0, 10);
+  len = 7;
+  KEXPECT_EQ(0, net_getsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len));
+  KEXPECT_EQ(7, len);
+  KEXPECT_STREQ("CLOSED", buf);
+
+  kstrcpy(buf, "xyz");
+  len = 6;
+  KEXPECT_EQ(-ENOBUFS,
+             net_getsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len));
+  KEXPECT_EQ(6, len);
+
+  len = 1;
+  KEXPECT_EQ(-ENOBUFS,
+             net_getsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len));
+  KEXPECT_EQ(1, len);
+
+  len = 0;
+  KEXPECT_EQ(-ENOBUFS,
+             net_getsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len));
+  KEXPECT_EQ(0, len);
+
+  len = -1;
+  KEXPECT_EQ(-ENOBUFS,
+             net_getsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len));
+  KEXPECT_EQ(-1, len);
+
+  KEXPECT_STREQ("xyz", buf);
+
+  KEXPECT_EQ(-EINVAL,
+             net_setsockopt(sock, IPPROTO_TCP, SO_TCP_SOCKSTATE, "abc", 3));
 
   KTEST_BEGIN("TCP socket: setsockopt");
   KEXPECT_EQ(-ENOPROTOOPT,
@@ -858,9 +903,11 @@ static void basic_connect_test(void) {
   init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
   s.seq_base = s.send_seq_base = 0;
   KEXPECT_EQ(0, set_initial_seqno(s.socket, 100));
+  KEXPECT_STREQ("CLOSED", get_sock_state(s.socket));
 
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
   KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
 
   // Should have received a SYN.
   int result = do_raw_recv(&s);
@@ -901,6 +948,7 @@ static void basic_connect_test(void) {
   tcp_hdr->flags = TCP_FLAG_SYN | TCP_FLAG_ACK;
   tcp_hdr->wndsize = btoh16(8000);
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
 
   // Should get an ACK.
   result = do_raw_recv(&s);
@@ -935,6 +983,7 @@ static void basic_connect_test(void) {
   tcp_hdr->checksum = 0x9ef8;
 
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
 
   // Should get an ACK.
   KEXPECT_TRUE(raw_has_packets(&s));
@@ -961,6 +1010,7 @@ static void basic_connect_test(void) {
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
 
   // Should get a FIN.
   result = do_raw_recv(&s);
@@ -987,6 +1037,7 @@ static void basic_connect_test(void) {
   tcp_hdr->wndsize = 8000;
   tcp_hdr->checksum = 0x9df8;
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
 
   // TODO(tcp): test other operations on the socket now that its closed.
 
