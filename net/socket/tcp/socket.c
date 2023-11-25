@@ -328,6 +328,11 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md);
 
+// Dispatches the packet to the socket (which could be NULL), or sends a RST.
+// Always consumes the packet.
+static void tcp_dispatch_or_rst(socket_tcp_t* socket, pbuf_t* pb,
+                                const tcp_packet_metadata_t* md);
+
 bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   KASSERT_DBG(ethertype == ET_IPV4);
   KASSERT_DBG(protocol == IPPROTO_TCP);
@@ -349,12 +354,9 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     socket_tcp_t* socket = (socket_tcp_t*)val;
     refcount_inc(&socket->ref);
     kspin_unlock(&g_tcp.lock);
-    bool result = tcp_dispatch_to_sock(socket, pb, &mdata);
-    if (result) {
-      pbuf_free(pb);
-    }
+    tcp_dispatch_or_rst(socket, pb, &mdata);
     TCP_DEC_REFCOUNT(socket);
-    return result;
+    return true;
   }
   kspin_unlock(&g_tcp.lock);
 
@@ -368,12 +370,9 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     socket_tcp_t* socket = (socket_tcp_t*)socket_base;
     refcount_inc(&socket->ref);
     DEFINT_POP();
-    bool result = tcp_dispatch_to_sock(socket, pb, &mdata);
-    if (result) {
-      pbuf_free(pb);
-    }
+    tcp_dispatch_or_rst(socket, pb, &mdata);
     TCP_DEC_REFCOUNT(socket);
-    return result;
+    return true;
   }
   DEFINT_POP();
 
@@ -384,6 +383,19 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   pbuf_push_header(pb, mdata.ip_hdr_len);
 
   return false;
+}
+
+static void tcp_dispatch_or_rst(socket_tcp_t* socket, pbuf_t* pb,
+                                const tcp_packet_metadata_t* md) {
+  bool handled = false;
+  if (socket) {
+    handled = tcp_dispatch_to_sock(socket, pb, md);
+  }
+
+  if (!handled) {
+    tcp_send_raw_rst(pb, md);
+  }
+  pbuf_free(pb);
 }
 
 // Actions to take based on a packet.
@@ -465,14 +477,6 @@ static void tcp_timer_defint(void* arg) {
 // Resets the connection state, but does _not_ set a socket error or send a RST.
 static void reset_connection(socket_tcp_t* socket, const char* reason);
 
-static uint32_t seg_len(const tcp_hdr_t* tcp_hdr,
-                        const tcp_packet_metadata_t* md) {
-  size_t len = md->data_len;
-  if (tcp_hdr->flags & TCP_FLAG_SYN) len++;
-  if (tcp_hdr->flags & TCP_FLAG_FIN) len++;
-  return len;
-}
-
 // Returns true if the given segment is valid (overlaps our window).
 static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
                          uint32_t seg_len) {
@@ -501,10 +505,18 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   tcp_pkt_action_t action = TCP_ACTION_NONE;
 
-  // TODO(tcp): check for unbound/unconnected state.
+  kspin_lock(&socket->spin_mu);
+
+  // This can happen if we receive a packet for an address that a socket is
+  // bound to, but is not listening on (or connected on).
+  if (socket->state == TCP_CLOSED) {
+    KLOG(DEBUG, "TCP: socket %p received packet in CLOSED; sending RST\n",
+         socket);
+    kspin_unlock(&socket->spin_mu);
+    return false;
+  }
 
   // Handle SYN-SENT as a special case first.
-  kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_SYN_SENT) {
     tcp_handle_in_synsent(socket, pb, &action);
     goto done;
@@ -513,7 +525,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // Check the sequence number of the packet.  The packet must overlap with the
   // receive window.
   uint32_t seq = btoh32(tcp_hdr->seq);
-  if (!validate_seq(socket, seq, seg_len(tcp_hdr, md))) {
+  if (!validate_seq(socket, seq, tcp_seg_len(tcp_hdr, md))) {
     // Special case for FIN in TIME_WAIT.
     if (socket->state == TCP_TIME_WAIT) {
       maybe_handle_time_wait_fin(socket, pb, md, seq);

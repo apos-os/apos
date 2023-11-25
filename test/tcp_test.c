@@ -758,6 +758,10 @@ static test_packet_spec_t RST_PKT(int seq, int ack) {
       .flags = TCP_FLAG_RST | TCP_FLAG_ACK, .seq = seq, .ack = ack});
 }
 
+static test_packet_spec_t RST_NOACK_PKT(int seq) {
+  return ((test_packet_spec_t){.flags = TCP_FLAG_RST, .seq = seq});
+}
+
 static test_packet_spec_t DATA_PKT(int seq, int ack, const char* data) {
   return ((test_packet_spec_t){.flags = TCP_FLAG_ACK,
                                .seq = seq,
@@ -1729,6 +1733,22 @@ static void shutdown_rdwr_during_connect(void) {
   cleanup_tcp_test(&s);
 }
 
+static void syn_bound_socket_test(void) {
+  KTEST_BEGIN("TCP: get SYN on bound but unconnected socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  // SYNs and SYN_ACKs should get a RST.
+  SEND_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 101));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 100, /* ack */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 0));
+
+  cleanup_tcp_test(&s);
+}
+
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
@@ -1747,6 +1767,8 @@ static void connect_tests(void) {
   shutdown_rd_during_connect2();
   shutdown_wr_during_connect();
   shutdown_rdwr_during_connect();
+
+  syn_bound_socket_test();
 }
 
 static void rst_during_established_test(void) {

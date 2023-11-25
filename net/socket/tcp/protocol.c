@@ -177,6 +177,61 @@ int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start,
   return 0;
 }
 
+int tcp_send_raw_rst(const pbuf_t* pb_in, const tcp_packet_metadata_t* md) {
+  const tcp_hdr_t* tcp_hdr_in = (const tcp_hdr_t*)pbuf_getc(pb_in);
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(tcp_hdr_t), 0);
+  if (!pb) {
+    return -ENOMEM;
+  }
+
+  // Build the TCP header (minus checksum).
+  pbuf_push_header(pb, sizeof(tcp_hdr_t));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  KASSERT_DBG(md->src.sa_family == AF_INET);
+  KASSERT_DBG(md->src.sa_family == AF_INET);
+  KASSERT_DBG(md->dst.sa_family == AF_INET);
+  KASSERT_DBG(md->dst.sa_family == AF_INET);
+
+  uint32_t rst_seq, rst_ack;
+  uint32_t rst_flags = TCP_FLAG_RST;
+  if (tcp_hdr_in->flags & TCP_FLAG_ACK) {
+    rst_seq = tcp_hdr_in->ack;
+    rst_ack = 0;
+  } else {
+    rst_seq = 0;
+    rst_ack = htob32(btoh32(tcp_hdr_in->seq) + tcp_seg_len(tcp_hdr_in, md));
+    rst_flags |= TCP_FLAG_ACK;
+  }
+
+  const struct sockaddr_in* src = (const struct sockaddr_in*)&md->dst;
+  const struct sockaddr_in* dst = (const struct sockaddr_in*)&md->src;
+  tcp_hdr->src_port = src->sin_port;
+  tcp_hdr->dst_port = dst->sin_port;
+  tcp_hdr->seq = rst_seq;
+  tcp_hdr->ack = rst_ack;
+  _Static_assert(sizeof(tcp_hdr_t) % sizeof(uint32_t) == 0, "bad tcp hdr");
+  tcp_hdr->data_offset = sizeof(tcp_hdr_t) / sizeof(uint32_t);
+  tcp_hdr->_zeroes = 0;
+  tcp_hdr->flags = rst_flags;
+  tcp_hdr->wndsize = 8000;
+  tcp_hdr->checksum = 0;
+  tcp_hdr->urg_ptr = 0;
+
+  // Prepare the pseudo-IP-header for the checksum.
+  ip4_pseudo_hdr_t pseudo_ip;
+  pseudo_ip.src_addr = src->sin_addr.s_addr;
+  pseudo_ip.dst_addr = dst->sin_addr.s_addr;
+  pseudo_ip.zeroes = 0;
+  pseudo_ip.protocol = IPPROTO_TCP;
+  pseudo_ip.length = btoh16(sizeof(tcp_hdr_t));
+
+  tcp_hdr->checksum =
+      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+
+  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
+  return ip_send(pb, /* allow_block */ false);
+}
+
 bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md) {
   KASSERT_DBG(pbuf_size(pb) >= sizeof(ip4_hdr_t));
   KASSERT_DBG((size_t)pb_ip4_hdr_len(pb) >= sizeof(ip4_hdr_t));
@@ -236,4 +291,12 @@ bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md) {
   md->ip_hdr_len = pb_ip4_hdr_len(pb);
   pbuf_pop_header(pb, pb_ip4_hdr_len(pb));
   return true;
+}
+
+uint32_t tcp_seg_len(const tcp_hdr_t* tcp_hdr,
+                     const tcp_packet_metadata_t* md) {
+  size_t len = md->data_len;
+  if (tcp_hdr->flags & TCP_FLAG_SYN) len++;
+  if (tcp_hdr->flags & TCP_FLAG_FIN) len++;
+  return len;
 }
