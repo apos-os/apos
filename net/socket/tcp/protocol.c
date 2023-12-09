@@ -117,6 +117,7 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
 
 int tcp_send_syn(socket_tcp_t* socket, int fflags) {
   kmutex_assert_is_held(&socket->mu);
+  KASSERT(socket->send_next == socket->initial_seq);
   return send_flags_only_packet(socket, TCP_FLAG_SYN, /* allow_block */ true);
 }
 

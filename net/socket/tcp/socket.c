@@ -111,7 +111,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connect_timeout_ms = SOCKET_CONNECT_TIMEOUT_MS;
   sock->recv_timeout_ms = -1;
   sock->send_timeout_ms = -1;
-  sock->send_next = gen_seq_num(sock);
+  sock->initial_seq = gen_seq_num(sock);
+  sock->send_next = sock->initial_seq;
   sock->send_unack = sock->send_next;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
@@ -1751,7 +1752,7 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
       return -EISCONN;
     }
 
-    int seq = (int)socket->send_next;
+    int seq = (int)socket->initial_seq;
     kspin_unlock(&socket->spin_mu);
     return getsockopt_int(val, val_len, seq);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {
@@ -1797,7 +1798,8 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
       kspin_unlock(&socket->spin_mu);
       return -EISCONN;
     }
-    socket->send_next = (uint32_t)seq;
+    socket->initial_seq = (uint32_t)seq;
+    socket->send_next = socket->initial_seq;
     socket->send_unack = socket->send_next;
     kspin_unlock(&socket->spin_mu);
     return 0;

@@ -76,6 +76,7 @@ typedef struct socket_tcp {
   long send_timeout_ms;
 
   // TCP state variables.
+  uint32_t initial_seq;   // Initial sequence number.
   uint32_t send_unack;    // My first unacknowledged sequence number.
   uint32_t send_next;     // My next sequence number to send.
   uint32_t send_wndsize;  // The send window size (from their side).
