@@ -104,7 +104,7 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
   }
 
   if (tcp_flags & TCP_FLAG_SYN) socket->send_next++;
-  if (tcp_flags & TCP_FLAG_FIN) socket->send_next++;
+  KASSERT(!(tcp_flags & TCP_FLAG_FIN));
   kspin_unlock(&socket->spin_mu);
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
@@ -122,12 +122,6 @@ int tcp_send_syn(socket_tcp_t* socket, int fflags) {
 
 int tcp_send_ack(socket_tcp_t* socket) {
   return send_flags_only_packet(socket, TCP_FLAG_ACK, /* allow_block */ false);
-}
-
-int tcp_send_fin(socket_tcp_t* socket) {
-  kmutex_assert_is_held(&socket->mu);
-  return send_flags_only_packet(socket, TCP_FLAG_FIN | TCP_FLAG_ACK,
-                                /* allow_block */ true);
 }
 
 int tcp_send_rst(socket_tcp_t* socket) {
