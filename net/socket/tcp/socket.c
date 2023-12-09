@@ -119,6 +119,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
   sock->time_wait_ms = TCP_TIME_WAIT_MS;
+  sock->syn_acked = false;
   kthread_queue_init(&sock->q);
   kmutex_init(&sock->mu);
   sock->spin_mu = KSPINLOCK_NORMAL_INIT;
@@ -133,6 +134,7 @@ socktcp_state_type_t get_state_type(socktcp_state_t s) {
   switch (s) {
     case TCP_CLOSED:
     case TCP_SYN_SENT:
+    case TCP_SYN_RCVD:
       return TCPSTATE_PRE_ESTABLISHED;
 
     case TCP_ESTABLISHED:
@@ -157,6 +159,7 @@ static inline const char* state2str(socktcp_state_t state) {
     CONSIDER(CLOSED)
     CONSIDER(CLOSED_DONE)
     CONSIDER(SYN_SENT)
+    CONSIDER(SYN_RCVD)
     CONSIDER(ESTABLISHED)
     CONSIDER(CLOSE_WAIT)
     CONSIDER(LAST_ACK)
@@ -255,13 +258,15 @@ static int bind_if_necessary(socket_tcp_t* socket,
 }
 
 // Sends a SYN (and updates socket->send_next).
-static int tcp_send_syn(socket_tcp_t* socket, bool allow_block) {
+static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   kspin_lock(&socket->spin_mu);
-  KASSERT(socket->state == TCP_SYN_SENT);
+  KASSERT(socket->state == TCP_SYN_SENT || socket->state == TCP_SYN_RCVD);
 
   ip4_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
-  int result = tcp_build_packet(socket, TCP_FLAG_SYN, socket->initial_seq,
+  uint32_t flags = TCP_FLAG_SYN;
+  if (ack) flags |= TCP_FLAG_ACK;
+  int result = tcp_build_packet(socket, flags, socket->initial_seq,
                                 /* data_len */ 0, &pb, &pseudo_ip);
   if (result < 0) {
     if (result != -EAGAIN) {
@@ -271,12 +276,14 @@ static int tcp_send_syn(socket_tcp_t* socket, bool allow_block) {
     kspin_unlock(&socket->spin_mu);
     return result;
   }
-  KASSERT_DBG(socket->send_next == socket->initial_seq);
-  socket->send_next++;
+  // If this is our first time sending the SYN, advance send_next.
+  if (socket->send_next == socket->initial_seq) {
+    socket->send_next++;
+  }
   kspin_unlock(&socket->spin_mu);
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
-  KASSERT_DBG(tcp_hdr->flags == TCP_FLAG_SYN);
+  KASSERT_DBG(tcp_hdr->flags == flags);
   tcp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
 
@@ -292,13 +299,24 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
   kspin_lock(&socket->spin_mu);
   // TODO(tcp): ensure this is removed/fixed --- it will preent post-established
   // retransmits.
-  if (get_state_type(socket->state) != TCPSTATE_ESTABLISHED) {
+  if (get_state_type(socket->state) != TCPSTATE_ESTABLISHED &&
+      socket->state != TCP_SYN_RCVD) {
+    kspin_unlock(&socket->spin_mu);
+    return -EAGAIN;
+  }
+
+  // In SYN_RCVD, only allowed to send FINs, not data.
+  if (socket->state == TCP_SYN_RCVD && socket->send_buf.len > 0) {
     kspin_unlock(&socket->spin_mu);
     return -EAGAIN;
   }
 
   uint32_t unacked_data = socket->send_next - socket->send_unack;
   if (is_fin_sent(socket) && unacked_data > 0) {
+    unacked_data--;
+  }
+  if (!socket->syn_acked) {
+    KASSERT_DBG(unacked_data == 1);
     unacked_data--;
   }
   KASSERT_DBG(socket->send_buf.len >= unacked_data);
@@ -331,6 +349,10 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
         break;
 
       case TCP_ESTABLISHED:
+        set_state(socket, TCP_FIN_WAIT_1, "sending FIN");
+        break;
+
+      case TCP_SYN_RCVD:
         set_state(socket, TCP_FIN_WAIT_1, "sending FIN");
         break;
 
@@ -439,6 +461,7 @@ typedef enum {
   TCP_SEND_ACK = 0x4,          // Send an ACK.
   TCP_RESET_CONNECTION = 0x8,  // Send a RST and reset the connection.
                                // Resetting implies we are done with the packet.
+  TCP_RESEND_SYNACK = 0x10,    // Retransmit a SYN-ACK.
 } tcp_pkt_action_t;
 
 // Handlers for different types of packet scenarios.  Multiple of these may be
@@ -641,6 +664,15 @@ done:
     return true;
   }
 
+  if (action & TCP_RESEND_SYNACK) {
+    result = tcp_send_syn(socket, /* ack */ true, /* allow_block */ false);
+    if (result != 0) {
+      KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", socket,
+           errorname(-result));
+    }
+    return true;
+  }
+
   result = tcp_send_datafin(socket, false);
   if (result == 0) {
     action &= ~TCP_SEND_ACK;  // We sent data, that includes an ack
@@ -664,7 +696,6 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action) {
   // If we get a SYN in any state other than SYN_SENT, just send an ack and
   // otherwise ignore it.
-  // TODO(tcp): handle SYN in SYN_RECEIVED.
   KLOG(DEBUG2, "TCP: socket %p got SYN in state %s\n", socket,
        state2str(socket->state));
   *action |= TCP_SEND_ACK | TCP_PACKET_DONE;
@@ -674,6 +705,7 @@ static bool is_fin_sent(const socket_tcp_t* socket) {
   switch (socket->state) {
     case TCP_CLOSED:
     case TCP_SYN_SENT:
+    case TCP_SYN_RCVD:
     case TCP_ESTABLISHED:
     case TCP_CLOSE_WAIT:
     case TCP_CLOSED_DONE:
@@ -708,6 +740,12 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
 
   uint32_t seqs_acked = ack - socket->send_unack;
   uint32_t bytes_acked = seqs_acked;
+  // We need to track syn_acked explicitly due to the possibility of wraparound.
+  if (bytes_acked > 0 && !socket->syn_acked) {
+    KASSERT_DBG(socket->send_unack == socket->initial_seq);
+    socket->syn_acked = true;
+    bytes_acked--;  // Account for the SYN.
+  }
   if (seqs_acked > 0 && is_fin_sent(socket) && ack == socket->send_next) {
     bytes_acked--;  // Account for the FIN.
   }
@@ -741,6 +779,13 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       // decided to drop the packet earlier.
       KASSERT(!(tcp_hdr->flags & TCP_FLAG_SYN));
       // TODO(tcp): send RST, this is not allowed.
+      break;
+
+    case TCP_SYN_RCVD:
+      // If our SYN is acked, move to ESTABLISHED.
+      if (socket->send_unack == socket->send_next) {
+        set_state(socket, TCP_ESTABLISHED, "SYN ack'd");
+      }
       break;
 
     case TCP_FIN_WAIT_1:
@@ -823,6 +868,14 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
       tcp_set_timer(socket, socket->time_wait_ms, /* force */ false);
       return;
 
+    case TCP_SYN_RCVD:
+      // This can happen if e.g. we get a valid FIN but our SYN hasn't been
+      // acknowledged yet (and therefore we haven't moved into ESTABLISHED).
+      KLOG(DEBUG2, "TCP: socket %p ignoring FIN received in SYN_RCVD\n",
+           socket);
+      *action |= TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
+      return;
+
     case TCP_SYN_SENT:
     case TCP_CLOSED:
     case TCP_CLOSED_DONE:
@@ -868,6 +921,13 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
       KASSERT_DBG(socket->send_shutdown);
       KASSERT_DBG(socket->send_buf.len == 0);
       finish_protocol_close(socket, "connection reset (already closed)");
+      *action = TCP_PACKET_DONE;
+      return;
+
+    case TCP_SYN_RCVD:
+      // TODO(tcp): if this came from a LISTEN state, drop the socket silently.
+      socket->error = ECONNREFUSED;
+      reset_connection(socket, "connection refused");
       *action = TCP_PACKET_DONE;
       return;
 
@@ -961,20 +1021,26 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
     return;
   }
 
-  bool is_synack =
-      (tcp_hdr->flags & TCP_FLAG_SYN) && (tcp_hdr->flags & TCP_FLAG_ACK);
-  if (!is_synack) {
-    // TODO(tcp): handle simultaneous open case (just SYN)
+  if (tcp_hdr->flags & TCP_FLAG_SYN) {
+    socket->recv_next = btoh32(tcp_hdr->seq) + 1;
+    socket->send_wndsize = btoh16(tcp_hdr->wndsize);
+    socket->send_buf_seq = socket->send_next;
+
+    if (tcp_hdr->flags & TCP_FLAG_ACK) {
+      set_state(socket, TCP_ESTABLISHED, "SYN-ACK received");
+      *action |= TCP_SEND_ACK;
+      socket->send_unack = btoh32(tcp_hdr->ack);
+      KASSERT_DBG(socket->send_unack == socket->send_next);
+      socket->syn_acked = true;
+    } else {
+      set_state(socket, TCP_SYN_RCVD, "SYN received (simultaneous open)");
+      KASSERT_DBG(socket->send_unack == socket->send_next - 1);
+      *action |= TCP_RESEND_SYNACK;
+    }
+  } else {
     // TODO(tcp): handle unexpected packets (sent RST)
     die("unexpected packet in SYN_SENT");
   }
-
-  set_state(socket, TCP_ESTABLISHED, "SYN-ACK received");
-  socket->recv_next = btoh32(tcp_hdr->seq) + 1;
-  socket->send_unack = btoh32(tcp_hdr->ack);
-  socket->send_wndsize = btoh16(tcp_hdr->wndsize);
-  socket->send_buf_seq = socket->send_next;
-  *action |= TCP_SEND_ACK;
 }
 
 static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
@@ -1378,7 +1444,8 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   KASSERT(refcount_dec(&sock->ref) > 0);
 
   // Send the initial SYN.
-  result = tcp_send_syn(sock, fflags & VFS_O_NONBLOCK);
+  result = tcp_send_syn(sock, /* ack */ false,
+                        /* allow_block */ fflags & VFS_O_NONBLOCK);
   kmutex_unlock(&sock->mu);
   if (result) {
     return result;
@@ -1462,6 +1529,7 @@ static recv_state_t recv_state(const socket_tcp_t* socket) {
 
     case TCP_CLOSED:
     case TCP_SYN_SENT:
+    case TCP_SYN_RCVD:
       return RECV_NOT_CONNECTED;
   }
   KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);
@@ -1573,6 +1641,7 @@ static send_state_t send_state(const socket_tcp_t* socket) {
 
     case TCP_CLOSED:
     case TCP_SYN_SENT:
+    case TCP_SYN_RCVD:
       return SEND_NOT_CONNECTED;
   }
   KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);

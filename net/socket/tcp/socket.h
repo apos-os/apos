@@ -27,6 +27,7 @@ typedef enum {
   TCP_CLOSED,
   TCP_CLOSED_DONE,  // The connection is finished and the socket can't be reused
   TCP_SYN_SENT,
+  TCP_SYN_RCVD,
   TCP_ESTABLISHED,
   TCP_CLOSE_WAIT,
   TCP_LAST_ACK,
@@ -85,6 +86,7 @@ typedef struct socket_tcp {
   uint32_t cwnd;          // Congestion window size.
   uint32_t mss;           // Maximum segment size.
   int time_wait_ms;       // How long to wait in TIME_WAIT.
+  bool syn_acked;         // Has our SYN been ACK'd.
 
   poll_event_t poll_event;
 
