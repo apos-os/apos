@@ -45,11 +45,9 @@ static const tcp_hdr_t* pb_tcp_hdr(const pbuf_t* pb) {
   return (const tcp_hdr_t*)(pbuf_getc(pb) + ip_hdr_len);
 }
 
-// Build a basic packet with the given data length.  Returns the length of the
-// TCP header or -error.
-static int tcp_build_packet(socket_tcp_t* socket, int tcp_flags,
-                            size_t data_len, pbuf_t** pb_out,
-                            ip4_pseudo_hdr_t* pseudo_ip) {
+int tcp_build_packet(socket_tcp_t* socket, int tcp_flags, uint32_t seq,
+                     size_t data_len, pbuf_t** pb_out,
+                     ip4_pseudo_hdr_t* pseudo_ip) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
   pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(tcp_hdr_t), data_len);
   if (!pb) {
@@ -68,7 +66,7 @@ static int tcp_build_packet(socket_tcp_t* socket, int tcp_flags,
       (const struct sockaddr_in*)&socket->connected_addr;
   tcp_hdr->src_port = src->sin_port;
   tcp_hdr->dst_port = dst->sin_port;
-  tcp_hdr->seq = htob32(socket->send_next);
+  tcp_hdr->seq = htob32(seq);
   tcp_hdr->ack = (tcp_flags & TCP_FLAG_ACK) ? htob32(socket->recv_next) : 0;
   _Static_assert(sizeof(tcp_hdr_t) % sizeof(uint32_t) == 0, "bad tcp hdr");
   tcp_hdr->data_offset = sizeof(tcp_hdr_t) / sizeof(uint32_t);
@@ -96,14 +94,14 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
 
   // Build the TCP header (minus checksum).
   kspin_lock(&socket->spin_mu);
-  int result =
-      tcp_build_packet(socket, tcp_flags, /* data_len */ 0, &pb, &pseudo_ip);
+  int result = tcp_build_packet(socket, tcp_flags, socket->send_next,
+                                /* data_len */ 0, &pb, &pseudo_ip);
   if (result < 0) {
     kspin_unlock(&socket->spin_mu);
     return result;
   }
 
-  if (tcp_flags & TCP_FLAG_SYN) socket->send_next++;
+  KASSERT(!(tcp_flags & TCP_FLAG_SYN));
   KASSERT(!(tcp_flags & TCP_FLAG_FIN));
   kspin_unlock(&socket->spin_mu);
 
@@ -113,12 +111,6 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
 
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
   return ip_send(pb, allow_block);
-}
-
-int tcp_send_syn(socket_tcp_t* socket, int fflags) {
-  kmutex_assert_is_held(&socket->mu);
-  KASSERT(socket->send_next == socket->initial_seq);
-  return send_flags_only_packet(socket, TCP_FLAG_SYN, /* allow_block */ true);
 }
 
 int tcp_send_ack(socket_tcp_t* socket) {
@@ -154,7 +146,8 @@ int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start,
   pbuf_t* pb = NULL;
   uint32_t flags = TCP_FLAG_ACK;
   if (send_fin) flags |= TCP_FLAG_FIN;
-  int result = tcp_build_packet(socket, flags, data_to_send, &pb, pseudo_ip);
+  int result =
+      tcp_build_packet(socket, flags, seq_start, data_to_send, &pb, pseudo_ip);
   if (result < 0) {
     return result;
   }

@@ -50,6 +50,7 @@
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/tcp.h"
+#include "user/include/apos/vfs/vfs.h"
 
 #define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
 
@@ -251,6 +252,37 @@ static int bind_if_necessary(socket_tcp_t* socket,
   return sock_tcp_bind_locked(socket, (struct sockaddr*)&addr_to_bind,
                               sizeof(addr_to_bind),
                               /* allow_rebind = */ true);
+}
+
+// Sends a SYN (and updates socket->send_next).
+static int tcp_send_syn(socket_tcp_t* socket, bool allow_block) {
+  kspin_lock(&socket->spin_mu);
+  KASSERT(socket->state == TCP_SYN_SENT);
+
+  ip4_pseudo_hdr_t pseudo_ip;
+  pbuf_t* pb = NULL;
+  int result = tcp_build_packet(socket, TCP_FLAG_SYN, socket->initial_seq,
+                                /* data_len */ 0, &pb, &pseudo_ip);
+  if (result < 0) {
+    if (result != -EAGAIN) {
+      KLOG(DFATAL, "TCP: unable to create SYN packet: %s\n",
+           errorname(-result));
+    }
+    kspin_unlock(&socket->spin_mu);
+    return result;
+  }
+  KASSERT_DBG(socket->send_next == socket->initial_seq);
+  socket->send_next++;
+  kspin_unlock(&socket->spin_mu);
+
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  KASSERT_DBG(tcp_hdr->flags == TCP_FLAG_SYN);
+  tcp_hdr->checksum =
+      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+
+  KLOG(DEBUG2, "TCP: socket %p transmitting SYN\n", socket);
+  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
+  return ip_send(pb, allow_block);
 }
 
 // Sends data and/or a FIN if available.  If no data is ready to be sent,
@@ -1347,7 +1379,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   KASSERT(refcount_dec(&sock->ref) > 0);
 
   // Send the initial SYN.
-  result = tcp_send_syn(sock, fflags);
+  result = tcp_send_syn(sock, fflags & VFS_O_NONBLOCK);
   kmutex_unlock(&sock->mu);
   if (result) {
     return result;

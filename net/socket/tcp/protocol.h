@@ -47,12 +47,22 @@ _Static_assert(sizeof(tcp_hdr_t) == 20, "Bad tcp_hdr_t size");
 #define TCP_FLAG_ECE (1 << 6)
 #define TCP_FLAG_CWR (1 << 7)
 
-int tcp_send_syn(socket_tcp_t* socket, int fflags);
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_rst(socket_tcp_t* socket);
 
-// Creates (but does not send) a data+FIN packet.  Requires the socket be
-// spinlocked.
+// Build a basic packet with the given data length.  Returns the length of the
+// TCP header or -error.  The caller must write data (if any) into the buffer
+// after the header and is responsible for calculating the checksum.
+//
+// Requires the socket be spinlocked.
+int tcp_build_packet(socket_tcp_t* socket, int tcp_flags, uint32_t seq,
+                     size_t data_len, pbuf_t** pb_out,
+                     ip4_pseudo_hdr_t* pseudo_ip);
+
+// Create (but does not send) a data/FIN packet.  Does not calculate the
+// checksum (caller must).  Depending on the state of the socket, the requested
+// sequence number start, and length of data, may send data and/or FIN.
+// Requires the socket be spinlocked.
 int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start, size_t datalen,
                        ip4_pseudo_hdr_t* pseudo_ip, pbuf_t** pb_out);
 
