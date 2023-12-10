@@ -853,11 +853,7 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_FIN_WAIT_1:
     case TCP_FIN_WAIT_2:
       socket->error = ECONNRESET;
-      // Drop any pending data.
-      circbuf_clear(&socket->recv_buf);
-      circbuf_clear(&socket->send_buf);
-      socket->send_unack = socket->send_next;
-      finish_protocol_close(socket, "connection reset");
+      reset_connection(socket, "connection reset");
       *action = TCP_PACKET_DONE;
       return;
 
