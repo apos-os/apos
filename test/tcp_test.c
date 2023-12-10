@@ -3886,9 +3886,11 @@ static void shutdown_with_zero_recv_window(void) {
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("12345", do_read(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
 
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 511, /* ack */ 101, "ABCD"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 516));
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
@@ -4591,8 +4593,28 @@ static void rst_out_of_order(void) {
   SEND_PKT(&s, RST_PKT(/* seq */ 516, /* ack */ 101));
   KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
 
-  // Test with data as well.
+  // Test with data, SYN, and FIN as well.
   test_packet_spec_t pkt = DATA_PKT(/* seq */ 503, /* ack */ 101, "Cde");
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  pkt = SYN_PKT(/* seq */ 503, /* ack */ 101);
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  pkt = SYN_PKT(/* seq */ 507, /* ack */ 101);
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  pkt = FIN_PKT(/* seq */ 503, /* ack */ 101);
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  pkt = FIN_PKT(/* seq */ 507, /* ack */ 101);
   pkt.flags |= TCP_FLAG_RST;
   SEND_PKT(&s, pkt);
   KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
@@ -4604,8 +4626,18 @@ static void rst_out_of_order(void) {
   SEND_PKT(&s, RST_PKT(/* seq */ 506, /* ack */ 101));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
 
-  // ...and again test with data.
+  // ...and again test with data/SYN/FIN.
   pkt = DATA_PKT(/* seq */ 505, /* ack */ 101, "e");
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
+
+  pkt = SYN_PKT(/* seq */ 505, /* ack */ 101);
+  pkt.flags |= TCP_FLAG_RST;
+  SEND_PKT(&s, pkt);
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));
+
+  pkt = FIN_PKT(/* seq */ 505, /* ack */ 101);
   pkt.flags |= TCP_FLAG_RST;
   SEND_PKT(&s, pkt);
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 3));

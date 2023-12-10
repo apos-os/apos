@@ -839,9 +839,12 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
   KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
 
+  // This is required for packets that otherwise are valid (e.g. have data that
+  // overlaps the window), and have RST set, but are not window-aligned.
   if (btoh32(tcp_hdr->seq) != socket->recv_next) {
+    // If greater than recv_next, should have been caught before.
+    KASSERT_DBG(seq_lt(btoh32(tcp_hdr->seq), socket->recv_next));
     KLOG(DEBUG, "TCP: socket %p out-of-order RST, dropping\n", socket);
-    // TODO(tcp): send a challenge ack.
     *action |= TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
     return;
   }
