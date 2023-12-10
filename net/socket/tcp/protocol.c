@@ -45,7 +45,7 @@ static const tcp_hdr_t* pb_tcp_hdr(const pbuf_t* pb) {
   return (const tcp_hdr_t*)(pbuf_getc(pb) + ip_hdr_len);
 }
 
-int tcp_build_packet(socket_tcp_t* socket, int tcp_flags, uint32_t seq,
+int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags, uint32_t seq,
                      size_t data_len, pbuf_t** pb_out,
                      ip4_pseudo_hdr_t* pseudo_ip) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
@@ -122,7 +122,7 @@ int tcp_send_rst(socket_tcp_t* socket) {
                                 /* allow_block */ false);
 }
 
-int tcp_create_datafin(socket_tcp_t* socket, uint32_t seq_start,
+int tcp_create_datafin(const socket_tcp_t* socket, uint32_t seq_start,
                        size_t data_to_send, ip4_pseudo_hdr_t* pseudo_ip,
                        pbuf_t** pb_out) {
   KASSERT(kspin_is_held(&socket->spin_mu));
