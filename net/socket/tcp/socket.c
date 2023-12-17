@@ -70,6 +70,13 @@ static uint32_t gen_seq_num(const socket_tcp_t* sock) {
   return fnv_hash_concat(get_time_ms(), fnv_hash_addr((addr_t)sock));
 }
 
+static void set_iss(socket_tcp_t* socket, uint32_t iss) {
+  KASSERT_DBG(socket->state == TCP_CLOSED);
+  socket->initial_seq = iss;
+  socket->send_next = socket->initial_seq;
+  socket->send_unack = socket->send_next;
+}
+
 int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   if (type != SOCK_STREAM) {
     return -EPROTOTYPE;
@@ -103,6 +110,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->state = TCP_CLOSED;
   sock->error = 0;
   sock->ref = REFCOUNT_INIT;
+  kmemset(&sock->bind_addr, 0, sizeof(sock->bind_addr));
+  kmemset(&sock->connected_addr, 0, sizeof(sock->connected_addr));
   sock->bind_addr.sa_family = AF_UNSPEC;
   sock->connected_addr.sa_family = AF_UNSPEC;
   circbuf_init(&sock->send_buf, sendbuf, SOCKET_DEFAULT_BUFSIZE);
@@ -112,9 +121,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connect_timeout_ms = SOCKET_CONNECT_TIMEOUT_MS;
   sock->recv_timeout_ms = -1;
   sock->send_timeout_ms = -1;
-  sock->initial_seq = gen_seq_num(sock);
-  sock->send_next = sock->initial_seq;
-  sock->send_unack = sock->send_next;
+  set_iss(sock, gen_seq_num(sock));
+  sock->iss_set = false;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
@@ -126,6 +134,12 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   poll_init_event(&sock->poll_event);
   sock->timer = TIMER_HANDLE_NONE;
 
+  sock->max_accept = sock->queued = 0;
+  sock->children_connecting = LIST_INIT;
+  sock->children_established = LIST_INIT;
+  sock->parent = NULL;
+  sock->link = LIST_LINK_INIT;
+
   *out = &(sock->base);
   return 0;
 }
@@ -133,6 +147,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
 socktcp_state_type_t get_state_type(socktcp_state_t s) {
   switch (s) {
     case TCP_CLOSED:
+    case TCP_LISTEN:
     case TCP_SYN_SENT:
     case TCP_SYN_RCVD:
       return TCPSTATE_PRE_ESTABLISHED;
@@ -158,6 +173,7 @@ static inline const char* state2str(socktcp_state_t state) {
   switch (state) {
     CONSIDER(CLOSED)
     CONSIDER(CLOSED_DONE)
+    CONSIDER(LISTEN)
     CONSIDER(SYN_SENT)
     CONSIDER(SYN_RCVD)
     CONSIDER(ESTABLISHED)
@@ -287,7 +303,8 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   tcp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
 
-  KLOG(DEBUG2, "TCP: socket %p transmitting SYN\n", socket);
+  KLOG(DEBUG2, "TCP: socket %p transmitting SYN%s\n", socket,
+       (flags & TCP_FLAG_ACK) ? "/ACK" : "");
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
   return ip_send(pb, allow_block);
 }
@@ -357,6 +374,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
         break;
 
       case TCP_CLOSED_DONE:
+      case TCP_LISTEN:
       case TCP_LAST_ACK:
       case TCP_CLOSED:
       case TCP_SYN_SENT:
@@ -467,9 +485,11 @@ typedef enum {
 // Handlers for different types of packet scenarios.  Multiple of these may be
 // called for a particular incoming packet depending on its contents.
 
-// Specific handler for SYN_SENT state.
+// Specific handler for SYN_SENT and LISTEN states.
 static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
                                   tcp_pkt_action_t* action);
+static void tcp_handle_in_listen(socket_tcp_t* socket, const pbuf_t* pb,
+                                 const tcp_packet_metadata_t* md);
 
 // Special case for maybe handling a retransmitted FIN in TIME_WAIT.
 static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
@@ -572,7 +592,13 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     return false;
   }
 
-  // Handle SYN-SENT as a special case first.
+  // If in LISTEN, tcp_handle_in_listen() takes care of everything (including
+  // unlocking the socket!)
+  if (socket->state == TCP_LISTEN) {
+    tcp_handle_in_listen(socket, pb, md);
+    return true;
+  }
+
   if (socket->state == TCP_SYN_SENT) {
     tcp_handle_in_synsent(socket, pb, &action);
     goto done;
@@ -704,6 +730,7 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
 static bool is_fin_sent(const socket_tcp_t* socket) {
   switch (socket->state) {
     case TCP_CLOSED:
+    case TCP_LISTEN:
     case TCP_SYN_SENT:
     case TCP_SYN_RCVD:
     case TCP_ESTABLISHED:
@@ -720,6 +747,21 @@ static bool is_fin_sent(const socket_tcp_t* socket) {
   }
   KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);
   return false;
+}
+
+static void syn_rcvd_connected(socket_tcp_t* socket) {
+  set_state(socket, TCP_ESTABLISHED, "SYN ack'd");
+  if (socket->parent) {
+    kspin_lock(&socket->parent->spin_mu);
+    if (socket->parent->state == TCP_LISTEN) {
+      list_remove(&socket->parent->children_connecting, &socket->link);
+      list_push(&socket->parent->children_established, &socket->link);
+      scheduler_wake_all(&socket->parent->q);
+    } else {
+      KASSERT_DBG(socket->parent->state == TCP_CLOSED_DONE);
+    }
+    kspin_unlock(&socket->parent->spin_mu);
+  }
 }
 
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
@@ -784,7 +826,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_SYN_RCVD:
       // If our SYN is acked, move to ESTABLISHED.
       if (socket->send_unack == socket->send_next) {
-        set_state(socket, TCP_ESTABLISHED, "SYN ack'd");
+        syn_rcvd_connected(socket);
       }
       break;
 
@@ -812,6 +854,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
 
     case TCP_CLOSED:
     case TCP_CLOSED_DONE:
+    case TCP_LISTEN:
       KLOG(DFATAL, "TCP: socket %p packet received in CLOSED state\n", socket);
       break;
   }
@@ -879,6 +922,7 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_SYN_SENT:
     case TCP_CLOSED:
     case TCP_CLOSED_DONE:
+    case TCP_LISTEN:
       KLOG(DFATAL, "TCP: socket %p FIN received in invalid state\n", socket);
       *action |= TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
       return;
@@ -925,7 +969,6 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
       return;
 
     case TCP_SYN_RCVD:
-      // TODO(tcp): if this came from a LISTEN state, drop the socket silently.
       socket->error = ECONNREFUSED;
       reset_connection(socket, "connection refused");
       *action = TCP_PACKET_DONE;
@@ -934,6 +977,7 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_SYN_SENT:
     case TCP_CLOSED:
     case TCP_CLOSED_DONE:
+    case TCP_LISTEN:
       die("RST handling in invalid state");
   }
   KLOG(FATAL, "TCP: socket %p in invalid state %d\n", socket, socket->state);
@@ -1043,6 +1087,108 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
   }
 }
 
+static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
+                                 const tcp_packet_metadata_t* md) {
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(kspin_is_held(&parent->spin_mu));
+
+  if (tcp_hdr->flags & TCP_FLAG_RST) {
+    KLOG(DEBUG, "TCP: socket %p ignoring RST in LISTEN\n", parent);
+    kspin_unlock(&parent->spin_mu);
+    return;
+  }
+
+  bool reset = false;
+  if (tcp_hdr->flags != TCP_FLAG_SYN || md->data_len > 0) {
+    KLOG(DEBUG, "TCP: socket %p RST for non-SYN in LISTEN\n", parent);
+    reset = true;
+  }
+
+  KASSERT_DBG(parent->queued >= 0 && parent->queued <= parent->max_accept);
+  if (parent->queued >= parent->max_accept) {
+    KLOG(DEBUG, "TCP: socket %p rejecting connection (max queued)\n", parent);
+    reset = true;
+  }
+
+  if (reset) {
+    kspin_unlock(&parent->spin_mu);
+
+    int result = tcp_send_raw_rst(pb, md);
+    if (result != 0) {
+      KLOG(WARNING, "TCP: socket %p unable to send RST: %s\n", parent,
+           errorname(-result));
+    }
+    return;
+  }
+
+  socket_t* child_base = NULL;
+  int result = sock_tcp_create(parent->base.s_domain, SOCK_STREAM, IPPROTO_TCP,
+                               &child_base);
+  if (result) {
+    KLOG(INFO, "TCP: socket %p unable to spawn child connection: %s\n", parent,
+         errorname(-result));
+    kspin_unlock(&parent->spin_mu);
+    return;
+  }
+
+  socket_tcp_t* child = (socket_tcp_t*)child_base;
+  // It's safe to lock the child's mutex (even though we have the parent mutex
+  // held) because no one else can access it yet.  Not strictly necessary.
+  kspin_lock(&child->spin_mu);
+  if (parent->iss_set) {
+    set_iss(child, parent->initial_seq);
+    child->iss_set = true;
+  }
+  child->parent = parent;
+  refcount_inc(&parent->ref);
+  list_push(&parent->children_connecting, &child->link);
+  parent->queued++;
+
+  child->bind_addr = parent->bind_addr;
+  child->connected_addr = md->src;
+  child->recv_next = btoh32(tcp_hdr->seq) + 1;
+  child->send_wndsize = btoh16(tcp_hdr->wndsize);  // Note: won't be used...
+  child->send_buf_seq = child->send_next + 1;
+  set_state(child, TCP_SYN_RCVD, "new incoming connection");
+
+  // Add the new socket to the connected sockets table.
+  tcp_key_t tcpkey = tcp_key((const struct sockaddr*)&child->bind_addr,
+                             (const struct sockaddr*)&child->connected_addr);
+  kspin_lock(&g_tcp.lock);
+  void* val;
+  // TODO(smp): write a test that exercises this code path.
+  if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
+    // This could happen (with SMP) if we race with another incoming connection.
+    KLOG(DEBUG, "TCP: socket %p unable to accept "
+         "incoming connection, 5-tuple in use\n", parent);
+    kspin_unlock(&g_tcp.lock);
+
+    child->parent = NULL;
+    list_remove(&parent->children_connecting, &child->link);
+    KASSERT(refcount_dec(&parent->ref) > 0);
+    set_state(child, TCP_CLOSED_DONE, "unable to accept connection");
+    kspin_unlock(&child->spin_mu);
+    TCP_DEC_REFCOUNT(child);
+    kspin_unlock(&parent->spin_mu);
+    return;
+  }
+
+  htbl_put(&g_tcp.connected_sockets, tcpkey, child);
+  refcount_inc(&child->ref);
+  kspin_unlock(&g_tcp.lock);
+
+  // Send SYN-ACK.
+  kspin_unlock(&child->spin_mu);
+  kspin_unlock(&parent->spin_mu);
+
+  // TODO(tcp): make sure retransmits are configured.
+  result = tcp_send_syn(child, /* ack */ true, /* allow_block */ false);
+  if (result != 0) {
+    KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", child,
+         errorname(-result));
+  }
+}
+
 static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
                                        const tcp_packet_metadata_t* md,
                                        uint32_t seq) {
@@ -1110,8 +1256,7 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
     clear_addr(&socket->connected_addr);
   } else if (socket->bind_addr.sa_family != AF_UNSPEC) {
     // If unconnected but bound, remove from the bound sockets map.
-    // TODO(tcp): expand this when more states are implemented (and tested).
-    KASSERT(socket->state == TCP_CLOSED || socket->state == TCP_SYN_SENT);
+    KASSERT(socket->state == TCP_CLOSED || socket->state == TCP_LISTEN);
     KASSERT_DBG(socket->bind_addr.sa_family ==
                 (sa_family_t)socket->base.s_domain);
     DEFINT_PUSH_AND_DISABLE();
@@ -1131,10 +1276,75 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
 
 static void reset_connection(socket_tcp_t* socket, const char* reason) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  if (socket->state == TCP_SYN_RCVD && socket->parent) {
+    // Keep the parent alive even while we (possibly) unlink ourselves from it.
+    socket_tcp_t* parent = socket->parent;
+    refcount_inc(&parent->ref);
+
+    kspin_lock(&parent->spin_mu);
+    // Can only update the lists if the parent is in LISTEN.  If not, the parent
+    // is responsible for cleaning everything up --- at that point, we don't
+    // care about our backlog queue anyway.
+    if (parent->state == TCP_LISTEN) {
+      list_remove(&parent->children_connecting, &socket->link);
+      parent->queued--;
+      KASSERT(refcount_dec(&socket->ref) > 0);
+      KASSERT(refcount_dec(&parent->ref) > 0);
+      socket->parent = NULL;
+    } else {
+      // TODO(smp): write a test that exercises this path.
+      KASSERT_DBG(socket->parent->state == TCP_CLOSED_DONE);
+    }
+    kspin_unlock(&parent->spin_mu);
+    KASSERT(refcount_dec(&parent->ref) > 0);
+  }
   circbuf_clear(&socket->recv_buf);
   circbuf_clear(&socket->send_buf);
   socket->send_unack = socket->send_next;
   finish_protocol_close(socket, reason);
+}
+
+static void close_listening(socket_tcp_t* socket) {
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  finish_protocol_close(socket, "FD closed");
+
+  KASSERT_DBG(socket->bind_addr.sa_family == AF_UNSPEC);
+  KASSERT_DBG(socket->connected_addr.sa_family == AF_UNSPEC);
+
+  // Copy the two lists locally and clear the socket versions --- this is not
+  // totally necessary, but means we aren't touching the parent socket without
+  // its lock held at all.
+  list_t lists[2];
+  lists[0] = socket->children_connecting;
+  lists[1] = socket->children_established;
+  socket->children_connecting = LIST_INIT;
+  socket->children_established = LIST_INIT;
+  socket->queued = 0;
+
+  // We must clean up the queued sockets without the parent's lock held.
+  kspin_unlock(&socket->spin_mu);
+
+  // TODO(smp): write a test that exercises the race condition where a socket in
+  // SYN_RCVD is reset right now.
+
+  for (int i = 0; i < 2; ++i) {
+    while (!list_empty(&lists[i])) {
+      list_link_t* child_link = list_pop(&lists[i]);
+      socket_tcp_t* child = container_of(child_link, socket_tcp_t, link);
+      tcp_send_rst(child);  // Might fail if the socket is not connected.
+
+      kspin_lock(&child->spin_mu);
+      KASSERT(child->parent == socket);
+      child->parent = NULL;
+      reset_connection(child, "parent closed before accept()");
+      kspin_unlock(&child->spin_mu);
+
+      TCP_DEC_REFCOUNT(child);
+      KASSERT(refcount_dec(&socket->ref) > 0);
+    }
+  }
+
+  kspin_lock(&socket->spin_mu);
 }
 
 static int sock_tcp_shutdown(socket_t* socket_base, int how);
@@ -1177,6 +1387,8 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
   kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_CLOSED) {
     finish_protocol_close(socket, "FD closed");
+  } else if (socket->state == TCP_LISTEN) {
+    close_listening(socket);
   }
   kspin_unlock(&socket->spin_mu);
 
@@ -1338,18 +1550,88 @@ static int sock_tcp_listen(socket_t* socket_base, int backlog) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  // TODO(tcp): implement
-  return -ENOTSUP;
+  if (backlog <= 0) {
+    backlog = DEFAULT_LISTEN_BACKLOG;
+  } else if (backlog > SOMAXCONN) {
+    backlog = SOMAXCONN;
+  }
+
+  socket_tcp_t* sock = (socket_tcp_t*)socket_base;
+  kspin_lock(&sock->spin_mu);
+  if (sock->state != TCP_CLOSED) {
+    kspin_unlock(&sock->spin_mu);
+    return -EINVAL;
+  }
+
+  if (sock->bind_addr.sa_family == AF_UNSPEC) {
+    kspin_unlock(&sock->spin_mu);
+    return -EDESTADDRREQ;
+  }
+
+  KASSERT_DBG(sock->queued == 0);
+  sock->max_accept = backlog;
+  set_state(sock, TCP_LISTEN, "listen()");
+
+  kspin_unlock(&sock->spin_mu);
+  return 0;
 }
 
 static int sock_tcp_accept(socket_t* socket_base, int fflags,
-                            struct sockaddr* address, socklen_t* address_len,
-                            socket_t** socket_out) {
+                           struct sockaddr* address, socklen_t* address_len,
+                           socket_t** socket_out) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  // TODO(tcp): implement
-  return -ENOTSUP;
+  socket_tcp_t* sock = (socket_tcp_t*)socket_base;
+  kspin_lock(&sock->spin_mu);
+  if (sock->state != TCP_LISTEN) {
+    kspin_unlock(&sock->spin_mu);
+    return -EINVAL;
+  }
+
+  // TODO(tcp): support non-blocking accept.
+  int result = 0;
+  while (list_empty(&sock->children_established)) {
+    int wait_result = scheduler_wait_on_splocked(&sock->q, -1, &sock->spin_mu);
+    if (wait_result == SWAIT_TIMEOUT) {
+      KLOG(DFATAL, "TCP: timeout hit in accept()\n");
+      result = -ETIMEDOUT;
+      break;
+    } else if (wait_result == SWAIT_INTERRUPTED) {
+      result = -EINTR;
+      break;
+    }
+    KASSERT(wait_result == SWAIT_DONE);
+  }
+
+  if (result < 0) {
+    KASSERT_DBG(result < 0);
+    kspin_unlock(&sock->spin_mu);
+    return result;
+  }
+
+  list_link_t* child_link = list_pop(&sock->children_established);
+  sock->queued--;
+  KASSERT_DBG(sock->queued >= 0);
+  kspin_unlock(&sock->spin_mu);
+
+  socket_tcp_t* child = container_of(child_link, socket_tcp_t, link);
+
+  kspin_lock(&child->spin_mu);
+  if (address && address_len) {
+    *address_len = min(*address_len, (socklen_t)sizeof(child->connected_addr));
+    KASSERT_DBG(*address_len > 0);
+    kmemcpy(address, &child->connected_addr, *address_len);
+  }
+
+  KASSERT_DBG(child->parent == sock);
+  child->parent = NULL;
+  kspin_unlock(&child->spin_mu);
+
+  // Transfer the ref from the parent's list to the new FD.
+  *socket_out = &child->base;
+  KASSERT(refcount_dec(&sock->ref) > 0);
+  return 0;
 }
 
 static int sock_tcp_connect(socket_t* socket_base, int fflags,
@@ -1365,7 +1647,6 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   kspin_lock(&sock->spin_mu);
   if (sock->state != TCP_CLOSED) {
     int result = 0;
-    // TODO(tcp): return -EOPNOTSUPP for listening sockets.
     switch (get_state_type(sock->state)) {
       case TCPSTATE_PRE_ESTABLISHED:
         result = -EALREADY;
@@ -1376,6 +1657,9 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
       case TCPSTATE_POST_ESTABLISHED:
         result = -EINVAL;
         break;
+    }
+    if (sock->state == TCP_LISTEN) {
+      result = -EOPNOTSUPP;
     }
     kspin_unlock(&sock->spin_mu);
     kmutex_unlock(&sock->mu);
@@ -1492,8 +1776,14 @@ static int sock_tcp_accept_queue_length(const socket_t* socket_base) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  // TODO(tcp): implement
-  return -ENOTSUP;
+  socket_tcp_t* sock = (socket_tcp_t*)socket_base;
+  kspin_lock(&sock->spin_mu);
+  int result = -EINVAL;
+  if (sock->state == TCP_LISTEN) {
+    result = sock->queued;
+  }
+  kspin_unlock(&sock->spin_mu);
+  return result;
 }
 
 typedef enum {
@@ -1531,6 +1821,7 @@ static recv_state_t recv_state(const socket_tcp_t* socket) {
       return RECV_BLOCK_FOR_DATA;
 
     case TCP_CLOSED:
+    case TCP_LISTEN:
     case TCP_SYN_SENT:
     case TCP_SYN_RCVD:
       return RECV_NOT_CONNECTED;
@@ -1643,6 +1934,7 @@ static send_state_t send_state(const socket_tcp_t* socket) {
       }
 
     case TCP_CLOSED:
+    case TCP_LISTEN:
     case TCP_SYN_SENT:
     case TCP_SYN_RCVD:
       return SEND_NOT_CONNECTED;
@@ -1901,9 +2193,8 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
       kspin_unlock(&socket->spin_mu);
       return -EISCONN;
     }
-    socket->initial_seq = (uint32_t)seq;
-    socket->send_next = socket->initial_seq;
-    socket->send_unack = socket->send_next;
+    set_iss(socket, (uint32_t)seq);
+    socket->iss_set = true;
     kspin_unlock(&socket->spin_mu);
     return 0;
   } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {

@@ -26,6 +26,7 @@
 typedef enum {
   TCP_CLOSED,
   TCP_CLOSED_DONE,  // The connection is finished and the socket can't be reused
+  TCP_LISTEN,
   TCP_SYN_SENT,
   TCP_SYN_RCVD,
   TCP_ESTABLISHED,
@@ -87,6 +88,7 @@ typedef struct socket_tcp {
   uint32_t mss;           // Maximum segment size.
   int time_wait_ms;       // How long to wait in TIME_WAIT.
   bool syn_acked;         // Has our SYN been ACK'd.
+  bool iss_set;           // Has the initial seq been overridden.
 
   poll_event_t poll_event;
 
@@ -101,6 +103,21 @@ typedef struct socket_tcp {
 
   timer_handle_t timer;
   apos_ms_t timer_deadline;
+
+  // For listening sockets, we store the connecting and established child
+  // sockets separately, which lets us easy grab established sockets in accept()
+  // without having to lock them to check their status.
+  // All protected by spin_mu.
+  int max_accept;  // Maximum number of queued connections.
+  int queued;      // Currently-queued connections.
+  list_t children_connecting;   // Incoming connections, still connecting.
+  list_t children_established;  // Children eligable for accept().
+
+  // For children sockets.  Invariant: if parent is non-NULL, AND parent->state
+  // is LISTEN, this socket will be on one of the parent's lists (depending on
+  // state).
+  struct socket_tcp* parent;  // Protected by spin_mu.  Holds ref on parent.
+  list_link_t link;  // Protected by PARENT'S spin_mu.
 } socket_tcp_t;
 
 // Categories of socket states (for internal use).

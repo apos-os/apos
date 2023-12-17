@@ -97,6 +97,19 @@ static int do_connect(int sock, const char* addr, int port) {
   return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
 }
 
+static int do_accept(int sock, char* addr_out) {
+  struct sockaddr_in saddr;
+  socklen_t slen = sizeof(saddr);
+  *addr_out = '\0';
+  int result = net_accept(sock, (struct sockaddr*)&saddr, &slen);
+  if (result < 0) {
+    return result;
+  }
+
+  sockaddr2str((const struct sockaddr*)&saddr, sizeof(saddr), addr_out);
+  return result;
+}
+
 static bool socket_has_data(int fd, int timeout_ms) {
   struct apos_pollfd pfd;
   pfd.events = KPOLLIN;
@@ -155,6 +168,7 @@ static int do_setsockopt_int(int socket, int domain, int option, int val) {
 static const char* get_sock_state(int socket) {
   static char buf[40];
   socklen_t len = 40;
+  buf[0] = '\0';
   int result = net_getsockopt(socket, IPPROTO_TCP, SO_TCP_SOCKSTATE, buf, &len);
   KEXPECT_EQ(0, result);
   return buf;
@@ -526,6 +540,9 @@ static void multi_bind_test(void) {
 #define RAW_RECV_BUF_SIZE 100
 #define DEFAULT_WNDSIZE 8000
 
+// To save stack space.  Max size of "255.255.255.255:65536" (22)
+#define SOCKADDR_IN_PRETTY_LEN 30
+
 typedef struct {
   kthread_t thread;
   int socket;
@@ -538,7 +555,7 @@ typedef struct {
   struct sockaddr_in tcp_addr;
 
   // Raw socket and buffer for the "other side".
-  const char* raw_addr_str;
+  char raw_addr_str[SOCKADDR_IN_PRETTY_LEN];
   struct sockaddr_in raw_addr;
   int raw_socket;
   char recv[RAW_RECV_BUF_SIZE];
@@ -573,11 +590,38 @@ static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
   s->tcp_addr_str = tcp_addr;
   make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
 
+  if (dst_addr) {
+    kstrcpy(s->raw_addr_str, dst_addr);
+    // Create the raw socket that will converse with the TCP socket under test.
+    s->raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
+    KEXPECT_GE(s->raw_socket, 0);
+
+    make_saddr(&s->raw_addr, dst_addr, dst_port);
+    KEXPECT_EQ(0, net_bind(s->raw_socket, (struct sockaddr*)&s->raw_addr,
+                           sizeof(s->raw_addr)));
+  } else {
+    s->raw_socket = -1;
+    s->raw_addr_str[0] = '\0';
+  }
+}
+
+// Creates a TCP test state for a child socket returned by accept().
+static void init_tcp_test_child(const tcp_test_state_t* parent,
+                                tcp_test_state_t* s, const char* dst_addr,
+                                int dst_port) {
+  s->wndsize = parent->wndsize;
+  s->seq_base = g_seq_start;
+  s->send_seq_base = g_seq_start + 100 - 500;
+  s->socket = -1;
+
+  s->tcp_addr_str = parent->tcp_addr_str;
+  s->tcp_addr = parent->tcp_addr;
+
   // Create the raw socket that will converse with the TCP socket under test.
   s->raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
   KEXPECT_GE(s->raw_socket, 0);
 
-  s->raw_addr_str = dst_addr;
+  kstrcpy(s->raw_addr_str, dst_addr);
   make_saddr(&s->raw_addr, dst_addr, dst_port);
   KEXPECT_EQ(0, net_bind(s->raw_socket, (struct sockaddr*)&s->raw_addr,
                          sizeof(s->raw_addr)));
@@ -587,7 +631,9 @@ static void cleanup_tcp_test(tcp_test_state_t* s) {
   if (s->socket >= 0) {
     KEXPECT_EQ(0, vfs_close(s->socket));
   }
-  KEXPECT_EQ(0, vfs_close(s->raw_socket));
+  if (s->raw_socket >= 0) {
+    KEXPECT_EQ(0, vfs_close(s->raw_socket));
+  }
 }
 
 static void* tcp_thread_connect(void* arg) {
@@ -668,6 +714,30 @@ static bool start_write(tcp_test_state_t* s, const char* data) {
   }
   if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("write() finished without blocking");
+    KEXPECT_EQ(0, s->op_result);  // Get the error code.
+    return false;
+  }
+  return true;
+}
+
+static void* tcp_thread_accept(void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  ntfn_notify(&s->op_started);
+  s->op_result = net_accept(s->socket, NULL, NULL);
+  ntfn_notify(&s->op_done);
+  return NULL;
+}
+
+static bool start_accept(tcp_test_state_t* s) {
+  ntfn_init(&s->op_started);
+  ntfn_init(&s->op_done);
+  KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_accept, s));
+  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+    KTEST_ADD_FAILURE("accept() thread didn't start");
+    return false;
+  }
+  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
+    KTEST_ADD_FAILURE("accept() finished without blocking");
     KEXPECT_EQ(0, s->op_result);  // Get the error code.
     return false;
   }
@@ -779,6 +849,11 @@ static test_packet_spec_t DATA_FIN_PKT(int seq, int ack, const char* data) {
   test_packet_spec_t result = DATA_PKT(seq, ack, data);
   result.flags |= TCP_FLAG_FIN;
   return result;
+}
+
+static test_packet_spec_t NOACK(test_packet_spec_t p) {
+  p.flags &= ~TCP_FLAG_ACK;
+  return p;
 }
 
 #define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt(_state, _spec))
@@ -917,6 +992,25 @@ static bool do_standard_finish(tcp_test_state_t* s, ssize_t data_sent,
   v &= EXPECT_PKT(s, FIN_PKT(/* seq */ sock_seq, /* ack */ remote_seq + 1));
   v &= SEND_PKT(s, ACK_PKT(remote_seq + 1, /* ack */ sock_seq + 1));
   return v;
+}
+
+// Do a "connect" operation on a child test state.
+static void do_child_connect(const tcp_test_state_t* parent,
+                             tcp_test_state_t* child, const char* dst_addr,
+                             int dst_port, uint32_t seq) {
+  init_tcp_test_child(parent, child, dst_addr, dst_port);
+
+  SEND_PKT(child, SYN_PKT(/* seq */ seq, /* wndsize */ 8000));
+  EXPECT_PKT(child,
+             SYNACK_PKT(/* seq */ 100, /* ack */ seq + 1, /* wnd */ 16384));
+  SEND_PKT(child, ACK_PKT(/* seq */ seq + 1, /* ack */ 101));
+
+  char addr[SOCKADDR_PRETTY_LEN];
+  char expected[SOCKADDR_PRETTY_LEN];
+  ksprintf(expected, "%s:%d", dst_addr, dst_port);
+  child->socket = do_accept(parent->socket, addr);
+  KEXPECT_GE(child->socket, 0);
+  KEXPECT_STREQ(expected, addr);
 }
 
 static void basic_connect_test(void) {
@@ -7663,6 +7757,693 @@ static void close_shutdown_test(void) {
   close_shutdown_test5();
 }
 
+static void basic_listen_test(void) {
+  KTEST_BEGIN("TCP: listen() basic test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  // Sholud not be able to listen on an unbound socket.
+  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s.socket, 10));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(s.socket, 10));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+
+  // Should not be able to call connect() on a listening socket.
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Or read/write.
+  char buf;
+  KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, &buf, 1));
+
+  struct sockaddr_in sin;
+  KEXPECT_EQ(0, getsockname_inet(s.socket, &sin));
+  KEXPECT_STREQ("127.0.0.1:4660", sin2str(&sin));
+  KEXPECT_EQ(-ENOTCONN, getpeername_inet(s.socket, &sin));
+
+  // Any packet other than a SYN should get a RST or be ignored.
+  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  // Try some mutants that don't have the ACK bit set for fun.
+  SEND_PKT(&s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 503));
+  SEND_PKT(&s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(&s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 501));
+
+  // A SYN (or SYN-ACK) with data should also be rejected.
+  test_packet_spec_t p = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  p.flags = TCP_FLAG_SYN;
+  SEND_PKT(&s, p);
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  p.flags |= TCP_FLAG_ACK;
+  SEND_PKT(&s, p);
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  // Send a SYN, complete the connection.
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 2000);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+
+  // We should be able to accept() a child socket.
+  char addr[SOCKADDR_PRETTY_LEN];
+  c1.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("127.0.0.2:2000", addr);
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // listen(), accept(), etc should not work on the child socket.
+  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+  KEXPECT_EQ(-EINVAL, do_accept(c1.socket, addr));
+  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1.socket));
+
+  // Do a second connection.
+  tcp_test_state_t c2;
+  init_tcp_test_child(&s, &c2, "127.0.0.3", 600);
+  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c2,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  c2.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c2.socket, 0);
+  KEXPECT_STREQ("127.0.0.3:600", addr);
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Should be able to pass data on both sockets.
+  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  SEND_PKT(&c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  EXPECT_PKT(&c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  KEXPECT_STREQ("abc", do_read(c1.socket));
+  KEXPECT_STREQ("123", do_read(c2.socket));
+
+  KEXPECT_EQ(5, vfs_write(c1.socket, "ABCDE", 5));
+  KEXPECT_EQ(5, vfs_write(c2.socket, "67890", 5));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
+  EXPECT_PKT(&c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(&c2, 5, 3));
+
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&c2);
+}
+
+static void listen_queue_max_test(void) {
+  KTEST_BEGIN("TCP: listen() hits max queue length test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  // Attempt to open four connections.
+  tcp_test_state_t c1, c2, c3, c4, c5;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c2, "127.0.0.3", 1003);
+  init_tcp_test_child(&s, &c3, "127.0.0.4", 1004);
+  init_tcp_test_child(&s, &c4, "127.0.0.5", 1005);
+  init_tcp_test_child(&s, &c5, "127.0.0.6", 1006);
+
+  // The first three should succeed.  Leave one in SYN_RCVD.
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 16384));
+  // No ACK (yet).
+
+  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c2, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 16384));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  SEND_PKT(&c3, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c3, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 16384));
+  SEND_PKT(&c3, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(3, net_accept_queue_length(s.socket));
+
+  // The fourth should be rejected.
+  SEND_PKT(&c4, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c4, RST_PKT(/* seq */ 0, /* ack */ 501));
+  SEND_PKT(&c4, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c4, RST_PKT(/* seq */ 0, /* ack */ 501));
+  KEXPECT_EQ(3, net_accept_queue_length(s.socket));
+
+  // Note: technically it's not guaranteed sockets will be given in FIFO order.
+  char addr[SOCKADDR_PRETTY_LEN];
+  c2.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c2.socket, 0);
+  KEXPECT_STREQ("127.0.0.3:1003", addr);
+  KEXPECT_EQ(2, net_accept_queue_length(s.socket));
+
+  // Now the fourth should be able to connect.
+  SEND_PKT(&c4, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c4, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 16384));
+  SEND_PKT(&c4, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  // ...a fifth should be rejected.
+  SEND_PKT(&c5, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c5, RST_PKT(/* seq */ 0, /* ack */ 501));
+
+  // When we close the listening socket, any queued sockets should be reset.
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  EXPECT_PKT(&c1, RST_PKT(/* seq */ 101, /* ack */ 501));
+  EXPECT_PKT(&c3, RST_PKT(/* seq */ 101, /* ack */ 501));
+  EXPECT_PKT(&c4, RST_PKT(/* seq */ 101, /* ack */ 501));
+
+  // c2 should still be usable.
+  SEND_PKT(&c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
+  EXPECT_PKT(&c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  KEXPECT_STREQ("123", do_read(c2.socket));
+
+  do_standard_finish(&c2, 0, 3);
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&c2);
+  cleanup_tcp_test(&c3);
+  cleanup_tcp_test(&c4);
+  cleanup_tcp_test(&c5);
+}
+
+static void do_backlog_test(tcp_test_state_t* s, int backlog) {
+  tcp_test_state_t* c = kmalloc(sizeof(tcp_test_state_t) * (backlog + 1));
+  char addr[SOCKADDR_PRETTY_LEN];
+  for (int i = 0; i < backlog + 1; ++i) {
+    ksprintf(addr, "127.0.0.%d", i + 2);
+    init_tcp_test_child(s, &c[i], addr, 1000);
+  }
+
+  for (int i = 0; i < backlog; ++i) {
+    SEND_PKT(&c[i], SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+    EXPECT_PKT(&c[i], SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+    SEND_PKT(&c[i], ACK_PKT(/* seq */ 501, /* ack */ 101));
+  }
+
+  SEND_PKT(&c[backlog], SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c[backlog], RST_PKT(/* seq */ 0, /* ack */ 501));
+
+  for (int i = 0; i < backlog + 1; ++i) {
+    cleanup_tcp_test(&c[i]);
+  }
+  kfree(c);
+}
+
+static void listen_backlog_values_test(void) {
+  KTEST_BEGIN("TCP: listen() backlog negative");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, -1));
+  do_backlog_test(&s, 10);
+  cleanup_tcp_test(&s);
+
+
+  KTEST_BEGIN("TCP: listen() backlog zero");
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 0));
+  do_backlog_test(&s, 10);
+  cleanup_tcp_test(&s);
+
+
+  KTEST_BEGIN("TCP: listen() backlog huge");
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, INT_MAX));
+  // Don't bother checking that it's actually clamped, but make sure at least
+  // one connection works.
+  tcp_test_state_t c1;
+  do_child_connect(&s, &c1, "127.0.0.2", 1002, 500);
+  do_standard_finish(&c1, 0, 0);
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_blocks_test(void) {
+  KTEST_BEGIN("TCP: accept() blocks until socket available");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  KEXPECT_TRUE(start_accept(&s));
+
+  tcp_test_state_t c1, c2, c3;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c2, "127.0.0.3", 1002);
+  init_tcp_test_child(&s, &c3, "127.0.0.4", 1002);
+
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c2, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c3, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c3, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+
+  // accept() shouldn't return yet.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+
+  kthread_disable(s.thread);
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  // Thread should be woken up but not run.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+
+  // Accept the socket in this thread.
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+
+  kthread_enable(s.thread);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+
+  // Another connection should wake it up.
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  SEND_PKT(&c3, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  c2.socket = finish_op(&s);
+  KEXPECT_GE(c2.socket, 0);
+
+  do_standard_finish(&c1, 0, 0);
+  do_standard_finish(&c2, 0, 0);
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&c2);
+  cleanup_tcp_test(&c3);
+}
+
+static void accept_blocks_test2(void) {
+  KTEST_BEGIN("TCP: accept() interrupted by signal");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  KEXPECT_TRUE(start_accept(&s));
+  proc_kill_thread(s.thread, SIGUSR1);
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  // accept() should indicate a signal.
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  // Socket should still be acceptable here.
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+
+  do_standard_finish(&c1, 0, 0);
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_blocks_test3(void) {
+  KTEST_BEGIN("TCP: accept() blocks when socket is already in SYN_RCVD");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+
+  // accept() shouldn't return yet.
+  KEXPECT_TRUE(start_accept(&s));
+
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  c1.socket = finish_op(&s);
+  KEXPECT_GE(c1.socket, 0);
+
+  do_standard_finish(&c1, 0, 0);
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_address_params_test(void) {
+  KTEST_BEGIN("TCP: accept() validates params (NULL address)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  struct sockaddr_storage addr, zero_addr;
+  kmemset(&addr, 0, sizeof(addr));
+  kmemset(&zero_addr, 0, sizeof(zero_addr));
+  socklen_t len;
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  len = 1234;
+  int child = net_accept(s.socket, NULL, &len);
+  KEXPECT_GE(child, 0);
+  KEXPECT_EQ(1234, len);
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  KTEST_BEGIN("TCP: accept() validates params (NULL address_len)");
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  child = net_accept(s.socket, (struct sockaddr*)&addr, NULL);
+  KEXPECT_GE(child, 0);
+  KEXPECT_EQ(0, kmemcmp(&addr, &zero_addr, sizeof(addr)));
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  // The both NULL case is already tested above.
+
+  KTEST_BEGIN("TCP: accept() validates params (negative address_len)");
+  len = -5;
+  KEXPECT_EQ(-EINVAL, net_accept(s.socket, (struct sockaddr*)&addr, &len));
+  KEXPECT_EQ(-5, len);
+  KEXPECT_EQ(0, kmemcmp(&addr, &zero_addr, sizeof(addr)));
+
+  KTEST_BEGIN("TCP: accept() validates params (zero address_len)");
+  len = 0;
+  KEXPECT_EQ(-EINVAL, net_accept(s.socket, (struct sockaddr*)&addr, &len));
+  KEXPECT_EQ(0, len);
+  KEXPECT_EQ(0, kmemcmp(&addr, &zero_addr, sizeof(addr)));
+
+  KTEST_BEGIN("TCP: accept() validates params (too-small address_len)");
+  len = 7;
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  kmemset(&addr, 0, sizeof(addr));
+  child = net_accept(s.socket, (struct sockaddr*)&addr, &len);
+  KEXPECT_GE(child, 0);
+  KEXPECT_EQ(7, len);
+  KEXPECT_EQ(AF_INET, addr.sa_family);
+  // Shouldn't have written past byte 7.
+  kmemset(&addr, 0, 7);
+  KEXPECT_EQ(0, kmemcmp(&addr, &zero_addr, sizeof(addr)));
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  KTEST_BEGIN("TCP: accept() validates params (too-large address_len)");
+  char bigbuf[sizeof(struct sockaddr_storage) * 2];
+  kmemset(bigbuf, 0, sizeof(struct sockaddr_storage) * 2);
+  len = sizeof(struct sockaddr_storage) * 2;
+  bigbuf[sizeof(struct sockaddr_storage)] = 0xab;
+  bigbuf[sizeof(struct sockaddr_storage) + 1] = 0xdf;
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  child = net_accept(s.socket, (struct sockaddr*)bigbuf, &len);
+  KEXPECT_GE(child, 0);
+  // We should have written the sockaddr_in fields correctly.
+  KEXPECT_EQ(sizeof(struct sockaddr_storage), len);
+  // The first part of the address (struct sockaddr_in) should match.
+  KEXPECT_EQ(AF_INET, ((struct sockaddr_in*)&bigbuf)->sin_family);
+  KEXPECT_EQ(btoh32(0x7f000002),
+             ((struct sockaddr_in*)&bigbuf)->sin_addr.s_addr);
+  KEXPECT_EQ(btoh16(1002), ((struct sockaddr_in*)&bigbuf)->sin_port);
+  // Shouldn't have written past the last byte.
+  KEXPECT_EQ((uint8_t)0xab, bigbuf[len]);
+  KEXPECT_EQ((uint8_t)0xdf, bigbuf[len + 1]);
+  // ...everything in between is gargbage, can't be checked.
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_child_rst1(void) {
+  KTEST_BEGIN("TCP: blocking accept() with socket RST in SYN_RCVD");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 1));
+
+  KEXPECT_TRUE(start_accept(&s));
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&c1, RST_NOACK_PKT(/* seq */ 101));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  c1.socket = finish_op(&s);
+  KEXPECT_GE(c1.socket, 0);
+
+  do_standard_finish(&c1, 0, 0);
+
+  // Make sure that nothing funny happens on close after a reset pending child.
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_child_rst2(void) {
+  KTEST_BEGIN("TCP: accept() gets socket that was already reset");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+
+  struct sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  addr.sa_family = 123;
+  int child = net_accept(s.socket, (struct sockaddr*)&addr, &len);
+  KEXPECT_GE(child, 0);
+  // Currently if the connection is closed, we don't retain the peer address.
+  KEXPECT_EQ(AF_UNSPEC, addr.sa_family);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(child));
+  char buf;
+  KEXPECT_EQ(-ECONNRESET, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_child_rst3(void) {
+  KTEST_BEGIN("TCP: blocking accept() gets socket that was already reset");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  KEXPECT_TRUE(start_accept(&s));
+  kthread_disable(s.thread);
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+
+  kthread_enable(s.thread);
+  int child = finish_op(&s);
+  KEXPECT_GE(child, 0);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(child));
+  char buf;
+  KEXPECT_EQ(-ECONNRESET, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_child_rst4(void) {
+  KTEST_BEGIN("TCP: accept() gets socket that was already reset (w/ data)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 505));
+  SEND_PKT(&c1, RST_PKT(/* seq */ 505, /* ack */ 101));
+
+  struct sockaddr_storage addr;
+  socklen_t len = sizeof(addr);
+  addr.sa_family = 123;
+  int child = net_accept(s.socket, (struct sockaddr*)&addr, &len);
+  KEXPECT_GE(child, 0);
+  // Currently if the connection is closed, we don't retain the peer address.
+  KEXPECT_EQ(AF_UNSPEC, addr.sa_family);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(child));
+  char buf;
+  KEXPECT_EQ(-ECONNRESET, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_close(child));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_child_partial_close(void) {
+  KTEST_BEGIN("TCP: accept() gets socket that was partially closed");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+
+  char addr[SOCKADDR_PRETTY_LEN];
+  int child = do_accept(s.socket, addr);
+  KEXPECT_GE(child, 0);
+  KEXPECT_STREQ("127.0.0.2:1002", addr);
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(child));
+  KEXPECT_STREQ("abc", do_read(child));
+  char buf;
+  KEXPECT_EQ(0, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_close(child));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 505, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void accept_child_partial_close2(void) {
+  KTEST_BEGIN("TCP: accept() gets socket that was partially closed #2");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  SEND_PKT(&c1, FIN_PKT(/* seq */ 504, /* ack */ 101));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 505));
+
+  char addr[SOCKADDR_PRETTY_LEN];
+  int child = do_accept(s.socket, addr);
+  KEXPECT_GE(child, 0);
+  KEXPECT_STREQ("127.0.0.2:1002", addr);
+  KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(child));
+  KEXPECT_STREQ("abc", do_read(child));
+  char buf;
+  KEXPECT_EQ(0, vfs_read(child, &buf, 1));
+  KEXPECT_EQ(0, vfs_close(child));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 505, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+// TODO(smp): Race condition deadlock tests (ideally, can't really test
+// currently without SMP)
+//  - close with pending socket locked
+//  - close with established socket locked
+
+static void listen_tests(void) {
+  basic_listen_test();
+  listen_queue_max_test();
+  listen_backlog_values_test();
+  accept_blocks_test();
+  accept_blocks_test2();
+  accept_blocks_test3();
+  accept_address_params_test();
+  accept_child_rst1();
+  accept_child_rst2();
+  accept_child_rst3();
+  accept_child_rst4();
+  accept_child_partial_close();
+  accept_child_partial_close2();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -7688,6 +8469,7 @@ void tcp_test(void) {
     ooo_tests();
     active_close_tests();
     close_shutdown_test();
+    listen_tests();
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");

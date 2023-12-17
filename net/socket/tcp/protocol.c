@@ -49,6 +49,16 @@ int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags, uint32_t seq,
                      size_t data_len, pbuf_t** pb_out,
                      ip4_pseudo_hdr_t* pseudo_ip) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+
+  // In some race conditions we can attempt to send a packet an a connection
+  // that was JUST closed.  Catch that case.
+  if (socket->state == TCP_CLOSED_DONE) {
+    KLOG(DEBUG, "TCP: socket %p cannot send packet on non-connected socket\n",
+         socket);
+    return -ENOTCONN;
+  }
+  KASSERT(socket->state != TCP_CLOSED);
+
   pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(tcp_hdr_t), data_len);
   if (!pb) {
     return -ENOMEM;
