@@ -1137,6 +1137,8 @@ static void reset_connection(socket_tcp_t* socket, const char* reason) {
   finish_protocol_close(socket, reason);
 }
 
+static int sock_tcp_shutdown(socket_t* socket_base, int how);
+
 // Socket cleanup has three stages:
 //  1a) last FD closed (sock_tcp_fd_cleanup called) --- clean up any
 //      FD/VFS-related components, transfer ownership of the socket to the TCP
@@ -1176,12 +1178,13 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
   if (socket->state == TCP_CLOSED) {
     finish_protocol_close(socket, "FD closed");
   }
-
-  if (socket->state != TCP_CLOSED_DONE) {
-    // TODO(tcp): close socket and defer cleanup after timeout.
-    die("Cannot cleanup non-closed socket");
-  }
   kspin_unlock(&socket->spin_mu);
+
+  int result = sock_tcp_shutdown(socket_base, SHUT_RDWR);
+  if (result != 0 && result != -ENOTCONN) {
+    KLOG(DFATAL, "TCP: socket %p unable to shutdown() on close(): %s\n",
+         socket_base, errorname(-result));
+  }
   TCP_DEC_REFCOUNT(socket);
 }
 

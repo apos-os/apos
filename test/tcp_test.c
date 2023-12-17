@@ -584,7 +584,9 @@ static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
 }
 
 static void cleanup_tcp_test(tcp_test_state_t* s) {
-  KEXPECT_EQ(0, vfs_close(s->socket));
+  if (s->socket >= 0) {
+    KEXPECT_EQ(0, vfs_close(s->socket));
+  }
   KEXPECT_EQ(0, vfs_close(s->raw_socket));
 }
 
@@ -7484,6 +7486,148 @@ static void active_close_tests(void) {
   active_close_buffered_to_passive2();
 }
 
+static void close_shutdown_test1(void) {
+  KTEST_BEGIN("TCP: close() a disconnected socket");
+  int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
+static void close_shutdown_test2(void) {
+  KTEST_BEGIN("TCP: close() bound socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  s.socket = -1;
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test3(void) {
+  KTEST_BEGIN("TCP: close() connecting socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // TODO(aoates): figure out how to signal that the FD is closed to the other
+  // thread, and have connect() return ECONNABORTED.
+  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  s.socket = -1;
+  cleanup_tcp_test(&s);
+}
+
+// As above, but kill the connect() call before calling close().
+static void close_shutdown_test3b(void) {
+  KTEST_BEGIN("TCP: close() connecting socket #2");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  s.socket = -1;
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test4(void) {
+  KTEST_BEGIN("TCP: close() connected socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  int fd2 = vfs_dup(s.socket);
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // Shouldn't cause anything yet due to dup'd FD.
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(0, vfs_close(fd2));
+
+  // Should cause the equivalent of shutdown(SHUT_RDWR).  The protocol handling
+  // should continue even though the fd is gone.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test5(void) {
+  KTEST_BEGIN("TCP: close() SYN-SENT socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do simultaneous connect.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+
+  EXPECT_PKT(&s, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
+
+  // Force the connect() to finish.
+  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // Should cause the equivalent of shutdown(SHUT_RDWR).  The protocol handling
+  // should continue even though the fd is gone.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test(void) {
+  close_shutdown_test1();
+  close_shutdown_test2();
+  close_shutdown_test3();
+  close_shutdown_test3b();
+  close_shutdown_test4();
+  close_shutdown_test5();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -7508,6 +7652,7 @@ void tcp_test(void) {
     send_tests();
     ooo_tests();
     active_close_tests();
+    close_shutdown_test();
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");
