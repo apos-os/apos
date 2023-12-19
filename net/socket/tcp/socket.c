@@ -47,6 +47,7 @@
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
 #include "proc/spinlock.h"
+#include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/tcp.h"
@@ -1292,7 +1293,6 @@ static void reset_connection(socket_tcp_t* socket, const char* reason) {
       KASSERT(refcount_dec(&parent->ref) > 0);
       socket->parent = NULL;
     } else {
-      // TODO(smp): write a test that exercises this path.
       KASSERT_DBG(socket->parent->state == TCP_CLOSED_DONE);
     }
     kspin_unlock(&parent->spin_mu);
@@ -1324,8 +1324,7 @@ static void close_listening(socket_tcp_t* socket) {
   // We must clean up the queued sockets without the parent's lock held.
   kspin_unlock(&socket->spin_mu);
 
-  // TODO(smp): write a test that exercises the race condition where a socket in
-  // SYN_RCVD is reset right now.
+  test_point_run("tcp:close_listening");
 
   for (int i = 0; i < 2; ++i) {
     while (!list_empty(&lists[i])) {
@@ -1336,7 +1335,9 @@ static void close_listening(socket_tcp_t* socket) {
       kspin_lock(&child->spin_mu);
       KASSERT(child->parent == socket);
       child->parent = NULL;
-      reset_connection(child, "parent closed before accept()");
+      if (child->state != TCP_CLOSED_DONE) {
+        reset_connection(child, "parent closed before accept()");
+      }
       kspin_unlock(&child->spin_mu);
 
       TCP_DEC_REFCOUNT(child);

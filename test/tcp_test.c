@@ -33,6 +33,7 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/net/socket/tcp.h"
@@ -8361,6 +8362,35 @@ static void accept_child_rst4(void) {
   cleanup_tcp_test(&c1);
 }
 
+static void send_test_rst(const char* name, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, RST_PKT(/* seq */ 501, /* ack */ 101));
+}
+
+static void accept_child_rst5(void) {
+  KTEST_BEGIN("TCP: close() listening socket race with RST (SYN_RCVD)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 1));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+
+  // Trigger the race condition.
+  test_point_add("tcp:close_listening", &send_test_rst, &c1);
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_EQ(1, test_point_remove("tcp:close_listening"));
+  s.socket = -1;
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
 static void accept_child_partial_close(void) {
   KTEST_BEGIN("TCP: accept() gets socket that was partially closed");
   tcp_test_state_t s;
@@ -8440,6 +8470,7 @@ static void listen_tests(void) {
   accept_child_rst2();
   accept_child_rst3();
   accept_child_rst4();
+  accept_child_rst5();
   accept_child_partial_close();
   accept_child_partial_close2();
 }
