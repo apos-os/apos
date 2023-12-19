@@ -1751,8 +1751,8 @@ static void syn_bound_socket_test(void) {
   cleanup_tcp_test(&s);
 }
 
-static void simultaneous_connect_test(void) {
-  KTEST_BEGIN("TCP: simultaneous connect()");
+static void simultaneous_connect_testA(void) {
+  KTEST_BEGIN("TCP: simultaneous connect() #1");
   tcp_test_state_t s;
   init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
 
@@ -1824,6 +1824,44 @@ static void simultaneous_connect_test(void) {
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
+  // ACK to complete the connection.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+
+  // Pass some data in both directions.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 104, "xyz"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 504));
+  KEXPECT_STREQ("xyz", do_read(s.socket));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 3, 3));
+  cleanup_tcp_test(&s);
+}
+
+static void simultaneous_connect_testB(void) {
+  KTEST_BEGIN("TCP: simultaneous connect() #2");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+
+  // We should get a SYN-ACK back.
+  EXPECT_PKT(&s, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
+
+  // The connect() call shouldn't finish yet.
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+
   // SYNs and SYN/ACKs aligned with the start of the window should get an ACK
   // but be ignored.
   SEND_PKT(&s, SYN_PKT(/* seq */ 501, /* wndsize */ 16384));
@@ -1878,16 +1916,7 @@ static void simultaneous_connect_test(void) {
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
   KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
 
-  // Pass some data in both directions.
-  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
-  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
-  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
-
-  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 104, "xyz"));
-  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 504));
-  KEXPECT_STREQ("xyz", do_read(s.socket));
-
-  KEXPECT_TRUE(do_standard_finish(&s, 3, 3));
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   cleanup_tcp_test(&s);
 }
 
@@ -2645,7 +2674,8 @@ static void connect_tests(void) {
 
   syn_bound_socket_test();
 
-  simultaneous_connect_test();
+  simultaneous_connect_testA();
+  simultaneous_connect_testB();
   simultaneous_connect_rst_test();
   simultaneous_connect_rst_test2();
   simultaneous_connect_rst_test3();
