@@ -115,3 +115,10 @@ void test_point_run(const char* name) {
   }
   kspin_unlock(&gtp_lock);
 }
+
+int test_point_count(void) {
+  kspin_lock(&gtp_lock);
+  int size = gtp_init ? htbl_size(&gtp_entries) : 0;
+  kspin_unlock(&gtp_lock);
+  return size;
+}

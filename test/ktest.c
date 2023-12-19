@@ -22,6 +22,7 @@
 #include "common/math.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "test/test_point.h"
 
 #if ENABLE_TERM_COLOR
 # define FAILED "\x1b[1;31m[FAILED]\x1b[0m"
@@ -274,6 +275,7 @@ void ktest_finish_all(void) {
       KLOG("  ...and %d more\n", num_leftover);
     }
   }
+  KEXPECT_EQ(0, test_point_count());
   KLOG("KERNEL UNIT TESTS FINISHED\n");
   KLOG("---------------------------------------\n");
 }

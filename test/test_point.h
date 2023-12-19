@@ -33,4 +33,8 @@ int test_point_remove(const char* name);
 // it synchronously.
 void test_point_run(const char* name);
 
+// Returns the total number of test points (useful for verifying all have been
+// removed at the end of a test run).
+int test_point_count(void);
+
 #endif
