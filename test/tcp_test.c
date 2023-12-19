@@ -720,6 +720,7 @@ typedef struct {
   int wndsize;
   const char* data;
   size_t datalen;
+  bool literal_seq;
 } test_packet_spec_t;
 
 static test_packet_spec_t SYN_PKT(int seq, int wndsize) {
@@ -756,8 +757,10 @@ static test_packet_spec_t FIN_PKT2(int seq, int ack, int wndsize) {
 }
 
 static test_packet_spec_t RST_PKT(int seq, int ack) {
-  return ((test_packet_spec_t){
-      .flags = TCP_FLAG_RST | TCP_FLAG_ACK, .seq = seq, .ack = ack});
+  return ((test_packet_spec_t){.flags = TCP_FLAG_RST | TCP_FLAG_ACK,
+                               .seq = seq,
+                               .ack = ack,
+                               .literal_seq = (seq == 0)});
 }
 
 static test_packet_spec_t RST_NOACK_PKT(int seq) {
@@ -814,10 +817,12 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[sizeof(ip4_hdr_t)];
   v &= KEXPECT_EQ(btoh16(s->tcp_addr.sin_port), btoh16(tcp_hdr->src_port));
   v &= KEXPECT_EQ(btoh16(s->raw_addr.sin_port), btoh16(tcp_hdr->dst_port));
-  if (spec.seq != 0) {
+  if (spec.literal_seq) {
+    v &= KEXPECT_EQ(spec.seq, btoh32(tcp_hdr->seq));
+  } else {
     v &= KEXPECT_EQ(spec.seq, btoh32(tcp_hdr->seq) - s->seq_base);
   }
-  if (spec.ack != 0) {
+  if (spec.flags & TCP_FLAG_ACK) {
     v &= KEXPECT_EQ(spec.ack, btoh32(tcp_hdr->ack) - s->send_seq_base);
   }
   v &= KEXPECT_EQ(0, tcp_hdr->_zeroes);
@@ -1746,7 +1751,7 @@ static void syn_bound_socket_test(void) {
   SEND_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
   EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 101));
   SEND_PKT(&s, SYNACK_PKT(/* seq */ 100, /* ack */ 500, /* wndsize */ 8000));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 0));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 500));
 
   cleanup_tcp_test(&s);
 }
