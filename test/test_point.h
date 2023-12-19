@@ -25,8 +25,9 @@ typedef void (*test_point_cb_t)(const char* name, void* arg);
 void test_point_add(const char* name, test_point_cb_t cb, void* arg);
 
 // Removes the named test hook.  If the hook is currently running, blocks until
-// the last running instance completes.
-void test_point_remove(const char* name);
+// the last running instance completes.  Returns the number of times it was
+// triggered (so the test can verify it was properly injected).
+int test_point_remove(const char* name);
 
 // Triggers a test hook.  If a hook is registered with the given name, executes
 // it synchronously.

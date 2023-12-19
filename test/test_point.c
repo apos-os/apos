@@ -25,6 +25,7 @@
 typedef struct {
   test_point_cb_t cb;
   void* arg;
+  int count;
   int refcount;
 } test_point_entry_t;
 
@@ -61,12 +62,13 @@ void test_point_add(const char* name, test_point_cb_t cb, void* arg) {
   test_point_entry_t* entry = KMALLOC(test_point_entry_t);
   entry->cb = cb;
   entry->arg = arg;
+  entry->count = 0;
   entry->refcount = 0;
   htbl_put(&gtp_entries, key, entry);
   kspin_unlock(&gtp_lock);
 }
 
-void test_point_remove(const char* name) {
+int test_point_remove(const char* name) {
   kspin_lock(&gtp_lock);
   KASSERT(gtp_init);
   uint32_t key = tpkey(name);
@@ -78,9 +80,11 @@ void test_point_remove(const char* name) {
     scheduler_wait_on_splocked(&gtp_queue, -1, &gtp_lock);
   }
 
+  int count = entry->count;
   KASSERT(htbl_remove(&gtp_entries, key) == 0);
   kfree(entry);
   kspin_unlock(&gtp_lock);
+  return count;
 }
 
 void test_point_run(const char* name) {
@@ -97,6 +101,7 @@ void test_point_run(const char* name) {
   if (htbl_get(&gtp_entries, key, &val) == 0) {
     test_point_entry_t* entry = (test_point_entry_t*)val;
     entry->refcount++;
+    entry->count++;
     KASSERT_DBG(entry->refcount > 0);
     kspin_unlock(&gtp_lock);
 
