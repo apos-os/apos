@@ -8453,6 +8453,64 @@ static void accept_child_partial_close2(void) {
   cleanup_tcp_test(&c1);
 }
 
+static void send_test_syn(const char* name, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  KEXPECT_FALSE(raw_has_packets(s));
+}
+
+static void syn_during_listen_close_test(void) {
+  KTEST_BEGIN("TCP: close() listening socket race with new SYN");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 1));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+
+  // Trigger the race condition.
+  test_point_add("tcp:close_listening", &send_test_syn, &c1);
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_EQ(1, test_point_remove("tcp:close_listening"));
+  s.socket = -1;
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void send_test_ack(const char* name, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+}
+
+static void syn_during_listen_close_test2(void) {
+  KTEST_BEGIN("TCP: close() listening socket race with ACK "
+              "(SYN_RCVD -> ESTABLISHED)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 1));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+
+  // Trigger the race condition.
+  test_point_add("tcp:close_listening", &send_test_ack, &c1);
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  KEXPECT_EQ(1, test_point_remove("tcp:close_listening"));
+  s.socket = -1;
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
 // TODO(smp): Race condition deadlock tests (ideally, can't really test
 // currently without SMP)
 //  - close with pending socket locked
@@ -8473,6 +8531,8 @@ static void listen_tests(void) {
   accept_child_rst5();
   accept_child_partial_close();
   accept_child_partial_close2();
+  syn_during_listen_close_test();
+  syn_during_listen_close_test2();
 }
 
 void tcp_test(void) {
