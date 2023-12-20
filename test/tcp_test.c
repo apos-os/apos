@@ -546,10 +546,20 @@ static void multi_bind_test(void) {
 
 typedef struct {
   kthread_t thread;
+  int fd;
+  int result;
+  notification_t started;
+  notification_t done;
+
+  const char* arg_addr;
+  int arg_port;
+  void* arg_buffer;
+  size_t arg_buflen;
+} async_op_t;
+
+typedef struct {
   int socket;
-  int op_result;
-  notification_t op_started;
-  notification_t op_done;
+  async_op_t op;
 
   // Address of the TCP socket under test.
   const char* tcp_addr_str;
@@ -560,11 +570,6 @@ typedef struct {
   struct sockaddr_in raw_addr;
   int raw_socket;
   char recv[RAW_RECV_BUF_SIZE];
-
-  const char* arg_addr;
-  int arg_port;
-  void* arg_buffer;
-  size_t arg_buflen;
 
   // Window size to send when not otherwise specified.
   size_t wndsize;
@@ -638,10 +643,10 @@ static void cleanup_tcp_test(tcp_test_state_t* s) {
 }
 
 static void* tcp_thread_connect(void* arg) {
-  tcp_test_state_t* s = (tcp_test_state_t*)arg;
-  ntfn_notify(&s->op_started);
-  s->op_result = do_connect(s->socket, s->arg_addr, s->arg_port);
-  ntfn_notify(&s->op_done);
+  async_op_t* op = (async_op_t*)arg;
+  ntfn_notify(&op->started);
+  op->result = do_connect(op->fd, op->arg_addr, op->arg_port);
+  ntfn_notify(&op->done);
   return NULL;
 }
 
@@ -649,110 +654,114 @@ static void* tcp_thread_connect(void* arg) {
 // test should either manually finish the connect call (with the SYN/SYN-ACK/ACK
 // sequence, or a variant), or call finish_standard_connect() below.
 static bool start_connect(tcp_test_state_t* s, const char* ip, int port) {
-  ntfn_init(&s->op_started);
-  ntfn_init(&s->op_done);
-  s->arg_addr = ip;
-  s->arg_port = port;
-  KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_connect, s));
-  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+  ntfn_init(&s->op.started);
+  ntfn_init(&s->op.done);
+  s->op.fd = s->socket;
+  s->op.arg_addr = ip;
+  s->op.arg_port = port;
+  KEXPECT_EQ(0, proc_thread_create(&s->op.thread, &tcp_thread_connect, &s->op));
+  if (!ntfn_await_with_timeout(&s->op.started, 5000)) {
     KTEST_ADD_FAILURE("connect() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
+  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("connect() finished without blocking");
-    KEXPECT_EQ(0, s->op_result);  // Get the error code.
+    KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
   }
   return true;
 }
 
 static void* tcp_thread_read(void* arg) {
-  tcp_test_state_t* s = (tcp_test_state_t*)arg;
-  ntfn_notify(&s->op_started);
-  s->op_result = vfs_read(s->socket, s->arg_buffer,s->arg_buflen);
-  ntfn_notify(&s->op_done);
+  async_op_t* op = (async_op_t*)arg;
+  ntfn_notify(&op->started);
+  op->result = vfs_read(op->fd, op->arg_buffer, op->arg_buflen);
+  ntfn_notify(&op->done);
   return NULL;
 }
 
 // Start an async read() call in another thread and ensure it blocks.
 static bool start_read(tcp_test_state_t* s, void* buf, size_t buflen) {
   kmemset(buf, 0, buflen);
-  ntfn_init(&s->op_started);
-  ntfn_init(&s->op_done);
-  s->arg_buffer = buf;
-  s->arg_buflen = buflen;
-  KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_read, s));
-  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+  ntfn_init(&s->op.started);
+  ntfn_init(&s->op.done);
+  s->op.fd = s->socket;
+  s->op.arg_buffer = buf;
+  s->op.arg_buflen = buflen;
+  KEXPECT_EQ(0, proc_thread_create(&s->op.thread, &tcp_thread_read, &s->op));
+  if (!ntfn_await_with_timeout(&s->op.started, 5000)) {
     KTEST_ADD_FAILURE("read() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
+  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("read() finished without blocking");
-    KEXPECT_EQ(0, s->op_result);  // Get the error code.
+    KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
   }
   return true;
 }
 
 static void* tcp_thread_write(void* arg) {
-  tcp_test_state_t* s = (tcp_test_state_t*)arg;
-  ntfn_notify(&s->op_started);
-  s->op_result = vfs_write(s->socket, s->arg_buffer, s->arg_buflen);
-  ntfn_notify(&s->op_done);
+  async_op_t* op = (async_op_t*)arg;
+  ntfn_notify(&op->started);
+  op->result = vfs_write(op->fd, op->arg_buffer, op->arg_buflen);
+  ntfn_notify(&op->done);
   return NULL;
 }
 
 // Start an async write() call in another thread and ensure it blocks.
 static bool start_write(tcp_test_state_t* s, const char* data) {
-  ntfn_init(&s->op_started);
-  ntfn_init(&s->op_done);
-  s->arg_buffer = (void*)data;
-  s->arg_buflen = kstrlen(data);
-  KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_write, s));
-  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+  ntfn_init(&s->op.started);
+  ntfn_init(&s->op.done);
+  s->op.fd = s->socket;
+  s->op.arg_buffer = (void*)data;
+  s->op.arg_buflen = kstrlen(data);
+  KEXPECT_EQ(0, proc_thread_create(&s->op.thread, &tcp_thread_write, &s->op));
+  if (!ntfn_await_with_timeout(&s->op.started, 5000)) {
     KTEST_ADD_FAILURE("write() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
+  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("write() finished without blocking");
-    KEXPECT_EQ(0, s->op_result);  // Get the error code.
+    KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
   }
   return true;
 }
 
 static void* tcp_thread_accept(void* arg) {
-  tcp_test_state_t* s = (tcp_test_state_t*)arg;
-  ntfn_notify(&s->op_started);
-  s->op_result = net_accept(s->socket, NULL, NULL);
-  ntfn_notify(&s->op_done);
+  async_op_t* op = (async_op_t*)arg;
+  ntfn_notify(&op->started);
+  op->result = net_accept(op->fd, NULL, NULL);
+  ntfn_notify(&op->done);
   return NULL;
 }
 
 static bool start_accept(tcp_test_state_t* s) {
-  ntfn_init(&s->op_started);
-  ntfn_init(&s->op_done);
-  KEXPECT_EQ(0, proc_thread_create(&s->thread, &tcp_thread_accept, s));
-  if (!ntfn_await_with_timeout(&s->op_started, 5000)) {
+  ntfn_init(&s->op.started);
+  ntfn_init(&s->op.done);
+  s->op.fd = s->socket;
+  KEXPECT_EQ(0, proc_thread_create(&s->op.thread, &tcp_thread_accept, &s->op));
+  if (!ntfn_await_with_timeout(&s->op.started, 5000)) {
     KTEST_ADD_FAILURE("accept() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op_done, BLOCK_VERIFY_MS)) {
+  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("accept() finished without blocking");
-    KEXPECT_EQ(0, s->op_result);  // Get the error code.
+    KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
   }
   return true;
 }
 
 static int finish_op(tcp_test_state_t* s) {
-  bool finished = ntfn_await_with_timeout(&s->op_done, 5000);
+  bool finished = ntfn_await_with_timeout(&s->op.done, 5000);
   KEXPECT_EQ(true, finished);
   if (!finished) return -ETIMEDOUT;
 
-  KEXPECT_EQ(NULL, kthread_join(s->thread));
-  s->thread = NULL;
-  return s->op_result;
+  KEXPECT_EQ(NULL, kthread_join(s->op.thread));
+  s->op.thread = NULL;
+  return s->op.result;
 }
 
 static bool raw_has_packets_wait(tcp_test_state_t* s, int timeout_ms) {
@@ -1580,7 +1589,7 @@ static void connect_interrupted_test(void) {
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   // ...but the connect should still complete.
@@ -1652,7 +1661,7 @@ static void connect_gets_to_close_wait_test(void) {
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   // ...but the connect should still complete.
   // Do SYN, SYN-ACK, ACK.
@@ -1672,8 +1681,8 @@ static void connect_gets_to_close_wait_test(void) {
   // Should get an ACK.
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 505));
 
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 50));
-  kthread_enable(s.thread);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, 50));
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(0, finish_op(&s));
 
   // Shutdown the connection from this side.
@@ -1694,7 +1703,7 @@ static void connect_gets_to_closed_test(void) {
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   // ...but the connect should still complete.
   // Do SYN, SYN-ACK, ACK.
@@ -1710,8 +1719,8 @@ static void connect_gets_to_closed_test(void) {
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
 
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 50));
-  kthread_enable(s.thread);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, 50));
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(0, finish_op(&s));
 
   cleanup_tcp_test(&s);
@@ -1869,7 +1878,7 @@ static void simultaneous_connect_testA(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Read/write in SYN_RCVD shouldn't work.
   char c;
@@ -1960,7 +1969,7 @@ static void simultaneous_connect_testB(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // SYNs and SYN/ACKs aligned with the start of the window should get an ACK
   // but be ignored.
@@ -2038,7 +2047,7 @@ static void simultaneous_connect_rst_test(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Send RST.
   SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
@@ -2067,7 +2076,7 @@ static void simultaneous_connect_rst_test2(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Send RST.
   SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 100));
@@ -2096,7 +2105,7 @@ static void simultaneous_connect_rst_test3(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Send RST.
   SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 100000));
@@ -2125,7 +2134,7 @@ static void simultaneous_connect_rst_test4(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Send RST.
   test_packet_spec_t pkt = DATA_PKT(/* seq */ 501, /* ack */ 101, "abc");
@@ -2156,7 +2165,7 @@ static void simultaneous_connect_data_test(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // DATA+ACK to complete the connection.
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
@@ -2196,7 +2205,7 @@ static void simultaneous_connect_data_test2(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // DATA+ACK to complete the connection.
   SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "x123"));
@@ -2240,7 +2249,7 @@ static void simultaneous_connect_data_test3(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // DATA+ACK to complete the connection.
   SEND_PKT(&s, DATA_PKT(/* seq */ 497, /* ack */ 101, "xyza123"));
@@ -2279,7 +2288,7 @@ static void simultaneous_connect_datafin_test(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // DATA+ACK to complete the connection.
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "123"));
@@ -2319,7 +2328,7 @@ static void simultaneous_connect_fin_test(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // DATA+ACK to complete the connection.
   SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
@@ -2358,7 +2367,7 @@ static void simultaneous_connect_shutdown_rd_test(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
 
@@ -2395,7 +2404,7 @@ static void simultaneous_connect_shutdown_rd_test2(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
 
@@ -2446,7 +2455,7 @@ static void simultaneous_connect_shutdown_rd_test3(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
 
@@ -2479,7 +2488,7 @@ static void simultaneous_connect_shutdown_wr_test(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2526,7 +2535,7 @@ static void simultaneous_connect_shutdown_wr_test2(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2571,7 +2580,7 @@ static void simultaneous_connect_shutdown_wr_test3(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2613,7 +2622,7 @@ static void simultaneous_connect_shutdown_wr_test4(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2653,7 +2662,7 @@ static void simultaneous_connect_shutdown_wr_test5(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2689,7 +2698,7 @@ static void simultaneous_connect_shutdown_wr_test6(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2727,7 +2736,7 @@ static void simultaneous_connect_shutdown_wr_test7(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // The connect() call shouldn't finish yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
@@ -2943,7 +2952,7 @@ static void rst_during_established_blocking_recv_test2(void) {
 
   // read() should now block, waiting for data.
   KEXPECT_TRUE(start_read(&s, buf, 3));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 504, /* wndsize */ 497));
@@ -2953,7 +2962,7 @@ static void rst_during_established_blocking_recv_test2(void) {
   KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
 
   // Read should finish with -ECONNRESET.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-ECONNRESET, finish_op(&s));
 
   // Subsequent reads should return EOF.
@@ -2978,7 +2987,7 @@ static void rst_during_established_blocking_recv_test3(void) {
 
   // read() should now block, waiting for data.
   KEXPECT_TRUE(start_read(&s, buf, 3));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   // Send RST _with data_.
   test_packet_spec_t rst_data_pkt =
@@ -2988,7 +2997,7 @@ static void rst_during_established_blocking_recv_test3(void) {
   KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
 
   // Read should finish with -ECONNRESET.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-ECONNRESET, finish_op(&s));
 
   // Subsequent reads should return EOF.
@@ -3133,7 +3142,7 @@ static void fin_during_established_blocking_recv_test2(void) {
 
   // read() should now block, waiting for data.
   KEXPECT_TRUE(start_read(&s, buf, 3));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
@@ -3144,7 +3153,7 @@ static void fin_during_established_blocking_recv_test2(void) {
   KEXPECT_FALSE(raw_has_packets(&s));
 
   // Read should finish with the data.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(3, finish_op(&s));
   buf[3] = '\0';
   KEXPECT_STREQ("abc", buf);
@@ -3178,7 +3187,7 @@ static void fin_during_established_blocking_recv_test3(void) {
 
   // read() should now block, waiting for data.
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
@@ -3192,7 +3201,7 @@ static void fin_during_established_blocking_recv_test3(void) {
   KEXPECT_FALSE(raw_has_packets(&s));
 
   // Read should finish with the data.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(5, finish_op(&s));
   buf[5] = '\0';
   KEXPECT_STREQ("abcde", buf);
@@ -3227,7 +3236,7 @@ static void fin_during_established_blocking_recv_test3b(void) {
 
   // read() should now block, waiting for data.
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   // Send FIN _with data_.
   test_packet_spec_t fin_data_pkt =
@@ -3238,7 +3247,7 @@ static void fin_during_established_blocking_recv_test3b(void) {
   KEXPECT_FALSE(raw_has_packets(&s));
 
   // Read should finish with the data.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(2, finish_op(&s));
   buf[2] = '\0';
   KEXPECT_STREQ("de", buf);
@@ -3271,7 +3280,7 @@ static void fin_and_rst_test(void) {
 
   // read() should now block, waiting for data.
   KEXPECT_TRUE(start_read(&s, buf, 3));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   // Send RST with data and FIN.
   test_packet_spec_t rst_data_pkt =
@@ -3281,7 +3290,7 @@ static void fin_and_rst_test(void) {
   KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
 
   // Read should finish with -ECONNRESET.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-ECONNRESET, finish_op(&s));
 
   // Subsequent reads should return EOF.
@@ -3486,7 +3495,7 @@ static void rst_after_fin_test3(void) {
 
   char buf[10];
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
@@ -3500,7 +3509,7 @@ static void rst_after_fin_test3(void) {
   KEXPECT_FALSE(raw_has_packets(&s));
 
   // Should get ECONNRESET.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-ECONNRESET, finish_op(&s));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));  // EOF now.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));  // EOF now.
@@ -3563,7 +3572,7 @@ static void rst_in_lastack_test2(void) {
 
   char buf[10];
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
@@ -3583,7 +3592,7 @@ static void rst_in_lastack_test2(void) {
   KEXPECT_FALSE(raw_has_packets(&s));
 
   // As above, should still be able to get the data.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(3, finish_op(&s));
   buf[3] = '\0';
   KEXPECT_STREQ("abc", buf);
@@ -3681,7 +3690,7 @@ static void interrupted_recv_test(void) {
 
   char buf[10];
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
@@ -3704,14 +3713,14 @@ static void interrupted_recv_test2(void) {
 
   char buf[10];
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
 
   // It would also be OK for this to read the data.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
@@ -3818,8 +3827,8 @@ static void recv_timeout_test2(void) {
 
   char buf[10];
   KEXPECT_TRUE(start_read(&s, buf, 10));
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 50));
-  proc_kill_thread(s.thread, SIGUSR1);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, 50));
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -3843,17 +3852,17 @@ static void recv_timeout_test3(void) {
 
   char buf[10];
   KEXPECT_TRUE(start_read(&s, buf, 1));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, 60));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, 60));
 
   // Read the data in _this_ thread.
   KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
 
   // Let the other thread wake up.  It should realize that it timed out.
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-ETIMEDOUT, finish_op(&s));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 3));
@@ -4330,7 +4339,7 @@ static void send_blocking_interrupted(void) {
 
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
 
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   // Finally send an ACK.
@@ -4416,7 +4425,7 @@ static void send_timeout_test2(void) {
   KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
   KEXPECT_TRUE(start_write(&s, "fgh"));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
   SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
   KEXPECT_FALSE(raw_has_packets_wait(&s, 60));
 
@@ -4424,7 +4433,7 @@ static void send_timeout_test2(void) {
   KEXPECT_EQ(5, vfs_write(s.socket, "123456", 6));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "12345"));
 
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   KEXPECT_EQ(-ETIMEDOUT, finish_op(&s));
   KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
 
@@ -5584,7 +5593,7 @@ static void data_retransmit_blocked(void) {
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 504));
 
   // The blocked read shouldn't have finished.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 503, /* ack */ 101, "Cd"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 505));
@@ -7652,7 +7661,7 @@ static void close_shutdown_test3(void) {
 
   // TODO(aoates): figure out how to signal that the FD is closed to the other
   // thread, and have connect() return ECONNABORTED.
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   s.socket = -1;
@@ -7672,7 +7681,7 @@ static void close_shutdown_test3b(void) {
   // Do SYN, SYN-ACK, ACK.
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
 
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
 
   KEXPECT_EQ(0, vfs_close(s.socket));
@@ -7734,7 +7743,7 @@ static void close_shutdown_test5(void) {
   KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
 
   // Force the connect() to finish.
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
   KEXPECT_EQ(-EINTR, finish_op(&s));
   KEXPECT_EQ(0, vfs_close(s.socket));
   s.socket = -1;
@@ -8044,19 +8053,19 @@ static void accept_blocks_test(void) {
   EXPECT_PKT(&c3, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
 
   // accept() shouldn't return yet.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
   // Thread should be woken up but not run.
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Accept the socket in this thread.
   c1.socket = net_accept(s.socket, NULL, NULL);
   KEXPECT_GE(c1.socket, 0);
 
-  kthread_enable(s.thread);
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  kthread_enable(s.op.thread);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   // Another connection should wake it up.
   SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
@@ -8082,7 +8091,7 @@ static void accept_blocks_test2(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 10));
 
   KEXPECT_TRUE(start_accept(&s));
-  proc_kill_thread(s.thread, SIGUSR1);
+  proc_kill_thread(s.op.thread, SIGUSR1);
 
   tcp_test_state_t c1;
   init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
@@ -8240,13 +8249,13 @@ static void accept_child_rst1(void) {
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   KEXPECT_EQ(1, net_accept_queue_length(s.socket));
   SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
   KEXPECT_EQ(0, net_accept_queue_length(s.socket));
 
 
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
   EXPECT_PKT(&c1, RST_NOACK_PKT(/* seq */ 101));
-  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op_done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
@@ -8307,7 +8316,7 @@ static void accept_child_rst3(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   KEXPECT_TRUE(start_accept(&s));
-  kthread_disable(s.thread);
+  kthread_disable(s.op.thread);
 
   tcp_test_state_t c1;
   init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
@@ -8316,7 +8325,7 @@ static void accept_child_rst3(void) {
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
   SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
 
-  kthread_enable(s.thread);
+  kthread_enable(s.op.thread);
   int child = finish_op(&s);
   KEXPECT_GE(child, 0);
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(child));
