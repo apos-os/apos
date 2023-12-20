@@ -67,6 +67,8 @@
 
 static const socket_ops_t g_tcp_socket_ops;
 
+static short tcp_poll_events(const socket_tcp_t* socket);
+
 static uint32_t gen_seq_num(const socket_tcp_t* sock) {
   return fnv_hash_concat(get_time_ms(), fnv_hash_addr((addr_t)sock));
 }
@@ -190,6 +192,11 @@ static inline const char* state2str(socktcp_state_t state) {
   return "UNKNOWN";
 }
 
+static void tcp_wake(socket_tcp_t* sock) {
+  scheduler_wake_all(&sock->q);
+  poll_trigger_event(&sock->poll_event, tcp_poll_events(sock));
+}
+
 static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
                       const char* debug_msg) {
   KASSERT(kspin_is_held(&sock->spin_mu));
@@ -197,7 +204,7 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
        state2str(sock->state), state2str(new_state), debug_msg);
   sock->state = new_state;
   // Wake up anyone waiting for a state transition.
-  scheduler_wake_all(&sock->q);
+  tcp_wake(sock);
 }
 
 static void delete_socket(socket_tcp_t* socket) {
@@ -762,7 +769,7 @@ static void syn_rcvd_connected(socket_tcp_t* socket) {
     if (socket->parent->state == TCP_LISTEN) {
       list_remove(&socket->parent->children_connecting, &socket->link);
       list_push(&socket->parent->children_established, &socket->link);
-      scheduler_wake_all(&socket->parent->q);
+      tcp_wake(socket->parent);
     } else {
       KASSERT_DBG(socket->parent->state == TCP_CLOSED_DONE);
     }
@@ -812,7 +819,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
        "unacked: %u; send_wndsize: %d)\n",
        socket, seqs_acked, bytes_acked, socket->send_next - socket->send_unack,
        socket->send_wndsize);
-  scheduler_wake_all(&socket->q);
+  tcp_wake(socket);
 
   switch (socket->state) {
     case TCP_LAST_ACK:
@@ -1045,7 +1052,7 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
 
   socket->recv_next += bytes_read;
   socket->recv_wndsize = circbuf_available(&socket->recv_buf);
-  scheduler_wake_all(&socket->q);
+  tcp_wake(socket);
   *action |= TCP_SEND_ACK;
 }
 
@@ -1426,7 +1433,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
 
     sock->recv_shutdown = true;
     circbuf_clear(&sock->recv_buf);
-    scheduler_wake_all(&sock->q);
+    tcp_wake(sock);
   }
 
   if (how == SHUT_WR || how == SHUT_RDWR) {
@@ -1440,13 +1447,13 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
 
     if (sock->state == TCP_SYN_SENT) {
       finish_protocol_close(sock, "shutdown(SHUT_WR) in SYN_SENT");
-      scheduler_wake_all(&sock->q);
+      tcp_wake(sock);
       kspin_unlock(&sock->spin_mu);
       return 0;
     }
 
     sock->send_shutdown = true;
-    scheduler_wake_all(&sock->q);
+    tcp_wake(sock);
     send_datafin = true;
   }
   kspin_unlock(&sock->spin_mu);
@@ -2078,8 +2085,14 @@ static int sock_tcp_poll(socket_t* socket_base, short event_mask,
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
-  // TODO(tcp): implement
-  return -ENOTSUP;
+  socket_tcp_t* socket = (socket_tcp_t*)socket_base;
+  kspin_lock(&socket->spin_mu);
+  const short masked_events = tcp_poll_events(socket) & event_mask;
+  kspin_unlock(&socket->spin_mu);
+  if (masked_events || !poll)
+    return masked_events;
+
+  return poll_add_event(poll, &socket->poll_event, event_mask);
 }
 
 static int getsockopt_bufsize(socket_tcp_t* socket, int option, void* val,
@@ -2222,6 +2235,51 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   }
 
   return -ENOPROTOOPT;
+}
+
+static short tcp_poll_events(const socket_tcp_t* socket) {
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  short events = 0;
+  if (socket->error) {
+    events |= KPOLLERR;
+  }
+
+  if (socket->state == TCP_LISTEN) {
+    if (!list_empty(&socket->children_established)) {
+      events |= KPOLLIN | KPOLLRDNORM;
+    }
+  } else {
+    switch (recv_state(socket)) {
+      case RECV_NOT_CONNECTED:
+      case RECV_BLOCK_FOR_DATA:
+        break;
+
+      case RECV_ERROR:
+        KASSERT_DBG(events & KPOLLERR);
+        break;
+
+      case RECV_HAS_DATA:
+      case RECV_EOF:
+        events |= KPOLLIN | KPOLLRDNORM;
+        break;
+    }
+
+    switch (send_state(socket)) {
+      case SEND_NOT_CONNECTED:
+      case SEND_BLOCK:
+      case SEND_IS_SHUTDOWN:
+        break;
+
+      case SEND_ERROR:
+        KASSERT_DBG(events & KPOLLERR);
+        break;
+
+      case SEND_HAS_BUFFER:
+        events |= KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND;
+        break;
+    }
+  }
+  return events;
 }
 
 static const socket_ops_t g_tcp_socket_ops = {

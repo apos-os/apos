@@ -39,6 +39,7 @@
 #include "user/include/apos/net/socket/tcp.h"
 #include "user/include/apos/posix_signal.h"
 #include "user/include/apos/time_types.h"
+#include "user/include/apos/vfs/poll.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
@@ -552,9 +553,10 @@ typedef struct {
   notification_t done;
 
   const char* arg_addr;
-  int arg_port;
   void* arg_buffer;
   size_t arg_buflen;
+  int arg_port;
+  short events;
 } async_op_t;
 
 typedef struct {
@@ -754,14 +756,49 @@ static bool start_accept(tcp_test_state_t* s) {
   return true;
 }
 
-static int finish_op(tcp_test_state_t* s) {
-  bool finished = ntfn_await_with_timeout(&s->op.done, 5000);
+static void* tcp_thread_poll(void* arg) {
+  async_op_t* op = (async_op_t*)arg;
+  ntfn_notify(&op->started);
+  struct apos_pollfd pfd;
+  pfd.fd = op->fd;
+  pfd.events = op->events;
+  pfd.revents = 0;
+  op->result = vfs_poll(&pfd, 1, 2000);
+  op->events = pfd.revents;
+  ntfn_notify(&op->done);
+  return NULL;
+}
+
+static bool start_poll(async_op_t* op, int fd, short events) {
+  ntfn_init(&op->started);
+  ntfn_init(&op->done);
+  op->fd = fd;
+  op->events = events;
+  KEXPECT_EQ(0, proc_thread_create(&op->thread, &tcp_thread_poll, op));
+  if (!ntfn_await_with_timeout(&op->started, 5000)) {
+    KTEST_ADD_FAILURE("poll() thread didn't start");
+    return false;
+  }
+  if (ntfn_await_with_timeout(&op->done, BLOCK_VERIFY_MS)) {
+    KTEST_ADD_FAILURE("poll() finished without blocking");
+    KEXPECT_EQ(0, op->result);  // Get the error code.
+    return false;
+  }
+  return true;
+}
+
+static int finish_op_direct(async_op_t* op) {
+  bool finished = ntfn_await_with_timeout(&op->done, 5000);
   KEXPECT_EQ(true, finished);
   if (!finished) return -ETIMEDOUT;
 
-  KEXPECT_EQ(NULL, kthread_join(s->op.thread));
-  s->op.thread = NULL;
-  return s->op.result;
+  KEXPECT_EQ(NULL, kthread_join(op->thread));
+  op->thread = NULL;
+  return op->result;
+}
+
+static int finish_op(tcp_test_state_t* s) {
+  return finish_op_direct(&s->op);
 }
 
 static bool raw_has_packets_wait(tcp_test_state_t* s, int timeout_ms) {
@@ -8630,6 +8667,344 @@ static void listen_tests(void) {
   simultaneous_connections_same_5tuple();
 }
 
+static void poll_read_test(void) {
+  KTEST_BEGIN("TCP: poll(POLLIN) - readable data");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  // Once data is available, the poll() should trigger.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 506));
+
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, poll_op.events);
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+
+  // Read some, but not all, of the data.
+  KEXPECT_STREQ("abc", do_read_len(s.socket, 3));
+
+  // POLLIN should still trigger.
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+
+  KEXPECT_STREQ("de", do_read(s.socket));
+
+  // poll should hang again.
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI));
+
+  // Send FIN.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 506, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 507));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, poll_op.events);
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 507));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 507, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void poll_shutdown_read_test(void) {
+  KTEST_BEGIN("TCP: poll(POLLIN) - shutdown(SHUT_RD)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI));
+  // shutdown() should trigger the EOF poll event.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, poll_op.events);
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void poll_write_test(void) {
+  KTEST_BEGIN("TCP: poll(POLLOUT) - writable socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(int)));
+
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI |
+                              KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  // As soon as the connect() finishes, we should be considered writable.
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, poll_op.events);
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI | KPOLLOUT |
+               KPOLLWRNORM | KPOLLWRBAND;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, pfd.revents);
+
+  // Fill up the send buffer.
+  KEXPECT_EQ(5, vfs_write(s.socket, "1234567890", 10));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+  // Don't ack (yet).
+
+  // A new poll() should block.
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI |
+                              KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND));
+
+  pfd.revents = 0;
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(0, pfd.revents);
+
+  // On a duplicate ACK, poll should still be blocking.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  // When we ACK, the poll should finish.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 103));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, poll_op.events);
+
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, pfd.revents);
+
+  // Send more data.
+  KEXPECT_EQ(2, vfs_write(s.socket, "67890", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "67"));
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 108));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 7, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void poll_write_shutdown_test(void) {
+  KTEST_BEGIN("TCP: poll(POLLOUT) - shutdown(SHUT_WR)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(int)));
+
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI |
+                              KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  // As soon as the connect() finishes, we should be considered writable.
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, poll_op.events);
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI | KPOLLOUT |
+               KPOLLWRNORM | KPOLLWRBAND;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, pfd.revents);
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  pfd.revents = 0;
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(0, pfd.revents);
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+
+  cleanup_tcp_test(&s);
+}
+
+static void poll_rdwr_shutdown_test(void) {
+  KTEST_BEGIN("TCP: poll() - shutdown(SHUT_RDWR)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(int)));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI | KPOLLOUT |
+               KPOLLWRNORM | KPOLLWRBAND;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND, pfd.revents);
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RDWR));
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 500));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+
+  cleanup_tcp_test(&s);
+}
+
+static void poll_accept_test(void) {
+  KTEST_BEGIN("TCP: poll() on listening socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI |
+                              KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND));
+
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  // Send a SYN, complete the connection.
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1000);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+
+  // Should be in SYN_RCVD, but poll shouldn't finish yet.
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, poll_op.events);
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI | KPOLLOUT |
+               KPOLLWRNORM | KPOLLWRBAND;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 2000));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+
+  // We should be able to accept() a child socket.
+  char addr[SOCKADDR_PRETTY_LEN];
+  c1.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("127.0.0.2:1000", addr);
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Should no longer show readable.
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+
+  SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void poll_error_test(void) {
+  KTEST_BEGIN("TCP: poll() - error");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&poll_op.done, BLOCK_VERIFY_MS));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLERR, poll_op.events);
+
+  struct apos_pollfd pfd;
+  pfd.fd = s.socket;
+  pfd.events = KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 2000));
+  KEXPECT_EQ(KPOLLERR, pfd.revents);
+
+  // Read to clear the error.  Then we should get a read poll for EOF.
+  char buf;
+  KEXPECT_EQ(-ECONNRESET, vfs_read(s.socket, &buf, 1));
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 0));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, pfd.revents);
+  KEXPECT_EQ(0, vfs_read(s.socket, &buf, 1));
+
+  cleanup_tcp_test(&s);
+}
+
+static void poll_tests(void) {
+  poll_read_test();
+  poll_shutdown_read_test();
+  poll_write_test();
+  poll_write_shutdown_test();
+  poll_rdwr_shutdown_test();
+  poll_accept_test();
+  poll_error_test();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -8656,6 +9031,7 @@ void tcp_test(void) {
     active_close_tests();
     close_shutdown_test();
     listen_tests();
+    poll_tests();
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");
