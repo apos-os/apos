@@ -201,6 +201,9 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
 }
 
 static void delete_socket(socket_tcp_t* socket) {
+  KASSERT_DBG(socket->ref.ref == 0);
+  KASSERT_DBG(socket->parent == NULL);
+  KASSERT_DBG(socket->state == TCP_CLOSED_DONE);
   kfree(socket->send_buf.buf);
   kfree(socket->recv_buf.buf);
   kfree(socket);
@@ -581,6 +584,8 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   tcp_pkt_action_t action = TCP_ACTION_NONE;
+
+  test_point_run("tcp:dispatch_packet");
 
   kspin_lock(&socket->spin_mu);
 
@@ -1157,7 +1162,6 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
                              (const struct sockaddr*)&child->connected_addr);
   kspin_lock(&g_tcp.lock);
   void* val;
-  // TODO(smp): write a test that exercises this code path.
   if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
     // This could happen (with SMP) if we race with another incoming connection.
     KLOG(DEBUG, "TCP: socket %p unable to accept "
@@ -1166,6 +1170,7 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
 
     child->parent = NULL;
     list_remove(&parent->children_connecting, &child->link);
+    parent->queued--;
     KASSERT(refcount_dec(&parent->ref) > 0);
     set_state(child, TCP_CLOSED_DONE, "unable to accept connection");
     kspin_unlock(&child->spin_mu);

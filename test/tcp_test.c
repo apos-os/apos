@@ -8511,6 +8511,91 @@ static void syn_during_listen_close_test2(void) {
   cleanup_tcp_test(&c1);
 }
 
+typedef struct {
+  notification_t hook_hit;
+  notification_t hook_done;
+  tcp_test_state_t* s;
+  tcp_test_state_t* c1;
+} simulcnt_args_t;
+
+static void simultaneous_connect_test_point(const char* name, void* arg) {
+  simulcnt_args_t* args = (simulcnt_args_t*)arg;
+  // Avoid the recursive case --- only pause the first time we dispatch.
+  if (ntfn_has_been_notified(&args->hook_hit)) {
+    return;
+  }
+  ntfn_notify(&args->hook_hit);
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args->hook_done, 2000));
+}
+
+static void* simultaneous_connect_thread(void* arg) {
+  simulcnt_args_t* args = (simulcnt_args_t*)arg;
+  // Wait until the main thread has started to dispatch the first SYN.
+  KEXPECT_TRUE(ntfn_await_with_timeout(&args->hook_hit, 2000));
+
+  // Inject a new SYN and create the connection first!  Ha!
+  SEND_PKT(args->c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(args->c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(args->c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(args->s->socket));
+  ntfn_notify(&args->hook_done);
+  return NULL;
+}
+
+static void simultaneous_connections_same_5tuple(void) {
+  KTEST_BEGIN("TCP: two SYNs from same 5-tuple race");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+
+  simulcnt_args_t args;
+  ntfn_init(&args.hook_hit);
+  ntfn_init(&args.hook_done);
+  args.s = &s;
+  args.c1 = &c1;
+
+  kthread_t thread;
+  KEXPECT_EQ(0,
+             proc_thread_create(&thread, &simultaneous_connect_thread, &args));
+
+  // Send a SYN, which will trigger the other thread to send a SYN as well and
+  // beat us to it.
+  test_point_add("tcp:dispatch_packet", &simultaneous_connect_test_point,
+                 &args);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 600, /* wndsize */ 8000));
+  // In this race, we simply ignore the second SYN (rather than sending a
+  // challenge ACK, which technically is what we should do).
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(3, test_point_remove("tcp:dispatch_packet"));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  // Now we should get a challenge ACK.  Note ack of 501, not 601.
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 600, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+
+  char addr[SOCKADDR_PRETTY_LEN];
+  c1.socket = do_accept(s.socket, addr);
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("127.0.0.2:1002", addr);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+
+  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  KEXPECT_STREQ("abc", do_read(c1.socket));
+  KEXPECT_TRUE(do_standard_finish(&c1, 0, 3));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
 // TODO(smp): Race condition deadlock tests (ideally, can't really test
 // currently without SMP)
 //  - close with pending socket locked
@@ -8533,6 +8618,7 @@ static void listen_tests(void) {
   accept_child_partial_close2();
   syn_during_listen_close_test();
   syn_during_listen_close_test2();
+  simultaneous_connections_same_5tuple();
 }
 
 void tcp_test(void) {
