@@ -124,7 +124,9 @@ static bool socket_has_data(int fd, int timeout_ms) {
 static const char* do_read_len(int sock, int len) {
   KASSERT(len < 100);
   static char buf[100];
-  // TODO(tcp): call socket_has_data() once poll is supported on TCP sockets.
+  if (!KEXPECT_TRUE(socket_has_data(sock, 0))) {
+    return "<no data>";
+  }
   int result = vfs_read(sock, buf, len);
   if (KEXPECT_GE(result, 0)) {
     buf[result] = '\0';
@@ -5496,15 +5498,13 @@ static void data_past_window_test(void) {
   // Should be dropped.
   SEND_PKT(&s, DATA_PKT(/* seq */ 512, /* ack */ 101, "567890abcdefg"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
-  // TODO(tcp): enable this once poll() is implemented
-  // KEXPECT_FALSE(socket_has_data(s.socket, 0));
+  KEXPECT_FALSE(socket_has_data(s.socket, 0));
 
   // Test #4: doesn't align wih start of window, but is within window.  Should
   // be dropped.
   SEND_PKT(&s, DATA_PKT(/* seq */ 512, /* ack */ 101, "X"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
-  // TODO(tcp): enable this once poll() is implemented
-  // KEXPECT_FALSE(socket_has_data(s.socket, 0));
+  KEXPECT_FALSE(socket_has_data(s.socket, 0));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 10));
 
@@ -5552,8 +5552,7 @@ static void data_fin_past_window_test(void) {
   // Should be dropped.
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 512, /* ack */ 101, "567890abcdefg"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
-  // TODO(tcp): enable this once poll() is implemented
-  // KEXPECT_FALSE(socket_has_data(s.socket, 0));
+  KEXPECT_FALSE(socket_has_data(s.socket, 0));
 
   // Test a correct in-window FIN with data that starts before the window.
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 509, /* ack */ 101, "456789"));
