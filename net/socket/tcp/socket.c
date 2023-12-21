@@ -1860,7 +1860,6 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   apos_ms_t timeout_end =
       (sock->recv_timeout_ms < 0) ? APOS_MS_MAX : now + sock->recv_timeout_ms;
   int result = 0;
-  // TODO(tcp): tests for transitioning to FIN_WAIT* during this.
   while (now < timeout_end && recv_state(sock) == RECV_BLOCK_FOR_DATA) {
     int wait_result =
         scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
@@ -1973,7 +1972,6 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
   apos_ms_t timeout_end =
       (sock->send_timeout_ms < 0) ? APOS_MS_MAX : now + sock->send_timeout_ms;
   int result = 0;
-  // TODO(tcp): tests for transitioning to FIN_WAIT* during this.
   while (now < timeout_end && send_state(sock) == SEND_BLOCK) {
     int wait_result =
         scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);

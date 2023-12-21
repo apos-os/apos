@@ -685,29 +685,41 @@ static void* tcp_thread_read(void* arg) {
 }
 
 // Start an async read() call in another thread and ensure it blocks.
-static bool start_read(tcp_test_state_t* s, void* buf, size_t buflen) {
+static bool start_read_op(async_op_t* op, void* buf, size_t buflen) {
   kmemset(buf, 0, buflen);
-  ntfn_init(&s->op.started);
-  ntfn_init(&s->op.done);
-  s->op.fd = s->socket;
-  s->op.arg_buffer = buf;
-  s->op.arg_buflen = buflen;
-  KEXPECT_EQ(0, proc_thread_create(&s->op.thread, &tcp_thread_read, &s->op));
-  if (!ntfn_await_with_timeout(&s->op.started, 5000)) {
+  ntfn_init(&op->started);
+  ntfn_init(&op->done);
+  op->arg_buffer = buf;
+  op->arg_buflen = buflen;
+  KEXPECT_EQ(0, proc_thread_create(&op->thread, &tcp_thread_read, op));
+  if (!ntfn_await_with_timeout(&op->started, 5000)) {
     KTEST_ADD_FAILURE("read() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
+  if (ntfn_await_with_timeout(&op->done, BLOCK_VERIFY_MS)) {
     KTEST_ADD_FAILURE("read() finished without blocking");
-    KEXPECT_EQ(0, s->op.result);  // Get the error code.
+    KEXPECT_EQ(0, op->result);  // Get the error code.
     return false;
   }
   return true;
 }
 
+static bool start_read(tcp_test_state_t* s, void* buf, size_t buflen) {
+  s->op.fd = s->socket;
+  return start_read_op(&s->op, buf, buflen);
+}
+
 static void* tcp_thread_write(void* arg) {
   async_op_t* op = (async_op_t*)arg;
   ntfn_notify(&op->started);
+
+  // Block SIGPIPE in _this_ thread --- that way, if it's generated, it can be
+  // detected from the test thread even if this one exits.
+  ksigset_t block;
+  ksigemptyset(&block);
+  ksigaddset(&block, SIGPIPE);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &block, NULL));
+
   op->result = vfs_write(op->fd, op->arg_buffer, op->arg_buflen);
   ntfn_notify(&op->done);
   return NULL;
@@ -3940,6 +3952,50 @@ static void recv_timeout_test4(void) {
   cleanup_tcp_test(&s);
 }
 
+static void read_and_shutdown_test(void) {
+  KTEST_BEGIN("TCP: shutdown() during blocking read");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  char buf[10];
+  KEXPECT_TRUE(start_read(&s, buf, 10));
+
+  async_op_t op2, op3;
+  op2.fd = s.socket;
+  op3.fd = s.socket;
+  KEXPECT_TRUE(start_read_op(&op2, buf, 10));
+  KEXPECT_TRUE(start_read_op(&op3, buf, 10));
+  kthread_disable(op2.thread);
+  kthread_disable(op3.thread);
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+
+  kthread_enable(op2.thread);
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 102));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&op2.done, BLOCK_VERIFY_MS));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_EQ(0, finish_op(&s));
+  KEXPECT_EQ(0, finish_op_direct(&op2));
+
+  kthread_enable(op3.thread);
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  KEXPECT_EQ(0, finish_op_direct(&op3));
+  cleanup_tcp_test(&s);
+}
+
 static void established_tests(void) {
   basic_established_recv_test();
   rst_during_established_test();
@@ -3976,6 +4032,8 @@ static void established_tests(void) {
   recv_timeout_test2();
   recv_timeout_test3();
   recv_timeout_test4();
+
+  read_and_shutdown_test();
 }
 
 static void recvbuf_size_test(void) {
@@ -4386,6 +4444,44 @@ static void send_blocking_interrupted(void) {
   KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
 
   KEXPECT_TRUE(do_standard_finish(&s, 5, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void send_blocking_shutdown(void) {
+  KTEST_BEGIN("TCP: blocking send interrupted with shutdown");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Fill the buffer, then get a thread blocking.
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcdef", 6));
+  KEXPECT_TRUE(start_write(&s, "fgh"));
+
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+
+  ksigset_t signew, sigold;
+  ksigemptyset(&signew);
+  ksigaddset(&signew, SIGPIPE);
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_BLOCK, &signew, &sigold));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 106, /* ack */ 501));
+  KEXPECT_EQ(-EPIPE, finish_op(&s));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  KEXPECT_EQ(0, proc_sigprocmask(SIG_SETMASK, &sigold, NULL));
+
+  // Finally send an ACK.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
 
   cleanup_tcp_test(&s);
 }
@@ -5378,6 +5474,7 @@ static void send_tests(void) {
   basic_send_test_blocks();
   basic_send_test_blocks2();
   send_blocking_interrupted();
+  send_blocking_shutdown();
   send_timeout_test();
   send_timeout_test2();
   send_error_test();
