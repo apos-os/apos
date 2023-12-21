@@ -135,6 +135,7 @@ typedef enum {
   TCPSTATE_POST_ESTABLISHED,
 } socktcp_state_type_t;
 
-socktcp_state_type_t get_state_type(socktcp_state_t s);
+socktcp_state_type_t tcp_state_type(socktcp_state_t s);
+bool tcp_is_fin_sent(socktcp_state_t s);
 
 #endif

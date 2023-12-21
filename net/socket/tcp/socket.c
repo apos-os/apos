@@ -147,7 +147,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   return 0;
 }
 
-socktcp_state_type_t get_state_type(socktcp_state_t s) {
+socktcp_state_type_t tcp_state_type(socktcp_state_t s) {
   switch (s) {
     case TCP_CLOSED:
     case TCP_LISTEN:
@@ -327,7 +327,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
   kspin_lock(&socket->spin_mu);
   // TODO(tcp): ensure this is removed/fixed --- it will preent post-established
   // retransmits.
-  if (get_state_type(socket->state) != TCPSTATE_ESTABLISHED &&
+  if (tcp_state_type(socket->state) != TCPSTATE_ESTABLISHED &&
       socket->state != TCP_SYN_RCVD) {
     kspin_unlock(&socket->spin_mu);
     return -EAGAIN;
@@ -340,7 +340,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
   }
 
   uint32_t unacked_data = socket->send_next - socket->send_unack;
-  if (is_fin_sent(socket) && unacked_data > 0) {
+  if (tcp_is_fin_sent(socket->state) && unacked_data > 0) {
     unacked_data--;
   }
   if (!socket->syn_acked) {
@@ -740,8 +740,8 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
   *action |= TCP_SEND_ACK | TCP_PACKET_DONE;
 }
 
-static bool is_fin_sent(const socket_tcp_t* socket) {
-  switch (socket->state) {
+bool tcp_is_fin_sent(socktcp_state_t state) {
+  switch (state) {
     case TCP_CLOSED:
     case TCP_LISTEN:
     case TCP_SYN_SENT:
@@ -758,7 +758,7 @@ static bool is_fin_sent(const socket_tcp_t* socket) {
     case TCP_TIME_WAIT:
       return true;
   }
-  KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)socket->state);
+  KLOG(DFATAL, "TCP: invalid socket state %d\n", (int)state);
   return false;
 }
 
@@ -801,7 +801,8 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
     socket->syn_acked = true;
     bytes_acked--;  // Account for the SYN.
   }
-  if (seqs_acked > 0 && is_fin_sent(socket) && ack == socket->send_next) {
+  if (seqs_acked > 0 && tcp_is_fin_sent(socket->state) &&
+      ack == socket->send_next) {
     bytes_acked--;  // Account for the FIN.
   }
 
@@ -1426,7 +1427,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   bool send_datafin = false;
   if (how == SHUT_RD || how == SHUT_RDWR) {
     if (sock->recv_shutdown ||
-        get_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
+        tcp_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
       kspin_unlock(&sock->spin_mu);
       return -ENOTCONN;
     }
@@ -1438,7 +1439,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
 
   if (how == SHUT_WR || how == SHUT_RDWR) {
     if (sock->send_shutdown ||
-        get_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
+        tcp_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
       // TODO(tcp): check we have tests for hitting this in all states
       // (including pre-established).
       kspin_unlock(&sock->spin_mu);
@@ -1660,7 +1661,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   kspin_lock(&sock->spin_mu);
   if (sock->state != TCP_CLOSED) {
     int result = 0;
-    switch (get_state_type(sock->state)) {
+    switch (tcp_state_type(sock->state)) {
       case TCPSTATE_PRE_ESTABLISHED:
         result = -EALREADY;
         break;
@@ -1761,7 +1762,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
                               ? APOS_MS_MAX
                               : now + sock->connect_timeout_ms;
   while (now < timeout_end &&
-         get_state_type(sock->state) == TCPSTATE_PRE_ESTABLISHED) {
+         tcp_state_type(sock->state) == TCPSTATE_PRE_ESTABLISHED) {
     int wait_result =
         scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
@@ -2045,7 +2046,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
   } else {
     // In every pre-established state, we should either be CLOSED, or have
     // bound (and therefore be caught above either way).
-    KASSERT_DBG(get_state_type(socket->state) != TCPSTATE_PRE_ESTABLISHED);
+    KASSERT_DBG(tcp_state_type(socket->state) != TCPSTATE_PRE_ESTABLISHED);
     result = -EINVAL;
   }
   kspin_unlock(&socket->spin_mu);
@@ -2061,9 +2062,9 @@ static int sock_tcp_getpeername(socket_t* socket_base,
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
   kspin_lock(&socket->spin_mu);
   int result = 0;
-  if (get_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
+  if (tcp_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
     result = -ENOTCONN;
-  } else if (get_state_type(socket->state) == TCPSTATE_POST_ESTABLISHED) {
+  } else if (tcp_state_type(socket->state) == TCPSTATE_POST_ESTABLISHED) {
     result = -EINVAL;
   } else if (socket->connected_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->bind_addr.sa_family ==      // If connected, must be
