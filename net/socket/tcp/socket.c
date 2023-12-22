@@ -129,6 +129,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
+  sock->segments = LIST_INIT;
   sock->time_wait_ms = TCP_TIME_WAIT_MS;
   sock->syn_acked = false;
   kthread_queue_init(&sock->q);
@@ -241,8 +242,6 @@ static bool is_in_state(socket_tcp_t* sock, socktcp_state_t target_state) {
   return result;
 }
 
-static bool is_fin_sent(const socket_tcp_t* socket);
-
 static void clear_addr(struct sockaddr_storage* addr) {
   kmemset(addr, 0xab, sizeof(struct sockaddr_storage));
   addr->sa_family = AF_UNSPEC;
@@ -291,6 +290,7 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
                                 tcp_segment_t* seg,
                                 pbuf_t* pb,
                                 bool allow_block) {
+  list_push(&socket->segments, &seg->link);
   kspin_unlock(&socket->spin_mu);
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
@@ -307,18 +307,19 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   kspin_lock(&socket->spin_mu);
   KASSERT(socket->state == TCP_SYN_SENT || socket->state == TCP_SYN_RCVD);
 
-  tcp_segment_t seg;
-  tcp_syn_segment(socket, &seg, ack);
+  tcp_segment_t* seg = KMALLOC(tcp_segment_t);
+  tcp_syn_segment(socket, seg, ack);
 
   ip4_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
-  int result = tcp_build_segment(socket, &seg, &pb, &pseudo_ip);
+  int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
   if (result < 0) {
     if (result != -EAGAIN) {
       KLOG(DFATAL, "TCP: unable to create SYN packet: %s\n",
            errorname(-result));
     }
     kspin_unlock(&socket->spin_mu);
+    kfree(seg);
     return result;
   }
   // If this is our first time sending the SYN, advance send_next.
@@ -328,7 +329,7 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
 
   KLOG(DEBUG2, "TCP: socket %p transmitting SYN%s\n", socket,
        ack ? "/ACK" : "");
-  return tcp_transmit_segment(socket, &pseudo_ip, &seg, pb, allow_block);
+  return tcp_transmit_segment(socket, &pseudo_ip, seg, pb, allow_block);
 }
 
 // Sends data and/or a FIN if available.  If no data is ready to be sent,
@@ -350,20 +351,21 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
     return -EAGAIN;
   }
 
-  tcp_segment_t seg;
-  tcp_next_segment(socket, &seg);
+  tcp_segment_t* seg = KMALLOC(tcp_segment_t);
+  tcp_next_segment(socket, seg);
   ip4_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
-  int result = tcp_build_segment(socket, &seg, &pb, &pseudo_ip);
+  int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
   if (result) {
     if (result != -EAGAIN) {
       KLOG(DFATAL, "TCP: unable to create data/FIN packet: %s\n",
            errorname(-result));
     }
     kspin_unlock(&socket->spin_mu);
+    kfree(seg);
     return result;
   }
-  socket->send_next += seg.data_len;
+  socket->send_next += seg->data_len;
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   bool sent_fin = (tcp_hdr->flags & TCP_FLAG_FIN);
   if (sent_fin) {
@@ -396,8 +398,8 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
     }
   }
   KLOG(DEBUG2, "TCP: socket %p transmitting %s%zu bytes of data\n", socket,
-       sent_fin ? "FIN and " : "", seg.data_len);
-  return tcp_transmit_segment(socket, &pseudo_ip, &seg, pb, allow_block);
+       sent_fin ? "FIN and " : "", seg->data_len);
+  return tcp_transmit_segment(socket, &pseudo_ip, seg, pb, allow_block);
 }
 
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
@@ -611,7 +613,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // Check the sequence number of the packet.  The packet must overlap with the
   // receive window.
   uint32_t seq = btoh32(tcp_hdr->seq);
-  if (!validate_seq(socket, seq, tcp_seg_len(tcp_hdr, md))) {
+  if (!validate_seq(socket, seq, tcp_packet_octets(tcp_hdr, md))) {
     // Special case for FIN in TIME_WAIT.
     if (socket->state == TCP_TIME_WAIT) {
       maybe_handle_time_wait_fin(socket, pb, md, seq);
@@ -782,6 +784,22 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
   } else if (seq_lt(ack, socket->send_unack)) {
     KLOG(DEBUG2, "TCP: socket %p got duplicate ACK (ack=%u)\n", socket, ack);
     return;
+  }
+
+  // Consume ack'd segments.
+  while (!list_empty(&socket->segments)) {
+    tcp_segment_t* seg =
+        container_of(socket->segments.head, tcp_segment_t, link);
+    uint32_t seg_len = tcp_seg_len(seg);
+    if (seq_gt(seg->seq + seg_len, ack)) {
+      break;
+    }
+
+    KLOG(DEBUG3, "TCP: socket %p retired segment [%u, %u)\n", socket,
+         seg->seq - socket->initial_seq,
+         seg->seq + seg_len - socket->initial_seq);
+    list_pop(&socket->segments);
+    kfree(seg);
   }
 
   uint32_t seqs_acked = ack - socket->send_unack;
@@ -1272,6 +1290,17 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
     KASSERT(refcount_dec(&socket->ref) > 0);
     DEFINT_POP();
     clear_addr(&socket->bind_addr);
+  }
+
+  while (!list_empty(&socket->segments)) {
+    tcp_segment_t* seg =
+        container_of(socket->segments.head, tcp_segment_t, link);
+    uint32_t seg_len = tcp_seg_len(seg);
+    KLOG(DEBUG3, "TCP: socket %p deleted unacked segment [%u, %u)\n", socket,
+         seg->seq - socket->initial_seq,
+         seg->seq + seg_len - socket->initial_seq);
+    list_pop(&socket->segments);
+    kfree(seg);
   }
 
   KASSERT_DBG(socket->bind_addr.sa_family == AF_UNSPEC);

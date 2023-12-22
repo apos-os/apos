@@ -238,7 +238,8 @@ int tcp_send_raw_rst(const pbuf_t* pb_in, const tcp_packet_metadata_t* md) {
     rst_ack = 0;
   } else {
     rst_seq = 0;
-    rst_ack = htob32(btoh32(tcp_hdr_in->seq) + tcp_seg_len(tcp_hdr_in, md));
+    rst_ack =
+        htob32(btoh32(tcp_hdr_in->seq) + tcp_packet_octets(tcp_hdr_in, md));
     rst_flags |= TCP_FLAG_ACK;
   }
 
@@ -332,10 +333,17 @@ bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md) {
   return true;
 }
 
-uint32_t tcp_seg_len(const tcp_hdr_t* tcp_hdr,
-                     const tcp_packet_metadata_t* md) {
+uint32_t tcp_packet_octets(const tcp_hdr_t* tcp_hdr,
+                           const tcp_packet_metadata_t* md) {
   size_t len = md->data_len;
   if (tcp_hdr->flags & TCP_FLAG_SYN) len++;
   if (tcp_hdr->flags & TCP_FLAG_FIN) len++;
+  return len;
+}
+
+uint32_t tcp_seg_len(const tcp_segment_t* seg) {
+  size_t len = seg->data_len;
+  if (seg->flags & TCP_FLAG_SYN) len++;
+  if (seg->flags & TCP_FLAG_FIN) len++;
   return len;
 }

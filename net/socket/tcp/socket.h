@@ -90,6 +90,9 @@ typedef struct socket_tcp {
   bool syn_acked;         // Has our SYN been ACK'd.
   bool iss_set;           // Has the initial seq been overridden.
 
+  // Transmitted segments that haven't been ACK'd yet.
+  list_t segments;
+
   poll_event_t poll_event;
 
   kthread_queue_t q;

@@ -92,7 +92,9 @@ typedef struct {
 bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md);
 
 // Returns the length of the TCP segment in octets, including SYN/FIN.
-uint32_t tcp_seg_len(const tcp_hdr_t* tcp_hdr, const tcp_packet_metadata_t* md);
+uint32_t tcp_packet_octets(const tcp_hdr_t* tcp_hdr,
+                           const tcp_packet_metadata_t* md);
+uint32_t tcp_seg_len(const tcp_segment_t* seg);
 
 // Sends a RST in response to an incoming packet.
 int tcp_send_raw_rst(const pbuf_t* pb, const tcp_packet_metadata_t* md);
