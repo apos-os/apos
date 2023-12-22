@@ -339,25 +339,11 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
     return -EAGAIN;
   }
 
-  uint32_t unacked_data = socket->send_next - socket->send_unack;
-  if (tcp_is_fin_sent(socket->state) && unacked_data > 0) {
-    unacked_data--;
-  }
-  if (!socket->syn_acked) {
-    KASSERT_DBG(unacked_data == 1);
-    unacked_data--;
-  }
-  KASSERT_DBG(socket->send_buf.len >= unacked_data);
-  size_t data_to_send =
-      min(socket->cwnd,
-          socket->send_wndsize - min(socket->send_wndsize, unacked_data));
-  data_to_send = min(data_to_send, socket->send_buf.len - unacked_data);
-  data_to_send = min(data_to_send, socket->mss);
-
+  tcp_segment_t seg;
+  tcp_next_segment(socket, &seg);
   ip4_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
-  int result = tcp_create_datafin(socket, socket->send_next, data_to_send,
-                                  &pseudo_ip, &pb);
+  int result = tcp_build_segment(socket, &seg, &pb, &pseudo_ip);
   if (result) {
     if (result != -EAGAIN) {
       KLOG(DFATAL, "TCP: unable to create data/FIN packet: %s\n",
@@ -366,7 +352,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
     kspin_unlock(&socket->spin_mu);
     return result;
   }
-  socket->send_next += data_to_send;
+  socket->send_next += seg.data_len;
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   bool sent_fin = (tcp_hdr->flags & TCP_FLAG_FIN);
   if (sent_fin) {
@@ -404,7 +390,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
 
   KLOG(DEBUG2, "TCP: socket %p transmitting %s%zu bytes of data\n", socket,
-       sent_fin ? "FIN and " : "", data_to_send);
+       sent_fin ? "FIN and " : "", seg.data_len);
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
   return ip_send(pb, allow_block);
 }

@@ -17,6 +17,8 @@
 
 #include <stdint.h>
 
+#include "common/list.h"
+#include "dev/timer.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/pbuf.h"
 #include "net/socket/tcp/socket.h"
@@ -47,8 +49,23 @@ _Static_assert(sizeof(tcp_hdr_t) == 20, "Bad tcp_hdr_t size");
 #define TCP_FLAG_ECE (1 << 6)
 #define TCP_FLAG_CWR (1 << 7)
 
+// Metadata for a transmitted TCP segment.  We store the data needed to
+// reconstruct the segment from the socket's buffers, but not the exact flags
+// and metadata sent on the wire.
+typedef struct {
+  uint32_t seq;   // Sequence number start.
+  uint8_t flags;  // TCP flags on the packet (SYN/ACK/FIN).
+  size_t data_len;    // Length of data on the packet (not including SYN/FIN).
+  apos_ms_t tx_time;  // When the packet was transmitted.
+  list_link_t link;
+} tcp_segment_t;
+
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_rst(socket_tcp_t* socket);
+
+// Calculates the next segment to send on the socket --- includes data and
+// possibly a FIN.
+void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out);
 
 // Build a basic packet with the given data length.  Returns the length of the
 // TCP header or -error.  The caller must write data (if any) into the buffer
@@ -59,13 +76,11 @@ int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags, uint32_t seq,
                      size_t data_len, pbuf_t** pb_out,
                      ip4_pseudo_hdr_t* pseudo_ip);
 
-// Create (but does not send) a data/FIN packet.  Does not calculate the
-// checksum (caller must).  Depending on the state of the socket, the requested
-// sequence number start, and length of data, may send data and/or FIN.
-// Requires the socket be spinlocked.
-int tcp_create_datafin(const socket_tcp_t* socket, uint32_t seq_start,
-                       size_t datalen, ip4_pseudo_hdr_t* pseudo_ip,
-                       pbuf_t** pb_out);
+// As above, but takes a segment spec.  Also copies whatever data is necessary
+// from the socket's send buffer.  Does not include the IP header or calculate
+// the checksum.
+int tcp_build_segment(const socket_tcp_t* socket, const tcp_segment_t* seg,
+                      pbuf_t** pb_out, ip4_pseudo_hdr_t* pseudo_ip);
 
 typedef struct {
   struct sockaddr_storage src;

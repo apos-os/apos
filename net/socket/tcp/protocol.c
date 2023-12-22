@@ -132,10 +132,27 @@ int tcp_send_rst(socket_tcp_t* socket) {
                                 /* allow_block */ false);
 }
 
-int tcp_create_datafin(const socket_tcp_t* socket, uint32_t seq_start,
-                       size_t data_to_send, ip4_pseudo_hdr_t* pseudo_ip,
-                       pbuf_t** pb_out) {
-  KASSERT(kspin_is_held(&socket->spin_mu));
+void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out) {
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+
+  // Figure out how much data to send.
+  uint32_t unacked_data = socket->send_next - socket->send_unack;
+  if (tcp_is_fin_sent(socket->state) && unacked_data > 0) {
+    unacked_data--;
+  }
+  if (!socket->syn_acked) {
+    KASSERT_DBG(unacked_data == 1);
+    unacked_data--;
+  }
+  KASSERT_DBG(socket->send_buf.len >= unacked_data);
+  size_t data_to_send =
+      min(socket->cwnd,
+          socket->send_wndsize - min(socket->send_wndsize, unacked_data));
+  data_to_send = min(data_to_send, socket->send_buf.len - unacked_data);
+  data_to_send = min(data_to_send, socket->mss);
+
+  // Determine if we should also send a FIN.
+  uint32_t seq_start = socket->send_next;
   bool send_fin = false;
   if (socket->send_shutdown) {
     uint32_t fin_seq = socket->send_buf_seq + socket->send_buf.len;
@@ -146,30 +163,44 @@ int tcp_create_datafin(const socket_tcp_t* socket, uint32_t seq_start,
       send_fin = true;
     }
   }
-  uint32_t send_buf_offset = seq_start - socket->send_buf_seq;
-  if (data_to_send == 0 && !send_fin) {
+
+  seg_out->seq = seq_start;
+  seg_out->data_len = data_to_send;
+  seg_out->flags = TCP_FLAG_ACK;
+  if (send_fin) seg_out->flags |= TCP_FLAG_FIN;
+  seg_out->tx_time = 0;
+  seg_out->link = LIST_LINK_INIT;
+}
+
+int tcp_build_segment(const socket_tcp_t* socket, const tcp_segment_t* seg,
+                      pbuf_t** pb_out, ip4_pseudo_hdr_t* pseudo_ip) {
+  if (seg->data_len == 0 && !(seg->flags & TCP_FLAG_SYN) &&
+      !(seg->flags & TCP_FLAG_FIN)) {
     return -EAGAIN;
   }
-  KASSERT_DBG(socket->send_buf.len >= send_buf_offset);
 
   // Build the TCP header (minus checksum).
   pbuf_t* pb = NULL;
-  uint32_t flags = TCP_FLAG_ACK;
-  if (send_fin) flags |= TCP_FLAG_FIN;
-  int result =
-      tcp_build_packet(socket, flags, seq_start, data_to_send, &pb, pseudo_ip);
+  int result = tcp_build_packet(socket, seg->flags, seg->seq, seg->data_len,
+                                &pb, pseudo_ip);
   if (result < 0) {
     return result;
   }
 
-  size_t bytes_copied =
-      circbuf_peek(&socket->send_buf, pbuf_get(pb) + sizeof(tcp_hdr_t),
-                   send_buf_offset, data_to_send);
-  if (bytes_copied != data_to_send) {
-    KLOG(DFATAL, "TCP: unable to copy %zd bytes to packet (copied %zd)\n",
-         data_to_send, bytes_copied);
-    pbuf_free(pb);
-    return -ENOMEM;
+  if (seg->data_len > 0) {
+    // Note: this doesn't handle SYN+data correctly.
+    uint32_t send_buf_offset = seg->seq - socket->send_buf_seq;
+    KASSERT_DBG(socket->send_buf.len >= send_buf_offset);
+    KASSERT_DBG(seg->data_len <= socket->send_buf.len - send_buf_offset);
+    size_t bytes_copied =
+        circbuf_peek(&socket->send_buf, pbuf_get(pb) + sizeof(tcp_hdr_t),
+                     send_buf_offset, seg->data_len);
+    if (bytes_copied != seg->data_len) {
+      KLOG(DFATAL, "TCP: unable to copy %zd bytes to packet (copied %zd)\n",
+           seg->data_len, bytes_copied);
+      pbuf_free(pb);
+      return -ENOMEM;
+    }
   }
   *pb_out = pb;
   return 0;
