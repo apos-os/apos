@@ -220,6 +220,7 @@ static void delete_socket(socket_tcp_t* socket) {
   KASSERT_DBG(socket->ref.ref == 0);
   KASSERT_DBG(socket->parent == NULL);
   KASSERT_DBG(socket->state == TCP_CLOSED_DONE);
+  KASSERT_DBG(socket->timer == TIMER_HANDLE_NONE);
   kfree(socket->send_buf.buf);
   kfree(socket->recv_buf.buf);
   kfree(socket);
@@ -528,16 +529,32 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
 static void tcp_timer_cb(void* arg);
 static void tcp_timer_defint(void* arg);
 
+// Updates the current TCP timer.  If the timer is currently set, only updates
+// the timer if force == true.  If no timer is running, always creates.
 static void tcp_set_timer(socket_tcp_t* socket, int duration_ms, bool force) {
   apos_ms_t deadline = get_time_ms() + duration_ms;
   KASSERT(kspin_is_held(&socket->spin_mu));
   PUSH_AND_DISABLE_INTERRUPTS();
-  if (socket->timer != TIMER_HANDLE_NONE &&
-      (force || socket->timer_deadline > deadline)) {
+  if (socket->timer != TIMER_HANDLE_NONE && force) {
     cancel_event_timer(socket->timer);
     socket->timer = TIMER_HANDLE_NONE;
   }
-  register_event_timer(deadline, &tcp_timer_cb, socket, &socket->timer);
+  if (socket->timer == TIMER_HANDLE_NONE) {
+    register_event_timer(deadline, &tcp_timer_cb, socket, &socket->timer);
+    socket->timer_deadline = deadline;
+  }
+  POP_INTERRUPTS();
+}
+
+// Cancels the current TCP timer, if any.
+static void tcp_cancel_timer(socket_tcp_t* socket) {
+  KASSERT(kspin_is_held(&socket->spin_mu));
+  PUSH_AND_DISABLE_INTERRUPTS();
+  if (socket->timer != TIMER_HANDLE_NONE) {
+    cancel_event_timer(socket->timer);
+    socket->timer = TIMER_HANDLE_NONE;
+  }
+  socket->timer_deadline = APOS_MS_MAX;
   POP_INTERRUPTS();
 }
 
@@ -552,7 +569,18 @@ static void tcp_timer_defint(void* arg) {
   socket_tcp_t* socket = arg;
   kspin_lock(&socket->spin_mu);
   if (socket->state == TCP_CLOSED_DONE) {
+    KLOG(DEBUG, "TCP: socket %p ignoring timer post-close\n", socket);
     kspin_unlock(&socket->spin_mu);
+    TCP_DEC_REFCOUNT(socket);
+    return;
+  }
+
+  // If the next timer is set in the future, this is a spurious timer and
+  // should be ignored.
+  if (socket->timer_deadline > get_time_ms()) {
+    KLOG(DEBUG, "TCP: socket %p ignoring spurious timer\n", socket);
+    kspin_unlock(&socket->spin_mu);
+    TCP_DEC_REFCOUNT(socket);
     return;
   }
 
@@ -1280,12 +1308,7 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
 
   // Cancel any pending timers.  A timer may be about to run (if it holds a
   // reference) once we unlock --- it will find the socket closed.
-  PUSH_AND_DISABLE_INTERRUPTS();
-  if (socket->timer != TIMER_HANDLE_NONE) {
-    cancel_event_timer(socket->timer);
-    socket->timer = TIMER_HANDLE_NONE;
-  }
-  POP_INTERRUPTS();
+  tcp_cancel_timer(socket);
 
   KASSERT(socket->state != TCP_CLOSED_DONE);
 
