@@ -29,6 +29,12 @@
      typeof (b) _b = (b); \
    _a > _b ? _a : _b; })
 
+#define abs(x)          \
+  ({                    \
+    typeof(x) _x = (x); \
+    _x < 0 ? -_x : _x;  \
+  })
+
 // Does integer division of a by b, but takes the ceiling of the result, not the
 // floor.
 #define ceiling_div(a, b) \
