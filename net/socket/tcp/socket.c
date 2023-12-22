@@ -284,6 +284,24 @@ static int bind_if_necessary(socket_tcp_t* socket,
                               /* allow_rebind = */ true);
 }
 
+// Transmit a constructed segment.  Requires the socket be locked, but unlocks
+// it before calculating the checksum and transmitting.
+static int tcp_transmit_segment(socket_tcp_t* socket,
+                                const ip4_pseudo_hdr_t* pseudo_ip,
+                                tcp_segment_t* seg,
+                                pbuf_t* pb,
+                                bool allow_block) {
+  kspin_unlock(&socket->spin_mu);
+
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  KASSERT_DBG(tcp_hdr->flags == seg->flags);
+  tcp_hdr->checksum = ip_checksum2(pseudo_ip, sizeof(ip4_pseudo_hdr_t),
+                                   pbuf_get(pb), pbuf_size(pb));
+
+  ip4_add_hdr(pb, pseudo_ip->src_addr, pseudo_ip->dst_addr, IPPROTO_TCP);
+  return ip_send(pb, allow_block);
+}
+
 // Sends a SYN (and updates socket->send_next).
 static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   kspin_lock(&socket->spin_mu);
@@ -307,17 +325,10 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   if (socket->send_next == socket->initial_seq) {
     socket->send_next++;
   }
-  kspin_unlock(&socket->spin_mu);
-
-  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
-  KASSERT_DBG(tcp_hdr->flags == seg.flags);
-  tcp_hdr->checksum =
-      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
 
   KLOG(DEBUG2, "TCP: socket %p transmitting SYN%s\n", socket,
        ack ? "/ACK" : "");
-  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
-  return ip_send(pb, allow_block);
+  return tcp_transmit_segment(socket, &pseudo_ip, &seg, pb, allow_block);
 }
 
 // Sends data and/or a FIN if available.  If no data is ready to be sent,
@@ -384,15 +395,9 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
         break;
     }
   }
-  kspin_unlock(&socket->spin_mu);
-
-  tcp_hdr->checksum =
-      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
-
   KLOG(DEBUG2, "TCP: socket %p transmitting %s%zu bytes of data\n", socket,
        sent_fin ? "FIN and " : "", seg.data_len);
-  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
-  return ip_send(pb, allow_block);
+  return tcp_transmit_segment(socket, &pseudo_ip, &seg, pb, allow_block);
 }
 
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
