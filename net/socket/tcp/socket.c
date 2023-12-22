@@ -289,12 +289,12 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   kspin_lock(&socket->spin_mu);
   KASSERT(socket->state == TCP_SYN_SENT || socket->state == TCP_SYN_RCVD);
 
+  tcp_segment_t seg;
+  tcp_syn_segment(socket, &seg, ack);
+
   ip4_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
-  uint32_t flags = TCP_FLAG_SYN;
-  if (ack) flags |= TCP_FLAG_ACK;
-  int result = tcp_build_packet(socket, flags, socket->initial_seq,
-                                /* data_len */ 0, &pb, &pseudo_ip);
+  int result = tcp_build_segment(socket, &seg, &pb, &pseudo_ip);
   if (result < 0) {
     if (result != -EAGAIN) {
       KLOG(DFATAL, "TCP: unable to create SYN packet: %s\n",
@@ -310,12 +310,12 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   kspin_unlock(&socket->spin_mu);
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
-  KASSERT_DBG(tcp_hdr->flags == flags);
+  KASSERT_DBG(tcp_hdr->flags == seg.flags);
   tcp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
 
   KLOG(DEBUG2, "TCP: socket %p transmitting SYN%s\n", socket,
-       (flags & TCP_FLAG_ACK) ? "/ACK" : "");
+       ack ? "/ACK" : "");
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
   return ip_send(pb, allow_block);
 }

@@ -45,9 +45,9 @@ static const tcp_hdr_t* pb_tcp_hdr(const pbuf_t* pb) {
   return (const tcp_hdr_t*)(pbuf_getc(pb) + ip_hdr_len);
 }
 
-int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags, uint32_t seq,
-                     size_t data_len, pbuf_t** pb_out,
-                     ip4_pseudo_hdr_t* pseudo_ip) {
+static int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags,
+                            uint32_t seq, size_t data_len, pbuf_t** pb_out,
+                            ip4_pseudo_hdr_t* pseudo_ip) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
 
   // In some race conditions we can attempt to send a packet an a connection
@@ -130,6 +130,16 @@ int tcp_send_ack(socket_tcp_t* socket) {
 int tcp_send_rst(socket_tcp_t* socket) {
   return send_flags_only_packet(socket, TCP_FLAG_RST | TCP_FLAG_ACK,
                                 /* allow_block */ false);
+}
+
+void tcp_syn_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out,
+                     bool ack) {
+  seg_out->seq = socket->initial_seq;
+  seg_out->data_len = 0;
+  seg_out->flags = TCP_FLAG_SYN;
+  if (ack) seg_out->flags |= TCP_FLAG_ACK;
+  seg_out->tx_time = 0;
+  seg_out->link = LIST_LINK_INIT;
 }
 
 void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out) {

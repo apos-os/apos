@@ -63,22 +63,19 @@ typedef struct {
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_rst(socket_tcp_t* socket);
 
+// Creates a SYN or SYN/ACK segment for the socket.
+void tcp_syn_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out,
+                     bool ack);
+
 // Calculates the next segment to send on the socket --- includes data and
 // possibly a FIN.
 void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out);
 
-// Build a basic packet with the given data length.  Returns the length of the
-// TCP header or -error.  The caller must write data (if any) into the buffer
-// after the header and is responsible for calculating the checksum.
+// Build a packet from the segment spec, copying data from the socket's send
+// buffer as needed.  Returns the length of the TCP header or -error.  Does not
+// include the IP header or calculate the checksum.
 //
 // Requires the socket be spinlocked.
-int tcp_build_packet(const socket_tcp_t* socket, int tcp_flags, uint32_t seq,
-                     size_t data_len, pbuf_t** pb_out,
-                     ip4_pseudo_hdr_t* pseudo_ip);
-
-// As above, but takes a segment spec.  Also copies whatever data is necessary
-// from the socket's send buffer.  Does not include the IP header or calculate
-// the checksum.
 int tcp_build_segment(const socket_tcp_t* socket, const tcp_segment_t* seg,
                       pbuf_t** pb_out, ip4_pseudo_hdr_t* pseudo_ip);
 
