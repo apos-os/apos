@@ -65,6 +65,10 @@
 
 #define TCP_TIME_WAIT_MS 60000
 
+#define TCP_DEFAULT_RTO_MS 1000
+#define TCP_DEFAULT_MIN_RTO_MS 1000
+#define TCP_MAX_RTO_MS 60000
+
 static const socket_ops_t g_tcp_socket_ops;
 
 static short tcp_poll_events(const socket_tcp_t* socket);
@@ -129,6 +133,10 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
+  sock->rto_ms = TCP_DEFAULT_RTO_MS;
+  sock->rto_min_ms = TCP_DEFAULT_MIN_RTO_MS;
+  sock->srtt_ms = -1;
+  sock->rttvar = 0;
   sock->segments = LIST_INIT;
   sock->time_wait_ms = TCP_TIME_WAIT_MS;
   sock->syn_acked = false;
@@ -290,6 +298,8 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
                                 tcp_segment_t* seg,
                                 pbuf_t* pb,
                                 bool allow_block) {
+  seg->retransmits = 0;
+  seg->tx_time = get_time_ms();
   list_push(&socket->segments, &seg->link);
   kspin_unlock(&socket->spin_mu);
 
@@ -770,6 +780,36 @@ static void syn_rcvd_connected(socket_tcp_t* socket) {
   }
 }
 
+static void segment_acked(socket_tcp_t* socket, tcp_segment_t* seg,
+                          uint32_t seg_len) {
+  if (seg->retransmits == 0) {
+    int rtt_ms = get_time_ms() - seg->tx_time;
+    KASSERT_DBG(rtt_ms >= 0);
+    if (socket->srtt_ms < 0) {
+      // First measurement.
+      socket->srtt_ms = rtt_ms;
+      socket->rttvar = rtt_ms / 2;
+    } else {
+      // RTTVAR <- (1 - beta) * RTTVAR + beta * |SRTT - R'|
+      socket->rttvar =
+          3 * (socket->rttvar / 4) + abs(socket->srtt_ms - rtt_ms) / 4;
+      // SRTT <- (1 - alpha) * SRTT + alpha * R'
+      socket->srtt_ms = 7 * (socket->srtt_ms / 8) + rtt_ms / 8;
+    }
+    // RTO <- SRTT + max (G, K*RTTVAR)
+    socket->rto_ms = socket->srtt_ms + max(KTIMESLICE_MS, 4 * socket->rttvar);
+    socket->rto_ms = max(socket->rto_ms, socket->rto_min_ms);
+    socket->rto_ms = min(socket->rto_ms, TCP_MAX_RTO_MS);
+    KLOG(DEBUG3,
+         "TCP: socket %p segment RTT: %dms -> "
+         "SRTT %dms; RTTVAR %dms; RTO %dms\n",
+         socket, rtt_ms, socket->srtt_ms, socket->rttvar, socket->rto_ms);
+  }
+  KLOG(DEBUG3, "TCP: socket %p retired segment [%u, %u) (retransmits: %d)\n",
+       socket, seg->seq - socket->initial_seq,
+       seg->seq + seg_len - socket->initial_seq, seg->retransmits);
+}
+
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
@@ -795,9 +835,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       break;
     }
 
-    KLOG(DEBUG3, "TCP: socket %p retired segment [%u, %u)\n", socket,
-         seg->seq - socket->initial_seq,
-         seg->seq + seg_len - socket->initial_seq);
+    segment_acked(socket, seg, seg_len);
     list_pop(&socket->segments);
     kfree(seg);
   }

@@ -90,6 +90,12 @@ typedef struct socket_tcp {
   bool syn_acked;         // Has our SYN been ACK'd.
   bool iss_set;           // Has the initial seq been overridden.
 
+  // Retransmit state.
+  int rto_ms;   // Retransmit time.
+  int srtt_ms;  // Smoothed RTT measurement.
+  int rttvar;   // RTT variance.
+  int rto_min_ms;  // Minimum RTO value.
+
   // Transmitted segments that haven't been ACK'd yet.
   list_t segments;
 

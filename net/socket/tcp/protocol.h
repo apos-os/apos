@@ -56,6 +56,7 @@ typedef struct {
   uint32_t seq;   // Sequence number start.
   uint8_t flags;  // TCP flags on the packet (SYN/ACK/FIN).
   size_t data_len;    // Length of data on the packet (not including SYN/FIN).
+  int retransmits;    // How many times this segment has been retransmitted.
   apos_ms_t tx_time;  // When the packet was transmitted.
   list_link_t link;
 } tcp_segment_t;
