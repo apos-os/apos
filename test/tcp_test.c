@@ -33,6 +33,7 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 #include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -141,6 +142,16 @@ static const char* do_read(int sock) { return do_read_len(sock, 99); }
 static int set_initial_seqno(int socket, int initial_seq) {
   return net_setsockopt(socket, IPPROTO_TCP, SO_TCP_SEQ_NUM, &initial_seq,
                         sizeof(initial_seq));
+}
+
+static int set_rto(int socket, int rto_ms) {
+  int result =
+      net_setsockopt(socket, IPPROTO_TCP, SO_TCP_RTO, &rto_ms, sizeof(rto_ms));
+  if (result) {
+    return result;
+  }
+  return net_setsockopt(socket, IPPROTO_TCP, SO_TCP_RTO_MIN, &rto_ms,
+                        sizeof(rto_ms));
 }
 
 static int getsockname_inet(int socket, struct sockaddr_in* sin) {
@@ -821,6 +832,18 @@ static bool raw_has_packets_wait(tcp_test_state_t* s, int timeout_ms) {
 
 static bool raw_has_packets(tcp_test_state_t* s) {
   return raw_has_packets_wait(s, 0);
+}
+
+// Drains all pending packets from the raw socket, returning the number of
+// packets removed.
+static int raw_drain_packets(tcp_test_state_t* s) {
+  char buf;
+  int result = 0;
+  while (socket_has_data(s->raw_socket, 0)) {
+    KEXPECT_EQ(1, vfs_read(s->raw_socket, &buf, 1));
+    result++;
+  }
+  return result;
 }
 
 static ssize_t do_raw_recv(tcp_test_state_t* s) {
@@ -2810,7 +2833,6 @@ static void simultaneous_connect_shutdown_wr_test7(void) {
   cleanup_tcp_test(&s);
 }
 
-// TODO(tcp): test retransmission of SYNACK in SYN_RCVD (from LISTEN) state.
 // TODO(tcp): allow send() in SYN_RCVD (and that FINs are queued after data).
 
 static void connect_tests(void) {
@@ -9106,6 +9128,324 @@ static void poll_tests(void) {
   poll_error_test();
 }
 
+static void basic_retransmit_test(void) {
+  KTEST_BEGIN("TCP: basic data retransmit");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  set_rto(s.socket, 40);
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 504));
+
+  ksleep(200);
+  SEND_PKT(&s, ACK_PKT(/* seq */ 504, /* ack */ 106));
+
+  // We should have gotten at least two retransmits.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 504, "12345"));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 504, "12345"));
+  set_rto(s.socket, 1000);
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 106));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 505));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 106, /* ack */ 505));
+  SEND_PKT(&s, ACK_PKT(505, /* ack */ 107));
+
+  cleanup_tcp_test(&s);
+}
+
+static void basic_retransmit_test2(void) {
+  KTEST_BEGIN("TCP: basic data retransmit (no retransmit needed)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  set_rto(s.socket, 20);
+  KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+
+  ksleep(50);
+  KEXPECT_EQ(0, raw_drain_packets(&s));
+  set_rto(s.socket, 1000);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 5, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void basic_retransmit_test3(void) {
+  KTEST_BEGIN(
+      "TCP: basic data retransmit (retransmit reset when only some segments "
+      "ACK'd)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  set_rto(s.socket, 300);
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "123"));
+  KEXPECT_EQ(2, vfs_write(s.socket, "45", 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "45"));
+
+  ksleep(250);
+  // Ack only the first segment.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  ksleep(100);
+  // The RTO should have been reset --- and the second one not retransmitted.
+  KEXPECT_EQ(0, raw_drain_packets(&s));
+
+  // After a total of 350 ms, the second one should retransmit as well.
+  ksleep(250);
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "45"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+
+  set_rto(s.socket, 1000);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 5, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void basic_retransmit_test4(void) {
+  KTEST_BEGIN("TCP: basic data retransmit (multi- and partial-segment ACK)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Transmit three segments, then ack the first 2.5 of them.  The full third
+  // segment should get retransmitted.
+  set_rto(s.socket, 40);
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "123"));
+  KEXPECT_EQ(2, vfs_write(s.socket, "45", 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "45"));
+  KEXPECT_EQ(3, vfs_write(s.socket, "678", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 501, "678"));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 108));
+
+  ksleep(80);
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 108, /* ack */ 501, "8"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 109));
+
+  // The RTO should have been reset --- and the second one not retransmitted.
+  KEXPECT_LT(raw_drain_packets(&s), 2);
+
+  set_rto(s.socket, 1000);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 8, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void retransmit_syn_test(void) {
+  KTEST_BEGIN("TCP: SYN retransmit (connect())");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  set_rto(s.socket, 10);
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+
+  ksleep(50);
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  set_rto(s.socket, 1000);
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void retransmit_synack_test(void) {
+  KTEST_BEGIN("TCP: retransmit SYN/ACK (listen/accept)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  // Send a SYN, complete the connection.
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 2000);
+  set_rto(s.socket, 10);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 0));
+
+  ksleep(40);
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 0));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 0));
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
+static void retransmit_synack_test2(void) {
+  KTEST_BEGIN("TCP: SYN/ACK retransmit (simultaneous connect)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  set_rto(s.socket, 40);
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+
+  // We should get a SYN-ACK back.
+  EXPECT_PKT(&s, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_RCVD", get_sock_state(s.socket));
+
+  ksleep(50);
+  EXPECT_PKT(&s, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  set_rto(s.socket, 1000);
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+}
+
+static void retransmit_fin_test(void) {
+  KTEST_BEGIN("TCP: retransmit FIN (active close)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Shutdown the connection from this side.
+  set_rto(s.socket, 10);
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+
+  ksleep(20);
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  cleanup_tcp_test(&s);
+}
+
+static void retransmit_fin_test2(void) {
+  KTEST_BEGIN("TCP: retransmit FIN (passive close)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+
+  // Shutdown the connection from this side.
+  set_rto(s.socket, 10);
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  ksleep(20);
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_LT(raw_drain_packets(&s), 4);
+
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void retransmit_tests(void) {
+  basic_retransmit_test();
+  basic_retransmit_test2();
+  if (RUN_SLOW_TIMING_TESTS) {
+    basic_retransmit_test3();
+    basic_retransmit_test4();
+  }
+  retransmit_syn_test();
+  retransmit_synack_test();
+  retransmit_synack_test2();
+  retransmit_fin_test();
+  retransmit_fin_test2();
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -9133,6 +9473,7 @@ void tcp_test(void) {
     close_shutdown_test();
     listen_tests();
     poll_tests();
+    retransmit_tests();
   }
 
   KTEST_BEGIN("vfs: vnode leak verification");

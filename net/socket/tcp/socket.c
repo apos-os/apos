@@ -234,6 +234,9 @@ static void delete_socket(socket_tcp_t* socket) {
     _socket_var = NULL;                           \
   } while (0)
 
+static void tcp_set_timer(socket_tcp_t* socket, int duration_ms, bool force);
+static void tcp_cancel_timer(socket_tcp_t* socket);
+
 // Helper to determine if we're currently in a particular state without having
 // the spinlock held.  Only some states can be checked "racily" --- states that
 // if the socket is in, deferred interrupts will never transition out of (only
@@ -302,6 +305,7 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
   seg->retransmits = 0;
   seg->tx_time = get_time_ms();
   list_push(&socket->segments, &seg->link);
+  tcp_set_timer(socket, socket->rto_ms, false);
   kspin_unlock(&socket->spin_mu);
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
@@ -311,6 +315,36 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
 
   ip4_add_hdr(pb, pseudo_ip->src_addr, pseudo_ip->dst_addr, IPPROTO_TCP);
   return ip_send(pb, allow_block);
+}
+
+static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
+  seg->retransmits++;
+
+  ip4_pseudo_hdr_t pseudo_ip;
+  pbuf_t* pb = NULL;
+  int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
+  if (result < 0) {
+    KLOG(DFATAL,
+         "TCP: socket %p unable to reconstruct segment to retransmit: %s\n",
+         socket, errorname(-result));
+    kspin_unlock(&socket->spin_mu);
+    return;
+  }
+
+  kspin_unlock(&socket->spin_mu);
+
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  KASSERT_DBG(tcp_hdr->flags == seg->flags);
+  tcp_hdr->checksum = ip_checksum2(&pseudo_ip, sizeof(ip4_pseudo_hdr_t),
+                                   pbuf_get(pb), pbuf_size(pb));
+
+  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
+  result = ip_send(pb, /* allow_block */ false);
+
+  if (result < 0) {
+    KLOG(WARNING, "TCP: socket %p unable to retransmit packet: %s\n", socket,
+         errorname(-result));
+  }
 }
 
 // Sends a SYN (and updates socket->send_next).
@@ -348,8 +382,6 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
 static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
   // Figure out how much data to send.
   kspin_lock(&socket->spin_mu);
-  // TODO(tcp): ensure this is removed/fixed --- it will preent post-established
-  // retransmits.
   if (tcp_state_type(socket->state) != TCPSTATE_ESTABLISHED &&
       socket->state != TCP_SYN_RCVD) {
     kspin_unlock(&socket->spin_mu);
@@ -494,7 +526,7 @@ typedef enum {
   TCP_SEND_ACK = 0x4,          // Send an ACK.
   TCP_RESET_CONNECTION = 0x8,  // Send a RST and reset the connection.
                                // Resetting implies we are done with the packet.
-  TCP_RESEND_SYNACK = 0x10,    // Retransmit a SYN-ACK.
+  TCP_RETRANSMIT = 0x10,       // Retransmit the first (oldest) segment.
 } tcp_pkt_action_t;
 
 // Handlers for different types of packet scenarios.  Multiple of these may be
@@ -528,6 +560,7 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason);
 
 static void tcp_timer_cb(void* arg);
 static void tcp_timer_defint(void* arg);
+static void handle_retransmit_timer(socket_tcp_t* socket);
 
 // Updates the current TCP timer.  If the timer is currently set, only updates
 // the timer if force == true.  If no timer is running, always creates.
@@ -584,12 +617,63 @@ static void tcp_timer_defint(void* arg) {
     return;
   }
 
-  // Timers are only used in TIME_WAIT currently.
-  KASSERT(socket->state == TCP_TIME_WAIT);
-  finish_protocol_close(socket, "TIME_WAIT finished");
-  kspin_unlock(&socket->spin_mu);
+  if (socket->state == TCP_TIME_WAIT) {
+    finish_protocol_close(socket, "TIME_WAIT finished");
+    kspin_unlock(&socket->spin_mu);
+  } else {
+    handle_retransmit_timer(socket);
+    // handle_retransmit_timer() handles the unlock.
+  }
 
   TCP_DEC_REFCOUNT(socket);
+}
+
+static void handle_retransmit_timer(socket_tcp_t* socket) {
+  if (list_empty(&socket->segments)) {
+    KLOG(DFATAL, "TCP: socket %p fired RTO timer but has no segments\n",
+         socket);
+    kspin_unlock(&socket->spin_mu);
+    return;
+  }
+
+  // Possibly configurations of segment seq and socket->send_unack:
+  //    u     |   <-- typical (send_unack aligned with unack'd segment)
+  //    |  u  |   <-- atypical (segment partially ack'd)
+  // u  |     |   <-- not allowed (we're missing a segment)
+  //    |     | u <-- not allowed (segment was fully ack'd)
+
+  tcp_segment_t* seg = container_of(socket->segments.head, tcp_segment_t, link);
+  uint32_t seg_len = tcp_seg_len(seg);
+  KASSERT_DBG(seq_ge(socket->send_unack, seg->seq));
+  KASSERT_DBG(seq_lt(socket->send_unack, seg->seq + seg_len));
+
+  // If part of the segment was acknowledged, for some reason, truncate this
+  // segment to only retransmit the unacked portion.
+  if (seg->seq != socket->send_unack) {
+    uint32_t bytes_trunc = (socket->send_unack - seg->seq);
+    KLOG(DEBUG,
+         "TCP: socket %p truncating partially-acked segment for retransmit "
+         "(seq %u -> %d; %u bytes less)\n",
+         socket, seg->seq - socket->initial_seq,
+         socket->send_unack - socket->initial_seq, bytes_trunc);
+    seg->seq = socket->send_unack;
+    seg->data_len -= bytes_trunc;
+    KASSERT_DBG(!(seg->flags & TCP_FLAG_SYN));  // Could support this if needed.
+  }
+
+  socket->rto_ms = min(socket->rto_ms * 2, TCP_MAX_RTO_MS);
+  KLOG(DEBUG,
+       "TCP: socket %p retransmitting segment [%u, %u) (retransmits: %d); RTO "
+       "-> %dms\n",
+       socket, seg->seq - socket->initial_seq,
+       seg->seq + seg_len - socket->initial_seq, seg->retransmits,
+       socket->rto_ms);
+
+  // TODO(tcp): if retransitting a SYN, set RTO to 3s when we reach ESTABLISHED
+  // (per RFC 6298).
+
+  tcp_set_timer(socket, socket->rto_ms, /* force */ true);
+  tcp_retransmit_segment(socket, seg);  // Unlocks the socket.
 }
 
 // Resets the connection state, but does _not_ set a socket error or send a RST.
@@ -734,12 +818,16 @@ done:
     return true;
   }
 
-  if (action & TCP_RESEND_SYNACK) {
-    result = tcp_send_syn(socket, /* ack */ true, /* allow_block */ false);
-    if (result != 0) {
-      KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", socket,
-           errorname(-result));
+  if (action & TCP_RETRANSMIT) {
+    kspin_lock(&socket->spin_mu);
+    if (list_empty(&socket->segments)) {
+      KLOG(DFATAL, "TCP: socket %p cannot retransmit, no segments\n", socket);
+      kspin_unlock(&socket->spin_mu);
+      return true;
     }
+    tcp_segment_t* seg =
+        container_of(socket->segments.head, tcp_segment_t, link);
+    tcp_retransmit_segment(socket, seg);  // Handles socket unlock.
     return true;
   }
 
@@ -825,13 +913,15 @@ static void segment_acked(socket_tcp_t* socket, tcp_segment_t* seg,
       socket->srtt_ms = 7 * (socket->srtt_ms / 8) + rtt_ms / 8;
     }
     // RTO <- SRTT + max (G, K*RTTVAR)
+    int old_rto = socket->rto_ms;
     socket->rto_ms = socket->srtt_ms + max(KTIMESLICE_MS, 4 * socket->rttvar);
     socket->rto_ms = max(socket->rto_ms, socket->rto_min_ms);
     socket->rto_ms = min(socket->rto_ms, TCP_MAX_RTO_MS);
     KLOG(DEBUG3,
          "TCP: socket %p segment RTT: %dms -> "
-         "SRTT %dms; RTTVAR %dms; RTO %dms\n",
-         socket, rtt_ms, socket->srtt_ms, socket->rttvar, socket->rto_ms);
+         "SRTT %dms; RTTVAR %dms; RTO %dms -> %dms\n",
+         socket, rtt_ms, socket->srtt_ms, socket->rttvar, old_rto,
+         socket->rto_ms);
   }
   KLOG(DEBUG3, "TCP: socket %p retired segment [%u, %u) (retransmits: %d)\n",
        socket, seg->seq - socket->initial_seq,
@@ -855,6 +945,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   // Consume ack'd segments.
+  int segs_acked = 0;
   while (!list_empty(&socket->segments)) {
     tcp_segment_t* seg =
         container_of(socket->segments.head, tcp_segment_t, link);
@@ -863,9 +954,16 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       break;
     }
 
+    segs_acked++;
     segment_acked(socket, seg, seg_len);
     list_pop(&socket->segments);
     kfree(seg);
+  }
+
+  if (list_empty(&socket->segments) && socket->state != TCP_TIME_WAIT) {
+    tcp_cancel_timer(socket);
+  } else if (segs_acked > 0) {
+    tcp_set_timer(socket, socket->rto_ms, true);
   }
 
   uint32_t seqs_acked = ack - socket->send_unack;
@@ -888,7 +986,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
     return;
   }
   // TODO(tcp): handle window updates properly (track WL1/WL2).
-  socket->send_unack = btoh32(tcp_hdr->ack);
+  socket->send_unack = ack;
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
   KLOG(DEBUG2,
        "TCP: socket %p had %u octets acked (data bytes acked: %u; remaining "
@@ -930,7 +1028,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       // If our FIN is acked, move to TIME_WAIT.
       if (socket->send_unack == socket->send_next) {
         set_state(socket, TCP_TIME_WAIT, "FIN ack'd");
-        tcp_set_timer(socket, socket->time_wait_ms, /* force */ false);
+        tcp_set_timer(socket, socket->time_wait_ms, /* force */ true);
       }
       break;
 
@@ -997,7 +1095,7 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
       set_state(socket, TCP_TIME_WAIT, "FIN received");
       socket->recv_next++;
       *action |= TCP_SEND_ACK;
-      tcp_set_timer(socket, socket->time_wait_ms, /* force */ false);
+      tcp_set_timer(socket, socket->time_wait_ms, /* force */ true);
       return;
 
     case TCP_SYN_RCVD:
@@ -1165,10 +1263,28 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
       socket->send_unack = btoh32(tcp_hdr->ack);
       KASSERT_DBG(socket->send_unack == socket->send_next);
       socket->syn_acked = true;
+
+      tcp_segment_t* seg =
+          container_of(socket->segments.head, tcp_segment_t, link);
+      KASSERT_DBG(seg->flags == TCP_FLAG_SYN);
+      KASSERT_DBG(seg->data_len == 0);
+      KASSERT_DBG(seg->seq == socket->initial_seq);
+      tcp_cancel_timer(socket);
+      segment_acked(socket, seg, 1);
+      list_pop(&socket->segments);
+      kfree(seg);
     } else {
       set_state(socket, TCP_SYN_RCVD, "SYN received (simultaneous open)");
       KASSERT_DBG(socket->send_unack == socket->send_next - 1);
-      *action |= TCP_RESEND_SYNACK;
+      KASSERT_DBG(!list_empty(&socket->segments));
+      // Update the already-sent segment and retransmit it.  As a side effect,
+      // we won't measure the first RTT (since we consider it technically a
+      // retransmit) --- meh.
+      tcp_segment_t* seg =
+          container_of(socket->segments.head, tcp_segment_t, link);
+      KASSERT_DBG(seg->flags == TCP_FLAG_SYN);
+      seg->flags |= TCP_FLAG_ACK;
+      *action |= TCP_RETRANSMIT;
     }
   } else {
     // TODO(tcp): handle unexpected packets (sent RST)
@@ -1228,6 +1344,8 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
     set_iss(child, parent->initial_seq);
     child->iss_set = true;
   }
+  child->rto_ms = parent->rto_ms;  // For tests.
+  child->rto_min_ms = parent->rto_min_ms;
   child->parent = parent;
   refcount_inc(&parent->ref);
   list_push(&parent->children_connecting, &child->link);
@@ -1270,7 +1388,6 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   kspin_unlock(&child->spin_mu);
   kspin_unlock(&parent->spin_mu);
 
-  // TODO(tcp): make sure retransmits are configured.
   result = tcp_send_syn(child, /* ack */ true, /* allow_block */ false);
   if (result != 0) {
     KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", child,
@@ -1833,7 +1950,6 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
     return result;
   }
 
-  // TODO(tcp): set up retry timer to retry sending the SYN.
   // TODO(tcp): implement non-blocking connect (and return EINPROGRESS).
 
   // Wait until the socket is established or closes (with an error, presumably).
