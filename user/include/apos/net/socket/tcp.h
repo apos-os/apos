@@ -26,4 +26,8 @@
 // Sets the time spent in TIME_WAIT.
 #define SO_TCP_TIME_WAIT_LEN 3
 
+// Sets the current and minimun RTO values, in milliseconds.
+#define SO_TCP_RTO 4
+#define SO_TCP_RTO_MIN 5
+
 #endif

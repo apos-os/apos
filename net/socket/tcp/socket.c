@@ -2222,6 +2222,31 @@ static int setsockopt_bufsize(socket_tcp_t* socket, int option, const void* val,
   return 0;
 }
 
+static int tcp_getsockopt_int(socket_tcp_t* socket, const int* dst,
+                              void* restrict val, socklen_t* restrict val_len) {
+  kspin_lock(&socket->spin_mu);
+  int dst_val = *dst;
+  kspin_unlock(&socket->spin_mu);
+  return getsockopt_int(val, val_len, dst_val);
+}
+
+static int tcp_setsockopt_posint(socket_tcp_t* socket, int* dst,
+                                 const void* val, socklen_t val_len) {
+  int parsed_val;
+  int result = setsockopt_int(val, val_len, &parsed_val);
+  if (result) {
+    return result;
+  }
+  if (parsed_val <= 0) {
+    return -EINVAL;
+  }
+
+  kspin_lock(&socket->spin_mu);
+  *dst = parsed_val;
+  kspin_unlock(&socket->spin_mu);
+  return 0;
+}
+
 static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
                                 void* restrict val,
                                 socklen_t* restrict val_len) {
@@ -2255,10 +2280,11 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     kspin_unlock(&socket->spin_mu);
     return getsockopt_cstr(val, val_len, state2str(state));
   } else if (level == IPPROTO_TCP && option == SO_TCP_TIME_WAIT_LEN) {
-    kspin_lock(&socket->spin_mu);
-    int tw = socket->time_wait_ms;
-    kspin_unlock(&socket->spin_mu);
-    return getsockopt_int(val, val_len, tw);
+    return tcp_getsockopt_int(socket, &socket->time_wait_ms, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_RTO) {
+    return tcp_getsockopt_int(socket, &socket->rto_ms, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {
+    return tcp_getsockopt_int(socket, &socket->rto_min_ms, val, val_len);
   }
 
   return -ENOPROTOOPT;
@@ -2299,19 +2325,11 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {
     return -EINVAL;
   } else if (level == IPPROTO_TCP && option == SO_TCP_TIME_WAIT_LEN) {
-    int tw;
-    int result = setsockopt_int(val, val_len, &tw);
-    if (result) {
-      return result;
-    }
-    if (tw <= 0) {
-      return -EINVAL;
-    }
-
-    kspin_lock(&socket->spin_mu);
-    socket->time_wait_ms = tw;
-    kspin_unlock(&socket->spin_mu);
-    return 0;
+    return tcp_setsockopt_posint(socket, &socket->time_wait_ms, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_RTO) {
+    return tcp_setsockopt_posint(socket, &socket->rto_ms, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {
+    return tcp_setsockopt_posint(socket, &socket->rto_min_ms, val, val_len);
   }
 
   return -ENOPROTOOPT;

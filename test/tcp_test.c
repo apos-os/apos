@@ -6121,6 +6121,11 @@ static void active_close1a(void) {
 
   KEXPECT_EQ(
       0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
+  int val = 0;
+  socklen_t vallen = sizeof(int);
+  KEXPECT_EQ(0, net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN,
+                               &val, &vallen));
+  KEXPECT_EQ(40, val);
   KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
