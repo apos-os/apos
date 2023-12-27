@@ -669,9 +669,6 @@ static void handle_retransmit_timer(socket_tcp_t* socket) {
        seg->seq + seg_len - socket->initial_seq, seg->retransmits,
        socket->rto_ms);
 
-  // TODO(tcp): if retransitting a SYN, set RTO to 3s when we reach ESTABLISHED
-  // (per RFC 6298).
-
   tcp_set_timer(socket, socket->rto_ms, /* force */ true);
   tcp_retransmit_segment(socket, seg);  // Unlocks the socket.
 }
@@ -926,6 +923,11 @@ static void segment_acked(socket_tcp_t* socket, tcp_segment_t* seg,
   KLOG(DEBUG3, "TCP: socket %p retired segment [%u, %u) (retransmits: %d)\n",
        socket, seg->seq - socket->initial_seq,
        seg->seq + seg_len - socket->initial_seq, seg->retransmits);
+
+  if ((seg->flags & TCP_FLAG_SYN) && seg->retransmits > 0) {
+    KLOG(DEBUG, "TCP: socket %p retransmitted SYN; RTO set to 3s\n", socket);
+    socket->rto_ms = 3000;
+  }
 }
 
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,

@@ -154,6 +154,14 @@ static int set_rto(int socket, int rto_ms) {
                         sizeof(rto_ms));
 }
 
+static int get_rto(int socket) {
+  int rto_ms = 0;
+  socklen_t len = sizeof(rto_ms);
+  int result = net_getsockopt(socket, IPPROTO_TCP, SO_TCP_RTO, &rto_ms, &len);
+  KEXPECT_EQ(0, result);
+  return rto_ms;
+}
+
 static int getsockname_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
@@ -9142,6 +9150,7 @@ static void basic_retransmit_test(void) {
   SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_LT(get_rto(s.socket), 2000);
 
   set_rto(s.socket, 40);
   KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
@@ -9155,6 +9164,7 @@ static void basic_retransmit_test(void) {
   // We should have gotten at least two retransmits.
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 504, "12345"));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 504, "12345"));
+  KEXPECT_LT(get_rto(s.socket), 1000);
   set_rto(s.socket, 1000);
   KEXPECT_LT(raw_drain_packets(&s), 4);
 
@@ -9189,14 +9199,17 @@ static void basic_retransmit_test2(void) {
   SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_LT(get_rto(s.socket), 2000);
 
   set_rto(s.socket, 20);
   KEXPECT_EQ(5, vfs_write(s.socket, "12345", 5));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "12345"));
   SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 106));
+  KEXPECT_LT(get_rto(s.socket), 100);
 
   ksleep(50);
   KEXPECT_EQ(0, raw_drain_packets(&s));
+  KEXPECT_LT(get_rto(s.socket), 100);
   set_rto(s.socket, 1000);
 
   KEXPECT_TRUE(do_standard_finish(&s, 5, 0));
@@ -9306,6 +9319,7 @@ static void retransmit_syn_test(void) {
   SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_EQ(3000, get_rto(s.socket));
 
   set_rto(s.socket, 1000);
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -9333,6 +9347,9 @@ static void retransmit_synack_test(void) {
   KEXPECT_LT(raw_drain_packets(&s), 4);
 
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_EQ(3000, get_rto(c1.socket));
 
   KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
   cleanup_tcp_test(&s);
@@ -9362,8 +9379,8 @@ static void retransmit_synack_test2(void) {
   KEXPECT_LT(raw_drain_packets(&s), 4);
 
   SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 101));
-  set_rto(s.socket, 1000);
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+  KEXPECT_EQ(3000, get_rto(s.socket));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   cleanup_tcp_test(&s);
