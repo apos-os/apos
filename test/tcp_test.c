@@ -687,7 +687,7 @@ static bool start_connect(tcp_test_state_t* s, const char* ip, int port) {
     KTEST_ADD_FAILURE("connect() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
+  if (ntfn_has_been_notified(&s->op.done)) {
     KTEST_ADD_FAILURE("connect() finished without blocking");
     KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
@@ -715,7 +715,7 @@ static bool start_read_op(async_op_t* op, void* buf, size_t buflen) {
     KTEST_ADD_FAILURE("read() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&op->done, BLOCK_VERIFY_MS)) {
+  if (ntfn_has_been_notified(&op->done)) {
     KTEST_ADD_FAILURE("read() finished without blocking");
     KEXPECT_EQ(0, op->result);  // Get the error code.
     return false;
@@ -756,7 +756,7 @@ static bool start_write(tcp_test_state_t* s, const char* data) {
     KTEST_ADD_FAILURE("write() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
+  if (ntfn_has_been_notified(&s->op.done)) {
     KTEST_ADD_FAILURE("write() finished without blocking");
     KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
@@ -781,7 +781,7 @@ static bool start_accept(tcp_test_state_t* s) {
     KTEST_ADD_FAILURE("accept() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&s->op.done, BLOCK_VERIFY_MS)) {
+  if (ntfn_has_been_notified(&s->op.done)) {
     KTEST_ADD_FAILURE("accept() finished without blocking");
     KEXPECT_EQ(0, s->op.result);  // Get the error code.
     return false;
@@ -812,7 +812,7 @@ static bool start_poll(async_op_t* op, int fd, short events) {
     KTEST_ADD_FAILURE("poll() thread didn't start");
     return false;
   }
-  if (ntfn_await_with_timeout(&op->done, BLOCK_VERIFY_MS)) {
+  if (ntfn_has_been_notified(&op->done)) {
     KTEST_ADD_FAILURE("poll() finished without blocking");
     KEXPECT_EQ(0, op->result);  // Get the error code.
     return false;
