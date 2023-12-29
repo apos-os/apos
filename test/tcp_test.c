@@ -25,6 +25,7 @@
 #include "net/socket/socket.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
+#include "net/socket/tcp/tcp.h"
 #include "net/util.h"
 #include "proc/kthread.h"
 #include "proc/notification.h"
@@ -9466,6 +9467,7 @@ static void retransmit_tests(void) {
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
+  const int initial_sockets = tcp_num_connected_sockets();
 
   for (int i = 0; i < TEST_SEQ_ITERS; ++i) {
     g_seq_start = TEST_SEQ_START;
@@ -9495,4 +9497,8 @@ void tcp_test(void) {
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
+
+  // Look for sockets that are not attached to an FD but are still open.
+  KTEST_BEGIN("TCP: socket leak verification");
+  KEXPECT_EQ(initial_sockets, tcp_num_connected_sockets());
 }

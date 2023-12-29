@@ -17,6 +17,7 @@
 #include "common/hashtable.h"
 #include "common/kassert.h"
 #include "net/socket/tcp/internal.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 
 tcp_state_t g_tcp;
@@ -36,4 +37,11 @@ tcp_key_t tcp_key(const struct sockaddr* local, const struct sockaddr* remote) {
   uint32_t vals[4] = {local_sin->sin_addr.s_addr, local_sin->sin_port,
                       remote_sin->sin_addr.s_addr, remote_sin->sin_port};
   return fnv_hash_array(vals, sizeof(vals));
+}
+
+int tcp_num_connected_sockets(void) {
+  kspin_lock(&g_tcp.lock);
+  int result = htbl_size(&g_tcp.connected_sockets);
+  kspin_unlock(&g_tcp.lock);
+  return result;
 }

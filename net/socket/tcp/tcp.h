@@ -30,4 +30,7 @@ void tcp_init(void);
 // Deferred-interrupt safe.
 bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
 
+// Returns the number of connected TCP sockets.
+int tcp_num_connected_sockets(void);
+
 #endif
