@@ -938,6 +938,14 @@ static test_packet_spec_t DATA_PKT(int seq, int ack, const char* data) {
                                .datalen = kstrlen(data)});
 }
 
+static test_packet_spec_t URG_PKT(int seq, int ack, const char* data) {
+  return ((test_packet_spec_t){.flags = TCP_FLAG_ACK | TCP_FLAG_URG,
+                               .seq = seq,
+                               .ack = ack,
+                               .data = data,
+                               .datalen = kstrlen(data)});
+}
+
 static test_packet_spec_t DATA_FIN_PKT(int seq, int ack, const char* data) {
   test_packet_spec_t result = DATA_PKT(seq, ack, data);
   result.flags |= TCP_FLAG_FIN;
@@ -1286,6 +1294,25 @@ static void basic_connect_test2(void) {
   cleanup_tcp_test(&s);
 }
 
+static void urg_resets_connection(void) {
+  KTEST_BEGIN("TCP: URG resets connection");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, URG_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  char buf;
+  KEXPECT_EQ(-ECONNRESET, vfs_read(s.socket, &buf, 1));
+
+  cleanup_tcp_test(&s);
+}
+
 static void bad_packets_syn_sent_test(void) {
   KTEST_BEGIN("TCP: various bad packets sent in SYN_SENT");
   tcp_test_state_t s;
@@ -1331,6 +1358,7 @@ static void bad_packets_syn_sent_test(void) {
   SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
   SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
   SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "test"));
+  SEND_PKT(&s, URG_PKT(/* seq */ 500, /* ack */ 101, "test"));
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "test"));
   test_packet_spec_t pkt = FIN_PKT(/* seq */ 500, /* ack */ 101);
   pkt.flags &= ~TCP_FLAG_ACK;
@@ -2927,6 +2955,7 @@ static void simultaneous_connect_shutdown_wr_test7(void) {
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
+  urg_resets_connection();
   bad_packets_syn_sent_test();
   connect_rst_test();
   multiple_connect_test();

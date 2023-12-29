@@ -777,9 +777,9 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (tcp_hdr->flags & TCP_FLAG_URG) {
-    // TODO(tcp): handle gracefully
-    KLOG(DFATAL, "TCP: socket %p cannot handle URG data\n", socket);
-    action = TCP_DROP_BAD_PKT;
+    KLOG(DEBUG, "TCP: socket %p cannot handle URG data\n", socket);
+    socket->error = ECONNRESET;
+    action = TCP_RESET_CONNECTION | TCP_PACKET_DONE;
     goto done;
   }
 
