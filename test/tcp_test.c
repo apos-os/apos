@@ -1286,6 +1286,86 @@ static void basic_connect_test2(void) {
   cleanup_tcp_test(&s);
 }
 
+static void bad_packets_syn_sent_test(void) {
+  KTEST_BEGIN("TCP: various bad packets sent in SYN_SENT");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send plain ACKs --- these should cause RSTs.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 100));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 100));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 90));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 90));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 102));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 102));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Next try SYN/ACKs, but where the ACK value is incorrect.  These should get
+  // RSTs as well.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 100, /* wndsize */ 8000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 100));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 90, /* wndsize */ 8000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 90));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 102, /* wndsize */ 8000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 102));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Now try RST+ACKs (with bad ACK).  These should be ignored.
+  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 100));
+  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 90));
+  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 102));
+
+  // A blind ACK should be ignored.
+  SEND_PKT(&s, RST_NOACK_PKT(/* seq */ 500));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Now try a plain _good_ ACK with no SYN.  Should be ignored.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "test"));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "test"));
+  test_packet_spec_t pkt = FIN_PKT(/* seq */ 500, /* ack */ 101);
+  pkt.flags &= ~TCP_FLAG_ACK;
+  SEND_PKT(&s, pkt);
+  pkt = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  pkt.flags &= ~TCP_FLAG_ACK;
+  SEND_PKT(&s, pkt);
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+
+  // After all the bad packets, we should still be able to complete the
+  // connection.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
 static void connect_rst_test(void) {
   KTEST_BEGIN("TCP: RST during connect() (connection refused)");
   tcp_test_state_t s;
@@ -2847,6 +2927,7 @@ static void simultaneous_connect_shutdown_wr_test7(void) {
 static void connect_tests(void) {
   basic_connect_test();
   basic_connect_test2();
+  bad_packets_syn_sent_test();
   connect_rst_test();
   multiple_connect_test();
   two_simultaneous_connects_test();

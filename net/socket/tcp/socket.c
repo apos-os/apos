@@ -526,7 +526,8 @@ typedef enum {
   TCP_SEND_ACK = 0x4,          // Send an ACK.
   TCP_RESET_CONNECTION = 0x8,  // Send a RST and reset the connection.
                                // Resetting implies we are done with the packet.
-  TCP_RETRANSMIT = 0x10,       // Retransmit the first (oldest) segment.
+  TCP_SEND_RAW_RST = 0x10,     // Send a RST without resetting the connection.
+  TCP_RETRANSMIT = 0x20,       // Retransmit the first (oldest) segment.
 } tcp_pkt_action_t;
 
 // Handlers for different types of packet scenarios.  Multiple of these may be
@@ -802,6 +803,15 @@ done:
     KLOG(DEBUG2, "TCP: socket %p dropping bad packet\n", socket);
   }
 
+  if (action & TCP_SEND_RAW_RST) {
+    KASSERT_DBG(action & TCP_PACKET_DONE);
+    result = tcp_send_raw_rst(pb, md);
+    if (result != 0) {
+      KLOG(WARNING, "TCP: socket %p unable to send raw RST: %s\n", socket,
+           errorname(-result));
+    }
+  }
+
   if (action & TCP_RESET_CONNECTION) {
     KASSERT_DBG(action & TCP_PACKET_DONE);
     result = tcp_send_rst(socket);
@@ -1005,13 +1015,6 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       }
       break;
 
-    case TCP_SYN_SENT:
-      // If a SYN flag was set, we should have transitioned out of SYN_SENT or
-      // decided to drop the packet earlier.
-      KASSERT(!(tcp_hdr->flags & TCP_FLAG_SYN));
-      // TODO(tcp): send RST, this is not allowed.
-      break;
-
     case TCP_SYN_RCVD:
       // If our SYN is acked, move to ESTABLISHED.
       if (socket->send_unack == socket->send_next) {
@@ -1043,8 +1046,9 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
 
     case TCP_CLOSED:
     case TCP_CLOSED_DONE:
+    case TCP_SYN_SENT:
     case TCP_LISTEN:
-      KLOG(DFATAL, "TCP: socket %p packet received in CLOSED state\n", socket);
+      KLOG(DFATAL, "TCP: socket %p packet received in invalid state\n", socket);
       break;
   }
 }
@@ -1241,15 +1245,23 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
     uint32_t seg_ack = btoh32(tcp_hdr->ack);
     // We don't transit data with our SYN, so this is the only acceptable ACK.
     if (seg_ack != socket->send_next) {
-      // TODO(tcp): send a RST if RST flag isn't set.
-      die("Out-of-order ACK received in SYN_SENT");
+      if (tcp_hdr->flags & TCP_FLAG_RST) {
+        *action = TCP_PACKET_DONE;  // Drop the packet.
+      } else {
+        *action = TCP_SEND_RAW_RST | TCP_PACKET_DONE;
+      }
+      return;
     }
   }
 
   if (tcp_hdr->flags & TCP_FLAG_RST) {
-    KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
-    socket->error = ECONNREFUSED;
-    finish_protocol_close(socket, "connection refused");
+    if (!(tcp_hdr->flags & TCP_FLAG_ACK)) {
+      KLOG(DEBUG, "TCP: socket %p ignoring RST without an ACK\n", socket);
+    } else {
+      KLOG(DEBUG, "TCP: socket %p received RST\n", socket);
+      socket->error = ECONNREFUSED;
+      finish_protocol_close(socket, "connection refused");
+    }
     *action = TCP_PACKET_DONE;
     return;
   }
@@ -1289,8 +1301,8 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
       *action |= TCP_RETRANSMIT;
     }
   } else {
-    // TODO(tcp): handle unexpected packets (sent RST)
-    die("unexpected packet in SYN_SENT");
+    KLOG(DEBUG, "TCP: socket %p dropping packet without SYN or RST\n", socket);
+    *action = TCP_PACKET_DONE;
   }
 }
 
