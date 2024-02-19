@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright 2014 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,8 @@ import sys
 
 def main(argv):
   if len(argv) != 2:
-    print >> sys.stderr, 'Usage: %s.py <template>' % os.path.basename(argv[0])
+    print('Usage: %s.py <template>' % os.path.basename(argv[0]),
+          file=sys.stderr)
     sys.exit(1)
 
   tpl_file = argv[1]
@@ -39,7 +40,7 @@ def main(argv):
   python_env = {}
   with open(tpl_file) as f:
     for line in f.readlines():
-      m = re.search('\{#\s*PY_IMPORT\s*(\S*)', line)
+      m = re.search(r'\{#\s*PY_IMPORT\s*(\S*)', line)
       if m:
         comp = compile(open(m.group(1)).read(), m.group(1), 'exec')
         eval(comp, python_env)
@@ -54,4 +55,3 @@ def main(argv):
 
 if __name__ == '__main__':
   main(sys.argv)
-
