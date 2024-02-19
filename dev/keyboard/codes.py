@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # Copyright 2014 Andrew Oates.  All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -174,7 +174,7 @@ i = 1
 codes_annot = []
 for key, make, brk in codes:
   name = key
-  for k,v in trans.iteritems():
+  for k,v in trans.items():
     name = name.replace(k, v)
   name = 'KEY_%s' % name
   universal_code = i
@@ -184,9 +184,9 @@ for key, make, brk in codes:
 
 #######
 # Now print #defines
-print '#define NONE 0'
+print('#define NONE 0')
 for _, _, _, name, code in codes_annot:
-  print '#define %s %s' % (name, code)
+  print('#define %s %s' % (name, code))
 
 #######
 # Now create make/break mappings
@@ -208,21 +208,21 @@ for key, make, brk, name, code in codes_annot:
     extended_pairs.append((parts[1], name))
 
 # Now print the list, filling in any blank spots.
-print "\n\n"
+print("\n\n")
 def print_code_list(lst):
   current_code = 0
   lst.sort()
   for make, name in lst:
     while current_code < int('0x%s' % make, 16):
-      print 'NONE, // %s' % hex(current_code)
+      print('NONE, // %s' % hex(current_code))
       current_code += 1
-    print '%s, // 0x%s' % (name, make)
+    print('%s, // 0x%s' % (name, make))
     current_code += 1
 
-print 'NORMAL'
-print '######'
+print('NORMAL')
+print('######')
 print_code_list(pairs)
 
-print '\nEXTENDED'
-print '######'
+print('\nEXTENDED')
+print('######')
 print_code_list(extended_pairs)
