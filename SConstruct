@@ -207,9 +207,9 @@ def tpl_scanner_func(node, env, paths, arg=None):
   """Depedency scanner for .tpl files."""
   text = node.get_text_contents()
   deps = []
-  for _, path in re.findall('{%[^}]*(import|include)\s*"([^"]*)"', text):
+  for _, path in re.findall(r'{%[^}]*(import|include)\s*"([^"]*)"', text):
     deps.append(path)
-  for path in re.findall('PY_IMPORT\s*(\S*)', text):
+  for path in re.findall(r'PY_IMPORT\s*(\S*)', text):
     deps.append(path)
   return env.File(deps)
 
