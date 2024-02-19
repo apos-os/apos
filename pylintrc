@@ -1,0 +1,3 @@
+[FORMAT]
+# We use two spaces in (unfortunate) alignment with the Google internal style.
+indent-string='  '
