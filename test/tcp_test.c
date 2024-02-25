@@ -23,6 +23,7 @@
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/socket/socket.h"
+#include "net/socket/tcp/congestion.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/tcp.h"
@@ -9574,6 +9575,75 @@ static void retransmit_tests(void) {
   retransmit_fin_test2();
 }
 
+static void cwnd_test(void) {
+  KTEST_BEGIN("TCP cwnd test: initial cwnd");
+  tcp_cwnd_t cw;
+  tcp_cwnd_init(&cw, 2500);
+  KEXPECT_EQ(5000, cw.cwnd);
+  tcp_cwnd_init(&cw, 2000);
+  KEXPECT_EQ(6000, cw.cwnd);
+  tcp_cwnd_init(&cw, 1000);
+  KEXPECT_EQ(4000, cw.cwnd);
+
+
+  KTEST_BEGIN("TCP cwnd test: slow start");
+  tcp_cwnd_init(&cw, 1000);
+  KEXPECT_EQ(4000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 300);
+  KEXPECT_EQ(4300, cw.cwnd);
+  tcp_cwnd_acked(&cw, 700);
+  KEXPECT_EQ(5000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(6000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 2000);
+  KEXPECT_EQ(7000, cw.cwnd);  // Should be clamped at MSS.
+  tcp_cwnd_acked(&cw, 2000);
+  KEXPECT_EQ(8000, cw.cwnd);  // Should be clamped at MSS.
+
+
+  KTEST_BEGIN("TCP cwnd test: congestion avoidance");
+  tcp_cwnd_loss(&cw, 7000);
+  KEXPECT_EQ(1000, cw.cwnd);  // Should be back to slow start.
+  tcp_cwnd_acked(&cw, 2000);
+  KEXPECT_EQ(2000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 2000);
+  KEXPECT_EQ(3000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 2000);
+  KEXPECT_EQ(4000, cw.cwnd);
+
+  // Now we should be in congestion avoidance.
+  tcp_cwnd_acked(&cw, 2000);
+  KEXPECT_EQ(4000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(4000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 900);
+  KEXPECT_EQ(4000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 100);
+  KEXPECT_EQ(5000, cw.cwnd);
+
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(5000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(5000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(5000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(5000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(6000, cw.cwnd);
+
+  // Test clamping of ssthresh if there's little outstanding data.
+  tcp_cwnd_loss(&cw, 100);
+  KEXPECT_EQ(2000, cw.ssthresh);
+  KEXPECT_EQ(1000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(2000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(3000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 1000);
+  KEXPECT_EQ(3000, cw.cwnd);
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -9604,6 +9674,8 @@ void tcp_test(void) {
     poll_tests();
     retransmit_tests();
   }
+
+  cwnd_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
