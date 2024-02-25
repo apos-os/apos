@@ -17,16 +17,16 @@
 
 // Non-standard socket options.
 
-// Gets/sets the initial sequence number on the socket.
+// The initial sequence number on the socket (uint32).
 #define SO_TCP_SEQ_NUM 1
 
-// Gets the current socket state.
+// The current socket state (read-only; const char*).
 #define SO_TCP_SOCKSTATE 2
 
-// Sets the time spent in TIME_WAIT.
+// The time spent in TIME_WAIT (positive int).
 #define SO_TCP_TIME_WAIT_LEN 3
 
-// Sets the current and minimun RTO values, in milliseconds.
+// The current and minimun RTO values, in milliseconds (positive int).
 #define SO_TCP_RTO 4
 #define SO_TCP_RTO_MIN 5
 
