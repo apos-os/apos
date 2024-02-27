@@ -9644,6 +9644,40 @@ static void cwnd_test(void) {
   KEXPECT_EQ(3000, cw.cwnd);
 }
 
+static void cwnd_socket_test(void) {
+  KTEST_BEGIN("TCP: congestion window on socket");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  int cwnd;
+  socklen_t len = sizeof(cwnd);
+  KEXPECT_EQ(0,
+             net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
+  KEXPECT_GE(cwnd, 500);
+  KEXPECT_LE(cwnd, 5000);
+
+  // Test setting CWND.
+  cwnd = 20;
+  KEXPECT_EQ(0, net_setsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, len));
+  KEXPECT_EQ(0,
+             net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
+  KEXPECT_EQ(cwnd, 20);
+
+  cwnd = -1;
+  KEXPECT_EQ(-EINVAL,
+             net_setsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, len));
+  KEXPECT_EQ(0,
+             net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
+  KEXPECT_EQ(cwnd, 20);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  cleanup_tcp_test(&s);
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -9676,6 +9710,7 @@ void tcp_test(void) {
   }
 
   cwnd_test();
+  cwnd_socket_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

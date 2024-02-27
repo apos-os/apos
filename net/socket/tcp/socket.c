@@ -2377,6 +2377,36 @@ static int tcp_setsockopt_posint(socket_tcp_t* socket, int* dst,
   return 0;
 }
 
+// For a sockopt that is passed as an int but stored in a uint32_t.
+static int tcp_getsockopt_int_u32(socket_tcp_t* socket, const uint32_t* dst,
+                                  void* restrict val,
+                                  socklen_t* restrict val_len) {
+  kspin_lock(&socket->spin_mu);
+  int dst_val = (int)*dst;
+  kspin_unlock(&socket->spin_mu);
+  if (dst_val < 0) {
+    return -ERANGE;
+  }
+  return getsockopt_int(val, val_len, dst_val);
+}
+
+static int tcp_setsockopt_int_u32(socket_tcp_t* socket, uint32_t* dst,
+                                  const void* restrict val, socklen_t val_len) {
+  int parsed_val;
+  int result = setsockopt_int(val, val_len, &parsed_val);
+  if (result) {
+    return result;
+  }
+  if (parsed_val <= 0) {
+    return -EINVAL;
+  }
+
+  kspin_lock(&socket->spin_mu);
+  *dst = parsed_val;
+  kspin_unlock(&socket->spin_mu);
+  return 0;
+}
+
 static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
                                 void* restrict val,
                                 socklen_t* restrict val_len) {
@@ -2415,6 +2445,8 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     return tcp_getsockopt_int(socket, &socket->rto_ms, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {
     return tcp_getsockopt_int(socket, &socket->rto_min_ms, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_CWND) {
+    return tcp_getsockopt_int_u32(socket, &socket->cwnd, val, val_len);
   }
 
   return -ENOPROTOOPT;
@@ -2460,6 +2492,8 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
     return tcp_setsockopt_posint(socket, &socket->rto_ms, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {
     return tcp_setsockopt_posint(socket, &socket->rto_min_ms, val, val_len);
+  } else if (level == IPPROTO_TCP && option == SO_TCP_CWND) {
+    return tcp_setsockopt_int_u32(socket, &socket->cwnd, val, val_len);
   }
 
   return -ENOPROTOOPT;

@@ -30,4 +30,7 @@
 #define SO_TCP_RTO 4
 #define SO_TCP_RTO_MIN 5
 
+// The current congestion window in bytes (positive int).
+#define SO_TCP_CWND 6
+
 #endif
