@@ -156,7 +156,7 @@ void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out) {
   }
   KASSERT_DBG(socket->send_buf.len >= unacked_data);
   size_t data_to_send =
-      min(socket->cwnd,
+      min(socket->cwnd.cwnd,
           socket->send_wndsize - min(socket->send_wndsize, unacked_data));
   data_to_send = min(data_to_send, socket->send_buf.len - unacked_data);
   data_to_send = min(data_to_send, socket->mss);

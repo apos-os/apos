@@ -20,6 +20,7 @@
 #include "common/refcount.h"
 #include "dev/timer.h"
 #include "net/socket/socket.h"
+#include "net/socket/tcp/congestion.h"
 #include "proc/kthread.h"
 #include "vfs/vnode.h"
 
@@ -84,11 +85,11 @@ typedef struct socket_tcp {
   uint32_t send_wndsize;  // The send window size (from their side).
   uint32_t recv_next;     // Their next sequence number expected.
   uint32_t recv_wndsize;  // Receive window size (my window)
-  uint32_t cwnd;          // Congestion window size.
   uint32_t mss;           // Maximum segment size.
   int time_wait_ms;       // How long to wait in TIME_WAIT.
   bool syn_acked;         // Has our SYN been ACK'd.
   bool iss_set;           // Has the initial seq been overridden.
+  tcp_cwnd_t cwnd;        // Congestion control state.
 
   // Retransmit state.
   int rto_ms;   // Retransmit time.

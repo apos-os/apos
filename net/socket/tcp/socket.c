@@ -38,6 +38,7 @@
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
 #include "net/socket/sockopt.h"
+#include "net/socket/tcp/congestion.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/tcp.h"
@@ -131,8 +132,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   set_iss(sock, gen_seq_num(sock));
   sock->iss_set = false;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
-  sock->cwnd = 1000;  // TODO(tcp): implement congestion control.
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
+  tcp_cwnd_init(&sock->cwnd, sock->mss);
   sock->rto_ms = TCP_DEFAULT_RTO_MS;
   sock->rto_min_ms = TCP_DEFAULT_MIN_RTO_MS;
   sock->srtt_ms = -1;
@@ -318,6 +319,10 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
 }
 
 static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
+  if (seg->retransmits == 0) {
+    uint32_t unacked_bytes = socket->send_next - socket->send_unack;
+    tcp_cwnd_loss(&socket->cwnd, unacked_bytes);
+  }
   seg->retransmits++;
 
   ip4_pseudo_hdr_t pseudo_ip;
@@ -1000,11 +1005,14 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
   // TODO(tcp): handle window updates properly (track WL1/WL2).
   socket->send_unack = ack;
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
+  if (bytes_acked > 0) {
+    tcp_cwnd_acked(&socket->cwnd, bytes_acked);
+  }
   KLOG(DEBUG2,
        "TCP: socket %p had %u octets acked (data bytes acked: %u; remaining "
-       "unacked: %u; send_wndsize: %d)\n",
+       "unacked: %u; send_wndsize: %d; cwnd: %u)\n",
        socket, seqs_acked, bytes_acked, socket->send_next - socket->send_unack,
-       socket->send_wndsize);
+       socket->send_wndsize, socket->cwnd.cwnd);
   tcp_wake(socket);
 
   switch (socket->state) {
@@ -2446,7 +2454,7 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {
     return tcp_getsockopt_int(socket, &socket->rto_min_ms, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_CWND) {
-    return tcp_getsockopt_int_u32(socket, &socket->cwnd, val, val_len);
+    return tcp_getsockopt_int_u32(socket, &socket->cwnd.cwnd, val, val_len);
   }
 
   return -ENOPROTOOPT;
@@ -2493,7 +2501,7 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {
     return tcp_setsockopt_posint(socket, &socket->rto_min_ms, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_CWND) {
-    return tcp_setsockopt_int_u32(socket, &socket->cwnd, val, val_len);
+    return tcp_setsockopt_int_u32(socket, &socket->cwnd.cwnd, val, val_len);
   }
 
   return -ENOPROTOOPT;

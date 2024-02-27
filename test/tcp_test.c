@@ -9661,20 +9661,64 @@ static void cwnd_socket_test(void) {
   KEXPECT_LE(cwnd, 5000);
 
   // Test setting CWND.
-  cwnd = 20;
+  cwnd = 10;
   KEXPECT_EQ(0, net_setsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, len));
   KEXPECT_EQ(0,
              net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
-  KEXPECT_EQ(cwnd, 20);
+  KEXPECT_EQ(cwnd, 10);
 
   cwnd = -1;
   KEXPECT_EQ(-EINVAL,
              net_setsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, len));
   KEXPECT_EQ(0,
              net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
+  KEXPECT_EQ(cwnd, 10);
+
+  char* buf = kmalloc(200);
+  kmemset(buf, 'x', 200);
+
+  // We should be able to send without blocking.
+  KEXPECT_EQ(100, vfs_write(s.socket, buf, 100));
+
+  buf[10] = '\0';
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, buf));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 111, /* wndsize */ 500));
+
+  // We should now get 2x the data.
+  buf[10] = 'x';
+  buf[20] = '\0';
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 111, /* ack */ 501, buf));
+  set_rto(s.socket, 20);
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 131, /* wndsize */ 500));
+  buf[20] = 'x';
+  buf[40] = '\0';
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 131, /* ack */ 501, buf));
+
+  ksleep(50);
+
+  // After several retransmits, we should have reset CWND.
+  KEXPECT_EQ(0,
+             net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
+  KEXPECT_EQ(cwnd, 536);
+  cwnd = 20;
+  KEXPECT_EQ(0, net_setsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, len));
+
+  // After more retransmits, we should _not_ have reset CWND again.
+  ksleep(100);
+  KEXPECT_EQ(0,
+             net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
   KEXPECT_EQ(cwnd, 20);
 
-  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 131, /* ack */ 501, buf));
+  raw_drain_packets(&s);
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 171, /* wndsize */ 500));
+  buf[40] = 'x';
+  buf[30] = '\0';
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 171, /* ack */ 501, buf));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 100, 0));
+  kfree(buf);
   cleanup_tcp_test(&s);
 }
 
