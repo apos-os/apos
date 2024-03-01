@@ -238,23 +238,6 @@ static void delete_socket(socket_tcp_t* socket) {
 static void tcp_set_timer(socket_tcp_t* socket, int duration_ms, bool force);
 static void tcp_cancel_timer(socket_tcp_t* socket);
 
-// Helper to determine if we're currently in a particular state without having
-// the spinlock held.  Only some states can be checked "racily" --- states that
-// if the socket is in, deferred interrupts will never transition out of (only
-// other kernel threads).  Rather than sprinkle that logic around, encapsulate
-// the nuanced safety constraint here.
-// TODO(tcp): given we can receive a RST at any point, can anything other than
-// CLOSED or CLOSED_DONE actually be safe here?
-static bool is_in_state(socket_tcp_t* sock, socktcp_state_t target_state) {
-  kmutex_assert_is_held(&sock->mu);
-  // Must be checking a "stable" state.
-  KASSERT_DBG(target_state == TCP_CLOSED || target_state == TCP_CLOSED_DONE);
-  kspin_lock(&sock->spin_mu);
-  bool result = (sock->state == target_state);
-  kspin_unlock(&sock->spin_mu);
-  return result;
-}
-
 static void clear_addr(struct sockaddr_storage* addr) {
   kmemset(addr, 0xab, sizeof(struct sockaddr_storage));
   addr->sa_family = AF_UNSPEC;
@@ -1695,7 +1678,14 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
                                 const struct sockaddr* address,
                                 socklen_t address_len, bool allow_rebind) {
   kmutex_assert_is_held(&socket->mu);
-  if (!is_in_state(socket, TCP_CLOSED)) {
+
+  // Check if the socket is CLOSED.  It's safe to check and then unlock because
+  // the only way to leave CLOSED is by taking them mutex (which we hold) --- an
+  // interrupt context will never cause us to leave CLOSED.
+  kspin_lock(&socket->spin_mu);
+  socktcp_state_t state = socket->state;
+  kspin_unlock(&socket->spin_mu);
+  if (state != TCP_CLOSED) {
     return -EINVAL;
   }
 
