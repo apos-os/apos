@@ -1222,7 +1222,8 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(0xf8bd, btoh16(tcp_hdr->checksum));
   KEXPECT_EQ(0, btoh16(tcp_hdr->urg_ptr));
 
-  // TODO(tcp): verify that read() returns 0/EOF.
+  char buf;
+  KEXPECT_EQ(0, vfs_read(s.socket, &buf, 1));
 
   KEXPECT_FALSE(raw_has_packets(&s));
 
@@ -1256,8 +1257,6 @@ static void basic_connect_test(void) {
   tcp_hdr->checksum = 0x9df8;
   KEXPECT_EQ(sizeof(tcp_hdr_t), do_raw_send(&s, tcp_hdr, sizeof(tcp_hdr_t)));
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
-
-  // TODO(tcp): test other operations on the socket now that its closed.
 
   cleanup_tcp_test(&s);
 }
@@ -1410,7 +1409,6 @@ static void connect_rst_test(void) {
 
   KEXPECT_EQ(-ECONNREFUSED, finish_op(&s));
 
-  // TODO(tcp): test other methods (read, write, etc) in the error state.
   struct sockaddr_storage unused;
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
@@ -1418,6 +1416,13 @@ static void connect_rst_test(void) {
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
+
+  char buf;
+  KEXPECT_EQ(0, vfs_read(s.socket, &buf, 1));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
 
   // TODO(tcp): if SO_ERROR is implemented, test here as well.
 
@@ -1484,8 +1489,6 @@ static void two_simultaneous_connects_test(void) {
   // connect() should complete successfully.
   KEXPECT_EQ(0, finish_op(&s1));
   KEXPECT_EQ(0, finish_op(&s2));
-
-  // TODO(tcp): exchange data.
 
   // Close each connection.
   SEND_PKT(&s1, FIN_PKT(/* seq */ 501, /* ack */ 101));
@@ -1768,9 +1771,6 @@ static void get_addrs_during_connect_test(void) {
   SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
 
   cleanup_tcp_test(&s);
-
-  // TODO(tcp): test the other shutdown path (local close first) once
-  // implemented.
 }
 
 static void connect_interrupted_test(void) {
@@ -3017,7 +3017,6 @@ static void rst_during_established_test(void) {
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
 
   // Send RST.
-  // TODO(tcp): test this also with data having passed.
   SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
   KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
 
@@ -3118,7 +3117,10 @@ static void rst_during_established_blocking_recv_test(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
 
   struct sockaddr_storage unused;
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
@@ -3196,7 +3198,10 @@ static void rst_during_established_blocking_recv_test3(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
 
   cleanup_tcp_test(&s);
 }
@@ -3309,7 +3314,6 @@ static void fin_during_established_blocking_recv_test(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
@@ -3354,7 +3358,6 @@ static void fin_during_established_blocking_recv_test2(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
@@ -3402,7 +3405,6 @@ static void fin_during_established_blocking_recv_test3(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
@@ -3448,7 +3450,6 @@ static void fin_during_established_blocking_recv_test3b(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
@@ -3489,12 +3490,14 @@ static void fin_and_rst_test(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
 
   cleanup_tcp_test(&s);
 }
 
-// TODO(tcp): version of this test with SHUT_RD called when that is implemented.
 static void read_after_shutdown_test(void) {
   KTEST_BEGIN("TCP: read buffered data after FIN");
   tcp_test_state_t s;
@@ -5605,9 +5608,6 @@ static void shutdown_invalid_test(void) {
   KEXPECT_EQ(-EINVAL, net_shutdown(sock, 100));
   KEXPECT_EQ(0, vfs_close(sock));
 }
-
-// TODO(tcp): more send tests needed:
-//  - receive after shutdown
 
 static void send_tests(void) {
   basic_send_test();
