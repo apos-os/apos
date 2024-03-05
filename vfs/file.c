@@ -14,11 +14,23 @@
 
 #include "vfs/file.h"
 
-void file_init_file(file_t* f) {
+static void file_init_file(file_t* f) {
   f->index = -1;
   f->vnode = 0x0;
   f->refcount = 0;
   f->pos = 0;
   f->mode = 0xFF;  // A bad mode.
   f->flags = 0;
+}
+
+file_t* file_alloc(void) {
+  file_t* f = KMALLOC(file_t);
+  if (f) {
+    file_init_file(f);
+  }
+  return f;
+}
+
+void file_free(file_t* f) {
+  kfree(f);
 }
