@@ -9575,6 +9575,63 @@ static void retransmit_tests(void) {
   retransmit_fin_test2();
 }
 
+static void nonblocking_connect_test(void) {
+  KTEST_BEGIN("TCP: non-blocking connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  vfs_make_nonblock(s.socket);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_EQ(-EINPROGRESS, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(start_poll(&s.op, s.socket, KPOLLOUT));
+
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(1, finish_op(&s));
+  KEXPECT_EQ(KPOLLOUT, s.op.events);
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void nonblocking_connect_test2(void) {
+  KTEST_BEGIN("TCP: non-blocking connect() (connection reset)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  vfs_make_nonblock(s.socket);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_EQ(-EINPROGRESS, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(start_poll(&s.op, s.socket, KPOLLOUT));
+
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+
+  KEXPECT_EQ(1, finish_op(&s));
+  KEXPECT_EQ(KPOLLERR, s.op.events);
+
+  // TODO(tcp): get (and test) error with SO_ERROR.
+  cleanup_tcp_test(&s);
+}
+
+static void nonblocking_tests(void) {
+  nonblocking_connect_test();
+  nonblocking_connect_test2();
+}
+
 static void cwnd_test(void) {
   KTEST_BEGIN("TCP cwnd test: initial cwnd");
   tcp_cwnd_t cw;
@@ -9751,6 +9808,7 @@ void tcp_test(void) {
     listen_tests();
     poll_tests();
     retransmit_tests();
+    nonblocking_tests();
   }
 
   cwnd_test();

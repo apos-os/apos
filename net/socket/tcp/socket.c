@@ -1962,7 +1962,9 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
     return result;
   }
 
-  // TODO(tcp): implement non-blocking connect (and return EINPROGRESS).
+  if (fflags & VFS_O_NONBLOCK) {
+    return -EINPROGRESS;
+  }
 
   // Wait until the socket is established or closes (with an error, presumably).
   kspin_lock(&sock->spin_mu);
