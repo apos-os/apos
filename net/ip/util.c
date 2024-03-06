@@ -28,5 +28,6 @@ int ip_pick_src(const struct sockaddr* dst, socklen_t dst_len,
   if (!ip_route(ndst, &route)) {
     return -ENETUNREACH;
   }
+  nic_put(route.nic);
   return net2sockaddr(&route.src, 0, src_out, sizeof(struct sockaddr_storage));
 }

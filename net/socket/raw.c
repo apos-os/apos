@@ -329,6 +329,8 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
     if (!ip_route(dest, &route)) {
       return -ENETUNREACH;
     }
+    nic_put(route.nic);
+    route.nic = NULL;
     src = &route.src;
   }
 

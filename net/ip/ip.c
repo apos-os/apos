@@ -93,10 +93,14 @@ int ip_send(pbuf_t* pb, bool allow_block) {
   if (inet_source_valid(&src, route.nic) != 0) {
     KLOG(INFO, "net: unable to route packet with src %s on iface %s\n",
          inet2str(hdr->src_addr, addrbuf), route.nic->name);
+    nic_put(route.nic);
     return -EADDRNOTAVAIL;
   }
 
-  return net_link_send(route.nic, route.nexthop, pb, ET_IPV4, allow_block);
+  int result =
+      net_link_send(route.nic, route.nexthop, pb, ET_IPV4, allow_block);
+  nic_put(route.nic);
+  return result;
 }
 
 void ip_recv(nic_t* nic, pbuf_t* pb) {

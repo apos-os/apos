@@ -27,11 +27,13 @@ int inet_bindable(const netaddr_t* addr) {
     case AF_UNSPEC:
       break;  // Will error out.
   }
-  for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
-    nic_t* nic = nic_get(nicidx);
+  nic_t* nic = nic_first();
+  while (nic) {
     if (inet_source_valid(addr, nic) == 0) {
+      nic_put(nic);
       return 0;
     }
+    nic_next(&nic);
   }
 
   return -EADDRNOTAVAIL;
@@ -55,14 +57,16 @@ int inet_source_valid(const netaddr_t* addr, const nic_t* nic) {
 }
 
 int inet_choose_bind(addrfam_t family, netaddr_t* addr_out) {
-  for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
-    nic_t* nic = nic_get(nicidx);
+  nic_t* nic = nic_first();
+  while (nic) {
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
       if (nic->addrs[addridx].addr.family == family) {
         *addr_out = nic->addrs[addridx].addr;
-        return nicidx;
+        nic_put(nic);
+        return 0;
       }
     }
+    nic_next(&nic);
   }
   return -EAFNOSUPPORT;
 }

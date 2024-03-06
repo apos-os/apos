@@ -18,9 +18,11 @@
 #include <stdint.h>
 
 #include "common/list.h"
+#include "common/refcount.h"
 #include "net/eth/arp/arp_cache.h"
 #include "net/addr.h"
 #include "net/pbuf.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
@@ -56,8 +58,10 @@ struct nic {
   nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
+  refcount_t ref;
   network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   arp_cache_t arp_cache;
+  list_link_t link;
 };
 
 // Initialize a nic_t structure.  Call this before calling nic_create().
@@ -71,13 +75,18 @@ void nic_init(nic_t* nic);
 // type-specific registries.
 void nic_create(nic_t* nic, const char* name_prefix);
 
-// Returns the number of configured NICs.
-int nic_count(void);
+// Returns the first configured NIC (with a reference), or NULL.
+nic_t* nic_first(void);
 
-// Returns the NIC at the given index, or NULL.
-nic_t* nic_get(int idx);
+// Iterates the given pointer, transferring the reference to the next NIC.  Sets
+// it to NULL if there are no more NICs to iterate through.
+void nic_next(nic_t** iter);
 
-// Returns the NIC with the given name, or NULL.
+// Returns the NIC with the given name (with a reference), or NULL.
 nic_t* nic_get_nm(const char* name);
+
+// Puts a NIC (returns the reference taken by one of the above).  The caller
+// must not reference the nic_t after calling this.
+void nic_put(nic_t* nic);
 
 #endif

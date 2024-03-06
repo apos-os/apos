@@ -26,8 +26,8 @@ int inet_bindable(const netaddr_t* addr);
 // given NIC, or -error.
 int inet_source_valid(const netaddr_t* addr, const nic_t* iface);
 
-// Chooses a default bind address for the given address family.  Returns the
-// address of the chosen NIC if successful, or -error if an address isn't found.
+// Chooses a default bind address for the given address family.  Returns 0 if
+// successful, or -error if an address isn't found.
 int inet_choose_bind(addrfam_t family, netaddr_t* addr_out);
 
 #endif
