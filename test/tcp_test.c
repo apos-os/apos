@@ -164,6 +164,14 @@ static int get_rto(int socket) {
   return rto_ms;
 }
 
+static int get_so_error(int socket) {
+  int error = 0;
+  socklen_t len = sizeof(error);
+  int result = net_getsockopt(socket, SOL_SOCKET, SO_ERROR, &error, &len);
+  KEXPECT_EQ(0, result);
+  return error;
+}
+
 static int getsockname_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
@@ -417,6 +425,8 @@ static void sockopt_test(void) {
   KTEST_BEGIN("TCP socket: setsockopt");
   KEXPECT_EQ(-ENOPROTOOPT,
              net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_setsockopt(sock, SOL_SOCKET, SO_ERROR, &val[0], vallen));
 
   KEXPECT_EQ(0, vfs_close(sock));
 }
@@ -1424,7 +1434,7 @@ static void connect_rst_test(void) {
   KEXPECT_TRUE(has_sigpipe());
   proc_suppress_signal(proc_current(), SIGPIPE);
 
-  // TODO(tcp): if SO_ERROR is implemented, test here as well.
+  KEXPECT_EQ(0, get_so_error(s.socket));
 
   cleanup_tcp_test(&s);
 }
@@ -3000,7 +3010,7 @@ static void connect_tests(void) {
   simultaneous_connect_shutdown_wr_test7();
 }
 
-static void rst_during_established_test(void) {
+static void rst_during_established_test1(void) {
   KTEST_BEGIN("TCP: RST during established (no data)");
   tcp_test_state_t s;
   init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
@@ -3033,7 +3043,35 @@ static void rst_during_established_test(void) {
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
 
-  // TODO(tcp): if SO_ERROR is implemented, test here as well.
+  KEXPECT_EQ(0, get_so_error(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void rst_during_established_test1b(void) {
+  KTEST_BEGIN("TCP: RST during established (no data, test SO_ERROR)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+
+  KEXPECT_EQ(ECONNRESET, get_so_error(s.socket));
+  KEXPECT_EQ(0, get_so_error(s.socket));
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
 
   cleanup_tcp_test(&s);
 }
@@ -4143,7 +4181,8 @@ static void read_and_shutdown_test(void) {
 
 static void established_tests(void) {
   basic_established_recv_test();
-  rst_during_established_test();
+  rst_during_established_test1();
+  rst_during_established_test1b();
   rst_during_established_test2();
   rst_during_established_test3();
   rst_during_established_blocking_recv_test();
@@ -6599,7 +6638,7 @@ static void active_close2(void) {
   SEND_PKT(&s, RST_PKT(/* seq */ 507, /* ack */ 102));
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
 
-  // TODO(tcp): use SO_ERROR to verify no error after RST here.
+  KEXPECT_EQ(0, get_so_error(s.socket));
 
   cleanup_tcp_test(&s);
 }
@@ -9623,7 +9662,9 @@ static void nonblocking_connect_test2(void) {
   KEXPECT_EQ(1, finish_op(&s));
   KEXPECT_EQ(KPOLLERR, s.op.events);
 
-  // TODO(tcp): get (and test) error with SO_ERROR.
+  KEXPECT_EQ(ECONNREFUSED, get_so_error(s.socket));
+  KEXPECT_EQ(0, get_so_error(s.socket));
+
   cleanup_tcp_test(&s);
 }
 

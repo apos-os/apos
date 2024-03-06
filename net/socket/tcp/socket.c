@@ -2424,6 +2424,12 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     return getsockopt_tvms(val, val_len, socket->send_timeout_ms);
   } else if (level == SOL_SOCKET && option == SO_CONNECTTIMEO) {
     return getsockopt_tvms(val, val_len, socket->connect_timeout_ms);
+  } else if (level == SOL_SOCKET && option == SO_ERROR) {
+    kspin_lock(&socket->spin_mu);
+    int err = socket->error;
+    socket->error = 0;
+    kspin_unlock(&socket->spin_mu);
+    return getsockopt_int(val, val_len, err);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     kspin_lock(&socket->spin_mu);
     if (socket->state != TCP_CLOSED) {
