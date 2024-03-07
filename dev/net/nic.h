@@ -42,6 +42,10 @@ typedef struct {
   // Enqueue the given packet (which should be an L2 frame) for transmission.
   // Returns 0 on success.
   int (*nic_tx)(nic_t* nic, pbuf_t* buf);
+
+  // Clean up the NIC and free any memory (including the nic_t itself, if
+  // necessary).
+  void (*nic_cleanup)(nic_t* nic);
 } nic_ops_t;
 
 typedef enum {
@@ -58,10 +62,11 @@ struct nic {
   nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
-  refcount_t ref;
+  refcount_t ref;  // External refcount (will be zero usually).
   network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   arp_cache_t arp_cache;
   list_link_t link;
+  bool deleted;
 };
 
 // Initialize a nic_t structure.  Call this before calling nic_create().
@@ -74,6 +79,14 @@ void nic_init(nic_t* nic);
 // TODO(aoates): come up with a better unified device model, rather than these
 // type-specific registries.
 void nic_create(nic_t* nic, const char* name_prefix);
+
+// Delete the given NIC.  It will no longer be used (returned for iterations
+// through the NIC list), but there may still be concurrent accesses to it.
+// Once the concurrent accesses are complete and there are no active references,
+// the NIC's cleanup method will be called.
+//
+// Does not consume a reference.
+void nic_delete(nic_t* nic);
 
 // Returns the first configured NIC (with a reference), or NULL.
 nic_t* nic_first(void);

@@ -71,6 +71,7 @@ void nic_init(nic_t* nic) {
     nic->addrs[i].addr.family = AF_UNSPEC;
   }
   arp_cache_init(&nic->arp_cache);
+  nic->deleted = false;
 }
 
 void nic_create(nic_t* nic, const char* name_prefix) {
@@ -78,14 +79,30 @@ void nic_create(nic_t* nic, const char* name_prefix) {
   find_free_name(nic, name_prefix);
   kspin_lock(&g_nics_lock);
   klogf("net: added NIC %s with MAC %s\n", nic->name, mac2str(nic->mac, buf));
-  refcount_inc(&nic->ref);
   list_push(&g_nics, &nic->link);
   kspin_unlock(&g_nics_lock);
+}
+
+void nic_delete(nic_t* nic) {
+  KASSERT(!nic->deleted);
+
+  kspin_lock(&g_nics_lock);
+  nic->deleted = true;
+  kspin_unlock(&g_nics_lock);
+}
+
+static void skip_deleted(nic_t** iter) {
+  KASSERT_DBG(kspin_is_held(&g_nics_lock));
+  while ((*iter) && (*iter)->deleted) {
+    list_link_t* next_link = (*iter)->link.next;
+    *iter = next_link ? container_of(next_link, nic_t, link) : NULL;
+  }
 }
 
 nic_t* nic_first(void) {
   kspin_lock(&g_nics_lock);
   nic_t* nic = container_of(g_nics.head, nic_t, link);
+  skip_deleted(&nic);
   if (nic) {
     refcount_inc(&nic->ref);
   }
@@ -97,11 +114,12 @@ void nic_next(nic_t** iter) {
   kspin_lock(&g_nics_lock);
   list_link_t* next_link = (*iter)->link.next;
   nic_t* next = next_link ? container_of(next_link, nic_t, link) : NULL;
+  skip_deleted(&next);
   if (next) {
     refcount_inc(&next->ref);
   }
-  nic_put(*iter);
   kspin_unlock(&g_nics_lock);
+  nic_put(*iter);
   *iter = next;
 }
 
@@ -119,8 +137,19 @@ nic_t* nic_get_nm(const char* name) {
 void nic_put(nic_t* nic) {
   // Crude and incorrect safety check to catch refcount leaks.
   KASSERT(nic->ref.ref < 20);
+
+  bool cleanup = false;
   if (refcount_dec(&nic->ref) == 0) {
+    kspin_lock(&g_nics_lock);
+    if (nic->deleted) {
+      cleanup = true;
+      list_remove(&g_nics, &nic->link);
+    }
+    kspin_unlock(&g_nics_lock);
+  }
+
+  if (cleanup) {
     klogf("net: deleting NIC %s\n", nic->name);
-    // TODO(aoates): delete the NIC (likely a NIC-specific operation).
+    nic->ops->nic_cleanup(nic);
   }
 }

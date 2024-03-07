@@ -158,6 +158,10 @@ static int rtl_tx(nic_t* base, pbuf_t* pb) {
   return 0;
 }
 
+static void rtl_cleanup(nic_t* base) {
+  KLOG(DFATAL, "RTL NIC cleanup called (shouldn't be deleted)\n");
+}
+
 static void rtl_handle_recv_one(rtl8139_t* nic) {
   // Read the packet header.
   uint32_t header;
@@ -364,4 +368,5 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
 
 static nic_ops_t rtl_ops = {
   &rtl_tx,
+  &rtl_cleanup,
 };
