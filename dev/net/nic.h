@@ -52,6 +52,7 @@ typedef enum {
   NIC_UNKNOWN = 0,
   NIC_ETHERNET = 1,
   NIC_LOOPBACK = 2,
+  NIC_TUN = 3,
 } nic_type_t;
 
 struct nic {

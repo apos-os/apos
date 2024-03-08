@@ -37,6 +37,9 @@ char* inet2str(in_addr_t addr, char* buf);
 // Parse an inet address.  Returns 0 if unparseable.
 in_addr_t str2inet(const char* s);
 
+// Create a sockaddr_in from an IP string and port.
+struct sockaddr_in str2sin(const char* ip, int port);
+
 #define SOCKADDR_PRETTY_LEN 109
 
 // Pretty-print a generic sockaddr.

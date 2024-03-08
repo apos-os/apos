@@ -29,6 +29,14 @@ char* inet2str(in_addr_t addr, char* buf) {
   return buf;
 }
 
+struct sockaddr_in str2sin(const char* ip, int port) {
+  struct sockaddr_in saddr;
+  saddr.sin_family = AF_INET;
+  saddr.sin_addr.s_addr = str2inet(ip);
+  saddr.sin_port = htob16(port);
+  return saddr;
+}
+
 static bool atol_internal(const char** s, long* out) {
   *out = 0;
   // Use do/while to fail if we _start_ with a period or NULL.

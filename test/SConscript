@@ -62,6 +62,7 @@ srcs = [
   'tcp_test.c',
   'test_point.c',
   'tty_test.c',
+  'tuntap_test.c',
   'user_test.c',
   'vm_test.c',
   'vfs_fifo_test.c',

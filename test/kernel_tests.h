@@ -71,6 +71,7 @@ void proc_thread_test(void);
 void futex_test(void);
 void devicetree_test(void);
 void tcp_test(void);
+void tuntap_test(void);
 
 #if ENABLE_NVME
 void nvme_test(void);
