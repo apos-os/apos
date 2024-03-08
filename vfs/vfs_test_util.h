@@ -44,5 +44,6 @@ bool vfs_get_force_no_files(void);
 // Make the given file descriptor non-blocking.
 // TODO(aoates): ditch this when fcntl() is implemented.
 void vfs_make_nonblock(int fd);
+void vfs_make_blocking(int fd);
 
 #endif
