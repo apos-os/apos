@@ -195,7 +195,12 @@ static int tuntap_cd_read(struct char_dev* dev, void* buf, size_t len,
 
 static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
                            int flags) {
-  return -ENOTSUP;
+  tuntap_dev_t* tt = (tuntap_dev_t*)dev->dev_data;
+  KASSERT_DBG(&tt->chardev == dev);
+  pbuf_t* pb = pbuf_create(0, len);
+  kmemcpy(pbuf_get(pb), buf, len);
+  ip_recv(&tt->nic, pb);
+  return len;
 }
 
 static int tuntap_cd_poll(struct char_dev* dev, short event_mask,

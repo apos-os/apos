@@ -16,6 +16,7 @@
 
 #include "common/endian.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
@@ -180,6 +181,32 @@ static void blocking_read_test(test_fixture_t* f) {
   vfs_make_nonblock(f->tt_fd);
 }
 
+static void basic_rx_test(test_fixture_t* f) {
+  KTEST_BEGIN("TUN/TAP: basic RX test");
+
+  // We should get an IP header, a UDP header, and some data.
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "abc", 3);
+
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = 0;
+
+  ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
+
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+}
+
 void tuntap_test(void) {
   KTEST_SUITE_BEGIN("TUN/TAP tests");
 
@@ -208,6 +235,7 @@ void tuntap_test(void) {
 
   basic_tx_test(&fixture);
   blocking_read_test(&fixture);
+  basic_rx_test(&fixture);
 
   KTEST_BEGIN("TUN/TAP: test teardown");
   // Send some more packets to make sure we delete queued packets.
