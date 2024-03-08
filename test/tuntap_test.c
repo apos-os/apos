@@ -19,18 +19,31 @@
 #include "net/socket/socket.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
+#include "proc/kthread.h"
+#include "proc/notification.h"
+#include "proc/process.h"
+#include "proc/signal/signal.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
 
 #define BUFSIZE 500
 #define SRC_IP "127.0.5.1"
 #define DST_IP "127.0.5.2"
 
+#define THREAD_BUF_SIZE 50
+
 typedef struct {
   int sock;
   int tt_fd;
+
+  notification_t thread_started;
+  notification_t thread_done;
+  int thread_result;
+  char thread_buf[THREAD_BUF_SIZE];
 } test_fixture_t;
 
 static void basic_tx_test(test_fixture_t* f) {
@@ -98,6 +111,75 @@ static void basic_tx_test(test_fixture_t* f) {
   kfree(buf);
 }
 
+static void* do_read(void* arg) {
+  test_fixture_t* f = (test_fixture_t*)arg;
+  ntfn_notify(&f->thread_started);
+  f->thread_result = vfs_read(f->tt_fd, &f->thread_buf, THREAD_BUF_SIZE);
+  ntfn_notify(&f->thread_done);
+  return NULL;
+}
+
+static void blocking_read_test(test_fixture_t* f) {
+  KTEST_BEGIN("TUN/TAP: read() blocks until packets are available");
+  vfs_make_blocking(f->tt_fd);
+
+  ntfn_init(&f->thread_started);
+  ntfn_init(&f->thread_done);
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_read, f));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&f->thread_done, 50));
+
+  struct sockaddr_in dst = str2sin(DST_IP, 5678);
+  KEXPECT_EQ(
+      3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&f->thread_done, 5000));
+
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             f->thread_result);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+
+  KTEST_BEGIN("TUN/TAP: read() blocks, interrupted");
+  ntfn_init(&f->thread_started);
+  ntfn_init(&f->thread_done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_read, f));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&f->thread_started, 5000));
+
+  KEXPECT_EQ(0, proc_kill_thread(thread, SIGUSR1));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&f->thread_done, 5000));
+
+  KEXPECT_EQ(-EINTR, f->thread_result);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+
+  KTEST_BEGIN("TUN/TAP: read() multi-thread race");
+  ntfn_init(&f->thread_started);
+  ntfn_init(&f->thread_done);
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_read, f));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&f->thread_started, 5000));
+  kthread_disable(thread);
+
+  KEXPECT_EQ(
+      3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+  // The other thread should be notified and wake up, but not run.
+  ksleep(10);
+  // We steal the packet.
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(f->tt_fd, &f->thread_buf, THREAD_BUF_SIZE));
+  kthread_enable(thread);
+  KEXPECT_FALSE(ntfn_await_with_timeout(&f->thread_done, 10));
+
+  // Let the other thread get one now.
+  KEXPECT_EQ(
+      2, net_sendto(f->sock, "de", 2, 0, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&f->thread_done, 5000));
+
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 2, f->thread_result);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  vfs_make_nonblock(f->tt_fd);
+}
+
 void tuntap_test(void) {
   KTEST_SUITE_BEGIN("TUN/TAP tests");
 
@@ -116,6 +198,7 @@ void tuntap_test(void) {
   KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
   fixture.tt_fd = vfs_open("_tuntap_test_dev", VFS_O_RDWR);
   KEXPECT_GE(fixture.tt_fd, 0);
+  vfs_make_nonblock(fixture.tt_fd);
 
   fixture.sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(fixture.sock, 0);
@@ -124,6 +207,7 @@ void tuntap_test(void) {
   KEXPECT_EQ(0, net_bind(fixture.sock, (struct sockaddr*)&src, sizeof(src)));
 
   basic_tx_test(&fixture);
+  blocking_read_test(&fixture);
 
   KTEST_BEGIN("TUN/TAP: test teardown");
   // Send some more packets to make sure we delete queued packets.

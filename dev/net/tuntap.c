@@ -26,8 +26,11 @@
 #include "memory/kmalloc.h"
 #include "net/ip/ip.h"
 #include "net/pbuf.h"
+#include "proc/kthread.h"
+#include "proc/scheduler.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/dev.h"
+#include "user/include/apos/vfs/vfs.h"
 
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
 
@@ -41,6 +44,8 @@ typedef struct {
   kspinlock_t lock;
   list_t tx;
   ssize_t tx_queued;
+
+  kthread_queue_t wait;
 } tuntap_dev_t;
 
 // NIC operations.
@@ -72,6 +77,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   tt->lock = KSPINLOCK_NORMAL_INIT;
   tt->tx = LIST_INIT;
   tt->tx_queued = 0;
+  kthread_queue_init(&tt->wait);
 
   // Create the character device first.
   tt->dev_id = kmakedev(DEVICE_MAJOR_TUN, 0);
@@ -123,21 +129,6 @@ int tuntap_destroy(apos_dev_t id) {
   return 0;
 }
 
-static pbuf_t* pop_tx(tuntap_dev_t* tt) {
-  kspin_lock(&tt->lock);
-  list_link_t* link = list_pop(&tt->tx);
-  if (!link) {
-    kspin_unlock(&tt->lock);
-    return NULL;
-  }
-
-  pbuf_t* pb = container_of(link, pbuf_t, link);
-  tt->tx_queued -= pb->total_len;
-  KASSERT_DBG(tt->tx_queued >= 0);
-  kspin_unlock(&tt->lock);
-  return pb;
-}
-
 static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf) {
   KASSERT_DBG(nic->type == NIC_TUN);
   tuntap_dev_t* tt = (tuntap_dev_t*)nic;
@@ -151,6 +142,7 @@ static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf) {
   }
   list_push(&tt->tx, &buf->link);
   tt->tx_queued += buf->total_len;
+  scheduler_wake_one(&tt->wait);
   kspin_unlock(&tt->lock);
   return 0;
 }
@@ -158,11 +150,14 @@ static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf) {
 static void tuntap_nic_cleanup(nic_t* nic) {
   KASSERT_DBG(nic->type == NIC_TUN);
   tuntap_dev_t* tt = (tuntap_dev_t*)nic;
-  pbuf_t* pb = pop_tx(tt);
-  while (pb) {
+
+  while (!list_empty(&tt->tx)) {
+    list_link_t* link = list_pop(&tt->tx);
+    pbuf_t* pb = container_of(link, pbuf_t, link);
+    tt->tx_queued -= pb->total_len;
     pbuf_free(pb);
-    pb = pop_tx(tt);
   }
+  KASSERT_DBG(tt->tx_queued == 0);
   kfree(tt);
 }
 
@@ -170,11 +165,27 @@ static int tuntap_cd_read(struct char_dev* dev, void* buf, size_t len,
                           int flags) {
   tuntap_dev_t* tt = (tuntap_dev_t*)dev->dev_data;
   KASSERT_DBG(&tt->chardev == dev);
-  // TODO(aoates): block if no packets are available.
-  pbuf_t* pb = pop_tx(tt);
-  if (!pb) {
-    return -EAGAIN;
+
+  kspin_lock(&tt->lock);
+  while (list_empty(&tt->tx)) {
+    if (flags & VFS_O_NONBLOCK) {
+      kspin_unlock(&tt->lock);
+      return -EAGAIN;
+    }
+
+    int result = scheduler_wait_on_splocked(&tt->wait, -1, &tt->lock);
+    if (result == SWAIT_INTERRUPTED) {
+      kspin_unlock(&tt->lock);
+      return -EINTR;
+    }
+    KASSERT_DBG(result == SWAIT_DONE);
   }
+
+  list_link_t* link = list_pop(&tt->tx);
+  pbuf_t* pb = container_of(link, pbuf_t, link);
+  tt->tx_queued -= pb->total_len;
+  KASSERT_DBG(tt->tx_queued >= 0);
+  kspin_unlock(&tt->lock);
 
   size_t read_len = min(len, pbuf_size(pb));
   kmemcpy(buf, pbuf_getc(pb), read_len);
