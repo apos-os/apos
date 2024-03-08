@@ -27,7 +27,9 @@
 #include "proc/sleep.h"
 #include "test/ktest.h"
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/vfs/poll.h"
 #include "user/include/apos/vfs/vfs.h"
+#include "vfs/poll.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
 
@@ -45,6 +47,7 @@ typedef struct {
   notification_t thread_done;
   int thread_result;
   char thread_buf[THREAD_BUF_SIZE];
+  int poll_events;
 } test_fixture_t;
 
 static void basic_tx_test(test_fixture_t* f) {
@@ -207,6 +210,59 @@ static void basic_rx_test(test_fixture_t* f) {
   KEXPECT_STREQ("abc", buf);
 }
 
+static void* do_poll(void* arg) {
+  test_fixture_t* f = (test_fixture_t*)arg;
+  ntfn_notify(&f->thread_started);
+  struct apos_pollfd pfd;
+  pfd.fd = f->tt_fd;
+  pfd.events = f->poll_events;
+  pfd.revents = 0;
+  f->thread_result = vfs_poll(&pfd, 1, 5000);
+  f->poll_events = pfd.revents;
+  ntfn_notify(&f->thread_done);
+  return NULL;
+}
+
+static void poll_test(test_fixture_t* f) {
+  KTEST_BEGIN("TUN/TAP: poll test");
+
+  ntfn_init(&f->thread_started);
+  ntfn_init(&f->thread_done);
+  f->poll_events = KPOLLIN | KPOLLHUP | KPOLLRDBAND | KPOLLRDNORM | KPOLLPRI;
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, f));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&f->thread_done, 10));
+
+  struct sockaddr_in dst = str2sin(DST_IP, 5678);
+  KEXPECT_EQ(
+      3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_TRUE(ntfn_await_with_timeout(&f->thread_done, 3000));
+
+  KEXPECT_EQ(1, f->thread_result);
+  KEXPECT_EQ(KPOLLIN, f->thread_result);
+  KEXPECT_EQ(NULL, kthread_join(thread));
+
+  struct apos_pollfd pfd;
+  pfd.fd = f->tt_fd;
+  pfd.events = KPOLLIN | KPOLLOUT;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));
+  KEXPECT_EQ(KPOLLIN | KPOLLOUT, pfd.revents);
+
+  char buf[40];
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(f->tt_fd, buf, 40));
+
+  pfd.events = KPOLLIN | KPOLLOUT;
+  pfd.revents = 0;
+  KEXPECT_EQ(1, vfs_poll(&pfd, 1, 1000));
+  KEXPECT_EQ(KPOLLOUT, pfd.revents);
+
+  pfd.events = KPOLLIN;
+  pfd.revents = 0;
+  KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
+}
+
 void tuntap_test(void) {
   KTEST_SUITE_BEGIN("TUN/TAP tests");
 
@@ -236,6 +292,7 @@ void tuntap_test(void) {
   basic_tx_test(&fixture);
   blocking_read_test(&fixture);
   basic_rx_test(&fixture);
+  poll_test(&fixture);
 
   KTEST_BEGIN("TUN/TAP: test teardown");
   // Send some more packets to make sure we delete queued packets.
@@ -245,8 +302,21 @@ void tuntap_test(void) {
   KEXPECT_EQ(3, net_sendto(fixture.sock, "def", 3, 0, (struct sockaddr*)&dst,
                            sizeof(dst)));
 
+  // Also start an async poll().
+  ntfn_init(&fixture.thread_started);
+  ntfn_init(&fixture.thread_done);
+  fixture.poll_events = 0;
+  kthread_t thread;
+  KEXPECT_EQ(0, proc_thread_create(&thread, &do_poll, &fixture));
+  KEXPECT_FALSE(ntfn_await_with_timeout(&fixture.thread_done, 10));
+
   KEXPECT_EQ(0, vfs_close(fixture.sock));
   KEXPECT_EQ(0, vfs_close(fixture.tt_fd));
   KEXPECT_EQ(0, vfs_unlink("_tuntap_test_dev"));
   KEXPECT_EQ(0, tuntap_destroy(id));
+
+  KEXPECT_TRUE(ntfn_await_with_timeout(&fixture.thread_done, 3000));
+  KEXPECT_EQ(1, fixture.thread_result);
+  KEXPECT_EQ(KPOLLNVAL, fixture.poll_events);
+  KEXPECT_EQ(NULL, kthread_join(thread));
 }

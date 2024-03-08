@@ -31,6 +31,7 @@
 #include "proc/spinlock.h"
 #include "user/include/apos/dev.h"
 #include "user/include/apos/vfs/vfs.h"
+#include "vfs/poll.h"
 
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
 
@@ -45,6 +46,7 @@ typedef struct {
   list_t tx;
   ssize_t tx_queued;
 
+  poll_event_t poll_event;
   kthread_queue_t wait;
 } tuntap_dev_t;
 
@@ -65,6 +67,15 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
 static int tuntap_cd_poll(struct char_dev* dev, short event_mask,
                           poll_state_t* poll);
 
+static short tuntap_poll_events(const tuntap_dev_t* tt) {
+  KASSERT_DBG(kspin_is_held(&tt->lock));
+  short events = KPOLLOUT;
+  if (!list_empty(&tt->tx)) {
+    events |= KPOLLIN;
+  }
+  return events;
+}
+
 nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   if (flags != 0) {
     KLOG(INFO, "unsupported flags 0x%x\n", flags);
@@ -78,6 +89,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   tt->tx = LIST_INIT;
   tt->tx_queued = 0;
   kthread_queue_init(&tt->wait);
+  poll_init_event(&tt->poll_event);
 
   // Create the character device first.
   tt->dev_id = kmakedev(DEVICE_MAJOR_TUN, 0);
@@ -121,6 +133,8 @@ int tuntap_destroy(apos_dev_t id) {
          errorname(-result));
     return result;
   }
+  poll_trigger_event(&tt->poll_event, KPOLLNVAL);
+  KASSERT(list_empty(&tt->poll_event.refs));
 
   // TODO(aoates): redo NIC refcounting and deletion system, this is strange and
   // brittle.
@@ -143,6 +157,7 @@ static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf) {
   list_push(&tt->tx, &buf->link);
   tt->tx_queued += buf->total_len;
   scheduler_wake_one(&tt->wait);
+  poll_trigger_event(&tt->poll_event, tuntap_poll_events(tt));
   kspin_unlock(&tt->lock);
   return 0;
 }
@@ -205,5 +220,17 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
 
 static int tuntap_cd_poll(struct char_dev* dev, short event_mask,
                           poll_state_t* poll) {
-  return -ENOTSUP;
+  tuntap_dev_t* tt = (tuntap_dev_t*)dev->dev_data;
+  KASSERT_DBG(&tt->chardev == dev);
+
+  kspin_lock(&tt->lock);
+  int result;
+  const short masked_events = tuntap_poll_events(tt) & event_mask;
+  if (masked_events || !poll) {
+    result = masked_events;
+  } else {
+    result = poll_add_event(poll, &tt->poll_event, event_mask);
+  }
+  kspin_unlock(&tt->lock);
+  return result;
 }
