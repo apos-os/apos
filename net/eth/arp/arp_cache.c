@@ -15,6 +15,7 @@
 #include "net/eth/arp/arp_cache.h"
 
 #include "common/errno.h"
+#include "common/hashtable.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/timer.h"
@@ -32,6 +33,16 @@
 void arp_cache_init(arp_cache_t* cache) {
   htbl_init(&cache->cache, ARP_CACHE_INITIAL_SIZE);
   kthread_queue_init(&cache->wait);
+}
+
+static void entry_dtor(void* arg, uint32_t key, void* val) {
+  arp_cache_entry_t* entry = (arp_cache_entry_t*)val;
+  kfree(entry);
+}
+
+void arp_cache_cleanup(arp_cache_t* cache) {
+  htbl_clear(&cache->cache, &entry_dtor, NULL);
+  htbl_cleanup(&cache->cache);
 }
 
 // TODO(aoates): periodically go through the ARP caches and clean out expired

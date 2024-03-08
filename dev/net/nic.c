@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "common/list.h"
 #include "common/refcount.h"
+#include "net/eth/arp/arp_cache.h"
 #include "proc/spinlock.h"
 
 static list_t g_nics = LIST_INIT_STATIC;
@@ -151,6 +152,7 @@ void nic_put(nic_t* nic) {
 
   if (cleanup) {
     klogf("net: deleting NIC %s\n", nic->name);
+    arp_cache_cleanup(&nic->arp_cache);
     nic->ops->nic_cleanup(nic);
   }
 }
