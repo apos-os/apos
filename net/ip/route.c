@@ -44,6 +44,7 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   nic_t* nic = nic_first();
   result->nic = NULL;
   while (nic) {
+    kspin_lock(&nic->lock);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
                               nic->addrs[addridx].addr.family != AF_UNSPEC;
          addridx++) {
@@ -53,6 +54,7 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
         result->nic = nic_get_nm("lo0");
         result->nexthop = dst;
         result->src = nic->addrs[addridx].addr;
+        kspin_unlock(&nic->lock);
         nic_put(nic);
         return (result->nic != NULL);
       }
@@ -67,6 +69,7 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
         longest_prefix = nic->addrs[addridx].prefix_len;
       }
     }
+    kspin_unlock(&nic->lock);
     nic_next(&nic);
   }
   if (longest_prefix > 0) {
@@ -81,12 +84,14 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
     result->nic = nic_get_nm(g_default_route.nic_name);
     if (result->nic) {
       result->src.family = ADDR_UNSPEC;
+      kspin_lock(&result->nic->lock);
       for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
         if (result->nic->addrs[i].addr.family == dst.family) {
           result->src = result->nic->addrs[0].addr;
           break;
         }
       }
+      kspin_unlock(&result->nic->lock);
       if (result->src.family == ADDR_UNSPEC) {
         klogfm(KL_NET, WARNING,
                "unable to route packet with address family %d to default route "

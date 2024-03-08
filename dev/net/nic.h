@@ -55,7 +55,9 @@ typedef enum {
 } nic_type_t;
 
 struct nic {
-  // Fields maintained by the NIC driver.
+  kspinlock_t lock;
+
+  // Fields maintained by the NIC driver.  Should be const after construction.
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
   nic_type_t type;              // What kind of NIC
   uint8_t mac[NIC_MAC_LEN];     // Hardware address.
@@ -65,8 +67,8 @@ struct nic {
   refcount_t ref;  // External refcount (will be zero usually).
   network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   arp_cache_t arp_cache;
-  list_link_t link;
-  bool deleted;
+  list_link_t link;  // Protected by global mutex, not |lock|.
+  bool deleted;      // Protected by global mutex, not |lock|.
 };
 
 // Initialize a nic_t structure.  Call this before calling nic_create().

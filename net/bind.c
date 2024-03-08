@@ -15,8 +15,10 @@
 #include "net/bind.h"
 
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "dev/net/nic.h"
 #include "net/addr.h"
+#include "proc/spinlock.h"
 
 int inet_bindable(const netaddr_t* addr) {
   switch (addr->family) {
@@ -39,9 +41,11 @@ int inet_bindable(const netaddr_t* addr) {
   return -EADDRNOTAVAIL;
 }
 
-int inet_source_valid(const netaddr_t* addr, const nic_t* nic) {
+int inet_source_valid(const netaddr_t* addr, nic_t* nic) {
+  kspin_lock(&nic->lock);
   for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
     if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
+      kspin_unlock(&nic->lock);
       return 0;
     }
 
@@ -49,23 +53,28 @@ int inet_source_valid(const netaddr_t* addr, const nic_t* nic) {
     // address in the configured network.
     if (nic->type == NIC_LOOPBACK &&
         netaddr_match(addr, &nic->addrs[addridx])) {
+      kspin_unlock(&nic->lock);
       return 0;
     }
   }
 
+  kspin_unlock(&nic->lock);
   return -EADDRNOTAVAIL;
 }
 
 int inet_choose_bind(addrfam_t family, netaddr_t* addr_out) {
   nic_t* nic = nic_first();
   while (nic) {
+    kspin_lock(&nic->lock);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
       if (nic->addrs[addridx].addr.family == family) {
         *addr_out = nic->addrs[addridx].addr;
+        kspin_unlock(&nic->lock);
         nic_put(nic);
         return 0;
       }
     }
+    kspin_unlock(&nic->lock);
     nic_next(&nic);
   }
   return -EAFNOSUPPORT;

@@ -24,7 +24,7 @@ int inet_bindable(const netaddr_t* addr);
 
 // Returns 0 if the given address can be used as a source for a packet on the
 // given NIC, or -error.
-int inet_source_valid(const netaddr_t* addr, const nic_t* iface);
+int inet_source_valid(const netaddr_t* addr, nic_t* iface);
 
 // Chooses a default bind address for the given address family.  Returns 0 if
 // successful, or -error if an address isn't found.
