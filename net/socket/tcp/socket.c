@@ -1954,9 +1954,9 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   kspin_unlock(&sock->spin_mu);
   KASSERT(refcount_dec(&sock->ref) > 0);
 
-  // Send the initial SYN.
-  result = tcp_send_syn(sock, /* ack */ false,
-                        /* allow_block */ fflags & VFS_O_NONBLOCK);
+  // Send the initial SYN.  Always allow blocking here --- we want to block for
+  // ARP even if the socket is non-blocking.
+  result = tcp_send_syn(sock, /* ack */ false, /* allow_block */ true);
   kmutex_unlock(&sock->mu);
   if (result) {
     return result;

@@ -16,9 +16,11 @@
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "dev/net/tuntap.h"
 #include "dev/timer.h"
 #include "net/addr.h"
 #include "net/bind.h"
+#include "net/eth/eth.h"
 #include "net/inet.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
@@ -57,6 +59,9 @@
 // How long (in ms) to wait for async operations to confirm they're blocking.
 // Increase this to make tests more stringent at the cost of running longer.
 #define BLOCK_VERIFY_MS 10
+
+#define TAP_SRC_IP "127.0.1.1"
+#define TAP_DST_IP "127.0.1.2"
 
 static uint32_t g_seq_start = TEST_SEQ_START;
 
@@ -9820,6 +9825,79 @@ static void cwnd_socket_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void nonblocking_tap_test(void) {
+  KTEST_BEGIN("TCP: non-blocking connect still blocks for ARP");
+  apos_dev_t id;
+  nic_t* nic = tuntap_create(5000, TUNTAP_TAP_MODE, &id);
+  KEXPECT_NE(NULL, nic);
+
+  kspin_lock(&nic->lock);
+  nic->addrs[0].addr.family = ADDR_INET;
+  nic->addrs[0].addr.a.ip4.s_addr = str2inet(TAP_SRC_IP);
+  nic->addrs[0].prefix_len = 24;
+  kspin_unlock(&nic->lock);
+
+  KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
+  int tt_fd = vfs_open("_tuntap_test_dev", VFS_O_RDWR);
+  KEXPECT_GE(tt_fd, 0);
+  vfs_make_nonblock(tt_fd);
+
+  tcp_test_state_t s;
+  init_tcp_test(&s, TAP_SRC_IP, 0x1234, TAP_DST_IP, 0x5678);
+  vfs_make_nonblock(s.socket);
+  KEXPECT_EQ(0, do_bind(s.socket, TAP_SRC_IP, 0x1234));
+
+  // We should be able to start an async connect() and it will block because the
+  // ARP cache is empty, even though the socket is non-blocking.
+  KEXPECT_TRUE(start_connect(&s, TAP_DST_IP, 0x5678));
+
+  // We should have gotten an ARP request.
+  char* buf = kmalloc(500);
+  kmemset(buf, 0, 500);
+  KEXPECT_EQ(sizeof(eth_hdr_t) + 28 /* ARP request */,
+             vfs_read(tt_fd, buf, 500));
+
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
+  KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
+  char macstr1[NIC_MAC_PRETTY_LEN], macstr2[NIC_MAC_PRETTY_LEN];
+  KEXPECT_STREQ(mac2str(nic->mac, macstr1), mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, macstr1));
+
+  // Signal to kill the connecting thread.
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  cleanup_tcp_test(&s);
+
+
+  // Now try again with a blocking socket.
+  KTEST_BEGIN("TCP: blocking connect blocks for ARP");
+  init_tcp_test(&s, TAP_SRC_IP, 0x1234, TAP_DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, TAP_SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, TAP_DST_IP, 0x5678));
+
+  // We should have gotten an ARP request.
+  kmemset(buf, 0, 500);
+  KEXPECT_EQ(sizeof(eth_hdr_t) + 28 /* ARP request */,
+             vfs_read(tt_fd, buf, 500));
+
+  KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(mac2str(nic->mac, macstr1), mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, macstr1));
+
+  // Signal to kill the connecting thread.
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+
+  cleanup_tcp_test(&s);
+
+  KEXPECT_EQ(0, vfs_close(tt_fd));
+  KEXPECT_EQ(0, vfs_unlink("_tuntap_test_dev"));
+  KEXPECT_EQ(0, tuntap_destroy(id));
+  kfree(buf);
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -9854,6 +9932,7 @@ void tcp_test(void) {
 
   cwnd_test();
   cwnd_socket_test();
+  nonblocking_tap_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
