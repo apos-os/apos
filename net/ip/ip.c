@@ -65,6 +65,7 @@ int ip_send(pbuf_t* pb, bool allow_block) {
   char addrbuf[INET_PRETTY_LEN];
   if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
     KLOG(INFO, "net: rejecting too-short IP packet\n");
+    pbuf_free(pb);
     return -EINVAL;
   }
 
@@ -72,6 +73,7 @@ int ip_send(pbuf_t* pb, bool allow_block) {
   if (hdr->version_ihl >> 4 != 4) {
     KLOG(INFO, "net: rejecting IP packet with bad version %d\n",
          hdr->version_ihl >> 4);
+    pbuf_free(pb);
     return -EINVAL;
   }
 
@@ -82,6 +84,7 @@ int ip_send(pbuf_t* pb, bool allow_block) {
   if (ip_route(dst, &route) == false) {
     KLOG(INFO, "net: unable to route packet to %s\n",
          inet2str(hdr->dst_addr, addrbuf));
+    pbuf_free(pb);
     return -EINVAL;  // TODO
   }
 
@@ -94,12 +97,16 @@ int ip_send(pbuf_t* pb, bool allow_block) {
     KLOG(INFO, "net: unable to route packet with src %s on iface %s\n",
          inet2str(hdr->src_addr, addrbuf), route.nic->name);
     nic_put(route.nic);
+    pbuf_free(pb);
     return -EADDRNOTAVAIL;
   }
 
   int result =
       net_link_send(route.nic, route.nexthop, pb, ET_IPV4, allow_block);
   nic_put(route.nic);
+  if (result != 0) {
+    pbuf_free(pb);
+  }
   return result;
 }
 
