@@ -32,7 +32,7 @@ static const char* kTypeNames[DEVICE_MAX_MAJOR] = {
   "tty",   // DEVICE_MAJOR_TTY
   "nvme",  // DEVICE_MAJOR_NVME
   "tun",   // DEVICE_MAJOR_TUN
-  0x0,
+  "tap",   // DEVICE_MAJOR_TAP
   0x0,
   0x0,
 };

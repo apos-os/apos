@@ -14,6 +14,7 @@
 
 #include "dev/net/tuntap.h"
 
+#include "common/attributes.h"
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
@@ -24,6 +25,7 @@
 #include "dev/dev.h"
 #include "dev/net/nic.h"
 #include "memory/kmalloc.h"
+#include "net/eth/eth.h"
 #include "net/ip/ip.h"
 #include "net/pbuf.h"
 #include "proc/kthread.h"
@@ -34,6 +36,9 @@
 #include "vfs/poll.h"
 
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
+
+#define MIN_BUFSIZE 128
+#define ALL_FLAGS (TUNTAP_TAP_MODE)
 
 typedef struct {
   nic_t nic;
@@ -49,6 +54,10 @@ typedef struct {
   poll_event_t poll_event;
   kthread_queue_t wait;
 } tuntap_dev_t;
+
+static inline ALWAYS_INLINE bool is_tap(tuntap_dev_t* tt) {
+  return tt->flags & TUNTAP_TAP_MODE;
+}
 
 // NIC operations.
 static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf);
@@ -77,8 +86,11 @@ static short tuntap_poll_events(const tuntap_dev_t* tt) {
 }
 
 nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
-  if (flags != 0) {
+  if ((flags & ~ALL_FLAGS) != 0) {
     KLOG(INFO, "unsupported flags 0x%x\n", flags);
+    return NULL;
+  }
+  if (bufsize <= MIN_BUFSIZE || !id) {
     return NULL;
   }
 
@@ -92,7 +104,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   poll_init_event(&tt->poll_event);
 
   // Create the character device first.
-  tt->dev_id = kmakedev(DEVICE_MAJOR_TUN, 0);
+  tt->dev_id = kmakedev(is_tap(tt) ? DEVICE_MAJOR_TAP : DEVICE_MAJOR_TUN, 0);
   tt->chardev.read = &tuntap_cd_read;
   tt->chardev.write = &tuntap_cd_write;
   tt->chardev.poll = &tuntap_cd_poll;
@@ -100,7 +112,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
 
   // Initialize the NIC.
   nic_init(&tt->nic);
-  tt->nic.type = NIC_TUN;
+  tt->nic.type = is_tap(tt) ? NIC_ETHERNET : NIC_TUN;
   kmemset(tt->nic.mac, 0, NIC_MAC_LEN);
   tt->nic.ops = &tuntap_nic_ops;
 
@@ -113,7 +125,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   *id = tt->dev_id;
 
   // Initialize the NIC.
-  nic_create(&tt->nic, "tun");
+  nic_create(&tt->nic, is_tap(tt) ? "tap" : "tun");
   KLOG(INFO, "created TUN/TAP device %s\n", tt->nic.name);
 
   return &tt->nic;
@@ -144,7 +156,6 @@ int tuntap_destroy(apos_dev_t id) {
 }
 
 static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf) {
-  KASSERT_DBG(nic->type == NIC_TUN);
   tuntap_dev_t* tt = (tuntap_dev_t*)nic;
   kspin_lock(&tt->lock);
   if (tt->tx_queued + (ssize_t)buf->total_len > tt->bufsize) {
@@ -163,7 +174,6 @@ static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf) {
 }
 
 static void tuntap_nic_cleanup(nic_t* nic) {
-  KASSERT_DBG(nic->type == NIC_TUN);
   tuntap_dev_t* tt = (tuntap_dev_t*)nic;
 
   while (!list_empty(&tt->tx)) {
@@ -214,7 +224,11 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
   KASSERT_DBG(&tt->chardev == dev);
   pbuf_t* pb = pbuf_create(0, len);
   kmemcpy(pbuf_get(pb), buf, len);
-  ip_recv(&tt->nic, pb);
+  if (is_tap(tt)) {
+    eth_recv(&tt->nic, pb);
+  } else {
+    ip_recv(&tt->nic, pb);
+  }
   return len;
 }
 

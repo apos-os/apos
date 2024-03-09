@@ -19,6 +19,9 @@
 #include "dev/dev.h"
 #include "dev/net/nic.h"
 
+// TUN/TAP flags.
+#define TUNTAP_TAP_MODE 0x1  // Operate in L2 (tap) rather than L3 (tun) mode.
+
 // Create and register a TUN/TAP device.  |bufsize| is the number of bytes
 // (approximately) that will be buffered each on the rx and tx sides.
 nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id);

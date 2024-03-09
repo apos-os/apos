@@ -15,6 +15,9 @@
 #include "dev/net/tuntap.h"
 
 #include "common/endian.h"
+#include "dev/net/nic.h"
+#include "net/eth/arp/arp_cache_ops.h"
+#include "net/eth/eth.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
@@ -42,6 +45,7 @@
 typedef struct {
   int sock;
   int tt_fd;
+  nic_t* nic;
 
   notification_t thread_started;
   notification_t thread_done;
@@ -263,10 +267,8 @@ static void poll_test(test_fixture_t* f) {
   KEXPECT_EQ(0, vfs_poll(&pfd, 1, 0));
 }
 
-void tuntap_test(void) {
-  KTEST_SUITE_BEGIN("TUN/TAP tests");
-
-  KTEST_BEGIN("TUN/TAP: test setup");
+static void tun_tests(void) {
+  KTEST_BEGIN("TUN: test setup");
   test_fixture_t fixture;
   apos_dev_t id;
   nic_t* nic = tuntap_create(BUFSIZE, 0, &id);
@@ -294,7 +296,7 @@ void tuntap_test(void) {
   basic_rx_test(&fixture);
   poll_test(&fixture);
 
-  KTEST_BEGIN("TUN/TAP: test teardown");
+  KTEST_BEGIN("TUN: test teardown");
   // Send some more packets to make sure we delete queued packets.
   struct sockaddr_in dst = str2sin(DST_IP, 5678);
   KEXPECT_EQ(3, net_sendto(fixture.sock, "abc", 3, 0, (struct sockaddr*)&dst,
@@ -319,4 +321,123 @@ void tuntap_test(void) {
   KEXPECT_EQ(1, fixture.thread_result);
   KEXPECT_EQ(KPOLLNVAL, fixture.poll_events);
   KEXPECT_EQ(NULL, kthread_join(thread));
+}
+
+static void tap_tx_test(test_fixture_t* f) {
+  KTEST_BEGIN("TAP: basic TX test (to NIC's IP)");
+  struct sockaddr_in dst = str2sin(DST_IP, 5678);
+
+  // First, seed the ARP cache.
+  uint8_t remote_mac[NIC_MAC_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+  arp_cache_insert(f->nic, dst.sin_addr.s_addr, remote_mac);
+
+  KEXPECT_EQ(
+      3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+
+  // We should get an ethernet header, IP header, UDP header, and some data.
+  char* buf = kmalloc(BUFSIZE);
+  kmemset(buf, 0, BUFSIZE);
+  KEXPECT_EQ(sizeof(eth_hdr_t) + sizeof(ip4_hdr_t) + sizeof(udp_hdr_t) + 3,
+             vfs_read(f->tt_fd, buf, BUFSIZE));
+
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
+  KEXPECT_EQ(ET_IPV4, btoh16(eth_hdr->ethertype));
+  char macstr[NIC_MAC_PRETTY_LEN];
+  KEXPECT_STREQ("00:00:00:00:00:00", mac2str(eth_hdr->mac_src, macstr));
+  KEXPECT_STREQ("01:02:03:04:05:06", mac2str(eth_hdr->mac_dst, macstr));
+
+  const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)(buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(ip4_hdr->src_addr, str2inet(SRC_IP));
+  KEXPECT_EQ(ip4_hdr->dst_addr, str2inet(DST_IP));
+  KEXPECT_EQ(IPPROTO_UDP, ip4_hdr->protocol);
+
+  const udp_hdr_t* udp_hdr =
+      (const udp_hdr_t*)(buf + sizeof(eth_hdr_t) + sizeof(ip4_hdr_t));
+  KEXPECT_EQ(1234, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(5678, btoh16(udp_hdr->dst_port));
+  KEXPECT_STREQ(
+      "abc", buf + sizeof(eth_hdr_t) + sizeof(ip4_hdr_t) + sizeof(udp_hdr_t));
+
+  kfree(buf);
+}
+
+static void tap_rx_test(test_fixture_t* f) {
+  KTEST_BEGIN("TAP: basic RX test");
+
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "abc", 3);
+
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = 0;
+
+  ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
+
+  uint8_t remote_mac[NIC_MAC_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+  eth_add_hdr(pb, f->nic->mac, remote_mac, ET_IPV4);
+
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+}
+
+// For TAP mode, we test just the basics and assume TUN mode tests handle
+// everything else.
+static void tap_tests(void) {
+  KTEST_BEGIN("TAP: test setup");
+  test_fixture_t fixture;
+  apos_dev_t id;
+  nic_t* nic = tuntap_create(BUFSIZE, TUNTAP_TAP_MODE, &id);
+  KEXPECT_NE(NULL, nic);
+  fixture.nic = nic;
+
+  kspin_lock(&nic->lock);
+  nic->addrs[0].addr.family = ADDR_INET;
+  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].prefix_len = 24;
+  kspin_unlock(&nic->lock);
+
+  KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
+  fixture.tt_fd = vfs_open("_tuntap_test_dev", VFS_O_RDWR);
+  KEXPECT_GE(fixture.tt_fd, 0);
+  vfs_make_nonblock(fixture.tt_fd);
+
+  fixture.sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(fixture.sock, 0);
+  vfs_make_nonblock(fixture.sock);
+
+  struct sockaddr_in src = str2sin("0.0.0.0", 1234);
+  KEXPECT_EQ(0, net_bind(fixture.sock, (struct sockaddr*)&src, sizeof(src)));
+
+  tap_tx_test(&fixture);
+  tap_rx_test(&fixture);
+
+  KTEST_BEGIN("TAP: test teardown");
+  KEXPECT_EQ(0, vfs_close(fixture.sock));
+  KEXPECT_EQ(0, vfs_close(fixture.tt_fd));
+  KEXPECT_EQ(0, vfs_unlink("_tuntap_test_dev"));
+  KEXPECT_EQ(0, tuntap_destroy(id));
+}
+
+void tuntap_test(void) {
+  KTEST_SUITE_BEGIN("TUN/TAP tests");
+
+  KTEST_BEGIN("TUN/TAP: bad creation args");
+  apos_dev_t id;
+  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 100, &id));
+  KEXPECT_EQ(NULL, tuntap_create(0, 0, &id));
+  KEXPECT_EQ(NULL, tuntap_create(-1, 0, &id));
+  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 0, NULL));
+  KEXPECT_EQ(NULL, tuntap_create(100, 0, &id));
+
+  tun_tests();
+  tap_tests();
 }
