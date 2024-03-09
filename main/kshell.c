@@ -488,6 +488,21 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
     }
   }
 
+  if (sock_type == SOCK_STREAM && listen) {
+    result = net_listen(sock, 1);
+    if (result < 0) {
+      ksh_printf("error: unable to listen(): %s\n", errorname(-result));
+      goto done;
+    }
+    result = net_accept(sock, NULL, NULL);
+    if (result < 0) {
+      ksh_printf("error: unable to accept(): %s\n", errorname(-result));
+      goto done;
+    }
+    vfs_close(sock);
+    sock = result;
+  }
+
   struct apos_pollfd pfds[2];
   pfds[0].fd = 0;
   pfds[0].events = KPOLLIN;
@@ -503,7 +518,7 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
       result = vfs_read(0, buf, kBufSize);
       if (result == 0) break;
       KASSERT(result > 0);
-      if (!listen) {
+      if (sock_type == SOCK_STREAM || !listen) {
         KASSERT(result == vfs_write(sock, buf, result));
       }
     }
