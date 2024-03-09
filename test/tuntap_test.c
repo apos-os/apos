@@ -342,9 +342,10 @@ static void tap_tx_test(test_fixture_t* f) {
 
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
   KEXPECT_EQ(ET_IPV4, btoh16(eth_hdr->ethertype));
-  char macstr[NIC_MAC_PRETTY_LEN];
-  KEXPECT_STREQ("00:00:00:00:00:00", mac2str(eth_hdr->mac_src, macstr));
-  KEXPECT_STREQ("01:02:03:04:05:06", mac2str(eth_hdr->mac_dst, macstr));
+  char macstr1[NIC_MAC_PRETTY_LEN], macstr2[NIC_MAC_PRETTY_LEN];
+  KEXPECT_STREQ(mac2str(f->nic->mac, macstr1),
+                mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ("01:02:03:04:05:06", mac2str(eth_hdr->mac_dst, macstr1));
 
   const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)(buf + sizeof(eth_hdr_t));
   KEXPECT_EQ(ip4_hdr->src_addr, str2inet(SRC_IP));

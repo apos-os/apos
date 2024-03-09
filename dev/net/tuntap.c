@@ -16,6 +16,7 @@
 
 #include "common/attributes.h"
 #include "common/errno.h"
+#include "common/hash.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -24,6 +25,7 @@
 #include "dev/char_dev.h"
 #include "dev/dev.h"
 #include "dev/net/nic.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
@@ -57,6 +59,18 @@ typedef struct {
 
 static inline ALWAYS_INLINE bool is_tap(tuntap_dev_t* tt) {
   return tt->flags & TUNTAP_TAP_MODE;
+}
+
+static void gen_random_mac(nic_t* nic) {
+  uint32_t rand = fnv_hash_addr((addr_t)nic);
+  rand = fnv_hash_concat(rand, fnv_hash_string(nic->name));
+  rand = fnv_hash_concat(rand, fnv_hash(get_time_ms()));
+  nic->mac[0] = 2;  // Locally-administered bit.
+  nic->mac[1] = rand;
+  nic->mac[2] = rand >> 8;
+  nic->mac[3] = rand >> 16;
+  nic->mac[4] = rand >> 24;
+  nic->mac[5] = fnv_hash(rand);
 }
 
 // NIC operations.
@@ -113,7 +127,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   // Initialize the NIC.
   nic_init(&tt->nic);
   tt->nic.type = is_tap(tt) ? NIC_ETHERNET : NIC_TUN;
-  kmemset(tt->nic.mac, 0, NIC_MAC_LEN);
+  gen_random_mac(&tt->nic);
   tt->nic.ops = &tuntap_nic_ops;
 
   // Register the block device and NIC.
