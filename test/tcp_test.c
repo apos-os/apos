@@ -8465,6 +8465,39 @@ static void accept_blocks_test3(void) {
   cleanup_tcp_test(&c1);
 }
 
+static void listen_on_any_addr_test(void) {
+  KTEST_BEGIN("TCP: listen()/accept() on a socket bound to ANY-addr");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, NULL, 0);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "0.0.0.0", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Accept the socket in this thread.
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+
+  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  KEXPECT_STREQ("abc", do_read(c1.socket));
+
+  KEXPECT_EQ(2, vfs_write(c1.socket, "de", 2));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "de"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 504, /* ack */ 103));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 2, 3));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
 static void accept_address_params_test(void) {
   KTEST_BEGIN("TCP: accept() validates params (NULL address)");
   tcp_test_state_t s;
@@ -8941,6 +8974,7 @@ static void listen_tests(void) {
   accept_blocks_test();
   accept_blocks_test2();
   accept_blocks_test3();
+  listen_on_any_addr_test();
   accept_address_params_test();
   accept_child_rst1();
   accept_child_rst2();

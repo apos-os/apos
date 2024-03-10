@@ -1356,7 +1356,7 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   list_push(&parent->children_connecting, &child->link);
   parent->queued++;
 
-  child->bind_addr = parent->bind_addr;
+  child->bind_addr = md->dst;
   child->connected_addr = md->src;
   child->recv_next = btoh32(tcp_hdr->seq) + 1;
   child->send_wndsize = btoh16(tcp_hdr->wndsize);  // Note: won't be used...
