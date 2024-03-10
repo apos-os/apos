@@ -63,6 +63,9 @@
 #define TAP_SRC_IP "127.0.1.1"
 #define TAP_DST_IP "127.0.1.2"
 
+#define SRC_IP TAP_SRC_IP
+#define DST_IP TAP_DST_IP
+
 static uint32_t g_seq_start = TEST_SEQ_START;
 
 // Some helpers just to make tests clearer to read and eliminate lots of silly
@@ -9932,6 +9935,138 @@ static void nonblocking_tap_test(void) {
   kfree(buf);
 }
 
+#define SERVER_PORT 5000
+
+// Create a standard TCP socket with options set for tests.
+static int make_test_socket(void) {
+  int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
+  return sock;
+}
+
+static void connect_sockets_tests(void) {
+  KTEST_BEGIN("TCP: basic self-connect test");
+  int server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(server, 0);
+  vfs_make_nonblock(server);
+  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, net_listen(server, 10));
+
+  int c1 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+
+  int s1 = net_accept(server, NULL, NULL);
+  KEXPECT_GE(s1, 0);
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(s1));
+
+
+  KTEST_BEGIN("TCP: multiple connections to same dest (bound sockets)");
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_bind(c1, SRC_IP, 10000));
+  int c2 = make_test_socket();
+  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+
+  // TODO(tcp): this should fail with EADDRINUSE, I think:
+  // KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
+  KEXPECT_EQ(0, do_bind(c2, SRC_IP, 10001));
+  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+
+  s1 = net_accept(server, NULL, NULL);
+  KEXPECT_GE(s1, 0);
+  int s2 = net_accept(server, NULL, NULL);
+  KEXPECT_GE(s2, 0);
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(c2, "def", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_EQ(3, vfs_write(s2, "123", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("123", do_read(c2));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_STREQ("def", do_read(s2));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+
+  // TODO(tcp): fix this bug and re-enable this test.
+#if 0
+  KTEST_BEGIN("TCP: multiple connections to same dest (only one bound)");
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_bind(c1, SRC_IP, 10100));
+  c2 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+
+  char addr1[INET_PRETTY_LEN], addr2[INET_PRETTY_LEN];
+  s1 = do_accept(server, addr1);
+  KEXPECT_GE(s1, 0);
+  s2 = do_accept(server, addr2);
+  KEXPECT_GE(s2, 0);
+  KEXPECT_STRNE(addr1, addr2);
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(c2, "def", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_EQ(3, vfs_write(s2, "123", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("123", do_read(c2));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_STREQ("def", do_read(s2));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+
+  KTEST_BEGIN("TCP: multiple connections to same dest (both unbound)");
+  c1 = make_test_socket();
+  c2 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+
+  s1 = do_accept(server, addr1);
+  KEXPECT_GE(s1, 0);
+  s2 = do_accept(server, addr2);
+  KEXPECT_GE(s2, 0);
+  KEXPECT_STRNE(addr1, addr2);
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(c2, "def", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_EQ(3, vfs_write(s2, "123", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("123", do_read(c2));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_STREQ("def", do_read(s2));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+#endif
+
+
+  // TODO(tcp): more tests:
+  //  - multiple connections (both any-addr)
+  //  - explicitly bound to any-addr
+  //  - explicitly bound to IP + any-port
+  //  - explicitly bound to any-addr + specific port
+
+  KEXPECT_EQ(0, vfs_close(server));
+
+  // Wait long enough for sockets to leave TIME_WAIT.
+  ksleep(10);
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -9964,9 +10099,12 @@ void tcp_test(void) {
     nonblocking_tests();
   }
 
+  // These are tests that don't look specifically at the sequence numbers or
+  // manipulate the TCP state machine.
   cwnd_test();
   cwnd_socket_test();
   nonblocking_tap_test();
+  connect_sockets_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
