@@ -42,7 +42,7 @@ void htbl_put(htbl_t* tbl, uint32_t key, void* value);
 
 // Retrieves the value stored for that key, returning 0 if successful.  Returns
 // non-zero if the key couldn't be found.
-int htbl_get(htbl_t* tbl, uint32_t key, void** value);
+int htbl_get(const htbl_t* tbl, uint32_t key, void** value);
 
 // Removes the value associated with a given key, returning 0 if successful.
 int htbl_remove(htbl_t* tbl, uint32_t key);
@@ -51,7 +51,8 @@ int htbl_remove(htbl_t* tbl, uint32_t key);
 // arg, the key, and the value, in that order.  There are no guarantees about
 // what order the items will be iterated in, and func must not mutate the table.
 // Equivalent to htbl_filter() and always returning false.
-void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*), void* arg);
+void htbl_iterate(const htbl_t* tbl, void (*func)(void*, uint32_t, void*),
+                  void* arg);
 
 // Clears (empties) the hash table, running the given function for each entry
 // before it is removed.  The function should not mutate the table.
@@ -66,10 +67,10 @@ int htbl_filter(htbl_t* tbl, bool (*pred)(void*, uint32_t, void*), void* arg);
 void htbl_resize(htbl_t* tbl, int num_buckets);
 
 // Return the number of entries in the hashtable.
-int htbl_size(htbl_t* tbl);
+int htbl_size(const htbl_t* tbl);
 
 // Return the number of buckets in the hashtable.
-int htbl_num_buckets(htbl_t* tbl);
+int htbl_num_buckets(const htbl_t* tbl);
 
 // Internal definition.
 struct htbl {
@@ -77,6 +78,5 @@ struct htbl {
   int num_buckets;
   int num_entries;
 };
-
 
 #endif
