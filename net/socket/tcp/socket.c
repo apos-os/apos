@@ -36,11 +36,11 @@
 #include "net/ip/ip.h"
 #include "net/ip/util.h"
 #include "net/pbuf.h"
-#include "net/socket/sockmap.h"
 #include "net/socket/sockopt.h"
 #include "net/socket/tcp/congestion.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
+#include "net/socket/tcp/sockmap.h"
 #include "net/socket/tcp/tcp.h"
 #include "net/util.h"
 #include "proc/defint.h"
@@ -453,36 +453,19 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     return true;
   }
 
-  // Find a matching socket --- first check connected sockets.
-  tcp_key_t tcpkey =
-      tcp_key((struct sockaddr*)&mdata.dst, (struct sockaddr*)&mdata.src);
+  // Find a matching socket.
   kspin_lock(&g_tcp.lock);
-  void* val;
-  if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
-    socket_tcp_t* socket = (socket_tcp_t*)val;
+  socket_tcp_t* socket = tcpsm_find(&g_tcp.sockets, &mdata.dst, &mdata.src);
+  if (socket) {
     refcount_inc(&socket->ref);
-    kspin_unlock(&g_tcp.lock);
-    tcp_dispatch_or_rst(socket, pb, &mdata);
-    TCP_DEC_REFCOUNT(socket);
-    return true;
   }
   kspin_unlock(&g_tcp.lock);
 
-  // No connected socket found, look for listening sockets.
-  DEFINT_PUSH_AND_DISABLE();  // For consistency and to mark for SMP-conversion.
-  sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_TCP);
-  socket_t* socket_base = sockmap_find(sm, (const struct sockaddr*)&mdata.dst);
-  if (socket_base) {
-    KASSERT_DBG(socket_base->s_type == SOCK_STREAM);
-    KASSERT_DBG(socket_base->s_protocol == IPPROTO_TCP);
-    socket_tcp_t* socket = (socket_tcp_t*)socket_base;
-    refcount_inc(&socket->ref);
-    DEFINT_POP();
+  if (socket) {
     tcp_dispatch_or_rst(socket, pb, &mdata);
     TCP_DEC_REFCOUNT(socket);
     return true;
   }
-  DEFINT_POP();
 
   // Incoming packet didn't match any listeners.  Restore the original IP header
   // and return to the IP stack (in case any raw sockets want it).
@@ -1364,14 +1347,13 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   set_state(child, TCP_SYN_RCVD, "new incoming connection");
 
   // Add the new socket to the connected sockets table.
-  tcp_key_t tcpkey = tcp_key((const struct sockaddr*)&child->bind_addr,
-                             (const struct sockaddr*)&child->connected_addr);
   kspin_lock(&g_tcp.lock);
-  void* val;
-  if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
+  result = tcpsm_bind(&g_tcp.sockets, &child->bind_addr, &child->connected_addr,
+                      child);
+  if (result) {
     // This could happen (with SMP) if we race with another incoming connection.
-    KLOG(DEBUG, "TCP: socket %p unable to accept "
-         "incoming connection, 5-tuple in use\n", parent);
+    KLOG(DEBUG, "TCP: socket %p unable to accept incoming connection: %s\n",
+         parent, errorname(-result));
     kspin_unlock(&g_tcp.lock);
 
     child->parent = NULL;
@@ -1384,10 +1366,11 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
     kspin_unlock(&parent->spin_mu);
     return;
   }
-
-  htbl_put(&g_tcp.connected_sockets, tcpkey, child);
   refcount_inc(&child->ref);
   kspin_unlock(&g_tcp.lock);
+
+  KASSERT_DBG(get_sockaddrs_port(&child->bind_addr) ==
+              get_sockaddrs_port(&md->dst));
 
   // Send SYN-ACK.
   kspin_unlock(&child->spin_mu);
@@ -1434,45 +1417,36 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
 
   KASSERT(socket->state != TCP_CLOSED_DONE);
 
-  // If connected, remove from the connection table.
-  if (socket->connected_addr.sa_family != AF_UNSPEC) {
-    KASSERT(socket->state != TCP_CLOSED);
-    KASSERT(socket->bind_addr.sa_family != AF_UNSPEC);
-    tcp_key_t tcpkey = tcp_key((const struct sockaddr*)&socket->bind_addr,
-                               (const struct sockaddr*)&socket->connected_addr);
-    kspin_lock(&g_tcp.lock);
-    void* val;
-    if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
-      KASSERT(val == socket);
-      KASSERT(htbl_remove(&g_tcp.connected_sockets, tcpkey) == 0);
-      KASSERT(refcount_dec(&socket->ref) > 0);
+  // If bound, remove from the socket table.
+  if (socket->bind_addr.sa_family != AF_UNSPEC) {
+    KASSERT_DBG(socket->bind_addr.sa_family ==
+                (sa_family_t)socket->base.s_domain);
+    const struct sockaddr_storage* remote = &socket->connected_addr;
+    if (remote->sa_family == AF_UNSPEC) {
+      KASSERT(socket->state == TCP_CLOSED || socket->state == TCP_LISTEN);
+      remote = NULL;
     } else {
+      KASSERT(socket->state != TCP_CLOSED);
+      KASSERT(remote->sa_family == (sa_family_t)socket->base.s_domain);
+    }
+    kspin_lock(&g_tcp.lock);
+    int result =
+        tcpsm_remove(&g_tcp.sockets, &socket->bind_addr, remote, socket);
+    kspin_unlock(&g_tcp.lock);
+    if (result) {
       char buf1[SOCKADDR_PRETTY_LEN], buf2[SOCKADDR_PRETTY_LEN];
       KLOG(DFATAL,
            "TCP: socket %p connected (bound to %s, connected to %s) but not in "
-           "connected sockets table\n",
+           "sockets table\n",
            socket,
            sockaddr2str((struct sockaddr*)&socket->bind_addr,
                         sizeof(struct sockaddr_storage), buf1),
            sockaddr2str((struct sockaddr*)&socket->connected_addr,
                         sizeof(struct sockaddr_storage), buf2));
     }
-    kspin_unlock(&g_tcp.lock);
     clear_addr(&socket->bind_addr);
     clear_addr(&socket->connected_addr);
-  } else if (socket->bind_addr.sa_family != AF_UNSPEC) {
-    // If unconnected but bound, remove from the bound sockets map.
-    KASSERT(socket->state == TCP_CLOSED || socket->state == TCP_LISTEN);
-    KASSERT_DBG(socket->bind_addr.sa_family ==
-                (sa_family_t)socket->base.s_domain);
-    DEFINT_PUSH_AND_DISABLE();
-    sockmap_t* sm = net_get_sockmap(socket->bind_addr.sa_family, IPPROTO_TCP);
-    socket_t* removed =
-        sockmap_remove(sm, (struct sockaddr*)&socket->bind_addr);
-    KASSERT(removed == &socket->base);
     KASSERT(refcount_dec(&socket->ref) > 0);
-    DEFINT_POP();
-    clear_addr(&socket->bind_addr);
   }
 
   while (!list_empty(&socket->segments)) {
@@ -1695,9 +1669,6 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
     return -EINVAL;
   }
 
-  // TODO(tcp): check for _connected_ sockets and fail if there are any bound to
-  // the same address unless SO_REUSEADDR is set.
-
   netaddr_t naddr;
   int naddr_port;
   int result = sock2netaddr(address, address_len, &naddr, &naddr_port);
@@ -1707,8 +1678,7 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
   result = inet_bindable(&naddr);
   if (result) return result;
 
-  DEFINT_PUSH_AND_DISABLE();
-  sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_TCP);
+  kspin_lock(&g_tcp.lock);
 
   // As a special case, we may allow rebinding to a "more specific" IP on an
   // implicit bind during connection.
@@ -1719,39 +1689,23 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
     // specific port, possibly chosen automatically).
     KASSERT_DBG(get_sockaddrs_port(&socket->bind_addr) == naddr_port);
     KASSERT_DBG(naddr_port != 0);
-    KASSERT(sockmap_remove(sm, (const struct sockaddr*)&socket->bind_addr) ==
-            (socket_t*)socket);
+    KASSERT_DBG(inet_is_anyaddr((struct sockaddr*)&socket->bind_addr));
+    KASSERT(tcpsm_remove(&g_tcp.sockets, &socket->bind_addr, NULL, socket) ==
+            0);
     KASSERT(refcount_dec(&socket->ref) > 0);
   }
 
-  // If necessary, pick a free port.
-  if (naddr_port == 0) {
-    in_port_t free_port = sockmap_free_port(sm, address);
-    if (free_port == 0) {
-      klogfm(KL_NET, WARNING, "net: out of ephemeral ports\n");
-      DEFINT_POP();
-      return -EADDRINUSE;
-    }
-    naddr_port = free_port;
-  }
-  KASSERT_DBG(naddr_port >= INET_PORT_MIN);
-  KASSERT_DBG(naddr_port <= INET_PORT_MAX);
-
   // TODO(aoates): check for permission to bind to low-numbered ports.
 
-  struct sockaddr_storage addr_with_port;
-  KASSERT(net2sockaddr(&naddr, naddr_port, &addr_with_port,
-                       sizeof(addr_with_port)) == 0);
-  bool inserted =
-      sockmap_insert(sm, (struct sockaddr*)&addr_with_port, &socket->base);
-  DEFINT_POP();
-  if (!inserted) {
-    return -EADDRINUSE;
+  kmemcpy(&socket->bind_addr, address, address_len);
+  result = tcpsm_bind(&g_tcp.sockets, &socket->bind_addr, NULL, socket);
+  kspin_unlock(&g_tcp.lock);
+  if (result) {
+    clear_addr(&socket->bind_addr);
+    return result;
   }
 
   refcount_inc(&socket->ref);
-  kmemset(&socket->bind_addr, 0, sizeof(struct sockaddr_storage));
-  kmemcpy(&socket->bind_addr, &addr_with_port, address_len);
 
   char buf[SOCKADDR_PRETTY_LEN];
   KLOG(DEBUG2, "TCP: socket %p bound to %s\n", socket,
@@ -1911,7 +1865,6 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
 
   // Hacky sanity check, should be checked above
   KASSERT_DBG(address_len >= (socklen_t)sizeof(struct sockaddr_in));
-  tcp_key_t tcpkey = tcp_key((const struct sockaddr*)&sock->bind_addr, address);
 
   // Update our state and put us in the connected sockets table.  State must be
   // updated before the table, or atomically together.
@@ -1920,39 +1873,32 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   KASSERT_DBG(sock->state == TCP_CLOSED);
 
   kspin_lock(&g_tcp.lock);
-  void* val;
-  if (htbl_get(&g_tcp.connected_sockets, tcpkey, &val) == 0) {
-    KLOG(DEBUG, "TCP: unable to connect socket, 5-tuple in use\n");
+  // First remove our bound address from the socket map, and other sockets can
+  // now bind to our IP/port if SO_REUSE* is set (when implemented).  In the
+  // case of an implicit bind, we're removing the entry we just added, whatever.
+  result = tcpsm_remove(&g_tcp.sockets, &sock->bind_addr, NULL, sock);
+  KASSERT(result == 0);
+
+  // Now attempt to rebind to the full 5-tuple.
+  struct sockaddr_storage address_sas;
+  kmemcpy(&address_sas, address, address_len);
+  result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas, sock);
+  if (result) {
+    KLOG(DEBUG, "TCP: unable to connect socket: %s\n", errorname(-result));
+    // TODO(tcp): close socket, and test this branch, once SO_REUSEADDR is
+    // implemented.
     kspin_unlock(&g_tcp.lock);
     kspin_unlock(&sock->spin_mu);
     kmutex_unlock(&sock->mu);
-    return -EADDRINUSE;
+    KASSERT(refcount_dec(&sock->ref) > 0);
+    return result;
   }
 
   set_state(sock, TCP_SYN_SENT, "sending connect SYN");
   kmemcpy(&sock->connected_addr, address, address_len);
-  htbl_put(&g_tcp.connected_sockets, tcpkey, sock);
-  refcount_inc(&sock->ref);
   kspin_unlock(&g_tcp.lock);
 
-  // Now remove us from the "bound" map --- we have succesfully transitioned to
-  // the connected map, and other sockets can now bind to our IP/port if
-  // SO_REUSE* is set (when implemented).  In the case of an implicit bind,
-  // we're removing the entry we just added, whatever.
-  // N.B.: put in separate block due to interaction between DEFINT_PUSH safety
-  // checks and the spinlock (so DEFINT_POP() is validated at the end of the
-  // block, rather than the end of the function --- when defints may be enabled
-  // again).  Leaving DEFINT_* in as a placeholder for future upgrade to a
-  // spinlock even though they are no-ops here.
-  {
-    DEFINT_PUSH_AND_DISABLE();
-    sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_TCP);
-    KASSERT(sockmap_remove(sm, (const struct sockaddr*)&sock->bind_addr) ==
-            (socket_t*)sock);
-    DEFINT_POP();
-  }
   kspin_unlock(&sock->spin_mu);
-  KASSERT(refcount_dec(&sock->ref) > 0);
 
   // Send the initial SYN.  Always allow blocking here --- we want to block for
   // ARP even if the socket is non-blocking.

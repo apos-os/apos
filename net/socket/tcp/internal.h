@@ -17,22 +17,13 @@
 
 #include "common/attributes.h"
 #include "common/hashtable.h"
+#include "net/socket/tcp/sockmap.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/socket.h"
 
 typedef struct {
-  // Map from 5-tuple hash to socket_tcp_t* of all sockets that are connected or
-  // connecting (i.e. that are expected to match a specific 5-tuple of incoming
-  // packets).  Sockets are here if they have a full 5-tuple, and in the TCP
-  // sockmap if they have only a bound address.  By construction, no more than
-  // one socket can be in the sockmap bound to a particular address (including
-  // the any-addr as a wildcard).  On the other hand, whether a new socket can
-  // be bound to an address while others are in `connected_sockets` is policy.
-  //
-  // For orphaned sockets (ones with no associated file descriptor but are
-  // still protocol-active, e.g. in TIME_WAIT), the only reference to them will
-  // be either connected_sockets or the bound sockmap.
-  htbl_t connected_sockets;  // GUARDED_BY(mu)
+  // Socket map.  Every socket in the map has a reference held on it.
+  tcp_sockmap_t sockets;  // GUARDED_BY(lock)
 
   kspinlock_t lock;
 } tcp_state_t;
@@ -41,6 +32,7 @@ extern tcp_state_t g_tcp;
 
 typedef uint32_t tcp_key_t;
 tcp_key_t tcp_key(const struct sockaddr* local, const struct sockaddr* remote);
+tcp_key_t tcp_key_single(const struct sockaddr* local);
 
 // Helpers for comparing sequence numbers.  We assume (arbitrarily) that
 // the sequence number space is split in half (modulo 2^32).

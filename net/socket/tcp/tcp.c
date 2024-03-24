@@ -16,14 +16,16 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
+#include "net/inet.h"
 #include "net/socket/tcp/internal.h"
+#include "net/socket/tcp/sockmap.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 
 tcp_state_t g_tcp;
 
 void tcp_init(void) {
-  htbl_init(&g_tcp.connected_sockets, 8);
+  tcpsm_init(&g_tcp.sockets, AF_INET, INET_PORT_EPHMIN, INET_PORT_EPHMAX);
   g_tcp.lock = KSPINLOCK_NORMAL_INIT;
 }
 
@@ -39,9 +41,18 @@ tcp_key_t tcp_key(const struct sockaddr* local, const struct sockaddr* remote) {
   return fnv_hash_array(vals, sizeof(vals));
 }
 
+tcp_key_t tcp_key_single(const struct sockaddr* local) {
+  KASSERT_DBG(local->sa_family != AF_UNSPEC);
+
+  KASSERT(local->sa_family == AF_INET);
+  const struct sockaddr_in* local_sin = (const struct sockaddr_in*)local;
+  uint32_t vals[2] = {local_sin->sin_addr.s_addr, local_sin->sin_port};
+  return fnv_hash_array(vals, sizeof(vals));
+}
+
 int tcp_num_connected_sockets(void) {
   kspin_lock(&g_tcp.lock);
-  int result = htbl_size(&g_tcp.connected_sockets);
+  int result = tcpsm_num_connected(&g_tcp.sockets);
   kspin_unlock(&g_tcp.lock);
   return result;
 }

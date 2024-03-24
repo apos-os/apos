@@ -1476,8 +1476,9 @@ static void multiple_connect_test(void) {
 static void two_simultaneous_connects_test(void) {
   KTEST_BEGIN("TCP: two sockets connecting simultaneously");
   tcp_test_state_t s1, s2;
+  // TODO(tcp): use the same local port once SO_REUSEADDR is implemented.
   init_tcp_test(&s1, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
-  init_tcp_test(&s2, "127.0.0.1", 0x1234, "127.0.0.3", 0x5678);
+  init_tcp_test(&s2, "127.0.0.1", 0x1235, "127.0.0.3", 0x5678);
   KEXPECT_EQ(0, set_initial_seqno(s2.socket, s2.seq_base + 700));
 
   KEXPECT_EQ(0, do_bind(s1.socket, "127.0.0.1", 0x1234));
@@ -1493,7 +1494,7 @@ static void two_simultaneous_connects_test(void) {
   KEXPECT_EQ(-EADDRINUSE, do_bind(s2.socket, "127.0.0.1", 0x1234));
 
   KEXPECT_TRUE(start_connect(&s1, "127.0.0.2", 0x5678));
-  KEXPECT_EQ(0, do_bind(s2.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, do_bind(s2.socket, "127.0.0.1", 0x1235));
   KEXPECT_TRUE(start_connect(&s2, "127.0.0.3", 0x5678));
 
   // Do SYN, SYN-ACK, ACK for both sockets, interleaved.
@@ -6290,11 +6291,14 @@ static void active_close1(void) {
   // Don't test retransmitted FIN (tested below).
 
   KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  // TODO(tcp): re-enable this when SO_REUSEADDR is implemented.
+#if 0
   int sock2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(sock2, 0);
   KEXPECT_EQ(0, do_bind(sock2, "127.0.0.1", 0x1234));
   KEXPECT_EQ(-EADDRINUSE, do_connect(sock2, "127.0.0.1", 0x5678));
   KEXPECT_EQ(0, vfs_close(sock2));
+#endif
 
   SEND_PKT(&s, RST_PKT(/* seq */ 508, /* ack */ 102));
   cleanup_tcp_test(&s);
@@ -9974,8 +9978,7 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
   KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
 
-  // TODO(tcp): this should fail with EADDRINUSE, I think:
-  // KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
   KEXPECT_EQ(0, do_bind(c2, SRC_IP, 10001));
   KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
 
@@ -9998,8 +10001,6 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(0, vfs_close(s2));
 
 
-  // TODO(tcp): fix this bug and re-enable this test.
-#if 0
   KTEST_BEGIN("TCP: multiple connections to same dest (only one bound)");
   c1 = make_test_socket();
   KEXPECT_EQ(0, do_bind(c1, SRC_IP, 10100));
@@ -10052,7 +10053,6 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(0, vfs_close(c2));
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(s2));
-#endif
 
 
   // TODO(tcp): more tests:
