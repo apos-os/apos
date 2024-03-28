@@ -194,15 +194,18 @@ socket_tcp_t* tcpsm_find(const tcp_sockmap_t* sm,
                          const struct sockaddr_storage* local,
                          const struct sockaddr_storage* remote) {
   KASSERT(local->sa_family == sm->family);
-  if (remote) KASSERT(remote->sa_family == sm->family);
 
-  tcp_key_t tcpkey = tcp_key_sas(local, remote);
+  tcp_key_t tcpkey;
   void* val;
-  if (htbl_get(&sm->connected_sockets, tcpkey, &val) == 0) {
-    const sm_entry_t* entry = (sm_entry_t*)val;
-    KASSERT_DBG(equal(&entry->local, local));
-    KASSERT_DBG(equal(&entry->remote, remote));
-    return ((sm_entry_t*)val)->socket;
+  if (remote) {
+    KASSERT(remote->sa_family == sm->family);
+    tcpkey = tcp_key_sas(local, remote);
+    if (htbl_get(&sm->connected_sockets, tcpkey, &val) == 0) {
+      const sm_entry_t* entry = (sm_entry_t*)val;
+      KASSERT_DBG(equal(&entry->local, local));
+      KASSERT_DBG(equal(&entry->remote, remote));
+      return ((sm_entry_t*)val)->socket;
+    }
   }
 
   // No full 5-tuple match.  Look for an exact 3-tuple match.
@@ -300,13 +303,16 @@ int tcpsm_remove(tcp_sockmap_t* sm, const struct sockaddr_storage* local,
     tcpkey = tcp_key_sas(local, remote);
     // Sanity check.
     void* val;
-    KASSERT(htbl_get(&sm->connected_sockets, tcpkey, &val) == 0);
-    sm_entry_t* entry = (sm_entry_t*)val;
-    KASSERT(entry->socket == sock);
+    if (htbl_get(&sm->connected_sockets, tcpkey, &val) == 0) {
+      sm_entry_t* entry = (sm_entry_t*)val;
+      KASSERT_DBG(equal(local, &entry->local));
+      KASSERT_DBG(equal(remote, &entry->remote));
+      KASSERT(entry->socket == sock);
+    }
 
     result = htbl_remove(&sm->connected_sockets, tcpkey);
     if (result) {
-      return result;
+      return -ENOENT;
     }
   }
 
@@ -318,11 +324,15 @@ int tcpsm_remove(tcp_sockmap_t* sm, const struct sockaddr_storage* local,
 
   sm_list_t* list = (sm_list_t*)val;
   sm_entry_t* entry = NULL;
+  bool found = false;
   FOR_EACH_LIST(iter, &list->sockets) {
     entry = LIST_ENTRY(iter, sm_entry_t, link);
-    if (entry->socket == sock) break;
+    if (entry->socket == sock) {
+      found = true;
+      break;
+    }
   }
-  if (!entry) {
+  if (!found) {
     return -ENOENT;
   }
 
@@ -330,6 +340,8 @@ int tcpsm_remove(tcp_sockmap_t* sm, const struct sockaddr_storage* local,
   KASSERT_DBG(equal(&entry->local, local));
   if (remote) {
     KASSERT_DBG(equal(&entry->remote, remote));
+  } else {
+    KASSERT_DBG(entry->remote.sa_family == AF_UNSPEC);
   }
 
   list_remove(&list->sockets, &entry->link);

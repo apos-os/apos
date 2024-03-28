@@ -29,6 +29,7 @@
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/tcp.h"
+#include "net/socket/tcp/sockmap.h"
 #include "net/util.h"
 #include "proc/kthread.h"
 #include "proc/notification.h"
@@ -10061,10 +10062,200 @@ static void connect_sockets_tests(void) {
   //  - explicitly bound to IP + any-port
   //  - explicitly bound to any-addr + specific port
 
+
+  KTEST_BEGIN("TCP: connection that outlives server socket");
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+
+  s1 = do_accept(server, addr1);
+  KEXPECT_GE(s1, 0);
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("abc", do_read(s1));
+
   KEXPECT_EQ(0, vfs_close(server));
+
+  KEXPECT_EQ(3, vfs_write(c1, "ABC", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "XYZ", 3));
+  KEXPECT_STREQ("XYZ", do_read(c1));
+  KEXPECT_STREQ("ABC", do_read(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(s1));
 
   // Wait long enough for sockets to leave TIME_WAIT.
   ksleep(10);
+}
+
+// Helpers for sockmap tests.
+static socket_tcp_t* tcpsm_do_find(const tcp_sockmap_t* sm, const char* local,
+                                   int local_port, const char* remote,
+                                   int remote_port) {
+  struct sockaddr_storage local_sin, remote_sin;
+  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
+  if (remote) {
+    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
+  }
+  return tcpsm_find(sm, &local_sin, remote ? &remote_sin : NULL);
+}
+
+static int tcpsm_do_bind(tcp_sockmap_t* sm, const char* local, int local_port,
+                         const char* remote, int remote_port,
+                         socket_tcp_t* socket, char* local_out) {
+  struct sockaddr_storage local_sin, remote_sin;
+  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
+  if (remote) {
+    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
+  }
+  int result = tcpsm_bind(sm, &local_sin, remote ? &remote_sin : NULL, socket);
+  if (result == 0) {
+    sockaddr2str((const struct sockaddr*)&local_sin, sizeof(local_sin),
+                 local_out);
+  }
+  return result;
+}
+
+static int tcpsm_do_remove(tcp_sockmap_t* sm, const char* local, int local_port,
+                           const char* remote, int remote_port,
+                           socket_tcp_t* socket) {
+  struct sockaddr_storage local_sin, remote_sin;
+  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
+  if (remote) {
+    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
+  }
+  return tcpsm_remove(sm, &local_sin, remote ? &remote_sin : NULL, socket);
+}
+
+static void sockmap_find_tests(void) {
+  KTEST_BEGIN("TCP: basic sockmap test");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET, 5, 7);
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-tuple lookup");
+  socket_tcp_t s1, s2;
+  char local[INET_PRETTY_LEN];
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "5.6.7.8", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 3-tuple lookup");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "5.6.7.8", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.4", 90, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.5", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 3-tuple lookup (any-addr)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("0.0.0.0:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "5.6.7.8", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "5.6.7.8", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.4", 90, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.5", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "5.6.7.8", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "5.6.7.8", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (any-address)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("0.0.0.0:80", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "5.6.7.8", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, "1.2.3.4", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "5.6.7.8", 90, "1.2.3.4", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 91));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+  // TODO(tcp): with SO_REUSEADDR test all the fallbacks together
+
+  tcpsm_cleanup(&sm);
+}
+
+static void sockmap_tests(void) {
+  sockmap_find_tests();
 }
 
 void tcp_test(void) {
@@ -10105,6 +10296,7 @@ void tcp_test(void) {
   cwnd_socket_test();
   nonblocking_tap_test();
   connect_sockets_tests();
+  sockmap_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
