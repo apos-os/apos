@@ -2139,6 +2139,11 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
       (sock->send_timeout_ms < 0) ? APOS_MS_MAX : now + sock->send_timeout_ms;
   int result = 0;
   while (now < timeout_end && send_state(sock) == SEND_BLOCK) {
+    if (fflags & VFS_O_NONBLOCK) {
+      result = -EAGAIN;
+      break;
+    }
+
     int wait_result =
         scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {

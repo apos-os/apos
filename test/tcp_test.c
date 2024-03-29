@@ -9796,11 +9796,71 @@ static void nonblocking_recvfrom_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void nonblocking_send_test(void) {
+  KTEST_BEGIN("TCP: non-blocking socket sendto");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  int val = 5;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_SNDBUF, &val, sizeof(val)));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  vfs_make_nonblock(s.socket);
+
+  // We should be able to send without blocking. [abc] [] []
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ 1));
+
+  // Second send should send only 1 byte and buffer the rest. [abc] [d] [ef]
+  KEXPECT_EQ(3, vfs_write(s.socket, "def", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "d"));
+  // Don't ack it yet.
+
+  // Next write should buffer some and not send any packets. [abc] [d] [efgh]
+  KEXPECT_EQ(2, vfs_write(s.socket, "ghijk", 5));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 10));
+
+  // The next write _would_ block, but shouldn't.
+  KEXPECT_EQ(-EAGAIN, vfs_write(s.socket, "ilmn", 4));
+
+  // Finally send an ACK. [abcd] [] [efgh]
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 3));
+
+  // We should get three more bytes from the buffer.  [abcd] [efg] [h]
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 105, /* ack */ 501, "efg"));
+  // ...don't ack yet.
+
+  // We should now be able to write one more byte.
+  KEXPECT_EQ(1, vfs_write(s.socket, "ilmn", 4));
+  KEXPECT_EQ(-EAGAIN, vfs_write(s.socket, "lmn", 3));
+
+  // Ack things and get the rest.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 108, /* wndsize */ 100));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 108, /* ack */ 501, "hi"));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
+
+  // We should still be able to get an error.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 108));
+  KEXPECT_EQ(-ECONNRESET, vfs_write(s.socket, "abc", 3));
+
+  // We should still be able to get an EPIPE.
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
 static void nonblocking_tests(void) {
   nonblocking_connect_test();
   nonblocking_connect_test2();
   nonblocking_accept_test();
   nonblocking_recvfrom_test();
+  nonblocking_send_test();
 }
 
 static void cwnd_test(void) {
