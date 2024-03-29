@@ -9753,10 +9753,54 @@ static void nonblocking_accept_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void nonblocking_recvfrom_test(void) {
+  KTEST_BEGIN("TCP: non-blocking recvfrom()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 500));
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+    KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  vfs_make_nonblock(s.socket);
+  async_op_t poll_op;
+  KEXPECT_TRUE(start_poll(&poll_op, s.socket,
+                          KPOLLIN | KPOLLRDNORM | KPOLLRDBAND | KPOLLPRI));
+
+  char buf[10];
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 10));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 506));
+
+  KEXPECT_EQ(1, finish_op_direct(&poll_op));
+  KEXPECT_EQ(KPOLLIN | KPOLLRDNORM, poll_op.events);
+
+  KEXPECT_EQ(2, vfs_read(s.socket, buf, 2));
+  KEXPECT_EQ(3, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 10));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "123"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 509));
+  KEXPECT_EQ(1, vfs_read(s.socket, buf, 1));
+  KEXPECT_EQ(2, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(-EAGAIN, vfs_read(s.socket, buf, 10));
+
+  // Test what happens when there's an error.
+  SEND_PKT(&s, RST_PKT(/* seq */ 509, /* ack */ 101));
+  KEXPECT_EQ(-ECONNRESET, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  cleanup_tcp_test(&s);
+}
+
 static void nonblocking_tests(void) {
   nonblocking_connect_test();
   nonblocking_connect_test2();
   nonblocking_accept_test();
+  nonblocking_recvfrom_test();
 }
 
 static void cwnd_test(void) {

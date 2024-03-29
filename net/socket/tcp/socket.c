@@ -2022,6 +2022,11 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
       (sock->recv_timeout_ms < 0) ? APOS_MS_MAX : now + sock->recv_timeout_ms;
   int result = 0;
   while (now < timeout_end && recv_state(sock) == RECV_BLOCK_FOR_DATA) {
+    if (fflags & VFS_O_NONBLOCK) {
+      result = -EAGAIN;
+      break;
+    }
+
     int wait_result =
         scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
