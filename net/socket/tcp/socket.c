@@ -1767,9 +1767,13 @@ static int sock_tcp_accept(socket_t* socket_base, int fflags,
     return -EINVAL;
   }
 
-  // TODO(tcp): support non-blocking accept.
   int result = 0;
   while (list_empty(&sock->children_established)) {
+    if (fflags & VFS_O_NONBLOCK) {
+      result = -EAGAIN;
+      break;
+    }
+
     int wait_result = scheduler_wait_on_splocked(&sock->q, -1, &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
       KLOG(DFATAL, "TCP: timeout hit in accept()\n");
@@ -1783,7 +1787,6 @@ static int sock_tcp_accept(socket_t* socket_base, int fflags,
   }
 
   if (result < 0) {
-    KASSERT_DBG(result < 0);
     kspin_unlock(&sock->spin_mu);
     return result;
   }

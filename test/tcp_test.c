@@ -9715,9 +9715,48 @@ static void nonblocking_connect_test2(void) {
   cleanup_tcp_test(&s);
 }
 
+static void nonblocking_accept_test(void) {
+  KTEST_BEGIN("TCP: non-blocking accept()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  vfs_make_nonblock(s.socket);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  KEXPECT_EQ(-EAGAIN, net_accept(s.socket, NULL, NULL));
+  KEXPECT_EQ(-EAGAIN, net_accept(s.socket, NULL, NULL));
+  char addr[SOCKADDR_PRETTY_LEN];
+  KEXPECT_EQ(-EAGAIN, do_accept(s.socket, addr));
+
+  // Start a connection.
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "127.0.0.2", 2000);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+
+  KEXPECT_EQ(-EAGAIN, do_accept(s.socket, addr));
+
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+
+  // We should be able to accept() a child socket.
+  c1.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("127.0.0.2:2000", addr);
+  KEXPECT_EQ(-EAGAIN, do_accept(s.socket, addr));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
+
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&s);
+}
+
 static void nonblocking_tests(void) {
   nonblocking_connect_test();
   nonblocking_connect_test2();
+  nonblocking_accept_test();
 }
 
 static void cwnd_test(void) {
