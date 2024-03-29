@@ -10254,8 +10254,196 @@ static void sockmap_find_tests(void) {
   tcpsm_cleanup(&sm);
 }
 
+static void sockmap_bind_tests(void) {
+  KTEST_BEGIN("TCP: arg validation");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET, 5, 7);
+
+  socket_tcp_t s1, s2, s3, s4;
+  char local[INET_PRETTY_LEN];
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "0.0.0.0", 90, &s1, local));
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 0, &s1, local));
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "0.0.0.0", 0, &s1, local));
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "0.0.0.0", 80, "5.6.7.8", 90, &s1, local));
+
+
+  KTEST_BEGIN("TCP: bind 5-tuple collision");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+
+  KTEST_BEGIN("TCP: bind 3-tuple collision");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  // A more specific 5-tuple binding should succeed.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, NULL, 0));
+
+
+  KTEST_BEGIN("TCP: bind 3-tuple any-addr collision");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("0.0.0.0:80", local);
+
+  // A more specific 5-tuple binding should succeed.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "1.2.3.4", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+
+
+  KTEST_BEGIN("TCP: port assignment");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("0.0.0.0:5", local);
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 5, NULL, 0, &s1, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 5, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
+
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 6, NULL, 0, &s1, local));
+  KEXPECT_STREQ("0.0.0.0:6", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("0.0.0.0:5", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("0.0.0.0:7", local);
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s4, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 6, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("0.0.0.0:6", local);
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 6, NULL, 0, &s1));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 5, NULL, 0, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "0.0.0.0", 7, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 7, NULL, 0, &s3));
+
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 6, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 7, NULL, 0));
+
+
+  KTEST_BEGIN("TCP: port assignment (cross-IP port reuse)");
+  // Binding to specific IPs should allow port reuse.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "5.6.7.8", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("5.6.7.8:5", local);
+  // ...but the any-IP should not be able to use port 5.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("0.0.0.0:6", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, NULL, 0, &s1));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "5.6.7.8", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "5.6.7.8", 5, NULL, 0, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "0.0.0.0", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 6, NULL, 0, &s3));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
+
+
+  KTEST_BEGIN("TCP: port assignment (5-tuple)");
+  // When the 5-tuple is bound first, 3-tuple binds should not be able to reuse
+  // the same port.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:6", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("1.2.3.4:7", local);
+
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 6, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 7, NULL, 0, &s3));
+
+  // When the 3-tuple is bound first, 5-tuple binds can reuse the port (due to
+  // the asymmetry of port conflicts).
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:6", local);
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 6, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, NULL, 0, &s3));
+
+  // As above, but with the any-address.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("0.0.0.0:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 5, NULL, 0, &s3));
+
+  tcpsm_cleanup(&sm);
+}
+
 static void sockmap_tests(void) {
   sockmap_find_tests();
+  sockmap_bind_tests();
 }
 
 void tcp_test(void) {
