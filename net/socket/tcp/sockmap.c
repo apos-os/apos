@@ -30,6 +30,7 @@
 typedef struct {
   struct sockaddr_storage local;
   struct sockaddr_storage remote;
+  bool reusable;
   socket_tcp_t* socket;
   list_link_t link;  // Link on the bound_sockets table.
   list_link_t port_link;  // Link on port_table.
@@ -98,11 +99,70 @@ static uint32_t get_port_table_key(const struct sockaddr_storage* local) {
   return fnv_hash(get_sockaddrs_port(local));
 }
 
+// Rteruns true if the given entry conflicts with the given local address, given
+// TCPSM_REUSEADDR is set.  It is assumed that the ports match, and either the
+// addresses match, or one or both is the any-addr.
+static bool entry_conflicts_reuseaddr(const struct sockaddr_storage* local,
+                                      const sm_entry_t* entry) {
+  KASSERT_DBG(is_any(local) || is_any(&entry->local) ||
+              equal(local, &entry->local));
+  KASSERT_DBG(get_sockaddrs_port(local) == get_sockaddrs_port(&entry->local));
+  // A resuable entry never conflicts.
+  if (entry->reusable) {
+    return false;
+  }
+  // A non-reusable 5-tuple entry _always_ conflicts.
+  if (entry->remote.sa_family != AF_UNSPEC) {
+    return true;
+  }
+  // Equal addresses always conflict.
+  if (is_any(local) == is_any(&entry->local)) {
+    KASSERT_DBG(equal(local, &entry->local));
+    return true;  // They are the same address.
+  }
+  return false;
+}
+
+// Looks up the given in the given map (which must map to an sm_list_t), and
+// returns true if there's a conflict.  If TCPSM_REUSEADDR is set, then a
+// conflict is any non-reusable entry that matches the is-any state passed in;
+// otherwise, it's any entry at all.
+//
+// This is due to the fact that we store both homogenous (bound_sockets) and
+// heterogenous (port_map) lists.  When TCPSM_REUSEADDR is set, we only want to
+// compare any-addr to any-addr, and non-any-addr to non-any-addr.
+static bool has_conflict_in_map(const htbl_t* tbl, tcp_key_t tcpkey,
+                                const struct sockaddr_storage* local,
+                                size_t link_offset, int flags) {
+  void* val;
+  if (htbl_get(tbl, tcpkey, &val) == 0) {
+    if (!(flags & TCPSM_REUSEADDR)) {
+      return true;
+    }
+
+    // Check if any entries bound to the same key are _not_ reusable.
+    sm_list_t* list = (sm_list_t*)val;
+    bool found_conflict = false;
+    FOR_EACH_LIST(iter, &list->sockets) {
+      const sm_entry_t* entry = (const sm_entry_t*)((char*)iter - link_offset);
+      KASSERT_DBG(entry->local.sa_family == AF_INET);
+      if (entry_conflicts_reuseaddr(local, entry)) {
+        found_conflict = true;
+        break;
+      }
+    }
+    if (found_conflict) {
+      return true;
+    }
+  }
+  return false;  // Entry didn't exist, or were all reusable entries.
+}
+
 // Checks if the given address pair (|remote| is optional) conflicts with any
 // entries in the socket map.  Returns 0 if no conflicts, or -error.
 int check_conflicts(const tcp_sockmap_t* sm,
                     const struct sockaddr_storage* local,
-                    const struct sockaddr_storage* remote) {
+                    const struct sockaddr_storage* remote, int flags) {
   // If this is a full 5-tuple, then only other 5-tuple sockets can conflict.
   if (remote) {
     tcp_key_t tcpkey = tcp_key_sas(local, remote);
@@ -114,21 +174,26 @@ int check_conflicts(const tcp_sockmap_t* sm,
     // If no remote address, then this matches _any_ remote address.  First look
     // for anything bound to <ip>:<port>, whether it's 3-tuple or 5-tuple bound.
     tcp_key_t tcpkey = tcp_key_bound(local);
-    void* val;
-    if (htbl_get(&sm->bound_sockets, tcpkey, &val) == 0) {
+    if (has_conflict_in_map(&sm->bound_sockets, tcpkey, local,
+                            offsetof(sm_entry_t, link), flags)) {
       return -EADDRINUSE;
     }
 
     // No exact 3-tuple match either.  Look for an any-addr port-only match.
-    tcpkey = get_anyaddr_port_key(local);
-    if (htbl_get(&sm->bound_sockets, tcpkey, &val) == 0) {
-      return -EADDRINUSE;
+    // Only check the wildcard address if TCPSM_REUSEADDR isn't set.
+    if (!(flags & TCPSM_REUSEADDR)) {
+      tcpkey = get_anyaddr_port_key(local);
+      void* val;
+      if (htbl_get(&sm->bound_sockets, tcpkey, &val) == 0) {
+        return -EADDRINUSE;
+      }
     }
 
-    // If the new address is itself the any-address, also check if anything else
-    // is currently bound to the same port.
+    // If the new address is itself the any-address, also check if anything
+    // else is currently bound to the same port.
     if (is_any(local) &&
-        htbl_get(&sm->port_table, get_port_table_key(local), &val) == 0) {
+        has_conflict_in_map(&sm->port_table, get_port_table_key(local), local,
+                            offsetof(sm_entry_t, port_link), flags)) {
       return -EADDRINUSE;
     }
   }
@@ -144,7 +209,7 @@ in_port_t find_free_port(const tcp_sockmap_t* sm,
   KASSERT_DBG(equal(&local, local_in));
   for (in_port_t port = sm->eph_port_min; port <= sm->eph_port_max; ++port) {
     set_sockaddrs_port(&local, port);
-    if (check_conflicts(sm, &local, remote) == 0) {
+    if (check_conflicts(sm, &local, remote, 0) == 0) {
       return port;
     }
   }
@@ -221,11 +286,16 @@ socket_tcp_t* tcpsm_find(const tcp_sockmap_t* sm,
 }
 
 int tcpsm_bind(tcp_sockmap_t* sm, struct sockaddr_storage* local,
-               const struct sockaddr_storage* remote, socket_tcp_t* sock) {
+               const struct sockaddr_storage* remote, int flags,
+               socket_tcp_t* sock) {
   KASSERT(local->sa_family == sm->family);
   if (remote) KASSERT(remote->sa_family == sm->family);
 
   // Check validity of parameters.
+  if (flags & ~TCPSM_REUSEADDR) {
+    return -EINVAL;
+  }
+
   if (remote) {
     if (is_any(remote) || get_sockaddrs_port(remote) == INET_PORT_ANY) {
       return -EINVAL;
@@ -245,7 +315,7 @@ int tcpsm_bind(tcp_sockmap_t* sm, struct sockaddr_storage* local,
   } else {
     // Check for conflicts.  If we assigned a port, there can definitionally be
     // no conflicts.
-    int result = check_conflicts(sm, local, remote);
+    int result = check_conflicts(sm, local, remote, flags);
     if (result) {
       return result;
     }
@@ -260,6 +330,7 @@ int tcpsm_bind(tcp_sockmap_t* sm, struct sockaddr_storage* local,
   } else {
     entry->remote.sa_family = AF_UNSPEC;
   }
+  entry->reusable = false;
   entry->socket = sock;
   entry->link = LIST_LINK_INIT;
   entry->port_link = LIST_LINK_INIT;
@@ -290,6 +361,22 @@ int tcpsm_bind(tcp_sockmap_t* sm, struct sockaddr_storage* local,
   }
 
   return 0;
+}
+
+void tcpsm_mark_reusable(tcp_sockmap_t* sm,
+                         const struct sockaddr_storage* local,
+                         const struct sockaddr_storage* remote,
+                         socket_tcp_t* sock) {
+  KASSERT(remote);
+  tcp_key_t tcpkey = tcp_key_sas(local, remote);
+  void* val;
+  if (htbl_get(&sm->connected_sockets, tcpkey, &val) == 0) {
+    sm_entry_t* entry = (sm_entry_t*)val;
+    KASSERT_DBG(equal(local, &entry->local));
+    KASSERT_DBG(equal(remote, &entry->remote));
+    KASSERT(entry->socket == sock);
+    entry->reusable = true;
+  }
 }
 
 int tcpsm_remove(tcp_sockmap_t* sm, const struct sockaddr_storage* local,

@@ -1349,7 +1349,7 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   // Add the new socket to the connected sockets table.
   kspin_lock(&g_tcp.lock);
   result = tcpsm_bind(&g_tcp.sockets, &child->bind_addr, &child->connected_addr,
-                      child);
+                      0, child);
   if (result) {
     // This could happen (with SMP) if we race with another incoming connection.
     KLOG(DEBUG, "TCP: socket %p unable to accept incoming connection: %s\n",
@@ -1698,7 +1698,7 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
   // TODO(aoates): check for permission to bind to low-numbered ports.
 
   kmemcpy(&socket->bind_addr, address, address_len);
-  result = tcpsm_bind(&g_tcp.sockets, &socket->bind_addr, NULL, socket);
+  result = tcpsm_bind(&g_tcp.sockets, &socket->bind_addr, NULL, 0, socket);
   kspin_unlock(&g_tcp.lock);
   if (result) {
     clear_addr(&socket->bind_addr);
@@ -1885,7 +1885,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   // Now attempt to rebind to the full 5-tuple.
   struct sockaddr_storage address_sas;
   kmemcpy(&address_sas, address, address_len);
-  result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas, sock);
+  result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas, 0, sock);
   if (result) {
     KLOG(DEBUG, "TCP: unable to connect socket: %s\n", errorname(-result));
     // TODO(tcp): close socket, and test this branch, once SO_REUSEADDR is

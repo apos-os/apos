@@ -20,6 +20,9 @@
 #include "net/socket/tcp/socket.h"
 #include "user/include/apos/net/socket/socket.h"
 
+// Sockmap flags.
+#define TCPSM_REUSEADDR 1  // Corresponds to SO_REUSEADDR.
+
 // TCP socket map data structure.  Tracks both bound and connected sockets.  It
 // does not do any internal synchronization or refcounting of the sockets; the
 // sockets are treated as opaque pointers that are cast to/from type
@@ -79,7 +82,18 @@ socket_tcp_t* tcpsm_find(const tcp_sockmap_t* sm,
 //
 // Returns 0 on succcess, or -error.
 int tcpsm_bind(tcp_sockmap_t* sm, struct sockaddr_storage* local,
-               const struct sockaddr_storage* remote, socket_tcp_t* sock);
+               const struct sockaddr_storage* remote, int flags,
+               socket_tcp_t* sock);
+
+// Marks the given 5-tuple-bound socket as reusable.  If another bind() is
+// attempted with a 3-tuple that would conflict with this 5-tuple, and
+// TCPSM_REUSEADDR is passed, then it will allowed rather than blocked.
+//
+// Requires the given 5-tuple is bound to the given socket already.
+void tcpsm_mark_reusable(tcp_sockmap_t* sm,
+                         const struct sockaddr_storage* local,
+                         const struct sockaddr_storage* remote,
+                         socket_tcp_t* sock);
 
 // Removes the socket with the given local/remote address from the map.  The
 // local and remote addresses must exactly match what was used by tcpsm_bind(),

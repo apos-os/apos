@@ -10243,20 +10243,28 @@ static socket_tcp_t* tcpsm_do_find(const tcp_sockmap_t* sm, const char* local,
   return tcpsm_find(sm, &local_sin, remote ? &remote_sin : NULL);
 }
 
-static int tcpsm_do_bind(tcp_sockmap_t* sm, const char* local, int local_port,
-                         const char* remote, int remote_port,
-                         socket_tcp_t* socket, char* local_out) {
+static int tcpsm_do_bind2(tcp_sockmap_t* sm, const char* local, int local_port,
+                          const char* remote, int remote_port,
+                          int flags, socket_tcp_t* socket, char* local_out) {
   struct sockaddr_storage local_sin, remote_sin;
   make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
   if (remote) {
     make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
   }
-  int result = tcpsm_bind(sm, &local_sin, remote ? &remote_sin : NULL, socket);
+  int result =
+      tcpsm_bind(sm, &local_sin, remote ? &remote_sin : NULL, flags, socket);
   if (result == 0) {
     sockaddr2str((const struct sockaddr*)&local_sin, sizeof(local_sin),
                  local_out);
   }
   return result;
+}
+
+static int tcpsm_do_bind(tcp_sockmap_t* sm, const char* local, int local_port,
+                         const char* remote, int remote_port,
+                         socket_tcp_t* socket, char* local_out) {
+  return tcpsm_do_bind2(sm, local, local_port, remote, remote_port, 0, socket,
+                        local_out);
 }
 
 static int tcpsm_do_remove(tcp_sockmap_t* sm, const char* local, int local_port,
@@ -10268,6 +10276,15 @@ static int tcpsm_do_remove(tcp_sockmap_t* sm, const char* local, int local_port,
     make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
   }
   return tcpsm_remove(sm, &local_sin, remote ? &remote_sin : NULL, socket);
+}
+
+static void tcpsm_do_mark_reusable(tcp_sockmap_t* sm, const char* local,
+                                   int local_port, const char* remote,
+                                   int remote_port, socket_tcp_t* socket) {
+  struct sockaddr_storage local_sin, remote_sin;
+  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
+  make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
+  tcpsm_mark_reusable(sm, &local_sin, &remote_sin, socket);
 }
 
 static void sockmap_find_tests(void) {
@@ -10584,9 +10601,221 @@ static void sockmap_bind_tests(void) {
   tcpsm_cleanup(&sm);
 }
 
+static void sockmap_reuseaddr_tests(void) {
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 5-tuple bind");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET, 5, 7);
+
+  socket_tcp_t s1, s2, s3, s4;
+  char local[INET_PRETTY_LEN];
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                               TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:80", local);
+
+  // A 5-tuple conflict should always fail.
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90, 0, &s1, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s1, local));
+
+  // As should 3-tuple conflicts.
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+
+  // Mark the address as reusable then retest.
+  tcpsm_do_mark_reusable(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1);
+
+  // All binds without TCPSM_REUSEADDR should still fail.
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90, 0, &s1, local));
+
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, 0, &s2, local));
+
+  // With the flag set, the 5-tuple should still fail, but both 3-tuple types
+  // should succeed.
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with multiple bindings");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                               TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 91,
+                               TCPSM_REUSEADDR, &s3, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+
+  // Mark the address as reusable then retest.
+  tcpsm_do_mark_reusable(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2);
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 91,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+
+  tcpsm_do_mark_reusable(&sm, "1.2.3.4", 80, "5.6.7.8", 91, &s3);
+
+  // With both 5-tuples marked reusable, the any-addr should now succeed as it
+  // won't conflict with either the explicit 3-tuple or the reusable 5-tuples.
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 91,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s4));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
+
+  // With the flag set, the 5-tuple should still fail, but both 3-tuple types
+  // should succeed.
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 91,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s4));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s4));
+
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "1.2.3.4", 80, "5.6.7.8", 91));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 91, &s3));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 3-tuple binding");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                               TCPSM_REUSEADDR, &s1, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s2));
+
+  // Create a 5-tuple as well and try again, for kicks.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90, 0, &s2, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+
+  tcpsm_do_mark_reusable(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s3));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s1));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 3-tuple binding (any-addr)");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                               TCPSM_REUSEADDR, &s1, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s2));
+
+  // Create a 5-tuple as well and try again, for kicks.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 80, "5.6.7.8", 90, 0, &s2, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+
+  tcpsm_do_mark_reusable(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "0.0.0.0", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, NULL, 0, &s3));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 80, "5.6.7.8", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s1));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR doesn't affect port selection");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 5, "5.6.7.8", 90,
+                               TCPSM_REUSEADDR, &s1, local));
+  tcpsm_do_mark_reusable(&sm, "1.2.3.4", 5, "5.6.7.8", 90, &s1);
+
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 0, "5.6.7.8", 91,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, "5.6.7.8", 91, &s2));
+
+  // We should not assign port 5 automatically.
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 0, NULL, 0,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 6, NULL, 0, &s2));
+
+  // ...but should be assignable explicitly.
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "1.2.3.4", 5, NULL, 0,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_STREQ("1.2.3.4:5", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, NULL, 0, &s2));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 5, "5.6.7.8", 90, &s1));
+
+
+  KTEST_BEGIN("TCP: invalid bind flags");
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind2(&sm, "1.2.3.4", 5, "5.6.7.8", 90, 20, &s1, local));
+
+  tcpsm_cleanup(&sm);
+}
+
 static void sockmap_tests(void) {
   sockmap_find_tests();
   sockmap_bind_tests();
+  sockmap_reuseaddr_tests();
 }
 
 void tcp_test(void) {
