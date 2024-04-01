@@ -10228,7 +10228,7 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(0, vfs_close(s1));
 
   // Wait long enough for sockets to leave TIME_WAIT.
-  ksleep(20);
+  ksleep(30);
 }
 
 static void reuseaddr_tests(void) {
@@ -10298,8 +10298,50 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(c1));
 
+
+  KTEST_BEGIN("TCP: connect() fails due to in-use address");
+  server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_EQ(0, do_setsockopt_int(server, SOL_SOCKET, SO_REUSEADDR, 1));
+  KEXPECT_GE(server, 0);
+  vfs_make_nonblock(server);
+  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, net_listen(server, 10));
+
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+
+  s1 = net_accept(server, NULL, NULL);
+  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_GE(s1, 0);
+
+  // Get the c1 address and put s1 into TIME_WAIT.
+  KEXPECT_EQ(0, getsockname_inet(c1, &c1_addr));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(server));
+  server = -1;
+
+  // Now create another socket and bind it to the same local address as the
+  // server was bound to.
+  int c2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(c2, 0);
+  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_setsockopt_int(c2, SOL_SOCKET, SO_REUSEADDR, 1));
+  KEXPECT_EQ(0, do_bind(c2, DST_IP, SERVER_PORT));
+
+  // Now connect() c2 to the address c1 was bound to.  This should fail, since
+  // the 5-tuple is already taken by c1 (which is in TIME_WAIT).
+  KEXPECT_STREQ("CLOSED", get_sock_state(c2));
+  KEXPECT_EQ(-EADDRINUSE,
+             net_connect(c2, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c2));
+
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(c2));
+
   // Wait long enough for sockets to leave TIME_WAIT.
-  ksleep(10);
+  ksleep(20);
 }
 
 // Helpers for sockmap tests.

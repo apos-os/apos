@@ -1895,10 +1895,11 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas,
                       sock->tcp_flags, sock);
   if (result) {
-    KLOG(DEBUG, "TCP: unable to connect socket: %s\n", errorname(-result));
-    // TODO(tcp): close socket, and test this branch, once SO_REUSEADDR is
-    // implemented.
+    KLOG(WARNING, "TCP: unable to connect socket: %s\n", errorname(-result));
     kspin_unlock(&g_tcp.lock);
+
+    clear_addr(&sock->bind_addr);
+    reset_connection(sock, "unable to connect()");
     kspin_unlock(&sock->spin_mu);
     kmutex_unlock(&sock->mu);
     KASSERT(refcount_dec(&sock->ref) > 0);
