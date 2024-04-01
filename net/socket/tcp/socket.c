@@ -129,6 +129,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->connect_timeout_ms = SOCKET_CONNECT_TIMEOUT_MS;
   sock->recv_timeout_ms = -1;
   sock->send_timeout_ms = -1;
+  sock->tcp_flags = 0;
   set_iss(sock, gen_seq_num(sock));
   sock->iss_set = false;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
@@ -213,6 +214,11 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
   KLOG(DEBUG2, "TCP: socket %p state %s -> %s (%s)\n", sock,
        state2str(sock->state), state2str(new_state), debug_msg);
   sock->state = new_state;
+  if (new_state == TCP_TIME_WAIT) {
+    KASSERT_DBG(sock->connected_addr.sa_family != AF_UNSPEC);
+    tcpsm_mark_reusable(&g_tcp.sockets, &sock->bind_addr, &sock->connected_addr,
+                        sock);
+  }
   // Wake up anyone waiting for a state transition.
   tcp_wake(sock);
 }
@@ -1349,7 +1355,7 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   // Add the new socket to the connected sockets table.
   kspin_lock(&g_tcp.lock);
   result = tcpsm_bind(&g_tcp.sockets, &child->bind_addr, &child->connected_addr,
-                      0, child);
+                      child->tcp_flags, child);
   if (result) {
     // This could happen (with SMP) if we race with another incoming connection.
     KLOG(DEBUG, "TCP: socket %p unable to accept incoming connection: %s\n",
@@ -1698,7 +1704,8 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
   // TODO(aoates): check for permission to bind to low-numbered ports.
 
   kmemcpy(&socket->bind_addr, address, address_len);
-  result = tcpsm_bind(&g_tcp.sockets, &socket->bind_addr, NULL, 0, socket);
+  result = tcpsm_bind(&g_tcp.sockets, &socket->bind_addr, NULL,
+                      socket->tcp_flags, socket);
   kspin_unlock(&g_tcp.lock);
   if (result) {
     clear_addr(&socket->bind_addr);
@@ -1885,7 +1892,8 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   // Now attempt to rebind to the full 5-tuple.
   struct sockaddr_storage address_sas;
   kmemcpy(&address_sas, address, address_len);
-  result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas, 0, sock);
+  result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas,
+                      sock->tcp_flags, sock);
   if (result) {
     KLOG(DEBUG, "TCP: unable to connect socket: %s\n", errorname(-result));
     // TODO(tcp): close socket, and test this branch, once SO_REUSEADDR is
@@ -2366,6 +2374,32 @@ static int tcp_setsockopt_int_u32(socket_tcp_t* socket, uint32_t* dst,
   return 0;
 }
 
+static int tcp_getsockopt_flag(socket_tcp_t* socket, int flag,
+                               void* restrict val,
+                               socklen_t* restrict val_len) {
+  kspin_lock(&socket->spin_mu);
+  bool dst_val = socket->tcp_flags & flag;
+  kspin_unlock(&socket->spin_mu);
+  return getsockopt_int(val, val_len, dst_val);
+}
+
+static int tcp_setsockopt_flag(socket_tcp_t* socket, int flag,
+                               const void* restrict val, socklen_t val_len) {
+  int parsed_val;
+  int result = setsockopt_int(val, val_len, &parsed_val);
+  if (result) {
+    return result;
+  }
+  kspin_lock(&socket->spin_mu);
+  if (parsed_val) {
+    socket->tcp_flags |= flag;
+  } else {
+    socket->tcp_flags &= ~flag;
+  }
+  kspin_unlock(&socket->spin_mu);
+  return 0;
+}
+
 static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
                                 void* restrict val,
                                 socklen_t* restrict val_len) {
@@ -2389,6 +2423,8 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     socket->error = 0;
     kspin_unlock(&socket->spin_mu);
     return getsockopt_int(val, val_len, err);
+  } else if (level == SOL_SOCKET && option == SO_REUSEADDR) {
+    return tcp_getsockopt_flag(socket, TCPSM_REUSEADDR, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     kspin_lock(&socket->spin_mu);
     if (socket->state != TCP_CLOSED) {
@@ -2433,6 +2469,8 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
     return setsockopt_tvms(val, val_len, &socket->send_timeout_ms);
   } else if (level == SOL_SOCKET && option == SO_CONNECTTIMEO) {
     return setsockopt_tvms(val, val_len, &socket->connect_timeout_ms);
+  } else if (level == SOL_SOCKET && option == SO_REUSEADDR) {
+    return tcp_setsockopt_flag(socket, TCPSM_REUSEADDR, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_SEQ_NUM) {
     int seq;
     int result = setsockopt_int(val, val_len, &seq);

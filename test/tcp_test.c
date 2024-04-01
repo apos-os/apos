@@ -10228,6 +10228,77 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(0, vfs_close(s1));
 
   // Wait long enough for sockets to leave TIME_WAIT.
+  ksleep(20);
+}
+
+static void reuseaddr_tests(void) {
+  KTEST_BEGIN("TCP: SO_REUSEADDR test");
+  int server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(server, 0);
+  vfs_make_nonblock(server);
+  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, net_listen(server, 10));
+
+  int s2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  int val = 123;
+  socklen_t val_len = sizeof(val);
+  KEXPECT_EQ(0, net_getsockopt(s2, SOL_SOCKET, SO_REUSEADDR, &val, &val_len));
+  KEXPECT_EQ(0, val);
+
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, "0.0.0.0", SERVER_PORT));
+  KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 5));
+
+  KEXPECT_EQ(0, net_getsockopt(s2, SOL_SOCKET, SO_REUSEADDR, &val, &val_len));
+  KEXPECT_EQ(1, val);
+
+  KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 0));
+  KEXPECT_EQ(0, net_getsockopt(s2, SOL_SOCKET, SO_REUSEADDR, &val, &val_len));
+  KEXPECT_EQ(0, val);
+
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, "0.0.0.0", SERVER_PORT));
+  KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 1));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(s2, "0.0.0.0", SERVER_PORT));
+  KEXPECT_EQ(0, vfs_close(s2));
+  s2 = -1;
+
+  int c1 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+
+  int s1 = net_accept(server, NULL, NULL);
+  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
+  KEXPECT_GE(s1, 0);
+
+  KEXPECT_EQ(0, vfs_close(server));
+
+  struct sockaddr_in c1_addr;
+  KEXPECT_EQ(0, getsockname_inet(c1, &c1_addr));
+
+  // Binding to the local address (server or client) should fail.
+  s2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(s2, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
+  KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 1));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE,
+             net_bind(s2, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
+  KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 0));
+
+  // After the client socket enters TIME_WAIT, we should be able to.
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 1));
+  KEXPECT_EQ(0, do_bind(s2, DST_IP, SERVER_PORT));
+
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+
+  // Wait long enough for sockets to leave TIME_WAIT.
   ksleep(10);
 }
 
@@ -10856,6 +10927,7 @@ void tcp_test(void) {
   cwnd_socket_test();
   nonblocking_tap_test();
   connect_sockets_tests();
+  reuseaddr_tests();
   sockmap_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");

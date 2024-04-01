@@ -77,6 +77,7 @@ typedef struct socket_tcp {
   long connect_timeout_ms;
   long recv_timeout_ms;
   long send_timeout_ms;
+  int tcp_flags;
 
   // TCP state variables.
   uint32_t initial_seq;   // Initial sequence number.
