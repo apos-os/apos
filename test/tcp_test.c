@@ -575,8 +575,6 @@ static void multi_bind_test(void) {
   KEXPECT_NE(0, port2);
   KEXPECT_NE(port1, port2);
 
-  // TODO(aoates): test binding to the same port on two different addresses.
-
   KEXPECT_EQ(0, vfs_close(sock));
   KEXPECT_EQ(0, vfs_close(sock2));
 }
@@ -3043,7 +3041,6 @@ static void rst_during_established_test1(void) {
   KEXPECT_EQ(-ECONNRESET, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
 
-  // TODO(tcp): test getting ECONNRESET from write.
   struct sockaddr_storage unused;
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
@@ -3081,6 +3078,32 @@ static void rst_during_established_test1b(void) {
 
   char buf[10];
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  cleanup_tcp_test(&s);
+}
+
+static void rst_during_established_test1c(void) {
+  KTEST_BEGIN("TCP: RST during established (no data, test error from write)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets_wait(&s, 20));  // Shouldn't get a response.
+
+  KEXPECT_EQ(-ECONNRESET, vfs_write(s.socket, "abc", 3));
+  KEXPECT_EQ(0, get_so_error(s.socket));
 
   cleanup_tcp_test(&s);
 }
@@ -3210,7 +3233,10 @@ static void rst_during_established_blocking_recv_test2(void) {
   // Subsequent reads should return EOF.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
-  // TODO(tcp): test write() as well.
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
 
   cleanup_tcp_test(&s);
 }
@@ -3650,12 +3676,9 @@ static void data_after_fin_test(void) {
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 505));
 
   // Send _more_ data.
-  // TODO(tcp): enable this when out-of-order ACKs are handled properly.
-#if 0
   SEND_PKT(&s, DATA_PKT(/* seq */ 505, /* ack */ 101, "d"));
   SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "e"));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));  // EOF now.
-#endif
 
   // Send data with the ACK for the fin.  The ACK should be read, but the data
   // should be dropped.
@@ -3696,7 +3719,6 @@ static void rst_after_fin_test(void) {
   cleanup_tcp_test(&s);
 }
 
-// TODO(tcp): this same test, but with a blocking write.
 static void rst_after_fin_test2(void) {
   KTEST_BEGIN("TCP: RST packet after FIN (with blocking read)");
   tcp_test_state_t s;
@@ -3722,6 +3744,36 @@ static void rst_after_fin_test2(void) {
   KEXPECT_EQ(-ECONNRESET, finish_op(&s));
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));  // EOF now.
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));  // EOF now.
+
+  cleanup_tcp_test(&s);
+}
+
+static void rst_after_fin_test2b(void) {
+  KTEST_BEGIN("TCP: RST packet after FIN (with blocking write)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_SNDBUF, 5));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(5, vfs_write(s.socket, "abcde", 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abcde"));
+
+  KEXPECT_TRUE(start_write(&s, "1234"));
+
+  // Send FIN without data.  Should get an ACK.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 502));
+
+  // We should be in CLOSE_WAIT. Send a RST.
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Should get ECONNRESET.
+  KEXPECT_EQ(-ECONNRESET, finish_op(&s));
 
   cleanup_tcp_test(&s);
 }
@@ -4192,6 +4244,7 @@ static void established_tests(void) {
   basic_established_recv_test();
   rst_during_established_test1();
   rst_during_established_test1b();
+  rst_during_established_test1c();
   rst_during_established_test2();
   rst_during_established_test3();
   rst_during_established_blocking_recv_test();
@@ -4212,6 +4265,7 @@ static void established_tests(void) {
 
   rst_after_fin_test();
   rst_after_fin_test2();
+  rst_after_fin_test2b();
   rst_after_fin_test3();
   rst_in_lastack_test();
   rst_in_lastack_test2();
