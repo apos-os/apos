@@ -88,6 +88,12 @@ static const char* sin2str(const struct sockaddr_in* sin) {
                       buf);
 }
 
+static const char* sas2str(const struct sockaddr_storage* sas) {
+  static char buf[SOCKADDR_PRETTY_LEN];
+  return sockaddr2str((const struct sockaddr*)sas,
+                      sizeof(struct sockaddr_storage), buf);
+}
+
 static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
   saddr->sin_family = AF_INET;
   saddr->sin_addr.s_addr = str2inet(addr);
@@ -201,6 +207,20 @@ static int getpeername_inet(int socket, struct sockaddr_in* sin) {
     kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
   }
   return 0;
+}
+
+static const char* getsockname_str(int socket) {
+  struct sockaddr_storage sas;
+  int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  if (result) return errorname(-result);
+  return sas2str(&sas);
+}
+
+static const char* getpeername_str(int socket) {
+  struct sockaddr_storage sas;
+  int result = net_getpeername(socket, (struct sockaddr*)&sas);
+  if (result) return errorname(-result);
+  return sas2str(&sas);
 }
 
 static int do_setsockopt_int(int socket, int domain, int option, int val) {
@@ -10135,6 +10155,7 @@ static void nonblocking_tap_test(void) {
 }
 
 #define SERVER_PORT 5000
+#define DST_IP_PORT "127.0.1.2:5000"
 
 // Create a standard TCP socket with options set for tests.
 static int make_test_socket(void) {
@@ -10250,11 +10271,75 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(0, vfs_close(s2));
 
 
-  // TODO(tcp): more tests:
-  //  - multiple connections (both any-addr)
-  //  - explicitly bound to any-addr
-  //  - explicitly bound to IP + any-port
-  //  - explicitly bound to any-addr + specific port
+  KTEST_BEGIN("TCP: multiple connections to same dest (both any-addr)");
+  c1 = make_test_socket();
+  c2 = make_test_socket();
+  KEXPECT_EQ(0, do_bind(c1, "0.0.0.0", 0));
+  KEXPECT_EQ(0, do_bind(c2, "0.0.0.0", 0));
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c1));
+  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c2));
+
+  s1 = do_accept(server, addr1);
+  KEXPECT_GE(s1, 0);
+  s2 = do_accept(server, addr2);
+  KEXPECT_GE(s2, 0);
+  KEXPECT_STRNE(addr1, addr2);
+
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(c2, "def", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_EQ(3, vfs_write(s2, "123", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("123", do_read(c2));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_STREQ("def", do_read(s2));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
+
+
+  KTEST_BEGIN("TCP: bound to any-port");
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_bind(c1, SRC_IP, 0));
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_STRNE(SRC_IP ":0", getsockname_str(c1));
+  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c1));
+
+  s1 = do_accept(server, addr1);
+  KEXPECT_GE(s1, 0);
+  kstrcpy(addr1, getsockname_str(c1));
+  KEXPECT_STREQ(addr1, getpeername_str(s1));
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(s1));
+
+
+  KTEST_BEGIN("TCP: bound to any-addr + port");
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_bind(c1, "0.0.0.0", 12345));
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_STRNE(SRC_IP ":12345", getsockname_str(c1));
+  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c1));
+
+  s1 = do_accept(server, addr1);
+  KEXPECT_GE(s1, 0);
+  kstrcpy(addr1, getsockname_str(c1));
+  KEXPECT_STREQ(addr1, getpeername_str(s1));
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
+  KEXPECT_STREQ("xyz", do_read(c1));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(s1));
 
 
   KTEST_BEGIN("TCP: connection that outlives server socket");
