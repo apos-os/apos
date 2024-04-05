@@ -9934,6 +9934,33 @@ static void nonblocking_tests(void) {
   nonblocking_send_test();
 }
 
+static void sleep_test_point_hook(const char* name, void* arg) {
+  ksleep((intptr_t)arg);
+}
+
+static void close_race_tests(void) {
+  KTEST_BEGIN("TCP: socket closes during packet dispatch");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_EQ(
+      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 10));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RDWR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+
+  test_point_add("tcp:dispatch_packet", &sleep_test_point_hook, (void*)20);
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+  test_point_remove("tcp:dispatch_packet");
+
+  cleanup_tcp_test(&s);
+}
+
 static void cwnd_test(void) {
   KTEST_BEGIN("TCP cwnd test: initial cwnd");
   tcp_cwnd_t cw;
@@ -11221,6 +11248,7 @@ void tcp_test(void) {
     poll_tests();
     retransmit_tests();
     nonblocking_tests();
+    close_race_tests();
   }
 
   // These are tests that don't look specifically at the sequence numbers or

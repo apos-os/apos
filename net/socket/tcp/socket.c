@@ -686,9 +686,11 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 
   kspin_lock(&socket->spin_mu);
 
-  // This can happen if we receive a packet for an address that a socket is
-  // bound to, but is not listening on (or connected on).
-  if (socket->state == TCP_CLOSED) {
+  // TCP_CLOSED can happen if we receive a packet for an address that a socket
+  // is bound to, but is not listening on (or connected on).  TCP_CLOSED_DONE
+  // can happen if the socket closes right after we take it out of the socket
+  // map, but before we lock it.
+  if (socket->state == TCP_CLOSED || socket->state == TCP_CLOSED_DONE) {
     KLOG(DEBUG, "TCP: socket %p received packet in CLOSED; sending RST\n",
          socket);
     kspin_unlock(&socket->spin_mu);
