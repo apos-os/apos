@@ -10480,6 +10480,62 @@ static void reuseaddr_tests(void) {
   ksleep(20);
 }
 
+static void rapid_reconnect_test(void) {
+  KTEST_BEGIN("TCP: rapid reconnection to the same IP:port");
+  int server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(server, 0);
+  vfs_make_nonblock(server);
+  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, net_listen(server, 10));
+
+  // If we select the same port twice in a row, then the second connection will
+  // send a SYN to the TIME_WAIT socket, which will send back a challenge ACK,
+  // which will trigger a RST (and close the TIME_WAIT socket); then a
+  // retransmitted SYN will start the new connection 1s later.
+  int c1 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  struct sockaddr_in c1_addr;
+  KEXPECT_EQ(0, getsockname_inet(c1, &c1_addr));
+
+  int s1 = net_accept(server, NULL, NULL);
+  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 4000));
+  KEXPECT_GE(s1, 0);
+
+  KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
+  KEXPECT_STREQ("abc", do_read(s1));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+  ksleep(10);
+
+  // Reconnect to the same IP:port.  We should pick a new port to connect from
+  // and not conflict with the server port that is still in TIME_WAIT.
+  apos_ms_t start = get_time_ms();
+  c1 = make_test_socket();
+  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+
+  s1 = net_accept(server, NULL, NULL);
+  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
+  KEXPECT_GE(s1, 0);
+  apos_ms_t end = get_time_ms();
+  KEXPECT_LT(end - start, 800);  // We should be able to connect() quickly.
+
+  KEXPECT_EQ(3, vfs_write(c1, "123", 3));
+  KEXPECT_STREQ("123", do_read(s1));
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(c1));
+
+  // To get the original s1 out of TIME_WAIT we need to connect to it again from
+  // the same IP:port (triggering a challenge ACK and RST).
+  c1 = make_test_socket();
+  vfs_make_nonblock(c1);
+  KEXPECT_EQ(0, net_bind(c1, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
+  KEXPECT_EQ(-EINPROGRESS, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, vfs_close(server));
+
+  ksleep(10);
+}
+
 // Helpers for sockmap tests.
 static socket_tcp_t* tcpsm_do_find(const tcp_sockmap_t* sm, const char* local,
                                    int local_port, const char* remote,
@@ -10693,7 +10749,7 @@ static void sockmap_bind_tests(void) {
   tcp_sockmap_t sm;
   tcpsm_init(&sm, AF_INET, 5, 7);
 
-  socket_tcp_t s1, s2, s3, s4;
+  socket_tcp_t s1, s2;
   char local[INET_PRETTY_LEN];
   KEXPECT_EQ(-EINVAL,
              tcpsm_do_bind(&sm, "1.2.3.4", 80, "0.0.0.0", 90, &s1, local));
@@ -10769,7 +10825,14 @@ static void sockmap_bind_tests(void) {
   KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s1));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+}
 
+static void sockmap_bind_tests2(void) {
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET, 5, 7);
+
+  socket_tcp_t s1, s2, s3, s4;
+  char local[INET_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment");
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s1, local));
@@ -10784,6 +10847,9 @@ static void sockmap_bind_tests(void) {
 
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 6, NULL, 0, &s1, local));
   KEXPECT_STREQ("0.0.0.0:6", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("0.0.0.0:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 7, NULL, 0, &s2));
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("0.0.0.0:5", local);
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
@@ -10812,10 +10878,25 @@ static void sockmap_bind_tests(void) {
   KTEST_BEGIN("TCP: port assignment (cross-IP port reuse)");
   // Binding to specific IPs should allow port reuse.
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 7, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, NULL, 0, &s1, local));
   KEXPECT_STREQ("1.2.3.4:5", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "5.6.7.8", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("5.6.7.8:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "5.6.7.8", 6, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "5.6.7.8", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("5.6.7.8:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "5.6.7.8", 7, NULL, 0, &s2));
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "5.6.7.8", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("5.6.7.8:5", local);
   // ...but the any-IP should not be able to use port 5.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("0.0.0.0:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 6, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("0.0.0.0:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 7, NULL, 0, &s3));
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("0.0.0.0:6", local);
 
@@ -10826,9 +10907,11 @@ static void sockmap_bind_tests(void) {
   KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "0.0.0.0", 6, NULL, 0));
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 6, NULL, 0, &s3));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 5, NULL, 0));
+  tcpsm_cleanup(&sm);
 
 
   KTEST_BEGIN("TCP: port assignment (5-tuple)");
+  tcpsm_init(&sm, AF_INET, 5, 7);
   // When the 5-tuple is bound first, 3-tuple binds should not be able to reuse
   // the same port.
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
@@ -10853,6 +10936,12 @@ static void sockmap_bind_tests(void) {
   KEXPECT_STREQ("1.2.3.4:5", local);
 
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 6, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 7, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
   KEXPECT_STREQ("1.2.3.4:5", local);
 
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s2, local));
@@ -10864,8 +10953,17 @@ static void sockmap_bind_tests(void) {
 
   // As above, but with the any-address.
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("0.0.0.0:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "0.0.0.0", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("0.0.0.0:5", local);
 
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 6, "5.6.7.8", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
+  KEXPECT_STREQ("1.2.3.4:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "1.2.3.4", 7, "5.6.7.8", 90, &s1));
   KEXPECT_EQ(0, tcpsm_do_bind(&sm, "1.2.3.4", 0, "5.6.7.8", 90, &s1, local));
   KEXPECT_STREQ("1.2.3.4:5", local);
 
@@ -11089,6 +11187,7 @@ static void sockmap_reuseaddr_tests(void) {
 static void sockmap_tests(void) {
   sockmap_find_tests();
   sockmap_bind_tests();
+  sockmap_bind_tests2();
   sockmap_reuseaddr_tests();
 }
 
@@ -11131,6 +11230,7 @@ void tcp_test(void) {
   nonblocking_tap_test();
   connect_sockets_tests();
   reuseaddr_tests();
+  rapid_reconnect_test();
   sockmap_tests();
 
   KTEST_BEGIN("vfs: vnode leak verification");

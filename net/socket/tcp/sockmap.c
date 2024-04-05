@@ -201,15 +201,18 @@ int check_conflicts(const tcp_sockmap_t* sm,
 }
 
 // Finds and returns a free port, or zero if one cannot be found.
-in_port_t find_free_port(const tcp_sockmap_t* sm,
-                         const struct sockaddr_storage* local_in,
-                         const struct sockaddr_storage* remote) {
+static in_port_t find_free_port(tcp_sockmap_t* sm,
+                                const struct sockaddr_storage* local_in,
+                                const struct sockaddr_storage* remote) {
   struct sockaddr_storage local;
   kmemcpy(&local, local_in, sizeof(local));
   KASSERT_DBG(equal(&local, local_in));
-  for (in_port_t port = sm->eph_port_min; port <= sm->eph_port_max; ++port) {
+  for (int i = 0; i < sm->eph_port_num; ++i) {
+    int idx = (sm->eph_port_next_idx + i) % sm->eph_port_num;
+    in_port_t port = sm->eph_port_min + idx;
     set_sockaddrs_port(&local, port);
     if (check_conflicts(sm, &local, remote, 0) == 0) {
+      sm->eph_port_next_idx = (idx + 1) % sm->eph_port_num;
       return port;
     }
   }
@@ -218,9 +221,11 @@ in_port_t find_free_port(const tcp_sockmap_t* sm,
 
 void tcpsm_init(tcp_sockmap_t* sm, sa_family_t family, int eph_port_min,
                 int eph_port_max) {
+  KASSERT(eph_port_max >= eph_port_min);
   sm->family = family;
   sm->eph_port_min = eph_port_min;
-  sm->eph_port_max = eph_port_max;
+  sm->eph_port_num = eph_port_max - eph_port_min + 1;
+  sm->eph_port_next_idx = 0;
   htbl_init(&sm->bound_sockets, 10);
   htbl_init(&sm->connected_sockets, 10);
   htbl_init(&sm->port_table, 10);

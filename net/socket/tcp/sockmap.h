@@ -32,7 +32,8 @@
 typedef struct {
   sa_family_t family;
   int eph_port_min;
-  int eph_port_max;
+  int eph_port_num;
+  int eph_port_next_idx;
 
   // Map (tcp_key_t -> sm_list_t) for each local address:port pair.  Each
   // contains a list of sockets bound to that local address, which may be
