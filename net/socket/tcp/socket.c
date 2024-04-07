@@ -308,6 +308,8 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
 }
 
 static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
+  KASSERT(!list_empty(&socket->segments));
+  KASSERT(socket->state != TCP_CLOSED_DONE);
   if (seg->retransmits == 0) {
     uint32_t unacked_bytes = socket->send_next - socket->send_unack;
     tcp_cwnd_loss(&socket->cwnd, unacked_bytes);
@@ -775,7 +777,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 
 done:
   kspin_unlock(&socket->spin_mu);
-  // TODO(tcp): there is a race here with the socket closing.
+  test_point_run("tcp:dispatch_packet_action");
 
   int result = 0;
   if (action & TCP_DROP_BAD_PKT) {
@@ -806,6 +808,11 @@ done:
 
   if (action & TCP_RETRANSMIT) {
     kspin_lock(&socket->spin_mu);
+    if (socket->state == TCP_CLOSED_DONE) {
+      KLOG(DEBUG3, "TCP: socket %p closed before retransmit\n", socket);
+      kspin_unlock(&socket->spin_mu);
+      return true;
+    }
     if (list_empty(&socket->segments)) {
       KLOG(DFATAL, "TCP: socket %p cannot retransmit, no segments\n", socket);
       kspin_unlock(&socket->spin_mu);
@@ -1475,6 +1482,15 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
 
 static void reset_connection(socket_tcp_t* socket, const char* reason) {
   KASSERT_DBG(kspin_is_held(&socket->spin_mu));
+  if (socket->state == TCP_CLOSED_DONE) {
+    KLOG(DEBUG3,
+         "TCP: socket %p ignoring reset_connection() because socket already "
+         "closed\n",
+         socket);
+    KASSERT_DBG(socket->recv_buf.len == 0);
+    KASSERT_DBG(socket->send_buf.len == 0);
+    return;
+  }
   if (socket->state == TCP_SYN_RCVD && socket->parent) {
     // Keep the parent alive even while we (possibly) unlink ourselves from it.
     socket_tcp_t* parent = socket->parent;
@@ -1533,9 +1549,7 @@ static void close_listening(socket_tcp_t* socket) {
       kspin_lock(&child->spin_mu);
       KASSERT(child->parent == socket);
       child->parent = NULL;
-      if (child->state != TCP_CLOSED_DONE) {
-        reset_connection(child, "parent closed before accept()");
-      }
+      reset_connection(child, "parent closed before accept()");
       kspin_unlock(&child->spin_mu);
 
       TCP_DEC_REFCOUNT(child);
@@ -1645,6 +1659,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   kspin_unlock(&sock->spin_mu);
 
   if (send_datafin) {
+    test_point_run("tcp:shutdown_before_send");
     // Send the FIN if possible.
     int result = tcp_send_datafin(sock, true);
     if (result != 0 && result != -EAGAIN) {

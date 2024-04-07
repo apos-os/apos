@@ -651,6 +651,7 @@ static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
   s->seq_base = g_seq_start;
   s->send_seq_base = g_seq_start + 100 - 500;
   s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  s->op.thread = NULL;
   KEXPECT_GE(s->socket, 0);
 
   KEXPECT_EQ(0, set_initial_seqno(s->socket, s->seq_base + 100));
@@ -681,6 +682,7 @@ static void init_tcp_test_child(const tcp_test_state_t* parent,
   s->seq_base = g_seq_start;
   s->send_seq_base = g_seq_start + 100 - 500;
   s->socket = -1;
+  s->op.thread = NULL;
 
   s->tcp_addr_str = parent->tcp_addr_str;
   s->tcp_addr = parent->tcp_addr;
@@ -702,6 +704,7 @@ static void cleanup_tcp_test(tcp_test_state_t* s) {
   if (s->raw_socket >= 0) {
     KEXPECT_EQ(0, vfs_close(s->raw_socket));
   }
+  KASSERT(s->op.thread == NULL);
 }
 
 static void* tcp_thread_connect(void* arg) {
@@ -941,6 +944,7 @@ static test_packet_spec_t ACK_PKT(int seq, int ack) {
 }
 
 static test_packet_spec_t ACK_PKT2(int seq, int ack, int wndsize) {
+  KASSERT_DBG(wndsize != 0);  // Must send WNDSIZE_ZERO.
   return ((test_packet_spec_t){
       .flags = TCP_FLAG_ACK, .seq = seq, .ack = ack, .wndsize = wndsize});
 }
@@ -9939,7 +9943,60 @@ static void sleep_test_point_hook(const char* name, int count, void* arg) {
   ksleep((intptr_t)arg);
 }
 
-static void close_race_tests(void) {
+static void shutdown_test_point_hook(const char* name, int count, void* arg) {
+  KEXPECT_EQ(0, net_shutdown((intptr_t)arg, SHUT_RDWR));
+}
+
+static void send_rst_test_point_hook(const char* name, int count, void* arg) {
+  if (count > 0) {
+    return;
+  }
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, RST_PKT(/* seq */ 501, /* ack */ 101));
+}
+
+static void fin_and_shutdown_test_point_hook(const char* name, int count,
+                                             void* arg) {
+  if (count > 0) {
+    return;
+  }
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_EQ(0, net_shutdown(s->socket, SHUT_WR));
+  EXPECT_PKT(s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(s, ACK_PKT(/* seq */ 502, /* ack */ 102));
+}
+
+// As above, but expects some data to be sent with the first ACK.
+static void fin_and_shutdown_test_point_hook_data(const char* name, int count,
+                                                  void* arg) {
+  if (count > 0) {
+    return;
+  }
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(s, DATA_PKT(/* seq */ 101, /* ack */ 502, "abc"));
+  KEXPECT_EQ(0, net_shutdown(s->socket, SHUT_WR));
+  EXPECT_PKT(s, FIN_PKT(/* seq */ 104, /* ack */ 502));
+  SEND_PKT(s, ACK_PKT(/* seq */ 502, /* ack */ 105));
+}
+
+// As above, but offsets the remote seq by 3 to reflect data sent.
+static void fin_and_shutdown_test_point_hook_data_sent(const char* name,
+                                                       int count, void* arg) {
+  if (count > 0) {
+    return;
+  }
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, FIN_PKT(/* seq */ 504, /* ack */ 101));
+  EXPECT_PKT(s, ACK_PKT(/* seq */ 101, /* ack */ 505));
+  KEXPECT_EQ(0, net_shutdown(s->socket, SHUT_WR));
+  EXPECT_PKT(s, FIN_PKT(/* seq */ 101, /* ack */ 505));
+  SEND_PKT(s, ACK_PKT(/* seq */ 505, /* ack */ 102));
+}
+
+static void close_dispatch_race_test(void) {
   KTEST_BEGIN("TCP: socket closes during packet dispatch");
   tcp_test_state_t s;
   init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
@@ -9960,6 +10017,226 @@ static void close_race_tests(void) {
   KEXPECT_EQ(1, test_point_remove("tcp:dispatch_packet"));
 
   cleanup_tcp_test(&s);
+}
+
+static void close_syn_sent_race_test(void) {
+  KTEST_BEGIN("TCP: socket closes from SYN_SENT before RST sent");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  test_point_add("tcp:dispatch_packet_action", &shutdown_test_point_hook,
+                 (void*)(intptr_t)s.socket);
+
+  // Send a plain ACK to get a RST.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 100));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 100));
+  KEXPECT_EQ(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  // TODO(aoates): should this return ECONNABORTED?
+  KEXPECT_EQ(0, finish_op(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void finish_conn_test_point_hook(const char* name, int count,
+                                        void* arg) {
+  if (count > 0) {
+    return;
+  }
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+}
+
+static void close_syn_sent_race_test2(void) {
+  KTEST_BEGIN("TCP: socket connection finishes in SYN_SENT before RST sent");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  test_point_add("tcp:dispatch_packet_action", &finish_conn_test_point_hook,
+                 &s);
+
+  // Send a plain ACK to get a RST.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 100));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 100));
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  KEXPECT_EQ(0, finish_op(&s));
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_syn_sent_race_test3(void) {
+  KTEST_BEGIN("TCP: socket closes during simultaneous connect from SYN_SENT");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  test_point_add("tcp:dispatch_packet_action",
+                 &fin_and_shutdown_test_point_hook, &s);
+
+  // Send a simultaneous SYN to get to SYN_RCVD and retransmit the original SYN
+  // as a SYN/ACK (if we didn't close first).
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+  KEXPECT_EQ(0, finish_op(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_handle_urg_race_test(void) {
+  KTEST_BEGIN("TCP: socket closes after getting URG data before reset sent");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  test_point_add("tcp:dispatch_packet_action",
+                 &fin_and_shutdown_test_point_hook, &s);
+
+  SEND_PKT(&s, URG_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  // Note: this _should_ send a RST --- if the close happens before the URG
+  // packet is received, it would be a no-matching-socket RST; if after the
+  // packet is handled, it would be a get-URG RST.  In the case of the race
+  // condition here, we  match the packet, the fail to send the RST because the
+  // socket closes.  I think that's fine behavior given how rare this should be.
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_handle_data_after_shutdown_race_test(void) {
+  KTEST_BEGIN(
+      "TCP: socket closes after getting post-shutdown data before reset sent");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  test_point_add("tcp:dispatch_packet_action",
+                 &fin_and_shutdown_test_point_hook, &s);
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  // As above, this _should_ send a RST.
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_send_data_after_shutdown_race_test(void) {
+  KTEST_BEGIN("TCP: socket closes before sending data");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ WNDSIZE_ZERO));
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+
+  test_point_add("tcp:dispatch_packet_action",
+                 &fin_and_shutdown_test_point_hook_data, &s);
+
+  // Open the window and trigger the send data/close race.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 100));
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_get_data_after_shutdown_race_test(void) {
+  KTEST_BEGIN("TCP: socket closes before sending ACK");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  test_point_add("tcp:dispatch_packet_action",
+                 &fin_and_shutdown_test_point_hook_data_sent, &s);
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_get_fin_after_shutdown_race_test(void) {
+  KTEST_BEGIN("TCP: socket (gets FIN) closes before sending ACK");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  test_point_add("tcp:dispatch_packet_action",
+                 &fin_and_shutdown_test_point_hook, &s);
+
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_LT(1, test_point_remove("tcp:dispatch_packet_action"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void shutdown_and_close_race_test(void) {
+  KTEST_BEGIN("TCP: socket in shutdown() closes before sending FIN");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  test_point_add("tcp:shutdown_before_send", &send_rst_test_point_hook, &s);
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(1, test_point_remove("tcp:shutdown_before_send"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_race_tests(void) {
+  close_dispatch_race_test();
+  close_syn_sent_race_test();
+  close_syn_sent_race_test2();
+  close_syn_sent_race_test3();
+  close_handle_urg_race_test();
+  close_handle_data_after_shutdown_race_test();
+  close_send_data_after_shutdown_race_test();
+  close_get_data_after_shutdown_race_test();
+  close_get_fin_after_shutdown_race_test();
+  shutdown_and_close_race_test();
 }
 
 static void cwnd_test(void) {
