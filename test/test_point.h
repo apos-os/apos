@@ -17,8 +17,9 @@
 #ifndef APOO_TEST_TEST_POINT_H
 #define APOO_TEST_TEST_POINT_H
 
-// A test point hook function.
-typedef void (*test_point_cb_t)(const char* name, void* arg);
+// A test point hook function.  The `count` passed is the number of times this
+// particular hook cb has been started (not including this one).
+typedef void (*test_point_cb_t)(const char* name, int count, void* arg);
 
 // Register a test point with the given name.  When triggered, the hook will be
 // called with the argument.

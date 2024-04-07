@@ -8807,7 +8807,7 @@ static void accept_child_rst4(void) {
   cleanup_tcp_test(&c1);
 }
 
-static void send_test_rst(const char* name, void* arg) {
+static void send_test_rst(const char* name, int count, void* arg) {
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   SEND_PKT(s, RST_PKT(/* seq */ 501, /* ack */ 101));
 }
@@ -8898,7 +8898,7 @@ static void accept_child_partial_close2(void) {
   cleanup_tcp_test(&c1);
 }
 
-static void send_test_syn(const char* name, void* arg) {
+static void send_test_syn(const char* name, int count, void* arg) {
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   SEND_PKT(s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   KEXPECT_FALSE(raw_has_packets(s));
@@ -8926,7 +8926,7 @@ static void syn_during_listen_close_test(void) {
   cleanup_tcp_test(&c1);
 }
 
-static void send_test_ack(const char* name, void* arg) {
+static void send_test_ack(const char* name, int count, void* arg) {
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   SEND_PKT(s, ACK_PKT(/* seq */ 501, /* ack */ 101));
 }
@@ -8963,7 +8963,8 @@ typedef struct {
   tcp_test_state_t* c1;
 } simulcnt_args_t;
 
-static void simultaneous_connect_test_point(const char* name, void* arg) {
+static void simultaneous_connect_test_point(const char* name, int count,
+                                            void* arg) {
   simulcnt_args_t* args = (simulcnt_args_t*)arg;
   // Avoid the recursive case --- only pause the first time we dispatch.
   if (ntfn_has_been_notified(&args->hook_hit)) {
@@ -9934,7 +9935,7 @@ static void nonblocking_tests(void) {
   nonblocking_send_test();
 }
 
-static void sleep_test_point_hook(const char* name, void* arg) {
+static void sleep_test_point_hook(const char* name, int count, void* arg) {
   ksleep((intptr_t)arg);
 }
 
@@ -9956,7 +9957,7 @@ static void close_race_tests(void) {
 
   test_point_add("tcp:dispatch_packet", &sleep_test_point_hook, (void*)20);
   SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
-  test_point_remove("tcp:dispatch_packet");
+  KEXPECT_EQ(1, test_point_remove("tcp:dispatch_packet"));
 
   cleanup_tcp_test(&s);
 }

@@ -101,11 +101,11 @@ void test_point_run(const char* name) {
   if (htbl_get(&gtp_entries, key, &val) == 0) {
     test_point_entry_t* entry = (test_point_entry_t*)val;
     entry->refcount++;
-    entry->count++;
+    int count = entry->count++;
     KASSERT_DBG(entry->refcount > 0);
     kspin_unlock(&gtp_lock);
 
-    entry->cb(name, entry->arg);
+    entry->cb(name, count, entry->arg);
 
     kspin_lock(&gtp_lock);
     KASSERT_DBG(entry->refcount > 0);
