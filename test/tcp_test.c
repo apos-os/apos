@@ -3962,7 +3962,7 @@ static void basic_established_recv_test(void) {
   KEXPECT_STREQ("abc", buf);
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 508, /* ack */ 101, "hi"));
-  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 510, /* wndsize */ 494));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 510, /* wndsize */ 493));
   KEXPECT_EQ(6, vfs_read(s.socket, buf, 100));
   buf[6] = '\0';
   KEXPECT_STREQ("defghi", buf);
@@ -4264,6 +4264,116 @@ static void read_and_shutdown_test(void) {
   cleanup_tcp_test(&s);
 }
 
+static void silly_window_test(void) {
+  KTEST_BEGIN("TCP: silly window updates avoided");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 10000));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 9995));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 9990));
+
+  // When some data is read, a small window update should not be sent.
+  KEXPECT_STREQ("abcd", do_read_len(s.socket, 4));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // When we send more data, the window should not be updated.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 511, /* ack */ 101, "1"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 512, /* wndsize */ 9990));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 512, /* ack */ 101, "23"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 514, /* wndsize */ 9990));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 514, /* ack */ 101, "4"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 515, /* wndsize */ 9990));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 515, /* ack */ 101, "5"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 516, /* wndsize */ 9989));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 516, /* ack */ 101, "6"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 517, /* wndsize */ 9988));
+
+  // Clear the buf.
+  KEXPECT_STREQ("eabcde123456", do_read(s.socket));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 517, /* ack */ 101, "ABCD"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 521, /* wndsize */ 9988));
+  KEXPECT_STREQ("ABCD", do_read(s.socket));
+
+  // If we update the threshold by an amount larger than the MSS (assumed to be
+  // <1500 for this test), then the window should update.
+  char* buf = kmalloc(1501);
+  kmemset(buf, 'x', 1500);
+  buf[1500] = '\0';
+  SEND_PKT(&s, DATA_PKT(/* seq */ 521, /* ack */ 101, buf));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 2021, /* wndsize */ 8500));
+
+  KEXPECT_EQ(100, vfs_read(s.socket, buf, 100));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(100, vfs_read(s.socket, buf, 100));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(1300, vfs_read(s.socket, buf, 2000));
+  // TODO(tcp): this should generate a window update ACK.
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 2021, /* ack */ 101, "x"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 2022, /* wndsize */ 9999));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 21 + 1500));
+
+  cleanup_tcp_test(&s);
+  kfree(buf);
+}
+
+// As above, but test that the algorithm triggers when the buffer size threshold
+// is met rather than MSS.
+static void silly_window_test2(void) {
+  KTEST_BEGIN("TCP: silly window updates avoided (buffer size threshold)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.1", 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 100));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "127.0.0.1", 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 95));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 506, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 90));
+
+  // When some data is read, a small window update should not be sent.
+  KEXPECT_STREQ("abcd", do_read_len(s.socket, 4));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // When we send more data, the window should not be updated.
+  char* buf = kmalloc(100);
+  kmemset(buf, 'x', 100);
+  buf[69] = '\0';
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 511, /* ack */ 101, buf));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 580, /* wndsize */ 25));
+
+  KEXPECT_EQ(49, vfs_read(s.socket, buf, 49));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Retransmit --- no new window size should be given.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 511, /* ack */ 101, buf));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 580, /* wndsize */ 25));
+
+  KEXPECT_EQ(1, vfs_read(s.socket, buf, 1));
+  // TODO(tcp): should get a proactive window update ACK.
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 511, /* ack */ 101, buf));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 580, /* wndsize */ 75));
+
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 79));
+
+  cleanup_tcp_test(&s);
+  kfree(buf);
+}
+
 static void established_tests(void) {
   basic_established_recv_test();
   rst_during_established_test1();
@@ -4305,6 +4415,9 @@ static void established_tests(void) {
   recv_timeout_test4();
 
   read_and_shutdown_test();
+
+  silly_window_test();
+  silly_window_test2();
 }
 
 static void recvbuf_size_test(void) {
@@ -4319,6 +4432,14 @@ static void recvbuf_size_test(void) {
   KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_RCVBUF, &val, &vallen));
   KEXPECT_EQ(sizeof(int), vallen);
   KEXPECT_EQ(16 * 1024, val);
+
+  val = 1233;
+  KEXPECT_EQ(
+      0, net_setsockopt(s.socket, SOL_SOCKET, SO_RCVBUF, &val, sizeof(int)));
+
+  KEXPECT_EQ(0, net_getsockopt(s.socket, SOL_SOCKET, SO_RCVBUF, &val, &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(1233, val);
 
   val = 1234;
   KEXPECT_EQ(

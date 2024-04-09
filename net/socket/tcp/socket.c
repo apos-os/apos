@@ -70,6 +70,8 @@
 #define TCP_DEFAULT_MIN_RTO_MS 1000
 #define TCP_MAX_RTO_MS 60000
 
+#define TCP_WINDOW_UPDATE_DIVISOR 2
+
 static const socket_ops_t g_tcp_socket_ops;
 
 static short tcp_poll_events(const socket_tcp_t* socket);
@@ -83,6 +85,25 @@ static void set_iss(socket_tcp_t* socket, uint32_t iss) {
   socket->initial_seq = iss;
   socket->send_next = socket->initial_seq;
   socket->send_unack = socket->send_next;
+}
+
+// Possibly updates the receive window if allowed by the SWS algorithm.  Returns
+// true if the window was updated.  If `force` is true, the window is always
+// updated.
+static bool maybe_update_recv_window(socket_tcp_t* socket, bool force) {
+  uint32_t threshold =
+      min(socket->recv_buf.buflen / TCP_WINDOW_UPDATE_DIVISOR, socket->mss);
+  uint32_t new_wnd = circbuf_available(&socket->recv_buf);
+  if (new_wnd < socket->recv_wndsize ||
+      circbuf_available(&socket->recv_buf) - socket->recv_wndsize >=
+          threshold ||
+      force) {
+    KLOG(DEBUG2, "TCP: socket %p updated recv_wndsize %u -> %d bytes\n", socket,
+         socket->recv_wndsize, new_wnd);
+    socket->recv_wndsize = new_wnd;
+    return true;
+  }
+  return false;
 }
 
 int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
@@ -1229,7 +1250,7 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
        (int)bytes_read);
 
   socket->recv_next += bytes_read;
-  socket->recv_wndsize = circbuf_available(&socket->recv_buf);
+  maybe_update_recv_window(socket, /* force */ false);
   tcp_wake(socket);
   action->send_ack = true;
 }
@@ -2100,7 +2121,7 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
         result = circbuf_read(&sock->recv_buf, buffer, length);
         KLOG(DEBUG2, "TCP: socket %p gave %d bytes to recvfrom()\n", sock,
              (int)result);
-        sock->recv_wndsize = circbuf_available(&sock->recv_buf);
+        maybe_update_recv_window(sock, /* force */ false);
         break;
     }
   }
@@ -2341,7 +2362,7 @@ static int setsockopt_bufsize(socket_tcp_t* socket, int option, const void* val,
 
   kfree(buf->buf);
   circbuf_init(buf, newbuf, buflen);
-  socket->recv_wndsize = circbuf_available(&socket->recv_buf);
+  maybe_update_recv_window(socket, /* force */ true);
   kspin_unlock(&socket->spin_mu);
   return 0;
 }
