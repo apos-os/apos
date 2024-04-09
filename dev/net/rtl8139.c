@@ -26,6 +26,7 @@
 #include "memory/page_alloc.h"
 #include "net/eth/eth.h"
 #include "proc/defint.h"
+#include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -204,7 +205,8 @@ static void rtl_handle_recv(void* arg) {
   rtl8139_t* nic = (rtl8139_t*)arg;
   int packets = 0;
   uint16_t rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
-  while (rxbuf_end != nic->rxstart) {
+  const int kMaxPackets = 2;
+  while (rxbuf_end != nic->rxstart && packets < kMaxPackets) {
     // TODO(aoates): increment stats?
     packets++;
     int bytes_len =
@@ -219,7 +221,24 @@ static void rtl_handle_recv(void* arg) {
     rxbuf_end = ltoh16(io_read16(nic->io, RTLRG_RXBUF_END));
   }
   KLOG(DEBUG2, "recv(%s): read %d packets\n", nic->public.name, packets);
+  if (rxbuf_end != nic->rxstart) {
+    defint_schedule(&rtl_handle_recv, nic);
+  }
 }
+
+const flag_spec_t kTxStatusFlagSpec[] = {
+   FLAG_SPEC_FLAG("CRS", 1 << 31),
+   FLAG_SPEC_FLAG("TABT", 1 << 30),
+   FLAG_SPEC_FLAG("OWC", 1 << 29),
+   FLAG_SPEC_FLAG("CDH", 1 << 28),
+   FLAG_SPEC_FIELD2("NCC", 4, 24),
+   FLAG_SPEC_FIELD2("ERTXTH", 6, 16),
+   FLAG_SPEC_FLAG("TOK", 1 << 15),
+   FLAG_SPEC_FLAG("TUN", 1 << 14),
+   FLAG_SPEC_FLAG("OWN", 1 << 13),
+   FLAG_SPEC_FIELD2("SIZE", 13, 0),
+   FLAG_SPEC_END,
+};
 
 // Deferred interrupt.
 static void rtl_handle_tx_irq(void* arg) {
@@ -227,6 +246,12 @@ static void rtl_handle_tx_irq(void* arg) {
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) {
     const uint16_t tx_status =
         io_read32(nic->io, RTLRG_TXSTATUS0 + (sizeof(uint32_t) * i));
+    if (klog_enabled(KL_NET, DEBUG3)) {
+      char buf[100];
+      flag_sprintf(buf, tx_status, kTxStatusFlagSpec);
+      KLOG(DEBUG3, "tx(%s) tx descriptor %d status: %s\n", nic->public.name, i,
+           buf);
+    }
     if (nic->txbuf_active[i]) {
       if (tx_status & RTL_TSD_TOK) {
         KASSERT_DBG(tx_status & RTL_TSD_OWN); // HW error
