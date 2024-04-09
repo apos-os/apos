@@ -37,7 +37,7 @@ void eth_mkbroadcast(uint8_t* mac) {
 
 #if PRINT_PACKETS
 static void print_packet(const pbuf_t* pb, const char* type) {
-  KLOG(INFO, "##### %s PACKET #####", type);
+  KLOG(INFO, "##### %s PACKET %d #####", type, get_time_ms());
   const size_t kLineLen = 20;
   for (size_t i = 0; i < pbuf_size(pb); ++i) {
     if (i % kLineLen == 0) {
