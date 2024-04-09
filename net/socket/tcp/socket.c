@@ -2097,6 +2097,7 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
     now = get_time_ms();
   }
 
+  bool send_ack = false;
   if (result == 0) {
     switch (recv_state(sock)) {
       case RECV_NOT_CONNECTED:
@@ -2121,11 +2122,19 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
         result = circbuf_read(&sock->recv_buf, buffer, length);
         KLOG(DEBUG2, "TCP: socket %p gave %d bytes to recvfrom()\n", sock,
              (int)result);
-        maybe_update_recv_window(sock, /* force */ false);
+        send_ack = maybe_update_recv_window(sock, /* force */ false);
         break;
     }
   }
   kspin_unlock(&sock->spin_mu);
+
+  if (send_ack) {
+    int result2 = tcp_send_ack(sock);
+    if (result2) {
+      KLOG(WARNING, "TCP: socket %p unable to send window update: %s\n", sock,
+           errorname(-result2));
+    }
+  }
 
   return result;
 }

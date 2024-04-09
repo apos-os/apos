@@ -4314,8 +4314,9 @@ static void silly_window_test(void) {
   KEXPECT_EQ(100, vfs_read(s.socket, buf, 100));
   KEXPECT_FALSE(raw_has_packets(&s));
   KEXPECT_EQ(1300, vfs_read(s.socket, buf, 2000));
-  // TODO(tcp): this should generate a window update ACK.
-  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // We should get a window update now.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 2021, /* wndsize */ 10000));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 2021, /* ack */ 101, "x"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 2022, /* wndsize */ 9999));
@@ -4363,7 +4364,9 @@ static void silly_window_test2(void) {
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 580, /* wndsize */ 25));
 
   KEXPECT_EQ(1, vfs_read(s.socket, buf, 1));
-  // TODO(tcp): should get a proactive window update ACK.
+
+  // We should get a window update now.
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 580, /* wndsize */ 75));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 511, /* ack */ 101, buf));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 580, /* wndsize */ 75));
@@ -5443,12 +5446,16 @@ static void shutdown_with_zero_recv_window(void) {
 
   // Read the data (open the window) and try again.
   KEXPECT_STREQ("abcde", do_read(s.socket));
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 5));
 
   // When the full packet is too long, we should drop the FIN.
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 506, /* ack */ 101, "12345"));
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("12345", do_read(s.socket));
+  EXPECT_PKT(
+      &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
   KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
 
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 511, /* ack */ 101, "ABCD"));
@@ -5969,6 +5976,7 @@ static void data_past_window_test(void) {
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("abcde", do_read(s.socket));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 5));
 
 
   // Test #2: as above, but is exactly aligned with start of window (still too
@@ -5979,6 +5987,7 @@ static void data_past_window_test(void) {
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("12345", do_read(s.socket));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
 
   // Test #3: extends past window and doesn't align with start of window.
   // Should be dropped.
@@ -6023,6 +6032,7 @@ static void data_fin_past_window_test(void) {
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("abcde", do_read(s.socket));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 5));
 
 
   // Test #2: as above, but is exactly aligned with start of window (still too
@@ -6033,6 +6043,7 @@ static void data_fin_past_window_test(void) {
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("12345", do_read(s.socket));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 511, /* wndsize */ 5));
 
   // Test #3: extends past window and doesn't align with start of window.
   // Should be dropped.
@@ -6047,6 +6058,7 @@ static void data_fin_past_window_test(void) {
   EXPECT_PKT(
       &s, ACK_PKT2(/* seq */ 101, /* ack */ 516, /* wndsize */ 1));
   KEXPECT_STREQ("6789", do_read(s.socket));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 516, /* wndsize */ 5));
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
@@ -6082,6 +6094,7 @@ static void data_fin_past_window_test2(void) {
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 502, /* ack */ 101, "BC"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 505, /* wndsize */ 2));
   KEXPECT_STREQ("abc", do_read(s.socket));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 505, /* wndsize */ 5));
 
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
