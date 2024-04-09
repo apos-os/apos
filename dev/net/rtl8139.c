@@ -207,9 +207,11 @@ static void rtl_handle_recv(void* arg) {
   while (rxbuf_end != nic->rxstart) {
     // TODO(aoates): increment stats?
     packets++;
-    KLOG(DEBUG2, "recv(%s): start=%#x end=%#x\n", nic->public.name,
-         nic->rxstart, rxbuf_end);
-    if (rxbuf_end - nic->rxstart < RTL_RX_PACKET_HDR_SIZE) {
+    int bytes_len =
+        (rxbuf_end + RTL_RXBUF_SIZE - nic->rxstart) % RTL_RXBUF_SIZE;
+    KLOG(DEBUG2, "recv(%s): start=%#x end=%#x (%d bytes)\n", nic->public.name,
+         nic->rxstart, rxbuf_end, bytes_len);
+    if (bytes_len < RTL_RX_PACKET_HDR_SIZE) {
       KLOG(INFO, "recv(%s): data in buffer too small!\n", nic->public.name);
       break;
     }
