@@ -497,16 +497,20 @@ static void tcp_dispatch_or_rst(socket_tcp_t* socket, pbuf_t* pb,
   pbuf_free(pb);
 }
 
-// Actions to take based on a packet.
+// Terminal actions for a packet.  These are mutually exclusive.
 typedef enum {
-  TCP_ACTION_NONE = 0x0,
-  TCP_PACKET_DONE = 0x1,       // We're done with the packet.
-  TCP_DROP_BAD_PKT = 0x2,      // Drop the packet, it is bad.
-  TCP_SEND_ACK = 0x4,          // Send an ACK.
-  TCP_RESET_CONNECTION = 0x8,  // Send a RST and reset the connection.
-                               // Resetting implies we are done with the packet.
-  TCP_SEND_RAW_RST = 0x10,     // Send a RST without resetting the connection.
-  TCP_RETRANSMIT = 0x20,       // Retransmit the first (oldest) segment.
+  TCP_ACTION_NOT_SET = 0,  // No terminal action set --- continue processing.
+  TCP_ACTION_NONE,         // No specific action to take.
+  TCP_DROP_BAD_PKT,        // Drop the packet, it is bad.
+  TCP_SEND_RAW_RST,        // Send a RST without resetting the connection.
+  TCP_RESET_CONNECTION,    // Send a RST and reset the connection.
+  TCP_RETRANSMIT,          // Retransmit the first (oldest) segment.
+} tcp_pkt_terminal_action_t;
+
+// Action to take based on a packet.
+typedef struct {
+  tcp_pkt_terminal_action_t action;
+  bool send_ack;  // Whether to send an ACK in addition to the action.
 } tcp_pkt_action_t;
 
 // Handlers for different types of packet scenarios.  Multiple of these may be
@@ -682,7 +686,9 @@ static bool validate_seq(const socket_tcp_t* socket, uint32_t seq,
 static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
                                  const tcp_packet_metadata_t* md) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
-  tcp_pkt_action_t action = TCP_ACTION_NONE;
+  tcp_pkt_action_t action;
+  action.action = TCP_ACTION_NOT_SET;
+  action.send_ack = false;
 
   test_point_run("tcp:dispatch_packet");
 
@@ -720,7 +726,8 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
       maybe_handle_time_wait_fin(socket, pb, md, seq);
     }
     KLOG(DEBUG2, "TCP: socket %p got out-of-window packet, dropping\n", socket);
-    action = (tcp_hdr->flags & TCP_FLAG_RST) ? TCP_DROP_BAD_PKT : TCP_SEND_ACK;
+    action.action = TCP_DROP_BAD_PKT;
+    action.send_ack = !(tcp_hdr->flags & TCP_FLAG_RST);
     goto done;
   }
 
@@ -728,7 +735,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     KLOG(DEBUG2,
          "TCP: socket %p dropping OOO packet (past start of window)\n",
          socket);
-    action |= TCP_SEND_ACK;
+    action.send_ack = true;
     goto done;
   }
 
@@ -741,32 +748,32 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // Next handle SYN and SYN-ACK.
   if (tcp_hdr->flags & TCP_FLAG_SYN) {
     tcp_handle_syn(socket, pb, &action);
-    if (action & TCP_PACKET_DONE) {
+    if (action.action != TCP_ACTION_NOT_SET) {
       goto done;
     }
   }
 
   if (!(tcp_hdr->flags & TCP_FLAG_ACK)) {
     KLOG(INFO, "TCP: socket %p dropping packet without ACK\n", socket);
-    action = TCP_DROP_BAD_PKT;
+    action.action = TCP_DROP_BAD_PKT;
     goto done;
   }
 
   tcp_handle_ack(socket, pb, &action);
-  if (action & TCP_PACKET_DONE) {
+  if (action.action != TCP_ACTION_NOT_SET) {
     goto done;
   }
 
   if (tcp_hdr->flags & TCP_FLAG_URG) {
     KLOG(DEBUG, "TCP: socket %p cannot handle URG data\n", socket);
     socket->error = ECONNRESET;
-    action = TCP_RESET_CONNECTION | TCP_PACKET_DONE;
+    action.action = TCP_RESET_CONNECTION;
     goto done;
   }
 
   if (md->data_len > 0) {
     tcp_handle_data(socket, pb, md, &action);
-    if (action & TCP_PACKET_DONE) {
+    if (action.action != TCP_ACTION_NOT_SET) {
       goto done;
     }
   }
@@ -780,59 +787,59 @@ done:
   test_point_run("tcp:dispatch_packet_action");
 
   int result = 0;
-  if (action & TCP_DROP_BAD_PKT) {
-    KLOG(DEBUG2, "TCP: socket %p dropping bad packet\n", socket);
-  }
+  switch (action.action) {
+    case TCP_DROP_BAD_PKT:
+      KLOG(DEBUG2, "TCP: socket %p dropping bad packet\n", socket);
+      break;
 
-  if (action & TCP_SEND_RAW_RST) {
-    KASSERT_DBG(action & TCP_PACKET_DONE);
-    result = tcp_send_raw_rst(pb, md);
-    if (result != 0) {
-      KLOG(WARNING, "TCP: socket %p unable to send raw RST: %s\n", socket,
-           errorname(-result));
-    }
-  }
+    case TCP_SEND_RAW_RST:
+      result = tcp_send_raw_rst(pb, md);
+      if (result != 0) {
+        KLOG(WARNING, "TCP: socket %p unable to send raw RST: %s\n", socket,
+             errorname(-result));
+      }
+      break;
 
-  if (action & TCP_RESET_CONNECTION) {
-    KASSERT_DBG(action & TCP_PACKET_DONE);
-    result = tcp_send_rst(socket);
-    if (result != 0) {
-      KLOG(WARNING, "TCP: socket %p unable to send RST: %s\n", socket,
-           errorname(-result));
-    }
-    kspin_lock(&socket->spin_mu);
-    reset_connection(socket, "Resetting connection");
-    kspin_unlock(&socket->spin_mu);
-    return true;
-  }
-
-  if (action & TCP_RETRANSMIT) {
-    kspin_lock(&socket->spin_mu);
-    if (socket->state == TCP_CLOSED_DONE) {
-      KLOG(DEBUG3, "TCP: socket %p closed before retransmit\n", socket);
+    case TCP_RESET_CONNECTION:
+      result = tcp_send_rst(socket);
+      if (result != 0) {
+        KLOG(WARNING, "TCP: socket %p unable to send RST: %s\n", socket,
+             errorname(-result));
+      }
+      kspin_lock(&socket->spin_mu);
+      reset_connection(socket, "Resetting connection");
       kspin_unlock(&socket->spin_mu);
-      return true;
-    }
-    if (list_empty(&socket->segments)) {
-      KLOG(DFATAL, "TCP: socket %p cannot retransmit, no segments\n", socket);
-      kspin_unlock(&socket->spin_mu);
-      return true;
-    }
-    tcp_segment_t* seg =
-        container_of(socket->segments.head, tcp_segment_t, link);
-    tcp_retransmit_segment(socket, seg);  // Handles socket unlock.
-    return true;
+      break;
+
+    case TCP_RETRANSMIT:
+      kspin_lock(&socket->spin_mu);
+      if (socket->state == TCP_CLOSED_DONE) {
+        KLOG(DEBUG3, "TCP: socket %p closed before retransmit\n", socket);
+        kspin_unlock(&socket->spin_mu);
+        return true;
+      }
+      if (list_empty(&socket->segments)) {
+        KLOG(DFATAL, "TCP: socket %p cannot retransmit, no segments\n", socket);
+        kspin_unlock(&socket->spin_mu);
+        return true;
+      }
+      tcp_segment_t* seg =
+          container_of(socket->segments.head, tcp_segment_t, link);
+      tcp_retransmit_segment(socket, seg);  // Handles socket unlock.
+      break;
+
+    case TCP_ACTION_NOT_SET:
+    case TCP_ACTION_NONE:
+      result = tcp_send_datafin(socket, false);
+      if (result == 0) {
+        action.send_ack = false;  // We sent data, that includes an ack
+      } else if (result != -EAGAIN) {
+        KLOG(WARNING, "TCP: socket %p unable to send data: %s\n", socket,
+             errorname(-result));
+      }
   }
 
-  result = tcp_send_datafin(socket, false);
-  if (result == 0) {
-    action &= ~TCP_SEND_ACK;  // We sent data, that includes an ack
-  } else if (result != -EAGAIN) {
-    KLOG(WARNING, "TCP: socket %p unable to send data: %s\n", socket,
-         errorname(-result));
-  }
-
-  if (action & TCP_SEND_ACK) {
+  if (action.send_ack) {
     result = tcp_send_ack(socket);
     if (result != 0) {
       KLOG(WARNING, "TCP: socket %p unable to send ACK: %s\n", socket,
@@ -849,7 +856,8 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
   // otherwise ignore it.
   KLOG(DEBUG2, "TCP: socket %p got SYN in state %s\n", socket,
        state2str(socket->state));
-  *action |= TCP_SEND_ACK | TCP_PACKET_DONE;
+  action->action = TCP_ACTION_NONE;
+  action->send_ack = true;
 }
 
 bool tcp_is_fin_sent(socktcp_state_t state) {
@@ -935,7 +943,8 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
   uint32_t ack = btoh32(tcp_hdr->ack);
   if (seq_gt(ack, socket->send_next)) {
     KLOG(DEBUG2, "TCP: socket %p got future ACK (ack=%u)\n", socket, ack);
-    *action |= TCP_SEND_ACK | TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
+    action->action = TCP_DROP_BAD_PKT;
+    action->send_ack = true;
     return;
   } else if (seq_lt(ack, socket->send_unack)) {
     KLOG(DEBUG2, "TCP: socket %p got duplicate ACK (ack=%u)\n", socket, ack);
@@ -1061,7 +1070,7 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_ESTABLISHED:
       set_state(socket, TCP_CLOSE_WAIT, "FIN received");
       socket->recv_next++;
-      *action |= TCP_SEND_ACK;
+      action->send_ack = true;
       return;
 
     case TCP_LAST_ACK:
@@ -1083,13 +1092,13 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
       KASSERT_DBG(seq_lt(socket->send_unack, socket->send_next));
       set_state(socket, TCP_CLOSING, "simultaneous close (got FIN, no ACK)");
       socket->recv_next++;
-      *action |= TCP_SEND_ACK;
+      action->send_ack = true;
       return;
 
     case TCP_FIN_WAIT_2:
       set_state(socket, TCP_TIME_WAIT, "FIN received");
       socket->recv_next++;
-      *action |= TCP_SEND_ACK;
+      action->send_ack = true;
       tcp_set_timer(socket, socket->time_wait_ms, /* force */ true);
       return;
 
@@ -1098,7 +1107,7 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
       // acknowledged yet (and therefore we haven't moved into ESTABLISHED).
       KLOG(DEBUG2, "TCP: socket %p ignoring FIN received in SYN_RCVD\n",
            socket);
-      *action |= TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
+      action->action = TCP_DROP_BAD_PKT;
       return;
 
     case TCP_SYN_SENT:
@@ -1106,7 +1115,7 @@ static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_CLOSED_DONE:
     case TCP_LISTEN:
       KLOG(DFATAL, "TCP: socket %p FIN received in invalid state\n", socket);
-      *action |= TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
+      action->action = TCP_DROP_BAD_PKT;
       return;
   }
   KLOG(FATAL, "TCP: socket %p in invalid state %d\n", socket, socket->state);
@@ -1124,7 +1133,7 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
     // If greater than recv_next, should have been caught before.
     KASSERT_DBG(seq_lt(btoh32(tcp_hdr->seq), socket->recv_next));
     KLOG(DEBUG, "TCP: socket %p out-of-order RST, dropping\n", socket);
-    *action |= TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
+    action->action = TCP_DROP_BAD_PKT;
     return;
   }
 
@@ -1136,7 +1145,7 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
     case TCP_FIN_WAIT_2:
       socket->error = ECONNRESET;
       reset_connection(socket, "connection reset");
-      *action = TCP_PACKET_DONE;
+      action->action = TCP_ACTION_NONE;
       return;
 
     case TCP_LAST_ACK:
@@ -1147,13 +1156,13 @@ static void tcp_handle_rst(socket_tcp_t* socket, const pbuf_t* pb,
       KASSERT_DBG(socket->send_shutdown);
       KASSERT_DBG(socket->send_buf.len == 0);
       finish_protocol_close(socket, "connection reset (already closed)");
-      *action = TCP_PACKET_DONE;
+      action->action = TCP_ACTION_NONE;
       return;
 
     case TCP_SYN_RCVD:
       socket->error = ECONNREFUSED;
       reset_connection(socket, "connection refused");
-      *action = TCP_PACKET_DONE;
+      action->action = TCP_ACTION_NONE;
       return;
 
     case TCP_SYN_SENT:
@@ -1201,14 +1210,14 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
     KLOG(DEBUG2,
          "TCP: socket %p ignoring %d bytes of data in non-connected state %s\n",
          socket, (int)md->data_len, state2str(socket->state));
-    *action = TCP_DROP_BAD_PKT | TCP_PACKET_DONE;
+    action->action = TCP_DROP_BAD_PKT;
     return;
   }
 
   if (socket->recv_shutdown) {
     KLOG(DEBUG2, "TCP: socket %p got data after shutdown(RD), sending RST\n",
          socket);
-    *action = TCP_RESET_CONNECTION | TCP_PACKET_DONE;
+    action->action = TCP_RESET_CONNECTION;
     return;
   }
 
@@ -1222,7 +1231,7 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
   socket->recv_next += bytes_read;
   socket->recv_wndsize = circbuf_available(&socket->recv_buf);
   tcp_wake(socket);
-  *action |= TCP_SEND_ACK;
+  action->send_ack = true;
 }
 
 static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
@@ -1235,9 +1244,9 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
     // We don't transit data with our SYN, so this is the only acceptable ACK.
     if (seg_ack != socket->send_next) {
       if (tcp_hdr->flags & TCP_FLAG_RST) {
-        *action = TCP_PACKET_DONE;  // Drop the packet.
+        action->action = TCP_ACTION_NONE;  // Drop the packet.
       } else {
-        *action = TCP_SEND_RAW_RST | TCP_PACKET_DONE;
+        action->action = TCP_SEND_RAW_RST;
       }
       return;
     }
@@ -1251,7 +1260,7 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
       socket->error = ECONNREFUSED;
       finish_protocol_close(socket, "connection refused");
     }
-    *action = TCP_PACKET_DONE;
+    action->action = TCP_ACTION_NONE;
     return;
   }
 
@@ -1262,7 +1271,7 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
 
     if (tcp_hdr->flags & TCP_FLAG_ACK) {
       set_state(socket, TCP_ESTABLISHED, "SYN-ACK received");
-      *action |= TCP_SEND_ACK;
+      action->send_ack = true;
       socket->send_unack = btoh32(tcp_hdr->ack);
       KASSERT_DBG(socket->send_unack == socket->send_next);
       socket->syn_acked = true;
@@ -1287,11 +1296,11 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
           container_of(socket->segments.head, tcp_segment_t, link);
       KASSERT_DBG(seg->flags == TCP_FLAG_SYN);
       seg->flags |= TCP_FLAG_ACK;
-      *action |= TCP_RETRANSMIT;
+      action->action = TCP_RETRANSMIT;
     }
   } else {
     KLOG(DEBUG, "TCP: socket %p dropping packet without SYN or RST\n", socket);
-    *action = TCP_PACKET_DONE;
+    action->action = TCP_ACTION_NONE;
   }
 }
 
