@@ -66,6 +66,8 @@
 
 #define SRC_IP TAP_SRC_IP
 #define DST_IP TAP_DST_IP
+#define DST_IP_2 "127.0.1.3"
+#define DST_IP_PREFIX "127.0.1"
 
 static uint32_t g_seq_start = TEST_SEQ_START;
 
@@ -1438,10 +1440,10 @@ static void bad_packets_syn_sent_test(void) {
 static void connect_rst_test(void) {
   KTEST_BEGIN("TCP: RST during connect() (connection refused)");
   tcp_test_state_t s;
-  init_tcp_test(&s, SRC_IP, 0x1234, "127.0.0.5", 0x5678);
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP_2, 0x5678);
 
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.5", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, DST_IP_2, 0x5678));
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
 
   // Send RST.
@@ -1453,10 +1455,12 @@ static void connect_rst_test(void) {
   struct sockaddr_storage unused;
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.1", 80));
-  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
-  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.1", 80));
-  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, SRC_IP, 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP, 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, DST_IP, 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, DST_IP_2, 80));
 
   char buf;
   KEXPECT_EQ(0, vfs_read(s.socket, &buf, 1));
@@ -1473,22 +1477,22 @@ static void connect_rst_test(void) {
 static void multiple_connect_test(void) {
   KTEST_BEGIN("TCP: multiple connect() calls");
   tcp_test_state_t s;
-  init_tcp_test(&s, SRC_IP, 0x1234, "127.0.0.2", 0x5678);
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
   // Try connect() while another thread is blocked in connect().
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 0x5678));
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 55));
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.1", 55));
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.5", 55));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP, 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP, 55));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, SRC_IP, 55));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP_2, 55));
 
   KEXPECT_TRUE(finish_standard_connect(&s));
 
   // Try connect() on a connected socket.
-  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.2", 0x5678));
-  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.2", 55));
-  KEXPECT_EQ(-EISCONN, do_connect(s.socket, "127.0.0.5", 55));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, DST_IP, 0x5678));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, DST_IP, 55));
+  KEXPECT_EQ(-EISCONN, do_connect(s.socket, DST_IP_2, 55));
 
   // Finish up.
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -1499,8 +1503,8 @@ static void multiple_connect_test(void) {
 static void two_simultaneous_connects_test(void) {
   KTEST_BEGIN("TCP: two sockets connecting simultaneously");
   tcp_test_state_t s1, s2;
-  init_tcp_test(&s1, SRC_IP, 0x1234, "127.0.0.2", 0x5678);
-  init_tcp_test(&s2, SRC_IP, 0x1235, "127.0.0.3", 0x5678);
+  init_tcp_test(&s1, SRC_IP, 0x1234, DST_IP, 0x5678);
+  init_tcp_test(&s2, SRC_IP, 0x1235, DST_IP_2, 0x5678);
   KEXPECT_EQ(0, set_initial_seqno(s2.socket, s2.seq_base + 700));
 
   KEXPECT_EQ(0, do_bind(s1.socket, SRC_IP, 0x1234));
@@ -1515,9 +1519,9 @@ static void two_simultaneous_connects_test(void) {
   KEXPECT_EQ(-EADDRINUSE, do_bind(s2.socket, "0.0.0.0", 0x1234));
   KEXPECT_EQ(-EADDRINUSE, do_bind(s2.socket, SRC_IP, 0x1234));
 
-  KEXPECT_TRUE(start_connect(&s1, "127.0.0.2", 0x5678));
+  KEXPECT_TRUE(start_connect(&s1, DST_IP, 0x5678));
   KEXPECT_EQ(0, do_bind(s2.socket, SRC_IP, 0x1235));
-  KEXPECT_TRUE(start_connect(&s2, "127.0.0.3", 0x5678));
+  KEXPECT_TRUE(start_connect(&s2, DST_IP_2, 0x5678));
 
   // Do SYN, SYN-ACK, ACK for both sockets, interleaved.
   EXPECT_PKT(&s2, SYN_PKT(/* seq */ 700, /* wndsize */ 0));
@@ -1591,11 +1595,13 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 0));
   KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", bound_port));
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 0));
-  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.2", 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, DST_IP, 0));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, DST_IP_2, 0));
   KEXPECT_EQ(-EINVAL, do_bind(sock, "0.0.0.0", 100));
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, bound_port));
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 100));
-  KEXPECT_EQ(-EINVAL, do_bind(sock, "127.0.0.2", 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, DST_IP, 100));
+  KEXPECT_EQ(-EINVAL, do_bind(sock, DST_IP_2, 100));
 
   KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
@@ -3069,9 +3075,9 @@ static void rst_during_established_test1(void) {
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, SRC_IP, 80));
-  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));
-  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, DST_IP_2, 80));
 
   KEXPECT_EQ(0, get_so_error(s.socket));
 
@@ -3219,10 +3225,10 @@ static void rst_during_established_blocking_recv_test(void) {
   struct sockaddr_storage unused;
   KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
   KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.1", 80));
-  KEXPECT_EQ(-EINVAL, do_connect(s.socket, "127.0.0.5", 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP, 80));
+  KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));
-  KEXPECT_EQ(-EINVAL, do_bind(s.socket, "127.0.0.5", 80));
+  KEXPECT_EQ(-EINVAL, do_bind(s.socket, DST_IP_2, 80));
 
   cleanup_tcp_test(&s);
 }
@@ -8372,7 +8378,7 @@ static void basic_listen_test(void) {
 
   // Send a SYN, complete the connection.
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 2000);
+  init_tcp_test_child(&s, &c1, DST_IP, 2000);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
@@ -8384,7 +8390,7 @@ static void basic_listen_test(void) {
   char addr[SOCKADDR_PRETTY_LEN];
   c1.socket = do_accept(s.socket, addr);
   KEXPECT_GE(c1.socket, 0);
-  KEXPECT_STREQ("127.0.0.2:2000", addr);
+  KEXPECT_STREQ(DST_IP ":2000", addr);
   KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
   KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
   KEXPECT_EQ(0, net_accept_queue_length(s.socket));
@@ -8396,7 +8402,7 @@ static void basic_listen_test(void) {
 
   // Do a second connection.
   tcp_test_state_t c2;
-  init_tcp_test_child(&s, &c2, "127.0.0.3", 600);
+  init_tcp_test_child(&s, &c2, DST_IP_2, 600);
   SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c2,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
@@ -8404,7 +8410,7 @@ static void basic_listen_test(void) {
   KEXPECT_EQ(1, net_accept_queue_length(s.socket));
   c2.socket = do_accept(s.socket, addr);
   KEXPECT_GE(c2.socket, 0);
-  KEXPECT_STREQ("127.0.0.3:600", addr);
+  KEXPECT_STREQ(DST_IP_2 ":600", addr);
   KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
   KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
   KEXPECT_EQ(0, net_accept_queue_length(s.socket));
@@ -8448,11 +8454,11 @@ static void listen_queue_max_test(void) {
 
   // Attempt to open four connections.
   tcp_test_state_t c1, c2, c3, c4, c5;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
-  init_tcp_test_child(&s, &c2, "127.0.0.3", 1003);
-  init_tcp_test_child(&s, &c3, "127.0.0.4", 1004);
-  init_tcp_test_child(&s, &c4, "127.0.0.5", 1005);
-  init_tcp_test_child(&s, &c5, "127.0.0.6", 1006);
+  init_tcp_test_child(&s, &c1, DST_IP_PREFIX ".2", 1002);
+  init_tcp_test_child(&s, &c2, DST_IP_PREFIX ".3", 1003);
+  init_tcp_test_child(&s, &c3, DST_IP_PREFIX ".4", 1004);
+  init_tcp_test_child(&s, &c4, DST_IP_PREFIX ".5", 1005);
+  init_tcp_test_child(&s, &c5, DST_IP_PREFIX ".6", 1006);
 
   // The first three should succeed.  Leave one in SYN_RCVD.
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
@@ -8479,7 +8485,7 @@ static void listen_queue_max_test(void) {
   char addr[SOCKADDR_PRETTY_LEN];
   c2.socket = do_accept(s.socket, addr);
   KEXPECT_GE(c2.socket, 0);
-  KEXPECT_STREQ("127.0.0.3:1003", addr);
+  KEXPECT_STREQ(DST_IP_PREFIX ".3:1003", addr);
   KEXPECT_EQ(2, net_accept_queue_length(s.socket));
 
   // Now the fourth should be able to connect.
@@ -8518,7 +8524,7 @@ static void do_backlog_test(tcp_test_state_t* s, int backlog) {
   tcp_test_state_t* c = kmalloc(sizeof(tcp_test_state_t) * (backlog + 1));
   char addr[SOCKADDR_PRETTY_LEN];
   for (int i = 0; i < backlog + 1; ++i) {
-    ksprintf(addr, "127.0.0.%d", i + 2);
+    ksprintf(addr, "%s.%d", DST_IP_PREFIX, i + 2);
     init_tcp_test_child(s, &c[i], addr, 1000);
   }
 
@@ -8565,7 +8571,7 @@ static void listen_backlog_values_test(void) {
   // Don't bother checking that it's actually clamped, but make sure at least
   // one connection works.
   tcp_test_state_t c1;
-  do_child_connect(&s, &c1, "127.0.0.2", 1002, 500);
+  do_child_connect(&s, &c1, DST_IP, 1002, 500);
   do_standard_finish(&c1, 0, 0);
   cleanup_tcp_test(&s);
   cleanup_tcp_test(&c1);
@@ -8582,9 +8588,9 @@ static void accept_blocks_test(void) {
   KEXPECT_TRUE(start_accept(&s));
 
   tcp_test_state_t c1, c2, c3;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
-  init_tcp_test_child(&s, &c2, "127.0.0.3", 1002);
-  init_tcp_test_child(&s, &c3, "127.0.0.4", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP_PREFIX ".2", 1002);
+  init_tcp_test_child(&s, &c2, DST_IP_PREFIX ".3", 1002);
+  init_tcp_test_child(&s, &c3, DST_IP_PREFIX ".4", 1002);
 
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
@@ -8635,7 +8641,7 @@ static void accept_blocks_test2(void) {
   proc_kill_thread(s.op.thread, SIGUSR1);
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
 
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
@@ -8665,7 +8671,7 @@ static void accept_blocks_test3(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
 
@@ -8691,7 +8697,7 @@ static void listen_on_any_addr_test(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
 
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
@@ -8724,7 +8730,7 @@ static void accept_address_params_test(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 10));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   struct sockaddr_storage addr, zero_addr;
   kmemset(&addr, 0, sizeof(addr));
   kmemset(&zero_addr, 0, sizeof(zero_addr));
@@ -8794,8 +8800,7 @@ static void accept_address_params_test(void) {
   KEXPECT_EQ(sizeof(struct sockaddr_storage), len);
   // The first part of the address (struct sockaddr_in) should match.
   KEXPECT_EQ(AF_INET, ((struct sockaddr_in*)&bigbuf)->sin_family);
-  KEXPECT_EQ(btoh32(0x7f000002),
-             ((struct sockaddr_in*)&bigbuf)->sin_addr.s_addr);
+  KEXPECT_EQ(str2inet(DST_IP), ((struct sockaddr_in*)&bigbuf)->sin_addr.s_addr);
   KEXPECT_EQ(btoh16(1002), ((struct sockaddr_in*)&bigbuf)->sin_port);
   // Shouldn't have written past the last byte.
   KEXPECT_EQ((uint8_t)0xab, bigbuf[len]);
@@ -8818,7 +8823,7 @@ static void accept_child_rst1(void) {
 
   KEXPECT_TRUE(start_accept(&s));
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   KEXPECT_EQ(1, net_accept_queue_length(s.socket));
@@ -8858,7 +8863,7 @@ static void accept_child_rst2(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
@@ -8893,7 +8898,7 @@ static void accept_child_rst3(void) {
   kthread_disable(s.op.thread);
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
@@ -8921,7 +8926,7 @@ static void accept_child_rst4(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   SEND_PKT(&c1, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
@@ -8959,7 +8964,7 @@ static void accept_child_rst5(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 1));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
 
@@ -8983,7 +8988,7 @@ static void accept_child_partial_close(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   SEND_PKT(&c1, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "abc"));
@@ -8991,7 +8996,7 @@ static void accept_child_partial_close(void) {
   char addr[SOCKADDR_PRETTY_LEN];
   int child = do_accept(s.socket, addr);
   KEXPECT_GE(child, 0);
-  KEXPECT_STREQ("127.0.0.2:1002", addr);
+  KEXPECT_STREQ(DST_IP ":1002", addr);
   KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(child));
   KEXPECT_STREQ("abc", do_read(child));
   char buf;
@@ -9012,7 +9017,7 @@ static void accept_child_partial_close2(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 3));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
   SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
@@ -9024,7 +9029,7 @@ static void accept_child_partial_close2(void) {
   char addr[SOCKADDR_PRETTY_LEN];
   int child = do_accept(s.socket, addr);
   KEXPECT_GE(child, 0);
-  KEXPECT_STREQ("127.0.0.2:1002", addr);
+  KEXPECT_STREQ(DST_IP ":1002", addr);
   KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(child));
   KEXPECT_STREQ("abc", do_read(child));
   char buf;
@@ -9051,7 +9056,7 @@ static void syn_during_listen_close_test(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 1));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
 
   // Trigger the race condition.
   test_point_add("tcp:close_listening", &send_test_syn, &c1);
@@ -9079,7 +9084,7 @@ static void syn_during_listen_close_test2(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 1));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
 
@@ -9135,7 +9140,7 @@ static void simultaneous_connections_same_5tuple(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 10));
 
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1002);
+  init_tcp_test_child(&s, &c1, DST_IP, 1002);
 
   simulcnt_args_t args;
   ntfn_init(&args.hook_hit);
@@ -9168,7 +9173,7 @@ static void simultaneous_connections_same_5tuple(void) {
   c1.socket = do_accept(s.socket, addr);
   KEXPECT_EQ(0, net_accept_queue_length(s.socket));
   KEXPECT_GE(c1.socket, 0);
-  KEXPECT_STREQ("127.0.0.2:1002", addr);
+  KEXPECT_STREQ(DST_IP ":1002", addr);
   KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
 
   SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
@@ -9460,7 +9465,7 @@ static void poll_accept_test(void) {
 
   // Send a SYN, complete the connection.
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 1000);
+  init_tcp_test_child(&s, &c1, DST_IP, 1000);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
 
@@ -9485,7 +9490,7 @@ static void poll_accept_test(void) {
   char addr[SOCKADDR_PRETTY_LEN];
   c1.socket = do_accept(s.socket, addr);
   KEXPECT_GE(c1.socket, 0);
-  KEXPECT_STREQ("127.0.0.2:1000", addr);
+  KEXPECT_STREQ(DST_IP ":1000", addr);
   KEXPECT_EQ(0, net_accept_queue_length(s.socket));
 
   // Should no longer show readable.
@@ -9744,7 +9749,7 @@ static void retransmit_synack_test(void) {
 
   // Send a SYN, complete the connection.
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 2000);
+  init_tcp_test_child(&s, &c1, DST_IP, 2000);
   set_rto(s.socket, 10);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 0));
@@ -9883,7 +9888,7 @@ static void nonblocking_connect_test(void) {
   KEXPECT_TRUE(start_poll(&s.op, s.socket, KPOLLOUT));
 
   KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP, 0x5678));
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP_2, 0x5678));
 
   // Do SYN, SYN-ACK, ACK.
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
@@ -9910,7 +9915,7 @@ static void nonblocking_connect_test2(void) {
   KEXPECT_TRUE(start_poll(&s.op, s.socket, KPOLLOUT));
 
   KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP, 0x5678));
-  KEXPECT_EQ(-EALREADY, do_connect(s.socket, "127.0.0.2", 0x5678));
+  KEXPECT_EQ(-EALREADY, do_connect(s.socket, DST_IP_2, 0x5678));
 
   // Do SYN, SYN-ACK, ACK.
   EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
@@ -9941,7 +9946,7 @@ static void nonblocking_accept_test(void) {
 
   // Start a connection.
   tcp_test_state_t c1;
-  init_tcp_test_child(&s, &c1, "127.0.0.2", 2000);
+  init_tcp_test_child(&s, &c1, DST_IP, 2000);
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
@@ -9954,7 +9959,7 @@ static void nonblocking_accept_test(void) {
   // We should be able to accept() a child socket.
   c1.socket = do_accept(s.socket, addr);
   KEXPECT_GE(c1.socket, 0);
-  KEXPECT_STREQ("127.0.0.2:2000", addr);
+  KEXPECT_STREQ(DST_IP ":2000", addr);
   KEXPECT_EQ(-EAGAIN, do_accept(s.socket, addr));
 
   KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
