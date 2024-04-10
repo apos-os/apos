@@ -75,6 +75,10 @@
 #define IMPLICIT_SRC_IP "127.0.0.1"
 #define IMPLICIT_DST_IP "127.0.0.2"
 
+// Constants for the real-socket tests.
+#define SERVER_PORT 5000
+#define DST_IP_PORT DST_IP ":5000"
+
 static uint32_t g_seq_start = TEST_SEQ_START;
 
 // Some helpers just to make tests clearer to read and eliminate lots of silly
@@ -10602,9 +10606,6 @@ static void nonblocking_tap_test(void) {
   KEXPECT_EQ(0, tuntap_destroy(id));
   kfree(buf);
 }
-
-#define SERVER_PORT 5000
-#define DST_IP_PORT "127.0.1.2:5000"
 
 // Create a standard TCP socket with options set for tests.
 static int make_test_socket(void) {
