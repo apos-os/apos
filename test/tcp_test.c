@@ -65,9 +65,15 @@
 #define TAP_DST_IP "127.0.1.2"
 
 #define SRC_IP TAP_SRC_IP
+#define SRC_IP_2 "127.0.1.10"
 #define DST_IP TAP_DST_IP
 #define DST_IP_2 "127.0.1.3"
 #define DST_IP_PREFIX "127.0.1"
+
+// IPs used for tests that use an implicit bind rather than explicit (and
+// therefore must be actually present on one of the interfaces).
+#define IMPLICIT_SRC_IP "127.0.0.1"
+#define IMPLICIT_DST_IP "127.0.0.2"
 
 static uint32_t g_seq_start = TEST_SEQ_START;
 
@@ -1646,18 +1652,18 @@ static void rebind_tests(void) {
 static void implicit_bind_test(void) {
   KTEST_BEGIN("TCP: socket implicitly binds on connect()");
   tcp_test_state_t s;
-  init_tcp_test(&s, "127.0.0.1", 0 /* will be chosen later */, "127.0.0.2",
-                0x5678);
+  init_tcp_test(&s, IMPLICIT_SRC_IP, 0 /* will be chosen later */,
+                IMPLICIT_DST_IP, 0x5678);
 
   // No bind!
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, IMPLICIT_DST_IP, 0x5678));
 
   // Find out what we bound to.  getsockname() _during_ connect() is allowed by
   // the spec to do this.
   struct sockaddr_in bound_addr;
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
 
   s.tcp_addr = bound_addr;
@@ -1668,7 +1674,7 @@ static void implicit_bind_test(void) {
   // Just in case, double check getsockname gives the same thing.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -1677,16 +1683,16 @@ static void implicit_bind_test(void) {
 
 
   KTEST_BEGIN("TCP: socket implicitly rebinds any-addr+any-port on connect()");
-  init_tcp_test(&s, "127.0.0.1", 0 /* will be chosen later */, "127.0.0.2",
-                0x5678);
+  init_tcp_test(&s, IMPLICIT_SRC_IP, 0 /* will be chosen later */,
+                IMPLICIT_DST_IP, 0x5678);
 
   KEXPECT_EQ(0, do_bind(s.socket, "0.0.0.0", 0));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, IMPLICIT_DST_IP, 0x5678));
 
   // As above, find out what port was chosen.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
   s.tcp_addr = bound_addr;
 
@@ -1696,7 +1702,7 @@ static void implicit_bind_test(void) {
   // Just in case, double check getsockname gives the same thing.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -1706,16 +1712,15 @@ static void implicit_bind_test(void) {
   // Internally this is the same as the above, since ports are picked in bind()
   // not connect(), but test for completeness.
   KTEST_BEGIN("TCP: socket implicitly rebinds $IP+any-port on connect()");
-  init_tcp_test(&s, "127.0.0.3", 0 /* will be chosen later */, "127.0.0.2",
-                0x5678);
+  init_tcp_test(&s, SRC_IP_2, 0 /* will be chosen later */, DST_IP, 0x5678);
 
-  KEXPECT_EQ(0, do_bind(s.socket, "127.0.0.3", 0));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP_2, 0));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
   // As above, find out what port was chosen.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.3", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(SRC_IP_2, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
   s.tcp_addr = bound_addr;
 
@@ -1725,7 +1730,7 @@ static void implicit_bind_test(void) {
   // Just in case, double check getsockname gives the same thing.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.3", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(SRC_IP_2, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -1734,15 +1739,15 @@ static void implicit_bind_test(void) {
 
   // Also redundant with the any-ip/any-port, but included for completeness.
   KTEST_BEGIN("TCP: socket implicitly rebinds any-ip+$PORT on connect()");
-  init_tcp_test(&s, "127.0.0.1", 0x1234, "127.0.0.2", 0x5678);
+  init_tcp_test(&s, IMPLICIT_SRC_IP, 0x1234, IMPLICIT_DST_IP, 0x5678);
 
   KEXPECT_EQ(0, do_bind(s.socket, "0.0.0.0", 0x1234));
-  KEXPECT_TRUE(start_connect(&s, "127.0.0.2", 0x5678));
+  KEXPECT_TRUE(start_connect(&s, IMPLICIT_DST_IP, 0x5678));
 
   // Check that the rebind happened correctly.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_EQ(0x1234, btoh16(bound_addr.sin_port));
 
   // Now can continue with connection setup.
@@ -1751,7 +1756,7 @@ static void implicit_bind_test(void) {
   // Just in case, double check getsockname gives the same thing.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ("127.0.0.1", ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_EQ(0x1234, btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
