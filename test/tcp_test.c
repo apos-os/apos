@@ -16,6 +16,7 @@
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "common/list.h"
 #include "dev/net/tuntap.h"
 #include "dev/timer.h"
 #include "net/addr.h"
@@ -24,6 +25,7 @@
 #include "net/inet.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/tcp/congestion.h"
 #include "net/socket/tcp/internal.h"
@@ -61,19 +63,20 @@
 // Increase this to make tests more stringent at the cost of running longer.
 #define BLOCK_VERIFY_MS 10
 
-#define TAP_SRC_IP "127.0.1.1"
-#define TAP_DST_IP "127.0.1.2"
+#define TAP_SRC_IP "127.0.2.1"
+#define TAP_DST_IP "127.0.2.2"
 
-#define SRC_IP TAP_SRC_IP
+// IPs used for the TUN tests.
+#define SRC_IP "127.0.1.1"
 #define SRC_IP_2 "127.0.1.10"
-#define DST_IP TAP_DST_IP
+#define DST_IP "127.0.1.2"
 #define DST_IP_2 "127.0.1.3"
 #define DST_IP_PREFIX "127.0.1"
 
 // IPs used for tests that use an implicit bind rather than explicit (and
 // therefore must be actually present on one of the interfaces).
-#define IMPLICIT_SRC_IP "127.0.0.1"
-#define IMPLICIT_DST_IP "127.0.0.2"
+#define IMPLICIT_SRC_IP SRC_IP
+#define IMPLICIT_DST_IP DST_IP
 
 // Constants for the real-socket tests.
 #define SERVER_PORT 5000
@@ -81,15 +84,36 @@
 #define LO_DST_IP "127.0.0.3"
 #define LO_DST_IP_PORT LO_DST_IP ":5000"
 
+#define RAW_RECV_BUF_SIZE 100
+
+// A packet that's queued for a test to handle.  We have to track these packets
+// explicitly because some tests have multiple destination IPs and we need to
+// keep the packet streams separated.
+typedef struct {
+  in_addr_t dst_ip;
+  char packet[RAW_RECV_BUF_SIZE];
+  ssize_t packet_len;
+  list_link_t link;
+} queued_packet_t;
+
 // Global test state.  Ideally would be plumbed through the code rather than
 // being global, but meh.  Should not be accessed by individual test cases, only
 // test helpers.
 typedef struct {
+  // Sequence number to start with for the tests.
   uint32_t seq_start;
+
+  // File descriptor for the TUN device for the test to read packets from.
+  int tun_fd;
+
+  // All queued packets, ready for a test to take.
+  list_t packets;
 } global_tcp_test_state_t;
 
 static global_tcp_test_state_t g_tcp_test = {
   .seq_start = TEST_SEQ_START,
+  .tun_fd = -1,
+  .packets = LIST_INIT_STATIC,
 };
 
 // Some helpers just to make tests clearer to read and eliminate lots of silly
@@ -622,7 +646,6 @@ static void multi_bind_test(void) {
   KEXPECT_EQ(0, vfs_close(sock2));
 }
 
-#define RAW_RECV_BUF_SIZE 100
 #define DEFAULT_WNDSIZE 8000
 
 // To save stack space.  Max size of "255.255.255.255:65536" (22)
@@ -653,7 +676,6 @@ typedef struct {
   // Raw socket and buffer for the "other side".
   char raw_addr_str[SOCKADDR_IN_PRETTY_LEN];
   struct sockaddr_in raw_addr;
-  int raw_socket;
   char recv[RAW_RECV_BUF_SIZE];
 
   // Window size to send when not otherwise specified.
@@ -684,15 +706,8 @@ static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
 
   if (dst_addr) {
     kstrcpy(s->raw_addr_str, dst_addr);
-    // Create the raw socket that will converse with the TCP socket under test.
-    s->raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-    KEXPECT_GE(s->raw_socket, 0);
-
     make_saddr(&s->raw_addr, dst_addr, dst_port);
-    KEXPECT_EQ(0, net_bind(s->raw_socket, (struct sockaddr*)&s->raw_addr,
-                           sizeof(s->raw_addr)));
   } else {
-    s->raw_socket = -1;
     s->raw_addr_str[0] = '\0';
   }
 }
@@ -710,23 +725,19 @@ static void init_tcp_test_child(const tcp_test_state_t* parent,
   s->tcp_addr_str = parent->tcp_addr_str;
   s->tcp_addr = parent->tcp_addr;
 
-  // Create the raw socket that will converse with the TCP socket under test.
-  s->raw_socket = net_socket(AF_INET, SOCK_RAW, IPPROTO_TCP);
-  KEXPECT_GE(s->raw_socket, 0);
-
   kstrcpy(s->raw_addr_str, dst_addr);
   make_saddr(&s->raw_addr, dst_addr, dst_port);
-  KEXPECT_EQ(0, net_bind(s->raw_socket, (struct sockaddr*)&s->raw_addr,
-                         sizeof(s->raw_addr)));
 }
+
+static int raw_drain_packets(tcp_test_state_t* s);
 
 static void cleanup_tcp_test(tcp_test_state_t* s) {
   if (s->socket >= 0) {
     KEXPECT_EQ(0, vfs_close(s->socket));
   }
-  if (s->raw_socket >= 0) {
-    KEXPECT_EQ(0, vfs_close(s->raw_socket));
-  }
+  // TODO(aoates): consider having this KEXPECT_EQ(0, ...) and update all tests
+  // to actually expect all the packets that they generate.
+  raw_drain_packets(s);
   KASSERT(s->op.thread == NULL);
 }
 
@@ -899,39 +910,84 @@ static int finish_op(tcp_test_state_t* s) {
   return finish_op_direct(&s->op);
 }
 
+// Assumes that no one will alter the packet list in the meantime.
 static bool raw_has_packets_wait(tcp_test_state_t* s, int timeout_ms) {
-  return socket_has_data(s->raw_socket, timeout_ms);
+  if (!list_empty(&g_tcp_test.packets)) {
+    return true;
+  }
+  return socket_has_data(g_tcp_test.tun_fd, timeout_ms);
 }
 
 static bool raw_has_packets(tcp_test_state_t* s) {
   return raw_has_packets_wait(s, 0);
 }
 
-// Drains all pending packets from the raw socket, returning the number of
-// packets removed.
+// Reads all packets from the TUN fd into the queue.
+static void read_tun_packets(void) {
+  while (true) {
+    queued_packet_t* pkt = KMALLOC(queued_packet_t);
+    int result = vfs_read(g_tcp_test.tun_fd, pkt->packet, RAW_RECV_BUF_SIZE);
+    if (result == -EAGAIN) {
+      kfree(pkt);
+      return;
+    }
+
+    const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)&pkt->packet;
+    pkt->dst_ip = ip4_hdr->dst_addr;
+    pkt->link = LIST_LINK_INIT;
+    pkt->packet_len = result;
+    list_push(&g_tcp_test.packets, &pkt->link);
+  }
+}
+
+// Drains all pending packets from the TUN device, returning the number of
+// packets removed.  Doesn't filter by IP address.
 static int raw_drain_packets(tcp_test_state_t* s) {
-  char buf;
+  read_tun_packets();
   int result = 0;
-  while (socket_has_data(s->raw_socket, 0)) {
-    KEXPECT_EQ(1, vfs_read(s->raw_socket, &buf, 1));
+  while (!list_empty(&g_tcp_test.packets)) {
+    list_link_t* link = list_pop(&g_tcp_test.packets);
+    queued_packet_t* pkt = container_of(link, queued_packet_t, link);
+    kfree(pkt);
     result++;
   }
   return result;
 }
 
 static ssize_t do_raw_recv(tcp_test_state_t* s) {
-  if (!raw_has_packets(s)) {
-    KTEST_ADD_FAILURE("Raw socket has no packets available");
-    return -EAGAIN;
+  read_tun_packets();
+  FOR_EACH_LIST(list_iter, &g_tcp_test.packets) {
+    queued_packet_t* pkt = LIST_ENTRY(list_iter, queued_packet_t, link);
+    if (pkt->dst_ip == s->raw_addr.sin_addr.s_addr) {
+      list_remove(&g_tcp_test.packets, &pkt->link);
+      kmemcpy(s->recv, pkt->packet, RAW_RECV_BUF_SIZE);
+      if (pkt->packet_len < RAW_RECV_BUF_SIZE) {
+        kmemset((char*)&s->recv + pkt->packet_len, 0,
+                RAW_RECV_BUF_SIZE - pkt->packet_len);
+      }
+      ssize_t result = pkt->packet_len;
+      kfree(pkt);
+      return result;
+    }
   }
-  kmemset(s->recv, 0, RAW_RECV_BUF_SIZE);
-  return net_recvfrom(s->raw_socket, s->recv, RAW_RECV_BUF_SIZE - 1, 0, NULL,
-                      NULL);
+  KTEST_ADD_FAILURE("Raw socket has no packets available");
+  return -EAGAIN;
 }
 
 static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
-  return net_sendto(s->raw_socket, buf, len, 0, (struct sockaddr*)&s->tcp_addr,
-                    sizeof(s->tcp_addr));
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE, len);
+  KASSERT(pb);
+
+  kmemcpy(pbuf_get(pb), buf, len);
+  ip4_add_hdr(pb, s->raw_addr.sin_addr.s_addr, s->tcp_addr.sin_addr.s_addr,
+              IPPROTO_TCP);
+
+  ssize_t result = vfs_write(g_tcp_test.tun_fd, pbuf_getc(pb), pbuf_size(pb));
+  if (result > 0) {
+    result -= sizeof(ip4_hdr_t);
+  }
+  pbuf_free(pb);
+  return result;
 }
 
 // Special value to indicate a zero window size (since passing zero means
@@ -1727,15 +1783,15 @@ static void implicit_bind_test(void) {
   // Internally this is the same as the above, since ports are picked in bind()
   // not connect(), but test for completeness.
   KTEST_BEGIN("TCP: socket implicitly rebinds $IP+any-port on connect()");
-  init_tcp_test(&s, SRC_IP_2, 0 /* will be chosen later */, DST_IP, 0x5678);
+  init_tcp_test(&s, SRC_IP, 0 /* will be chosen later */, DST_IP, 0x5678);
 
-  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP_2, 0));
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0));
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
   // As above, find out what port was chosen.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ(SRC_IP_2, ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
   s.tcp_addr = bound_addr;
 
@@ -1745,7 +1801,7 @@ static void implicit_bind_test(void) {
   // Just in case, double check getsockname gives the same thing.
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
-  KEXPECT_STREQ(SRC_IP_2, ip2str(bound_addr.sin_addr.s_addr));
+  KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
@@ -9113,7 +9169,7 @@ static void syn_during_listen_close_test2(void) {
   KEXPECT_EQ(0, vfs_close(s.socket));
   KEXPECT_EQ(1, test_point_remove("tcp:close_listening"));
   s.socket = -1;
-  KEXPECT_FALSE(raw_has_packets(&s));
+  EXPECT_PKT(&c1, RST_PKT(/* seq */ 101, /* ack */ 501));
 
   cleanup_tcp_test(&s);
   cleanup_tcp_test(&c1);
@@ -11658,6 +11714,24 @@ void tcp_test(void) {
   const int initial_cache_size = vfs_cache_size();
   const int initial_sockets = tcp_num_connected_sockets();
 
+  // Create a TUN device for receiving test packets.
+  KTEST_BEGIN("TCP: test setup");
+  apos_dev_t tun_id;
+  nic_t* nic = tuntap_create(20000, 0, &tun_id);
+  KEXPECT_NE(NULL, nic);
+
+  kspin_lock(&nic->lock);
+  nic->addrs[0].addr.family = ADDR_INET;
+  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].prefix_len = 24;
+  kspin_unlock(&nic->lock);
+
+  vfs_unlink("_tun_test_dev");
+  KEXPECT_EQ(0, vfs_mknod("_tun_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, tun_id));
+  g_tcp_test.tun_fd = vfs_open("_tun_test_dev", VFS_O_RDWR);
+  KEXPECT_GE(g_tcp_test.tun_fd, 0);
+  vfs_make_nonblock(g_tcp_test.tun_fd);
+
   for (int i = 0; i < TEST_SEQ_ITERS; ++i) {
     g_tcp_test.seq_start = TEST_SEQ_START;
     if (TEST_SEQ_ITERS > 1) {
@@ -11695,6 +11769,11 @@ void tcp_test(void) {
   reuseaddr_tests();
   rapid_reconnect_test();
   sockmap_tests();
+
+  KTEST_BEGIN("TCP: test cleanup");
+  KEXPECT_EQ(0, vfs_close(g_tcp_test.tun_fd));
+  KEXPECT_EQ(0, vfs_unlink("_tun_test_dev"));
+  KEXPECT_EQ(0, tuntap_destroy(tun_id));
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
