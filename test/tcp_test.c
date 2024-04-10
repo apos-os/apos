@@ -11264,6 +11264,7 @@ static void sockmap_bind_tests(void) {
   KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
   KEXPECT_EQ(0, tcpsm_do_remove(&sm, "0.0.0.0", 80, NULL, 0, &s1));
   KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "0.0.0.0", 80, NULL, 0));
+  tcpsm_cleanup(&sm);
 }
 
 static void sockmap_bind_tests2(void) {
