@@ -2133,7 +2133,8 @@ static void shutdown_wr_during_connect(void) {
   KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
 
-  // TODO(tcp): test sending packets and getting a RST
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
 
   cleanup_tcp_test(&s);
 }
@@ -2154,7 +2155,8 @@ static void shutdown_rdwr_during_connect(void) {
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RDWR));
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
 
-  // TODO(tcp): test sending packets and getting a RST
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
 
   cleanup_tcp_test(&s);
 }
@@ -5678,11 +5680,8 @@ static void shutdown_read_then_data_test(void) {
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
   EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
-  // TODO(tcp): determine if this should send a RST and enable or delete.
-#if 0
   SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
-#endif
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
 
   char buf[10];
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
@@ -5710,11 +5709,8 @@ static void shutdown_read_then_datafin_test(void) {
 
   SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
   EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
-  // TODO(tcp): determine if this should send a RST and enable or delete.
-#if 0
   SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
-#endif
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
 
   char buf[10];
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
@@ -5745,11 +5741,8 @@ static void shutdown_read_then_data_with_buffered_test(void) {
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 504, /* ack */ 101, "xyz"));
   EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 504));
-  // TODO(tcp): determine if this should send a RST and enable or delete.
-#if 0
   SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
-  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
-#endif
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
 
   char buf[10];
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
@@ -6665,8 +6658,12 @@ static void active_close1a(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
+
+  // ...but a RST should get nothing.
+  SEND_PKT(&s, RST_PKT(/* seq */ 50, /* ack */ 20));
+  SEND_PKT(&s, RST_NOACK_PKT(/* seq */ 50));
+  KEXPECT_FALSE(raw_has_packets(&s));
 
   cleanup_tcp_test(&s);
 }
@@ -6741,8 +6738,7 @@ static void active_close1b(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -6816,8 +6812,7 @@ static void active_close1c(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7236,8 +7231,7 @@ static void active_close_fw1_shutrd_data(void) {
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7278,8 +7272,7 @@ static void active_close_fw1_shutrd_data2(void) {
   // Connection should now be reset.
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7317,8 +7310,7 @@ static void active_close_fw1_shutrd_datafin(void) {
   // Connection should now be reset.
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7443,8 +7435,7 @@ static void active_close_fw2_shutrd_data(void) {
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7485,8 +7476,7 @@ static void active_close_fw2_shutrd_data2(void) {
   // Connection should now be reset.
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7525,8 +7515,7 @@ static void active_close_fw2_shutrd_datafin(void) {
   // Connection should now be reset.
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7571,8 +7560,7 @@ static void active_close_fw1_to_tw(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7619,8 +7607,7 @@ static void active_close_fw1_to_tw_datafin(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7706,8 +7693,7 @@ static void active_close_fw_to_closing1(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -7878,8 +7864,7 @@ static void active_close_fw_to_closing2(void) {
 
   // Now a FIN should get a RST.
   SEND_PKT(&s, FIN_PKT(/* seq */ 50, /* ack */ 20));
-  // TODO(tcp): fix this test
-  //EXPECT_PKT(&s, RST_PKT(/* seq */ 20, /* ack */ 51));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 20));
 
   cleanup_tcp_test(&s);
 }
@@ -9120,7 +9105,7 @@ static void accept_child_partial_close2(void) {
 static void send_test_syn(const char* name, int count, void* arg) {
   tcp_test_state_t* s = (tcp_test_state_t*)arg;
   SEND_PKT(s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
-  KEXPECT_FALSE(raw_has_packets(s));
+  EXPECT_PKT(s, RST_PKT(/* seq */ 0, /* ack */ 501));
 }
 
 static void syn_during_listen_close_test(void) {

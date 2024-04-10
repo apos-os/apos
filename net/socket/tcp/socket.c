@@ -496,13 +496,18 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     return true;
   }
 
-  // Incoming packet didn't match any listeners.  Restore the original IP header
-  // and return to the IP stack (in case any raw sockets want it).
-  // TODO(tcp): send a RST?
-  // Restore the original IP header.
-  pbuf_push_header(pb, mdata.ip_hdr_len);
+  // Incoming packet didn't match any listeners.  If it's not a RST, send a RST.
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  if (!(tcp_hdr->flags & TCP_FLAG_RST)) {
+    int result = tcp_send_raw_rst(pb, &mdata);
+    if (result) {
+      KLOG(INFO, "TCP: unable to send raw RST for unknown packet: %s\n",
+           errorname(-result));
+    }
+  }
 
-  return false;
+  pbuf_free(pb);
+  return true;
 }
 
 static void tcp_dispatch_or_rst(socket_tcp_t* socket, pbuf_t* pb,
