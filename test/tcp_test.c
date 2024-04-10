@@ -79,7 +79,16 @@
 #define SERVER_PORT 5000
 #define DST_IP_PORT DST_IP ":5000"
 
-static uint32_t g_seq_start = TEST_SEQ_START;
+// Global test state.  Ideally would be plumbed through the code rather than
+// being global, but meh.  Should not be accessed by individual test cases, only
+// test helpers.
+typedef struct {
+  uint32_t seq_start;
+} global_tcp_test_state_t;
+
+static global_tcp_test_state_t g_tcp_test = {
+  .seq_start = TEST_SEQ_START,
+};
 
 // Some helpers just to make tests clearer to read and eliminate lots of silly
 // casting of sockaddr structs.
@@ -660,8 +669,8 @@ typedef struct {
 static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
                           int tcp_port, const char* dst_addr, int dst_port) {
   s->wndsize = DEFAULT_WNDSIZE;
-  s->seq_base = g_seq_start;
-  s->send_seq_base = g_seq_start + 100 - 500;
+  s->seq_base = g_tcp_test.seq_start;
+  s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
   s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   s->op.thread = NULL;
   KEXPECT_GE(s->socket, 0);
@@ -691,8 +700,8 @@ static void init_tcp_test_child(const tcp_test_state_t* parent,
                                 tcp_test_state_t* s, const char* dst_addr,
                                 int dst_port) {
   s->wndsize = parent->wndsize;
-  s->seq_base = g_seq_start;
-  s->send_seq_base = g_seq_start + 100 - 500;
+  s->seq_base = g_tcp_test.seq_start;
+  s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
   s->socket = -1;
   s->op.thread = NULL;
 
@@ -11648,12 +11657,12 @@ void tcp_test(void) {
   const int initial_sockets = tcp_num_connected_sockets();
 
   for (int i = 0; i < TEST_SEQ_ITERS; ++i) {
-    g_seq_start = TEST_SEQ_START;
+    g_tcp_test.seq_start = TEST_SEQ_START;
     if (TEST_SEQ_ITERS > 1) {
       // We only add the offset if doing more than one iteration.
-      g_seq_start += (uint32_t)(i - TEST_SEQ_ITERS / 2);
+      g_tcp_test.seq_start += (uint32_t)(i - TEST_SEQ_ITERS / 2);
     }
-    klogf("g_seq_start = 0x%x\n", g_seq_start);
+    klogf("g_seq_start = 0x%x\n", g_tcp_test.seq_start);
     tcp_key_test();
     seqno_test();
     tcp_socket_test();
