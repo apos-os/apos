@@ -77,7 +77,9 @@
 
 // Constants for the real-socket tests.
 #define SERVER_PORT 5000
-#define DST_IP_PORT DST_IP ":5000"
+#define LO_SRC_IP "127.0.0.2"
+#define LO_DST_IP "127.0.0.3"
+#define LO_DST_IP_PORT LO_DST_IP ":5000"
 
 // Global test state.  Ideally would be plumbed through the code rather than
 // being global, but meh.  Should not be accessed by individual test cases, only
@@ -10629,11 +10631,11 @@ static void connect_sockets_tests(void) {
   int server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(server, 0);
   vfs_make_nonblock(server);
-  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(server, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, net_listen(server, 10));
 
   int c1 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   int s1 = net_accept(server, NULL, NULL);
   KEXPECT_GE(s1, 0);
@@ -10648,14 +10650,14 @@ static void connect_sockets_tests(void) {
 
   KTEST_BEGIN("TCP: multiple connections to same dest (bound sockets)");
   c1 = make_test_socket();
-  KEXPECT_EQ(0, do_bind(c1, SRC_IP, 10000));
+  KEXPECT_EQ(0, do_bind(c1, LO_SRC_IP, 10000));
   int c2 = make_test_socket();
-  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, LO_SRC_IP, 10000));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
-  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, SRC_IP, 10000));
-  KEXPECT_EQ(0, do_bind(c2, SRC_IP, 10001));
-  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, LO_SRC_IP, 10000));
+  KEXPECT_EQ(0, do_bind(c2, LO_SRC_IP, 10001));
+  KEXPECT_EQ(0, do_connect(c2, LO_DST_IP, SERVER_PORT));
 
   s1 = net_accept(server, NULL, NULL);
   KEXPECT_GE(s1, 0);
@@ -10678,10 +10680,10 @@ static void connect_sockets_tests(void) {
 
   KTEST_BEGIN("TCP: multiple connections to same dest (only one bound)");
   c1 = make_test_socket();
-  KEXPECT_EQ(0, do_bind(c1, SRC_IP, 10100));
+  KEXPECT_EQ(0, do_bind(c1, LO_SRC_IP, 10100));
   c2 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
-  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c2, LO_DST_IP, SERVER_PORT));
 
   char addr1[INET_PRETTY_LEN], addr2[INET_PRETTY_LEN];
   s1 = do_accept(server, addr1);
@@ -10707,8 +10709,8 @@ static void connect_sockets_tests(void) {
   KTEST_BEGIN("TCP: multiple connections to same dest (both unbound)");
   c1 = make_test_socket();
   c2 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
-  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c2, LO_DST_IP, SERVER_PORT));
 
   s1 = do_accept(server, addr1);
   KEXPECT_GE(s1, 0);
@@ -10735,10 +10737,10 @@ static void connect_sockets_tests(void) {
   c2 = make_test_socket();
   KEXPECT_EQ(0, do_bind(c1, "0.0.0.0", 0));
   KEXPECT_EQ(0, do_bind(c2, "0.0.0.0", 0));
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
-  KEXPECT_EQ(0, do_connect(c2, DST_IP, SERVER_PORT));
-  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c1));
-  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c2));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c2, LO_DST_IP, SERVER_PORT));
+  KEXPECT_STREQ(LO_DST_IP_PORT, getpeername_str(c1));
+  KEXPECT_STREQ(LO_DST_IP_PORT, getpeername_str(c2));
 
   s1 = do_accept(server, addr1);
   KEXPECT_GE(s1, 0);
@@ -10763,10 +10765,10 @@ static void connect_sockets_tests(void) {
 
   KTEST_BEGIN("TCP: bound to any-port");
   c1 = make_test_socket();
-  KEXPECT_EQ(0, do_bind(c1, SRC_IP, 0));
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
-  KEXPECT_STRNE(SRC_IP ":0", getsockname_str(c1));
-  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c1));
+  KEXPECT_EQ(0, do_bind(c1, LO_SRC_IP, 0));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
+  KEXPECT_STRNE(LO_SRC_IP ":0", getsockname_str(c1));
+  KEXPECT_STREQ(LO_DST_IP_PORT, getpeername_str(c1));
 
   s1 = do_accept(server, addr1);
   KEXPECT_GE(s1, 0);
@@ -10784,9 +10786,9 @@ static void connect_sockets_tests(void) {
   KTEST_BEGIN("TCP: bound to any-addr + port");
   c1 = make_test_socket();
   KEXPECT_EQ(0, do_bind(c1, "0.0.0.0", 12345));
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
-  KEXPECT_STRNE(SRC_IP ":12345", getsockname_str(c1));
-  KEXPECT_STREQ(DST_IP_PORT, getpeername_str(c1));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
+  KEXPECT_STRNE(LO_SRC_IP ":12345", getsockname_str(c1));
+  KEXPECT_STREQ(LO_DST_IP_PORT, getpeername_str(c1));
 
   s1 = do_accept(server, addr1);
   KEXPECT_GE(s1, 0);
@@ -10803,7 +10805,7 @@ static void connect_sockets_tests(void) {
 
   KTEST_BEGIN("TCP: connection that outlives server socket");
   c1 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   s1 = do_accept(server, addr1);
   KEXPECT_GE(s1, 0);
@@ -10831,7 +10833,7 @@ static void reuseaddr_tests(void) {
   int server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(server, 0);
   vfs_make_nonblock(server);
-  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(server, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, net_listen(server, 10));
 
   int s2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -10840,7 +10842,7 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, net_getsockopt(s2, SOL_SOCKET, SO_REUSEADDR, &val, &val_len));
   KEXPECT_EQ(0, val);
 
-  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(-EADDRINUSE, do_bind(s2, "0.0.0.0", SERVER_PORT));
   KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 5));
 
@@ -10851,16 +10853,16 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, net_getsockopt(s2, SOL_SOCKET, SO_REUSEADDR, &val, &val_len));
   KEXPECT_EQ(0, val);
 
-  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(-EADDRINUSE, do_bind(s2, "0.0.0.0", SERVER_PORT));
   KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 1));
-  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, do_bind(s2, "0.0.0.0", SERVER_PORT));
   KEXPECT_EQ(0, vfs_close(s2));
   s2 = -1;
 
   int c1 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   int s1 = net_accept(server, NULL, NULL);
   KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
@@ -10873,11 +10875,11 @@ static void reuseaddr_tests(void) {
 
   // Binding to the local address (server or client) should fail.
   s2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(-EADDRINUSE,
              net_bind(s2, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
   KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 1));
-  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(-EADDRINUSE,
              net_bind(s2, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
   KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 0));
@@ -10885,9 +10887,9 @@ static void reuseaddr_tests(void) {
   // After the client socket enters TIME_WAIT, we should be able to.
   KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
   KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
-  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(s2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, do_setsockopt_int(s2, SOL_SOCKET, SO_REUSEADDR, 1));
-  KEXPECT_EQ(0, do_bind(s2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(s2, LO_DST_IP, SERVER_PORT));
 
   KEXPECT_EQ(0, vfs_close(s2));
   KEXPECT_EQ(0, vfs_close(s1));
@@ -10899,11 +10901,11 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, do_setsockopt_int(server, SOL_SOCKET, SO_REUSEADDR, 1));
   KEXPECT_GE(server, 0);
   vfs_make_nonblock(server);
-  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(server, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, net_listen(server, 10));
 
   c1 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   s1 = net_accept(server, NULL, NULL);
   KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
@@ -10920,9 +10922,9 @@ static void reuseaddr_tests(void) {
   // server was bound to.
   int c2 = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(c2, 0);
-  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EADDRINUSE, do_bind(c2, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, do_setsockopt_int(c2, SOL_SOCKET, SO_REUSEADDR, 1));
-  KEXPECT_EQ(0, do_bind(c2, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(c2, LO_DST_IP, SERVER_PORT));
 
   // Now connect() c2 to the address c1 was bound to.  This should fail, since
   // the 5-tuple is already taken by c1 (which is in TIME_WAIT).
@@ -10944,7 +10946,7 @@ static void rapid_reconnect_test(void) {
   int server = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(server, 0);
   vfs_make_nonblock(server);
-  KEXPECT_EQ(0, do_bind(server, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_bind(server, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, net_listen(server, 10));
 
   // If we select the same port twice in a row, then the second connection will
@@ -10952,7 +10954,7 @@ static void rapid_reconnect_test(void) {
   // which will trigger a RST (and close the TIME_WAIT socket); then a
   // retransmitted SYN will start the new connection 1s later.
   int c1 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
   struct sockaddr_in c1_addr;
   KEXPECT_EQ(0, getsockname_inet(c1, &c1_addr));
 
@@ -10970,7 +10972,7 @@ static void rapid_reconnect_test(void) {
   // and not conflict with the server port that is still in TIME_WAIT.
   apos_ms_t start = get_time_ms();
   c1 = make_test_socket();
-  KEXPECT_EQ(0, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   s1 = net_accept(server, NULL, NULL);
   KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
@@ -10988,7 +10990,7 @@ static void rapid_reconnect_test(void) {
   c1 = make_test_socket();
   vfs_make_nonblock(c1);
   KEXPECT_EQ(0, net_bind(c1, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
-  KEXPECT_EQ(-EINPROGRESS, do_connect(c1, DST_IP, SERVER_PORT));
+  KEXPECT_EQ(-EINPROGRESS, do_connect(c1, LO_DST_IP, SERVER_PORT));
   KEXPECT_EQ(0, vfs_close(c1));
   KEXPECT_EQ(0, vfs_close(server));
 
