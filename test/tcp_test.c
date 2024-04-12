@@ -4799,13 +4799,11 @@ static void basic_send_window_test2(void) {
 
   // Open the window just enough to get the data but not the FIN in.
   SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 1));
-  // TODO(tcp): fix this bug (should only send "5", not "5" + FIN)
-  EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "5"));
-  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 110));
-#if 0
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 108, /* ack */ 502, "5"));
-  SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 109));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 502, /* ack */ 109, /* wndsize */ WNDSIZE_ZERO));
   KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
+  KEXPECT_FALSE(raw_has_packets(&s));
 
   SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 109, /* wndsize */ 1));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 109, /* ack */ 502));
@@ -4814,7 +4812,6 @@ static void basic_send_window_test2(void) {
   KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
   SEND_PKT(&s, ACK_PKT(/* seq */ 502, /* ack */ 110));
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
-#endif
 
   cleanup_tcp_test(&s);
 }
@@ -5336,7 +5333,7 @@ static void shutdown_with_data_buffered(void) {
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 502, "fg"));
 
   // ACK, then should get the last data plus a FIN.
-  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 1));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 2));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "h"));
   SEND_PKT(&s, ACK_PKT(502, /* ack */ 110));
 
@@ -5463,7 +5460,7 @@ static void double_write_shutdown_with_data_buffered(void) {
   KEXPECT_FALSE(raw_has_packets_wait(&s, BLOCK_VERIFY_MS));
 
   // ACK, then should get the last data plus a FIN.
-  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 1));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 108, /* wndsize */ 2));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 108, /* ack */ 502, "h"));
   SEND_PKT(&s, ACK_PKT(502, /* ack */ 110));
 
@@ -5471,7 +5468,7 @@ static void double_write_shutdown_with_data_buffered(void) {
 }
 
 static void shutdown_with_zero_window(void) {
-  KTEST_BEGIN("TCP: shutdown() sends FIN with zero window");
+  KTEST_BEGIN("TCP: shutdown() doesn't send FIN with zero window");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
@@ -5498,7 +5495,11 @@ static void shutdown_with_zero_window(void) {
   // Shutdown the connection from this side.
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
 
-  // Should get a FIN even though the window is zero.
+  // Should NOT get a FIN because the window is zero.
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Should get the FIN once we open the window.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 104, /* wndsize */ 1));
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 502));
   SEND_PKT(&s, ACK_PKT(502, /* ack */ 105));
 
@@ -7079,7 +7080,7 @@ static void active_close5(void) {
   SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 103, /* wndsize */ 2));
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 103, /* ack */ 501, "cd"));
   KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
-  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 2));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 105, /* wndsize */ 3));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 105, /* ack */ 501, "ef"));
   KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
   // Now we're in FIN_WAIT_1.
@@ -8136,7 +8137,7 @@ static void active_close_buffered_to_passive(void) {
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 502, "d"));
   KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
 
-  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 2));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 3));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 105, /* ack */ 502, "ef"));
   KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
 
@@ -8189,7 +8190,7 @@ static void active_close_buffered_to_passive2(void) {
   EXPECT_PKT(&s, DATA_PKT(/* seq */ 103, /* ack */ 502, "cd"));
   KEXPECT_STREQ("CLOSE_WAIT", get_sock_state(s.socket));
 
-  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 2));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 502, /* ack */ 105, /* wndsize */ 3));
   EXPECT_PKT(&s, DATA_FIN_PKT(/* seq */ 105, /* ack */ 502, "ef"));
   KEXPECT_STREQ("LAST_ACK", get_sock_state(s.socket));
 

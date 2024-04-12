@@ -169,7 +169,8 @@ void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out) {
     // We use equality here so that we don't attempt to send a FIN when
     // seq_start is past the FIN sequence number (which happens when this is
     // called after a FIN has been sent).
-    if (seq_start + (uint32_t)data_to_send == fin_seq) {
+    if (seq_start + (uint32_t)data_to_send == fin_seq &&
+        socket->send_wndsize - data_to_send >= 1) {
       send_fin = true;
     }
   }
