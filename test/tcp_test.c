@@ -10467,7 +10467,7 @@ static void cwnd_test(void) {
 
 
   KTEST_BEGIN("TCP cwnd test: congestion avoidance");
-  tcp_cwnd_loss(&cw, 7000);
+  tcp_cwnd_rto(&cw, 7000);
   KEXPECT_EQ(1000, cw.cwnd);  // Should be back to slow start.
   tcp_cwnd_acked(&cw, 2000);
   KEXPECT_EQ(2000, cw.cwnd);
@@ -10498,7 +10498,7 @@ static void cwnd_test(void) {
   KEXPECT_EQ(6000, cw.cwnd);
 
   // Test clamping of ssthresh if there's little outstanding data.
-  tcp_cwnd_loss(&cw, 100);
+  tcp_cwnd_rto(&cw, 100);
   KEXPECT_EQ(2000, cw.ssthresh);
   KEXPECT_EQ(1000, cw.cwnd);
   tcp_cwnd_acked(&cw, 1000);

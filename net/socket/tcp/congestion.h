@@ -38,7 +38,8 @@ void tcp_cwnd_init(tcp_cwnd_t* cw, uint32_t mss);
 // New data is ACK'd.
 void tcp_cwnd_acked(tcp_cwnd_t* cw, ssize_t len);
 
-// Loss is detected and data was retransmitted for the first time.
-void tcp_cwnd_loss(tcp_cwnd_t* cw, uint32_t bytes_outstanding);
+// Loss is detected due to the retransmit timer firing, and data was
+// retransmitted for the first time.
+void tcp_cwnd_rto(tcp_cwnd_t* cw, uint32_t bytes_outstanding);
 
 #endif

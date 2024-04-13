@@ -45,7 +45,7 @@ void tcp_cwnd_acked(tcp_cwnd_t* cw, ssize_t len) {
   }
 }
 
-void tcp_cwnd_loss(tcp_cwnd_t* cw, uint32_t bytes_outstanding) {
+void tcp_cwnd_rto(tcp_cwnd_t* cw, uint32_t bytes_outstanding) {
   cw->ssthresh = max(bytes_outstanding / 2, 2 * cw->mss);
   cw->cwnd = cw->mss;
 }

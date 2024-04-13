@@ -333,7 +333,7 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
   KASSERT(socket->state != TCP_CLOSED_DONE);
   if (seg->retransmits == 0) {
     uint32_t unacked_bytes = socket->send_next - socket->send_unack;
-    tcp_cwnd_loss(&socket->cwnd, unacked_bytes);
+    tcp_cwnd_rto(&socket->cwnd, unacked_bytes);
   }
   seg->retransmits++;
 
