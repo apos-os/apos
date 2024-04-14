@@ -2381,6 +2381,30 @@ static int setsockopt_bufsize(socket_tcp_t* socket, int option, const void* val,
   return 0;
 }
 
+static int tcp_set_time_wait_len(socket_tcp_t* socket, const void* val,
+                                 socklen_t val_len) {
+  int parsed_val;
+  int result = setsockopt_int(val, val_len, &parsed_val);
+  if (result) {
+    return result;
+  }
+  if (parsed_val < 0) {
+    return -EINVAL;
+  }
+
+  result = 0;
+  kspin_lock(&socket->spin_mu);
+  if (parsed_val == 0 && socket->state == TCP_TIME_WAIT) {
+    finish_protocol_close(socket, "TIME_WAIT force-finished");
+  } else if (parsed_val == 0) {
+    result = -EINVAL;
+  } else {
+    socket->time_wait_ms = parsed_val;
+  }
+  kspin_unlock(&socket->spin_mu);
+  return result;
+}
+
 static int tcp_getsockopt_int(socket_tcp_t* socket, const int* dst,
                               void* restrict val, socklen_t* restrict val_len) {
   kspin_lock(&socket->spin_mu);
@@ -2552,7 +2576,7 @@ static int sock_tcp_setsockopt(socket_t* socket_base, int level, int option,
   } else if (level == IPPROTO_TCP && option == SO_TCP_SOCKSTATE) {
     return -EINVAL;
   } else if (level == IPPROTO_TCP && option == SO_TCP_TIME_WAIT_LEN) {
-    return tcp_setsockopt_posint(socket, &socket->time_wait_ms, val, val_len);
+    return tcp_set_time_wait_len(socket, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO) {
     return tcp_setsockopt_posint(socket, &socket->rto_ms, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO_MIN) {

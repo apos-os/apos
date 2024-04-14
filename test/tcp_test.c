@@ -283,6 +283,19 @@ static const char* get_sock_state(int socket) {
   return buf;
 }
 
+// Force a socket that is in TIME_WAIT to close.
+static void kill_time_wait(int socket) {
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(socket));
+  KEXPECT_EQ(0,
+             do_setsockopt_int(socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 0));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(socket));
+}
+
+static void close_time_wait(int socket) {
+  kill_time_wait(socket);
+  KEXPECT_EQ(0, vfs_close(socket));
+}
+
 static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
                              const struct sockaddr_in* b) {
   return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
@@ -503,6 +516,22 @@ static void sockopt_test(void) {
              net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
   KEXPECT_EQ(-ENOPROTOOPT,
              net_setsockopt(sock, SOL_SOCKET, SO_ERROR, &val[0], vallen));
+
+  KTEST_BEGIN("TCP: SO_TCP_TIME_WAIT_LEN invalid value");
+  KEXPECT_EQ(0,
+             do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 400));
+  KEXPECT_EQ(-EINVAL,
+             do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, -1));
+  KEXPECT_EQ(-EINVAL,
+             do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, -400));
+  KEXPECT_EQ(-EINVAL,
+             do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 0));
+  int val_int;
+  len = sizeof(int);
+  KEXPECT_EQ(0, net_getsockopt(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN,
+                               &val_int, &len));
+  KEXPECT_EQ(sizeof(int), len);
+  KEXPECT_EQ(400, val_int);
 
   KEXPECT_EQ(0, vfs_close(sock));
 }
@@ -10664,7 +10693,12 @@ static void nonblocking_tap_test(void) {
 static int make_test_socket(void) {
   int sock = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
   KEXPECT_GE(sock, 0);
-  KEXPECT_EQ(0, do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
+  // Set it long enough that it will outlive the relevant tests, but not so long
+  // that they won't get a chance to fire if there's a bug.
+  // TODO(tcp): look at other tests that set this and see if they can be
+  // switched to the deterministic TIME_WAIT method.
+  KEXPECT_EQ(0,
+             do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1000));
   return sock;
 }
 
@@ -10686,8 +10720,9 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
   KEXPECT_STREQ("xyz", do_read(c1));
   KEXPECT_STREQ("abc", do_read(s1));
-  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(c1);
 
 
   KTEST_BEGIN("TCP: multiple connections to same dest (bound sockets)");
@@ -10714,10 +10749,12 @@ static void connect_sockets_tests(void) {
   KEXPECT_STREQ("123", do_read(c2));
   KEXPECT_STREQ("abc", do_read(s1));
   KEXPECT_STREQ("def", do_read(s2));
-  KEXPECT_EQ(0, vfs_close(c1));
-  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
+  KEXPECT_EQ(0, net_shutdown(c2, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(s2));
+  close_time_wait(c1);
+  close_time_wait(c2);
 
 
   KTEST_BEGIN("TCP: multiple connections to same dest (only one bound)");
@@ -10742,10 +10779,12 @@ static void connect_sockets_tests(void) {
   KEXPECT_STREQ("123", do_read(c2));
   KEXPECT_STREQ("abc", do_read(s1));
   KEXPECT_STREQ("def", do_read(s2));
-  KEXPECT_EQ(0, vfs_close(c1));
-  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
+  KEXPECT_EQ(0, net_shutdown(c2, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(s2));
+  close_time_wait(c1);
+  close_time_wait(c2);
 
 
   KTEST_BEGIN("TCP: multiple connections to same dest (both unbound)");
@@ -10768,10 +10807,12 @@ static void connect_sockets_tests(void) {
   KEXPECT_STREQ("123", do_read(c2));
   KEXPECT_STREQ("abc", do_read(s1));
   KEXPECT_STREQ("def", do_read(s2));
-  KEXPECT_EQ(0, vfs_close(c1));
-  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
+  KEXPECT_EQ(0, net_shutdown(c2, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(s2));
+  close_time_wait(c1);
+  close_time_wait(c2);
 
 
   KTEST_BEGIN("TCP: multiple connections to same dest (both any-addr)");
@@ -10799,10 +10840,12 @@ static void connect_sockets_tests(void) {
   KEXPECT_STREQ("123", do_read(c2));
   KEXPECT_STREQ("abc", do_read(s1));
   KEXPECT_STREQ("def", do_read(s2));
-  KEXPECT_EQ(0, vfs_close(c1));
-  KEXPECT_EQ(0, vfs_close(c2));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
+  KEXPECT_EQ(0, net_shutdown(c2, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(s2));
+  close_time_wait(c1);
+  close_time_wait(c2);
 
 
   KTEST_BEGIN("TCP: bound to any-port");
@@ -10821,8 +10864,9 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
   KEXPECT_STREQ("xyz", do_read(c1));
   KEXPECT_STREQ("abc", do_read(s1));
-  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(c1);
 
 
   KTEST_BEGIN("TCP: bound to any-addr + port");
@@ -10841,8 +10885,9 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(3, vfs_write(s1, "xyz", 3));
   KEXPECT_STREQ("xyz", do_read(c1));
   KEXPECT_STREQ("abc", do_read(s1));
-  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(c1);
 
 
   KTEST_BEGIN("TCP: connection that outlives server socket");
@@ -10863,11 +10908,9 @@ static void connect_sockets_tests(void) {
   KEXPECT_EQ(3, vfs_write(s1, "XYZ", 3));
   KEXPECT_STREQ("XYZ", do_read(c1));
   KEXPECT_STREQ("ABC", do_read(s1));
-  KEXPECT_EQ(0, vfs_close(c1));
+  KEXPECT_EQ(0, net_shutdown(c1, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(s1));
-
-  // Wait long enough for sockets to leave TIME_WAIT.
-  ksleep(30);
+  close_time_wait(c1);
 }
 
 static void reuseaddr_tests(void) {
@@ -10907,7 +10950,7 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   int s1 = net_accept(server, NULL, NULL);
-  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
+  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1000));
   KEXPECT_GE(s1, 0);
 
   KEXPECT_EQ(0, vfs_close(server));
@@ -10934,8 +10977,8 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, do_bind(s2, LO_DST_IP, SERVER_PORT));
 
   KEXPECT_EQ(0, vfs_close(s2));
-  KEXPECT_EQ(0, vfs_close(s1));
   KEXPECT_EQ(0, vfs_close(c1));
+  close_time_wait(s1);
 
 
   KTEST_BEGIN("TCP: connect() fails due to in-use address");
@@ -10950,7 +10993,7 @@ static void reuseaddr_tests(void) {
   KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
 
   s1 = net_accept(server, NULL, NULL);
-  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
+  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1000));
   KEXPECT_GE(s1, 0);
 
   // Get the c1 address and put s1 into TIME_WAIT.
@@ -10975,12 +11018,9 @@ static void reuseaddr_tests(void) {
              net_connect(c2, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c2));
 
-  KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(s1);
   KEXPECT_EQ(0, vfs_close(c1));
   KEXPECT_EQ(0, vfs_close(c2));
-
-  // Wait long enough for sockets to leave TIME_WAIT.
-  ksleep(20);
 }
 
 static void rapid_reconnect_test(void) {
@@ -11006,7 +11046,7 @@ static void rapid_reconnect_test(void) {
 
   KEXPECT_EQ(3, vfs_write(c1, "abc", 3));
   KEXPECT_STREQ("abc", do_read(s1));
-  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, net_shutdown(s1, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(c1));
   ksleep(10);
 
@@ -11015,28 +11055,24 @@ static void rapid_reconnect_test(void) {
   apos_ms_t start = get_time_ms();
   c1 = make_test_socket();
   KEXPECT_EQ(0, do_connect(c1, LO_DST_IP, SERVER_PORT));
+  struct sockaddr_in c1_addr_2;
+  KEXPECT_EQ(0, getsockname_inet(c1, &c1_addr_2));
+  KEXPECT_EQ(c1_addr.sin_addr.s_addr, c1_addr_2.sin_addr.s_addr);
+  KEXPECT_NE(c1_addr.sin_port, c1_addr_2.sin_port);
 
-  s1 = net_accept(server, NULL, NULL);
-  KEXPECT_EQ(0, do_setsockopt_int(s1, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1));
-  KEXPECT_GE(s1, 0);
+  int s2 = net_accept(server, NULL, NULL);
+  KEXPECT_GE(s2, 0);
   apos_ms_t end = get_time_ms();
   KEXPECT_LT(end - start, 800);  // We should be able to connect() quickly.
 
   KEXPECT_EQ(3, vfs_write(c1, "123", 3));
-  KEXPECT_STREQ("123", do_read(s1));
-  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_STREQ("123", do_read(s2));
+  KEXPECT_EQ(0, net_shutdown(s2, SHUT_RDWR));
   KEXPECT_EQ(0, vfs_close(c1));
 
-  // To get the original s1 out of TIME_WAIT we need to connect to it again from
-  // the same IP:port (triggering a challenge ACK and RST).
-  c1 = make_test_socket();
-  vfs_make_nonblock(c1);
-  KEXPECT_EQ(0, net_bind(c1, (struct sockaddr*)&c1_addr, sizeof(c1_addr)));
-  KEXPECT_EQ(-EINPROGRESS, do_connect(c1, LO_DST_IP, SERVER_PORT));
-  KEXPECT_EQ(0, vfs_close(c1));
+  close_time_wait(s1);
+  close_time_wait(s2);
   KEXPECT_EQ(0, vfs_close(server));
-
-  ksleep(10);
 }
 
 // Helpers for sockmap tests.
