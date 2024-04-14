@@ -10169,10 +10169,6 @@ static void nonblocking_tests(void) {
   nonblocking_send_test();
 }
 
-static void sleep_test_point_hook(const char* name, int count, void* arg) {
-  ksleep((intptr_t)arg);
-}
-
 static void shutdown_test_point_hook(const char* name, int count, void* arg) {
   KEXPECT_EQ(0, net_shutdown((intptr_t)arg, SHUT_RDWR));
 }
@@ -10226,13 +10222,18 @@ static void fin_and_shutdown_test_point_hook_data_sent(const char* name,
   SEND_PKT(s, ACK_PKT(/* seq */ 505, /* ack */ 102));
 }
 
+// Test hook that forces a socket in TIME_WAIT to close.
+static void close_time_wait_socket_hook(const char* name, int count,
+                                        void* arg) {
+  int fd = (intptr_t)arg;
+  kill_time_wait(fd);
+}
+
 static void close_dispatch_race_test(void) {
   KTEST_BEGIN("TCP: socket closes during packet dispatch");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 10));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -10242,9 +10243,11 @@ static void close_dispatch_race_test(void) {
   SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
 
-  test_point_add("tcp:dispatch_packet", &sleep_test_point_hook, (void*)20);
+  test_point_add("tcp:dispatch_packet", &close_time_wait_socket_hook,
+                 (void*)(intptr_t)s.socket);
   SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
   KEXPECT_EQ(1, test_point_remove("tcp:dispatch_packet"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
 
   cleanup_tcp_test(&s);
 }
