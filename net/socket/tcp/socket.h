@@ -87,6 +87,7 @@ typedef struct socket_tcp {
   uint32_t recv_next;     // Their next sequence number expected.
   uint32_t recv_wndsize;  // Receive window size (my window)
   uint32_t mss;           // Maximum segment size.
+  uint32_t wl1, wl2;      // Window update tracking.
   int time_wait_ms;       // How long to wait in TIME_WAIT.
   bool syn_acked;         // Has our SYN been ACK'd.
   bool iss_set;           // Has the initial seq been overridden.

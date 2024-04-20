@@ -156,6 +156,8 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->iss_set = false;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
+  sock->send_wndsize = 0;
+  sock->wl1 = sock->wl2 = 0;
   tcp_cwnd_init(&sock->cwnd, sock->mss);
   sock->rto_ms = TCP_DEFAULT_RTO_MS;
   sock->rto_min_ms = TCP_DEFAULT_MIN_RTO_MS;
@@ -1044,9 +1046,17 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
     KLOG(DFATAL, "TCP: unable to consume all ACK'd bytes\n");
     return;
   }
-  // TODO(tcp): handle window updates properly (track WL1/WL2).
   socket->send_unack = ack;
-  socket->send_wndsize = btoh16(tcp_hdr->wndsize);
+  uint32_t seq = btoh32(tcp_hdr->seq);
+  if (seq_lt(socket->wl1, seq) ||
+      (socket->wl1 == seq && seq_le(socket->wl2, ack))) {
+    uint16_t new_wnd = btoh16(tcp_hdr->wndsize);
+    KLOG(DEBUG2, "TCP: socket %p send window update %d -> %d\n", socket,
+         socket->send_wndsize, new_wnd);
+    socket->send_wndsize = new_wnd;
+    socket->wl1 = seq;
+    socket->wl2 = ack;
+  }
   if (bytes_acked > 0) {
     socket->dup_ack_count = 0;
     tcp_cwnd_acked(&socket->cwnd, bytes_acked);
@@ -1070,6 +1080,9 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
       // If our SYN is acked, move to ESTABLISHED.
       if (socket->send_unack == socket->send_next) {
         syn_rcvd_connected(socket);
+        socket->send_wndsize = btoh16(tcp_hdr->wndsize);
+        socket->wl1 = seq;
+        socket->wl2 = ack;
       }
       break;
 
@@ -1321,6 +1334,8 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
     socket->recv_next = btoh32(tcp_hdr->seq) + 1;
     socket->send_wndsize = btoh16(tcp_hdr->wndsize);
     socket->send_buf_seq = socket->send_next;
+    socket->wl1 = btoh32(tcp_hdr->seq);
+    socket->wl2 = btoh32(tcp_hdr->ack);
 
     if (tcp_hdr->flags & TCP_FLAG_ACK) {
       set_state(socket, TCP_ESTABLISHED, "SYN-ACK received");

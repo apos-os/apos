@@ -1102,6 +1102,17 @@ static test_packet_spec_t DATA_PKT(int seq, int ack, const char* data) {
                                .datalen = kstrlen(data)});
 }
 
+static test_packet_spec_t DATA_PKT2(int seq, int ack, int wndsize,
+                                    const char* data) {
+  KASSERT_DBG(wndsize != 0);  // Must send WNDSIZE_ZERO.
+  return ((test_packet_spec_t){.flags = TCP_FLAG_ACK,
+                               .seq = seq,
+                               .ack = ack,
+                               .wndsize = wndsize,
+                               .data = data,
+                               .datalen = kstrlen(data)});
+}
+
 static test_packet_spec_t URG_PKT(int seq, int ack, const char* data) {
   return ((test_packet_spec_t){.flags = TCP_FLAG_ACK | TCP_FLAG_URG,
                                .seq = seq,
@@ -4859,6 +4870,226 @@ static void basic_send_window_test2(void) {
   cleanup_tcp_test(&s);
 }
 
+static void send_window_wl1_wl2_test(void) {
+  KTEST_BEGIN("TCP: send window correctly uses WL1/WL2 test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  // We should be able to send without blocking.  Ack it and close the window.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "abc"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ WNDSIZE_ZERO));
+
+  // A segment with new data, even if the ACK is old, should NOT be able to
+  // update the window.
+  SEND_PKT(&s, DATA_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2, "x"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 104, /* ack */ 502));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send new data with a current ACK, which should open the window.
+  SEND_PKT(&s, DATA_PKT2(/* seq */ 502, /* ack */ 104, /* wndsize */ 2, "y"));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 503, "12"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 106, /* wndsize */ 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 106, /* ack */ 503, "3"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 107, /* wndsize */ 3));
+
+  // Send more data and partially acknowledge it.
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 107, /* ack */ 503, "123"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 503, /* ack */ 108, /* wndsize */ WNDSIZE_ZERO));
+
+  // Window is closed.  A segment that doesn't advance WL1 (seq) or WL2 (ack)
+  // shouldn't be able to open the window.
+  KEXPECT_EQ(3, vfs_write(s.socket, "abc", 3));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 106, /* wndsize */ 10));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 107, /* wndsize */ 10));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Advancing WL2, even though it doesn't ACK the full data, should update the
+  // window.  It should open the window enough for the 2 unacked packets plus
+  // one more packet from the latest write.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 109, /* wndsize */ 2));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 110, /* ack */ 503, "a"));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 109, /* wndsize */ 2));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 503, /* ack */ 109, /* wndsize */ 5));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 111, /* ack */ 503, "bc"));
+  SEND_PKT(&s,
+           ACK_PKT2(/* seq */ 503, /* ack */ 113, /* wndsize */ 10));
+
+  // New test when a packet is sent with a previously-seen sequence number; it
+  // should not update the window.
+  SEND_PKT(&s,
+           DATA_PKT2(/* seq */ 503, /* ack */ 113, /* wndsize */ 2, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 113, /* ack */ 506));
+  SEND_PKT(&s,
+           DATA_PKT2(/* seq */ 504, /* ack */ 113, /* wndsize */ 1, "bcx"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 113, /* ack */ 507));
+  SEND_PKT(&s,
+           DATA_PKT2(/* seq */ 503, /* ack */ 113, /* wndsize */ 10, "abcxy"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 113, /* ack */ 508));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "def", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 113, /* ack */ 508, "d"));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 508, /* ack */ 114, /* wndsize */ 10));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 114, /* ack */ 508, "ef"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 508, /* ack */ 116));
+
+  // Test for WL2 handling: need to send a fresh ACK with already-seen data to
+  // make sure the window isn't updated then either.
+  SEND_PKT(&s,
+           DATA_PKT2(/* seq */ 508, /* ack */ 116, /* wndsize */ 2, "123"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 116, /* ack */ 511));
+  SEND_PKT(&s,
+           DATA_PKT2(/* seq */ 509, /* ack */ 116, /* wndsize */ 1, "234"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 116, /* ack */ 512));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "ghi", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 116, /* ack */ 512, "g"));
+
+  // Sending repeat data with an updated ACK should _not_ update the window.
+  SEND_PKT(&s,
+           DATA_PKT2(/* seq */ 508, /* ack */ 117, /* wndsize */ 10, "12345"));
+  // We should still only get one byte.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 117, /* ack */ 513, "h"));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 513, /* ack */ 118, /* wndsize */ 10));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 118, /* ack */ 513, "i"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 513, /* ack */ 119));
+
+
+  KEXPECT_TRUE(do_standard_finish(&s, 18, 12));
+
+  cleanup_tcp_test(&s);
+}
+
+// As above, but with a socket that comes from a listen socket.
+static void send_window_wl1_wl2_incoming_test(void) {
+  KTEST_BEGIN(
+      "TCP: send window correctly uses WL1/WL2 test (incoming connection)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 3));
+
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, DST_IP, 2000);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2));
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+
+  // We should be able to send without blocking.  Ack it and close the window.
+  KEXPECT_EQ(3, vfs_write(c1.socket, "abc", 3));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 501, "ab"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 103));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 103, /* ack */ 501, "c"));
+  SEND_PKT(&c1,
+           ACK_PKT2(/* seq */ 501, /* ack */ 104, /* wndsize */ WNDSIZE_ZERO));
+
+  // A segment with new data, even if the ACK is old, should NOT be able to
+  // update the window.
+  SEND_PKT(&c1, DATA_PKT2(/* seq */ 501, /* ack */ 101, /* wndsize */ 2, "x"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 104, /* ack */ 502));
+
+  KEXPECT_EQ(3, vfs_write(c1.socket, "123", 3));
+  KEXPECT_FALSE(raw_has_packets(&c1));
+
+  // Send new data with a current ACK, which should open the window.
+  SEND_PKT(&c1, DATA_PKT2(/* seq */ 502, /* ack */ 104, /* wndsize */ 2, "y"));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 104, /* ack */ 503, "12"));
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 106, /* wndsize */ 3));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 106, /* ack */ 503, "3"));
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 107, /* wndsize */ 3));
+
+  // Send more data and partially acknowledge it.
+  KEXPECT_EQ(3, vfs_write(c1.socket, "123", 3));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 107, /* ack */ 503, "123"));
+  SEND_PKT(&c1,
+           ACK_PKT2(/* seq */ 503, /* ack */ 108, /* wndsize */ WNDSIZE_ZERO));
+
+  // Window is closed.  A segment that doesn't advance WL1 (seq) or WL2 (ack)
+  // shouldn't be able to open the window.
+  KEXPECT_EQ(3, vfs_write(c1.socket, "abc", 3));
+  KEXPECT_FALSE(raw_has_packets(&c1));
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 106, /* wndsize */ 10));
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 107, /* wndsize */ 10));
+  KEXPECT_FALSE(raw_has_packets(&c1));
+
+  // Advancing WL2, even though it doesn't ACK the full data, should update the
+  // window.  It should open the window enough for the 2 unacked packets plus
+  // one more packet from the latest write.
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 109, /* wndsize */ 2));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 110, /* ack */ 503, "a"));
+
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 109, /* wndsize */ 2));
+  KEXPECT_FALSE(raw_has_packets(&c1));
+
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 503, /* ack */ 109, /* wndsize */ 5));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 111, /* ack */ 503, "bc"));
+  SEND_PKT(&c1,
+           ACK_PKT2(/* seq */ 503, /* ack */ 113, /* wndsize */ 10));
+
+  // New test when a packet is sent with a previously-seen sequence number; it
+  // should not update the window.
+  SEND_PKT(&c1,
+           DATA_PKT2(/* seq */ 503, /* ack */ 113, /* wndsize */ 2, "abc"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 113, /* ack */ 506));
+  SEND_PKT(&c1,
+           DATA_PKT2(/* seq */ 504, /* ack */ 113, /* wndsize */ 1, "bcx"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 113, /* ack */ 507));
+  SEND_PKT(&c1,
+           DATA_PKT2(/* seq */ 503, /* ack */ 113, /* wndsize */ 10, "abcxy"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 113, /* ack */ 508));
+
+  KEXPECT_EQ(3, vfs_write(c1.socket, "def", 3));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 113, /* ack */ 508, "d"));
+
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 508, /* ack */ 114, /* wndsize */ 10));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 114, /* ack */ 508, "ef"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 508, /* ack */ 116));
+
+  // Test for WL2 handling: need to send a fresh ACK with already-seen data to
+  // make sure the window isn't updated then either.
+  SEND_PKT(&c1,
+           DATA_PKT2(/* seq */ 508, /* ack */ 116, /* wndsize */ 2, "123"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 116, /* ack */ 511));
+  SEND_PKT(&c1,
+           DATA_PKT2(/* seq */ 509, /* ack */ 116, /* wndsize */ 1, "234"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 116, /* ack */ 512));
+
+  KEXPECT_EQ(3, vfs_write(c1.socket, "ghi", 3));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 116, /* ack */ 512, "g"));
+
+  // Sending repeat data with an updated ACK should _not_ update the window.
+  SEND_PKT(&c1,
+           DATA_PKT2(/* seq */ 508, /* ack */ 117, /* wndsize */ 10, "12345"));
+  // We should still only get one byte.
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 117, /* ack */ 513, "h"));
+  SEND_PKT(&c1, ACK_PKT2(/* seq */ 513, /* ack */ 118, /* wndsize */ 10));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 118, /* ack */ 513, "i"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 513, /* ack */ 119));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 18, 12));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+}
+
 static void basic_send_test_blocks(void) {
   KTEST_BEGIN("TCP: basic data passing (blocking send)");
   tcp_test_state_t s;
@@ -5986,6 +6217,8 @@ static void send_tests(void) {
   basic_send_test();
   basic_send_window_test();
   basic_send_window_test2();
+  send_window_wl1_wl2_test();
+  send_window_wl1_wl2_incoming_test();
   basic_send_test_blocks();
   basic_send_test_blocks2();
   send_blocking_interrupted();
