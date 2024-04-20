@@ -15,6 +15,7 @@
 #ifndef APOO_NET_SOCKET_TCP_CONGESTION_H
 #define APOO_NET_SOCKET_TCP_CONGESTION_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "common/types.h"
@@ -30,6 +31,9 @@ typedef struct {
 
   // How many bytes have been acked since the last cwnd increase.
   ssize_t acked;
+
+  // Whether we're in fast retransmit mode (duplicate ACKs).
+  bool fast_retransmit;
 } tcp_cwnd_t;
 
 // Initialize the congestion state.
@@ -41,5 +45,9 @@ void tcp_cwnd_acked(tcp_cwnd_t* cw, ssize_t len);
 // Loss is detected due to the retransmit timer firing, and data was
 // retransmitted for the first time.
 void tcp_cwnd_rto(tcp_cwnd_t* cw, uint32_t bytes_outstanding);
+
+// A duplicate ACK has been received.  |ack_count| is the number of times the
+// ACK has been received (i.e. ack_count will be 1 on the first duplicate ACK).
+void tcp_cwnd_dupack(tcp_cwnd_t* cw, uint32_t bytes_outstanding, int ack_count);
 
 #endif

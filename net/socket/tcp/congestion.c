@@ -29,11 +29,15 @@ void tcp_cwnd_init(tcp_cwnd_t* cw, uint32_t mss) {;
   cw->mss = mss;
   cw->ssthresh = INT32_MAX;
   cw->acked = 0;
+  cw->fast_retransmit = false;
 }
 
 void tcp_cwnd_acked(tcp_cwnd_t* cw, ssize_t len) {
   KASSERT(len > 0);
-  if (cw->cwnd <= cw->ssthresh) {
+  if (cw->fast_retransmit) {
+    cw->fast_retransmit = false;
+    cw->cwnd = cw->ssthresh;
+  } else if (cw->cwnd <= cw->ssthresh) {
     // In slow-start.  Increase accordingly.
     cw->cwnd += min((uint32_t)len, cw->mss);
   } else {
@@ -48,4 +52,16 @@ void tcp_cwnd_acked(tcp_cwnd_t* cw, ssize_t len) {
 void tcp_cwnd_rto(tcp_cwnd_t* cw, uint32_t bytes_outstanding) {
   cw->ssthresh = max(bytes_outstanding / 2, 2 * cw->mss);
   cw->cwnd = cw->mss;
+}
+
+void tcp_cwnd_dupack(tcp_cwnd_t* cw, uint32_t bytes_outstanding,
+                     int ack_count) {
+  cw->fast_retransmit = true;
+  // Per RFC 5681.
+  if (ack_count == 3) {
+    cw->ssthresh = max(bytes_outstanding / 2, 2 * cw->mss);
+    cw->cwnd = cw->ssthresh + 3 * cw->mss;
+  } else if (ack_count > 3) {
+    cw->cwnd += cw->mss;
+  }
 }

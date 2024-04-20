@@ -152,6 +152,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->send_timeout_ms = -1;
   sock->tcp_flags = 0;
   set_iss(sock, gen_seq_num(sock));
+  sock->dup_ack_count = 0;
   sock->iss_set = false;
   sock->recv_wndsize = circbuf_available(&sock->recv_buf);
   sock->mss = 536;  // TODO(tcp): determine MSS dynamically.
@@ -556,6 +557,7 @@ static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
 static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
                            tcp_pkt_action_t* action);
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
+                           const tcp_packet_metadata_t* md,
                            tcp_pkt_action_t* action);
 static void tcp_handle_fin(socket_tcp_t* socket, const pbuf_t* pb,
                            const tcp_packet_metadata_t* md,
@@ -785,7 +787,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     goto done;
   }
 
-  tcp_handle_ack(socket, pb, &action);
+  tcp_handle_ack(socket, pb, md, &action);
   if (action.action != TCP_ACTION_NOT_SET) {
     goto done;
   }
@@ -960,20 +962,44 @@ static void segment_acked(socket_tcp_t* socket, tcp_segment_t* seg,
   }
 }
 
+static bool is_dup_ack(const socket_tcp_t* socket, const pbuf_t* pb,
+                       const tcp_packet_metadata_t* md) {
+  // Per definition in RFC 5681.
+  const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(tcp_hdr->flags & TCP_FLAG_ACK);
+  uint32_t ack = btoh32(tcp_hdr->ack);
+  return (socket->send_next != socket->send_unack &&  // Unsent data?
+          md->data_len == 0 &&
+          !(tcp_hdr->flags & TCP_FLAG_SYN) &&
+          !(tcp_hdr->flags & TCP_FLAG_FIN) &&
+          ack == socket->send_unack &&
+          btoh16(tcp_hdr->wndsize) == socket->send_wndsize);
+}
+
 static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
+                           const tcp_packet_metadata_t* md,
                            tcp_pkt_action_t* action) {
   const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pb);
   KASSERT_DBG(tcp_hdr->flags & TCP_FLAG_ACK);
 
-  // TODO(tcp): send retransmits on duplicate ACKs.
   uint32_t ack = btoh32(tcp_hdr->ack);
   if (seq_gt(ack, socket->send_next)) {
     KLOG(DEBUG2, "TCP: socket %p got future ACK (ack=%u)\n", socket, ack);
     action->action = TCP_DROP_BAD_PKT;
     action->send_ack = true;
     return;
+  } else if (is_dup_ack(socket, pb, md)) {
+    socket->dup_ack_count++;
+    KLOG(DEBUG2, "TCP: socket %p got duplicate ACK #%d (ack=%u)\n", socket,
+         socket->dup_ack_count, ack);
+    uint32_t unacked_bytes = socket->send_next - socket->send_unack;
+    tcp_cwnd_dupack(&socket->cwnd, unacked_bytes, socket->dup_ack_count);
+    if (socket->dup_ack_count > 2) {
+      action->action = TCP_RETRANSMIT;
+    }
+    return;
   } else if (seq_lt(ack, socket->send_unack)) {
-    KLOG(DEBUG2, "TCP: socket %p got duplicate ACK (ack=%u)\n", socket, ack);
+    KLOG(DEBUG2, "TCP: socket %p got old ACK (ack=%u)\n", socket, ack);
     return;
   }
 
@@ -1022,6 +1048,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
   socket->send_unack = ack;
   socket->send_wndsize = btoh16(tcp_hdr->wndsize);
   if (bytes_acked > 0) {
+    socket->dup_ack_count = 0;
     tcp_cwnd_acked(&socket->cwnd, bytes_acked);
   }
   KLOG(DEBUG2,

@@ -84,6 +84,8 @@
 #define LO_DST_IP "127.0.0.3"
 #define LO_DST_IP_PORT LO_DST_IP ":5000"
 
+#define DEFAULT_MSS 536
+
 #define RAW_RECV_BUF_SIZE 100
 
 // A packet that's queued for a test to handle.  We have to track these packets
@@ -224,6 +226,18 @@ static int get_rto(int socket) {
   int result = net_getsockopt(socket, IPPROTO_TCP, SO_TCP_RTO, &rto_ms, &len);
   KEXPECT_EQ(0, result);
   return rto_ms;
+}
+
+static int set_cwnd(int socket, int cwnd) {
+  return net_setsockopt(socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, sizeof(cwnd));
+}
+
+static int get_cwnd(int socket) {
+  int cwnd = 0;
+  socklen_t len = sizeof(cwnd);
+  int result = net_getsockopt(socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len);
+  KEXPECT_EQ(0, result);
+  return cwnd;
 }
 
 static int get_so_error(int socket) {
@@ -9953,6 +9967,200 @@ static void retransmit_fin_test2(void) {
   cleanup_tcp_test(&s);
 }
 
+static void fast_retransmit_test(void) {
+  KTEST_BEGIN("TCP: fast retransmit (duplicate ACKs) basic test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "123"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Send a bunch of "duplicate" ACKs --- they should not _count_ as duplicate
+  // ACKs for the purposes of retransmits since there is no outstanding data.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send new data.
+  KEXPECT_EQ(3, vfs_write(s.socket, "456", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 501, "456"));
+
+  // Send two duplicate ACKs.  These should increment the counter but not
+  // trigger a retransmit.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send a bunch of ACKs that are duplicates sequence-number-wise, but don't
+  // count for other reasons.  These should neither increment, nor reset, the
+  // counter.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 104, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 504));
+
+  // Try SYNs and FINs.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 501, /* ack */ 104, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 504));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 104));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 107, /* ack */ 505));
+
+  // Try old ACKs.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 101));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 103));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Try a duplicate ACK that updates the window.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 1000));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+
+  // We should not have received a retransmit.
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send more data.
+  KEXPECT_EQ(1, vfs_write(s.socket, "7", 1));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 107, /* ack */ 505, "7"));
+  KEXPECT_EQ(1, vfs_write(s.socket, "8", 1));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 108, /* ack */ 505, "8"));
+
+  int orig_cwnd = get_cwnd(s.socket);
+
+  // Now send a third proper duplicate ACK.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+
+  // ...we should now get a retransmit.
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+
+  int new_cwnd = get_cwnd(s.socket);
+  KEXPECT_LT(new_cwnd, orig_cwnd);
+
+  // Send more duplicate ACKs.  Each one should trigger a retransmit and
+  // inflate the cwnd by MSS.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+  KEXPECT_EQ(new_cwnd + DEFAULT_MSS, get_cwnd(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+  KEXPECT_EQ(new_cwnd + 2 * DEFAULT_MSS, get_cwnd(s.socket));
+
+  // A non-dup-ACK should not trigger a retransmit, nor reset the counter.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 1000));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(new_cwnd + 2 * DEFAULT_MSS, get_cwnd(s.socket));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 1000));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 104, /* ack */ 505, "456"));
+  KEXPECT_EQ(new_cwnd + 3 * DEFAULT_MSS, get_cwnd(s.socket));
+
+  // Finally, ACK the data.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 109));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(2 * DEFAULT_MSS,
+             get_cwnd(s.socket));  // cwnd should be deflated again.
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 109, /* ack */ 505));
+  SEND_PKT(&s, ACK_PKT(505, /* ack */ 110));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+// This tests fast retransmits of FINs.  This shouldn't happen in a normal TCP
+// session (as there shouldn't be any additional segments sent after the FIN to
+// trigger duplicate ACKs), but test it anyway to make sure the stack handles it
+// gracefully.
+static void fast_retransmit_test2(void) {
+  KTEST_BEGIN("TCP: fast retransmit (duplicate ACKs) FIN test");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(3, vfs_write(s.socket, "123", 3));
+  EXPECT_PKT(&s, DATA_PKT(/* seq */ 101, /* ack */ 501, "123"));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+
+  // Send a bunch of "duplicate" ACKs --- they should not _count_ as duplicate
+  // ACKs for the purposes of retransmits since there is no outstanding data.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send FIN.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 501));
+
+  // Send two duplicate ACKs.  These should increment the counter but not
+  // trigger a retransmit.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 501, /* ack */ 104));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Send a bunch of ACKs that are duplicates sequence-number-wise, but don't
+  // count for other reasons.  These should neither increment, nor reset, the
+  // counter.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 104, "abc"));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 105, /* ack */ 504));
+
+  // Try SYNs and FINs.
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 501, /* ack */ 104, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 105, /* ack */ 504));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 504, /* ack */ 104));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 105, /* ack */ 505));
+
+  // Try old ACKs.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 101));
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 103));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Try a duplicate ACK that updates the window.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 1000));
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+
+  // We should not have received a retransmit.
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Now send a third proper duplicate ACK.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+
+  // ...we should now get a retransmit.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+
+  // Send more duplicate ACKs.  Each one should trigger a retransmit.
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+
+  SEND_PKT(&s, ACK_PKT2(/* seq */ 505, /* ack */ 104, /* wndsize */ 2000));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 104, /* ack */ 505));
+
+  // Finally, ACK the FIN.
+  SEND_PKT(&s, ACK_PKT(/* seq */ 505, /* ack */ 105));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  kill_time_wait(s.socket);
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
 static void retransmit_tests(void) {
   basic_retransmit_test();
   basic_retransmit_test2();
@@ -9965,6 +10173,8 @@ static void retransmit_tests(void) {
   retransmit_synack_test2();
   retransmit_fin_test();
   retransmit_fin_test2();
+  fast_retransmit_test();
+  fast_retransmit_test2();
 }
 
 static void nonblocking_connect_test(void) {
@@ -10539,6 +10749,48 @@ static void cwnd_test(void) {
   KEXPECT_EQ(3000, cw.cwnd);
   tcp_cwnd_acked(&cw, 1000);
   KEXPECT_EQ(3000, cw.cwnd);
+
+  KTEST_BEGIN("TCP: cwnd duplicate ack test");
+  tcp_cwnd_init(&cw, 500);
+  KEXPECT_EQ(2000, cw.cwnd);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  tcp_cwnd_acked(&cw, 500);
+  KEXPECT_EQ(8000, cw.cwnd);
+
+  tcp_cwnd_dupack(&cw, 8000, 1);
+  KEXPECT_EQ(8000, cw.cwnd);
+  KEXPECT_EQ(INT32_MAX, cw.ssthresh);
+
+  tcp_cwnd_dupack(&cw, 8000, 2);
+  KEXPECT_EQ(8000, cw.cwnd);
+  KEXPECT_EQ(INT32_MAX, cw.ssthresh);
+
+  tcp_cwnd_dupack(&cw, 8000, 3);
+  KEXPECT_EQ(4000, cw.ssthresh);
+  KEXPECT_EQ(5500, cw.cwnd);
+
+  // We should inflate the window with additional duplicate ACKs.
+  tcp_cwnd_dupack(&cw, 8000, 4);
+  KEXPECT_EQ(4000, cw.ssthresh);
+  KEXPECT_EQ(6000, cw.cwnd);
+  tcp_cwnd_dupack(&cw, 8000, 5);
+  KEXPECT_EQ(4000, cw.ssthresh);
+  KEXPECT_EQ(6500, cw.cwnd);
+
+  // ...and should deflate the window when data is finally ACK'd.
+  tcp_cwnd_acked(&cw, 500);
+  KEXPECT_EQ(4000, cw.ssthresh);
+  KEXPECT_EQ(4000, cw.cwnd);
 }
 
 static void cwnd_socket_test(void) {
@@ -10596,7 +10848,7 @@ static void cwnd_socket_test(void) {
   // After several retransmits, we should have reset CWND.
   KEXPECT_EQ(0,
              net_getsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, &len));
-  KEXPECT_EQ(cwnd, 536);
+  KEXPECT_EQ(cwnd, DEFAULT_MSS);
   cwnd = 20;
   KEXPECT_EQ(0, net_setsockopt(s.socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, len));
 

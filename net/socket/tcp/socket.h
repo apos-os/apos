@@ -90,6 +90,7 @@ typedef struct socket_tcp {
   int time_wait_ms;       // How long to wait in TIME_WAIT.
   bool syn_acked;         // Has our SYN been ACK'd.
   bool iss_set;           // Has the initial seq been overridden.
+  int dup_ack_count;      // Count of consecutive duplicate ACKs received.
   tcp_cwnd_t cwnd;        // Congestion control state.
 
   // Retransmit state.
