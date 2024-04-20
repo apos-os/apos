@@ -1979,13 +1979,13 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   // Wait until the socket is established or closes (with an error, presumably).
   kspin_lock(&sock->spin_mu);
   apos_ms_t now = get_time_ms();
-  apos_ms_t timeout_end = (sock->connect_timeout_ms < 0)
-                              ? APOS_MS_MAX
-                              : now + sock->connect_timeout_ms;
-  while (now < timeout_end &&
+  apos_ms_t timeout_end =
+      (sock->connect_timeout_ms < 0) ? 0 : now + sock->connect_timeout_ms;
+  while ((sock->connect_timeout_ms < 0 || now < timeout_end) &&
          tcp_state_type(sock->state) == TCPSTATE_PRE_ESTABLISHED) {
-    int wait_result =
-        scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
+    int wait_result = scheduler_wait_on_splocked(
+        &sock->q, sock->connect_timeout_ms < 0 ? 0 : timeout_end - now,
+        &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
       result = -ETIMEDOUT;
       break;
@@ -2080,16 +2080,18 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   // Wait until data is available or the socket is closed.
   apos_ms_t now = get_time_ms();
   apos_ms_t timeout_end =
-      (sock->recv_timeout_ms < 0) ? APOS_MS_MAX : now + sock->recv_timeout_ms;
+      (sock->recv_timeout_ms < 0) ? 0 : now + sock->recv_timeout_ms;
   int result = 0;
-  while (now < timeout_end && recv_state(sock) == RECV_BLOCK_FOR_DATA) {
+  while ((sock->recv_timeout_ms < 0 || now < timeout_end) &&
+         recv_state(sock) == RECV_BLOCK_FOR_DATA) {
     if (fflags & VFS_O_NONBLOCK) {
       result = -EAGAIN;
       break;
     }
 
-    int wait_result =
-        scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
+    int wait_result = scheduler_wait_on_splocked(
+        &sock->q, sock->recv_timeout_ms < 0 ? 0 : timeout_end - now,
+        &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
       result = -ETIMEDOUT;
       break;
@@ -2206,16 +2208,18 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
   // Wait until buffer space is available or the socket is closed.
   apos_ms_t now = get_time_ms();
   apos_ms_t timeout_end =
-      (sock->send_timeout_ms < 0) ? APOS_MS_MAX : now + sock->send_timeout_ms;
+      (sock->send_timeout_ms < 0) ? 0 : now + sock->send_timeout_ms;
   int result = 0;
-  while (now < timeout_end && send_state(sock) == SEND_BLOCK) {
+  while ((sock->send_timeout_ms < 0 || now < timeout_end) &&
+         send_state(sock) == SEND_BLOCK) {
     if (fflags & VFS_O_NONBLOCK) {
       result = -EAGAIN;
       break;
     }
 
-    int wait_result =
-        scheduler_wait_on_splocked(&sock->q, timeout_end - now, &sock->spin_mu);
+    int wait_result = scheduler_wait_on_splocked(
+        &sock->q, sock->send_timeout_ms < 0 ? 0 : timeout_end - now,
+        &sock->spin_mu);
     if (wait_result == SWAIT_TIMEOUT) {
       result = -ETIMEDOUT;
       break;
