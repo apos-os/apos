@@ -1512,8 +1512,6 @@ static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,
 // Could be called from a user context or a defint.
 static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
   KASSERT(kspin_is_held(&socket->spin_mu));
-  // TODO(tcp): assert that we're coming from a last-to-terminal state, OR that
-  // an error has occurred.
 
   // Cancel any pending timers.  A timer may be about to run (if it holds a
   // reference) once we unlock --- it will find the socket closed.

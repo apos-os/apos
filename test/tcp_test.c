@@ -2166,9 +2166,14 @@ static void shutdown_rd_during_connect2(void) {
 
   KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
 
+  char buf;
+  KEXPECT_EQ(0, vfs_read(s.socket, &buf, 1));
+
   // Data should cause a RST.
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
   EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, vfs_read(s.socket, &buf, 1));
 
   cleanup_tcp_test(&s);
 }
