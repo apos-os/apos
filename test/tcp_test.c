@@ -4726,7 +4726,6 @@ static void basic_send_test(void) {
   SEND_PKT(&s, ACK_PKT2(/* seq */ 501, /* ack */ 106, /* wndsize */ 495));
 
   // Receive a bit of data too.
-  // TODO(tcp): test sending data with old ACK value and unsent (invalid) ACK.
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 106, "xyz"));
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 106, /* ack */ 504));
   char buf[10];
@@ -7412,8 +7411,6 @@ static void active_close_fw1_rst(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7453,8 +7450,6 @@ static void active_close_fw1_shutrd(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7495,8 +7490,6 @@ static void active_close_fw1_shutrd_data(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7536,8 +7529,6 @@ static void active_close_fw1_shutrd_data2(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7576,8 +7567,6 @@ static void active_close_fw1_shutrd_datafin(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7614,8 +7603,6 @@ static void active_close_fw2_rst(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7658,8 +7645,6 @@ static void active_close_fw2_shutrd(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7698,8 +7683,6 @@ static void active_close_fw2_shutrd_data(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7740,8 +7723,6 @@ static void active_close_fw2_shutrd_data2(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7780,8 +7761,6 @@ static void active_close_fw2_shutrd_datafin(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 20));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -7994,12 +7973,10 @@ static void active_close_fw_to_closing1(void) {
 
 static void active_close_fw_to_closing1b(void) {
   KTEST_BEGIN("TCP: active close (FIN_WAIT_1 -> CLOSING -> TIME_WAIT), "
-              "ACK in the " "past");
+              "ACK in the past");
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -8052,8 +8029,6 @@ static void active_close_fw_to_closing1c(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -8169,8 +8144,6 @@ static void active_close_fw_to_closing_rst(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -8222,8 +8195,6 @@ static void active_close_fw_to_closing_shutdown(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
-  KEXPECT_EQ(
-      0, do_setsockopt_int(s.socket, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 40));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
@@ -11203,8 +11174,6 @@ static int make_test_socket(void) {
   KEXPECT_GE(sock, 0);
   // Set it long enough that it will outlive the relevant tests, but not so long
   // that they won't get a chance to fire if there's a bug.
-  // TODO(tcp): look at other tests that set this and see if they can be
-  // switched to the deterministic TIME_WAIT method.
   KEXPECT_EQ(0,
              do_setsockopt_int(sock, IPPROTO_TCP, SO_TCP_TIME_WAIT_LEN, 1000));
   return sock;
