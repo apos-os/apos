@@ -8632,6 +8632,132 @@ static void close_shutdown_test5(void) {
   cleanup_tcp_test(&s);
 }
 
+static void close_shutdown_test6(void) {
+  KTEST_BEGIN("TCP: close() socket after shutdown(SHUT_RD)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // Should cause the equivalent of shutdown(SHUT_RDWR).  The protocol handling
+  // should continue even though the fd is gone.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test7(void) {
+  KTEST_BEGIN("TCP: close() socket after shutdown(SHUT_WR)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // Continue the shutdown after the fd is closed.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test7b(void) {
+  KTEST_BEGIN("TCP: close() socket after shutdown(SHUT_WR) [send data]");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // The socket should have done the equivalent of SHUT_RD, so sending data
+  // should trigger a RST.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test8(void) {
+  KTEST_BEGIN("TCP: close() socket after shutdown(SHUT_RDWR)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RDWR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // Continue the shutdown after the fd is closed.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 102));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 502));
+  SEND_PKT(&s, RST_PKT(/* seq */ 502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void close_shutdown_test8b(void) {
+  KTEST_BEGIN("TCP: close() socket after shutdown(SHUT_RDWR) [send data]");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RDWR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+
+  KEXPECT_EQ(0, vfs_close(s.socket));
+  s.socket = -1;
+
+  // The socket should have done the equivalent of SHUT_RD, so sending data
+  // should trigger a RST.
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 102, "abc"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 102, /* ack */ 501));
+
+  cleanup_tcp_test(&s);
+}
+
 static void close_shutdown_test(void) {
   close_shutdown_test1();
   close_shutdown_test2();
@@ -8639,6 +8765,11 @@ static void close_shutdown_test(void) {
   close_shutdown_test3b();
   close_shutdown_test4();
   close_shutdown_test5();
+  close_shutdown_test6();
+  close_shutdown_test7();
+  close_shutdown_test7b();
+  close_shutdown_test8();
+  close_shutdown_test8b();
 }
 
 static void basic_listen_test(void) {

@@ -1692,7 +1692,15 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
   }
   kspin_unlock(&socket->spin_mu);
 
-  int result = sock_tcp_shutdown(socket_base, SHUT_RDWR);
+  // Do SHUT_RD and SHUT_WR separately (rather than SHUT_RDWR) to ensure they
+  // are both done even if the socket is partially shut down.
+  int result = sock_tcp_shutdown(socket_base, SHUT_RD);
+  if (result != 0 && result != -ENOTCONN) {
+    KLOG(DFATAL, "TCP: socket %p unable to shutdown() on close(): %s\n",
+         socket_base, errorname(-result));
+  }
+
+  result = sock_tcp_shutdown(socket_base, SHUT_WR);
   if (result != 0 && result != -ENOTCONN) {
     KLOG(DFATAL, "TCP: socket %p unable to shutdown() on close(): %s\n",
          socket_base, errorname(-result));
