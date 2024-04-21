@@ -403,6 +403,7 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
 static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
   // Figure out how much data to send.
   kspin_lock(&socket->spin_mu);
+  tcp_coverage_log("send_datafin", socket);
   if (tcp_state_type(socket->state) != TCPSTATE_ESTABLISHED &&
       socket->state != TCP_SYN_RCVD) {
     kspin_unlock(&socket->spin_mu);
@@ -724,6 +725,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   test_point_run("tcp:dispatch_packet");
 
   kspin_lock(&socket->spin_mu);
+  tcp_coverage_log("tcp_dispatch_to_sock", socket);
 
   // TCP_CLOSED can happen if we receive a packet for an address that a socket
   // is bound to, but is not listening on (or connected on).  TCP_CLOSED_DONE
@@ -752,6 +754,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   // receive window.
   uint32_t seq = btoh32(tcp_hdr->seq);
   if (!validate_seq(socket, seq, tcp_packet_octets(tcp_hdr, md))) {
+    tcp_coverage_log("recv:invalid_seq", socket);
     // Special case for FIN in TIME_WAIT.
     if (socket->state == TCP_TIME_WAIT) {
       maybe_handle_time_wait_fin(socket, pb, md, seq);
@@ -763,6 +766,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (seq_gt(seq, socket->recv_next)) {
+    tcp_coverage_log("recv:ooo_packet", socket);
     KLOG(DEBUG2,
          "TCP: socket %p dropping OOO packet (past start of window)\n",
          socket);
@@ -771,6 +775,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (tcp_hdr->flags & TCP_FLAG_RST) {
+    tcp_coverage_log("recv:RST", socket);
     tcp_handle_rst(socket, pb, &action);
     // We should always be done after a RST.
     goto done;
@@ -778,6 +783,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 
   // Next handle SYN and SYN-ACK.
   if (tcp_hdr->flags & TCP_FLAG_SYN) {
+    tcp_coverage_log("recv:SYN", socket);
     tcp_handle_syn(socket, pb, &action);
     if (action.action != TCP_ACTION_NOT_SET) {
       goto done;
@@ -785,11 +791,13 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (!(tcp_hdr->flags & TCP_FLAG_ACK)) {
+    tcp_coverage_log("no_ACK", socket);
     KLOG(INFO, "TCP: socket %p dropping packet without ACK\n", socket);
     action.action = TCP_DROP_BAD_PKT;
     goto done;
   }
 
+  tcp_coverage_log("recv:ACK", socket);
   tcp_handle_ack(socket, pb, md, &action);
   if (action.action != TCP_ACTION_NOT_SET) {
     goto done;
@@ -803,6 +811,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (md->data_len > 0) {
+    tcp_coverage_log("recv:data", socket);
     tcp_handle_data(socket, pb, md, &action);
     if (action.action != TCP_ACTION_NOT_SET) {
       goto done;
@@ -810,6 +819,7 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
   }
 
   if (tcp_hdr->flags & TCP_FLAG_FIN) {
+    tcp_coverage_log("recv:FIN", socket);
     tcp_handle_fin(socket, pb, md, &action);
   }
 
@@ -844,6 +854,7 @@ done:
 
     case TCP_RETRANSMIT:
       kspin_lock(&socket->spin_mu);
+      tcp_coverage_log("RETRANSMIT", socket);
       if (socket->state == TCP_CLOSED_DONE) {
         KLOG(DEBUG3, "TCP: socket %p closed before retransmit\n", socket);
         kspin_unlock(&socket->spin_mu);
@@ -1701,8 +1712,10 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
 
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
   kspin_lock(&sock->spin_mu);
+  tcp_coverage_log("shutdown", sock);
   bool send_datafin = false;
   if (how == SHUT_RD || how == SHUT_RDWR) {
+    tcp_coverage_log("shutdown_rd", sock);
     if (sock->recv_shutdown ||
         tcp_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
       kspin_unlock(&sock->spin_mu);
@@ -1715,6 +1728,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   }
 
   if (how == SHUT_WR || how == SHUT_RDWR) {
+    tcp_coverage_log("shutdown_wr", sock);
     if (sock->send_shutdown ||
         tcp_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
       // TODO(tcp): check we have tests for hitting this in all states
@@ -1758,6 +1772,7 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
   // the only way to leave CLOSED is by taking them mutex (which we hold) --- an
   // interrupt context will never cause us to leave CLOSED.
   kspin_lock(&socket->spin_mu);
+  tcp_coverage_log("bind", socket);
   socktcp_state_t state = socket->state;
   kspin_unlock(&socket->spin_mu);
   if (state != TCP_CLOSED) {
@@ -1838,6 +1853,7 @@ static int sock_tcp_listen(socket_t* socket_base, int backlog) {
 
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
   kspin_lock(&sock->spin_mu);
+  tcp_coverage_log("listen", sock);
   if (sock->state != TCP_CLOSED) {
     kspin_unlock(&sock->spin_mu);
     return -EINVAL;
@@ -1864,6 +1880,7 @@ static int sock_tcp_accept(socket_t* socket_base, int fflags,
 
   socket_tcp_t* sock = (socket_tcp_t*)socket_base;
   kspin_lock(&sock->spin_mu);
+  tcp_coverage_log("accept", sock);
   if (sock->state != TCP_LISTEN) {
     kspin_unlock(&sock->spin_mu);
     return -EINVAL;
@@ -1928,6 +1945,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   kmutex_lock(&sock->mu);
 
   kspin_lock(&sock->spin_mu);
+  tcp_coverage_log("connect", sock);
   if (sock->state != TCP_CLOSED) {
     int result = 0;
     switch (tcp_state_type(sock->state)) {
@@ -2119,6 +2137,7 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
   // No need to lock the mutex --- no multi-stage operations here, just a simple
   // one that must coordinate with the defint code.
   kspin_lock(&sock->spin_mu);
+  tcp_coverage_log("recvfrom", sock);
 
   // Wait until data is available or the socket is closed.
   apos_ms_t now = get_time_ms();
@@ -2247,6 +2266,7 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
   // No need to lock the mutex --- no multi-stage operations here, just a simple
   // one that must coordinate with the defint code.
   kspin_lock(&sock->spin_mu);
+  tcp_coverage_log("sendto", sock);
 
   // Wait until buffer space is available or the socket is closed.
   apos_ms_t now = get_time_ms();

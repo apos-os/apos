@@ -23,6 +23,7 @@
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/pbuf.h"
+#include "net/socket/tcp/coverage.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/socket.h"
 #include "net/util.h"
@@ -104,6 +105,7 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
 
   // Build the TCP header (minus checksum).
   kspin_lock(&socket->spin_mu);
+  tcp_coverage_log("send_flags_only_packet", socket);
   int result = tcp_build_packet(socket, tcp_flags, socket->send_next,
                                 /* data_len */ 0, &pb, &pseudo_ip);
   if (result < 0) {
