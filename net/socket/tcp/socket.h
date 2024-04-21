@@ -25,7 +25,7 @@
 #include "vfs/vnode.h"
 
 typedef enum {
-  TCP_CLOSED,
+  TCP_CLOSED = 0,
   TCP_CLOSED_DONE,  // The connection is finished and the socket can't be reused
   TCP_LISTEN,
   TCP_SYN_SENT,
@@ -38,6 +38,9 @@ typedef enum {
   TCP_CLOSING,
   TCP_TIME_WAIT,
 } socktcp_state_t;
+#define TCP_STATE_MAX TCP_TIME_WAIT
+
+const char* tcp_state2str(socktcp_state_t state);
 
 typedef struct socket_tcp {
   socket_t base;

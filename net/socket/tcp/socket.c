@@ -38,6 +38,7 @@
 #include "net/pbuf.h"
 #include "net/socket/sockopt.h"
 #include "net/socket/tcp/congestion.h"
+#include "net/socket/tcp/coverage.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/sockmap.h"
@@ -206,7 +207,7 @@ socktcp_state_type_t tcp_state_type(socktcp_state_t s) {
   return TCPSTATE_POST_ESTABLISHED;
 }
 
-static inline const char* state2str(socktcp_state_t state) {
+const char* tcp_state2str(socktcp_state_t state) {
 #define CONSIDER(X) case TCP_##X: return #X;
   switch (state) {
     CONSIDER(CLOSED)
@@ -223,7 +224,7 @@ static inline const char* state2str(socktcp_state_t state) {
     CONSIDER(TIME_WAIT)
   }
 #undef CONSIDER
-  KLOG(FATAL, "Unknown TCP state %d\n", state);
+  KLOG(DFATAL, "Unknown TCP state %d\n", state);
   return "UNKNOWN";
 }
 
@@ -236,7 +237,7 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
                       const char* debug_msg) {
   KASSERT(kspin_is_held(&sock->spin_mu));
   KLOG(DEBUG2, "TCP: socket %p state %s -> %s (%s)\n", sock,
-       state2str(sock->state), state2str(new_state), debug_msg);
+       tcp_state2str(sock->state), tcp_state2str(new_state), debug_msg);
   sock->state = new_state;
   if (new_state == TCP_TIME_WAIT) {
     KASSERT_DBG(sock->connected_addr.sa_family != AF_UNSPEC);
@@ -456,7 +457,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
       case TCP_CLOSING:
       case TCP_TIME_WAIT:
         KLOG(DFATAL, "TCP: socket %p sent FIN in invalid state %s\n", socket,
-             state2str(socket->state));
+             tcp_state2str(socket->state));
         break;
     }
   }
@@ -885,7 +886,7 @@ static void tcp_handle_syn(socket_tcp_t* socket, const pbuf_t* pb,
   // If we get a SYN in any state other than SYN_SENT, just send an ack and
   // otherwise ignore it.
   KLOG(DEBUG2, "TCP: socket %p got SYN in state %s\n", socket,
-       state2str(socket->state));
+       tcp_state2str(socket->state));
   action->action = TCP_ACTION_NONE;
   action->send_ack = true;
 }
@@ -1275,7 +1276,7 @@ static void tcp_handle_data(socket_tcp_t* socket, const pbuf_t* pb,
       socket->state != TCP_FIN_WAIT_2) {
     KLOG(DEBUG2,
          "TCP: socket %p ignoring %d bytes of data in non-connected state %s\n",
-         socket, (int)md->data_len, state2str(socket->state));
+         socket, (int)md->data_len, tcp_state2str(socket->state));
     action->action = TCP_DROP_BAD_PKT;
     return;
   }
@@ -2213,7 +2214,7 @@ static send_state_t send_state(const socket_tcp_t* socket) {
     case TCP_CLOSING:
     case TCP_TIME_WAIT:
       KLOG(DFATAL, "TCP: socket %p in state %s but send_shutdown is false\n",
-           socket, state2str(socket->state));
+           socket, tcp_state2str(socket->state));
       return SEND_IS_SHUTDOWN;
 
     case TCP_CLOSE_WAIT:
@@ -2571,7 +2572,7 @@ static int sock_tcp_getsockopt(socket_t* socket_base, int level, int option,
     kspin_lock(&socket->spin_mu);
     socktcp_state_t state = socket->state;
     kspin_unlock(&socket->spin_mu);
-    return getsockopt_cstr(val, val_len, state2str(state));
+    return getsockopt_cstr(val, val_len, tcp_state2str(state));
   } else if (level == IPPROTO_TCP && option == SO_TCP_TIME_WAIT_LEN) {
     return tcp_getsockopt_int(socket, &socket->time_wait_ms, val, val_len);
   } else if (level == IPPROTO_TCP && option == SO_TCP_RTO) {

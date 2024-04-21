@@ -16,6 +16,7 @@ Import('env AposAddSources')
 
 srcs = [
     'congestion.c',
+    'coverage.c',
     'protocol.c',
     'socket.c',
     'sockmap.c',

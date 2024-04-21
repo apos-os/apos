@@ -28,6 +28,7 @@
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/tcp/congestion.h"
+#include "net/socket/tcp/coverage.h"
 #include "net/socket/tcp/internal.h"
 #include "net/socket/tcp/protocol.h"
 #include "net/socket/tcp/tcp.h"
@@ -12291,4 +12292,8 @@ void tcp_test(void) {
   // Look for sockets that are not attached to an FD but are still open.
   KTEST_BEGIN("TCP: socket leak verification");
   KEXPECT_EQ(initial_sockets, tcp_num_connected_sockets());
+
+  if (TCP_ENABLE_COVERAGE) {
+    tcp_coverage_dump();
+  }
 }
