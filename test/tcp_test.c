@@ -2101,7 +2101,13 @@ static void shutdown_rd_during_connect(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
@@ -2176,7 +2182,9 @@ static void shutdown_wr_during_connect(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
@@ -2199,7 +2207,9 @@ static void shutdown_rdwr_during_connect(void) {
   tcp_test_state_t s;
   init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
 
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
 
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
 
@@ -4382,6 +4392,7 @@ static void read_and_shutdown_test(void) {
 
   KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
   KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
   KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
 
   kthread_enable(op2.thread);
@@ -6772,6 +6783,7 @@ static void active_close1(void) {
   // Should get a FIN.
   EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 501));
   KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
   // Now we're in FIN_WAIT_1.
 
   // Send duplicate ACK.  Should still be in FIN_WAIT_1.
@@ -6803,6 +6815,7 @@ static void active_close1(void) {
   // Now we're in FIN_WAIT_2
   KEXPECT_FALSE(raw_has_packets(&s));
   KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
 
   // We should still be able to receive data.
   SEND_PKT(&s, DATA_PKT(/* seq */ 504, /* ack */ 102, "def"));
@@ -6828,6 +6841,9 @@ static void active_close1(void) {
   // Send FIN to start connection close.
   SEND_PKT(&s, FIN_PKT(/* seq */ 507, /* ack */ 102));
   KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
 
   // Should get an ACK.
   EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 508));
@@ -8666,6 +8682,9 @@ static void basic_listen_test(void) {
   KEXPECT_EQ(0, net_listen(s.socket, 10));
   KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
   KEXPECT_EQ(-EINVAL, net_listen(s.socket, 10));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
   KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
 
   // Should not be able to call connect() on a listening socket.

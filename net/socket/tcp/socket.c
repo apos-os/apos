@@ -1702,6 +1702,13 @@ static void sock_tcp_fd_cleanup(socket_t* socket_base) {
   TCP_DEC_REFCOUNT(socket);
 }
 
+// Returns true if it's possible to shutdown in this state.
+static inline bool can_shutdown(socktcp_state_t state) {
+  return !(state == TCP_CLOSED ||
+           state == TCP_LISTEN ||
+           tcp_state_type(state) == TCPSTATE_POST_ESTABLISHED);
+}
+
 static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
@@ -1716,8 +1723,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
   bool send_datafin = false;
   if (how == SHUT_RD || how == SHUT_RDWR) {
     tcp_coverage_log("shutdown_rd", sock);
-    if (sock->recv_shutdown ||
-        tcp_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
+    if (sock->recv_shutdown || !can_shutdown(sock->state)) {
       kspin_unlock(&sock->spin_mu);
       return -ENOTCONN;
     }
@@ -1729,10 +1735,7 @@ static int sock_tcp_shutdown(socket_t* socket_base, int how) {
 
   if (how == SHUT_WR || how == SHUT_RDWR) {
     tcp_coverage_log("shutdown_wr", sock);
-    if (sock->send_shutdown ||
-        tcp_state_type(sock->state) == TCPSTATE_POST_ESTABLISHED) {
-      // TODO(tcp): check we have tests for hitting this in all states
-      // (including pre-established).
+    if (sock->send_shutdown || !can_shutdown(sock->state)) {
       kspin_unlock(&sock->spin_mu);
       return -ENOTCONN;
     }
