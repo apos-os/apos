@@ -229,10 +229,6 @@ static int get_rto(int socket) {
   return rto_ms;
 }
 
-static int set_cwnd(int socket, int cwnd) {
-  return net_setsockopt(socket, IPPROTO_TCP, SO_TCP_CWND, &cwnd, sizeof(cwnd));
-}
-
 static int get_cwnd(int socket) {
   int cwnd = 0;
   socklen_t len = sizeof(cwnd);
