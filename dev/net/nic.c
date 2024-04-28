@@ -20,12 +20,12 @@
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/list.h"
+#include "common/refcount.h"
+#include "net/eth/arp/arp_cache.h"
+#include "proc/spinlock.h"
 
-// TODO(aoates): use something more flexible (either back to a list, or an
-// arraylist or hashtable based approach).
-#define MAX_NICS 10
-static int g_num_nics = 0;
-static nic_t* g_nics[MAX_NICS];
+static list_t g_nics = LIST_INIT_STATIC;
+static kspinlock_t g_nics_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 
 const char* mac2str(const uint8_t* mac, char* buf) {
   ksprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
@@ -43,11 +43,13 @@ static void find_free_name(nic_t* nic, const char* name_prefix) {
   for (idx = 0; idx < kMaxIndex; ++idx) {
     ksprintf(nic->name, "%s%d", name_prefix, idx);
     bool collision = false;
-    for (int i = 0; i < g_num_nics; ++i) {
-      if (kstrcmp(nic->name, g_nics[i]->name) == 0) {
+    nic_t* iter = nic_first();
+    while (iter) {
+      if (kstrcmp(nic->name, iter->name) == 0) {
         collision = true;
         break;
       }
+      nic_next(&iter);
     }
     if (!collision) {
       break;
@@ -59,6 +61,9 @@ static void find_free_name(nic_t* nic, const char* name_prefix) {
 }
 
 void nic_init(nic_t* nic) {
+  nic->lock = KSPINLOCK_NORMAL_INIT;
+  nic->ref = REFCOUNT_INIT;
+  nic->link = LIST_LINK_INIT;
   kmemset(&nic->name, 0, NIC_MAX_NAME_LEN);
   nic->type = NIC_UNKNOWN;
   kmemset(&nic->mac, 0, NIC_MAC_LEN);
@@ -68,29 +73,86 @@ void nic_init(nic_t* nic) {
     nic->addrs[i].addr.family = AF_UNSPEC;
   }
   arp_cache_init(&nic->arp_cache);
+  nic->deleted = false;
 }
 
 void nic_create(nic_t* nic, const char* name_prefix) {
   char buf[NIC_MAC_PRETTY_LEN];
   find_free_name(nic, name_prefix);
-  KASSERT(g_num_nics < MAX_NICS);
+  kspin_lock(&g_nics_lock);
   klogf("net: added NIC %s with MAC %s\n", nic->name, mac2str(nic->mac, buf));
-  g_nics[g_num_nics++] = nic;
+  list_push(&g_nics, &nic->link);
+  kspin_unlock(&g_nics_lock);
 }
 
-int nic_count(void) {
-  return g_num_nics;
+void nic_delete(nic_t* nic) {
+  KASSERT(!nic->deleted);
+
+  kspin_lock(&g_nics_lock);
+  nic->deleted = true;
+  kspin_unlock(&g_nics_lock);
 }
 
-nic_t* nic_get(int idx) {
-  return (idx >= 0 && idx < g_num_nics) ? g_nics[idx] : NULL;
+static void skip_deleted(nic_t** iter) {
+  KASSERT_DBG(kspin_is_held(&g_nics_lock));
+  while ((*iter) && (*iter)->deleted) {
+    list_link_t* next_link = (*iter)->link.next;
+    *iter = next_link ? container_of(next_link, nic_t, link) : NULL;
+  }
+}
+
+nic_t* nic_first(void) {
+  kspin_lock(&g_nics_lock);
+  nic_t* nic = container_of(g_nics.head, nic_t, link);
+  skip_deleted(&nic);
+  if (nic) {
+    refcount_inc(&nic->ref);
+  }
+  kspin_unlock(&g_nics_lock);
+  return nic;
+}
+
+void nic_next(nic_t** iter) {
+  kspin_lock(&g_nics_lock);
+  list_link_t* next_link = (*iter)->link.next;
+  nic_t* next = next_link ? container_of(next_link, nic_t, link) : NULL;
+  skip_deleted(&next);
+  if (next) {
+    refcount_inc(&next->ref);
+  }
+  kspin_unlock(&g_nics_lock);
+  nic_put(*iter);
+  *iter = next;
 }
 
 nic_t* nic_get_nm(const char* name) {
-  for (int i = 0; i < g_num_nics; ++i) {
-    if (g_nics[i] && kstrcmp(name, g_nics[i]->name) == 0) {
-      return g_nics[i];
+  nic_t* iter = nic_first();
+  while (iter) {
+    if (kstrcmp(name, iter->name) == 0) {
+      return iter;
     }
+    nic_next(&iter);
   }
   return NULL;
+}
+
+void nic_put(nic_t* nic) {
+  // Crude and incorrect safety check to catch refcount leaks.
+  KASSERT(nic->ref.ref < 20);
+
+  bool cleanup = false;
+  if (refcount_dec(&nic->ref) == 0) {
+    kspin_lock(&g_nics_lock);
+    if (nic->deleted) {
+      cleanup = true;
+      list_remove(&g_nics, &nic->link);
+    }
+    kspin_unlock(&g_nics_lock);
+  }
+
+  if (cleanup) {
+    klogf("net: deleting NIC %s\n", nic->name);
+    arp_cache_cleanup(&nic->arp_cache);
+    nic->ops->nic_cleanup(nic);
+  }
 }

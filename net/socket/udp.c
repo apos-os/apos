@@ -37,15 +37,6 @@
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/vfs/vfs.h"
 
-// Pseudo-header for calculating checksums.
-typedef struct {
-  uint32_t src_addr;
-  uint32_t dst_addr;
-  uint8_t zeroes;
-  uint8_t protocol;
-  uint16_t udp_length;
-} __attribute__((packed)) ip4_pseudo_hdr_t;
-
 static const socket_ops_t g_udp_socket_ops;
 
 static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
@@ -66,12 +57,10 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
                          socklen_t address_len);
 
 static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
-  KASSERT(dst_addr->sa_family == AF_INET);
-  // TODO(aoates): make a generic make_any_addr() helper.
+  KASSERT(dst_addr->sa_family == AF_UNSPEC ||
+          dst_addr->sa_family == (addrfam_t)socket->base.s_domain);
   struct sockaddr_in bind_addr;
-  bind_addr.sin_family = AF_INET;
-  bind_addr.sin_addr.s_addr = INADDR_ANY;
-  bind_addr.sin_port = 0;
+  inet_make_anyaddr(socket->base.s_domain, (struct sockaddr*)&bind_addr);
   return sock_udp_bind(&socket->base, (struct sockaddr*)&bind_addr,
                        sizeof(bind_addr));
 }
@@ -132,7 +121,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     pseudo_ip.dst_addr = ip_hdr->dst_addr;
     pseudo_ip.zeroes = 0;
     pseudo_ip.protocol = IPPROTO_UDP;
-    pseudo_ip.udp_length = udp_hdr->len;
+    pseudo_ip.length = udp_hdr->len;
 
     KASSERT_DBG((size_t)pb_ip4_hdr_len(pb) >= sizeof(ip4_hdr_t));
     KASSERT_DBG(pbuf_size(pb) >=
@@ -210,6 +199,7 @@ static void sock_udp_cleanup(socket_t* socket_base) {
   // to ensure the file isn't destroyed while someone is polling it?
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
 }
 
 static int sock_udp_shutdown(socket_t* socket_base, int how) {
@@ -421,14 +411,14 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
   pseudo_ip.dst_addr = ((struct sockaddr_in*)actual_dst)->sin_addr.s_addr;
   pseudo_ip.zeroes = 0;
   pseudo_ip.protocol = IPPROTO_UDP;
-  pseudo_ip.udp_length = udp_hdr->len;
+  pseudo_ip.length = udp_hdr->len;
 
   udp_hdr->checksum =
       ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
   if (udp_hdr->checksum == 0) udp_hdr->checksum = 0xffff;
 
   ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
-  int result = ip_send(pb);
+  int result = ip_send(pb, /* allow_block */ true);
   if (result < 0) {
     return result;
   }
@@ -471,6 +461,21 @@ static int sock_udp_poll(socket_t* socket_base, short event_mask,
   return result;
 }
 
+static int sock_udp_getsockopt(socket_t* socket_base, int level, int option,
+                                void* restrict val,
+                                socklen_t* restrict val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_UDP);
+  return -ENOPROTOOPT;
+}
+
+static int sock_udp_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
+  KASSERT_DBG(socket_base->s_protocol == IPPROTO_UDP);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_cleanup,
   &sock_udp_shutdown,
@@ -484,4 +489,6 @@ static const socket_ops_t g_udp_socket_ops = {
   &sock_udp_getsockname,
   &sock_udp_getpeername,
   &sock_udp_poll,
+  &sock_udp_getsockopt,
+  &sock_udp_setsockopt,
 };

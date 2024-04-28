@@ -50,7 +50,7 @@ typedef struct {
 } apos_stat_32_t;
 _Static_assert(sizeof(apos_stat_32_t) == 64, "apos_stat_32_t wrong size!");
 
-#if ARCH == ARCH_i586
+#if !ARCH_IS_64_BIT
 _Static_assert(sizeof(struct apos_timespec_32) == sizeof(struct apos_timespec),
                "struct apos_timespec_32 wrong size!");
 _Static_assert(sizeof(apos_stat_32_t) == sizeof(apos_stat_t),
@@ -69,7 +69,7 @@ struct ksigaction_32 {
 };
 _Static_assert(sizeof(struct ksigaction_32) == 12,
                "ksigaction_32_t wrong size!");
-#if ARCH == ARCH_i586
+#if !ARCH_IS_64_BIT
 _Static_assert(sizeof(struct ksigaction_32) == sizeof(struct ksigaction),
                "struct ksigaction_32 wrong size!");
 #endif
@@ -85,7 +85,7 @@ typedef struct {
   char d_name[];  // Null-terminated filename
 } kdirent_32_t;
 _Static_assert(sizeof(kdirent_32_t) == 12, "kdirent_32_t wrong size!");
-#if ARCH == ARCH_i586
+#if !ARCH_IS_64_BIT
 _Static_assert(sizeof(kdirent_32_t) == sizeof(kdirent_t),
                "kdirent_32_t wrong size!");
 #endif
@@ -99,7 +99,7 @@ struct apos_rlimit_32 {
 };
 _Static_assert(sizeof(struct apos_rlimit_32) == 8,
                "struct rlimit_32 wrong size!");
-#if ARCH == ARCH_i586
+#if !ARCH_IS_64_BIT
 _Static_assert(sizeof(struct apos_rlimit_32) == sizeof(struct apos_rlimit),
                "struct rlimit_32 wrong size!");
 #endif
@@ -118,5 +118,27 @@ _Static_assert(sizeof(struct ktermios) == 28, "struct ktermios wrong size!");
 _Static_assert(sizeof(struct apos_pollfd) == 8, "struct pollfd wrong size!");
 
 int apos_get_timespec_32(struct apos_timespec_32* ts);
+
+struct apos_timeval32 {
+  /* apos_time_t */ int32_t tv_sec;
+  /* apos_suseconds_t */ int32_t tv_usec;
+};
+_Static_assert(sizeof(struct apos_timeval32) == 8, "apos_timeval32 wrong size");
+#if !ARCH_IS_64_BIT
+_Static_assert(sizeof(struct apos_timeval32) == sizeof(struct apos_timeval),
+               "apos_timeval32 wrong size");
+#endif
+
+// Converters for timeval.
+void timeval_32to64(const struct apos_timeval32* tv32,
+                    struct apos_timeval* tv64);
+int timeval_64to32(const struct apos_timeval* tv64,
+                   struct apos_timeval32* tv32);
+
+// Converts from the current user architecture (but kernel buffers).
+int timeval_from_user(const void* buf, size_t buflen,
+                      struct apos_timeval* tv_out);
+int timeval_to_user(const struct apos_timeval* tv, void* buf_out,
+                    size_t* buflen);
 
 #endif

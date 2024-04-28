@@ -34,18 +34,9 @@ struct file {
 };
 typedef struct file file_t;
 
-// Initialize a file_t with sane values.
-void file_init_file(file_t* f);
-
-// Allocate and free a file.  For now, these just call kmalloc() and kfree(),
-// but we cloud replace them with a better allocator in the future.
-static inline file_t* file_alloc(void) {
-  return (file_t*)kmalloc(sizeof(file_t));
-}
-
-static inline void file_free(file_t* f) {
-  kfree(f);
-}
+// Allocate (and initialize) and free a file.
+file_t* file_alloc(void);
+void file_free(file_t* f);
 
 // A file descriptor.
 typedef struct {

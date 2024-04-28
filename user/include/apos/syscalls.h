@@ -114,5 +114,7 @@
 #define SYS_FUTEX_TS 94
 #define SYS_MOUNT 95
 #define SYS_UNMOUNT 96
+#define SYS_GETSOCKOPT 98
+#define SYS_SETSOCKOPT 99
 
 #endif

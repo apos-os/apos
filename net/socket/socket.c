@@ -15,10 +15,13 @@
 
 #include "common/kassert.h"
 #include "user/include/apos/errors.h"
+#include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/vfs/vfs.h"
 #include "net/socket/raw.h"
+#include "net/socket/sockopt.h"
 #include "net/socket/udp.h"
 #include "net/socket/unix.h"
+#include "net/socket/tcp/tcp.h"
 #include "vfs/anonfs.h"
 #include "vfs/fsid.h"
 #include "vfs/vfs_internal.h"
@@ -58,6 +61,14 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
       } else {
         result = -EPROTONOSUPPORT;
       }
+    } else if (type == SOCK_STREAM) {
+      if (protocol == 0) protocol = IPPROTO_TCP;
+
+      if (protocol == IPPROTO_TCP) {
+        result = sock_tcp_create(domain, type, protocol, out);
+      } else {
+        result = -EPROTONOSUPPORT;
+      }
     } else {
       result = -EPROTOTYPE;
     }
@@ -74,7 +85,6 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
 
 void net_socket_destroy(socket_t* sock) {
   sock->s_ops->cleanup(sock);
-  kfree(sock);
 }
 
 int net_socket(int domain, int type, int protocol) {
@@ -282,6 +292,48 @@ int net_getpeername(int socket, struct sockaddr* address) {
   KASSERT(file->vnode->socket != NULL);
   result =
       file->vnode->socket->s_ops->getpeername(file->vnode->socket, address);
+  file_unref(file);
+  return result;
+}
+
+int net_getsockopt(int socket, int level, int option, void* val,
+                   socklen_t* val_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
+    return -ENOTSOCK;
+  }
+
+  if (level == SOL_SOCKET && option == SO_TYPE) {
+    result = getsockopt_int(val, val_len, file->vnode->socket->s_type);
+    file_unref(file);
+    return result;
+  }
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->getsockopt(file->vnode->socket, level,
+                                                  option, val, val_len);
+  file_unref(file);
+  return result;
+}
+
+int net_setsockopt(int socket, int level, int option, const void* val,
+                   socklen_t val_len) {
+  file_t* file = 0x0;
+  int result = lookup_fd(socket, &file);
+  if (result) return result;
+
+  if (file->vnode->type != VNODE_SOCKET) {
+    file_unref(file);
+    return -ENOTSOCK;
+  }
+
+  KASSERT(file->vnode->socket != NULL);
+  result = file->vnode->socket->s_ops->setsockopt(file->vnode->socket, level,
+                                                  option, val, val_len);
   file_unref(file);
   return result;
 }

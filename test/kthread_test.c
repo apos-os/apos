@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/kassert.h"
+#include "common/refcount.h"
 #include "dev/interrupts.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
@@ -27,6 +28,7 @@
 #include "proc/sleep.h"
 #include "proc/spinlock.h"
 #include "test/ktest.h"
+#include "test/test_params.h"
 
 // Enable this to run a test that catches a deadlock (and panics the kernel).
 #define RUN_DEADLOCK_DETECTION_FALIURE_TEST 0
@@ -923,6 +925,7 @@ static void preemption_test(void) {
 
 typedef struct {
   kmutex_t* mu;
+  kspinlock_t* sp;
   kthread_queue_t* queue;
   bool* val;  // Shared state between the test threads.
   bool who_am_i;  // Different for each test thread.
@@ -981,6 +984,62 @@ static void wait_on_locked_test(void) {
   kmutex_lock(&mu);
   KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_locked(&queue, 30, &mu));
   kmutex_unlock(&mu);
+}
+
+static void* wait_on_spin_locked_test_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  wait_on_locked_test_args* args = (wait_on_locked_test_args*)arg;
+
+  for (int i = 0; i < 3000; ++i) {
+    kspin_lock(args->sp);
+    while (*args->val != args->who_am_i) {
+      scheduler_wait_on_splocked(args->queue, -1, args->sp);
+    }
+    *args->val = !args->who_am_i;
+    scheduler_wake_all(args->queue);
+    kspin_unlock(args->sp);
+  }
+  return NULL;
+}
+
+static void wait_on_spin_locked_test(void) {
+  KTEST_BEGIN("scheduler_wait_on_splocked test");
+
+  kthread_t threadA, threadB;
+  kspinlock_t sp = KSPINLOCK_NORMAL_INIT;
+  kthread_queue_t queue;
+  bool shared_val = false;
+
+  wait_on_locked_test_args argsA, argsB;
+  argsA.sp = &sp;
+  argsA.queue = &queue;
+  argsA.val = &shared_val;
+  argsA.who_am_i = false;
+  argsB = argsA;
+  argsB.who_am_i = true;
+
+  kthread_queue_init(&queue);
+  KEXPECT_EQ(
+      0, kthread_create(&threadA, &wait_on_spin_locked_test_thread, &argsA));
+  KEXPECT_EQ(
+      0, kthread_create(&threadB, &wait_on_spin_locked_test_thread, &argsB));
+  scheduler_make_runnable(threadA);
+  scheduler_make_runnable(threadB);
+
+  kthread_join(threadA);
+  kthread_join(threadB);
+
+  KTEST_BEGIN("scheduler_wait_on_splocked interruptable test");
+  proc_alarm_ms(50);
+  kspin_lock(&sp);
+  KEXPECT_EQ(SWAIT_INTERRUPTED, scheduler_wait_on_splocked(&queue, -1, &sp));
+  proc_suppress_signal(proc_current(), SIGALRM);
+  kspin_unlock(&sp);
+
+  KTEST_BEGIN("scheduler_wait_on_locked timeout test");
+  kspin_lock(&sp);
+  KEXPECT_EQ(SWAIT_TIMEOUT, scheduler_wait_on_splocked(&queue, 30, &sp));
+  kspin_unlock(&sp);
 }
 
 typedef struct {
@@ -1324,6 +1383,77 @@ static void creation_interrupts_test(void) {
   DEFINT_POP();
 }
 
+typedef struct {
+  refcount_t ref;
+  kspinlock_t spin;
+  int deletes;
+} refcount_test_args_t;
+
+static void refcount_test_defint(void* arg) {
+  refcount_test_args_t* args = (refcount_test_args_t*)arg;
+  if (refcount_dec(&args->ref) == 0) {
+    kspin_lock(&args->spin);
+    args->deletes++;
+    kspin_unlock(&args->spin);
+  }
+}
+
+static void* refcount_test_thread(void* arg) {
+  sched_enable_preemption_for_test();
+  const int kNumIters = 3000 * CONCURRENCY_TEST_ITERS_MULT;
+
+  refcount_test_args_t* args = (refcount_test_args_t*)arg;
+  for (int i = 0; i < kNumIters; ++i) {
+    refcount_inc(&args->ref);
+    KASSERT(refcount_dec(&args->ref) > 0);
+    if (i % 100 == 0) {
+      refcount_inc(&args->ref);
+      defint_schedule(refcount_test_defint, arg);
+    }
+    if (i % 1000 == 0) {
+      ksleep(10);
+    }
+  }
+
+  if (refcount_dec(&args->ref) == 0) {
+    kspin_lock(&args->spin);
+    args->deletes++;
+    kspin_unlock(&args->spin);
+  }
+  return NULL;
+}
+
+static refcount_t static_ref_test = REFCOUNT_INIT;
+
+static void refcount_test(void) {
+  KTEST_BEGIN("refcount_t static init test");
+  refcount_inc(&static_ref_test);
+  KEXPECT_EQ(1, refcount_dec(&static_ref_test));
+
+  KTEST_BEGIN("refcount_t test");
+  const int kNumThreads = 10 * CONCURRENCY_TEST_THREADS_MULT;
+  kthread_t threads[kNumThreads];
+  refcount_test_args_t args;
+  args.ref = REFCOUNT_INIT;
+  args.spin = KSPINLOCK_NORMAL_INIT;
+  args.deletes = 0;
+
+  for (int i = 0; i < kNumThreads; ++i) {
+    refcount_inc(&args.ref);
+    KEXPECT_EQ(0, kthread_create(&threads[i], &refcount_test_thread, &args));
+  }
+
+  KASSERT(refcount_dec(&args.ref) > 0);
+  for (int i = 0; i < kNumThreads; ++i) {
+    scheduler_make_runnable(threads[i]);
+  }
+  for (int i = 0; i < kNumThreads; ++i) {
+    kthread_join(threads[i]);
+  }
+  KEXPECT_EQ(0, args.ref.ref);
+  KEXPECT_EQ(1, args.deletes);
+}
+
 // TODO(aoates): add some more involved kmutex tests.
 
 void kthread_test(void) {
@@ -1347,10 +1477,12 @@ void kthread_test(void) {
   ksleep_test();
   preemption_test();
   wait_on_locked_test();
+  wait_on_spin_locked_test();
   disable_test();
   notification_test();
 #if ENABLE_KMUTEX_DEADLOCK_DETECTION
   deadlock_detection_test();
 #endif
   creation_interrupts_test();
+  refcount_test();
 }

@@ -128,7 +128,6 @@ static void sock_unix_cleanup(socket_t* socket_base) {
       socket_unix_t* incoming_socket =
           container_of(peer_link, socket_unix_t, connecting_link);
       sock_unix_cleanup((socket_t*)incoming_socket);
-      kfree(incoming_socket);
     }
   }
   if (socket->readbuf_raw) {
@@ -143,6 +142,7 @@ static void sock_unix_cleanup(socket_t* socket_base) {
   // Our socket is about to disappear.  Tell any pending poll()s as much.
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
 }
 
 static int sock_unix_shutdown(socket_t* socket_base, int how) {
@@ -491,6 +491,18 @@ static int sock_unix_poll(socket_t* socket_base, short event_mask,
   return poll_add_event(poll, &socket->poll_event, event_mask);
 }
 
+static int sock_unix_getsockopt(socket_t* socket_base, int level, int option,
+                                void* val, socklen_t* val_len) {
+  KASSERT_DBG(socket_base->s_domain == AF_UNIX);
+  return -ENOPROTOOPT;
+}
+
+static int sock_unix_setsockopt(socket_t* socket_base, int level, int option,
+                                const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_domain == AF_UNIX);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_cleanup,
   &sock_unix_shutdown,
@@ -504,4 +516,6 @@ static const socket_ops_t g_unix_socket_ops = {
   &sock_unix_getsockname,
   &sock_unix_getpeername,
   &sock_unix_poll,
+  &sock_unix_getsockopt,
+  &sock_unix_setsockopt,
 };

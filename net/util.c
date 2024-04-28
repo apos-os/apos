@@ -18,13 +18,23 @@
 
 #include "common/endian.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "user/include/apos/net/socket/unix.h"
 
 char* inet2str(in_addr_t addr, char* buf) {
   const uint8_t* bytes = (uint8_t*)&addr;
   ksprintf(buf, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);
   return buf;
+}
+
+struct sockaddr_in str2sin(const char* ip, int port) {
+  struct sockaddr_in saddr;
+  saddr.sin_family = AF_INET;
+  saddr.sin_addr.s_addr = str2inet(ip);
+  saddr.sin_port = htob16(port);
+  return saddr;
 }
 
 static bool atol_internal(const char** s, long* out) {
@@ -64,6 +74,38 @@ in_addr_t str2inet(const char* s) {
   in_addr_t addr;
   kmemcpy(&addr, bytes, 4);
   return addr;
+}
+
+char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
+                   char* buf) {
+  switch (saddr->sa_family) {
+    case AF_INET:
+      if (saddr_len < (socklen_t)sizeof(struct sockaddr_in)) {
+        ksprintf(buf, "<bad AF_INET addr>");
+      } else {
+        const struct sockaddr_in* sin = (const struct sockaddr_in*)saddr;
+        const uint8_t* bytes = (const uint8_t*)&sin->sin_addr.s_addr;
+        ksprintf(buf, "%d.%d.%d.%d:%d", bytes[0], bytes[1], bytes[2], bytes[3],
+                 btoh16(sin->sin_port));
+      }
+      break;
+
+    case AF_UNIX:
+      if (saddr_len < (socklen_t)sizeof(struct sockaddr_un) ||
+          kstrnlen(((const struct sockaddr_un*)saddr)->sun_path,
+                   sizeof((const struct sockaddr_un*)saddr)->sun_path) == -1) {
+        ksprintf(buf, "<bad AF_UNIX addr>");
+      } else {
+        const struct sockaddr_un* sun = (const struct sockaddr_un*)saddr;
+        kstrcpy(buf, sun->sun_path);
+      }
+      break;
+
+    default:
+      ksprintf(buf, "<bad sockaddr>");
+      break;
+  }
+  return buf;
 }
 
 int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
@@ -117,4 +159,52 @@ int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
   }
 
   return -EAFNOSUPPORT;
+}
+
+in_port_t get_sockaddr_port(const struct sockaddr* addr, socklen_t addr_len) {
+  // We take the addr_len just to double check it rather than risk buffer
+  // overflow --- this should only be called with buffers that are known to be
+  // big enough.
+  KASSERT(addr->sa_family == AF_INET);
+  KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in));
+  const struct sockaddr_in* sin = (const struct sockaddr_in*)addr;
+  return btoh16(sin->sin_port);
+}
+
+void set_sockaddr_port(struct sockaddr* addr, socklen_t addr_len,
+                       in_port_t port) {
+  KASSERT(addr->sa_family == AF_INET);
+  KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in));
+  struct sockaddr_in* sin = (struct sockaddr_in*)addr;
+  sin->sin_port = btoh16(port);
+}
+
+in_port_t get_sockaddrs_port(const struct sockaddr_storage* addr) {
+  return get_sockaddr_port((const struct sockaddr*)addr,
+                           sizeof(struct sockaddr_storage));
+}
+
+void set_sockaddrs_port(struct sockaddr_storage* addr, in_port_t port) {
+  return set_sockaddr_port((struct sockaddr*)addr,
+                           sizeof(struct sockaddr_storage), port);
+}
+
+void inet_make_anyaddr(int af, struct sockaddr* addr) {
+  KASSERT(af == AF_INET);
+  struct sockaddr_in* in_addr = (struct sockaddr_in*)addr;
+  in_addr->sin_family = AF_INET;
+  in_addr->sin_addr.s_addr = INADDR_ANY;
+  in_addr->sin_port = 0;
+}
+
+bool inet_is_anyaddr(const struct sockaddr* addr) {
+  KASSERT(addr->sa_family == AF_INET || addr->sa_family == AF_UNIX ||
+          addr->sa_family == AF_UNSPEC);
+
+  if (addr->sa_family == AF_INET) {
+    const struct sockaddr_in* sin = (const struct sockaddr_in*)addr;
+    return sin->sin_addr.s_addr == INADDR_ANY;
+  }
+
+  return false;
 }

@@ -24,6 +24,7 @@
 #include "net/eth/arp/arp_cache_ops.h"
 #include "net/eth/eth.h"
 #include "net/util.h"
+#include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -77,9 +78,11 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
   KLOG(DEBUG2, "ARP: got request for IP %s on %s\n",
        inet2str(target_addr, inetbuf), nic->name);
 
+  kspin_lock(&nic->lock);
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
     if (nic->addrs[addr_idx].addr.family == AF_INET) {
       if (nic->addrs[addr_idx].addr.a.ip4.s_addr == target_addr) {
+        kspin_unlock(&nic->lock);
         KLOG(DEBUG, "ARP: found NIC %s with matching IP (%s)\n", nic->name,
              inet2str(target_addr, inetbuf));
 
@@ -103,6 +106,7 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
       }
     }
   }
+  kspin_unlock(&nic->lock);
 }
 
 static void arp_handle_reply(nic_t* nic, const arp_packet_t* packet) {
@@ -153,6 +157,7 @@ void arp_rx(nic_t* nic, pbuf_t* pb) {
 }
 
 void arp_send_request(nic_t* nic, in_addr_t addr) {
+  KASSERT_DBG(kspin_is_held(&nic->lock));
   char inetbuf[INET_PRETTY_LEN];
   KLOG(DEBUG, "ARP: sending request for %s on %s\n", inet2str(addr, inetbuf),
        nic->name);

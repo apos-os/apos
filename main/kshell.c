@@ -422,21 +422,29 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
   const size_t kBufSize = 100;
   char buf[kBufSize];
   bool listen = false;
+  int sock_type = SOCK_STREAM;
   const char* addr_str = NULL;
   const char* port_str = NULL;
   argc--;
   argv++;
 
-  if (argc == 0) {
-    addr_str = "10.0.2.2";
-    port_str = "5556";
-  }
-
-  if (argc > 0 && kstrcmp(argv[0], "-l") == 0) {
-    listen = 1;
-    addr_str = "0.0.0.0";  // Default.
+  while (argc > 0 && argv[0][0] == '-') {
+    if (kstrcmp(argv[0], "-l") == 0) {
+      listen = 1;
+      addr_str = "0.0.0.0";  // Default.
+    } else if (kstrcmp(argv[0], "-u") == 0) {
+      sock_type = SOCK_DGRAM;
+    } else {
+      ksh_printf("unknown flag '%s'\n", argv[0]);
+      return;
+    }
     argc--;
     argv++;
+  }
+
+  if (argc == 0 && !listen) {
+    addr_str = "10.0.2.2";
+    port_str = "5556";
   }
 
   if (argc >= 2) {
@@ -451,11 +459,11 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
 
   if (argc > 0 || !addr_str || !port_str) {
-    ksh_printf("usage: _nc [-l] [host] <port>\n");
+    ksh_printf("usage: _nc [-l] [-u] [host] <port>\n");
     return;
   }
 
-  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  int sock = net_socket(AF_INET, sock_type, 0);
   if (sock < 0) {
     ksh_printf("error: couldn't create socket: %s\n", errorname(-sock));
     return;
@@ -480,6 +488,21 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
     }
   }
 
+  if (sock_type == SOCK_STREAM && listen) {
+    result = net_listen(sock, 1);
+    if (result < 0) {
+      ksh_printf("error: unable to listen(): %s\n", errorname(-result));
+      goto done;
+    }
+    result = net_accept(sock, NULL, NULL);
+    if (result < 0) {
+      ksh_printf("error: unable to accept(): %s\n", errorname(-result));
+      goto done;
+    }
+    vfs_close(sock);
+    sock = result;
+  }
+
   struct apos_pollfd pfds[2];
   pfds[0].fd = 0;
   pfds[0].events = KPOLLIN;
@@ -495,7 +518,7 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
       result = vfs_read(0, buf, kBufSize);
       if (result == 0) break;
       KASSERT(result > 0);
-      if (!listen) {
+      if (sock_type == SOCK_STREAM || !listen) {
         KASSERT(result == vfs_write(sock, buf, result));
       }
     }

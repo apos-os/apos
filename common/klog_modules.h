@@ -34,17 +34,23 @@ typedef enum {
 
   // Device modules.
   KL_PCI,
-  KL_NET,
   KL_NVME,
   KL_USB,
   KL_USB_HUB,
   KL_USB_UHCI,
   KL_TTY,
 
+  // Networking modules.
+  KL_NET,
+  KL_TCP,
+
   KL_TEST,
   KL_USER,  // From userspace.
 
   KL_MODULE_MAX,
 } klog_module_t;
+
+// Return the string form of the klog module (e.g. KL_PCI -> "PCI").
+const char* klog_module_name(klog_module_t m);
 
 #endif

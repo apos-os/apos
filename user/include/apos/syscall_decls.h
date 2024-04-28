@@ -119,5 +119,9 @@ int futex_ts(uint32_t* uaddr, int op, uint32_t val,
 int mount(const char* source, const char* mount_path, const char* type,
           unsigned long flags, const void* data, size_t data_len);
 int unmount(const char* mount_path, unsigned long flags);
+int getsockopt(int socket, int level, int option, void* val,
+               socklen_t* val_len);
+int setsockopt(int socket, int level, int option, const void* val,
+               socklen_t val_len);
 
 #endif

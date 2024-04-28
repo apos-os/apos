@@ -33,6 +33,18 @@ struct _APOS_TIMESPEC {
 };
 #undef _APOS_TIMESPEC
 
+#if __APOS_BUILDING_KERNEL__
+#  define _APOS_TIMEVAL apos_timeval
+#else
+#  define _APOS_TIMEVAL timeval
+#  define apos_timeval timeval
+#endif
+struct _APOS_TIMEVAL {
+  apos_time_t tv_sec;
+  apos_suseconds_t tv_usec;
+};
+#undef _APOS_TIMEVAL
+
 // Similar to POSIX struct tm.
 struct apos_tm {
   int tm_sec;

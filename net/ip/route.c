@@ -17,6 +17,7 @@
 #include "common/endian.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/refcount.h"
 #include "dev/net/nic.h"
 
 typedef struct {
@@ -34,69 +35,16 @@ typedef struct {
 // TODO(aoates): support multiple default routes (e.g. ipv4 and ipv6).
 static ip_route_rule_t g_default_route;
 
-static in_addr_t kNetMasks[33] = {
-  0x00000000,
-  0x80000000,
-  0xc0000000,
-  0xe0000000,
-  0xf0000000,
-  0xf8000000,
-  0xfc000000,
-  0xfe000000,
-  0xff000000,
-  0xff800000,
-  0xffc00000,
-  0xffe00000,
-  0xfff00000,
-  0xfff80000,
-  0xfffc0000,
-  0xfffe0000,
-  0xffff0000,
-  0xffff8000,
-  0xffffc000,
-  0xffffe000,
-  0xfffff000,
-  0xfffff800,
-  0xfffffc00,
-  0xfffffe00,
-  0xffffff00,
-  0xffffff80,
-  0xffffffc0,
-  0xffffffe0,
-  0xfffffff0,
-  0xfffffff8,
-  0xfffffffc,
-  0xfffffffe,
-  0xffffffff,
-};
-
-static bool netmatch(const netaddr_t* addr, const network_t* network) {
-  if (addr->family != network->addr.family) {
-    return false;
-  }
-  switch (addr->family) {
-    case ADDR_INET: {
-      KASSERT_DBG(network->prefix_len <= 32 && network->prefix_len >= 0);
-      const in_addr_t mask = htob32(kNetMasks[network->prefix_len]);
-      return (addr->a.ip4.s_addr & mask) == (network->addr.a.ip4.s_addr & mask);
-    }
-
-    case ADDR_UNSPEC:
-      break;
-  }
-
-  // Unknown address type.
-  return false;
-}
-
 // TODO(aoates): write some tests for this.
 bool ip_route(netaddr_t dst, ip_routed_t* result) {
   // First try to find a NIC with a matching network.
   // N.B.(aoates): this isn't totally proper routing logic, but good enough for
   // now.
   int longest_prefix = 0;
-  for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
-    nic_t* nic = nic_get(nicidx);
+  nic_t* nic = nic_first();
+  result->nic = NULL;
+  while (nic) {
+    kspin_lock(&nic->lock);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
                               nic->addrs[addridx].addr.family != AF_UNSPEC;
          addridx++) {
@@ -106,15 +54,23 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
         result->nic = nic_get_nm("lo0");
         result->nexthop = dst;
         result->src = nic->addrs[addridx].addr;
+        kspin_unlock(&nic->lock);
+        nic_put(nic);
         return (result->nic != NULL);
       }
       if (nic->addrs[addridx].prefix_len > longest_prefix &&
-          netmatch(&dst, &nic->addrs[addridx])) {
+          netaddr_match(&dst, &nic->addrs[addridx])) {
+        if (result->nic) {
+          nic_put(result->nic);
+        }
+        refcount_inc(&nic->ref);
         result->nic = nic;
         result->src = nic->addrs[addridx].addr;
         longest_prefix = nic->addrs[addridx].prefix_len;
       }
     }
+    kspin_unlock(&nic->lock);
+    nic_next(&nic);
   }
   if (longest_prefix > 0) {
     result->nexthop = dst;
@@ -122,22 +78,27 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   }
 
   // No match, use the default route if we can.
+  KASSERT_DBG(result->nic == NULL);
   if (g_default_route.nexthop.family == dst.family) {
     result->nexthop = g_default_route.nexthop;
     result->nic = nic_get_nm(g_default_route.nic_name);
     if (result->nic) {
       result->src.family = ADDR_UNSPEC;
+      kspin_lock(&result->nic->lock);
       for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
         if (result->nic->addrs[i].addr.family == dst.family) {
           result->src = result->nic->addrs[0].addr;
           break;
         }
       }
+      kspin_unlock(&result->nic->lock);
       if (result->src.family == ADDR_UNSPEC) {
         klogfm(KL_NET, WARNING,
                "unable to route packet with address family %d to default route "
                "NIC %s\n",
                dst.family, result->nic->name);
+        nic_put(result->nic);
+        result->nic = NULL;
         return false;
       }
     }

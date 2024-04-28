@@ -23,9 +23,12 @@ typedef struct {
 
   // The device tree if present, or NULL.
   const dt_tree_t* dtree;
+
+  // Tokenized command line string, NULL-terminated.
+  const char** cmd_line;
 } boot_info_t;
 
-void kmain(const boot_info_t* boot);
+void kmain(boot_info_t* boot, const char* cmdline);
 
 const boot_info_t* get_boot_info(void);
 

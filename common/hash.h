@@ -66,6 +66,15 @@ static inline uint32_t fnv_hash_array(const void* buf, int len) {
   return h;
 }
 
+static inline uint32_t fnv_hash_string(const char* s) {
+  uint32_t h = kFNVOffsetBasis;
+  while (*s) {
+    h ^= *s++;
+    h *= kFNVPrime;
+  }
+  return h;
+}
+
 static inline uint32_t fnv_hash_concat(uint32_t a, uint32_t b) {
   uint32_t buf[2];
   buf[0] = a;

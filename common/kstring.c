@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "common/kstring.h"
+#include "common/math.h"
 
 #include <stdint.h>
 
@@ -146,10 +147,6 @@ size_t kstrlcat(char* dst, const char* src, size_t dst_size) {
   }
   // Return length of string we would have copied given room.
   return copied;
-}
-
-static unsigned long abs(long x) {
-  return x < 0 ? -x : x;
 }
 
 const char* kitoa(long x) {

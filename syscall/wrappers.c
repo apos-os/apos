@@ -19,6 +19,7 @@
 #include "memory/mmap.h"
 #include "proc/exec.h"
 #include "proc/process.h"
+#include "syscall/dmz-internal.h"
 #include "syscall/dmz.h"
 #include "syscall/wrappers.h"
 
@@ -46,7 +47,7 @@ int accept_wrapper(int socket, struct sockaddr* addr, socklen_t* addr_len) {
   // Everything is checked but the 'addr' argument.  Do that now.
   struct sockaddr* KERNEL_addr = 0x0;
 
-  if (addr_len != NULL && (size_t)(*addr_len) > UINT32_MAX / 2) {
+  if (addr_len != NULL && (size_t)(*addr_len) > DMZ_MAX_BUFSIZE) {
     return -EINVAL;
   }
 
@@ -75,7 +76,7 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
                          struct sockaddr* address, socklen_t* address_len) {
   struct sockaddr* KERNEL_address = 0x0;
 
-  if (address_len != NULL && (size_t)(*address_len) > UINT32_MAX / 2) {
+  if (address_len != NULL && (size_t)(*address_len) > DMZ_MAX_BUFSIZE) {
     return -EINVAL;
   }
 
@@ -96,6 +97,37 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
     result = syscall_copy_to_user(KERNEL_address, address, *address_len);
   }
   if (KERNEL_address) kfree((void*)KERNEL_address);
+
+  return result;
+}
+
+int getsockopt_wrapper(int socket, int level, int option, void* val,
+                       socklen_t* val_len) {
+  // Everything is checked but the `val` buffer.
+  void* KERNEL_val = 0x0;
+
+  if ((size_t)(*val_len) > DMZ_MAX_BUFSIZE) return -EINVAL;
+
+  KERNEL_val = (void*)kmalloc(*val_len);
+
+  if (!KERNEL_val) {
+    return -ENOMEM;
+  }
+
+  int result;
+  result = net_getsockopt(socket, level, option, KERNEL_val, val_len);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+  int copy_result = syscall_copy_to_user(KERNEL_val, val, *val_len);
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
+  }
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_val) kfree((void*)KERNEL_val);
 
   return result;
 }

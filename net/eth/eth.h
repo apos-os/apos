@@ -35,7 +35,11 @@ _Static_assert(sizeof(eth_hdr_t) == 14, "wrong eth_hdr_t size");
 // equivalent) lookup to find the link-layer address.  May block.
 //
 // The packet should NOT have an ethernet frame header on it already.
-int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol);
+//
+// If allow_blocking is false, then the request may fail with EWOULDBLOCK if the
+// ARP cache doesn't have an appropriate entry.
+int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
+             bool allow_blocking);
 
 // Handle and dispatch an inbound packet.  Takes ownership of the buffer.
 void eth_recv(nic_t* nic, pbuf_t* pb);

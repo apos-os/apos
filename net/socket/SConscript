@@ -18,11 +18,12 @@ srcs = [
     'raw.c',
     'socket.c',
     'sockmap.c',
+    'sockopt.c',
     'udp.c',
     'unix.c',
 ]
 
-subdirs = []
+subdirs = ['tcp']
 
 objects = AposAddSources(env, srcs, subdirs)
 Return('objects')

@@ -15,20 +15,10 @@
 #include "net/bind.h"
 
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "dev/net/nic.h"
-
-static bool addr_eq(const netaddr_t* a, const netaddr_t* b) {
-  if (a->family != b->family) return false;
-  switch (a->family) {
-    case ADDR_INET:
-      return a->a.ip4.s_addr == b->a.ip4.s_addr;
-
-    case ADDR_UNSPEC:
-      break;
-  }
-
-  return false;
-}
+#include "net/addr.h"
+#include "proc/spinlock.h"
 
 int inet_bindable(const netaddr_t* addr) {
   switch (addr->family) {
@@ -39,26 +29,53 @@ int inet_bindable(const netaddr_t* addr) {
     case AF_UNSPEC:
       break;  // Will error out.
   }
-  for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
-    nic_t* nic = nic_get(nicidx);
-    for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-      if (addr_eq(&nic->addrs[addridx].addr, addr)) {
-        return 0;
-      }
+  nic_t* nic = nic_first();
+  while (nic) {
+    if (inet_source_valid(addr, nic) == 0) {
+      nic_put(nic);
+      return 0;
+    }
+    nic_next(&nic);
+  }
+
+  return -EADDRNOTAVAIL;
+}
+
+int inet_source_valid(const netaddr_t* addr, nic_t* nic) {
+  kspin_lock(&nic->lock);
+  for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
+    if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
+      kspin_unlock(&nic->lock);
+      return 0;
+    }
+
+    // As a special case, for loopback interfaces, allow binding to any
+    // address in the configured network.
+    if (nic->type == NIC_LOOPBACK &&
+        netaddr_match(addr, &nic->addrs[addridx])) {
+      kspin_unlock(&nic->lock);
+      return 0;
     }
   }
+
+  kspin_unlock(&nic->lock);
   return -EADDRNOTAVAIL;
 }
 
 int inet_choose_bind(addrfam_t family, netaddr_t* addr_out) {
-  for (int nicidx = 0; nicidx < nic_count(); ++nicidx) {
-    nic_t* nic = nic_get(nicidx);
+  nic_t* nic = nic_first();
+  while (nic) {
+    kspin_lock(&nic->lock);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
       if (nic->addrs[addridx].addr.family == family) {
         *addr_out = nic->addrs[addridx].addr;
-        return nicidx;
+        kspin_unlock(&nic->lock);
+        nic_put(nic);
+        return 0;
       }
     }
+    kspin_unlock(&nic->lock);
+    nic_next(&nic);
   }
   return -EAFNOSUPPORT;
 }

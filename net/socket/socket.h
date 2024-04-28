@@ -77,6 +77,12 @@ struct socket_ops {
 
   // Called from poll() to handle polls of sockets.
   int (*poll)(socket_t* socket, short event_mask, poll_state_t* poll);
+
+  // Get and set socket options.
+  int (*getsockopt)(socket_t* socket, int level, int option, void* restrict val,
+                    socklen_t* restrict val_len);
+  int (*setsockopt)(socket_t* socket, int level, int option, const void* val,
+                    socklen_t val_len);
 };
 
 // Creates a new unbound socket, per the POSIX socket() function.
@@ -122,5 +128,12 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
 // sockaddr_storage) bytes).
 int net_getsockname(int socket, struct sockaddr* address);
 int net_getpeername(int socket, struct sockaddr* address);
+
+// Get and set socket options.
+// TODO(aoates): implement a generic blackbox-value system for syscalls.
+int net_getsockopt(int socket, int level, int option, void* restrict val,
+                   socklen_t* restrict val_len);
+int net_setsockopt(int socket, int level, int option, const void* val,
+                   socklen_t val_len);
 
 #endif

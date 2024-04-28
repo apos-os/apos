@@ -43,7 +43,17 @@ struct sockaddr_storage {
 #define SHUT_RDWR 2  // Disables further send and receive operations.
 #define SHUT_WR 3    // Disables further send operations.
 
-// TODO(aoates): define socket option constants.
+// Socket options.
+#define SOL_SOCKET 0xffff
+#define SO_TYPE 1
+#define SO_RCVBUF 2
+#define SO_SNDBUF 3
+#define SO_RCVTIMEO 4
+#define SO_SNDTIMEO 5
+#define SO_CONNECTTIMEO 6  // Non-standard.
+#define SO_ERROR 7
+#define SO_REUSEADDR 8
+
 // TODO(aoates): this is supposed to define size_t and ssize_t.
 
 #define SOMAXCONN 128

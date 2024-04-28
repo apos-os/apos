@@ -43,6 +43,7 @@ loader:
     # Pass the memory_info_t* returned by mem_init to kinit.  kinit is linked
     # in the virtual address space, and will undo the identity-mapping of the
     # first 4MB set up by mem_init.  It will then call kmain.
+    pushl mbd
     pushl %eax
     call  kinit
 

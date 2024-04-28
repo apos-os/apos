@@ -336,6 +336,56 @@ static void connect_test(void) {
   vfs_close(sock);
 
 
+  KTEST_BEGIN("connect(SOCK_DGRAM): connect to bad address (unbound)");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  dst_addr.sin_family = AF_UNIX;
+  dst_addr.sin_addr.s_addr = str2inet("1.2.3.4");
+  dst_addr.sin_port = 1234;
+
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+
+  // We should not have bound during the connect() (probably OK if we did, but
+  // test current behavior).
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_UNSPEC, result_addr->sin_family);
+
+  vfs_close(sock);
+
+  // Test too-short address.
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  dst_addr.sin_family = AF_INET;
+  KEXPECT_EQ(-EDESTADDRREQ, net_connect(sock, (struct sockaddr*)&dst_addr,
+                                        sizeof(dst_addr) - 5));
+
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  vfs_close(sock);
+
+
+  KTEST_BEGIN("connect(SOCK_DGRAM): connect to NULL address (unbound)");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  dst_addr.sin_family = AF_UNSPEC;
+  // Note: this "disconnects" even though it's not connected.  Should this call
+  // succeed?  The behavior of succeeding when connecting to AF_UNSPEC is weird.
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(-ENOTCONN,
+             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+
+  // We SHOULD have bound during the connect() (probably OK if we didn't, but
+  // test current behavior).
+  KEXPECT_EQ(0, net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+
+  vfs_close(sock);
+
+
   KTEST_BEGIN("connect(SOCK_DGRAM): connect bound socket");
   sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(sock, 0);
@@ -364,6 +414,50 @@ static void connect_test(void) {
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("1.2.3.4", inet2str(result_addr->sin_addr.s_addr, prettybuf));
   KEXPECT_EQ(1234, result_addr->sin_port);
+  vfs_close(sock);
+
+
+  KTEST_BEGIN(
+      "connect(SOCK_DGRAM): connect to bad address (bound, unconnected)");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&src_addr, sizeof(src_addr)));
+
+  dst_addr.sin_family = AF_UNIX;
+  dst_addr.sin_addr.s_addr = str2inet("1.2.3.4");
+  dst_addr.sin_port = 1234;
+
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  vfs_close(sock);
+
+
+  // Test too-short address.
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&src_addr, sizeof(src_addr)));
+  dst_addr.sin_family = AF_INET;
+  KEXPECT_EQ(-EDESTADDRREQ, net_connect(sock, (struct sockaddr*)&dst_addr,
+                                        sizeof(dst_addr) - 5));
+
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  vfs_close(sock);
+
+
+  KTEST_BEGIN("connect(SOCK_DGRAM): connect to NULL address (bound, unconnected)");
+  sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&src_addr, sizeof(src_addr)));
+  dst_addr.sin_family = AF_UNSPEC;
+  // As above, this is a "no-op" disconnect.
+  KEXPECT_EQ(0,
+             net_connect(sock, (struct sockaddr*)&dst_addr, sizeof(dst_addr)));
+
+  KEXPECT_EQ(-ENOTCONN,
+             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+
   vfs_close(sock);
 }
 
@@ -884,6 +978,65 @@ static void shutdown_test(void) {
   KEXPECT_EQ(0, vfs_close(sock));
 }
 
+static void sockopt_test(void) {
+  KTEST_BEGIN("UDP socket: getsockopt");
+  int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int val[2];
+  socklen_t vallen = sizeof(int) * 2;
+  KEXPECT_EQ(0, net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  KEXPECT_EQ(sizeof(int), vallen);
+  KEXPECT_EQ(SOCK_DGRAM, val[0]);
+
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("UDP socket: getsockopt(SO_TYPE) option too small");
+  vallen = 3;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = 0;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = -1;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = INT_MIN;
+  KEXPECT_EQ(-ENOMEM,
+             net_getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &vallen));
+  vallen = sizeof(int) * 2;
+
+  KTEST_BEGIN("UDP socket: setsockopt");
+  KEXPECT_EQ(-ENOPROTOOPT,
+             net_setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], vallen));
+
+  KTEST_BEGIN("getsockopt(): not a socket");
+  int fd = vfs_open("/", VFS_O_DIRECTORY);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(-ENOTSOCK,
+             net_getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("setsockopt(): not a socket");
+  KEXPECT_EQ(-ENOTSOCK,
+             net_setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &val[0], vallen));
+
+  KTEST_BEGIN("getsockopt(): bad FD");
+  KEXPECT_EQ(-EBADF,
+             net_getsockopt(-1, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+  KEXPECT_EQ(-EBADF,
+             net_getsockopt(1000, SOL_SOCKET, SO_RCVBUF, &val[0], &vallen));
+
+  KTEST_BEGIN("setsockopt(): bad FD");
+  KEXPECT_EQ(-EBADF,
+             net_setsockopt(-1, SOL_SOCKET, SO_RCVBUF, &val[0], vallen));
+  KEXPECT_EQ(-EBADF,
+             net_setsockopt(1000, SOL_SOCKET, SO_RCVBUF, &val[0], vallen));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+  KEXPECT_EQ(0, vfs_close(fd));
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
@@ -898,6 +1051,7 @@ void socket_udp_test(void) {
   recvfrom_test();
   recv_poll_test();
   shutdown_test();
+  sockopt_test();
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

@@ -27,7 +27,7 @@
 // Transmits the packet on the NIC, dispatching to the appropriate L2 stack.
 // Returns 0 on success, or -error.
 int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
-                  ethertype_t protocol);
+                  ethertype_t protocol, bool allow_block);
 
 // Handles a packet recieved by a particular link layer stack.
 void net_link_recv(nic_t* nic, pbuf_t* pb, ethertype_t protocol);

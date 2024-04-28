@@ -22,6 +22,7 @@
 #include "common/math.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "test/test_point.h"
 
 #if ENABLE_TERM_COLOR
 # define FAILED "\x1b[1;31m[FAILED]\x1b[0m"
@@ -109,20 +110,24 @@ void KTEST_BEGIN(const char* name) {
   num_tests++;
 }
 
-void kexpect(int cond, const char* name, const char* astr,
+static void do_failure(void) {
+  if (current_test_passing) {
+    klogm(KL_TEST, INFO, "\nTEST: ");
+    klogm(KL_TEST, INFO, current_test_name);
+    klogm(KL_TEST, INFO, "\n");
+    klogm(KL_TEST, INFO, "---------------------------------------\n");
+  }
+  current_test_passing = 0;
+  current_suite_passing = 0;
+  current_test_failures++;
+}
+
+bool kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
   if (!cond) {
-    if (current_test_passing) {
-      klogm(KL_TEST, INFO, "\nTEST: ");
-      klogm(KL_TEST, INFO, current_test_name);
-      klogm(KL_TEST, INFO, "\n");
-      klogm(KL_TEST, INFO, "---------------------------------------\n");
-    }
-    current_test_passing = 0;
-    current_suite_passing = 0;
-    current_test_failures++;
+    do_failure();
     klogm(KL_TEST, INFO, FAILED " ");
     klogm(KL_TEST, INFO, name);
     klogm(KL_TEST, INFO, "(");
@@ -143,9 +148,10 @@ void kexpect(int cond, const char* name, const char* astr,
     klogm(KL_TEST, INFO, val_surrounders);
     klogm(KL_TEST, INFO, "\n");
   }
+  return cond;
 }
 
-void kexpect_int(const char* name, const char* file, const char* line,
+bool kexpect_int(const char* name, const char* file, const char* line,
                  const char* astr, const char* bstr, intmax_t aval,
                  intmax_t bval, long result, const char* opstr,
                  kexpect_print_t a_type, kexpect_print_t b_type) {
@@ -163,7 +169,19 @@ void kexpect_int(const char* name, const char* file, const char* line,
     kstrcpy(aval_str, kutoa(aval));
     kstrcpy(bval_str, kutoa(bval));
   }
-  kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file, line);
+  return kexpect(result, name, astr, bstr, aval_str, bval_str, "", opstr, file,
+                 line);
+}
+
+void ktest_add_failure(const char* msg, const char* file, const char* line) {
+  do_failure();
+  klogm(KL_TEST, INFO, FAILED " Failure at ");
+  klogm(KL_TEST, INFO, file);
+  klogm(KL_TEST, INFO, ":");
+  klogm(KL_TEST, INFO, line);
+  klogm(KL_TEST, INFO, ": ");
+  klogm(KL_TEST, INFO, msg);
+  klogm(KL_TEST, INFO, "\n");
 }
 
 static void cpy_or_trunc(char* dst, const char* start, size_t strlen,
@@ -176,7 +194,7 @@ static void cpy_or_trunc(char* dst, const char* start, size_t strlen,
   }
 }
 
-void kexpect_multiline_streq(const char* file, const char* line,
+bool kexpect_multiline_streq(const char* file, const char* line,
                              const char* astr, const char* bstr,
                              const char* aval, const char* bval) {
   int result = !kstrcmp(aval, bval);
@@ -217,6 +235,7 @@ void kexpect_multiline_streq(const char* file, const char* line,
     }
     kfree(buf);
   }
+  return result;
 }
 
 void ktest_begin_all(void) {
@@ -256,6 +275,7 @@ void ktest_finish_all(void) {
       KLOG("  ...and %d more\n", num_leftover);
     }
   }
+  KEXPECT_EQ(0, test_point_count());
   KLOG("KERNEL UNIT TESTS FINISHED\n");
   KLOG("---------------------------------------\n");
 }

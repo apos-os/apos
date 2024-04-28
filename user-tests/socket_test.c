@@ -113,7 +113,7 @@ static void socket_unix_test(void) {
                  accept(sock, (struct sockaddr*)0x123, (socklen_t*)0x123));
 
   addr_len = INT_MAX;
-  KEXPECT_ERRNO(ENOMEM, accept(sock, (struct sockaddr*)&addr, &addr_len));
+  KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
   addr_len = 0;
   KEXPECT_ERRNO(EINVAL, accept(sock, (struct sockaddr*)&addr, &addr_len));
   addr_len = -1;
@@ -183,7 +183,7 @@ static void socket_unix_test(void) {
                                    (socklen_t*)INT_MAX));
 
   socklen_t len = INT_MAX;
-  KEXPECT_ERRNO(ENOMEM,
+  KEXPECT_ERRNO(EINVAL,
                 recvfrom(sock, buf, 10, 0, (struct sockaddr*)&addr, &len));
   len = -1;
   KEXPECT_ERRNO(EINVAL,
@@ -212,6 +212,78 @@ static void socket_unix_test(void) {
   KEXPECT_EQ(0, unlink("_socket_bind"));
 }
 
+static void sockopt_test(void) {
+  KTEST_SUITE_BEGIN("Socket options tests");
+  KTEST_BEGIN("getsockopt(): basic test");
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  int val[2];
+  socklen_t len = 2 * sizeof(int);
+  KEXPECT_EQ(0, getsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], &len));
+  KEXPECT_EQ(SOCK_DGRAM, val[0]);
+  KEXPECT_EQ(sizeof(int), len);
+  KEXPECT_ERRNO(EBADF, getsockopt(-1, SOL_SOCKET, SO_TYPE, &val[0], &len));
+  KEXPECT_ERRNO(EBADF, getsockopt(1000, SOL_SOCKET, SO_TYPE, &val[0], &len));
+
+
+  KTEST_BEGIN("setsockopt(): basic test");
+  len = sizeof(int);
+  KEXPECT_ERRNO(ENOPROTOOPT,
+                setsockopt(sock, SOL_SOCKET, SO_TYPE, &val[0], len));
+  KEXPECT_ERRNO(EBADF,
+                setsockopt(-1, SOL_SOCKET, SO_TYPE, &val[0], len));
+  KEXPECT_ERRNO(EBADF,
+                setsockopt(1000, SOL_SOCKET, SO_TYPE, &val[0], len));
+
+
+  KTEST_BEGIN("getsockopt(): bad buffers test");
+  len = sizeof(int);
+  void* addr1 = mmap(NULL, 2 * 4096, PROT_READ | PROT_WRITE,
+                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  KEXPECT_NE(NULL, addr1);
+  KEXPECT_EQ(0, munmap(addr1 + 4096, 4096));
+  void* bad_buf = addr1 + 4096;
+  void* partial_bad_buf = addr1 + 4094;
+
+  len = sizeof(int);
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(sock, SOL_SOCKET, SO_TYPE, bad_buf, &len));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 getsockopt(sock, SOL_SOCKET, SO_TYPE, partial_bad_buf, &len));
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(sock, SOL_SOCKET, SO_TYPE, addr1,
+                                     (socklen_t*)bad_buf));
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(sock, SOL_SOCKET, SO_TYPE, addr1,
+                                     (socklen_t*)partial_bad_buf));
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(1000, SOL_SOCKET, SO_TYPE, bad_buf, &len));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 getsockopt(sock, SOL_SOCKET, SO_TYPE, partial_bad_buf, &len));
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(1000, SOL_SOCKET, SO_TYPE, addr1,
+                                     (socklen_t*)bad_buf));
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(1000, SOL_SOCKET, SO_TYPE, addr1,
+                                     (socklen_t*)partial_bad_buf));
+  // Note: this, arguably, could SIGSEGV as well.  The current kernel
+  // implementation doesn't check the buffer length until _after_ the call, so
+  // this succeeds (since the length at that point is 4 bytes).
+  len = 4096 + 100;
+  KEXPECT_EQ(0, getsockopt(sock, SOL_SOCKET, SO_TYPE, addr1, &len));
+  KEXPECT_EQ(sizeof(int), len);
+  // This could segfault or have an error, either would be valid behavior.
+  len = 4096 + 100;
+  KEXPECT_SIGNAL(SIGSEGV, getsockopt(1000, SOL_SOCKET, SO_TYPE, addr1, &len));
+
+
+  KTEST_BEGIN("setsockopt(): bad buffers test");
+  len = sizeof(int);
+  KEXPECT_SIGNAL(SIGSEGV, setsockopt(sock, SOL_SOCKET, SO_TYPE, bad_buf, len));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 setsockopt(sock, SOL_SOCKET, SO_TYPE, partial_bad_buf, len));
+
+
+  KEXPECT_EQ(0, munmap(addr1, 4096));
+  KEXPECT_EQ(0, close(sock));
+}
+
 void socket_test(void) {
   socket_unix_test();
+  sockopt_test();
 }

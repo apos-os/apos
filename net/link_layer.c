@@ -23,14 +23,17 @@
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
 int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
-                  ethertype_t protocol) {
+                  ethertype_t protocol, bool allow_block) {
   switch (nic->type) {
     case NIC_ETHERNET:
-      return eth_send(nic, next_hop, pb, protocol);
+      return eth_send(nic, next_hop, pb, protocol, allow_block);
 
     case NIC_LOOPBACK:
       net_link_recv(nic, pb, protocol);
       return 0;
+
+    case NIC_TUN:
+      return nic->ops->nic_tx(nic, pb);
 
     case NIC_UNKNOWN:
       break;

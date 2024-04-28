@@ -625,7 +625,6 @@ int vfs_open_vnode(vnode_t* child, int flags, bool block) {
 
   KASSERT(g_file_table[idx] == 0x0);
   g_file_table[idx] = file_alloc();
-  file_init_file(g_file_table[idx]);
   g_file_table[idx]->index = idx;
   g_file_table[idx]->vnode = VFS_COPY_REF(child);
   g_file_table[idx]->refcount = 1;

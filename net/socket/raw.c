@@ -26,6 +26,7 @@
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
+#include "net/pbuf.h"
 #include "net/util.h"
 #include "proc/defint.h"
 #include "proc/scheduler.h"
@@ -97,6 +98,22 @@ static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb,
   poll_trigger_event(&sock->poll_event, raw_poll_events(sock));
 }
 
+static bool packet_matches_socket(const socket_raw_t* socket,
+                                  const pbuf_t* pb) {
+  if (socket->base.s_domain != AF_INET ||
+      socket->bind_addr.family == AF_UNSPEC) {
+    return true;
+  }
+
+  if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
+    klogfm(KL_NET, WARNING, "Too-short IP packet in raw socket code\n");
+    return true;
+  }
+
+  const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)pbuf_getc(pb);
+  return (socket->bind_addr.a.ip4.s_addr == ip4_hdr->dst_addr);
+}
+
 void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
                        const struct sockaddr* addr, socklen_t addrlen) {
   init_raw_sockets();
@@ -106,7 +123,9 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
   list_link_t* link = sock_list->head;
   while (link) {
     socket_raw_t* sock = container_of(link, socket_raw_t, link);
-    sock_raw_dispatch_one(sock, pb, addr, addrlen);
+    if (packet_matches_socket(sock, pb)) {
+      sock_raw_dispatch_one(sock, pb, addr, addrlen);
+    }
     link = link->next;
   }
   DEFINT_POP();
@@ -168,6 +187,7 @@ static void sock_raw_cleanup(socket_t* socket_base) {
   // Our socket is about to disappear.  Tell any pending poll()s as much.
   poll_trigger_event(&socket->poll_event, KPOLLNVAL);
   KASSERT(list_empty(&socket->poll_event.refs));
+  kfree(socket);
 }
 
 static int sock_raw_shutdown(socket_t* socket_base, int how) {
@@ -309,6 +329,8 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
     if (!ip_route(dest, &route)) {
       return -ENETUNREACH;
     }
+    nic_put(route.nic);
+    route.nic = NULL;
     src = &route.src;
   }
 
@@ -323,7 +345,7 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
   KASSERT_DBG(dest.family == ADDR_INET);
   ip4_add_hdr(pb, src->a.ip4.s_addr, dest.a.ip4.s_addr,
               socket_base->s_protocol);
-  int result = ip_send(pb);
+  int result = ip_send(pb, /* allow_block */ true);
   if (result < 0) {
     return result;
   }
@@ -357,6 +379,18 @@ static int sock_raw_poll(socket_t* socket_base, short event_mask,
   return result;
 }
 
+static int sock_raw_getsockopt(socket_t* socket_base, int level, int option,
+                               void* val, socklen_t* val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_RAW);
+  return -ENOPROTOOPT;
+}
+
+static int sock_raw_setsockopt(socket_t* socket_base, int level, int option,
+                               const void* val, socklen_t val_len) {
+  KASSERT_DBG(socket_base->s_type == SOCK_RAW);
+  return -ENOPROTOOPT;
+}
+
 static const socket_ops_t g_raw_socket_ops = {
   &sock_raw_cleanup,
   &sock_raw_shutdown,
@@ -370,4 +404,6 @@ static const socket_ops_t g_raw_socket_ops = {
   &sock_raw_getsockname,
   &sock_raw_getpeername,
   &sock_raw_poll,
+  &sock_raw_getsockopt,
+  &sock_raw_setsockopt,
 };

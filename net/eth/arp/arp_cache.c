@@ -15,14 +15,15 @@
 #include "net/eth/arp/arp_cache.h"
 
 #include "common/errno.h"
+#include "common/hashtable.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "net/eth/arp/arp.h"
 #include "net/util.h"
-#include "proc/defint.h"
 #include "proc/scheduler.h"
+#include "proc/spinlock.h"
 
 #define ARP_CACHE_INITIAL_SIZE 10
 #define ARP_CACHE_TIMEOUT_MS (60 * 1000)
@@ -32,6 +33,16 @@
 void arp_cache_init(arp_cache_t* cache) {
   htbl_init(&cache->cache, ARP_CACHE_INITIAL_SIZE);
   kthread_queue_init(&cache->wait);
+}
+
+static void entry_dtor(void* arg, uint32_t key, void* val) {
+  arp_cache_entry_t* entry = (arp_cache_entry_t*)val;
+  kfree(entry);
+}
+
+void arp_cache_cleanup(arp_cache_t* cache) {
+  htbl_clear(&cache->cache, &entry_dtor, NULL);
+  htbl_cleanup(&cache->cache);
 }
 
 // TODO(aoates): periodically go through the ARP caches and clean out expired
@@ -44,7 +55,7 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
   const apos_ms_t start = get_time_ms();
   const apos_ms_t end = start + timeout_ms;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&nic->lock);
   apos_ms_t now;
   do {
     now = get_time_ms();
@@ -53,7 +64,7 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
       arp_cache_entry_t* entry = (arp_cache_entry_t*)value;
       if (now - entry->last_used <= ARP_CACHE_TIMEOUT_MS) {
         kmemcpy(result, entry, sizeof(arp_cache_entry_t));
-        DEFINT_POP();
+        kspin_unlock(&nic->lock);
         return 0;
       } else {
         KLOG(DEBUG, "ARP: ignoring expired entry %s -> %s (%d ms old)\n",
@@ -68,19 +79,19 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
     // with it?
 
     if (timeout_ms > 0 && now < end) {
-      int result =
-          scheduler_wait_on_interruptable(&nic->arp_cache.wait, end - now);
+      int result = scheduler_wait_on_splocked(&nic->arp_cache.wait, end - now,
+                                              &nic->lock);
       if (result == SWAIT_TIMEOUT) {
-        DEFINT_POP();
+        kspin_unlock(&nic->lock);
         return -ETIMEDOUT;
       } else if (result == SWAIT_INTERRUPTED) {
-        DEFINT_POP();
+        kspin_unlock(&nic->lock);
         return -EINTR;
       }
     }
   } while (timeout_ms > 0 && now < end);
 
-  DEFINT_POP();
+  kspin_unlock(&nic->lock);
   return -EAGAIN;
 }
 
@@ -90,7 +101,7 @@ void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
   arp_cache_entry_t* entry;
   void* val;
 
-  DEFINT_PUSH_AND_DISABLE();
+  kspin_lock(&nic->lock);
   if (htbl_get(&nic->arp_cache.cache, addr, &val) == 0) {
     KLOG(DEBUG, "ARP: updating cache entry %s -> %s\n",
          inet2str(addr, inetbuf), mac2str(mac, macbuf));
@@ -104,5 +115,5 @@ void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
   kmemcpy(&entry->mac, mac, ETH_MAC_LEN);
   entry->last_used = get_time_ms();
   scheduler_wake_all(&nic->arp_cache.wait);
-  DEFINT_POP();
+  kspin_unlock(&nic->lock);
 }

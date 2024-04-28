@@ -115,3 +115,12 @@ void vfs_make_nonblock(int fd) {
   file->flags |= VFS_O_NONBLOCK;
   file_unref(file);
 }
+
+void vfs_make_blocking(int fd) {
+  file_t* file = 0x0;
+  int result = lookup_fd(fd, &file);
+  KASSERT(result == 0);
+  KASSERT((file->flags & VFS_O_NONBLOCK) != 0);
+  file->flags &= ~VFS_O_NONBLOCK;
+  file_unref(file);
+}

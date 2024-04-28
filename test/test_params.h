@@ -22,4 +22,7 @@
 // A multiplier on the number of participating threads.
 #define CONCURRENCY_TEST_THREADS_MULT 1
 
+// Whether to run slow timing-sensitive tests.
+#define RUN_SLOW_TIMING_TESTS 0
+
 #endif

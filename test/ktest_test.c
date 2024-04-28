@@ -87,6 +87,31 @@ static void int_conv_test(void) {
   KASSERT(ktest_current_test_failures() == 7);
 }
 
+static void retval_test(void) {
+  KTEST_BEGIN("KEXPECT* evaluated value test");
+  bool result = KEXPECT_EQ(6, 6);
+  KASSERT(result == true);
+  result = KEXPECT_EQ(6, 7);
+  KASSERT(result == false);
+
+  result = KEXPECT_TRUE(true);
+  KASSERT(result == true);
+  result = KEXPECT_TRUE(false);
+  KASSERT(result == false);
+
+  result = KEXPECT_STREQ("abc", "abc");
+  KASSERT(result == true);
+  result = KEXPECT_STREQ("abc", "def");
+  KASSERT(result == false);
+
+  result = KEXPECT_MULTILINE_STREQ("abc", "abc");
+  KASSERT(result == true);
+  result = KEXPECT_MULTILINE_STREQ("abc", "def");
+  KASSERT(result == false);
+
+  KASSERT(ktest_current_test_failures() == 4);
+}
+
 void ktest_test(void) {
   KTEST_SUITE_BEGIN("ktest");
 
@@ -207,8 +232,14 @@ void ktest_test(void) {
   // KEXPECT_NULL(1);
   KASSERT(ktest_current_test_failures() == 7);
 
+  KTEST_BEGIN("KTEST_ADD_FAILURE(): should fail x2");
+  KTEST_ADD_FAILURE("manual test failure");
+  KTEST_ADD_FAILURE("manual test failure #2");
+  KASSERT(ktest_current_test_failures() == 2);
+
   multiline_test();
   int_conv_test();
+  retval_test();
 }
 
 void kassert_test(void) {

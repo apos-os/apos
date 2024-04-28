@@ -32,7 +32,7 @@ static inline uint32_t hash_num_buckets(int num_buckets, uint32_t key) {
   return fnv_hash(key) % num_buckets;
 }
 
-static inline uint32_t hash(htbl_t* tbl, uint32_t key) {
+static inline uint32_t hash(const htbl_t* tbl, uint32_t key) {
   return hash_num_buckets(tbl->num_buckets, key);
 }
 
@@ -115,7 +115,7 @@ void htbl_put(htbl_t* tbl, uint32_t key, void* value) {
   maybe_grow(tbl);
 }
 
-int htbl_get(htbl_t* tbl, uint32_t key, void** value) {
+int htbl_get(const htbl_t* tbl, uint32_t key, void** value) {
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   while (e) {
@@ -149,7 +149,7 @@ int htbl_remove(htbl_t* tbl, uint32_t key) {
   return -1;
 }
 
-void htbl_iterate(htbl_t* tbl, void (*func)(void*, uint32_t, void*),
+void htbl_iterate(const htbl_t* tbl, void (*func)(void*, uint32_t, void*),
                   void* arg) {
   int counter = 0;
   for (int i = 0; i < tbl->num_buckets; ++i) {
@@ -201,10 +201,10 @@ int htbl_filter(htbl_t* tbl, bool (*pred)(void*, uint32_t, void*), void* arg) {
   return removed;
 }
 
-int htbl_size(htbl_t* tbl) {
+int htbl_size(const htbl_t* tbl) {
   return tbl->num_entries;
 }
 
-int htbl_num_buckets(htbl_t* tbl) {
+int htbl_num_buckets(const htbl_t* tbl) {
   return tbl->num_buckets;
 }

@@ -33,4 +33,7 @@ typedef struct {
 // Initialize an empty ARP cache.
 void arp_cache_init(arp_cache_t* cache);
 
+// Free all memory used by the ARP cache (but not the arp_cache_t itself).
+void arp_cache_cleanup(arp_cache_t* cache);
+
 #endif

@@ -18,11 +18,13 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "net/bind.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
 #include "net/link_layer.h"
 #include "net/socket/raw.h"
+#include "net/socket/tcp/tcp.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
 
@@ -59,10 +61,11 @@ static bool validate_hdr_v4(const pbuf_t* pb) {
   return true;
 }
 
-int ip_send(pbuf_t* pb) {
+int ip_send(pbuf_t* pb, bool allow_block) {
   char addrbuf[INET_PRETTY_LEN];
   if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
     KLOG(INFO, "net: rejecting too-short IP packet\n");
+    pbuf_free(pb);
     return -EINVAL;
   }
 
@@ -70,6 +73,7 @@ int ip_send(pbuf_t* pb) {
   if (hdr->version_ihl >> 4 != 4) {
     KLOG(INFO, "net: rejecting IP packet with bad version %d\n",
          hdr->version_ihl >> 4);
+    pbuf_free(pb);
     return -EINVAL;
   }
 
@@ -80,16 +84,30 @@ int ip_send(pbuf_t* pb) {
   if (ip_route(dst, &route) == false) {
     KLOG(INFO, "net: unable to route packet to %s\n",
          inet2str(hdr->dst_addr, addrbuf));
+    pbuf_free(pb);
     return -EINVAL;  // TODO
   }
 
-  if (route.src.a.ip4.s_addr != hdr->src_addr) {
+  // Check the source address --- for non-RAW sockets, we should not have been
+  // allowed to bind() a socket to this source IP if it wasn't valid.
+  netaddr_t src;
+  src.family = AF_INET;
+  src.a.ip4.s_addr = hdr->src_addr;
+  if (inet_source_valid(&src, route.nic) != 0) {
     KLOG(INFO, "net: unable to route packet with src %s on iface %s\n",
          inet2str(hdr->src_addr, addrbuf), route.nic->name);
+    nic_put(route.nic);
+    pbuf_free(pb);
     return -EADDRNOTAVAIL;
   }
 
-  return net_link_send(route.nic, route.nexthop, pb, ET_IPV4);
+  int result =
+      net_link_send(route.nic, route.nexthop, pb, ET_IPV4, allow_block);
+  nic_put(route.nic);
+  if (result != 0) {
+    pbuf_free(pb);
+  }
+  return result;
 }
 
 void ip_recv(nic_t* nic, pbuf_t* pb) {
@@ -111,6 +129,8 @@ void ip_recv(nic_t* nic, pbuf_t* pb) {
   bool handled = false;
   if (hdr->protocol == IPPROTO_UDP) {
     handled = sock_udp_dispatch(pb, ET_IPV4, hdr->protocol);
+  } else if (hdr->protocol == IPPROTO_TCP) {
+    handled = sock_tcp_dispatch(pb, ET_IPV4, hdr->protocol);
   }
   // pb is now a dangling pointer unless handled is false!
 
