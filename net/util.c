@@ -108,6 +108,16 @@ char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
   return buf;
 }
 
+socklen_t sizeof_sockaddr(sa_family_t sa_family) {
+  switch (sa_family) {
+    case AF_UNSPEC: return sizeof(struct sockaddr);
+    case AF_UNIX: return sizeof(struct sockaddr_un);
+    case AF_INET: return sizeof(struct sockaddr_in);
+  }
+  klogfm(KL_NET, WARNING, "unknown address family: %d\n", sa_family);
+  return 0;
+}
+
 int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
                  socklen_t saddr_len) {
   switch (naddr->family) {

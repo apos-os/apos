@@ -19,6 +19,7 @@
 #include "common/kstring.h"
 #include "memory/kmalloc.h"
 #include "net/inet.h"
+#include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/unix.h"
 
@@ -35,14 +36,6 @@ static sockmap_t* g_sockmaps[SM_MAX_AF][SM_MAX_PROTOCOL];
 
 // TODO(aoates): these helpers are probably useful elsewhere.  Refactor them
 // out.
-static size_t sizeof_addr(const struct sockaddr* addr) {
-  switch (addr->sa_family) {
-    case AF_INET: return sizeof(struct sockaddr_in);
-  }
-  klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
-  return 0;
-}
-
 static bool is_any(const struct sockaddr* addr) {
   switch (addr->sa_family) {
     case AF_INET:
@@ -98,7 +91,7 @@ bool sockmap_insert(sockmap_t* sm, const struct sockaddr* addr,
     return false;
   }
   sm_entry_t* entry = (sm_entry_t*)kmalloc(sizeof(sm_entry_t));
-  kmemcpy(&entry->addr, addr, sizeof_addr(addr));
+  kmemcpy(&entry->addr, addr, sizeof_sockaddr(addr->sa_family));
   entry->socket = socket;
   entry->link = LIST_LINK_INIT;
   list_push(&sm->socks, &entry->link);
@@ -152,7 +145,7 @@ socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr) {
 in_port_t sockmap_free_port(const sockmap_t* sm, const struct sockaddr* addr) {
   KASSERT(sm->family == addr->sa_family);
   struct sockaddr_storage addr_port;
-  kmemcpy(&addr_port, addr, sizeof_addr(addr));
+  kmemcpy(&addr_port, addr, sizeof_sockaddr(addr->sa_family));
   // TODO(aoates): this is crazy inefficient; do something better.
   for (int p = INET_PORT_EPHMIN; p <= INET_PORT_EPHMAX; p++) {
     set_port((struct sockaddr*)&addr_port, p);

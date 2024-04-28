@@ -19,6 +19,7 @@
 
 #include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/net/socket/socket.h"
 
 // How much buffer space to allocate for headers.
 // TODO(aoates): this should probably be a dynamic function of some sort (and/or
@@ -45,6 +46,9 @@ struct sockaddr_in str2sin(const char* ip, int port);
 // Pretty-print a generic sockaddr.
 char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
                    char* buf);
+
+// Returns the size of the given struct sockaddr based on its family.
+socklen_t sizeof_sockaddr(sa_family_t sa_family);
 
 // Convert a netaddr_t and port to a struct sockaddr, and vice versa.  |saddr|
 // should point to a `struct sockaddr` (void* used to prevent casts).  Returns 0
