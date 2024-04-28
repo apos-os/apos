@@ -369,10 +369,8 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
 }
 
 // Sends a SYN (and updates socket->send_next).
-// TODO(aoates): have this take a locked socket
 static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
-  test_point_run("tcp:send_syn");
-  kspin_lock(&socket->spin_mu);
+  KASSERT_DBG(kspin_is_held(&socket->spin_mu));
 
   // This is an unusual circumstance --- for us to leave this state, either a
   // packet must have come in that matched our ACK state (despite not sending a
@@ -1497,10 +1495,14 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   KASSERT_DBG(get_sockaddrs_port(&child->bind_addr) ==
               get_sockaddrs_port(&md->dst));
 
-  // Send SYN-ACK.
+  // Send SYN-ACK.  Unlock then re-lock the child socket.
+  // TODO(aoates): fix spinlock so you can unlock in a different order than
+  // locking, and then eliminate this race condition.
   kspin_unlock(&child->spin_mu);
   kspin_unlock(&parent->spin_mu);
 
+  test_point_run("tcp:send_syn");
+  kspin_lock(&child->spin_mu);
   result = tcp_send_syn(child, /* ack */ true, /* allow_block */ false);
   if (result != 0) {
     KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", child,
@@ -2053,8 +2055,6 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   set_state(sock, TCP_SYN_SENT, "sending connect SYN");
   kmemcpy(&sock->connected_addr, address, address_len);
   kspin_unlock(&g_tcp.lock);
-
-  kspin_unlock(&sock->spin_mu);
 
   // Send the initial SYN.  Always allow blocking here --- we want to block for
   // ARP even if the socket is non-blocking.

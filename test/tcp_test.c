@@ -11089,8 +11089,13 @@ static void open_connect_rst_test(void) {
 
   // This RST should be ignored.
   test_point_add("tcp:send_syn", &send_rst100_tp_hook, &s);
-  KEXPECT_EQ(-ENOTCONN, do_connect(s.socket, DST_IP, 0x5678));
-  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_EQ(0, test_point_remove("tcp:send_syn"));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(0, s.op.result);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
 
   cleanup_tcp_test(&s);
@@ -11104,7 +11109,7 @@ static void open_connect_rst_test2(void) {
 
   test_point_add("tcp:send_syn", &send_rst101_tp_hook, &s);
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
-  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_EQ(0, test_point_remove("tcp:send_syn"));
   KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
   KEXPECT_TRUE(finish_standard_connect(&s));
   KEXPECT_EQ(0, s.op.result);
@@ -11125,7 +11130,7 @@ static void open_connect_established_race_test(void) {
 
   test_point_add("tcp:send_syn", &send_synack100_tp_hook, &s);
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
-  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_EQ(0, test_point_remove("tcp:send_syn"));
   KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
   KEXPECT_TRUE(finish_standard_connect(&s));
   KEXPECT_EQ(0, s.op.result);
@@ -11144,8 +11149,7 @@ static void open_connect_established_race_test2(void) {
 
   test_point_add("tcp:send_syn", &send_synack101_tp_hook, &s);
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
-  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
-  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  KEXPECT_EQ(0, test_point_remove("tcp:send_syn"));
   KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
   KEXPECT_TRUE(finish_standard_connect(&s));
   KEXPECT_EQ(0, s.op.result);
@@ -11163,8 +11167,12 @@ static void open_connect_shutdown_test(void) {
 
   // This RST should be ignored.
   test_point_add("tcp:send_syn", &shutdown_tp_hook, &s);
-  KEXPECT_EQ(-ENOTCONN, do_connect(s.socket, DST_IP, 0x5678));
-  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_EQ(0, test_point_remove("tcp:send_syn"));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(0, s.op.result);
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
 
   cleanup_tcp_test(&s);
