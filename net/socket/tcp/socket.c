@@ -369,9 +369,20 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
 }
 
 // Sends a SYN (and updates socket->send_next).
+// TODO(aoates): have this take a locked socket
 static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
+  test_point_run("tcp:send_syn");
   kspin_lock(&socket->spin_mu);
-  KASSERT(socket->state == TCP_SYN_SENT || socket->state == TCP_SYN_RCVD);
+
+  // This is an unusual circumstance --- for us to leave this state, either a
+  // packet must have come in that matched our ACK state (despite not sending a
+  // SYN yet), or another thread must have shut down the socket.  ENOTCONN may
+  // be a strange error depending on the circumstance, but this should no happen
+  // in normal circumstances.
+  if (socket->state != TCP_SYN_SENT && socket->state != TCP_SYN_RCVD) {
+    kspin_unlock(&socket->spin_mu);
+    return -ENOTCONN;
+  }
 
   tcp_segment_t* seg = KMALLOC(tcp_segment_t);
   tcp_syn_segment(socket, seg, ack);
@@ -388,10 +399,8 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
     kfree(seg);
     return result;
   }
-  // If this is our first time sending the SYN, advance send_next.
-  if (socket->send_next == socket->initial_seq) {
-    socket->send_next++;
-  }
+  socket->send_next++;
+  KASSERT_DBG(socket->send_next == socket->initial_seq + 1);
 
   KLOG(DEBUG2, "TCP: socket %p transmitting SYN%s\n", socket,
        ack ? "/ACK" : "");
@@ -872,12 +881,14 @@ done:
 
     case TCP_ACTION_NOT_SET:
     case TCP_ACTION_NONE:
-      result = tcp_send_datafin(socket, false);
-      if (result == 0) {
-        action.send_ack = false;  // We sent data, that includes an ack
-      } else if (result != -EAGAIN) {
-        KLOG(WARNING, "TCP: socket %p unable to send data: %s\n", socket,
-             errorname(-result));
+      if (tcp_state_type(socket->state) == TCPSTATE_ESTABLISHED) {
+        result = tcp_send_datafin(socket, false);
+        if (result == 0) {
+          action.send_ack = false;  // We sent data, that includes an ack
+        } else if (result != -EAGAIN) {
+          KLOG(WARNING, "TCP: socket %p unable to send data: %s\n", socket,
+               errorname(-result));
+        }
       }
   }
 
@@ -1090,7 +1101,7 @@ static void tcp_handle_ack(socket_tcp_t* socket, const pbuf_t* pb,
 
     case TCP_SYN_RCVD:
       // If our SYN is acked, move to ESTABLISHED.
-      if (socket->send_unack == socket->send_next) {
+      if (socket->syn_acked) {
         syn_rcvd_connected(socket);
         socket->send_wndsize = btoh16(tcp_hdr->wndsize);
         socket->wl1 = seq;
@@ -1342,6 +1353,14 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
     return;
   }
 
+  // Special case to deal with a race condition of a perfect packet coming in
+  // before we've actually sent our SYN.
+  if (socket->send_next == socket->initial_seq) {
+    KLOG(INFO, "TCP: socket %p got packet before SYN sent\n", socket);
+    action->action = TCP_ACTION_NONE;
+    return;
+  }
+
   if (tcp_hdr->flags & TCP_FLAG_SYN) {
     socket->recv_next = btoh32(tcp_hdr->seq) + 1;
     socket->send_wndsize = btoh16(tcp_hdr->wndsize);
@@ -1356,6 +1375,7 @@ static void tcp_handle_in_synsent(socket_tcp_t* socket, const pbuf_t* pb,
       KASSERT_DBG(socket->send_unack == socket->send_next);
       socket->syn_acked = true;
 
+      KASSERT_DBG(!list_empty(&socket->segments));
       tcp_segment_t* seg =
           container_of(socket->segments.head, tcp_segment_t, link);
       KASSERT_DBG(seg->flags == TCP_FLAG_SYN);
@@ -1470,7 +1490,8 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
     kspin_unlock(&parent->spin_mu);
     return;
   }
-  refcount_inc(&child->ref);
+  refcount_inc(&child->ref);  // For the sockmap.
+  refcount_inc(&child->ref);  // For us to send a SYN/ACK below.
   kspin_unlock(&g_tcp.lock);
 
   KASSERT_DBG(get_sockaddrs_port(&child->bind_addr) ==
@@ -1485,6 +1506,7 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
     KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", child,
          errorname(-result));
   }
+  TCP_DEC_REFCOUNT(child);
 }
 
 static void maybe_handle_time_wait_fin(socket_tcp_t* socket, const pbuf_t* pb,

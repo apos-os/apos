@@ -11038,6 +11038,271 @@ static void close_race_tests(void) {
   shutdown_and_close_race_test();
 }
 
+static void send_rst100_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, RST_PKT(/* seq */ 501, /* ack */ 100));
+}
+
+static void send_rst101_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, RST_PKT(/* seq */ 501, /* ack */ 101));
+}
+
+static void send_synack100_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, SYNACK_PKT(/* seq */ 500, /* ack */ 100, /* wndsize */ 8000));
+}
+
+static void send_synack101_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+}
+
+static void send_ack100_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, ACK_PKT(/* seq */ 501, /* ack */ 100));
+}
+
+static void send_ack101_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  SEND_PKT(s, ACK_PKT(/* seq */ 501, /* ack */ 101));
+}
+
+static void shutdown_tp_hook(const char* name, int count, void* arg) {
+  tcp_test_state_t* s = (tcp_test_state_t*)arg;
+  net_shutdown(s->socket, SHUT_RD);
+  net_shutdown(s->socket, SHUT_WR);
+}
+
+// We have two versions of each test, one that sends with an ACK value of 100
+// and one with 101 --- this is to make sure we tickle interesting races,
+// regardless of whether the internal TCP code increments it's send_next before
+// or after unlocking the mutex.
+//
+// The specific outcome isn't necessarily important so long as it's valid and
+// safe.
+static void open_connect_rst_test(void) {
+  KTEST_BEGIN("TCP: socket gets RST during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  // This RST should be ignored.
+  test_point_add("tcp:send_syn", &send_rst100_tp_hook, &s);
+  KEXPECT_EQ(-ENOTCONN, do_connect(s.socket, DST_IP, 0x5678));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_connect_rst_test2(void) {
+  KTEST_BEGIN("TCP: socket gets RST during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  test_point_add("tcp:send_syn", &send_rst101_tp_hook, &s);
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(0, s.op.result);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(s.socket));
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+// This shouldn't happen in a normal connection (the peer would have to guess
+// our sequence number).
+static void open_connect_established_race_test(void) {
+  KTEST_BEGIN("TCP: socket gets a SYN/ACK before sending SYN during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  test_point_add("tcp:send_syn", &send_synack100_tp_hook, &s);
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(0, s.op.result);
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_connect_established_race_test2(void) {
+  KTEST_BEGIN(
+      "TCP: socket gets a SYN/ACK before sending SYN during connect() (#2)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  test_point_add("tcp:send_syn", &send_synack101_tp_hook, &s);
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+  KEXPECT_EQ(0, s.op.result);
+  KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_connect_shutdown_test(void) {
+  KTEST_BEGIN("TCP: socket gets shutdown during connect()");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+
+  // This RST should be ignored.
+  test_point_add("tcp:send_syn", &shutdown_tp_hook, &s);
+  KEXPECT_EQ(-ENOTCONN, do_connect(s.socket, DST_IP, 0x5678));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_accept_rst_test(void) {
+  KTEST_BEGIN("TCP: socket gets RST during inbound connection");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  // Start a connection.
+  test_point_add("tcp:send_syn", &send_rst100_tp_hook, &s);
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_accept_rst_test2(void) {
+  KTEST_BEGIN("TCP: socket gets RST during inbound connection");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  // Start a connection.
+  test_point_add("tcp:send_syn", &send_rst101_tp_hook, &s);
+  SEND_PKT(&s, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  cleanup_tcp_test(&s);
+}
+
+static void open_accept_established_test(void) {
+  KTEST_BEGIN(
+      "TCP: socket gets ACK before sending SYN/ACK during inbound connection");
+  tcp_test_state_t s, c1;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  init_tcp_test_child(&s, &c1, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  // Start a connection.  The early ACK should be ignored.
+  test_point_add("tcp:send_syn", &send_ack100_tp_hook, &s);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
+
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&s);
+}
+
+static void open_accept_established_test2(void) {
+  KTEST_BEGIN(
+      "TCP: socket gets ACK before sending SYN/ACK during inbound connection");
+  tcp_test_state_t s, c1;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  init_tcp_test_child(&s, &c1, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  // Start a connection.  The early ACK should trigger a challenge ACK.
+  test_point_add("tcp:send_syn", &send_ack101_tp_hook, &s);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 100, /* ack */ 501));  // Challenge ACK.
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
+
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&s);
+}
+
+// Note: unlike the open_connect_shutdown_test(), this closes the _listening_
+// socket and not the connecting socket.  There's no way to get the connecting
+// socket to close it (it doesn't have a file descriptor yet).
+static void open_accept_shutdown_test(void) {
+  KTEST_BEGIN("TCP: listening socket gets shutdown during inbound connection");
+  tcp_test_state_t s, c1;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  init_tcp_test_child(&s, &c1, DST_IP, 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+
+  // Start a connection.  The shutdown will be ignored.
+  test_point_add("tcp:send_syn", &shutdown_tp_hook, &s);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  KEXPECT_EQ(1, test_point_remove("tcp:send_syn"));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  EXPECT_PKT(&c1, SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wnd */ 0));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+
+  c1.socket = net_accept(s.socket, NULL, NULL);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_TRUE(do_standard_finish(&c1, 0, 0));
+
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&s);
+}
+
+static void open_race_tests(void) {
+  open_connect_rst_test();
+  open_connect_rst_test2();
+  open_connect_established_race_test();
+  open_connect_established_race_test2();
+  open_connect_shutdown_test();
+  open_accept_rst_test();
+  open_accept_rst_test2();
+  open_accept_established_test();
+  open_accept_established_test2();
+  open_accept_shutdown_test();
+}
+
 static void cwnd_test(void) {
   KTEST_BEGIN("TCP cwnd test: initial cwnd");
   tcp_cwnd_t cw;
@@ -12389,6 +12654,7 @@ void tcp_test(void) {
     retransmit_tests();
     nonblocking_tests();
     close_race_tests();
+    open_race_tests();
   }
 
   // These are tests that don't look specifically at the sequence numbers or
