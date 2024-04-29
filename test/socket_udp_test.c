@@ -115,7 +115,9 @@ static void bind_test(void) {
   struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
   KEXPECT_EQ(sizeof(struct sockaddr_in),
              net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
-  KEXPECT_EQ(AF_UNSPEC, result_addr->sin_family);
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_EQ(0, result_addr->sin_addr.s_addr);
+  KEXPECT_EQ(0, result_addr->sin_port);
 
   KTEST_BEGIN("getpeername(SOCK_DGRAM): unbound socket");
   KEXPECT_EQ(-ENOTCONN,
@@ -361,7 +363,9 @@ static void connect_test(void) {
   // test current behavior).
   KEXPECT_EQ(sizeof(struct sockaddr_in),
              net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
-  KEXPECT_EQ(AF_UNSPEC, result_addr->sin_family);
+  KEXPECT_EQ(AF_INET, result_addr->sin_family);
+  KEXPECT_EQ(0, result_addr->sin_addr.s_addr);
+  KEXPECT_EQ(0, result_addr->sin_port);
 
   vfs_close(sock);
 

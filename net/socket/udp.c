@@ -429,7 +429,12 @@ static int sock_udp_getsockname(socket_t* socket_base,
                                 struct sockaddr* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
-  kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
+  if (socket->bind_addr.sa_family == AF_UNSPEC) {
+    // We haven't bound yet.
+    inet_make_anyaddr(socket_base->s_domain, address);
+  } else {
+    kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
+  }
   return sizeof_sockaddr(socket_base->s_domain);
 }
 
