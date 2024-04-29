@@ -593,6 +593,7 @@ AddSyscall('mount', 95, 'vfs_mount', 'vfs/mount.h', '', 'int',
 AddSyscall('unmount', 96, 'vfs_unmount', 'vfs/mount.h', '', 'int',
     ['const char*:mount_path:s', 'unsigned long:flags:u'])
 
+# TODO(aoates): figure out how to get 'restrict' in these decls as needed.
 AddSyscall('getsockopt', 98, 'getsockopt_wrapper', 'syscall/wrappers.h',
            '<sys/socket.h>', 'int',
            ['int:socket:u', 'int:level:u', 'int:option:u',
@@ -602,3 +603,12 @@ AddSyscall('setsockopt', 99, 'net_setsockopt', 'net/socket/socket.h',
            '<sys/socket.h>', 'int',
            ['int:socket:u', 'int:level:u', 'int:option:u',
             'const void*:val:br:val_len', 'socklen_t:val_len:u'])
+
+AddSyscall('getsockname', 101, 'getsockname_wrapper', 'syscall/wrappers.h',
+           '<sys/socket.h>', 'int',
+           ['int:socket:u', 'struct sockaddr*:address:u',
+            'socklen_t*:len:brw:sizeof(socklen_t)'])
+AddSyscall('getpeername', 102, 'getpeername_wrapper', 'syscall/wrappers.h',
+           '<sys/socket.h>', 'int',
+           ['int:socket:u', 'struct sockaddr*:address:u',
+            'socklen_t*:len:brw:sizeof(socklen_t)'])

@@ -321,6 +321,10 @@ int SYSCALL_DMZ_getsockopt(int socket, int level, int option, void* val,
                            socklen_t* val_len);
 int SYSCALL_DMZ_setsockopt(int socket, int level, int option, const void* val,
                            socklen_t val_len);
+int SYSCALL_DMZ_getsockname(int socket, struct sockaddr* address,
+                            socklen_t* len);
+int SYSCALL_DMZ_getpeername(int socket, struct sockaddr* address,
+                            socklen_t* len);
 
 static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
                                 long arg3, long arg4, long arg5, long arg6) {
@@ -707,6 +711,14 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
     case SYS_SETSOCKOPT:
       return SYSCALL_DMZ_setsockopt((int)arg1, (int)arg2, (int)arg3,
                                     (const void*)arg4, (socklen_t)arg5);
+
+    case SYS_GETSOCKNAME:
+      return SYSCALL_DMZ_getsockname((int)arg1, (struct sockaddr*)arg2,
+                                     (socklen_t*)arg3);
+
+    case SYS_GETPEERNAME:
+      return SYSCALL_DMZ_getpeername((int)arg1, (struct sockaddr*)arg2,
+                                     (socklen_t*)arg3);
 
     default:
       proc_kill(proc_current()->id, SIGSYS);

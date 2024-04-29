@@ -3192,3 +3192,77 @@ cleanup:
 
   return result;
 }
+
+int getsockname_wrapper(int socket, struct sockaddr* address, socklen_t* len);
+int SYSCALL_DMZ_getsockname(int socket, struct sockaddr* address,
+                            socklen_t* len) {
+  socklen_t* KERNEL_len = 0x0;
+
+  if ((size_t)(sizeof(socklen_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+
+  KERNEL_len = (socklen_t*)kmalloc(sizeof(socklen_t));
+
+  if (!KERNEL_len) {
+    if (KERNEL_len) kfree((void*)KERNEL_len);
+
+    return -ENOMEM;
+  }
+
+  int result;
+  result = syscall_copy_from_user(len, (void*)KERNEL_len, sizeof(socklen_t));
+  if (result) goto cleanup;
+
+  result = getsockname_wrapper(socket, address, KERNEL_len);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+  int copy_result = syscall_copy_to_user(KERNEL_len, len, sizeof(socklen_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
+  }
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_len) kfree((void*)KERNEL_len);
+
+  return result;
+}
+
+int getpeername_wrapper(int socket, struct sockaddr* address, socklen_t* len);
+int SYSCALL_DMZ_getpeername(int socket, struct sockaddr* address,
+                            socklen_t* len) {
+  socklen_t* KERNEL_len = 0x0;
+
+  if ((size_t)(sizeof(socklen_t)) > DMZ_MAX_BUFSIZE) return -EINVAL;
+
+  KERNEL_len = (socklen_t*)kmalloc(sizeof(socklen_t));
+
+  if (!KERNEL_len) {
+    if (KERNEL_len) kfree((void*)KERNEL_len);
+
+    return -ENOMEM;
+  }
+
+  int result;
+  result = syscall_copy_from_user(len, (void*)KERNEL_len, sizeof(socklen_t));
+  if (result) goto cleanup;
+
+  result = getpeername_wrapper(socket, address, KERNEL_len);
+
+  // TODO(aoates): this should only copy the written bytes, not the full kernel
+  // buffer (e.g. in a read() syscall).
+  int copy_result = syscall_copy_to_user(KERNEL_len, len, sizeof(socklen_t));
+  if (copy_result) {
+    result = copy_result;
+    goto cleanup;
+  }
+
+  goto cleanup;  // Make the compiler happy if cleanup is otherwise unused.
+
+cleanup:
+  if (KERNEL_len) kfree((void*)KERNEL_len);
+
+  return result;
+}

@@ -283,7 +283,136 @@ static void sockopt_test(void) {
   KEXPECT_EQ(0, close(sock));
 }
 
+static void sockname_unix_tests(void) {
+  KTEST_SUITE_BEGIN("sockname tests");
+  KTEST_BEGIN("getsockname()/getpeername(): AF_UNIX");
+  int sock = socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  char buf[200];
+  struct sockaddr_un* buf_addr = (struct sockaddr_un*)buf;
+  memset(buf, 'x', 200);
+  socklen_t len = 200;
+  KEXPECT_EQ(0, getsockname(sock, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(sizeof(struct sockaddr_un), len);
+  KEXPECT_EQ(AF_UNIX, buf_addr->sun_family);
+  KEXPECT_STREQ("", buf_addr->sun_path);
+  KEXPECT_EQ('x', buf[len]);
+
+  memset(buf, 'x', 200);
+  KEXPECT_ERRNO(ENOTCONN, getpeername(sock, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ('x', buf[0]);
+
+  // Create a connected pair.
+  struct sockaddr_un addr;
+  addr.sun_family = AF_UNIX;
+  strcpy(addr.sun_path, "_socket_bind");
+  KEXPECT_EQ(0, bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, listen(sock, 5));
+
+  len = 200;
+  KEXPECT_EQ(0, getsockname(sock, (struct sockaddr*)buf, &len));
+  KEXPECT_ERRNO(ENOTCONN, getpeername(sock, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(sizeof(struct sockaddr_un), len);
+  KEXPECT_EQ(AF_UNIX, buf_addr->sun_family);
+  KEXPECT_STREQ("_socket_bind", buf_addr->sun_path);
+  KEXPECT_EQ('x', buf[len]);
+
+
+  int s1 = socket(AF_UNIX, SOCK_STREAM, 0);
+  KEXPECT_GE(s1, 0);
+  struct sockaddr_un addr_client;
+  addr_client.sun_family = AF_UNIX;
+  strcpy(addr_client.sun_path, "_socket_client");
+  KEXPECT_EQ(0, bind(s1, (struct sockaddr*)&addr_client, sizeof(addr_client)));
+  KEXPECT_EQ(0, connect(s1, (struct sockaddr*)&addr, sizeof(addr)));
+
+  KTEST_BEGIN("socket(AF_UNIX): accept test");
+  memset(&addr, 0, sizeof(addr));
+  socklen_t addr_len = sizeof(addr);
+  int s2 = accept(sock, (struct sockaddr*)&addr, &addr_len);
+  KEXPECT_GE(s2, 0);
+  KEXPECT_EQ(AF_UNIX, addr.sun_family);
+  KEXPECT_STREQ("_socket_client", addr.sun_path);
+
+  len = 200;
+  memset(buf, 'x', 200);
+  KEXPECT_EQ(0, getsockname(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(sizeof(struct sockaddr_un), len);
+  KEXPECT_EQ(AF_UNIX, buf_addr->sun_family);
+  KEXPECT_STREQ("_socket_client", buf_addr->sun_path);
+  KEXPECT_EQ('x', buf[len]);
+
+  len = 200;
+  memset(buf, 'x', 200);
+  KEXPECT_EQ(0, getpeername(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(sizeof(struct sockaddr_un), len);
+  KEXPECT_EQ(AF_UNIX, buf_addr->sun_family);
+  KEXPECT_STREQ("_socket_bind", buf_addr->sun_path);
+  KEXPECT_EQ('x', buf[len]);
+
+  len = 200;
+  memset(buf, 'x', 200);
+  KEXPECT_EQ(0, getsockname(s2, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(sizeof(struct sockaddr_un), len);
+  KEXPECT_EQ(AF_UNIX, buf_addr->sun_family);
+  KEXPECT_STREQ("_socket_bind", buf_addr->sun_path);
+  KEXPECT_EQ('x', buf[len]);
+
+  // Test small lengths.
+  len = 10;
+  memset(buf, 'x', 200);
+  KEXPECT_EQ(0, getsockname(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(10, len);
+  buf[15] = '\0';
+  KEXPECT_EQ(AF_UNIX, buf_addr->sun_family);
+  KEXPECT_STREQ("_sockexxxxx", buf_addr->sun_path);
+
+  // Test bad lengths.
+  len = 0;
+  memset(buf, 'x', 200);
+  KEXPECT_EQ(0, getsockname(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(0, len);
+  KEXPECT_EQ('x', buf[0]);
+
+  len = 0;
+  memset(buf, 'x', 200);
+  KEXPECT_EQ(0, getpeername(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(0, len);
+  KEXPECT_EQ('x', buf[0]);
+
+  len = 1;
+  KEXPECT_EQ(0, getsockname(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(1, len);
+  KEXPECT_NE('x', buf[0]);
+  KEXPECT_EQ('x', buf[1]);
+
+  len = 1;
+  KEXPECT_EQ(0, getpeername(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_EQ(1, len);
+  KEXPECT_NE('x', buf[0]);
+  KEXPECT_EQ('x', buf[1]);
+
+  len = -5;
+  KEXPECT_ERRNO(EINVAL, getsockname(s1, (struct sockaddr*)buf, &len));
+  KEXPECT_ERRNO(EINVAL, getpeername(s1, (struct sockaddr*)buf, &len));
+
+  // Test bad address.
+  len = 200;
+  KEXPECT_SIGNAL(SIGSEGV, getsockname(s1, (struct sockaddr*)0x0, &len));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 getsockname(s1, (struct sockaddr*)INVALID_ADDR, &len));
+  KEXPECT_SIGNAL(SIGSEGV, getpeername(s1, (struct sockaddr*)0x0, &len));
+  KEXPECT_SIGNAL(SIGSEGV,
+                 getpeername(s1, (struct sockaddr*)INVALID_ADDR, &len));
+}
+
+static void sockname_tests(void) {
+  sockname_unix_tests();
+}
+
 void socket_test(void) {
   socket_unix_test();
   sockopt_test();
+  sockname_tests();
 }

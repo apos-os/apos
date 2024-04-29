@@ -15,6 +15,7 @@
 #include "common/errno.h"
 #include "common/kassert.h"
 #include "common/kstring.h"
+#include "common/math.h"
 #include "memory/kmalloc.h"
 #include "memory/mmap.h"
 #include "proc/exec.h"
@@ -130,6 +131,40 @@ cleanup:
   if (KERNEL_val) kfree((void*)KERNEL_val);
 
   return result;
+}
+
+int getsockname_wrapper(int socket, struct sockaddr* address, socklen_t* len) {
+  struct sockaddr_storage KERNEL_address;
+  kmemset(&KERNEL_address, 0, sizeof(KERNEL_address));
+
+  if (*len < 0) {
+    return -EINVAL;
+  }
+
+  int result = net_getsockname(socket, (struct sockaddr*)&KERNEL_address);
+  if (result < 0) {
+    return result;
+  }
+
+  *len = min(*len, result);
+  return syscall_copy_to_user(&KERNEL_address, address, *len);
+}
+
+int getpeername_wrapper(int socket, struct sockaddr* address, socklen_t* len) {
+  struct sockaddr_storage KERNEL_address;
+  kmemset(&KERNEL_address, 0, sizeof(KERNEL_address));
+
+  if (*len < 0) {
+    return -EINVAL;
+  }
+
+  int result = net_getpeername(socket, (struct sockaddr*)&KERNEL_address);
+  if (result < 0) {
+    return result;
+  }
+
+  *len = min(*len, result);
+  return syscall_copy_to_user(&KERNEL_address, address, *len);
 }
 
 int klog_wrapper(const char* msg) {

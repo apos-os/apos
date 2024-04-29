@@ -123,5 +123,7 @@ int getsockopt(int socket, int level, int option, void* val,
                socklen_t* val_len);
 int setsockopt(int socket, int level, int option, const void* val,
                socklen_t val_len);
+int getsockname(int socket, struct sockaddr* address, socklen_t* len);
+int getpeername(int socket, struct sockaddr* address, socklen_t* len);
 
 #endif

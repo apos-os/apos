@@ -45,6 +45,10 @@ ssize_t recvfrom_wrapper(int socket, void* buf, size_t len, int flags,
                          struct sockaddr* address, socklen_t* address_len);
 int getsockopt_wrapper(int socket, int level, int option, void* restrict val,
                        socklen_t* restrict val_len);
+int getsockname_wrapper(int socket, struct sockaddr* restrict addr,
+                        socklen_t* restrict len);
+int getpeername_wrapper(int socket, struct sockaddr* restrict addr,
+                        socklen_t* restrict len);
 
 int klog_wrapper(const char* msg);
 
