@@ -2021,7 +2021,8 @@ static void sockname_test(void) {
   KEXPECT_GE(server_sock, 0);
 
   struct sockaddr_un result_addr;
-  KEXPECT_EQ(0, net_getsockname(server_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(sizeof(struct sockaddr_un),
+             net_getsockname(server_sock, (struct sockaddr*)&result_addr));
   KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
   KEXPECT_STREQ("", result_addr.sun_path);
 
@@ -2035,7 +2036,8 @@ static void sockname_test(void) {
   KEXPECT_EQ(0, net_bind(server_sock, (struct sockaddr*)&server_addr,
                          sizeof(server_addr)));
   kmemset(&result_addr, 0xff, sizeof(struct sockaddr_un));
-  KEXPECT_EQ(0, net_getsockname(server_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(sizeof(struct sockaddr_un),
+             net_getsockname(server_sock, (struct sockaddr*)&result_addr));
   KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
   KEXPECT_STREQ(kServerPath, result_addr.sun_path);
 
@@ -2056,19 +2058,23 @@ static void sockname_test(void) {
   int accepted_sock = net_accept(server_sock, NULL, 0);
   KEXPECT_GE(accepted_sock, 0);
 
-  KEXPECT_EQ(0, net_getsockname(accepted_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(sizeof(struct sockaddr_un),
+             net_getsockname(accepted_sock, (struct sockaddr*)&result_addr));
   KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
   KEXPECT_STREQ(kServerPath, result_addr.sun_path);
 
-  KEXPECT_EQ(0, net_getsockname(client_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(sizeof(struct sockaddr_un),
+             net_getsockname(client_sock, (struct sockaddr*)&result_addr));
   KEXPECT_STREQ(kClientPath, result_addr.sun_path);
 
   KTEST_BEGIN("net_getpeername(AF_UNIX): connected socket");
-  KEXPECT_EQ(0, net_getpeername(accepted_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(sizeof(struct sockaddr_un),
+             net_getpeername(accepted_sock, (struct sockaddr*)&result_addr));
   KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
   KEXPECT_STREQ(kClientPath, result_addr.sun_path);
 
-  KEXPECT_EQ(0, net_getpeername(client_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(sizeof(struct sockaddr_un),
+             net_getpeername(client_sock, (struct sockaddr*)&result_addr));
   KEXPECT_STREQ(kServerPath, result_addr.sun_path);
 
   KEXPECT_EQ(0, vfs_close(accepted_sock));

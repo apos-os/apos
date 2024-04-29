@@ -70,7 +70,11 @@ struct socket_ops {
                     size_t length, int sflags, const struct sockaddr* dest_addr,
                     socklen_t dest_len);
 
-  // Get bound and peer name.
+  // Get bound and peer name.  The address MUST fit in the standard size for the
+  // returned address family, if any (e.g. if AF_INET, the address must fit into
+  // a struct sockaddr_in).  Returns the actual size of the written address.
+  // TODO(aoates): use a safer API for these (pass size, or pass
+  // sockaddr_storage, or use a different type).
   int (*getsockname)(socket_t* socket, struct sockaddr* address);
 
   int (*getpeername)(socket_t* socket, struct sockaddr* address);
@@ -125,7 +129,7 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
 
 // Returns the bound and connected address of the given socket.  The given
 // address buffer must be large enough to hold it (at least sizeof(struct
-// sockaddr_storage) bytes).
+// sockaddr_storage) bytes).  Returns the size of the address written.
 int net_getsockname(int socket, struct sockaddr* address);
 int net_getpeername(int socket, struct sockaddr* address);
 

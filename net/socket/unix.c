@@ -463,7 +463,7 @@ static int sock_unix_getsockname(socket_t* socket_base,
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
   kmemcpy(address, &socket->bind_address, sizeof(struct sockaddr_un));
-  return 0;
+  return sizeof(struct sockaddr_un);
 }
 
 static int sock_unix_getpeername(socket_t* socket_base,
@@ -476,7 +476,7 @@ static int sock_unix_getpeername(socket_t* socket_base,
   }
 
   kmemcpy(address, &socket->peer->bind_address, sizeof(struct sockaddr_un));
-  return 0;
+  return sizeof(struct sockaddr_un);
 }
 
 static int sock_unix_poll(socket_t* socket_base, short event_mask,

@@ -430,7 +430,7 @@ static int sock_udp_getsockname(socket_t* socket_base,
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
   kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
-  return 0;
+  return sizeof_sockaddr(socket_base->s_domain);
 }
 
 static int sock_udp_getpeername(socket_t* socket_base,
@@ -441,7 +441,7 @@ static int sock_udp_getpeername(socket_t* socket_base,
     return -ENOTCONN;
   }
   kmemcpy(address, &socket->connected_addr, sizeof(socket->connected_addr));
-  return 0;
+  return sizeof_sockaddr(socket_base->s_domain);
 }
 
 static int sock_udp_poll(socket_t* socket_base, short event_mask,

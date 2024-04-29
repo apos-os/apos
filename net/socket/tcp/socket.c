@@ -2375,7 +2375,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
   kspin_lock(&socket->spin_mu);
-  int result = 0;
+  int result = sizeof_sockaddr(socket_base->s_domain);
   if (socket->bind_addr.sa_family != AF_UNSPEC) {
     kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
   } else if (socket->state == TCP_CLOSED) {
@@ -2399,7 +2399,7 @@ static int sock_tcp_getpeername(socket_t* socket_base,
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
   kspin_lock(&socket->spin_mu);
-  int result = 0;
+  int result = sizeof_sockaddr(socket_base->s_domain);
   if (tcp_state_type(socket->state) == TCPSTATE_PRE_ESTABLISHED) {
     result = -ENOTCONN;
   } else if (tcp_state_type(socket->state) == TCPSTATE_POST_ESTABLISHED) {
