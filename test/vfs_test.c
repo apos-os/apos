@@ -44,6 +44,7 @@
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/fs.h"
 #include "vfs/pipe.h"
+#include "vfs/poll.h"
 #include "vfs/ramfs.h"
 #include "vfs/util.h"
 #include "vfs/vfs.h"
@@ -3781,6 +3782,24 @@ static void pipe_test(void) {
   KEXPECT_EQ(-EMFILE, vfs_pipe(fds));
 
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &orig_lim));
+
+  KTEST_BEGIN("vfs_pipe(): poll on pipe endpoints");
+  KEXPECT_EQ(0, vfs_pipe(fds));
+  struct apos_pollfd pfds[2];
+  pfds[0].fd = fds[0];
+  pfds[1].fd = fds[1];
+  pfds[0].events = pfds[1].events = KPOLLIN | KPOLLOUT;
+  KEXPECT_EQ(1, vfs_poll(pfds, 2, -1));
+  KEXPECT_EQ(0, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
+
+  KEXPECT_EQ(3, vfs_write(fds[1], "abc", 3));
+  KEXPECT_EQ(2, vfs_poll(pfds, 2, -1));
+  KEXPECT_EQ(KPOLLIN, pfds[0].revents);
+  KEXPECT_EQ(KPOLLOUT, pfds[1].revents);
+
+  KEXPECT_EQ(0, vfs_close(fds[0]));
+  KEXPECT_EQ(0, vfs_close(fds[1]));
 
   // TODO(aoates): other tests to write:
   //  - write or read from unconnected pipe

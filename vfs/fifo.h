@@ -65,6 +65,7 @@ void fifo_close(apos_fifo_t* fifo, fifo_mode_t mode);
 
 ssize_t fifo_read(apos_fifo_t* fifo, void* buf, size_t len, bool block);
 ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block);
-int fifo_poll(apos_fifo_t* fifo, short event_mask, poll_state_t* poll);
+int fifo_poll(apos_fifo_t* fifo, kmode_t mode, short event_mask,
+              poll_state_t* poll);
 
 #endif

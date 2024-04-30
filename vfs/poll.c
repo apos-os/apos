@@ -93,6 +93,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
   int result = lookup_fd(fd, &file);
   if (result == -EBADF) return KPOLLNVAL;
 
+  kmode_t mode = file->mode;
   vnode_t* vnode = VFS_COPY_REF(file->vnode);
   file_unref(file);
   file = NULL;
@@ -116,7 +117,7 @@ static int vfs_poll_fd(int fd, short event_mask, poll_state_t* poll) {
     }
 
     case VNODE_FIFO:
-      result = fifo_poll(vnode->fifo, event_mask | ALWAYS_EVENTS, poll);
+      result = fifo_poll(vnode->fifo, mode, event_mask | ALWAYS_EVENTS, poll);
       VFS_PUT_AND_CLEAR(vnode);
       return result;
 

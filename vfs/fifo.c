@@ -17,6 +17,7 @@
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
 #include "proc/signal/signal.h"
+#include "user/include/apos/vfs/vfs.h"
 #include "vfs/fifo.h"
 
 static short fifo_poll_events(const apos_fifo_t* fifo) {
@@ -162,7 +163,14 @@ ssize_t fifo_write(apos_fifo_t* fifo, const void* buf, size_t len, bool block) {
   return bytes_written;
 }
 
-int fifo_poll(apos_fifo_t* fifo, short event_mask, poll_state_t* poll) {
+int fifo_poll(apos_fifo_t* fifo, kmode_t mode, short event_mask,
+              poll_state_t* poll) {
+  if (mode == VFS_O_RDONLY) {
+    event_mask &= ~(KPOLLOUT | KPOLLWRNORM | KPOLLWRBAND);
+  } else if (mode == VFS_O_WRONLY) {
+    event_mask &= ~(KPOLLIN | KPOLLRDNORM | KPOLLRDBAND);
+  }
+
   const short masked_events = fifo_poll_events(fifo) & event_mask;
   if (masked_events || !poll)
     return masked_events;
