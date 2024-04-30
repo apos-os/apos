@@ -154,6 +154,7 @@ int proc_getrlimit_32(int resource, struct apos_rlimit_32* lim) {
 }
 
 int proc_setrlimit_32(int resource, const struct apos_rlimit_32* lim) {
+  // TODO(aoates): translate APOS_RLIM_INFINITY, etc back and forth.
   struct apos_rlimit lim64;
   lim64.rlim_cur = lim->rlim_cur;
   lim64.rlim_max = lim->rlim_max;

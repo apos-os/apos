@@ -116,17 +116,45 @@ static void rlimit_test(void) {
   KEXPECT_EQ(0, getrlimit(RLIMIT_NOFILE, &rl));
   KEXPECT_GE(rl.rlim_max, rl.rlim_cur);
   const struct rlimit orig_rl = rl;
-  rl.rlim_cur = 5;
+  rl.rlim_cur = 15;
 
   KEXPECT_EQ(0, setrlimit(RLIMIT_NOFILE, &rl));
   rl.rlim_max = rl.rlim_cur = 0;
   KEXPECT_EQ(0, getrlimit(RLIMIT_NOFILE, &rl));
-  KEXPECT_EQ(5, rl.rlim_cur);
+  KEXPECT_EQ(15, rl.rlim_cur);
   KEXPECT_EQ(orig_rl.rlim_max, rl.rlim_max);
+
+  // We should be able to dup2() to a low numbered fd, but not a high one.
+  int fds[2];
+  KEXPECT_EQ(0, pipe(fds));
+  KEXPECT_EQ(14, dup2(fds[0], 14));
+  KEXPECT_ERRNO(EMFILE, dup2(fds[0], 15));
+  KEXPECT_ERRNO(EMFILE, dup2(0, 16));
+  KEXPECT_ERRNO(EMFILE, dup2(0, 30));
+  KEXPECT_EQ(0, close(14));
+  KEXPECT_EQ(0, close(fds[0]));
+  KEXPECT_EQ(0, close(fds[1]));
+
+  // We should be able to round-trip RLIM_INFINITY.
+  rl.rlim_max = rl.rlim_cur = RLIM_INFINITY;
+  KEXPECT_EQ(0, setrlimit(RLIMIT_NOFILE, &rl));
+  rl.rlim_max = rl.rlim_cur = 0;
+  KEXPECT_EQ(0, getrlimit(RLIMIT_NOFILE, &rl));
+  KEXPECT_EQ(RLIM_INFINITY, rl.rlim_cur);
+  KEXPECT_EQ(RLIM_INFINITY, rl.rlim_max);
+
+  KEXPECT_EQ(0, pipe(fds));
+  KEXPECT_EQ(14, dup2(fds[0], 14));
+  KEXPECT_EQ(15, dup2(fds[0], 15));
+  KEXPECT_EQ(31, dup2(fds[0], 31));
+  KEXPECT_EQ(0, close(14));
+  KEXPECT_EQ(0, close(15));
+  KEXPECT_EQ(0, close(31));
+  KEXPECT_EQ(0, close(fds[0]));
+  KEXPECT_EQ(0, close(fds[1]));
 
   KEXPECT_EQ(0, setrlimit(RLIMIT_NOFILE, &orig_rl));
   // We should be able to open a file now.
-  int fds[2];
   KEXPECT_EQ(0, pipe(fds));
   KEXPECT_EQ(0, close(fds[0]));
   KEXPECT_EQ(0, close(fds[1]));

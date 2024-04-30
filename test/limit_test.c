@@ -180,18 +180,32 @@ static void limit_nofile_test(void* arg) {
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   fd = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(30, vfs_dup2(fd, 30));
+  KEXPECT_EQ(0, vfs_close(30));
   KEXPECT_EQ(0, vfs_close(fd));
 
   lim.rlim_cur = (double)APOS_RLIM_INFINITY * 0.5 + 20;
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   fd = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(30, vfs_dup2(fd, 30));
+  KEXPECT_EQ(0, vfs_close(30));
   KEXPECT_EQ(0, vfs_close(fd));
 
   lim.rlim_cur = INT_MAX;
   KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
   fd = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
   KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(30, vfs_dup2(fd, 30));
+  KEXPECT_EQ(0, vfs_close(30));
+  KEXPECT_EQ(0, vfs_close(fd));
+
+  lim.rlim_cur = (apos_rlim_t)INT_MAX + 1;
+  KEXPECT_EQ(0, proc_setrlimit(APOS_RLIMIT_NOFILE, &lim));
+  fd = vfs_open("_tmp_test_f", VFS_O_RDONLY | VFS_O_CREAT, VFS_S_IRWXU);
+  KEXPECT_GE(fd, 0);
+  KEXPECT_EQ(30, vfs_dup2(fd, 30));
+  KEXPECT_EQ(0, vfs_close(30));
   KEXPECT_EQ(0, vfs_close(fd));
 
   KEXPECT_EQ(0, vfs_unlink("_tmp_test_f"));

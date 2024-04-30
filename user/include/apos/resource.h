@@ -48,6 +48,7 @@ struct _APOS_RLIMIT {
   typedef apos_rlim_t rlim_t;
 # define apos_rlimit rlimit
 
+# define RLIM_INFINITY APOS_RLIM_INFINITY
 # define RLIMIT_FSIZE APOS_RLIMIT_FSIZE
 # define RLIMIT_NOFILE APOS_RLIMIT_NOFILE
 # define RLIMIT_AS APOS_RLIMIT_AS

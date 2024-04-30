@@ -800,7 +800,7 @@ int vfs_dup2(int fd1, int fd2) {
   if (!is_valid_fd(fd2)) return -EBADF;
   if (proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur !=
           APOS_RLIM_INFINITY &&
-      fd2 >= (int)proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur)
+      (apos_rlim_t)fd2 >= proc_current()->limits[APOS_RLIMIT_NOFILE].rlim_cur)
     return -EMFILE;
 
   int result = lookup_fd(fd1, &file1);
