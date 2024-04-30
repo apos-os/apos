@@ -16,6 +16,7 @@
 #include <apos/time_types.h>
 #include <fcntl.h>
 #include <sys/resource.h>
+#include <sys/select.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -175,8 +176,127 @@ static void rlimit_test(void) {
   KEXPECT_SIGNAL(SIGSEGV, setrlimit(100, (struct rlimit*)0x1fff));
 }
 
+// Test the poll()-wrapping version of select() included in the APOS newlib
+// implementation.
+static void select_test(void) {
+  KTEST_SUITE_BEGIN("select() tests");
+
+  KTEST_BEGIN("select() basic test");
+  int pfds[2];
+  KEXPECT_EQ(0, pipe(pfds));
+  const int pfd1 = 24;
+  const int pfd2 = 30;
+  KEXPECT_EQ(pfd1, dup2(pfds[0], pfd1));
+  KEXPECT_EQ(pfd2, dup2(pfds[1], pfd2));
+  KEXPECT_EQ(0, close(pfds[0]));
+  KEXPECT_EQ(0, close(pfds[1]));
+
+  fd_set allfds;
+  fd_set rset, wset, eset;
+  FD_ZERO(&allfds);
+  FD_ZERO(&rset);
+  FD_ZERO(&wset);
+  FD_ZERO(&eset);
+  FD_SET(pfd1, &allfds);
+  FD_SET(pfd2, &allfds);
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = 0;
+  KEXPECT_EQ(0, select(FD_SETSIZE, &rset, &wset, &eset, &tv));
+  KEXPECT_EQ(0, select(FD_SETSIZE, NULL, NULL, NULL, &tv));
+
+  FD_COPY(&allfds, &wset);
+  KEXPECT_EQ(1, select(FD_SETSIZE, &rset, &wset, &eset, &tv));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &wset));
+  KEXPECT_TRUE(FD_ISSET(pfd2, &wset));
+  KEXPECT_EQ(1, select(FD_SETSIZE, &rset, &wset, &eset, NULL));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &wset));
+  KEXPECT_TRUE(FD_ISSET(pfd2, &wset));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &rset));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &eset));
+
+  FD_COPY(&allfds, &wset);
+  KEXPECT_EQ(0, select(pfd1 + 1, &rset, &wset, &eset, &tv));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &wset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &wset));
+
+
+  KTEST_BEGIN("select() readfds test");
+  FD_COPY(&allfds, &rset);
+  FD_COPY(&allfds, &wset);
+  FD_COPY(&allfds, &eset);
+  KEXPECT_EQ(3, write(pfd2, "abc", 3));
+  KEXPECT_EQ(2, select(FD_SETSIZE, &rset, &wset, &eset, &tv));
+  KEXPECT_EQ(2, select(FD_SETSIZE, &rset, &wset, &eset, NULL));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &wset));
+  KEXPECT_TRUE(FD_ISSET(pfd2, &wset));
+  KEXPECT_TRUE(FD_ISSET(pfd1, &rset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &rset));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &eset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &eset));
+  KEXPECT_EQ(1, select(FD_SETSIZE, &rset, NULL, NULL, NULL));
+
+  FD_COPY(&allfds, &rset);
+  FD_COPY(&allfds, &wset);
+  FD_COPY(&allfds, &eset);
+  KEXPECT_EQ(1, select(pfd1 + 1, &rset, &wset, &eset, NULL));
+  KEXPECT_TRUE(FD_ISSET(pfd1, &rset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &rset));
+
+  KTEST_BEGIN("select() exceptfds test");
+  FD_COPY(&allfds, &rset);
+  FD_COPY(&allfds, &wset);
+  FD_ZERO(&eset);
+
+  KEXPECT_EQ(0, select(FD_SETSIZE, NULL, NULL, &eset, &tv));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &eset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &eset));
+
+  FD_COPY(&allfds, &eset);
+  KEXPECT_EQ(0, select(FD_SETSIZE, NULL, NULL, &eset, &tv));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &eset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &eset));
+
+  KEXPECT_EQ(0, close(pfd1));
+  // If we pass both, we should get EBADF.
+  FD_COPY(&allfds, &rset);
+  KEXPECT_ERRNO(EBADF, select(FD_SETSIZE, &rset, NULL, NULL, &tv));
+  FD_COPY(&allfds, &wset);
+  KEXPECT_ERRNO(EBADF, select(FD_SETSIZE, NULL, &wset, NULL, &tv));
+  FD_COPY(&allfds, &eset);
+  KEXPECT_ERRNO(EBADF, select(FD_SETSIZE, NULL, NULL, &eset, &tv));
+  FD_COPY(&allfds, &rset);
+  FD_COPY(&allfds, &wset);
+  FD_COPY(&allfds, &eset);
+  KEXPECT_ERRNO(EBADF, select(FD_SETSIZE, &rset, &wset, &eset, &tv));
+
+  // Test again with just pfd2 set.
+  FD_ZERO(&eset);
+  FD_SET(pfd2, &eset);
+  KEXPECT_EQ(1, select(FD_SETSIZE, NULL, NULL, &eset, &tv));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &eset));
+  KEXPECT_TRUE(FD_ISSET(pfd2, &eset));
+
+  // Test again with pfd2 set in rset, but _not_ eset.
+  FD_ZERO(&eset);
+  FD_ZERO(&rset);
+  FD_SET(pfd2, &rset);
+  KEXPECT_EQ(1, select(FD_SETSIZE, &rset, NULL, &eset, &tv));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &rset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &rset));
+  KEXPECT_FALSE(FD_ISSET(pfd1, &eset));
+  KEXPECT_FALSE(FD_ISSET(pfd2, &eset));
+
+  KEXPECT_EQ(0, select(0, &rset, NULL, NULL, &tv));
+  KEXPECT_ERRNO(EINVAL, select(FD_SETSIZE + 1, &rset, NULL, NULL, &tv));
+  KEXPECT_ERRNO(EINVAL, select(-1, &rset, NULL, NULL, &tv));
+
+  KEXPECT_EQ(0, close(pfd2));
+}
+
 void misc_syscall_test(void) {
   apos_get_time_test();
   termios_test();
   rlimit_test();
+  select_test();
 }
