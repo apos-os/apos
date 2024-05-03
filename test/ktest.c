@@ -24,6 +24,16 @@
 #include "memory/kmalloc.h"
 #include "test/test_point.h"
 
+// Whether to print all test names (including passing tests)
+#define KTEST_PRINT_ALL_TESTS 0
+
+// Whether to print all test conditions (including passing ones).
+// Implies KTEST_PRINT_ALL_TESTS.
+#define KTEST_PRINT_ALL_CONDITIONS 0
+
+#define KTEST_PRINT_ALL_TESTS_VAL \
+  (KTEST_PRINT_ALL_TESTS || KTEST_PRINT_ALL_CONDITIONS)
+
 #if ENABLE_TERM_COLOR
 # define FAILED "\x1b[1;31m[FAILED]\x1b[0m"
 # define PASSED "\x1b[1;32m[PASSED]\x1b[0m"
@@ -108,10 +118,16 @@ void KTEST_BEGIN(const char* name) {
   current_test_passing = 1;
   current_test_failures = 0;
   num_tests++;
+  if (KTEST_PRINT_ALL_TESTS_VAL) {
+    klogm(KL_TEST, INFO, "\nTEST: ");
+    klogm(KL_TEST, INFO, name);
+    klogm(KL_TEST, INFO, "\n");
+    klogm(KL_TEST, INFO, "---------------------------------------\n");
+  }
 }
 
 static void do_failure(void) {
-  if (current_test_passing) {
+  if (current_test_passing && !KTEST_PRINT_ALL_TESTS_VAL) {
     klogm(KL_TEST, INFO, "\nTEST: ");
     klogm(KL_TEST, INFO, current_test_name);
     klogm(KL_TEST, INFO, "\n");
@@ -126,7 +142,15 @@ bool kexpect(int cond, const char* name, const char* astr,
              const char* bstr, const char* aval, const char* bval,
              const char* val_surrounders, const char* opstr, const char* file,
              const char* line) {
-  if (!cond) {
+  if (cond && KTEST_PRINT_ALL_CONDITIONS) {
+    klogm(KL_TEST, INFO, PASSED " ");
+    klogm(KL_TEST, INFO, name);
+    klogm(KL_TEST, INFO, "(");
+    klogm(KL_TEST, INFO, astr);
+    klogm(KL_TEST, INFO, ", ");
+    klogm(KL_TEST, INFO, bstr);
+    klogm(KL_TEST, INFO, ")\n");
+  } else if (!cond) {
     do_failure();
     klogm(KL_TEST, INFO, FAILED " ");
     klogm(KL_TEST, INFO, name);
