@@ -37,7 +37,7 @@ struct sockaddr_storage {
 #define AF_UNSPEC 1  // Unspecified.
 #define AF_UNIX 2    // UNIX domain sockets.
 #define AF_INET 3    // IPv4 sockets.
-// TODO(aoates): define AF_INET6
+#define AF_INET6 4   // IPv6 sockets.
 
 #define SHUT_RD 1    // Disables further receive operations.
 #define SHUT_RDWR 2  // Disables further send and receive operations.
