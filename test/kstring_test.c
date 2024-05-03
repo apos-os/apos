@@ -321,6 +321,28 @@ static void kstring_testE(void) {
   KEXPECT_EQ(1, kisalnum('5'));
   KEXPECT_EQ(1, kisalnum('9'));
 
+  KTEST_BEGIN("kishex()");
+  KEXPECT_EQ(1, kishex('a'));
+  KEXPECT_EQ(0, kishex('z'));
+  KEXPECT_EQ(1, kishex('A'));
+  KEXPECT_EQ(0, kishex('Z'));
+  KEXPECT_EQ(0, kishex('x'));
+  KEXPECT_EQ(0, kishex('X'));
+  KEXPECT_EQ(0, kishex('_'));
+  KEXPECT_EQ(0, kishex('*'));
+  KEXPECT_EQ(0, kishex(':'));
+  KEXPECT_EQ(0, kishex('\0'));
+  KEXPECT_EQ(0, kishex('\x03'));
+  KEXPECT_EQ(1, kishex('0'));
+  KEXPECT_EQ(1, kishex('5'));
+  KEXPECT_EQ(1, kishex('9'));
+  KEXPECT_EQ(1, kishex('b'));
+  KEXPECT_EQ(1, kishex('c'));
+  KEXPECT_EQ(1, kishex('f'));
+  KEXPECT_EQ(1, kishex('F'));
+  KEXPECT_EQ(0, kishex('g'));
+  KEXPECT_EQ(0, kishex('G'));
+
   KTEST_BEGIN("kisspace()");
   KEXPECT_EQ(1, kisspace(' '));
   KEXPECT_EQ(1, kisspace('\t'));

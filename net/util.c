@@ -76,6 +76,141 @@ in_addr_t str2inet(const char* s) {
   return addr;
 }
 
+char* inet62str(const struct in6_addr* addr, char* buf) {
+  // First find the longest string of zeroes.
+  int zrun_start = -1;
+  int zrun_len = 0;
+  int cur_zrun_start = -1;
+  int cur_zrun_len = 0;
+  for (int i = 0; i < 8; ++i) {
+    bool is_zero = (addr->s6_addr[i * 2] == 0 && addr->s6_addr[i * 2 + 1] == 0);
+    if (is_zero) {
+      if (cur_zrun_start < 0) {
+        cur_zrun_start = i;
+        cur_zrun_len = 0;
+      }
+      cur_zrun_len++;
+    } else {
+      if (cur_zrun_start >= 0 && cur_zrun_len > 1 && cur_zrun_len > zrun_len) {
+        zrun_start = cur_zrun_start;
+        zrun_len = cur_zrun_len;
+      }
+      cur_zrun_start = -1;
+      cur_zrun_len = 0;
+    }
+  }
+  if (cur_zrun_start >= 0 && cur_zrun_len > zrun_len) {
+    zrun_start = cur_zrun_start;
+    zrun_len = cur_zrun_len;
+  }
+
+  // Print the address.
+  char* orig_buf = buf;
+  bool colon = false;
+  for (int i = 0; i < 8; ++i) {
+    if (i == zrun_start) {
+      kstrcpy(buf, "::");
+      buf += 2;
+      colon = false;
+    } else if (i > zrun_start && i < zrun_start + zrun_len) {
+      continue;
+    } else {
+      if (colon) {
+        kstrcpy(buf, ":");
+        buf++;
+      }
+      uint16_t val =
+          ((uint16_t)addr->s6_addr[i * 2] << 8) + addr->s6_addr[i * 2 + 1];
+      kutoa_hex_lower_r(val, buf, 5);
+      buf += kstrlen(buf);
+      colon = true;
+    }
+  }
+  return orig_buf;
+}
+
+int str2inet6(const char* s, struct in6_addr* addr_out) {
+  // First check the string for validity and find the double-colon, if any.
+  int zrun_start = -1;
+  int hextet = 0;
+  int i = 0;
+  bool expect_colon = false;
+  while (s[i] != '\0') {
+    if (hextet > 7) {
+      return -EINVAL;  // Too man hextets.
+    }
+    int hlen = 0;
+    if (expect_colon && s[i] != ':') {
+      return -EINVAL;
+    }
+    if (s[i] == ':') {
+      // Special case for a double colon at the start.
+      if (i == 0 && s[1] == ':') expect_colon = true;
+      if (!expect_colon) {
+        return -EINVAL;
+      }
+      i++;
+    }
+
+    // Look for a double colon.
+    if (s[i] == ':') {
+      if (zrun_start >= 0) {
+        return -EINVAL;  // Multiple double colons.
+      }
+      zrun_start = hextet;
+      i++;
+      expect_colon = false;
+      continue;
+    }
+    // Find the limits of the hextet (consume up to 4 hex digits).
+    while (kishex(s[i + hlen]) && hlen < 4) {
+      hlen++;
+    }
+    if (hlen == 0) {
+      return -EINVAL;
+    }
+    char hstr[5];
+    kmemcpy(hstr, s + i, hlen);
+    hstr[hlen] = '\0';
+    int hextet_val = katou_hex(hstr);
+    KASSERT_DBG(hextet_val >= 0);
+    KASSERT_DBG(hextet_val <= (int)UINT16_MAX);
+    addr_out->s6_addr[2 * hextet] = hextet_val >> 8;
+    addr_out->s6_addr[2 * hextet + 1] = hextet_val;
+    hextet++;
+    i += hlen;
+    expect_colon = true;
+  }
+  if (hextet < 8 && zrun_start < 0) {
+    return -EINVAL;  // Too few hextets.
+  }
+
+  // If we found a double colon, shift everything to fill in the zeroes.
+  if (zrun_start >= 0) {
+    int zeroes = 2 * (8 - hextet);
+    zrun_start *= 2;  // Switch from hextets to octets.
+    for (i = 15; i >= zrun_start + zeroes; --i) {
+      addr_out->s6_addr[i] = addr_out->s6_addr[i - zeroes];
+    }
+    for (i = zrun_start; i < zrun_start + zeroes; ++i) {
+      KASSERT_DBG(i < 16);
+      addr_out->s6_addr[i] = 0;
+    }
+  }
+  return 0;
+}
+
+int str2sin6(const char* ip, int port, struct sockaddr_in6* addr_out) {
+  kmemset(addr_out, 0, sizeof(struct sockaddr_in6));
+  int result = str2inet6(ip, &addr_out->sin6_addr);
+  if (result) {
+    return result;
+  }
+  addr_out->sin6_family = AF_INET6;
+  addr_out->sin6_port = htob16(port);
+  return 0;
+}
+
 char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
                    char* buf) {
   switch (saddr->sa_family) {

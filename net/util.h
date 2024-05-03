@@ -26,8 +26,9 @@
 // make it just a hint so pbuf_t can expand if necessary).
 #define INET_HEADER_RESERVE (14 /* eth */ + 20 /* ipv4 */)
 
-// Minimum length of a buffer for pretty-printing an IPv4 address.
+// Minimum length of a buffer for pretty-printing an IPv4/IPv6 address.
 #define INET_PRETTY_LEN (4 * 4)
+#define INET6_PRETTY_LEN (8 * 5)
 
 // TODO(aoates): should these go somewhere that can be shared with userspace
 // libraries?
@@ -40,6 +41,11 @@ in_addr_t str2inet(const char* s);
 
 // Create a sockaddr_in from an IP string and port.
 struct sockaddr_in str2sin(const char* ip, int port);
+
+// As above, but for IPv6 addresses.
+char* inet62str(const struct in6_addr* addr, char* buf);
+int str2inet6(const char* s, struct in6_addr* addr_out);
+int str2sin6(const char* ip, int port, struct sockaddr_in6* addr_out);
 
 #define SOCKADDR_PRETTY_LEN 109
 

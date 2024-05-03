@@ -32,6 +32,7 @@ srcs = [
   'hashtable_test.c',
   'fork_test.c',
   'futex_test.c',
+  'ipv6_test.c',
   'kernel_tests.c',
   'kmalloc_test.c',
   'kprintf_test.c',
