@@ -40,6 +40,7 @@ srcs = [
 subdirs = ['internal/load']
 
 env.Append(CFLAGS = Split("-mcmodel=medany"))
+env.Append(LINKFLAGS = Split("--no-relax"))
 
 def build_shared_constants(env, source):
   types = (('asm', '.s'), ('ld', '.ld'), ('c', '.h'))
