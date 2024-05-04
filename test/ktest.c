@@ -21,7 +21,9 @@
 #include "common/klog.h"
 #include "common/math.h"
 #include "dev/timer.h"
+#include "memory/block_cache.h"
 #include "memory/kmalloc.h"
+#include "proc/sleep.h"
 #include "test/test_point.h"
 
 // Whether to print all test names (including passing tests)
@@ -277,6 +279,12 @@ void ktest_begin_all(void) {
 }
 
 void ktest_finish_all(void) {
+  // Trigger the block cache flush thread to flush any dirtied blocks from the
+  // end of the test run (e.g. cleanup operations), in case we're terminated
+  // immediately after this.
+  block_cache_wakeup_flush_thread();
+  ksleep(10);
+
   apos_ms_t end_time = get_time_ms();
   finish_test();
   finish_suite();
