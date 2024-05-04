@@ -161,12 +161,14 @@ int ktest_finish_all(void) {
   apos_klogf("---------------------------------------\n");
   apos_klogf("USERSPACE UNIT TESTS FINISHED\n");
   if (num_suites == num_suites_passing) {
-    apos_klogf(PASSED " passed %d/%d suites and %d/%d tests in %d ms\n",
+    apos_klogf(PASSED
+               " passed (user-mode) %d/%d suites and %d/%d tests in %d ms\n",
                num_suites_passing, num_suites, num_tests_passing, num_tests,
                end_time - test_start_time);
     return 0;
   } else {
-    apos_klogf(FAILED " passed %d/%d suites and %d/%d tests in %d ms\n",
+    apos_klogf(FAILED
+               " passed (user-mode) %d/%d suites and %d/%d tests in %d ms\n",
                num_suites_passing, num_suites, num_tests_passing, num_tests,
                end_time - test_start_time);
     apos_klogf("Failed tests:\n");
