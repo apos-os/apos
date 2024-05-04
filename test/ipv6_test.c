@@ -16,6 +16,7 @@
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kstring.h"
+#include "net/addr.h"
 #include "net/util.h"
 #include "test/ktest.h"
 
@@ -274,6 +275,13 @@ static void str2addr_tests(void) {
   KEXPECT_EQ(btoh16(0xabcd), sin6.sin6_port);
   KEXPECT_EQ(0, sin6.sin6_flowinfo);
   KEXPECT_EQ(0, sin6.sin6_scope_id);
+
+  KTEST_BEGIN("IPv6: sockaddr2str tests");
+  KEXPECT_EQ(0, str2sin6("1::7", 1234, &sin6));
+  KEXPECT_STREQ("[1::7]:1234", sockaddr2str((struct sockaddr*)&sin6,
+                                            sizeof(sin6), buf));
+  KEXPECT_STREQ("<bad AF_INET6 addr>",
+                sockaddr2str((struct sockaddr*)&sin6, sizeof(sin6) - 1, buf));
 }
 
 static void addr_tests(void) {
@@ -303,7 +311,97 @@ static void addr_tests(void) {
   str2addr_tests();
 }
 
+static void netaddr_tests(void) {
+  KTEST_BEGIN("IPv6 netaddr tests");
+  char buf[INET6_PRETTY_LEN];
+  struct sockaddr_in6 sin6;
+  netaddr_t na;
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 100, &sin6));
+  KEXPECT_EQ(-EINVAL, sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6) - 1,
+                                   &na, NULL));
+  KEXPECT_EQ(0, sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na, NULL));
+  KEXPECT_EQ(ADDR_INET6, na.family);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&na.a.ip6, buf));
+  int port = 0;
+  KEXPECT_EQ(0,
+             sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na, &port));
+  KEXPECT_EQ(100, port);
+
+  kmemset(&sin6, 0xab, sizeof(sin6));
+  KEXPECT_EQ(-EINVAL, net2sockaddr(&na, 1234, &sin6, sizeof(sin6) - 1));
+  KEXPECT_EQ(0, net2sockaddr(&na, 1234, &sin6, sizeof(sin6)));
+  KEXPECT_STREQ("2001:db8::1", inet62str(&sin6.sin6_addr, buf));
+  KEXPECT_EQ(htob16(1234), sin6.sin6_port);
+  KEXPECT_EQ(AF_INET6, sin6.sin6_family);
+  KEXPECT_EQ(0, sin6.sin6_flowinfo);
+  KEXPECT_EQ(0, sin6.sin6_scope_id);
+
+  netaddr_t na2;
+  KEXPECT_TRUE(netaddr_eq(&na, &na));
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 100, &sin6));
+  KEXPECT_EQ(0,
+             sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na2, NULL));
+  KEXPECT_FALSE(netaddr_eq(&na, &na2));
+
+  network_t network;
+  network.addr = na2;
+  network.prefix_len = 128;
+  KEXPECT_TRUE(netaddr_match(&na2, &network));
+  KEXPECT_FALSE(netaddr_match(&na, &network));
+  network.prefix_len = 127;
+  KEXPECT_TRUE(netaddr_match(&na2, &network));
+  network.prefix_len = 20;
+  KEXPECT_TRUE(netaddr_match(&na2, &network));
+
+  KEXPECT_EQ(0, str2sin6("2001:da8::2", 100, &sin6));
+  KEXPECT_EQ(0,
+             sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na2, NULL));
+  KEXPECT_FALSE(netaddr_eq(&na, &na2));
+  network.prefix_len = 20;
+  KEXPECT_TRUE(netaddr_match(&na2, &network));
+  network.prefix_len = 32;
+  KEXPECT_FALSE(netaddr_match(&na2, &network));
+  network.prefix_len = 25;
+  KEXPECT_TRUE(netaddr_match(&na2, &network));
+  network.prefix_len = 28;
+  KEXPECT_FALSE(netaddr_match(&na2, &network));
+  network.prefix_len = 27;
+  KEXPECT_TRUE(netaddr_match(&na2, &network));
+}
+
+static void sockaddr_tests(void) {
+  KTEST_BEGIN("IPv6 sockaddr tests");
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), sizeof_sockaddr(AF_INET6));
+  char buf[INET6_PRETTY_LEN];
+  struct sockaddr_in6 sin6;
+  netaddr_t na;
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 100, &sin6));
+  KEXPECT_EQ(100, get_sockaddr_port((struct sockaddr*)&sin6, sizeof(sin6)));
+  set_sockaddr_port((struct sockaddr*)&sin6, sizeof(sin6), 1234);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&sin6.sin6_addr, buf));
+  KEXPECT_EQ(htob16(1234), sin6.sin6_port);
+
+  kmemset(&sin6, 0xab, sizeof(sin6));
+  inet_make_anyaddr(AF_INET6, (struct sockaddr*)&sin6);
+  KEXPECT_STREQ("::", inet62str(&sin6.sin6_addr, buf));
+
+  KEXPECT_TRUE(inet_is_anyaddr((struct sockaddr*)&sin6));
+  sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na, NULL);
+  KEXPECT_TRUE(netaddr_is_anyaddr(&na));
+  sin6.sin6_addr.s6_addr[15] = 1;
+  KEXPECT_FALSE(inet_is_anyaddr((struct sockaddr*)&sin6));
+  sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na, NULL);
+  KEXPECT_FALSE(netaddr_is_anyaddr(&na));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 100, &sin6));
+  KEXPECT_FALSE(inet_is_anyaddr((struct sockaddr*)&sin6));
+  sock2netaddr((struct sockaddr*)&sin6, sizeof(sin6), &na, NULL);
+  KEXPECT_FALSE(netaddr_is_anyaddr(&na));
+}
+
 void ipv6_test(void) {
   KTEST_SUITE_BEGIN("IPv6");
   addr_tests();
+  netaddr_tests();
+  sockaddr_tests();
 }

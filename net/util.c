@@ -19,9 +19,13 @@
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/klog.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
+#include "net/addr.h"
 #include "user/include/apos/net/socket/unix.h"
+
+#define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
 
 char* inet2str(in_addr_t addr, char* buf) {
   const uint8_t* bytes = (uint8_t*)&addr;
@@ -225,6 +229,17 @@ char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
       }
       break;
 
+    case AF_INET6:
+      if (saddr_len < (socklen_t)sizeof(struct sockaddr_in6)) {
+        ksprintf(buf, "<bad AF_INET6 addr>");
+      } else {
+        const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)saddr;
+        kstrcpy(buf, "[");
+        inet62str(&sin6->sin6_addr, buf + 1);
+        ksprintf(buf + kstrlen(buf), "]:%d", btoh16(sin6->sin6_port));
+      }
+      break;
+
     case AF_UNIX:
       if (saddr_len < (socklen_t)sizeof(struct sockaddr_un) ||
           kstrnlen(((const struct sockaddr_un*)saddr)->sun_path,
@@ -248,6 +263,7 @@ socklen_t sizeof_sockaddr(sa_family_t sa_family) {
     case AF_UNSPEC: return sizeof(struct sockaddr);
     case AF_UNIX: return sizeof(struct sockaddr_un);
     case AF_INET: return sizeof(struct sockaddr_in);
+    case AF_INET6: return sizeof(struct sockaddr_in6);
   }
   klogfm(KL_NET, WARNING, "unknown address family: %d\n", sa_family);
   return 0;
@@ -264,6 +280,19 @@ int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,
       addr_in->sin_family = AF_INET;
       addr_in->sin_addr = naddr->a.ip4;
       addr_in->sin_port = htob16(port);
+      return 0;
+    }
+
+    case ADDR_INET6: {
+      if (saddr_len < (int)sizeof(struct sockaddr_in6)) {
+        return -EINVAL;
+      }
+      struct sockaddr_in6* addr_in6 = (struct sockaddr_in6*)saddr;
+      addr_in6->sin6_family = AF_INET6;
+      addr_in6->sin6_addr = naddr->a.ip6;
+      addr_in6->sin6_port = htob16(port);
+      addr_in6->sin6_flowinfo = 0;
+      addr_in6->sin6_scope_id = 0;
       return 0;
     }
 
@@ -295,6 +324,21 @@ int sock2netaddr(const struct sockaddr* saddr, socklen_t saddr_len,
       return 0;
     }
 
+    case ADDR_INET6: {
+      if (saddr_len < (int)sizeof(struct sockaddr_in6)) {
+        return -EINVAL;
+      }
+      const struct sockaddr_in6* addr_in6 = (const struct sockaddr_in6*)saddr;
+      if (naddr) {
+        naddr->family = ADDR_INET6;
+        naddr->a.ip6 = addr_in6->sin6_addr;
+      }
+      if (port) {
+        *port = btoh16(addr_in6->sin6_port);
+      }
+      return 0;
+    }
+
     case ADDR_UNSPEC:
       naddr->family = ADDR_UNSPEC;
       if (port) {
@@ -310,18 +354,33 @@ in_port_t get_sockaddr_port(const struct sockaddr* addr, socklen_t addr_len) {
   // We take the addr_len just to double check it rather than risk buffer
   // overflow --- this should only be called with buffers that are known to be
   // big enough.
-  KASSERT(addr->sa_family == AF_INET);
-  KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in));
-  const struct sockaddr_in* sin = (const struct sockaddr_in*)addr;
-  return btoh16(sin->sin_port);
+  if (addr->sa_family == AF_INET) {
+    KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in));
+    const struct sockaddr_in* sin = (const struct sockaddr_in*)addr;
+    return btoh16(sin->sin_port);
+  } else if (addr->sa_family == AF_INET6) {
+    KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in6));
+    const struct sockaddr_in6* sin = (const struct sockaddr_in6*)addr;
+    return btoh16(sin->sin6_port);
+  } else {
+    KLOG(FATAL, "Unknown sockaddr family %d\n", addr->sa_family);
+    return 0;
+  }
 }
 
 void set_sockaddr_port(struct sockaddr* addr, socklen_t addr_len,
                        in_port_t port) {
-  KASSERT(addr->sa_family == AF_INET);
-  KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in));
-  struct sockaddr_in* sin = (struct sockaddr_in*)addr;
-  sin->sin_port = btoh16(port);
+  if (addr->sa_family == AF_INET) {
+    KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in));
+    struct sockaddr_in* sin = (struct sockaddr_in*)addr;
+    sin->sin_port = btoh16(port);
+  } else if (addr->sa_family == AF_INET6) {
+    KASSERT(addr_len >= (socklen_t)sizeof(struct sockaddr_in6));
+    struct sockaddr_in6* sin = (struct sockaddr_in6*)addr;
+    sin->sin6_port = btoh16(port);
+  } else {
+    KLOG(FATAL, "Unknown sockaddr family %d\n", addr->sa_family);
+  }
 }
 
 in_port_t get_sockaddrs_port(const struct sockaddr_storage* addr) {
@@ -335,21 +394,55 @@ void set_sockaddrs_port(struct sockaddr_storage* addr, in_port_t port) {
 }
 
 void inet_make_anyaddr(int af, struct sockaddr* addr) {
-  KASSERT(af == AF_INET);
-  struct sockaddr_in* in_addr = (struct sockaddr_in*)addr;
-  in_addr->sin_family = AF_INET;
-  in_addr->sin_addr.s_addr = INADDR_ANY;
-  in_addr->sin_port = 0;
+  if (af == AF_INET) {
+    struct sockaddr_in* in_addr = (struct sockaddr_in*)addr;
+    in_addr->sin_family = AF_INET;
+    in_addr->sin_addr.s_addr = INADDR_ANY;
+    in_addr->sin_port = 0;
+  } else if (af == AF_INET6) {
+    struct sockaddr_in6* in_addr = (struct sockaddr_in6*)addr;
+    kmemset(in_addr, 0, sizeof(struct sockaddr_in6));
+    in_addr->sin6_family = AF_INET6;
+  } else {
+    KLOG(FATAL, "Unknown sockaddr family %d\n", addr->sa_family);
+  }
+}
+
+static bool in6_is_any(const struct in6_addr* addr) {
+  for (int i = 0; i < 16; ++i) {
+    if (addr->s6_addr[i] != 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool inet_is_anyaddr(const struct sockaddr* addr) {
   KASSERT(addr->sa_family == AF_INET || addr->sa_family == AF_UNIX ||
-          addr->sa_family == AF_UNSPEC);
+          addr->sa_family == AF_INET6 || addr->sa_family == AF_UNSPEC);
 
   if (addr->sa_family == AF_INET) {
     const struct sockaddr_in* sin = (const struct sockaddr_in*)addr;
     return sin->sin_addr.s_addr == INADDR_ANY;
+  } else if (addr->sa_family == AF_INET6) {
+    const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)addr;
+    return in6_is_any(&sin6->sin6_addr);
   }
 
+  return false;
+}
+
+bool netaddr_is_anyaddr(const netaddr_t* addr) {
+  switch (addr->family) {
+    case ADDR_INET:
+      return addr->a.ip4.s_addr == INADDR_ANY;
+
+    case ADDR_INET6:
+      return in6_is_any(&addr->a.ip6);
+
+    case ADDR_UNSPEC:
+      return false;
+  }
+  KLOG(DFATAL, "Unknown netaddr family %d\n", addr->family);
   return false;
 }

@@ -16,12 +16,16 @@
 #include "common/attributes.h"
 #include "common/endian.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 
 bool netaddr_eq(const netaddr_t* a, const netaddr_t* b) {
   if (a->family != b->family) return false;
   switch (a->family) {
     case ADDR_INET:
       return a->a.ip4.s_addr == b->a.ip4.s_addr;
+
+    case ADDR_INET6:
+      return kmemcmp(&a->a.ip6, &b->a.ip6, sizeof(struct in6_addr)) == 0;
 
     case ADDR_UNSPEC:
       break;
@@ -43,6 +47,24 @@ bool netaddr_match(const netaddr_t* addr, const network_t* network) {
       KASSERT_DBG(network->prefix_len <= 32 && network->prefix_len >= 0);
       const in_addr_t mask = htob32(netmask(network->prefix_len));
       return (addr->a.ip4.s_addr & mask) == (network->addr.a.ip4.s_addr & mask);
+    }
+
+    case ADDR_INET6: {
+      KASSERT_DBG(network->prefix_len <= 128 && network->prefix_len >= 0);
+      for (int i = 0; i < network->prefix_len / 8; ++i) {
+        if (addr->a.ip6.s6_addr[i] != network->addr.a.ip6.s6_addr[i]) {
+          return false;
+        }
+      }
+      int bits = network->prefix_len % 8;
+      if (bits != 0) {
+        if ((addr->a.ip6.s6_addr[network->prefix_len / 8] >> (8 - bits)) !=
+            (network->addr.a.ip6.s6_addr[network->prefix_len / 8] >>
+             (8 - bits))) {
+          return false;
+        }
+      }
+      return true;
     }
 
     case ADDR_UNSPEC:

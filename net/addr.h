@@ -21,10 +21,10 @@
 #include "user/include/apos/net/socket/socket.h"
 
 // Address family.  Corresponds to AF_* values, but as an enum.
-// TODO(aoates): support IPv6 addresses.
 typedef enum {
   ADDR_UNSPEC = AF_UNSPEC,
   ADDR_INET = AF_INET,
+  ADDR_INET6 = AF_INET6,
 } addrfam_t;
 
 // A generic network address, agnostic to the underlying protocol.
@@ -32,6 +32,7 @@ typedef struct {
   addrfam_t family;
   union {
     struct in_addr ip4;
+    struct in6_addr ip6;
   } a;
 } netaddr_t;
 

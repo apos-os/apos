@@ -18,17 +18,14 @@
 #include "common/kassert.h"
 #include "dev/net/nic.h"
 #include "net/addr.h"
+#include "net/util.h"
 #include "proc/spinlock.h"
 
 int inet_bindable(const netaddr_t* addr) {
-  switch (addr->family) {
-    case AF_INET:
-      if (addr->a.ip4.s_addr == INADDR_ANY) return 0;
-      break;
-
-    case AF_UNSPEC:
-      break;  // Will error out.
+  if (netaddr_is_anyaddr(addr)) {
+    return 0;
   }
+
   nic_t* nic = nic_first();
   while (nic) {
     if (inet_source_valid(addr, nic) == 0) {
