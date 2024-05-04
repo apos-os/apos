@@ -405,6 +405,12 @@ static void sockname_unix_tests(void) {
   KEXPECT_SIGNAL(SIGSEGV, getpeername(s1, (struct sockaddr*)0x0, &len));
   KEXPECT_SIGNAL(SIGSEGV,
                  getpeername(s1, (struct sockaddr*)INVALID_ADDR, &len));
+
+  KEXPECT_EQ(0, close(s1));
+  KEXPECT_EQ(0, close(s2));
+  KEXPECT_EQ(0, close(sock));
+  KEXPECT_EQ(0, unlink("_socket_bind"));
+  KEXPECT_EQ(0, unlink("_socket_client"));
 }
 
 static void sockname_tests(void) {
