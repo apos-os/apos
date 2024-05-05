@@ -45,7 +45,7 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
 void eth_recv(nic_t* nic, pbuf_t* pb);
 
 // Adds (prepends) an ethernet header to the given packet.
-void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
+void eth_add_hdr(pbuf_t* pb, const nic_mac_t* mac_dst, const nic_mac_t* mac_src,
                  ethertype_t ethertype);
 
 #endif

@@ -66,7 +66,7 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
     return result;
   }
 
-  eth_add_hdr(pb, arp_result.mac, nic->mac, protocol);
+  eth_add_hdr(pb, &arp_result.mac, &nic->mac, protocol);
   print_packet(pb, "TX");
   return nic->ops->nic_tx(nic, pb);
 }
@@ -92,11 +92,11 @@ void eth_recv(nic_t* nic, pbuf_t* pb) {
   net_link_recv(nic, pb, hdr.ethertype);
 }
 
-void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
+void eth_add_hdr(pbuf_t* pb, const nic_mac_t* mac_dst, const nic_mac_t* mac_src,
                  ethertype_t ethertype) {
   pbuf_push_header(pb, sizeof(eth_hdr_t));
   eth_hdr_t* hdr = (eth_hdr_t*)pbuf_get(pb);
-  kmemcpy(hdr->mac_dst, mac_dst, ETH_MAC_LEN);
-  kmemcpy(hdr->mac_src, mac_src, ETH_MAC_LEN);
+  kmemcpy(hdr->mac_dst, &mac_dst->addr, ETH_MAC_LEN);
+  kmemcpy(hdr->mac_src, &mac_src->addr, ETH_MAC_LEN);
   hdr->ethertype = htob16(ethertype);
 }

@@ -382,12 +382,12 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   // N.B.(aoates): the RTL8139 datasheet is contradictory---it says that these
   // can only be accessed in 4-byte chunks...but then says the exact opposite
   // right after.
-  nic->public.mac[0] = io_read8(nic->io, RTLRG_IDR0);
-  nic->public.mac[1] = io_read8(nic->io, RTLRG_IDR1);
-  nic->public.mac[2] = io_read8(nic->io, RTLRG_IDR2);
-  nic->public.mac[3] = io_read8(nic->io, RTLRG_IDR3);
-  nic->public.mac[4] = io_read8(nic->io, RTLRG_IDR4);
-  nic->public.mac[5] = io_read8(nic->io, RTLRG_IDR5);
+  nic->public.mac.addr[0] = io_read8(nic->io, RTLRG_IDR0);
+  nic->public.mac.addr[1] = io_read8(nic->io, RTLRG_IDR1);
+  nic->public.mac.addr[2] = io_read8(nic->io, RTLRG_IDR2);
+  nic->public.mac.addr[3] = io_read8(nic->io, RTLRG_IDR3);
+  nic->public.mac.addr[4] = io_read8(nic->io, RTLRG_IDR4);
+  nic->public.mac.addr[5] = io_read8(nic->io, RTLRG_IDR5);
 
   nic_create(&nic->public, "eth");
   rtl_init(pcidev, nic);

@@ -1,4 +1,4 @@
-// Copyright 2017 Andrew Oates.  All Rights Reserved.
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,29 +11,12 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-#ifndef APOO_NET_ETH_ARP_ARP_CACHE_H
-#define APOO_NET_ETH_ARP_ARP_CACHE_H
-
-#include "common/hashtable.h"
-#include "dev/timer.h"
 #include "net/mac.h"
-#include "proc/kthread.h"
 
-typedef struct {
-  htbl_t cache;
-  kthread_queue_t wait;
-} arp_cache_t;
+#include "common/kprintf.h"
 
-typedef struct {
-  nic_mac_t mac;
-  apos_ms_t last_used;
-} arp_cache_entry_t;
-
-// Initialize an empty ARP cache.
-void arp_cache_init(arp_cache_t* cache);
-
-// Free all memory used by the ARP cache (but not the arp_cache_t itself).
-void arp_cache_cleanup(arp_cache_t* cache);
-
-#endif
+const char* mac2str(const uint8_t mac[], char* buf) {
+  ksprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+           mac[4], mac[5]);
+  return buf;
+}

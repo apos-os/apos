@@ -20,6 +20,7 @@
 #include "common/kstring.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
+#include "net/eth/mac.h"
 #include "net/eth/arp/arp.h"
 #include "net/util.h"
 #include "proc/scheduler.h"
@@ -68,7 +69,7 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
         return 0;
       } else {
         KLOG(DEBUG, "ARP: ignoring expired entry %s -> %s (%d ms old)\n",
-             inet2str(addr, inetbuf), mac2str(entry->mac, macbuf),
+             inet2str(addr, inetbuf), mac2str(entry->mac.addr, macbuf),
              now - entry->last_used);
       }
     }
@@ -112,7 +113,7 @@ void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
     entry = (arp_cache_entry_t*)kmalloc(sizeof(arp_cache_entry_t));
     htbl_put(&nic->arp_cache.cache, addr, entry);
   }
-  kmemcpy(&entry->mac, mac, ETH_MAC_LEN);
+  kmemcpy(entry->mac.addr, mac, ETH_MAC_LEN);
   entry->last_used = get_time_ms();
   scheduler_wake_all(&nic->arp_cache.wait);
   kspin_unlock(&nic->lock);

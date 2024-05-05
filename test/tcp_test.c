@@ -11545,7 +11545,8 @@ static void nonblocking_tap_test(void) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
   char macstr1[NIC_MAC_PRETTY_LEN], macstr2[NIC_MAC_PRETTY_LEN];
-  KEXPECT_STREQ(mac2str(nic->mac, macstr1), mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ(mac2str(nic->mac.addr, macstr1),
+                mac2str(eth_hdr->mac_src, macstr2));
   KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, macstr1));
 
   // Signal to kill the connecting thread.
@@ -11568,7 +11569,8 @@ static void nonblocking_tap_test(void) {
              vfs_read(tt_fd, buf, 500));
 
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(mac2str(nic->mac, macstr1), mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ(mac2str(nic->mac.addr, macstr1),
+                mac2str(eth_hdr->mac_src, macstr2));
   KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, macstr1));
 
   // Signal to kill the connecting thread.

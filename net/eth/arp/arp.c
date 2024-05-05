@@ -88,12 +88,12 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
 
         pbuf_t* reply_buf = arp_mkpacket(ARP_OPER_REPLY);
         arp_packet_t* reply = (arp_packet_t*)pbuf_get(reply_buf);
-        kmemcpy(&reply->sha, nic->mac, ETH_MAC_LEN);
+        kmemcpy(&reply->sha, &nic->mac.addr, ETH_MAC_LEN);
         kmemcpy(&reply->spa, &target_addr, sizeof(target_addr));
         kmemcpy(&reply->tha, packet->sha, ETH_MAC_LEN);
         kmemcpy(&reply->tpa, packet->spa, sizeof(in_addr_t));
 
-        eth_add_hdr(reply_buf, packet->sha, nic->mac, ET_ARP);
+        eth_add_hdr(reply_buf, raw2mac(packet->sha), &nic->mac, ET_ARP);
         int result = nic->ops->nic_tx(nic, reply_buf);
         if (result) {
           KLOG(INFO, "ARP: unable to send reply on %s: %s\n",
@@ -181,11 +181,11 @@ void arp_send_request(nic_t* nic, in_addr_t addr) {
 
   pbuf_t* request_buf = arp_mkpacket(ARP_OPER_REQUEST);
   arp_packet_t* req = (arp_packet_t*)pbuf_get(request_buf);
-  kmemcpy(&req->sha, nic->mac, ETH_MAC_LEN);
+  kmemcpy(&req->sha, &nic->mac.addr, ETH_MAC_LEN);
   kmemcpy(&req->spa, &nic_addr, sizeof(nic_addr));
   eth_mkbroadcast(req->tha);
   kmemcpy(&req->tpa, &addr, sizeof(addr));
-  eth_add_hdr(request_buf, req->tha, nic->mac, ET_ARP);
+  eth_add_hdr(request_buf, raw2mac(req->tha), &nic->mac, ET_ARP);
   int result = nic->ops->nic_tx(nic, request_buf);
   if (result) {
     KLOG(INFO, "ARP: unable to send request on %s: %s\n", nic->name,

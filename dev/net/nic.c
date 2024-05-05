@@ -27,12 +27,6 @@
 static list_t g_nics = LIST_INIT_STATIC;
 static kspinlock_t g_nics_lock = KSPINLOCK_NORMAL_INIT_STATIC;
 
-const char* mac2str(const uint8_t* mac, char* buf) {
-  ksprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
-           mac[4], mac[5]);
-  return buf;
-}
-
 static void find_free_name(nic_t* nic, const char* name_prefix) {
   // Allow up to 999 NICs of each type.
   const int kMaxIndex = 1000;
@@ -80,7 +74,8 @@ void nic_create(nic_t* nic, const char* name_prefix) {
   char buf[NIC_MAC_PRETTY_LEN];
   find_free_name(nic, name_prefix);
   kspin_lock(&g_nics_lock);
-  klogf("net: added NIC %s with MAC %s\n", nic->name, mac2str(nic->mac, buf));
+  klogf("net: added NIC %s with MAC %s\n", nic->name,
+        mac2str(nic->mac.addr, buf));
   list_push(&g_nics, &nic->link);
   kspin_unlock(&g_nics_lock);
 }

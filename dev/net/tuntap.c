@@ -65,12 +65,12 @@ static void gen_random_mac(nic_t* nic) {
   uint32_t rand = fnv_hash_addr((addr_t)nic);
   rand = fnv_hash_concat(rand, fnv_hash_string(nic->name));
   rand = fnv_hash_concat(rand, fnv_hash(get_time_ms()));
-  nic->mac[0] = 2;  // Locally-administered bit.
-  nic->mac[1] = rand;
-  nic->mac[2] = rand >> 8;
-  nic->mac[3] = rand >> 16;
-  nic->mac[4] = rand >> 24;
-  nic->mac[5] = fnv_hash(rand);
+  nic->mac.addr[0] = 2;  // Locally-administered bit.
+  nic->mac.addr[1] = rand;
+  nic->mac.addr[2] = rand >> 8;
+  nic->mac.addr[3] = rand >> 16;
+  nic->mac.addr[4] = rand >> 24;
+  nic->mac.addr[5] = fnv_hash(rand);
 }
 
 // NIC operations.

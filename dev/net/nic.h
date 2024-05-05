@@ -21,19 +21,14 @@
 #include "common/refcount.h"
 #include "net/eth/arp/arp_cache.h"
 #include "net/addr.h"
+#include "net/mac.h"
 #include "net/pbuf.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
-#define NIC_MAC_LEN 6        // Length of MACs
-#define NIC_MAC_PRETTY_LEN (3 * NIC_MAC_LEN)
 #define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
-
-// Pretty-print the given MAC address, using the given buffer (which must be at
-// least NIC_MAC_PRETTY_LEN bytes big).
-const char* mac2str(const uint8_t* mac, char* buf);
 
 struct nic;
 typedef struct nic nic_t;
@@ -61,7 +56,7 @@ struct nic {
   // Fields maintained by the NIC driver.  Should be const after construction.
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
   nic_type_t type;              // What kind of NIC
-  uint8_t mac[NIC_MAC_LEN];     // Hardware address.
+  nic_mac_t mac;                // Hardware address.
   nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
