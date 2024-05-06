@@ -25,6 +25,7 @@
 // TODO(aoates): this should probably be a dynamic function of some sort (and/or
 // make it just a hint so pbuf_t can expand if necessary).
 #define INET_HEADER_RESERVE (14 /* eth */ + 20 /* ipv4 */)
+#define INET6_HEADER_RESERVE (14 /* eth */ + 40 /* ipv6 */)
 
 // Minimum length of a buffer for pretty-printing an IPv4/IPv6 address.
 #define INET_PRETTY_LEN (4 * 4)

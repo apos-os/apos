@@ -18,6 +18,7 @@ srcs = [
   'checksum.c',
   'ip.c',
   'ip4_hdr.c',
+  'ip6_hdr.c',
   'route.c',
   'util.c',
 ]

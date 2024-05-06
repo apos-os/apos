@@ -17,6 +17,9 @@
 #include "common/errno.h"
 #include "common/kstring.h"
 #include "net/addr.h"
+#include "net/eth/eth.h"
+#include "net/ip/ip6_hdr.h"
+#include "net/pbuf.h"
 #include "net/util.h"
 #include "test/ktest.h"
 
@@ -399,9 +402,53 @@ static void sockaddr_tests(void) {
   KEXPECT_FALSE(netaddr_is_anyaddr(&na));
 }
 
+static const uint8_t kTestPacket[] = {
+    0x52, 0x56, 0x00, 0x00, 0x00, 0x02, 0x52, 0x54, 0x00, 0x12, 0x34, 0x56,
+    0x86, 0xdd, 0x60, 0x0d, 0xd7, 0x86, 0x00, 0x28, 0x06, 0x40, 0xfe, 0xc0,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x54, 0x00, 0xff, 0xfe, 0x12,
+    0x34, 0x56, 0xfe, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xaa, 0x24, 0x15, 0xb3, 0x82, 0xdf,
+    0xda, 0x78, 0x00, 0x00, 0x00, 0x00, 0xa0, 0x02, 0xfd, 0x20, 0x83, 0x26,
+    0x00, 0x00, 0x02, 0x04, 0x05, 0xa0, 0x04, 0x02, 0x08, 0x0a, 0x37, 0xe3,
+    0xf1, 0x79, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x03, 0x07};
+
+static void pkt_tests(void) {
+  KTEST_BEGIN("IPv6 packet struct tests");
+  const ip6_hdr_t* hdr = (const ip6_hdr_t*)(kTestPacket + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*hdr));
+  KEXPECT_EQ(0, ip6_traffic_class(*hdr));
+  KEXPECT_EQ(0xdd786, ip6_flow(*hdr));
+  KEXPECT_EQ(40, btoh16(hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_TCP, hdr->next_hdr);
+  KEXPECT_EQ(64, hdr->hop_limit);
+
+  char buf[INET6_PRETTY_LEN];
+  KEXPECT_STREQ("fec0::5054:ff:fe12:3456", inet62str(&hdr->src_addr, buf));
+  KEXPECT_STREQ("fec0::2", inet62str(&hdr->dst_addr, buf));
+
+  KTEST_BEGIN("IPv6: ip6_add_hdr() test");
+  pbuf_t* pb = pbuf_create(0, INET6_HEADER_RESERVE + 10);
+  kmemset(pbuf_get(pb), 0xaa, INET6_HEADER_RESERVE + 10);
+  pbuf_pop_header(pb, INET6_HEADER_RESERVE);
+  struct in6_addr src, dst;
+  KEXPECT_EQ(0, str2inet6("fec0::5054:ff:fe12:3456", &src));
+  KEXPECT_EQ(0, str2inet6("fec0::2", &dst));
+  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP);
+  hdr = (const ip6_hdr_t*)pbuf_get(pb);
+  KEXPECT_EQ(6, ip6_version(*hdr));
+  KEXPECT_EQ(0, ip6_traffic_class(*hdr));
+  KEXPECT_EQ(0, ip6_flow(*hdr));
+  KEXPECT_EQ(10, btoh16(hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_TCP, hdr->next_hdr);
+  KEXPECT_EQ(64, hdr->hop_limit);
+
+  pbuf_free(pb);
+}
+
 void ipv6_test(void) {
   KTEST_SUITE_BEGIN("IPv6");
   addr_tests();
   netaddr_tests();
   sockaddr_tests();
+  pkt_tests();
 }
