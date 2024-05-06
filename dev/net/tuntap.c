@@ -76,10 +76,14 @@ static void gen_random_mac(nic_t* nic) {
 // NIC operations.
 static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf);
 static void tuntap_nic_cleanup(nic_t* nic);
+static void tuntap_mc_sub(nic_t* nic, const nic_mac_t* mac);
+static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac);
 
 static nic_ops_t tuntap_nic_ops = {
   &tuntap_nic_tx,
   &tuntap_nic_cleanup,
+  &tuntap_mc_sub,
+  &tuntap_mc_unsub,
 };
 
 // Chardev operations.
@@ -199,6 +203,10 @@ static void tuntap_nic_cleanup(nic_t* nic) {
   KASSERT_DBG(tt->tx_queued == 0);
   kfree(tt);
 }
+
+// Both no-ops.
+static void tuntap_mc_sub(nic_t* nic, const nic_mac_t* mac) {}
+static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac) {}
 
 static int tuntap_cd_read(struct char_dev* dev, void* buf, size_t len,
                           int flags) {

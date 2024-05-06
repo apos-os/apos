@@ -41,6 +41,10 @@ typedef struct {
   // Clean up the NIC and free any memory (including the nic_t itself, if
   // necessary).
   void (*nic_cleanup)(nic_t* nic);
+
+  // Subscribe or unsubscribe from a hardware multicast address.
+  void (*nic_mc_sub)(nic_t* nic, const nic_mac_t* mac);
+  void (*nic_mc_unsub)(nic_t* nic, const nic_mac_t* mac);
 } nic_ops_t;
 
 typedef enum {

@@ -15,6 +15,8 @@
 #include "arch/dev/irq.h"
 #include "common/endian.h"
 #include "common/errno.h"
+#include "common/hash.h"
+#include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -46,6 +48,7 @@ typedef struct {
   int txdesc;
   void* txbuf[RTL_NUM_TX_DESCS];
   bool txbuf_active[RTL_NUM_TX_DESCS];
+  htbl_t multicast_addrs;  // MAC -> counter map.
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -56,6 +59,14 @@ typedef enum {
   RTLRG_IDR3 = 0x0003,         // ID register 3
   RTLRG_IDR4 = 0x0004,         // ID register 4
   RTLRG_IDR5 = 0x0005,         // ID register 5
+  RTLRG_MAR0 = 0x0008,         // Multicast mask register 0
+  RTLRG_MAR1 = 0x0009,         // Multicast mask register 1
+  RTLRG_MAR2 = 0x000a,         // Multicast mask register 2
+  RTLRG_MAR3 = 0x000b,         // Multicast mask register 3
+  RTLRG_MAR4 = 0x000c,         // Multicast mask register 4
+  RTLRG_MAR5 = 0x000d,         // Multicast mask register 5
+  RTLRG_MAR6 = 0x000e,         // Multicast mask register 6
+  RTLRG_MAR7 = 0x000f,         // Multicast mask register 7
   RTLRG_TXSTATUS0 = 0x0010,    // Transmit status of desc 0 (TSD0)
   RTLRG_TXSTATUS1 = 0x0014,    // Transmit status of desc 1 (TSD1)
   RTLRG_TXSTATUS2 = 0x0018,    // Transmit status of desc 2 (TSD2)
@@ -161,6 +172,54 @@ static int rtl_tx(nic_t* base, pbuf_t* pb) {
 
 static void rtl_cleanup(nic_t* base) {
   KLOG(DFATAL, "RTL NIC cleanup called (shouldn't be deleted)\n");
+}
+
+static void rtl_update_multicast(rtl8139_t* nic) {
+  // Register for all multi-cast packets.
+  // TODO(aoates): calculate the CRC properly.
+  uint32_t val = 0;
+  if (htbl_size(&nic->multicast_addrs) > 0) {
+    val = 0xffffffff;
+  }
+  io_write32(nic->io, RTLRG_MAR0, val);
+  io_write32(nic->io, RTLRG_MAR1, val);
+  io_write32(nic->io, RTLRG_MAR2, val);
+  io_write32(nic->io, RTLRG_MAR3, val);
+  io_write32(nic->io, RTLRG_MAR4, val);
+  io_write32(nic->io, RTLRG_MAR5, val);
+  io_write32(nic->io, RTLRG_MAR6, val);
+  io_write32(nic->io, RTLRG_MAR7, val);
+}
+
+static void rtl_mc_sub(nic_t* base, const nic_mac_t* mac) {
+  rtl8139_t* nic = (rtl8139_t*)base;
+  void* value;
+  uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
+  intptr_t current = 0;
+  if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
+    current = (intptr_t)value;
+  }
+  current++;
+  htbl_put(&nic->multicast_addrs, hash, (void*)current);
+  rtl_update_multicast(nic);
+}
+
+static void rtl_mc_unsub(nic_t* base, const nic_mac_t* mac) {
+  rtl8139_t* nic = (rtl8139_t*)base;
+  void* value;
+  uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
+  intptr_t current = 0;
+  if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
+    current = (intptr_t)value;
+  }
+  KASSERT_DBG(current > 0);
+  if (current > 1) {
+    current--;
+    htbl_put(&nic->multicast_addrs, hash, (void*)current);
+  } else {
+    htbl_remove(&nic->multicast_addrs, hash);
+  }
+  rtl_update_multicast(nic);
 }
 
 static void rtl_handle_recv_one(rtl8139_t* nic) {
@@ -354,6 +413,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   io_write32(nic->io, RTLRG_TXBUF3, htol32((uint32_t)txbuf3));
   nic->txdesc = 0;
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) nic->txbuf_active[i] = false;
+  htbl_init(&nic->multicast_addrs, 5);
 
   // Enable receiving and transmitting.
   KLOG(DEBUG, "Enabling packet rx/tx\n");
@@ -396,4 +456,6 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
 static nic_ops_t rtl_ops = {
   &rtl_tx,
   &rtl_cleanup,
+  &rtl_mc_sub,
+  &rtl_mc_unsub,
 };
