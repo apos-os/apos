@@ -19,10 +19,12 @@
 #define IP_DEFAULT_TTL 64
 
 void ip6_add_hdr(pbuf_t* pb, const struct in6_addr* src,
-                 const struct in6_addr* dst, uint8_t protocol) {
+                 const struct in6_addr* dst, uint8_t protocol,
+                 uint32_t flow_label) {
   pbuf_push_header(pb, sizeof(ip6_hdr_t));
   ip6_hdr_t* hdr = (ip6_hdr_t*)pbuf_get(pb);
   hdr->version_tc_flow = htob32(6 << 28);  // Version 0, TC/flow = 0.
+  hdr->version_tc_flow |= htob32(flow_label & 0xfffff);
   hdr->payload_len = htob16(pbuf_size(pb) - sizeof(ip6_hdr_t));
   hdr->next_hdr = protocol;
   hdr->hop_limit = IP_DEFAULT_TTL;

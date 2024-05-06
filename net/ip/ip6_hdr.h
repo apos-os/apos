@@ -39,6 +39,7 @@ _Static_assert(sizeof(ip6_hdr_t) == 40, "ip6_hdr_t wrong size");
 
 // Adds (prepends) an IPv6 header to the given packet.
 void ip6_add_hdr(pbuf_t* pb, const struct in6_addr* src,
-                 const struct in6_addr* dst, uint8_t protocol);
+                 const struct in6_addr* dst, uint8_t protocol,
+                 uint32_t flow_label);
 
 #endif

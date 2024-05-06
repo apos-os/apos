@@ -433,11 +433,11 @@ static void pkt_tests(void) {
   struct in6_addr src, dst;
   KEXPECT_EQ(0, str2inet6("fec0::5054:ff:fe12:3456", &src));
   KEXPECT_EQ(0, str2inet6("fec0::2", &dst));
-  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP);
+  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP, 0xabcdef12);
   hdr = (const ip6_hdr_t*)pbuf_get(pb);
   KEXPECT_EQ(6, ip6_version(*hdr));
   KEXPECT_EQ(0, ip6_traffic_class(*hdr));
-  KEXPECT_EQ(0, ip6_flow(*hdr));
+  KEXPECT_EQ(0xdef12, ip6_flow(*hdr));
   KEXPECT_EQ(10, btoh16(hdr->payload_len));
   KEXPECT_EQ(IPPROTO_TCP, hdr->next_hdr);
   KEXPECT_EQ(64, hdr->hop_limit);
