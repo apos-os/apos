@@ -16,6 +16,7 @@
 
 #include "dev/net/loopback.h"
 #include "dev/net/nic.h"
+#include "net/ip/ip6.h"
 #include "net/ip/route.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -38,6 +39,8 @@ void net_init(void) {
     nic->addrs[0].addr.a.ip4.s_addr = str2inet("10.0.2.8");
     nic->addrs[0].prefix_len = 24;
     kspin_unlock(&nic->lock);
+
+    ipv6_enable(nic);
   }
 
   netaddr_t def;
