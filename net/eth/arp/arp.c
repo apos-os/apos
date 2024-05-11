@@ -94,7 +94,7 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
         kmemcpy(&reply->tpa, packet->spa, sizeof(in_addr_t));
 
         eth_add_hdr(reply_buf, raw2mac(packet->sha), &nic->mac, ET_ARP);
-        int result = nic->ops->nic_tx(nic, reply_buf);
+        int result = eth_send_raw(nic, reply_buf);
         if (result) {
           KLOG(INFO, "ARP: unable to send reply on %s: %s\n",
                nic->name, errorname(-result));
@@ -186,7 +186,7 @@ void arp_send_request(nic_t* nic, in_addr_t addr) {
   eth_mkbroadcast(req->tha);
   kmemcpy(&req->tpa, &addr, sizeof(addr));
   eth_add_hdr(request_buf, raw2mac(req->tha), &nic->mac, ET_ARP);
-  int result = nic->ops->nic_tx(nic, request_buf);
+  int result = eth_send_raw(nic, request_buf);
   if (result) {
     KLOG(INFO, "ARP: unable to send request on %s: %s\n", nic->name,
          errorname(-result));

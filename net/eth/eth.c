@@ -67,6 +67,10 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
   }
 
   eth_add_hdr(pb, &arp_result.mac, &nic->mac, protocol);
+  return eth_send_raw(nic, pb);
+}
+
+int eth_send_raw(nic_t* nic, pbuf_t* pb) {
   print_packet(pb, "TX");
   return nic->ops->nic_tx(nic, pb);
 }

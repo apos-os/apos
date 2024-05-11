@@ -33,7 +33,7 @@ int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
       return 0;
 
     case NIC_TUN:
-      return nic->ops->nic_tx(nic, pb);
+      return eth_send_raw(nic, pb);
 
     case NIC_UNKNOWN:
       break;
