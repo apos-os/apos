@@ -21,6 +21,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "net/eth/arp/arp_packet.h"
 #include "net/eth/eth.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/util.h"
@@ -28,29 +29,6 @@
 #include "user/include/apos/net/socket/inet.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
-
-// ARP packet format (assuming ethernet and ipv4).  Everything in
-// network-byte-order.
-typedef struct __attribute__((packed)) {
-  uint16_t htype;  // Hardware type
-  uint16_t ptype;  // Protocol type
-  uint8_t hlen;    // Hardware address length
-  uint8_t plen;    // Protocol address length
-  uint16_t oper;   // Operation
-  uint8_t sha[6];  // Sender hardware address
-  uint8_t spa[4];  // Sender protocol address
-  uint8_t tha[6];  // Target hardware address
-  uint8_t tpa[4];  // Target protocol address
-} arp_packet_t;
-
-typedef enum {
-  ARP_HTYPE_ETH = 1,
-} arp_htype_t;
-
-typedef enum {
-  ARP_OPER_REQUEST = 1,
-  ARP_OPER_REPLY = 2,
-} arp_oper_t;
 
 _Static_assert(sizeof(arp_packet_t) == 28, "bad arp_packet_t size");
 

@@ -31,4 +31,7 @@ int nbr_cache_lookup(nic_t* nic, netaddr_t addr, nbr_cache_entry_t* result,
 // Interrupt-safe.
 void nbr_cache_insert(nic_t* nic, netaddr_t addr, const uint8_t* mac);
 
+// Clear all entries in the neighbor cache.
+void nbr_cache_clear(nic_t* nic);
+
 #endif

@@ -34,6 +34,9 @@ static inline ALWAYS_INLINE const nic_mac_t* raw2mac(const uint8_t* bytes) {
 
 // Pretty-print the given MAC address, using the given buffer (which must be at
 // least NIC_MAC_PRETTY_LEN bytes big).
-const char* mac2str(const uint8_t mac[], char* buf);
+const char* mac2str(const uint8_t* mac, char* buf);
+
+// Parse a string into a MAC address.
+int str2mac(const char* str, uint8_t* mac_out);
 
 #endif

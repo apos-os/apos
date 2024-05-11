@@ -46,6 +46,7 @@ srcs = [
   'list_test.c',
   'load_test.c',
   'mmap_test.c',
+  'net_base_test.c',
   'page_alloc_test.c',
   'poll_test.c',
   'proc_group_test.c',

@@ -126,3 +126,9 @@ void nbr_cache_insert(nic_t* nic, netaddr_t addr, const uint8_t* mac) {
   scheduler_wake_all(&nic->nbr_cache.wait);
   kspin_unlock(&nic->lock);
 }
+
+void nbr_cache_clear(nic_t* nic) {
+  kspin_lock(&nic->lock);
+  htbl_clear(&nic->nbr_cache.cache, &entry_dtor, NULL);
+  kspin_unlock(&nic->lock);
+}
