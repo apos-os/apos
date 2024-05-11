@@ -16,12 +16,29 @@
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kstring.h"
+#include "dev/net/tuntap.h"
 #include "net/addr.h"
 #include "net/eth/eth.h"
+#include "net/eth/ethertype.h"
+#include "net/ip/checksum.h"
+#include "net/ip/icmpv6/ndp.h"
+#include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/util.h"
 #include "test/ktest.h"
+#include "user/include/apos/net/socket/inet.h"
+#include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
+
+#define TAP_BUFSIZE 500
+#define SRC_IP "2001:db8::1"
+
+typedef struct {
+  int tap_fd;
+  nic_t* nic;
+} test_fixture_t;
 
 // Creates a in6_addr from a test-encoded (no zero compression, etc) string.
 static struct in6_addr* str2addr6(const char* s) {
@@ -445,10 +462,103 @@ static void pkt_tests(void) {
   pbuf_free(pb);
 }
 
+static void ndp_send_request_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: send request");
+  nbr_cache_clear(t->nic);
+
+  struct in6_addr addr6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &addr6));
+
+  kspin_lock(&t->nic->lock);
+  ndp_send_request(t->nic, &addr6);
+  kspin_unlock(&t->nic->lock);
+
+  // First check the ethernet header.
+  char mac1[NIC_MAC_PRETTY_LEN], mac2[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  char buf[100];
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t) + 8,
+      vfs_read(t->tap_fd, buf, 100));
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
+                mac2str(eth_hdr->mac_src, mac2));
+  KEXPECT_STREQ("33:33:FF:12:34:56", mac2str(eth_hdr->mac_dst, mac2));
+
+  // ...then the IPv6 header.
+  const ip6_hdr_t* ip6_hdr =
+      (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_traffic_class(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_solict_t) + 8, btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(255, ip6_hdr->hop_limit);
+
+  KEXPECT_STREQ(SRC_IP, inet62str(&ip6_hdr->src_addr, addr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::1:ff12:3456", inet62str(&ip6_hdr->dst_addr, addr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_nbr_solict_t* pkt =
+      (const ndp_nbr_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(135, pkt->hdr.type);
+  KEXPECT_EQ(0, pkt->hdr.code);
+  KEXPECT_EQ(0, pkt->reserved);
+  KEXPECT_STREQ("2001:db8::fffe:12:3456", inet62str(&pkt->target, addr));
+
+  // ...and finally we should include a source link-layer address option.
+  const uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_solict_t));
+  KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
+  KEXPECT_EQ(1 /* 8 octets */, option[1]);
+  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
+                mac2str(&option[2], mac2));
+
+  // Verify the ICMP checksum.
+  ip6_pseudo_hdr_t phdr;
+  kmemcpy(&phdr.src_addr, &ip6_hdr->src_addr, sizeof(struct in6_addr));
+  kmemcpy(&phdr.dst_addr, &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  phdr.payload_len = htob32(sizeof(ndp_nbr_solict_t) + 8);
+  KEXPECT_EQ(
+      0, ip_checksum2(&phdr, sizeof(phdr), pkt, sizeof(ndp_nbr_solict_t) + 8));
+}
+
+static void ndp_tests(test_fixture_t* t) {
+  ndp_send_request_test(t);
+}
+
 void ipv6_test(void) {
   KTEST_SUITE_BEGIN("IPv6");
+  KTEST_BEGIN("IPv6: test setup");
+  test_fixture_t fixture;
+  apos_dev_t id;
+  nic_t* nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id);
+  KEXPECT_NE(NULL, nic);
+  fixture.nic = nic;
+
+  kspin_lock(&nic->lock);
+  nic->addrs[0].addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &nic->addrs[0].addr.a.ip6));
+  nic->addrs[0].prefix_len = 64;
+  kspin_unlock(&nic->lock);
+
+  KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
+  fixture.tap_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
+  KEXPECT_GE(fixture.tap_fd, 0);
+  vfs_make_nonblock(fixture.tap_fd);
+
+  // Run the tests.
   addr_tests();
   netaddr_tests();
   sockaddr_tests();
   pkt_tests();
+  ndp_tests(&fixture);
+
+  KTEST_BEGIN("IPv6: test teardown");
+  KEXPECT_EQ(0, vfs_close(fixture.tap_fd));
+  KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
+  KEXPECT_EQ(0, tuntap_destroy(id));
 }

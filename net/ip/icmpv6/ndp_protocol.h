@@ -1,4 +1,4 @@
-// Copyright 2018 Andrew Oates.  All Rights Reserved.
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ETHERTYPE_H
-#define APOO_NET_ETH_ETHERTYPE_H
+#ifndef APOO_NET_IP_ICMPV6_NDP_PROTOCOL_H
+#define APOO_NET_IP_ICMPV6_NDP_PROTOCOL_H
 
-// Protocol types.  Used in the ethernet frame header, of course, but also
-// throughout the network stack to identify protocols (even if they aren't bound
-// for an ethernet device).
-typedef enum {
-  ET_IPV4 = 0x0800,
-  ET_IPV6 = 0x86DD,
-  ET_ARP = 0x0806,
-} ethertype_t;
+#include "net/ip/icmpv6/protocol.h"
+#include "user/include/apos/net/socket/inet.h"
+
+typedef struct __attribute__((packed)) {
+  icmpv6_hdr_t hdr;
+  uint32_t reserved;
+  struct in6_addr target;
+} ndp_nbr_solict_t;
 
 #endif

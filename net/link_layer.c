@@ -49,6 +49,10 @@ void net_link_recv(nic_t* nic, pbuf_t* pb, ethertype_t protocol) {
       ip_recv(nic, pb);
       return;
 
+    case ET_IPV6:
+      // TODO(ipv6): handle incoming packets.
+      break;
+
     case ET_ARP:
       arp_rx(nic, pb);
       return;

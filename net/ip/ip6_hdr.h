@@ -42,4 +42,19 @@ void ip6_add_hdr(pbuf_t* pb, const struct in6_addr* src,
                  const struct in6_addr* dst, uint8_t protocol,
                  uint32_t flow_label);
 
+// IPv6 pseudo-header for upper layer checksum calculations.
+typedef struct __attribute__((packed)) {
+  struct in6_addr src_addr;
+  struct in6_addr dst_addr;
+  uint32_t payload_len;
+  uint8_t _zeroes[3];
+  uint8_t next_hdr;
+} ip6_pseudo_hdr_t;
+
+_Static_assert(sizeof(ip6_pseudo_hdr_t) == 40, "ip6_pseudo_hdr_t wrong size");
+
+// Calculate the multicast Ethernet MAC address for the given IPv6 multicast
+// address.
+void ip6_multicast_mac(const struct in6_addr* addr, uint8_t* mac);
+
 #endif
