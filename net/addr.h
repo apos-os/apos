@@ -20,6 +20,8 @@
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
 
+#define NETADDR_PRETTY_LEN INET6_PRETTY_LEN
+
 // Address family.  Corresponds to AF_* values, but as an enum.
 typedef enum {
   ADDR_UNSPEC = AF_UNSPEC,
@@ -44,5 +46,9 @@ typedef struct {
 
 bool netaddr_eq(const netaddr_t* a, const netaddr_t* b);
 bool netaddr_match(const netaddr_t* addr, const network_t* network);
+uint32_t netaddr_hash(const netaddr_t* a);
+
+// buf must be at least NETADDR_PRETTY_LEN bytes big.
+char* netaddr2str(const netaddr_t* a, char* buf);
 
 #endif

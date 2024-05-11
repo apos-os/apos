@@ -329,7 +329,9 @@ static void tap_tx_test(test_fixture_t* f) {
 
   // First, seed the ARP cache.
   uint8_t remote_mac[NIC_MAC_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-  nbr_cache_insert(f->nic, dst.sin_addr.s_addr, remote_mac);
+  netaddr_t dst_na;
+  KEXPECT_EQ(0, sock2netaddr((struct sockaddr*)&dst, sizeof(dst), &dst_na, NULL));
+  nbr_cache_insert(f->nic, dst_na, remote_mac);
 
   KEXPECT_EQ(
       3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));

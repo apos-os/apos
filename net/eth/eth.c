@@ -60,7 +60,7 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
   }
   KASSERT(next_hop.family == ADDR_INET);
   nbr_cache_entry_t nbr_result;
-  int result = nbr_cache_lookup(nic, next_hop.a.ip4.s_addr, &nbr_result,
+  int result = nbr_cache_lookup(nic, next_hop, &nbr_result,
                                 allow_block ? ARP_TIMEOUT_MS : 0);
   if (result != 0) {
     return result;

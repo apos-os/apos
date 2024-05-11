@@ -16,12 +16,15 @@
 
 #include "common/errno.h"
 #include "common/hashtable.h"
+#include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/timer.h"
 #include "memory/kmalloc.h"
-#include "net/eth/mac.h"
+#include "net/addr.h"
 #include "net/eth/arp/arp.h"
+#include "net/eth/mac.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/util.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
@@ -49,19 +52,20 @@ void nbr_cache_cleanup(nbr_cache_t* cache) {
 // TODO(aoates): periodically go through the ARP caches and clean out expired
 // entries, to keep them from growing unbounded.
 
-int nbr_cache_lookup(nic_t* nic, in_addr_t addr, nbr_cache_entry_t* result,
+int nbr_cache_lookup(nic_t* nic, netaddr_t addr, nbr_cache_entry_t* result,
                      int timeout_ms) {
   char macbuf[NIC_MAC_PRETTY_LEN];
-  char inetbuf[INET_PRETTY_LEN];
+  char addrbuf[NETADDR_PRETTY_LEN];
   const apos_ms_t start = get_time_ms();
   const apos_ms_t end = start + timeout_ms;
 
+  uint32_t hash = netaddr_hash(&addr);
   kspin_lock(&nic->lock);
   apos_ms_t now;
   do {
     now = get_time_ms();
     void* value;
-    if (htbl_get(&nic->nbr_cache.cache, addr, &value) == 0) {
+    if (htbl_get(&nic->nbr_cache.cache, hash, &value) == 0) {
       nbr_cache_entry_t* entry = (nbr_cache_entry_t*)value;
       if (now - entry->last_used <= NBR_CACHE_TIMEOUT_MS) {
         kmemcpy(result, entry, sizeof(nbr_cache_entry_t));
@@ -70,13 +74,15 @@ int nbr_cache_lookup(nic_t* nic, in_addr_t addr, nbr_cache_entry_t* result,
       } else {
         KLOG(DEBUG,
              "Neighbor cache: ignoring expired entry %s -> %s (%d ms old)\n",
-             inet2str(addr, inetbuf), mac2str(entry->mac.addr, macbuf),
+             netaddr2str(&addr, addrbuf), mac2str(entry->mac.addr, macbuf),
              now - entry->last_used);
       }
     }
 
+    // TODO(ipv6): support IPv6/NDP.
+    KASSERT(addr.family == AF_INET);
     // If the entry didn't exist, or was expired, send a request and wait.
-    arp_send_request(nic, addr);
+    arp_send_request(nic, addr.a.ip4.s_addr);
     // TODO(aoates): retries after a timeout?  Or just let the upper layers deal
     // with it?
 
@@ -97,22 +103,23 @@ int nbr_cache_lookup(nic_t* nic, in_addr_t addr, nbr_cache_entry_t* result,
   return -EAGAIN;
 }
 
-void nbr_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
+void nbr_cache_insert(nic_t* nic, netaddr_t addr, const uint8_t* mac) {
   char macbuf[NIC_MAC_PRETTY_LEN];
-  char inetbuf[INET_PRETTY_LEN];
+  char addrbuf[NETADDR_PRETTY_LEN];
   nbr_cache_entry_t* entry;
   void* val;
 
+  uint32_t hash = netaddr_hash(&addr);
   kspin_lock(&nic->lock);
-  if (htbl_get(&nic->nbr_cache.cache, addr, &val) == 0) {
+  if (htbl_get(&nic->nbr_cache.cache, hash, &val) == 0) {
     KLOG(DEBUG, "Neighbor cache: updating cache entry %s -> %s\n",
-         inet2str(addr, inetbuf), mac2str(mac, macbuf));
+         netaddr2str(&addr, addrbuf), mac2str(mac, macbuf));
     entry = (nbr_cache_entry_t*)val;
   } else {
     KLOG(DEBUG, "Neighbor cache: inserting new cache entry %s -> %s\n",
-         inet2str(addr, inetbuf), mac2str(mac, macbuf));
+         netaddr2str(&addr, addrbuf), mac2str(mac, macbuf));
     entry = (nbr_cache_entry_t*)kmalloc(sizeof(nbr_cache_entry_t));
-    htbl_put(&nic->nbr_cache.cache, addr, entry);
+    htbl_put(&nic->nbr_cache.cache, hash, entry);
   }
   kmemcpy(entry->mac.addr, mac, ETH_MAC_LEN);
   entry->last_used = get_time_ms();

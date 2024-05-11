@@ -15,8 +15,11 @@
 
 #include "common/attributes.h"
 #include "common/endian.h"
+#include "common/hash.h"
 #include "common/kassert.h"
+#include "common/klog.h"
 #include "common/kstring.h"
+#include "net/util.h"
 
 bool netaddr_eq(const netaddr_t* a, const netaddr_t* b) {
   if (a->family != b->family) return false;
@@ -73,4 +76,37 @@ bool netaddr_match(const netaddr_t* addr, const network_t* network) {
 
   // Unknown address type.
   return false;
+}
+
+uint32_t netaddr_hash(const netaddr_t* a) {
+  uint32_t hash = fnv_hash(a->family);
+  switch (a->family) {
+    case ADDR_INET:
+      return fnv_hash_concat(hash, fnv_hash(a->a.ip4.s_addr));
+
+    case ADDR_INET6:
+      return fnv_hash_concat(hash, fnv_hash_array(&a->a.ip6, sizeof(a->a.ip6)));
+
+    case ADDR_UNSPEC:
+      return hash;
+  }
+
+  klogfm(KL_NET, DFATAL, "Unknown netaddr family: %d\n", a->family);
+  return hash;
+}
+
+char* netaddr2str(const netaddr_t* a, char* buf) {
+  switch (a->family) {
+    case ADDR_INET:
+      return inet2str(a->a.ip4.s_addr, buf);
+
+    case ADDR_INET6:
+      return inet62str(&a->a.ip6, buf);
+
+    case ADDR_UNSPEC:
+      return kstrcpy(buf, "<ADDR_UNSPEC addr>");
+  }
+
+  klogfm(KL_NET, DFATAL, "Unknown netaddr family: %d\n", a->family);
+  return kstrcpy(buf, "<invalid netaddr family>");
 }

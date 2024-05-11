@@ -114,8 +114,9 @@ static void arp_handle_reply(nic_t* nic, const arp_packet_t* packet) {
 
   // TODO(aoates): verify that the source addresses are valid (i.e. aren't
   // broadcast or multicast addresses, etc).
-  in_addr_t src_addr;
-  kmemcpy(&src_addr, packet->spa, sizeof(src_addr));
+  netaddr_t src_addr;
+  src_addr.family = AF_INET;
+  kmemcpy(&src_addr.a.ip4, packet->spa, sizeof(packet->spa));
   nbr_cache_insert(nic, src_addr, packet->sha);
 }
 
