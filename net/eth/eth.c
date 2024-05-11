@@ -19,8 +19,8 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "net/eth/arp/arp_cache_ops.h"
 #include "net/link_layer.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -59,14 +59,14 @@ int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
     return -EINVAL;
   }
   KASSERT(next_hop.family == ADDR_INET);
-  arp_cache_entry_t arp_result;
-  int result = arp_cache_lookup(nic, next_hop.a.ip4.s_addr, &arp_result,
+  nbr_cache_entry_t nbr_result;
+  int result = nbr_cache_lookup(nic, next_hop.a.ip4.s_addr, &nbr_result,
                                 allow_block ? ARP_TIMEOUT_MS : 0);
   if (result != 0) {
     return result;
   }
 
-  eth_add_hdr(pb, &arp_result.mac, &nic->mac, protocol);
+  eth_add_hdr(pb, &nbr_result.mac, &nic->mac, protocol);
   return eth_send_raw(nic, pb);
 }
 

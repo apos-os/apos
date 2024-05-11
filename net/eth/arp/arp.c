@@ -21,8 +21,8 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "net/eth/arp/arp_cache_ops.h"
 #include "net/eth/eth.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -116,7 +116,7 @@ static void arp_handle_reply(nic_t* nic, const arp_packet_t* packet) {
   // broadcast or multicast addresses, etc).
   in_addr_t src_addr;
   kmemcpy(&src_addr, packet->spa, sizeof(src_addr));
-  arp_cache_insert(nic, src_addr, packet->sha);
+  nbr_cache_insert(nic, src_addr, packet->sha);
 }
 
 void arp_rx(nic_t* nic, pbuf_t* pb) {

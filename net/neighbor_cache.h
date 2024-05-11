@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ARP_ARP_CACHE_H
-#define APOO_NET_ETH_ARP_ARP_CACHE_H
+#ifndef APOO_NET_NEIGHBOR_CACHE_H
+#define APOO_NET_NEIGHBOR_CACHE_H
 
 #include "common/hashtable.h"
 #include "dev/timer.h"
@@ -23,17 +23,17 @@
 typedef struct {
   htbl_t cache;
   kthread_queue_t wait;
-} arp_cache_t;
+} nbr_cache_t;
 
 typedef struct {
   nic_mac_t mac;
   apos_ms_t last_used;
-} arp_cache_entry_t;
+} nbr_cache_entry_t;
 
 // Initialize an empty ARP cache.
-void arp_cache_init(arp_cache_t* cache);
+void nbr_cache_init(nbr_cache_t* cache);
 
-// Free all memory used by the ARP cache (but not the arp_cache_t itself).
-void arp_cache_cleanup(arp_cache_t* cache);
+// Free all memory used by the ARP cache (but not the nbr_cache_t itself).
+void nbr_cache_cleanup(nbr_cache_t* cache);
 
 #endif

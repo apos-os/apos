@@ -15,17 +15,13 @@
 #ifndef APOO_DEV_NET_NIC_H
 #define APOO_DEV_NET_NIC_H
 
-#include <stdint.h>
-
 #include "common/list.h"
 #include "common/refcount.h"
-#include "net/eth/arp/arp_cache.h"
 #include "net/addr.h"
 #include "net/mac.h"
+#include "net/neighbor_cache.h"
 #include "net/pbuf.h"
 #include "proc/spinlock.h"
-#include "user/include/apos/net/socket/inet.h"
-#include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
 #define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
@@ -66,7 +62,7 @@ struct nic {
   // Fields maintained by the network subsystem.
   refcount_t ref;  // External refcount (will be zero usually).
   network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
-  arp_cache_t arp_cache;
+  nbr_cache_t nbr_cache;
   list_link_t link;  // Protected by global mutex, not |lock|.
   bool deleted;      // Protected by global mutex, not |lock|.
 };

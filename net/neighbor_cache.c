@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "net/eth/arp/arp_cache.h"
+#include "net/neighbor_cache.h"
 
 #include "common/errno.h"
 #include "common/hashtable.h"
@@ -26,22 +26,22 @@
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
 
-#define ARP_CACHE_INITIAL_SIZE 10
-#define ARP_CACHE_TIMEOUT_MS (60 * 1000)
+#define NBR_CACHE_INITIAL_SIZE 10
+#define NBR_CACHE_TIMEOUT_MS (60 * 1000)
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
-void arp_cache_init(arp_cache_t* cache) {
-  htbl_init(&cache->cache, ARP_CACHE_INITIAL_SIZE);
+void nbr_cache_init(nbr_cache_t* cache) {
+  htbl_init(&cache->cache, NBR_CACHE_INITIAL_SIZE);
   kthread_queue_init(&cache->wait);
 }
 
 static void entry_dtor(void* arg, uint32_t key, void* val) {
-  arp_cache_entry_t* entry = (arp_cache_entry_t*)val;
+  nbr_cache_entry_t* entry = (nbr_cache_entry_t*)val;
   kfree(entry);
 }
 
-void arp_cache_cleanup(arp_cache_t* cache) {
+void nbr_cache_cleanup(nbr_cache_t* cache) {
   htbl_clear(&cache->cache, &entry_dtor, NULL);
   htbl_cleanup(&cache->cache);
 }
@@ -49,7 +49,7 @@ void arp_cache_cleanup(arp_cache_t* cache) {
 // TODO(aoates): periodically go through the ARP caches and clean out expired
 // entries, to keep them from growing unbounded.
 
-int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
+int nbr_cache_lookup(nic_t* nic, in_addr_t addr, nbr_cache_entry_t* result,
                      int timeout_ms) {
   char macbuf[NIC_MAC_PRETTY_LEN];
   char inetbuf[INET_PRETTY_LEN];
@@ -61,14 +61,15 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
   do {
     now = get_time_ms();
     void* value;
-    if (htbl_get(&nic->arp_cache.cache, addr, &value) == 0) {
-      arp_cache_entry_t* entry = (arp_cache_entry_t*)value;
-      if (now - entry->last_used <= ARP_CACHE_TIMEOUT_MS) {
-        kmemcpy(result, entry, sizeof(arp_cache_entry_t));
+    if (htbl_get(&nic->nbr_cache.cache, addr, &value) == 0) {
+      nbr_cache_entry_t* entry = (nbr_cache_entry_t*)value;
+      if (now - entry->last_used <= NBR_CACHE_TIMEOUT_MS) {
+        kmemcpy(result, entry, sizeof(nbr_cache_entry_t));
         kspin_unlock(&nic->lock);
         return 0;
       } else {
-        KLOG(DEBUG, "ARP: ignoring expired entry %s -> %s (%d ms old)\n",
+        KLOG(DEBUG,
+             "Neighbor cache: ignoring expired entry %s -> %s (%d ms old)\n",
              inet2str(addr, inetbuf), mac2str(entry->mac.addr, macbuf),
              now - entry->last_used);
       }
@@ -80,7 +81,7 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
     // with it?
 
     if (timeout_ms > 0 && now < end) {
-      int result = scheduler_wait_on_splocked(&nic->arp_cache.wait, end - now,
+      int result = scheduler_wait_on_splocked(&nic->nbr_cache.wait, end - now,
                                               &nic->lock);
       if (result == SWAIT_TIMEOUT) {
         kspin_unlock(&nic->lock);
@@ -96,25 +97,25 @@ int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
   return -EAGAIN;
 }
 
-void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
+void nbr_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac) {
   char macbuf[NIC_MAC_PRETTY_LEN];
   char inetbuf[INET_PRETTY_LEN];
-  arp_cache_entry_t* entry;
+  nbr_cache_entry_t* entry;
   void* val;
 
   kspin_lock(&nic->lock);
-  if (htbl_get(&nic->arp_cache.cache, addr, &val) == 0) {
-    KLOG(DEBUG, "ARP: updating cache entry %s -> %s\n",
+  if (htbl_get(&nic->nbr_cache.cache, addr, &val) == 0) {
+    KLOG(DEBUG, "Neighbor cache: updating cache entry %s -> %s\n",
          inet2str(addr, inetbuf), mac2str(mac, macbuf));
-    entry = (arp_cache_entry_t*)val;
+    entry = (nbr_cache_entry_t*)val;
   } else {
-    KLOG(DEBUG, "ARP: inserting new cache entry %s -> %s\n",
+    KLOG(DEBUG, "Neighbor cache: inserting new cache entry %s -> %s\n",
          inet2str(addr, inetbuf), mac2str(mac, macbuf));
-    entry = (arp_cache_entry_t*)kmalloc(sizeof(arp_cache_entry_t));
-    htbl_put(&nic->arp_cache.cache, addr, entry);
+    entry = (nbr_cache_entry_t*)kmalloc(sizeof(nbr_cache_entry_t));
+    htbl_put(&nic->nbr_cache.cache, addr, entry);
   }
   kmemcpy(entry->mac.addr, mac, ETH_MAC_LEN);
   entry->last_used = get_time_ms();
-  scheduler_wake_all(&nic->arp_cache.wait);
+  scheduler_wake_all(&nic->nbr_cache.wait);
   kspin_unlock(&nic->lock);
 }

@@ -16,9 +16,9 @@
 
 #include "common/endian.h"
 #include "dev/net/nic.h"
-#include "net/eth/arp/arp_cache_ops.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/udp.h"
@@ -329,7 +329,7 @@ static void tap_tx_test(test_fixture_t* f) {
 
   // First, seed the ARP cache.
   uint8_t remote_mac[NIC_MAC_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-  arp_cache_insert(f->nic, dst.sin_addr.s_addr, remote_mac);
+  nbr_cache_insert(f->nic, dst.sin_addr.s_addr, remote_mac);
 
   KEXPECT_EQ(
       3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));

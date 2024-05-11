@@ -12,21 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ARP_ARP_CACHE_OPS_H
-#define APOO_NET_ETH_ARP_ARP_CACHE_OPS_H
+// Generic link-layer neighbor cache.  This handles ARP for IPv4 and NDP for
+// IPv6, and manages a common neighbor cache for each NIC that covers both
+// protocols.
+#ifndef APOO_NET_NEIGHBOR_CACHE_OPS_H
+#define APOO_NET_NEIGHBOR_CACHE_OPS_H
 
 #include "dev/net/nic.h"
-#include "net/eth/arp/arp_cache.h"
+#include "net/neighbor_cache.h"
 #include "user/include/apos/net/socket/inet.h"
 
-// Do an ARP lookup.  Returns 0 on success, or -error.  If the timeout is 0,
+// Do a cache lookup.  Returns 0 on success, or -error.  If the timeout is 0,
 // returns without blocking.
-int arp_cache_lookup(nic_t* nic, in_addr_t addr, arp_cache_entry_t* result,
+int nbr_cache_lookup(nic_t* nic, in_addr_t addr, nbr_cache_entry_t* result,
                      int timeout_ms);
 
-// Add an entry to the given ARP cache.
+// Add an entry to the given neighbor cache.
 // Interrupt-safe.
-// TODO(aoates): make this deferred-interrupt-safe when that's a thing.
-void arp_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac);
+void nbr_cache_insert(nic_t* nic, in_addr_t addr, const uint8_t* mac);
 
 #endif

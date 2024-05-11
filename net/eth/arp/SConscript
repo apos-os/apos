@@ -16,7 +16,6 @@ Import('env AposAddSources')
 
 srcs = [
   'arp.c',
-  'arp_cache.c',
 ]
 
 subdirs = []

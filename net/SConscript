@@ -21,6 +21,7 @@ srcs = [
   'init.c',
   'link_layer.c',
   'mac.c',
+  'neighbor_cache.c',
   'pbuf.c',
   'util.c',
 ]

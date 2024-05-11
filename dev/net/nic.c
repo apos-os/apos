@@ -21,7 +21,7 @@
 #include "common/kstring.h"
 #include "common/list.h"
 #include "common/refcount.h"
-#include "net/eth/arp/arp_cache.h"
+#include "net/neighbor_cache.h"
 #include "proc/spinlock.h"
 
 static list_t g_nics = LIST_INIT_STATIC;
@@ -66,7 +66,7 @@ void nic_init(nic_t* nic) {
     kmemset(&nic->addrs[i], 0, sizeof(network_t));
     nic->addrs[i].addr.family = AF_UNSPEC;
   }
-  arp_cache_init(&nic->arp_cache);
+  nbr_cache_init(&nic->nbr_cache);
   nic->deleted = false;
 }
 
@@ -147,7 +147,7 @@ void nic_put(nic_t* nic) {
 
   if (cleanup) {
     klogf("net: deleting NIC %s\n", nic->name);
-    arp_cache_cleanup(&nic->arp_cache);
+    nbr_cache_cleanup(&nic->nbr_cache);
     nic->ops->nic_cleanup(nic);
   }
 }
