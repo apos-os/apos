@@ -17,6 +17,7 @@
 #include "net/eth/arp/arp.h"
 #include "net/eth/arp/arp_packet.h"
 #include "net/eth/eth.h"
+#include "net/ip/route.h"
 #include "net/mac.h"
 #include "net/neighbor_cache.h"
 #include "net/neighbor_cache_ops.h"
@@ -295,6 +296,31 @@ static void arp_tests(test_fixture_t* t) {
   arp_recv_request_test3(t);
 }
 
+static void ip_route_tests(test_fixture_t* t) {
+  KTEST_BEGIN("ip_route(): route to loopback");
+  netaddr_t dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET;
+  dst.a.ip4.s_addr = str2inet(SRC_IP);
+
+  ip_routed_t result;
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ("lo0", result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP));
+
+  // Do it again with a different bit pattern filling the address.
+  kmemset(&dst, 0x12, sizeof(dst));
+  dst.family = AF_INET;
+  dst.a.ip4.s_addr = str2inet(SRC_IP);
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ("lo0", result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP));
+}
+
 // TODO(aoates): neighbor cache tests:
 //  - time out
 //  - multiple pending requests
@@ -327,6 +353,7 @@ void net_base_test(void) {
   // Run the tests.
   str_tests();
   arp_tests(&fixture);
+  ip_route_tests(&fixture);
 
   KTEST_BEGIN("Network base: test teardown");
   KEXPECT_EQ(0, vfs_close(fixture.tap_fd));

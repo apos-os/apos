@@ -19,6 +19,7 @@
 #include "common/kstring.h"
 #include "common/refcount.h"
 #include "dev/net/nic.h"
+#include "net/addr.h"
 
 typedef struct {
   // TODO(aoates): support network matching.
@@ -50,7 +51,7 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
     for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
                           nic->addrs[addridx].state == NIC_ADDR_ENABLED;
          addridx++) {
-      if (kmemcmp(&nic->addrs[addridx].a.addr, &dst, sizeof(dst)) == 0) {
+      if (netaddr_eq(&nic->addrs[addridx].a.addr, &dst)) {
         // Sending to the NIC's own address---reroute via the loopback.
         // TODO(aoates): don't hard-code the loopback device name here.
         result->nic = nic_get_nm("lo0");
