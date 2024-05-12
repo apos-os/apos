@@ -19,6 +19,7 @@
 #include "net/eth/arp/arp.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
+#include "net/ip/ip6.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -50,8 +51,8 @@ void net_link_recv(nic_t* nic, pbuf_t* pb, ethertype_t protocol) {
       return;
 
     case ET_IPV6:
-      // TODO(ipv6): handle incoming packets.
-      break;
+      ip6_recv(nic, pb);
+      return;
 
     case ET_ARP:
       arp_rx(nic, pb);

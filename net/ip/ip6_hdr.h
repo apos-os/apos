@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include "common/endian.h"
 #include "net/pbuf.h"
 #include "user/include/apos/net/socket/inet.h"
 

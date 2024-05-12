@@ -16,6 +16,8 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "net/addr.h"
+#include "net/ip/icmpv6/icmpv6.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -60,4 +62,51 @@ void ipv6_enable(nic_t* nic) {
        inet62str(&link_local, buf));
   // TODO(ipv6): subscribe to multicast groups
   // TODO(ipv6): kick off SLAAC.
+}
+
+static bool validate_hdr_v6(const pbuf_t* pb) {
+  if (pbuf_size(pb) < sizeof(ip6_hdr_t)) {
+    KLOG(DEBUG, "net: truncated IPv6 packet\n");
+    return false;
+  }
+  const ip6_hdr_t* hdr = (const ip6_hdr_t*)pbuf_getc(pb);
+  if (ip6_version(*hdr) != 6) {
+    KLOG(DEBUG, "net: IPv6 packet with bad version %d\n", ip6_version(*hdr));
+    return false;
+  }
+  const size_t payload_len = btoh16(hdr->payload_len);
+  if (payload_len > pbuf_size(pb) - sizeof(ip6_hdr_t)) {
+    KLOG(DEBUG, "net: IPv6 packet with bad length %zu\n", payload_len);
+    return false;
+  }
+  return true;
+}
+
+void ip6_recv(nic_t* nic, pbuf_t* pb) {
+  // Verify the packet.
+  if (!validate_hdr_v6(pb)) {
+    KLOG(INFO, "net: dropping invalid IPv6 packet\n");
+    // TODO(aoates): increment stats.
+    pbuf_free(pb);
+    return;
+  }
+
+  const ip6_hdr_t* hdr = (const ip6_hdr_t*)pbuf_getc(pb);
+  KASSERT_DBG(ip6_version(*hdr) == 6);
+  char buf1[INET6_PRETTY_LEN], buf2[INET6_PRETTY_LEN];
+  KLOG(DEBUG2, "ipv6 rx(%s): %s -> %s, next_hdr=%d\n", nic->name,
+       inet62str(&hdr->src_addr, buf1), inet62str(&hdr->dst_addr, buf2),
+       hdr->next_hdr);
+
+  bool handled = false;
+  if (hdr->next_hdr == IPPROTO_ICMPV6) {
+    handled = icmpv6_recv(nic, hdr, sizeof(ip6_hdr_t), pb);
+  }
+  // pb is now a dangling pointer unless handled is false!
+
+  // TODO(ipv6): handle TCP, UDP, and raw sockets.
+
+  if (!handled) {
+    pbuf_free(pb);
+  }
 }

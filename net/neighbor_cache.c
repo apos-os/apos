@@ -24,10 +24,13 @@
 #include "net/addr.h"
 #include "net/eth/arp/arp.h"
 #include "net/eth/mac.h"
+#include "net/ip/icmpv6/ndp.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/util.h"
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
+#include "user/include/apos/errors.h"
+#include "user/include/apos/net/socket/socket.h"
 
 #define NBR_CACHE_INITIAL_SIZE 10
 #define NBR_CACHE_TIMEOUT_MS (60 * 1000)
@@ -79,10 +82,21 @@ int nbr_cache_lookup(nic_t* nic, netaddr_t addr, nbr_cache_entry_t* result,
       }
     }
 
-    // TODO(ipv6): support IPv6/NDP.
-    KASSERT(addr.family == AF_INET);
     // If the entry didn't exist, or was expired, send a request and wait.
-    arp_send_request(nic, addr.a.ip4.s_addr);
+    switch (addr.family) {
+      case ADDR_INET:
+        arp_send_request(nic, addr.a.ip4.s_addr);
+        break;
+
+      case ADDR_INET6:
+        ndp_send_request(nic, &addr.a.ip6);
+        break;
+
+      default:
+        kspin_unlock(&nic->lock);
+        return -EAFNOSUPPORT;
+    }
+
     // TODO(aoates): retries after a timeout?  Or just let the upper layers deal
     // with it?
 

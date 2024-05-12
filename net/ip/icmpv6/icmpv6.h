@@ -12,27 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_IP_ICMPV6_PROTOCOL_H
-#define APOO_NET_IP_ICMPV6_PROTOCOL_H
+#ifndef APOO_NET_IP_ICMPV6_ICMPV6_H
+#define APOO_NET_IP_ICMPV6_ICMPV6_H
 
-#include <stdint.h>
+#include "dev/net/nic.h"
+#include "net/ip/ip6_hdr.h"
+#include "net/pbuf.h"
 
-// Common header for all ICMPv6 packets.  All packets have at least one data
-// word (4 bytes) after this header.
-typedef struct __attribute__((packed)) {
-  uint8_t type;
-  uint8_t code;
-  uint16_t checksum;
-} icmpv6_hdr_t;
-
-_Static_assert(sizeof(icmpv6_hdr_t) == 4, "icmpv6_hdr_t wrong size");
-
-// ICMPv6 message types.
-#define ICMPV6_NDP_NBR_SOLICIT 135
-#define ICMPV6_NDP_NBR_ADVERT 136
-
-// ICMPv6 option types.
-#define ICMPV6_OPTION_SRC_LL_ADDR 1
-#define ICMPV6_OPTION_TGT_LL_ADDR 2
+// Dispatch a packet.  The IPv6 header may be part of the pbuf_t.  |offset| is
+// how far into the pbuf_t the ICMPv6 packet starts.
+bool icmpv6_recv(nic_t* nic, const ip6_hdr_t* ip_hdr, size_t offset,
+                 pbuf_t* pb);
 
 #endif

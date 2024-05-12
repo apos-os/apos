@@ -24,6 +24,7 @@
 #include "net/ip/icmpv6/ndp.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/util.h"
@@ -526,9 +527,76 @@ static void ndp_send_request_test(test_fixture_t* t) {
       0, ip_checksum2(&phdr, sizeof(phdr), pkt, sizeof(ndp_nbr_solict_t) + 8));
 }
 
+static void ndp_recv_advert_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor advert");
+  nbr_cache_clear(t->nic);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_advert_t), 24);
+  uint8_t* options = pbuf_get(pb);
+
+  // Put a bogus option first, then the target link layer option.
+  options[0] = 100;
+  options[1] = 2;  // 16 octets.
+  options[16] = ICMPV6_OPTION_TGT_LL_ADDR;
+  options[17] = 1;  // 8 octets.
+  KEXPECT_EQ(0, str2mac("01:02:03:04:05:06", &options[18]));
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_advert_t));
+  ndp_nbr_advert_t* pkt = (ndp_nbr_advert_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_ADVERT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->flags =
+      htob32(NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE);
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_advert_t) + 24);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // There shouldn't be an entry for the IP yet.
+  netaddr_t na;
+  na.family = AF_INET6;
+  kmemcpy(&na.a.ip6, &pkt->target, sizeof(struct in6_addr));
+
+  nbr_cache_entry_t entry;
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  // We should have sent a request packet.
+  char buf[100];
+  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
+
+  // Send the response.
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+
+  // Now the lookup should succeed.
+  kmemset(&entry, 0, sizeof(entry));
+  KEXPECT_EQ(0, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_STREQ("01:02:03:04:05:06", mac2str(entry.mac.addr, buf));
+}
+
 static void ndp_tests(test_fixture_t* t) {
   ndp_send_request_test(t);
+  ndp_recv_advert_test(t);
 }
+
+// TODO(ipv6): additional tests:
+//  - invalid IPv6 packets
+//  - invalid NDP packets (including options)
+//  - too-short ipv6 and icmp and NDP packets.
 
 void ipv6_test(void) {
   KTEST_SUITE_BEGIN("IPv6");

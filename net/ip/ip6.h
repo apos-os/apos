@@ -21,4 +21,6 @@
 // the configuration process.  No-op if the NIC already has an IPv6 address.
 void ipv6_enable(nic_t* nic);
 
+void ip6_recv(nic_t* nic, pbuf_t* pb);
+
 #endif

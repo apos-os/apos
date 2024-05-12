@@ -25,12 +25,77 @@
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/mac.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/util.h"
 
 #define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
 
+static void handle_advert(nic_t* nic, pbuf_t* pb) {
+  const ndp_nbr_advert_t* hdr = (const ndp_nbr_advert_t*)pbuf_getc(pb);
+  KASSERT(hdr->hdr.type == ICMPV6_NDP_NBR_ADVERT);
+  if (hdr->hdr.code != 0) {
+    KLOG(INFO, "ICMPv6 NDP: NDP packet with non-zero code, dropping\n");
+    return;
+  }
+  if (pbuf_size(pb) < sizeof(ndp_nbr_advert_t)) {
+    KLOG(INFO, "ICMPv6 NDP: NDP packet too short, dropping\n");
+    return;
+  }
+  // TODO(ipv6): handle the override flag.
+
+  size_t size = pbuf_size(pb);
+  size -= sizeof(ndp_nbr_advert_t);
+  const uint8_t* option_buf = pbuf_getc(pb) + sizeof(ndp_nbr_advert_t);
+  uint8_t ll_tgt[ETH_MAC_LEN];
+  bool found = false;
+  while (size >= 8) {
+    uint8_t option = option_buf[0];
+    uint8_t option_size = option_buf[1];
+    if (option_size == 0) {
+      KLOG(INFO, "ICMPv6 NDP: bad option size\n");
+      return;
+    }
+
+    if (option == ICMPV6_OPTION_TGT_LL_ADDR) {
+      if (option_size != 1) {
+        KLOG(INFO, "ICMPv6 NDP: bad LL target option size\n");
+        return;
+      }
+
+      kmemcpy(&ll_tgt, option_buf + 2, ETH_MAC_LEN);
+      found = true;
+      break;
+    }
+    option_buf += option_size * 8;
+    size -= option_size * 8;
+  }
+  if (size < 8) {
+    KLOG(INFO, "ICMPv6 NDP: bad options\n");
+    return;
+  }
+  if (!found) {
+    KLOG(INFO, "ICMPv6 NDP: no LL target option, ignoring\n");
+    return;
+  }
+
+  netaddr_t addr;
+  addr.family = AF_INET6;
+  kmemcpy(&addr.a.ip6, &hdr->target, sizeof(struct in6_addr));
+  nbr_cache_insert(nic, addr, ll_tgt);
+}
+
 void ndp_rx(nic_t* nic, pbuf_t* pb) {
+  const icmpv6_hdr_t* hdr = (const icmpv6_hdr_t*)pbuf_getc(pb);
+  switch (hdr->type) {
+    case ICMPV6_NDP_NBR_ADVERT:
+      handle_advert(nic, pb);
+      pbuf_free(pb);
+      return;
+  }
+
+  KLOG(DFATAL, "Unknown ICMPv6 NDP type %d\n", hdr->type);
+  pbuf_free(pb);
 }
 
 // TODO(aoates): refactor the code so that this (and arp_send_request) can be
