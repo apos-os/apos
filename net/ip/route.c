@@ -45,28 +45,30 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   result->nic = NULL;
   while (nic) {
     kspin_lock(&nic->lock);
+    // TODO(aoates): if we're going to assume a left-justified address list,
+    // should track that explicitly.
     for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
-                              nic->addrs[addridx].addr.family != AF_UNSPEC;
+                          nic->addrs[addridx].state == NIC_ADDR_ENABLED;
          addridx++) {
-      if (kmemcmp(&nic->addrs[addridx].addr, &dst, sizeof(dst)) == 0) {
+      if (kmemcmp(&nic->addrs[addridx].a.addr, &dst, sizeof(dst)) == 0) {
         // Sending to the NIC's own address---reroute via the loopback.
         // TODO(aoates): don't hard-code the loopback device name here.
         result->nic = nic_get_nm("lo0");
         result->nexthop = dst;
-        result->src = nic->addrs[addridx].addr;
+        result->src = nic->addrs[addridx].a.addr;
         kspin_unlock(&nic->lock);
         nic_put(nic);
         return (result->nic != NULL);
       }
-      if (nic->addrs[addridx].prefix_len > longest_prefix &&
-          netaddr_match(&dst, &nic->addrs[addridx])) {
+      if (nic->addrs[addridx].a.prefix_len > longest_prefix &&
+          netaddr_match(&dst, &nic->addrs[addridx].a)) {
         if (result->nic) {
           nic_put(result->nic);
         }
         refcount_inc(&nic->ref);
         result->nic = nic;
-        result->src = nic->addrs[addridx].addr;
-        longest_prefix = nic->addrs[addridx].prefix_len;
+        result->src = nic->addrs[addridx].a.addr;
+        longest_prefix = nic->addrs[addridx].a.prefix_len;
       }
     }
     kspin_unlock(&nic->lock);
@@ -86,8 +88,8 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
       result->src.family = ADDR_UNSPEC;
       kspin_lock(&result->nic->lock);
       for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-        if (result->nic->addrs[i].addr.family == dst.family) {
-          result->src = result->nic->addrs[0].addr;
+        if (result->nic->addrs[i].a.addr.family == dst.family) {
+          result->src = result->nic->addrs[0].a.addr;
           break;
         }
       }

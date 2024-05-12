@@ -63,8 +63,9 @@ void nic_init(nic_t* nic) {
   kmemset(&nic->mac, 0, NIC_MAC_LEN);
 
   for (size_t i = 0; i < NIC_MAX_ADDRS; ++i) {
-    kmemset(&nic->addrs[i], 0, sizeof(network_t));
-    nic->addrs[i].addr.family = AF_UNSPEC;
+    kmemset(&nic->addrs[i], 0, sizeof(nic_addr_t));
+    nic->addrs[i].a.addr.family = AF_UNSPEC;
+    nic->addrs[i].state = NIC_ADDR_NONE;
   }
   nbr_cache_init(&nic->nbr_cache);
   nic->deleted = false;

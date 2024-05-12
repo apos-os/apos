@@ -41,7 +41,7 @@ int inet_bindable(const netaddr_t* addr) {
 int inet_source_valid(const netaddr_t* addr, nic_t* nic) {
   kspin_lock(&nic->lock);
   for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-    if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
+    if (netaddr_eq(&nic->addrs[addridx].a.addr, addr)) {
       kspin_unlock(&nic->lock);
       return 0;
     }
@@ -49,7 +49,7 @@ int inet_source_valid(const netaddr_t* addr, nic_t* nic) {
     // As a special case, for loopback interfaces, allow binding to any
     // address in the configured network.
     if (nic->type == NIC_LOOPBACK &&
-        netaddr_match(addr, &nic->addrs[addridx])) {
+        netaddr_match(addr, &nic->addrs[addridx].a)) {
       kspin_unlock(&nic->lock);
       return 0;
     }
@@ -64,8 +64,8 @@ int inet_choose_bind(addrfam_t family, netaddr_t* addr_out) {
   while (nic) {
     kspin_lock(&nic->lock);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-      if (nic->addrs[addridx].addr.family == family) {
-        *addr_out = nic->addrs[addridx].addr;
+      if (nic->addrs[addridx].a.addr.family == family) {
+        *addr_out = nic->addrs[addridx].a.addr;
         kspin_unlock(&nic->lock);
         nic_put(nic);
         return 0;

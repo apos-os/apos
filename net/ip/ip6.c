@@ -36,11 +36,12 @@ void ipv6_enable(nic_t* nic) {
   kspin_lock(&nic->lock);
   int open = -1;
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    if (nic->addrs[i].addr.family == ADDR_INET6) {
+    if (nic->addrs[i].state != NIC_ADDR_NONE &&
+        nic->addrs[i].a.addr.family == ADDR_INET6) {
       KLOG(INFO, "ipv6: nic %s already has IPv6 address\n", nic->name);
       kspin_unlock(&nic->lock);
       return;
-    } else if (open < 0 && nic->addrs[i].addr.family == ADDR_UNSPEC) {
+    } else if (open < 0 && nic->addrs[i].state == NIC_ADDR_NONE) {
       open = i;
     }
   }
@@ -52,9 +53,10 @@ void ipv6_enable(nic_t* nic) {
     return;
   }
 
-  nic->addrs[open].addr.a.ip6 = link_local;
-  nic->addrs[open].addr.family = ADDR_INET6;
-  nic->addrs[open].prefix_len = 64;
+  nic->addrs[open].state = NIC_ADDR_ENABLED;
+  nic->addrs[open].a.addr.a.ip6 = link_local;
+  nic->addrs[open].a.addr.family = ADDR_INET6;
+  nic->addrs[open].a.prefix_len = 64;
   kspin_unlock(&nic->lock);
 
   char buf[INET6_PRETTY_LEN];

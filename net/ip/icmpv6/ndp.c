@@ -136,9 +136,10 @@ void ndp_send_request(nic_t* nic, const struct in6_addr* addr) {
   struct in6_addr src_addr;
   bool found = 0;
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    if (nic->addrs[i].addr.family == AF_INET6) {
+    if (nic->addrs[i].state == NIC_ADDR_ENABLED &&
+        nic->addrs[i].a.addr.family == AF_INET6) {
       found = true;
-      kmemcpy(&src_addr, &nic->addrs[i].addr.a.ip6, sizeof(struct in6_addr));
+      kmemcpy(&src_addr, &nic->addrs[i].a.addr.a.ip6, sizeof(struct in6_addr));
       break;
     }
   }

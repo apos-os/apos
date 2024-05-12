@@ -275,9 +275,10 @@ static void tun_tests(void) {
   KEXPECT_NE(NULL, nic);
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].prefix_len = 24;
+  nic->addrs[0].a.addr.family = ADDR_INET;
+  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
@@ -403,9 +404,10 @@ static void tap_tests(void) {
   fixture.nic = nic;
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].prefix_len = 24;
+  nic->addrs[0].a.addr.family = ADDR_INET;
+  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));

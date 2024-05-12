@@ -29,6 +29,17 @@
 struct nic;
 typedef struct nic nic_t;
 
+typedef enum {
+  NIC_ADDR_NONE,
+  NIC_ADDR_TENTATIVE,
+  NIC_ADDR_ENABLED,
+} nic_addr_state_t;
+
+typedef struct {
+  network_t a;
+  nic_addr_state_t state;
+} nic_addr_t;
+
 typedef struct {
   // Enqueue the given packet (which should be an L2 frame) for transmission.
   // Returns 0 on success.
@@ -61,7 +72,7 @@ struct nic {
 
   // Fields maintained by the network subsystem.
   refcount_t ref;  // External refcount (will be zero usually).
-  network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
+  nic_addr_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   nbr_cache_t nbr_cache;
   list_link_t link;  // Protected by global mutex, not |lock|.
   bool deleted;      // Protected by global mutex, not |lock|.

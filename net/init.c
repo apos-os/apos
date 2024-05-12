@@ -27,17 +27,19 @@ void net_init(void) {
   // TODO(aoates): do better than this.
   nic_t* lo = loopback_create();
   kspin_lock(&lo->lock);
-  lo->addrs[0].addr.family = ADDR_INET;
-  lo->addrs[0].addr.a.ip4.s_addr = str2inet("127.0.0.1");
-  lo->addrs[0].prefix_len = 8;
+  lo->addrs[0].state = NIC_ADDR_ENABLED;
+  lo->addrs[0].a.addr.family = ADDR_INET;
+  lo->addrs[0].a.addr.a.ip4.s_addr = str2inet("127.0.0.1");
+  lo->addrs[0].a.prefix_len = 8;
   kspin_unlock(&lo->lock);
 
   nic_t* nic = nic_get_nm("eth0");
   if (nic) {
     kspin_lock(&nic->lock);
-    nic->addrs[0].addr.family = ADDR_INET;
-    nic->addrs[0].addr.a.ip4.s_addr = str2inet("10.0.2.8");
-    nic->addrs[0].prefix_len = 24;
+    nic->addrs[0].state = NIC_ADDR_ENABLED;
+    nic->addrs[0].a.addr.family = ADDR_INET;
+    nic->addrs[0].a.addr.a.ip4.s_addr = str2inet("10.0.2.8");
+    nic->addrs[0].a.prefix_len = 24;
     kspin_unlock(&nic->lock);
 
     ipv6_enable(nic);

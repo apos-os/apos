@@ -309,12 +309,14 @@ void net_base_test(void) {
   fixture.nic = nic;
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].prefix_len = 24;
-  nic->addrs[1].addr.family = ADDR_INET;
-  nic->addrs[1].addr.a.ip4.s_addr = str2inet(SRC_IP2);
-  nic->addrs[1].prefix_len = 32;
+  nic->addrs[0].a.addr.family = ADDR_INET;
+  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
+  nic->addrs[1].a.addr.family = ADDR_INET;
+  nic->addrs[1].a.addr.a.ip4.s_addr = str2inet(SRC_IP2);
+  nic->addrs[1].a.prefix_len = 32;
+  nic->addrs[1].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
