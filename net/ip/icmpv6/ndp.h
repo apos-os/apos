@@ -17,10 +17,11 @@
 #define APOO_NET_IP_ICMPV6_NDP_H
 
 #include "dev/net/nic.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/pbuf.h"
 
 // Handle an inbound NDP packet.
-void ndp_rx(nic_t* nic, pbuf_t* pb);
+void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb);
 
 // Send a request for the given address on the nic.  Requires the nic be locked.
 void ndp_send_request(nic_t* nic, const struct in6_addr* addr);

@@ -19,17 +19,90 @@
 #include "common/klog.h"
 #include "common/kstring.h"
 #include "dev/net/nic.h"
+#include "net/addr.h"
 #include "net/eth/eth.h"
 #include "net/eth/mac.h"
 #include "net/ip/checksum.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
+#include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/util.h"
+#include "proc/spinlock.h"
 
 #define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
+
+// Creates a solicit or advert packet.  NIC must be locked.  Returns it up
+// through the IPv6 header (not including the link-layer header).
+static pbuf_t* ndp_mkpkt(nic_t* nic, const struct in6_addr* dst_addr, int type,
+                         const struct in6_addr* pkt_addr, uint32_t flags,
+                         int option_type, const uint8_t* option_val) {
+  _Static_assert(sizeof(ndp_nbr_advert_t) == sizeof(ndp_nbr_solict_t),
+                 "Bad packet sizes");
+  KASSERT_DBG(kspin_is_held(&nic->lock));
+
+  size_t pkt_size = sizeof(ndp_nbr_advert_t) + 8;
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, pkt_size);
+  if (!pb) {
+    KLOG(DFATAL, "IPv6 NDP: unable to allocate packet\n");
+    return NULL;
+  }
+
+  // Fill in the ICMPv6 header.
+  ndp_nbr_advert_t* pkt = (ndp_nbr_advert_t*)pbuf_get(pb);
+  pkt->hdr.type = type;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->flags = htob32(flags);
+  kmemcpy(&pkt->target, pkt_addr, sizeof(struct in6_addr));
+
+  // Add a source link-layer address option.
+  uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_advert_t));
+  option[0] = option_type;
+  option[1] = 1;  // 8 octets.
+  _Static_assert(NIC_MAC_LEN == 6, "Mismatched NIC_MAC_LEN");
+  kmemcpy(&option[2], option_val, NIC_MAC_LEN);
+
+  // Find the IPv6 address to send from.
+  struct in6_addr src_addr;
+  bool found = 0;
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    if (nic->addrs[i].state == NIC_ADDR_ENABLED &&
+        nic->addrs[i].a.addr.family == AF_INET6) {
+      found = true;
+      kmemcpy(&src_addr, &nic->addrs[i].a.addr.a.ip6, sizeof(struct in6_addr));
+      break;
+    }
+  }
+  if (!found) {
+    KLOG(INFO,
+         "IPv6 NDP: cannot send NDP on iface %s, no IPv6 address configured\n",
+         nic->name);
+    pbuf_free(pb);
+    return NULL;
+  }
+
+  // Calculate the checksum.
+  ip6_pseudo_hdr_t ip6_phdr;
+  kmemcpy(&ip6_phdr.src_addr, &src_addr, sizeof(src_addr));
+  kmemcpy(&ip6_phdr.dst_addr, dst_addr, sizeof(struct in6_addr));
+  ip6_phdr.payload_len = htob32(pkt_size);
+  kmemset(&ip6_phdr._zeroes, 0, 3);
+  ip6_phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&ip6_phdr, sizeof(ip6_phdr), pbuf_get(pb), pkt_size);
+
+  // Add the IPv6 and Ethernet headers and send.
+  ip6_add_hdr(pb, &src_addr, dst_addr, IPPROTO_ICMPV6, /* flow label */ 0);
+
+  // Override hop limit, which must be 255.
+  ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)pbuf_get(pb);
+  ip6_hdr->hop_limit = 255;
+
+  return pb;
+}
 
 static void handle_advert(nic_t* nic, pbuf_t* pb) {
   const ndp_nbr_advert_t* hdr = (const ndp_nbr_advert_t*)pbuf_getc(pb);
@@ -85,11 +158,74 @@ static void handle_advert(nic_t* nic, pbuf_t* pb) {
   nbr_cache_insert(nic, addr, ll_tgt);
 }
 
-void ndp_rx(nic_t* nic, pbuf_t* pb) {
+static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
+  const ndp_nbr_solict_t* hdr = (const ndp_nbr_solict_t*)pbuf_getc(pb);
+  KASSERT(hdr->hdr.type == ICMPV6_NDP_NBR_SOLICIT);
+  if (hdr->hdr.code != 0) {
+    KLOG(INFO, "ICMPv6 NDP: NDP packet with non-zero code, dropping\n");
+    return;
+  }
+  if (pbuf_size(pb) < sizeof(ndp_nbr_solict_t)) {
+    KLOG(INFO, "ICMPv6 NDP: NDP packet too short, dropping\n");
+    return;
+  }
+
+  // Check if this request matches any of our IP addresses.
+  char addrbuf[INET6_PRETTY_LEN];
+  KLOG(DEBUG2, "IPv6 NDP: got request for IP %s on %s\n",
+       inet62str(&hdr->target, addrbuf), nic->name);
+
+  kspin_lock(&nic->lock);
+  for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
+    if (nic->addrs[addr_idx].a.addr.family == AF_INET6 &&
+        nic->addrs[addr_idx].state == NIC_ADDR_ENABLED) {
+      if (kmemcmp(&nic->addrs[addr_idx].a.addr.a.ip6, &hdr->target,
+                  sizeof(struct in6_addr)) == 0) {
+        KLOG(DEBUG, "IPv6 NDP: found NIC %s with matching IP (%s)\n", nic->name,
+             inet62str(&hdr->target, addrbuf));
+
+        // TODO(ipv6): handle packets from the unspecified address correctly.
+        pbuf_t* pb = ndp_mkpkt(
+            nic, &ip_hdr->src_addr, ICMPV6_NDP_NBR_ADVERT, &hdr->target,
+            NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE,
+            ICMPV6_OPTION_TGT_LL_ADDR, nic->mac.addr);
+        kspin_unlock(&nic->lock);
+        if (!pb) {
+          return;
+        }
+
+        // TODO(ipv6): handle non-blocking correctly (currently, if the neighbor
+        // cache doesn't include the target's address, then this will send an
+        // NDP solicit but not wait for the reply --- and the requester will
+        // have to time out and try their solicit again).
+        netaddr_t next_hop;
+        next_hop.family = AF_INET6;
+        next_hop.a.ip6 = ip_hdr->src_addr;
+        int result = eth_send(nic, next_hop, pb, ET_IPV6, false);
+        if (result) {
+          KLOG(WARNING, "IPv6 NDP: unable to send reply to solicitation: %s\n",
+               errorname(-result));
+        }
+
+        // Our job is done.
+        return;
+      }
+    }
+  }
+  kspin_unlock(&nic->lock);
+  // TODO(ipv6): handle options.
+}
+
+void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
   const icmpv6_hdr_t* hdr = (const icmpv6_hdr_t*)pbuf_getc(pb);
   switch (hdr->type) {
     case ICMPV6_NDP_NBR_ADVERT:
       handle_advert(nic, pb);
+      pbuf_free(pb);
+      return;
+
+    case ICMPV6_NDP_NBR_SOLICIT:
+      handle_solicit(nic, ip_hdr, pb);
       pbuf_free(pb);
       return;
   }
@@ -109,63 +245,11 @@ void ndp_send_request(nic_t* nic, const struct in6_addr* addr) {
   dst_addr.s6_addr[14] = addr->s6_addr[14];
   dst_addr.s6_addr[15] = addr->s6_addr[15];
 
-  // Create the request packet.
-  size_t pkt_size = sizeof(ndp_nbr_solict_t) + 8;
-  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, pkt_size);
+  pbuf_t* pb = ndp_mkpkt(nic, &dst_addr, ICMPV6_NDP_NBR_SOLICIT, addr, 0,
+                         ICMPV6_OPTION_SRC_LL_ADDR, nic->mac.addr);
   if (!pb) {
-    KLOG(DFATAL, "IPv6 NDP: unable to allocate packet\n");
     return;
   }
-
-  // Fill in the ICMPv6 header.
-  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
-  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
-  pkt->hdr.code = 0;
-  pkt->hdr.checksum = 0;
-  pkt->reserved = 0;
-  kmemcpy(&pkt->target, addr, sizeof(struct in6_addr));
-
-  // Add a source link-layer address option.
-  uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_solict_t));
-  option[0] = ICMPV6_OPTION_SRC_LL_ADDR;
-  option[1] = 1;  // 8 octets.
-  _Static_assert(NIC_MAC_LEN == 6, "Mismatched NIC_MAC_LEN");
-  kmemcpy(&option[2], &nic->mac.addr, NIC_MAC_LEN);
-
-  // Find the IPv6 address to send from.
-  struct in6_addr src_addr;
-  bool found = 0;
-  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    if (nic->addrs[i].state == NIC_ADDR_ENABLED &&
-        nic->addrs[i].a.addr.family == AF_INET6) {
-      found = true;
-      kmemcpy(&src_addr, &nic->addrs[i].a.addr.a.ip6, sizeof(struct in6_addr));
-      break;
-    }
-  }
-  if (!found) {
-    KLOG(INFO,
-         "IPv6 NDP: cannot send NDP on iface %s, no IPv6 address configured\n",
-         nic->name);
-    return;
-  }
-
-  // Calculate the checksum.
-  ip6_pseudo_hdr_t ip6_phdr;
-  kmemcpy(&ip6_phdr.src_addr, &src_addr, sizeof(src_addr));
-  kmemcpy(&ip6_phdr.dst_addr, &dst_addr, sizeof(dst_addr));
-  ip6_phdr.payload_len = htob32(pkt_size);
-  kmemset(&ip6_phdr._zeroes, 0, 3);
-  ip6_phdr.next_hdr = IPPROTO_ICMPV6;
-  pkt->hdr.checksum =
-      ip_checksum2(&ip6_phdr, sizeof(ip6_phdr), pbuf_get(pb), pkt_size);
-
-  // Add the IPv6 and Ethernet headers and send.
-  ip6_add_hdr(pb, &src_addr, &dst_addr, IPPROTO_ICMPV6, /* flow label */ 0);
-
-  // Override hop limit, which must be 255.
-  ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)pbuf_get(pb);
-  ip6_hdr->hop_limit = 255;
 
   nic_mac_t eth_dst;
   ip6_multicast_mac(&dst_addr, eth_dst.addr);

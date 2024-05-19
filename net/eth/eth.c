@@ -53,12 +53,13 @@ static void print_packet(const pbuf_t* pb, const char* type) {
 
 int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
              bool allow_block) {
-  if (protocol != ET_IPV4) {
+  if (protocol != ET_IPV4 && protocol != ET_IPV6) {
     KLOG(INFO, "send(%s): dropping packet with unsupported protocol %#06x\n",
          nic->name, protocol);
     return -EINVAL;
   }
-  KASSERT(next_hop.family == ADDR_INET);
+  KASSERT((protocol == ET_IPV4 && next_hop.family == ADDR_INET) ||
+          (protocol == ET_IPV6 && next_hop.family == ADDR_INET6));
   nbr_cache_entry_t nbr_result;
   int result = nbr_cache_lookup(nic, next_hop, &nbr_result,
                                 allow_block ? ARP_TIMEOUT_MS : 0);
