@@ -247,7 +247,6 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
     }
   }
   kspin_unlock(&nic->lock);
-  // TODO(ipv6): handle options.
 }
 
 void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {

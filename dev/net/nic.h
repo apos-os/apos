@@ -24,7 +24,7 @@
 #include "proc/spinlock.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
-#define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
+#define NIC_MAX_ADDRS 5      // Maximum number of addresses per NIC
 
 struct nic;
 typedef struct nic nic_t;
