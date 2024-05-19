@@ -589,8 +589,8 @@ static void ndp_recv_advert_test(test_fixture_t* t) {
   KEXPECT_STREQ("01:02:03:04:05:06", mac2str(entry.mac.addr, buf));
 }
 
-static void ndp_recv_solicit_test(test_fixture_t* t) {
-  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (no source LL address");
+static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (no source LL address)");
   nbr_cache_clear(t->nic);
 
   // Pre-seed the neighbor cache with the sender's address.  Use yet another
@@ -676,18 +676,421 @@ static void ndp_recv_solicit_test(test_fixture_t* t) {
   KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
 }
 
+static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit "
+              "(no source LL address, and neighbor is unknown)");
+  nbr_cache_clear(t->nic);
+
+  // N.B. this request is not RFC-compliant, as it does not include the source
+  // link-layer address option even though this is a multicast solicit.
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_solict_t));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // We should get a NDP solicit for ourselves.
+  char buf[100];
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t) + 8,
+      vfs_read(t->tap_fd, buf, 100));
+
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  size_t idx = 0;
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
+  idx += sizeof(eth_hdr_t);
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:FF:00:00:10", mac2str(eth_hdr->mac_dst, mac));
+
+  const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
+  idx += sizeof(ip6_hdr_t);
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_solict_t) + 8, btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_STREQ(SRC_IP, inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("ff02::1:ff00:10", inet62str(&ip6_hdr->dst_addr, addr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_nbr_solict_t* resp =
+      (const ndp_nbr_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(135, resp->hdr.type);
+  KEXPECT_EQ(0, resp->hdr.code);
+  KEXPECT_EQ(0, resp->reserved);
+  KEXPECT_STREQ("2001:db8::10", inet62str(&resp->target, addr));
+
+  // ...and finally we should include a source link-layer address option.
+  const uint8_t* option = ((uint8_t*)resp + sizeof(ndp_nbr_solict_t));
+  KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
+  KEXPECT_EQ(1 /* 8 octets */, option[1]);
+  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
+
+static void ndp_recv_solicit_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit");
+  nbr_cache_clear(t->nic);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
+  // Start with the options.  Do two bogus ones and a source link-layer addr.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 2;
+  option += 2 * 8;
+  option[0] = 1;  // Link-layer source option.
+  option[1] = 1;
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+  option += 8;
+  option[0] = 19;  // Bogus #2.
+  option[1] = 1;
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // We should have sent a reply packet.
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_advert_t) + 8,
+      vfs_read(t->tap_fd, buf, 100));
+
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  size_t idx = 0;
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
+  idx += sizeof(eth_hdr_t);
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("00:00:00:00:00:05", mac2str(eth_hdr->mac_dst, mac));
+
+  const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
+  idx += sizeof(ip6_hdr_t);
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_advert_t) + 8, btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_STREQ(SRC_IP, inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("2001:db8::10", inet62str(&ip6_hdr->dst_addr, addr));
+
+  const ndp_nbr_advert_t* advert = (const ndp_nbr_advert_t*)&buf[idx];
+  idx += sizeof(ndp_nbr_advert_t);
+  KEXPECT_EQ(ICMPV6_NDP_NBR_ADVERT, advert->hdr.type);
+  KEXPECT_EQ(0, advert->hdr.code);
+  KEXPECT_NE(0, advert->hdr.checksum);
+  KEXPECT_EQ(NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE,
+             btoh32(advert->flags));
+  KEXPECT_STREQ(SRC_IP, inet62str(&advert->target, addr));
+
+  option = (uint8_t*)&buf[idx];
+  KEXPECT_EQ(ICMPV6_OPTION_TGT_LL_ADDR, option[0]);
+  KEXPECT_EQ(1, option[1]);
+  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+
+  // We should have also seeded the neighbor cache with the src LL option.
+  netaddr_t na;
+  na.family = AF_INET6;
+  kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
+  nbr_cache_entry_t entry;
+  kmemset(&entry, 0, sizeof(entry));
+  KEXPECT_EQ(0, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_STREQ("00:00:00:00:00:05", mac2str(entry.mac.addr, buf));
+
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
+
+static void ndp_recv_solicit_test_bad_opt(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option)");
+  nbr_cache_clear(t->nic);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
+  // Start with the options.  Do two bogus ones and a source link-layer addr.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 0;  // Too-short option.
+  option += 2 * 8;
+  option[0] = 1;  // Link-layer source option.
+  option[1] = 1;
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+  option += 8;
+  option[0] = 19;  // Bogus #2.
+  option[1] = 1;
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // Packet should be ignored due to the bad option.
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
+
+static void ndp_recv_solicit_test_bad_opt2(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option 2)");
+  nbr_cache_clear(t->nic);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 3 * 8);
+  // Start with the options.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 4;  // Too-long option.
+  option += 8;
+  option[0] = 1;  // Link-layer source option.  Shouldn't be read.
+  option[1] = 1;
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+  option += 8;
+  option[0] = 13;  // This is past the end of the packet!
+  option[1] = 1;
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.  Omit the last 8 bytes to test if the check skips
+  // processing that (otherwise valid) option data.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // Packet should be ignored due to the bad option.
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
+
+static void ndp_recv_solicit_test_bad_opt3(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option 3)");
+  nbr_cache_clear(t->nic);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
+  // Start with the options.  Do two bogus ones and a source link-layer addr.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 1;
+  option += 2 * 8;
+  option[0] = 1;  // Link-layer source option.
+  option[1] = 1;
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+  option += 8;
+  option[0] = 19;  // Bogus #2.
+  option[1] = 1;  // Too-long last option.
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // Packet should be ignored due to the bad option.
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
+
+static void ndp_recv_solicit_test_bad_opt4(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option 4)");
+  nbr_cache_clear(t->nic);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
+  // Start with the options.  Do two bogus ones and a source link-layer addr.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 1;
+  option += 2 * 8;
+  option[0] = 1;  // Link-layer source option.
+  option[1] = 2;  // Bad size for LL src option.
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // Packet should be ignored due to the bad option.
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
+
 // TODO(ipv6): more NDP tests:
-//  - source address option included
 //  - match second IP
 //  - doesn't match IP
 //  - matches non-enabled IPs (disabled and tentative)
 //  - source address is unspecified (reply to multicast)
-//  - sends NDP solicit when neighbor cache misses
+//  - invalid option sizes (small and large, known and unknown options,
+//    mismatched sizes)
 
 static void ndp_tests(test_fixture_t* t) {
   ndp_send_request_test(t);
   ndp_recv_advert_test(t);
+  ndp_recv_solicit_test_no_src_addr(t);
+  ndp_recv_solicit_test_unknown_neighbor(t);
   ndp_recv_solicit_test(t);
+  ndp_recv_solicit_test_bad_opt(t);
+  ndp_recv_solicit_test_bad_opt2(t);
+  ndp_recv_solicit_test_bad_opt3(t);
+  ndp_recv_solicit_test_bad_opt4(t);
 }
 
 // TODO(ipv6): additional tests:
