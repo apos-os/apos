@@ -81,6 +81,7 @@ void set_sockaddrs_port(struct sockaddr_storage* addr, in_port_t port);
 void inet_make_anyaddr(int af, struct sockaddr* addr);
 
 // Returns true if the given address is an any-addr for its family.
+bool in6_is_any(const struct in6_addr* addr);
 bool inet_is_anyaddr(const struct sockaddr* addr);
 bool netaddr_is_anyaddr(const netaddr_t* addr);
 

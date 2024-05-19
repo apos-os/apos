@@ -408,7 +408,7 @@ void inet_make_anyaddr(int af, struct sockaddr* addr) {
   }
 }
 
-static bool in6_is_any(const struct in6_addr* addr) {
+bool in6_is_any(const struct in6_addr* addr) {
   for (int i = 0; i < 16; ++i) {
     if (addr->s6_addr[i] != 0) {
       return false;

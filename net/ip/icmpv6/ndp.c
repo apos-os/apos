@@ -214,9 +214,16 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
         KLOG(DEBUG, "IPv6 NDP: found NIC %s with matching IP (%s)\n", nic->name,
              inet62str(&hdr->target, addrbuf));
 
-        // TODO(ipv6): handle packets from the unspecified address correctly.
+        bool src_unspec = false;
+        struct in6_addr reply_dst;
+        if (in6_is_any(&ip_hdr->src_addr)) {
+          KASSERT(0 == str2inet6("ff02::1", &reply_dst));
+          src_unspec = true;
+        } else {
+          reply_dst = ip_hdr->src_addr;
+        }
         pbuf_t* pb = ndp_mkpkt(
-            nic, &ip_hdr->src_addr, ICMPV6_NDP_NBR_ADVERT, &hdr->target,
+            nic, &reply_dst, ICMPV6_NDP_NBR_ADVERT, &hdr->target,
             NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE,
             ICMPV6_OPTION_TGT_LL_ADDR, nic->mac.addr);
         kspin_unlock(&nic->lock);
@@ -231,11 +238,19 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
         netaddr_t next_hop;
         next_hop.family = AF_INET6;
         next_hop.a.ip6 = ip_hdr->src_addr;
-        if (ll_src_found) {
+        if (!src_unspec && ll_src_found) {
           nbr_cache_insert(nic, next_hop, ll_src);
         }
 
-        int result = eth_send(nic, next_hop, pb, ET_IPV6, false);
+        int result;
+        if (src_unspec) {
+          nic_mac_t eth_dst;
+          ip6_multicast_mac(&reply_dst, eth_dst.addr);
+          eth_add_hdr(pb, &eth_dst, &nic->mac, ET_IPV6);
+          result = eth_send_raw(nic, pb);
+        } else {
+          result = eth_send(nic, next_hop, pb, ET_IPV6, false);
+        }
         if (result) {
           KLOG(WARNING, "IPv6 NDP: unable to send reply to solicitation: %s\n",
                errorname(-result));

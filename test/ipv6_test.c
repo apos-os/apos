@@ -1443,8 +1443,109 @@ static void ndp_recv_solicit_test_ipv4(test_fixture_t* t) {
   KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
 }
 
-// TODO(ipv6): more NDP tests:
-//  - source address is unspecified (reply to multicast)
+static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (unspecified source)");
+  nbr_cache_clear(t->nic);
+
+  // Incorrectly include a source link-layer option, which must be ignored
+  // (alternatively, the entire packet could be dropped).
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
+  // Start with the options.  Do two bogus ones and a source link-layer addr.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 2;
+  option += 2 * 8;
+  option[0] = 1;  // Link-layer source option.
+  option[1] = 1;
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+  option += 8;
+  option[0] = 19;  // Bogus #2.
+  option[1] = 1;
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("::", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // We should have sent a reply packet to the all-nodes multicast address.
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_advert_t) + 8,
+      vfs_read(t->tap_fd, buf, 100));
+
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  size_t idx = 0;
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
+  idx += sizeof(eth_hdr_t);
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:00:00:00:01", mac2str(eth_hdr->mac_dst, mac));
+
+  const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
+  idx += sizeof(ip6_hdr_t);
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_advert_t) + 8, btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_STREQ(SRC_IP, inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("ff02::1", inet62str(&ip6_hdr->dst_addr, addr));
+
+  const ndp_nbr_advert_t* advert = (const ndp_nbr_advert_t*)&buf[idx];
+  idx += sizeof(ndp_nbr_advert_t);
+  KEXPECT_EQ(ICMPV6_NDP_NBR_ADVERT, advert->hdr.type);
+  KEXPECT_EQ(0, advert->hdr.code);
+  KEXPECT_NE(0, advert->hdr.checksum);
+  KEXPECT_EQ(NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE,
+             btoh32(advert->flags));
+  KEXPECT_STREQ(SRC_IP, inet62str(&advert->target, addr));
+
+  option = (uint8_t*)&buf[idx];
+  KEXPECT_EQ(ICMPV6_OPTION_TGT_LL_ADDR, option[0]);
+  KEXPECT_EQ(1, option[1]);
+  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+
+  // We should not have added anything to the neighbor cache.
+  netaddr_t na;
+  na.family = AF_INET6;
+  kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
+  nbr_cache_entry_t entry;
+  kmemset(&entry, 0, sizeof(entry));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+
+  // Drain the request that was sent.
+  // TODO(ipv6): we should not send an NDP request for this IP.
+  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+}
 
 static void ndp_tests(test_fixture_t* t) {
   ndp_send_request_test(t);
@@ -1461,6 +1562,7 @@ static void ndp_tests(test_fixture_t* t) {
   ndp_recv_solicit_test_disabled(t);
   ndp_recv_solicit_test_disabled2(t);
   ndp_recv_solicit_test_ipv4(t);
+  ndp_recv_solicit_test_from_unspecified(t);
 }
 
 // TODO(ipv6): additional tests:
