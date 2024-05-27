@@ -27,6 +27,7 @@
 #define KALLOC_MIN_BLOCK_SIZE 8
 
 #define KALLOC_MAGIC 0xAB
+#define KMALLOC_SAFE_BUFFER 16
 
 // Every memory block has the following structure:
 // | free (8 bits) | length (32 bits) | prev (32 bits) | next (32 bits) | data (length bytes) |
@@ -45,6 +46,7 @@ struct block {
   addrdiff_t length;
   struct block* prev;
   struct block* next;
+  uint8_t _buf[KMALLOC_SAFE_BUFFER];
   uint8_t data[0];
 };
 typedef struct block block_t;

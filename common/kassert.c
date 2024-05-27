@@ -25,12 +25,6 @@
 static bool g_dying = false;
 const int kMaxStackFrames = 32;
 
-static void print_stack_trace(addr_t* stack_trace, int frames) {
-  for (int i = 0; i < frames; ++i) {
-    klogf(" #%d %#" PRIxADDR "\n", i, stack_trace[i]);
-  }
-}
-
 static void do_print_stack(kthread_t thread, void* arg) {
   if (thread == kthread_current_thread()) return;
 

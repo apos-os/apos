@@ -255,3 +255,9 @@ void klog_init_log_levels(void) {
     }
   }
 }
+
+void print_stack_trace(addr_t* stack_trace, int frames) {
+  for (int i = 0; i < frames; ++i) {
+    klogf(" #%d %#" PRIxADDR "\n", i, stack_trace[i]);
+  }
+}
