@@ -337,6 +337,21 @@ static void route_to_loopback_test(test_fixture_t* t) {
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP3));
   nic_put(result.nic);
+
+
+  KTEST_BEGIN("ip_route(): route to loopback (IPv6)");
+  char addr[INET6_PRETTY_LEN];
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst.a.ip6));
+
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ("lo0", result.nic->name);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::2", inet62str(&result.src.a.ip6, addr));
+  nic_put(result.nic);
 }
 
 static void route_longest_prefix_test(test_fixture_t* t) {
@@ -384,6 +399,44 @@ static void route_longest_prefix_test(test_fixture_t* t) {
   KEXPECT_STREQ(t->nic2->name, result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_STREQ("127.0.5.4", inet2str(result.src.a.ip4.s_addr, addr));
+  nic_put(result.nic);
+}
+
+static void route_longest_prefix_v6_test(test_fixture_t* t) {
+  KTEST_BEGIN("ip_route(): route to longest prefix (IPv6)");
+  netaddr_t dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::5", &dst.a.ip6));
+
+  char addr[INET6_PRETTY_LEN];
+  ip_routed_t result;
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic3->name, result.nic->name);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::2", inet62str(&result.src.a.ip6, addr));
+  nic_put(result.nic);
+
+  // This one should match the first NIC, not the third.
+  KEXPECT_EQ(0, str2inet6("2001:db8::1:0:5", &dst.a.ip6));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic->name, result.nic->name);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&result.src.a.ip6, addr));
+  nic_put(result.nic);
+
+  // This one should match the second addr of the third NIC.
+  KEXPECT_EQ(0, str2inet6("2001:db8:1::5", &dst.a.ip6));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic3->name, result.nic->name);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8:1::2", inet62str(&result.src.a.ip6, addr));
   nic_put(result.nic);
 }
 
@@ -448,6 +501,7 @@ static void route_default_route_test(test_fixture_t* t) {
 static void ip_route_tests(test_fixture_t* t) {
   route_to_loopback_test(t);
   route_longest_prefix_test(t);
+  route_longest_prefix_v6_test(t);
   route_default_route_test(t);
 }
 
@@ -499,9 +553,15 @@ void net_base_test(void) {
 
   kspin_lock(&fixture.nic3->lock);
   fixture.nic3->addrs[0].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6("2001:db8::2", &fixture.nic3->addrs[0].a.addr.a.ip6));
-  fixture.nic3->addrs[0].a.prefix_len = 64;
+  KEXPECT_EQ(0,
+             str2inet6("2001:db8::2", &fixture.nic3->addrs[0].a.addr.a.ip6));
+  fixture.nic3->addrs[0].a.prefix_len = 96;
   fixture.nic3->addrs[0].state = NIC_ADDR_ENABLED;
+  fixture.nic3->addrs[1].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0,
+             str2inet6("2001:db8:1::2", &fixture.nic3->addrs[1].a.addr.a.ip6));
+  fixture.nic3->addrs[1].a.prefix_len = 70;
+  fixture.nic3->addrs[1].state = NIC_ADDR_ENABLED;
   kspin_unlock(&fixture.nic3->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
