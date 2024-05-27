@@ -325,6 +325,18 @@ static void route_to_loopback_test(test_fixture_t* t) {
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP));
   nic_put(result.nic);
+
+  // Try with an address on a later NIC after we would have matched a normal
+  // route.
+  kmemset(&dst, 0x12, sizeof(dst));
+  dst.family = AF_INET;
+  dst.a.ip4.s_addr = str2inet(SRC_IP3);
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ("lo0", result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP3));
+  nic_put(result.nic);
 }
 
 static void route_longest_prefix_test(test_fixture_t* t) {

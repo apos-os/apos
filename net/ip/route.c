@@ -51,6 +51,9 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
                           nic->addrs[addridx].state == NIC_ADDR_ENABLED;
          addridx++) {
       if (netaddr_eq(&nic->addrs[addridx].a.addr, &dst)) {
+        if (result->nic) {
+          nic_put(result->nic);
+        }
         // Sending to the NIC's own address---reroute via the loopback.
         // TODO(aoates): don't hard-code the loopback device name here.
         result->nic = nic_get_nm("lo0");
