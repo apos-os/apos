@@ -40,6 +40,7 @@ static void find_free_name(nic_t* nic, const char* name_prefix) {
     nic_t* iter = nic_first();
     while (iter) {
       if (kstrcmp(nic->name, iter->name) == 0) {
+        nic_put(iter);
         collision = true;
         break;
       }

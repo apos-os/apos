@@ -425,6 +425,13 @@ static void tap_tests(void) {
   tap_tx_test(&fixture);
   tap_rx_test(&fixture);
 
+  KTEST_BEGIN("TAP: create second device");
+  apos_dev_t id2;
+  nic_t* nic2 = tuntap_create(BUFSIZE, TUNTAP_TAP_MODE, &id2);
+  KEXPECT_NE(id, id2);
+  KEXPECT_NE(NULL, nic2);
+  KEXPECT_EQ(0, tuntap_destroy(id2));
+
   KTEST_BEGIN("TAP: test teardown");
   KEXPECT_EQ(0, vfs_close(fixture.sock));
   KEXPECT_EQ(0, vfs_close(fixture.tt_fd));

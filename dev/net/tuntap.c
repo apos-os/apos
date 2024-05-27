@@ -122,7 +122,8 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   poll_init_event(&tt->poll_event);
 
   // Create the character device first.
-  tt->dev_id = kmakedev(is_tap(tt) ? DEVICE_MAJOR_TAP : DEVICE_MAJOR_TUN, 0);
+  tt->dev_id = kmakedev(is_tap(tt) ? DEVICE_MAJOR_TAP : DEVICE_MAJOR_TUN,
+                        DEVICE_ID_UNKNOWN);
   tt->chardev.read = &tuntap_cd_read;
   tt->chardev.write = &tuntap_cd_write;
   tt->chardev.poll = &tuntap_cd_poll;
