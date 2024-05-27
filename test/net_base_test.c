@@ -14,6 +14,7 @@
 #include "common/endian.h"
 #include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
+#include "net/addr.h"
 #include "net/eth/arp/arp.h"
 #include "net/eth/arp/arp_packet.h"
 #include "net/eth/eth.h"
@@ -31,12 +32,14 @@
 
 #define TAP_BUFSIZE 500
 #define SRC_IP "127.0.5.1"
-#define SRC_IP2 "127.0.5.2"
-#define DST_IP "127.0.5.8"
+#define SRC_IP2 "127.0.5.8"
+#define SRC_IP3 "127.0.5.130"
+#define DST_IP "127.0.5.15"
 
 typedef struct {
   int tap_fd;
   nic_t* nic;
+  nic_t* nic2;
 } test_fixture_t;
 
 static void str_tests(void) {
@@ -296,7 +299,7 @@ static void arp_tests(test_fixture_t* t) {
   arp_recv_request_test3(t);
 }
 
-static void ip_route_tests(test_fixture_t* t) {
+static void route_to_loopback_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): route to loopback");
   netaddr_t dst;
   kmemset(&dst, 0xcd, sizeof(dst));
@@ -309,6 +312,7 @@ static void ip_route_tests(test_fixture_t* t) {
   KEXPECT_STREQ("lo0", result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP));
+  nic_put(result.nic);
 
   // Do it again with a different bit pattern filling the address.
   kmemset(&dst, 0x12, sizeof(dst));
@@ -319,6 +323,111 @@ static void ip_route_tests(test_fixture_t* t) {
   KEXPECT_STREQ("lo0", result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_EQ(result.src.a.ip4.s_addr, str2inet(SRC_IP));
+  nic_put(result.nic);
+}
+
+static void route_longest_prefix_test(test_fixture_t* t) {
+  KTEST_BEGIN("ip_route(): route to longest prefix");
+  netaddr_t dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET;
+  dst.a.ip4.s_addr = str2inet("127.0.5.5");
+
+  char addr[INET_PRETTY_LEN];
+  ip_routed_t result;
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic->name, result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_STREQ(SRC_IP, inet2str(result.src.a.ip4.s_addr, addr));
+  nic_put(result.nic);
+
+  // This one should match the second address of the first NIC.
+  dst.a.ip4.s_addr = str2inet("127.0.5.9");
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic->name, result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_STREQ(SRC_IP2, inet2str(result.src.a.ip4.s_addr, addr));
+  nic_put(result.nic);
+
+  // This one should match the third NIC.
+  dst.a.ip4.s_addr = str2inet("127.0.5.131");
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic2->name, result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_STREQ(SRC_IP3, inet2str(result.src.a.ip4.s_addr, addr));
+  nic_put(result.nic);
+
+  // Should match second address of second NIC.
+  dst.a.ip4.s_addr = str2inet("127.0.6.1");
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
+  KEXPECT_STREQ(t->nic2->name, result.nic->name);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_STREQ("127.0.5.4", inet2str(result.src.a.ip4.s_addr, addr));
+  nic_put(result.nic);
+}
+
+static void route_default_route_test(test_fixture_t* t) {
+  KTEST_BEGIN("ip_route(): no default route");
+  netaddr_t orig_default_nexthop;
+  char orig_default_nic[NIC_MAX_NAME_LEN];
+  ip_get_default_route(&orig_default_nexthop, orig_default_nic);
+
+  netaddr_t nexthop;
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(nexthop, "");
+
+  netaddr_t dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET;
+  dst.a.ip4.s_addr = str2inet("8.8.8.8");
+
+  char addr[INET_PRETTY_LEN];
+  ip_routed_t result;
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  KTEST_BEGIN("ip_route(): no default route (with NIC name)");
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(nexthop, t->nic->name);
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  KTEST_BEGIN("ip_route(): default route with bad NIC name");
+  nexthop.family = AF_INET;
+  nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
+  ip_set_default_route(nexthop, "not_a_nic");
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  KTEST_BEGIN("ip_route(): default route set");
+  nexthop.family = AF_INET;
+  nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
+  ip_set_default_route(nexthop, t->nic->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_EQ(t->nic, result.nic);
+  KEXPECT_EQ(AF_INET, result.src.family);
+  KEXPECT_STREQ(SRC_IP, inet2str(result.src.a.ip4.s_addr, addr));
+  KEXPECT_EQ(AF_INET, result.nexthop.family);
+  KEXPECT_STREQ("1.2.3.4", inet2str(result.nexthop.a.ip4.s_addr, addr));
+  nic_put(result.nic);
+
+  ip_set_default_route(orig_default_nexthop, orig_default_nic);
+}
+
+static void ip_route_tests(test_fixture_t* t) {
+  route_to_loopback_test(t);
+  route_longest_prefix_test(t);
+  route_default_route_test(t);
 }
 
 // TODO(aoates): neighbor cache tests:
@@ -329,7 +438,7 @@ void net_base_test(void) {
   KTEST_SUITE_BEGIN("Network base code");
   KTEST_BEGIN("Network base: test setup");
   test_fixture_t fixture;
-  apos_dev_t id;
+  apos_dev_t id, id2;
   nic_t* nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id);
   KEXPECT_NE(NULL, nic);
   fixture.nic = nic;
@@ -341,9 +450,23 @@ void net_base_test(void) {
   nic->addrs[0].state = NIC_ADDR_ENABLED;
   nic->addrs[1].a.addr.family = ADDR_INET;
   nic->addrs[1].a.addr.a.ip4.s_addr = str2inet(SRC_IP2);
-  nic->addrs[1].a.prefix_len = 32;
+  nic->addrs[1].a.prefix_len = 31;
   nic->addrs[1].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
+
+  fixture.nic2 = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id2);
+  KEXPECT_NE(NULL, fixture.nic2);
+
+  kspin_lock(&fixture.nic2->lock);
+  fixture.nic2->addrs[0].a.addr.family = ADDR_INET;
+  fixture.nic2->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP3);
+  fixture.nic2->addrs[0].a.prefix_len = 30;
+  fixture.nic2->addrs[0].state = NIC_ADDR_ENABLED;
+  fixture.nic2->addrs[1].a.addr.family = ADDR_INET;
+  fixture.nic2->addrs[1].a.addr.a.ip4.s_addr = str2inet("127.0.5.4");
+  fixture.nic2->addrs[1].a.prefix_len = 16;
+  fixture.nic2->addrs[1].state = NIC_ADDR_ENABLED;
+  kspin_unlock(&fixture.nic2->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
   fixture.tap_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
@@ -359,4 +482,5 @@ void net_base_test(void) {
   KEXPECT_EQ(0, vfs_close(fixture.tap_fd));
   KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
   KEXPECT_EQ(0, tuntap_destroy(id));
+  KEXPECT_EQ(0, tuntap_destroy(id2));
 }

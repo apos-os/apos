@@ -36,7 +36,6 @@ typedef struct {
 // TODO(aoates): support multiple default routes (e.g. ipv4 and ipv6).
 static ip_route_rule_t g_default_route;
 
-// TODO(aoates): write some tests for this.
 bool ip_route(netaddr_t dst, ip_routed_t* result) {
   // First try to find a NIC with a matching network.
   // N.B.(aoates): this isn't totally proper routing logic, but good enough for
@@ -115,4 +114,9 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
 void ip_set_default_route(netaddr_t nexthop, const char* nic_name) {
   g_default_route.nexthop = nexthop;
   g_default_route.nic_name = nic_name;
+}
+
+void ip_get_default_route(netaddr_t* nexthop, char* nic_name) {
+  *nexthop = g_default_route.nexthop;
+  kstrcpy(nic_name, g_default_route.nic_name);
 }

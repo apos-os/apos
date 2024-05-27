@@ -33,5 +33,6 @@ bool ip_route(netaddr_t dst, ip_routed_t* result);
 // Set the default route.
 // TODO(aoates): support arbitrary routing rules.
 void ip_set_default_route(netaddr_t nexthop, const char* nic_name);
+void ip_get_default_route(netaddr_t* nexthop, char* nic_name);
 
 #endif
