@@ -48,5 +48,5 @@ void net_init(void) {
   netaddr_t def;
   def.family = AF_INET;
   def.a.ip4.s_addr = str2inet("10.0.2.2");
-  ip_set_default_route(def, "eth0");
+  ip_set_default_route(ADDR_INET, def, "eth0");
 }

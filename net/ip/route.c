@@ -33,8 +33,24 @@ typedef struct {
   const char* nic_name;
 } ip_route_rule_t;
 
-// TODO(aoates): support multiple default routes (e.g. ipv4 and ipv6).
-static ip_route_rule_t g_default_route;
+static ip_route_rule_t g_default_route_v4 = {.nexthop = {.family = AF_UNSPEC}};
+static ip_route_rule_t g_default_route_v6 = {.nexthop = {.family = AF_UNSPEC}};
+
+static ip_route_rule_t* get_default_route(addrfam_t family) {
+  switch (family) {
+    case ADDR_INET:
+      return &g_default_route_v4;
+      break;
+
+    case ADDR_INET6:
+      return &g_default_route_v6;
+      break;
+
+    case ADDR_UNSPEC:
+      break;
+  }
+  return NULL;
+}
 
 bool ip_route(netaddr_t dst, ip_routed_t* result) {
   // First try to find a NIC with a matching network.
@@ -84,9 +100,17 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
 
   // No match, use the default route if we can.
   KASSERT_DBG(result->nic == NULL);
-  if (g_default_route.nexthop.family == dst.family) {
-    result->nexthop = g_default_route.nexthop;
-    result->nic = nic_get_nm(g_default_route.nic_name);
+  const ip_route_rule_t* route_rule = get_default_route(dst.family);
+  if (!route_rule) {
+    klogfm(KL_NET, DFATAL, "Invalid address family %d passed to ip_route()\n",
+           dst.family);
+    return false;
+  }
+
+  if (route_rule->nexthop.family != AF_UNSPEC) {
+    KASSERT(route_rule->nexthop.family == dst.family);
+    result->nexthop = route_rule->nexthop;
+    result->nic = nic_get_nm(route_rule->nic_name);
     if (result->nic) {
       result->src.family = ADDR_UNSPEC;
       kspin_lock(&result->nic->lock);
@@ -114,12 +138,31 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   return false;
 }
 
-void ip_set_default_route(netaddr_t nexthop, const char* nic_name) {
-  g_default_route.nexthop = nexthop;
-  g_default_route.nic_name = nic_name;
+void ip_set_default_route(addrfam_t family, netaddr_t nexthop,
+                          const char* nic_name) {
+  KASSERT(nexthop.family == AF_UNSPEC || nexthop.family == family);
+  ip_route_rule_t* route = get_default_route(family);
+  if (route) {
+    route->nexthop = nexthop;
+    route->nic_name = nic_name;
+  } else {
+    klogfm(KL_NET, DFATAL,
+           "Cannot set default route for invalid address family %d\n", family);
+  }
 }
 
-void ip_get_default_route(netaddr_t* nexthop, char* nic_name) {
-  *nexthop = g_default_route.nexthop;
-  kstrcpy(nic_name, g_default_route.nic_name);
+void ip_get_default_route(addrfam_t family, netaddr_t* nexthop,
+                          char* nic_name) {
+  const ip_route_rule_t* route = get_default_route(family);
+  if (route) {
+    *nexthop = route->nexthop;
+    if (route->nic_name) {
+      kstrcpy(nic_name, route->nic_name);
+    } else {
+      *nic_name = '\0';
+    }
+  } else {
+    klogfm(KL_NET, DFATAL,
+           "Cannot set default route for invalid address family %d\n", family);
+  }
 }

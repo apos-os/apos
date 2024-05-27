@@ -444,11 +444,11 @@ static void route_default_route_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): no default route");
   netaddr_t orig_default_nexthop;
   char orig_default_nic[NIC_MAX_NAME_LEN];
-  ip_get_default_route(&orig_default_nexthop, orig_default_nic);
+  ip_get_default_route(ADDR_INET, &orig_default_nexthop, orig_default_nic);
 
   netaddr_t nexthop;
   nexthop.family = AF_UNSPEC;
-  ip_set_default_route(nexthop, "");
+  ip_set_default_route(ADDR_INET, nexthop, "");
 
   netaddr_t dst;
   kmemset(&dst, 0xcd, sizeof(dst));
@@ -463,21 +463,21 @@ static void route_default_route_test(test_fixture_t* t) {
 
   KTEST_BEGIN("ip_route(): no default route (with NIC name)");
   nexthop.family = AF_UNSPEC;
-  ip_set_default_route(nexthop, t->nic->name);
+  ip_set_default_route(ADDR_INET, nexthop, t->nic->name);
   KEXPECT_FALSE(ip_route(dst, &result));
 
 
   KTEST_BEGIN("ip_route(): default route with bad NIC name");
   nexthop.family = AF_INET;
   nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
-  ip_set_default_route(nexthop, "not_a_nic");
+  ip_set_default_route(ADDR_INET, nexthop, "not_a_nic");
   KEXPECT_FALSE(ip_route(dst, &result));
 
 
   KTEST_BEGIN("ip_route(): default route set");
   nexthop.family = AF_INET;
   nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
-  ip_set_default_route(nexthop, t->nic->name);
+  ip_set_default_route(ADDR_INET, nexthop, t->nic->name);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_EQ(t->nic, result.nic);
@@ -491,11 +491,69 @@ static void route_default_route_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): default route set (no usable addrs on NIC)");
   nexthop.family = AF_INET;
   nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
-  ip_set_default_route(nexthop, t->nic3->name);
+  ip_set_default_route(ADDR_INET, nexthop, t->nic3->name);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_FALSE(ip_route(dst, &result));
 
-  ip_set_default_route(orig_default_nexthop, orig_default_nic);
+  ip_set_default_route(ADDR_INET, orig_default_nexthop, orig_default_nic);
+}
+
+static void route_default_route_v6_test(test_fixture_t* t) {
+  KTEST_BEGIN("ip_route(): no default route (IPv6)");
+  netaddr_t orig_default_nexthop;
+  char orig_default_nic[NIC_MAX_NAME_LEN];
+  ip_get_default_route(ADDR_INET6, &orig_default_nexthop, orig_default_nic);
+
+  netaddr_t nexthop;
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(ADDR_INET6, nexthop, "");
+
+  netaddr_t dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2607:f8b0:4006:821::2004", &dst.a.ip6));
+
+  char addr[INET6_PRETTY_LEN];
+  ip_routed_t result;
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  KTEST_BEGIN("ip_route(): no default route (with NIC name) (IPv6)");
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic->name);
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  KTEST_BEGIN("ip_route(): default route with bad NIC name (IPv6)");
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, "not_a_nic");
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  KTEST_BEGIN("ip_route(): default route set (IPv6)");
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_EQ(t->nic, result.nic);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&result.src.a.ip6, addr));
+  KEXPECT_EQ(AF_INET6, result.nexthop.family);
+  KEXPECT_STREQ("2001:db8::100", inet62str(&result.nexthop.a.ip6, addr));
+  nic_put(result.nic);
+
+
+  KTEST_BEGIN("ip_route(): default route set (no usable addrs on NIC) (IPv6)");
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic2->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+  ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
 }
 
 static void ip_route_tests(test_fixture_t* t) {
@@ -503,6 +561,7 @@ static void ip_route_tests(test_fixture_t* t) {
   route_longest_prefix_test(t);
   route_longest_prefix_v6_test(t);
   route_default_route_test(t);
+  route_default_route_v6_test(t);
 }
 
 // TODO(aoates): neighbor cache tests:
