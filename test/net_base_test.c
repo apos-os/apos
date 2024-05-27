@@ -40,6 +40,7 @@ typedef struct {
   int tap_fd;
   nic_t* nic;
   nic_t* nic2;
+  nic_t* nic3;
 } test_fixture_t;
 
 static void str_tests(void) {
@@ -421,6 +422,14 @@ static void route_default_route_test(test_fixture_t* t) {
   KEXPECT_STREQ("1.2.3.4", inet2str(result.nexthop.a.ip4.s_addr, addr));
   nic_put(result.nic);
 
+
+  KTEST_BEGIN("ip_route(): default route set (no usable addrs on NIC)");
+  nexthop.family = AF_INET;
+  nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
+  ip_set_default_route(nexthop, t->nic3->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_FALSE(ip_route(dst, &result));
+
   ip_set_default_route(orig_default_nexthop, orig_default_nic);
 }
 
@@ -438,20 +447,24 @@ void net_base_test(void) {
   KTEST_SUITE_BEGIN("Network base code");
   KTEST_BEGIN("Network base: test setup");
   test_fixture_t fixture;
-  apos_dev_t id, id2;
+  apos_dev_t id, id2, id3;
   nic_t* nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id);
   KEXPECT_NE(NULL, nic);
   fixture.nic = nic;
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].a.addr.family = ADDR_INET;
-  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &nic->addrs[0].a.addr.a.ip6));
+  nic->addrs[0].a.prefix_len = 64;
   nic->addrs[0].state = NIC_ADDR_ENABLED;
   nic->addrs[1].a.addr.family = ADDR_INET;
-  nic->addrs[1].a.addr.a.ip4.s_addr = str2inet(SRC_IP2);
-  nic->addrs[1].a.prefix_len = 31;
+  nic->addrs[1].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[1].a.prefix_len = 24;
   nic->addrs[1].state = NIC_ADDR_ENABLED;
+  nic->addrs[2].a.addr.family = ADDR_INET;
+  nic->addrs[2].a.addr.a.ip4.s_addr = str2inet(SRC_IP2);
+  nic->addrs[2].a.prefix_len = 31;
+  nic->addrs[2].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
   fixture.nic2 = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id2);
@@ -468,6 +481,17 @@ void net_base_test(void) {
   fixture.nic2->addrs[1].state = NIC_ADDR_ENABLED;
   kspin_unlock(&fixture.nic2->lock);
 
+  // A third ipv6-only NIC.
+  fixture.nic3 = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id3);
+  KEXPECT_NE(NULL, fixture.nic3);
+
+  kspin_lock(&fixture.nic3->lock);
+  fixture.nic3->addrs[0].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &fixture.nic3->addrs[0].a.addr.a.ip6));
+  fixture.nic3->addrs[0].a.prefix_len = 64;
+  fixture.nic3->addrs[0].state = NIC_ADDR_ENABLED;
+  kspin_unlock(&fixture.nic3->lock);
+
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
   fixture.tap_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
   KEXPECT_GE(fixture.tap_fd, 0);
@@ -483,4 +507,5 @@ void net_base_test(void) {
   KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
   KEXPECT_EQ(0, tuntap_destroy(id));
   KEXPECT_EQ(0, tuntap_destroy(id2));
+  KEXPECT_EQ(0, tuntap_destroy(id3));
 }

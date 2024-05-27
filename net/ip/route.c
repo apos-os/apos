@@ -89,7 +89,7 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
       kspin_lock(&result->nic->lock);
       for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
         if (result->nic->addrs[i].a.addr.family == dst.family) {
-          result->src = result->nic->addrs[0].a.addr;
+          result->src = result->nic->addrs[i].a.addr;
           break;
         }
       }
