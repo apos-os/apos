@@ -145,6 +145,15 @@ int ip6_src_addr_cmp(const nic_addr_t* A, const nic_addr_t* B,
   }
 
   // Rule 7: prefer temporary addresses; skipped.
-  // TODO(ipv6): implement the rest of the algorithm.
+
+  // Rule 8: prefer longer matching prefixes.
+  int matchA = ip6_common_prefix(&A->a.addr.a.ip6, &dst->a.ip6);
+  int matchB = ip6_common_prefix(&B->a.addr.a.ip6, &dst->a.ip6);
+  if (matchA > matchB) {
+    return PREFER_A;
+  } else if (matchB > matchA) {
+    return PREFER_B;
+  }
+
   return 0;
 }

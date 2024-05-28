@@ -1668,7 +1668,7 @@ static void addr_selection_tests(test_fixture_t* t) {
   KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::1", "ff02:1::3"));
 
   // 1    1     1
-  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "fe80::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1:1", "fe80::1:2", "fe80::3"));
   KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff02::3"));
   KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff0e::3"));
   KEXPECT_EQ( 0, do_cmp(t, "feb0::1", "fe80::2", "ff0e::3"));
@@ -1715,10 +1715,15 @@ static void addr_selection_tests(test_fixture_t* t) {
   KTEST_BEGIN("ip6_src_addr_cmp(): rule 6 (match labels)");
   KEXPECT_EQ( 1, do_cmp(t, "::ffff:0:1", "2001:db8::1", "::ffff:0:3"));
   KEXPECT_EQ(-1, do_cmp(t, "::ffff:0:1", "2001:db8::1", "1::ffff:0:3"));
-  KEXPECT_EQ( 0, do_cmp(t, "::ffff:0:1", "::ffff:0:2", "::ffff:0:3"));
-  KEXPECT_EQ( 0, do_cmp(t, "::0:1", "2001:db8::1", "::0:3"));
+  KEXPECT_EQ( 0, do_cmp(t, "::ffff:1:1", "::ffff:1:2", "::ffff:0:3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2002::1", "2001::1", "::0:3"));
   KEXPECT_EQ( 1, do_cmp(t, "::1:1", "2001:db8::1", "::0:3"));
-  KEXPECT_EQ( 0, do_cmp(t, "::1:1", "::0:2", "::0:3"));
+  KEXPECT_EQ( 0, do_cmp(t, "::2:1", "::3:2", "::0:3"));
+
+
+  KTEST_BEGIN("ip6_src_addr_cmp(): rule 8 (longest matching prefix)");
+  KEXPECT_EQ( 1, do_cmp(t, "2001:db8::0:1", "2001:db8::1:2", "2001:db8::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::0:2", "2001:db8::0:3", "2001:db8::"));
 }
 
 // TODO(ipv6): additional tests:
