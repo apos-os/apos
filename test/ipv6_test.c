@@ -24,6 +24,7 @@
 #include "net/ip/icmpv6/ndp.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
+#include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
@@ -310,6 +311,61 @@ static void str2addr_tests(void) {
                 sockaddr2str((struct sockaddr*)&sin6, sizeof(sin6) - 1, buf));
 }
 
+static void addr_prefix_tests(void) {
+  KTEST_BEGIN("ip6_common_prefix() tests");
+  struct in6_addr addr1, addr2;
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:0:1", &addr1));
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:0:1", &addr2));
+  KEXPECT_EQ(128, ip6_common_prefix(&addr1, &addr2));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:0:0", &addr2));
+  KEXPECT_EQ(127, ip6_common_prefix(&addr1, &addr2));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:0:2", &addr2));
+  KEXPECT_EQ(126, ip6_common_prefix(&addr1, &addr2));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:0:3", &addr2));
+  KEXPECT_EQ(126, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(126, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::", &addr2));
+  KEXPECT_EQ(94, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(94, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:8000:0", &addr2));
+  KEXPECT_EQ(96, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(96, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::2:1000:0", &addr2));
+  KEXPECT_EQ(99, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(99, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::3:1000:0", &addr2));
+  KEXPECT_EQ(95, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(95, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("f001:db8::3:1000:0", &addr2));
+  KEXPECT_EQ(0, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(0, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("7001:db8::3:1000:0", &addr2));
+  KEXPECT_EQ(1, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(1, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2001::", &addr2));
+  KEXPECT_EQ(20, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(20, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2001:8000::", &addr2));
+  KEXPECT_EQ(16, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(16, ip6_common_prefix(&addr2, &addr1));
+
+  KEXPECT_EQ(0, str2inet6("2000::", &addr2));
+  KEXPECT_EQ(15, ip6_common_prefix(&addr1, &addr2));
+  KEXPECT_EQ(15, ip6_common_prefix(&addr2, &addr1));
+}
+
 static void addr_tests(void) {
   KTEST_BEGIN("IPv6 address test helpers");
   char buf[INET6_PRETTY_LEN];
@@ -335,6 +391,7 @@ static void addr_tests(void) {
 
   addr2str_tests();
   str2addr_tests();
+  addr_prefix_tests();
 }
 
 static void netaddr_tests(void) {

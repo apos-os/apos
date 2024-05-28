@@ -17,8 +17,9 @@ Import('env AposAddSources')
 srcs = [
   'checksum.c',
   'ip.c',
-  'ip6.c',
   'ip4_hdr.c',
+  'ip6.c',
+  'ip6_addr.c',
   'ip6_hdr.c',
   'route.c',
   'util.c',
