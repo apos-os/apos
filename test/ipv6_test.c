@@ -16,6 +16,7 @@
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kstring.h"
+#include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
 #include "net/addr.h"
 #include "net/eth/eth.h"
@@ -1622,6 +1623,94 @@ static void ndp_tests(test_fixture_t* t) {
   ndp_recv_solicit_test_from_unspecified(t);
 }
 
+static int do_cmp(test_fixture_t* t, const char* Astr, const char* Bstr,
+                  const char* dst_str) {
+  netaddr_t dst;
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6(dst_str, &dst.a.ip6));
+
+  nic_addr_t A, B;
+  A.state = B.state = NIC_ADDR_ENABLED;
+  A.a.addr.family = B.a.addr.family = AF_INET6;
+  A.a.prefix_len = B.a.prefix_len = 64;  // Unused.
+  KEXPECT_EQ(0, str2inet6(Astr, &A.a.addr.a.ip6));
+  KEXPECT_EQ(0, str2inet6(Bstr, &B.a.addr.a.ip6));
+  int result = ip6_src_addr_cmp(&A, &B, &dst, t->nic);
+  int result_reverse = ip6_src_addr_cmp(&B, &A, &dst, t->nic);
+  KEXPECT_EQ(-result, result_reverse);
+  if (result != -result_reverse) {
+    return 5;
+  }
+  return result;
+}
+
+static void addr_selection_tests(test_fixture_t* t) {
+  KTEST_BEGIN("ip6_src_addr_cmp(): rule 1 (prefer same address)");
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::1", "2001:db8::1"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::1", "2001:db8::2"));
+  KEXPECT_EQ(-1, do_cmp(t, "2001:db8::1", "2001:db8::2", "2001:db8::2"));
+  KEXPECT_EQ( 1, do_cmp(t, "2001:db8::2", "2001:db8::1", "2001:db8::2"));
+
+  KTEST_BEGIN("ip6_src_addr_cmp(): rule 2 (prefer appropriate scope)");
+  // These are the values for scope of A/B/dest we need to test --- assuming
+  // do_cmp reverse A and B, these will represent all possible orderings.
+  // SA   SB    D
+
+  // 1    2     2
+  KEXPECT_EQ(-1, do_cmp(t, "fe80::1", "2001:db8::1", "2001:db8::2"));
+  KEXPECT_EQ(-1, do_cmp(t, "fe80::1", "2001:db8::1", "ff0e::3"));
+
+  // 1    2     1
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::1", "fe80::3"));
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::1", "ff02::3"));
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::1", "ff12::3"));
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::1", "fff2::3"));
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::1", "ff02:1::3"));
+
+  // 1    1     1
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "fe80::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff02::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fec0::1", "2001:db8::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fec8::1", "2001:db8::2", "ff0e::3"));
+
+  // 1    1     2
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "2001:db8::2"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff03::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff04::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff05::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff08::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe88::1", "fe80::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fe8f::1", "fe80::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "febf::1", "fe80::2", "ff0e::3"));
+
+  // 2    2     1
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "fe80::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff01::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff02::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff03::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff04::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff05::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff08::3"));
+
+  // 1    3     2
+  KEXPECT_EQ(-1, do_cmp(t, "fe80::1", "2001:db8::2", "ff03::3"));
+  KEXPECT_EQ(-1, do_cmp(t, "fe80::1", "2001:db8::2", "ff04::3"));
+  KEXPECT_EQ(-1, do_cmp(t, "fe80::1", "2001:db8::2", "ff05::3"));
+  KEXPECT_EQ(-1, do_cmp(t, "fe80::1", "2001:db8::2", "ff08::3"));
+
+  // 2 (link-local)    3 (global)     1 (interface-local)
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::2", "ff01::3"));
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::2", "ff11::3"));
+  KEXPECT_EQ( 1, do_cmp(t, "fe80::1", "2001:db8::2", "fff1::3"));
+
+  // Note: this last ordering is untestable, as we don't implement the
+  // deprecated unicast site-local address handling, and multicast addresses
+  // can't be sources:
+  // 1    2     3
+}
+
 // TODO(ipv6): additional tests:
 //  - invalid IPv6 packets
 //  - invalid NDP packets (including options)
@@ -1675,6 +1764,7 @@ void ipv6_test(void) {
   sockaddr_tests();
   pkt_tests();
   ndp_tests(&fixture);
+  addr_selection_tests(&fixture);
 
   KTEST_BEGIN("IPv6: test teardown");
   KEXPECT_EQ(0, vfs_close(fixture.tap_fd));

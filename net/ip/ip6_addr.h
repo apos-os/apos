@@ -15,9 +15,19 @@
 #ifndef APOO_NET_IP_IP6_ADDR_H
 #define APOO_NET_IP_IP6_ADDR_H
 
+#include "dev/net/nic.h"
+#include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 
 // Returns the number of bits shared between the two addresses.
 int ip6_common_prefix(const struct in6_addr* A, const struct in6_addr* B);
+
+// Compare two IPv6 source addresses per RFC 6724.  Returns a negative number if
+// if the first address is lower in preference than the second.
+//
+// Does not implement the full sorting criteria --- in particular, assumes that
+// all addresses are on the outgoing interface, among other constraints.
+int ip6_src_addr_cmp(const nic_addr_t* A, const nic_addr_t* B,
+                     const netaddr_t* dst, const nic_t* out_nic);
 
 #endif
