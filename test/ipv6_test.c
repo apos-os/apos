@@ -1671,8 +1671,10 @@ static void addr_selection_tests(test_fixture_t* t) {
   KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "fe80::3"));
   KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "ff02::3"));
   KEXPECT_EQ( 0, do_cmp(t, "2001:db8::1", "2001:db8::2", "ff0e::3"));
-  KEXPECT_EQ( 0, do_cmp(t, "fec0::1", "2001:db8::2", "ff0e::3"));
-  KEXPECT_EQ( 0, do_cmp(t, "fec8::1", "2001:db8::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "feb0::1", "fe80::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fec0::1", "fec0::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "fec8::1", "fec8::2", "ff0e::3"));
+  KEXPECT_EQ( 0, do_cmp(t, "feb8::1", "fe80::2", "ff0e::3"));
 
   // 1    1     2
   KEXPECT_EQ( 0, do_cmp(t, "fe80::1", "fe80::2", "2001:db8::2"));
@@ -1709,6 +1711,14 @@ static void addr_selection_tests(test_fixture_t* t) {
   // deprecated unicast site-local address handling, and multicast addresses
   // can't be sources:
   // 1    2     3
+
+  KTEST_BEGIN("ip6_src_addr_cmp(): rule 6 (match labels)");
+  KEXPECT_EQ( 1, do_cmp(t, "::ffff:0:1", "2001:db8::1", "::ffff:0:3"));
+  KEXPECT_EQ(-1, do_cmp(t, "::ffff:0:1", "2001:db8::1", "1::ffff:0:3"));
+  KEXPECT_EQ( 0, do_cmp(t, "::ffff:0:1", "::ffff:0:2", "::ffff:0:3"));
+  KEXPECT_EQ( 0, do_cmp(t, "::0:1", "2001:db8::1", "::0:3"));
+  KEXPECT_EQ( 1, do_cmp(t, "::1:1", "2001:db8::1", "::0:3"));
+  KEXPECT_EQ( 0, do_cmp(t, "::1:1", "::0:2", "::0:3"));
 }
 
 // TODO(ipv6): additional tests:
