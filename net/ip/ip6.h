@@ -21,6 +21,11 @@
 // the configuration process.  No-op if the NIC already has an IPv6 address.
 void ipv6_enable(nic_t* nic);
 
+// Send an IPv6 packet out onto the network.  May block.  The packet must
+// already have an IPv6 header.  Unconditionally takes ownership of the packet
+// (on success as well as failure).
+int ip6_send(pbuf_t* pb, bool allow_block);
+
 void ip6_recv(nic_t* nic, pbuf_t* pb);
 
 #endif

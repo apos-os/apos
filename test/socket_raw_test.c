@@ -17,10 +17,11 @@
 
 #include "common/errno.h"
 #include "dev/net/nic.h"
-#include "memory/kmalloc.h"
+#include "dev/net/tuntap.h"
 #include "net/bind.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/socket/raw.h"
 #include "net/socket/socket.h"
 #include "net/util.h"
@@ -35,7 +36,12 @@
 #include "test/vfs_test_util.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
+#include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
+
+typedef struct {
+  int tun_fd;
+} test_fixture_t;
 
 static void create_test(void) {
   KTEST_BEGIN("net_socket_create(SOCK_RAW): basic creation");
@@ -605,11 +611,154 @@ static void bind_filtering_test(void) {
   KEXPECT_EQ(0, vfs_close(recv_sock_unbound));
 }
 
+static void raw_ipv6_test(test_fixture_t* t) {
+  KTEST_BEGIN("recv(SOCK_RAW): basic IPv6 receive");
+  int sock = net_socket(AF_INET6, SOCK_RAW, 100);
+  vfs_make_nonblock(sock);
+  KEXPECT_GE(sock, 0);
+
+  pbuf_t* pb1 = pbuf_create(INET6_HEADER_RESERVE, 3);
+  kmemcpy(pbuf_get(pb1), "abc", 3);
+  struct in6_addr src, dst;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &dst));
+  ip6_add_hdr(pb1, &src, &dst, 100, 0);
+
+  KEXPECT_EQ(pbuf_size(pb1),
+             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+
+  char buf[200];
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, net_recv(sock, buf, 200, 0));
+  KEXPECT_EQ(0, kmemcmp(buf, pbuf_getc(pb1), pbuf_size(pb1)));
+  pbuf_free(pb1);
+
+  // Try again with a different destination IP to match test below.
+  pb1 = pbuf_create(INET6_HEADER_RESERVE, 3);
+  kmemcpy(pbuf_get(pb1), "abc", 3);
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::3", &dst));
+  ip6_add_hdr(pb1, &src, &dst, 100, 0);
+
+  KEXPECT_EQ(pbuf_size(pb1),
+             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, net_recv(sock, buf, 200, 0));
+  KEXPECT_EQ(0, kmemcmp(buf, pbuf_getc(pb1), pbuf_size(pb1)));
+  pbuf_free(pb1);
+
+
+  KTEST_BEGIN("recv(SOCK_RAW): IPv6 checks protocol");
+  pb1 = pbuf_create(INET6_HEADER_RESERVE, 3);
+  kmemcpy(pbuf_get(pb1), "abc", 3);
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &dst));
+  ip6_add_hdr(pb1, &src, &dst, 101, 0);  // Different protocol.
+  KEXPECT_EQ(pbuf_size(pb1),
+             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 200, 0));
+  pbuf_free(pb1);
+
+
+  KTEST_BEGIN("recv(SOCK_RAW): bound to IPv6 address (filters packets)");
+  // First bind.
+  struct sockaddr_in6 bind_addr;
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 500 /* unused port */, &bind_addr));
+  KEXPECT_EQ(0,
+             net_bind(sock, (struct sockaddr*)&bind_addr, sizeof(bind_addr)));
+
+  // Send a packet that should be received.
+  pb1 = pbuf_create(INET6_HEADER_RESERVE, 3);
+  kmemcpy(pbuf_get(pb1), "abc", 3);
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &dst));
+  ip6_add_hdr(pb1, &src, &dst, 100, 0);
+  KEXPECT_EQ(pbuf_size(pb1),
+             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, net_recv(sock, buf, 200, 0));
+  KEXPECT_EQ(0, kmemcmp(buf, pbuf_getc(pb1), pbuf_size(pb1)));
+  pbuf_free(pb1);
+
+  // Now send a packet that shouldn't be received.
+  pb1 = pbuf_create(INET6_HEADER_RESERVE, 3);
+  kmemcpy(pbuf_get(pb1), "abc", 3);
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::3", &dst));
+  ip6_add_hdr(pb1, &src, &dst, 100, 0);
+  KEXPECT_EQ(pbuf_size(pb1),
+             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 200, 0));
+  pbuf_free(pb1);
+
+
+  KTEST_BEGIN("recv(SOCK_RAW): IPv6 socket ignores IPv4 packets");
+  pb1 = pbuf_create(INET_HEADER_RESERVE, 3);
+  kmemcpy(pbuf_get(pb1), "abc", 3);
+  ip4_add_hdr(pb1, str2inet("1.2.3.4"), str2inet("5.6.7.8"), 100);
+  KEXPECT_EQ(pbuf_size(pb1),
+             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 200, 0));
+  pbuf_free(pb1);
+
+
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("sendto(SOCK_RAW): basic IPv6 send");
+  int send_sock = net_socket(AF_INET6, SOCK_RAW, 100);
+  KEXPECT_GE(send_sock, 0);
+
+  struct sockaddr_in6 dst_addr;
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 0, &dst_addr));
+
+  KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                           sizeof(dst_addr)));
+
+  int result = vfs_read(t->tun_fd, buf, 100);
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, result);
+  buf[result] = '\0';
+
+  ip6_hdr_t* hdr = (ip6_hdr_t*)buf;
+  char prettybuf[INET6_PRETTY_LEN];
+  KEXPECT_STREQ("2001:db8::1", inet62str(&hdr->src_addr, prettybuf));
+  KEXPECT_STREQ("2001:db8::2", inet62str(&hdr->dst_addr, prettybuf));
+  KEXPECT_EQ(100, hdr->next_hdr);
+  KEXPECT_EQ(3, btoh16(hdr->payload_len));
+  KEXPECT_STREQ(buf + sizeof(ip6_hdr_t), "abc");
+
+
+  KTEST_BEGIN("sendto(SOCK_RAW): IPv6 can't send to IPv4 address");
+  dst_addr.sin6_family = AF_INET;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
+                        sizeof(dst_addr)));
+
+  KEXPECT_EQ(0, vfs_close(send_sock));
+}
+
 void socket_raw_test(void) {
   KTEST_SUITE_BEGIN("Socket (raw)");
   block_cache_clear_unpinned();
   const int initial_cache_size = vfs_cache_size();
 
+  KTEST_BEGIN("Raw socket: test setup");
+  test_fixture_t fixture;
+  apos_dev_t id;
+  nic_t* nic = tuntap_create(5000, TUNTAP_TUN_IPV6, &id);
+  KEXPECT_NE(NULL, nic);
+
+  kspin_lock(&nic->lock);
+  nic->addrs[0].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &nic->addrs[0].a.addr.a.ip6));
+  nic->addrs[0].a.prefix_len = 64;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
+  kspin_unlock(&nic->lock);
+
+  KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
+  fixture.tun_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
+  KEXPECT_GE(fixture.tun_fd, 0);
+  vfs_make_nonblock(fixture.tun_fd);
+
+  // Run the tests.
   create_test();
   unsupported_ops_test();
   recv_test();
@@ -619,7 +768,13 @@ void socket_raw_test(void) {
   raw_poll_test();
   sockopt_test();
   bind_filtering_test();
+  raw_ipv6_test(&fixture);
 
-  KTEST_BEGIN("vfs: vnode leak verification");
+  KTEST_BEGIN("Raw socket: test teardown");
+  KEXPECT_EQ(0, vfs_close(fixture.tun_fd));
+  KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
+  KEXPECT_EQ(0, tuntap_destroy(id));
+
+  KTEST_BEGIN("Raw socket: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
 }

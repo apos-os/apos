@@ -16,8 +16,12 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "net/addr.h"
+#include "net/bind.h"
 #include "net/ip/icmpv6/icmpv6.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/route.h"
+#include "net/link_layer.h"
+#include "net/socket/raw.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -66,6 +70,56 @@ void ipv6_enable(nic_t* nic) {
   // TODO(ipv6): kick off SLAAC.
 }
 
+// TODO(ipv6): add tests for each of these failure cases.
+int ip6_send(pbuf_t* pb, bool allow_block) {
+  char addrbuf[INET6_PRETTY_LEN];
+  if (pbuf_size(pb) < sizeof(ip6_hdr_t)) {
+    KLOG(INFO, "net: rejecting too-short IPv6 packet\n");
+    pbuf_free(pb);
+    return -EINVAL;
+  }
+
+  ip6_hdr_t* hdr = (ip6_hdr_t*)pbuf_get(pb);
+  if (ip6_version(*hdr) != 6) {
+    KLOG(INFO, "net: rejecting IPv6 packet with bad version %d\n",
+         ip6_version(*hdr));
+    pbuf_free(pb);
+    return -EINVAL;
+  }
+
+  netaddr_t dst;
+  dst.family = AF_INET6;
+  dst.a.ip6 = hdr->dst_addr;
+  ip_routed_t route;
+  if (ip_route(dst, &route) == false) {
+    KLOG(INFO, "net: unable to route packet to %s\n",
+         inet62str(&hdr->dst_addr, addrbuf));
+    pbuf_free(pb);
+    return -ENETUNREACH;
+  }
+
+  // Check the source address --- for non-RAW sockets, we should not have been
+  // allowed to bind() a socket to this source IP if it wasn't valid.
+  netaddr_t src;
+  src.family = AF_INET6;
+  src.a.ip6 = hdr->src_addr;
+  if (inet_source_valid(&src, route.nic) != 0) {
+    KLOG(INFO, "net: unable to route packet with src %s on iface %s\n",
+         inet62str(&hdr->src_addr, addrbuf), route.nic->name);
+    nic_put(route.nic);
+    pbuf_free(pb);
+    return -EADDRNOTAVAIL;
+  }
+
+  int result =
+      net_link_send(route.nic, route.nexthop, pb, ET_IPV6, allow_block);
+  nic_put(route.nic);
+  if (result != 0) {
+    pbuf_free(pb);
+  }
+  return result;
+}
+
 static bool validate_hdr_v6(const pbuf_t* pb) {
   if (pbuf_size(pb) < sizeof(ip6_hdr_t)) {
     KLOG(DEBUG, "net: truncated IPv6 packet\n");
@@ -104,11 +158,16 @@ void ip6_recv(nic_t* nic, pbuf_t* pb) {
   if (hdr->next_hdr == IPPROTO_ICMPV6) {
     handled = icmpv6_recv(nic, hdr, sizeof(ip6_hdr_t), pb);
   }
+  // TODO(ipv6): handle TCP and UDP sockets.
+
   // pb is now a dangling pointer unless handled is false!
-
-  // TODO(ipv6): handle TCP, UDP, and raw sockets.
-
   if (!handled) {
+    struct sockaddr_in6 src_addr;
+    src_addr.sin6_family = AF_INET;
+    src_addr.sin6_addr = hdr->src_addr;
+    src_addr.sin6_port = 0;
+    sock_raw_dispatch(pb, ET_IPV6, hdr->next_hdr, (struct sockaddr*)&src_addr,
+                      sizeof(src_addr));
     pbuf_free(pb);
   }
 }
