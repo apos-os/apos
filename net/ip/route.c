@@ -30,7 +30,7 @@ typedef struct {
 
   // The device to use.
   // TODO(aoates): make this optional (so we can use nexthop alone).
-  const char* nic_name;
+  char nic_name[NIC_MAX_NAME_LEN];
 } ip_route_rule_t;
 
 static ip_route_rule_t g_default_route_v4 = {.nexthop = {.family = AF_UNSPEC}};
@@ -141,10 +141,11 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
 void ip_set_default_route(addrfam_t family, netaddr_t nexthop,
                           const char* nic_name) {
   KASSERT(nexthop.family == AF_UNSPEC || nexthop.family == family);
+  KASSERT(kstrlen(nic_name) < NIC_MAX_NAME_LEN);
   ip_route_rule_t* route = get_default_route(family);
   if (route) {
     route->nexthop = nexthop;
-    route->nic_name = nic_name;
+    kstrcpy(route->nic_name, nic_name);
   } else {
     klogfm(KL_NET, DFATAL,
            "Cannot set default route for invalid address family %d\n", family);
@@ -154,13 +155,12 @@ void ip_set_default_route(addrfam_t family, netaddr_t nexthop,
 void ip_get_default_route(addrfam_t family, netaddr_t* nexthop,
                           char* nic_name) {
   const ip_route_rule_t* route = get_default_route(family);
+  KASSERT(route->nexthop.family == AF_UNSPEC ||
+          route->nexthop.family == family);
+  KASSERT(kstrlen(route->nic_name) < NIC_MAX_NAME_LEN);
   if (route) {
     *nexthop = route->nexthop;
-    if (route->nic_name) {
-      kstrcpy(nic_name, route->nic_name);
-    } else {
-      *nic_name = '\0';
-    }
+    kstrcpy(nic_name, route->nic_name);
   } else {
     klogfm(KL_NET, DFATAL,
            "Cannot set default route for invalid address family %d\n", family);
