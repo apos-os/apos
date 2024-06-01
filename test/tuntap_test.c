@@ -449,7 +449,10 @@ void tuntap_test(void) {
   KEXPECT_EQ(NULL, tuntap_create(-1, 0, &id));
   KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 0, NULL));
   KEXPECT_EQ(NULL, tuntap_create(100, 0, &id));
+  KEXPECT_EQ(NULL,
+             tuntap_create(BUFSIZE, TUNTAP_TAP_MODE | TUNTAP_TUN_IPV6, &id));
 
   tun_tests();
+  // TODO(ipv6): add IPv6 TUN tests.
   tap_tests();
 }

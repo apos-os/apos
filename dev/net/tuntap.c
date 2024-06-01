@@ -29,6 +29,7 @@
 #include "memory/kmalloc.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
+#include "net/ip/ip6.h"
 #include "net/pbuf.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -40,7 +41,7 @@
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
 
 #define MIN_BUFSIZE 128
-#define ALL_FLAGS (TUNTAP_TAP_MODE)
+#define ALL_FLAGS (TUNTAP_TAP_MODE | TUNTAP_TUN_IPV6)
 
 typedef struct {
   nic_t nic;
@@ -106,6 +107,10 @@ static short tuntap_poll_events(const tuntap_dev_t* tt) {
 nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   if ((flags & ~ALL_FLAGS) != 0) {
     KLOG(INFO, "unsupported flags 0x%x\n", flags);
+    return NULL;
+  }
+  if ((flags & TUNTAP_TAP_MODE) && (flags & TUNTAP_TUN_IPV6)) {
+    KLOG(INFO, "incompatible flags (TAP and IPv6 mode): 0x%x\n", flags);
     return NULL;
   }
   if (bufsize <= MIN_BUFSIZE || !id) {
@@ -249,6 +254,8 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
   kmemcpy(pbuf_get(pb), buf, len);
   if (is_tap(tt)) {
     eth_recv(&tt->nic, pb);
+  } else if (tt->flags & TUNTAP_TUN_IPV6) {
+    ip6_recv(&tt->nic, pb);
   } else {
     ip_recv(&tt->nic, pb);
   }
