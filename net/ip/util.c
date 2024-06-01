@@ -50,18 +50,29 @@ int ip_pick_src(const struct sockaddr* dst, socklen_t dst_len,
   int result = sock2netaddr(dst, dst_len, &ndst, NULL);
   if (result) return result;
 
+  netaddr_t nsrc;
+  result = ip_pick_src_netaddr(&ndst, &nsrc);
+  if (result) {
+    return result;
+  }
+  return net2sockaddr(&nsrc, 0, src_out, sizeof(struct sockaddr_storage));
+}
+
+int ip_pick_src_netaddr(const netaddr_t* ndst, netaddr_t* src_out) {
   ip_routed_t route;
-  if (!ip_route(ndst, &route)) {
+  if (!ip_route(*ndst, &route)) {
     return -ENETUNREACH;
   }
   test_point_run("ip_pick_src:after_route");
-  if (dst->sa_family == AF_INET6) {
-    int result = ip6_pick_src(&ndst, route.nic, &route.src);
+  if (ndst->family == AF_INET6) {
+    int result = ip6_pick_src(ndst, route.nic, src_out);
     if (result) {
       nic_put(route.nic);
       return result;
     }
+  } else {
+    *src_out = route.src;
   }
   nic_put(route.nic);
-  return net2sockaddr(&route.src, 0, src_out, sizeof(struct sockaddr_storage));
+  return 0;
 }

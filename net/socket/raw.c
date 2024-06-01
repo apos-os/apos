@@ -26,6 +26,7 @@
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
 #include "net/ip/route.h"
+#include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/util.h"
 #include "proc/defint.h"
@@ -320,18 +321,17 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
 
   // Pick a source address, either by using the bind address or doing a route
   // calculation.
-  ip_routed_t route;
   const netaddr_t* src = NULL;
+  netaddr_t src_data;
   if (sock->bind_addr.family != AF_UNSPEC) {
     KASSERT_DBG(sock->bind_addr.family == ADDR_INET);
     src = &sock->bind_addr;
   } else {
-    if (!ip_route(dest, &route)) {
-      return -ENETUNREACH;
+    int result = ip_pick_src_netaddr(&dest, &src_data);
+    if (result) {
+      return result;
     }
-    nic_put(route.nic);
-    route.nic = NULL;
-    src = &route.src;
+    src = &src_data;
   }
 
   // Actually generate and send the packet.

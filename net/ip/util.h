@@ -15,11 +15,14 @@
 #ifndef APOO_NET_IP_UTIL_H
 #define APOO_NET_IP_UTIL_H
 
+#include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 
 // Given a destination address, pick a source address that can route to it (or
 // return an error).
 int ip_pick_src(const struct sockaddr* dst, socklen_t dst_len,
                 struct sockaddr_storage* src_out);
+
+int ip_pick_src_netaddr(const netaddr_t* dst, netaddr_t* src_out);
 
 #endif
