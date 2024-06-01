@@ -33,6 +33,7 @@
 #include "proc/sleep.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/test_nic.h"
 #include "test/vfs_test_util.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -747,10 +748,7 @@ void socket_raw_test(void) {
   KEXPECT_NE(NULL, nic);
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6("2001:db8::1", &nic->addrs[0].a.addr.a.ip6));
-  nic->addrs[0].a.prefix_len = 64;
-  nic->addrs[0].state = NIC_ADDR_ENABLED;
+  nic_add_addr_v6(nic, "2001:db8::1", 64, NIC_ADDR_ENABLED);
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));

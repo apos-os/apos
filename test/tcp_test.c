@@ -41,6 +41,7 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/test_nic.h"
 #include "test/test_params.h"
 #include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -12638,10 +12639,7 @@ void tcp_test(void) {
   KEXPECT_NE(NULL, nic);
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].a.addr.family = ADDR_INET;
-  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].a.prefix_len = 24;
-  nic->addrs[0].state = NIC_ADDR_ENABLED;
+  nic_add_addr(nic, SRC_IP, 24, NIC_ADDR_ENABLED);
   kspin_unlock(&nic->lock);
 
   vfs_unlink("_tun_test_dev");

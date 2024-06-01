@@ -36,6 +36,7 @@
 #include "net/pbuf.h"
 #include "net/util.h"
 #include "test/ktest.h"
+#include "test/test_nic.h"
 #include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "vfs/vfs.h"
@@ -1914,30 +1915,15 @@ void ipv6_test(void) {
   mac2str(nic->mac.addr, fixture.nic_mac);
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6(SRC_IP, &nic->addrs[0].a.addr.a.ip6));
-  nic->addrs[0].a.prefix_len = 64;
-  nic->addrs[0].state = NIC_ADDR_ENABLED;
+  nic_add_addr_v6(nic, SRC_IP, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(nic, SRC_IP2, 64, NIC_ADDR_ENABLED);
+  nic_addr_t* disable_addr1 =
+      nic_add_addr_v6(nic, DISABLED_SRC_IP, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(nic, DISABLED_SRC_IP2, 64, NIC_ADDR_TENTATIVE);
+  nic_add_addr_v6(nic, "0102:0304::", 64, NIC_ADDR_ENABLED)->a.addr.family =
+      AF_INET;
 
-  nic->addrs[1].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6(SRC_IP2, &nic->addrs[1].a.addr.a.ip6));
-  nic->addrs[1].a.prefix_len = 64;
-  nic->addrs[1].state = NIC_ADDR_ENABLED;
-
-  nic->addrs[2].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6(DISABLED_SRC_IP, &nic->addrs[2].a.addr.a.ip6));
-  nic->addrs[2].a.prefix_len = 64;
-  nic->addrs[2].state = NIC_ADDR_NONE;
-
-  nic->addrs[3].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6(DISABLED_SRC_IP2, &nic->addrs[3].a.addr.a.ip6));
-  nic->addrs[3].a.prefix_len = 64;
-  nic->addrs[3].state = NIC_ADDR_TENTATIVE;
-
-  nic->addrs[4].a.addr.family = ADDR_INET;
-  KEXPECT_EQ(0, str2inet6("0102:0304::", &nic->addrs[4].a.addr.a.ip6));
-  nic->addrs[4].a.prefix_len = 64;
-  nic->addrs[4].state = NIC_ADDR_ENABLED;
+  disable_addr1->state = NIC_ADDR_NONE;
   kspin_unlock(&nic->lock);
 
   apos_dev_t id2;
@@ -1946,43 +1932,12 @@ void ipv6_test(void) {
   fixture.nic2 = nic;
 
   kspin_lock(&nic->lock);
-  int idx = 0;
-  nic->addrs[idx].a.addr.family = ADDR_INET;
-  nic->addrs[idx].a.addr.a.ip4.s_addr = str2inet("1.2.3.4");
-  nic->addrs[idx].a.prefix_len = 24;
-  nic->addrs[idx].state = NIC_ADDR_ENABLED;
-
-  idx++;
-  nic->addrs[idx].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6(SRC_IP, &nic->addrs[idx].a.addr.a.ip6));
-  nic->addrs[idx].a.prefix_len = 64;
-  nic->addrs[idx].state = NIC_ADDR_ENABLED;
-
-  idx++;
-  nic->addrs[idx].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6(SRC_IP2, &nic->addrs[idx].a.addr.a.ip6));
-  nic->addrs[idx].a.prefix_len = 64;
-  nic->addrs[idx].state = NIC_ADDR_ENABLED;
-
-  idx++;
-  nic->addrs[idx].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6("1::1", &nic->addrs[idx].a.addr.a.ip6));
-  nic->addrs[idx].a.prefix_len = 64;
-  nic->addrs[idx].state = NIC_ADDR_TENTATIVE;
-
-  idx++;
-  nic->addrs[idx].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6("fe80::1", &nic->addrs[idx].a.addr.a.ip6));
-  nic->addrs[idx].a.prefix_len = 64;
-  nic->addrs[idx].state = NIC_ADDR_ENABLED;
-
-  idx++;
-  nic->addrs[idx].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6("2001:0:1::1", &nic->addrs[idx].a.addr.a.ip6));
-  nic->addrs[idx].a.prefix_len = 64;
-  nic->addrs[idx].state = NIC_ADDR_ENABLED;
-
-  KASSERT_DBG(idx < NIC_MAX_ADDRS);
+  nic_add_addr(nic, "1.2.3.4", 24, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(nic, SRC_IP, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(nic, SRC_IP2, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(nic, "1::1", 64, NIC_ADDR_TENTATIVE);
+  nic_add_addr_v6(nic, "fe80::1", 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(nic, "2001:0:1::1", 64, NIC_ADDR_ENABLED);
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));

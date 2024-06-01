@@ -27,6 +27,7 @@
 #include "proc/notification.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "test/test_nic.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
 
@@ -578,32 +579,17 @@ void net_base_test(void) {
   fixture.nic = nic;
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0, str2inet6("2001:db8::1", &nic->addrs[0].a.addr.a.ip6));
-  nic->addrs[0].a.prefix_len = 64;
-  nic->addrs[0].state = NIC_ADDR_ENABLED;
-  nic->addrs[1].a.addr.family = ADDR_INET;
-  nic->addrs[1].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[1].a.prefix_len = 24;
-  nic->addrs[1].state = NIC_ADDR_ENABLED;
-  nic->addrs[2].a.addr.family = ADDR_INET;
-  nic->addrs[2].a.addr.a.ip4.s_addr = str2inet(SRC_IP2);
-  nic->addrs[2].a.prefix_len = 31;
-  nic->addrs[2].state = NIC_ADDR_ENABLED;
+  nic_add_addr_v6(nic, "2001:db8::1", 64, NIC_ADDR_ENABLED);
+  nic_add_addr(nic, SRC_IP, 24, NIC_ADDR_ENABLED);
+  nic_add_addr(nic, SRC_IP2, 31, NIC_ADDR_ENABLED);
   kspin_unlock(&nic->lock);
 
   fixture.nic2 = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id2);
   KEXPECT_NE(NULL, fixture.nic2);
 
   kspin_lock(&fixture.nic2->lock);
-  fixture.nic2->addrs[0].a.addr.family = ADDR_INET;
-  fixture.nic2->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP3);
-  fixture.nic2->addrs[0].a.prefix_len = 30;
-  fixture.nic2->addrs[0].state = NIC_ADDR_ENABLED;
-  fixture.nic2->addrs[1].a.addr.family = ADDR_INET;
-  fixture.nic2->addrs[1].a.addr.a.ip4.s_addr = str2inet("127.0.5.4");
-  fixture.nic2->addrs[1].a.prefix_len = 16;
-  fixture.nic2->addrs[1].state = NIC_ADDR_ENABLED;
+  nic_add_addr(fixture.nic2, SRC_IP3, 30, NIC_ADDR_ENABLED);
+  nic_add_addr(fixture.nic2, "127.0.5.4", 16, NIC_ADDR_ENABLED);
   kspin_unlock(&fixture.nic2->lock);
 
   // A third ipv6-only NIC.
@@ -611,16 +597,8 @@ void net_base_test(void) {
   KEXPECT_NE(NULL, fixture.nic3);
 
   kspin_lock(&fixture.nic3->lock);
-  fixture.nic3->addrs[0].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0,
-             str2inet6("2001:db8::2", &fixture.nic3->addrs[0].a.addr.a.ip6));
-  fixture.nic3->addrs[0].a.prefix_len = 96;
-  fixture.nic3->addrs[0].state = NIC_ADDR_ENABLED;
-  fixture.nic3->addrs[1].a.addr.family = ADDR_INET6;
-  KEXPECT_EQ(0,
-             str2inet6("2001:db8:1::2", &fixture.nic3->addrs[1].a.addr.a.ip6));
-  fixture.nic3->addrs[1].a.prefix_len = 70;
-  fixture.nic3->addrs[1].state = NIC_ADDR_ENABLED;
+  nic_add_addr_v6(fixture.nic3, "2001:db8::2", 96, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic3, "2001:db8:1::2", 70, NIC_ADDR_ENABLED);
   kspin_unlock(&fixture.nic3->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
