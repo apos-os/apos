@@ -70,7 +70,6 @@ void ipv6_enable(nic_t* nic) {
   // TODO(ipv6): kick off SLAAC.
 }
 
-// TODO(ipv6): add tests for each of these failure cases.
 int ip6_send(pbuf_t* pb, bool allow_block) {
   char addrbuf[INET6_PRETTY_LEN];
   if (pbuf_size(pb) < sizeof(ip6_hdr_t)) {

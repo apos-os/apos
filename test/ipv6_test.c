@@ -26,6 +26,7 @@
 #include "net/ip/icmpv6/ndp.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
+#include "net/ip/ip6.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/ip/route.h"
@@ -1845,6 +1846,58 @@ static void pick_src_ip_tests(test_fixture_t* t) {
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
 }
 
+static void send_tests(test_fixture_t* t) {
+  KTEST_BEGIN("ip6_send(): too-short packet");
+  pbuf_t* pb = pbuf_create(0, 10);
+  KEXPECT_EQ(-EINVAL, ip6_send(pb, true));
+
+  KTEST_BEGIN("ip6_send(): invalid version");
+  pb = pbuf_create(INET6_HEADER_RESERVE, 0);
+  struct in6_addr src, dst;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst));
+  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP, 0);
+  ip6_hdr_t* hdr = (ip6_hdr_t*)pbuf_get(pb);
+  hdr->version_tc_flow = htob32(4 << 28);
+  KEXPECT_EQ(-EINVAL, ip6_send(pb, true));
+
+  KTEST_BEGIN("ip6_send(): unroutable packet");
+  netaddr_t orig_default_nexthop;
+  char orig_default_nic[NIC_MAX_NAME_LEN];
+  ip_get_default_route(ADDR_INET6, &orig_default_nexthop, orig_default_nic);
+  netaddr_t nexthop;
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(ADDR_INET6, nexthop, "");
+
+  pb = pbuf_create(INET6_HEADER_RESERVE, 0);
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src));
+  KEXPECT_EQ(0, str2inet6("100::2", &dst));
+  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP, 0);
+  KEXPECT_EQ(-ENETUNREACH, ip6_send(pb, true));
+
+  ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
+
+
+  KTEST_BEGIN("ip6_send(): unavailable source address packet");
+  pb = pbuf_create(INET6_HEADER_RESERVE, 0);
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst));
+  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP, 0);
+  KEXPECT_EQ(-EADDRNOTAVAIL, ip6_send(pb, true));
+
+
+  KTEST_BEGIN("ip6_send(): sending fails");
+  pb = pbuf_create(INET6_HEADER_RESERVE, 0);
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234", &dst));
+  ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP, 0);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, ip6_send(pb, false));
+  // Drain the NDP solicit.
+  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
+}
+
 // TODO(ipv6): additional tests:
 //  - invalid IPv6 packets
 //  - invalid NDP packets (including options)
@@ -1945,6 +1998,7 @@ void ipv6_test(void) {
   ndp_tests(&fixture);
   addr_selection_tests(&fixture);
   pick_src_ip_tests(&fixture);
+  send_tests(&fixture);
 
   KTEST_BEGIN("IPv6: test teardown");
   KEXPECT_EQ(0, vfs_close(fixture.tap_fd));
