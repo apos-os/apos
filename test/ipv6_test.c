@@ -15,6 +15,7 @@
 
 #include "common/endian.h"
 #include "common/errno.h"
+#include "common/kassert.h"
 #include "common/kstring.h"
 #include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
@@ -27,11 +28,14 @@
 #include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/route.h"
+#include "net/ip/util.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/util.h"
 #include "test/ktest.h"
+#include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
@@ -45,6 +49,7 @@
 typedef struct {
   int tap_fd;
   nic_t* nic;
+  nic_t* nic2;
   char nic_mac[NIC_MAC_PRETTY_LEN];
 } test_fixture_t;
 
@@ -1726,6 +1731,120 @@ static void addr_selection_tests(test_fixture_t* t) {
   KEXPECT_EQ( 0, do_cmp(t, "2001:db8::0:2", "2001:db8::0:3", "2001:db8::"));
 }
 
+static void remove_ipv6_hook(const char* name, int count, void* arg) {
+  nic_t* nic = (nic_t*)arg;
+  kspin_lock(&nic->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    if (nic->addrs[i].a.addr.family == AF_INET6) {
+      nic->addrs[i].state = NIC_ADDR_NONE;
+    }
+  }
+  kspin_unlock(&nic->lock);
+}
+
+static void pick_src_ip_tests(test_fixture_t* t) {
+  KTEST_BEGIN("ip_pick_src(): IPv6 (no route)");
+  netaddr_t orig_default_nexthop;
+  char orig_default_nic[NIC_MAX_NAME_LEN];
+  ip_get_default_route(ADDR_INET6, &orig_default_nexthop, orig_default_nic);
+
+  struct sockaddr_in6 dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.sin6_family = AF_INET6;
+  KEXPECT_EQ(0, str2sin6("2607:f8b0:4006:821::2004", 100, &dst));
+
+  struct sockaddr_storage result;
+  netaddr_t nexthop;
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(ADDR_INET6, nexthop, "");
+  KEXPECT_EQ(-ENETUNREACH,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+
+
+  KTEST_BEGIN("ip_pick_src(): IPv6");
+  char addr[INET6_PRETTY_LEN];
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic2->name);
+
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(0,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(AF_INET6, result.sa_family);
+  KEXPECT_STREQ(SRC_IP,
+                inet62str(&((struct sockaddr_in6*)&result)->sin6_addr, addr));
+
+  KEXPECT_EQ(0, str2sin6("fe80::2", 100, &dst));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(0,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(AF_INET6, result.sa_family);
+  KEXPECT_STREQ("fe80::1",
+                inet62str(&((struct sockaddr_in6*)&result)->sin6_addr, addr));
+
+  // Should match the default route (not the NIC's network), but match the
+  // 2001::... source address per picking rules.
+  KEXPECT_EQ(0, str2sin6("fe80:1::2", 100, &dst));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(0,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(AF_INET6, result.sa_family);
+  KEXPECT_STREQ("fe80::1",
+                inet62str(&((struct sockaddr_in6*)&result)->sin6_addr, addr));
+
+  // As above.
+  KEXPECT_EQ(0, str2sin6("1:1::2", 100, &dst));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(0,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(AF_INET6, result.sa_family);
+  KEXPECT_STREQ(SRC_IP,
+                inet62str(&((struct sockaddr_in6*)&result)->sin6_addr, addr));
+
+  KEXPECT_EQ(0, str2sin6("2::1", 100, &dst));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(0,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(AF_INET6, result.sa_family);
+  KEXPECT_STREQ(SRC_IP,
+                inet62str(&((struct sockaddr_in6*)&result)->sin6_addr, addr));
+
+  // As above.
+  KEXPECT_EQ(0, str2sin6("2001::2", 100, &dst));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(0,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(AF_INET6, result.sa_family);
+  KEXPECT_STREQ("2001:0:1::1",
+                inet62str(&((struct sockaddr_in6*)&result)->sin6_addr, addr));
+
+
+  // Test a race condition where appropriate addresses are removed after the IP
+  // is routed.
+  KTEST_BEGIN("ip_pick_src(): IPv6 address removed after route");
+  nic_addr_t saved_addrs[NIC_MAX_ADDRS];
+  kspin_lock(&t->nic2->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    saved_addrs[i] = t->nic2->addrs[i];
+  }
+  kspin_unlock(&t->nic2->lock);
+
+  test_point_add("ip_pick_src:after_route", &remove_ipv6_hook, t->nic2);
+  KEXPECT_EQ(0, str2sin6("2001::2", 100, &dst));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_EQ(-EADDRNOTAVAIL,
+             ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
+  KEXPECT_EQ(1, test_point_remove("ip_pick_src:after_route"));
+
+  kspin_lock(&t->nic2->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    t->nic2->addrs[i] = saved_addrs[i];
+  }
+  kspin_unlock(&t->nic2->lock);
+
+  ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
+}
+
 // TODO(ipv6): additional tests:
 //  - invalid IPv6 packets
 //  - invalid NDP packets (including options)
@@ -1768,6 +1887,51 @@ void ipv6_test(void) {
   nic->addrs[4].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
+  apos_dev_t id2;
+  nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id2);
+  KEXPECT_NE(NULL, nic);
+  fixture.nic2 = nic;
+
+  kspin_lock(&nic->lock);
+  int idx = 0;
+  nic->addrs[idx].a.addr.family = ADDR_INET;
+  nic->addrs[idx].a.addr.a.ip4.s_addr = str2inet("1.2.3.4");
+  nic->addrs[idx].a.prefix_len = 24;
+  nic->addrs[idx].state = NIC_ADDR_ENABLED;
+
+  idx++;
+  nic->addrs[idx].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &nic->addrs[idx].a.addr.a.ip6));
+  nic->addrs[idx].a.prefix_len = 64;
+  nic->addrs[idx].state = NIC_ADDR_ENABLED;
+
+  idx++;
+  nic->addrs[idx].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6(SRC_IP2, &nic->addrs[idx].a.addr.a.ip6));
+  nic->addrs[idx].a.prefix_len = 64;
+  nic->addrs[idx].state = NIC_ADDR_ENABLED;
+
+  idx++;
+  nic->addrs[idx].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6("1::1", &nic->addrs[idx].a.addr.a.ip6));
+  nic->addrs[idx].a.prefix_len = 64;
+  nic->addrs[idx].state = NIC_ADDR_TENTATIVE;
+
+  idx++;
+  nic->addrs[idx].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6("fe80::1", &nic->addrs[idx].a.addr.a.ip6));
+  nic->addrs[idx].a.prefix_len = 64;
+  nic->addrs[idx].state = NIC_ADDR_ENABLED;
+
+  idx++;
+  nic->addrs[idx].a.addr.family = ADDR_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:0:1::1", &nic->addrs[idx].a.addr.a.ip6));
+  nic->addrs[idx].a.prefix_len = 64;
+  nic->addrs[idx].state = NIC_ADDR_ENABLED;
+
+  KASSERT_DBG(idx < NIC_MAX_ADDRS);
+  kspin_unlock(&nic->lock);
+
   KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
   fixture.tap_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
   KEXPECT_GE(fixture.tap_fd, 0);
@@ -1780,9 +1944,11 @@ void ipv6_test(void) {
   pkt_tests();
   ndp_tests(&fixture);
   addr_selection_tests(&fixture);
+  pick_src_ip_tests(&fixture);
 
   KTEST_BEGIN("IPv6: test teardown");
   KEXPECT_EQ(0, vfs_close(fixture.tap_fd));
   KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
   KEXPECT_EQ(0, tuntap_destroy(id));
+  KEXPECT_EQ(0, tuntap_destroy(id2));
 }
