@@ -20,8 +20,6 @@
 #include "net/mac.h"
 #include "user/include/apos/dev.h"
 
-#define TEST_TAP_FILENAME_LEN (NIC_MAX_NAME_LEN + 20)
-
 // A TUN/TAP device set up for testing.
 typedef struct {
   nic_t* n;
@@ -29,7 +27,6 @@ typedef struct {
   int fd;  // FD to read/write packets from.
 
   apos_dev_t nic_id;
-  char fd_filename[TEST_TAP_FILENAME_LEN];
 } test_tap_t;
 
 // Create and destroy a TUN/TAP device for testing.

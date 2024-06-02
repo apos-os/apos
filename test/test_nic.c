@@ -28,7 +28,6 @@
 
 int test_ttap_create(test_tap_t* t, int flags) {
   t->fd = -1;
-  t->fd_filename[0] = '\0';
   t->n = tuntap_create(TAP_BUFSIZE, flags, &t->nic_id);
   if (t->n == NULL) {
     klogfm(KL_TEST, WARNING, "test_ttap_create(): unable to create NIC\n");
@@ -36,20 +35,22 @@ int test_ttap_create(test_tap_t* t, int flags) {
   }
   mac2str(t->n->mac.addr, t->mac);
 
-  ksprintf(t->fd_filename, "_tap_test_dev_%s", t->n->name);
-  int result = vfs_mknod(t->fd_filename, VFS_S_IFCHR | VFS_S_IRWXU, t->nic_id);
+
+  char fname[NIC_MAX_NAME_LEN + 20];
+  ksprintf(fname, "_tap_test_dev_%s", t->n->name);
+  int result = vfs_mknod(fname, VFS_S_IFCHR | VFS_S_IRWXU, t->nic_id);
   if (result  < 0) {
-    t->fd_filename[0] = '\0';
     klogfm(KL_TEST, WARNING,
            "test_ttap_create(): unable to create device file: %s\n",
            errorname(-result));
     test_ttap_destroy(t);
     return result;
   }
-  t->fd = vfs_open(t->fd_filename, VFS_O_RDWR);
+  t->fd = vfs_open(fname, VFS_O_RDWR);
+  KASSERT(0 == vfs_unlink(fname));
   if (t->fd < 0) {
     klogfm(KL_TEST, WARNING,
-           "test_ttap_create(): unable to open device file: %s\n",
+           "test_ttap_create(): unable to open device file %s: %s\n", fname,
            errorname(-t->fd));
     test_ttap_destroy(t);
     return t->fd;
@@ -62,9 +63,6 @@ int test_ttap_create(test_tap_t* t, int flags) {
 void test_ttap_destroy(test_tap_t* t) {
   if (t->fd >= 0) {
     KASSERT(0 == vfs_close(t->fd));
-  }
-  if (t->fd_filename[0]) {
-    KASSERT(0 == vfs_unlink(t->fd_filename));
   }
   KASSERT(0 == tuntap_destroy(t->nic_id));
   t->n = NULL;
