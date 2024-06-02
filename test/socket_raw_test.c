@@ -41,7 +41,7 @@
 #include "vfs/vfs_test_util.h"
 
 typedef struct {
-  int tun_fd;
+  test_tap_t tun;
 } test_fixture_t;
 
 static void create_test(void) {
@@ -626,7 +626,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   ip6_add_hdr(pb1, &src, &dst, 100, 0);
 
   KEXPECT_EQ(pbuf_size(pb1),
-             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+             vfs_write(t->tun.fd, pbuf_getc(pb1), pbuf_size(pb1)));
 
   char buf[200];
   KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, net_recv(sock, buf, 200, 0));
@@ -641,7 +641,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   ip6_add_hdr(pb1, &src, &dst, 100, 0);
 
   KEXPECT_EQ(pbuf_size(pb1),
-             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+             vfs_write(t->tun.fd, pbuf_getc(pb1), pbuf_size(pb1)));
 
   KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, net_recv(sock, buf, 200, 0));
   KEXPECT_EQ(0, kmemcmp(buf, pbuf_getc(pb1), pbuf_size(pb1)));
@@ -655,7 +655,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   KEXPECT_EQ(0, str2inet6("2001:db8::1", &dst));
   ip6_add_hdr(pb1, &src, &dst, 101, 0);  // Different protocol.
   KEXPECT_EQ(pbuf_size(pb1),
-             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+             vfs_write(t->tun.fd, pbuf_getc(pb1), pbuf_size(pb1)));
   KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 200, 0));
   pbuf_free(pb1);
 
@@ -674,7 +674,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   KEXPECT_EQ(0, str2inet6("2001:db8::1", &dst));
   ip6_add_hdr(pb1, &src, &dst, 100, 0);
   KEXPECT_EQ(pbuf_size(pb1),
-             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+             vfs_write(t->tun.fd, pbuf_getc(pb1), pbuf_size(pb1)));
   KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, net_recv(sock, buf, 200, 0));
   KEXPECT_EQ(0, kmemcmp(buf, pbuf_getc(pb1), pbuf_size(pb1)));
   pbuf_free(pb1);
@@ -686,7 +686,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   KEXPECT_EQ(0, str2inet6("2001:db8::3", &dst));
   ip6_add_hdr(pb1, &src, &dst, 100, 0);
   KEXPECT_EQ(pbuf_size(pb1),
-             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+             vfs_write(t->tun.fd, pbuf_getc(pb1), pbuf_size(pb1)));
   KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 200, 0));
   pbuf_free(pb1);
 
@@ -696,7 +696,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   kmemcpy(pbuf_get(pb1), "abc", 3);
   ip4_add_hdr(pb1, str2inet("1.2.3.4"), str2inet("5.6.7.8"), 100);
   KEXPECT_EQ(pbuf_size(pb1),
-             vfs_write(t->tun_fd, pbuf_getc(pb1), pbuf_size(pb1)));
+             vfs_write(t->tun.fd, pbuf_getc(pb1), pbuf_size(pb1)));
   KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 200, 0));
   pbuf_free(pb1);
 
@@ -714,7 +714,7 @@ static void raw_ipv6_test(test_fixture_t* t) {
   KEXPECT_EQ(3, net_sendto(send_sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
                            sizeof(dst_addr)));
 
-  int result = vfs_read(t->tun_fd, buf, 100);
+  int result = vfs_read(t->tun.fd, buf, 100);
   KEXPECT_EQ(sizeof(ip6_hdr_t) + 3, result);
   buf[result] = '\0';
 
@@ -743,18 +743,11 @@ void socket_raw_test(void) {
 
   KTEST_BEGIN("Raw socket: test setup");
   test_fixture_t fixture;
-  apos_dev_t id;
-  nic_t* nic = tuntap_create(5000, TUNTAP_TUN_IPV6, &id);
-  KEXPECT_NE(NULL, nic);
+  KEXPECT_EQ(0, test_ttap_create(&fixture.tun, TUNTAP_TUN_IPV6));
 
-  kspin_lock(&nic->lock);
-  nic_add_addr_v6(nic, "2001:db8::1", 64, NIC_ADDR_ENABLED);
-  kspin_unlock(&nic->lock);
-
-  KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
-  fixture.tun_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(fixture.tun_fd, 0);
-  vfs_make_nonblock(fixture.tun_fd);
+  kspin_lock(&fixture.tun.n->lock);
+  nic_add_addr_v6(fixture.tun.n, "2001:db8::1", 64, NIC_ADDR_ENABLED);
+  kspin_unlock(&fixture.tun.n->lock);
 
   // Run the tests.
   create_test();
@@ -769,9 +762,7 @@ void socket_raw_test(void) {
   raw_ipv6_test(&fixture);
 
   KTEST_BEGIN("Raw socket: test teardown");
-  KEXPECT_EQ(0, vfs_close(fixture.tun_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(id));
+  test_ttap_destroy(&fixture.tun);
 
   KTEST_BEGIN("Raw socket: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
