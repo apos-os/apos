@@ -12628,7 +12628,7 @@ void tcp_test(void) {
   // Create a TUN device for receiving test packets.
   KTEST_BEGIN("TCP: test setup");
   test_tap_t tun;
-  KEXPECT_EQ(0, test_ttap_create(&tun, 0));
+  KEXPECT_EQ(0, test_ttap_create(&tun, TUNTAP_TUN_MODE));
 
   kspin_lock(&tun.n->lock);
   nic_add_addr(tun.n, SRC_IP, 24, NIC_ADDR_ENABLED);

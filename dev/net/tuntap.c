@@ -41,7 +41,7 @@
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
 
 #define MIN_BUFSIZE 128
-#define ALL_FLAGS (TUNTAP_TAP_MODE | TUNTAP_TUN_IPV6)
+#define ALL_FLAGS (TUNTAP_TAP_MODE | TUNTAP_TUN_MODE | TUNTAP_TUN_IPV6)
 
 typedef struct {
   nic_t nic;
@@ -107,6 +107,14 @@ static short tuntap_poll_events(const tuntap_dev_t* tt) {
 nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   if ((flags & ~ALL_FLAGS) != 0) {
     KLOG(INFO, "unsupported flags 0x%x\n", flags);
+    return NULL;
+  }
+  if (!(flags & TUNTAP_TAP_MODE) && !(flags & TUNTAP_TUN_MODE)) {
+    KLOG(INFO, "bad flags (must set TAP OR TUN mode): 0x%x\n", flags);
+    return NULL;
+  }
+  if ((flags & TUNTAP_TAP_MODE) && (flags & TUNTAP_TUN_MODE)) {
+    KLOG(INFO, "incompatible flags (TAP and TUN mode): 0x%x\n", flags);
     return NULL;
   }
   if ((flags & TUNTAP_TAP_MODE) && (flags & TUNTAP_TUN_IPV6)) {

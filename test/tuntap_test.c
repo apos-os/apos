@@ -271,7 +271,7 @@ static void tun_tests(void) {
   KTEST_BEGIN("TUN: test setup");
   test_fixture_t fixture;
   apos_dev_t id;
-  nic_t* nic = tuntap_create(BUFSIZE, 0, &id);
+  nic_t* nic = tuntap_create(BUFSIZE, TUNTAP_TUN_MODE, &id);
   KEXPECT_NE(NULL, nic);
 
   kspin_lock(&nic->lock);
@@ -445,12 +445,16 @@ void tuntap_test(void) {
   KTEST_BEGIN("TUN/TAP: bad creation args");
   apos_dev_t id;
   KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 100, &id));
-  KEXPECT_EQ(NULL, tuntap_create(0, 0, &id));
-  KEXPECT_EQ(NULL, tuntap_create(-1, 0, &id));
-  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 0, NULL));
-  KEXPECT_EQ(NULL, tuntap_create(100, 0, &id));
+  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 0, &id));
+  KEXPECT_EQ(NULL, tuntap_create(0, TUNTAP_TAP_MODE, &id));
+  KEXPECT_EQ(NULL, tuntap_create(0, TUNTAP_TUN_MODE, &id));
+  KEXPECT_EQ(NULL, tuntap_create(-1, TUNTAP_TAP_MODE, &id));
+  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, TUNTAP_TAP_MODE, NULL));
+  KEXPECT_EQ(NULL, tuntap_create(100, TUNTAP_TAP_MODE, &id));
   KEXPECT_EQ(NULL,
              tuntap_create(BUFSIZE, TUNTAP_TAP_MODE | TUNTAP_TUN_IPV6, &id));
+  KEXPECT_EQ(NULL,
+             tuntap_create(BUFSIZE, TUNTAP_TAP_MODE | TUNTAP_TUN_MODE, &id));
 
   tun_tests();
   // TODO(ipv6): add IPv6 TUN tests.

@@ -20,8 +20,10 @@
 #include "dev/net/nic.h"
 
 // TUN/TAP flags.
-#define TUNTAP_TAP_MODE 0x1  // Operate in L2 (tap) rather than L3 (tun) mode.
-#define TUNTAP_TUN_IPV6 0x2  // Create an IPv6 (rather than IPv4) TUN device.
+#define TUNTAP_TAP_MODE 0x1  // Operate in L2 (tap) mode.
+#define TUNTAP_TUN_MODE 0x2  // Operate in L3 (tun) mode.
+#define TUNTAP_TUN_IPV6 0x4  // Create an IPv6 (rather than IPv4) TUN device.
+                             // Requires TUNTAP_TUN_MODE.
 
 // Create and register a TUN/TAP device.  |bufsize| is the number of bytes
 // (approximately) that will be buffered each on the rx and tx sides.
