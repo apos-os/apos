@@ -34,41 +34,17 @@ typedef struct {
 // TODO(aoates): this is incredibly inefficient.
 static sockmap_t* g_sockmaps[SM_MAX_AF][SM_MAX_PROTOCOL];
 
-// TODO(aoates): these helpers are probably useful elsewhere.  Refactor them
-// out.
-static bool is_any(const struct sockaddr* addr) {
-  switch (addr->sa_family) {
-    case AF_INET:
-      return ((const struct sockaddr_in*)addr)->sin_addr.s_addr == INADDR_ANY;
-  }
-  klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
-  return false;
-}
-
-static in_port_t get_port(const struct sockaddr* addr) {
-  switch (addr->sa_family) {
-    case AF_INET:
-      return btoh16(((const struct sockaddr_in*)addr)->sin_port);
-  }
-  klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
-  return 0;
-}
-
-static void set_port(struct sockaddr* addr, in_port_t port) {
-  switch (addr->sa_family) {
-    case AF_INET:
-      ((struct sockaddr_in*)addr)->sin_port = htob16(port);
-      return;
-  }
-  klogfm(KL_NET, WARNING, "unknown address family: %d\n", addr->sa_family);
-}
-
-static in_port_t equal(const struct sockaddr* A, const struct sockaddr* B) {
+static bool equal(const struct sockaddr* A, const struct sockaddr* B) {
   KASSERT(A->sa_family == B->sa_family);
   switch (A->sa_family) {
     case AF_INET:
       return ((struct sockaddr_in*)A)->sin_addr.s_addr ==
              ((struct sockaddr_in*)B)->sin_addr.s_addr;
+
+    case AF_INET6:
+      return kmemcmp(&((const struct sockaddr_in6*)A)->sin6_addr,
+                     &((const struct sockaddr_in6*)B)->sin6_addr,
+                     sizeof(struct in6_addr)) == 0;
   }
   klogfm(KL_NET, WARNING, "unknown address family: %d\n", A->sa_family);
   return false;
@@ -78,7 +54,7 @@ sockmap_t* sockmap_create(sa_family_t family) {
   sockmap_t* sm = (sockmap_t*)kmalloc(sizeof(sockmap_t));
   if (!sm) return NULL;
 
-  KASSERT(family == AF_INET);
+  KASSERT(family == AF_INET || family == AF_INET6);
   sm->family = family;
   sm->socks = LIST_INIT;
   return sm;
@@ -101,16 +77,18 @@ bool sockmap_insert(sockmap_t* sm, const struct sockaddr* addr,
 socket_t* sockmap_find(const sockmap_t* sm, const struct sockaddr* addr) {
   KASSERT(sm->family == addr->sa_family);
   list_link_t* link = sm->socks.head;
-  const in_port_t port = get_port(addr);
+  const in_port_t port =
+      get_sockaddr_port(addr, sizeof_sockaddr(addr->sa_family));
+  bool addr_is_any = inet_is_anyaddr(addr);
   for (; link; link = link->next) {
     const sm_entry_t* entry = container_of(link, sm_entry_t, link);
     KASSERT_DBG(entry->addr.sa_family == sm->family);
-    if (get_port((struct sockaddr*)&entry->addr) != port) {
+    if (get_sockaddrs_port(&entry->addr) != port) {
       continue;
     }
 
     // Ports match!
-    if (is_any((struct sockaddr*)&entry->addr) || is_any(addr) ||
+    if (inet_is_anyaddr((struct sockaddr*)&entry->addr) || addr_is_any ||
         equal((struct sockaddr*)&entry->addr, addr)) {
       return entry->socket;
     }
@@ -122,11 +100,12 @@ socket_t* sockmap_find(const sockmap_t* sm, const struct sockaddr* addr) {
 socket_t* sockmap_remove(sockmap_t* sm, const struct sockaddr* addr) {
   KASSERT(sm->family == addr->sa_family);
   list_link_t* link = sm->socks.head;
-  const in_port_t port = get_port(addr);
+  const in_port_t port =
+      get_sockaddr_port(addr, sizeof_sockaddr(addr->sa_family));
   for (; link; link = link->next) {
     sm_entry_t* entry = container_of(link, sm_entry_t, link);
     KASSERT_DBG(entry->addr.sa_family == sm->family);
-    if (get_port((struct sockaddr*)&entry->addr) != port) {
+    if (get_sockaddrs_port(&entry->addr) != port) {
       continue;
     }
 
@@ -148,7 +127,7 @@ in_port_t sockmap_free_port(const sockmap_t* sm, const struct sockaddr* addr) {
   kmemcpy(&addr_port, addr, sizeof_sockaddr(addr->sa_family));
   // TODO(aoates): this is crazy inefficient; do something better.
   for (int p = INET_PORT_EPHMIN; p <= INET_PORT_EPHMAX; p++) {
-    set_port((struct sockaddr*)&addr_port, p);
+    set_sockaddrs_port(&addr_port, p);
     if (sockmap_find(sm, (struct sockaddr*)&addr_port) == NULL) {
       return p;
     }
