@@ -558,6 +558,58 @@ static void ip_route_tests(test_fixture_t* t) {
   route_default_route_v6_test(t);
 }
 
+static void addr_cmp_tests(void) {
+  KTEST_BEGIN("sockaddr_equal() (IPv4)");
+  struct sockaddr_storage a, b;
+  kmemset(&a, 0, sizeof(a));
+  kmemset(&b, 0, sizeof(b));
+  a.sa_family = AF_INET;
+  b.sa_family = AF_INET6;
+  KEXPECT_FALSE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+
+  struct sockaddr_in* a_v4 = (struct sockaddr_in*)&a;
+  struct sockaddr_in* b_v4 = (struct sockaddr_in*)&b;
+  kmemset(&a, 0, sizeof(a));
+  kmemset(&b, 0xff, sizeof(b));
+  a_v4->sin_family = AF_INET;
+  b_v4->sin_family = AF_INET;
+  a_v4->sin_addr.s_addr = 0xabcd;
+  b_v4->sin_addr.s_addr = 0xabcd;
+  a_v4->sin_port = 1234;
+  b_v4->sin_port = 1234;
+  KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  a_v4->sin_addr.s_addr = 0xabce;
+  KEXPECT_FALSE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  a_v4->sin_addr.s_addr = 0xabcd;
+  KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  a_v4->sin_port = 5678;
+  KEXPECT_FALSE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  a_v4->sin_port = 1234;
+  KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+
+
+  KTEST_BEGIN("sockaddr_equal() (IPv6)");
+  struct sockaddr_in6* a_v6 = (struct sockaddr_in6*)&a;
+  struct sockaddr_in6* b_v6 = (struct sockaddr_in6*)&b;
+  kmemset(&a, 0, sizeof(a));
+  kmemset(&b, 0xff, sizeof(b));
+  a_v6->sin6_family = AF_INET6;
+  b_v6->sin6_family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &a_v6->sin6_addr));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &b_v6->sin6_addr));
+  a_v6->sin6_port = 1234;
+  b_v6->sin6_port = 1234;
+  KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &a_v6->sin6_addr));
+  KEXPECT_FALSE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &a_v6->sin6_addr));
+  KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  a_v6->sin6_port = 5678;
+  KEXPECT_FALSE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+  a_v6->sin6_port = 1234;
+  KEXPECT_TRUE(sockaddr_equal((struct sockaddr*)&a, (struct sockaddr*)&b));
+}
+
 // TODO(aoates): neighbor cache tests:
 //  - time out
 //  - multiple pending requests
@@ -593,6 +645,7 @@ void net_base_test(void) {
   str_tests();
   arp_tests(&fixture);
   ip_route_tests(&fixture);
+  addr_cmp_tests();
 
   KTEST_BEGIN("Network base: test teardown");
   test_ttap_destroy(&fixture.nic);

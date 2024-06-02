@@ -85,4 +85,6 @@ bool in6_is_any(const struct in6_addr* addr);
 bool inet_is_anyaddr(const struct sockaddr* addr);
 bool netaddr_is_anyaddr(const netaddr_t* addr);
 
+bool sockaddr_equal(const struct sockaddr* A, const struct sockaddr* B);
+
 #endif

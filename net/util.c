@@ -446,3 +446,30 @@ bool netaddr_is_anyaddr(const netaddr_t* addr) {
   KLOG(DFATAL, "Unknown netaddr family %d\n", addr->family);
   return false;
 }
+
+bool sockaddr_equal(const struct sockaddr* A, const struct sockaddr* B) {
+  if (A->sa_family != B->sa_family) {
+    return false;
+  }
+
+  switch (A->sa_family) {
+    case AF_INET: {
+      const struct sockaddr_in* A4 = (const struct sockaddr_in*)A;
+      const struct sockaddr_in* B4 = (const struct sockaddr_in*)B;
+      return (A4->sin_addr.s_addr == B4->sin_addr.s_addr) &&
+             (A4->sin_port == B4->sin_port);
+    }
+
+    case AF_INET6: {
+      // TODO(ipv6): should we include scope ID and flow label here?
+      const struct sockaddr_in6* A6 = (const struct sockaddr_in6*)A;
+      const struct sockaddr_in6* B6 = (const struct sockaddr_in6*)B;
+      return (kmemcmp(&A6->sin6_addr, &B6->sin6_addr,
+                      sizeof(struct in6_addr)) == 0) &&
+             (A6->sin6_port == B6->sin6_port);
+      ;
+    }
+  }
+  klogfm(KL_NET, DFATAL, "unknown address family: %d\n", A->sa_family);
+  return false;
+}
