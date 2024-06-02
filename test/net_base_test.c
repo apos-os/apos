@@ -38,10 +38,9 @@
 #define DST_IP "127.0.5.15"
 
 typedef struct {
-  int tap_fd;
-  nic_t* nic;
-  nic_t* nic2;
-  nic_t* nic3;
+  test_tap_t nic;
+  test_tap_t nic2;
+  test_tap_t nic3;
 } test_fixture_t;
 
 static void str_tests(void) {
@@ -93,20 +92,19 @@ static void str_tests(void) {
 
 static void arp_request_test(test_fixture_t* t) {
   KTEST_BEGIN("ARP: send request");
-  nbr_cache_clear(t->nic);
-  kspin_lock(&t->nic->lock);
-  arp_send_request(t->nic, str2inet("127.0.5.8"));
-  kspin_unlock(&t->nic->lock);
-  char mac1[NIC_MAC_PRETTY_LEN], mac2[NIC_MAC_PRETTY_LEN];
+  nbr_cache_clear(t->nic.n);
+  kspin_lock(&t->nic.n->lock);
+  arp_send_request(t->nic.n, str2inet("127.0.5.8"));
+  kspin_unlock(&t->nic.n->lock);
+  char mac1[NIC_MAC_PRETTY_LEN];
   char addrbuf[INET_PRETTY_LEN];
   char buf[100];
   KEXPECT_EQ(sizeof(eth_hdr_t) + sizeof(arp_packet_t),
-             vfs_read(t->tap_fd, buf, 100));
+             vfs_read(t->nic.fd, buf, 100));
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
-                mac2str(eth_hdr->mac_src, mac2));
-  KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, mac2));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac1));
+  KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, mac1));
 
   const arp_packet_t* pkt =
       (const arp_packet_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
@@ -116,19 +114,18 @@ static void arp_request_test(test_fixture_t* t) {
   KEXPECT_EQ(sizeof(in_addr_t), pkt->plen);
   KEXPECT_EQ(1 /* ARP_OPER_REQUEST */, btoh16(pkt->oper));
 
-  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
-                mac2str(pkt->sha, mac2));
+  KEXPECT_STREQ(t->nic.mac, mac2str(pkt->sha, mac1));
   in_addr_t addr;
   kmemcpy(&addr, pkt->spa, 4);
   KEXPECT_STREQ(SRC_IP, inet2str(addr, addrbuf));
-  KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(pkt->tha, mac2));
+  KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(pkt->tha, mac1));
   kmemcpy(&addr, pkt->tpa, 4);
   KEXPECT_STREQ("127.0.5.8", inet2str(addr, addrbuf));
 }
 
 static void arp_response_test(test_fixture_t* t) {
   KTEST_BEGIN("ARP: get response");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
   pbuf_t* pbuf = pbuf_create(0, sizeof(arp_packet_t));
   arp_packet_t* pkt = (arp_packet_t*)pbuf_get(pbuf);
   pkt->htype = btoh16(1);
@@ -149,21 +146,21 @@ static void arp_response_test(test_fixture_t* t) {
   na.family = AF_INET;
   na.a.ip4.s_addr = str2inet("5.6.7.8");
   nbr_cache_entry_t entry;
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
   char buf[100];
   KEXPECT_EQ(sizeof(eth_hdr_t) + sizeof(arp_packet_t),
-             vfs_read(t->tap_fd, buf, 100));
+             vfs_read(t->nic.fd, buf, 100));
 
-  arp_rx(t->nic, pbuf);
+  arp_rx(t->nic.n, pbuf);
 
-  KEXPECT_EQ(0, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(0, nbr_cache_lookup(t->nic.n, na, &entry, 0));
   char mac1[NIC_MAC_PRETTY_LEN];
   KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(entry.mac.addr, mac1));
 }
 
 static void arp_recv_request_test(test_fixture_t* t) {
   KTEST_BEGIN("ARP: receive request (first NIC IP)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
   pbuf_t* pbuf = pbuf_create(0, sizeof(arp_packet_t));
   arp_packet_t* pkt = (arp_packet_t*)pbuf_get(pbuf);
   pkt->htype = btoh16(1);
@@ -182,19 +179,18 @@ static void arp_recv_request_test(test_fixture_t* t) {
   kmemcpy(pkt->tpa, &addr, 4);
 
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  arp_rx(t->nic, pbuf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  arp_rx(t->nic.n, pbuf);
 
   // Should get a reply with this NIC's MAC address.
-  char mac1[NIC_MAC_PRETTY_LEN], mac2[NIC_MAC_PRETTY_LEN];
+  char mac[NIC_MAC_PRETTY_LEN];
   char addrbuf[INET_PRETTY_LEN];
   KEXPECT_EQ(sizeof(eth_hdr_t) + sizeof(arp_packet_t),
-             vfs_read(t->tap_fd, buf, 100));
+             vfs_read(t->nic.fd, buf, 100));
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
-                mac2str(eth_hdr->mac_src, mac2));
-  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(eth_hdr->mac_dst, mac2));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(eth_hdr->mac_dst, mac));
 
   const arp_packet_t* reply =
       (const arp_packet_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
@@ -204,18 +200,17 @@ static void arp_recv_request_test(test_fixture_t* t) {
   KEXPECT_EQ(sizeof(in_addr_t), reply->plen);
   KEXPECT_EQ(2 /* ARP_OPER_REPLY */, btoh16(reply->oper));
 
-  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
-                mac2str(reply->sha, mac2));
+  KEXPECT_STREQ(t->nic.mac, mac2str(reply->sha, mac));
   kmemcpy(&addr, reply->spa, 4);
   KEXPECT_STREQ(SRC_IP, inet2str(addr, addrbuf));
-  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(reply->tha, mac2));
+  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(reply->tha, mac));
   kmemcpy(&addr, reply->tpa, 4);
   KEXPECT_STREQ("5.6.7.8", inet2str(addr, addrbuf));
 }
 
 static void arp_recv_request_test2(test_fixture_t* t) {
   KTEST_BEGIN("ARP: receive request (second NIC IP)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
   pbuf_t* pbuf = pbuf_create(0, sizeof(arp_packet_t));
   arp_packet_t* pkt = (arp_packet_t*)pbuf_get(pbuf);
   pkt->htype = btoh16(1);
@@ -234,19 +229,18 @@ static void arp_recv_request_test2(test_fixture_t* t) {
   kmemcpy(pkt->tpa, &addr, 4);
 
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  arp_rx(t->nic, pbuf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  arp_rx(t->nic.n, pbuf);
 
   // Should get a reply with this NIC's MAC address.
-  char mac1[NIC_MAC_PRETTY_LEN], mac2[NIC_MAC_PRETTY_LEN];
+  char mac[NIC_MAC_PRETTY_LEN];
   char addrbuf[INET_PRETTY_LEN];
   KEXPECT_EQ(sizeof(eth_hdr_t) + sizeof(arp_packet_t),
-             vfs_read(t->tap_fd, buf, 100));
+             vfs_read(t->nic.fd, buf, 100));
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
-                mac2str(eth_hdr->mac_src, mac2));
-  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(eth_hdr->mac_dst, mac2));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(eth_hdr->mac_dst, mac));
 
   const arp_packet_t* reply =
       (const arp_packet_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
@@ -256,18 +250,17 @@ static void arp_recv_request_test2(test_fixture_t* t) {
   KEXPECT_EQ(sizeof(in_addr_t), reply->plen);
   KEXPECT_EQ(2 /* ARP_OPER_REPLY */, btoh16(reply->oper));
 
-  KEXPECT_STREQ(mac2str(t->nic->mac.addr, mac1),
-                mac2str(reply->sha, mac2));
+  KEXPECT_STREQ(t->nic.mac, mac2str(reply->sha, mac));
   kmemcpy(&addr, reply->spa, 4);
   KEXPECT_STREQ(SRC_IP2, inet2str(addr, addrbuf));
-  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(reply->tha, mac2));
+  KEXPECT_STREQ("07:08:09:0A:0B:0C", mac2str(reply->tha, mac));
   kmemcpy(&addr, reply->tpa, 4);
   KEXPECT_STREQ("5.6.7.8", inet2str(addr, addrbuf));
 }
 
 static void arp_recv_request_test3(test_fixture_t* t) {
   KTEST_BEGIN("ARP: receive request (not our IP)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
   pbuf_t* pbuf = pbuf_create(0, sizeof(arp_packet_t));
   arp_packet_t* pkt = (arp_packet_t*)pbuf_get(pbuf);
   pkt->htype = btoh16(1);
@@ -286,11 +279,11 @@ static void arp_recv_request_test3(test_fixture_t* t) {
   kmemcpy(pkt->tpa, &addr, 4);
 
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  arp_rx(t->nic, pbuf);
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  arp_rx(t->nic.n, pbuf);
 
   // Should be ignored --- no reply.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void arp_tests(test_fixture_t* t) {
@@ -367,7 +360,7 @@ static void route_longest_prefix_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic->name, result.nic->name);
+  KEXPECT_STREQ(t->nic.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_STREQ(SRC_IP, inet2str(result.src.a.ip4.s_addr, addr));
   nic_put(result.nic);
@@ -377,7 +370,7 @@ static void route_longest_prefix_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic->name, result.nic->name);
+  KEXPECT_STREQ(t->nic.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_STREQ(SRC_IP2, inet2str(result.src.a.ip4.s_addr, addr));
   nic_put(result.nic);
@@ -387,7 +380,7 @@ static void route_longest_prefix_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic2->name, result.nic->name);
+  KEXPECT_STREQ(t->nic2.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_STREQ(SRC_IP3, inet2str(result.src.a.ip4.s_addr, addr));
   nic_put(result.nic);
@@ -397,7 +390,7 @@ static void route_longest_prefix_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic2->name, result.nic->name);
+  KEXPECT_STREQ(t->nic2.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_STREQ("127.0.5.4", inet2str(result.src.a.ip4.s_addr, addr));
   nic_put(result.nic);
@@ -415,7 +408,7 @@ static void route_longest_prefix_v6_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic3->name, result.nic->name);
+  KEXPECT_STREQ(t->nic3.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET6, result.src.family);
   KEXPECT_STREQ("2001:db8::2", inet62str(&result.src.a.ip6, addr));
   nic_put(result.nic);
@@ -425,7 +418,7 @@ static void route_longest_prefix_v6_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic->name, result.nic->name);
+  KEXPECT_STREQ(t->nic.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET6, result.src.family);
   KEXPECT_STREQ("2001:db8::1", inet62str(&result.src.a.ip6, addr));
   nic_put(result.nic);
@@ -435,7 +428,7 @@ static void route_longest_prefix_v6_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
   KEXPECT_TRUE(netaddr_eq(&dst, &result.nexthop));
-  KEXPECT_STREQ(t->nic3->name, result.nic->name);
+  KEXPECT_STREQ(t->nic3.n->name, result.nic->name);
   KEXPECT_EQ(AF_INET6, result.src.family);
   KEXPECT_STREQ("2001:db8:1::2", inet62str(&result.src.a.ip6, addr));
   nic_put(result.nic);
@@ -464,7 +457,7 @@ static void route_default_route_test(test_fixture_t* t) {
 
   KTEST_BEGIN("ip_route(): no default route (with NIC name)");
   nexthop.family = AF_UNSPEC;
-  ip_set_default_route(ADDR_INET, nexthop, t->nic->name);
+  ip_set_default_route(ADDR_INET, nexthop, t->nic.n->name);
   KEXPECT_FALSE(ip_route(dst, &result));
 
 
@@ -478,10 +471,10 @@ static void route_default_route_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): default route set");
   nexthop.family = AF_INET;
   nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
-  ip_set_default_route(ADDR_INET, nexthop, t->nic->name);
+  ip_set_default_route(ADDR_INET, nexthop, t->nic.n->name);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
-  KEXPECT_EQ(t->nic, result.nic);
+  KEXPECT_EQ(t->nic.n, result.nic);
   KEXPECT_EQ(AF_INET, result.src.family);
   KEXPECT_STREQ(SRC_IP, inet2str(result.src.a.ip4.s_addr, addr));
   KEXPECT_EQ(AF_INET, result.nexthop.family);
@@ -492,7 +485,7 @@ static void route_default_route_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): default route set (no usable addrs on NIC)");
   nexthop.family = AF_INET;
   nexthop.a.ip4.s_addr = str2inet("1.2.3.4");
-  ip_set_default_route(ADDR_INET, nexthop, t->nic3->name);
+  ip_set_default_route(ADDR_INET, nexthop, t->nic3.n->name);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_FALSE(ip_route(dst, &result));
 
@@ -522,7 +515,7 @@ static void route_default_route_v6_test(test_fixture_t* t) {
 
   KTEST_BEGIN("ip_route(): no default route (with NIC name) (IPv6)");
   nexthop.family = AF_UNSPEC;
-  ip_set_default_route(ADDR_INET6, nexthop, t->nic->name);
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic.n->name);
   KEXPECT_FALSE(ip_route(dst, &result));
 
 
@@ -536,10 +529,10 @@ static void route_default_route_v6_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): default route set (IPv6)");
   nexthop.family = AF_INET6;
   KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
-  ip_set_default_route(ADDR_INET6, nexthop, t->nic->name);
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic.n->name);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_TRUE(ip_route(dst, &result));
-  KEXPECT_EQ(t->nic, result.nic);
+  KEXPECT_EQ(t->nic.n, result.nic);
   KEXPECT_EQ(AF_INET6, result.src.family);
   KEXPECT_STREQ("2001:db8::1", inet62str(&result.src.a.ip6, addr));
   KEXPECT_EQ(AF_INET6, result.nexthop.family);
@@ -550,7 +543,7 @@ static void route_default_route_v6_test(test_fixture_t* t) {
   KTEST_BEGIN("ip_route(): default route set (no usable addrs on NIC) (IPv6)");
   nexthop.family = AF_INET6;
   KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
-  ip_set_default_route(ADDR_INET6, nexthop, t->nic2->name);
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic2.n->name);
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_FALSE(ip_route(dst, &result));
 
@@ -573,38 +566,28 @@ void net_base_test(void) {
   KTEST_SUITE_BEGIN("Network base code");
   KTEST_BEGIN("Network base: test setup");
   test_fixture_t fixture;
-  apos_dev_t id, id2, id3;
-  nic_t* nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id);
-  KEXPECT_NE(NULL, nic);
-  fixture.nic = nic;
+  KEXPECT_EQ(0, test_ttap_create(&fixture.nic, TUNTAP_TAP_MODE));
 
+  nic_t* nic = fixture.nic.n;
   kspin_lock(&nic->lock);
   nic_add_addr_v6(nic, "2001:db8::1", 64, NIC_ADDR_ENABLED);
   nic_add_addr(nic, SRC_IP, 24, NIC_ADDR_ENABLED);
   nic_add_addr(nic, SRC_IP2, 31, NIC_ADDR_ENABLED);
   kspin_unlock(&nic->lock);
 
-  fixture.nic2 = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id2);
-  KEXPECT_NE(NULL, fixture.nic2);
-
-  kspin_lock(&fixture.nic2->lock);
-  nic_add_addr(fixture.nic2, SRC_IP3, 30, NIC_ADDR_ENABLED);
-  nic_add_addr(fixture.nic2, "127.0.5.4", 16, NIC_ADDR_ENABLED);
-  kspin_unlock(&fixture.nic2->lock);
+  KEXPECT_EQ(0, test_ttap_create(&fixture.nic2, TUNTAP_TAP_MODE));
+  kspin_lock(&fixture.nic2.n->lock);
+  nic_add_addr(fixture.nic2.n, SRC_IP3, 30, NIC_ADDR_ENABLED);
+  nic_add_addr(fixture.nic2.n, "127.0.5.4", 16, NIC_ADDR_ENABLED);
+  kspin_unlock(&fixture.nic2.n->lock);
 
   // A third ipv6-only NIC.
-  fixture.nic3 = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id3);
-  KEXPECT_NE(NULL, fixture.nic3);
+  KEXPECT_EQ(0, test_ttap_create(&fixture.nic3, TUNTAP_TAP_MODE));
 
-  kspin_lock(&fixture.nic3->lock);
-  nic_add_addr_v6(fixture.nic3, "2001:db8::2", 96, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(fixture.nic3, "2001:db8:1::2", 70, NIC_ADDR_ENABLED);
-  kspin_unlock(&fixture.nic3->lock);
-
-  KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
-  fixture.tap_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(fixture.tap_fd, 0);
-  vfs_make_nonblock(fixture.tap_fd);
+  kspin_lock(&fixture.nic3.n->lock);
+  nic_add_addr_v6(fixture.nic3.n, "2001:db8::2", 96, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic3.n, "2001:db8:1::2", 70, NIC_ADDR_ENABLED);
+  kspin_unlock(&fixture.nic3.n->lock);
 
   // Run the tests.
   str_tests();
@@ -612,9 +595,7 @@ void net_base_test(void) {
   ip_route_tests(&fixture);
 
   KTEST_BEGIN("Network base: test teardown");
-  KEXPECT_EQ(0, vfs_close(fixture.tap_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(id));
-  KEXPECT_EQ(0, tuntap_destroy(id2));
-  KEXPECT_EQ(0, tuntap_destroy(id3));
+  test_ttap_destroy(&fixture.nic);
+  test_ttap_destroy(&fixture.nic2);
+  test_ttap_destroy(&fixture.nic3);
 }
