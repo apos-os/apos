@@ -11513,9 +11513,9 @@ static void cwnd_socket_test(void) {
 
 static void nonblocking_tap_test(void) {
   KTEST_BEGIN("TCP: non-blocking connect still blocks for ARP");
-  apos_dev_t id;
-  nic_t* nic = tuntap_create(5000, TUNTAP_TAP_MODE, &id);
-  KEXPECT_NE(NULL, nic);
+  test_tap_t tap;
+  KEXPECT_EQ(0, test_ttap_create(&tap, TUNTAP_TAP_MODE));
+  nic_t* nic = tap.n;
 
   kspin_lock(&nic->lock);
   nic->addrs[0].a.addr.family = ADDR_INET;
@@ -11523,11 +11523,6 @@ static void nonblocking_tap_test(void) {
   nic->addrs[0].a.prefix_len = 24;
   nic->addrs[0].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
-
-  KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
-  int tt_fd = vfs_open("_tuntap_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(tt_fd, 0);
-  vfs_make_nonblock(tt_fd);
 
   tcp_test_state_t s;
   init_tcp_test(&s, TAP_SRC_IP, 0x1234, TAP_DST_IP, 0x5678);
@@ -11542,7 +11537,7 @@ static void nonblocking_tap_test(void) {
   char* buf = kmalloc(500);
   kmemset(buf, 0, 500);
   KEXPECT_EQ(sizeof(eth_hdr_t) + 28 /* ARP request */,
-             vfs_read(tt_fd, buf, 500));
+             vfs_read(tap.fd, buf, 500));
 
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
@@ -11568,7 +11563,7 @@ static void nonblocking_tap_test(void) {
   // We should have gotten an ARP request.
   kmemset(buf, 0, 500);
   KEXPECT_EQ(sizeof(eth_hdr_t) + 28 /* ARP request */,
-             vfs_read(tt_fd, buf, 500));
+             vfs_read(tap.fd, buf, 500));
 
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
   KEXPECT_STREQ(mac2str(nic->mac.addr, macstr1),
@@ -11581,9 +11576,7 @@ static void nonblocking_tap_test(void) {
 
   cleanup_tcp_test(&s);
 
-  KEXPECT_EQ(0, vfs_close(tt_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tuntap_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(id));
+  test_ttap_destroy(&tap);
   kfree(buf);
 }
 
@@ -12634,19 +12627,14 @@ void tcp_test(void) {
 
   // Create a TUN device for receiving test packets.
   KTEST_BEGIN("TCP: test setup");
-  apos_dev_t tun_id;
-  nic_t* nic = tuntap_create(20000, 0, &tun_id);
-  KEXPECT_NE(NULL, nic);
+  test_tap_t tun;
+  KEXPECT_EQ(0, test_ttap_create(&tun, 0));
 
-  kspin_lock(&nic->lock);
-  nic_add_addr(nic, SRC_IP, 24, NIC_ADDR_ENABLED);
-  kspin_unlock(&nic->lock);
+  kspin_lock(&tun.n->lock);
+  nic_add_addr(tun.n, SRC_IP, 24, NIC_ADDR_ENABLED);
+  kspin_unlock(&tun.n->lock);
 
-  vfs_unlink("_tun_test_dev");
-  KEXPECT_EQ(0, vfs_mknod("_tun_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, tun_id));
-  g_tcp_test.tun_fd = vfs_open("_tun_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(g_tcp_test.tun_fd, 0);
-  vfs_make_nonblock(g_tcp_test.tun_fd);
+  g_tcp_test.tun_fd = tun.fd;
 
   for (int i = 0; i < TEST_SEQ_ITERS; ++i) {
     g_tcp_test.seq_start = TEST_SEQ_START;
@@ -12688,9 +12676,7 @@ void tcp_test(void) {
   sockmap_tests();
 
   KTEST_BEGIN("TCP: test cleanup");
-  KEXPECT_EQ(0, vfs_close(g_tcp_test.tun_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tun_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(tun_id));
+  test_ttap_destroy(&tun);
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());
