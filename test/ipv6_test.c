@@ -49,8 +49,8 @@
 #define DISABLED_SRC_IP2 "2001:db8::12"
 
 typedef struct {
-  test_tap_t nic;
-  test_tap_t nic2;
+  test_ttap_t nic;
+  test_ttap_t nic2;
 } test_fixture_t;
 
 // Creates a in6_addr from a test-encoded (no zero compression, etc) string.

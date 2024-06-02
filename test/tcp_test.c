@@ -11513,7 +11513,7 @@ static void cwnd_socket_test(void) {
 
 static void nonblocking_tap_test(void) {
   KTEST_BEGIN("TCP: non-blocking connect still blocks for ARP");
-  test_tap_t tap;
+  test_ttap_t tap;
   KEXPECT_EQ(0, test_ttap_create(&tap, TUNTAP_TAP_MODE));
   nic_t* nic = tap.n;
 
@@ -12627,7 +12627,7 @@ void tcp_test(void) {
 
   // Create a TUN device for receiving test packets.
   KTEST_BEGIN("TCP: test setup");
-  test_tap_t tun;
+  test_ttap_t tun;
   KEXPECT_EQ(0, test_ttap_create(&tun, TUNTAP_TUN_MODE));
 
   kspin_lock(&tun.n->lock);

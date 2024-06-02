@@ -27,11 +27,11 @@ typedef struct {
   int fd;  // FD to read/write packets from.
 
   apos_dev_t nic_id;
-} test_tap_t;
+} test_ttap_t;
 
 // Create and destroy a TUN/TAP device for testing.
-int test_ttap_create(test_tap_t* t, int flags);
-void test_ttap_destroy(test_tap_t* t);
+int test_ttap_create(test_ttap_t* t, int flags);
+void test_ttap_destroy(test_ttap_t* t);
 
 // Adds an IPv4 or IPv6 address to the given NIC.  The NIC must be locked.
 // Returns the nic_addr_t for tests that need to further modify it.

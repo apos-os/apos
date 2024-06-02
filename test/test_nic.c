@@ -26,7 +26,7 @@
 
 #define TAP_BUFSIZE 5000
 
-int test_ttap_create(test_tap_t* t, int flags) {
+int test_ttap_create(test_ttap_t* t, int flags) {
   t->fd = -1;
   t->n = tuntap_create(TAP_BUFSIZE, flags, &t->nic_id);
   if (t->n == NULL) {
@@ -60,7 +60,7 @@ int test_ttap_create(test_tap_t* t, int flags) {
   return 0;
 }
 
-void test_ttap_destroy(test_tap_t* t) {
+void test_ttap_destroy(test_ttap_t* t) {
   if (t->fd >= 0) {
     KASSERT(0 == vfs_close(t->fd));
   }

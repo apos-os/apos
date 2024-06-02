@@ -38,9 +38,9 @@
 #define DST_IP "127.0.5.15"
 
 typedef struct {
-  test_tap_t nic;
-  test_tap_t nic2;
-  test_tap_t nic3;
+  test_ttap_t nic;
+  test_ttap_t nic2;
+  test_ttap_t nic3;
 } test_fixture_t;
 
 static void str_tests(void) {

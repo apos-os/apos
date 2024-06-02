@@ -41,7 +41,7 @@
 #include "vfs/vfs_test_util.h"
 
 typedef struct {
-  test_tap_t tun;
+  test_ttap_t tun;
 } test_fixture_t;
 
 static void create_test(void) {
