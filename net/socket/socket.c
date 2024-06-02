@@ -54,7 +54,7 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
     result = sock_raw_create(domain, protocol, out);
   } else if (domain == AF_UNIX) {
     result = sock_unix_create(type, protocol, out);
-  } else if (domain == AF_INET) {
+  } else if (domain == AF_INET || domain == AF_INET6) {
     if (type == SOCK_DGRAM) {
       if (protocol == 0 || protocol == IPPROTO_UDP) {
         result = sock_udp_create(domain, out);

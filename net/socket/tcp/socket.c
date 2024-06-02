@@ -108,6 +108,9 @@ static bool maybe_update_recv_window(socket_tcp_t* socket, bool force) {
 }
 
 int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
+  if (domain != AF_INET) {
+    return -EAFNOSUPPORT;
+  }
   if (type != SOCK_STREAM) {
     return -EPROTOTYPE;
   } else if (protocol != IPPROTO_TCP) {

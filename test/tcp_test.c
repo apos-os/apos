@@ -12620,6 +12620,11 @@ static void sockmap_tests(void) {
   sockmap_reuseaddr_tests();
 }
 
+static void tcp_ipv6_test(void) {
+  KTEST_BEGIN("TCP: IPv6 socket creation unsupported");
+  KEXPECT_EQ(-EAFNOSUPPORT, net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP));
+}
+
 void tcp_test(void) {
   KTEST_SUITE_BEGIN("TCP");
   const int initial_cache_size = vfs_cache_size();
@@ -12674,6 +12679,7 @@ void tcp_test(void) {
   reuseaddr_tests();
   rapid_reconnect_test();
   sockmap_tests();
+  tcp_ipv6_test();
 
   KTEST_BEGIN("TCP: test cleanup");
   test_ttap_destroy(&tun);
