@@ -49,10 +49,8 @@
 #define DISABLED_SRC_IP2 "2001:db8::12"
 
 typedef struct {
-  int tap_fd;
-  nic_t* nic;
-  nic_t* nic2;
-  char nic_mac[NIC_MAC_PRETTY_LEN];
+  test_tap_t nic;
+  test_tap_t nic2;
 } test_fixture_t;
 
 // Creates a in6_addr from a test-encoded (no zero compression, etc) string.
@@ -535,14 +533,14 @@ static void pkt_tests(void) {
 
 static void ndp_send_request_test(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: send request");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   struct in6_addr addr6;
   KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &addr6));
 
-  kspin_lock(&t->nic->lock);
-  ndp_send_request(t->nic, &addr6);
-  kspin_unlock(&t->nic->lock);
+  kspin_lock(&t->nic.n->lock);
+  ndp_send_request(t->nic.n, &addr6);
+  kspin_unlock(&t->nic.n->lock);
 
   // First check the ethernet header.
   char mac[NIC_MAC_PRETTY_LEN];
@@ -550,10 +548,10 @@ static void ndp_send_request_test(test_fixture_t* t) {
   char buf[100];
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t) + 8,
-      vfs_read(t->tap_fd, buf, 100));
+      vfs_read(t->nic.fd, buf, 100));
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("33:33:FF:12:34:56", mac2str(eth_hdr->mac_dst, mac));
 
   // ...then the IPv6 header.
@@ -582,7 +580,7 @@ static void ndp_send_request_test(test_fixture_t* t) {
   const uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_solict_t));
   KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
   KEXPECT_EQ(1 /* 8 octets */, option[1]);
-  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
 
   // Verify the ICMP checksum.
   ip6_pseudo_hdr_t phdr;
@@ -597,7 +595,7 @@ static void ndp_send_request_test(test_fixture_t* t) {
 
 static void ndp_recv_advert_test(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor advert");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_advert_t), 24);
   uint8_t* options = pbuf_get(pb);
@@ -641,24 +639,24 @@ static void ndp_recv_advert_test(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &pkt->target, sizeof(struct in6_addr));
 
   nbr_cache_entry_t entry;
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
   // We should have sent a request packet.
   char buf[100];
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
 
   // Send the response.
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
 
   // Now the lookup should succeed.
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(0, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(0, nbr_cache_lookup(t->nic.n, na, &entry, 0));
   KEXPECT_STREQ("01:02:03:04:05:06", mac2str(entry.mac.addr, buf));
 }
 
 static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (no source LL address)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   // Pre-seed the neighbor cache with the sender's address.  Use yet another
   // MAC address to ensure this one is used, and not the one in the request
@@ -668,7 +666,7 @@ static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   KEXPECT_EQ(0, str2inet6("2001:db8::10", &entry_addr.a.ip6));
   nic_mac_t entry_mac;
   KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", entry_mac.addr));
-  nbr_cache_insert(t->nic, entry_addr, entry_mac.addr);
+  nbr_cache_insert(t->nic.n, entry_addr, entry_mac.addr);
 
   // N.B. this request is not RFC-compliant, as it does not include the source
   // link-layer address option even though this is a multicast solicit.
@@ -698,7 +696,7 @@ static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   str2mac("0d:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
@@ -706,7 +704,7 @@ static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   char buf[100];
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_advert_t) + 8,
-      vfs_read(t->tap_fd, buf, 100));
+      vfs_read(t->nic.fd, buf, 100));
 
   char mac[NIC_MAC_PRETTY_LEN];
   char addr[INET6_PRETTY_LEN];
@@ -714,7 +712,7 @@ static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
   idx += sizeof(eth_hdr_t);
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("00:00:00:00:00:05", mac2str(eth_hdr->mac_dst, mac));
 
   const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
@@ -738,15 +736,15 @@ static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   const uint8_t* option = (const uint8_t*)&buf[idx];
   KEXPECT_EQ(ICMPV6_OPTION_TGT_LL_ADDR, option[0]);
   KEXPECT_EQ(1, option[1]);
-  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
 
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit "
               "(no source LL address, and neighbor is unknown)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   // N.B. this request is not RFC-compliant, as it does not include the source
   // link-layer address option even though this is a multicast solicit.
@@ -776,7 +774,7 @@ static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
   str2mac("0d:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
@@ -784,7 +782,7 @@ static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
   char buf[100];
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t) + 8,
-      vfs_read(t->tap_fd, buf, 100));
+      vfs_read(t->nic.fd, buf, 100));
 
   char mac[NIC_MAC_PRETTY_LEN];
   char addr[INET6_PRETTY_LEN];
@@ -792,7 +790,7 @@ static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
   idx += sizeof(eth_hdr_t);
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("33:33:FF:00:00:10", mac2str(eth_hdr->mac_dst, mac));
 
   const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
@@ -816,14 +814,14 @@ static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
   const uint8_t* option = ((uint8_t*)resp + sizeof(ndp_nbr_solict_t));
   KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
   KEXPECT_EQ(1 /* 8 octets */, option[1]);
-  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
 
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -867,15 +865,15 @@ static void ndp_recv_solicit_test(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have sent a reply packet.
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_advert_t) + 8,
-      vfs_read(t->tap_fd, buf, 100));
+      vfs_read(t->nic.fd, buf, 100));
 
   char mac[NIC_MAC_PRETTY_LEN];
   char addr[INET6_PRETTY_LEN];
@@ -883,7 +881,7 @@ static void ndp_recv_solicit_test(test_fixture_t* t) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
   idx += sizeof(eth_hdr_t);
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("00:00:00:00:00:05", mac2str(eth_hdr->mac_dst, mac));
 
   const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
@@ -907,7 +905,7 @@ static void ndp_recv_solicit_test(test_fixture_t* t) {
   option = (uint8_t*)&buf[idx];
   KEXPECT_EQ(ICMPV6_OPTION_TGT_LL_ADDR, option[0]);
   KEXPECT_EQ(1, option[1]);
-  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
 
   // We should have also seeded the neighbor cache with the src LL option.
   netaddr_t na;
@@ -915,15 +913,15 @@ static void ndp_recv_solicit_test(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(0, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(0, nbr_cache_lookup(t->nic.n, na, &entry, 0));
   KEXPECT_STREQ("00:00:00:00:00:05", mac2str(entry.mac.addr, buf));
 
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_bad_opt(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -967,18 +965,18 @@ static void ndp_recv_solicit_test_bad_opt(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // Packet should be ignored due to the bad option.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_bad_opt2(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option 2)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 3 * 8);
@@ -1024,18 +1022,18 @@ static void ndp_recv_solicit_test_bad_opt2(test_fixture_t* t) {
   // Send the solicit.  Omit the last 8 bytes to test if the check skips
   // processing that (otherwise valid) option data.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // Packet should be ignored due to the bad option.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_bad_opt3(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option 3)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1079,18 +1077,18 @@ static void ndp_recv_solicit_test_bad_opt3(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // Packet should be ignored due to the bad option.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_bad_opt4(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad option 4)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1131,18 +1129,18 @@ static void ndp_recv_solicit_test_bad_opt4(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // Packet should be ignored due to the bad option.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test2(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (second IP)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1186,15 +1184,15 @@ static void ndp_recv_solicit_test2(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have sent a reply packet.
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_advert_t) + 8,
-      vfs_read(t->tap_fd, buf, 100));
+      vfs_read(t->nic.fd, buf, 100));
 
   char mac[NIC_MAC_PRETTY_LEN];
   char addr[INET6_PRETTY_LEN];
@@ -1202,7 +1200,7 @@ static void ndp_recv_solicit_test2(test_fixture_t* t) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
   idx += sizeof(eth_hdr_t);
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("00:00:00:00:00:05", mac2str(eth_hdr->mac_dst, mac));
 
   const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
@@ -1226,7 +1224,7 @@ static void ndp_recv_solicit_test2(test_fixture_t* t) {
   option = (uint8_t*)&buf[idx];
   KEXPECT_EQ(ICMPV6_OPTION_TGT_LL_ADDR, option[0]);
   KEXPECT_EQ(1, option[1]);
-  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
 
   // We should have also seeded the neighbor cache with the src LL option.
   netaddr_t na;
@@ -1234,15 +1232,15 @@ static void ndp_recv_solicit_test2(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(0, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(0, nbr_cache_lookup(t->nic.n, na, &entry, 0));
   KEXPECT_STREQ("00:00:00:00:00:05", mac2str(entry.mac.addr, buf));
 
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_no_match(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (non matching IP)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1286,13 +1284,13 @@ static void ndp_recv_solicit_test_no_match(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have ignored the request.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 
   // We should NOT have added it to the neighbor cache.
   netaddr_t na;
@@ -1300,16 +1298,16 @@ static void ndp_recv_solicit_test_no_match(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
 
   // Drain the request sent by the lookup.
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_disabled(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (disabled IP)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1353,13 +1351,13 @@ static void ndp_recv_solicit_test_disabled(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have ignored the request.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 
   // We should NOT have added it to the neighbor cache.
   netaddr_t na;
@@ -1367,16 +1365,16 @@ static void ndp_recv_solicit_test_disabled(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
 
   // Drain the request sent by the lookup.
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_disabled2(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (disabled IP #2)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1420,13 +1418,13 @@ static void ndp_recv_solicit_test_disabled2(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have ignored the request.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 
   // We should NOT have added it to the neighbor cache.
   netaddr_t na;
@@ -1434,16 +1432,16 @@ static void ndp_recv_solicit_test_disabled2(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
 
   // Drain the request sent by the lookup.
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_ipv4(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (~match IPv4)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   pbuf_t* pb =
       pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
@@ -1487,13 +1485,13 @@ static void ndp_recv_solicit_test_ipv4(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have ignored the request.
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 
   // We should NOT have added it to the neighbor cache.
   netaddr_t na;
@@ -1501,16 +1499,16 @@ static void ndp_recv_solicit_test_ipv4(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
 
   // Drain the request sent by the lookup.
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (unspecified source)");
-  nbr_cache_clear(t->nic);
+  nbr_cache_clear(t->nic.n);
 
   // Incorrectly include a source link-layer option, which must be ignored
   // (alternatively, the entire packet could be dropped).
@@ -1556,15 +1554,15 @@ static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
 
   // Send the solicit.
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->tap_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
   pb = NULL;
 
   // We should have sent a reply packet to the all-nodes multicast address.
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_advert_t) + 8,
-      vfs_read(t->tap_fd, buf, 100));
+      vfs_read(t->nic.fd, buf, 100));
 
   char mac[NIC_MAC_PRETTY_LEN];
   char addr[INET6_PRETTY_LEN];
@@ -1572,7 +1570,7 @@ static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf[idx];
   idx += sizeof(eth_hdr_t);
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic_mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("33:33:00:00:00:01", mac2str(eth_hdr->mac_dst, mac));
 
   const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf[idx];
@@ -1596,7 +1594,7 @@ static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
   option = (uint8_t*)&buf[idx];
   KEXPECT_EQ(ICMPV6_OPTION_TGT_LL_ADDR, option[0]);
   KEXPECT_EQ(1, option[1]);
-  KEXPECT_STREQ(t->nic_mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
 
   // We should not have added anything to the neighbor cache.
   netaddr_t na;
@@ -1604,12 +1602,12 @@ static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
   kmemcpy(&na.a.ip6, &phdr.src_addr, sizeof(struct in6_addr));
   nbr_cache_entry_t entry;
   kmemset(&entry, 0, sizeof(entry));
-  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic, na, &entry, 0));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
 
   // Drain the request that was sent.
   // TODO(ipv6): we should not send an NDP request for this IP.
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
 }
 
 static void ndp_tests(test_fixture_t* t) {
@@ -1642,8 +1640,8 @@ static int do_cmp(test_fixture_t* t, const char* Astr, const char* Bstr,
   A.a.prefix_len = B.a.prefix_len = 64;  // Unused.
   KEXPECT_EQ(0, str2inet6(Astr, &A.a.addr.a.ip6));
   KEXPECT_EQ(0, str2inet6(Bstr, &B.a.addr.a.ip6));
-  int result = ip6_src_addr_cmp(&A, &B, &dst, t->nic);
-  int result_reverse = ip6_src_addr_cmp(&B, &A, &dst, t->nic);
+  int result = ip6_src_addr_cmp(&A, &B, &dst, t->nic.n);
+  int result_reverse = ip6_src_addr_cmp(&B, &A, &dst, t->nic.n);
   KEXPECT_EQ(-result, result_reverse);
   if (result != -result_reverse) {
     return 5;
@@ -1767,7 +1765,7 @@ static void pick_src_ip_tests(test_fixture_t* t) {
   char addr[INET6_PRETTY_LEN];
   nexthop.family = AF_INET6;
   KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
-  ip_set_default_route(ADDR_INET6, nexthop, t->nic2->name);
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic2.n->name);
 
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_EQ(0,
@@ -1825,24 +1823,24 @@ static void pick_src_ip_tests(test_fixture_t* t) {
   // is routed.
   KTEST_BEGIN("ip_pick_src(): IPv6 address removed after route");
   nic_addr_t saved_addrs[NIC_MAX_ADDRS];
-  kspin_lock(&t->nic2->lock);
+  kspin_lock(&t->nic2.n->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    saved_addrs[i] = t->nic2->addrs[i];
+    saved_addrs[i] = t->nic2.n->addrs[i];
   }
-  kspin_unlock(&t->nic2->lock);
+  kspin_unlock(&t->nic2.n->lock);
 
-  test_point_add("ip_pick_src:after_route", &remove_ipv6_hook, t->nic2);
+  test_point_add("ip_pick_src:after_route", &remove_ipv6_hook, t->nic2.n);
   KEXPECT_EQ(0, str2sin6("2001::2", 100, &dst));
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_EQ(-EADDRNOTAVAIL,
              ip_pick_src((const struct sockaddr*)&dst, sizeof(dst), &result));
   KEXPECT_EQ(1, test_point_remove("ip_pick_src:after_route"));
 
-  kspin_lock(&t->nic2->lock);
+  kspin_lock(&t->nic2.n->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    t->nic2->addrs[i] = saved_addrs[i];
+    t->nic2.n->addrs[i] = saved_addrs[i];
   }
-  kspin_unlock(&t->nic2->lock);
+  kspin_unlock(&t->nic2.n->lock);
 
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
 }
@@ -1893,10 +1891,10 @@ static void send_tests(test_fixture_t* t) {
   KEXPECT_EQ(0, str2inet6("2001:db8::1234", &dst));
   ip6_add_hdr(pb, &src, &dst, IPPROTO_TCP, 0);
   char buf[100];
-  KEXPECT_EQ(-EAGAIN, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
   KEXPECT_EQ(-EAGAIN, ip6_send(pb, false));
   // Drain the NDP solicit.
-  KEXPECT_LT(0, vfs_read(t->tap_fd, buf, 100));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
 }
 
 // TODO(ipv6): additional tests:
@@ -1908,42 +1906,30 @@ void ipv6_test(void) {
   KTEST_SUITE_BEGIN("IPv6");
   KTEST_BEGIN("IPv6: test setup");
   test_fixture_t fixture;
-  apos_dev_t id;
-  nic_t* nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id);
-  KEXPECT_NE(NULL, nic);
-  fixture.nic = nic;
-  mac2str(nic->mac.addr, fixture.nic_mac);
+  KEXPECT_EQ(0, test_ttap_create(&fixture.nic, TUNTAP_TAP_MODE));
 
-  kspin_lock(&nic->lock);
-  nic_add_addr_v6(nic, SRC_IP, 64, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(nic, SRC_IP2, 64, NIC_ADDR_ENABLED);
+  kspin_lock(&fixture.nic.n->lock);
+  nic_add_addr_v6(fixture.nic.n, SRC_IP, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic.n, SRC_IP2, 64, NIC_ADDR_ENABLED);
   nic_addr_t* disable_addr1 =
-      nic_add_addr_v6(nic, DISABLED_SRC_IP, 64, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(nic, DISABLED_SRC_IP2, 64, NIC_ADDR_TENTATIVE);
-  nic_add_addr_v6(nic, "0102:0304::", 64, NIC_ADDR_ENABLED)->a.addr.family =
-      AF_INET;
+      nic_add_addr_v6(fixture.nic.n, DISABLED_SRC_IP, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic.n, DISABLED_SRC_IP2, 64, NIC_ADDR_TENTATIVE);
+  nic_add_addr_v6(fixture.nic.n, "0102:0304::", 64, NIC_ADDR_ENABLED)
+      ->a.addr.family = AF_INET;
 
   disable_addr1->state = NIC_ADDR_NONE;
-  kspin_unlock(&nic->lock);
+  kspin_unlock(&fixture.nic.n->lock);
 
-  apos_dev_t id2;
-  nic = tuntap_create(TAP_BUFSIZE, TUNTAP_TAP_MODE, &id2);
-  KEXPECT_NE(NULL, nic);
-  fixture.nic2 = nic;
+  KEXPECT_EQ(0, test_ttap_create(&fixture.nic2, TUNTAP_TAP_MODE));
 
-  kspin_lock(&nic->lock);
-  nic_add_addr(nic, "1.2.3.4", 24, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(nic, SRC_IP, 64, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(nic, SRC_IP2, 64, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(nic, "1::1", 64, NIC_ADDR_TENTATIVE);
-  nic_add_addr_v6(nic, "fe80::1", 64, NIC_ADDR_ENABLED);
-  nic_add_addr_v6(nic, "2001:0:1::1", 64, NIC_ADDR_ENABLED);
-  kspin_unlock(&nic->lock);
-
-  KEXPECT_EQ(0, vfs_mknod("_tap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
-  fixture.tap_fd = vfs_open("_tap_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(fixture.tap_fd, 0);
-  vfs_make_nonblock(fixture.tap_fd);
+  kspin_lock(&fixture.nic2.n->lock);
+  nic_add_addr(fixture.nic2.n, "1.2.3.4", 24, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic2.n, SRC_IP, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic2.n, SRC_IP2, 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic2.n, "1::1", 64, NIC_ADDR_TENTATIVE);
+  nic_add_addr_v6(fixture.nic2.n, "fe80::1", 64, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic2.n, "2001:0:1::1", 64, NIC_ADDR_ENABLED);
+  kspin_unlock(&fixture.nic2.n->lock);
 
   // Run the tests.
   addr_tests();
@@ -1956,8 +1942,6 @@ void ipv6_test(void) {
   send_tests(&fixture);
 
   KTEST_BEGIN("IPv6: test teardown");
-  KEXPECT_EQ(0, vfs_close(fixture.tap_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tap_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(id));
-  KEXPECT_EQ(0, tuntap_destroy(id2));
+  test_ttap_destroy(&fixture.nic);
+  test_ttap_destroy(&fixture.nic2);
 }

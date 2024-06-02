@@ -13,11 +13,62 @@
 // limitations under the License.
 #include "test/test_nic.h"
 
+#include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "common/kstring.h"
 #include "dev/net/nic.h"
+#include "dev/net/tuntap.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
+#include "vfs/vfs.h"
+#include "vfs/vfs_test_util.h"
+
+#define TAP_BUFSIZE 5000
+
+int test_ttap_create(test_tap_t* t, int flags) {
+  t->fd = -1;
+  t->fd_filename[0] = '\0';
+  t->n = tuntap_create(TAP_BUFSIZE, flags, &t->nic_id);
+  if (t->n == NULL) {
+    klogfm(KL_TEST, WARNING, "test_ttap_create(): unable to create NIC\n");
+    return -EXDEV;
+  }
+  mac2str(t->n->mac.addr, t->mac);
+
+  ksprintf(t->fd_filename, "_tap_test_dev_%s", t->n->name);
+  int result = vfs_mknod(t->fd_filename, VFS_S_IFCHR | VFS_S_IRWXU, t->nic_id);
+  if (result  < 0) {
+    t->fd_filename[0] = '\0';
+    klogfm(KL_TEST, WARNING,
+           "test_ttap_create(): unable to create device file: %s\n",
+           errorname(-result));
+    test_ttap_destroy(t);
+    return result;
+  }
+  t->fd = vfs_open(t->fd_filename, VFS_O_RDWR);
+  if (t->fd < 0) {
+    klogfm(KL_TEST, WARNING,
+           "test_ttap_create(): unable to open device file: %s\n",
+           errorname(-t->fd));
+    test_ttap_destroy(t);
+    return t->fd;
+  }
+
+  vfs_make_nonblock(t->fd);
+  return 0;
+}
+
+void test_ttap_destroy(test_tap_t* t) {
+  if (t->fd >= 0) {
+    KASSERT(0 == vfs_close(t->fd));
+  }
+  if (t->fd_filename[0]) {
+    KASSERT(0 == vfs_unlink(t->fd_filename));
+  }
+  KASSERT(0 == tuntap_destroy(t->nic_id));
+  t->n = NULL;
+}
 
 static nic_addr_t* alloc_addr(nic_t* nic, int prefix_len,
                               nic_addr_state_t state) {
