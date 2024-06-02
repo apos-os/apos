@@ -26,7 +26,6 @@
 #include "net/ip/checksum.h"
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
-#include "net/ip/route.h"
 #include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
@@ -74,11 +73,15 @@ static short udp_poll_events(const socket_udp_t* socket) {
   return events;
 }
 
-int sock_udp_create(socket_t** out) {
+int sock_udp_create(int domain, socket_t** out) {
+  if (domain != AF_INET) {
+    return -EAFNOSUPPORT;
+  }
+
   socket_udp_t* sock = (socket_udp_t*)kmalloc(sizeof(socket_udp_t));
   if (!sock) return -ENOMEM;
 
-  sock->base.s_domain = AF_INET;
+  sock->base.s_domain = domain;
   sock->base.s_type = SOCK_DGRAM;
   sock->base.s_protocol = IPPROTO_UDP;
   sock->base.s_ops = &g_udp_socket_ops;
@@ -93,10 +96,8 @@ int sock_udp_create(socket_t** out) {
   return 0;
 }
 
-bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
-  KASSERT_DBG(ethertype == ET_IPV4);
-  KASSERT_DBG(protocol == IPPROTO_UDP);
-
+static bool check_inbound_ipv4(pbuf_t* pb, struct sockaddr_storage* src,
+                               struct sockaddr_storage* dst) {
   // Validate the packet.
   KASSERT_DBG(pbuf_size(pb) >= sizeof(ip4_hdr_t));
   if (pbuf_size(pb) < sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)) {
@@ -136,10 +137,26 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   }
 
   // Find a matching socket.
-  struct sockaddr_in dst_addr;
-  dst_addr.sin_family = AF_INET;
-  dst_addr.sin_addr.s_addr = ip_hdr->dst_addr;
-  dst_addr.sin_port = udp_hdr->dst_port;
+  struct sockaddr_in* src_addr = (struct sockaddr_in*)src;
+  src_addr->sin_family = AF_INET;
+  src_addr->sin_addr.s_addr = ip_hdr->src_addr;
+  src_addr->sin_port = udp_hdr->src_port;
+
+  struct sockaddr_in* dst_addr = (struct sockaddr_in*)dst;
+  dst_addr->sin_family = AF_INET;
+  dst_addr->sin_addr.s_addr = ip_hdr->dst_addr;
+  dst_addr->sin_port = udp_hdr->dst_port;
+
+  return true;
+}
+
+bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
+  KASSERT(protocol == IPPROTO_UDP);
+
+  struct sockaddr_storage src_addr, dst_addr;
+  if (!check_inbound_ipv4(pb, &src_addr, &dst_addr)) {
+    return false;
+  }
 
   DEFINT_PUSH_AND_DISABLE();
   sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
@@ -155,11 +172,8 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   // If the socket is connected, the source address must exactly match the
   // connected-to address.
   if (socket->connected_addr.sa_family != AF_UNSPEC) {
-    if (socket->connected_addr.sa_family != AF_INET ||
-        ((struct sockaddr_in*)&socket->connected_addr)->sin_addr.s_addr !=
-            ip_hdr->src_addr ||
-        ((struct sockaddr_in*)&socket->connected_addr)->sin_port !=
-            udp_hdr->src_port) {
+    if (!sockaddr_equal((struct sockaddr*)&socket->connected_addr,
+                        (struct sockaddr*)&src_addr)) {
       DEFINT_POP();
       return false;
     }

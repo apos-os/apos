@@ -57,7 +57,7 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
   } else if (domain == AF_INET) {
     if (type == SOCK_DGRAM) {
       if (protocol == 0 || protocol == IPPROTO_UDP) {
-        result = sock_udp_create(out);
+        result = sock_udp_create(domain, out);
       } else {
         result = -EPROTONOSUPPORT;
       }

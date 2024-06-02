@@ -46,7 +46,7 @@ typedef struct socket_udp {
   poll_event_t poll_event;
 } socket_udp_t;
 
-int sock_udp_create(socket_t** out);
+int sock_udp_create(int domain, socket_t** out);
 
 // Handles an IP packet.  The packet is dispatched to a matching socket (if one
 // exists).  Returns true if the packet was dispatched, false if not.  If false
