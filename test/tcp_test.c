@@ -249,7 +249,7 @@ static int get_so_error(int socket) {
 static int getsockname_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
-  int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  int result = net_getsockname(socket, &sas);
   if (result < 0) return result;
   if (sas.sa_family == AF_INET) {
     kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
@@ -260,7 +260,7 @@ static int getsockname_inet(int socket, struct sockaddr_in* sin) {
 static int getpeername_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
-  int result = net_getpeername(socket, (struct sockaddr*)&sas);
+  int result = net_getpeername(socket, &sas);
   if (result < 0) return result;
   if (sas.sa_family == AF_INET) {
     kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
@@ -270,14 +270,14 @@ static int getpeername_inet(int socket, struct sockaddr_in* sin) {
 
 static const char* getsockname_str(int socket) {
   struct sockaddr_storage sas;
-  int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  int result = net_getsockname(socket, &sas);
   if (result < 0) return errorname(-result);
   return sas2str(&sas);
 }
 
 static const char* getpeername_str(int socket) {
   struct sockaddr_storage sas;
-  int result = net_getpeername(socket, (struct sockaddr*)&sas);
+  int result = net_getpeername(socket, &sas);
   if (result < 0) return errorname(-result);
   return sas2str(&sas);
 }
@@ -556,15 +556,13 @@ static void bind_test(void) {
   struct sockaddr_storage result_addr_storage;
   struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_EQ(INADDR_ANY, result_addr->sin_addr.s_addr);
   KEXPECT_EQ(INET_PORT_ANY, result_addr->sin_port);
 
   KTEST_BEGIN("getpeername(SOCK_STREAM): unbound socket");
-  KEXPECT_EQ(-ENOTCONN,
-             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
-
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, &result_addr_storage));
 
   KTEST_BEGIN("bind(SOCK_STREAM): can bind to NIC's address");
   struct sockaddr_in addr;
@@ -579,14 +577,13 @@ static void bind_test(void) {
 
   KTEST_BEGIN("getsockname(SOCK_STREAM): bound socket");
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_EQ(addr.sin_addr.s_addr, result_addr->sin_addr.s_addr);
   KEXPECT_EQ(1234, result_addr->sin_port);
 
   KTEST_BEGIN("getpeername(SOCK_STREAM): bound socket");
-  KEXPECT_EQ(-ENOTCONN,
-             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, &result_addr_storage));
 
   KTEST_BEGIN("bind(SOCK_STREAM): already bound socket");
   KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
@@ -674,14 +671,14 @@ static void multi_bind_test(void) {
 
   struct sockaddr_storage sockname_addr;
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&sockname_addr));
+             net_getsockname(sock, &sockname_addr));
   KEXPECT_STREQ(SRC_IP, sas_ip2str(&sockname_addr));
   in_port_t port1 = ((struct sockaddr_in*)&sockname_addr)->sin_port;
   KEXPECT_NE(0, port1);
 
   KEXPECT_EQ(0, net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock2, (struct sockaddr*)&sockname_addr));
+             net_getsockname(sock2, &sockname_addr));
   KEXPECT_STREQ(SRC_IP, sas_ip2str(&sockname_addr));
   in_port_t port2 = ((struct sockaddr_in*)&sockname_addr)->sin_port;
   KEXPECT_NE(0, port2);
@@ -1586,8 +1583,8 @@ static void connect_rst_test(void) {
   KEXPECT_EQ(-ECONNREFUSED, finish_op(&s));
 
   struct sockaddr_storage unused;
-  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, &unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, &unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, SRC_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
@@ -1695,7 +1692,7 @@ static void rebind_tests(void) {
 
   // See what port it chose.
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_NE(0, result_addr->sin_port);
@@ -1709,7 +1706,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 100));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(bound_port, result_addr->sin_port);
@@ -1722,7 +1719,7 @@ static void rebind_tests(void) {
 
   // See what port it chose.
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_NE(0, result_addr->sin_port);
@@ -1740,7 +1737,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, DST_IP_2, 100));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(bound_port, result_addr->sin_port);
@@ -1758,7 +1755,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 200));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(btoh16(100), result_addr->sin_port);
@@ -1775,7 +1772,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 200));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(btoh16(100), result_addr->sin_port);
@@ -3227,8 +3224,8 @@ static void rst_during_established_test1(void) {
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
 
   struct sockaddr_storage unused;
-  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, &unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, &unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, SRC_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));
@@ -3378,8 +3375,8 @@ static void rst_during_established_blocking_recv_test(void) {
   proc_suppress_signal(proc_current(), SIGPIPE);
 
   struct sockaddr_storage unused;
-  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, &unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, &unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));

@@ -2371,7 +2371,7 @@ ssize_t sock_tcp_sendto(socket_t* socket_base, int fflags, const void* buffer,
 }
 
 static int sock_tcp_getsockname(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 
@@ -2383,7 +2383,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
     kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
   } else if (socket->state == TCP_CLOSED) {
     // We haven't bound yet.
-    inet_make_anyaddr(socket_base->s_domain, address);
+    inet_make_anyaddr(socket_base->s_domain, (struct sockaddr*)address);
   } else {
     // In every pre-established state, we should either be CLOSED, or have
     // bound (and therefore be caught above either way).
@@ -2395,7 +2395,7 @@ static int sock_tcp_getsockname(socket_t* socket_base,
 }
 
 static int sock_tcp_getpeername(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
 

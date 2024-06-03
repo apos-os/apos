@@ -440,12 +440,12 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
 }
 
 static int sock_udp_getsockname(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
   if (socket->bind_addr.sa_family == AF_UNSPEC) {
     // We haven't bound yet.
-    inet_make_anyaddr(socket_base->s_domain, address);
+    inet_make_anyaddr(socket_base->s_domain, (struct sockaddr*)address);
   } else {
     kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
   }
@@ -453,7 +453,7 @@ static int sock_udp_getsockname(socket_t* socket_base,
 }
 
 static int sock_udp_getpeername(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
   if (socket->connected_addr.sa_family == AF_UNSPEC) {

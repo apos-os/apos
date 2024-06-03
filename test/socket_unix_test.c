@@ -2020,30 +2020,29 @@ static void sockname_test(void) {
   int server_sock = net_socket(AF_UNIX, SOCK_STREAM, 0);
   KEXPECT_GE(server_sock, 0);
 
-  struct sockaddr_un result_addr;
+  struct sockaddr_storage result_addr_storage;
+  const struct sockaddr_un* result_addr =
+      (const struct sockaddr_un*)&result_addr_storage;
   KEXPECT_EQ(sizeof(struct sockaddr_un),
-             net_getsockname(server_sock, (struct sockaddr*)&result_addr));
-  KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
-  KEXPECT_STREQ("", result_addr.sun_path);
+             net_getsockname(server_sock, &result_addr_storage));
+  KEXPECT_EQ(AF_UNIX, result_addr->sun_family);
+  KEXPECT_STREQ("", result_addr->sun_path);
 
 
   KTEST_BEGIN("net_getpeername(AF_UNIX): unbound socket");
-  KEXPECT_EQ(-ENOTCONN,
-             net_getpeername(server_sock, (struct sockaddr*)&result_addr));
-
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(server_sock, &result_addr_storage));
 
   KTEST_BEGIN("net_getsockname(AF_UNIX): bound socket");
   KEXPECT_EQ(0, net_bind(server_sock, (struct sockaddr*)&server_addr,
                          sizeof(server_addr)));
-  kmemset(&result_addr, 0xff, sizeof(struct sockaddr_un));
+  kmemset(&result_addr_storage, 0xff, sizeof(struct sockaddr_un));
   KEXPECT_EQ(sizeof(struct sockaddr_un),
-             net_getsockname(server_sock, (struct sockaddr*)&result_addr));
-  KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
-  KEXPECT_STREQ(kServerPath, result_addr.sun_path);
+             net_getsockname(server_sock, &result_addr_storage));
+  KEXPECT_EQ(AF_UNIX, result_addr->sun_family);
+  KEXPECT_STREQ(kServerPath, result_addr->sun_path);
 
   KTEST_BEGIN("net_getpeername(AF_UNIX): bound socket");
-  KEXPECT_EQ(-ENOTCONN,
-             net_getpeername(server_sock, (struct sockaddr*)&result_addr));
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(server_sock, &result_addr_storage));
 
   KTEST_BEGIN("net_getsockname(AF_UNIX): connected socket");
   KEXPECT_EQ(0, net_listen(server_sock, 5));
@@ -2059,23 +2058,23 @@ static void sockname_test(void) {
   KEXPECT_GE(accepted_sock, 0);
 
   KEXPECT_EQ(sizeof(struct sockaddr_un),
-             net_getsockname(accepted_sock, (struct sockaddr*)&result_addr));
-  KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
-  KEXPECT_STREQ(kServerPath, result_addr.sun_path);
+             net_getsockname(accepted_sock, &result_addr_storage));
+  KEXPECT_EQ(AF_UNIX, result_addr->sun_family);
+  KEXPECT_STREQ(kServerPath, result_addr->sun_path);
 
   KEXPECT_EQ(sizeof(struct sockaddr_un),
-             net_getsockname(client_sock, (struct sockaddr*)&result_addr));
-  KEXPECT_STREQ(kClientPath, result_addr.sun_path);
+             net_getsockname(client_sock, &result_addr_storage));
+  KEXPECT_STREQ(kClientPath, result_addr->sun_path);
 
   KTEST_BEGIN("net_getpeername(AF_UNIX): connected socket");
   KEXPECT_EQ(sizeof(struct sockaddr_un),
-             net_getpeername(accepted_sock, (struct sockaddr*)&result_addr));
-  KEXPECT_EQ(AF_UNIX, result_addr.sun_family);
-  KEXPECT_STREQ(kClientPath, result_addr.sun_path);
+             net_getpeername(accepted_sock, &result_addr_storage));
+  KEXPECT_EQ(AF_UNIX, result_addr->sun_family);
+  KEXPECT_STREQ(kClientPath, result_addr->sun_path);
 
   KEXPECT_EQ(sizeof(struct sockaddr_un),
-             net_getpeername(client_sock, (struct sockaddr*)&result_addr));
-  KEXPECT_STREQ(kServerPath, result_addr.sun_path);
+             net_getpeername(client_sock, &result_addr_storage));
+  KEXPECT_STREQ(kServerPath, result_addr->sun_path);
 
   KEXPECT_EQ(0, vfs_close(accepted_sock));
   KEXPECT_EQ(0, vfs_close(client_sock));

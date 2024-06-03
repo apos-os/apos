@@ -89,8 +89,8 @@ static void unsupported_ops_test(void) {
 
   KTEST_BEGIN("Raw sockets: get{sock,peer}name() unsupported");
   struct sockaddr_storage addr;
-  KEXPECT_EQ(-EOPNOTSUPP, net_getsockname(sock, (struct sockaddr*)&addr));
-  KEXPECT_EQ(-EOPNOTSUPP, net_getpeername(sock, (struct sockaddr*)&addr));
+  KEXPECT_EQ(-EOPNOTSUPP, net_getsockname(sock, &addr));
+  KEXPECT_EQ(-EOPNOTSUPP, net_getpeername(sock, &addr));
 
   KEXPECT_EQ(0, vfs_close(sock));
 }

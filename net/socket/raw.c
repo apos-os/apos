@@ -380,12 +380,12 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
 }
 
 static int sock_raw_getsockname(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   return -EOPNOTSUPP;
 }
 
 static int sock_raw_getpeername(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   return -EOPNOTSUPP;
 }
 

@@ -262,7 +262,7 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
   return result;
 }
 
-int net_getsockname(int socket, struct sockaddr* address) {
+int net_getsockname(int socket, struct sockaddr_storage* address) {
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;
@@ -279,7 +279,7 @@ int net_getsockname(int socket, struct sockaddr* address) {
   return result;
 }
 
-int net_getpeername(int socket, struct sockaddr* address) {
+int net_getpeername(int socket, struct sockaddr_storage* address) {
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;

@@ -29,18 +29,18 @@ static void getsockname_test(void) {
   struct sockaddr_storage addr;
 
   KTEST_BEGIN("net_getsockname(): bad FD");
-  KEXPECT_EQ(-EBADF, net_getsockname(-5, (struct sockaddr*)&addr));
+  KEXPECT_EQ(-EBADF, net_getsockname(-5, &addr));
 
   KTEST_BEGIN("net_getpeername(): bad FD");
-  KEXPECT_EQ(-EBADF, net_getpeername(-5, (struct sockaddr*)&addr));
+  KEXPECT_EQ(-EBADF, net_getpeername(-5, &addr));
 
   KTEST_BEGIN("net_getsockname(): non-socket FD");
   int pipe[2];
   KEXPECT_EQ(0, vfs_pipe(pipe));
-  KEXPECT_EQ(-ENOTSOCK, net_getsockname(pipe[0], (struct sockaddr*)&addr));
+  KEXPECT_EQ(-ENOTSOCK, net_getsockname(pipe[0], &addr));
 
   KTEST_BEGIN("net_getpeername(): non-socket FD");
-  KEXPECT_EQ(-ENOTSOCK, net_getpeername(pipe[0], (struct sockaddr*)&addr));
+  KEXPECT_EQ(-ENOTSOCK, net_getpeername(pipe[0], &addr));
 
   vfs_close(pipe[0]);
   vfs_close(pipe[1]);
