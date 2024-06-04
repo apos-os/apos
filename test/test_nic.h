@@ -17,6 +17,7 @@
 #define APOO_TEST_TEST_NIC_H
 
 #include "dev/net/nic.h"
+#include "dev/net/tuntap.h"  // For flag definitions.
 #include "net/mac.h"
 #include "user/include/apos/dev.h"
 

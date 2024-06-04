@@ -22,6 +22,7 @@
 #include "net/ip/route.h"
 #include "net/link_layer.h"
 #include "net/socket/raw.h"
+#include "net/socket/udp.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -153,11 +154,15 @@ void ip6_recv(nic_t* nic, pbuf_t* pb) {
        inet62str(&hdr->src_addr, buf1), inet62str(&hdr->dst_addr, buf2),
        hdr->next_hdr);
 
+  // TODO(ipv6): handle additional IPv6 packet headers.
+  size_t header_len = sizeof(ip6_hdr_t);
   bool handled = false;
   if (hdr->next_hdr == IPPROTO_ICMPV6) {
-    handled = icmpv6_recv(nic, hdr, sizeof(ip6_hdr_t), pb);
+    handled = icmpv6_recv(nic, hdr, header_len, pb);
+  } else if (hdr->next_hdr == IPPROTO_UDP) {
+    handled = sock_udp_dispatch(pb, ET_IPV6, hdr->next_hdr, header_len);
   }
-  // TODO(ipv6): handle TCP and UDP sockets.
+  // TODO(ipv6): handle TCP sockets.
 
   // pb is now a dangling pointer unless handled is false!
   if (!handled) {

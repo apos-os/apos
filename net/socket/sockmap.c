@@ -30,7 +30,7 @@ typedef struct {
 } sm_entry_t;
 
 #define SM_MAX_PROTOCOL 20
-#define SM_MAX_AF 4
+#define SM_MAX_AF 5
 // TODO(aoates): this is incredibly inefficient.
 static sockmap_t* g_sockmaps[SM_MAX_AF][SM_MAX_PROTOCOL];
 

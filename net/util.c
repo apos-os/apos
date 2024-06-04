@@ -27,6 +27,18 @@
 
 #define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
 
+ssize_t inet_header_reserve(sa_family_t family) {
+  switch (family) {
+    case AF_INET:
+      return INET_HEADER_RESERVE;
+
+    case AF_INET6:
+      return INET6_HEADER_RESERVE;
+  }
+  KLOG(DFATAL, "Unknown address family: %d", family);
+  return INET6_HEADER_RESERVE;
+}
+
 char* inet2str(in_addr_t addr, char* buf) {
   const uint8_t* bytes = (uint8_t*)&addr;
   ksprintf(buf, "%d.%d.%d.%d", bytes[0], bytes[1], bytes[2], bytes[3]);

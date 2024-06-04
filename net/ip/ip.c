@@ -128,7 +128,8 @@ void ip_recv(nic_t* nic, pbuf_t* pb) {
 
   bool handled = false;
   if (hdr->protocol == IPPROTO_UDP) {
-    handled = sock_udp_dispatch(pb, ET_IPV4, hdr->protocol);
+    handled = sock_udp_dispatch(pb, ET_IPV4, hdr->protocol,
+                                ip4_ihl(*hdr) * sizeof(uint32_t));
   } else if (hdr->protocol == IPPROTO_TCP) {
     handled = sock_tcp_dispatch(pb, ET_IPV4, hdr->protocol);
   }

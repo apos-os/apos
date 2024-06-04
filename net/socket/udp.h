@@ -53,6 +53,7 @@ int sock_udp_create(int domain, socket_t** out);
 // is returned, the caller retains ownership of the packet.
 //
 // Deferred-interrupt safe.
-bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
+bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
+                       ssize_t header_len);
 
 #endif

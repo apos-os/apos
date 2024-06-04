@@ -19,9 +19,14 @@
 #include "memory/block_cache.h"
 #include "net/addr.h"
 #include "net/bind.h"
+#include "net/eth/eth.h"
 #include "net/inet.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/ip6_hdr.h"
+#include "net/pbuf.h"
+#include "net/socket/socket.h"
 #include "net/socket/udp.h"
+#include "net/test_util.h"
 #include "net/util.h"
 #include "proc/exit.h"
 #include "proc/fork.h"
@@ -30,9 +35,14 @@
 #include "proc/sleep.h"
 #include "proc/wait.h"
 #include "test/ktest.h"
+#include "test/test_nic.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
+
+typedef struct {
+  test_ttap_t nic;
+} test_fixture_t;
 
 static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
   saddr->sin_family = AF_INET;
@@ -159,6 +169,12 @@ static void bind_test(void) {
   addr.sin_family = AF_UNIX;
   KEXPECT_EQ(-EAFNOSUPPORT,
              net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+  KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
+
+  struct sockaddr_in6 addr6;
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 100, &addr6));
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr6, sizeof(addr6)));
 
 
   KTEST_BEGIN("bind(SOCK_DGRAM): bad FD");
@@ -550,20 +566,30 @@ static void sendto_test(void) {
   dst_addr.sin_family = AF_UNIX;
   KEXPECT_EQ(-EAFNOSUPPORT,
              net_sendto(sock, "def", 3, 0, (struct sockaddr*)&dst_addr,
-                        sizeof(dst_addr)));
+                        sizeof(struct sockaddr_storage)));
+  dst_addr.sin_family = AF_INET6;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_sendto(sock, "def", 3, 0, (struct sockaddr*)&dst_addr,
+                        sizeof(struct sockaddr_in6)));
 
   KTEST_BEGIN("net_sendto(UDP): send to too-short address");
   dst_addr.sin_family = AF_INET;
-  KEXPECT_EQ(-EAFNOSUPPORT,
+  KEXPECT_EQ(-EINVAL,
              net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
                         sizeof(dst_addr) - 1));
-  KEXPECT_EQ(-EAFNOSUPPORT,
-             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01,
+  KEXPECT_EQ(-EINVAL,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
                         sizeof(dst_addr) - 1));
+  // These are all sizes small enough to not even be able to read the
+  // sa_family_t; therefore, the socket pointer itself shouldn't be read either.
   KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 3));
+  KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 2));
+  KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 1));
   KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 0));
   KEXPECT_EQ(-EINVAL,
              net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, -1));
+  KEXPECT_EQ(-EINVAL,
+             net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, -10));
 
   vfs_close(sock);
 
@@ -623,7 +649,7 @@ static void do_recv(void* arg) {
   proc_exit(net_recv(sock, buf, 200, 0));
 }
 
-static void recvfrom_test(void) {
+static void recvfrom_test(test_fixture_t* t) {
   KTEST_BEGIN("net_recvfrom(UDP): basic recv");
   int sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(sock, 0);
@@ -696,6 +722,38 @@ static void recvfrom_test(void) {
   KTEST_BEGIN("net_recvfrom(UDP): medium-sized packet");
   KEXPECT_EQ(100, net_sendto(send_sock, recv_buf, 100, 0, NULL, 0));
   KEXPECT_EQ(100, net_recvfrom(sock, recv_buf, 100, 0, NULL, NULL));
+
+
+  KTEST_BEGIN("net_recvfrom(UDP): extra long IPv4 header");
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + 10, 3);
+  kmemcpy(pbuf_get(pb), "abc", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr = (udp_hdr_t*)pbuf_get(pb);
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = 0;
+
+  pbuf_push_header(pb, 4);  // Extra IP header space.
+  *(uint32_t*)pbuf_get(pb) = 0x12345678;
+  ip4_add_hdr(pb, str2inet("127.0.0.2"), str2inet("127.0.0.1"), IPPROTO_UDP);
+  ((ip4_hdr_t*)pbuf_get(pb))->version_ihl = 0x46;  // Extra word of length.
+  ((ip4_hdr_t*)pbuf_get(pb))->hdr_checksum = 0x5ecf;
+  KEXPECT_EQ(sizeof(ip4_hdr_t) + 4 + sizeof(udp_hdr_t) + 3,
+             pbuf_write(t->nic.fd, &pb));
+
+  recv_addr_len = sizeof(recv_addr);
+  kmemset(recv_buf, 0, 10);
+  KEXPECT_EQ(3, net_recvfrom(sock, recv_buf, 10, 0,
+                             (struct sockaddr*)&recv_addr, &recv_addr_len));
+  KEXPECT_EQ(sizeof(recv_addr), recv_addr_len);
+  KEXPECT_EQ(AF_INET, recv_addr.sin_family);
+  KEXPECT_STREQ("127.0.0.2", inet2str(recv_addr.sin_addr.s_addr, prettybuf));
+  KEXPECT_EQ(5678, btoh16(recv_addr.sin_port));
+  KEXPECT_STREQ("abc", recv_buf);
+
+  // Reset for future tests.
+  udp_hdr = (udp_hdr_t*)send_buf;
 
 
   KTEST_BEGIN("net_recvfrom(UDP): packet with truncated UDP header");
@@ -1049,10 +1107,343 @@ static void sockopt_test(void) {
   KEXPECT_EQ(0, vfs_close(fd));
 }
 
+static void udp_ipv6_test(test_fixture_t* t) {
+  KTEST_BEGIN("UDP socket: IPv6 test");
+  int sock = net_socket(AF_INET6, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+  vfs_make_nonblock(sock);
+
+  struct sockaddr_in srcv4 = str2sin("127.0.0.1", 1000);
+  KEXPECT_EQ(-EAFNOSUPPORT, net_bind(sock, (const struct sockaddr*)&srcv4,
+                                     sizeof(srcv4)));
+  srcv4.sin_family = 1234;
+  KEXPECT_EQ(-EAFNOSUPPORT, net_bind(sock, (const struct sockaddr*)&srcv4,
+                                     sizeof(srcv4)));
+
+  struct sockaddr_in6 src, dst;
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 1000, &dst));
+  KEXPECT_EQ(0, net_bind(sock, (const struct sockaddr*)&src, sizeof(src)));
+
+  char addr[INET6_PRETTY_LEN];
+  kmemset(&src, 0xab, sizeof(src));
+  struct sockaddr_storage src_storage;
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(sock, &src_storage));
+  kmemcpy(&src, &src_storage, sizeof(src));
+  KEXPECT_EQ(AF_INET6, src.sin6_family);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&src.sin6_addr, addr));
+  KEXPECT_EQ(btoh16(900), src.sin6_port);
+  KEXPECT_EQ(0, src.sin6_flowinfo);
+
+  dst.sin6_family = AF_INET;
+  KEXPECT_EQ(-EAFNOSUPPORT, net_sendto(sock, "abc", 3, 0,
+                                       (struct sockaddr*)&dst, sizeof(dst)));
+  dst.sin6_family = 1234;
+  KEXPECT_EQ(-EAFNOSUPPORT, net_sendto(sock, "abc", 3, 0,
+                                       (struct sockaddr*)&dst, sizeof(dst)));
+
+  dst.sin6_family = AF_INET6;
+  KEXPECT_EQ(
+      3, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+
+  char buf[100];
+  int result = vfs_read(t->nic.fd, buf, 100);
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + sizeof(udp_hdr_t) + 3, result);
+  const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&buf;
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(IPPROTO_UDP, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(ip6_hdr->payload_len));
+  KEXPECT_STREQ("2001:db8::1", inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("2001:db8::2", inet62str(&ip6_hdr->dst_addr, addr));
+
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)&buf[sizeof(ip6_hdr_t)];
+  KEXPECT_EQ(0x94d8, udp_hdr->checksum);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(udp_hdr->len));
+  KEXPECT_EQ(900, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(1000, btoh16(udp_hdr->dst_port));
+
+  char* payload = &buf[sizeof(ip6_hdr_t) + sizeof(udp_hdr_t)];
+  payload[3] = '\0';
+  KEXPECT_STREQ("abc", payload);
+
+  // Send a reply back.
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "def", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr_t* hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 0;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  kmemset(&src, 0, sizeof(src));
+  socklen_t src_len = sizeof(src) + 1;  // A lie...
+  KEXPECT_EQ(3,
+             net_recvfrom(sock, buf, 100, 0, (struct sockaddr*)&src, &src_len));
+  buf[3] = '\0';
+  KEXPECT_STREQ("def", buf);
+  KEXPECT_EQ(sizeof(src), src_len);
+  KEXPECT_EQ(AF_INET6, src.sin6_family);
+  KEXPECT_STREQ("2001:db8::2", inet62str(&src.sin6_addr, addr));
+  KEXPECT_EQ(htob16(1000), src.sin6_port);
+  KEXPECT_EQ(0, src.sin6_flowinfo);
+
+
+  KTEST_BEGIN("UDP socket: IPv6 receive packet with wrong port");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "def", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 0;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(901);
+  hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 100, 0));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 truncated UDP header");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t) - 1, 0);
+  pbuf_push_header(pb, sizeof(udp_hdr_t) - 1);
+  // Only write the first 3 fields!  These shouldn't be read, anyway
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t));
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 100, 0));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 UDP length too short");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "def", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 0;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t) - 1);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 100, 0));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 UDP length too long");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "def", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 0;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t) + 5);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 100, 0));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 UDP packet shorter than IP packet");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "def", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 0;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t) + 2);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  kmemset(buf, 0, 100);
+  KEXPECT_EQ(2, net_recv(sock, buf, 100, 0));
+  KEXPECT_STREQ("de", buf);
+
+
+  KTEST_BEGIN("UDP socket: IPv6 UDP bad checksum");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "abc", 3);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 1234;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 100, 0));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 test (auto-bind)");
+  sock = net_socket(AF_INET6, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 1000, &dst));
+  KEXPECT_EQ(
+      3, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+
+  kmemset(&src, 0xab, sizeof(src));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(sock, &src_storage));
+  kmemcpy(&src, &src_storage, sizeof(src));
+  KEXPECT_EQ(AF_INET6, src.sin6_family);
+  KEXPECT_STREQ("::", inet62str(&src.sin6_addr, addr));
+  KEXPECT_NE(0, src.sin6_port);
+  KEXPECT_EQ(0, src.sin6_flowinfo);
+
+  result = vfs_read(t->nic.fd, buf, 100);
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + sizeof(udp_hdr_t) + 3,
+             result);
+  ip6_hdr = (const ip6_hdr_t*)&buf;
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(IPPROTO_UDP, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(ip6_hdr->payload_len));
+  KEXPECT_STREQ("2001:db8::1", inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("2001:db8::2", inet62str(&ip6_hdr->dst_addr, addr));
+
+  udp_hdr = (udp_hdr_t*)&buf[sizeof(ip6_hdr_t)];
+  KEXPECT_NE(0x0, udp_hdr->checksum);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(udp_hdr->len));
+  KEXPECT_EQ(btoh16(src.sin6_port), btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(1000, btoh16(udp_hdr->dst_port));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 connected socket (unbound)");
+  sock = net_socket(AF_INET6, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::3", 1001, &dst));
+  dst.sin6_family = AF_INET;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_connect(sock, (struct sockaddr*)&dst, sizeof(dst)));
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::3", 1001, &dst));
+  KEXPECT_EQ(0, net_connect(sock, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 1000, &dst));
+  KEXPECT_EQ(0, net_connect(sock, (struct sockaddr*)&dst, sizeof(dst)));
+
+  kmemset(&src, 0xab, sizeof(src));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(sock, &src_storage));
+  kmemcpy(&src, &src_storage, sizeof(src));
+  KEXPECT_EQ(AF_INET6, src.sin6_family);
+  KEXPECT_STREQ("::", inet62str(&src.sin6_addr, addr));
+  KEXPECT_NE(0, src.sin6_port);
+  KEXPECT_EQ(0, src.sin6_flowinfo);
+
+  KEXPECT_EQ(-EISCONN, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst,
+                                  sizeof(dst)));
+  KEXPECT_EQ(3, net_sendto(sock, "abc", 3, 0, NULL, 0));
+
+  result = vfs_read(t->nic.fd, buf, 100);
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + sizeof(udp_hdr_t) + 3,
+             result);
+  ip6_hdr = (const ip6_hdr_t*)&buf;
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(IPPROTO_UDP, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(ip6_hdr->payload_len));
+  KEXPECT_STREQ("2001:db8::1", inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("2001:db8::2", inet62str(&ip6_hdr->dst_addr, addr));
+
+  udp_hdr = (udp_hdr_t*)&buf[sizeof(ip6_hdr_t)];
+  KEXPECT_NE(0x0, udp_hdr->checksum);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(udp_hdr->len));
+  KEXPECT_EQ(btoh16(src.sin6_port), btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(1000, btoh16(udp_hdr->dst_port));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+
+
+  KTEST_BEGIN("UDP socket: IPv6 connected socket (bound)");
+  sock = net_socket(AF_INET6, SOCK_DGRAM, 0);
+  KEXPECT_GE(sock, 0);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 900, &src));
+  KEXPECT_EQ(0, net_bind(sock, (struct sockaddr*)&src, sizeof(src)));
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 1000, &dst));
+  KEXPECT_EQ(0, net_connect(sock, (struct sockaddr*)&dst, sizeof(dst)));
+
+  kmemset(&src, 0xab, sizeof(src));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(sock, &src_storage));
+  kmemcpy(&src, &src_storage, sizeof(src));
+  KEXPECT_EQ(AF_INET6, src.sin6_family);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&src.sin6_addr, addr));
+  KEXPECT_NE(900, src.sin6_port);
+  KEXPECT_EQ(0, src.sin6_flowinfo);
+
+  KEXPECT_EQ(-EISCONN, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst,
+                                  sizeof(dst)));
+  KEXPECT_EQ(3, net_sendto(sock, "abc", 3, 0, NULL, 0));
+
+  result = vfs_read(t->nic.fd, buf, 100);
+  KEXPECT_EQ(sizeof(ip6_hdr_t) + sizeof(udp_hdr_t) + 3,
+             result);
+  ip6_hdr = (const ip6_hdr_t*)&buf;
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(IPPROTO_UDP, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(ip6_hdr->payload_len));
+  KEXPECT_STREQ("2001:db8::1", inet62str(&ip6_hdr->src_addr, addr));
+  KEXPECT_STREQ("2001:db8::2", inet62str(&ip6_hdr->dst_addr, addr));
+
+  udp_hdr = (udp_hdr_t*)&buf[sizeof(ip6_hdr_t)];
+  KEXPECT_NE(0x0, udp_hdr->checksum);
+  KEXPECT_EQ(sizeof(udp_hdr_t) + 3, btoh16(udp_hdr->len));
+  KEXPECT_EQ(900, btoh16(udp_hdr->src_port));
+  KEXPECT_EQ(1000, btoh16(udp_hdr->dst_port));
+
+  KEXPECT_EQ(0, vfs_close(sock));
+}
+
 void socket_udp_test(void) {
   KTEST_SUITE_BEGIN("Socket (UDP)");
   block_cache_clear_unpinned();
   const int initial_cache_size = vfs_cache_size();
+
+  KTEST_BEGIN("UDP: test setup");
+  test_fixture_t t;
+  KEXPECT_EQ(0, test_ttap_create(&t.nic, TUNTAP_TUN_MODE));
+
+  kspin_lock(&t.nic.n->lock);
+  nic_add_addr_v6(t.nic.n, "2001:db8::1", 64, NIC_ADDR_ENABLED);
+  kspin_unlock(&t.nic.n->lock);
 
   create_test();
   unsupported_ops_test();
@@ -1060,10 +1451,13 @@ void socket_udp_test(void) {
   multi_bind_test();
   connect_test();
   sendto_test();
-  recvfrom_test();
+  recvfrom_test(&t);
   recv_poll_test();
   shutdown_test();
   sockopt_test();
+  udp_ipv6_test(&t);
+
+  test_ttap_destroy(&t.nic);
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

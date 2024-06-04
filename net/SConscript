@@ -23,6 +23,7 @@ srcs = [
   'mac.c',
   'neighbor_cache.c',
   'pbuf.c',
+  'test_util.c',
   'util.c',
 ]
 

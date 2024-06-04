@@ -254,7 +254,7 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
                            int flags) {
   tuntap_dev_t* tt = (tuntap_dev_t*)dev->dev_data;
   KASSERT_DBG(&tt->chardev == dev);
-  pbuf_t* pb = pbuf_create(0, len);
+  pbuf_t* pb = pbuf_create(sizeof(eth_hdr_t) /* unused */, len);
   kmemcpy(pbuf_get(pb), buf, len);
   if (is_tap(tt)) {
     eth_recv(&tt->nic, pb);

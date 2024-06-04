@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 
+#include "common/types.h"
 #include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -26,6 +27,8 @@
 // make it just a hint so pbuf_t can expand if necessary).
 #define INET_HEADER_RESERVE (14 /* eth */ + 20 /* ipv4 */)
 #define INET6_HEADER_RESERVE (14 /* eth */ + 40 /* ipv6 */)
+
+ssize_t inet_header_reserve(sa_family_t family);
 
 // Minimum length of a buffer for pretty-printing an IPv4/IPv6 address.
 #define INET_PRETTY_LEN (4 * 4)
