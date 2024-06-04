@@ -743,8 +743,7 @@ void socket_raw_test(void) {
 
   KTEST_BEGIN("Raw socket: test setup");
   test_fixture_t fixture;
-  KEXPECT_EQ(0,
-             test_ttap_create(&fixture.tun, TUNTAP_TUN_MODE | TUNTAP_TUN_IPV6));
+  KEXPECT_EQ(0, test_ttap_create(&fixture.tun, TUNTAP_TUN_MODE));
 
   kspin_lock(&fixture.tun.n->lock);
   nic_add_addr_v6(fixture.tun.n, "2001:db8::1", 64, NIC_ADDR_ENABLED);

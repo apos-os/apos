@@ -41,7 +41,7 @@
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
 
 #define MIN_BUFSIZE 128
-#define ALL_FLAGS (TUNTAP_TAP_MODE | TUNTAP_TUN_MODE | TUNTAP_TUN_IPV6)
+#define ALL_FLAGS (TUNTAP_TAP_MODE | TUNTAP_TUN_MODE)
 
 typedef struct {
   nic_t nic;
@@ -115,10 +115,6 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   }
   if ((flags & TUNTAP_TAP_MODE) && (flags & TUNTAP_TUN_MODE)) {
     KLOG(INFO, "incompatible flags (TAP and TUN mode): 0x%x\n", flags);
-    return NULL;
-  }
-  if ((flags & TUNTAP_TAP_MODE) && (flags & TUNTAP_TUN_IPV6)) {
-    KLOG(INFO, "incompatible flags (TAP and IPv6 mode): 0x%x\n", flags);
     return NULL;
   }
   if (bufsize <= MIN_BUFSIZE || !id) {
@@ -262,10 +258,18 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
   kmemcpy(pbuf_get(pb), buf, len);
   if (is_tap(tt)) {
     eth_recv(&tt->nic, pb);
-  } else if (tt->flags & TUNTAP_TUN_IPV6) {
-    ip6_recv(&tt->nic, pb);
   } else {
-    ip_recv(&tt->nic, pb);
+    int version = ((uint8_t*)buf)[0] >> 4;
+    if (version == 4) {
+      ip_recv(&tt->nic, pb);
+    } else if (version == 6) {
+      ip6_recv(&tt->nic, pb);
+    } else {
+      KLOG(WARNING, "TUN: bad IP packet version %d, dropping packet\n",
+           version);
+      pbuf_free(pb);
+      return -EAFNOSUPPORT;
+    }
   }
   return len;
 }

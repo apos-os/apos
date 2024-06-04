@@ -206,12 +206,19 @@ static void basic_rx_test(test_fixture_t* f) {
   ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
 
   KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
-  pbuf_free(pb);
 
   char buf[10];
   KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
   buf[3] = '\0';
   KEXPECT_STREQ("abc", buf);
+
+
+  KTEST_BEGIN("TUN/TAP: bad IP version packet (TUN)");
+  ip4_hdr_t* ip_hdr = (ip4_hdr_t*)pbuf_get(pb);
+  ip_hdr->version_ihl = 0x55;  // IPv5, header 5 words long.
+  KEXPECT_EQ(-EAFNOSUPPORT, vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
+  pbuf_free(pb);
 }
 
 static void* do_poll(void* arg) {
@@ -288,6 +295,7 @@ static void tun_tests(void) {
 
   fixture.sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(fixture.sock, 0);
+  vfs_make_nonblock(fixture.sock);
 
   struct sockaddr_in src = str2sin("0.0.0.0", 1234);
   KEXPECT_EQ(0, net_bind(fixture.sock, (struct sockaddr*)&src, sizeof(src)));
@@ -451,8 +459,6 @@ void tuntap_test(void) {
   KEXPECT_EQ(NULL, tuntap_create(-1, TUNTAP_TAP_MODE, &id));
   KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, TUNTAP_TAP_MODE, NULL));
   KEXPECT_EQ(NULL, tuntap_create(100, TUNTAP_TAP_MODE, &id));
-  KEXPECT_EQ(NULL,
-             tuntap_create(BUFSIZE, TUNTAP_TAP_MODE | TUNTAP_TUN_IPV6, &id));
   KEXPECT_EQ(NULL,
              tuntap_create(BUFSIZE, TUNTAP_TAP_MODE | TUNTAP_TUN_MODE, &id));
 
