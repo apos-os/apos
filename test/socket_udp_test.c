@@ -1430,6 +1430,35 @@ static void udp_ipv6_test(test_fixture_t* t) {
   KEXPECT_EQ(1000, btoh16(udp_hdr->dst_port));
 
   KEXPECT_EQ(0, vfs_close(sock));
+
+  KTEST_BEGIN("UDP socket: IPv6 loopback socket pair");
+  int s1 = net_socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+  KEXPECT_GE(s1, 0);
+  int s2 = net_socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+  KEXPECT_GE(s2, 0);
+  vfs_make_nonblock(s1);
+  vfs_make_nonblock(s2);
+
+  KEXPECT_EQ(0, str2sin6("::", 900, &dst));
+  KEXPECT_EQ(0, net_bind(s1, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, str2sin6("::", 1000, &dst));
+  KEXPECT_EQ(0, net_bind(s2, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, str2sin6("::1", 1000, &dst));
+  KEXPECT_EQ(0, net_connect(s1, (struct sockaddr*)&dst, sizeof(dst)));
+
+  KEXPECT_EQ(3, vfs_write(s1, "abc", 3));
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(3, vfs_read(s2, buf, 10));
+  KEXPECT_STREQ("abc", buf);
+
+  KEXPECT_EQ(0, str2sin6("::1", 900, &dst));
+  KEXPECT_EQ(3,
+             net_sendto(s2, "def", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
+  kmemset(buf, 0, 10);
+  KEXPECT_EQ(3, vfs_read(s1, buf, 10));
+  KEXPECT_STREQ("def", buf);
+  KEXPECT_EQ(0, vfs_close(s1));
+  KEXPECT_EQ(0, vfs_close(s2));
 }
 
 void socket_udp_test(void) {

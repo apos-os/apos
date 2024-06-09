@@ -14,6 +14,7 @@
 
 #include "net/init.h"
 
+#include "common/kassert.h"
 #include "dev/net/loopback.h"
 #include "dev/net/nic.h"
 #include "net/ip/ip6.h"
@@ -31,6 +32,11 @@ void net_init(void) {
   lo->addrs[0].a.addr.family = ADDR_INET;
   lo->addrs[0].a.addr.a.ip4.s_addr = str2inet("127.0.0.1");
   lo->addrs[0].a.prefix_len = 8;
+
+  lo->addrs[1].state = NIC_ADDR_ENABLED;
+  lo->addrs[1].a.addr.family = ADDR_INET6;
+  KASSERT(0 == str2inet6("::1", &lo->addrs[1].a.addr.a.ip6));
+  lo->addrs[1].a.prefix_len = 128;
   kspin_unlock(&lo->lock);
 
   nic_t* nic = nic_get_nm("eth0");
