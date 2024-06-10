@@ -21,6 +21,7 @@
 #include "net/ip/ip6_hdr.h"
 #include "net/ip/route.h"
 #include "net/link_layer.h"
+#include "net/pbuf.h"
 #include "net/socket/raw.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
@@ -153,6 +154,12 @@ void ip6_recv(nic_t* nic, pbuf_t* pb) {
   KLOG(DEBUG2, "ipv6 rx(%s): %s -> %s, next_hdr=%d\n", nic->name,
        inet62str(&hdr->src_addr, buf1), inet62str(&hdr->dst_addr, buf2),
        hdr->next_hdr);
+
+  // Trim off any extra bytes at the end of the packet.
+  if (btoh16(hdr->payload_len) + sizeof(ip6_hdr_t) < pbuf_size(pb)) {
+    pbuf_trim_end(pb,
+                  pbuf_size(pb) - btoh16(hdr->payload_len) - sizeof(ip6_hdr_t));
+  }
 
   // TODO(ipv6): handle additional IPv6 packet headers.
   size_t header_len = sizeof(ip6_hdr_t);

@@ -1214,6 +1214,28 @@ static void udp_ipv6_test(test_fixture_t* t) {
   KEXPECT_EQ(-EAGAIN, net_recv(sock, buf, 100, 0));
 
 
+  KTEST_BEGIN("UDP socket: IPv6 receive packet with extra bytes on end");
+  pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t), 5);
+  kmemcpy(pbuf_get(pb), "defgh", 5);
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  hdr->checksum = 0x91d2;
+  hdr->src_port = htob16(1000);
+  hdr->dst_port = htob16(900);
+  hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+
+  KEXPECT_EQ(0, str2sin6("2001:db8::2", 900, &src));
+  KEXPECT_EQ(0, str2sin6("2001:db8::1", 1000, &dst));
+  ip6_add_hdr(pb, &src.sin6_addr, &dst.sin6_addr, IPPROTO_UDP, 0);
+  ((ip6_hdr_t*)pbuf_get(pb))->payload_len = htob16(sizeof(udp_hdr_t) + 3);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(t->nic.fd, &pb));
+
+  kmemset(buf, 0, 100);
+  KEXPECT_EQ(3, net_recv(sock, buf, 100, 0));
+  KEXPECT_STREQ("def", buf);
+
+
   KTEST_BEGIN("UDP socket: IPv6 truncated UDP header");
   pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(udp_hdr_t) - 1, 0);
   pbuf_push_header(pb, sizeof(udp_hdr_t) - 1);

@@ -73,3 +73,9 @@ void pbuf_pop_header(pbuf_t* pb, size_t n) {
   KASSERT(pb->total_len - pb->reserved >= n);
   pb->reserved += n;
 }
+
+void pbuf_trim_end(pbuf_t* pb, size_t bytes) {
+  KASSERT(bytes <= pb->total_len - pb->reserved);
+  pb->total_len -= bytes;
+}
+
