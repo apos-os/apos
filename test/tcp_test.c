@@ -313,6 +313,11 @@ static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
   return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
 }
 
+static tcp_key_t tcp_key_sin6(const struct sockaddr_in6* a,
+                              const struct sockaddr_in6* b) {
+  return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
+}
+
 static void tcp_key_test(void) {
   KTEST_BEGIN("TCP key test (AF_INET)");
   struct sockaddr_in src1, src2, dst1, dst2;
@@ -337,6 +342,13 @@ static void tcp_key_test(void) {
 
   KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&dst1, &src1));
 
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&src2));
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&dst1),
+             tcp_key_single((struct sockaddr*)&dst2));
+  KEXPECT_NE(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&dst1));
+
   src1 = src2;
   src1.sin_port = 2;
   KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
@@ -348,12 +360,16 @@ static void tcp_key_test(void) {
   src2 = src1;
   dst2 = dst1;
   tcp_key_t orig = tcp_key_sin(&src2, &dst2);
+  tcp_key_t orig_single = tcp_key_single((struct sockaddr*)&src2);
   src2.sin_addr.s_addr++;
   KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
   src2 = src1;
 
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
   src2.sin_port++;
   KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
   src2 = src1;
 
   dst2.sin_addr.s_addr++;
@@ -362,6 +378,95 @@ static void tcp_key_test(void) {
 
   dst2.sin_port++;
   KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  dst2 = dst1;
+}
+
+static void tcp_v6_key_test(void) {
+  KTEST_BEGIN("TCP key test (AF_INET6)");
+  struct sockaddr_in6 src1, src2, dst1, dst2;
+  kmemset(&src1, 0xaa, sizeof(src1));
+  kmemset(&src2, 0xbb, sizeof(src2));
+  kmemset(&dst1, 0xcc, sizeof(dst1));
+  kmemset(&dst2, 0xdd, sizeof(dst2));
+  src1.sin6_family = src2.sin6_family = dst1.sin6_family = dst2.sin6_family =
+      AF_INET6;
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src1.sin6_addr));
+  src1.sin6_port = 1;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst1.sin6_addr));
+  dst1.sin6_port = 2;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src2.sin6_addr));
+  src2.sin6_port = 1;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst2.sin6_addr));
+  dst2.sin6_port = 2;
+  KEXPECT_EQ(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(tcp_key_sin6(&src2, &dst1), tcp_key_sin6(&src1, &dst2));
+  KEXPECT_EQ(tcp_key_sin6(&src1, &dst2), tcp_key_sin6(&src2, &dst1));
+
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&dst1, &src1));
+
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&src2));
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&dst1),
+             tcp_key_single((struct sockaddr*)&dst2));
+  KEXPECT_NE(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&dst1));
+
+  src1 = src2;
+  src1.sin6_port = 2;
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+  src1 = src2;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src1.sin6_addr));
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+
+  // Test sensitivity to different elements of the address.
+  src2 = src1;
+  dst2 = dst1;
+  tcp_key_t orig = tcp_key_sin6(&src2, &dst2);
+  tcp_key_t orig_single = tcp_key_single((struct sockaddr*)&src2);
+  src2.sin6_addr.s6_addr[0]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2.sin6_addr.s6_addr[8]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2.sin6_addr.s6_addr[15]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2.sin6_port++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  dst2.sin6_addr.s6_addr[0]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  dst2 = dst1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  dst2.sin6_addr.s6_addr[8]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  dst2 = dst1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  dst2.sin6_addr.s6_addr[15]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  dst2 = dst1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  dst2.sin6_port++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
   dst2 = dst1;
 }
 
@@ -12646,6 +12751,7 @@ void tcp_test(void) {
     }
     klogf("g_seq_start = 0x%x\n", g_tcp_test.seq_start);
     tcp_key_test();
+    tcp_v6_key_test();
     seqno_test();
     tcp_socket_test();
     sockopt_test();

@@ -33,21 +33,41 @@ tcp_key_t tcp_key(const struct sockaddr* local, const struct sockaddr* remote) {
   KASSERT_DBG(local->sa_family == remote->sa_family);
   KASSERT_DBG(local->sa_family != AF_UNSPEC);
 
-  KASSERT(local->sa_family == AF_INET);
-  const struct sockaddr_in* local_sin = (const struct sockaddr_in*)local;
-  const struct sockaddr_in* remote_sin = (const struct sockaddr_in*)remote;
-  uint32_t vals[4] = {local_sin->sin_addr.s_addr, local_sin->sin_port,
-                      remote_sin->sin_addr.s_addr, remote_sin->sin_port};
-  return fnv_hash_array(vals, sizeof(vals));
+  if (local->sa_family == AF_INET) {
+    const struct sockaddr_in* local_sin = (const struct sockaddr_in*)local;
+    const struct sockaddr_in* remote_sin = (const struct sockaddr_in*)remote;
+    uint32_t vals[4] = {local_sin->sin_addr.s_addr, local_sin->sin_port,
+                        remote_sin->sin_addr.s_addr, remote_sin->sin_port};
+    return fnv_hash_array(vals, sizeof(vals));
+  } else {
+    KASSERT(local->sa_family == AF_INET6);
+    const struct sockaddr_in6* local_sin6 = (const struct sockaddr_in6*)local;
+    const struct sockaddr_in6* remote_sin6 = (const struct sockaddr_in6*)remote;
+    tcp_key_t key =
+        fnv_hash_array(&local_sin6->sin6_addr, sizeof(struct in6_addr));
+    key = fnv_hash_concat(key, fnv_hash(local_sin6->sin6_port));
+    key = fnv_hash_concat(
+        key, fnv_hash_array(&remote_sin6->sin6_addr, sizeof(struct in6_addr)));
+    key = fnv_hash_concat(key, fnv_hash(remote_sin6->sin6_port));
+    return key;
+  }
 }
 
 tcp_key_t tcp_key_single(const struct sockaddr* local) {
   KASSERT_DBG(local->sa_family != AF_UNSPEC);
 
-  KASSERT(local->sa_family == AF_INET);
-  const struct sockaddr_in* local_sin = (const struct sockaddr_in*)local;
-  uint32_t vals[2] = {local_sin->sin_addr.s_addr, local_sin->sin_port};
-  return fnv_hash_array(vals, sizeof(vals));
+  if (local->sa_family == AF_INET) {
+    const struct sockaddr_in* local_sin = (const struct sockaddr_in*)local;
+    uint32_t vals[2] = {local_sin->sin_addr.s_addr, local_sin->sin_port};
+    return fnv_hash_array(vals, sizeof(vals));
+  } else {
+    KASSERT(local->sa_family == AF_INET6);
+    const struct sockaddr_in6* local_sin6 = (const struct sockaddr_in6*)local;
+    tcp_key_t key =
+        fnv_hash_array(&local_sin6->sin6_addr, sizeof(struct in6_addr));
+    key = fnv_hash_concat(key, fnv_hash(local_sin6->sin6_port));
+    return key;
+  }
 }
 
 int tcp_num_connected_sockets(void) {
