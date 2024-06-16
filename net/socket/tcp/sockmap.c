@@ -70,19 +70,10 @@ static void sm_port_dtor(void* arg, uint32_t key, void* val) {
   kfree(val);
 }
 
-// TODO(aoates): these helpers are probably useful elsewhere.  Refactor them
-// out.
 static bool equal(const struct sockaddr_storage* A,
                   const struct sockaddr_storage* B) {
   KASSERT(A->sa_family == B->sa_family);
-  switch (A->sa_family) {
-    case AF_INET:
-      return (((struct sockaddr_in*)A)->sin_addr.s_addr ==
-              ((struct sockaddr_in*)B)->sin_addr.s_addr) &&
-             get_sockaddrs_port(A) == get_sockaddrs_port(B);
-  }
-  klogfm(KL_NET, WARNING, "unknown address family: %d\n", A->sa_family);
-  return false;
+  return sockaddr_equal((const struct sockaddr*)A, (const struct sockaddr*)B);
 }
 
 // Returns the tcp_key_t corresponding to ANY_ADDR:<port> (with the port of the
@@ -145,7 +136,7 @@ static bool has_conflict_in_map(const htbl_t* tbl, tcp_key_t tcpkey,
     bool found_conflict = false;
     FOR_EACH_LIST(iter, &list->sockets) {
       const sm_entry_t* entry = (const sm_entry_t*)((char*)iter - link_offset);
-      KASSERT_DBG(entry->local.sa_family == AF_INET);
+      KASSERT_DBG(entry->local.sa_family == local->sa_family);
       if (entry_conflicts_reuseaddr(local, entry)) {
         found_conflict = true;
         break;
@@ -373,6 +364,8 @@ void tcpsm_mark_reusable(tcp_sockmap_t* sm,
                          const struct sockaddr_storage* remote,
                          socket_tcp_t* sock) {
   KASSERT(remote);
+  KASSERT(local->sa_family == sm->family);
+  KASSERT(remote->sa_family == sm->family);
   tcp_key_t tcpkey = tcp_key_sas(local, remote);
   void* val;
   if (htbl_get(&sm->connected_sockets, tcpkey, &val) == 0) {
