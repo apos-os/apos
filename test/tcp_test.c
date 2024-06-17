@@ -25,6 +25,7 @@
 #include "net/inet.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/tcp/congestion.h"
@@ -94,7 +95,7 @@
 // explicitly because some tests have multiple destination IPs and we need to
 // keep the packet streams separated.
 typedef struct {
-  in_addr_t dst_ip;
+  struct sockaddr_storage_ip dst_ip;
   char packet[RAW_RECV_BUF_SIZE];
   ssize_t packet_len;
   list_link_t link;
@@ -145,10 +146,16 @@ static const char* sas2str(const struct sockaddr_storage* sas) {
                       sizeof(struct sockaddr_storage), buf);
 }
 
-static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
-  saddr->sin_family = AF_INET;
-  saddr->sin_addr.s_addr = str2inet(addr);
-  saddr->sin_port = htob16(port);
+static void make_saddr(struct sockaddr_storage_ip* sas, const char* addr,
+                       int port) {
+  if (kstrchr(addr, ':') == 0) {
+    struct sockaddr_in* saddr = (struct sockaddr_in*)sas;
+    saddr->sin_family = AF_INET;
+    saddr->sin_addr.s_addr = str2inet(addr);
+    saddr->sin_port = htob16(port);
+  } else {
+    KEXPECT_EQ(0, str2sin6(addr, port, (struct sockaddr_in6*)sas));
+  }
 }
 
 static bool has_sigpipe(void) {
@@ -157,13 +164,13 @@ static bool has_sigpipe(void) {
 }
 
 static int do_bind(int sock, const char* addr, int port) {
-  struct sockaddr_in saddr;
+  struct sockaddr_storage_ip saddr;
   make_saddr(&saddr, addr, port);
   return net_bind(sock, (struct sockaddr*)&saddr, sizeof(saddr));
 }
 
 static int do_connect(int sock, const char* addr, int port) {
-  struct sockaddr_in saddr;
+  struct sockaddr_storage_ip saddr;
   make_saddr(&saddr, addr, port);
   return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
 }
@@ -818,11 +825,11 @@ typedef struct {
 
   // Address of the TCP socket under test.
   const char* tcp_addr_str;
-  struct sockaddr_in tcp_addr;
+  struct sockaddr_storage_ip tcp_addr;
 
   // Raw socket and buffer for the "other side".
   char raw_addr_str[SOCKADDR_IN_PRETTY_LEN];
-  struct sockaddr_in raw_addr;
+  struct sockaddr_storage_ip raw_addr;
   char recv[RAW_RECV_BUF_SIZE];
 
   // Window size to send when not otherwise specified.
@@ -839,17 +846,17 @@ typedef struct {
 // a different IP, however, or each will get packets sent by all test sockets.
 static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
                           int tcp_port, const char* dst_addr, int dst_port) {
+  s->tcp_addr_str = tcp_addr;
+  make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
+
   s->wndsize = DEFAULT_WNDSIZE;
   s->seq_base = g_tcp_test.seq_start;
   s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
-  s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  s->socket = net_socket(s->tcp_addr.sa_family, SOCK_STREAM, IPPROTO_TCP);
   s->op.thread = NULL;
   KEXPECT_GE(s->socket, 0);
 
   KEXPECT_EQ(0, set_initial_seqno(s->socket, s->seq_base + 100));
-
-  s->tcp_addr_str = tcp_addr;
-  make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
 
   if (dst_addr) {
     kstrcpy(s->raw_addr_str, dst_addr);
@@ -1079,8 +1086,26 @@ static void read_tun_packets(void) {
       return;
     }
 
-    const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)&pkt->packet;
-    pkt->dst_ip = ip4_hdr->dst_addr;
+    int version = ((uint8_t*)pkt->packet)[0] >> 4;
+    tcp_hdr_t* tcp_hdr = NULL;
+    if (version == 4) {
+      const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)&pkt->packet;
+      pkt->dst_ip.sa_family = AF_INET;
+      ((struct sockaddr_in*)&pkt->dst_ip)->sin_addr.s_addr = ip4_hdr->dst_addr;
+      KASSERT(ip4_hdr->protocol == IPPROTO_TCP);
+      tcp_hdr =
+          (tcp_hdr_t*)(&pkt->packet[ip4_ihl(*ip4_hdr) * sizeof(uint32_t)]);
+    } else {
+      KASSERT(version == 6);
+      const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&pkt->packet;
+      pkt->dst_ip.sa_family = AF_INET6;
+      kmemcpy(&((struct sockaddr_in6*)&pkt->dst_ip)->sin6_addr,
+              &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+      KASSERT(ip6_hdr->next_hdr == IPPROTO_TCP);
+      tcp_hdr = (tcp_hdr_t*)(&pkt->packet + sizeof(ip6_hdr_t));
+    }
+    set_sockaddrs_port((struct sockaddr_storage*)&pkt->dst_ip,
+                       btoh16(tcp_hdr->dst_port));
     pkt->link = LIST_LINK_INIT;
     pkt->packet_len = result;
     list_push(&g_tcp_test.packets, &pkt->link);
@@ -1105,7 +1130,8 @@ static ssize_t do_raw_recv(tcp_test_state_t* s) {
   read_tun_packets();
   FOR_EACH_LIST(list_iter, &g_tcp_test.packets) {
     queued_packet_t* pkt = LIST_ENTRY(list_iter, queued_packet_t, link);
-    if (pkt->dst_ip == s->raw_addr.sin_addr.s_addr) {
+    if (sockaddr_equal((struct sockaddr*)&pkt->dst_ip,
+                       (struct sockaddr*)&s->raw_addr)) {
       list_remove(&g_tcp_test.packets, &pkt->link);
       kmemcpy(s->recv, pkt->packet, RAW_RECV_BUF_SIZE);
       if (pkt->packet_len < RAW_RECV_BUF_SIZE) {
@@ -1122,12 +1148,21 @@ static ssize_t do_raw_recv(tcp_test_state_t* s) {
 }
 
 static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
-  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE, len);
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, len);
   KASSERT(pb);
 
   kmemcpy(pbuf_get(pb), buf, len);
-  ip4_add_hdr(pb, s->raw_addr.sin_addr.s_addr, s->tcp_addr.sin_addr.s_addr,
-              IPPROTO_TCP);
+  if (s->raw_addr.sa_family == AF_INET) {
+    const struct sockaddr_in* raw = (const struct sockaddr_in*)&s->raw_addr;
+    const struct sockaddr_in* dst = (const struct sockaddr_in*)&s->tcp_addr;
+    ip4_add_hdr(pb, raw->sin_addr.s_addr, dst->sin_addr.s_addr, IPPROTO_TCP);
+  } else {
+    KASSERT_DBG(s->raw_addr.sa_family == AF_INET6);
+    KASSERT_DBG(s->tcp_addr.sa_family == AF_INET6);
+    const struct sockaddr_in6* raw = (const struct sockaddr_in6*)&s->raw_addr;
+    const struct sockaddr_in6* dst = (const struct sockaddr_in6*)&s->tcp_addr;
+    ip6_add_hdr(pb, &raw->sin6_addr, &dst->sin6_addr, IPPROTO_TCP, 0);
+  }
 
   ssize_t result = vfs_write(g_tcp_test.tun_fd, pbuf_getc(pb), pbuf_size(pb));
   if (result > 0) {
@@ -1270,8 +1305,10 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
 
   // Validate the TCP header.
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[sizeof(ip4_hdr_t)];
-  v &= KEXPECT_EQ(btoh16(s->tcp_addr.sin_port), btoh16(tcp_hdr->src_port));
-  v &= KEXPECT_EQ(btoh16(s->raw_addr.sin_port), btoh16(tcp_hdr->dst_port));
+  v &= KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s->tcp_addr),
+                  btoh16(tcp_hdr->src_port));
+  v &= KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s->raw_addr),
+                  btoh16(tcp_hdr->dst_port));
   if (spec.literal_seq) {
     v &= KEXPECT_EQ(spec.seq, btoh32(tcp_hdr->seq));
   } else {
@@ -1303,20 +1340,41 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
 
 // Builds a packet based on the given spec and sends it.
 static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
-  ip4_pseudo_hdr_t pseudo_ip;
-
+  void* pseudo_ip = NULL;
+  size_t pseudo_ip_size = 0;
+  ip4_pseudo_hdr_t pseudo_ip_v4;
+  ip6_pseudo_hdr_t pseudo_ip_v6;
   size_t tcp_len = sizeof(tcp_hdr_t) + spec.datalen;
-  pseudo_ip.src_addr = s->raw_addr.sin_addr.s_addr;
-  pseudo_ip.dst_addr = s->tcp_addr.sin_addr.s_addr;
-  pseudo_ip.zeroes = 0;
-  pseudo_ip.protocol = IPPROTO_TCP;
-  pseudo_ip.length = btoh16(tcp_len);
+  if (s->raw_addr.sa_family == AF_INET) {
+    pseudo_ip = &pseudo_ip_v4;
+    pseudo_ip_size = sizeof(pseudo_ip_v4);
+
+    pseudo_ip_v4.src_addr =
+        ((struct sockaddr_in*)&s->raw_addr)->sin_addr.s_addr;
+    pseudo_ip_v4.dst_addr =
+        ((struct sockaddr_in*)&s->tcp_addr)->sin_addr.s_addr;
+    pseudo_ip_v4.zeroes = 0;
+    pseudo_ip_v4.protocol = IPPROTO_TCP;
+    pseudo_ip_v4.length = btoh16(tcp_len);
+  } else {
+    KASSERT_DBG(s->raw_addr.sa_family == AF_INET6);
+    pseudo_ip = &pseudo_ip_v6;
+    pseudo_ip_size = sizeof(pseudo_ip_v6);
+
+    pseudo_ip_v6.src_addr = ((struct sockaddr_in6*)&s->raw_addr)->sin6_addr;
+    pseudo_ip_v6.dst_addr = ((struct sockaddr_in6*)&s->tcp_addr)->sin6_addr;
+    kmemset(&pseudo_ip_v6._zeroes, 0, 3);
+    pseudo_ip_v6.next_hdr = IPPROTO_TCP;
+    pseudo_ip_v6.payload_len = btoh16(tcp_len);
+  }
 
   void* buf = kmalloc(tcp_len);
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)buf;
   kmemset(tcp_hdr, 0, sizeof(tcp_hdr_t));
-  tcp_hdr->src_port = s->raw_addr.sin_port;
-  tcp_hdr->dst_port = s->tcp_addr.sin_port;
+  tcp_hdr->src_port =
+      htob16(get_sockaddrs_port((struct sockaddr_storage*)&s->raw_addr));
+  tcp_hdr->dst_port =
+      htob16(get_sockaddrs_port((struct sockaddr_storage*)&s->tcp_addr));
   tcp_hdr->seq = btoh32(s->send_seq_base + spec.seq);
   tcp_hdr->ack =
       (spec.flags & TCP_FLAG_ACK) ? btoh32(s->seq_base + spec.ack) : 0;
@@ -1331,7 +1389,7 @@ static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   }
 
   tcp_hdr->checksum =
-      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), tcp_hdr, tcp_len);
+      ip_checksum2(pseudo_ip, pseudo_ip_size, tcp_hdr, tcp_len);
   bool result = KEXPECT_EQ(tcp_len, do_raw_send(s, tcp_hdr, tcp_len));
   kfree(buf);
   return result;
@@ -1901,7 +1959,7 @@ static void implicit_bind_test(void) {
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
 
-  s.tcp_addr = bound_addr;
+  kmemcpy(&s.tcp_addr, &bound_addr, sizeof(bound_addr));
 
   // Now can continue with connection setup.
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -1910,7 +1968,8 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
 
@@ -1929,7 +1988,7 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
-  s.tcp_addr = bound_addr;
+  kmemcpy(&s.tcp_addr, &bound_addr, sizeof(bound_addr));
 
   // Now can continue with connection setup.
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -1938,7 +1997,8 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   cleanup_tcp_test(&s);
@@ -1957,7 +2017,7 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
-  s.tcp_addr = bound_addr;
+  kmemcpy(&s.tcp_addr, &bound_addr, sizeof(bound_addr));
 
   // Now can continue with connection setup.
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -1966,7 +2026,8 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   cleanup_tcp_test(&s);
@@ -4214,7 +4275,8 @@ static void basic_established_recv_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 495));
@@ -12067,64 +12129,32 @@ static void rapid_reconnect_test(void) {
 }
 
 // Helpers for sockmap tests.
+static void make_two_sin(const char* local, int local_port, const char* remote,
+                         int remote_port, struct sockaddr_storage* local_sin,
+                         struct sockaddr_storage* remote_sin) {
+  make_saddr((struct sockaddr_storage_ip*)local_sin, local, local_port);
+  if (remote) {
+    make_saddr((struct sockaddr_storage_ip*)remote_sin, remote, remote_port);
+  }
+}
+
 static socket_tcp_t* tcpsm_do_find(const tcp_sockmap_t* sm, const char* local,
                                    int local_port, const char* remote,
                                    int remote_port) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  if (remote) {
-    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
-  }
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   return tcpsm_find(sm, &local_sin, remote ? &remote_sin : NULL);
-}
-
-static void make_two_sin6(const char* local, int local_port, const char* remote,
-                          int remote_port, struct sockaddr_storage* local_sin6,
-                          struct sockaddr_storage* remote_sin6) {
-  KEXPECT_EQ(0, str2sin6(local, local_port, (struct sockaddr_in6*)local_sin6));
-  if (remote) {
-    KEXPECT_EQ(
-        0, str2sin6(remote, remote_port, (struct sockaddr_in6*)remote_sin6));
-  }
-}
-
-static socket_tcp_t* tcpsm_do_find6(const tcp_sockmap_t* sm, const char* local,
-                                    int local_port, const char* remote,
-                                    int remote_port) {
-  struct sockaddr_storage local_sin6, remote_sin6;
-  make_two_sin6(local, local_port, remote, remote_port, &local_sin6,
-                &remote_sin6);
-  return tcpsm_find(sm, &local_sin6, remote ? &remote_sin6 : NULL);
 }
 
 static int tcpsm_do_bind2(tcp_sockmap_t* sm, const char* local, int local_port,
                           const char* remote, int remote_port,
                           int flags, socket_tcp_t* socket, char* local_out) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  if (remote) {
-    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
-  }
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   int result =
       tcpsm_bind(sm, &local_sin, remote ? &remote_sin : NULL, flags, socket);
   if (result == 0) {
     sockaddr2str((const struct sockaddr*)&local_sin, sizeof(local_sin),
-                 local_out);
-  }
-  return result;
-}
-
-static int tcpsm_do_bind26(tcp_sockmap_t* sm, const char* local, int local_port,
-                           const char* remote, int remote_port, int flags,
-                           socket_tcp_t* socket, char* local_out) {
-  struct sockaddr_storage local_sin6, remote_sin6;
-  make_two_sin6(local, local_port, remote, remote_port, &local_sin6,
-                &remote_sin6);
-
-  int result =
-      tcpsm_bind(sm, &local_sin6, remote ? &remote_sin6 : NULL, flags, socket);
-  if (result == 0) {
-    sockaddr2str((const struct sockaddr*)&local_sin6, sizeof(local_sin6),
                  local_out);
   }
   return result;
@@ -12137,49 +12167,20 @@ static int tcpsm_do_bind(tcp_sockmap_t* sm, const char* local, int local_port,
                         local_out);
 }
 
-static int tcpsm_do_bind6(tcp_sockmap_t* sm, const char* local, int local_port,
-                          const char* remote, int remote_port,
-                          socket_tcp_t* socket, char* local_out) {
-  return tcpsm_do_bind26(sm, local, local_port, remote, remote_port, 0, socket,
-                         local_out);
-}
-
 static int tcpsm_do_remove(tcp_sockmap_t* sm, const char* local, int local_port,
                            const char* remote, int remote_port,
                            socket_tcp_t* socket) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  if (remote) {
-    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
-  }
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   return tcpsm_remove(sm, &local_sin, remote ? &remote_sin : NULL, socket);
-}
-
-static int tcpsm_do_remove6(tcp_sockmap_t* sm, const char* local,
-                            int local_port, const char* remote, int remote_port,
-                            socket_tcp_t* socket) {
-  struct sockaddr_storage local_sin6, remote_sin6;
-  make_two_sin6(local, local_port, remote, remote_port, &local_sin6,
-                &remote_sin6);
-  return tcpsm_remove(sm, &local_sin6, remote ? &remote_sin6 : NULL, socket);
 }
 
 static void tcpsm_do_mark_reusable(tcp_sockmap_t* sm, const char* local,
                                    int local_port, const char* remote,
                                    int remote_port, socket_tcp_t* socket) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   tcpsm_mark_reusable(sm, &local_sin, &remote_sin, socket);
-}
-
-static void tcpsm_do_mark_reusable6(tcp_sockmap_t* sm, const char* local,
-                                    int local_port, const char* remote,
-                                    int remote_port, socket_tcp_t* socket) {
-  struct sockaddr_storage local_sin6, remote_sin6;
-  make_two_sin6(local, local_port, remote, remote_port, &local_sin6,
-                &remote_sin6);
-  tcpsm_mark_reusable(sm, &local_sin6, &remote_sin6, socket);
 }
 
 static void sockmap_find_tests(void) {
@@ -12779,166 +12780,166 @@ static void sockmap_find_ipv6_tests(void) {
   KTEST_BEGIN("TCP: sockmap IPv6 basic setup ");
   tcp_sockmap_t sm;
   tcpsm_init(&sm, AF_INET6, 5, 7);
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
 
 
   KTEST_BEGIN("TCP: sockmap 5-tuple lookup (IPv6)");
   socket_tcp_t s1, s2, s3;
   char local[INET6_PRETTY_LEN];
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
 
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 90, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, "::2", 90, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: sockmap 3-tuple lookup (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 90, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::1", 90, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::3", 80, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 90, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::3", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: sockmap 3-tuple lookup (any-addr) (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:80", local);
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::2", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 90, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::1", 90, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::3", 80, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, "::2", 90, &s1));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 90, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::3", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_STREQ("[::1]:80", local);
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 80, "::1", 90));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 80, "::1", 90));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 80, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 90, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, "::1", 80));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (any-address) (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:80", local);
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_STREQ("[::1]:80", local);
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::2", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 90, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, "::1", 80));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 91));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 91));
 
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(-ENOENT, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: sockmap 5-to-3 tuple double fallback (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:80", local);
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s2, local));
   KEXPECT_STREQ("[::1]:80", local);
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s3, local));
   KEXPECT_STREQ("[::1]:80", local);
 
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, NULL, 0));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::2", 80, NULL, 0));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, "::1", 80));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::2", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, "::1", 90));
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 90, "::1", 80));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::2", 90, "::1", 80));
-  KEXPECT_EQ(&s3, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, "::2", 91));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, NULL, 0));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 91));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s3));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
 
 
   KTEST_BEGIN("TCP: sockmap allocates port (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::1]:5", local);
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 0, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0, TCPSM_REUSEADDR,
                                &s2, local));
   KEXPECT_STREQ("[::1]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 0, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0, TCPSM_REUSEADDR,
                                &s3, local));
   KEXPECT_STREQ("[::1]:7", local);
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 0, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0,
                                           TCPSM_REUSEADDR, &s1, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, NULL, 0, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 6, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, NULL, 0, &s3));
 
   tcpsm_cleanup(&sm);
 }
@@ -12951,79 +12952,79 @@ static void sockmap_bind_ipv6_tests(void) {
   socket_tcp_t s1, s2;
   char local[INET6_PRETTY_LEN];
   KEXPECT_EQ(-EINVAL,
-             tcpsm_do_bind6(&sm, "::1", 80, "::", 90, &s1, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::", 90, &s1, local));
   KEXPECT_EQ(-EINVAL,
-             tcpsm_do_bind6(&sm, "::1", 80, "::2", 0, &s1, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 0, &s1, local));
   KEXPECT_EQ(-EINVAL,
-             tcpsm_do_bind6(&sm, "::1", 80, "::", 0, &s1, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::", 0, &s1, local));
   KEXPECT_EQ(-EINVAL,
-             tcpsm_do_bind6(&sm, "::", 80, "::2", 90, &s1, local));
+             tcpsm_do_bind(&sm, "::", 80, "::2", 90, &s1, local));
 
 
   KTEST_BEGIN("TCP: bind 5-tuple collision");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
 
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: bind 3-tuple collision");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
 
   // A more specific 5-tuple binding should succeed.
   KEXPECT_EQ(0,
-             tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
 
 
   KTEST_BEGIN("TCP: bind 3-tuple any-addr collision");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:80", local);
 
   // A more specific 5-tuple binding should succeed.
   KEXPECT_EQ(0,
-             tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, "::2", 90, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::1", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 80, NULL, 0, &s2, local));
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 80, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 80, NULL, 0));
   tcpsm_cleanup(&sm);
 }
 
@@ -13035,78 +13036,78 @@ static void sockmap_bind_ipv6_tests2(void) {
   char local[INET6_PRETTY_LEN];
 
   KTEST_BEGIN("TCP: port assignment (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:5", local);
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 5, NULL, 0, &s1, local));
+             tcpsm_do_bind(&sm, "::", 5, NULL, 0, &s1, local));
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 5, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 5, NULL, 0, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 5, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
 
 
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 6, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 6, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("[::]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 7, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("[::]:5", local);
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::]:7", local);
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s4, local));
+             tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s4, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s4, local));
+             tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s4, local));
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 6, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 6, NULL, 0, &s1));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s1, local));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::]:6", local);
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::", 6, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 6, NULL, 0, &s1));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::", 5, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 5, NULL, 0, &s2));
-  KEXPECT_EQ(&s3, tcpsm_do_find6(&sm, "::", 7, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 7, NULL, 0, &s3));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s1));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 5, NULL, 0, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::", 7, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s3));
 
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 5, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 6, NULL, 0));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 7, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 7, NULL, 0));
 
 
   KTEST_BEGIN("TCP: port assignment (cross-IP port reuse) (IPv6)");
   // Binding to specific IPs should allow port reuse.
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::1]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 7, NULL, 0, &s1));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, NULL, 0, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s1, local));
   KEXPECT_STREQ("[::1]:5", local);
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::2", 0, NULL, 0, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::2", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("[::2]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::2", 6, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::2", 0, NULL, 0, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::2", 6, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::2", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("[::2]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::2", 7, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::2", 0, NULL, 0, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::2", 7, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::2", 0, NULL, 0, &s2, local));
   KEXPECT_STREQ("[::2]:5", local);
   // ...but the any-IP should not be able to use port 5.
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 6, NULL, 0, &s3));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 7, NULL, 0, &s3));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::]:6", local);
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 5, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, NULL, 0, &s1));
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::2", 5, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::2", 5, NULL, 0, &s2));
-  KEXPECT_EQ(&s3, tcpsm_do_find6(&sm, "::", 6, NULL, 0));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 6, NULL, 0, &s3));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s1));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::2", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::2", 5, NULL, 0, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s3));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
   tcpsm_cleanup(&sm);
 
 
@@ -13114,61 +13115,61 @@ static void sockmap_bind_ipv6_tests2(void) {
   tcpsm_init(&sm, AF_INET6, 5, 7);
   // When the 5-tuple is bound first, 3-tuple binds should not be able to reuse
   // the same port.
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:5", local);
 
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s2, local));
   KEXPECT_STREQ("[::1]:6", local);
 
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::1]:7", local);
 
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+             tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 6, "::2", 90, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, NULL, 0, &s3));
 
   // When the 3-tuple is bound first, 5-tuple binds can reuse the port (due to
   // the asymmetry of port conflicts).
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::1]:5", local);
 
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 6, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 7, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:5", local);
 
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s2, local));
   KEXPECT_STREQ("[::1]:6", local);
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 6, "::2", 90, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s3));
 
   // As above, but with the any-address.
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 7, NULL, 0, &s3));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
   KEXPECT_STREQ("[::]:5", local);
 
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 6, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:7", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 7, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_bind6(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
   KEXPECT_STREQ("[::1]:5", local);
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, "::2", 90, &s1));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 5, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 5, NULL, 0, &s3));
 
   tcpsm_cleanup(&sm);
 }
@@ -13180,206 +13181,206 @@ static void sockmap_reuseaddr_ipv6_tests(void) {
 
   socket_tcp_t s1, s2, s3, s4;
   char local[INET6_PRETTY_LEN];
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                TCPSM_REUSEADDR, &s1, local));
   KEXPECT_STREQ("[::1]:80", local);
 
   // A 5-tuple conflict should always fail.
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind26(&sm, "::1", 80, "::2", 90, 0, &s1, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s1, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s1, local));
 
   // As should 3-tuple conflicts.
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, 0, &s2, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+             tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind26(&sm, "::", 80, NULL, 0, 0, &s2, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+             tcpsm_do_bind2(&sm, "::", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s2, local));
 
   // Mark the address as reusable then retest.
-  tcpsm_do_mark_reusable6(&sm, "::1", 80, "::2", 90, &s1);
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s1);
 
   // All binds without TCPSM_REUSEADDR should still fail.
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind26(&sm, "::1", 80, "::2", 90, 0, &s1, local));
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s1, local));
 
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, 0, &s2, local));
+             tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, 0, &s2, local));
   KEXPECT_EQ(-EADDRINUSE,
-             tcpsm_do_bind26(&sm, "::", 80, NULL, 0, 0, &s2, local));
+             tcpsm_do_bind2(&sm, "::", 80, NULL, 0, 0, &s2, local));
 
   // With the flag set, the 5-tuple should still fail, but both 3-tuple types
   // should succeed.
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s1, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s2));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
 
-  KEXPECT_EQ(&s1, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s1));
-  KEXPECT_EQ(NULL, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
 
 
   KTEST_BEGIN("TCP: TCPSM_REUSEADDR with multiple bindings (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                TCPSM_REUSEADDR, &s1, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                TCPSM_REUSEADDR, &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, "::2", 91,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
                                TCPSM_REUSEADDR, &s3, local));
 
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s4, local));
 
   // Mark the address as reusable then retest.
-  tcpsm_do_mark_reusable6(&sm, "::1", 80, "::2", 90, &s2);
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s2);
 
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 91,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s4, local));
 
-  tcpsm_do_mark_reusable6(&sm, "::1", 80, "::2", 91, &s3);
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 91, &s3);
 
   // With both 5-tuples marked reusable, the any-addr should now succeed as it
   // won't conflict with either the explicit 3-tuple or the reusable 5-tuples.
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 91,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s4, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s4));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s4));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
 
   // With the flag set, the 5-tuple should still fail, but both 3-tuple types
   // should succeed.
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 90,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, "::2", 91,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
                                          TCPSM_REUSEADDR, &s4, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s4, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s4));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s4));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s4, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s4));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s4));
 
-  KEXPECT_EQ(&s2, tcpsm_do_find6(&sm, "::1", 80, "::2", 90));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(&s3, tcpsm_do_find6(&sm, "::1", 80, "::2", 91));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 91, &s3));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::1", 80, "::2", 91));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 91, &s3));
 
 
   KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 3-tuple binding (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                TCPSM_REUSEADDR, &s1, local));
 
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
 
   // Create a 5-tuple as well and try again, for kicks.
   KEXPECT_EQ(0,
-             tcpsm_do_bind26(&sm, "::1", 80, "::2", 90, 0, &s2, local));
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s2, local));
 
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s3, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s3, local));
 
-  tcpsm_do_mark_reusable6(&sm, "::1", 80, "::2", 90, &s2);
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s2);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s3, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s3, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s3));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
 
 
   KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 3-tuple binding (any-addr) (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                TCPSM_REUSEADDR, &s1, local));
 
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s2, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
 
   // Create a 5-tuple as well and try again, for kicks.
   KEXPECT_EQ(0,
-             tcpsm_do_bind26(&sm, "::1", 80, "::2", 90, 0, &s2, local));
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s2, local));
 
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s3, local));
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s3, local));
 
-  tcpsm_do_mark_reusable6(&sm, "::1", 80, "::2", 90, &s2);
-  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind26(&sm, "::", 80, NULL, 0,
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s2);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
                                          TCPSM_REUSEADDR, &s3, local));
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
                                &s3, local));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s3));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 80, "::2", 90, &s2));
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
 
 
   KTEST_BEGIN("TCP: TCPSM_REUSEADDR doesn't affect port selection (IPv6)");
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 5, "::2", 90,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 5, "::2", 90,
                                TCPSM_REUSEADDR, &s1, local));
-  tcpsm_do_mark_reusable6(&sm, "::1", 5, "::2", 90, &s1);
+  tcpsm_do_mark_reusable(&sm, "::1", 5, "::2", 90, &s1);
 
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 0, "::2", 91,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, "::2", 91,
                                TCPSM_REUSEADDR, &s2, local));
   KEXPECT_STREQ("[::1]:5", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, "::2", 91, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 91, &s2));
 
   // We should not assign port 5 automatically.
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 0, NULL, 0,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0,
                                TCPSM_REUSEADDR, &s2, local));
   KEXPECT_STREQ("[::1]:6", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 6, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, NULL, 0, &s2));
 
   // ...but should be assignable explicitly.
-  KEXPECT_EQ(0, tcpsm_do_bind26(&sm, "::1", 5, NULL, 0,
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 5, NULL, 0,
                                TCPSM_REUSEADDR, &s2, local));
   KEXPECT_STREQ("[::1]:5", local);
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s2));
 
-  KEXPECT_EQ(0, tcpsm_do_remove6(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
 
 
   KTEST_BEGIN("TCP: invalid bind flags (IPv6)");
   KEXPECT_EQ(-EINVAL,
-             tcpsm_do_bind26(&sm, "::1", 5, "::2", 90, 20, &s1, local));
+             tcpsm_do_bind2(&sm, "::1", 5, "::2", 90, 20, &s1, local));
 
   tcpsm_cleanup(&sm);
 }
