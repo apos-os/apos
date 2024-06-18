@@ -176,7 +176,7 @@ static int do_connect(int sock, const char* addr, int port) {
 }
 
 static int do_accept(int sock, char* addr_out) {
-  struct sockaddr_in saddr;
+  struct sockaddr_storage_ip saddr;
   socklen_t slen = sizeof(saddr);
   *addr_out = '\0';
   int result = net_accept(sock, (struct sockaddr*)&saddr, &slen);
@@ -723,6 +723,10 @@ static void bind_test(void) {
   KEXPECT_EQ(-EAFNOSUPPORT,
              net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
 
+  addr.sin_family = AF_INET6;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
 
   KTEST_BEGIN("bind(SOCK_STREAM): bad FD");
   addr.sin_family = AF_UNIX;
@@ -1102,7 +1106,7 @@ static void read_tun_packets(void) {
       kmemcpy(&((struct sockaddr_in6*)&pkt->dst_ip)->sin6_addr,
               &ip6_hdr->dst_addr, sizeof(struct in6_addr));
       KASSERT(ip6_hdr->next_hdr == IPPROTO_TCP);
-      tcp_hdr = (tcp_hdr_t*)(&pkt->packet + sizeof(ip6_hdr_t));
+      tcp_hdr = (tcp_hdr_t*)(&pkt->packet[sizeof(ip6_hdr_t)]);
     }
     set_sockaddrs_port((struct sockaddr_storage*)&pkt->dst_ip,
                        btoh16(tcp_hdr->dst_port));
@@ -1166,7 +1170,7 @@ static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
 
   ssize_t result = vfs_write(g_tcp_test.tun_fd, pbuf_getc(pb), pbuf_size(pb));
   if (result > 0) {
-    result -= sizeof(ip4_hdr_t);
+    result -= (pbuf_size(pb) - len);
   }
   pbuf_free(pb);
   return result;
@@ -1272,7 +1276,7 @@ static test_packet_spec_t NOACK(test_packet_spec_t p) {
 }
 
 #define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt(_state, _spec))
-#define SEND_PKT(_state, _spec) KEXPECT_TRUE(send_pkt(_state, _spec))
+#define SEND_PKT(_state, _spec) KEXPECT_TRUE(build_send_pkt(_state, _spec))
 
 // Expects to receive a packet matching the given description, returning true if
 // it does.
@@ -1286,25 +1290,49 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   if (!v) return v;
 
   // Validate the IP header.
-  v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen, result);
-  if (result < (int)sizeof(ip4_hdr_t) + (int)sizeof(tcp_hdr_t)) {
-    return false;
+  size_t header_len = 0;
+  if (s->raw_addr.sa_family == AF_INET) {
+    v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen,
+                    result);
+    if (result < (int)sizeof(ip4_hdr_t) + (int)sizeof(tcp_hdr_t)) {
+      return false;
+    }
+
+    ip4_hdr_t* ip_hdr = (ip4_hdr_t*)s->recv;
+    v &= KEXPECT_EQ(0x45, ip_hdr->version_ihl);
+    v &= KEXPECT_EQ(0x0, ip_hdr->dscp_ecn);
+    v &= KEXPECT_EQ(result, btoh16(ip_hdr->total_len));
+    v &= KEXPECT_EQ(0, ip_hdr->id);
+    v &= KEXPECT_EQ(0, ip_hdr->flags_fragoff);
+    v &= KEXPECT_GE(ip_hdr->ttl, 10);
+    v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
+    // Don't bother checking the checksum here.
+    v &= KEXPECT_STREQ(s->tcp_addr_str, ip2str(ip_hdr->src_addr));
+    v &= KEXPECT_STREQ(s->raw_addr_str, ip2str(ip_hdr->dst_addr));
+    header_len = sizeof(ip4_hdr_t);
+  } else {
+    KASSERT_DBG(s->raw_addr.sa_family == AF_INET6);
+    v &= KEXPECT_EQ(sizeof(ip6_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen,
+                    result);
+    if (result < (int)sizeof(ip6_hdr_t) + (int)sizeof(tcp_hdr_t)) {
+      return false;
+    }
+
+    ip6_hdr_t* ip_hdr = (ip6_hdr_t*)s->recv;
+    v &= KEXPECT_EQ(6, ip6_version(*ip_hdr));
+    v &= KEXPECT_EQ(0, ip6_traffic_class(*ip_hdr));
+    v &= KEXPECT_EQ(0, ip6_flow(*ip_hdr));
+    v &= KEXPECT_EQ(result, sizeof(ip6_hdr_t) + btoh16(ip_hdr->payload_len));
+    v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->next_hdr);
+    // Don't bother checking the checksum here.
+    char addrstr[INET6_PRETTY_LEN];
+    v &= KEXPECT_STREQ(s->tcp_addr_str, inet62str(&ip_hdr->src_addr, addrstr));
+    v &= KEXPECT_STREQ(s->raw_addr_str, inet62str(&ip_hdr->dst_addr, addrstr));
+    header_len = sizeof(ip6_hdr_t);
   }
 
-  ip4_hdr_t* ip_hdr = (ip4_hdr_t*)s->recv;
-  v &= KEXPECT_EQ(0x45, ip_hdr->version_ihl);
-  v &= KEXPECT_EQ(0x0, ip_hdr->dscp_ecn);
-  v &= KEXPECT_EQ(result, btoh16(ip_hdr->total_len));
-  v &= KEXPECT_EQ(0, ip_hdr->id);
-  v &= KEXPECT_EQ(0, ip_hdr->flags_fragoff);
-  v &= KEXPECT_GE(ip_hdr->ttl, 10);
-  v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
-  // Don't bother checking the checksum here.
-  v &= KEXPECT_STREQ(s->tcp_addr_str, ip2str(ip_hdr->src_addr));
-  v &= KEXPECT_STREQ(s->raw_addr_str, ip2str(ip_hdr->dst_addr));
-
   // Validate the TCP header.
-  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[sizeof(ip4_hdr_t)];
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[header_len];
   v &= KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s->tcp_addr),
                   btoh16(tcp_hdr->src_port));
   v &= KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s->raw_addr),
@@ -1333,18 +1361,18 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
 
   // Check data.
   if (spec.data) {
-    KEXPECT_STREQ(spec.data, s->recv + sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t));
+    KEXPECT_STREQ(spec.data, s->recv + header_len + sizeof(tcp_hdr_t));
   }
   return v;
 }
 
-// Builds a packet based on the given spec and sends it.
-static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+// (re)calculates the TCP header checksum for the packet.
+static void calc_checksum(tcp_test_state_t* s, pbuf_t* pb) {
   void* pseudo_ip = NULL;
   size_t pseudo_ip_size = 0;
   ip4_pseudo_hdr_t pseudo_ip_v4;
   ip6_pseudo_hdr_t pseudo_ip_v6;
-  size_t tcp_len = sizeof(tcp_hdr_t) + spec.datalen;
+  size_t tcp_len = pbuf_size(pb);
   if (s->raw_addr.sa_family == AF_INET) {
     pseudo_ip = &pseudo_ip_v4;
     pseudo_ip_size = sizeof(pseudo_ip_v4);
@@ -1368,7 +1396,16 @@ static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
     pseudo_ip_v6.payload_len = btoh16(tcp_len);
   }
 
-  void* buf = kmalloc(tcp_len);
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  tcp_hdr->checksum = 0;
+  tcp_hdr->checksum =
+      ip_checksum2(pseudo_ip, pseudo_ip_size, tcp_hdr, tcp_len);
+}
+
+// Builds a packet based on the given spec.
+static pbuf_t* build_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+  pbuf_t* pb = pbuf_create(0, sizeof(tcp_hdr_t) + spec.datalen);
+  void* buf = pbuf_get(pb);
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)buf;
   kmemset(tcp_hdr, 0, sizeof(tcp_hdr_t));
   tcp_hdr->src_port =
@@ -1388,11 +1425,20 @@ static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
     kmemcpy(buf + sizeof(tcp_hdr_t), spec.data, spec.datalen);
   }
 
-  tcp_hdr->checksum =
-      ip_checksum2(pseudo_ip, pseudo_ip_size, tcp_hdr, tcp_len);
-  bool result = KEXPECT_EQ(tcp_len, do_raw_send(s, tcp_hdr, tcp_len));
-  kfree(buf);
+  calc_checksum(s, pb);
+  return pb;
+}
+
+static bool send_pkt(tcp_test_state_t* s, pbuf_t* pb) {
+  bool result =
+      KEXPECT_EQ(pbuf_size(pb), do_raw_send(s, pbuf_get(pb), pbuf_size(pb)));
+  pbuf_free(pb);
   return result;
+}
+
+// Builds a packet based on the given spec and sends it.
+static bool build_send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+  return send_pkt(s, build_pkt(s, spec));
 }
 
 // Standard operations for tests that don't care about specifics.
@@ -1459,6 +1505,10 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(0, set_initial_seqno(s.socket, 100));
   KEXPECT_STREQ("CLOSED", get_sock_state(s.socket));
 
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "2001:db8::2", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "::1", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "::", 0x1234));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
   KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
@@ -9433,14 +9483,14 @@ static void accept_address_params_test(void) {
   child = net_accept(s.socket, (struct sockaddr*)bigbuf, &len);
   KEXPECT_GE(child, 0);
   // We should have written the sockaddr_in fields correctly.
-  KEXPECT_EQ(sizeof(struct sockaddr_storage), len);
+  KEXPECT_EQ(sizeof(struct sockaddr_in), len);
   // The first part of the address (struct sockaddr_in) should match.
   KEXPECT_EQ(AF_INET, ((struct sockaddr_in*)&bigbuf)->sin_family);
   KEXPECT_EQ(str2inet(DST_IP), ((struct sockaddr_in*)&bigbuf)->sin_addr.s_addr);
   KEXPECT_EQ(btoh16(1002), ((struct sockaddr_in*)&bigbuf)->sin_port);
   // Shouldn't have written past the last byte.
-  KEXPECT_EQ((uint8_t)0xab, bigbuf[len]);
-  KEXPECT_EQ((uint8_t)0xdf, bigbuf[len + 1]);
+  KEXPECT_EQ((uint8_t)0xab, bigbuf[sizeof(struct sockaddr_storage)]);
+  KEXPECT_EQ((uint8_t)0xdf, bigbuf[sizeof(struct sockaddr_storage) + 1]);
   // ...everything in between is gargbage, can't be checked.
   SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
   KEXPECT_EQ(0, vfs_close(child));
@@ -13396,9 +13446,348 @@ static void sockmap_tests(void) {
   sockmap_reuseaddr_ipv6_tests();
 }
 
-static void tcp_ipv6_test(void) {
-  KTEST_BEGIN("TCP: IPv6 socket creation unsupported");
-  KEXPECT_EQ(-EAFNOSUPPORT, net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP));
+static void basic_ipv6_test(void) {
+  KTEST_BEGIN("TCP: listen() basic test (IPv6)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  // Should not be able to listen on an unbound socket.
+  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s.socket, 10));
+
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "1.2.3.4", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "0.0.0.0", 0x1234));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(s.socket, 10));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+
+  // Should not be able to call connect() on a listening socket.
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s.socket, "2001:db8::2", 0x5678));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Or read/write.
+  char buf;
+  KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, &buf, 1));
+
+  KEXPECT_STREQ("[2001:db8::1]:4660", getsockname_str(s.socket));
+  KEXPECT_STREQ("ENOTCONN", getpeername_str(s.socket));
+
+  // Any packet other than a SYN should get a RST or be ignored.
+  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  // Try some mutants that don't have the ACK bit set for fun.
+  SEND_PKT(&s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 503));
+  SEND_PKT(&s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(&s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 501));
+
+  // A SYN (or SYN-ACK) with data should also be rejected.
+  test_packet_spec_t p = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  p.flags = TCP_FLAG_SYN;
+  SEND_PKT(&s, p);
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  p.flags |= TCP_FLAG_ACK;
+  SEND_PKT(&s, p);
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  // Send a SYN, complete the connection.
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "2001:db8::2", 2000);
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+
+  // We should be able to accept() a child socket.
+  char addr[SOCKADDR_PRETTY_LEN];
+  c1.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("[2001:db8::2]:2000", addr);
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // listen(), accept(), etc should not work on the child socket.
+  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+  KEXPECT_EQ(-EINVAL, do_accept(c1.socket, addr));
+  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1.socket));
+
+  // Do a second connection.
+  tcp_test_state_t c2;
+  init_tcp_test_child(&s, &c2, "2001:db8::3", 600);
+  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c2,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  c2.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c2.socket, 0);
+  KEXPECT_STREQ("[2001:db8::3]:600", addr);
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Should be able to pass data on both sockets.
+  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  SEND_PKT(&c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  EXPECT_PKT(&c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  KEXPECT_STREQ("abc", do_read(c1.socket));
+  KEXPECT_STREQ("123", do_read(c2.socket));
+
+  KEXPECT_EQ(5, vfs_write(c1.socket, "ABCDE", 5));
+  KEXPECT_EQ(5, vfs_write(c2.socket, "67890", 5));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
+  EXPECT_PKT(&c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(&c2, 5, 3));
+
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&c2);
+}
+
+static void tcp_ipv6_self_connect_test(void) {
+  KTEST_BEGIN("TCP: IPv6 basic loopback self-connect test");
+  int s1 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s1, 0);
+  int s2 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s2, 0);
+
+  struct sockaddr_in6 dst;
+  KEXPECT_EQ(0, str2sin6("::1", 1234, &dst));
+  KEXPECT_EQ(0, net_bind(s2, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, net_listen(s2, 10));
+  KEXPECT_EQ(0, net_connect(s1, (struct sockaddr*)&dst, sizeof(dst)));
+
+  struct sockaddr_storage src;
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s1, &src));
+  char str[SOCKADDR_PRETTY_LEN];
+  ksprintf(str, "[::1]:%d", get_sockaddrs_port(&src));
+  KEXPECT_STREQ(str, sas2str(&src));
+
+  struct sockaddr_storage peer;
+  socklen_t peer_len = sizeof(peer);
+  int s3 = net_accept(s2, (struct sockaddr*)&peer, &peer_len);
+  KEXPECT_GE(s3, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), peer_len);
+  KEXPECT_STREQ(str, sas2str(&peer));
+
+  KEXPECT_EQ(3, vfs_write(s1, "abc", 3));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s3, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  KEXPECT_EQ(3, vfs_write(s3, "def", 3));
+  KEXPECT_EQ(3, vfs_read(s1, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("def", buf);
+
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, net_shutdown(s3, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(s3);
+}
+
+static void tcp_ipv6_bind_port_only_test(void) {
+  KTEST_BEGIN("TCP: IPv6 port-only bind test");
+  int s1 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s1, 0);
+  int s2 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s2, 0);
+
+  struct sockaddr_in6 dst;
+  KEXPECT_EQ(0, str2sin6("::", 1234, &dst));
+  KEXPECT_EQ(0, net_bind(s2, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, net_listen(s2, 10));
+
+  struct sockaddr_storage src;
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s2, &src));
+  KEXPECT_STREQ("[::]:1234", sas2str(&src));
+
+  KEXPECT_EQ(0, str2sin6("::", 5678, &dst));
+  KEXPECT_EQ(0, net_bind(s1, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s1, &src));
+  KEXPECT_STREQ("[::]:5678", sas2str(&src));
+  KEXPECT_EQ(0, str2sin6("::1", 1234, &dst));
+  KEXPECT_EQ(0, net_connect(s1, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s1, &src));
+  KEXPECT_STREQ("[::1]:5678", sas2str(&src));
+
+  struct sockaddr_storage peer;
+  socklen_t peer_len = sizeof(peer);
+  int s3 = net_accept(s2, (struct sockaddr*)&peer, &peer_len);
+  KEXPECT_GE(s3, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), peer_len);
+  KEXPECT_STREQ("[::1]:5678", sas2str(&peer));
+
+  KEXPECT_EQ(3, vfs_write(s1, "abc", 3));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s3, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  KEXPECT_EQ(3, vfs_write(s3, "def", 3));
+  KEXPECT_EQ(3, vfs_read(s1, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("def", buf);
+
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, net_shutdown(s3, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(s3);
+}
+
+static void bad_ipv6_packet_test(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (truncated TCP header)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a truncated SYN/ACK.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  pbuf_trim_end(pkt, 1);
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void bad_ipv6_packet_test2(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (header size too small)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a SYN/ACK with a too-small header size.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pkt);
+  KEXPECT_EQ(5, tcp_hdr->data_offset);
+  tcp_hdr->data_offset = 4;
+  calc_checksum(&s, pkt);
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void bad_ipv6_packet_test3(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (header size too large)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a SYN/ACK with a too-small header size.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pkt);
+  KEXPECT_EQ(5, tcp_hdr->data_offset);
+  tcp_hdr->data_offset = 6;
+  calc_checksum(&s, pkt);
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void bad_ipv6_packet_test4(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (bad checksum)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a SYN/ACK with a too-small header size.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pkt);
+  tcp_hdr->checksum = 1234;
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void tcp_ipv6_tests(void) {
+  basic_ipv6_test();
+  tcp_ipv6_self_connect_test();
+  tcp_ipv6_bind_port_only_test();
+  bad_ipv6_packet_test();
+  bad_ipv6_packet_test2();
+  bad_ipv6_packet_test3();
+  bad_ipv6_packet_test4();
 }
 
 void tcp_test(void) {
@@ -13413,6 +13802,7 @@ void tcp_test(void) {
 
   kspin_lock(&tun.n->lock);
   nic_add_addr(tun.n, SRC_IP, 24, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(tun.n, "2001:db8::1", 64, NIC_ADDR_ENABLED);
   kspin_unlock(&tun.n->lock);
 
   g_tcp_test.tun_fd = tun.fd;
@@ -13445,6 +13835,7 @@ void tcp_test(void) {
     nonblocking_tests();
     close_race_tests();
     open_race_tests();
+    tcp_ipv6_tests();
   }
 
   // These are tests that don't look specifically at the sequence numbers or
@@ -13456,7 +13847,6 @@ void tcp_test(void) {
   reuseaddr_tests();
   rapid_reconnect_test();
   sockmap_tests();
-  tcp_ipv6_test();
 
   KTEST_BEGIN("TCP: test cleanup");
   test_ttap_destroy(&tun);

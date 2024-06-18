@@ -25,7 +25,8 @@
 tcp_state_t g_tcp;
 
 void tcp_init(void) {
-  tcpsm_init(&g_tcp.sockets, AF_INET, INET_PORT_EPHMIN, INET_PORT_EPHMAX);
+  tcpsm_init(&g_tcp.sockets_v4, AF_INET, INET_PORT_EPHMIN, INET_PORT_EPHMAX);
+  tcpsm_init(&g_tcp.sockets_v6, AF_INET6, INET_PORT_EPHMIN, INET_PORT_EPHMAX);
   g_tcp.lock = KSPINLOCK_NORMAL_INIT;
 }
 
@@ -72,7 +73,8 @@ tcp_key_t tcp_key_single(const struct sockaddr* local) {
 
 int tcp_num_connected_sockets(void) {
   kspin_lock(&g_tcp.lock);
-  int result = tcpsm_num_connected(&g_tcp.sockets);
+  int result = tcpsm_num_connected(&g_tcp.sockets_v4) +
+               tcpsm_num_connected(&g_tcp.sockets_v6);
   kspin_unlock(&g_tcp.lock);
   return result;
 }

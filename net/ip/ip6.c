@@ -23,6 +23,7 @@
 #include "net/link_layer.h"
 #include "net/pbuf.h"
 #include "net/socket/raw.h"
+#include "net/socket/tcp/tcp.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
@@ -168,8 +169,9 @@ void ip6_recv(nic_t* nic, pbuf_t* pb) {
     handled = icmpv6_recv(nic, hdr, header_len, pb);
   } else if (hdr->next_hdr == IPPROTO_UDP) {
     handled = sock_udp_dispatch(pb, ET_IPV6, hdr->next_hdr, header_len);
+  } else if (hdr->next_hdr == IPPROTO_TCP) {
+    handled = sock_tcp_dispatch(pb, ET_IPV6, hdr->next_hdr, header_len);
   }
-  // TODO(ipv6): handle TCP sockets.
 
   // pb is now a dangling pointer unless handled is false!
   if (!handled) {

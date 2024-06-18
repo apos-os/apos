@@ -16,6 +16,7 @@
 
 #include <stdbool.h>
 
+#include "common/debug.h"
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
@@ -234,6 +235,10 @@ char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
       if (saddr_len < (socklen_t)sizeof(struct sockaddr_in)) {
         ksprintf(buf, "<bad AF_INET addr>");
       } else {
+        if (ENABLE_KERNEL_SAFETY_NETS) {
+          // IP address plus a colon, five digits, and a NULL.
+          kmemset(buf, 0xab, INET_PRETTY_LEN + 1 + 5 + 1);
+        }
         const struct sockaddr_in* sin = (const struct sockaddr_in*)saddr;
         const uint8_t* bytes = (const uint8_t*)&sin->sin_addr.s_addr;
         ksprintf(buf, "%d.%d.%d.%d:%d", bytes[0], bytes[1], bytes[2], bytes[3],
@@ -245,6 +250,10 @@ char* sockaddr2str(const struct sockaddr* saddr, socklen_t saddr_len,
       if (saddr_len < (socklen_t)sizeof(struct sockaddr_in6)) {
         ksprintf(buf, "<bad AF_INET6 addr>");
       } else {
+        if (ENABLE_KERNEL_SAFETY_NETS) {
+          // IP address plus two brackets, a colon, five digits, and a NULL.
+          kmemset(buf, 0xab, INET6_PRETTY_LEN + 2 + 1 + 5 + 1);
+        }
         const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)saddr;
         kstrcpy(buf, "[");
         inet62str(&sin6->sin6_addr, buf + 1);

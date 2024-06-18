@@ -77,6 +77,11 @@ static const socket_ops_t g_tcp_socket_ops;
 
 static short tcp_poll_events(const socket_tcp_t* socket);
 
+static tcp_sockmap_t* sm(int domain) {
+  KASSERT_DBG(domain == AF_INET || domain == AF_INET6);
+  return (domain == AF_INET) ? &g_tcp.sockets_v4 : &g_tcp.sockets_v6;
+}
+
 static uint32_t gen_seq_num(const socket_tcp_t* sock) {
   return fnv_hash_concat(get_time_ms(), fnv_hash_addr((addr_t)sock));
 }
@@ -108,7 +113,7 @@ static bool maybe_update_recv_window(socket_tcp_t* socket, bool force) {
 }
 
 int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
-  if (domain != AF_INET) {
+  if (domain != AF_INET && domain != AF_INET6) {
     return -EAFNOSUPPORT;
   }
   if (type != SOCK_STREAM) {
@@ -244,8 +249,8 @@ static void set_state(socket_tcp_t* sock, socktcp_state_t new_state,
   sock->state = new_state;
   if (new_state == TCP_TIME_WAIT) {
     KASSERT_DBG(sock->connected_addr.sa_family != AF_UNSPEC);
-    tcpsm_mark_reusable(&g_tcp.sockets, &sock->bind_addr, &sock->connected_addr,
-                        sock);
+    tcpsm_mark_reusable(sm(sock->base.s_domain), &sock->bind_addr,
+                        &sock->connected_addr, sock);
   }
   // Wake up anyone waiting for a state transition.
   tcp_wake(sock);
@@ -302,7 +307,7 @@ static int bind_if_necessary(socket_tcp_t* socket,
     KASSERT(bound_port != 0);  // Should never have a bound IP but not a port.
     set_sockaddrs_port(&addr_to_bind, bound_port);
 
-    char buf[INET_PRETTY_LEN];
+    char buf[SOCKADDR_PRETTY_LEN];
     KLOG(DEBUG2, "TCP: socket %p used bound port for new address %s\n", socket,
          sockaddr2str((const struct sockaddr*)&addr_to_bind,
                       sizeof(addr_to_bind), buf));
@@ -316,7 +321,7 @@ static int bind_if_necessary(socket_tcp_t* socket,
 // Transmit a constructed segment.  Requires the socket be locked, but unlocks
 // it before calculating the checksum and transmitting.
 static int tcp_transmit_segment(socket_tcp_t* socket,
-                                const ip4_pseudo_hdr_t* pseudo_ip,
+                                const tcpip_pseudo_hdr_t* pseudo_ip,
                                 tcp_segment_t* seg,
                                 pbuf_t* pb,
                                 bool allow_block) {
@@ -326,13 +331,10 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
   tcp_set_timer(socket, socket->rto_ms, false);
   kspin_unlock(&socket->spin_mu);
 
+  KASSERT_DBG(socket->base.s_domain == pseudo_ip->domain);
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   KASSERT_DBG(tcp_hdr->flags == seg->flags);
-  tcp_hdr->checksum = ip_checksum2(pseudo_ip, sizeof(ip4_pseudo_hdr_t),
-                                   pbuf_get(pb), pbuf_size(pb));
-
-  ip4_add_hdr(pb, pseudo_ip->src_addr, pseudo_ip->dst_addr, IPPROTO_TCP);
-  return ip_send(pb, allow_block);
+  return tcp_checksum_and_send(pb, pseudo_ip, allow_block);
 }
 
 static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
@@ -344,7 +346,7 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
   }
   seg->retransmits++;
 
-  ip4_pseudo_hdr_t pseudo_ip;
+  tcpip_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
   int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
   if (result < 0) {
@@ -359,11 +361,7 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   KASSERT_DBG(tcp_hdr->flags == seg->flags);
-  tcp_hdr->checksum = ip_checksum2(&pseudo_ip, sizeof(ip4_pseudo_hdr_t),
-                                   pbuf_get(pb), pbuf_size(pb));
-
-  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_TCP);
-  result = ip_send(pb, /* allow_block */ false);
+  result = tcp_checksum_and_send(pb, &pseudo_ip, /* allow_block */ false);
 
   if (result < 0) {
     KLOG(WARNING, "TCP: socket %p unable to retransmit packet: %s\n", socket,
@@ -388,7 +386,7 @@ static int tcp_send_syn(socket_tcp_t* socket, bool ack, bool allow_block) {
   tcp_segment_t* seg = KMALLOC(tcp_segment_t);
   tcp_syn_segment(socket, seg, ack);
 
-  ip4_pseudo_hdr_t pseudo_ip;
+  tcpip_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
   int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
   if (result < 0) {
@@ -428,7 +426,7 @@ static int tcp_send_datafin(socket_tcp_t* socket, bool allow_block) {
 
   tcp_segment_t* seg = KMALLOC(tcp_segment_t);
   tcp_next_segment(socket, seg);
-  ip4_pseudo_hdr_t pseudo_ip;
+  tcpip_pseudo_hdr_t pseudo_ip;
   pbuf_t* pb = NULL;
   int result = tcp_build_segment(socket, seg, &pb, &pseudo_ip);
   if (result) {
@@ -485,13 +483,14 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 static void tcp_dispatch_or_rst(socket_tcp_t* socket, pbuf_t* pb,
                                 const tcp_packet_metadata_t* md);
 
-bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
-  KASSERT_DBG(ethertype == ET_IPV4);
+bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
+                       ssize_t header_len) {
+  KASSERT_DBG(ethertype == ET_IPV4 || ethertype == ET_IPV6);
   KASSERT_DBG(protocol == IPPROTO_TCP);
 
   // Validate the packet.
   tcp_packet_metadata_t mdata;
-  if (!tcp_validate_packet(pb, &mdata)) {
+  if (!tcp_validate_packet(pb, ethertype, header_len, &mdata)) {
     // Drop the packet if it is TCP but invalid.
     pbuf_free(pb);
     return true;
@@ -499,7 +498,8 @@ bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
 
   // Find a matching socket.
   kspin_lock(&g_tcp.lock);
-  socket_tcp_t* socket = tcpsm_find(&g_tcp.sockets, &mdata.dst, &mdata.src);
+  int domain = (ethertype == ET_IPV4) ? AF_INET : AF_INET6;
+  socket_tcp_t* socket = tcpsm_find(sm(domain), &mdata.dst, &mdata.src);
   if (socket) {
     refcount_inc(&socket->ref);
   }
@@ -1473,8 +1473,8 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
 
   // Add the new socket to the connected sockets table.
   kspin_lock(&g_tcp.lock);
-  result = tcpsm_bind(&g_tcp.sockets, &child->bind_addr, &child->connected_addr,
-                      child->tcp_flags, child);
+  result = tcpsm_bind(sm(child->base.s_domain), &child->bind_addr,
+                      &child->connected_addr, child->tcp_flags, child);
   if (result) {
     // This could happen (with SMP) if we race with another incoming connection.
     KLOG(DEBUG, "TCP: socket %p unable to accept incoming connection: %s\n",
@@ -1559,8 +1559,8 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
       KASSERT(remote->sa_family == (sa_family_t)socket->base.s_domain);
     }
     kspin_lock(&g_tcp.lock);
-    int result =
-        tcpsm_remove(&g_tcp.sockets, &socket->bind_addr, remote, socket);
+    int result = tcpsm_remove(sm(socket->base.s_domain), &socket->bind_addr,
+                              remote, socket);
     kspin_unlock(&g_tcp.lock);
     if (result) {
       char buf1[SOCKADDR_PRETTY_LEN], buf2[SOCKADDR_PRETTY_LEN];
@@ -1842,15 +1842,15 @@ static int sock_tcp_bind_locked(socket_tcp_t* socket,
     KASSERT_DBG(get_sockaddrs_port(&socket->bind_addr) == naddr_port);
     KASSERT_DBG(naddr_port != 0);
     KASSERT_DBG(inet_is_anyaddr((struct sockaddr*)&socket->bind_addr));
-    KASSERT(tcpsm_remove(&g_tcp.sockets, &socket->bind_addr, NULL, socket) ==
-            0);
+    KASSERT(tcpsm_remove(sm(socket->base.s_domain), &socket->bind_addr, NULL,
+                         socket) == 0);
     KASSERT(refcount_dec(&socket->ref) > 0);
   }
 
   // TODO(aoates): check for permission to bind to low-numbered ports.
 
   kmemcpy(&socket->bind_addr, address, address_len);
-  result = tcpsm_bind(&g_tcp.sockets, &socket->bind_addr, NULL,
+  result = tcpsm_bind(sm(socket->base.s_domain), &socket->bind_addr, NULL,
                       socket->tcp_flags, socket);
   kspin_unlock(&g_tcp.lock);
   if (result) {
@@ -1871,6 +1871,10 @@ static int sock_tcp_bind(socket_t* socket_base, const struct sockaddr* address,
                          socklen_t address_len) {
   KASSERT(socket_base->s_type == SOCK_STREAM);
   KASSERT(socket_base->s_protocol == IPPROTO_TCP);
+  if (address->sa_family != (sa_family_t)socket_base->s_domain) {
+    return -EAFNOSUPPORT;
+  }
+
   socket_tcp_t* socket = (socket_tcp_t*)socket_base;
   KMUTEX_AUTO_LOCK(lock, &socket->mu);
   return sock_tcp_bind_locked(socket, address, address_len,
@@ -1955,7 +1959,9 @@ static int sock_tcp_accept(socket_t* socket_base, int fflags,
 
   kspin_lock(&child->spin_mu);
   if (address && address_len) {
-    *address_len = min(*address_len, (socklen_t)sizeof(child->connected_addr));
+    *address_len =
+        min(*address_len,
+            (socklen_t)sizeof_sockaddr(child->connected_addr.sa_family));
     KASSERT_DBG(*address_len > 0);
     kmemcpy(address, &child->connected_addr, *address_len);
   }
@@ -2035,13 +2041,13 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
   // First remove our bound address from the socket map, and other sockets can
   // now bind to our IP/port if SO_REUSE* is set (when implemented).  In the
   // case of an implicit bind, we're removing the entry we just added, whatever.
-  result = tcpsm_remove(&g_tcp.sockets, &sock->bind_addr, NULL, sock);
+  result = tcpsm_remove(sm(sock->base.s_domain), &sock->bind_addr, NULL, sock);
   KASSERT(result == 0);
 
   // Now attempt to rebind to the full 5-tuple.
   struct sockaddr_storage address_sas;
   kmemcpy(&address_sas, address, address_len);
-  result = tcpsm_bind(&g_tcp.sockets, &sock->bind_addr, &address_sas,
+  result = tcpsm_bind(sm(sock->base.s_domain), &sock->bind_addr, &address_sas,
                       sock->tcp_flags, sock);
   if (result) {
     KLOG(WARNING, "TCP: unable to connect socket: %s\n", errorname(-result));
