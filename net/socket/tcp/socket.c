@@ -93,6 +93,11 @@ static void set_iss(socket_tcp_t* socket, uint32_t iss) {
   socket->send_unack = socket->send_next;
 }
 
+static void calc_flow_label(socket_tcp_t* socket) {
+  socket->flow_label = tcp_key((const struct sockaddr*)&socket->bind_addr,
+                               (const struct sockaddr*)&socket->connected_addr);
+}
+
 // Possibly updates the receive window if allowed by the SWS algorithm.  Returns
 // true if the window was updated.  If `force` is true, the window is always
 // updated.
@@ -168,6 +173,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->send_wndsize = 0;
   sock->wl1 = sock->wl2 = 0;
   tcp_cwnd_init(&sock->cwnd, sock->mss);
+  sock->flow_label = 0;
   sock->rto_ms = TCP_DEFAULT_RTO_MS;
   sock->rto_min_ms = TCP_DEFAULT_MIN_RTO_MS;
   sock->srtt_ms = -1;
@@ -334,7 +340,7 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
   KASSERT_DBG(socket->base.s_domain == pseudo_ip->domain);
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   KASSERT_DBG(tcp_hdr->flags == seg->flags);
-  return tcp_checksum_and_send(pb, pseudo_ip, allow_block);
+  return tcp_checksum_and_send(socket, pb, pseudo_ip, allow_block);
 }
 
 static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
@@ -361,7 +367,8 @@ static void tcp_retransmit_segment(socket_tcp_t* socket, tcp_segment_t* seg) {
 
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   KASSERT_DBG(tcp_hdr->flags == seg->flags);
-  result = tcp_checksum_and_send(pb, &pseudo_ip, /* allow_block */ false);
+  result =
+      tcp_checksum_and_send(socket, pb, &pseudo_ip, /* allow_block */ false);
 
   if (result < 0) {
     KLOG(WARNING, "TCP: socket %p unable to retransmit packet: %s\n", socket,
@@ -1466,6 +1473,7 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
 
   child->bind_addr = md->dst;
   child->connected_addr = md->src;
+  calc_flow_label(child);
   child->recv_next = btoh32(tcp_hdr->seq) + 1;
   child->send_wndsize = btoh16(tcp_hdr->wndsize);  // Note: won't be used...
   child->send_buf_seq = child->send_next + 1;
@@ -2063,6 +2071,7 @@ static int sock_tcp_connect(socket_t* socket_base, int fflags,
 
   set_state(sock, TCP_SYN_SENT, "sending connect SYN");
   kmemcpy(&sock->connected_addr, address, address_len);
+  calc_flow_label(sock);
   kspin_unlock(&g_tcp.lock);
 
   // Send the initial SYN.  Always allow blocking here --- we want to block for

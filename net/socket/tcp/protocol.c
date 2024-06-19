@@ -48,7 +48,8 @@ static const tcp_hdr_t* pb_tcp_hdr(const pbuf_t* pb, ssize_t header_len) {
   return (const tcp_hdr_t*)(pbuf_getc(pb) + header_len);
 }
 
-int tcp_checksum_and_send(pbuf_t* pb, const tcpip_pseudo_hdr_t* pseudo_ip,
+int tcp_checksum_and_send(const socket_tcp_t* socket, pbuf_t* pb,
+                          const tcpip_pseudo_hdr_t* pseudo_ip,
                           bool allow_block) {
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
   tcp_hdr->checksum = ip_checksum2(&pseudo_ip->hdr, pseudo_ip->len,
@@ -61,8 +62,8 @@ int tcp_checksum_and_send(pbuf_t* pb, const tcpip_pseudo_hdr_t* pseudo_ip,
   } else {
     KASSERT_DBG(pseudo_ip->domain == AF_INET6);
     const ip6_pseudo_hdr_t* pv6 = &pseudo_ip->hdr.v6;
-    // TODO(ipv6): add flow label
-    ip6_add_hdr(pb, &pv6->src_addr, &pv6->dst_addr, IPPROTO_TCP, 0);
+    ip6_add_hdr(pb, &pv6->src_addr, &pv6->dst_addr, IPPROTO_TCP,
+                socket ? socket->flow_label : 0);
     return ip6_send(pb, allow_block);
   }
 }
@@ -163,7 +164,7 @@ static int send_flags_only_packet(socket_tcp_t* socket, int tcp_flags,
   KASSERT(!(tcp_flags & TCP_FLAG_FIN));
   kspin_unlock(&socket->spin_mu);
 
-  return tcp_checksum_and_send(pb, &pseudo_ip, allow_block);
+  return tcp_checksum_and_send(socket, pb, &pseudo_ip, allow_block);
 }
 
 int tcp_send_ack(socket_tcp_t* socket) {
@@ -324,7 +325,7 @@ int tcp_send_raw_rst(const pbuf_t* pb_in, const tcp_packet_metadata_t* md) {
     pseudo_ip.len = sizeof(ip6_pseudo_hdr_t);
   }
 
-  return tcp_checksum_and_send(pb, &pseudo_ip, /* allow_block */ false);
+  return tcp_checksum_and_send(NULL, pb, &pseudo_ip, /* allow_block */ false);
 }
 
 static bool validate_packet_v4(pbuf_t* pb, ssize_t header_len,

@@ -842,6 +842,9 @@ typedef struct {
   // Sequence base for the socket.
   uint32_t seq_base;
   uint32_t send_seq_base;
+
+  // Expected flow label for incoming packets.
+  uint32_t flow_label;
 } tcp_test_state_t;
 
 // Creates and initializes the test state.  Does _not_ bind the test socket.
@@ -856,6 +859,7 @@ static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
   s->wndsize = DEFAULT_WNDSIZE;
   s->seq_base = g_tcp_test.seq_start;
   s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
+  s->flow_label = 0;
   s->socket = net_socket(s->tcp_addr.sa_family, SOCK_STREAM, IPPROTO_TCP);
   s->op.thread = NULL;
   KEXPECT_GE(s->socket, 0);
@@ -877,6 +881,7 @@ static void init_tcp_test_child(const tcp_test_state_t* parent,
   s->wndsize = parent->wndsize;
   s->seq_base = g_tcp_test.seq_start;
   s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
+  s->flow_label = 0;
   s->socket = -1;
   s->op.thread = NULL;
 
@@ -1179,6 +1184,7 @@ static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
 // Special value to indicate a zero window size (since passing zero means
 // "ignore").
 #define WNDSIZE_ZERO 0xabcd
+#define FLOW_LABEL_ZERO 0xabcd
 
 // Specification for a packet to expect or send.  Fields not supplied are not
 // checked (on receive), or given default values (on send).
@@ -1321,7 +1327,16 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
     ip6_hdr_t* ip_hdr = (ip6_hdr_t*)s->recv;
     v &= KEXPECT_EQ(6, ip6_version(*ip_hdr));
     v &= KEXPECT_EQ(0, ip6_traffic_class(*ip_hdr));
-    v &= KEXPECT_EQ(0, ip6_flow(*ip_hdr));
+    if (s->flow_label == FLOW_LABEL_ZERO) {
+      v &= KEXPECT_EQ(0, ip6_flow(*ip_hdr));
+    } else if (s->flow_label != 0) {
+      v &= KEXPECT_EQ(s->flow_label, ip6_flow(*ip_hdr));
+    } else if (!(spec.flags & TCP_FLAG_RST)) {
+      // Make sure the flow label is set to _something_ in most tests.  The flow
+      // label should be set on _some_ RSTs, but hard to tell here, so don't
+      // bother as this is a catchall.
+      v &= KEXPECT_NE(0, ip6_flow(*ip_hdr));
+    }
     v &= KEXPECT_EQ(result, sizeof(ip6_hdr_t) + btoh16(ip_hdr->payload_len));
     v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->next_hdr);
     // Don't bother checking the checksum here.
@@ -13516,6 +13531,7 @@ static void basic_ipv6_test(void) {
   // Send a SYN, complete the connection.
   tcp_test_state_t c1;
   init_tcp_test_child(&s, &c1, "2001:db8::2", 2000);
+  c1.flow_label = 966464;
   SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c1,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
@@ -13540,6 +13556,7 @@ static void basic_ipv6_test(void) {
   // Do a second connection.
   tcp_test_state_t c2;
   init_tcp_test_child(&s, &c2, "2001:db8::3", 600);
+  c2.flow_label = 54956;
   SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
   EXPECT_PKT(&c2,
              SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
@@ -13579,6 +13596,79 @@ static void basic_ipv6_test(void) {
   cleanup_tcp_test(&s);
   cleanup_tcp_test(&c1);
   cleanup_tcp_test(&c2);
+}
+
+static void basic_ipv6_connect_test(void) {
+  KTEST_BEGIN("TCP: basic connect() (IPv6)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+  s.flow_label = 473694;
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void basic_ipv6_connect_reset_test(void) {
+  KTEST_BEGIN("TCP: basic connect() then reset (IPv6)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+  s.flow_label = 473694;
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shut down the connect then trigger a reset.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+  s.flow_label = FLOW_LABEL_ZERO;
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
 }
 
 static void tcp_ipv6_self_connect_test(void) {
@@ -13782,6 +13872,8 @@ static void bad_ipv6_packet_test4(void) {
 
 static void tcp_ipv6_tests(void) {
   basic_ipv6_test();
+  basic_ipv6_connect_test();
+  basic_ipv6_connect_reset_test();
   tcp_ipv6_self_connect_test();
   tcp_ipv6_bind_port_only_test();
   bad_ipv6_packet_test();

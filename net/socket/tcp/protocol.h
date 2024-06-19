@@ -76,7 +76,8 @@ typedef struct {
 
 // Calculate the checksum for a given packet, add the appropriate IP header, and
 // send it.  The pbuf should be pointing at the TCP header.
-int tcp_checksum_and_send(pbuf_t* pb, const tcpip_pseudo_hdr_t* pseudo_ip,
+int tcp_checksum_and_send(const socket_tcp_t* socket, pbuf_t* pb,
+                          const tcpip_pseudo_hdr_t* pseudo_ip,
                           bool allow_block);
 
 int tcp_send_ack(socket_tcp_t* socket);
