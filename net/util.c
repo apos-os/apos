@@ -286,8 +286,8 @@ socklen_t sizeof_sockaddr(sa_family_t sa_family) {
     case AF_INET: return sizeof(struct sockaddr_in);
     case AF_INET6: return sizeof(struct sockaddr_in6);
   }
-  klogfm(KL_NET, WARNING, "unknown address family: %d\n", sa_family);
-  return 0;
+  klogfm(KL_NET, DFATAL, "unknown address family: %d\n", sa_family);
+  return sizeof(struct sockaddr_storage);
 }
 
 int net2sockaddr(const netaddr_t* naddr, int port, void* saddr,

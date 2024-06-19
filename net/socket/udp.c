@@ -458,14 +458,13 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
     }
     actual_dst = dest_addr;
     actual_dst_len = dest_len;
-    if (actual_dst_len < (socklen_t)sizeof(sa_family_t)) {
-      return -EINVAL;
+    KASSERT(actual_dst_len >=
+            (socklen_t)sizeof(sa_family_t));  // Checked by net_sendto()
+    if (actual_dst->sa_family != (sa_family_t)socket_base->s_domain) {
+      return -EAFNOSUPPORT;
     }
     if (dest_len < sizeof_sockaddr(actual_dst->sa_family)) {
       return -EINVAL;
-    }
-    if (actual_dst->sa_family != (sa_family_t)socket_base->s_domain) {
-      return -EAFNOSUPPORT;
     }
   } else if (socket->connected_addr.sa_family != AF_UNSPEC) {
     KASSERT_DBG(socket->connected_addr.sa_family == AF_INET ||

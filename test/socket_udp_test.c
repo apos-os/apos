@@ -579,7 +579,7 @@ static void sendto_test(void) {
                         sizeof(dst_addr) - 1));
   KEXPECT_EQ(-EINVAL,
              net_sendto(sock, "abc", 3, 0, (struct sockaddr*)&dst_addr,
-                        sizeof(dst_addr) - 1));
+                        3));
   // These are all sizes small enough to not even be able to read the
   // sa_family_t; therefore, the socket pointer itself shouldn't be read either.
   KEXPECT_EQ(-EINVAL, net_sendto(sock, "abc", 3, 0, (struct sockaddr*)0x01, 3));
