@@ -1107,9 +1107,10 @@ static void read_tun_packets(void) {
     } else {
       KASSERT(version == 6);
       const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&pkt->packet;
-      pkt->dst_ip.sa_family = AF_INET6;
-      kmemcpy(&((struct sockaddr_in6*)&pkt->dst_ip)->sin6_addr,
-              &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+      struct sockaddr_in6* pkt_v6 = (struct sockaddr_in6*)&pkt->dst_ip;
+      pkt_v6->sin6_family = AF_INET6;
+      pkt_v6->sin6_scope_id = 0;
+      kmemcpy(&pkt_v6->sin6_addr, &ip6_hdr->dst_addr, sizeof(struct in6_addr));
       KASSERT(ip6_hdr->next_hdr == IPPROTO_TCP);
       tcp_hdr = (tcp_hdr_t*)(&pkt->packet[sizeof(ip6_hdr_t)]);
     }

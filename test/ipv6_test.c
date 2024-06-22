@@ -372,6 +372,48 @@ static void addr_prefix_tests(void) {
   KEXPECT_EQ(15, ip6_common_prefix(&addr2, &addr1));
 }
 
+static void addr_equal_tests(void) {
+  KTEST_BEGIN("sockaddr_equal() for IPv6");
+  struct sockaddr_in6 addr1, addr2;
+  kmemset(&addr1, 0xab, sizeof(addr1));
+  kmemset(&addr2, 0xcd, sizeof(addr2));
+  str2inet6("2001:db8::1", &addr1.sin6_addr);
+  str2inet6("2001:db8::1", &addr2.sin6_addr);
+  addr1.sin6_family = addr2.sin6_family = AF_INET6;
+  addr1.sin6_port = 1000;
+  addr2.sin6_port = 1000;
+  addr1.sin6_scope_id = 0;
+  addr2.sin6_scope_id = 0;
+  addr1.sin6_flowinfo = 123;
+  addr2.sin6_flowinfo = 456;
+  KEXPECT_TRUE(
+      sockaddr_equal((struct sockaddr*)&addr1, (struct sockaddr*)&addr2));
+
+  addr1.sin6_port = 1001;
+  KEXPECT_FALSE(
+      sockaddr_equal((struct sockaddr*)&addr1, (struct sockaddr*)&addr2));
+  addr1.sin6_port = addr2.sin6_port;
+
+  addr1.sin6_addr.s6_addr[0] = 100;
+  KEXPECT_FALSE(
+      sockaddr_equal((struct sockaddr*)&addr1, (struct sockaddr*)&addr2));
+  addr1.sin6_addr = addr2.sin6_addr;
+
+  addr1.sin6_addr.s6_addr[10] = 100;
+  KEXPECT_FALSE(
+      sockaddr_equal((struct sockaddr*)&addr1, (struct sockaddr*)&addr2));
+  addr1.sin6_addr = addr2.sin6_addr;
+
+  addr1.sin6_scope_id = 1;
+  addr2.sin6_scope_id = 1;
+  KEXPECT_TRUE(
+      sockaddr_equal((struct sockaddr*)&addr1, (struct sockaddr*)&addr2));
+  addr2.sin6_scope_id = 2;
+  KEXPECT_TRUE(
+      sockaddr_equal((struct sockaddr*)&addr1, (struct sockaddr*)&addr2));
+  addr1.sin6_scope_id = addr2.sin6_scope_id;
+}
+
 static void addr_tests(void) {
   KTEST_BEGIN("IPv6 address test helpers");
   char buf[INET6_PRETTY_LEN];
@@ -398,6 +440,7 @@ static void addr_tests(void) {
   addr2str_tests();
   str2addr_tests();
   addr_prefix_tests();
+  addr_equal_tests();
 }
 
 static void netaddr_tests(void) {
