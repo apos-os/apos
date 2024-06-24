@@ -61,6 +61,11 @@ typedef enum {
   NIC_TUN = 3,
 } nic_type_t;
 
+// IPv6-specific NIC data.
+typedef struct {
+  htbl_t multicast;  // Multicast addresses we're subscribed to.
+} nic_ipv6_t;
+
 struct nic {
   kspinlock_t lock;
 
@@ -74,6 +79,7 @@ struct nic {
   refcount_t ref;  // External refcount (will be zero usually).
   nic_addr_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
   nbr_cache_t nbr_cache;
+  nic_ipv6_t ipv6;
   list_link_t link;  // Protected by global mutex, not |lock|.
   bool deleted;      // Protected by global mutex, not |lock|.
 };

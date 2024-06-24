@@ -21,6 +21,7 @@ srcs = [
   'ip6.c',
   'ip6_addr.c',
   'ip6_hdr.c',
+  'ip6_multicast.c',
   'route.c',
   'util.c',
 ]

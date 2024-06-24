@@ -16,11 +16,13 @@
 
 #include <stdbool.h>
 
+#include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/kprintf.h"
 #include "common/kstring.h"
 #include "common/list.h"
 #include "common/refcount.h"
+#include "memory/kmalloc.h"
 #include "net/neighbor_cache.h"
 #include "proc/spinlock.h"
 
@@ -70,6 +72,8 @@ void nic_init(nic_t* nic) {
   }
   nbr_cache_init(&nic->nbr_cache);
   nic->deleted = false;
+
+  htbl_init(&nic->ipv6.multicast, 10);
 }
 
 void nic_create(nic_t* nic, const char* name_prefix) {
@@ -133,6 +137,10 @@ nic_t* nic_get_nm(const char* name) {
   return NULL;
 }
 
+static void do_delete(void* arg, uint32_t key, void* val) {
+  kfree(val);
+}
+
 void nic_put(nic_t* nic) {
   // Crude and incorrect safety check to catch refcount leaks.
   KASSERT(nic->ref.ref < 20);
@@ -150,6 +158,8 @@ void nic_put(nic_t* nic) {
   if (cleanup) {
     klogf("net: deleting NIC %s\n", nic->name);
     nbr_cache_cleanup(&nic->nbr_cache);
+    htbl_clear(&nic->ipv6.multicast, &do_delete, NULL);
+    htbl_cleanup(&nic->ipv6.multicast);
     nic->ops->nic_cleanup(nic);
   }
 }

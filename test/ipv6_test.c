@@ -23,17 +23,20 @@
 #include "net/eth/eth.h"
 #include "net/eth/ethertype.h"
 #include "net/ip/checksum.h"
+#include "net/ip/icmpv6/multicast.h"
 #include "net/ip/icmpv6/ndp.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/ip6_multicast.h"
 #include "net/ip/route.h"
 #include "net/ip/util.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
+#include "net/test_util.h"
 #include "net/util.h"
 #include "test/ktest.h"
 #include "test/test_nic.h"
@@ -47,6 +50,7 @@
 #define SRC_IP2 "2001:db8::3"
 #define DISABLED_SRC_IP "2001:db8::11"
 #define DISABLED_SRC_IP2 "2001:db8::12"
+#define MLD_QUERY_SRC "fe80::1234"
 
 typedef struct {
   test_ttap_t nic;
@@ -2037,6 +2041,495 @@ static void send_tests(test_fixture_t* t) {
   KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
 }
 
+static size_t mld_size(int num_addrs) {
+  return sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(mld_listener_report_t) +
+         num_addrs * sizeof(mld_multicast_record_t);
+}
+
+static void send_mld_query(test_ttap_t* tt, const char* src) {
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, sizeof(mld_query_t));
+  mld_query_t* query = (mld_query_t*)pbuf_get(pb);
+  kmemset(query, 0, sizeof(mld_query_t));
+  query->hdr.type = ICMPV6_MLD_QUERY;
+  query->max_response_code = 32768 - 1;
+
+  ip6_pseudo_hdr_t ip6_phdr;
+  KEXPECT_EQ(0, str2inet6(src, &ip6_phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1", &ip6_phdr.dst_addr));
+  kmemset(&ip6_phdr._zeroes, 0, sizeof(ip6_phdr._zeroes));
+  ip6_phdr.next_hdr = IPPROTO_ICMPV6;
+  ip6_phdr.payload_len = htob32(pbuf_size(pb));
+
+  query->hdr.checksum =
+      ip_checksum2(&ip6_phdr, sizeof(ip6_phdr), pbuf_get(pb), pbuf_size(pb));
+  ip6_add_hdr(pb, &ip6_phdr.src_addr, &ip6_phdr.dst_addr, IPPROTO_ICMPV6, 0);
+
+  nic_mac_t eth_dst;
+  ip6_multicast_mac(&ip6_phdr.dst_addr, eth_dst.addr);
+  eth_add_hdr(pb, &eth_dst, &tt->n->mac, ET_IPV6);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(tt->fd, &pb));
+}
+
+static void multicast_tests(test_fixture_t* t) {
+  KTEST_BEGIN("IPv6 multicast query (no groups joined)");
+  send_mld_query(&t->nic2, MLD_QUERY_SRC);
+  char buf[150];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+
+
+  KTEST_BEGIN("IPv6 multicast join");
+  struct in6_addr addr;
+  char pretty[INET6_PRETTY_LEN];
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &addr));
+  KEXPECT_EQ(-EINVAL, ip6_multicast_join(t->nic2.n, &addr));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_join(t->nic2.n, &addr));
+
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic2.fd, buf, 150));
+  const eth_hdr_t* eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  const ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  const mld_listener_report_t* report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  const mld_multicast_record_t* record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic2, MLD_QUERY_SRC);
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic2.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+  // TODO(ipv6): verify it subscribes on the NIC.
+
+
+  KTEST_BEGIN("IPv6 multicast query from bad source addr");
+  send_mld_query(&t->nic2, "::");
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+  send_mld_query(&t->nic2, "1::");
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+  send_mld_query(&t->nic2, "2001:db8::1");
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+
+
+  KTEST_BEGIN("IPv6 multicast join (second)");
+  // A second join shouldn't trigger any updates.
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_join(t->nic2.n, &addr));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+
+
+  KTEST_BEGIN("IPv6 multicast join (a second multicast address)");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff56:3412", &addr));
+  KEXPECT_EQ(0, ip6_multicast_join(t->nic2.n, &addr));
+
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic2.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff56:3412",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic2, MLD_QUERY_SRC);
+  KEXPECT_EQ(mld_size(2), vfs_read(t->nic2.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + 2 * sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(2, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  record = &report->records[1];
+  KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff56:3412",
+                inet62str(&record->multicast_addr, pretty));
+  // TODO(ipv6): verify it subscribes on the NIC.
+
+
+  KTEST_BEGIN("IPv6 multicast leave (not last join)");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_leave(t->nic2.n, &addr));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+
+
+  KTEST_BEGIN("IPv6 multicast leave (last join)");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_leave(t->nic2.n, &addr));
+
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic2.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_INCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic2, MLD_QUERY_SRC);
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic2.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff56:3412",
+                inet62str(&record->multicast_addr, pretty));
+  // TODO(ipv6): verify it UNsubscribes on the NIC.
+
+  KTEST_BEGIN("IPv6 multicast leave (last join #2)");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff56:3412", &addr));
+  KEXPECT_EQ(0, ip6_multicast_leave(t->nic2.n, &addr));
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic2.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_INCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff56:3412",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic2, MLD_QUERY_SRC);
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+  // TODO(ipv6): verify it UNsubscribes on the NIC.
+}
+
+static void multicast_tests2(test_fixture_t* t) {
+  KTEST_BEGIN("IPv6 multicast join (no link-local address");
+  struct in6_addr addr;
+  char pretty[INET6_PRETTY_LEN];
+  char buf[150];
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &addr));
+  KEXPECT_EQ(-EINVAL, ip6_multicast_join(t->nic.n, &addr));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 150));
+
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_join(t->nic.n, &addr));
+
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  const eth_hdr_t* eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  const ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  const mld_listener_report_t* report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  const mld_multicast_record_t* record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic, MLD_QUERY_SRC);
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+  // TODO(ipv6): verify it subscribes on the NIC.
+
+  KTEST_BEGIN("IPv6 multicast leave (no link-local address)");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_leave(t->nic.n, &addr));
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_INCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic, MLD_QUERY_SRC);
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 150));
+
+  KTEST_BEGIN("IPv6 multicast join (tentative link-local address");
+  kspin_lock(&t->nic.n->lock);
+  nic_addr_t* new_addr =
+      nic_add_addr_v6(t->nic.n, "fe80::1", 64, NIC_ADDR_TENTATIVE);
+  kspin_unlock(&t->nic.n->lock);
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &addr));
+  KEXPECT_EQ(-EINVAL, ip6_multicast_join(t->nic.n, &addr));
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 150));
+
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_join(t->nic.n, &addr));
+
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic, MLD_QUERY_SRC);
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+  // TODO(ipv6): verify it subscribes on the NIC.
+
+  KTEST_BEGIN("IPv6 multicast leave (no link-local address)");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
+  KEXPECT_EQ(0, ip6_multicast_leave(t->nic.n, &addr));
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, pretty));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, pretty));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, pretty));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, pretty));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_INCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff12:3456",
+                inet62str(&record->multicast_addr, pretty));
+
+  send_mld_query(&t->nic, MLD_QUERY_SRC);
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 150));
+
+  KTEST_BEGIN("IPv6 multicast NIC cleanup");
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3457", &addr));
+  KEXPECT_EQ(0, ip6_multicast_join(t->nic.n, &addr));
+  KEXPECT_EQ(mld_size(1), vfs_read(t->nic.fd, buf, 150));
+  // Leave the multicast entry on the NIC intentionally to ensure NIC cleanup
+  // destroys the table correctly.
+
+  kspin_lock(&t->nic.n->lock);
+  new_addr->state = NIC_ADDR_NONE;
+  kspin_unlock(&t->nic.n->lock);
+}
+
 // TODO(ipv6): additional tests:
 //  - invalid IPv6 packets
 //  - invalid NDP packets (including options)
@@ -2080,6 +2573,8 @@ void ipv6_test(void) {
   addr_selection_tests(&fixture);
   pick_src_ip_tests(&fixture);
   send_tests(&fixture);
+  multicast_tests(&fixture);
+  multicast_tests2(&fixture);
 
   KTEST_BEGIN("IPv6: test teardown");
   test_ttap_destroy(&fixture.nic);

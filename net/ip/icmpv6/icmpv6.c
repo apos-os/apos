@@ -20,6 +20,7 @@
 #include "net/ip/icmpv6/ndp.h"
 #include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/ip6_multicast.h"
 #include "net/pbuf.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -53,6 +54,10 @@ bool icmpv6_recv(nic_t* nic, const ip6_hdr_t* ip_hdr, size_t offset,
     case ICMPV6_NDP_NBR_SOLICIT:
     case ICMPV6_NDP_NBR_ADVERT:
       ndp_rx(nic, ip_hdr, pb);
+      return true;
+
+    case ICMPV6_MLD_QUERY:
+      ip6_multicast_handle_query(nic, ip_hdr, pb);
       return true;
   }
 

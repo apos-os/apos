@@ -18,6 +18,7 @@
 #include "dev/net/loopback.h"
 #include "dev/net/nic.h"
 #include "net/ip/ip6.h"
+#include "net/ip/ip6_multicast.h"
 #include "net/ip/route.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"

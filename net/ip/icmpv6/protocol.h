@@ -30,6 +30,8 @@ _Static_assert(sizeof(icmpv6_hdr_t) == 4, "icmpv6_hdr_t wrong size");
 // ICMPv6 message types.
 #define ICMPV6_NDP_NBR_SOLICIT 135
 #define ICMPV6_NDP_NBR_ADVERT 136
+#define ICMPV6_MLD_QUERY 130
+#define ICMPV6_MLD_LISTENER_REPORT 143
 
 // ICMPv6 option types.
 #define ICMPV6_OPTION_SRC_LL_ADDR 1
