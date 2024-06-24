@@ -157,3 +157,7 @@ int ip6_src_addr_cmp(const nic_addr_t* A, const nic_addr_t* B,
 
   return 0;
 }
+
+bool ip6_is_link_local(const struct in6_addr* addr) {
+  return addr->s6_addr[0] == 0xfe && (addr->s6_addr[1] & 0xc0) == 0x80;
+}

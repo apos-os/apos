@@ -437,6 +437,35 @@ static void addr_tests(void) {
   KEXPECT_EQ(0x73, addr.s6_addr[14]);
   KEXPECT_EQ(0x48, addr.s6_addr[15]);
 
+  KTEST_BEGIN("ip6_is_link_local() test");
+  KEXPECT_EQ(0, str2inet6("fe80::", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("fe80::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("fe81::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("fe8f::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("fe9f::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("feaf::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("fea0::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("feb0::1", &addr));
+  KEXPECT_TRUE(ip6_is_link_local(&addr));
+
+  KEXPECT_EQ(0, str2inet6("fec0::0", &addr));
+  KEXPECT_FALSE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("ff80::0", &addr));
+  KEXPECT_FALSE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("fd80::0", &addr));
+  KEXPECT_FALSE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("de80::0", &addr));
+  KEXPECT_FALSE(ip6_is_link_local(&addr));
+  KEXPECT_EQ(0, str2inet6("0e80::0", &addr));
+  KEXPECT_FALSE(ip6_is_link_local(&addr));
+
   addr2str_tests();
   str2addr_tests();
   addr_prefix_tests();

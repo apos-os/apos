@@ -30,4 +30,7 @@ int ip6_common_prefix(const struct in6_addr* A, const struct in6_addr* B);
 int ip6_src_addr_cmp(const nic_addr_t* A, const nic_addr_t* B,
                      const netaddr_t* dst, const nic_t* out_nic);
 
+// Returns true if the given address is a link-local address.
+bool ip6_is_link_local(const struct in6_addr* addr);
+
 #endif
