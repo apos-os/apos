@@ -16,6 +16,7 @@ Import('env')
 
 srcs = ['builtins.c', 'errno.c',
     'circbuf.c',
+    'crc.c',
     'hash.c',
     'hashtable.c',
     'kassert.c',

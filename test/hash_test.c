@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/hash.h"
+#include "common/crc.h"
 #include "common/kprintf.h"
 #include "test/hamlet.h"
 #include "test/ktest.h"
@@ -172,6 +173,16 @@ static void md5_test(void) {
                 get_md5_hash_n(kHamlet, 1000));
 }
 
+static void crc_test(void) {
+  KTEST_BEGIN("CRC32 test");
+  KEXPECT_EQ(0xe8b7be43, crc32((const uint8_t*)"a", 1, CRC32_NET_POLY));
+  KEXPECT_EQ(0xcbf43926, crc32((const uint8_t*)"123456789", 9, CRC32_NET_POLY));
+  KEXPECT_EQ(0xd202ef8d, crc32((const uint8_t*)"\0", 1, CRC32_NET_POLY));
+  KEXPECT_EQ(0xed82cd11, crc32((const uint8_t*)"abcd", 4, CRC32_NET_POLY));
+  KEXPECT_EQ(0xeb8eba67, crc32((const uint8_t*)"xyz", 3, CRC32_NET_POLY));
+  KEXPECT_EQ(0, crc32((const uint8_t*)"", 0, CRC32_NET_POLY));
+}
+
 void hash_test(void) {
   KTEST_SUITE_BEGIN("hash test");
 
@@ -181,4 +192,7 @@ void hash_test(void) {
 
   KTEST_SUITE_BEGIN("MD5 hash test");
   md5_test();
+
+  KTEST_SUITE_BEGIN("CRC tests");
+  crc_test();
 }
