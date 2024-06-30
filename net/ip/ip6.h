@@ -17,9 +17,13 @@
 
 #include "dev/net/nic.h"
 
+// Initialize and clean up IPv6 state on the given NIC.
+void ipv6_init(nic_t* nic);
+void ipv6_cleanup(nic_t* nic);
+
 // Enable IPv6 on the given NIC.  Configures a link-local address and kicks off
 // the configuration process.  No-op if the NIC already has an IPv6 address.
-void ipv6_enable(nic_t* nic);
+void ipv6_configure(nic_t* nic);
 
 // Send an IPv6 packet out onto the network.  May block.  The packet must
 // already have an IPv6 header.  Unconditionally takes ownership of the packet

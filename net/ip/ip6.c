@@ -15,12 +15,16 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/bind.h"
 #include "net/ip/icmpv6/icmpv6.h"
+#include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/ip6_multicast.h"
 #include "net/ip/route.h"
 #include "net/link_layer.h"
+#include "net/mac.h"
 #include "net/pbuf.h"
 #include "net/socket/raw.h"
 #include "net/socket/tcp/tcp.h"
@@ -31,9 +35,32 @@
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
+#define ALL_NODES_MULTICAST "ff02::1"
 #define LINK_LOCAL_PREFIX "fe80::"
 
-void ipv6_enable(nic_t* nic) {
+void ipv6_init(nic_t* nic) {
+  htbl_init(&nic->ipv6.multicast, 10);
+}
+
+static void do_delete(void* arg, uint32_t key, void* val) {
+  kfree(val);
+}
+
+void ipv6_cleanup(nic_t* nic) {
+  htbl_clear(&nic->ipv6.multicast, &do_delete, NULL);
+  htbl_cleanup(&nic->ipv6.multicast);
+}
+
+void ipv6_configure(nic_t* nic) {
+  // Subscribe to the all-nodes multicast address on the NIC (bypassing IPv6
+  // multicast logic).
+  // TODO(ipv6): write test that verifies this.
+  struct in6_addr all_nodes;
+  KASSERT(0 == str2inet6(ALL_NODES_MULTICAST, &all_nodes));
+  nic_mac_t all_nodes_mac;
+  ip6_multicast_mac(&all_nodes, all_nodes_mac.addr);
+  nic->ops->nic_mc_sub(nic, &all_nodes_mac);
+
   // Start by generating a link-local address for the interface.
   // TODO(ipv6): do this properly randomly.
   struct in6_addr link_local;
@@ -69,7 +96,12 @@ void ipv6_enable(nic_t* nic) {
   char buf[INET6_PRETTY_LEN];
   KLOG(INFO, "ipv6: configured nic %s with addr %s\n", nic->name,
        inet62str(&link_local, buf));
-  // TODO(ipv6): subscribe to multicast groups
+
+  // Join the solicited-node multicast address.
+  struct in6_addr solicited_node_addr;
+  ip6_solicited_node_addr(&link_local, &solicited_node_addr);
+  ip6_multicast_join(nic, &solicited_node_addr);
+
   // TODO(ipv6): kick off SLAAC.
 }
 

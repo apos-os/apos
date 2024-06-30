@@ -161,3 +161,11 @@ int ip6_src_addr_cmp(const nic_addr_t* A, const nic_addr_t* B,
 bool ip6_is_link_local(const struct in6_addr* addr) {
   return addr->s6_addr[0] == 0xfe && (addr->s6_addr[1] & 0xc0) == 0x80;
 }
+
+void ip6_solicited_node_addr(const struct in6_addr* addr_in,
+                             struct in6_addr* mc_addr_out) {
+  KASSERT(str2inet6("ff02:0:0:0:0:1:ff00::", mc_addr_out) == 0);
+  mc_addr_out->s6_addr[13] = addr_in->s6_addr[13];
+  mc_addr_out->s6_addr[14] = addr_in->s6_addr[14];
+  mc_addr_out->s6_addr[15] = addr_in->s6_addr[15];
+}

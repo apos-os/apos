@@ -33,4 +33,8 @@ int ip6_src_addr_cmp(const nic_addr_t* A, const nic_addr_t* B,
 // Returns true if the given address is a link-local address.
 bool ip6_is_link_local(const struct in6_addr* addr);
 
+// Create the solicited-node multicast address for the given address.
+void ip6_solicited_node_addr(const struct in6_addr* addr_in,
+                             struct in6_addr* mc_addr_out);
+
 #endif

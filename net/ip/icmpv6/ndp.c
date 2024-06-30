@@ -25,6 +25,7 @@
 #include "net/ip/checksum.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
+#include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
@@ -289,10 +290,7 @@ void ndp_send_request(nic_t* nic, const struct in6_addr* addr) {
   KASSERT_DBG(kspin_is_held(&nic->lock));
   // First calculate the IPv6 solicited-node multicast address.
   struct in6_addr dst_addr;
-  KASSERT(str2inet6("ff02:0:0:0:0:1:ff00::", &dst_addr) == 0);
-  dst_addr.s6_addr[13] = addr->s6_addr[13];
-  dst_addr.s6_addr[14] = addr->s6_addr[14];
-  dst_addr.s6_addr[15] = addr->s6_addr[15];
+  ip6_solicited_node_addr(addr, &dst_addr);
 
   pbuf_t* pb = ndp_mkpkt(nic, &dst_addr, ICMPV6_NDP_NBR_SOLICIT, addr, 0,
                          ICMPV6_OPTION_SRC_LL_ADDR, nic->mac.addr);
