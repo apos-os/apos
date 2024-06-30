@@ -23,5 +23,6 @@
 // Calculate a 32-bit CRC.  Calculates per the Ethernet CRC parameters (reversed
 // polynomial, reflected bit order, etc).
 uint32_t crc32(const uint8_t* msg, size_t len, uint32_t poly);
+uint32_t ether_crc32(const uint8_t* msg, size_t len);
 
 #endif
