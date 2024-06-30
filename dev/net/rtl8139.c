@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "arch/dev/irq.h"
+#include "common/crc.h"
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/hash.h"
@@ -27,7 +28,9 @@
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
 #include "net/eth/eth.h"
+#include "net/mac.h"
 #include "proc/defint.h"
+#include "proc/spinlock.h"
 #include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -37,6 +40,11 @@ static nic_ops_t rtl_ops;
 #define RTL_NUM_TX_DESCS 4
 
 #define DWORD_ALIGN(x) (((x) + 3) & ~0x3)
+
+typedef struct {
+  nic_mac_t addr;
+  int refs;
+} rtl_multicast_t;
 
 // TODO(aoates): lots of parts of this are touched in an interrupt context---go
 // through and ensure the appropriate memory barriers are in place.
@@ -48,7 +56,7 @@ typedef struct {
   int txdesc;
   void* txbuf[RTL_NUM_TX_DESCS];
   bool txbuf_active[RTL_NUM_TX_DESCS];
-  htbl_t multicast_addrs;  // MAC -> counter map.
+  htbl_t multicast_addrs;  // MAC -> rtl_multicast_t* map.
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -174,52 +182,58 @@ static void rtl_cleanup(nic_t* base) {
   KLOG(DFATAL, "RTL NIC cleanup called (shouldn't be deleted)\n");
 }
 
+static void multicast_update_iter(void* arg, uint32_t key, void* val) {
+  rtl_multicast_t* entry = (rtl_multicast_t*)val;
+  uint32_t crc = ether_crc32(entry->addr.addr, sizeof(entry->addr));
+  int bit = crc >> 26;
+  uint32_t* regs = (uint32_t*)arg;
+  regs[bit / 32] |= 1 << (bit % 32);
+}
+
 static void rtl_update_multicast(rtl8139_t* nic) {
   // Register for all multi-cast packets.
-  // TODO(aoates): calculate the CRC properly.
-  uint32_t val = 0;
-  if (htbl_size(&nic->multicast_addrs) > 0) {
-    val = 0xffffffff;
-  }
-  io_write32(nic->io, RTLRG_MAR0, val);
-  io_write32(nic->io, RTLRG_MAR1, val);
-  io_write32(nic->io, RTLRG_MAR2, val);
-  io_write32(nic->io, RTLRG_MAR3, val);
-  io_write32(nic->io, RTLRG_MAR4, val);
-  io_write32(nic->io, RTLRG_MAR5, val);
-  io_write32(nic->io, RTLRG_MAR6, val);
-  io_write32(nic->io, RTLRG_MAR7, val);
+  uint32_t regs[2];
+  regs[0] = regs[1] = 0;
+  htbl_iterate(&nic->multicast_addrs, &multicast_update_iter, regs);
+
+  io_write32(nic->io, RTLRG_MAR0, regs[0]);
+  io_write32(nic->io, RTLRG_MAR4, regs[1]);
 }
 
 static void rtl_mc_sub(nic_t* base, const nic_mac_t* mac) {
   rtl8139_t* nic = (rtl8139_t*)base;
+  kspin_lock(&base->lock);
   void* value;
   uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
-  intptr_t current = 0;
   if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
-    current = (intptr_t)value;
+    rtl_multicast_t* entry = (rtl_multicast_t*)value;
+    entry->refs++;
+  } else {
+    rtl_multicast_t* entry = KMALLOC(rtl_multicast_t);
+    entry->addr = *mac;
+    entry->refs = 1;
+    htbl_put(&nic->multicast_addrs, hash, entry);
   }
-  current++;
-  htbl_put(&nic->multicast_addrs, hash, (void*)current);
   rtl_update_multicast(nic);
+  kspin_unlock(&base->lock);
 }
 
 static void rtl_mc_unsub(nic_t* base, const nic_mac_t* mac) {
   rtl8139_t* nic = (rtl8139_t*)base;
+  kspin_lock(&base->lock);
   void* value;
   uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
-  intptr_t current = 0;
   if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
-    current = (intptr_t)value;
-  }
-  KASSERT_DBG(current > 0);
-  if (current > 1) {
-    current--;
-    htbl_put(&nic->multicast_addrs, hash, (void*)current);
-  } else {
-    htbl_remove(&nic->multicast_addrs, hash);
+    rtl_multicast_t* entry = (rtl_multicast_t*)value;
+    KASSERT_DBG(entry->refs > 0);
+    entry->refs--;
+    if (entry->refs == 0) {
+      htbl_remove(&nic->multicast_addrs, hash);
+      kfree(entry);
+    }
   }
   rtl_update_multicast(nic);
+  kspin_unlock(&base->lock);
 }
 
 static void rtl_handle_recv_one(rtl8139_t* nic) {
