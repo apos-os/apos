@@ -706,7 +706,7 @@ static void ndp_recv_advert_test(test_fixture_t* t) {
   nic_mac_t mac1, mac2;
   // Use different addresses for the packet itself.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // There shouldn't be an entry for the IP yet.
@@ -769,7 +769,7 @@ static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
@@ -847,7 +847,7 @@ static void ndp_recv_solicit_test_unknown_neighbor(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
@@ -936,7 +936,7 @@ static void ndp_recv_solicit_test(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1036,7 +1036,7 @@ static void ndp_recv_solicit_test_bad_opt(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1092,7 +1092,7 @@ static void ndp_recv_solicit_test_bad_opt2(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.  Omit the last 8 bytes to test if the check skips
@@ -1148,7 +1148,7 @@ static void ndp_recv_solicit_test_bad_opt3(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1200,7 +1200,7 @@ static void ndp_recv_solicit_test_bad_opt4(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1255,7 +1255,7 @@ static void ndp_recv_solicit_test2(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1355,7 +1355,7 @@ static void ndp_recv_solicit_test_no_match(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1422,7 +1422,7 @@ static void ndp_recv_solicit_test_disabled(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1489,7 +1489,7 @@ static void ndp_recv_solicit_test_disabled2(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1556,7 +1556,7 @@ static void ndp_recv_solicit_test_ipv4(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1625,7 +1625,7 @@ static void ndp_recv_solicit_test_from_unspecified(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -1735,7 +1735,7 @@ static void ndp_recv_solicit_test_extra_ip_bytes(test_fixture_t* t) {
   // Use different addresses for the packet itself.  These _should_ be the
   // multicast address, but the code shouldn't care.
   str2mac("07:08:09:0a:0b:0c", mac1.addr);
-  str2mac("0d:0e:0f:10:11:12", mac2.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
   eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
 
   // Send the solicit.
@@ -2540,6 +2540,7 @@ void ipv6_test(void) {
   KTEST_BEGIN("IPv6: test setup");
   test_fixture_t fixture;
   KEXPECT_EQ(0, test_ttap_create(&fixture.nic, TUNTAP_TAP_MODE));
+  ipv6_enable(fixture.nic.n, false);
 
   kspin_lock(&fixture.nic.n->lock);
   nic_add_addr_v6(fixture.nic.n, SRC_IP, 64, NIC_ADDR_ENABLED);
@@ -2554,6 +2555,7 @@ void ipv6_test(void) {
   kspin_unlock(&fixture.nic.n->lock);
 
   KEXPECT_EQ(0, test_ttap_create(&fixture.nic2, TUNTAP_TAP_MODE));
+  ipv6_enable(fixture.nic2.n, false);
 
   kspin_lock(&fixture.nic2.n->lock);
   nic_add_addr(fixture.nic2.n, "1.2.3.4", 24, NIC_ADDR_ENABLED);

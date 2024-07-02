@@ -18,6 +18,7 @@
 #include "dev/net/nic.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
@@ -401,6 +402,45 @@ static void tap_rx_test(test_fixture_t* f) {
   KEXPECT_STREQ("abc", buf);
 }
 
+static void tap_multicast_test(test_fixture_t* f) {
+  KTEST_BEGIN("TAP: basic multicast filtering test");
+
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "abc", 3);
+
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = 0;
+
+  ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
+
+  nic_mac_t remote_mac = {{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}};
+  nic_mac_t mcast_dst;
+  KEXPECT_EQ(0, str2mac("33:33:12:34:56:78", mcast_dst.addr));
+  eth_add_hdr(pb, &mcast_dst, &remote_mac, ET_IPV4);
+
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  char buf[10];
+  KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
+
+  // Subscribe, and now should get it.
+  f->nic->ops->nic_mc_sub(f->nic, &mcast_dst);
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  // Unsubscribe, and should not get it.
+  f->nic->ops->nic_mc_unsub(f->nic, &mcast_dst);
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
+  pbuf_free(pb);
+}
+
 // For TAP mode, we test just the basics and assume TUN mode tests handle
 // everything else.
 static void tap_tests(void) {
@@ -432,6 +472,7 @@ static void tap_tests(void) {
 
   tap_tx_test(&fixture);
   tap_rx_test(&fixture);
+  tap_multicast_test(&fixture);
 
   KTEST_BEGIN("TAP: create second device");
   apos_dev_t id2;

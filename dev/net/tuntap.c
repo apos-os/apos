@@ -17,6 +17,7 @@
 #include "common/attributes.h"
 #include "common/errno.h"
 #include "common/hash.h"
+#include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -30,6 +31,7 @@
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
 #include "net/ip/ip6.h"
+#include "net/mac.h"
 #include "net/pbuf.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -50,9 +52,11 @@ typedef struct {
   ssize_t bufsize;
   int flags;
 
+  // TODO(aoates): replace this with the base nic_t lock.
   kspinlock_t lock;
   list_t tx;
   ssize_t tx_queued;
+  htbl_t multicast;
 
   poll_event_t poll_event;
   kthread_queue_t wait;
@@ -127,6 +131,7 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   tt->lock = KSPINLOCK_NORMAL_INIT;
   tt->tx = LIST_INIT;
   tt->tx_queued = 0;
+  htbl_init(&tt->multicast, 5);
   kthread_queue_init(&tt->wait);
   poll_init_event(&tt->poll_event);
 
@@ -211,12 +216,29 @@ static void tuntap_nic_cleanup(nic_t* nic) {
     pbuf_free(pb);
   }
   KASSERT_DBG(tt->tx_queued == 0);
+  htbl_cleanup(&tt->multicast);
   kfree(tt);
 }
 
-// Both no-ops.
-static void tuntap_mc_sub(nic_t* nic, const nic_mac_t* mac) {}
-static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac) {}
+static void tuntap_mc_sub(nic_t* nic, const nic_mac_t* mac) {
+  tuntap_dev_t* tt = (tuntap_dev_t*)nic;
+  kspin_lock(&tt->lock);
+  htbl_put(&tt->multicast, fnv_hash_array(mac->addr, NIC_MAC_LEN), NULL);
+  kspin_unlock(&tt->lock);
+}
+
+static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac) {
+  tuntap_dev_t* tt = (tuntap_dev_t*)nic;
+  uint32_t hash = fnv_hash_array(mac->addr, NIC_MAC_LEN);
+  kspin_lock(&tt->lock);
+  if (htbl_remove(&tt->multicast, hash) != 0) {
+    KLOG(
+        WARNING,
+        "rtl8139: unable to unsubscribe to MAC address on %s(not subscribed)\n",
+        nic->name);
+  }
+  kspin_unlock(&tt->lock);
+}
 
 static int tuntap_cd_read(struct char_dev* dev, void* buf, size_t len,
                           int flags) {
@@ -257,6 +279,21 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
   pbuf_t* pb = pbuf_create(sizeof(eth_hdr_t) /* unused */, len);
   kmemcpy(pbuf_get(pb), buf, len);
   if (is_tap(tt)) {
+    const eth_hdr_t* eth_hdr = (const eth_hdr_t*)pbuf_getc(pb);
+    if (eth_hdr->mac_dst[0] & 0x01) {
+      uint32_t hash = fnv_hash_array(eth_hdr->mac_dst, NIC_MAC_LEN);
+      kspin_lock(&tt->lock);
+      void* unused_val;
+      bool allow = (htbl_get(&tt->multicast, hash, &unused_val) == 0);
+      kspin_unlock(&tt->lock);
+      if (!allow) {
+        char mac_pretty[NIC_MAC_PRETTY_LEN];
+        KLOG(DEBUG2, "TAP: ignoring multicast packet to %s\n",
+             mac2str(eth_hdr->mac_dst, mac_pretty));
+        pbuf_free(pb);
+        return len;
+      }
+    }
     eth_recv(&tt->nic, pb);
   } else {
     int version = ((uint8_t*)buf)[0] >> 4;

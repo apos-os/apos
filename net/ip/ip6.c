@@ -51,15 +51,18 @@ void ipv6_cleanup(nic_t* nic) {
   htbl_cleanup(&nic->ipv6.multicast);
 }
 
-void ipv6_configure(nic_t* nic) {
+void ipv6_enable(nic_t* nic, bool autoconfigure) {
   // Subscribe to the all-nodes multicast address on the NIC (bypassing IPv6
   // multicast logic).
-  // TODO(ipv6): write test that verifies this.
   struct in6_addr all_nodes;
   KASSERT(0 == str2inet6(ALL_NODES_MULTICAST, &all_nodes));
   nic_mac_t all_nodes_mac;
   ip6_multicast_mac(&all_nodes, all_nodes_mac.addr);
   nic->ops->nic_mc_sub(nic, &all_nodes_mac);
+
+  if (!autoconfigure) {
+    return;
+  }
 
   // Start by generating a link-local address for the interface.
   // TODO(ipv6): do this properly randomly.
