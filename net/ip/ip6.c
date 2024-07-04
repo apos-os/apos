@@ -15,6 +15,7 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "dev/net/nic.h"
 #include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/bind.h"
@@ -38,6 +39,10 @@
 #define ALL_NODES_MULTICAST "ff02::1"
 #define LINK_LOCAL_PREFIX "fe80::"
 
+static const nic_ipv6_options_t kDefaultNicOpts = {
+  true, // autoconfigure
+};
+
 void ipv6_init(nic_t* nic) {
   htbl_init(&nic->ipv6.multicast, 10);
 }
@@ -51,7 +56,11 @@ void ipv6_cleanup(nic_t* nic) {
   htbl_cleanup(&nic->ipv6.multicast);
 }
 
-void ipv6_enable(nic_t* nic, bool autoconfigure) {
+const nic_ipv6_options_t* ipv6_default_nic_opts(void) {
+  return &kDefaultNicOpts;
+}
+
+void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
   // Subscribe to the all-nodes multicast address on the NIC (bypassing IPv6
   // multicast logic).
   struct in6_addr all_nodes;
@@ -60,7 +69,11 @@ void ipv6_enable(nic_t* nic, bool autoconfigure) {
   ip6_multicast_mac(&all_nodes, all_nodes_mac.addr);
   nic->ops->nic_mc_sub(nic, &all_nodes_mac);
 
-  if (!autoconfigure) {
+  kspin_lock(&nic->lock);
+  nic->ipv6.opts = *opts;
+  kspin_unlock(&nic->lock);
+
+  if (!opts->autoconfigure) {
     return;
   }
 

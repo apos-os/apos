@@ -29,6 +29,10 @@
 struct nic;
 typedef struct nic nic_t;
 
+typedef struct {
+  bool autoconfigure;
+} nic_ipv6_options_t;
+
 typedef enum {
   NIC_ADDR_NONE,
   NIC_ADDR_TENTATIVE,
@@ -63,6 +67,7 @@ typedef enum {
 
 // IPv6-specific NIC data.
 typedef struct {
+  nic_ipv6_options_t opts;
   htbl_t multicast;  // Multicast addresses we're subscribed to.
 } nic_ipv6_t;
 

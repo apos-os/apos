@@ -2540,7 +2540,9 @@ void ipv6_test(void) {
   KTEST_BEGIN("IPv6: test setup");
   test_fixture_t fixture;
   KEXPECT_EQ(0, test_ttap_create(&fixture.nic, TUNTAP_TAP_MODE));
-  ipv6_enable(fixture.nic.n, false);
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(fixture.nic.n, &opts);
 
   kspin_lock(&fixture.nic.n->lock);
   nic_add_addr_v6(fixture.nic.n, SRC_IP, 64, NIC_ADDR_ENABLED);
@@ -2555,7 +2557,7 @@ void ipv6_test(void) {
   kspin_unlock(&fixture.nic.n->lock);
 
   KEXPECT_EQ(0, test_ttap_create(&fixture.nic2, TUNTAP_TAP_MODE));
-  ipv6_enable(fixture.nic2.n, false);
+  ipv6_enable(fixture.nic2.n, &opts);
 
   kspin_lock(&fixture.nic2.n->lock);
   nic_add_addr(fixture.nic2.n, "1.2.3.4", 24, NIC_ADDR_ENABLED);

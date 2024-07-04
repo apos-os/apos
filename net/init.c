@@ -49,7 +49,7 @@ void net_init(void) {
     nic->addrs[0].a.prefix_len = 24;
     kspin_unlock(&nic->lock);
 
-    ipv6_enable(nic, true);
+    ipv6_enable(nic, ipv6_default_nic_opts());
   }
 
   netaddr_t def;
