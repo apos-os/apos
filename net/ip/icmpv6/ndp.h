@@ -24,6 +24,7 @@
 void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb);
 
 // Send a request for the given address on the nic.  Requires the nic be locked.
-void ndp_send_request(nic_t* nic, const struct in6_addr* addr);
+void ndp_send_request(nic_t* nic, const struct in6_addr* addr,
+                      bool src_any_addr);
 
 #endif

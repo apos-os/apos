@@ -37,14 +37,16 @@
 
 // Creates a solicit or advert packet.  NIC must be locked.  Returns it up
 // through the IPv6 header (not including the link-layer header).
-static pbuf_t* ndp_mkpkt(nic_t* nic, const struct in6_addr* dst_addr, int type,
+static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
+                         const struct in6_addr* dst_addr, int type,
                          const struct in6_addr* pkt_addr, uint32_t flags,
                          int option_type, const uint8_t* option_val) {
   _Static_assert(sizeof(ndp_nbr_advert_t) == sizeof(ndp_nbr_solict_t),
                  "Bad packet sizes");
   KASSERT_DBG(kspin_is_held(&nic->lock));
 
-  size_t pkt_size = sizeof(ndp_nbr_advert_t) + 8;
+  bool include_src_opt = !src_any_addr;
+  size_t pkt_size = sizeof(ndp_nbr_advert_t) + (include_src_opt ? 8 : 0);
   pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, pkt_size);
   if (!pb) {
     KLOG(DFATAL, "IPv6 NDP: unable to allocate packet\n");
@@ -60,29 +62,35 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, const struct in6_addr* dst_addr, int type,
   kmemcpy(&pkt->target, pkt_addr, sizeof(struct in6_addr));
 
   // Add a source link-layer address option.
-  uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_advert_t));
-  option[0] = option_type;
-  option[1] = 1;  // 8 octets.
-  _Static_assert(NIC_MAC_LEN == 6, "Mismatched NIC_MAC_LEN");
-  kmemcpy(&option[2], option_val, NIC_MAC_LEN);
+  if (include_src_opt) {
+    uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_advert_t));
+    option[0] = option_type;
+    option[1] = 1;  // 8 octets.
+    _Static_assert(NIC_MAC_LEN == 6, "Mismatched NIC_MAC_LEN");
+    kmemcpy(&option[2], option_val, NIC_MAC_LEN);
+  }
 
   // Find the IPv6 address to send from.
   struct in6_addr src_addr;
-  bool found = 0;
-  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    if (nic->addrs[i].state == NIC_ADDR_ENABLED &&
-        nic->addrs[i].a.addr.family == AF_INET6) {
-      found = true;
-      kmemcpy(&src_addr, &nic->addrs[i].a.addr.a.ip6, sizeof(struct in6_addr));
-      break;
+  if (src_any_addr) {
+    kmemset(&src_addr, 0, sizeof(src_addr));
+  } else {
+    bool found = 0;
+    for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+      if (nic->addrs[i].state == NIC_ADDR_ENABLED &&
+          nic->addrs[i].a.addr.family == AF_INET6) {
+        found = true;
+        kmemcpy(&src_addr, &nic->addrs[i].a.addr.a.ip6, sizeof(struct in6_addr));
+        break;
+      }
     }
-  }
-  if (!found) {
-    KLOG(INFO,
-         "IPv6 NDP: cannot send NDP on iface %s, no IPv6 address configured\n",
-         nic->name);
-    pbuf_free(pb);
-    return NULL;
+    if (!found) {
+      KLOG(INFO,
+           "IPv6 NDP: cannot send NDP on iface %s, no IPv6 address configured\n",
+           nic->name);
+      pbuf_free(pb);
+      return NULL;
+    }
   }
 
   // Calculate the checksum.
@@ -224,7 +232,7 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
           reply_dst = ip_hdr->src_addr;
         }
         pbuf_t* pb = ndp_mkpkt(
-            nic, &reply_dst, ICMPV6_NDP_NBR_ADVERT, &hdr->target,
+            nic, false, &reply_dst, ICMPV6_NDP_NBR_ADVERT, &hdr->target,
             NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE,
             ICMPV6_OPTION_TGT_LL_ADDR, nic->mac.addr);
         kspin_unlock(&nic->lock);
@@ -286,14 +294,15 @@ void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
 
 // TODO(aoates): refactor the code so that this (and arp_send_request) can be
 // called without the NIC lock held.
-void ndp_send_request(nic_t* nic, const struct in6_addr* addr) {
+void ndp_send_request(nic_t* nic, const struct in6_addr* addr,
+                      bool src_any_addr) {
   KASSERT_DBG(kspin_is_held(&nic->lock));
   // First calculate the IPv6 solicited-node multicast address.
   struct in6_addr dst_addr;
   ip6_solicited_node_addr(addr, &dst_addr);
 
-  pbuf_t* pb = ndp_mkpkt(nic, &dst_addr, ICMPV6_NDP_NBR_SOLICIT, addr, 0,
-                         ICMPV6_OPTION_SRC_LL_ADDR, nic->mac.addr);
+  pbuf_t* pb = ndp_mkpkt(nic, src_any_addr, &dst_addr, ICMPV6_NDP_NBR_SOLICIT,
+                         addr, 0, ICMPV6_OPTION_SRC_LL_ADDR, nic->mac.addr);
   if (!pb) {
     return;
   }

@@ -21,6 +21,7 @@
 #include "common/kstring.h"
 #include "common/list.h"
 #include "common/refcount.h"
+#include "dev/timer.h"
 #include "net/ip/ip6.h"
 #include "net/neighbor_cache.h"
 #include "proc/spinlock.h"
@@ -68,6 +69,9 @@ void nic_init(nic_t* nic) {
     kmemset(&nic->addrs[i], 0, sizeof(nic_addr_t));
     nic->addrs[i].a.addr.family = AF_UNSPEC;
     nic->addrs[i].state = NIC_ADDR_NONE;
+    nic->addrs[i].timer = TIMER_HANDLE_NONE;
+    nic->addrs[i].timer_lock = KSPINLOCK_INTERRUPT_SAFE_INIT;
+    nic->addrs[i].nic = nic;
   }
   nbr_cache_init(&nic->nbr_cache);
   nic->deleted = false;
@@ -89,6 +93,15 @@ void nic_delete(nic_t* nic) {
 
   kspin_lock(&g_nics_lock);
   nic->deleted = true;
+  for (size_t i = 0; i < NIC_MAX_ADDRS; ++i) {
+    kspin_lock_int(&nic->addrs[i].timer_lock);
+    if (nic->addrs[i].timer != TIMER_HANDLE_NONE) {
+      cancel_event_timer(nic->addrs[i].timer);
+      nic->addrs[i].timer = TIMER_HANDLE_NONE;
+      refcount_dec(&nic->ref);
+    }
+    kspin_unlock_int(&nic->addrs[i].timer_lock);
+  }
   kspin_unlock(&g_nics_lock);
 }
 

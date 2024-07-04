@@ -17,6 +17,7 @@
 
 #include "common/list.h"
 #include "common/refcount.h"
+#include "dev/timer.h"
 #include "net/addr.h"
 #include "net/mac.h"
 #include "net/neighbor_cache.h"
@@ -31,6 +32,7 @@ typedef struct nic nic_t;
 
 typedef struct {
   bool autoconfigure;
+  int dup_detection_timeout_ms;
 } nic_ipv6_options_t;
 
 typedef enum {
@@ -42,6 +44,12 @@ typedef enum {
 typedef struct {
   network_t a;
   nic_addr_state_t state;
+
+  // Timer handle for duplicate detection timer.
+  kspinlock_intsafe_t timer_lock;
+  timer_handle_t timer;  // GUARDED_BY(timer_lock)
+  // TODO(aoates): figure out how to get rid of this pointer.
+  nic_t* nic;
 } nic_addr_t;
 
 typedef struct {

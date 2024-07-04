@@ -89,7 +89,7 @@ int nbr_cache_lookup(nic_t* nic, netaddr_t addr, nbr_cache_entry_t* result,
         break;
 
       case ADDR_INET6:
-        ndp_send_request(nic, &addr.a.ip6);
+        ndp_send_request(nic, &addr.a.ip6, false);
         break;
 
       default:

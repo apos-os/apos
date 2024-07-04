@@ -15,11 +15,14 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/refcount.h"
 #include "dev/net/nic.h"
+#include "dev/timer.h"
 #include "memory/kmalloc.h"
 #include "net/addr.h"
 #include "net/bind.h"
 #include "net/ip/icmpv6/icmpv6.h"
+#include "net/ip/icmpv6/ndp.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/ip/ip6_multicast.h"
@@ -31,6 +34,7 @@
 #include "net/socket/tcp/tcp.h"
 #include "net/socket/udp.h"
 #include "net/util.h"
+#include "proc/defint.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 
@@ -40,7 +44,8 @@
 #define LINK_LOCAL_PREFIX "fe80::"
 
 static const nic_ipv6_options_t kDefaultNicOpts = {
-  true, // autoconfigure
+    true,  // autoconfigure
+    1000,  // dup_detection_timeout_ms
 };
 
 void ipv6_init(nic_t* nic) {
@@ -58,6 +63,108 @@ void ipv6_cleanup(nic_t* nic) {
 
 const nic_ipv6_options_t* ipv6_default_nic_opts(void) {
   return &kDefaultNicOpts;
+}
+
+static void addr_dup_timeout_defint(void* arg);
+static void addr_dup_timeout(void* arg) {
+  nic_addr_t* addr = (nic_addr_t*)arg;
+  // TODO(aoates): this technically isn't correct with SMP --- another thread
+  // could simultaneously be trying to cancel the timer.  This needs to be fixed
+  // in the timer code.
+  // TODO(aoates): create a standard utility for this kind of
+  // trampoline-to-defint timer so it's not duplicated everywhere.
+  kspin_lock_int(&addr->timer_lock);
+  addr->timer = TIMER_HANDLE_NONE;
+  kspin_unlock_int(&addr->timer_lock);
+  defint_schedule(&addr_dup_timeout_defint, arg);
+}
+
+static void addr_dup_timeout_defint(void* arg) {
+  nic_addr_t* addr = (nic_addr_t*)arg;
+  nic_t* nic = addr->nic;
+
+  kspin_lock(&nic->lock);
+  if (addr->state != NIC_ADDR_TENTATIVE ||
+      addr->a.addr.family != AF_INET6) {
+    KLOG(WARNING, "ipv6: nic %s addr %p in unexpected state, can't promote\n",
+         nic->name, addr);
+    goto done;
+  }
+
+  char buf[INET6_PRETTY_LEN];
+  KLOG(INFO, "ipv6: configured nic %s with addr %s (confirmed)\n", nic->name,
+       inet62str(&addr->a.addr.a.ip6, buf));
+  addr->state = NIC_ADDR_ENABLED;
+
+done:
+  kspin_unlock(&nic->lock);
+  nic_put(nic);
+}
+
+int ipv6_configure_addr(nic_t* nic, const network_t* addr) {
+  if (addr->addr.family != AF_INET6 || addr->prefix_len < 1 ||
+      addr->prefix_len > 128) {
+    return -EINVAL;
+  }
+
+  char buf[INET6_PRETTY_LEN];
+  kspin_lock(&nic->lock);
+  int open = -1;
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    if (nic->addrs[i].state != NIC_ADDR_NONE &&
+        netaddr_eq(&addr->addr, &nic->addrs[i].a.addr)) {
+      kspin_unlock(&nic->lock);
+      KLOG(INFO, "ipv6: nic %s already has requested IPv6 address %s\n",
+           nic->name, inet62str(&addr->addr.a.ip6, buf));
+      return -EEXIST;
+    } else if (open < 0 && nic->addrs[i].state == NIC_ADDR_NONE) {
+      open = i;
+    }
+  }
+
+  if (open < 0) {
+    KLOG(INFO, "ipv6: can't configure ipv6 on nic %s; no addresses available\n",
+         nic->name);
+    kspin_unlock(&nic->lock);
+    return -ENOMEM;
+  }
+
+  nic->addrs[open].state = NIC_ADDR_TENTATIVE;
+  nic->addrs[open].a = *addr;
+
+  // Set a timer for confirmation.
+  KASSERT_DBG(nic->addrs[open].timer == TIMER_HANDLE_NONE);
+  refcount_inc(&nic->ref);
+
+  kspin_lock_int(&nic->addrs[open].timer_lock);
+  apos_ms_t end = get_time_ms() +
+      nic->ipv6.opts.dup_detection_timeout_ms;
+  if (register_event_timer(end, &addr_dup_timeout, &nic->addrs[open],
+                           &nic->addrs[open].timer) != 0) {
+    KLOG(WARNING,
+         "ipv6: unable to register timer for duplicate address detection "
+         "expiration\n");
+  }
+  kspin_unlock_int(&nic->addrs[open].timer_lock);
+  kspin_unlock(&nic->lock);
+
+  KLOG(INFO, "ipv6: configured nic %s with addr %s (tentative)\n", nic->name,
+       inet62str(&addr->addr.a.ip6, buf));
+
+  // Join the solicited-node multicast address.
+  struct in6_addr solicited_node_addr;
+  ip6_solicited_node_addr(&addr->addr.a.ip6, &solicited_node_addr);
+  ip6_multicast_join(nic, &solicited_node_addr);
+
+  // Send a neighbor solicitation for the address.
+  kspin_lock(&nic->lock);
+  ndp_send_request(nic, &addr->addr.a.ip6, true);
+  kspin_unlock(&nic->lock);
+
+  // TODO(ipv6): if we get a neighbor solicitation or advertisement, mark the
+  // address as conflicted/disabled.
+
+  return 0;
 }
 
 void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
@@ -79,45 +186,16 @@ void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
 
   // Start by generating a link-local address for the interface.
   // TODO(ipv6): do this properly randomly.
-  struct in6_addr link_local;
-  KASSERT(0 == str2inet6(LINK_LOCAL_PREFIX, &link_local));
-  link_local.s6_addr[15] = 1;
+  network_t link_local;
+  link_local.addr.family = AF_INET6;
+  KASSERT(0 == str2inet6(LINK_LOCAL_PREFIX, &link_local.addr.a.ip6));
+  link_local.addr.a.ip6.s6_addr[15] = 1;
+  link_local.prefix_len = 64;
 
-  kspin_lock(&nic->lock);
-  int open = -1;
-  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-    if (nic->addrs[i].state != NIC_ADDR_NONE &&
-        nic->addrs[i].a.addr.family == ADDR_INET6) {
-      KLOG(INFO, "ipv6: nic %s already has IPv6 address\n", nic->name);
-      kspin_unlock(&nic->lock);
-      return;
-    } else if (open < 0 && nic->addrs[i].state == NIC_ADDR_NONE) {
-      open = i;
-    }
-  }
-
-  if (open < 0) {
-    KLOG(INFO, "ipv6: can't configure ipv6 on nic %s; no addresses available\n",
+  if (ipv6_configure_addr(nic, &link_local) != 0) {
+    KLOG(WARNING, "ipv6: unable to configure link-local address on NIC %s\n",
          nic->name);
-    kspin_unlock(&nic->lock);
-    return;
   }
-
-  nic->addrs[open].state = NIC_ADDR_ENABLED;
-  nic->addrs[open].a.addr.a.ip6 = link_local;
-  nic->addrs[open].a.addr.family = ADDR_INET6;
-  nic->addrs[open].a.prefix_len = 64;
-  kspin_unlock(&nic->lock);
-
-  char buf[INET6_PRETTY_LEN];
-  KLOG(INFO, "ipv6: configured nic %s with addr %s\n", nic->name,
-       inet62str(&link_local, buf));
-
-  // Join the solicited-node multicast address.
-  struct in6_addr solicited_node_addr;
-  ip6_solicited_node_addr(&link_local, &solicited_node_addr);
-  ip6_multicast_join(nic, &solicited_node_addr);
-
   // TODO(ipv6): kick off SLAAC.
 }
 

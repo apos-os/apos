@@ -21,7 +21,14 @@
 void ipv6_init(nic_t* nic);
 void ipv6_cleanup(nic_t* nic);
 
+// Returns default options (can be passed directly to ipv6_enable()).
 const nic_ipv6_options_t* ipv6_default_nic_opts(void);
+
+// Configures the given IP address on the NIC.  Adds it to the NIC, sets the
+// state to TENTATIVE, and begins duplicate detection.  This operation may fail
+// synchronously (e.g. if there are no more address slots), or asynchronously
+// (e.g. if duplicate detection finds a conflict).
+int ipv6_configure_addr(nic_t* nic, const network_t* addr);
 
 // Enable IPv6 on the given NIC.  Copies the passed options.  If autoconfigure
 // is set, configures a link-local address and kicks off the configuration

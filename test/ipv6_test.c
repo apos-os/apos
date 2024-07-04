@@ -38,6 +38,7 @@
 #include "net/pbuf.h"
 #include "net/test_util.h"
 #include "net/util.h"
+#include "proc/sleep.h"
 #include "test/ktest.h"
 #include "test/test_nic.h"
 #include "test/test_point.h"
@@ -615,7 +616,7 @@ static void ndp_send_request_test(test_fixture_t* t) {
   KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &addr6));
 
   kspin_lock(&t->nic.n->lock);
-  ndp_send_request(t->nic.n, &addr6);
+  ndp_send_request(t->nic.n, &addr6, false);
   kspin_unlock(&t->nic.n->lock);
 
   // First check the ethernet header.
@@ -667,6 +668,62 @@ static void ndp_send_request_test(test_fixture_t* t) {
   phdr.payload_len = htob32(sizeof(ndp_nbr_solict_t) + 8);
   KEXPECT_EQ(
       0, ip_checksum2(&phdr, sizeof(phdr), pkt, sizeof(ndp_nbr_solict_t) + 8));
+}
+
+static void ndp_send_request_any_addr_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: send request (from any-addr)");
+  nbr_cache_clear(t->nic.n);
+
+  struct in6_addr addr6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &addr6));
+
+  kspin_lock(&t->nic.n->lock);
+  ndp_send_request(t->nic.n, &addr6, true);
+  kspin_unlock(&t->nic.n->lock);
+
+  // First check the ethernet header.
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  char buf[100];
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t),
+      vfs_read(t->nic.fd, buf, 100));
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:FF:12:34:56", mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  const ip6_hdr_t* ip6_hdr =
+      (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_traffic_class(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_solict_t), btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(255, ip6_hdr->hop_limit);
+
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, addr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::1:ff12:3456", inet62str(&ip6_hdr->dst_addr, addr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_nbr_solict_t* pkt =
+      (const ndp_nbr_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(135, pkt->hdr.type);
+  KEXPECT_EQ(0, pkt->hdr.code);
+  KEXPECT_EQ(0, pkt->reserved);
+  KEXPECT_STREQ("2001:db8::fffe:12:3456", inet62str(&pkt->target, addr));
+
+  // Verify the ICMP checksum.
+  ip6_pseudo_hdr_t phdr;
+  kmemcpy(&phdr.src_addr, &ip6_hdr->src_addr, sizeof(struct in6_addr));
+  kmemcpy(&phdr.dst_addr, &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  phdr.payload_len = htob32(sizeof(ndp_nbr_solict_t));
+  KEXPECT_EQ(
+      0, ip_checksum2(&phdr, sizeof(phdr), pkt, sizeof(ndp_nbr_solict_t)));
 }
 
 static void ndp_recv_advert_test(test_fixture_t* t) {
@@ -1755,6 +1812,7 @@ static void ndp_recv_solicit_test_extra_ip_bytes(test_fixture_t* t) {
 
 static void ndp_tests(test_fixture_t* t) {
   ndp_send_request_test(t);
+  ndp_send_request_any_addr_test(t);
   ndp_recv_advert_test(t);
   ndp_recv_solicit_test_no_src_addr(t);
   ndp_recv_solicit_test_unknown_neighbor(t);
@@ -2530,6 +2588,260 @@ static void multicast_tests2(test_fixture_t* t) {
   kspin_unlock(&t->nic.n->lock);
 }
 
+static void basic_configure_test(void) {
+  KTEST_BEGIN("IPv6 basic address configuration (test setup)");
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = 50;
+  ipv6_enable(nic.n, &opts);
+
+
+  KTEST_BEGIN("IPv6 basic address configuration: invalid address");
+  network_t addr;
+  addr.addr.family = AF_INET;
+  KEXPECT_EQ(-EINVAL, ipv6_configure_addr(nic.n, &addr));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 0;
+  KEXPECT_EQ(-EINVAL, ipv6_configure_addr(nic.n, &addr));
+  addr.prefix_len = 129;
+  KEXPECT_EQ(-EINVAL, ipv6_configure_addr(nic.n, &addr));
+  kspin_lock(&nic.n->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+  char buf[300];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
+
+  KTEST_BEGIN("IPv6 basic address configuration");
+  // Configure an address (which should NOT be used in this process).
+  kspin_lock(&nic.n->lock);
+  nic.n->addrs[0].state = NIC_ADDR_ENABLED;
+  KEXPECT_EQ(0, str2inet6("fe80::1", &nic.n->addrs[0].a.addr.a.ip6));
+  nic.n->addrs[0].a.addr.family = AF_INET6;
+  nic.n->addrs[0].a.prefix_len = 64;
+  kspin_unlock(&nic.n->lock);
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(0, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_ENABLED, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(64, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("fe80::1",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[1].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[1].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[1].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[1].a.addr.a.ip6, buf));
+  for (int i = 2; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+
+  // We should have first gotten an MLD update to subscribe to the new address.
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addrstr[INET6_PRETTY_LEN];
+
+  KEXPECT_EQ(mld_size(1), vfs_read(nic.fd, buf, 150));
+  const eth_hdr_t* eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, addrstr));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, addrstr));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  const ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, addrstr));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, addrstr));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  const mld_listener_report_t* report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  const mld_multicast_record_t* record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff34:5678",
+                inet62str(&record->multicast_addr, addrstr));
+
+  // We should have then gotten a neighbor solicitation for the address.
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t),
+      vfs_read(nic.fd, buf, 300));
+  // First check ethernet header.
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:FF:34:56:78", mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  ip6_hdr = (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_solict_t), btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, addrstr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::1:ff34:5678", inet62str(&ip6_hdr->dst_addr, addrstr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_nbr_solict_t* pkt =
+      (const ndp_nbr_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(135, pkt->hdr.type);
+  KEXPECT_EQ(0, pkt->hdr.code);
+  KEXPECT_EQ(0, pkt->reserved);
+  KEXPECT_STREQ("2001:db8::1234:5678", inet62str(&pkt->target, addrstr));
+
+  // Now wait for the timer to time out.
+  ksleep(50);
+
+  // Should have no more packets, and the address should be configured.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_ENABLED, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(64, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("fe80::1",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+
+  KEXPECT_EQ(NIC_ADDR_ENABLED, nic.n->addrs[1].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[1].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[1].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[1].a.addr.a.ip6, buf));
+  for (int i = 2; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+
+  test_ttap_destroy(&nic);
+}
+
+// Variant 1 has a timeout that we make sure expires during the test, and after
+// we delete the NIC.  This confirms that either the timer is cancelled, or
+// memory is otherwise managed correctly.
+static void configure_nic_delete_test(void) {
+  KTEST_BEGIN("IPv6 NIC deletion during configuration");
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = 50;
+  ipv6_enable(nic.n, &opts);
+
+  network_t addr;
+  char buf[300];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
+  // Configure an address (which should NOT be used in this process).
+  kspin_lock(&nic.n->lock);
+  nic.n->addrs[0].state = NIC_ADDR_ENABLED;
+  KEXPECT_EQ(0, str2inet6("fe80::1", &nic.n->addrs[0].a.addr.a.ip6));
+  nic.n->addrs[0].a.addr.family = AF_INET6;
+  nic.n->addrs[0].a.prefix_len = 64;
+  kspin_unlock(&nic.n->lock);
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(0, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[1].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[1].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[1].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[1].a.addr.a.ip6, buf));
+  kspin_unlock(&nic.n->lock);
+
+  // We should have gotten an MLD update and NDP request.
+  KEXPECT_EQ(mld_size(1), vfs_read(nic.fd, buf, 150));
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t),
+      vfs_read(nic.fd, buf, 300));
+
+  // Destroy the NIC before the timer triggers.
+  test_ttap_destroy(&nic);
+
+  // Wait until the timer would have triggered.
+  ksleep(60);
+}
+
+// Variant 2 has a timeout that expires long in the future, verifying there are
+// no memory leaks and the timer is cancelled.  This is arguably over-testing
+// --- it could be valid for the code to let the timer complete so long as it
+// doesn't reference any freed memory.
+static void configure_nic_delete_test2(void) {
+  KTEST_BEGIN("IPv6 NIC deletion during configuration (long timeout)");
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = 60000;
+  ipv6_enable(nic.n, &opts);
+
+  network_t addr;
+  char buf[300];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
+  // Configure an address (which should NOT be used in this process).
+  kspin_lock(&nic.n->lock);
+  nic.n->addrs[0].state = NIC_ADDR_ENABLED;
+  KEXPECT_EQ(0, str2inet6("fe80::1", &nic.n->addrs[0].a.addr.a.ip6));
+  nic.n->addrs[0].a.addr.family = AF_INET6;
+  nic.n->addrs[0].a.prefix_len = 64;
+  kspin_unlock(&nic.n->lock);
+
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(0, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[1].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[1].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[1].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[1].a.addr.a.ip6, buf));
+  kspin_unlock(&nic.n->lock);
+
+  // We should have gotten an MLD update and NDP request.
+  KEXPECT_EQ(mld_size(1), vfs_read(nic.fd, buf, 150));
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t),
+      vfs_read(nic.fd, buf, 300));
+
+  // Destroy the NIC before the timer triggers.
+  test_ttap_destroy(&nic);
+}
+
+static void configure_tests(test_fixture_t* t) {
+  basic_configure_test();
+  configure_nic_delete_test();
+  configure_nic_delete_test2();
+  // TODO(ipv6): more configuration tests:
+  // - duplicate detection finds dup
+  // - no address spots left
+  // - address already configured (inc. in a later slot)
+  // - simultaneous duplicate address detections
+  // - autoconfigure does link-local address
+  // - autoconfigure does link-local address (and conflict)
+}
+
 // TODO(ipv6): additional tests:
 //  - invalid IPv6 packets
 //  - invalid NDP packets (including options)
@@ -2579,6 +2891,7 @@ void ipv6_test(void) {
   send_tests(&fixture);
   multicast_tests(&fixture);
   multicast_tests2(&fixture);
+  configure_tests(&fixture);
 
   KTEST_BEGIN("IPv6: test teardown");
   test_ttap_destroy(&fixture.nic);
