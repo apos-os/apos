@@ -637,8 +637,14 @@ void net_base_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&fixture.nic3, TUNTAP_TAP_MODE));
 
   kspin_lock(&fixture.nic3.n->lock);
+  nic_add_addr_v6(fixture.nic3.n, "2001:db8::3", 100, NIC_ADDR_TENTATIVE);
+  nic_add_addr_v6(fixture.nic3.n, "2001:db8::3", 65, NIC_ADDR_CONFLICT);
   nic_add_addr_v6(fixture.nic3.n, "2001:db8::2", 96, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(fixture.nic3.n, "2001:db8:1::3", 75, NIC_ADDR_TENTATIVE);
+  nic_add_addr_v6(fixture.nic3.n, "2001:db8:1::4", 75, NIC_ADDR_CONFLICT);
   nic_add_addr_v6(fixture.nic3.n, "2001:db8:1::2", 70, NIC_ADDR_ENABLED);
+
+  fixture.nic3.n->addrs[0].state = NIC_ADDR_NONE;
   kspin_unlock(&fixture.nic3.n->lock);
 
   // Run the tests.

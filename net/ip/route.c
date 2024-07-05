@@ -61,11 +61,10 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   result->nic = NULL;
   while (nic) {
     kspin_lock(&nic->lock);
-    // TODO(aoates): if we're going to assume a left-justified address list,
-    // should track that explicitly.
-    for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
-                          nic->addrs[addridx].state == NIC_ADDR_ENABLED;
-         addridx++) {
+    for (int addridx = 0; addridx < NIC_MAX_ADDRS; addridx++) {
+      if (nic->addrs[addridx].state != NIC_ADDR_ENABLED) {
+        continue;
+      }
       if (netaddr_eq(&nic->addrs[addridx].a.addr, &dst)) {
         if (result->nic) {
           nic_put(result->nic);
