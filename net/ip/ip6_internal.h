@@ -24,4 +24,11 @@
 void ip6_nic_got_nbr_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
                             const ndp_nbr_advert_t* advert);
 
+// Indicate that we got a duplicate neighbor advertisement for a tentative IP
+// (i.e. someone else is doing simultaneous duplicate address detection for the
+// same address).
+//
+// Requires: nic->lock is held.
+void ip6_nic_got_dup_solicit(nic_t* nic, nic_addr_t* addr);
+
 #endif

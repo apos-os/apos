@@ -3001,15 +3001,325 @@ static void configure_dup_found_test(void) {
   test_ttap_destroy(&nic);
 }
 
+static void configure_dup_found_simultaneous_detect_test(void) {
+  KTEST_BEGIN(
+      "IPv6 address configuration: duplicate detected (simultaneous duplicate "
+      "detection)");
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = 50;
+  ipv6_enable(nic.n, &opts);
+
+  network_t addr;
+  char buf[300];
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(0, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+  for (int i = 2; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+
+  // We shouldn't be able to use the tentative address.
+  netaddr_t dst, src;
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::9000", &dst.a.ip6));
+  KEXPECT_EQ(-EADDRNOTAVAIL, ip6_pick_nic_src(&dst, nic.n, &src));
+
+  // We should have first gotten an MLD update to subscribe to the new address.
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addrstr[INET6_PRETTY_LEN];
+
+  KEXPECT_EQ(mld_size(1), vfs_read(nic.fd, buf, 150));
+  const eth_hdr_t* eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, addrstr));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, addrstr));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  const ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, addrstr));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, addrstr));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  const mld_listener_report_t* report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  const mld_multicast_record_t* record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff34:5678",
+                inet62str(&record->multicast_addr, addrstr));
+
+  // We should have then gotten a neighbor solicitation for the address.
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t),
+      vfs_read(nic.fd, buf, 300));
+  // First check ethernet header.
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:FF:34:56:78", mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  ip6_hdr = (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_solict_t), btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, addrstr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::1:ff34:5678", inet62str(&ip6_hdr->dst_addr, addrstr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_nbr_solict_t* pkt =
+      (const ndp_nbr_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(135, pkt->hdr.type);
+  KEXPECT_EQ(0, pkt->hdr.code);
+  KEXPECT_EQ(0, pkt->reserved);
+  KEXPECT_STREQ("2001:db8::1234:5678", inet62str(&pkt->target, addrstr));
+
+  // Send an equivalent neighbor SOLICITATION for the address.  This is the case
+  // where two nodes are doing duplicate detection simultaneously.
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* solicit = (ndp_nbr_solict_t*)pbuf_get(pb);
+  solicit->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  solicit->hdr.code = 0;
+  solicit->hdr.checksum = 0;
+  solicit->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &solicit->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("::", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff34:5678", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_solict_t));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  solicit->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // Should have no more packets, and the address should be marked CONFLICT.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+  for (int i = 1; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+
+  // After the timer expires (or would expire), it should still be CONFLICT.
+  ksleep(50);
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+  kspin_unlock(&nic.n->lock);
+
+  // We should not be able to use the IP for an outbound connection.
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::9000", &dst.a.ip6));
+  KEXPECT_EQ(-EADDRNOTAVAIL, ip6_pick_nic_src(&dst, nic.n, &src));
+
+  test_ttap_destroy(&nic);
+}
+
+// As above, but the solicitation received is not from the any-addr (i.e. is a
+// normal solicitation).  This should _not_ trigger duplicate detection.
+static void configure_gets_unicast_solicit_test(void) {
+  KTEST_BEGIN(
+      "IPv6 address configuration: gets unicast solicit simultaneously");
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = 50;
+  ipv6_enable(nic.n, &opts);
+
+  network_t addr;
+  char buf[300];
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(0, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+  for (int i = 2; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+
+  // We shouldn't be able to use the tentative address.
+  netaddr_t dst, src;
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::9000", &dst.a.ip6));
+  KEXPECT_EQ(-EADDRNOTAVAIL, ip6_pick_nic_src(&dst, nic.n, &src));
+
+  // We should have first gotten an MLD update to subscribe to the new address.
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addrstr[INET6_PRETTY_LEN];
+
+  KEXPECT_EQ(mld_size(1), vfs_read(nic.fd, buf, 150));
+  const eth_hdr_t* eth_hdr = (eth_hdr_t*)&buf[0];
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, addrstr));
+  KEXPECT_STREQ("33:33:00:00:00:16", mac2str(eth_hdr->mac_dst, addrstr));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+
+  const ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)(eth_hdr + 1);
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, addrstr));
+  KEXPECT_STREQ("ff02::16", inet62str(&ip6_hdr->dst_addr, addrstr));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t),
+             btoh16(ip6_hdr->payload_len));
+
+  const mld_listener_report_t* report = (mld_listener_report_t*)(ip6_hdr + 1);
+  KEXPECT_EQ(143, report->hdr.type);
+  KEXPECT_EQ(0, report->hdr.code);
+  KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  KEXPECT_EQ(0, report->reserved);
+
+  const mld_multicast_record_t* record = &report->records[0];
+  KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  KEXPECT_EQ(0, btoh16(record->num_sources));
+  KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  KEXPECT_STREQ("ff02::1:ff34:5678",
+                inet62str(&record->multicast_addr, addrstr));
+
+  // We should have then gotten a neighbor solicitation for the address.
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t),
+      vfs_read(nic.fd, buf, 300));
+  // First check ethernet header.
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:FF:34:56:78", mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  ip6_hdr = (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_nbr_solict_t), btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+
+  KEXPECT_STREQ("::", inet62str(&ip6_hdr->src_addr, addrstr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::1:ff34:5678", inet62str(&ip6_hdr->dst_addr, addrstr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_nbr_solict_t* pkt =
+      (const ndp_nbr_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(135, pkt->hdr.type);
+  KEXPECT_EQ(0, pkt->hdr.code);
+  KEXPECT_EQ(0, pkt->reserved);
+  KEXPECT_STREQ("2001:db8::1234:5678", inet62str(&pkt->target, addrstr));
+
+  // Send a neighbor solicitation for the address, but not from the any-addr.
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* solicit = (ndp_nbr_solict_t*)pbuf_get(pb);
+  solicit->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  solicit->hdr.code = 0;
+  solicit->hdr.checksum = 0;
+  solicit->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &solicit->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("1234::5678", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff34:5678", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_solict_t));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  solicit->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // We should not have replied to the solicitation, but the address should still
+  // be tentative.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+  for (int i = 1; i < NIC_MAX_ADDRS; ++i) {
+    KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[i].state);
+  }
+  kspin_unlock(&nic.n->lock);
+
+  // After the timer expires, it should be promoted.
+  ksleep(50);
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_ENABLED, nic.n->addrs[0].state);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_EQ(96, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_STREQ("2001:db8::1234:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
+  kspin_unlock(&nic.n->lock);
+
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::9000", &dst.a.ip6));
+  KEXPECT_EQ(0, ip6_pick_nic_src(&dst, nic.n, &src));
+  KEXPECT_STREQ("2001:db8::1234:5678", inet62str(&src.a.ip6, buf));
+
+  test_ttap_destroy(&nic);
+}
+
 static void configure_tests(test_fixture_t* t) {
   basic_configure_test();
   configure_nic_delete_test();
   configure_nic_delete_test2();
   configure_dup_found_test();
+  configure_dup_found_simultaneous_detect_test();
+  configure_gets_unicast_solicit_test();
   // TODO(ipv6): more configuration tests:
   // - no address spots left
   // - address already configured (inc. in a later slot)
-  // - simultaneous duplicate address detections
   // - autoconfigure does link-local address
   // - autoconfigure does link-local address (and conflict)
 }

@@ -128,6 +128,24 @@ void ip6_nic_got_nbr_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
   kspin_unlock(&nic->lock);
 }
 
+void ip6_nic_got_dup_solicit(nic_t* nic, nic_addr_t* addr) {
+  KASSERT(kspin_is_held(&nic->lock));
+  KASSERT_DBG(addr->state == NIC_ADDR_TENTATIVE);
+  KASSERT_DBG(addr->a.addr.family == AF_INET6);
+
+  char pretty[INET6_PRETTY_LEN];
+  KLOG(INFO, "ipv6: nic %s detected duplicate for tentative address %s\n",
+       nic->name, inet62str(&addr->a.addr.a.ip6, pretty));
+  kspin_lock_int(&addr->timer_lock);
+  if (addr->timer != TIMER_HANDLE_NONE) {
+    cancel_event_timer(addr->timer);
+    addr->timer = TIMER_HANDLE_NONE;
+    KASSERT(refcount_dec(&nic->ref) != 0);
+  }
+  kspin_unlock_int(&addr->timer_lock);
+  addr->state = NIC_ADDR_CONFLICT;
+}
+
 int ipv6_configure_addr(nic_t* nic, const network_t* addr) {
   if (addr->addr.family != AF_INET6 || addr->prefix_len < 1 ||
       addr->prefix_len > 128) {

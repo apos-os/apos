@@ -220,7 +220,8 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
   kspin_lock(&nic->lock);
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
     if (nic->addrs[addr_idx].a.addr.family == AF_INET6 &&
-        nic->addrs[addr_idx].state == NIC_ADDR_ENABLED) {
+        (nic->addrs[addr_idx].state == NIC_ADDR_ENABLED ||
+         nic->addrs[addr_idx].state == NIC_ADDR_TENTATIVE)) {
       if (kmemcmp(&nic->addrs[addr_idx].a.addr.a.ip6, &hdr->target,
                   sizeof(struct in6_addr)) == 0) {
         KLOG(DEBUG, "IPv6 NDP: found NIC %s with matching IP (%s)\n", nic->name,
@@ -234,6 +235,16 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
         } else {
           reply_dst = ip_hdr->src_addr;
         }
+
+        // If the address is tentative, don't send a reply.
+        if (nic->addrs[addr_idx].state == NIC_ADDR_TENTATIVE) {
+          if (src_unspec) {
+            ip6_nic_got_dup_solicit(nic, &nic->addrs[addr_idx]);
+          }
+          kspin_unlock(&nic->lock);
+          return;
+        }
+
         pbuf_t* pb = ndp_mkpkt(
             nic, false, &reply_dst, ICMPV6_NDP_NBR_ADVERT, &hdr->target,
             NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE,
