@@ -3525,7 +3525,9 @@ void ipv6_test(void) {
   nic_add_addr_v6(fixture.nic2.n, SRC_IP, 64, NIC_ADDR_ENABLED);
   nic_add_addr_v6(fixture.nic2.n, SRC_IP2, 64, NIC_ADDR_ENABLED);
   nic_add_addr_v6(fixture.nic2.n, "1::1", 64, NIC_ADDR_TENTATIVE);
-  nic_add_addr_v6(fixture.nic2.n, "fe80::1", 64, NIC_ADDR_ENABLED);
+  // Prefix length of 72 bits to match addresses more closely than whatever the
+  // normal (non-test) NICs' have.
+  nic_add_addr_v6(fixture.nic2.n, "fe80::1", 72, NIC_ADDR_ENABLED);
   nic_add_addr_v6(fixture.nic2.n, "2001:0:1::1", 64, NIC_ADDR_ENABLED);
   kspin_unlock(&fixture.nic2.n->lock);
 

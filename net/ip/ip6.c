@@ -52,6 +52,8 @@ static const nic_ipv6_options_t kDefaultNicOpts = {
 
 void ipv6_init(nic_t* nic) {
   htbl_init(&nic->ipv6.multicast, 10);
+  nic->ipv6.iface_id_len = 0;
+  kmemset(&nic->ipv6.iface_id, 0, sizeof(struct in6_addr));
 }
 
 static void do_delete(void* arg, uint32_t key, void* val) {
@@ -223,6 +225,18 @@ void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
 
   kspin_lock(&nic->lock);
   nic->ipv6.opts = *opts;
+
+  // Generate the interface ID.
+  nic->ipv6.iface_id_len = 64;
+  nic->ipv6.iface_id.s6_addr[8] = nic->mac.addr[0];
+  nic->ipv6.iface_id.s6_addr[8] ^= 0x2;  // Flip the local/global bit.
+  nic->ipv6.iface_id.s6_addr[9] = nic->mac.addr[1];
+  nic->ipv6.iface_id.s6_addr[10] = nic->mac.addr[2];
+  nic->ipv6.iface_id.s6_addr[11] = 0xff;
+  nic->ipv6.iface_id.s6_addr[12] = 0xfe;
+  nic->ipv6.iface_id.s6_addr[13] = nic->mac.addr[3];
+  nic->ipv6.iface_id.s6_addr[14] = nic->mac.addr[4];
+  nic->ipv6.iface_id.s6_addr[15] = nic->mac.addr[5];
   kspin_unlock(&nic->lock);
 
   if (!opts->autoconfigure) {
@@ -230,11 +244,11 @@ void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
   }
 
   // Start by generating a link-local address for the interface.
-  // TODO(ipv6): do this properly randomly.
   network_t link_local;
   link_local.addr.family = AF_INET6;
   KASSERT(0 == str2inet6(LINK_LOCAL_PREFIX, &link_local.addr.a.ip6));
-  link_local.addr.a.ip6.s6_addr[15] = 1;
+  ip6_addr_merge(&link_local.addr.a.ip6, &nic->ipv6.iface_id,
+                 128 - nic->ipv6.iface_id_len);
   link_local.prefix_len = 64;
 
   if (ipv6_configure_addr(nic, &link_local) != 0) {

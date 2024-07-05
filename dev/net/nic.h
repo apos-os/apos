@@ -23,6 +23,7 @@
 #include "net/neighbor_cache.h"
 #include "net/pbuf.h"
 #include "proc/spinlock.h"
+#include "user/include/apos/net/socket/inet.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
 #define NIC_MAX_ADDRS 6      // Maximum number of addresses per NIC
@@ -78,6 +79,8 @@ typedef enum {
 typedef struct {
   nic_ipv6_options_t opts;
   htbl_t multicast;  // Multicast addresses we're subscribed to.
+  int iface_id_len;  // How long the interface ID is (in bits).
+  struct in6_addr iface_id;  // Low N-bits set to interface ID.
 } nic_ipv6_t;
 
 struct nic {
