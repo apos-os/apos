@@ -49,7 +49,9 @@ void net_init(void) {
     nic->addrs[0].a.prefix_len = 24;
     kspin_unlock(&nic->lock);
 
-    ipv6_enable(nic, ipv6_default_nic_opts());
+    nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+    opts.dup_detection_timeout_ms = 50;
+    ipv6_enable(nic, &opts);
   }
 
   netaddr_t def;
