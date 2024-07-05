@@ -74,6 +74,7 @@ void tcp_test(void);
 void tuntap_test(void);
 void ipv6_test(void);
 void net_base_test(void);
+void net_echo_test(void);
 
 #if ENABLE_NVME
 void nvme_test(void);
