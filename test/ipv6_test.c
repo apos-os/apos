@@ -420,6 +420,103 @@ static void addr_equal_tests(void) {
   addr1.sin6_scope_id = addr2.sin6_scope_id;
 }
 
+static void addr_merge_tests(void) {
+  KTEST_BEGIN("ip6_addr_merge() tests");
+  struct in6_addr ones, zeroes, addr;
+  char s[INET6_PRETTY_LEN];
+
+  kmemset(&ones, 0xff, sizeof(ones));
+  kmemset(&zeroes, 0, sizeof(zeroes));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 128);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 0);
+  KEXPECT_STREQ("::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 1);
+  KEXPECT_STREQ("8000::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 2);
+  KEXPECT_STREQ("c000::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 3);
+  KEXPECT_STREQ("e000::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 4);
+  KEXPECT_STREQ("f000::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 5);
+  KEXPECT_STREQ("f800::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 8);
+  KEXPECT_STREQ("ff00::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 9);
+  KEXPECT_STREQ("ff80::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 64);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 65);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff:8000::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 66);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff:c000::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 71);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff:fe00::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 72);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff:ff00::", inet62str(&addr, s));
+
+  addr = ones;
+  ip6_addr_merge(&addr, &zeroes, 127);
+  KEXPECT_STREQ("ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &zeroes, 72);
+  KEXPECT_STREQ("::", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &ones, 72);
+  KEXPECT_STREQ("::ff:ffff:ffff:ffff", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &ones, 71);
+  KEXPECT_STREQ("::1ff:ffff:ffff:ffff", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &ones, 70);
+  KEXPECT_STREQ("::3ff:ffff:ffff:ffff", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &ones, 65);
+  KEXPECT_STREQ("::7fff:ffff:ffff:ffff", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &ones, 64);
+  KEXPECT_STREQ("::ffff:ffff:ffff:ffff", inet62str(&addr, s));
+
+  addr = zeroes;
+  ip6_addr_merge(&addr, &ones, 63);
+  KEXPECT_STREQ("::1:ffff:ffff:ffff:ffff", inet62str(&addr, s));
+}
+
 static void addr_tests(void) {
   KTEST_BEGIN("IPv6 address test helpers");
   char buf[INET6_PRETTY_LEN];
@@ -476,6 +573,7 @@ static void addr_tests(void) {
   str2addr_tests();
   addr_prefix_tests();
   addr_equal_tests();
+  addr_merge_tests();
 }
 
 static void netaddr_tests(void) {

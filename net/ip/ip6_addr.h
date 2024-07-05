@@ -22,6 +22,10 @@
 // Returns the number of bits shared between the two addresses.
 int ip6_common_prefix(const struct in6_addr* A, const struct in6_addr* B);
 
+// Merges the two IP addresses.  Uses the first N bits of the first IP, and
+// takes the (128 - N) bits of the second IP.
+void ip6_addr_merge(struct in6_addr* A, const struct in6_addr* B, int nbits);
+
 // Compare two IPv6 source addresses per RFC 6724.  Returns a negative number if
 // if the first address is lower in preference than the second.
 //

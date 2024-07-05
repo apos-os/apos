@@ -14,6 +14,7 @@
 #include "net/ip/ip6_addr.h"
 
 #include "common/kassert.h"
+#include "common/math.h"
 #include "net/addr.h"
 #include "net/util.h"
 
@@ -55,6 +56,23 @@ int ip6_common_prefix(const struct in6_addr* A, const struct in6_addr* B) {
     }
   }
   return result;
+}
+
+void ip6_addr_merge(struct in6_addr* A, const struct in6_addr* B, int nbits) {
+  KASSERT_DBG(nbits >= 0);
+  KASSERT_DBG(nbits <= 128);
+  int first_byte = ceiling_div(nbits, 8);
+  if (nbits % 8 != 0) {
+    KASSERT_DBG(first_byte > 0);
+    int byte = first_byte - 1;
+    for (int i = 0; i < 8 - (nbits % 8); ++i) {
+      A->s6_addr[byte] &= ~(1 << i);
+      A->s6_addr[byte] |= B->s6_addr[byte] & (1 << i);
+    }
+  }
+  for (int i = first_byte; i < 16; ++i) {
+    A->s6_addr[i] = B->s6_addr[i];
+  }
 }
 
 // Constants to match the scope field in multicast addresses.
