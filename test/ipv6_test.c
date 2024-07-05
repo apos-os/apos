@@ -16,6 +16,7 @@
 #include "common/endian.h"
 #include "common/errno.h"
 #include "common/kassert.h"
+#include "common/kprintf.h"
 #include "common/kstring.h"
 #include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
@@ -3310,6 +3311,75 @@ static void configure_gets_unicast_solicit_test(void) {
   test_ttap_destroy(&nic);
 }
 
+static void configure_unable_test(void) {
+  KTEST_BEGIN("IPv6 addr configuration: no slots left");
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = 50;
+  ipv6_enable(nic.n, &opts);
+
+  kspin_lock(&nic.n->lock);
+  char pretty[INET6_PRETTY_LEN], pretty2[INET6_PRETTY_LEN];
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    nic.n->addrs[i].state = NIC_ADDR_ENABLED;
+    ksprintf(pretty, "fe80::%d", i + 1);
+    KEXPECT_EQ(0, str2inet6(pretty, &nic.n->addrs[i].a.addr.a.ip6));
+    nic.n->addrs[i].a.addr.family = AF_INET6;
+    nic.n->addrs[i].a.prefix_len = 64;
+  }
+  nic.n->addrs[0].state = NIC_ADDR_TENTATIVE;
+  nic.n->addrs[1].state = NIC_ADDR_CONFLICT;
+  kspin_unlock(&nic.n->lock);
+
+  network_t addr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1234:5678", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(-ENOMEM, ipv6_configure_addr(nic.n, &addr));
+  KEXPECT_EQ(0, str2inet6("fe80::8", &addr.addr.a.ip6));
+  KEXPECT_EQ(-ENOMEM, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    ksprintf(pretty, "fe80::%d", i + 1);
+    KEXPECT_STREQ(pretty, inet62str(&nic.n->addrs[i].a.addr.a.ip6, pretty2));
+  }
+  kspin_unlock(&nic.n->lock);
+
+  // Should have sent no packets.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, pretty, 10));
+
+
+  KTEST_BEGIN("IPv6 addr configuration: addr already configured");
+  // Create a slot.  It should not be used.
+  kspin_lock(&nic.n->lock);
+  nic.n->addrs[4].state = NIC_ADDR_NONE;
+  kspin_unlock(&nic.n->lock);
+
+  KEXPECT_EQ(0, str2inet6("fe80::1", &addr.addr.a.ip6));
+  addr.addr.family = AF_INET6;
+  addr.prefix_len = 96;
+  KEXPECT_EQ(-EEXIST, ipv6_configure_addr(nic.n, &addr));
+  KEXPECT_EQ(0, str2inet6("fe80::2", &addr.addr.a.ip6));
+  KEXPECT_EQ(-EEXIST, ipv6_configure_addr(nic.n, &addr));
+  KEXPECT_EQ(0, str2inet6("fe80::3", &addr.addr.a.ip6));
+  KEXPECT_EQ(-EEXIST, ipv6_configure_addr(nic.n, &addr));
+  KEXPECT_EQ(0, str2inet6("fe80::4", &addr.addr.a.ip6));
+  KEXPECT_EQ(-EEXIST, ipv6_configure_addr(nic.n, &addr));
+  KEXPECT_EQ(0, str2inet6("fe80::6", &addr.addr.a.ip6));
+  KEXPECT_EQ(-EEXIST, ipv6_configure_addr(nic.n, &addr));
+
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[4].state);
+  kspin_unlock(&nic.n->lock);
+
+  // Should have sent no packets.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, pretty, 10));
+  test_ttap_destroy(&nic);
+}
+
 static void configure_tests(test_fixture_t* t) {
   basic_configure_test();
   configure_nic_delete_test();
@@ -3317,9 +3387,8 @@ static void configure_tests(test_fixture_t* t) {
   configure_dup_found_test();
   configure_dup_found_simultaneous_detect_test();
   configure_gets_unicast_solicit_test();
+  configure_unable_test();
   // TODO(ipv6): more configuration tests:
-  // - no address spots left
-  // - address already configured (inc. in a later slot)
   // - autoconfigure does link-local address
   // - autoconfigure does link-local address (and conflict)
 }
