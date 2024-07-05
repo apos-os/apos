@@ -27,6 +27,7 @@
 #include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/ip6_internal.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
@@ -113,7 +114,7 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
   return pb;
 }
 
-static void handle_advert(nic_t* nic, pbuf_t* pb) {
+static void handle_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr, pbuf_t* pb) {
   const ndp_nbr_advert_t* hdr = (const ndp_nbr_advert_t*)pbuf_getc(pb);
   KASSERT(hdr->hdr.type == ICMPV6_NDP_NBR_ADVERT);
   if (hdr->hdr.code != 0) {
@@ -165,6 +166,8 @@ static void handle_advert(nic_t* nic, pbuf_t* pb) {
   addr.family = AF_INET6;
   kmemcpy(&addr.a.ip6, &hdr->target, sizeof(struct in6_addr));
   nbr_cache_insert(nic, addr, ll_tgt);
+
+  ip6_nic_got_nbr_advert(nic, ip6_hdr, hdr);
 }
 
 static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
@@ -278,7 +281,7 @@ void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
   const icmpv6_hdr_t* hdr = (const icmpv6_hdr_t*)pbuf_getc(pb);
   switch (hdr->type) {
     case ICMPV6_NDP_NBR_ADVERT:
-      handle_advert(nic, pb);
+      handle_advert(nic, ip_hdr, pb);
       pbuf_free(pb);
       return;
 

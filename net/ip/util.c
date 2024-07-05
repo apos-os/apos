@@ -22,7 +22,7 @@
 #include "proc/spinlock.h"
 #include "test/test_point.h"
 
-static int ip6_pick_src(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out) {
+int ip6_pick_nic_src(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out) {
   int best = -1;
   kspin_lock(&nic->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
@@ -65,7 +65,7 @@ int ip_pick_src_netaddr(const netaddr_t* ndst, netaddr_t* src_out) {
   }
   test_point_run("ip_pick_src:after_route");
   if (ndst->family == AF_INET6) {
-    int result = ip6_pick_src(ndst, route.nic, src_out);
+    int result = ip6_pick_nic_src(ndst, route.nic, src_out);
     if (result) {
       nic_put(route.nic);
       return result;

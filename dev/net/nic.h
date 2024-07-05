@@ -39,6 +39,7 @@ typedef enum {
   NIC_ADDR_NONE,
   NIC_ADDR_TENTATIVE,
   NIC_ADDR_ENABLED,
+  NIC_ADDR_CONFLICT,
 } nic_addr_state_t;
 
 typedef struct {

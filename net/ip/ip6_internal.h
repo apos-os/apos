@@ -1,4 +1,4 @@
-// Copyright 2018 Andrew Oates.  All Rights Reserved.
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,21 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_IP_UTIL_H
-#define APOO_NET_IP_UTIL_H
+#ifndef APOO_NET_IP_IP6_INTERNAL_H
+#define APOO_NET_IP_IP6_INTERNAL_H
 
-#include "net/addr.h"
 #include "dev/net/nic.h"
-#include "user/include/apos/net/socket/inet.h"
+#include "net/ip/icmpv6/ndp_protocol.h"
+#include "net/ip/ip6_hdr.h"
 
-// Given a destination address, pick a source address that can route to it (or
-// return an error).
-int ip_pick_src(const struct sockaddr* dst, socklen_t dst_len,
-                struct sockaddr_storage* src_out);
-
-int ip_pick_src_netaddr(const netaddr_t* dst, netaddr_t* src_out);
-
-// As above, but restricted to a particular NIC.
-int ip6_pick_nic_src(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out);
+// Indicate that we got a neighbor advertisement for given IP address ---
+// handles duplicate address detection logic.
+void ip6_nic_got_nbr_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
+                            const ndp_nbr_advert_t* advert);
 
 #endif

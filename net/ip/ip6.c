@@ -15,6 +15,7 @@
 
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "common/kstring.h"
 #include "common/refcount.h"
 #include "dev/net/nic.h"
 #include "dev/timer.h"
@@ -25,6 +26,7 @@
 #include "net/ip/icmpv6/ndp.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
+#include "net/ip/ip6_internal.h"
 #include "net/ip/ip6_multicast.h"
 #include "net/ip/route.h"
 #include "net/link_layer.h"
@@ -99,6 +101,31 @@ static void addr_dup_timeout_defint(void* arg) {
 done:
   kspin_unlock(&nic->lock);
   nic_put(nic);
+}
+
+void ip6_nic_got_nbr_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
+                            const ndp_nbr_advert_t* advert) {
+  char pretty[INET6_PRETTY_LEN];
+  kspin_lock(&nic->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    if (nic->addrs[i].state == NIC_ADDR_TENTATIVE &&
+        nic->addrs[i].a.addr.family == AF_INET6 &&
+        kmemcmp(&nic->addrs[i].a.addr.a.ip6, &advert->target,
+                sizeof(struct in6_addr)) == 0) {
+      KLOG(INFO, "ipv6: nic %s detected duplicate for tentative address %s\n",
+           nic->name, inet62str(&advert->target, pretty));
+      kspin_lock_int(&nic->addrs[i].timer_lock);
+      if (nic->addrs[i].timer != TIMER_HANDLE_NONE) {
+        cancel_event_timer(nic->addrs[i].timer);
+        nic->addrs[i].timer = TIMER_HANDLE_NONE;
+        KASSERT(refcount_dec(&nic->ref) != 0);
+      }
+      kspin_unlock_int(&nic->addrs[i].timer_lock);
+
+      nic->addrs[i].state = NIC_ADDR_CONFLICT;
+    }
+  }
+  kspin_unlock(&nic->lock);
 }
 
 int ipv6_configure_addr(nic_t* nic, const network_t* addr) {
