@@ -54,6 +54,8 @@
 #define DISABLED_SRC_IP2 "2001:db8::12"
 #define MLD_QUERY_SRC "fe80::1234"
 
+#define TEST_DUP_TIMEOUT_MS 20
+
 typedef struct {
   test_ttap_t nic;
   test_ttap_t nic2;
@@ -2696,7 +2698,7 @@ static void basic_configure_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = false;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
 
@@ -2815,7 +2817,7 @@ static void basic_configure_test(void) {
   KEXPECT_STREQ("fe80::1", inet62str(&src.a.ip6, buf));
 
   // Now wait for the timer to time out.
-  ksleep(50);
+  ksleep(TEST_DUP_TIMEOUT_MS);
 
   // Should have no more packets, and the address should be configured.
   KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
@@ -2855,7 +2857,7 @@ static void configure_nic_delete_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = false;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   network_t addr;
@@ -2893,7 +2895,7 @@ static void configure_nic_delete_test(void) {
   test_ttap_destroy(&nic);
 
   // Wait until the timer would have triggered.
-  ksleep(60);
+  ksleep(TEST_DUP_TIMEOUT_MS + 10);
 }
 
 // Variant 2 has a timeout that expires long in the future, verifying there are
@@ -2950,7 +2952,7 @@ static void configure_dup_found_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = false;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   network_t addr;
@@ -3086,7 +3088,7 @@ static void configure_dup_found_test(void) {
   kspin_unlock(&nic.n->lock);
 
   // After the timer expires (or would expire), it should still be CONFLICT.
-  ksleep(50);
+  ksleep(TEST_DUP_TIMEOUT_MS);
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
   KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
@@ -3111,7 +3113,7 @@ static void configure_dup_found_simultaneous_detect_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = false;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   network_t addr;
@@ -3240,7 +3242,7 @@ static void configure_dup_found_simultaneous_detect_test(void) {
   kspin_unlock(&nic.n->lock);
 
   // After the timer expires (or would expire), it should still be CONFLICT.
-  ksleep(50);
+  ksleep(TEST_DUP_TIMEOUT_MS);
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
   KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
@@ -3266,7 +3268,7 @@ static void configure_gets_unicast_solicit_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = false;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   network_t addr;
@@ -3395,7 +3397,7 @@ static void configure_gets_unicast_solicit_test(void) {
   kspin_unlock(&nic.n->lock);
 
   // After the timer expires, it should be promoted.
-  ksleep(50);
+  ksleep(TEST_DUP_TIMEOUT_MS);
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_ENABLED, nic.n->addrs[0].state);
   KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
@@ -3418,7 +3420,7 @@ static void configure_unable_test(void) {
   KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = false;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   kspin_lock(&nic.n->lock);
@@ -3489,7 +3491,7 @@ static void autoconfigure_test(void) {
   KEXPECT_EQ(0, str2mac(nic.mac, nic.n->mac.addr));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = true;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   // We should have first gotten an MLD update to subscribe to the new address.
@@ -3560,7 +3562,7 @@ static void autoconfigure_test(void) {
   KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
 
   // Now wait for the timer to time out.
-  ksleep(50);
+  ksleep(TEST_DUP_TIMEOUT_MS);
 
   // The address should now be configured.
   kspin_lock(&nic.n->lock);
@@ -3624,7 +3626,7 @@ static void autoconfigure_conflict_test(void) {
   KEXPECT_EQ(0, str2mac(nic.mac, nic.n->mac.addr));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = true;
-  opts.dup_detection_timeout_ms = 50;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
   ipv6_enable(nic.n, &opts);
 
   // We should have first gotten an MLD update to subscribe to the new address.
@@ -3743,7 +3745,7 @@ static void autoconfigure_conflict_test(void) {
   kspin_unlock(&nic.n->lock);
 
   // After the timer expires (or would expire), it should still be CONFLICT.
-  ksleep(50);
+  ksleep(TEST_DUP_TIMEOUT_MS);
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
   KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
