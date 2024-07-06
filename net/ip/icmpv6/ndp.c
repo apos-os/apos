@@ -48,6 +48,9 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
 
   bool include_src_opt = !src_any_addr;
   size_t pkt_size = sizeof(ndp_nbr_advert_t) + (include_src_opt ? 8 : 0);
+  if (!pkt_addr) {
+    pkt_size -= sizeof(struct in6_addr);
+  }
   pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, pkt_size);
   if (!pb) {
     KLOG(DFATAL, "IPv6 NDP: unable to allocate packet\n");
@@ -60,11 +63,13 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
   pkt->hdr.code = 0;
   pkt->hdr.checksum = 0;
   pkt->flags = htob32(flags);
-  kmemcpy(&pkt->target, pkt_addr, sizeof(struct in6_addr));
+  if (pkt_addr) {
+    kmemcpy(&pkt->target, pkt_addr, sizeof(struct in6_addr));
+  }
 
   // Add a source link-layer address option.
   if (include_src_opt) {
-    uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_advert_t));
+    uint8_t* option = ((uint8_t*)pkt + (pkt_size - 8));
     option[0] = option_type;
     option[1] = 1;  // 8 octets.
     _Static_assert(NIC_MAC_LEN == 6, "Mismatched NIC_MAC_LEN");
@@ -317,6 +322,28 @@ void ndp_send_request(nic_t* nic, const struct in6_addr* addr,
 
   pbuf_t* pb = ndp_mkpkt(nic, src_any_addr, &dst_addr, ICMPV6_NDP_NBR_SOLICIT,
                          addr, 0, ICMPV6_OPTION_SRC_LL_ADDR, nic->mac.addr);
+  if (!pb) {
+    return;
+  }
+
+  nic_mac_t eth_dst;
+  ip6_multicast_mac(&dst_addr, eth_dst.addr);
+  eth_add_hdr(pb, &eth_dst, &nic->mac, ET_IPV6);
+  int result = eth_send_raw(nic, pb);
+  if (result) {
+    KLOG(WARNING, "IPv6 NDP: unable to send NDP packet: %s\n",
+         errorname(-result));
+  }
+}
+
+void ndp_send_router_solicit(nic_t* nic) {
+  KASSERT_DBG(kspin_is_held(&nic->lock));
+  // Send to the all-routers multicast address.
+  struct in6_addr dst_addr;
+  KASSERT(0 == str2inet6("ff02::2", &dst_addr));
+
+  pbuf_t* pb = ndp_mkpkt(nic, false, &dst_addr, ICMPV6_NDP_ROUTER_SOLICIT, NULL,
+                         0, ICMPV6_OPTION_SRC_LL_ADDR, nic->mac.addr);
   if (!pb) {
     return;
   }

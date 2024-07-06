@@ -30,6 +30,11 @@ typedef struct __attribute__((packed)) {
   struct in6_addr target;
 } ndp_nbr_advert_t;
 
+typedef struct __attribute__((packed)) {
+  icmpv6_hdr_t hdr;
+  uint32_t reserved;
+} ndp_router_solict_t;
+
 #define NDP_NBR_ADVERT_FLAG_ROUTER (1 << 31)
 #define NDP_NBR_ADVERT_FLAG_SOLICITED (1 << 30)
 #define NDP_NBR_ADVERT_FLAG_OVERRIDE (1 << 29)

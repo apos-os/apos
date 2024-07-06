@@ -27,4 +27,7 @@ void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb);
 void ndp_send_request(nic_t* nic, const struct in6_addr* addr,
                       bool src_any_addr);
 
+// Send a router solicitation on the given NIC.
+void ndp_send_router_solicit(nic_t* nic);
+
 #endif

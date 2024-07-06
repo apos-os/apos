@@ -3724,6 +3724,63 @@ static void autoconfigure_conflict_test(void) {
   test_ttap_destroy(&nic);
 }
 
+static void send_router_solicit_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: send router solicit");
+
+  kspin_lock(&t->nic.n->lock);
+  ndp_send_router_solicit(t->nic.n);
+  kspin_unlock(&t->nic.n->lock);
+
+  // First check the ethernet header.
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  char buf[100];
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_router_solict_t) + 8,
+      vfs_read(t->nic.fd, buf, 100));
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:00:00:00:02", mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  const ip6_hdr_t* ip6_hdr =
+      (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_traffic_class(*ip6_hdr));
+  KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_router_solict_t) + 8, btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  KEXPECT_EQ(255, ip6_hdr->hop_limit);
+
+  KEXPECT_STREQ(SRC_IP, inet62str(&ip6_hdr->src_addr, addr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::2", inet62str(&ip6_hdr->dst_addr, addr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_router_solict_t* pkt =
+      (const ndp_router_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(133, pkt->hdr.type);
+  KEXPECT_EQ(0, pkt->hdr.code);
+  KEXPECT_EQ(0, pkt->reserved);
+
+  // ...and finally we should include a source link-layer address option.
+  const uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_router_solict_t));
+  KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
+  KEXPECT_EQ(1 /* 8 octets */, option[1]);
+  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
+
+  // Verify the ICMP checksum.
+  ip6_pseudo_hdr_t phdr;
+  kmemcpy(&phdr.src_addr, &ip6_hdr->src_addr, sizeof(struct in6_addr));
+  kmemcpy(&phdr.dst_addr, &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  phdr.payload_len = htob32(sizeof(ndp_router_solict_t) + 8);
+  KEXPECT_EQ(0, ip_checksum2(&phdr, sizeof(phdr), pkt,
+                             sizeof(ndp_router_solict_t) + 8));
+}
+
 static void configure_tests(test_fixture_t* t) {
   basic_configure_test();
   configure_nic_delete_test();
@@ -3735,6 +3792,8 @@ static void configure_tests(test_fixture_t* t) {
 
   autoconfigure_test();
   autoconfigure_conflict_test();
+
+  send_router_solicit_test(t);
 }
 
 // TODO(ipv6): additional tests:
