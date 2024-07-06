@@ -707,16 +707,17 @@ static void pkt_tests(void) {
   pbuf_free(pb);
 }
 
+// We use nic2 to test source IP selection.
 static void ndp_send_request_test(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: send request");
-  nbr_cache_clear(t->nic.n);
+  nbr_cache_clear(t->nic2.n);
 
   struct in6_addr addr6;
   KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &addr6));
 
-  kspin_lock(&t->nic.n->lock);
-  ndp_send_request(t->nic.n, &addr6, false);
-  kspin_unlock(&t->nic.n->lock);
+  kspin_lock(&t->nic2.n->lock);
+  ndp_send_request(t->nic2.n, &addr6, false);
+  kspin_unlock(&t->nic2.n->lock);
 
   // First check the ethernet header.
   char mac[NIC_MAC_PRETTY_LEN];
@@ -724,10 +725,10 @@ static void ndp_send_request_test(test_fixture_t* t) {
   char buf[100];
   KEXPECT_EQ(
       sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_nbr_solict_t) + 8,
-      vfs_read(t->nic.fd, buf, 100));
+      vfs_read(t->nic2.fd, buf, 100));
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)&buf;
   KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(t->nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ(t->nic2.mac, mac2str(eth_hdr->mac_src, mac));
   KEXPECT_STREQ("33:33:FF:12:34:56", mac2str(eth_hdr->mac_dst, mac));
 
   // ...then the IPv6 header.
@@ -740,7 +741,9 @@ static void ndp_send_request_test(test_fixture_t* t) {
   KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
   KEXPECT_EQ(255, ip6_hdr->hop_limit);
 
-  KEXPECT_STREQ(SRC_IP, inet62str(&ip6_hdr->src_addr, addr));
+  // Should source from fe80::1 due to scope match (not just pick the first IPv6
+  // address it finds).
+  KEXPECT_STREQ("fe80::1", inet62str(&ip6_hdr->src_addr, addr));
   // The solicited-node multicast address for the requested IP.
   KEXPECT_STREQ("ff02::1:ff12:3456", inet62str(&ip6_hdr->dst_addr, addr));
 
@@ -756,7 +759,7 @@ static void ndp_send_request_test(test_fixture_t* t) {
   const uint8_t* option = ((uint8_t*)pkt + sizeof(ndp_nbr_solict_t));
   KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
   KEXPECT_EQ(1 /* 8 octets */, option[1]);
-  KEXPECT_STREQ(t->nic.mac, mac2str(&option[2], mac));
+  KEXPECT_STREQ(t->nic2.mac, mac2str(&option[2], mac));
 
   // Verify the ICMP checksum.
   ip6_pseudo_hdr_t phdr;

@@ -22,9 +22,8 @@
 #include "proc/spinlock.h"
 #include "test/test_point.h"
 
-int ip6_pick_nic_src(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out) {
+int ip6_pick_nic_src_locked(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out) {
   int best = -1;
-  kspin_lock(&nic->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
     if (nic->addrs[i].a.addr.family != AF_INET6 ||
         nic->addrs[i].state != NIC_ADDR_ENABLED) {
@@ -36,12 +35,18 @@ int ip6_pick_nic_src(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out) {
     }
   }
   if (best < 0) {
-    kspin_unlock(&nic->lock);
     return -EADDRNOTAVAIL;
   }
   *src_out = nic->addrs[best].a.addr;
-  kspin_unlock(&nic->lock);
   return 0;
+}
+
+int ip6_pick_nic_src(const netaddr_t* dst, nic_t* nic,
+                            netaddr_t* src_out) {
+  kspin_lock(&nic->lock);
+  int result = ip6_pick_nic_src_locked(dst, nic, src_out);
+  kspin_unlock(&nic->lock);
+  return result;
 }
 
 int ip_pick_src(const struct sockaddr* dst, socklen_t dst_len,

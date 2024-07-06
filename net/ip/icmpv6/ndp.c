@@ -28,6 +28,7 @@
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/ip/ip6_internal.h"
+#include "net/ip/util.h"
 #include "net/mac.h"
 #include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
@@ -77,20 +78,14 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
   }
 
   // Find the IPv6 address to send from.
-  struct in6_addr src_addr;
+  netaddr_t net_dst_addr, src_addr;
+  src_addr.family = AF_INET6;
+  net_dst_addr.family = AF_INET6;
+  kmemcpy(&net_dst_addr.a.ip6, dst_addr, sizeof(struct in6_addr));
   if (src_any_addr) {
-    kmemset(&src_addr, 0, sizeof(src_addr));
+    kmemset(&src_addr.a.ip6, 0, sizeof(struct in6_addr));
   } else {
-    bool found = 0;
-    for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-      if (nic->addrs[i].state == NIC_ADDR_ENABLED &&
-          nic->addrs[i].a.addr.family == AF_INET6) {
-        found = true;
-        kmemcpy(&src_addr, &nic->addrs[i].a.addr.a.ip6, sizeof(struct in6_addr));
-        break;
-      }
-    }
-    if (!found) {
+    if (ip6_pick_nic_src_locked(&net_dst_addr, nic, &src_addr) != 0) {
       KLOG(INFO,
            "IPv6 NDP: cannot send NDP on iface %s, no IPv6 address configured\n",
            nic->name);
@@ -101,7 +96,7 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
 
   // Calculate the checksum.
   ip6_pseudo_hdr_t ip6_phdr;
-  kmemcpy(&ip6_phdr.src_addr, &src_addr, sizeof(src_addr));
+  kmemcpy(&ip6_phdr.src_addr, &src_addr.a.ip6, sizeof(struct in6_addr));
   kmemcpy(&ip6_phdr.dst_addr, dst_addr, sizeof(struct in6_addr));
   ip6_phdr.payload_len = htob32(pkt_size);
   kmemset(&ip6_phdr._zeroes, 0, 3);
@@ -110,7 +105,8 @@ static pbuf_t* ndp_mkpkt(nic_t* nic, bool src_any_addr,
       ip_checksum2(&ip6_phdr, sizeof(ip6_phdr), pbuf_get(pb), pkt_size);
 
   // Add the IPv6 and Ethernet headers and send.
-  ip6_add_hdr(pb, &src_addr, dst_addr, IPPROTO_ICMPV6, /* flow label */ 0);
+  ip6_add_hdr(pb, &src_addr.a.ip6, dst_addr, IPPROTO_ICMPV6,
+              /* flow label */ 0);
 
   // Override hop limit, which must be 255.
   ip6_hdr_t* ip6_hdr = (ip6_hdr_t*)pbuf_get(pb);

@@ -29,4 +29,8 @@ int ip_pick_src_netaddr(const netaddr_t* dst, netaddr_t* src_out);
 // As above, but restricted to a particular NIC.
 int ip6_pick_nic_src(const netaddr_t* dst, nic_t* nic, netaddr_t* src_out);
 
+// As above, but with the NIC locked.
+int ip6_pick_nic_src_locked(const netaddr_t* dst, nic_t* nic,
+                            netaddr_t* src_out);
+
 #endif
