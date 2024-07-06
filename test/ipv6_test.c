@@ -3553,12 +3553,13 @@ static void autoconfigure_test(void) {
   KEXPECT_EQ(0, str2inet6("2001:db8::9000", &dst.a.ip6));
   KEXPECT_EQ(-EADDRNOTAVAIL, ip6_pick_nic_src(&dst, nic.n, &src));
 
+  // Should have no more packets.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+
   // Now wait for the timer to time out.
   ksleep(50);
 
-  // Should have no more packets, and the address should be configured.
-  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
-
+  // The address should now be configured.
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_ENABLED, nic.n->addrs[0].state);
   KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
@@ -3576,6 +3577,38 @@ static void autoconfigure_test(void) {
   KEXPECT_EQ(0, str2inet6("2001:db8::9000", &dst.a.ip6));
   KEXPECT_EQ(0, ip6_pick_nic_src(&dst, nic.n, &src));
   KEXPECT_STREQ("fe80::5054:12ff:fe34:5678", inet62str(&src.a.ip6, buf));
+
+  // We should have gotten a router solicitation as well.
+  KEXPECT_EQ(
+      sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + sizeof(ndp_router_solict_t) + 8,
+      vfs_read(nic.fd, buf, 300));
+  KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  KEXPECT_STREQ(nic.mac, mac2str(eth_hdr->mac_src, mac));
+  KEXPECT_STREQ("33:33:00:00:00:02", mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  ip6_hdr = (const ip6_hdr_t*)((uint8_t*)&buf + sizeof(eth_hdr_t));
+  KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  KEXPECT_EQ(sizeof(ndp_router_solict_t) + 8, btoh16(ip6_hdr->payload_len));
+  KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+
+  KEXPECT_STREQ("fe80::5054:12ff:fe34:5678",
+                inet62str(&ip6_hdr->src_addr, addrstr));
+  // The solicited-node multicast address for the requested IP.
+  KEXPECT_STREQ("ff02::2", inet62str(&ip6_hdr->dst_addr, addrstr));
+
+  // ...then the ICMPv6 and NDP headers.
+  const ndp_router_solict_t* rtr_solicit =
+      (const ndp_router_solict_t*)((uint8_t*)ip6_hdr + sizeof(ip6_hdr_t));
+  KEXPECT_EQ(133, rtr_solicit->hdr.type);
+  KEXPECT_EQ(0, rtr_solicit->hdr.code);
+  KEXPECT_EQ(0, rtr_solicit->reserved);
+
+  // ...and finally we should include a source link-layer address option.
+  const uint8_t* option = ((uint8_t*)rtr_solicit + sizeof(ndp_router_solict_t));
+  KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, option[0]);
+  KEXPECT_EQ(1 /* 8 octets */, option[1]);
+  KEXPECT_STREQ(nic.mac, mac2str(&option[2], mac));
 
   test_ttap_destroy(&nic);
 }

@@ -100,6 +100,12 @@ static void addr_dup_timeout_defint(void* arg) {
        inet62str(&addr->a.addr.a.ip6, buf));
   addr->state = NIC_ADDR_ENABLED;
 
+  // If this is a link-local address, send a new router solicitation.
+  if (ip6_is_link_local(&addr->a.addr.a.ip6)) {
+    ndp_send_router_solicit(nic);
+  }
+
+  // TODO(ipv6): handle router advertisements
 done:
   kspin_unlock(&nic->lock);
   nic_put(nic);
@@ -255,7 +261,6 @@ void ipv6_enable(nic_t* nic, const nic_ipv6_options_t* opts) {
     KLOG(WARNING, "ipv6: unable to configure link-local address on NIC %s\n",
          nic->name);
   }
-  // TODO(ipv6): kick off SLAAC.
 }
 
 int ip6_send(pbuf_t* pb, bool allow_block) {
