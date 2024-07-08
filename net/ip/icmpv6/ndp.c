@@ -23,6 +23,7 @@
 #include "net/eth/eth.h"
 #include "net/eth/mac.h"
 #include "net/ip/checksum.h"
+#include "net/ip/icmpv6/ndp_internal.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6_addr.h"
@@ -36,6 +37,36 @@
 #include "proc/spinlock.h"
 
 #define KLOG(...) klogfm(KL_TCP, __VA_ARGS__)
+
+int ndp_parse_opts(const uint8_t* buf, size_t len, const ndp_option_t** opts,
+                   int max_opts) {
+  for (int i = 0; i < max_opts; ++i) {
+    opts[i] = NULL;
+  }
+  int count = 0;
+  while (len >= 8) {
+    uint8_t optlen = buf[1] * 8;
+    if (optlen > len) {
+      KLOG(DEBUG, "ICMPv6: invalid NDP option (too long)\n");
+      return -EINVAL;
+    } else if (optlen == 0) {
+      KLOG(DEBUG, "ICMPv6: invalid NDP option (length zero)\n");
+      return -EINVAL;
+    }
+
+    if (count < max_opts) {
+      opts[count] = (const ndp_option_t*)buf;
+    }
+    count++;
+    buf += optlen;
+    len -= optlen;
+  }
+  if (len != 0) {
+    KLOG(DEBUG, "ICMPv6: invalid NDP option (too short)\n");
+    return -EINVAL;
+  }
+  return count;
+}
 
 // Creates a solicit or advert packet.  NIC must be locked.  Returns it up
 // through the IPv6 header (not including the link-layer header).

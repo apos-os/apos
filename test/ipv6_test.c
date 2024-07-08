@@ -26,6 +26,7 @@
 #include "net/ip/checksum.h"
 #include "net/ip/icmpv6/multicast.h"
 #include "net/ip/icmpv6/ndp.h"
+#include "net/ip/icmpv6/ndp_internal.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
 #include "net/ip/ip6.h"
@@ -707,6 +708,129 @@ static void pkt_tests(void) {
   KEXPECT_EQ(64, hdr->hop_limit);
 
   pbuf_free(pb);
+}
+
+static void ndp_options_test(void) {
+  const ndp_option_t* opts[10];
+  uint8_t buf[100];
+
+  KTEST_BEGIN("NDP: basic options parse");
+  kmemset(opts, 0xaa, sizeof(opts));
+  kmemset(buf, 0xbb, 100);
+  buf[0] = 100;
+  buf[1] = 2;
+  buf[2 * 8] = 101;
+  buf[2 * 8 + 1] = 1;
+  buf[3 * 8] = 102;
+  buf[3 * 8 + 1] = 4;
+  KEXPECT_EQ(3, ndp_parse_opts(buf, 7 * 8, opts, 10));
+  KEXPECT_EQ((addr_t)&buf[0], (addr_t)opts[0]);
+  KEXPECT_EQ((addr_t)&buf[2 * 8], (addr_t)opts[1]);
+  KEXPECT_EQ((addr_t)&buf[3 * 8], (addr_t)opts[2]);
+  KEXPECT_EQ(100, opts[0]->type);
+  KEXPECT_EQ(2, opts[0]->len);
+  KEXPECT_EQ(101, opts[1]->type);
+  KEXPECT_EQ(1, opts[1]->len);
+  KEXPECT_EQ(102, opts[2]->type);
+  KEXPECT_EQ(4, opts[2]->len);
+  for (int i = 3; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+
+  buf[3 * 8 + 1] = 1;
+  KEXPECT_EQ(3, ndp_parse_opts(buf, 4 * 8, opts, 10));
+  for (int i = 3; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+
+  buf[1] = 1;
+  KEXPECT_EQ(1, ndp_parse_opts(buf, 1 * 8, opts, 10));
+  for (int i = 1; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+
+  KTEST_BEGIN("NDP: basic options parse (more options than buffer)");
+  kmemset(opts, 0xaa, sizeof(opts));
+  kmemset(buf, 0xbb, 100);
+  buf[0] = 100;
+  buf[1] = 2;
+  buf[2 * 8] = 101;
+  buf[2 * 8 + 1] = 1;
+  buf[3 * 8] = 102;
+  buf[3 * 8 + 1] = 4;
+  KEXPECT_EQ(3, ndp_parse_opts(buf, 7 * 8, opts, 0));
+  for (int i = 0; i < 10; ++i) {
+    KEXPECT_EQ(0xaaaaaaaa, (addr_t)opts[i]);
+  }
+  KEXPECT_EQ(3, ndp_parse_opts(buf, 7 * 8, opts, 1));
+  KEXPECT_EQ((addr_t)&buf[0], (addr_t)opts[0]);
+  for (int i = 2; i < 10; ++i) {
+    KEXPECT_EQ(0xaaaaaaaa, (addr_t)opts[i]);
+  }
+  KEXPECT_EQ(3, ndp_parse_opts(buf, 7 * 8, opts, 2));
+  KEXPECT_EQ((addr_t)&buf[0], (addr_t)opts[0]);
+  KEXPECT_EQ((addr_t)&buf[2 * 8], (addr_t)opts[1]);
+  for (int i = 3; i < 10; ++i) {
+    KEXPECT_EQ(0xaaaaaaaa, (addr_t)opts[i]);
+  }
+
+  KTEST_BEGIN("NDP: basic options parse (zero-length option)");
+  kmemset(opts, 0xaa, sizeof(opts));
+  kmemset(buf, 0xbb, 100);
+  buf[0] = 100;
+  buf[1] = 2;
+  buf[2 * 8] = 101;
+  buf[2 * 8 + 1] = 0;
+  buf[3 * 8] = 102;
+  buf[3 * 8 + 1] = 4;
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8, opts, 10));
+  for (int i = 1; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+
+  KTEST_BEGIN("NDP: basic options parse (option too long for buffer)");
+  kmemset(opts, 0xaa, sizeof(opts));
+  kmemset(buf, 0xbb, 100);
+  buf[0] = 100;
+  buf[1] = 2;
+  buf[2 * 8] = 101;
+  buf[2 * 8 + 1] = 1;
+  buf[3 * 8] = 102;
+  buf[3 * 8 + 1] = 10;
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8, opts, 10));
+  for (int i = 2; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+  buf[1] = 10;
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8, opts, 10));
+  for (int i = 1; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+
+
+  KTEST_BEGIN("NDP: basic options parse (too few bytes left at end)");
+  kmemset(opts, 0xaa, sizeof(opts));
+  kmemset(buf, 0xbb, 100);
+  buf[0] = 100;
+  buf[1] = 2;
+  buf[2 * 8] = 101;
+  buf[2 * 8 + 1] = 1;
+  buf[3 * 8] = 102;
+  buf[3 * 8 + 1] = 4;
+  buf[7 * 8] = 103;
+  buf[7 * 8 + 1] = 1;
+  KEXPECT_EQ(3, ndp_parse_opts(buf, 7 * 8, opts, 1));
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8 + 1, opts, 10));
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8 + 7, opts, 10));
+  KEXPECT_EQ(4, ndp_parse_opts(buf, 7 * 8 + 8, opts, 10));
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8 + 15, opts, 10));
+  buf[7 * 8 + 1] = 2;
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8 + 8, opts, 10));
+  KEXPECT_EQ(-EINVAL, ndp_parse_opts(buf, 7 * 8 + 15, opts, 10));
+  for (int i = 3; i < 10; ++i) {
+    KEXPECT_EQ(NULL, (void*)opts[i]);
+  }
+  KEXPECT_EQ(4, ndp_parse_opts(buf, 7 * 8 + 16, opts, 10));
 }
 
 // We use nic2 to test source IP selection.
@@ -1915,6 +2039,7 @@ static void ndp_recv_solicit_test_extra_ip_bytes(test_fixture_t* t) {
 }
 
 static void ndp_tests(test_fixture_t* t) {
+  ndp_options_test();
   ndp_send_request_test(t);
   ndp_send_request_any_addr_test(t);
   ndp_recv_advert_test(t);
