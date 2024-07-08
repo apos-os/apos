@@ -105,7 +105,6 @@ static void addr_dup_timeout_defint(void* arg) {
     ndp_send_router_solicit(nic);
   }
 
-  // TODO(ipv6): handle router advertisements
 done:
   kspin_unlock(&nic->lock);
   nic_put(nic);

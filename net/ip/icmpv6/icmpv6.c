@@ -53,6 +53,7 @@ bool icmpv6_recv(nic_t* nic, const ip6_hdr_t* ip_hdr, size_t offset,
   switch (hdr->type) {
     case ICMPV6_NDP_NBR_SOLICIT:
     case ICMPV6_NDP_NBR_ADVERT:
+    case ICMPV6_NDP_ROUTER_ADVERT:
       ndp_rx(nic, ip_hdr, pb);
       return true;
 

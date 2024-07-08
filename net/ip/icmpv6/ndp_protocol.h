@@ -35,6 +35,29 @@ typedef struct __attribute__((packed)) {
   uint32_t reserved;
 } ndp_router_solict_t;
 
+typedef struct __attribute__((packed)) {
+  icmpv6_hdr_t hdr;
+  uint8_t cur_hop_limit;
+  uint8_t router_flags;
+  uint16_t lifetime;
+  uint32_t reachable_time;
+  uint32_t retrans_timer;
+} ndp_router_advert_t;
+
+typedef struct __attribute__((packed)) {
+  uint8_t type;
+  uint8_t length;
+  uint8_t prefix_len;
+  uint8_t flags;
+  uint32_t valid_lifetime;
+  uint32_t pref_lifetime;
+  uint32_t reserved;
+  struct in6_addr prefix;
+} ndp_option_prefix_t;
+
+#define NDP_PREFIX_FLAG_ONLINK 0x80
+#define NDP_PREFIX_FLAG_AUTOCONF 0x40
+
 #define NDP_NBR_ADVERT_FLAG_ROUTER (1 << 31)
 #define NDP_NBR_ADVERT_FLAG_SOLICITED (1 << 30)
 #define NDP_NBR_ADVERT_FLAG_OVERRIDE (1 << 29)

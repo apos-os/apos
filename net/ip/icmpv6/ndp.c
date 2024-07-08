@@ -26,6 +26,7 @@
 #include "net/ip/icmpv6/ndp_internal.h"
 #include "net/ip/icmpv6/ndp_protocol.h"
 #include "net/ip/icmpv6/protocol.h"
+#include "net/ip/ip6.h"
 #include "net/ip/ip6_addr.h"
 #include "net/ip/ip6_hdr.h"
 #include "net/ip/ip6_internal.h"
@@ -311,6 +312,90 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
   kspin_unlock(&nic->lock);
 }
 
+static bool handle_prefix(nic_t* nic, const ndp_option_prefix_t* prefix) {
+  KASSERT_DBG(prefix->type == ICMPV6_OPTION_PREFIX);
+  KASSERT_DBG(prefix->length == 4);
+  char pretty[INET6_PRETTY_LEN], pretty2[INET6_PRETTY_LEN];
+  if (!(prefix->flags & NDP_PREFIX_FLAG_ONLINK) ||
+      !(prefix->flags & NDP_PREFIX_FLAG_AUTOCONF)) {
+    KLOG(DEBUG, "ICMPv6: ignoring non-autoconf advertised router prefix %s/%d\n",
+         inet62str(&prefix->prefix, pretty), prefix->prefix_len);
+    return false;
+  }
+  if (prefix->prefix_len != 128 - nic->ipv6.iface_id_len) {
+    KLOG(DEBUG,
+         "ICMPv6: ignoring advertised router prefix %s/%d (incompatible prefix "
+         "len)\n",
+         inet62str(&prefix->prefix, pretty), prefix->prefix_len);
+    return false;
+  }
+
+  // TODO(ipv6): handle valid and preferred times.
+
+  // Create new address and attempt to configure it.
+  network_t addr;
+  addr.prefix_len = prefix->prefix_len;
+  addr.addr.family = AF_INET6;
+  // Must ignore all the bits after prefix_len; this accomplishes that by
+  // requiring that the prefix len exactly matches the interface ID length, and
+  // merging them.
+  kmemcpy(&addr.addr.a.ip6, &prefix->prefix, sizeof(struct in6_addr));
+  ip6_addr_merge(&addr.addr.a.ip6, &nic->ipv6.iface_id, nic->ipv6.iface_id_len);
+  KLOG(INFO, "ipv6: found advertised prefix %s/%d; configuring address %s\n",
+       inet62str(&prefix->prefix, pretty), prefix->prefix_len,
+       inet62str(&addr.addr.a.ip6, pretty2));
+
+  int result = ipv6_configure_addr(nic, &addr);
+  if (result != 0) {
+    KLOG(WARNING, "ipv6: unable to configure advertised prefix %s/%d: %s\n",
+       inet62str(&prefix->prefix, pretty), prefix->prefix_len,
+       errorname(-result));
+  }
+  return true;
+}
+
+static void handle_router_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
+                                 pbuf_t* pb) {
+  const ndp_router_advert_t* hdr = (const ndp_router_advert_t*)pbuf_getc(pb);
+  KASSERT(hdr->hdr.type == ICMPV6_NDP_ROUTER_ADVERT);
+  if (hdr->hdr.code != 0) {
+    KLOG(INFO, "ICMPv6 NDP: NDP packet with non-zero code, dropping\n");
+    return;
+  }
+  if (pbuf_size(pb) < sizeof(ndp_router_advert_t)) {
+    KLOG(INFO, "ICMPv6 NDP: NDP packet too short, dropping\n");
+    return;
+  }
+  // TODO(ipv6): handle the current hop limit (and other fields).
+
+  const int kMaxOpts = 10;
+  const ndp_option_t* opts[kMaxOpts];
+  size_t opts_offset = sizeof(ndp_router_advert_t);
+  int num_opts = ndp_parse_opts(pbuf_get(pb) + opts_offset,
+                                pbuf_size(pb) - opts_offset, opts, kMaxOpts);
+  if (num_opts < 0) {
+    KLOG(INFO, "ICMPv6: NDP bad options; dropping\n");
+    return;
+  }
+
+  bool found_prefix = false;
+  for (int i = 0; i < num_opts; ++i) {
+    if (opts[i]->type == ICMPV6_OPTION_PREFIX) {
+      if (opts[i]->len != 4) {
+        KLOG(INFO, "ICMPv6 NDP: bad LL target option size\n");
+        return;
+      }
+
+      const ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)opts[i];
+      found_prefix = handle_prefix(nic, prefix) || found_prefix;
+    }
+  }
+
+  if (found_prefix) {
+    // TODO(ipv6): set default route
+  }
+}
+
 void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
   const icmpv6_hdr_t* hdr = (const icmpv6_hdr_t*)pbuf_getc(pb);
   switch (hdr->type) {
@@ -321,6 +406,11 @@ void ndp_rx(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
 
     case ICMPV6_NDP_NBR_SOLICIT:
       handle_solicit(nic, ip_hdr, pb);
+      pbuf_free(pb);
+      return;
+
+    case ICMPV6_NDP_ROUTER_ADVERT:
+      handle_router_advert(nic, ip_hdr, pb);
       pbuf_free(pb);
       return;
   }

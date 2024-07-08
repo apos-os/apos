@@ -62,6 +62,147 @@ typedef struct {
   test_ttap_t nic2;
 } test_fixture_t;
 
+// TODO(aoates): use these packet match helpers in more of the tests.
+
+// Meta-helper for the ICMPv6 packet checkers.  Checks the ethernet, IPv6, and
+// common ICMPv6 headers, and extracts the message and option pointers.
+static bool check_icmpv6_pkt(const void* buf, ssize_t buf_len, size_t msg_len,
+                             const char* src_mac, const char* dst_mac,
+                             const char* src_ip, const char* dst_ip,
+                             int hop_limit, const icmpv6_hdr_t** msg_out,
+                             const uint8_t** options_out,
+                             size_t* options_len_out) {
+  KASSERT(msg_len >= sizeof(icmpv6_hdr_t));
+  *msg_out = NULL;
+  *options_out = NULL;
+  *options_len_out = 0;
+
+  bool v = true;
+  v &= KEXPECT_GE(buf_len, 0);  // Check for error messages first.
+  if (!v) return v;
+
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+  v &= KEXPECT_GE(buf_len, sizeof(eth_hdr_t) + sizeof(ip6_hdr_t) + msg_len);
+  if (!v) return v;
+
+  // First check the ethernet header.
+  const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
+  v &= KEXPECT_EQ(ET_IPV6, btoh16(eth_hdr->ethertype));
+  v &= KEXPECT_STREQ(src_mac, mac2str(eth_hdr->mac_src, mac));
+  v &= KEXPECT_STREQ(dst_mac, mac2str(eth_hdr->mac_dst, mac));
+
+  // ...then the IPv6 header.
+  const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)(eth_hdr + 1);
+  v &= KEXPECT_EQ(6, ip6_version(*ip6_hdr));
+  v &= KEXPECT_EQ(0, ip6_traffic_class(*ip6_hdr));
+  v &= KEXPECT_EQ(0, ip6_flow(*ip6_hdr));
+  v &= KEXPECT_GE(btoh16(ip6_hdr->payload_len), msg_len);
+  v &= KEXPECT_EQ(buf_len - sizeof(eth_hdr_t) - sizeof(ip6_hdr_t),
+                  btoh16(ip6_hdr->payload_len));
+  v &= KEXPECT_EQ(IPPROTO_ICMPV6, ip6_hdr->next_hdr);
+  if (hop_limit >= 0) {
+    v &= KEXPECT_EQ(hop_limit, ip6_hdr->hop_limit);
+  }
+
+  v &= KEXPECT_STREQ(src_ip, inet62str(&ip6_hdr->src_addr, addr));
+  v &= KEXPECT_STREQ(dst_ip, inet62str(&ip6_hdr->dst_addr, addr));
+
+  const icmpv6_hdr_t* pkt = (const icmpv6_hdr_t*)(ip6_hdr + 1);
+  *options_len_out = btoh16(ip6_hdr->payload_len) - msg_len;
+  if (*options_len_out > 0) {
+    *options_out = ((uint8_t*)pkt + msg_len);
+  }
+
+  // Verify the ICMP checksum.
+  ip6_pseudo_hdr_t phdr;
+  kmemcpy(&phdr.src_addr, &ip6_hdr->src_addr, sizeof(struct in6_addr));
+  kmemcpy(&phdr.dst_addr, &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  phdr.payload_len = htob32(msg_len + *options_len_out);
+  v &= KEXPECT_EQ(
+      0, ip_checksum2(&phdr, sizeof(phdr), pkt, msg_len + *options_len_out));
+
+  if (v) {
+    *msg_out = pkt;
+  }
+  return v;
+}
+
+// Returns true if the given buffer contains a neighbor solicitation for the
+// given address.
+static bool is_nbr_solicit(const void* buf, ssize_t len, const char* src_mac,
+                           const char* dst_mac, const char* src_ip,
+                           const char* dst_ip, const char* target,
+                           const char* source_ll_opt) {
+  bool v = true;
+  const icmpv6_hdr_t* msg = NULL;
+  const uint8_t* options = NULL;
+  size_t options_len = 0;
+  v &= check_icmpv6_pkt(buf, len, sizeof(ndp_nbr_solict_t), src_mac, dst_mac,
+                        src_ip, dst_ip, 255, &msg, &options, &options_len);
+  if (!v) {
+    return v;
+  }
+
+  char mac[NIC_MAC_PRETTY_LEN];
+  char addr[INET6_PRETTY_LEN];
+
+  // Check the packet.
+  const ndp_nbr_solict_t* pkt = (const ndp_nbr_solict_t*)msg;
+  v &= KEXPECT_EQ(135, pkt->hdr.type);
+  v &= KEXPECT_EQ(0, pkt->hdr.code);
+  v &= KEXPECT_EQ(0, pkt->reserved);
+  v &= KEXPECT_STREQ(target, inet62str(&pkt->target, addr));
+
+  if (source_ll_opt) {
+    // ...and finally we should include a source link-layer address option.
+    v &= KEXPECT_EQ(8, options_len);
+    if (!v) return v;
+    v &= KEXPECT_EQ(1 /* ICMPV6_OPTION_SRC_LL_ADDR */, options[0]);
+    v &= KEXPECT_EQ(1 /* 8 octets */, options[1]);
+    v &= KEXPECT_STREQ(source_ll_opt, mac2str(&options[2], mac));
+  } else {
+    v &= KEXPECT_EQ(0, options_len);
+  }
+
+  return v;
+}
+
+// Returns true if the given buffer contains an MLD update that changes the
+// given address to EXCLUDE (i.e. subscribes to it).
+static bool is_mld_exclude(const void* buf, ssize_t len, const char* src_mac,
+                           const char* dst_mac, const char* src_ip,
+                           const char* dst_ip, const char* target) {
+  bool v = true;
+  const icmpv6_hdr_t* msg = NULL;
+  const uint8_t* options = NULL;
+  size_t options_len = 0;
+  size_t msg_size =
+      sizeof(mld_listener_report_t) + sizeof(mld_multicast_record_t);
+  v &= check_icmpv6_pkt(buf, len, msg_size, src_mac, dst_mac, src_ip, dst_ip,
+                        -1, &msg, &options, &options_len);
+  if (!v) {
+    return v;
+  }
+
+  char addr[INET6_PRETTY_LEN];
+  const mld_listener_report_t* report = (const mld_listener_report_t*)msg;
+  v &= KEXPECT_EQ(143, report->hdr.type);
+  v &= KEXPECT_EQ(0, report->hdr.code);
+  v &= KEXPECT_EQ(1, btoh16(report->num_mc_records));
+  v &= KEXPECT_EQ(0, report->reserved);
+
+  const mld_multicast_record_t* record = &report->records[0];
+  v &= KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+  v &= KEXPECT_EQ(0, btoh16(record->num_sources));
+  v &= KEXPECT_EQ(0, btoh16(record->aux_data_len));
+  v &= KEXPECT_STREQ(target, inet62str(&record->multicast_addr, addr));
+
+  return v;
+}
+
 // Creates a in6_addr from a test-encoded (no zero compression, etc) string.
 static struct in6_addr* str2addr6(const char* s) {
   int index = 0;
@@ -4182,6 +4323,828 @@ static void send_router_solicit_test(test_fixture_t* t) {
                              sizeof(ndp_router_solict_t) + 8));
 }
 
+// Add the IPv6 and ethernet headers to the given packet and calculate the
+// ICMPv6 checksum.
+static void create_router_advert_ipeth(pbuf_t* pb) {
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("fe80::2", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  icmpv6_hdr_t* hdr = (icmpv6_hdr_t*)pbuf_get(pb);
+  hdr->checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  KEXPECT_EQ(0, str2mac("07:08:09:0a:0b:0c", mac1.addr));
+  KEXPECT_EQ(0, str2mac("33:33:00:00:00:01", mac2.addr));
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+}
+
+static void router_advert_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: basic router advertisement test");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  kstrcpy(nic.mac, "52:54:12:34:56:78");
+  KEXPECT_EQ(0, str2mac(nic.mac, nic.n->mac.addr));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // We should have auto-configured a tentative address.
+  char pretty[INET6_PRETTY_LEN];
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[0].state);
+  KEXPECT_EQ(64, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_STREQ("2001:db8:abcd:ef01:5054:12ff:fe34:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, pretty));
+  kspin_unlock(&nic.n->lock);
+
+  // Should have gotten an MLD update and a neighbor solicit for it.
+  char buf[100];
+  ssize_t len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_mld_exclude(buf, len, nic.mac, "33:33:00:00:00:16",
+                              "::", "ff02::16", "ff02::1:ff34:5678"));
+
+  len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_nbr_solicit(buf, len, nic.mac, "33:33:FF:34:56:78",
+                              "::", "ff02::1:ff34:5678",
+                              "2001:db8:abcd:ef01:5054:12ff:fe34:5678", NULL));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_option_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix option too short)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 3;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_option_test2(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix option too long)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 5;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_option_test3(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix option len zero)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 0;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_option_test4(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (unknown option too long)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 123; // Unknown option.
+  option[1] = 10;  // Too long for buffer.
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_option_test5(void) {
+  KTEST_BEGIN(
+      "ICMPv6 NDP: router advert test (buffer has dangling bytes, not enough "
+      "for a full option)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t) + 7);
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_option_test6(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix option wrong len)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t) + 8);
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 5;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_bad_code_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (bad ICMPv6 code)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 1;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_no_prefix_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (no prefixes)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t), 0);
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_too_short_pkt_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (packet too short)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t), 0);
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  pbuf_trim_end(pb, 1);
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_not_onlink_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix isn't on-link)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_not_autoconf_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix isn't autoconf)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_wrong_prefix_len_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix len doesn't match)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 63;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_wrong_prefix_len_test2(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (prefix len is invalid)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 129;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[0].state);
+  kspin_unlock(&nic.n->lock);
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_unable_to_configure(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advert test (configuration fails)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  // Fill up the NIC's address table so we can't configure more.
+  char addr[INET6_PRETTY_LEN];
+  kspin_lock(&nic.n->lock);
+  for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
+    nic.n->addrs[i].state = NIC_ADDR_ENABLED;
+    nic.n->addrs[i].a.prefix_len = 64;
+    nic.n->addrs[i].a.addr.family = AF_INET6;
+    ksprintf(addr, "fe80::1:%d", i + 1);
+    KEXPECT_EQ(0, str2inet6(addr, &nic.n->addrs[i].a.addr.a.ip6));
+  }
+  kspin_unlock(&nic.n->lock);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // It should have been ignored.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 100));
+
+  test_ttap_destroy(&nic);
+}
+
+static void router_advert_multi_prefix_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: basic router advertisement test (multi prefixes)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  kstrcpy(nic.mac, "52:54:12:34:56:78");
+  KEXPECT_EQ(0, str2mac(nic.mac, nic.n->mac.addr));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  // For some reason, this one needs more buffer time.
+  opts.dup_detection_timeout_ms = 1000;
+  ipv6_enable(nic.n, &opts);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           3 * sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  prefix++;
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  prefix++;
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:1234::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // We should have auto-configured a tentative address.
+  char pretty[INET6_PRETTY_LEN];
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[0].state);
+  KEXPECT_EQ(64, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_STREQ("2001:db8:abcd:ef01:5054:12ff:fe34:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, pretty));
+
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[1].state);
+  KEXPECT_EQ(64, nic.n->addrs[1].a.prefix_len);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[1].a.addr.family);
+  KEXPECT_STREQ("2001:db8:1234:0:5054:12ff:fe34:5678",
+                inet62str(&nic.n->addrs[1].a.addr.a.ip6, pretty));
+
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[2].state);
+  kspin_unlock(&nic.n->lock);
+
+  // Should have gotten an MLD update and a neighbor solicit for each of the
+  // two autoconf prefixes.
+  char buf[100];
+  ssize_t len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_mld_exclude(buf, len, nic.mac, "33:33:00:00:00:16",
+                              "::", "ff02::16", "ff02::1:ff34:5678"));
+
+  kmemset(buf, 0xaa, 100);
+  len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_nbr_solicit(buf, len, nic.mac, "33:33:FF:34:56:78",
+                              "::", "ff02::1:ff34:5678",
+                              "2001:db8:abcd:ef01:5054:12ff:fe34:5678", NULL));
+
+  // No second MLD update --- we're already subscribed to our interface ID
+  // solicited-node multicast group (it's the same for both prefixes).
+
+  kmemset(buf, 0xaa, 100);
+  len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_nbr_solicit(buf, len, nic.mac, "33:33:FF:34:56:78",
+                              "::", "ff02::1:ff34:5678",
+                              "2001:db8:1234:0:5054:12ff:fe34:5678", NULL));
+
+  test_ttap_destroy(&nic);
+}
+
 static void configure_tests(test_fixture_t* t) {
   basic_configure_test();
   configure_nic_delete_test();
@@ -4195,6 +5158,24 @@ static void configure_tests(test_fixture_t* t) {
   autoconfigure_conflict_test();
 
   send_router_solicit_test(t);
+
+  router_advert_test();
+  router_advert_bad_option_test();
+  router_advert_bad_option_test2();
+  router_advert_bad_option_test3();
+  router_advert_bad_option_test4();
+  router_advert_bad_option_test5();
+  router_advert_bad_option_test6();
+  router_advert_bad_code_test();
+  router_advert_no_prefix_test();
+  router_advert_too_short_pkt_test();
+
+  router_advert_not_onlink_test();
+  router_advert_not_autoconf_test();
+  router_advert_wrong_prefix_len_test();
+  router_advert_wrong_prefix_len_test2();
+  router_advert_unable_to_configure();
+  router_advert_multi_prefix_test();
 }
 
 // TODO(ipv6): additional tests:
