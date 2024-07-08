@@ -21,6 +21,7 @@
 typedef struct __attribute__((packed)) {
   uint8_t type;
   uint8_t len;
+  uint8_t value[];
 } ndp_option_t;
 
 // Parse and validate a series of options.  Fills the option array with pointers

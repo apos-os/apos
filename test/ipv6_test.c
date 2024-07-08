@@ -1015,6 +1015,185 @@ static void ndp_recv_advert_test(test_fixture_t* t) {
   KEXPECT_STREQ("01:02:03:04:05:06", mac2str(entry.mac.addr, buf));
 }
 
+static void ndp_recv_advert_bad_opt_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor advert with bad option");
+  nbr_cache_clear(t->nic.n);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_advert_t), 24);
+  uint8_t* options = pbuf_get(pb);
+
+  // Put a BAD option first.
+  options[0] = 100;
+  options[1] = 0;  // 16 octets.
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_advert_t));
+  ndp_nbr_advert_t* pkt = (ndp_nbr_advert_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_ADVERT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->flags =
+      htob32(NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE);
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_advert_t) + 24);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // There shouldn't be an entry for the IP yet.
+  netaddr_t na;
+  na.family = AF_INET6;
+  kmemcpy(&na.a.ip6, &pkt->target, sizeof(struct in6_addr));
+
+  nbr_cache_entry_t entry;
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
+  // We should have sent a request packet.
+  char buf[100];
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+
+  // Send the response.
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+
+  // Should have been ignored.
+  kmemset(&entry, 0, sizeof(entry));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+}
+
+static void ndp_recv_advert_bad_opt_test2(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor advert with bad option #2");
+  nbr_cache_clear(t->nic.n);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_advert_t), 24);
+  uint8_t* options = pbuf_get(pb);
+
+  // Put a bad LL address option.
+  options[0] = ICMPV6_OPTION_TGT_LL_ADDR;
+  options[1] = 2;  // 16 octets -- wrong.
+  KEXPECT_EQ(0, str2mac("01:02:03:04:05:06", &options[2]));
+  options[16] = 100;
+  options[17] = 1;  // 8 octets.
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_advert_t));
+  ndp_nbr_advert_t* pkt = (ndp_nbr_advert_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_ADVERT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->flags =
+      htob32(NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE);
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_advert_t) + 24);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // There shouldn't be an entry for the IP yet.
+  netaddr_t na;
+  na.family = AF_INET6;
+  kmemcpy(&na.a.ip6, &pkt->target, sizeof(struct in6_addr));
+
+  nbr_cache_entry_t entry;
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
+  // We should have sent a request packet.
+  char buf[100];
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+
+  // Send the response.
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+
+  // Should have been ignored.
+  kmemset(&entry, 0, sizeof(entry));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+}
+
+static void ndp_recv_advert_no_opt_test(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor advert without a LL option");
+  nbr_cache_clear(t->nic.n);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_advert_t), 24);
+  uint8_t* options = pbuf_get(pb);
+
+  // Put a bad LL address option.
+  options[0] = 100;
+  options[1] = 2;  // 16 octets.
+  options[16] = 100;
+  options[17] = 1;  // 8 octets.
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_advert_t));
+  ndp_nbr_advert_t* pkt = (ndp_nbr_advert_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_ADVERT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->flags =
+      htob32(NDP_NBR_ADVERT_FLAG_SOLICITED | NDP_NBR_ADVERT_FLAG_OVERRIDE);
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::fffe:12:3456", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(sizeof(ndp_nbr_advert_t) + 24);
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // There shouldn't be an entry for the IP yet.
+  netaddr_t na;
+  na.family = AF_INET6;
+  kmemcpy(&na.a.ip6, &pkt->target, sizeof(struct in6_addr));
+
+  nbr_cache_entry_t entry;
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
+  // We should have sent a request packet.
+  char buf[100];
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+
+  // Send the response.
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+
+  // Should have been ignored.
+  kmemset(&entry, 0, sizeof(entry));
+  KEXPECT_EQ(-EAGAIN, nbr_cache_lookup(t->nic.n, na, &entry, 0));
+  KEXPECT_LT(0, vfs_read(t->nic.fd, buf, 100));
+}
+
 static void ndp_recv_solicit_test_no_src_addr(test_fixture_t* t) {
   KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (no source LL address)");
   nbr_cache_clear(t->nic.n);
@@ -1461,6 +1640,61 @@ static void ndp_recv_solicit_test_bad_opt4(test_fixture_t* t) {
   option[0] = 1;  // Link-layer source option.
   option[1] = 2;  // Bad size for LL src option.
   KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+
+  pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
+  ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
+  pkt->hdr.type = ICMPV6_NDP_NBR_SOLICIT;
+  pkt->hdr.code = 0;
+  pkt->hdr.checksum = 0;
+  pkt->reserved = 12345;  // Should be ignored.
+  KEXPECT_EQ(0, str2inet6(SRC_IP, &pkt->target));
+
+  ip6_pseudo_hdr_t phdr;
+  KEXPECT_EQ(0, str2inet6("2001:db8::10", &phdr.src_addr));
+  KEXPECT_EQ(0, str2inet6("ff02::1:ff00:1", &phdr.dst_addr));
+  kmemset(&phdr._zeroes, 0, 3);
+  phdr.payload_len = htob16(pbuf_size(pb));
+  phdr.next_hdr = IPPROTO_ICMPV6;
+  pkt->hdr.checksum =
+      ip_checksum2(&phdr, sizeof(phdr), pbuf_getc(pb), pbuf_size(pb));
+
+  // Add the IPv6 and ethernet headers.
+  ip6_add_hdr(pb, &phdr.src_addr, &phdr.dst_addr, IPPROTO_ICMPV6, 0);
+  nic_mac_t mac1, mac2;
+  // Use different addresses for the packet itself.  These _should_ be the
+  // multicast address, but the code shouldn't care.
+  str2mac("07:08:09:0a:0b:0c", mac1.addr);
+  str2mac("0e:0e:0f:10:11:12", mac2.addr);
+  eth_add_hdr(pb, &mac2, &mac1, ET_IPV6);
+
+  // Send the solicit.
+  char buf[100];
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(t->nic.fd, pbuf_getc(pb), pbuf_size(pb)));
+  pbuf_free(pb);
+  pb = NULL;
+
+  // Packet should be ignored due to the bad option.
+  KEXPECT_EQ(-EAGAIN, vfs_read(t->nic.fd, buf, 100));
+}
+
+static void ndp_recv_solicit_test_bad_ll_opt(test_fixture_t* t) {
+  KTEST_BEGIN("ICMPv6 NDP: receive neighbor solicit (bad link-layer option)");
+  nbr_cache_clear(t->nic.n);
+
+  pbuf_t* pb =
+      pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_nbr_solict_t), 4 * 8);
+  // Start with the options.  Do two bogus ones and a source link-layer addr.
+  uint8_t* option = (uint8_t*)pbuf_get(pb);
+  option[0] = 12;  // Bogus #1.
+  option[1] = 1;
+  option += 8;
+  option[0] = 1;  // Link-layer source option.
+  option[1] = 2;  // Bad size.
+  KEXPECT_EQ(0, str2mac("00:00:00:00:00:05", &option[2]));
+  option += 2 * 8;
+  option[0] = 19;  // Bogus #2.
+  option[1] = 1;
 
   pbuf_push_header(pb, sizeof(ndp_nbr_solict_t));
   ndp_nbr_solict_t* pkt = (ndp_nbr_solict_t*)pbuf_get(pb);
@@ -2043,6 +2277,9 @@ static void ndp_tests(test_fixture_t* t) {
   ndp_send_request_test(t);
   ndp_send_request_any_addr_test(t);
   ndp_recv_advert_test(t);
+  ndp_recv_advert_bad_opt_test(t);
+  ndp_recv_advert_bad_opt_test2(t);
+  ndp_recv_advert_no_opt_test(t);
   ndp_recv_solicit_test_no_src_addr(t);
   ndp_recv_solicit_test_unknown_neighbor(t);
   ndp_recv_solicit_test(t);
@@ -2050,6 +2287,7 @@ static void ndp_tests(test_fixture_t* t) {
   ndp_recv_solicit_test_bad_opt2(t);
   ndp_recv_solicit_test_bad_opt3(t);
   ndp_recv_solicit_test_bad_opt4(t);
+  ndp_recv_solicit_test_bad_ll_opt(t);
   ndp_recv_solicit_test2(t);
   ndp_recv_solicit_test_no_match(t);
   ndp_recv_solicit_test_disabled(t);

@@ -159,35 +159,29 @@ static void handle_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr, pbuf_t* pb) {
   }
   // TODO(ipv6): handle the override flag.
 
-  size_t size = pbuf_size(pb);
-  size -= sizeof(ndp_nbr_advert_t);
-  const uint8_t* option_buf = pbuf_getc(pb) + sizeof(ndp_nbr_advert_t);
+  const int kMaxOpts = 10;
+  const ndp_option_t* opts[kMaxOpts];
+  size_t opts_offset = sizeof(ndp_nbr_advert_t);
+  int num_opts = ndp_parse_opts(pbuf_get(pb) + opts_offset,
+                                pbuf_size(pb) - opts_offset, opts, kMaxOpts);
+  if (num_opts < 0) {
+    KLOG(INFO, "ICMPv6: NDP bad options; dropping\n");
+    return;
+  }
+
   uint8_t ll_tgt[ETH_MAC_LEN];
   bool found = false;
-  while (size >= 8) {
-    uint8_t option = option_buf[0];
-    uint8_t option_size = option_buf[1];
-    if (option_size == 0) {
-      KLOG(INFO, "ICMPv6 NDP: bad option size\n");
-      return;
-    }
-
-    if (option == ICMPV6_OPTION_TGT_LL_ADDR) {
-      if (option_size != 1) {
+  for (int i = 0; i < num_opts; ++i) {
+    if (opts[i]->type == ICMPV6_OPTION_TGT_LL_ADDR) {
+      if (opts[i]->len != 1) {
         KLOG(INFO, "ICMPv6 NDP: bad LL target option size\n");
         return;
       }
 
-      kmemcpy(&ll_tgt, option_buf + 2, ETH_MAC_LEN);
+      kmemcpy(&ll_tgt, opts[i]->value, ETH_MAC_LEN);
       found = true;
       break;
     }
-    option_buf += option_size * 8;
-    size -= option_size * 8;
-  }
-  if (size < 8) {
-    KLOG(INFO, "ICMPv6 NDP: bad options\n");
-    return;
   }
   if (!found) {
     KLOG(INFO, "ICMPv6 NDP: no LL target option, ignoring\n");
@@ -220,32 +214,29 @@ static void handle_solicit(nic_t* nic, const ip6_hdr_t* ip_hdr, pbuf_t* pb) {
        inet62str(&hdr->target, addrbuf), nic->name);
 
   // First look for the source link-layer option (but don't insert yet).
-  // TODO(ipv6): consolidate option parsing code and safety checks.
-  ssize_t size = pbuf_size(pb);
-  size -= sizeof(ndp_nbr_solict_t);
-  const uint8_t* option_buf = pbuf_getc(pb) + sizeof(ndp_nbr_solict_t);
+  const int kMaxOpts = 10;
+  const ndp_option_t* opts[kMaxOpts];
+  size_t opts_offset = sizeof(ndp_nbr_solict_t);
+  int num_opts = ndp_parse_opts(pbuf_get(pb) + opts_offset,
+                                pbuf_size(pb) - opts_offset, opts, kMaxOpts);
+  if (num_opts < 0) {
+    KLOG(INFO, "ICMPv6: NDP bad options; dropping\n");
+    return;
+  }
+
   uint8_t ll_src[ETH_MAC_LEN];
   bool ll_src_found = false;
-  while (size >= 8) {
-    uint8_t option = option_buf[0];
-    uint8_t option_size = option_buf[1];
-    if (option_size == 0 || (option_size * 8) > size) {
-      KLOG(INFO, "ICMPv6 NDP: bad option size\n");
-      return;
-    }
-
-    if (option == ICMPV6_OPTION_SRC_LL_ADDR) {
-      if (option_size != 1) {
+  for (int i = 0; i < num_opts; ++i) {
+    if (opts[i]->type == ICMPV6_OPTION_SRC_LL_ADDR) {
+      if (opts[i]->len != 1) {
         KLOG(INFO, "ICMPv6 NDP: bad LL source option size\n");
         return;
       }
 
-      kmemcpy(&ll_src, option_buf + 2, ETH_MAC_LEN);
+      kmemcpy(&ll_src, opts[i]->value, ETH_MAC_LEN);
       ll_src_found = true;
       break;
     }
-    option_buf += option_size * 8;
-    size -= option_size * 8;
   }
 
   // Handle the solicit request itself.
