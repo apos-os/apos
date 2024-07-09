@@ -113,6 +113,8 @@ done:
 void ip6_nic_got_nbr_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
                             const ndp_nbr_advert_t* advert) {
   char pretty[INET6_PRETTY_LEN];
+  bool unsub = false;
+  struct in6_addr unsub_addr;
   kspin_lock(&nic->lock);
   for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
     if (nic->addrs[i].state == NIC_ADDR_TENTATIVE &&
@@ -130,9 +132,18 @@ void ip6_nic_got_nbr_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
       kspin_unlock_int(&nic->addrs[i].timer_lock);
 
       nic->addrs[i].state = NIC_ADDR_CONFLICT;
+      unsub = true;
+      kmemcpy(&unsub_addr, &advert->target, sizeof(struct in6_addr));
+      break;
     }
   }
   kspin_unlock(&nic->lock);
+
+  if (unsub) {
+    struct in6_addr solicited_node_addr;
+    ip6_solicited_node_addr(&unsub_addr, &solicited_node_addr);
+    ip6_multicast_leave(nic, &solicited_node_addr);
+  }
 }
 
 void ip6_nic_got_dup_solicit(nic_t* nic, nic_addr_t* addr) {

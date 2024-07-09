@@ -170,11 +170,9 @@ static bool is_nbr_solicit(const void* buf, ssize_t len, const char* src_mac,
   return v;
 }
 
-// Returns true if the given buffer contains an MLD update that changes the
-// given address to EXCLUDE (i.e. subscribes to it).
-static bool is_mld_exclude(const void* buf, ssize_t len, const char* src_mac,
-                           const char* dst_mac, const char* src_ip,
-                           const char* dst_ip, const char* target) {
+static const mld_multicast_record_t* is_mld_one_report(
+    const void* buf, ssize_t len, const char* src_mac, const char* dst_mac,
+    const char* src_ip, const char* dst_ip, const char* target) {
   bool v = true;
   const icmpv6_hdr_t* msg = NULL;
   const uint8_t* options = NULL;
@@ -184,7 +182,7 @@ static bool is_mld_exclude(const void* buf, ssize_t len, const char* src_mac,
   v &= check_icmpv6_pkt(buf, len, msg_size, src_mac, dst_mac, src_ip, dst_ip,
                         -1, &msg, &options, &options_len);
   if (!v) {
-    return v;
+    return NULL;
   }
 
   char addr[INET6_PRETTY_LEN];
@@ -195,12 +193,36 @@ static bool is_mld_exclude(const void* buf, ssize_t len, const char* src_mac,
   v &= KEXPECT_EQ(0, report->reserved);
 
   const mld_multicast_record_t* record = &report->records[0];
-  v &= KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
   v &= KEXPECT_EQ(0, btoh16(record->num_sources));
   v &= KEXPECT_EQ(0, btoh16(record->aux_data_len));
   v &= KEXPECT_STREQ(target, inet62str(&record->multicast_addr, addr));
 
-  return v;
+  return v ? record : NULL;
+}
+
+// Returns true if the given buffer contains an MLD update that changes the
+// given address to EXCLUDE (i.e. subscribes to it).
+static bool is_mld_exclude(const void* buf, ssize_t len, const char* src_mac,
+                           const char* dst_mac, const char* src_ip,
+                           const char* dst_ip, const char* target) {
+  const mld_multicast_record_t* record =
+      is_mld_one_report(buf, len, src_mac, dst_mac, src_ip, dst_ip, target);
+  if (!record) {
+    return false;
+  }
+  return KEXPECT_EQ(MLD_CHANGE_TO_EXCLUDE_MODE, record->record_type);
+}
+
+// Inverse of the above.
+static bool is_mld_include(const void* buf, ssize_t len, const char* src_mac,
+                           const char* dst_mac, const char* src_ip,
+                           const char* dst_ip, const char* target) {
+  const mld_multicast_record_t* record =
+      is_mld_one_report(buf, len, src_mac, dst_mac, src_ip, dst_ip, target);
+  if (!record) {
+    return false;
+  }
+  return KEXPECT_EQ(MLD_CHANGE_TO_INCLUDE_MODE, record->record_type);
 }
 
 // Creates a in6_addr from a test-encoded (no zero compression, etc) string.
@@ -3577,8 +3599,11 @@ static void configure_dup_found_test(void) {
 
   KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
 
-  // Should have no more packets, and the address should be marked CONFLICT.
-  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+  // We should have gotten an MLD unsub, and address should be marked CONFLICT.
+  ssize_t len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_mld_include(buf, len, nic.mac, "33:33:00:00:00:16",
+                              "::", "ff02::16", "ff02::1:ff34:5678"));
 
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
@@ -3600,6 +3625,9 @@ static void configure_dup_found_test(void) {
   KEXPECT_STREQ("2001:db8::1234:5678",
                 inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
   kspin_unlock(&nic.n->lock);
+
+  // Should not have gotten additional packets.
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
 
   // We should not be able to use the IP for an outbound connection.
   dst.family = AF_INET6;
@@ -4234,8 +4262,11 @@ static void autoconfigure_conflict_test(void) {
 
   KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
 
-  // Should have no more packets, and the address should be marked CONFLICT.
-  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
+  // We should have gotten an MLD unsub, and address should be marked CONFLICT.
+  ssize_t len = vfs_read(nic.fd, buf, 100);
+  KEXPECT_GE(len, 0);
+  KEXPECT_TRUE(is_mld_include(buf, len, nic.mac, "33:33:00:00:00:16",
+                              "::", "ff02::16", "ff02::1:ff34:5678"));
 
   kspin_lock(&nic.n->lock);
   KEXPECT_EQ(NIC_ADDR_CONFLICT, nic.n->addrs[0].state);
@@ -4257,6 +4288,7 @@ static void autoconfigure_conflict_test(void) {
   KEXPECT_STREQ("fe80::5054:12ff:fe34:5678",
                 inet62str(&nic.n->addrs[0].a.addr.a.ip6, buf));
   kspin_unlock(&nic.n->lock);
+  KEXPECT_EQ(-EAGAIN, vfs_read(nic.fd, buf, 300));
 
   // We should not be able to use the IP for an outbound connection.
   dst.family = AF_INET6;
