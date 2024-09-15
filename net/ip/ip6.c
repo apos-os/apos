@@ -51,9 +51,12 @@ static const nic_ipv6_options_t kDefaultNicOpts = {
 };
 
 void ipv6_init(nic_t* nic) {
+  nic->ipv6.opts = kDefaultNicOpts;
   htbl_init(&nic->ipv6.multicast, 10);
   nic->ipv6.iface_id_len = 0;
   kmemset(&nic->ipv6.iface_id, 0, sizeof(struct in6_addr));
+  kmemset(&nic->ipv6.gateway, 0, sizeof(nic->ipv6.gateway));
+  nic->ipv6.gateway.valid = false;
 }
 
 static void do_delete(void* arg, uint32_t key, void* val) {
@@ -223,9 +226,6 @@ int ipv6_configure_addr(nic_t* nic, const network_t* addr) {
   kspin_lock(&nic->lock);
   ndp_send_request(nic, &addr->addr.a.ip6, true);
   kspin_unlock(&nic->lock);
-
-  // TODO(ipv6): if we get a neighbor solicitation or advertisement, mark the
-  // address as conflicted/disabled.
 
   return 0;
 }

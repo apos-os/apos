@@ -5177,6 +5177,65 @@ static void router_advert_multi_prefix_test(void) {
   test_ttap_destroy(&nic);
 }
 
+static void router_advert_gateway_test(void) {
+  KTEST_BEGIN("ICMPv6 NDP: router advertisement test (sets gateway)");
+
+  test_ttap_t nic;
+  KEXPECT_EQ(0, test_ttap_create(&nic, TUNTAP_TAP_MODE));
+  kstrcpy(nic.mac, "52:54:12:34:56:78");
+  KEXPECT_EQ(0, str2mac(nic.mac, nic.n->mac.addr));
+  nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+  opts.autoconfigure = false;
+  ipv6_enable(nic.n, &opts);
+
+  KEXPECT_FALSE(nic.n->ipv6.gateway.valid);
+
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE + sizeof(ndp_router_advert_t),
+                           sizeof(ndp_option_prefix_t));
+  ndp_option_prefix_t* prefix = (ndp_option_prefix_t*)pbuf_get(pb);
+  prefix->type = ICMPV6_OPTION_PREFIX;
+  prefix->length = 4;
+  prefix->prefix_len = 64;
+  prefix->flags = NDP_PREFIX_FLAG_ONLINK | NDP_PREFIX_FLAG_AUTOCONF;
+  prefix->valid_lifetime = 0xffffffff;
+  prefix->pref_lifetime = 0xffffffff;
+  prefix->reserved = 1234;
+  KEXPECT_EQ(0, str2inet6("2001:db8:abcd:ef01:dcba::", &prefix->prefix));
+
+  pbuf_push_header(pb, sizeof(ndp_router_advert_t));
+  ndp_router_advert_t* advert = (ndp_router_advert_t*)pbuf_get(pb);
+  advert->hdr.type = ICMPV6_NDP_ROUTER_ADVERT;
+  advert->hdr.code = 0;
+  advert->hdr.checksum = 0;
+  advert->cur_hop_limit = 255;
+  advert->router_flags = 0;
+  advert->lifetime = 0;
+  advert->reachable_time = 0;
+  advert->retrans_timer = 0;
+
+  // Send the router advert.
+  create_router_advert_ipeth(pb);
+  KEXPECT_EQ(pbuf_size(pb), pbuf_write(nic.fd, &pb));
+
+  // We should have auto-configured a tentative address.
+  char pretty[INET6_PRETTY_LEN];
+  kspin_lock(&nic.n->lock);
+  KEXPECT_EQ(NIC_ADDR_TENTATIVE, nic.n->addrs[0].state);
+  KEXPECT_EQ(64, nic.n->addrs[0].a.prefix_len);
+  KEXPECT_EQ(AF_INET6, nic.n->addrs[0].a.addr.family);
+  KEXPECT_STREQ("2001:db8:abcd:ef01:5054:12ff:fe34:5678",
+                inet62str(&nic.n->addrs[0].a.addr.a.ip6, pretty));
+
+  KEXPECT_EQ(NIC_ADDR_NONE, nic.n->addrs[1].state);
+  kspin_unlock(&nic.n->lock);
+
+  // We should have configured the NIC's gateway.
+  KEXPECT_TRUE(nic.n->ipv6.gateway.valid);
+  KEXPECT_STREQ("fe80::2", inet62str(&nic.n->ipv6.gateway.addr, pretty));
+
+  test_ttap_destroy(&nic);
+}
+
 static void configure_tests(test_fixture_t* t) {
   basic_configure_test();
   configure_nic_delete_test();
@@ -5208,6 +5267,7 @@ static void configure_tests(test_fixture_t* t) {
   router_advert_wrong_prefix_len_test2();
   router_advert_unable_to_configure();
   router_advert_multi_prefix_test();
+  router_advert_gateway_test();
 }
 
 // TODO(ipv6): additional tests:

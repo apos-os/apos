@@ -75,12 +75,21 @@ typedef enum {
   NIC_TUN = 3,
 } nic_type_t;
 
+// An IPv6 gateway configured on a NIC.
+typedef struct {
+  bool valid;
+  struct in6_addr addr;
+} nic_ipv6_gateway_t;
+
 // IPv6-specific NIC data.
 typedef struct {
   nic_ipv6_options_t opts;
   htbl_t multicast;  // Multicast addresses we're subscribed to.
   int iface_id_len;  // How long the interface ID is (in bits).
   struct in6_addr iface_id;  // Low N-bits set to interface ID.
+
+  // The default gateway learned from a route advertisement, if any.
+  nic_ipv6_gateway_t gateway;
 } nic_ipv6_t;
 
 struct nic {
