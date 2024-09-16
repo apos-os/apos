@@ -547,6 +547,20 @@ static void route_default_route_v6_test(test_fixture_t* t) {
   kmemset(&result, 0xab, sizeof(result));
   KEXPECT_FALSE(ip_route(dst, &result));
 
+
+  KTEST_BEGIN("ip_route(): default route set (skips disabled addrs) (IPv6)");
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic3.n->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_EQ(t->nic3.n, result.nic);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::2", inet62str(&result.src.a.ip6, addr));
+  KEXPECT_EQ(AF_INET6, result.nexthop.family);
+  KEXPECT_STREQ("2001:db8::100", inet62str(&result.nexthop.a.ip6, addr));
+  nic_put(result.nic);
+
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
 }
 

@@ -114,7 +114,8 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
       result->src.family = ADDR_UNSPEC;
       kspin_lock(&result->nic->lock);
       for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-        if (result->nic->addrs[i].a.addr.family == dst.family) {
+        if (result->nic->addrs[i].state == NIC_ADDR_ENABLED &&
+            result->nic->addrs[i].a.addr.family == dst.family) {
           result->src = result->nic->addrs[i].a.addr;
           break;
         }
