@@ -148,6 +148,10 @@ nic_t* nic_get_nm(const char* name) {
   return NULL;
 }
 
+void nic_ref(nic_t* nic) {
+  refcount_inc(&nic->ref);
+}
+
 void nic_put(nic_t* nic) {
   // Crude and incorrect safety check to catch refcount leaks.
   KASSERT(nic->ref.ref < 20);

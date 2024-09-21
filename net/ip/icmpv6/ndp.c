@@ -397,7 +397,6 @@ static void handle_router_advert(nic_t* nic, const ip6_hdr_t* ip6_hdr,
     kmemcpy(&nic->ipv6.gateway.addr, &ip6_hdr->src_addr,
             sizeof(struct in6_addr));
     kspin_unlock(&nic->lock);
-    // TODO(ipv6): set default route
   }
 }
 

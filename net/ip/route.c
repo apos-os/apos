@@ -20,6 +20,7 @@
 #include "common/refcount.h"
 #include "dev/net/nic.h"
 #include "net/addr.h"
+#include "proc/spinlock.h"
 
 typedef struct {
   // TODO(aoates): support network matching.
@@ -35,6 +36,26 @@ typedef struct {
 
 static ip_route_rule_t g_default_route_v4 = {.nexthop = {.family = AF_UNSPEC}};
 static ip_route_rule_t g_default_route_v6 = {.nexthop = {.family = AF_UNSPEC}};
+
+static void ip6_find_gateway(ip_route_rule_t* rule) {
+  rule->nic_name[0] = '\0';
+  rule->nexthop.family = AF_UNSPEC;
+  nic_t* nic = nic_first();
+  while (nic) {
+    kspin_lock(&nic->lock);
+    if (nic->ipv6.gateway.valid) {
+      kstrcpy(rule->nic_name, nic->name);
+      rule->nexthop.family = AF_INET6;
+      kmemcpy(&rule->nexthop.a.ip6, &nic->ipv6.gateway.addr,
+              sizeof(struct in6_addr));
+      kspin_unlock(&nic->lock);
+      nic_put(nic);
+      return;
+    }
+    kspin_unlock(&nic->lock);
+    nic_next(&nic);
+  }
+}
 
 static ip_route_rule_t* get_default_route(addrfam_t family) {
   switch (family) {
@@ -104,6 +125,12 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
     klogfm(KL_NET, DFATAL, "Invalid address family %d passed to ip_route()\n",
            dst.family);
     return false;
+  }
+
+  ip_route_rule_t ip6_route_rule;
+  if (route_rule->nexthop.family == AF_UNSPEC && dst.family == AF_INET6) {
+    ip6_find_gateway(&ip6_route_rule);
+    route_rule = &ip6_route_rule;
   }
 
   if (route_rule->nexthop.family != AF_UNSPEC) {

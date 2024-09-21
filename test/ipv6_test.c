@@ -42,6 +42,7 @@
 #include "net/util.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/net_test_util.h"
 #include "test/test_nic.h"
 #include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -2580,6 +2581,8 @@ static void pick_src_ip_tests(test_fixture_t* t) {
   char orig_default_nic[NIC_MAX_NAME_LEN];
   ip_get_default_route(ADDR_INET6, &orig_default_nexthop, orig_default_nic);
 
+  saved_gw_nics_t saved_gws;
+  disable_nic_gateways(&saved_gws);
   struct sockaddr_in6 dst;
   kmemset(&dst, 0xcd, sizeof(dst));
   dst.sin6_family = AF_INET6;
@@ -2675,6 +2678,7 @@ static void pick_src_ip_tests(test_fixture_t* t) {
   kspin_unlock(&t->nic2.n->lock);
 
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
+  restore_nic_gateways(&saved_gws);
 }
 
 static void send_tests(test_fixture_t* t) {
@@ -2696,6 +2700,8 @@ static void send_tests(test_fixture_t* t) {
   netaddr_t orig_default_nexthop;
   char orig_default_nic[NIC_MAX_NAME_LEN];
   ip_get_default_route(ADDR_INET6, &orig_default_nexthop, orig_default_nic);
+  saved_gw_nics_t saved_gws;
+  disable_nic_gateways(&saved_gws);
   netaddr_t nexthop;
   nexthop.family = AF_UNSPEC;
   ip_set_default_route(ADDR_INET6, nexthop, "");
@@ -2707,6 +2713,7 @@ static void send_tests(test_fixture_t* t) {
   KEXPECT_EQ(-ENETUNREACH, ip6_send(pb, true));
 
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
+  restore_nic_gateways(&saved_gws);
 
 
   KTEST_BEGIN("ip6_send(): unavailable source address packet");

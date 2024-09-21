@@ -139,6 +139,9 @@ void nic_next(nic_t** iter);
 // Returns the NIC with the given name (with a reference), or NULL.
 nic_t* nic_get_nm(const char* name);
 
+// Copies a reference on the given NIC.
+void nic_ref(nic_t* nic);
+
 // Puts a NIC (returns the reference taken by one of the above).  The caller
 // must not reference the nic_t after calling this.
 void nic_put(nic_t* nic);

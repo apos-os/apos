@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 #include "common/endian.h"
+#include "common/kassert.h"
 #include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
 #include "net/addr.h"
@@ -27,6 +28,7 @@
 #include "proc/notification.h"
 #include "test/kernel_tests.h"
 #include "test/ktest.h"
+#include "test/net_test_util.h"
 #include "test/test_nic.h"
 #include "vfs/vfs.h"
 #include "vfs/vfs_test_util.h"
@@ -507,6 +509,8 @@ static void route_default_route_v6_test(test_fixture_t* t) {
   dst.family = AF_INET6;
   KEXPECT_EQ(0, str2inet6("2607:f8b0:4006:821::2004", &dst.a.ip6));
 
+  saved_gw_nics_t saved_gws;
+  disable_nic_gateways(&saved_gws);
   char addr[INET6_PRETTY_LEN];
   ip_routed_t result;
   kmemset(&result, 0xab, sizeof(result));
@@ -561,6 +565,68 @@ static void route_default_route_v6_test(test_fixture_t* t) {
   KEXPECT_STREQ("2001:db8::100", inet62str(&result.nexthop.a.ip6, addr));
   nic_put(result.nic);
 
+  restore_nic_gateways(&saved_gws);
+  ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
+}
+
+static void route_default_route_v6_nic_gateway_test(test_fixture_t* t) {
+  KTEST_BEGIN("ip_route(): IPv6 autoconfigured gateway");
+  netaddr_t orig_default_nexthop;
+  char orig_default_nic[NIC_MAX_NAME_LEN];
+  ip_get_default_route(ADDR_INET6, &orig_default_nexthop, orig_default_nic);
+
+  netaddr_t nexthop;
+  nexthop.family = AF_UNSPEC;
+  ip_set_default_route(ADDR_INET6, nexthop, "");
+
+  netaddr_t dst;
+  kmemset(&dst, 0xcd, sizeof(dst));
+  dst.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2607:f8b0:4006:821::2004", &dst.a.ip6));
+
+  saved_gw_nics_t saved_gws;
+  disable_nic_gateways(&saved_gws);
+  char addr[INET6_PRETTY_LEN];
+  ip_routed_t result;
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+
+  t->nic3.n->ipv6.gateway.valid = true;
+  KEXPECT_EQ(0, str2inet6("fe80::2", &t->nic3.n->ipv6.gateway.addr));
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_EQ(t->nic3.n, result.nic);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::2", inet62str(&result.src.a.ip6, addr));
+  KEXPECT_EQ(AF_INET6, result.nexthop.family);
+  KEXPECT_STREQ("fe80::2", inet62str(&result.nexthop.a.ip6, addr));
+  nic_put(result.nic);
+
+  KTEST_BEGIN(
+      "ip_route(): default route set overrides autoconfigured gateway (IPv6)");
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic.n->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_TRUE(ip_route(dst, &result));
+  KEXPECT_EQ(t->nic.n, result.nic);
+  KEXPECT_EQ(AF_INET6, result.src.family);
+  KEXPECT_STREQ("2001:db8::1", inet62str(&result.src.a.ip6, addr));
+  KEXPECT_EQ(AF_INET6, result.nexthop.family);
+  KEXPECT_STREQ("2001:db8::100", inet62str(&result.nexthop.a.ip6, addr));
+  nic_put(result.nic);
+
+
+  KTEST_BEGIN("ip_route(): default route set (no usable addrs on NIC) (IPv6)");
+  nexthop.family = AF_INET6;
+  KEXPECT_EQ(0, str2inet6("2001:db8::100", &nexthop.a.ip6));
+  ip_set_default_route(ADDR_INET6, nexthop, t->nic2.n->name);
+  kmemset(&result, 0xab, sizeof(result));
+  KEXPECT_FALSE(ip_route(dst, &result));
+
+  t->nic3.n->ipv6.gateway.valid = true;
+  restore_nic_gateways(&saved_gws);
   ip_set_default_route(ADDR_INET6, orig_default_nexthop, orig_default_nic);
 }
 
@@ -570,6 +636,7 @@ static void ip_route_tests(test_fixture_t* t) {
   route_longest_prefix_v6_test(t);
   route_default_route_test(t);
   route_default_route_v6_test(t);
+  route_default_route_v6_nic_gateway_test(t);
 }
 
 static void addr_cmp_tests(void) {

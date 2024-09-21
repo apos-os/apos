@@ -48,6 +48,7 @@ srcs = [
   'mmap_test.c',
   'net_base_test.c',
   'net_echo_test.c',
+  'net_test_util.c',
   'page_alloc_test.c',
   'poll_test.c',
   'proc_group_test.c',
