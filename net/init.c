@@ -58,10 +58,4 @@ void net_init(void) {
   def.family = AF_INET;
   def.a.ip4.s_addr = str2inet("10.0.2.2");
   ip_set_default_route(ADDR_INET, def, "eth0");
-
-  // TODO(ipv6): remove this hard-coded default route when we can auto-learn via
-  // SLAAC.
-  def.family = AF_INET6;
-  KASSERT(0 == str2inet6("fe80::2", &def.a.ip6));
-  ip_set_default_route(ADDR_INET6, def, "eth0");
 }
