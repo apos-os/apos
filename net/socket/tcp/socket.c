@@ -331,6 +331,8 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
                                 tcp_segment_t* seg,
                                 pbuf_t* pb,
                                 bool allow_block) {
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  KASSERT_DBG(tcp_hdr->flags == seg->flags);
   seg->retransmits = 0;
   seg->tx_time = get_time_ms();
   list_push(&socket->segments, &seg->link);
@@ -338,8 +340,6 @@ static int tcp_transmit_segment(socket_tcp_t* socket,
   kspin_unlock(&socket->spin_mu);
 
   KASSERT_DBG(socket->base.s_domain == pseudo_ip->domain);
-  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
-  KASSERT_DBG(tcp_hdr->flags == seg->flags);
   return tcp_checksum_and_send(socket, pb, pseudo_ip, allow_block);
 }
 
