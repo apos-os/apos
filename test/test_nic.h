@@ -34,6 +34,9 @@ typedef struct {
 int test_ttap_create(test_ttap_t* t, int flags);
 void test_ttap_destroy(test_ttap_t* t);
 
+// Returns true if the given NIC has subscribed to the multicast address.
+bool test_ttap_mc_subscribed(const test_ttap_t* t, const nic_mac_t* mac);
+
 // Adds an IPv4 or IPv6 address to the given NIC.  The NIC must be locked.
 // Returns the nic_addr_t for tests that need to further modify it.
 nic_addr_t* nic_add_addr(nic_t* nic, const char* ipv4, int prefix_len,

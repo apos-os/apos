@@ -427,8 +427,11 @@ static void tap_multicast_test(test_fixture_t* f) {
   char buf[10];
   KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
 
+  KEXPECT_FALSE(tuntap_mc_subscribed(f->nic, &mcast_dst));
+
   // Subscribe, and now should get it.
   f->nic->ops->nic_mc_sub(f->nic, &mcast_dst);
+  KEXPECT_TRUE(tuntap_mc_subscribed(f->nic, &mcast_dst));
   KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
   KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
   buf[3] = '\0';
@@ -436,6 +439,7 @@ static void tap_multicast_test(test_fixture_t* f) {
 
   // Unsubscribe, and should not get it.
   f->nic->ops->nic_mc_unsub(f->nic, &mcast_dst);
+  KEXPECT_FALSE(tuntap_mc_subscribed(f->nic, &mcast_dst));
   KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
   KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
   pbuf_free(pb);

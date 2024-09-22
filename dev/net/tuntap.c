@@ -240,6 +240,16 @@ static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac) {
   kspin_unlock(&tt->lock);
 }
 
+bool tuntap_mc_subscribed(nic_t* nic, const nic_mac_t* mac) {
+  tuntap_dev_t* tt = (tuntap_dev_t*)nic;
+  kspin_lock(&tt->lock);
+  void* unused_val;
+  int result = htbl_get(&tt->multicast, fnv_hash_array(mac->addr, NIC_MAC_LEN),
+                        &unused_val);
+  kspin_unlock(&tt->lock);
+  return (result == 0);
+}
+
 static int tuntap_cd_read(struct char_dev* dev, void* buf, size_t len,
                           int flags) {
   tuntap_dev_t* tt = (tuntap_dev_t*)dev->dev_data;

@@ -30,4 +30,8 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id);
 // Destroy a TUN/TAP device.
 int tuntap_destroy(apos_dev_t id);
 
+// Returns true if the given tuntap device is subscribed to the given multicast
+// address.
+bool tuntap_mc_subscribed(nic_t* nic, const nic_mac_t* mac);
+
 #endif

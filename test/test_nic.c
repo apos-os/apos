@@ -68,6 +68,10 @@ void test_ttap_destroy(test_ttap_t* t) {
   t->n = NULL;
 }
 
+bool test_ttap_mc_subscribed(const test_ttap_t* tt, const nic_mac_t* mac) {
+  return tuntap_mc_subscribed(tt->n, mac);
+}
+
 static nic_addr_t* alloc_addr(nic_t* nic, int prefix_len,
                               nic_addr_state_t state) {
   KASSERT(kspin_is_held(&nic->lock));
