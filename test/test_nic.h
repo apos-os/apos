@@ -36,6 +36,7 @@ void test_ttap_destroy(test_ttap_t* t);
 
 // Returns true if the given NIC has subscribed to the multicast address.
 bool test_ttap_mc_subscribed(const test_ttap_t* t, const nic_mac_t* mac);
+bool test_ttap_mc_subscribed_str(const test_ttap_t* t, const char* mac);
 
 // Adds an IPv4 or IPv6 address to the given NIC.  The NIC must be locked.
 // Returns the nic_addr_t for tests that need to further modify it.

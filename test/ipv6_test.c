@@ -2834,7 +2834,10 @@ static void multicast_tests(test_fixture_t* t) {
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
   KEXPECT_STREQ("ff02::1:ff12:3456",
                 inet62str(&record->multicast_addr, pretty));
-  // TODO(ipv6): verify it subscribes on the NIC.
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:12:34:56"));
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
 
 
   KTEST_BEGIN("IPv6 multicast query from bad source addr");
@@ -2916,13 +2919,20 @@ static void multicast_tests(test_fixture_t* t) {
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
   KEXPECT_STREQ("ff02::1:ff56:3412",
                 inet62str(&record->multicast_addr, pretty));
-  // TODO(ipv6): verify it subscribes on the NIC.
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:56:34:12"));
 
 
   KTEST_BEGIN("IPv6 multicast leave (not last join)");
   KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
   KEXPECT_EQ(0, ip6_multicast_leave(t->nic2.n, &addr));
   KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:56:34:12"));
 
 
   KTEST_BEGIN("IPv6 multicast leave (last join)");
@@ -2981,7 +2991,14 @@ static void multicast_tests(test_fixture_t* t) {
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
   KEXPECT_STREQ("ff02::1:ff56:3412",
                 inet62str(&record->multicast_addr, pretty));
-  // TODO(ipv6): verify it UNsubscribes on the NIC.
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:12:34:56"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:56:34:12"));
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:56:34:12"));
 
   KTEST_BEGIN("IPv6 multicast leave (last join #2)");
   KEXPECT_EQ(0, str2inet6("ff02::1:ff56:3412", &addr));
@@ -3014,7 +3031,14 @@ static void multicast_tests(test_fixture_t* t) {
 
   send_mld_query(&t->nic2, MLD_QUERY_SRC);
   KEXPECT_EQ(-EAGAIN, vfs_read(t->nic2.fd, buf, 150));
-  // TODO(ipv6): verify it UNsubscribes on the NIC.
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:12:34:56"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:56:34:12"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:56:34:12"));
 }
 
 static void multicast_tests2(test_fixture_t* t) {
@@ -3081,7 +3105,10 @@ static void multicast_tests2(test_fixture_t* t) {
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
   KEXPECT_STREQ("ff02::1:ff12:3456",
                 inet62str(&record->multicast_addr, pretty));
-  // TODO(ipv6): verify it subscribes on the NIC.
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:12:34:56"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
 
   KTEST_BEGIN("IPv6 multicast leave (no link-local address)");
   KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));
@@ -3179,7 +3206,10 @@ static void multicast_tests2(test_fixture_t* t) {
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
   KEXPECT_STREQ("ff02::1:ff12:3456",
                 inet62str(&record->multicast_addr, pretty));
-  // TODO(ipv6): verify it subscribes on the NIC.
+  KEXPECT_TRUE(
+      test_ttap_mc_subscribed_str(&t->nic, "33:33:FF:12:34:56"));
+  KEXPECT_FALSE(
+      test_ttap_mc_subscribed_str(&t->nic2, "33:33:FF:12:34:56"));
 
   KTEST_BEGIN("IPv6 multicast leave (no link-local address)");
   KEXPECT_EQ(0, str2inet6("ff02::1:ff12:3456", &addr));

@@ -19,6 +19,7 @@
 #include "common/kstring.h"
 #include "dev/net/nic.h"
 #include "dev/net/tuntap.h"
+#include "net/mac.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
 #include "vfs/vfs.h"
@@ -70,6 +71,12 @@ void test_ttap_destroy(test_ttap_t* t) {
 
 bool test_ttap_mc_subscribed(const test_ttap_t* tt, const nic_mac_t* mac) {
   return tuntap_mc_subscribed(tt->n, mac);
+}
+
+bool test_ttap_mc_subscribed_str(const test_ttap_t* t, const char* mac_str) {
+  nic_mac_t mac;
+  KASSERT(0 == str2mac(mac_str, mac.addr));
+  return test_ttap_mc_subscribed(t, &mac);
 }
 
 static nic_addr_t* alloc_addr(nic_t* nic, int prefix_len,
