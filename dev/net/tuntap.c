@@ -234,7 +234,7 @@ static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac) {
   if (htbl_remove(&tt->multicast, hash) != 0) {
     KLOG(
         WARNING,
-        "rtl8139: unable to unsubscribe to MAC address on %s(not subscribed)\n",
+        "TUN/TAP: unable to unsubscribe to MAC addr on %s (not subscribed)\n",
         nic->name);
   }
   kspin_unlock(&tt->lock);
