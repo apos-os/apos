@@ -25,6 +25,7 @@
 #include "net/inet.h"
 #include "net/ip/checksum.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/tcp/congestion.h"
@@ -41,6 +42,7 @@
 #include "proc/signal/signal.h"
 #include "proc/sleep.h"
 #include "test/ktest.h"
+#include "test/test_nic.h"
 #include "test/test_params.h"
 #include "test/test_point.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -93,7 +95,7 @@
 // explicitly because some tests have multiple destination IPs and we need to
 // keep the packet streams separated.
 typedef struct {
-  in_addr_t dst_ip;
+  struct sockaddr_storage_ip dst_ip;
   char packet[RAW_RECV_BUF_SIZE];
   ssize_t packet_len;
   list_link_t link;
@@ -144,10 +146,16 @@ static const char* sas2str(const struct sockaddr_storage* sas) {
                       sizeof(struct sockaddr_storage), buf);
 }
 
-static void make_saddr(struct sockaddr_in* saddr, const char* addr, int port) {
-  saddr->sin_family = AF_INET;
-  saddr->sin_addr.s_addr = str2inet(addr);
-  saddr->sin_port = htob16(port);
+static void make_saddr(struct sockaddr_storage_ip* sas, const char* addr,
+                       int port) {
+  if (kstrchr(addr, ':') == 0) {
+    struct sockaddr_in* saddr = (struct sockaddr_in*)sas;
+    saddr->sin_family = AF_INET;
+    saddr->sin_addr.s_addr = str2inet(addr);
+    saddr->sin_port = htob16(port);
+  } else {
+    KEXPECT_EQ(0, str2sin6(addr, port, (struct sockaddr_in6*)sas));
+  }
 }
 
 static bool has_sigpipe(void) {
@@ -156,19 +164,19 @@ static bool has_sigpipe(void) {
 }
 
 static int do_bind(int sock, const char* addr, int port) {
-  struct sockaddr_in saddr;
+  struct sockaddr_storage_ip saddr;
   make_saddr(&saddr, addr, port);
   return net_bind(sock, (struct sockaddr*)&saddr, sizeof(saddr));
 }
 
 static int do_connect(int sock, const char* addr, int port) {
-  struct sockaddr_in saddr;
+  struct sockaddr_storage_ip saddr;
   make_saddr(&saddr, addr, port);
   return net_connect(sock, (struct sockaddr*)&saddr, sizeof(saddr));
 }
 
 static int do_accept(int sock, char* addr_out) {
-  struct sockaddr_in saddr;
+  struct sockaddr_storage_ip saddr;
   socklen_t slen = sizeof(saddr);
   *addr_out = '\0';
   int result = net_accept(sock, (struct sockaddr*)&saddr, &slen);
@@ -248,7 +256,7 @@ static int get_so_error(int socket) {
 static int getsockname_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
-  int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  int result = net_getsockname(socket, &sas);
   if (result < 0) return result;
   if (sas.sa_family == AF_INET) {
     kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
@@ -259,7 +267,7 @@ static int getsockname_inet(int socket, struct sockaddr_in* sin) {
 static int getpeername_inet(int socket, struct sockaddr_in* sin) {
   kmemset(sin, 0xab, sizeof(struct sockaddr_in));
   struct sockaddr_storage sas;
-  int result = net_getpeername(socket, (struct sockaddr*)&sas);
+  int result = net_getpeername(socket, &sas);
   if (result < 0) return result;
   if (sas.sa_family == AF_INET) {
     kmemcpy(sin, &sas, sizeof(struct sockaddr_in));
@@ -269,14 +277,14 @@ static int getpeername_inet(int socket, struct sockaddr_in* sin) {
 
 static const char* getsockname_str(int socket) {
   struct sockaddr_storage sas;
-  int result = net_getsockname(socket, (struct sockaddr*)&sas);
+  int result = net_getsockname(socket, &sas);
   if (result < 0) return errorname(-result);
   return sas2str(&sas);
 }
 
 static const char* getpeername_str(int socket) {
   struct sockaddr_storage sas;
-  int result = net_getpeername(socket, (struct sockaddr*)&sas);
+  int result = net_getpeername(socket, &sas);
   if (result < 0) return errorname(-result);
   return sas2str(&sas);
 }
@@ -312,6 +320,11 @@ static tcp_key_t tcp_key_sin(const struct sockaddr_in* a,
   return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
 }
 
+static tcp_key_t tcp_key_sin6(const struct sockaddr_in6* a,
+                              const struct sockaddr_in6* b) {
+  return tcp_key((const struct sockaddr*)a, (const struct sockaddr*)b);
+}
+
 static void tcp_key_test(void) {
   KTEST_BEGIN("TCP key test (AF_INET)");
   struct sockaddr_in src1, src2, dst1, dst2;
@@ -336,6 +349,13 @@ static void tcp_key_test(void) {
 
   KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&dst1, &src1));
 
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&src2));
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&dst1),
+             tcp_key_single((struct sockaddr*)&dst2));
+  KEXPECT_NE(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&dst1));
+
   src1 = src2;
   src1.sin_port = 2;
   KEXPECT_NE(tcp_key_sin(&src1, &dst1), tcp_key_sin(&src2, &dst2));
@@ -347,12 +367,16 @@ static void tcp_key_test(void) {
   src2 = src1;
   dst2 = dst1;
   tcp_key_t orig = tcp_key_sin(&src2, &dst2);
+  tcp_key_t orig_single = tcp_key_single((struct sockaddr*)&src2);
   src2.sin_addr.s_addr++;
   KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
   src2 = src1;
 
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
   src2.sin_port++;
   KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
   src2 = src1;
 
   dst2.sin_addr.s_addr++;
@@ -361,6 +385,95 @@ static void tcp_key_test(void) {
 
   dst2.sin_port++;
   KEXPECT_NE(orig, tcp_key_sin(&src2, &dst2));
+  dst2 = dst1;
+}
+
+static void tcp_v6_key_test(void) {
+  KTEST_BEGIN("TCP key test (AF_INET6)");
+  struct sockaddr_in6 src1, src2, dst1, dst2;
+  kmemset(&src1, 0xaa, sizeof(src1));
+  kmemset(&src2, 0xbb, sizeof(src2));
+  kmemset(&dst1, 0xcc, sizeof(dst1));
+  kmemset(&dst2, 0xdd, sizeof(dst2));
+  src1.sin6_family = src2.sin6_family = dst1.sin6_family = dst2.sin6_family =
+      AF_INET6;
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src1.sin6_addr));
+  src1.sin6_port = 1;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst1.sin6_addr));
+  dst1.sin6_port = 2;
+  KEXPECT_EQ(0, str2inet6("2001:db8::1", &src2.sin6_addr));
+  src2.sin6_port = 1;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &dst2.sin6_addr));
+  dst2.sin6_port = 2;
+  KEXPECT_EQ(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(tcp_key_sin6(&src2, &dst1), tcp_key_sin6(&src1, &dst2));
+  KEXPECT_EQ(tcp_key_sin6(&src1, &dst2), tcp_key_sin6(&src2, &dst1));
+
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&dst1, &src1));
+
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&src2));
+  KEXPECT_EQ(tcp_key_single((struct sockaddr*)&dst1),
+             tcp_key_single((struct sockaddr*)&dst2));
+  KEXPECT_NE(tcp_key_single((struct sockaddr*)&src1),
+             tcp_key_single((struct sockaddr*)&dst1));
+
+  src1 = src2;
+  src1.sin6_port = 2;
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+  src1 = src2;
+  KEXPECT_EQ(0, str2inet6("2001:db8::2", &src1.sin6_addr));
+  KEXPECT_NE(tcp_key_sin6(&src1, &dst1), tcp_key_sin6(&src2, &dst2));
+
+  // Test sensitivity to different elements of the address.
+  src2 = src1;
+  dst2 = dst1;
+  tcp_key_t orig = tcp_key_sin6(&src2, &dst2);
+  tcp_key_t orig_single = tcp_key_single((struct sockaddr*)&src2);
+  src2.sin6_addr.s6_addr[0]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2.sin6_addr.s6_addr[8]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2.sin6_addr.s6_addr[15]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_EQ(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2.sin6_port++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  KEXPECT_NE(orig_single, tcp_key_single((struct sockaddr*)&src2));
+  src2 = src1;
+
+  dst2.sin6_addr.s6_addr[0]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  dst2 = dst1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  dst2.sin6_addr.s6_addr[8]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  dst2 = dst1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  dst2.sin6_addr.s6_addr[15]++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
+  dst2 = dst1;
+
+  KEXPECT_EQ(orig, tcp_key_sin6(&src2, &dst2));
+  dst2.sin6_port++;
+  KEXPECT_NE(orig, tcp_key_sin6(&src2, &dst2));
   dst2 = dst1;
 }
 
@@ -555,15 +668,13 @@ static void bind_test(void) {
   struct sockaddr_storage result_addr_storage;
   struct sockaddr_in* result_addr = (struct sockaddr_in*)&result_addr_storage;
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_EQ(INADDR_ANY, result_addr->sin_addr.s_addr);
   KEXPECT_EQ(INET_PORT_ANY, result_addr->sin_port);
 
   KTEST_BEGIN("getpeername(SOCK_STREAM): unbound socket");
-  KEXPECT_EQ(-ENOTCONN,
-             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
-
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, &result_addr_storage));
 
   KTEST_BEGIN("bind(SOCK_STREAM): can bind to NIC's address");
   struct sockaddr_in addr;
@@ -578,14 +689,13 @@ static void bind_test(void) {
 
   KTEST_BEGIN("getsockname(SOCK_STREAM): bound socket");
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_EQ(addr.sin_addr.s_addr, result_addr->sin_addr.s_addr);
   KEXPECT_EQ(1234, result_addr->sin_port);
 
   KTEST_BEGIN("getpeername(SOCK_STREAM): bound socket");
-  KEXPECT_EQ(-ENOTCONN,
-             net_getpeername(sock, (struct sockaddr*)&result_addr_storage));
+  KEXPECT_EQ(-ENOTCONN, net_getpeername(sock, &result_addr_storage));
 
   KTEST_BEGIN("bind(SOCK_STREAM): already bound socket");
   KEXPECT_EQ(-EINVAL, net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
@@ -610,6 +720,10 @@ static void bind_test(void) {
   KTEST_BEGIN("bind(SOCK_STREAM): wrong address family");
   KEXPECT_EQ(0, net2sockaddr(&netaddr, 0, &addr, sizeof(addr)));
   addr.sin_family = AF_UNIX;
+  KEXPECT_EQ(-EAFNOSUPPORT,
+             net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
+
+  addr.sin_family = AF_INET6;
   KEXPECT_EQ(-EAFNOSUPPORT,
              net_bind(sock, (struct sockaddr*)&addr, sizeof(addr)));
 
@@ -673,14 +787,14 @@ static void multi_bind_test(void) {
 
   struct sockaddr_storage sockname_addr;
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&sockname_addr));
+             net_getsockname(sock, &sockname_addr));
   KEXPECT_STREQ(SRC_IP, sas_ip2str(&sockname_addr));
   in_port_t port1 = ((struct sockaddr_in*)&sockname_addr)->sin_port;
   KEXPECT_NE(0, port1);
 
   KEXPECT_EQ(0, net_bind(sock2, (struct sockaddr*)&addr, sizeof(addr)));
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock2, (struct sockaddr*)&sockname_addr));
+             net_getsockname(sock2, &sockname_addr));
   KEXPECT_STREQ(SRC_IP, sas_ip2str(&sockname_addr));
   in_port_t port2 = ((struct sockaddr_in*)&sockname_addr)->sin_port;
   KEXPECT_NE(0, port2);
@@ -715,11 +829,11 @@ typedef struct {
 
   // Address of the TCP socket under test.
   const char* tcp_addr_str;
-  struct sockaddr_in tcp_addr;
+  struct sockaddr_storage_ip tcp_addr;
 
   // Raw socket and buffer for the "other side".
   char raw_addr_str[SOCKADDR_IN_PRETTY_LEN];
-  struct sockaddr_in raw_addr;
+  struct sockaddr_storage_ip raw_addr;
   char recv[RAW_RECV_BUF_SIZE];
 
   // Window size to send when not otherwise specified.
@@ -728,6 +842,9 @@ typedef struct {
   // Sequence base for the socket.
   uint32_t seq_base;
   uint32_t send_seq_base;
+
+  // Expected flow label for incoming packets.
+  uint32_t flow_label;
 } tcp_test_state_t;
 
 // Creates and initializes the test state.  Does _not_ bind the test socket.
@@ -736,17 +853,18 @@ typedef struct {
 // a different IP, however, or each will get packets sent by all test sockets.
 static void init_tcp_test(tcp_test_state_t* s, const char* tcp_addr,
                           int tcp_port, const char* dst_addr, int dst_port) {
+  s->tcp_addr_str = tcp_addr;
+  make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
+
   s->wndsize = DEFAULT_WNDSIZE;
   s->seq_base = g_tcp_test.seq_start;
   s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
-  s->socket = net_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+  s->flow_label = 0;
+  s->socket = net_socket(s->tcp_addr.sa_family, SOCK_STREAM, IPPROTO_TCP);
   s->op.thread = NULL;
   KEXPECT_GE(s->socket, 0);
 
   KEXPECT_EQ(0, set_initial_seqno(s->socket, s->seq_base + 100));
-
-  s->tcp_addr_str = tcp_addr;
-  make_saddr(&s->tcp_addr, tcp_addr, tcp_port);
 
   if (dst_addr) {
     kstrcpy(s->raw_addr_str, dst_addr);
@@ -763,6 +881,7 @@ static void init_tcp_test_child(const tcp_test_state_t* parent,
   s->wndsize = parent->wndsize;
   s->seq_base = g_tcp_test.seq_start;
   s->send_seq_base = g_tcp_test.seq_start + 100 - 500;
+  s->flow_label = 0;
   s->socket = -1;
   s->op.thread = NULL;
 
@@ -976,8 +1095,27 @@ static void read_tun_packets(void) {
       return;
     }
 
-    const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)&pkt->packet;
-    pkt->dst_ip = ip4_hdr->dst_addr;
+    int version = ((uint8_t*)pkt->packet)[0] >> 4;
+    tcp_hdr_t* tcp_hdr = NULL;
+    if (version == 4) {
+      const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)&pkt->packet;
+      pkt->dst_ip.sa_family = AF_INET;
+      ((struct sockaddr_in*)&pkt->dst_ip)->sin_addr.s_addr = ip4_hdr->dst_addr;
+      KASSERT(ip4_hdr->protocol == IPPROTO_TCP);
+      tcp_hdr =
+          (tcp_hdr_t*)(&pkt->packet[ip4_ihl(*ip4_hdr) * sizeof(uint32_t)]);
+    } else {
+      KASSERT(version == 6);
+      const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)&pkt->packet;
+      struct sockaddr_in6* pkt_v6 = (struct sockaddr_in6*)&pkt->dst_ip;
+      pkt_v6->sin6_family = AF_INET6;
+      pkt_v6->sin6_scope_id = 0;
+      kmemcpy(&pkt_v6->sin6_addr, &ip6_hdr->dst_addr, sizeof(struct in6_addr));
+      KASSERT(ip6_hdr->next_hdr == IPPROTO_TCP);
+      tcp_hdr = (tcp_hdr_t*)(&pkt->packet[sizeof(ip6_hdr_t)]);
+    }
+    set_sockaddrs_port((struct sockaddr_storage*)&pkt->dst_ip,
+                       btoh16(tcp_hdr->dst_port));
     pkt->link = LIST_LINK_INIT;
     pkt->packet_len = result;
     list_push(&g_tcp_test.packets, &pkt->link);
@@ -1002,7 +1140,8 @@ static ssize_t do_raw_recv(tcp_test_state_t* s) {
   read_tun_packets();
   FOR_EACH_LIST(list_iter, &g_tcp_test.packets) {
     queued_packet_t* pkt = LIST_ENTRY(list_iter, queued_packet_t, link);
-    if (pkt->dst_ip == s->raw_addr.sin_addr.s_addr) {
+    if (sockaddr_equal((struct sockaddr*)&pkt->dst_ip,
+                       (struct sockaddr*)&s->raw_addr)) {
       list_remove(&g_tcp_test.packets, &pkt->link);
       kmemcpy(s->recv, pkt->packet, RAW_RECV_BUF_SIZE);
       if (pkt->packet_len < RAW_RECV_BUF_SIZE) {
@@ -1019,16 +1158,25 @@ static ssize_t do_raw_recv(tcp_test_state_t* s) {
 }
 
 static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
-  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE, len);
+  pbuf_t* pb = pbuf_create(INET6_HEADER_RESERVE, len);
   KASSERT(pb);
 
   kmemcpy(pbuf_get(pb), buf, len);
-  ip4_add_hdr(pb, s->raw_addr.sin_addr.s_addr, s->tcp_addr.sin_addr.s_addr,
-              IPPROTO_TCP);
+  if (s->raw_addr.sa_family == AF_INET) {
+    const struct sockaddr_in* raw = (const struct sockaddr_in*)&s->raw_addr;
+    const struct sockaddr_in* dst = (const struct sockaddr_in*)&s->tcp_addr;
+    ip4_add_hdr(pb, raw->sin_addr.s_addr, dst->sin_addr.s_addr, IPPROTO_TCP);
+  } else {
+    KASSERT_DBG(s->raw_addr.sa_family == AF_INET6);
+    KASSERT_DBG(s->tcp_addr.sa_family == AF_INET6);
+    const struct sockaddr_in6* raw = (const struct sockaddr_in6*)&s->raw_addr;
+    const struct sockaddr_in6* dst = (const struct sockaddr_in6*)&s->tcp_addr;
+    ip6_add_hdr(pb, &raw->sin6_addr, &dst->sin6_addr, IPPROTO_TCP, 0);
+  }
 
   ssize_t result = vfs_write(g_tcp_test.tun_fd, pbuf_getc(pb), pbuf_size(pb));
   if (result > 0) {
-    result -= sizeof(ip4_hdr_t);
+    result -= (pbuf_size(pb) - len);
   }
   pbuf_free(pb);
   return result;
@@ -1037,6 +1185,7 @@ static ssize_t do_raw_send(tcp_test_state_t* s, const void* buf, size_t len) {
 // Special value to indicate a zero window size (since passing zero means
 // "ignore").
 #define WNDSIZE_ZERO 0xabcd
+#define FLOW_LABEL_ZERO 0xabcd
 
 // Specification for a packet to expect or send.  Fields not supplied are not
 // checked (on receive), or given default values (on send).
@@ -1134,7 +1283,7 @@ static test_packet_spec_t NOACK(test_packet_spec_t p) {
 }
 
 #define EXPECT_PKT(_state, _spec) KEXPECT_TRUE(receive_pkt(_state, _spec))
-#define SEND_PKT(_state, _spec) KEXPECT_TRUE(send_pkt(_state, _spec))
+#define SEND_PKT(_state, _spec) KEXPECT_TRUE(build_send_pkt(_state, _spec))
 
 // Expects to receive a packet matching the given description, returning true if
 // it does.
@@ -1148,27 +1297,62 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
   if (!v) return v;
 
   // Validate the IP header.
-  v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen, result);
-  if (result < (int)sizeof(ip4_hdr_t) + (int)sizeof(tcp_hdr_t)) {
-    return false;
+  size_t header_len = 0;
+  if (s->raw_addr.sa_family == AF_INET) {
+    v &= KEXPECT_EQ(sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen,
+                    result);
+    if (result < (int)sizeof(ip4_hdr_t) + (int)sizeof(tcp_hdr_t)) {
+      return false;
+    }
+
+    ip4_hdr_t* ip_hdr = (ip4_hdr_t*)s->recv;
+    v &= KEXPECT_EQ(0x45, ip_hdr->version_ihl);
+    v &= KEXPECT_EQ(0x0, ip_hdr->dscp_ecn);
+    v &= KEXPECT_EQ(result, btoh16(ip_hdr->total_len));
+    v &= KEXPECT_EQ(0, ip_hdr->id);
+    v &= KEXPECT_EQ(0, ip_hdr->flags_fragoff);
+    v &= KEXPECT_GE(ip_hdr->ttl, 10);
+    v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
+    // Don't bother checking the checksum here.
+    v &= KEXPECT_STREQ(s->tcp_addr_str, ip2str(ip_hdr->src_addr));
+    v &= KEXPECT_STREQ(s->raw_addr_str, ip2str(ip_hdr->dst_addr));
+    header_len = sizeof(ip4_hdr_t);
+  } else {
+    KASSERT_DBG(s->raw_addr.sa_family == AF_INET6);
+    v &= KEXPECT_EQ(sizeof(ip6_hdr_t) + sizeof(tcp_hdr_t) + spec.datalen,
+                    result);
+    if (result < (int)sizeof(ip6_hdr_t) + (int)sizeof(tcp_hdr_t)) {
+      return false;
+    }
+
+    ip6_hdr_t* ip_hdr = (ip6_hdr_t*)s->recv;
+    v &= KEXPECT_EQ(6, ip6_version(*ip_hdr));
+    v &= KEXPECT_EQ(0, ip6_traffic_class(*ip_hdr));
+    if (s->flow_label == FLOW_LABEL_ZERO) {
+      v &= KEXPECT_EQ(0, ip6_flow(*ip_hdr));
+    } else if (s->flow_label != 0) {
+      v &= KEXPECT_EQ(s->flow_label, ip6_flow(*ip_hdr));
+    } else if (!(spec.flags & TCP_FLAG_RST)) {
+      // Make sure the flow label is set to _something_ in most tests.  The flow
+      // label should be set on _some_ RSTs, but hard to tell here, so don't
+      // bother as this is a catchall.
+      v &= KEXPECT_NE(0, ip6_flow(*ip_hdr));
+    }
+    v &= KEXPECT_EQ(result, sizeof(ip6_hdr_t) + btoh16(ip_hdr->payload_len));
+    v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->next_hdr);
+    // Don't bother checking the checksum here.
+    char addrstr[INET6_PRETTY_LEN];
+    v &= KEXPECT_STREQ(s->tcp_addr_str, inet62str(&ip_hdr->src_addr, addrstr));
+    v &= KEXPECT_STREQ(s->raw_addr_str, inet62str(&ip_hdr->dst_addr, addrstr));
+    header_len = sizeof(ip6_hdr_t);
   }
 
-  ip4_hdr_t* ip_hdr = (ip4_hdr_t*)s->recv;
-  v &= KEXPECT_EQ(0x45, ip_hdr->version_ihl);
-  v &= KEXPECT_EQ(0x0, ip_hdr->dscp_ecn);
-  v &= KEXPECT_EQ(result, btoh16(ip_hdr->total_len));
-  v &= KEXPECT_EQ(0, ip_hdr->id);
-  v &= KEXPECT_EQ(0, ip_hdr->flags_fragoff);
-  v &= KEXPECT_GE(ip_hdr->ttl, 10);
-  v &= KEXPECT_EQ(IPPROTO_TCP, ip_hdr->protocol);
-  // Don't bother checking the checksum here.
-  v &= KEXPECT_STREQ(s->tcp_addr_str, ip2str(ip_hdr->src_addr));
-  v &= KEXPECT_STREQ(s->raw_addr_str, ip2str(ip_hdr->dst_addr));
-
   // Validate the TCP header.
-  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[sizeof(ip4_hdr_t)];
-  v &= KEXPECT_EQ(btoh16(s->tcp_addr.sin_port), btoh16(tcp_hdr->src_port));
-  v &= KEXPECT_EQ(btoh16(s->raw_addr.sin_port), btoh16(tcp_hdr->dst_port));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)&s->recv[header_len];
+  v &= KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s->tcp_addr),
+                  btoh16(tcp_hdr->src_port));
+  v &= KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s->raw_addr),
+                  btoh16(tcp_hdr->dst_port));
   if (spec.literal_seq) {
     v &= KEXPECT_EQ(spec.seq, btoh32(tcp_hdr->seq));
   } else {
@@ -1193,27 +1377,57 @@ static bool receive_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
 
   // Check data.
   if (spec.data) {
-    KEXPECT_STREQ(spec.data, s->recv + sizeof(ip4_hdr_t) + sizeof(tcp_hdr_t));
+    KEXPECT_STREQ(spec.data, s->recv + header_len + sizeof(tcp_hdr_t));
   }
   return v;
 }
 
-// Builds a packet based on the given spec and sends it.
-static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
-  ip4_pseudo_hdr_t pseudo_ip;
+// (re)calculates the TCP header checksum for the packet.
+static void calc_checksum(tcp_test_state_t* s, pbuf_t* pb) {
+  void* pseudo_ip = NULL;
+  size_t pseudo_ip_size = 0;
+  ip4_pseudo_hdr_t pseudo_ip_v4;
+  ip6_pseudo_hdr_t pseudo_ip_v6;
+  size_t tcp_len = pbuf_size(pb);
+  if (s->raw_addr.sa_family == AF_INET) {
+    pseudo_ip = &pseudo_ip_v4;
+    pseudo_ip_size = sizeof(pseudo_ip_v4);
 
-  size_t tcp_len = sizeof(tcp_hdr_t) + spec.datalen;
-  pseudo_ip.src_addr = s->raw_addr.sin_addr.s_addr;
-  pseudo_ip.dst_addr = s->tcp_addr.sin_addr.s_addr;
-  pseudo_ip.zeroes = 0;
-  pseudo_ip.protocol = IPPROTO_TCP;
-  pseudo_ip.length = btoh16(tcp_len);
+    pseudo_ip_v4.src_addr =
+        ((struct sockaddr_in*)&s->raw_addr)->sin_addr.s_addr;
+    pseudo_ip_v4.dst_addr =
+        ((struct sockaddr_in*)&s->tcp_addr)->sin_addr.s_addr;
+    pseudo_ip_v4.zeroes = 0;
+    pseudo_ip_v4.protocol = IPPROTO_TCP;
+    pseudo_ip_v4.length = btoh16(tcp_len);
+  } else {
+    KASSERT_DBG(s->raw_addr.sa_family == AF_INET6);
+    pseudo_ip = &pseudo_ip_v6;
+    pseudo_ip_size = sizeof(pseudo_ip_v6);
 
-  void* buf = kmalloc(tcp_len);
+    pseudo_ip_v6.src_addr = ((struct sockaddr_in6*)&s->raw_addr)->sin6_addr;
+    pseudo_ip_v6.dst_addr = ((struct sockaddr_in6*)&s->tcp_addr)->sin6_addr;
+    kmemset(&pseudo_ip_v6._zeroes, 0, 3);
+    pseudo_ip_v6.next_hdr = IPPROTO_TCP;
+    pseudo_ip_v6.payload_len = btoh16(tcp_len);
+  }
+
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pb);
+  tcp_hdr->checksum = 0;
+  tcp_hdr->checksum =
+      ip_checksum2(pseudo_ip, pseudo_ip_size, tcp_hdr, tcp_len);
+}
+
+// Builds a packet based on the given spec.
+static pbuf_t* build_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+  pbuf_t* pb = pbuf_create(0, sizeof(tcp_hdr_t) + spec.datalen);
+  void* buf = pbuf_get(pb);
   tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)buf;
   kmemset(tcp_hdr, 0, sizeof(tcp_hdr_t));
-  tcp_hdr->src_port = s->raw_addr.sin_port;
-  tcp_hdr->dst_port = s->tcp_addr.sin_port;
+  tcp_hdr->src_port =
+      htob16(get_sockaddrs_port((struct sockaddr_storage*)&s->raw_addr));
+  tcp_hdr->dst_port =
+      htob16(get_sockaddrs_port((struct sockaddr_storage*)&s->tcp_addr));
   tcp_hdr->seq = btoh32(s->send_seq_base + spec.seq);
   tcp_hdr->ack =
       (spec.flags & TCP_FLAG_ACK) ? btoh32(s->seq_base + spec.ack) : 0;
@@ -1227,11 +1441,20 @@ static bool send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
     kmemcpy(buf + sizeof(tcp_hdr_t), spec.data, spec.datalen);
   }
 
-  tcp_hdr->checksum =
-      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), tcp_hdr, tcp_len);
-  bool result = KEXPECT_EQ(tcp_len, do_raw_send(s, tcp_hdr, tcp_len));
-  kfree(buf);
+  calc_checksum(s, pb);
+  return pb;
+}
+
+static bool send_pkt(tcp_test_state_t* s, pbuf_t* pb) {
+  bool result =
+      KEXPECT_EQ(pbuf_size(pb), do_raw_send(s, pbuf_get(pb), pbuf_size(pb)));
+  pbuf_free(pb);
   return result;
+}
+
+// Builds a packet based on the given spec and sends it.
+static bool build_send_pkt(tcp_test_state_t* s, test_packet_spec_t spec) {
+  return send_pkt(s, build_pkt(s, spec));
 }
 
 // Standard operations for tests that don't care about specifics.
@@ -1298,6 +1521,10 @@ static void basic_connect_test(void) {
   KEXPECT_EQ(0, set_initial_seqno(s.socket, 100));
   KEXPECT_STREQ("CLOSED", get_sock_state(s.socket));
 
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "2001:db8::2", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "::1", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "::", 0x1234));
   KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
   KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
   KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
@@ -1585,8 +1812,8 @@ static void connect_rst_test(void) {
   KEXPECT_EQ(-ECONNREFUSED, finish_op(&s));
 
   struct sockaddr_storage unused;
-  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, &unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, &unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, SRC_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
@@ -1694,7 +1921,7 @@ static void rebind_tests(void) {
 
   // See what port it chose.
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_NE(0, result_addr->sin_port);
@@ -1708,7 +1935,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 100));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(bound_port, result_addr->sin_port);
@@ -1721,7 +1948,7 @@ static void rebind_tests(void) {
 
   // See what port it chose.
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_NE(0, result_addr->sin_port);
@@ -1739,7 +1966,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, DST_IP_2, 100));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(bound_port, result_addr->sin_port);
@@ -1757,7 +1984,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 200));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ("0.0.0.0", ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(btoh16(100), result_addr->sin_port);
@@ -1774,7 +2001,7 @@ static void rebind_tests(void) {
   KEXPECT_EQ(-EINVAL, do_bind(sock, SRC_IP, 200));
 
   KEXPECT_EQ(sizeof(struct sockaddr_in),
-             net_getsockname(sock, (struct sockaddr*)&result_addr_storage));
+             net_getsockname(sock, &result_addr_storage));
   KEXPECT_EQ(AF_INET, result_addr->sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(result_addr->sin_addr.s_addr));
   KEXPECT_EQ(btoh16(100), result_addr->sin_port);
@@ -1798,7 +2025,7 @@ static void implicit_bind_test(void) {
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
 
-  s.tcp_addr = bound_addr;
+  kmemcpy(&s.tcp_addr, &bound_addr, sizeof(bound_addr));
 
   // Now can continue with connection setup.
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -1807,7 +2034,8 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
 
@@ -1826,7 +2054,7 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
-  s.tcp_addr = bound_addr;
+  kmemcpy(&s.tcp_addr, &bound_addr, sizeof(bound_addr));
 
   // Now can continue with connection setup.
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -1835,7 +2063,8 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(IMPLICIT_SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   cleanup_tcp_test(&s);
@@ -1854,7 +2083,7 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
   KEXPECT_NE(0, bound_addr.sin_port);
-  s.tcp_addr = bound_addr;
+  kmemcpy(&s.tcp_addr, &bound_addr, sizeof(bound_addr));
 
   // Now can continue with connection setup.
   KEXPECT_TRUE(finish_standard_connect(&s));
@@ -1863,7 +2092,8 @@ static void implicit_bind_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   KEXPECT_TRUE(do_standard_finish(&s, 0, 0));
   cleanup_tcp_test(&s);
@@ -3226,8 +3456,8 @@ static void rst_during_established_test1(void) {
   KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
 
   struct sockaddr_storage unused;
-  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, &unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, &unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, SRC_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));
@@ -3377,8 +3607,8 @@ static void rst_during_established_blocking_recv_test(void) {
   proc_suppress_signal(proc_current(), SIGPIPE);
 
   struct sockaddr_storage unused;
-  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, (struct sockaddr*)&unused));
-  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, (struct sockaddr*)&unused));
+  KEXPECT_EQ(-EINVAL, net_getsockname(s.socket, &unused));
+  KEXPECT_EQ(-EINVAL, net_getpeername(s.socket, &unused));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP, 80));
   KEXPECT_EQ(-EINVAL, do_connect(s.socket, DST_IP_2, 80));
   KEXPECT_EQ(-EINVAL, do_bind(s.socket, SRC_IP, 80));
@@ -4111,7 +4341,8 @@ static void basic_established_recv_test(void) {
   KEXPECT_EQ(0, getsockname_inet(s.socket, &bound_addr));
   KEXPECT_EQ(AF_INET, bound_addr.sin_family);
   KEXPECT_STREQ(SRC_IP, ip2str(bound_addr.sin_addr.s_addr));
-  KEXPECT_EQ(s.tcp_addr.sin_port, bound_addr.sin_port);
+  KEXPECT_EQ(get_sockaddrs_port((struct sockaddr_storage*)&s.tcp_addr),
+             btoh16(bound_addr.sin_port));
 
   SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
   EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 495));
@@ -9268,14 +9499,14 @@ static void accept_address_params_test(void) {
   child = net_accept(s.socket, (struct sockaddr*)bigbuf, &len);
   KEXPECT_GE(child, 0);
   // We should have written the sockaddr_in fields correctly.
-  KEXPECT_EQ(sizeof(struct sockaddr_storage), len);
+  KEXPECT_EQ(sizeof(struct sockaddr_in), len);
   // The first part of the address (struct sockaddr_in) should match.
   KEXPECT_EQ(AF_INET, ((struct sockaddr_in*)&bigbuf)->sin_family);
   KEXPECT_EQ(str2inet(DST_IP), ((struct sockaddr_in*)&bigbuf)->sin_addr.s_addr);
   KEXPECT_EQ(btoh16(1002), ((struct sockaddr_in*)&bigbuf)->sin_port);
   // Shouldn't have written past the last byte.
-  KEXPECT_EQ((uint8_t)0xab, bigbuf[len]);
-  KEXPECT_EQ((uint8_t)0xdf, bigbuf[len + 1]);
+  KEXPECT_EQ((uint8_t)0xab, bigbuf[sizeof(struct sockaddr_storage)]);
+  KEXPECT_EQ((uint8_t)0xdf, bigbuf[sizeof(struct sockaddr_storage) + 1]);
   // ...everything in between is gargbage, can't be checked.
   SEND_PKT(&c1, RST_PKT(/* seq */ 501, /* ack */ 101));
   KEXPECT_EQ(0, vfs_close(child));
@@ -11512,20 +11743,16 @@ static void cwnd_socket_test(void) {
 
 static void nonblocking_tap_test(void) {
   KTEST_BEGIN("TCP: non-blocking connect still blocks for ARP");
-  apos_dev_t id;
-  nic_t* nic = tuntap_create(5000, TUNTAP_TAP_MODE, &id);
-  KEXPECT_NE(NULL, nic);
+  test_ttap_t tap;
+  KEXPECT_EQ(0, test_ttap_create(&tap, TUNTAP_TAP_MODE));
+  nic_t* nic = tap.n;
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(TAP_SRC_IP);
-  nic->addrs[0].prefix_len = 24;
+  nic->addrs[0].a.addr.family = ADDR_INET;
+  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(TAP_SRC_IP);
+  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
-
-  KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
-  int tt_fd = vfs_open("_tuntap_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(tt_fd, 0);
-  vfs_make_nonblock(tt_fd);
 
   tcp_test_state_t s;
   init_tcp_test(&s, TAP_SRC_IP, 0x1234, TAP_DST_IP, 0x5678);
@@ -11540,12 +11767,13 @@ static void nonblocking_tap_test(void) {
   char* buf = kmalloc(500);
   kmemset(buf, 0, 500);
   KEXPECT_EQ(sizeof(eth_hdr_t) + 28 /* ARP request */,
-             vfs_read(tt_fd, buf, 500));
+             vfs_read(tap.fd, buf, 500));
 
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
   char macstr1[NIC_MAC_PRETTY_LEN], macstr2[NIC_MAC_PRETTY_LEN];
-  KEXPECT_STREQ(mac2str(nic->mac, macstr1), mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ(mac2str(nic->mac.addr, macstr1),
+                mac2str(eth_hdr->mac_src, macstr2));
   KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, macstr1));
 
   // Signal to kill the connecting thread.
@@ -11565,10 +11793,11 @@ static void nonblocking_tap_test(void) {
   // We should have gotten an ARP request.
   kmemset(buf, 0, 500);
   KEXPECT_EQ(sizeof(eth_hdr_t) + 28 /* ARP request */,
-             vfs_read(tt_fd, buf, 500));
+             vfs_read(tap.fd, buf, 500));
 
   KEXPECT_EQ(ET_ARP, btoh16(eth_hdr->ethertype));
-  KEXPECT_STREQ(mac2str(nic->mac, macstr1), mac2str(eth_hdr->mac_src, macstr2));
+  KEXPECT_STREQ(mac2str(nic->mac.addr, macstr1),
+                mac2str(eth_hdr->mac_src, macstr2));
   KEXPECT_STREQ("FF:FF:FF:FF:FF:FF", mac2str(eth_hdr->mac_dst, macstr1));
 
   // Signal to kill the connecting thread.
@@ -11577,9 +11806,7 @@ static void nonblocking_tap_test(void) {
 
   cleanup_tcp_test(&s);
 
-  KEXPECT_EQ(0, vfs_close(tt_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tuntap_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(id));
+  test_ttap_destroy(&tap);
   kfree(buf);
 }
 
@@ -11968,14 +12195,20 @@ static void rapid_reconnect_test(void) {
 }
 
 // Helpers for sockmap tests.
+static void make_two_sin(const char* local, int local_port, const char* remote,
+                         int remote_port, struct sockaddr_storage* local_sin,
+                         struct sockaddr_storage* remote_sin) {
+  make_saddr((struct sockaddr_storage_ip*)local_sin, local, local_port);
+  if (remote) {
+    make_saddr((struct sockaddr_storage_ip*)remote_sin, remote, remote_port);
+  }
+}
+
 static socket_tcp_t* tcpsm_do_find(const tcp_sockmap_t* sm, const char* local,
                                    int local_port, const char* remote,
                                    int remote_port) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  if (remote) {
-    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
-  }
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   return tcpsm_find(sm, &local_sin, remote ? &remote_sin : NULL);
 }
 
@@ -11983,10 +12216,7 @@ static int tcpsm_do_bind2(tcp_sockmap_t* sm, const char* local, int local_port,
                           const char* remote, int remote_port,
                           int flags, socket_tcp_t* socket, char* local_out) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  if (remote) {
-    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
-  }
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   int result =
       tcpsm_bind(sm, &local_sin, remote ? &remote_sin : NULL, flags, socket);
   if (result == 0) {
@@ -12007,10 +12237,7 @@ static int tcpsm_do_remove(tcp_sockmap_t* sm, const char* local, int local_port,
                            const char* remote, int remote_port,
                            socket_tcp_t* socket) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  if (remote) {
-    make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
-  }
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   return tcpsm_remove(sm, &local_sin, remote ? &remote_sin : NULL, socket);
 }
 
@@ -12018,8 +12245,7 @@ static void tcpsm_do_mark_reusable(tcp_sockmap_t* sm, const char* local,
                                    int local_port, const char* remote,
                                    int remote_port, socket_tcp_t* socket) {
   struct sockaddr_storage local_sin, remote_sin;
-  make_saddr((struct sockaddr_in*)&local_sin, local, local_port);
-  make_saddr((struct sockaddr_in*)&remote_sin, remote, remote_port);
+  make_two_sin(local, local_port, remote, remote_port, &local_sin, &remote_sin);
   tcpsm_mark_reusable(sm, &local_sin, &remote_sin, socket);
 }
 
@@ -12616,11 +12842,1045 @@ static void sockmap_reuseaddr_tests(void) {
   tcpsm_cleanup(&sm);
 }
 
+static void sockmap_find_ipv6_tests(void) {
+  KTEST_BEGIN("TCP: sockmap IPv6 basic setup ");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-tuple lookup (IPv6)");
+  socket_tcp_t s1, s2, s3;
+  char local[INET6_PRETTY_LEN];
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 3-tuple lookup (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 90, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::3", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 3-tuple lookup (any-addr) (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 90, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::3", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::1]:80", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-to-3 tuple fallback (any-address) (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:80", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 91));
+
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(-ENOENT, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: sockmap 5-to-3 tuple double fallback (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:80", local);
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_STREQ("[::1]:80", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s3, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, NULL, 0));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, NULL, 0));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::1", 80));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::2", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, "::1", 90));
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 90, "::1", 80));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::2", 90, "::1", 80));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 91));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s3));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+
+
+  KTEST_BEGIN("TCP: sockmap allocates port (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::1]:5", local);
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_STREQ("[::1]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0, TCPSM_REUSEADDR,
+                               &s3, local));
+  KEXPECT_STREQ("[::1]:7", local);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0,
+                                          TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, NULL, 0, &s3));
+
+  tcpsm_cleanup(&sm);
+}
+
+static void sockmap_bind_ipv6_tests(void) {
+  KTEST_BEGIN("TCP: arg validation");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+
+  socket_tcp_t s1, s2;
+  char local[INET6_PRETTY_LEN];
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "::1", 80, "::", 90, &s1, local));
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 0, &s1, local));
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "::1", 80, "::", 0, &s1, local));
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind(&sm, "::", 80, "::2", 90, &s1, local));
+
+
+  KTEST_BEGIN("TCP: bind 5-tuple collision");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: bind 3-tuple collision");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  // A more specific 5-tuple binding should succeed.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, NULL, 0));
+
+
+  KTEST_BEGIN("TCP: bind 3-tuple any-addr collision");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:80", local);
+
+  // A more specific 5-tuple binding should succeed.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, "::2", 90, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::1", 80, NULL, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 80, NULL, 0, &s2, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 80, NULL, 0));
+  tcpsm_cleanup(&sm);
+}
+
+static void sockmap_bind_ipv6_tests2(void) {
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+
+  socket_tcp_t s1, s2, s3, s4;
+  char local[INET6_PRETTY_LEN];
+
+  KTEST_BEGIN("TCP: port assignment (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:5", local);
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 5, NULL, 0, &s1, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 5, NULL, 0, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 6, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("[::]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("[::]:5", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::]:7", local);
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s4, local));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::]:6", local);
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s1));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 5, NULL, 0, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::", 7, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s3));
+
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 7, NULL, 0));
+
+
+  KTEST_BEGIN("TCP: port assignment (cross-IP port reuse) (IPv6)");
+  // Binding to specific IPs should allow port reuse.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::1]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, NULL, 0, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s1, local));
+  KEXPECT_STREQ("[::1]:5", local);
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::2", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("[::2]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::2", 6, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::2", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("[::2]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::2", 7, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::2", 0, NULL, 0, &s2, local));
+  KEXPECT_STREQ("[::2]:5", local);
+  // ...but the any-IP should not be able to use port 5.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::]:6", local);
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s1));
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::2", 5, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::2", 5, NULL, 0, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::", 6, NULL, 0));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 6, NULL, 0, &s3));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::", 5, NULL, 0));
+  tcpsm_cleanup(&sm);
+
+
+  KTEST_BEGIN("TCP: port assignment (5-tuple) (IPv6)");
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+  // When the 5-tuple is bound first, 3-tuple binds should not be able to reuse
+  // the same port.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s2, local));
+  KEXPECT_STREQ("[::1]:6", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::1]:7", local);
+
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, NULL, 0, &s3));
+
+  // When the 3-tuple is bound first, 5-tuple binds can reuse the port (due to
+  // the asymmetry of port conflicts).
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::1]:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s2, local));
+  KEXPECT_STREQ("[::1]:6", local);
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s3));
+
+  // As above, but with the any-address.
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 7, NULL, 0, &s3));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::", 0, NULL, 0, &s3, local));
+  KEXPECT_STREQ("[::]:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:7", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 7, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_bind(&sm, "::1", 0, "::2", 90, &s1, local));
+  KEXPECT_STREQ("[::1]:5", local);
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 5, NULL, 0, &s3));
+
+  tcpsm_cleanup(&sm);
+}
+
+static void sockmap_reuseaddr_ipv6_tests(void) {
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 5-tuple bind (IPv6)");
+  tcp_sockmap_t sm;
+  tcpsm_init(&sm, AF_INET6, 5, 7);
+
+  socket_tcp_t s1, s2, s3, s4;
+  char local[INET6_PRETTY_LEN];
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                               TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_STREQ("[::1]:80", local);
+
+  // A 5-tuple conflict should always fail.
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s1, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s1, local));
+
+  // As should 3-tuple conflicts.
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "::", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+
+  // Mark the address as reusable then retest.
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s1);
+
+  // All binds without TCPSM_REUSEADDR should still fail.
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s1, local));
+
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, 0, &s2, local));
+  KEXPECT_EQ(-EADDRINUSE,
+             tcpsm_do_bind2(&sm, "::", 80, NULL, 0, 0, &s2, local));
+
+  // With the flag set, the 5-tuple should still fail, but both 3-tuple types
+  // should succeed.
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+
+  KEXPECT_EQ(&s1, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s1));
+  KEXPECT_EQ(NULL, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with multiple bindings (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                               TCPSM_REUSEADDR, &s1, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
+                               TCPSM_REUSEADDR, &s3, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+
+  // Mark the address as reusable then retest.
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s2);
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 91, &s3);
+
+  // With both 5-tuples marked reusable, the any-addr should now succeed as it
+  // won't conflict with either the explicit 3-tuple or the reusable 5-tuples.
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s4));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+
+  // With the flag set, the 5-tuple should still fail, but both 3-tuple types
+  // should succeed.
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 90,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, "::2", 91,
+                                         TCPSM_REUSEADDR, &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s4));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s4, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s4));
+
+  KEXPECT_EQ(&s2, tcpsm_do_find(&sm, "::1", 80, "::2", 90));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(&s3, tcpsm_do_find(&sm, "::1", 80, "::2", 91));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 91, &s3));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 3-tuple binding (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                               TCPSM_REUSEADDR, &s1, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s2));
+
+  // Create a 5-tuple as well and try again, for kicks.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s2, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s2);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s3));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s1));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR with 3-tuple binding (any-addr) (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                               TCPSM_REUSEADDR, &s1, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s2, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s2));
+
+  // Create a 5-tuple as well and try again, for kicks.
+  KEXPECT_EQ(0,
+             tcpsm_do_bind2(&sm, "::1", 80, "::2", 90, 0, &s2, local));
+
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+
+  tcpsm_do_mark_reusable(&sm, "::1", 80, "::2", 90, &s2);
+  KEXPECT_EQ(-EADDRINUSE, tcpsm_do_bind2(&sm, "::", 80, NULL, 0,
+                                         TCPSM_REUSEADDR, &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 80, NULL, 0, TCPSM_REUSEADDR,
+                               &s3, local));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, NULL, 0, &s3));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 80, "::2", 90, &s2));
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::", 80, NULL, 0, &s1));
+
+
+  KTEST_BEGIN("TCP: TCPSM_REUSEADDR doesn't affect port selection (IPv6)");
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 5, "::2", 90,
+                               TCPSM_REUSEADDR, &s1, local));
+  tcpsm_do_mark_reusable(&sm, "::1", 5, "::2", 90, &s1);
+
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, "::2", 91,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_STREQ("[::1]:5", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 91, &s2));
+
+  // We should not assign port 5 automatically.
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 0, NULL, 0,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_STREQ("[::1]:6", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 6, NULL, 0, &s2));
+
+  // ...but should be assignable explicitly.
+  KEXPECT_EQ(0, tcpsm_do_bind2(&sm, "::1", 5, NULL, 0,
+                               TCPSM_REUSEADDR, &s2, local));
+  KEXPECT_STREQ("[::1]:5", local);
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, NULL, 0, &s2));
+
+  KEXPECT_EQ(0, tcpsm_do_remove(&sm, "::1", 5, "::2", 90, &s1));
+
+
+  KTEST_BEGIN("TCP: invalid bind flags (IPv6)");
+  KEXPECT_EQ(-EINVAL,
+             tcpsm_do_bind2(&sm, "::1", 5, "::2", 90, 20, &s1, local));
+
+  tcpsm_cleanup(&sm);
+}
+
 static void sockmap_tests(void) {
   sockmap_find_tests();
   sockmap_bind_tests();
   sockmap_bind_tests2();
   sockmap_reuseaddr_tests();
+  sockmap_find_ipv6_tests();
+  sockmap_bind_ipv6_tests();
+  sockmap_bind_ipv6_tests2();
+  sockmap_reuseaddr_ipv6_tests();
+}
+
+static void basic_ipv6_test(void) {
+  KTEST_BEGIN("TCP: listen() basic test (IPv6)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  // Should not be able to listen on an unbound socket.
+  KEXPECT_EQ(-EDESTADDRREQ, net_listen(s.socket, 10));
+
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "1.2.3.4", 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_EQ(-EAFNOSUPPORT, do_bind(s.socket, "0.0.0.0", 0x1234));
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+
+  KEXPECT_EQ(0, net_listen(s.socket, 10));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(s.socket, 10));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_WR));
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RDWR));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+
+  // Should not be able to call connect() on a listening socket.
+  KEXPECT_EQ(-EOPNOTSUPP, do_connect(s.socket, "2001:db8::2", 0x5678));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Or read/write.
+  char buf;
+  KEXPECT_EQ(-ENOTCONN, vfs_read(s.socket, &buf, 1));
+  KEXPECT_EQ(-ENOTCONN, vfs_write(s.socket, &buf, 1));
+
+  KEXPECT_STREQ("[2001:db8::1]:4660", getsockname_str(s.socket));
+  KEXPECT_STREQ("ENOTCONN", getpeername_str(s.socket));
+
+  // Any packet other than a SYN should get a RST or be ignored.
+  SEND_PKT(&s, RST_PKT(/* seq */ 500, /* ack */ 101));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  SEND_PKT(&s, ACK_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 5000));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, DATA_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc"));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+  SEND_PKT(&s, FIN_PKT(/* seq */ 500, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  // Try some mutants that don't have the ACK bit set for fun.
+  SEND_PKT(&s, NOACK(DATA_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 503));
+  SEND_PKT(&s, NOACK(DATA_FIN_PKT(/* seq */ 500, /* ack */ 101, "abc")));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  SEND_PKT(&s, NOACK(FIN_PKT(/* seq */ 500, /* ack */ 101)));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 501));
+
+  // A SYN (or SYN-ACK) with data should also be rejected.
+  test_packet_spec_t p = DATA_PKT(/* seq */ 500, /* ack */ 101, "abc");
+  p.flags = TCP_FLAG_SYN;
+  SEND_PKT(&s, p);
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 0, /* ack */ 504));
+  p.flags |= TCP_FLAG_ACK;
+  SEND_PKT(&s, p);
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  // Send a SYN, complete the connection.
+  tcp_test_state_t c1;
+  init_tcp_test_child(&s, &c1, "2001:db8::2", 2000);
+  c1.flow_label = 966464;
+  SEND_PKT(&c1, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c1,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+
+  // We should be able to accept() a child socket.
+  char addr[SOCKADDR_PRETTY_LEN];
+  c1.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c1.socket, 0);
+  KEXPECT_STREQ("[2001:db8::2]:2000", addr);
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // listen(), accept(), etc should not work on the child socket.
+  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+  KEXPECT_EQ(-EINVAL, do_accept(c1.socket, addr));
+  KEXPECT_EQ(-EINVAL, net_accept_queue_length(c1.socket));
+
+  // Do a second connection.
+  tcp_test_state_t c2;
+  init_tcp_test_child(&s, &c2, "2001:db8::3", 600);
+  c2.flow_label = 54956;
+  SEND_PKT(&c2, SYN_PKT(/* seq */ 500, /* wndsize */ 8000));
+  EXPECT_PKT(&c2,
+             SYNACK_PKT(/* seq */ 100, /* ack */ 501, /* wndsize */ 16384));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 501, /* ack */ 101));
+  KEXPECT_EQ(1, net_accept_queue_length(s.socket));
+  c2.socket = do_accept(s.socket, addr);
+  KEXPECT_GE(c2.socket, 0);
+  KEXPECT_STREQ("[2001:db8::3]:600", addr);
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+  KEXPECT_STREQ("ESTABLISHED", get_sock_state(c1.socket));
+  KEXPECT_EQ(0, net_accept_queue_length(s.socket));
+
+  // Should be able to pass data on both sockets.
+  SEND_PKT(&c1, DATA_PKT(/* seq */ 501, /* ack */ 101, "abc"));
+  SEND_PKT(&c2, DATA_PKT(/* seq */ 501, /* ack */ 101, "123"));
+  EXPECT_PKT(&c1, ACK_PKT(/* seq */ 101, /* ack */ 504));
+  EXPECT_PKT(&c2, ACK_PKT(/* seq */ 101, /* ack */ 504));
+
+  KEXPECT_STREQ("abc", do_read(c1.socket));
+  KEXPECT_STREQ("123", do_read(c2.socket));
+
+  KEXPECT_EQ(5, vfs_write(c1.socket, "ABCDE", 5));
+  KEXPECT_EQ(5, vfs_write(c2.socket, "67890", 5));
+  EXPECT_PKT(&c1, DATA_PKT(/* seq */ 101, /* ack */ 504, "ABCDE"));
+  EXPECT_PKT(&c2, DATA_PKT(/* seq */ 101, /* ack */ 504, "67890"));
+  SEND_PKT(&c1, ACK_PKT(/* seq */ 504, /* ack */ 106));
+  SEND_PKT(&c2, ACK_PKT(/* seq */ 504, /* ack */ 106));
+
+  KEXPECT_TRUE(do_standard_finish(&c1, 5, 3));
+  KEXPECT_TRUE(do_standard_finish(&c2, 5, 3));
+
+  KEXPECT_STREQ("CLOSED_DONE", get_sock_state(c1.socket));
+  KEXPECT_EQ(-EINVAL, net_listen(c1.socket, 10));
+
+  KEXPECT_STREQ("LISTEN", get_sock_state(s.socket));
+
+  cleanup_tcp_test(&s);
+  cleanup_tcp_test(&c1);
+  cleanup_tcp_test(&c2);
+}
+
+static void basic_ipv6_connect_test(void) {
+  KTEST_BEGIN("TCP: basic connect() (IPv6)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+  s.flow_label = 473694;
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 502));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+
+  // Should get a FIN.
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 502));
+  SEND_PKT(&s, ACK_PKT(502, /* ack */ 102));
+
+  cleanup_tcp_test(&s);
+}
+
+static void basic_ipv6_connect_reset_test(void) {
+  KTEST_BEGIN("TCP: basic connect() then reset (IPv6)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+  s.flow_label = 473694;
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+
+  // Do SYN, SYN-ACK, ACK.
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 16384));
+  SEND_PKT(&s, SYNACK_PKT(/* seq */ 500, /* ack */ 101, /* wndsize */ 8000));
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 101, /* ack */ 501));
+
+  KEXPECT_EQ(0, finish_op(&s));  // connect() should complete successfully.
+
+  // Shut down the connect then trigger a reset.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_RD));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "xyz"));
+  EXPECT_PKT(&s, RST_PKT(/* seq */ 101, /* ack */ 501));
+  s.flow_label = FLOW_LABEL_ZERO;
+  SEND_PKT(&s, FIN_PKT(/* seq */ 501, /* ack */ 101));
+  EXPECT_PKT(&s, RST_NOACK_PKT(/* seq */ 101));
+
+  char buf[10];
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+  KEXPECT_EQ(0, vfs_read(s.socket, buf, 10));
+
+  KEXPECT_EQ(-ENOTCONN, net_shutdown(s.socket, SHUT_RD));
+
+  KEXPECT_EQ(-EPIPE, vfs_write(s.socket, "abc", 3));
+  KEXPECT_TRUE(has_sigpipe());
+  proc_suppress_signal(proc_current(), SIGPIPE);
+
+  cleanup_tcp_test(&s);
+}
+
+static void tcp_ipv6_self_connect_test(void) {
+  KTEST_BEGIN("TCP: IPv6 basic loopback self-connect test");
+  int s1 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s1, 0);
+  int s2 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s2, 0);
+
+  struct sockaddr_in6 dst;
+  KEXPECT_EQ(0, str2sin6("::1", 1234, &dst));
+  KEXPECT_EQ(0, net_bind(s2, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, net_listen(s2, 10));
+  KEXPECT_EQ(0, net_connect(s1, (struct sockaddr*)&dst, sizeof(dst)));
+
+  struct sockaddr_storage src;
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s1, &src));
+  char str[SOCKADDR_PRETTY_LEN];
+  ksprintf(str, "[::1]:%d", get_sockaddrs_port(&src));
+  KEXPECT_STREQ(str, sas2str(&src));
+
+  struct sockaddr_storage peer;
+  socklen_t peer_len = sizeof(peer);
+  int s3 = net_accept(s2, (struct sockaddr*)&peer, &peer_len);
+  KEXPECT_GE(s3, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), peer_len);
+  KEXPECT_STREQ(str, sas2str(&peer));
+
+  KEXPECT_EQ(3, vfs_write(s1, "abc", 3));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s3, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  KEXPECT_EQ(3, vfs_write(s3, "def", 3));
+  KEXPECT_EQ(3, vfs_read(s1, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("def", buf);
+
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, net_shutdown(s3, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(s3);
+}
+
+static void tcp_ipv6_bind_port_only_test(void) {
+  KTEST_BEGIN("TCP: IPv6 port-only bind test");
+  int s1 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s1, 0);
+  int s2 = net_socket(AF_INET6, SOCK_STREAM, IPPROTO_TCP);
+  KEXPECT_GE(s2, 0);
+
+  struct sockaddr_in6 dst;
+  KEXPECT_EQ(0, str2sin6("::", 1234, &dst));
+  KEXPECT_EQ(0, net_bind(s2, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(0, net_listen(s2, 10));
+
+  struct sockaddr_storage src;
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s2, &src));
+  KEXPECT_STREQ("[::]:1234", sas2str(&src));
+
+  KEXPECT_EQ(0, str2sin6("::", 5678, &dst));
+  KEXPECT_EQ(0, net_bind(s1, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s1, &src));
+  KEXPECT_STREQ("[::]:5678", sas2str(&src));
+  KEXPECT_EQ(0, str2sin6("::1", 1234, &dst));
+  KEXPECT_EQ(0, net_connect(s1, (struct sockaddr*)&dst, sizeof(dst)));
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), net_getsockname(s1, &src));
+  KEXPECT_STREQ("[::1]:5678", sas2str(&src));
+
+  struct sockaddr_storage peer;
+  socklen_t peer_len = sizeof(peer);
+  int s3 = net_accept(s2, (struct sockaddr*)&peer, &peer_len);
+  KEXPECT_GE(s3, 0);
+  KEXPECT_EQ(sizeof(struct sockaddr_in6), peer_len);
+  KEXPECT_STREQ("[::1]:5678", sas2str(&peer));
+
+  KEXPECT_EQ(3, vfs_write(s1, "abc", 3));
+  char buf[10];
+  KEXPECT_EQ(3, vfs_read(s3, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  KEXPECT_EQ(3, vfs_write(s3, "def", 3));
+  KEXPECT_EQ(3, vfs_read(s1, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("def", buf);
+
+  KEXPECT_EQ(0, vfs_close(s2));
+  KEXPECT_EQ(0, net_shutdown(s3, SHUT_RDWR));
+  KEXPECT_EQ(0, vfs_close(s1));
+  close_time_wait(s3);
+}
+
+static void bad_ipv6_packet_test(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (truncated TCP header)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a truncated SYN/ACK.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  pbuf_trim_end(pkt, 1);
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void bad_ipv6_packet_test2(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (header size too small)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a SYN/ACK with a too-small header size.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pkt);
+  KEXPECT_EQ(5, tcp_hdr->data_offset);
+  tcp_hdr->data_offset = 4;
+  calc_checksum(&s, pkt);
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void bad_ipv6_packet_test3(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (header size too large)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a SYN/ACK with a too-small header size.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pkt);
+  KEXPECT_EQ(5, tcp_hdr->data_offset);
+  tcp_hdr->data_offset = 6;
+  calc_checksum(&s, pkt);
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void bad_ipv6_packet_test4(void) {
+  KTEST_BEGIN("TCP: bad IPv6 packet (bad checksum)");
+  tcp_test_state_t s;
+  init_tcp_test(&s, "2001:db8::1", 0x1234, "2001:db8::2", 0x5678);
+
+  KEXPECT_EQ(0, do_bind(s.socket, "2001:db8::1", 0x1234));
+  KEXPECT_TRUE(start_connect(&s, "2001:db8::2", 0x5678));
+  EXPECT_PKT(&s, SYN_PKT(/* seq */ 100, /* wndsize */ 0));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  // Send back a SYN/ACK with a too-small header size.
+  pbuf_t* pkt = build_pkt(
+      &s, SYNACK_PKT(/* seq */ 500, /* seq */ 101, /* wndsize */ 16000));
+  tcp_hdr_t* tcp_hdr = (tcp_hdr_t*)pbuf_get(pkt);
+  tcp_hdr->checksum = 1234;
+  KEXPECT_TRUE(send_pkt(&s, pkt));
+  KEXPECT_STREQ("SYN_SENT", get_sock_state(s.socket));
+
+  KEXPECT_FALSE(ntfn_await_with_timeout(&s.op.done, BLOCK_VERIFY_MS));
+  proc_kill_thread(s.op.thread, SIGUSR1);
+  KEXPECT_EQ(-EINTR, finish_op(&s));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  cleanup_tcp_test(&s);
+}
+
+static void tcp_ipv6_tests(void) {
+  basic_ipv6_test();
+  basic_ipv6_connect_test();
+  basic_ipv6_connect_reset_test();
+  tcp_ipv6_self_connect_test();
+  tcp_ipv6_bind_port_only_test();
+  bad_ipv6_packet_test();
+  bad_ipv6_packet_test2();
+  bad_ipv6_packet_test3();
+  bad_ipv6_packet_test4();
 }
 
 void tcp_test(void) {
@@ -12630,21 +13890,15 @@ void tcp_test(void) {
 
   // Create a TUN device for receiving test packets.
   KTEST_BEGIN("TCP: test setup");
-  apos_dev_t tun_id;
-  nic_t* nic = tuntap_create(20000, 0, &tun_id);
-  KEXPECT_NE(NULL, nic);
+  test_ttap_t tun;
+  KEXPECT_EQ(0, test_ttap_create(&tun, TUNTAP_TUN_MODE));
 
-  kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].prefix_len = 24;
-  kspin_unlock(&nic->lock);
+  kspin_lock(&tun.n->lock);
+  nic_add_addr(tun.n, SRC_IP, 24, NIC_ADDR_ENABLED);
+  nic_add_addr_v6(tun.n, "2001:db8::1", 64, NIC_ADDR_ENABLED);
+  kspin_unlock(&tun.n->lock);
 
-  vfs_unlink("_tun_test_dev");
-  KEXPECT_EQ(0, vfs_mknod("_tun_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, tun_id));
-  g_tcp_test.tun_fd = vfs_open("_tun_test_dev", VFS_O_RDWR);
-  KEXPECT_GE(g_tcp_test.tun_fd, 0);
-  vfs_make_nonblock(g_tcp_test.tun_fd);
+  g_tcp_test.tun_fd = tun.fd;
 
   for (int i = 0; i < TEST_SEQ_ITERS; ++i) {
     g_tcp_test.seq_start = TEST_SEQ_START;
@@ -12654,6 +13908,7 @@ void tcp_test(void) {
     }
     klogf("g_seq_start = 0x%x\n", g_tcp_test.seq_start);
     tcp_key_test();
+    tcp_v6_key_test();
     seqno_test();
     tcp_socket_test();
     sockopt_test();
@@ -12673,6 +13928,7 @@ void tcp_test(void) {
     nonblocking_tests();
     close_race_tests();
     open_race_tests();
+    tcp_ipv6_tests();
   }
 
   // These are tests that don't look specifically at the sequence numbers or
@@ -12686,9 +13942,7 @@ void tcp_test(void) {
   sockmap_tests();
 
   KTEST_BEGIN("TCP: test cleanup");
-  KEXPECT_EQ(0, vfs_close(g_tcp_test.tun_fd));
-  KEXPECT_EQ(0, vfs_unlink("_tun_test_dev"));
-  KEXPECT_EQ(0, tuntap_destroy(tun_id));
+  test_ttap_destroy(&tun);
 
   KTEST_BEGIN("vfs: vnode leak verification");
   KEXPECT_EQ(initial_cache_size, vfs_cache_size());

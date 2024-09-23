@@ -20,7 +20,10 @@ srcs = [
   'icmp.c',
   'init.c',
   'link_layer.c',
+  'mac.c',
+  'neighbor_cache.c',
   'pbuf.c',
+  'test_util.c',
   'util.c',
 ]
 

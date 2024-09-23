@@ -25,7 +25,10 @@
 #include "net/eth/ethertype.h"
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/ip6.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/ip/route.h"
+#include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/util.h"
 #include "proc/defint.h"
@@ -98,20 +101,35 @@ static void sock_raw_dispatch_one(socket_raw_t* sock, pbuf_t* pb,
   poll_trigger_event(&sock->poll_event, raw_poll_events(sock));
 }
 
-static bool packet_matches_socket(const socket_raw_t* socket,
-                                  const pbuf_t* pb) {
-  if (socket->base.s_domain != AF_INET ||
-      socket->bind_addr.family == AF_UNSPEC) {
+static bool packet_matches_socket(const socket_raw_t* socket, const pbuf_t* pb,
+                                  ethertype_t et) {
+  KASSERT((socket->base.s_domain == AF_INET && et == ET_IPV4) ||
+          (socket->base.s_domain == AF_INET6 && et == ET_IPV6));
+
+  // Ethertype matches; if not bound, all packets match.
+  if (socket->bind_addr.family == AF_UNSPEC) {
     return true;
   }
 
-  if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
-    klogfm(KL_NET, WARNING, "Too-short IP packet in raw socket code\n");
-    return true;
-  }
+  if (socket->base.s_domain == AF_INET) {
+    if (pbuf_size(pb) < sizeof(ip4_hdr_t)) {
+      klogfm(KL_NET, WARNING, "Too-short IP packet in raw socket code\n");
+      return true;
+    }
 
-  const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)pbuf_getc(pb);
-  return (socket->bind_addr.a.ip4.s_addr == ip4_hdr->dst_addr);
+    const ip4_hdr_t* ip4_hdr = (const ip4_hdr_t*)pbuf_getc(pb);
+    return (socket->bind_addr.a.ip4.s_addr == ip4_hdr->dst_addr);
+  } else if (socket->base.s_domain == AF_INET6) {
+    KASSERT(pbuf_size(pb) >= sizeof(ip6_hdr_t));
+
+    const ip6_hdr_t* ip6_hdr = (const ip6_hdr_t*)pbuf_getc(pb);
+    return kmemcmp(&socket->bind_addr.a.ip6, &ip6_hdr->dst_addr,
+                   sizeof(struct in6_addr)) == 0;
+  } else {
+    klogfm(KL_NET, DFATAL, "Invalid raw socket domain: %d\n",
+           socket->base.s_domain);
+    return false;
+  }
 }
 
 void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
@@ -123,7 +141,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
   list_link_t* link = sock_list->head;
   while (link) {
     socket_raw_t* sock = container_of(link, socket_raw_t, link);
-    if (packet_matches_socket(sock, pb)) {
+    if (packet_matches_socket(sock, pb, ethertype)) {
       sock_raw_dispatch_one(sock, pb, addr, addrlen);
     }
     link = link->next;
@@ -134,7 +152,7 @@ void sock_raw_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
 int sock_raw_create(int domain, int protocol, socket_t** out) {
   init_raw_sockets();
 
-  if (domain != AF_INET) {
+  if (domain != AF_INET && domain != AF_INET6) {
     return -EPROTONOSUPPORT;
   }
   if (protocol == 0) {
@@ -158,8 +176,8 @@ int sock_raw_create(int domain, int protocol, socket_t** out) {
   poll_init_event(&sock->poll_event);
 
   DEFINT_PUSH_AND_DISABLE();
-  KASSERT(domain == AF_INET);
-  list_t* sock_list = get_socket_list(ET_IPV4, protocol);
+  ethertype_t et = (domain == AF_INET) ? ET_IPV4 : ET_IPV6;
+  list_t* sock_list = get_socket_list(et, protocol);
   list_push(sock_list, &sock->link);
   sock->sock_list = sock_list;
   DEFINT_POP();
@@ -293,7 +311,7 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
   KASSERT_DBG(socket_base->s_type == SOCK_RAW);
   socket_raw_t* sock = (socket_raw_t*)socket_base;
 
-  if (sock->base.s_domain != AF_INET) {
+  if (sock->base.s_domain != AF_INET && sock->base.s_domain != AF_INET6) {
     // Shouldn't get here until we support other protocols anyways.
     return -EAFNOSUPPORT;
   }
@@ -320,32 +338,41 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
 
   // Pick a source address, either by using the bind address or doing a route
   // calculation.
-  ip_routed_t route;
   const netaddr_t* src = NULL;
+  netaddr_t src_data;
   if (sock->bind_addr.family != AF_UNSPEC) {
-    KASSERT_DBG(sock->bind_addr.family == ADDR_INET);
+    KASSERT_DBG(sock->bind_addr.family == ADDR_INET ||
+                sock->bind_addr.family == ADDR_INET6);
     src = &sock->bind_addr;
   } else {
-    if (!ip_route(dest, &route)) {
-      return -ENETUNREACH;
+    int result = ip_pick_src_netaddr(&dest, &src_data);
+    if (result) {
+      return result;
     }
-    nic_put(route.nic);
-    route.nic = NULL;
-    src = &route.src;
+    src = &src_data;
   }
 
   // Actually generate and send the packet.
-  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE, length);
+  int reserve =
+      (src->family == ADDR_INET) ? INET_HEADER_RESERVE : INET6_HEADER_RESERVE;
+  pbuf_t* pb = pbuf_create(reserve, length);
   if (!pb) {
     return -ENOMEM;
   }
 
-  kmemcpy(pbuf_get(pb), buffer, length);
-  KASSERT_DBG(src->family == ADDR_INET);
-  KASSERT_DBG(dest.family == ADDR_INET);
-  ip4_add_hdr(pb, src->a.ip4.s_addr, dest.a.ip4.s_addr,
-              socket_base->s_protocol);
-  int result = ip_send(pb, /* allow_block */ true);
+  KASSERT_DBG(src->family == dest.family);
+  int result = 0;
+  if (src->family == ADDR_INET) {
+    kmemcpy(pbuf_get(pb), buffer, length);
+    ip4_add_hdr(pb, src->a.ip4.s_addr, dest.a.ip4.s_addr,
+                socket_base->s_protocol);
+    result = ip_send(pb, /* allow_block */ true);
+  } else {
+    KASSERT_DBG(src->family == ADDR_INET6);
+    kmemcpy(pbuf_get(pb), buffer, length);
+    ip6_add_hdr(pb, &src->a.ip6, &dest.a.ip6, socket_base->s_protocol, 0);
+    result = ip6_send(pb, /* allow_block */ true);
+  }
   if (result < 0) {
     return result;
   }
@@ -353,12 +380,12 @@ ssize_t sock_raw_sendto(socket_t* socket_base, int fflags, const void* buffer,
 }
 
 static int sock_raw_getsockname(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   return -EOPNOTSUPP;
 }
 
 static int sock_raw_getpeername(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   return -EOPNOTSUPP;
 }
 

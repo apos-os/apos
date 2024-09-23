@@ -1,4 +1,4 @@
-// Copyright 2017 Andrew Oates.  All Rights Reserved.
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,28 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef APOO_NET_ETH_ARP_ARP_CACHE_H
-#define APOO_NET_ETH_ARP_ARP_CACHE_H
+#ifndef APOO_TEST_NET_TEST_UTIL_H
+#define APOO_TEST_NET_TEST_UTIL_H
 
-#include "common/hashtable.h"
-#include "dev/timer.h"
-#include "net/eth/mac.h"
-#include "proc/kthread.h"
+#include "dev/net/nic.h"
 
+// Save and restore the gateway values on the current set of NICs.  Note that a
+// router advertisement received during a test run would get around this.
+#define MAX_SAVED_NICS 10
 typedef struct {
-  htbl_t cache;
-  kthread_queue_t wait;
-} arp_cache_t;
+  nic_t* gw_nics[MAX_SAVED_NICS];
+} saved_gw_nics_t;
 
-typedef struct {
-  uint8_t mac[ETH_MAC_LEN];
-  apos_ms_t last_used;
-} arp_cache_entry_t;
-
-// Initialize an empty ARP cache.
-void arp_cache_init(arp_cache_t* cache);
-
-// Free all memory used by the ARP cache (but not the arp_cache_t itself).
-void arp_cache_cleanup(arp_cache_t* cache);
+void disable_nic_gateways(saved_gw_nics_t* gwn);
+void restore_nic_gateways(saved_gw_nics_t* gwn);
 
 #endif

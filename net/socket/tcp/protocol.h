@@ -19,7 +19,10 @@
 
 #include "common/list.h"
 #include "dev/timer.h"
+#include "net/addr.h"
+#include "net/eth/ethertype.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/pbuf.h"
 #include "net/socket/tcp/socket.h"
 
@@ -61,6 +64,22 @@ typedef struct {
   list_link_t link;
 } tcp_segment_t;
 
+// A generic IP pseudo-IP header (IPv4 or IPv6).
+typedef struct {
+  int domain;
+  union {
+    ip4_pseudo_hdr_t v4;
+    ip6_pseudo_hdr_t v6;
+  } hdr;
+  size_t len;
+} tcpip_pseudo_hdr_t;
+
+// Calculate the checksum for a given packet, add the appropriate IP header, and
+// send it.  The pbuf should be pointing at the TCP header.
+int tcp_checksum_and_send(const socket_tcp_t* socket, pbuf_t* pb,
+                          const tcpip_pseudo_hdr_t* pseudo_ip,
+                          bool allow_block);
+
 int tcp_send_ack(socket_tcp_t* socket);
 int tcp_send_rst(socket_tcp_t* socket);
 
@@ -78,7 +97,7 @@ void tcp_next_segment(const socket_tcp_t* socket, tcp_segment_t* seg_out);
 //
 // Requires the socket be spinlocked.
 int tcp_build_segment(const socket_tcp_t* socket, const tcp_segment_t* seg,
-                      pbuf_t** pb_out, ip4_pseudo_hdr_t* pseudo_ip);
+                      pbuf_t** pb_out, tcpip_pseudo_hdr_t* pseudo_ip);
 
 typedef struct {
   struct sockaddr_storage src;
@@ -90,7 +109,8 @@ typedef struct {
 
 // Validate an incoming packet, pop the IP header, and extract information about
 // the packet.  Returns true if valid (and parsed).
-bool tcp_validate_packet(pbuf_t* pb, tcp_packet_metadata_t* md);
+bool tcp_validate_packet(pbuf_t* pb, ethertype_t ethertype, ssize_t header_len,
+                         tcp_packet_metadata_t* md);
 
 // Returns the length of the TCP segment in octets, including SYN/FIN.
 uint32_t tcp_packet_octets(const tcp_hdr_t* tcp_hdr,

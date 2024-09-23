@@ -96,6 +96,7 @@ typedef struct socket_tcp {
   bool iss_set;           // Has the initial seq been overridden.
   int dup_ack_count;      // Count of consecutive duplicate ACKs received.
   tcp_cwnd_t cwnd;        // Congestion control state.
+  uint32_t flow_label;    // Flow label (for IPv6).
 
   // Retransmit state.
   int rto_ms;   // Retransmit time.

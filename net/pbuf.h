@@ -84,4 +84,7 @@ void pbuf_push_header(pbuf_t* pb, size_t n);
 // re-pushing it.
 void pbuf_pop_header(pbuf_t* pb, size_t n);
 
+// Trim bytes from the end of the packet.
+void pbuf_trim_end(pbuf_t* pb, size_t bytes);
+
 #endif

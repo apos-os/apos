@@ -20,6 +20,7 @@
 // for an ethernet device).
 typedef enum {
   ET_IPV4 = 0x0800,
+  ET_IPV6 = 0x86DD,
   ET_ARP = 0x0806,
 } ethertype_t;
 

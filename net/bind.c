@@ -18,17 +18,14 @@
 #include "common/kassert.h"
 #include "dev/net/nic.h"
 #include "net/addr.h"
+#include "net/util.h"
 #include "proc/spinlock.h"
 
 int inet_bindable(const netaddr_t* addr) {
-  switch (addr->family) {
-    case AF_INET:
-      if (addr->a.ip4.s_addr == INADDR_ANY) return 0;
-      break;
-
-    case AF_UNSPEC:
-      break;  // Will error out.
+  if (netaddr_is_anyaddr(addr)) {
+    return 0;
   }
+
   nic_t* nic = nic_first();
   while (nic) {
     if (inet_source_valid(addr, nic) == 0) {
@@ -44,7 +41,7 @@ int inet_bindable(const netaddr_t* addr) {
 int inet_source_valid(const netaddr_t* addr, nic_t* nic) {
   kspin_lock(&nic->lock);
   for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-    if (netaddr_eq(&nic->addrs[addridx].addr, addr)) {
+    if (netaddr_eq(&nic->addrs[addridx].a.addr, addr)) {
       kspin_unlock(&nic->lock);
       return 0;
     }
@@ -52,7 +49,7 @@ int inet_source_valid(const netaddr_t* addr, nic_t* nic) {
     // As a special case, for loopback interfaces, allow binding to any
     // address in the configured network.
     if (nic->type == NIC_LOOPBACK &&
-        netaddr_match(addr, &nic->addrs[addridx])) {
+        netaddr_match(addr, &nic->addrs[addridx].a)) {
       kspin_unlock(&nic->lock);
       return 0;
     }
@@ -67,8 +64,8 @@ int inet_choose_bind(addrfam_t family, netaddr_t* addr_out) {
   while (nic) {
     kspin_lock(&nic->lock);
     for (int addridx = 0; addridx < NIC_MAX_ADDRS; ++addridx) {
-      if (nic->addrs[addridx].addr.family == family) {
-        *addr_out = nic->addrs[addridx].addr;
+      if (nic->addrs[addridx].a.addr.family == family) {
+        *addr_out = nic->addrs[addridx].a.addr;
         kspin_unlock(&nic->lock);
         nic_put(nic);
         return 0;

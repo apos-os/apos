@@ -30,8 +30,11 @@ typedef struct {
 // Find a route for the given destination address.
 bool ip_route(netaddr_t dst, ip_routed_t* result);
 
-// Set the default route.
+// Set the default route for the address's address family.  Pass an AF_UNSPEC
+// address to disable the default route for the given address family.
 // TODO(aoates): support arbitrary routing rules.
-void ip_set_default_route(netaddr_t nexthop, const char* nic_name);
+void ip_set_default_route(addrfam_t family, netaddr_t nexthop,
+                          const char* nic_name);
+void ip_get_default_route(addrfam_t family, netaddr_t* nexthop, char* nic_name);
 
 #endif

@@ -19,6 +19,7 @@
 #include "net/eth/arp/arp.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
+#include "net/ip/ip6.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
 
@@ -33,7 +34,7 @@ int net_link_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb,
       return 0;
 
     case NIC_TUN:
-      return nic->ops->nic_tx(nic, pb);
+      return eth_send_raw(nic, pb);
 
     case NIC_UNKNOWN:
       break;
@@ -47,6 +48,10 @@ void net_link_recv(nic_t* nic, pbuf_t* pb, ethertype_t protocol) {
   switch (protocol) {
     case ET_IPV4:
       ip_recv(nic, pb);
+      return;
+
+    case ET_IPV6:
+      ip6_recv(nic, pb);
       return;
 
     case ET_ARP:

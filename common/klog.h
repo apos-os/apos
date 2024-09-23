@@ -77,4 +77,6 @@ int klog_read(int offset, void* buf, int len);
 // Set up initial log levels based on kernel command line args.
 void klog_init_log_levels(void);
 
+void print_stack_trace(addr_t* stack_trace, int frames);
+
 #endif

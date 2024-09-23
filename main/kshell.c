@@ -423,6 +423,7 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
   char buf[kBufSize];
   bool listen = false;
   int sock_type = SOCK_STREAM;
+  int sock_fam = AF_INET;
   const char* addr_str = NULL;
   const char* port_str = NULL;
   argc--;
@@ -431,15 +432,20 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
   while (argc > 0 && argv[0][0] == '-') {
     if (kstrcmp(argv[0], "-l") == 0) {
       listen = 1;
-      addr_str = "0.0.0.0";  // Default.
     } else if (kstrcmp(argv[0], "-u") == 0) {
       sock_type = SOCK_DGRAM;
+    } else if (kstrcmp(argv[0], "-6") == 0) {
+      sock_fam = AF_INET6;
     } else {
       ksh_printf("unknown flag '%s'\n", argv[0]);
       return;
     }
     argc--;
     argv++;
+  }
+
+  if (listen && addr_str == NULL) {
+    addr_str = (sock_fam == AF_INET) ? "0.0.0.0" : "::";
   }
 
   if (argc == 0 && !listen) {
@@ -459,21 +465,30 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
   }
 
   if (argc > 0 || !addr_str || !port_str) {
-    ksh_printf("usage: _nc [-l] [-u] [host] <port>\n");
+    ksh_printf("usage: _nc [-l] [-u] [-6] [host] <port>\n");
     return;
   }
 
-  int sock = net_socket(AF_INET, sock_type, 0);
+  int sock = net_socket(sock_fam, sock_type, 0);
   if (sock < 0) {
     ksh_printf("error: couldn't create socket: %s\n", errorname(-sock));
     return;
   }
 
   int result;
-  struct sockaddr_in saddr;
-  saddr.sin_family = AF_INET;
-  saddr.sin_addr.s_addr = str2inet(addr_str);
-  saddr.sin_port = htob16(katoi(port_str));
+  struct sockaddr_storage saddr;
+  if (sock_fam == AF_INET) {
+    saddr.sa_family = AF_INET;
+    ((struct sockaddr_in*)&saddr)->sin_addr.s_addr = str2inet(addr_str);
+  } else {
+    saddr.sa_family = AF_INET6;
+    if (str2inet6(addr_str, &(((struct sockaddr_in6*)&saddr)->sin6_addr)) !=
+        0) {
+      ksh_printf("error: invalid IPv6 address '%s'\n", addr_str);
+      goto done;
+    }
+  }
+  set_sockaddrs_port(&saddr, katoi(port_str));
   if (listen) {
     result = net_bind(sock, (struct sockaddr*)&saddr, sizeof(saddr));
     if (result < 0) {
@@ -519,7 +534,14 @@ static void nc_cmd(kshell_t* shell, int argc, char* argv[]) {
       if (result == 0) break;
       KASSERT(result > 0);
       if (sock_type == SOCK_STREAM || !listen) {
-        KASSERT(result == vfs_write(sock, buf, result));
+        int r2 = vfs_write(sock, buf, result);
+        if (r2 < 0) {
+          ksh_printf("error: unable to send bytes: %s\n", errorname(-r2));
+          goto done;
+        } else if (r2 != result) {
+          ksh_printf("error: unable to send all bytes\n");
+          goto done;
+        }
       }
     }
     if (pfds[1].revents & KPOLLIN) {

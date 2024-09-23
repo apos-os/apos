@@ -16,9 +16,10 @@
 
 #include "common/endian.h"
 #include "dev/net/nic.h"
-#include "net/eth/arp/arp_cache_ops.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip4_hdr.h"
+#include "net/mac.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/pbuf.h"
 #include "net/socket/socket.h"
 #include "net/socket/udp.h"
@@ -206,12 +207,19 @@ static void basic_rx_test(test_fixture_t* f) {
   ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
 
   KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
-  pbuf_free(pb);
 
   char buf[10];
   KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
   buf[3] = '\0';
   KEXPECT_STREQ("abc", buf);
+
+
+  KTEST_BEGIN("TUN/TAP: bad IP version packet (TUN)");
+  ip4_hdr_t* ip_hdr = (ip4_hdr_t*)pbuf_get(pb);
+  ip_hdr->version_ihl = 0x55;  // IPv5, header 5 words long.
+  KEXPECT_EQ(-EAFNOSUPPORT, vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
+  pbuf_free(pb);
 }
 
 static void* do_poll(void* arg) {
@@ -271,13 +279,14 @@ static void tun_tests(void) {
   KTEST_BEGIN("TUN: test setup");
   test_fixture_t fixture;
   apos_dev_t id;
-  nic_t* nic = tuntap_create(BUFSIZE, 0, &id);
+  nic_t* nic = tuntap_create(BUFSIZE, TUNTAP_TUN_MODE, &id);
   KEXPECT_NE(NULL, nic);
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].prefix_len = 24;
+  nic->addrs[0].a.addr.family = ADDR_INET;
+  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
@@ -287,6 +296,7 @@ static void tun_tests(void) {
 
   fixture.sock = net_socket(AF_INET, SOCK_DGRAM, 0);
   KEXPECT_GE(fixture.sock, 0);
+  vfs_make_nonblock(fixture.sock);
 
   struct sockaddr_in src = str2sin("0.0.0.0", 1234);
   KEXPECT_EQ(0, net_bind(fixture.sock, (struct sockaddr*)&src, sizeof(src)));
@@ -329,7 +339,9 @@ static void tap_tx_test(test_fixture_t* f) {
 
   // First, seed the ARP cache.
   uint8_t remote_mac[NIC_MAC_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-  arp_cache_insert(f->nic, dst.sin_addr.s_addr, remote_mac);
+  netaddr_t dst_na;
+  KEXPECT_EQ(0, sock2netaddr((struct sockaddr*)&dst, sizeof(dst), &dst_na, NULL));
+  nbr_cache_insert(f->nic, dst_na, remote_mac);
 
   KEXPECT_EQ(
       3, net_sendto(f->sock, "abc", 3, 0, (struct sockaddr*)&dst, sizeof(dst)));
@@ -343,7 +355,7 @@ static void tap_tx_test(test_fixture_t* f) {
   const eth_hdr_t* eth_hdr = (const eth_hdr_t*)buf;
   KEXPECT_EQ(ET_IPV4, btoh16(eth_hdr->ethertype));
   char macstr1[NIC_MAC_PRETTY_LEN], macstr2[NIC_MAC_PRETTY_LEN];
-  KEXPECT_STREQ(mac2str(f->nic->mac, macstr1),
+  KEXPECT_STREQ(mac2str(f->nic->mac.addr, macstr1),
                 mac2str(eth_hdr->mac_src, macstr2));
   KEXPECT_STREQ("01:02:03:04:05:06", mac2str(eth_hdr->mac_dst, macstr1));
 
@@ -378,8 +390,8 @@ static void tap_rx_test(test_fixture_t* f) {
 
   ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
 
-  uint8_t remote_mac[NIC_MAC_LEN] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
-  eth_add_hdr(pb, f->nic->mac, remote_mac, ET_IPV4);
+  nic_mac_t remote_mac = {{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}};
+  eth_add_hdr(pb, &f->nic->mac, &remote_mac, ET_IPV4);
 
   KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
   pbuf_free(pb);
@@ -388,6 +400,49 @@ static void tap_rx_test(test_fixture_t* f) {
   KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
   buf[3] = '\0';
   KEXPECT_STREQ("abc", buf);
+}
+
+static void tap_multicast_test(test_fixture_t* f) {
+  KTEST_BEGIN("TAP: basic multicast filtering test");
+
+  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(udp_hdr_t), 3);
+  kmemcpy(pbuf_get(pb), "abc", 3);
+
+  pbuf_push_header(pb, sizeof(udp_hdr_t));
+  udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
+
+  udp_hdr->src_port = htob16(5678);
+  udp_hdr->dst_port = htob16(1234);
+  udp_hdr->len = htob16(sizeof(udp_hdr_t) + 3);
+  udp_hdr->checksum = 0;
+
+  ip4_add_hdr(pb, str2inet(DST_IP), str2inet(SRC_IP), IPPROTO_UDP);
+
+  nic_mac_t remote_mac = {{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}};
+  nic_mac_t mcast_dst;
+  KEXPECT_EQ(0, str2mac("33:33:12:34:56:78", mcast_dst.addr));
+  eth_add_hdr(pb, &mcast_dst, &remote_mac, ET_IPV4);
+
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  char buf[10];
+  KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
+
+  KEXPECT_FALSE(tuntap_mc_subscribed(f->nic, &mcast_dst));
+
+  // Subscribe, and now should get it.
+  f->nic->ops->nic_mc_sub(f->nic, &mcast_dst);
+  KEXPECT_TRUE(tuntap_mc_subscribed(f->nic, &mcast_dst));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(3, vfs_read(f->sock, buf, 10));
+  buf[3] = '\0';
+  KEXPECT_STREQ("abc", buf);
+
+  // Unsubscribe, and should not get it.
+  f->nic->ops->nic_mc_unsub(f->nic, &mcast_dst);
+  KEXPECT_FALSE(tuntap_mc_subscribed(f->nic, &mcast_dst));
+  KEXPECT_EQ(pbuf_size(pb), vfs_write(f->tt_fd, pbuf_getc(pb), pbuf_size(pb)));
+  KEXPECT_EQ(-EAGAIN, vfs_read(f->sock, buf, 10));
+  pbuf_free(pb);
 }
 
 // For TAP mode, we test just the basics and assume TUN mode tests handle
@@ -401,9 +456,10 @@ static void tap_tests(void) {
   fixture.nic = nic;
 
   kspin_lock(&nic->lock);
-  nic->addrs[0].addr.family = ADDR_INET;
-  nic->addrs[0].addr.a.ip4.s_addr = str2inet(SRC_IP);
-  nic->addrs[0].prefix_len = 24;
+  nic->addrs[0].a.addr.family = ADDR_INET;
+  nic->addrs[0].a.addr.a.ip4.s_addr = str2inet(SRC_IP);
+  nic->addrs[0].a.prefix_len = 24;
+  nic->addrs[0].state = NIC_ADDR_ENABLED;
   kspin_unlock(&nic->lock);
 
   KEXPECT_EQ(0, vfs_mknod("_tuntap_test_dev", VFS_S_IFCHR | VFS_S_IRWXU, id));
@@ -420,6 +476,14 @@ static void tap_tests(void) {
 
   tap_tx_test(&fixture);
   tap_rx_test(&fixture);
+  tap_multicast_test(&fixture);
+
+  KTEST_BEGIN("TAP: create second device");
+  apos_dev_t id2;
+  nic_t* nic2 = tuntap_create(BUFSIZE, TUNTAP_TAP_MODE, &id2);
+  KEXPECT_NE(id, id2);
+  KEXPECT_NE(NULL, nic2);
+  KEXPECT_EQ(0, tuntap_destroy(id2));
 
   KTEST_BEGIN("TAP: test teardown");
   KEXPECT_EQ(0, vfs_close(fixture.sock));
@@ -434,11 +498,16 @@ void tuntap_test(void) {
   KTEST_BEGIN("TUN/TAP: bad creation args");
   apos_dev_t id;
   KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 100, &id));
-  KEXPECT_EQ(NULL, tuntap_create(0, 0, &id));
-  KEXPECT_EQ(NULL, tuntap_create(-1, 0, &id));
-  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 0, NULL));
-  KEXPECT_EQ(NULL, tuntap_create(100, 0, &id));
+  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, 0, &id));
+  KEXPECT_EQ(NULL, tuntap_create(0, TUNTAP_TAP_MODE, &id));
+  KEXPECT_EQ(NULL, tuntap_create(0, TUNTAP_TUN_MODE, &id));
+  KEXPECT_EQ(NULL, tuntap_create(-1, TUNTAP_TAP_MODE, &id));
+  KEXPECT_EQ(NULL, tuntap_create(BUFSIZE, TUNTAP_TAP_MODE, NULL));
+  KEXPECT_EQ(NULL, tuntap_create(100, TUNTAP_TAP_MODE, &id));
+  KEXPECT_EQ(NULL,
+             tuntap_create(BUFSIZE, TUNTAP_TAP_MODE | TUNTAP_TUN_MODE, &id));
 
   tun_tests();
+  // TODO(ipv6): add IPv6 TUN tests.
   tap_tests();
 }

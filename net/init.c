@@ -14,8 +14,11 @@
 
 #include "net/init.h"
 
+#include "common/kassert.h"
 #include "dev/net/loopback.h"
 #include "dev/net/nic.h"
+#include "net/ip/ip6.h"
+#include "net/ip/ip6_multicast.h"
 #include "net/ip/route.h"
 #include "net/util.h"
 #include "user/include/apos/net/socket/inet.h"
@@ -26,22 +29,33 @@ void net_init(void) {
   // TODO(aoates): do better than this.
   nic_t* lo = loopback_create();
   kspin_lock(&lo->lock);
-  lo->addrs[0].addr.family = ADDR_INET;
-  lo->addrs[0].addr.a.ip4.s_addr = str2inet("127.0.0.1");
-  lo->addrs[0].prefix_len = 8;
+  lo->addrs[0].state = NIC_ADDR_ENABLED;
+  lo->addrs[0].a.addr.family = ADDR_INET;
+  lo->addrs[0].a.addr.a.ip4.s_addr = str2inet("127.0.0.1");
+  lo->addrs[0].a.prefix_len = 8;
+
+  lo->addrs[1].state = NIC_ADDR_ENABLED;
+  lo->addrs[1].a.addr.family = ADDR_INET6;
+  KASSERT(0 == str2inet6("::1", &lo->addrs[1].a.addr.a.ip6));
+  lo->addrs[1].a.prefix_len = 128;
   kspin_unlock(&lo->lock);
 
   nic_t* nic = nic_get_nm("eth0");
   if (nic) {
     kspin_lock(&nic->lock);
-    nic->addrs[0].addr.family = ADDR_INET;
-    nic->addrs[0].addr.a.ip4.s_addr = str2inet("10.0.2.8");
-    nic->addrs[0].prefix_len = 24;
+    nic->addrs[0].state = NIC_ADDR_ENABLED;
+    nic->addrs[0].a.addr.family = ADDR_INET;
+    nic->addrs[0].a.addr.a.ip4.s_addr = str2inet("10.0.2.8");
+    nic->addrs[0].a.prefix_len = 24;
     kspin_unlock(&nic->lock);
+
+    nic_ipv6_options_t opts = *ipv6_default_nic_opts();
+    opts.dup_detection_timeout_ms = 50;
+    ipv6_enable(nic, &opts);
   }
 
   netaddr_t def;
   def.family = AF_INET;
   def.a.ip4.s_addr = str2inet("10.0.2.2");
-  ip_set_default_route(def, "eth0");
+  ip_set_default_route(ADDR_INET, def, "eth0");
 }

@@ -19,6 +19,8 @@
 #include "common/kstring.h"
 #include "common/refcount.h"
 #include "dev/net/nic.h"
+#include "net/addr.h"
+#include "proc/spinlock.h"
 
 typedef struct {
   // TODO(aoates): support network matching.
@@ -29,13 +31,48 @@ typedef struct {
 
   // The device to use.
   // TODO(aoates): make this optional (so we can use nexthop alone).
-  const char* nic_name;
+  char nic_name[NIC_MAX_NAME_LEN];
 } ip_route_rule_t;
 
-// TODO(aoates): support multiple default routes (e.g. ipv4 and ipv6).
-static ip_route_rule_t g_default_route;
+static ip_route_rule_t g_default_route_v4 = {.nexthop = {.family = AF_UNSPEC}};
+static ip_route_rule_t g_default_route_v6 = {.nexthop = {.family = AF_UNSPEC}};
 
-// TODO(aoates): write some tests for this.
+static void ip6_find_gateway(ip_route_rule_t* rule) {
+  rule->nic_name[0] = '\0';
+  rule->nexthop.family = AF_UNSPEC;
+  nic_t* nic = nic_first();
+  while (nic) {
+    kspin_lock(&nic->lock);
+    if (nic->ipv6.gateway.valid) {
+      kstrcpy(rule->nic_name, nic->name);
+      rule->nexthop.family = AF_INET6;
+      kmemcpy(&rule->nexthop.a.ip6, &nic->ipv6.gateway.addr,
+              sizeof(struct in6_addr));
+      kspin_unlock(&nic->lock);
+      nic_put(nic);
+      return;
+    }
+    kspin_unlock(&nic->lock);
+    nic_next(&nic);
+  }
+}
+
+static ip_route_rule_t* get_default_route(addrfam_t family) {
+  switch (family) {
+    case ADDR_INET:
+      return &g_default_route_v4;
+      break;
+
+    case ADDR_INET6:
+      return &g_default_route_v6;
+      break;
+
+    case ADDR_UNSPEC:
+      break;
+  }
+  return NULL;
+}
+
 bool ip_route(netaddr_t dst, ip_routed_t* result) {
   // First try to find a NIC with a matching network.
   // N.B.(aoates): this isn't totally proper routing logic, but good enough for
@@ -45,28 +82,32 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   result->nic = NULL;
   while (nic) {
     kspin_lock(&nic->lock);
-    for (int addridx = 0; addridx < NIC_MAX_ADDRS &&
-                              nic->addrs[addridx].addr.family != AF_UNSPEC;
-         addridx++) {
-      if (kmemcmp(&nic->addrs[addridx].addr, &dst, sizeof(dst)) == 0) {
+    for (int addridx = 0; addridx < NIC_MAX_ADDRS; addridx++) {
+      if (nic->addrs[addridx].state != NIC_ADDR_ENABLED) {
+        continue;
+      }
+      if (netaddr_eq(&nic->addrs[addridx].a.addr, &dst)) {
+        if (result->nic) {
+          nic_put(result->nic);
+        }
         // Sending to the NIC's own address---reroute via the loopback.
         // TODO(aoates): don't hard-code the loopback device name here.
         result->nic = nic_get_nm("lo0");
         result->nexthop = dst;
-        result->src = nic->addrs[addridx].addr;
+        result->src = nic->addrs[addridx].a.addr;
         kspin_unlock(&nic->lock);
         nic_put(nic);
         return (result->nic != NULL);
       }
-      if (nic->addrs[addridx].prefix_len > longest_prefix &&
-          netaddr_match(&dst, &nic->addrs[addridx])) {
+      if (nic->addrs[addridx].a.prefix_len > longest_prefix &&
+          netaddr_match(&dst, &nic->addrs[addridx].a)) {
         if (result->nic) {
           nic_put(result->nic);
         }
         refcount_inc(&nic->ref);
         result->nic = nic;
-        result->src = nic->addrs[addridx].addr;
-        longest_prefix = nic->addrs[addridx].prefix_len;
+        result->src = nic->addrs[addridx].a.addr;
+        longest_prefix = nic->addrs[addridx].a.prefix_len;
       }
     }
     kspin_unlock(&nic->lock);
@@ -79,15 +120,30 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
 
   // No match, use the default route if we can.
   KASSERT_DBG(result->nic == NULL);
-  if (g_default_route.nexthop.family == dst.family) {
-    result->nexthop = g_default_route.nexthop;
-    result->nic = nic_get_nm(g_default_route.nic_name);
+  const ip_route_rule_t* route_rule = get_default_route(dst.family);
+  if (!route_rule) {
+    klogfm(KL_NET, DFATAL, "Invalid address family %d passed to ip_route()\n",
+           dst.family);
+    return false;
+  }
+
+  ip_route_rule_t ip6_route_rule;
+  if (route_rule->nexthop.family == AF_UNSPEC && dst.family == AF_INET6) {
+    ip6_find_gateway(&ip6_route_rule);
+    route_rule = &ip6_route_rule;
+  }
+
+  if (route_rule->nexthop.family != AF_UNSPEC) {
+    KASSERT(route_rule->nexthop.family == dst.family);
+    result->nexthop = route_rule->nexthop;
+    result->nic = nic_get_nm(route_rule->nic_name);
     if (result->nic) {
       result->src.family = ADDR_UNSPEC;
       kspin_lock(&result->nic->lock);
       for (int i = 0; i < NIC_MAX_ADDRS; ++i) {
-        if (result->nic->addrs[i].addr.family == dst.family) {
-          result->src = result->nic->addrs[0].addr;
+        if (result->nic->addrs[i].state == NIC_ADDR_ENABLED &&
+            result->nic->addrs[i].a.addr.family == dst.family) {
+          result->src = result->nic->addrs[i].a.addr;
           break;
         }
       }
@@ -109,7 +165,31 @@ bool ip_route(netaddr_t dst, ip_routed_t* result) {
   return false;
 }
 
-void ip_set_default_route(netaddr_t nexthop, const char* nic_name) {
-  g_default_route.nexthop = nexthop;
-  g_default_route.nic_name = nic_name;
+void ip_set_default_route(addrfam_t family, netaddr_t nexthop,
+                          const char* nic_name) {
+  KASSERT(nexthop.family == AF_UNSPEC || nexthop.family == family);
+  KASSERT(kstrlen(nic_name) < NIC_MAX_NAME_LEN);
+  ip_route_rule_t* route = get_default_route(family);
+  if (route) {
+    route->nexthop = nexthop;
+    kstrcpy(route->nic_name, nic_name);
+  } else {
+    klogfm(KL_NET, DFATAL,
+           "Cannot set default route for invalid address family %d\n", family);
+  }
+}
+
+void ip_get_default_route(addrfam_t family, netaddr_t* nexthop,
+                          char* nic_name) {
+  const ip_route_rule_t* route = get_default_route(family);
+  KASSERT(route->nexthop.family == AF_UNSPEC ||
+          route->nexthop.family == family);
+  KASSERT(kstrlen(route->nic_name) < NIC_MAX_NAME_LEN);
+  if (route) {
+    *nexthop = route->nexthop;
+    kstrcpy(nic_name, route->nic_name);
+  } else {
+    klogfm(KL_NET, DFATAL,
+           "Cannot set default route for invalid address family %d\n", family);
+  }
 }

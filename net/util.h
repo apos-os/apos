@@ -17,6 +17,7 @@
 
 #include <stdbool.h>
 
+#include "common/types.h"
 #include "net/addr.h"
 #include "user/include/apos/net/socket/inet.h"
 #include "user/include/apos/net/socket/socket.h"
@@ -25,9 +26,13 @@
 // TODO(aoates): this should probably be a dynamic function of some sort (and/or
 // make it just a hint so pbuf_t can expand if necessary).
 #define INET_HEADER_RESERVE (14 /* eth */ + 20 /* ipv4 */)
+#define INET6_HEADER_RESERVE (14 /* eth */ + 40 /* ipv6 */)
 
-// Minimum length of a buffer for pretty-printing an IPv4 address.
+ssize_t inet_header_reserve(sa_family_t family);
+
+// Minimum length of a buffer for pretty-printing an IPv4/IPv6 address.
 #define INET_PRETTY_LEN (4 * 4)
+#define INET6_PRETTY_LEN (8 * 5)
 
 // TODO(aoates): should these go somewhere that can be shared with userspace
 // libraries?
@@ -40,6 +45,11 @@ in_addr_t str2inet(const char* s);
 
 // Create a sockaddr_in from an IP string and port.
 struct sockaddr_in str2sin(const char* ip, int port);
+
+// As above, but for IPv6 addresses.
+char* inet62str(const struct in6_addr* addr, char* buf);
+int str2inet6(const char* s, struct in6_addr* addr_out);
+int str2sin6(const char* ip, int port, struct sockaddr_in6* addr_out);
 
 #define SOCKADDR_PRETTY_LEN 109
 
@@ -74,6 +84,10 @@ void set_sockaddrs_port(struct sockaddr_storage* addr, in_port_t port);
 void inet_make_anyaddr(int af, struct sockaddr* addr);
 
 // Returns true if the given address is an any-addr for its family.
+bool in6_is_any(const struct in6_addr* addr);
 bool inet_is_anyaddr(const struct sockaddr* addr);
+bool netaddr_is_anyaddr(const netaddr_t* addr);
+
+bool sockaddr_equal(const struct sockaddr* A, const struct sockaddr* B);
 
 #endif

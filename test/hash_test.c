@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "common/hash.h"
+#include "common/crc.h"
 #include "common/kprintf.h"
 #include "test/hamlet.h"
 #include "test/ktest.h"
@@ -172,6 +173,26 @@ static void md5_test(void) {
                 get_md5_hash_n(kHamlet, 1000));
 }
 
+static void crc_test(void) {
+  KTEST_BEGIN("CRC32 test");
+  KEXPECT_EQ(0xe8b7be43, crc32((const uint8_t*)"a", 1, CRC32_NET_POLY));
+  KEXPECT_EQ(0xcbf43926, crc32((const uint8_t*)"123456789", 9, CRC32_NET_POLY));
+  KEXPECT_EQ(0xd202ef8d, crc32((const uint8_t*)"\0", 1, CRC32_NET_POLY));
+  KEXPECT_EQ(0xed82cd11, crc32((const uint8_t*)"abcd", 4, CRC32_NET_POLY));
+  KEXPECT_EQ(0xeb8eba67, crc32((const uint8_t*)"xyz", 3, CRC32_NET_POLY));
+  KEXPECT_EQ(0, crc32((const uint8_t*)"", 0, CRC32_NET_POLY));
+
+  KEXPECT_EQ(0x3d8212e8, ether_crc32((const uint8_t*)"a", 1));
+  KEXPECT_EQ(0x9b63d02c, ether_crc32((const uint8_t*)"123456789", 9));
+  KEXPECT_EQ(0x4e08bfb4, ether_crc32((const uint8_t*)"\0", 1));
+  KEXPECT_EQ(0x774cbe48, ether_crc32((const uint8_t*)"abcd", 4));
+  KEXPECT_EQ(0x19a28e28, ether_crc32((const uint8_t*)"xyz", 3));
+  KEXPECT_EQ(0xffffffff, ether_crc32((const uint8_t*)"", 0));
+
+  uint8_t mac[] = {0x33, 0x33, 0xff, 0x00, 0x00, 0x01};
+  KEXPECT_EQ(0x76fb0ac1, ether_crc32(mac, 6));
+}
+
 void hash_test(void) {
   KTEST_SUITE_BEGIN("hash test");
 
@@ -181,4 +202,7 @@ void hash_test(void) {
 
   KTEST_SUITE_BEGIN("MD5 hash test");
   md5_test();
+
+  KTEST_SUITE_BEGIN("CRC tests");
+  crc_test();
 }

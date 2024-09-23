@@ -28,7 +28,8 @@ void tcp_init(void);
 // is returned, the caller retains ownership of the packet.
 //
 // Deferred-interrupt safe.
-bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol);
+bool sock_tcp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
+                       ssize_t header_len);
 
 // Returns the number of connected TCP sockets.
 int tcp_num_connected_sockets(void);

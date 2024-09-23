@@ -17,7 +17,11 @@
 
 #include <stdint.h>
 
+#include "net/mac.h"
+
 #define ETH_MAC_LEN 6
+_Static_assert(NIC_MAC_LEN >= ETH_MAC_LEN,
+               "Cannot store an ETH MAC in a NIC MAC");
 
 // Copy the broadcast address into the given buffer.
 void eth_mkbroadcast(uint8_t* mac);

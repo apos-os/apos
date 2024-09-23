@@ -54,10 +54,10 @@ int net_socket_create(int domain, int type, int protocol, socket_t** out) {
     result = sock_raw_create(domain, protocol, out);
   } else if (domain == AF_UNIX) {
     result = sock_unix_create(type, protocol, out);
-  } else if (domain == AF_INET) {
+  } else if (domain == AF_INET || domain == AF_INET6) {
     if (type == SOCK_DGRAM) {
       if (protocol == 0 || protocol == IPPROTO_UDP) {
-        result = sock_udp_create(out);
+        result = sock_udp_create(domain, out);
       } else {
         result = -EPROTONOSUPPORT;
       }
@@ -262,7 +262,7 @@ ssize_t net_sendto(int socket, const void* buf, size_t len, int flags,
   return result;
 }
 
-int net_getsockname(int socket, struct sockaddr* address) {
+int net_getsockname(int socket, struct sockaddr_storage* address) {
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;
@@ -279,7 +279,7 @@ int net_getsockname(int socket, struct sockaddr* address) {
   return result;
 }
 
-int net_getpeername(int socket, struct sockaddr* address) {
+int net_getpeername(int socket, struct sockaddr_storage* address) {
   file_t* file = 0x0;
   int result = lookup_fd(socket, &file);
   if (result) return result;

@@ -17,6 +17,7 @@
 #include "common/attributes.h"
 #include "common/errno.h"
 #include "common/hash.h"
+#include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -29,6 +30,8 @@
 #include "memory/kmalloc.h"
 #include "net/eth/eth.h"
 #include "net/ip/ip.h"
+#include "net/ip/ip6.h"
+#include "net/mac.h"
 #include "net/pbuf.h"
 #include "proc/kthread.h"
 #include "proc/scheduler.h"
@@ -40,7 +43,7 @@
 #define KLOG(lvl, msg, ...) klogfm(KL_NET, lvl, "tuntap: " msg, __VA_ARGS__)
 
 #define MIN_BUFSIZE 128
-#define ALL_FLAGS (TUNTAP_TAP_MODE)
+#define ALL_FLAGS (TUNTAP_TAP_MODE | TUNTAP_TUN_MODE)
 
 typedef struct {
   nic_t nic;
@@ -49,9 +52,11 @@ typedef struct {
   ssize_t bufsize;
   int flags;
 
+  // TODO(aoates): replace this with the base nic_t lock.
   kspinlock_t lock;
   list_t tx;
   ssize_t tx_queued;
+  htbl_t multicast;
 
   poll_event_t poll_event;
   kthread_queue_t wait;
@@ -65,21 +70,25 @@ static void gen_random_mac(nic_t* nic) {
   uint32_t rand = fnv_hash_addr((addr_t)nic);
   rand = fnv_hash_concat(rand, fnv_hash_string(nic->name));
   rand = fnv_hash_concat(rand, fnv_hash(get_time_ms()));
-  nic->mac[0] = 2;  // Locally-administered bit.
-  nic->mac[1] = rand;
-  nic->mac[2] = rand >> 8;
-  nic->mac[3] = rand >> 16;
-  nic->mac[4] = rand >> 24;
-  nic->mac[5] = fnv_hash(rand);
+  nic->mac.addr[0] = 2;  // Locally-administered bit.
+  nic->mac.addr[1] = rand;
+  nic->mac.addr[2] = rand >> 8;
+  nic->mac.addr[3] = rand >> 16;
+  nic->mac.addr[4] = rand >> 24;
+  nic->mac.addr[5] = fnv_hash(rand);
 }
 
 // NIC operations.
 static int tuntap_nic_tx(nic_t* nic, pbuf_t* buf);
 static void tuntap_nic_cleanup(nic_t* nic);
+static void tuntap_mc_sub(nic_t* nic, const nic_mac_t* mac);
+static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac);
 
 static nic_ops_t tuntap_nic_ops = {
   &tuntap_nic_tx,
   &tuntap_nic_cleanup,
+  &tuntap_mc_sub,
+  &tuntap_mc_unsub,
 };
 
 // Chardev operations.
@@ -104,6 +113,14 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
     KLOG(INFO, "unsupported flags 0x%x\n", flags);
     return NULL;
   }
+  if (!(flags & TUNTAP_TAP_MODE) && !(flags & TUNTAP_TUN_MODE)) {
+    KLOG(INFO, "bad flags (must set TAP OR TUN mode): 0x%x\n", flags);
+    return NULL;
+  }
+  if ((flags & TUNTAP_TAP_MODE) && (flags & TUNTAP_TUN_MODE)) {
+    KLOG(INFO, "incompatible flags (TAP and TUN mode): 0x%x\n", flags);
+    return NULL;
+  }
   if (bufsize <= MIN_BUFSIZE || !id) {
     return NULL;
   }
@@ -114,11 +131,13 @@ nic_t* tuntap_create(ssize_t bufsize, int flags, apos_dev_t* id) {
   tt->lock = KSPINLOCK_NORMAL_INIT;
   tt->tx = LIST_INIT;
   tt->tx_queued = 0;
+  htbl_init(&tt->multicast, 5);
   kthread_queue_init(&tt->wait);
   poll_init_event(&tt->poll_event);
 
   // Create the character device first.
-  tt->dev_id = kmakedev(is_tap(tt) ? DEVICE_MAJOR_TAP : DEVICE_MAJOR_TUN, 0);
+  tt->dev_id = kmakedev(is_tap(tt) ? DEVICE_MAJOR_TAP : DEVICE_MAJOR_TUN,
+                        DEVICE_ID_UNKNOWN);
   tt->chardev.read = &tuntap_cd_read;
   tt->chardev.write = &tuntap_cd_write;
   tt->chardev.poll = &tuntap_cd_poll;
@@ -197,7 +216,38 @@ static void tuntap_nic_cleanup(nic_t* nic) {
     pbuf_free(pb);
   }
   KASSERT_DBG(tt->tx_queued == 0);
+  htbl_cleanup(&tt->multicast);
   kfree(tt);
+}
+
+static void tuntap_mc_sub(nic_t* nic, const nic_mac_t* mac) {
+  tuntap_dev_t* tt = (tuntap_dev_t*)nic;
+  kspin_lock(&tt->lock);
+  htbl_put(&tt->multicast, fnv_hash_array(mac->addr, NIC_MAC_LEN), NULL);
+  kspin_unlock(&tt->lock);
+}
+
+static void tuntap_mc_unsub(nic_t* nic, const nic_mac_t* mac) {
+  tuntap_dev_t* tt = (tuntap_dev_t*)nic;
+  uint32_t hash = fnv_hash_array(mac->addr, NIC_MAC_LEN);
+  kspin_lock(&tt->lock);
+  if (htbl_remove(&tt->multicast, hash) != 0) {
+    KLOG(
+        WARNING,
+        "TUN/TAP: unable to unsubscribe to MAC addr on %s (not subscribed)\n",
+        nic->name);
+  }
+  kspin_unlock(&tt->lock);
+}
+
+bool tuntap_mc_subscribed(nic_t* nic, const nic_mac_t* mac) {
+  tuntap_dev_t* tt = (tuntap_dev_t*)nic;
+  kspin_lock(&tt->lock);
+  void* unused_val;
+  int result = htbl_get(&tt->multicast, fnv_hash_array(mac->addr, NIC_MAC_LEN),
+                        &unused_val);
+  kspin_unlock(&tt->lock);
+  return (result == 0);
 }
 
 static int tuntap_cd_read(struct char_dev* dev, void* buf, size_t len,
@@ -236,12 +286,37 @@ static int tuntap_cd_write(struct char_dev* dev, const void* buf, size_t len,
                            int flags) {
   tuntap_dev_t* tt = (tuntap_dev_t*)dev->dev_data;
   KASSERT_DBG(&tt->chardev == dev);
-  pbuf_t* pb = pbuf_create(0, len);
+  pbuf_t* pb = pbuf_create(sizeof(eth_hdr_t) /* unused */, len);
   kmemcpy(pbuf_get(pb), buf, len);
   if (is_tap(tt)) {
+    const eth_hdr_t* eth_hdr = (const eth_hdr_t*)pbuf_getc(pb);
+    if (eth_hdr->mac_dst[0] & 0x01) {
+      uint32_t hash = fnv_hash_array(eth_hdr->mac_dst, NIC_MAC_LEN);
+      kspin_lock(&tt->lock);
+      void* unused_val;
+      bool allow = (htbl_get(&tt->multicast, hash, &unused_val) == 0);
+      kspin_unlock(&tt->lock);
+      if (!allow) {
+        char mac_pretty[NIC_MAC_PRETTY_LEN];
+        KLOG(DEBUG2, "TAP: ignoring multicast packet to %s\n",
+             mac2str(eth_hdr->mac_dst, mac_pretty));
+        pbuf_free(pb);
+        return len;
+      }
+    }
     eth_recv(&tt->nic, pb);
   } else {
-    ip_recv(&tt->nic, pb);
+    int version = ((uint8_t*)buf)[0] >> 4;
+    if (version == 4) {
+      ip_recv(&tt->nic, pb);
+    } else if (version == 6) {
+      ip6_recv(&tt->nic, pb);
+    } else {
+      KLOG(WARNING, "TUN: bad IP packet version %d, dropping packet\n",
+           version);
+      pbuf_free(pb);
+      return -EAFNOSUPPORT;
+    }
   }
   return len;
 }

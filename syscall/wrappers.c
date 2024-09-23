@@ -141,7 +141,7 @@ int getsockname_wrapper(int socket, struct sockaddr* address, socklen_t* len) {
     return -EINVAL;
   }
 
-  int result = net_getsockname(socket, (struct sockaddr*)&KERNEL_address);
+  int result = net_getsockname(socket, &KERNEL_address);
   if (result < 0) {
     return result;
   }
@@ -158,7 +158,7 @@ int getpeername_wrapper(int socket, struct sockaddr* address, socklen_t* len) {
     return -EINVAL;
   }
 
-  int result = net_getpeername(socket, (struct sockaddr*)&KERNEL_address);
+  int result = net_getpeername(socket, &KERNEL_address);
   if (result < 0) {
     return result;
   }

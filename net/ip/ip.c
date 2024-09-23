@@ -127,10 +127,11 @@ void ip_recv(nic_t* nic, pbuf_t* pb) {
        hdr->protocol);
 
   bool handled = false;
+  ssize_t header_len = ip4_ihl(*hdr) * sizeof(uint32_t);
   if (hdr->protocol == IPPROTO_UDP) {
-    handled = sock_udp_dispatch(pb, ET_IPV4, hdr->protocol);
+    handled = sock_udp_dispatch(pb, ET_IPV4, hdr->protocol, header_len);
   } else if (hdr->protocol == IPPROTO_TCP) {
-    handled = sock_tcp_dispatch(pb, ET_IPV4, hdr->protocol);
+    handled = sock_tcp_dispatch(pb, ET_IPV4, hdr->protocol, header_len);
   }
   // pb is now a dangling pointer unless handled is false!
 

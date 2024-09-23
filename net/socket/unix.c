@@ -458,7 +458,7 @@ ssize_t sock_unix_sendto(socket_t* socket_base, int fflags, const void* buffer,
 }
 
 static int sock_unix_getsockname(socket_t* socket_base,
-                                 struct sockaddr* address) {
+                                 struct sockaddr_storage* address) {
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 
@@ -467,7 +467,7 @@ static int sock_unix_getsockname(socket_t* socket_base,
 }
 
 static int sock_unix_getpeername(socket_t* socket_base,
-                                 struct sockaddr* address) {
+                                 struct sockaddr_storage* address) {
   KASSERT(socket_base->s_domain == AF_UNIX);
   socket_unix_t* const socket = (socket_unix_t*)socket_base;
 

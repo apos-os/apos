@@ -26,7 +26,8 @@
 #include "net/ip/checksum.h"
 #include "net/ip/ip.h"
 #include "net/ip/ip4_hdr.h"
-#include "net/ip/route.h"
+#include "net/ip/ip6.h"
+#include "net/ip/ip6_hdr.h"
 #include "net/ip/util.h"
 #include "net/pbuf.h"
 #include "net/socket/sockmap.h"
@@ -43,13 +44,11 @@ static const ip4_hdr_t* pb_ip4_hdr(const pbuf_t* pb) {
   return (const ip4_hdr_t*)pbuf_getc(pb);
 }
 
-static int pb_ip4_hdr_len(const pbuf_t* pb) {
-  const ip4_hdr_t* ip_hdr = pb_ip4_hdr(pb);
-  return ip4_ihl(*ip_hdr) * sizeof(uint32_t);
+static const ip6_hdr_t* pb_ip6_hdr(const pbuf_t* pb) {
+  return (const ip6_hdr_t*)pbuf_getc(pb);
 }
 
-static const udp_hdr_t* pb_udp_hdr(const pbuf_t* pb) {
-  const size_t ip_hdr_len = pb_ip4_hdr_len(pb);
+static const udp_hdr_t* pb_udp_hdr(const pbuf_t* pb, ssize_t ip_hdr_len) {
   return (const udp_hdr_t*)(pbuf_getc(pb) + ip_hdr_len);
 }
 
@@ -59,7 +58,7 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
 static int bind_to_any(socket_udp_t* socket, const struct sockaddr* dst_addr) {
   KASSERT(dst_addr->sa_family == AF_UNSPEC ||
           dst_addr->sa_family == (addrfam_t)socket->base.s_domain);
-  struct sockaddr_in bind_addr;
+  struct sockaddr_storage bind_addr;
   inet_make_anyaddr(socket->base.s_domain, (struct sockaddr*)&bind_addr);
   return sock_udp_bind(&socket->base, (struct sockaddr*)&bind_addr,
                        sizeof(bind_addr));
@@ -74,11 +73,15 @@ static short udp_poll_events(const socket_udp_t* socket) {
   return events;
 }
 
-int sock_udp_create(socket_t** out) {
+int sock_udp_create(int domain, socket_t** out) {
+  if (domain != AF_INET && domain != AF_INET6) {
+    return -EAFNOSUPPORT;
+  }
+
   socket_udp_t* sock = (socket_udp_t*)kmalloc(sizeof(socket_udp_t));
   if (!sock) return -ENOMEM;
 
-  sock->base.s_domain = AF_INET;
+  sock->base.s_domain = domain;
   sock->base.s_type = SOCK_DGRAM;
   sock->base.s_protocol = IPPROTO_UDP;
   sock->base.s_ops = &g_udp_socket_ops;
@@ -93,10 +96,9 @@ int sock_udp_create(socket_t** out) {
   return 0;
 }
 
-bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
-  KASSERT_DBG(ethertype == ET_IPV4);
-  KASSERT_DBG(protocol == IPPROTO_UDP);
-
+static bool check_inbound_ipv4(pbuf_t* pb, ssize_t header_len,
+                               struct sockaddr_storage* src,
+                               struct sockaddr_storage* dst) {
   // Validate the packet.
   KASSERT_DBG(pbuf_size(pb) >= sizeof(ip4_hdr_t));
   if (pbuf_size(pb) < sizeof(ip4_hdr_t) + sizeof(udp_hdr_t)) {
@@ -104,12 +106,14 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     return false;
   }
   const ip4_hdr_t* ip_hdr = pb_ip4_hdr(pb);
-  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);
+  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb, header_len);
+  KASSERT((size_t)header_len == ip4_ihl(*ip_hdr) * sizeof(uint32_t));
+  KASSERT(header_len >= (ssize_t)sizeof(ip4_hdr_t));
 
   KASSERT_DBG(btoh16(ip_hdr->total_len) >=
               sizeof(ip4_hdr_t) + sizeof(udp_hdr_t));
   if (btoh16(udp_hdr->len) < sizeof(udp_hdr_t) ||
-      btoh16(udp_hdr->len) > btoh16(ip_hdr->total_len) - pb_ip4_hdr_len(pb)) {
+      btoh16(udp_hdr->len) > btoh16(ip_hdr->total_len) - header_len) {
     klogfm(KL_NET, DEBUG, "net: dropping UDP packet with invalid size\n");
     return false;
   }
@@ -123,9 +127,7 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
     pseudo_ip.protocol = IPPROTO_UDP;
     pseudo_ip.length = udp_hdr->len;
 
-    KASSERT_DBG((size_t)pb_ip4_hdr_len(pb) >= sizeof(ip4_hdr_t));
-    KASSERT_DBG(pbuf_size(pb) >=
-                btoh16(udp_hdr->len) + (size_t)pb_ip4_hdr_len(pb));
+    KASSERT_DBG((ssize_t)pbuf_size(pb) >= btoh16(udp_hdr->len) + header_len);
     uint16_t checksum = ip_checksum2(&pseudo_ip, sizeof(pseudo_ip),
                                      /* really UDP header _and_ data */ udp_hdr,
                                      btoh16(udp_hdr->len));
@@ -136,13 +138,92 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   }
 
   // Find a matching socket.
-  struct sockaddr_in dst_addr;
-  dst_addr.sin_family = AF_INET;
-  dst_addr.sin_addr.s_addr = ip_hdr->dst_addr;
-  dst_addr.sin_port = udp_hdr->dst_port;
+  struct sockaddr_in* src_addr = (struct sockaddr_in*)src;
+  src_addr->sin_family = AF_INET;
+  src_addr->sin_addr.s_addr = ip_hdr->src_addr;
+  src_addr->sin_port = udp_hdr->src_port;
+
+  struct sockaddr_in* dst_addr = (struct sockaddr_in*)dst;
+  dst_addr->sin_family = AF_INET;
+  dst_addr->sin_addr.s_addr = ip_hdr->dst_addr;
+  dst_addr->sin_port = udp_hdr->dst_port;
+
+  return true;
+}
+
+static bool check_inbound_ipv6(pbuf_t* pb, ssize_t header_len,
+                               struct sockaddr_storage* src,
+                               struct sockaddr_storage* dst) {
+  // Validate the packet.
+  KASSERT_DBG(pbuf_size(pb) >= sizeof(ip6_hdr_t));
+  KASSERT_DBG((ssize_t)pbuf_size(pb) >= header_len);
+  KASSERT_DBG(header_len >= (ssize_t)sizeof(ip6_hdr_t));
+  const ip6_hdr_t* ip_hdr = (const ip6_hdr_t*)pbuf_getc(pb);
+
+  // These should be enforced by the IP validation.
+  KASSERT(btoh16(ip_hdr->payload_len) + header_len <= (ssize_t)pbuf_size(pb));
+  if (btoh16(ip_hdr->payload_len) < sizeof(udp_hdr_t)) {
+    klogfm(KL_NET, DEBUG, "net: dropping truncated UDP packet\n");
+    return false;
+  }
+  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb, header_len);
+  if (btoh16(udp_hdr->len) < sizeof(udp_hdr_t) ||
+      btoh16(udp_hdr->len) > pbuf_size(pb) - header_len) {
+    klogfm(KL_NET, DEBUG, "net: dropping UDP packet with invalid size\n");
+    return false;
+  }
+
+  // Validate the checksum, if present.
+  if (udp_hdr->checksum != 0) {
+    ip6_pseudo_hdr_t pseudo_ip;
+    pseudo_ip.src_addr = ip_hdr->src_addr;
+    pseudo_ip.dst_addr = ip_hdr->dst_addr;
+    pseudo_ip.next_hdr = IPPROTO_UDP;
+    pseudo_ip.payload_len = udp_hdr->len;
+    kmemset(&pseudo_ip._zeroes, 0, 3);
+
+    KASSERT_DBG((ssize_t)pbuf_size(pb) >= btoh16(udp_hdr->len) + header_len);
+    uint16_t checksum = ip_checksum2(&pseudo_ip, sizeof(pseudo_ip),
+                                     /* really UDP header _and_ data */ udp_hdr,
+                                     btoh16(udp_hdr->len));
+    if (checksum != 0) {
+      klogfm(KL_NET, DEBUG, "net: dropping UDP packet with bad checksum\n");
+      return false;
+    }
+  }
+
+  // Find a matching socket.
+  struct sockaddr_in6* src_addr = (struct sockaddr_in6*)src;
+  src_addr->sin6_family = AF_INET6;
+  src_addr->sin6_addr = ip_hdr->src_addr;
+  src_addr->sin6_port = udp_hdr->src_port;
+
+  struct sockaddr_in6* dst_addr = (struct sockaddr_in6*)dst;
+  dst_addr->sin6_family = AF_INET6;
+  dst_addr->sin6_addr = ip_hdr->dst_addr;
+  dst_addr->sin6_port = udp_hdr->dst_port;
+
+  return true;
+}
+
+bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol,
+                       ssize_t header_len) {
+  KASSERT(protocol == IPPROTO_UDP);
+
+  struct sockaddr_storage src_addr, dst_addr;
+  if (ethertype == ET_IPV4) {
+    if (!check_inbound_ipv4(pb, header_len, &src_addr, &dst_addr)) {
+      return false;
+    }
+  } else {
+    KASSERT(ethertype == ET_IPV6);
+    if (!check_inbound_ipv6(pb, header_len, &src_addr, &dst_addr)) {
+      return false;
+    }
+  }
 
   DEFINT_PUSH_AND_DISABLE();
-  sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
+  sockmap_t* sm = net_get_sockmap(dst_addr.sa_family, IPPROTO_UDP);
   socket_t* socket_base = sockmap_find(sm, (const struct sockaddr*)&dst_addr);
   if (!socket_base) {
     DEFINT_POP();
@@ -155,15 +236,16 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
   // If the socket is connected, the source address must exactly match the
   // connected-to address.
   if (socket->connected_addr.sa_family != AF_UNSPEC) {
-    if (socket->connected_addr.sa_family != AF_INET ||
-        ((struct sockaddr_in*)&socket->connected_addr)->sin_addr.s_addr !=
-            ip_hdr->src_addr ||
-        ((struct sockaddr_in*)&socket->connected_addr)->sin_port !=
-            udp_hdr->src_port) {
+    if (!sockaddr_equal((struct sockaddr*)&socket->connected_addr,
+                        (struct sockaddr*)&src_addr)) {
       DEFINT_POP();
       return false;
     }
   }
+
+  // We own the pbuf now, add 4 bytes to store the header length.
+  pbuf_push_header(pb, 4);
+  *(uint32_t*)pbuf_get(pb) = header_len;
 
   list_push(&socket->rx_queue, &pb->link);
   scheduler_wake_one(&socket->wait_queue);
@@ -174,7 +256,8 @@ bool sock_udp_dispatch(pbuf_t* pb, ethertype_t ethertype, int protocol) {
 }
 
 static void sock_udp_cleanup(socket_t* socket_base) {
-  KASSERT_DBG(socket_base->s_domain == AF_INET);
+  KASSERT_DBG(socket_base->s_domain == AF_INET ||
+              socket_base->s_domain == AF_INET6);
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   KASSERT_DBG(socket_base->s_protocol == IPPROTO_UDP);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
@@ -223,11 +306,15 @@ static int sock_udp_bind(socket_t* socket_base, const struct sockaddr* address,
   if (result == -EAFNOSUPPORT) return result;
   else if (result) return -EADDRNOTAVAIL;
 
+  if ((addrfam_t)socket->base.s_domain != naddr.family) {
+    return -EAFNOSUPPORT;
+  }
+
   result = inet_bindable(&naddr);
   if (result) return result;
 
   DEFINT_PUSH_AND_DISABLE();
-  sockmap_t* sm = net_get_sockmap(AF_INET, IPPROTO_UDP);
+  sockmap_t* sm = net_get_sockmap(naddr.family, IPPROTO_UDP);
   if (naddr_port == 0) {
     in_port_t free_port = sockmap_free_port(sm, address);
     if (free_port == 0) {
@@ -325,15 +412,29 @@ static ssize_t sock_udp_recvfrom(socket_t* socket_base, int fflags,
   DEFINT_POP();
 
   pbuf_t* pb = container_of(link, pbuf_t, link);
-  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb);
+  uint32_t header_len = *(uint32_t*)pbuf_getc(pb);
+  pbuf_pop_header(pb, 4);
+  const udp_hdr_t* udp_hdr = pb_udp_hdr(pb, header_len);
 
   if (address && address_len) {
-    struct sockaddr_in src_addr;
-    src_addr.sin_family = AF_INET;
-    src_addr.sin_addr.s_addr = pb_ip4_hdr(pb)->src_addr;
-    src_addr.sin_port = udp_hdr->src_port;
-    kmemcpy(address, &src_addr, min(sizeof(src_addr), (size_t)*address_len));
-    *address_len = sizeof(struct sockaddr_in);
+    struct sockaddr_storage src_addr;
+    if (socket_base->s_domain == AF_INET) {
+      struct sockaddr_in* src_addr_v4 = (struct sockaddr_in*)&src_addr;
+      src_addr_v4->sin_family = AF_INET;
+      src_addr_v4->sin_addr.s_addr = pb_ip4_hdr(pb)->src_addr;
+      src_addr_v4->sin_port = udp_hdr->src_port;
+    } else {
+      KASSERT(socket_base->s_domain == AF_INET6);
+      struct sockaddr_in6* src_addr_v6 = (struct sockaddr_in6*)&src_addr;
+      src_addr_v6->sin6_family = AF_INET6;
+      src_addr_v6->sin6_addr = pb_ip6_hdr(pb)->src_addr;
+      src_addr_v6->sin6_port = udp_hdr->src_port;
+      src_addr_v6->sin6_flowinfo = 0;
+      src_addr_v6->sin6_scope_id = 0;
+    }
+    kmemcpy(address, &src_addr,
+            min(sizeof_sockaddr(src_addr.sa_family), *address_len));
+    *address_len = sizeof_sockaddr(src_addr.sa_family);
   }
 
   size_t bytes_to_copy = min(length, btoh16(udp_hdr->len) - sizeof(udp_hdr_t));
@@ -357,12 +458,17 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
     }
     actual_dst = dest_addr;
     actual_dst_len = dest_len;
-    if (dest_len < (socklen_t)sizeof(struct sockaddr_in) ||
-        actual_dst->sa_family != AF_INET) {
+    KASSERT(actual_dst_len >=
+            (socklen_t)sizeof(sa_family_t));  // Checked by net_sendto()
+    if (actual_dst->sa_family != (sa_family_t)socket_base->s_domain) {
       return -EAFNOSUPPORT;
     }
+    if (dest_len < sizeof_sockaddr(actual_dst->sa_family)) {
+      return -EINVAL;
+    }
   } else if (socket->connected_addr.sa_family != AF_UNSPEC) {
-    KASSERT_DBG(socket->connected_addr.sa_family == AF_INET);
+    KASSERT_DBG(socket->connected_addr.sa_family == AF_INET ||
+                socket->connected_addr.sa_family == AF_INET6);
     actual_dst = (struct sockaddr*)&socket->connected_addr;
     actual_dst_len = sizeof(struct sockaddr_storage);
   } else {
@@ -378,18 +484,18 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
   }
 
   // Pick an IP to send from.
-  struct sockaddr_in* src = (struct sockaddr_in*)&socket->bind_addr;
+  struct sockaddr_storage* src = &socket->bind_addr;
   struct sockaddr_storage src_if_any;
-  if (src->sin_addr.s_addr == INADDR_ANY) {
+  if (inet_is_anyaddr((struct sockaddr*)src)) {
     int result = ip_pick_src(actual_dst, actual_dst_len, &src_if_any);
     if (result) return result;
-    KASSERT(src_if_any.sa_family == AF_INET);
-    src = (struct sockaddr_in*)&src_if_any;
-    src->sin_port = ((struct sockaddr_in*)&socket->bind_addr)->sin_port;
+    src = &src_if_any;
+    set_sockaddrs_port(src, get_sockaddrs_port(&socket->bind_addr));
   }
 
   // Actually generate and send the packet.
-  pbuf_t* pb = pbuf_create(INET_HEADER_RESERVE + sizeof(udp_hdr_t), length);
+  pbuf_t* pb = pbuf_create(
+      inet_header_reserve(socket_base->s_domain) + sizeof(udp_hdr_t), length);
   if (!pb) {
     return -ENOMEM;
   }
@@ -398,40 +504,65 @@ static ssize_t sock_udp_sendto(socket_t* socket_base, int fflags,
   kmemcpy(pbuf_get(pb), buffer, length);
   pbuf_push_header(pb, sizeof(udp_hdr_t));
   udp_hdr_t* udp_hdr = (udp_hdr_t*)pbuf_get(pb);
-  KASSERT_DBG(src->sin_family == AF_INET);
-  KASSERT_DBG(actual_dst->sa_family == AF_INET);
-  udp_hdr->src_port = src->sin_port;
-  udp_hdr->dst_port = ((struct sockaddr_in*)actual_dst)->sin_port;
+  KASSERT_DBG(src->sa_family == (sa_family_t)socket_base->s_domain);
+  KASSERT_DBG(actual_dst->sa_family == (sa_family_t)socket_base->s_domain);
+  udp_hdr->src_port = btoh16(get_sockaddrs_port(src));
+  udp_hdr->dst_port = btoh16(get_sockaddr_port(actual_dst, actual_dst_len));
   udp_hdr->len = htob16(sizeof(udp_hdr_t) + length);
   udp_hdr->checksum = 0;
 
-  // Calculate the checksum.
-  ip4_pseudo_hdr_t pseudo_ip;
-  pseudo_ip.src_addr = src->sin_addr.s_addr;
-  pseudo_ip.dst_addr = ((struct sockaddr_in*)actual_dst)->sin_addr.s_addr;
-  pseudo_ip.zeroes = 0;
-  pseudo_ip.protocol = IPPROTO_UDP;
-  pseudo_ip.length = udp_hdr->len;
+  if (socket_base->s_domain == AF_INET) {
+    // Calculate the checksum.
+    const struct sockaddr_in* src_v4 = (const struct sockaddr_in*)src;
+    const struct sockaddr_in* dst_v4 = (const struct sockaddr_in*)actual_dst;
+    ip4_pseudo_hdr_t pseudo_ip;
+    pseudo_ip.src_addr = src_v4->sin_addr.s_addr;
+    pseudo_ip.dst_addr = dst_v4->sin_addr.s_addr;
+    pseudo_ip.zeroes = 0;
+    pseudo_ip.protocol = IPPROTO_UDP;
+    pseudo_ip.length = udp_hdr->len;
 
-  udp_hdr->checksum =
-      ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
-  if (udp_hdr->checksum == 0) udp_hdr->checksum = 0xffff;
+    udp_hdr->checksum =
+        ip_checksum2(&pseudo_ip, sizeof(pseudo_ip), pbuf_get(pb), pbuf_size(pb));
+    if (udp_hdr->checksum == 0) udp_hdr->checksum = 0xffff;
 
-  ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
-  int result = ip_send(pb, /* allow_block */ true);
-  if (result < 0) {
-    return result;
+    ip4_add_hdr(pb, pseudo_ip.src_addr, pseudo_ip.dst_addr, IPPROTO_UDP);
+    int result = ip_send(pb, /* allow_block */ true);
+    if (result < 0) {
+      return result;
+    }
+  } else {
+    KASSERT(socket_base->s_domain == AF_INET6);
+    // Calculate the checksum.
+    const struct sockaddr_in6* src_v6 = (const struct sockaddr_in6*)src;
+    const struct sockaddr_in6* dst_v6 = (const struct sockaddr_in6*)actual_dst;
+    ip6_pseudo_hdr_t pseudo_ip;
+    pseudo_ip.src_addr = src_v6->sin6_addr;
+    pseudo_ip.dst_addr = dst_v6->sin6_addr;
+    kmemset(&pseudo_ip._zeroes, 0, 3);
+    pseudo_ip.next_hdr = IPPROTO_UDP;
+    pseudo_ip.payload_len = htob32(btoh16(udp_hdr->len));
+
+    udp_hdr->checksum = ip_checksum2(&pseudo_ip, sizeof(pseudo_ip),
+                                     pbuf_get(pb), pbuf_size(pb));
+    if (udp_hdr->checksum == 0) udp_hdr->checksum = 0xffff;
+
+    ip6_add_hdr(pb, &pseudo_ip.src_addr, &pseudo_ip.dst_addr, IPPROTO_UDP, 0);
+    int result = ip6_send(pb, /* allow_block */ true);
+    if (result < 0) {
+      return result;
+    }
   }
   return length;
 }
 
 static int sock_udp_getsockname(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
   if (socket->bind_addr.sa_family == AF_UNSPEC) {
     // We haven't bound yet.
-    inet_make_anyaddr(socket_base->s_domain, address);
+    inet_make_anyaddr(socket_base->s_domain, (struct sockaddr*)address);
   } else {
     kmemcpy(address, &socket->bind_addr, sizeof(socket->bind_addr));
   }
@@ -439,7 +570,7 @@ static int sock_udp_getsockname(socket_t* socket_base,
 }
 
 static int sock_udp_getpeername(socket_t* socket_base,
-                                struct sockaddr* address) {
+                                struct sockaddr_storage* address) {
   KASSERT_DBG(socket_base->s_type == SOCK_DGRAM);
   socket_udp_t* socket = (socket_udp_t*)socket_base;
   if (socket->connected_addr.sa_family == AF_UNSPEC) {

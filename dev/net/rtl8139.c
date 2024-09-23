@@ -13,8 +13,11 @@
 // limitations under the License.
 
 #include "arch/dev/irq.h"
+#include "common/crc.h"
 #include "common/endian.h"
 #include "common/errno.h"
+#include "common/hash.h"
+#include "common/hashtable.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
@@ -25,7 +28,9 @@
 #include "memory/memory.h"
 #include "memory/page_alloc.h"
 #include "net/eth/eth.h"
+#include "net/mac.h"
 #include "proc/defint.h"
+#include "proc/spinlock.h"
 #include "util/flag_printf.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
@@ -35,6 +40,11 @@ static nic_ops_t rtl_ops;
 #define RTL_NUM_TX_DESCS 4
 
 #define DWORD_ALIGN(x) (((x) + 3) & ~0x3)
+
+typedef struct {
+  nic_mac_t addr;
+  int refs;
+} rtl_multicast_t;
 
 // TODO(aoates): lots of parts of this are touched in an interrupt context---go
 // through and ensure the appropriate memory barriers are in place.
@@ -46,6 +56,7 @@ typedef struct {
   int txdesc;
   void* txbuf[RTL_NUM_TX_DESCS];
   bool txbuf_active[RTL_NUM_TX_DESCS];
+  htbl_t multicast_addrs;  // MAC -> rtl_multicast_t* map.
 } rtl8139_t;
 
 // PCI configuration registers (all IO-space mapped).
@@ -56,6 +67,14 @@ typedef enum {
   RTLRG_IDR3 = 0x0003,         // ID register 3
   RTLRG_IDR4 = 0x0004,         // ID register 4
   RTLRG_IDR5 = 0x0005,         // ID register 5
+  RTLRG_MAR0 = 0x0008,         // Multicast mask register 0
+  RTLRG_MAR1 = 0x0009,         // Multicast mask register 1
+  RTLRG_MAR2 = 0x000a,         // Multicast mask register 2
+  RTLRG_MAR3 = 0x000b,         // Multicast mask register 3
+  RTLRG_MAR4 = 0x000c,         // Multicast mask register 4
+  RTLRG_MAR5 = 0x000d,         // Multicast mask register 5
+  RTLRG_MAR6 = 0x000e,         // Multicast mask register 6
+  RTLRG_MAR7 = 0x000f,         // Multicast mask register 7
   RTLRG_TXSTATUS0 = 0x0010,    // Transmit status of desc 0 (TSD0)
   RTLRG_TXSTATUS1 = 0x0014,    // Transmit status of desc 1 (TSD1)
   RTLRG_TXSTATUS2 = 0x0018,    // Transmit status of desc 2 (TSD2)
@@ -161,6 +180,60 @@ static int rtl_tx(nic_t* base, pbuf_t* pb) {
 
 static void rtl_cleanup(nic_t* base) {
   KLOG(DFATAL, "RTL NIC cleanup called (shouldn't be deleted)\n");
+}
+
+static void multicast_update_iter(void* arg, uint32_t key, void* val) {
+  rtl_multicast_t* entry = (rtl_multicast_t*)val;
+  uint32_t crc = ether_crc32(entry->addr.addr, sizeof(entry->addr));
+  int bit = crc >> 26;
+  uint32_t* regs = (uint32_t*)arg;
+  regs[bit / 32] |= 1 << (bit % 32);
+}
+
+static void rtl_update_multicast(rtl8139_t* nic) {
+  // Register for all multi-cast packets.
+  uint32_t regs[2];
+  regs[0] = regs[1] = 0;
+  htbl_iterate(&nic->multicast_addrs, &multicast_update_iter, regs);
+
+  io_write32(nic->io, RTLRG_MAR0, regs[0]);
+  io_write32(nic->io, RTLRG_MAR4, regs[1]);
+}
+
+static void rtl_mc_sub(nic_t* base, const nic_mac_t* mac) {
+  rtl8139_t* nic = (rtl8139_t*)base;
+  kspin_lock(&base->lock);
+  void* value;
+  uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
+  if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
+    rtl_multicast_t* entry = (rtl_multicast_t*)value;
+    entry->refs++;
+  } else {
+    rtl_multicast_t* entry = KMALLOC(rtl_multicast_t);
+    entry->addr = *mac;
+    entry->refs = 1;
+    htbl_put(&nic->multicast_addrs, hash, entry);
+  }
+  rtl_update_multicast(nic);
+  kspin_unlock(&base->lock);
+}
+
+static void rtl_mc_unsub(nic_t* base, const nic_mac_t* mac) {
+  rtl8139_t* nic = (rtl8139_t*)base;
+  kspin_lock(&base->lock);
+  void* value;
+  uint32_t hash = fnv_hash_array(&mac->addr, sizeof(mac->addr));
+  if (htbl_get(&nic->multicast_addrs, hash, &value) == 0) {
+    rtl_multicast_t* entry = (rtl_multicast_t*)value;
+    KASSERT_DBG(entry->refs > 0);
+    entry->refs--;
+    if (entry->refs == 0) {
+      htbl_remove(&nic->multicast_addrs, hash);
+      kfree(entry);
+    }
+  }
+  rtl_update_multicast(nic);
+  kspin_unlock(&base->lock);
 }
 
 static void rtl_handle_recv_one(rtl8139_t* nic) {
@@ -354,6 +427,7 @@ static void rtl_init(pci_device_t* pcidev, rtl8139_t* nic) {
   io_write32(nic->io, RTLRG_TXBUF3, htol32((uint32_t)txbuf3));
   nic->txdesc = 0;
   for (int i = 0; i < RTL_NUM_TX_DESCS; ++i) nic->txbuf_active[i] = false;
+  htbl_init(&nic->multicast_addrs, 5);
 
   // Enable receiving and transmitting.
   KLOG(DEBUG, "Enabling packet rx/tx\n");
@@ -382,12 +456,12 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
   // N.B.(aoates): the RTL8139 datasheet is contradictory---it says that these
   // can only be accessed in 4-byte chunks...but then says the exact opposite
   // right after.
-  nic->public.mac[0] = io_read8(nic->io, RTLRG_IDR0);
-  nic->public.mac[1] = io_read8(nic->io, RTLRG_IDR1);
-  nic->public.mac[2] = io_read8(nic->io, RTLRG_IDR2);
-  nic->public.mac[3] = io_read8(nic->io, RTLRG_IDR3);
-  nic->public.mac[4] = io_read8(nic->io, RTLRG_IDR4);
-  nic->public.mac[5] = io_read8(nic->io, RTLRG_IDR5);
+  nic->public.mac.addr[0] = io_read8(nic->io, RTLRG_IDR0);
+  nic->public.mac.addr[1] = io_read8(nic->io, RTLRG_IDR1);
+  nic->public.mac.addr[2] = io_read8(nic->io, RTLRG_IDR2);
+  nic->public.mac.addr[3] = io_read8(nic->io, RTLRG_IDR3);
+  nic->public.mac.addr[4] = io_read8(nic->io, RTLRG_IDR4);
+  nic->public.mac.addr[5] = io_read8(nic->io, RTLRG_IDR5);
 
   nic_create(&nic->public, "eth");
   rtl_init(pcidev, nic);
@@ -396,4 +470,6 @@ void pci_rtl8139_init(pci_device_t* pcidev) {
 static nic_ops_t rtl_ops = {
   &rtl_tx,
   &rtl_cleanup,
+  &rtl_mc_sub,
+  &rtl_mc_unsub,
 };

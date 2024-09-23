@@ -25,7 +25,7 @@ nic_t* loopback_create(void) {
   nic_t* nic = kmalloc(sizeof(nic_t));
   nic_init(nic);
   nic->type = NIC_LOOPBACK;
-  kmemset(nic->mac, 0, NIC_MAC_LEN);
+  kmemset(&nic->mac.addr, 0, NIC_MAC_LEN);
   nic->ops = NULL;
   nic_create(nic, "lo");
   KLOG(INFO, "net: created loopback device %s\n", nic->name);

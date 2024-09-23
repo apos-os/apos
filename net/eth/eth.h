@@ -41,11 +41,15 @@ _Static_assert(sizeof(eth_hdr_t) == 14, "wrong eth_hdr_t size");
 int eth_send(nic_t* nic, netaddr_t next_hop, pbuf_t* pb, ethertype_t protocol,
              bool allow_blocking);
 
+// Sends a raw ethernet packet on the given NIC --- it must already have an
+// ethernet frame header.
+int eth_send_raw(nic_t* nic, pbuf_t* pb);
+
 // Handle and dispatch an inbound packet.  Takes ownership of the buffer.
 void eth_recv(nic_t* nic, pbuf_t* pb);
 
 // Adds (prepends) an ethernet header to the given packet.
-void eth_add_hdr(pbuf_t* pb, const uint8_t mac_dst[], const uint8_t mac_src[],
+void eth_add_hdr(pbuf_t* pb, const nic_mac_t* mac_dst, const nic_mac_t* mac_src,
                  ethertype_t ethertype);
 
 #endif

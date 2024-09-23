@@ -37,9 +37,22 @@ struct sockaddr_in {
   struct in_addr sin_addr;  // IP address.
 };
 
+struct in6_addr {
+  uint8_t s6_addr[16];
+};
+
+struct sockaddr_in6 {
+  sa_family_t sin6_family;    // Must be AF_INET6.
+  in_port_t sin6_port;        // Port number.
+  uint32_t sin6_flowinfo;     // IPv6 traffic class and flow information.
+  struct in6_addr sin6_addr;  // IPv6 address.
+  uint32_t sin6_scope_id;     // Set of interfaces for a scope.
+};
+
 #define IPPROTO_ICMP 1
 #define IPPROTO_TCP 6
 #define IPPROTO_UDP 17
+#define IPPROTO_ICMPV6 58
 
 // TODO(aoates): define various IPPROTO_* constants.
 

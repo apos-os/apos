@@ -15,13 +15,20 @@
 
 #include "common/attributes.h"
 #include "common/endian.h"
+#include "common/hash.h"
 #include "common/kassert.h"
+#include "common/klog.h"
+#include "common/kstring.h"
+#include "net/util.h"
 
 bool netaddr_eq(const netaddr_t* a, const netaddr_t* b) {
   if (a->family != b->family) return false;
   switch (a->family) {
     case ADDR_INET:
       return a->a.ip4.s_addr == b->a.ip4.s_addr;
+
+    case ADDR_INET6:
+      return kmemcmp(&a->a.ip6, &b->a.ip6, sizeof(struct in6_addr)) == 0;
 
     case ADDR_UNSPEC:
       break;
@@ -45,10 +52,61 @@ bool netaddr_match(const netaddr_t* addr, const network_t* network) {
       return (addr->a.ip4.s_addr & mask) == (network->addr.a.ip4.s_addr & mask);
     }
 
+    case ADDR_INET6: {
+      KASSERT_DBG(network->prefix_len <= 128 && network->prefix_len >= 0);
+      for (int i = 0; i < network->prefix_len / 8; ++i) {
+        if (addr->a.ip6.s6_addr[i] != network->addr.a.ip6.s6_addr[i]) {
+          return false;
+        }
+      }
+      int bits = network->prefix_len % 8;
+      if (bits != 0) {
+        if ((addr->a.ip6.s6_addr[network->prefix_len / 8] >> (8 - bits)) !=
+            (network->addr.a.ip6.s6_addr[network->prefix_len / 8] >>
+             (8 - bits))) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     case ADDR_UNSPEC:
       break;
   }
 
   // Unknown address type.
   return false;
+}
+
+uint32_t netaddr_hash(const netaddr_t* a) {
+  uint32_t hash = fnv_hash(a->family);
+  switch (a->family) {
+    case ADDR_INET:
+      return fnv_hash_concat(hash, fnv_hash(a->a.ip4.s_addr));
+
+    case ADDR_INET6:
+      return fnv_hash_concat(hash, fnv_hash_array(&a->a.ip6, sizeof(a->a.ip6)));
+
+    case ADDR_UNSPEC:
+      return hash;
+  }
+
+  klogfm(KL_NET, DFATAL, "Unknown netaddr family: %d\n", a->family);
+  return hash;
+}
+
+char* netaddr2str(const netaddr_t* a, char* buf) {
+  switch (a->family) {
+    case ADDR_INET:
+      return inet2str(a->a.ip4.s_addr, buf);
+
+    case ADDR_INET6:
+      return inet62str(&a->a.ip6, buf);
+
+    case ADDR_UNSPEC:
+      return kstrcpy(buf, "<ADDR_UNSPEC addr>");
+  }
+
+  klogfm(KL_NET, DFATAL, "Unknown netaddr family: %d\n", a->family);
+  return kstrcpy(buf, "<invalid netaddr family>");
 }

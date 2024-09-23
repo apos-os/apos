@@ -49,6 +49,9 @@ static void init_block(block_t* b) {
   b->length = 0;
   b->prev = 0;
   b->next = 0;
+  for (int i = 0; i < KMALLOC_SAFE_BUFFER; ++i) {
+    b->_buf[i] = 0xAA;
+  }
 }
 
 void kmalloc_init(void) {
@@ -160,6 +163,7 @@ void* kmalloc(size_t n) {
 }
 
 void* kmalloc_aligned(size_t n, size_t alignment) {
+  n += KMALLOC_SAFE_BUFFER;
 #if ENABLE_KMALLOC_HEAP_PROFILE
   addr_t stack_trace[32];
   const int stack_trace_len = get_stack_trace(stack_trace, 32);
@@ -221,6 +225,38 @@ void kfree(void* x) {
   block_t* b = (block_t*)((uint8_t*)x - sizeof(block_t));
   KASSERT(b->magic == KALLOC_MAGIC);
   KASSERT(b->free == false);
+  bool bad = false;
+  for (int i = 0; i < KMALLOC_SAFE_BUFFER; ++i) {
+    if (b->_buf[i] != 0xAA) {
+      KLOG(ERROR,
+           "Buffer underflow detected at address 0x%" PRIxADDR
+           "(allocated addr 0x%" PRIxADDR ", offset %d)\n",
+           (intptr_t)&b->_buf[i], (intptr_t)x,
+           -KMALLOC_SAFE_BUFFER + i);
+      bad = true;
+      break;
+    }
+  }
+  const uint8_t* post_buf =
+      (uint8_t*)&b->data + (b->length - KMALLOC_SAFE_BUFFER);
+  for (int i = 0; i < KMALLOC_SAFE_BUFFER; ++i) {
+    if (post_buf[i] != 0xAA) {
+      KLOG(ERROR,
+           "Buffer overflow detected at address 0x%" PRIxADDR
+           "(allocated addr 0x%" PRIxADDR ", offset %d)\n",
+           (intptr_t)&post_buf[i], (intptr_t)x,
+           (int)b->length + i);
+      bad = true;
+      break;
+    }
+  }
+  if (bad) {
+    addr_t trace[TRACETBL_MAX_TRACE_LEN];
+    int len = tracetbl_get(b->stack_trace, trace);
+    KLOG(ERROR, "Block allocated at:\n");
+    print_stack_trace(trace, len);
+    die("Heap corruption");
+  }
   if (ENABLE_KERNEL_SAFETY_NETS) {
     fill_block(b, 0xDEADBEEF);
   }

@@ -15,28 +15,44 @@
 #ifndef APOO_DEV_NET_NIC_H
 #define APOO_DEV_NET_NIC_H
 
-#include <stdint.h>
-
 #include "common/list.h"
 #include "common/refcount.h"
-#include "net/eth/arp/arp_cache.h"
+#include "dev/timer.h"
 #include "net/addr.h"
+#include "net/mac.h"
+#include "net/neighbor_cache.h"
 #include "net/pbuf.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
-#include "user/include/apos/net/socket/socket.h"
 
 #define NIC_MAX_NAME_LEN 16  // Maximum name length
-#define NIC_MAC_LEN 6        // Length of MACs
-#define NIC_MAC_PRETTY_LEN (3 * NIC_MAC_LEN)
-#define NIC_MAX_ADDRS 3      // Maximum number of addresses per NIC
-
-// Pretty-print the given MAC address, using the given buffer (which must be at
-// least NIC_MAC_PRETTY_LEN bytes big).
-const char* mac2str(const uint8_t* mac, char* buf);
+#define NIC_MAX_ADDRS 6      // Maximum number of addresses per NIC
 
 struct nic;
 typedef struct nic nic_t;
+
+typedef struct {
+  bool autoconfigure;
+  int dup_detection_timeout_ms;
+} nic_ipv6_options_t;
+
+typedef enum {
+  NIC_ADDR_NONE,
+  NIC_ADDR_TENTATIVE,
+  NIC_ADDR_ENABLED,
+  NIC_ADDR_CONFLICT,
+} nic_addr_state_t;
+
+typedef struct {
+  network_t a;
+  nic_addr_state_t state;
+
+  // Timer handle for duplicate detection timer.
+  kspinlock_intsafe_t timer_lock;
+  timer_handle_t timer;  // GUARDED_BY(timer_lock)
+  // TODO(aoates): figure out how to get rid of this pointer.
+  nic_t* nic;
+} nic_addr_t;
 
 typedef struct {
   // Enqueue the given packet (which should be an L2 frame) for transmission.
@@ -46,6 +62,10 @@ typedef struct {
   // Clean up the NIC and free any memory (including the nic_t itself, if
   // necessary).
   void (*nic_cleanup)(nic_t* nic);
+
+  // Subscribe or unsubscribe from a hardware multicast address.
+  void (*nic_mc_sub)(nic_t* nic, const nic_mac_t* mac);
+  void (*nic_mc_unsub)(nic_t* nic, const nic_mac_t* mac);
 } nic_ops_t;
 
 typedef enum {
@@ -55,19 +75,37 @@ typedef enum {
   NIC_TUN = 3,
 } nic_type_t;
 
+// An IPv6 gateway configured on a NIC.
+typedef struct {
+  bool valid;
+  struct in6_addr addr;
+} nic_ipv6_gateway_t;
+
+// IPv6-specific NIC data.
+typedef struct {
+  nic_ipv6_options_t opts;
+  htbl_t multicast;  // Multicast addresses we're subscribed to.
+  int iface_id_len;  // How long the interface ID is (in bits).
+  struct in6_addr iface_id;  // Low N-bits set to interface ID.
+
+  // The default gateway learned from a route advertisement, if any.
+  nic_ipv6_gateway_t gateway;
+} nic_ipv6_t;
+
 struct nic {
   kspinlock_t lock;
 
   // Fields maintained by the NIC driver.  Should be const after construction.
   char name[NIC_MAX_NAME_LEN];  // Unique human-readable name (e.g. 'eth0')
   nic_type_t type;              // What kind of NIC
-  uint8_t mac[NIC_MAC_LEN];     // Hardware address.
+  nic_mac_t mac;                // Hardware address.
   nic_ops_t* ops;
 
   // Fields maintained by the network subsystem.
   refcount_t ref;  // External refcount (will be zero usually).
-  network_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
-  arp_cache_t arp_cache;
+  nic_addr_t addrs[NIC_MAX_ADDRS];  // Configured network addresses
+  nbr_cache_t nbr_cache;
+  nic_ipv6_t ipv6;
   list_link_t link;  // Protected by global mutex, not |lock|.
   bool deleted;      // Protected by global mutex, not |lock|.
 };
@@ -100,6 +138,9 @@ void nic_next(nic_t** iter);
 
 // Returns the NIC with the given name (with a reference), or NULL.
 nic_t* nic_get_nm(const char* name);
+
+// Copies a reference on the given NIC.
+void nic_ref(nic_t* nic);
 
 // Puts a NIC (returns the reference taken by one of the above).  The caller
 // must not reference the nic_t after calling this.

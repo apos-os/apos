@@ -21,36 +21,14 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
-#include "net/eth/arp/arp_cache_ops.h"
+#include "net/eth/arp/arp_packet.h"
 #include "net/eth/eth.h"
+#include "net/neighbor_cache_ops.h"
 #include "net/util.h"
 #include "proc/spinlock.h"
 #include "user/include/apos/net/socket/inet.h"
 
 #define KLOG(...) klogfm(KL_NET, __VA_ARGS__)
-
-// ARP packet format (assuming ethernet and ipv4).  Everything in
-// network-byte-order.
-typedef struct __attribute__((packed)) {
-  uint16_t htype;  // Hardware type
-  uint16_t ptype;  // Protocol type
-  uint8_t hlen;    // Hardware address length
-  uint8_t plen;    // Protocol address length
-  uint16_t oper;   // Operation
-  uint8_t sha[6];  // Sender hardware address
-  uint8_t spa[4];  // Sender protocol address
-  uint8_t tha[6];  // Target hardware address
-  uint8_t tpa[4];  // Target protocol address
-} arp_packet_t;
-
-typedef enum {
-  ARP_HTYPE_ETH = 1,
-} arp_htype_t;
-
-typedef enum {
-  ARP_OPER_REQUEST = 1,
-  ARP_OPER_REPLY = 2,
-} arp_oper_t;
 
 _Static_assert(sizeof(arp_packet_t) == 28, "bad arp_packet_t size");
 
@@ -80,21 +58,22 @@ static void arp_handle_request(nic_t* nic, const arp_packet_t* packet) {
 
   kspin_lock(&nic->lock);
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
-    if (nic->addrs[addr_idx].addr.family == AF_INET) {
-      if (nic->addrs[addr_idx].addr.a.ip4.s_addr == target_addr) {
+    if (nic->addrs[addr_idx].a.addr.family == AF_INET) {
+      KASSERT(nic->addrs[addr_idx].state == NIC_ADDR_ENABLED);
+      if (nic->addrs[addr_idx].a.addr.a.ip4.s_addr == target_addr) {
         kspin_unlock(&nic->lock);
         KLOG(DEBUG, "ARP: found NIC %s with matching IP (%s)\n", nic->name,
              inet2str(target_addr, inetbuf));
 
         pbuf_t* reply_buf = arp_mkpacket(ARP_OPER_REPLY);
         arp_packet_t* reply = (arp_packet_t*)pbuf_get(reply_buf);
-        kmemcpy(&reply->sha, nic->mac, ETH_MAC_LEN);
+        kmemcpy(&reply->sha, &nic->mac.addr, ETH_MAC_LEN);
         kmemcpy(&reply->spa, &target_addr, sizeof(target_addr));
         kmemcpy(&reply->tha, packet->sha, ETH_MAC_LEN);
         kmemcpy(&reply->tpa, packet->spa, sizeof(in_addr_t));
 
-        eth_add_hdr(reply_buf, packet->sha, nic->mac, ET_ARP);
-        int result = nic->ops->nic_tx(nic, reply_buf);
+        eth_add_hdr(reply_buf, raw2mac(packet->sha), &nic->mac, ET_ARP);
+        int result = eth_send_raw(nic, reply_buf);
         if (result) {
           KLOG(INFO, "ARP: unable to send reply on %s: %s\n",
                nic->name, errorname(-result));
@@ -114,9 +93,10 @@ static void arp_handle_reply(nic_t* nic, const arp_packet_t* packet) {
 
   // TODO(aoates): verify that the source addresses are valid (i.e. aren't
   // broadcast or multicast addresses, etc).
-  in_addr_t src_addr;
-  kmemcpy(&src_addr, packet->spa, sizeof(src_addr));
-  arp_cache_insert(nic, src_addr, packet->sha);
+  netaddr_t src_addr;
+  src_addr.family = AF_INET;
+  kmemcpy(&src_addr.a.ip4, packet->spa, sizeof(packet->spa));
+  nbr_cache_insert(nic, src_addr, packet->sha);
 }
 
 void arp_rx(nic_t* nic, pbuf_t* pb) {
@@ -166,8 +146,8 @@ void arp_send_request(nic_t* nic, in_addr_t addr) {
   // TODO(aoates): consider some NIC helper functions to find particular
   // addresses, or an address of a particular family.
   for (int addr_idx = 0; addr_idx < NIC_MAX_ADDRS; ++addr_idx) {
-    if (nic->addrs[addr_idx].addr.family == AF_INET) {
-      nic_addr = nic->addrs[addr_idx].addr.a.ip4.s_addr;
+    if (nic->addrs[addr_idx].a.addr.family == AF_INET) {
+      nic_addr = nic->addrs[addr_idx].a.addr.a.ip4.s_addr;
       break;
     }
   }
@@ -181,12 +161,12 @@ void arp_send_request(nic_t* nic, in_addr_t addr) {
 
   pbuf_t* request_buf = arp_mkpacket(ARP_OPER_REQUEST);
   arp_packet_t* req = (arp_packet_t*)pbuf_get(request_buf);
-  kmemcpy(&req->sha, nic->mac, ETH_MAC_LEN);
+  kmemcpy(&req->sha, &nic->mac.addr, ETH_MAC_LEN);
   kmemcpy(&req->spa, &nic_addr, sizeof(nic_addr));
   eth_mkbroadcast(req->tha);
   kmemcpy(&req->tpa, &addr, sizeof(addr));
-  eth_add_hdr(request_buf, req->tha, nic->mac, ET_ARP);
-  int result = nic->ops->nic_tx(nic, request_buf);
+  eth_add_hdr(request_buf, raw2mac(req->tha), &nic->mac, ET_ARP);
+  int result = eth_send_raw(nic, request_buf);
   if (result) {
     KLOG(INFO, "ARP: unable to send request on %s: %s\n", nic->name,
          errorname(-result));
