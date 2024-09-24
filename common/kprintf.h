@@ -17,9 +17,10 @@
 
 #include <stdarg.h>
 
-// The printf functions support %s, %d, %i, %u, and %x.
+#include "common/types.h"
+
 int ksprintf(char* str, const char* fmt, ...)
     __attribute__((format(printf, 2, 3)));
-int kvsprintf(char* str, const char* fmt, va_list args);
+int kvsnprintf(char* str, size_t size, const char* fmt, va_list args);
 
 #endif

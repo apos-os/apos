@@ -124,7 +124,7 @@ void ksh_printf(const char* fmt, ...) {
 
   va_list args;
   va_start(args, fmt);
-  kvsprintf(buf, fmt, args);
+  kvsnprintf(buf, 1024, fmt, args);
   va_end(args);
 
   vfs_write(1, buf, kstrlen(buf));

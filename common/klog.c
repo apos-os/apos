@@ -104,7 +104,7 @@ void klogf(const char* fmt, ...) {
 
   va_list args;
   va_start(args, fmt);
-  kvsprintf(buf, fmt, args);
+  kvsnprintf(buf, 1024, fmt, args);
   va_end(args);
 
   klog(buf);
@@ -169,7 +169,7 @@ void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {
 
   va_list args;
   va_start(args, fmt);
-  kvsprintf(buf, fmt, args);
+  kvsnprintf(buf, 1024, fmt, args);
   va_end(args);
 
   klogm(module, level, buf);

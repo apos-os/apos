@@ -92,12 +92,12 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
 int ksprintf(char* str, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  int r = kvsprintf(str, fmt, args);
+  int r = kvsnprintf(str, SIZE_MAX, fmt, args);
   va_end(args);
   return r;
 }
 
-int kvsprintf(char* str, const char* fmt, va_list args) {
+int kvsnprintf(char* str, size_t size, const char* fmt, va_list args) {
   char* str_orig = str;
   _Static_assert(sizeof(long) <= 8, "buffer too small in printf");
   const char kNumBufSize = 22;
