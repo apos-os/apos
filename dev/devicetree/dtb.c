@@ -335,7 +335,9 @@ static void print_propval(fdt_print_state_t* state,
       }
     }
     if (is_string) {
-      fdt_printf(state, "'%s' [string]", buf);
+      fdt_printf(state, "'");
+      state->sink(state->cbarg, buf);
+      fdt_printf(state, "' [string]");
       return;
     }
   }

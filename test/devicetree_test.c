@@ -190,6 +190,17 @@ static const char kParseTestDtb[] __attribute__((aligned(4))) = {
 #include "test/dtb_testdata/parse_test.dts.h"
 };
 
+static const char kLongStringDtb[] __attribute__((aligned(4))) = {
+#include "test/dtb_testdata/long_string.dts.h"
+};
+
+static const char kLongStringDtbPrinted[] =
+    "{\n"
+    "  #address-cells = 2 (0x2) [u32]\n"
+    "  #size-cells = 2 (0x2) [u32]\n"
+    "  compatible = '9606768166 1854316951 8743526857 3744120557 1634093319 3327128542 6351776553 4222219797 0708357691 4693832655 1162194673 3941456885 7216369872 3406736901 5604405406 1670900312 1349576978 7093812791 6926228431 6072703774 4496979722 3975026031 1374452669 1545280260 9417798237 0678006631 2831119919 2997680305 7806356385 2162570967 4449145751 9039586910 8184806121 3001062213 0608156234 5223186678 6848671756 2822024747 0082830534 8601066376 5097587131 9097392087 0857604188 6121473634 5728565749 0628666597 2359615051 9176740523 8587291564 4864853865' [string]\n"
+    "}\n";
+
 const size_t kPrintBufLen = 10000;
 static void printer(void* arg, const char* s) {
   kstrlcat(arg, s, kPrintBufLen);
@@ -210,6 +221,11 @@ static void dtb_print_golden_test(void) {
   kmemset(pbuf, 0, kPrintBufLen);
   KEXPECT_EQ(DTFDT_OK, dtfdt_print(kSmallGoldenDtb, false, printer, pbuf));
   KEXPECT_MULTILINE_STREQ(kSmallGoldenDtbPrinted, pbuf);
+
+  KTEST_BEGIN("dtfdt_print(): long string test");
+  kmemset(pbuf, 0, kPrintBufLen);
+  KEXPECT_EQ(DTFDT_OK, dtfdt_print(kLongStringDtb, false, printer, pbuf));
+  KEXPECT_MULTILINE_STREQ(kLongStringDtbPrinted, pbuf);
 
   kfree(pbuf);
 }
