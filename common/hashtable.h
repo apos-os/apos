@@ -79,4 +79,8 @@ struct htbl {
   int num_entries;
 };
 
+// A static initializer for htbl_t --- the hashtable must still be initialized
+// with htbl_init(), this is just a placeholder.
+#define HTBL_STATIC_DECL { NULL, 0, 0 }
+
 #endif

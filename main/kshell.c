@@ -30,6 +30,7 @@
 #include "common/kstring.h"
 #include "common/kprintf.h"
 #include "common/math.h"
+#include "common/perf_trace.h"
 #include "dev/ata/ata.h"
 #include "memory/block_cache.h"
 #include "dev/block_dev.h"
@@ -154,6 +155,34 @@ static void heap_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
     block_cache_clear_unpinned();
   }
   kmalloc_log_heap_profile();
+}
+
+static void perf_trace_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
+  if (argc != 1) {
+    ksh_printf("usage: %s\n", argv[0]);
+    return;
+  }
+
+  uint8_t* buf = NULL;
+  ssize_t len = perftrace_dump(&buf);
+  if (len < 0) {
+    ksh_printf("Failed to dump perftrace: %s\n", errorname(-len));
+    return;
+  }
+
+  KLOG("######## CPU profile #########");
+  const int kLineLen = 16;
+  const int kChunkLen = 2;
+  for (int i = 0; i < len; ++i) {
+    if (i % kLineLen == 0) {
+      KLOG("\n%07x:", i);
+    }
+    if (i % kChunkLen == 0) {
+      KLOG(" ");
+    }
+    KLOG("%02x", buf[i]);
+  }
+  KLOG("\n######## END CPU profile #########");
 }
 
 static void hash_cmd(kshell_t* shell, int argc, char* argv[]) {
@@ -1165,6 +1194,7 @@ static const cmd_t CMDS[] = {
   { "meminfo", &meminfo_cmd },
   { "heapprof", &heap_profile_cmd },
   { "hp", &heap_profile_cmd },
+  { "perf", &perf_trace_profile_cmd },
   { "hash", &hash_cmd },
   { "b_read", &b_read_cmd },
   { "b_write", &b_write_cmd },

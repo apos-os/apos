@@ -24,6 +24,7 @@
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/perf_trace.h"
 #include "dev/devicetree/devicetree.h"
 #include "dev/devicetree/drivers.h"
 #include "dev/interrupts.h"
@@ -253,6 +254,9 @@ void kmain(boot_info_t* boot, const char* cmdline) {
 
   klog("proc_init_stage2()\n");
   proc_init_stage2();
+
+  klog("perftrace_init()\n");
+  perftrace_init();
 
   // Initialize devices.
   if (boot->dtree) {
