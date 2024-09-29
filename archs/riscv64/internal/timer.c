@@ -61,3 +61,13 @@ void arch_init_timer(apos_ms_t period_ms, void (*cb)(void*), void* cbarg) {
 
   rsv64_sbi_set_timer(0);
 }
+
+uint64_t arch_real_timer(void) {
+  uint64_t time;
+  asm volatile("rdtime %0" : "=r"(time)::);
+  return time;
+}
+
+uint32_t arch_real_timer_freq(void) {
+  return get_timebase_frequency();
+}

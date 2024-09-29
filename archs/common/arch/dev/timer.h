@@ -15,10 +15,19 @@
 #ifndef APOO_ARCHS_COMMON_ARCH_DEV_TIMER_H
 #define APOO_ARCHS_COMMON_ARCH_DEV_TIMER_H
 
+#include <stdint.h>
+
 #include "dev/timer.h"
 
 // Initialize the basic system periodic timer with the given period.  The period
 // may not be supported exactly.
 void arch_init_timer(apos_ms_t period_ms, void (*cb)(void*), void* cbarg);
+
+// Returns a cheap timer value in unspecified units.  The units must be
+// proportional to real time elapsed (must not be variable).
+uint64_t arch_real_timer(void);
+
+// Returns the number of arch_real_timer() ticks per second.
+uint32_t arch_real_timer_freq(void);
 
 #endif

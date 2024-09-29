@@ -17,6 +17,7 @@
 
 #include "arch/common/io.h"
 #include "arch/dev/irq.h"
+#include "dev/timer.h"
 
 void arch_init_timer(apos_ms_t period_ms, void (*cb)(void*), void* cbarg) {
   // Inintialize the timer hardware.
@@ -29,4 +30,13 @@ void arch_init_timer(apos_ms_t period_ms, void (*cb)(void*), void* cbarg) {
   outb(0x40, high);
 
   register_irq_handler(IRQ0, cb, cbarg);
+}
+
+uint64_t arch_real_timer(void) {
+  // TODO(aoates): use a more granular performance counter.
+  return get_time_ms();
+}
+
+uint32_t arch_real_timer_freq(void) {
+  return 1000;
 }
