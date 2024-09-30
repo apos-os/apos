@@ -1,0 +1,21 @@
+// Copyright 2023 Andrew Oates.  All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	compatible = "9606768166 1854316951 8743526857 3744120557 1634093319 3327128542 6351776553 4222219797 0708357691 4693832655 1162194673 3941456885 7216369872 3406736901 5604405406 1670900312 1349576978 7093812791 6926228431 6072703774 4496979722 3975026031 1374452669 1545280260 9417798237 0678006631 2831119919 2997680305 7806356385 2162570967 4449145751 9039586910 8184806121 3001062213 0608156234 5223186678 6848671756 2822024747 0082830534 8601066376 5097587131 9097392087 0857604188 6121473634 5728565749 0628666597 2359615051 9176740523 8587291564 4864853865";
+};

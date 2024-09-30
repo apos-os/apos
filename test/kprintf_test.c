@@ -23,7 +23,7 @@ const char* do_printf(const char* fmt, ...) {
 
   va_list args;
   va_start(args, fmt);
-  kvsprintf(buffer, fmt, args);
+  kvsnprintf(buffer, 500, fmt, args);
   va_end(args);
   return buffer;
 }
@@ -332,6 +332,185 @@ static void kprintf_PRI_test(void) {
 #endif
 }
 
+static bool do_nprintf_test(const char* expected, const char* fmt,
+                            va_list args_in) {
+  va_list args;
+  bool v = true;
+  char full[30], full2[30];
+  va_copy(args, args_in);
+  kvsnprintf(full, 30, fmt, args);
+  va_end(args);
+  v &= KEXPECT_STREQ(expected, full);
+
+  char buf[30];
+  kmemset(buf, '?', 30);
+  buf[9] = '\0';
+  size_t len = kstrlen(full);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, 0, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ("?????????", buf);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, 1, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ("", buf);
+
+  kstrcpy(full2, full);
+  full2[1] = '\0';
+  kmemset(buf, '?', 29);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, 2, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ(full2, buf);
+
+  kstrcpy(full2, full);
+  full2[2] = '\0';
+  kmemset(buf, '?', 29);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, 3, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ(full2, buf);
+
+  kstrcpy(full2, full);
+  full2[3] = '\0';
+  kmemset(buf, '?', 29);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, 4, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ(full2, buf);
+
+  kstrcpy(full2, full);
+  full2[4] = '\0';
+  kmemset(buf, '?', 29);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, 5, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ(full2, buf);
+
+  kstrcpy(full2, full);
+  full2[len - 1] = '\0';
+  kmemset(buf, '?', 29);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, len, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ(full2, buf);
+
+  kstrcpy(full2, full);
+  kmemset(buf, '?', 29);
+  va_copy(args, args_in);
+  v &= KEXPECT_EQ(len, kvsnprintf(buf, len + 1, fmt, args));
+  va_end(args);
+  v &= KEXPECT_STREQ(full2, buf);
+
+  return v;
+}
+
+// Helper for snprintf tests --- takes an expected string, and tests truncation
+// of it at various lengths.
+static bool nprintf_test(const char* expected, const char* fmt, ...)
+    __attribute__((format(printf, 2, 3)));
+static bool nprintf_test(const char* expected, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  bool result = do_nprintf_test(expected, fmt, args);
+  va_end(args);
+  return result;
+}
+
+static void knprintf_test(void) {
+  KTEST_BEGIN("ksnprintf(): clamped snprintf tests");
+  char buf[50];
+  kmemset(buf, '?', 50);
+
+  buf[3] = '\0';
+  KEXPECT_EQ(0, ksnprintf(buf, 0, ""));
+  KEXPECT_STREQ("???", buf);
+  KEXPECT_EQ(2, ksnprintf(buf, 0, "ab"));
+  KEXPECT_STREQ("???", buf);
+  KEXPECT_EQ(4, ksnprintf(buf, 0, "abcd"));
+  KEXPECT_STREQ("???", buf);
+  KEXPECT_EQ(4, ksnprintf(buf, 1, "abcd"));
+  KEXPECT_STREQ("", buf);
+  KEXPECT_EQ(4, ksnprintf(buf, 2, "abcd"));
+  KEXPECT_STREQ("a", buf);
+  KEXPECT_EQ(4, ksnprintf(buf, 3, "ABCD"));
+  KEXPECT_STREQ("AB", buf);
+
+  KEXPECT_TRUE(nprintf_test("%", "%%"));
+  KEXPECT_TRUE(nprintf_test("%%", "%%%%"));
+  KEXPECT_TRUE(nprintf_test("0", "%d", 0));
+  KEXPECT_TRUE(nprintf_test("10", "%d", 10));
+  KEXPECT_TRUE(nprintf_test("123", "%d", 123));
+  KEXPECT_TRUE(nprintf_test("123456", "%d", 123456));
+  KEXPECT_TRUE(nprintf_test("123456", "%i", 123456));
+  KEXPECT_TRUE(nprintf_test("-1", "%d", -1));
+  KEXPECT_TRUE(nprintf_test("-10", "%d", -10));
+  KEXPECT_TRUE(nprintf_test("-123", "%d", -123));
+  KEXPECT_TRUE(nprintf_test("-123456", "%d", -123456));
+  KEXPECT_TRUE(nprintf_test("-123456", "%i", -123456));
+#if ARCH_IS_64_BIT
+  KEXPECT_TRUE(nprintf_test("2147483648", "%li", 2147483648l));
+#endif
+
+  KEXPECT_TRUE(nprintf_test("123456", "%u", 123456));
+  KEXPECT_TRUE(nprintf_test("123456", "%u", 123456));
+  KEXPECT_TRUE(nprintf_test("2147483648", "%u", 2147483648U));
+#if ARCH_IS_64_BIT
+  KEXPECT_TRUE(nprintf_test("4294967296", "%lu", 4294967296U));
+#endif
+
+  KEXPECT_TRUE(nprintf_test("abcdefg", "%s", "abcdefg"));
+  KEXPECT_TRUE(nprintf_test("abcdefg", "a%s", "bcdefg"));
+  KEXPECT_TRUE(nprintf_test("abcdefg", "ab%s", "cdefg"));
+  KEXPECT_TRUE(nprintf_test("a", "%c", 'a'));
+  KEXPECT_TRUE(nprintf_test("ab", "a%c", 'b'));
+
+  KEXPECT_TRUE(nprintf_test("abc", "%x", 0xabc));
+  KEXPECT_TRUE(nprintf_test("ABC", "%X", 0xabc));
+  KEXPECT_TRUE(nprintf_test("0xabc", "%p", (void*)0xabc));
+
+  KEXPECT_TRUE(nprintf_test("23", "%hhi", (signed char)23));
+  KEXPECT_TRUE(nprintf_test("-10", "%hhi", (signed char)-10));
+  KEXPECT_TRUE(nprintf_test("-26", "%hhi", (signed char)230));
+  KEXPECT_TRUE(nprintf_test("246", "%hhu", (unsigned char)-10));
+  KEXPECT_TRUE(nprintf_test("230", "%hhu", (unsigned char)230));
+  KEXPECT_TRUE(nprintf_test("44", "%hhu", (unsigned char)300));
+
+  KEXPECT_TRUE(nprintf_test("16000", "%hi", (short)16000));
+  KEXPECT_TRUE(nprintf_test("-16000", "%hi", (short)-16000));
+  KEXPECT_TRUE(nprintf_test("-13536", "%hi", (short)52000));
+  KEXPECT_TRUE(nprintf_test("52000", "%hu", (unsigned short)52000));
+
+  KEXPECT_TRUE(nprintf_test("+5", "%+i", 5));
+  KEXPECT_TRUE(nprintf_test("-5", "%+i", -5));
+  KEXPECT_TRUE(nprintf_test(" 5", "% i", 5));
+  KEXPECT_TRUE(nprintf_test("-5", "% i", -5));
+
+  KEXPECT_TRUE(nprintf_test(" 5", "% i", 5));
+  KEXPECT_TRUE(nprintf_test("-5", "% i", -5));
+
+  KEXPECT_TRUE(nprintf_test("  5", "%3i", 5));
+  KEXPECT_TRUE(nprintf_test(" -5", "%3i", -5));
+
+  KEXPECT_TRUE(nprintf_test("    5", "%5i", 5));
+  KEXPECT_TRUE(nprintf_test("   -5", "%5i", -5));
+
+  KEXPECT_TRUE(nprintf_test("005", "%03i", 5));
+  KEXPECT_TRUE(nprintf_test("-05", "%03i", -5));
+
+  KEXPECT_TRUE(nprintf_test("00005", "%05i", 5));
+  KEXPECT_TRUE(nprintf_test("-0005", "%05i", -5));
+
+  KEXPECT_TRUE(nprintf_test("5    ", "%-5i", 5));
+  KEXPECT_TRUE(nprintf_test("-5   ", "%-5i", -5));
+
+  KEXPECT_TRUE(nprintf_test("5    a", "%-5ia", 5));
+  KEXPECT_TRUE(nprintf_test("-5   a", "%-5ia", -5));
+
+  KEXPECT_TRUE(nprintf_test("0xa  a", "%#-5xa", 0xa));
+  KEXPECT_TRUE(nprintf_test("0XA  a", "%#-5Xa", 0xa));
+}
+
 void kprintf_test(void) {
   KTEST_SUITE_BEGIN("kprintf");
   kprintf_testA();
@@ -341,4 +520,5 @@ void kprintf_test(void) {
   kprintf_testE();
   kprintf_testF();
   kprintf_PRI_test();
+  knprintf_test();
 }

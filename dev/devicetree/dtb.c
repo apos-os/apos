@@ -239,6 +239,8 @@ dtfdt_parse_result_t dtfdt_parse(const void* fdt, const dtfdt_parse_cbs_t* cbs,
   return DTFDT_OK;
 }
 
+#define FDT_PRINT_BUF_SIZE 100
+
 typedef struct {
   dtfdt_sink_t sink;
   void* cbarg;
@@ -246,7 +248,7 @@ typedef struct {
 
   // Whether to put a spacer before the next node.
   bool space_next_node;
-  char buf[100];
+  char buf[FDT_PRINT_BUF_SIZE];
 } fdt_print_state_t;
 
 void fdt_printf(fdt_print_state_t* state, const char* fmt, ...)
@@ -254,7 +256,7 @@ void fdt_printf(fdt_print_state_t* state, const char* fmt, ...)
 void fdt_printf(fdt_print_state_t* state, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  kvsprintf(state->buf, fmt, args);
+  kvsnprintf(state->buf, FDT_PRINT_BUF_SIZE, fmt, args);
   va_end(args);
 
   state->sink(state->cbarg, state->buf);
@@ -333,7 +335,9 @@ static void print_propval(fdt_print_state_t* state,
       }
     }
     if (is_string) {
-      fdt_printf(state, "'%s' [string]", buf);
+      fdt_printf(state, "'");
+      state->sink(state->cbarg, buf);
+      fdt_printf(state, "' [string]");
       return;
     }
   }

@@ -92,20 +92,47 @@ static int parse_printf_spec(const char* fmt, printf_spec_t* spec) {
 int ksprintf(char* str, const char* fmt, ...) {
   va_list args;
   va_start(args, fmt);
-  int r = kvsprintf(str, fmt, args);
+  int r = kvsnprintf(str, SIZE_MAX, fmt, args);
   va_end(args);
   return r;
 }
 
-int kvsprintf(char* str, const char* fmt, va_list args) {
-  char* str_orig = str;
+int ksnprintf(char* str, size_t size, const char* fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  int r = kvsnprintf(str, size, fmt, args);
+  va_end(args);
+  return r;
+}
+
+static void cpy(char** dst, const char** src, size_t* buf_len, int* ret_len) {
+  if (*buf_len > 1) {
+    **dst = **src;
+    (*dst)++;
+    (*buf_len)--;
+  }
+  (*src)++;
+  (*ret_len)++;
+}
+
+static void cpyc(char** dst, char src, size_t* buf_len, int* ret_len) {
+  if (*buf_len > 1) {
+    **dst = src;
+    (*dst)++;
+    (*buf_len)--;
+  }
+  (*ret_len)++;
+}
+
+int kvsnprintf(char* str, size_t size, const char* fmt, va_list args) {
   _Static_assert(sizeof(long) <= 8, "buffer too small in printf");
   const char kNumBufSize = 22;
   char num_buf[kNumBufSize];
+  int ret_len = 0;
 
   while (*fmt) {
     if (*fmt != '%') {
-      *(str++) = *(fmt++);
+      cpy(&str, &fmt, &size, &ret_len);
       continue;
     }
 
@@ -248,31 +275,43 @@ int kvsprintf(char* str, const char* fmt, va_list args) {
 
     // Left space padding.
     if (!spec.left_justify_flag && (!spec.zero_flag || !numeric)) {
-      for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+      for (int i = 0; i + len < spec.field_width; ++i) {
+        cpyc(&str, ' ', &size, &ret_len);
+      }
     }
 
     // Add the symbol.
-    if (symbol) *str++ = symbol;
+    if (symbol) cpyc(&str, symbol, &size, &ret_len);
 
     // Add the prefix.
-    while (*prefix) *str++ = *prefix++;
+    while (*prefix) {
+      cpy(&str, &prefix, &size, &ret_len);
+    }
 
     // Zero padding.
     if (!spec.left_justify_flag && spec.zero_flag && numeric) {
-      for (int i = 0; i + len < spec.field_width; ++i) *str++ = '0';
+      for (int i = 0; i + len < spec.field_width; ++i) {
+        cpyc(&str, '0', &size, &ret_len);
+      }
     }
 
     // Copy over the remaining value.
-    while (*s) *str++ = *s++;
+    while (*s) {
+      cpy(&str, &s, &size, &ret_len);
+    }
 
     // Second space padding.
     if (spec.left_justify_flag) {
-      for (int i = 0; i + len < spec.field_width; ++i) *str++ = ' ';
+      for (int i = 0; i + len < spec.field_width; ++i) {
+        cpyc(&str, ' ', &size, &ret_len);
+      }
     }
 
     fmt += spec_len;
   }
-  *str = '\0';
+  if (size > 0) {
+    *str = '\0';
+  }
 
-  return str - str_orig;
+  return ret_len;
 }
