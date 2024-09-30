@@ -167,6 +167,10 @@ void klogm(klog_module_t module, klog_level_t level, const char* s) {
 void klogfm(klog_module_t module, klog_level_t level, const char* fmt, ...) {
   char buf[1024];
 
+  if (!klog_enabled(module, level)) {
+    return;
+  }
+
   va_list args;
   va_start(args, fmt);
   kvsnprintf(buf, 1024, fmt, args);
