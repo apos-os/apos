@@ -26,6 +26,10 @@
 // ignored.
 void perftrace_init(void);
 
+// Enable or disable perf tracing.
+void perftrace_enable(void);
+void perftrace_disable(void);
+
 // Registers an event using the current stack trace.  Increments the event
 // counter for the stack trace by 1, and the cumulative counter by elapsed time.
 // |elapsed_time| should be in the units return by arch_real_timer().

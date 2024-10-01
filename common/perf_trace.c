@@ -26,11 +26,12 @@ typedef struct {
   htbl_t traces;  // trace_id_t -> trace_t*
   kspinlock_intsafe_t lock;
   bool init;
+  bool enabled;
   int total_stack_entries;
 } perftrace_tbl_t;
 
 #define PERFTRACE_TBL_INIT \
-  { HTBL_STATIC_DECL, KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC, false, 0 }
+  { HTBL_STATIC_DECL, KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC, false, false, 0 }
 
 static perftrace_tbl_t g_ptbl = PERFTRACE_TBL_INIT;
 
@@ -46,9 +47,21 @@ void perftrace_init(void) {
   g_ptbl.init = true;
 }
 
+void perftrace_enable(void) {
+  kspin_lock_int(&g_ptbl.lock);
+  g_ptbl.enabled = true;
+  kspin_unlock_int(&g_ptbl.lock);
+}
+
+void perftrace_disable(void) {
+  kspin_lock_int(&g_ptbl.lock);
+  g_ptbl.enabled = false;
+  kspin_unlock_int(&g_ptbl.lock);
+}
+
 void perftrace_log(uint64_t elapsed_time, int max_stack_frames) {
   // TODO(SMP): this should be an atomic operation.
-  if (!g_ptbl.init) {
+  if (!g_ptbl.init || !g_ptbl.enabled) {
     return;
   }
 
