@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 
+#include "common/endian.h"
 #include "common/hash.h"
 #include "common/crc.h"
 #include "common/kprintf.h"
@@ -92,6 +93,43 @@ static void fnv_concat_test(void) {
     KEXPECT_NE(0, x);
     KEXPECT_NE(old_x, x);
   }
+}
+
+static void basic_fnv64_test(void) {
+  KTEST_BEGIN("fnv64_hash(): basic test");
+  KEXPECT_EQ(0xa8c7f832281a39c5, fnv64_hash(htob64(0)));
+  KEXPECT_EQ(0xa8c7f732281a3812, fnv64_hash(htob64(1)));
+  KEXPECT_EQ(0xa8c7f632281a365f, fnv64_hash(htob64(2)));
+  KEXPECT_EQ(0x659787be488521d5, fnv64_hash(htob64(0x12345678)));
+  KEXPECT_EQ(0xcfa2bd135d067fed, fnv64_hash(htob64(0x12345678abcdef01)));
+}
+
+static void fnv64_array_test(void) {
+  KTEST_BEGIN("fnv64_hash_array(): basic test");
+
+  for (uint64_t i = 0; i < 10; ++i) {
+    KEXPECT_EQ(fnv64_hash(i), fnv64_hash_array(&i, sizeof(uint64_t)));
+  }
+
+  for (uint64_t i = UINT64_MAX - 10; i < UINT64_MAX; ++i) {
+    KEXPECT_EQ(fnv64_hash(i), fnv64_hash_array(&i, sizeof(uint64_t)));
+  }
+
+  KEXPECT_EQ(0x779a65e7023cd2e7, fnv64_hash_array("hello world", 11));
+  KEXPECT_EQ(0x59f5f65ebaf8b367, fnv64_hash_array("HELLO WORLD", 11));
+  KEXPECT_EQ(0x4c344629608d5f40, fnv64_hash_array("abcd12345", 9));
+
+  KEXPECT_EQ(0xaf63bd4c8601b7df, fnv64_hash_array("\0", 1));
+  KEXPECT_EQ(0xaf63bc4c8601b62c, fnv64_hash_array("\1", 1));
+  KEXPECT_EQ(0x086f8007b51f1073, fnv64_hash_array("\x12\x34", 2));
+  KEXPECT_EQ(0x7486b218c3c86edf, fnv64_hash_array("\x12\x34\x56", 3));
+
+  KEXPECT_EQ(0x7C930E439CD83087, fnv64_hash_concat(fnv64_hash_array("abc", 3),
+                                                   fnv64_hash_array("def", 3)));
+  KEXPECT_EQ(0x89F30B7243873775, fnv64_hash_concat(fnv64_hash_array("abc", 3),
+                                                   fnv64_hash_array("deg", 3)));
+  KEXPECT_EQ(0xA83DC77212AD9BED, fnv64_hash_concat(fnv64_hash_array("abd", 3),
+                                                   fnv64_hash_array("def", 3)));
 }
 
 const char* get_md5_hash_n(const char* str, int len) {
@@ -199,6 +237,8 @@ void hash_test(void) {
   basic_fnv_test();
   fnv_array_test();
   fnv_concat_test();
+  basic_fnv64_test();
+  fnv64_array_test();
 
   KTEST_SUITE_BEGIN("MD5 hash test");
   md5_test();
