@@ -14,6 +14,8 @@
 
 #include "common/stack_trace_table.h"
 
+#include <limits.h>
+
 #include "common/config.h"
 #include "common/errno.h"
 #include "common/hash.h"
@@ -35,6 +37,8 @@ typedef struct {
   uint32_t hash;
   addr_t trace[TRACETBL_MAX_TRACE_LEN];
 } entry_t;
+
+#define REFCOUNT_MAX SHRT_MAX
 
 static entry_t g_tracetbl[TRACETBL_ENTRIES];
 static int g_tblsize = 0;
@@ -83,6 +87,7 @@ trace_id_t tracetbl_put(const addr_t* trace, int len) {
   } else {
     KASSERT_DBG(g_tracetbl[id].len == len);
     KASSERT_DBG(kmemcmp(g_tracetbl[id].trace, trace, len) == 0);
+    KASSERT(g_tracetbl[id].refcount < REFCOUNT_MAX);
     g_tracetbl[id].refcount++;
   }
 
