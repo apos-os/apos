@@ -226,6 +226,25 @@ static bool is_mld_include(const void* buf, ssize_t len, const char* src_mac,
   return KEXPECT_EQ(MLD_CHANGE_TO_INCLUDE_MODE, record->record_type);
 }
 
+// Extract the MLD records from the given report and sort them lexicographically
+// by multicast address.
+static const mld_multicast_record_t** mld_sort_records(
+    const mld_listener_report_t* report) {
+  static const mld_multicast_record_t* records[2];
+  int num_records = btoh16(report->num_mc_records);
+  KEXPECT_EQ(2, num_records);
+  if (num_records != 2 || kmemcmp(&report->records[0].multicast_addr,
+                                  &report->records[1].multicast_addr,
+                                  sizeof(struct in6_addr)) < 0) {
+    records[0] = &report->records[0];
+    records[1] = &report->records[1];
+  } else {
+    records[0] = &report->records[1];
+    records[1] = &report->records[0];
+  }
+  return records;
+}
+
 // Creates a in6_addr from a test-encoded (no zero compression, etc) string.
 static struct in6_addr* str2addr6(const char* s) {
   int index = 0;
@@ -2906,14 +2925,15 @@ static void multicast_tests(test_fixture_t* t) {
   KEXPECT_EQ(2, btoh16(report->num_mc_records));
   KEXPECT_EQ(0, report->reserved);
 
-  record = &report->records[0];
+  const mld_multicast_record_t** records = mld_sort_records(report);
+  record = records[0];
   KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
   KEXPECT_EQ(0, btoh16(record->num_sources));
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
   KEXPECT_STREQ("ff02::1:ff12:3456",
                 inet62str(&record->multicast_addr, pretty));
 
-  record = &report->records[1];
+  record = records[1];
   KEXPECT_EQ(MLD_MODE_IS_EXCLUDE, record->record_type);
   KEXPECT_EQ(0, btoh16(record->num_sources));
   KEXPECT_EQ(0, btoh16(record->aux_data_len));
