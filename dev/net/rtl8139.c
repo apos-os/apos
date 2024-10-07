@@ -182,7 +182,7 @@ static void rtl_cleanup(nic_t* base) {
   KLOG(DFATAL, "RTL NIC cleanup called (shouldn't be deleted)\n");
 }
 
-static void multicast_update_iter(void* arg, uint32_t key, void* val) {
+static void multicast_update_iter(void* arg, htbl_key_t key, void* val) {
   rtl_multicast_t* entry = (rtl_multicast_t*)val;
   uint32_t crc = ether_crc32(entry->addr.addr, sizeof(entry->addr));
   int bit = crc >> 26;

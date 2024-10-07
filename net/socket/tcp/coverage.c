@@ -113,7 +113,7 @@ void tcp_coverage_log_do(const char* event, const socket_tcp_t* socket) {
   htbl_put(&entry->events, fnv_hash_string(event), (void*)event);
 }
 
-static void dump_events(void* arg, uint32_t key, void* val) {
+static void dump_events(void* arg, htbl_key_t key, void* val) {
   bool* first = (bool*)arg;
   if (*first) {
     *first = false;
@@ -123,7 +123,7 @@ static void dump_events(void* arg, uint32_t key, void* val) {
   KLOG(INFO, "%s", (const char*)val);
 }
 
-static void dump_entry(void* arg, uint32_t key, void* val) {
+static void dump_entry(void* arg, htbl_key_t key, void* val) {
   const coverage_entry_t* entry = (const coverage_entry_t*)val;
   KLOG(INFO, "  state=%s "
        "has_recv_data=%d "

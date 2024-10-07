@@ -88,7 +88,7 @@ static void do_table_test(htbl_t* tbl) {
 
 #define ITERATE_SIZE 10
 static int g_iterate_vals[10];
-static void iterate_func(void* arg, uint32_t key, void* val) {
+static void iterate_func(void* arg, htbl_key_t key, void* val) {
   int* counter = (int*)arg;
   KASSERT(key < ITERATE_SIZE);
   g_iterate_vals[key] = (intptr_t)val;
@@ -162,12 +162,13 @@ static void clear_test(htbl_t* tbl) {
   KEXPECT_EQ(-1, htbl_get(tbl, 6, &val));
 }
 
-static bool filter_func(void* arg, uint32_t key, void* val) {
+static bool filter_func(void* arg, htbl_key_t key, void* val) {
   int* counter = (int*)arg;
   KASSERT(*counter < ITERATE_SIZE);
   g_iterate_vals[*counter] = (intptr_t)val;
   (*counter)++;
-  if (key % 3 == 0 || key % 7 == 0) {
+  KASSERT(key < UINT32_MAX);
+  if ((uint32_t)key % 3 == 0 || (uint32_t)key % 7 == 0) {
     return false;
   } else {
     return true;
@@ -265,7 +266,7 @@ static void hashtable_size_test(void) {
   htbl_cleanup(&tbl);
 }
 
-static bool filter_even(void* arg, uint32_t key, void* val) {
+static bool filter_even(void* arg, htbl_key_t key, void* val) {
   return key % 2 == 0;
 }
 

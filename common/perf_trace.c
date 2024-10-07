@@ -103,7 +103,7 @@ typedef struct {
   uint32_t sample_divisor;
 } perftrace_iter_args_t;
 
-static void perftrace_iter(void* arg, uint32_t key, void* val) {
+static void perftrace_iter(void* arg, htbl_key_t key, void* val) {
   perftrace_iter_args_t* args = (perftrace_iter_args_t*)arg;
   trace_id_t trace_id = (trace_id_t)key;
   const trace_entry_t* entry = (trace_entry_t*)val;

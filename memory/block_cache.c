@@ -773,7 +773,7 @@ typedef struct {
   int total_pins;
 } stats_t;
 
-static void stats_counter_func(void* arg, uint32_t key, void* value) {
+static void stats_counter_func(void* arg, htbl_key_t key, void* value) {
   stats_t* stats = (stats_t*)arg;
   bc_entry_internal_t* entry = (bc_entry_internal_t*)value;
   stats->total++;

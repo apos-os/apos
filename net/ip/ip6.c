@@ -59,7 +59,7 @@ void ipv6_init(nic_t* nic) {
   nic->ipv6.gateway.valid = false;
 }
 
-static void do_delete(void* arg, uint32_t key, void* val) {
+static void do_delete(void* arg, htbl_key_t key, void* val) {
   kfree(val);
 }
 

@@ -23,16 +23,21 @@
 #define GROW_RATIO 2
 
 struct htbl_entry {
-  uint32_t key;
+  htbl_key_t key;
   void* value;
   struct htbl_entry* next;
 };
 
-static inline uint32_t hash_num_buckets(int num_buckets, uint32_t key) {
-  return fnv_hash(key) % num_buckets;
+static inline uint32_t hash_num_buckets(int num_buckets, htbl_key_t key) {
+  // On 32-bit systems, avoid a 64-bit division by truncating the hash.
+#if ARCH_IS_64_BIT
+  return fnv64_hash(key) % num_buckets;
+#else
+  return ((uint32_t)fnv64_hash(key)) % num_buckets;
+#endif
 }
 
-static inline uint32_t hash(const htbl_t* tbl, uint32_t key) {
+static inline uint32_t hash(const htbl_t* tbl, htbl_key_t key) {
   return hash_num_buckets(tbl->num_buckets, key);
 }
 
@@ -93,7 +98,7 @@ void htbl_cleanup(htbl_t* tbl) {
   tbl->num_buckets = -1;
 }
 
-void htbl_put(htbl_t* tbl, uint32_t key, void* value) {
+void htbl_put(htbl_t* tbl, htbl_key_t key, void* value) {
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   while (e) {
@@ -115,7 +120,7 @@ void htbl_put(htbl_t* tbl, uint32_t key, void* value) {
   maybe_grow(tbl);
 }
 
-int htbl_get(const htbl_t* tbl, uint32_t key, void** value) {
+int htbl_get(const htbl_t* tbl, htbl_key_t key, void** value) {
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   while (e) {
@@ -128,7 +133,7 @@ int htbl_get(const htbl_t* tbl, uint32_t key, void** value) {
   return -1;
 }
 
-int htbl_remove(htbl_t* tbl, uint32_t key) {
+int htbl_remove(htbl_t* tbl, htbl_key_t key) {
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   htbl_entry_t* prev = 0;
@@ -149,7 +154,7 @@ int htbl_remove(htbl_t* tbl, uint32_t key) {
   return -1;
 }
 
-void htbl_iterate(const htbl_t* tbl, void (*func)(void*, uint32_t, void*),
+void htbl_iterate(const htbl_t* tbl, void (*func)(void*, htbl_key_t, void*),
                   void* arg) {
   int counter = 0;
   for (int i = 0; i < tbl->num_buckets; ++i) {
@@ -163,7 +168,7 @@ void htbl_iterate(const htbl_t* tbl, void (*func)(void*, uint32_t, void*),
   KASSERT_DBG(counter == tbl->num_entries);
 }
 
-void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg) {
+void htbl_clear(htbl_t* tbl, void (*dtor)(void*, htbl_key_t, void*), void* arg) {
   int counter = tbl->num_entries;
   for (int i = 0; i < tbl->num_buckets; ++i) {
     while (tbl->buckets[i]) {
@@ -179,7 +184,7 @@ void htbl_clear(htbl_t* tbl, void (*dtor)(void*, uint32_t, void*), void* arg) {
   KASSERT_DBG(counter == 0);
 }
 
-int htbl_filter(htbl_t* tbl, bool (*pred)(void*, uint32_t, void*), void* arg) {
+int htbl_filter(htbl_t* tbl, bool (*pred)(void*, htbl_key_t, void*), void* arg) {
   int removed = 0;
   for (int i = 0; i < tbl->num_buckets; ++i) {
     htbl_entry_t** prev_ptr = &tbl->buckets[i];
