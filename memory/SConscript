@@ -15,6 +15,7 @@
 Import('env AposAddSources')
 
 srcs = [
+  'arena.c',
   'block_cache.c',
   'kmalloc.c',
   'memobj.c',
