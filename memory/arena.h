@@ -32,6 +32,11 @@ typedef struct {
 
 #define ARENA_INIT_STATIC { 0, 0 }
 
+// If a requested allocation is too large (larger than ~ARENA_BLOCK_SIZE/2) then
+// a dedicated block will be allocated for it.  If done more than occasionally,
+// this defeats the purpose of an arena.  However it makes it easy to use the
+// arena with hash tables (which have occasional large allocations and frequent
+// small ones).
 void* arena_alloc(arena_t* arena, size_t n, size_t alignment);
 
 // Clear all allocated memory from the arena.  A cleared arena can be

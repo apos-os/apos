@@ -157,10 +157,50 @@ static void arena_allocator_test(void) {
   arena_clear(&a);
 }
 
+static void arena_large_alloc_test(void) {
+  KTEST_BEGIN("Arena: test allocating too-large blocks");
+  arena_t a = ARENA_INIT_STATIC;
+
+  void* x = arena_alloc(&a, 10, 1);
+  kmemset(x, 'x', 10);
+  x = arena_alloc(&a, 10, 1);
+  kmemset(x, 'x', 10);
+  KEXPECT_EQ(1, arena_num_blocks(&a));
+
+  void* big = arena_alloc(&a, 100000, 64);
+  KEXPECT_NE(NULL, big);
+  kmemset(big, 'x', 100000);
+  KEXPECT_EQ(0, (uintptr_t)big % 64);
+  KEXPECT_EQ(2, arena_num_blocks(&a));
+
+  void* y = arena_alloc(&a, 10, 1);
+  kmemset(y, 'x', 10);
+  KEXPECT_EQ(2, arena_num_blocks(&a));
+
+  // Should still have the same unfinished block.
+  KEXPECT_EQ(10, (uintptr_t)y - (uintptr_t)x);
+
+  big = arena_alloc(&a, ARENA_BLOCK_SIZE / 2 + 1, 128);
+  KEXPECT_NE(NULL, big);
+  KEXPECT_EQ(0, (uintptr_t)big % 128);
+  KEXPECT_EQ(3, arena_num_blocks(&a));
+
+  y = arena_alloc(&a, 10, 1);
+  kmemset(y, 'x', 10);
+  KEXPECT_EQ(3, arena_num_blocks(&a));
+
+  // Should still have the same unfinished block.
+  KEXPECT_EQ(20, (uintptr_t)y - (uintptr_t)x);
+
+  arena_clear(&a);
+  KEXPECT_EQ(0, arena_num_blocks(&a));
+}
+
 void arena_test(void) {
   KTEST_SUITE_BEGIN("Arena tests");
   basic_arena_test();
   arena_multiblock_test();
   arena_block_end_test();
   arena_allocator_test();
+  arena_large_alloc_test();
 }

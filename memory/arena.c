@@ -21,6 +21,8 @@ typedef struct {
   uintptr_t next;
 } arena_header_t;
 
+#define MAX_ARENA_ALLOC ((ARENA_BLOCK_SIZE - sizeof(arena_header_t)) / 2)
+
 static void extend_arena(arena_t* arena) {
   void* new_block = kmalloc_aligned(ARENA_BLOCK_SIZE, sizeof(arena_header_t));
   KASSERT(new_block != NULL);
@@ -30,12 +32,33 @@ static void extend_arena(arena_t* arena) {
   arena->offset = sizeof(arena_header_t);
 }
 
+static void* mega_alloc(arena_t* arena, size_t n, size_t alignment) {
+  klogfm(KL_MEMORY, WARNING, "arena allocating mega block of %zu bytes\n", n);
+  const size_t block_size =
+      n + sizeof(arena_header_t) + 2 * ARENA_MAX_ALIGN;
+  void* new_block = kmalloc_aligned(block_size, sizeof(arena_header_t));
+  KASSERT(new_block != NULL);
+  arena_header_t* hdr = (arena_header_t*)new_block;
+  arena_header_t* curr_hdr = (arena_header_t*)arena->base;
+  hdr->next = curr_hdr->next;
+  curr_hdr->next = (uintptr_t)new_block;
+
+  void* result = (void*)align_up((uintptr_t)new_block + sizeof(arena_header_t),
+                                 alignment);
+  KASSERT_DBG((uintptr_t)result + n <= (uintptr_t)new_block + block_size);
+  return result;
+}
+
 void* arena_alloc(arena_t* arena, size_t n, size_t alignment) {
-  KASSERT(n > 0 && n < ARENA_BLOCK_SIZE / 4);
+  KASSERT(n > 0);
   KASSERT(alignment > 0 && alignment <= ARENA_MAX_ALIGN);
 
   if (arena->base == 0) {
     extend_arena(arena);
+  }
+
+  if (n > MAX_ARENA_ALLOC) {
+    return mega_alloc(arena, n, alignment);
   }
 
   uintptr_t result = align_up(arena->base + arena->offset, alignment);
