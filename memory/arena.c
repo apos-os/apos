@@ -59,6 +59,18 @@ void arena_clear(arena_t* arena) {
   arena->base = 0;
 }
 
+static void* arena_alloc_alloc(void* arg, size_t n, size_t alignment) {
+  return arena_alloc((arena_t*)arg, n, alignment);
+}
+
+static void arena_alloc_free(void* arg, void* ptr) {}
+
+void arena_make_alloc(arena_t* arena, allocator_t* alloc) {
+  alloc->alloc = &arena_alloc_alloc;
+  alloc->free = &arena_alloc_free;
+  alloc->arg = arena;
+}
+
 int arena_num_blocks(const arena_t* arena) {
   int result = 0;
   uintptr_t block = arena->base;

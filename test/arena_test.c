@@ -13,6 +13,7 @@
 // limitations under the License.
 #include "test/kernel_tests.h"
 
+#include "memory/allocator.h"
 #include "memory/arena.h"
 #include "test/ktest.h"
 
@@ -138,9 +139,28 @@ static void arena_block_end_test(void) {
   arena_clear(&a);
 }
 
+static void arena_allocator_test(void) {
+  KTEST_BEGIN("Arena: use via allocator_t");
+  arena_t a = ARENA_INIT_STATIC;
+  allocator_t alloc;
+  arena_make_alloc(&a, &alloc);
+
+  void* x = alloc_alloc(&alloc, 10, 8);
+  KEXPECT_EQ(0, (uintptr_t)x % 8);
+  kmemset(x, 'x', 10);
+
+  alloc_free(&alloc, x);
+  // Should not have done anything --- though for safety, the allocator bounce
+  // code could have overwritten it.  Consider for future.
+  KEXPECT_EQ('x', *(const char*)x);
+
+  arena_clear(&a);
+}
+
 void arena_test(void) {
   KTEST_SUITE_BEGIN("Arena tests");
   basic_arena_test();
   arena_multiblock_test();
   arena_block_end_test();
+  arena_allocator_test();
 }

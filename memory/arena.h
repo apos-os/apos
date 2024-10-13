@@ -20,6 +20,7 @@
 #include <stdint.h>
 
 #include "common/types.h"
+#include "memory/allocator.h"
 
 #define ARENA_BLOCK_SIZE (2 << 15)  // 64k
 #define ARENA_MAX_ALIGN 128
@@ -36,6 +37,10 @@ void* arena_alloc(arena_t* arena, size_t n, size_t alignment);
 // Clear all allocated memory from the arena.  A cleared arena can be
 // deallocated safely.
 void arena_clear(arena_t* arena);
+
+// Make an allocator for the given arena.  The arena must outlive use of the
+// allocator.
+void arena_make_alloc(arena_t* arena, allocator_t* alloc);
 
 // For tests.
 int arena_num_blocks(const arena_t* arena);
