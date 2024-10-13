@@ -14,6 +14,7 @@
 
 #include "common/kassert.h"
 #include "common/hashtable.h"
+#include "memory/arena.h"
 #include "test/ktest.h"
 
 #define EXPECT_IN_TABLE(tbl, key, value) do { \
@@ -298,6 +299,48 @@ static void hashtable_big_filter_test(void) {
   htbl_cleanup(&tbl);
 }
 
+static void hashtable_alloc_test(void) {
+  KTEST_BEGIN("hashtable: custom allocator test");
+  // First a basic test that does several normal operations.
+  htbl_t tbl;
+  arena_t arena = ARENA_INIT_STATIC;
+  allocator_t alloc;
+
+  arena_make_alloc(&arena, &alloc);
+  htbl_init_alloc(&tbl, 5, &alloc);
+  for (int i = 0; i < 30; ++i) {
+    htbl_put(&tbl, i, (void*)(intptr_t)i);
+  }
+  void* val;
+  for (int i = 0; i < 30; ++i) {
+    KEXPECT_EQ(0, htbl_get(&tbl, i, &val));
+    KEXPECT_EQ(i, (intptr_t)val);
+  }
+  KEXPECT_EQ(0, htbl_remove(&tbl, 5));
+  KEXPECT_EQ(-1, htbl_get(&tbl, 5, &val));
+  KEXPECT_EQ(1, arena_num_blocks(&arena));
+  htbl_cleanup(&tbl);
+
+
+  KTEST_BEGIN("hashtable: custom allocator test (arena, no cleanup)");
+  // Test just cleaning up the arena --- if the hashtable allocates any memory
+  // outside the arena, this will leak.
+  htbl_init_alloc(&tbl, 5, &alloc);
+  for (int i = 0; i < 30; ++i) {
+    htbl_put(&tbl, i, (void*)(intptr_t)i);
+  }
+  for (int i = 0; i < 30; ++i) {
+    KEXPECT_EQ(0, htbl_get(&tbl, i, &val));
+    KEXPECT_EQ(i, (intptr_t)val);
+  }
+  KEXPECT_EQ(0, htbl_remove(&tbl, 5));
+  KEXPECT_EQ(-1, htbl_get(&tbl, 5, &val));
+  KEXPECT_EQ(1, arena_num_blocks(&arena));
+
+  arena_clear(&arena);
+  // If there are any leaks now, that indicates a bug.
+}
+
 void hashtable_test(void) {
   KTEST_SUITE_BEGIN("hashtable (large table)");
   htbl_t t;
@@ -320,4 +363,5 @@ void hashtable_test(void) {
   KTEST_SUITE_BEGIN("hashtable (general tests)");
   hashtable_size_test();
   hashtable_big_filter_test();
+  hashtable_alloc_test();
 }

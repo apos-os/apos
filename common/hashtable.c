@@ -42,8 +42,8 @@ static inline uint32_t hash(const htbl_t* tbl, htbl_key_t key) {
 }
 
 void htbl_resize(htbl_t* tbl, int new_size) {
-  htbl_entry_t** new_buckets =
-      (htbl_entry_t**)kmalloc(sizeof(htbl_entry_t*) * new_size);
+  htbl_entry_t** new_buckets = (htbl_entry_t**)alloc_alloc(
+      tbl->alloc, sizeof(htbl_entry_t*) * new_size, sizeof(void*));
   if (!new_buckets) return;
 
   for (int i = 0; i < new_size; ++i) {
@@ -62,7 +62,7 @@ void htbl_resize(htbl_t* tbl, int new_size) {
     }
   }
 
-  kfree(tbl->buckets);
+  alloc_free(tbl->alloc, tbl->buckets);
 
   tbl->buckets = new_buckets;
   tbl->num_buckets = new_size;
@@ -76,7 +76,13 @@ static void maybe_grow(htbl_t* tbl) {
 }
 
 void htbl_init(htbl_t* tbl, int buckets) {
-  tbl->buckets = (htbl_entry_t**)kmalloc(sizeof(htbl_entry_t*) * buckets);
+  htbl_init_alloc(tbl, buckets, &kDefaultAlloc);
+}
+
+void htbl_init_alloc(htbl_t* tbl, int buckets, const allocator_t* alloc) {
+  tbl->alloc = alloc;
+  tbl->buckets = (htbl_entry_t**)alloc_alloc(
+      tbl->alloc, sizeof(htbl_entry_t*) * buckets, sizeof(void*));
   for (int i = 0; i < buckets; ++i) {
     tbl->buckets[i] = 0x0;
   }
@@ -89,11 +95,11 @@ void htbl_cleanup(htbl_t* tbl) {
     htbl_entry_t* e = tbl->buckets[i];
     while (e) {
       htbl_entry_t* next = e->next;
-      kfree(e);
+      alloc_free(tbl->alloc, e);
       e = next;
     }
   }
-  kfree(tbl->buckets);
+  alloc_free(tbl->alloc, tbl->buckets);
   tbl->buckets = 0x0;
   tbl->num_buckets = -1;
 }
@@ -110,7 +116,8 @@ void htbl_put(htbl_t* tbl, htbl_key_t key, void* value) {
   }
 
   // Add a new entry.
-  e = (htbl_entry_t*)kmalloc(sizeof(htbl_entry_t));
+  e = (htbl_entry_t*)alloc_alloc(tbl->alloc, sizeof(htbl_entry_t),
+                                 sizeof(void*));
   e->key = key;
   e->value = value;
   e->next = tbl->buckets[bucket];
@@ -144,7 +151,7 @@ int htbl_remove(htbl_t* tbl, htbl_key_t key) {
       } else {
         tbl->buckets[bucket] = e->next;
       }
-      kfree(e);
+      alloc_free(tbl->alloc, e);
       tbl->num_entries--;
       return 0;
     }
@@ -176,7 +183,7 @@ void htbl_clear(htbl_t* tbl, void (*dtor)(void*, htbl_key_t, void*), void* arg) 
       tbl->buckets[i] = e->next;
       tbl->num_entries--;
       dtor(arg, e->key, e->value);
-      kfree(e);
+      alloc_free(tbl->alloc, e);
       counter--;
     }
   }
@@ -195,7 +202,7 @@ int htbl_filter(htbl_t* tbl, bool (*pred)(void*, htbl_key_t, void*), void* arg) 
         removed++;
         *prev_ptr = e->next;
         tbl->num_entries--;
-        kfree(e);
+        alloc_free(tbl->alloc, e);
       } else {
         prev_ptr = &e->next;
       }

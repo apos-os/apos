@@ -24,6 +24,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "memory/allocator.h"
+
 typedef uint64_t htbl_key_t;
 
 struct htbl_entry;
@@ -34,6 +36,9 @@ typedef struct htbl htbl_t;
 
 // Initialize a hash table with a certain number of buckets.
 void htbl_init(htbl_t* tbl, int buckets);
+
+// As above, but uses a custom allocator for the hashtable.
+void htbl_init_alloc(htbl_t* tbl, int buckets, const allocator_t* alloc);
 
 // Clean up the memory used by the table.  You must still call kfree() on the
 // htbl_t if you allocated it on the heap.
@@ -77,6 +82,7 @@ int htbl_num_buckets(const htbl_t* tbl);
 
 // Internal definition.
 struct htbl {
+  const allocator_t* alloc;
   htbl_entry_t** buckets;
   int num_buckets;
   int num_entries;
@@ -84,6 +90,6 @@ struct htbl {
 
 // A static initializer for htbl_t --- the hashtable must still be initialized
 // with htbl_init(), this is just a placeholder.
-#define HTBL_STATIC_DECL { NULL, 0, 0 }
+#define HTBL_STATIC_DECL { NULL, NULL, 0, 0 }
 
 #endif
