@@ -71,7 +71,9 @@ void perftrace_disable(void) {
 
 static const uint64_t kHashKey[2] = {0x5ae4bea972f7e468, 0xdcbaaa22cf9e0ef5};
 
-void perftrace_log(uint64_t elapsed_time, int max_stack_frames) {
+void perftrace_log(uint64_t elapsed_time, int trim_stack_frames,
+                   int max_stack_frames) {
+  KASSERT_DBG(trim_stack_frames >= 0);
   // TODO(SMP): this should be an atomic operation.
   if (!g_ptbl.init || !g_ptbl.enabled) {
     return;
@@ -88,6 +90,9 @@ void perftrace_log(uint64_t elapsed_time, int max_stack_frames) {
   // Exclude this function from the call stack.
   stack_trace_len--;
   const addr_t* stack_trace = &stack_trace_storage[1];
+  int trim = min(trim_stack_frames, stack_trace_len - 1);
+  stack_trace_len -= trim;
+  stack_trace += trim;
   if (max_stack_frames > 0) {
     stack_trace_len = min(stack_trace_len, max_stack_frames);
   }
