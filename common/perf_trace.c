@@ -71,6 +71,10 @@ void perftrace_disable(void) {
 
 static const uint64_t kHashKey[2] = {0x5ae4bea972f7e468, 0xdcbaaa22cf9e0ef5};
 
+static void perftrace_log_internal(uint64_t elapsed_time,
+                                   const addr_t* stack_trace,
+                                   int stack_trace_len);
+
 void perftrace_log(uint64_t elapsed_time, int trim_stack_frames,
                    int max_stack_frames) {
   KASSERT_DBG(trim_stack_frames >= 0);
@@ -96,6 +100,24 @@ void perftrace_log(uint64_t elapsed_time, int trim_stack_frames,
   if (max_stack_frames > 0) {
     stack_trace_len = min(stack_trace_len, max_stack_frames);
   }
+
+  perftrace_log_internal(elapsed_time, stack_trace, stack_trace_len);
+}
+
+void perftrace_log_trace(uint64_t elapsed_time, const addr_t* stack_trace,
+                         int stack_trace_len) {
+  KASSERT_DBG(stack_trace_len > 0 && stack_trace_len < 128);
+  // TODO(SMP): this should be an atomic operation.
+  if (!g_ptbl.init || !g_ptbl.enabled) {
+    return;
+  }
+
+  perftrace_log_internal(elapsed_time, stack_trace, stack_trace_len);
+}
+
+static void perftrace_log_internal(uint64_t elapsed_time,
+                                   const addr_t* stack_trace,
+                                   int stack_trace_len) {
   uint64_t stack_trace_id =
       siphash_2_4(kHashKey, stack_trace, stack_trace_len * sizeof(addr_t));
 

@@ -43,6 +43,10 @@ void perftrace_disable(void);
 void perftrace_log(uint64_t elapsed_time, int trim_stack_frames,
                    int max_stack_frames);
 
+// As above, but for a manually-supplied stack trace.
+void perftrace_log_trace(uint64_t elapsed_time, const addr_t* stack_trace,
+                         int stack_trace_len);
+
 // Dump the current perf trace data into a buffer.  Returns the number of bytes
 // written, and sets |buf_out| to be the allocated buffer.  Dumps in the binary
 // gperftools CPU trace format:
