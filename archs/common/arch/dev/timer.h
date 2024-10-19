@@ -30,4 +30,7 @@ uint64_t arch_real_timer(void);
 // Returns the number of arch_real_timer() ticks per second.
 uint32_t arch_real_timer_freq(void);
 
+// Returns the number of profiler samples (if profiling is enabled) per second.
+uint32_t arch_profile_samples_freq(void);
+
 #endif

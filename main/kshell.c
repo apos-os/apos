@@ -141,7 +141,9 @@ static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
+  perftrace_enable();
   kernel_run_ktest(argv[1]);
+  perftrace_disable();
 }
 
 #endif  // ENABLE_TESTS

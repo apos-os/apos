@@ -177,7 +177,11 @@ ssize_t perftrace_dump(uint8_t** buf_out) {
   uint64_t* buf_orig = a.buf;
   *buf_out = (uint8_t*)a.buf;
 
-  uint32_t arch_freq = arch_real_timer_freq();
+  // If sample-based profiling is enabled, then use the samples-per-second.
+  // Otherwise, we're doing trace-based profiling and each entry's elapsed time
+  // represents arch-ticks, so use the arch real-timer frequency.
+  uint32_t arch_freq =
+      ENABLE_PROFILING ? arch_profile_samples_freq() : arch_real_timer_freq();
   uint64_t out_freq;
   if (arch_freq > MICROS_PER_SEC) {
     a.sample_divisor = arch_freq / MICROS_PER_SEC;
