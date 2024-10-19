@@ -24,6 +24,10 @@ typedef struct {
   void* arg;
 } allocator_t;
 
+// Static initializer for an (invalid) allocator_t.
+#define ALLOCATOR_INIT_STATIC \
+  { NULL, NULL, NULL }
+
 static inline ALWAYS_INLINE void* alloc_alloc(const allocator_t* alloc,
                                               size_t n, size_t alignment) {
   return alloc->alloc(alloc->arg, n, alignment);

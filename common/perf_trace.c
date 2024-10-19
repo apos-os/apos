@@ -17,32 +17,42 @@
 #include "arch/proc/stack_trace.h"
 #include "common/hashtable.h"
 #include "common/kassert.h"
+#include "common/kstring.h"
 #include "common/math.h"
-#include "common/stack_trace_table.h"
+#include "common/siphash.h"
+#include "memory/arena.h"
 #include "memory/kmalloc.h"
 #include "proc/spinlock.h"
 
 typedef struct {
-  htbl_t traces;  // trace_id_t -> trace_t*
+  htbl_t traces;  // hash(stack_trace) -> trace_t*
   kspinlock_intsafe_t lock;
   bool init;
   bool enabled;
   int total_stack_entries;
+  arena_t arena;
+  allocator_t alloc;
 } perftrace_tbl_t;
 
-#define PERFTRACE_TBL_INIT \
-  { HTBL_STATIC_DECL, KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC, false, false, 0 }
+#define PERFTRACE_TBL_INIT                                                   \
+  {                                                                          \
+    HTBL_STATIC_DECL, KSPINLOCK_INTERRUPT_SAFE_INIT_STATIC, false, false, 0, \
+        ARENA_INIT_STATIC, ALLOCATOR_INIT_STATIC,                            \
+  }
 
 static perftrace_tbl_t g_ptbl = PERFTRACE_TBL_INIT;
 
 typedef struct {
+  addr_t* trace;
   int count;
   uint64_t elapsed_time;
+  uint8_t trace_len;
 } trace_entry_t;
 
 void perftrace_init(void) {
   KASSERT(!g_ptbl.init);
-  htbl_init(&g_ptbl.traces, 10);
+  arena_make_alloc(&g_ptbl.arena, &g_ptbl.alloc);
+  htbl_init_alloc(&g_ptbl.traces, 16, &g_ptbl.alloc);
   g_ptbl.total_stack_entries = 0;
   g_ptbl.init = true;
 }
@@ -59,6 +69,8 @@ void perftrace_disable(void) {
   kspin_unlock_int(&g_ptbl.lock);
 }
 
+static const uint64_t kHashKey[2] = {0x5ae4bea972f7e468, 0xdcbaaa22cf9e0ef5};
+
 void perftrace_log(uint64_t elapsed_time, int max_stack_frames) {
   // TODO(SMP): this should be an atomic operation.
   if (!g_ptbl.init || !g_ptbl.enabled) {
@@ -70,30 +82,50 @@ void perftrace_log(uint64_t elapsed_time, int max_stack_frames) {
   // with too long of a timer resolution.
   elapsed_time = max(elapsed_time, 1U);
 
-  addr_t stack_trace[32];
-  int stack_trace_len = get_stack_trace(stack_trace, 32);
+  addr_t stack_trace_storage[32];
+  int stack_trace_len = get_stack_trace(stack_trace_storage, 32);
   KASSERT_DBG(stack_trace_len > 3);
   // Exclude this function from the call stack.
   stack_trace_len--;
+  const addr_t* stack_trace = &stack_trace_storage[1];
   if (max_stack_frames > 0) {
     stack_trace_len = min(stack_trace_len, max_stack_frames);
   }
-  const trace_id_t stack_trace_id =
-      tracetbl_put(stack_trace + 1, stack_trace_len);
-  KASSERT(stack_trace_id >= 0);
+  uint64_t stack_trace_id =
+      siphash_2_4(kHashKey, stack_trace, stack_trace_len * sizeof(addr_t));
 
   kspin_lock_int(&g_ptbl.lock);
+
   void* val;
   if (htbl_get(&g_ptbl.traces, stack_trace_id, &val) == 0) {
     trace_entry_t* entry = (trace_entry_t*)val;
+    KASSERT_DBG(entry->trace_len == stack_trace_len);
+    KASSERT_DBG(kmemcmp(stack_trace, entry->trace,
+                        entry->trace_len * sizeof(addr_t)) == 0);
     entry->count++;
     entry->elapsed_time += elapsed_time;
   } else {
-    trace_entry_t* entry = KMALLOC(trace_entry_t);
+    trace_entry_t* entry =
+        alloc_alloc(&g_ptbl.alloc, sizeof(trace_entry_t), PTR_ALIGN);
+    if (!entry) {
+      klogf("WARNING: perf trace dropped, no memory\n");
+      kspin_unlock_int(&g_ptbl.lock);
+      return;
+    }
+    entry->trace_len = stack_trace_len;
+    entry->trace = (addr_t*)alloc_alloc(
+        &g_ptbl.alloc, sizeof(addr_t) * stack_trace_len, PTR_ALIGN);
+    for (int i = 0; i < stack_trace_len; ++i) {
+      entry->trace[i] = stack_trace[i];
+    }
     entry->count = 1;
     entry->elapsed_time = elapsed_time;
     htbl_put(&g_ptbl.traces, stack_trace_id, entry);
     g_ptbl.total_stack_entries += stack_trace_len;
+
+    if (htbl_size(&g_ptbl.traces) % 10000 == 0) {
+      klogf("perf_trace: stored %d traces\n", htbl_size(&g_ptbl.traces));
+    }
   }
   kspin_unlock_int(&g_ptbl.lock);
 }
@@ -105,7 +137,6 @@ typedef struct {
 
 static void perftrace_iter(void* arg, htbl_key_t key, void* val) {
   perftrace_iter_args_t* args = (perftrace_iter_args_t*)arg;
-  trace_id_t trace_id = (trace_id_t)key;
   const trace_entry_t* entry = (trace_entry_t*)val;
   // TODO(aoates): do something more elegant than this.  Without this cast, on
   // i586 we get perf_trace.c:97: undefined reference to `__udivdi3'
@@ -115,15 +146,12 @@ static void perftrace_iter(void* arg, htbl_key_t key, void* val) {
   *args->buf = (uint32_t)entry->elapsed_time / args->sample_divisor;
 #endif
   args->buf++;
-  addr_t stack_trace[TRACETBL_MAX_TRACE_LEN];
-  int len = tracetbl_get(trace_id, stack_trace);
-  KASSERT(len > 0);
-  *args->buf = len;
+  *args->buf = entry->trace_len;
   args->buf++;
-  for (int i = 0; i < len; ++i) {
-    *args->buf = stack_trace[i];
-    args->buf++;
+  for (int i = 0; i < entry->trace_len; ++i) {
+    args->buf[i] = entry->trace[i];
   }
+  args->buf += entry->trace_len;
 }
 
 #define MICROS_PER_SEC 1000000

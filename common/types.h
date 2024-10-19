@@ -28,4 +28,6 @@ typedef uint64_t addr64_t;
 _Static_assert(sizeof(size_t) == sizeof(addr_t), "bad size_t size");
 _Static_assert(sizeof(ssize_t) == sizeof(size_t), "bad ssize_t size");
 
+#define PTR_ALIGN sizeof(void*)
+
 #endif
