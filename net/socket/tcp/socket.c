@@ -1518,6 +1518,15 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   if (result != 0) {
     KLOG(WARNING, "TCP: socket %p unable to send SYN-ACK: %s\n", child,
          errorname(-result));
+    // As a special case, if we got -EAGAIN, shorten the retransmit timer to try
+    // and retransmit fast.  This is likely due to an incoming connection whose
+    // source, when routed, has an unknown nexthop.  There will be no ARP/NDP
+    // entry.  Rather than wait a full 1s, try retransmitting quickly.
+    if (result == -EAGAIN) {
+      kspin_lock(&child->spin_mu);
+      tcp_set_timer(child, 50, true);
+      kspin_unlock(&child->spin_mu);
+    }
   }
   TCP_DEC_REFCOUNT(child);
 }
