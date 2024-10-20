@@ -14,9 +14,12 @@
 
 #include <stdint.h>
 
+#include "arch/dev/timer.h"
+#include "arch/proc/stack_trace.h"
 #include "common/kassert.h"
 #include "common/klog.h"
 #include "common/kstring.h"
+#include "common/perf_trace.h"
 #include "dev/interrupts.h"
 #include "memory/kmalloc.h"
 #include "proc/kthread.h"
@@ -26,8 +29,13 @@
 #include "proc/scheduler.h"
 #include "proc/spinlock.h"
 
+_Static_assert(!(ENABLE_PROFILING && ENABLE_PROFILE_IDLE),
+               "Cannot enable PROFILING and PROFILE_IDLE at the same time");
+
 static kthread_t g_idle_thread = 0;
 static kthread_queue_t g_run_queue;
+static bool g_idling = false;
+static uint64_t g_idling_start = 0;
 
 static void* idle_thread_body(void* arg) {
   sched_disable_preemption();
@@ -85,8 +93,22 @@ void scheduler_yield_no_reschedule(void) {
   }
   if (new_thread) {
     kthread_queue_remove(new_thread);
+    if (ENABLE_PROFILE_IDLE && g_idling) {
+      g_idling = false;
+      uint64_t idle_len = arch_real_timer() - g_idling_start;
+      addr_t stack_trace[32];
+      int len = get_stack_trace_for_thread(new_thread, stack_trace, 32);
+      // Skip the kthread_switch().
+      KASSERT_DBG(len > 2);
+      len--;
+      perftrace_log_trace(idle_len, stack_trace + 1, len);
+    }
   } else {
     new_thread = g_idle_thread;
+    if (ENABLE_PROFILE_IDLE && !g_idling) {
+      g_idling = true;
+      g_idling_start = arch_real_timer();
+    }
   }
   kthread_switch(new_thread);
   POP_INTERRUPTS();

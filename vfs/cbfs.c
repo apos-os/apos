@@ -298,7 +298,7 @@ fs_t* cbfs_create(const char* type, cbfs_lookup_t lookup_cb,
   return &f->fs;
 }
 
-static void inode_cleanup_func(void* arg, uint32_t key, void* value) {
+static void inode_cleanup_func(void* arg, htbl_key_t key, void* value) {
   cbfs_t* cfs = (cbfs_t*)arg;
   cbfs_inode_t* inode = (cbfs_inode_t*)value;
   cleanup_inode(inode);

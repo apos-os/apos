@@ -1,4 +1,4 @@
-// Copyright 2014 Andrew Oates.  All Rights Reserved.
+// Copyright 2024 Andrew Oates.  All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,22 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Common types.  See common/posix_types.h for POSIX-required types.
-#ifndef APOO_COMMON_TYPES_H
-#define APOO_COMMON_TYPES_H
+#ifndef APOO_COMMON_SIPHASH_H
+#define APOO_COMMON_SIPHASH_H
 
 #include <stdint.h>
-#include <stddef.h>
 
-#include "arch/common/types.h"
-#include "user/include/apos/posix_types.h"
+#include "common/types.h"
 
-typedef uint32_t addr32_t;
-typedef uint64_t addr64_t;
-
-_Static_assert(sizeof(size_t) == sizeof(addr_t), "bad size_t size");
-_Static_assert(sizeof(ssize_t) == sizeof(size_t), "bad ssize_t size");
-
-#define PTR_ALIGN sizeof(void*)
+uint64_t siphash_2_4(const uint64_t key[2], const void* data, ssize_t len);
 
 #endif

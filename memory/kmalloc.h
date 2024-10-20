@@ -16,13 +16,15 @@
 #define APOO_MEMORY_KMALLOC_H
 
 #include <stddef.h>
-#include <stdint.h>
+
+#include "memory/allocator.h"
 
 // TODO(aoates): document these
 void kmalloc_init(void);
 void kfree(void* x);
 void* kmalloc(size_t n);
-void* kmalloc_aligned(size_t n, size_t alignment);
+void* kmalloc_alloc(void* arg, size_t n, size_t alignment);
+#define kmalloc_aligned(n, alignment) kmalloc_alloc(NULL, (n), (alignment))
 void kmalloc_log_state(void);
 void kmalloc_log_heap_profile(void);
 
@@ -34,5 +36,8 @@ void kmalloc_log_heap_profile(void);
 void kmalloc_enable_test_mode(void);
 
 #define KMALLOC(_TYPE) ((_TYPE*)kmalloc(sizeof(_TYPE)));
+
+// Default kmalloc-based allocator.
+extern allocator_t kDefaultAlloc;
 
 #endif

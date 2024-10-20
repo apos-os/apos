@@ -95,6 +95,7 @@ static const test_entry_t TESTS[] = {
   { "ipv6", &ipv6_test, 1 },
   { "net_base", &net_base_test, 1 },
   { "echo", &net_echo_test, 1 },
+  { "arena", &arena_test, 1 },
 
 #if ARCH == ARCH_i586
   { "page_alloc_map", &page_alloc_map_test, 1 },

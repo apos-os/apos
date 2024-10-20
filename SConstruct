@@ -54,6 +54,8 @@ FEATURES_DEFAULT_DISABLED = [
   # Whether to pre-page in user binaries.  Useful when debugging them to avoid
   # stepping through lots of page faults.
   'PRELOAD_USER_BINS',
+  'PROFILING',
+  'PROFILE_IDLE',
 ]
 
 ALL_FEATURES = FEATURES_DEFAULT_ENABLED + FEATURES_DEFAULT_DISABLED

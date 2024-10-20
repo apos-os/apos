@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "memory/kmalloc.h"
+#include "memory/allocator.h"
 #include "memory/kmalloc-internal.h"
 
 #include <stdint.h>
@@ -162,7 +163,8 @@ void* kmalloc(size_t n) {
   return kmalloc_aligned(n, 1);
 }
 
-void* kmalloc_aligned(size_t n, size_t alignment) {
+void* kmalloc_alloc(void* arg, size_t n, size_t alignment) {
+  KASSERT_DBG(arg == NULL);
   n += KMALLOC_SAFE_BUFFER;
 #if ENABLE_KMALLOC_HEAP_PROFILE
   addr_t stack_trace[32];
@@ -343,3 +345,14 @@ void kmalloc_enable_test_mode(void) {
 block_t* kmalloc_internal_get_block_list(void) {
   return g_block_list;
 }
+
+static void kfree_alloc(void* arg, void* ptr) {
+  KASSERT_DBG(arg == NULL);
+  return kfree(ptr);
+}
+
+allocator_t kDefaultAlloc = {
+  &kmalloc_alloc,
+  &kfree_alloc,
+  NULL,
+};

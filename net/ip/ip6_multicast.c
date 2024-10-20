@@ -54,7 +54,7 @@ static uint32_t hash(const struct in6_addr* addr) {
   return fnv_hash_array(addr, sizeof(struct in6_addr));
 }
 
-static void build_mld(void* arg, uint32_t key, void* val) {
+static void build_mld(void* arg, htbl_key_t key, void* val) {
   ipv6_mc_sub_t* sub = (ipv6_mc_sub_t*)val;
   mld_multicast_record_t** record_ptr = (mld_multicast_record_t**)arg;
   mld_multicast_record_t* record = *record_ptr;

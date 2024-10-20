@@ -26,6 +26,7 @@ srcs = ['builtins.c', 'errno.c',
     'list.c',
     'perf_trace.c',
     'refcount.c',
+    'siphash.c',
     'stack_trace_table.c',
     'time.c',
     ]

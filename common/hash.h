@@ -82,6 +82,10 @@ static inline uint32_t fnv_hash_concat(uint32_t a, uint32_t b) {
   return fnv_hash_array(buf, sizeof(uint32_t) * 2);
 }
 
+uint64_t fnv64_hash(uint64_t key);
+uint64_t fnv64_hash_array(const void* buf, int len);
+uint64_t fnv64_hash_concat(uint64_t a, uint64_t b);
+
 #if ARCH_IS_64_BIT
 _Static_assert(sizeof(addr_t) == sizeof(uint64_t), "bad addr_t size");
 #  define fnv_hash_addr(x) fnv_hash64(x)

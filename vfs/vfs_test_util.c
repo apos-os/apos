@@ -24,7 +24,7 @@
 
 static bool g_force_no_files = false;
 
-static void vfs_log_cache_iter(void* arg, uint32_t key, void* val) {
+static void vfs_log_cache_iter(void* arg, htbl_key_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
   KASSERT(key == vnode_hash_n(vnode));
   KLOG(INFO, "  %p { fs: %d inode: %d  type: %s  len: %d  refcount: %d }\n",
@@ -37,7 +37,7 @@ void vfs_log_cache(void) {
   htbl_iterate(&g_vnode_cache, &vfs_log_cache_iter, 0x0);
 }
 
-static void vfs_cache_size_iter(void* arg, uint32_t key, void* val) {
+static void vfs_cache_size_iter(void* arg, htbl_key_t key, void* val) {
   int* counter = (int*)arg;
   vnode_t* vnode = (vnode_t*)val;
   KASSERT(key == vnode_hash_n(vnode));

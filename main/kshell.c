@@ -61,6 +61,7 @@
 #include "test/ktest.h"
 #endif
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
@@ -141,7 +142,9 @@ static void test_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
+  perftrace_enable();
   kernel_run_ktest(argv[1]);
+  perftrace_disable();
 }
 
 #endif  // ENABLE_TESTS
@@ -157,12 +160,7 @@ static void heap_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
   kmalloc_log_heap_profile();
 }
 
-static void perf_trace_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
-  if (argc != 1) {
-    ksh_printf("usage: %s\n", argv[0]);
-    return;
-  }
-
+static void perf_child(void* arg) {
   uint8_t* buf = NULL;
   ssize_t len = perftrace_dump(&buf);
   if (len < 0) {
@@ -170,19 +168,70 @@ static void perf_trace_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
     return;
   }
 
-  KLOG("######## CPU profile #########");
-  const int kLineLen = 16;
-  const int kChunkLen = 2;
-  for (int i = 0; i < len; ++i) {
-    if (i % kLineLen == 0) {
-      KLOG("\n%07x:", i);
-    }
-    if (i % kChunkLen == 0) {
-      KLOG(" ");
-    }
-    KLOG("%02x", buf[i]);
+  const int kPort = 5555;
+  KLOG("Serving profile data on port %d (%ld bytes)\n", kPort, len);
+
+  int server = net_socket(AF_INET, SOCK_STREAM, 0);
+  KASSERT(server >= 0);
+
+  int sockopt = 1;
+  KASSERT(0 == net_setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &sockopt,
+                              sizeof(sockopt)));
+
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = INADDR_ANY;
+  addr.sin_port = htob16(kPort);
+  KASSERT(0 == net_bind(server, (struct sockaddr*)&addr, sizeof(addr)));
+  KASSERT(0 == net_listen(server, 10));
+  int child = net_accept(server, NULL, NULL);
+  if (child < 0) {
+    KLOG("Unable to accept connection: %s\n", errorname(-child));
+    goto done;
   }
-  KLOG("\n######## END CPU profile #########");
+
+  const char* data = "HTTP/1.1 200 OK\r\n";
+  vfs_write(child, data, kstrlen(data));
+  data = "Content-Type: application/octet-stream\r\n";
+  vfs_write(child, data, kstrlen(data));
+  char buf2[100];
+  ksnprintf(buf2, 100, "Content-Length: %ld\r\n\r\n", len);
+  vfs_write(child, buf2, kstrlen(buf2));
+
+  const int kChunkSize = 1000;
+  const uint8_t* buf_write = buf;
+  ssize_t len_write = len;
+  while (len_write > kChunkSize) {
+    KASSERT(kChunkSize == vfs_write(child, buf_write, kChunkSize));
+    buf_write += kChunkSize;
+    len_write -= kChunkSize;
+  }
+  KASSERT(len_write == vfs_write(child, buf_write, len_write));
+
+done:
+  kfree(buf);
+  vfs_close(child);
+  vfs_close(server);
+}
+
+static void perf_trace_profile_cmd(kshell_t* shell, int argc, char* argv[]) {
+  if (argc != 1) {
+    ksh_printf("usage: %s\n", argv[0]);
+    return;
+  }
+
+  kpid_t child_pid = proc_fork(&perf_child, NULL);
+  if (child_pid < 0) {
+    klogf("Unable to fork(): %s\n", errorname(-child_pid));
+  } else {
+    int status;
+    int result = proc_waitpid(child_pid, &status, 0);
+    if (result != child_pid) {
+      klogf("Warning: unable to wait for server child\n");
+    } else if (status != 0) {
+      klogf("Warning: server proc exited with status %d\n", status);
+    }
+  }
 }
 
 static void hash_cmd(kshell_t* shell, int argc, char* argv[]) {

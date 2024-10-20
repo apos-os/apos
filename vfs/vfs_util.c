@@ -34,7 +34,7 @@ typedef struct {
   int buflen;
 } state_t;
 
-static void vfs_print_vnode_cache_iter(void* arg, uint32_t key, void* val) {
+static void vfs_print_vnode_cache_iter(void* arg, htbl_key_t key, void* val) {
   vnode_t* vnode = (vnode_t*)val;
   KASSERT_DBG(key == vnode_hash_n(vnode));
   char buf[1024];

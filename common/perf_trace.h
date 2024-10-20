@@ -26,14 +26,26 @@
 // ignored.
 void perftrace_init(void);
 
+// Enable or disable perf tracing.
+void perftrace_enable(void);
+void perftrace_disable(void);
+
 // Registers an event using the current stack trace.  Increments the event
 // counter for the stack trace by 1, and the cumulative counter by elapsed time.
 // |elapsed_time| should be in the units return by arch_real_timer().
 //
+// |trim_stack_frames| frames are removed from the bottom (inner-most) of the
+// stack trace before recording.
+//
 // If non-negative, caps the number of stack trace entries if
 // |max_stack_frames|.  This prevents combinatorial explosion of tracked stack
 // frames with uninteresting upper frames.
-void perftrace_log(uint64_t elapsed_time, int max_stack_frames);
+void perftrace_log(uint64_t elapsed_time, int trim_stack_frames,
+                   int max_stack_frames);
+
+// As above, but for a manually-supplied stack trace.
+void perftrace_log_trace(uint64_t elapsed_time, const addr_t* stack_trace,
+                         int stack_trace_len);
 
 // Dump the current perf trace data into a buffer.  Returns the number of bytes
 // written, and sets |buf_out| to be the allocated buffer.  Dumps in the binary

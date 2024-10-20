@@ -60,7 +60,7 @@ static void shadow_ref(memobj_t* obj) {
   kspin_unlock(&obj->lock);
 }
 
-static void unpin_htbl_entry(void* arg, uint32_t key, void* val) {
+static void unpin_htbl_entry(void* arg, htbl_key_t key, void* val) {
   bc_entry_t* entry = (bc_entry_t*)val;
   KASSERT_DBG(key == entry->offset);
   block_cache_put(entry, BC_FLUSH_NONE);
@@ -84,9 +84,10 @@ static void maybe_add_to_entry_table(bc_entry_t* entry) {
 }
 
 // Try to remove any entries that exist in the parent shadow object.
-static bool shadow_maybe_migrate_entry(void* arg, uint32_t key, void* val) {
+static bool shadow_maybe_migrate_entry(void* arg, htbl_key_t key, void* val) {
   bc_entry_t* entry = (bc_entry_t*)val;
   KASSERT_DBG(key == entry->offset);
+  KASSERT_DBG(key <= UINT32_MAX);
 
   shadow_data_t* parent = (shadow_data_t*)arg;
   bc_entry_t* new_entry = NULL;
@@ -94,7 +95,8 @@ static bool shadow_maybe_migrate_entry(void* arg, uint32_t key, void* val) {
   if (migrate_result == 0) {
     entry = NULL;  // Possibly dead pointer, safety measure.
     klogfm(KL_MEMORY, DEBUG2,
-           "Migrated shadow entry (parent: %p  offset: %d)\n", parent->me, key);
+           "Migrated shadow entry (parent: %p  offset: %u)\n", parent->me,
+           (uint32_t)key);
 
     // Add the new entry to the parent's table if necessary.
     maybe_add_to_entry_table(new_entry);

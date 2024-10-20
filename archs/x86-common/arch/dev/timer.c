@@ -40,3 +40,7 @@ uint64_t arch_real_timer(void) {
 uint32_t arch_real_timer_freq(void) {
   return 1000;
 }
+
+uint32_t arch_profile_samples_freq(void) {
+  return 1;
+}

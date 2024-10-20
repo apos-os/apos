@@ -56,7 +56,7 @@ static inline ALWAYS_INLINE bool is_any(const struct sockaddr_storage* addr) {
   return inet_is_anyaddr((const struct sockaddr*)addr);
 }
 
-static void sm_bound_dtor(void* arg, uint32_t key, void* val) {
+static void sm_bound_dtor(void* arg, htbl_key_t key, void* val) {
   sm_list_t* list = (sm_list_t*)val;
   while (!list_empty(&list->sockets)) {
     sm_entry_t* entry =
@@ -66,7 +66,7 @@ static void sm_bound_dtor(void* arg, uint32_t key, void* val) {
   kfree(list);
 }
 
-static void sm_port_dtor(void* arg, uint32_t key, void* val) {
+static void sm_port_dtor(void* arg, htbl_key_t key, void* val) {
   kfree(val);
 }
 

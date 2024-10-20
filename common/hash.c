@@ -21,3 +21,43 @@
 #define MD5_MEMCPY kmemcpy
 #define MD5_MEMSET kmemset
 #include "common/md5-impl.c"
+
+static const uint64_t kFNV64OffsetBasis = 0xcbf29ce484222325;
+static const uint64_t kFNV64Prime = 0x00000100000001b3;
+
+uint64_t fnv64_hash(uint64_t key) {
+  uint64_t h = kFNV64OffsetBasis;
+  h ^= (key & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 8) & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 16) & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 24) & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 32) & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 40) & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 48) & 0xFF);
+  h *= kFNV64Prime;
+  h ^= ((key >> 56) & 0xFF);
+  h *= kFNV64Prime;
+  return h;
+}
+
+uint64_t fnv64_hash_array(const void* buf, int len) {
+  uint64_t h = kFNV64OffsetBasis;
+  for (int i = 0; i < len; ++i) {
+    h ^= ((uint8_t*)buf)[i];
+    h *= kFNV64Prime;
+  }
+  return h;
+}
+
+uint64_t fnv64_hash_concat(uint64_t a, uint64_t b) {
+  uint64_t buf[2];
+  buf[0] = a;
+  buf[1] = b;
+  return fnv64_hash_array(buf, sizeof(uint64_t) * 2);
+}

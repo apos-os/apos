@@ -42,7 +42,7 @@ void nbr_cache_init(nbr_cache_t* cache) {
   kthread_queue_init(&cache->wait);
 }
 
-static void entry_dtor(void* arg, uint32_t key, void* val) {
+static void entry_dtor(void* arg, htbl_key_t key, void* val) {
   nbr_cache_entry_t* entry = (nbr_cache_entry_t*)val;
   kfree(entry);
 }
