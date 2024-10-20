@@ -192,7 +192,10 @@ static void allocate_bars(pcie_t* pcie, pcie_device_t* dev) {
       }
     }
     if (range_idx < 0) {
-      die("Found unallocatable BAR");
+      KLOG(WARNING, "Unallocatable BAR %d: %s 0x%zx bytes\n", i,
+           bartype2str(bar->type), bar_len);
+      bar->valid = false;
+      continue;
     }
 
     // Allocate a chunk of the appropriate size and alignment.
