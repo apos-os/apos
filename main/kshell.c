@@ -61,6 +61,7 @@
 #include "test/ktest.h"
 #endif
 #include "user/include/apos/net/socket/inet.h"
+#include "user/include/apos/net/socket/socket.h"
 #include "user/include/apos/vfs/dirent.h"
 #include "vfs/poll.h"
 #include "vfs/vfs.h"
@@ -172,6 +173,11 @@ static void perf_child(void* arg) {
 
   int server = net_socket(AF_INET, SOCK_STREAM, 0);
   KASSERT(server >= 0);
+
+  int sockopt = 1;
+  KASSERT(0 == net_setsockopt(server, SOL_SOCKET, SO_REUSEADDR, &sockopt,
+                              sizeof(sockopt)));
+
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
