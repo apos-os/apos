@@ -346,7 +346,7 @@ static bool handle_prefix(nic_t* nic, const ndp_option_prefix_t* prefix) {
        inet62str(&addr.addr.a.ip6, pretty2));
 
   int result = ipv6_configure_addr(nic, &addr);
-  if (result != 0) {
+  if (result != 0 && result != -EEXIST) {
     KLOG(WARNING, "ipv6: unable to configure advertised prefix %s/%d: %s\n",
        inet62str(&prefix->prefix, pretty), prefix->prefix_len,
        errorname(-result));

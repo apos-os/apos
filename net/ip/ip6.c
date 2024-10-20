@@ -180,7 +180,7 @@ int ipv6_configure_addr(nic_t* nic, const network_t* addr) {
     if (nic->addrs[i].state != NIC_ADDR_NONE &&
         netaddr_eq(&addr->addr, &nic->addrs[i].a.addr)) {
       kspin_unlock(&nic->lock);
-      KLOG(INFO, "ipv6: nic %s already has requested IPv6 address %s\n",
+      KLOG(DEBUG, "ipv6: nic %s already has requested IPv6 address %s\n",
            nic->name, inet62str(&addr->addr.a.ip6, buf));
       return -EEXIST;
     } else if (open < 0 && nic->addrs[i].state == NIC_ADDR_NONE) {
