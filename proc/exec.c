@@ -25,6 +25,7 @@
 #include "memory/mmap.h"
 #include "proc/exec.h"
 #include "proc/load/load.h"
+#include "proc/signal/signal.h"
 #include "vfs/vfs.h"
 
 #define KLOG(...) klogfm(KL_PROC, __VA_ARGS__)
@@ -53,9 +54,22 @@ int do_execve(const char* path, char* const argv[], char* const envp[],
     return -EINVAL;
   }
 
-  // Unmap the current user address space.
   // TODO(aoates): if this (or anything after this) fails, we're hosed.  Should
   // exit the process.
+
+  // Terminate all other threads in the process.
+  process_t* const p = proc_current();
+  kthread_t thread = kthread_current_thread();
+  KASSERT(thread->process == p);
+  FOR_EACH_LIST(iter_link, &p->threads) {
+    kthread_data_t* thread_iter =
+        LIST_ENTRY(iter_link, kthread_data_t, proc_threads_link);
+    if (thread_iter == thread) continue;
+
+    proc_force_signal_on_thread(p, thread_iter, SIGAPOSTKILL);
+  }
+
+  // Unmap the current user address space.
   result = do_munmap((void*)MEM_FIRST_MAPPABLE_ADDR,
                      MEM_LAST_USER_MAPPABLE_ADDR -
                      MEM_FIRST_MAPPABLE_ADDR + 1);

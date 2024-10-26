@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <apos/sleep.h>
 #include <sys/signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -49,6 +50,15 @@ int execve_helper(int argc, char** argv) {
         return 1;
       }
     }
+    return 0;
+  } else if (strcmp(argv[1], "sleep") == 0) {
+    if (argc != 3) {
+      printf("error: incorrect number of arguments in execve() sleep\n");
+      return 1;
+    }
+    int len_ms = atoi(argv[2]);
+    printf("sleeping for %d ms\n", len_ms);
+    sleep_ms(len_ms);
     return 0;
   }
 

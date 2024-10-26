@@ -21,6 +21,9 @@
 #include "ktest.h"
 #include "user-tests/arch.h"
 
+#define SELF_PROGRAM "/bin/all_tests"
+#define EXECVE_HELPER "execve_test_helper"
+
 #if ARCH_IS_64_BIT
 typedef uint64_t stackelt_t;
 #else
@@ -601,6 +604,46 @@ static void self_test(void) {
   KEXPECT_SIGNAL(SIGSEGV, apos_thread_self((apos_uthread_id_t*)INVALID_ADDR));
 }
 
+static void sleep_and_exit(void* arg) {
+  sleep_ms(20);
+  printf("sleep_and_exit() woke up, exiting\n");
+  exit(1);
+}
+
+static void do_exec(void* arg) {
+  char* sub_argv[] = {EXECVE_HELPER, "sleep", "50", NULL};
+  char* sub_envp[] = {NULL};
+  int result = execve(SELF_PROGRAM, sub_argv, sub_envp);
+  if (result) {
+    perror("execve failed");
+    exit(1);
+  }
+}
+
+static void do_exec_thread_test(void) {
+  // One thread will sleep then exit(1), as will this thread.  Another thread
+  // execve(), then sleep longer, then exit(0).  The execve() should kill the
+  // other sleeping threads, preventing them from exit(1)ing.  In practice, if
+  // the thread isn't killed it will segfault before getting to exit(1) because
+  // its stack won't be set up correctly.
+  apos_uthread_id_t id1, id2;
+  KEXPECT_EQ(0, create_thread(&id1, &sleep_and_exit, NULL));
+  KEXPECT_EQ(0, create_thread(&id2, &do_exec, NULL));
+  sleep_and_exit(NULL);
+}
+
+static void exec_thread_test(void) {
+  KTEST_BEGIN("execve() terminates all threads");
+  pid_t child = fork();
+  if (child == 0) {
+    do_exec_thread_test();
+    exit(1);
+  }
+  int status;
+  waitpid(child, &status, 0);
+  KEXPECT_EQ(0, status);
+}
+
 void thread_test(void) {
   KTEST_SUITE_BEGIN("thread tests");
 
@@ -612,6 +655,7 @@ void thread_test(void) {
   basic_thread_signal_test();
   send_signal_to_thread_test();
   self_test();
+  exec_thread_test();
 
   // TODO(aoates): other interesting tests:
   //  - signal masks and delivery
