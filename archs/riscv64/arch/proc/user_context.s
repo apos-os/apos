@@ -13,6 +13,7 @@
 # limitations under the License.
 
 .set SSTATUS_SPP,  0x100
+.set SSTATUS_SIE,  0x002
 
 .global user_context_apply
 
@@ -54,6 +55,11 @@ user_context_apply:
   ld t4,  0x0e0(a0)
   ld t5,  0x0e8(a0)
   ld t6,  0x0f0(a0)
+
+  # Block interrupts to avoid an interrupt in the next few instructions
+  # clobbering sepc.
+  li ra, SSTATUS_SIE
+  csrc sstatus, ra
 
   # sepc = ctx->address
   ld ra, 0xf8(a0)
