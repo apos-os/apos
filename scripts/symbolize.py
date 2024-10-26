@@ -56,6 +56,12 @@ def symbolize(tool_prefix, frame_num, addr):
 
 TOOL_PREFIX = get_tool_prefix()
 
+# Reopen stdin with errors=replace --- the logs will sometimes contain garbage
+# bytes (e.g. if an invalid string is read from raw memory in a failing test),
+# which will not be decodable as UTF-8.  This prevents the script from stopping
+# if those are encountered.
+sys.stdin.reconfigure(errors='replace')
+
 try:
   while True:
     line = sys.stdin.readline()
