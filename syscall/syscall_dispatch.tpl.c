@@ -264,7 +264,7 @@ int SYSCALL_DMZ_mmap(void* addr_inout, size_t length, int prot, int flags,
 int SYSCALL_DMZ_munmap(void* addr, size_t length);
 int SYSCALL_DMZ_symlink(const char* path1, const char* path2);
 int SYSCALL_DMZ_readlink(const char* path, char* buf, size_t bufsize);
-int SYSCALL_DMZ_sleep_ms(int seconds);
+int SYSCALL_DMZ_sleep_ms(int milliseconds);
 int SYSCALL_DMZ_apos_get_time(struct apos_tm* t);
 int SYSCALL_DMZ_apos_get_timespec_32(struct apos_timespec_32* t);
 int SYSCALL_DMZ_apos_get_timespec(struct apos_timespec* t);

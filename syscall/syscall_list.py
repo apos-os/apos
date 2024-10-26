@@ -437,7 +437,7 @@ AddSyscall('readlink', 43, 'vfs_readlink', 'vfs/vfs.h', '<unistd.h>',
     'int', ['const char*:path:s', 'char*:buf:bw:bufsize', 'size_t:bufsize:u'])
 
 AddSyscall('sleep_ms', 44, 'ksleep', 'proc/sleep.h', '<apos/sleep.h>',
-    'int', ['int:seconds:u'])
+    'int', ['int:milliseconds:u'])
 
 AddSyscall('apos_get_time', 51, 'apos_get_time', 'common/time.h',
     '<apos/syscall_decls.h>', 'int',

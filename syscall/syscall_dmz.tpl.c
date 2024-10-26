@@ -1859,11 +1859,11 @@ cleanup:
   return result;
 }
 
-int ksleep(int seconds);
-int SYSCALL_DMZ_sleep_ms(int seconds) {
+int ksleep(int milliseconds);
+int SYSCALL_DMZ_sleep_ms(int milliseconds) {
   int result;
 
-  result = ksleep(seconds);
+  result = ksleep(milliseconds);
 
   // TODO(aoates): this should only copy the written bytes, not the full kernel
   // buffer (e.g. in a read() syscall).
