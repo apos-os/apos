@@ -643,11 +643,12 @@ static void kthread_is_done_test(void) {
 #define STRESS_TEST_THREADS 1000
 
 static void* stress_test_func(void* arg) {
-  KLOG("THREAD %d START\n", (int)(intptr_t)arg);
+  int id = (int)(intptr_t)arg;
+  if (id % 100 == 0) KLOG("THREAD %d START\n", (int)(intptr_t)arg);
   for (int i = 0; i < STRESS_TEST_ITERS; ++i) {
     scheduler_yield();
   }
-  KLOG("THREAD %d DONE\n", (int)(intptr_t)arg);
+  if (id % 100 == 0) KLOG("THREAD %d DONE\n", (int)(intptr_t)arg);
   return arg;
 }
 
