@@ -56,7 +56,7 @@
 #define DISABLED_SRC_IP2 "2001:db8::12"
 #define MLD_QUERY_SRC "fe80::1234"
 
-#define TEST_DUP_TIMEOUT_MS 20
+#define TEST_DUP_TIMEOUT_MS 30
 
 typedef struct {
   test_ttap_t nic;
