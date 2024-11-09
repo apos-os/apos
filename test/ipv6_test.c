@@ -4215,7 +4215,7 @@ static void autoconfigure_conflict_test(void) {
   KEXPECT_EQ(0, str2mac(nic.mac, nic.n->mac.addr));
   nic_ipv6_options_t opts = *ipv6_default_nic_opts();
   opts.autoconfigure = true;
-  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS;
+  opts.dup_detection_timeout_ms = TEST_DUP_TIMEOUT_MS + 20;
   ipv6_enable(nic.n, &opts);
 
   // We should have first gotten an MLD update to subscribe to the new address.
