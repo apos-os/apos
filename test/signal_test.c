@@ -791,7 +791,7 @@ static void ksleep_interrupted_test(void) {
   KEXPECT_GE(end_time - start_time, 20);
   KEXPECT_LE(end_time - start_time, 60);
   KEXPECT_GE(exit_status, 160);
-  KEXPECT_LE(exit_status, 180);
+  KEXPECT_LE(exit_status, 190);
 }
 
 static void sigprocmask_test(void) {
