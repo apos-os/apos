@@ -35,6 +35,18 @@
 #define EXTERNAL_DST_V4 "10.0.2.2"
 #define EXTERNAL_DST_V6 "fec0::2"
 
+static ssize_t read_loop(int fd, void* buf, size_t len) {
+  ssize_t result;
+  apos_ms_t start = get_time_ms();
+  do {
+    result = vfs_read(fd, buf, len);
+    if (result == -EAGAIN) {
+      ksleep(10);
+    }
+  } while (result == -EAGAIN && get_time_ms() - start < 100);
+  return result;
+}
+
 static void udp_v4_test(void) {
   KTEST_BEGIN("Network echo test (UDP, IPv4)");
   int sock = net_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -50,29 +62,15 @@ static void udp_v4_test(void) {
   char buf[10];
   kmemset(buf, 0, 10);
   KEXPECT_EQ(3, vfs_write(sock, "abc", 3));
-  ksleep(20);
-  KEXPECT_EQ(3, vfs_read(sock, buf, 10));
+  KEXPECT_EQ(3, read_loop(sock, buf, 10));
   KEXPECT_STREQ("abc", buf);
 
   kmemset(buf, 0, 10);
   KEXPECT_EQ(3, vfs_write(sock, "123", 3));
-  ksleep(20);
-  KEXPECT_EQ(3, vfs_read(sock, buf, 10));
+  KEXPECT_EQ(3, read_loop(sock, buf, 10));
   KEXPECT_STREQ("123", buf);
 
   KEXPECT_EQ(0, vfs_close(sock));
-}
-
-static ssize_t read_loop(int fd, void* buf, size_t len) {
-  ssize_t result;
-  apos_ms_t start = get_time_ms();
-  do {
-    result = vfs_read(fd, buf, len);
-    if (result == -EAGAIN) {
-      ksleep(10);
-    }
-  } while (result == -EAGAIN && get_time_ms() - start < 100);
-  return result;
 }
 
 static void udp_v6_test(void) {
@@ -146,14 +144,12 @@ static void tcp_v6_test(void) {
   char buf[10];
   kmemset(buf, 0, 10);
   KEXPECT_EQ(3, vfs_write(sock, "abc", 3));
-  ksleep(20);
-  KEXPECT_EQ(3, vfs_read(sock, buf, 10));
+  KEXPECT_EQ(3, read_loop(sock, buf, 10));
   KEXPECT_STREQ("abc", buf);
 
   kmemset(buf, 0, 10);
   KEXPECT_EQ(3, vfs_write(sock, "123", 3));
-  ksleep(20);
-  KEXPECT_EQ(3, vfs_read(sock, buf, 10));
+  KEXPECT_EQ(3, read_loop(sock, buf, 10));
   KEXPECT_STREQ("123", buf);
 
   // Do SHUT_RD then send data, which will cause an echo and reset.  This
