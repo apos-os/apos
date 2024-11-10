@@ -76,7 +76,7 @@ int compare_dirents(int fd, int expected_num, const edirent_t expected[]) {
       num_dirents++;
       buf_offset += ent->d_reclen;
 
-      KLOG("dirent: %lu -> %s\n", ent->d_ino, ent->d_name);
+      klogfm(KL_TEST, DEBUG, "dirent: %lu -> %s\n", ent->d_ino, ent->d_name);
 
       // Ignore the standard root directories.
       if (is_root && (kstrcmp(ent->d_name, "lost+found") == 0 ||
