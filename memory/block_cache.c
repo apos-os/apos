@@ -815,3 +815,21 @@ int block_cache_set_bg_flush_period(int period_ms) {
 void block_cache_wakeup_flush_thread(void) {
   scheduler_wake_all(&g_flush_queue_wakeup_queue);
 }
+
+bool block_cache_quiesce_flushing(int max_ms) {
+  KASSERT(max_ms > 0);
+  apos_ms_t start = get_time_ms();
+  while (get_time_ms() <= start + max_ms) {
+    kmutex_lock(&g_mu);
+    if (list_empty(&g_flush_queue)) {
+      kmutex_unlock(&g_mu);
+      KLOG(INFO, "block cache: quiesced after %d ms\n", get_time_ms() - start);
+      return true;
+    }
+    kmutex_unlock(&g_mu);
+    block_cache_wakeup_flush_thread();
+    ksleep(10);
+  }
+  KLOG(INFO, "block cache: failed to quiesce within %d ms\n", max_ms);
+  return false;
+}

@@ -282,8 +282,7 @@ void ktest_finish_all(void) {
   // Trigger the block cache flush thread to flush any dirtied blocks from the
   // end of the test run (e.g. cleanup operations), in case we're terminated
   // immediately after this.
-  block_cache_wakeup_flush_thread();
-  ksleep(10);
+  block_cache_quiesce_flushing(200);
 
   apos_ms_t end_time = get_time_ms();
   finish_test();

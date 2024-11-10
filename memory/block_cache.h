@@ -129,6 +129,11 @@ int block_cache_set_bg_flush_period(int period_ms);
 // necessarily force flushing).
 void block_cache_wakeup_flush_thread(void);
 
+// Attempt to quiesce the flush queue.  Repeatedly wakes up the flush thread and
+// check if the flush queue is empty.  Times out after |max_ms| ms.  Returns
+// true if the quiesce worked, false if it timed out.
+bool block_cache_quiesce_flushing(int max_ms);
+
 // TODO(aoates): support sync operations on pinned cache entries.
 
 #endif
