@@ -308,13 +308,14 @@ static void free_dead_entries(void) {
   kmutex_assert_is_held(&g_mu);
   while (!list_empty(&g_cleanup_list)) {
     bc_entry_internal_t* entry = cache_entry_pop(&g_cleanup_list, lruq);
-    kmutex_unlock(&g_mu);
 
     KASSERT_DBG(entry->initialized == false);
     KASSERT_DBG(entry->pin_count == 0);
     list_remove(&entry->pub.obj->bc_entries, &entry->memobj_link);
     entry->pub.obj->num_bc_entries--;
     KASSERT_DBG(entry->pub.obj->num_bc_entries >= 0);
+    kmutex_unlock(&g_mu);
+
     entry->pub.obj->ops->unref(entry->pub.obj);  // May block.
     entry->pub.obj = 0x0;
     kfree(entry);
