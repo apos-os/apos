@@ -14,12 +14,20 @@
 
 #include "common/hash.h"
 #include "common/klog.h"
+#include "proc/load/load.h"
+#include "proc/process.h"
 
 long do_syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                      long arg6) {
-  const long args[] = { arg1, arg2, arg3, arg4, arg5, arg6 };
-  uint32_t hash = fnv_hash_array(args, sizeof(long) * 6);
-  klogf("SYSCALL(test): %ld, %ld, %ld, %ld, %ld, %ld --> %d\n",
+  uint32_t hash;
+  if (bin_32bit(proc_current()->user_arch)) {
+    const uint32_t args[] = {arg1, arg2, arg3, arg4, arg5, arg6};
+    hash = fnv_hash_array(args, sizeof(int32_t) * 6);
+  } else {
+    const long args[] = { arg1, arg2, arg3, arg4, arg5, arg6 };
+    hash = fnv_hash_array(args, sizeof(long) * 6);
+  }
+  klogf("SYSCALL(test): %lx, %lx, %lx, %lx, %lx, %lx --> %x\n",
         arg1, arg2, arg3, arg4, arg5, arg6, hash);
   return hash;
 }

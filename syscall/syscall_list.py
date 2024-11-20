@@ -173,7 +173,8 @@ AddSyscall('syscall_test', 100, 'do_syscall_test',
     'long:arg3:u',
     'long:arg4:u',
     'long:arg5:u',
-    'long:arg6:u'])
+    'long:arg6:u'],
+     can_fail=False)
 
 AddSyscall('open', 1, 'vfs_open', 'vfs/vfs.h', '<fcntl.h>',
     'int', [

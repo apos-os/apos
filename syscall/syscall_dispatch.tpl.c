@@ -330,6 +330,7 @@ static long do_syscall_dispatch(long syscall_number, long arg1, long arg2,
                                 long arg3, long arg4, long arg5, long arg6) {
   switch (syscall_number) {
     case SYS_SYSCALL_TEST:
+      kthread_current_thread()->syscall_ctx.flags &= ~SCCTX_RESTARTABLE;
       return SYSCALL_DMZ_syscall_test((long)arg1, (long)arg2, (long)arg3,
                                       (long)arg4, (long)arg5, (long)arg6);
 

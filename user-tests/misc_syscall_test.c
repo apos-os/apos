@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <apos/syscall_decls.h>
+#include <apos/test.h>
 #include <apos/time_types.h>
 #include <fcntl.h>
 #include <sys/resource.h>
@@ -22,6 +23,21 @@
 
 #include "ktest.h"
 #include "user-tests/arch.h"
+
+static void test_syscall_test(void) {
+  KTEST_SUITE_BEGIN("syscall_test() test");
+  KTEST_BEGIN("syscall_test(): basic test");
+
+#if ARCH_IS_64_BIT
+  KEXPECT_EQ(
+      0xffffffff85daa734,
+      syscall_test(0xffffffff12345678, 0xffffffff12345679, 0xffffffff1234567a,
+                   0xffffffff1234567b, 0xffffffff1234567c, 0xffffffff1234567d));
+#else
+  KEXPECT_EQ(0x41aa6204, syscall_test(0x12345678, 0x12345679, 0x1234567a,
+                                      0x1234567b, 0x1234567c, 0x1234567d));
+#endif
+}
 
 static void apos_get_time_test(void) {
   KTEST_SUITE_BEGIN("apos_get_time() test");
@@ -295,6 +311,7 @@ static void select_test(void) {
 }
 
 void misc_syscall_test(void) {
+  test_syscall_test();
   apos_get_time_test();
   termios_test();
   rlimit_test();
