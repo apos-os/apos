@@ -14,11 +14,22 @@
 
 #include "common/hash.h"
 #include "common/klog.h"
+#include "common/klog_modules.h"
+#include "dev/interrupts.h"
+#include "proc/defint.h"
 #include "proc/load/load.h"
 #include "proc/process.h"
 
 long do_syscall_test(long arg1, long arg2, long arg3, long arg4, long arg5,
                      long arg6) {
+  if (!interrupts_enabled()) {
+    klogfm(KL_SYSCALL, ERROR, "Interrupts disabled in syscall");
+    return 0;
+  }
+  if (!defint_state()) {
+    klogfm(KL_SYSCALL, ERROR, "Defints disabled in syscall");
+    return 0;
+  }
   uint32_t hash;
   if (bin_32bit(proc_current()->user_arch)) {
     const uint32_t args[] = {arg1, arg2, arg3, arg4, arg5, arg6};

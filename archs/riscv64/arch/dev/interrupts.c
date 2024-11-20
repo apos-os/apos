@@ -20,6 +20,7 @@
 #include "archs/riscv64/internal/timer.h"
 #include "common/kassert.h"
 #include "common/klog.h"
+#include "dev/interrupts.h"
 #include "internal/constants.h"
 #include "internal/plic.h"
 #include "memory/vm_page_fault.h"
@@ -158,10 +159,12 @@ void int_handler(rsv_context_t* ctx, uint64_t scause, uint64_t stval,
         break;
 
       case RSV_TRAP_ENVCALL_USR:
+        enable_interrupts();
         ctx->a0 = syscall_dispatch(ctx->a0, ctx->a1, ctx->a2, ctx->a3, ctx->a4,
                                    ctx->a5, ctx->a6);
         ctx->address += RSV_ECALL_INSTR_LEN;
         syscall_ctx = &kthread_current_thread()->syscall_ctx;
+        disable_interrupts();
         break;
 
       case RSV_TRAP_BREAKPOINT:
