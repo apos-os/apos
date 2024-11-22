@@ -17,6 +17,7 @@
 {# Manually implemented syscall stubs. -#}
 #include <stdarg.h>
 #include <unistd.h>
+#include <apos/mmap.h>
 
 __attribute__((noreturn)) void _exit(int status) {
   _do_exit(status);
@@ -42,7 +43,7 @@ void* _mmap_r(struct _reent* reent_ptr, void *addr, size_t len, int prot,
   int result = _do_mmap(&addr, len, prot, flags, fd, offset);
   if (result) {
     reent_ptr->_errno = -result;
-    return NULL;
+    return MAP_FAILED;
   }
   return addr;
 }

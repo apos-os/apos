@@ -30,6 +30,9 @@
 #define KMAP_ANONYMOUS 0x08
 #define KMAP_KERNEL_ONLY 0x10
 
+// TODO(aoates): change MAP_FAILED to be -1 (and update user tests).
+#define KMAP_FAILED ((void*)0)
+
 // Export POSIX names for user code.
 #if !__APOS_BUILDING_KERNEL__
 # define PROT_NONE KPROT_NONE
@@ -40,6 +43,7 @@
 # define MAP_PRIVATE KMAP_PRIVATE
 # define MAP_FIXED KMAP_FIXED
 # define MAP_ANONYMOUS KMAP_ANONYMOUS
+# define MAP_FAILED KMAP_FAILED
 #endif
 
 #endif
