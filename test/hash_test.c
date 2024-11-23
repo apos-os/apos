@@ -210,6 +210,11 @@ static void md5_test(void) {
   KTEST_BEGIN("MD5 hamlet test (1000 bytes)");
   KEXPECT_STREQ("7930a15bee177618802514e57effbc71",
                 get_md5_hash_n(kHamlet, 1000));
+
+  KTEST_BEGIN("MD5 hamlet test (all data)");
+  KEXPECT_EQ(kHamletSize, kstrlen(kHamlet) + 1);
+  KEXPECT_STREQ("4a0b0f8a18f73a3280c33539a834333e",
+                get_md5_hash_n(kHamlet, kHamletSize));
 }
 
 static void crc_test(void) {
