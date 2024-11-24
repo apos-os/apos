@@ -14,18 +14,19 @@
 #include "common/refcount.h"
 
 #include "common/kassert.h"
+#include "proc/spinlock.h"
 
 void refcount_inc(refcount_t* ref) {
-  kspin_lock(&ref->spin);
+  kspin_lock_int(&ref->spin);
   KASSERT_DBG(ref->ref >= 1);
   ref->ref++;
-  kspin_unlock(&ref->spin);
+  kspin_unlock_int(&ref->spin);
 }
 
 int refcount_dec(refcount_t* ref) {
-  kspin_lock(&ref->spin);
+  kspin_lock_int(&ref->spin);
   KASSERT_DBG(ref->ref >= 1);
   int result = --ref->ref;
-  kspin_unlock(&ref->spin);
+  kspin_unlock_int(&ref->spin);
   return result;
 }

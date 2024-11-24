@@ -18,11 +18,11 @@
 #include "common/attributes.h"
 #include "proc/spinlock.h"
 
-// Simple defint-safe atomic refcount.
+// Simple interrupt-safe atomic refcount.
 // TODO(aoates): replace with a native atomic.
 typedef struct {
   int ref;
-  kspinlock_t spin;
+  kspinlock_intsafe_t spin;
 } refcount_t;
 
 #define REFCOUNT_INIT ((refcount_t){1, KSPINLOCK_NORMAL_INIT_STATIC})
