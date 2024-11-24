@@ -57,13 +57,22 @@ static inline uint32_t fnv_hash64(uint64_t key) {
   return h;
 }
 
-static inline uint32_t fnv_hash_array(const void* buf, int len) {
-  uint32_t h = kFNVOffsetBasis;
+static inline uint32_t fnv_hash_array_start(void) {
+  return kFNVOffsetBasis;
+}
+
+static inline uint32_t fnv_hash_array_continue(uint32_t h, const void* buf,
+                                               int len) {
   for (int i = 0; i < len; ++i) {
     h ^= ((uint8_t*)buf)[i];
     h *= kFNVPrime;
   }
   return h;
+}
+
+static inline uint32_t fnv_hash_array(const void* buf, int len) {
+  uint32_t h = fnv_hash_array_start();
+  return fnv_hash_array_continue(h, buf, len);
 }
 
 static inline uint32_t fnv_hash_string(const char* s) {

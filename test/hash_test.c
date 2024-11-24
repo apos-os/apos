@@ -76,6 +76,12 @@ static void fnv_array_test(void) {
   KEXPECT_EQ(0xd58b3fa7, fnv_hash_string("hello world\0x"));
   KEXPECT_EQ(0x02186e67, fnv_hash_string("HELLO WORLD\0yyy"));
   KEXPECT_EQ(0x65c5fd60, fnv_hash_string("abcd12345"));
+
+  uint32_t h = fnv_hash_array_start();
+  h = fnv_hash_array_continue(h, "hello", 5);
+  h = fnv_hash_array_continue(h, " w", 2);
+  h = fnv_hash_array_continue(h, "orld", 4);
+  KEXPECT_EQ(0xd58b3fa7, h);
 }
 
 static void fnv_concat_test(void) {
