@@ -23,9 +23,9 @@
 //
 // Factors are separate for each data structure.  Different modules will use the
 // data structures differently, so these should be tested separately.
-#define PREEMPTION_INDUCE_LEVEL_LIST 0
-#define PREEMPTION_INDUCE_LEVEL_HTBL 0
-#define PREEMPTION_INDUCE_LEVEL_CIRCBUF 0
+#define PREEMPTION_INDUCE_LEVEL_LIST 5
+#define PREEMPTION_INDUCE_LEVEL_HTBL 5
+#define PREEMPTION_INDUCE_LEVEL_CIRCBUF 5
 
 // Preempt the current thread IF preemption is enabled.  Otherwise, a no-op.
 // Not guaranteed to actually preempt --- should be inserted into key code
