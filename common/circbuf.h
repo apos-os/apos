@@ -16,6 +16,7 @@
 #define APOO_COMMON_CIRCBUF_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #include "user/include/apos/posix_types.h"
 
@@ -24,6 +25,7 @@ typedef struct {
   size_t buflen;  // Length of the buffer overall.
   size_t pos;  // Start position of the data in the buffer.
   size_t len;  // Length of the data in the buffer.
+  uint16_t generation;
 } circbuf_t;
 
 void circbuf_init(circbuf_t* cbuf, void* buf, size_t buflen);

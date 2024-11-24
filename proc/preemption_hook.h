@@ -21,11 +21,11 @@
 // hooks will be taken, to ensure we avoid weird aliasing effects where buggy
 // racing threads preempt back and forth every time and avoid the actual race.
 //
-// Factors are separate for list and hashtable preemptions.  Different modules
-// will use the data structures differently, so these should be tested
-// separately.
+// Factors are separate for each data structure.  Different modules will use the
+// data structures differently, so these should be tested separately.
 #define PREEMPTION_INDUCE_LEVEL_LIST 0
 #define PREEMPTION_INDUCE_LEVEL_HTBL 0
+#define PREEMPTION_INDUCE_LEVEL_CIRCBUF 0
 
 // Preempt the current thread IF preemption is enabled.  Otherwise, a no-op.
 // Not guaranteed to actually preempt --- should be inserted into key code

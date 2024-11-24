@@ -28,6 +28,10 @@ _Static_assert(PREEMPTION_INDUCE_LEVEL_HTBL >= 0 &&
                    PREEMPTION_INDUCE_LEVEL_HTBL <= 10,
                "PREEMPTION_INDUCE_LEVEL_HTBL out of range");
 
+_Static_assert(PREEMPTION_INDUCE_LEVEL_CIRCBUF >= 0 &&
+                   PREEMPTION_INDUCE_LEVEL_CIRCBUF <= 10,
+               "PREEMPTION_INDUCE_LEVEL_CIRCBUF out of range");
+
 void sched_preempt_me(int level) {
   static uint32_t rng = 12345;
   static kspinlock_t rng_lock = KSPINLOCK_NORMAL_INIT_STATIC;
