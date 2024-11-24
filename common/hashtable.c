@@ -18,9 +18,16 @@
 #include "common/hash.h"
 #include "common/hashtable.h"
 #include "memory/kmalloc.h"
+#include "proc/preemption_hook.h"
 
 #define GROW_THRESHOLD 0.75
 #define GROW_RATIO 2
+
+#if PREEMPTION_INDUCE_LEVEL_HTBL > 0
+# define preempt() sched_preempt_me(PREEMPTION_INDUCE_LEVEL_HTBL)
+#else
+# define preempt()
+#endif
 
 struct htbl_entry {
   htbl_key_t key;
@@ -88,6 +95,7 @@ void htbl_init_alloc(htbl_t* tbl, int buckets, const allocator_t* alloc) {
   }
   tbl->num_buckets = buckets;
   tbl->num_entries = 0;
+  tbl->generation = 0;
 }
 
 void htbl_cleanup(htbl_t* tbl) {
@@ -105,6 +113,11 @@ void htbl_cleanup(htbl_t* tbl) {
 }
 
 void htbl_put(htbl_t* tbl, htbl_key_t key, void* value) {
+  uint16_t g = tbl->generation;
+  preempt();
+  KASSERT(tbl->generation == g);
+  tbl->generation++;
+
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   while (e) {
@@ -128,6 +141,10 @@ void htbl_put(htbl_t* tbl, htbl_key_t key, void* value) {
 }
 
 int htbl_get(const htbl_t* tbl, htbl_key_t key, void** value) {
+  uint16_t g = tbl->generation;
+  preempt();
+  KASSERT(tbl->generation == g);
+
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   while (e) {
@@ -141,6 +158,11 @@ int htbl_get(const htbl_t* tbl, htbl_key_t key, void** value) {
 }
 
 int htbl_remove(htbl_t* tbl, htbl_key_t key) {
+  uint16_t g = tbl->generation;
+  preempt();
+  KASSERT(tbl->generation == g);
+  tbl->generation++;
+
   const uint32_t bucket = hash(tbl, key);
   htbl_entry_t* e = tbl->buckets[bucket];
   htbl_entry_t* prev = 0;
@@ -163,6 +185,10 @@ int htbl_remove(htbl_t* tbl, htbl_key_t key) {
 
 void htbl_iterate(const htbl_t* tbl, void (*func)(void*, htbl_key_t, void*),
                   void* arg) {
+  uint16_t g = tbl->generation;
+  preempt();
+  KASSERT(tbl->generation == g);
+
   int counter = 0;
   for (int i = 0; i < tbl->num_buckets; ++i) {
     htbl_entry_t* e = tbl->buckets[i];

@@ -86,10 +86,11 @@ struct htbl {
   htbl_entry_t** buckets;
   int num_buckets;
   int num_entries;
+  uint16_t generation;
 };
 
 // A static initializer for htbl_t --- the hashtable must still be initialized
 // with htbl_init(), this is just a placeholder.
-#define HTBL_STATIC_DECL { NULL, NULL, 0, 0 }
+#define HTBL_STATIC_DECL { NULL, NULL, 0, 0, 0 }
 
 #endif

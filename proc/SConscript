@@ -31,6 +31,7 @@ srcs = [
   'sleep.c',
   'spinlock.c',
   'kthread_pool.c',
+  'preemption_hook.c',
   'tcgroup.c',
   'umask.c',
   'user.c',

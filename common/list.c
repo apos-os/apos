@@ -11,11 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
-#include "common/kassert.h"
 #include "common/list.h"
 
+#include "common/kassert.h"
+#include "proc/preemption_hook.h"
+
 #define SLOW_CONSISTENCY_CHECKS 0
+
+#if PREEMPTION_INDUCE_LEVEL_LIST > 0
+# define preempt() sched_preempt_me(PREEMPTION_INDUCE_LEVEL_LIST)
+#else
+# define preempt()
+#endif
 
 const list_link_t LIST_LINK_INIT = { 0x0, 0x0 };
 const list_t LIST_INIT = { 0x0, 0x0 };
@@ -24,9 +31,11 @@ void list_push(list_t* list, list_link_t* link) {
   KASSERT_DBG(link->prev == 0x0);
   KASSERT_DBG(link->next == 0x0);
   if (list->head == 0x0) {
+    preempt();
     KASSERT_DBG(list->tail == 0x0);
     list->head = list->tail = link;
   } else {
+    preempt();
     KASSERT_DBG(list->tail != 0x0);
     link->prev = list->tail;
     list->tail->next = link;
@@ -36,17 +45,21 @@ void list_push(list_t* list, list_link_t* link) {
 
 list_link_t* list_pop(list_t* list) {
   if (list->head == 0x0) {
+    preempt();
     KASSERT_DBG(list->tail == 0x0);
     return 0x0;
   } else {
     list_link_t* link = list->head;
+    preempt();
     KASSERT_DBG(link->prev == 0x0);
     if (link->next != 0x0) {
+      preempt();
       KASSERT_DBG(list->tail != link);
       link->next->prev = 0x0;
       list->head = link->next;
       link->next = 0x0;
     } else {
+      preempt();
       KASSERT_DBG(list->tail == list->head);
       list->tail = list->head = 0x0;
     }
@@ -59,6 +72,7 @@ void list_insert(list_t* list, list_link_t* prev, list_link_t* link) {
   KASSERT_DBG(link->next == 0x0);
   link->prev = prev;
   if (prev == 0x0) {
+    preempt();
     link->next = list->head;
     if (list->head) {
       list->head->prev = link;
@@ -68,6 +82,7 @@ void list_insert(list_t* list, list_link_t* prev, list_link_t* link) {
     }
     list->head = link;
   } else {
+    preempt();
     if (prev->next) {
       prev->next->prev = link;
     } else {
@@ -86,6 +101,7 @@ list_link_t* list_remove(list_t* list, list_link_t* link) {
     list_pop(list);
     return list->head;
   } else if (list->tail == link) {
+    preempt();
     KASSERT_DBG(link->next == 0x0);
     KASSERT_DBG(link->prev != 0x0);
     list->tail = link->prev;
@@ -95,6 +111,7 @@ list_link_t* list_remove(list_t* list, list_link_t* link) {
     link->prev = 0x0;
     return NULL;
   } else {
+    preempt();
     KASSERT_DBG(link->prev != 0x0);
     KASSERT_DBG(link->next != 0x0);
     list_link_t* next = link->next;

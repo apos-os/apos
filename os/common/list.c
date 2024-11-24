@@ -17,7 +17,10 @@
 #include <assert.h>
 
 #define APOO_KASSERT_H
+#define APOO_PROC_PREEMPTION_HOOK_H
+#define PREEMPTION_INDUCE_LEVEL_LIST 0
 
 #define KASSERT_DBG assert
 #define KASSERT assert
+#define sched_preempt_me()
 #include "common/list.c"
