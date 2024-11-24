@@ -2253,6 +2253,12 @@ ssize_t sock_tcp_recvfrom(socket_t* socket_base, int fflags, void* buffer,
         break;
     }
   }
+
+  // If we're in TIME_WAIT, don't send window updates --- the other side isn't
+  // listening.
+  if (send_ack && sock->state == TCP_TIME_WAIT) {
+    send_ack = false;
+  }
   kspin_unlock(&sock->spin_mu);
 
   if (send_ack) {

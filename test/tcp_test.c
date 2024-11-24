@@ -4769,6 +4769,56 @@ static void silly_window_test2(void) {
   kfree(buf);
 }
 
+static void no_window_update_in_time_wait(void) {
+  KTEST_BEGIN("TCP: no window updates sent when in TIME_WAIT");
+  tcp_test_state_t s;
+  init_tcp_test(&s, SRC_IP, 0x1234, DST_IP, 0x5678);
+  KEXPECT_EQ(0, do_setsockopt_int(s.socket, SOL_SOCKET, SO_RCVBUF, 10000));
+
+  KEXPECT_EQ(0, do_bind(s.socket, SRC_IP, 0x1234));
+  KEXPECT_TRUE(start_connect(&s, DST_IP, 0x5678));
+  KEXPECT_TRUE(finish_standard_connect(&s));
+
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, "abcde"));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 506, /* wndsize */ 9995));
+
+  // Send a large amount of data to induce a window update when we read.
+  char* buf = kmalloc(1501);
+  kmemset(buf, 'x', 1500);
+  buf[1500] = '\0';
+  SEND_PKT(&s, DATA_PKT(/* seq */ 501, /* ack */ 101, buf));
+  EXPECT_PKT(&s, ACK_PKT2(/* seq */ 101, /* ack */ 2001, /* wndsize */ 8500));
+
+  // Shutdown the connection from this side.
+  KEXPECT_EQ(0, net_shutdown(s.socket, SHUT_WR));
+  EXPECT_PKT(&s, FIN_PKT(/* seq */ 101, /* ack */ 2001));
+  KEXPECT_STREQ("FIN_WAIT_1", get_sock_state(s.socket));
+  SEND_PKT(&s, ACK_PKT(2001, /* ack */ 102));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_STREQ("FIN_WAIT_2", get_sock_state(s.socket));
+
+  // Send FIN to start connection close.
+  SEND_PKT(&s, FIN_PKT(/* seq */ 2001, /* ack */ 102));
+  KEXPECT_STREQ("TIME_WAIT", get_sock_state(s.socket));
+
+  // Should get an ACK.
+  EXPECT_PKT(&s, ACK_PKT(/* seq */ 102, /* ack */ 2002));
+  KEXPECT_FALSE(raw_has_packets(&s));
+
+  // Drain the buffer to attempt to trigger a window update.  We should not get
+  // one.
+  KEXPECT_EQ(100, vfs_read(s.socket, buf, 100));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(100, vfs_read(s.socket, buf, 100));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  KEXPECT_EQ(1300, vfs_read(s.socket, buf, 2000));
+  KEXPECT_FALSE(raw_has_packets(&s));
+  kill_time_wait(s.socket);
+
+  cleanup_tcp_test(&s);
+  kfree(buf);
+}
+
 static void established_tests(void) {
   basic_established_recv_test();
   rst_during_established_test1();
@@ -4813,6 +4863,7 @@ static void established_tests(void) {
 
   silly_window_test();
   silly_window_test2();
+  no_window_update_in_time_wait();
 }
 
 static void recvbuf_size_test(void) {
