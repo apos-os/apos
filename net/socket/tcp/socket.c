@@ -832,13 +832,13 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
     // RFC 9293 states that future RSTs and SYNs must/should (respectively) be
     // immediately dropped (with a challenge ACK) and not processed further.
     if ((tcp_hdr->flags & TCP_FLAG_RST) || (tcp_hdr->flags & TCP_FLAG_SYN)) {
-      KLOG(
-          DEBUG2,
-          "TCP: socket %p dropping OOO RST/SYN packet (past start of window)\n",
-          socket);
+      KLOG(DEBUG2,
+           "TCP: socket %p dropping OOO RST/SYN packet (%u past start of window %u)\n",
+           socket, seq, socket->recv_next);
     } else {
-      KLOG(DEBUG2, "TCP: socket %p queuing OOO packet (past start of window)\n",
-           socket);
+      KLOG(DEBUG2,
+           "TCP: socket %p dropping OOO packet (%u past start of window %u)\n",
+           socket, seq, socket->recv_next);
       tcp_ooo_pkt_t* queued = KMALLOC(tcp_ooo_pkt_t);
       // TODO(aoates): avoid this copy.
       queued->pb = pbuf_dup(pb, true);
@@ -1599,6 +1599,15 @@ static void tcp_handle_in_listen(socket_tcp_t* parent, const pbuf_t* pb,
   child->recv_next = btoh32(tcp_hdr->seq) + 1;
   child->send_wndsize = btoh16(tcp_hdr->wndsize);  // Note: won't be used...
   child->send_buf_seq = child->send_next + 1;
+
+  char buf[SOCKADDR_PRETTY_LEN], buf2[SOCKADDR_PRETTY_LEN];
+  KLOG(DEBUG2,
+       "TCP: socket %p created for incoming connection from %s (to %s)\n",
+       child,
+       sockaddr2str((const struct sockaddr*)&child->connected_addr,
+                    sizeof(child->connected_addr), buf),
+       sockaddr2str((const struct sockaddr*)&child->bind_addr,
+                    sizeof(child->bind_addr), buf2));
   set_state(child, TCP_SYN_RCVD, "new incoming connection");
 
   // Add the new socket to the connected sockets table.
