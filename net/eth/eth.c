@@ -43,7 +43,7 @@ static void print_packet(const pbuf_t* pb, const char* type) {
     if (i % kLineLen == 0) {
       KLOG(INFO, "\n%05zx: ", i);
     }
-    KLOG(INFO, "%02x ", ((const char*)pbuf_getc(pb))[i]);
+    KLOG(INFO, "%02x ", ((const unsigned char*)pbuf_getc(pb))[i]);
   }
   KLOG(INFO, "\n##### END PACKET #####\n");
 }
