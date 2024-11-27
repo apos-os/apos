@@ -75,6 +75,14 @@
 
 static const socket_ops_t g_tcp_socket_ops;
 
+// A packet that's been queued for OOO processing.
+typedef struct {
+  pbuf_t* pb;
+  tcp_packet_metadata_t md;
+  uint32_t seq;
+  list_link_t link;
+} tcp_ooo_pkt_t;
+
 static short tcp_poll_events(const socket_tcp_t* socket);
 
 static tcp_sockmap_t* sm(int domain) {
@@ -179,6 +187,7 @@ int sock_tcp_create(int domain, int type, int protocol, socket_t** out) {
   sock->srtt_ms = -1;
   sock->rttvar = 0;
   sock->segments = LIST_INIT;
+  sock->ooo_recv_queue = LIST_INIT;
   sock->time_wait_ms = TCP_TIME_WAIT_MS;
   sock->syn_acked = false;
   kthread_queue_init(&sock->q);
@@ -267,6 +276,8 @@ static void delete_socket(socket_tcp_t* socket) {
   KASSERT_DBG(socket->parent == NULL);
   KASSERT_DBG(socket->state == TCP_CLOSED_DONE);
   KASSERT_DBG(socket->timer == TIMER_HANDLE_NONE);
+  KASSERT_DBG(list_empty(&socket->segments));
+  KASSERT_DBG(list_empty(&socket->ooo_recv_queue));
   kfree(socket->send_buf.buf);
   kfree(socket->recv_buf.buf);
   kfree(socket);
@@ -793,9 +804,32 @@ static bool tcp_dispatch_to_sock(socket_tcp_t* socket, const pbuf_t* pb,
 
   if (seq_gt(seq, socket->recv_next)) {
     tcp_coverage_log("recv:ooo_packet", socket);
-    KLOG(DEBUG2,
-         "TCP: socket %p dropping OOO packet (past start of window)\n",
-         socket);
+    // RFC 9293 states that future RSTs and SYNs must/should (respectively) be
+    // immediately dropped (with a challenge ACK) and not processed further.
+    if ((tcp_hdr->flags & TCP_FLAG_RST) || (tcp_hdr->flags & TCP_FLAG_SYN)) {
+      KLOG(
+          DEBUG2,
+          "TCP: socket %p dropping OOO RST/SYN packet (past start of window)\n",
+          socket);
+    } else {
+      KLOG(DEBUG2, "TCP: socket %p queuing OOO packet (past start of window)\n",
+           socket);
+      tcp_ooo_pkt_t* queued = KMALLOC(tcp_ooo_pkt_t);
+      // TODO(aoates): avoid this copy.
+      queued->pb = pbuf_dup(pb, true);
+      queued->md = *md;
+      queued->seq = seq;
+      queued->link = LIST_LINK_INIT;
+
+      // Insert into the list in the appropriate place.
+      list_link_t* prev = NULL;
+      list_link_t* next = socket->ooo_recv_queue.head;
+      while (next && seq_lt(container_of(next, tcp_ooo_pkt_t, link)->seq, seq)) {
+        prev = next;
+        next = next->next;
+      }
+      list_insert(&socket->ooo_recv_queue, prev, &queued->link);
+    }
     action.send_ack = true;
     goto done;
   }
@@ -806,7 +840,40 @@ done:
   kspin_unlock(&socket->spin_mu);
   tcp_process_action(socket, pb, md, &action);
 
-  if (action.send_ack) {
+  bool send_ack = action.send_ack;
+
+  // Try to process any other queued packets that may be usable now.
+  kspin_lock(&socket->spin_mu);
+  while (!list_empty(&socket->ooo_recv_queue)) {
+    tcp_ooo_pkt_t* pkt =
+        container_of(socket->ooo_recv_queue.head, tcp_ooo_pkt_t, link);
+    if (seq_gt(pkt->seq, socket->recv_next)) {
+      break;
+    }
+    list_pop(&socket->ooo_recv_queue);
+    KLOG(DEBUG3, "TCP: socket %p processing queued OOO packet seq %u\n",
+         socket, pkt->seq);
+
+    action.action = TCP_ACTION_NOT_SET;
+    action.send_ack = false;
+    const tcp_hdr_t* tcp_hdr = (const tcp_hdr_t*)pbuf_getc(pkt->pb);
+    tcp_dispatch_to_sock_one(socket, pkt->pb, &pkt->md, tcp_hdr, &action);
+    kspin_unlock(&socket->spin_mu);
+
+    // N.B. not all actions can be triggered here (in particular,
+    // TCP_SEND_RAW_RST), so the paths that require the pb and md can't be
+    // tested.
+    tcp_process_action(socket, pkt->pb, &pkt->md, &action);
+    // TODO(aoates): certain actions (that close the socket) _suppress_ sending
+    // ACKs, which this doesn't handle.  Update this to figure that out.
+    send_ack |= action.send_ack;
+    pbuf_free(pkt->pb);
+    kfree(pkt);
+    kspin_lock(&socket->spin_mu);
+  }
+  kspin_unlock(&socket->spin_mu);
+
+  if (send_ack) {
     int result = tcp_send_ack(socket);
     if (result != 0) {
       KLOG(WARNING, "TCP: socket %p unable to send ACK: %s\n", socket,
@@ -1633,6 +1700,16 @@ static void finish_protocol_close(socket_tcp_t* socket, const char* reason) {
          seg->seq + seg_len - socket->initial_seq);
     list_pop(&socket->segments);
     kfree(seg);
+  }
+
+  while (!list_empty(&socket->ooo_recv_queue)) {
+    tcp_ooo_pkt_t* pkt =
+        container_of(socket->ooo_recv_queue.head, tcp_ooo_pkt_t, link);
+    KLOG(DEBUG3, "TCP: socket %p deleted queued OOO recv segment %u\n", socket,
+         pkt->seq);
+    list_pop(&socket->ooo_recv_queue);
+    pbuf_free(pkt->pb);
+    kfree(pkt);
   }
 
   KASSERT_DBG(socket->bind_addr.sa_family == AF_UNSPEC);

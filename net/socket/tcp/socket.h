@@ -107,6 +107,11 @@ typedef struct socket_tcp {
   // Transmitted segments that haven't been ACK'd yet.
   list_t segments;
 
+  // Received segments that came out-of-order (and are unprocessed).  This list
+  // is ordered by sequence number, and packets have passed basic validation,
+  // but that's it.
+  list_t ooo_recv_queue;
+
   poll_event_t poll_event;
 
   kthread_queue_t q;
